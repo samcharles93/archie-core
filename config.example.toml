@@ -20,6 +20,9 @@ api_key_env = "OPENAI_API_KEY"
 [providers.ollama]
 class = "ollama"
 
+[web] # observability dashboard (read-only, no auth — keep it local/tailnet)
+listen = "127.0.0.1:8484" # "off" disables
+
 [budgets]
 max_steps = 60
 max_tokens = 400000
