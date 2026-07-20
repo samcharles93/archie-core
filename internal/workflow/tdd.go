@@ -131,7 +131,7 @@ func TDD() Workflow {
 				}
 				if tc.ReproProof != "" {
 					proof := fmt.Sprintf("**Proof the repro tests failed before the fix** (commit 1 of this PR):\n\n```\n%s\n```", tc.ReproProof)
-					if err := tc.Forge.Comment(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.PRNumber, proof); err != nil {
+					if _, err := tc.Forge.Comment(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.PRNumber, proof); err != nil {
 						tc.Log.Warn("failed to post repro proof", "err", err)
 					}
 				}

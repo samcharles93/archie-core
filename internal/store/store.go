@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -45,6 +46,9 @@ type Task struct {
 	Iterations  int
 	Attempt     int
 	ParkReason  string
+	// WatchCommentID: replies to the issue after this comment are the
+	// human input a waiting_human task is blocked on.
+	WatchCommentID int64
 }
 
 type Store struct{ db *sql.DB }
@@ -61,6 +65,12 @@ func Open(path string) (*Store, error) {
 	if _, err := db.Exec(schema + eventsSchema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("store: init schema: %w", err)
+	}
+	// Additive migrations; "duplicate column" means already applied.
+	if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN watch_comment_id INTEGER NOT NULL DEFAULT 0`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column") {
+		db.Close()
+		return nil, fmt.Errorf("store: migrate: %w", err)
 	}
 	return &Store{db: db}, nil
 }
@@ -160,10 +170,47 @@ func (s *Store) Update(ctx context.Context, t *Task) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE tasks SET workflow=?, stage=?, branch=?, plan=?, notes=?,
 			pr_number=?, tokens_used=?, iterations=?, park_reason=?,
-			updated_at=datetime('now')
+			watch_comment_id=?, updated_at=datetime('now')
 		WHERE id=?`,
 		t.Workflow, t.Stage, t.Branch, t.Plan, t.Notes,
-		t.PRNumber, t.TokensUsed, t.Iterations, clip(t.ParkReason, 4000), t.ID)
+		t.PRNumber, t.TokensUsed, t.Iterations, clip(t.ParkReason, 4000),
+		t.WatchCommentID, t.ID)
+	return err
+}
+
+// WaitingTasks returns tasks blocked on human input.
+func (s *Store) WaitingTasks(ctx context.Context) ([]Task, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, owner, repo, issue_number, title, body, plan, workflow,
+			watch_comment_id, status
+		FROM tasks WHERE status='waiting_human'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Task
+	for rows.Next() {
+		var t Task
+		if err := rows.Scan(&t.ID, &t.Owner, &t.Repo, &t.IssueNumber, &t.Title,
+			&t.Body, &t.Plan, &t.Workflow, &t.WatchCommentID, &t.Status); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// Requeue puts a task back on the queue under a specific workflow —
+// the waiting_human → approved → implement handoff.
+func (s *Store) Requeue(ctx context.Context, taskID int64, fromStatus, workflow string) error {
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE tasks SET status='queued', workflow=?, stage='', updated_at=datetime('now')
+		WHERE id=?`, workflow, taskID); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO transitions (task_id, from_status, to_status, detail) VALUES (?, ?, 'queued', ?)`,
+		taskID, fromStatus, "requeued as "+workflow)
 	return err
 }
 

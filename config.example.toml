@@ -23,6 +23,9 @@ class = "ollama"
 [web] # observability dashboard (read-only, no auth — keep it local/tailnet)
 listen = "127.0.0.1:8484" # "off" disables
 
+[notify] # optional webhook for human-in-the-loop moments (n8n -> email)
+# webhook = "https://n8n.catlow.cloud/webhook/archie"
+
 [budgets]
 max_steps = 60
 max_tokens = 400000

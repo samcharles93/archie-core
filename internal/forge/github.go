@@ -66,11 +66,40 @@ func (c *Client) AssignedIssues(ctx context.Context, owner, repo, assignee strin
 	return out, nil
 }
 
-// Comment posts an issue (or PR) comment.
-func (c *Client) Comment(ctx context.Context, owner, repo string, number int, body string) error {
-	_, _, err := c.gh.Issues.CreateComment(ctx, owner, repo, number,
+// Comment posts an issue (or PR) comment and returns its id, so a
+// workflow can watch for replies that come after it.
+func (c *Client) Comment(ctx context.Context, owner, repo string, number int, body string) (int64, error) {
+	cm, _, err := c.gh.Issues.CreateComment(ctx, owner, repo, number,
 		&github.IssueComment{Body: github.Ptr(body)})
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return cm.GetID(), nil
+}
+
+// Reply is a human comment on a watched issue.
+type Reply struct {
+	ID   int64
+	User string
+	Body string
+}
+
+// RepliesAfter returns comments on the issue with id > afterID that were
+// not written by exclude (the bot) — the human side of waiting_human.
+func (c *Client) RepliesAfter(ctx context.Context, owner, repo string, number int, afterID int64, exclude string) ([]Reply, error) {
+	comments, _, err := c.gh.Issues.ListComments(ctx, owner, repo, number,
+		&github.IssueListCommentsOptions{ListOptions: github.ListOptions{PerPage: 50}})
+	if err != nil {
+		return nil, err
+	}
+	var out []Reply
+	for _, cm := range comments {
+		if cm.GetID() <= afterID || cm.GetUser().GetLogin() == exclude {
+			continue
+		}
+		out = append(out, Reply{ID: cm.GetID(), User: cm.GetUser().GetLogin(), Body: cm.GetBody()})
+	}
+	return out, nil
 }
 
 // CreatePR opens a pull request and returns its number.
@@ -102,7 +131,7 @@ func (c *Client) PRState(ctx context.Context, owner, repo string, number int) (s
 // CloseIssue closes an issue with a final comment (feasibility "won't do").
 func (c *Client) CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error {
 	if comment != "" {
-		if err := c.Comment(ctx, owner, repo, number, comment); err != nil {
+		if _, err := c.Comment(ctx, owner, repo, number, comment); err != nil {
 			return err
 		}
 	}

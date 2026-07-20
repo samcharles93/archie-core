@@ -6,11 +6,13 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/google/go-github/v78/github"
+	"github.com/samcharles93/ai-sdk/core"
 	"github.com/samcharles93/ai-sdk/runtime"
 
 	"github.com/samcharles93/archie-core/internal/config"
@@ -73,11 +75,13 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 }
 
-// Cycle is one poll-and-drain pass: enqueue new labelled issues,
-// reconcile open PRs, then process every queued task sequentially.
+// Cycle is one poll-and-drain pass: enqueue newly assigned issues,
+// reconcile open PRs, act on human replies to waiting tasks, then
+// process every queued task sequentially.
 func (d *Daemon) Cycle(ctx context.Context) {
 	d.poll(ctx)
 	d.reconcilePRs(ctx)
+	d.checkWaiting(ctx)
 	for {
 		if ctx.Err() != nil {
 			return
@@ -154,6 +158,104 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 			})
 		}
 	}
+}
+
+// checkWaiting looks for human replies on waiting_human tasks and asks
+// an LLM — not keyword matching — whether the reply is a go-ahead.
+// Approved tasks requeue under the implement workflow; rejections close
+// the issue with the human's reasoning acknowledged.
+func (d *Daemon) checkWaiting(ctx context.Context) {
+	tasks, err := d.Store.WaitingTasks(ctx)
+	if err != nil {
+		d.Log.Error("waiting query failed", "err", err)
+		return
+	}
+	for _, t := range tasks {
+		replies, err := d.Forge.RepliesAfter(ctx, t.Owner, t.Repo, t.IssueNumber, t.WatchCommentID, d.Cfg.BotUser)
+		if err != nil {
+			d.Log.Warn("reply check failed", "issue", t.IssueNumber, "err", err)
+			continue
+		}
+		if len(replies) == 0 {
+			continue
+		}
+		var sb strings.Builder
+		for _, r := range replies {
+			fmt.Fprintf(&sb, "%s: %s\n", r.User, r.Body)
+		}
+		verdict, reason, err := d.judgeReply(ctx, t.Plan, sb.String())
+		if err != nil {
+			d.Log.Error("reply judge failed", "issue", t.IssueNumber, "err", err)
+			continue
+		}
+		d.Log.Info("human reply judged", "issue", t.IssueNumber, "verdict", verdict)
+		switch verdict {
+		case "approve":
+			if err := d.Store.Requeue(ctx, t.ID, store.StatusWaitingHuman, "implement"); err != nil {
+				d.Log.Error("requeue failed", "issue", t.IssueNumber, "err", err)
+				continue
+			}
+			_, _ = d.Forge.Comment(ctx, t.Owner, t.Repo, t.IssueNumber,
+				"**Go-ahead received — implementation is queued.** ("+reason+")")
+			d.emit(events.Event{
+				Kind: "human_approved", TaskID: t.ID,
+				Repo: t.Owner + "/" + t.Repo, Issue: t.IssueNumber, Detail: reason,
+			})
+		case "reject":
+			_ = d.Store.Transition(ctx, t.ID, store.StatusWaitingHuman, store.StatusClosedWontDo, reason)
+			_ = d.Forge.CloseIssue(ctx, t.Owner, t.Repo, t.IssueNumber,
+				"**Understood — closing without implementation.** ("+reason+")")
+			d.emit(events.Event{
+				Kind: "human_rejected", TaskID: t.ID,
+				Repo: t.Owner + "/" + t.Repo, Issue: t.IssueNumber, Detail: reason,
+			})
+		default:
+			// Unclear: keep waiting; the humans can be more explicit.
+			d.Log.Info("reply unclear — still waiting", "issue", t.IssueNumber, "reason", reason)
+		}
+	}
+}
+
+// judgeReply classifies the human's response to a PRD as approve,
+// reject, or unclear.
+func (d *Daemon) judgeReply(ctx context.Context, prd, replies string) (verdict, reason string, err error) {
+	if d.Runtime == nil {
+		return "", "", fmt.Errorf("no LLM runtime configured")
+	}
+	model := d.Cfg.Models["triage"]
+	if model == "" {
+		model = d.Cfg.Models["planner"]
+	}
+	if model == "" {
+		return "", "", fmt.Errorf("no triage or planner model configured")
+	}
+	res, err := d.Runtime.Chat(ctx, model, core.GenerateOptions{
+		System: "You classify a project owner's reply to a proposed PRD. Answer with exactly one line: " +
+			"APPROVE, REJECT, or UNCLEAR, followed by ' - ' and a one-sentence justification. " +
+			"APPROVE only when the reply expresses a go-ahead (with or without caveats). " +
+			"REJECT when it declines or shelves the proposal. Anything ambiguous is UNCLEAR.",
+		Prompt: "PRD (abridged):\n" + clip(prd, 3000) + "\n\nOwner's reply:\n" + clip(replies, 2000),
+	})
+	if err != nil {
+		return "", "", err
+	}
+	line := strings.TrimSpace(res.Text)
+	word, rest, _ := strings.Cut(line, "-")
+	switch strings.ToUpper(strings.TrimSpace(strings.Trim(word, " :*"))) {
+	case "APPROVE":
+		return "approve", strings.TrimSpace(rest), nil
+	case "REJECT":
+		return "reject", strings.TrimSpace(rest), nil
+	default:
+		return "unclear", line, nil
+	}
+}
+
+func clip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 func (d *Daemon) process(ctx context.Context, task *store.Task) {

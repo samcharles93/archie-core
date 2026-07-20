@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/samcharles93/ai-sdk/agentloop"
+	"github.com/samcharles93/ai-sdk/core"
 
 	"github.com/samcharles93/archie-core/internal/config"
 )
@@ -34,6 +35,9 @@ type AgentStage struct {
 	// an environmental constraint, not a prompt rule (TDD's fix stage
 	// protects the committed repro tests).
 	ProtectPaths func(path string) bool
+	// Extra adds stage-specific tools to the agent's toolset (e.g.
+	// feasibility's decide tool).
+	Extra func(*TaskContext) core.ToolSet
 	// OnResult consumes a successful (passed) result. Parked and idle
 	// results park the workflow before OnResult is called.
 	OnResult func(*TaskContext, agentloop.Result) error
@@ -66,6 +70,10 @@ func (a AgentStage) Stage() Stage {
 		if a.Gate != nil {
 			gate = a.Gate(tc)
 		}
+		var extra core.ToolSet
+		if a.Extra != nil {
+			extra = a.Extra(tc)
+		}
 
 		res, err := agentloop.Run(ctx, agentloop.Config{
 			Runtime:    tc.Runtime,
@@ -81,6 +89,7 @@ func (a AgentStage) Stage() Stage {
 			Budget:       budget,
 			ReadOnly:     a.ReadOnly,
 			ProtectPaths: a.ProtectPaths,
+			Extra:        extra,
 			Logger:       tc.Log.With("stage", a.Name, "model", modelRef),
 		})
 		if err != nil {

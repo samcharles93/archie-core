@@ -83,7 +83,15 @@ type Config struct {
 
 	Budgets Budgets `toml:"budgets"`
 	Web     Web     `toml:"web"`
+	Notify  Notify  `toml:"notify"`
 	Repos   []Repo  `toml:"repos"`
+}
+
+// Notify configures outbound notifications (n8n webhook → email etc.).
+type Notify struct {
+	// Webhook receives JSON POSTs for events that need a human (e.g.
+	// feasibility PRDs awaiting go/no-go). Empty disables.
+	Webhook string `toml:"webhook"`
 }
 
 // Web configures the observability dashboard.

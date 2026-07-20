@@ -43,6 +43,8 @@ type TaskContext struct {
 	// ReproProof is the captured failing-test output from a TDD repro
 	// stage, posted on the PR as evidence the bug was reproduced.
 	ReproProof string
+	// decision is the feasibility assess stage's verdict.
+	decision *decision
 	// Outcome describes where the task ended up; the engine applies it.
 	Outcome Outcome
 }
@@ -88,10 +90,15 @@ type Workflow struct {
 // Registry maps workflow names to definitions.
 type Registry map[string]Workflow
 
-// Route picks the workflow for a task. Label-driven first; an LLM
-// triage stage inside a workflow can still re-route by returning an
-// Outcome that re-enqueues under a different workflow (later phase).
+// Route picks the workflow for a task. A pre-assigned workflow wins
+// (the waiting_human → approved handoff requeues under "implement");
+// otherwise labels decide, then the default.
 func Route(t *store.Task, reg Registry) Workflow {
+	if t.Workflow != "" {
+		if wf, ok := reg[t.Workflow]; ok {
+			return wf
+		}
+	}
 	labels := strings.Split(t.Labels, ",")
 	for _, l := range labels {
 		switch strings.TrimSpace(l) {
@@ -177,7 +184,7 @@ func park(ctx context.Context, tc *TaskContext, reason string) {
 	tc.Emit(events.KindParked, t.Stage, reason, nil)
 	body := fmt.Sprintf("**archie parked this task.**\n\n```\n%s\n```\n\nThe worktree is kept for inspection.",
 		clip(reason, 3000))
-	if err := tc.Forge.Comment(ctx, t.Owner, t.Repo, t.IssueNumber, body); err != nil {
+	if _, err := tc.Forge.Comment(ctx, t.Owner, t.Repo, t.IssueNumber, body); err != nil {
 		tc.Log.Error("failed to post park comment", "err", err)
 	}
 }

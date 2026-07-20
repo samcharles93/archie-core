@@ -45,8 +45,14 @@ func Implement() Workflow {
 				ReadOnly: true,
 				MaxSteps: 15,
 				Mission: func(tc *TaskContext) string {
+					prd := ""
+					if tc.Task.Plan != "" {
+						// An approved feasibility PRD precedes this run;
+						// the plan refines it rather than starting cold.
+						prd = "\n<approved_prd>\n" + tc.Task.Plan + "\n</approved_prd>\n"
+					}
 					return fmt.Sprintf(
-						"Produce a concrete implementation plan for this GitHub issue on the repository %s.\n\n"+
+						"Produce a concrete implementation plan for this GitHub issue on the repository %s.\n"+prd+"\n"+
 							"<issue number=%d>\n# %s\n\n%s\n</issue>\n\n"+
 							"Explore the codebase with your read-only tools, then call finish with status "+
 							"\"passed\" and the plan as the summary: files to touch, the approach, acceptance "+
@@ -58,7 +64,7 @@ func Implement() Workflow {
 				OnResult: func(tc *TaskContext, res agentloop.Result) error {
 					tc.Task.Plan = res.Summary
 					body := fmt.Sprintf("**archie's plan** (review now if you want to veto — building starts immediately):\n\n%s", res.Summary)
-					if err := tc.Forge.Comment(context.Background(), tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, body); err != nil {
+					if _, err := tc.Forge.Comment(context.Background(), tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, body); err != nil {
 						tc.Log.Warn("failed to post plan comment", "err", err)
 					}
 					return nil
