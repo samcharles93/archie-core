@@ -77,6 +77,8 @@ func Implement() Workflow {
 				Gate: func(tc *TaskContext) agentloop.GateConfig {
 					return GateFromRepo(tc.Repo, tc.Cfg.Budgets)
 				},
+				ExtraRules: "Files matching the repository's protected suffixes (e.g. generated code) are " +
+					"write-blocked — edit their sources instead; the gate regenerates them.",
 				Mission: func(tc *TaskContext) string {
 					return fmt.Sprintf(
 						"Implement this GitHub issue on the repository %s, following the plan below.\n\n"+

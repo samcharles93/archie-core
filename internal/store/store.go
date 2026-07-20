@@ -200,17 +200,20 @@ func (s *Store) WaitingTasks(ctx context.Context) ([]Task, error) {
 	return out, rows.Err()
 }
 
-// Requeue puts a task back on the queue under a specific workflow —
-// the waiting_human → approved → implement handoff.
+// Requeue puts a task back on the queue. A non-empty workflow forces it
+// (the waiting_human → approved → implement handoff); empty keeps the
+// task's current workflow (retrying a parked task).
 func (s *Store) Requeue(ctx context.Context, taskID int64, fromStatus, workflow string) error {
 	if _, err := s.db.ExecContext(ctx, `
-		UPDATE tasks SET status='queued', workflow=?, stage='', updated_at=datetime('now')
-		WHERE id=?`, workflow, taskID); err != nil {
+		UPDATE tasks SET status='queued',
+			workflow=CASE WHEN ?='' THEN workflow ELSE ? END,
+			stage='', park_reason='', updated_at=datetime('now')
+		WHERE id=?`, workflow, workflow, taskID); err != nil {
 		return err
 	}
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO transitions (task_id, from_status, to_status, detail) VALUES (?, ?, 'queued', ?)`,
-		taskID, fromStatus, "requeued as "+workflow)
+		taskID, fromStatus, "requeued "+workflow)
 	return err
 }
 

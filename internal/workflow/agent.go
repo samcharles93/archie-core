@@ -33,8 +33,10 @@ type AgentStage struct {
 	MaxSteps int
 	// ProtectPaths blocks write/edit on matching paths for this stage —
 	// an environmental constraint, not a prompt rule (TDD's fix stage
-	// protects the committed repro tests).
-	ProtectPaths func(path string) bool
+	// protects the committed repro tests; every builder stage protects
+	// the repo's generated files). The returned matcher is combined
+	// with the repo's configured protected suffixes.
+	ProtectPaths func(*TaskContext) func(path string) bool
 	// Extra adds stage-specific tools to the agent's toolset (e.g.
 	// feasibility's decide tool).
 	Extra func(*TaskContext) core.ToolSet
@@ -75,6 +77,22 @@ func (a AgentStage) Stage() Stage {
 			extra = a.Extra(tc)
 		}
 
+		// Repo-configured protected suffixes (generated files) apply to
+		// every writing stage; stage-specific matchers stack on top.
+		var stageProtect func(string) bool
+		if a.ProtectPaths != nil {
+			stageProtect = a.ProtectPaths(tc)
+		}
+		protect := func(path string) bool {
+			if tc.Repo.Protected(path) {
+				return true
+			}
+			return stageProtect != nil && stageProtect(path)
+		}
+		if a.ReadOnly {
+			protect = nil // nothing to protect from read-only tools
+		}
+
 		res, err := agentloop.Run(ctx, agentloop.Config{
 			Runtime:    tc.Runtime,
 			ModelRef:   modelRef,
@@ -88,7 +106,7 @@ func (a AgentStage) Stage() Stage {
 			},
 			Budget:       budget,
 			ReadOnly:     a.ReadOnly,
-			ProtectPaths: a.ProtectPaths,
+			ProtectPaths: protect,
 			Extra:        extra,
 			Logger:       tc.Log.With("stage", a.Name, "model", modelRef),
 		})

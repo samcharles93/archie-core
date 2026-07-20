@@ -36,7 +36,9 @@ gate_max_failures = 5
 owner = "samcharles93"
 name = "todo"
 base = "main"
+protect = ["_templ.go"]
 gate = [
+  ["templ", "generate", "./components/"],
   ["go", "vet", "./..."],
   ["go", "build", "./..."],
   ["golangci-lint", "run"],

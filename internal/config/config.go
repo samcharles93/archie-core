@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -36,6 +37,20 @@ type Repo struct {
 	// [["go","vet","./..."], ["task","check"]]. Workflow stages may
 	// extend or override it (a TDD repro stage inverts the test command).
 	Gate [][]string `toml:"gate"`
+	// Protect lists path suffixes agents must never write directly —
+	// generated files (e.g. "_templ.go") whose sources they should edit
+	// instead. Enforced environmentally via agentloop.ProtectPaths.
+	Protect []string `toml:"protect"`
+}
+
+// Protected reports whether path matches a protected suffix.
+func (r Repo) Protected(path string) bool {
+	for _, suf := range r.Protect {
+		if strings.HasSuffix(path, suf) {
+			return true
+		}
+	}
+	return false
 }
 
 func (r Repo) FullName() string { return r.Owner + "/" + r.Name }

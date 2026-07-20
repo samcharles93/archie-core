@@ -95,8 +95,8 @@ func TDD() Workflow {
 				},
 				// Environmental, not advisory: the fix stage cannot touch
 				// test files at all — the committed repro is the spec.
-				ProtectPaths: func(path string) bool {
-					return strings.HasSuffix(path, "_test.go")
+				ProtectPaths: func(*TaskContext) func(string) bool {
+					return func(path string) bool { return strings.HasSuffix(path, "_test.go") }
 				},
 				ExtraRules: "The repro tests written in the previous stage are the bug's specification. " +
 					"Test files are write-protected in this stage — make them pass by fixing the code they exercise.",
