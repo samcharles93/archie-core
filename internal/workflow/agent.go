@@ -30,6 +30,10 @@ type AgentStage struct {
 	// MaxSteps overrides the configured step budget when > 0 (planner
 	// stages are cheaper than builder stages).
 	MaxSteps int
+	// ProtectPaths blocks write/edit on matching paths for this stage —
+	// an environmental constraint, not a prompt rule (TDD's fix stage
+	// protects the committed repro tests).
+	ProtectPaths func(path string) bool
 	// OnResult consumes a successful (passed) result. Parked and idle
 	// results park the workflow before OnResult is called.
 	OnResult func(*TaskContext, agentloop.Result) error
@@ -74,9 +78,10 @@ func (a AgentStage) Stage() Stage {
 			Preflight: []agentloop.GateCommand{
 				{Name: "go-version", Argv: []string{"go", "version"}},
 			},
-			Budget:   budget,
-			ReadOnly: a.ReadOnly,
-			Logger:   tc.Log.With("stage", a.Name, "model", modelRef),
+			Budget:       budget,
+			ReadOnly:     a.ReadOnly,
+			ProtectPaths: a.ProtectPaths,
+			Logger:       tc.Log.With("stage", a.Name, "model", modelRef),
 		})
 		if err != nil {
 			return fmt.Errorf("agent run: %w", err)

@@ -38,12 +38,14 @@ func (c *Client) AcceptInvitations(ctx context.Context) error {
 	return nil
 }
 
-// LabelledIssues returns open issues carrying the label, excluding PRs.
-func (c *Client) LabelledIssues(ctx context.Context, owner, repo, label string) ([]*github.Issue, error) {
+// AssignedIssues returns open issues assigned to the given user,
+// excluding PRs. Assigning an issue to the bot is how work is handed to
+// archie (tink-bot style); labels only influence workflow routing.
+func (c *Client) AssignedIssues(ctx context.Context, owner, repo, assignee string) ([]*github.Issue, error) {
 	var out []*github.Issue
 	opts := &github.IssueListByRepoOptions{
 		State:       "open",
-		Labels:      []string{label},
+		Assignee:    assignee,
 		ListOptions: github.ListOptions{PerPage: 50},
 	}
 	for {

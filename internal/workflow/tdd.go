@@ -1,7 +1,10 @@
 package workflow
 
 import (
+	"context"
 	"fmt"
+	"os/exec"
+	"strings"
 
 	"github.com/samcharles93/ai-sdk/agentloop"
 )
@@ -67,6 +70,19 @@ func TDD() Workflow {
 				},
 			}.Stage(),
 
+			// Capture the failing test run — the proof the repro
+			// reproduces the bug, posted on the PR later.
+			{Name: "capture-proof", Run: func(ctx context.Context, tc *TaskContext) error {
+				cmd := exec.CommandContext(ctx, "go", "test", "./...", "-count=1")
+				cmd.Dir = tc.Dir
+				out, err := cmd.CombinedOutput()
+				if err == nil {
+					return fmt.Errorf("repro tests unexpectedly pass after commit — the bug is not captured")
+				}
+				tc.ReproProof = clip(string(out), 4000)
+				return nil
+			}},
+
 			StageCommit("commit-repro", func(tc *TaskContext) string {
 				return fmt.Sprintf("test: failing repro for #%d", tc.Task.IssueNumber)
 			}),
@@ -77,8 +93,13 @@ func TDD() Workflow {
 				Gate: func(tc *TaskContext) agentloop.GateConfig {
 					return GateFromRepo(tc.Repo, tc.Cfg.Budgets)
 				},
+				// Environmental, not advisory: the fix stage cannot touch
+				// test files at all — the committed repro is the spec.
+				ProtectPaths: func(path string) bool {
+					return strings.HasSuffix(path, "_test.go")
+				},
 				ExtraRules: "The repro tests written in the previous stage are the bug's specification. " +
-					"Never weaken, skip, or delete them — make them pass by fixing the code they exercise.",
+					"Test files are write-protected in this stage — make them pass by fixing the code they exercise.",
 				Mission: func(tc *TaskContext) string {
 					return fmt.Sprintf(
 						"Fix the bug in the repository %s. Failing repro tests are already committed; make them pass.\n\n"+
@@ -99,10 +120,23 @@ func TDD() Workflow {
 				return fmt.Sprintf("fix: %s (archie)\n\nFixes #%d", tc.Task.Title, tc.Task.IssueNumber)
 			}),
 			StageDiffCap(),
-			StageOpenPR(func(tc *TaskContext) string {
-				return fmt.Sprintf("%s\n\n---\n*workflow: tdd (failing repro committed first) · %d iterations · %d tokens*\n\nCloses #%d",
+
+			// Open the PR, then post the captured failing-test output as
+			// evidence the bug was reproduced before the fix.
+			{Name: "open-pr", Run: func(ctx context.Context, tc *TaskContext) error {
+				body := fmt.Sprintf("%s\n\n---\n*workflow: tdd (failing repro committed first) · %d iterations · %d tokens*\n\nCloses #%d",
 					tc.BuildSummary, tc.Task.Iterations, tc.Task.TokensUsed, tc.Task.IssueNumber)
-			}),
+				if err := OpenPR(ctx, tc, body); err != nil {
+					return err
+				}
+				if tc.ReproProof != "" {
+					proof := fmt.Sprintf("**Proof the repro tests failed before the fix** (commit 1 of this PR):\n\n```\n%s\n```", tc.ReproProof)
+					if err := tc.Forge.Comment(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.PRNumber, proof); err != nil {
+						tc.Log.Warn("failed to post repro proof", "err", err)
+					}
+				}
+				return nil
+			}},
 		},
 	}
 }

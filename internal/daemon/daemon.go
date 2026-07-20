@@ -87,7 +87,7 @@ func (d *Daemon) Cycle(ctx context.Context) {
 
 func (d *Daemon) poll(ctx context.Context) {
 	for _, repo := range d.Cfg.Repos {
-		issues, err := d.Forge.LabelledIssues(ctx, repo.Owner, repo.Name, d.Cfg.Label)
+		issues, err := d.Forge.AssignedIssues(ctx, repo.Owner, repo.Name, d.Cfg.BotUser)
 		if err != nil {
 			d.Log.Error("poll failed", "repo", repo.FullName(), "err", err)
 			continue

@@ -73,18 +73,26 @@ func StageDiffCap() Stage {
 	}}
 }
 
+// OpenPR opens the task's pull request, records its number, and sets
+// the terminal pr_open outcome. Stages that need to act after the PR
+// exists (e.g. posting evidence comments) call this and then do so in
+// the same stage — the engine stops at the first stage with an outcome.
+func OpenPR(ctx context.Context, tc *TaskContext, body string) error {
+	t := tc.Task
+	title := fmt.Sprintf("%s (archie)", t.Title)
+	num, err := tc.Forge.CreatePR(ctx, t.Owner, t.Repo, title, tc.Branch, tc.Repo.BaseBranch(), body)
+	if err != nil {
+		return err
+	}
+	t.PRNumber = num
+	tc.Outcome = Outcome{Status: store.StatusPROpen, Detail: fmt.Sprintf("PR #%d", num)}
+	return nil
+}
+
 // StageOpenPR opens the pull request with the given body and records it.
 func StageOpenPR(body func(*TaskContext) string) Stage {
 	return Stage{Name: "open-pr", Run: func(ctx context.Context, tc *TaskContext) error {
-		t := tc.Task
-		title := fmt.Sprintf("%s (archie)", t.Title)
-		num, err := tc.Forge.CreatePR(ctx, t.Owner, t.Repo, title, tc.Branch, tc.Repo.BaseBranch(), body(tc))
-		if err != nil {
-			return err
-		}
-		t.PRNumber = num
-		tc.Outcome = Outcome{Status: store.StatusPROpen, Detail: fmt.Sprintf("PR #%d", num)}
-		return nil
+		return OpenPR(ctx, tc, body(tc))
 	}}
 }
 

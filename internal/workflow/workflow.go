@@ -37,6 +37,9 @@ type TaskContext struct {
 	Branch string
 	// BuildSummary is the builder agent's finish summary — the PR body.
 	BuildSummary string
+	// ReproProof is the captured failing-test output from a TDD repro
+	// stage, posted on the PR as evidence the bug was reproduced.
+	ReproProof string
 	// Outcome describes where the task ended up; the engine applies it.
 	Outcome Outcome
 }
@@ -140,8 +143,8 @@ func park(ctx context.Context, tc *TaskContext, reason string) {
 	t.ParkReason = reason
 	_ = tc.Store.Update(ctx, t)
 	_ = tc.Store.Transition(ctx, t.ID, store.StatusRunning, store.StatusParked, reason)
-	body := fmt.Sprintf("**archie parked this task.**\n\n```\n%s\n```\n\nThe worktree is kept for inspection. Re-add the `%s` label after addressing this to retry.",
-		clip(reason, 3000), tc.Cfg.Label)
+	body := fmt.Sprintf("**archie parked this task.**\n\n```\n%s\n```\n\nThe worktree is kept for inspection.",
+		clip(reason, 3000))
 	if err := tc.Forge.Comment(ctx, t.Owner, t.Repo, t.IssueNumber, body); err != nil {
 		tc.Log.Error("failed to post park comment", "err", err)
 	}
