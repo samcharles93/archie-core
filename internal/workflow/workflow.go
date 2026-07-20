@@ -79,6 +79,9 @@ func Route(t *store.Task, reg Registry) Workflow {
 	if wf, ok := reg["implement"]; ok {
 		return wf
 	}
+	if wf, ok := reg["default"]; ok {
+		return wf
+	}
 	// Registry always ships a default; this is a config error backstop.
 	return Workflow{Name: "none", Stages: []Stage{{
 		Name: "fail",
