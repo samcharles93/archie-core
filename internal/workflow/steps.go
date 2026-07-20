@@ -27,16 +27,29 @@ func StagePrepareWorktree() Stage {
 	}}
 }
 
-// StageCommitPush commits everything in the worktree and pushes the
-// branch; an empty tree parks (the workflow produced nothing).
-func StageCommitPush(message func(*TaskContext) string) Stage {
-	return Stage{Name: "commit-push", Run: func(ctx context.Context, tc *TaskContext) error {
+// StageCommit commits everything in the worktree without pushing —
+// used mid-workflow so a PR tells its story in multiple commits (TDD:
+// failing tests first, fix second). An empty tree parks.
+func StageCommit(name string, message func(*TaskContext) string) Stage {
+	return Stage{Name: name, Run: func(ctx context.Context, tc *TaskContext) error {
 		changed, err := tc.Trees.CommitAll(ctx, tc.Dir, message(tc))
 		if err != nil {
 			return err
 		}
 		if !changed {
 			return fmt.Errorf("worktree has no changes to commit")
+		}
+		return nil
+	}}
+}
+
+// StageCommitPush commits everything in the worktree and pushes the
+// branch; an empty tree parks (the workflow produced nothing).
+func StageCommitPush(message func(*TaskContext) string) Stage {
+	commit := StageCommit("commit-push", message)
+	return Stage{Name: "commit-push", Run: func(ctx context.Context, tc *TaskContext) error {
+		if err := commit.Run(ctx, tc); err != nil {
+			return err
 		}
 		return tc.Trees.Push(ctx, tc.Dir, tc.Branch)
 	}}
