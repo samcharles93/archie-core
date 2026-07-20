@@ -89,6 +89,10 @@ func (a AgentStage) Stage() Stage {
 
 		tc.Task.TokensUsed += res.TokensUsed
 		tc.Task.Iterations += res.Iterations
+		tc.Emit("agent_finish", a.Name, res.Summary, map[string]any{
+			"status": string(res.Status), "stop_reason": res.StopReason,
+			"tokens": res.TokensUsed, "iterations": res.Iterations, "model": modelRef,
+		})
 
 		if res.Status != agentloop.StatusPassed {
 			detail := res.Detail

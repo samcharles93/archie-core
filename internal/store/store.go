@@ -58,7 +58,7 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := db.Exec(schema); err != nil {
+	if _, err := db.Exec(schema + eventsSchema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("store: init schema: %w", err)
 	}

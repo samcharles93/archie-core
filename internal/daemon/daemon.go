@@ -14,6 +14,7 @@ import (
 	"github.com/samcharles93/ai-sdk/runtime"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/workflow"
@@ -26,8 +27,16 @@ type Daemon struct {
 	Forge     *forge.Client
 	Trees     *worktree.Manager
 	Runtime   *runtime.Runtime
+	Bus       *events.Bus
 	Workflows workflow.Registry
 	Log       *slog.Logger
+}
+
+// emit publishes an observability event; safe on a nil bus.
+func (d *Daemon) emit(e events.Event) {
+	if d.Bus != nil {
+		d.Bus.Publish(e)
+	}
 }
 
 // Startup runs crash recovery and access verification once.
@@ -101,6 +110,10 @@ func (d *Daemon) poll(ctx context.Context) {
 			}
 			if inserted {
 				d.Log.Info("issue queued", "repo", repo.FullName(), "issue", is.GetNumber(), "title", is.GetTitle())
+				d.emit(events.Event{
+					Kind: events.KindTaskQueued, Repo: repo.FullName(),
+					Issue: is.GetNumber(), Detail: is.GetTitle(),
+				})
 			}
 		}
 	}
@@ -125,10 +138,20 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 			_ = d.Store.Transition(ctx, t.ID, store.StatusPROpen, store.StatusMerged, "")
 			_ = d.Trees.Cleanup(t.Owner, t.Repo, t.IssueNumber)
 			d.Log.Info("PR merged", "repo", t.Owner+"/"+t.Repo, "pr", t.PRNumber)
+			d.emit(events.Event{
+				Kind: events.KindPRMerged, TaskID: t.ID,
+				Repo: t.Owner + "/" + t.Repo, Issue: t.IssueNumber,
+				Data: map[string]any{"pr": t.PRNumber},
+			})
 		case "closed":
 			_ = d.Store.Transition(ctx, t.ID, store.StatusPROpen, store.StatusRejected, "PR closed without merge")
 			_ = d.Trees.Cleanup(t.Owner, t.Repo, t.IssueNumber)
 			d.Log.Info("PR rejected", "repo", t.Owner+"/"+t.Repo, "pr", t.PRNumber)
+			d.emit(events.Event{
+				Kind: events.KindPRRejected, TaskID: t.ID,
+				Repo: t.Owner + "/" + t.Repo, Issue: t.IssueNumber,
+				Data: map[string]any{"pr": t.PRNumber},
+			})
 		}
 	}
 }
@@ -149,6 +172,7 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 		Store:   d.Store,
 		Trees:   d.Trees,
 		Runtime: d.Runtime,
+		Bus:     d.Bus,
 		Log:     d.Log,
 	})
 }

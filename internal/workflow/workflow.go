@@ -10,10 +10,12 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/samcharles93/ai-sdk/runtime"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/worktree"
@@ -30,6 +32,7 @@ type TaskContext struct {
 	Store   *store.Store
 	Trees   *worktree.Manager
 	Runtime *runtime.Runtime
+	Bus     *events.Bus // nil-safe via Emit
 	Log     *slog.Logger
 
 	// Dir/Branch are set by the prepare step.
@@ -42,6 +45,24 @@ type TaskContext struct {
 	ReproProof string
 	// Outcome describes where the task ended up; the engine applies it.
 	Outcome Outcome
+}
+
+// Emit publishes an observability event stamped with the task's
+// identity. Safe on a nil bus.
+func (tc *TaskContext) Emit(kind, stage, detail string, data map[string]any) {
+	if tc.Bus == nil {
+		return
+	}
+	tc.Bus.Publish(events.Event{
+		Kind:     kind,
+		TaskID:   tc.Task.ID,
+		Repo:     tc.Task.Owner + "/" + tc.Task.Repo,
+		Issue:    tc.Task.IssueNumber,
+		Workflow: tc.Task.Workflow,
+		Stage:    stage,
+		Detail:   detail,
+		Data:     data,
+	})
 }
 
 // Outcome is a stage's terminal decision for the whole workflow. Stages
@@ -110,8 +131,17 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 		t.Stage = stage.Name
 		_ = tc.Store.Update(ctx, t)
 		log.Info("stage starting", "stage", stage.Name)
+		tc.Emit(events.KindStageStart, stage.Name, "", nil)
+		started := time.Now()
 
-		if err := stage.Run(ctx, tc); err != nil {
+		err := stage.Run(ctx, tc)
+		data := map[string]any{"duration_ms": time.Since(started).Milliseconds()}
+		if err != nil {
+			data["error"] = err.Error()
+		}
+		tc.Emit(events.KindStageFinish, stage.Name, "", data)
+
+		if err != nil {
 			t.ParkReason = fmt.Sprintf("stage %s: %v", stage.Name, err)
 			log.Warn("stage failed — parking", "stage", stage.Name, "err", err)
 			park(ctx, tc, t.ParkReason)
@@ -135,6 +165,7 @@ func finish(ctx context.Context, tc *TaskContext, log *slog.Logger) {
 	}
 	_ = tc.Store.Update(ctx, t)
 	_ = tc.Store.Transition(ctx, t.ID, store.StatusRunning, tc.Outcome.Status, tc.Outcome.Detail)
+	tc.Emit(events.KindOutcome, t.Stage, tc.Outcome.Detail, map[string]any{"status": tc.Outcome.Status})
 	log.Info("workflow finished", "status", tc.Outcome.Status)
 }
 
@@ -143,6 +174,7 @@ func park(ctx context.Context, tc *TaskContext, reason string) {
 	t.ParkReason = reason
 	_ = tc.Store.Update(ctx, t)
 	_ = tc.Store.Transition(ctx, t.ID, store.StatusRunning, store.StatusParked, reason)
+	tc.Emit(events.KindParked, t.Stage, reason, nil)
 	body := fmt.Sprintf("**archie parked this task.**\n\n```\n%s\n```\n\nThe worktree is kept for inspection.",
 		clip(reason, 3000))
 	if err := tc.Forge.Comment(ctx, t.Owner, t.Repo, t.IssueNumber, body); err != nil {

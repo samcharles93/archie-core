@@ -82,7 +82,15 @@ type Config struct {
 	Providers map[string]Provider `toml:"providers"`
 
 	Budgets Budgets `toml:"budgets"`
+	Web     Web     `toml:"web"`
 	Repos   []Repo  `toml:"repos"`
+}
+
+// Web configures the observability dashboard.
+type Web struct {
+	// Listen is the dashboard address; empty disables the web UI.
+	// Bind localhost (or a LAN/tailnet address) — there is no auth.
+	Listen string `toml:"listen"`
 }
 
 // Load reads, parses, and defaults the configuration.
@@ -105,6 +113,9 @@ func Load(path string) (Config, error) {
 	}
 	if cfg.DiffCapLines == 0 {
 		cfg.DiffCapLines = 400
+	}
+	if cfg.Web.Listen == "" {
+		cfg.Web.Listen = "127.0.0.1:8484" // "off" disables
 	}
 	if cfg.BotUser == "" {
 		return cfg, errors.New("config: bot_user is required")

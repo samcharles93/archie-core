@@ -22,6 +22,6 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 )
 
-require github.com/samcharles93/ai-sdk v0.1.16
+require github.com/samcharles93/ai-sdk v0.1.17
 
 replace github.com/samcharles93/ai-sdk => /work/projects/ai-sdk
