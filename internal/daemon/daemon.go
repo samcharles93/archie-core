@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/go-github/v78/github"
+	"github.com/samcharles93/ai-sdk/runtime"
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/forge"
@@ -24,6 +25,7 @@ type Daemon struct {
 	Store     *store.Store
 	Forge     *forge.Client
 	Trees     *worktree.Manager
+	Runtime   *runtime.Runtime
 	Workflows workflow.Registry
 	Log       *slog.Logger
 }
@@ -140,13 +142,14 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	wf := workflow.Route(task, d.Workflows)
 	d.Log.Info("processing task", "repo", repo.FullName(), "issue", task.IssueNumber, "workflow", wf.Name, "attempt", task.Attempt)
 	workflow.Run(ctx, wf, &workflow.TaskContext{
-		Task:  task,
-		Repo:  repo,
-		Cfg:   d.Cfg,
-		Forge: d.Forge,
-		Store: d.Store,
-		Trees: d.Trees,
-		Log:   d.Log,
+		Task:    task,
+		Repo:    repo,
+		Cfg:     d.Cfg,
+		Forge:   d.Forge,
+		Store:   d.Store,
+		Trees:   d.Trees,
+		Runtime: d.Runtime,
+		Log:     d.Log,
 	})
 }
 

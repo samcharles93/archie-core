@@ -11,6 +11,8 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/samcharles93/ai-sdk/runtime"
+
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -21,17 +23,20 @@ import (
 // forward by mutating Task (persisted after every stage) and the
 // scratch fields below.
 type TaskContext struct {
-	Task  *store.Task
-	Repo  config.Repo
-	Cfg   config.Config
-	Forge *forge.Client
-	Store *store.Store
-	Trees *worktree.Manager
-	Log   *slog.Logger
+	Task    *store.Task
+	Repo    config.Repo
+	Cfg     config.Config
+	Forge   *forge.Client
+	Store   *store.Store
+	Trees   *worktree.Manager
+	Runtime *runtime.Runtime
+	Log     *slog.Logger
 
 	// Dir/Branch are set by the prepare step.
 	Dir    string
 	Branch string
+	// BuildSummary is the builder agent's finish summary — the PR body.
+	BuildSummary string
 	// Outcome describes where the task ended up; the engine applies it.
 	Outcome Outcome
 }
