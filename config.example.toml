@@ -1,0 +1,38 @@
+# archied configuration. Copy to ~/.config/archie/config.toml.
+# The GitHub token is NOT configured here: export ARCHIE_GITHUB_TOKEN.
+
+# work_dir = "~/.local/share/archie/work"   # default
+# db_path  = "~/.local/share/archie/archie.db"
+poll_interval = "60s"
+label = "archie"
+bot_user = "vectis-labs-archie"
+diff_cap_lines = 400
+
+[models] # role -> ai-sdk runtime ref (used by agent workflows, Phase 4b)
+triage  = "openai/gpt-5.4"
+planner = "openai/gpt-5.4"
+builder = "openai/gpt-5.4"
+
+[providers.openai]
+class = "openai"
+api_key_env = "OPENAI_API_KEY"
+
+[providers.ollama]
+class = "ollama"
+
+[budgets]
+max_steps = 60
+max_tokens = 400000
+wall_clock = "30m"
+gate_max_failures = 5
+
+[[repos]]
+owner = "samcharles93"
+name = "todo"
+base = "main"
+gate = [
+  ["go", "vet", "./..."],
+  ["go", "build", "./..."],
+  ["golangci-lint", "run"],
+  ["go", "test", "./...", "-count=1"],
+]
