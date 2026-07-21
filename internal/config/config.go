@@ -1,5 +1,5 @@
-// Package config loads archied's TOML configuration. The GitHub token is
-// deliberately not part of the file: it comes from ARCHIE_GITHUB_TOKEN.
+// Package config loads archied's TOML configuration. The forge API token is
+// deliberately not part of the file: it comes from a configurable env var.
 package config
 
 import (
@@ -34,13 +34,28 @@ type Repo struct {
 	// Base is the branch PRs target. Defaults to "main".
 	Base string `toml:"base"`
 	// Gate is the quality-gate command list for this repo, e.g.
-	// [["go","vet","./..."], ["task","check"]]. Workflow stages may
-	// extend or override it (a TDD repro stage inverts the test command).
+	// [["go","vet","./..."], ["task","check"]]. By convention the
+	// LAST command is the test runner — TDD workflows invert only
+	// that one with ExpectFailure during the repro stage and re-run
+	// it in capture-proof. Workflow stages may extend or override
+	// Gate (a TDD repro stage inverts the test command).
 	Gate [][]string `toml:"gate"`
 	// Protect lists path suffixes agents must never write directly —
 	// generated files (e.g. "_templ.go") whose sources they should edit
 	// instead. Enforced environmentally via agentloop.ProtectPaths.
 	Protect []string `toml:"protect"`
+
+	// Ecosystem selects a default preflight check and test-file glob
+	// ("go", "python", "node", "rust", or "custom"). Empty defaults
+	// to "go" for backward compatibility.
+	Ecosystem string `toml:"ecosystem"`
+	// Preflight is an explicit override for the ecosystem's default
+	// preflight commands. Empty inherits the ecosystem default.
+	Preflight [][]string `toml:"preflight"`
+	// TestGlob is an explicit override for the ecosystem's default
+	// test-file pattern (e.g. "*_test.go"). Empty inherits the
+	// ecosystem default.
+	TestGlob string `toml:"test_glob"`
 }
 
 // Protected reports whether path matches a protected suffix.
@@ -51,6 +66,41 @@ func (r Repo) Protected(path string) bool {
 		}
 	}
 	return false
+}
+
+// effectiveEcosystem returns the ecosystem to use, defaulting to "go"
+// when unset (backward compatibility: pre-ecosystem configs are Go).
+func (r Repo) effectiveEcosystem() string {
+	if r.Ecosystem != "" {
+		return r.Ecosystem
+	}
+	return "go"
+}
+
+// ResolvedPreflight returns the preflight commands for this repo.
+// Explicit Preflight wins; otherwise the ecosystem default; empty
+// for unknown ecosystems and "custom".
+func (r Repo) ResolvedPreflight() [][]string {
+	if len(r.Preflight) > 0 {
+		return r.Preflight
+	}
+	if eco, ok := ecosystems[r.effectiveEcosystem()]; ok {
+		return eco.Preflight
+	}
+	return nil
+}
+
+// ResolvedTestGlob returns the test-file glob pattern for this repo.
+// Explicit TestGlob wins; otherwise the ecosystem default; empty
+// for unknown ecosystems and "custom" (protection no-ops).
+func (r Repo) ResolvedTestGlob() string {
+	if r.TestGlob != "" {
+		return r.TestGlob
+	}
+	if eco, ok := ecosystems[r.effectiveEcosystem()]; ok {
+		return eco.TestGlob
+	}
+	return ""
 }
 
 func (r Repo) FullName() string { return r.Owner + "/" + r.Name }
@@ -77,6 +127,68 @@ type Provider struct {
 	BaseURL   string `toml:"base_url"`
 }
 
+// Forge configures the code forge integration.
+type Forge struct {
+	Type     string `toml:"type"`
+	Host     string `toml:"host"`
+	TokenEnv string `toml:"token_env"`
+}
+
+// Dispatch configures how archied discovers work and reflects task state
+// onto the forge via labels and reactions.
+type Dispatch struct {
+	// Trigger is how tasks are discovered: "assignee" (poll assigned
+	// issues), "label" (poll labelled issues), or "either" (both).
+	Trigger string `toml:"trigger"`
+	// AckReaction is the emoji reaction posted on issue pickup. Set
+	// ack_reaction = "off" in TOML to disable it; Load normalizes that
+	// sentinel to an empty string for callers.
+	AckReaction string `toml:"ack_reaction"`
+	// Labels maps state names ("queued", "working", "waiting", "pr",
+	// "parked") to their forge label strings. Each key is defaulted
+	// independently; missing keys fall back to the legacy archie:*
+	// constants at call time via StateLabel().
+	Labels map[string]string `toml:"labels"`
+}
+
+// dispatchLabelDefaults is the fallback label set, reproducing the
+// legacy archie:* constants that were previously in internal/forge.
+var dispatchLabelDefaults = map[string]string{
+	"queued":  "archie:queued",
+	"working": "archie:working",
+	"waiting": "archie:waiting",
+	"pr":      "archie:pr",
+	"parked":  "archie:parked",
+}
+
+// StateLabel returns the configured label for a state name. Falls back
+// to the legacy archie:* constant when the key is missing or empty.
+func (d Dispatch) StateLabel(state string) string {
+	if s, ok := d.Labels[state]; ok && s != "" {
+		return s
+	}
+	if s, ok := dispatchLabelDefaults[state]; ok {
+		return s
+	}
+	return ""
+}
+
+// LabelValues returns the set of all configured state label strings.
+// Used by SetStateLabel to detect and remove old state labels regardless
+// of naming convention.
+func (d Dispatch) LabelValues() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, k := range []string{"queued", "working", "waiting", "pr", "parked"} {
+		v := d.StateLabel(k)
+		if v != "" && !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 // Config is the daemon configuration.
 type Config struct {
 	WorkDir      string   `toml:"work_dir"`
@@ -89,6 +201,9 @@ type Config struct {
 	// address for BotUser.
 	BotEmail     string `toml:"bot_email"`
 	DiffCapLines int    `toml:"diff_cap_lines"`
+
+	Forge    Forge    `toml:"forge"`
+	Dispatch Dispatch `toml:"dispatch"`
 
 	// Models maps a role ("planner", "builder", "triage") to a runtime
 	// model ref ("provider/model").
@@ -111,7 +226,7 @@ type Notify struct {
 
 // Web configures the observability dashboard.
 type Web struct {
-	// Listen is the dashboard address; empty disables the web UI.
+	// Listen is the dashboard address; "off" disables the web UI.
 	// Bind localhost (or a LAN/tailnet address) — there is no auth.
 	Listen string `toml:"listen"`
 }
@@ -140,18 +255,56 @@ func Load(path string) (Config, error) {
 	if cfg.Web.Listen == "" {
 		cfg.Web.Listen = "127.0.0.1:8484" // "off" disables
 	}
+	if cfg.Forge.Type == "" {
+		cfg.Forge.Type = "github"
+	}
+	if cfg.Forge.Host == "" {
+		cfg.Forge.Host = "https://github.com"
+	}
+	if cfg.Forge.TokenEnv == "" {
+		cfg.Forge.TokenEnv = "ARCHIE_GITHUB_TOKEN"
+	}
+	if cfg.Dispatch.Trigger == "" {
+		cfg.Dispatch.Trigger = "assignee"
+	}
+	switch cfg.Dispatch.Trigger {
+	case "assignee", "label", "either":
+	default:
+		return cfg, fmt.Errorf("config: dispatch.trigger %q is invalid (want assignee, label, or either)", cfg.Dispatch.Trigger)
+	}
+	if cfg.Dispatch.AckReaction == "" {
+		cfg.Dispatch.AckReaction = "eyes"
+	} else if strings.EqualFold(cfg.Dispatch.AckReaction, "off") {
+		cfg.Dispatch.AckReaction = ""
+	}
+	if cfg.Dispatch.Labels == nil {
+		cfg.Dispatch.Labels = map[string]string{}
+	}
+	for k, v := range dispatchLabelDefaults {
+		if cfg.Dispatch.Labels[k] == "" {
+			cfg.Dispatch.Labels[k] = v
+		}
+	}
 	if cfg.BotUser == "" {
 		return cfg, errors.New("config: bot_user is required")
 	}
-	if cfg.BotEmail == "" {
+	if cfg.BotEmail == "" && cfg.Forge.Type == "github" {
 		cfg.BotEmail = cfg.BotUser + "@users.noreply.github.com"
 	}
 	if len(cfg.Repos) == 0 {
 		return cfg, errors.New("config: at least one [[repos]] entry is required")
 	}
+	if cfg.Forge.Type != "github" {
+		return cfg, fmt.Errorf("config: forge.type %q is not yet supported", cfg.Forge.Type)
+	}
 	for i, r := range cfg.Repos {
 		if r.Owner == "" || r.Name == "" {
 			return cfg, fmt.Errorf("config: repos[%d] needs owner and name", i)
+		}
+		if glob := r.ResolvedTestGlob(); glob != "" {
+			if _, err := filepath.Match(glob, ""); err != nil {
+				return cfg, fmt.Errorf("config: repos[%d] test_glob %q is invalid: %w", i, glob, err)
+			}
 		}
 	}
 	return cfg, nil

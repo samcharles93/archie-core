@@ -178,6 +178,20 @@ func (s *Store) Update(ctx context.Context, t *Task) error {
 	return err
 }
 
+// TaskByIssue returns the task tracking an issue, or nil.
+func (s *Store) TaskByIssue(ctx context.Context, owner, repo string, number int) (*Task, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, owner, repo, issue_number, title, body, labels, status,
+			workflow, stage, branch, plan, notes, pr_number, tokens_used,
+			iterations, attempt, park_reason
+		FROM tasks WHERE owner=? AND repo=? AND issue_number=?`, owner, repo, number)
+	t, err := scanTask(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return t, err
+}
+
 // WaitingTasks returns tasks blocked on human input.
 func (s *Store) WaitingTasks(ctx context.Context) ([]Task, error) {
 	rows, err := s.db.QueryContext(ctx, `

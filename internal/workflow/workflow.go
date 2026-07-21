@@ -28,7 +28,7 @@ type TaskContext struct {
 	Task    *store.Task
 	Repo    config.Repo
 	Cfg     config.Config
-	Forge   *forge.Client
+	Forge   forge.Forge
 	Store   *store.Store
 	Trees   *worktree.Manager
 	Runtime *runtime.Runtime
@@ -110,6 +110,12 @@ func Route(t *store.Task, reg Registry) Workflow {
 			if wf, ok := reg["feasibility"]; ok {
 				return wf
 			}
+		case "bootstrap":
+			// Diagnostics: exercise the full pipeline deterministically
+			// (no LLM spend) — invites, clone, push, PR, labels.
+			if wf, ok := reg["bootstrap"]; ok {
+				return wf
+			}
 		}
 	}
 	if wf, ok := reg["implement"]; ok {
@@ -172,8 +178,25 @@ func finish(ctx context.Context, tc *TaskContext, log *slog.Logger) {
 	}
 	_ = tc.Store.Update(ctx, t)
 	_ = tc.Store.Transition(ctx, t.ID, store.StatusRunning, tc.Outcome.Status, tc.Outcome.Detail)
+	tc.Forge.SetStateLabel(ctx, t.Owner, t.Repo, t.IssueNumber, stateLabelFor(tc.Cfg.Dispatch, tc.Outcome.Status), tc.Cfg.Dispatch.LabelValues())
 	tc.Emit(events.KindOutcome, t.Stage, tc.Outcome.Detail, map[string]any{"status": tc.Outcome.Status})
 	log.Info("workflow finished", "status", tc.Outcome.Status)
+}
+
+// stateLabelFor maps a terminal workflow status to its forge label by
+// looking up the configured [dispatch.labels]; empty clears (done states
+// — the issue closes or the PR speaks).
+func stateLabelFor(d config.Dispatch, status string) string {
+	switch status {
+	case store.StatusPROpen:
+		return d.StateLabel("pr")
+	case store.StatusWaitingHuman:
+		return d.StateLabel("waiting")
+	case store.StatusParked:
+		return d.StateLabel("parked")
+	default:
+		return ""
+	}
 }
 
 func park(ctx context.Context, tc *TaskContext, reason string) {
@@ -181,6 +204,7 @@ func park(ctx context.Context, tc *TaskContext, reason string) {
 	t.ParkReason = reason
 	_ = tc.Store.Update(ctx, t)
 	_ = tc.Store.Transition(ctx, t.ID, store.StatusRunning, store.StatusParked, reason)
+	tc.Forge.SetStateLabel(ctx, t.Owner, t.Repo, t.IssueNumber, tc.Cfg.Dispatch.StateLabel("parked"), tc.Cfg.Dispatch.LabelValues())
 	tc.Emit(events.KindParked, t.Stage, reason, nil)
 	body := fmt.Sprintf("**archie parked this task.**\n\n```\n%s\n```\n\nThe worktree is kept for inspection.",
 		clip(reason, 3000))

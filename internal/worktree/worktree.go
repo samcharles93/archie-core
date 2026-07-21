@@ -21,8 +21,8 @@ type Manager struct {
 	Token    string
 	BotUser  string
 	BotEmail string
-	// BaseURL overrides the forge host (tests use a local file:// remote).
-	// Empty means https://github.com.
+	// BaseURL overrides the forge host. Set from config [forge].host.
+	// Empty falls back to https://github.com.
 	BaseURL string
 }
 

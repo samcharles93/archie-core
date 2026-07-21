@@ -93,17 +93,23 @@ func (a AgentStage) Stage() Stage {
 			protect = nil // nothing to protect from read-only tools
 		}
 
+		var preflight []agentloop.GateCommand
+		for _, argv := range tc.Repo.ResolvedPreflight() {
+			if len(argv) == 0 {
+				continue
+			}
+			preflight = append(preflight, agentloop.GateCommand{Name: argv[0], Argv: argv})
+		}
+
 		res, err := agentloop.Run(ctx, agentloop.Config{
-			Runtime:    tc.Runtime,
-			ModelRef:   modelRef,
-			WorkDir:    tc.Dir,
-			Mission:    a.Mission(tc),
-			ExtraRules: a.ExtraRules,
-			Notes:      taskNotes{tc: tc},
-			Gate:       gate,
-			Preflight: []agentloop.GateCommand{
-				{Name: "go-version", Argv: []string{"go", "version"}},
-			},
+			Runtime:      tc.Runtime,
+			ModelRef:     modelRef,
+			WorkDir:      tc.Dir,
+			Mission:      a.Mission(tc),
+			ExtraRules:   a.ExtraRules,
+			Notes:        taskNotes{tc: tc},
+			Gate:         gate,
+			Preflight:    preflight,
 			Budget:       budget,
 			ReadOnly:     a.ReadOnly,
 			ProtectPaths: protect,

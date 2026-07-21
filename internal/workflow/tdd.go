@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/samcharles93/ai-sdk/agentloop"
+
+	"github.com/samcharles93/archie-core/internal/config"
 )
 
 // TDD is the bugfix workflow: prove the bug with failing tests before
@@ -46,26 +49,22 @@ func TDD() Workflow {
 			AgentStage{
 				Name: "repro-tests",
 				Role: "builder",
-				// The inverted gate: code must still vet, but the test
-				// suite MUST fail — proof the repro captures the bug.
+				// The inverted gate: code-quality commands must still
+				// pass, but the test command (last in repo.Gate) MUST
+				// fail — proof the repro captures the bug.
 				Gate: func(tc *TaskContext) agentloop.GateConfig {
-					return agentloop.GateConfig{
-						Commands: []agentloop.GateCommand{
-							{Name: "vet", Argv: []string{"go", "vet", "./..."}},
-							{Name: "repro-must-fail", Argv: []string{"go", "test", "./...", "-count=1"}, ExpectFailure: true},
-						},
-						MaxConsecutiveFailures: tc.Cfg.Budgets.GateMaxFailures,
-					}
+					return tddReproGate(tc.Repo, tc.Cfg.Budgets)
 				},
 				Mission: func(tc *TaskContext) string {
+					cmd := testCommand(tc.Repo)
 					return fmt.Sprintf(
 						"Write tests that REPRODUCE this bug in the repository %s. Do NOT fix the bug yet.\n\n"+
 							"<issue number=%d>\n# %s\n\n%s\n</issue>\n\n<analysis>\n%s\n</analysis>\n\n"+
 							"Add tests that pass once the bug is fixed but FAIL today because of it. The gate is "+
-							"inverted for this stage: it requires 'go vet' to pass and 'go test ./...' to FAIL. "+
-							"Do not touch non-test files. Call finish with status \"passed\" once the failing "+
+							"inverted for this stage: it requires the full gate to pass EXCEPT %s which is required "+
+							"to FAIL. Do not touch non-test files. Call finish with status \"passed\" once the failing "+
 							"repro is in place, summarising which tests capture the bug.",
-						tc.Repo.FullName(), tc.Task.IssueNumber, tc.Task.Title, tc.Task.Body, tc.Task.Plan,
+						tc.Repo.FullName(), tc.Task.IssueNumber, tc.Task.Title, tc.Task.Body, tc.Task.Plan, cmd,
 					)
 				},
 			}.Stage(),
@@ -73,7 +72,11 @@ func TDD() Workflow {
 			// Capture the failing test run — the proof the repro
 			// reproduces the bug, posted on the PR later.
 			{Name: "capture-proof", Run: func(ctx context.Context, tc *TaskContext) error {
-				cmd := exec.CommandContext(ctx, "go", "test", "./...", "-count=1")
+				argv := testCommandArgv(tc.Repo)
+				if len(argv) == 0 {
+					return fmt.Errorf("tdd: repo %s has no gate configured — cannot capture repro proof (add at least one [[repos.gate]] command, with the test runner last)", tc.Repo.FullName())
+				}
+				cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 				cmd.Dir = tc.Dir
 				out, err := cmd.CombinedOutput()
 				if err == nil {
@@ -95,8 +98,12 @@ func TDD() Workflow {
 				},
 				// Environmental, not advisory: the fix stage cannot touch
 				// test files at all — the committed repro is the spec.
-				ProtectPaths: func(*TaskContext) func(string) bool {
-					return func(path string) bool { return strings.HasSuffix(path, "_test.go") }
+				ProtectPaths: func(tc *TaskContext) func(string) bool {
+					glob := tc.Repo.ResolvedTestGlob()
+					if glob == "" {
+						return nil
+					}
+					return func(path string) bool { return matchesTestPath(glob, path) }
 				},
 				ExtraRules: "The repro tests written in the previous stage are the bug's specification. " +
 					"Test files are write-protected in this stage — make them pass by fixing the code they exercise.",
@@ -139,4 +146,61 @@ func TDD() Workflow {
 			}},
 		},
 	}
+}
+
+// tddReproGate builds the inverted gate for the repro-tests stage:
+// every command from repo.Gate runs normally except the last one (the
+// test runner, by convention), which gets ExpectFailure — the repro
+// must fail the tests to prove the bug exists.
+func tddReproGate(repo config.Repo, budgets config.Budgets) agentloop.GateConfig {
+	if len(repo.Gate) == 0 {
+		return agentloop.GateConfig{}
+	}
+	cmds := make([]agentloop.GateCommand, 0, len(repo.Gate))
+	for _, argv := range repo.Gate {
+		if len(argv) == 0 {
+			continue
+		}
+		gc := agentloop.GateCommand{Name: argv[0], Argv: argv}
+		cmds = append(cmds, gc)
+	}
+	if len(cmds) > 0 {
+		cmds[len(cmds)-1].ExpectFailure = true
+	}
+	return agentloop.GateConfig{
+		Commands:               cmds,
+		MaxConsecutiveFailures: budgets.GateMaxFailures,
+	}
+}
+
+// testCommand returns a human-readable representation of the test
+// command (the last entry in repo.Gate).
+func testCommand(repo config.Repo) string {
+	last := testCommandArgv(repo)
+	if len(last) == 0 {
+		return "(no gate configured)"
+	}
+	return strings.Join(last, " ")
+}
+
+// testCommandArgv returns the test command argv (the last entry in
+// repo.Gate), or nil when no gate is configured.
+func testCommandArgv(repo config.Repo) []string {
+	for i := len(repo.Gate) - 1; i >= 0; i-- {
+		if len(repo.Gate[i]) > 0 {
+			return repo.Gate[i]
+		}
+	}
+	return nil
+}
+
+// matchesTestPath applies basename-only patterns (such as *_test.go) to
+// files in any directory. Patterns containing a path separator continue
+// to match against the full repository-relative path.
+func matchesTestPath(glob, path string) bool {
+	if !strings.ContainsAny(glob, `/\`) {
+		path = filepath.Base(path)
+	}
+	ok, err := filepath.Match(glob, path)
+	return err == nil && ok
 }

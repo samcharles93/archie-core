@@ -149,7 +149,7 @@ func notify(ctx context.Context, tc *TaskContext, kind string) {
 	payload, _ := json.Marshal(map[string]any{
 		"type": kind, "repo": tc.Repo.FullName(), "issue": tc.Task.IssueNumber,
 		"title": tc.Task.Title, "prd": tc.Task.Plan,
-		"issue_url": fmt.Sprintf("https://github.com/%s/issues/%d", tc.Repo.FullName(), tc.Task.IssueNumber),
+		"issue_url": fmt.Sprintf("%s/%s/issues/%d", tc.Cfg.Forge.Host, tc.Repo.FullName(), tc.Task.IssueNumber),
 	})
 	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

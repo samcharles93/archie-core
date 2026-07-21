@@ -1,5 +1,5 @@
 # archied configuration. Copy to ~/.config/archie/config.toml.
-# The GitHub token is NOT configured here: export ARCHIE_GITHUB_TOKEN.
+# Forge tokens are NOT configured here: export the variable named by token_env.
 
 # work_dir = "~/.local/share/archie/work"   # default
 # db_path  = "~/.local/share/archie/archie.db"
@@ -7,6 +7,22 @@ poll_interval = "60s"
 label = "archie"
 bot_user = "vectis-labs-archie"
 diff_cap_lines = 400
+
+[forge]
+type = "github"
+host = "https://github.com"
+token_env = "ARCHIE_GITHUB_TOKEN"
+
+[dispatch]
+trigger = "assignee"      # "assignee", "label", or "either"
+ack_reaction = "eyes"    # "off" disables pickup reactions
+
+[dispatch.labels]
+queued = "archie:queued"
+working = "archie:working"
+waiting = "archie:waiting"
+pr = "archie:pr"
+parked = "archie:parked"
 
 [models] # role -> ai-sdk runtime ref (used by agent workflows, Phase 4b)
 triage  = "openai/gpt-5.4"
@@ -36,6 +52,10 @@ gate_max_failures = 5
 owner = "samcharles93"
 name = "todo"
 base = "main"
+ecosystem = "go" # "go", "python", "node", "rust", or "custom"
+# Override the ecosystem defaults when needed:
+# preflight = [["go", "version"]]
+# test_glob = "*_test.go"
 protect = ["_templ.go"]
 gate = [
   ["templ", "generate", "./components/"],

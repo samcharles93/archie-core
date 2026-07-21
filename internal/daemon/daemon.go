@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/go-github/v78/github"
 	"github.com/samcharles93/ai-sdk/core"
 	"github.com/samcharles93/ai-sdk/runtime"
 
@@ -26,7 +25,7 @@ import (
 type Daemon struct {
 	Cfg       config.Config
 	Store     *store.Store
-	Forge     *forge.Client
+	Forge     forge.Forge
 	Trees     *worktree.Manager
 	Runtime   *runtime.Runtime
 	Bus       *events.Bus
@@ -100,27 +99,114 @@ func (d *Daemon) Cycle(ctx context.Context) {
 
 func (d *Daemon) poll(ctx context.Context) {
 	for _, repo := range d.Cfg.Repos {
-		issues, err := d.Forge.AssignedIssues(ctx, repo.Owner, repo.Name, d.Cfg.BotUser)
-		if err != nil {
-			d.Log.Error("poll failed", "repo", repo.FullName(), "err", err)
-			continue
-		}
+		issues := d.pollIssues(ctx, repo)
 		for _, is := range issues {
 			inserted, err := d.Store.EnqueueIssue(ctx,
-				repo.Owner, repo.Name, is.GetNumber(), is.GetTitle(), is.GetBody(), labelNames(is))
+				repo.Owner, repo.Name, is.Number, is.Title, is.Body, strings.Join(is.Labels, ","))
 			if err != nil {
-				d.Log.Error("enqueue failed", "repo", repo.FullName(), "issue", is.GetNumber(), "err", err)
+				d.Log.Error("enqueue failed", "repo", repo.FullName(), "issue", is.Number, "err", err)
 				continue
 			}
 			if inserted {
-				d.Log.Info("issue queued", "repo", repo.FullName(), "issue", is.GetNumber(), "title", is.GetTitle())
+				d.Log.Info("issue queued", "repo", repo.FullName(), "issue", is.Number, "title", is.Title)
+				// Instant acknowledgement: the human sees pickup, not
+				// silence until a PR appears.
+				if ack := d.Cfg.Dispatch.AckReaction; ack != "" {
+					if err := d.Forge.React(ctx, repo.Owner, repo.Name, is.Number, ack); err != nil {
+						d.Log.Warn("ack reaction failed", "issue", is.Number, "err", err)
+					}
+				}
+				d.Forge.SetStateLabel(ctx, repo.Owner, repo.Name, is.Number, d.Cfg.Dispatch.StateLabel("queued"), d.Cfg.Dispatch.LabelValues())
 				d.emit(events.Event{
 					Kind: events.KindTaskQueued, Repo: repo.FullName(),
-					Issue: is.GetNumber(), Detail: is.GetTitle(),
+					Issue: is.Number, Detail: is.Title,
 				})
+				continue
+			}
+			d.maybeRetryParked(ctx, repo, is)
+		}
+	}
+}
+
+// pollIssues discovers work for one repo according to cfg.Dispatch.Trigger.
+func (d *Daemon) pollIssues(ctx context.Context, repo config.Repo) []forge.Issue {
+	switch d.Cfg.Dispatch.Trigger {
+	case "label":
+		issues, err := d.Forge.IssuesWithLabel(ctx, repo.Owner, repo.Name, d.Cfg.Label)
+		if err != nil {
+			d.Log.Error("label poll failed", "repo", repo.FullName(), "err", err)
+			return nil
+		}
+		return issues
+	case "either":
+		return d.pollEither(ctx, repo)
+	default: // "assignee" (default)
+		issues, err := d.Forge.AssignedIssues(ctx, repo.Owner, repo.Name, d.Cfg.BotUser)
+		if err != nil {
+			d.Log.Error("poll failed", "repo", repo.FullName(), "err", err)
+			return nil
+		}
+		return issues
+	}
+}
+
+// pollEither returns the union of assigned and labelled issues, deduped
+// by issue number. An issue both assigned and labelled appears once.
+func (d *Daemon) pollEither(ctx context.Context, repo config.Repo) []forge.Issue {
+	seen := map[int]bool{}
+	var out []forge.Issue
+
+	assigned, err := d.Forge.AssignedIssues(ctx, repo.Owner, repo.Name, d.Cfg.BotUser)
+	if err != nil {
+		d.Log.Error("assigned poll failed", "repo", repo.FullName(), "err", err)
+	} else {
+		for _, is := range assigned {
+			seen[is.Number] = true
+			out = append(out, is)
+		}
+	}
+
+	labelled, err := d.Forge.IssuesWithLabel(ctx, repo.Owner, repo.Name, d.Cfg.Label)
+	if err != nil {
+		d.Log.Error("label poll failed", "repo", repo.FullName(), "err", err)
+	} else {
+		for _, is := range labelled {
+			if !seen[is.Number] {
+				out = append(out, is)
 			}
 		}
 	}
+
+	return out
+}
+
+// maybeRetryParked requeues a parked task whose archie:parked label a
+// human has removed — the forge-native retry trigger.
+func (d *Daemon) maybeRetryParked(ctx context.Context, repo config.Repo, is forge.Issue) {
+	if hasLabel(is.Labels, d.Cfg.Dispatch.StateLabel("parked")) {
+		return
+	}
+	task, err := d.Store.TaskByIssue(ctx, repo.Owner, repo.Name, is.Number)
+	if err != nil || task == nil || task.Status != store.StatusParked {
+		return
+	}
+	if err := d.Store.Requeue(ctx, task.ID, store.StatusParked, ""); err != nil {
+		d.Log.Error("label-triggered requeue failed", "issue", is.Number, "err", err)
+		return
+	}
+	d.Log.Info("parked task requeued via label removal", "repo", repo.FullName(), "issue", is.Number)
+	d.Forge.SetStateLabel(ctx, repo.Owner, repo.Name, is.Number, d.Cfg.Dispatch.StateLabel("queued"), d.Cfg.Dispatch.LabelValues())
+	d.emit(events.Event{Kind: "task_retried", TaskID: task.ID,
+		Repo: repo.FullName(), Issue: is.Number, Detail: "archie:parked label removed"})
+}
+
+func hasLabel(labels []string, want string) bool {
+	for _, label := range labels {
+		if label == want {
+			return true
+		}
+	}
+	return false
 }
 
 // reconcilePRs moves pr_open tasks to merged/rejected from GitHub state
@@ -141,6 +227,7 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 		case "merged":
 			_ = d.Store.Transition(ctx, t.ID, store.StatusPROpen, store.StatusMerged, "")
 			_ = d.Trees.Cleanup(t.Owner, t.Repo, t.IssueNumber)
+			d.Forge.SetStateLabel(ctx, t.Owner, t.Repo, t.IssueNumber, "", d.Cfg.Dispatch.LabelValues())
 			d.Log.Info("PR merged", "repo", t.Owner+"/"+t.Repo, "pr", t.PRNumber)
 			d.emit(events.Event{
 				Kind: events.KindPRMerged, TaskID: t.ID,
@@ -150,6 +237,7 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 		case "closed":
 			_ = d.Store.Transition(ctx, t.ID, store.StatusPROpen, store.StatusRejected, "PR closed without merge")
 			_ = d.Trees.Cleanup(t.Owner, t.Repo, t.IssueNumber)
+			d.Forge.SetStateLabel(ctx, t.Owner, t.Repo, t.IssueNumber, "", d.Cfg.Dispatch.LabelValues())
 			d.Log.Info("PR rejected", "repo", t.Owner+"/"+t.Repo, "pr", t.PRNumber)
 			d.emit(events.Event{
 				Kind: events.KindPRRejected, TaskID: t.ID,
@@ -197,6 +285,7 @@ func (d *Daemon) checkWaiting(ctx context.Context) {
 			}
 			_, _ = d.Forge.Comment(ctx, t.Owner, t.Repo, t.IssueNumber,
 				"**Go-ahead received — implementation is queued.** ("+reason+")")
+			d.Forge.SetStateLabel(ctx, t.Owner, t.Repo, t.IssueNumber, d.Cfg.Dispatch.StateLabel("queued"), d.Cfg.Dispatch.LabelValues())
 			d.emit(events.Event{
 				Kind: "human_approved", TaskID: t.ID,
 				Repo: t.Owner + "/" + t.Repo, Issue: t.IssueNumber, Detail: reason,
@@ -205,6 +294,7 @@ func (d *Daemon) checkWaiting(ctx context.Context) {
 			_ = d.Store.Transition(ctx, t.ID, store.StatusWaitingHuman, store.StatusClosedWontDo, reason)
 			_ = d.Forge.CloseIssue(ctx, t.Owner, t.Repo, t.IssueNumber,
 				"**Understood — closing without implementation.** ("+reason+")")
+			d.Forge.SetStateLabel(ctx, t.Owner, t.Repo, t.IssueNumber, "", d.Cfg.Dispatch.LabelValues())
 			d.emit(events.Event{
 				Kind: "human_rejected", TaskID: t.ID,
 				Repo: t.Owner + "/" + t.Repo, Issue: t.IssueNumber, Detail: reason,
@@ -266,6 +356,7 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	}
 	wf := workflow.Route(task, d.Workflows)
 	d.Log.Info("processing task", "repo", repo.FullName(), "issue", task.IssueNumber, "workflow", wf.Name, "attempt", task.Attempt)
+	d.Forge.SetStateLabel(ctx, task.Owner, task.Repo, task.IssueNumber, d.Cfg.Dispatch.StateLabel("working"), d.Cfg.Dispatch.LabelValues())
 	workflow.Run(ctx, wf, &workflow.TaskContext{
 		Task:    task,
 		Repo:    repo,
@@ -286,12 +377,4 @@ func (d *Daemon) repoFor(t *store.Task) (config.Repo, bool) {
 		}
 	}
 	return config.Repo{}, false
-}
-
-func labelNames(is *github.Issue) string {
-	var names []string
-	for _, l := range is.Labels {
-		names = append(names, l.GetName())
-	}
-	return strings.Join(names, ",")
 }
