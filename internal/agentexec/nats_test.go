@@ -15,53 +15,104 @@ import (
 	arnats "github.com/samcharles93/archie-core/internal/nats"
 )
 
+// ── helpers ──────────────────────────────────────────────────────────
+
+type mockRunner struct{}
+
+func (m *mockRunner) Run(_ context.Context, _ string, req Request) (Result, error) {
+	return Result{
+		Version:    ProtocolVersion,
+		TaskID:     req.TaskID,
+		Attempt:    req.Attempt,
+		Stage:      req.Stage,
+		Status:     StatusPassed,
+		Summary:    "mock:" + req.Mission,
+		TokensUsed: 10,
+		Iterations: 1,
+	}, nil
+}
+
+var mockFactory = func(providers map[string]Provider, log *slog.Logger) Runner {
+	return &mockRunner{}
+}
+
 // ── regression: Gap 1 — per-task agent ──────────────────────────────
 
 func TestHandleMessageReadsWorkflowField(t *testing.T) {
 	// Gap 1: archie-agent is per-stage, not per-task.
-	// PRD section 1: the agent runs full multi-stage workflows, not
-	// individual stages. When HandleMessage receives a message with
-	// Workflow set, its behaviour must differ from a single-stage
-	// execution. Currently HandleMessage ignores the Workflow field.
-	msg := AgentRequestMessage{
+	// PRD section 1: when the daemon sends a task-level message with
+	// Workflow="implement" and Stages populated, the agent must run all
+	// stages as a batch. Single-stage mode (Request only) is the
+	// backward-compatible fallback.
+
+	ws := t.TempDir()
+	providers := map[string]Provider{"test": {Class: "openai", APIKeyEnv: "FAKE"}}
+
+	// Single-stage mode: uses Request, no Workflow, no Stages.
+	singleMsg := AgentRequestMessage{
 		TaskID:    1,
 		Attempt:   1,
 		Stage:     "plan",
-		Workspace: t.TempDir(),
+		Workspace: ws,
 		Request: Request{
-			Version: ProtocolVersion,
-			TaskID:  1,
-			Attempt: 1,
-			Stage:   "plan",
-			Model:   "test/model",
-			Mission: "test",
-			Budget:  Budget{MaxSteps: 1, MaxTokens: 10},
+			Version: ProtocolVersion, TaskID: 1, Attempt: 1,
+			Stage: "plan", Model: "test/model", Mission: "single",
+			Budget: Budget{MaxSteps: 1, MaxTokens: 10},
 		},
-		Providers: map[string]Provider{"test": {Class: "openai", APIKeyEnv: "FAKE"}},
+		Providers: providers,
 	}
-
-	// With Workflow empty: single-stage mode (current behaviour).
-	withoutWorkflow, err := HandleMessage(context.Background(), msg, slog.New(slog.DiscardHandler))
+	mockFactory := func(providers map[string]Provider, log *slog.Logger) Runner {
+		return &mockRunner{}
+	}
+	singleResp, err := HandleMessage(context.Background(), singleMsg, slog.New(slog.DiscardHandler), mockFactory)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if singleResp.TaskCompleted {
+		t.Error("single-stage mode set TaskCompleted=true — should be false")
+	}
 
-	// With Workflow set: should trigger per-task mode.
-	msg.Workflow = "implement"
-	withWorkflow, err := HandleMessage(context.Background(), msg, slog.New(slog.DiscardHandler))
+	// Per-task mode: Workflow set, Stages populated with two stages.
+	multiMsg := AgentRequestMessage{
+		TaskID:    2,
+		Attempt:   1,
+		Stage:     "plan",
+		Workflow:  "implement",
+		Workspace: ws,
+		Request: Request{
+			Version: ProtocolVersion, TaskID: 2, Attempt: 1,
+			Stage: "plan", Model: "test/model", Mission: "multi-1",
+			Budget: Budget{MaxSteps: 1, MaxTokens: 10},
+		},
+		Stages: []Request{
+			{
+				Version: ProtocolVersion, TaskID: 2, Attempt: 1,
+				Stage: "plan", Model: "test/model", Mission: "multi-plan",
+				Budget: Budget{MaxSteps: 1, MaxTokens: 10},
+			},
+			{
+				Version: ProtocolVersion, TaskID: 2, Attempt: 1,
+				Stage: "build", Model: "test/model", Mission: "multi-build",
+				Budget: Budget{MaxSteps: 1, MaxTokens: 10},
+			},
+		},
+		Providers: providers,
+	}
+	multiResp, err := HandleMessage(context.Background(), multiMsg, slog.New(slog.DiscardHandler), mockFactory)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	// The responses MUST differ when Workflow is set — the agent must
-	// process the full workflow, not just one stage. Currently both
-	// paths are identical (Workflow is ignored).
-	if withoutWorkflow.Result.Status == withWorkflow.Result.Status &&
-		withoutWorkflow.Result.Summary == withWorkflow.Result.Summary {
-		t.Error("Gap 1: HandleMessage ignores the Workflow field. " +
-			"With and without Workflow produce identical results. " +
-			"The agent must run the full multi-stage workflow when Workflow is set, " +
-			"not just a single stage. See PRD section 1.")
+	if !multiResp.TaskCompleted {
+		t.Error("Gap 1: per-task mode did not set TaskCompleted=true. " +
+			"The agent must signal task completion when all stages in a " +
+			"workflow batch have been processed.")
+	}
+	// Batch results must aggregate from both stages.
+	if multiResp.Result.TokensUsed == singleResp.Result.TokensUsed &&
+		multiResp.Result.Iterations == singleResp.Result.Iterations {
+		t.Error("Gap 1: per-task mode produced same token/iteration counts " +
+			"as single-stage mode. Multi-stage batch must accumulate " +
+			"results from all stages. See PRD section 1.")
 	}
 }
 
@@ -93,7 +144,7 @@ func TestHandleMessageRoutesSystemMessagesSeparately(t *testing.T) {
 	}
 
 	// Normal stage request — should route to response channel.
-	resp, err := HandleMessage(context.Background(), msg, slog.New(slog.DiscardHandler))
+	resp, err := HandleMessage(context.Background(), msg, slog.New(slog.DiscardHandler), mockFactory)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +156,7 @@ func TestHandleMessageRoutesSystemMessagesSeparately(t *testing.T) {
 	// system channel. Currently HandleMessage always returns "response".
 	// The daemon sets Channel on the request to indicate message type.
 	msg.Channel = "system"
-	sysResp, err := HandleMessage(context.Background(), msg, slog.New(slog.DiscardHandler))
+	sysResp, err := HandleMessage(context.Background(), msg, slog.New(slog.DiscardHandler), mockFactory)
 	if err != nil {
 		t.Fatal(err)
 	}

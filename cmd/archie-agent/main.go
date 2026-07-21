@@ -155,7 +155,7 @@ func handle(ctx context.Context, msg jetstream.Msg, nc *nats.Conn, log *slog.Log
 		"reply_to", replyTo,
 	)
 
-	resp, err := agentexec.HandleMessage(ctx, req, log)
+	resp, err := agentexec.HandleMessage(ctx, req, log, agentexec.DefaultRunnerFactory)
 	if err != nil {
 		return fmt.Errorf("handle: %w", err)
 	}
