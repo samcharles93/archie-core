@@ -19,6 +19,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
+	"github.com/samcharles93/archie-core/internal/nats"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webui"
 	"github.com/samcharles93/archie-core/internal/workflow"
@@ -106,6 +107,18 @@ func run() int {
 		}()
 	}
 
+	// NATS client (optional — SQLite flow unchanged when [nats] is absent).
+	var natsClient *nats.Client
+	if cfg.NATS.URL != "" {
+		natsClient, err = nats.Connect(ctx, cfg.NATS.URL, log)
+		if err != nil {
+			log.Error("nats connect failed", "err", err)
+			return 1
+		}
+		defer natsClient.Close()
+		log.Info("nats connected", "url", cfg.NATS.URL)
+	}
+
 	providers := executionProviders(cfg)
 	llm := agentexec.NewRuntime(providers)
 	var agentRunner agentexec.Runner
@@ -146,6 +159,7 @@ func run() int {
 		},
 		Log:          log,
 		CustomStages: wfeval.Discover,
+		Nats:         natsClient,
 	}
 
 	if err := d.Startup(ctx); err != nil {

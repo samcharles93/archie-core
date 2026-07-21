@@ -224,10 +224,22 @@ type Config struct {
 	Providers map[string]Provider `toml:"providers"`
 	Agent     Agent               `toml:"agent"`
 
-	Budgets Budgets `toml:"budgets"`
-	Web     Web     `toml:"web"`
-	Notify  Notify  `toml:"notify"`
-	Repos   []Repo  `toml:"repos"`
+	Budgets Budgets    `toml:"budgets"`
+	Web     Web        `toml:"web"`
+	Notify  Notify     `toml:"notify"`
+	NATS    NATSConfig `toml:"nats"`
+	Repos   []Repo     `toml:"repos"`
+}
+
+// NATSConfig configures NATS JetStream for task distribution. When URL is
+// empty the existing SQLite ClaimNext flow is used unchanged.
+type NATSConfig struct {
+	// URL is the NATS server address, e.g. "nats://localhost:4222".
+	// Empty means NATS is not configured.
+	URL string `toml:"url"`
+	// TokenEnv optionally names an env var holding a NATS auth token.
+	// Empty means no authentication.
+	TokenEnv string `toml:"token_env"`
 }
 
 // Notify configures outbound notifications (n8n webhook → email etc.).

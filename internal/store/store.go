@@ -151,6 +151,24 @@ func scanTask(row *sql.Row) (*Task, error) {
 	return &t, nil
 }
 
+// ClaimByIssue atomically claims a queued task by owner/repo/issue_number.
+// Returns nil if the task is not in queued state (already claimed, parked,
+// or terminal). Used by the NATS consumer path where the task was just
+// inserted via EnqueueIssue and needs an immediate targeted claim.
+func (s *Store) ClaimByIssue(ctx context.Context, owner, repo string, number int) (*Task, error) {
+	row := s.db.QueryRowContext(ctx, `
+		UPDATE tasks SET status='running', attempt=attempt+1, updated_at=datetime('now')
+		WHERE owner=? AND repo=? AND issue_number=? AND status='queued'
+		RETURNING id, owner, repo, issue_number, title, body, labels, status,
+			workflow, stage, branch, plan, notes, pr_number, tokens_used,
+			iterations, attempt, park_reason`, owner, repo, number)
+	t, err := scanTask(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return t, err
+}
+
 // Transition moves a task to a new status, recording the change.
 func (s *Store) Transition(ctx context.Context, taskID int64, from, to, detail string) error {
 	if _, err := s.db.ExecContext(ctx,

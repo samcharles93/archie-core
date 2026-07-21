@@ -15,10 +15,13 @@ import (
 	"github.com/samcharles93/ai-sdk/core"
 	"github.com/samcharles93/ai-sdk/runtime"
 
+	"github.com/nats-io/nats.go/jetstream"
+
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
+	arnats "github.com/samcharles93/archie-core/internal/nats"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/workflow"
 	"github.com/samcharles93/archie-core/internal/worktree"
@@ -34,6 +37,9 @@ type Daemon struct {
 	Bus       *events.Bus
 	Workflows workflow.Registry
 	Log       *slog.Logger
+	// Nats is the optional NATS client for task distribution. Nil means
+	// NATS is not configured; the existing SQLite ClaimNext flow is used.
+	Nats *arnats.Client
 	// CustomStages discovers a repo's per-repo Yaegi custom stages
 	// (.archie/stages/*.go) from its prepared worktree. Set by the
 	// composition root (cmd/archied) to wfeval.Discover; nil disables
@@ -89,6 +95,15 @@ func (d *Daemon) Cycle(ctx context.Context) {
 	d.poll(ctx)
 	d.reconcilePRs(ctx)
 	d.checkWaiting(ctx)
+	if d.Nats != nil {
+		d.drainNATS(ctx)
+	} else {
+		d.drainSQLite(ctx)
+	}
+}
+
+// drainSQLite processes queued tasks from SQLite (existing behaviour).
+func (d *Daemon) drainSQLite(ctx context.Context) {
 	for {
 		if ctx.Err() != nil {
 			return
@@ -105,35 +120,136 @@ func (d *Daemon) Cycle(ctx context.Context) {
 	}
 }
 
+// drainNATS processes tasks from NATS, falling back to SQLite ClaimNext for
+// requeued tasks (waiting_human approval, retry-parked) that didn't come
+// through a NATS publish.
+func (d *Daemon) drainNATS(ctx context.Context) {
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		msg, err := d.Nats.Fetch(ctx)
+		if err != nil {
+			d.Log.Error("nats fetch failed", "err", err)
+			return
+		}
+		if msg != nil {
+			d.processNATSTask(ctx, msg)
+			continue
+		}
+		// Fall back to SQLite for requeued tasks.
+		task, err := d.Store.ClaimNext(ctx)
+		if err != nil {
+			d.Log.Error("sqlite claim failed", "err", err)
+			return
+		}
+		if task == nil {
+			return
+		}
+		d.process(ctx, task)
+	}
+}
+
 func (d *Daemon) poll(ctx context.Context) {
 	for _, repo := range d.Cfg.Repos {
 		issues := d.pollIssues(ctx, repo)
 		for _, is := range issues {
-			inserted, err := d.Store.EnqueueIssue(ctx,
-				repo.Owner, repo.Name, is.Number, is.Title, is.Body, strings.Join(is.Labels, ","))
-			if err != nil {
-				d.Log.Error("enqueue failed", "repo", repo.FullName(), "issue", is.Number, "err", err)
-				continue
+			labels := strings.Join(is.Labels, ",")
+			if d.Nats != nil {
+				d.pollNATS(ctx, repo, is, labels)
+			} else {
+				d.pollSQLite(ctx, repo, is, labels)
 			}
-			if inserted {
-				d.Log.Info("issue queued", "repo", repo.FullName(), "issue", is.Number, "title", is.Title)
-				// Instant acknowledgement: the human sees pickup, not
-				// silence until a PR appears.
-				if ack := d.Cfg.Dispatch.AckReaction; ack != "" {
-					if err := d.Forge.React(ctx, repo.Owner, repo.Name, is.Number, ack); err != nil {
-						d.Log.Warn("ack reaction failed", "issue", is.Number, "err", err)
-					}
-				}
-				d.Forge.SetStateLabel(ctx, repo.Owner, repo.Name, is.Number, d.Cfg.Dispatch.StateLabel("queued"), d.Cfg.Dispatch.LabelValues())
-				d.emit(events.Event{
-					Kind: events.KindTaskQueued, Repo: repo.FullName(),
-					Issue: is.Number, Detail: is.Title,
-				})
-				continue
-			}
-			d.maybeRetryParked(ctx, repo, is)
 		}
 	}
+}
+
+// pollSQLite enqueues discovered issues directly into SQLite (existing flow).
+func (d *Daemon) pollSQLite(ctx context.Context, repo config.Repo, is forge.Issue, labels string) {
+	inserted, err := d.Store.EnqueueIssue(ctx,
+		repo.Owner, repo.Name, is.Number, is.Title, is.Body, labels)
+	if err != nil {
+		d.Log.Error("enqueue failed", "repo", repo.FullName(), "issue", is.Number, "err", err)
+		return
+	}
+	if inserted {
+		d.acknowledge(ctx, repo, is)
+		return
+	}
+	d.maybeRetryParked(ctx, repo, is)
+}
+
+// pollNATS publishes discovered issues to NATS (new flow).
+func (d *Daemon) pollNATS(ctx context.Context, repo config.Repo, is forge.Issue, labels string) {
+	// Read-only existence check — needed for maybeRetryParked.
+	existing, err := d.Store.TaskByIssue(ctx, repo.Owner, repo.Name, is.Number)
+	if err != nil {
+		d.Log.Error("task lookup failed", "repo", repo.FullName(), "issue", is.Number, "err", err)
+		return
+	}
+	if existing != nil {
+		d.maybeRetryParked(ctx, repo, is)
+		return
+	}
+	if err := d.Nats.PublishTask(ctx, repo.Owner, repo.Name, is.Number, is.Title, is.Body, labels); err != nil {
+		d.Log.Error("nats publish failed", "repo", repo.FullName(), "issue", is.Number, "err", err)
+		return
+	}
+	d.acknowledge(ctx, repo, is)
+}
+
+// acknowledge posts the pickup reaction, state label, and queued event.
+func (d *Daemon) acknowledge(ctx context.Context, repo config.Repo, is forge.Issue) {
+	d.Log.Info("issue queued", "repo", repo.FullName(), "issue", is.Number, "title", is.Title)
+	if ack := d.Cfg.Dispatch.AckReaction; ack != "" {
+		if err := d.Forge.React(ctx, repo.Owner, repo.Name, is.Number, ack); err != nil {
+			d.Log.Warn("ack reaction failed", "issue", is.Number, "err", err)
+		}
+	}
+	d.Forge.SetStateLabel(ctx, repo.Owner, repo.Name, is.Number, d.Cfg.Dispatch.StateLabel("queued"), d.Cfg.Dispatch.LabelValues())
+	d.emit(events.Event{
+		Kind: events.KindTaskQueued, Repo: repo.FullName(),
+		Issue: is.Number, Detail: is.Title,
+	})
+}
+
+// processNATSTask decodes a NATS message, writes it to SQLite, claims it,
+// and runs the workflow. The message is ack'd on terminal (park is a valid
+// outcome). Nak on transient errors so NATS redelivers.
+func (d *Daemon) processNATSTask(ctx context.Context, msg jetstream.Msg) {
+	tm, err := arnats.DecodeTask(msg)
+	if err != nil {
+		d.Log.Error("nats decode failed", "err", err)
+		msg.Ack() // bad message, don't retry
+		return
+	}
+
+	inserted, err := d.Store.EnqueueIssue(ctx, tm.Owner, tm.Repo, tm.Number, tm.Title, tm.Body, tm.Labels)
+	if err != nil {
+		d.Log.Error("nats enqueue failed", "err", err)
+		msg.Nak()
+		return
+	}
+	if !inserted {
+		// Already tracked — dedup. Ack and move on.
+		msg.Ack()
+		return
+	}
+
+	task, err := d.Store.ClaimByIssue(ctx, tm.Owner, tm.Repo, tm.Number)
+	if err != nil {
+		d.Log.Error("nats claim failed", "err", err)
+		msg.Nak()
+		return
+	}
+	if task == nil {
+		// Claimed by another consumer, or task is not queued. Ack.
+		msg.Ack()
+		return
+	}
+
+	d.process(ctx, task)
+	msg.Ack()
 }
 
 // pollIssues discovers work for one repo according to cfg.Dispatch.Trigger.
