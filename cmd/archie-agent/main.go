@@ -137,7 +137,6 @@ func run() int {
 }
 
 func handle(ctx context.Context, msg jetstream.Msg, nc *nats.Conn, log *slog.Logger) error {
-	// Decode the request.
 	var req agentexec.AgentRequestMessage
 	if err := json.Unmarshal(msg.Data(), &req); err != nil {
 		return fmt.Errorf("decode request: %w", err)
@@ -152,24 +151,13 @@ func handle(ctx context.Context, msg jetstream.Msg, nc *nats.Conn, log *slog.Log
 		"task", req.TaskID,
 		"attempt", req.Attempt,
 		"stage", req.Stage,
+		"workflow", req.Workflow,
 		"reply_to", replyTo,
 	)
 
-	// Build the agent runner and execute.
-	llm := agentexec.NewRuntime(req.Providers)
-	if llm == nil {
-		return fmt.Errorf("no providers configured in request")
-	}
-	runner := agentexec.NewInProcessRunner(llm, log)
-	result, runErr := runner.Run(ctx, req.Workspace, req.Request)
-
-	// Build and publish the response.
-	resp := agentexec.AgentResponseEnvelope{
-		Version: req.Request.Version,
-		Result:  result,
-	}
-	if runErr != nil {
-		resp.Error = runErr.Error()
+	resp, err := agentexec.HandleMessage(ctx, req, log)
+	if err != nil {
+		return fmt.Errorf("handle: %w", err)
 	}
 
 	data, err := json.Marshal(resp)
@@ -183,7 +171,7 @@ func handle(ctx context.Context, msg jetstream.Msg, nc *nats.Conn, log *slog.Log
 	log.Info("stage complete",
 		"task", req.TaskID,
 		"stage", req.Stage,
-		"status", result.Status,
+		"status", resp.Result.Status,
 	)
 	return nil
 }

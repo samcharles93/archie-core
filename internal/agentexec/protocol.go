@@ -4,6 +4,7 @@ package agentexec
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -11,6 +12,10 @@ import (
 )
 
 const ProtocolVersion = 1
+
+// ErrBlocked is returned by ReviewResult when the daemon blocks agent output
+// from reaching human channels.
+var ErrBlocked = errors.New("agent output blocked by daemon review")
 
 const StatusPassed = "passed"
 

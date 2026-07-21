@@ -42,6 +42,38 @@ func serveOne(ctx context.Context, in io.Reader, out io.Writer, newRunner func(I
 	return nil
 }
 
+// ReplyFunc sends a response back to the daemon.
+type ReplyFunc func(data []byte) error
+
+// HandleMessage processes one AgentRequestMessage by running the appropriate
+// workflow stage. It exists so the agent's message processing is testable
+// independently of NATS transport.
+//
+// Gap 1: currently runs ONE stage. Must be changed to run the full multi-stage
+// workflow named in msg.Workflow.
+func HandleMessage(ctx context.Context, msg AgentRequestMessage, log *slog.Logger) (*AgentResponseEnvelope, error) {
+	llm := NewRuntime(msg.Providers)
+	if llm == nil {
+		return nil, fmt.Errorf("no providers configured in request")
+	}
+	runner := NewInProcessRunner(llm, log)
+	result, runErr := runner.Run(ctx, msg.Workspace, msg.Request)
+
+	channel := msg.Channel
+	if channel == "" {
+		channel = "response"
+	}
+	resp := &AgentResponseEnvelope{
+		Version: msg.Request.Version,
+		Result:  result,
+		Channel: channel,
+	}
+	if runErr != nil {
+		resp.Error = runErr.Error()
+	}
+	return resp, nil
+}
+
 func decodeOne(r io.Reader, value any) error {
 	data, err := io.ReadAll(io.LimitReader(r, maxProtocolBytes+1))
 	if err != nil {

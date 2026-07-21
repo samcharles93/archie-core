@@ -15,46 +15,114 @@ import (
 	arnats "github.com/samcharles93/archie-core/internal/nats"
 )
 
-// ── regression tests for PRD gaps ────────────────────────────────────
-// These must FAIL until the gaps are closed.
+// ── regression: Gap 1 — per-task agent ──────────────────────────────
 
-func TestAgentRequestMessageHasWorkflowField(t *testing.T) {
+func TestHandleMessageReadsWorkflowField(t *testing.T) {
 	// Gap 1: archie-agent is per-stage, not per-task.
-	// PRD section 1 says the agent runs full multi-stage workflows.
-	// AgentRequestMessage must carry the workflow name.
-	msg := AgentRequestMessage{Workflow: "implement"}
-	if msg.Workflow == "" {
-		t.Error("Gap 1: AgentRequestMessage.Workflow is empty. " +
-			"Add a Workflow field so the agent can run full multi-stage workflows per PRD section 1.")
+	// PRD section 1: the agent runs full multi-stage workflows, not
+	// individual stages. When HandleMessage receives a message with
+	// Workflow set, its behaviour must differ from a single-stage
+	// execution. Currently HandleMessage ignores the Workflow field.
+	msg := AgentRequestMessage{
+		TaskID:    1,
+		Attempt:   1,
+		Stage:     "plan",
+		Workspace: t.TempDir(),
+		Request: Request{
+			Version: ProtocolVersion,
+			TaskID:  1,
+			Attempt: 1,
+			Stage:   "plan",
+			Model:   "test/model",
+			Mission: "test",
+			Budget:  Budget{MaxSteps: 1, MaxTokens: 10},
+		},
+		Providers: map[string]Provider{"test": {Class: "openai", APIKeyEnv: "FAKE"}},
+	}
+
+	// With Workflow empty: single-stage mode (current behaviour).
+	withoutWorkflow, err := HandleMessage(context.Background(), msg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// With Workflow set: should trigger per-task mode.
+	msg.Workflow = "implement"
+	withWorkflow, err := HandleMessage(context.Background(), msg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The responses MUST differ when Workflow is set — the agent must
+	// process the full workflow, not just one stage. Currently both
+	// paths are identical (Workflow is ignored).
+	if withoutWorkflow.Result.Status == withWorkflow.Result.Status &&
+		withoutWorkflow.Result.Summary == withWorkflow.Result.Summary {
+		t.Error("Gap 1: HandleMessage ignores the Workflow field. " +
+			"With and without Workflow produce identical results. " +
+			"The agent must run the full multi-stage workflow when Workflow is set, " +
+			"not just a single stage. See PRD section 1.")
 	}
 }
 
-func TestAgentResponseEnvelopeHasChannelField(t *testing.T) {
+// ── regression: Gap 3 — response/system channel split ───────────────
+
+func TestHandleMessageRoutesSystemMessagesSeparately(t *testing.T) {
 	// Gap 3: no response/system channel split.
-	// PRD section 2: archie.agent.<id>.response vs .system.
-	// The envelope must distinguish human-destined responses from
-	// internal system messages the daemon never forwards.
-	env := AgentResponseEnvelope{Channel: "system"}
-	if env.Channel == "" {
-		t.Error("Gap 3: AgentResponseEnvelope has no Channel field. " +
-			"Add a Channel field (\"response\"|\"system\") per PRD section 2.")
-	}
-}
+	// PRD section 2: system messages go to archie.agent.<id>.system and
+	// are never forwarded to humans. Response messages go to
+	// archie.agent.<id>.response for daemon review before human delivery.
+	// Currently HandleMessage always returns Channel="response" — there
+	// is no code path that produces a system-channel response.
 
-func TestSubjectForAgentResponseExists(t *testing.T) {
-	// Gap 3: subject functions for response/system channels.
-	subj := arnats.SubjectForAgentResponse(42)
-	if subj == "" {
-		t.Error("Gap 3: SubjectForAgentResponse not implemented. " +
-			"Add SubjectForAgentResponse(taskID) returning archie.agent.<id>.response per PRD section 2.")
+	msg := AgentRequestMessage{
+		TaskID:    1,
+		Attempt:   1,
+		Stage:     "plan",
+		Workspace: t.TempDir(),
+		Request: Request{
+			Version: ProtocolVersion,
+			TaskID:  1,
+			Attempt: 1,
+			Stage:   "plan",
+			Model:   "test/model",
+			Mission: "test",
+			Budget:  Budget{MaxSteps: 1, MaxTokens: 10},
+		},
+		Providers: map[string]Provider{"test": {Class: "openai", APIKeyEnv: "FAKE"}},
 	}
-}
 
-func TestSubjectForAgentSystemExists(t *testing.T) {
-	subj := arnats.SubjectForAgentSystem(42)
-	if subj == "" {
-		t.Error("Gap 3: SubjectForAgentSystem not implemented. " +
-			"Add SubjectForAgentSystem(taskID) returning archie.agent.<id>.system per PRD section 2.")
+	// Normal stage request — should route to response channel.
+	resp, err := HandleMessage(context.Background(), msg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Channel != "response" {
+		t.Errorf("normal stage request: Channel = %q, want \"response\"", resp.Channel)
+	}
+
+	// System message (health check, log dump request) — should route to
+	// system channel. Currently HandleMessage always returns "response".
+	// The daemon sets Channel on the request to indicate message type.
+	msg.Channel = "system"
+	sysResp, err := HandleMessage(context.Background(), msg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sysResp.Channel != "system" {
+		t.Error("Gap 3: HandleMessage ignores the input Channel field. " +
+			"When the daemon sends a system message (Channel=\"system\"), " +
+			"the response must be routed to archie.agent.<id>.system, " +
+			"not to the reply inbox. Currently all responses go to the " +
+			"same inbox regardless of channel. See PRD section 2.")
+	}
+
+	// Verify the subject functions exist and are distinct.
+	respSubj := arnats.SubjectForAgentResponse(42)
+	sysSubj := arnats.SubjectForAgentSystem(42)
+	if respSubj == sysSubj || respSubj == "" || sysSubj == "" {
+		t.Error("Gap 3: subject functions broken — verify SubjectForAgentResponse " +
+			"and SubjectForAgentSystem return distinct, non-empty subjects.")
 	}
 }
 

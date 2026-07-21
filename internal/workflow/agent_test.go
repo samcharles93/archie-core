@@ -177,29 +177,68 @@ func TestFeasibilityRejectsNullFitValue(t *testing.T) {
 
 // ── regression: Gap 5 — daemon review step ──────────────────────────
 
-func TestAgentStageHasReviewHook(t *testing.T) {
+func TestReviewResultBlocksOnResultWhenRejected(t *testing.T) {
 	// Gap 5: no daemon review step before human delivery.
-	// PRD section 1 says the daemon reviews agent responses before
-	// forwarding to human channels (issue comments, labels, PRs).
-	// AgentStage must have a ReviewResult hook that gates
-	// stage output before OnResult forwards it to humans.
-	reviewed := false
-	stage := AgentStage{
+	// PRD section 1: the daemon reviews agent responses before forwarding
+	// to human channels. When ReviewResult returns an error, the stage
+	// must fail and OnResult must NOT be called. When ReviewResult
+	// returns nil, OnResult IS called. Currently ReviewResult exists
+	// but no workflow uses it — the review step is never exercised.
+	runner := &fakeAgentRunner{result: agentexec.Result{
+		Version: agentexec.ProtocolVersion, Status: agentexec.StatusPassed,
+		Summary: "sensitive output", TokensUsed: 1,
+	}}
+
+	// Test 1: ReviewResult rejects → OnResult must not be called.
+	onResultCalled := false
+	rejectStage := AgentStage{
 		Name:    "plan",
 		Role:    "planner",
 		Mission: func(*TaskContext) string { return "test" },
 		ReviewResult: func(_ *TaskContext, _ agentexec.Result) error {
-			reviewed = true
+			return agentexec.ErrBlocked
+		},
+		OnResult: func(_ *TaskContext, _ agentexec.Result) error {
+			onResultCalled = true
 			return nil
 		},
+	}.Stage()
+	tc := &TaskContext{
+		Task: &store.Task{ID: 1, Attempt: 1},
+		Agent: runner, Log: slog.New(slog.DiscardHandler),
+		Cfg:  config.Config{Models: map[string]string{"planner": "provider/model"}},
 	}
-	if stage.ReviewResult == nil {
-		t.Error("Gap 5: AgentStage.ReviewResult is nil. " +
-			"Add a ReviewResult func(*TaskContext, agentexec.Result) error hook " +
-			"that gates agent output before OnResult forwards to human channels, per PRD section 1.")
+	err := rejectStage.Run(context.Background(), tc)
+	if err == nil {
+		t.Error("Gap 5: ReviewResult returned an error but the stage did not fail. " +
+			"ReviewResult must block the stage when it rejects output.")
 	}
-	// Verify the field is settable and has the right signature.
-	_ = reviewed
+	if onResultCalled {
+		t.Error("Gap 5: ReviewResult rejected the output but OnResult was still called. " +
+			"ReviewResult must gate OnResult — rejected output must not reach human channels.")
+	}
+
+	// Test 2: ReviewResult approves → OnResult IS called.
+	onResultCalled = false
+	approveStage := AgentStage{
+		Name:    "plan",
+		Role:    "planner",
+		Mission: func(*TaskContext) string { return "test" },
+		ReviewResult: func(_ *TaskContext, _ agentexec.Result) error {
+			return nil // approved
+		},
+		OnResult: func(_ *TaskContext, _ agentexec.Result) error {
+			onResultCalled = true
+			return nil
+		},
+	}.Stage()
+	if err := approveStage.Run(context.Background(), tc); err != nil {
+		t.Fatalf("unexpected stage error: %v", err)
+	}
+	if !onResultCalled {
+		t.Error("Gap 5: ReviewResult approved the output but OnResult was not called. " +
+			"Approved output must flow through to human channels.")
+	}
 }
 
 func TestRunLeavesInterruptedTaskForCrashRecovery(t *testing.T) {

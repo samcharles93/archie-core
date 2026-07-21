@@ -16,11 +16,14 @@ import (
 // AgentRequestMessage is the NATS payload for an agent stage execution request.
 // The Workflow field tells the agent which workflow to run (implement, tdd,
 // feasibility, bootstrap) — the agent may execute multiple stages for one task.
+// Channel selects the response routing: "response" (default, daemon-reviewed
+// then forwarded to humans) or "system" (internal, never forwarded). PRD §2.
 type AgentRequestMessage struct {
 	TaskID    int64             `json:"task_id"`
 	Attempt   int               `json:"attempt"`
 	Stage     string            `json:"stage"`
 	Workflow  string            `json:"workflow,omitempty"`
+	Channel   string            `json:"channel,omitempty"` // "response" (default) or "system"
 	Workspace string            `json:"workspace"`
 	Request   Request           `json:"request"`
 	Providers map[string]Provider `json:"providers,omitempty"`
