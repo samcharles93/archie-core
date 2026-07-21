@@ -16,6 +16,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
+	"github.com/samcharles93/archie-core/internal/skill"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
@@ -46,6 +47,10 @@ type TaskContext struct {
 	// workflow's matching skill, injected into agent context. Empty
 	// when no skill is found (backward compatible).
 	SkillBody string
+	// SkillPlugins holds the bundled Yaegi plugins loaded from the
+	// skill's plugins/ directory. Populated by loadSkillBody alongside
+	// SkillBody. Nil when no skill is loaded or the skill has no plugins.
+	SkillPlugins []skill.Plugin
 	// Dir/Branch are set by the prepare step.
 	Dir    string
 	Branch string

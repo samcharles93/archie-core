@@ -196,12 +196,21 @@ var workflowToSkill = map[string]string{
 	"feasibility": "feasibility",
 }
 
-// loadSkillBody attempts to load the SKILL.md body for the current workflow
-// from the worktree's .agents/skills/ directory. Returns "" if not found.
+// loadSkillBody loads the SKILL.md body and any bundled plugins for the
+// current workflow from the worktree's .agents/skills/ directory. Returns ""
+// if not found. Populates tc.SkillPlugins alongside tc.SkillBody.
 func loadSkillBody(tc *TaskContext) string {
 	skillDir, ok := workflowToSkill[tc.Task.Workflow]
 	if !ok {
 		return ""
 	}
-	return skill.LoadBody(tc.Dir, skillDir)
+	body := skill.LoadBody(tc.Dir, skillDir)
+	if body != "" && tc.SkillPlugins == nil {
+		// Load plugins lazily on first agent stage.
+		plugins, err := skill.DiscoverPlugins(tc.Dir, skillDir)
+		if err == nil {
+			tc.SkillPlugins = plugins
+		}
+	}
+	return body
 }
