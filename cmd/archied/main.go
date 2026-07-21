@@ -16,6 +16,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
@@ -119,6 +120,22 @@ func run() int {
 		log.Info("nats connected", "url", cfg.NATS.URL)
 	}
 
+	// Container pool (optional — no containers when [containers] is absent).
+	var containerPool *container.Pool
+	if cfg.Containers.Enabled {
+		containerPool, err = container.NewPool(ctx, container.Config{
+			Image:          cfg.Containers.Image,
+			MaxConcurrency: cfg.Containers.MaxConcurrency,
+			MaxUptime:      cfg.Containers.MaxUptime.Std(),
+			PullPolicy:     cfg.Containers.PullPolicy,
+		}, cfg.NATS.URL, log)
+		if err != nil {
+			log.Error("container pool failed", "err", err)
+			return 1
+		}
+		defer containerPool.Close()
+	}
+
 	providers := executionProviders(cfg)
 	llm := agentexec.NewRuntime(providers)
 	var agentRunner agentexec.Runner
@@ -167,9 +184,10 @@ func run() int {
 			"feasibility": workflow.Feasibility(),
 			"default":     workflow.Implement(),
 		},
-		Log:          log,
-		CustomStages: wfeval.Discover,
-		Nats:         natsClient,
+		Log:           log,
+		CustomStages:  wfeval.Discover,
+		Nats:          natsClient,
+		ContainerPool: containerPool,
 	}
 
 	if err := d.Startup(ctx); err != nil {

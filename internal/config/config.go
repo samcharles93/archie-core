@@ -225,10 +225,11 @@ type Config struct {
 	Agent     Agent               `toml:"agent"`
 
 	Budgets Budgets    `toml:"budgets"`
-	Web     Web        `toml:"web"`
-	Notify  Notify     `toml:"notify"`
-	NATS    NATSConfig `toml:"nats"`
-	Repos   []Repo     `toml:"repos"`
+	Web        Web             `toml:"web"`
+	Notify     Notify          `toml:"notify"`
+	NATS       NATSConfig      `toml:"nats"`
+	Containers ContainerConfig `toml:"containers"`
+	Repos      []Repo          `toml:"repos"`
 }
 
 // NATSConfig configures NATS JetStream for task distribution. When URL is
@@ -240,6 +241,20 @@ type NATSConfig struct {
 	// TokenEnv optionally names an env var holding a NATS auth token.
 	// Empty means no authentication.
 	TokenEnv string `toml:"token_env"`
+}
+
+// ContainerConfig configures Docker sandbox execution of archie-agent.
+type ContainerConfig struct {
+	// Enabled activates container execution. Requires agent.mode = "nats".
+	Enabled bool `toml:"enabled"`
+	// Image is the Docker image to run (e.g. "ghcr.io/sam/archie-agent:latest").
+	Image string `toml:"image"`
+	// MaxConcurrency limits simultaneous containers. 0 = no limit.
+	MaxConcurrency int `toml:"max_concurrency"`
+	// MaxUptime caps a container's lifetime before recycling.
+	MaxUptime Duration `toml:"max_uptime"`
+	// PullPolicy controls image pulling: "missing" (default) or "always".
+	PullPolicy string `toml:"pull_policy"`
 }
 
 // Notify configures outbound notifications (n8n webhook → email etc.).
@@ -361,6 +376,23 @@ func Load(path string) (Config, error) {
 			if _, err := filepath.Match(glob, ""); err != nil {
 				return cfg, fmt.Errorf("config: repos[%d] test_glob %q is invalid: %w", i, glob, err)
 			}
+		}
+	}
+	if cfg.Containers.Enabled {
+		if cfg.Containers.Image == "" {
+			return cfg, errors.New("config: containers.image is required when containers.enabled is true")
+		}
+		if cfg.Agent.Mode != "nats" {
+			return cfg, errors.New("config: agent.mode must be \"nats\" when containers.enabled is true")
+		}
+		if cfg.NATS.URL == "" {
+			return cfg, errors.New("config: [nats] url is required when containers.enabled is true")
+		}
+		if cfg.Containers.MaxUptime == 0 {
+			cfg.Containers.MaxUptime = Duration(60 * time.Minute)
+		}
+		if cfg.Containers.PullPolicy == "" {
+			cfg.Containers.PullPolicy = "missing"
 		}
 	}
 	return cfg, nil

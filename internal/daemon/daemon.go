@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	arnats "github.com/samcharles93/archie-core/internal/nats"
@@ -40,6 +42,9 @@ type Daemon struct {
 	// Nats is the optional NATS client for task distribution. Nil means
 	// NATS is not configured; the existing SQLite ClaimNext flow is used.
 	Nats *arnats.Client
+	// ContainerPool manages Docker container lifecycle. Nil when [containers]
+	// is not configured. When non-nil, every task gets a fresh container.
+	ContainerPool *container.Pool
 	// CustomStages discovers a repo's per-repo Yaegi custom stages
 	// (.archie/stages/*.go) from its prepared worktree. Set by the
 	// composition root (cmd/archied) to wfeval.Discover; nil disables
@@ -478,6 +483,19 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	wf := workflow.Route(task, d.Workflows)
 	d.Log.Info("processing task", "repo", repo.FullName(), "issue", task.IssueNumber, "workflow", wf.Name, "attempt", task.Attempt)
 	d.Forge.SetStateLabel(ctx, task.Owner, task.Repo, task.IssueNumber, d.Cfg.Dispatch.StateLabel("working"), d.Cfg.Dispatch.LabelValues())
+
+	// Acquire a container for the task when Docker sandboxing is enabled.
+	if d.ContainerPool != nil {
+		workDir := d.Trees.Dir(task.Owner, task.Repo, task.IssueNumber)
+		ctr, err := d.ContainerPool.Acquire(ctx, workDir, d.containerEnv())
+		if err != nil {
+			d.Log.Error("container acquire failed", "err", err)
+			_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "container acquire failed: "+err.Error())
+			return
+		}
+		defer d.ContainerPool.Release(ctr)
+	}
+
 	workflow.Run(ctx, wf, &workflow.TaskContext{
 		Task:         task,
 		Repo:         repo,
@@ -490,6 +508,20 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 		Log:          d.Log,
 		CustomStages: d.CustomStages,
 	})
+}
+
+// containerEnv returns the environment variables passed to agent containers.
+func (d *Daemon) containerEnv() []string {
+	var env []string
+	env = append(env, "NATS_URL="+d.Cfg.NATS.URL)
+	for _, p := range d.Cfg.Providers {
+		if p.APIKeyEnv != "" {
+			if v := os.Getenv(p.APIKeyEnv); v != "" {
+				env = append(env, p.APIKeyEnv+"="+v)
+			}
+		}
+	}
+	return env
 }
 
 func (d *Daemon) repoFor(t *store.Task) (config.Repo, bool) {

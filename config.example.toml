@@ -61,6 +61,14 @@ gate_max_failures = 5
 # url = "nats://localhost:4222"
 # token_env = "NATS_TOKEN"
 
+# Docker sandbox execution of archie-agent. Requires [nats] and agent.mode = "nats".
+# [containers]
+# enabled = true
+# image = "archie-agent:latest"    # Docker image to run
+# max_concurrency = 4              # max simultaneous containers
+# max_uptime = "60m"               # container lifetime cap
+# pull_policy = "missing"          # "missing" or "always"
+
 [[repos]]
 owner = "samcharles93"
 name = "todo"
