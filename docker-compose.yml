@@ -1,0 +1,59 @@
+# archie-core stack: daemon, NATS, and agent containers.
+#
+# Start:  docker compose up -d
+# Stop:   docker compose down
+# Logs:   docker compose logs -f archied
+
+services:
+  # ── NATS JetStream ────────────────────────────────────────────────
+  nats:
+    image: nats:2.11-alpine
+    command: -js -m 8222
+    ports:
+      - "4222:4222"   # client
+      - "8222:8222"   # monitoring (http://localhost:8222)
+    volumes:
+      - nats_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nats", "server", "check", "-s", "nats://localhost:4222"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── archie daemon ──────────────────────────────────────────────────
+  archied:
+    build:
+      context: .
+      dockerfile: Dockerfile.archied
+    command: -config /etc/archie/config.toml
+    ports:
+      - "8484:8484"   # web dashboard
+    environment:
+      - ARCHIE_GITEA_TOKEN
+      - QWYTHOS_API_KEY=not-needed
+    volumes:
+      - ./config.toml:/etc/archie/config.toml:ro
+      - archie_work:/var/lib/archie/work
+      - archie_db:/var/lib/archie
+      - /var/run/docker.sock:/var/run/docker.sock  # spawn agent containers
+    depends_on:
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── agent container (built but not run directly — daemon spawns) ──
+  # The image is built here so the daemon's container.Pool can use it.
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: archie-agent:latest
+    command: ["true"]  # never run directly — daemon spawns via Docker API
+    restart: "no"
+
+volumes:
+  nats_data:
+  archie_work:
+  archie_db:

@@ -1,0 +1,80 @@
+# archied configuration for Docker Compose deployment.
+# Mounted at /etc/archie/config.toml inside the archied container.
+
+poll_interval = "60s"
+label = "archie"
+bot_user = "archie"
+diff_cap_lines = 400
+
+[forge]
+type = "gitea"
+host = "https://git.catlow.cloud"
+token_env = "ARCHIE_GITEA_TOKEN"
+
+[dispatch]
+trigger = "label"
+ack_reaction = "eyes"
+
+[dispatch.labels]
+queued = "archie:queued"
+working = "archie:working"
+waiting = "archie:waiting"
+pr = "archie:pr"
+parked = "archie:parked"
+
+[agent]
+mode = "nats"
+
+[models]
+triage = "qwythos/qwythos-9b"
+planner = "qwythos/qwythos-9b"
+builder = "qwythos/qwythos-9b"
+
+[providers.qwythos]
+class = "openai"
+base_url = "http://host.docker.internal:8081/v1"
+api_key_env = "QWYTHOS_API_KEY"
+
+[budgets]
+max_steps = 60
+max_tokens = 400000
+wall_clock = "30m"
+gate_max_failures = 5
+
+[web]
+listen = "0.0.0.0:8484"
+
+[nats]
+url = "nats://nats:4222"
+
+[containers]
+enabled = true
+image = "archie-agent:latest"
+max_concurrency = 4
+max_uptime = "60m"
+pull_policy = "missing"
+
+[[repos]]
+owner = "sam"
+name = "archie-core"
+base = "main"
+ecosystem = "go"
+gate = [
+  ["go", "vet", "./..."],
+  ["go", "build", "./..."],
+  ["go", "test", "./...", "-count=1"],
+]
+
+[[repos]]
+owner = "sam"
+name = "tau"
+base = "main"
+ecosystem = "go"
+gate = [
+  ["gofumpt", "-w", "."],
+  ["go", "fix", "./..."],
+  ["go", "vet", "./..."],
+  ["golangci-lint", "run"],
+  ["go", "test", "./...", "-count=1"],
+]
+protect = ["_templ.go"]
