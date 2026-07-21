@@ -54,7 +54,7 @@ RUN npm install -g pnpm typescript tsx esbuild stylelint htmlhint && \
     npm cache clean --force
 
 # ── Python + UV ───────────────────────────────────────────────────────
-# Python 3.14 (latest) and 3.13 via deadsnakes PPA.
+# Python 3.14 (3.14.6, latest) and 3.13 via deadsnakes PPA.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common && \
     add-apt-repository -y ppa:deadsnakes/ppa && \
