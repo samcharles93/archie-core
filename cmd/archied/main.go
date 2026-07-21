@@ -202,7 +202,8 @@ func run() int {
 		pluginReg = &plugin.Registry{}
 		for _, p := range plugins {
 			pluginReg.Register(p)
-			log.Info("daemon plugin loaded", "name", p.Name(), "version", p.Version())
+			name, version := safePluginInfo(p)
+			log.Info("daemon plugin loaded", "name", name, "version", version)
 		}
 	}
 
@@ -260,4 +261,16 @@ func configHome() string {
 	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".config")
+}
+
+// safePluginInfo calls Name() and Version() on a plugin, recovering from
+// panics. A panicking plugin must not crash the daemon at startup.
+func safePluginInfo(p plugin.Plugin) (name, version string) {
+	defer func() {
+		if r := recover(); r != nil {
+			name = "(panic)"
+			version = "(panic)"
+		}
+	}()
+	return p.Name(), p.Version()
 }

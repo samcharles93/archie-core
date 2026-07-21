@@ -41,7 +41,8 @@ type CatalogEntry struct {
 
 // Catalog scans dir/.agents/skills/*/SKILL.md and returns catalog entries
 // (Tier 1: name + description + workflow only). Only the frontmatter is
-// parsed — full bodies are not loaded. Missing directory returns nil.
+// parsed — full bodies are not loaded. Missing directory or a file at the
+// skills path returns nil (no error) — the caller treats this as "no skills."
 func Catalog(dir string) ([]CatalogEntry, error) {
 	skillsPath := filepath.Join(dir, skillsDir)
 	entries, err := os.ReadDir(skillsPath)
@@ -49,7 +50,9 @@ func Catalog(dir string) ([]CatalogEntry, error) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read skills dir %s: %w", skillsPath, err)
+		// A file at .agents/skills (ENOTDIR) is not fatal — treat as no skills.
+		// Same for permission errors and other non-fatal ReadDir failures.
+		return nil, nil
 	}
 
 	var names []string

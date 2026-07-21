@@ -389,6 +389,60 @@ var Plugin = struct{}{}
 	_ = plugins
 }
 
+func TestGeneratedWrapperHasNilGuards(t *testing.T) {
+	// C4: the generated _Plugin wrapper must nil-guard WName and WVersion.
+	// If go generate strips these guards, the daemon panics at startup
+	// when logging plugin names. This test verifies the guards exist
+	// and will fail if someone regenerates without them.
+	//
+	// The _Plugin type is in the pluginextract package. We verify
+	// indirectly by loading a plugin with nil funcs and calling
+	// Name()/Version() — they must return empty strings, not panic.
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "nilguard.go"), []byte(`package main
+
+import "github.com/samcharles93/archie-core/internal/plugin"
+
+var Plugin = plugin._Plugin{
+	WName:    nil,
+	WVersion: nil,
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	plugins, err := plugin.LoadDir(dir, symbols)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plugins) != 1 {
+		t.Fatal("plugin with nil funcs not loaded")
+	}
+
+	// These must not panic. If they do, go generate was run and stripped
+	// the nil guards from the generated wrapper.
+	var name, version string
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("Name()/Version() panicked with nil funcs — "+
+					"the generated _Plugin wrapper is missing nil guards. "+
+					"Re-run `go generate` may have overwritten them: %v", r)
+			}
+		}()
+		name = plugins[0].Name()
+		version = plugins[0].Version()
+	}()
+
+	if name != "" {
+		t.Errorf("Name() = %q, want empty from nil WName", name)
+	}
+	if version != "" {
+		t.Errorf("Version() = %q, want empty from nil WVersion", version)
+	}
+}
+
 func TestLoadDirPluginWithGoBuildTag(t *testing.T) {
 	// Build tags in Yaegi-interpreted code are just comments — they
 	// don't gate evaluation. The file loads normally.

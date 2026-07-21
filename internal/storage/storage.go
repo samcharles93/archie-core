@@ -23,6 +23,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -90,8 +91,9 @@ var cacheVolumesByEcosystem = map[string][]cacheVolume{
 
 // cacheMounts returns the cache mount specs for an ecosystem, sorted by
 // destination path for deterministic container configuration.
+// Ecosystem is case-insensitive — "Python" and "python" are equivalent.
 func cacheMounts(ecosystem string) []Mount {
-	vols, ok := cacheVolumesByEcosystem[ecosystem]
+	vols, ok := cacheVolumesByEcosystem[strings.ToLower(ecosystem)]
 	if !ok {
 		return nil
 	}
@@ -136,6 +138,8 @@ func NewDockerBackend(cli *client.Client) *DockerBackend {
 }
 
 // ensureVolume creates a Docker volume if it doesn't already exist.
+// It is idempotent: concurrent callers racing to create the same volume
+// will not see an error — "already exists" is treated as success.
 func (d *DockerBackend) ensureVolume(ctx context.Context, name string) error {
 	if d.cli == nil {
 		return nil // nil client for testing
@@ -149,6 +153,12 @@ func (d *DockerBackend) ensureVolume(ctx context.Context, name string) error {
 		Driver: "local",
 	})
 	if err != nil {
+		// TOCTOU: a concurrent caller may have created the volume between
+		// our inspect and create calls. Docker returns an error for
+		// duplicate volumes — treat that as success.
+		if strings.Contains(err.Error(), "already exists") || strings.Contains(err.Error(), "already in use") {
+			return nil
+		}
 		return &ErrVolumeCreate{Volume: name, Cause: err}
 	}
 	return nil

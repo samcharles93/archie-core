@@ -505,19 +505,29 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	}
 	wf := workflow.Route(task, registry)
 	d.Log.Info("processing task", "repo", repo.FullName(), "issue", task.IssueNumber, "workflow", wf.Name, "attempt", task.Attempt)
-	d.Forge.SetStateLabel(ctx, task.Owner, task.Repo, task.IssueNumber, d.Cfg.Dispatch.StateLabel("working"), d.Cfg.Dispatch.LabelValues())
 
 	// Acquire a container for the task when Docker sandboxing is enabled.
 	if d.ContainerPool != nil {
 		// Write task.json — the container's boot-time brief.
-		_ = container.WriteTaskJSON(workDir, container.TaskPayload{
+		if err := container.WriteTaskJSON(workDir, container.TaskPayload{
 			ID: task.ID, Owner: task.Owner, Repo: task.Repo,
 			Number: task.IssueNumber, Title: task.Title, Body: task.Body,
 			Labels: strings.Split(task.Labels, ","),
 			Workflow: task.Workflow, Branch: task.Branch, Plan: task.Plan,
-		})
+		}); err != nil {
+			d.Log.Error("task.json write failed", "err", err)
+			_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "task.json write failed: "+err.Error())
+			return
+		}
 
 		// Build the mount list from the storage backend.
+		// Guard: Storage may be nil if the daemon was wired incorrectly.
+		// In normal operation, Storage is always set when ContainerPool is set.
+		if d.Storage == nil {
+			d.Log.Error("storage backend is nil — cannot acquire container")
+			_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "storage backend not configured")
+			return
+		}
 		mounts, err := d.Storage.Setup(ctx, storage.TaskRef{
 			WorktreeDir:       workDir,
 			Ecosystem:         repo.Ecosystem,
@@ -538,6 +548,10 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 		}
 		defer d.ContainerPool.Release(ctr)
 	}
+
+	// Set the working label only after successful container setup (or when no
+	// container is needed). This prevents label/database divergence on failure.
+	d.Forge.SetStateLabel(ctx, task.Owner, task.Repo, task.IssueNumber, d.Cfg.Dispatch.StateLabel("working"), d.Cfg.Dispatch.LabelValues())
 
 	workflow.Run(ctx, wf, &workflow.TaskContext{
 		Task:         task,

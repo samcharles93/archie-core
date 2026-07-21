@@ -5,6 +5,7 @@ package skillbuild
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -57,6 +58,12 @@ func BuildRegistry(worktree string) (workflow.Registry, error) {
 		// an empty workflow means the skill declared intent but has no
 		// plugins yet, so keep the built-in.
 		if len(wf.Stages) > 0 {
+			if _, dup := reg[entry.Workflow]; dup {
+				slog.Default().Warn("duplicate workflow name — overriding",
+					"workflow", entry.Workflow,
+					"skill", entry.Dir,
+				)
+			}
 			reg[entry.Workflow] = wf
 		}
 	}
@@ -106,6 +113,12 @@ func AugmentRegistry(worktree string, base workflow.Registry) (workflow.Registry
 		// An empty workflow means the skill declared intent but has no
 		// plugins yet — keep the base (or built-in) definition.
 		if len(wf.Stages) > 0 {
+			if _, dup := reg[entry.Workflow]; dup {
+				slog.Default().Warn("duplicate workflow name — overriding",
+					"workflow", entry.Workflow,
+					"skill", entry.Dir,
+				)
+			}
 			reg[entry.Workflow] = wf
 		}
 	}

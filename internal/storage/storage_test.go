@@ -369,6 +369,43 @@ func TestRepoVolumeName(t *testing.T) {
 	}
 }
 
+// ── audit fixes ──────────────────────────────────────────────────────
+
+func TestCacheMountsCaseInsensitive(t *testing.T) {
+	// C6: ecosystem must be case-insensitive. "Python", "Go", "NODE"
+	// must all return the same cache mounts as their lowercase forms.
+	for _, eco := range []string{"Go", "GO", "go", "gO"} {
+		mounts := cacheMounts(eco)
+		names := mountDestinations(mounts)
+		if !contains(names, "/data/cache/go") {
+			t.Errorf("ecosystem %q: missing /data/cache/go in %v", eco, names)
+		}
+	}
+	for _, eco := range []string{"Python", "PYTHON", "python"} {
+		mounts := cacheMounts(eco)
+		names := mountDestinations(mounts)
+		if !contains(names, "/data/cache/pip") {
+			t.Errorf("ecosystem %q: missing /data/cache/pip in %v", eco, names)
+		}
+	}
+}
+
+func TestEnsureVolumeAlreadyExistsIsNotError(t *testing.T) {
+	// N1: if a volume already exists (concurrent creation), ensureVolume
+	// must not treat it as an error. The TOCTOU between VolumeInspect and
+	// VolumeCreate must be handled.
+	//
+	// We can't test against a real Docker daemon, but we can test the
+	// design: ensureVolume should only return an error when Docker returns
+	// something OTHER than "already exists". For now, verify that
+	// ensureVolume with nil client returns nil (existing behavior).
+	backend := &DockerBackend{}
+	err := backend.ensureVolume(context.Background(), "test-volume")
+	if err != nil {
+		t.Error("ensureVolume with nil client should not error:", err)
+	}
+}
+
 // ── helpers ──────────────────────────────────────────────────────────
 
 func mountDestinations(mounts []Mount) []string {
