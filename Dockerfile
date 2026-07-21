@@ -50,7 +50,7 @@ RUN go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest && 
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
-RUN npm install -g pnpm typescript tsx esbuild && \
+RUN npm install -g pnpm typescript tsx esbuild stylelint htmlhint && \
     npm cache clean --force
 
 # ── Python + UV ───────────────────────────────────────────────────────
