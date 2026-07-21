@@ -70,8 +70,10 @@ func NewPool(ctx context.Context, cfg Config, natsURL string, log *slog.Logger) 
 	return p, nil
 }
 
-// Acquire creates and starts a container, mounting workspace at /workspace,
-// passing provider API keys and NATS URL as environment variables.
+// Acquire creates and starts a container, mounting the worktree at
+// /data/worktree, passing provider API keys and NATS URL as environment
+// variables. If MaxUptime is set, the container is created with a
+// deadline — Docker kills it when the time elapses.
 func (p *Pool) Acquire(ctx context.Context, workspace string, env []string) (*Container, error) {
 	p.mu.Lock()
 	if p.cfg.MaxConcurrency > 0 && p.active >= p.cfg.MaxConcurrency {
@@ -80,6 +82,13 @@ func (p *Pool) Acquire(ctx context.Context, workspace string, env []string) (*Co
 	}
 	p.active++
 	p.mu.Unlock()
+
+	// Enforce MaxUptime via container-level timeout.
+	if p.cfg.MaxUptime > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, p.cfg.MaxUptime)
+		defer cancel()
+	}
 
 	name := fmt.Sprintf("archie-agent-%d", time.Now().UnixNano())
 
@@ -97,7 +106,7 @@ func (p *Pool) Acquire(ctx context.Context, workspace string, env []string) (*Co
 				{
 					Type:   mount.TypeBind,
 					Source: workspace,
-					Target: "/workspace",
+					Target: "/data/worktree",
 				},
 			},
 			AutoRemove: true,

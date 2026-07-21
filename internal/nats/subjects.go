@@ -47,9 +47,11 @@ const (
 	SubjectAgentWildcard = "archie.agent.>"
 )
 
-// SubjectForAgentRequest returns the JetStream subject for a stage request.
-func SubjectForAgentRequest(taskID int64, stage string) string {
-	return fmt.Sprintf("archie.agent.%d.%s", taskID, stage)
+// SubjectForAgentRequest returns the JetStream subject for a per-task
+// agent request. The stage is carried in the message payload, not the
+// subject — one subject per task with sequential stage messages. PRD §2.
+func SubjectForAgentRequest(taskID int64) string {
+	return fmt.Sprintf("archie.agent.%d.request", taskID)
 }
 
 // ReplyHeader is the custom NATS header carrying the daemon's reply inbox.

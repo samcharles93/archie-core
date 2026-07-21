@@ -74,7 +74,7 @@ func (r *NATSRunner) Run(ctx context.Context, workspace string, req Request) (Re
 		return Result{}, err
 	}
 
-	subject := arnats.SubjectForAgentRequest(req.TaskID, req.Stage)
+	subject := arnats.SubjectForAgentRequest(req.TaskID)
 	headers := natsio.Header{}
 	headers.Set(arnats.ReplyHeader, replySub.Subject)
 
