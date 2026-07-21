@@ -33,6 +33,14 @@ type TaskContext struct {
 	Agent agentexec.Runner
 	Bus   *events.Bus // nil-safe via Emit
 	Log   *slog.Logger
+	// CustomStages discovers a repo's per-repo custom stages (Yaegi-
+	// interpreted from .archie/stages/*.go in the given worktree
+	// directory), returning them in the order they should run. Wired up
+	// by the composition root (cmd/archied) — nil disables discovery, so
+	// StageRepoStages is a no-op. Kept as an injected function rather
+	// than a direct import to avoid workflow depending on its own
+	// generated Yaegi symbol table (an import cycle).
+	CustomStages func(dir string) ([]Stage, error)
 
 	// Dir/Branch are set by the prepare step.
 	Dir    string

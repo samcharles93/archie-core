@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"path/filepath"
 	"strings"
 
 	"github.com/samcharles93/ai-sdk/agentloop"
 	"github.com/samcharles93/ai-sdk/core"
 	"github.com/samcharles93/ai-sdk/runtime"
+
+	"github.com/samcharles93/archie-core/internal/skillscript"
 )
 
 // Runner executes one autonomous stage against an already prepared workspace.
@@ -58,7 +61,7 @@ func (r *InProcessRunner) Run(ctx context.Context, workspace string, req Request
 		Budget:       agentloop.Budget(req.Budget),
 		ReadOnly:     req.ReadOnly,
 		ProtectPaths: protectionMatcher(req.Protection, req.ReadOnly),
-		Extra:        captureToolSet(req.CaptureTools, captures),
+		Extra:        mergeToolSets(captureToolSet(req.CaptureTools, captures), scriptToolSet(workspace)),
 		Logger:       r.logger(req),
 	})
 	result := Result{
@@ -167,6 +170,50 @@ func captureToolSet(specs []CaptureTool, captures map[string][]json.RawMessage) 
 			})
 	}
 	return tools
+}
+
+// scriptToolSet exposes run_go_script: interpreting a Yaegi Go script
+// bundled with a skill (.archie/skills/<skill>/scripts/*.go) or living
+// anywhere else in the workspace, and returning what it printed. This is
+// how an agent following a skill's instructions ("run scripts/gitleaks.go
+// to scan for secrets") actually executes a .go helper without a Go
+// toolchain in the sandbox.
+func scriptToolSet(workspace string) core.ToolSet {
+	const params = `{"type":"object","properties":{"path":{"type":"string","description":"Path to the .go script, relative to the workspace root."}},"required":["path"]}`
+	return core.ToolSet{
+		"run_go_script": core.NewTool(
+			"run_go_script",
+			"Run a Yaegi-interpreted Go script (e.g. a skill's bundled scripts/*.go helper) and return everything it printed.",
+			json.RawMessage(params),
+			func(_ context.Context, input string) (string, error) {
+				var args struct {
+					Path string `json:"path"`
+				}
+				if err := json.Unmarshal([]byte(input), &args); err != nil || strings.TrimSpace(args.Path) == "" {
+					return "run_go_script rejected: arguments must be a JSON object with a non-empty path field", nil
+				}
+				full := filepath.Join(workspace, args.Path)
+				if rel, err := filepath.Rel(workspace, full); err != nil || strings.HasPrefix(rel, "..") {
+					return "run_go_script rejected: path escapes the workspace", nil
+				}
+				out, err := skillscript.Run(full)
+				if err != nil {
+					return fmt.Sprintf("run_go_script failed: %v\n%s", err, out), nil
+				}
+				return out, nil
+			},
+		),
+	}
+}
+
+// mergeToolSets combines tool sets into one; later sets win on name
+// collisions.
+func mergeToolSets(sets ...core.ToolSet) core.ToolSet {
+	merged := core.ToolSet{}
+	for _, set := range sets {
+		maps.Copy(merged, set)
+	}
+	return merged
 }
 
 type memoryNotes struct {

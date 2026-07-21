@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/gate"
+	"github.com/samcharles93/archie-core/internal/gate/gateeval"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
@@ -68,6 +71,80 @@ func StageDiffCap() Stage {
 				Status: store.StatusParked,
 				Detail: fmt.Sprintf("diff is %d changed lines (cap %d) — split the issue or approve manually", lines, tc.Cfg.DiffCapLines),
 			}
+		}
+		return nil
+	}}
+}
+
+// StageRepoStages runs every custom stage the repo defines under
+// .archie/stages/*.go (Yaegi-interpreted via TaskContext.CustomStages),
+// in the order the loader returns them — a no-op when no loader is wired
+// up or the repo defines none. A custom stage that sets tc.Outcome ends
+// the workflow there, same as any built-in stage.
+func StageRepoStages() Stage {
+	return Stage{Name: "repo-stages", Run: func(ctx context.Context, tc *TaskContext) error {
+		if tc.CustomStages == nil {
+			return nil
+		}
+		stages, err := tc.CustomStages(tc.Dir)
+		if err != nil {
+			return fmt.Errorf("repo stages: %w", err)
+		}
+		for _, s := range stages {
+			tc.Log.Info("repo stage starting", "stage", s.Name)
+			if err := s.Run(ctx, tc); err != nil {
+				return fmt.Errorf("repo stage %s: %w", s.Name, err)
+			}
+			if tc.Outcome.Status != "" {
+				return nil
+			}
+		}
+		return nil
+	}}
+}
+
+// StageYaegiGate evaluates the repo's optional .archie/gate.go — a
+// Yaegi-interpreted Go file inspecting the committed diff for
+// project-specific rules shell gate commands can't express (AST checks,
+// diff scanning). A missing script is a no-op. Error-level findings
+// park the task; warn-level findings are logged only.
+func StageYaegiGate() Stage {
+	return Stage{Name: "custom-gate", Run: func(ctx context.Context, tc *TaskContext) error {
+		base := tc.Repo.BaseBranch()
+		diff, err := tc.Trees.Diff(ctx, tc.Dir, base)
+		if err != nil {
+			return fmt.Errorf("custom gate: diff against %s: %w", base, err)
+		}
+		files, err := tc.Trees.ChangedFiles(ctx, tc.Dir, base)
+		if err != nil {
+			return fmt.Errorf("custom gate: changed files against %s: %w", base, err)
+		}
+
+		findings, err := gateeval.Evaluate(gate.GateContext{
+			Diff:         diff,
+			ChangedFiles: files,
+			Dir:          tc.Dir,
+			BaseRef:      "origin/" + base,
+			Repo:         tc.Repo.FullName(),
+		})
+		if err != nil {
+			return fmt.Errorf("custom gate: %w", err)
+		}
+
+		var blocking []string
+		for _, f := range findings {
+			loc := f.File
+			if f.Line > 0 {
+				loc = fmt.Sprintf("%s:%d", f.File, f.Line)
+			}
+			msg := strings.TrimSpace(loc + ": " + f.Message)
+			if f.Level == "error" {
+				blocking = append(blocking, msg)
+			}
+			tc.Log.Info("custom gate finding", "level", f.Level, "file", f.File, "line", f.Line, "message", f.Message)
+		}
+		if len(blocking) > 0 {
+			return fmt.Errorf("custom gate: %s", strings.Join(blocking, "; "))
 		}
 		return nil
 	}}

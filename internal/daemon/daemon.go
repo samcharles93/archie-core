@@ -34,6 +34,11 @@ type Daemon struct {
 	Bus       *events.Bus
 	Workflows workflow.Registry
 	Log       *slog.Logger
+	// CustomStages discovers a repo's per-repo Yaegi custom stages
+	// (.archie/stages/*.go) from its prepared worktree. Set by the
+	// composition root (cmd/archied) to wfeval.Discover; nil disables
+	// discovery.
+	CustomStages func(dir string) ([]workflow.Stage, error)
 }
 
 // emit publishes an observability event; safe on a nil bus.
@@ -358,15 +363,16 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	d.Log.Info("processing task", "repo", repo.FullName(), "issue", task.IssueNumber, "workflow", wf.Name, "attempt", task.Attempt)
 	d.Forge.SetStateLabel(ctx, task.Owner, task.Repo, task.IssueNumber, d.Cfg.Dispatch.StateLabel("working"), d.Cfg.Dispatch.LabelValues())
 	workflow.Run(ctx, wf, &workflow.TaskContext{
-		Task:  task,
-		Repo:  repo,
-		Cfg:   d.Cfg,
-		Forge: d.Forge,
-		Store: d.Store,
-		Trees: d.Trees,
-		Agent: d.Agent,
-		Bus:   d.Bus,
-		Log:   d.Log,
+		Task:         task,
+		Repo:         repo,
+		Cfg:          d.Cfg,
+		Forge:        d.Forge,
+		Store:        d.Store,
+		Trees:        d.Trees,
+		Agent:        d.Agent,
+		Bus:          d.Bus,
+		Log:          d.Log,
+		CustomStages: d.CustomStages,
 	})
 }
 

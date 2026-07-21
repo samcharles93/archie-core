@@ -20,6 +20,7 @@ func TDD() Workflow {
 		Name: "tdd",
 		Stages: []Stage{
 			StagePrepareWorktree(),
+			StageRepoStages(),
 			StageBaselineGate(),
 
 			AgentStage{
@@ -124,6 +125,7 @@ func TDD() Workflow {
 			StageCommitPush(func(tc *TaskContext) string {
 				return fmt.Sprintf("fix: %s (archie)\n\nFixes #%d", tc.Task.Title, tc.Task.IssueNumber)
 			}),
+			StageYaegiGate(),
 			StageDiffCap(),
 
 			// Open the PR, then post the captured failing-test output as

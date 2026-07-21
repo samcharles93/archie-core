@@ -149,6 +149,26 @@ func (m *Manager) ChangedLines(ctx context.Context, dir, base string) (int, erro
 	return total - files, nil
 }
 
+// Diff returns the unified diff of all committed changes against base.
+func (m *Manager) Diff(ctx context.Context, dir, base string) (string, error) {
+	return m.git(ctx, dir, "diff", "origin/"+base+"...HEAD")
+}
+
+// ChangedFiles lists the repo-relative paths changed against base.
+func (m *Manager) ChangedFiles(ctx context.Context, dir, base string) ([]string, error) {
+	out, err := m.git(ctx, dir, "diff", "--name-only", "origin/"+base+"...HEAD")
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for line := range strings.SplitSeq(out, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			files = append(files, line)
+		}
+	}
+	return files, nil
+}
+
 // Cleanup removes a task's worktree (merged/rejected); parked worktrees
 // are kept for post-mortems.
 func (m *Manager) Cleanup(owner, repo string, issue int) error {

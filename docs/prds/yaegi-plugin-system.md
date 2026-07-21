@@ -229,27 +229,32 @@ func NewReportable() Reportable { return &MyGate{} }
 
 ## Implementation phases
 
-### Phase 1: Gate functions
-- Add `yaegi` as a dependency (`go get github.com/traefik/yaegi`)
-- Build symbol tables for `GateContext`, `Finding` via `yaegi extract`
-- Add `internal/gate/yaegi.go`: load `.archie/gate.go`, compile, call `Check()`
-- Wire into the gate stage — runs after shell-based gate commands
-- Error findings park the task; warn findings are logged
+### Phase 1: Gate functions — implemented
+- `yaegi` added as a dependency
+- Symbol table for `GateContext`, `Finding` generated via `yaegi extract` into `internal/gate/gateextract` (a separate package from `internal/gate` itself, avoiding the self-import cycle extracting a package's own symbols creates)
+- `internal/gate/gateeval.Evaluate`: loads `.archie/gate.go` from the worktree, interprets it, calls `Check()`; panics are recovered
+- Wired in as `workflow.StageYaegiGate`, run after the final commit in both the `implement` and `tdd` workflows
+- Error findings park the task; warn findings are logged only
 
-### Phase 2: Custom stages
-- Build symbol tables for `workflow.Stage`, `workflow.TaskContext`
-- Add stage discovery: scan `.archie/stages/*.go` and register each `Stage()` function
-- Allow `config.toml` to reference custom stages in workflow definitions
+### Phase 2: Custom stages — implemented
+- Symbol table for `workflow.Stage`/`TaskContext`/`Outcome` generated into `internal/workflow/wfextract`
+- `internal/workflow/wfeval.Discover` scans `.archie/stages/*.go` in filename order and calls each file's exported `Stage()` function
+- `TaskContext.CustomStages` is an injected `func(dir string) ([]Stage, error)` — the composition root (`cmd/archied`) wires it to `wfeval.Discover`, keeping `internal/workflow` decoupled from its own generated symbol table
+- `workflow.StageRepoStages` runs discovered stages in order right after the worktree is prepared, in both `implement` and `tdd`
+- Simplification vs. the original sketch: stages are auto-discovered and always run (like `.archie/gate.go`) rather than referenced by name from `config.toml` — the workflow engine has no data-driven stage graph today, so wiring arbitrary named stages into arbitrary positions would need a larger config-driven rework. Auto-run-in-order covers the PRD's actual use case (a repo-defined pre-flight/setup hook) without it.
 
-### Phase 3: Skill scripts
-- Skills can ship `scripts/*.go` alongside shell scripts
-- archie-core evaluates them via Yaegi when a skill's instructions reference them
-- Stdout from the script is returned to the agent as tool output
+### Phase 3: Skill scripts — implemented
+- `internal/skillscript.Run` interprets a `.go` file via `i.EvalPath`, which (like `go run`) evaluates and calls its `main()`; stdout/stderr are captured via `interp.Options`
+- Uses `stdlib.Symbols` + `stdlib/unrestricted.Symbols` (not just `stdlib`) — `os/exec` lives in the unrestricted set, and the PRD's own example script shells out via `os/exec`
+- No archie-core-specific symbol table needed here — skill scripts only touch the Go standard library
+- Exposed to the agent loop as a new `run_go_script` tool (`internal/agentexec/inprocess.go`), available in every agent stage; path is validated to stay inside the workspace
+- This is how "the skill's instructions reference a script" cashes out concretely: the agent calls `run_go_script` with the path instead of needing a Go toolchain in the sandbox
 
-### Phase 4: Hot reload
-- Watch `.archie/` for changes during daemon runtime
-- Reload gate functions without restarting the daemon
-- (Only matters for long-running daemons — archie-core currently fresh-clones per task, so phase 1 covers the common case)
+### Phase 4: Hot reload — not needed, by construction
+- All three loaders (`gate.Evaluate`, `wfeval.Discover`, `skillscript.Run`) read their `.go` source from disk on every call — no in-memory cache exists anywhere in the implementation
+- Every task additionally gets a fresh `git clone` (`worktree.Manager.Prepare` removes and re-clones the worktree directory per task)
+- Consequently every stage already re-reads `.archie/gate.go`, `.archie/stages/*.go`, and skill scripts fresh, every run — there is no stale state a file watcher would ever need to invalidate
+- A file-watching daemon-runtime reload mechanism would add machinery with nothing to do given this architecture; revisit only if the daemon starts reusing long-lived worktrees across tasks
 
 ---
 

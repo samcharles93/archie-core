@@ -22,6 +22,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webui"
 	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/workflow/wfeval"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
@@ -143,7 +144,8 @@ func run() int {
 			"feasibility": workflow.Feasibility(),
 			"default":     workflow.Implement(),
 		},
-		Log: log,
+		Log:          log,
+		CustomStages: wfeval.Discover,
 	}
 
 	if err := d.Startup(ctx); err != nil {

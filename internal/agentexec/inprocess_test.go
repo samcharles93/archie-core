@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/samcharles93/ai-sdk/agentloop"
@@ -91,6 +93,65 @@ func TestCaptureToolRejectsWrongFieldTypeBeforeRecording(t *testing.T) {
 	}
 	if len(captures["decide"]) != 0 || output != "decide rejected: fit must be a boolean" {
 		t.Fatalf("invalid capture output=%q captures=%v", output, captures)
+	}
+}
+
+func TestScriptToolRunsAGoScriptAndReturnsItsOutput(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	src := "package main\n\nimport \"fmt\"\n\nfunc main() { fmt.Println(\"hi from a script\") }\n"
+	if err := os.WriteFile(filepath.Join(workspace, "scripts", "hello.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tool := scriptToolSet(workspace)["run_go_script"]
+	out, err := tool.Execute(context.Background(), `{"path":"scripts/hello.go"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "hi from a script\n" {
+		t.Fatalf("run_go_script output = %q", out)
+	}
+}
+
+func TestScriptToolRejectsPathsEscapingTheWorkspace(t *testing.T) {
+	workspace := t.TempDir()
+	tool := scriptToolSet(workspace)["run_go_script"]
+	out, err := tool.Execute(context.Background(), `{"path":"../outside.go"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "run_go_script rejected: path escapes the workspace" {
+		t.Fatalf("run_go_script output = %q, want a workspace-escape rejection", out)
+	}
+}
+
+func TestScriptToolRejectsMissingPath(t *testing.T) {
+	tool := scriptToolSet(t.TempDir())["run_go_script"]
+	out, err := tool.Execute(context.Background(), `{}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "run_go_script rejected: arguments must be a JSON object with a non-empty path field" {
+		t.Fatalf("run_go_script output = %q", out)
+	}
+}
+
+func TestMergeToolSetsLaterWinsOnCollision(t *testing.T) {
+	first := scriptToolSet(t.TempDir())
+	captures := make(map[string][]json.RawMessage)
+	second := captureToolSet([]CaptureTool{{Name: "run_go_script"}}, captures)
+	merged := mergeToolSets(first, second)
+	if len(merged) != 1 {
+		t.Fatalf("merged = %v, want exactly one tool", merged)
+	}
+	if _, err := merged["run_go_script"].Execute(context.Background(), `{}`); err != nil {
+		t.Fatal(err)
+	}
+	if len(captures["run_go_script"]) != 1 {
+		t.Fatalf("expected the capture tool (second set) to win, captures = %v", captures)
 	}
 }
 

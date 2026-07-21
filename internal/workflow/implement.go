@@ -37,6 +37,7 @@ func Implement() Workflow {
 		Name: "implement",
 		Stages: []Stage{
 			StagePrepareWorktree(),
+			StageRepoStages(),
 			StageBaselineGate(),
 
 			AgentStage{
@@ -99,6 +100,7 @@ func Implement() Workflow {
 			StageCommitPush(func(tc *TaskContext) string {
 				return fmt.Sprintf("%s (archie)\n\nImplements #%d", tc.Task.Title, tc.Task.IssueNumber)
 			}),
+			StageYaegiGate(),
 			StageDiffCap(),
 			StageOpenPR(func(tc *TaskContext) string {
 				return fmt.Sprintf("%s\n\n---\n*workflow: implement · %d iterations · %d tokens*\n\nCloses #%d",

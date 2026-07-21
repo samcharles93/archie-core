@@ -93,6 +93,22 @@ func TestPrepareCommitPushRoundTrip(t *testing.T) {
 		t.Fatalf("ChangedLines = %d, want 2", lines)
 	}
 
+	files, err := m.ChangedFiles(ctx, dir, "main")
+	if err != nil {
+		t.Fatalf("ChangedFiles: %v", err)
+	}
+	if len(files) != 1 || files[0] != "hello.txt" {
+		t.Fatalf("ChangedFiles = %v, want [hello.txt]", files)
+	}
+
+	diff, err := m.Diff(ctx, dir, "main")
+	if err != nil {
+		t.Fatalf("Diff: %v", err)
+	}
+	if !strings.Contains(diff, "+one") || !strings.Contains(diff, "hello.txt") {
+		t.Fatalf("Diff missing expected content: %q", diff)
+	}
+
 	if err := m.Push(ctx, dir, branch); err != nil {
 		t.Fatalf("push: %v", err)
 	}
