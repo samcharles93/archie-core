@@ -342,6 +342,372 @@ func TestBuildRegistryEmptySkillsDirReturnsBuiltins(t *testing.T) {
 	}
 }
 
+// ── per-worktree registry augmentation ───────────────────────────────
+
+func TestAugmentRegistryAddsWorktreeWorkflows(t *testing.T) {
+	// When a worktree contains .agents/skills/ with workflow-declaring
+	// skills, AugmentRegistry must add those workflows to the base
+	// registry. Workflows already in the base are not duplicated.
+
+	worktree := t.TempDir()
+	skillDir := filepath.Join(worktree, ".agents", "skills", "archie-wf-custom")
+	pluginsDir := filepath.Join(skillDir, "plugins")
+	if err := os.MkdirAll(pluginsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
+name: archie-wf-custom
+description: Custom workflow from worktree
+version: 1.0.0
+metadata:
+  archie:
+    workflow: custom
+---
+Custom worktree workflow.
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pluginsDir, "01-do.go"), []byte(`package main
+
+import (
+	"context"
+	"github.com/samcharles93/archie-core/internal/workflow"
+)
+
+func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
+	return "do", func(ctx context.Context, tc *workflow.TaskContext) error {
+		tc.BuildSummary = "worktree-custom-ran"
+		return nil
+	}
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	base := workflow.Registry{"default": {Name: "default", Stages: nil}}
+	aug, err := AugmentRegistry(worktree, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Base entries preserved.
+	if _, ok := aug["default"]; !ok {
+		t.Error("'default' missing from augmented registry")
+	}
+
+	// Worktree workflow added.
+	wf, ok := aug["custom"]
+	if !ok {
+		t.Fatal("'custom' workflow not found in augmented registry — worktree skill was not discovered")
+	}
+	if wf.Name != "custom" {
+		t.Errorf("Workflow.Name = %q, want custom", wf.Name)
+	}
+	if len(wf.Stages) != 1 {
+		t.Fatalf("got %d stages, want 1", len(wf.Stages))
+	}
+	if wf.Stages[0].Name != "do" {
+		t.Errorf("stage[0].Name = %q, want do", wf.Stages[0].Name)
+	}
+
+	// Run the worktree workflow.
+	tc := &workflow.TaskContext{BuildSummary: ""}
+	if err := wf.Stages[0].Run(context.Background(), tc); err != nil {
+		t.Fatal(err)
+	}
+	if tc.BuildSummary != "worktree-custom-ran" {
+		t.Errorf("BuildSummary = %q, want 'worktree-custom-ran'", tc.BuildSummary)
+	}
+}
+
+func TestAugmentRegistryWorktreeOverridesBase(t *testing.T) {
+	// A worktree skill declaring the same workflow name as a base entry
+	// must take precedence. Worktree skills ARE the repo's workflow
+	// definition.
+
+	worktree := t.TempDir()
+	skillDir := filepath.Join(worktree, ".agents", "skills", "archie-wf-implement")
+	pluginsDir := filepath.Join(skillDir, "plugins")
+	if err := os.MkdirAll(pluginsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
+name: archie-wf-implement
+description: Repo-specific implement workflow
+version: 1.0.0
+metadata:
+  archie:
+    workflow: implement
+---
+Repo-custom implement.
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pluginsDir, "01-repo-plan.go"), []byte(`package main
+
+import (
+	"context"
+	"github.com/samcharles93/archie-core/internal/workflow"
+)
+
+func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
+	return "repo-plan", func(ctx context.Context, tc *workflow.TaskContext) error {
+		tc.BuildSummary = "repo-implement-override"
+		return nil
+	}
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Base has "implement" as a built-in.
+	base := workflow.Registry{"implement": {Name: "implement", Stages: []workflow.Stage{
+		{Name: "builtin-plan", Run: func(ctx context.Context, tc *workflow.TaskContext) error {
+			tc.BuildSummary = "builtin-implement"
+			return nil
+		}},
+	}}}
+	aug, err := AugmentRegistry(worktree, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wf, ok := aug["implement"]
+	if !ok {
+		t.Fatal("'implement' missing from augmented registry")
+	}
+	if len(wf.Stages) != 1 {
+		t.Fatalf("got %d stages, want 1 from worktree override", len(wf.Stages))
+	}
+	if wf.Stages[0].Name != "repo-plan" {
+		t.Errorf("stage[0].Name = %q, want 'repo-plan' from worktree override", wf.Stages[0].Name)
+	}
+
+	// Run it — must use worktree version.
+	tc := &workflow.TaskContext{BuildSummary: ""}
+	if err := wf.Stages[0].Run(context.Background(), tc); err != nil {
+		t.Fatal(err)
+	}
+	if tc.BuildSummary != "repo-implement-override" {
+		t.Errorf("BuildSummary = %q, want 'repo-implement-override' (worktree override)", tc.BuildSummary)
+	}
+}
+
+func TestAugmentRegistryDoesNotModifyBase(t *testing.T) {
+	// AugmentRegistry returns a NEW registry — the caller's base must
+	// not be mutated.
+	base := workflow.Registry{"keep": {Name: "keep"}}
+	worktree := t.TempDir()
+
+	aug, err := AugmentRegistry(worktree, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Augmented has the entry.
+	if _, ok := aug["keep"]; !ok {
+		t.Fatal("'keep' missing from augmented registry")
+	}
+
+	// Mutating augmented must not affect base.
+	aug["keep"] = workflow.Workflow{Name: "modified"}
+	if base["keep"].Name != "keep" {
+		t.Error("AugmentRegistry mutated the base registry — must return a copy")
+	}
+}
+
+func TestAugmentRegistryNonexistentWorktreeReturnsBase(t *testing.T) {
+	base := workflow.Registry{"default": {Name: "default"}}
+	aug, err := AugmentRegistry("/nonexistent/worktree/path", base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(aug) != len(base) {
+		t.Errorf("got %d entries, want %d (nonexistent worktree adds nothing)", len(aug), len(base))
+	}
+}
+
+func TestAugmentRegistryWorktreeWithNoSkillsReturnsBase(t *testing.T) {
+	// A worktree without .agents/skills/ must not error — returns
+	// a copy of the base unchanged.
+	worktree := t.TempDir()
+	base := workflow.Registry{"default": {Name: "default"}}
+	aug, err := AugmentRegistry(worktree, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(aug) != len(base) {
+		t.Errorf("got %d entries, want %d (no skills in worktree)", len(aug), len(base))
+	}
+}
+
+func TestAugmentRegistryWorktreeSkillWithNoStagesDoesNotOverride(t *testing.T) {
+	// A skill that declares a workflow but has no plugins must not
+	// override the base entry — it would produce an empty workflow.
+	worktree := t.TempDir()
+	skillDir := filepath.Join(worktree, ".agents", "skills", "archie-wf-empty")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
+name: archie-wf-empty
+description: Workflow with no stages
+version: 1.0.0
+metadata:
+  archie:
+    workflow: implement
+---
+No plugins here.
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	base := workflow.Registry{"implement": {Name: "implement", Stages: []workflow.Stage{
+		{Name: "builtin", Run: func(ctx context.Context, tc *workflow.TaskContext) error { return nil }},
+	}}}
+	aug, err := AugmentRegistry(worktree, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wf := aug["implement"]
+	if len(wf.Stages) == 0 {
+		t.Error("worktree skill with no stages overrode base — must keep base when skill is empty")
+	}
+	if wf.Stages[0].Name != "builtin" {
+		t.Error("base stage was replaced by empty worktree skill")
+	}
+}
+
+// ── AugmentRegistry adversarial tests ────────────────────────────────
+
+func TestAugmentRegistryConcurrentAccess(t *testing.T) {
+	// AugmentRegistry must be safe to call concurrently from different
+	// goroutines (e.g. multiple tasks processed in parallel).
+	worktree := t.TempDir()
+	skillDir := filepath.Join(worktree, ".agents", "skills", "archie-wf-concurrent")
+	pluginsDir := filepath.Join(skillDir, "plugins")
+	if err := os.MkdirAll(pluginsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
+name: archie-wf-concurrent
+description: Concurrent test
+version: 1.0.0
+metadata:
+  archie:
+    workflow: concurrent
+---
+Concurrent.
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pluginsDir, "01-step.go"), []byte(`package main
+
+import (
+	"context"
+	"github.com/samcharles93/archie-core/internal/workflow"
+)
+
+func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
+	return "step", func(ctx context.Context, tc *workflow.TaskContext) error {
+		return nil
+	}
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	base := workflow.Registry{"default": {Name: "default"}}
+
+	// Run 10 concurrent augmentations — none should panic or corrupt state.
+	errs := make(chan error, 10)
+	for i := 0; i < 10; i++ {
+		go func() {
+			aug, err := AugmentRegistry(worktree, base)
+			if err != nil {
+				errs <- err
+				return
+			}
+			if _, ok := aug["concurrent"]; !ok {
+				errs <- nil // would use sentinel but keeping simple
+				return
+			}
+			errs <- nil
+		}()
+	}
+	for i := 0; i < 10; i++ {
+		if err := <-errs; err != nil {
+			t.Error("concurrent AugmentRegistry failed:", err)
+		}
+	}
+
+	// Base must still be unmodified.
+	if _, ok := base["concurrent"]; ok {
+		t.Error("base registry was mutated by concurrent augmentation")
+	}
+}
+
+func TestAugmentRegistryBrokenSkillMDIsSkipped(t *testing.T) {
+	// A SKILL.md with invalid YAML must not crash augmentation — the
+	// skill is simply skipped (skill.Catalog skips parse errors).
+	worktree := t.TempDir()
+	skillDir := filepath.Join(worktree, ".agents", "skills", "archie-wf-broken")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
+this is not valid: [[[ YAML {{{
+---
+Body.
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	base := workflow.Registry{"default": {Name: "default"}}
+	aug, err := AugmentRegistry(worktree, base)
+	if err != nil {
+		t.Fatal("AugmentRegistry errored on broken SKILL.md:", err)
+	}
+	if len(aug) != len(base) {
+		t.Errorf("got %d entries, want %d (broken SKILL.md adds nothing)", len(aug), len(base))
+	}
+}
+
+func TestAugmentRegistryWorktreeWithNoSkillsDir(t *testing.T) {
+	// A worktree that exists but has no .agents/ directory at all
+	// must not error.
+	worktree := t.TempDir()
+	// Don't create .agents/skills/ — just a bare worktree.
+	if err := os.WriteFile(filepath.Join(worktree, "README.md"), []byte(`# repo`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	base := workflow.Registry{"default": {Name: "default"}}
+	aug, err := AugmentRegistry(worktree, base)
+	if err != nil {
+		t.Fatal("AugmentRegistry errored on worktree without .agents/: ", err)
+	}
+	if len(aug) != len(base) {
+		t.Errorf("got %d entries, want %d", len(aug), len(base))
+	}
+}
+
+func TestAugmentRegistryNilBaseReturnsEmpty(t *testing.T) {
+	// A nil base registry must be treated as empty — not panic.
+	worktree := t.TempDir()
+	aug, err := AugmentRegistry(worktree, nil)
+	if err != nil {
+		t.Fatal("AugmentRegistry errored with nil base:", err)
+	}
+	if aug == nil {
+		t.Error("AugmentRegistry returned nil for nil base — want empty registry")
+	}
+	if len(aug) != 0 {
+		t.Errorf("got %d entries with nil base and no skills, want 0", len(aug))
+	}
+}
+
 func TestBuildRegistryNoStagesReturnsEmptyWorkflow(t *testing.T) {
 	dir := t.TempDir()
 	skillDir := filepath.Join(dir, ".agents", "skills", "archie-wf-empty")

@@ -27,6 +27,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/workflow/skillbuild"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
@@ -484,13 +485,26 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "repo no longer in config")
 		return
 	}
-	wf := workflow.Route(task, d.Workflows)
+	// Per-worktree registry augmentation: if the worktree already
+	// exists (e.g. retry, waiting_human → implement handoff), scan
+	// it for .agents/skills/ that declare workflows. Worktree skills
+	// override the startup registry for this task only.
+	workDir := d.Trees.Dir(task.Owner, task.Repo, task.IssueNumber)
+	registry := d.Workflows
+	if _, err := os.Stat(workDir); err == nil {
+		aug, err := skillbuild.AugmentRegistry(workDir, d.Workflows)
+		if err != nil {
+			d.Log.Warn("worktree registry augmentation failed — using startup registry", "dir", workDir, "err", err)
+		} else {
+			registry = aug
+		}
+	}
+	wf := workflow.Route(task, registry)
 	d.Log.Info("processing task", "repo", repo.FullName(), "issue", task.IssueNumber, "workflow", wf.Name, "attempt", task.Attempt)
 	d.Forge.SetStateLabel(ctx, task.Owner, task.Repo, task.IssueNumber, d.Cfg.Dispatch.StateLabel("working"), d.Cfg.Dispatch.LabelValues())
 
 	// Acquire a container for the task when Docker sandboxing is enabled.
 	if d.ContainerPool != nil {
-		workDir := d.Trees.Dir(task.Owner, task.Repo, task.IssueNumber)
 		// Write task.json — the container's boot-time brief.
 		_ = container.WriteTaskJSON(workDir, container.TaskPayload{
 			ID: task.ID, Owner: task.Owner, Repo: task.Repo,

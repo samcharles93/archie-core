@@ -71,6 +71,48 @@ type SkillWorkflow struct {
 	Dir      string // skill directory name
 }
 
+// AugmentRegistry scans a worktree directory for skills that declare
+// workflows, builds each from its stage plugins, and returns a new
+// registry with worktree workflows merged over the base. The base
+// registry is not mutated.
+//
+// This is the per-task complement to BuildRegistry: BuildRegistry
+// runs once at startup against a shared skills directory (or the
+// workdir root); AugmentRegistry runs at process time against a
+// specific cloned worktree so that per-repo skills are discovered
+// without restarting the daemon.
+func AugmentRegistry(worktree string, base workflow.Registry) (workflow.Registry, error) {
+	catalog, err := skill.Catalog(worktree)
+	if err != nil {
+		return nil, fmt.Errorf("skill catalog: %w", err)
+	}
+
+	// Copy base — never mutate the caller's registry.
+	reg := make(workflow.Registry, len(base)+len(catalog))
+	for k, v := range base {
+		reg[k] = v
+	}
+
+	for _, entry := range catalog {
+		if entry.Workflow == "" {
+			continue
+		}
+		sw := SkillWorkflow{Workflow: entry.Workflow, Dir: entry.Dir}
+		wf, err := BuildWorkflow(worktree, sw)
+		if err != nil {
+			return nil, fmt.Errorf("build workflow %s from skill %s: %w", entry.Workflow, entry.Dir, err)
+		}
+		// Only override the base entry when the skill actually has stages.
+		// An empty workflow means the skill declared intent but has no
+		// plugins yet — keep the base (or built-in) definition.
+		if len(wf.Stages) > 0 {
+			reg[entry.Workflow] = wf
+		}
+	}
+
+	return reg, nil
+}
+
 // BuildWorkflow loads stage plugins from a skill's plugins/ directory
 // and returns a workflow.Workflow. Stages are Yaegi-interpreted .go files
 // sorted by filename. Each file must export:
