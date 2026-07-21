@@ -36,14 +36,17 @@ func TestHandleMessageLoadsSkillsFromWorktree(t *testing.T) {
 	// the Mission string. HandleMessage never touches .agents/skills/.
 
 	dir := t.TempDir()
-	skillsDir := filepath.Join(dir, ".agents", "skills", "tdd-bugfix")
+	skillsDir := filepath.Join(dir, ".agents", "skills", "archie-wf-tdd")
 	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(skillsDir, "SKILL.md"), []byte(`---
-name: tdd-bugfix
+name: archie-wf-tdd
 description: TDD bugfix workflow
 version: 1.0.0
+metadata:
+  archie:
+    workflow: tdd
 ---
 Analyse the bug. Write repro tests. Fix.
 `), 0o644); err != nil {

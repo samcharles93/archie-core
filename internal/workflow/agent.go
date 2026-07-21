@@ -202,28 +202,20 @@ func missionWithSkill(tc *TaskContext, mission string) string {
 	return "Follow these project-specific guidelines:\n\n" + tc.SkillBody + "\n\n---\n\n" + mission
 }
 
-// workflowToSkill maps a workflow name to the skill directory name.
-var workflowToSkill = map[string]string{
-	"tdd":         "tdd-bugfix",
-	"implement":   "implement",
-	"feasibility": "feasibility",
-}
-
-// loadSkillBody loads the SKILL.md body and any bundled plugins for the
-// current workflow from the worktree's .agents/skills/ directory. Returns ""
-// if not found. Populates tc.SkillPlugins alongside tc.SkillBody.
+// loadSkillBody loads the SKILL.md body and plugins for the current
+// workflow from the worktree's .agents/skills/ directory. Skills declare
+// their workflow in metadata.archie.workflow — no hardcoded mapping.
 func loadSkillBody(tc *TaskContext) string {
-	skillDir, ok := workflowToSkill[tc.Task.Workflow]
-	if !ok {
+	catalog, _ := skill.Catalog(tc.Dir)
+	entry := skill.SkillForWorkflow(catalog, tc.Task.Workflow)
+	if entry == nil {
 		return ""
 	}
-	body := skill.LoadBody(tc.Dir, skillDir)
+	body := skill.LoadBody(tc.Dir, entry.Dir)
 	if body != "" && tc.SkillPlugins == nil {
-		// Load plugins lazily on first agent stage.
-		plugins, err := skill.DiscoverPlugins(tc.Dir, skillDir)
-		if err == nil {
-			tc.SkillPlugins = plugins
-		}
+		plugins, _ := skill.DiscoverPlugins(tc.Dir, entry.Dir)
+		tc.SkillPlugins = plugins
 	}
 	return body
 }
+

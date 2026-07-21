@@ -73,7 +73,7 @@ func HandleMessage(ctx context.Context, msg AgentRequestMessage, log *slog.Logge
 	// Load the skill body from the worktree — the agent owns skill
 	// loading per PRD section 1. Mirrors daemon-side loadSkillBody().
 	if msg.Workflow != "" && msg.Workspace != "" {
-		body := skill.LoadBody(msg.Workspace, workflowToSkillDir(msg.Workflow))
+		body := skill.LoadBody(msg.Workspace, skillDirForWorkflow(msg.Workspace, msg.Workflow))
 		if body != "" {
 			msg.Request.Mission = "Follow these project-specific guidelines:\n\n" + body + "\n\n---\n\n" + msg.Request.Mission
 			for i := range msg.Stages {
@@ -151,19 +151,15 @@ func runStages(ctx context.Context, runner Runner, msg AgentRequestMessage, chan
 	}, nil
 }
 
-// workflowToSkillDir maps a workflow name to the skill directory name.
-// Mirrors the mapping in internal/workflow/agent.go.
-func workflowToSkillDir(workflow string) string {
-	switch workflow {
-	case "tdd":
-		return "tdd-bugfix"
-	case "implement":
-		return "implement"
-	case "feasibility":
-		return "feasibility"
-	default:
-		return workflow
+// skillDirForWorkflow finds the skill directory for a workflow from the
+// workspace catalog. Skills declare their workflow in metadata.archie.workflow.
+func skillDirForWorkflow(workspace, workflow string) string {
+	catalog, _ := skill.Catalog(workspace)
+	entry := skill.SkillForWorkflow(catalog, workflow)
+	if entry == nil {
+		return ""
 	}
+	return entry.Dir
 }
 
 func decodeOne(r io.Reader, value any) error {

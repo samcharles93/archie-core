@@ -1,5 +1,5 @@
 ---
-name: tdd-bugfix
+name: archie-wf-tdd
 description: >
   Fix bugs using test-driven development. Write a failing repro test first, prove
   it captures the bug, then fix the code without touching the tests. archie-core
@@ -9,6 +9,7 @@ metadata:
   archie:
     tools: [go, golangci-lint]
     engine: any
+    workflow: tdd
 ---
 # TDD Bugfix Workflow
 

@@ -24,7 +24,7 @@ func TestSkillPluginsAvailableDuringStageExecution(t *testing.T) {
 	// accessible via the TaskContext.
 
 	dir := t.TempDir()
-	skillsDir := filepath.Join(dir, ".agents", "skills", "tdd-bugfix")
+	skillsDir := filepath.Join(dir, ".agents", "skills", "archie-wf-tdd")
 	pluginsDir := filepath.Join(skillsDir, "plugins")
 	if err := os.MkdirAll(pluginsDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -39,6 +39,7 @@ metadata:
   archie:
     tools: [go]
     engine: any
+    workflow: tdd
 ---
 Analyse the bug, write repro tests, fix.
 `), 0o644); err != nil {

@@ -20,11 +20,81 @@ type Frontmatter struct {
 	Version     string `yaml:"version"`
 	Metadata    struct {
 		Archie *struct {
-			Tools   []string `yaml:"tools"`
-			Engine  string   `yaml:"engine"`
-			Plugins []string `yaml:"plugins,omitempty"`
+			Tools    []string `yaml:"tools"`
+			Engine   string   `yaml:"engine"`
+			Plugins  []string `yaml:"plugins,omitempty"`
+			Workflow string   `yaml:"workflow,omitempty"`
 		} `yaml:"archie"`
 	} `yaml:"metadata"`
+}
+
+// CatalogEntry is a lightweight skill reference — name + description
+// only (~100 tokens). Loaded at daemon startup for skill discovery.
+// The full body is loaded on activation via LoadBody. agentskills.io
+// progressive disclosure Tier 1.
+type CatalogEntry struct {
+	Name        string
+	Description string
+	Workflow    string // from metadata.archie.workflow — which workflow this skill handles
+	Dir         string // skill directory name
+}
+
+// Catalog scans dir/.agents/skills/*/SKILL.md and returns catalog entries
+// (Tier 1: name + description + workflow only). Only the frontmatter is
+// parsed — full bodies are not loaded. Missing directory returns nil.
+func Catalog(dir string) ([]CatalogEntry, error) {
+	skillsPath := filepath.Join(dir, skillsDir)
+	entries, err := os.ReadDir(skillsPath)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read skills dir %s: %w", skillsPath, err)
+	}
+
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+
+	var out []CatalogEntry
+	for _, name := range names {
+		skillPath := filepath.Join(skillsPath, name, "SKILL.md")
+		data, err := os.ReadFile(skillPath)
+		if err != nil {
+			continue
+		}
+		fm, _, err := Parse(data)
+		if err != nil || fm == nil {
+			continue
+		}
+		wf := ""
+		if fm.Metadata.Archie != nil {
+			wf = fm.Metadata.Archie.Workflow
+		}
+		out = append(out, CatalogEntry{
+			Name:        fm.Name,
+			Description: fm.Description,
+			Workflow:    wf,
+			Dir:         name,
+		})
+	}
+	return out, nil
+}
+
+// SkillForWorkflow returns the catalog entry whose Workflow field matches
+// the given workflow name, or nil if no skill declares that workflow.
+// Replaces hardcoded workflow→skill lookup tables.
+func SkillForWorkflow(catalog []CatalogEntry, workflow string) *CatalogEntry {
+	for i := range catalog {
+		if catalog[i].Workflow == workflow {
+			return &catalog[i]
+		}
+	}
+	return nil
 }
 
 // Skill is a parsed SKILL.md file with its frontmatter, body, and any
