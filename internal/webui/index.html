@@ -24,15 +24,13 @@
             border-radius: 8px; padding: .9rem 1rem; }
   section h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em;
                color: var(--dim); margin: 0 0 .6rem; }
-  .cards { display: flex; gap: .6rem; flex-wrap: wrap; grid-column: 1 / -1; max-width: 100%; }
-  section { min-height: 1.25rem; }
+  .cards { display: flex; gap: .6rem; flex-wrap: wrap; grid-column: 1 / -1;
            background: none; border: none; padding: 0; }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
           padding: .55rem .9rem; min-width: 7.5rem; }
   .card .n { font-size: 1.5rem; font-variant-numeric: tabular-nums; }
   .card .l { color: var(--dim); font-size: .78rem; }
-  section .table-wrap { position: relative; overflow-x: auto; max-width: 100%; }
-  section .table-wrap table { min-width: 100%; margin-left: calc(1rem - minmax(0,1fr)); }
+  .section-table { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: .85rem; }
   th { text-align: left; color: var(--dim); font-weight: 500; padding: .25rem .5rem .25rem 0; white-space: nowrap; }
   td { padding: .3rem .5rem .3rem 0; border-top: 1px solid var(--line);
@@ -47,7 +45,7 @@
   #feed { font-family: ui-monospace, monospace; font-size: .78rem; max-height: 30rem;
           overflow-y: auto; display: flex; flex-direction: column-reverse; }
   #feed div { padding: .12rem 0; border-top: 1px solid var(--line); white-space: normal;
-              overflow: visible; text-overflow: unset; word-break: break-word; }
+              overflow-wrap: break-word; }
   #feed .t { color: var(--dim); } #feed .k { color: var(--accent); }
   #feed .k-parked, #feed .k-pr_rejected { color: var(--bad); }
   #feed .k-pr_merged, #feed .k-outcome { color: var(--ok); }
@@ -58,12 +56,15 @@
   .muted { color: var(--dim); }
   @media (max-width: 950px) { main { grid-template-columns: 1fr; } }
   @media (max-width: 700px) {
-    section, #timeline { padding: .6rem .8rem; }
-    header { padding: .75rem 1rem; }
-    .card { min-width: 4.5rem; }
-    table, .table-wrap { font-size: .8rem; }
-    th, td, #feed div { padding: .18rem .35rem; }
-    #feed { white-space: normal; overflow: visible; text-overflow: unset; word-break: break-word; }
+    header { padding: .6rem .8rem; }
+    header .sub { font-size: .75rem; }
+    main { padding: .5rem; gap: .5rem; }
+    section { padding: .5rem .6rem; }
+    .card { min-width: 4rem; padding: .35rem .6rem; }
+    .card .n { font-size: 1.2rem; }
+    table { font-size: .75rem; }
+    th, td { padding: .15rem .3rem; }
+    #feed { font-size: .7rem; }
   }
 </style>
 </head>
@@ -77,10 +78,10 @@
 
   <section style="grid-column: 1">
     <h2>Tasks</h2>
-    <table id="tasks"><thead><tr>
+    <div class="section-table"><table id="tasks"><thead><tr>
       <th>repo</th><th>issue</th><th>title</th><th>workflow</th><th>status</th>
       <th class="num">steps</th><th class="num">tokens</th>
-    </tr></thead><tbody></tbody></table>
+    </tr></thead><tbody></tbody></table></div>
   </section>
 
   <section style="grid-column: 2">
@@ -90,31 +91,31 @@
 
   <section id="timeline">
     <h2>Task timeline — <span id="timeline-title"></span></h2>
-    <table id="timeline-table"><thead><tr>
+    <div class="section-table"><table id="timeline-table"><thead><tr>
       <th>time</th><th>kind</th><th>stage</th><th>detail</th>
-    </tr></thead><tbody></tbody></table>
+    </tr></thead><tbody></tbody></table></div>
   </section>
 
   <section style="grid-column: 1">
     <h2>Workflows</h2>
-    <table id="workflows"><thead><tr>
+    <div class="section-table"><table id="workflows"><thead><tr>
       <th>workflow</th><th class="num">runs</th><th class="num">merged</th>
       <th class="num">open</th><th class="num">parked</th>
       <th class="num">avg tokens</th><th class="num">avg steps</th><th class="num">total tokens</th>
-    </tr></thead><tbody></tbody></table>
+    </tr></thead><tbody></tbody></table></div>
   </section>
 
   <section style="grid-column: 2">
     <h2>Token spend by day</h2>
-    <table id="days"><tbody></tbody></table>
+    <div class="section-table"><table id="days"><tbody></tbody></table></div>
   </section>
 
   <section style="grid-column: 1 / -1">
     <h2>Stages</h2>
-    <table id="stages"><thead><tr>
+    <div class="section-table"><table id="stages"><thead><tr>
       <th>workflow</th><th>stage</th><th class="num">runs</th>
       <th class="num">avg duration</th><th class="num">errors</th>
-    </tr></thead><tbody></tbody></table>
+    </tr></thead><tbody></tbody></table></div>
   </section>
 </main>
 <script>
