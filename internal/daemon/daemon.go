@@ -14,6 +14,7 @@ import (
 	"github.com/samcharles93/ai-sdk/core"
 	"github.com/samcharles93/ai-sdk/runtime"
 
+	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
@@ -28,6 +29,7 @@ type Daemon struct {
 	Forge     forge.Forge
 	Trees     *worktree.Manager
 	Runtime   *runtime.Runtime
+	Agent     agentexec.Runner
 	Bus       *events.Bus
 	Workflows workflow.Registry
 	Log       *slog.Logger
@@ -358,15 +360,15 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	d.Log.Info("processing task", "repo", repo.FullName(), "issue", task.IssueNumber, "workflow", wf.Name, "attempt", task.Attempt)
 	d.Forge.SetStateLabel(ctx, task.Owner, task.Repo, task.IssueNumber, d.Cfg.Dispatch.StateLabel("working"), d.Cfg.Dispatch.LabelValues())
 	workflow.Run(ctx, wf, &workflow.TaskContext{
-		Task:    task,
-		Repo:    repo,
-		Cfg:     d.Cfg,
-		Forge:   d.Forge,
-		Store:   d.Store,
-		Trees:   d.Trees,
-		Runtime: d.Runtime,
-		Bus:     d.Bus,
-		Log:     d.Log,
+		Task:  task,
+		Repo:  repo,
+		Cfg:   d.Cfg,
+		Forge: d.Forge,
+		Store: d.Store,
+		Trees: d.Trees,
+		Agent: d.Agent,
+		Bus:   d.Bus,
+		Log:   d.Log,
 	})
 }
 

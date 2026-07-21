@@ -16,6 +16,7 @@ import (
 
 	"github.com/samcharles93/ai-sdk/runtime"
 
+	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -102,6 +103,11 @@ func run() int {
 		}()
 	}
 
+	llm := llmRuntime(cfg)
+	var agentRunner agentexec.Runner
+	if llm != nil {
+		agentRunner = agentexec.NewInProcessRunner(llm, log)
+	}
 	d := &daemon.Daemon{
 		Cfg:   cfg,
 		Store: st,
@@ -114,7 +120,8 @@ func run() int {
 			BotEmail: cfg.BotEmail,
 			BaseURL:  cfg.Forge.Host,
 		},
-		Runtime: llmRuntime(cfg),
+		Runtime: llm,
+		Agent:   agentRunner,
 		Workflows: workflow.Registry{
 			"bootstrap":   workflow.Bootstrap(),
 			"implement":   workflow.Implement(),

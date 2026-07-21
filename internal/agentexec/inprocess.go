@@ -1,0 +1,183 @@
+package agentexec
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"path/filepath"
+	"strings"
+
+	"github.com/samcharles93/ai-sdk/agentloop"
+	"github.com/samcharles93/ai-sdk/core"
+	"github.com/samcharles93/ai-sdk/runtime"
+)
+
+// Runner executes one autonomous stage against an already prepared workspace.
+type Runner interface {
+	Run(ctx context.Context, workspace string, req Request) (Result, error)
+}
+
+type loopFunc func(context.Context, agentloop.Config) (agentloop.Result, error)
+
+// InProcessRunner preserves the current execution behavior behind the v1
+// agent protocol. It is replaced by a subprocess or container runner without
+// changing workflow orchestration.
+type InProcessRunner struct {
+	runtime *runtime.Runtime
+	log     *slog.Logger
+	run     loopFunc
+}
+
+func NewInProcessRunner(rt *runtime.Runtime, log *slog.Logger) *InProcessRunner {
+	return &InProcessRunner{runtime: rt, log: log, run: agentloop.Run}
+}
+
+func (r *InProcessRunner) Run(ctx context.Context, workspace string, req Request) (Result, error) {
+	if err := req.Validate(); err != nil {
+		return Result{}, err
+	}
+	if r.runtime == nil {
+		return Result{}, fmt.Errorf("agent runtime is not configured")
+	}
+	if r.run == nil {
+		return Result{}, fmt.Errorf("agent loop is not configured")
+	}
+
+	notes := &memoryNotes{initial: req.Notes}
+	captures := make(map[string][]json.RawMessage)
+	res, err := r.run(ctx, agentloop.Config{
+		Runtime:      r.runtime,
+		ModelRef:     req.Model,
+		WorkDir:      workspace,
+		Mission:      req.Mission,
+		ExtraRules:   req.ExtraRules,
+		Notes:        notes,
+		Gate:         toAgentGate(req.Gate),
+		Preflight:    toAgentCommands(req.Preflight),
+		Budget:       agentloop.Budget(req.Budget),
+		ReadOnly:     req.ReadOnly,
+		ProtectPaths: protectionMatcher(req.Protection, req.ReadOnly),
+		Extra:        captureToolSet(req.CaptureTools, captures),
+		Logger:       r.logger(req),
+	})
+	result := Result{
+		Version:       ProtocolVersion,
+		TaskID:        req.TaskID,
+		Attempt:       req.Attempt,
+		Stage:         req.Stage,
+		Status:        string(res.Status),
+		StopReason:    res.StopReason,
+		Changes:       res.Changes,
+		Iterations:    res.Iterations,
+		TokensUsed:    res.TokensUsed,
+		Summary:       res.Summary,
+		Detail:        res.Detail,
+		AppendedNotes: notes.appended,
+		Captures:      captures,
+	}
+	if cause := context.Cause(ctx); cause != nil {
+		return result, cause
+	}
+	return result, err
+}
+
+func (r *InProcessRunner) logger(req Request) *slog.Logger {
+	if r.log == nil {
+		return slog.New(slog.DiscardHandler)
+	}
+	return r.log.With("task", req.TaskID, "attempt", req.Attempt, "stage", req.Stage, "model", req.Model)
+}
+
+func toAgentGate(g Gate) agentloop.GateConfig {
+	return agentloop.GateConfig{
+		Commands:               toAgentCommands(g.Commands),
+		MaxConsecutiveFailures: g.MaxConsecutiveFailures,
+	}
+}
+
+func toAgentCommands(commands []Command) []agentloop.GateCommand {
+	out := make([]agentloop.GateCommand, 0, len(commands))
+	for _, command := range commands {
+		out = append(out, agentloop.GateCommand{
+			Name: command.Name, Argv: command.Argv, ExpectFailure: command.ExpectFailure,
+		})
+	}
+	return out
+}
+
+func protectionMatcher(p Protection, readOnly bool) func(string) bool {
+	if readOnly || len(p.Suffixes)+len(p.Globs) == 0 {
+		return nil
+	}
+	return func(path string) bool {
+		for _, suffix := range p.Suffixes {
+			if strings.HasSuffix(path, suffix) {
+				return true
+			}
+		}
+		for _, glob := range p.Globs {
+			matchPath := path
+			if !strings.ContainsAny(glob, `/\`) {
+				matchPath = filepath.Base(path)
+			}
+			if matched, err := filepath.Match(glob, matchPath); err == nil && matched {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+func captureToolSet(specs []CaptureTool, captures map[string][]json.RawMessage) core.ToolSet {
+	tools := make(core.ToolSet, len(specs))
+	for _, spec := range specs {
+		spec := spec
+		tools[spec.Name] = core.NewTool(spec.Name, spec.Description, spec.Parameters,
+			func(_ context.Context, input string) (string, error) {
+				if spec.MaxCalls > 0 && len(captures[spec.Name]) >= spec.MaxCalls {
+					return fmt.Sprintf("%s rejected: maximum call count is %d", spec.Name, spec.MaxCalls), nil
+				}
+				value := json.RawMessage(input)
+				if !json.Valid(value) {
+					return spec.Name + " rejected: arguments are not valid JSON", nil
+				}
+				var object map[string]json.RawMessage
+				if err := json.Unmarshal(value, &object); err != nil {
+					return spec.Name + " rejected: arguments must be a JSON object", nil
+				}
+				for _, field := range spec.RequiredFields {
+					if _, ok := object[field]; !ok {
+						return fmt.Sprintf("%s rejected: %s is required", spec.Name, field), nil
+					}
+				}
+				for _, field := range spec.NonEmptyStrings {
+					var text string
+					if raw, ok := object[field]; !ok || json.Unmarshal(raw, &text) != nil || strings.TrimSpace(text) == "" {
+						return fmt.Sprintf("%s rejected: %s must be a non-empty string", spec.Name, field), nil
+					}
+				}
+				for _, field := range spec.BooleanFields {
+					var value bool
+					if raw, ok := object[field]; !ok || json.Unmarshal(raw, &value) != nil {
+						return fmt.Sprintf("%s rejected: %s must be a boolean", spec.Name, field), nil
+					}
+				}
+				captures[spec.Name] = append(captures[spec.Name], append(json.RawMessage(nil), value...))
+				return spec.Name + " recorded", nil
+			})
+	}
+	return tools
+}
+
+type memoryNotes struct {
+	initial  string
+	appended []string
+}
+
+func (n *memoryNotes) Load(context.Context) (string, error) { return n.initial, nil }
+
+func (n *memoryNotes) Append(_ context.Context, entry string) error {
+	n.appended = append(n.appended, entry)
+	return nil
+}

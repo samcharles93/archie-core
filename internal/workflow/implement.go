@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/samcharles93/ai-sdk/agentloop"
+	"github.com/samcharles93/archie-core/internal/agentexec"
 )
 
 // StageBaselineGate verifies the repo's gate is green at the base commit
@@ -61,7 +61,7 @@ func Implement() Workflow {
 						tc.Repo.FullName(), tc.Task.IssueNumber, tc.Task.Title, tc.Task.Body,
 					)
 				},
-				OnResult: func(tc *TaskContext, res agentloop.Result) error {
+				OnResult: func(tc *TaskContext, res agentexec.Result) error {
 					tc.Task.Plan = res.Summary
 					body := fmt.Sprintf("**archie's plan** (review now if you want to veto — building starts immediately):\n\n%s", res.Summary)
 					if _, err := tc.Forge.Comment(context.Background(), tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, body); err != nil {
@@ -74,7 +74,7 @@ func Implement() Workflow {
 			AgentStage{
 				Name: "build",
 				Role: "builder",
-				Gate: func(tc *TaskContext) agentloop.GateConfig {
+				Gate: func(tc *TaskContext) agentexec.Gate {
 					return GateFromRepo(tc.Repo, tc.Cfg.Budgets)
 				},
 				ExtraRules: "Files matching the repository's protected suffixes (e.g. generated code) are " +
@@ -90,7 +90,7 @@ func Implement() Workflow {
 						tc.Repo.FullName(), tc.Task.IssueNumber, tc.Task.Title, tc.Task.Body, tc.Task.Plan,
 					)
 				},
-				OnResult: func(tc *TaskContext, res agentloop.Result) error {
+				OnResult: func(tc *TaskContext, res agentexec.Result) error {
 					tc.BuildSummary = res.Summary
 					return nil
 				},

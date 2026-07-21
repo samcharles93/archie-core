@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/samcharles93/ai-sdk/agentloop"
-	"github.com/samcharles93/ai-sdk/core"
-
+	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 )
 
@@ -25,30 +23,30 @@ type AgentStage struct {
 	Mission func(*TaskContext) string
 	// Gate returns the stage's quality gate; nil means ungated (e.g.
 	// read-only analysis stages).
-	Gate func(*TaskContext) agentloop.GateConfig
+	Gate func(*TaskContext) agentexec.Gate
 	// ExtraRules is appended to the system prompt.
 	ExtraRules string
 	// MaxSteps overrides the configured step budget when > 0 (planner
 	// stages are cheaper than builder stages).
 	MaxSteps int
-	// ProtectPaths blocks write/edit on matching paths for this stage —
+	// ProtectGlobs blocks write/edit on matching paths for this stage —
 	// an environmental constraint, not a prompt rule (TDD's fix stage
 	// protects the committed repro tests; every builder stage protects
-	// the repo's generated files). The returned matcher is combined
+	// the repo's generated files). The returned globs are combined
 	// with the repo's configured protected suffixes.
-	ProtectPaths func(*TaskContext) func(path string) bool
-	// Extra adds stage-specific tools to the agent's toolset (e.g.
-	// feasibility's decide tool).
-	Extra func(*TaskContext) core.ToolSet
+	ProtectGlobs func(*TaskContext) []string
+	// CaptureTools adds structured-output tools whose calls are returned
+	// as data rather than receiving callbacks into daemon state.
+	CaptureTools func(*TaskContext) []agentexec.CaptureTool
 	// OnResult consumes a successful (passed) result. Parked and idle
 	// results park the workflow before OnResult is called.
-	OnResult func(*TaskContext, agentloop.Result) error
+	OnResult func(*TaskContext, agentexec.Result) error
 }
 
 // Stage adapts the AgentStage to the engine.
 func (a AgentStage) Stage() Stage {
 	return Stage{Name: a.Name, Run: func(ctx context.Context, tc *TaskContext) error {
-		if tc.Runtime == nil {
+		if tc.Agent == nil {
 			return fmt.Errorf("no LLM runtime configured (missing [providers] in config?)")
 		}
 		modelRef := tc.Cfg.Models[a.Role]
@@ -59,7 +57,7 @@ func (a AgentStage) Stage() Stage {
 			return fmt.Errorf("no model configured for role %q (set [models] in config)", a.Role)
 		}
 
-		budget := agentloop.Budget{
+		budget := agentexec.Budget{
 			MaxSteps:  tc.Cfg.Budgets.MaxSteps,
 			MaxTokens: tc.Cfg.Budgets.MaxTokens,
 			WallClock: tc.Cfg.Budgets.WallClock.Std(),
@@ -68,54 +66,62 @@ func (a AgentStage) Stage() Stage {
 			budget.MaxSteps = a.MaxSteps
 		}
 
-		var gate agentloop.GateConfig
+		var gate agentexec.Gate
 		if a.Gate != nil {
 			gate = a.Gate(tc)
 		}
-		var extra core.ToolSet
-		if a.Extra != nil {
-			extra = a.Extra(tc)
+		var captureTools []agentexec.CaptureTool
+		if a.CaptureTools != nil {
+			captureTools = a.CaptureTools(tc)
 		}
 
-		// Repo-configured protected suffixes (generated files) apply to
-		// every writing stage; stage-specific matchers stack on top.
-		var stageProtect func(string) bool
-		if a.ProtectPaths != nil {
-			stageProtect = a.ProtectPaths(tc)
-		}
-		protect := func(path string) bool {
-			if tc.Repo.Protected(path) {
-				return true
-			}
-			return stageProtect != nil && stageProtect(path)
+		protection := agentexec.Protection{Suffixes: append([]string(nil), tc.Repo.Protect...)}
+		if a.ProtectGlobs != nil {
+			protection.Globs = a.ProtectGlobs(tc)
 		}
 		if a.ReadOnly {
-			protect = nil // nothing to protect from read-only tools
+			protection = agentexec.Protection{}
 		}
 
-		var preflight []agentloop.GateCommand
+		var preflight []agentexec.Command
 		for _, argv := range tc.Repo.ResolvedPreflight() {
 			if len(argv) == 0 {
 				continue
 			}
-			preflight = append(preflight, agentloop.GateCommand{Name: argv[0], Argv: argv})
+			preflight = append(preflight, agentexec.Command{Name: argv[0], Argv: argv})
 		}
 
-		res, err := agentloop.Run(ctx, agentloop.Config{
-			Runtime:      tc.Runtime,
-			ModelRef:     modelRef,
-			WorkDir:      tc.Dir,
+		req := agentexec.Request{
+			Version:      agentexec.ProtocolVersion,
+			TaskID:       tc.Task.ID,
+			Attempt:      tc.Task.Attempt,
+			Stage:        a.Name,
+			Model:        modelRef,
 			Mission:      a.Mission(tc),
 			ExtraRules:   a.ExtraRules,
-			Notes:        taskNotes{tc: tc},
+			ReadOnly:     a.ReadOnly,
+			Budget:       budget,
 			Gate:         gate,
 			Preflight:    preflight,
-			Budget:       budget,
-			ReadOnly:     a.ReadOnly,
-			ProtectPaths: protect,
-			Extra:        extra,
-			Logger:       tc.Log.With("stage", a.Name, "model", modelRef),
-		})
+			Protection:   protection,
+			Notes:        tc.Task.Notes,
+			CaptureTools: captureTools,
+		}
+		res, err := tc.Agent.Run(ctx, tc.Dir, req)
+		if err != nil && res.Version == 0 {
+			return fmt.Errorf("agent run: %w", err)
+		}
+		if validateErr := res.ValidateFor(req); validateErr != nil {
+			return fmt.Errorf("validate agent result: %w", validateErr)
+		}
+		if len(res.AppendedNotes) > 0 {
+			for _, note := range res.AppendedNotes {
+				tc.Task.Notes += "- " + note + "\n"
+			}
+			if saveErr := tc.Store.Update(ctx, tc.Task); saveErr != nil {
+				return fmt.Errorf("persist agent notes: %w", saveErr)
+			}
+		}
 		if err != nil {
 			return fmt.Errorf("agent run: %w", err)
 		}
@@ -127,7 +133,7 @@ func (a AgentStage) Stage() Stage {
 			"tokens": res.TokensUsed, "iterations": res.Iterations, "model": modelRef,
 		})
 
-		if res.Status != agentloop.StatusPassed {
+		if res.Status != agentexec.StatusPassed {
 			detail := res.Detail
 			if detail == "" {
 				detail = res.Summary
@@ -141,28 +147,15 @@ func (a AgentStage) Stage() Stage {
 	}}
 }
 
-// taskNotes stores agent notes on the task row — orchestrator-side, so
-// they survive worktree cleanup and never pollute the PR diff.
-type taskNotes struct{ tc *TaskContext }
-
-func (n taskNotes) Load(context.Context) (string, error) {
-	return n.tc.Task.Notes, nil
-}
-
-func (n taskNotes) Append(ctx context.Context, entry string) error {
-	n.tc.Task.Notes += "- " + entry + "\n"
-	return n.tc.Store.Update(ctx, n.tc.Task)
-}
-
 // GateFromRepo converts the repo's configured command lists into an
-// agentloop gate.
-func GateFromRepo(repo config.Repo, budgets config.Budgets) agentloop.GateConfig {
-	cmds := make([]agentloop.GateCommand, 0, len(repo.Gate))
+// agent execution gate.
+func GateFromRepo(repo config.Repo, budgets config.Budgets) agentexec.Gate {
+	cmds := make([]agentexec.Command, 0, len(repo.Gate))
 	for _, argv := range repo.Gate {
 		if len(argv) == 0 {
 			continue
 		}
-		cmds = append(cmds, agentloop.GateCommand{Name: argv[0], Argv: argv})
+		cmds = append(cmds, agentexec.Command{Name: argv[0], Argv: argv})
 	}
-	return agentloop.GateConfig{Commands: cmds, MaxConsecutiveFailures: budgets.GateMaxFailures}
+	return agentexec.Gate{Commands: cmds, MaxConsecutiveFailures: budgets.GateMaxFailures}
 }

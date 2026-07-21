@@ -12,8 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samcharles93/ai-sdk/runtime"
-
+	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
@@ -25,15 +24,15 @@ import (
 // forward by mutating Task (persisted after every stage) and the
 // scratch fields below.
 type TaskContext struct {
-	Task    *store.Task
-	Repo    config.Repo
-	Cfg     config.Config
-	Forge   forge.Forge
-	Store   *store.Store
-	Trees   *worktree.Manager
-	Runtime *runtime.Runtime
-	Bus     *events.Bus // nil-safe via Emit
-	Log     *slog.Logger
+	Task  *store.Task
+	Repo  config.Repo
+	Cfg   config.Config
+	Forge forge.Forge
+	Store *store.Store
+	Trees *worktree.Manager
+	Agent agentexec.Runner
+	Bus   *events.Bus // nil-safe via Emit
+	Log   *slog.Logger
 
 	// Dir/Branch are set by the prepare step.
 	Dir    string
@@ -155,6 +154,13 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 		tc.Emit(events.KindStageFinish, stage.Name, "", data)
 
 		if err != nil {
+			// Daemon shutdown is not a workflow failure. Leave the task running
+			// so Startup's existing crash recovery requeues it; parking here
+			// would publish a false failure and require manual intervention.
+			if ctx.Err() != nil {
+				log.Info("stage interrupted", "stage", stage.Name, "err", err)
+				return
+			}
 			t.ParkReason = fmt.Sprintf("stage %s: %v", stage.Name, err)
 			log.Warn("stage failed — parking", "stage", stage.Name, "err", err)
 			park(ctx, tc, t.ParkReason)

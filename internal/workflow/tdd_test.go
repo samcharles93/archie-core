@@ -7,30 +7,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 )
 
-func TestMatchesTestPath(t *testing.T) {
-	tests := []struct {
-		name string
-		glob string
-		path string
-		want bool
-	}{
-		{name: "root Go test", glob: "*_test.go", path: "main_test.go", want: true},
-		{name: "nested Go test", glob: "*_test.go", path: "internal/foo/bar_test.go", want: true},
-		{name: "nested Python test", glob: "test_*.py", path: "pkg/unit/test_widget.py", want: true},
-		{name: "directory pattern", glob: "tests/*.rs", path: "tests/widget.rs", want: true},
-		{name: "non-test file", glob: "*_test.go", path: "internal/foo/bar.go", want: false},
-		{name: "wrong directory", glob: "tests/*.rs", path: "src/widget.rs", want: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := matchesTestPath(tt.glob, tt.path); got != tt.want {
-				t.Errorf("matchesTestPath(%q, %q) = %v, want %v", tt.glob, tt.path, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestTDDGateUsesLastNonEmptyCommand(t *testing.T) {
 	repo := config.Repo{Gate: [][]string{
 		{"go", "vet", "./..."},

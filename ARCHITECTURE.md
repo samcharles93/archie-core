@@ -10,6 +10,7 @@
 | `internal/config/` | TOML config, per-repo gates, budgets, providers, ecosystems |
 | `internal/daemon/` | Resident loop: poll, enqueue, claim, route, process, reconcile |
 | `internal/workflow/` | Engine: stage lists, routing, shared steps, workflow definitions |
+| `internal/agentexec/` | Versioned agent-stage protocol and current in-process runner |
 | `internal/forge/` | GitHub interface: issues, labels, PRs, comments, reactions |
 | `internal/worktree/` | Git operations: clone, branch, commit, push, diff, cleanup |
 | `internal/store/` | SQLite: task rows, status transitions, crash recovery |
@@ -39,7 +40,7 @@ queued → running(workflow:stage) → pr_open → merged | rejected
 
 - `Workflow` = named list of `Stage`s
 - `Stage` = `Name` + `Run(ctx, *TaskContext) error`
-- `TaskContext` = mutable bag: Task, Repo, Config, Forge, Store, Runtime, worktree dir/branch, scratch fields
+- `TaskContext` = mutable bag: Task, Repo, Config, Forge, Store, Agent runner, worktree dir/branch, scratch fields
 - `Outcome` = terminal decision (status + detail) — ends the workflow immediately
 - `Registry` = `map[string]Workflow`
 
@@ -167,6 +168,7 @@ Every lifecycle event flows through an internal event bus:
 5. **Shared code with tau at the module level.** `ai-sdk/agentloop` and `ai-sdk/toolkit` are extracted from tau's coordinator and promoted to shared libraries.
 6. **No daemon-internal cron.** Polling is a ticker loop, not cron. The feasibility PRD notification uses an external webhook (n8n).
 7. **Fresh worktree per task.** No persistent state between runs. Crash recovery just re-queues.
+8. **Agent execution is a data boundary.** Autonomous stages receive a versioned request and return a fenced result; SQLite, forge operations, git, workflow sequencing, and outcome handling stay daemon-owned.
 
 ## What's Implemented vs Planned
 

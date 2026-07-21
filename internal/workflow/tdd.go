@@ -4,11 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
-	"github.com/samcharles93/ai-sdk/agentloop"
-
+	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 )
 
@@ -40,7 +38,7 @@ func TDD() Workflow {
 						tc.Repo.FullName(), tc.Task.IssueNumber, tc.Task.Title, tc.Task.Body,
 					)
 				},
-				OnResult: func(tc *TaskContext, res agentloop.Result) error {
+				OnResult: func(tc *TaskContext, res agentexec.Result) error {
 					tc.Task.Plan = res.Summary
 					return nil
 				},
@@ -52,7 +50,7 @@ func TDD() Workflow {
 				// The inverted gate: code-quality commands must still
 				// pass, but the test command (last in repo.Gate) MUST
 				// fail — proof the repro captures the bug.
-				Gate: func(tc *TaskContext) agentloop.GateConfig {
+				Gate: func(tc *TaskContext) agentexec.Gate {
 					return tddReproGate(tc.Repo, tc.Cfg.Budgets)
 				},
 				Mission: func(tc *TaskContext) string {
@@ -93,17 +91,17 @@ func TDD() Workflow {
 			AgentStage{
 				Name: "fix",
 				Role: "builder",
-				Gate: func(tc *TaskContext) agentloop.GateConfig {
+				Gate: func(tc *TaskContext) agentexec.Gate {
 					return GateFromRepo(tc.Repo, tc.Cfg.Budgets)
 				},
 				// Environmental, not advisory: the fix stage cannot touch
 				// test files at all — the committed repro is the spec.
-				ProtectPaths: func(tc *TaskContext) func(string) bool {
+				ProtectGlobs: func(tc *TaskContext) []string {
 					glob := tc.Repo.ResolvedTestGlob()
 					if glob == "" {
 						return nil
 					}
-					return func(path string) bool { return matchesTestPath(glob, path) }
+					return []string{glob}
 				},
 				ExtraRules: "The repro tests written in the previous stage are the bug's specification. " +
 					"Test files are write-protected in this stage — make them pass by fixing the code they exercise.",
@@ -117,7 +115,7 @@ func TDD() Workflow {
 						tc.Repo.FullName(), tc.Task.IssueNumber, tc.Task.Title, tc.Task.Body, tc.Task.Plan,
 					)
 				},
-				OnResult: func(tc *TaskContext, res agentloop.Result) error {
+				OnResult: func(tc *TaskContext, res agentexec.Result) error {
 					tc.BuildSummary = res.Summary
 					return nil
 				},
@@ -152,22 +150,22 @@ func TDD() Workflow {
 // every command from repo.Gate runs normally except the last one (the
 // test runner, by convention), which gets ExpectFailure — the repro
 // must fail the tests to prove the bug exists.
-func tddReproGate(repo config.Repo, budgets config.Budgets) agentloop.GateConfig {
+func tddReproGate(repo config.Repo, budgets config.Budgets) agentexec.Gate {
 	if len(repo.Gate) == 0 {
-		return agentloop.GateConfig{}
+		return agentexec.Gate{}
 	}
-	cmds := make([]agentloop.GateCommand, 0, len(repo.Gate))
+	cmds := make([]agentexec.Command, 0, len(repo.Gate))
 	for _, argv := range repo.Gate {
 		if len(argv) == 0 {
 			continue
 		}
-		gc := agentloop.GateCommand{Name: argv[0], Argv: argv}
+		gc := agentexec.Command{Name: argv[0], Argv: argv}
 		cmds = append(cmds, gc)
 	}
 	if len(cmds) > 0 {
 		cmds[len(cmds)-1].ExpectFailure = true
 	}
-	return agentloop.GateConfig{
+	return agentexec.Gate{
 		Commands:               cmds,
 		MaxConsecutiveFailures: budgets.GateMaxFailures,
 	}
@@ -192,15 +190,4 @@ func testCommandArgv(repo config.Repo) []string {
 		}
 	}
 	return nil
-}
-
-// matchesTestPath applies basename-only patterns (such as *_test.go) to
-// files in any directory. Patterns containing a path separator continue
-// to match against the full repository-relative path.
-func matchesTestPath(glob, path string) bool {
-	if !strings.ContainsAny(glob, `/\`) {
-		path = filepath.Base(path)
-	}
-	ok, err := filepath.Match(glob, path)
-	return err == nil && ok
 }

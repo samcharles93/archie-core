@@ -8,9 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/samcharles93/ai-sdk/agentloop"
-	"github.com/samcharles93/ai-sdk/core"
-
+	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
@@ -28,11 +26,11 @@ func Feasibility() Workflow {
 			StagePrepareWorktree(), // read-only stages still need the checkout
 
 			AgentStage{
-				Name:     "assess",
-				Role:     "planner",
-				ReadOnly: true,
-				MaxSteps: 15,
-				Extra:    decideToolSet,
+				Name:         "assess",
+				Role:         "planner",
+				ReadOnly:     true,
+				MaxSteps:     15,
+				CaptureTools: decideCaptureTools,
 				Mission: func(tc *TaskContext) string {
 					return fmt.Sprintf(
 						"Assess whether this feature request fits the project %s.\n\n"+
@@ -44,10 +42,25 @@ func Feasibility() Workflow {
 						tc.Repo.FullName(), tc.Task.IssueNumber, tc.Task.Title, tc.Task.Body,
 					)
 				},
-				OnResult: func(tc *TaskContext, res agentloop.Result) error {
-					if tc.decision == nil {
-						return fmt.Errorf("assess stage finished without calling the decide tool")
+				OnResult: func(tc *TaskContext, res agentexec.Result) error {
+					calls := res.Captures["decide"]
+					if len(calls) != 1 {
+						return fmt.Errorf("assess stage called the decide tool %d times (want exactly once)", len(calls))
 					}
+					var captured struct {
+						Fit     *bool  `json:"fit"`
+						Reasons string `json:"reasons"`
+					}
+					if err := json.Unmarshal(calls[0], &captured); err != nil {
+						return fmt.Errorf("decode feasibility decision: %w", err)
+					}
+					if captured.Fit == nil {
+						return fmt.Errorf("assess stage decision has no boolean fit value")
+					}
+					if captured.Reasons == "" {
+						return fmt.Errorf("assess stage decision has no reasons")
+					}
+					tc.decision = &decision{Fit: *captured.Fit, Reasons: captured.Reasons}
 					if !tc.decision.Fit {
 						comment := fmt.Sprintf("**archie assessed this feature as not a fit — closing as won't-do.**\n\n%s\n\n_Reopen and re-assign if you disagree._", tc.decision.Reasons)
 						if err := tc.Forge.CloseIssue(context.Background(), tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, comment); err != nil {
@@ -75,7 +88,7 @@ func Feasibility() Workflow {
 						tc.Repo.FullName(), tc.Task.IssueNumber, tc.Task.Title, tc.Task.Body, tc.decision.Reasons,
 					)
 				},
-				OnResult: func(tc *TaskContext, res agentloop.Result) error {
+				OnResult: func(tc *TaskContext, res agentexec.Result) error {
 					tc.Task.Plan = res.Summary
 					return nil
 				},
@@ -101,14 +114,13 @@ func Feasibility() Workflow {
 
 // decision is the assess stage's structured verdict.
 type decision struct {
-	Fit     bool
-	Reasons string
+	Fit     bool   `json:"fit"`
+	Reasons string `json:"reasons"`
 }
 
-// decideToolSet gives the assess agent a decide tool that records its
-// verdict on the TaskContext — structured output as a tool call, not
-// parsed out of prose.
-func decideToolSet(tc *TaskContext) core.ToolSet {
+// decideCaptureTools gives the assess agent a structured verdict tool. Its
+// arguments cross the execution boundary as data and are applied by OnResult.
+func decideCaptureTools(*TaskContext) []agentexec.CaptureTool {
 	params := json.RawMessage(`{
 		"type": "object",
 		"properties": {
@@ -117,25 +129,11 @@ func decideToolSet(tc *TaskContext) core.ToolSet {
 		},
 		"required": ["fit", "reasons"]
 	}`)
-	return core.ToolSet{
-		"decide": core.NewTool("decide",
-			"Record the feasibility verdict. Call exactly once, before finish.",
-			params,
-			func(ctx context.Context, input string) (string, error) {
-				var args struct {
-					Fit     bool   `json:"fit"`
-					Reasons string `json:"reasons"`
-				}
-				if err := json.Unmarshal([]byte(input), &args); err != nil {
-					return "decide rejected: invalid arguments: " + err.Error(), nil
-				}
-				if args.Reasons == "" {
-					return "decide rejected: reasons are required", nil
-				}
-				tc.decision = &decision{Fit: args.Fit, Reasons: args.Reasons}
-				return fmt.Sprintf("verdict recorded: fit=%v", args.Fit), nil
-			}),
-	}
+	return []agentexec.CaptureTool{{
+		Name: "decide", Description: "Record the feasibility verdict. Call exactly once, before finish.",
+		Parameters: params, RequiredFields: []string{"fit", "reasons"},
+		NonEmptyStrings: []string{"reasons"}, BooleanFields: []string{"fit"}, MaxCalls: 1,
+	}}
 }
 
 // notify POSTs a JSON payload to the configured webhook (n8n turns it
