@@ -1,54 +1,43 @@
 ---
 name: archie-wf-frontend
 description: >
-  Validates HTML, CSS, and JS in the worktree before commit. Runs as a
-  gate stage: parses CSS for syntax errors, checks HTML structure, and
-  verifies responsive requirements. Use in any project with web assets.
-version: 1.0.0
+  Runs frontend quality checks: stylelint for CSS, htmlhint for HTML.
+  Gate stage runs these after Go vet/build/test. Use in any project
+  with web assets to catch syntax errors, broken selectors, and
+  structural issues before they reach a PR.
+version: 1.1.0
 metadata:
   archie:
     workflow: frontend
-    tools: [go]
+    tools: [stylelint, htmlhint]
     engine: any
-    plugins:
-      - plugins/css-gate.go
-      - plugins/html-gate.go
----
 
 # Frontend Quality Gate
 
 ## When this runs
 
-This skill registers a `frontend` workflow. Repos that include web assets
-(HTML, CSS, JS) can opt into it by labelling issues `frontend` or declaring
-`workflow: frontend` in their SKILL.md frontmatter.
+This skill adds frontend linting to the gate stage. After Go checks pass,
+the gate runs:
 
-The bundled plugins run during the gate stage:
+1. `stylelint "**/*.css"` — catches syntax errors, invalid properties,
+   duplicate selectors, calc() misuse, missing units
+2. `htmlhint "**/*.html"` — catches unclosed tags, mismatched pairs,
+   duplicate IDs, inline style abuse, missing viewport meta
 
-- `css-gate.go` — parses all .css files and `<style>` blocks for syntax
-  errors, missing units, invalid calc() expressions, and common responsive
-  anti-patterns
-- `html-gate.go` — checks HTML files for orphaned tags, missing closing
-  elements, and structural issues
-
-Both plugins return `Finding` structs. Error-level findings block the
-commit. Warn-level findings are logged.
+Both must exit 0. If either fails, the stage parks with the lint output.
 
 ## How to use in your project
 
 1. Copy `.agents/skills/archie-wf-frontend/` into your repo
-2. Ensure `workflow: frontend` is declared in the skill frontmatter
-3. Label UI/design issues `frontend` — archie-core routes them here
-4. The gate runs after Go vet/build/test (unchanged — this skill adds
-   to the existing gate, it doesn't replace it)
+2. Add to your daemon config gate:
+   ```toml
+   gate = [
+     ["go", "vet", "./..."],
+     ["go", "test", "./..."],
+     ["stylelint", "**/*.css"],
+     ["htmlhint", "**/*.html"],
+   ]
+   ```
+3. Or declare `workflow: frontend` in the skill frontmatter — archie-core
+   loads the skill body and the agent knows to run these during build
 
-## Verification
-
-After a frontend-labelled issue is implemented, archie-core runs:
-```
-go vet ./...        # existing
-go build ./...      # existing
-go test ./...       # existing
-css-gate            # new — CSS validation
-html-gate           # new — HTML validation
-```
