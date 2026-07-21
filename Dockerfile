@@ -54,12 +54,12 @@ RUN npm install -g pnpm typescript tsx esbuild stylelint htmlhint && \
     npm cache clean --force
 
 # ── Python + UV ───────────────────────────────────────────────────────
-# Python 3.12 and 3.13 (3.13 is latest; 3.12 is one below).
+# Python 3.14 (latest) and 3.13 via deadsnakes PPA.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common && \
     add-apt-repository -y ppa:deadsnakes/ppa && \
     apt-get install -y --no-install-recommends \
-    python3.12 python3.12-dev python3.12-venv \
+    python3.14 python3.14-dev python3.14-venv \
     python3.13 python3.13-dev python3.13-venv \
     && rm -rf /var/lib/apt/lists/*
 RUN curl -fsSL https://astral.sh/uv/install.sh | sh
