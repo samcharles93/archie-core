@@ -79,6 +79,13 @@ func (r *InProcessRunner) Run(ctx context.Context, workspace string, req Request
 		AppendedNotes: notes.appended,
 		Captures:      captures,
 	}
+	// agentloop may return a zero-valued status on early exit (model
+	// connectivity failure, empty response, etc.). Normalise it to a
+	// known value so protocol validation always passes.
+	if result.Status == "" {
+		result.Status = "blocked"
+		result.Detail = "agent returned no status (possible model connectivity issue)"
+	}
 	if cause := context.Cause(ctx); cause != nil {
 		return result, cause
 	}
