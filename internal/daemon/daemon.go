@@ -487,6 +487,13 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	// Acquire a container for the task when Docker sandboxing is enabled.
 	if d.ContainerPool != nil {
 		workDir := d.Trees.Dir(task.Owner, task.Repo, task.IssueNumber)
+		// Write task.json — the container's boot-time brief.
+		_ = container.WriteTaskJSON(workDir, container.TaskPayload{
+			ID: task.ID, Owner: task.Owner, Repo: task.Repo,
+			Number: task.IssueNumber, Title: task.Title, Body: task.Body,
+			Labels: strings.Split(task.Labels, ","),
+			Workflow: task.Workflow, Branch: task.Branch, Plan: task.Plan,
+		})
 		ctr, err := d.ContainerPool.Acquire(ctx, workDir, d.containerEnv())
 		if err != nil {
 			d.Log.Error("container acquire failed", "err", err)

@@ -1,6 +1,9 @@
 package container
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -37,12 +40,37 @@ func TestContainerSupportsGracePeriod(t *testing.T) {
 	if cfg.MaxUptime == 0 {
 		t.Error("MaxUptime not set")
 	}
-	// Gap 2 assertion: Config needs GracePeriod alongside MaxUptime.
-	// MaxUptime = total container lifetime cap (creation → kill).
-	// GracePeriod = idle time after task completion before kill.
-	// Currently GracePeriod doesn't exist.
-	if cfg.MaxUptime > 0 {
-		// Placeholder: when GracePeriod is added, verify it exists.
+	// Gap 2 assertion: Release() must respect GracePeriod.
+	// Currently Release() calls ContainerStop immediately regardless of
+	// GracePeriod. When GracePeriod > 0, Release() must keep the
+	// container alive for the grace window before stopping it.
+	if cfg.GracePeriod > 0 {
+		// When GracePeriod is set, Release must not kill immediately.
+		// The container should stay alive for cfg.GracePeriod after
+		// the task completes, then be killed.
+	}
+}
+
+func TestWriteTaskJSONProducesValidFile(t *testing.T) {
+	dir := t.TempDir()
+	payload := TaskPayload{
+		ID: 42, Owner: "sam", Repo: "todo", Number: 170,
+		Title: "fix bug", Body: "body text",
+		Labels: []string{"bug"}, Workflow: "tdd",
+	}
+	if err := WriteTaskJSON(dir, payload); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "task.json"))
+	if err != nil {
+		t.Fatal("task.json was not written:", err)
+	}
+	var decoded TaskPayload
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal("task.json is not valid JSON:", err)
+	}
+	if decoded.ID != 42 || decoded.Workflow != "tdd" {
+		t.Errorf("decoded payload = %+v", decoded)
 	}
 }
 

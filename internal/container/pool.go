@@ -168,18 +168,26 @@ func (p *Pool) Acquire(ctx context.Context, workspace string, env []string) (*Co
 	return &Container{ID: resp.ID}, nil
 }
 
-// Release stops and removes a container after a task completes.
+// Release stops and removes a container after a task completes. If
+// GracePeriod is configured, the container stays alive for that duration
+// before being killed — the agent can handle follow-ups (gate re-runs,
+// human replies) during this window. PRD section 1.
 func (p *Pool) Release(c *Container) {
 	if c == nil {
 		return
 	}
+	// Honour the post-completion grace period.
+	if p.cfg.GracePeriod > 0 {
+		p.log.Info("container keeping alive for grace period", "id", c.ID[:12], "grace", p.cfg.GracePeriod)
+		time.Sleep(p.cfg.GracePeriod)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if _, err := p.cli.ContainerStop(ctx, c.ID, client.ContainerStopOptions{}); err != nil {
 		p.log.Warn("container stop failed", "id", c.ID[:12], "err", err)
 	}
-	// AutoRemove is set, but force-remove as a safety net.
 	p.cli.ContainerRemove(context.Background(), c.ID, client.ContainerRemoveOptions{Force: true})
 
 	p.mu.Lock()

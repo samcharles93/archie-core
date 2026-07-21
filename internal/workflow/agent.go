@@ -120,7 +120,8 @@ func (a AgentStage) Stage() Stage {
 			Protection:   protection,
 			Notes:        tc.Task.Notes,
 			CaptureTools: captureTools,
-		}
+				Plugins:      pluginSpecs(tc.SkillPlugins),
+			}
 		res, err := tc.Agent.Run(ctx, tc.Dir, req)
 		if err != nil && res.Version == 0 {
 			return fmt.Errorf("agent run: %w", err)
@@ -178,6 +179,18 @@ func GateFromRepo(repo config.Repo, budgets config.Budgets) agentexec.Gate {
 		cmds = append(cmds, agentexec.Command{Name: argv[0], Argv: argv})
 	}
 	return agentexec.Gate{Commands: cmds, MaxConsecutiveFailures: budgets.GateMaxFailures}
+}
+
+// pluginSpecs converts skill.Plugin to agentexec.PluginSpec for transport.
+func pluginSpecs(plugins []skill.Plugin) []agentexec.PluginSpec {
+	if len(plugins) == 0 {
+		return nil
+	}
+	out := make([]agentexec.PluginSpec, len(plugins))
+	for i, p := range plugins {
+		out[i] = agentexec.PluginSpec{Name: p.Name, Src: p.Src}
+	}
+	return out
 }
 
 // missionWithSkill prepends the skill body (loaded from SKILL.md) to the

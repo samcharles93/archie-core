@@ -77,6 +77,16 @@ type Request struct {
 	Protection   Protection    `json:"protection"`
 	Notes        string        `json:"notes,omitempty"`
 	CaptureTools []CaptureTool `json:"capture_tools,omitempty"`
+	// Plugins are bundled Yaegi plugins from the skill's plugins/
+	// directory. Each entry carries the name and source so the agent
+	// can register them as tools. PRD section 5 Layer 1.
+	Plugins []PluginSpec `json:"plugins,omitempty"`
+}
+
+// PluginSpec is a bundled Yaegi plugin passed from daemon to agent.
+type PluginSpec struct {
+	Name string `json:"name"`
+	Src  string `json:"src"`
 }
 
 // Validate rejects requests that this runner cannot safely interpret.
