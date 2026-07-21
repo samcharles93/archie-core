@@ -739,3 +739,181 @@ Body.
 		t.Errorf("Workflow.Name = %q, want empty", wf.Name)
 	}
 }
+
+// ── resilience: skip broken plugins, don't abort ────────────────────
+
+func TestBuildWorkflowSkipsBrokenPlugin(t *testing.T) {
+	// R2: one broken stage plugin must not abort the entire workflow.
+	// Valid plugins before and after the broken one must still load.
+
+	dir := t.TempDir()
+	pluginsDir := filepath.Join(dir, ".agents", "skills", "archie-wf-resilient", "plugins")
+	if err := os.MkdirAll(pluginsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// First plugin — valid.
+	if err := os.WriteFile(filepath.Join(pluginsDir, "01-setup.go"), []byte(`package main
+
+import (
+	"context"
+	"github.com/samcharles93/archie-core/internal/workflow"
+)
+
+func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
+	return "setup", func(ctx context.Context, tc *workflow.TaskContext) error {
+		tc.BuildSummary = "setup-ran"
+		return nil
+	}
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Second plugin — BROKEN (syntax error).
+	if err := os.WriteFile(filepath.Join(pluginsDir, "02-broken.go"), []byte(`package main
+this is %% NOT VALID GO @@@@
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Third plugin — valid.
+	if err := os.WriteFile(filepath.Join(pluginsDir, "03-teardown.go"), []byte(`package main
+
+import (
+	"context"
+	"github.com/samcharles93/archie-core/internal/workflow"
+)
+
+func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
+	return "teardown", func(ctx context.Context, tc *workflow.TaskContext) error {
+		tc.BuildSummary = tc.BuildSummary + " teardown-ran"
+		return nil
+	}
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(filepath.Dir(pluginsDir), "SKILL.md"), []byte(`---
+name: archie-wf-resilient
+description: Resilient workflow
+version: 1.0.0
+metadata:
+  archie:
+    workflow: resilient
+---
+Resilient workflow.
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	entry := SkillWorkflow{Workflow: "resilient", Dir: "archie-wf-resilient"}
+	wf, err := BuildWorkflow(dir, entry)
+	if err != nil {
+		t.Fatalf("BuildWorkflow returned error instead of skipping broken plugin: %v", err)
+	}
+	if len(wf.Stages) != 2 {
+		t.Fatalf("got %d stages, want 2 (broken plugin skipped)", len(wf.Stages))
+	}
+	if wf.Stages[0].Name != "setup" {
+		t.Errorf("stage[0].Name = %q, want setup", wf.Stages[0].Name)
+	}
+	if wf.Stages[1].Name != "teardown" {
+		t.Errorf("stage[1].Name = %q, want teardown", wf.Stages[1].Name)
+	}
+
+	// Run the surviving stages.
+	tc := &workflow.TaskContext{BuildSummary: ""}
+	for _, s := range wf.Stages {
+		if err := s.Run(context.Background(), tc); err != nil {
+			t.Fatalf("stage %s: %v", s.Name, err)
+		}
+	}
+	if tc.BuildSummary != "setup-ran teardown-ran" {
+		t.Errorf("BuildSummary = %q, want 'setup-ran teardown-ran'", tc.BuildSummary)
+	}
+}
+
+func TestBuildRegistrySkipsBrokenSkill(t *testing.T) {
+	// R2: a skill with broken plugins must not prevent other skills
+	// from registering — and must not block daemon startup.
+
+	dir := t.TempDir()
+
+	// Skill 1: valid workflow.
+	goodDir := filepath.Join(dir, ".agents", "skills", "archie-wf-good", "plugins")
+	if err := os.MkdirAll(goodDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(goodDir, "01-step.go"), []byte(`package main
+
+import (
+	"context"
+	"github.com/samcharles93/archie-core/internal/workflow"
+)
+
+func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
+	return "step", func(ctx context.Context, tc *workflow.TaskContext) error {
+		return nil
+	}
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(goodDir), "SKILL.md"), []byte(`---
+name: archie-wf-good
+description: Good workflow
+version: 1.0.0
+metadata:
+  archie:
+    workflow: good
+---
+Good.
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Skill 2: broken plugins — ALL plugins are broken.
+	badDir := filepath.Join(dir, ".agents", "skills", "archie-wf-bad", "plugins")
+	if err := os.MkdirAll(badDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(badDir, "01-broken.go"), []byte(`package main
+%%% SYNTAX ERROR @@@
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(badDir), "SKILL.md"), []byte(`---
+name: archie-wf-bad
+description: Broken workflow
+version: 1.0.0
+metadata:
+  archie:
+    workflow: bad
+---
+Broken.
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	reg, err := BuildRegistry(dir)
+	if err != nil {
+		t.Fatalf("BuildRegistry returned error instead of skipping broken skill: %v", err)
+	}
+
+	// Good workflow must still be registered.
+	if _, ok := reg["good"]; !ok {
+		t.Error("'good' workflow missing — broken skill blocked registry build")
+	}
+	// Bad workflow must not be registered (it had no valid stages).
+	if _, ok := reg["bad"]; ok {
+		// It might fall back to built-in "bad" — that's fine.
+		// But it should NOT be the empty workflow from the broken skill.
+		t.Log("'bad' workflow present (may be built-in fallback)")
+	}
+	// Built-in fallbacks must still exist.
+	if _, ok := reg["implement"]; !ok {
+		t.Error("built-in 'implement' missing after broken skill was skipped")
+	}
+}

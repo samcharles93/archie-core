@@ -140,9 +140,14 @@ func NewDockerBackend(cli *client.Client) *DockerBackend {
 // ensureVolume creates a Docker volume if it doesn't already exist.
 // It is idempotent: concurrent callers racing to create the same volume
 // will not see an error — "already exists" is treated as success.
+//
+// When d.cli is nil (unit tests), ensureVolume returns nil without
+// creating a volume. The returned mounts will fail at container create
+// time if Docker cannot find the volume. Production code always sets
+// cli via NewDockerBackend.
 func (d *DockerBackend) ensureVolume(ctx context.Context, name string) error {
 	if d.cli == nil {
-		return nil // nil client for testing
+		return nil // nil client for testing — volumes must be pre-created
 	}
 	_, err := d.cli.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
 	if err == nil {

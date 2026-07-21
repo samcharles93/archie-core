@@ -6,6 +6,7 @@ package plugin
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -68,27 +69,40 @@ func LoadDir(dir string, extraSymbols ...map[string]map[string]reflect.Value) ([
 		path := filepath.Join(dir, name)
 		src, err := os.ReadFile(path)
 		if err != nil {
-			continue // skip unreadable files
-		}
-		i := interp.New(interp.Options{})
-		if err := i.Use(stdlib.Symbols); err != nil {
+			slog.Default().Warn("skipping unreadable daemon plugin", "file", name, "err", err)
 			continue
 		}
-		for _, s := range extraSymbols {
+		// Each plugin file is package main — must use a fresh interpreter
+		// to avoid symbol collisions between files.
+		i := interp.New(interp.Options{})
+		if err := i.Use(stdlib.Symbols); err != nil {
+			slog.Default().Warn("skipping plugin — stdlib load failed", "file", name, "err", err)
+			continue
+		}
+		symbolLoadFailed := false
+		for j, s := range extraSymbols {
 			if err := i.Use(s); err != nil {
-				continue
+				slog.Default().Warn("skipping plugin — symbol table load failed", "file", name, "symbolIndex", j, "err", err)
+				symbolLoadFailed = true
+				break
 			}
 		}
+		if symbolLoadFailed {
+			continue
+		}
 		if _, err := i.Eval(string(src)); err != nil {
-			continue // skip files that don't compile
+			slog.Default().Warn("skipping plugin — compile failed", "file", name, "err", err)
+			continue
 		}
 		v, err := i.Eval("main.Plugin")
 		if err != nil {
-			continue // skip files without a Plugin export
+			slog.Default().Warn("skipping plugin — no Plugin export", "file", name, "err", err)
+			continue
 		}
 		p, ok := v.Interface().(Plugin)
 		if !ok {
-			continue // skip files with wrong Plugin type
+			slog.Default().Warn("skipping plugin — wrong Plugin type", "file", name, "type", fmt.Sprintf("%T", v.Interface()))
+			continue
 		}
 		plugins = append(plugins, p)
 	}

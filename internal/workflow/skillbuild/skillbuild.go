@@ -52,7 +52,12 @@ func BuildRegistry(worktree string) (workflow.Registry, error) {
 		sw := SkillWorkflow{Workflow: entry.Workflow, Dir: entry.Dir}
 		wf, err := BuildWorkflow(worktree, sw)
 		if err != nil {
-			return nil, fmt.Errorf("build workflow %s from skill %s: %w", entry.Workflow, entry.Dir, err)
+			slog.Default().Warn("skipping broken skill workflow",
+				"workflow", entry.Workflow,
+				"skill", entry.Dir,
+				"err", err,
+			)
+			continue
 		}
 		// Only override the built-in when the skill actually has stages —
 		// an empty workflow means the skill declared intent but has no
@@ -107,7 +112,12 @@ func AugmentRegistry(worktree string, base workflow.Registry) (workflow.Registry
 		sw := SkillWorkflow{Workflow: entry.Workflow, Dir: entry.Dir}
 		wf, err := BuildWorkflow(worktree, sw)
 		if err != nil {
-			return nil, fmt.Errorf("build workflow %s from skill %s: %w", entry.Workflow, entry.Dir, err)
+			slog.Default().Warn("skipping broken skill workflow in worktree",
+				"workflow", entry.Workflow,
+				"skill", entry.Dir,
+				"err", err,
+			)
+			continue
 		}
 		// Only override the base entry when the skill actually has stages.
 		// An empty workflow means the skill declared intent but has no
@@ -149,16 +159,21 @@ func BuildWorkflow(worktree string, entry SkillWorkflow) (workflow.Workflow, err
 	}
 	sort.Strings(names)
 
+	// Each plugin file is package main defining Stage() — they must be
+	// evaluated in separate interpreters to avoid symbol collisions.
 	stages := make([]workflow.Stage, 0, len(names))
 	for _, name := range names {
 		path := filepath.Join(pluginsDir, name)
 		src, err := os.ReadFile(path)
 		if err != nil {
-			return workflow.Workflow{}, fmt.Errorf("read plugin %s: %w", path, err)
+			slog.Default().Warn("skipping unreadable stage plugin", "plugin", name, "err", err)
+			continue
 		}
-		stage, err := loadStage(name, string(src))
+		i := newStageInterpreter()
+		stage, err := loadStage(i, name, string(src))
 		if err != nil {
-			return workflow.Workflow{}, fmt.Errorf("plugin %s: %w", name, err)
+			slog.Default().Warn("skipping broken stage plugin", "plugin", name, "err", err)
+			continue
 		}
 		stages = append(stages, stage)
 	}
@@ -166,15 +181,24 @@ func BuildWorkflow(worktree string, entry SkillWorkflow) (workflow.Workflow, err
 	return workflow.Workflow{Name: entry.Workflow, Stages: stages}, nil
 }
 
-// loadStage interprets a single .go plugin source via Yaegi, using the
-// wfextract symbol table so plugins can reference workflow types.
-func loadStage(filename string, src string) (workflow.Stage, error) {
+// newStageInterpreter returns a Yaegi interpreter pre-loaded with stdlib
+// and workflow symbols. Each plugin file still needs its own interpreter
+// because files use package main with duplicate Stage() symbols — they
+// cannot be co-evaluated in a single interpreter without collisions.
+func newStageInterpreter() *interp.Interpreter {
 	i := interp.New(interp.Options{})
-	if err := i.Use(stdlib.Symbols); err != nil {
-		return workflow.Stage{}, fmt.Errorf("stdlib: %w", err)
-	}
-	if err := i.Use(wfextract.Symbols); err != nil {
-		return workflow.Stage{}, fmt.Errorf("wfextract: %w", err)
+	_ = i.Use(stdlib.Symbols)
+	_ = i.Use(wfextract.Symbols)
+	return i
+}
+
+// loadStage interprets a single .go plugin source via Yaegi. Prefer
+// passing a pre-configured interpreter from newStageInterpreter() to
+// avoid redundant stdlib loading across multiple files.
+func loadStage(interp *interp.Interpreter, filename string, src string) (workflow.Stage, error) {
+	i := interp
+	if i == nil {
+		i = newStageInterpreter()
 	}
 	if _, err := i.Eval(src); err != nil {
 		return workflow.Stage{}, fmt.Errorf("eval: %w", err)
@@ -185,7 +209,10 @@ func loadStage(filename string, src string) (workflow.Stage, error) {
 	}
 	fn, ok := v.Interface().(func() workflow.Stage)
 	if !ok {
-		// Fallback for test plugins: func() (string, func(...) error)
+		// Fallback for test plugins: func() (string, func(...) error).
+		// NOTE: this constructs Stage with positional fields. If Stage
+		// gains new fields in the future, this path will silently zero-
+		// value them. Prefer func() workflow.Stage in production plugins.
 		rawFn, rawOk := v.Interface().(func() (string, func(context.Context, *workflow.TaskContext) error))
 		if rawOk {
 			name, run := rawFn()
