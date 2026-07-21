@@ -204,6 +204,12 @@ func (d Dispatch) LabelValues() []string {
 // Config is the daemon configuration.
 type Config struct {
 	WorkDir      string   `toml:"work_dir"`
+	// SkillsDir is an optional path to a shared skills directory
+	// containing .agents/skills/*/SKILL.md files. When set, the
+	// daemon builds its workflow registry from the skill catalog
+	// (plugin-defined workflows override built-ins). When empty,
+	// only built-in workflows are available.
+	SkillsDir    string   `toml:"skills_dir"`
 	DBPath       string   `toml:"db_path"`
 	PollInterval Duration `toml:"poll_interval"`
 	// Label marks issues archie should pick up.

@@ -13,9 +13,56 @@ import (
 	"github.com/traefik/yaegi/interp"
 	"github.com/traefik/yaegi/stdlib"
 
+	"github.com/samcharles93/archie-core/internal/skill"
 	"github.com/samcharles93/archie-core/internal/workflow"
 	"github.com/samcharles93/archie-core/internal/workflow/wfextract"
 )
+
+// builtins returns the hardcoded fallback workflows. These are used when
+// no skill declares a given workflow name in its metadata.archie.workflow.
+func builtins() workflow.Registry {
+	return workflow.Registry{
+		"bootstrap":   workflow.Bootstrap(),
+		"implement":   workflow.Implement(),
+		"tdd":         workflow.TDD(),
+		"feasibility": workflow.Feasibility(),
+		"default":     workflow.Implement(),
+	}
+}
+
+// BuildRegistry scans .agents/skills/ for catalog entries that declare a
+// workflow in metadata.archie.workflow, builds each from its stage plugins,
+// and returns a complete workflow.Registry. Workflow names not covered by
+// any skill fall back to the built-in Go definitions.
+//
+// Skills define workflows. Plugins define stages. The daemon composes them.
+func BuildRegistry(worktree string) (workflow.Registry, error) {
+	catalog, err := skill.Catalog(worktree)
+	if err != nil {
+		return nil, fmt.Errorf("skill catalog: %w", err)
+	}
+
+	reg := builtins()
+
+	for _, entry := range catalog {
+		if entry.Workflow == "" {
+			continue
+		}
+		sw := SkillWorkflow{Workflow: entry.Workflow, Dir: entry.Dir}
+		wf, err := BuildWorkflow(worktree, sw)
+		if err != nil {
+			return nil, fmt.Errorf("build workflow %s from skill %s: %w", entry.Workflow, entry.Dir, err)
+		}
+		// Only override the built-in when the skill actually has stages —
+		// an empty workflow means the skill declared intent but has no
+		// plugins yet, so keep the built-in.
+		if len(wf.Stages) > 0 {
+			reg[entry.Workflow] = wf
+		}
+	}
+
+	return reg, nil
+}
 
 // SkillWorkflow is the subset of a catalog entry needed to build a
 // workflow from a skill's stage plugins.

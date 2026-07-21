@@ -23,7 +23,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/nats"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webui"
-	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/workflow/skillbuild"
 	"github.com/samcharles93/archie-core/internal/workflow/wfeval"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
@@ -163,6 +163,19 @@ func run() int {
 			}
 		}
 	}
+	// Build the workflow registry from the skill catalog. Plugin-defined
+	// workflows override built-ins of the same name; built-ins fill gaps.
+	skillsBase := cfg.SkillsDir
+	if skillsBase == "" {
+		skillsBase = cfg.WorkDir
+	}
+	registry, err := skillbuild.BuildRegistry(skillsBase)
+	if err != nil {
+		log.Error("skill registry build failed", "err", err)
+		return 1
+	}
+	log.Info("workflow registry built", "workflows", len(registry))
+
 	d := &daemon.Daemon{
 		Cfg:   cfg,
 		Store: st,
@@ -177,13 +190,7 @@ func run() int {
 		},
 		Runtime: llm,
 		Agent:   agentRunner,
-		Workflows: workflow.Registry{
-			"bootstrap":   workflow.Bootstrap(),
-			"implement":   workflow.Implement(),
-			"tdd":         workflow.TDD(),
-			"feasibility": workflow.Feasibility(),
-			"default":     workflow.Implement(),
-		},
+		Workflows:    registry,
 		Log:           log,
 		CustomStages:  wfeval.Discover,
 		Nats:          natsClient,
