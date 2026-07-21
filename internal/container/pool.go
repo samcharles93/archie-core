@@ -16,8 +16,9 @@ import (
 	"time"
 
 	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
+
+	"github.com/samcharles93/archie-core/internal/storage"
 )
 
 // Container wraps a running Docker container.
@@ -106,11 +107,11 @@ func NewPool(ctx context.Context, cfg Config, natsURL string, log *slog.Logger) 
 	return p, nil
 }
 
-// Acquire creates and starts a container, mounting the worktree at
-// /data/worktree, passing provider API keys and NATS URL as environment
-// variables. If MaxUptime is set, the container is created with a
-// deadline — Docker kills it when the time elapses.
-func (p *Pool) Acquire(ctx context.Context, workspace string, env []string) (*Container, error) {
+// Acquire creates and starts a container with the given mounts and
+// environment variables. Mounts are provided by the caller (typically
+// from a storage.Backend). If MaxUptime is set, the container is
+// created with a deadline — Docker kills it when the time elapses.
+func (p *Pool) Acquire(ctx context.Context, mounts []storage.Mount, env []string) (*Container, error) {
 	p.mu.Lock()
 	if p.cfg.MaxConcurrency > 0 && p.active >= p.cfg.MaxConcurrency {
 		p.mu.Unlock()
@@ -138,13 +139,7 @@ func (p *Pool) Acquire(ctx context.Context, workspace string, env []string) (*Co
 			},
 		},
 		HostConfig: &container.HostConfig{
-			Mounts: []mount.Mount{
-				{
-					Type:   mount.TypeBind,
-					Source: workspace,
-					Target: "/data/worktree",
-				},
-			},
+			Mounts:     storage.ConvertMounts(mounts),
 			AutoRemove: true,
 		},
 	})
@@ -164,7 +159,7 @@ func (p *Pool) Acquire(ctx context.Context, workspace string, env []string) (*Co
 		return nil, fmt.Errorf("container start: %w", err)
 	}
 
-	p.log.Info("container started", "id", resp.ID[:12], "name", name, "workspace", workspace)
+	p.log.Info("container started", "id", resp.ID[:12], "name", name)
 	return &Container{ID: resp.ID}, nil
 }
 

@@ -25,6 +25,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/forge"
 	arnats "github.com/samcharles93/archie-core/internal/nats"
 	"github.com/samcharles93/archie-core/internal/plugin"
+	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/workflow"
 	"github.com/samcharles93/archie-core/internal/workflow/skillbuild"
@@ -47,6 +48,9 @@ type Daemon struct {
 	// ContainerPool manages Docker container lifecycle. Nil when [containers]
 	// is not configured. When non-nil, every task gets a fresh container.
 	ContainerPool *container.Pool
+	// Storage is the pluggable storage backend for container mounts.
+	// When nil (no containers configured), mount setup is skipped.
+	Storage storage.Backend
 	// PluginRegistry holds core daemon plugins loaded from the configured
 	// plugin_dir at startup (Layer 2). Nil when no plugin_dir is configured.
 	PluginRegistry *plugin.Registry
@@ -512,7 +516,21 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 			Labels: strings.Split(task.Labels, ","),
 			Workflow: task.Workflow, Branch: task.Branch, Plan: task.Plan,
 		})
-		ctr, err := d.ContainerPool.Acquire(ctx, workDir, d.containerEnv())
+
+		// Build the mount list from the storage backend.
+		mounts, err := d.Storage.Setup(ctx, storage.TaskRef{
+			WorktreeDir:       workDir,
+			Ecosystem:         repo.Ecosystem,
+			PersistentStorage: repo.PersistentStorage,
+			Owner:             task.Owner,
+			Repo:              task.Repo,
+		})
+		if err != nil {
+			d.Log.Error("storage setup failed", "err", err)
+			_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "storage setup failed: "+err.Error())
+			return
+		}
+		ctr, err := d.ContainerPool.Acquire(ctx, mounts, d.containerEnv())
 		if err != nil {
 			d.Log.Error("container acquire failed", "err", err)
 			_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "container acquire failed: "+err.Error())

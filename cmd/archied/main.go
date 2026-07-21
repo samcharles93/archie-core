@@ -21,8 +21,11 @@ import (
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/nats"
+	"github.com/moby/moby/client"
+
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
+	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webui"
 	"github.com/samcharles93/archie-core/internal/workflow/skillbuild"
@@ -124,6 +127,7 @@ func run() int {
 
 	// Container pool (optional — no containers when [containers] is absent).
 	var containerPool *container.Pool
+	var storeBackend storage.Backend
 	if cfg.Containers.Enabled {
 		containerPool, err = container.NewPool(ctx, container.Config{
 			Image:          cfg.Containers.Image,
@@ -136,6 +140,14 @@ func run() int {
 			return 1
 		}
 		defer containerPool.Close()
+
+		// Storage backend — Docker volume management for cache mounts.
+		dockerCli, err := client.New(client.FromEnv)
+		if err != nil {
+			log.Error("docker client for storage failed", "err", err)
+			return 1
+		}
+		storeBackend = storage.NewDockerBackend(dockerCli)
 	}
 
 	providers := executionProviders(cfg)
@@ -210,6 +222,7 @@ func run() int {
 		Agent:   agentRunner,
 		Workflows:      registry,
 		PluginRegistry: pluginReg,
+		Storage:        storeBackend,
 		Log:             log,
 		CustomStages:  wfeval.Discover,
 		Nats:          natsClient,

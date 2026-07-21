@@ -57,6 +57,11 @@ type Repo struct {
 	// test-file pattern (e.g. "*_test.go"). Empty inherits the
 	// ecosystem default.
 	TestGlob string `toml:"test_glob"`
+	// PersistentStorage creates a named Docker volume for this repo
+	// (archie-repo-<owner>-<repo>) mounted at /data/repo. The volume
+	// survives task completion and retains data across tasks. Use for
+	// repos with expensive build artifacts or large dependency trees.
+	PersistentStorage bool `toml:"persistent_storage"`
 }
 
 // Protected reports whether path matches a protected suffix.

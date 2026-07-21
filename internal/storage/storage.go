@@ -1,0 +1,216 @@
+// Package storage defines the pluggable storage backend interface for agent
+// container execution. The Docker backend (DockerBackend) is the MVP
+// implementation — no NFS/SMB/S3 yet, just Docker volumes + bind mounts.
+//
+// /data/ volume layout:
+//
+//	/data/
+//	  task.json          — boot-time brief (written by container.WriteTaskJSON)
+//	  worktree/          — bind mount of host worktree
+//	  cache/
+//	    go/              — GOMODCACHE (shared across all tasks)
+//	    node/            — npm cache (shared)
+//	    pnpm/            — pnpm store (shared)
+//	    pip/             — pip cache (shared)
+//	    cargo/           — Rust cargo cache (shared)
+//	  plugins/           — skill plugins staged from worktree
+//
+// Cache volumes are named Docker volumes created once and shared across all
+// tasks. They are never deleted — the daemon operator manages them.
+package storage
+
+import (
+	"context"
+	"fmt"
+	"sort"
+
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/client"
+)
+
+// ── types ──────────────────────────────────────────────────────────────
+
+// TaskRef identifies a task for storage setup.
+type TaskRef struct {
+	Owner, Repo string
+	IssueNumber int
+	Ecosystem          string // "go", "node", "python", "rust", "custom"
+	WorktreeDir        string // host path to the git worktree
+	PersistentStorage  bool   // if true, attach a per-repo Docker volume at /data/repo
+}
+
+// Mount describes a container mount point.
+type Mount struct {
+	Type        string // "bind" or "volume"
+	Source      string // host path (bind) or volume name (volume)
+	Destination string // container path
+}
+
+// Mount type constants.
+const (
+	MountTypeBind   = "bind"
+	MountTypeVolume = "volume"
+)
+
+// Backend prepares container storage. Each container runtime backend
+// (Docker, future containerd, etc.) implements this interface.
+type Backend interface {
+	// Setup returns the mount specs for a task container. Must include
+	// at minimum a bind mount for the worktree at /data/worktree.
+	Setup(ctx context.Context, task TaskRef) ([]Mount, error)
+	// Teardown cleans up ephemeral storage. Cache volumes survive.
+	Teardown(ctx context.Context, task TaskRef) error
+}
+
+// ── cache mounts per ecosystem ─────────────────────────────────────────
+
+// cacheVolume describes a named Docker volume that is shared across tasks.
+type cacheVolume struct {
+	Name      string // Docker volume name
+	MountPath string // container destination path
+}
+
+// cacheVolumesByEcosystem maps ecosystem names to their shared cache volumes.
+// Volumes are created once by the pool and never deleted.
+var cacheVolumesByEcosystem = map[string][]cacheVolume{
+	"go": {
+		{Name: "archie-cache-go", MountPath: "/data/cache/go"},
+	},
+	"node": {
+		{Name: "archie-cache-node", MountPath: "/data/cache/node"},
+		{Name: "archie-cache-pnpm", MountPath: "/data/cache/pnpm"},
+	},
+	"python": {
+		{Name: "archie-cache-pip", MountPath: "/data/cache/pip"},
+	},
+	"rust": {
+		{Name: "archie-cache-cargo", MountPath: "/data/cache/cargo"},
+	},
+}
+
+// cacheMounts returns the cache mount specs for an ecosystem, sorted by
+// destination path for deterministic container configuration.
+func cacheMounts(ecosystem string) []Mount {
+	vols, ok := cacheVolumesByEcosystem[ecosystem]
+	if !ok {
+		return nil
+	}
+	mounts := make([]Mount, len(vols))
+	for i, v := range vols {
+		mounts[i] = Mount{
+			Type:        MountTypeVolume,
+			Source:      v.Name,
+			Destination: v.MountPath,
+		}
+	}
+	sort.Slice(mounts, func(i, j int) bool {
+		return mounts[i].Destination < mounts[j].Destination
+	})
+	return mounts
+}
+
+// ── error types ────────────────────────────────────────────────────────
+
+// ErrVolumeCreate is returned when a Docker volume cannot be created.
+type ErrVolumeCreate struct {
+	Volume string
+	Cause  error
+}
+
+func (e *ErrVolumeCreate) Error() string {
+	return "create volume " + e.Volume + ": " + e.Cause.Error()
+}
+
+func (e *ErrVolumeCreate) Unwrap() error { return e.Cause }
+
+// ── Docker backend ─────────────────────────────────────────────────────
+
+// DockerBackend implements Backend for Docker via the moby client.
+type DockerBackend struct {
+	cli *client.Client
+}
+
+// NewDockerBackend creates a Docker storage backend.
+func NewDockerBackend(cli *client.Client) *DockerBackend {
+	return &DockerBackend{cli: cli}
+}
+
+// ensureVolume creates a Docker volume if it doesn't already exist.
+func (d *DockerBackend) ensureVolume(ctx context.Context, name string) error {
+	if d.cli == nil {
+		return nil // nil client for testing
+	}
+	_, err := d.cli.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
+	if err == nil {
+		return nil // already exists
+	}
+	_, err = d.cli.VolumeCreate(ctx, client.VolumeCreateOptions{
+		Name:   name,
+		Driver: "local",
+	})
+	if err != nil {
+		return &ErrVolumeCreate{Volume: name, Cause: err}
+	}
+	return nil
+}
+
+// repoVolumeName returns the Docker volume name for a repo's persistent storage.
+func repoVolumeName(owner, repo string) string {
+	return fmt.Sprintf("archie-repo-%s-%s", owner, repo)
+}
+
+// Setup returns the mount list for a task container. Mounts are ordered:
+// 1. /data/worktree bind mount (always first)
+// 2. /data/repo volume mount (only when PersistentStorage is true)
+// 3. /data/cache/<ecosystem> volume mounts (sorted by destination)
+func (d *DockerBackend) Setup(ctx context.Context, task TaskRef) ([]Mount, error) {
+	mounts := []Mount{
+		{
+			Type:        MountTypeBind,
+			Source:      task.WorktreeDir,
+			Destination: "/data/worktree",
+		},
+	}
+
+	// Per-repo persistent volume.
+	if task.PersistentStorage && task.Owner != "" && task.Repo != "" {
+		volName := repoVolumeName(task.Owner, task.Repo)
+		if err := d.ensureVolume(ctx, volName); err != nil {
+			return nil, err
+		}
+		mounts = append(mounts, Mount{
+			Type:        MountTypeVolume,
+			Source:      volName,
+			Destination: "/data/repo",
+		})
+	}
+
+	caches := cacheMounts(task.Ecosystem)
+	for _, m := range caches {
+		if err := d.ensureVolume(ctx, m.Source); err != nil {
+			return nil, err
+		}
+	}
+	mounts = append(mounts, caches...)
+
+	return mounts, nil
+}
+
+// Teardown is a no-op for Docker backend. Cache volumes survive task
+// completion so subsequent tasks benefit from warmed caches.
+func (d *DockerBackend) Teardown(ctx context.Context, task TaskRef) error {
+	return nil
+}
+
+// ConvertMounts converts []Mount to moby mount.Mount for container creation.
+func ConvertMounts(mounts []Mount) []mount.Mount {
+	out := make([]mount.Mount, len(mounts))
+	for i, m := range mounts {
+		out[i] = mount.Mount{
+			Type:   mount.Type(m.Type),
+			Source: m.Source,
+			Target: m.Destination,
+		}
+	}
+	return out
+}
