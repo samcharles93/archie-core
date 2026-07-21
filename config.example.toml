@@ -37,8 +37,8 @@ api_key_env = "OPENAI_API_KEY"
 class = "ollama"
 
 [agent]
-mode = "inprocess"          # "subprocess" runs each autonomous stage through archie-agent
-command = "archie-agent"    # executable path for subprocess mode
+mode = "inprocess"          # "subprocess" runs each stage through archie-agent (stdin/stdout); "nats" sends stages over NATS
+command = "archie-agent"    # executable path for subprocess mode (not used in nats mode)
 # Subprocess mode isolates the protocol and process lifecycle, not OS privileges.
 # The worker still runs as the daemon user until the Docker sandbox phase lands.
 # env = ["GOCACHE"]         # extra environment variable names forwarded to the worker

@@ -134,6 +134,16 @@ func run() int {
 			}
 		case "inprocess":
 			agentRunner = agentexec.NewInProcessRunner(llm, log)
+		case "nats":
+			if natsClient == nil {
+				log.Error("agent.mode is nats but [nats] is not configured")
+				return 1
+			}
+			agentRunner = &agentexec.NATSRunner{
+				Nats:      natsClient,
+				Providers: providers,
+				Log:       log,
+			}
 		}
 	}
 	d := &daemon.Daemon{

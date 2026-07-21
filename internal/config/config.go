@@ -296,9 +296,9 @@ func Load(path string) (Config, error) {
 		cfg.Agent.Command = "archie-agent"
 	}
 	switch cfg.Agent.Mode {
-	case "inprocess", "subprocess":
+	case "inprocess", "subprocess", "nats":
 	default:
-		return cfg, fmt.Errorf("config: agent.mode %q is invalid (want inprocess or subprocess)", cfg.Agent.Mode)
+		return cfg, fmt.Errorf("config: agent.mode %q is invalid (want inprocess, subprocess, or nats)", cfg.Agent.Mode)
 	}
 	if cfg.Agent.Mode == "subprocess" && strings.TrimSpace(cfg.Agent.Command) == "" {
 		return cfg, fmt.Errorf("config: agent.command is required in subprocess mode")

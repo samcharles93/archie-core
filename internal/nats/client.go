@@ -54,7 +54,7 @@ func Connect(ctx context.Context, url string, log *slog.Logger) (*Client, error)
 
 	stream, err := js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
 		Name:      streamName,
-		Subjects:  []string{"archie.task.>"},
+		Subjects:  []string{"archie.task.>", "archie.agent.>"},
 		Storage:   jetstream.FileStorage,
 		Retention: jetstream.WorkQueuePolicy,
 		Duplicates: dedupWindow,
@@ -81,8 +81,31 @@ func Connect(ctx context.Context, url string, log *slog.Logger) (*Client, error)
 	return &Client{conn: nc, js: js, stream: stream, consumer: consumer, log: log}, nil
 }
 
+// Conn returns the underlying NATS connection for core NATS operations
+// (inbox subscriptions, direct publishes).
+func (c *Client) Conn() *nats.Conn { return c.conn }
+
+// PublishMsg publishes a message to JetStream with optional headers.
+func (c *Client) PublishMsg(ctx context.Context, msg *nats.Msg) (*jetstream.PubAck, error) {
+	return c.js.PublishMsg(ctx, msg)
+}
+
 // Close drains and closes the NATS connection.
 func (c *Client) Close() { c.conn.Close() }
+
+// NewReplyInbox creates a unique inbox subject and returns a synchronous
+// subscription configured to auto-unsubscribe after one message.
+func (c *Client) NewReplyInbox() (*nats.Subscription, error) {
+	sub, err := c.conn.SubscribeSync(c.conn.NewInbox())
+	if err != nil {
+		return nil, err
+	}
+	if err := sub.AutoUnsubscribe(1); err != nil {
+		sub.Unsubscribe()
+		return nil, err
+	}
+	return sub, nil
+}
 
 // PublishTask publishes a discovered issue to the appropriate NATS subject.
 // The Nats-Msg-Id header enables JetStream dedup within the dedup window.
