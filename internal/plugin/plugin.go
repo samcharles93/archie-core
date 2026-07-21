@@ -63,7 +63,7 @@ func LoadDir(dir string, extraSymbols ...map[string]map[string]reflect.Value) ([
 	}
 	sort.Strings(names)
 
-	var plugins []Plugin
+	plugins := make([]Plugin, 0)
 	for _, name := range names {
 		path := filepath.Join(dir, name)
 		src, err := os.ReadFile(path)

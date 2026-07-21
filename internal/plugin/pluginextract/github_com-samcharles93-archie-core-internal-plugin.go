@@ -29,8 +29,14 @@ type _github_com_samcharles93_archie_core_internal_plugin_Plugin struct {
 }
 
 func (W _github_com_samcharles93_archie_core_internal_plugin_Plugin) Name() string {
+	if W.WName == nil {
+		return ""
+	}
 	return W.WName()
 }
 func (W _github_com_samcharles93_archie_core_internal_plugin_Plugin) Version() string {
+	if W.WVersion == nil {
+		return ""
+	}
 	return W.WVersion()
 }
