@@ -376,14 +376,21 @@ func Load(path string) (Config, error) {
 	if cfg.BotUser == "" {
 		return cfg, errors.New("config: bot_user is required")
 	}
-	if cfg.BotEmail == "" && cfg.Forge.Type == "github" {
-		cfg.BotEmail = cfg.BotUser + "@users.noreply.github.com"
+	if cfg.BotEmail == "" {
+		switch cfg.Forge.Type {
+		case "github":
+			cfg.BotEmail = cfg.BotUser + "@users.noreply.github.com"
+		case "gitea":
+			cfg.BotEmail = cfg.BotUser + "@gitea.local"
+		}
 	}
 	if len(cfg.Repos) == 0 {
 		return cfg, errors.New("config: at least one [[repos]] entry is required")
 	}
-	if cfg.Forge.Type != "github" {
-		return cfg, fmt.Errorf("config: forge.type %q is not yet supported", cfg.Forge.Type)
+	switch cfg.Forge.Type {
+	case "github", "gitea":
+	default:
+		return cfg, fmt.Errorf("config: forge.type %q is not supported (want github or gitea)", cfg.Forge.Type)
 	}
 	for i, r := range cfg.Repos {
 		if r.Owner == "" || r.Name == "" {

@@ -23,9 +23,9 @@ type GitHubClient struct {
 	labelsEnsured map[string]bool
 }
 
-// New creates a GitHub-backed Forge implementation. Non-github.com hosts
-// are configured using GitHub Enterprise's API and upload URL conventions.
-func New(token, host string, log *slog.Logger) (Forge, error) {
+// NewGitHub creates a GitHub-backed Forge implementation. Non-github.com
+// hosts are configured using GitHub Enterprise's API and upload URL conventions.
+func NewGitHub(token, host string, log *slog.Logger) (Forge, error) {
 	client := github.NewClient(nil)
 	if strings.TrimRight(host, "/") != "https://github.com" {
 		var err error

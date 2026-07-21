@@ -57,7 +57,7 @@ func run() int {
 		fmt.Fprintln(os.Stderr, cfg.Forge.TokenEnv+" is required")
 		return 1
 	}
-	forgeClient, err := forge.New(token, cfg.Forge.Host, log)
+	forgeClient, err := forge.New(cfg.Forge.Type, token, cfg.Forge.Host, log)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

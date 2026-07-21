@@ -1,10 +1,25 @@
 // Package forge defines the interface archie uses to interact with a git
 // host — polling issues, managing labels, opening PRs, and reacting to
-// comments. GitHub is the primary implementation; other hosts (Gitea,
-// GitLab) can be added later by implementing this interface.
+// comments. GitHub and Gitea are the supported implementations.
 package forge
 
-import "context"
+import (
+	"context"
+	"fmt"
+	"log/slog"
+)
+
+// New creates a Forge implementation for the given type.
+func New(forgeType, token, host string, log *slog.Logger) (Forge, error) {
+	switch forgeType {
+	case "github":
+		return NewGitHub(token, host, log)
+	case "gitea":
+		return NewGitea(token, host, log)
+	default:
+		return nil, fmt.Errorf("unsupported forge type %q (want github or gitea)", forgeType)
+	}
+}
 
 // Issue is a forge-neutral representation of an issue (not a PR).
 type Issue struct {
