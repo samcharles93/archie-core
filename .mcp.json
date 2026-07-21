@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "okf": {
+      "type": "http",
+      "url": "http://localhost:8765/archie-core/"
+    }
+  }
+}
