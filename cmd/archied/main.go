@@ -21,6 +21,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/nats"
+	"github.com/samcharles93/archie-core/internal/plugin"
+	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webui"
 	"github.com/samcharles93/archie-core/internal/workflow/skillbuild"
@@ -176,6 +178,22 @@ func run() int {
 	}
 	log.Info("workflow registry built", "workflows", len(registry))
 
+	// Load daemon plugins from the configured plugin directory (Layer 2).
+	// Failed plugins are skipped — the daemon starts with the remaining set.
+	var pluginReg *plugin.Registry
+	if cfg.PluginDir != "" {
+		plugins, err := plugin.LoadDir(cfg.PluginDir, pluginextract.Symbols)
+		if err != nil {
+			log.Error("plugin load failed", "dir", cfg.PluginDir, "err", err)
+			return 1
+		}
+		pluginReg = &plugin.Registry{}
+		for _, p := range plugins {
+			pluginReg.Register(p)
+			log.Info("daemon plugin loaded", "name", p.Name(), "version", p.Version())
+		}
+	}
+
 	d := &daemon.Daemon{
 		Cfg:   cfg,
 		Store: st,
@@ -190,8 +208,9 @@ func run() int {
 		},
 		Runtime: llm,
 		Agent:   agentRunner,
-		Workflows:    registry,
-		Log:           log,
+		Workflows:      registry,
+		PluginRegistry: pluginReg,
+		Log:             log,
 		CustomStages:  wfeval.Discover,
 		Nats:          natsClient,
 		ContainerPool: containerPool,

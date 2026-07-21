@@ -210,6 +210,12 @@ type Config struct {
 	// (plugin-defined workflows override built-ins). When empty,
 	// only built-in workflows are available.
 	SkillsDir    string   `toml:"skills_dir"`
+	// PluginDir is an optional path to a directory of Yaegi-interpreted
+	// daemon plugins (*.go files). Each file must export a "Plugin"
+	// variable satisfying the plugin.Plugin interface. Failed plugins
+	// are skipped — the daemon starts with the remaining set. When
+	// empty, no daemon plugins are loaded.
+	PluginDir    string   `toml:"plugin_dir"`
 	DBPath       string   `toml:"db_path"`
 	PollInterval Duration `toml:"poll_interval"`
 	// Label marks issues archie should pick up.

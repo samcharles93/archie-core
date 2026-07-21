@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -40,7 +41,12 @@ func (r *Registry) Plugins() []Plugin { return r.plugins }
 // Each file must export a variable named "Plugin" that implements the
 // Plugin interface. Failed plugins are logged and skipped — the daemon
 // starts with the remaining plugins (PRD section 5).
-func LoadDir(dir string) ([]Plugin, error) {
+//
+// extraSymbols are additional Yaegi symbol tables made available to
+// interpreted code. Callers should pass pluginextract.Symbols so that
+// interpreted types can satisfy the plugin.Plugin interface across
+// the Yaegi/Go boundary.
+func LoadDir(dir string, extraSymbols ...map[string]map[string]reflect.Value) ([]Plugin, error) {
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -67,6 +73,11 @@ func LoadDir(dir string) ([]Plugin, error) {
 		i := interp.New(interp.Options{})
 		if err := i.Use(stdlib.Symbols); err != nil {
 			continue
+		}
+		for _, s := range extraSymbols {
+			if err := i.Use(s); err != nil {
+				continue
+			}
 		}
 		if _, err := i.Eval(string(src)); err != nil {
 			continue // skip files that don't compile

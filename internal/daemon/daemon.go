@@ -24,6 +24,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	arnats "github.com/samcharles93/archie-core/internal/nats"
+	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/workflow"
 	"github.com/samcharles93/archie-core/internal/worktree"
@@ -45,6 +46,9 @@ type Daemon struct {
 	// ContainerPool manages Docker container lifecycle. Nil when [containers]
 	// is not configured. When non-nil, every task gets a fresh container.
 	ContainerPool *container.Pool
+	// PluginRegistry holds core daemon plugins loaded from the configured
+	// plugin_dir at startup (Layer 2). Nil when no plugin_dir is configured.
+	PluginRegistry *plugin.Registry
 	// CustomStages discovers a repo's per-repo Yaegi custom stages
 	// (.archie/stages/*.go) from its prepared worktree. Set by the
 	// composition root (cmd/archied) to wfeval.Discover; nil disables

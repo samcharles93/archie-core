@@ -2,7 +2,7 @@
 
 **Author:** Archie (Hermes agent)  
 **Date:** 2026-07-21 (implementation status updated 2026-07-22)  
-**Status:** Final
+**Status:** Final (substantially implemented — remaining aspirational items are pluggable storage backends and Layer 2 daemon plugin loader)
 
 ---
 
@@ -16,16 +16,16 @@ This document describes a target end state. The table below is the ground truth;
 | Sandbox / "daemon never runs untrusted code" | **Partial** | Default mode is still `inprocess` for development. Docker sandbox mode (`agent.mode = "nats"` + `containers.enabled = true`) runs each task in an ephemeral Docker container with workspace bind-mounted at `/workspace`. `internal/container/pool.go` manages full lifecycle: pull, create, start, release, orphan recovery. `max_concurrency` enforced. |
 | NATS / JetStream messaging | **Implemented** | `internal/nats/client.go` (176 lines): JetStream connect, stream creation (WorkQueue retention, file storage), pull consumer (durable, ack-wait 5min, max-deliver 3, dedup by Msg-Id), `PublishTask`, `Fetch`, `NewReplyInbox`. Subject hierarchy in `internal/nats/subjects.go`. `[nats]` config block in config.go. `internal/agentexec/nats.go` implements NATS-based agent runner. |
 | Docker container sandbox | **Implemented** | `internal/container/pool.go` (210 lines): Docker API client, image pull (always/missing/never), container create with workspace bind mount, start, release (stop+remove), orphan recovery on daemon restart. `Dockerfile` at repo root builds archie-agent fat image. `[containers]` config block: enabled, image, max_concurrency, max_uptime, pull_policy. `agent.mode = "nats"` required when containers enabled. |
-| `/data/` volume, `task.json` | **Partial** | No `/data/task.json` file convention exists. Containers mount a workspace directory at `/workspace` (bind mount, host path). Task payload travels over NATS, not a volume file. Worktrees are still ephemeral fresh clones per task. |
+| `/data/` volume, `task.json` | **Partial** | `container.WriteTaskJSON()` writes task payload to the worktree before container acquire. The container pool bind-mounts the worktree at `/data/worktree`. Task payload travels over NATS as the primary channel; `/data/task.json` is a boot-time brief for the container. Worktrees are still ephemeral fresh clones per task. |
 | `[containers]` config block | **Implemented** | `ContainerConfig` struct in config.go: enabled, image, max_concurrency, max_uptime, pull_policy. Validated on load. |
 | Yaegi extensibility (gates, custom stages, skill scripts) | **Implemented** | Three surfaces: `.archie/gate.go`, `.archie/stages/*.go`, skill scripts via `run_go_script` tool. All in-process via Yaegi with generated symbol tables and panic recovery. Full detail in `docs/prds/yaegi-plugin-system.md`. |
-| Layer 1: skill-bundled plugins | **Aspirational** | No skill ships a `plugins/` directory. No code reads `metadata.archie.plugins`. No volume-staged plugin loading. |
-| Layer 2: core daemon plugins | **Aspirational** | No `Plugin` interface, no registry, no `~/.config/archie/plugins/` loader. |
-| Skills (agentskills.io spec) | **Partial** | `internal/skill/skill.go` (116 lines): parses SKILL.md YAML frontmatter, discovers skills from `.agents/skills/*/SKILL.md`, extracts body. Skills moved from `.archie/skills/` to `.agents/skills/`. No `archie-wf-*` naming convention yet. No progressive disclosure -- body injected directly. |
+| Layer 1: skill-bundled plugins | **Implemented** | `skill.DiscoverPlugins()` scans `.agents/skills/<name>/plugins/*.go`. `skill.Plugin.Run()` executes them via Yaegi. `skillbuild.BuildWorkflow()` constructs `workflow.Workflow` from plugin-defined stages. `TaskContext.SkillPlugins` makes them available during stage execution. `skillbuild.BuildRegistry()` replaces the hardcoded `workflow.Registry` with catalog-driven construction — skills define workflows, plugins define stages. |
+| Layer 2: core daemon plugins | **Partial** | `internal/plugin/plugin.go`: `Plugin` interface (`Name()`, `Version()`), `Registry` type, `LoadDir()` using Yaegi to interpret `.go` files. No `~/.config/archie/plugins/` loader wired into `cmd/archied/main.go` yet — the interface and registry exist but are not connected to the daemon's startup. |
+| Skills (agentskills.io spec) | **Implemented** | `internal/skill/skill.go`: parses SKILL.md YAML frontmatter, discovers skills from `.agents/skills/*/SKILL.md`, extracts body. Skills follow `archie-wf-*` naming convention. Progressive disclosure: `Catalog()` (Tier 1 — frontmatter-only scan, ~100 tokens per entry), `LoadBody()` (Tier 2 — full body on activation), `Discover()` (Tier 3 — full parse with plugins). `metadata.archie.workflow` declares skill→workflow affinity. `skill.SkillForWorkflow()` is catalog-driven, no hardcoded maps. `skillbuild.BuildRegistry()` constructs the daemon's workflow registry from the catalog. |
 | Worktree/repo management | **Implemented, ephemeral** | Fresh `git clone` per task attempt, no shared cache, no persistence, no TTL. |
 | Config schema | **Closer to sec.4** | `[agent]` block: mode (inprocess/subprocess/nats) + command + env. `[nats]` block: url + token_env. `[containers]` block: enabled, image, max_concurrency, max_uptime, pull_policy. No per-repo persistent_storage override yet. |
 
-**Net read post-e4d11b1:** Phases 1 and 2 are substantially implemented -- NATS, Docker sandbox, skill parsing all landed in three commits. The remaining aspirational work is core plugin registry (Layer 2), skill-bundled plugins (Layer 1), skill progressive disclosure, and pluggable storage backends. The PRD is now more "current state with aspirational sections" than "entirely aspirational."
+**Net read post-1dca419:** Phases 1, 2, and 3 are substantially implemented. NATS, Docker sandbox, skill parsing, skill-bundled plugins (Layer 1), skill progressive disclosure, and catalog-driven workflow construction (`skillbuild.BuildRegistry()`) all landed. The remaining aspirational work is Layer 2 daemon plugin loader (interface exists, not wired), pluggable storage backends, and per-worktree dynamic registry augmentation.
 
 ---
 
