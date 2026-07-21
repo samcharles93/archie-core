@@ -20,8 +20,9 @@ type Frontmatter struct {
 	Version     string `yaml:"version"`
 	Metadata    struct {
 		Archie *struct {
-			Tools  []string `yaml:"tools"`
-			Engine string   `yaml:"engine"`
+			Tools   []string `yaml:"tools"`
+			Engine  string   `yaml:"engine"`
+			Plugins []string `yaml:"plugins,omitempty"`
 		} `yaml:"archie"`
 	} `yaml:"metadata"`
 }

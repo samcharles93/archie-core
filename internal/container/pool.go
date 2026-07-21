@@ -6,9 +6,12 @@ package container
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -20,6 +23,33 @@ import (
 // Container wraps a running Docker container.
 type Container struct {
 	ID string
+}
+
+// TaskPayload is the boot-time brief written to /data/task.json before
+// the container starts, per PRD section 3.
+type TaskPayload struct {
+	ID       int64    `json:"id"`
+	Owner    string   `json:"owner"`
+	Repo     string   `json:"repo"`
+	Number   int      `json:"issue_number"`
+	Title    string   `json:"title"`
+	Body     string   `json:"body"`
+	Labels   []string `json:"labels"`
+	Workflow string   `json:"workflow"`
+	Branch   string   `json:"branch,omitempty"`
+	Plan     string   `json:"plan,omitempty"`
+}
+
+// WriteTaskJSON writes the task payload to <workspace>/task.json.
+func WriteTaskJSON(workspace string, payload TaskPayload) error {
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		return fmt.Errorf("task.json dir: %w", err)
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(workspace, "task.json"), data, 0o644)
 }
 
 // Pool manages a set of Docker containers running archie-agent.
@@ -37,8 +67,14 @@ type Pool struct {
 type Config struct {
 	Image          string
 	MaxConcurrency int
-	MaxUptime      time.Duration
-	PullPolicy     string
+	// MaxUptime is the total container lifetime cap from creation. When
+	// exceeded, the container is killed regardless of task state. PRD §4.
+	MaxUptime time.Duration
+	// GracePeriod is the idle time after task completion before the
+	// container is killed. The agent stays alive to handle follow-ups
+	// (gate re-runs, human replies) during this window. PRD §1.
+	GracePeriod time.Duration
+	PullPolicy  string
 }
 
 // NewPool connects to the Docker daemon, optionally pulls the image,
