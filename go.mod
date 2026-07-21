@@ -36,6 +36,7 @@ require (
 	github.com/nats-io/nats.go v1.52.0
 	github.com/samcharles93/ai-sdk v0.1.17
 	github.com/traefik/yaegi v0.16.1
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 replace github.com/samcharles93/ai-sdk => /work/projects/ai-sdk

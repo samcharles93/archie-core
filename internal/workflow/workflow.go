@@ -42,6 +42,10 @@ type TaskContext struct {
 	// generated Yaegi symbol table (an import cycle).
 	CustomStages func(dir string) ([]Stage, error)
 
+	// SkillBody is the Markdown body of the loaded SKILL.md for this
+	// workflow's matching skill, injected into agent context. Empty
+	// when no skill is found (backward compatible).
+	SkillBody string
 	// Dir/Branch are set by the prepare step.
 	Dir    string
 	Branch string

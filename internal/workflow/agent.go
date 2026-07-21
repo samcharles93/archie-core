@@ -6,6 +6,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/skill"
 )
 
 // AgentStage is the reusable bridge from a workflow stage to an
@@ -46,6 +47,12 @@ type AgentStage struct {
 // Stage adapts the AgentStage to the engine.
 func (a AgentStage) Stage() Stage {
 	return Stage{Name: a.Name, Run: func(ctx context.Context, tc *TaskContext) error {
+		// Lazy-load the skill body from the worktree (dir is set by the
+		// prepare stage, which runs before any agent stage). If the body
+		// was already loaded by the daemon, this is a no-op.
+		if tc.SkillBody == "" && tc.Dir != "" {
+			tc.SkillBody = loadSkillBody(tc)
+		}
 		if tc.Agent == nil {
 			return fmt.Errorf("no LLM runtime configured (missing [providers] in config?)")
 		}
@@ -97,7 +104,7 @@ func (a AgentStage) Stage() Stage {
 			Attempt:      tc.Task.Attempt,
 			Stage:        a.Name,
 			Model:        modelRef,
-			Mission:      a.Mission(tc),
+			Mission:      missionWithSkill(tc, a.Mission(tc)),
 			ExtraRules:   a.ExtraRules,
 			ReadOnly:     a.ReadOnly,
 			Budget:       budget,
@@ -158,4 +165,30 @@ func GateFromRepo(repo config.Repo, budgets config.Budgets) agentexec.Gate {
 		cmds = append(cmds, agentexec.Command{Name: argv[0], Argv: argv})
 	}
 	return agentexec.Gate{Commands: cmds, MaxConsecutiveFailures: budgets.GateMaxFailures}
+}
+
+// missionWithSkill prepends the skill body (loaded from SKILL.md) to the
+// stage's mission. When no skill is loaded, the mission is returned unchanged.
+func missionWithSkill(tc *TaskContext, mission string) string {
+	if tc.SkillBody == "" {
+		return mission
+	}
+	return "Follow these project-specific guidelines:\n\n" + tc.SkillBody + "\n\n---\n\n" + mission
+}
+
+// workflowToSkill maps a workflow name to the skill directory name.
+var workflowToSkill = map[string]string{
+	"tdd":         "tdd-bugfix",
+	"implement":   "implement",
+	"feasibility": "feasibility",
+}
+
+// loadSkillBody attempts to load the SKILL.md body for the current workflow
+// from the worktree's .agents/skills/ directory. Returns "" if not found.
+func loadSkillBody(tc *TaskContext) string {
+	skillDir, ok := workflowToSkill[tc.Task.Workflow]
+	if !ok {
+		return ""
+	}
+	return skill.LoadBody(tc.Dir, skillDir)
 }
