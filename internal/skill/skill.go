@@ -26,11 +26,13 @@ type Frontmatter struct {
 	} `yaml:"metadata"`
 }
 
-// Skill is a parsed SKILL.md file with its frontmatter and body.
+// Skill is a parsed SKILL.md file with its frontmatter, body, and any
+// bundled Yaegi plugins found in the skill's plugins/ directory.
 type Skill struct {
 	Frontmatter Frontmatter
 	Body        string
-	Dir         string // skill directory name (e.g. "tdd-bugfix")
+	Dir         string   // skill directory name (e.g. "tdd-bugfix")
+	Plugins     []Plugin // bundled Yaegi plugins from plugins/*.go
 }
 
 const skillsDir = ".agents/skills"
@@ -95,7 +97,11 @@ func Discover(dir string) (map[string]Skill, error) {
 		if err != nil {
 			return nil, fmt.Errorf("parse %s: %w", skillPath, err)
 		}
-		out[name] = Skill{Frontmatter: *fm, Body: body, Dir: name}
+		plugins, err := DiscoverPlugins(dir, name)
+		if err != nil {
+			return nil, fmt.Errorf("plugins %s: %w", name, err)
+		}
+		out[name] = Skill{Frontmatter: *fm, Body: body, Dir: name, Plugins: plugins}
 	}
 	return out, nil
 }
