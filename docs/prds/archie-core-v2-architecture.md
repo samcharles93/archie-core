@@ -392,10 +392,16 @@ The agent writes whatever it wants to `response`. The daemon reviews it. No agen
 
 ## 9. Open questions
 
-1. **Agent image versioning:** Does the daemon pull `:latest` and auto-restart, or pin to a digest?
-2. **NATS auth:** Anonymous for single-node, or credentials for multi-node/cluster?
-3. **Worktree ownership:** ~~Does the daemon clone repos into a shared volume that agents mount read-only, or does each agent clone fresh?~~ **Answered by current implementation:** `internal/worktree.Manager.Prepare` does a full fresh `git clone` per task attempt, removing any prior directory first — no shared clone/object cache, no reuse across attempts or sessions. This is a reasonable default to carry into v2, but note it forgoes a common efficiency pattern (e.g. `git clone --reference` against a shared mirror) that will matter more once `max_concurrency` > 1 is real.
-4. **Grace period interaction:** If a human replies during grace period and the agent handles it, is the grace period reset?
-5. **Concurrent agents on the same repo:** Blocked (worktree conflict) or allowed with different base branches? Current implementation processes exactly one task at a time daemon-wide, so this question doesn't yet arise in practice — resolve it as part of Phase 2's `max_concurrency` work.
-6. **Plugin architecture reconciliation (new):** Should §5's Layer 1/Layer 2 plugin design replace or extend the existing, already-working Yaegi surfaces documented in `docs/prds/yaegi-plugin-system.md`? See the reconciliation note in §5 — this should be settled before Phase 3/4 implementation starts, not during it.
-7. **Skill loading scope (new):** Is a full agentskills.io progressive-disclosure loader in scope for Phase 3, or is a simpler "read SKILL.md body into the stage's system prompt" step sufficient for v2? The current Mission-string-in-Go-code approach works; the gap is that nothing reads SKILL.md at all, not that the loading model needs to be maximally sophisticated on day one.
+1. **Agent image versioning:** Use tagged versions (`:v1.2.3`) with a "never repoint tags" policy. `:latest` is for dev only, not the config default. No digest complexity needed — archie-core is self-hosted, not a public registry.
+
+2. **NATS auth:** Anonymous for single-node deployments (daemon + NATS + agents on same host). Credentials required for multi-node/cluster. Add an optional `[nats]` config block (default: anonymous, validated only when present).
+
+3. **Worktree ownership:** ~~Answered by current implementation.~~ Fresh `git clone` per task attempt, no shared cache. This is fine for v2. Revisit if concurrent agents on the same repo become a bottleneck.
+
+4. **Grace period interaction:** Reset `max_uptime` on human reply — the agent just did useful work. But cap total lifetime with `max_total_uptime` (e.g. 4 hours) to prevent infinite hanging. `max_uptime` = grace after inactivity, `max_total_uptime` = absolute kill switch.
+
+5. **Concurrent agents on the same repo:** Blocked (worktree conflict) by default. For repos where concurrent work is safe (different base branches, different packages), add a per-repo override: `allow_concurrent = true`. Resolve during Phase 2.
+
+6. **Plugin architecture reconciliation:** Extend the existing Yaegi surfaces (`internal/gate/gateeval`, `internal/workflow/wfeval`, `internal/skillscript`) rather than building a parallel `Plugin.Register(daemon)` interface. Core plugins follow the same pattern: `Eval()` a `.go` file, extract known symbols. Settled before Phase 3/4.
+
+7. **Skill loading scope:** "Parse frontmatter, inject body into system prompt" is sufficient for v2. The gap is that nothing reads SKILL.md today — closing that gap is the value. Full progressive disclosure (catalog → activate → resources) is deferred to a later phase.
