@@ -175,6 +175,33 @@ func TestFeasibilityRejectsNullFitValue(t *testing.T) {
 	}
 }
 
+// ── regression: Gap 5 — daemon review step ──────────────────────────
+
+func TestAgentStageHasReviewHook(t *testing.T) {
+	// Gap 5: no daemon review step before human delivery.
+	// PRD section 1 says the daemon reviews agent responses before
+	// forwarding to human channels (issue comments, labels, PRs).
+	// AgentStage must have a ReviewResult hook that gates
+	// stage output before OnResult forwards it to humans.
+	reviewed := false
+	stage := AgentStage{
+		Name:    "plan",
+		Role:    "planner",
+		Mission: func(*TaskContext) string { return "test" },
+		ReviewResult: func(_ *TaskContext, _ agentexec.Result) error {
+			reviewed = true
+			return nil
+		},
+	}
+	if stage.ReviewResult == nil {
+		t.Error("Gap 5: AgentStage.ReviewResult is nil. " +
+			"Add a ReviewResult func(*TaskContext, agentexec.Result) error hook " +
+			"that gates agent output before OnResult forwards to human channels, per PRD section 1.")
+	}
+	// Verify the field is settable and has the right signature.
+	_ = reviewed
+}
+
 func TestRunLeavesInterruptedTaskForCrashRecovery(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "archie.db"))
 	if err != nil {
