@@ -132,7 +132,6 @@ func protectionMatcher(p Protection, readOnly bool) func(string) bool {
 func captureToolSet(specs []CaptureTool, captures map[string][]json.RawMessage) core.ToolSet {
 	tools := make(core.ToolSet, len(specs))
 	for _, spec := range specs {
-		spec := spec
 		tools[spec.Name] = core.NewTool(spec.Name, spec.Description, spec.Parameters,
 			func(_ context.Context, input string) (string, error) {
 				if spec.MaxCalls > 0 && len(captures[spec.Name]) >= spec.MaxCalls {

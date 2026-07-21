@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -31,7 +32,7 @@ CREATE INDEX IF NOT EXISTS idx_events_kind ON events(kind, id);
 func (s *Store) InsertEvent(ctx context.Context, e events.Event) (int64, error) {
 	data, err := json.Marshal(e.Data)
 	if err != nil {
-		data = []byte(fmt.Sprintf(`{"marshal_error":%q}`, err.Error()))
+		data = fmt.Appendf(nil, `{"marshal_error":%q}`, err.Error())
 	}
 	res, err := s.db.ExecContext(ctx, `
 		INSERT INTO events (at, kind, task_id, repo, issue, workflow, stage, detail, data)
@@ -44,9 +45,10 @@ func (s *Store) InsertEvent(ctx context.Context, e events.Event) (int64, error) 
 	return res.LastInsertId()
 }
 
-func scanEvents(rows *sql.Rows) ([]events.Event, error) {
-	defer rows.Close()
-	var out []events.Event
+func scanEvents(rows *sql.Rows) (out []events.Event, retErr error) {
+	defer func() {
+		retErr = errors.Join(retErr, rows.Close())
+	}()
 	for rows.Next() {
 		var e events.Event
 		var at, data string
@@ -95,7 +97,7 @@ func (s *Store) TaskEvents(ctx context.Context, taskID int64) ([]events.Event, e
 }
 
 // Tasks returns all tasks, newest first (dashboard listing).
-func (s *Store) Tasks(ctx context.Context, limit int) ([]Task, error) {
+func (s *Store) Tasks(ctx context.Context, limit int) (tasks []Task, retErr error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, owner, repo, issue_number, title, status, workflow, stage,
 			pr_number, tokens_used, iterations, attempt, park_reason
@@ -103,8 +105,9 @@ func (s *Store) Tasks(ctx context.Context, limit int) ([]Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []Task
+	defer func() {
+		retErr = errors.Join(retErr, rows.Close())
+	}()
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.Owner, &t.Repo, &t.IssueNumber, &t.Title,
@@ -112,28 +115,30 @@ func (s *Store) Tasks(ctx context.Context, limit int) ([]Task, error) {
 			&t.Iterations, &t.Attempt, &t.ParkReason); err != nil {
 			return nil, err
 		}
-		out = append(out, t)
+		tasks = append(tasks, t)
 	}
-	return out, rows.Err()
+	return tasks, rows.Err()
 }
 
 // StatusCounts returns task counts by status.
-func (s *Store) StatusCounts(ctx context.Context) (map[string]int, error) {
+func (s *Store) StatusCounts(ctx context.Context) (counts map[string]int, retErr error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT status, COUNT(*) FROM tasks GROUP BY status`)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := map[string]int{}
+	defer func() {
+		retErr = errors.Join(retErr, rows.Close())
+	}()
+	counts = map[string]int{}
 	for rows.Next() {
 		var st string
 		var n int
 		if err := rows.Scan(&st, &n); err != nil {
 			return nil, err
 		}
-		out[st] = n
+		counts[st] = n
 	}
-	return out, rows.Err()
+	return counts, rows.Err()
 }
 
 // WorkflowStat is one row of the per-workflow metrics table.
@@ -150,7 +155,7 @@ type WorkflowStat struct {
 
 // WorkflowStats aggregates outcomes and spend per workflow — the
 // core "is archie getting better per dollar" table.
-func (s *Store) WorkflowStats(ctx context.Context) ([]WorkflowStat, error) {
+func (s *Store) WorkflowStats(ctx context.Context) (stats []WorkflowStat, retErr error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT workflow, COUNT(*),
 			SUM(status='merged'), SUM(status='pr_open'), SUM(status='parked'),
@@ -159,17 +164,18 @@ func (s *Store) WorkflowStats(ctx context.Context) ([]WorkflowStat, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []WorkflowStat
+	defer func() {
+		retErr = errors.Join(retErr, rows.Close())
+	}()
 	for rows.Next() {
 		var w WorkflowStat
 		if err := rows.Scan(&w.Workflow, &w.Runs, &w.Merged, &w.PROpen, &w.Parked,
 			&w.AvgTokens, &w.AvgSteps, &w.TotalToken); err != nil {
 			return nil, err
 		}
-		out = append(out, w)
+		stats = append(stats, w)
 	}
-	return out, rows.Err()
+	return stats, rows.Err()
 }
 
 // StageStat is average stage duration and failure counts per stage.
@@ -182,7 +188,7 @@ type StageStat struct {
 
 // StageStats aggregates stage_finish events — where does time go, and
 // which stages fail.
-func (s *Store) StageStats(ctx context.Context) ([]StageStat, error) {
+func (s *Store) StageStats(ctx context.Context) (stats []StageStat, retErr error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT workflow, stage, COUNT(*),
 			CAST(AVG(json_extract(data,'$.duration_ms')) AS INTEGER),
@@ -192,8 +198,9 @@ func (s *Store) StageStats(ctx context.Context) ([]StageStat, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []StageStat
+	defer func() {
+		retErr = errors.Join(retErr, rows.Close())
+	}()
 	for rows.Next() {
 		var st StageStat
 		var avg sql.NullInt64
@@ -201,9 +208,9 @@ func (s *Store) StageStats(ctx context.Context) ([]StageStat, error) {
 			return nil, err
 		}
 		st.AvgMs = int(avg.Int64)
-		out = append(out, st)
+		stats = append(stats, st)
 	}
-	return out, rows.Err()
+	return stats, rows.Err()
 }
 
 // DayTokens is token spend per UTC day.
@@ -213,7 +220,7 @@ type DayTokens struct {
 }
 
 // TokensByDay sums agent token spend per day from agent_finish events.
-func (s *Store) TokensByDay(ctx context.Context, days int) ([]DayTokens, error) {
+func (s *Store) TokensByDay(ctx context.Context, days int) (tokens []DayTokens, retErr error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT substr(at,1,10) AS day,
 			CAST(SUM(json_extract(data,'$.tokens')) AS INTEGER)
@@ -222,14 +229,15 @@ func (s *Store) TokensByDay(ctx context.Context, days int) ([]DayTokens, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []DayTokens
+	defer func() {
+		retErr = errors.Join(retErr, rows.Close())
+	}()
 	for rows.Next() {
 		var d DayTokens
 		if err := rows.Scan(&d.Day, &d.Tokens); err != nil {
 			return nil, err
 		}
-		out = append(out, d)
+		tokens = append(tokens, d)
 	}
-	return out, rows.Err()
+	return tokens, rows.Err()
 }

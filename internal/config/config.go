@@ -5,6 +5,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -127,6 +128,17 @@ type Provider struct {
 	BaseURL   string `toml:"base_url"`
 }
 
+// Agent configures how archied executes autonomous stages.
+type Agent struct {
+	// Mode is "inprocess" during migration or "subprocess" to invoke the
+	// standalone archie-agent worker for every autonomous stage.
+	Mode string `toml:"mode"`
+	// Command is the archie-agent executable path used in subprocess mode.
+	Command string `toml:"command"`
+	// Env adds environment variable names to the worker allowlist.
+	Env []string `toml:"env"`
+}
+
 // Forge configures the code forge integration.
 type Forge struct {
 	Type     string `toml:"type"`
@@ -210,6 +222,7 @@ type Config struct {
 	Models map[string]string `toml:"models"`
 
 	Providers map[string]Provider `toml:"providers"`
+	Agent     Agent               `toml:"agent"`
 
 	Budgets Budgets `toml:"budgets"`
 	Web     Web     `toml:"web"`
@@ -263,6 +276,37 @@ func Load(path string) (Config, error) {
 	}
 	if cfg.Forge.TokenEnv == "" {
 		cfg.Forge.TokenEnv = "ARCHIE_GITHUB_TOKEN"
+	}
+	if cfg.Agent.Mode == "" {
+		cfg.Agent.Mode = "inprocess"
+	}
+	if cfg.Agent.Command == "" {
+		cfg.Agent.Command = "archie-agent"
+	}
+	switch cfg.Agent.Mode {
+	case "inprocess", "subprocess":
+	default:
+		return cfg, fmt.Errorf("config: agent.mode %q is invalid (want inprocess or subprocess)", cfg.Agent.Mode)
+	}
+	if cfg.Agent.Mode == "subprocess" && strings.TrimSpace(cfg.Agent.Command) == "" {
+		return cfg, fmt.Errorf("config: agent.command is required in subprocess mode")
+	}
+	for i, name := range cfg.Agent.Env {
+		if strings.TrimSpace(name) == "" || strings.Contains(name, "=") {
+			return cfg, fmt.Errorf("config: agent.env[%d] %q is not an environment variable name", i, name)
+		}
+	}
+	for name, provider := range cfg.Providers {
+		if provider.BaseURL == "" {
+			continue
+		}
+		u, err := url.Parse(provider.BaseURL)
+		if err != nil {
+			return cfg, fmt.Errorf("config: providers.%s.base_url is invalid: %w", name, err)
+		}
+		if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+			return cfg, fmt.Errorf("config: providers.%s.base_url must not contain userinfo, query parameters, or a fragment", name)
+		}
 	}
 	if cfg.Dispatch.Trigger == "" {
 		cfg.Dispatch.Trigger = "assignee"

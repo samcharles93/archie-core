@@ -162,5 +162,7 @@ func notify(ctx context.Context, tc *TaskContext, kind string) {
 		tc.Log.Warn("notify webhook failed", "err", err)
 		return
 	}
-	resp.Body.Close()
+	if err := resp.Body.Close(); err != nil {
+		tc.Log.Warn("close notify webhook response", "err", err)
+	}
 }

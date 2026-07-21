@@ -14,8 +14,6 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/samcharles93/ai-sdk/runtime"
-
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/daemon"
@@ -62,7 +60,11 @@ func run() int {
 		log.Error("open store", "err", err)
 		return 1
 	}
-	defer st.Close()
+	defer func() {
+		if err := st.Close(); err != nil {
+			log.Error("close store", "err", err)
+		}
+	}()
 
 	if *requeue > 0 {
 		if err := st.Requeue(context.Background(), *requeue, "manual", ""); err != nil {
@@ -103,10 +105,22 @@ func run() int {
 		}()
 	}
 
-	llm := llmRuntime(cfg)
+	providers := executionProviders(cfg)
+	llm := agentexec.NewRuntime(providers)
 	var agentRunner agentexec.Runner
 	if llm != nil {
-		agentRunner = agentexec.NewInProcessRunner(llm, log)
+		switch cfg.Agent.Mode {
+		case "subprocess":
+			agentRunner = &agentexec.SubprocessRunner{
+				Command:       cfg.Agent.Command,
+				Environ:       os.Environ(),
+				AdditionalEnv: cfg.Agent.Env,
+				Diagnostics:   os.Stderr,
+				Providers:     providers,
+			}
+		case "inprocess":
+			agentRunner = agentexec.NewInProcessRunner(llm, log)
+		}
 	}
 	d := &daemon.Daemon{
 		Cfg:   cfg,
@@ -149,25 +163,12 @@ func run() int {
 	return 0
 }
 
-// llmRuntime builds the ai-sdk runtime from the [providers] config.
-// Nil when no providers are configured — agent workflows then park with
-// a clear error while deterministic workflows keep working.
-func llmRuntime(cfg config.Config) *runtime.Runtime {
-	if len(cfg.Providers) == 0 {
-		return nil
-	}
-	runtime.RegisterBuiltinClasses()
-	providers := make(map[string]runtime.ProviderConfig, len(cfg.Providers))
+func executionProviders(cfg config.Config) map[string]agentexec.Provider {
+	providers := make(map[string]agentexec.Provider, len(cfg.Providers))
 	for name, p := range cfg.Providers {
-		pc := runtime.ProviderConfig{ID: name, Class: p.Class, BaseURL: p.BaseURL}
-		if p.APIKeyEnv != "" {
-			pc.Auth = runtime.AuthConfig{APIKeyEnv: p.APIKeyEnv}
-		} else {
-			pc.Auth = runtime.AuthConfig{Type: runtime.AuthTypeNone}
-		}
-		providers[name] = pc
+		providers[name] = agentexec.Provider{Class: p.Class, APIKeyEnv: p.APIKeyEnv, BaseURL: p.BaseURL}
 	}
-	return runtime.NewRuntime(runtime.Config{Providers: providers})
+	return providers
 }
 
 func configHome() string {

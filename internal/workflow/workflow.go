@@ -98,8 +98,8 @@ func Route(t *store.Task, reg Registry) Workflow {
 			return wf
 		}
 	}
-	labels := strings.Split(t.Labels, ",")
-	for _, l := range labels {
+	labels := strings.SplitSeq(t.Labels, ",")
+	for l := range labels {
 		switch strings.TrimSpace(l) {
 		case "bug":
 			if wf, ok := reg["tdd"]; ok {

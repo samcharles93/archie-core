@@ -134,7 +134,7 @@ func (c *GitHubClient) IssuesWithLabel(ctx context.Context, owner, repo, label s
 // workflow can watch for replies that come after it.
 func (c *GitHubClient) Comment(ctx context.Context, owner, repo string, number int, body string) (int64, error) {
 	cm, _, err := c.gh.Issues.CreateComment(ctx, owner, repo, number,
-		&github.IssueComment{Body: github.Ptr(body)})
+		&github.IssueComment{Body: new(body)})
 	if err != nil {
 		return 0, err
 	}
@@ -169,10 +169,10 @@ func (c *GitHubClient) RepliesAfter(ctx context.Context, owner, repo string, num
 // CreatePR opens a pull request and returns its number.
 func (c *GitHubClient) CreatePR(ctx context.Context, owner, repo, title, head, base, body string) (int, error) {
 	pr, _, err := c.gh.PullRequests.Create(ctx, owner, repo, &github.NewPullRequest{
-		Title: github.Ptr(title),
-		Head:  github.Ptr(head),
-		Base:  github.Ptr(base),
-		Body:  github.Ptr(body),
+		Title: new(title),
+		Head:  new(head),
+		Base:  new(base),
+		Body:  new(body),
 	})
 	if err != nil {
 		return 0, fmt.Errorf("create PR %s/%s: %w", owner, repo, err)
@@ -200,7 +200,7 @@ func (c *GitHubClient) CloseIssue(ctx context.Context, owner, repo string, numbe
 		}
 	}
 	_, _, err := c.gh.Issues.Edit(ctx, owner, repo, number,
-		&github.IssueRequest{State: github.Ptr("closed")})
+		&github.IssueRequest{State: new("closed")})
 	return err
 }
 
@@ -244,9 +244,9 @@ func (c *GitHubClient) ensureLabel(ctx context.Context, owner, repo, name string
 		color = defaultLabelColor
 	}
 	_, _, err := c.gh.Issues.CreateLabel(ctx, owner, repo, &github.Label{
-		Name:        github.Ptr(name),
-		Color:       github.Ptr(color),
-		Description: github.Ptr("archie task state (managed automatically)"),
+		Name:        new(name),
+		Color:       new(color),
+		Description: new("archie task state (managed automatically)"),
 	})
 	// 422 = already exists; both outcomes mean the label is available.
 	if err != nil && !strings.Contains(err.Error(), "already_exists") {

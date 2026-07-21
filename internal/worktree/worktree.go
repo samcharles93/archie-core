@@ -132,15 +132,20 @@ func (m *Manager) ChangedLines(ctx context.Context, dir, base string) (int, erro
 		return 0, err
 	}
 	total := 0
-	for _, f := range strings.Fields(out) {
+	for f := range strings.FieldsSeq(out) {
 		var n int
 		if _, err := fmt.Sscanf(f, "%d", &n); err == nil {
 			total += n
 		}
 	}
 	// The first field is the file count; subtract it back out.
+	if strings.TrimSpace(out) == "" {
+		return 0, nil
+	}
 	var files int
-	fmt.Sscanf(strings.TrimSpace(out), "%d", &files)
+	if _, err := fmt.Sscanf(strings.TrimSpace(out), "%d", &files); err != nil {
+		return 0, fmt.Errorf("parse git diff shortstat %q: %w", strings.TrimSpace(out), err)
+	}
 	return total - files, nil
 }
 

@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -198,17 +199,14 @@ func (d *Daemon) maybeRetryParked(ctx context.Context, repo config.Repo, is forg
 	}
 	d.Log.Info("parked task requeued via label removal", "repo", repo.FullName(), "issue", is.Number)
 	d.Forge.SetStateLabel(ctx, repo.Owner, repo.Name, is.Number, d.Cfg.Dispatch.StateLabel("queued"), d.Cfg.Dispatch.LabelValues())
-	d.emit(events.Event{Kind: "task_retried", TaskID: task.ID,
-		Repo: repo.FullName(), Issue: is.Number, Detail: "archie:parked label removed"})
+	d.emit(events.Event{
+		Kind: "task_retried", TaskID: task.ID,
+		Repo: repo.FullName(), Issue: is.Number, Detail: "archie:parked label removed",
+	})
 }
 
 func hasLabel(labels []string, want string) bool {
-	for _, label := range labels {
-		if label == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(labels, want)
 }
 
 // reconcilePRs moves pr_open tasks to merged/rejected from GitHub state

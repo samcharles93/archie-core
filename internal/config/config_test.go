@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -158,6 +159,11 @@ func TestLoadRejectsInvalidConfigEnumsAndGlobs(t *testing.T) {
 		extra string
 	}{
 		{name: "dispatch trigger", extra: "\n[dispatch]\ntrigger = \"labels\"\n"},
+		{name: "agent mode", extra: "\n[agent]\nmode = \"remote\"\n"},
+		{name: "agent command", extra: "\n[agent]\nmode = \"subprocess\"\ncommand = \"   \"\n"},
+		{name: "agent env", extra: "\n[agent]\nenv = [\"TOKEN=value\"]\n"},
+		{name: "provider userinfo", extra: "\n[providers.openai]\nclass = \"openai\"\nbase_url = \"https://token@example.com/v1\"\n"},
+		{name: "provider query secret", extra: "\n[providers.openai]\nclass = \"openai\"\nbase_url = \"https://example.com/v1?api_key=secret\"\n"},
 		{name: "test glob", extra: "\n[[repos]]\nowner = \"acme\"\nname = \"app\"\ntest_glob = \"[\"\n"},
 	}
 
@@ -175,6 +181,38 @@ func TestLoadRejectsInvalidConfigEnumsAndGlobs(t *testing.T) {
 
 			if _, err := Load(path); err == nil {
 				t.Fatal("Load() succeeded, want validation error")
+			}
+		})
+	}
+}
+
+func TestLoadAgentDefaultsAndOverrides(t *testing.T) {
+	tests := []struct {
+		name        string
+		agent       string
+		wantMode    string
+		wantCommand string
+		wantEnv     []string
+	}{
+		{name: "defaults", wantMode: "inprocess", wantCommand: "archie-agent"},
+		{
+			name: "subprocess", agent: "\n[agent]\nmode = \"subprocess\"\ncommand = \"/opt/archie-agent\"\nenv = [\"GOCACHE\"]\n",
+			wantMode: "subprocess", wantCommand: "/opt/archie-agent", wantEnv: []string{"GOCACHE"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			contents := "bot_user = \"archie\"\n" + tt.agent + "\n[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
+			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := Load(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Agent.Mode != tt.wantMode || cfg.Agent.Command != tt.wantCommand || strings.Join(cfg.Agent.Env, ",") != strings.Join(tt.wantEnv, ",") {
+				t.Fatalf("agent config = %#v", cfg.Agent)
 			}
 		})
 	}

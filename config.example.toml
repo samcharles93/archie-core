@@ -36,6 +36,13 @@ api_key_env = "OPENAI_API_KEY"
 [providers.ollama]
 class = "ollama"
 
+[agent]
+mode = "inprocess"          # "subprocess" runs each autonomous stage through archie-agent
+command = "archie-agent"    # executable path for subprocess mode
+# Subprocess mode isolates the protocol and process lifecycle, not OS privileges.
+# The worker still runs as the daemon user until the Docker sandbox phase lands.
+# env = ["GOCACHE"]         # extra environment variable names forwarded to the worker
+
 [web] # observability dashboard (read-only, no auth — keep it local/tailnet)
 listen = "127.0.0.1:8484" # "off" disables
 

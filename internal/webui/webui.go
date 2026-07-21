@@ -46,7 +46,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(indexHTML)
+		_, _ = w.Write(indexHTML)
 	})
 	mux.HandleFunc("GET /api/summary", s.handleSummary)
 	mux.HandleFunc("GET /api/tasks", s.handleTasks)

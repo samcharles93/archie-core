@@ -7,10 +7,11 @@
 | Package | Role |
 |---|---|
 | `cmd/archied/` | Binary entry: config→forge→store→runtime→workflows→daemon |
+| `cmd/archie-agent/` | One-invocation autonomous stage worker (JSON stdin/stdout) |
 | `internal/config/` | TOML config, per-repo gates, budgets, providers, ecosystems |
 | `internal/daemon/` | Resident loop: poll, enqueue, claim, route, process, reconcile |
 | `internal/workflow/` | Engine: stage lists, routing, shared steps, workflow definitions |
-| `internal/agentexec/` | Versioned agent-stage protocol and current in-process runner |
+| `internal/agentexec/` | Versioned agent-stage protocol, worker, and in-process/subprocess runners |
 | `internal/forge/` | GitHub interface: issues, labels, PRs, comments, reactions |
 | `internal/worktree/` | Git operations: clone, branch, commit, push, diff, cleanup |
 | `internal/store/` | SQLite: task rows, status transitions, crash recovery |
@@ -146,9 +147,12 @@ Daemon-level TOML (`~/.config/archie/config.toml`):
 - `[[repos]]` — owner, name, base branch, gate commands, protected paths, ecosystem
 - `[models]` — planner, builder, triage (provider/model refs)
 - `[providers]` — LLM provider configs
+- `[agent]` — execution mode (`inprocess` or `subprocess`), worker command, environment allowlist
 - `[budgets]` — max steps, max tokens, wall clock, gate max failures
 - `[web]` — dashboard listen address
 - `[notify]` — webhook URL for notifications
+
+Subprocess mode is a migration transport boundary, not a security sandbox: the worker still runs under the daemon UID and can access daemon-readable host resources. The "daemon never runs untrusted code" boundary requires the later container runner with a separate user, a restricted filesystem and process namespace, and explicit mounts.
 
 Per-repo gates are command lists: `[[repos.gate]] = ["go", "vet", "./..."]`. The last command is the test runner (by convention — TDD inverts it).
 

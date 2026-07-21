@@ -63,14 +63,12 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	if _, err := db.Exec(schema + eventsSchema); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("store: init schema: %w", err)
+		return nil, errors.Join(fmt.Errorf("store: init schema: %w", err), db.Close())
 	}
 	// Additive migrations; "duplicate column" means already applied.
 	if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN watch_comment_id INTEGER NOT NULL DEFAULT 0`); err != nil &&
 		!strings.Contains(err.Error(), "duplicate column") {
-		db.Close()
-		return nil, fmt.Errorf("store: migrate: %w", err)
+		return nil, errors.Join(fmt.Errorf("store: migrate: %w", err), db.Close())
 	}
 	return &Store{db: db}, nil
 }
@@ -193,7 +191,7 @@ func (s *Store) TaskByIssue(ctx context.Context, owner, repo string, number int)
 }
 
 // WaitingTasks returns tasks blocked on human input.
-func (s *Store) WaitingTasks(ctx context.Context) ([]Task, error) {
+func (s *Store) WaitingTasks(ctx context.Context) (tasks []Task, retErr error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, owner, repo, issue_number, title, body, plan, workflow,
 			watch_comment_id, status
@@ -201,17 +199,18 @@ func (s *Store) WaitingTasks(ctx context.Context) ([]Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []Task
+	defer func() {
+		retErr = errors.Join(retErr, rows.Close())
+	}()
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.Owner, &t.Repo, &t.IssueNumber, &t.Title,
 			&t.Body, &t.Plan, &t.Workflow, &t.WatchCommentID, &t.Status); err != nil {
 			return nil, err
 		}
-		out = append(out, t)
+		tasks = append(tasks, t)
 	}
-	return out, rows.Err()
+	return tasks, rows.Err()
 }
 
 // Requeue puts a task back on the queue. A non-empty workflow forces it
@@ -242,22 +241,23 @@ func (s *Store) RecoverStale(ctx context.Context) (int64, error) {
 }
 
 // OpenPRs returns tasks whose PR state should be reconciled with GitHub.
-func (s *Store) OpenPRs(ctx context.Context) ([]Task, error) {
+func (s *Store) OpenPRs(ctx context.Context) (tasks []Task, retErr error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, owner, repo, issue_number, pr_number, status FROM tasks WHERE status='pr_open'`)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []Task
+	defer func() {
+		retErr = errors.Join(retErr, rows.Close())
+	}()
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.Owner, &t.Repo, &t.IssueNumber, &t.PRNumber, &t.Status); err != nil {
 			return nil, err
 		}
-		out = append(out, t)
+		tasks = append(tasks, t)
 	}
-	return out, rows.Err()
+	return tasks, rows.Err()
 }
 
 func clip(s string, n int) string {
