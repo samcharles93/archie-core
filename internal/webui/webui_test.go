@@ -1,0 +1,180 @@
+package webui
+
+import (
+	"bufio"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/store"
+)
+
+func newTestServer(t *testing.T) *Server {
+	t.Helper()
+	s, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return &Server{Store: s, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+}
+
+func TestHandleSummary(t *testing.T) {
+	srv := newTestServer(t)
+	ctx := t.Context()
+	if _, err := srv.Store.EnqueueIssue(ctx, "sam", "archie", 1, "t", "b", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/summary", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"statuses", "workflows", "stages", "tokens_by_day"} {
+		if _, ok := got[key]; !ok {
+			t.Errorf("summary missing key %q: %+v", key, got)
+		}
+	}
+}
+
+func TestHandleTasks(t *testing.T) {
+	srv := newTestServer(t)
+	ctx := t.Context()
+	if _, err := srv.Store.EnqueueIssue(ctx, "sam", "archie", 1, "hello", "b", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/tasks", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body)
+	}
+	var got []store.Task
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Title != "hello" {
+		t.Fatalf("tasks = %+v", got)
+	}
+}
+
+func TestHandleTask(t *testing.T) {
+	srv := newTestServer(t)
+	ctx := t.Context()
+	if _, err := srv.Store.EnqueueIssue(ctx, "sam", "archie", 1, "t", "b", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := srv.Store.TaskByIssue(ctx, "sam", "archie", 1)
+	if err != nil || task == nil {
+		t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
+	}
+	if _, err := srv.Store.InsertEvent(ctx, events.Event{Kind: "stage_start", TaskID: task.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/tasks/"+strconv.FormatInt(task.ID, 10), nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body)
+	}
+	var got []events.Event
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Kind != "stage_start" {
+		t.Fatalf("task events = %+v", got)
+	}
+}
+
+func TestHandleTaskBadID(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest("GET", "/api/tasks/not-a-number", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", w.Code)
+	}
+}
+
+func TestHandleIndex(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("content-type = %q", ct)
+	}
+}
+
+func TestHandleSSEBacklogAndLive(t *testing.T) {
+	srv := newTestServer(t)
+	ctx := t.Context()
+	id, err := srv.Store.InsertEvent(ctx, events.Event{Kind: "log", Detail: "backlog"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	resp, err := http.Get(ts.URL + "/events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	line, err := readLineUntil(reader, "backlog")
+	if err != nil {
+		t.Fatalf("backlog event not received: %v (%q)", err, line)
+	}
+
+	// Now broadcast a live event and confirm it's delivered too. Give
+	// the SSE handler a moment to register its subscriber.
+	time.Sleep(50 * time.Millisecond)
+	srv.Broadcast(events.Event{ID: id + 1, Kind: "log", Detail: "live"})
+
+	if _, err := readLineUntil(reader, "live"); err != nil {
+		t.Fatalf("live event not received: %v", err)
+	}
+}
+
+// readLineUntil scans SSE "data:" lines until one contains want.
+func readLineUntil(r *bufio.Reader, want string) (string, error) {
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		line, err := r.ReadString('\n')
+		if err != nil {
+			return line, err
+		}
+		if strings.HasPrefix(line, "data:") && strings.Contains(line, want) {
+			return line, nil
+		}
+	}
+	return "", io.EOF
+}
