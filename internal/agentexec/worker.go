@@ -8,6 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+
+	"github.com/samcharles93/archie-core/internal/skill"
 )
 
 const maxProtocolBytes = 8 << 20
@@ -66,6 +68,18 @@ func HandleMessage(ctx context.Context, msg AgentRequestMessage, log *slog.Logge
 	channel := msg.Channel
 	if channel == "" {
 		channel = "response"
+	}
+
+	// Load the skill body from the worktree — the agent owns skill
+	// loading per PRD section 1. Mirrors daemon-side loadSkillBody().
+	if msg.Workflow != "" && msg.Workspace != "" {
+		body := skill.LoadBody(msg.Workspace, workflowToSkillDir(msg.Workflow))
+		if body != "" {
+			msg.Request.Mission = "Follow these project-specific guidelines:\n\n" + body + "\n\n---\n\n" + msg.Request.Mission
+			for i := range msg.Stages {
+				msg.Stages[i].Mission = "Follow these project-specific guidelines:\n\n" + body + "\n\n---\n\n" + msg.Stages[i].Mission
+			}
+		}
 	}
 
 	// Per-task mode: run all stages for this workflow as a batch.
@@ -135,6 +149,21 @@ func runStages(ctx context.Context, runner Runner, msg AgentRequestMessage, chan
 		Channel:      channel,
 		TaskCompleted: lastResult.Status == StatusPassed,
 	}, nil
+}
+
+// workflowToSkillDir maps a workflow name to the skill directory name.
+// Mirrors the mapping in internal/workflow/agent.go.
+func workflowToSkillDir(workflow string) string {
+	switch workflow {
+	case "tdd":
+		return "tdd-bugfix"
+	case "implement":
+		return "implement"
+	case "feasibility":
+		return "feasibility"
+	default:
+		return workflow
+	}
 }
 
 func decodeOne(r io.Reader, value any) error {
