@@ -53,6 +53,10 @@ type Daemon struct {
 	Storage storage.Backend
 	// PluginRegistry holds core daemon plugins loaded from the configured
 	// plugin_dir at startup (Layer 2). Nil when no plugin_dir is configured.
+	//
+	// Reserved for future daemon extension points (forge resolvers, storage
+	// backends, notification handlers). Loaded plugins are logged at startup;
+	// the registry is available when extension point interfaces are defined.
 	PluginRegistry *plugin.Registry
 	// CustomStages discovers a repo's per-repo Yaegi custom stages
 	// (.archie/stages/*.go) from its prepared worktree. Set by the
@@ -498,7 +502,12 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	if _, err := os.Stat(workDir); err == nil {
 		aug, err := skillbuild.AugmentRegistry(workDir, d.Workflows)
 		if err != nil {
-			d.Log.Warn("worktree registry augmentation failed — using startup registry", "dir", workDir, "err", err)
+			d.Log.Error("worktree registry augmentation failed — using startup registry", "dir", workDir, "err", err)
+			d.emit(events.Event{
+				Kind: "registry_augment_failed", TaskID: task.ID,
+				Repo: task.Owner + "/" + task.Repo, Issue: task.IssueNumber,
+				Detail: err.Error(),
+			})
 		} else {
 			registry = aug
 		}
@@ -565,6 +574,18 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 		Log:          d.Log,
 		CustomStages: d.CustomStages,
 	})
+
+	// Teardown storage after workflow completes. The Docker backend is a
+	// no-op; future backends (temp volumes, NFS leases) use this hook.
+	if d.Storage != nil {
+		_ = d.Storage.Teardown(ctx, storage.TaskRef{
+			WorktreeDir:       workDir,
+			Ecosystem:         repo.Ecosystem,
+			PersistentStorage: repo.PersistentStorage,
+			Owner:             task.Owner,
+			Repo:              task.Repo,
+		})
+	}
 }
 
 // containerEnv returns the environment variables passed to agent containers.

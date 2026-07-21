@@ -369,6 +369,24 @@ func TestRepoVolumeName(t *testing.T) {
 	}
 }
 
+func TestCacheMountsForTypeScript(t *testing.T) {
+	// S4: typescript ecosystem must share node + pnpm cache volumes.
+	mounts := cacheMounts("typescript")
+	names := mountDestinations(mounts)
+	if !contains(names, "/data/cache/node") {
+		t.Errorf("typescript ecosystem missing /data/cache/node in %v", names)
+	}
+	if !contains(names, "/data/cache/pnpm") {
+		t.Errorf("typescript ecosystem missing /data/cache/pnpm in %v", names)
+	}
+	// Must be sorted.
+	if !sort.SliceIsSorted(mounts, func(i, j int) bool {
+		return mounts[i].Destination < mounts[j].Destination
+	}) {
+		t.Error("typescript cacheMounts not sorted by Destination")
+	}
+}
+
 // ── audit fixes ──────────────────────────────────────────────────────
 
 func TestCacheMountsCaseInsensitive(t *testing.T) {

@@ -2,18 +2,27 @@
 // container execution. The Docker backend (DockerBackend) is the MVP
 // implementation — no NFS/SMB/S3 yet, just Docker volumes + bind mounts.
 //
-// /data/ volume layout:
+// /data/ volume layout (implemented):
 //
 //	/data/
-//	  task.json          — boot-time brief (written by container.WriteTaskJSON)
+//	  task.json          — at /data/worktree/task.json (WriteTaskJSON writes
+//	                        to the worktree root, which is bind-mounted)
 //	  worktree/          — bind mount of host worktree
+//	  repo/              — per-repo persistent volume (optional, on request)
 //	  cache/
 //	    go/              — GOMODCACHE (shared across all tasks)
 //	    node/            — npm cache (shared)
 //	    pnpm/            — pnpm store (shared)
+//	    deno/            — Deno module cache (shared)
+//	    bun/             — Bun package cache (shared)
 //	    pip/             — pip cache (shared)
 //	    cargo/           — Rust cargo cache (shared)
-//	  plugins/           — skill plugins staged from worktree
+//
+// TODO(PRD §3): session.jsonl, memory.jsonl, plugins/ volume — these
+// require agent-side implementation before the storage layer can mount
+// them. session.jsonl needs per-stage structured output from the agent;
+// memory.jsonl needs cross-session persistence; plugins/ needs daemon-
+// staged bundled plugins.
 //
 // Cache volumes are named Docker volumes created once and shared across all
 // tasks. They are never deleted — the daemon operator manages them.
@@ -80,6 +89,16 @@ var cacheVolumesByEcosystem = map[string][]cacheVolume{
 	"node": {
 		{Name: "archie-cache-node", MountPath: "/data/cache/node"},
 		{Name: "archie-cache-pnpm", MountPath: "/data/cache/pnpm"},
+	},
+	"typescript": {
+		{Name: "archie-cache-node", MountPath: "/data/cache/node"},
+		{Name: "archie-cache-pnpm", MountPath: "/data/cache/pnpm"},
+	},
+	"deno": {
+		{Name: "archie-cache-deno", MountPath: "/data/cache/deno"},
+	},
+	"bun": {
+		{Name: "archie-cache-bun", MountPath: "/data/cache/bun"},
 	},
 	"python": {
 		{Name: "archie-cache-pip", MountPath: "/data/cache/pip"},
@@ -149,6 +168,8 @@ func (d *DockerBackend) ensureVolume(ctx context.Context, name string) error {
 	if d.cli == nil {
 		return nil // nil client for testing — volumes must be pre-created
 	}
+	// VolumeInspectOptions{} is the empty struct form (requires moby v25+).
+	// The go.mod pins a compatible version; zero value is always valid.
 	_, err := d.cli.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
 	if err == nil {
 		return nil // already exists

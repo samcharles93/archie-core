@@ -129,11 +129,20 @@ func run() int {
 	var containerPool *container.Pool
 	var storeBackend storage.Backend
 	if cfg.Containers.Enabled {
+		// Single Docker client shared between pool and storage backend.
+		dockerCli, err := client.New(client.FromEnv)
+		if err != nil {
+			log.Error("docker client failed", "err", err)
+			return 1
+		}
+		defer dockerCli.Close()
+
 		containerPool, err = container.NewPool(ctx, container.Config{
-			Image:          cfg.Containers.Image,
+			Image:        cfg.Containers.Image,
 			MaxConcurrency: cfg.Containers.MaxConcurrency,
 			MaxUptime:      cfg.Containers.MaxUptime.Std(),
 			PullPolicy:     cfg.Containers.PullPolicy,
+			DockerClient:   dockerCli,
 		}, cfg.NATS.URL, log)
 		if err != nil {
 			log.Error("container pool failed", "err", err)
@@ -141,12 +150,6 @@ func run() int {
 		}
 		defer containerPool.Close()
 
-		// Storage backend — Docker volume management for cache mounts.
-		dockerCli, err := client.New(client.FromEnv)
-		if err != nil {
-			log.Error("docker client for storage failed", "err", err)
-			return 1
-		}
 		storeBackend = storage.NewDockerBackend(dockerCli)
 	}
 

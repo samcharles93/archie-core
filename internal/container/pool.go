@@ -56,6 +56,7 @@ func WriteTaskJSON(workspace string, payload TaskPayload) error {
 // Pool manages a set of Docker containers running archie-agent.
 type Pool struct {
 	cli     *client.Client
+	ownCli  bool // true when the pool created the client (owns Close)
 	cfg     Config
 	log     *slog.Logger
 	natsURL string
@@ -75,15 +76,26 @@ type Config struct {
 	// container is killed. The agent stays alive to handle follow-ups
 	// (gate re-runs, human replies) during this window. PRD §1.
 	GracePeriod time.Duration
-	PullPolicy  string
+	PullPolicy string
+	// DockerClient is an optional pre-connected Docker client. When nil,
+	// NewPool creates its own via client.New(client.FromEnv). Pass a
+	// shared client to avoid multiple independent connections.
+	DockerClient *client.Client
 }
 
 // NewPool connects to the Docker daemon, optionally pulls the image,
 // and cleans up orphaned containers from a previous daemon crash.
+//
+// If cfg.DockerClient is set, it is reused (caller owns Close).
+// Otherwise a new client is created via client.FromEnv (pool owns Close).
 func NewPool(ctx context.Context, cfg Config, natsURL string, log *slog.Logger) (*Pool, error) {
-	cli, err := client.New(client.FromEnv)
-	if err != nil {
-		return nil, fmt.Errorf("docker client: %w", err)
+	cli := cfg.DockerClient
+	if cli == nil {
+		var err error
+		cli, err = client.New(client.FromEnv)
+		if err != nil {
+			return nil, fmt.Errorf("docker client: %w", err)
+		}
 	}
 
 	p := &Pool{
@@ -91,6 +103,7 @@ func NewPool(ctx context.Context, cfg Config, natsURL string, log *slog.Logger) 
 		cfg:     cfg,
 		log:     log,
 		natsURL: natsURL,
+		ownCli:  cfg.DockerClient == nil,
 	}
 
 	// Pull image if needed.
@@ -191,7 +204,8 @@ func (p *Pool) Release(c *Container) {
 	p.log.Info("container released", "id", c.ID[:12])
 }
 
-// Close stops and removes all active containers, then closes the client.
+// Close stops and removes all active containers. If the pool created its
+// own Docker client, it is closed. Shared clients are not closed.
 func (p *Pool) Close() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -209,7 +223,10 @@ func (p *Pool) Close() error {
 			p.cli.ContainerRemove(ctx, c.ID, client.ContainerRemoveOptions{Force: true})
 		}
 	}
-	return p.cli.Close()
+	if p.ownCli {
+		return p.cli.Close()
+	}
+	return nil
 }
 
 // ── helpers ──────────────────────────────────────────────────────────
