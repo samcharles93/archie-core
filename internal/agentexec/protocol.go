@@ -61,6 +61,7 @@ type Request struct {
 	TaskID       int64         `json:"task_id"`
 	Attempt      int           `json:"attempt"`
 	Stage        string        `json:"stage"`
+	Workflow     string        `json:"workflow,omitempty"`
 	Model        string        `json:"model"`
 	Mission      string        `json:"mission"`
 	ExtraRules   string        `json:"extra_rules,omitempty"`

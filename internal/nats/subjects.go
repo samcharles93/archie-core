@@ -54,6 +54,20 @@ func SubjectForAgentRequest(taskID int64) string {
 	return fmt.Sprintf("archie.agent.%d.request", taskID)
 }
 
+// SubjectForAgentResponse returns the subject for agent output destined
+// for human channels. The daemon reviews messages on this subject before
+// forwarding to issue comments, labels, or PRs. PRD §2.
+func SubjectForAgentResponse(taskID int64) string {
+	return fmt.Sprintf("archie.agent.%d.response", taskID)
+}
+
+// SubjectForAgentSystem returns the subject for internal agent messages
+// (log dumps, health, PII warnings). The daemon reads these for
+// observability and never forwards them. PRD §2.
+func SubjectForAgentSystem(taskID int64) string {
+	return fmt.Sprintf("archie.agent.%d.system", taskID)
+}
+
 // ReplyHeader is the custom NATS header carrying the daemon's reply inbox.
 // JetStream's PublishMsg consumes the Reply field internally for PubAck, so
 // the reply address is carried via this header instead.

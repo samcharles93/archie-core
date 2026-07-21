@@ -42,6 +42,12 @@ type AgentStage struct {
 	// OnResult consumes a successful (passed) result. Parked and idle
 	// results park the workflow before OnResult is called.
 	OnResult func(*TaskContext, agentexec.Result) error
+	// ReviewResult gates agent output before OnResult forwards it to
+	// human channels. The daemon calls this hook to review stage output
+	// (issue comments, PR bodies) before human delivery. Return an
+	// error to block the stage. Nil means pass-through — no review.
+	// PRD §1: daemon reviews agent responses before forwarding.
+	ReviewResult func(*TaskContext, agentexec.Result) error
 }
 
 // Stage adapts the AgentStage to the engine.
@@ -103,6 +109,7 @@ func (a AgentStage) Stage() Stage {
 			TaskID:       tc.Task.ID,
 			Attempt:      tc.Task.Attempt,
 			Stage:        a.Name,
+			Workflow:     tc.Task.Workflow,
 			Model:        modelRef,
 			Mission:      missionWithSkill(tc, a.Mission(tc)),
 			ExtraRules:   a.ExtraRules,
@@ -146,6 +153,12 @@ func (a AgentStage) Stage() Stage {
 				detail = res.Summary
 			}
 			return fmt.Errorf("agent %s (%s): %s", res.Status, res.StopReason, clip(detail, 2000))
+		}
+		// Gatekeeping: the daemon reviews agent output before human delivery.
+		if a.ReviewResult != nil {
+			if err := a.ReviewResult(tc, res); err != nil {
+				return fmt.Errorf("review: %w", err)
+			}
 		}
 		if a.OnResult != nil {
 			return a.OnResult(tc, res)

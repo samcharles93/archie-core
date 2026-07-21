@@ -14,20 +14,26 @@ import (
 )
 
 // AgentRequestMessage is the NATS payload for an agent stage execution request.
+// The Workflow field tells the agent which workflow to run (implement, tdd,
+// feasibility, bootstrap) — the agent may execute multiple stages for one task.
 type AgentRequestMessage struct {
 	TaskID    int64             `json:"task_id"`
 	Attempt   int               `json:"attempt"`
 	Stage     string            `json:"stage"`
+	Workflow  string            `json:"workflow,omitempty"`
 	Workspace string            `json:"workspace"`
 	Request   Request           `json:"request"`
 	Providers map[string]Provider `json:"providers,omitempty"`
 }
 
 // AgentResponseEnvelope is the response payload published to the reply inbox.
+// Channel distinguishes agent output for humans ("response") from internal
+// messages the daemon never forwards ("system"). PRD §2.
 type AgentResponseEnvelope struct {
 	Version int    `json:"version"`
 	Result  Result `json:"result"`
 	Error   string `json:"error,omitempty"`
+	Channel string `json:"channel,omitempty"` // "response" (default) or "system"
 }
 
 const defaultAgentTimeout = 30 * time.Minute
@@ -65,6 +71,7 @@ func (r *NATSRunner) Run(ctx context.Context, workspace string, req Request) (Re
 		TaskID:    req.TaskID,
 		Attempt:   req.Attempt,
 		Stage:     req.Stage,
+		Workflow:  req.Workflow,
 		Workspace: workspace,
 		Request:   req,
 		Providers: r.Providers,
