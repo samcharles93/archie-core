@@ -1,8 +1,31 @@
 # archie-core v2 Architecture — Design Document
 
 **Author:** Archie (Hermes agent)  
-**Date:** 2026-07-21  
+**Date:** 2026-07-21 (implementation status updated 2026-07-22)  
 **Status:** Draft — interview-complete, pending final review
+
+---
+
+## 0. Implementation status (as of 2026-07-22)
+
+This document describes a target end state. A parallel exploration of the codebase found that most of it is greenfield — not a delta from current code. The table below is the ground truth; read it before treating any section as already built.
+
+| Area | Status | What actually exists today |
+|---|---|---|
+| Daemon/agent binary split | **Partial** | `cmd/archied` and `cmd/archie-agent` both exist, but `archied` owns task discovery, routing, and full multi-stage workflow sequencing. `archie-agent` is a 28-line stdin/stdout worker invoked once **per stage**, not a persistent per-task process. See §1. |
+| Sandbox / "daemon never runs untrusted code" | **Not true today** | Default `[agent] mode = "inprocess"` runs the LLM agent loop, and therefore all tool calls, inside `archied` itself. `subprocess` mode exists but its own code comment says explicitly it is "not an OS security boundary." No Docker sandbox exists. See §1, §4. |
+| NATS / JetStream messaging | **Aspirational — zero code** | No `nats`/`jetstream` dependency, no subject hierarchy, no pub/sub anywhere. Task distribution today is GitHub polling → SQLite `tasks` table used as a queue (`ClaimNext` claims the oldest row) → fully sequential, single-goroutine, in-process execution. Results flow through an in-process `internal/events.Bus` (Go channels) feeding SQLite + SSE. See §2. |
+| Docker container sandbox | **Aspirational — zero code** | No Docker/container code anywhere (grep confirms zero implementation hits; the only "container" matches are comments contrasting today's subprocess approach with a hypothetical future runner). `config.example.toml` itself says: *"The worker still runs as the daemon user until the Docker sandbox phase lands."* See §4. |
+| `/data/` volume, `task.json` | **Aspirational — zero code** | No file named `task.json` exists anywhere. The closest analog, `store.Task`, is a SQLite-row Go struct with a materially different shape (flat comma-separated `labels`, no nested `config`/`nats` objects) passed by function call, never serialized to a volume. See §3. |
+| `[containers]` config block | **Aspirational — zero code** | `internal/config/config.go` has no `[containers]`, `[containers.image]`, or `[containers.persistent_storage]` sections, and `Repo` has no `persistent_storage` override field. See §4. |
+| Yaegi extensibility (gates, custom stages, skill scripts) | **Implemented** — but scoped differently than §5 describes | Three surfaces are real, working, and production-tested today: `.archie/gate.go` (custom gates), `.archie/stages/*.go` (custom workflow stages, auto-discovered and run in filename order — no `config.toml`-driven named routing), and skill-local `scripts/*.go` via a `run_go_script` agent tool. All run in-process inside `archied`, re-read from disk every call (no caching layer needed). Full detail lives in the sibling PRD `docs/prds/yaegi-plugin-system.md`, whose Phases 1–3 are marked implemented and match disk state 1:1. See §5, and the reconciliation note there. |
+| Layer 1: skill-bundled plugins (`metadata.archie.plugins`, `/data/plugins/`) | **Aspirational — zero code** | No skill currently ships a `plugins/` directory, no code reads `metadata.archie.plugins`, no daemon-side staging to `/data/plugins/`, no volume-precedence conflict resolution. See §5. |
+| Layer 2: core daemon plugins (`~/.config/archie/plugins/`, `Plugin` interface) | **Aspirational — zero code** | No `Plugin` interface, no `Register(daemon *Daemon)`, no plugin registry, no loader for `~/.config/archie/plugins/`. Grepped for `Plugin`/plugin registry/`Register(daemon` — zero matches anywhere in the repo. See §5. |
+| Skills (`archie-wf-*`, agentskills.io spec) | **Cosmetic only** | Five `SKILL.md` files exist (`ecosystem-node`, `ecosystem-python`, `go-quality-gate`, `security-audit`, `tdd-bugfix`) with a `metadata.archie` block (`tools`, `engine` — no `plugins` or `budget_usd` keys). None use the `archie-wf-*` naming convention. **No Go code parses SKILL.md frontmatter, loads it, or does progressive disclosure at all** — they are documentation of existing hardcoded Go workflow stages, not a loaded specification. One drift found: `tdd-bugfix/SKILL.md` names the final stage "deliver"; the code calls it `open-pr`. See §5. |
+| Worktree/repo management | **Implemented, but ephemeral, not volume-based** | `internal/worktree.Manager` does a full fresh `git clone` per task attempt (removing any prior directory first) — no shared object cache, no persistence, no TTL. This answers PRD open question 3: today it is 100% per-task, daemon-owned, non-reusable. See §3, §9. |
+| Config schema | **Simpler than §4 describes** | Current `[agent]` block is just `mode` (`inprocess`/`subprocess`) + `command` + `env` — no image registry, no volume TTL, no concurrency cap. See §4. |
+
+**Net read:** the two things that are genuinely further along than a plain reading of this doc's phase list would suggest are (a) the Yaegi extension surfaces (real, tested, in production — just narrower and differently-shaped than §5's Layer 1/2 split), and (b) the `agentexec.Runner` interface (`InProcessRunner`/`SubprocessRunner`), which its own doc comments describe as deliberately designed so a future container runner is a drop-in swap rather than a rewrite. Everything else in this document — NATS, Docker, `/data/` volumes, core plugin registry, agentskills.io loading — is a from-scratch build, not a refactor.
 
 ---
 
@@ -22,6 +45,8 @@ The resident orchestrator. Owns:
 
 The daemon never runs untrusted code. Agent containers are the sandbox boundary.
 
+> **Target state, not current state.** Today, default `[agent] mode = "inprocess"` runs the agent loop (and therefore all LLM-directed tool calls) directly inside `archied`. `subprocess` mode exists (`internal/agentexec/subprocess.go`) but its own code comment says: *"This is not an OS security boundary: a same-UID subprocess may still access daemon-readable host resources."* This claim becomes true only once the Docker sandbox (§4, Phase 2) lands.
+
 ### archie-agent (ephemeral container)
 
 Spawned per task. Lives in a Docker container. Receives its brief via `/data/task.json` (volume-mounted). Owns:
@@ -34,9 +59,13 @@ Spawned per task. Lives in a Docker container. Receives its brief via `/data/tas
 
 Lifecycle: spawn → load task → run workflow → report → wait for follow-ups (grace period) → killed by daemon.
 
+> **Target state, not current state.** `cmd/archie-agent/main.go` today is 28 lines: read one JSON `Invocation` from stdin, run one stage via `agentexec.ServeOne`, write one `Response` to stdout, exit. It is a single-stage subprocess worker invoked by `archied`'s `SubprocessRunner`, not a persistent per-task container process. Workflow routing and multi-stage sequencing (`workflow.Route`, `workflow.Run`) run entirely inside `archied` (`internal/daemon/daemon.go:process()`), not inside archie-agent. There is no `/data/task.json`, no bundled-plugin loading, no `.agents/skills/archie-wf-*` discovery, and no NATS reporting — see §0, §2, §3, §5. The existing `agentexec.Runner` interface (`InProcessRunner`/`SubprocessRunner`) is, however, deliberately shaped so a future container-backed runner can be a drop-in swap without changing workflow orchestration.
+
 ---
 
 ## 2. NATS subject hierarchy
+
+> **Status: aspirational, zero code.** No NATS/JetStream dependency exists anywhere in `go.mod` or the codebase. Today, task discovery is GitHub-poll-driven (`daemon.Run()` ticks on `PollInterval`, calls `pollIssues()`), distribution is a SQLite `tasks` table used as a FIFO queue (`store.ClaimNext` atomically claims the oldest `queued` row), and results/status flow through an in-process `internal/events.Bus` (Go channels, multi-subscriber fan-out, drop-on-overflow) that already feeds both a SQLite `events` table and the SSE dashboard. `events.Bus` has roughly the right shape to become the NATS publish path — same `Event` schema, swap the transport — which meaningfully de-risks this phase, but it is currently single-process only with no network transport.
 
 ### Task distribution
 
@@ -66,6 +95,8 @@ Tasks are published with JetStream persistence. On agent container failure, NATS
 ---
 
 ## 3. Persistent volume
+
+> **Status: aspirational, zero code.** No `/data/` directory convention, no `task.json` file, no `session.jsonl`/`memory.jsonl` exist on disk anywhere. The closest thing today is `store.Task` (a SQLite row, passed by function call, different shape from the JSON below — e.g. `Labels` is a comma-separated string, not an array, and there's no nested `config`/`nats` object) plus the `agentexec` wire protocol, which passes an `Invocation` directly over the subprocess's stdin as JSON rather than through a mounted volume. Worktrees are real but ephemeral: `internal/worktree.Manager.Prepare` does a fresh `git clone` per task attempt into `WorkDir/<owner>-<repo>/issue-<N>`, removing any prior directory first — no shared clone cache, no persistence across attempts, no TTL-based cleanup (cleanup today is purely lifecycle-status-driven: removed on terminal merged/rejected outcomes, kept indefinitely while parked).
 
 ### /data/ layout
 
@@ -121,6 +152,8 @@ The daemon writes `task.json` to the volume before the container starts. The age
 
 ## 4. Container management
 
+> **Status: aspirational, zero code.** `internal/config/config.go` has no `[containers]`, `[containers.image]`, or `[containers.persistent_storage]` sections, and `Repo` has no per-repo `persistent_storage` override. The real config today is a much smaller `[agent]` block: `mode` (`"inprocess"` default, or `"subprocess"`), `command` (defaults to the PATH-resolved `archie-agent` binary name, not a container image), and `env`. There is no Docker/container library dependency in `go.mod`, no `Dockerfile.agent`, and no spawn/kill/grace-period lifecycle code — `SubprocessRunner` uses plain `os/exec.CommandContext` with an env-allowlist, running as the daemon's own OS user. `config.example.toml` already documents this gap directly: *"The worker still runs as the daemon user until the Docker sandbox phase lands."*
+
 ### Daemon config
 
 ```toml
@@ -170,7 +203,17 @@ Pre-built and published to a registry. The daemon pulls on startup. Users can pr
 
 ## 5. Extensibility layers
 
+> **Reconciliation note.** This section describes a two-layer plugin architecture (skill-bundled plugins loaded per-task, core daemon plugins loaded at startup) that does not exist in code. What *does* exist — and is implemented, tested, and already in production — is described in the sibling PRD `docs/prds/yaegi-plugin-system.md`, whose three phases (custom gate functions, custom workflow stages, skill scripts) are marked "implemented" and match disk state exactly as of commit `d45f21d`. That implementation is narrower and shaped differently than what follows:
+>
+> - It has **no skill-bundling concept** — `.archie/gate.go` and `.archie/stages/*.go` are repo-level, not shipped inside a skill's `plugins/` directory; skill scripts (`.archie/skills/<skill>/scripts/*.go`) are the closest analog but none of the five current skills ship a `scripts/` directory yet.
+> - It has **no daemon-side core plugin registry** — no `Plugin` interface, no `Register(daemon *Daemon)`, no `~/.config/archie/plugins/` loader. Yaegi today only interprets small, narrowly-scoped `.go` files (gates, stages, scripts) in-process inside `archied`, using generated symbol tables (`internal/gate/gateextract`, `internal/workflow/wfextract`) rather than a general extension-registration interface.
+> - Custom stages are **auto-discovered and run in filename order**, not routed by name from `config.toml` — the workflow engine has no data-driven stage graph today, so the `[[workflows.stages]]` config sketch below does not correspond to real config.
+>
+> Before implementation begins, decide: does Layer 1/Layer 2 as described below *replace* the existing three Yaegi surfaces, or does it *extend* them (e.g., teach the existing loaders to also read from a skill's `plugins/` directory, and add a genuinely new daemon-side `Plugin` interface as a separate, later addition)? The existing surfaces are working code with real symbol-table generation and panic recovery — treat them as the implementation substrate for Layer 1, not as something to discard.
+
 ### Layer 1: Skills (`archie-wf-*`)
+
+> **Status: cosmetic only.** Five `SKILL.md` files exist today (`ecosystem-node`, `ecosystem-python`, `go-quality-gate`, `security-audit`, `tdd-bugfix`) at `.archie/skills/<name>/SKILL.md` — a single flat repo-relative location, no worktree-vs-user-level split, no `archie-wf-*` naming. Each has a `metadata.archie` block with only `tools` and `engine` keys (no `plugins`, no `budget_usd`). **No Go code parses SKILL.md frontmatter, discovers skills, or does progressive disclosure** — grepping for a skill loader, catalog, or frontmatter parser across the repo returns nothing. The workflow `Mission` strings that drive agent behavior today are hand-written Go string literals in `internal/workflow/{implement,tdd,feasibility}.go`, not content injected from SKILL.md. The stage names described in the PRD's SKILL.md prose closely mirror the hardcoded Go stage names (one drift found: `tdd-bugfix/SKILL.md` says the last stage is "deliver"; the code calls it `open-pr`) — these read as retrofitted documentation of existing v1 behavior wearing v2-flavored frontmatter, not a functioning specification the daemon consumes.
 
 Skills are Markdown documents following the [agentskills.io](https://agentskills.io/specification) specification with archie-specific extensions.
 
@@ -222,6 +265,8 @@ If `/data/plugins/` already has a plugin with the same name (from persistent pro
 
 ### Layer 2: Core plugins
 
+> **Status: aspirational, zero code.** No `Plugin` interface, no plugin registry, no `~/.config/archie/plugins/` loader exists anywhere in the repo (confirmed by grep for `Plugin`, plugin registry, and `Register(daemon` — zero matches). Yaegi is a real dependency (`traefik/yaegi v0.16.1`) and is genuinely wired up, but only for the three narrow surfaces in §5's reconciliation note above, all interpreted in-process inside `archied` — not for extending the daemon with new forge/ticketing/storage/secrets/notify implementations as described below.
+
 Core plugins live at `~/.config/archie/plugins/` and extend the daemon itself:
 
 ```
@@ -261,6 +306,8 @@ The daemon discovers `.go` files, evaluates them, extracts the plugin symbol, an
 ---
 
 ## 6. Task lifecycle (v2)
+
+> **Status: aspirational shape, real states.** The status values (`pr_open`, `merged`, `rejected`, `parked`, etc.) and stage names are real — they're the actual `store.Task.Status`/`Stage` values used today. What's aspirational is the *execution model* implied by this diagram: today there is no JetStream publish step, and "Agent consumes" is really "the daemon's single poll-loop goroutine claims the next queued row from SQLite and runs the whole workflow synchronously in-process" (`daemon.Cycle()` → `store.ClaimNext` → `process()` → `workflow.Run()`). There is no concurrent multi-agent consumption today — see §0 and §2.
 
 ```
 Discover ──→ Publish to JetStream ──→ Agent consumes ──→ running(workflow:stage)
@@ -307,36 +354,39 @@ The agent writes whatever it wants to `response`. The daemon reviews it. No agen
 
 ## 8. Implementation phases
 
+> Updated 2026-07-22 against actual repo state (see §0). Items marked **done** are already merged; nothing else in this document is implemented beyond them. Phase ordering below is unchanged from the original sketch except Phase 3, which now builds on top of existing Yaegi work instead of assuming a blank slate.
+
 ### Phase 1: Binary split + NATS
-- Split `archied` into daemon binary
-- Create `archie-agent` binary (extracted agent loop from current daemon)
-- Add NATS to both (JetStream for task queue, request-reply for comms)
-- Daemon publishes, agent consumes, results return via NATS
-- Current single-process mode preserved for development (`--local` flag)
+- ~~Split `archied` into daemon binary~~ — **done**, `cmd/archied` exists
+- ~~Create `archie-agent` binary~~ — **done, but partial**: `cmd/archie-agent` exists and executes one workflow *stage* per invocation over a versioned stdin/stdout JSON protocol (`internal/agentexec`, protocol v1). Still needed: promote it from a single-stage subprocess worker to the PRD's per-task process, and move workflow routing/sequencing (`workflow.Route`/`workflow.Run`) out of `archied` and into it.
+- Add NATS to both (JetStream for task queue, request-reply for comms) — not started. `internal/events.Bus` (in-process pub/sub, already feeding SQLite + SSE) is the natural seam to replace the transport under.
+- Daemon publishes, agent consumes, results return via NATS — not started
+- Current single-process mode preserved for development (`--local` flag) — effectively already true: `inprocess` `[agent] mode` is the *default*, not an opt-in fallback, so this constraint is satisfied but should be revisited once subprocess/container modes are the default.
 
 ### Phase 2: Docker sandbox
-- Docker agent image (fat, with tools)
-- Daemon container lifecycle: spawn, volume create, env inject, kill
-- Persistent volumes with TTL
-- `max_concurrency` enforcement
-- Grace period `max_uptime`
+- Docker agent image (fat, with tools) — not started
+- Daemon container lifecycle: spawn, volume create, env inject, kill — not started
+- Persistent volumes with TTL — not started (current worktree lifecycle is fresh-clone-per-task with status-driven cleanup, no TTL)
+- `max_concurrency` enforcement — not started (daemon processes one task at a time today)
+- Grace period `max_uptime` — not started
+- **Groundwork already in place:** `agentexec.Runner` (`InProcessRunner`/`SubprocessRunner`) is an interface designed, per its own doc comments, to be swapped for a container-backed runner without touching workflow orchestration — implement `ContainerRunner` against this interface rather than redesigning the execution boundary.
 
 ### Phase 3: Skills + bundled plugins
-- agentskills.io spec implementation (progressive disclosure)
-- `archie-wf-*` skill discovery from worktree and user paths
-- Bundled plugin loading via Yaegi from skill's `plugins/` directory
-- Volume-staged plugins with conflict resolution
+- agentskills.io spec implementation (progressive disclosure) — not started; current SKILL.md files are unparsed documentation (see §5)
+- `archie-wf-*` skill discovery from worktree and user paths — not started; current skills live at a single flat `.archie/skills/` path with different naming
+- Bundled plugin loading via Yaegi from skill's `plugins/` directory — not started, but **has a working substrate to extend**: `internal/gate/gateeval`, `internal/workflow/wfeval`, and `internal/skillscript` already interpret `.go` files via Yaegi with generated symbol tables and panic recovery (see `docs/prds/yaegi-plugin-system.md`, Phases 1–3, done). This phase should teach those loaders to also discover files from a skill's `plugins/` directory, not build a second Yaegi integration from scratch.
+- Volume-staged plugins with conflict resolution — not started, and depends on Phase 2's volume work existing first
 
 ### Phase 4: Core plugins
-- Yaegi plugin loader for `~/.config/archie/plugins/`
-- Plugin registry in daemon
-- Gitea forge as first core plugin (proof of concept)
-- Linear ticketing as second core plugin
+- Yaegi plugin loader for `~/.config/archie/plugins/` — not started (no `Plugin` interface, no registry, no loader exist today)
+- Plugin registry in daemon — not started
+- Gitea forge as first core plugin (proof of concept) — not started (current `internal/forge` only implements GitHub REST polling)
+- Linear ticketing as second core plugin — not started
 
 ### Phase 5: Pluggable storage
-- Docker volume backend (built-in)
-- Bind mount backend (built-in)
-- S3, SFTP, NFS backends as core plugins
+- Docker volume backend (built-in) — not started
+- Bind mount backend (built-in) — not started
+- S3, SFTP, NFS backends as core plugins — not started
 
 ---
 
@@ -344,6 +394,8 @@ The agent writes whatever it wants to `response`. The daemon reviews it. No agen
 
 1. **Agent image versioning:** Does the daemon pull `:latest` and auto-restart, or pin to a digest?
 2. **NATS auth:** Anonymous for single-node, or credentials for multi-node/cluster?
-3. **Worktree ownership:** Does the daemon clone repos into a shared volume that agents mount read-only, or does each agent clone fresh?
+3. **Worktree ownership:** ~~Does the daemon clone repos into a shared volume that agents mount read-only, or does each agent clone fresh?~~ **Answered by current implementation:** `internal/worktree.Manager.Prepare` does a full fresh `git clone` per task attempt, removing any prior directory first — no shared clone/object cache, no reuse across attempts or sessions. This is a reasonable default to carry into v2, but note it forgoes a common efficiency pattern (e.g. `git clone --reference` against a shared mirror) that will matter more once `max_concurrency` > 1 is real.
 4. **Grace period interaction:** If a human replies during grace period and the agent handles it, is the grace period reset?
-5. **Concurrent agents on the same repo:** Blocked (worktree conflict) or allowed with different base branches?
+5. **Concurrent agents on the same repo:** Blocked (worktree conflict) or allowed with different base branches? Current implementation processes exactly one task at a time daemon-wide, so this question doesn't yet arise in practice — resolve it as part of Phase 2's `max_concurrency` work.
+6. **Plugin architecture reconciliation (new):** Should §5's Layer 1/Layer 2 plugin design replace or extend the existing, already-working Yaegi surfaces documented in `docs/prds/yaegi-plugin-system.md`? See the reconciliation note in §5 — this should be settled before Phase 3/4 implementation starts, not during it.
+7. **Skill loading scope (new):** Is a full agentskills.io progressive-disclosure loader in scope for Phase 3, or is a simpler "read SKILL.md body into the stage's system prompt" step sufficient for v2? The current Mission-string-in-Go-code approach works; the gap is that nothing reads SKILL.md at all, not that the loading model needs to be maximally sophisticated on day one.
