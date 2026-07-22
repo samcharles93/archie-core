@@ -27,13 +27,15 @@ services:
       context: .
       dockerfile: Dockerfile.archied
     command: -config /etc/archie/config.toml
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8484:8484"   # web dashboard
     environment:
       - ARCHIE_GITEA_TOKEN
       - QWYTHOS_API_KEY=not-needed
     volumes:
-      - ./config.toml:/etc/archie/config.toml:ro
+      - ./config.docker.toml:/etc/archie/config.toml:ro
       - archie_work:/var/lib/archie/work
       - archie_db:/var/lib/archie
       - /var/run/docker.sock:/var/run/docker.sock  # spawn agent containers
