@@ -12,7 +12,7 @@ host = "https://git.catlow.cloud"
 token_env = "ARCHIE_GITEA_TOKEN"
 
 [dispatch]
-trigger = "label"
+trigger = "assignee"
 ack_reaction = "eyes"
 
 [dispatch.labels]
