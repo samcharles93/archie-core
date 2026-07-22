@@ -16,7 +16,7 @@ services:
       - nats_data:/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "nats", "server", "check", "-s", "nats://localhost:4222"]
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8222/healthz"]
       interval: 10s
       timeout: 5s
       retries: 5
