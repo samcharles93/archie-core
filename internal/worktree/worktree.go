@@ -77,7 +77,6 @@ func (m *Manager) Prepare(ctx context.Context, owner, repo, base string, issue i
 	if st, statErr := os.Stat(filepath.Join(dir, ".git")); statErr == nil && st.IsDir() {
 		return dir, branch, nil
 	}
-
 	if err := os.RemoveAll(dir); err != nil {
 		return "", "", err
 	}
