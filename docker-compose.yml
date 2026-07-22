@@ -50,7 +50,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      target: runtime
     image: archie-agent:latest
     command: ["true"]  # never run directly — daemon spawns via Docker API
     restart: "no"
