@@ -41,11 +41,8 @@ RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
 ENV PATH="/usr/local/go/bin:${PATH}"
 ENV GOPATH="/go"
 
-# Pre-install common Go tools. Use pre-built binaries to avoid
-# compiling from source (golangci-lint is a large CGO build).
-ARG GOLANGCI_LINT_VERSION=v2.12.2
-RUN curl -fsSL "https://github.com/golangci/golangci-lint/releases/download/${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64.tar.gz" \
-    | tar -xz -C /usr/local/bin --strip-components=1 "golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64/golangci-lint" && \
+# Pre-install common Go tools that need a Go toolchain.
+RUN go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest && \
     go install mvdan.cc/gofumpt@latest && \
     rm -rf /go/pkg/mod/cache
 
