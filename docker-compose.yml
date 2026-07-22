@@ -26,6 +26,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.archied
+    image: git.catlow.cloud/sam/archied:latest
     command: -config /etc/archie/config.toml
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -50,7 +51,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: archie-agent:latest
+    image: git.catlow.cloud/sam/archie-agent:latest
     command: ["true"]  # never run directly — daemon spawns via Docker API
     restart: "no"
 

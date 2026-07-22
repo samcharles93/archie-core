@@ -49,7 +49,7 @@ url = "nats://nats:4222"
 
 [containers]
 enabled = true
-image = "archie-agent:latest"
+image = "git.catlow.cloud/sam/archie-agent:latest"
 max_concurrency = 4
 max_uptime = "60m"
 pull_policy = "missing"
