@@ -35,7 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # ── Go ────────────────────────────────────────────────────────────────
 # Latest stable Go for agent-driven Go tasks (build, test, lint).
-ARG GO_VERSION=1.26.2
+ARG GO_VERSION=1.26.5
 RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
     | tar -C /usr/local -xz
 ENV PATH="/usr/local/go/bin:${PATH}"
@@ -44,10 +44,12 @@ ENV GOPATH="/go"
 # Pre-install common Go tools that need a Go toolchain.
 RUN go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest && \
     go install mvdan.cc/gofumpt@latest && \
+    go install github.com/bufbuild/buf/cmd/buf@latest && \
+    go install github.com/go-delve/delve/cmd/dlv@latest && \
     rm -rf /go/pkg/mod/cache
 
-# ── Node.js 22 LTS ────────────────────────────────────────────────────
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+# ── Node.js 24 ────────────────────────────────────────────────────
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
 RUN npm install -g pnpm typescript tsx esbuild stylelint htmlhint && \
