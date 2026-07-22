@@ -515,6 +515,18 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	wf := workflow.Route(task, registry)
 	d.Log.Info("processing task", "repo", repo.FullName(), "issue", task.IssueNumber, "workflow", wf.Name, "attempt", task.Attempt)
 
+	// Clone the worktree before Docker mount setup. The container
+	// binds /data/worktree to workDir on the host — the directory
+	// must exist before Acquire is called.
+	_, branch, err := d.Trees.Prepare(ctx, task.Owner, task.Repo, repo.Base, task.IssueNumber)
+	if err != nil {
+		d.Log.Error("worktree prepare failed", "err", err)
+		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "worktree prepare failed: "+err.Error())
+		return
+	}
+	task.Branch = branch
+	_ = d.Store.Update(ctx, task)
+
 	// Acquire a container for the task when Docker sandboxing is enabled.
 	if d.ContainerPool != nil {
 		// Write task.json — the container's boot-time brief.

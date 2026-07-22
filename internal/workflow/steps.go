@@ -17,7 +17,8 @@ import (
 // stages live next to their workflow definition.
 
 // StagePrepareWorktree clones the repo fresh and checks out the task
-// branch.
+// branch. Skips if the daemon already prepared the worktree (Docker
+// containers require the tree before acquire).
 func StagePrepareWorktree() Stage {
 	return Stage{Name: "prepare", Run: func(ctx context.Context, tc *TaskContext) error {
 		dir, branch, err := tc.Trees.Prepare(ctx, tc.Task.Owner, tc.Task.Repo, tc.Repo.BaseBranch(), tc.Task.IssueNumber)

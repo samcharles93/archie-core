@@ -67,9 +67,17 @@ func (m *Manager) git(ctx context.Context, dir string, args ...string) (string, 
 
 // Prepare creates a fresh clone for the task and checks out its branch.
 // Any leftover worktree from a prior attempt is removed first.
+// If the worktree is already prepared (the daemon may have done this
+// before container acquisition), it returns the existing directory.
 func (m *Manager) Prepare(ctx context.Context, owner, repo, base string, issue int) (dir, branch string, err error) {
 	dir = m.Dir(owner, repo, issue)
 	branch = fmt.Sprintf("archie/issue-%d", issue)
+
+	// Already prepared (daemon cloned before container acquire).
+	if st, statErr := os.Stat(filepath.Join(dir, ".git")); statErr == nil && st.IsDir() {
+		return dir, branch, nil
+	}
+
 	if err := os.RemoveAll(dir); err != nil {
 		return "", "", err
 	}
