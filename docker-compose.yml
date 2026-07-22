@@ -26,7 +26,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.archied
-    image: git.catlow.cloud/sam/archied:latest
     command: -config /etc/archie/config.toml
     extra_hosts:
       - "host.docker.internal:host-gateway"
