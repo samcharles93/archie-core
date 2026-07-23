@@ -5,6 +5,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -27,6 +28,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/workflow"
 	"github.com/samcharles93/archie-core/internal/workflow/skillbuild"
 	"github.com/samcharles93/archie-core/internal/worktree"
@@ -688,18 +690,27 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	// container is needed). This prevents label/database divergence on failure.
 	d.Forge.SetStateLabel(ctx, task.Owner, task.Repo, task.IssueNumber, d.Cfg.Dispatch.StateLabel("working"), d.Cfg.Dispatch.LabelValues())
 
-	workflow.Run(ctx, wf, &workflow.TaskContext{
-		Task:         task,
-		Repo:         repo,
-		Cfg:          d.Cfg,
-		Forge:        d.Forge,
-		Store:        d.Store,
-		Trees:        d.Trees,
-		Agent:        d.Agent,
-		Bus:          d.Bus,
-		Log:          d.Log,
-		CustomStages: d.CustomStages,
-	})
+	// Sandboxed path: hand the whole task to archie-agent in one NATS round
+	// trip instead of running the stage loop here. archie-agent proxies
+	// Store/Forge/worktree-push calls back to archied over storerpc/
+	// forgerpc/worktreerpc — by the time runViaAgent returns, the task's
+	// terminal state already landed via those calls.
+	if d.ContainerPool != nil {
+		d.runViaAgent(ctx, task, repo)
+	} else {
+		workflow.Run(ctx, wf, &workflow.TaskContext{
+			Task:         task,
+			Repo:         repo,
+			Cfg:          d.Cfg,
+			Forge:        d.Forge,
+			Store:        d.Store,
+			Trees:        d.Trees,
+			Agent:        d.Agent,
+			Bus:          d.Bus,
+			Log:          d.Log,
+			CustomStages: d.CustomStages,
+		})
+	}
 
 	// Teardown storage after workflow completes. The Docker backend is a
 	// no-op; future backends (temp volumes, NFS leases) use this hook.
@@ -715,6 +726,51 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 }
 
 // containerEnv returns the environment variables passed to agent containers.
+// runViaAgent publishes a full-task handoff to archie-agent over
+// archie.taskrun.<id> and waits for its completion report. Every durable
+// side effect (Store transitions, Forge calls, git push) happens inside
+// archie-agent's workflow.Run, proxied back to this daemon over
+// storerpc/forgerpc/worktreerpc — those RPC servers are the sole place a
+// terminal state gets written on success. runViaAgent only parks the task
+// itself when nothing else could have: the request never reached (or was
+// never answered by) an archie-agent, or archie-agent failed before its
+// own workflow.Run got a chance to record an outcome.
+func (d *Daemon) runViaAgent(ctx context.Context, task *store.Task, repo config.Repo) {
+	req := taskrun.Request{
+		Task:      task,
+		Repo:      repo,
+		Cfg:       d.Cfg.ForTask(),
+		Providers: agentexec.ProvidersFromConfig(d.Cfg.Providers),
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		d.Log.Error("taskrun encode failed", "task", task.ID, "err", err)
+		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "taskrun encode failed: "+err.Error())
+		return
+	}
+
+	reply, err := d.Nats.Conn().RequestWithContext(ctx, taskrun.SubjectForTask(task.ID), data)
+	if err != nil {
+		d.Log.Error("taskrun request failed", "task", task.ID, "err", err)
+		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "taskrun request failed: "+err.Error())
+		return
+	}
+
+	var resp taskrun.Response
+	if err := json.Unmarshal(reply.Data, &resp); err != nil {
+		d.Log.Error("taskrun decode response failed", "task", task.ID, "err", err)
+		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "taskrun decode response failed: "+err.Error())
+		return
+	}
+	if resp.Error != "" {
+		d.Log.Error("taskrun run failed", "task", task.ID, "err", resp.Error)
+		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "taskrun run failed: "+resp.Error)
+		return
+	}
+
+	d.Log.Info("taskrun complete", "task", task.ID, "status", resp.Status)
+}
+
 func (d *Daemon) containerEnv() []string {
 	var env []string
 	env = append(env, "NATS_URL="+d.Cfg.NATS.URL)

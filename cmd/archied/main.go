@@ -275,11 +275,7 @@ func run() int {
 }
 
 func executionProviders(cfg config.Config) map[string]agentexec.Provider {
-	providers := make(map[string]agentexec.Provider, len(cfg.Providers))
-	for name, p := range cfg.Providers {
-		providers[name] = agentexec.Provider{Class: p.Class, APIKeyEnv: p.APIKeyEnv, BaseURL: p.BaseURL}
-	}
-	return providers
+	return agentexec.ProvidersFromConfig(cfg.Providers)
 }
 
 // registerTaskRPCServers subscribes the storerpc/forgerpc/worktreerpc

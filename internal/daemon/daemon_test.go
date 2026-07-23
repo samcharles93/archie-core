@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"slices"
@@ -10,9 +11,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nats-io/nats-server/v2/server"
+	natssrv "github.com/nats-io/nats-server/v2/test"
+	natsio "github.com/nats-io/nats.go"
+
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/forge"
+	arnats "github.com/samcharles93/archie-core/internal/nats"
 	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/taskrun"
 )
 
 func TestTaskDispatcherEnforcesMaxConcurrency(t *testing.T) {
@@ -213,6 +220,152 @@ func TestContainerEnvIncludesConfiguredNATSCredentials(t *testing.T) {
 		if !slices.Contains(got, want) {
 			t.Errorf("containerEnv() = %q, want %q", got, want)
 		}
+	}
+}
+
+func startEmbeddedNATSForDaemon(t *testing.T) *server.Server {
+	t.Helper()
+	srv := natssrv.RunRandClientPortServer()
+	t.Cleanup(srv.Shutdown)
+	if err := srv.EnableJetStream(&server.JetStreamConfig{StoreDir: t.TempDir()}); err != nil {
+		t.Fatalf("enable jetstream: %v", err)
+	}
+	return srv
+}
+
+func daemonWithNATS(t *testing.T) (*Daemon, *store.Store) {
+	t.Helper()
+	srv := startEmbeddedNATSForDaemon(t)
+	client, err := arnats.Connect(context.Background(), srv.ClientURL(), "", slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("nats connect: %v", err)
+	}
+	t.Cleanup(client.Close)
+
+	s := store.OpenTest(t)
+	d := &Daemon{
+		Cfg: config.Config{
+			Dispatch: config.Dispatch{Labels: map[string]string{
+				"parked": "archie:parked", "queued": "archie:queued", "dead": "archie:dead",
+			}},
+		},
+		Store: s,
+		Nats:  client,
+		Log:   slog.New(slog.DiscardHandler),
+	}
+	return d, s
+}
+
+func TestRunViaAgentParksOnRequestFailure(t *testing.T) {
+	d, s := daemonWithNATS(t)
+	ctx := context.Background()
+
+	if _, err := s.EnqueueIssue(ctx, "sam", "archie", 1, "t", "b", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("claim: (%v, %v)", task, err)
+	}
+
+	// No responder registered on the taskrun subject — the request must
+	// fail, and runViaAgent must park rather than leave the task stuck
+	// running.
+	d.runViaAgent(ctx, task, config.Repo{Owner: "sam", Name: "archie"})
+
+	got, err := s.TaskByIssue(ctx, "sam", "archie", 1)
+	if err != nil || got == nil {
+		t.Fatalf("TaskByIssue: (%+v, %v)", got, err)
+	}
+	if got.Status != store.StatusParked {
+		t.Fatalf("status = %q, want %q", got.Status, store.StatusParked)
+	}
+}
+
+func TestRunViaAgentParksOnRunError(t *testing.T) {
+	d, s := daemonWithNATS(t)
+	ctx := context.Background()
+
+	if _, err := s.EnqueueIssue(ctx, "sam", "archie", 2, "t", "b", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("claim: (%v, %v)", task, err)
+	}
+
+	sub, err := d.Nats.Conn().Subscribe(taskrun.SubjectForTask(task.ID), func(msg *natsio.Msg) {
+		data, _ := json.Marshal(taskrun.Response{Error: "registry build failed"})
+		_ = msg.Respond(data)
+	})
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	t.Cleanup(func() { sub.Unsubscribe() })
+
+	d.runViaAgent(ctx, task, config.Repo{Owner: "sam", Name: "archie"})
+
+	got, err := s.TaskByIssue(ctx, "sam", "archie", 2)
+	if err != nil || got == nil {
+		t.Fatalf("TaskByIssue: (%+v, %v)", got, err)
+	}
+	if got.Status != store.StatusParked {
+		t.Fatalf("status = %q, want %q", got.Status, store.StatusParked)
+	}
+}
+
+func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
+	d, s := daemonWithNATS(t)
+	d.Cfg.DiffCapLines = 999
+	ctx := context.Background()
+
+	if _, err := s.EnqueueIssue(ctx, "sam", "archie", 3, "t", "b", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("claim: (%v, %v)", task, err)
+	}
+
+	received := make(chan taskrun.Request, 1)
+	sub, err := d.Nats.Conn().Subscribe(taskrun.SubjectForTask(task.ID), func(msg *natsio.Msg) {
+		var req taskrun.Request
+		_ = json.Unmarshal(msg.Data, &req)
+		received <- req
+		data, _ := json.Marshal(taskrun.Response{Status: store.StatusPROpen})
+		_ = msg.Respond(data)
+	})
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	t.Cleanup(func() { sub.Unsubscribe() })
+
+	repo := config.Repo{Owner: "sam", Name: "archie", Base: "main"}
+	d.runViaAgent(ctx, task, repo)
+
+	select {
+	case req := <-received:
+		if req.Task == nil || req.Task.ID != task.ID {
+			t.Fatalf("request Task = %+v, want ID %d", req.Task, task.ID)
+		}
+		if req.Repo.FullName() != "sam/archie" {
+			t.Fatalf("request Repo = %+v", req.Repo)
+		}
+		if req.Cfg.DiffCapLines != 999 {
+			t.Fatalf("request Cfg.DiffCapLines = %d, want 999", req.Cfg.DiffCapLines)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("archied did not publish a taskrun request")
+	}
+
+	// Success path: runViaAgent must not park a task that archie-agent
+	// already reported as complete — the daemon just logs it.
+	got, err := s.TaskByIssue(ctx, "sam", "archie", 3)
+	if err != nil || got == nil {
+		t.Fatalf("TaskByIssue: (%+v, %v)", got, err)
+	}
+	if got.Status == store.StatusParked {
+		t.Fatal("runViaAgent parked a task that succeeded")
 	}
 }
 

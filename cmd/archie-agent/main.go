@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -22,7 +23,10 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/container"
 	arnats "github.com/samcharles93/archie-core/internal/nats"
+	"github.com/samcharles93/archie-core/internal/storage"
+	"github.com/samcharles93/archie-core/internal/taskrun"
 )
 
 const (
@@ -107,9 +111,23 @@ func run() int {
 		return 1
 	}
 
-	taskRunSub, err := nc.QueueSubscribe(taskRunSubjectWildcard, taskRunQueueGroup, func(msg *nats.Msg) {
-		handleTaskRun(ctx, msg, nc, log)
-	})
+	// Prefer a dedicated per-task subscription over the shared queue group
+	// whenever this container was spawned for a specific task (task.json
+	// present at the worktree mount): with concurrent multi-task dispatch,
+	// a queue-group member could otherwise pick up a message meant for a
+	// sibling container that has a *different* task's worktree mounted.
+	var taskRunSub *nats.Subscription
+	if taskID, ok := bootTaskID(storage.WorktreeMountDir, log); ok {
+		taskRunSub, err = nc.Subscribe(taskrun.SubjectForTask(taskID), func(msg *nats.Msg) {
+			handleTaskRun(ctx, msg, nc, log)
+		})
+		log.Info("taskrun: dedicated per-task subscription", "task", taskID)
+	} else {
+		taskRunSub, err = nc.QueueSubscribe(taskRunSubjectWildcard, taskRunQueueGroup, func(msg *nats.Msg) {
+			handleTaskRun(ctx, msg, nc, log)
+		})
+		log.Info("taskrun: shared queue-group subscription (no task.json found)")
+	}
 	if err != nil {
 		log.Error("taskrun subscribe failed", "err", err)
 		return 1
@@ -158,6 +176,26 @@ func run() int {
 		}
 		msg.Ack()
 	}
+}
+
+// bootTaskID reads the boot-time task.json brief the daemon writes into
+// the worktree before container acquire (container.WriteTaskJSON) and
+// returns its ID. Returns (0, false) when the file is absent, unparseable,
+// or has no ID — any of which mean "shared pool mode, no dedicated task."
+func bootTaskID(mountDir string, log *slog.Logger) (int64, bool) {
+	data, err := os.ReadFile(filepath.Join(mountDir, "task.json"))
+	if err != nil {
+		return 0, false
+	}
+	var payload container.TaskPayload
+	if err := json.Unmarshal(data, &payload); err != nil {
+		log.Warn("task.json present but unparseable — falling back to shared queue subscription", "err", err)
+		return 0, false
+	}
+	if payload.ID <= 0 {
+		return 0, false
+	}
+	return payload.ID, true
 }
 
 func natsConnectionSettings(flagURL string, getenv func(string) string) (url, token string) {
