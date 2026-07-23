@@ -7,6 +7,7 @@ poll_interval = "60s"
 label = "archie"
 bot_user = "vectis-labs-archie"
 diff_cap_lines = 400
+# max_retries = 3  # how many times a parked task is retried before permanent park (global default; set per-repo to override)
 
 [forge]
 type = "github"
@@ -23,6 +24,7 @@ working = "archie:working"
 waiting = "archie:waiting"
 pr = "archie:pr"
 parked = "archie:parked"
+# dead = "archie:dead"  # applied when a task exhausts max_retries
 
 [models] # role -> ai-sdk runtime ref (used by agent workflows, Phase 4b)
 triage  = "openai/gpt-5.4"

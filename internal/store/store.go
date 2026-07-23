@@ -23,6 +23,7 @@ const (
 	StatusPROpen       = "pr_open"
 	StatusMerged       = "merged"
 	StatusParked       = "parked"
+	StatusDead         = "dead"
 	StatusRejected     = "rejected"
 	StatusClosedWontDo = "closed_wont_do"
 )
@@ -46,6 +47,10 @@ type Task struct {
 	Iterations  int
 	Attempt     int
 	ParkReason  string
+	// RetryCount tracks how many times a parked task has been retried
+	// (parking-to-queued transitions). When it reaches the configured
+	// max_retries the daemon moves the task to StatusDead.
+	RetryCount int
 	// WatchCommentID: replies to the issue after this comment are the
 	// human input a waiting_human task is blocked on.
 	WatchCommentID int64
@@ -67,6 +72,10 @@ func Open(path string) (*Store, error) {
 	}
 	// Additive migrations; "duplicate column" means already applied.
 	if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN watch_comment_id INTEGER NOT NULL DEFAULT 0`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column") {
+		return nil, errors.Join(fmt.Errorf("store: migrate: %w", err), db.Close())
+	}
+	if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0`); err != nil &&
 		!strings.Contains(err.Error(), "duplicate column") {
 		return nil, errors.Join(fmt.Errorf("store: migrate: %w", err), db.Close())
 	}
@@ -109,6 +118,23 @@ CREATE TABLE IF NOT EXISTS transitions (
 
 func (s *Store) Close() error { return s.db.Close() }
 
+// OpenTest opens an in-memory SQLite store suitable for tests.
+func OpenTest(t interface{ TempDir() string }) *Store {
+	s, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		panic(err)
+	}
+	return s
+}
+
+// IncrementRetryCount atomically bumps retry_count by 1. Called after
+// a parked task is requeued by maybeRetryParked.
+func (s *Store) IncrementRetryCount(ctx context.Context, taskID int64) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE tasks SET retry_count = retry_count + 1, updated_at = datetime('now') WHERE id = ?`, taskID)
+	return err
+}
+
 // EnqueueIssue inserts a new queued task for the issue; returns false if
 // the issue is already tracked (the idempotency key is owner/repo/number).
 func (s *Store) EnqueueIssue(ctx context.Context, owner, repo string, number int, title, body, labels string) (bool, error) {
@@ -132,7 +158,7 @@ func (s *Store) ClaimNext(ctx context.Context) (*Task, error) {
 		WHERE id = (SELECT id FROM tasks WHERE status='queued' ORDER BY id LIMIT 1)
 		RETURNING id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
-			iterations, attempt, park_reason`)
+			iterations, attempt, park_reason, watch_comment_id, retry_count`)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -144,7 +170,8 @@ func scanTask(row *sql.Row) (*Task, error) {
 	var t Task
 	err := row.Scan(&t.ID, &t.Owner, &t.Repo, &t.IssueNumber, &t.Title, &t.Body,
 		&t.Labels, &t.Status, &t.Workflow, &t.Stage, &t.Branch, &t.Plan, &t.Notes,
-		&t.PRNumber, &t.TokensUsed, &t.Iterations, &t.Attempt, &t.ParkReason)
+		&t.PRNumber, &t.TokensUsed, &t.Iterations, &t.Attempt, &t.ParkReason,
+		&t.WatchCommentID, &t.RetryCount)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +188,7 @@ func (s *Store) ClaimByIssue(ctx context.Context, owner, repo string, number int
 		WHERE owner=? AND repo=? AND issue_number=? AND status='queued'
 		RETURNING id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
-			iterations, attempt, park_reason`, owner, repo, number)
+			iterations, attempt, park_reason, watch_comment_id, retry_count`, owner, repo, number)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -199,7 +226,7 @@ func (s *Store) TaskByIssue(ctx context.Context, owner, repo string, number int)
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
-			iterations, attempt, park_reason
+			iterations, attempt, park_reason, watch_comment_id, retry_count
 		FROM tasks WHERE owner=? AND repo=? AND issue_number=?`, owner, repo, number)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {

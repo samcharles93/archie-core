@@ -22,6 +22,7 @@ const (
 	KindOutcome     = "outcome"      // data: status, detail
 	KindPRMerged    = "pr_merged"
 	KindPRRejected  = "pr_rejected"
+	KindTaskDead    = "task_dead"
 	KindLog         = "log" // data: level, msg
 )
 

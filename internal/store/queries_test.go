@@ -88,6 +88,28 @@ func TestWaitingTasksAndRequeue(t *testing.T) {
 	if retried.ParkReason != "" {
 		t.Fatalf("Requeue must clear park_reason, got %q", retried.ParkReason)
 	}
+
+	// Verify retry_count is NOT reset by Requeue (it persists).
+	if err := s.IncrementRetryCount(ctx, task2.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.IncrementRetryCount(ctx, task2.ID); err != nil {
+		t.Fatal(err)
+	}
+	// Park again and requeue.
+	if err := s.Transition(ctx, task2.ID, StatusQueued, StatusParked, "parked again"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Requeue(ctx, task2.ID, StatusParked, ""); err != nil {
+		t.Fatal(err)
+	}
+	afterRequeue, err := s.TaskByIssue(ctx, "sam", "archie", 1)
+	if err != nil || afterRequeue == nil {
+		t.Fatalf("TaskByIssue after second requeue = (%+v, %v)", afterRequeue, err)
+	}
+	if afterRequeue.RetryCount != 2 {
+		t.Fatalf("Requeue must not reset retry_count, got %d, want 2", afterRequeue.RetryCount)
+	}
 }
 
 func TestTasksListingAndStatusCounts(t *testing.T) {
