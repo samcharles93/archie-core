@@ -46,6 +46,7 @@ func StageBaselineGate() Stage {
 
 			modelRef := tc.Cfg.Models["builder"]
 			req := agentexec.Request{
+				Version:  agentexec.ProtocolVersion,
 				TaskID:   tc.Task.ID,
 				Attempt:  tc.Task.Attempt,
 				Stage:    "baseline-fix",
