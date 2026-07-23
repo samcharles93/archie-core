@@ -148,6 +148,9 @@ func Implement() Workflow {
 				},
 				OnResult: func(tc *TaskContext, res agentexec.Result) error {
 					tc.BuildSummary = res.Summary
+					if res.Status == agentexec.StatusPassed && len(res.Changes) == 0 {
+						tc.BuildNoChanges = true
+					}
 					return nil
 				},
 			}.Stage(),
