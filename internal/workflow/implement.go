@@ -9,9 +9,10 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec"
 )
 
-// StageBaselineGate verifies the repo's gate is green at the base commit
-// before any planning starts — a red baseline would park-storm the
-// builder with failures it didn't cause.
+// StageBaselineGate verifies the repo's gate is green at the base commit.
+// If the gate is red due to pre-existing failures, the builder attempts to
+// fix them via TDD before proceeding. Only parks if the builder cannot fix
+// the failures.
 func StageBaselineGate() Stage {
 	return Stage{Name: "baseline", Run: func(ctx context.Context, tc *TaskContext) error {
 		for _, argv := range tc.Repo.Gate {
@@ -20,9 +21,63 @@ func StageBaselineGate() Stage {
 			}
 			cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 			cmd.Dir = tc.Dir
-			if out, err := cmd.CombinedOutput(); err != nil {
-				return fmt.Errorf("baseline red — %s fails at %s before archie touched anything:\n%s",
-					strings.Join(argv, " "), tc.Repo.BaseBranch(), clip(string(out), 2000))
+			out, err := cmd.CombinedOutput()
+			if err == nil {
+				continue
+			}
+			tc.Log.Warn("baseline red — auto-fixing pre-existing gate failure",
+				"cmd", strings.Join(argv, " "),
+				"err", clip(string(out), 200))
+
+			// Run builder to fix the failure via TDD.
+			mission := fmt.Sprintf(
+				"The baseline gate check `%s` failed on the repository %s at the base commit "+
+					"(before any feature work). This is a pre-existing issue — not caused by your work. "+
+					"Fix it using TDD:\n\n"+
+					"1. Write a test that proves the failure exists\n"+
+					"2. Run the test — it should FAIL (confirming the bug)\n"+
+					"3. Fix the root cause\n"+
+					"4. Run the test — it should PASS\n"+
+					"5. Repeat until the gate `%s` passes for all packages\n\n"+
+					"Gate output:\n%s\n\n"+
+					"When the gate passes, call finish with status \"passed\".",
+				strings.Join(argv, " "), tc.Repo.FullName(), strings.Join(argv, " "), clip(string(out), 3000),
+			)
+
+			modelRef := tc.Cfg.Models["builder"]
+			req := agentexec.Request{
+				TaskID:   tc.Task.ID,
+				Attempt:  tc.Task.Attempt,
+				Stage:    "baseline-fix",
+				Workflow: tc.Task.Workflow,
+				Model:    modelRef,
+				Mission:  mission,
+				Budget: agentexec.Budget{
+					MaxSteps:  tc.Cfg.Budgets.MaxSteps,
+					MaxTokens: tc.Cfg.Budgets.MaxTokens,
+					WallClock: tc.Cfg.Budgets.WallClock.Std(),
+				},
+				Gate:       GateFromRepo(tc.Repo, tc.Cfg.Budgets),
+				Protection: agentexec.Protection{Suffixes: append([]string(nil), tc.Repo.Protect...)},
+			}
+
+			res, agentErr := tc.Agent.Run(ctx, tc.Dir, req)
+			if agentErr != nil {
+				return fmt.Errorf("baseline-fix agent run: %w", agentErr)
+			}
+			if res.Status != agentexec.StatusPassed {
+				return fmt.Errorf("baseline red — %s fails and builder could not auto-fix (status: %s)",
+					strings.Join(argv, " "), res.Status)
+			}
+
+			// Commit the baseline fix.
+			changed, commitErr := tc.Trees.CommitAll(ctx, tc.Dir,
+				fmt.Sprintf("fix: baseline gate repair (%s)", strings.Join(argv, " ")))
+			if commitErr != nil {
+				tc.Log.Warn("baseline fix commit failed", "err", commitErr)
+			}
+			if changed {
+				tc.BuildSummary = res.Summary
 			}
 		}
 		return nil
