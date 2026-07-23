@@ -29,31 +29,31 @@ const (
 )
 
 type Task struct {
-	ID          int64
-	Owner       string
-	Repo        string
-	IssueNumber int
-	Title       string
-	Body        string
-	Labels      string // comma-separated, as seen at enqueue time
-	Status      string
-	Workflow    string
-	Stage       string
-	Branch      string
-	Plan        string
-	Notes       string
-	PRNumber    int
-	TokensUsed  int
-	Iterations  int
-	Attempt     int
-	ParkReason  string
+	ID          int64  `json:"id"`
+	Owner       string `json:"owner"`
+	Repo        string `json:"repo"`
+	IssueNumber int    `json:"issue_number"`
+	Title       string `json:"title"`
+	Body        string `json:"body"`
+	Labels      string `json:"labels"` // comma-separated, as seen at enqueue time
+	Status      string `json:"status"`
+	Workflow    string `json:"workflow"`
+	Stage       string `json:"stage"`
+	Branch      string `json:"branch"`
+	Plan        string `json:"plan"`
+	Notes       string `json:"notes"`
+	PRNumber    int    `json:"pr_number"`
+	TokensUsed  int    `json:"tokens_used"`
+	Iterations  int    `json:"iterations"`
+	Attempt     int    `json:"attempt"`
+	ParkReason  string `json:"park_reason"`
 	// RetryCount tracks how many times a parked task has been retried
 	// (parking-to-queued transitions). When it reaches the configured
 	// max_retries the daemon moves the task to StatusDead.
-	RetryCount int
+	RetryCount int `json:"retry_count"`
 	// WatchCommentID: replies to the issue after this comment are the
 	// human input a waiting_human task is blocked on.
-	WatchCommentID int64
+	WatchCommentID int64 `json:"watch_comment_id"`
 }
 
 type Store struct{ db *sql.DB }
