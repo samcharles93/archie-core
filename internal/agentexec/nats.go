@@ -17,24 +17,24 @@ import (
 // When Workflow is set and Stages is populated, the agent runs all stages as a
 // per-task batch rather than a single stage. PRD §1.
 type AgentRequestMessage struct {
-	TaskID    int64             `json:"task_id"`
-	Attempt   int               `json:"attempt"`
-	Stage     string            `json:"stage"`
-	Workflow  string            `json:"workflow,omitempty"`
-	Channel   string            `json:"channel,omitempty"` // "response" (default) or "system"
-	Workspace string            `json:"workspace"`
-	Request   Request           `json:"request"`
-	Stages    []Request         `json:"stages,omitempty"` // batch: all agent stages for this task
+	TaskID    int64               `json:"task_id"`
+	Attempt   int                 `json:"attempt"`
+	Stage     string              `json:"stage"`
+	Workflow  string              `json:"workflow,omitempty"`
+	Channel   string              `json:"channel,omitempty"` // "response" (default) or "system"
+	Workspace string              `json:"workspace"`
+	Request   Request             `json:"request"`
+	Stages    []Request           `json:"stages,omitempty"` // batch: all agent stages for this task
 	Providers map[string]Provider `json:"providers,omitempty"`
 }
 
 // AgentResponseEnvelope is the response payload published to the reply inbox.
 type AgentResponseEnvelope struct {
-	Version      int    `json:"version"`
-	Result       Result `json:"result"`
-	Error        string `json:"error,omitempty"`
-	Channel      string `json:"channel,omitempty"`       // "response" (default) or "system"
-	TaskCompleted bool  `json:"task_completed,omitempty"` // true when all stages finished (per-task mode)
+	Version       int    `json:"version"`
+	Result        Result `json:"result"`
+	Error         string `json:"error,omitempty"`
+	Channel       string `json:"channel,omitempty"`        // "response" (default) or "system"
+	TaskCompleted bool   `json:"task_completed,omitempty"` // true when all stages finished (per-task mode)
 }
 
 const defaultAgentTimeout = 30 * time.Minute

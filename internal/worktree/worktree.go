@@ -131,7 +131,7 @@ func archieBranch(issue int, title, body, labels string) string {
 // labels, then falls back to "feat". Maps: bug→fix, feature→feat,
 // enhancement→feat, docs→docs, chore→chore, test→test.
 func branchPrefix(title, body, labels string) string {
-	for _, l := range strings.Split(labels, ",") {
+	for l := range strings.SplitSeq(labels, ",") {
 		switch strings.TrimSpace(strings.ToLower(l)) {
 		case "bug":
 			return "fix"

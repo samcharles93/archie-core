@@ -151,16 +151,16 @@ func TestIndexHasResponsiveFeatures(t *testing.T) {
 		t.Fatalf("status = %d", w.Code)
 	}
 	body := w.Body.String()
-	reqs := []struct{
-	 name string
-	 want string
+	reqs := []struct {
+		name string
+		want string
 	}{
-	{"section-table", ".section-table { overflow-x: auto; }"},
-	{"feed-wraps", "white-space: normal"},
-	{"feed-break-word", "overflow-wrap: break-word"},
-	{"700px-breakpoint", "@media (max-width: 700px)"},
-	{"950px-breakpoint", "@media (max-width: 950px)"},
-	{"viewport-meta", `<meta name="viewport" content="width=device-width, initial-scale=1">`},
+		{"section-table", ".section-table { overflow-x: auto; }"},
+		{"feed-wraps", "white-space: normal"},
+		{"feed-break-word", "overflow-wrap: break-word"},
+		{"700px-breakpoint", "@media (max-width: 700px)"},
+		{"950px-breakpoint", "@media (max-width: 950px)"},
+		{"viewport-meta", `<meta name="viewport" content="width=device-width, initial-scale=1">`},
 	}
 	for _, r := range reqs {
 		if !strings.Contains(body, r.want) {

@@ -622,7 +622,7 @@ func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
 
 	// Run 10 concurrent augmentations — none should panic or corrupt state.
 	errs := make(chan error, 10)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		go func() {
 			aug, err := AugmentRegistry(worktree, base)
 			if err != nil {
@@ -636,7 +636,7 @@ func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
 			errs <- nil
 		}()
 	}
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		if err := <-errs; err != nil {
 			t.Error("concurrent AugmentRegistry failed:", err)
 		}

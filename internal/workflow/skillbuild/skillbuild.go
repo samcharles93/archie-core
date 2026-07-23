@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -101,9 +102,7 @@ func AugmentRegistry(worktree string, base workflow.Registry) (workflow.Registry
 
 	// Copy base — never mutate the caller's registry.
 	reg := make(workflow.Registry, len(base)+len(catalog))
-	for k, v := range base {
-		reg[k] = v
-	}
+	maps.Copy(reg, base)
 
 	for _, entry := range catalog {
 		if entry.Workflow == "" {

@@ -13,7 +13,7 @@ This document describes a target end state. The table below is the ground truth;
 | Area | Status | What actually exists today (post-e4d11b1) |
 |---|---|---|
 | Daemon/agent binary split | **Implemented** | `cmd/archied` and `cmd/archie-agent` both exist. `archie-agent` is a 189-line NATS-connected per-task worker that subscribes to task subjects, runs the full multi-stage workflow, and reports results. Workflow routing and sequencing (`workflow.Route`, `workflow.Run`) now run inside the agent, not the daemon. Three agent modes: `inprocess`, `subprocess`, `nats`. |
-| Sandbox / "daemon never runs untrusted code" | **Partial** | Default mode is still `inprocess` for development. Docker sandbox mode (`agent.mode = "nats"` + `containers.enabled = true`) runs each task in an ephemeral Docker container with workspace bind-mounted at `/workspace`. `internal/container/pool.go` manages full lifecycle: pull, create, start, release, orphan recovery. `max_concurrency` enforced. |
+| Sandbox / "daemon never runs untrusted code" | **Partial** | Default mode is still `inprocess` for development. Docker sandbox mode (`agent.mode = "nats"` + `containers.enabled = true`) runs each task in an ephemeral Docker container with workspace bind-mounted at `/workspace`. `internal/container/pool.go` manages full lifecycle: pull, create, start, release, orphan recovery. Daemon dispatch and container lifecycle both enforce `max_concurrency`; same-repo tasks remain serialized. |
 | NATS / JetStream messaging | **Implemented** | `internal/nats/client.go` (176 lines): JetStream connect, stream creation (WorkQueue retention, file storage), pull consumer (durable, ack-wait 5min, max-deliver 3, dedup by Msg-Id), `PublishTask`, `Fetch`, `NewReplyInbox`. Subject hierarchy in `internal/nats/subjects.go`. `[nats]` config block in config.go. `internal/agentexec/nats.go` implements NATS-based agent runner. |
 | Docker container sandbox | **Implemented** | `internal/container/pool.go` (210 lines): Docker API client, image pull (always/missing/never), container create with workspace bind mount, start, release (stop+remove), orphan recovery on daemon restart. `Dockerfile` at repo root builds archie-agent fat image. `[containers]` config block: enabled, image, max_concurrency, max_uptime, pull_policy. `agent.mode = "nats"` required when containers enabled. |
 | `/data/` volume, `task.json` | **Partial** | `container.WriteTaskJSON()` writes task payload to the worktree before container acquire. The container pool bind-mounts the worktree at `/data/worktree`. Task payload travels over NATS as the primary channel; `/data/task.json` is a boot-time brief for the container. Worktrees are still ephemeral fresh clones per task. |
@@ -459,7 +459,8 @@ The agent writes whatever it wants to `response`. The daemon reviews it. No agen
 - Daemon container lifecycle: spawn, volume create, env inject, kill -- not started
 - Persistent volumes with TTL -- not started (current worktree lifecycle is fresh-clone-per-task with status-driven
   cleanup, no TTL)
-- `max_concurrency` enforcement -- not started (daemon processes one task at a time today)
+- ~~`max_concurrency` enforcement~~ -- **done**: SQLite and NATS drains dispatch different repositories concurrently
+  up to `[containers].max_concurrency`; same-repo tasks remain serialized by default.
 - Grace period `max_uptime` -- not started
 - **Groundwork already in place:** `agentexec.Runner` (`InProcessRunner`/`SubprocessRunner`) is an interface designed,
   per its own doc comments, to be swapped for a container-backed runner without touching workflow orchestration --

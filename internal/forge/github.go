@@ -200,7 +200,7 @@ func (c *GitHubClient) CloseIssue(ctx context.Context, owner, repo string, numbe
 		}
 	}
 	_, _, err := c.gh.Issues.Edit(ctx, owner, repo, number,
-		&github.IssueRequest{State: github.String("closed")})
+		&github.IssueRequest{State: new("closed")})
 	return err
 }
 

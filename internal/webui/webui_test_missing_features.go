@@ -1,4 +1,4 @@
-// +build ignore
+//go:build ignore
 
 package webui
 
@@ -16,14 +16,14 @@ func TestIndexHasResponsiveFeatures(t *testing.T) {
 		t.Fatalf("status = %d", w.Code)
 	}
 	body := w.Body.String()
-	reqs := []struct{
-	 name string
-	 want string
+	reqs := []struct {
+		name string
+		want string
 	}{
-	{"mobile-font-padding", "section { min-height: 1.25rem; }"},
-	{"table-wrap", "section .table-wrap { position: relative; overflow-x: auto;"},
-	{"feed-wraps", "white-space: normal"},
-	{"700px-breakpoint", "@media (max-width: 700px)"},
+		{"mobile-font-padding", "section { min-height: 1.25rem; }"},
+		{"table-wrap", "section .table-wrap { position: relative; overflow-x: auto;"},
+		{"feed-wraps", "white-space: normal"},
+		{"700px-breakpoint", "@media (max-width: 700px)"},
 	}
 	for _, r := range reqs {
 		if !strings.Contains(body, r.want) {

@@ -222,13 +222,13 @@ func (d Dispatch) LabelValues() []string {
 
 // Config is the daemon configuration.
 type Config struct {
-	WorkDir      string   `toml:"work_dir"`
+	WorkDir string `toml:"work_dir"`
 	// SkillsDir is an optional path to a shared skills directory
 	// containing .agents/skills/*/SKILL.md files. When set, the
 	// daemon builds its workflow registry from the skill catalog
 	// (plugin-defined workflows override built-ins). When empty,
 	// only built-in workflows are available.
-	SkillsDir    string   `toml:"skills_dir"`
+	SkillsDir string `toml:"skills_dir"`
 	// MaxRetries caps how many times a parked task is retried before
 	// being permanently parked (status "dead"). Defaults to 3.
 	MaxRetries int `toml:"max_retries"`
@@ -258,7 +258,7 @@ type Config struct {
 	Providers map[string]Provider `toml:"providers"`
 	Agent     Agent               `toml:"agent"`
 
-	Budgets Budgets    `toml:"budgets"`
+	Budgets    Budgets         `toml:"budgets"`
 	Web        Web             `toml:"web"`
 	Notify     Notify          `toml:"notify"`
 	NATS       NATSConfig      `toml:"nats"`
@@ -283,7 +283,8 @@ type ContainerConfig struct {
 	Enabled bool `toml:"enabled"`
 	// Image is the Docker image to run (e.g. "ghcr.io/sam/archie-agent:latest").
 	Image string `toml:"image"`
-	// MaxConcurrency limits simultaneous containers. 0 = no limit.
+	// MaxConcurrency limits simultaneous daemon tasks and containers.
+	// Tasks from the same repository remain serialized. 0 = no limit.
 	MaxConcurrency int `toml:"max_concurrency"`
 	// MaxUptime caps a container's lifetime before recycling.
 	MaxUptime Duration `toml:"max_uptime"`

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/moby/moby/client"
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
@@ -21,7 +22,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/nats"
-	"github.com/moby/moby/client"
 
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
@@ -138,7 +138,7 @@ func run() int {
 		defer dockerCli.Close()
 
 		containerPool, err = container.NewPool(ctx, container.Config{
-			Image:        cfg.Containers.Image,
+			Image:          cfg.Containers.Image,
 			MaxConcurrency: cfg.Containers.MaxConcurrency,
 			MaxUptime:      cfg.Containers.MaxUptime.Std(),
 			PullPolicy:     cfg.Containers.PullPolicy,
@@ -222,15 +222,15 @@ func run() int {
 			BotEmail: cfg.BotEmail,
 			BaseURL:  cfg.Forge.Host,
 		},
-		Runtime: llm,
-		Agent:   agentRunner,
+		Runtime:        llm,
+		Agent:          agentRunner,
 		Workflows:      registry,
 		PluginRegistry: pluginReg,
 		Storage:        storeBackend,
-		Log:             log,
-		CustomStages:  wfeval.Discover,
-		Nats:          natsClient,
-		ContainerPool: containerPool,
+		Log:            log,
+		CustomStages:   wfeval.Discover,
+		Nats:           natsClient,
+		ContainerPool:  containerPool,
 	}
 
 	if err := d.Startup(ctx); err != nil {

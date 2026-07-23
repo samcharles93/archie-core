@@ -67,10 +67,10 @@ func run() int {
 	}
 
 	stream, err := js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
-		Name:      streamName,
-		Subjects:  []string{"archie.task.>", "archie.agent.>"},
-		Storage:   jetstream.FileStorage,
-		Retention: jetstream.WorkQueuePolicy,
+		Name:       streamName,
+		Subjects:   []string{"archie.task.>", "archie.agent.>"},
+		Storage:    jetstream.FileStorage,
+		Retention:  jetstream.WorkQueuePolicy,
 		Duplicates: dedupWindow,
 	})
 	if err != nil {
@@ -79,12 +79,12 @@ func run() int {
 	}
 
 	cons, err := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
-		Name:             *consumer,
-		Durable:          *consumer,
-		FilterSubject:    arnats.SubjectAgentWildcard,
-		AckPolicy:        jetstream.AckExplicitPolicy,
-		MaxDeliver:       3,
-		AckWait:          ackWait,
+		Name:              *consumer,
+		Durable:           *consumer,
+		FilterSubject:     arnats.SubjectAgentWildcard,
+		AckPolicy:         jetstream.AckExplicitPolicy,
+		MaxDeliver:        3,
+		AckWait:           ackWait,
 		InactiveThreshold: 24 * time.Hour,
 	})
 	if err != nil {

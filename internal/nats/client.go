@@ -53,10 +53,10 @@ func Connect(ctx context.Context, url string, log *slog.Logger) (*Client, error)
 	}
 
 	stream, err := js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
-		Name:      streamName,
-		Subjects:  []string{"archie.task.>", "archie.agent.>"},
-		Storage:   jetstream.FileStorage,
-		Retention: jetstream.WorkQueuePolicy,
+		Name:       streamName,
+		Subjects:   []string{"archie.task.>", "archie.agent.>"},
+		Storage:    jetstream.FileStorage,
+		Retention:  jetstream.WorkQueuePolicy,
 		Duplicates: dedupWindow,
 	})
 	if err != nil {
@@ -65,12 +65,12 @@ func Connect(ctx context.Context, url string, log *slog.Logger) (*Client, error)
 	}
 
 	consumer, err := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
-		Name:             consumerName,
-		Durable:          consumerName,
-		FilterSubject:    "archie.task.>",
-		AckPolicy:        jetstream.AckExplicitPolicy,
-		MaxDeliver:       3,
-		AckWait:          5 * time.Minute,
+		Name:              consumerName,
+		Durable:           consumerName,
+		FilterSubject:     "archie.task.>",
+		AckPolicy:         jetstream.AckExplicitPolicy,
+		MaxDeliver:        3,
+		AckWait:           5 * time.Minute,
 		InactiveThreshold: 24 * time.Hour,
 	})
 	if err != nil {

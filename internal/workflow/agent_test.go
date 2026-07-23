@@ -204,9 +204,9 @@ func TestReviewResultBlocksOnResultWhenRejected(t *testing.T) {
 		},
 	}.Stage()
 	tc := &TaskContext{
-		Task: &store.Task{ID: 1, Attempt: 1},
+		Task:  &store.Task{ID: 1, Attempt: 1},
 		Agent: runner, Log: slog.New(slog.DiscardHandler),
-		Cfg:  config.Config{Models: map[string]string{"planner": "provider/model"}},
+		Cfg: config.Config{Models: map[string]string{"planner": "provider/model"}},
 	}
 	err := rejectStage.Run(context.Background(), tc)
 	if err == nil {

@@ -120,8 +120,8 @@ func (a AgentStage) Stage() Stage {
 			Protection:   protection,
 			Notes:        tc.Task.Notes,
 			CaptureTools: captureTools,
-				Plugins:      pluginSpecs(tc.SkillPlugins),
-			}
+			Plugins:      pluginSpecs(tc.SkillPlugins),
+		}
 		res, err := tc.Agent.Run(ctx, tc.Dir, req)
 		if err != nil && res.Version == 0 {
 			return fmt.Errorf("agent run: %w", err)
@@ -218,4 +218,3 @@ func loadSkillBody(tc *TaskContext) string {
 	}
 	return body
 }
-

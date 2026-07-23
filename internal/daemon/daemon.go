@@ -1,7 +1,6 @@
 // Package daemon is archied's resident loop: poll GitHub for labelled
-// issues, enqueue them, and process one task at a time through its
-// routed workflow. State lives in the store; the daemon is restartable
-// at any point.
+// issues, enqueue them, and process tasks through their routed workflows.
+// State lives in the store; the daemon is restartable at any point.
 package daemon
 
 import (
@@ -11,6 +10,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/samcharles93/ai-sdk/core"
@@ -108,7 +108,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 // Cycle is one poll-and-drain pass: enqueue newly assigned issues,
 // reconcile open PRs, act on human replies to waiting tasks, then
-// process every queued task sequentially.
+// process queued tasks concurrently up to containers.max_concurrency.
 func (d *Daemon) Cycle(ctx context.Context) {
 	d.poll(ctx)
 	d.reconcilePRs(ctx)
@@ -120,52 +120,118 @@ func (d *Daemon) Cycle(ctx context.Context) {
 	}
 }
 
-// drainSQLite processes queued tasks from SQLite (existing behaviour).
+// drainSQLite claims queued tasks from SQLite and dispatches them concurrently.
 func (d *Daemon) drainSQLite(ctx context.Context) {
-	for {
-		if ctx.Err() != nil {
-			return
-		}
+	dispatcher := newTaskDispatcher(d.Cfg.Containers.MaxConcurrency)
+	for ctx.Err() == nil {
 		task, err := d.Store.ClaimNext(ctx)
 		if err != nil {
 			d.Log.Error("claim failed", "err", err)
-			return
+			break
 		}
 		if task == nil {
-			return
+			break
 		}
-		d.process(ctx, task)
+		dispatcher.Submit(ctx, task, d.process)
 	}
+	dispatcher.Wait()
 }
 
 // drainNATS processes tasks from NATS, falling back to SQLite ClaimNext for
 // requeued tasks (waiting_human approval, retry-parked) that didn't come
 // through a NATS publish.
 func (d *Daemon) drainNATS(ctx context.Context) {
-	for {
-		if ctx.Err() != nil {
-			return
-		}
+	dispatcher := newTaskDispatcher(d.Cfg.Containers.MaxConcurrency)
+	for ctx.Err() == nil {
 		msg, err := d.Nats.Fetch(ctx)
 		if err != nil {
 			d.Log.Error("nats fetch failed", "err", err)
-			return
+			break
 		}
 		if msg != nil {
-			d.processNATSTask(ctx, msg)
+			tm, err := arnats.DecodeTask(msg)
+			if err != nil {
+				d.Log.Error("nats decode failed", "err", err)
+				_ = msg.Ack() // bad message, don't retry
+				continue
+			}
+			task := &store.Task{Owner: tm.Owner, Repo: tm.Repo}
+			dispatcher.Submit(ctx, task, func(ctx context.Context, _ *store.Task) {
+				d.processNATSTask(ctx, msg)
+			})
 			continue
 		}
 		// Fall back to SQLite for requeued tasks.
 		task, err := d.Store.ClaimNext(ctx)
 		if err != nil {
 			d.Log.Error("sqlite claim failed", "err", err)
-			return
+			break
 		}
 		if task == nil {
-			return
+			break
 		}
-		d.process(ctx, task)
+		dispatcher.Submit(ctx, task, d.process)
 	}
+	dispatcher.Wait()
+}
+
+// taskDispatcher bounds task execution globally while preserving the default
+// one-task-per-repository safety rule. Submit order is retained within a repo;
+// tasks for different repos may run concurrently.
+type taskDispatcher struct {
+	slots chan struct{}
+
+	mu       sync.Mutex
+	repoTail map[string]chan struct{}
+	wg       sync.WaitGroup
+}
+
+func newTaskDispatcher(maxConcurrency int) *taskDispatcher {
+	var slots chan struct{}
+	if maxConcurrency > 0 {
+		slots = make(chan struct{}, maxConcurrency)
+	}
+	return &taskDispatcher{
+		slots:    slots,
+		repoTail: make(map[string]chan struct{}),
+	}
+}
+
+func (d *taskDispatcher) Submit(
+	ctx context.Context,
+	task *store.Task,
+	process func(context.Context, *store.Task),
+) {
+	repo := task.Owner + "/" + task.Repo
+	done := make(chan struct{})
+
+	d.mu.Lock()
+	previous := d.repoTail[repo]
+	d.repoTail[repo] = done
+	d.mu.Unlock()
+
+	d.wg.Go(func() {
+		if previous != nil {
+			<-previous
+		}
+		if d.slots != nil {
+			d.slots <- struct{}{}
+			defer func() { <-d.slots }()
+		}
+		defer func() {
+			close(done)
+			d.mu.Lock()
+			if d.repoTail[repo] == done {
+				delete(d.repoTail, repo)
+			}
+			d.mu.Unlock()
+		}()
+		process(ctx, task)
+	})
+}
+
+func (d *taskDispatcher) Wait() {
+	d.wg.Wait()
 }
 
 func (d *Daemon) poll(ctx context.Context) {
@@ -569,7 +635,7 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 		if err := container.WriteTaskJSON(workDir, container.TaskPayload{
 			ID: task.ID, Owner: task.Owner, Repo: task.Repo,
 			Number: task.IssueNumber, Title: task.Title, Body: task.Body,
-			Labels: strings.Split(task.Labels, ","),
+			Labels:   strings.Split(task.Labels, ","),
 			Workflow: task.Workflow, Branch: task.Branch, Plan: task.Plan,
 		}); err != nil {
 			d.Log.Error("task.json write failed", "err", err)

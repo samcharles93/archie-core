@@ -76,7 +76,7 @@ type Config struct {
 	// container is killed. The agent stays alive to handle follow-ups
 	// (gate re-runs, human replies) during this window. PRD §1.
 	GracePeriod time.Duration
-	PullPolicy string
+	PullPolicy  string
 	// DockerClient is an optional pre-connected Docker client. When nil,
 	// NewPool creates its own via client.New(client.FromEnv). Pass a
 	// shared client to avoid multiple independent connections.
@@ -211,7 +211,7 @@ func (p *Pool) Close() error {
 	defer cancel()
 
 	list, err := p.cli.ContainerList(ctx, client.ContainerListOptions{
-		All: true,
+		All:     true,
 		Filters: client.Filters{}.Add("label", "archie-daemon=true"),
 	})
 	if err != nil {
@@ -258,7 +258,7 @@ func (p *Pool) pullImage(ctx context.Context) error {
 // recoverOrphans stops and removes containers left by a previous daemon.
 func (p *Pool) recoverOrphans(ctx context.Context) {
 	list, err := p.cli.ContainerList(ctx, client.ContainerListOptions{
-		All: true,
+		All:     true,
 		Filters: client.Filters{}.Add("label", "archie-daemon=true"),
 	})
 	if err != nil {

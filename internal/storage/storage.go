@@ -42,11 +42,11 @@ import (
 
 // TaskRef identifies a task for storage setup.
 type TaskRef struct {
-	Owner, Repo string
-	IssueNumber int
-	Ecosystem          string // "go", "node", "python", "rust", "custom"
-	WorktreeDir        string // host path to the git worktree
-	PersistentStorage  bool   // if true, attach a per-repo Docker volume at /data/repo
+	Owner, Repo       string
+	IssueNumber       int
+	Ecosystem         string // "go", "node", "python", "rust", "custom"
+	WorktreeDir       string // host path to the git worktree
+	PersistentStorage bool   // if true, attach a per-repo Docker volume at /data/repo
 }
 
 // Mount describes a container mount point.

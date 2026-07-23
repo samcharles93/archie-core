@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"os"
+	"slices"
 	"sort"
 	"testing"
 )
@@ -435,10 +436,5 @@ func mountDestinations(mounts []Mount) []string {
 }
 
 func contains(slice []string, s string) bool {
-	for _, v := range slice {
-		if v == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, s)
 }

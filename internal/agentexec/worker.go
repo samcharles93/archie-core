@@ -130,9 +130,9 @@ func runStages(ctx context.Context, runner Runner, msg AgentRequestMessage, chan
 	}
 
 	return &AgentResponseEnvelope{
-		Version:      lastResult.Version,
-		Result:       lastResult,
-		Channel:      channel,
+		Version:       lastResult.Version,
+		Result:        lastResult,
+		Channel:       channel,
 		TaskCompleted: lastResult.Status == StatusPassed,
 	}, nil
 }
