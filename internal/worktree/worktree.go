@@ -69,9 +69,9 @@ func (m *Manager) git(ctx context.Context, dir string, args ...string) (string, 
 // Any leftover worktree from a prior attempt is removed first.
 // If the worktree is already prepared (the daemon may have done this
 // before container acquisition), it returns the existing directory.
-func (m *Manager) Prepare(ctx context.Context, owner, repo, base string, issue int) (dir, branch string, err error) {
+func (m *Manager) Prepare(ctx context.Context, owner, repo, base string, issue int, title string) (dir, branch string, err error) {
 	dir = m.Dir(owner, repo, issue)
-	branch = fmt.Sprintf("archie/issue-%d", issue)
+	branch = archieBranch(issue, title)
 
 	// Already prepared (daemon cloned before container acquire).
 	if st, statErr := os.Stat(filepath.Join(dir, ".git")); statErr == nil && st.IsDir() {
@@ -97,6 +97,38 @@ func (m *Manager) Prepare(ctx context.Context, owner, repo, base string, issue i
 		}
 	}
 	return dir, branch, nil
+}
+
+// archieBranch builds a descriptive branch name from issue number and
+// a slug of the title. Example: "archie/62-clear-finished-button".
+func archieBranch(issue int, title string) string {
+	slug := branchSlug(title)
+	if slug == "" {
+		return fmt.Sprintf("archie/%d", issue)
+	}
+	return fmt.Sprintf("archie/%d-%s", issue, slug)
+}
+
+// branchSlug converts a title to a kebab-case slug suitable for a git
+// branch. Only keeps lowercase alphanumerics and hyphens, max 40 chars.
+func branchSlug(title string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(title) {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		} else if r == ' ' || r == '-' || r == '_' {
+			b.WriteRune('-')
+		}
+		if b.Len() >= 40 {
+			break
+		}
+	}
+	slug := strings.Trim(b.String(), "-")
+	// Collapse multiple hyphens.
+	for strings.Contains(slug, "--") {
+		slug = strings.ReplaceAll(slug, "--", "-")
+	}
+	return slug
 }
 
 func (m *Manager) cloneURL(owner, repo string) string {

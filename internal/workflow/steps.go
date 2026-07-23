@@ -21,7 +21,7 @@ import (
 // containers require the tree before acquire).
 func StagePrepareWorktree() Stage {
 	return Stage{Name: "prepare", Run: func(ctx context.Context, tc *TaskContext) error {
-		dir, branch, err := tc.Trees.Prepare(ctx, tc.Task.Owner, tc.Task.Repo, tc.Repo.BaseBranch(), tc.Task.IssueNumber)
+		dir, branch, err := tc.Trees.Prepare(ctx, tc.Task.Owner, tc.Task.Repo, tc.Repo.BaseBranch(), tc.Task.IssueNumber, tc.Task.Title)
 		if err != nil {
 			return err
 		}
