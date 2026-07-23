@@ -56,6 +56,10 @@ type TaskContext struct {
 	Branch string
 	// BuildSummary is the builder agent's finish summary — the PR body.
 	BuildSummary string
+	// BuildNoChanges is set when the builder returned StatusPassed but
+	// made no file changes — the fix already exists or the issue is a
+	// no-op. StageCommitPush closes the issue instead of erroring.
+	BuildNoChanges bool
 	// ReproProof is the captured failing-test output from a TDD repro
 	// stage, posted on the PR as evidence the bug was reproduced.
 	ReproProof string

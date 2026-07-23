@@ -46,6 +46,7 @@ func StageBaselineGate() Stage {
 
 			modelRef := tc.Cfg.Models["builder"]
 			req := agentexec.Request{
+				Version:  agentexec.ProtocolVersion,
 				TaskID:   tc.Task.ID,
 				Attempt:  tc.Task.Attempt,
 				Stage:    "baseline-fix",
@@ -99,7 +100,6 @@ func Implement() Workflow {
 				Name:     "plan",
 				Role:     "planner",
 				ReadOnly: true,
-				MaxSteps: 15,
 				Mission: func(tc *TaskContext) string {
 					prd := ""
 					if tc.Task.Plan != "" {
@@ -148,6 +148,9 @@ func Implement() Workflow {
 				},
 				OnResult: func(tc *TaskContext, res agentexec.Result) error {
 					tc.BuildSummary = res.Summary
+					if res.Status == agentexec.StatusPassed && len(res.Changes) == 0 {
+						tc.BuildNoChanges = true
+					}
 					return nil
 				},
 			}.Stage(),

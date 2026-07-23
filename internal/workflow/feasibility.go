@@ -29,7 +29,6 @@ func Feasibility() Workflow {
 				Name:         "assess",
 				Role:         "planner",
 				ReadOnly:     true,
-				MaxSteps:     15,
 				CaptureTools: decideCaptureTools,
 				Mission: func(tc *TaskContext) string {
 					return fmt.Sprintf(
@@ -76,7 +75,6 @@ func Feasibility() Workflow {
 				Name:     "prd",
 				Role:     "planner",
 				ReadOnly: true,
-				MaxSteps: 20,
 				Mission: func(tc *TaskContext) string {
 					return fmt.Sprintf(
 						"Write a PRD for this accepted feature request on %s.\n\n"+

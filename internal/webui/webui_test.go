@@ -155,10 +155,12 @@ func TestIndexHasResponsiveFeatures(t *testing.T) {
 	 name string
 	 want string
 	}{
-	{"mobile-font-padding", "section { min-height: 1.25rem; }"},
-	{"table-wrap", "section .table-wrap { position: relative; overflow-x: auto;"},
+	{"section-table", ".section-table { overflow-x: auto; }"},
 	{"feed-wraps", "white-space: normal"},
+	{"feed-break-word", "overflow-wrap: break-word"},
 	{"700px-breakpoint", "@media (max-width: 700px)"},
+	{"950px-breakpoint", "@media (max-width: 950px)"},
+	{"viewport-meta", `<meta name="viewport" content="width=device-width, initial-scale=1">`},
 	}
 	for _, r := range reqs {
 		if !strings.Contains(body, r.want) {

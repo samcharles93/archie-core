@@ -27,7 +27,6 @@ func TDD() Workflow {
 				Name:     "analyse",
 				Role:     "planner",
 				ReadOnly: true,
-				MaxSteps: 15,
 				Mission: func(tc *TaskContext) string {
 					return fmt.Sprintf(
 						"Analyse this bug report for the repository %s and determine the problem surface.\n\n"+

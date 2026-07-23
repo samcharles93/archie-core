@@ -48,10 +48,23 @@ func StageCommit(name string, message func(*TaskContext) string) Stage {
 }
 
 // StageCommitPush commits everything in the worktree and pushes the
-// branch; an empty tree parks (the workflow produced nothing).
+// branch. When the builder completed with no changes (BuildNoChanges is
+// set), the issue is already resolved — close it with a comment instead
+// of erroring on an empty tree.
 func StageCommitPush(message func(*TaskContext) string) Stage {
-	commit := StageCommit("commit-push", message)
 	return Stage{Name: "commit-push", Run: func(ctx context.Context, tc *TaskContext) error {
+		if tc.BuildNoChanges {
+			body := fmt.Sprintf("**archie closed this issue — no changes required.**\n\n%s", tc.BuildSummary)
+			if _, err := tc.Forge.Comment(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, body); err != nil {
+				tc.Log.Warn("no-op close comment failed", "err", err)
+			}
+			if err := tc.Forge.CloseIssue(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, ""); err != nil {
+				return err
+			}
+			tc.Outcome = Outcome{Status: store.StatusMerged, Detail: "closed — no changes required"}
+			return nil
+		}
+		commit := StageCommit("commit-push", message)
 		if err := commit.Run(ctx, tc); err != nil {
 			return err
 		}
