@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -18,7 +19,7 @@ func TestTaskDispatcherEnforcesMaxConcurrency(t *testing.T) {
 	t.Parallel()
 
 	const maxConcurrency = 2
-	dispatcher := newTaskDispatcher(maxConcurrency)
+	dispatcher := newTaskDispatcher(maxConcurrency, nil)
 	release := make(chan struct{})
 	started := make(chan int, 3)
 	var active atomic.Int32
@@ -69,7 +70,7 @@ func TestTaskDispatcherEnforcesMaxConcurrency(t *testing.T) {
 func TestTaskDispatcherSerializesTasksForSameRepo(t *testing.T) {
 	t.Parallel()
 
-	dispatcher := newTaskDispatcher(3)
+	dispatcher := newTaskDispatcher(3, nil)
 	releaseFirst := make(chan struct{})
 	firstStarted := make(chan struct{})
 	secondStarted := make(chan struct{})
@@ -112,10 +113,43 @@ func TestTaskDispatcherSerializesTasksForSameRepo(t *testing.T) {
 	}
 }
 
+func TestTaskDispatcherRunsConcurrentReposInParallel(t *testing.T) {
+	t.Parallel()
+
+	dispatcher := newTaskDispatcher(3, func(owner, repo string) bool {
+		return owner == "sam" && repo == "archie"
+	})
+	releaseFirst := make(chan struct{})
+	firstStarted := make(chan struct{})
+	secondStarted := make(chan struct{})
+
+	dispatcher.Submit(context.Background(), &store.Task{Owner: "sam", Repo: "archie"}, func(context.Context, *store.Task) {
+		close(firstStarted)
+		<-releaseFirst
+	})
+	dispatcher.Submit(context.Background(), &store.Task{Owner: "sam", Repo: "archie"}, func(context.Context, *store.Task) {
+		close(secondStarted)
+	})
+
+	for name, started := range map[string]<-chan struct{}{
+		"first opted-in task":  firstStarted,
+		"second opted-in task": secondStarted,
+	} {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatalf("%s did not start — allow_concurrent repos should not be serialized", name)
+		}
+	}
+
+	close(releaseFirst)
+	dispatcher.Wait()
+}
+
 func TestTaskDispatcherWaitsForRunningTasks(t *testing.T) {
 	t.Parallel()
 
-	dispatcher := newTaskDispatcher(1)
+	dispatcher := newTaskDispatcher(1, nil)
 	release := make(chan struct{})
 	dispatcher.Submit(context.Background(), &store.Task{Owner: "sam", Repo: "archie"}, func(context.Context, *store.Task) {
 		<-release
@@ -137,6 +171,48 @@ func TestTaskDispatcherWaitsForRunningTasks(t *testing.T) {
 	case <-waited:
 	case <-time.After(time.Second):
 		t.Fatal("Wait did not return after the running task completed")
+	}
+}
+
+func TestDaemonAllowConcurrentForReadsRepoConfig(t *testing.T) {
+	d := &Daemon{
+		Cfg: config.Config{
+			Repos: []config.Repo{
+				{Owner: "sam", Name: "archie", AllowConcurrent: true},
+				{Owner: "sam", Name: "todo"},
+			},
+		},
+	}
+
+	if !d.allowConcurrentFor("sam", "archie") {
+		t.Fatal("expected allow_concurrent=true repo to report concurrent-allowed")
+	}
+	if d.allowConcurrentFor("sam", "todo") {
+		t.Fatal("expected repo without allow_concurrent to report false")
+	}
+	if d.allowConcurrentFor("sam", "unknown") {
+		t.Fatal("expected unknown repo to report false")
+	}
+}
+
+func TestContainerEnvIncludesConfiguredNATSCredentials(t *testing.T) {
+	t.Setenv("ARCHIE_NATS_SECRET", "test-nats-token")
+
+	d := &Daemon{Cfg: config.Config{
+		NATS: config.NATSConfig{
+			URL:      "nats://nats.example:4222",
+			TokenEnv: "ARCHIE_NATS_SECRET",
+		},
+	}}
+
+	got := d.containerEnv()
+	for _, want := range []string{
+		"NATS_URL=nats://nats.example:4222",
+		"NATS_TOKEN=test-nats-token",
+	} {
+		if !slices.Contains(got, want) {
+			t.Errorf("containerEnv() = %q, want %q", got, want)
+		}
 	}
 }
 

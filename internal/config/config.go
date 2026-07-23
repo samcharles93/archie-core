@@ -66,6 +66,12 @@ type Repo struct {
 	// being permanently parked (status "dead"). 0 means use the
 	// global Config.MaxRetries.
 	MaxRetries int `toml:"max_retries"`
+	// AllowConcurrent lets the daemon dispatch multiple tasks for this
+	// repo at once instead of the default FIFO one-task-per-repo
+	// serialization. Only safe for repos where concurrent worktrees
+	// won't collide (e.g. different base branches or packages per
+	// task). Still bounded by [containers].max_concurrency globally.
+	AllowConcurrent bool `toml:"allow_concurrent"`
 }
 
 // Protected reports whether path matches a protected suffix.

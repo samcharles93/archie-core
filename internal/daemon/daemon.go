@@ -122,7 +122,7 @@ func (d *Daemon) Cycle(ctx context.Context) {
 
 // drainSQLite claims queued tasks from SQLite and dispatches them concurrently.
 func (d *Daemon) drainSQLite(ctx context.Context) {
-	dispatcher := newTaskDispatcher(d.Cfg.Containers.MaxConcurrency)
+	dispatcher := newTaskDispatcher(d.Cfg.Containers.MaxConcurrency, d.allowConcurrentFor)
 	for ctx.Err() == nil {
 		task, err := d.Store.ClaimNext(ctx)
 		if err != nil {
@@ -141,7 +141,7 @@ func (d *Daemon) drainSQLite(ctx context.Context) {
 // requeued tasks (waiting_human approval, retry-parked) that didn't come
 // through a NATS publish.
 func (d *Daemon) drainNATS(ctx context.Context) {
-	dispatcher := newTaskDispatcher(d.Cfg.Containers.MaxConcurrency)
+	dispatcher := newTaskDispatcher(d.Cfg.Containers.MaxConcurrency, d.allowConcurrentFor)
 	for ctx.Err() == nil {
 		msg, err := d.Nats.Fetch(ctx)
 		if err != nil {
@@ -177,23 +177,30 @@ func (d *Daemon) drainNATS(ctx context.Context) {
 
 // taskDispatcher bounds task execution globally while preserving the default
 // one-task-per-repository safety rule. Submit order is retained within a repo;
-// tasks for different repos may run concurrently.
+// tasks for different repos may run concurrently. Repos for which
+// allowConcurrent reports true opt out of the same-repo serialization
+// entirely — the global slot limit is the only bound on their concurrency.
 type taskDispatcher struct {
-	slots chan struct{}
+	slots           chan struct{}
+	allowConcurrent func(owner, repo string) bool
 
 	mu       sync.Mutex
 	repoTail map[string]chan struct{}
 	wg       sync.WaitGroup
 }
 
-func newTaskDispatcher(maxConcurrency int) *taskDispatcher {
+func newTaskDispatcher(maxConcurrency int, allowConcurrent func(owner, repo string) bool) *taskDispatcher {
 	var slots chan struct{}
 	if maxConcurrency > 0 {
 		slots = make(chan struct{}, maxConcurrency)
 	}
+	if allowConcurrent == nil {
+		allowConcurrent = func(string, string) bool { return false }
+	}
 	return &taskDispatcher{
-		slots:    slots,
-		repoTail: make(map[string]chan struct{}),
+		slots:           slots,
+		allowConcurrent: allowConcurrent,
+		repoTail:        make(map[string]chan struct{}),
 	}
 }
 
@@ -203,12 +210,15 @@ func (d *taskDispatcher) Submit(
 	process func(context.Context, *store.Task),
 ) {
 	repo := task.Owner + "/" + task.Repo
-	done := make(chan struct{})
 
-	d.mu.Lock()
-	previous := d.repoTail[repo]
-	d.repoTail[repo] = done
-	d.mu.Unlock()
+	var previous, done chan struct{}
+	if !d.allowConcurrent(task.Owner, task.Repo) {
+		done = make(chan struct{})
+		d.mu.Lock()
+		previous = d.repoTail[repo]
+		d.repoTail[repo] = done
+		d.mu.Unlock()
+	}
 
 	d.wg.Go(func() {
 		if previous != nil {
@@ -218,14 +228,16 @@ func (d *taskDispatcher) Submit(
 			d.slots <- struct{}{}
 			defer func() { <-d.slots }()
 		}
-		defer func() {
-			close(done)
-			d.mu.Lock()
-			if d.repoTail[repo] == done {
-				delete(d.repoTail, repo)
-			}
-			d.mu.Unlock()
-		}()
+		if done != nil {
+			defer func() {
+				close(done)
+				d.mu.Lock()
+				if d.repoTail[repo] == done {
+					delete(d.repoTail, repo)
+				}
+				d.mu.Unlock()
+			}()
+		}
 		process(ctx, task)
 	})
 }
@@ -706,6 +718,11 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 func (d *Daemon) containerEnv() []string {
 	var env []string
 	env = append(env, "NATS_URL="+d.Cfg.NATS.URL)
+	if tokenEnv := d.Cfg.NATS.TokenEnv; tokenEnv != "" {
+		if token := os.Getenv(tokenEnv); token != "" {
+			env = append(env, "NATS_TOKEN="+token)
+		}
+	}
 	for _, p := range d.Cfg.Providers {
 		if p.APIKeyEnv != "" {
 			if v := os.Getenv(p.APIKeyEnv); v != "" {
@@ -723,4 +740,16 @@ func (d *Daemon) repoFor(t *store.Task) (config.Repo, bool) {
 		}
 	}
 	return config.Repo{}, false
+}
+
+// allowConcurrentFor reports whether owner/repo has opted into concurrent
+// task dispatch (config.Repo.AllowConcurrent). Unknown repos default to the
+// safe, serialized behavior.
+func (d *Daemon) allowConcurrentFor(owner, repo string) bool {
+	for _, r := range d.Cfg.Repos {
+		if r.Owner == owner && r.Name == repo {
+			return r.AllowConcurrent
+		}
+	}
+	return false
 }

@@ -87,3 +87,7 @@ gate = [
   ["golangci-lint", "run"],
   ["go", "test", "./...", "-count=1"],
 ]
+# allow_concurrent = true  # let the daemon run multiple tasks for this repo at once instead of
+                           # FIFO-serializing them; only safe when concurrent worktrees won't collide
+                           # (e.g. different base branches or packages per task). Still bounded by
+                           # [containers].max_concurrency globally.

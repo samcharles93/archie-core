@@ -511,9 +511,10 @@ The agent writes whatever it wants to `response`. The daemon reviews it. No agen
    lifetime with `max_total_uptime` (e.g. 4 hours) to prevent infinite hanging. `max_uptime` = grace after inactivity,
    `max_total_uptime` = absolute kill switch.
 
-5. **Concurrent agents on the same repo:** Blocked (worktree conflict) by default. For repos where concurrent work is
-   safe (different base branches, different packages), add a per-repo override: `allow_concurrent = true`. Resolve
-   during Phase 2.
+5. **Concurrent agents on the same repo:** ~~Resolved.~~ Serialized by default (dispatcher chains tasks per
+   `owner/repo`). `[[repos]]` now supports `allow_concurrent = true` (`config.Repo.AllowConcurrent`) to opt a repo out
+   of that serialization; the global `[containers].max_concurrency` slot limit still applies. Worktrees are already
+   keyed per issue number (`worktree.Manager.Dir`), so opted-in repos don't collide on disk.
 
 6. **Plugin architecture reconciliation:** Extend the existing Yaegi surfaces (`internal/gate/gateeval`,
    `internal/workflow/wfeval`, `internal/skillscript`) rather than building a parallel `Plugin.Register(daemon)`
