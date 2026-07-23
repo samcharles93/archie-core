@@ -100,7 +100,6 @@ func Implement() Workflow {
 				Name:     "plan",
 				Role:     "planner",
 				ReadOnly: true,
-				MaxSteps: 30,
 				Mission: func(tc *TaskContext) string {
 					prd := ""
 					if tc.Task.Plan != "" {
