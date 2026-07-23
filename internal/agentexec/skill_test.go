@@ -26,14 +26,14 @@ func (c *captureRunner) Run(_ context.Context, _ string, req Request) (Result, e
 	}, nil
 }
 
-// ── regression: Agent doesn't load its own skills ───────────────────
+// ── regression: HandleMessage must not duplicate skill body ─────────
 
-func TestHandleMessageLoadsSkillsFromWorktree(t *testing.T) {
-	// PRD section 1: archie-agent owns skill loading — reads
-	// .agents/skills/archie-wf-* from the worktree.
-	//
-	// Currently the daemon loads skills and injects the body into
-	// the Mission string. HandleMessage never touches .agents/skills/.
+func TestHandleMessageDoesNotDuplicateSkillBody(t *testing.T) {
+	// Regression for issue #65: the daemon already prepends the skill
+	// body to every mission via missionWithSkill() before the Request
+	// reaches HandleMessage. HandleMessage must pass the mission
+	// through unchanged — a second prepend here would duplicate the
+	// skill body in the agent's context window.
 
 	dir := t.TempDir()
 	skillsDir := filepath.Join(dir, ".agents", "skills", "archie-wf-tdd")
@@ -53,6 +53,12 @@ Analyse the bug. Write repro tests. Fix.
 		t.Fatal(err)
 	}
 
+	// Mission already includes the daemon-side prepend (as produced by
+	// missionWithSkill in internal/workflow/agent.go).
+	alreadyPrepended := "Follow these project-specific guidelines:\n\n" +
+		"Analyse the bug. Write repro tests. Fix.\n\n---\n\n" +
+		"Analyse this bug"
+
 	var capturedMission string
 	captureFactory := func(providers map[string]Provider, log *slog.Logger) Runner {
 		return &captureRunner{callback: func(req Request) {
@@ -69,7 +75,7 @@ Analyse the bug. Write repro tests. Fix.
 		Request: Request{
 			Version: ProtocolVersion, TaskID: 1, Attempt: 1,
 			Stage: "analyse", Model: "test/model",
-			Mission: "Analyse this bug",
+			Mission: alreadyPrepended,
 			Budget: Budget{MaxSteps: 1, MaxTokens: 10},
 		},
 		Providers: map[string]Provider{"test": {Class: "openai", APIKeyEnv: "FAKE"}},
@@ -81,14 +87,13 @@ Analyse the bug. Write repro tests. Fix.
 	}
 	_ = resp
 
-	// The agent must load the skill body from its workspace. If the
-	// agent loaded the skill, the Mission sent to the runner would
-	// include the skill body prepended.
-	if capturedMission == "Analyse this bug" {
-		t.Error("Gap: HandleMessage does not load skills from the worktree. " +
-			"The Mission sent to the runner is the bare mission string — " +
-			"no skill content was loaded from " + skillsDir + ". " +
-			"HandleMessage must load .agents/skills/<workflow>/SKILL.md " +
-			"from the workspace when processing a task. PRD section 1.")
+	// The mission must be passed through unchanged. Any modification
+	// would indicate a double-prepend bug (issue #65).
+	if capturedMission != alreadyPrepended {
+		t.Errorf("HandleMessage modified the mission:\n  got:  %q\n  want: %q\n\n"+
+			"The daemon already prepends the skill body via missionWithSkill(). "+
+			"HandleMessage must not prepend it again — doing so duplicates content "+
+			"in the agent's context window (issue #65).",
+			capturedMission, alreadyPrepended)
 	}
 }

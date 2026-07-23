@@ -8,8 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"strings"
-
-	"github.com/samcharles93/archie-core/internal/skill"
 )
 
 const maxProtocolBytes = 8 << 20
@@ -68,18 +66,6 @@ func HandleMessage(ctx context.Context, msg AgentRequestMessage, log *slog.Logge
 	channel := msg.Channel
 	if channel == "" {
 		channel = "response"
-	}
-
-	// Load the skill body from the worktree — the agent owns skill
-	// loading per PRD section 1. Mirrors daemon-side loadSkillBody().
-	if msg.Workflow != "" && msg.Workspace != "" {
-		body := skill.LoadBody(msg.Workspace, skillDirForWorkflow(msg.Workspace, msg.Workflow))
-		if body != "" {
-			msg.Request.Mission = "Follow these project-specific guidelines:\n\n" + body + "\n\n---\n\n" + msg.Request.Mission
-			for i := range msg.Stages {
-				msg.Stages[i].Mission = "Follow these project-specific guidelines:\n\n" + body + "\n\n---\n\n" + msg.Stages[i].Mission
-			}
-		}
 	}
 
 	// Per-task mode: run all stages for this workflow as a batch.
@@ -149,17 +135,6 @@ func runStages(ctx context.Context, runner Runner, msg AgentRequestMessage, chan
 		Channel:      channel,
 		TaskCompleted: lastResult.Status == StatusPassed,
 	}, nil
-}
-
-// skillDirForWorkflow finds the skill directory for a workflow from the
-// workspace catalog. Skills declare their workflow in metadata.archie.workflow.
-func skillDirForWorkflow(workspace, workflow string) string {
-	catalog, _ := skill.Catalog(workspace)
-	entry := skill.SkillForWorkflow(catalog, workflow)
-	if entry == nil {
-		return ""
-	}
-	return entry.Dir
 }
 
 func decodeOne(r io.Reader, value any) error {
