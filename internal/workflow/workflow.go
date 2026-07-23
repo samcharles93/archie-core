@@ -15,11 +15,40 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/skill"
 	"github.com/samcharles93/archie-core/internal/store"
-	"github.com/samcharles93/archie-core/internal/worktree"
 )
+
+// Forger is the subset of forge.Forge that workflow stages call mid-run.
+// forge.Forge (the daemon's real implementations) and forgerpc.Client
+// (archie-agent's NATS-backed proxy) both satisfy it.
+type Forger interface {
+	Comment(ctx context.Context, owner, repo string, number int, body string) (int64, error)
+	CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error
+	CreatePR(ctx context.Context, owner, repo, title, head, base, body string) (int, error)
+	SetStateLabel(ctx context.Context, owner, repo string, number int, label string, knownLabels []string)
+}
+
+// TaskStore is the subset of *store.Store that workflow stages call
+// mid-run. *store.Store (the daemon's real store) and storerpc.Client
+// (archie-agent's NATS-backed proxy) both satisfy it.
+type TaskStore interface {
+	Update(ctx context.Context, t *store.Task) error
+	Transition(ctx context.Context, taskID int64, from, to, detail string) error
+}
+
+// Trees is the subset of *worktree.Manager that workflow stages call
+// mid-run. *worktree.Manager (the daemon's real manager, holding the push
+// token) and a hybrid RPC-backed implementation (archie-agent proxies
+// Prepare/Push, runs the rest locally) both satisfy it.
+type Trees interface {
+	Prepare(ctx context.Context, owner, repo, base string, issue int, title, body, labels string) (dir, branch string, err error)
+	CommitAll(ctx context.Context, dir, message string) (bool, error)
+	Push(ctx context.Context, dir, branch string) error
+	Diff(ctx context.Context, dir, base string) (string, error)
+	ChangedFiles(ctx context.Context, dir, base string) ([]string, error)
+	ChangedLines(ctx context.Context, dir, base string) (int, error)
+}
 
 // TaskContext carries everything a stage may need. Stages communicate
 // forward by mutating Task (persisted after every stage) and the
@@ -28,9 +57,9 @@ type TaskContext struct {
 	Task  *store.Task
 	Repo  config.Repo
 	Cfg   config.Config
-	Forge forge.Forge
-	Store *store.Store
-	Trees *worktree.Manager
+	Forge Forger
+	Store TaskStore
+	Trees Trees
 	Agent agentexec.Runner
 	Bus   *events.Bus // nil-safe via Emit
 	Log   *slog.Logger

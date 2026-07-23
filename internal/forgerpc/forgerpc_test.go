@@ -106,8 +106,10 @@ func (f *fakeForge) PRState(context.Context, string, string, int) (string, error
 func (f *fakeForge) CreateIssue(context.Context, string, string, string, string, []string) (int, error) {
 	panic("unexpected call")
 }
-func (f *fakeForge) React(context.Context, string, string, int, string) error { panic("unexpected call") }
-func (f *fakeForge) VerifyPush(context.Context, string, string) error         { panic("unexpected call") }
+func (f *fakeForge) React(context.Context, string, string, int, string) error {
+	panic("unexpected call")
+}
+func (f *fakeForge) VerifyPush(context.Context, string, string) error { panic("unexpected call") }
 
 func newTestServer(t *testing.T) (*fakeForge, *Client) {
 	t.Helper()
