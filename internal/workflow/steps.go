@@ -76,6 +76,9 @@ func StageCommitPush(message func(*TaskContext) string) Stage {
 // oversized changes need human pre-approval, not an auto-opened PR.
 func StageDiffCap() Stage {
 	return Stage{Name: "diff-cap", Run: func(ctx context.Context, tc *TaskContext) error {
+		if tc.Cfg.DiffCapLines <= 0 {
+			return nil
+		}
 		lines, err := tc.Trees.ChangedLines(ctx, tc.Dir, tc.Repo.BaseBranch())
 		if err != nil {
 			return err
