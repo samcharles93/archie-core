@@ -221,6 +221,8 @@ func stateLabelFor(d config.Dispatch, status string) string {
 		return d.StateLabel("waiting")
 	case store.StatusParked:
 		return d.StateLabel("parked")
+	case store.StatusDead:
+		return d.StateLabel("dead")
 	default:
 		return ""
 	}

@@ -62,6 +62,10 @@ type Repo struct {
 	// survives task completion and retains data across tasks. Use for
 	// repos with expensive build artifacts or large dependency trees.
 	PersistentStorage bool `toml:"persistent_storage"`
+	// MaxRetries caps how many times a parked task is retried before
+	// being permanently parked (status "dead"). 0 means use the
+	// global Config.MaxRetries.
+	MaxRetries int `toml:"max_retries"`
 }
 
 // Protected reports whether path matches a protected suffix.
@@ -116,6 +120,15 @@ func (r Repo) BaseBranch() string {
 		return "main"
 	}
 	return r.Base
+}
+
+// EffectiveMaxRetries returns the per-repo override when set (>0),
+// otherwise the global default.
+func (r Repo) EffectiveMaxRetries(global int) int {
+	if r.MaxRetries > 0 {
+		return r.MaxRetries
+	}
+	return global
 }
 
 // Budgets bound every agent stage. Zero disables a limit.
@@ -176,6 +189,7 @@ var dispatchLabelDefaults = map[string]string{
 	"waiting": "archie:waiting",
 	"pr":      "archie:pr",
 	"parked":  "archie:parked",
+	"dead":    "archie:dead",
 }
 
 // StateLabel returns the configured label for a state name. Falls back
@@ -196,7 +210,7 @@ func (d Dispatch) StateLabel(state string) string {
 func (d Dispatch) LabelValues() []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, k := range []string{"queued", "working", "waiting", "pr", "parked"} {
+	for _, k := range []string{"queued", "working", "waiting", "pr", "parked", "dead"} {
 		v := d.StateLabel(k)
 		if v != "" && !seen[v] {
 			seen[v] = true
@@ -215,6 +229,9 @@ type Config struct {
 	// (plugin-defined workflows override built-ins). When empty,
 	// only built-in workflows are available.
 	SkillsDir    string   `toml:"skills_dir"`
+	// MaxRetries caps how many times a parked task is retried before
+	// being permanently parked (status "dead"). Defaults to 3.
+	MaxRetries int `toml:"max_retries"`
 	// PluginDir is an optional path to a directory of Yaegi-interpreted
 	// daemon plugins (*.go files). Each file must export a "Plugin"
 	// variable satisfying the plugin.Plugin interface. Failed plugins
@@ -372,6 +389,9 @@ func Load(path string) (Config, error) {
 		if cfg.Dispatch.Labels[k] == "" {
 			cfg.Dispatch.Labels[k] = v
 		}
+	}
+	if cfg.MaxRetries == 0 {
+		cfg.MaxRetries = 3
 	}
 	if cfg.BotUser == "" {
 		return cfg, errors.New("config: bot_user is required")

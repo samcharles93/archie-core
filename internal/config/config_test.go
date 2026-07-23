@@ -91,16 +91,16 @@ func TestDispatchCustomLabels(t *testing.T) {
 		t.Errorf("AckReaction: got %q, want empty", d.AckReaction)
 	}
 
-	// LabelValues returns all five state labels.
+	// LabelValues returns all six state labels.
 	vals := d.LabelValues()
-	if len(vals) != 5 {
-		t.Errorf("LabelValues: got %d values, want 5: %v", len(vals), vals)
+	if len(vals) != 6 {
+		t.Errorf("LabelValues: got %d values, want 6: %v", len(vals), vals)
 	}
 	seen := map[string]bool{}
 	for _, v := range vals {
 		seen[v] = true
 	}
-	for _, want := range []string{"bot:queued", "bot:working", "bot:parked", "archie:waiting", "archie:pr"} {
+	for _, want := range []string{"bot:queued", "bot:working", "bot:parked", "archie:waiting", "archie:pr", "archie:dead"} {
 		if !seen[want] {
 			t.Errorf("LabelValues missing %q", want)
 		}
@@ -118,9 +118,9 @@ func TestDispatchLabelValuesDedup(t *testing.T) {
 		},
 	}
 	vals := d.LabelValues()
-	// Should have "bot:queued" plus fallbacks for waiting and pr.
-	if len(vals) != 3 {
-		t.Errorf("LabelValues: got %d values, want 3: %v", len(vals), vals)
+	// Should have "bot:queued" plus fallbacks for waiting, pr, and dead.
+	if len(vals) != 4 {
+		t.Errorf("LabelValues: got %d values, want 4: %v", len(vals), vals)
 	}
 }
 

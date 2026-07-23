@@ -116,6 +116,58 @@ func TestEventLogRoundTrip(t *testing.T) {
 	}
 }
 
+func TestIncrementRetryCount(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	if _, err := s.EnqueueIssue(ctx, "sam", "todo", 1, "t", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("claim = (%v, %v)", task, err)
+	}
+
+	if task.RetryCount != 0 {
+		t.Fatalf("expected retry_count=0, got %d", task.RetryCount)
+	}
+
+	// Increment twice and verify.
+	if err := s.IncrementRetryCount(ctx, task.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.IncrementRetryCount(ctx, task.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.TaskByIssue(ctx, "sam", "todo", 1)
+	if err != nil || got == nil {
+		t.Fatalf("TaskByIssue = (%+v, %v)", got, err)
+	}
+	if got.RetryCount != 2 {
+		t.Fatalf("expected retry_count=2, got %d", got.RetryCount)
+	}
+}
+
+func TestRetryCountColumn(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	if _, err := s.EnqueueIssue(ctx, "sam", "todo", 1, "t", "", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify column exists and defaults to 0 via direct query.
+	var count int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT retry_count FROM tasks WHERE owner='sam' AND repo='todo' AND issue_number=1`).Scan(&count); err != nil {
+		t.Fatalf("retry_count scan failed: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("default retry_count = %d, want 0", count)
+	}
+}
+
 func TestClaimTransitionAndRecovery(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()

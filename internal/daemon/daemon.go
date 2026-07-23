@@ -322,8 +322,9 @@ func (d *Daemon) pollEither(ctx context.Context, repo config.Repo) []forge.Issue
 	return out
 }
 
-// maybeRetryParked requeues a parked task whose archie:parked label a
-// human has removed — the forge-native retry trigger.
+// maybeRetryParked requeues a parked task whose state label a human has
+// removed — the forge-native retry trigger. When retry_count reaches the
+// configured max_retries the task moves to dead instead of requeuing.
 func (d *Daemon) maybeRetryParked(ctx context.Context, repo config.Repo, is forge.Issue) {
 	if hasLabel(is.Labels, d.Cfg.Dispatch.StateLabel("parked")) {
 		return
@@ -332,15 +333,50 @@ func (d *Daemon) maybeRetryParked(ctx context.Context, repo config.Repo, is forg
 	if err != nil || task == nil || task.Status != store.StatusParked {
 		return
 	}
+
+	maxRetries := repo.EffectiveMaxRetries(d.Cfg.MaxRetries)
+
+	if task.RetryCount >= maxRetries {
+		d.markDead(ctx, repo, task, maxRetries)
+		return
+	}
+
 	if err := d.Store.Requeue(ctx, task.ID, store.StatusParked, ""); err != nil {
 		d.Log.Error("label-triggered requeue failed", "issue", is.Number, "err", err)
 		return
 	}
-	d.Log.Info("parked task requeued via label removal", "repo", repo.FullName(), "issue", is.Number)
+	if err := d.Store.IncrementRetryCount(ctx, task.ID); err != nil {
+		d.Log.Error("increment retry_count failed", "issue", is.Number, "err", err)
+	}
+	d.Log.Info("parked task requeued via label removal", "repo", repo.FullName(), "issue", is.Number, "retry_count", task.RetryCount+1, "max_retries", maxRetries)
 	d.Forge.SetStateLabel(ctx, repo.Owner, repo.Name, is.Number, d.Cfg.Dispatch.StateLabel("queued"), d.Cfg.Dispatch.LabelValues())
 	d.emit(events.Event{
 		Kind: "task_retried", TaskID: task.ID,
-		Repo: repo.FullName(), Issue: is.Number, Detail: "archie:parked label removed",
+		Repo: repo.FullName(), Issue: is.Number, Detail: "parked label removed",
+	})
+}
+
+// markDead permanently parks a task that has exhausted its max_retries.
+func (d *Daemon) markDead(ctx context.Context, repo config.Repo, task *store.Task, maxRetries int) {
+	reason := fmt.Sprintf("max retries reached (%d/%d) — task parked permanently", task.RetryCount, maxRetries)
+	if err := d.Store.Transition(ctx, task.ID, store.StatusParked, store.StatusDead, reason); err != nil {
+		d.Log.Error("transition to dead failed", "task", task.ID, "err", err)
+		return
+	}
+	d.Forge.SetStateLabel(ctx, task.Owner, task.Repo, task.IssueNumber,
+		d.Cfg.Dispatch.StateLabel("dead"), d.Cfg.Dispatch.LabelValues())
+	d.Log.Warn("task permanently parked after max retries",
+		"issue", task.IssueNumber, "retry_count", task.RetryCount, "max_retries", maxRetries)
+	body := fmt.Sprintf("**Max retries reached (%d/%d) — task parked permanently.**\n\n"+
+		"The task failed %d times and has been moved to `dead` status. "+
+		"Manual intervention is required to recover this task.",
+		task.RetryCount, maxRetries, task.RetryCount)
+	if _, err := d.Forge.Comment(ctx, task.Owner, task.Repo, task.IssueNumber, body); err != nil {
+		d.Log.Error("failed to post dead comment", "issue", task.IssueNumber, "err", err)
+	}
+	d.emit(events.Event{
+		Kind: events.KindTaskDead, TaskID: task.ID,
+		Repo: repo.FullName(), Issue: task.IssueNumber, Detail: reason,
 	})
 }
 
