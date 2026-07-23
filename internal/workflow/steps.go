@@ -58,7 +58,11 @@ func StageCommitPush(message func(*TaskContext) string) Stage {
 			if _, err := tc.Forge.Comment(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, body); err != nil {
 				tc.Log.Warn("no-op close comment failed", "err", err)
 			}
-			return tc.Forge.CloseIssue(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, "")
+			if err := tc.Forge.CloseIssue(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, ""); err != nil {
+				return err
+			}
+			tc.Outcome = Outcome{Status: store.StatusMerged, Detail: "closed — no changes required"}
+			return nil
 		}
 		commit := StageCommit("commit-push", message)
 		if err := commit.Run(ctx, tc); err != nil {

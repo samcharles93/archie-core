@@ -61,6 +61,11 @@ func TestStageCommitPushClosesIssueWhenBuildNoChanges(t *testing.T) {
 	} else {
 		t.Log("CloseIssue called (no changes needed)")
 	}
+	if tc.Outcome.Status != store.StatusMerged {
+		t.Errorf("expected Outcome=Merged, got %s", tc.Outcome.Status)
+	} else {
+		t.Log("Outcome set to Merged (workflow stops)")
+	}
 
 	found := false
 	for _, c := range f.commented {
