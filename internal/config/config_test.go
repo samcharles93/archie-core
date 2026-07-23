@@ -1,11 +1,180 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestConfigForTaskJSONRoundTrip(t *testing.T) {
+	cfg := Config{
+		DiffCapLines: 321,
+		Models: map[string]string{
+			"builder": "anthropic/claude",
+			"planner": "openai/gpt",
+		},
+		Budgets: Budgets{
+			MaxSteps:        12,
+			MaxTokens:       34_000,
+			WallClock:       Duration(45 * time.Minute),
+			GateMaxFailures: 3,
+		},
+		Dispatch: Dispatch{
+			Trigger:     "label",
+			AckReaction: "eyes",
+			Labels:      map[string]string{"working": "bot:working"},
+		},
+		Notify: Notify{Webhook: "https://notify.example.test/hook"},
+		Forge: Forge{
+			Type:     "github",
+			Host:     "https://forge.example.test",
+			TokenEnv: "TOP_SECRET_FORGE_TOKEN",
+		},
+		Providers: map[string]Provider{
+			"secret": {APIKeyEnv: "TOP_SECRET_PROVIDER_TOKEN"},
+		},
+		NATS: NATSConfig{TokenEnv: "TOP_SECRET_NATS_TOKEN"},
+	}
+
+	want := TaskConfig{
+		Models:       cfg.Models,
+		Budgets:      cfg.Budgets,
+		Dispatch:     cfg.Dispatch,
+		DiffCapLines: cfg.DiffCapLines,
+		Notify:       cfg.Notify,
+		Forge:        TaskForge{Host: cfg.Forge.Host},
+	}
+	got := cfg.ForTask()
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ForTask() = %#v, want %#v", got, want)
+	}
+	cfg.Models["source-only"] = "source/model"
+	if _, ok := got.Models["source-only"]; ok {
+		t.Fatal("ForTask().Models aliases Config.Models")
+	}
+	got.Models["task-only"] = "task/model"
+	if _, ok := cfg.Models["task-only"]; ok {
+		t.Fatal("Config.Models aliases ForTask().Models")
+	}
+	cfg.Dispatch.Labels["source-only"] = "source:label"
+	if _, ok := got.Dispatch.Labels["source-only"]; ok {
+		t.Fatal("ForTask().Dispatch.Labels aliases Config.Dispatch.Labels")
+	}
+	got.Dispatch.Labels["task-only"] = "task:label"
+	if _, ok := cfg.Dispatch.Labels["task-only"]; ok {
+		t.Fatal("Config.Dispatch.Labels aliases ForTask().Dispatch.Labels")
+	}
+
+	data, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertJSONKeys(t, data, "models", "budgets", "dispatch", "diff_cap_lines", "notify", "forge")
+
+	var forgePayload map[string]json.RawMessage
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	var budgetsPayload map[string]json.RawMessage
+	if err := json.Unmarshal(payload["budgets"], &budgetsPayload); err != nil {
+		t.Fatal(err)
+	}
+	if string(budgetsPayload["wall_clock"]) != `"45m0s"` {
+		t.Fatalf("wall_clock = %s, want JSON duration string", budgetsPayload["wall_clock"])
+	}
+	if err := json.Unmarshal(payload["forge"], &forgePayload); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(forgePayload, map[string]json.RawMessage{
+		"host": json.RawMessage(`"https://forge.example.test"`),
+	}) {
+		t.Fatalf("forge payload = %s, want only host", payload["forge"])
+	}
+	for _, secret := range []string{
+		cfg.Forge.TokenEnv,
+		cfg.Providers["secret"].APIKeyEnv,
+		cfg.NATS.TokenEnv,
+	} {
+		if strings.Contains(string(data), secret) {
+			t.Fatalf("task config JSON contains credential reference %q: %s", secret, data)
+		}
+	}
+
+	var roundTripped TaskConfig
+	if err := json.Unmarshal(data, &roundTripped); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(roundTripped, got) {
+		t.Fatalf("JSON round trip = %#v, want %#v", roundTripped, got)
+	}
+}
+
+func TestRepoJSONRoundTrip(t *testing.T) {
+	repo := Repo{
+		Owner:             "acme",
+		Name:              "widget",
+		Base:              "develop",
+		Gate:              [][]string{{"task", "check"}, {"go", "test", "./..."}},
+		Protect:           []string{"_templ.go", ".generated"},
+		Ecosystem:         "go",
+		Preflight:         [][]string{{"go", "version"}},
+		TestGlob:          "*_test.go",
+		PersistentStorage: true,
+		MaxRetries:        4,
+		AllowConcurrent:   true,
+	}
+
+	data, err := json.Marshal(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertJSONKeys(t, data,
+		"owner",
+		"name",
+		"base",
+		"gate",
+		"protect",
+		"ecosystem",
+		"preflight",
+		"test_glob",
+		"persistent_storage",
+		"max_retries",
+		"allow_concurrent",
+	)
+
+	var got Repo
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, repo) {
+		t.Fatalf("JSON round trip = %#v, want %#v", got, repo)
+	}
+}
+
+func assertJSONKeys(t *testing.T, data []byte, want ...string) {
+	t.Helper()
+
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	got := make(map[string]bool, len(payload))
+	for key := range payload {
+		got[key] = true
+	}
+	wantSet := make(map[string]bool, len(want))
+	for _, key := range want {
+		wantSet[key] = true
+	}
+	if !reflect.DeepEqual(got, wantSet) {
+		t.Fatalf("JSON keys = %v, want %v", got, wantSet)
+	}
+}
 
 func TestDispatchDefaults(t *testing.T) {
 	// Simulate a config with no [dispatch] section — all fields zero.

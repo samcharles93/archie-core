@@ -3,8 +3,10 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -26,52 +28,66 @@ func (d *Duration) UnmarshalText(b []byte) error {
 	return nil
 }
 
+// MarshalJSON encodes a Duration using the same string representation as TOML.
+func (d Duration) MarshalJSON() ([]byte, error) {
+	return json.Marshal(d.Std().String())
+}
+
+// UnmarshalJSON decodes a duration string such as "60s".
+func (d *Duration) UnmarshalJSON(data []byte) error {
+	var value string
+	if err := json.Unmarshal(data, &value); err != nil {
+		return fmt.Errorf("duration must be a string: %w", err)
+	}
+	return d.UnmarshalText([]byte(value))
+}
+
 func (d Duration) Std() time.Duration { return time.Duration(d) }
 
 // Repo is one managed repository.
 type Repo struct {
-	Owner string `toml:"owner"`
-	Name  string `toml:"name"`
+	Owner string `toml:"owner" json:"owner"`
+	Name  string `toml:"name" json:"name"`
 	// Base is the branch PRs target. Defaults to "main".
-	Base string `toml:"base"`
+	Base string `toml:"base" json:"base"`
 	// Gate is the quality-gate command list for this repo, e.g.
 	// [["go","vet","./..."], ["task","check"]]. By convention the
 	// LAST command is the test runner — TDD workflows invert only
 	// that one with ExpectFailure during the repro stage and re-run
 	// it in capture-proof. Workflow stages may extend or override
 	// Gate (a TDD repro stage inverts the test command).
-	Gate [][]string `toml:"gate"`
+	Gate [][]string `toml:"gate" json:"gate"`
 	// Protect lists path suffixes agents must never write directly —
 	// generated files (e.g. "_templ.go") whose sources they should edit
 	// instead. Enforced environmentally via agentloop.ProtectPaths.
-	Protect []string `toml:"protect"`
+	Protect []string `toml:"protect" json:"protect"`
 
 	// Ecosystem selects a default preflight check and test-file glob
 	// ("go", "python", "node", "rust", or "custom"). Empty defaults
 	// to "go" for backward compatibility.
-	Ecosystem string `toml:"ecosystem"`
+	Ecosystem string `toml:"ecosystem" json:"ecosystem"`
 	// Preflight is an explicit override for the ecosystem's default
 	// preflight commands. Empty inherits the ecosystem default.
-	Preflight [][]string `toml:"preflight"`
+	Preflight [][]string `toml:"preflight" json:"preflight"`
 	// TestGlob is an explicit override for the ecosystem's default
 	// test-file pattern (e.g. "*_test.go"). Empty inherits the
 	// ecosystem default.
-	TestGlob string `toml:"test_glob"`
+	TestGlob string `toml:"test_glob" json:"test_glob"`
 	// PersistentStorage creates a named Docker volume for this repo
 	// (archie-repo-<owner>-<repo>) mounted at /data/repo. The volume
 	// survives task completion and retains data across tasks. Use for
 	// repos with expensive build artifacts or large dependency trees.
-	PersistentStorage bool `toml:"persistent_storage"`
+	PersistentStorage bool `toml:"persistent_storage" json:"persistent_storage"`
 	// MaxRetries caps how many times a parked task is retried before
 	// being permanently parked (status "dead"). 0 means use the
 	// global Config.MaxRetries.
-	MaxRetries int `toml:"max_retries"`
+	MaxRetries int `toml:"max_retries" json:"max_retries"`
 	// AllowConcurrent lets the daemon dispatch multiple tasks for this
 	// repo at once instead of the default FIFO one-task-per-repo
 	// serialization. Only safe for repos where concurrent worktrees
 	// won't collide (e.g. different base branches or packages per
 	// task). Still bounded by [containers].max_concurrency globally.
-	AllowConcurrent bool `toml:"allow_concurrent"`
+	AllowConcurrent bool `toml:"allow_concurrent" json:"allow_concurrent"`
 }
 
 // Protected reports whether path matches a protected suffix.
@@ -139,10 +155,10 @@ func (r Repo) EffectiveMaxRetries(global int) int {
 
 // Budgets bound every agent stage. Zero disables a limit.
 type Budgets struct {
-	MaxSteps        int      `toml:"max_steps"`
-	MaxTokens       int      `toml:"max_tokens"`
-	WallClock       Duration `toml:"wall_clock"`
-	GateMaxFailures int      `toml:"gate_max_failures"`
+	MaxSteps        int      `toml:"max_steps" json:"max_steps"`
+	MaxTokens       int      `toml:"max_tokens" json:"max_tokens"`
+	WallClock       Duration `toml:"wall_clock" json:"wall_clock"`
+	GateMaxFailures int      `toml:"gate_max_failures" json:"gate_max_failures"`
 }
 
 // Provider configures one LLM provider for the runtime catalog.
@@ -175,16 +191,16 @@ type Forge struct {
 type Dispatch struct {
 	// Trigger is how tasks are discovered: "assignee" (poll assigned
 	// issues), "label" (poll labelled issues), or "either" (both).
-	Trigger string `toml:"trigger"`
+	Trigger string `toml:"trigger" json:"trigger"`
 	// AckReaction is the emoji reaction posted on issue pickup. Set
 	// ack_reaction = "off" in TOML to disable it; Load normalizes that
 	// sentinel to an empty string for callers.
-	AckReaction string `toml:"ack_reaction"`
+	AckReaction string `toml:"ack_reaction" json:"ack_reaction"`
 	// Labels maps state names ("queued", "working", "waiting", "pr",
 	// "parked") to their forge label strings. Each key is defaulted
 	// independently; missing keys fall back to the legacy archie:*
 	// constants at call time via StateLabel().
-	Labels map[string]string `toml:"labels"`
+	Labels map[string]string `toml:"labels" json:"labels"`
 }
 
 // dispatchLabelDefaults is the fallback label set, reproducing the
@@ -272,6 +288,44 @@ type Config struct {
 	Repos      []Repo          `toml:"repos"`
 }
 
+// TaskConfig is the non-secret subset of Config needed to run workflow
+// stages. It is safe to send to an archie-agent container.
+type TaskConfig struct {
+	Models       map[string]string `json:"models"`
+	Budgets      Budgets           `json:"budgets"`
+	Dispatch     Dispatch          `json:"dispatch"`
+	DiffCapLines int               `json:"diff_cap_lines"`
+	Notify       Notify            `json:"notify"`
+	Forge        TaskForge         `json:"forge"`
+}
+
+// TaskForge is the non-secret forge configuration needed by workflow stages.
+type TaskForge struct {
+	Host string `json:"host"`
+}
+
+// ForTask returns a detached, non-secret snapshot of the configuration fields
+// needed to run a workflow.
+func (c Config) ForTask() TaskConfig {
+	return TaskConfig{
+		Models:       cloneStringMap(c.Models),
+		Budgets:      c.Budgets,
+		Dispatch:     Dispatch{Trigger: c.Dispatch.Trigger, AckReaction: c.Dispatch.AckReaction, Labels: cloneStringMap(c.Dispatch.Labels)},
+		DiffCapLines: c.DiffCapLines,
+		Notify:       c.Notify,
+		Forge:        TaskForge{Host: c.Forge.Host},
+	}
+}
+
+func cloneStringMap(src map[string]string) map[string]string {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[string]string, len(src))
+	maps.Copy(dst, src)
+	return dst
+}
+
 // NATSConfig configures NATS JetStream for task distribution. When URL is
 // empty the existing SQLite ClaimNext flow is used unchanged.
 type NATSConfig struct {
@@ -302,7 +356,7 @@ type ContainerConfig struct {
 type Notify struct {
 	// Webhook receives JSON POSTs for events that need a human (e.g.
 	// feasibility PRDs awaiting go/no-go). Empty disables.
-	Webhook string `toml:"webhook"`
+	Webhook string `toml:"webhook" json:"webhook"`
 }
 
 // Web configures the observability dashboard.
