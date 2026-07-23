@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"syscall"
 
+	natsio "github.com/nats-io/nats.go"
+
 	"github.com/moby/moby/client"
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
@@ -21,16 +23,19 @@ import (
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
+	"github.com/samcharles93/archie-core/internal/forgerpc"
 	"github.com/samcharles93/archie-core/internal/nats"
 
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/storerpc"
 	"github.com/samcharles93/archie-core/internal/webui"
 	"github.com/samcharles93/archie-core/internal/workflow/skillbuild"
 	"github.com/samcharles93/archie-core/internal/workflow/wfeval"
 	"github.com/samcharles93/archie-core/internal/worktree"
+	"github.com/samcharles93/archie-core/internal/worktreerpc"
 )
 
 func main() {
@@ -215,18 +220,32 @@ func run() int {
 		}
 	}
 
+	trees := &worktree.Manager{
+		WorkDir:  cfg.WorkDir,
+		Token:    token,
+		BotUser:  cfg.BotUser,
+		BotEmail: cfg.BotEmail,
+		BaseURL:  cfg.Forge.Host,
+	}
+
+	// Let archie-agent containers (which hold no DB connection, forge
+	// token, or push credential) proxy Store/Forge/worktree operations
+	// back to archied over NATS.
+	if natsClient != nil {
+		unsubscribe, err := registerTaskRPCServers(natsClient.Conn(), st, forgeClient, trees, log)
+		if err != nil {
+			log.Error("task RPC server registration failed", "err", err)
+			return 1
+		}
+		defer unsubscribe()
+	}
+
 	d := &daemon.Daemon{
-		Cfg:   cfg,
-		Store: st,
-		Bus:   bus,
-		Forge: forgeClient,
-		Trees: &worktree.Manager{
-			WorkDir:  cfg.WorkDir,
-			Token:    token,
-			BotUser:  cfg.BotUser,
-			BotEmail: cfg.BotEmail,
-			BaseURL:  cfg.Forge.Host,
-		},
+		Cfg:            cfg,
+		Store:          st,
+		Bus:            bus,
+		Forge:          forgeClient,
+		Trees:          trees,
 		Runtime:        llm,
 		Agent:          agentRunner,
 		Workflows:      registry,
@@ -261,6 +280,39 @@ func executionProviders(cfg config.Config) map[string]agentexec.Provider {
 		providers[name] = agentexec.Provider{Class: p.Class, APIKeyEnv: p.APIKeyEnv, BaseURL: p.BaseURL}
 	}
 	return providers
+}
+
+// registerTaskRPCServers subscribes the storerpc/forgerpc/worktreerpc
+// handlers on nc so an archie-agent container (which holds no DB
+// connection, forge token, or push credential) can proxy those operations
+// back to archied. The returned func unsubscribes all three.
+func registerTaskRPCServers(nc *natsio.Conn, st *store.Store, forgeClient forge.Forge, trees *worktree.Manager, log *slog.Logger) (unsubscribe func(), err error) {
+	storeServer := &storerpc.Server{Store: st, Log: log}
+	unsubStore, err := storeServer.Register(nc)
+	if err != nil {
+		return nil, fmt.Errorf("register storerpc: %w", err)
+	}
+
+	forgeServer := &forgerpc.Server{Forge: forgeClient, Log: log}
+	unsubForge, err := forgeServer.Register(nc)
+	if err != nil {
+		unsubStore()
+		return nil, fmt.Errorf("register forgerpc: %w", err)
+	}
+
+	treesServer := &worktreerpc.Server{Trees: trees, Log: log}
+	unsubTrees, err := treesServer.Register(nc)
+	if err != nil {
+		unsubStore()
+		unsubForge()
+		return nil, fmt.Errorf("register worktreerpc: %w", err)
+	}
+
+	return func() {
+		unsubStore()
+		unsubForge()
+		unsubTrees()
+	}, nil
 }
 
 func configuredNATSToken(cfg config.NATSConfig, getenv func(string) string) (string, error) {
