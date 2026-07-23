@@ -74,7 +74,16 @@ func (m *Manager) Prepare(ctx context.Context, owner, repo, base string, issue i
 	branch = archieBranch(issue, title, body, labels)
 
 	// Already prepared (daemon cloned before container acquire).
+	// Pull latest to avoid working on stale code.
 	if st, statErr := os.Stat(filepath.Join(dir, ".git")); statErr == nil && st.IsDir() {
+		if _, err := m.git(ctx, dir, "fetch", "origin"); err != nil {
+			return "", "", err
+		}
+		if _, err := m.git(ctx, dir, "checkout", branch); err == nil {
+			if _, err := m.git(ctx, dir, "reset", "--hard", "origin/"+base); err != nil {
+				return "", "", err
+			}
+		}
 		return dir, branch, nil
 	}
 	if err := os.RemoveAll(dir); err != nil {
