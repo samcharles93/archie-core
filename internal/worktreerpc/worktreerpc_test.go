@@ -81,6 +81,44 @@ func remoteHasBranch(t *testing.T, host, owner, repo, branch string) bool {
 	return len(out) > 0
 }
 
+func TestClientPreparePublishesViaServer(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	ctx := context.Background()
+	host := newLocalRemote(t, "sam", "archie")
+
+	m := &worktree.Manager{
+		WorkDir:  t.TempDir(),
+		Token:    "unused-for-file-remotes",
+		BotUser:  "archie-bot",
+		BotEmail: "archie-bot@example.com",
+		BaseURL:  "file://" + host,
+	}
+
+	srv := startEmbedded(t)
+	url := srv.ClientURL()
+
+	rpcServer := &Server{Trees: m, Log: slog.New(slog.DiscardHandler)}
+	unsub, err := rpcServer.Register(connect(t, url))
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	t.Cleanup(unsub)
+
+	client := &Client{Conn: connect(t, url), Timeout: 5 * time.Second}
+	dir, branch, err := client.Prepare(ctx, "sam", "archie", "main", 1, "feat: test", "", "")
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if dir == "" || branch != "feat/1-test" {
+		t.Fatalf("Prepare = (%q, %q)", dir, branch)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+		t.Fatalf("expected worktree cloned at %q: %v", dir, err)
+	}
+}
+
 func TestClientPushPublishesViaServer(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")

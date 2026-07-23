@@ -1,12 +1,14 @@
-// Package worktreerpc lets archie-agent request a git push over core NATS
-// request/reply instead of holding the forge push token itself. archied
-// remains the sole holder of worktree.Manager.Token and performs the push
-// against the host worktree directory (the same files the agent container
-// has bind-mounted at /data/worktree).
+// Package worktreerpc lets archie-agent request the two worktree
+// operations that touch the network — clone/fetch (Prepare) and push
+// (Push) — over core NATS request/reply, instead of holding the forge
+// credential itself. archied remains the sole holder of
+// worktree.Manager.Token and performs both against the host worktree
+// directory (the same files the agent container has bind-mounted at
+// /data/worktree).
 //
-// Only Push is proxied. Prepare/CommitAll/Diff/ChangedFiles/ChangedLines
-// are local git operations against the already-mounted worktree and don't
-// need the push credential, so they can run directly inside archie-agent.
+// CommitAll/Diff/ChangedFiles/ChangedLines are purely local git
+// operations against the already-mounted worktree and don't need the
+// credential, so they run directly inside archie-agent.
 package worktreerpc
 
 import (
@@ -22,7 +24,10 @@ import (
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
-const SubjectPush = "archie.worktree.push"
+const (
+	SubjectPush    = "archie.worktree.push"
+	SubjectPrepare = "archie.worktree.prepare"
+)
 
 // PushRequest identifies the task's worktree by owner/repo/issue rather
 // than trusting a path from the (sandboxed) agent — the server resolves
@@ -38,6 +43,23 @@ type Response struct {
 	Error string `json:"error,omitempty"`
 }
 
+// PrepareRequest mirrors worktree.Manager.Prepare's arguments.
+type PrepareRequest struct {
+	Owner  string `json:"owner"`
+	Repo   string `json:"repo"`
+	Base   string `json:"base"`
+	Issue  int    `json:"issue"`
+	Title  string `json:"title"`
+	Body   string `json:"body"`
+	Labels string `json:"labels"`
+}
+
+type PrepareResponse struct {
+	Dir    string `json:"dir"`
+	Branch string `json:"branch"`
+	Error  string `json:"error,omitempty"`
+}
+
 // Server proxies push requests to a real worktree.Manager holding the
 // forge push token.
 type Server struct {
@@ -45,13 +67,22 @@ type Server struct {
 	Log   *slog.Logger
 }
 
-// Register subscribes the push handler on nc. The returned func unsubscribes it.
+// Register subscribes the push and prepare handlers on nc. The returned
+// func unsubscribes both.
 func (s *Server) Register(nc *nats.Conn) (unsubscribe func(), err error) {
-	sub, err := nc.Subscribe(SubjectPush, s.handlePush)
+	pushSub, err := nc.Subscribe(SubjectPush, s.handlePush)
 	if err != nil {
 		return nil, fmt.Errorf("subscribe %s: %w", SubjectPush, err)
 	}
-	return func() { sub.Unsubscribe() }, nil
+	prepareSub, err := nc.Subscribe(SubjectPrepare, s.handlePrepare)
+	if err != nil {
+		pushSub.Unsubscribe()
+		return nil, fmt.Errorf("subscribe %s: %w", SubjectPrepare, err)
+	}
+	return func() {
+		pushSub.Unsubscribe()
+		prepareSub.Unsubscribe()
+	}, nil
 }
 
 func (s *Server) handlePush(msg *nats.Msg) {
@@ -62,6 +93,33 @@ func (s *Server) handlePush(msg *nats.Msg) {
 	}
 	dir := s.Trees.Dir(req.Owner, req.Repo, req.Issue)
 	s.respond(msg, s.Trees.Push(context.Background(), dir, req.Branch))
+}
+
+func (s *Server) handlePrepare(msg *nats.Msg) {
+	var req PrepareRequest
+	if err := json.Unmarshal(msg.Data, &req); err != nil {
+		s.respondPrepare(msg, "", "", fmt.Errorf("decode prepare request: %w", err))
+		return
+	}
+	dir, branch, err := s.Trees.Prepare(context.Background(), req.Owner, req.Repo, req.Base, req.Issue, req.Title, req.Body, req.Labels)
+	s.respondPrepare(msg, dir, branch, err)
+}
+
+func (s *Server) respondPrepare(msg *nats.Msg, dir, branch string, err error) {
+	resp := PrepareResponse{Dir: dir, Branch: branch}
+	if err != nil {
+		resp.Error = err.Error()
+	}
+	data, encErr := json.Marshal(resp)
+	if encErr != nil {
+		if s.Log != nil {
+			s.Log.Error("worktreerpc: encode response failed", "err", encErr)
+		}
+		return
+	}
+	if err := msg.Respond(data); err != nil && s.Log != nil {
+		s.Log.Error("worktreerpc: respond failed", "err", err)
+	}
 }
 
 func (s *Server) respond(msg *nats.Msg, err error) {
@@ -95,21 +153,51 @@ func (c *Client) Push(ctx context.Context, owner, repo string, issue int, branch
 	if err != nil {
 		return fmt.Errorf("encode push request: %w", err)
 	}
-	if _, hasDeadline := ctx.Deadline(); !hasDeadline && c.Timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, c.Timeout)
-		defer cancel()
-	}
-	reply, err := c.Conn.RequestWithContext(ctx, SubjectPush, data)
+	reply, err := c.request(ctx, SubjectPush, data)
 	if err != nil {
-		return fmt.Errorf("worktreerpc %s: %w", SubjectPush, err)
+		return err
 	}
 	var resp Response
-	if err := json.Unmarshal(reply.Data, &resp); err != nil {
+	if err := json.Unmarshal(reply, &resp); err != nil {
 		return fmt.Errorf("worktreerpc %s: decode response: %w", SubjectPush, err)
 	}
 	if resp.Error != "" {
 		return errors.New(resp.Error)
 	}
 	return nil
+}
+
+// Prepare requests that archied clone/fetch the worktree for
+// owner/repo/issue using its held forge credential, matching
+// worktree.Manager.Prepare's signature.
+func (c *Client) Prepare(ctx context.Context, owner, repo, base string, issue int, title, body, labels string) (dir, branch string, err error) {
+	data, err := json.Marshal(PrepareRequest{Owner: owner, Repo: repo, Base: base, Issue: issue, Title: title, Body: body, Labels: labels})
+	if err != nil {
+		return "", "", fmt.Errorf("encode prepare request: %w", err)
+	}
+	reply, err := c.request(ctx, SubjectPrepare, data)
+	if err != nil {
+		return "", "", err
+	}
+	var resp PrepareResponse
+	if err := json.Unmarshal(reply, &resp); err != nil {
+		return "", "", fmt.Errorf("worktreerpc %s: decode response: %w", SubjectPrepare, err)
+	}
+	if resp.Error != "" {
+		return "", "", errors.New(resp.Error)
+	}
+	return resp.Dir, resp.Branch, nil
+}
+
+func (c *Client) request(ctx context.Context, subject string, data []byte) ([]byte, error) {
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline && c.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, c.Timeout)
+		defer cancel()
+	}
+	reply, err := c.Conn.RequestWithContext(ctx, subject, data)
+	if err != nil {
+		return nil, fmt.Errorf("worktreerpc %s: %w", subject, err)
+	}
+	return reply.Data, nil
 }
