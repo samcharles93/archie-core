@@ -22,6 +22,8 @@
          padding: 1rem 1.2rem; max-width: 1500px; }
   section { background: var(--panel); border: 1px solid var(--line);
             border-radius: 8px; padding: .9rem 1rem; }
+  section { min-height: 1.25rem; }
+  section .table-wrap { position: relative; overflow-x: auto; }
   section h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em;
                color: var(--dim); margin: 0 0 .6rem; }
   .cards { display: flex; gap: .6rem; flex-wrap: wrap; grid-column: 1 / -1;
@@ -54,6 +56,10 @@
   .bar { background: #253141; height: .6rem; border-radius: 3px; display: inline-block;
          vertical-align: middle; }
   .muted { color: var(--dim); }
+  #clear-btn { background: var(--panel); color: var(--dim); border: 1px solid var(--line);
+               padding: .2rem .6rem; border-radius: 4px; cursor: pointer; font-size: .75rem;
+               margin-left: .75rem; }
+  #clear-btn:hover { color: var(--bad); border-color: var(--bad); }
   @media (max-width: 950px) { main { grid-template-columns: 1fr; } }
   @media (max-width: 700px) {
     header { padding: .6rem .8rem; }
@@ -77,7 +83,7 @@
   <div class="cards" id="cards"></div>
 
   <section style="grid-column: 1">
-    <h2>Tasks</h2>
+    <h2>Tasks <button id="clear-btn" onclick="clearCompleted()">Clear Completed</button></h2>
     <div class="section-table"><table id="tasks"><thead><tr>
       <th>repo</th><th>issue</th><th>title</th><th>workflow</th><th>status</th>
       <th class="num">steps</th><th class="num">tokens</th>
@@ -123,6 +129,18 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fmt = n => (n ?? 0).toLocaleString();
 const ms = v => v >= 60000 ? (v/60000).toFixed(1)+"m" : v >= 1000 ? (v/1000).toFixed(1)+"s" : v+"ms";
+
+async function clearCompleted() {
+  if (!confirm("Delete all merged, parked, rejected, and closed-wont-do tasks?")) return;
+  const res = await fetch("/api/tasks/clear", { method: "POST" });
+  const data = await res.json();
+  if (res.ok) {
+    alert(`Deleted ${data.deleted} task(s).`);
+    refresh();
+  } else {
+    alert("Error: " + (data.error || res.statusText));
+  }
+}
 
 async function refresh() {
   const [summary, tasks] = await Promise.all([

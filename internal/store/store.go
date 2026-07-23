@@ -278,6 +278,17 @@ func (s *Store) OpenPRs(ctx context.Context) (tasks []Task, retErr error) {
 	return tasks, rows.Err()
 }
 
+// ClearTerminalTasks deletes tasks whose status is terminal (merged, parked,
+// rejected, closed_wont_do). Returns the number of rows removed.
+func (s *Store) ClearTerminalTasks(ctx context.Context) (int64, error) {
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM tasks WHERE status IN ('merged','parked','rejected','closed_wont_do')`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 func clip(s string, n int) string {
 	if len(s) <= n {
 		return s
