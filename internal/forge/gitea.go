@@ -171,6 +171,15 @@ func (c *GiteaClient) CloseIssue(ctx context.Context, owner, repo string, number
 	return err
 }
 
+// CreateIssue opens a new issue and returns its number.
+func (c *GiteaClient) CreateIssue(ctx context.Context, owner, repo, title, body string, labels []string) (int, error) {
+	iss, _, err := c.cli.CreateIssue(owner, repo, gitea.CreateIssueOption{Title: title, Body: body})
+	if err != nil {
+		return 0, err
+	}
+	return int(iss.Index), nil
+}
+
 // React adds an emoji reaction to an issue.
 func (c *GiteaClient) React(ctx context.Context, owner, repo string, number int, reaction string) error {
 	_, _, err := c.cli.PostIssueReaction(owner, repo, int64(number), reaction)

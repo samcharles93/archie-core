@@ -200,8 +200,13 @@ func (c *GitHubClient) CloseIssue(ctx context.Context, owner, repo string, numbe
 		}
 	}
 	_, _, err := c.gh.Issues.Edit(ctx, owner, repo, number,
-		&github.IssueRequest{State: new("closed")})
+		&github.IssueRequest{State: github.String("closed")})
 	return err
+}
+
+// CreateIssue opens a new issue and returns its number (stub — Gitea is primary).
+func (c *GitHubClient) CreateIssue(ctx context.Context, owner, repo, title, body string, labels []string) (int, error) {
+	return 0, fmt.Errorf("GitHub CreateIssue not yet implemented")
 }
 
 // State labels mirror the task lifecycle onto the forge so archie's

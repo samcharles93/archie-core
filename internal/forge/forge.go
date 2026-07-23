@@ -58,6 +58,9 @@ type Forge interface {
 	// CloseIssue closes an issue with an optional final comment.
 	CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error
 
+	// CreateIssue opens a new issue and returns its number.
+	CreateIssue(ctx context.Context, owner, repo, title, body string, labels []string) (int, error)
+
 	// React adds an emoji reaction to an issue.
 	React(ctx context.Context, owner, repo string, number int, reaction string) error
 

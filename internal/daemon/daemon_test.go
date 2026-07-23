@@ -69,6 +69,7 @@ func (f *testForge) CreatePR(context.Context, string, string, string, string, st
 }
 func (f *testForge) PRState(context.Context, string, string, int) (string, error) { panic("unexpected call") }
 func (f *testForge) CloseIssue(context.Context, string, string, int, string) error { panic("unexpected call") }
+func (f *testForge) CreateIssue(context.Context, string, string, string, string, []string) (int, error) { return 0, nil }
 func (f *testForge) React(context.Context, string, string, int, string) error     { return nil }
 func (f *testForge) VerifyPush(context.Context, string, string) error             { return nil }
 

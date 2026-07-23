@@ -21,6 +21,7 @@ func (f *fakeForge) Comment(ctx context.Context, owner, repo string, number int,
 	return 0, nil
 }
 // Remaining forge.Forge stubs — only CloseIssue and Comment are used by StageCommitPush.
+func (f *fakeForge) CreateIssue(ctx context.Context, owner, repo, title, body string, labels []string) (int, error) { return 0, nil }
 func (f *fakeForge) Name() string                       { return "fake" }
 func (f *fakeForge) AcceptInvitations(ctx context.Context) error { return nil }
 func (f *fakeForge) AssignedIssues(ctx context.Context, owner, repo, user string) ([]forge.Issue, error) { return nil, nil }
