@@ -14,7 +14,7 @@ This document describes a target end state. The table below is the ground truth;
 |---|---|---|
 | Daemon/agent binary split | **Implemented** | `cmd/archied` and `cmd/archie-agent` both exist. `archie-agent` is a 189-line NATS-connected per-task worker that subscribes to task subjects, runs the full multi-stage workflow, and reports results. Workflow routing and sequencing (`workflow.Route`, `workflow.Run`) now run inside the agent, not the daemon. Three agent modes: `inprocess`, `subprocess`, `nats`. |
 | Sandbox / "daemon never runs untrusted code" | **Partial** | Default mode is still `inprocess` for development. Docker sandbox mode (`agent.mode = "nats"` + `containers.enabled = true`) runs each task in an ephemeral Docker container with workspace bind-mounted at `/workspace`. `internal/container/pool.go` manages full lifecycle: pull, create, start, release, orphan recovery. Daemon dispatch and container lifecycle both enforce `max_concurrency`; same-repo tasks remain serialized. |
-| NATS / JetStream messaging | **Implemented** | `internal/nats/client.go` (176 lines): JetStream connect, stream creation (WorkQueue retention, file storage), pull consumer (durable, ack-wait 5min, max-deliver 3, dedup by Msg-Id), `PublishTask`, `Fetch`, `NewReplyInbox`. Subject hierarchy in `internal/nats/subjects.go`. `[nats]` config block in config.go. `internal/agentexec/nats.go` implements NATS-based agent runner. |
+| NATS / JetStream messaging | **Implemented** | `internal/nats/client.go`: JetStream connect, stream creation (WorkQueue retention, file storage), pull consumer (durable, ack-wait 5min, max-deliver 3, dedup by Msg-Id), `PublishTask`, `Fetch`, `NewReplyInbox`, and optional token authentication. Subject hierarchy lives in `internal/nats/subjects.go`; `internal/agentexec/nats.go` implements request/reply agent execution. |
 | Docker container sandbox | **Implemented** | `internal/container/pool.go` (210 lines): Docker API client, image pull (always/missing/never), container create with workspace bind mount, start, release (stop+remove), orphan recovery on daemon restart. `Dockerfile` at repo root builds archie-agent fat image. `[containers]` config block: enabled, image, max_concurrency, max_uptime, pull_policy. `agent.mode = "nats"` required when containers enabled. |
 | `/data/` volume, `task.json` | **Partial** | `container.WriteTaskJSON()` writes task payload to the worktree before container acquire. The container pool bind-mounts the worktree at `/data/worktree`. Task payload travels over NATS as the primary channel; `/data/task.json` is a boot-time brief for the container. Worktrees are still ephemeral fresh clones per task. |
 | `[containers]` config block | **Implemented** | `ContainerConfig` struct in config.go: enabled, image, max_concurrency, max_uptime, pull_policy. Validated on load. |
@@ -435,7 +435,7 @@ The agent writes whatever it wants to `response`. The daemon reviews it. No agen
 
 ## 8. Implementation phases
 
-> Updated 2026-07-22 against actual repo state (see sec.0). Items marked **done** are already merged; nothing else in
+> Updated 2026-07-24 against actual repo state (see sec.0). Items marked **done** exist in the current tree; nothing else in
 > this document is implemented beyond them. Phase ordering below is unchanged from the original sketch except Phase 3,
 > which now builds on top of existing Yaegi work instead of assuming a blank slate.
 
@@ -446,9 +446,11 @@ The agent writes whatever it wants to `response`. The daemon reviews it. No agen
   per invocation over a versioned stdin/stdout JSON protocol (`internal/agentexec`, protocol v1). Still needed: promote
   it from a single-stage subprocess worker to the PRD's per-task process, and move workflow routing/sequencing
   (`workflow.Route`/`workflow.Run`) out of `archied` and into it.
-- Add NATS to both (JetStream for task queue, request-reply for comms) -- not started. `internal/events.Bus` (in-process
-  pub/sub, already feeding SQLite + SSE) is the natural seam to replace the transport under.
-- Daemon publishes, agent consumes, results return via NATS -- not started
+- ~~Add NATS to both (JetStream for task queue, request-reply for comms)~~ -- **done**. `[nats]` is optional, supports
+  anonymous local mode and token authentication via `token_env`, and leaves `internal/events.Bus` as the local
+  observability fan-out.
+- ~~Daemon publishes, agent consumes, results return via NATS~~ -- **done**. Task discovery uses JetStream work-queue
+  subjects; autonomous stages use JetStream requests plus core NATS reply inboxes.
 - Current single-process mode preserved for development (`--local` flag) -- effectively already true: `inprocess`
   `[agent] mode` is the _default_, not an opt-in fallback, so this constraint is satisfied but should be revisited once
   subprocess/container modes are the default.

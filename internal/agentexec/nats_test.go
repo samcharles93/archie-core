@@ -251,7 +251,7 @@ func TestNATSRunnerRoundTrip(t *testing.T) {
 	url := srv.ClientURL()
 
 	ctx := context.Background()
-	client, err := arnats.Connect(ctx, url, slog.New(slog.DiscardHandler))
+	client, err := arnats.Connect(ctx, url, "", slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}

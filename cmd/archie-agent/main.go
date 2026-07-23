@@ -35,12 +35,13 @@ func main() {
 }
 
 func run() int {
-	natsURL := flag.String("nats-url", "", "NATS server URL (required)")
+	natsURLFlag := flag.String("nats-url", "", "NATS server URL (defaults to NATS_URL)")
 	consumer := flag.String("consumer", consumerName, "JetStream consumer name")
 	flag.Parse()
 
-	if *natsURL == "" {
-		fmt.Fprintln(os.Stderr, "error: -nats-url is required")
+	natsURL, natsToken := natsConnectionSettings(*natsURLFlag, os.Getenv)
+	if natsURL == "" {
+		fmt.Fprintln(os.Stderr, "error: -nats-url or NATS_URL is required")
 		flag.Usage()
 		return 1
 	}
@@ -51,13 +52,17 @@ func run() int {
 	defer stop()
 
 	// Connect to NATS.
-	nc, err := nats.Connect(*natsURL)
+	var natsOptions []nats.Option
+	if natsToken != "" {
+		natsOptions = append(natsOptions, nats.Token(natsToken))
+	}
+	nc, err := nats.Connect(natsURL, natsOptions...)
 	if err != nil {
 		log.Error("nats connect failed", "err", err)
 		return 1
 	}
 	defer nc.Close()
-	log.Info("nats connected", "url", *natsURL)
+	log.Info("nats connected", "url", natsURL)
 
 	// JetStream setup.
 	js, err := jetstream.New(nc)
@@ -92,7 +97,7 @@ func run() int {
 		return 1
 	}
 
-	log.Info("archie-agent ready", "nats", *natsURL, "consumer", *consumer)
+	log.Info("archie-agent ready", "nats", natsURL, "consumer", *consumer)
 
 	// Main loop: fetch, run, reply, ack.
 	for {
@@ -134,6 +139,14 @@ func run() int {
 		}
 		msg.Ack()
 	}
+}
+
+func natsConnectionSettings(flagURL string, getenv func(string) string) (url, token string) {
+	url = flagURL
+	if url == "" {
+		url = getenv("NATS_URL")
+	}
+	return url, getenv("NATS_TOKEN")
 }
 
 func handle(ctx context.Context, msg jetstream.Msg, nc *nats.Conn, log *slog.Logger) error {

@@ -41,8 +41,12 @@ type Client struct {
 
 // Connect dials url, sets up the JetStream stream and pull consumer.
 // The stream is created with WorkQueue retention and file storage.
-func Connect(ctx context.Context, url string, log *slog.Logger) (*Client, error) {
-	nc, err := nats.Connect(url)
+func Connect(ctx context.Context, url, token string, log *slog.Logger) (*Client, error) {
+	var opts []nats.Option
+	if token != "" {
+		opts = append(opts, nats.Token(token))
+	}
+	nc, err := nats.Connect(url, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("nats connect: %w", err)
 	}

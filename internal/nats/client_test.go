@@ -20,12 +20,41 @@ func startEmbedded(t *testing.T) *server.Server {
 	return srv
 }
 
+func startEmbeddedWithToken(t *testing.T, token string) *server.Server {
+	t.Helper()
+	opts := natssrv.DefaultTestOptions
+	opts.Port = -1
+	opts.Authorization = token
+	srv := natssrv.RunServer(&opts)
+	t.Cleanup(srv.Shutdown)
+	if err := srv.EnableJetStream(&server.JetStreamConfig{StoreDir: t.TempDir()}); err != nil {
+		t.Fatalf("enable jetstream: %v", err)
+	}
+	return srv
+}
+
+func TestConnectUsesToken(t *testing.T) {
+	const token = "test-nats-token"
+	srv := startEmbeddedWithToken(t, token)
+
+	client, err := Connect(
+		context.Background(),
+		srv.ClientURL(),
+		token,
+		slog.New(slog.DiscardHandler),
+	)
+	if err != nil {
+		t.Fatalf("Connect with token: %v", err)
+	}
+	client.Close()
+}
+
 func TestConnectAndPublish(t *testing.T) {
 	srv := startEmbedded(t)
 	url := srv.ClientURL()
 
 	ctx := context.Background()
-	client, err := Connect(ctx, url, slog.New(slog.DiscardHandler))
+	client, err := Connect(ctx, url, "", slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +89,7 @@ func TestDedup(t *testing.T) {
 	url := srv.ClientURL()
 
 	ctx := context.Background()
-	client, err := Connect(ctx, url, slog.New(slog.DiscardHandler))
+	client, err := Connect(ctx, url, "", slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -71,5 +71,5 @@ ENV PATH="/root/.local/bin:${PATH}"
 COPY --from=builder /usr/local/bin/archie-agent /usr/local/bin/archie-agent
 
 # ── entrypoint ────────────────────────────────────────────────────────
-# The daemon passes -nats-url and other flags at container start.
+# The daemon injects NATS_URL and, when configured, NATS_TOKEN.
 ENTRYPOINT ["archie-agent"]

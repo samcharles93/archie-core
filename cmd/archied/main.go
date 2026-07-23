@@ -116,7 +116,12 @@ func run() int {
 	// NATS client (optional — SQLite flow unchanged when [nats] is absent).
 	var natsClient *nats.Client
 	if cfg.NATS.URL != "" {
-		natsClient, err = nats.Connect(ctx, cfg.NATS.URL, log)
+		natsToken, err := configuredNATSToken(cfg.NATS, os.Getenv)
+		if err != nil {
+			log.Error("nats credentials", "err", err)
+			return 1
+		}
+		natsClient, err = nats.Connect(ctx, cfg.NATS.URL, natsToken, log)
 		if err != nil {
 			log.Error("nats connect failed", "err", err)
 			return 1
@@ -256,6 +261,17 @@ func executionProviders(cfg config.Config) map[string]agentexec.Provider {
 		providers[name] = agentexec.Provider{Class: p.Class, APIKeyEnv: p.APIKeyEnv, BaseURL: p.BaseURL}
 	}
 	return providers
+}
+
+func configuredNATSToken(cfg config.NATSConfig, getenv func(string) string) (string, error) {
+	if cfg.TokenEnv == "" {
+		return "", nil
+	}
+	token := getenv(cfg.TokenEnv)
+	if token == "" {
+		return "", fmt.Errorf("%s is required when nats.token_env is configured", cfg.TokenEnv)
+	}
+	return token, nil
 }
 
 func configHome() string {
