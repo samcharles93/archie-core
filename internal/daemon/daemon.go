@@ -554,7 +554,7 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	// Clone the worktree before Docker mount setup. The container
 	// binds /data/worktree to workDir on the host — the directory
 	// must exist before Acquire is called.
-	_, branch, err := d.Trees.Prepare(ctx, task.Owner, task.Repo, repo.Base, task.IssueNumber, task.Title)
+	_, branch, err := d.Trees.Prepare(ctx, task.Owner, task.Repo, repo.Base, task.IssueNumber, task.Title, task.Body, task.Labels)
 	if err != nil {
 		d.Log.Error("worktree prepare failed", "err", err)
 		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "worktree prepare failed: "+err.Error())

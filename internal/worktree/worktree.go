@@ -69,9 +69,9 @@ func (m *Manager) git(ctx context.Context, dir string, args ...string) (string, 
 // Any leftover worktree from a prior attempt is removed first.
 // If the worktree is already prepared (the daemon may have done this
 // before container acquisition), it returns the existing directory.
-func (m *Manager) Prepare(ctx context.Context, owner, repo, base string, issue int, title string) (dir, branch string, err error) {
+func (m *Manager) Prepare(ctx context.Context, owner, repo, base string, issue int, title, body, labels string) (dir, branch string, err error) {
 	dir = m.Dir(owner, repo, issue)
-	branch = archieBranch(issue, title)
+	branch = archieBranch(issue, title, body, labels)
 
 	// Already prepared (daemon cloned before container acquire).
 	if st, statErr := os.Stat(filepath.Join(dir, ".git")); statErr == nil && st.IsDir() {
@@ -99,14 +99,44 @@ func (m *Manager) Prepare(ctx context.Context, owner, repo, base string, issue i
 	return dir, branch, nil
 }
 
-// archieBranch builds a descriptive branch name from issue number and
-// a slug of the title. Example: "archie/62-clear-finished-button".
-func archieBranch(issue int, title string) string {
-	slug := branchSlug(title)
-	if slug == "" {
-		return fmt.Sprintf("archie/%d", issue)
+// archieBranch builds a descriptive branch name. Uses conventional
+// commit prefix (feat/fix/chore) from the issue title when possible,
+// falls back to labels, then a plain "archie" prefix.
+func archieBranch(issue int, title, body, labels string) string {
+	prefix, rest := branchPrefix(title, body, labels), title
+	// Strip conventional prefix from slug to avoid duplication.
+	if p := strings.TrimSuffix(prefix, ""); p != "" {
+		t := strings.ToLower(title)
+		if strings.HasPrefix(t, p+":") {
+			rest = strings.TrimSpace(title[len(p)+1:])
+		}
 	}
-	return fmt.Sprintf("archie/%d-%s", issue, slug)
+	slug := branchSlug(rest)
+	if slug == "" {
+		return fmt.Sprintf("%s/%d", prefix, issue)
+	}
+	return fmt.Sprintf("%s/%d-%s", prefix, issue, slug)
+}
+
+// branchPrefix derives a conventional-commit prefix from the issue.
+// Checks the title first (e.g. "feat: ..." or "fix: ..."), then falls
+// back to labels ("bug" → fix, "feature" → feat), then "archie".
+func branchPrefix(title, body, labels string) string {
+	t := strings.ToLower(title)
+	for _, p := range []string{"feat:", "fix:", "refactor:", "chore:", "docs:", "test:", "perf:", "ci:", "build:", "revert:"} {
+		if strings.HasPrefix(t, p) {
+			return strings.TrimSuffix(p, ":")
+		}
+	}
+	for _, l := range strings.Split(labels, ",") {
+		switch strings.TrimSpace(strings.ToLower(l)) {
+		case "bug":
+			return "fix"
+		case "feature":
+			return "feat"
+		}
+	}
+	return "archie"
 }
 
 // branchSlug converts a title to a kebab-case slug suitable for a git

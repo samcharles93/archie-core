@@ -63,11 +63,11 @@ func TestPrepareCommitPushRoundTrip(t *testing.T) {
 		BaseURL:  "file://" + host,
 	}
 
-	dir, branch, err := m.Prepare(ctx, "sam", "todo", "main", 42, "test issue title")
+	dir, branch, err := m.Prepare(ctx, "sam", "todo", "main", 42, "feat: add test issue title", "", "")
 	if err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
-	if branch != "archie/42-test-issue-title" {
+	if branch != "feat/42-add-test-issue-title" {
 		t.Fatalf("branch = %q", branch)
 	}
 
