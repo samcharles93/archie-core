@@ -7,6 +7,46 @@ changing anything that contradicts a prior decision.
 
 ---
 
+## 2026-07-23 — Forge-agnostic issue creation via CreateIssue
+
+**Decision**: Add `CreateIssue(ctx, owner, repo, title, body, labels)
+(int, error)` to the `forge.Forge` interface. Every forge backend
+(Gitea, GitHub, future beads) implements it.
+
+**Reasoning**: Agents discover out-of-scope findings during planning
+and building. These should be filed as tickets immediately rather than
+lost. Making `CreateIssue` part of the Forge interface means the agent
+calls one method regardless of the underlying ticketing system.
+
+**Future**: A `beads` forge backend will implement `CreateIssue` by
+calling `bd create`. This makes beads the internal/default issue tracker
+while Gitea/GitHub are external forges. The agent doesn't know which
+it's talking to — the daemon resolves the forge from repo config.
+
+---
+
+## 2026-07-23 — Dolt and Beads for agent-native issue tracking
+
+**Decision**: Install dolt (version-controlled SQL) and beads (`bd`,
+a graph-based issue tracker for AI agents) as the foundation for
+multi-repo scaling and multi-agent coordination.
+
+**Reasoning**: Beads provides persistent memory across sessions, first-
+class dependency tracking, JSON output for programmatic use, and hash-
+based IDs that prevent merge conflicts in multi-agent workflows. It's
+built on Dolt which gives cell-level merge, native branching, and
+remote sync — the same primitives git gives code but applied to issues.
+
+**Context**: Gas Town (`~/gt/`) is cloned for reference — it implements
+a multi-agent workspace on top of beads. The archie-core scaling
+strategy will follow a similar model: a coordinator daemon with per-repo
+agents, all sharing a beads-backed task graph.
+
+**Current state**: dolt 2.2.2, beads 1.1.0 installed. Beads initialized
+in archie-core (`.beads/`). Six issues seeded for the scaling roadmap.
+
+---
+
 ## 2026-07-23 — Token budgets must be generous, not predictive
 
 **Decision**: Set `max_tokens` to 100,000,000 (100M). Do not attempt to
