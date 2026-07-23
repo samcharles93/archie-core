@@ -118,25 +118,27 @@ func archieBranch(issue int, title, body, labels string) string {
 	return fmt.Sprintf("%s/%d-%s", prefix, issue, slug)
 }
 
-// branchPrefix derives a conventional-commit prefix from the issue.
-// Checks the title first (e.g. "feat: ..." or "fix: ..."), then falls
-// back to labels ("bug" → fix, "feature" → feat), then "archie".
+// branchPrefix derives a conventional-commit prefix from the issue
+// labels, then falls back to "feat". Maps: bug→fix, feature→feat,
+// enhancement→feat, docs→docs, chore→chore, test→test.
 func branchPrefix(title, body, labels string) string {
-	t := strings.ToLower(title)
-	for _, p := range []string{"feat:", "fix:", "refactor:", "chore:", "docs:", "test:", "perf:", "ci:", "build:", "revert:"} {
-		if strings.HasPrefix(t, p) {
-			return strings.TrimSuffix(p, ":")
-		}
-	}
 	for _, l := range strings.Split(labels, ",") {
 		switch strings.TrimSpace(strings.ToLower(l)) {
 		case "bug":
 			return "fix"
-		case "feature":
+		case "feature", "enhancement":
 			return "feat"
+		case "docs":
+			return "docs"
+		case "chore":
+			return "chore"
+		case "test":
+			return "test"
+		case "refactor":
+			return "refactor"
 		}
 	}
-	return "archie"
+	return "feat"
 }
 
 // branchSlug converts a title to a kebab-case slug suitable for a git
