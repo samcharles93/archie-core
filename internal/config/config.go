@@ -317,6 +317,21 @@ func (c Config) ForTask() TaskConfig {
 	}
 }
 
+// ToConfig expands a TaskConfig back into a Config with only the carried
+// fields populated — everything else (Repos, NATS, Containers, Providers,
+// secrets) is zero. Used by archie-agent to reconstruct the Config value
+// workflow stages read via TaskContext.Cfg.
+func (tc TaskConfig) ToConfig() Config {
+	return Config{
+		Models:       cloneStringMap(tc.Models),
+		Budgets:      tc.Budgets,
+		Dispatch:     Dispatch{Trigger: tc.Dispatch.Trigger, AckReaction: tc.Dispatch.AckReaction, Labels: cloneStringMap(tc.Dispatch.Labels)},
+		DiffCapLines: tc.DiffCapLines,
+		Notify:       tc.Notify,
+		Forge:        Forge{Host: tc.Forge.Host},
+	}
+}
+
 func cloneStringMap(src map[string]string) map[string]string {
 	if src == nil {
 		return nil

@@ -62,6 +62,12 @@ const (
 	MountTypeVolume = "volume"
 )
 
+// WorktreeMountDir is the fixed container path where a task's worktree is
+// bind-mounted. archie-agent uses this path directly rather than the host
+// path archied's worktree.Manager reports — the two processes see the same
+// files at different paths.
+const WorktreeMountDir = "/data/worktree"
+
 // Backend prepares container storage. Each container runtime backend
 // (Docker, future containerd, etc.) implements this interface.
 type Backend interface {
@@ -204,7 +210,7 @@ func (d *DockerBackend) Setup(ctx context.Context, task TaskRef) ([]Mount, error
 		{
 			Type:        MountTypeBind,
 			Source:      task.WorktreeDir,
-			Destination: "/data/worktree",
+			Destination: WorktreeMountDir,
 		},
 	}
 

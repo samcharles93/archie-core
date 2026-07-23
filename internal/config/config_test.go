@@ -10,6 +10,40 @@ import (
 	"time"
 )
 
+func TestTaskConfigToConfigRoundTrip(t *testing.T) {
+	cfg := Config{
+		DiffCapLines: 321,
+		Models:       map[string]string{"builder": "anthropic/claude"},
+		Budgets:      Budgets{MaxSteps: 12, MaxTokens: 34_000, WallClock: Duration(45 * time.Minute), GateMaxFailures: 3},
+		Dispatch:     Dispatch{Trigger: "label", AckReaction: "eyes", Labels: map[string]string{"working": "bot:working"}},
+		Notify:       Notify{Webhook: "https://notify.example.test/hook"},
+		Forge:        Forge{Type: "github", Host: "https://forge.example.test", TokenEnv: "TOP_SECRET"},
+	}
+
+	got := cfg.ForTask().ToConfig()
+	if !reflect.DeepEqual(got.Models, cfg.Models) {
+		t.Fatalf("Models = %#v, want %#v", got.Models, cfg.Models)
+	}
+	if got.Budgets != cfg.Budgets {
+		t.Fatalf("Budgets = %#v, want %#v", got.Budgets, cfg.Budgets)
+	}
+	if !reflect.DeepEqual(got.Dispatch, cfg.Dispatch) {
+		t.Fatalf("Dispatch = %#v, want %#v", got.Dispatch, cfg.Dispatch)
+	}
+	if got.DiffCapLines != cfg.DiffCapLines {
+		t.Fatalf("DiffCapLines = %d, want %d", got.DiffCapLines, cfg.DiffCapLines)
+	}
+	if got.Notify != cfg.Notify {
+		t.Fatalf("Notify = %#v, want %#v", got.Notify, cfg.Notify)
+	}
+	if got.Forge.Host != cfg.Forge.Host {
+		t.Fatalf("Forge.Host = %q, want %q", got.Forge.Host, cfg.Forge.Host)
+	}
+	if got.Forge.TokenEnv != "" {
+		t.Fatalf("Forge.TokenEnv = %q, want empty (never carried by TaskConfig)", got.Forge.TokenEnv)
+	}
+}
+
 func TestConfigForTaskJSONRoundTrip(t *testing.T) {
 	cfg := Config{
 		DiffCapLines: 321,

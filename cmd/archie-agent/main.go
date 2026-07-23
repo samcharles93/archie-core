@@ -1,7 +1,10 @@
-// Command archie-agent is a long-running NATS-connected worker that executes
-// autonomous agent stages. It subscribes to archie.agent.> on the ARCHIE_TASKS
-// JetStream stream, runs the agent loop for each received request, and publishes
-// the result back to the daemon's reply inbox.
+// Command archie-agent is a long-running NATS-connected worker. It answers
+// two request shapes: single-stage archie.agent.> requests over the
+// ARCHIE_TASKS JetStream stream (the legacy per-stage protocol), and full
+// task handoffs on archie.taskrun.> (core NATS, queue-grouped) — where it
+// runs workflow.Route/workflow.Run itself, proxying Store/Forge/worktree
+// operations back to archied over NATS instead of holding those
+// credentials directly.
 package main
 
 import (
@@ -28,6 +31,13 @@ const (
 	dedupWindow  = 2 * time.Minute
 	pollTimeout  = 5 * time.Second
 	ackWait      = 30 * time.Minute
+
+	// taskRunSubjectWildcard matches full-task handoffs (archie.taskrun.<id>).
+	// A queue group means only one archie-agent instance answers each
+	// message, whether deployed as a shared worker pool (today) or spawned
+	// one-per-task (the sandboxed container target).
+	taskRunSubjectWildcard = "archie.taskrun.>"
+	taskRunQueueGroup      = "archie-taskrun-workers"
 )
 
 func main() {
@@ -96,6 +106,15 @@ func run() int {
 		log.Error("consumer setup failed", "err", err)
 		return 1
 	}
+
+	taskRunSub, err := nc.QueueSubscribe(taskRunSubjectWildcard, taskRunQueueGroup, func(msg *nats.Msg) {
+		handleTaskRun(ctx, msg, nc, log)
+	})
+	if err != nil {
+		log.Error("taskrun subscribe failed", "err", err)
+		return 1
+	}
+	defer taskRunSub.Unsubscribe()
 
 	log.Info("archie-agent ready", "nats", natsURL, "consumer", *consumer)
 
