@@ -22,6 +22,51 @@ func openTest(t *testing.T) *Store {
 	return s
 }
 
+func TestClearTerminalTasks(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	statuses := []string{StatusMerged, StatusParked, StatusRejected, StatusClosedWontDo, StatusQueued}
+	for i, status := range statuses {
+		if _, err := s.EnqueueIssue(ctx, "sam", "archie", i+1, "t", "b", ""); err != nil {
+			t.Fatal(err)
+		}
+		task, err := s.TaskByIssue(ctx, "sam", "archie", i+1)
+		if err != nil || task == nil {
+			t.Fatalf("TaskByIssue(%d) = (%+v, %v)", i+1, task, err)
+		}
+		if status != StatusQueued {
+			if err := s.Transition(ctx, task.ID, StatusQueued, status, ""); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	n, err := s.ClearTerminalTasks(ctx)
+	if err != nil || n != 4 {
+		t.Fatalf("ClearTerminalTasks = (%d, %v), want (4, nil)", n, err)
+	}
+
+	counts, err := s.StatusCounts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts[StatusQueued] != 1 {
+		t.Fatalf("expected 1 queued, got %d", counts[StatusQueued])
+	}
+	for _, status := range []string{StatusMerged, StatusParked, StatusRejected, StatusClosedWontDo} {
+		if counts[status] != 0 {
+			t.Fatalf("expected 0 for %s, got %d", status, counts[status])
+		}
+	}
+
+	// Idempotent: second call removes nothing.
+	n, err = s.ClearTerminalTasks(ctx)
+	if err != nil || n != 0 {
+		t.Fatalf("second ClearTerminalTasks = (%d, %v), want (0, nil)", n, err)
+	}
+}
+
 func TestEnqueueIsIdempotent(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()

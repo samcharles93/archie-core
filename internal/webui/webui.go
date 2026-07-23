@@ -51,6 +51,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/summary", s.handleSummary)
 	mux.HandleFunc("GET /api/tasks", s.handleTasks)
 	mux.HandleFunc("GET /api/tasks/{id}", s.handleTask)
+	mux.HandleFunc("POST /api/tasks/clear", s.handleClearTasks)
 	mux.HandleFunc("GET /events", s.handleSSE)
 	return mux
 }
@@ -99,6 +100,15 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, tasks)
+}
+
+func (s *Server) handleClearTasks(w http.ResponseWriter, r *http.Request) {
+	deleted, err := s.Store.ClearTerminalTasks(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, map[string]any{"deleted": deleted})
 }
 
 func (s *Server) handleTask(w http.ResponseWriter, r *http.Request) {
