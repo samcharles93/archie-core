@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 
@@ -12,8 +13,10 @@ import (
 
 // GiteaClient implements Forge against a Gitea instance.
 type GiteaClient struct {
-	cli *gitea.Client
-	log *slog.Logger
+	cli   *gitea.Client
+	host  string
+	token string
+	log   *slog.Logger
 
 	labelMu       sync.Mutex
 	labelsEnsured map[string]bool
@@ -26,7 +29,7 @@ func NewGitea(token, host string, log *slog.Logger) (Forge, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gitea client %s: %w", host, err)
 	}
-	return &GiteaClient{cli: cli, log: log}, nil
+	return &GiteaClient{cli: cli, host: host, token: token, log: log}, nil
 }
 
 // ── Forge interface ──────────────────────────────────────────────────
@@ -181,16 +184,27 @@ func (c *GiteaClient) CreateIssue(ctx context.Context, owner, repo, title, body 
 }
 
 // React adds an emoji reaction to an issue.
-// LinkBranch associates a branch with an issue.
-func (c *GiteaClient) LinkBranch(ctx context.Context, owner, repo string, issueNumber int, branch string) error {
-	_, _, err := c.cli.Client().Post(fmt.Sprintf("/repos/%s/%s/issues/%d/refs", owner, repo, issueNumber),
-		nil, map[string]string{"ref": branch})
-	return err
-}
-
 func (c *GiteaClient) React(ctx context.Context, owner, repo string, number int, reaction string) error {
 	_, _, err := c.cli.PostIssueReaction(owner, repo, int64(number), reaction)
 	return err
+}
+
+// LinkBranch associates a branch with an issue via the Gitea API.
+func (c *GiteaClient) LinkBranch(ctx context.Context, owner, repo string, issueNumber int, branch string) error {
+	url := fmt.Sprintf("%s/api/v1/repos/%s/%s/issues/%d/refs", c.host, owner, repo, issueNumber)
+	body := fmt.Sprintf(`{"ref": "%s"}`, branch)
+	req, _ := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(body))
+	req.Header.Set("Authorization", "token "+c.token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("link branch: HTTP %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // SetStateLabel makes label the issue's only state label.

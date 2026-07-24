@@ -276,7 +276,7 @@ func branchSlug(title string) string {
 		} else if r == ' ' || r == '-' || r == '_' {
 			b.WriteRune('-')
 		}
-		if b.Len() >= 40 {
+		if b.Len() >= 60 {
 			break
 		}
 	}
