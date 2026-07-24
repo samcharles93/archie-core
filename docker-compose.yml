@@ -23,9 +23,7 @@ services:
 
   # ── archie daemon ──────────────────────────────────────────────────
   archied:
-    build:
-      context: .
-      dockerfile: Dockerfile.archied
+    image: git.catlow.cloud/sam/archied:latest
     command: -config /etc/archie/config.toml
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -33,25 +31,24 @@ services:
       - "8484:8484"   # web dashboard
     environment:
       - ARCHIE_GITEA_TOKEN
-      - QWYTHOS_API_KEY=not-needed
+      - DEEPSEEK_API_KEY
     volumes:
       - ./config.docker.toml:/etc/archie/config.toml:ro
       - archie_work:/var/lib/archie/work
       - archie_db:/var/lib/archie
-      - /var/run/docker.sock:/var/run/docker.sock  # spawn agent containers
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       nats:
         condition: service_healthy
     restart: unless-stopped
 
-  # ── agent container (built but not run directly — daemon spawns) ──
-  # The image is built here so the daemon's container.Pool can use it.
+  # ── agent image (built once, spawned by daemon) ────────────────────
   agent:
     build:
       context: .
       dockerfile: Dockerfile
     image: git.catlow.cloud/sam/archie-agent:latest
-    command: ["true"]  # never run directly — daemon spawns via Docker API
+    command: ["true"]
     restart: "no"
 
 volumes:

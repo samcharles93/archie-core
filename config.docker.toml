@@ -7,7 +7,7 @@ db_path = "/var/lib/archie/archie.db"
 poll_interval = "60s"
 label = "archie"
 bot_user = "archie"
-diff_cap_lines = 400
+diff_cap_lines = 0
 
 [forge]
 type = "gitea"
@@ -29,19 +29,18 @@ parked = "archie:parked"
 mode = "nats"
 
 [models]
-triage = "qwythos/qwythos-9b"
-planner = "qwythos/qwythos-9b"
-builder = "qwythos/qwythos-9b"
+triage = "deepseek/deepseek-v4-pro"
+planner = "deepseek/deepseek-v4-pro"
+builder = "deepseek/deepseek-v4-pro"
 
-[providers.qwythos]
-class = "openai"
-base_url = "http://host.docker.internal:8081/v1"
-api_key_env = "QWYTHOS_API_KEY"
+[providers.deepseek]
+class = "deepseek"
+api_key_env = "DEEPSEEK_API_KEY"
 
 [budgets]
-max_steps = 60
-max_tokens = 400000
-wall_clock = "30m"
+max_steps = 90
+max_tokens = 100000000
+wall_clock = "60m"
 gate_max_failures = 5
 
 [web]
@@ -63,6 +62,8 @@ name = "archie-core"
 base = "main"
 ecosystem = "go"
 gate = [
+  ["gofumpt", "-w", "."],
+  ["go", "fix", "./..."],
   ["go", "vet", "./..."],
   ["go", "build", "./..."],
   ["go", "test", "./...", "-count=1"],
