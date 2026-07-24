@@ -368,7 +368,11 @@ func (m *Manager) ChangedLines(ctx context.Context, dir, base string) (int, erro
 
 // Diff returns the unified diff of all committed changes against base.
 func (m *Manager) Diff(ctx context.Context, dir, base string) (string, error) {
-	return m.git(ctx, dir, "diff", "origin/"+base+"...HEAD")
+	out, err := m.git(ctx, dir, "diff", "origin/"+base+"...HEAD")
+	if err != nil {
+		return "", err
+	}
+	return out, nil
 }
 
 // ChangedFiles lists the repo-relative paths changed against base.
