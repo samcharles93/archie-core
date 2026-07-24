@@ -421,6 +421,54 @@ func TestLoadAgentDefaultsAndOverrides(t *testing.T) {
 	}
 }
 
+func TestLoadContainerVolumeTTL(t *testing.T) {
+	tests := []struct {
+		name    string
+		ttl     string
+		wantTTL time.Duration
+	}{
+		{name: "default", wantTTL: 72 * time.Hour},
+		{name: "explicit", ttl: "volume_ttl = \"6h\"\n", wantTTL: 6 * time.Hour},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			contents := "bot_user = \"archie\"\n" +
+				"[agent]\nmode = \"nats\"\n" +
+				"[nats]\nurl = \"nats://localhost:4222\"\n" +
+				"[containers]\nenabled = true\nimage = \"archie-agent:test\"\n" + tt.ttl +
+				"[[repos]]\nowner = \"acme\"\nname = \"app\"\npersistent_storage = true\n"
+			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			cfg, err := Load(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := cfg.Containers.VolumeTTL.Std(); got != tt.wantTTL {
+				t.Fatalf("Containers.VolumeTTL = %s, want %s", got, tt.wantTTL)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsNegativeContainerVolumeTTL(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	contents := "bot_user = \"archie\"\n" +
+		"[agent]\nmode = \"nats\"\n" +
+		"[nats]\nurl = \"nats://localhost:4222\"\n" +
+		"[containers]\nenabled = true\nimage = \"archie-agent:test\"\nvolume_ttl = \"-1h\"\n" +
+		"[[repos]]\nowner = \"acme\"\nname = \"app\"\npersistent_storage = true\n"
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Load(path); err == nil {
+		t.Fatal("Load() accepted a negative containers.volume_ttl")
+	}
+}
+
 func TestExampleConfigLoads(t *testing.T) {
 	cfg, err := Load(filepath.Join("..", "..", "config.example.toml"))
 	if err != nil {

@@ -363,6 +363,10 @@ type ContainerConfig struct {
 	MaxConcurrency int `toml:"max_concurrency"`
 	// MaxUptime caps a container's lifetime before recycling.
 	MaxUptime Duration `toml:"max_uptime"`
+	// VolumeTTL is the maximum age of persistent per-repo storage before
+	// automatic cleanup. It also bounds the host-side Git object cache used
+	// to seed isolated task worktrees.
+	VolumeTTL Duration `toml:"volume_ttl"`
 	// PullPolicy controls image pulling: "missing" (default) or "always".
 	PullPolicy string `toml:"pull_policy"`
 }
@@ -510,6 +514,12 @@ func Load(path string) (Config, error) {
 		}
 		if cfg.Containers.MaxUptime == 0 {
 			cfg.Containers.MaxUptime = Duration(60 * time.Minute)
+		}
+		if cfg.Containers.VolumeTTL < 0 {
+			return cfg, errors.New("config: containers.volume_ttl must not be negative")
+		}
+		if cfg.Containers.VolumeTTL == 0 {
+			cfg.Containers.VolumeTTL = Duration(72 * time.Hour)
 		}
 		if cfg.Containers.PullPolicy == "" {
 			cfg.Containers.PullPolicy = "missing"

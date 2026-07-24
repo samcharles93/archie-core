@@ -16,14 +16,14 @@ This document describes a target end state. The table below is the ground truth;
 | Sandbox / "daemon never runs untrusted code" | **Partial** | Default mode is still `inprocess` for development. Docker sandbox mode (`agent.mode = "nats"` + `containers.enabled = true`) runs each task in an ephemeral Docker container with workspace bind-mounted at `/workspace`. `internal/container/pool.go` manages full lifecycle: pull, create, start, release, orphan recovery. Daemon dispatch and container lifecycle both enforce `max_concurrency`; same-repo tasks remain serialized. |
 | NATS / JetStream messaging | **Implemented** | `internal/nats/client.go`: JetStream connect, stream creation (WorkQueue retention, file storage), pull consumer (durable, ack-wait 5min, max-deliver 3, dedup by Msg-Id), `PublishTask`, `Fetch`, `NewReplyInbox`, and optional token authentication. Subject hierarchy lives in `internal/nats/subjects.go`; `internal/agentexec/nats.go` implements request/reply agent execution. |
 | Docker container sandbox | **Implemented** | `internal/container/pool.go` (210 lines): Docker API client, image pull (always/missing/never), container create with workspace bind mount, start, release (stop+remove), orphan recovery on daemon restart. `Dockerfile` at repo root builds archie-agent fat image. `[containers]` config block: enabled, image, max_concurrency, max_uptime, pull_policy. `agent.mode = "nats"` required when containers enabled. |
-| `/data/` volume, `task.json` | **Partial** | `container.WriteTaskJSON()` writes task payload to the worktree before container acquire. The container pool bind-mounts the worktree at `/data/worktree`. Task payload travels over NATS as the primary channel; `/data/task.json` is a boot-time brief for the container. Worktrees are still ephemeral fresh clones per task. |
+| `/data/` volume, `task.json` | **Partial** | `container.WriteTaskJSON()` writes task payload to the worktree before container acquire. The container pool bind-mounts the isolated task worktree at `/data/worktree`; configured repos also receive a persistent `/data/repo` Docker volume. Task payload travels over NATS as the primary channel; `/data/task.json` is a boot-time brief for the container. |
 | `[containers]` config block | **Implemented** | `ContainerConfig` struct in config.go: enabled, image, max_concurrency, max_uptime, pull_policy. Validated on load. |
 | Yaegi extensibility (gates, custom stages, skill scripts) | **Implemented** | Three surfaces: `.archie/gate.go`, `.archie/stages/*.go`, skill scripts via `run_go_script` tool. All in-process via Yaegi with generated symbol tables and panic recovery. Full detail in `docs/prds/yaegi-plugin-system.md`. |
 | Layer 1: skill-bundled plugins | **Implemented** | `skill.DiscoverPlugins()` scans `.agents/skills/<name>/plugins/*.go`. `skill.Plugin.Run()` executes them via Yaegi. `skillbuild.BuildWorkflow()` constructs `workflow.Workflow` from plugin-defined stages. `TaskContext.SkillPlugins` makes them available during stage execution. `skillbuild.BuildRegistry()` replaces the hardcoded `workflow.Registry` with catalog-driven construction — skills define workflows, plugins define stages. |
 | Layer 2: core daemon plugins | **Partial** | `internal/plugin/plugin.go`: `Plugin` interface (`Name()`, `Version()`), `Registry` type, `LoadDir()` using Yaegi to interpret `.go` files. No `~/.config/archie/plugins/` loader wired into `cmd/archied/main.go` yet — the interface and registry exist but are not connected to the daemon's startup. |
 | Skills (agentskills.io spec) | **Implemented** | `internal/skill/skill.go`: parses SKILL.md YAML frontmatter, discovers skills from `.agents/skills/*/SKILL.md`, extracts body. Skills follow `archie-wf-*` naming convention. Progressive disclosure: `Catalog()` (Tier 1 — frontmatter-only scan, ~100 tokens per entry), `LoadBody()` (Tier 2 — full body on activation), `Discover()` (Tier 3 — full parse with plugins). `metadata.archie.workflow` declares skill→workflow affinity. `skill.SkillForWorkflow()` is catalog-driven, no hardcoded maps. `skillbuild.BuildRegistry()` constructs the daemon's workflow registry from the catalog. |
-| Worktree/repo management | **Implemented, ephemeral** | Fresh `git clone` per task attempt, no shared cache, no persistence, no TTL. |
-| Config schema | **Closer to sec.4** | `[agent]` block: mode (inprocess/subprocess/nats) + command + env. `[nats]` block: url + token_env. `[containers]` block: enabled, image, max_concurrency, max_uptime, pull_policy. No per-repo persistent_storage override yet. |
+| Worktree/repo management | **Implemented** | Each issue keeps an isolated worktree. Repos with `persistent_storage = true` use a per-repo bare Git object cache to avoid repeated full network clones; caches and Archie-owned repo volumes expire via `containers.volume_ttl`. |
+| Config schema | **Closer to sec.4** | `[agent]` block: mode (inprocess/subprocess/nats) + command + env. `[nats]` block: url + token_env. `[containers]` block: enabled, image, max_concurrency, max_uptime, volume_ttl, pull_policy. Per-repo `persistent_storage` is supported as a boolean Docker-volume/Git-cache opt-in. |
 
 **Net read post-1dca419:** Phases 1, 2, and 3 are substantially implemented. NATS, Docker sandbox, skill parsing, skill-bundled plugins (Layer 1), skill progressive disclosure, and catalog-driven workflow construction (`skillbuild.BuildRegistry()`) all landed. The remaining aspirational work is Layer 2 daemon plugin loader (interface exists, not wired), pluggable storage backends, and per-worktree dynamic registry augmentation.
 
@@ -117,15 +117,10 @@ retry logic -- NATS handles it.
 
 ## 3. Persistent volume
 
-> **Status: aspirational, zero code.** No `/data/` directory convention, no `task.json` file, no
-> `session.jsonl`/`memory.jsonl` exist on disk anywhere. The closest thing today is `store.Task` (a SQLite row, passed
-> by function call, different shape from the JSON below -- e.g. `Labels` is a comma-separated string, not an array, and
-> there's no nested `config`/`nats` object) plus the `agentexec` wire protocol, which passes an `Invocation` directly
-> over the subprocess's stdin as JSON rather than through a mounted volume. Worktrees are real but ephemeral:
-> `internal/worktree.Manager.Prepare` does a fresh `git clone` per task attempt into `WorkDir/<owner>-<repo>/issue-<N>`,
-> removing any prior directory first -- no shared clone cache, no persistence across attempts, no TTL-based cleanup
-> (cleanup today is purely lifecycle-status-driven: removed on terminal merged/rejected outcomes, kept indefinitely
-> while parked).
+> **Status: partially implemented.** `task.json`, `/data/worktree`, optional per-repo `/data/repo` Docker volumes,
+> ecosystem cache volumes, and TTL cleanup exist. Task worktrees remain isolated by issue, while configured repos use a
+> per-repo bare Git object cache to seed clones without repeating full network transfers. `session.jsonl`,
+> `memory.jsonl`, and staged plugin volumes remain unimplemented.
 
 ### /data/ layout
 
@@ -185,14 +180,10 @@ The daemon writes `task.json` to the volume before the container starts. The age
 
 ## 4. Container management
 
-> **Status: aspirational, zero code.** `internal/config/config.go` has no `[containers]`, `[containers.image]`, or
-> `[containers.persistent_storage]` sections, and `Repo` has no per-repo `persistent_storage` override. The real config
-> today is a much smaller `[agent]` block: `mode` (`"inprocess"` default, or `"subprocess"`), `command` (defaults to the
-> PATH-resolved `archie-agent` binary name, not a container image), and `env`. There is no Docker/container library
-> dependency in `go.mod`, no `Dockerfile.agent`, and no spawn/kill/grace-period lifecycle code -- `SubprocessRunner`
-> uses plain `os/exec.CommandContext` with an env-allowlist, running as the daemon's own OS user. `config.example.toml`
-> already documents this gap directly: _"The worker still runs as the daemon user until the Docker sandbox phase
-> lands."_
+> **Status: implemented with a flatter schema than the sketch below.** `[containers]` configures the image,
+> concurrency, uptime, pull policy, and persistent-storage TTL. `Repo.PersistentStorage` opts a repository into the
+> per-repo Docker volume and Git object cache. The backend abstraction exists in `internal/storage`; additional storage
+> types and structured per-backend configuration remain future work.
 
 ### Daemon config
 
@@ -459,8 +450,8 @@ The agent writes whatever it wants to `response`. The daemon reviews it. No agen
 
 - Docker agent image (fat, with tools) -- not started
 - Daemon container lifecycle: spawn, volume create, env inject, kill -- not started
-- Persistent volumes with TTL -- not started (current worktree lifecycle is fresh-clone-per-task with status-driven
-  cleanup, no TTL)
+- ~~Persistent volumes with TTL~~ -- **done**: configured repos receive a persistent Docker volume plus a per-repo Git
+  object cache; both are automatically reaped using `containers.volume_ttl`.
 - ~~`max_concurrency` enforcement~~ -- **done**: SQLite and NATS drains dispatch different repositories concurrently
   up to `[containers].max_concurrency`; same-repo tasks remain serialized by default.
 - Grace period `max_uptime` -- not started

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // newLocalRemote creates a bare repo with one commit on main and
@@ -134,5 +135,75 @@ func TestPrepareCommitPushRoundTrip(t *testing.T) {
 	}
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
 		t.Fatal("cleanup left the worktree behind")
+	}
+}
+
+func TestPreparePersistentReusesRepoCacheAndCleanupExpiresIt(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	ctx := context.Background()
+	host := newLocalRemote(t, "sam", "todo")
+	m := &Manager{
+		WorkDir:  t.TempDir(),
+		Token:    "unused-for-file-remotes",
+		BotUser:  "archie-bot",
+		BotEmail: "archie-bot@example.com",
+		BaseURL:  "file://" + host,
+	}
+	const ttl = 24 * time.Hour
+
+	first, _, err := m.PreparePersistent(ctx, "sam", "todo", "main", 41, "feat: first", "", "", ttl)
+	if err != nil {
+		t.Fatalf("first persistent prepare: %v", err)
+	}
+	cache := m.cacheDir("sam", "todo")
+	if st, err := os.Stat(filepath.Join(cache, "HEAD")); err != nil || st.IsDir() {
+		t.Fatalf("repo cache was not created at %s: %v", cache, err)
+	}
+
+	second, _, err := m.PreparePersistent(ctx, "sam", "todo", "main", 42, "feat: second", "", "", ttl)
+	if err != nil {
+		t.Fatalf("second persistent prepare: %v", err)
+	}
+	if first == second {
+		t.Fatalf("persistent tasks share a mutable worktree: %s", first)
+	}
+	for _, dir := range []string{first, second} {
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+			t.Fatalf("isolated worktree missing at %s: %v", dir, err)
+		}
+	}
+
+	expired := time.Now().Add(-ttl - time.Hour)
+	if err := os.Chtimes(cache, expired, expired); err != nil {
+		t.Fatal(err)
+	}
+	count, err := m.CleanupExpiredCaches(ttl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("CleanupExpiredCaches count = %d, want 1", count)
+	}
+	if _, err := os.Stat(cache); !os.IsNotExist(err) {
+		t.Fatalf("expired repo cache still exists: %v", err)
+	}
+	for _, dir := range []string{first, second} {
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+			t.Fatalf("cache cleanup removed or broke task worktree %s: %v", dir, err)
+		}
+	}
+}
+
+func TestCacheDirCannotEscapeWorkDir(t *testing.T) {
+	m := &Manager{WorkDir: t.TempDir()}
+	cache := m.cacheDir("../outside", `..\also-outside`)
+	rel, err := filepath.Rel(filepath.Join(m.WorkDir, ".repo-cache"), cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		t.Fatalf("cache path escaped managed root: %s", cache)
 	}
 }

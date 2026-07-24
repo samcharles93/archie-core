@@ -30,9 +30,11 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -76,6 +78,9 @@ type Backend interface {
 	Setup(ctx context.Context, task TaskRef) ([]Mount, error)
 	// Teardown cleans up ephemeral storage. Cache volumes survive.
 	Teardown(ctx context.Context, task TaskRef) error
+	// CleanupExpired removes persistent per-repo storage older than ttl.
+	// Shared ecosystem caches and storage not owned by Archie survive.
+	CleanupExpired(ctx context.Context, ttl time.Duration) (int, error)
 }
 
 // ── cache mounts per ecosystem ─────────────────────────────────────────
@@ -155,7 +160,14 @@ func (e *ErrVolumeCreate) Unwrap() error { return e.Cause }
 // DockerBackend implements Backend for Docker via the moby client.
 type DockerBackend struct {
 	cli *client.Client
+	now func() time.Time
 }
+
+const (
+	storageLabel     = "com.samcharles93.archie.storage"
+	storageKindRepo  = "repo"
+	storageKindCache = "cache"
+)
 
 // NewDockerBackend creates a Docker storage backend.
 func NewDockerBackend(cli *client.Client) *DockerBackend {
@@ -170,7 +182,7 @@ func NewDockerBackend(cli *client.Client) *DockerBackend {
 // creating a volume. The returned mounts will fail at container create
 // time if Docker cannot find the volume. Production code always sets
 // cli via NewDockerBackend.
-func (d *DockerBackend) ensureVolume(ctx context.Context, name string) error {
+func (d *DockerBackend) ensureVolume(ctx context.Context, name string, labels map[string]string) error {
 	if d.cli == nil {
 		return nil // nil client for testing — volumes must be pre-created
 	}
@@ -183,6 +195,7 @@ func (d *DockerBackend) ensureVolume(ctx context.Context, name string) error {
 	_, err = d.cli.VolumeCreate(ctx, client.VolumeCreateOptions{
 		Name:   name,
 		Driver: "local",
+		Labels: labels,
 	})
 	if err != nil {
 		// TOCTOU: a concurrent caller may have created the volume between
@@ -217,7 +230,7 @@ func (d *DockerBackend) Setup(ctx context.Context, task TaskRef) ([]Mount, error
 	// Per-repo persistent volume.
 	if task.PersistentStorage && task.Owner != "" && task.Repo != "" {
 		volName := repoVolumeName(task.Owner, task.Repo)
-		if err := d.ensureVolume(ctx, volName); err != nil {
+		if err := d.ensureVolume(ctx, volName, map[string]string{storageLabel: storageKindRepo}); err != nil {
 			return nil, err
 		}
 		mounts = append(mounts, Mount{
@@ -229,7 +242,7 @@ func (d *DockerBackend) Setup(ctx context.Context, task TaskRef) ([]Mount, error
 
 	caches := cacheMounts(task.Ecosystem)
 	for _, m := range caches {
-		if err := d.ensureVolume(ctx, m.Source); err != nil {
+		if err := d.ensureVolume(ctx, m.Source, map[string]string{storageLabel: storageKindCache}); err != nil {
 			return nil, err
 		}
 	}
@@ -242,6 +255,51 @@ func (d *DockerBackend) Setup(ctx context.Context, task TaskRef) ([]Mount, error
 // completion so subsequent tasks benefit from warmed caches.
 func (d *DockerBackend) Teardown(ctx context.Context, task TaskRef) error {
 	return nil
+}
+
+// CleanupExpired removes Archie-owned per-repo volumes whose creation time is
+// at least ttl old. Docker volume labels are immutable, so the TTL is a hard
+// maximum age rather than an idle lease. Removal is non-forced: a volume still
+// attached to a running container is retained and retried on the next sweep.
+func (d *DockerBackend) CleanupExpired(ctx context.Context, ttl time.Duration) (int, error) {
+	if d.cli == nil || ttl <= 0 {
+		return 0, nil
+	}
+	result, err := d.cli.VolumeList(ctx, client.VolumeListOptions{
+		Filters: client.Filters{}.Add("label", storageLabel+"="+storageKindRepo),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("list persistent volumes: %w", err)
+	}
+
+	now := time.Now()
+	if d.now != nil {
+		now = d.now()
+	}
+	var (
+		removed int
+		errs    []error
+	)
+	for _, vol := range result.Items {
+		// Defend against Docker implementations that ignore label filters.
+		if vol.Labels[storageLabel] != storageKindRepo {
+			continue
+		}
+		created, err := time.Parse(time.RFC3339Nano, vol.CreatedAt)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("persistent volume %s created_at %q: %w", vol.Name, vol.CreatedAt, err))
+			continue
+		}
+		if now.Sub(created) < ttl {
+			continue
+		}
+		if _, err := d.cli.VolumeRemove(ctx, vol.Name, client.VolumeRemoveOptions{}); err != nil {
+			errs = append(errs, fmt.Errorf("remove persistent volume %s: %w", vol.Name, err))
+			continue
+		}
+		removed++
+	}
+	return removed, errors.Join(errs...)
 }
 
 // ConvertMounts converts []Mount to moby mount.Mount for container creation.

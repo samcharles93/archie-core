@@ -18,9 +18,44 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/forge"
 	arnats "github.com/samcharles93/archie-core/internal/nats"
+	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 )
+
+type cleanupStorage struct {
+	ttl time.Duration
+}
+
+func (s *cleanupStorage) Setup(context.Context, storage.TaskRef) ([]storage.Mount, error) {
+	return nil, nil
+}
+
+func (s *cleanupStorage) Teardown(context.Context, storage.TaskRef) error {
+	return nil
+}
+
+func (s *cleanupStorage) CleanupExpired(_ context.Context, ttl time.Duration) (int, error) {
+	s.ttl = ttl
+	return 2, nil
+}
+
+func TestCleanupExpiredStorageUsesConfiguredTTL(t *testing.T) {
+	backend := &cleanupStorage{}
+	d := &Daemon{
+		Cfg: config.Config{
+			Containers: config.ContainerConfig{VolumeTTL: config.Duration(6 * time.Hour)},
+		},
+		Storage: backend,
+		Log:     slog.New(slog.DiscardHandler),
+	}
+
+	d.cleanupExpiredStorage(context.Background())
+
+	if backend.ttl != 6*time.Hour {
+		t.Fatalf("CleanupExpired ttl = %s, want 6h", backend.ttl)
+	}
+}
 
 func TestTaskDispatcherEnforcesMaxConcurrency(t *testing.T) {
 	t.Parallel()

@@ -6,11 +6,15 @@ package worktree
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 )
 
 type Manager struct {
@@ -24,6 +28,8 @@ type Manager struct {
 	// BaseURL overrides the forge host. Set from config [forge].host.
 	// Empty falls back to https://github.com.
 	BaseURL string
+
+	cacheMu sync.Mutex
 }
 
 // Dir is the worktree path for a task.
@@ -70,6 +76,25 @@ func (m *Manager) git(ctx context.Context, dir string, args ...string) (string, 
 // If the worktree is already prepared (the daemon may have done this
 // before container acquisition), it returns the existing directory.
 func (m *Manager) Prepare(ctx context.Context, owner, repo, base string, issue int, title, body, labels string) (dir, branch string, err error) {
+	return m.prepare(ctx, owner, repo, base, issue, title, body, labels, "")
+}
+
+// PreparePersistent creates an isolated task worktree using a per-repo bare
+// Git cache as an object reference. The cache avoids repeated full network
+// clones while --dissociate keeps each task worktree independent so expiry
+// cannot break active or parked tasks.
+func (m *Manager) PreparePersistent(ctx context.Context, owner, repo, base string, issue int, title, body, labels string, ttl time.Duration) (dir, branch string, err error) {
+	m.cacheMu.Lock()
+	defer m.cacheMu.Unlock()
+
+	cache, err := m.prepareCache(ctx, owner, repo, ttl)
+	if err != nil {
+		return "", "", err
+	}
+	return m.prepare(ctx, owner, repo, base, issue, title, body, labels, cache)
+}
+
+func (m *Manager) prepare(ctx context.Context, owner, repo, base string, issue int, title, body, labels, cache string) (dir, branch string, err error) {
 	dir = m.Dir(owner, repo, issue)
 	branch = archieBranch(issue, title, body, labels)
 
@@ -93,7 +118,12 @@ func (m *Manager) Prepare(ctx context.Context, owner, repo, base string, issue i
 		return "", "", err
 	}
 	url := m.cloneURL(owner, repo)
-	if _, err := m.git(ctx, filepath.Dir(dir), "clone", "--branch", base, url, dir); err != nil {
+	cloneArgs := []string{"clone", "--branch", base}
+	if cache != "" {
+		cloneArgs = append(cloneArgs, "--reference-if-able", cache, "--dissociate")
+	}
+	cloneArgs = append(cloneArgs, url, dir)
+	if _, err := m.git(ctx, filepath.Dir(dir), cloneArgs...); err != nil {
 		return "", "", err
 	}
 	for _, args := range [][]string{
@@ -106,6 +136,92 @@ func (m *Manager) Prepare(ctx context.Context, owner, repo, base string, issue i
 		}
 	}
 	return dir, branch, nil
+}
+
+func (m *Manager) cacheDir(owner, repo string) string {
+	key := url.PathEscape(owner) + "-" + url.PathEscape(repo) + ".git"
+	return filepath.Join(m.WorkDir, ".repo-cache", key)
+}
+
+func (m *Manager) prepareCache(ctx context.Context, owner, repo string, ttl time.Duration) (string, error) {
+	cache := m.cacheDir(owner, repo)
+	if st, err := os.Stat(filepath.Join(cache, "HEAD")); err == nil && !st.IsDir() {
+		if ttl > 0 {
+			if cacheInfo, statErr := os.Stat(cache); statErr == nil && time.Since(cacheInfo.ModTime()) >= ttl {
+				if err := os.RemoveAll(cache); err != nil {
+					return "", fmt.Errorf("expire repo cache: %w", err)
+				}
+			}
+		}
+	}
+
+	if st, err := os.Stat(filepath.Join(cache, "HEAD")); err == nil && !st.IsDir() {
+		if _, err := m.git(ctx, cache, "fetch", "--prune", "origin"); err != nil {
+			return "", fmt.Errorf("refresh repo cache: %w", err)
+		}
+		if err := os.Chtimes(cache, time.Now(), time.Now()); err != nil {
+			return "", fmt.Errorf("touch repo cache: %w", err)
+		}
+		return cache, nil
+	}
+
+	if err := os.RemoveAll(cache); err != nil {
+		return "", fmt.Errorf("reset repo cache: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(cache), 0o755); err != nil {
+		return "", fmt.Errorf("create repo cache dir: %w", err)
+	}
+	if _, err := m.git(ctx, filepath.Dir(cache), "clone", "--mirror", m.cloneURL(owner, repo), cache); err != nil {
+		return "", fmt.Errorf("create repo cache: %w", err)
+	}
+	if err := os.Chtimes(cache, time.Now(), time.Now()); err != nil {
+		return "", fmt.Errorf("touch repo cache: %w", err)
+	}
+	return cache, nil
+}
+
+// CleanupExpiredCaches removes per-repo Git object caches not used within ttl.
+// Task worktrees are dissociated clones and remain intact.
+func (m *Manager) CleanupExpiredCaches(ttl time.Duration) (int, error) {
+	if ttl <= 0 {
+		return 0, nil
+	}
+	m.cacheMu.Lock()
+	defer m.cacheMu.Unlock()
+
+	root := filepath.Join(m.WorkDir, ".repo-cache")
+	entries, err := os.ReadDir(root)
+	if os.IsNotExist(err) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("list repo caches: %w", err)
+	}
+	var (
+		removed int
+		errs    []error
+	)
+	now := time.Now()
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(root, entry.Name())
+		info, err := entry.Info()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("stat repo cache %s: %w", entry.Name(), err))
+			continue
+		}
+		if now.Sub(info.ModTime()) < ttl {
+			continue
+		}
+		if err := os.RemoveAll(path); err != nil {
+			errs = append(errs, fmt.Errorf("remove repo cache %s: %w", entry.Name(), err))
+			continue
+		}
+		removed++
+	}
+	return removed, errors.Join(errs...)
 }
 
 // archieBranch builds a descriptive branch name. Uses conventional

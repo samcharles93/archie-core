@@ -2,10 +2,19 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/moby/moby/api/types/volume"
+	"github.com/moby/moby/client"
 )
 
 // ── interface contract ───────────────────────────────────────────────
@@ -370,6 +379,98 @@ func TestRepoVolumeName(t *testing.T) {
 	}
 }
 
+func TestDockerBackendLabelsPersistentRepoVolumes(t *testing.T) {
+	var createBody string
+	cli := dockerTestClient(t, func(req *http.Request) (*http.Response, error) {
+		path := dockerAPIPath(req.URL.Path)
+		switch {
+		case req.Method == http.MethodGet:
+			return dockerResponse(http.StatusNotFound, `{"message":"not found"}`), nil
+		case req.Method == http.MethodPost && path == "/volumes/create":
+			data, readErr := io.ReadAll(req.Body)
+			if readErr != nil {
+				return nil, readErr
+			}
+			createBody = string(data)
+			return dockerResponse(http.StatusCreated, `{"Name":"archie-repo-alice-demo","Driver":"local","Labels":{}}`), nil
+		default:
+			return dockerResponse(http.StatusNotFound, `{"message":"unexpected request"}`), nil
+		}
+	})
+
+	backend := NewDockerBackend(cli)
+	if _, err := backend.Setup(context.Background(), TaskRef{
+		WorktreeDir:       t.TempDir(),
+		Ecosystem:         "custom",
+		PersistentStorage: true,
+		Owner:             "alice",
+		Repo:              "demo",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(createBody, `"com.samcharles93.archie.storage":"repo"`) {
+		t.Fatalf("persistent volume create body lacks Archie repo label: %s", createBody)
+	}
+}
+
+func TestDockerBackendCleanupExpiredOnlyRemovesOwnedRepoVolumes(t *testing.T) {
+	now := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
+	listBody, err := json.Marshal(volume.ListResponse{Volumes: []volume.Volume{
+		{
+			Name:      "archie-repo-old",
+			CreatedAt: now.Add(-25 * time.Hour).Format(time.RFC3339Nano),
+			Labels:    map[string]string{"com.samcharles93.archie.storage": "repo"},
+		},
+		{
+			Name:      "archie-repo-fresh",
+			CreatedAt: now.Add(-23 * time.Hour).Format(time.RFC3339Nano),
+			Labels:    map[string]string{"com.samcharles93.archie.storage": "repo"},
+		},
+		{
+			Name:      "archie-cache-old",
+			CreatedAt: now.Add(-100 * time.Hour).Format(time.RFC3339Nano),
+			Labels:    map[string]string{"com.samcharles93.archie.storage": "cache"},
+		},
+		{
+			Name:      "operator-volume",
+			CreatedAt: now.Add(-100 * time.Hour).Format(time.RFC3339Nano),
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var removed []string
+	cli := dockerTestClient(t, func(req *http.Request) (*http.Response, error) {
+		path := dockerAPIPath(req.URL.Path)
+		switch req.Method {
+		case http.MethodGet:
+			if !strings.Contains(req.URL.Query().Get("filters"), "com.samcharles93.archie.storage") {
+				t.Errorf("volume list did not filter by Archie ownership: %s", req.URL.RawQuery)
+			}
+			return dockerResponse(http.StatusOK, string(listBody)), nil
+		case http.MethodDelete:
+			removed = append(removed, strings.TrimPrefix(path, "/volumes/"))
+			return dockerResponse(http.StatusNoContent, ""), nil
+		default:
+			return dockerResponse(http.StatusNotFound, `{"message":"unexpected request"}`), nil
+		}
+	})
+
+	backend := NewDockerBackend(cli)
+	backend.now = func() time.Time { return now }
+	count, err := backend.CleanupExpired(context.Background(), 24*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("CleanupExpired count = %d, want 1", count)
+	}
+	if !slices.Equal(removed, []string{"archie-repo-old"}) {
+		t.Fatalf("removed volumes = %v, want only expired owned repo volume", removed)
+	}
+}
+
 func TestCacheMountsForTypeScript(t *testing.T) {
 	// S4: typescript ecosystem must share node + pnpm cache volumes.
 	mounts := cacheMounts("typescript")
@@ -419,7 +520,7 @@ func TestEnsureVolumeAlreadyExistsIsNotError(t *testing.T) {
 	// something OTHER than "already exists". For now, verify that
 	// ensureVolume with nil client returns nil (existing behavior).
 	backend := &DockerBackend{}
-	err := backend.ensureVolume(context.Background(), "test-volume")
+	err := backend.ensureVolume(context.Background(), "test-volume", nil)
 	if err != nil {
 		t.Error("ensureVolume with nil client should not error:", err)
 	}
@@ -437,4 +538,52 @@ func mountDestinations(mounts []Mount) []string {
 
 func contains(slice []string, s string) bool {
 	return slices.Contains(slice, s)
+}
+
+func dockerResponse(status int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: status,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+}
+
+func dockerTestClient(t *testing.T, roundTrip func(*http.Request) (*http.Response, error)) *client.Client {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		resp, err := roundTrip(req)
+		if err != nil {
+			t.Errorf("Docker test handler: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		for key, values := range resp.Header {
+			for _, value := range values {
+				w.Header().Add(key, value)
+			}
+		}
+		w.WriteHeader(resp.StatusCode)
+		if _, err := io.Copy(w, resp.Body); err != nil {
+			t.Errorf("Docker test response write: %v", err)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	cli, err := client.New(
+		client.WithHost(srv.URL),
+		client.WithHTTPClient(srv.Client()),
+		client.WithAPIVersion("1.55"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cli.Close() })
+	return cli
+}
+
+func dockerAPIPath(path string) string {
+	if strings.HasPrefix(path, "/v1.55/") {
+		return strings.TrimPrefix(path, "/v1.55")
+	}
+	return path
 }

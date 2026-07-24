@@ -68,21 +68,27 @@ func (f *prCapturingForge) AcceptInvitations(context.Context) error             
 func (f *prCapturingForge) AssignedIssues(context.Context, string, string, string) ([]forge.Issue, error) {
 	panic("unexpected call")
 }
+
 func (f *prCapturingForge) IssuesWithLabel(context.Context, string, string, string) ([]forge.Issue, error) {
 	panic("unexpected call")
 }
+
 func (f *prCapturingForge) RepliesAfter(context.Context, string, string, int, int64, string) ([]forge.Reply, error) {
 	panic("unexpected call")
 }
+
 func (f *prCapturingForge) PRState(context.Context, string, string, int) (string, error) {
 	panic("unexpected call")
 }
+
 func (f *prCapturingForge) CreateIssue(context.Context, string, string, string, string, []string) (int, error) {
 	panic("unexpected call")
 }
+
 func (f *prCapturingForge) React(context.Context, string, string, int, string) error {
 	panic("unexpected call")
 }
+
 func (f *prCapturingForge) VerifyPush(context.Context, string, string) error {
 	panic("unexpected call")
 }

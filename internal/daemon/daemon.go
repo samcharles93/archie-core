@@ -76,6 +76,7 @@ func (d *Daemon) emit(e events.Event) {
 
 // Startup runs crash recovery and access verification once.
 func (d *Daemon) Startup(ctx context.Context) error {
+	d.cleanupExpiredStorage(ctx)
 	n, err := d.Store.RecoverStale(ctx)
 	if err != nil {
 		return err
@@ -112,6 +113,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 // reconcile open PRs, act on human replies to waiting tasks, then
 // process queued tasks concurrently up to containers.max_concurrency.
 func (d *Daemon) Cycle(ctx context.Context) {
+	d.cleanupExpiredStorage(ctx)
 	d.poll(ctx)
 	d.reconcilePRs(ctx)
 	d.checkWaiting(ctx)
@@ -119,6 +121,31 @@ func (d *Daemon) Cycle(ctx context.Context) {
 		d.drainNATS(ctx)
 	} else {
 		d.drainSQLite(ctx)
+	}
+}
+
+func (d *Daemon) cleanupExpiredStorage(ctx context.Context) {
+	ttl := d.Cfg.Containers.VolumeTTL.Std()
+	if ttl <= 0 {
+		return
+	}
+	if d.Storage != nil {
+		n, err := d.Storage.CleanupExpired(ctx, ttl)
+		if err != nil {
+			d.Log.Warn("persistent volume cleanup failed", "err", err)
+		}
+		if n > 0 {
+			d.Log.Info("expired persistent volumes removed", "count", n)
+		}
+	}
+	if d.Trees != nil {
+		n, err := d.Trees.CleanupExpiredCaches(ttl)
+		if err != nil {
+			d.Log.Warn("repo cache cleanup failed", "err", err)
+		}
+		if n > 0 {
+			d.Log.Info("expired repo caches removed", "count", n)
+		}
 	}
 }
 
@@ -634,7 +661,16 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	// Clone the worktree before Docker mount setup. The container
 	// binds /data/worktree to workDir on the host — the directory
 	// must exist before Acquire is called.
-	_, branch, err := d.Trees.Prepare(ctx, task.Owner, task.Repo, repo.Base, task.IssueNumber, task.Title, task.Body, task.Labels)
+	var branch string
+	var err error
+	if repo.PersistentStorage && d.Cfg.Containers.VolumeTTL.Std() > 0 {
+		_, branch, err = d.Trees.PreparePersistent(
+			ctx, task.Owner, task.Repo, repo.Base, task.IssueNumber,
+			task.Title, task.Body, task.Labels, d.Cfg.Containers.VolumeTTL.Std(),
+		)
+	} else {
+		_, branch, err = d.Trees.Prepare(ctx, task.Owner, task.Repo, repo.Base, task.IssueNumber, task.Title, task.Body, task.Labels)
+	}
 	if err != nil {
 		d.Log.Error("worktree prepare failed", "err", err)
 		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "worktree prepare failed: "+err.Error())

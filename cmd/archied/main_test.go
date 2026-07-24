@@ -35,15 +35,19 @@ func (stubForge) AcceptInvitations(context.Context) error                       
 func (stubForge) AssignedIssues(context.Context, string, string, string) ([]forge.Issue, error) {
 	panic("unexpected call")
 }
+
 func (stubForge) IssuesWithLabel(context.Context, string, string, string) ([]forge.Issue, error) {
 	panic("unexpected call")
 }
+
 func (stubForge) RepliesAfter(context.Context, string, string, int, int64, string) ([]forge.Reply, error) {
 	panic("unexpected call")
 }
+
 func (stubForge) PRState(context.Context, string, string, int) (string, error) {
 	panic("unexpected call")
 }
+
 func (stubForge) CreateIssue(context.Context, string, string, string, string, []string) (int, error) {
 	panic("unexpected call")
 }

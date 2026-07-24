@@ -69,6 +69,7 @@ gate_max_failures = 5
 # image = "archie-agent:latest"    # Docker image to run
 # max_concurrency = 4              # max simultaneous tasks/containers
 # max_uptime = "60m"               # container lifetime cap
+# volume_ttl = "72h"               # max age for persistent repo volumes and Git clone caches
 # pull_policy = "missing"          # "missing" or "always"
 
 [[repos]]
@@ -91,3 +92,4 @@ gate = [
                            # FIFO-serializing them; only safe when concurrent worktrees won't collide
                            # (e.g. different base branches or packages per task). Still bounded by
                            # [containers].max_concurrency globally.
+# persistent_storage = true  # reuse a per-repo Docker volume and Git object cache until volume_ttl
