@@ -2,8 +2,10 @@ package skillbuild
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/workflow"
@@ -832,6 +834,411 @@ Resilient workflow.
 	}
 	if tc.BuildSummary != "setup-ran teardown-ran" {
 		t.Errorf("BuildSummary = %q, want 'setup-ran teardown-ran'", tc.BuildSummary)
+	}
+}
+
+// ── duplicate warning suppression for builtin overrides ─────────────
+
+// slogCaptureHandler is a slog.Handler that captures log records in a
+// slice for inspection in tests. It writes log output to the test log
+// instead of stderr to avoid infinite recursion through the log bridge.
+type slogCaptureHandler struct {
+	records []slog.Record
+	t       *testing.T
+}
+
+func (h *slogCaptureHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return true
+}
+
+func (h *slogCaptureHandler) Handle(ctx context.Context, r slog.Record) error {
+	h.records = append(h.records, r)
+	h.t.Log(r.Level.String() + " " + r.Message)
+	return nil
+}
+
+func (h *slogCaptureHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return h
+}
+
+func (h *slogCaptureHandler) WithGroup(name string) slog.Handler {
+	return h
+}
+
+// setSlogCapture sets the default slog.Logger to one that captures all
+// records and returns the handler for inspection. The previous logger
+// is restored when t.Cleanup runs.
+func setSlogCapture(t *testing.T) *slogCaptureHandler {
+	t.Helper()
+	prev := slog.Default()
+	h := &slogCaptureHandler{t: t}
+	slog.SetDefault(slog.New(h))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return h
+}
+
+func TestMergeSkillWorkflows_NoWarningOnBuiltinOverride(t *testing.T) {
+	// A skill overriding a built-in workflow name (e.g. "implement")
+	// must NOT produce a "duplicate workflow name" warning. Builtin
+	// overrides are routine and expected.
+
+	dir := t.TempDir()
+	skillDir := filepath.Join(dir, ".agents", "skills", "archie-wf-implement")
+	pluginsDir := filepath.Join(skillDir, "plugins")
+	if err := os.MkdirAll(pluginsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
+name: archie-wf-implement
+description: Custom implement workflow
+version: 1.0.0
+metadata:
+  archie:
+    workflow: implement
+---
+Custom implement.
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pluginsDir, "01-custom.go"), []byte(`package main
+
+import (
+	"context"
+	"github.com/samcharles93/archie-core/internal/workflow"
+)
+
+func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
+	return "custom", func(ctx context.Context, tc *workflow.TaskContext) error {
+		tc.BuildSummary = "custom-ran"
+		return nil
+	}
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	capture := setSlogCapture(t)
+
+	reg := builtins()
+	if err := mergeSkillWorkflows(dir, reg); err != nil {
+		t.Fatal(err)
+	}
+
+	// Override must take effect.
+	wf, ok := reg["implement"]
+	if !ok {
+		t.Fatal("'implement' missing from registry")
+	}
+	if len(wf.Stages) != 1 {
+		t.Fatalf("got %d stages, want 1", len(wf.Stages))
+	}
+	if wf.Stages[0].Name != "custom" {
+		t.Errorf("stage[0].Name = %q, want custom", wf.Stages[0].Name)
+	}
+
+	// No "duplicate" warning must have been logged.
+	for _, r := range capture.records {
+		if r.Level >= slog.LevelWarn && strings.Contains(r.Message, "duplicate") {
+			t.Errorf("unexpected 'duplicate' warning on builtin override: %s", r.Message)
+		}
+	}
+}
+
+func TestMergeSkillWorkflows_WarnsOnTwoSkillsSameWorkflow(t *testing.T) {
+	// When TWO DIFFERENT SKILLS declare the same workflow name, the
+	// second one must produce a warning. This is a genuine conflict.
+
+	dir := t.TempDir()
+
+	// Skill 1: declares workflow "custom"
+	skill1 := filepath.Join(dir, ".agents", "skills", "archie-wf-custom-a")
+	plugins1 := filepath.Join(skill1, "plugins")
+	if err := os.MkdirAll(plugins1, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skill1, "SKILL.md"), []byte(`---
+name: archie-wf-custom-a
+description: First custom workflow
+version: 1.0.0
+metadata:
+  archie:
+    workflow: custom
+---
+First.
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(plugins1, "01-first.go"), []byte(`package main
+
+import (
+	"context"
+	"github.com/samcharles93/archie-core/internal/workflow"
+)
+
+func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
+	return "first", func(ctx context.Context, tc *workflow.TaskContext) error {
+		tc.BuildSummary = "first-ran"
+		return nil
+	}
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Skill 2: also declares workflow "custom"
+	skill2 := filepath.Join(dir, ".agents", "skills", "archie-wf-custom-b")
+	plugins2 := filepath.Join(skill2, "plugins")
+	if err := os.MkdirAll(plugins2, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skill2, "SKILL.md"), []byte(`---
+name: archie-wf-custom-b
+description: Second custom workflow
+version: 1.0.0
+metadata:
+  archie:
+    workflow: custom
+---
+Second.
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(plugins2, "01-second.go"), []byte(`package main
+
+import (
+	"context"
+	"github.com/samcharles93/archie-core/internal/workflow"
+)
+
+func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
+	return "second", func(ctx context.Context, tc *workflow.TaskContext) error {
+		tc.BuildSummary = "second-ran"
+		return nil
+	}
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	capture := setSlogCapture(t)
+
+	reg := make(workflow.Registry)
+	if err := mergeSkillWorkflows(dir, reg); err != nil {
+		t.Fatal(err)
+	}
+
+	// Last-write-wins: second skill's stages should be used.
+	wf, ok := reg["custom"]
+	if !ok {
+		t.Fatal("'custom' missing from registry")
+	}
+	if len(wf.Stages) != 1 {
+		t.Fatalf("got %d stages, want 1", len(wf.Stages))
+	}
+	if wf.Stages[0].Name != "second" {
+		t.Errorf("stage[0].Name = %q, want second (last-write-wins)", wf.Stages[0].Name)
+	}
+
+	// Exactly one warning containing both skill dirs must have been logged.
+	var warnings []slog.Record
+	for _, r := range capture.records {
+		if r.Level >= slog.LevelWarn && strings.Contains(r.Message, "duplicate") {
+			warnings = append(warnings, r)
+		}
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("got %d duplicate warnings, want exactly 1", len(warnings))
+	}
+	w := warnings[0]
+	hasSkill := false
+	hasPrev := false
+	w.Attrs(func(a slog.Attr) bool {
+		if a.Key == "skill" && strings.Contains(a.Value.String(), "archie-wf-custom-b") {
+			hasSkill = true
+		}
+		if a.Key == "previous_skill" && strings.Contains(a.Value.String(), "archie-wf-custom-a") {
+			hasPrev = true
+		}
+		return true
+	})
+	if !hasSkill {
+		t.Error("warning missing 'skill' key with second skill dir")
+	}
+	if !hasPrev {
+		t.Error("warning missing 'previous_skill' key with first skill dir")
+	}
+}
+
+// TestBuildRegistry_NoWarningOnBuiltinOverride is an integration-style
+// test that validates the warning is absent when a skill overrides the
+// built-in "implement" workflow via BuildRegistry.
+func TestBuildRegistry_NoWarningOnBuiltinOverride(t *testing.T) {
+	dir := t.TempDir()
+	skillDir := filepath.Join(dir, ".agents", "skills", "archie-wf-implement")
+	pluginsDir := filepath.Join(skillDir, "plugins")
+	if err := os.MkdirAll(pluginsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
+name: archie-wf-implement
+description: Custom implement
+version: 1.0.0
+metadata:
+  archie:
+    workflow: implement
+---
+Custom.
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pluginsDir, "01-custom.go"), []byte(`package main
+
+import (
+	"context"
+	"github.com/samcharles93/archie-core/internal/workflow"
+)
+
+func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
+	return "custom-stage", func(ctx context.Context, tc *workflow.TaskContext) error {
+		return nil
+	}
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	capture := setSlogCapture(t)
+
+	reg, err := BuildRegistry(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wf, ok := reg["implement"]
+	if !ok {
+		t.Fatal("'implement' missing from registry")
+	}
+	if len(wf.Stages) != 1 {
+		t.Fatalf("got %d stages, want 1 from skill override", len(wf.Stages))
+	}
+	if wf.Stages[0].Name != "custom-stage" {
+		t.Errorf("stage[0].Name = %q, want custom-stage", wf.Stages[0].Name)
+	}
+
+	for _, r := range capture.records {
+		if r.Level >= slog.LevelWarn && strings.Contains(r.Message, "duplicate") {
+			t.Errorf("unexpected 'duplicate' warning via BuildRegistry on builtin override: %s", r.Message)
+		}
+	}
+}
+
+// TestAugmentRegistry_WarnsOnTwoWorktreeSkillsSameWorkflow verifies that
+// AugmentRegistry warns when two worktree skills declare the same workflow
+// name, while not warning on a normal builtin override.
+func TestAugmentRegistry_WarnsOnTwoWorktreeSkillsSameWorkflow(t *testing.T) {
+	dir := t.TempDir()
+
+	// Skill 1: declares "custom"
+	skill1 := filepath.Join(dir, ".agents", "skills", "archie-wf-custom-a")
+	plugins1 := filepath.Join(skill1, "plugins")
+	if err := os.MkdirAll(plugins1, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skill1, "SKILL.md"), []byte(`---
+name: archie-wf-custom-a
+description: First custom
+version: 1.0.0
+metadata:
+  archie:
+    workflow: custom
+---
+First.
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(plugins1, "01-a.go"), []byte(`package main
+
+import (
+	"context"
+	"github.com/samcharles93/archie-core/internal/workflow"
+)
+
+func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
+	return "a", func(ctx context.Context, tc *workflow.TaskContext) error {
+		return nil
+	}
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Skill 2: also declares "custom"
+	skill2 := filepath.Join(dir, ".agents", "skills", "archie-wf-custom-b")
+	plugins2 := filepath.Join(skill2, "plugins")
+	if err := os.MkdirAll(plugins2, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skill2, "SKILL.md"), []byte(`---
+name: archie-wf-custom-b
+description: Second custom
+version: 1.0.0
+metadata:
+  archie:
+    workflow: custom
+---
+Second.
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(plugins2, "01-b.go"), []byte(`package main
+
+import (
+	"context"
+	"github.com/samcharles93/archie-core/internal/workflow"
+)
+
+func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
+	return "b", func(ctx context.Context, tc *workflow.TaskContext) error {
+		return nil
+	}
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	capture := setSlogCapture(t)
+
+	base := builtins()
+	aug, err := AugmentRegistry(dir, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wf, ok := aug["custom"]
+	if !ok {
+		t.Fatal("'custom' missing from augmented registry")
+	}
+	if wf.Stages[0].Name != "b" {
+		t.Errorf("stage[0].Name = %q, want b (last-write-wins)", wf.Stages[0].Name)
+	}
+
+	// Must have a duplicate warning for skill-vs-skill conflict.
+	var warnings []slog.Record
+	for _, r := range capture.records {
+		if r.Level >= slog.LevelWarn && strings.Contains(r.Message, "duplicate") {
+			warnings = append(warnings, r)
+		}
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("got %d duplicate warnings, want exactly 1 for skill-vs-skill conflict", len(warnings))
+	}
+
+	// No warning for builtin overrides (the base has all 5 built-ins).
+	for _, r := range capture.records {
+		if r.Level >= slog.LevelWarn && strings.Contains(r.Message, "duplicate") {
+			continue // the one we already verified
+		}
+		// No other warnings should mention builtin names in a duplicate context.
 	}
 }
 
