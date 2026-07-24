@@ -530,6 +530,48 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 	}
 }
 
+// checkMentions scans all tasks assigned to the bot for new human
+// comments containing @botname. Matching tasks are re-queued (if
+// parked) and the agent responds in context. Unlike checkWaiting
+// which is for workflow go/no-go decisions, this handles ad-hoc
+// human questions on any assigned issue.
+func (d *Daemon) checkMentions(ctx context.Context) {
+	tasks, err := d.Store.AssignedTasks(ctx)
+	if err != nil {
+		d.Log.Error("mention query failed", "err", err)
+		return
+	}
+	atMe := "@" + d.Cfg.BotUser
+	for _, t := range tasks {
+		replies, err := d.Forge.RepliesAfter(ctx, t.Owner, t.Repo, t.IssueNumber, t.WatchCommentID, d.Cfg.BotUser)
+		if err != nil {
+			d.Log.Warn("mention reply check failed", "issue", t.IssueNumber, "err", err)
+			continue
+		}
+		hasMention := false
+		for _, r := range replies {
+			if strings.Contains(strings.ToLower(r.Body), strings.ToLower(atMe)) {
+				hasMention = true
+				break
+			}
+		}
+		if !hasMention {
+			continue
+		}
+		d.Log.Info("@mention detected", "issue", t.IssueNumber)
+		// If parked, requeue so the agent can respond.
+		if t.Status == store.StatusParked {
+			if err := d.Store.Requeue(ctx, t.ID, store.StatusParked, "@mention from human"); err != nil {
+				d.Log.Error("mention requeue failed", "issue", t.IssueNumber, "err", err)
+				continue
+			}
+			d.Forge.SetStateLabel(ctx, t.Owner, t.Repo, t.IssueNumber, d.Cfg.Dispatch.StateLabel("queued"), d.Cfg.Dispatch.LabelValues())
+		}
+		// TODO: for non-parked tasks, inject the comment as context
+		// into the next agent turn rather than re-queuing.
+	}
+}
+
 // checkWaiting looks for human replies on waiting_human tasks and asks
 // an LLM — not keyword matching — whether the reply is a go-ahead.
 // Approved tasks requeue under the implement workflow; rejections close

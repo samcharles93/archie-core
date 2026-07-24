@@ -71,4 +71,8 @@ type Forge interface {
 
 	// VerifyPush confirms the token can push to the repo.
 	VerifyPush(ctx context.Context, owner, repo string) error
+
+	// LinkBranch associates a branch with an issue so Gitea shows the
+	// development link in the issue sidebar.
+	LinkBranch(ctx context.Context, owner, repo string, issueNumber int, branch string) error
 }

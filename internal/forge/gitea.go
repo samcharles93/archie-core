@@ -181,6 +181,13 @@ func (c *GiteaClient) CreateIssue(ctx context.Context, owner, repo, title, body 
 }
 
 // React adds an emoji reaction to an issue.
+// LinkBranch associates a branch with an issue.
+func (c *GiteaClient) LinkBranch(ctx context.Context, owner, repo string, issueNumber int, branch string) error {
+	_, _, err := c.cli.Client().Post(fmt.Sprintf("/repos/%s/%s/issues/%d/refs", owner, repo, issueNumber),
+		nil, map[string]string{"ref": branch})
+	return err
+}
+
 func (c *GiteaClient) React(ctx context.Context, owner, repo string, number int, reaction string) error {
 	_, _, err := c.cli.PostIssueReaction(owner, repo, int64(number), reaction)
 	return err

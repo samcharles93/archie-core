@@ -204,6 +204,11 @@ func (c *GitHubClient) CloseIssue(ctx context.Context, owner, repo string, numbe
 	return err
 }
 
+// LinkBranch associates a branch with an issue (GitHub stub — Gitea is primary).
+func (c *GitHubClient) LinkBranch(ctx context.Context, owner, repo string, issueNumber int, branch string) error {
+	return nil
+}
+
 // CreateIssue opens a new issue and returns its number (stub — Gitea is primary).
 func (c *GitHubClient) CreateIssue(ctx context.Context, owner, repo, title, body string, labels []string) (int, error) {
 	return 0, fmt.Errorf("GitHub CreateIssue not yet implemented")
