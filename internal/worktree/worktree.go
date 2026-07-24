@@ -106,9 +106,9 @@ func (m *Manager) prepare(ctx context.Context, owner, repo, base string, issue i
 	dir = m.Dir(owner, repo, issue)
 	branch = archieBranch(issue, title, body, labels)
 
-	// Already prepared (daemon cloned before container acquire).
-	// Pull latest to avoid working on stale code.
-	if st, statErr := os.Stat(filepath.Join(dir, ".git")); statErr == nil && st.IsDir() {
+	// Already prepared: sentinel proves clone + checkout + config completed.
+	sentinel := filepath.Join(dir, ".archie-prepared")
+	if _, err := os.Stat(sentinel); err == nil {
 		if _, err := m.git(ctx, dir, "fetch", "origin"); err != nil {
 			return "", "", err
 		}
@@ -146,6 +146,23 @@ func (m *Manager) prepare(ctx context.Context, owner, repo, base string, issue i
 		if _, err := m.git(ctx, dir, args...); err != nil {
 			return "", "", err
 		}
+	}
+	// Exclude the sentinel from git tracking via the local exclude file.
+	exclude := filepath.Join(dir, ".git", "info", "exclude")
+	f, err := os.OpenFile(exclude, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return "", "", err
+	}
+	if _, err := f.WriteString(".archie-prepared\n"); err != nil {
+		f.Close()
+		return "", "", err
+	}
+	if err := f.Close(); err != nil {
+		return "", "", err
+	}
+	// Write sentinel to mark the worktree as fully prepared.
+	if err := os.WriteFile(filepath.Join(dir, ".archie-prepared"), nil, 0o644); err != nil {
+		return "", "", err
 	}
 	return dir, branch, nil
 }
@@ -359,7 +376,11 @@ func (m *Manager) ChangedLines(ctx context.Context, dir, base string) (int, erro
 
 // Diff returns the unified diff of all committed changes against base.
 func (m *Manager) Diff(ctx context.Context, dir, base string) (string, error) {
-	return m.git(ctx, dir, "diff", "origin/"+base+"...HEAD")
+	out, err := m.git(ctx, dir, "diff", "origin/"+base+"...HEAD")
+	if err != nil {
+		return "", err
+	}
+	return out, nil
 }
 
 // ChangedFiles lists the repo-relative paths changed against base.

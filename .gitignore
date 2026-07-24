@@ -5,3 +5,4 @@
 .references/
 .claude/
 .env
+task.json

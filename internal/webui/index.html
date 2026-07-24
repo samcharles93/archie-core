@@ -157,11 +157,11 @@ async function refresh() {
     .join("") || '<div class="card"><div class="n">0</div><div class="l">tasks</div></div>';
 
   $("#tasks tbody").innerHTML = (tasks ?? []).map(t => `
-    <tr class="task" onclick="showTask(${t.ID}, '${esc(t.Owner)}/${esc(t.Repo)}#${t.IssueNumber}')">
-      <td>${esc(t.Owner)}/${esc(t.Repo)}</td><td>#${t.IssueNumber}</td>
-      <td>${esc(t.Title)}</td><td>${esc(t.Workflow)}</td>
-      <td><span class="status ${esc(t.Status)}">${esc(t.Status)}</span></td>
-      <td class="num">${fmt(t.Iterations)}</td><td class="num">${fmt(t.TokensUsed)}</td>
+    <tr class="task" onclick="showTask(${t.id}, '${esc(t.owner)}/${esc(t.repo)}#${t.issue_number}')">
+      <td>${esc(t.owner)}/${esc(t.repo)}</td><td>#${t.issue_number}</td>
+      <td>${esc(t.title)}</td><td>${esc(t.workflow)}</td>
+      <td><span class="status ${esc(t.status)}">${esc(t.status)}</span></td>
+      <td class="num">${fmt(t.iterations)}</td><td class="num">${fmt(t.tokens_used)}</td>
     </tr>`).join("");
 
   $("#workflows tbody").innerHTML = (summary.workflows ?? []).map(w => `
