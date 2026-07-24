@@ -30,6 +30,10 @@ type Manager struct {
 	BaseURL string
 
 	cacheMu sync.Mutex
+
+	askpassOnce sync.Once
+	askpassPath string
+	askpassErr  error
 }
 
 // Dir is the worktree path for a task.
@@ -40,15 +44,19 @@ func (m *Manager) Dir(owner, repo string, issue int) string {
 // askpass writes (once) a helper script that emits the token, so git
 // authenticates without the token appearing in argv or .git/config.
 func (m *Manager) askpass() (string, error) {
-	path := filepath.Join(m.WorkDir, ".git-askpass")
-	script := "#!/bin/sh\necho \"$ARCHIE_GIT_TOKEN\"\n"
-	if err := os.MkdirAll(m.WorkDir, 0o755); err != nil {
-		return "", err
-	}
-	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
-		return "", err
-	}
-	return path, nil
+	m.askpassOnce.Do(func() {
+		m.askpassPath = filepath.Join(m.WorkDir, ".git-askpass")
+		script := "#!/bin/sh\necho \"$ARCHIE_GIT_TOKEN\"\n"
+		if err := os.MkdirAll(m.WorkDir, 0o755); err != nil {
+			m.askpassErr = err
+			return
+		}
+		if err := os.WriteFile(m.askpassPath, []byte(script), 0o700); err != nil {
+			m.askpassErr = err
+			return
+		}
+	})
+	return m.askpassPath, m.askpassErr
 }
 
 func (m *Manager) git(ctx context.Context, dir string, args ...string) (string, error) {
