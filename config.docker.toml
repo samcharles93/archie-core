@@ -1,49 +1,17 @@
-# archied configuration for Docker Compose deployment.
-# Mounted at /etc/archie/config.toml inside the archied container.
+# Docker Compose overrides for the inprocess config.
+# Only set fields that differ: paths (container filesystem) and
+# container-specific configuration. Everything else inherits from
+# config.toml (inprocess config), which is the single source of truth.
+#
+# Mount this at /etc/archie/config.toml AND the base config so TOML
+# merging works. Or better: the daemon loads both — base first, then
+# this overlay.
 
 work_dir = "/var/lib/archie/work"
 db_path = "/var/lib/archie/archie.db"
 
-poll_interval = "60s"
-bot_user = "archie"
-diff_cap_lines = 0
-
-[forge]
-type = "gitea"
-host = "https://git.catlow.cloud"
-token_env = "ARCHIE_GITEA_TOKEN"
-
-[dispatch]
-trigger = "assignee"
-ack_reaction = "eyes"
-
-[dispatch.labels]
-queued = "agent:queued"
-working = "agent:working"
-waiting = "agent:waiting"
-pr = "agent:pr"
-parked = "agent:parked"
-
 [agent]
 mode = "nats"
-
-[models]
-triage = "deepseek/deepseek-v4-pro"
-planner = "deepseek/deepseek-v4-pro"
-builder = "deepseek/deepseek-v4-pro"
-
-[providers.deepseek]
-class = "deepseek"
-api_key_env = "DEEPSEEK_API_KEY"
-
-[budgets]
-max_steps = 90
-max_tokens = 100000000
-wall_clock = "60m"
-gate_max_failures = 5
-
-[web]
-listen = "0.0.0.0:8484"
 
 [nats]
 url = "nats://nats:4222"
@@ -54,6 +22,12 @@ image = "git.catlow.cloud/sam/archie-agent:latest"
 max_concurrency = 4
 max_uptime = "60m"
 pull_policy = "missing"
+
+[web]
+listen = "0.0.0.0:8484"
+
+# Repos: same as inprocess config — keep in sync with config.toml.
+# TODO: support `include` directive so repos list is not duplicated.
 
 [[repos]]
 owner = "sam"
