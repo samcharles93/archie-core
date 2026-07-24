@@ -47,8 +47,8 @@ func gitRepoWithOriginRef(t *testing.T, base string) string {
 func newYaegiGateTaskContext(t *testing.T, dir string) *TaskContext {
 	t.Helper()
 	return &TaskContext{
-		Task:  &store.Task{ID: 1, Owner: "sam", Repo: "todo", IssueNumber: 42},
-		Repo:  config.Repo{Owner: "sam", Name: "todo", Base: "main"},
+		Task:  &store.Task{ID: 1, Owner: "acme", Repo: "todo", IssueNumber: 42},
+		Repo:  config.Repo{Owner: "acme", Name: "todo", Base: "main"},
 		Trees: &worktree.Manager{WorkDir: t.TempDir()},
 		Dir:   dir,
 		Log:   slog.New(slog.DiscardHandler),

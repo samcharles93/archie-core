@@ -12,14 +12,14 @@ func TestTaskByIssue(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	if got, err := s.TaskByIssue(ctx, "sam", "archie", 1); err != nil || got != nil {
+	if got, err := s.TaskByIssue(ctx, "acme", "widget", 1); err != nil || got != nil {
 		t.Fatalf("TaskByIssue on empty store = (%+v, %v)", got, err)
 	}
 
-	if _, err := s.EnqueueIssue(ctx, "sam", "archie", 1, "title", "body", "bug"); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "title", "body", "bug"); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.TaskByIssue(ctx, "sam", "archie", 1)
+	got, err := s.TaskByIssue(ctx, "acme", "widget", 1)
 	if err != nil || got == nil {
 		t.Fatalf("TaskByIssue = (%+v, %v)", got, err)
 	}
@@ -27,7 +27,7 @@ func TestTaskByIssue(t *testing.T) {
 		t.Fatalf("TaskByIssue = %+v", got)
 	}
 
-	if got, err := s.TaskByIssue(ctx, "sam", "archie", 2); err != nil || got != nil {
+	if got, err := s.TaskByIssue(ctx, "acme", "widget", 2); err != nil || got != nil {
 		t.Fatalf("TaskByIssue for missing issue = (%+v, %v)", got, err)
 	}
 }
@@ -36,7 +36,7 @@ func TestWaitingTasksAndRequeue(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	if _, err := s.EnqueueIssue(ctx, "sam", "archie", 1, "t", "b", ""); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "t", "b", ""); err != nil {
 		t.Fatal(err)
 	}
 	task, err := s.ClaimNext(ctx)
@@ -60,7 +60,7 @@ func TestWaitingTasksAndRequeue(t *testing.T) {
 	if err := s.Requeue(ctx, task.ID, StatusWaitingHuman, "implement"); err != nil {
 		t.Fatal(err)
 	}
-	requeued, err := s.TaskByIssue(ctx, "sam", "archie", 1)
+	requeued, err := s.TaskByIssue(ctx, "acme", "widget", 1)
 	if err != nil || requeued == nil || requeued.Status != StatusQueued || requeued.Workflow != "implement" {
 		t.Fatalf("after forced requeue = %+v, %v", requeued, err)
 	}
@@ -81,7 +81,7 @@ func TestWaitingTasksAndRequeue(t *testing.T) {
 	if err := s.Requeue(ctx, task2.ID, StatusParked, ""); err != nil {
 		t.Fatal(err)
 	}
-	retried, err := s.TaskByIssue(ctx, "sam", "archie", 1)
+	retried, err := s.TaskByIssue(ctx, "acme", "widget", 1)
 	if err != nil || retried == nil || retried.Status != StatusQueued || retried.Workflow != "feasibility" {
 		t.Fatalf("after empty-workflow requeue = %+v, %v", retried, err)
 	}
@@ -103,7 +103,7 @@ func TestWaitingTasksAndRequeue(t *testing.T) {
 	if err := s.Requeue(ctx, task2.ID, StatusParked, ""); err != nil {
 		t.Fatal(err)
 	}
-	afterRequeue, err := s.TaskByIssue(ctx, "sam", "archie", 1)
+	afterRequeue, err := s.TaskByIssue(ctx, "acme", "widget", 1)
 	if err != nil || afterRequeue == nil {
 		t.Fatalf("TaskByIssue after second requeue = (%+v, %v)", afterRequeue, err)
 	}
@@ -117,10 +117,10 @@ func TestTasksListingAndStatusCounts(t *testing.T) {
 	ctx := context.Background()
 
 	for i, status := range []string{StatusQueued, StatusRunning, StatusPROpen} {
-		if _, err := s.EnqueueIssue(ctx, "sam", "archie", i+1, "t", "b", ""); err != nil {
+		if _, err := s.EnqueueIssue(ctx, "acme", "widget", i+1, "t", "b", ""); err != nil {
 			t.Fatal(err)
 		}
-		task, err := s.TaskByIssue(ctx, "sam", "archie", i+1)
+		task, err := s.TaskByIssue(ctx, "acme", "widget", i+1)
 		if err != nil || task == nil {
 			t.Fatalf("TaskByIssue(%d) = (%+v, %v)", i+1, task, err)
 		}
@@ -157,7 +157,7 @@ func TestWorkflowStats(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	if _, err := s.EnqueueIssue(ctx, "sam", "archie", 1, "t", "b", ""); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "t", "b", ""); err != nil {
 		t.Fatal(err)
 	}
 	task, err := s.ClaimNext(ctx)

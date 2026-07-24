@@ -53,7 +53,7 @@ func newTestServer(t *testing.T) (*store.Store, *nats.Conn, *Client) {
 func enqueueTask(t *testing.T, s *store.Store) *store.Task {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := s.EnqueueIssue(ctx, "sam", "archie", 1, "title", "body", ""); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "title", "body", ""); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	task, err := s.ClaimNext(ctx)
@@ -80,7 +80,7 @@ func TestClientUpdatePersistsViaServer(t *testing.T) {
 		t.Fatalf("Update: %v", err)
 	}
 
-	got, err := s.TaskByIssue(context.Background(), "sam", "archie", 1)
+	got, err := s.TaskByIssue(context.Background(), "acme", "widget", 1)
 	if err != nil || got == nil {
 		t.Fatalf("TaskByIssue: (%+v, %v)", got, err)
 	}
@@ -99,7 +99,7 @@ func TestClientTransitionPersistsViaServer(t *testing.T) {
 		t.Fatalf("Transition: %v", err)
 	}
 
-	got, err := s.TaskByIssue(context.Background(), "sam", "archie", 1)
+	got, err := s.TaskByIssue(context.Background(), "acme", "widget", 1)
 	if err != nil || got == nil {
 		t.Fatalf("TaskByIssue: (%+v, %v)", got, err)
 	}

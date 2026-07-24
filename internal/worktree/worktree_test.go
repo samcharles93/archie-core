@@ -54,7 +54,7 @@ func TestPrepareCommitPushRoundTrip(t *testing.T) {
 		t.Skip("git not installed")
 	}
 	ctx := context.Background()
-	host := newLocalRemote(t, "sam", "todo")
+	host := newLocalRemote(t, "acme", "todo")
 
 	m := &Manager{
 		WorkDir:  t.TempDir(),
@@ -64,7 +64,7 @@ func TestPrepareCommitPushRoundTrip(t *testing.T) {
 		BaseURL:  "file://" + host,
 	}
 
-	dir, branch, err := m.Prepare(ctx, "sam", "todo", "main", 42, "feat: add test issue title", "", "")
+	dir, branch, err := m.Prepare(ctx, "acme", "todo", "main", 42, "feat: add test issue title", "", "")
 	if err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestPrepareCommitPushRoundTrip(t *testing.T) {
 
 	// The branch must exist on the remote after push.
 	cmd := exec.Command("git", "ls-remote", "--heads",
-		"file://"+filepath.Join(host, "sam", "todo.git"), branch)
+		"file://"+filepath.Join(host, "acme", "todo.git"), branch)
 	out, err := cmd.CombinedOutput()
 	if err != nil || !strings.Contains(string(out), branch) {
 		t.Fatalf("branch not on remote: %v\n%s", err, out)
@@ -130,7 +130,7 @@ func TestPrepareCommitPushRoundTrip(t *testing.T) {
 		t.Fatalf("author = %q", got)
 	}
 
-	if err := m.Cleanup("sam", "todo", 42); err != nil {
+	if err := m.Cleanup("acme", "todo", 42); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
@@ -143,7 +143,7 @@ func TestPreparePersistentReusesRepoCacheAndCleanupExpiresIt(t *testing.T) {
 		t.Skip("git not installed")
 	}
 	ctx := context.Background()
-	host := newLocalRemote(t, "sam", "todo")
+	host := newLocalRemote(t, "acme", "todo")
 	m := &Manager{
 		WorkDir:  t.TempDir(),
 		Token:    "unused-for-file-remotes",
@@ -153,16 +153,16 @@ func TestPreparePersistentReusesRepoCacheAndCleanupExpiresIt(t *testing.T) {
 	}
 	const ttl = 24 * time.Hour
 
-	first, _, err := m.PreparePersistent(ctx, "sam", "todo", "main", 41, "feat: first", "", "", ttl)
+	first, _, err := m.PreparePersistent(ctx, "acme", "todo", "main", 41, "feat: first", "", "", ttl)
 	if err != nil {
 		t.Fatalf("first persistent prepare: %v", err)
 	}
-	cache := m.cacheDir("sam", "todo")
+	cache := m.cacheDir("acme", "todo")
 	if st, err := os.Stat(filepath.Join(cache, "HEAD")); err != nil || st.IsDir() {
 		t.Fatalf("repo cache was not created at %s: %v", cache, err)
 	}
 
-	second, _, err := m.PreparePersistent(ctx, "sam", "todo", "main", 42, "feat: second", "", "", ttl)
+	second, _, err := m.PreparePersistent(ctx, "acme", "todo", "main", 42, "feat: second", "", "", ttl)
 	if err != nil {
 		t.Fatalf("second persistent prepare: %v", err)
 	}

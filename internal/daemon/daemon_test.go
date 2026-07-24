@@ -68,7 +68,7 @@ func TestTaskDispatcherEnforcesMaxConcurrency(t *testing.T) {
 	var peak atomic.Int32
 
 	for i := 1; i <= 3; i++ {
-		task := &store.Task{Owner: "sam", Repo: "repo-" + string(rune('0'+i))}
+		task := &store.Task{Owner: "acme", Repo: "repo-" + string(rune('0'+i))}
 		dispatcher.Submit(context.Background(), task, func(context.Context, *store.Task) {
 			n := active.Add(1)
 			for {
@@ -118,14 +118,14 @@ func TestTaskDispatcherSerializesTasksForSameRepo(t *testing.T) {
 	secondStarted := make(chan struct{})
 	otherRepoStarted := make(chan struct{})
 
-	dispatcher.Submit(context.Background(), &store.Task{Owner: "sam", Repo: "archie"}, func(context.Context, *store.Task) {
+	dispatcher.Submit(context.Background(), &store.Task{Owner: "acme", Repo: "widget"}, func(context.Context, *store.Task) {
 		close(firstStarted)
 		<-releaseFirst
 	})
-	dispatcher.Submit(context.Background(), &store.Task{Owner: "sam", Repo: "archie"}, func(context.Context, *store.Task) {
+	dispatcher.Submit(context.Background(), &store.Task{Owner: "acme", Repo: "widget"}, func(context.Context, *store.Task) {
 		close(secondStarted)
 	})
-	dispatcher.Submit(context.Background(), &store.Task{Owner: "sam", Repo: "tau"}, func(context.Context, *store.Task) {
+	dispatcher.Submit(context.Background(), &store.Task{Owner: "acme", Repo: "gizmo"}, func(context.Context, *store.Task) {
 		close(otherRepoStarted)
 	})
 
@@ -159,17 +159,17 @@ func TestTaskDispatcherRunsConcurrentReposInParallel(t *testing.T) {
 	t.Parallel()
 
 	dispatcher := newTaskDispatcher(3, func(owner, repo string) bool {
-		return owner == "sam" && repo == "archie"
+		return owner == "acme" && repo == "widget"
 	})
 	releaseFirst := make(chan struct{})
 	firstStarted := make(chan struct{})
 	secondStarted := make(chan struct{})
 
-	dispatcher.Submit(context.Background(), &store.Task{Owner: "sam", Repo: "archie"}, func(context.Context, *store.Task) {
+	dispatcher.Submit(context.Background(), &store.Task{Owner: "acme", Repo: "widget"}, func(context.Context, *store.Task) {
 		close(firstStarted)
 		<-releaseFirst
 	})
-	dispatcher.Submit(context.Background(), &store.Task{Owner: "sam", Repo: "archie"}, func(context.Context, *store.Task) {
+	dispatcher.Submit(context.Background(), &store.Task{Owner: "acme", Repo: "widget"}, func(context.Context, *store.Task) {
 		close(secondStarted)
 	})
 
@@ -193,7 +193,7 @@ func TestTaskDispatcherWaitsForRunningTasks(t *testing.T) {
 
 	dispatcher := newTaskDispatcher(1, nil)
 	release := make(chan struct{})
-	dispatcher.Submit(context.Background(), &store.Task{Owner: "sam", Repo: "archie"}, func(context.Context, *store.Task) {
+	dispatcher.Submit(context.Background(), &store.Task{Owner: "acme", Repo: "widget"}, func(context.Context, *store.Task) {
 		<-release
 	})
 
@@ -220,19 +220,19 @@ func TestDaemonAllowConcurrentForReadsRepoConfig(t *testing.T) {
 	d := &Daemon{
 		Cfg: config.Config{
 			Repos: []config.Repo{
-				{Owner: "sam", Name: "archie", AllowConcurrent: true},
-				{Owner: "sam", Name: "todo"},
+				{Owner: "acme", Name: "widget", AllowConcurrent: true},
+				{Owner: "acme", Name: "todo"},
 			},
 		},
 	}
 
-	if !d.allowConcurrentFor("sam", "archie") {
+	if !d.allowConcurrentFor("acme", "widget") {
 		t.Fatal("expected allow_concurrent=true repo to report concurrent-allowed")
 	}
-	if d.allowConcurrentFor("sam", "todo") {
+	if d.allowConcurrentFor("acme", "todo") {
 		t.Fatal("expected repo without allow_concurrent to report false")
 	}
-	if d.allowConcurrentFor("sam", "unknown") {
+	if d.allowConcurrentFor("acme", "unknown") {
 		t.Fatal("expected unknown repo to report false")
 	}
 }
@@ -295,7 +295,7 @@ func TestRunViaAgentParksOnRequestFailure(t *testing.T) {
 	d, s := daemonWithNATS(t)
 	ctx := context.Background()
 
-	if _, err := s.EnqueueIssue(ctx, "sam", "archie", 1, "t", "b", ""); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "t", "b", ""); err != nil {
 		t.Fatal(err)
 	}
 	task, err := s.ClaimNext(ctx)
@@ -306,9 +306,9 @@ func TestRunViaAgentParksOnRequestFailure(t *testing.T) {
 	// No responder registered on the taskrun subject — the request must
 	// fail, and runViaAgent must park rather than leave the task stuck
 	// running.
-	d.runViaAgent(ctx, task, config.Repo{Owner: "sam", Name: "archie"})
+	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget"})
 
-	got, err := s.TaskByIssue(ctx, "sam", "archie", 1)
+	got, err := s.TaskByIssue(ctx, "acme", "widget", 1)
 	if err != nil || got == nil {
 		t.Fatalf("TaskByIssue: (%+v, %v)", got, err)
 	}
@@ -321,7 +321,7 @@ func TestRunViaAgentParksOnRunError(t *testing.T) {
 	d, s := daemonWithNATS(t)
 	ctx := context.Background()
 
-	if _, err := s.EnqueueIssue(ctx, "sam", "archie", 2, "t", "b", ""); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 2, "t", "b", ""); err != nil {
 		t.Fatal(err)
 	}
 	task, err := s.ClaimNext(ctx)
@@ -338,9 +338,9 @@ func TestRunViaAgentParksOnRunError(t *testing.T) {
 	}
 	t.Cleanup(func() { sub.Unsubscribe() })
 
-	d.runViaAgent(ctx, task, config.Repo{Owner: "sam", Name: "archie"})
+	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget"})
 
-	got, err := s.TaskByIssue(ctx, "sam", "archie", 2)
+	got, err := s.TaskByIssue(ctx, "acme", "widget", 2)
 	if err != nil || got == nil {
 		t.Fatalf("TaskByIssue: (%+v, %v)", got, err)
 	}
@@ -354,7 +354,7 @@ func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
 	d.Cfg.DiffCapLines = 999
 	ctx := context.Background()
 
-	if _, err := s.EnqueueIssue(ctx, "sam", "archie", 3, "t", "b", ""); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 3, "t", "b", ""); err != nil {
 		t.Fatal(err)
 	}
 	task, err := s.ClaimNext(ctx)
@@ -375,7 +375,7 @@ func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
 	}
 	t.Cleanup(func() { sub.Unsubscribe() })
 
-	repo := config.Repo{Owner: "sam", Name: "archie", Base: "main"}
+	repo := config.Repo{Owner: "acme", Name: "widget", Base: "main"}
 	d.runViaAgent(ctx, task, repo)
 
 	select {
@@ -383,7 +383,7 @@ func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
 		if req.Task == nil || req.Task.ID != task.ID {
 			t.Fatalf("request Task = %+v, want ID %d", req.Task, task.ID)
 		}
-		if req.Repo.FullName() != "sam/archie" {
+		if req.Repo.FullName() != "acme/widget" {
 			t.Fatalf("request Repo = %+v", req.Repo)
 		}
 		if req.Cfg.DiffCapLines != 999 {
@@ -395,7 +395,7 @@ func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
 
 	// Success path: runViaAgent must not park a task that archie-agent
 	// already reported as complete — the daemon just logs it.
-	got, err := s.TaskByIssue(ctx, "sam", "archie", 3)
+	got, err := s.TaskByIssue(ctx, "acme", "widget", 3)
 	if err != nil || got == nil {
 		t.Fatalf("TaskByIssue: (%+v, %v)", got, err)
 	}
@@ -474,8 +474,9 @@ func (f *testForge) CloseIssue(context.Context, string, string, int, string) err
 func (f *testForge) CreateIssue(context.Context, string, string, string, string, []string) (int, error) {
 	return 0, nil
 }
-func (f *testForge) React(context.Context, string, string, int, string) error { return nil }
-func (f *testForge) VerifyPush(context.Context, string, string) error         { return nil }
+func (f *testForge) React(context.Context, string, string, int, string) error      { return nil }
+func (f *testForge) VerifyPush(context.Context, string, string) error              { return nil }
+func (f *testForge) LinkBranch(context.Context, string, string, int, string) error { return nil }
 
 func testDaemon(t *testing.T, maxRetries int, _ int) (*Daemon, *store.Store, *testForge) {
 	t.Helper()
@@ -508,7 +509,7 @@ func setupParkedTask(t *testing.T, s *store.Store, retryCount int) *store.Task {
 	t.Helper()
 	ctx := context.Background()
 
-	if _, err := s.EnqueueIssue(ctx, "sam", "todo", 1, "t", "b", ""); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "todo", 1, "t", "b", ""); err != nil {
 		t.Fatal(err)
 	}
 	task, err := s.ClaimNext(ctx)
@@ -524,7 +525,7 @@ func setupParkedTask(t *testing.T, s *store.Store, retryCount int) *store.Task {
 		}
 	}
 
-	task, err = s.TaskByIssue(ctx, "sam", "todo", 1)
+	task, err = s.TaskByIssue(ctx, "acme", "todo", 1)
 	if err != nil || task == nil {
 		t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
 	}
@@ -538,11 +539,11 @@ func TestMaybeRetryParkedUnderThreshold(t *testing.T) {
 	_ = setupParkedTask(t, s, 0)
 
 	is := forge.Issue{Number: 1, Labels: []string{}}
-	repo := config.Repo{Owner: "sam", Name: "todo"}
+	repo := config.Repo{Owner: "acme", Name: "todo"}
 
 	d.maybeRetryParked(ctx, repo, is)
 
-	task, err := s.TaskByIssue(ctx, "sam", "todo", 1)
+	task, err := s.TaskByIssue(ctx, "acme", "todo", 1)
 	if err != nil || task == nil {
 		t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
 	}
@@ -567,11 +568,11 @@ func TestMaybeRetryParkedAtThreshold(t *testing.T) {
 	_ = setupParkedTask(t, s, 3)
 
 	is := forge.Issue{Number: 1, Labels: []string{}}
-	repo := config.Repo{Owner: "sam", Name: "todo"}
+	repo := config.Repo{Owner: "acme", Name: "todo"}
 
 	d.maybeRetryParked(ctx, repo, is)
 
-	task, err := s.TaskByIssue(ctx, "sam", "todo", 1)
+	task, err := s.TaskByIssue(ctx, "acme", "todo", 1)
 	if err != nil || task == nil {
 		t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
 	}
@@ -596,7 +597,7 @@ func TestMaybeRetryParkedSkipsDead(t *testing.T) {
 	}
 
 	is := forge.Issue{Number: 1, Labels: []string{}}
-	repo := config.Repo{Owner: "sam", Name: "todo"}
+	repo := config.Repo{Owner: "acme", Name: "todo"}
 
 	d.maybeRetryParked(ctx, repo, is)
 
@@ -613,7 +614,7 @@ func TestMaybeRetryParkedStillParked(t *testing.T) {
 	ctx := context.Background()
 
 	is := forge.Issue{Number: 1, Labels: []string{"archie:parked", "bug"}}
-	repo := config.Repo{Owner: "sam", Name: "todo"}
+	repo := config.Repo{Owner: "acme", Name: "todo"}
 
 	d.maybeRetryParked(ctx, repo, is)
 
@@ -629,11 +630,11 @@ func TestMaybeRetryParkedRepoOverride(t *testing.T) {
 	_ = setupParkedTask(t, s, 1)
 
 	is := forge.Issue{Number: 1, Labels: []string{}}
-	repo := config.Repo{Owner: "sam", Name: "todo", MaxRetries: 1}
+	repo := config.Repo{Owner: "acme", Name: "todo", MaxRetries: 1}
 
 	d.maybeRetryParked(ctx, repo, is)
 
-	task, err := s.TaskByIssue(ctx, "sam", "todo", 1)
+	task, err := s.TaskByIssue(ctx, "acme", "todo", 1)
 	if err != nil || task == nil {
 		t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
 	}

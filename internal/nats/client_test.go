@@ -61,7 +61,7 @@ func TestConnectAndPublish(t *testing.T) {
 	defer client.Close()
 
 	// Publish a task.
-	if err := client.PublishTask(ctx, "sam", "todo", 1, "fix bug", "body text", "bug"); err != nil {
+	if err := client.PublishTask(ctx, "acme", "todo", 1, "fix bug", "body text", "bug"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -78,7 +78,7 @@ func TestConnectAndPublish(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tm.Owner != "sam" || tm.Repo != "todo" || tm.Number != 1 || tm.Title != "fix bug" || tm.Body != "body text" {
+	if tm.Owner != "acme" || tm.Repo != "todo" || tm.Number != 1 || tm.Title != "fix bug" || tm.Body != "body text" {
 		t.Fatalf("unexpected task: %+v", tm)
 	}
 	msg.Ack()

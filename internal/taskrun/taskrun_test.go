@@ -13,13 +13,13 @@ func TestRequestJSONRoundTrip(t *testing.T) {
 	req := Request{
 		Task: &store.Task{
 			ID:          1,
-			Owner:       "sam",
-			Repo:        "archie",
+			Owner:       "acme",
+			Repo:        "widget",
 			IssueNumber: 42,
 			Title:       "feat: thing",
 			Status:      store.StatusRunning,
 		},
-		Repo: config.Repo{Owner: "sam", Name: "archie", Base: "main"},
+		Repo: config.Repo{Owner: "acme", Name: "widget", Base: "main"},
 		Cfg:  config.Config{DiffCapLines: 500}.ForTask(),
 		Providers: map[string]agentexec.Provider{
 			"anthropic": {Class: "anthropic", APIKeyEnv: "ANTHROPIC_API_KEY"},
@@ -36,10 +36,10 @@ func TestRequestJSONRoundTrip(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	if got.Task == nil || got.Task.ID != 1 || got.Task.Owner != "sam" || got.Task.IssueNumber != 42 {
+	if got.Task == nil || got.Task.ID != 1 || got.Task.Owner != "acme" || got.Task.IssueNumber != 42 {
 		t.Fatalf("Task did not round-trip: %+v", got.Task)
 	}
-	if got.Repo.FullName() != "sam/archie" || got.Repo.BaseBranch() != "main" {
+	if got.Repo.FullName() != "acme/widget" || got.Repo.BaseBranch() != "main" {
 		t.Fatalf("Repo did not round-trip: %+v", got.Repo)
 	}
 	if got.Cfg.DiffCapLines != 500 {

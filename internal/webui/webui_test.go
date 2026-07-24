@@ -30,7 +30,7 @@ func newTestServer(t *testing.T) *Server {
 func TestHandleSummary(t *testing.T) {
 	srv := newTestServer(t)
 	ctx := t.Context()
-	if _, err := srv.Store.EnqueueIssue(ctx, "sam", "archie", 1, "t", "b", ""); err != nil {
+	if _, err := srv.Store.EnqueueIssue(ctx, "acme", "widget", 1, "t", "b", ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -55,7 +55,7 @@ func TestHandleSummary(t *testing.T) {
 func TestHandleTasks(t *testing.T) {
 	srv := newTestServer(t)
 	ctx := t.Context()
-	if _, err := srv.Store.EnqueueIssue(ctx, "sam", "archie", 1, "hello", "b", ""); err != nil {
+	if _, err := srv.Store.EnqueueIssue(ctx, "acme", "widget", 1, "hello", "b", ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -78,10 +78,10 @@ func TestHandleTasks(t *testing.T) {
 func TestHandleTask(t *testing.T) {
 	srv := newTestServer(t)
 	ctx := t.Context()
-	if _, err := srv.Store.EnqueueIssue(ctx, "sam", "archie", 1, "t", "b", ""); err != nil {
+	if _, err := srv.Store.EnqueueIssue(ctx, "acme", "widget", 1, "t", "b", ""); err != nil {
 		t.Fatal(err)
 	}
-	task, err := srv.Store.TaskByIssue(ctx, "sam", "archie", 1)
+	task, err := srv.Store.TaskByIssue(ctx, "acme", "widget", 1)
 	if err != nil || task == nil {
 		t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
 	}

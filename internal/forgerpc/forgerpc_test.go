@@ -115,6 +115,9 @@ func (f *fakeForge) React(context.Context, string, string, int, string) error {
 	panic("unexpected call")
 }
 func (f *fakeForge) VerifyPush(context.Context, string, string) error { panic("unexpected call") }
+func (f *fakeForge) LinkBranch(context.Context, string, string, int, string) error {
+	panic("unexpected call")
+}
 
 func newTestServer(t *testing.T) (*fakeForge, *Client) {
 	t.Helper()
@@ -138,14 +141,14 @@ func newTestServer(t *testing.T) (*fakeForge, *Client) {
 func TestClientCommentPersistsViaServer(t *testing.T) {
 	fg, client := newTestServer(t)
 
-	id, err := client.Comment(context.Background(), "sam", "archie", 1, "hello")
+	id, err := client.Comment(context.Background(), "acme", "widget", 1, "hello")
 	if err != nil {
 		t.Fatalf("Comment: %v", err)
 	}
 	if id != 99 {
 		t.Fatalf("expected comment id 99, got %d", id)
 	}
-	if len(fg.comments) != 1 || fg.comments[0] != (commentCall{"sam", "archie", 1, "hello"}) {
+	if len(fg.comments) != 1 || fg.comments[0] != (commentCall{"acme", "widget", 1, "hello"}) {
 		t.Fatalf("comment did not reach server, got %+v", fg.comments)
 	}
 }
@@ -153,10 +156,10 @@ func TestClientCommentPersistsViaServer(t *testing.T) {
 func TestClientCloseIssuePersistsViaServer(t *testing.T) {
 	fg, client := newTestServer(t)
 
-	if err := client.CloseIssue(context.Background(), "sam", "archie", 2, "done"); err != nil {
+	if err := client.CloseIssue(context.Background(), "acme", "widget", 2, "done"); err != nil {
 		t.Fatalf("CloseIssue: %v", err)
 	}
-	if len(fg.closes) != 1 || fg.closes[0] != (closeCall{"sam", "archie", 2, "done"}) {
+	if len(fg.closes) != 1 || fg.closes[0] != (closeCall{"acme", "widget", 2, "done"}) {
 		t.Fatalf("close did not reach server, got %+v", fg.closes)
 	}
 }
@@ -164,14 +167,14 @@ func TestClientCloseIssuePersistsViaServer(t *testing.T) {
 func TestClientCreatePRPersistsViaServer(t *testing.T) {
 	fg, client := newTestServer(t)
 
-	num, err := client.CreatePR(context.Background(), "sam", "archie", "title", "head", "main", "body")
+	num, err := client.CreatePR(context.Background(), "acme", "widget", "title", "head", "main", "body")
 	if err != nil {
 		t.Fatalf("CreatePR: %v", err)
 	}
 	if num != 7 {
 		t.Fatalf("expected PR number 7, got %d", num)
 	}
-	if len(fg.prs) != 1 || fg.prs[0] != (prCall{"sam", "archie", "title", "head", "main", "body"}) {
+	if len(fg.prs) != 1 || fg.prs[0] != (prCall{"acme", "widget", "title", "head", "main", "body"}) {
 		t.Fatalf("PR did not reach server, got %+v", fg.prs)
 	}
 }
@@ -179,13 +182,13 @@ func TestClientCreatePRPersistsViaServer(t *testing.T) {
 func TestClientSetStateLabelPersistsViaServer(t *testing.T) {
 	fg, client := newTestServer(t)
 
-	client.SetStateLabel(context.Background(), "sam", "archie", 3, "archie:working", []string{"archie:queued", "archie:working"})
+	client.SetStateLabel(context.Background(), "acme", "widget", 3, "archie:working", []string{"archie:queued", "archie:working"})
 
 	if len(fg.stateLabels) != 1 {
 		t.Fatalf("expected 1 state label call, got %d", len(fg.stateLabels))
 	}
 	got := fg.stateLabels[0]
-	if got.owner != "sam" || got.repo != "archie" || got.number != 3 || got.label != "archie:working" {
+	if got.owner != "acme" || got.repo != "widget" || got.number != 3 || got.label != "archie:working" {
 		t.Fatalf("state label call mismatch: %+v", got)
 	}
 }
@@ -203,7 +206,7 @@ func TestClientPropagatesServerError(t *testing.T) {
 	t.Cleanup(unsub)
 
 	client := &Client{Conn: connect(t, url), Timeout: 2 * time.Second}
-	_, err = client.Comment(context.Background(), "sam", "archie", 1, "hello")
+	_, err = client.Comment(context.Background(), "acme", "widget", 1, "hello")
 	if err == nil {
 		t.Fatal("expected Comment to propagate the server-side error")
 	}
@@ -213,7 +216,7 @@ func TestClientCommentTimesOutWithNoResponder(t *testing.T) {
 	srv := startEmbedded(t)
 	client := &Client{Conn: connect(t, srv.ClientURL()), Timeout: 100 * time.Millisecond}
 
-	_, err := client.Comment(context.Background(), "sam", "archie", 1, "hello")
+	_, err := client.Comment(context.Background(), "acme", "widget", 1, "hello")
 	if err == nil {
 		t.Fatal("expected Comment to time out with no server registered")
 	}

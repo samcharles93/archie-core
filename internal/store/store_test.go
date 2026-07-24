@@ -28,10 +28,10 @@ func TestClearTerminalTasks(t *testing.T) {
 
 	statuses := []string{StatusMerged, StatusParked, StatusRejected, StatusClosedWontDo, StatusQueued}
 	for i, status := range statuses {
-		if _, err := s.EnqueueIssue(ctx, "sam", "archie", i+1, "t", "b", ""); err != nil {
+		if _, err := s.EnqueueIssue(ctx, "acme", "widget", i+1, "t", "b", ""); err != nil {
 			t.Fatal(err)
 		}
-		task, err := s.TaskByIssue(ctx, "sam", "archie", i+1)
+		task, err := s.TaskByIssue(ctx, "acme", "widget", i+1)
 		if err != nil || task == nil {
 			t.Fatalf("TaskByIssue(%d) = (%+v, %v)", i+1, task, err)
 		}
@@ -71,11 +71,11 @@ func TestEnqueueIsIdempotent(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	ins, err := s.EnqueueIssue(ctx, "sam", "todo", 1, "add tests", "body", "archie")
+	ins, err := s.EnqueueIssue(ctx, "acme", "todo", 1, "add tests", "body", "widget")
 	if err != nil || !ins {
 		t.Fatalf("first enqueue = (%v, %v)", ins, err)
 	}
-	ins, err = s.EnqueueIssue(ctx, "sam", "todo", 1, "add tests", "body", "archie")
+	ins, err = s.EnqueueIssue(ctx, "acme", "todo", 1, "add tests", "body", "widget")
 	if err != nil || ins {
 		t.Fatalf("duplicate enqueue must be a no-op, got (%v, %v)", ins, err)
 	}
@@ -120,7 +120,7 @@ func TestIncrementRetryCount(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	if _, err := s.EnqueueIssue(ctx, "sam", "todo", 1, "t", "", ""); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "todo", 1, "t", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	task, err := s.ClaimNext(ctx)
@@ -140,7 +140,7 @@ func TestIncrementRetryCount(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := s.TaskByIssue(ctx, "sam", "todo", 1)
+	got, err := s.TaskByIssue(ctx, "acme", "todo", 1)
 	if err != nil || got == nil {
 		t.Fatalf("TaskByIssue = (%+v, %v)", got, err)
 	}
@@ -153,14 +153,14 @@ func TestRetryCountColumn(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	if _, err := s.EnqueueIssue(ctx, "sam", "todo", 1, "t", "", ""); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "todo", 1, "t", "", ""); err != nil {
 		t.Fatal(err)
 	}
 
 	// Verify column exists and defaults to 0 via direct query.
 	var count int
 	if err := s.db.QueryRowContext(ctx,
-		`SELECT retry_count FROM tasks WHERE owner='sam' AND repo='todo' AND issue_number=1`).Scan(&count); err != nil {
+		`SELECT retry_count FROM tasks WHERE owner='acme' AND repo='todo' AND issue_number=1`).Scan(&count); err != nil {
 		t.Fatalf("retry_count scan failed: %v", err)
 	}
 	if count != 0 {
@@ -172,7 +172,7 @@ func TestClaimTransitionAndRecovery(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	if _, err := s.EnqueueIssue(ctx, "sam", "todo", 7, "t", "", "archie,bug"); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "todo", 7, "t", "", "archie,bug"); err != nil {
 		t.Fatal(err)
 	}
 

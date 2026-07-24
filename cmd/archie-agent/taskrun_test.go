@@ -93,6 +93,10 @@ func (f *prCapturingForge) VerifyPush(context.Context, string, string) error {
 	panic("unexpected call")
 }
 
+func (f *prCapturingForge) LinkBranch(context.Context, string, string, int, string) error {
+	panic("unexpected call")
+}
+
 // newLocalRemote mirrors worktree_test.go's helper: a bare repo with one
 // commit on main, reachable via file://<host>/<owner>/<repo>.git.
 func newLocalRemote(t *testing.T, owner, repo string) string {
@@ -140,12 +144,12 @@ func TestRunTaskExecutesBootstrapWorkflowEndToEnd(t *testing.T) {
 		t.Skip("git not installed")
 	}
 	ctx := context.Background()
-	host := newLocalRemote(t, "sam", "archie")
+	host := newLocalRemote(t, "acme", "widget")
 
 	// archied side: real Store, a capturing Forge, and the Manager that
 	// actually holds the (unused-for-file-remotes) push token.
 	st := store.OpenTest(t)
-	if _, err := st.EnqueueIssue(ctx, "sam", "archie", 1, "feat: bootstrap test", "", "bootstrap"); err != nil {
+	if _, err := st.EnqueueIssue(ctx, "acme", "widget", 1, "feat: bootstrap test", "", "bootstrap"); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	task, err := st.ClaimNext(ctx)
@@ -164,7 +168,7 @@ func TestRunTaskExecutesBootstrapWorkflowEndToEnd(t *testing.T) {
 
 	// The daemon always prepares the worktree before container acquire —
 	// reproduce that here so the container's bind mount has real content.
-	hostDir, _, err := daemonTrees.Prepare(ctx, "sam", "archie", "main", 1, task.Title, "", "bootstrap")
+	hostDir, _, err := daemonTrees.Prepare(ctx, "acme", "widget", "main", 1, task.Title, "", "bootstrap")
 	if err != nil {
 		t.Fatalf("daemon-side prepare: %v", err)
 	}
@@ -195,7 +199,7 @@ func TestRunTaskExecutesBootstrapWorkflowEndToEnd(t *testing.T) {
 
 	req := taskrun.Request{
 		Task: task,
-		Repo: config.Repo{Owner: "sam", Name: "archie", Base: "main"},
+		Repo: config.Repo{Owner: "acme", Name: "widget", Base: "main"},
 		Cfg:  config.Config{}.ForTask(),
 	}
 
@@ -216,7 +220,7 @@ func TestRunTaskExecutesBootstrapWorkflowEndToEnd(t *testing.T) {
 
 	// The authoritative state landed in archied's store via storerpc, not
 	// just in the in-memory tc.Task.
-	stored, err := st.TaskByIssue(ctx, "sam", "archie", 1)
+	stored, err := st.TaskByIssue(ctx, "acme", "widget", 1)
 	if err != nil || stored == nil {
 		t.Fatalf("TaskByIssue: (%+v, %v)", stored, err)
 	}

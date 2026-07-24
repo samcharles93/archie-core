@@ -53,6 +53,9 @@ func (stubForge) CreateIssue(context.Context, string, string, string, string, []
 }
 func (stubForge) React(context.Context, string, string, int, string) error { panic("unexpected call") }
 func (stubForge) VerifyPush(context.Context, string, string) error         { panic("unexpected call") }
+func (stubForge) LinkBranch(context.Context, string, string, int, string) error {
+	panic("unexpected call")
+}
 
 func startEmbeddedNATS(t *testing.T) *server.Server {
 	t.Helper()
@@ -90,7 +93,7 @@ func TestRegisterTaskRPCServersReachableFromClient(t *testing.T) {
 	ctx := context.Background()
 
 	storeClient := &storerpc.Client{Conn: clientConn, Timeout: 2 * time.Second}
-	if _, err := st.EnqueueIssue(ctx, "sam", "archie", 1, "t", "b", ""); err != nil {
+	if _, err := st.EnqueueIssue(ctx, "acme", "widget", 1, "t", "b", ""); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	task, err := st.ClaimNext(ctx)
@@ -102,12 +105,12 @@ func TestRegisterTaskRPCServersReachableFromClient(t *testing.T) {
 	}
 
 	forgeClient := &forgerpc.Client{Conn: clientConn, Timeout: 2 * time.Second}
-	if _, err := forgeClient.Comment(ctx, "sam", "archie", 1, "hi"); err != nil {
+	if _, err := forgeClient.Comment(ctx, "acme", "widget", 1, "hi"); err != nil {
 		t.Fatalf("forgerpc Comment unreachable: %v", err)
 	}
 
 	treesClient := &worktreerpc.Client{Conn: clientConn, Timeout: 2 * time.Second}
-	if _, _, err := treesClient.Prepare(ctx, "sam", "archie", "main", 1, "feat: x", "", ""); err == nil {
+	if _, _, err := treesClient.Prepare(ctx, "acme", "widget", "main", 1, "feat: x", "", ""); err == nil {
 		t.Fatal("expected Prepare to fail against a non-git remote, proving the RPC round-tripped")
 	} else if err.Error() == "" {
 		t.Fatal("expected a non-empty error from the worktreerpc round trip")

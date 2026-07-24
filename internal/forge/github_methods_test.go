@@ -38,7 +38,7 @@ func TestAssignedIssuesExcludesPRs(t *testing.T) {
 func TestIssuesWithLabelExcludesPRs(t *testing.T) {
 	c, mux := newTestClient(t)
 	mux.HandleFunc("GET /repos/o/r/issues", func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Query().Get("labels"); got != "archie" {
+		if got := r.URL.Query().Get("labels"); got != "widget" {
 			t.Errorf("labels = %q", got)
 		}
 		writeJSON(t, w, []map[string]any{
@@ -46,7 +46,7 @@ func TestIssuesWithLabelExcludesPRs(t *testing.T) {
 		})
 	})
 
-	issues, err := c.IssuesWithLabel(t.Context(), "o", "r", "archie")
+	issues, err := c.IssuesWithLabel(t.Context(), "o", "r", "widget")
 	if err != nil {
 		t.Fatal(err)
 	}

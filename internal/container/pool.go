@@ -60,6 +60,12 @@ type Pool struct {
 	cfg     Config
 	log     *slog.Logger
 	natsURL string
+	// network is the user-defined Docker network spawned containers join,
+	// detected from the daemon's own container so they can resolve
+	// sibling services (nats, etc.) by compose service name. Empty when
+	// the daemon isn't running in a container on such a network, or when
+	// detection fails — Docker then falls back to its default bridge.
+	network string
 
 	mu     sync.Mutex
 	active int
@@ -104,6 +110,7 @@ func NewPool(ctx context.Context, cfg Config, natsURL string, log *slog.Logger) 
 		log:     log,
 		natsURL: natsURL,
 		ownCli:  cfg.DockerClient == nil,
+		network: selfNetwork(ctx, cli, log),
 	}
 
 	// Pull image if needed.
@@ -142,6 +149,18 @@ func (p *Pool) Acquire(ctx context.Context, mounts []storage.Mount, env []string
 
 	name := fmt.Sprintf("archie-agent-%d", time.Now().UnixNano())
 
+	hostConfig := &container.HostConfig{
+		Mounts:     storage.ConvertMounts(mounts),
+		AutoRemove: true,
+	}
+	if p.network != "" {
+		// Join the same user-defined network the daemon itself is on, so
+		// the agent container can resolve sibling compose services (nats,
+		// etc.) by name — otherwise Docker attaches it to the default
+		// bridge network, where those hostnames don't resolve.
+		hostConfig.NetworkMode = container.NetworkMode(p.network)
+	}
+
 	resp, err := p.cli.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Name: name,
 		Config: &container.Config{
@@ -151,10 +170,7 @@ func (p *Pool) Acquire(ctx context.Context, mounts []storage.Mount, env []string
 				"archie-daemon": "true",
 			},
 		},
-		HostConfig: &container.HostConfig{
-			Mounts:     storage.ConvertMounts(mounts),
-			AutoRemove: true,
-		},
+		HostConfig: hostConfig,
 	})
 	if err != nil {
 		p.mu.Lock()
@@ -253,6 +269,33 @@ func (p *Pool) pullImage(ctx context.Context) error {
 	io.Copy(io.Discard, rc)
 	p.log.Info("image pulled", "image", ref)
 	return nil
+}
+
+// selfNetwork detects the user-defined Docker network the current
+// process's own container is attached to, by inspecting the container
+// named after our hostname (Docker sets a container's hostname to its
+// short ID by default). Returns "" if we're not running in a container,
+// the inspect fails, or we're only on the default bridge network — in
+// all of those cases Acquire falls back to Docker's normal default.
+func selfNetwork(ctx context.Context, cli *client.Client, log *slog.Logger) string {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	self, err := cli.ContainerInspect(ctx, hostname, client.ContainerInspectOptions{})
+	if err != nil {
+		return ""
+	}
+	if self.Container.NetworkSettings == nil {
+		return ""
+	}
+	for name := range self.Container.NetworkSettings.Networks {
+		if name != "bridge" {
+			log.Info("spawned containers will join daemon's network", "network", name)
+			return name
+		}
+	}
+	return ""
 }
 
 // recoverOrphans stops and removes containers left by a previous daemon.

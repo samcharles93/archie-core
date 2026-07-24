@@ -22,7 +22,7 @@ func TestBootTaskID(t *testing.T) {
 
 	t.Run("valid task.json — dedicated per-task mode", func(t *testing.T) {
 		dir := t.TempDir()
-		data, err := json.Marshal(container.TaskPayload{ID: 42, Owner: "sam", Repo: "archie"})
+		data, err := json.Marshal(container.TaskPayload{ID: 42, Owner: "acme", Repo: "widget"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -48,7 +48,7 @@ func TestBootTaskID(t *testing.T) {
 
 	t.Run("zero ID falls back to shared pool mode", func(t *testing.T) {
 		dir := t.TempDir()
-		data, _ := json.Marshal(container.TaskPayload{Owner: "sam", Repo: "archie"})
+		data, _ := json.Marshal(container.TaskPayload{Owner: "acme", Repo: "widget"})
 		if err := os.WriteFile(filepath.Join(dir, "task.json"), data, 0o644); err != nil {
 			t.Fatal(err)
 		}

@@ -54,7 +54,7 @@ func TestContainerSupportsGracePeriod(t *testing.T) {
 func TestWriteTaskJSONProducesValidFile(t *testing.T) {
 	dir := t.TempDir()
 	payload := TaskPayload{
-		ID: 42, Owner: "sam", Repo: "todo", Number: 170,
+		ID: 42, Owner: "acme", Repo: "todo", Number: 170,
 		Title: "fix bug", Body: "body text",
 		Labels: []string{"bug"}, Workflow: "tdd",
 	}
@@ -100,7 +100,7 @@ func TestTaskPayloadWrittenAsVolumeFile(t *testing.T) {
 	}
 
 	payload := TaskPayload{
-		ID: 42, Owner: "sam", Repo: "todo", Number: 170,
+		ID: 42, Owner: "acme", Repo: "todo", Number: 170,
 		Title: "fix bug", Body: "body text",
 		Labels: []string{"bug"}, Workflow: "tdd",
 	}

@@ -228,21 +228,21 @@ func TestDispatchDefaults(t *testing.T) {
 		d.AckReaction = "eyes"
 	}
 
-	// StateLabel should return the legacy constants.
-	if got := d.StateLabel("queued"); got != "archie:queued" {
-		t.Errorf("queued: got %q, want archie:queued", got)
+	// StateLabel should return the default agent:* labels.
+	if got := d.StateLabel("queued"); got != "agent:queued" {
+		t.Errorf("queued: got %q, want agent:queued", got)
 	}
-	if got := d.StateLabel("working"); got != "archie:working" {
-		t.Errorf("working: got %q, want archie:working", got)
+	if got := d.StateLabel("working"); got != "agent:working" {
+		t.Errorf("working: got %q, want agent:working", got)
 	}
-	if got := d.StateLabel("waiting"); got != "archie:waiting" {
-		t.Errorf("waiting: got %q, want archie:waiting", got)
+	if got := d.StateLabel("waiting"); got != "agent:waiting" {
+		t.Errorf("waiting: got %q, want agent:waiting", got)
 	}
-	if got := d.StateLabel("pr"); got != "archie:pr" {
-		t.Errorf("pr: got %q, want archie:pr", got)
+	if got := d.StateLabel("pr"); got != "agent:pr" {
+		t.Errorf("pr: got %q, want agent:pr", got)
 	}
-	if got := d.StateLabel("parked"); got != "archie:parked" {
-		t.Errorf("parked: got %q, want archie:parked", got)
+	if got := d.StateLabel("parked"); got != "agent:parked" {
+		t.Errorf("parked: got %q, want agent:parked", got)
 	}
 
 	// Unknown state returns empty.
@@ -282,11 +282,11 @@ func TestDispatchCustomLabels(t *testing.T) {
 	}
 
 	// Missing keys fall back to defaults.
-	if got := d.StateLabel("waiting"); got != "archie:waiting" {
-		t.Errorf("waiting: got %q, want archie:waiting (fallback)", got)
+	if got := d.StateLabel("waiting"); got != "agent:waiting" {
+		t.Errorf("waiting: got %q, want agent:waiting (fallback)", got)
 	}
-	if got := d.StateLabel("pr"); got != "archie:pr" {
-		t.Errorf("pr: got %q, want archie:pr (fallback)", got)
+	if got := d.StateLabel("pr"); got != "agent:pr" {
+		t.Errorf("pr: got %q, want agent:pr (fallback)", got)
 	}
 
 	// Empty AckReaction.
@@ -303,7 +303,7 @@ func TestDispatchCustomLabels(t *testing.T) {
 	for _, v := range vals {
 		seen[v] = true
 	}
-	for _, want := range []string{"bot:queued", "bot:working", "bot:parked", "archie:waiting", "archie:pr", "archie:dead"} {
+	for _, want := range []string{"bot:queued", "bot:working", "bot:parked", "agent:waiting", "agent:pr", "agent:dead"} {
 		if !seen[want] {
 			t.Errorf("LabelValues missing %q", want)
 		}
@@ -340,7 +340,7 @@ func TestLoadDispatchAckReaction(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.toml")
-			contents := "bot_user = \"archie\"\n" + tt.dispatch + "\n[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
+			contents := "bot_user = \"widget\"\n" + tt.dispatch + "\n[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
 			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -373,7 +373,7 @@ func TestLoadRejectsInvalidConfigEnumsAndGlobs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.toml")
-			contents := "bot_user = \"archie\"\n"
+			contents := "bot_user = \"widget\"\n"
 			if tt.name != "test glob" {
 				contents += "\n[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
 			}
@@ -406,7 +406,7 @@ func TestLoadAgentDefaultsAndOverrides(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.toml")
-			contents := "bot_user = \"archie\"\n" + tt.agent + "\n[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
+			contents := "bot_user = \"widget\"\n" + tt.agent + "\n[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
 			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -433,7 +433,7 @@ func TestLoadContainerVolumeTTL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.toml")
-			contents := "bot_user = \"archie\"\n" +
+			contents := "bot_user = \"widget\"\n" +
 				"[agent]\nmode = \"nats\"\n" +
 				"[nats]\nurl = \"nats://localhost:4222\"\n" +
 				"[containers]\nenabled = true\nimage = \"archie-agent:test\"\n" + tt.ttl +
@@ -455,7 +455,7 @@ func TestLoadContainerVolumeTTL(t *testing.T) {
 
 func TestLoadRejectsNegativeContainerVolumeTTL(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
-	contents := "bot_user = \"archie\"\n" +
+	contents := "bot_user = \"widget\"\n" +
 		"[agent]\nmode = \"nats\"\n" +
 		"[nats]\nurl = \"nats://localhost:4222\"\n" +
 		"[containers]\nenabled = true\nimage = \"archie-agent:test\"\nvolume_ttl = \"-1h\"\n" +
@@ -488,7 +488,7 @@ func TestExampleConfigLoads(t *testing.T) {
 func TestLoadOverlay(t *testing.T) {
 	dir := t.TempDir()
 	basePath := filepath.Join(dir, "config.toml")
-	base := "bot_user = \"archie\"\nwork_dir = \"/base/work\"\n" +
+	base := "bot_user = \"widget\"\nwork_dir = \"/base/work\"\n" +
 		"[agent]\nmode = \"inprocess\"\n" +
 		"[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
 	if err := os.WriteFile(basePath, []byte(base), 0o600); err != nil {
@@ -515,7 +515,7 @@ func TestLoadOverlay(t *testing.T) {
 		t.Errorf("Agent.Mode: got %q, want %q", cfg.Agent.Mode, "nats")
 	}
 	// Fields the overlay omits keep the base value.
-	if cfg.BotUser != "archie" {
+	if cfg.BotUser != "widget" {
 		t.Errorf("BotUser: got %q, want base value", cfg.BotUser)
 	}
 	if len(cfg.Repos) != 1 || cfg.Repos[0].Owner != "acme" {

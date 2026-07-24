@@ -86,7 +86,7 @@ func TestClientPreparePublishesViaServer(t *testing.T) {
 		t.Skip("git not installed")
 	}
 	ctx := context.Background()
-	host := newLocalRemote(t, "sam", "archie")
+	host := newLocalRemote(t, "acme", "widget")
 
 	m := &worktree.Manager{
 		WorkDir:  t.TempDir(),
@@ -107,7 +107,7 @@ func TestClientPreparePublishesViaServer(t *testing.T) {
 	t.Cleanup(unsub)
 
 	client := &Client{Conn: connect(t, url), Timeout: 5 * time.Second}
-	dir, branch, err := client.Prepare(ctx, "sam", "archie", "main", 1, "feat: test", "", "")
+	dir, branch, err := client.Prepare(ctx, "acme", "widget", "main", 1, "feat: test", "", "")
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestClientPushPublishesViaServer(t *testing.T) {
 		t.Skip("git not installed")
 	}
 	ctx := context.Background()
-	host := newLocalRemote(t, "sam", "archie")
+	host := newLocalRemote(t, "acme", "widget")
 
 	m := &worktree.Manager{
 		WorkDir:  t.TempDir(),
@@ -134,7 +134,7 @@ func TestClientPushPublishesViaServer(t *testing.T) {
 		BaseURL:  "file://" + host,
 	}
 
-	dir, branch, err := m.Prepare(ctx, "sam", "archie", "main", 1, "feat: test", "", "")
+	dir, branch, err := m.Prepare(ctx, "acme", "widget", "main", 1, "feat: test", "", "")
 	if err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
@@ -156,11 +156,11 @@ func TestClientPushPublishesViaServer(t *testing.T) {
 	t.Cleanup(unsub)
 
 	client := &Client{Conn: connect(t, url), Timeout: 5 * time.Second}
-	if err := client.Push(ctx, "sam", "archie", 1, branch); err != nil {
+	if err := client.Push(ctx, "acme", "widget", 1, branch); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 
-	if !remoteHasBranch(t, host, "sam", "archie", branch) {
+	if !remoteHasBranch(t, host, "acme", "widget", branch) {
 		t.Fatalf("branch %q was not pushed to the remote", branch)
 	}
 }
@@ -179,7 +179,7 @@ func TestClientPropagatesServerError(t *testing.T) {
 
 	client := &Client{Conn: connect(t, url), Timeout: 5 * time.Second}
 	// No worktree ever prepared at this dir — push must fail.
-	err = client.Push(context.Background(), "sam", "nonexistent", 999, "some-branch")
+	err = client.Push(context.Background(), "acme", "nonexistent", 999, "some-branch")
 	if err == nil {
 		t.Fatal("expected Push to propagate the server-side git error")
 	}
@@ -189,7 +189,7 @@ func TestClientPushTimesOutWithNoResponder(t *testing.T) {
 	srv := startEmbedded(t)
 	client := &Client{Conn: connect(t, srv.ClientURL()), Timeout: 100 * time.Millisecond}
 
-	err := client.Push(context.Background(), "sam", "archie", 1, "branch")
+	err := client.Push(context.Background(), "acme", "widget", 1, "branch")
 	if err == nil {
 		t.Fatal("expected Push to time out with no server registered")
 	}
