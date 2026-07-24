@@ -72,6 +72,11 @@ func TestPrepareCommitPushRoundTrip(t *testing.T) {
 		t.Fatalf("branch = %q", branch)
 	}
 
+	// Sentinel must exist after successful Prepare.
+	if _, err := os.Stat(filepath.Join(dir, ".archie-prepared")); err != nil {
+		t.Fatalf("sentinel missing after prepare: %v", err)
+	}
+
 	// Clean tree commits nothing.
 	changed, err := m.CommitAll(ctx, dir, "noop")
 	if err != nil || changed {
@@ -193,6 +198,97 @@ func TestPreparePersistentReusesRepoCacheAndCleanupExpiresIt(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
 			t.Fatalf("cache cleanup removed or broke task worktree %s: %v", dir, err)
 		}
+	}
+}
+
+func TestPrepareResumesAfterInterruptedClone(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	ctx := context.Background()
+	host := newLocalRemote(t, "acme", "interrupt")
+
+	m := &Manager{
+		WorkDir:  t.TempDir(),
+		Token:    "unused-for-file-remotes",
+		BotUser:  "archie-bot",
+		BotEmail: "archie-bot@example.com",
+		BaseURL:  "file://" + host,
+	}
+
+	dir := m.Dir("acme", "interrupt", 1)
+
+	// Simulate an interrupted clone: create parent dir with a bare-bones
+	// .git directory (via git init + remote + fetch) but no checked-out
+	// files and no .archie-prepared sentinel.
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run(dir, "init")
+	run(dir, "remote", "add", "origin", "file://"+filepath.Join(host, "acme", "interrupt.git"))
+	run(dir, "fetch", "origin")
+
+	// Confirm the broken state: .git exists but no sentinel and no README.md.
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+		t.Fatalf(".git missing in simulated broken clone: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".archie-prepared")); !os.IsNotExist(err) {
+		t.Fatal("sentinel unexpectedly exists in broken clone")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "README.md")); !os.IsNotExist(err) {
+		t.Fatal("working tree files unexpectedly exist in broken clone")
+	}
+
+	// Prepare must detect the broken state, remove it, and do a fresh clone.
+	dir2, branch, err := m.Prepare(ctx, "acme", "interrupt", "main", 1, "feat: interrupted", "", "")
+	if err != nil {
+		t.Fatalf("prepare after interrupted clone: %v", err)
+	}
+
+	// The sentinel must exist after a successful Prepare.
+	if _, err := os.Stat(filepath.Join(dir2, ".archie-prepared")); err != nil {
+		t.Fatalf("sentinel missing after prepare: %v", err)
+	}
+
+	// The working tree must be fully functional: files from the remote exist.
+	if _, err := os.Stat(filepath.Join(dir2, "README.md")); err != nil {
+		t.Fatalf("working tree missing README.md after prepare: %v", err)
+	}
+
+	// CommitAll must work — the sentinel is excluded from git tracking.
+	changed, err := m.CommitAll(ctx, dir2, "noop")
+	if err != nil || changed {
+		t.Fatalf("clean CommitAll = (%v, %v), want (false, nil)", changed, err)
+	}
+
+	// Push must work.
+	if err := m.Push(ctx, dir2, branch); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+
+	// A second Prepare call must short-circuit via the sentinel — no re-clone.
+	dir3, _, err := m.Prepare(ctx, "acme", "interrupt", "main", 1, "feat: interrupted", "", "")
+	if err != nil {
+		t.Fatalf("second prepare: %v", err)
+	}
+	if dir3 != dir2 {
+		t.Fatalf("second prepare created a different directory: %q vs %q", dir3, dir2)
+	}
+
+	if err := m.Cleanup("acme", "interrupt", 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir3); !os.IsNotExist(err) {
+		t.Fatal("cleanup left the worktree behind")
 	}
 }
 
