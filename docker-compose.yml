@@ -34,8 +34,8 @@ services:
       - DEEPSEEK_API_KEY
     volumes:
       - ./config.docker.toml:/etc/archie/config.toml:ro
-      - archie_work:/var/lib/archie/work
-      - archie_db:/var/lib/archie
+      - /var/lib/archie/work:/var/lib/archie/work
+      - /var/lib/archie/db:/var/lib/archie
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       nats:
@@ -54,5 +54,3 @@ services:
 
 volumes:
   nats_data:
-  archie_work:
-  archie_db:
