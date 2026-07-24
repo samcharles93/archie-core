@@ -53,5 +53,20 @@ services:
     entrypoint: [""]
     restart: "no"
 
+  # ── deploy watcher ──────────────────────────────────────────────────
+  # Polls the registry for new archied/archie-agent images (pushed by
+  # .gitea/workflows/deploy.yml on merge to main) and restarts the
+  # containers that changed. Registry auth comes from the host's
+  # existing `docker login` config, mounted read-only.
+  watchtower:
+    image: nickfedor/watchtower
+    environment:
+      - DOCKER_CONFIG=/
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${HOME}/.docker/config.json:/config.json:ro
+    command: --interval 60 --cleanup archie-core-archied-1 archie-core-archied-winter-1
+    restart: unless-stopped
+
 volumes:
   nats_data:
