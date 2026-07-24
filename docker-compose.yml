@@ -49,6 +49,7 @@ services:
       dockerfile: Dockerfile
     image: git.catlow.cloud/sam/archie-agent:latest
     command: ["true"]
+    entrypoint: [""]
     restart: "no"
 
 volumes:

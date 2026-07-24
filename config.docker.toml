@@ -5,7 +5,6 @@ work_dir = "/var/lib/archie/work"
 db_path = "/var/lib/archie/archie.db"
 
 poll_interval = "60s"
-label = "archie"
 bot_user = "archie"
 diff_cap_lines = 0
 
@@ -19,11 +18,11 @@ trigger = "assignee"
 ack_reaction = "eyes"
 
 [dispatch.labels]
-queued = "archie:queued"
-working = "archie:working"
-waiting = "archie:waiting"
-pr = "archie:pr"
-parked = "archie:parked"
+queued = "agent:queued"
+working = "agent:working"
+waiting = "agent:waiting"
+pr = "agent:pr"
+parked = "agent:parked"
 
 [agent]
 mode = "nats"

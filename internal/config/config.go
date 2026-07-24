@@ -203,15 +203,15 @@ type Dispatch struct {
 	Labels map[string]string `toml:"labels" json:"labels"`
 }
 
-// dispatchLabelDefaults is the fallback label set, reproducing the
-// legacy archie:* constants that were previously in internal/forge.
+// dispatchLabelDefaults is the fallback label set used when the user
+// hasn't configured explicit [dispatch.labels] entries.
 var dispatchLabelDefaults = map[string]string{
-	"queued":  "archie:queued",
-	"working": "archie:working",
-	"waiting": "archie:waiting",
-	"pr":      "archie:pr",
-	"parked":  "archie:parked",
-	"dead":    "archie:dead",
+	"queued":  "agent:queued",
+	"working": "agent:working",
+	"waiting": "agent:waiting",
+	"pr":      "agent:pr",
+	"parked":  "agent:parked",
+	"dead":    "agent:dead",
 }
 
 // StateLabel returns the configured label for a state name. Falls back
@@ -401,7 +401,7 @@ func Load(path string) (Config, error) {
 		cfg.PollInterval = Duration(60 * time.Second)
 	}
 	if cfg.Label == "" {
-		cfg.Label = "archie"
+		cfg.Label = ""
 	}
 	if cfg.DiffCapLines == 0 {
 		cfg.DiffCapLines = 400
