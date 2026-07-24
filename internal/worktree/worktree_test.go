@@ -196,6 +196,49 @@ func TestPreparePersistentReusesRepoCacheAndCleanupExpiresIt(t *testing.T) {
 	}
 }
 
+func TestAskpassWrittenOnce(t *testing.T) {
+	m := &Manager{WorkDir: t.TempDir()}
+
+	p1, err1 := m.askpass()
+	if err1 != nil {
+		t.Fatalf("first askpass: %v", err1)
+	}
+	if _, err := os.Stat(p1); err != nil {
+		t.Fatalf("askpass file not created: %v", err)
+	}
+	fi1, err := os.Stat(p1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p2, err2 := m.askpass()
+	if err2 != nil {
+		t.Fatalf("second askpass: %v", err2)
+	}
+	if p1 != p2 {
+		t.Fatalf("paths differ: %q vs %q", p1, p2)
+	}
+
+	// Mod time must be unchanged — file was not rewritten.
+	fi2, err := os.Stat(p2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fi1.ModTime().Equal(fi2.ModTime()) {
+		t.Fatalf("askpass file was rewritten: mod time changed from %v to %v", fi1.ModTime(), fi2.ModTime())
+	}
+
+	// Content must be correct.
+	b, err := os.ReadFile(p1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "#!/bin/sh\necho \"$ARCHIE_GIT_TOKEN\"\n"
+	if string(b) != want {
+		t.Fatalf("content = %q, want %q", string(b), want)
+	}
+}
+
 func TestCacheDirCannotEscapeWorkDir(t *testing.T) {
 	m := &Manager{WorkDir: t.TempDir()}
 	cache := m.cacheDir("../outside", `..\also-outside`)
