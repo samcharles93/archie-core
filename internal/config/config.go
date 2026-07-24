@@ -391,6 +391,30 @@ func Load(path string) (Config, error) {
 	if _, err := toml.DecodeFile(path, &cfg); err != nil {
 		return cfg, fmt.Errorf("config %s: %w", path, err)
 	}
+	return finalize(cfg)
+}
+
+// LoadOverlay reads basePath, then re-decodes overlayPath into the same
+// struct so only the fields overlayPath sets are overridden — every field
+// it omits keeps the value from basePath. This lets a deployment-specific
+// file (e.g. config.docker.toml) declare only what differs from the base
+// config instead of duplicating the whole schema. overlayPath == "" is
+// equivalent to Load(basePath).
+func LoadOverlay(basePath, overlayPath string) (Config, error) {
+	var cfg Config
+	if _, err := toml.DecodeFile(basePath, &cfg); err != nil {
+		return cfg, fmt.Errorf("config %s: %w", basePath, err)
+	}
+	if overlayPath != "" {
+		if _, err := toml.DecodeFile(overlayPath, &cfg); err != nil {
+			return cfg, fmt.Errorf("config %s: %w", overlayPath, err)
+		}
+	}
+	return finalize(cfg)
+}
+
+// finalize applies defaults and validates a decoded configuration.
+func finalize(cfg Config) (Config, error) {
 	if cfg.WorkDir == "" {
 		cfg.WorkDir = filepath.Join(dataHome(), "archie", "work")
 	}

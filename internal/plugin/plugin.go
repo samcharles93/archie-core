@@ -14,7 +14,8 @@ import (
 	"strings"
 
 	"github.com/traefik/yaegi/interp"
-	"github.com/traefik/yaegi/stdlib"
+
+	"github.com/samcharles93/archie-core/internal/yaegiutil"
 )
 
 // Plugin is a core plugin loaded by the daemon at startup. Each .go file
@@ -74,34 +75,14 @@ func LoadDir(dir string, extraSymbols ...map[string]map[string]reflect.Value) ([
 		}
 		// Each plugin file is package main — must use a fresh interpreter
 		// to avoid symbol collisions between files.
-		i := interp.New(interp.Options{})
-		if err := i.Use(stdlib.Symbols); err != nil {
-			slog.Default().Warn("skipping plugin — stdlib load failed", "file", name, "err", err)
-			continue
-		}
-		symbolLoadFailed := false
-		for j, s := range extraSymbols {
-			if err := i.Use(s); err != nil {
-				slog.Default().Warn("skipping plugin — symbol table load failed", "file", name, "symbolIndex", j, "err", err)
-				symbolLoadFailed = true
-				break
-			}
-		}
-		if symbolLoadFailed {
-			continue
-		}
-		if _, err := i.Eval(string(src)); err != nil {
-			slog.Default().Warn("skipping plugin — compile failed", "file", name, "err", err)
-			continue
-		}
-		v, err := i.Eval("main.Plugin")
+		i, err := yaegiutil.New(interp.Options{}, extraSymbols...)
 		if err != nil {
-			slog.Default().Warn("skipping plugin — no Plugin export", "file", name, "err", err)
+			slog.Default().Warn("skipping plugin — interpreter setup failed", "file", name, "err", err)
 			continue
 		}
-		p, ok := v.Interface().(Plugin)
-		if !ok {
-			slog.Default().Warn("skipping plugin — wrong Plugin type", "file", name, "type", fmt.Sprintf("%T", v.Interface()))
+		p, err := yaegiutil.Resolve[Plugin](i, string(src), "main.Plugin")
+		if err != nil {
+			slog.Default().Warn("skipping plugin", "file", name, "err", err)
 			continue
 		}
 		plugins = append(plugins, p)

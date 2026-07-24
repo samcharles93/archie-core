@@ -13,11 +13,11 @@ import (
 	"strings"
 
 	"github.com/traefik/yaegi/interp"
-	"github.com/traefik/yaegi/stdlib"
 
 	"github.com/samcharles93/archie-core/internal/skill"
 	"github.com/samcharles93/archie-core/internal/workflow"
 	"github.com/samcharles93/archie-core/internal/workflow/wfextract"
+	"github.com/samcharles93/archie-core/internal/yaegiutil"
 )
 
 // builtins returns the hardcoded fallback workflows. These are used when
@@ -39,41 +39,10 @@ func builtins() workflow.Registry {
 //
 // Skills define workflows. Plugins define stages. The daemon composes them.
 func BuildRegistry(worktree string) (workflow.Registry, error) {
-	catalog, err := skill.Catalog(worktree)
-	if err != nil {
-		return nil, fmt.Errorf("skill catalog: %w", err)
-	}
-
 	reg := builtins()
-
-	for _, entry := range catalog {
-		if entry.Workflow == "" {
-			continue
-		}
-		sw := SkillWorkflow{Workflow: entry.Workflow, Dir: entry.Dir}
-		wf, err := BuildWorkflow(worktree, sw)
-		if err != nil {
-			slog.Default().Warn("skipping broken skill workflow",
-				"workflow", entry.Workflow,
-				"skill", entry.Dir,
-				"err", err,
-			)
-			continue
-		}
-		// Only override the built-in when the skill actually has stages —
-		// an empty workflow means the skill declared intent but has no
-		// plugins yet, so keep the built-in.
-		if len(wf.Stages) > 0 {
-			if _, dup := reg[entry.Workflow]; dup {
-				slog.Default().Warn("duplicate workflow name — overriding",
-					"workflow", entry.Workflow,
-					"skill", entry.Dir,
-				)
-			}
-			reg[entry.Workflow] = wf
-		}
+	if err := mergeSkillWorkflows(worktree, reg); err != nil {
+		return nil, err
 	}
-
 	return reg, nil
 }
 
@@ -95,14 +64,25 @@ type SkillWorkflow struct {
 // specific cloned worktree so that per-repo skills are discovered
 // without restarting the daemon.
 func AugmentRegistry(worktree string, base workflow.Registry) (workflow.Registry, error) {
+	// Copy base — never mutate the caller's registry.
+	reg := make(workflow.Registry, len(base))
+	maps.Copy(reg, base)
+	if err := mergeSkillWorkflows(worktree, reg); err != nil {
+		return nil, err
+	}
+	return reg, nil
+}
+
+// mergeSkillWorkflows scans worktree for skill catalog entries that
+// declare a workflow, builds each from its stage plugins, and merges the
+// result into reg in place. A skill whose workflow has no stages yet
+// (declared intent, no plugins/ directory) leaves reg's existing entry
+// (built-in or base) untouched.
+func mergeSkillWorkflows(worktree string, reg workflow.Registry) error {
 	catalog, err := skill.Catalog(worktree)
 	if err != nil {
-		return nil, fmt.Errorf("skill catalog: %w", err)
+		return fmt.Errorf("skill catalog: %w", err)
 	}
-
-	// Copy base — never mutate the caller's registry.
-	reg := make(workflow.Registry, len(base)+len(catalog))
-	maps.Copy(reg, base)
 
 	for _, entry := range catalog {
 		if entry.Workflow == "" {
@@ -111,16 +91,13 @@ func AugmentRegistry(worktree string, base workflow.Registry) (workflow.Registry
 		sw := SkillWorkflow{Workflow: entry.Workflow, Dir: entry.Dir}
 		wf, err := BuildWorkflow(worktree, sw)
 		if err != nil {
-			slog.Default().Warn("skipping broken skill workflow in worktree",
+			slog.Default().Warn("skipping broken skill workflow",
 				"workflow", entry.Workflow,
 				"skill", entry.Dir,
 				"err", err,
 			)
 			continue
 		}
-		// Only override the base entry when the skill actually has stages.
-		// An empty workflow means the skill declared intent but has no
-		// plugins yet — keep the base (or built-in) definition.
 		if len(wf.Stages) > 0 {
 			if _, dup := reg[entry.Workflow]; dup {
 				slog.Default().Warn("duplicate workflow name — overriding",
@@ -132,7 +109,7 @@ func AugmentRegistry(worktree string, base workflow.Registry) (workflow.Registry
 		}
 	}
 
-	return reg, nil
+	return nil
 }
 
 // BuildWorkflow loads stage plugins from a skill's plugins/ directory
@@ -168,8 +145,7 @@ func BuildWorkflow(worktree string, entry SkillWorkflow) (workflow.Workflow, err
 			slog.Default().Warn("skipping unreadable stage plugin", "plugin", name, "err", err)
 			continue
 		}
-		i := newStageInterpreter()
-		stage, err := loadStage(i, name, string(src))
+		stage, err := loadStage(name, string(src))
 		if err != nil {
 			slog.Default().Warn("skipping broken stage plugin", "plugin", name, "err", err)
 			continue
@@ -180,44 +156,32 @@ func BuildWorkflow(worktree string, entry SkillWorkflow) (workflow.Workflow, err
 	return workflow.Workflow{Name: entry.Workflow, Stages: stages}, nil
 }
 
-// newStageInterpreter returns a Yaegi interpreter pre-loaded with stdlib
-// and workflow symbols. Each plugin file still needs its own interpreter
-// because files use package main with duplicate Stage() symbols — they
-// cannot be co-evaluated in a single interpreter without collisions.
-func newStageInterpreter() *interp.Interpreter {
-	i := interp.New(interp.Options{})
-	_ = i.Use(stdlib.Symbols)
-	_ = i.Use(wfextract.Symbols)
-	return i
-}
-
-// loadStage interprets a single .go plugin source via Yaegi. Prefer
-// passing a pre-configured interpreter from newStageInterpreter() to
-// avoid redundant stdlib loading across multiple files.
-func loadStage(interp *interp.Interpreter, filename string, src string) (workflow.Stage, error) {
-	i := interp
-	if i == nil {
-		i = newStageInterpreter()
-	}
-	if _, err := i.Eval(src); err != nil {
-		return workflow.Stage{}, fmt.Errorf("eval: %w", err)
-	}
-	v, err := i.Eval("main.Stage")
-	if err != nil {
-		return workflow.Stage{}, fmt.Errorf("resolve Stage: %w", err)
-	}
-	fn, ok := v.Interface().(func() workflow.Stage)
-	if !ok {
+// loadStage interprets a single .go plugin source via Yaegi and calls its
+// exported Stage(). filename is used only for interpreter panic messages.
+func loadStage(filename, src string) (workflow.Stage, error) {
+	return yaegiutil.Safe(filename, func() (workflow.Stage, error) {
+		i, err := yaegiutil.New(interp.Options{}, wfextract.Symbols)
+		if err != nil {
+			return workflow.Stage{}, err
+		}
+		if _, err := i.Eval(src); err != nil {
+			return workflow.Stage{}, fmt.Errorf("evaluate: %w", err)
+		}
+		v, err := i.Eval("main.Stage")
+		if err != nil {
+			return workflow.Stage{}, fmt.Errorf("does not export main.Stage: %w", err)
+		}
+		if fn, ok := v.Interface().(func() workflow.Stage); ok {
+			return fn(), nil
+		}
 		// Fallback for test plugins: func() (string, func(...) error).
 		// NOTE: this constructs Stage with positional fields. If Stage
 		// gains new fields in the future, this path will silently zero-
 		// value them. Prefer func() workflow.Stage in production plugins.
-		rawFn, rawOk := v.Interface().(func() (string, func(context.Context, *workflow.TaskContext) error))
-		if rawOk {
+		if rawFn, ok := v.Interface().(func() (string, func(context.Context, *workflow.TaskContext) error)); ok {
 			name, run := rawFn()
 			return workflow.Stage{Name: name, Run: run}, nil
 		}
-		return workflow.Stage{}, fmt.Errorf("Stage is %T, want func() workflow.Stage", v.Interface())
-	}
-	return fn(), nil
+		return workflow.Stage{}, fmt.Errorf("main.Stage is %T, want func() workflow.Stage", v.Interface())
+	})
 }

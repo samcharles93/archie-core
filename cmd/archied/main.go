@@ -45,13 +45,14 @@ func main() {
 func run() int {
 	defaultCfg := filepath.Join(configHome(), "archie", "config.toml")
 	cfgPath := flag.String("config", defaultCfg, "path to config.toml")
+	overlayPath := flag.String("config-overlay", "", "path to a config.toml overlay applied on top of -config (only the fields it sets are overridden)")
 	once := flag.Bool("once", false, "run a single poll+process cycle and exit (systemd timer / testing)")
 	requeue := flag.Int64("requeue", 0, "requeue a parked/waiting task by id (keeps its workflow), then exit unless -once is also set")
 	flag.Parse()
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
-	cfg, err := config.Load(*cfgPath)
+	cfg, err := config.LoadOverlay(*cfgPath, *overlayPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

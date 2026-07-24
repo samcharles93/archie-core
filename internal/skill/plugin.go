@@ -8,7 +8,8 @@ import (
 	"strings"
 
 	"github.com/traefik/yaegi/interp"
-	"github.com/traefik/yaegi/stdlib"
+
+	"github.com/samcharles93/archie-core/internal/yaegiutil"
 )
 
 // Plugin is a discovered Yaegi-interpreted .go file in a skill's plugins/
@@ -24,21 +25,14 @@ type Plugin struct {
 // Run interprets the plugin source via Yaegi and calls its Run function
 // with the given input. The plugin runs with full standard library access.
 func (p *Plugin) Run(input string) (string, error) {
-	i := interp.New(interp.Options{})
-	if err := i.Use(stdlib.Symbols); err != nil {
-		return "", fmt.Errorf("plugin %s: stdlib: %w", p.Name, err)
-	}
-	if _, err := i.Eval(p.Src); err != nil {
-		return "", fmt.Errorf("plugin %s: eval: %w", p.Name, err)
+	i, err := yaegiutil.New(interp.Options{})
+	if err != nil {
+		return "", fmt.Errorf("plugin %s: %w", p.Name, err)
 	}
 	// Plugins must use package main — the convention for runnable Yaegi scripts.
-	v, err := i.Eval("main.Run")
+	fn, err := yaegiutil.Resolve[func(string) string](i, p.Src, "main.Run")
 	if err != nil {
-		return "", fmt.Errorf("plugin %s: resolve Run: %w", p.Name, err)
-	}
-	fn, ok := v.Interface().(func(string) string)
-	if !ok {
-		return "", fmt.Errorf("plugin %s: Run is %T, want func(string) string", p.Name, v.Interface())
+		return "", fmt.Errorf("plugin %s: %w", p.Name, err)
 	}
 	return fn(input), nil
 }

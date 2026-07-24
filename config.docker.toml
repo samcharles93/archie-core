@@ -1,11 +1,9 @@
-# Docker Compose overrides for the inprocess config.
-# Only set fields that differ: paths (container filesystem) and
-# container-specific configuration. Everything else inherits from
-# config.toml (inprocess config), which is the single source of truth.
-#
-# Mount this at /etc/archie/config.toml AND the base config so TOML
-# merging works. Or better: the daemon loads both — base first, then
-# this overlay.
+# Docker Compose overlay: only fields that differ from the base config.
+# The daemon loads both — base config.toml first, then this file on top
+# (config.LoadOverlay) — so config.toml (the same file inprocess mode
+# reads) stays the single source of truth for bot_user, forge, dispatch,
+# models, providers, budgets, and repos. See docker-compose.yml's
+# `-config` / `-config-overlay` flags and volume mounts.
 
 work_dir = "/var/lib/archie/work"
 db_path = "/var/lib/archie/archie.db"
@@ -25,33 +23,3 @@ pull_policy = "missing"
 
 [web]
 listen = "0.0.0.0:8484"
-
-# Repos: same as inprocess config — keep in sync with config.toml.
-# TODO: support `include` directive so repos list is not duplicated.
-
-[[repos]]
-owner = "sam"
-name = "archie-core"
-base = "main"
-ecosystem = "go"
-gate = [
-  ["gofumpt", "-w", "."],
-  ["go", "fix", "./..."],
-  ["go", "vet", "./..."],
-  ["go", "build", "./..."],
-  ["go", "test", "./...", "-count=1"],
-]
-
-[[repos]]
-owner = "sam"
-name = "tau"
-base = "main"
-ecosystem = "go"
-gate = [
-  ["gofumpt", "-w", "."],
-  ["go", "fix", "./..."],
-  ["go", "vet", "./..."],
-  ["golangci-lint", "run"],
-  ["go", "test", "./...", "-count=1"],
-]
-protect = ["_templ.go"]

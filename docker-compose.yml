@@ -24,7 +24,7 @@ services:
   # ── archie daemon ──────────────────────────────────────────────────
   archied:
     image: git.catlow.cloud/sam/archied:latest
-    command: -config /etc/archie/config.toml
+    command: -config /etc/archie/config.toml -config-overlay /etc/archie/config.docker.toml
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -33,7 +33,8 @@ services:
       - ARCHIE_GITEA_TOKEN
       - DEEPSEEK_API_KEY
     volumes:
-      - ./config.docker.toml:/etc/archie/config.toml:ro
+      - ${HOME}/.config/archie/config.toml:/etc/archie/config.toml:ro
+      - ./config.docker.toml:/etc/archie/config.docker.toml:ro
       - /var/lib/archie/work:/var/lib/archie/work
       - /var/lib/archie/db:/var/lib/archie
       - /var/run/docker.sock:/var/run/docker.sock

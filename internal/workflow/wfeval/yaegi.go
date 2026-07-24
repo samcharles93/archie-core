@@ -12,10 +12,10 @@ import (
 	"sort"
 
 	"github.com/traefik/yaegi/interp"
-	"github.com/traefik/yaegi/stdlib"
 
 	"github.com/samcharles93/archie-core/internal/workflow"
 	"github.com/samcharles93/archie-core/internal/workflow/wfextract"
+	"github.com/samcharles93/archie-core/internal/yaegiutil"
 )
 
 // stagesDir is where a repo's custom stage scripts live, relative to
@@ -58,38 +58,21 @@ func Discover(dir string) ([]workflow.Stage, error) {
 // Stage() function. The script runs in-process (interpreted, not
 // sandboxed), so a panic inside it is recovered and returned as an error
 // rather than taking down the daemon.
-func loadStage(path string) (stage workflow.Stage, err error) {
+func loadStage(path string) (workflow.Stage, error) {
 	src, err := os.ReadFile(path)
 	if err != nil {
 		return workflow.Stage{}, err
 	}
 
-	defer func() {
-		if r := recover(); r != nil {
-			stage, err = workflow.Stage{}, fmt.Errorf("panicked: %v", r)
+	return yaegiutil.Safe(path, func() (workflow.Stage, error) {
+		i, err := yaegiutil.New(interp.Options{}, wfextract.Symbols)
+		if err != nil {
+			return workflow.Stage{}, err
 		}
-	}()
-
-	i := interp.New(interp.Options{})
-	if err := i.Use(stdlib.Symbols); err != nil {
-		return workflow.Stage{}, fmt.Errorf("yaegi: load stdlib symbols: %w", err)
-	}
-	if err := i.Use(wfextract.Symbols); err != nil {
-		return workflow.Stage{}, fmt.Errorf("yaegi: load workflow symbols: %w", err)
-	}
-
-	if _, err := i.Eval(string(src)); err != nil {
-		return workflow.Stage{}, fmt.Errorf("yaegi: evaluate: %w", err)
-	}
-
-	v, err := i.Eval("stages.Stage")
-	if err != nil {
-		return workflow.Stage{}, fmt.Errorf("yaegi: does not export func Stage() workflow.Stage: %w", err)
-	}
-	factory, ok := v.Interface().(func() workflow.Stage)
-	if !ok {
-		return workflow.Stage{}, fmt.Errorf("yaegi: Stage has the wrong signature (want func() workflow.Stage)")
-	}
-
-	return factory(), nil
+		factory, err := yaegiutil.Resolve[func() workflow.Stage](i, string(src), "stages.Stage")
+		if err != nil {
+			return workflow.Stage{}, fmt.Errorf("yaegi: %w", err)
+		}
+		return factory(), nil
+	})
 }

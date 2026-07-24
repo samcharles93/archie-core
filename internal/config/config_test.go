@@ -485,6 +485,78 @@ func TestExampleConfigLoads(t *testing.T) {
 	}
 }
 
+func TestLoadOverlay(t *testing.T) {
+	dir := t.TempDir()
+	basePath := filepath.Join(dir, "config.toml")
+	base := "bot_user = \"archie\"\nwork_dir = \"/base/work\"\n" +
+		"[agent]\nmode = \"inprocess\"\n" +
+		"[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
+	if err := os.WriteFile(basePath, []byte(base), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	overlayPath := filepath.Join(dir, "config.docker.toml")
+	overlay := "work_dir = \"/var/lib/archie/work\"\n[agent]\nmode = \"nats\"\n" +
+		"[nats]\nurl = \"nats://nats:4222\"\n" +
+		"[containers]\nenabled = true\nimage = \"archie-agent:latest\"\n"
+	if err := os.WriteFile(overlayPath, []byte(overlay), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadOverlay(basePath, overlayPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Overlay-set fields win.
+	if cfg.WorkDir != "/var/lib/archie/work" {
+		t.Errorf("WorkDir: got %q, want overlay value", cfg.WorkDir)
+	}
+	if cfg.Agent.Mode != "nats" {
+		t.Errorf("Agent.Mode: got %q, want %q", cfg.Agent.Mode, "nats")
+	}
+	// Fields the overlay omits keep the base value.
+	if cfg.BotUser != "archie" {
+		t.Errorf("BotUser: got %q, want base value", cfg.BotUser)
+	}
+	if len(cfg.Repos) != 1 || cfg.Repos[0].Owner != "acme" {
+		t.Errorf("Repos: got %+v, want base repos", cfg.Repos)
+	}
+
+	// No overlay path behaves like Load(basePath).
+	baseOnly, err := LoadOverlay(basePath, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if baseOnly.Agent.Mode != "inprocess" {
+		t.Errorf("Agent.Mode with empty overlay: got %q, want %q", baseOnly.Agent.Mode, "inprocess")
+	}
+}
+
+func TestDockerConfigOverlaysExampleConfig(t *testing.T) {
+	cfg, err := LoadOverlay(
+		filepath.Join("..", "..", "config.example.toml"),
+		filepath.Join("..", "..", "config.docker.toml"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Agent.Mode != "nats" {
+		t.Errorf("Agent.Mode: got %q, want %q", cfg.Agent.Mode, "nats")
+	}
+	if cfg.Containers.Image == "" {
+		t.Error("Containers.Image: want docker overlay image, got empty")
+	}
+	// bot_user and repos are not set by the docker overlay — they must
+	// come from the base config, proving the overlay isn't a standalone
+	// config that silently drops required fields.
+	if cfg.BotUser == "" {
+		t.Error("BotUser: want value from base config.example.toml, got empty")
+	}
+	if len(cfg.Repos) == 0 {
+		t.Error("Repos: want repos from base config.example.toml, got none")
+	}
+}
+
 func TestEcosystemDefaults(t *testing.T) {
 	// Empty ecosystem → "go" (backward compat).
 	r := Repo{}

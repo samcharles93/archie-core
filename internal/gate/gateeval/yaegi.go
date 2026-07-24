@@ -11,10 +11,10 @@ import (
 	"path/filepath"
 
 	"github.com/traefik/yaegi/interp"
-	"github.com/traefik/yaegi/stdlib"
 
 	"github.com/samcharles93/archie-core/internal/gate"
 	"github.com/samcharles93/archie-core/internal/gate/gateextract"
+	"github.com/samcharles93/archie-core/internal/yaegiutil"
 )
 
 // scriptPath is the per-repo custom gate script, relative to the
@@ -27,7 +27,7 @@ const scriptPath = ".archie/gate.go"
 // (interpreted, not sandboxed), so a panic inside it — nil dereference,
 // out-of-range index — is recovered and returned as an error rather than
 // taking down the daemon.
-func Evaluate(gctx gate.GateContext) (findings []gate.Finding, err error) {
+func Evaluate(gctx gate.GateContext) ([]gate.Finding, error) {
 	src, err := os.ReadFile(filepath.Join(gctx.Dir, scriptPath))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -36,32 +36,15 @@ func Evaluate(gctx gate.GateContext) (findings []gate.Finding, err error) {
 		return nil, fmt.Errorf("read %s: %w", scriptPath, err)
 	}
 
-	defer func() {
-		if r := recover(); r != nil {
-			findings, err = nil, fmt.Errorf("yaegi: %s panicked: %v", scriptPath, r)
+	return yaegiutil.Safe(scriptPath, func() ([]gate.Finding, error) {
+		i, err := yaegiutil.New(interp.Options{}, gateextract.Symbols)
+		if err != nil {
+			return nil, err
 		}
-	}()
-
-	i := interp.New(interp.Options{})
-	if err := i.Use(stdlib.Symbols); err != nil {
-		return nil, fmt.Errorf("yaegi: load stdlib symbols: %w", err)
-	}
-	if err := i.Use(gateextract.Symbols); err != nil {
-		return nil, fmt.Errorf("yaegi: load gate symbols: %w", err)
-	}
-
-	if _, err := i.Eval(string(src)); err != nil {
-		return nil, fmt.Errorf("yaegi: evaluate %s: %w", scriptPath, err)
-	}
-
-	v, err := i.Eval("gate.Check")
-	if err != nil {
-		return nil, fmt.Errorf("yaegi: %s does not export func Check(GateContext) []Finding: %w", scriptPath, err)
-	}
-	check, ok := v.Interface().(func(gate.GateContext) []gate.Finding)
-	if !ok {
-		return nil, fmt.Errorf("yaegi: %s Check has the wrong signature (want func(gate.GateContext) []gate.Finding)", scriptPath)
-	}
-
-	return check(gctx), nil
+		check, err := yaegiutil.Resolve[func(gate.GateContext) []gate.Finding](i, string(src), "gate.Check")
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", scriptPath, err)
+		}
+		return check(gctx), nil
+	})
 }
