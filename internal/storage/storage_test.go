@@ -3,6 +3,8 @@ package storage
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"go/format"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -579,6 +581,48 @@ func dockerTestClient(t *testing.T, roundTrip func(*http.Request) (*http.Respons
 	}
 	t.Cleanup(func() { _ = cli.Close() })
 	return cli
+}
+
+// ── gofmt compliance ─────────────────────────────────────────────────
+
+func TestStorageDotGoIsGofmtClean(t *testing.T) {
+	// storage.go must be gofmt-clean so that CI checks (gofmt -l) pass.
+	// This test reads the source and feeds it through go/format.Source;
+	// if the output differs, the file is not canonical Go formatting.
+	src, err := os.ReadFile("storage.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	formatted, err := format.Source(src)
+	if err != nil {
+		t.Fatalf("storage.go is not valid Go: %v", err)
+	}
+	if string(formatted) != string(src) {
+		t.Errorf("storage.go is not gofmt-clean. diff:\n%s", diffBytes(src, formatted))
+	}
+}
+
+func diffBytes(a, b []byte) string {
+	linesA := strings.Split(string(a), "\n")
+	linesB := strings.Split(string(b), "\n")
+	var out strings.Builder
+	maxLine := len(linesA)
+	if len(linesB) > maxLine {
+		maxLine = len(linesB)
+	}
+	for i := 0; i < maxLine; i++ {
+		var lineA, lineB string
+		if i < len(linesA) {
+			lineA = linesA[i]
+		}
+		if i < len(linesB) {
+			lineB = linesB[i]
+		}
+		if lineA != lineB {
+			out.WriteString(fmt.Sprintf("-%s\n+%s\n", lineA, lineB))
+		}
+	}
+	return out.String()
 }
 
 func dockerAPIPath(path string) string {
