@@ -201,7 +201,6 @@ func TestPreparePersistentReusesRepoCacheAndCleanupExpiresIt(t *testing.T) {
 	}
 }
 
-<<<<<<< HEAD
 func TestAskpassWrittenOnce(t *testing.T) {
 	m := &Manager{WorkDir: t.TempDir()}
 
@@ -242,7 +241,9 @@ func TestAskpassWrittenOnce(t *testing.T) {
 	want := "#!/bin/sh\necho \"$ARCHIE_GIT_TOKEN\"\n"
 	if string(b) != want {
 		t.Fatalf("content = %q, want %q", string(b), want)
-=======
+	}
+}
+
 func TestPrepareResumesAfterInterruptedClone(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
@@ -331,7 +332,6 @@ func TestPrepareResumesAfterInterruptedClone(t *testing.T) {
 	}
 	if _, err := os.Stat(dir3); !os.IsNotExist(err) {
 		t.Fatal("cleanup left the worktree behind")
->>>>>>> origin/main
 	}
 }
 
