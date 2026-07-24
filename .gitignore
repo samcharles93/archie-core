@@ -1,4 +1,6 @@
 /archied
+/bin/
+.task/
 *.db
 .references/
 .claude/
