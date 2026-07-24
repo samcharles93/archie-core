@@ -171,7 +171,11 @@ func Discover(dir string) (map[string]Skill, error) {
 		if err != nil {
 			return nil, fmt.Errorf("parse %s: %w", skillPath, err)
 		}
-		plugins, err := DiscoverPlugins(dir, name)
+		var pluginNames []string
+		if fm.Metadata.Archie != nil {
+			pluginNames = fm.Metadata.Archie.Plugins
+		}
+		plugins, err := LoadPlugins(dir, name, pluginNames)
 		if err != nil {
 			return nil, fmt.Errorf("plugins %s: %w", name, err)
 		}
