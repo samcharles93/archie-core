@@ -67,6 +67,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl -fsSL https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:${PATH}"
 
+# ── Dolt + Beads ───────────────────────────────────────────────────────
+# Dolt: version-controlled SQL database (beads backend).
+RUN curl -fsSL https://github.com/dolthub/dolt/releases/latest/download/dolt-linux-amd64.tar.gz \
+    | tar xz -C /tmp && mv /tmp/dolt-linux-amd64/bin/dolt /usr/local/bin/ && \
+    rm -rf /tmp/dolt-linux-amd64
+# Beads: agent-native graph issue tracker.
+RUN npm install -g @beads/bd && npm cache clean --force
+
 # ── archie-agent ──────────────────────────────────────────────────────
 COPY --from=builder /usr/local/bin/archie-agent /usr/local/bin/archie-agent
 

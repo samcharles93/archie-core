@@ -104,10 +104,14 @@ func (m *Manager) prepare(ctx context.Context, owner, repo, base string, issue i
 		if _, err := m.git(ctx, dir, "fetch", "origin"); err != nil {
 			return "", "", err
 		}
-		if _, err := m.git(ctx, dir, "checkout", branch); err == nil {
-			if _, err := m.git(ctx, dir, "reset", "--hard", "origin/"+base); err != nil {
+		// Try switching to the branch; create it if it doesn't exist yet.
+		if _, err := m.git(ctx, dir, "checkout", branch); err != nil {
+			if _, err := m.git(ctx, dir, "checkout", "-b", branch); err != nil {
 				return "", "", err
 			}
+		}
+		if _, err := m.git(ctx, dir, "reset", "--hard", "origin/"+base); err != nil {
+			// Non-fatal — the branch may not have been pushed yet.
 		}
 		return dir, branch, nil
 	}
