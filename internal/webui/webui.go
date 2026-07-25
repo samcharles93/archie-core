@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/sensors"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
@@ -123,10 +122,6 @@ func (s *Server) handleClearTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"deleted": deleted})
-}
-
-func (s *Server) handleSensors(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, sensors.Collect())
 }
 
 func (s *Server) handleTask(w http.ResponseWriter, r *http.Request) {
