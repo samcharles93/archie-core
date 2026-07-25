@@ -276,11 +276,12 @@ func toolNames(entries []ToolEntry) []string {
 func TestRegistryAvailableReentrySafety(t *testing.T) {
 	// Regression: Available() called CheckFn while holding RLock,
 	// which could deadlock if CheckFn re-entered the registry.
-	// After the fix, CheckFn is evaluated outside the lock.
+	// After the fix, CheckFn is evaluated outside the lock, so
+	// calling All(), ByToolset(), or even Register() from inside
+	// CheckFn cannot deadlock.
 	r := NewRegistry()
 	r.Register(ToolEntry{Name: "safe", Handler: noopHandler})
 
-	// CheckFn that calls back into the registry (reads and writes).
 	called := false
 	r.Register(ToolEntry{
 		Name:    "reentrant",
@@ -289,10 +290,11 @@ func TestRegistryAvailableReentrySafety(t *testing.T) {
 			called = true
 			// Call All() from inside CheckFn — must not deadlock.
 			_ = r.All()
-			// Call Available() from inside CheckFn — must not deadlock.
-			_ = r.Available()
 			// Call ByToolset from inside CheckFn — must not deadlock.
 			_ = r.ByToolset("")
+			// Call Register from inside CheckFn — must not deadlock
+			// (was the original deadlock trigger when lock was held).
+			_ = r.Register(ToolEntry{Name: "nested-reg", Handler: noopHandler})
 			return true
 		},
 	})

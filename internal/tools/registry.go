@@ -213,21 +213,13 @@ func isRegisterCall(call *ast.CallExpr) bool {
 		return false
 	}
 
-	// The receiver (sel.X) should be a call to DefaultRegistry, or an
-	// identifier that names a registry variable.
-	switch x := sel.X.(type) {
-	case *ast.CallExpr:
-		// DefaultRegistry() or tools.DefaultRegistry()
-		return callsDefaultRegistry(x)
-	case *ast.Ident:
-		// r.Register(...) — accept any identifier as a potential
-		// registry variable. False positives are harmless: the
-		// call's argument won't parse as a ToolEntry and will
-		// be skipped by extractToolEntries.
-		return true
-	default:
+	// The receiver must be a call to DefaultRegistry, with or without
+	// a package qualifier (e.g. DefaultRegistry() or tools.DefaultRegistry()).
+	rcv, ok := sel.X.(*ast.CallExpr)
+	if !ok {
 		return false
 	}
+	return callsDefaultRegistry(rcv)
 }
 
 // callsDefaultRegistry reports whether call is a DefaultRegistry()

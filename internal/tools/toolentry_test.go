@@ -179,10 +179,53 @@ func TestToolEntryClone(t *testing.T) {
 		t.Errorf("RequiresEnv[0] = %q, want %q (clone should be independent)", clone.RequiresEnv[0], "X")
 	}
 
-	// Schema is an independent shallow copy.
+	// Schema is an independent deep copy.
 	e.Schema["key"] = "mutated"
 	if clone.Schema["key"] != "value" {
 		t.Errorf("Schema[key] = %v, want 'value' (clone should be independent)", clone.Schema["key"])
+	}
+}
+
+func TestToolEntryCloneDeepNested(t *testing.T) {
+	// Regression: Clone() used maps.Copy which only does a shallow copy
+	// of Schema values. Nested maps and slices were shared between
+	// the clone and original, enabling mutation leaks.
+	e := ToolEntry{
+		Name:    "nested",
+		Handler: noopHandler,
+		Schema: JSONSchema{
+			"type": "object",
+			"properties": JSONSchema{
+				"name": JSONSchema{"type": "string"},
+			},
+			"required": []any{"name"},
+			"tags":    []string{"a", "b"},
+		},
+	}
+	clone := e.Clone()
+
+	// Mutate nested map in original.
+	props := e.Schema["properties"].(JSONSchema)
+	props["name"] = JSONSchema{"type": "integer"}
+	cloneProps := clone.Schema["properties"].(JSONSchema)
+	if cloneProps["name"].(JSONSchema)["type"] != "string" {
+		t.Error("nested schema map mutation leaked into clone")
+	}
+
+	// Mutate nested slice in original.
+	req := e.Schema["required"].([]any)
+	req[0] = "email"
+	cloneReq := clone.Schema["required"].([]any)
+	if cloneReq[0] != "name" {
+		t.Error("nested schema []any slice mutation leaked into clone")
+	}
+
+	// Mutate string slice in original.
+	tags := e.Schema["tags"].([]string)
+	tags[0] = "mutated"
+	cloneTags := clone.Schema["tags"].([]string)
+	if cloneTags[0] != "a" {
+		t.Error("nested schema []string slice mutation leaked into clone")
 	}
 }
 
