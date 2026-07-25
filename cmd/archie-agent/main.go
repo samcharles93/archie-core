@@ -132,7 +132,11 @@ func run() int {
 		log.Error("taskrun subscribe failed", "err", err)
 		return 1
 	}
-	defer taskRunSub.Unsubscribe()
+	defer func() {
+		if err := taskRunSub.Unsubscribe(); err != nil {
+			log.Warn("task run unsubscribe failed", "err", err)
+		}
+	}()
 
 	log.Info("archie-agent ready", "nats", natsURL, "consumer", *consumer)
 
@@ -171,10 +175,14 @@ func run() int {
 		// Process the message.
 		if err := handle(ctx, msg, nc, log); err != nil {
 			log.Error("handle failed", "err", err)
-			msg.Nak()
+			if err := msg.Nak(); err != nil {
+				log.Warn("nak failed", "err", err)
+			}
 			continue
 		}
-		msg.Ack()
+		if err := msg.Ack(); err != nil {
+			log.Warn("ack failed", "err", err)
+		}
 	}
 }
 

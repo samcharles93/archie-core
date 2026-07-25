@@ -619,7 +619,7 @@ func diffBytes(a, b []byte) string {
 			lineB = linesB[i]
 		}
 		if lineA != lineB {
-			out.WriteString(fmt.Sprintf("-%s\n+%s\n", lineA, lineB))
+			fmt.Fprintf(&out, "-%s\n+%s\n", lineA, lineB)
 		}
 	}
 	return out.String()

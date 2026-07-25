@@ -282,7 +282,7 @@ func TestBuildRegistryNoSkillsReturnsBuiltins(t *testing.T) {
 			t.Errorf("BuildRegistry missing built-in workflow %q when no skills exist", name)
 			continue
 		}
-		if wf.Name != name && !(name == "default" && wf.Name == "implement") {
+		if wf.Name != name && (name != "default" || wf.Name != "implement") {
 			t.Errorf("built-in %q: Name = %q, want %q", name, wf.Name, name)
 		}
 	}
