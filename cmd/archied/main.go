@@ -184,6 +184,9 @@ func run() int {
 		}
 		tg := telegram.New(tgToken, "", "", nil, log)
 		router := gateway.NewRouter(st, nil, "telegram")
+		if len(cfg.Repos) > 0 {
+			router.Tasks = gateway.NewStoreTaskCreator(st, cfg.Repos[0].Owner, cfg.Repos[0].Name)
+		}
 		go func() {
 			if err := tg.Start(ctx, router); err != nil && ctx.Err() == nil {
 				log.Error("telegram gateway stopped", "err", err)

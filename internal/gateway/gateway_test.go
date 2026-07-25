@@ -273,3 +273,91 @@ func TestRouteModelNoManager(t *testing.T) {
 		t.Errorf("reply = %q, want 'not configured' message", reply)
 	}
     }
+
+// -- TaskCreator fakes for /spawn tests --
+
+type fakeTaskCreator struct {
+	tasks    []string
+	createFn func(ctx context.Context, title string) (int64, error)
+}
+
+func (f *fakeTaskCreator) CreateTask(ctx context.Context, title string) (int64, error) {
+	f.tasks = append(f.tasks, title)
+	if f.createFn != nil {
+		return f.createFn(ctx, title)
+	}
+	return int64(len(f.tasks)), nil
+}
+
+func TestRouteSpawnCreatesTask(t *testing.T) {
+	tc := &fakeTaskCreator{}
+	r := NewRouter(nil, nil, "test-gw")
+	r.Tasks = tc
+	reply, err := r.Route(context.Background(), Message{Text: "/spawn Fix the login bug"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Created task") || !strings.Contains(reply, "1") {
+		t.Errorf("reply should confirm task creation: %q", reply)
+	}
+	if len(tc.tasks) != 1 || tc.tasks[0] != "Fix the login bug" {
+		t.Errorf("tasks = %v, want [Fix the login bug]", tc.tasks)
+	}
+}
+
+func TestRouteSpawnAtMention(t *testing.T) {
+	tc := &fakeTaskCreator{}
+	r := NewRouter(nil, nil, "archie-bot")
+	r.Tasks = tc
+	reply, err := r.Route(context.Background(), Message{Text: "/spawn@archie-bot Deploy the release"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Created task") {
+		t.Errorf("reply should confirm creation: %q", reply)
+	}
+}
+
+func TestRouteSpawnNoTitle(t *testing.T) {
+	tc := &fakeTaskCreator{}
+	r := NewRouter(nil, nil, "test-gw")
+	r.Tasks = tc
+	reply, err := r.Route(context.Background(), Message{Text: "/spawn"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Usage") {
+		t.Errorf("reply should show usage: %q", reply)
+	}
+	if len(tc.tasks) != 0 {
+		t.Errorf("no task should be created without a title")
+	}
+}
+
+func TestRouteSpawnNoManager(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	reply, err := r.Route(context.Background(), Message{Text: "/spawn something"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "not configured") {
+		t.Errorf("reply = %q, want 'not configured'", reply)
+	}
+}
+
+func TestRouteSpawnHandlesCreationError(t *testing.T) {
+	tc := &fakeTaskCreator{
+		createFn: func(ctx context.Context, title string) (int64, error) {
+			return 0, fmt.Errorf("store unavailable")
+		},
+	}
+	r := NewRouter(nil, nil, "test-gw")
+	r.Tasks = tc
+	reply, err := r.Route(context.Background(), Message{Text: "/spawn Break things"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Failed") {
+		t.Errorf("reply should mention failure: %q", reply)
+	}
+}

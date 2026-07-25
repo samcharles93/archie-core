@@ -63,6 +63,13 @@ type ModelManager interface {
 	SetActiveModel(ctx context.Context, ref string) error
 }
 
+// TaskCreator creates a task from a chat command. The daemon supplies
+// an implementation backed by the store. When nil on a Router, /spawn
+// returns "not configured".
+type TaskCreator interface {
+	CreateTask(ctx context.Context, title string) (int64, error)
+}
+
 // Router dispatches inbound messages. Gateway-local commands (like
 // /status) are handled directly. Everything else is routed to the LLM
 // responder. Gateway implementations call Route on every inbound
@@ -70,6 +77,7 @@ type ModelManager interface {
 type Router struct {
 	Store       StatusReader
 	Models      ModelManager // nil = /model and /models not configured
+	Tasks       TaskCreator  // nil = /spawn not configured
 	LLM         LLMResponder // nil = LLM not wired yet
 	gatewayName string
 }
@@ -94,6 +102,10 @@ func (r *Router) Route(ctx context.Context, msg Message) (string, error) {
 		return r.handleModels(ctx)
 	case "/model":
 		return r.handleModel(ctx, arg)
+	case "/spawn":
+		// Title is everything after "/spawn" — keep the multi-word text.
+		title := restAfter(text, cmd, r.gatewayName)
+		return r.handleSpawn(ctx, title)
 	default:
 		if r.LLM == nil {
 			return "I'm running but LLM processing isn't wired yet. Try /status.", nil
@@ -168,6 +180,32 @@ func (r *Router) handleModel(ctx context.Context, arg string) (string, error) {
 		return fmt.Sprintf("Cannot switch: %v", err), nil
 	}
 	return fmt.Sprintf("Active model set to %s.", arg), nil
+}
+
+// restAfter returns the text after the command token, stripping the
+// optional @gateway mention. E.g. for "/spawn Fix the bug", returns
+// "Fix the bug".
+func restAfter(text, cmd, gatewayName string) string {
+	s := text
+	if gatewayName != "" {
+		s = strings.TrimPrefix(s, cmd+"@"+gatewayName)
+	}
+	s = strings.TrimPrefix(s, cmd)
+	return strings.TrimSpace(s)
+}
+
+func (r *Router) handleSpawn(ctx context.Context, title string) (string, error) {
+	if r.Tasks == nil {
+		return "Task creation is not configured.", nil
+	}
+	if title == "" {
+		return "Usage: /spawn <title>", nil
+	}
+	id, err := r.Tasks.CreateTask(ctx, title)
+	if err != nil {
+		return fmt.Sprintf("Failed to create task: %v", err), nil
+	}
+	return fmt.Sprintf("Created task %d: %s", id, title), nil
 }
 
 func (r *Router) handleStatus(ctx context.Context) (string, error) {
