@@ -36,7 +36,7 @@ import (
 
 type Daemon struct {
 	Cfg       config.Config
-	Store     *store.Store
+	Store     store.TaskStore
 	Forge     forge.Forge
 	Trees     *worktree.Manager
 	Runtime   *runtime.Runtime

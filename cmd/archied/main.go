@@ -18,15 +18,16 @@ import (
 
 	"github.com/moby/moby/client"
 	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/channels/telegram"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
-	"github.com/samcharles93/archie-core/internal/channels/telegram"
-	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
+	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/nats"
+	"github.com/samcharles93/archie-core/internal/nell"
 
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
@@ -71,7 +72,7 @@ func run() int {
 		return 1
 	}
 
-	st, err := store.Open(cfg.DBPath)
+	st, err := nell.OpenStore(cfg.DBPath, cfg.BotUser)
 	if err != nil {
 		log.Error("open store", "err", err)
 		return 1
@@ -314,7 +315,7 @@ func executionProviders(cfg config.Config) map[string]agentexec.Provider {
 // handlers on nc so an archie-agent container (which holds no DB
 // connection, forge token, or push credential) can proxy those operations
 // back to archied. The returned func unsubscribes all three.
-func registerTaskRPCServers(nc *natsio.Conn, st *store.Store, forgeClient forge.Forge, trees *worktree.Manager, log *slog.Logger) (unsubscribe func(), err error) {
+func registerTaskRPCServers(nc *natsio.Conn, st store.TaskStore, forgeClient forge.Forge, trees *worktree.Manager, log *slog.Logger) (unsubscribe func(), err error) {
 	storeServer := &storerpc.Server{Store: st, Log: log}
 	unsubStore, err := storeServer.Register(nc)
 	if err != nil {

@@ -29,14 +29,6 @@ type Forger interface {
 	SetStateLabel(ctx context.Context, owner, repo string, number int, label string, knownLabels []string)
 }
 
-// TaskStore is the subset of *store.Store that workflow stages call
-// mid-run. *store.Store (the daemon's real store) and storerpc.Client
-// (archie-agent's NATS-backed proxy) both satisfy it.
-type TaskStore interface {
-	Update(ctx context.Context, t *store.Task) error
-	Transition(ctx context.Context, taskID int64, from, to, detail string) error
-}
-
 // Trees is the subset of *worktree.Manager that workflow stages call
 // mid-run. *worktree.Manager (the daemon's real manager, holding the push
 // token) and a hybrid RPC-backed implementation (archie-agent proxies
@@ -58,7 +50,7 @@ type TaskContext struct {
 	Repo  config.Repo
 	Cfg   config.Config
 	Forge Forger
-	Store TaskStore
+	Store store.WorkflowStore
 	Trees Trees
 	Agent agentexec.Runner
 	Bus   *events.Bus // nil-safe via Emit

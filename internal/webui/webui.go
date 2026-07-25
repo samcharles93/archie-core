@@ -22,7 +22,7 @@ import (
 var indexHTML []byte
 
 type Server struct {
-	Store *store.Store
+	Store store.TaskStore
 	Log   *slog.Logger
 
 	mu    sync.Mutex
