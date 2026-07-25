@@ -608,3 +608,118 @@ func TestEcosystemCustom(t *testing.T) {
 		t.Errorf("ResolvedPreflight custom: got %v, want nil", got)
 	}
 }
+
+func TestIdentitiesConfigParsesTwoIdentities(t *testing.T) {
+	cfg, err := LoadBytes([]byte(`
+bot_user = "default-legacy"
+
+[[identities]]
+name = "archie"
+bot_user = "archie"
+forge = { type = "gitea", host = "https://git.example.test", token_env = "ARCHIE_TOKEN" }
+
+[[identities.repos]]
+owner = "sam"
+name = "archie-core"
+base = "main"
+ecosystem = "go"
+
+[[identities]]
+name = "winter"
+bot_user = "winter"
+forge = { type = "gitea", host = "https://git.example.test", token_env = "WINTER_TOKEN" }
+
+[[identities.repos]]
+owner = "sam"
+name = "tau"
+base = "main"
+ecosystem = "go"
+`))
+	if err != nil {
+		t.Fatalf("LoadBytes: %v", err)
+	}
+	if len(cfg.Identities) != 2 {
+		t.Fatalf("len(Identities) = %d, want 2", len(cfg.Identities))
+	}
+	if cfg.Identities[0].Name != "archie" {
+		t.Errorf("Identities[0].Name = %q", cfg.Identities[0].Name)
+	}
+	if cfg.Identities[0].BotUser != "archie" {
+		t.Errorf("Identities[0].BotUser = %q", cfg.Identities[0].BotUser)
+	}
+	if cfg.Identities[0].Forge.TokenEnv != "ARCHIE_TOKEN" {
+		t.Errorf("Identities[0].Forge.TokenEnv = %q", cfg.Identities[0].Forge.TokenEnv)
+	}
+	if len(cfg.Identities[0].Repos) != 1 || cfg.Identities[0].Repos[0].Name != "archie-core" {
+		t.Errorf("Identities[0].Repos = %+v", cfg.Identities[0].Repos)
+	}
+	if cfg.Identities[1].Name != "winter" {
+		t.Errorf("Identities[1].Name = %q", cfg.Identities[1].Name)
+	}
+	if cfg.Identities[1].BotUser != "winter" {
+		t.Errorf("Identities[1].BotUser = %q", cfg.Identities[1].BotUser)
+	}
+	if cfg.Identities[1].Forge.TokenEnv != "WINTER_TOKEN" {
+		t.Errorf("Identities[1].Forge.TokenEnv = %q", cfg.Identities[1].Forge.TokenEnv)
+	}
+	if len(cfg.Identities[1].Repos) != 1 || cfg.Identities[1].Repos[0].Name != "tau" {
+		t.Errorf("Identities[1].Repos = %+v", cfg.Identities[1].Repos)
+	}
+}
+
+func TestIdentitiesConfigFallsBackToLegacyWhenEmpty(t *testing.T) {
+	cfg, err := LoadBytes([]byte(`
+bot_user = "solo"
+forge = { type = "github", host = "https://github.test", token_env = "GH_TOKEN" }
+
+[[repos]]
+owner = "sam"
+name = "my-repo"
+`))
+	if err != nil {
+		t.Fatalf("LoadBytes: %v", err)
+	}
+	if len(cfg.Identities) != 0 {
+		t.Errorf("len(Identities) = %d, want 0 (empty = legacy mode)", len(cfg.Identities))
+	}
+	if cfg.BotUser != "solo" {
+		t.Errorf("BotUser = %q, want solo (legacy field active)", cfg.BotUser)
+	}
+}
+
+func TestIdentitiesConfigRejectsEmptyName(t *testing.T) {
+	_, err := LoadBytes([]byte(`
+[[identities]]
+bot_user = "no-name"
+forge = { type = "github", token_env = "X" }
+`))
+	if err == nil {
+		t.Error("expected error for identity with empty name")
+	}
+}
+
+func TestLoadBytesDoesNotExist(t *testing.T) {
+	_, err := LoadBytes(nil)
+	if err == nil {
+		t.Error("expected error from nil LoadBytes")
+	}
+}
+
+func LoadBytes(data []byte) (Config, error) {
+	if data == nil {
+		return Config{}, os.ErrNotExist
+	}
+	tmp, err := os.CreateTemp("", "archie-config-*.toml")
+	if err != nil {
+		return Config{}, err
+	}
+	defer func() {
+		_ = os.Remove(tmp.Name())
+	}()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return Config{}, err
+	}
+	_ = tmp.Close()
+	return Load(tmp.Name())
+}

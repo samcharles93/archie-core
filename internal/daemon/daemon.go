@@ -65,6 +65,42 @@ type Daemon struct {
 	// composition root (cmd/archied) to wfeval.Discover; nil disables
 	// discovery.
 	CustomStages func(dir string) ([]workflow.Stage, error)
+	// Identities holds per-identity runner state for multi-identity mode.
+	// When non-empty, Run() starts one goroutine per identity instead of
+	// using the single-identity Forge/Trees/Cfg.Repos path.
+	Identities []*IdentityRunner
+}
+
+// IdentityRunner bundles identity-specific state for a single agent
+// identity running within a multi-identity daemon. Each identity gets its
+// own forge client, worktree manager, repo list, and config — but shares
+// the store, NATS connection, container pool, and event bus with siblings.
+type IdentityRunner struct {
+	Name  string
+	Forge forge.Forge
+	Trees *worktree.Manager
+	Repos []config.Repo
+	// Cfg is the identity-scoped config subset (forge, models, dispatch,
+	// budgets, etc.).
+	Cfg config.IdentityConfig
+	Log *slog.Logger
+}
+
+// NewIdentityRunner constructs an IdentityRunner from an identity config
+// and a pre-built forge client. The caller owns forge and trees lifecycle;
+// IdentityRunner just holds references.
+func NewIdentityRunner(ctx context.Context, idCfg config.IdentityConfig, fg forge.Forge, trees *worktree.Manager, log *slog.Logger) (*IdentityRunner, error) {
+	if idCfg.Name == "" {
+		return nil, fmt.Errorf("identity name is required")
+	}
+	return &IdentityRunner{
+		Name:  idCfg.Name,
+		Forge: fg,
+		Trees: trees,
+		Repos: idCfg.Repos,
+		Cfg:   idCfg,
+		Log:   log.With("identity", idCfg.Name),
+	}, nil
 }
 
 // emit publishes an observability event; safe on a nil bus.
@@ -95,8 +131,14 @@ func (d *Daemon) Startup(ctx context.Context) error {
 	return nil
 }
 
-// Run polls until the context ends.
+// Run polls until the context ends. When Identities is non-empty, each
+// identity gets its own goroutine with its own forge client, repo list,
+// and poll interval — failure isolation between identities (one identity's
+// forge outage doesn't block another's poll cycle).
 func (d *Daemon) Run(ctx context.Context) error {
+	if len(d.Identities) > 0 {
+		return d.runIdentities(ctx)
+	}
 	ticker := time.NewTicker(d.Cfg.PollInterval.Std())
 	defer ticker.Stop()
 	for {
@@ -107,6 +149,108 @@ func (d *Daemon) Run(ctx context.Context) error {
 		case <-ticker.C:
 		}
 	}
+}
+
+// runIdentities starts one goroutine per identity. Each goroutine runs an
+// independent poll loop. All identities share the daemon's store, NATS
+// connection, container pool, and event bus.
+func (d *Daemon) runIdentities(ctx context.Context) error {
+	var wg sync.WaitGroup
+	for _, id := range d.Identities {
+		wg.Add(1)
+		go func(id *IdentityRunner) {
+			defer wg.Done()
+			interval := d.Cfg.PollInterval.Std()
+			if id.Cfg.PollInterval > 0 {
+				interval = id.Cfg.PollInterval.Std()
+			}
+			ticker := time.NewTicker(interval)
+			defer ticker.Stop()
+			for {
+				d.cycleForIdentity(ctx, id)
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+				}
+			}
+		}(id)
+	}
+	wg.Wait()
+	return ctx.Err()
+}
+
+// cycleForIdentity is a single poll-and-drain pass scoped to one identity's
+// forge client and repo list.
+func (d *Daemon) cycleForIdentity(ctx context.Context, id *IdentityRunner) {
+	// Poll the identity's repos via its own forge client.
+	for _, repo := range id.Repos {
+		issues := d.pollIssuesWithForge(ctx, id.Forge, repo)
+		for _, is := range issues {
+			labels := strings.Join(is.Labels, ",")
+			if d.Nats != nil {
+				d.pollNATS(ctx, repo, is, labels)
+			} else {
+				d.pollSQLite(ctx, repo, is, labels)
+			}
+		}
+	}
+	// Draining is shared: ClaimNext returns the oldest queued task
+	// regardless of which identity enqueued it.
+	if d.Nats != nil {
+		d.drainNATS(ctx)
+	} else {
+		d.drainSQLite(ctx)
+	}
+}
+
+// pollIssuesWithForge is pollIssues using an explicit forge client rather
+// than d.Forge — used by multi-identity poll loops.
+func (d *Daemon) pollIssuesWithForge(ctx context.Context, fg forge.Forge, repo config.Repo) []forge.Issue {
+	switch d.Cfg.Dispatch.Trigger {
+	case "label":
+		issues, err := fg.IssuesWithLabel(ctx, repo.Owner, repo.Name, d.Cfg.Label)
+		if err != nil {
+			d.Log.Error("label poll failed", "repo", repo.FullName(), "err", err)
+			return nil
+		}
+		return issues
+	case "either":
+		return d.pollEitherWithForge(ctx, fg, repo)
+	default: // "assignee" (default)
+		issues, err := fg.AssignedIssues(ctx, repo.Owner, repo.Name, d.Cfg.BotUser)
+		if err != nil {
+			d.Log.Error("poll failed", "repo", repo.FullName(), "err", err)
+			return nil
+		}
+		return issues
+	}
+}
+
+func (d *Daemon) pollEitherWithForge(ctx context.Context, fg forge.Forge, repo config.Repo) []forge.Issue {
+	seen := map[int]bool{}
+	var out []forge.Issue
+
+	assigned, err := fg.AssignedIssues(ctx, repo.Owner, repo.Name, d.Cfg.BotUser)
+	if err != nil {
+		d.Log.Error("assigned poll failed", "repo", repo.FullName(), "err", err)
+	} else {
+		for _, is := range assigned {
+			seen[is.Number] = true
+			out = append(out, is)
+		}
+	}
+	labelled, err := fg.IssuesWithLabel(ctx, repo.Owner, repo.Name, d.Cfg.Label)
+	if err != nil {
+		d.Log.Error("label poll failed", "repo", repo.FullName(), "err", err)
+	} else {
+		for _, is := range labelled {
+			if !seen[is.Number] {
+				out = append(out, is)
+			}
+		}
+	}
+	return out
 }
 
 // Cycle is one poll-and-drain pass: enqueue newly assigned issues,
@@ -345,36 +489,49 @@ func (d *Daemon) processNATSTask(ctx context.Context, msg jetstream.Msg) {
 	tm, err := arnats.DecodeTask(msg)
 	if err != nil {
 		d.Log.Error("nats decode failed", "err", err)
-		msg.Ack() // bad message, don't retry
+		if err := msg.Ack(); err != nil {
+			d.Log.Warn("ack failed", "err", err)
+		}
+		// bad message, don't retry
 		return
 	}
 
 	inserted, err := d.Store.EnqueueIssue(ctx, tm.Owner, tm.Repo, tm.Number, tm.Title, tm.Body, tm.Labels)
 	if err != nil {
 		d.Log.Error("nats enqueue failed", "err", err)
-		msg.Nak()
+		if err := msg.Nak(); err != nil {
+			d.Log.Warn("nats nak failed", "err", err)
+		}
 		return
 	}
 	if !inserted {
 		// Already tracked — dedup. Ack and move on.
-		msg.Ack()
+		if err := msg.Ack(); err != nil {
+			d.Log.Warn("ack failed", "err", err)
+		}
 		return
 	}
 
 	task, err := d.Store.ClaimByIssue(ctx, tm.Owner, tm.Repo, tm.Number)
 	if err != nil {
 		d.Log.Error("nats claim failed", "err", err)
-		msg.Nak()
+		if err := msg.Nak(); err != nil {
+			d.Log.Warn("nats nak failed", "err", err)
+		}
 		return
 	}
 	if task == nil {
 		// Claimed by another consumer, or task is not queued. Ack.
-		msg.Ack()
+		if err := msg.Ack(); err != nil {
+			d.Log.Warn("ack failed", "err", err)
+		}
 		return
 	}
 
 	d.process(ctx, task)
-	msg.Ack()
+	if err := msg.Ack(); err != nil {
+		d.Log.Warn("ack failed", "err", err)
+	}
 }
 
 // pollIssues discovers work for one repo according to cfg.Dispatch.Trigger.
@@ -528,17 +685,6 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 			})
 		}
 	}
-}
-
-// checkMentions scans all tasks assigned to the bot for new human
-// comments containing @botname. Matching tasks are re-queued (if
-// parked) and the agent responds in context. Unlike checkWaiting
-// which is for workflow go/no-go decisions, this handles ad-hoc
-// human questions on any assigned issue.
-func (d *Daemon) checkMentions(ctx context.Context) {
-	// TODO: scan parked tasks for @botname mentions via
-	// Forge.RepliesAfter and auto-requeue. Needs ParkedTasks
-	// on the store — coming in a follow-up.
 }
 
 // checkWaiting looks for human replies on waiting_human tasks and asks
