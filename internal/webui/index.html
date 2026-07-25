@@ -130,6 +130,7 @@
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const escJS = s => String(s ?? "").replace(/['\\]/g, c => '\\' + c);
 const fmt = n => (n ?? 0).toLocaleString();
 const ms = v => v >= 60000 ? (v/60000).toFixed(1)+"m" : v >= 1000 ? (v/1000).toFixed(1)+"s" : v+"ms";
 
@@ -157,7 +158,7 @@ async function refresh() {
     .join("") || '<div class="card"><div class="n">0</div><div class="l">tasks</div></div>';
 
   $("#tasks tbody").innerHTML = (tasks ?? []).map(t => `
-    <tr class="task" onclick="showTask(${t.id}, '${esc(t.owner)}/${esc(t.repo)}#${t.issue_number}')">
+    <tr class="task" onclick="showTask(${t.id}, '${escJS(t.owner)}/${escJS(t.repo)}#${t.issue_number}')">
       <td>${esc(t.owner)}/${esc(t.repo)}</td><td>#${t.issue_number}</td>
       <td>${esc(t.title)}</td><td>${esc(t.workflow)}</td>
       <td><span class="status ${esc(t.status)}">${esc(t.status)}</span></td>
