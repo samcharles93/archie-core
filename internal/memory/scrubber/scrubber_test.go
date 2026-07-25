@@ -510,6 +510,34 @@ func TestScrubber_Close(t *testing.T) {
 	}
 }
 
+func TestScrubber_Flush_UnresolvedTagInsideBlockIsNotLeaked(t *testing.T) {
+	var buf bytes.Buffer
+	s := New(&buf)
+	_, _ = s.Write([]byte("visible <memory>secret</mem"))
+
+	if err := s.Flush(); err != nil {
+		t.Fatalf("Flush error: %v", err)
+	}
+
+	if got, want := buf.String(), "visible "; got != want {
+		t.Errorf("got %q, want %q (partial close-tag bytes must not leak in-block content)", got, want)
+	}
+}
+
+func TestScrubber_Flush_UnresolvedNestedOpenTagInsideBlockIsNotLeaked(t *testing.T) {
+	var buf bytes.Buffer
+	s := New(&buf)
+	_, _ = s.Write([]byte("visible <memory>outer<mem"))
+
+	if err := s.Flush(); err != nil {
+		t.Fatalf("Flush error: %v", err)
+	}
+
+	if got, want := buf.String(), "visible "; got != want {
+		t.Errorf("got %q, want %q (partial nested open-tag bytes must not leak in-block content)", got, want)
+	}
+}
+
 // ── Process / ProcessString ────────────────────────────────────────────
 
 func TestScrubber_Process_StreamingEquivalence(t *testing.T) {

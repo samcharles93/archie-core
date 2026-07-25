@@ -41,6 +41,12 @@ type Scrubber struct {
 	pending []byte
 	pbuf    [maxTagLen]byte
 
+	// pendingInBlock records whether pending was captured while inside a
+	// memory block (depth > 0 at capture time). It determines how Flush
+	// disposes of pending: emitted as literal text if false, discarded as
+	// stripped content if true.
+	pendingInBlock bool
+
 	// buf is a reusable buffer for building output in Process.
 	buf bytes.Buffer
 
@@ -62,14 +68,15 @@ func New(w io.Writer) *Scrubber {
 func (s *Scrubber) Reset() {
 	s.depth = 0
 	s.pending = s.pending[:0]
+	s.pendingInBlock = false
 	s.buf.Reset()
 	s.blocksStripped = 0
 	s.bytesStripped = 0
 }
 
 // Write processes a chunk of streaming text and writes the scrubbed output
-// to the underlying writer. It returns the number of bytes consumed from p
-// (always len(p) on success) and any write error from the underlying writer.
+// to the underlying writer. It always returns len(p), nil: underlying
+// writer errors are not surfaced (see writeOutput).
 //
 // Write is the primary streaming interface. It maintains internal state
 // across calls to handle tags that span chunk boundaries.
@@ -134,6 +141,7 @@ func (s *Scrubber) processNormal(data []byte) []byte {
 	if isPrefixOfTag(tail, openTag) {
 		s.writeOutput(data[:idx])
 		s.pending = append(s.pbuf[:0], tail...)
+		s.pendingInBlock = false
 		return nil
 	}
 
@@ -178,6 +186,7 @@ func (s *Scrubber) processInMemory(data []byte) []byte {
 	if isPrefixOfTag(tail, closeTag) || isPrefixOfTag(tail, openTag) {
 		s.bytesStripped += int64(idx)
 		s.pending = append(s.pbuf[:0], tail...)
+		s.pendingInBlock = true
 		return nil
 	}
 
@@ -192,9 +201,10 @@ func (s *Scrubber) writeOutput(data []byte) {
 		return
 	}
 	if s.w != nil {
-		// Write errors are rare on bytes.Buffer (the common case). When the
-		// underlying writer is a real connection, errors are surfaced on the
-		// next Write call.
+		// Underlying writer errors are intentionally discarded: the
+		// scrubber has no way to signal a mid-stream failure back through
+		// its own Write/Process/Flush return values without breaking the
+		// streaming API. Callers needing failure detection should wrap w.
 		_, _ = s.w.Write(data)
 	}
 }
@@ -213,9 +223,17 @@ func (s *Scrubber) Flush() error {
 		s.depth = 0
 	}
 
-	// Write any pending bytes — they weren't actually a tag.
 	if len(s.pending) > 0 {
-		s.writeOutput(s.pending)
+		if s.pendingInBlock {
+			// Pending bytes were buffered as unresolved tag content inside
+			// a memory block — they're hidden content, not literal text.
+			// Discard them as stripped, not emit them.
+			s.bytesStripped += int64(len(s.pending))
+		} else {
+			// Pending bytes were buffered outside any memory block — they
+			// weren't actually a tag, so emit them as literal text.
+			s.writeOutput(s.pending)
+		}
 		s.pending = s.pending[:0]
 	}
 
