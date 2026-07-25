@@ -205,6 +205,69 @@ func TestHandleSSEBacklogAndLive(t *testing.T) {
 	}
 }
 
+
+
+func TestIndexEscapesSingleQuotesInOnclick(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d", w.Code)
+	}
+	body := w.Body.String()
+
+	// escJS helper must be defined.
+	if !strings.Contains(body, "escJS") {
+		t.Fatal("escJS helper not found in HTML")
+	}
+
+	// The onclick template must use escJS (not esc) for owner and
+	// repo — the values interpolated into the single-quoted JS str.
+	if !strings.Contains(body, "escJS(t.owner)") {
+		t.Error("onclick does not use escJS for owner")
+	}
+	if !strings.Contains(body, "escJS(t.repo)") {
+		t.Error("onclick does not use escJS for repo")
+	}
+}
+
+func TestIndexEscDoesNotEscapeSingleQuotes(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d", w.Code)
+	}
+	body := w.Body.String()
+
+	// esc() must NOT escape single quotes — it's used for HTML
+	// content/attribute contexts where apostrophes are legitimate
+	// (e.g. issue titles like "Don't panic").
+	idx := strings.Index(body, "const esc =")
+	if idx == -1 {
+		t.Fatal("esc definition not found")
+	}
+	snippet := body[idx : idx+200]
+	// The regex should escape & < > " but NOT '
+	if !strings.Contains(snippet, "[&<>\"") {
+		t.Error("esc regex character class is missing or malformed")
+	}
+	// The character class must NOT include a single quote.
+	reStart := strings.Index(snippet, "[&<>\"")
+	reEnd := strings.Index(snippet[reStart:], "]")
+	if reEnd == -1 {
+		t.Fatal("could not find end of esc regex character class")
+	}
+	charClass := snippet[reStart : reStart+reEnd]
+	if strings.Contains(charClass, "'") {
+		t.Error("esc() regex escapes single quotes — this would cause backslash artifacts in HTML text")
+	}
+}
+
 // readLineUntil scans SSE "data:" lines until one contains want.
 func readLineUntil(r *bufio.Reader, want string) (string, error) {
 	deadline := time.Now().Add(3 * time.Second)
