@@ -3,6 +3,9 @@ package workflow
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
@@ -205,15 +208,31 @@ func missionWithSkill(tc *TaskContext, mission string) string {
 // loadSkillBody loads the SKILL.md body and plugins for the current
 // workflow from the worktree's .agents/skills/ directory. Skills declare
 // their workflow in metadata.archie.workflow — no hardcoded mapping.
+// When metadata.archie.plugins is non-empty, only the listed plugin files
+// are loaded in declared order; otherwise all *.go files are globbed.
 func loadSkillBody(tc *TaskContext) string {
 	catalog, _ := skill.Catalog(tc.Dir)
 	entry := skill.SkillForWorkflow(catalog, tc.Task.Workflow)
 	if entry == nil {
 		return ""
 	}
-	body := skill.LoadBody(tc.Dir, entry.Dir)
+	// Read and parse SKILL.md once to get both body and frontmatter.
+	skillPath := filepath.Join(tc.Dir, ".agents", "skills", entry.Dir, "SKILL.md")
+	data, err := os.ReadFile(skillPath)
+	if err != nil {
+		return ""
+	}
+	fm, body, err := skill.Parse(data)
+	if err != nil || fm == nil {
+		return ""
+	}
+	body = strings.TrimSpace(body)
 	if body != "" && tc.SkillPlugins == nil {
-		plugins, _ := skill.DiscoverPlugins(tc.Dir, entry.Dir)
+		var pluginNames []string
+		if fm.Metadata.Archie != nil {
+			pluginNames = fm.Metadata.Archie.Plugins
+		}
+		plugins, _ := skill.LoadPlugins(tc.Dir, entry.Dir, pluginNames)
 		tc.SkillPlugins = plugins
 	}
 	return body
