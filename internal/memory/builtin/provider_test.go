@@ -275,3 +275,227 @@ func TestProvider_ConcurrentToolCalls(t *testing.T) {
 		t.Fatalf("expected exactly one Facts header after concurrent writes, got: %q", rendered)
 	}
 }
+
+// ── Frozen snapshot tests ─────────────────────────────────────────────
+
+func TestProvider_FrozenSnapshot_NotUpdatedOnWrite(t *testing.T) {
+	p := newTestProvider(t)
+
+	// Add content before Initialize so the snapshot captures it.
+	if _, err := p.HandleToolCall(toolName, map[string]any{
+		"action": "add", "section": "Facts", "content": "initial fact",
+	}); err != nil {
+		t.Fatalf("add before init: %v", err)
+	}
+
+	if err := p.Initialize("session-1"); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	firstBlock := p.SystemPromptBlock()
+	if !strings.Contains(firstBlock, "initial fact") {
+		t.Fatalf("snapshot should contain initial fact, got: %s", firstBlock)
+	}
+	if !strings.Contains(firstBlock, "<memory>") {
+		t.Fatalf("snapshot should be wrapped in <memory> fences, got: %s", firstBlock)
+	}
+
+	// Write after initialization — the snapshot must not change.
+	if _, err := p.HandleToolCall(toolName, map[string]any{
+		"action": "add", "section": "Facts", "content": "new fact after init",
+	}); err != nil {
+		t.Fatalf("add after init: %v", err)
+	}
+
+	secondBlock := p.SystemPromptBlock()
+	if secondBlock != firstBlock {
+		t.Fatalf("snapshot changed after write!\nbefore: %s\nafter:  %s", firstBlock, secondBlock)
+	}
+
+	// The file on disk should have the new content.
+	if !strings.Contains(p.memory.Render(), "new fact after init") {
+		t.Fatal("file on disk should contain the new fact")
+	}
+}
+
+func TestProvider_FrozenSnapshot_Disabled_ReadsLive(t *testing.T) {
+	dir := t.TempDir()
+	p, err := New(Config{Dir: dir, DisableFrozenSnapshot: true})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	if _, err := p.HandleToolCall(toolName, map[string]any{
+		"action": "add", "section": "Facts", "content": "first",
+	}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	if err := p.Initialize("session-1"); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	block1 := p.SystemPromptBlock()
+	if !strings.Contains(block1, "first") {
+		t.Fatalf("expected 'first' in block, got: %s", block1)
+	}
+
+	// With frozen disabled, writes are immediately visible.
+	if _, err := p.HandleToolCall(toolName, map[string]any{
+		"action": "add", "section": "Facts", "content": "second",
+	}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	block2 := p.SystemPromptBlock()
+	if !strings.Contains(block2, "second") {
+		t.Fatalf("expected 'second' in live block, got: %s", block2)
+	}
+	if block1 == block2 {
+		t.Fatal("live mode should reflect writes immediately, but blocks are identical")
+	}
+}
+
+func TestProvider_FrozenSnapshot_EmptyStores(t *testing.T) {
+	p := newTestProvider(t)
+	if err := p.Initialize("session-1"); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	block := p.SystemPromptBlock()
+	if block != "" {
+		t.Fatalf("expected empty block for empty stores, got: %s", block)
+	}
+}
+
+func TestProvider_FrozenSnapshot_OnlyMemory(t *testing.T) {
+	p := newTestProvider(t)
+	if _, err := p.HandleToolCall(toolName, map[string]any{
+		"action": "add", "section": "Facts", "content": "mem only",
+	}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if err := p.Initialize("session-1"); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	block := p.SystemPromptBlock()
+	if !strings.Contains(block, "mem only") {
+		t.Fatalf("expected memory content, got: %s", block)
+	}
+	if !strings.Contains(block, "<memory>") {
+		t.Fatal("missing <memory> fence")
+	}
+}
+
+func TestProvider_FrozenSnapshot_OnlyUser(t *testing.T) {
+	p := newTestProvider(t)
+	if _, err := p.HandleToolCall(toolName, map[string]any{
+		"file": "user", "action": "add", "section": "Preferences", "content": "user only",
+	}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if err := p.Initialize("session-1"); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	block := p.SystemPromptBlock()
+	if !strings.Contains(block, "user only") {
+		t.Fatalf("expected user content, got: %s", block)
+	}
+}
+
+func TestProvider_FrozenSnapshot_ReInitialize(t *testing.T) {
+	p := newTestProvider(t)
+	if _, err := p.HandleToolCall(toolName, map[string]any{
+		"action": "add", "section": "Facts", "content": "before",
+	}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if err := p.Initialize("session-1"); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	block1 := p.SystemPromptBlock()
+	if !strings.Contains(block1, "before") {
+		t.Fatalf("expected 'before', got: %s", block1)
+	}
+
+	// Add more content and re-initialize — snapshot should refresh.
+	if _, err := p.HandleToolCall(toolName, map[string]any{
+		"action": "add", "section": "Facts", "content": "after",
+	}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if err := p.Initialize("session-2"); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	block2 := p.SystemPromptBlock()
+	if !strings.Contains(block2, "after") {
+		t.Fatalf("re-init should capture new content, got: %s", block2)
+	}
+	if block1 == block2 {
+		t.Fatal("re-init should produce a fresh snapshot")
+	}
+}
+
+func TestProvider_FrozenSnapshot_DefaultEnabled(t *testing.T) {
+	// When FrozenSnapshot is not explicitly set, it defaults to true.
+	dir := t.TempDir()
+	p, err := New(Config{Dir: dir})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	if _, err := p.HandleToolCall(toolName, map[string]any{
+		"action": "add", "section": "Facts", "content": "pre-init",
+	}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if err := p.Initialize("session-1"); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	block1 := p.SystemPromptBlock()
+
+	// Write after init — snapshot should be frozen.
+	if _, err := p.HandleToolCall(toolName, map[string]any{
+		"action": "add", "section": "Facts", "content": "post-init",
+	}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	block2 := p.SystemPromptBlock()
+	if block1 != block2 {
+		t.Fatal("default frozen snapshot should not change after writes")
+	}
+}
+
+func TestProvider_FrozenSnapshot_BothFiles(t *testing.T) {
+	p := newTestProvider(t)
+	if _, err := p.HandleToolCall(toolName, map[string]any{
+		"action": "add", "section": "Facts", "content": "mem content",
+	}); err != nil {
+		t.Fatalf("add memory: %v", err)
+	}
+	if _, err := p.HandleToolCall(toolName, map[string]any{
+		"file": "user", "action": "add", "section": "Preferences", "content": "user content",
+	}); err != nil {
+		t.Fatalf("add user: %v", err)
+	}
+	if err := p.Initialize("session-1"); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	block := p.SystemPromptBlock()
+	if !strings.Contains(block, "mem content") {
+		t.Fatal("missing memory content")
+	}
+	if !strings.Contains(block, "user content") {
+		t.Fatal("missing user content")
+	}
+	if !strings.Contains(block, "<memory>") && !strings.Contains(block, "</memory>") {
+		t.Fatal("missing <memory> fences")
+	}
+}
