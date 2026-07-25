@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/samcharles93/archie-core/internal/events"
 )
@@ -20,6 +21,44 @@ func openTest(t *testing.T) *Store {
 		}
 	})
 	return s
+}
+
+func TestClip(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		n     int
+		want  string
+	}{
+		{"ascii truncate", "hello", 3, "hel"},
+		{"ascii below n", "hello", 10, "hello"},
+		{"empty zero", "", 0, ""},
+		{"empty positive", "", 5, ""},
+		{"2-byte fits exactly", "café", 5, "café"},
+		{"2-byte cut off", "café", 4, "caf"},
+		{"clean ASCII boundary", "café", 3, "caf"},
+		{"4-byte emoji fits", "🍕pizza", 4, "🍕"},
+		{"4-byte emoji cut off", "🍕pizza", 3, ""},
+		{"2-byte ñ fits", "niño", 5, "niño"},
+		{"2-byte ñ cut off", "niño", 4, "niñ"},
+		{"3-byte CJK fits", "日本語", 6, "日本"},
+		{"3-byte CJK cut off", "日本語", 5, "日"},
+		{"mixed multi-byte", "a🍕b", 5, "a🍕"},
+		{"mixed multi-byte cut off", "a🍕b", 4, "a"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := clip(tt.input, tt.n)
+			if got != tt.want {
+				t.Errorf("clip(%q, %d) = %q, want %q", tt.input, tt.n, got, tt.want)
+			}
+			// Verify output is valid UTF-8.
+			if !utf8.ValidString(got) {
+				t.Errorf("clip(%q, %d) produced invalid UTF-8: %q", tt.input, tt.n, got)
+			}
+		})
+	}
 }
 
 func TestClearTerminalTasks(t *testing.T) {
