@@ -272,7 +272,7 @@ func TestRouteModelNoManager(t *testing.T) {
 	if !strings.Contains(reply, "not configured") {
 		t.Errorf("reply = %q, want 'not configured' message", reply)
 	}
-    }
+}
 
 // -- TaskCreator fakes for /spawn tests --
 

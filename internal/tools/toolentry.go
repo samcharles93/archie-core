@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 )
 
 // JSONSchema represents a JSON Schema document describing a tool's input
@@ -129,9 +130,7 @@ func (e ToolEntry) Clone() ToolEntry {
 	}
 	if e.Schema != nil {
 		clone.Schema = make(JSONSchema, len(e.Schema))
-		for k, v := range e.Schema {
-			clone.Schema[k] = v
-		}
+		maps.Copy(clone.Schema, e.Schema)
 	}
 	return clone
 }
