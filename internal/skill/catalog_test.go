@@ -139,7 +139,8 @@ func TestCatalogEntryHasRequiredFields(t *testing.T) {
 
 func TestBundledPluginSkillIsDiscoverableAndRunnable(t *testing.T) {
 	// A skill must be able to ship bundled Yaegi plugins in its plugins/
-	// directory. DiscoverPlugins finds them, Plugin.Run executes them.
+	// directory. When metadata.archie.plugins is present, only the listed
+	// plugins are loaded in declared order; unlisted *.go files are ignored.
 
 	dir := t.TempDir()
 	skillsDir := filepath.Join(dir, ".agents", "skills", "archie-wf-tdd")
@@ -157,13 +158,14 @@ metadata:
     engine: any
     plugins:
       - plugins/security-check.go
+      - plugins/lint-check.go
 ---
 Full body content.
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	// Write the bundled plugin.
+	// Write the listed plugins.
 	if err := os.WriteFile(filepath.Join(pluginsDir, "security-check.go"), []byte(`package main
 
 import "strings"
@@ -177,8 +179,25 @@ func Run(input string) string {
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(pluginsDir, "lint-check.go"), []byte(`package main
 
-	// Discover the skill — must include plugins.
+func Run(input string) string {
+	return "linted: " + input
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Write an unlisted plugin — it must NOT be loaded.
+	if err := os.WriteFile(filepath.Join(pluginsDir, "extra.go"), []byte(`package main
+
+func Run(input string) string {
+	return "extra"
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Discover the skill — must include only the listed plugins in declared order.
 	skills, err := Discover(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -187,11 +206,14 @@ func Run(input string) string {
 		t.Fatalf("got %d skills, want 1", len(skills))
 	}
 	s := skills["archie-wf-tdd"]
-	if len(s.Plugins) != 1 {
-		t.Fatalf("skill has %d plugins, want 1 — Discover() must populate Plugins", len(s.Plugins))
+	if len(s.Plugins) != 2 {
+		t.Fatalf("skill has %d plugins, want 2 — Discover() must honor metadata.archie.plugins", len(s.Plugins))
 	}
 	if s.Plugins[0].Name != "security-check" {
-		t.Errorf("plugin name = %q, want security-check", s.Plugins[0].Name)
+		t.Errorf("plugin[0].Name = %q, want security-check (declared order)", s.Plugins[0].Name)
+	}
+	if s.Plugins[1].Name != "lint-check" {
+		t.Errorf("plugin[1].Name = %q, want lint-check (declared order)", s.Plugins[1].Name)
 	}
 
 	// The plugin must be runnable.
@@ -204,7 +226,7 @@ func Run(input string) string {
 	}
 
 	// The frontmatter must declare the plugin.
-	if s.Frontmatter.Metadata.Archie == nil || len(s.Frontmatter.Metadata.Archie.Plugins) != 1 {
+	if s.Frontmatter.Metadata.Archie == nil || len(s.Frontmatter.Metadata.Archie.Plugins) != 2 {
 		t.Error("Frontmatter.Metadata.Archie.Plugins is empty — " +
 			"the SKILL.md must declare bundled plugins in the metadata.archie.plugins list")
 	}

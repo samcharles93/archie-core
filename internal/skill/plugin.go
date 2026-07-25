@@ -42,6 +42,18 @@ func (p *Plugin) Run(input string) (string, error) {
 // skill directory does not exist. Returns an empty slice if the skill
 // exists but has no plugins/ directory.
 func DiscoverPlugins(dir, skillName string) ([]Plugin, error) {
+	return LoadPlugins(dir, skillName, nil)
+}
+
+// LoadPlugins loads plugins from dir/.agents/skills/<skillName>/plugins/.
+//
+// When allowed is non-empty, only the listed filenames are loaded in
+// declared order — the plugins/ prefix is stripped before matching.
+// A listed file that does not exist on disk is an error.
+//
+// When allowed is nil or empty, all *.go files in the plugins/ directory
+// are globbed alphabetically (backward-compatible fallback).
+func LoadPlugins(dir, skillName string, allowed []string) ([]Plugin, error) {
 	pluginsDir := filepath.Join(dir, skillsDir, skillName, "plugins")
 	entries, err := os.ReadDir(pluginsDir)
 	if os.IsNotExist(err) {
@@ -52,13 +64,31 @@ func DiscoverPlugins(dir, skillName string) ([]Plugin, error) {
 		return nil, fmt.Errorf("read plugins dir %s: %w", pluginsDir, err)
 	}
 
-	var names []string
+	// Build an on-disk set for existence checks when filtering.
+	onDisk := make(map[string]struct{}, len(entries))
 	for _, e := range entries {
 		if !e.IsDir() && strings.HasSuffix(e.Name(), ".go") {
-			names = append(names, e.Name())
+			onDisk[e.Name()] = struct{}{}
 		}
 	}
-	sort.Strings(names)
+
+	var names []string
+	if len(allowed) == 0 {
+		// Fallback: glob all *.go files alphabetically.
+		for name := range onDisk {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+	} else {
+		// Use the frontmatter list; strip "plugins/" prefix.
+		for _, a := range allowed {
+			a = strings.TrimPrefix(a, "plugins/")
+			if _, ok := onDisk[a]; !ok {
+				return nil, fmt.Errorf("plugin %q listed in metadata.archie.plugins not found on disk", a)
+			}
+			names = append(names, a)
+		}
+	}
 
 	plugins := make([]Plugin, 0, len(names))
 	for _, name := range names {
