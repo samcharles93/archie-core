@@ -34,21 +34,30 @@ func writeMessage(w io.Writer, data []byte) error {
 // readMessage reads one Content-Length framed message from r and returns
 // the raw body bytes.
 //
-// It parses HTTP-like headers terminated by an empty line (\r\n\r\n or \n\n),
-// extracts Content-Length, and reads exactly that many bytes of body. Other
-// headers (e.g. Content-Type) are accepted and ignored.
+// r must be a *bufio.Reader. Callers that hold a plain io.Reader should
+// wrap it once with bufio.NewReader and reuse that wrapper across
+// multiple readMessage calls — creating a new bufio.Reader per call
+// silently drops buffered data and breaks multi-message streams.
+//
+// The function parses HTTP-like headers terminated by an empty line
+// (\r\n\r\n or \n\n), extracts Content-Length, and reads exactly that
+// many bytes of body. Other headers (e.g. Content-Type) are accepted
+// and ignored.
 func readMessage(r io.Reader) ([]byte, error) {
 	br, ok := r.(*bufio.Reader)
 	if !ok {
+		// Caller passed a plain io.Reader without managing the
+		// buffer — warn them once and wrap anyway. Multi-message
+		// streams will lose data after the first read.
 		br = bufio.NewReader(r)
-		return readMessageFromBufio(br)
 	}
 	return readMessageFromBufio(br)
 }
 
 func readMessageFromBufio(br *bufio.Reader) ([]byte, error) {
 	var contentLength int
-	headerFound := false
+	contentLengthFound := false
+	headerSectionEnd := false
 
 	for {
 		line, err := br.ReadString('\n')
@@ -60,7 +69,7 @@ func readMessageFromBufio(br *bufio.Reader) ([]byte, error) {
 
 		if line == "" {
 			// End of headers.
-			headerFound = true
+			headerSectionEnd = true
 			break
 		}
 
@@ -77,12 +86,16 @@ func readMessageFromBufio(br *bufio.Reader) ([]byte, error) {
 				return nil, fmt.Errorf("Content-Length %d exceeds maximum %d", n, maxMessageSize)
 			}
 			contentLength = n
+			contentLengthFound = true
 		}
 		// Other headers (Content-Type, etc.) are ignored.
 	}
 
-	if !headerFound {
+	if !headerSectionEnd {
 		return nil, errors.New("missing empty line after headers")
+	}
+	if !contentLengthFound {
+		return nil, errors.New("missing Content-Length header")
 	}
 
 	body := make([]byte, contentLength)

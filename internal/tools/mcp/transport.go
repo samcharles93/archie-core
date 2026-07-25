@@ -81,6 +81,10 @@ type StdioTransport struct {
 	cmd   *exec.Cmd
 	stdin io.WriteCloser
 
+	// writeMu serialises writes to stdin so that header and body from
+	// different goroutines are not interleaved.
+	writeMu sync.Mutex
+
 	// pending maps message IDs (as raw JSON) to response channels.
 	pending map[string]chan []byte
 
@@ -91,9 +95,16 @@ type StdioTransport struct {
 	// readerWg tracks the reader goroutine so Stop can wait for it.
 	readerWg sync.WaitGroup
 
-	// retryCount is the number of consecutive failed restart attempts.
-	// Reset to 0 on a successful start.
-	retryCount int
+	// crashCount is incremented on each unexpected subprocess death and is
+	// used to compute the exponential backoff delay. Reset to 0 on explicit
+	// Start (not on auto-restart), so repeated crash loops produce
+	// increasingly long backoff intervals up to MaxBackoff.
+	crashCount int
+
+	// startupFailures tracks consecutive spawn failures (command not found,
+	// permissions, etc.). Reset to 0 on a successful spawn. When MaxRetries
+	// is set and this exceeds it, the transport enters StateError.
+	startupFailures int
 }
 
 // NewStdioTransport creates a new transport with the given config.
@@ -140,7 +151,9 @@ func (t *StdioTransport) Start(ctx context.Context) error {
 		t.cancel()
 	}
 	t.ctx, t.cancel = context.WithCancel(context.Background())
-	t.retryCount = 0
+	// Reset crash and failure counters on explicit user start.
+	t.crashCount = 0
+	t.startupFailures = 0
 	t.mu.Unlock()
 
 	return t.startSubprocess()
@@ -245,8 +258,13 @@ func (t *StdioTransport) Send(ctx context.Context, body []byte) ([]byte, error) 
 
 	t.mu.Unlock()
 
-	// Write the framed message.
-	if err := writeMessage(stdin, body); err != nil {
+	// Write the framed message under writeMu to prevent interleaving with
+	// concurrent Send calls on the same pipe.
+	t.writeMu.Lock()
+	err = writeMessage(stdin, body)
+	t.writeMu.Unlock()
+
+	if err != nil {
 		// Cleanup the pending entry on write failure.
 		t.mu.Lock()
 		// Check if someone else already consumed the channel (e.g., reader
@@ -391,15 +409,16 @@ func (t *StdioTransport) deliverResponse(body []byte) {
 }
 
 // handleProcessDeath is called when the reader detects the subprocess
-// has died. It transitions to Starting, closes pending channels, and
-// initiates the auto-restart loop with exponential backoff.
+// has died. It increments crashCount for backoff, transitions to Starting,
+// closes pending channels, and initiates the auto-restart sequence.
 func (t *StdioTransport) handleProcessDeath() {
-	// Transition to Starting and fail all pending.
 	t.mu.Lock()
 	if t.state != StateRunning {
 		t.mu.Unlock()
 		return
 	}
+
+	t.crashCount++
 	t.state = StateStarting
 	t.cmd = nil
 	t.stdin = nil
@@ -423,40 +442,46 @@ func (t *StdioTransport) failAllPendingLocked() {
 
 // attemptRestart runs the auto-restart loop with exponential backoff.
 // It is called after a subprocess crash and runs until either the
-// transport is stopped, max retries are exceeded, or the subprocess
-// successfully starts.
+// transport is stopped, max retries (for spawn failures) are exceeded,
+// or the subprocess successfully starts.
+//
+// Crash loops where the process starts but immediately dies are bounded
+// by exponential backoff growing up to MaxBackoff. Spawn failures
+// (binary not found, permissions, etc.) count against MaxRetries.
 func (t *StdioTransport) attemptRestart() {
-	backoff := t.config.effectiveInitialBackoff()
-	maxBackoff := t.config.effectiveMaxBackoff()
-
-	for attempt := 1; ; attempt++ {
-		// Check if we should still be trying to restart.
+	for {
+		// Check preconditions under lock.
 		t.mu.Lock()
 		if t.ctx.Err() != nil {
-			// Transport was stopped while we were waiting.
 			t.state = StateStopped
 			t.mu.Unlock()
 			return
 		}
 		if t.state != StateStarting {
-			// Someone else called Start/Stop concurrently.
 			t.mu.Unlock()
 			return
 		}
 
-		maxed := t.config.MaxRetries > 0 && attempt > t.config.MaxRetries
-		if maxed {
+		backoff := t.computeBackoffLocked()
+
+		// Check spawn-failure limit (not crash limit — crash loops are
+		// bounded by the growing backoff cap).
+		if t.config.MaxRetries > 0 && t.startupFailures >= t.config.MaxRetries {
 			t.state = StateError
 			t.mu.Unlock()
 			return
 		}
-
-		currentBackoff := backoff
-		t.retryCount++
+		if t.config.MaxRetries > 0 && t.crashCount >= t.config.MaxRetries {
+			// Crash loops (spawn succeeds, process immediately dies) also
+			// count toward the retry limit so we don't restart forever.
+			t.state = StateError
+			t.mu.Unlock()
+			return
+		}
 		t.mu.Unlock()
 
 		// Wait for the backoff period, but abort if the transport is stopped.
-		timer := time.NewTimer(currentBackoff)
+		timer := time.NewTimer(backoff)
 		select {
 		case <-t.ctx.Done():
 			timer.Stop()
@@ -470,11 +495,9 @@ func (t *StdioTransport) attemptRestart() {
 		// Try to start the subprocess.
 		cmd, stdin, stdout, err := t.spawnProcess()
 		if err != nil {
-			// Exponential backoff: double, but cap at max.
-			backoff = currentBackoff * 2
-			if backoff > maxBackoff {
-				backoff = maxBackoff
-			}
+			t.mu.Lock()
+			t.startupFailures++
+			t.mu.Unlock()
 			continue
 		}
 
@@ -483,13 +506,26 @@ func (t *StdioTransport) attemptRestart() {
 		t.cmd = cmd
 		t.stdin = stdin
 		t.state = StateRunning
-		t.retryCount = 0
+		t.startupFailures = 0 // reset on successful spawn
 		t.mu.Unlock()
 
 		t.readerWg.Add(1)
 		go t.runReader(stdout)
 		return
 	}
+}
+
+// computeBackoffLocked returns the exponential backoff delay based on
+// the current crashCount. Must hold t.mu.
+func (t *StdioTransport) computeBackoffLocked() time.Duration {
+	d := t.config.effectiveInitialBackoff()
+	for i := 1; i < t.crashCount; i++ {
+		d *= 2
+		if d > t.config.effectiveMaxBackoff() {
+			return t.config.effectiveMaxBackoff()
+		}
+	}
+	return d
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────

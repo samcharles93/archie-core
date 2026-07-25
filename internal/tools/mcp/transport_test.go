@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -8,9 +9,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -31,7 +33,7 @@ func TestMCPServerHelper(t *testing.T) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	os.Exit(0)
+	runtime.Goexit()
 }
 
 // testMCPServer reads MCP messages from stdin and responds.
@@ -40,8 +42,11 @@ type testMCPServer struct {
 }
 
 func (s *testMCPServer) serve() error {
+	// Use a persistent bufio.Reader so buffered bytes between calls
+	// are not lost (each readMessage call checks for an existing bufio.Reader).
+	stdin := bufio.NewReader(os.Stdin)
 	for {
-		body, err := readMessage(os.Stdin)
+		body, err := readMessage(stdin)
 		if err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) {
 				return nil
@@ -81,16 +86,9 @@ func (s *testMCPServer) handle(msg Message) (*Message, error) {
 		return nil, nil
 
 	case "crash-after-init":
-		if msg.Method == "initialize" {
-			resp := &Message{
-				JSONRPC: "2.0",
-				ID:      msg.ID,
-				Result:  json.RawMessage(`{"protocolVersion":"2025-03-26","capabilities":{}}`),
-			}
-			data, _ := json.Marshal(resp)
-			_ = writeMessage(os.Stdout, data)
-		}
-		os.Exit(1)
+		// Exit immediately without reading stdin to simulate a
+		// subprocess that crashes right after starting.
+		syscall.Exit(1) // bypass test harness os.Exit interception
 		return nil, nil
 
 	case "slow-response":
@@ -567,15 +565,15 @@ func TestFramingCarriageReturnOnly(t *testing.T) {
 
 func TestFramingMultipleMessages(t *testing.T) {
 	input := "Content-Length: 5\r\n\r\nhelloContent-Length: 3\r\n\r\nbye"
-	r := strings.NewReader(input)
-	body1, err := readMessage(r)
+	br := bufio.NewReader(strings.NewReader(input))
+	body1, err := readMessage(br)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(body1) != "hello" {
 		t.Errorf("first: got %q, want %q", string(body1), "hello")
 	}
-	body2, err := readMessage(r)
+	body2, err := readMessage(br)
 	if err != nil {
 		t.Fatal(err)
 	}
