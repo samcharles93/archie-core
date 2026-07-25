@@ -22,7 +22,7 @@ func TestCatalogReturnsNameAndDescriptionOnly(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(skillsDir, "SKILL.md"), []byte(`---
 name: archie-wf-tdd
-description: TDD bugfix workflow — reproduce, prove, fix.
+description: TDD bugfix workflow  --  reproduce, prove, fix.
 version: 1.0.0
 metadata:
   archie:
@@ -48,7 +48,7 @@ It should NOT appear in the catalog entry.
 		t.Errorf("Name = %q, want archie-wf-tdd", e.Name)
 	}
 	if e.Description == "" {
-		t.Error("Description is empty — catalog must include the description")
+		t.Error("Description is empty  --  catalog must include the description")
 	}
 	if strings.Contains(e.Description, "full SKILL.md body") {
 		t.Error("Catalog entry contains the body text. " +
@@ -187,7 +187,7 @@ func Run(input string) string {
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// Write an unlisted plugin — it must NOT be loaded.
+	// Write an unlisted plugin  --  it must NOT be loaded.
 	if err := os.WriteFile(filepath.Join(pluginsDir, "extra.go"), []byte(`package main
 
 func Run(input string) string {
@@ -197,7 +197,7 @@ func Run(input string) string {
 		t.Fatal(err)
 	}
 
-	// Discover the skill — must include only the listed plugins in declared order.
+	// Discover the skill  --  must include only the listed plugins in declared order.
 	skills, err := Discover(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -207,7 +207,7 @@ func Run(input string) string {
 	}
 	s := skills["archie-wf-tdd"]
 	if len(s.Plugins) != 2 {
-		t.Fatalf("skill has %d plugins, want 2 — Discover() must honor metadata.archie.plugins", len(s.Plugins))
+		t.Fatalf("skill has %d plugins, want 2  --  Discover() must honor metadata.archie.plugins", len(s.Plugins))
 	}
 	if s.Plugins[0].Name != "security-check" {
 		t.Errorf("plugin[0].Name = %q, want security-check (declared order)", s.Plugins[0].Name)
@@ -227,7 +227,7 @@ func Run(input string) string {
 
 	// The frontmatter must declare the plugin.
 	if s.Frontmatter.Metadata.Archie == nil || len(s.Frontmatter.Metadata.Archie.Plugins) != 2 {
-		t.Error("Frontmatter.Metadata.Archie.Plugins is empty — " +
+		t.Error("Frontmatter.Metadata.Archie.Plugins is empty  --  " +
 			"the SKILL.md must declare bundled plugins in the metadata.archie.plugins list")
 	}
 }

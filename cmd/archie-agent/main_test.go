@@ -13,14 +13,14 @@ import (
 func TestBootTaskID(t *testing.T) {
 	log := slog.New(slog.DiscardHandler)
 
-	t.Run("no task.json — shared pool mode", func(t *testing.T) {
+	t.Run("no task.json  --  shared pool mode", func(t *testing.T) {
 		id, ok := bootTaskID(t.TempDir(), log)
 		if ok || id != 0 {
 			t.Fatalf("bootTaskID() = (%d, %v), want (0, false)", id, ok)
 		}
 	})
 
-	t.Run("valid task.json — dedicated per-task mode", func(t *testing.T) {
+	t.Run("valid task.json  --  dedicated per-task mode", func(t *testing.T) {
 		dir := t.TempDir()
 		data, err := json.Marshal(container.TaskPayload{ID: 42, Owner: "acme", Repo: "widget"})
 		if err != nil {

@@ -145,7 +145,7 @@ func (g *Gateway) WebhookHandler() http.Handler {
 	return g.bot.WebhookHandler()
 }
 
-// ── command handlers (gateway-local — no LLM) ────────────────
+// ── command handlers (gateway-local  --  no LLM) ────────────────
 
 func (g *Gateway) statusHandler(router *gateway.Router) bot.HandlerFunc {
 	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -174,9 +174,9 @@ func (g *Gateway) helpHandler() bot.HandlerFunc {
 		}
 		g.sendMessage(ctx, b, msg.Chat.ID,
 			"🤖 <b>Archie Gateway</b>\n\n"+
-				"/status — Show task status\n"+
-				"/help — This message\n\n"+
-				"Anything else: chat with the LLM (not yet wired — coming soon).")
+				"/status  --  Show task status\n"+
+				"/help  --  This message\n\n"+
+				"Anything else: chat with the LLM (not yet wired  --  coming soon).")
 	}
 }
 
@@ -190,7 +190,7 @@ func (g *Gateway) defaultHandler(router *gateway.Router) bot.HandlerFunc {
 		}
 
 		// If it starts with / but wasn't matched by a registered
-		// handler, it's unknown — let the router handle it (which
+		// handler, it's unknown  --  let the router handle it (which
 		// will say "unrecognized").
 		reply, err := router.Route(ctx, gateway.Message{
 			ChannelID: fmt.Sprintf("%d", msg.Chat.ID),

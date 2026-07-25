@@ -42,7 +42,7 @@ type Config struct {
 // By default, the provider captures a frozen snapshot of both files at
 // Initialize() time and uses that snapshot for the system prompt block
 // (SystemPromptProvider). Writes go to disk immediately but the snapshot is
-// not updated mid-session — only the next session (or next Initialize call)
+// not updated mid-session  --  only the next session (or next Initialize call)
 // picks up the changes. Set Config.FrozenSnapshot to false to read live
 // content on every SystemPromptBlock() call.
 type Provider struct {
@@ -154,7 +154,7 @@ func (p *Provider) snapshotContent() (memory, user string) {
 //
 // When frozen snapshot is enabled (the default), Initialize captures the
 // rendered content of both files for use by SystemPromptBlock(). The snapshot
-// is not updated on subsequent writes — only the next Initialize() call (or
+// is not updated on subsequent writes  --  only the next Initialize() call (or
 // the next session) picks up the fresh content.
 func (p *Provider) Initialize(sessionID string) error {
 	if err := p.memory.Reload(); err != nil {

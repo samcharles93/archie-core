@@ -33,7 +33,7 @@ func (c *StoreTaskCreator) CreateTask(ctx context.Context, title string) (int64,
 	if c.owner == "" || c.repo == "" {
 		return 0, fmt.Errorf("no repo configured for chat-spawned tasks")
 	}
-	// Synthetic issue number — prevents collisions with real Gitea issues
+	// Synthetic issue number  --  prevents collisions with real Gitea issues
 	// (which are small sequential ints) while staying within the store's
 	// existing (owner, repo, number) uniqueness constraint.
 	number := int(time.Now().UnixNano())
@@ -41,7 +41,7 @@ func (c *StoreTaskCreator) CreateTask(ctx context.Context, title string) (int64,
 	if err != nil {
 		return 0, err
 	}
-	// The store doesn't return the task ID from EnqueueIssue — ClaimByIssue
+	// The store doesn't return the task ID from EnqueueIssue  --  ClaimByIssue
 	// gives us back the row. For the chat reply, the synthetic number is
 	// all the user needs to reference the task.
 	return int64(number), nil

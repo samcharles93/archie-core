@@ -29,7 +29,7 @@ const rpcTimeout = 60 * time.Second
 // operations run directly against the container's bind-mounted worktree.
 //
 // Prepare deliberately discards the RPC response's directory (the
-// daemon's host-side path) and returns localDir instead — archied and
+// daemon's host-side path) and returns localDir instead  --  archied and
 // archie-agent see the same files at different paths.
 type hybridTrees struct {
 	push        *worktreerpc.Client
@@ -72,7 +72,7 @@ var _ workflow.Trees = (*hybridTrees)(nil)
 // runTask builds a workflow.Registry from the container's own mounted
 // worktree, routes and runs req.Task's entire workflow, and reports the
 // terminal outcome. Store/Forge/worktree-push calls proxy back to archied
-// over nc; Store is archied's sole authority for task state — the
+// over nc; Store is archied's sole authority for task state  --  the
 // returned Response.Task is a best-effort snapshot for logging only.
 func runTask(ctx context.Context, req taskrun.Request, nc *natsio.Conn, newRunner agentexec.RunnerFactory, workDir string, log *slog.Logger) (*taskrun.Response, error) {
 	registry, err := skillbuild.BuildRegistry(workDir)
@@ -118,7 +118,7 @@ func runTask(ctx context.Context, req taskrun.Request, nc *natsio.Conn, newRunne
 
 // handleTaskRun decodes a taskrun.Request from msg, runs it via runTask
 // against the container's fixed worktree mount, and replies with the
-// outcome. Errors are reported in the reply, not returned — there's no
+// outcome. Errors are reported in the reply, not returned  --  there's no
 // caller to return them to; this is a NATS subscription callback.
 func handleTaskRun(ctx context.Context, msg *natsio.Msg, nc *natsio.Conn, log *slog.Logger) {
 	var req taskrun.Request

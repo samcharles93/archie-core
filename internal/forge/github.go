@@ -98,7 +98,7 @@ func labelNames(is *github.Issue) []string {
 }
 
 // IssuesWithLabel returns open issues matching the given label, excluding
-// PRs. Used when Dispatch.Trigger is "label" or "either" — no assignee
+// PRs. Used when Dispatch.Trigger is "label" or "either"  --  no assignee
 // required, just the label.
 func (c *GitHubClient) IssuesWithLabel(ctx context.Context, owner, repo, label string) ([]Issue, error) {
 	var out []Issue
@@ -149,7 +149,7 @@ type Reply struct {
 }
 
 // RepliesAfter returns comments on the issue with id > afterID that were
-// not written by exclude (the bot) — the human side of waiting_human.
+// not written by exclude (the bot)  --  the human side of waiting_human.
 func (c *GitHubClient) RepliesAfter(ctx context.Context, owner, repo string, number int, afterID int64, exclude string) ([]Reply, error) {
 	comments, _, err := c.gh.Issues.ListComments(ctx, owner, repo, number,
 		&github.IssueListCommentsOptions{ListOptions: github.ListOptions{PerPage: 50}})
@@ -204,19 +204,19 @@ func (c *GitHubClient) CloseIssue(ctx context.Context, owner, repo string, numbe
 	return err
 }
 
-// LinkBranch associates a branch with an issue (GitHub stub — Gitea is primary).
+// LinkBranch associates a branch with an issue (GitHub stub  --  Gitea is primary).
 func (c *GitHubClient) LinkBranch(ctx context.Context, owner, repo string, issueNumber int, branch string) error {
 	return nil
 }
 
-// CreateIssue opens a new issue and returns its number (stub — Gitea is primary).
+// CreateIssue opens a new issue and returns its number (stub  --  Gitea is primary).
 func (c *GitHubClient) CreateIssue(ctx context.Context, owner, repo, title, body string, labels []string) (int, error) {
 	return 0, fmt.Errorf("GitHub CreateIssue not yet implemented")
 }
 
 // State labels mirror the task lifecycle onto the forge so archie's
 // status is visible at a glance. SQLite remains the source of truth;
-// labels are the human-facing projection — and removing the parked
+// labels are the human-facing projection  --  and removing the parked
 // label is the forge-native retry trigger.
 // Label strings are configured via [dispatch.labels]; these are the
 // legacy defaults used as a fallback when config is absent.
@@ -233,7 +233,7 @@ var stateLabelColors = map[string]string{
 // defaultLabelColor is used for custom labels not in stateLabelColors.
 const defaultLabelColor = "bfd4f2"
 
-// React adds an emoji reaction to an issue — the instant "received"
+// React adds an emoji reaction to an issue  --  the instant "received"
 // acknowledgement on pickup.
 func (c *GitHubClient) React(ctx context.Context, owner, repo string, number int, reaction string) error {
 	_, _, err := c.gh.Reactions.CreateIssueReaction(ctx, owner, repo, number, reaction)

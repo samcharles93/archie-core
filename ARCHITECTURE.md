@@ -31,7 +31,7 @@ queued → running(workflow:stage) → pr_open → merged | rejected
             parked
 ```
 
-**Crash recovery:** tasks left in `running` are re-queued on startup. Parks are never silent — every park posts a comment with the reason and gate output.
+**Crash recovery:** tasks left in `running` are re-queued on startup. Parks are never silent  --  every park posts a comment with the reason and gate output.
 
 **PR reconciliation:** the daemon polls open PRs, checks GitHub state (`merged`/`closed`), transitions the task, and cleans up worktrees.
 
@@ -42,7 +42,7 @@ queued → running(workflow:stage) → pr_open → merged | rejected
 - `Workflow` = named list of `Stage`s
 - `Stage` = `Name` + `Run(ctx, *TaskContext) error`
 - `TaskContext` = mutable bag: Task, Repo, Config, Forge, Store, Agent runner, worktree dir/branch, scratch fields
-- `Outcome` = terminal decision (status + detail) — ends the workflow immediately
+- `Outcome` = terminal decision (status + detail)  --  ends the workflow immediately
 - `Registry` = `map[string]Workflow`
 
 ### Routing (`Route`)
@@ -61,7 +61,7 @@ Stages execute sequentially. After each stage:
 - Outcome set → finish (transition task, update labels)
 - Neither → continue to next stage
 
-A workflow that ends without an outcome parks — definition bugs must not vanish silently.
+A workflow that ends without an outcome parks  --  definition bugs must not vanish silently.
 
 ## Workflows
 
@@ -91,7 +91,7 @@ prepare → baseline-gate → plan(planner, read-only) → build(builder, gated)
 prepare → baseline-gate → analyse(planner) → repro-tests(builder, inverted gate) → capture-proof → commit-repro → fix(builder, normal gate, test files protected) → commit-push → diff-cap → open-pr + repro-evidence
 ```
 
-- **repro-tests:** the quality gate is **inverted** — the test command must FAIL. Proven failure is required.
+- **repro-tests:** the quality gate is **inverted**  --  the test command must FAIL. Proven failure is required.
 - **capture-proof:** runs the test command deterministically, captures the failing output
 - **commit-repro:** commits the failing tests as the first commit
 - **fix:** test files are **environmentally write-protected** (not prompt-ruled). The agent fixes code, not tests.
@@ -130,42 +130,42 @@ State labels (`archie:queued`, `archie:working`, etc.) are created on demand, re
 
 ## Worktree Manager
 
-Every task gets a fresh clone — no persistent state between runs. The model never runs git.
+Every task gets a fresh clone  --  no persistent state between runs. The model never runs git.
 
 ```
 ~/.local/share/archie/work/<owner>-<repo>/issue-<N>/
 ```
 
-Token auth via a generated `GIT_ASKPASS` helper script — the token never appears in `.git/config` or process argv.
+Token auth via a generated `GIT_ASKPASS` helper script  --  the token never appears in `.git/config` or process argv.
 
 ## Config
 
 Daemon-level TOML (`~/.config/archie/config.toml`):
 
-- `[forge]` — type (github), host, token env var
-- `[dispatch]` — trigger (assignee/label/either), labels, ack reaction
-- `[[repos]]` — owner, name, base branch, gate commands, protected paths, ecosystem
-- `[models]` — planner, builder, triage (provider/model refs)
-- `[providers]` — LLM provider configs
-- `[agent]` — execution mode (`inprocess` or `subprocess`), worker command, environment allowlist
-- `[budgets]` — max steps, max tokens, wall clock, gate max failures
-- `[web]` — dashboard listen address
-- `[notify]` — webhook URL for notifications
+- `[forge]`  --  type (github), host, token env var
+- `[dispatch]`  --  trigger (assignee/label/either), labels, ack reaction
+- `[[repos]]`  --  owner, name, base branch, gate commands, protected paths, ecosystem
+- `[models]`  --  planner, builder, triage (provider/model refs)
+- `[providers]`  --  LLM provider configs
+- `[agent]`  --  execution mode (`inprocess` or `subprocess`), worker command, environment allowlist
+- `[budgets]`  --  max steps, max tokens, wall clock, gate max failures
+- `[web]`  --  dashboard listen address
+- `[notify]`  --  webhook URL for notifications
 
 Subprocess mode is a migration transport boundary, not a security sandbox: the worker still runs under the daemon UID and can access daemon-readable host resources. The "daemon never runs untrusted code" boundary requires the later container runner with a separate user, a restricted filesystem and process namespace, and explicit mounts.
 
-Per-repo gates are command lists: `[[repos.gate]] = ["go", "vet", "./..."]`. The last command is the test runner (by convention — TDD inverts it).
+Per-repo gates are command lists: `[[repos.gate]] = ["go", "vet", "./..."]`. The last command is the test runner (by convention  --  TDD inverts it).
 
 ## Observability
 
 Every lifecycle event flows through an internal event bus:
 - SQLite event log (every event stamped with a row ID)
 - Live dashboard via SSE (server-sent events)
-- Bounded subscriber buffers — slow consumers drop events, never block the daemon
+- Bounded subscriber buffers  --  slow consumers drop events, never block the daemon
 
 ## Key Design Decisions
 
-1. **Environmental constraints over prompt rules.** The gate, test-file protection, and diff cap are code enforcement — not "please don't do that" in the system prompt.
+1. **Environmental constraints over prompt rules.** The gate, test-file protection, and diff cap are code enforcement  --  not "please don't do that" in the system prompt.
 2. **The model never runs git.** Worktree operations are deterministic steps, not agent tools.
 3. **Tokens as cost, not features.** Token usage is tracked per task and emitted in observability events but never budgeted beyond the agent loop's own limits.
 4. **Label-driven routing.** Workflow selection is a switch statement, not an LLM call. A triage LLM is used only for the human reply judgment in waiting_human.
@@ -192,4 +192,4 @@ Every lifecycle event flows through an internal event bus:
 - Gitea forge implementation
 - More ecosystems
 - Notification integrations beyond n8n webhook
-- Skills (SKILL.md support — see `.archie/skills/`)
+- Skills (SKILL.md support  --  see `.archie/skills/`)

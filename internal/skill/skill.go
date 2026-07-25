@@ -28,21 +28,21 @@ type Frontmatter struct {
 	} `yaml:"metadata"`
 }
 
-// CatalogEntry is a lightweight skill reference — name + description
+// CatalogEntry is a lightweight skill reference  --  name + description
 // only (~100 tokens). Loaded at daemon startup for skill discovery.
 // The full body is loaded on activation via LoadBody. agentskills.io
 // progressive disclosure Tier 1.
 type CatalogEntry struct {
 	Name        string
 	Description string
-	Workflow    string // from metadata.archie.workflow — which workflow this skill handles
+	Workflow    string // from metadata.archie.workflow  --  which workflow this skill handles
 	Dir         string // skill directory name
 }
 
 // Catalog scans dir/.agents/skills/*/SKILL.md and returns catalog entries
 // (Tier 1: name + description + workflow only). Only the frontmatter is
-// parsed — full bodies are not loaded. Missing directory or a file at the
-// skills path returns nil (no error) — the caller treats this as "no skills."
+// parsed  --  full bodies are not loaded. Missing directory or a file at the
+// skills path returns nil (no error)  --  the caller treats this as "no skills."
 func Catalog(dir string) ([]CatalogEntry, error) {
 	skillsPath := filepath.Join(dir, skillsDir)
 	entries, err := os.ReadDir(skillsPath)
@@ -50,7 +50,7 @@ func Catalog(dir string) ([]CatalogEntry, error) {
 		return nil, nil
 	}
 	if err != nil {
-		// A file at .agents/skills (ENOTDIR) is not fatal — treat as no skills.
+		// A file at .agents/skills (ENOTDIR) is not fatal  --  treat as no skills.
 		// Same for permission errors and other non-fatal ReadDir failures.
 		return nil, nil
 	}

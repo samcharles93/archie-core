@@ -62,7 +62,7 @@ var Plugin = plugin._Plugin{
 }
 
 func TestLoadDirSkipsInvalidPlugin(t *testing.T) {
-	// A .go file that doesn't compile must be skipped — not crash the loader.
+	// A .go file that doesn't compile must be skipped  --  not crash the loader.
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "broken.go"), []byte(`package main
 this is not valid Go syntax @@@@
@@ -179,11 +179,11 @@ func TestLoadDirNonexistentDirReturnsNil(t *testing.T) {
 // ── Adversarial tests ────────────────────────────────────────────────
 //
 // These tests try to BREAK LoadDir. A correct implementation must
-// degrade gracefully — skip the bad plugin, load the rest, never panic.
+// degrade gracefully  --  skip the bad plugin, load the rest, never panic.
 
 func TestLoadDirNilFunctionFieldsLoadsWithoutPanic(t *testing.T) {
 	// A _Plugin with nil WName/WVersion must LOAD without panicking
-	// AND must not panic when Name()/Version() is called — the wrapper
+	// AND must not panic when Name()/Version() is called  --  the wrapper
 	// must nil-guard. Otherwise logging plugin names at startup crashes
 	// the daemon.
 	dir := t.TempDir()
@@ -207,7 +207,7 @@ var Plugin = plugin._Plugin{
 		t.Fatalf("LoadDir returned %d plugins, want 1 (nil funcs should not prevent loading)", len(plugins))
 	}
 
-	// These must not panic — the _Plugin wrapper must nil-guard.
+	// These must not panic  --  the _Plugin wrapper must nil-guard.
 	// The daemon calls Name()/Version() at startup to log loaded plugins.
 	name := plugins[0].Name()
 	version := plugins[0].Version()
@@ -220,7 +220,7 @@ var Plugin = plugin._Plugin{
 }
 
 func TestLoadDirPluginReturningEmptyNameVersion(t *testing.T) {
-	// Plugins with empty name/version are still valid — the interface
+	// Plugins with empty name/version are still valid  --  the interface
 	// doesn't forbid empty strings. LoadDir must not reject them.
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "empty.go"), []byte(`package main
@@ -264,14 +264,14 @@ var Plugin = 42
 }
 
 func TestLoadDirSkipsPluginWithOnlySomeInterfaceMethods(t *testing.T) {
-	// A struct that has Name() but not Version() — doesn't satisfy Plugin.
+	// A struct that has Name() but not Version()  --  doesn't satisfy Plugin.
 	// type assertion must fail and the plugin must be skipped.
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "partial.go"), []byte(`package main
 
 type partial struct{}
 func (p partial) Name() string { return "partial" }
-// No Version() method — deliberately incomplete.
+// No Version() method  --  deliberately incomplete.
 
 var Plugin partial
 `), 0o644); err != nil {
@@ -325,12 +325,12 @@ var Plugin = plugin._Plugin{
 		t.Fatal(err)
 	}
 	if len(plugins) != 0 {
-		t.Errorf("LoadDir returned %d plugins, want 0 — subdirectories must not be traversed", len(plugins))
+		t.Errorf("LoadDir returned %d plugins, want 0  --  subdirectories must not be traversed", len(plugins))
 	}
 }
 
 func TestLoadDirPluginWithPanicInNameFunc(t *testing.T) {
-	// A plugin whose Name() function panics must still be loadable —
+	// A plugin whose Name() function panics must still be loadable  -- 
 	// the panic only fires on call, not on load.
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "panicky.go"), []byte(`package main
@@ -353,12 +353,12 @@ var Plugin = plugin._Plugin{
 		t.Fatalf("LoadDir returned %d plugins, want 1 (panics are deferred to call time)", len(plugins))
 	}
 
-	// Verify calling Name() actually panics — the plugin loaded, the panic
+	// Verify calling Name() actually panics  --  the plugin loaded, the panic
 	// is the caller's responsibility.
 	func() {
 		defer func() {
 			if r := recover(); r == nil {
-				t.Error("Name() did not panic — expected panic from panicky plugin")
+				t.Error("Name() did not panic  --  expected panic from panicky plugin")
 			}
 		}()
 		plugins[0].Name()
@@ -378,7 +378,7 @@ var Plugin = struct{}{}
 		t.Fatal(err)
 	}
 
-	// This must not crash — just skip.
+	// This must not crash  --  just skip.
 	plugins, err := plugin.LoadDir(dir, symbols)
 	if err != nil {
 		t.Fatal("LoadDir errored on unused import:", err)
@@ -394,7 +394,7 @@ func TestGeneratedWrapperHasNilGuards(t *testing.T) {
 	//
 	// The _Plugin type is in the pluginextract package. We verify
 	// indirectly by loading a plugin with nil funcs and calling
-	// Name()/Version() — they must return empty strings, not panic.
+	// Name()/Version()  --  they must return empty strings, not panic.
 
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "nilguard.go"), []byte(`package main
@@ -423,7 +423,7 @@ var Plugin = plugin._Plugin{
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Fatalf("Name()/Version() panicked with nil funcs — "+
+				t.Fatalf("Name()/Version() panicked with nil funcs  --  "+
 					"the generated _Plugin wrapper is missing nil guards. "+
 					"Re-run `go generate` may have overwritten them: %v", r)
 			}
@@ -441,7 +441,7 @@ var Plugin = plugin._Plugin{
 }
 
 func TestLoadDirPluginWithGoBuildTag(t *testing.T) {
-	// Build tags in Yaegi-interpreted code are just comments — they
+	// Build tags in Yaegi-interpreted code are just comments  --  they
 	// don't gate evaluation. The file loads normally.
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "tagged.go"), []byte(`//go:build ignore

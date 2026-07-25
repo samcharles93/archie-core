@@ -181,7 +181,7 @@ func TestTaskDispatcherRunsConcurrentReposInParallel(t *testing.T) {
 		select {
 		case <-started:
 		case <-time.After(time.Second):
-			t.Fatalf("%s did not start — allow_concurrent repos should not be serialized", name)
+			t.Fatalf("%s did not start  --  allow_concurrent repos should not be serialized", name)
 		}
 	}
 
@@ -304,7 +304,7 @@ func TestRunViaAgentParksOnRequestFailure(t *testing.T) {
 		t.Fatalf("claim: (%v, %v)", task, err)
 	}
 
-	// No responder registered on the taskrun subject — the request must
+	// No responder registered on the taskrun subject  --  the request must
 	// fail, and runViaAgent must park rather than leave the task stuck
 	// running.
 	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget"})
@@ -395,7 +395,7 @@ func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
 	}
 
 	// Success path: runViaAgent must not park a task that archie-agent
-	// already reported as complete — the daemon just logs it.
+	// already reported as complete  --  the daemon just logs it.
 	got, err := s.TaskByIssue(ctx, "acme", "widget", 3)
 	if err != nil || got == nil {
 		t.Fatalf("TaskByIssue: (%+v, %v)", got, err)

@@ -23,7 +23,7 @@ func SubjectForTask(taskID int64) string {
 // workflow itself: the task row (already claimed by archied), the repo's
 // gate/ecosystem config, a non-secret config snapshot, and LLM provider
 // config (API keys are injected into the container's environment
-// separately — Providers only carries class/env-var-name/base-URL).
+// separately  --  Providers only carries class/env-var-name/base-URL).
 type Request struct {
 	Task      *store.Task                   `json:"task"`
 	Repo      config.Repo                   `json:"repo"`

@@ -36,9 +36,9 @@ Hermes gateway (`gateway/run.py`, GatewayRunner) manages full lifecycle: adapter
 
 | Feature | archie-core status | Priority |
 |---|---|---|
-| Adapter lifecycle (connect/disconnect/reconnect) | None — 3-method Gateway interface | **P0** |
-| MessageEvent data model (types, media, reply context) | None — 3-field Message struct | **P0** |
-| SendResult with retry/error classification | None — fire-and-forget | **P1** |
+| Adapter lifecycle (connect/disconnect/reconnect) | None  --  3-method Gateway interface | **P0** |
+| MessageEvent data model (types, media, reply context) | None  --  3-field Message struct | **P0** |
+| SendResult with retry/error classification | None  --  fire-and-forget | **P1** |
 | Session management (SessionSource + AsyncSessionStore) | None | **P0** |
 | Platform config (Platform enum, PlatformConfig) | None | **P0** |
 | Streaming delivery (token streaming with edit/draft) | None | **P1** |
@@ -54,7 +54,7 @@ Hermes has 30+ platform adapters: Telegram, Discord, Slack, Matrix, WhatsApp, Si
 
 | Feature | archie-core status | Priority |
 |---|---|---|
-| BasePlatformAdapter ABC (20+ methods, capability flags) | None — 3-method Gateway interface | **P0** |
+| BasePlatformAdapter ABC (20+ methods, capability flags) | None  --  3-method Gateway interface | **P0** |
 | Platform adapter registry + plugin discovery | None | **P0** |
 | Media handling (image/video/audio/document send) | None | **P1** |
 | Typing indicators | None | **P2** |
@@ -110,7 +110,7 @@ Hermes has: 60+ CLI commands, TUI interface, command registry with plugin contri
 
 | Feature | archie-core status | Priority |
 |---|---|---|
-| Interactive CLI with command registry | None — 4 flags | **P1** |
+| Interactive CLI with command registry | None  --  4 flags | **P1** |
 | Config subcommands (get/set/unset/edit/wizard) | None | **P1** |
 | .env file support | None | **P2** |
 | Self-update mechanism | None | **P2** |
@@ -171,10 +171,10 @@ Hermes has: FastAPI web server (Vite/React frontend), OpenAI-compatible API serv
 
 ## Total: ~60 feature gaps across 11 subsystems
 
-**P0 (must-have for baseline parity):** 7 items — adapter lifecycle, message model, session management, platform config, tool registry, MCP client, memory provider ABC
+**P0 (must-have for baseline parity):** 7 items  --  adapter lifecycle, message model, session management, platform config, tool registry, MCP client, memory provider ABC
 
-**P1 (near-term):** 13 items — send result, streaming, dedup, media handling, guardrails, progressive disclosure, tool persistence, session hooks, history store, pairing/auth, CLI, config subcommands, profiles, readiness
+**P1 (near-term):** 13 items  --  send result, streaming, dedup, media handling, guardrails, progressive disclosure, tool persistence, session hooks, history store, pairing/auth, CLI, config subcommands, profiles, readiness
 
-**P2 (medium-term):** 22 items — interactive UX, subagents, browser/search/file tools, compression, session splitting, slash access, secrets CLI, cron, dashboard, API server, delivery, drain, scale-to-zero
+**P2 (medium-term):** 22 items  --  interactive UX, subagents, browser/search/file tools, compression, session splitting, slash access, secrets CLI, cron, dashboard, API server, delivery, drain, scale-to-zero
 
-**P3 (future):** 3 items — billing, OAuth, desktop app
+**P3 (future):** 3 items  --  billing, OAuth, desktop app

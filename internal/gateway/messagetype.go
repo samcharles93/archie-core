@@ -57,7 +57,7 @@ func (t MessageType) IsMedia() bool {
 
 // IsEphemeral reports whether the type is a transient signal
 // (typing indicators, read receipts) that should not be stored.
-// Note: MsgEdited is NOT ephemeral — it carries content (original
+// Note: MsgEdited is NOT ephemeral  --  it carries content (original
 // and updated text) that must be persisted to avoid serving stale data.
 func (t MessageType) IsEphemeral() bool {
 	switch t {

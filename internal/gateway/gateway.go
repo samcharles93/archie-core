@@ -3,8 +3,8 @@
 // etc.) owns its connection lifecycle and delegates message dispatch to a
 // shared CommandRouter.
 //
-// The router distinguishes gateway-local commands — handled directly
-// without the LLM (model changes, status queries, restart) — from
+// The router distinguishes gateway-local commands  --  handled directly
+// without the LLM (model changes, status queries, restart)  --  from
 // general messages that need LLM processing.
 package gateway
 
@@ -43,7 +43,7 @@ type StatusReader interface {
 }
 
 // LLMResponder routes a message to the LLM and returns the reply. When
-// nil (not yet wired — see abg.13), non-command messages get a static
+// nil (not yet wired  --  see abg.13), non-command messages get a static
 // "LLM not configured" response. Gateways call this for any message the
 // router did not handle directly.
 type LLMResponder func(ctx context.Context, msg Message) (string, error)
@@ -82,7 +82,7 @@ type Router struct {
 	gatewayName string
 }
 
-// NewRouter returns a Router. llm is optional — when nil, non-command
+// NewRouter returns a Router. llm is optional  --  when nil, non-command
 // messages get a "not configured" response.
 func NewRouter(store StatusReader, llm LLMResponder, gatewayName string) *Router {
 	return &Router{Store: store, LLM: llm, gatewayName: gatewayName}
@@ -103,7 +103,7 @@ func (r *Router) Route(ctx context.Context, msg Message) (string, error) {
 	case "/model":
 		return r.handleModel(ctx, arg)
 	case "/spawn":
-		// Title is everything after "/spawn" — keep the multi-word text.
+		// Title is everything after "/spawn"  --  keep the multi-word text.
 		title := restAfter(text, cmd, r.gatewayName)
 		return r.handleSpawn(ctx, title)
 	default:

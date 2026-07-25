@@ -20,7 +20,7 @@ import (
 // ── Helper: test MCP server process ─────────────────────────────────────
 
 // TestMCPServerHelper is the entry point for the test helper subprocess.
-// It is NOT a test — it is a process invoked by StdioTransport tests.
+// It is NOT a test  --  it is a process invoked by StdioTransport tests.
 // It must be the only Test* function in this file that runs as a subprocess;
 // we guard it with GO_WANT_MCP_HELPER.
 func TestMCPServerHelper(t *testing.T) {
@@ -42,6 +42,12 @@ type testMCPServer struct {
 }
 
 func (s *testMCPServer) serve() error {
+	// crash-after-init must exit immediately on startup, before the read
+	// loop, so the transport sees a subprocess that dies right after spawn.
+	if s.behavior == "crash-after-init" {
+		syscall.Exit(1)
+	}
+
 	// Use a persistent bufio.Reader so buffered bytes between calls
 	// are not lost (each readMessage call checks for an existing bufio.Reader).
 	stdin := bufio.NewReader(os.Stdin)
@@ -83,12 +89,6 @@ func (s *testMCPServer) handle(msg Message) (*Message, error) {
 				Result:  json.RawMessage(`{"protocolVersion":"2025-03-26","capabilities":{}}`),
 			}, nil
 		}
-		return nil, nil
-
-	case "crash-after-init":
-		// Exit immediately without reading stdin to simulate a
-		// subprocess that crashes right after starting.
-		syscall.Exit(1) // bypass test harness os.Exit interception
 		return nil, nil
 
 	case "slow-response":
@@ -148,7 +148,7 @@ func helperTransportWithConfig(t *testing.T, behavior string, cfg StdioTransport
 		cfg.MaxBackoff = 50 * time.Millisecond
 	}
 	t.Cleanup(func() {
-		// nothing — caller manages lifecycle
+		// nothing  --  caller manages lifecycle
 	})
 	return NewStdioTransport(cfg)
 }
@@ -408,7 +408,7 @@ func TestStdioTransportConcurrentRequests(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, concurrency)
 
-	for i := 0; i < concurrency; i++ {
+	for i := range concurrency {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
@@ -509,7 +509,7 @@ func TestStdioTransportRestartFromError(t *testing.T) {
 	// We accept either Running or Error (depending on timing).
 	if err := tr.Start(context.Background()); err != nil {
 		// Starting a crashing process may return nil if the retry loop starts in background.
-		// That's fine — we just check the transition happened.
+		// That's fine  --  we just check the transition happened.
 		t.Logf("Start from Error: %v (acceptable)", err)
 	}
 }
@@ -552,7 +552,7 @@ func TestStdioTransportSendAfterStop(t *testing.T) {
 // ── Framing edge cases ──────────────────────────────────────────────────
 
 func TestFramingCarriageReturnOnly(t *testing.T) {
-	// Some servers might send \n without \r — we should be lenient.
+	// Some servers might send \n without \r  --  we should be lenient.
 	input := "Content-Length: 4\n\nbody"
 	body, err := readMessage(strings.NewReader(input))
 	if err != nil {

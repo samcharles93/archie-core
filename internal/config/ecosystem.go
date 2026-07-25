@@ -9,7 +9,7 @@ type ecosystemDefaults struct {
 }
 
 // ecosystems maps known ecosystem names to their defaults.
-// "custom" is deliberately absent — it means user-configured everything.
+// "custom" is deliberately absent  --  it means user-configured everything.
 var ecosystems = map[string]ecosystemDefaults{
 	"go": {
 		Preflight: [][]string{{"go", "version"}},

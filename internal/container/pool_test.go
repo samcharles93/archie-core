@@ -8,16 +8,16 @@ import (
 	"time"
 )
 
-// ── regression: Gap 2 — post-completion grace period ────────────────
+// ── regression: Gap 2  --  post-completion grace period ────────────────
 
 func TestContainerSupportsGracePeriod(t *testing.T) {
 	// Gap 2: MaxUptime is a container-level context timeout at creation,
 	// not a post-completion grace period. PRD section 1 says:
-	// "max_uptime — grace period after task completion before kill."
+	// "max_uptime  --  grace period after task completion before kill."
 	//
 	// The agent should stay alive after the task finishes so it can
 	// handle follow-ups (gate re-runs, human replies). Currently
-	// Release() stops the container immediately — there's no way to
+	// Release() stops the container immediately  --  there's no way to
 	// keep it alive after task completion.
 
 	c := &Container{ID: "test"}
@@ -72,11 +72,11 @@ func TestWriteTaskJSONProducesValidFile(t *testing.T) {
 	}
 }
 
-// ── regression: Gap 6 — /data/task.json boot brief ───────────────────
+// ── regression: Gap 6  --  /data/task.json boot brief ───────────────────
 
 func TestTaskPayloadWrittenAsVolumeFile(t *testing.T) {
 	// Gap 6: task travels over NATS, not a file. PRD section 3 describes
-	// /data/task.json as the container's boot-time brief — the daemon
+	// /data/task.json as the container's boot-time brief  --  the daemon
 	// writes it to the volume before the container starts, and the agent
 	// reads it on boot alongside NATS messages.
 
@@ -105,7 +105,7 @@ func TestTaskPayloadWrittenAsVolumeFile(t *testing.T) {
 
 	// Gap 6 assertion: the daemon must serialize this payload as JSON
 	// and write it to <workspace>/task.json before calling Acquire().
-	// Currently no such file is written — the task travels over NATS.
+	// Currently no such file is written  --  the task travels over NATS.
 	if payload.ID == 0 {
 		t.Error("TaskPayload ID is zero")
 	}

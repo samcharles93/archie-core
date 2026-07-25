@@ -11,7 +11,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
-// ── regression: Gap 7 — plugins discovered but not executed ─────────
+// ── regression: Gap 7  --  plugins discovered but not executed ─────────
 
 func TestSkillPluginsAvailableDuringStageExecution(t *testing.T) {
 	// Gap 7: skill.Discover() populates Skill.Plugins but nothing calls
@@ -24,7 +24,7 @@ func TestSkillPluginsAvailableDuringStageExecution(t *testing.T) {
 	// accessible via the TaskContext.
 	//
 	// Additionally (Gap 8): when metadata.archie.plugins lists specific
-	// plugin files, only those are loaded — unlisted *.go files are ignored.
+	// plugin files, only those are loaded  --  unlisted *.go files are ignored.
 
 	dir := t.TempDir()
 	skillsDir := filepath.Join(dir, ".agents", "skills", "archie-wf-tdd")
@@ -61,7 +61,7 @@ func Run(input string) string {
 		t.Fatal(err)
 	}
 
-	// Write an unlisted plugin — it must NOT be loaded.
+	// Write an unlisted plugin  --  it must NOT be loaded.
 	if err := os.WriteFile(filepath.Join(pluginsDir, "extra.go"), []byte(`package main
 
 func Run(input string) string {
@@ -89,7 +89,7 @@ func Run(input string) string {
 	// Load the skill body (existing behavior).
 	body := loadSkillBody(tc)
 	if body == "" {
-		t.Fatal("skill body not loaded — worktree setup is wrong")
+		t.Fatal("skill body not loaded  --  worktree setup is wrong")
 	}
 
 	// Gap 7 assertion: loadSkillBody must also populate skill plugins
@@ -105,12 +105,12 @@ func Run(input string) string {
 	// Gap 8 assertion: only the frontmatter-listed plugin must be loaded.
 	// The unlisted extra.go must NOT appear in SkillPlugins.
 	if len(tc.SkillPlugins) != 1 {
-		t.Errorf("Gap 8: got %d plugins, want 1 — loadSkillBody must honor "+
+		t.Errorf("Gap 8: got %d plugins, want 1  --  loadSkillBody must honor "+
 			"metadata.archie.plugins and exclude unlisted *.go files", len(tc.SkillPlugins))
 	}
 	for _, p := range tc.SkillPlugins {
 		if p.Name == "extra" {
-			t.Error("Gap 8: unlisted plugin 'extra' was loaded — " +
+			t.Error("Gap 8: unlisted plugin 'extra' was loaded  --  " +
 				"loadSkillBody must only load plugins declared in metadata.archie.plugins")
 		}
 	}

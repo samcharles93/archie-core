@@ -39,7 +39,7 @@ var (
 
 // Manager orchestrates the built-in memory provider plus at most one external
 // provider. It is the single entry point that agent lifecycle code interacts
-// with — callers never address providers directly.
+// with  --  callers never address providers directly.
 //
 // Key responsibilities:
 //   - Provider registration and lifecycle (Initialize, Shutdown)
@@ -130,7 +130,7 @@ type Manager struct {
 // that kind is available.
 //
 // The built-in provider is always present and typically backed by the
-// filesystem or NellDB. The external provider is optional — pass nil
+// filesystem or NellDB. The external provider is optional  --  pass nil
 // and call RegisterExternal later, or pass a single external provider
 // at construction time.
 //
@@ -239,7 +239,7 @@ func (m *Manager) GetToolSchemas() []tools.ToolEntry {
 // ToolCallProvider.
 //
 // Before dispatching, any "content" or "replacement" string argument is
-// passed through ScanContent (18.15) — this is the actual integration point
+// passed through ScanContent (18.15)  --  this is the actual integration point
 // for threat scanning, applying uniformly to every provider's write tools.
 // A ThreatBlock result rejects the call before it reaches the provider.
 //
@@ -317,7 +317,7 @@ func (m *Manager) Initialize(sessionID string) error {
 // Each hook fans out to all active providers that implement the
 // corresponding sub-interface. Hooks are fire-and-forget: they launch a
 // goroutine per provider and return immediately. Hook errors and panics
-// are recovered — they must not interrupt the agent loop.
+// are recovered  --  they must not interrupt the agent loop.
 
 // safeGo runs fn in a goroutine, recovering any panic to prevent a
 // misbehaving provider from crashing the process.
@@ -325,7 +325,7 @@ func safeGo(fn func()) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				// A provider panicked — this must not take down the agent.
+				// A provider panicked  --  this must not take down the agent.
 				// The panic is intentionally swallowed after logging.
 				_ = r
 				_ = debug.Stack()
@@ -482,7 +482,7 @@ func (m *Manager) Prefetch(query string) (string, error) {
 // is applied if the caller's context does not already have a shorter deadline.
 //
 // If the target provider is still prefetching from the previous turn, the
-// call is skipped — PrefetchContext returns ("", nil) and the skip is logged
+// call is skipped  --  PrefetchContext returns ("", nil) and the skip is logged
 // (18.8). Results from successful prefetches are stored and included in
 // SystemPromptBlock() output.
 func (m *Manager) PrefetchContext(ctx context.Context, query string) (string, error) {
@@ -674,7 +674,7 @@ func (m *Manager) Shutdown() error {
 //
 // After ShutdownContext returns, no new sync operations are accepted.
 func (m *Manager) ShutdownContext(ctx context.Context) error {
-	// Signal that we're shutting down — new submissions will be rejected.
+	// Signal that we're shutting down  --  new submissions will be rejected.
 	m.shuttingDown.Store(true)
 
 	// Record the drain deadline so the sync worker can self-abandon any op
@@ -691,7 +691,7 @@ func (m *Manager) ShutdownContext(ctx context.Context) error {
 	m.pipelineMu.Unlock()
 
 	// Wait for the sync worker to finish draining, or the deadline. On
-	// timeout we don't block further — the worker keeps running in the
+	// timeout we don't block further  --  the worker keeps running in the
 	// background, but every op still queued after the deadline is now
 	// abandoned near-instantly by processSyncOp rather than dispatched.
 	drainDone := make(chan struct{})

@@ -4,7 +4,7 @@
 // container holding a live forge API token. archied remains the sole
 // holder of forge credentials and the sole caller of forge.Forge.
 //
-// Only these four methods are proxied — the rest of forge.Forge (issue
+// Only these four methods are proxied  --  the rest of forge.Forge (issue
 // polling, invitations, reactions, PR-state reconciliation) is used
 // exclusively by the daemon's own poll/reconcile loops, never from inside
 // a workflow stage, so there's nothing for archie-agent to call.
@@ -121,7 +121,7 @@ func (s *Server) handleSetStateLabel(msg *nats.Msg) {
 		s.respond(msg, Response{Envelope: natsrpc.NewEnvelope(fmt.Errorf("decode set_state_label request: %w", err))})
 		return
 	}
-	// SetStateLabel has no error return in forge.Forge — nothing to propagate.
+	// SetStateLabel has no error return in forge.Forge  --  nothing to propagate.
 	s.Forge.SetStateLabel(context.Background(), req.Owner, req.Repo, req.Number, req.Label, req.KnownLabels)
 	s.respond(msg, Response{})
 }

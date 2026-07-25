@@ -166,7 +166,7 @@ func TestRunTaskExecutesBootstrapWorkflowEndToEnd(t *testing.T) {
 		BaseURL:  "file://" + host,
 	}
 
-	// The daemon always prepares the worktree before container acquire —
+	// The daemon always prepares the worktree before container acquire  -- 
 	// reproduce that here so the container's bind mount has real content.
 	hostDir, _, err := daemonTrees.Prepare(ctx, "acme", "widget", "main", 1, task.Title, "", "bootstrap")
 	if err != nil {

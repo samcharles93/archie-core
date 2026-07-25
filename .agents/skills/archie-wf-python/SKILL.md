@@ -65,16 +65,16 @@ pip install -e ".[dev]"
 ## Common gate failures
 
 ### ruff
-- `F401`: unused import — remove it
-- `E501`: line too long — break the line
-- `I001`: import order — let ruff fix it with `ruff check --fix`
+- `F401`: unused import  --  remove it
+- `E501`: line too long  --  break the line
+- `I001`: import order  --  let ruff fix it with `ruff check --fix`
 
 ### mypy
-- Missing type annotation on public function — add it
-- `Cannot determine type` — add explicit annotation
-- Import errors — check the package is installed in the venv
+- Missing type annotation on public function  --  add it
+- `Cannot determine type`  --  add explicit annotation
+- Import errors  --  check the package is installed in the venv
 
 ### pytest
-- Test discovery failed — check `__init__.py` files and test naming
-- Import errors — verify the package is installed (`pip install -e .`)
-- Assertion failures — fix the code, not the test
+- Test discovery failed  --  check `__init__.py` files and test naming
+- Import errors  --  verify the package is installed (`pip install -e .`)
+- Assertion failures  --  fix the code, not the test

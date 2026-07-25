@@ -66,7 +66,7 @@ func scanEvents(rows *sql.Rows) (out []events.Event, retErr error) {
 const eventCols = "id, at, kind, task_id, repo, issue, workflow, stage, detail, data"
 
 // EventsSince returns up to limit events with id > sinceID, oldest
-// first — SSE catch-up and the live feed.
+// first  --  SSE catch-up and the live feed.
 func (s *Store) EventsSince(ctx context.Context, sinceID int64, limit int) ([]events.Event, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT `+eventCols+` FROM events WHERE id > ? ORDER BY id LIMIT ?`, sinceID, limit)
@@ -153,7 +153,7 @@ type WorkflowStat struct {
 	TotalToken int
 }
 
-// WorkflowStats aggregates outcomes and spend per workflow — the
+// WorkflowStats aggregates outcomes and spend per workflow  --  the
 // core "is archie getting better per dollar" table.
 func (s *Store) WorkflowStats(ctx context.Context) (stats []WorkflowStat, retErr error) {
 	rows, err := s.db.QueryContext(ctx, `
@@ -186,7 +186,7 @@ type StageStat struct {
 	Errors          int
 }
 
-// StageStats aggregates stage_finish events — where does time go, and
+// StageStats aggregates stage_finish events  --  where does time go, and
 // which stages fail.
 func (s *Store) StageStats(ctx context.Context) (stats []StageStat, retErr error) {
 	rows, err := s.db.QueryContext(ctx, `

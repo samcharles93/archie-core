@@ -211,7 +211,7 @@ func assertJSONKeys(t *testing.T, data []byte, want ...string) {
 }
 
 func TestDispatchDefaults(t *testing.T) {
-	// Simulate a config with no [dispatch] section — all fields zero.
+	// Simulate a config with no [dispatch] section  --  all fields zero.
 	var d Dispatch
 	d.Labels = map[string]string{}
 
@@ -269,7 +269,7 @@ func TestDispatchCustomLabels(t *testing.T) {
 			"queued":  "bot:queued",
 			"working": "bot:working",
 			"parked":  "bot:parked",
-			// "waiting" and "pr" intentionally missing — should fall back.
+			// "waiting" and "pr" intentionally missing  --  should fall back.
 		},
 	}
 
@@ -546,7 +546,7 @@ func TestDockerConfigOverlaysExampleConfig(t *testing.T) {
 	if cfg.Containers.Image == "" {
 		t.Error("Containers.Image: want docker overlay image, got empty")
 	}
-	// bot_user and repos are not set by the docker overlay — they must
+	// bot_user and repos are not set by the docker overlay  --  they must
 	// come from the base config, proving the overlay isn't a standalone
 	// config that silently drops required fields.
 	if cfg.BotUser == "" {
@@ -599,7 +599,7 @@ func TestEcosystemOverrides(t *testing.T) {
 }
 
 func TestEcosystemCustom(t *testing.T) {
-	// "custom" ecosystem has no defaults — preflight empty, test glob empty.
+	// "custom" ecosystem has no defaults  --  preflight empty, test glob empty.
 	r := Repo{Ecosystem: "custom"}
 	if got := r.ResolvedTestGlob(); got != "" {
 		t.Errorf("ResolvedTestGlob custom: got %q, want empty", got)

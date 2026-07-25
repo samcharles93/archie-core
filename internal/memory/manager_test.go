@@ -383,7 +383,7 @@ func TestManager_GetToolSchemas_MergesAllProviders(t *testing.T) {
 	// Verify injected handlers are present (Finding 2 fix)
 	for _, s := range schemas {
 		if s.Handler == nil {
-			t.Errorf("ToolEntry %q has nil Handler — GetToolSchemas must inject handlers", s.Name)
+			t.Errorf("ToolEntry %q has nil Handler  --  GetToolSchemas must inject handlers", s.Name)
 		}
 	}
 }
@@ -669,7 +669,7 @@ func TestManager_TypeAssertions_DetectsOptionalInterfaces(t *testing.T) {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
 
-	// The mock implements everything — verify the manager detects this
+	// The mock implements everything  --  verify the manager detects this
 	if !mgr.HasSystemPrompt() {
 		t.Error("HasSystemPrompt() = false, want true")
 	}
@@ -895,7 +895,7 @@ func TestManager_Shutdown_UnavailableProviderStillShutDown(t *testing.T) {
 
 	builtin.mu.Lock()
 	if builtin.shutdownCalls != 1 {
-		t.Errorf("unavailable provider shutdown was NOT called (shutdownCalls=%d), want 1 — resources may leak",
+		t.Errorf("unavailable provider shutdown was NOT called (shutdownCalls=%d), want 1  --  resources may leak",
 			builtin.shutdownCalls)
 	}
 	builtin.mu.Unlock()
@@ -1159,7 +1159,7 @@ func (p *panickyProvider) GetToolSchemas() []tools.ToolEntry {
 	}
 }
 
-// Every hook panics — safeGo must recover each one.
+// Every hook panics  --  safeGo must recover each one.
 func (p *panickyProvider) OnTurnStart(sessionID string) error {
 	panic("OnTurnStart panicked")
 }
@@ -1418,7 +1418,7 @@ func TestManager_PrefetchContext_StoresResult(t *testing.T) {
 
 	stored := mgr.PrefetchResult("builtin")
 	if stored == "" {
-		t.Error("PrefetchResult() returned empty — result was not stored")
+		t.Error("PrefetchResult() returned empty  --  result was not stored")
 	}
 }
 
@@ -1726,7 +1726,7 @@ func TestManager_ShutdownContext_DrainsPipeline(t *testing.T) {
 	// New submissions should be rejected.
 	err = mgr.SubmitSync(SyncOp{})
 	if err == nil {
-		t.Error("SubmitSync after shutdown succeeded — wanted ErrShuttingDown")
+		t.Error("SubmitSync after shutdown succeeded  --  wanted ErrShuttingDown")
 	}
 }
 
@@ -1766,7 +1766,7 @@ func TestManager_ShutdownContext_AbandonedCount(t *testing.T) {
 		}
 	}
 
-	// Shutdown with a very short deadline — ops won't finish.
+	// Shutdown with a very short deadline  --  ops won't finish.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 

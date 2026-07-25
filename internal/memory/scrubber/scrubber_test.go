@@ -52,7 +52,7 @@ func TestScrubber_EmptyContent(t *testing.T) {
 }
 
 func TestScrubber_OnlyOpenTag(t *testing.T) {
-	// Missing close tag — block is implicitly closed at end of stream.
+	// Missing close tag  --  block is implicitly closed at end of stream.
 	s := New(nil)
 	result := s.ProcessString("Before <memory>stuff")
 	if result != "Before " {
@@ -61,7 +61,7 @@ func TestScrubber_OnlyOpenTag(t *testing.T) {
 }
 
 func TestScrubber_OnlyCloseTag(t *testing.T) {
-	// Stray close tag with no open — treated as literal text.
+	// Stray close tag with no open  --  treated as literal text.
 	s := New(nil)
 	result := s.ProcessString("text </memory> more")
 	if result != "text </memory> more" {
@@ -110,7 +110,7 @@ func TestScrubber_DeeplyNestedMemoryBlocks(t *testing.T) {
 }
 
 func TestScrubber_UnbalancedNested_MoreOpens(t *testing.T) {
-	// More open tags than close tags — remaining blocks implicitly closed
+	// More open tags than close tags  --  remaining blocks implicitly closed
 	// at end of stream. Everything after the first <memory> is stripped
 	// because the outer block never closes.
 	s := New(nil)
@@ -241,7 +241,7 @@ func TestScrubber_PartialTag_NotActuallyATag(t *testing.T) {
 		{
 			name:   "partial in memory block not a close tag",
 			chunk1: "<memory>content </", chunk2: "notmemory> more</memory>",
-			// "</notmemory>" is not "</memory>" — it doesn't close the block.
+			// "</notmemory>" is not "</memory>"  --  it doesn't close the block.
 			// Everything inside the memory block is stripped until the real
 			// </memory> is found.
 			expected: "",
@@ -903,7 +903,7 @@ func TestScrubber_Write_ZeroLengthChunkWithPending(t *testing.T) {
 	if len(s.pending) == 0 {
 		t.Error("pending should not be empty after partial tag")
 	}
-	s.Write([]byte("")) // zero-length write — no-op
+	s.Write([]byte("")) // zero-length write  --  no-op
 	if len(s.pending) == 0 {
 		t.Error("pending should not be cleared by zero-length Write")
 	}

@@ -1,6 +1,6 @@
 # Docker Compose overlay: only fields that differ from the base config.
-# The daemon loads both — base config.toml first, then this file on top
-# (config.LoadOverlay) — so config.toml (the same file inprocess mode
+# The daemon loads both  --  base config.toml first, then this file on top
+# (config.LoadOverlay)  --  so config.toml (the same file inprocess mode
 # reads) stays the single source of truth for bot_user, forge, dispatch,
 # models, providers, budgets, and repos. See docker-compose.yml's
 # `-config` / `-config-overlay` flags and volume mounts.

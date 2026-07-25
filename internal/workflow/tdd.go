@@ -12,8 +12,8 @@ import (
 
 // TDD is the bugfix workflow: prove the bug with failing tests before
 // fixing it. The repro stage's gate INVERTS the test command
-// (ExpectFailure) — the run cannot proceed until the new tests fail for
-// the right reason — and the fix stage restores the repo's full gate.
+// (ExpectFailure)  --  the run cannot proceed until the new tests fail for
+// the right reason  --  and the fix stage restores the repo's full gate.
 // Routed via the "bug" label.
 func TDD() Workflow {
 	return Workflow{
@@ -49,7 +49,7 @@ func TDD() Workflow {
 				Role: "builder",
 				// The inverted gate: code-quality commands must still
 				// pass, but the test command (last in repo.Gate) MUST
-				// fail — proof the repro captures the bug.
+				// fail  --  proof the repro captures the bug.
 				Gate: func(tc *TaskContext) agentexec.Gate {
 					return tddReproGate(tc.Repo, tc.Cfg.Budgets)
 				},
@@ -67,18 +67,18 @@ func TDD() Workflow {
 				},
 			}.Stage(),
 
-			// Capture the failing test run — the proof the repro
+			// Capture the failing test run  --  the proof the repro
 			// reproduces the bug, posted on the PR later.
 			{Name: "capture-proof", Run: func(ctx context.Context, tc *TaskContext) error {
 				argv := testCommandArgv(tc.Repo)
 				if len(argv) == 0 {
-					return fmt.Errorf("tdd: repo %s has no gate configured — cannot capture repro proof (add at least one [[repos.gate]] command, with the test runner last)", tc.Repo.FullName())
+					return fmt.Errorf("tdd: repo %s has no gate configured  --  cannot capture repro proof (add at least one [[repos.gate]] command, with the test runner last)", tc.Repo.FullName())
 				}
 				cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 				cmd.Dir = tc.Dir
 				out, err := cmd.CombinedOutput()
 				if err == nil {
-					return fmt.Errorf("repro tests unexpectedly pass after commit — the bug is not captured")
+					return fmt.Errorf("repro tests unexpectedly pass after commit  --  the bug is not captured")
 				}
 				tc.ReproProof = clip(string(out), 4000)
 				return nil
@@ -95,7 +95,7 @@ func TDD() Workflow {
 					return GateFromRepo(tc.Repo, tc.Cfg.Budgets)
 				},
 				// Environmental, not advisory: the fix stage cannot touch
-				// test files at all — the committed repro is the spec.
+				// test files at all  --  the committed repro is the spec.
 				ProtectGlobs: func(tc *TaskContext) []string {
 					glob := tc.Repo.ResolvedTestGlob()
 					if glob == "" {
@@ -104,7 +104,7 @@ func TDD() Workflow {
 					return []string{glob}
 				},
 				ExtraRules: "The repro tests written in the previous stage are the bug's specification. " +
-					"Test files are write-protected in this stage — make them pass by fixing the code they exercise.",
+					"Test files are write-protected in this stage  --  make them pass by fixing the code they exercise.",
 				Mission: func(tc *TaskContext) string {
 					return fmt.Sprintf(
 						"Fix the bug in the repository %s. Failing repro tests are already committed; make them pass.\n\n"+
@@ -149,7 +149,7 @@ func TDD() Workflow {
 
 // tddReproGate builds the inverted gate for the repro-tests stage:
 // every command from repo.Gate runs normally except the last one (the
-// test runner, by convention), which gets ExpectFailure — the repro
+// test runner, by convention), which gets ExpectFailure  --  the repro
 // must fail the tests to prove the bug exists.
 func tddReproGate(repo config.Repo, budgets config.Budgets) agentexec.Gate {
 	if len(repo.Gate) == 0 {

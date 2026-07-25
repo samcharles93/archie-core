@@ -27,8 +27,8 @@ func runGit(t *testing.T, dir string, args ...string) {
 
 // gitRepoWithOriginRef creates a repo with a base commit, then labels
 // that commit "origin/<base>" (a plain local branch standing in for a
-// remote-tracking ref) so Manager.Diff/ChangedFiles — which always diff
-// against "origin/<base>" — resolve without a real clone/push round trip.
+// remote-tracking ref) so Manager.Diff/ChangedFiles  --  which always diff
+// against "origin/<base>"  --  resolve without a real clone/push round trip.
 func gitRepoWithOriginRef(t *testing.T, base string) string {
 	t.Helper()
 	dir := t.TempDir()

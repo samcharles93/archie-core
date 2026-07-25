@@ -459,7 +459,7 @@
       <div>
         <p class="eyebrow"><span class="live-dot" aria-hidden="true"></span>Implemented topology · v2</p>
         <h1>archie-core</h1>
-        <p class="subtitle">Single-daemon architecture: poll GitHub for labelled issues, route through label-driven workflows, run gated AI agent loops via ai-sdk, and deliver reviewed PRs — all in-process with SQLite crash recovery and an SSE observability dashboard.</p>
+        <p class="subtitle">Single-daemon architecture: poll GitHub for labelled issues, route through label-driven workflows, run gated AI agent loops via ai-sdk, and deliver reviewed PRs  --  all in-process with SQLite crash recovery and an SSE observability dashboard.</p>
       </div>
       <div class="legend" aria-label="Component legend">
         <span class="chip" style="--chip-color: var(--slate)">External</span>
@@ -761,17 +761,17 @@
       <article class="insight" style="--accent: var(--green)">
         <p class="insight-kicker">01 · Task flow</p>
         <h2>Label-driven, in-process execution</h2>
-        <p>archied polls GitHub for issues matching the configured trigger (assignee, label, or either). Each issue becomes a SQLite-tracked task, claimed one at a time, and routed to a workflow by issue labels — no LLM involved in routing. All stages run sequentially inside the daemon process.</p>
+        <p>archied polls GitHub for issues matching the configured trigger (assignee, label, or either). Each issue becomes a SQLite-tracked task, claimed one at a time, and routed to a workflow by issue labels  --  no LLM involved in routing. All stages run sequentially inside the daemon process.</p>
       </article>
       <article class="insight" style="--accent: var(--orange)">
         <p class="insight-kicker">02 · Failure boundaries</p>
         <h2>Environmental constraints, not prompt rules</h2>
-        <p>The quality gate, test-file protection (TDD fix stage), and diff-size cap are code enforcement — not "please don't do that" in the system prompt. Crashed daemons re-queue stale running tasks on startup. Parks are never silent: every parked task posts a comment with the reason and gate output.</p>
+        <p>The quality gate, test-file protection (TDD fix stage), and diff-size cap are code enforcement  --  not "please don't do that" in the system prompt. Crashed daemons re-queue stale running tasks on startup. Parks are never silent: every parked task posts a comment with the reason and gate output.</p>
       </article>
       <article class="insight" style="--accent: var(--cyan)">
         <p class="insight-kicker">03 · Design decisions</p>
         <h2>Deterministic git, fresh worktrees</h2>
-        <p>The model never runs git — worktree operations (clone, branch, commit, push, diff, cleanup) are deterministic steps, not agent tools. Every task gets a fresh clone under <code>~/.local/share/archie/work/</code>. Tokens are tracked per task and emitted in observability events, but not budgeted beyond the agent loop's own limits.</p>
+        <p>The model never runs git  --  worktree operations (clone, branch, commit, push, diff, cleanup) are deterministic steps, not agent tools. Every task gets a fresh clone under <code>~/.local/share/archie/work/</code>. Tokens are tracked per task and emitted in observability events, but not budgeted beyond the agent loop's own limits.</p>
       </article>
     </section>
 

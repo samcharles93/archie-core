@@ -147,7 +147,7 @@ func TestRegistryAvailable(t *testing.T) {
 			t.Errorf("expected 3 available (toggle is true), got %d", len(r.Available()))
 		}
 		flag = false
-		// Available() re-evaluates — the closure captures &flag.
+		// Available() re-evaluates  --  the closure captures &flag.
 		if len(r.Available()) != 2 {
 			t.Errorf("expected 2 available (toggle is now false), got %d", len(r.Available()))
 		}
@@ -288,11 +288,11 @@ func TestRegistryAvailableReentrySafety(t *testing.T) {
 		Handler: noopHandler,
 		CheckFn: func() bool {
 			called = true
-			// Call All() from inside CheckFn — must not deadlock.
+			// Call All() from inside CheckFn  --  must not deadlock.
 			_ = r.All()
-			// Call ByToolset from inside CheckFn — must not deadlock.
+			// Call ByToolset from inside CheckFn  --  must not deadlock.
 			_ = r.ByToolset("")
-			// Call Register from inside CheckFn — must not deadlock
+			// Call Register from inside CheckFn  --  must not deadlock
 			// (was the original deadlock trigger when lock was held).
 			_ = r.Register(ToolEntry{Name: "nested-reg", Handler: noopHandler})
 			return true
@@ -322,7 +322,7 @@ func TestRegistryRegisterDefensiveCopy(t *testing.T) {
 		t.Fatalf("register: %v", err)
 	}
 
-	// Mutate the original schema and env — must not affect registry.
+	// Mutate the original schema and env  --  must not affect registry.
 	schema["key"] = "mutated"
 	env[0] = "MUTATED"
 
@@ -331,10 +331,10 @@ func TestRegistryRegisterDefensiveCopy(t *testing.T) {
 		t.Fatalf("expected 1 tool, got %d", len(all))
 	}
 	if all[0].Schema["key"] != "original" {
-		t.Errorf("Schema[key] = %v, want 'original' — caller mutation leaked into registry", all[0].Schema["key"])
+		t.Errorf("Schema[key] = %v, want 'original'  --  caller mutation leaked into registry", all[0].Schema["key"])
 	}
 	if all[0].RequiresEnv[0] != "ORIGINAL" {
-		t.Errorf("RequiresEnv[0] = %q, want 'ORIGINAL' — caller mutation leaked into registry", all[0].RequiresEnv[0])
+		t.Errorf("RequiresEnv[0] = %q, want 'ORIGINAL'  --  caller mutation leaked into registry", all[0].RequiresEnv[0])
 	}
 }
 

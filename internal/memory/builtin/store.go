@@ -132,8 +132,8 @@ type AddResult struct {
 }
 
 // Add appends content as a new block in the named section, creating the
-// section if it does not already exist. The write is rejected — with no
-// change to in-memory state or disk — if the resulting file would exceed
+// section if it does not already exist. The write is rejected  --  with no
+// change to in-memory state or disk  --  if the resulting file would exceed
 // the store's size bound.
 func (s *Store) Add(sectionName, content string) (AddResult, error) {
 	if err := ValidateSectionName(sectionName); err != nil {

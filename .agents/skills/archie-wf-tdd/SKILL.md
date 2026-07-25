@@ -25,7 +25,7 @@ The planner agent explores the codebase read-only and produces:
 - The expected vs actual behaviour
 - Which test cases would prove the bug exists
 
-No code is written. The plan is stored but not posted — the repro proof speaks louder.
+No code is written. The plan is stored but not posted  --  the repro proof speaks louder.
 
 ## Stage 2: Repro Tests (write failing tests only)
 
@@ -66,9 +66,9 @@ This means the test doesn't actually capture the bug. Check:
 - Are there test setup issues (missing imports, wrong package)?
 
 ### The fix stage modifies test files
-This shouldn't happen — test files are write-protected. If it does, the agent is
+This shouldn't happen  --  test files are write-protected. If it does, the agent is
 bypassing the constraint. The worktree should be inspected.
 
 ### The gate is misconfigured
-If the repo has no `[[repos.gate]]` entries, TDD cannot run — it needs at least
+If the repo has no `[[repos.gate]]` entries, TDD cannot run  --  it needs at least
 one gate command, with the test runner last.

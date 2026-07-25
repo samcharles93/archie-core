@@ -15,7 +15,7 @@ import (
 // AgentStage is the reusable bridge from a workflow stage to an
 // agentloop run. Every LLM-driven stage in any workflow (implement's
 // planner/builder, tdd's test-writer/fixer, feasibility's analyst)
-// is an AgentStage with a different mission, gate, and result handler —
+// is an AgentStage with a different mission, gate, and result handler  -- 
 // never a new engine.
 type AgentStage struct {
 	Name string
@@ -33,7 +33,7 @@ type AgentStage struct {
 	// MaxSteps overrides the configured step budget when > 0 (planner
 	// stages are cheaper than builder stages).
 	MaxSteps int
-	// ProtectGlobs blocks write/edit on matching paths for this stage —
+	// ProtectGlobs blocks write/edit on matching paths for this stage  -- 
 	// an environmental constraint, not a prompt rule (TDD's fix stage
 	// protects the committed repro tests; every builder stage protects
 	// the repo's generated files). The returned globs are combined
@@ -48,7 +48,7 @@ type AgentStage struct {
 	// ReviewResult gates agent output before OnResult forwards it to
 	// human channels. The daemon calls this hook to review stage output
 	// (issue comments, PR bodies) before human delivery. Return an
-	// error to block the stage. Nil means pass-through — no review.
+	// error to block the stage. Nil means pass-through  --  no review.
 	// PRD §1: daemon reviews agent responses before forwarding.
 	ReviewResult func(*TaskContext, agentexec.Result) error
 }
@@ -207,7 +207,7 @@ func missionWithSkill(tc *TaskContext, mission string) string {
 
 // loadSkillBody loads the SKILL.md body and plugins for the current
 // workflow from the worktree's .agents/skills/ directory. Skills declare
-// their workflow in metadata.archie.workflow — no hardcoded mapping.
+// their workflow in metadata.archie.workflow  --  no hardcoded mapping.
 // When metadata.archie.plugins is non-empty, only the listed plugin files
 // are loaded in declared order; otherwise all *.go files are globbed.
 func loadSkillBody(tc *TaskContext) string {

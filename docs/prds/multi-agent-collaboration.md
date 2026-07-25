@@ -161,7 +161,7 @@ pieces where isolation adds cost without benefit:
 Decision rationale: per-identity goroutines guarantee failure isolation (one
 identity's forge outage cannot block another's poll tick), each identity
 gets its own forge rate-limit domain, and the existing `Daemon` struct maps
-cleanly — each goroutine holds a thin `Identity` value (forge client + config
+cleanly  --  each goroutine holds a thin `Identity` value (forge client + config
 subset + worktree manager + NATS subject prefix) and dispatches tasks with
 an `identity_name` column on the task row. The shared NATS connection
 multiplexes subjects by identity prefix; the shared store already handles
@@ -170,7 +170,7 @@ the identity name so agent containers (which consume from NATS) route
 responses back to the correct daemon identity.
 
 This design resolves the open question in section 4 of the original PRD
-draft (per-identity goroutine vs single loop iterating identities — the
+draft (per-identity goroutine vs single loop iterating identities  --  the
 former, for failure isolation).
 
 ## 5. Priority / phasing

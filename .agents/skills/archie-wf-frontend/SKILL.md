@@ -19,9 +19,9 @@ metadata:
 This skill adds frontend linting to the gate stage. After Go checks pass,
 the gate runs:
 
-1. `stylelint "**/*.css"` — catches syntax errors, invalid properties,
+1. `stylelint "**/*.css"`  --  catches syntax errors, invalid properties,
    duplicate selectors, calc() misuse, missing units
-2. `htmlhint "**/*.html"` — catches unclosed tags, mismatched pairs,
+2. `htmlhint "**/*.html"`  --  catches unclosed tags, mismatched pairs,
    duplicate IDs, inline style abuse, missing viewport meta
 
 Both must exit 0. If either fails, the stage parks with the lint output.
@@ -38,6 +38,6 @@ Both must exit 0. If either fails, the stage parks with the lint output.
      ["htmlhint", "**/*.html"],
    ]
    ```
-3. Or declare `workflow: frontend` in the skill frontmatter — archie-core
+3. Or declare `workflow: frontend` in the skill frontmatter  --  archie-core
    loads the skill body and the agent knows to run these during build
 

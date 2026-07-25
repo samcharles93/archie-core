@@ -125,7 +125,7 @@ func TestDockerBackendSetupWorktreeBindMount(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	backend := &DockerBackend{} // nil client — Setup doesn't need it for bind mounts
+	backend := &DockerBackend{} // nil client  --  Setup doesn't need it for bind mounts
 	mounts, err := backend.Setup(context.Background(), TaskRef{
 		WorktreeDir: dir,
 		Ecosystem:   "go",
@@ -183,7 +183,7 @@ func TestDockerBackendSetupIncludesCacheMounts(t *testing.T) {
 }
 
 func TestDockerBackendSetupWorktreeMountIsFirst(t *testing.T) {
-	// Worktree bind mount must be the first entry — container create
+	// Worktree bind mount must be the first entry  --  container create
 	// depends on this order for overlay semantics.
 	dir := t.TempDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -208,7 +208,7 @@ func TestDockerBackendSetupWorktreeMountIsFirst(t *testing.T) {
 }
 
 func TestDockerBackendTeardownSucceeds(t *testing.T) {
-	// Teardown is a no-op for Docker backend — cache volumes survive.
+	// Teardown is a no-op for Docker backend  --  cache volumes survive.
 	// Must not error.
 	backend := &DockerBackend{}
 	err := backend.Teardown(context.Background(), TaskRef{
@@ -223,7 +223,7 @@ func TestDockerBackendTeardownSucceeds(t *testing.T) {
 
 func TestDockerBackendSetupEmptyWorktreeDir(t *testing.T) {
 	// An empty (non-existent) worktree dir must still produce valid mounts.
-	// The backend doesn't validate host paths — that's the pool's job.
+	// The backend doesn't validate host paths  --  that's the pool's job.
 	backend := &DockerBackend{}
 	mounts, err := backend.Setup(context.Background(), TaskRef{
 		WorktreeDir: "/nonexistent/worktree",
@@ -349,7 +349,7 @@ func TestDockerBackendSetupWithoutPersistentStorage(t *testing.T) {
 
 func TestDockerBackendSetupPersistentStorageEmptyOwner(t *testing.T) {
 	// With empty Owner/Repo, no per-repo volume should be created even
-	// when PersistentStorage is true — we can't name the volume.
+	// when PersistentStorage is true  --  we can't name the volume.
 	dir := t.TempDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)

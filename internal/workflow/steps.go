@@ -31,7 +31,7 @@ func StagePrepareWorktree() Stage {
 	}}
 }
 
-// StageCommit commits everything in the worktree without pushing —
+// StageCommit commits everything in the worktree without pushing  -- 
 // used mid-workflow so a PR tells its story in multiple commits (TDD:
 // failing tests first, fix second). An empty tree parks.
 func StageCommit(name string, message func(*TaskContext) string) Stage {
@@ -49,19 +49,19 @@ func StageCommit(name string, message func(*TaskContext) string) Stage {
 
 // StageCommitPush commits everything in the worktree and pushes the
 // branch. When the builder completed with no changes (BuildNoChanges is
-// set), the issue is already resolved — close it with a comment instead
+// set), the issue is already resolved  --  close it with a comment instead
 // of erroring on an empty tree.
 func StageCommitPush(message func(*TaskContext) string) Stage {
 	return Stage{Name: "commit-push", Run: func(ctx context.Context, tc *TaskContext) error {
 		if tc.BuildNoChanges {
-			body := fmt.Sprintf("**archie closed this issue — no changes required.**\n\n%s", tc.BuildSummary)
+			body := fmt.Sprintf("**archie closed this issue  --  no changes required.**\n\n%s", tc.BuildSummary)
 			if _, err := tc.Forge.Comment(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, body); err != nil {
 				tc.Log.Warn("no-op close comment failed", "err", err)
 			}
 			if err := tc.Forge.CloseIssue(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, ""); err != nil {
 				return err
 			}
-			tc.Outcome = Outcome{Status: store.StatusMerged, Detail: "closed — no changes required"}
+			tc.Outcome = Outcome{Status: store.StatusMerged, Detail: "closed  --  no changes required"}
 			return nil
 		}
 		commit := StageCommit("commit-push", message)
@@ -72,7 +72,7 @@ func StageCommitPush(message func(*TaskContext) string) Stage {
 	}}
 }
 
-// StageDiffCap parks tasks whose diff exceeds the configured line cap —
+// StageDiffCap parks tasks whose diff exceeds the configured line cap  -- 
 // oversized changes need human pre-approval, not an auto-opened PR.
 func StageDiffCap() Stage {
 	return Stage{Name: "diff-cap", Run: func(ctx context.Context, tc *TaskContext) error {
@@ -86,7 +86,7 @@ func StageDiffCap() Stage {
 		if lines > tc.Cfg.DiffCapLines {
 			tc.Outcome = Outcome{
 				Status: store.StatusParked,
-				Detail: fmt.Sprintf("diff is %d changed lines (cap %d) — split the issue or approve manually", lines, tc.Cfg.DiffCapLines),
+				Detail: fmt.Sprintf("diff is %d changed lines (cap %d)  --  split the issue or approve manually", lines, tc.Cfg.DiffCapLines),
 			}
 		}
 		return nil
@@ -95,7 +95,7 @@ func StageDiffCap() Stage {
 
 // StageRepoStages runs every custom stage the repo defines under
 // .archie/stages/*.go (Yaegi-interpreted via TaskContext.CustomStages),
-// in the order the loader returns them — a no-op when no loader is wired
+// in the order the loader returns them  --  a no-op when no loader is wired
 // up or the repo defines none. A custom stage that sets tc.Outcome ends
 // the workflow there, same as any built-in stage.
 func StageRepoStages() Stage {
@@ -120,7 +120,7 @@ func StageRepoStages() Stage {
 	}}
 }
 
-// StageYaegiGate evaluates the repo's optional .archie/gate.go — a
+// StageYaegiGate evaluates the repo's optional .archie/gate.go  --  a
 // Yaegi-interpreted Go file inspecting the committed diff for
 // project-specific rules shell gate commands can't express (AST checks,
 // diff scanning). A missing script is a no-op. Error-level findings
@@ -170,7 +170,7 @@ func StageYaegiGate() Stage {
 // OpenPR opens the task's pull request, records its number, and sets
 // the terminal pr_open outcome. Stages that need to act after the PR
 // exists (e.g. posting evidence comments) call this and then do so in
-// the same stage — the engine stops at the first stage with an outcome.
+// the same stage  --  the engine stops at the first stage with an outcome.
 func OpenPR(ctx context.Context, tc *TaskContext, body string) error {
 	t := tc.Task
 	title := fmt.Sprintf("%s (archie)", t.Title)
@@ -204,7 +204,7 @@ func Bootstrap() Workflow {
 				if err := os.MkdirAll(dir, 0o755); err != nil {
 					return err
 				}
-				content := fmt.Sprintf("# archie bootstrap\n\nIssue: #%d — %s\nTime: %s\n\nThis file proves the archie pipeline (poll → worktree → push → PR) works for this repository.\n",
+				content := fmt.Sprintf("# archie bootstrap\n\nIssue: #%d  --  %s\nTime: %s\n\nThis file proves the archie pipeline (poll → worktree → push → PR) works for this repository.\n",
 					tc.Task.IssueNumber, tc.Task.Title, time.Now().UTC().Format(time.RFC3339))
 				return os.WriteFile(filepath.Join(dir, "bootstrap.md"), []byte(content), 0o644)
 			}},

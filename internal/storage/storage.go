@@ -1,31 +1,31 @@
 // Package storage defines the pluggable storage backend interface for agent
 // container execution. The Docker backend (DockerBackend) is the MVP
-// implementation — no NFS/SMB/S3 yet, just Docker volumes + bind mounts.
+// implementation  --  no NFS/SMB/S3 yet, just Docker volumes + bind mounts.
 //
 // /data/ volume layout (implemented):
 //
 //	/data/
-//	  task.json          — at /data/worktree/task.json (WriteTaskJSON writes
+//	  task.json           --  at /data/worktree/task.json (WriteTaskJSON writes
 //	                        to the worktree root, which is bind-mounted)
-//	  worktree/          — bind mount of host worktree
-//	  repo/              — per-repo persistent volume (optional, on request)
+//	  worktree/           --  bind mount of host worktree
+//	  repo/               --  per-repo persistent volume (optional, on request)
 //	  cache/
-//	    go/              — GOMODCACHE (shared across all tasks)
-//	    node/            — npm cache (shared)
-//	    pnpm/            — pnpm store (shared)
-//	    deno/            — Deno module cache (shared)
-//	    bun/             — Bun package cache (shared)
-//	    pip/             — pip cache (shared)
-//	    cargo/           — Rust cargo cache (shared)
+//	    go/               --  GOMODCACHE (shared across all tasks)
+//	    node/             --  npm cache (shared)
+//	    pnpm/             --  pnpm store (shared)
+//	    deno/             --  Deno module cache (shared)
+//	    bun/              --  Bun package cache (shared)
+//	    pip/              --  pip cache (shared)
+//	    cargo/            --  Rust cargo cache (shared)
 //
-// TODO(PRD §3): session.jsonl, memory.jsonl, plugins/ volume — these
+// TODO(PRD §3): session.jsonl, memory.jsonl, plugins/ volume  --  these
 // require agent-side implementation before the storage layer can mount
 // them. session.jsonl needs per-stage structured output from the agent;
 // memory.jsonl needs cross-session persistence; plugins/ needs daemon-
 // staged bundled plugins.
 //
 // Cache volumes are named Docker volumes created once and shared across all
-// tasks. They are never deleted — the daemon operator manages them.
+// tasks. They are never deleted  --  the daemon operator manages them.
 package storage
 
 import (
@@ -66,7 +66,7 @@ const (
 
 // WorktreeMountDir is the fixed container path where a task's worktree is
 // bind-mounted. archie-agent uses this path directly rather than the host
-// path archied's worktree.Manager reports — the two processes see the same
+// path archied's worktree.Manager reports  --  the two processes see the same
 // files at different paths.
 const WorktreeMountDir = "/data/worktree"
 
@@ -121,7 +121,7 @@ var cacheVolumesByEcosystem = map[string][]cacheVolume{
 
 // cacheMounts returns the cache mount specs for an ecosystem, sorted by
 // destination path for deterministic container configuration.
-// Ecosystem is case-insensitive — "Python" and "python" are equivalent.
+// Ecosystem is case-insensitive  --  "Python" and "python" are equivalent.
 func cacheMounts(ecosystem string) []Mount {
 	vols, ok := cacheVolumesByEcosystem[strings.ToLower(ecosystem)]
 	if !ok {
@@ -176,7 +176,7 @@ func NewDockerBackend(cli *client.Client) *DockerBackend {
 
 // ensureVolume creates a Docker volume if it doesn't already exist.
 // It is idempotent: concurrent callers racing to create the same volume
-// will not see an error — "already exists" is treated as success.
+// will not see an error  --  "already exists" is treated as success.
 //
 // When d.cli is nil (unit tests), ensureVolume returns nil without
 // creating a volume. The returned mounts will fail at container create
@@ -184,7 +184,7 @@ func NewDockerBackend(cli *client.Client) *DockerBackend {
 // cli via NewDockerBackend.
 func (d *DockerBackend) ensureVolume(ctx context.Context, name string, labels map[string]string) error {
 	if d.cli == nil {
-		return nil // nil client for testing — volumes must be pre-created
+		return nil // nil client for testing  --  volumes must be pre-created
 	}
 	// VolumeInspectOptions{} is the empty struct form (requires moby v25+).
 	// The go.mod pins a compatible version; zero value is always valid.
@@ -200,7 +200,7 @@ func (d *DockerBackend) ensureVolume(ctx context.Context, name string, labels ma
 	if err != nil {
 		// TOCTOU: a concurrent caller may have created the volume between
 		// our inspect and create calls. Docker returns an error for
-		// duplicate volumes — treat that as success.
+		// duplicate volumes  --  treat that as success.
 		if strings.Contains(err.Error(), "already exists") || strings.Contains(err.Error(), "already in use") {
 			return nil
 		}

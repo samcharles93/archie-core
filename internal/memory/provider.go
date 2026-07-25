@@ -6,8 +6,8 @@ package memory
 
 import "github.com/samcharles93/archie-core/internal/tools"
 
-// MemoryProvider is the contract that every memory provider — built-in or
-// external/plugin — must implement. It covers provider identity, availability,
+// MemoryProvider is the contract that every memory provider  --  built-in or
+// external/plugin  --  must implement. It covers provider identity, availability,
 // session-scoped initialization, and tool schema export.
 type MemoryProvider interface {
 	// Name returns a unique, human-readable identifier for this provider

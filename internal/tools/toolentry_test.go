@@ -148,15 +148,15 @@ func TestToolEntryResolvedSchema(t *testing.T) {
 
 func TestToolEntryClone(t *testing.T) {
 	e := ToolEntry{
-		Name:    "original",
-		Toolset: "test",
-		Schema:  JSONSchema{"key": "value"},
-		Handler: noopHandler,
-		CheckFn: func() bool { return true },
-		RequiresEnv: []string{"X", "Y"},
-		IsAsync: true,
-		Description: "a test tool",
-		Emoji:       "🧪",
+		Name:               "original",
+		Toolset:            "test",
+		Schema:             JSONSchema{"key": "value"},
+		Handler:            noopHandler,
+		CheckFn:            func() bool { return true },
+		RequiresEnv:        []string{"X", "Y"},
+		IsAsync:            true,
+		Description:        "a test tool",
+		Emoji:              "🧪",
 		MaxResultSizeChars: 4096,
 	}
 
@@ -170,7 +170,7 @@ func TestToolEntryClone(t *testing.T) {
 		t.Errorf("IsAsync = %v, want %v", clone.IsAsync, e.IsAsync)
 	}
 
-	// Handler and CheckFn are shared (function pointers — not deep-copied).
+	// Handler and CheckFn are shared (function pointers  --  not deep-copied).
 	// This is documented behavior.
 
 	// RequiresEnv is an independent copy.
@@ -199,7 +199,7 @@ func TestToolEntryCloneDeepNested(t *testing.T) {
 				"name": JSONSchema{"type": "string"},
 			},
 			"required": []any{"name"},
-			"tags":    []string{"a", "b"},
+			"tags":     []string{"a", "b"},
 		},
 	}
 	clone := e.Clone()
@@ -231,17 +231,17 @@ func TestToolEntryCloneDeepNested(t *testing.T) {
 
 func TestToolEntryJSONRoundTrip(t *testing.T) {
 	e := ToolEntry{
-		Name:        "greet",
-		Toolset:     "demo",
-		Schema:      JSONSchema{"type": "object", "properties": JSONSchema{"name": JSONSchema{"type": "string"}}},
-		Handler:     noopHandler,   // json:"-" — excluded
-		CheckFn:     func() bool { return true }, // json:"-" — excluded
-		RequiresEnv: []string{"GREET_NAME"},
-		IsAsync:     true,
-		Description: "Sends a greeting",
-		Emoji:       "👋",
-		MaxResultSizeChars: 1000,
-		DynamicSchemaOverrides: nil, // json:"-" — excluded
+		Name:                   "greet",
+		Toolset:                "demo",
+		Schema:                 JSONSchema{"type": "object", "properties": JSONSchema{"name": JSONSchema{"type": "string"}}},
+		Handler:                noopHandler,                 // json:"-"  --  excluded
+		CheckFn:                func() bool { return true }, // json:"-"  --  excluded
+		RequiresEnv:            []string{"GREET_NAME"},
+		IsAsync:                true,
+		Description:            "Sends a greeting",
+		Emoji:                  "👋",
+		MaxResultSizeChars:     1000,
+		DynamicSchemaOverrides: nil, // json:"-"  --  excluded
 	}
 
 	data, err := json.Marshal(e)
@@ -317,7 +317,7 @@ func TestToolEntryZeroValue(t *testing.T) {
 		t.Error("zero ToolEntry should fail Validate")
 	}
 	if !e.Available() {
-		// nil CheckFn = available — this is correct even for zero value.
+		// nil CheckFn = available  --  this is correct even for zero value.
 	}
 	if e.ResolvedSchema() != nil {
 		t.Error("zero ToolEntry should have nil resolved schema")
@@ -332,6 +332,6 @@ func TestToolEntryJSONSchemaIsNilByDefault(t *testing.T) {
 	}
 	// Schema field omitted when nil.
 	if strings.Contains(string(data), `"schema"`) {
-		t.Log("schema present in JSON (either null or omitted) — both are acceptable")
+		t.Log("schema present in JSON (either null or omitted)  --  both are acceptable")
 	}
 }

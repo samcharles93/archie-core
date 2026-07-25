@@ -1,7 +1,7 @@
 // Package events is archied's in-process observability stream, adapted
 // from tau's eventbus but slimmed for a small daemon: one event type,
-// mutex fan-out instead of a router goroutine, and — unlike tau's
-// blocking delivery — bounded per-subscriber buffers that DROP on
+// mutex fan-out instead of a router goroutine, and  --  unlike tau's
+// blocking delivery  --  bounded per-subscriber buffers that DROP on
 // overflow, so a stalled dashboard connection can never apply
 // backpressure to the task engine.
 package events
@@ -27,7 +27,7 @@ const (
 )
 
 // Event is the single wire type: task lifecycle, stage progress, agent
-// stats, and log lines all flow through it — every consumer (SQLite
+// stats, and log lines all flow through it  --  every consumer (SQLite
 // sink, SSE fan-out, future aggregators) is just another subscriber.
 type Event struct {
 	ID       int64          `json:"id,omitempty"` // set by the store sink

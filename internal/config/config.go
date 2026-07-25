@@ -53,12 +53,12 @@ type Repo struct {
 	Base string `toml:"base" json:"base" yaml:"base"`
 	// Gate is the quality-gate command list for this repo, e.g.
 	// [["go","vet","./..."], ["task","check"]]. By convention the
-	// LAST command is the test runner — TDD workflows invert only
+	// LAST command is the test runner  --  TDD workflows invert only
 	// that one with ExpectFailure during the repro stage and re-run
 	// it in capture-proof. Workflow stages may extend or override
 	// Gate (a TDD repro stage inverts the test command).
 	Gate [][]string `toml:"gate" json:"gate" yaml:"gate"`
-	// Protect lists path suffixes agents must never write directly —
+	// Protect lists path suffixes agents must never write directly  -- 
 	// generated files (e.g. "_templ.go") whose sources they should edit
 	// instead. Enforced environmentally via agentloop.ProtectPaths.
 	Protect []string `toml:"protect" json:"protect" yaml:"protect"`
@@ -286,7 +286,7 @@ type Config struct {
 	// PluginDir is an optional path to a directory of Yaegi-interpreted
 	// daemon plugins (*.go files). Each file must export a "Plugin"
 	// variable satisfying the plugin.Plugin interface. Failed plugins
-	// are skipped — the daemon starts with the remaining set. When
+	// are skipped  --  the daemon starts with the remaining set. When
 	// empty, no daemon plugins are loaded.
 	PluginDir    string   `toml:"plugin_dir" yaml:"plugin_dir"`
 	DBPath       string   `toml:"db_path" yaml:"db_path"`
@@ -394,7 +394,7 @@ func (c Config) ForTask() TaskConfig {
 }
 
 // ToConfig expands a TaskConfig back into a Config with only the carried
-// fields populated — everything else (Repos, NATS, Containers, Providers,
+// fields populated  --  everything else (Repos, NATS, Containers, Providers,
 // secrets) is zero. Used by archie-agent to reconstruct the Config value
 // workflow stages read via TaskContext.Cfg.
 func (tc TaskConfig) ToConfig() Config {
@@ -448,7 +448,7 @@ type ContainerConfig struct {
 }
 
 // ChatConfig configures conversational front-ends (multi-agent
-// collaboration PRD, phase C — docs/prds/multi-agent-collaboration.md).
+// collaboration PRD, phase C  --  docs/prds/multi-agent-collaboration.md).
 // Empty (Telegram.TokenEnv == "") disables chat entirely.
 type ChatConfig struct {
 	Telegram TelegramConfig `toml:"telegram" yaml:"telegram"`
@@ -471,7 +471,7 @@ type Notify struct {
 // Web configures the observability dashboard.
 type Web struct {
 	// Listen is the dashboard address; "off" disables the web UI.
-	// Bind localhost (or a LAN/tailnet address) — there is no auth.
+	// Bind localhost (or a LAN/tailnet address)  --  there is no auth.
 	Listen string `toml:"listen" yaml:"listen"`
 }
 
@@ -485,7 +485,7 @@ func Load(path string) (Config, error) {
 }
 
 // LoadOverlay reads basePath, then re-decodes overlayPath into the same
-// struct so only the fields overlayPath sets are overridden — every field
+// struct so only the fields overlayPath sets are overridden  --  every field
 // it omits keeps the value from basePath. This lets a deployment-specific
 // file (e.g. config.docker.toml) declare only what differs from the base
 // config instead of duplicating the whole schema. overlayPath == "" is
@@ -603,7 +603,7 @@ func finalize(cfg Config) (Config, error) {
 				return cfg, fmt.Errorf("config: identities[%d].bot_user is required", i)
 			}
 			if len(id.Repos) == 0 {
-				return cfg, fmt.Errorf("config: identities[%d] has no [[identities.repos]] entries — at least one is required", i)
+				return cfg, fmt.Errorf("config: identities[%d] has no [[identities.repos]] entries  --  at least one is required", i)
 			}
 			switch id.Forge.Type {
 			case "github", "gitea":

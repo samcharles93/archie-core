@@ -1,6 +1,6 @@
 // Package webui is archied's observability dashboard: task board,
 // per-task timelines, workflow/stage metrics, and a live event tail
-// over SSE. Read-only — the daemon is steered through GitHub, not here.
+// over SSE. Read-only  --  the daemon is steered through GitHub, not here.
 // Bind it to localhost or a tailnet address; it has no auth.
 package webui
 

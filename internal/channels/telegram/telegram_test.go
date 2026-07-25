@@ -66,7 +66,7 @@ func TestStartAndStopLifecycle(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	g := New("test-token", "", "", nil, log)
 
-	// Override the API base URL — the go-telegram/bot library uses
+	// Override the API base URL  --  the go-telegram/bot library uses
 	// https://api.telegram.org by default. We want it to hit our test
 	// server instead. The library doesn't expose a BaseURL override, so
 	// we test what we can: ensure Start fails predictably when the API
@@ -82,7 +82,7 @@ func TestStartAndStopLifecycle(t *testing.T) {
 	// The point: we exercise the Start/Stop path; accept either
 	// success or failure.
 	_ = g.Start(ctx, router)
-	// Best-effort stop — don't assert on Start result since we can't
+	// Best-effort stop  --  don't assert on Start result since we can't
 	// fully mock the Bot API without the library supporting a base URL
 	// override.
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), 2*time.Second)

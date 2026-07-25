@@ -13,8 +13,8 @@ type SendResult struct {
 	// Success is true when the platform accepted the message.
 	Success bool
 
-	// Retryable is true when the error is transient — rate limits, network
-	// timeouts, temporary platform outages — and the caller should retry
+	// Retryable is true when the error is transient  --  rate limits, network
+	// timeouts, temporary platform outages  --  and the caller should retry
 	// with backoff.
 	Retryable bool
 
@@ -24,12 +24,12 @@ type SendResult struct {
 	// ErrorCode classifies the failure for observability and retry-policy
 	// decisions. Values:
 	//
-	//   ""                — no error (Success == true)
-	//   "rate_limited"    — platform rejected due to rate limiting
-	//   "network"         — connection lost or timeout
-	//   "auth"            — token expired or credentials invalid
-	//   "invalid_message" — message content rejected by platform
-	//   "internal"        — unexpected adapter or platform error
+	//   ""                 --  no error (Success == true)
+	//   "rate_limited"     --  platform rejected due to rate limiting
+	//   "network"          --  connection lost or timeout
+	//   "auth"             --  token expired or credentials invalid
+	//   "invalid_message"  --  message content rejected by platform
+	//   "internal"         --  unexpected adapter or platform error
 	ErrorCode string
 }
 

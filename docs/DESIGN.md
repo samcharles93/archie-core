@@ -1,18 +1,18 @@
-# archied — design notes
+# archied  --  design notes
 
 Archie is a resident daemon that keeps personal projects moving: it polls GitHub for issues labelled
 `archie`, works each one in an isolated fresh-clone worktree through a routed **workflow**, and opens a
 pull request for human review. Sam reviews and merges; the machine grinds in between.
 
 Guiding principle: **environmental constraints over prompt instructions.** Agents don't get asked nicely
-to write good code — the quality gate (vet/build/test/lint, configurable per repo and per workflow stage)
+to write good code  --  the quality gate (vet/build/test/lint, configurable per repo and per workflow stage)
 refuses to let a run succeed until it passes. The gate mechanics live in `ai-sdk/agentloop`; this repo
 owns orchestration only.
 
 ## Workflows, not a pipeline
 
 `internal/workflow` is the engine: a Workflow is an ordered list of stages over a shared TaskContext;
-stages are deterministic steps (worktree, gate, diff cap, PR, comments — the shared step library in
+stages are deterministic steps (worktree, gate, diff cap, PR, comments  --  the shared step library in
 `steps.go`) or agent stages (`agentloop.Run` with a stage-specific mission/toolset/gate). Routing is
 label-driven (`bug` → tdd, `feature` → feasibility, default → implement), refinable by an LLM triage
 stage. Adding a workflow must never require touching the engine or reimplementing steps.
@@ -31,7 +31,7 @@ Planned workflows:
 `queued → running(workflow:stage) → waiting_human | pr_open → merged | parked | rejected | closed_wont_do`
 
 SQLite (`internal/store`), WAL, one row per issue with a transitions audit table. Crash recovery:
-`running` tasks re-queue on startup with attempt++. Parks are never silent — every park comments on the
+`running` tasks re-queue on startup with attempt++. Parks are never silent  --  every park comments on the
 issue with the reason and gate output.
 
 ## Rejected alternative: building on tau's peer-agent runtime

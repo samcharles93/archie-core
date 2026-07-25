@@ -49,7 +49,7 @@ func Check(ctx gate.GateContext) []gate.Finding {
 	}
 	for _, f := range ctx.ChangedFiles {
 		if strings.HasSuffix(f, ".md") {
-			findings = append(findings, gate.Finding{Level: "warn", File: f, Message: "markdown change — no build impact"})
+			findings = append(findings, gate.Finding{Level: "warn", File: f, Message: "markdown change  --  no build impact"})
 		}
 	}
 	return findings

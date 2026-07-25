@@ -4,7 +4,7 @@
 // "<owner>:<repo>:<issue_number>".  Events live in the "events" collection,
 // keyed by an auto-incrementing counter.
 //
-// Secondary indexes are not available — ClaimNext scans all tasks, and
+// Secondary indexes are not available  --  ClaimNext scans all tasks, and
 // lookups by task ID (Transition, Requeue, etc.) scan all tasks.  This is
 // acceptable at the daemon's scale (tens to hundreds of tasks).
 package nell
@@ -233,7 +233,7 @@ func (a *Adapter) Update(ctx context.Context, t *store.Task) error {
 	if err != nil {
 		return fmt.Errorf("nell: get task for update: %w", err)
 	}
-	// Copy only mutable fields — same set as the SQLite store's UPDATE.
+	// Copy only mutable fields  --  same set as the SQLite store's UPDATE.
 	doc["workflow"] = t.Workflow
 	doc["stage"] = t.Stage
 	doc["branch"] = t.Branch
@@ -602,7 +602,7 @@ func (a *Adapter) WorkflowStats(ctx context.Context) ([]store.WorkflowStat, erro
 	return stats, nil
 }
 
-// StageStats aggregates stage_finish events — where time goes and which
+// StageStats aggregates stage_finish events  --  where time goes and which
 // stages fail.
 func (a *Adapter) StageStats(ctx context.Context) ([]store.StageStat, error) {
 	all, err := a.events.AllDocs(ctx, sdk.DocRange{IncludeDocs: true})

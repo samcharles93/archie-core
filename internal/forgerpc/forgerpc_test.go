@@ -32,7 +32,7 @@ func connect(t *testing.T, url string) *nats.Conn {
 }
 
 // fakeForge implements forge.Forge, recording calls to the four methods
-// workflow stages invoke mid-run. Every other method panics if called —
+// workflow stages invoke mid-run. Every other method panics if called  -- 
 // this RPC layer must never proxy them.
 type fakeForge struct {
 	comments    []commentCall

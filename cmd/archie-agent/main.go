@@ -1,7 +1,7 @@
 // Command archie-agent is a long-running NATS-connected worker. It answers
 // two request shapes: single-stage archie.agent.> requests over the
 // ARCHIE_TASKS JetStream stream (the legacy per-stage protocol), and full
-// task handoffs on archie.taskrun.> (core NATS, queue-grouped) — where it
+// task handoffs on archie.taskrun.> (core NATS, queue-grouped)  --  where it
 // runs workflow.Route/workflow.Run itself, proxying Store/Forge/worktree
 // operations back to archied over NATS instead of holding those
 // credentials directly.
@@ -189,7 +189,7 @@ func run() int {
 // bootTaskID reads the boot-time task.json brief the daemon writes into
 // the worktree before container acquire (container.WriteTaskJSON) and
 // returns its ID. Returns (0, false) when the file is absent, unparseable,
-// or has no ID — any of which mean "shared pool mode, no dedicated task."
+// or has no ID  --  any of which mean "shared pool mode, no dedicated task."
 func bootTaskID(mountDir string, log *slog.Logger) (int64, bool) {
 	data, err := os.ReadFile(filepath.Join(mountDir, "task.json"))
 	if err != nil {
@@ -197,7 +197,7 @@ func bootTaskID(mountDir string, log *slog.Logger) (int64, bool) {
 	}
 	var payload container.TaskPayload
 	if err := json.Unmarshal(data, &payload); err != nil {
-		log.Warn("task.json present but unparseable — falling back to shared queue subscription", "err", err)
+		log.Warn("task.json present but unparseable  --  falling back to shared queue subscription", "err", err)
 		return 0, false
 	}
 	if payload.ID <= 0 {

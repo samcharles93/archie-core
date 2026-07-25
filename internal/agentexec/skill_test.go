@@ -32,7 +32,7 @@ func TestHandleMessageDoesNotDuplicateSkillBody(t *testing.T) {
 	// Regression for issue #65: the daemon already prepends the skill
 	// body to every mission via missionWithSkill() before the Request
 	// reaches HandleMessage. HandleMessage must pass the mission
-	// through unchanged — a second prepend here would duplicate the
+	// through unchanged  --  a second prepend here would duplicate the
 	// skill body in the agent's context window.
 
 	dir := t.TempDir()
@@ -92,7 +92,7 @@ Analyse the bug. Write repro tests. Fix.
 	if capturedMission != alreadyPrepended {
 		t.Errorf("HandleMessage modified the mission:\n  got:  %q\n  want: %q\n\n"+
 			"The daemon already prepends the skill body via missionWithSkill(). "+
-			"HandleMessage must not prepend it again — doing so duplicates content "+
+			"HandleMessage must not prepend it again  --  doing so duplicates content "+
 			"in the agent's context window (issue #65).",
 			capturedMission, alreadyPrepended)
 	}

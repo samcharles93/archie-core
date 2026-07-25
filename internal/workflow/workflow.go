@@ -1,7 +1,7 @@
 // Package workflow is archied's extensible pipeline engine. A Workflow
 // is an ordered list of stages over a shared TaskContext; stages are
 // either deterministic steps (git, gate, PR, comments) or agent stages
-// (agentloop runs). New workflows compose from the shared step library —
+// (agentloop runs). New workflows compose from the shared step library  -- 
 // adding one must never require reimplementing the engine or the steps.
 package workflow
 
@@ -58,7 +58,7 @@ type TaskContext struct {
 	// CustomStages discovers a repo's per-repo custom stages (Yaegi-
 	// interpreted from .archie/stages/*.go in the given worktree
 	// directory), returning them in the order they should run. Wired up
-	// by the composition root (cmd/archied) — nil disables discovery, so
+	// by the composition root (cmd/archied)  --  nil disables discovery, so
 	// StageRepoStages is a no-op. Kept as an injected function rather
 	// than a direct import to avoid workflow depending on its own
 	// generated Yaegi symbol table (an import cycle).
@@ -75,10 +75,10 @@ type TaskContext struct {
 	// Dir/Branch are set by the prepare step.
 	Dir    string
 	Branch string
-	// BuildSummary is the builder agent's finish summary — the PR body.
+	// BuildSummary is the builder agent's finish summary  --  the PR body.
 	BuildSummary string
 	// BuildNoChanges is set when the builder returned StatusPassed but
-	// made no file changes — the fix already exists or the issue is a
+	// made no file changes  --  the fix already exists or the issue is a
 	// no-op. StageCommitPush closes the issue instead of erroring.
 	BuildNoChanges bool
 	// ReproProof is the captured failing-test output from a TDD repro
@@ -153,7 +153,7 @@ func Route(t *store.Task, reg Registry) Workflow {
 			}
 		case "bootstrap":
 			// Diagnostics: exercise the full pipeline deterministically
-			// (no LLM spend) — invites, clone, push, PR, labels.
+			// (no LLM spend)  --  invites, clone, push, PR, labels.
 			if wf, ok := reg["bootstrap"]; ok {
 				return wf
 			}
@@ -175,7 +175,7 @@ func Route(t *store.Task, reg Registry) Workflow {
 }
 
 // Run executes the workflow: stages in order, task persisted after each,
-// errors park the task with a comment on the issue — never silently.
+// errors park the task with a comment on the issue  --  never silently.
 func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 	t := tc.Task
 	t.Workflow = wf.Name
@@ -204,7 +204,7 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 				return
 			}
 			t.ParkReason = fmt.Sprintf("stage %s: %v", stage.Name, err)
-			log.Warn("stage failed — parking", "stage", stage.Name, "err", err)
+			log.Warn("stage failed  --  parking", "stage", stage.Name, "err", err)
 			park(ctx, tc, t.ParkReason)
 			return
 		}
@@ -233,7 +233,7 @@ func finish(ctx context.Context, tc *TaskContext, log *slog.Logger) {
 
 // stateLabelFor maps a terminal workflow status to its forge label by
 // looking up the configured [dispatch.labels]; empty clears (done states
-// — the issue closes or the PR speaks).
+//  --  the issue closes or the PR speaks).
 func stateLabelFor(d config.Dispatch, status string) string {
 	switch status {
 	case store.StatusPROpen:

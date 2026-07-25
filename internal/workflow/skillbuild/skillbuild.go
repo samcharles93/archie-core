@@ -64,7 +64,7 @@ type SkillWorkflow struct {
 // specific cloned worktree so that per-repo skills are discovered
 // without restarting the daemon.
 func AugmentRegistry(worktree string, base workflow.Registry) (workflow.Registry, error) {
-	// Copy base — never mutate the caller's registry.
+	// Copy base  --  never mutate the caller's registry.
 	reg := make(workflow.Registry, len(base))
 	maps.Copy(reg, base)
 	if err := mergeSkillWorkflows(worktree, reg); err != nil {
@@ -102,9 +102,9 @@ func mergeSkillWorkflows(worktree string, reg workflow.Registry) error {
 		}
 		if len(wf.Stages) > 0 {
 			// Only warn when TWO SKILLS declare the same workflow name.
-			// Overriding a built-in name is routine — don't log.
+			// Overriding a built-in name is routine  --  don't log.
 			if prevSkill, dup := seenFromSkill[entry.Workflow]; dup {
-				slog.Default().Warn("duplicate workflow name across skills — overriding",
+				slog.Default().Warn("duplicate workflow name across skills  --  overriding",
 					"workflow", entry.Workflow,
 					"skill", entry.Dir,
 					"previous_skill", prevSkill,
@@ -141,7 +141,7 @@ func BuildWorkflow(worktree string, entry SkillWorkflow) (workflow.Workflow, err
 	}
 	sort.Strings(names)
 
-	// Each plugin file is package main defining Stage() — they must be
+	// Each plugin file is package main defining Stage()  --  they must be
 	// evaluated in separate interpreters to avoid symbol collisions.
 	stages := make([]workflow.Stage, 0, len(names))
 	for _, name := range names {

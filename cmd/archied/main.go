@@ -122,7 +122,7 @@ func run() int {
 		}()
 	}
 
-	// NATS client (optional — SQLite flow unchanged when [nats] is absent).
+	// NATS client (optional  --  SQLite flow unchanged when [nats] is absent).
 	var natsClient *nats.Client
 	if cfg.NATS.URL != "" {
 		natsToken, err := configuredNATSToken(cfg.NATS, os.Getenv)
@@ -139,7 +139,7 @@ func run() int {
 		log.Info("nats connected", "url", cfg.NATS.URL)
 	}
 
-	// Container pool (optional — no containers when [containers] is absent).
+	// Container pool (optional  --  no containers when [containers] is absent).
 	var containerPool *container.Pool
 	var storeBackend storage.Backend
 	if cfg.Containers.Enabled {
@@ -175,7 +175,7 @@ func run() int {
 		storeBackend = storage.NewDockerBackend(dockerCli)
 	}
 
-	// Gateways (optional — absent [chat.telegram] disables). Multi-agent
+	// Gateways (optional  --  absent [chat.telegram] disables). Multi-agent
 	// collaboration PRD phase C (docs/prds/multi-agent-collaboration.md).
 	if cfg.Chat.Telegram.TokenEnv != "" {
 		tgToken := os.Getenv(cfg.Chat.Telegram.TokenEnv)
@@ -237,7 +237,7 @@ func run() int {
 	log.Info("workflow registry built", "workflows", len(registry))
 
 	// Load daemon plugins from the configured plugin directory (Layer 2).
-	// Failed plugins are skipped — the daemon starts with the remaining set.
+	// Failed plugins are skipped  --  the daemon starts with the remaining set.
 	var pluginReg *plugin.Registry
 	if cfg.PluginDir != "" {
 		plugins, err := plugin.LoadDir(cfg.PluginDir, pluginextract.Symbols)

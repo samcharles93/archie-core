@@ -75,11 +75,11 @@ pnpm install --frozen-lockfile
 - Import order: let eslint fix it with `--fix`
 
 ### tsc / typecheck
-- `TS2345`: type mismatch — fix the argument or the signature
-- `TS2339`: property doesn't exist — check the type definition
+- `TS2345`: type mismatch  --  fix the argument or the signature
+- `TS2339`: property doesn't exist  --  check the type definition
 - `Cannot find module`: check the import path or install the package
 
 ### vitest / jest
-- Test timeout: the test is hanging — check async/await, mocks, or network calls
-- Snapshot mismatch: the output changed — update the snapshot if the change is intentional
+- Test timeout: the test is hanging  --  check async/await, mocks, or network calls
+- Snapshot mismatch: the output changed  --  update the snapshot if the change is intentional
 - Assertion failure: fix the code, not the test

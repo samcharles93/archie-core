@@ -71,7 +71,7 @@ func main() {
 
 func TestRunMissingMain(t *testing.T) {
 	// Yaegi's EvalPath, like `go build` without `go run`, doesn't
-	// complain about a missing main() — it just never gets called.
+	// complain about a missing main()  --  it just never gets called.
 	path := writeScript(t, `package main
 
 func notMain() {}

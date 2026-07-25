@@ -1,5 +1,5 @@
 // Package tools is the central tool subsystem for archie-core. It defines
-// the ToolEntry data type that every tool — built-in, MCP, or plugin —
+// the ToolEntry data type that every tool  --  built-in, MCP, or plugin  -- 
 // registers with. The registry (17.2) and guardrails (17.10–17.15) are
 // built on top of this type.
 package tools
@@ -26,14 +26,14 @@ type Handler func(ctx context.Context, input map[string]any) (output any, err er
 type CheckFn func() bool
 
 // SchemaOverrideFn mutates a tool's JSON Schema at runtime. Use it to
-// inject dynamic values — for example, enumerating MCP server names or
+// inject dynamic values  --  for example, enumerating MCP server names or
 // filesystem paths that aren't known until the daemon starts. A nil
 // override means the schema is static.
 type SchemaOverrideFn func(schema JSONSchema) JSONSchema
 
 // ToolEntry is the foundational data type for the tools subsystem. Every
-// tool — built-in, MCP server, plugin-provided, or dynamically registered
-// — is represented by a ToolEntry. Fields with `json:"-"` tags are
+// tool  --  built-in, MCP server, plugin-provided, or dynamically registered
+//  --  is represented by a ToolEntry. Fields with `json:"-"` tags are
 // runtime-only (not serialized).
 type ToolEntry struct {
 	// Name uniquely identifies this tool (e.g. "read_file", "write_file",
@@ -54,7 +54,7 @@ type ToolEntry struct {
 	// Must be non-nil for the tool to be functional.
 	Handler Handler `json:"-"`
 
-	// CheckFn reports whether the tool is currently available — for
+	// CheckFn reports whether the tool is currently available  --  for
 	// example, an MCP server might be offline, or a required binary might
 	// not be installed. A nil CheckFn means always available.
 	CheckFn CheckFn `json:"-"`
@@ -64,6 +64,11 @@ type ToolEntry struct {
 	// warning for each missing variable but does not reject the tool
 	// (the check only matters at invocation time).
 	RequiresEnv []string `json:"requires_env,omitempty"`
+
+	// Classification is a bitmask describing the tool's behavioral
+	// characteristics (idempotent, mutating, etc.). Zero means no
+	// special classification. See [ToolClassification] for valid flags.
+	Classification ToolClassification `json:"classification,omitempty"`
 
 	// IsAsync distinguishes synchronous tools (complete immediately) from
 	// asynchronous ones (start a background operation and return a handle

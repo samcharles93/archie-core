@@ -1,6 +1,6 @@
 # Builds and pushes the archied and archie-agent images on every merge
 # to main. carina's watchtower container (see docker-compose.yml) picks
-# up the new images and restarts the running daemons — this workflow
+# up the new images and restarts the running daemons  --  this workflow
 # never touches carina directly.
 name: deploy
 

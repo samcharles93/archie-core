@@ -1,4 +1,4 @@
-# archie-core TypeScript Plugin Engine — PRD
+# archie-core TypeScript Plugin Engine  --  PRD
 
 **Author:** Archie (Hermes agent)  
 **Date:** 2026-07-21  
@@ -8,7 +8,7 @@
 
 ## Summary
 
-A TypeScript-based plugin engine that lets repositories ship interpreted, dynamically-loaded workflow extensions. Plugins are `.ts` files placed in `.archie/workflows/`. archie-core discovers them on its next poll cycle, transpiles them to JavaScript via esbuild, and executes them in an embedded [goja](https://github.com/dop251/goja) runtime — a pure-Go ECMAScript interpreter with zero CGO dependencies.
+A TypeScript-based plugin engine that lets repositories ship interpreted, dynamically-loaded workflow extensions. Plugins are `.ts` files placed in `.archie/workflows/`. archie-core discovers them on its next poll cycle, transpiles them to JavaScript via esbuild, and executes them in an embedded [goja](https://github.com/dop251/goja) runtime  --  a pure-Go ECMAScript interpreter with zero CGO dependencies.
 
 ---
 
@@ -20,7 +20,7 @@ TypeScript is the most widely understood language among developers writing autom
 
 Having a TypeScript-native plugin engine means:
 - Plugin authors get familiar syntax, type safety, and IDE support
-- No separate toolchain — just `.ts` files in a folder
+- No separate toolchain  --  just `.ts` files in a folder
 - Skills, gates, and workflow stages share the same language
 
 ### Why goja
@@ -29,12 +29,12 @@ Having a TypeScript-native plugin engine means:
 |---|---|
 | V8 CGO bindings | Requires CGO, ~50MB static libraries, platform-specific builds |
 | QuickJS CGO | Requires CGO, smaller than V8 but still a C dependency |
-| QJS (Wazero) | Pure Go WASM, but sandboxed — can't expose Go functions efficiently |
+| QJS (Wazero) | Pure Go WASM, but sandboxed  --  can't expose Go functions efficiently |
 | Ramune | Heavy dependency, bundles an entire TypeScript 7 compiler |
 | Node.js subprocess | Process overhead per execution, IPC serialization cost |
 
 goja is a pure-Go ECMAScript 5.1+ interpreter at ~20k lines. It:
-- Has **zero CGO** — cross-compiles everywhere Go does
+- Has **zero CGO**  --  cross-compiles everywhere Go does
 - Passes nearly all TC39 Test262 tests for ES5.1 + significant ES6 coverage
 - Can run Babel and the TypeScript compiler itself (proven capability)
 - Provides direct Go↔JS interop via `Set()`/`Get()`/`Runtime.RunString()`
@@ -114,7 +114,7 @@ export function check(ctx: GateContext): Finding[] {
             if (line.includes("panic(")) {
                 findings.push({
                     level: "error",
-                    message: "new panic() call — use error returns instead"
+                    message: "new panic() call  --  use error returns instead"
                 });
             }
         }
@@ -128,7 +128,7 @@ export function check(ctx: GateContext): Finding[] {
             findings.push({
                 level: "warn",
                 file: file,
-                message: "time.Sleep in non-test code — use time.Ticker instead"
+                message: "time.Sleep in non-test code  --  use time.Ticker instead"
             });
         }
     }
@@ -217,7 +217,7 @@ All file operations are **jailed to the worktree**. `archie.readFile("/etc/passw
 
 ### Reload cycle
 
-Plugins are loaded fresh on every poll cycle — archie-core already fresh-clones per task. No hot-reload complexity, no cache invalidation. The worktree is the source of truth.
+Plugins are loaded fresh on every poll cycle  --  archie-core already fresh-clones per task. No hot-reload complexity, no cache invalidation. The worktree is the source of truth.
 
 For the rare case where a plugin errors at parse/transpile time, archie-core comments on the issue with the diagnostic and parks the task. The plugin author fixes the `.ts` file and requeues.
 
@@ -294,7 +294,7 @@ func (l *Loader) LoadPlugins(worktreeDir string) ([]Plugin, error) {
     dir := filepath.Join(worktreeDir, ".archie", "workflows")
     entries, err := os.ReadDir(dir)
     if os.IsNotExist(err) {
-        return nil, nil // no plugins — not an error
+        return nil, nil // no plugins  --  not an error
     }
     if err != nil {
         return nil, err
@@ -388,7 +388,7 @@ goja natively supports ES5.1 with significant ES6 features. Modern syntax like `
 | Generators | ❌ not supported |
 | `Proxy` | ❌ not supported |
 
-For gate scripts, this is fine — gates are synchronous by nature. If async is genuinely needed later, the Bun backend (via `tsgo`) is the escape hatch.
+For gate scripts, this is fine  --  gates are synchronous by nature. If async is genuinely needed later, the Bun backend (via `tsgo`) is the escape hatch.
 
 ### Performance
 
@@ -417,7 +417,7 @@ Plugins can't `import` from npm or other files. They're self-contained modules. 
 | **Plugin folder** | `.archie/workflows/` | `.archie/workflows/` |
 | **Best for** | Custom stages needing Go's stdlib, tight daemon integration | Custom gates and scripts where author familiarity matters |
 
-**Recommendation: support both.** They solve different problems. Yaegi for repo owners who want full Go power in their custom stages. goja for repo owners who want to write gates and scripts in TypeScript. Both load from `.archie/workflows/` — archie-core discovers which engine to use by file extension (`.go` → Yaegi, `.ts` → goja+esbuild).
+**Recommendation: support both.** They solve different problems. Yaegi for repo owners who want full Go power in their custom stages. goja for repo owners who want to write gates and scripts in TypeScript. Both load from `.archie/workflows/`  --  archie-core discovers which engine to use by file extension (`.go` → Yaegi, `.ts` → goja+esbuild).
 
 ---
 

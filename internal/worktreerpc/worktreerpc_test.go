@@ -34,7 +34,7 @@ func connect(t *testing.T, url string) *nats.Conn {
 }
 
 // newLocalRemote creates a bare repo with one commit on main, reachable
-// via file://<host>/<owner>/<repo>.git — mirrors worktree_test.go's helper.
+// via file://<host>/<owner>/<repo>.git  --  mirrors worktree_test.go's helper.
 func newLocalRemote(t *testing.T, owner, repo string) string {
 	t.Helper()
 	host := t.TempDir()
@@ -178,7 +178,7 @@ func TestClientPropagatesServerError(t *testing.T) {
 	t.Cleanup(unsub)
 
 	client := &Client{Conn: connect(t, url), Timeout: 5 * time.Second}
-	// No worktree ever prepared at this dir — push must fail.
+	// No worktree ever prepared at this dir  --  push must fail.
 	err = client.Push(context.Background(), "acme", "nonexistent", 999, "some-branch")
 	if err == nil {
 		t.Fatal("expected Push to propagate the server-side git error")

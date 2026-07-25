@@ -1,6 +1,6 @@
 // Package worktreerpc lets archie-agent request the two worktree
-// operations that touch the network — clone/fetch (Prepare) and push
-// (Push) — over core NATS request/reply, instead of holding the forge
+// operations that touch the network  --  clone/fetch (Prepare) and push
+// (Push)  --  over core NATS request/reply, instead of holding the forge
 // credential itself. archied remains the sole holder of
 // worktree.Manager.Token and performs both against the host worktree
 // directory (the same files the agent container has bind-mounted at
@@ -29,7 +29,7 @@ const (
 )
 
 // PushRequest identifies the task's worktree by owner/repo/issue rather
-// than trusting a path from the (sandboxed) agent — the server resolves
+// than trusting a path from the (sandboxed) agent  --  the server resolves
 // the directory itself via worktree.Manager.Dir.
 type PushRequest struct {
 	Owner  string `json:"owner"`

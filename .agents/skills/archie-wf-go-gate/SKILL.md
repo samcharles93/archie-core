@@ -20,7 +20,7 @@ what a correct gate looks like and how to diagnose failures.
 
 ## Standard gate (Tau and similar Go projects)
 
-Run in this exact order. archie-core does NOT run these — the `ai-sdk/agentloop` gate
+Run in this exact order. archie-core does NOT run these  --  the `ai-sdk/agentloop` gate
 does. This list is what you should configure in `config.toml`:
 
 ```toml
@@ -47,9 +47,9 @@ The agent should re-run them after making changes.
 
 ### golangci-lint
 Common failures and fixes:
-- `unused` — remove the unused function or add `//nolint:unused`
-- `errcheck` — handle the error or assign to `_`
-- `gosec` — review the security finding; never blindly suppress
+- `unused`  --  remove the unused function or add `//nolint:unused`
+- `errcheck`  --  handle the error or assign to `_`
+- `gosec`  --  review the security finding; never blindly suppress
 
 ### go test -race
 Data races are non-deterministic. If `-race` fails:
@@ -65,6 +65,6 @@ golangci-lint run --tests=false --enable-only=unused,staticcheck ./changed/pkg/.
 
 ## When the TDD workflow runs
 
-During `repro-tests`, the test command's expectations are INVERTED — it must FAIL.
+During `repro-tests`, the test command's expectations are INVERTED  --  it must FAIL.
 During `fix`, the full gate runs normally and test files are write-protected.
 The agent cannot modify tests in the fix stage; it must fix the code to make them pass.

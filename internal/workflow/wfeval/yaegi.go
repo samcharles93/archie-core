@@ -24,7 +24,7 @@ const stagesDir = ".archie/stages"
 
 // Discover loads every .archie/stages/*.go file in dir and returns the
 // workflow.Stage each exports, in filename order. A missing directory is
-// not an error — it returns (nil, nil), meaning no custom stages are
+// not an error  --  it returns (nil, nil), meaning no custom stages are
 // configured for this repo.
 func Discover(dir string) ([]workflow.Stage, error) {
 	entries, err := os.ReadDir(filepath.Join(dir, stagesDir))

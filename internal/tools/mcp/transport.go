@@ -204,7 +204,7 @@ func (t *StdioTransport) Stop(_ context.Context) error {
 	t.state = StateStopping
 	t.mu.Unlock()
 
-	// Cancel the transport context — this signals all background
+	// Cancel the transport context  --  this signals all background
 	// goroutines (reader, restart timer) to stop.
 	t.mu.Lock()
 	if t.cancel != nil {
@@ -280,7 +280,7 @@ func (t *StdioTransport) Send(ctx context.Context, body []byte) ([]byte, error) 
 	// Wait for the response.
 	select {
 	case <-ctx.Done():
-		// De-register on context cancellation — no cleanup needed on the
+		// De-register on context cancellation  --  no cleanup needed on the
 		// channel since the reader will close it when it tries to deliver.
 		t.mu.Lock()
 		delete(t.pending, msgID)
@@ -289,7 +289,7 @@ func (t *StdioTransport) Send(ctx context.Context, body []byte) ([]byte, error) 
 
 	case resp, ok := <-ch:
 		if !ok {
-			// Channel closed — the transport was stopped or the subprocess
+			// Channel closed  --  the transport was stopped or the subprocess
 			// crashed before we got a response.
 			return nil, errors.New("mcp: transport closed while waiting for response")
 		}
@@ -383,7 +383,7 @@ func (t *StdioTransport) deliverResponse(body []byte) {
 	msgID, err := extractMessageID(body)
 	if err != nil {
 		// Cannot route a message without an ID. This could be a server
-		// notification (no ID) — we silently drop it rather than blocking.
+		// notification (no ID)  --  we silently drop it rather than blocking.
 		// In a full MCP client implementation, notifications would be
 		// handled via a callback.
 		return
@@ -403,7 +403,7 @@ func (t *StdioTransport) deliverResponse(body []byte) {
 		select {
 		case ch <- body:
 		default:
-			// Caller is no longer waiting — discard.
+			// Caller is no longer waiting  --  discard.
 		}
 	}
 }
@@ -423,7 +423,7 @@ func (t *StdioTransport) handleProcessDeath() {
 	t.cmd = nil
 	t.stdin = nil
 
-	// Fail all pending requests — the subprocess is gone.
+	// Fail all pending requests  --  the subprocess is gone.
 	t.failAllPendingLocked()
 	t.mu.Unlock()
 
@@ -464,7 +464,7 @@ func (t *StdioTransport) attemptRestart() {
 
 		backoff := t.computeBackoffLocked()
 
-		// Check spawn-failure limit (not crash limit — crash loops are
+		// Check spawn-failure limit (not crash limit  --  crash loops are
 		// bounded by the growing backoff cap).
 		if t.config.MaxRetries > 0 && t.startupFailures >= t.config.MaxRetries {
 			t.state = StateError
@@ -501,7 +501,7 @@ func (t *StdioTransport) attemptRestart() {
 			continue
 		}
 
-		// Success — update state and start the reader.
+		// Success  --  update state and start the reader.
 		t.mu.Lock()
 		t.cmd = cmd
 		t.stdin = stdin

@@ -29,7 +29,7 @@ func (p *Plugin) Run(input string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("plugin %s: %w", p.Name, err)
 	}
-	// Plugins must use package main — the convention for runnable Yaegi scripts.
+	// Plugins must use package main  --  the convention for runnable Yaegi scripts.
 	fn, err := yaegiutil.Resolve[func(string) string](i, p.Src, "main.Run")
 	if err != nil {
 		return "", fmt.Errorf("plugin %s: %w", p.Name, err)
@@ -48,7 +48,7 @@ func DiscoverPlugins(dir, skillName string) ([]Plugin, error) {
 // LoadPlugins loads plugins from dir/.agents/skills/<skillName>/plugins/.
 //
 // When allowed is non-empty, only the listed filenames are loaded in
-// declared order — the plugins/ prefix is stripped before matching.
+// declared order  --  the plugins/ prefix is stripped before matching.
 // A listed file that does not exist on disk is an error.
 //
 // When allowed is nil or empty, all *.go files in the plugins/ directory
@@ -57,7 +57,7 @@ func LoadPlugins(dir, skillName string, allowed []string) ([]Plugin, error) {
 	pluginsDir := filepath.Join(dir, skillsDir, skillName, "plugins")
 	entries, err := os.ReadDir(pluginsDir)
 	if os.IsNotExist(err) {
-		// Skill exists but has no plugins directory — not an error.
+		// Skill exists but has no plugins directory  --  not an error.
 		return nil, nil
 	}
 	if err != nil {

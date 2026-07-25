@@ -12,7 +12,7 @@ import "encoding/json"
 type TransportState int
 
 const (
-	// StateStopped is the initial and final state — no subprocess running.
+	// StateStopped is the initial and final state  --  no subprocess running.
 	StateStopped TransportState = iota
 	// StateStarting means a subprocess has been spawned and is being
 	// initialised. The transport is not yet usable for requests.

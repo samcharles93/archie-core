@@ -73,7 +73,7 @@ type Daemon struct {
 
 // IdentityRunner bundles identity-specific state for a single agent
 // identity running within a multi-identity daemon. Each identity gets its
-// own forge client, worktree manager, repo list, and config — but shares
+// own forge client, worktree manager, repo list, and config  --  but shares
 // the store, NATS connection, container pool, and event bus with siblings.
 type IdentityRunner struct {
 	Name  string
@@ -125,7 +125,7 @@ func (d *Daemon) Startup(ctx context.Context) error {
 	}
 	for _, r := range d.Cfg.Repos {
 		if err := d.Forge.VerifyPush(ctx, r.Owner, r.Name); err != nil {
-			d.Log.Warn("repo not pushable — tasks from it will fail", "repo", r.FullName(), "err", err)
+			d.Log.Warn("repo not pushable  --  tasks from it will fail", "repo", r.FullName(), "err", err)
 		}
 	}
 	return nil
@@ -133,7 +133,7 @@ func (d *Daemon) Startup(ctx context.Context) error {
 
 // Run polls until the context ends. When Identities is non-empty, each
 // identity gets its own goroutine with its own forge client, repo list,
-// and poll interval — failure isolation between identities (one identity's
+// and poll interval  --  failure isolation between identities (one identity's
 // forge outage doesn't block another's poll cycle).
 func (d *Daemon) Run(ctx context.Context) error {
 	if len(d.Identities) > 0 {
@@ -205,7 +205,7 @@ func (d *Daemon) cycleForIdentity(ctx context.Context, id *IdentityRunner) {
 }
 
 // pollIssuesWithForge is pollIssues using an explicit forge client rather
-// than d.Forge — used by multi-identity poll loops.
+// than d.Forge  --  used by multi-identity poll loops.
 func (d *Daemon) pollIssuesWithForge(ctx context.Context, fg forge.Forge, repo config.Repo) []forge.Issue {
 	switch d.Cfg.Dispatch.Trigger {
 	case "label":
@@ -352,7 +352,7 @@ func (d *Daemon) drainNATS(ctx context.Context) {
 // one-task-per-repository safety rule. Submit order is retained within a repo;
 // tasks for different repos may run concurrently. Repos for which
 // allowConcurrent reports true opt out of the same-repo serialization
-// entirely — the global slot limit is the only bound on their concurrency.
+// entirely  --  the global slot limit is the only bound on their concurrency.
 type taskDispatcher struct {
 	slots           chan struct{}
 	allowConcurrent func(owner, repo string) bool
@@ -450,7 +450,7 @@ func (d *Daemon) pollSQLite(ctx context.Context, repo config.Repo, is forge.Issu
 
 // pollNATS publishes discovered issues to NATS (new flow).
 func (d *Daemon) pollNATS(ctx context.Context, repo config.Repo, is forge.Issue, labels string) {
-	// Read-only existence check — needed for maybeRetryParked.
+	// Read-only existence check  --  needed for maybeRetryParked.
 	existing, err := d.Store.TaskByIssue(ctx, repo.Owner, repo.Name, is.Number)
 	if err != nil {
 		d.Log.Error("task lookup failed", "repo", repo.FullName(), "issue", is.Number, "err", err)
@@ -505,7 +505,7 @@ func (d *Daemon) processNATSTask(ctx context.Context, msg jetstream.Msg) {
 		return
 	}
 	if !inserted {
-		// Already tracked — dedup. Ack and move on.
+		// Already tracked  --  dedup. Ack and move on.
 		if err := msg.Ack(); err != nil {
 			d.Log.Warn("ack failed", "err", err)
 		}
@@ -587,7 +587,7 @@ func (d *Daemon) pollEither(ctx context.Context, repo config.Repo) []forge.Issue
 }
 
 // maybeRetryParked requeues a parked task whose state label a human has
-// removed — the forge-native retry trigger. When retry_count reaches the
+// removed  --  the forge-native retry trigger. When retry_count reaches the
 // configured max_retries the task moves to dead instead of requeuing.
 func (d *Daemon) maybeRetryParked(ctx context.Context, repo config.Repo, is forge.Issue) {
 	if hasLabel(is.Labels, d.Cfg.Dispatch.StateLabel("parked")) {
@@ -622,7 +622,7 @@ func (d *Daemon) maybeRetryParked(ctx context.Context, repo config.Repo, is forg
 
 // markDead permanently parks a task that has exhausted its max_retries.
 func (d *Daemon) markDead(ctx context.Context, repo config.Repo, task *store.Task, maxRetries int) {
-	reason := fmt.Sprintf("max retries reached (%d/%d) — task parked permanently", task.RetryCount, maxRetries)
+	reason := fmt.Sprintf("max retries reached (%d/%d)  --  task parked permanently", task.RetryCount, maxRetries)
 	if err := d.Store.Transition(ctx, task.ID, store.StatusParked, store.StatusDead, reason); err != nil {
 		d.Log.Error("transition to dead failed", "task", task.ID, "err", err)
 		return
@@ -631,7 +631,7 @@ func (d *Daemon) markDead(ctx context.Context, repo config.Repo, task *store.Tas
 		d.Cfg.Dispatch.StateLabel("dead"), d.Cfg.Dispatch.LabelValues())
 	d.Log.Warn("task permanently parked after max retries",
 		"issue", task.IssueNumber, "retry_count", task.RetryCount, "max_retries", maxRetries)
-	body := fmt.Sprintf("**Max retries reached (%d/%d) — task parked permanently.**\n\n"+
+	body := fmt.Sprintf("**Max retries reached (%d/%d)  --  task parked permanently.**\n\n"+
 		"The task failed %d times and has been moved to `dead` status. "+
 		"Manual intervention is required to recover this task.",
 		task.RetryCount, maxRetries, task.RetryCount)
@@ -688,7 +688,7 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 }
 
 // checkWaiting looks for human replies on waiting_human tasks and asks
-// an LLM — not keyword matching — whether the reply is a go-ahead.
+// an LLM  --  not keyword matching  --  whether the reply is a go-ahead.
 // Approved tasks requeue under the implement workflow; rejections close
 // the issue with the human's reasoning acknowledged.
 func (d *Daemon) checkWaiting(ctx context.Context) {
@@ -723,7 +723,7 @@ func (d *Daemon) checkWaiting(ctx context.Context) {
 				continue
 			}
 			_, _ = d.Forge.Comment(ctx, t.Owner, t.Repo, t.IssueNumber,
-				"**Go-ahead received — implementation is queued.** ("+reason+")")
+				"**Go-ahead received  --  implementation is queued.** ("+reason+")")
 			d.Forge.SetStateLabel(ctx, t.Owner, t.Repo, t.IssueNumber, d.Cfg.Dispatch.StateLabel("queued"), d.Cfg.Dispatch.LabelValues())
 			d.emit(events.Event{
 				Kind: "human_approved", TaskID: t.ID,
@@ -732,7 +732,7 @@ func (d *Daemon) checkWaiting(ctx context.Context) {
 		case "reject":
 			_ = d.Store.Transition(ctx, t.ID, store.StatusWaitingHuman, store.StatusClosedWontDo, reason)
 			_ = d.Forge.CloseIssue(ctx, t.Owner, t.Repo, t.IssueNumber,
-				"**Understood — closing without implementation.** ("+reason+")")
+				"**Understood  --  closing without implementation.** ("+reason+")")
 			d.Forge.SetStateLabel(ctx, t.Owner, t.Repo, t.IssueNumber, "", d.Cfg.Dispatch.LabelValues())
 			d.emit(events.Event{
 				Kind: "human_rejected", TaskID: t.ID,
@@ -740,7 +740,7 @@ func (d *Daemon) checkWaiting(ctx context.Context) {
 			})
 		default:
 			// Unclear: keep waiting; the humans can be more explicit.
-			d.Log.Info("reply unclear — still waiting", "issue", t.IssueNumber, "reason", reason)
+			d.Log.Info("reply unclear  --  still waiting", "issue", t.IssueNumber, "reason", reason)
 		}
 	}
 }
@@ -802,7 +802,7 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	if _, err := os.Stat(workDir); err == nil {
 		aug, err := skillbuild.AugmentRegistry(workDir, d.Workflows)
 		if err != nil {
-			d.Log.Error("worktree registry augmentation failed — using startup registry", "dir", workDir, "err", err)
+			d.Log.Error("worktree registry augmentation failed  --  using startup registry", "dir", workDir, "err", err)
 			d.emit(events.Event{
 				Kind: "registry_augment_failed", TaskID: task.ID,
 				Repo: task.Owner + "/" + task.Repo, Issue: task.IssueNumber,
@@ -816,7 +816,7 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	d.Log.Info("processing task", "repo", repo.FullName(), "issue", task.IssueNumber, "workflow", wf.Name, "attempt", task.Attempt)
 
 	// Clone the worktree before Docker mount setup. The container
-	// binds /data/worktree to workDir on the host — the directory
+	// binds /data/worktree to workDir on the host  --  the directory
 	// must exist before Acquire is called.
 	var branch string
 	var err error
@@ -838,7 +838,7 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 
 	// Acquire a container for the task when Docker sandboxing is enabled.
 	if d.ContainerPool != nil {
-		// Write task.json — the container's boot-time brief.
+		// Write task.json  --  the container's boot-time brief.
 		if err := container.WriteTaskJSON(workDir, container.TaskPayload{
 			ID: task.ID, Owner: task.Owner, Repo: task.Repo,
 			Number: task.IssueNumber, Title: task.Title, Body: task.Body,
@@ -854,7 +854,7 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 		// Guard: Storage may be nil if the daemon was wired incorrectly.
 		// In normal operation, Storage is always set when ContainerPool is set.
 		if d.Storage == nil {
-			d.Log.Error("storage backend is nil — cannot acquire container")
+			d.Log.Error("storage backend is nil  --  cannot acquire container")
 			_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "storage backend not configured")
 			return
 		}
@@ -886,7 +886,7 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	// Sandboxed path: hand the whole task to archie-agent in one NATS round
 	// trip instead of running the stage loop here. archie-agent proxies
 	// Store/Forge/worktree-push calls back to archied over storerpc/
-	// forgerpc/worktreerpc — by the time runViaAgent returns, the task's
+	// forgerpc/worktreerpc  --  by the time runViaAgent returns, the task's
 	// terminal state already landed via those calls.
 	if d.ContainerPool != nil {
 		d.runViaAgent(ctx, task, repo)
@@ -923,7 +923,7 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 // archie.taskrun.<id> and waits for its completion report. Every durable
 // side effect (Store transitions, Forge calls, git push) happens inside
 // archie-agent's workflow.Run, proxied back to this daemon over
-// storerpc/forgerpc/worktreerpc — those RPC servers are the sole place a
+// storerpc/forgerpc/worktreerpc  --  those RPC servers are the sole place a
 // terminal state gets written on success. runViaAgent only parks the task
 // itself when nothing else could have: the request never reached (or was
 // never answered by) an archie-agent, or archie-agent failed before its

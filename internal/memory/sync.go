@@ -79,7 +79,7 @@ func (m *Manager) syncWorker() {
 }
 
 // processSyncOp handles a single sync operation. Errors are logged but never
-// crash the pipeline — a misbehaving external provider must not take down
+// crash the pipeline  --  a misbehaving external provider must not take down
 // the agent.
 func (m *Manager) processSyncOp(op SyncOp) {
 	if deadlineNano := m.shutdownDeadlineNano.Load(); deadlineNano != 0 && time.Now().UnixNano() > deadlineNano {
@@ -143,6 +143,6 @@ func (m *Manager) signalDone(done chan error, err error) {
 	select {
 	case done <- err:
 	default:
-		// Receiver stopped waiting — don't block the pipeline.
+		// Receiver stopped waiting  --  don't block the pipeline.
 	}
 }

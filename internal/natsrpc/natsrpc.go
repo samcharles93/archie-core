@@ -63,7 +63,7 @@ func (c *Client) Request(ctx context.Context, subject string, data []byte) ([]by
 }
 
 // Call marshals req, sends it to subject, and unmarshals the reply
-// into a Resp. It does not inspect Resp's error envelope — callers
+// into a Resp. It does not inspect Resp's error envelope  --  callers
 // that embed Envelope should check Err() themselves, since natsrpc
 // has no way to know a bare Resp type embeds one.
 func Call[Resp any](ctx context.Context, c *Client, subject string, req any) (Resp, error) {
@@ -91,7 +91,7 @@ type Registration struct {
 
 // RegisterAll subscribes every registration on nc. If any subscribe
 // call fails, every subscription made so far is unsubscribed before
-// returning the error — a server never ends up half-registered. The
+// returning the error  --  a server never ends up half-registered. The
 // returned func unsubscribes all of them.
 func RegisterAll(nc *nats.Conn, regs []Registration) (unsubscribe func(), err error) {
 	subs := make([]*nats.Subscription, 0, len(regs))
@@ -113,7 +113,7 @@ func RegisterAll(nc *nats.Conn, regs []Registration) (unsubscribe func(), err er
 }
 
 // Respond marshals v and replies to msg, logging (rather than
-// returning) any encode or transport failure — a handler has no
+// returning) any encode or transport failure  --  a handler has no
 // meaningful way to retry or propagate a respond failure to its caller.
 // pkg prefixes the log message (e.g. "storerpc") to identify the
 // surface a failure came from.

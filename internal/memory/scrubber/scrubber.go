@@ -128,19 +128,19 @@ func (s *Scrubber) processNormal(data []byte) []byte {
 	if len(tail) >= len(openTag) {
 		// Enough data to check the full tag.
 		if string(tail[:len(openTag)]) == openTag {
-			// Found <memory> — write everything before it, then enter memory block.
+			// Found <memory>  --  write everything before it, then enter memory block.
 			s.writeOutput(data[:idx])
 			s.depth++
 			s.blocksStripped++
 			s.bytesStripped += int64(len(openTag))
 			return tail[len(openTag):]
 		}
-		// Not <memory> — write the '<' and continue after it.
+		// Not <memory>  --  write the '<' and continue after it.
 		s.writeOutput(data[:idx+1])
 		return data[idx+1:]
 	}
 
-	// Not enough data to determine — partial tag at end of chunk.
+	// Not enough data to determine  --  partial tag at end of chunk.
 	// Hold the tail for the next Write call.
 	if isPrefixOfTag(tail, openTag) {
 		s.writeOutput(data[:idx])
@@ -148,7 +148,7 @@ func (s *Scrubber) processNormal(data []byte) []byte {
 		return nil
 	}
 
-	// Not a prefix of <memory> — write everything.
+	// Not a prefix of <memory>  --  write everything.
 	s.writeOutput(data)
 	return nil
 }
@@ -156,7 +156,7 @@ func (s *Scrubber) processNormal(data []byte) []byte {
 // processInMemory handles input when we're inside a memory block (depth > 0).
 // It looks for </memory> close tags and strips everything else.
 func (s *Scrubber) processInMemory(data []byte) []byte {
-	// Fast path: no '<' means no possible close tag — strip everything.
+	// Fast path: no '<' means no possible close tag  --  strip everything.
 	idx := bytes.IndexByte(data, '<')
 	if idx < 0 {
 		s.bytesStripped += int64(len(data))
@@ -180,12 +180,12 @@ func (s *Scrubber) processInMemory(data []byte) []byte {
 			s.depth--
 			return tail[len(closeTag):]
 		}
-		// Not a close tag — skip the '<' and continue stripping.
+		// Not a close tag  --  skip the '<' and continue stripping.
 		s.bytesStripped += int64(idx + 1)
 		return data[idx+1:]
 	}
 
-	// Not enough data to determine — partial tag at end of chunk.
+	// Not enough data to determine  --  partial tag at end of chunk.
 	// Could be the start of </memory> (which would close the block) or
 	// <memory> (which would nest). Buffer it.
 	if isPrefixOfTag(tail, closeTag) || isPrefixOfTag(tail, openTag) {
@@ -194,7 +194,7 @@ func (s *Scrubber) processInMemory(data []byte) []byte {
 		return nil
 	}
 
-	// Not a prefix of any relevant tag — strip everything.
+	// Not a prefix of any relevant tag  --  strip everything.
 	s.bytesStripped += int64(len(data))
 	return nil
 }
@@ -223,13 +223,13 @@ func (s *Scrubber) writeOutput(data []byte) {
 func (s *Scrubber) Flush() error {
 	if s.depth > 0 {
 		// Inside an unclosed memory block. Pending bytes are content that
-		// was buffered as potential tag starts — since no close tag arrives,
+		// was buffered as potential tag starts  --  since no close tag arrives,
 		// they are memory-block content and should be stripped, not emitted.
 		s.bytesStripped += int64(len(s.pending))
 		s.pending = s.pending[:0]
 		s.depth = 0
 	} else if len(s.pending) > 0 {
-		// Outside a memory block — pending bytes are literal text whose
+		// Outside a memory block  --  pending bytes are literal text whose
 		// partial tag didn't resolve.
 		s.writeOutput(s.pending)
 		s.pending = s.pending[:0]
@@ -249,7 +249,7 @@ func (s *Scrubber) Close() error {
 // Process is a convenience method that scrubs a single chunk and returns
 // the cleaned text. It maintains internal state across calls, so it can
 // be used for streaming just like Write. The returned string is only the
-// newly scrubbed output from this chunk — not the full accumulated output.
+// newly scrubbed output from this chunk  --  not the full accumulated output.
 //
 // For zero-allocation streaming, prefer Write with a pre-allocated writer.
 func (s *Scrubber) Process(chunk string) string {
@@ -308,7 +308,7 @@ func (s *Scrubber) Depth() int {
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
-// isPrefixOfTag reports whether data is a prefix of tag — i.e., data could
+// isPrefixOfTag reports whether data is a prefix of tag  --  i.e., data could
 // be the start of tag if more bytes arrive later. Returns false if data is
 // longer than tag.
 func isPrefixOfTag(data []byte, tag string) bool {

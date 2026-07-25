@@ -135,7 +135,7 @@ func TestSessionStore_GetByChannel(t *testing.T) {
 		}
 	}
 
-	// Query chat-1 — should get both sessions.
+	// Query chat-1  --  should get both sessions.
 	results, err := st.GetByChannel(ctx, "telegram", "chat-1")
 	if err != nil {
 		t.Fatalf("GetByChannel: %v", err)
@@ -144,7 +144,7 @@ func TestSessionStore_GetByChannel(t *testing.T) {
 		t.Fatalf("expected 2 sessions for chat-1, got %d", len(results))
 	}
 
-	// Query chat-2 — should get one.
+	// Query chat-2  --  should get one.
 	results, err = st.GetByChannel(ctx, "telegram", "chat-2")
 	if err != nil {
 		t.Fatalf("GetByChannel chat-2: %v", err)
@@ -153,7 +153,7 @@ func TestSessionStore_GetByChannel(t *testing.T) {
 		t.Fatalf("expected 1 session for chat-2, got %d", len(results))
 	}
 
-	// Different platform — none.
+	// Different platform  --  none.
 	results, err = st.GetByChannel(ctx, "discord", "chat-1")
 	if err != nil {
 		t.Fatalf("GetByChannel discord: %v", err)
@@ -232,7 +232,7 @@ func TestSessionStore_Touch(t *testing.T) {
 		t.Errorf("expected CreatedAt to be preserved, was %v vs %v", got.CreatedAt, oldTime)
 	}
 
-	// Touch non-existent session — should not error.
+	// Touch non-existent session  --  should not error.
 	if err := st.Touch(ctx, "nonexistent"); err != nil {
 		t.Errorf("Touch nonexistent: %v", err)
 	}

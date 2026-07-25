@@ -1,6 +1,6 @@
 // Package worktree owns archied's git operations: fresh clone per task,
 // branch, commit as the bot identity, push, diff stats, cleanup. The
-// daemon performs these deterministically — the model's shell tool never
+// daemon performs these deterministically  --  the model's shell tool never
 // drives git.
 package worktree
 
@@ -119,7 +119,7 @@ func (m *Manager) prepare(ctx context.Context, owner, repo, base string, issue i
 			}
 		}
 		if _, err := m.git(ctx, dir, "reset", "--hard", "origin/"+base); err != nil {
-			_ = err // Non-fatal — the branch may not have been pushed yet.
+			_ = err // Non-fatal  --  the branch may not have been pushed yet.
 		}
 		return dir, branch, nil
 	}
@@ -349,7 +349,7 @@ func (m *Manager) Push(ctx context.Context, dir, branch string) error {
 	return err
 }
 
-// ChangedLines reports lines added+deleted vs the base branch — the
+// ChangedLines reports lines added+deleted vs the base branch  --  the
 // input to the diff-size cap.
 func (m *Manager) ChangedLines(ctx context.Context, dir, base string) (int, error) {
 	out, err := m.git(ctx, dir, "diff", "--shortstat", "origin/"+base+"...HEAD")

@@ -41,7 +41,7 @@ func (r *Registry) Plugins() []Plugin { return r.plugins }
 
 // LoadDir discovers and evaluates .go files in the given directory.
 // Each file must export a variable named "Plugin" that implements the
-// Plugin interface. Failed plugins are logged and skipped — the daemon
+// Plugin interface. Failed plugins are logged and skipped  --  the daemon
 // starts with the remaining plugins (PRD section 5).
 //
 // extraSymbols are additional Yaegi symbol tables made available to
@@ -73,11 +73,11 @@ func LoadDir(dir string, extraSymbols ...map[string]map[string]reflect.Value) ([
 			slog.Default().Warn("skipping unreadable daemon plugin", "file", name, "err", err)
 			continue
 		}
-		// Each plugin file is package main — must use a fresh interpreter
+		// Each plugin file is package main  --  must use a fresh interpreter
 		// to avoid symbol collisions between files.
 		i, err := yaegiutil.New(interp.Options{}, extraSymbols...)
 		if err != nil {
-			slog.Default().Warn("skipping plugin — interpreter setup failed", "file", name, "err", err)
+			slog.Default().Warn("skipping plugin  --  interpreter setup failed", "file", name, "err", err)
 			continue
 		}
 		p, err := yaegiutil.Resolve[Plugin](i, string(src), "main.Plugin")

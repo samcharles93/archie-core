@@ -1,4 +1,4 @@
-# archie-core Skills System — PRD
+# archie-core Skills System  --  PRD
 
 **Author:** Archie (Hermes agent)
 **Date:** 2026-07-18
@@ -21,7 +21,7 @@ Every project can ship an `archie.yaml` that defines how archie-core should beha
 ### 1.1 Discovery
 
 ```
-.archie.yaml              (root of repo — highest precedence)
+.archie.yaml              (root of repo  --  highest precedence)
 archie.yaml               (repo root)
 .archie/archie.yaml       (subdirectory, one level deep)
 ```
@@ -54,7 +54,7 @@ connection:
       base: main
       draft: false
 
-# Skills — playbooks archie-core loads to know how to work
+# Skills  --  playbooks archie-core loads to know how to work
 skills:
   paths:
     - .archie/skills/              # project-local skills
@@ -62,7 +62,7 @@ skills:
   remotes:
     - github.com/sam/archie-skills@v1   # shared skill library
 
-# Sandbox — what's available in the container
+# Sandbox  --  what's available in the container
 sandbox:
   image: ghcr.io/sam/archie-sandbox:latest
   tools:
@@ -75,7 +75,7 @@ sandbox:
   env:
     GOFLAGS: "-mod=readonly"
 
-# Gates — archie-core must pass these before committing
+# Gates  --  archie-core must pass these before committing
 gates:
   test:
     run: go test -race -count=1 ./...
@@ -89,7 +89,7 @@ gates:
     run: task deadcode
     optional: true
 
-# Quality pipeline — which gates run when
+# Quality pipeline  --  which gates run when
 quality:
   pre_commit: [test, lint, format]
   pre_push: [deadcode]
@@ -171,9 +171,9 @@ All five steps must exit 0. If `task deadcode` fails on unrelated packages,
 scope it to only changed packages: `golangci-lint run --tests=false --enable-only=unused,staticcheck ./changed/pkg/...`
 
 ## Common failures
-- `golangci-lint`: unused function — remove it or add `//nolint:unused` comment
-- `go test -race`: data race — protect with mutex or channel
-- `task deadcode`: pre-existing dead code in unrelated package — scope to changed packages
+- `golangci-lint`: unused function  --  remove it or add `//nolint:unused` comment
+- `go test -race`: data race  --  protect with mutex or channel
+- `task deadcode`: pre-existing dead code in unrelated package  --  scope to changed packages
 ```
 
 ### 2.3 Skill metadata (arcie-specific)
@@ -258,15 +258,15 @@ arcie-core can delegate implementation to different LLM engines. The workflow fi
 
 ```yaml
 engines:
-  - type: claude            # Claude Code CLI — full agent loop
+  - type: claude            # Claude Code CLI  --  full agent loop
     model: sonnet
     budget_usd: 5.00
-  - type: tau               # Tau — Sam's native Go agent
+  - type: tau               # Tau  --  Sam's native Go agent
     model: gpt-4o
     budget_usd: 2.00
   - type: codex             # OpenAI Codex CLI
     model: gpt-5.1-codex-max
-  - type: raw               # Direct LLM — no agent loop, single prompt
+  - type: raw               # Direct LLM  --  no agent loop, single prompt
     model: gpt-4o-mini
 ```
 

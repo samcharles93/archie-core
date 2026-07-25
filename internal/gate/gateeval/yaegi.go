@@ -1,6 +1,6 @@
 // Package gateeval evaluates a repo's .archie/gate.go via Yaegi. Split
 // from internal/gate (which only declares the GateContext/Finding types)
-// because the generated symbol table in gateextract imports internal/gate —
+// because the generated symbol table in gateextract imports internal/gate  -- 
 // this package sits above both to avoid the resulting import cycle.
 package gateeval
 
@@ -22,10 +22,10 @@ import (
 const scriptPath = ".archie/gate.go"
 
 // Evaluate loads and runs the repo's .archie/gate.go against gctx. A
-// missing script is not an error — it returns (nil, nil), meaning no
+// missing script is not an error  --  it returns (nil, nil), meaning no
 // custom gate is configured for this repo. The script runs in-process
-// (interpreted, not sandboxed), so a panic inside it — nil dereference,
-// out-of-range index — is recovered and returned as an error rather than
+// (interpreted, not sandboxed), so a panic inside it  --  nil dereference,
+// out-of-range index  --  is recovered and returned as an error rather than
 // taking down the daemon.
 func Evaluate(gctx gate.GateContext) ([]gate.Finding, error) {
 	src, err := os.ReadFile(filepath.Join(gctx.Dir, scriptPath))

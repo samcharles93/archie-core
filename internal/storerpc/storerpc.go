@@ -79,7 +79,7 @@ func (s *Server) reply(msg *nats.Msg, err error) {
 
 // Client calls the storerpc Server from archie-agent's process.
 // It implements store.WorkflowStore (the narrow interface workflow stages
-// need — just Update + Transition), not the full store.TaskStore.
+// need  --  just Update + Transition), not the full store.TaskStore.
 type Client struct {
 	Conn    *nats.Conn
 	Timeout time.Duration // bounds each call when ctx has no deadline

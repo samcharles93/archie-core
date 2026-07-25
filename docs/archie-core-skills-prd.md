@@ -1,4 +1,4 @@
-# archie-core Workflows & Skills — Product Requirements Document
+# archie-core Workflows & Skills  --  Product Requirements Document
 
 **Author:** Archie (Hermes agent)
 **Date:** 2026-07-18
@@ -19,7 +19,7 @@ This PRD defines a workflow and skills system for archie-core. Workflow files de
 A project declares its workflow in `archie.yaml` at the project root. archie-core discovers it the same way Task (Taskfile) and devcontainers do:
 
 ```
-.archie.yaml              (root of repo — highest precedence)
+.archie.yaml              (root of repo  --  highest precedence)
 archie.yaml               (repo root)
 .archie/archie.yaml       (subdirectory, one level deep)
 ```
@@ -29,7 +29,7 @@ If no file is found, archie-core uses built-in defaults (read, write, bash).
 ### 1.2 Schema
 
 ```yaml
-# archie.yaml — complete schema
+# archie.yaml  --  complete schema
 version: "1"
 
 # Project identity
@@ -74,7 +74,7 @@ sandbox:
     GOFLAGS: "-mod=readonly"
     CGO_ENABLED: "0"
 
-# Gates — ordered checkpoints that must pass
+# Gates  --  ordered checkpoints that must pass
 gates:
   test:
     run: go test -race -count=1 ./...
@@ -95,7 +95,7 @@ gates:
     optional: true                # non-blocking gate
     description: "Dead code check (advisory)"
 
-# Quality pipeline — ordered sequence of gate groups
+# Quality pipeline  --  ordered sequence of gate groups
 quality:
   pre_commit:
     - test

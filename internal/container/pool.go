@@ -64,7 +64,7 @@ type Pool struct {
 	// detected from the daemon's own container so they can resolve
 	// sibling services (nats, etc.) by compose service name. Empty when
 	// the daemon isn't running in a container on such a network, or when
-	// detection fails — Docker then falls back to its default bridge.
+	// detection fails  --  Docker then falls back to its default bridge.
 	network string
 
 	mu     sync.Mutex
@@ -132,7 +132,7 @@ func NewPool(ctx context.Context, cfg Config, natsURL string, log *slog.Logger) 
 // Acquire creates and starts a container with the given mounts and
 // environment variables. Mounts are provided by the caller (typically
 // from a storage.Backend). If MaxUptime is set, the container is
-// created with a deadline — Docker kills it when the time elapses.
+// created with a deadline  --  Docker kills it when the time elapses.
 func (p *Pool) Acquire(ctx context.Context, mounts []storage.Mount, env []string) (*Container, error) {
 	p.mu.Lock()
 	if p.cfg.MaxConcurrency > 0 && p.active >= p.cfg.MaxConcurrency {
@@ -158,7 +158,7 @@ func (p *Pool) Acquire(ctx context.Context, mounts []storage.Mount, env []string
 	if p.network != "" {
 		// Join the same user-defined network the daemon itself is on, so
 		// the agent container can resolve sibling compose services (nats,
-		// etc.) by name — otherwise Docker attaches it to the default
+		// etc.) by name  --  otherwise Docker attaches it to the default
 		// bridge network, where those hostnames don't resolve.
 		hostConfig.NetworkMode = container.NetworkMode(p.network)
 	}
@@ -198,7 +198,7 @@ func (p *Pool) Acquire(ctx context.Context, mounts []storage.Mount, env []string
 
 // Release stops and removes a container after a task completes. If
 // GracePeriod is configured, the container stays alive for that duration
-// before being killed — the agent can handle follow-ups (gate re-runs,
+// before being killed  --  the agent can handle follow-ups (gate re-runs,
 // human replies) during this window. PRD section 1.
 func (p *Pool) Release(c *Container) {
 	if c == nil {
@@ -291,7 +291,7 @@ func (p *Pool) pullImage(ctx context.Context) error {
 // process's own container is attached to, by inspecting the container
 // named after our hostname (Docker sets a container's hostname to its
 // short ID by default). Returns "" if we're not running in a container,
-// the inspect fails, or we're only on the default bridge network — in
+// the inspect fails, or we're only on the default bridge network  --  in
 // all of those cases Acquire falls back to Docker's normal default.
 func selfNetwork(ctx context.Context, cli *client.Client, log *slog.Logger) string {
 	hostname, err := os.Hostname()

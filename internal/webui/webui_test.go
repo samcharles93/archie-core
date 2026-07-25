@@ -224,7 +224,7 @@ func TestIndexEscapesSingleQuotesInOnclick(t *testing.T) {
 	}
 
 	// The onclick template must use escJS (not esc) for owner and
-	// repo — the values interpolated into the single-quoted JS str.
+	// repo  --  the values interpolated into the single-quoted JS str.
 	if !strings.Contains(body, "escJS(t.owner)") {
 		t.Error("onclick does not use escJS for owner")
 	}
@@ -244,7 +244,7 @@ func TestIndexEscDoesNotEscapeSingleQuotes(t *testing.T) {
 	}
 	body := w.Body.String()
 
-	// esc() must NOT escape single quotes — it's used for HTML
+	// esc() must NOT escape single quotes  --  it's used for HTML
 	// content/attribute contexts where apostrophes are legitimate
 	// (e.g. issue titles like "Don't panic").
 	idx := strings.Index(body, "const esc =")
@@ -264,7 +264,7 @@ func TestIndexEscDoesNotEscapeSingleQuotes(t *testing.T) {
 	}
 	charClass := snippet[reStart : reStart+reEnd]
 	if strings.Contains(charClass, "'") {
-		t.Error("esc() regex escapes single quotes — this would cause backslash artifacts in HTML text")
+		t.Error("esc() regex escapes single quotes  --  this would cause backslash artifacts in HTML text")
 	}
 }
 

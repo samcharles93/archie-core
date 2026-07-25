@@ -2,7 +2,7 @@ package skill
 
 import "testing"
 
-// ── regression: Gap 8 — frontmatter missing plugins key ─────────────
+// ── regression: Gap 8  --  frontmatter missing plugins key ─────────────
 
 func TestFrontmatterMetadataArchieHasPluginsField(t *testing.T) {
 	// Gap 8: Frontmatter.Metadata.Archie has Tools and Engine only.

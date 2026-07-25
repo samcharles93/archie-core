@@ -38,7 +38,7 @@ func startEmbeddedWithToken(t *testing.T, token string) *server.Server {
 	opts.Port = -1
 	opts.Authorization = token
 	srv := natssrv.RunServer(&opts)
-	// TempDir before Cleanup — shutdown runs before TempDir removal.
+	// TempDir before Cleanup  --  shutdown runs before TempDir removal.
 	jsDir := t.TempDir()
 	if err := srv.EnableJetStream(&server.JetStreamConfig{StoreDir: jsDir}); err != nil {
 		t.Fatalf("enable jetstream: %v", err)

@@ -7,7 +7,7 @@ package memory
 // and calls them at the appropriate points in the agent lifecycle.
 //
 // All hooks are called asynchronously (fire-and-forget) to avoid blocking
-// the main agent loop. Hook errors and panics are recovered — they must not
+// the main agent loop. Hook errors and panics are recovered  --  they must not
 // interrupt the agent's operation.
 
 // TurnStartHook is called at the beginning of each agent turn. Providers

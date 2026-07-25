@@ -175,7 +175,7 @@ func TestFeasibilityRejectsNullFitValue(t *testing.T) {
 	}
 }
 
-// ── regression: Gap 5 — daemon review step ──────────────────────────
+// ── regression: Gap 5  --  daemon review step ──────────────────────────
 
 func TestReviewResultBlocksOnResultWhenRejected(t *testing.T) {
 	// Gap 5: no daemon review step before human delivery.
@@ -183,7 +183,7 @@ func TestReviewResultBlocksOnResultWhenRejected(t *testing.T) {
 	// to human channels. When ReviewResult returns an error, the stage
 	// must fail and OnResult must NOT be called. When ReviewResult
 	// returns nil, OnResult IS called. Currently ReviewResult exists
-	// but no workflow uses it — the review step is never exercised.
+	// but no workflow uses it  --  the review step is never exercised.
 	runner := &fakeAgentRunner{result: agentexec.Result{
 		Version: agentexec.ProtocolVersion, Status: agentexec.StatusPassed,
 		Summary: "sensitive output", TokensUsed: 1,
@@ -215,7 +215,7 @@ func TestReviewResultBlocksOnResultWhenRejected(t *testing.T) {
 	}
 	if onResultCalled {
 		t.Error("Gap 5: ReviewResult rejected the output but OnResult was still called. " +
-			"ReviewResult must gate OnResult — rejected output must not reach human channels.")
+			"ReviewResult must gate OnResult  --  rejected output must not reach human channels.")
 	}
 
 	// Test 2: ReviewResult approves → OnResult IS called.

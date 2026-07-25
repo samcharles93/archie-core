@@ -54,14 +54,14 @@ func (r *Registry) Register(e ToolEntry) error {
 		return fmt.Errorf("%w: %q", ErrDuplicateTool, e.Name)
 	}
 
-	// Defensive copy — sever shared Schema/RequiresEnv references so the
+	// Defensive copy  --  sever shared Schema/RequiresEnv references so the
 	// caller cannot mutate them and race with concurrent readers.
 	r.tools[e.Name] = e.Clone()
 	return nil
 }
 
 // All returns all registered tool entries. The returned slice is a
-// snapshot — mutating it does not affect the registry.
+// snapshot  --  mutating it does not affect the registry.
 func (r *Registry) All() []ToolEntry {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -100,7 +100,7 @@ func (r *Registry) Available() []ToolEntry {
 	}
 	r.mu.RUnlock()
 
-	// Evaluate CheckFn outside the lock — no deadlock risk.
+	// Evaluate CheckFn outside the lock  --  no deadlock risk.
 	var out []ToolEntry
 	for _, e := range snapshot {
 		if e.Available() {
@@ -117,7 +117,7 @@ func (r *Registry) Available() []ToolEntry {
 // Discover returns the number of Register calls found. Function fields
 // (Handler, CheckFn, DynamicSchemaOverrides) cannot be resolved from
 // static source analysis and remain nil. Entries that fail
-// [ToolEntry.Validate] — typically because Handler is nil — are
+// [ToolEntry.Validate]  --  typically because Handler is nil  --  are
 // counted but not registered.
 //
 // Parse errors in individual files do not stop the scan; they are

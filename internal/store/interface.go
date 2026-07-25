@@ -11,7 +11,7 @@ import (
 )
 
 // TaskStore is the full store surface the daemon needs.
-// Every storage backend — SQLite, NellDB, future additions — implements this
+// Every storage backend  --  SQLite, NellDB, future additions  --  implements this
 // interface. Consumers depend on TaskStore, never on a concrete type.
 type TaskStore interface {
 	// ── Task lifecycle ──────────────────────────────────────────────

@@ -300,7 +300,7 @@ func TestProvider_FrozenSnapshot_NotUpdatedOnWrite(t *testing.T) {
 		t.Fatalf("snapshot should be wrapped in <memory> fences, got: %s", firstBlock)
 	}
 
-	// Write after initialization — the snapshot must not change.
+	// Write after initialization  --  the snapshot must not change.
 	if _, err := p.HandleToolCall(toolName, map[string]any{
 		"action": "add", "section": "Facts", "content": "new fact after init",
 	}); err != nil {
@@ -421,7 +421,7 @@ func TestProvider_FrozenSnapshot_ReInitialize(t *testing.T) {
 		t.Fatalf("expected 'before', got: %s", block1)
 	}
 
-	// Add more content and re-initialize — snapshot should refresh.
+	// Add more content and re-initialize  --  snapshot should refresh.
 	if _, err := p.HandleToolCall(toolName, map[string]any{
 		"action": "add", "section": "Facts", "content": "after",
 	}); err != nil {
@@ -459,7 +459,7 @@ func TestProvider_FrozenSnapshot_DefaultEnabled(t *testing.T) {
 
 	block1 := p.SystemPromptBlock()
 
-	// Write after init — snapshot should be frozen.
+	// Write after init  --  snapshot should be frozen.
 	if _, err := p.HandleToolCall(toolName, map[string]any{
 		"action": "add", "section": "Facts", "content": "post-init",
 	}); err != nil {

@@ -1,5 +1,5 @@
 // Package forge defines the interface archie uses to interact with a git
-// host — polling issues, managing labels, opening PRs, and reacting to
+// host  --  polling issues, managing labels, opening PRs, and reacting to
 // comments. GitHub and Gitea are the supported implementations.
 package forge
 

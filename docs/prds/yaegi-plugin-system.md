@@ -1,4 +1,4 @@
-# archie-core Yaegi Plugin System — PRD
+# archie-core Yaegi Plugin System  --  PRD
 
 **Author:** Archie (Hermes agent)  
 **Date:** 2026-07-21  
@@ -23,11 +23,11 @@ Embed the [Yaegi](https://github.com/traefik/yaegi) Go interpreter to let archie
 - "All public functions in `pkg/api/` must be documented"
 - "No `time.Sleep` in production code paths"
 
-These are rules that need to read the diff, parse Go ASTs, or walk the worktree — things shell scripts can do but shouldn't have to.
+These are rules that need to read the diff, parse Go ASTs, or walk the worktree  --  things shell scripts can do but shouldn't have to.
 
 ### Why not shell scripts?
 
-Shell scripts for gates are fine until they're not. They can't import the archie-core types, can't use the Go parser, and are a second language to maintain alongside the daemon. Yaegi runs Go — the same language as the daemon, the same language as the repos archie-core works on.
+Shell scripts for gates are fine until they're not. They can't import the archie-core types, can't use the Go parser, and are a second language to maintain alongside the daemon. Yaegi runs Go  --  the same language as the daemon, the same language as the repos archie-core works on.
 
 ### Why not Go's native `plugin` package?
 
@@ -37,7 +37,7 @@ Go's `plugin` package (`.so` files) requires:
 - No unload
 - Painful distribution
 
-Yaegi interprets `.go` source files directly — no compilation step, portable everywhere, loads from filesystem paths.
+Yaegi interprets `.go` source files directly  --  no compilation step, portable everywhere, loads from filesystem paths.
 
 ### Production precedent
 
@@ -52,7 +52,7 @@ Yaegi interprets `.go` source files directly — no compilation step, portable e
 
 | Surface | Location | When loaded | What it does |
 |---|---|---|---|
-| **Custom gate functions** | `.archie/gate.go` | During the gate stage (after shell commands) | Returns `[]Finding` — each finding has severity, message, file, line |
+| **Custom gate functions** | `.archie/gate.go` | During the gate stage (after shell commands) | Returns `[]Finding`  --  each finding has severity, message, file, line |
 | **Custom workflow stages** | `.archie/stages/<name>.go` | When the workflow references the stage name | Returns a `workflow.Stage` implementation |
 | **Skill scripts** | `.archie/skills/<skill>/scripts/*.go` | When the parent skill is activated | Called by the skill's instructions |
 
@@ -61,7 +61,7 @@ Yaegi interprets `.go` source files directly — no compilation step, portable e
 The most important extension surface. After the shell-based gate passes, archie-core loads and evaluates `.archie/gate.go` in the worktree directory. The script exposes a `Check` function:
 
 ```go
-// .archie/gate.go — per-repo gate rules interpreted at runtime
+// .archie/gate.go  --  per-repo gate rules interpreted at runtime
 package gate
 
 import (
@@ -104,7 +104,7 @@ func Check(ctx GateContext) []Finding {
             if strings.Contains(line, "panic(") {
                 findings = append(findings, Finding{
                     Level:   "error",
-                    Message: "new panic() call — use error returns instead",
+                    Message: "new panic() call  --  use error returns instead",
                 })
             }
         }
@@ -124,7 +124,7 @@ func Check(ctx GateContext) []Finding {
             findings = append(findings, Finding{
                 Level:   "warn",
                 File:    f,
-                Message: "time.Sleep in non-test code — use time.Ticker or context.WithTimeout instead",
+                Message: "time.Sleep in non-test code  --  use time.Ticker or context.WithTimeout instead",
             })
         }
     }
@@ -205,7 +205,7 @@ Via `i.Use()`, the daemon pre-loads symbols that interpreted code can import:
 | `archie-core/internal/gate` | `GateContext`, `Finding`, `Block` |
 | `stdlib` | Full Go standard library (stdlib.Symbols) |
 
-Generated with `yaegi extract` — same approach Traefik and Vikunja use. A `//go:generate yaegi extract ...` line in the source triggers symbol table generation during `go generate`.
+Generated with `yaegi extract`  --  same approach Traefik and Vikunja use. A `//go:generate yaegi extract ...` line in the source triggers symbol table generation during `go generate`.
 
 ---
 
@@ -213,10 +213,10 @@ Generated with `yaegi extract` — same approach Traefik and Vikunja use. A `//g
 
 From Yaegi's own docs:
 - **No assembly files** (`.s` not supported)
-- **No CGo** (can't call C code — the daemon is pure Go, so this doesn't matter)
-- **No compiler/linker directives** (no `//go:embed`, etc. — fine for gate scripts)
-- **Interfaces from pre-compiled code can't be added dynamically** — the daemon must pre-compile wrapper types for any interface interpreted code needs to implement
-- **Slower than compiled code** — gate scripts run once per commit, not in hot paths; negligible impact
+- **No CGo** (can't call C code  --  the daemon is pure Go, so this doesn't matter)
+- **No compiler/linker directives** (no `//go:embed`, etc.  --  fine for gate scripts)
+- **Interfaces from pre-compiled code can't be added dynamically**  --  the daemon must pre-compile wrapper types for any interface interpreted code needs to implement
+- **Slower than compiled code**  --  gate scripts run once per commit, not in hot paths; negligible impact
 
 The Vikunja PR documents a specific Yaegi quirk: **typed factory functions required.** You can't do `v.Interface().(MyInterface)` on a value returned from interpreted code. Each interface needs its own factory:
 
@@ -229,31 +229,31 @@ func NewReportable() Reportable { return &MyGate{} }
 
 ## Implementation phases
 
-### Phase 1: Gate functions — implemented
+### Phase 1: Gate functions  --  implemented
 - `yaegi` added as a dependency
 - Symbol table for `GateContext`, `Finding` generated via `yaegi extract` into `internal/gate/gateextract` (a separate package from `internal/gate` itself, avoiding the self-import cycle extracting a package's own symbols creates)
 - `internal/gate/gateeval.Evaluate`: loads `.archie/gate.go` from the worktree, interprets it, calls `Check()`; panics are recovered
 - Wired in as `workflow.StageYaegiGate`, run after the final commit in both the `implement` and `tdd` workflows
 - Error findings park the task; warn findings are logged only
 
-### Phase 2: Custom stages — implemented
+### Phase 2: Custom stages  --  implemented
 - Symbol table for `workflow.Stage`/`TaskContext`/`Outcome` generated into `internal/workflow/wfextract`
 - `internal/workflow/wfeval.Discover` scans `.archie/stages/*.go` in filename order and calls each file's exported `Stage()` function
-- `TaskContext.CustomStages` is an injected `func(dir string) ([]Stage, error)` — the composition root (`cmd/archied`) wires it to `wfeval.Discover`, keeping `internal/workflow` decoupled from its own generated symbol table
+- `TaskContext.CustomStages` is an injected `func(dir string) ([]Stage, error)`  --  the composition root (`cmd/archied`) wires it to `wfeval.Discover`, keeping `internal/workflow` decoupled from its own generated symbol table
 - `workflow.StageRepoStages` runs discovered stages in order right after the worktree is prepared, in both `implement` and `tdd`
-- Simplification vs. the original sketch: stages are auto-discovered and always run (like `.archie/gate.go`) rather than referenced by name from `config.toml` — the workflow engine has no data-driven stage graph today, so wiring arbitrary named stages into arbitrary positions would need a larger config-driven rework. Auto-run-in-order covers the PRD's actual use case (a repo-defined pre-flight/setup hook) without it.
+- Simplification vs. the original sketch: stages are auto-discovered and always run (like `.archie/gate.go`) rather than referenced by name from `config.toml`  --  the workflow engine has no data-driven stage graph today, so wiring arbitrary named stages into arbitrary positions would need a larger config-driven rework. Auto-run-in-order covers the PRD's actual use case (a repo-defined pre-flight/setup hook) without it.
 
-### Phase 3: Skill scripts — implemented
+### Phase 3: Skill scripts  --  implemented
 - `internal/skillscript.Run` interprets a `.go` file via `i.EvalPath`, which (like `go run`) evaluates and calls its `main()`; stdout/stderr are captured via `interp.Options`
-- Uses `stdlib.Symbols` + `stdlib/unrestricted.Symbols` (not just `stdlib`) — `os/exec` lives in the unrestricted set, and the PRD's own example script shells out via `os/exec`
-- No archie-core-specific symbol table needed here — skill scripts only touch the Go standard library
+- Uses `stdlib.Symbols` + `stdlib/unrestricted.Symbols` (not just `stdlib`)  --  `os/exec` lives in the unrestricted set, and the PRD's own example script shells out via `os/exec`
+- No archie-core-specific symbol table needed here  --  skill scripts only touch the Go standard library
 - Exposed to the agent loop as a new `run_go_script` tool (`internal/agentexec/inprocess.go`), available in every agent stage; path is validated to stay inside the workspace
 - This is how "the skill's instructions reference a script" cashes out concretely: the agent calls `run_go_script` with the path instead of needing a Go toolchain in the sandbox
 
-### Phase 4: Hot reload — not needed, by construction
-- All three loaders (`gate.Evaluate`, `wfeval.Discover`, `skillscript.Run`) read their `.go` source from disk on every call — no in-memory cache exists anywhere in the implementation
+### Phase 4: Hot reload  --  not needed, by construction
+- All three loaders (`gate.Evaluate`, `wfeval.Discover`, `skillscript.Run`) read their `.go` source from disk on every call  --  no in-memory cache exists anywhere in the implementation
 - Every task additionally gets a fresh `git clone` (`worktree.Manager.Prepare` removes and re-clones the worktree directory per task)
-- Consequently every stage already re-reads `.archie/gate.go`, `.archie/stages/*.go`, and skill scripts fresh, every run — there is no stale state a file watcher would ever need to invalidate
+- Consequently every stage already re-reads `.archie/gate.go`, `.archie/stages/*.go`, and skill scripts fresh, every run  --  there is no stale state a file watcher would ever need to invalidate
 - A file-watching daemon-runtime reload mechanism would add machinery with nothing to do given this architecture; revisit only if the daemon starts reusing long-lived worktrees across tasks
 
 ---
@@ -262,6 +262,6 @@ func NewReportable() Reportable { return &MyGate{} }
 
 1. **Symbol table generation:** Run `yaegi extract` as a `go generate` step, or generate on daemon startup?
 2. **Error handling:** If the interpreted gate panics or times out, park the task? Or fall back to shell-only gate?
-3. **Budget:** Interpreted gate scripts run in the gate stage — should they have their own timeout/step budget?
+3. **Budget:** Interpreted gate scripts run in the gate stage  --  should they have their own timeout/step budget?
 4. **Template system:** Should archie-core ship with common gate templates (e.g. `go: no panic, no Sleep, no hardcoded paths`)?
 5. **Remote gates:** Could `.archie/gate.go` be pulled from a shared remote registry, like skills?

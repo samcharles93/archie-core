@@ -224,7 +224,7 @@ func TestAskpassWrittenOnce(t *testing.T) {
 		t.Fatalf("paths differ: %q vs %q", p1, p2)
 	}
 
-	// Mod time must be unchanged — file was not rewritten.
+	// Mod time must be unchanged  --  file was not rewritten.
 	fi2, err := os.Stat(p2)
 	if err != nil {
 		t.Fatal(err)
@@ -307,7 +307,7 @@ func TestPrepareResumesAfterInterruptedClone(t *testing.T) {
 		t.Fatalf("working tree missing README.md after prepare: %v", err)
 	}
 
-	// CommitAll must work — the sentinel is excluded from git tracking.
+	// CommitAll must work  --  the sentinel is excluded from git tracking.
 	changed, err := m.CommitAll(ctx, dir2, "noop")
 	if err != nil || changed {
 		t.Fatalf("clean CommitAll = (%v, %v), want (false, nil)", changed, err)
@@ -318,7 +318,7 @@ func TestPrepareResumesAfterInterruptedClone(t *testing.T) {
 		t.Fatalf("push: %v", err)
 	}
 
-	// A second Prepare call must short-circuit via the sentinel — no re-clone.
+	// A second Prepare call must short-circuit via the sentinel  --  no re-clone.
 	dir3, _, err := m.Prepare(ctx, "acme", "interrupt", "main", 1, "feat: interrupted", "", "")
 	if err != nil {
 		t.Fatalf("second prepare: %v", err)
@@ -610,7 +610,7 @@ func TestPushRejected(t *testing.T) {
 	}
 
 	// Now the first worktree's branch is behind origin/branch.
-	// Make a change and try to push — it should be rejected.
+	// Make a change and try to push  --  it should be rejected.
 	if err := os.WriteFile(filepath.Join(dir, "third.txt"), []byte("third\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

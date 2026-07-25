@@ -11,7 +11,7 @@ import (
 )
 
 // knownFeatureNames is the set of recognised config.<name>.yaml feature files.
-// Any config.<name>.yaml file whose <name> is not in this set is rejected —
+// Any config.<name>.yaml file whose <name> is not in this set is rejected  -- 
 // silent ignores would hide typos.
 var knownFeatureNames = map[string]bool{
 	"gateway":    true,
@@ -23,20 +23,20 @@ var knownFeatureNames = map[string]bool{
 
 // LoadDir loads configuration from a directory tree.
 //
-//	~/.config/archie/config.yaml           — daemon-level fields
-//	~/.config/archie/config.gateway.yaml   — chat channels, platforms
-//	~/.config/archie/config.tools.yaml     — MCP servers, tool policy
-//	~/.config/archie/config.memory.yaml    — memory provider config
-//	~/.config/archie/config.models.yaml    — LLM providers and models
-//	~/.config/archie/config.identities.yaml — identity configs
-//	~/.config/archie/conf.d/*.yaml          — additional feature files
+//	~/.config/archie/config.yaml            --  daemon-level fields
+//	~/.config/archie/config.gateway.yaml    --  chat channels, platforms
+//	~/.config/archie/config.tools.yaml      --  MCP servers, tool policy
+//	~/.config/archie/config.memory.yaml     --  memory provider config
+//	~/.config/archie/config.models.yaml     --  LLM providers and models
+//	~/.config/archie/config.identities.yaml  --  identity configs
+//	~/.config/archie/conf.d/*.yaml           --  additional feature files
 //
-// Missing feature files mean "feature disabled" — no error, just zero values.
+// Missing feature files mean "feature disabled"  --  no error, just zero values.
 // Legacy config.toml is used as a fallback when config.yaml is absent.
 // YAML takes precedence over TOML when both exist.
 //
 // When overlayDir is non-empty, files from overlayDir are decoded on top of
-// baseDir — only the fields an overlay file declares are overridden; everything
+// baseDir  --  only the fields an overlay file declares are overridden; everything
 // else is inherited from the base.
 func LoadDir(baseDir, overlayDir string) (Config, error) {
 	var cfg Config
@@ -54,7 +54,7 @@ func LoadDir(baseDir, overlayDir string) (Config, error) {
 // loadDirInto scans dir for config files and decodes them into cfg.
 // When requireMain is true the directory must contain config.yaml or
 // config.toml; when false (overlay mode) a missing main config is
-// fine — only feature and conf.d/ files are applied.
+// fine  --  only feature and conf.d/ files are applied.
 func loadDirInto(cfg *Config, dir string, requireMain bool) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -186,7 +186,7 @@ func loadDirInto(cfg *Config, dir string, requireMain bool) error {
 // Config. Most feature files map to top-level Config fields and can be
 // decoded with yaml.Unmarshal(data, cfg) directly. Memory and tools are
 // sub-structs whose YAML keys live at the top level of the file, not nested
-// under a "memory:" or "tools:" key — decode those into their target
+// under a "memory:" or "tools:" key  --  decode those into their target
 // sub-struct directly.
 func loadFeatureFile(cfg *Config, feature, path string) error {
 	data, err := os.ReadFile(path)
@@ -203,7 +203,7 @@ func loadFeatureFile(cfg *Config, feature, path string) error {
 			return fmt.Errorf("parsing %s: %w", path, err)
 		}
 	default:
-		// models, gateway, identities — these have top-level keys that
+		// models, gateway, identities  --  these have top-level keys that
 		// match Config fields directly.
 		if err := yaml.Unmarshal(data, cfg); err != nil {
 			return fmt.Errorf("parsing %s: %w", path, err)

@@ -36,7 +36,7 @@ var mockFactory = func(providers map[string]Provider, log *slog.Logger) Runner {
 	return &mockRunner{}
 }
 
-// ── regression: Gap 1 — per-task agent ──────────────────────────────
+// ── regression: Gap 1  --  per-task agent ──────────────────────────────
 
 func TestHandleMessageReadsWorkflowField(t *testing.T) {
 	// Gap 1: archie-agent is per-stage, not per-task.
@@ -69,7 +69,7 @@ func TestHandleMessageReadsWorkflowField(t *testing.T) {
 		t.Fatal(err)
 	}
 	if singleResp.TaskCompleted {
-		t.Error("single-stage mode set TaskCompleted=true — should be false")
+		t.Error("single-stage mode set TaskCompleted=true  --  should be false")
 	}
 
 	// Per-task mode: Workflow set, Stages populated with two stages.
@@ -116,14 +116,14 @@ func TestHandleMessageReadsWorkflowField(t *testing.T) {
 	}
 }
 
-// ── regression: Gap 3 — response/system channel split ───────────────
+// ── regression: Gap 3  --  response/system channel split ───────────────
 
 func TestHandleMessageRoutesSystemMessagesSeparately(t *testing.T) {
 	// Gap 3: no response/system channel split.
 	// PRD section 2: system messages go to archie.agent.<id>.system and
 	// are never forwarded to humans. Response messages go to
 	// archie.agent.<id>.response for daemon review before human delivery.
-	// Currently HandleMessage always returns Channel="response" — there
+	// Currently HandleMessage always returns Channel="response"  --  there
 	// is no code path that produces a system-channel response.
 
 	msg := AgentRequestMessage{
@@ -143,7 +143,7 @@ func TestHandleMessageRoutesSystemMessagesSeparately(t *testing.T) {
 		Providers: map[string]Provider{"test": {Class: "openai", APIKeyEnv: "FAKE"}},
 	}
 
-	// Normal stage request — should route to response channel.
+	// Normal stage request  --  should route to response channel.
 	resp, err := HandleMessage(context.Background(), msg, slog.New(slog.DiscardHandler), mockFactory)
 	if err != nil {
 		t.Fatal(err)
@@ -152,7 +152,7 @@ func TestHandleMessageRoutesSystemMessagesSeparately(t *testing.T) {
 		t.Errorf("normal stage request: Channel = %q, want \"response\"", resp.Channel)
 	}
 
-	// System message (health check, log dump request) — should route to
+	// System message (health check, log dump request)  --  should route to
 	// system channel. Currently HandleMessage always returns "response".
 	// The daemon sets Channel on the request to indicate message type.
 	msg.Channel = "system"
@@ -172,7 +172,7 @@ func TestHandleMessageRoutesSystemMessagesSeparately(t *testing.T) {
 	respSubj := arnats.SubjectForAgentResponse(42)
 	sysSubj := arnats.SubjectForAgentSystem(42)
 	if respSubj == sysSubj || respSubj == "" || sysSubj == "" {
-		t.Error("Gap 3: subject functions broken — verify SubjectForAgentResponse " +
+		t.Error("Gap 3: subject functions broken  --  verify SubjectForAgentResponse " +
 			"and SubjectForAgentSystem return distinct, non-empty subjects.")
 	}
 }

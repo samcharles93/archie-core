@@ -27,7 +27,7 @@ func TestMessageEventToLegacy(t *testing.T) {
 		t.Errorf("Text = %q", m.Text)
 	}
 
-	// ToLegacy carries Text for non-text types too — callers decide
+	// ToLegacy carries Text for non-text types too  --  callers decide
 	// how to interpret it.
 	img := MessageEvent{
 		Type:      MsgImage,

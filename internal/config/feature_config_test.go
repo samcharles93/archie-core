@@ -5,15 +5,15 @@
 // modifying the tests themselves. The tests are the spec.
 //
 // Design:
-//   - ~/.config/archie/config.yaml           — daemon-level fields
-//   - ~/.config/archie/config.gateway.yaml   — chat channels, platforms
-//   - ~/.config/archie/config.tools.yaml     — MCP servers, tool policy
-//   - ~/.config/archie/config.memory.yaml    — memory provider config
-//   - ~/.config/archie/config.models.yaml    — LLM providers and models
-//   - ~/.config/archie/config.identities.yaml — identity configs
-//   - ~/.config/archie/conf.d/*.yaml          — additional feature files (Linux convention)
+//   - ~/.config/archie/config.yaml            --  daemon-level fields
+//   - ~/.config/archie/config.gateway.yaml    --  chat channels, platforms
+//   - ~/.config/archie/config.tools.yaml      --  MCP servers, tool policy
+//   - ~/.config/archie/config.memory.yaml     --  memory provider config
+//   - ~/.config/archie/config.models.yaml     --  LLM providers and models
+//   - ~/.config/archie/config.identities.yaml  --  identity configs
+//   - ~/.config/archie/conf.d/*.yaml           --  additional feature files (Linux convention)
 //
-// Missing files mean "feature disabled" — no error, just zero values.
+// Missing files mean "feature disabled"  --  no error, just zero values.
 // Legacy config.toml is still supported as a fallback.
 // Overlay support: --config-overlay <dir> applies files from <dir>
 // on top of the base config directory.
@@ -111,7 +111,7 @@ func TestLoadDirRequiresBotUser(t *testing.T) {
 
 func TestLoadDirMissingFeatureFilesSucceeds(t *testing.T) {
 	dir := tmpConfigDir(t)
-	// Only config.yaml exists — no gateway, tools, memory, models, identities files.
+	// Only config.yaml exists  --  no gateway, tools, memory, models, identities files.
 	writeFile(t, dir, "config.yaml", `bot_user: minimal`)
 
 	cfg, err := LoadDir(dir, "")
@@ -348,7 +348,7 @@ custom_tools:
 
 func TestLoadDirFallsBackToLegacyToml(t *testing.T) {
 	dir := tmpConfigDir(t)
-	// No config.yaml — only the legacy config.toml exists.
+	// No config.yaml  --  only the legacy config.toml exists.
 	writeFile(t, dir, "config.toml", `
 bot_user = "legacy"
 poll_interval = "90s"
@@ -380,7 +380,7 @@ name = "legacy-repo"
 
 func TestLoadDirYamlTakesPrecedenceOverToml(t *testing.T) {
 	dir := tmpConfigDir(t)
-	// Both exist — YAML wins.
+	// Both exist  --  YAML wins.
 	writeFile(t, dir, "config.yaml", `bot_user: yaml-wins`)
 	writeFile(t, dir, "config.toml", `bot_user = "toml-loses"`)
 
@@ -469,7 +469,7 @@ func TestLoadDirOverlayEmptyDirIsNoop(t *testing.T) {
 	writeFile(t, baseDir, "config.yaml", `bot_user: base-only`)
 
 	overlayDir := tmpConfigDir(t)
-	// Empty overlay directory — same as calling LoadDir(baseDir, "").
+	// Empty overlay directory  --  same as calling LoadDir(baseDir, "").
 
 	cfg, err := LoadDir(baseDir, overlayDir)
 	if err != nil {
@@ -496,7 +496,7 @@ func TestLoadDirRejectsInvalidFeatureFile(t *testing.T) {
 func TestLoadDirRejectsUnknownFeatureFile(t *testing.T) {
 	dir := tmpConfigDir(t)
 	writeFile(t, dir, "config.yaml", `bot_user: valid`)
-	// config.unknown.yaml is not a known feature — should error, not silently ignore.
+	// config.unknown.yaml is not a known feature  --  should error, not silently ignore.
 	writeFile(t, dir, "config.unknown.yaml", `foo: bar`)
 
 	_, err := LoadDir(dir, "")
