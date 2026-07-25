@@ -18,13 +18,16 @@ import (
 
 	"github.com/moby/moby/client"
 	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/channels/telegram"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
+	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/nats"
+	"github.com/samcharles93/archie-core/internal/nell"
 
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
@@ -69,7 +72,7 @@ func run() int {
 		return 1
 	}
 
-	st, err := store.Open(cfg.DBPath)
+	st, err := nell.OpenStore(cfg.DBPath, cfg.BotUser)
 	if err != nil {
 		log.Error("open store", "err", err)
 		return 1
@@ -146,7 +149,11 @@ func run() int {
 			log.Error("docker client failed", "err", err)
 			return 1
 		}
-		defer dockerCli.Close()
+		defer func() {
+			if err := dockerCli.Close(); err != nil {
+				log.Warn("docker client close failed", "err", err)
+			}
+		}()
 
 		containerPool, err = container.NewPool(ctx, container.Config{
 			Image:          cfg.Containers.Image,
@@ -159,9 +166,34 @@ func run() int {
 			log.Error("container pool failed", "err", err)
 			return 1
 		}
-		defer containerPool.Close()
+		defer func() {
+			if err := containerPool.Close(); err != nil {
+				log.Warn("container pool close failed", "err", err)
+			}
+		}()
 
 		storeBackend = storage.NewDockerBackend(dockerCli)
+	}
+
+	// Gateways (optional — absent [chat.telegram] disables). Multi-agent
+	// collaboration PRD phase C (docs/prds/multi-agent-collaboration.md).
+	if cfg.Chat.Telegram.TokenEnv != "" {
+		tgToken := os.Getenv(cfg.Chat.Telegram.TokenEnv)
+		if tgToken == "" {
+			log.Error("chat.telegram configured but token env var is empty", "env", cfg.Chat.Telegram.TokenEnv)
+			return 1
+		}
+		tg := telegram.New(tgToken, "", "", nil, log)
+		router := gateway.NewRouter(st, nil, "telegram")
+		if len(cfg.Repos) > 0 {
+			router.Tasks = gateway.NewStoreTaskCreator(st, cfg.Repos[0].Owner, cfg.Repos[0].Name)
+		}
+		go func() {
+			if err := tg.Start(ctx, router); err != nil && ctx.Err() == nil {
+				log.Error("telegram gateway stopped", "err", err)
+			}
+		}()
+		log.Info("telegram gateway started")
 	}
 
 	providers := executionProviders(cfg)
@@ -283,7 +315,7 @@ func executionProviders(cfg config.Config) map[string]agentexec.Provider {
 // handlers on nc so an archie-agent container (which holds no DB
 // connection, forge token, or push credential) can proxy those operations
 // back to archied. The returned func unsubscribes all three.
-func registerTaskRPCServers(nc *natsio.Conn, st *store.Store, forgeClient forge.Forge, trees *worktree.Manager, log *slog.Logger) (unsubscribe func(), err error) {
+func registerTaskRPCServers(nc *natsio.Conn, st store.TaskStore, forgeClient forge.Forge, trees *worktree.Manager, log *slog.Logger) (unsubscribe func(), err error) {
 	storeServer := &storerpc.Server{Store: st, Log: log}
 	unsubStore, err := storeServer.Register(nc)
 	if err != nil {

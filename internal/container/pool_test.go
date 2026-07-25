@@ -44,11 +44,9 @@ func TestContainerSupportsGracePeriod(t *testing.T) {
 	// Currently Release() calls ContainerStop immediately regardless of
 	// GracePeriod. When GracePeriod > 0, Release() must keep the
 	// container alive for the grace window before stopping it.
-	if cfg.GracePeriod > 0 {
-		// When GracePeriod is set, Release must not kill immediately.
-		// The container should stay alive for cfg.GracePeriod after
-		// the task completes, then be killed.
-	}
+	// The container should stay alive for cfg.GracePeriod after
+	// the task completes, then be killed.
+	_ = cfg.GracePeriod
 }
 
 func TestWriteTaskJSONProducesValidFile(t *testing.T) {

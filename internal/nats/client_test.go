@@ -9,27 +9,44 @@ import (
 	natssrv "github.com/nats-io/nats-server/v2/test"
 )
 
+// startEmbedded starts an embedded NATS server with JetStream file storage.
+// The shutdown cleanup is registered AFTER t.TempDir() so that server shutdown
+// completes deterministically before TempDir removes its storage directory.
+// This prevents "directory not empty" races where JetStream's async file
+// operations contend with testing.TempDir's os.RemoveAll.
 func startEmbedded(t *testing.T) *server.Server {
 	t.Helper()
 	srv := natssrv.RunRandClientPortServer()
-	t.Cleanup(srv.Shutdown)
+	// Call TempDir FIRST so its internal cleanup is registered before shutdown.
+	// LIFO cleanup order ensures shutdown runs before TempDir removal.
 	jsDir := t.TempDir()
 	if err := srv.EnableJetStream(&server.JetStreamConfig{StoreDir: jsDir}); err != nil {
 		t.Fatalf("enable jetstream: %v", err)
 	}
+	t.Cleanup(func() {
+		srv.Shutdown()
+		srv.WaitForShutdown()
+	})
 	return srv
 }
 
+// startEmbeddedWithToken starts an embedded NATS server with token auth.
+// Same deterministic cleanup ordering as startEmbedded.
 func startEmbeddedWithToken(t *testing.T, token string) *server.Server {
 	t.Helper()
 	opts := natssrv.DefaultTestOptions
 	opts.Port = -1
 	opts.Authorization = token
 	srv := natssrv.RunServer(&opts)
-	t.Cleanup(srv.Shutdown)
-	if err := srv.EnableJetStream(&server.JetStreamConfig{StoreDir: t.TempDir()}); err != nil {
+	// TempDir before Cleanup — shutdown runs before TempDir removal.
+	jsDir := t.TempDir()
+	if err := srv.EnableJetStream(&server.JetStreamConfig{StoreDir: jsDir}); err != nil {
 		t.Fatalf("enable jetstream: %v", err)
 	}
+	t.Cleanup(func() {
+		srv.Shutdown()
+		srv.WaitForShutdown()
+	})
 	return srv
 }
 
@@ -81,7 +98,7 @@ func TestConnectAndPublish(t *testing.T) {
 	if tm.Owner != "acme" || tm.Repo != "todo" || tm.Number != 1 || tm.Title != "fix bug" || tm.Body != "body text" {
 		t.Fatalf("unexpected task: %+v", tm)
 	}
-	msg.Ack()
+	_ = msg.Ack()
 }
 
 func TestDedup(t *testing.T) {
@@ -107,7 +124,7 @@ func TestDedup(t *testing.T) {
 	if msg == nil {
 		t.Fatal("first message not received")
 	}
-	msg.Ack()
+	_ = msg.Ack()
 
 	// Second publish with same Msg-Id should be deduped.
 	if err := client.PublishTask(ctx, "acme", "app", 1, "second", "body-v2", "bug"); err != nil {
@@ -119,7 +136,7 @@ func TestDedup(t *testing.T) {
 		t.Fatal(err)
 	}
 	if msg2 != nil {
-		msg2.Ack()
+		_ = msg2.Ack()
 		t.Fatal("expected no second message (dedup)")
 	}
 }

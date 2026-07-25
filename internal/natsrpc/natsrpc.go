@@ -99,7 +99,7 @@ func RegisterAll(nc *nats.Conn, regs []Registration) (unsubscribe func(), err er
 		sub, err := nc.Subscribe(r.Subject, r.Handler)
 		if err != nil {
 			for _, s := range subs {
-				s.Unsubscribe()
+				_ = s.Unsubscribe()
 			}
 			return nil, fmt.Errorf("subscribe %s: %w", r.Subject, err)
 		}
@@ -107,7 +107,7 @@ func RegisterAll(nc *nats.Conn, regs []Registration) (unsubscribe func(), err er
 	}
 	return func() {
 		for _, s := range subs {
-			s.Unsubscribe()
+			_ = s.Unsubscribe()
 		}
 	}, nil
 }

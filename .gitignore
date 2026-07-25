@@ -6,3 +6,8 @@
 .claude/
 .env
 task.json
+
+# Beads — commit JSONL exports (sync mechanism), ignore local DB
+.beads/embeddeddolt/
+.beads/backup/
+.beads/last-touched

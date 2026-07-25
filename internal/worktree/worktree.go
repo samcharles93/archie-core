@@ -119,7 +119,7 @@ func (m *Manager) prepare(ctx context.Context, owner, repo, base string, issue i
 			}
 		}
 		if _, err := m.git(ctx, dir, "reset", "--hard", "origin/"+base); err != nil {
-			// Non-fatal — the branch may not have been pushed yet.
+			_ = err // Non-fatal — the branch may not have been pushed yet.
 		}
 		return dir, branch, nil
 	}
@@ -154,7 +154,7 @@ func (m *Manager) prepare(ctx context.Context, owner, repo, base string, issue i
 		return "", "", err
 	}
 	if _, err := f.WriteString(".archie-prepared\n"); err != nil {
-		f.Close()
+		_ = f.Close()
 		return "", "", err
 	}
 	if err := f.Close(); err != nil {

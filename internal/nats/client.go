@@ -105,7 +105,7 @@ func (c *Client) NewReplyInbox() (*nats.Subscription, error) {
 		return nil, err
 	}
 	if err := sub.AutoUnsubscribe(1); err != nil {
-		sub.Unsubscribe()
+		_ = sub.Unsubscribe()
 		return nil, err
 	}
 	return sub, nil

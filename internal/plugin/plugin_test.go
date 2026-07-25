@@ -22,10 +22,7 @@ func TestPluginInterfaceExists(t *testing.T) {
 }
 
 func TestRegistryExists(t *testing.T) {
-	r := &plugin.Registry{}
-	if r == nil {
-		t.Fatal("Registry type is not defined")
-	}
+	_ = &plugin.Registry{}
 }
 
 // ── LoadDir behavioral tests ─────────────────────────────────────────

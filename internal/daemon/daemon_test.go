@@ -21,6 +21,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskrun"
+	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
 type cleanupStorage struct {
@@ -336,7 +337,7 @@ func TestRunViaAgentParksOnRunError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("subscribe: %v", err)
 	}
-	t.Cleanup(func() { sub.Unsubscribe() })
+	t.Cleanup(func() { _ = sub.Unsubscribe() })
 
 	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget"})
 
@@ -373,7 +374,7 @@ func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("subscribe: %v", err)
 	}
-	t.Cleanup(func() { sub.Unsubscribe() })
+	t.Cleanup(func() { _ = sub.Unsubscribe() })
 
 	repo := config.Repo{Owner: "acme", Name: "widget", Base: "main"}
 	d.runViaAgent(ctx, task, repo)
@@ -606,6 +607,77 @@ func TestMaybeRetryParkedSkipsDead(t *testing.T) {
 	}
 	if len(fg.comments) != 0 {
 		t.Fatalf("expected no comments, got %d", len(fg.comments))
+	}
+}
+
+func TestNewIdentityRunnerPopulatesFromConfig(t *testing.T) {
+	// Identity names come from config, not hardcoded by the daemon.
+	tests := []struct {
+		name    string
+		idCfg   config.IdentityConfig
+		wantErr bool
+	}{
+		{
+			name: "valid identity",
+			idCfg: config.IdentityConfig{
+				Name:    "my-bot",
+				BotUser: "my-bot",
+				Forge:   config.Forge{Type: "gitea", TokenEnv: "X"},
+				Repos:   []config.Repo{{Owner: "o", Name: "r"}},
+			},
+		},
+		{
+			name: "another identity",
+			idCfg: config.IdentityConfig{
+				Name:    "other-bot",
+				BotUser: "other-bot",
+				Forge:   config.Forge{Type: "github", TokenEnv: "Y"},
+				Repos:   []config.Repo{{Owner: "a", Name: "b"}, {Owner: "c", Name: "d"}},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			fg := &testForge{}
+			trees := &worktree.Manager{WorkDir: t.TempDir(), Token: "t", BotUser: tt.idCfg.BotUser, BotEmail: "bot@test"}
+			ir, err := NewIdentityRunner(ctx, tt.idCfg, fg, trees, slog.New(slog.DiscardHandler))
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("NewIdentityRunner error = %v, wantErr = %v", err, tt.wantErr)
+			}
+			if err != nil {
+				return
+			}
+			if ir.Name != tt.idCfg.Name {
+				t.Errorf("Name = %q, want %q", ir.Name, tt.idCfg.Name)
+			}
+			if ir.Forge != fg {
+				t.Error("Forge not wired")
+			}
+			if len(ir.Repos) != len(tt.idCfg.Repos) {
+				t.Errorf("len(Repos) = %d, want %d", len(ir.Repos), len(tt.idCfg.Repos))
+			}
+		})
+	}
+}
+
+func TestNewIdentityRunnerRejectsEmptyName(t *testing.T) {
+	ctx := context.Background()
+	_, err := NewIdentityRunner(ctx, config.IdentityConfig{Name: ""}, &testForge{}, nil, slog.New(slog.DiscardHandler))
+	if err == nil {
+		t.Error("expected error for empty name")
+	}
+}
+
+func TestDaemonStoresIdentityRunners(t *testing.T) {
+	d := &Daemon{
+		Identities: []*IdentityRunner{
+			{Name: "one"},
+			{Name: "two"},
+		},
+	}
+	if len(d.Identities) != 2 {
+		t.Errorf("len(Identities) = %d, want 2", len(d.Identities))
 	}
 }
 

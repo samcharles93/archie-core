@@ -116,7 +116,9 @@ func NewPool(ctx context.Context, cfg Config, natsURL string, log *slog.Logger) 
 	// Pull image if needed.
 	if cfg.PullPolicy == "always" || cfg.PullPolicy == "missing" {
 		if err := p.pullImage(ctx); err != nil {
-			cli.Close()
+			if err := cli.Close(); err != nil {
+				log.Warn("docker client close failed during pull error", "err", err)
+			}
 			return nil, err
 		}
 	}
@@ -181,7 +183,9 @@ func (p *Pool) Acquire(ctx context.Context, mounts []storage.Mount, env []string
 
 	if _, err := p.cli.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
 		// Best-effort cleanup.
-		p.cli.ContainerRemove(context.Background(), resp.ID, client.ContainerRemoveOptions{Force: true})
+		if _, rmErr := p.cli.ContainerRemove(context.Background(), resp.ID, client.ContainerRemoveOptions{Force: true}); rmErr != nil {
+			p.log.Warn("container remove after start failure", "id", resp.ID[:12], "err", rmErr)
+		}
 		p.mu.Lock()
 		p.active--
 		p.mu.Unlock()
@@ -212,7 +216,9 @@ func (p *Pool) Release(c *Container) {
 	if _, err := p.cli.ContainerStop(ctx, c.ID, client.ContainerStopOptions{}); err != nil {
 		p.log.Warn("container stop failed", "id", c.ID[:12], "err", err)
 	}
-	p.cli.ContainerRemove(context.Background(), c.ID, client.ContainerRemoveOptions{Force: true})
+	if _, err := p.cli.ContainerRemove(context.Background(), c.ID, client.ContainerRemoveOptions{Force: true}); err != nil {
+		p.log.Warn("container remove failed", "id", c.ID[:12], "err", err)
+	}
 
 	p.mu.Lock()
 	p.active--
@@ -235,8 +241,12 @@ func (p *Pool) Close() error {
 	} else {
 		for _, c := range list.Items {
 			p.log.Info("cleaning up container", "id", c.ID[:12])
-			p.cli.ContainerStop(ctx, c.ID, client.ContainerStopOptions{})
-			p.cli.ContainerRemove(ctx, c.ID, client.ContainerRemoveOptions{Force: true})
+			if _, err := p.cli.ContainerStop(ctx, c.ID, client.ContainerStopOptions{}); err != nil {
+				p.log.Warn("container stop during close", "id", c.ID[:12], "err", err)
+			}
+			if _, err := p.cli.ContainerRemove(ctx, c.ID, client.ContainerRemoveOptions{Force: true}); err != nil {
+				p.log.Warn("container remove during close", "id", c.ID[:12], "err", err)
+			}
 		}
 	}
 	if p.ownCli {
@@ -265,8 +275,14 @@ func (p *Pool) pullImage(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("pull %s: %w", ref, err)
 	}
-	defer rc.Close()
-	io.Copy(io.Discard, rc)
+	defer func() {
+		if err := rc.Close(); err != nil {
+			p.log.Warn("image pull reader close failed", "err", err)
+		}
+	}()
+	if _, err := io.Copy(io.Discard, rc); err != nil {
+		return fmt.Errorf("pull %s: discard: %w", ref, err)
+	}
 	p.log.Info("image pulled", "image", ref)
 	return nil
 }
@@ -309,8 +325,12 @@ func (p *Pool) recoverOrphans(ctx context.Context) {
 	}
 	for _, c := range list.Items {
 		p.log.Info("recovering orphaned container", "id", c.ID[:12])
-		p.cli.ContainerStop(ctx, c.ID, client.ContainerStopOptions{})
-		p.cli.ContainerRemove(ctx, c.ID, client.ContainerRemoveOptions{Force: true})
+		if _, err := p.cli.ContainerStop(ctx, c.ID, client.ContainerStopOptions{}); err != nil {
+			p.log.Warn("container stop during orphan recovery", "id", c.ID[:12], "err", err)
+		}
+		if _, err := p.cli.ContainerRemove(ctx, c.ID, client.ContainerRemoveOptions{Force: true}); err != nil {
+			p.log.Warn("container remove during orphan recovery", "id", c.ID[:12], "err", err)
+		}
 	}
 	if len(list.Items) > 0 {
 		p.log.Info("orphan recovery complete", "count", len(list.Items))

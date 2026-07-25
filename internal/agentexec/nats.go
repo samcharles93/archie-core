@@ -59,7 +59,11 @@ func (r *NATSRunner) Run(ctx context.Context, workspace string, req Request) (Re
 	if err != nil {
 		return Result{}, fmt.Errorf("nats reply inbox: %w", err)
 	}
-	defer replySub.Unsubscribe()
+	defer func() {
+		if err := replySub.Unsubscribe(); err != nil {
+			r.Log.Warn("reply inbox unsubscribe failed", "err", err)
+		}
+	}()
 
 	// 2. Compute timeout from budget.
 	timeout := defaultAgentTimeout

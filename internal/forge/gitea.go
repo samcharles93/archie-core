@@ -3,6 +3,7 @@ package forge
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -200,7 +201,8 @@ func (c *GiteaClient) LinkBranch(ctx context.Context, owner, repo string, issueN
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("link branch: HTTP %d", resp.StatusCode)
 	}
@@ -219,17 +221,13 @@ func (c *GiteaClient) SetStateLabel(ctx context.Context, owner, repo string, num
 		return
 	}
 	// Remove known state labels (except the target).
-	labelIDs := make([]int64, 0, len(issue.Labels))
 	for _, l := range issue.Labels {
 		if l.Name == label {
 			label = "" // already present
-			labelIDs = append(labelIDs, l.ID)
 		} else if known[l.Name] {
 			if _, err := c.cli.DeleteIssueLabel(owner, repo, int64(number), l.ID); err != nil {
 				c.log.Warn("remove state label failed", "label", l.Name, "err", err)
 			}
-		} else {
-			labelIDs = append(labelIDs, l.ID)
 		}
 	}
 	if label == "" {

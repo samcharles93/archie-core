@@ -224,7 +224,7 @@ func startHandler(t *testing.T, nc *natsio.Conn) {
 					continue
 				}
 				var req AgentRequestMessage
-				json.Unmarshal(msg.Data(), &req)
+				_ = json.Unmarshal(msg.Data(), &req)
 				replyTo := msg.Headers().Get(arnats.ReplyHeader)
 				resp := AgentResponseEnvelope{
 					Version: req.Request.Version,
@@ -239,8 +239,8 @@ func startHandler(t *testing.T, nc *natsio.Conn) {
 					},
 				}
 				data, _ := json.Marshal(resp)
-				nc.Publish(replyTo, data)
-				msg.Ack()
+				_ = nc.Publish(replyTo, data)
+				_ = msg.Ack()
 			}
 		}
 	}()
