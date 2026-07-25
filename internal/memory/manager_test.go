@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/tools"
 )
@@ -572,19 +573,24 @@ func TestManager_TypeAssertions_NoOptionalInterfaces(t *testing.T) {
 	}
 }
 
-// waitForHooks drains exactly expected signals from the providers' hookDone
-// channels. It fails the test if the signals don't arrive within 5 seconds.
-// This replaces the flaky time.Sleep approach with deterministic
-// synchronization.
+// waitForHooks waits for all hook goroutines to complete. Mock hook methods
+// finish in nanoseconds (lock + increment + unlock + channel send), so a brief
+// sleep is more than sufficient for the scheduler to dispatch them. Using a
+// buffered channel of size 50 ensures no goroutine blocks on send even under
+// extreme load.
 func waitForHooks(t *testing.T, expected int, providers ...*mockProvider) {
 	t.Helper()
-
-	// Multiplex all provider channels into one logical stream.
-	for received := 0; received < expected; received++ {
+	// Poll-and-sleep: drain what we can non-blocking, then sleep briefly
+	// for stragglers. This avoids the flakiness of a single time.Sleep
+	// while being simpler than reflect.Select multiplexing.
+	deadline := time.Now().Add(5 * time.Second)
+	received := 0
+	for received < expected && time.Now().Before(deadline) {
 		drained := false
 		for _, p := range providers {
 			select {
 			case <-p.hookDone:
+				received++
 				drained = true
 			default:
 			}
@@ -593,10 +599,11 @@ func waitForHooks(t *testing.T, expected int, providers ...*mockProvider) {
 			}
 		}
 		if !drained {
-			// No signal ready yet — block on the first provider that still
-			// has capacity (any will do since hooks fire concurrently).
-			<-providers[0].hookDone
+			time.Sleep(time.Millisecond)
 		}
+	}
+	if received < expected {
+		t.Errorf("timed out waiting for hooks: got %d/%d signals", received, expected)
 	}
 }
 
