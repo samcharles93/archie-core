@@ -20,6 +20,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
+	"github.com/samcharles93/archie-core/internal/channels/telegram"
+	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
@@ -146,7 +148,11 @@ func run() int {
 			log.Error("docker client failed", "err", err)
 			return 1
 		}
-		defer dockerCli.Close()
+		defer func() {
+			if err := dockerCli.Close(); err != nil {
+				log.Warn("docker client close failed", "err", err)
+			}
+		}()
 
 		containerPool, err = container.NewPool(ctx, container.Config{
 			Image:          cfg.Containers.Image,
@@ -159,9 +165,31 @@ func run() int {
 			log.Error("container pool failed", "err", err)
 			return 1
 		}
-		defer containerPool.Close()
+		defer func() {
+			if err := containerPool.Close(); err != nil {
+				log.Warn("container pool close failed", "err", err)
+			}
+		}()
 
 		storeBackend = storage.NewDockerBackend(dockerCli)
+	}
+
+	// Gateways (optional — absent [chat.telegram] disables). Multi-agent
+	// collaboration PRD phase C (docs/prds/multi-agent-collaboration.md).
+	if cfg.Chat.Telegram.TokenEnv != "" {
+		tgToken := os.Getenv(cfg.Chat.Telegram.TokenEnv)
+		if tgToken == "" {
+			log.Error("chat.telegram configured but token env var is empty", "env", cfg.Chat.Telegram.TokenEnv)
+			return 1
+		}
+		tg := telegram.New(tgToken, "", "", nil, log)
+		router := gateway.NewRouter(st, nil, "telegram")
+		go func() {
+			if err := tg.Start(ctx, router); err != nil && ctx.Err() == nil {
+				log.Error("telegram gateway stopped", "err", err)
+			}
+		}()
+		log.Info("telegram gateway started")
 	}
 
 	providers := executionProviders(cfg)

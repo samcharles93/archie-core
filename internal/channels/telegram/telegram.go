@@ -1,0 +1,352 @@
+// Package telegram implements gateway.Gateway using the Telegram Bot API
+// via go-telegram/bot. Ported from GopherClaw's telegram.go and adapted
+// for archie-core's gateway architecture.
+package telegram
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"runtime/debug"
+	"strings"
+
+	"github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
+
+	"github.com/samcharles93/archie-core/internal/gateway"
+)
+
+// Gateway is a Telegram gateway.Gateway backed by go-telegram/bot.
+type Gateway struct {
+	Token         string
+	WebhookURL    string
+	WebhookSecret string
+	// AllowedChatIDs restricts which chats may use the bot. Empty = anyone.
+	AllowedChatIDs []int64
+	log            *slog.Logger
+	bot            *bot.Bot
+	webhookCancel  context.CancelFunc
+	running        bool
+}
+
+// New returns an unstarted Gateway. Call Start to begin webhook
+// processing.
+func New(token, webhookURL, webhookSecret string, allowedChatIDs []int64, log *slog.Logger) *Gateway {
+	return &Gateway{
+		Token:          token,
+		WebhookURL:     webhookURL,
+		WebhookSecret:  webhookSecret,
+		AllowedChatIDs: allowedChatIDs,
+		log:            log.With("component", "gateway-telegram"),
+	}
+}
+
+func (g *Gateway) Name() string { return "telegram" }
+
+// Start builds the bot, registers handlers, sets the webhook (if
+// configured), and begins processing. Blocks until ctx is cancelled.
+func (g *Gateway) Start(ctx context.Context, router *gateway.Router) error {
+	if g.Token == "" {
+		return fmt.Errorf("telegram bot token is required")
+	}
+	g.log.Info("starting telegram gateway")
+
+	opts := []bot.Option{
+		bot.WithErrorsHandler(func(err error) {
+			g.log.Error("telegram pipeline error", "error", err)
+		}),
+		bot.WithDebugHandler(func(format string, args ...any) {
+			g.log.Debug("telegram debug", "message", fmt.Sprintf(format, args...))
+		}),
+		bot.WithDefaultHandler(g.defaultHandler(router)),
+		bot.WithMiddlewares(g.panicRecoveryMiddleware(), g.updateLoggingMiddleware()),
+	}
+	if g.WebhookSecret != "" {
+		opts = append(opts, bot.WithWebhookSecretToken(g.WebhookSecret))
+	}
+
+	b, err := bot.New(g.Token, opts...)
+	if err != nil {
+		return fmt.Errorf("create bot: %w", err)
+	}
+	g.bot = b
+
+	// Gateway-local commands: handled directly, no LLM.
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/status", bot.MatchTypePrefix, g.statusHandler(router))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/help", bot.MatchTypePrefix, g.helpHandler())
+
+	// Set up webhook or fall back to long polling.
+	if g.WebhookURL != "" {
+		params := &bot.SetWebhookParams{
+			URL:                g.WebhookURL,
+			SecretToken:        g.WebhookSecret,
+			MaxConnections:     40,
+			AllowedUpdates:     []string{"message"},
+			DropPendingUpdates: true,
+		}
+		if _, err := b.SetWebhook(ctx, params); err != nil {
+			return fmt.Errorf("set webhook: %w", err)
+		}
+		g.log.Info("webhook set", "url", g.WebhookURL)
+
+		info, err := b.GetWebhookInfo(ctx)
+		if err != nil {
+			g.log.Warn("failed to get webhook info", "error", err)
+		} else {
+			g.log.Info("webhook info",
+				"url", info.URL,
+				"pending_update_count", info.PendingUpdateCount,
+				"last_error_message", info.LastErrorMessage,
+				"max_connections", info.MaxConnections,
+			)
+		}
+
+		webhookCtx, cancel := context.WithCancel(ctx)
+		g.webhookCancel = cancel
+		g.running = true
+		go b.StartWebhook(webhookCtx)
+	} else {
+		g.running = true
+		go b.Start(ctx)
+	}
+
+	<-ctx.Done()
+	return nil
+}
+
+// Stop gracefully shuts down the bot and deletes the webhook.
+func (g *Gateway) Stop(ctx context.Context) error {
+	if !g.running {
+		return nil
+	}
+	g.log.Info("stopping telegram gateway")
+	g.running = false
+
+	if g.webhookCancel != nil {
+		g.webhookCancel()
+		g.webhookCancel = nil
+	}
+	if g.WebhookURL != "" && g.bot != nil {
+		if _, err := g.bot.DeleteWebhook(ctx, &bot.DeleteWebhookParams{DropPendingUpdates: true}); err != nil {
+			g.log.Warn("error deleting webhook", "error", err)
+		}
+	}
+	return nil
+}
+
+// WebhookHandler returns the HTTP handler for Telegram webhooks.
+func (g *Gateway) WebhookHandler() http.Handler {
+	if g.bot == nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "bot not initialized", http.StatusServiceUnavailable)
+		})
+	}
+	return g.bot.WebhookHandler()
+}
+
+// ── command handlers (gateway-local — no LLM) ────────────────
+
+func (g *Gateway) statusHandler(router *gateway.Router) bot.HandlerFunc {
+	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
+		msg, ok := g.authorizedMessage(ctx, b, update)
+		if !ok {
+			return
+		}
+		reply, err := router.Route(ctx, gateway.Message{
+			ChannelID: fmt.Sprintf("%d", msg.Chat.ID),
+			From:      msg.From.Username,
+			Text:      "/status",
+		})
+		if err != nil {
+			g.log.Error("status handler failed", "error", err)
+			return
+		}
+		g.sendMessage(ctx, b, msg.Chat.ID, reply)
+	}
+}
+
+func (g *Gateway) helpHandler() bot.HandlerFunc {
+	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
+		msg, ok := g.authorizedMessage(ctx, b, update)
+		if !ok {
+			return
+		}
+		g.sendMessage(ctx, b, msg.Chat.ID,
+			"🤖 <b>Archie Gateway</b>\n\n"+
+				"/status — Show task status\n"+
+				"/help — This message\n\n"+
+				"Anything else: chat with the LLM (not yet wired — coming soon).")
+	}
+}
+
+// ── default handler (non-command text → router) ─────────────
+
+func (g *Gateway) defaultHandler(router *gateway.Router) bot.HandlerFunc {
+	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
+		msg, ok := g.authorizedMessage(ctx, b, update)
+		if !ok || msg.Text == "" {
+			return
+		}
+
+		// If it starts with / but wasn't matched by a registered
+		// handler, it's unknown — let the router handle it (which
+		// will say "unrecognized").
+		reply, err := router.Route(ctx, gateway.Message{
+			ChannelID: fmt.Sprintf("%d", msg.Chat.ID),
+			From:      msg.From.Username,
+			Text:      msg.Text,
+		})
+		if err != nil {
+			g.log.Error("route failed", "error", err)
+			return
+		}
+		if reply != "" {
+			g.sendMessage(ctx, b, msg.Chat.ID, reply)
+		}
+	}
+}
+
+// ── helpers ──────────────────────────────────────────────────
+
+func (g *Gateway) authorizedMessage(ctx context.Context, b *bot.Bot, update *models.Update) (*models.Message, bool) {
+	if update.Message == nil {
+		return nil, false
+	}
+	if g.isChatAllowed(update.Message.Chat.ID) {
+		return update.Message, true
+	}
+	g.log.Warn("message from unauthorized chat", "chat_id", update.Message.Chat.ID)
+	g.sendMessage(ctx, b, update.Message.Chat.ID,
+		"⛔ This bot is not available in this chat.")
+	return nil, false
+}
+
+func (g *Gateway) isChatAllowed(chatID int64) bool {
+	if len(g.AllowedChatIDs) == 0 {
+		return true
+	}
+	for _, id := range g.AllowedChatIDs {
+		if id == chatID {
+			return true
+		}
+	}
+	return false
+}
+
+func (g *Gateway) sendMessage(ctx context.Context, b *bot.Bot, chatID int64, text string) {
+	// Split long messages to stay under Telegram's 4096 character limit.
+	const maxLen = 4000
+	if len(text) <= maxLen {
+		if _, err := b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   text,
+		}); err != nil {
+			g.log.Error("send message failed", "error", err)
+		}
+		return
+	}
+	parts := splitLongMessage(text, maxLen)
+	for i, part := range parts {
+		partText := part
+		if i < len(parts)-1 {
+			partText += "\n\n_(continued...)_"
+		}
+		if _, err := b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   partText,
+		}); err != nil {
+			g.log.Error("send message part failed", "error", err, "part", i)
+		}
+	}
+}
+
+func splitLongMessage(text string, maxLen int) []string {
+	if len(text) <= maxLen {
+		return []string{text}
+	}
+	var parts []string
+	lines := strings.Split(text, "\n")
+	var cur strings.Builder
+	for _, line := range lines {
+		if cur.Len()+len(line)+1 > maxLen {
+			if cur.Len() > 0 {
+				parts = append(parts, cur.String())
+				cur.Reset()
+			}
+			if len(line) > maxLen {
+				for i := 0; i < len(line); i += maxLen {
+					end := i + maxLen
+					if end > len(line) {
+						end = len(line)
+					}
+					parts = append(parts, line[i:end])
+				}
+				continue
+			}
+		}
+		if cur.Len() > 0 {
+			cur.WriteByte('\n')
+		}
+		cur.WriteString(line)
+	}
+	if cur.Len() > 0 {
+		parts = append(parts, cur.String())
+	}
+	return parts
+}
+
+// ── middlewares ──────────────────────────────────────────────
+
+func (g *Gateway) panicRecoveryMiddleware() bot.Middleware {
+	return func(next bot.HandlerFunc) bot.HandlerFunc {
+		return func(ctx context.Context, b *bot.Bot, update *models.Update) {
+			defer func() {
+				if r := recover(); r != nil {
+					kind, chatID, hasChat := updateMetadata(update)
+					attrs := []any{
+						"panic", r,
+						"update_kind", kind,
+						"update_id", update.ID,
+						"stack", string(debug.Stack()),
+					}
+					if hasChat {
+						attrs = append(attrs, "chat_id", chatID)
+					}
+					g.log.Error("panic in telegram middleware", attrs...)
+				}
+			}()
+			next(ctx, b, update)
+		}
+	}
+}
+
+func (g *Gateway) updateLoggingMiddleware() bot.Middleware {
+	return func(next bot.HandlerFunc) bot.HandlerFunc {
+		return func(ctx context.Context, b *bot.Bot, update *models.Update) {
+			kind, chatID, hasChat := updateMetadata(update)
+			attrs := []any{"update_kind", kind, "update_id", update.ID}
+			if hasChat {
+				attrs = append(attrs, "chat_id", chatID)
+			}
+			g.log.Debug("telegram update", attrs...)
+			next(ctx, b, update)
+		}
+	}
+}
+
+func updateMetadata(update *models.Update) (kind string, chatID int64, hasChat bool) {
+	switch {
+	case update == nil:
+		return "unknown", 0, false
+	case update.Message != nil:
+		return "message", update.Message.Chat.ID, true
+	case update.CallbackQuery != nil:
+		if update.CallbackQuery.Message.Message != nil {
+			return "callback_query", update.CallbackQuery.Message.Message.Chat.ID, true
+		}
+		return "callback_query", 0, false
+	default:
+		return "other", 0, false
+	}
+}

@@ -9,7 +9,6 @@ require (
 )
 
 require (
-	code.gitea.io/sdk/gitea v0.25.1 // indirect
 	github.com/42wim/httpsig v1.2.4 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/antithesishq/antithesis-sdk-go v0.7.0-default-no-op // indirect
@@ -54,6 +53,8 @@ require (
 )
 
 require (
+	code.gitea.io/sdk/gitea v0.25.1
+	github.com/go-telegram/bot v1.18.0
 	github.com/moby/moby/api v1.55.0
 	github.com/moby/moby/client v0.5.0
 	github.com/nats-io/nats-server/v2 v2.14.3

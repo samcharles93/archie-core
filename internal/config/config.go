@@ -285,7 +285,42 @@ type Config struct {
 	Notify     Notify          `toml:"notify"`
 	NATS       NATSConfig      `toml:"nats"`
 	Containers ContainerConfig `toml:"containers"`
-	Repos      []Repo          `toml:"repos"`
+	Chat       ChatConfig      `toml:"chat"`
+	// Identities declares multi-identity configurations. When non-empty,
+	// each identity runs its own poll loop with its own forge client,
+	// worktree manager, repo list, model/provider config, and NATS subject
+	// namespace. When empty, the legacy single-identity fields (BotUser,
+	// Forge, Repos, Models, Providers, Dispatch, PollInterval) are used
+	// unchanged for backward compatibility.
+	Identities []IdentityConfig `toml:"identities"`
+	Repos      []Repo           `toml:"repos"`
+}
+
+// IdentityConfig is a per-identity configuration subset. Each identity
+// gets its own poll loop goroutine with isolated forge, repo, model,
+// and dispatch configuration.
+type IdentityConfig struct {
+	// Name identifies this identity in logs, events, and NATS subject
+	// namespaces (archie.<name>.task.<type>). Required when Identities
+	// is non-empty.
+	Name string `toml:"name"`
+	// BotUser is the forge username for this identity's git commits and
+	// API calls. Required.
+	BotUser string `toml:"bot_user"`
+	// BotEmail is the git author email. Falls back to a forge-appropriate
+	// default from BotUser when empty.
+	BotEmail     string `toml:"bot_email"`
+	DiffCapLines int    `toml:"diff_cap_lines"`
+	// PollInterval overrides the shared PollInterval. When 0, the shared
+	// interval is used.
+	PollInterval Duration `toml:"poll_interval"`
+	Forge        Forge    `toml:"forge"`
+	Dispatch     Dispatch `toml:"dispatch"`
+	Models       map[string]string `toml:"models"`
+	Providers    map[string]Provider `toml:"providers"`
+	Budgets      Budgets           `toml:"budgets"`
+	Notify       Notify            `toml:"notify"`
+	Repos        []Repo            `toml:"repos"`
 }
 
 // TaskConfig is the non-secret subset of Config needed to run workflow
@@ -369,6 +404,20 @@ type ContainerConfig struct {
 	VolumeTTL Duration `toml:"volume_ttl"`
 	// PullPolicy controls image pulling: "missing" (default) or "always".
 	PullPolicy string `toml:"pull_policy"`
+}
+
+// ChatConfig configures conversational front-ends (multi-agent
+// collaboration PRD, phase C — docs/prds/multi-agent-collaboration.md).
+// Empty (Telegram.TokenEnv == "") disables chat entirely.
+type ChatConfig struct {
+	Telegram TelegramConfig `toml:"telegram"`
+}
+
+// TelegramConfig configures the Telegram Bot API channel.
+type TelegramConfig struct {
+	// TokenEnv names the env var holding the bot token from @BotFather.
+	// Empty disables the Telegram channel.
+	TokenEnv string `toml:"token_env"`
 }
 
 // Notify configures outbound notifications (n8n webhook → email etc.).
@@ -497,32 +546,64 @@ func finalize(cfg Config) (Config, error) {
 	if cfg.MaxRetries == 0 {
 		cfg.MaxRetries = 3
 	}
-	if cfg.BotUser == "" {
-		return cfg, errors.New("config: bot_user is required")
-	}
-	if cfg.BotEmail == "" {
+	// Multi-identity mode: validate each identity independently and relax
+	// the top-level BotUser / Repos requirement (backward compat: when
+	// Identities is empty, the legacy single-identity fields are used).
+	if len(cfg.Identities) > 0 {
+		for i, id := range cfg.Identities {
+			if id.Name == "" {
+				return cfg, fmt.Errorf("config: identities[%d].name is required", i)
+			}
+			if id.BotUser == "" {
+				return cfg, fmt.Errorf("config: identities[%d].bot_user is required", i)
+			}
+			if len(id.Repos) == 0 {
+				return cfg, fmt.Errorf("config: identities[%d] has no [[identities.repos]] entries — at least one is required", i)
+			}
+			switch id.Forge.Type {
+			case "github", "gitea":
+			default:
+				return cfg, fmt.Errorf("config: identities[%d].forge.type %q is not supported (want github or gitea)", i, id.Forge.Type)
+			}
+			for j, r := range id.Repos {
+				if r.Owner == "" || r.Name == "" {
+					return cfg, fmt.Errorf("config: identities[%d].repos[%d] needs owner and name", i, j)
+				}
+				if glob := r.ResolvedTestGlob(); glob != "" {
+					if _, err := filepath.Match(glob, ""); err != nil {
+						return cfg, fmt.Errorf("config: identities[%d].repos[%d] test_glob %q is invalid: %w", i, j, glob, err)
+					}
+				}
+			}
+		}
+	} else {
+		if cfg.BotUser == "" {
+			return cfg, errors.New("config: bot_user is required (or define [[identities]])")
+		}
+		if cfg.BotEmail == "" {
+			switch cfg.Forge.Type {
+			case "github":
+				cfg.BotEmail = cfg.BotUser + "@users.noreply.github.com"
+			case "gitea":
+				cfg.BotEmail = cfg.BotUser + "@gitea.local"
+			}
+		}
+		if len(cfg.Repos) == 0 {
+			return cfg, errors.New("config: at least one [[repos]] entry is required (or define [[identities]])")
+		}
 		switch cfg.Forge.Type {
-		case "github":
-			cfg.BotEmail = cfg.BotUser + "@users.noreply.github.com"
-		case "gitea":
-			cfg.BotEmail = cfg.BotUser + "@gitea.local"
+		case "github", "gitea":
+		default:
+			return cfg, fmt.Errorf("config: forge.type %q is not supported (want github or gitea)", cfg.Forge.Type)
 		}
-	}
-	if len(cfg.Repos) == 0 {
-		return cfg, errors.New("config: at least one [[repos]] entry is required")
-	}
-	switch cfg.Forge.Type {
-	case "github", "gitea":
-	default:
-		return cfg, fmt.Errorf("config: forge.type %q is not supported (want github or gitea)", cfg.Forge.Type)
-	}
-	for i, r := range cfg.Repos {
-		if r.Owner == "" || r.Name == "" {
-			return cfg, fmt.Errorf("config: repos[%d] needs owner and name", i)
-		}
-		if glob := r.ResolvedTestGlob(); glob != "" {
-			if _, err := filepath.Match(glob, ""); err != nil {
-				return cfg, fmt.Errorf("config: repos[%d] test_glob %q is invalid: %w", i, glob, err)
+		for i, r := range cfg.Repos {
+			if r.Owner == "" || r.Name == "" {
+				return cfg, fmt.Errorf("config: repos[%d] needs owner and name", i)
+			}
+			if glob := r.ResolvedTestGlob(); glob != "" {
+				if _, err := filepath.Match(glob, ""); err != nil {
+					return cfg, fmt.Errorf("config: repos[%d] test_glob %q is invalid: %w", i, glob, err)
+				}
 			}
 		}
 	}
