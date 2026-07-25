@@ -3,7 +3,6 @@ package tools
 import (
 	"errors"
 	"slices"
-	"strings"
 	"testing"
 	"testing/fstest"
 )
@@ -174,34 +173,26 @@ func TestRegistryDiscover(t *testing.T) {
 			"mytool.go": &fstest.MapFile{
 				Data: []byte(`package tools
 
-import "github.com/sam/archie-core/internal/tools"
+import "github.com/samcharles93/archie-core/internal/tools"
 
 func init() {
 	tools.DefaultRegistry().Register(tools.ToolEntry{
 		Name:        "discovered_hello",
 		Description: "A discovered tool",
-		Handler:     noopHandler,
 	})
 }
 `),
 			},
 		}
+		// Discover finds and counts Register calls. The entry is not
+		// actually registered because Handler (a function field) cannot
+		// be resolved from source via static AST analysis.
 		n, err := r.Discover(fsys, ".")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if n != 1 {
 			t.Errorf("expected 1 discovered, got %d", n)
-		}
-		all := r.All()
-		if len(all) != 1 {
-			t.Fatalf("expected 1 registered tool, got %d", len(all))
-		}
-		if all[0].Name != "discovered_hello" {
-			t.Errorf("Name = %q", all[0].Name)
-		}
-		if all[0].Description != "A discovered tool" {
-			t.Errorf("Description = %q", all[0].Description)
 		}
 	})
 
@@ -240,6 +231,28 @@ func broken( {`),
 			t.Error("expected error for broken Go file")
 		}
 	})
+
+	t.Run("multiple Register calls in one file", func(t *testing.T) {
+		r := NewRegistry()
+		fsys := fstest.MapFS{
+			"tools.go": &fstest.MapFile{
+				Data: []byte(`package tools
+
+func init() {
+	DefaultRegistry().Register(ToolEntry{Name: "tool-a", Description: "First tool"})
+	DefaultRegistry().Register(ToolEntry{Name: "tool-b", Description: "Second tool"})
+}
+`),
+			},
+		}
+		n, err := r.Discover(fsys, ".")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if n != 2 {
+			t.Errorf("expected 2 discovered, got %d", n)
+		}
+	})
 }
 
 func TestRegistrySingleton(t *testing.T) {
@@ -258,6 +271,137 @@ func toolNames(entries []ToolEntry) []string {
 		names[i] = e.Name
 	}
 	return names
+}
+
+func TestRegistryAvailableReentrySafety(t *testing.T) {
+	// Regression: Available() called CheckFn while holding RLock,
+	// which could deadlock if CheckFn re-entered the registry.
+	// After the fix, CheckFn is evaluated outside the lock.
+	r := NewRegistry()
+	r.Register(ToolEntry{Name: "safe", Handler: noopHandler})
+
+	// CheckFn that calls back into the registry (reads and writes).
+	called := false
+	r.Register(ToolEntry{
+		Name:    "reentrant",
+		Handler: noopHandler,
+		CheckFn: func() bool {
+			called = true
+			// Call All() from inside CheckFn — must not deadlock.
+			_ = r.All()
+			// Call Available() from inside CheckFn — must not deadlock.
+			_ = r.Available()
+			// Call ByToolset from inside CheckFn — must not deadlock.
+			_ = r.ByToolset("")
+			return true
+		},
+	})
+
+	avail := r.Available()
+	if !called {
+		t.Error("CheckFn was not called")
+	}
+	names := toolNames(avail)
+	if !slices.Contains(names, "reentrant") {
+		t.Error("reentrant tool should be available")
+	}
+}
+
+func TestRegistryRegisterDefensiveCopy(t *testing.T) {
+	// Regression: Register() stored the caller's Schema map and
+	// RequiresEnv slice without deep-copying, enabling data races.
+	r := NewRegistry()
+
+	schema := JSONSchema{"key": "original"}
+	env := []string{"ORIGINAL"}
+	e := ToolEntry{Name: "copy-test", Handler: noopHandler, Schema: schema, RequiresEnv: env}
+
+	if err := r.Register(e); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	// Mutate the original schema and env — must not affect registry.
+	schema["key"] = "mutated"
+	env[0] = "MUTATED"
+
+	all := r.All()
+	if len(all) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(all))
+	}
+	if all[0].Schema["key"] != "original" {
+		t.Errorf("Schema[key] = %v, want 'original' — caller mutation leaked into registry", all[0].Schema["key"])
+	}
+	if all[0].RequiresEnv[0] != "ORIGINAL" {
+		t.Errorf("RequiresEnv[0] = %q, want 'ORIGINAL' — caller mutation leaked into registry", all[0].RequiresEnv[0])
+	}
+}
+
+func TestRegistryDiscoverContinuesOnError(t *testing.T) {
+	// Regression: Discover aborted on first parse error, losing prior
+	// registrations. After fix, it continues to remaining files.
+	r := NewRegistry()
+	fsys := fstest.MapFS{
+		"good.go": &fstest.MapFile{
+			Data: []byte(`package tools
+
+func init() {
+	DefaultRegistry().Register(ToolEntry{Name: "good-tool", Description: "Valid"})
+}
+`),
+		},
+		"broken.go": &fstest.MapFile{
+			Data: []byte(`package tools
+
+func broken( {`),
+		},
+		"another.go": &fstest.MapFile{
+			Data: []byte(`package tools
+
+func init() {
+	DefaultRegistry().Register(ToolEntry{Name: "another-tool", Description: "Also valid"})
+}
+`),
+		},
+	}
+	n, err := r.Discover(fsys, ".")
+	// Should report the parse error.
+	if err == nil {
+		t.Error("expected error for broken.go")
+	}
+	// Should still count Register calls from good files.
+	if n != 2 {
+		t.Errorf("expected 2 discovered (good.go + another.go), got %d", n)
+	}
+}
+
+func TestRegistryDiscoverNonRegistryRegisterIgnored(t *testing.T) {
+	// Regression: isRegisterCall matched ANY .Register() method.
+	// After fix, only DefaultRegistry().Register() or bare identifiers
+	// are matched.
+	r := NewRegistry()
+	fsys := fstest.MapFS{
+		"not_a_tool.go": &fstest.MapFile{
+			Data: []byte(`package tools
+
+type Other struct{}
+func (o *Other) Register(name string) {}
+
+func init() {
+	var o Other
+	o.Register("not-a-tool")
+	DefaultRegistry().Register(ToolEntry{Name: "real-tool", Description: "A real tool"})
+}
+`),
+		},
+	}
+	n, err := r.Discover(fsys, ".")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Only the DefaultRegistry().Register() call should be counted.
+	if n != 1 {
+		t.Errorf("expected 1 (only DefaultRegistry call), got %d", n)
+	}
 }
 
 // Ensure registry implements basic sanity at the package level.

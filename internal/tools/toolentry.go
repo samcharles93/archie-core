@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"maps"
 )
 
 // JSONSchema represents a JSON Schema document describing a tool's input
@@ -120,8 +119,10 @@ func (e ToolEntry) ResolvedSchema() JSONSchema {
 	return e.DynamicSchemaOverrides(e.Schema)
 }
 
-// Clone returns a shallow copy of the entry. Handler, CheckFn, and
-// DynamicSchemaOverrides are shared (not deep-copied).
+// Clone returns a deep copy of the entry. Handler, CheckFn, and
+// DynamicSchemaOverrides are shared (not deep-copied). Schema is
+// recursively deep-copied so that nested maps and slices are
+// independent from the original.
 func (e ToolEntry) Clone() ToolEntry {
 	clone := e
 	if e.RequiresEnv != nil {
@@ -129,10 +130,53 @@ func (e ToolEntry) Clone() ToolEntry {
 		copy(clone.RequiresEnv, e.RequiresEnv)
 	}
 	if e.Schema != nil {
-		clone.Schema = make(JSONSchema, len(e.Schema))
-		maps.Copy(clone.Schema, e.Schema)
+		clone.Schema = deepCopySchema(e.Schema)
 	}
 	return clone
+}
+
+// deepCopySchema recursively copies a JSONSchema value, ensuring nested
+// maps and slices are independent from the source.
+func deepCopySchema(s JSONSchema) JSONSchema {
+	out := make(JSONSchema, len(s))
+	for k, v := range s {
+		out[k] = deepCopyAny(v)
+	}
+	return out
+}
+
+// deepCopyAny copies a value that may be a nested map, slice, or scalar.
+func deepCopyAny(v any) any {
+	switch val := v.(type) {
+	case JSONSchema:
+		return deepCopySchema(val)
+	case map[string]any:
+		out := make(map[string]any, len(val))
+		for mk, mv := range val {
+			out[mk] = deepCopyAny(mv)
+		}
+		return out
+	case []any:
+		out := make([]any, len(val))
+		for i, item := range val {
+			out[i] = deepCopyAny(item)
+		}
+		return out
+	case []string:
+		out := make([]string, len(val))
+		copy(out, val)
+		return out
+	case []float64:
+		out := make([]float64, len(val))
+		copy(out, val)
+		return out
+	case []bool:
+		out := make([]bool, len(val))
+		copy(out, val)
+		return out
+	default:
+		return v
+	}
 }
 
 // MarshalJSON implements json.Marshaler, stripping runtime-only fields so
