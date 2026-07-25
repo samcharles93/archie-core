@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	_ "modernc.org/sqlite"
 )
@@ -320,5 +321,14 @@ func clip(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n]
+	// Walk forward by runes; stop when the next rune would exceed n bytes.
+	pos := 0
+	for pos < len(s) {
+		_, size := utf8.DecodeRuneInString(s[pos:])
+		if pos+size > n {
+			break
+		}
+		pos += size
+	}
+	return s[:pos]
 }
