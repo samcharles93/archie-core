@@ -1,5 +1,6 @@
-// Package config loads archied's TOML configuration. The forge API token is
-// deliberately not part of the file: it comes from a configurable env var.
+// Package config loads archied's TOML and YAML configuration. The forge API
+// token is deliberately not part of the file: it comes from a configurable env
+// var.
 package config
 
 import (
@@ -46,48 +47,48 @@ func (d Duration) Std() time.Duration { return time.Duration(d) }
 
 // Repo is one managed repository.
 type Repo struct {
-	Owner string `toml:"owner" json:"owner"`
-	Name  string `toml:"name" json:"name"`
+	Owner string `toml:"owner" json:"owner" yaml:"owner"`
+	Name  string `toml:"name" json:"name" yaml:"name"`
 	// Base is the branch PRs target. Defaults to "main".
-	Base string `toml:"base" json:"base"`
+	Base string `toml:"base" json:"base" yaml:"base"`
 	// Gate is the quality-gate command list for this repo, e.g.
 	// [["go","vet","./..."], ["task","check"]]. By convention the
 	// LAST command is the test runner — TDD workflows invert only
 	// that one with ExpectFailure during the repro stage and re-run
 	// it in capture-proof. Workflow stages may extend or override
 	// Gate (a TDD repro stage inverts the test command).
-	Gate [][]string `toml:"gate" json:"gate"`
+	Gate [][]string `toml:"gate" json:"gate" yaml:"gate"`
 	// Protect lists path suffixes agents must never write directly —
 	// generated files (e.g. "_templ.go") whose sources they should edit
 	// instead. Enforced environmentally via agentloop.ProtectPaths.
-	Protect []string `toml:"protect" json:"protect"`
+	Protect []string `toml:"protect" json:"protect" yaml:"protect"`
 
 	// Ecosystem selects a default preflight check and test-file glob
 	// ("go", "python", "node", "rust", or "custom"). Empty defaults
 	// to "go" for backward compatibility.
-	Ecosystem string `toml:"ecosystem" json:"ecosystem"`
+	Ecosystem string `toml:"ecosystem" json:"ecosystem" yaml:"ecosystem"`
 	// Preflight is an explicit override for the ecosystem's default
 	// preflight commands. Empty inherits the ecosystem default.
-	Preflight [][]string `toml:"preflight" json:"preflight"`
+	Preflight [][]string `toml:"preflight" json:"preflight" yaml:"preflight"`
 	// TestGlob is an explicit override for the ecosystem's default
 	// test-file pattern (e.g. "*_test.go"). Empty inherits the
 	// ecosystem default.
-	TestGlob string `toml:"test_glob" json:"test_glob"`
+	TestGlob string `toml:"test_glob" json:"test_glob" yaml:"test_glob"`
 	// PersistentStorage creates a named Docker volume for this repo
 	// (archie-repo-<owner>-<repo>) mounted at /data/repo. The volume
 	// survives task completion and retains data across tasks. Use for
 	// repos with expensive build artifacts or large dependency trees.
-	PersistentStorage bool `toml:"persistent_storage" json:"persistent_storage"`
+	PersistentStorage bool `toml:"persistent_storage" json:"persistent_storage" yaml:"persistent_storage"`
 	// MaxRetries caps how many times a parked task is retried before
 	// being permanently parked (status "dead"). 0 means use the
 	// global Config.MaxRetries.
-	MaxRetries int `toml:"max_retries" json:"max_retries"`
+	MaxRetries int `toml:"max_retries" json:"max_retries" yaml:"max_retries"`
 	// AllowConcurrent lets the daemon dispatch multiple tasks for this
 	// repo at once instead of the default FIFO one-task-per-repo
 	// serialization. Only safe for repos where concurrent worktrees
 	// won't collide (e.g. different base branches or packages per
 	// task). Still bounded by [containers].max_concurrency globally.
-	AllowConcurrent bool `toml:"allow_concurrent" json:"allow_concurrent"`
+	AllowConcurrent bool `toml:"allow_concurrent" json:"allow_concurrent" yaml:"allow_concurrent"`
 }
 
 // Protected reports whether path matches a protected suffix.
@@ -155,35 +156,35 @@ func (r Repo) EffectiveMaxRetries(global int) int {
 
 // Budgets bound every agent stage. Zero disables a limit.
 type Budgets struct {
-	MaxSteps        int      `toml:"max_steps" json:"max_steps"`
-	MaxTokens       int      `toml:"max_tokens" json:"max_tokens"`
-	WallClock       Duration `toml:"wall_clock" json:"wall_clock"`
-	GateMaxFailures int      `toml:"gate_max_failures" json:"gate_max_failures"`
+	MaxSteps        int      `toml:"max_steps" json:"max_steps" yaml:"max_steps"`
+	MaxTokens       int      `toml:"max_tokens" json:"max_tokens" yaml:"max_tokens"`
+	WallClock       Duration `toml:"wall_clock" json:"wall_clock" yaml:"wall_clock"`
+	GateMaxFailures int      `toml:"gate_max_failures" json:"gate_max_failures" yaml:"gate_max_failures"`
 }
 
 // Provider configures one LLM provider for the runtime catalog.
 type Provider struct {
-	Class     string `toml:"class"`
-	APIKeyEnv string `toml:"api_key_env"`
-	BaseURL   string `toml:"base_url"`
+	Class     string `toml:"class" yaml:"class" json:"class"`
+	APIKeyEnv string `toml:"api_key_env" yaml:"api_key_env" json:"api_key_env"`
+	BaseURL   string `toml:"base_url" yaml:"base_url" json:"base_url"`
 }
 
 // Agent configures how archied executes autonomous stages.
 type Agent struct {
 	// Mode is "inprocess" during migration or "subprocess" to invoke the
 	// standalone archie-agent worker for every autonomous stage.
-	Mode string `toml:"mode"`
+	Mode string `toml:"mode" yaml:"mode"`
 	// Command is the archie-agent executable path used in subprocess mode.
-	Command string `toml:"command"`
+	Command string `toml:"command" yaml:"command"`
 	// Env adds environment variable names to the worker allowlist.
-	Env []string `toml:"env"`
+	Env []string `toml:"env" yaml:"env"`
 }
 
 // Forge configures the code forge integration.
 type Forge struct {
-	Type     string `toml:"type"`
-	Host     string `toml:"host"`
-	TokenEnv string `toml:"token_env"`
+	Type     string `toml:"type" yaml:"type"`
+	Host     string `toml:"host" yaml:"host"`
+	TokenEnv string `toml:"token_env" yaml:"token_env"`
 }
 
 // Dispatch configures how archied discovers work and reflects task state
@@ -191,16 +192,16 @@ type Forge struct {
 type Dispatch struct {
 	// Trigger is how tasks are discovered: "assignee" (poll assigned
 	// issues), "label" (poll labelled issues), or "either" (both).
-	Trigger string `toml:"trigger" json:"trigger"`
+	Trigger string `toml:"trigger" json:"trigger" yaml:"trigger"`
 	// AckReaction is the emoji reaction posted on issue pickup. Set
 	// ack_reaction = "off" in TOML to disable it; Load normalizes that
 	// sentinel to an empty string for callers.
-	AckReaction string `toml:"ack_reaction" json:"ack_reaction"`
+	AckReaction string `toml:"ack_reaction" json:"ack_reaction" yaml:"ack_reaction"`
 	// Labels maps state names ("queued", "working", "waiting", "pr",
 	// "parked") to their forge label strings. Each key is defaulted
 	// independently; missing keys fall back to the legacy archie:*
 	// constants at call time via StateLabel().
-	Labels map[string]string `toml:"labels" json:"labels"`
+	Labels map[string]string `toml:"labels" json:"labels" yaml:"labels"`
 }
 
 // dispatchLabelDefaults is the fallback label set used when the user
@@ -242,58 +243,98 @@ func (d Dispatch) LabelValues() []string {
 	return out
 }
 
+// MemoryConfig holds memory provider configuration.
+type MemoryConfig struct {
+	Provider       string            `yaml:"provider" json:"provider"`
+	ProviderConfig map[string]string `yaml:"provider_config" json:"provider_config"`
+	SessionTTL     Duration          `yaml:"session_ttl" json:"session_ttl"`
+}
+
+// MCPServer describes one MCP server connection.
+type MCPServer struct {
+	Name      string   `yaml:"name" json:"name"`
+	Transport string   `yaml:"transport" json:"transport"`
+	Command   string   `yaml:"command" json:"command,omitempty"`
+	Args      []string `yaml:"args" json:"args,omitempty"`
+	URL       string   `yaml:"url" json:"url,omitempty"`
+}
+
+// ToolPolicy holds tool execution limits.
+type ToolPolicy struct {
+	MaxResultChars    int  `yaml:"max_result_chars" json:"max_result_chars"`
+	ParallelExecution bool `yaml:"parallel_execution" json:"parallel_execution"`
+}
+
+// ToolsConfig holds MCP server and tool policy configuration.
+type ToolsConfig struct {
+	MCPServers []MCPServer `yaml:"mcp_servers" json:"mcp_servers"`
+	Policy     ToolPolicy  `yaml:"tool_policy" json:"tool_policy"`
+}
+
 // Config is the daemon configuration.
 type Config struct {
-	WorkDir string `toml:"work_dir"`
+	WorkDir string `toml:"work_dir" yaml:"work_dir"`
 	// SkillsDir is an optional path to a shared skills directory
 	// containing .agents/skills/*/SKILL.md files. When set, the
 	// daemon builds its workflow registry from the skill catalog
 	// (plugin-defined workflows override built-ins). When empty,
 	// only built-in workflows are available.
-	SkillsDir string `toml:"skills_dir"`
+	SkillsDir string `toml:"skills_dir" yaml:"skills_dir"`
 	// MaxRetries caps how many times a parked task is retried before
 	// being permanently parked (status "dead"). Defaults to 3.
-	MaxRetries int `toml:"max_retries"`
+	MaxRetries int `toml:"max_retries" yaml:"max_retries"`
 	// PluginDir is an optional path to a directory of Yaegi-interpreted
 	// daemon plugins (*.go files). Each file must export a "Plugin"
 	// variable satisfying the plugin.Plugin interface. Failed plugins
 	// are skipped — the daemon starts with the remaining set. When
 	// empty, no daemon plugins are loaded.
-	PluginDir    string   `toml:"plugin_dir"`
-	DBPath       string   `toml:"db_path"`
-	PollInterval Duration `toml:"poll_interval"`
+	PluginDir    string   `toml:"plugin_dir" yaml:"plugin_dir"`
+	DBPath       string   `toml:"db_path" yaml:"db_path"`
+	PollInterval Duration `toml:"poll_interval" yaml:"poll_interval"`
 	// Label marks issues archie should pick up.
-	Label   string `toml:"label"`
-	BotUser string `toml:"bot_user"`
+	Label   string `toml:"label" yaml:"label"`
+	BotUser string `toml:"bot_user" yaml:"bot_user"`
 	// BotEmail is the git author email; defaults to the GitHub noreply
 	// address for BotUser.
-	BotEmail     string `toml:"bot_email"`
-	DiffCapLines int    `toml:"diff_cap_lines"`
+	BotEmail     string `toml:"bot_email" yaml:"bot_email"`
+	DiffCapLines int    `toml:"diff_cap_lines" yaml:"diff_cap_lines"`
 
-	Forge    Forge    `toml:"forge"`
-	Dispatch Dispatch `toml:"dispatch"`
+	Forge    Forge    `toml:"forge" yaml:"forge"`
+	Dispatch Dispatch `toml:"dispatch" yaml:"dispatch"`
 
 	// Models maps a role ("planner", "builder", "triage") to a runtime
 	// model ref ("provider/model").
-	Models map[string]string `toml:"models"`
+	Models map[string]string `toml:"models" yaml:"models"`
 
-	Providers map[string]Provider `toml:"providers"`
-	Agent     Agent               `toml:"agent"`
+	Providers map[string]Provider `toml:"providers" yaml:"providers"`
+	Agent     Agent               `toml:"agent" yaml:"agent"`
 
-	Budgets    Budgets         `toml:"budgets"`
-	Web        Web             `toml:"web"`
-	Notify     Notify          `toml:"notify"`
-	NATS       NATSConfig      `toml:"nats"`
-	Containers ContainerConfig `toml:"containers"`
-	Chat       ChatConfig      `toml:"chat"`
+	Budgets    Budgets         `toml:"budgets" yaml:"budgets"`
+	Web        Web             `toml:"web" yaml:"web"`
+	Notify     Notify          `toml:"notify" yaml:"notify"`
+	NATS       NATSConfig      `toml:"nats" yaml:"nats"`
+	Containers ContainerConfig `toml:"containers" yaml:"containers"`
+	Chat       ChatConfig      `toml:"chat" yaml:"chat"`
+
+	// Memory holds memory provider configuration (from config.memory.yaml).
+	Memory MemoryConfig `toml:"memory" yaml:"memory"`
+
+	// Tools holds MCP server and tool policy configuration (from config.tools.yaml).
+	Tools ToolsConfig `toml:"tools" yaml:"tools"`
+
 	// Identities declares multi-identity configurations. When non-empty,
 	// each identity runs its own poll loop with its own forge client,
 	// worktree manager, repo list, model/provider config, and NATS subject
 	// namespace. When empty, the legacy single-identity fields (BotUser,
 	// Forge, Repos, Models, Providers, Dispatch, PollInterval) are used
 	// unchanged for backward compatibility.
-	Identities []IdentityConfig `toml:"identities"`
-	Repos      []Repo           `toml:"repos"`
+	Identities []IdentityConfig `toml:"identities" yaml:"identities"`
+	Repos      []Repo           `toml:"repos" yaml:"repos"`
+
+	// Extra holds additional feature configuration from conf.d/ files that
+	// don't match a known feature name. Keys are the filename stem (e.g.
+	// "custom-tool" for conf.d/custom-tool.yaml).
+	Extra map[string]any `toml:"-" yaml:"-" json:"extra,omitempty"`
 }
 
 // IdentityConfig is a per-identity configuration subset. Each identity
@@ -303,24 +344,24 @@ type IdentityConfig struct {
 	// Name identifies this identity in logs, events, and NATS subject
 	// namespaces (archie.<name>.task.<type>). Required when Identities
 	// is non-empty.
-	Name string `toml:"name"`
+	Name string `toml:"name" yaml:"name"`
 	// BotUser is the forge username for this identity's git commits and
 	// API calls. Required.
-	BotUser string `toml:"bot_user"`
+	BotUser string `toml:"bot_user" yaml:"bot_user"`
 	// BotEmail is the git author email. Falls back to a forge-appropriate
 	// default from BotUser when empty.
-	BotEmail     string `toml:"bot_email"`
-	DiffCapLines int    `toml:"diff_cap_lines"`
+	BotEmail     string `toml:"bot_email" yaml:"bot_email"`
+	DiffCapLines int    `toml:"diff_cap_lines" yaml:"diff_cap_lines"`
 	// PollInterval overrides the shared PollInterval. When 0, the shared
 	// interval is used.
-	PollInterval Duration `toml:"poll_interval"`
-	Forge        Forge    `toml:"forge"`
-	Dispatch     Dispatch `toml:"dispatch"`
-	Models       map[string]string `toml:"models"`
-	Providers    map[string]Provider `toml:"providers"`
-	Budgets      Budgets           `toml:"budgets"`
-	Notify       Notify            `toml:"notify"`
-	Repos        []Repo            `toml:"repos"`
+	PollInterval Duration            `toml:"poll_interval" yaml:"poll_interval"`
+	Forge        Forge               `toml:"forge" yaml:"forge"`
+	Dispatch     Dispatch            `toml:"dispatch" yaml:"dispatch"`
+	Models       map[string]string   `toml:"models" yaml:"models"`
+	Providers    map[string]Provider `toml:"providers" yaml:"providers"`
+	Budgets      Budgets             `toml:"budgets" yaml:"budgets"`
+	Notify       Notify              `toml:"notify" yaml:"notify"`
+	Repos        []Repo              `toml:"repos" yaml:"repos"`
 }
 
 // TaskConfig is the non-secret subset of Config needed to run workflow
@@ -381,57 +422,57 @@ func cloneStringMap(src map[string]string) map[string]string {
 type NATSConfig struct {
 	// URL is the NATS server address, e.g. "nats://localhost:4222".
 	// Empty means NATS is not configured.
-	URL string `toml:"url"`
+	URL string `toml:"url" yaml:"url"`
 	// TokenEnv optionally names an env var holding a NATS auth token.
 	// Empty means no authentication.
-	TokenEnv string `toml:"token_env"`
+	TokenEnv string `toml:"token_env" yaml:"token_env"`
 }
 
 // ContainerConfig configures Docker sandbox execution of archie-agent.
 type ContainerConfig struct {
 	// Enabled activates container execution. Requires agent.mode = "nats".
-	Enabled bool `toml:"enabled"`
+	Enabled bool `toml:"enabled" yaml:"enabled"`
 	// Image is the Docker image to run (e.g. "ghcr.io/sam/archie-agent:latest").
-	Image string `toml:"image"`
+	Image string `toml:"image" yaml:"image"`
 	// MaxConcurrency limits simultaneous daemon tasks and containers.
 	// Tasks from the same repository remain serialized. 0 = no limit.
-	MaxConcurrency int `toml:"max_concurrency"`
+	MaxConcurrency int `toml:"max_concurrency" yaml:"max_concurrency"`
 	// MaxUptime caps a container's lifetime before recycling.
-	MaxUptime Duration `toml:"max_uptime"`
+	MaxUptime Duration `toml:"max_uptime" yaml:"max_uptime"`
 	// VolumeTTL is the maximum age of persistent per-repo storage before
 	// automatic cleanup. It also bounds the host-side Git object cache used
 	// to seed isolated task worktrees.
-	VolumeTTL Duration `toml:"volume_ttl"`
+	VolumeTTL Duration `toml:"volume_ttl" yaml:"volume_ttl"`
 	// PullPolicy controls image pulling: "missing" (default) or "always".
-	PullPolicy string `toml:"pull_policy"`
+	PullPolicy string `toml:"pull_policy" yaml:"pull_policy"`
 }
 
 // ChatConfig configures conversational front-ends (multi-agent
 // collaboration PRD, phase C — docs/prds/multi-agent-collaboration.md).
 // Empty (Telegram.TokenEnv == "") disables chat entirely.
 type ChatConfig struct {
-	Telegram TelegramConfig `toml:"telegram"`
+	Telegram TelegramConfig `toml:"telegram" yaml:"telegram"`
 }
 
 // TelegramConfig configures the Telegram Bot API channel.
 type TelegramConfig struct {
 	// TokenEnv names the env var holding the bot token from @BotFather.
 	// Empty disables the Telegram channel.
-	TokenEnv string `toml:"token_env"`
+	TokenEnv string `toml:"token_env" yaml:"token_env"`
 }
 
 // Notify configures outbound notifications (n8n webhook → email etc.).
 type Notify struct {
 	// Webhook receives JSON POSTs for events that need a human (e.g.
 	// feasibility PRDs awaiting go/no-go). Empty disables.
-	Webhook string `toml:"webhook" json:"webhook"`
+	Webhook string `toml:"webhook" json:"webhook" yaml:"webhook"`
 }
 
 // Web configures the observability dashboard.
 type Web struct {
 	// Listen is the dashboard address; "off" disables the web UI.
 	// Bind localhost (or a LAN/tailnet address) — there is no auth.
-	Listen string `toml:"listen"`
+	Listen string `toml:"listen" yaml:"listen"`
 }
 
 // Load reads, parses, and defaults the configuration.
@@ -492,7 +533,11 @@ func finalize(cfg Config) (Config, error) {
 		cfg.Forge.TokenEnv = "ARCHIE_GITHUB_TOKEN"
 	}
 	if cfg.Agent.Mode == "" {
-		cfg.Agent.Mode = "inprocess"
+		if cfg.Containers.Enabled {
+			cfg.Agent.Mode = "nats"
+		} else {
+			cfg.Agent.Mode = "inprocess"
+		}
 	}
 	if cfg.Agent.Command == "" {
 		cfg.Agent.Command = "archie-agent"
@@ -588,9 +633,9 @@ func finalize(cfg Config) (Config, error) {
 				cfg.BotEmail = cfg.BotUser + "@gitea.local"
 			}
 		}
-		if len(cfg.Repos) == 0 {
-			return cfg, errors.New("config: at least one [[repos]] entry is required (or define [[identities]])")
-		}
+		// Repos are optional in the new feature-based config path (they can
+		// come from config.identities.yaml). Legacy TOML callers should still
+		// include [[repos]], but LoadDir callers may omit them.
 		switch cfg.Forge.Type {
 		case "github", "gitea":
 		default:
