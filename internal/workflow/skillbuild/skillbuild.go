@@ -84,6 +84,8 @@ func mergeSkillWorkflows(worktree string, reg workflow.Registry) error {
 		return fmt.Errorf("skill catalog: %w", err)
 	}
 
+	seenFromSkill := make(map[string]string) // workflow -> skill dir
+
 	for _, entry := range catalog {
 		if entry.Workflow == "" {
 			continue
@@ -99,12 +101,16 @@ func mergeSkillWorkflows(worktree string, reg workflow.Registry) error {
 			continue
 		}
 		if len(wf.Stages) > 0 {
-			if _, dup := reg[entry.Workflow]; dup {
-				slog.Default().Warn("duplicate workflow name — overriding",
+			// Only warn when TWO SKILLS declare the same workflow name.
+			// Overriding a built-in name is routine — don't log.
+			if prevSkill, dup := seenFromSkill[entry.Workflow]; dup {
+				slog.Default().Warn("duplicate workflow name across skills — overriding",
 					"workflow", entry.Workflow,
 					"skill", entry.Dir,
+					"previous_skill", prevSkill,
 				)
 			}
+			seenFromSkill[entry.Workflow] = entry.Dir
 			reg[entry.Workflow] = wf
 		}
 	}
