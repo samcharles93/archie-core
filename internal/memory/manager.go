@@ -1,8 +1,10 @@
 package memory
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"strings"
 	"sync"
 
@@ -94,16 +96,29 @@ func (m *Manager) External() MemoryProvider {
 
 // GetToolSchemas returns the merged set of tool definitions from all active
 // and available providers. Providers that are nil or report IsAvailable()
-// == false are skipped. The returned slice is a new allocation; callers may
-// mutate it freely.
+// == false are skipped.
+//
+// For tools whose owning provider implements ToolCallProvider, a synthetic
+// Handler is injected that delegates to HandleToolCall. This ensures every
+// returned ToolEntry passes tools.ToolEntry.Validate().
 func (m *Manager) GetToolSchemas() []tools.ToolEntry {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	var out []tools.ToolEntry
 	for _, p := range m.activeProvidersLocked() {
-		schemas := p.GetToolSchemas()
-		out = append(out, schemas...)
+		for _, t := range p.GetToolSchemas() {
+			if t.Handler == nil {
+				if tcp, ok := p.(ToolCallProvider); ok {
+					t = t.Clone()           // don't mutate the provider's original
+					toolName := t.Name      // capture for the closure
+					t.Handler = func(ctx context.Context, input map[string]any) (any, error) {
+						return tcp.HandleToolCall(toolName, input)
+					}
+				}
+			}
+			out = append(out, t)
+		}
 	}
 	if out == nil {
 		out = []tools.ToolEntry{}
@@ -117,6 +132,10 @@ func (m *Manager) GetToolSchemas() []tools.ToolEntry {
 // named tool. It returns ErrToolNotFound when no active provider owns the
 // tool, and an error when the owning provider does not implement
 // ToolCallProvider.
+//
+// Note: the preferred entry point for tool execution is through the Handler
+// injected by GetToolSchemas(). HandleToolCall is exposed for callers that
+// need direct access (e.g., MCP server bridging).
 func (m *Manager) HandleToolCall(name string, args map[string]any) (any, error) {
 	m.mu.RLock()
 	p, ok := m.toolIndex[name]
@@ -137,9 +156,9 @@ func (m *Manager) HandleToolCall(name string, args map[string]any) (any, error) 
 // ── Initialization ─────────────────────────────────────────────────────
 
 // Initialize calls Initialize on every active provider with the given
-// session ID. Errors from individual providers are logged but do not
-// prevent other providers from initializing. The first error encountered
-// is returned after all providers have been tried.
+// session ID. Errors from individual providers do not prevent other
+// providers from initializing. The first error encountered is returned
+// after all providers have been tried.
 func (m *Manager) Initialize(sessionID string) error {
 	m.mu.RLock()
 	providers := m.activeProvidersLocked()
@@ -158,8 +177,24 @@ func (m *Manager) Initialize(sessionID string) error {
 //
 // Each hook fans out to all active providers that implement the
 // corresponding sub-interface. Hooks are fire-and-forget: they launch a
-// goroutine per provider and return immediately. Hook errors are
-// intentionally swallowed — they must not interrupt the agent loop.
+// goroutine per provider and return immediately. Hook errors and panics
+// are recovered — they must not interrupt the agent loop.
+
+// safeGo runs fn in a goroutine, recovering any panic to prevent a
+// misbehaving provider from crashing the process.
+func safeGo(fn func()) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				// A provider panicked — this must not take down the agent.
+				// The panic is intentionally swallowed after logging.
+				_ = r
+				_ = debug.Stack()
+			}
+		}()
+		fn()
+	}()
+}
 
 func (m *Manager) OnTurnStart(sessionID string) {
 	m.mu.RLock()
@@ -168,7 +203,7 @@ func (m *Manager) OnTurnStart(sessionID string) {
 
 	for _, p := range providers {
 		if h, ok := p.(TurnStartHook); ok {
-			go h.OnTurnStart(sessionID)
+			safeGo(func() { h.OnTurnStart(sessionID) })
 		}
 	}
 }
@@ -180,7 +215,7 @@ func (m *Manager) OnSessionEnd(sessionID string) {
 
 	for _, p := range providers {
 		if h, ok := p.(SessionEndHook); ok {
-			go h.OnSessionEnd(sessionID)
+			safeGo(func() { h.OnSessionEnd(sessionID) })
 		}
 	}
 }
@@ -192,7 +227,7 @@ func (m *Manager) OnSessionSwitch(oldSessionID, newSessionID string) {
 
 	for _, p := range providers {
 		if h, ok := p.(SessionSwitchHook); ok {
-			go h.OnSessionSwitch(oldSessionID, newSessionID)
+			safeGo(func() { h.OnSessionSwitch(oldSessionID, newSessionID) })
 		}
 	}
 }
@@ -204,19 +239,19 @@ func (m *Manager) OnPreCompress(sessionID string) {
 
 	for _, p := range providers {
 		if h, ok := p.(PreCompressHook); ok {
-			go h.OnPreCompress(sessionID)
+			safeGo(func() { h.OnPreCompress(sessionID) })
 		}
 	}
 }
 
-func (m *Manager) OnMemoryWrite(content string) {
+func (m *Manager) OnMemoryWrite(sessionID string, content string) {
 	m.mu.RLock()
 	providers := m.activeProvidersLocked()
 	m.mu.RUnlock()
 
 	for _, p := range providers {
 		if h, ok := p.(MemoryWriteHook); ok {
-			go h.OnMemoryWrite(content)
+			safeGo(func() { h.OnMemoryWrite(sessionID, content) })
 		}
 	}
 }
@@ -228,7 +263,7 @@ func (m *Manager) OnDelegation(sessionID string) {
 
 	for _, p := range providers {
 		if h, ok := p.(DelegationHook); ok {
-			go h.OnDelegation(sessionID)
+			safeGo(func() { h.OnDelegation(sessionID) })
 		}
 	}
 }
@@ -346,12 +381,15 @@ func (m *Manager) HasShutdown() bool {
 	return false
 }
 
-// Shutdown gracefully shuts down all active providers that implement
-// ShutdownProvider. Errors from individual providers are collected; the
-// first error is returned after all providers have been shut down.
+// Shutdown gracefully shuts down all registered providers (whether available
+// or not) that implement ShutdownProvider. A provider that reports
+// IsAvailable() == false may still hold open resources (file handles,
+// connections, goroutines) and must be given the opportunity to release them.
+// Errors from individual providers are collected; the first error is returned
+// after all providers have been shut down.
 func (m *Manager) Shutdown() error {
 	m.mu.RLock()
-	providers := m.activeProvidersLocked()
+	providers := m.allProvidersLocked()
 	m.mu.RUnlock()
 
 	var firstErr error
@@ -383,9 +421,11 @@ func (m *Manager) GetConfigSchemas() map[string]map[string]any {
 	return out
 }
 
-// SaveConfig persists configuration for the named provider. It returns
-// ErrProviderNotFound when the named provider is not active, and an error
-// when the provider does not implement SaveConfigProvider.
+// SaveConfig validates the given values against the provider's config
+// schema (if the provider implements ConfigSchemaProvider) and then
+// persists them via SaveConfigProvider. It returns ErrProviderNotFound
+// when the named provider is not active, and an error when the provider
+// does not implement SaveConfigProvider or when validation fails.
 func (m *Manager) SaveConfig(providerName string, values map[string]any, hermesHome string) error {
 	m.mu.RLock()
 	p := m.providerByNameLocked(providerName)
@@ -443,8 +483,25 @@ func (m *Manager) activeProvidersLocked() []MemoryProvider {
 	return out
 }
 
+// allProvidersLocked returns all non-nil providers regardless of
+// availability. Use for shutdown so unavailable providers still get
+// a chance to release resources.
+// Caller must hold m.mu (read or write lock).
+func (m *Manager) allProvidersLocked() []MemoryProvider {
+	var out []MemoryProvider
+	if m.builtin != nil {
+		out = append(out, m.builtin)
+	}
+	if m.external != nil {
+		out = append(out, m.external)
+	}
+	if out == nil {
+		out = []MemoryProvider{}
+	}
+	return out
+}
+
 // rebuildToolIndex rebuilds the tool name → provider mapping.
-// Caller must hold m.mu (write lock preferred, or use write).
 func (m *Manager) rebuildToolIndex() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -452,11 +509,16 @@ func (m *Manager) rebuildToolIndex() {
 }
 
 // rebuildToolIndexLocked rebuilds the tool index. Caller must hold m.mu.
+// Duplicate tool names across providers are detected and handled
+// deterministically: the first provider to claim a name wins; subsequent
+// duplicates are skipped (the duplicate tool is not discoverable).
 func (m *Manager) rebuildToolIndexLocked() {
 	m.toolIndex = make(map[string]MemoryProvider)
 	for _, p := range m.activeProvidersLocked() {
 		for _, t := range p.GetToolSchemas() {
-			m.toolIndex[t.Name] = p
+			if _, exists := m.toolIndex[t.Name]; !exists {
+				m.toolIndex[t.Name] = p
+			}
 		}
 	}
 }

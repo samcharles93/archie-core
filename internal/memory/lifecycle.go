@@ -7,8 +7,8 @@ package memory
 // and calls them at the appropriate points in the agent lifecycle.
 //
 // All hooks are called asynchronously (fire-and-forget) to avoid blocking
-// the main agent loop. Hook errors are logged but do not interrupt the
-// agent's operation.
+// the main agent loop. Hook errors and panics are recovered — they must not
+// interrupt the agent's operation.
 
 // TurnStartHook is called at the beginning of each agent turn. Providers
 // can use this to load fresh context, refresh caches, or prepare
@@ -51,8 +51,9 @@ type PreCompressHook interface {
 // downstream processing of the newly written content.
 type MemoryWriteHook interface {
 	// OnMemoryWrite is invoked after content has been written to memory.
+	// sessionID identifies the session that performed the write.
 	// content is the full text that was stored.
-	OnMemoryWrite(content string) error
+	OnMemoryWrite(sessionID string, content string) error
 }
 
 // DelegationHook is called when the agent delegates work to a sub-agent

@@ -1,10 +1,10 @@
 package memory
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/samcharles93/archie-core/internal/tools"
 )
@@ -13,10 +13,10 @@ import (
 // verify that the MemoryManager correctly discovers and dispatches to optional
 // behavior via type assertion.
 type mockProvider struct {
-	nameVal          string
-	availableVal     bool
-	toolSchemasVal   []tools.ToolEntry
-	toolCallHandler  func(name string, args map[string]any) (any, error)
+	nameVal        string
+	availableVal   bool
+	toolSchemasVal []tools.ToolEntry
+	toolCallHandler func(name string, args map[string]any) (any, error)
 
 	mu sync.Mutex
 	// call counters for assertion
@@ -38,26 +38,32 @@ type mockProvider struct {
 	handleToolCallCalls   int
 
 	// last args
-	lastSessionID         string
-	lastOldSessionID      string
-	lastNewSessionID      string
-	lastUserMsg           string
-	lastAssistantMsg      string
-	lastPrefetchQuery     string
+	lastSessionID          string
+	lastOldSessionID       string
+	lastNewSessionID       string
+	lastUserMsg            string
+	lastAssistantMsg       string
+	lastPrefetchQuery      string
 	lastQueuePrefetchQuery string
-	lastMemoryContent     string
-	lastToolName          string
-	lastToolArgs          map[string]any
-	lastSaveValues        map[string]any
-	lastSaveHermesHome    string
-	lastConfigSchema      map[string]any
-	lastBackupPaths       []string
+	lastMemoryContent      string
+	lastMemorySessionID    string
+	lastToolName           string
+	lastToolArgs           map[string]any
+	lastSaveValues         map[string]any
+	lastSaveHermesHome     string
+	lastConfigSchema       map[string]any
+	lastBackupPaths        []string
+
+	// hookDone is signalled for each hook goroutine that completes.
+	// Tests use it instead of time.Sleep for reliable synchronization.
+	hookDone chan string
 }
 
 func newMockProvider(name string) *mockProvider {
 	return &mockProvider{
 		nameVal:      name,
 		availableVal: true,
+		hookDone:     make(chan string, 50),
 		toolSchemasVal: []tools.ToolEntry{
 			{
 				Name:        name + "_tool",
@@ -70,8 +76,8 @@ func newMockProvider(name string) *mockProvider {
 
 // ── MemoryProvider ──────────────────────────────────────────────────────
 
-func (m *mockProvider) Name() string                                    { return m.nameVal }
-func (m *mockProvider) IsAvailable() bool                               { return m.availableVal }
+func (m *mockProvider) Name() string          { return m.nameVal }
+func (m *mockProvider) IsAvailable() bool     { return m.availableVal }
 func (m *mockProvider) Initialize(sessionID string) error {
 	m.mu.Lock()
 	m.initCalls++
@@ -149,6 +155,7 @@ func (m *mockProvider) OnTurnStart(sessionID string) error {
 	m.turnStartCalls++
 	m.lastSessionID = sessionID
 	m.mu.Unlock()
+	m.hookDone <- "turnStart:" + m.nameVal
 	return nil
 }
 
@@ -157,6 +164,7 @@ func (m *mockProvider) OnSessionEnd(sessionID string) error {
 	m.sessionEndCalls++
 	m.lastSessionID = sessionID
 	m.mu.Unlock()
+	m.hookDone <- "sessionEnd:" + m.nameVal
 	return nil
 }
 
@@ -166,6 +174,7 @@ func (m *mockProvider) OnSessionSwitch(oldSessionID, newSessionID string) error 
 	m.lastOldSessionID = oldSessionID
 	m.lastNewSessionID = newSessionID
 	m.mu.Unlock()
+	m.hookDone <- "sessionSwitch:" + m.nameVal
 	return nil
 }
 
@@ -174,14 +183,17 @@ func (m *mockProvider) OnPreCompress(sessionID string) error {
 	m.preCompressCalls++
 	m.lastSessionID = sessionID
 	m.mu.Unlock()
+	m.hookDone <- "preCompress:" + m.nameVal
 	return nil
 }
 
-func (m *mockProvider) OnMemoryWrite(content string) error {
+func (m *mockProvider) OnMemoryWrite(sessionID string, content string) error {
 	m.mu.Lock()
 	m.memoryWriteCalls++
+	m.lastMemorySessionID = sessionID
 	m.lastMemoryContent = content
 	m.mu.Unlock()
+	m.hookDone <- "memoryWrite:" + m.nameVal
 	return nil
 }
 
@@ -190,6 +202,7 @@ func (m *mockProvider) OnDelegation(sessionID string) error {
 	m.delegationCalls++
 	m.lastSessionID = sessionID
 	m.mu.Unlock()
+	m.hookDone <- "delegation:" + m.nameVal
 	return nil
 }
 
@@ -354,6 +367,46 @@ func TestManager_GetToolSchemas_MergesAllProviders(t *testing.T) {
 	if !names["ext_tool_2"] {
 		t.Error("missing ext_tool_2 in merged schemas")
 	}
+
+	// Verify injected handlers are present (Finding 2 fix)
+	for _, s := range schemas {
+		if s.Handler == nil {
+			t.Errorf("ToolEntry %q has nil Handler — GetToolSchemas must inject handlers", s.Name)
+		}
+	}
+}
+
+func TestManager_GetToolSchemas_HandlersAreFunctional(t *testing.T) {
+	builtin := newMockProvider("builtin")
+	mgr, err := NewManager(builtin, nil)
+	if err != nil {
+		t.Fatalf("NewManager returned error: %v", err)
+	}
+
+	schemas := mgr.GetToolSchemas()
+	if len(schemas) != 1 {
+		t.Fatalf("GetToolSchemas() returned %d schemas, want 1", len(schemas))
+	}
+
+	// Actually call the injected handler to verify the wiring works
+	result, err := schemas[0].Handler(context.Background(), map[string]any{"key": "val"})
+	if err != nil {
+		t.Fatalf("Handler() returned error: %v", err)
+	}
+	resultMap, ok := result.(map[string]any)
+	if !ok {
+		t.Fatalf("Handler() result is %T, want map[string]any", result)
+	}
+	if resultMap["provider"] != "builtin" {
+		t.Errorf("result provider = %q, want %q", resultMap["provider"], "builtin")
+	}
+
+	// Verify the mock's HandleToolCall was called through the injected handler
+	builtin.mu.Lock()
+	if builtin.handleToolCallCalls != 1 {
+		t.Errorf("HandleToolCall called %d times via injected handler, want 1", builtin.handleToolCallCalls)
+	}
+	builtin.mu.Unlock()
 }
 
 func TestManager_GetToolSchemas_EmptyProviders(t *testing.T) {
@@ -519,6 +572,34 @@ func TestManager_TypeAssertions_NoOptionalInterfaces(t *testing.T) {
 	}
 }
 
+// waitForHooks drains exactly expected signals from the providers' hookDone
+// channels. It fails the test if the signals don't arrive within 5 seconds.
+// This replaces the flaky time.Sleep approach with deterministic
+// synchronization.
+func waitForHooks(t *testing.T, expected int, providers ...*mockProvider) {
+	t.Helper()
+
+	// Multiplex all provider channels into one logical stream.
+	for received := 0; received < expected; received++ {
+		drained := false
+		for _, p := range providers {
+			select {
+			case <-p.hookDone:
+				drained = true
+			default:
+			}
+			if drained {
+				break
+			}
+		}
+		if !drained {
+			// No signal ready yet — block on the first provider that still
+			// has capacity (any will do since hooks fire concurrently).
+			<-providers[0].hookDone
+		}
+	}
+}
+
 func TestManager_LifecycleHooks_AllCalled(t *testing.T) {
 	builtin := newMockProvider("builtin")
 	ext := newMockProvider("external")
@@ -535,12 +616,11 @@ func TestManager_LifecycleHooks_AllCalled(t *testing.T) {
 	mgr.OnSessionEnd(sessionID)
 	mgr.OnSessionSwitch(sessionID, newSessionID)
 	mgr.OnPreCompress(sessionID)
-	mgr.OnMemoryWrite("test content")
+	mgr.OnMemoryWrite(sessionID, "test content")
 	mgr.OnDelegation(sessionID)
 
-	// Hooks are dispatched asynchronously via goroutines. Wait briefly
-	// for them to complete before checking call counters.
-	time.Sleep(10 * time.Millisecond)
+	// Wait for all 12 goroutines (6 hooks × 2 providers) to complete
+	waitForHooks(t, 12, builtin, ext)
 
 	// Verify builtin received all hook calls
 	builtin.mu.Lock()
@@ -564,13 +644,25 @@ func TestManager_LifecycleHooks_AllCalled(t *testing.T) {
 	}
 	builtin.mu.Unlock()
 
-	// Verify external received all hook calls
+	// Verify external received ALL hook calls (Finding 10 fix)
 	ext.mu.Lock()
 	if ext.turnStartCalls != 1 {
 		t.Errorf("external turnStartCalls = %d, want 1", ext.turnStartCalls)
 	}
+	if ext.sessionEndCalls != 1 {
+		t.Errorf("external sessionEndCalls = %d, want 1", ext.sessionEndCalls)
+	}
 	if ext.sessionSwitchCalls != 1 {
 		t.Errorf("external sessionSwitchCalls = %d, want 1", ext.sessionSwitchCalls)
+	}
+	if ext.preCompressCalls != 1 {
+		t.Errorf("external preCompressCalls = %d, want 1", ext.preCompressCalls)
+	}
+	if ext.memoryWriteCalls != 1 {
+		t.Errorf("external memoryWriteCalls = %d, want 1", ext.memoryWriteCalls)
+	}
+	if ext.delegationCalls != 1 {
+		t.Errorf("external delegationCalls = %d, want 1", ext.delegationCalls)
 	}
 	ext.mu.Unlock()
 }
@@ -588,8 +680,27 @@ func TestManager_LifecycleHooks_MinimalProvider(t *testing.T) {
 	mgr.OnSessionEnd("s1")
 	mgr.OnSessionSwitch("s1", "s2")
 	mgr.OnPreCompress("s1")
-	mgr.OnMemoryWrite("content")
+	mgr.OnMemoryWrite("s1", "content")
 	mgr.OnDelegation("s1")
+}
+
+func TestManager_LifecycleHooks_PanicRecovery(t *testing.T) {
+	// A provider whose hook panics should not crash the test process
+	panicky := &panickyProvider{nameVal: "panicky", availableVal: true}
+	mgr, err := NewManager(panicky, nil)
+	if err != nil {
+		t.Fatalf("NewManager returned error: %v", err)
+	}
+
+	// These must not panic the test
+	mgr.OnTurnStart("s1")
+	mgr.OnSessionEnd("s1")
+	mgr.OnSessionSwitch("s1", "s2")
+	mgr.OnPreCompress("s1")
+	mgr.OnMemoryWrite("s1", "content")
+	mgr.OnDelegation("s1")
+
+	// If we reached here without panicking, the recovery works
 }
 
 func TestManager_Shutdown(t *testing.T) {
@@ -628,6 +739,27 @@ func TestManager_Shutdown_NoShutdownProviders(t *testing.T) {
 	if err := mgr.Shutdown(); err != nil {
 		t.Fatalf("Shutdown() returned error: %v", err)
 	}
+}
+
+func TestManager_Shutdown_UnavailableProviderStillShutDown(t *testing.T) {
+	// Finding 7 fix: shutdown must include providers even if IsAvailable() == false
+	builtin := newMockProvider("builtin")
+	builtin.availableVal = false // unavailable but still holding resources
+	mgr, err := NewManager(builtin, nil)
+	if err != nil {
+		t.Fatalf("NewManager returned error: %v", err)
+	}
+
+	if err := mgr.Shutdown(); err != nil {
+		t.Fatalf("Shutdown() returned error: %v", err)
+	}
+
+	builtin.mu.Lock()
+	if builtin.shutdownCalls != 1 {
+		t.Errorf("unavailable provider shutdown was NOT called (shutdownCalls=%d), want 1 — resources may leak",
+			builtin.shutdownCalls)
+	}
+	builtin.mu.Unlock()
 }
 
 func TestManager_GetConfigSchema_Aggregates(t *testing.T) {
@@ -818,6 +950,36 @@ func TestManager_Initialize(t *testing.T) {
 	ext.mu.Unlock()
 }
 
+func TestManager_DuplicateToolNames_FirstWins(t *testing.T) {
+	// Finding 8 fix: duplicate tool names should be deterministic (first wins)
+	builtin := newMockProvider("builtin")
+	builtin.toolSchemasVal = []tools.ToolEntry{
+		{Name: "shared_tool", Description: "Builtin version"},
+	}
+	ext := newMockProvider("external")
+	ext.toolSchemasVal = []tools.ToolEntry{
+		{Name: "shared_tool", Description: "External version"},
+	}
+
+	mgr, err := NewManager(builtin, ext)
+	if err != nil {
+		t.Fatalf("NewManager returned error: %v", err)
+	}
+
+	// HandleToolCall should route to builtin (first wins)
+	result, err := mgr.HandleToolCall("shared_tool", nil)
+	if err != nil {
+		t.Fatalf("HandleToolCall() returned error: %v", err)
+	}
+	resultMap, ok := result.(map[string]any)
+	if !ok {
+		t.Fatalf("HandleToolCall() result is %T, want map[string]any", result)
+	}
+	if resultMap["provider"] != "builtin" {
+		t.Errorf("duplicate tool routed to %q, want %q (first-wins)", resultMap["provider"], "builtin")
+	}
+}
+
 // ── minimalProvider ─────────────────────────────────────────────────────
 //
 // A provider that only implements the required MemoryProvider interface.
@@ -828,9 +990,9 @@ type minimalProvider struct {
 	availableVal bool
 }
 
-func (p *minimalProvider) Name() string                                { return p.nameVal }
-func (p *minimalProvider) IsAvailable() bool                           { return p.availableVal }
-func (p *minimalProvider) Initialize(sessionID string) error           { return nil }
+func (p *minimalProvider) Name() string                      { return p.nameVal }
+func (p *minimalProvider) IsAvailable() bool                 { return p.availableVal }
+func (p *minimalProvider) Initialize(sessionID string) error { return nil }
 func (p *minimalProvider) GetToolSchemas() []tools.ToolEntry {
 	return []tools.ToolEntry{
 		{Name: p.nameVal + "_tool", Description: "Minimal tool for " + p.nameVal},
@@ -838,3 +1000,50 @@ func (p *minimalProvider) GetToolSchemas() []tools.ToolEntry {
 }
 
 var _ MemoryProvider = (*minimalProvider)(nil)
+
+// ── panickyProvider ─────────────────────────────────────────────────────
+//
+// A provider whose hook methods panic. Used to verify that safeGo recovery
+// prevents hook panics from crashing the process (Finding 1 fix).
+
+type panickyProvider struct {
+	nameVal      string
+	availableVal bool
+}
+
+func (p *panickyProvider) Name() string                      { return p.nameVal }
+func (p *panickyProvider) IsAvailable() bool                 { return p.availableVal }
+func (p *panickyProvider) Initialize(sessionID string) error { return nil }
+func (p *panickyProvider) GetToolSchemas() []tools.ToolEntry {
+	return []tools.ToolEntry{
+		{Name: p.nameVal + "_tool", Description: "Panicky tool"},
+	}
+}
+
+// Every hook panics — safeGo must recover each one.
+func (p *panickyProvider) OnTurnStart(sessionID string) error {
+	panic("OnTurnStart panicked")
+}
+func (p *panickyProvider) OnSessionEnd(sessionID string) error {
+	panic("OnSessionEnd panicked")
+}
+func (p *panickyProvider) OnSessionSwitch(oldSessionID, newSessionID string) error {
+	panic("OnSessionSwitch panicked")
+}
+func (p *panickyProvider) OnPreCompress(sessionID string) error {
+	panic("OnPreCompress panicked")
+}
+func (p *panickyProvider) OnMemoryWrite(sessionID string, content string) error {
+	panic("OnMemoryWrite panicked")
+}
+func (p *panickyProvider) OnDelegation(sessionID string) error {
+	panic("OnDelegation panicked")
+}
+
+var _ MemoryProvider    = (*panickyProvider)(nil)
+var _ TurnStartHook     = (*panickyProvider)(nil)
+var _ SessionEndHook    = (*panickyProvider)(nil)
+var _ SessionSwitchHook = (*panickyProvider)(nil)
+var _ PreCompressHook   = (*panickyProvider)(nil)
+var _ MemoryWriteHook   = (*panickyProvider)(nil)
+var _ DelegationHook    = (*panickyProvider)(nil)
