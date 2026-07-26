@@ -362,14 +362,24 @@ func run() int {
 					if err != nil {
 						return "", fmt.Errorf("llm chat stream: %w", err)
 					}
+					// Consume FullStream, not TextStream. Per the ai-sdk
+					// channel contract FullStream is authoritative and MUST
+					// be drained until close: its writes are synchronous, so
+					// leaving it unread stalls the producer and deadlocks the
+					// whole turn. TextStream is a best-effort view that drops
+					// deltas when it is not being read, so it cannot be used
+					// to reconstruct the reply either.
 					var sb strings.Builder
-					for delta := range stream.TextStream {
-						sb.WriteString(delta)
-						onDelta(delta)
+					for part := range stream.FullStream {
+						if part.Type != core.StreamPartTextDelta || part.TextDelta == "" {
+							continue
+						}
+						sb.WriteString(part.TextDelta)
+						onDelta(part.TextDelta)
 					}
-					// FinishReason resolves only once the stream is drained,
-					// so a mid-stream provider failure surfaces here rather
-					// than being mistaken for a short but complete reply.
+					// Resolves once the producer completes, so a mid-stream
+					// failure surfaces here rather than a truncated reply
+					// passing as a short but complete one.
 					if _, err := stream.FinishReason(); err != nil {
 						return "", fmt.Errorf("llm chat stream: %w", err)
 					}
