@@ -239,11 +239,7 @@ func (g *Gateway) helpHandler() bot.HandlerFunc {
 		if !ok {
 			return
 		}
-		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
-			"🤖 **Archie Gateway**\n\n"+
-				"/status  --  Show task status\n"+
-				"/help  --  This message\n\n"+
-				"Anything else: chat with the LLM (not yet wired  --  coming soon).")
+		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, gatewayHelpText())
 	}
 }
 

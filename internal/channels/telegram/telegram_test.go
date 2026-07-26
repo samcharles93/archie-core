@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -33,6 +34,56 @@ func TestNewStoresFields(t *testing.T) {
 	}
 	if len(g.AllowedUserIDs) != 1 || g.AllowedUserIDs[0] != 42 {
 		t.Errorf("AllowedUserIDs = %v", g.AllowedUserIDs)
+	}
+}
+
+func TestHelpDescribesPublishedCommandsAndChat(t *testing.T) {
+	const allowedUserID = int64(42)
+
+	var sentText string
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("parse Telegram request: %v", err)
+		} else {
+			var rich models.InputRichMessage
+			if err := json.Unmarshal([]byte(r.FormValue("rich_message")), &rich); err != nil {
+				t.Errorf("decode Telegram rich_message: %v", err)
+			} else {
+				sentText = rich.Markdown
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":1,"date":1,"chat":{"id":7,"type":"private"}}}`))
+	}))
+	defer api.Close()
+
+	b, err := bot.New(
+		"1:test",
+		bot.WithServerURL(api.URL),
+		bot.WithSkipGetMe(),
+		bot.WithNotAsyncHandlers(),
+	)
+	if err != nil {
+		t.Fatalf("new test bot: %v", err)
+	}
+	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g.helpHandler()(context.Background(), b, &models.Update{
+		Message: &models.Message{
+			From: &models.User{ID: allowedUserID},
+			Chat: models.Chat{ID: 7, Type: models.ChatTypePrivate},
+		},
+	})
+
+	for _, command := range gatewayCommands {
+		if !strings.Contains(sentText, "/"+command.Command) {
+			t.Errorf("help text does not describe published /%s command:\n%s", command.Command, sentText)
+		}
+	}
+	if strings.Contains(sentText, "not yet wired") {
+		t.Errorf("help text still claims working LLM chat is not wired:\n%s", sentText)
+	}
+	if !strings.Contains(strings.ToLower(sentText), "chat") {
+		t.Errorf("help text does not describe free-text chat:\n%s", sentText)
 	}
 }
 

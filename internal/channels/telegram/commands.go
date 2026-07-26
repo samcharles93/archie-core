@@ -3,24 +3,52 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
 
-// gatewayCommands is the command list published to Telegram. It mirrors
-// what gateway.Router actually handles: publishing a command the router
-// does not implement sends the user to the LLM, which has no idea the
-// command exists.
-var gatewayCommands = []models.BotCommand{
-	{Command: "status", Description: "Show task status"},
-	{Command: "models", Description: "List available models"},
-	{Command: "model", Description: "Show or switch the active model"},
-	{Command: "spawn", Description: "Spawn a task from a title"},
-	{Command: "approve", Description: "Approve a task awaiting review"},
-	{Command: "cancel", Description: "Cancel a task"},
-	{Command: "restart", Description: "Restart the gateway and reload config"},
-	{Command: "help", Description: "Show available commands"},
+type commandSpec struct {
+	Command     string
+	Description string
+	Usage       string
+}
+
+// gatewayCommandSpecs is the single source of truth for both Telegram's
+// published command menu and /help. Keeping the discoverability surfaces
+// together prevents a newly registered command from being omitted from help.
+var gatewayCommandSpecs = []commandSpec{
+	{Command: "status", Description: "Show task counts by state", Usage: "/status"},
+	{Command: "models", Description: "List available models", Usage: "/models"},
+	{Command: "model", Description: "Show the model selector or switch directly", Usage: "/model [provider/model]"},
+	{Command: "spawn", Description: "Create a tracked task", Usage: "/spawn [identity=name] [repo=owner/name] [workflow=name] <title>"},
+	{Command: "approve", Description: "Approve and requeue a waiting task", Usage: "/approve [identity=name] <task-id>"},
+	{Command: "cancel", Description: "Cancel a queued or waiting task", Usage: "/cancel [identity=name] <task-id>"},
+	{Command: "restart", Description: "Restart the gateway and reload its config", Usage: "/restart"},
+	{Command: "help", Description: "Show this guide", Usage: "/help"},
+}
+
+var gatewayCommands = func() []models.BotCommand {
+	commands := make([]models.BotCommand, 0, len(gatewayCommandSpecs))
+	for _, spec := range gatewayCommandSpecs {
+		commands = append(commands, models.BotCommand{
+			Command:     spec.Command,
+			Description: spec.Description,
+		})
+	}
+	return commands
+}()
+
+func gatewayHelpText() string {
+	var help strings.Builder
+	help.WriteString("🤖 **Archie Gateway**\n\n")
+	help.WriteString("Send a message to chat with Archie. Replies stream into Telegram as they are generated.\n\n")
+	help.WriteString("**Commands**\n")
+	for _, spec := range gatewayCommandSpecs {
+		fmt.Fprintf(&help, "`%s`\n%s\n\n", spec.Usage, spec.Description)
+	}
+	return strings.TrimSpace(help.String())
 }
 
 // commandScopes are the scopes the menu is published to.
