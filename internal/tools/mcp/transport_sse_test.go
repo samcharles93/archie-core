@@ -210,7 +210,7 @@ func TestSSETransportConcurrentSendsGetCorrectResponses(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			resp, err := tr.Send(context.Background(),
-				[]byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"test"}`, id)))
+				fmt.Appendf(nil, `{"jsonrpc":"2.0","id":%d,"method":"test"}`, id))
 			if err != nil {
 				results <- fmt.Errorf("id %d: Send: %v", id, err)
 				return
