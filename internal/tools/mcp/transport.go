@@ -350,11 +350,41 @@ func (t *StdioTransport) startSubprocess() error {
 		t.mu.Unlock()
 		return err
 	}
+	return t.commitSpawnedProcess(cmd, stdin, stdout, false)
+}
 
+// commitSpawnedProcess installs a freshly spawned subprocess as the
+// transport's active one and starts its reader goroutine. spawnProcess runs
+// without t.mu held (it performs a real fork/exec), so a concurrent Stop()
+// can cancel t.ctx and commit StateStopped while a spawn is still in
+// flight. commitSpawnedProcess re-checks t.ctx under the lock immediately
+// before committing: if Stop() already won, the just-spawned subprocess is
+// discarded (killed and reaped) instead of clobbering the Stopped state
+// Stop() already reported to its own caller. Both startSubprocess (a fresh
+// Start()) and attemptRestart's success path (a crash-triggered restart)
+// funnel through this single guarded commit point.
+//
+// resetStartupFailures resets the spawn-failure counter on success; it is
+// true only for attemptRestart, since Start() already resets both crash and
+// startup-failure counters itself before the first spawn attempt.
+func (t *StdioTransport) commitSpawnedProcess(cmd *exec.Cmd, stdin io.WriteCloser, stdout *bufio.Reader, resetStartupFailures bool) error {
 	t.mu.Lock()
+	if t.ctx.Err() != nil {
+		t.state = StateStopped
+		t.mu.Unlock()
+		_ = stdin.Close()
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+		}
+		return t.ctx.Err()
+	}
 	t.cmd = cmd
 	t.stdin = stdin
 	t.state = StateRunning
+	if resetStartupFailures {
+		t.startupFailures = 0
+	}
 	t.mu.Unlock()
 
 	// Start the reader goroutine.
@@ -542,29 +572,11 @@ func (t *StdioTransport) attemptRestart() {
 			continue
 		}
 
-		// Success  --  update state and start the reader. Re-check for a
-		// concurrent Stop() that ran while spawnProcess was in flight: if it
-		// already cancelled the context, discard this subprocess instead of
-		// reporting StateRunning for one Stop() already considers torn down.
-		t.mu.Lock()
-		if t.ctx.Err() != nil {
-			t.state = StateStopped
-			t.mu.Unlock()
-			_ = stdin.Close()
-			if cmd.Process != nil {
-				_ = cmd.Process.Kill()
-				_ = cmd.Wait()
-			}
-			return
-		}
-		t.cmd = cmd
-		t.stdin = stdin
-		t.state = StateRunning
-		t.startupFailures = 0 // reset on successful spawn
-		t.mu.Unlock()
-
-		t.readerWg.Add(1)
-		go t.runReader(stdout)
+		// Success  --  commit via the same guarded path startSubprocess uses,
+		// so a concurrent Stop() that cancelled the context while
+		// spawnProcess was in flight discards this subprocess instead of
+		// clobbering the Stopped state Stop() already reported.
+		_ = t.commitSpawnedProcess(cmd, stdin, stdout, true)
 		return
 	}
 }

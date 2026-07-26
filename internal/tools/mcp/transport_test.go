@@ -103,8 +103,12 @@ func (s *testMCPServer) handle(msg Message) (*Message, error) {
 		return s.echo(msg), nil
 
 	case "bad-framing":
-		// Write malformed output (no Content-Length)
+		// Write malformed output (no Content-Length header, no newline) and
+		// exit immediately. Without the exit, the client's reader would
+		// block forever inside readMessage looking for a header terminator
+		// that this payload never provides, hanging the test.
 		_, _ = fmt.Fprint(os.Stdout, `{"jsonrpc":"2.0","id":1,"result":{}}`)
+		syscall.Exit(0)
 		return nil, nil
 
 	default:
@@ -569,6 +573,62 @@ func TestStdioTransportConcurrentStartDuringStop(t *testing.T) {
 	t.Logf("concurrent Start error: %v, final state: %v", startErr, state)
 
 	_ = tr.Stop(context.Background())
+}
+
+// TestStdioTransportCommitSpawnedProcessDiscardsWhenContextRacesAhead is a
+// regression test for a race where startSubprocess (the path Start() uses
+// to commit a freshly spawned subprocess) could clobber a StateStopped
+// already committed and reported by a concurrent Stop(): spawnProcess runs
+// without t.mu held (it's a real fork/exec), so Stop() can cancel t.ctx and
+// return Stopped to its own caller while a spawn is still in flight. The
+// commit path used to unconditionally set state = StateRunning afterward,
+// wedging the transport in a Running state no caller of Stop() would ever
+// expect, with no way back to Stopped.
+//
+// The real race is timing-dependent, so this drives the two halves
+// (spawnProcess, then commitSpawnedProcess) directly and in order
+// (white-box, same package) to deterministically simulate a Stop() landing
+// in between them: the process is actually spawned and running (so the
+// commit path's kill/reap of a live process is genuinely exercised), then
+// the context is cancelled to simulate Stop() winning the race, then commit
+// runs and must discard rather than clobber.
+func TestStdioTransportCommitSpawnedProcessDiscardsWhenContextRacesAhead(t *testing.T) {
+	tr := NewStdioTransport(StdioTransportConfig{
+		Command: os.Args[0],
+		Args:    []string{"-test.run=TestMCPServerHelper$"},
+		Env:     []string{"GO_WANT_MCP_HELPER=1", "MCP_HELPER_BEHAVIOR=normal"},
+	})
+
+	tr.mu.Lock()
+	tr.state = StateStarting
+	tr.ctx, tr.cancel = context.WithCancel(context.Background())
+	tr.mu.Unlock()
+
+	cmd, stdin, stdout, err := tr.spawnProcess()
+	if err != nil {
+		t.Fatalf("spawnProcess: %v", err)
+	}
+
+	// Simulate a concurrent Stop() winning the race between spawn and
+	// commit: it would have cancelled this exact context.
+	tr.mu.Lock()
+	tr.cancel()
+	tr.mu.Unlock()
+
+	err = tr.commitSpawnedProcess(cmd, stdin, stdout, false)
+	if err == nil {
+		t.Fatal("expected error when context was cancelled before commit")
+	}
+	if tr.State() != StateStopped {
+		t.Fatalf("state = %v, want Stopped", tr.State())
+	}
+
+	tr.mu.Lock()
+	gotCmd := tr.cmd
+	tr.mu.Unlock()
+	if gotCmd != nil {
+		t.Fatal("expected no committed subprocess after discard")
+	}
 }
 
 // ── Error State Tests ───────────────────────────────────────────────────
