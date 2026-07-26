@@ -16,6 +16,8 @@ import (
 
 	natsio "github.com/nats-io/nats.go"
 
+	"github.com/samcharles93/ai-sdk/core"
+
 	"github.com/moby/moby/client"
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/channels/telegram"
@@ -179,8 +181,14 @@ func run() int {
 		storeBackend = storage.NewDockerBackend(dockerCli)
 	}
 
-	// Gateways (optional  --  absent [chat.telegram] disables). Multi-agent
-	// collaboration PRD phase C (docs/prds/multi-agent-collaboration.md).
+	// ── LLM runtime ──────────────────────────────────────────────────
+	// Created before gateways so the LLMResponder can be wired into the
+	// Telegram router for non-command message processing.
+	providers := executionProviders(cfg)
+	llm := agentexec.NewRuntime(providers)
+
+	// ── Gateways ──────────────────────────────────────────────────────
+	// Multi-agent collaboration PRD phase C (docs/prds/multi-agent-collaboration.md).
 	if cfg.Chat.Telegram.TokenEnv != "" {
 		tgToken := os.Getenv(cfg.Chat.Telegram.TokenEnv)
 		if tgToken == "" {
@@ -188,10 +196,29 @@ func run() int {
 			return 1
 		}
 		tg := telegram.New(tgToken, "", "", nil, log)
-		// LLM responder is wired after agent startup — gateway-local
-		// commands (/status, /models, /model, /spawn) work without it.
-		// TODO: wrap llm.Chat() as gateway.LLMResponder for full parity.
-		router := gateway.NewRouter(st, nil, "telegram")
+
+		// Build an LLM responder from the runtime. Gateway-local commands
+		// (/status, /models, /model, /spawn) are handled directly; all
+		// other messages are routed through the LLM.
+		var llmResponder gateway.LLMResponder
+		if llm != nil {
+			chatModel := cfg.Models["chat"]
+			if chatModel == "" {
+				chatModel = cfg.Models["builder"]
+			}
+			llmResponder = func(ctx context.Context, msg gateway.Message) (string, error) {
+				result, err := llm.Chat(ctx, chatModel, core.GenerateOptions{
+					Prompt:   msg.Text,
+					MaxSteps: 1,
+				})
+				if err != nil {
+					return "", fmt.Errorf("llm chat: %w", err)
+				}
+				return result.Text, nil
+			}
+		}
+
+		router := gateway.NewRouter(st, llmResponder, "telegram")
 		if len(cfg.Repos) > 0 {
 			router.Tasks = gateway.NewStoreTaskCreator(st, cfg.Repos[0].Owner, cfg.Repos[0].Name)
 		}
@@ -203,8 +230,6 @@ func run() int {
 		log.Info("telegram gateway started")
 	}
 
-	providers := executionProviders(cfg)
-	llm := agentexec.NewRuntime(providers)
 	var agentRunner agentexec.Runner
 	if llm != nil {
 		switch cfg.Agent.Mode {
