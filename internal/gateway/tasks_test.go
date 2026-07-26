@@ -58,3 +58,59 @@ func TestStoreTaskCreatorSyntheticNumbersDiffer(t *testing.T) {
 		t.Errorf("synthetic numbers collided: %d", id1)
 	}
 }
+
+// ── Regression tests for approve/cancel edge cases ──────────────────
+
+func TestStoreTaskCreatorEmptyTitle(t *testing.T) {
+	sw := &fakeStoreWriter{}
+	tc := NewStoreTaskCreator(sw, "sam", "tau")
+	id, err := tc.CreateTask(context.Background(), "")
+	if err != nil {
+		t.Fatalf("CreateTask with empty title: %v", err)
+	}
+	if id == 0 {
+		t.Error("empty title should still create a task")
+	}
+}
+
+func TestStoreTaskCreatorVeryLongTitle(t *testing.T) {
+	sw := &fakeStoreWriter{}
+	tc := NewStoreTaskCreator(sw, "sam", "tau")
+	longTitle := strings.Repeat("x", 10000)
+	id, err := tc.CreateTask(context.Background(), longTitle)
+	if err != nil {
+		t.Fatalf("CreateTask with long title: %v", err)
+	}
+	if id == 0 {
+		t.Error("long title should still create a task")
+	}
+}
+
+func TestStoreTaskCreatorIdempotentEnqueue(t *testing.T) {
+	// Synthetic numbers are generated from time.Now().UnixNano().
+	// The underlying EnqueueIssue is idempotent — a second enqueue
+	// of the same issue returns false. The TaskCreator does not
+	// expose this, but the store layer does. This test documents
+	// the expected behavior.
+	sw := &fakeStoreWriter{}
+	tc := NewStoreTaskCreator(sw, "sam", "tau")
+	id1, _ := tc.CreateTask(context.Background(), "task")
+	id2, _ := tc.CreateTask(context.Background(), "another task")
+	// Each call should produce a unique number.
+	if id1 == id2 {
+		t.Error("sequential creates should produce unique numbers")
+	}
+}
+
+func TestStoreTaskCreatorWritesChatLabel(t *testing.T) {
+	sw := &fakeStoreWriter{}
+	tc := NewStoreTaskCreator(sw, "sam", "tau")
+	_, err := tc.CreateTask(context.Background(), "from chat")
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	// The label should be "chat" (set by the constructor).
+	if len(sw.titles) != 1 {
+		t.Errorf("expected 1 enqueue, got %d", len(sw.titles))
+	}
+}

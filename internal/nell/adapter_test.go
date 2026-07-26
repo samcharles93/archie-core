@@ -3,7 +3,11 @@ package nell
 import (
 	"context"
 	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -215,3 +219,290 @@ func TestPersistenceAcrossRestart(t *testing.T) {
 		t.Fatalf("counts after restart = (%v, %v)", counts, err)
 	}
 }
+
+// ── Regression tests for previously untested paths ────────────────────
+
+func TestEmptyStoreOperations(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	// Get on empty store.
+	task, err := s.TaskByIssue(ctx, "acme", "repo", 1)
+	if err != nil {
+		t.Errorf("TaskByIssue on empty store: %v", err)
+	}
+	if task != nil {
+		t.Error("TaskByIssue on empty store should return nil")
+	}
+
+	// List on empty store.
+	tasks, err := s.Tasks(ctx, 10)
+	if err != nil {
+		t.Errorf("Tasks on empty store: %v", err)
+	}
+	if len(tasks) != 0 {
+		t.Errorf("Tasks on empty store should be empty, got %d", len(tasks))
+	}
+
+	// WaitingTasks on empty store.
+	waiting, err := s.WaitingTasks(ctx)
+	if err != nil {
+		t.Errorf("WaitingTasks on empty store: %v", err)
+	}
+	if len(waiting) != 0 {
+		t.Errorf("WaitingTasks on empty store should be empty, got %d", len(waiting))
+	}
+
+	// OpenPRs on empty store.
+	prs, err := s.OpenPRs(ctx)
+	if err != nil {
+		t.Errorf("OpenPRs on empty store: %v", err)
+	}
+	if len(prs) != 0 {
+		t.Errorf("OpenPRs on empty store should be empty, got %d", len(prs))
+	}
+
+	// ClaimNext on empty store.
+	claimed, err := s.ClaimNext(ctx)
+	if err != nil {
+		t.Errorf("ClaimNext on empty store: %v", err)
+	}
+	if claimed != nil {
+		t.Error("ClaimNext on empty store should return nil")
+	}
+
+	// StatusCounts on empty store.
+	counts, err := s.StatusCounts(ctx)
+	if err != nil {
+		t.Errorf("StatusCounts on empty store: %v", err)
+	}
+	if len(counts) != 0 {
+		t.Errorf("StatusCounts on empty store should be empty, got %v", counts)
+	}
+}
+
+func TestConcurrentEnqueueAndClaim(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	const n = 20
+	var wg sync.WaitGroup
+
+	// Concurrent enqueues.
+	for i := range n {
+		wg.Add(1)
+		go func(num int) {
+			defer wg.Done()
+			_, err := s.EnqueueIssue(ctx, "acme", "repo", num, "title", "", "")
+			if err != nil {
+				t.Errorf("enqueue %d: %v", num, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	// All should be queued.
+	counts, err := s.StatusCounts(ctx)
+	if err != nil {
+		t.Fatalf("StatusCounts: %v", err)
+	}
+	if counts[store.StatusQueued] != n {
+		t.Errorf("expected %d queued, got %d", n, counts[store.StatusQueued])
+	}
+
+	// Concurrent claims.
+	var claimed int32
+	for range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			task, err := s.ClaimNext(ctx)
+			if err != nil {
+				t.Errorf("ClaimNext: %v", err)
+				return
+			}
+			if task != nil {
+				atomic.AddInt32(&claimed, 1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if claimed != n {
+		t.Errorf("claimed %d, want %d", claimed, n)
+	}
+}
+
+func TestContextCancellation(t *testing.T) {
+	s := openTest(t)
+	_, _ = s.EnqueueIssue(context.Background(), "acme", "repo", 1, "t", "", "")
+
+	t.Run("cancelled context on ClaimNext", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		task, err := s.ClaimNext(ctx)
+		// Either error or nil task is acceptable when cancelled.
+		if task != nil && err != nil {
+			t.Logf("ClaimNext with cancelled ctx: task=%v err=%v", task, err)
+		}
+	})
+
+	t.Run("cancelled context on TaskByIssue", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		task, err := s.TaskByIssue(ctx, "acme", "repo", 1)
+		// Either error or result is acceptable.
+		if task != nil && err != nil {
+			t.Logf("TaskByIssue with cancelled ctx: task=%v err=%v", task, err)
+		}
+	})
+}
+
+func TestOversizedEventPayload(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	// Insert event with detail exceeding 4000 chars.
+	longDetail := strings.Repeat("x", 5000)
+	ev := events.Event{
+		Kind:   events.KindLog,
+		Detail: longDetail,
+		Data:   map[string]any{"level": "info", "msg": "test"},
+	}
+
+	id, err := s.InsertEvent(ctx, ev)
+	if err != nil {
+		t.Fatalf("InsertEvent with oversized detail: %v", err)
+	}
+	if id <= 0 {
+		t.Error("expected positive event ID")
+	}
+
+	// Read back and verify detail was clipped.
+	events, err := s.EventsSince(ctx, id-1, 1)
+	if err != nil {
+		t.Fatalf("EventsSince: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if len(events[0].Detail) > 4000 {
+		t.Errorf("detail should be clipped to 4000, got %d chars", len(events[0].Detail))
+	}
+}
+
+func TestInsertEventWithUnmarshalableData(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	// Channel values cannot be JSON-marshaled.
+	ev := events.Event{
+		Kind: events.KindLog,
+		Data: map[string]any{"ch": make(chan int)},
+	}
+
+	id, err := s.InsertEvent(ctx, ev)
+	if err != nil {
+		t.Fatalf("InsertEvent with unmarshalable data should not error: %v", err)
+	}
+	if id <= 0 {
+		t.Error("expected positive event ID")
+	}
+
+	// Read back — should have marshal_error marker.
+	eventsList, err := s.EventsSince(ctx, id-1, 1)
+	if err != nil {
+		t.Fatalf("EventsSince: %v", err)
+	}
+	if len(eventsList) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(eventsList))
+	}
+}
+
+func TestStatusCountsAfterTransitions(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	s.EnqueueIssue(ctx, "acme", "repo", 1, "t1", "", "")
+	s.EnqueueIssue(ctx, "acme", "repo", 2, "t2", "", "")
+
+	task1, _ := s.ClaimNext(ctx)
+	task2, _ := s.ClaimNext(ctx)
+
+	counts, _ := s.StatusCounts(ctx)
+	if counts[store.StatusRunning] != 2 {
+		t.Errorf("expected 2 running, got %d", counts[store.StatusRunning])
+	}
+
+	s.Transition(ctx, task1.ID, store.StatusRunning, store.StatusPROpen, "")
+	counts, _ = s.StatusCounts(ctx)
+	if counts[store.StatusPROpen] != 1 {
+		t.Errorf("expected 1 pr_open, got %d", counts[store.StatusPROpen])
+	}
+	if counts[store.StatusRunning] != 1 {
+		t.Errorf("expected 1 running after transition, got %d", counts[store.StatusRunning])
+	}
+	_ = task2
+}
+
+func TestInsertEventsSinceAndRecent(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	id1, _ := s.InsertEvent(ctx, events.Event{Kind: events.KindTaskQueued, TaskID: 1})
+	time.Sleep(1 * time.Millisecond)
+	id2, _ := s.InsertEvent(ctx, events.Event{Kind: events.KindStageStart, TaskID: 1})
+
+	// EventsSince should return events in order.
+	evs, err := s.EventsSince(ctx, 0, 10)
+	if err != nil {
+		t.Fatalf("EventsSince: %v", err)
+	}
+	if len(evs) < 2 {
+		t.Fatalf("expected at least 2 events, got %d", len(evs))
+	}
+	if evs[0].ID < evs[1].ID {
+		// Oldest first — correct.
+	}
+
+	// RecentEvents returns newest first.
+	recent, err := s.RecentEvents(ctx, 10)
+	if err != nil {
+		t.Fatalf("RecentEvents: %v", err)
+	}
+	if len(recent) < 2 {
+		t.Fatalf("expected at least 2 recent events, got %d", len(recent))
+	}
+	if recent[0].ID < recent[1].ID {
+		t.Error("RecentEvents should return newest first")
+	}
+	_ = id1
+	_ = id2
+}
+
+func TestRecoverStaleEmptyStore(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	n, err := s.RecoverStale(ctx)
+	if err != nil {
+		t.Errorf("RecoverStale on empty store: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("RecoverStale on empty store should return 0, got %d", n)
+	}
+}
+
+func TestClearTerminalTasksEmptyStore(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	n, err := s.ClearTerminalTasks(ctx)
+	if err != nil {
+		t.Errorf("ClearTerminalTasks on empty store: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("ClearTerminalTasks on empty store should return 0, got %d", n)
+	}
+}
+

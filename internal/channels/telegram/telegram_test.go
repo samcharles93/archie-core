@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -96,3 +97,220 @@ func TestStartAndStopLifecycle(t *testing.T) {
 var _ gateway.Gateway = (*Gateway)(nil)
 var _ = (*bot.Bot)(nil)
 var _ = models.Update{}
+
+// ── Regression tests for previously untested paths ────────────────────
+
+func TestSplitLongMessage(t *testing.T) {
+	t.Run("empty string", func(t *testing.T) {
+		parts := splitLongMessage("", 10)
+		if len(parts) != 1 || parts[0] != "" {
+			t.Errorf("expected [\"\"], got %v", parts)
+		}
+	})
+
+	t.Run("short text under limit", func(t *testing.T) {
+		parts := splitLongMessage("hello", 4000)
+		if len(parts) != 1 || parts[0] != "hello" {
+			t.Errorf("expected [\"hello\"], got %v", parts)
+		}
+	})
+
+	t.Run("exactly at limit", func(t *testing.T) {
+		s := strings.Repeat("x", 10)
+		parts := splitLongMessage(s, 10)
+		if len(parts) != 1 {
+			t.Errorf("expected 1 part, got %d", len(parts))
+		}
+	})
+
+	t.Run("one char over limit splits", func(t *testing.T) {
+		s := strings.Repeat("x", 11)
+		parts := splitLongMessage(s, 10)
+		if len(parts) != 2 {
+			t.Errorf("expected 2 parts, got %d: %v", len(parts), parts)
+		}
+	})
+
+	t.Run("newline-aware splitting", func(t *testing.T) {
+		lines := strings.Repeat("aaaaa\n", 5)
+		parts := splitLongMessage(strings.TrimSuffix(lines, "\n"), 14)
+		if len(parts) < 2 {
+			t.Errorf("expected at least 2 parts at limit=14, got %d", len(parts))
+		}
+		for i, p := range parts {
+			if p == "" {
+				t.Errorf("part %d is empty", i)
+			}
+		}
+	})
+
+	t.Run("single line exceeds limit splits evenly", func(t *testing.T) {
+		longLine := strings.Repeat("y", 2500)
+		parts := splitLongMessage(longLine, 1000)
+		if len(parts) != 3 {
+			t.Fatalf("expected 3 parts, got %d", len(parts))
+		}
+		if len(parts[0]) != 1000 {
+			t.Errorf("part 0 len = %d, want 1000", len(parts[0]))
+		}
+		if len(parts[1]) != 1000 {
+			t.Errorf("part 1 len = %d, want 1000", len(parts[1]))
+		}
+		if len(parts[2]) != 500 {
+			t.Errorf("part 2 len = %d, want 500", len(parts[2]))
+		}
+	})
+
+	t.Run("multiline with one oversized line", func(t *testing.T) {
+		text := "short line\n" + strings.Repeat("z", 300) + "\nanother short"
+		parts := splitLongMessage(text, 100)
+		if len(parts) < 3 {
+			t.Errorf("expected at least 3 parts, got %d", len(parts))
+		}
+		if parts[0] != "short line" {
+			t.Errorf("part 0 = %q", parts[0])
+		}
+	})
+
+	t.Run("44k stress test within 4000 char limit", func(t *testing.T) {
+		big := strings.Repeat("The quick brown fox jumps over the lazy dog.\n", 1000)
+		parts := splitLongMessage(big, 4000)
+		if len(parts) < 10 {
+			t.Errorf("expected at least 10 parts, got %d", len(parts))
+		}
+		for _, p := range parts {
+			if len(p) > 4000 {
+				t.Errorf("part exceeds limit: %d chars", len(p))
+			}
+		}
+	})
+}
+
+func TestIsChatAllowed(t *testing.T) {
+	g := New("tok", "", "", []int64{100, 200, 300}, slog.Default())
+
+	t.Run("empty allowlist allows all", func(t *testing.T) {
+		g2 := New("tok", "", "", nil, slog.Default())
+		if !g2.isChatAllowed(999999) {
+			t.Error("empty allowlist should allow any chat")
+		}
+	})
+
+	t.Run("explicit allowed chats", func(t *testing.T) {
+		if !g.isChatAllowed(100) {
+			t.Error("chat 100 should be allowed")
+		}
+		if !g.isChatAllowed(300) {
+			t.Error("chat 300 should be allowed")
+		}
+	})
+
+	t.Run("not in allowlist", func(t *testing.T) {
+		if g.isChatAllowed(999) {
+			t.Error("chat 999 should not be allowed")
+		}
+	})
+
+	t.Run("negative chat IDs", func(t *testing.T) {
+		g3 := New("tok", "", "", []int64{-1, 0, 1}, slog.Default())
+		if !g3.isChatAllowed(-1) {
+			t.Error("-1 should be allowed")
+		}
+		if !g3.isChatAllowed(0) {
+			t.Error("0 should be allowed")
+		}
+		if g3.isChatAllowed(2) {
+			t.Error("2 should not be allowed")
+		}
+	})
+}
+
+func TestUpdateMetadata(t *testing.T) {
+	t.Run("nil update returns unknown", func(t *testing.T) {
+		kind, _, hasChat := updateMetadata(nil)
+		if kind != "unknown" {
+			t.Errorf("kind = %q, want 'unknown'", kind)
+		}
+		if hasChat {
+			t.Error("nil update should have hasChat=false")
+		}
+	})
+
+	t.Run("message update", func(t *testing.T) {
+		u := &models.Update{
+			ID:      42,
+			Message: &models.Message{Chat: models.Chat{ID: 12345}},
+		}
+		kind, chatID, hasChat := updateMetadata(u)
+		if kind != "message" || !hasChat || chatID != 12345 {
+			t.Errorf("kind=%q hasChat=%v chatID=%d, want message/true/12345", kind, hasChat, chatID)
+		}
+	})
+
+	t.Run("callback query with message", func(t *testing.T) {
+		u := &models.Update{
+			ID: 99,
+			CallbackQuery: &models.CallbackQuery{
+				Message: models.MaybeInaccessibleMessage{
+					Message: &models.Message{Chat: models.Chat{ID: 888}},
+				},
+			},
+		}
+		kind, chatID, hasChat := updateMetadata(u)
+		if kind != "callback_query" || !hasChat || chatID != 888 {
+			t.Errorf("kind=%q hasChat=%v chatID=%d, want callback_query/true/888", kind, hasChat, chatID)
+		}
+	})
+
+	t.Run("other update type", func(t *testing.T) {
+		u := &models.Update{ID: 7}
+		kind, _, hasChat := updateMetadata(u)
+		if kind != "other" || hasChat {
+			t.Errorf("kind=%q hasChat=%v, want other/false", kind, hasChat)
+		}
+	})
+}
+
+func TestPanicRecoveryMiddlewareDoesNotCrash(t *testing.T) {
+	g := New("tok", "", "", nil, slog.Default())
+	mw := g.panicRecoveryMiddleware()
+	handler := mw(func(ctx context.Context, b *bot.Bot, update *models.Update) {
+		panic("test panic")
+	})
+	// Must not panic.
+	handler(context.Background(), nil, &models.Update{
+		ID:      1,
+		Message: &models.Message{Chat: models.Chat{ID: 123}},
+	})
+}
+
+func TestUpdateLoggingMiddlewareCallsInner(t *testing.T) {
+	g := New("tok", "", "", nil, slog.Default())
+	mw := g.updateLoggingMiddleware()
+	called := false
+	handler := mw(func(ctx context.Context, b *bot.Bot, update *models.Update) {
+		called = true
+	})
+	handler(context.Background(), nil, &models.Update{
+		ID:      1,
+		Message: &models.Message{Chat: models.Chat{ID: 456}},
+	})
+	if !called {
+		t.Error("inner handler was not called")
+	}
+}
+
+func TestAuthorizedMessageNilMessage(t *testing.T) {
+	g := New("tok", "", "", []int64{42}, slog.Default())
+	msg, ok := g.authorizedMessage(context.Background(), nil, &models.Update{ID: 1})
+	if ok || msg != nil {
+		t.Error("nil message should return false, nil")
+	}
+}
+
+func TestGatewayStopWhenNotRunning(t *testing.T) {
+	g := New("tok", "", "", nil, slog.Default())
+	if err := g.Stop(context.Background()); err != nil {
+		t.Errorf("unexpected error stopping unstarted gateway: %v", err)
+	}
+}

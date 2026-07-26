@@ -111,3 +111,100 @@ func TestTaskPayloadWrittenAsVolumeFile(t *testing.T) {
 	}
 	_ = payload
 }
+
+// ── Regression tests for error paths ────────────────────────────────
+
+func TestWriteTaskJSONNonexistentDir(t *testing.T) {
+	err := WriteTaskJSON("/nonexistent/path/that/does/not/exist", TaskPayload{ID: 1})
+	if err == nil {
+		t.Error("expected error writing to nonexistent directory")
+	}
+}
+
+func TestWriteTaskJSONEmptyWorkspace(t *testing.T) {
+	err := WriteTaskJSON("", TaskPayload{ID: 1})
+	if err == nil {
+		t.Error("expected error with empty workspace path")
+	}
+}
+
+func TestTaskPayloadRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	payload := TaskPayload{
+		ID:       99,
+		Owner:    "test-owner",
+		Repo:     "test-repo",
+		Number:   42,
+		Title:    "test title",
+		Body:     "test body",
+		Labels:   []string{"a", "b"},
+		Workflow: "tdd",
+		Branch:   "feature/x",
+		Plan:     "plan text",
+	}
+
+	if err := WriteTaskJSON(dir, payload); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "task.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var decoded TaskPayload
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+
+	if decoded.ID != payload.ID {
+		t.Errorf("ID = %d", decoded.ID)
+	}
+	if decoded.Owner != payload.Owner {
+		t.Errorf("Owner = %q", decoded.Owner)
+	}
+	if decoded.Branch != payload.Branch {
+		t.Errorf("Branch = %q", decoded.Branch)
+	}
+	if decoded.Plan != payload.Plan {
+		t.Errorf("Plan = %q", decoded.Plan)
+	}
+	if len(decoded.Labels) != 2 {
+		t.Errorf("Labels = %v", decoded.Labels)
+	}
+}
+
+func TestWriteTaskJSONOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	p1 := TaskPayload{ID: 1, Title: "first"}
+	p2 := TaskPayload{ID: 2, Title: "second"}
+
+	WriteTaskJSON(dir, p1)
+	WriteTaskJSON(dir, p2) // overwrite
+
+	data, _ := os.ReadFile(filepath.Join(dir, "task.json"))
+	var decoded TaskPayload
+	json.Unmarshal(data, &decoded)
+
+	if decoded.ID != 2 || decoded.Title != "second" {
+		t.Errorf("expected second payload, got ID=%d Title=%q", decoded.ID, decoded.Title)
+	}
+}
+
+func TestWriteTaskJSONMinimalPayload(t *testing.T) {
+	dir := t.TempDir()
+	payload := TaskPayload{ID: 1}
+
+	if err := WriteTaskJSON(dir, payload); err != nil {
+		t.Fatal(err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(dir, "task.json"))
+	var decoded TaskPayload
+	json.Unmarshal(data, &decoded)
+
+	if decoded.ID != 1 {
+		t.Error("minimal payload ID mismatch")
+	}
+}
+
