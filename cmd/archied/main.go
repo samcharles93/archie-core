@@ -26,8 +26,12 @@ import (
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/memory"
+	"github.com/samcharles93/archie-core/internal/memory/builtin"
 	"github.com/samcharles93/archie-core/internal/nats"
 	"github.com/samcharles93/archie-core/internal/nell"
+	"github.com/samcharles93/archie-core/internal/tools"
+	"github.com/samcharles93/archie-core/internal/tools/mcp"
 
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
@@ -184,6 +188,9 @@ func run() int {
 			return 1
 		}
 		tg := telegram.New(tgToken, "", "", nil, log)
+		// LLM responder is wired after agent startup — gateway-local
+		// commands (/status, /models, /model, /spawn) work without it.
+		// TODO: wrap llm.Chat() as gateway.LLMResponder for full parity.
 		router := gateway.NewRouter(st, nil, "telegram")
 		if len(cfg.Repos) > 0 {
 			router.Tasks = gateway.NewStoreTaskCreator(st, cfg.Repos[0].Owner, cfg.Repos[0].Name)
@@ -273,6 +280,53 @@ func run() int {
 		defer unsubscribe()
 	}
 
+	// ── Memory manager ────────────────────────────────────────────────
+	// Built-in file-backed provider (MEMORY.md + USER.md) under the
+	// daemon work directory. External providers from config are added
+	// via RegisterExternal when cfg.Memory.Provider is set.
+	var memManager *memory.Manager
+	memDir := filepath.Join(cfg.WorkDir, "memory")
+	memProvider, err := builtin.New(builtin.Config{Dir: memDir})
+	if err != nil {
+		log.Error("memory provider init failed", "err", err)
+		return 1
+	}
+	memManager, err = memory.NewManager(memProvider, nil)
+	if err != nil {
+		log.Error("memory manager init failed", "err", err)
+		return 1
+	}
+	if err := memManager.Initialize("daemon"); err != nil {
+		log.Warn("memory manager initialize", "err", err)
+	}
+	log.Info("memory manager started", "dir", memDir)
+
+	// ── Guardrail engine ───────────────────────────────────────────────
+	gc := tools.DefaultGuardrailConfig()
+	guardrails := tools.NewGuardrailEngine(gc)
+	log.Info("guardrail engine enabled",
+		"exact_failure_warn", gc.ExactFailureWarnAfter,
+		"same_tool_failure_warn", gc.SameToolFailureWarnAfter,
+		"no_progress_warn", gc.NoProgressWarnAfter,
+	)
+
+	// ── Tool registry ──────────────────────────────────────────────────
+	toolReg := tools.NewRegistry()
+	for _, srv := range cfg.Tools.MCPServers {
+		transport := mcp.NewStdioTransport(mcp.StdioTransportConfig{
+			Command: srv.Command,
+			Args:    srv.Args,
+		})
+		if err := transport.Start(context.Background()); err != nil {
+			log.Error("mcp server start failed", "name", srv.Name, "err", err)
+			continue
+		}
+		log.Info("mcp server started", "name", srv.Name)
+	}
+	// Built-in tools and MCP-discovered tools are registered at startup
+	// via init() and the MCP transport. Tool discovery via Yaegi is
+	// deferred to the container/agent runtime.
+
 	d := &daemon.Daemon{
 		Cfg:            cfg,
 		Store:          st,
@@ -288,6 +342,9 @@ func run() int {
 		CustomStages:   wfeval.Discover,
 		Nats:           natsClient,
 		ContainerPool:  containerPool,
+		Memory:         memManager,
+		Guardrails:     guardrails,
+		ToolRegistry:   toolReg,
 	}
 
 	if err := d.Startup(ctx); err != nil {

@@ -165,7 +165,7 @@ func (s *nellSessionStore) listAll(ctx context.Context) ([]SessionContext, error
 }
 
 func sessionToDoc(sc SessionContext) sdk.Doc {
-	return sdk.Doc{
+	doc := sdk.Doc{
 		sdk.FieldID:   sc.SessionID,
 		"session_id":  sc.SessionID,
 		"platform":    sc.Source.Platform,
@@ -174,6 +174,10 @@ func sessionToDoc(sc SessionContext) sdk.Doc {
 		"created_at":  sc.CreatedAt.UTC().Format(time.RFC3339Nano),
 		"last_active": sc.LastActiveAt.UTC().Format(time.RFC3339Nano),
 	}
+	if sc.Source.ThreadID != "" {
+		doc["thread_id"] = sc.Source.ThreadID
+	}
+	return doc
 }
 
 func docToSession(doc sdk.Doc) SessionContext {
@@ -183,6 +187,7 @@ func docToSession(doc sdk.Doc) SessionContext {
 			Platform:  strField(doc, "platform"),
 			BotUser:   strField(doc, "bot_user"),
 			ChannelID: strField(doc, "channel_id"),
+			ThreadID:  strField(doc, "thread_id"),
 		},
 	}
 	if v := strField(doc, "created_at"); v != "" {

@@ -314,3 +314,23 @@ func TestGatewayStopWhenNotRunning(t *testing.T) {
 		t.Errorf("unexpected error stopping unstarted gateway: %v", err)
 	}
 }
+
+func TestThreadIDString(t *testing.T) {
+	tests := []struct {
+		name string
+		id   int
+		want string
+	}{
+		{name: "zero is empty", id: 0, want: ""},
+		{name: "positive thread id", id: 5, want: "5"},
+		{name: "large thread id", id: 123456789, want: "123456789"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := threadIDString(tt.id)
+			if got != tt.want {
+				t.Errorf("threadIDString(%d) = %q, want %q", tt.id, got, tt.want)
+			}
+		})
+	}
+}

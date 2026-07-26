@@ -155,6 +155,7 @@ func (g *Gateway) statusHandler(router *gateway.Router) bot.HandlerFunc {
 		}
 		reply, err := router.Route(ctx, gateway.Message{
 			ChannelID: fmt.Sprintf("%d", msg.Chat.ID),
+			ThreadID:  threadIDString(msg.MessageThreadID),
 			From:      msg.From.Username,
 			Text:      "/status",
 		})
@@ -162,7 +163,7 @@ func (g *Gateway) statusHandler(router *gateway.Router) bot.HandlerFunc {
 			g.log.Error("status handler failed", "error", err)
 			return
 		}
-		g.sendMessage(ctx, b, msg.Chat.ID, reply)
+		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, reply)
 	}
 }
 
@@ -172,7 +173,7 @@ func (g *Gateway) helpHandler() bot.HandlerFunc {
 		if !ok {
 			return
 		}
-		g.sendMessage(ctx, b, msg.Chat.ID,
+		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
 			"🤖 <b>Archie Gateway</b>\n\n"+
 				"/status  --  Show task status\n"+
 				"/help  --  This message\n\n"+
@@ -194,6 +195,7 @@ func (g *Gateway) defaultHandler(router *gateway.Router) bot.HandlerFunc {
 		// will say "unrecognized").
 		reply, err := router.Route(ctx, gateway.Message{
 			ChannelID: fmt.Sprintf("%d", msg.Chat.ID),
+			ThreadID:  threadIDString(msg.MessageThreadID),
 			From:      msg.From.Username,
 			Text:      msg.Text,
 		})
@@ -202,12 +204,23 @@ func (g *Gateway) defaultHandler(router *gateway.Router) bot.HandlerFunc {
 			return
 		}
 		if reply != "" {
-			g.sendMessage(ctx, b, msg.Chat.ID, reply)
+			g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, reply)
 		}
 	}
 }
 
 // ── helpers ──────────────────────────────────────────────────
+
+// threadIDString converts a Telegram message_thread_id to a string suitable
+// for gateway.Message.ThreadID and SessionSource.ThreadID. A zero value
+// (no topic thread, or the General topic) maps to empty string so that
+// flat-chat routing continues to work without changes.
+func threadIDString(id int) string {
+	if id == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d", id)
+}
 
 func (g *Gateway) authorizedMessage(ctx context.Context, b *bot.Bot, update *models.Update) (*models.Message, bool) {
 	if update.Message == nil {
@@ -217,7 +230,7 @@ func (g *Gateway) authorizedMessage(ctx context.Context, b *bot.Bot, update *mod
 		return update.Message, true
 	}
 	g.log.Warn("message from unauthorized chat", "chat_id", update.Message.Chat.ID)
-	g.sendMessage(ctx, b, update.Message.Chat.ID,
+	g.sendMessage(ctx, b, update.Message.Chat.ID, update.Message.MessageThreadID,
 		"⛔ This bot is not available in this chat.")
 	return nil, false
 }
@@ -234,14 +247,18 @@ func (g *Gateway) isChatAllowed(chatID int64) bool {
 	return false
 }
 
-func (g *Gateway) sendMessage(ctx context.Context, b *bot.Bot, chatID int64, text string) {
+func (g *Gateway) sendMessage(ctx context.Context, b *bot.Bot, chatID int64, messageThreadID int, text string) {
 	// Split long messages to stay under Telegram's 4096 character limit.
 	const maxLen = 4000
 	if len(text) <= maxLen {
-		if _, err := b.SendMessage(ctx, &bot.SendMessageParams{
+		params := &bot.SendMessageParams{
 			ChatID: chatID,
 			Text:   text,
-		}); err != nil {
+		}
+		if messageThreadID != 0 {
+			params.MessageThreadID = messageThreadID
+		}
+		if _, err := b.SendMessage(ctx, params); err != nil {
 			g.log.Error("send message failed", "error", err)
 		}
 		return
@@ -252,10 +269,14 @@ func (g *Gateway) sendMessage(ctx context.Context, b *bot.Bot, chatID int64, tex
 		if i < len(parts)-1 {
 			partText += "\n\n_(continued...)_"
 		}
-		if _, err := b.SendMessage(ctx, &bot.SendMessageParams{
+		params := &bot.SendMessageParams{
 			ChatID: chatID,
 			Text:   partText,
-		}); err != nil {
+		}
+		if messageThreadID != 0 {
+			params.MessageThreadID = messageThreadID
+		}
+		if _, err := b.SendMessage(ctx, params); err != nil {
 			g.log.Error("send message part failed", "error", err, "part", i)
 		}
 	}

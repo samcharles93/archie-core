@@ -15,7 +15,7 @@ import (
 // AgentStage is the reusable bridge from a workflow stage to an
 // agentloop run. Every LLM-driven stage in any workflow (implement's
 // planner/builder, tdd's test-writer/fixer, feasibility's analyst)
-// is an AgentStage with a different mission, gate, and result handler  -- 
+// is an AgentStage with a different mission, gate, and result handler  --
 // never a new engine.
 type AgentStage struct {
 	Name string
@@ -33,7 +33,7 @@ type AgentStage struct {
 	// MaxSteps overrides the configured step budget when > 0 (planner
 	// stages are cheaper than builder stages).
 	MaxSteps int
-	// ProtectGlobs blocks write/edit on matching paths for this stage  -- 
+	// ProtectGlobs blocks write/edit on matching paths for this stage  --
 	// an environmental constraint, not a prompt rule (TDD's fix stage
 	// protects the committed repro tests; every builder stage protects
 	// the repo's generated files). The returned globs are combined
@@ -107,6 +107,19 @@ func (a AgentStage) Stage() Stage {
 			preflight = append(preflight, agentexec.Command{Name: argv[0], Argv: argv})
 		}
 
+		// Build ExtraRules: start with the stage's rules, prepend memory
+		// context if the daemon wired a memory manager.
+		extraRules := a.ExtraRules
+		if tc.SystemPrompt != nil {
+			if memCtx := tc.SystemPrompt(); memCtx != "" {
+				if extraRules != "" {
+					extraRules = memCtx + "\n\n" + extraRules
+				} else {
+					extraRules = memCtx
+				}
+			}
+		}
+
 		req := agentexec.Request{
 			Version:      agentexec.ProtocolVersion,
 			TaskID:       tc.Task.ID,
@@ -115,7 +128,7 @@ func (a AgentStage) Stage() Stage {
 			Workflow:     tc.Task.Workflow,
 			Model:        modelRef,
 			Mission:      missionWithSkill(tc, a.Mission(tc)),
-			ExtraRules:   a.ExtraRules,
+			ExtraRules:   extraRules,
 			ReadOnly:     a.ReadOnly,
 			Budget:       budget,
 			Gate:         gate,
@@ -126,6 +139,17 @@ func (a AgentStage) Stage() Stage {
 			Plugins:      pluginSpecs(tc.SkillPlugins),
 		}
 		res, err := tc.Agent.Run(ctx, tc.Dir, req)
+
+		// Record guardrail state: on success the guardrail engine checks
+		// no-progress thresholds; on failure it records the error pattern.
+		if tc.Guardrails != nil {
+			if err == nil && res.Status == agentexec.StatusPassed {
+				tc.Guardrails.RecordSuccess("agent:" + a.Name)
+			} else if err != nil {
+				tc.Guardrails.RecordFailure("agent:"+a.Name, err)
+			}
+		}
+
 		if err != nil && res.Version == 0 {
 			return fmt.Errorf("agent run: %w", err)
 		}

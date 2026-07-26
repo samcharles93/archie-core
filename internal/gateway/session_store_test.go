@@ -238,6 +238,72 @@ func TestSessionStore_Touch(t *testing.T) {
 	}
 }
 
+func TestSessionStore_SaveWithThreadID(t *testing.T) {
+	ctx := context.Background()
+	st := NewSessionStoreMemory("test-node")
+	defer func() { _ = st.Close() }()
+
+	sc := SessionContext{
+		SessionID: "sess-thread-1",
+		Source: SessionSource{
+			Platform:  "telegram",
+			BotUser:   "archie",
+			ChannelID: "-100123",
+			ThreadID:  "5",
+		},
+		CreatedAt:    time.Now(),
+		LastActiveAt: time.Now(),
+	}
+
+	if err := st.Save(ctx, sc); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	got, err := st.Get(ctx, "sess-thread-1")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected session, got nil")
+	}
+	if got.Source.ThreadID != "5" {
+		t.Errorf("expected ThreadID 5, got %q", got.Source.ThreadID)
+	}
+	if got.Source.ChannelID != "-100123" {
+		t.Errorf("expected ChannelID -100123, got %q", got.Source.ChannelID)
+	}
+}
+
+func TestSessionStore_SaveWithoutThreadID(t *testing.T) {
+	ctx := context.Background()
+	st := NewSessionStoreMemory("test-node")
+	defer func() { _ = st.Close() }()
+
+	// ThreadID is empty for flat chats — round-trip should preserve that.
+	sc := SessionContext{
+		SessionID: "sess-flat",
+		Source: SessionSource{
+			Platform:  "telegram",
+			BotUser:   "archie",
+			ChannelID: "-100456",
+		},
+		CreatedAt:    time.Now(),
+		LastActiveAt: time.Now(),
+	}
+
+	if err := st.Save(ctx, sc); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	got, err := st.Get(ctx, "sess-flat")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Source.ThreadID != "" {
+		t.Errorf("expected empty ThreadID, got %q", got.Source.ThreadID)
+	}
+}
+
 func TestSessionStore_List(t *testing.T) {
 	ctx := context.Background()
 	st := NewSessionStoreMemory("test-node")

@@ -24,11 +24,13 @@ import (
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
+	"github.com/samcharles93/archie-core/internal/memory"
 	arnats "github.com/samcharles93/archie-core/internal/nats"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskrun"
+	"github.com/samcharles93/archie-core/internal/tools"
 	"github.com/samcharles93/archie-core/internal/workflow"
 	"github.com/samcharles93/archie-core/internal/workflow/skillbuild"
 	"github.com/samcharles93/archie-core/internal/worktree"
@@ -69,6 +71,33 @@ type Daemon struct {
 	// When non-empty, Run() starts one goroutine per identity instead of
 	// using the single-identity Forge/Trees/Cfg.Repos path.
 	Identities []*IdentityRunner
+
+	// Memory is the pluggable memory manager, wired by the composition root
+	// (cmd/archied). When non-nil, the system prompt includes memory context
+	// and memory tool calls are routed through the manager. Nil means memory
+	// is disabled (backward compatible).
+	Memory *memory.Manager
+
+	// Guardrails is the tool-call guardrail engine, wired by the composition
+	// root. When non-nil, tool successes and failures are recorded and
+	// warnings/hard-stops are issued per the configured thresholds. Nil
+	// means guardrails are disabled (backward compatible).
+	Guardrails *tools.GuardrailEngine
+
+	// ToolRegistry is the central tool registry, wired by the composition
+	// root. MCP-discovered tools and built-in tools are registered here
+	// and passed as CaptureTools in agent requests. Nil means no dynamic
+	// tool discovery (backward compatible).
+	ToolRegistry *tools.Registry
+}
+
+// memoryPrompt returns the memory manager's system prompt block, or an empty
+// string when memory is disabled. Safe to call from any goroutine.
+func (d *Daemon) memoryPrompt() string {
+	if d.Memory == nil {
+		return ""
+	}
+	return d.Memory.SystemPromptBlock()
 }
 
 // IdentityRunner bundles identity-specific state for a single agent
@@ -898,6 +927,8 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 			Forge:        d.Forge,
 			Store:        d.Store,
 			Trees:        d.Trees,
+			SystemPrompt: d.memoryPrompt,
+			Guardrails:   d.Guardrails,
 			Agent:        d.Agent,
 			Bus:          d.Bus,
 			Log:          d.Log,

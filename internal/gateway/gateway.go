@@ -20,6 +20,10 @@ type Message struct {
 	// ChannelID identifies the conversation within the channel (e.g. a
 	// Telegram chat ID). Replies are sent back to this ID.
 	ChannelID string
+	// ThreadID identifies the topic thread within the conversation, for
+	// platforms that support threading (Telegram supergroup topics,
+	// Slack threads, Discord forum posts). Empty for flat chats.
+	ThreadID string
 	// From identifies the sender (channel-specific: username, user ID).
 	From string
 	// Text is the raw message text, including any leading slash command.

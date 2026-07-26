@@ -250,6 +250,38 @@ func TestMessageEventMediaAttachmentZeroValue(t *testing.T) {
 	}
 }
 
+func TestMessageEventToLegacyThreadID(t *testing.T) {
+	// ThreadID must round-trip through ToLegacy for thread-aware routing.
+	e := MessageEvent{
+		Type:      MsgText,
+		Text:      "message in a thread",
+		ChannelID: "-100123",
+		ThreadID:  "5",
+		Platform:  "telegram",
+		SenderID:  "user1",
+	}
+	m := e.ToLegacy()
+	if m.ThreadID != "5" {
+		t.Errorf("legacy ThreadID = %q, want 5", m.ThreadID)
+	}
+	if m.ChannelID != "-100123" {
+		t.Errorf("legacy ChannelID = %q", m.ChannelID)
+	}
+
+	// Empty ThreadID preserves emptiness.
+	e2 := MessageEvent{
+		Type:      MsgText,
+		Text:      "flat chat message",
+		ChannelID: "-100456",
+		Platform:  "telegram",
+		SenderID:  "user2",
+	}
+	m2 := e2.ToLegacy()
+	if m2.ThreadID != "" {
+		t.Errorf("expected empty ThreadID, got %q", m2.ThreadID)
+	}
+}
+
 func TestMessageEventDocExample(t *testing.T) {
 	// Exercise: full photo message as an adapter would construct it.
 	e := MessageEvent{

@@ -17,6 +17,13 @@ type SessionSource struct {
 	// ChannelID is the platform conversation identifier (chat ID, channel
 	// name, DM thread).
 	ChannelID string `json:"channel_id"`
+
+	// ThreadID identifies the topic thread within the conversation, for
+	// platforms that support threading (Telegram supergroup topics,
+	// Slack threads, Discord forum posts). Empty for flat chats and the
+	// General topic. When non-empty, distinct threads within the same
+	// channel produce distinct sessions.
+	ThreadID string `json:"thread_id,omitempty"`
 }
 
 // SessionContext holds the full metadata for an active gateway session.

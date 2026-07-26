@@ -129,6 +129,7 @@ type MessageEvent struct {
 func (e MessageEvent) ToLegacy() Message {
 	return Message{
 		ChannelID: e.ChannelID,
+		ThreadID:  e.ThreadID,
 		From:      e.SenderID,
 		Text:      e.Text,
 	}

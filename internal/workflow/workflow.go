@@ -1,7 +1,7 @@
 // Package workflow is archied's extensible pipeline engine. A Workflow
 // is an ordered list of stages over a shared TaskContext; stages are
 // either deterministic steps (git, gate, PR, comments) or agent stages
-// (agentloop runs). New workflows compose from the shared step library  -- 
+// (agentloop runs). New workflows compose from the shared step library  --
 // adding one must never require reimplementing the engine or the steps.
 package workflow
 
@@ -17,6 +17,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/skill"
 	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/tools"
 )
 
 // Forger is the subset of forge.Forge that workflow stages call mid-run.
@@ -88,6 +89,16 @@ type TaskContext struct {
 	decision *decision
 	// Outcome describes where the task ended up; the engine applies it.
 	Outcome Outcome
+
+	// SystemPrompt, when non-nil, returns additional context to inject
+	// before the agent's mission in every agent stage request. Wired by
+	// the composition root (cmd/archied) from the MemoryManager.
+	SystemPrompt func() string
+
+	// Guardrails is the per-task guardrail engine reference. When non-nil,
+	// agent stages record tool successes and failures for guardrail
+	// enforcement. Wired by the composition root from the daemon.
+	Guardrails *tools.GuardrailEngine
 }
 
 // Emit publishes an observability event stamped with the task's
@@ -233,7 +244,8 @@ func finish(ctx context.Context, tc *TaskContext, log *slog.Logger) {
 
 // stateLabelFor maps a terminal workflow status to its forge label by
 // looking up the configured [dispatch.labels]; empty clears (done states
-//  --  the issue closes or the PR speaks).
+//
+//	--  the issue closes or the PR speaks).
 func stateLabelFor(d config.Dispatch, status string) string {
 	switch status {
 	case store.StatusPROpen:
