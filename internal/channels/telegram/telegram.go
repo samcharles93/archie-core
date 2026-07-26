@@ -36,6 +36,10 @@ type Gateway struct {
 	// Supplied by the composition root, which owns config paths. Nil
 	// restarts with the settings already in memory.
 	Reload func(*Gateway) error
+	// ReleaseAnnouncements sends one-time upgrade notes to authorized users.
+	// It is supplied by the composition root because version, changelog, and
+	// persistence paths are deployment concerns.
+	ReleaseAnnouncements ReleaseAnnouncer
 
 	// restartCh carries /restart requests from a bot handler to the
 	// supervisor loop in Start. Buffered so a handler never blocks.
@@ -46,6 +50,14 @@ type Gateway struct {
 	bot           *bot.Bot
 	webhookCancel context.CancelFunc
 	running       bool
+}
+
+type ReleaseAnnouncer interface {
+	Announce(
+		ctx context.Context,
+		recipients []int64,
+		send func(context.Context, int64, string) error,
+	) error
 }
 
 // New returns an unstarted Gateway. Call Start to begin webhook
@@ -134,14 +146,16 @@ func (g *Gateway) launch(ctx context.Context, router *gateway.Router) (*bot.Bot,
 	g.bot = b
 
 	// Gateway-local commands: handled directly, no LLM.
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/status", bot.MatchTypePrefix, g.statusHandler(router))
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/help", bot.MatchTypePrefix, g.helpHandler())
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/restart", bot.MatchTypePrefix, g.restartHandler())
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/status", bot.MatchTypeExact, g.statusHandler(router))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, g.startHandler())
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/help", bot.MatchTypeExact, g.helpHandler())
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/restart", bot.MatchTypeExact, g.restartHandler())
 
 	// Publish the command list so Telegram renders a menu. Without this
 	// the commands are undiscoverable and the LLM, having no idea they
 	// exist, tells users there are none.
 	g.registerCommands(ctx, b)
+	g.announceRelease(ctx, b)
 
 	// Set up webhook or fall back to long polling.
 	if g.WebhookURL != "" {
@@ -179,6 +193,28 @@ func (g *Gateway) launch(ctx context.Context, router *gateway.Router) (*bot.Bot,
 	}
 
 	return b, nil
+}
+
+func (g *Gateway) announceRelease(ctx context.Context, b *bot.Bot) {
+	if g.ReleaseAnnouncements == nil {
+		return
+	}
+	err := g.ReleaseAnnouncements.Announce(
+		ctx,
+		slices.Clone(g.AllowedUserIDs),
+		func(ctx context.Context, recipient int64, message string) error {
+			_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: recipient,
+				Text:   message,
+			})
+			return err
+		},
+	)
+	if err != nil {
+		// Notifications are ancillary to chat availability. Keep the gateway
+		// running and let the announcer retry unrecorded recipients next time.
+		g.log.Warn("release announcement failed", "error", err)
+	}
 }
 
 // Stop gracefully shuts down the bot and deletes the webhook.
@@ -243,12 +279,34 @@ func (g *Gateway) helpHandler() bot.HandlerFunc {
 	}
 }
 
+func (g *Gateway) startHandler() bot.HandlerFunc {
+	return g.helpHandler()
+}
+
 // ── default handler (non-command text → router) ─────────────
 
 func (g *Gateway) defaultHandler(router *gateway.Router) bot.HandlerFunc {
 	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
+		if update.CallbackQuery != nil {
+			switch {
+			case strings.HasPrefix(update.CallbackQuery.Data, providerCallbackPrefix):
+				g.handleProviderCallback(ctx, b, update, router)
+			case strings.HasPrefix(update.CallbackQuery.Data, modelCallbackPrefix):
+				g.handleModelCallback(ctx, b, update, router)
+			}
+			return
+		}
+
 		msg, ok := g.authorizedMessage(ctx, b, update)
 		if !ok || msg.Text == "" {
+			return
+		}
+		if isModelSelectorRequest(msg.Text) {
+			g.sendModelSelector(ctx, b, msg, router)
+			return
+		}
+		if isProviderSelectorRequest(msg.Text) {
+			g.sendProviderSelector(ctx, b, msg, router)
 			return
 		}
 

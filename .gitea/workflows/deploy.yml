@@ -7,6 +7,7 @@ name: deploy
 on:
   push:
     branches: [main]
+    tags: ["archied/v*", "archie/v*"]
 
 jobs:
   build-and-push:
@@ -14,16 +15,30 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Log in to registry
         run: echo "${{ secrets.DEPLOY_TOKEN }}" | docker login git.catlow.cloud -u sam --password-stdin
 
       - name: Build and push archied
         run: |
-          docker build -f Dockerfile.archied -t git.catlow.cloud/sam/archied:latest .
+          GATEWAY_TAG="$(git tag --points-at HEAD --list 'archied/v*' | sort -V | tail -1)"
+          RUNTIME_TAG="$(git tag --points-at HEAD --list 'archie/v*' | sort -V | tail -1)"
+          GATEWAY_VERSION="${GATEWAY_TAG#archied/}"
+          RUNTIME_VERSION="${RUNTIME_TAG#archie/}"
+          [ -n "$GATEWAY_VERSION" ] || GATEWAY_VERSION=dev
+          [ -n "$RUNTIME_VERSION" ] || RUNTIME_VERSION=dev
+          docker build \
+            --build-arg GATEWAY_VERSION="$GATEWAY_VERSION" \
+            --build-arg RUNTIME_VERSION="$RUNTIME_VERSION" \
+            -f Dockerfile.archied -t git.catlow.cloud/sam/archied:latest .
           docker push git.catlow.cloud/sam/archied:latest
 
       - name: Build and push archie-agent
         run: |
-          docker build -f Dockerfile -t git.catlow.cloud/sam/archie-agent:latest .
+          RUNTIME_TAG="$(git tag --points-at HEAD --list 'archie/v*' | sort -V | tail -1)"
+          RUNTIME_VERSION="${RUNTIME_TAG#archie/}"
+          [ -n "$RUNTIME_VERSION" ] || RUNTIME_VERSION=dev
+          docker build --build-arg RUNTIME_VERSION="$RUNTIME_VERSION" -f Dockerfile -t git.catlow.cloud/sam/archie-agent:latest .
           docker push git.catlow.cloud/sam/archie-agent:latest

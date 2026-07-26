@@ -16,6 +16,8 @@ RUN CGO_ENABLED=0 go build -o /usr/local/bin/archie-agent ./cmd/archie-agent/
 
 # ── runtime ───────────────────────────────────────────────────────────
 FROM ubuntu:24.04
+ARG RUNTIME_VERSION=dev
+LABEL org.opencontainers.image.version="${RUNTIME_VERSION}"
 
 # Avoid interactive prompts during package installs.
 ENV DEBIAN_FRONTEND=noninteractive

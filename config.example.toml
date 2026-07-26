@@ -42,6 +42,23 @@ api_key_env = "OPENAI_API_KEY"
 [providers.ollama]
 class = "ollama"
 
+# Optional interactive-chat catalog. /provider groups these references by
+# their first path segment, and /model shows only the selected provider's
+# entries. When omitted, Archie uses the distinct refs in [models].
+# [chat]
+# models = [
+#   "openai/gpt-5.6-sol",
+#   "openrouter/openai/gpt-5.6-sol",
+# ]
+
+# External MCP tools are launched and managed by Archie's MCP client.
+# [[tools.mcp_servers]]
+# name = "desktop-commander"
+# transport = "stdio"
+# command = "npx"
+# args = ["-y", "@wonderwhy-er/desktop-commander@0.2.46", "--no-onboarding"]
+# work_dir = "/path/to/workspace"
+
 [agent]
 mode = "inprocess"          # "subprocess" runs each stage through archie-agent (stdin/stdout); "nats" sends stages over NATS
 command = "archie-agent"    # executable path for subprocess mode (not used in nats mode)

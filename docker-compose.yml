@@ -37,6 +37,7 @@ services:
     volumes:
       - ${HOME}/.config/archie/config.toml:/etc/archie/config.toml:ro
       - ./config.docker.toml:/etc/archie/config.docker.toml:ro
+      - ./:/workspace
       - /var/lib/archie/work:/var/lib/archie/work
       - /var/lib/archie/db:/var/lib/archie
       - /var/run/docker.sock:/var/run/docker.sock

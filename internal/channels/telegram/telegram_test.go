@@ -74,9 +74,9 @@ func TestHelpDescribesPublishedCommandsAndChat(t *testing.T) {
 		},
 	})
 
-	for _, command := range gatewayCommands {
-		if !strings.Contains(sentText, "/"+command.Command) {
-			t.Errorf("help text does not describe published /%s command:\n%s", command.Command, sentText)
+	for _, spec := range gatewayCommandSpecs {
+		if !strings.Contains(sentText, "`"+spec.Usage+"`") {
+			t.Errorf("help text does not contain exact usage %q:\n%s", spec.Usage, sentText)
 		}
 	}
 	if strings.Contains(sentText, "not yet wired") {
@@ -84,6 +84,99 @@ func TestHelpDescribesPublishedCommandsAndChat(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(sentText), "chat") {
 		t.Errorf("help text does not describe free-text chat:\n%s", sentText)
+	}
+}
+
+func TestStartHasDeterministicGatewayResponse(t *testing.T) {
+	const allowedUserID = int64(42)
+	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	b, requests := newTelegramTestBot(t)
+
+	g.startHandler()(context.Background(), b, &models.Update{
+		Message: &models.Message{
+			From: &models.User{ID: allowedUserID},
+			Chat: models.Chat{ID: 7, Type: models.ChatTypePrivate},
+			Text: "/start",
+		},
+	})
+
+	if len(*requests) == 0 {
+		t.Fatal("/start sent no response")
+	}
+	found := false
+	for _, request := range *requests {
+		found = found || request.method == "sendRichMessage"
+	}
+	if !found {
+		t.Fatalf("/start did not use deterministic gateway help response: %#v", *requests)
+	}
+}
+
+func TestPublishedCommandsMatchExecutableCommandSurface(t *testing.T) {
+	executable := make(map[string]bool)
+	for _, command := range gateway.LocalCommands() {
+		executable[strings.TrimPrefix(command, "/")] = true
+	}
+	for _, command := range telegramOnlyCommands {
+		executable[command] = true
+	}
+
+	published := make(map[string]bool, len(gatewayCommandSpecs))
+	for _, spec := range gatewayCommandSpecs {
+		published[spec.Command] = true
+	}
+
+	for command := range executable {
+		if !published[command] {
+			t.Errorf("executable /%s command is missing from the menu and help", command)
+		}
+	}
+	for command := range published {
+		if !executable[command] {
+			t.Errorf("published /%s command has no executable implementation", command)
+		}
+	}
+}
+
+type releaseAnnouncerStub struct {
+	recipients []int64
+	message    string
+}
+
+func (s *releaseAnnouncerStub) Announce(
+	ctx context.Context,
+	recipients []int64,
+	send func(context.Context, int64, string) error,
+) error {
+	s.recipients = append([]int64(nil), recipients...)
+	for _, recipient := range recipients {
+		if err := send(ctx, recipient, s.message); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func TestReleaseAnnouncementTargetsAuthorizedUsers(t *testing.T) {
+	const message = "Archie has just been updated to v0.2.0"
+	announcer := &releaseAnnouncerStub{message: message}
+	g := New("1:test", "", "", []int64{7, 8}, slog.Default())
+	g.ReleaseAnnouncements = announcer
+	b, requests := newTelegramTestBot(t)
+
+	g.announceRelease(context.Background(), b)
+
+	if len(announcer.recipients) != 2 || announcer.recipients[0] != 7 || announcer.recipients[1] != 8 {
+		t.Fatalf("announcement recipients = %v, want authorized users [7 8]", announcer.recipients)
+	}
+	var sends int
+	for _, request := range *requests {
+		if request.method == "sendMessage" && request.form["text"] == message {
+			sends++
+		}
+	}
+	if sends != 2 {
+		t.Fatalf("release announcement sends = %d, want 2; requests: %#v", sends, *requests)
 	}
 }
 

@@ -103,10 +103,8 @@ func (s *testMCPServer) handle(msg Message) (*Message, error) {
 		return s.echo(msg), nil
 
 	case "bad-framing":
-		// Write malformed output (no Content-Length header, no newline) and
-		// exit immediately. Without the exit, the client's reader would
-		// block forever inside readMessage looking for a header terminator
-		// that this payload never provides, hanging the test.
+		// Write malformed output without MCP's required trailing newline and
+		// exit immediately so the client observes an incomplete frame.
 		_, _ = fmt.Fprint(os.Stdout, `{"jsonrpc":"2.0","id":1,"result":{}}`)
 		syscall.Exit(0)
 		return nil, nil
@@ -117,9 +115,11 @@ func (s *testMCPServer) handle(msg Message) (*Message, error) {
 }
 
 func (s *testMCPServer) echo(msg Message) *Message {
+	cwd, _ := os.Getwd()
 	result, _ := json.Marshal(map[string]any{
 		"echoed":                 msg.Method,
 		"notifications_received": notificationsReceived.Load(),
+		"cwd":                    cwd,
 	})
 	return &Message{
 		JSONRPC: "2.0",
@@ -132,6 +132,36 @@ func (s *testMCPServer) echo(msg Message) *Message {
 // by this subprocess, so a follow-up Send can report the count back  --
 // a notification itself gets no response to observe from the test side.
 var notificationsReceived atomic.Int64
+
+func TestStdioTransportSetsSubprocessWorkingDirectory(t *testing.T) {
+	workDir := t.TempDir()
+	tr := helperTransportWithConfig(t, "normal", StdioTransportConfig{
+		Dir:            workDir,
+		InitialBackoff: 10 * time.Millisecond,
+		MaxBackoff:     50 * time.Millisecond,
+		MaxRetries:     2,
+	})
+	if err := tr.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tr.Stop(context.Background()) }()
+
+	response, err := tr.Send(context.Background(), []byte(`{"jsonrpc":"2.0","method":"ping","id":1}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var message struct {
+		Result struct {
+			CWD string `json:"cwd"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &message); err != nil {
+		t.Fatal(err)
+	}
+	if message.Result.CWD != workDir {
+		t.Fatalf("MCP subprocess cwd = %q, want %q", message.Result.CWD, workDir)
+	}
+}
 
 // ── Transport Tests ─────────────────────────────────────────────────────
 
@@ -181,7 +211,7 @@ func TestWriteMessage(t *testing.T) {
 		if err := writeMessage(&buf, body); err != nil {
 			t.Fatal(err)
 		}
-		want := "Content-Length: 15\r\n\r\n{\"key\":\"value\"}"
+		want := "{\"key\":\"value\"}\n"
 		if got := buf.String(); got != want {
 			t.Errorf("got %q, want %q", got, want)
 		}
@@ -192,7 +222,7 @@ func TestWriteMessage(t *testing.T) {
 		if err := writeMessage(&buf, nil); err != nil {
 			t.Fatal(err)
 		}
-		want := "Content-Length: 0\r\n\r\n"
+		want := "\n"
 		if got := buf.String(); got != want {
 			t.Errorf("got %q, want %q", got, want)
 		}
@@ -200,48 +230,40 @@ func TestWriteMessage(t *testing.T) {
 }
 
 func TestReadMessage(t *testing.T) {
-	t.Run("reads body with content-length header", func(t *testing.T) {
-		input := "Content-Length: 5\r\n\r\nhello"
+	t.Run("reads newline-delimited JSON", func(t *testing.T) {
+		input := "{\"ok\":true}\n"
 		body, err := readMessage(strings.NewReader(input))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if string(body) != "hello" {
-			t.Errorf("got %q, want %q", string(body), "hello")
+		if string(body) != `{"ok":true}` {
+			t.Errorf("got %q, want JSON body", string(body))
 		}
 	})
 
-	t.Run("ignores other headers", func(t *testing.T) {
-		input := "Content-Type: application/json\r\nContent-Length: 3\r\n\r\nabc"
+	t.Run("accepts CRLF line ending", func(t *testing.T) {
+		input := "{\"ok\":true}\r\n"
 		body, err := readMessage(strings.NewReader(input))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if string(body) != "abc" {
-			t.Errorf("got %q, want %q", string(body), "abc")
+		if string(body) != `{"ok":true}` {
+			t.Errorf("got %q, want JSON body", string(body))
 		}
 	})
 
-	t.Run("missing content-length header", func(t *testing.T) {
-		_, err := readMessage(strings.NewReader("no-header\r\n\r\nbody"))
+	t.Run("missing newline", func(t *testing.T) {
+		_, err := readMessage(strings.NewReader(`{"ok":true}`))
 		if err == nil {
-			t.Fatal("expected error for missing Content-Length")
+			t.Fatal("expected error for incomplete newline-delimited message")
 		}
 	})
 
-	t.Run("negative content-length", func(t *testing.T) {
-		input := "Content-Length: -1\r\n\r\n"
+	t.Run("oversized message", func(t *testing.T) {
+		input := strings.Repeat("x", maxMessageSize+1) + "\n"
 		_, err := readMessage(strings.NewReader(input))
 		if err == nil {
-			t.Fatal("expected error for negative Content-Length")
-		}
-	})
-
-	t.Run("oversized content-length", func(t *testing.T) {
-		input := fmt.Sprintf("Content-Length: %d\r\n\r\n", maxMessageSize+1)
-		_, err := readMessage(strings.NewReader(input))
-		if err == nil {
-			t.Fatal("expected error for oversized Content-Length")
+			t.Fatal("expected error for oversized message")
 		}
 	})
 
@@ -261,7 +283,7 @@ func TestReadMessage(t *testing.T) {
 	})
 
 	t.Run("truncated body returns error", func(t *testing.T) {
-		input := "Content-Length: 10\r\n\r\nshort"
+		input := `{"truncated":true}`
 		_, err := readMessage(strings.NewReader(input))
 		if err == nil {
 			t.Fatal("expected error for truncated body")
@@ -786,7 +808,7 @@ func TestStdioTransportSendContextCancellationWhileWaiting(t *testing.T) {
 // TestStdioTransportBadFraming exercises the reader's malformed-framing
 // path against a real, live subprocess (rather than a synthetic
 // strings.Reader as in TestReadMessage): the server writes a response with
-// no Content-Length header, which readMessage cannot parse, so the reader
+// no trailing newline, which readMessage cannot parse, so the reader
 // goroutine treats the transport as dead and fails pending requests.
 func TestStdioTransportBadFraming(t *testing.T) {
 	tr := helperTransportWithConfig(t, "bad-framing", StdioTransportConfig{
@@ -855,8 +877,7 @@ func TestStdioTransportSendWriteFailureCleansPending(t *testing.T) {
 // ── Framing edge cases ──────────────────────────────────────────────────
 
 func TestFramingCarriageReturnOnly(t *testing.T) {
-	// Some servers might send \n without \r  --  we should be lenient.
-	input := "Content-Length: 4\n\nbody"
+	input := "body\r\n"
 	body, err := readMessage(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -867,7 +888,7 @@ func TestFramingCarriageReturnOnly(t *testing.T) {
 }
 
 func TestFramingMultipleMessages(t *testing.T) {
-	input := "Content-Length: 5\r\n\r\nhelloContent-Length: 3\r\n\r\nbye"
+	input := "hello\nbye\n"
 	br := bufio.NewReader(strings.NewReader(input))
 	body1, err := readMessage(br)
 	if err != nil {

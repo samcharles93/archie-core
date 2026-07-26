@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/BurntSushi/toml"
+
 	"github.com/samcharles93/archie-core/internal/secret"
 )
 
@@ -43,6 +45,43 @@ func TestTaskConfigToConfigRoundTrip(t *testing.T) {
 	}
 	if got.Forge.Token != (secret.SecretRef{}) {
 		t.Fatalf("Forge.Token = %#v, want zero value (never carried by TaskConfig)", got.Forge.Token)
+	}
+}
+
+func TestMCPServerTOMLIncludesClientWorkingDirectory(t *testing.T) {
+	var cfg Config
+	if _, err := toml.Decode(`
+[[tools.mcp_servers]]
+name = "desktop-commander"
+transport = "stdio"
+command = "npx"
+args = ["-y", "@wonderwhy-er/desktop-commander@0.2.46", "--no-onboarding"]
+work_dir = "/workspace"
+`, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Tools.MCPServers) != 1 {
+		t.Fatalf("MCPServers = %#v, want one server", cfg.Tools.MCPServers)
+	}
+	server := cfg.Tools.MCPServers[0]
+	if server.Name != "desktop-commander" || server.Command != "npx" || server.WorkDir != "/workspace" {
+		t.Fatalf("MCP server = %#v", server)
+	}
+	if len(server.Args) != 3 || server.Args[1] != "@wonderwhy-er/desktop-commander@0.2.46" {
+		t.Fatalf("MCP args = %v", server.Args)
+	}
+}
+
+func TestChatModelCatalogDecodesFromTOML(t *testing.T) {
+	var cfg Config
+	if _, err := toml.Decode(`
+[chat]
+models = ["openai/gpt-5.6-sol", "openrouter/openai/gpt-5.6-sol"]
+`, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Chat.Models) != 2 || cfg.Chat.Models[1] != "openrouter/openai/gpt-5.6-sol" {
+		t.Fatalf("chat models = %v", cfg.Chat.Models)
 	}
 }
 

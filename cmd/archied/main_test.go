@@ -87,6 +87,22 @@ func TestGatewaysStartOnlyAfterCapabilityHostAndDaemonStartup(t *testing.T) {
 	}
 }
 
+func TestTelegramRouterUsesRuntimeSelectableChatModel(t *testing.T) {
+	source, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	for _, marker := range []string{
+		"router.Models = chatModels",
+		"chatModel := chatModels.ActiveModel()",
+	} {
+		if !strings.Contains(text, marker) {
+			t.Errorf("Telegram chat model wiring missing %q", marker)
+		}
+	}
+}
+
 func TestConfiguredMCPProviderSupportsOnlyExecutableStdioServers(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -141,6 +157,16 @@ func TestConfiguredMCPProviderSupportsOnlyExecutableStdioServers(t *testing.T) {
 				t.Fatalf("Manifest().ID = %q, want %q", got, tt.wantID)
 			}
 		})
+	}
+}
+
+func TestConfiguredMCPProviderPassesWorkingDirectoryToClientTransport(t *testing.T) {
+	source, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(source), "Dir:     server.WorkDir") {
+		t.Fatal("configured MCP client transport does not receive server.WorkDir")
 	}
 }
 

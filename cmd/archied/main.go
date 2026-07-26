@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -47,6 +48,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
+	"github.com/samcharles93/archie-core/internal/releaseannounce"
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/skill"
 	"github.com/samcharles93/archie-core/internal/storage"
@@ -63,7 +65,19 @@ func main() {
 	os.Exit(run())
 }
 
-const defaultChatMaxSteps = 8
+const (
+	defaultChatMaxSteps          = 8
+	packagedGatewayChangelogPath = "/usr/share/archie/CHANGELOG.archied.md"
+	packagedRuntimeChangelogPath = "/usr/share/archie/CHANGELOG.archie.md"
+)
+
+// Component versions are injected from their independent release tags.
+// Components without a release tag remain "dev" and never generate upgrade
+// notifications.
+var (
+	gatewayVersion = "dev"
+	runtimeVersion = "dev"
+)
 
 func chatGenerateOptions(
 	messages []chat.Message,
@@ -99,6 +113,7 @@ func configuredMCPProvider(server config.MCPServer) (toolprovider.Engine, error)
 	transport := mcp.NewStdioTransport(mcp.StdioTransportConfig{
 		Command: command,
 		Args:    append([]string(nil), server.Args...),
+		Dir:     server.WorkDir,
 	})
 	return mcptoolprovider.New(name, transport), nil
 }
@@ -241,6 +256,7 @@ func run() int {
 	providers := executionProviders(cfg)
 	llm := agentexec.NewRuntime(providers)
 	toolReg := tools.NewRegistry()
+	chatModels := newChatModelManager(cfg.Models, cfg.Chat.Models)
 
 	// ── Persona registry ─────────────────────────────────────────────
 	personas := gateway.NewPersonaRegistry(gateway.DefaultPersonas())
@@ -276,6 +292,24 @@ func run() int {
 				"Add your Telegram user id to chat.telegram.allowed_user_ids to enable the bot.")
 		}
 		tg := telegram.New(tgToken, "", "", cfg.Chat.Telegram.AllowedUserIDs, log)
+		releaseAnnouncements := &releaseannounce.Announcer{
+			StatePath: releaseAnnouncementStatePath(cfg.WorkDir, cfg.BotUser),
+			Components: []releaseannounce.Component{
+				{
+					ID:            "gateway",
+					Label:         "THE GATEWAY",
+					Version:       gatewayVersion,
+					ChangelogPath: packagedGatewayChangelogPath,
+				},
+				{
+					ID:            "runtime",
+					Label:         "THE RUNTIME",
+					Version:       runtimeVersion,
+					ChangelogPath: packagedRuntimeChangelogPath,
+				},
+			},
+		}
+		tg.ReleaseAnnouncements = releaseAnnouncements
 
 		// /restart re-reads config from disk so allowlist and token edits
 		// apply without restarting the daemon and killing running tasks.
@@ -317,23 +351,24 @@ func run() int {
 		var llmResponder gateway.LLMResponder
 		var llmStream gateway.LLMStreamResponder
 		if llm != nil {
-			chatModel := cfg.Models["chat"]
-			if chatModel == "" {
-				chatModel = cfg.Models["builder"]
-			}
 			// respond runs one chat turn. When onDelta is non-nil the reply
 			// is streamed and each fragment reported as it arrives; the
 			// assembled text is returned either way, so both the blocking
 			// and streaming responders share this single path.
 			respond := func(ctx context.Context, msg gateway.Message, onDelta func(string)) (string, error) {
 				sessionKey := sessionKey(msg)
-				_ = sessionStore.SaveMessage(ctx, sessionKey, msg)
+				if err := sessionStore.SaveMessage(ctx, sessionKey, msg); err != nil {
+					return "", fmt.Errorf("save inbound chat message: %w", err)
+				}
 
 				// Load recent conversation history for context.
 				// Use a larger fetch window so compression has room to work
 				// — older messages get summarised, recent ones stay intact.
-				history, _ := sessionStore.RecentMessages(ctx, sessionKey, 100)
-				compressed := make([]gateway.CompressedMessage, 0, len(history)+1)
+				history, err := sessionStore.RecentMessages(ctx, sessionKey, 100)
+				if err != nil {
+					return "", fmt.Errorf("load chat history: %w", err)
+				}
+				compressed := make([]gateway.CompressedMessage, 0, len(history))
 				for _, h := range history {
 					role := "user"
 					if h.From == cfg.BotUser {
@@ -344,11 +379,6 @@ func run() int {
 						Content: h.Text,
 					})
 				}
-				compressed = append(compressed, gateway.CompressedMessage{
-					Role:    "user",
-					Content: msg.Text,
-				})
-
 				// Apply context compression for long-running sessions.
 				compCfg := gateway.DefaultCompressionConfig()
 				view := gateway.CompressHistory(compressed, compCfg)
@@ -381,6 +411,7 @@ func run() int {
 				if err != nil {
 					return "", fmt.Errorf("build chat tools: %w", err)
 				}
+				chatModel := chatModels.ActiveModel()
 				var text string
 				if onDelta == nil {
 					result, err := llm.Chat(ctx, chatModel, options)
@@ -418,10 +449,12 @@ func run() int {
 				}
 
 				// Persist the response.
-				_ = sessionStore.SaveMessage(ctx, sessionKey, gateway.Message{
+				if err := sessionStore.SaveMessage(ctx, sessionKey, gateway.Message{
 					From: cfg.BotUser,
 					Text: text,
-				})
+				}); err != nil {
+					return "", fmt.Errorf("save outbound chat message: %w", err)
+				}
 
 				return text, nil
 			}
@@ -436,6 +469,7 @@ func run() int {
 
 		router := gateway.NewRouter(st, llmResponder, "telegram")
 		router.LLMStream = llmStream
+		router.Models = chatModels
 		configureTaskCommands(router, chatTasks, chatController, defaultChatIdentity)
 		startGateways = append(startGateways, func() {
 			go func() {
@@ -913,6 +947,14 @@ func configHome() string {
 	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".config")
+}
+
+func releaseAnnouncementStatePath(workDir, identity string) string {
+	identityHash := sha256.Sum256([]byte(identity))
+	return filepath.Join(
+		workDir,
+		fmt.Sprintf("release-announcements-%x.json", identityHash[:8]),
+	)
 }
 
 // safePluginInfo calls Name() and Version() on a plugin, recovering from

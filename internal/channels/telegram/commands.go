@@ -21,6 +21,7 @@ type commandSpec struct {
 var gatewayCommandSpecs = []commandSpec{
 	{Command: "status", Description: "Show task counts by state", Usage: "/status"},
 	{Command: "models", Description: "List available models", Usage: "/models"},
+	{Command: "provider", Description: "Choose the provider used for chat", Usage: "/provider"},
 	{Command: "model", Description: "Show the model selector or switch directly", Usage: "/model [provider/model]"},
 	{Command: "spawn", Description: "Create a tracked task", Usage: "/spawn [identity=name] [repo=owner/name] [workflow=name] <title>"},
 	{Command: "approve", Description: "Approve and requeue a waiting task", Usage: "/approve [identity=name] <task-id>"},
@@ -28,6 +29,8 @@ var gatewayCommandSpecs = []commandSpec{
 	{Command: "restart", Description: "Restart the gateway and reload its config", Usage: "/restart"},
 	{Command: "help", Description: "Show this guide", Usage: "/help"},
 }
+
+var telegramOnlyCommands = []string{"provider", "restart", "help"}
 
 var gatewayCommands = func() []models.BotCommand {
 	commands := make([]models.BotCommand, 0, len(gatewayCommandSpecs))
