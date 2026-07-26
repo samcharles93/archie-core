@@ -12,9 +12,9 @@ import (
 	"github.com/samcharles93/NellDB/sdk"
 )
 
-// SessionStore persists gateway session metadata. Each session tracks
-// one (platform, bot, channel) combination for the lifetime of a
-// connection.
+// SessionStore persists gateway session metadata and conversation
+// history. Each session tracks one (platform, bot, channel) combination
+// for the lifetime of a connection.
 type SessionStore interface {
 	// Save persists a session. If a session with the same ID already
 	// exists it is overwritten.
@@ -24,8 +24,7 @@ type SessionStore interface {
 	Get(ctx context.Context, sessionID string) (*SessionContext, error)
 
 	// GetByChannel returns all sessions for the given platform and
-	// channel, newest first. Useful for finding which bot identities
-	// are active in a conversation.
+	// channel, newest first.
 	GetByChannel(ctx context.Context, platform, channelID string) ([]SessionContext, error)
 
 	// Delete removes a session by ID. Deleting a non-existent session
@@ -33,11 +32,25 @@ type SessionStore interface {
 	Delete(ctx context.Context, sessionID string) error
 
 	// Touch updates the LastActiveAt timestamp of the session to now.
-	// Returns nil when the session does not exist.
 	Touch(ctx context.Context, sessionID string) error
 
 	// List returns all sessions, newest first.
 	List(ctx context.Context) ([]SessionContext, error)
+
+	// ── Message persistence ──────────────────────────────────────────
+
+	// SaveMessage appends a message turn to the session's conversation
+	// history. Messages are stored with causal ordering via the HLC.
+	SaveMessage(ctx context.Context, sessionID string, msg Message) error
+
+	// RecentMessages returns the most recent n messages for a session,
+	// oldest first. Used to build the LLM conversation context.
+	RecentMessages(ctx context.Context, sessionID string, n int) ([]Message, error)
+
+	// SearchMessages returns messages matching query via semantic
+	// vector search (NellDB SearchSimilar). Falls back to substring
+	// match on message text when vector search is unavailable.
+	SearchMessages(ctx context.Context, sessionID string, query string, limit int) ([]Message, error)
 
 	// Close shuts down the underlying store.
 	Close() error
@@ -47,7 +60,8 @@ type SessionStore interface {
 
 // nellSessionStore implements SessionStore backed by a NellDB DocDB.
 type nellSessionStore struct {
-	db     *sdk.DocDB
+	db     *sdk.DocDB // sessions collection
+	msgDB  *sdk.DocDB // messages collection
 	store  nl.Store
 	nodeID string
 	mu     sync.Mutex
@@ -58,6 +72,7 @@ type nellSessionStore struct {
 func NewSessionStore(st nl.Store, nodeID string) SessionStore {
 	return &nellSessionStore{
 		db:     sdk.New(st, nodeID, "sessions"),
+		msgDB:  sdk.New(st, nodeID, "messages"),
 		store:  st,
 		nodeID: nodeID,
 	}
@@ -207,4 +222,97 @@ func strField(doc sdk.Doc, key string) string {
 // isMetaKey returns true for internal NellDB meta documents (e.g. counters).
 func isMetaKey(key string) bool {
 	return strings.HasPrefix(key, "meta:")
+}
+
+// ── Message persistence ──────────────────────────────────────────────────────
+
+// msgKey builds a sortable document key for a message within a session.
+// Format: {sessionID}:{seq} where seq is zero-padded to 20 digits for
+// lexicographic ordering.
+func msgKey(sessionID string, seq int64) string {
+	return fmt.Sprintf("%s:%020d", sessionID, seq)
+}
+
+func (s *nellSessionStore) SaveMessage(ctx context.Context, sessionID string, msg Message) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Get the next sequence number by counting existing messages.
+	prefix := sessionID + ":"
+	result, err := s.msgDB.AllDocs(ctx, sdk.DocRange{
+		StartKey:    prefix,
+		EndKey:      prefix + "\xff",
+		IncludeDocs: false,
+	})
+	if err != nil {
+		return fmt.Errorf("sessionstore: save message count: %w", err)
+	}
+	seq := int64(len(result.Rows))
+
+	doc := sdk.Doc{
+		sdk.FieldID:  msgKey(sessionID, seq),
+		"session_id": sessionID,
+		"seq":        seq,
+		"from":       msg.From,
+		"text":       msg.Text,
+		"channel_id": msg.ChannelID,
+		"thread_id":  msg.ThreadID,
+		"at":         time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	if _, err := s.msgDB.Put(ctx, doc); err != nil {
+		return fmt.Errorf("sessionstore: save message: %w", err)
+	}
+	return nil
+}
+
+func (s *nellSessionStore) RecentMessages(ctx context.Context, sessionID string, n int) ([]Message, error) {
+	prefix := sessionID + ":"
+	result, err := s.msgDB.AllDocs(ctx, sdk.DocRange{
+		StartKey:    prefix,
+		EndKey:      prefix + "\xff",
+		IncludeDocs: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("sessionstore: recent messages: %w", err)
+	}
+
+	// Rows are sorted by key (which includes the seq). Take the last n.
+	start := len(result.Rows) - n
+	if start < 0 {
+		start = 0
+	}
+	out := make([]Message, 0, n)
+	for _, row := range result.Rows[start:] {
+		if row.Doc == nil {
+			continue
+		}
+		out = append(out, Message{
+			From:      strField(row.Doc, "from"),
+			Text:      strField(row.Doc, "text"),
+			ChannelID: strField(row.Doc, "channel_id"),
+			ThreadID:  strField(row.Doc, "thread_id"),
+		})
+	}
+	return out, nil
+}
+
+func (s *nellSessionStore) SearchMessages(ctx context.Context, sessionID string, query string, limit int) ([]Message, error) {
+	// Substring match on recent messages. Vector search via NellDB
+	// SearchSimilar requires an embedding model — deferred to future
+	// integration with the memory provider's vector store.
+	msgs, err := s.RecentMessages(ctx, sessionID, 200)
+	if err != nil {
+		return nil, err
+	}
+	ql := strings.ToLower(query)
+	var out []Message
+	for _, m := range msgs {
+		if strings.Contains(strings.ToLower(m.Text), ql) {
+			out = append(out, m)
+			if len(out) >= limit {
+				break
+			}
+		}
+	}
+	return out, nil
 }

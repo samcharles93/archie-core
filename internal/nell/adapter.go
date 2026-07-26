@@ -62,6 +62,11 @@ func OpenMemory(nodeID string) store.TaskStore {
 	return newAdapter(nell.NewMemoryStore(nodeID), nodeID)
 }
 
+// Store returns the underlying NellDB engine this adapter wraps. Useful for
+// creating additional SDK collections (e.g. sessions, messages) on the same
+// persistent store without opening a second log.
+func (a *Adapter) Store() nell.Store { return a.store }
+
 func newAdapter(st nell.Store, nodeID string) *Adapter {
 	return &Adapter{
 		store:  st,

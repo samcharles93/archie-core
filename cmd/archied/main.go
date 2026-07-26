@@ -16,6 +16,7 @@ import (
 
 	natsio "github.com/nats-io/nats.go"
 
+	"github.com/samcharles93/ai-sdk/chat"
 	"github.com/samcharles93/ai-sdk/core"
 
 	"github.com/moby/moby/client"
@@ -197,9 +198,19 @@ func run() int {
 		}
 		tg := telegram.New(tgToken, "", "", nil, log)
 
+		// Session store backed by the same NellDB log as task state.
+		// Sessions and messages survive daemon restarts.
+		var sessionStore gateway.SessionStore
+		if nellAdapter, ok := st.(*nell.Adapter); ok {
+			sessionStore = gateway.NewSessionStore(nellAdapter.Store(), cfg.BotUser)
+		} else {
+			sessionStore = gateway.NewSessionStoreMemory(cfg.BotUser)
+		}
+
 		// Build an LLM responder from the runtime. Gateway-local commands
 		// (/status, /models, /model, /spawn) are handled directly; all
-		// other messages are routed through the LLM.
+		// other messages are routed through the LLM with conversation
+		// history from the session store.
 		var llmResponder gateway.LLMResponder
 		if llm != nil {
 			chatModel := cfg.Models["chat"]
@@ -207,13 +218,41 @@ func run() int {
 				chatModel = cfg.Models["builder"]
 			}
 			llmResponder = func(ctx context.Context, msg gateway.Message) (string, error) {
+				sessionKey := sessionKey(msg)
+				_ = sessionStore.SaveMessage(ctx, sessionKey, msg)
+
+				// Load recent conversation history for context.
+				history, _ := sessionStore.RecentMessages(ctx, sessionKey, 20)
+				messages := make([]chat.Message, 0, len(history)+1)
+				for _, h := range history {
+					role := chat.RoleUser
+					if h.From == cfg.BotUser {
+						role = chat.RoleAssistant
+					}
+					messages = append(messages, chat.Message{
+						Role:    role,
+						Content: h.Text,
+					})
+				}
+				messages = append(messages, chat.Message{
+					Role:    chat.RoleUser,
+					Content: msg.Text,
+				})
+
 				result, err := llm.Chat(ctx, chatModel, core.GenerateOptions{
-					Prompt:   msg.Text,
+					Messages: messages,
 					MaxSteps: 1,
 				})
 				if err != nil {
 					return "", fmt.Errorf("llm chat: %w", err)
 				}
+
+				// Persist the response.
+				_ = sessionStore.SaveMessage(ctx, sessionKey, gateway.Message{
+					From: cfg.BotUser,
+					Text: result.Text,
+				})
+
 				return result.Text, nil
 			}
 		}
@@ -387,6 +426,16 @@ func run() int {
 		return 1
 	}
 	return 0
+}
+
+// sessionKey builds a deterministic session identifier from a gateway
+// message's routing fields. Platform + channel + thread uniquely identify
+// a conversation for session persistence and history retrieval.
+func sessionKey(msg gateway.Message) string {
+	if msg.ThreadID != "" {
+		return msg.ChannelID + ":" + msg.ThreadID
+	}
+	return msg.ChannelID
 }
 
 func executionProviders(cfg config.Config) map[string]agentexec.Provider {
