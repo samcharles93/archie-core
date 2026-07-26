@@ -11,9 +11,12 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"encoding/json"
+
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/gateway"
 )
 
@@ -380,3 +383,45 @@ func updateThreadID(update *models.Update) int {
 	}
 	return update.Message.MessageThreadID
 }
+
+// ConfigSchema returns the JSON Schema for the Telegram channel config.
+func (g *Gateway) ConfigSchema() json.RawMessage {
+	return json.RawMessage(`{
+  "type": "object",
+  "required": ["token_env"],
+  "properties": {
+    "token_env": {
+      "type": "string",
+      "description": "Environment variable holding the Telegram bot token from @BotFather"
+    },
+    "webhook_url": {
+      "type": "string",
+      "description": "Public HTTPS URL for Telegram webhook delivery"
+    },
+    "webhook_secret": {
+      "type": "string",
+      "description": "Secret token for webhook validation"
+    },
+    "allowed_chat_ids": {
+      "type": "array",
+      "items": { "type": "integer" },
+      "description": "Restrict bot access to specific chat IDs"
+    }
+  }
+}`)
+}
+
+// ValidateConfig checks the Telegram channel configuration.
+func (g *Gateway) ValidateConfig(cfg map[string]any) error {
+	if cfg == nil {
+		return fmt.Errorf("telegram config is required")
+	}
+	tokenEnv, _ := cfg["token_env"].(string)
+	if tokenEnv == "" {
+		return fmt.Errorf("telegram.token_env is required")
+	}
+	return nil
+}
+
+// Compile-time guard.
+var _ channels.Channel = (*Gateway)(nil)

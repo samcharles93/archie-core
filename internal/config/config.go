@@ -451,6 +451,8 @@ type ContainerConfig struct {
 // collaboration PRD, phase C  --  docs/prds/multi-agent-collaboration.md).
 // Empty (Telegram.TokenEnv == "") disables chat entirely.
 type ChatConfig struct {
+	// Email configures the inbound email gateway via SMTP.
+	Email EmailConfig `toml:"email" yaml:"email"`
 	// WebhookAddr is the host:port for the inbound webhook gateway.
 	// Empty disables the webhook gateway.
 	WebhookAddr string `toml:"webhook_addr" yaml:"webhook_addr"`
@@ -462,6 +464,15 @@ type TelegramConfig struct {
 	// TokenEnv names the env var holding the bot token from @BotFather.
 	// Empty disables the Telegram channel.
 	TokenEnv string `toml:"token_env" yaml:"token_env"`
+}
+
+// EmailConfig configures the inbound email channel via SMTP.
+type EmailConfig struct {
+	// ListenAddr is the host:port for the inbound SMTP server.
+	// Empty disables the email channel.
+	ListenAddr string `toml:"listen_addr" yaml:"listen_addr"`
+	// RelayAddr is the SMTP relay for outbound replies.
+	RelayAddr string `toml:"relay_addr" yaml:"relay_addr"`
 }
 
 // Notify configures outbound notifications (n8n webhook → email etc.).

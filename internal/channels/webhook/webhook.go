@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/gateway"
 )
 
@@ -193,6 +194,49 @@ func validateHMAC(body []byte, signature, secret string) bool {
 	expected := hex.EncodeToString(mac.Sum(nil))
 	return hmac.Equal([]byte(sigHex), []byte(expected))
 }
+
+// ConfigSchema returns the JSON Schema for the webhook channel config.
+func (g *Gateway) ConfigSchema() json.RawMessage {
+	return json.RawMessage(`{
+  "type": "object",
+  "required": ["host", "port"],
+  "properties": {
+    "host": {
+      "type": "string",
+      "description": "Listen address (e.g. 0.0.0.0)"
+    },
+    "port": {
+      "type": "integer",
+      "description": "Listen port (e.g. 8644)"
+    },
+    "routes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "secret": { "type": "string" },
+          "template": { "type": "string" }
+        }
+      }
+    }
+  }
+}`)
+}
+
+// ValidateConfig checks the webhook channel configuration.
+func (g *Gateway) ValidateConfig(cfg map[string]any) error {
+	if cfg == nil {
+		return fmt.Errorf("webhook config is required")
+	}
+	if host, _ := cfg["host"].(string); host == "" {
+		return fmt.Errorf("webhook.host is required")
+	}
+	return nil
+}
+
+// Compile-time guard.
+var _ channels.Channel = (*Gateway)(nil)
 
 // extractText pulls a value from a JSON body using dot-notation path.
 // "issue.title" → body["issue"]["title"]. Empty path = raw body.

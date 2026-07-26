@@ -23,6 +23,7 @@ import (
 
 	"github.com/moby/moby/client"
 	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/channels/email"
 	"github.com/samcharles93/archie-core/internal/channels/telegram"
 	"github.com/samcharles93/archie-core/internal/channels/webhook"
 	"github.com/samcharles93/archie-core/internal/config"
@@ -303,6 +304,18 @@ func run() int {
 			}
 		}()
 		log.Info("telegram gateway started")
+	}
+
+	// ── Email gateway (optional) ───────────────────────────────────
+	if cfg.Chat.Email.ListenAddr != "" {
+		em := email.New(cfg.Chat.Email.ListenAddr, cfg.Chat.Email.RelayAddr, log)
+		emRouter := gateway.NewRouter(st, nil, "email")
+		go func() {
+			if err := em.Start(ctx, emRouter); err != nil && ctx.Err() == nil {
+				log.Error("email gateway stopped", "err", err)
+			}
+		}()
+		log.Info("email gateway started", "addr", cfg.Chat.Email.ListenAddr)
 	}
 
 	// ── Webhook gateway (optional) ─────────────────────────────────
