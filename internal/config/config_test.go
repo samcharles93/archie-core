@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/samcharles93/archie-core/internal/secret"
 )
 
 func TestTaskConfigToConfigRoundTrip(t *testing.T) {
@@ -17,7 +19,7 @@ func TestTaskConfigToConfigRoundTrip(t *testing.T) {
 		Budgets:      Budgets{MaxSteps: 12, MaxTokens: 34_000, WallClock: Duration(45 * time.Minute), GateMaxFailures: 3},
 		Dispatch:     Dispatch{Trigger: "label", AckReaction: "eyes", Labels: map[string]string{"working": "bot:working"}},
 		Notify:       Notify{Webhook: "https://notify.example.test/hook"},
-		Forge:        Forge{Type: "github", Host: "https://forge.example.test", TokenEnv: "TOP_SECRET"},
+		Forge:        Forge{Type: "github", Host: "https://forge.example.test", Token: secret.SecretRef{Engine: "env", Key: "TOP_SECRET"}},
 	}
 
 	got := cfg.ForTask().ToConfig()
@@ -39,8 +41,8 @@ func TestTaskConfigToConfigRoundTrip(t *testing.T) {
 	if got.Forge.Host != cfg.Forge.Host {
 		t.Fatalf("Forge.Host = %q, want %q", got.Forge.Host, cfg.Forge.Host)
 	}
-	if got.Forge.TokenEnv != "" {
-		t.Fatalf("Forge.TokenEnv = %q, want empty (never carried by TaskConfig)", got.Forge.TokenEnv)
+	if got.Forge.Token != (secret.SecretRef{}) {
+		t.Fatalf("Forge.Token = %#v, want zero value (never carried by TaskConfig)", got.Forge.Token)
 	}
 }
 
@@ -64,9 +66,9 @@ func TestConfigForTaskJSONRoundTrip(t *testing.T) {
 		},
 		Notify: Notify{Webhook: "https://notify.example.test/hook"},
 		Forge: Forge{
-			Type:     "github",
-			Host:     "https://forge.example.test",
-			TokenEnv: "TOP_SECRET_FORGE_TOKEN",
+			Type:  "github",
+			Host:  "https://forge.example.test",
+			Token: secret.SecretRef{Engine: "env", Key: "TOP_SECRET_FORGE_TOKEN"},
 		},
 		Providers: map[string]Provider{
 			"secret": {APIKeyEnv: "TOP_SECRET_PROVIDER_TOKEN"},
@@ -129,13 +131,13 @@ func TestConfigForTaskJSONRoundTrip(t *testing.T) {
 	}) {
 		t.Fatalf("forge payload = %s, want only host", payload["forge"])
 	}
-	for _, secret := range []string{
-		cfg.Forge.TokenEnv,
+	for _, ref := range []string{
+		cfg.Forge.Token.Key,
 		cfg.Providers["secret"].APIKeyEnv,
 		cfg.NATS.TokenEnv,
 	} {
-		if strings.Contains(string(data), secret) {
-			t.Fatalf("task config JSON contains credential reference %q: %s", secret, data)
+		if strings.Contains(string(data), ref) {
+			t.Fatalf("task config JSON contains credential reference %q: %s", ref, data)
 		}
 	}
 
@@ -616,7 +618,7 @@ bot_user = "default-legacy"
 [[identities]]
 name = "archie"
 bot_user = "archie"
-forge = { type = "gitea", host = "https://git.example.test", token_env = "ARCHIE_TOKEN" }
+forge = { type = "gitea", host = "https://git.example.test", token = { engine = "env", key = "ARCHIE_TOKEN" } }
 
 [[identities.repos]]
 owner = "sam"
@@ -627,7 +629,7 @@ ecosystem = "go"
 [[identities]]
 name = "winter"
 bot_user = "winter"
-forge = { type = "gitea", host = "https://git.example.test", token_env = "WINTER_TOKEN" }
+forge = { type = "gitea", host = "https://git.example.test", token = { engine = "env", key = "WINTER_TOKEN" } }
 
 [[identities.repos]]
 owner = "sam"
@@ -647,8 +649,8 @@ ecosystem = "go"
 	if cfg.Identities[0].BotUser != "archie" {
 		t.Errorf("Identities[0].BotUser = %q", cfg.Identities[0].BotUser)
 	}
-	if cfg.Identities[0].Forge.TokenEnv != "ARCHIE_TOKEN" {
-		t.Errorf("Identities[0].Forge.TokenEnv = %q", cfg.Identities[0].Forge.TokenEnv)
+	if cfg.Identities[0].Forge.Token != (secret.SecretRef{Engine: "env", Key: "ARCHIE_TOKEN"}) {
+		t.Errorf("Identities[0].Forge.Token = %#v", cfg.Identities[0].Forge.Token)
 	}
 	if len(cfg.Identities[0].Repos) != 1 || cfg.Identities[0].Repos[0].Name != "archie-core" {
 		t.Errorf("Identities[0].Repos = %+v", cfg.Identities[0].Repos)
@@ -659,8 +661,8 @@ ecosystem = "go"
 	if cfg.Identities[1].BotUser != "winter" {
 		t.Errorf("Identities[1].BotUser = %q", cfg.Identities[1].BotUser)
 	}
-	if cfg.Identities[1].Forge.TokenEnv != "WINTER_TOKEN" {
-		t.Errorf("Identities[1].Forge.TokenEnv = %q", cfg.Identities[1].Forge.TokenEnv)
+	if cfg.Identities[1].Forge.Token != (secret.SecretRef{Engine: "env", Key: "WINTER_TOKEN"}) {
+		t.Errorf("Identities[1].Forge.Token = %#v", cfg.Identities[1].Forge.Token)
 	}
 	if len(cfg.Identities[1].Repos) != 1 || cfg.Identities[1].Repos[0].Name != "tau" {
 		t.Errorf("Identities[1].Repos = %+v", cfg.Identities[1].Repos)
@@ -695,6 +697,29 @@ forge = { type = "github", token_env = "X" }
 `))
 	if err == nil {
 		t.Error("expected error for identity with empty name")
+	}
+}
+
+func TestIdentitiesConfigRejectsMissingForgeToken(t *testing.T) {
+	// Unlike the top-level [forge], a per-identity forge has no default
+	// token  --  each identity needs its own secret reference (e.g.
+	// distinct bot accounts each with their own token). Omitting it must
+	// be a startup error, not a silent empty-string token.
+	_, err := LoadBytes([]byte(`
+[[identities]]
+name = "archie"
+bot_user = "archie"
+forge = { type = "github" }
+
+[[identities.repos]]
+owner = "sam"
+name = "archie-core"
+`))
+	if err == nil {
+		t.Fatal("expected error for identity with no forge.token")
+	}
+	if !strings.Contains(err.Error(), "forge.token") {
+		t.Errorf("error = %q, want mention of forge.token", err.Error())
 	}
 }
 

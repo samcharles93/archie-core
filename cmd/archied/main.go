@@ -9,10 +9,10 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"net"
 	"strconv"
 	"syscall"
 
@@ -42,6 +42,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
+	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/storerpc"
@@ -72,9 +73,10 @@ func run() int {
 		return 1
 	}
 
-	token := os.Getenv(cfg.Forge.TokenEnv)
-	if token == "" {
-		fmt.Fprintln(os.Stderr, cfg.Forge.TokenEnv+" is required")
+	secrets := secret.NewRegistry()
+	token, err := cfg.Forge.Token.Resolve(secrets)
+	if err != nil || token == "" {
+		fmt.Fprintf(os.Stderr, "forge token (engine %q, key %q) is required: %v\n", cfg.Forge.Token.Engine, cfg.Forge.Token.Key, err)
 		return 1
 	}
 	forgeClient, err := forge.New(cfg.Forge.Type, token, cfg.Forge.Host, log)

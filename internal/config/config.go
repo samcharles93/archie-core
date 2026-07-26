@@ -17,6 +17,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/samcharles93/archie-core/internal/secret"
 )
 
 // Duration is a time.Duration that unmarshals from TOML strings ("60s").
@@ -184,9 +185,9 @@ type Agent struct {
 
 // Forge configures the code forge integration.
 type Forge struct {
-	Type     string `toml:"type" yaml:"type"`
-	Host     string `toml:"host" yaml:"host"`
-	TokenEnv string `toml:"token_env" yaml:"token_env"`
+	Type  string           `toml:"type" yaml:"type"`
+	Host  string           `toml:"host" yaml:"host"`
+	Token secret.SecretRef `toml:"token" yaml:"token"`
 }
 
 // Dispatch configures how archied discovers work and reflects task state
@@ -543,8 +544,8 @@ func finalize(cfg Config) (Config, error) {
 	if cfg.Forge.Host == "" {
 		cfg.Forge.Host = "https://github.com"
 	}
-	if cfg.Forge.TokenEnv == "" {
-		cfg.Forge.TokenEnv = "ARCHIE_GITHUB_TOKEN"
+	if cfg.Forge.Token.Engine == "" && cfg.Forge.Token.Key == "" {
+		cfg.Forge.Token = secret.SecretRef{Engine: "env", Key: "ARCHIE_GITHUB_TOKEN"}
 	}
 	if cfg.Agent.Mode == "" {
 		if cfg.Containers.Enabled {
@@ -623,6 +624,9 @@ func finalize(cfg Config) (Config, error) {
 			case "github", "gitea":
 			default:
 				return cfg, fmt.Errorf("config: identities[%d].forge.type %q is not supported (want github or gitea)", i, id.Forge.Type)
+			}
+			if id.Forge.Token == (secret.SecretRef{}) {
+				return cfg, fmt.Errorf("config: identities[%d].forge.token is required (each identity needs its own secret reference; unlike the top-level [forge], there is no default)", i)
 			}
 			for j, r := range id.Repos {
 				if r.Owner == "" || r.Name == "" {

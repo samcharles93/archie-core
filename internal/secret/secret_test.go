@@ -45,30 +45,6 @@ func TestSecretRefZeroValue(t *testing.T) {
 	}
 }
 
-func TestSecretRefResolveOrEnvFallback(t *testing.T) {
-	os.Setenv("FALLBACK_TEST_KEY", "fallback-val")
-	defer os.Unsetenv("FALLBACK_TEST_KEY")
-
-	r := NewRegistry()
-	s := SecretRef{Key: "FALLBACK_TEST_KEY"} // no engine → env fallback
-	v, err := s.ResolveOrEnv(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if v != "fallback-val" {
-		t.Errorf("got %q, want fallback-val", v)
-	}
-}
-
-func TestSecretRefResolveOrEnvMissing(t *testing.T) {
-	r := NewRegistry()
-	s := SecretRef{Key: "NONEXISTENT_VAR_12345"}
-	_, err := s.ResolveOrEnv(r)
-	if err == nil {
-		t.Error("expected error for missing env var in fallback")
-	}
-}
-
 func TestRegistryRegisterAndGet(t *testing.T) {
 	r := NewRegistry()
 	e, ok := r.Get("env")

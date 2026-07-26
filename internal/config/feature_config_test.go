@@ -25,6 +25,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/samcharles93/archie-core/internal/secret"
 )
 
 // helpers
@@ -32,7 +34,7 @@ import (
 // writeFile creates a file under dir with the given content.
 func writeFile(t *testing.T, dir, name, content string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
 		t.Fatalf("write %s: %v", name, err)
 	}
 }
@@ -42,7 +44,7 @@ func tmpConfigDir(t *testing.T) string {
 	t.Helper()
 	d := t.TempDir()
 	// Also create conf.d/ subdirectory for additional feature files.
-	if err := os.MkdirAll(filepath.Join(d, "conf.d"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(d, "conf.d"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return d
@@ -275,7 +277,9 @@ identities:
     forge:
       type: gitea
       host: https://git.example.test
-      token_env: ARCHIE_TOKEN
+      token:
+        engine: env
+        key: ARCHIE_TOKEN
     repos:
       - owner: sam
         name: archie-core
@@ -285,7 +289,9 @@ identities:
     forge:
       type: gitea
       host: https://git.example.test
-      token_env: WINTER_TOKEN
+      token:
+        engine: env
+        key: WINTER_TOKEN
     repos:
       - owner: sam
         name: tau
@@ -305,8 +311,8 @@ identities:
 	if cfg.Identities[1].Name != "secondary" {
 		t.Errorf("identities[1].name = %q", cfg.Identities[1].Name)
 	}
-	if cfg.Identities[0].Forge.TokenEnv != "ARCHIE_TOKEN" {
-		t.Errorf("identities[0].forge.token_env = %q", cfg.Identities[0].Forge.TokenEnv)
+	if cfg.Identities[0].Forge.Token != (secret.SecretRef{Engine: "env", Key: "ARCHIE_TOKEN"}) {
+		t.Errorf("identities[0].forge.token = %#v", cfg.Identities[0].Forge.Token)
 	}
 }
 
@@ -718,8 +724,8 @@ models:
 	}
 	// ForTask must NOT carry secret references.
 	roundTripped := taskCfg.ToConfig()
-	if roundTripped.Forge.TokenEnv != "" {
-		t.Error("ForTask must not leak TokenEnv")
+	if roundTripped.Forge.Token != (secret.SecretRef{}) {
+		t.Error("ForTask must not leak Forge.Token")
 	}
 }
 
@@ -733,7 +739,7 @@ poll_interval = "120s"
 
 [forge]
 type = "github"
-token_env = "GH_TOKEN"
+token = { engine = "env", key = "GH_TOKEN" }
 
 [[repos]]
 owner = "sam"
@@ -757,7 +763,7 @@ bot_user = "base"
 max_retries = 2
 [forge]
 type = "github"
-token_env = "BASE_TOKEN"
+token = { engine = "env", key = "BASE_TOKEN" }
 [[repos]]
 owner = "sam"
 name = "base-repo"
@@ -781,7 +787,7 @@ max_retries = 5
 		t.Errorf("MaxRetries = %d, want 5 (overridden by overlay)", cfg.MaxRetries)
 	}
 	// Inherited from base.
-	if cfg.Forge.TokenEnv != "BASE_TOKEN" {
-		t.Errorf("Forge.TokenEnv = %q, want BASE_TOKEN (inherited)", cfg.Forge.TokenEnv)
+	if cfg.Forge.Token != (secret.SecretRef{Engine: "env", Key: "BASE_TOKEN"}) {
+		t.Errorf("Forge.Token = %#v, want {env BASE_TOKEN} (inherited)", cfg.Forge.Token)
 	}
 }

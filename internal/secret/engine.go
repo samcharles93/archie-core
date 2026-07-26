@@ -2,14 +2,24 @@
 // resolve SecretRef values (engine + key) into strings at daemon startup,
 // keeping credentials out of config files and environment variables.
 //
-// Built-in engines (env, bws, sops) are compiled in; custom engines are
-// loaded from a directory via Yaegi, mirroring internal/plugin conventions.
+// Only the "env" engine is compiled in (see env.go). Other backends
+// (sops, Bitwarden Secrets Manager, Vault/OpenBao) ship as Yaegi-loaded
+// .go plugins under a configurable directory via Registry.LoadDir,
+// mirroring internal/plugin conventions  --  they are not hard-coded
+// into the binary.
 package secret
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
+	"strings"
 	"sync"
+
+	"github.com/traefik/yaegi/interp"
 
 	"github.com/samcharles93/archie-core/internal/yaegiutil"
 )
@@ -23,6 +33,12 @@ type Engine interface {
 	Version() string
 	// Resolve looks up a secret by key and returns its value. Returns an
 	// error when the key is unknown or the backend is unreachable.
+	//
+	// Caution for callers: a Yaegi-loaded engine whose exported value
+	// omits the Resolve function resolves every key to ("", nil) rather
+	// than failing (see secretextract's generated wrapper nil-guards) --
+	// check for an empty string in addition to a non-nil error before
+	// trusting a resolved secret.
 	Resolve(key string) (string, error)
 }
 
@@ -60,31 +76,51 @@ func (r *Registry) Resolve(ref SecretRef) (string, error) {
 	return e.Resolve(ref.Key)
 }
 
-// LoadDir loads yaegi-interpreted secret engine plugins from a directory
-// of .go files. Each file must export a "main.Engine" variable satisfying
-// the Engine interface. Failed plugins are skipped; successful ones are
-// registered. Returns the count of loaded engines.
-func (r *Registry) LoadDir(dir string) (int, error) {
+// LoadDir discovers and evaluates .go files in dir. Each file must export
+// a variable named "Engine" that implements the Engine interface. Failed
+// engines are logged and skipped  --  the daemon starts with the remaining
+// set, matching internal/plugin.LoadDir's degrade-gracefully behavior.
+// Returns the count of newly registered engines.
+//
+// extraSymbols are additional Yaegi symbol tables made available to
+// interpreted code. Callers should pass secretextract.Symbols so that
+// interpreted types can satisfy the secret.Engine interface across the
+// Yaegi/Go boundary.
+func (r *Registry) LoadDir(dir string, extraSymbols ...map[string]map[string]reflect.Value) (int, error) {
 	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return 0, nil
+	}
 	if err != nil {
-		if os.IsNotExist(err) {
-			return 0, nil
-		}
 		return 0, fmt.Errorf("secret: read dir %s: %w", dir, err)
 	}
 
-	loaded := 0
-	for _, entry := range entries {
-		if entry.IsDir() || !isGoFile(entry.Name()) {
-			continue
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".go") {
+			names = append(names, e.Name())
 		}
-		path := dir + "/" + entry.Name()
+	}
+	sort.Strings(names)
+
+	loaded := 0
+	for _, name := range names {
+		path := filepath.Join(dir, name)
 		src, err := os.ReadFile(path)
 		if err != nil {
+			slog.Default().Warn("skipping unreadable secret engine", "file", name, "err", err)
 			continue
 		}
-		e, err := yaegiutil.Resolve[Engine](nil, string(src), "main.Engine")
+		// Each file is package main  --  must use a fresh interpreter to
+		// avoid symbol collisions between files.
+		i, err := yaegiutil.New(interp.Options{}, extraSymbols...)
 		if err != nil {
+			slog.Default().Warn("skipping secret engine  --  interpreter setup failed", "file", name, "err", err)
+			continue
+		}
+		e, err := yaegiutil.Resolve[Engine](i, string(src), "main.Engine")
+		if err != nil {
+			slog.Default().Warn("skipping secret engine", "file", name, "err", err)
 			continue
 		}
 		r.Register(e)
@@ -107,8 +143,4 @@ func NewRegistry() *Registry {
 	r := &Registry{engines: make(map[string]Engine)}
 	r.Register(&envEngine{})
 	return r
-}
-
-func isGoFile(name string) bool {
-	return len(name) > 3 && name[len(name)-3:] == ".go"
 }

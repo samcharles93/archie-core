@@ -18,6 +18,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/forge"
 	arnats "github.com/samcharles93/archie-core/internal/nats"
+	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskrun"
@@ -622,7 +623,7 @@ func TestNewIdentityRunnerPopulatesFromConfig(t *testing.T) {
 			idCfg: config.IdentityConfig{
 				Name:    "my-bot",
 				BotUser: "my-bot",
-				Forge:   config.Forge{Type: "gitea", TokenEnv: "X"},
+				Forge:   config.Forge{Type: "gitea", Token: secret.SecretRef{Engine: "env", Key: "X"}},
 				Repos:   []config.Repo{{Owner: "o", Name: "r"}},
 			},
 		},
@@ -631,7 +632,7 @@ func TestNewIdentityRunnerPopulatesFromConfig(t *testing.T) {
 			idCfg: config.IdentityConfig{
 				Name:    "other-bot",
 				BotUser: "other-bot",
-				Forge:   config.Forge{Type: "github", TokenEnv: "Y"},
+				Forge:   config.Forge{Type: "github", Token: secret.SecretRef{Engine: "env", Key: "Y"}},
 				Repos:   []config.Repo{{Owner: "a", Name: "b"}, {Owner: "c", Name: "d"}},
 			},
 		},

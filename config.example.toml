@@ -1,5 +1,9 @@
 # archied configuration. Copy to ~/.config/archie/config.toml.
-# Forge tokens are NOT configured here: export the variable named by token_env.
+# Secrets are NOT configured here directly: each one is a {engine, key}
+# reference resolved through a secrets engine at startup. The built-in
+# "env" engine reads key as an environment variable name. Custom engines
+# (sops, bws, vault/openbao, ...) are Yaegi plugins loaded from a
+# directory  --  see internal/secret.
 
 # work_dir = "~/.local/share/archie/work"   # default
 # db_path  = "~/.local/share/archie/archie.db"
@@ -12,7 +16,7 @@ diff_cap_lines = 400
 [forge]
 type = "github"
 host = "https://github.com"
-token_env = "ARCHIE_GITHUB_TOKEN"
+token = { engine = "env", key = "ARCHIE_GITHUB_TOKEN" }
 
 [dispatch]
 trigger = "assignee"      # "assignee", "label", or "either"

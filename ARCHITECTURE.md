@@ -142,7 +142,7 @@ Token auth via a generated `GIT_ASKPASS` helper script  --  the token never appe
 
 Daemon-level TOML (`~/.config/archie/config.toml`):
 
-- `[forge]`  --  type (github), host, token env var
+- `[forge]`  --  type (github), host, token secret reference
 - `[dispatch]`  --  trigger (assignee/label/either), labels, ack reaction
 - `[[repos]]`  --  owner, name, base branch, gate commands, protected paths, ecosystem
 - `[models]`  --  planner, builder, triage (provider/model refs)
@@ -151,6 +151,8 @@ Daemon-level TOML (`~/.config/archie/config.toml`):
 - `[budgets]`  --  max steps, max tokens, wall clock, gate max failures
 - `[web]`  --  dashboard listen address
 - `[notify]`  --  webhook URL for notifications
+
+Secrets (forge token, provider API keys, channel tokens) are not embedded in config files. `internal/secret` defines a pluggable `Engine` interface (`Name`, `Version`, `Resolve(key) (string, error)`) resolved through a `Registry`; the built-in `env` engine reads an environment variable by name. Custom engines (sops, Bitwarden Secrets Manager, Vault/OpenBao) are Yaegi-interpreted `.go` plugins loaded from a directory, following the same convention as `internal/plugin`'s daemon plugins. Config fields reference a secret as `{engine, key}` (`secret.SecretRef`), e.g. `token = { engine = "env", key = "ARCHIE_GITHUB_TOKEN" }`. As of this writing only `Forge.Token` has been migrated to `SecretRef`; `Provider.APIKeyEnv`, `NATSConfig.TokenEnv`, and `TelegramConfig.TokenEnv` are still plain env-var-name strings pending a follow-up (they're forwarded by name to `ai-sdk/runtime` and subprocess workers rather than resolved centrally, which needs its own design pass before migrating).
 
 Subprocess mode is a migration transport boundary, not a security sandbox: the worker still runs under the daemon UID and can access daemon-readable host resources. The "daemon never runs untrusted code" boundary requires the later container runner with a separate user, a restricted filesystem and process namespace, and explicit mounts.
 
