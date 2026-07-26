@@ -32,6 +32,7 @@ services:
     environment:
       - ARCHIE_GITEA_TOKEN
       - ARCHIE_GITEA_TOKEN_ARCHIE
+      - HEYARCHIE_TELEGRAM_BOT_TOKEN
       - DEEPSEEK_API_KEY
     volumes:
       - ${HOME}/.config/archie/config.toml:/etc/archie/config.toml:ro
