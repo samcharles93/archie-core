@@ -6,8 +6,8 @@ import (
 )
 
 func TestEnvEngineResolve(t *testing.T) {
-	os.Setenv("TEST_SECRET_KEY", "test-value")
-	defer os.Unsetenv("TEST_SECRET_KEY")
+	_ = os.Setenv("TEST_SECRET_KEY", "test-value")
+	defer func() { _ = os.Unsetenv("TEST_SECRET_KEY") }()
 
 	e := &envEngine{}
 	if e.Name() != "env" {
@@ -65,8 +65,8 @@ func TestRegistryGetMissing(t *testing.T) {
 }
 
 func TestRegistryResolve(t *testing.T) {
-	os.Setenv("TEST_SECRET", "resolved")
-	defer os.Unsetenv("TEST_SECRET")
+	_ = os.Setenv("TEST_SECRET", "resolved")
+	defer func() { _ = os.Unsetenv("TEST_SECRET") }()
 
 	r := NewRegistry()
 	v, err := r.Resolve(SecretRef{Engine: "env", Key: "TEST_SECRET"})

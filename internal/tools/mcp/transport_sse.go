@@ -66,10 +66,6 @@ type SSETransport struct {
 	mu    sync.Mutex
 	state TransportState
 
-	// sessionID is learned from the endpoint event after the SSE
-	// connection is established and appended as a query parameter on
-	// POSTs to the message endpoint.
-	sessionID string
 	// messageEndpoint is the actual POST URL the server told us to use,
 	// discovered from the endpoint event (or the config fallback).
 	messageEndpoint string
@@ -214,7 +210,7 @@ func (t *SSETransport) connect(ctx context.Context) error {
 		return err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		err := fmt.Errorf("mcp sse: server returned %d", resp.StatusCode)
 		_ = t.setError(err)
 		return err
@@ -228,7 +224,7 @@ func (t *SSETransport) connect(ctx context.Context) error {
 	reader := bufio.NewReader(resp.Body)
 	msgURL, err := readEndpointEvent(reader)
 	if err != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		_ = t.setError(fmt.Errorf("mcp sse: read endpoint event: %w", err))
 		return err
 	}
@@ -252,7 +248,7 @@ func (t *SSETransport) connect(ctx context.Context) error {
 // "message" events to the corresponding pending channel.
 func (t *SSETransport) runReader(body io.Closer, reader *bufio.Reader) {
 	defer t.readerWg.Done()
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 
 	for {
 		event, data, err := readSSEEvent(reader)
@@ -323,7 +319,7 @@ func (t *SSETransport) reconnect() {
 			continue
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			backoff = nextBackoff(backoff, t.config.effectiveMaxReconnectBackoff())
 			continue
 		}
@@ -331,7 +327,7 @@ func (t *SSETransport) reconnect() {
 		reader := bufio.NewReader(resp.Body)
 		msgURL, err := readEndpointEvent(reader)
 		if err != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			backoff = nextBackoff(backoff, t.config.effectiveMaxReconnectBackoff())
 			continue
 		}
@@ -407,7 +403,7 @@ func (t *SSETransport) postJSON(ctx context.Context, body []byte) error {
 	if err != nil {
 		return fmt.Errorf("mcp sse: post: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))

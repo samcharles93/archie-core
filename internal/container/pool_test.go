@@ -179,12 +179,12 @@ func TestWriteTaskJSONOverwrite(t *testing.T) {
 	p1 := TaskPayload{ID: 1, Title: "first"}
 	p2 := TaskPayload{ID: 2, Title: "second"}
 
-	WriteTaskJSON(dir, p1)
-	WriteTaskJSON(dir, p2) // overwrite
+	_ = WriteTaskJSON(dir, p1)
+	_ = WriteTaskJSON(dir, p2) // overwrite
 
 	data, _ := os.ReadFile(filepath.Join(dir, "task.json"))
 	var decoded TaskPayload
-	json.Unmarshal(data, &decoded)
+	_ = json.Unmarshal(data, &decoded)
 
 	if decoded.ID != 2 || decoded.Title != "second" {
 		t.Errorf("expected second payload, got ID=%d Title=%q", decoded.ID, decoded.Title)
@@ -201,7 +201,7 @@ func TestWriteTaskJSONMinimalPayload(t *testing.T) {
 
 	data, _ := os.ReadFile(filepath.Join(dir, "task.json"))
 	var decoded TaskPayload
-	json.Unmarshal(data, &decoded)
+	_ = json.Unmarshal(data, &decoded)
 
 	if decoded.ID != 1 {
 		t.Error("minimal payload ID mismatch")

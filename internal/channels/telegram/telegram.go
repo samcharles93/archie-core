@@ -345,6 +345,9 @@ func (g *Gateway) updateLoggingMiddleware() bot.Middleware {
 			if hasChat {
 				attrs = append(attrs, "chat_id", chatID)
 			}
+			if threadID := updateThreadID(update); threadID != 0 {
+				attrs = append(attrs, "thread_id", threadID)
+			}
 			g.log.Debug("telegram update", attrs...)
 			next(ctx, b, update)
 		}

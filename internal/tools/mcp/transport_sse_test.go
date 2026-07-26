@@ -19,11 +19,9 @@ import (
 // events onto events to send them back through the SSE stream.
 type sseTestServer struct {
 	*httptest.Server
-	SessID    string
-	events    chan string
-	incoming  chan []byte
-	mu        sync.Mutex
-	postedIDs []string
+	SessID   string
+	events   chan string
+	incoming chan []byte
 }
 
 func newSSETestServer(t *testing.T) *sseTestServer {
@@ -33,7 +31,7 @@ func newSSETestServer(t *testing.T) *sseTestServer {
 		incoming: make(chan []byte, 10),
 	}
 	s.Server = httptest.NewUnstartedServer(s)
-	s.Server.Start()
+	s.Start()
 	s.SessID = "test-session-id"
 	return s
 }
@@ -51,13 +49,13 @@ func (s *sseTestServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 
 		// Send the endpoint event — tells the client where to POST.
-		fmt.Fprintf(w, "event: endpoint\ndata: %s/messages?session_id=%s\n\n", s.URL, s.SessID)
+		_, _ = fmt.Fprintf(w, "event: endpoint\ndata: %s/messages?session_id=%s\n\n", s.URL, s.SessID)
 		flusher.Flush()
 
 		for {
 			select {
 			case data := <-s.events:
-				fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+				_, _ = fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
 				flusher.Flush()
 			case <-r.Context().Done():
 				return
@@ -66,7 +64,7 @@ func (s *sseTestServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	case "/messages":
 		body, _ := io.ReadAll(r.Body)
-		r.Body.Close()
+		_ = r.Body.Close()
 		s.incoming <- body
 		w.WriteHeader(http.StatusAccepted)
 
@@ -86,7 +84,7 @@ func TestSSETransportSendReceivesResponseViaSSE(t *testing.T) {
 	if err := tr.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	defer tr.Stop(context.Background())
+	defer func() { _ = tr.Stop(context.Background()) }()
 
 	time.Sleep(50 * time.Millisecond) // let the SSE connection establish
 
@@ -121,7 +119,7 @@ func TestSSETransportNotifyFireAndForget(t *testing.T) {
 	if err := tr.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	defer tr.Stop(context.Background())
+	defer func() { _ = tr.Stop(context.Background()) }()
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -197,7 +195,7 @@ func TestSSETransportConcurrentSendsGetCorrectResponses(t *testing.T) {
 	if err := tr.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	defer tr.Stop(context.Background())
+	defer func() { _ = tr.Stop(context.Background()) }()
 
 	time.Sleep(50 * time.Millisecond)
 

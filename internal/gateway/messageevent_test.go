@@ -5,12 +5,6 @@ import (
 	"testing"
 )
 
-//go:fix inline
-func intPtr(v int) *int { return new(v) }
-
-//go:fix inline
-func i64Ptr(v int64) *int64 { return new(v) }
-
 func TestMessageEventToLegacy(t *testing.T) {
 	e := MessageEvent{
 		Type:      MsgText,

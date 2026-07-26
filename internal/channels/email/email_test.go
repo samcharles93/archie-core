@@ -81,19 +81,19 @@ func TestSMTPReceiveAndRoute(t *testing.T) {
 		t.Fatal(err)
 	}
 	addr := ln.Addr().String()
-	ln.Close()
+	_ = ln.Close()
 
 	g.ListenAddr = addr
 	go func() { _ = g.Start(ctx, router) }()
 	time.Sleep(20 * time.Millisecond)
-	defer g.Stop(context.Background())
+	defer func() { _ = g.Stop(context.Background()) }()
 
 	// Connect via SMTP and send a message.
 	conn, err := net.DialTimeout("tcp", addr, 1*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Read greeting.
 	buf := make([]byte, 1024)
@@ -104,7 +104,7 @@ func TestSMTPReceiveAndRoute(t *testing.T) {
 
 	// Send a minimal SMTP transaction.
 	send := func(s string) {
-		conn.Write([]byte(s + "\r\n"))
+		_, _ = conn.Write([]byte(s + "\r\n"))
 		time.Sleep(5 * time.Millisecond)
 	}
 

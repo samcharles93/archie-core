@@ -475,7 +475,7 @@ func (d *Daemon) pollSQLite(ctx context.Context, fg forge.Forge, repo config.Rep
 		d.acknowledge(ctx, fg, repo, is)
 		return
 	}
-	d.maybeRetryParked(ctx, fg, repo, is)
+	d.maybeRetryParked(ctx, repo, is)
 }
 
 // pollNATS publishes discovered issues to NATS (new flow).
@@ -487,7 +487,7 @@ func (d *Daemon) pollNATS(ctx context.Context, fg forge.Forge, repo config.Repo,
 		return
 	}
 	if existing != nil {
-		d.maybeRetryParked(ctx, fg, repo, is)
+		d.maybeRetryParked(ctx, repo, is)
 		return
 	}
 	if err := d.Nats.PublishTask(ctx, repo.Owner, repo.Name, is.Number, is.Title, is.Body, labels, identity); err != nil {
@@ -620,10 +620,9 @@ func (d *Daemon) pollEither(ctx context.Context, repo config.Repo) []forge.Issue
 // maybeRetryParked requeues a parked task whose state label a human has
 // removed  --  the forge-native retry trigger. When retry_count reaches the
 // configured max_retries the task moves to dead instead of requeuing.
-// fg is only used before task is loaded (the hasLabel short-circuit needs
-// no forge call); once task is available its own Identity is authoritative
-// for which forge client owns it, resolved via forgeFor.
-func (d *Daemon) maybeRetryParked(ctx context.Context, fg forge.Forge, repo config.Repo, is forge.Issue) {
+// The forge client is resolved from the task's own Identity via forgeFor
+// (not passed in) since that's authoritative for which forge client owns it.
+func (d *Daemon) maybeRetryParked(ctx context.Context, repo config.Repo, is forge.Issue) {
 	if hasLabel(is.Labels, d.Cfg.Dispatch.StateLabel("parked")) {
 		return
 	}
@@ -631,7 +630,7 @@ func (d *Daemon) maybeRetryParked(ctx context.Context, fg forge.Forge, repo conf
 	if err != nil || task == nil || task.Status != store.StatusParked {
 		return
 	}
-	fg = d.forgeFor(task)
+	fg := d.forgeFor(task)
 
 	maxRetries := repo.EffectiveMaxRetries(d.Cfg.MaxRetries)
 
@@ -648,7 +647,7 @@ func (d *Daemon) maybeRetryParked(ctx context.Context, fg forge.Forge, repo conf
 		d.Log.Error("increment retry_count failed", "issue", is.Number, "err", err)
 	}
 	d.Log.Info("parked task requeued via label removal", "repo", repo.FullName(), "issue", is.Number, "retry_count", task.RetryCount+1, "max_retries", maxRetries)
-	d.Forge.SetStateLabel(ctx, repo.Owner, repo.Name, is.Number, d.Cfg.Dispatch.StateLabel("queued"), d.Cfg.Dispatch.LabelValues())
+	fg.SetStateLabel(ctx, repo.Owner, repo.Name, is.Number, d.Cfg.Dispatch.StateLabel("queued"), d.Cfg.Dispatch.LabelValues())
 	d.emit(events.Event{
 		Kind: "task_retried", TaskID: task.ID,
 		Repo: repo.FullName(), Issue: is.Number, Detail: "parked label removed",

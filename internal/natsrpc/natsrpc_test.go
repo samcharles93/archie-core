@@ -86,8 +86,8 @@ func TestEnvelopeJSONRoundTrip(t *testing.T) {
 			t.Errorf("expected error 'request failed', got %v", decoded.Err())
 		}
 		// Error field flattens into parent JSON.
-		if decoded.Envelope.Error != "request failed" {
-			t.Errorf("Error = %q", decoded.Envelope.Error)
+		if decoded.Error != "request failed" {
+			t.Errorf("Error = %q", decoded.Error)
 		}
 	})
 }

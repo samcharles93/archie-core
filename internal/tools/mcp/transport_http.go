@@ -55,7 +55,7 @@ func (t *HTTPTransport) Send(ctx context.Context, body []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		// Read up to 4 KB of the error body for diagnostics.
@@ -80,7 +80,7 @@ func (t *HTTPTransport) Notify(ctx context.Context, body []byte) error {
 	}
 	// Drain and close the response body to return the connection to the pool.
 	_, _ = io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return nil
 }
 
@@ -101,3 +101,6 @@ func (t *HTTPTransport) do(ctx context.Context, body []byte) (*http.Response, er
 	}
 	return resp, nil
 }
+
+// Compile-time interface check.
+var _ Transport = (*HTTPTransport)(nil)

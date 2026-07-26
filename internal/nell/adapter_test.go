@@ -243,7 +243,7 @@ func TestPersistenceAcrossRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s2.Close()
+	defer func() { _ = s2.Close() }()
 
 	task, err := s2.TaskByIssue(ctx, "acme", "todo", 1)
 	if err != nil || task == nil {
@@ -459,8 +459,8 @@ func TestStatusCountsAfterTransitions(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	s.EnqueueIssue(ctx, "acme", "repo", 1, "t1", "", "", "")
-	s.EnqueueIssue(ctx, "acme", "repo", 2, "t2", "", "", "")
+	_, _ = s.EnqueueIssue(ctx, "acme", "repo", 1, "t1", "", "", "")
+	_, _ = s.EnqueueIssue(ctx, "acme", "repo", 2, "t2", "", "", "")
 
 	task1, _ := s.ClaimNext(ctx)
 	task2, _ := s.ClaimNext(ctx)
@@ -470,7 +470,7 @@ func TestStatusCountsAfterTransitions(t *testing.T) {
 		t.Errorf("expected 2 running, got %d", counts[store.StatusRunning])
 	}
 
-	s.Transition(ctx, task1.ID, store.StatusRunning, store.StatusPROpen, "")
+	_ = s.Transition(ctx, task1.ID, store.StatusRunning, store.StatusPROpen, "")
 	counts, _ = s.StatusCounts(ctx)
 	if counts[store.StatusPROpen] != 1 {
 		t.Errorf("expected 1 pr_open, got %d", counts[store.StatusPROpen])
@@ -497,8 +497,8 @@ func TestInsertEventsSinceAndRecent(t *testing.T) {
 	if len(evs) < 2 {
 		t.Fatalf("expected at least 2 events, got %d", len(evs))
 	}
-	if evs[0].ID < evs[1].ID {
-		// Oldest first — correct.
+	if evs[0].ID >= evs[1].ID {
+		t.Errorf("EventsSince order: evs[0].ID=%d, evs[1].ID=%d, want oldest first", evs[0].ID, evs[1].ID)
 	}
 
 	// RecentEvents returns newest first.

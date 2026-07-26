@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -221,13 +222,16 @@ func (m *mockProvider) OnDelegation(sessionID string) error {
 // ── Config helpers ──────────────────────────────────────────────────────
 
 func (m *mockProvider) GetConfigSchema() map[string]any {
-	m.mu.Lock()
-	m.getConfigSchemaCalls++
-	m.mu.Unlock()
-	return map[string]any{
+	schema := map[string]any{
 		"type":       "object",
 		"properties": map[string]any{},
+		"provider":   m.nameVal,
 	}
+	m.mu.Lock()
+	m.getConfigSchemaCalls++
+	m.lastConfigSchema = schema
+	m.mu.Unlock()
+	return schema
 }
 
 func (m *mockProvider) SaveConfig(values map[string]any, hermesHome string) error {
@@ -242,10 +246,12 @@ func (m *mockProvider) SaveConfig(values map[string]any, hermesHome string) erro
 // ── Backup paths ────────────────────────────────────────────────────────
 
 func (m *mockProvider) BackupPaths() []string {
+	paths := []string{"/var/data/" + m.nameVal}
 	m.mu.Lock()
 	m.backupPathsCalls++
+	m.lastBackupPaths = paths
 	m.mu.Unlock()
-	return []string{"/var/data/" + m.nameVal}
+	return paths
 }
 
 // ── Compile-time checks ─────────────────────────────────────────────────
@@ -551,7 +557,7 @@ func TestManager_HandleToolCall_ScanBlocksPromptInjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	mgr.SetScanner(&DefaultScanner{})
 	mgr.SetScanReject(true)
@@ -577,7 +583,7 @@ func TestManager_HandleToolCall_ScanAllowsCleanContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	mgr.SetScanner(&DefaultScanner{})
 	mgr.SetScanReject(true)
@@ -604,7 +610,7 @@ func TestManager_HandleToolCall_NotifiesExternalOnBuiltinWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	_, err = mgr.HandleToolCall("builtin_tool", map[string]any{
 		"session_id": "session-1",
@@ -643,7 +649,7 @@ func TestManager_HandleToolCall_DoesNotNotifyOnExternalWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	// external_tool is owned by ext itself; a write through ext's own tool
 	// must not loop back and notify ext of its own write.
@@ -921,6 +927,26 @@ func TestManager_GetConfigSchema_Aggregates(t *testing.T) {
 	if _, ok := schemas["external"]; !ok {
 		t.Error("missing external in config schemas")
 	}
+
+	// The manager's aggregated result must be each provider's own schema,
+	// not a shared/mixed one.
+	if schemas["builtin"]["provider"] != "builtin" {
+		t.Errorf("schemas[\"builtin\"][\"provider\"] = %v, want %q", schemas["builtin"]["provider"], "builtin")
+	}
+	if schemas["external"]["provider"] != "external" {
+		t.Errorf("schemas[\"external\"][\"provider\"] = %v, want %q", schemas["external"]["provider"], "external")
+	}
+
+	builtin.mu.Lock()
+	if builtin.lastConfigSchema["provider"] != "builtin" {
+		t.Errorf("builtin.lastConfigSchema recorded %v, want provider=builtin", builtin.lastConfigSchema)
+	}
+	builtin.mu.Unlock()
+	ext.mu.Lock()
+	if ext.lastConfigSchema["provider"] != "external" {
+		t.Errorf("external.lastConfigSchema recorded %v, want provider=external", ext.lastConfigSchema)
+	}
+	ext.mu.Unlock()
 }
 
 func TestManager_SaveConfig(t *testing.T) {
@@ -980,6 +1006,23 @@ func TestManager_BackupPaths_Aggregates(t *testing.T) {
 	if len(paths) != 2 {
 		t.Fatalf("BackupPaths() returned %d paths, want 2", len(paths))
 	}
+	if !slices.Contains(paths, "/var/data/builtin") {
+		t.Errorf("BackupPaths() = %v, missing builtin path", paths)
+	}
+	if !slices.Contains(paths, "/var/data/external") {
+		t.Errorf("BackupPaths() = %v, missing external path", paths)
+	}
+
+	builtin.mu.Lock()
+	if len(builtin.lastBackupPaths) != 1 || builtin.lastBackupPaths[0] != "/var/data/builtin" {
+		t.Errorf("builtin.lastBackupPaths = %v, want [/var/data/builtin]", builtin.lastBackupPaths)
+	}
+	builtin.mu.Unlock()
+	ext.mu.Lock()
+	if len(ext.lastBackupPaths) != 1 || ext.lastBackupPaths[0] != "/var/data/external" {
+		t.Errorf("external.lastBackupPaths = %v, want [/var/data/external]", ext.lastBackupPaths)
+	}
+	ext.mu.Unlock()
 }
 
 func TestManager_BackupPaths_NoBackupProviders(t *testing.T) {
@@ -1205,7 +1248,7 @@ func TestManager_SubmitSync_DispatchesToExternalProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	done := make(chan error, 1)
 	op := SyncOp{
@@ -1257,7 +1300,7 @@ func TestManager_SubmitSync_FIFOOrdering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	// Submit 3 ops. The external providers OnMemoryWrite stores the last
 	// content only, so use content as a sequence identifier.
@@ -1308,7 +1351,7 @@ func TestManager_SubmitSync_CompletionNotification(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	// Submit to builtin (no MemoryWriteHook by default on mock builtin).
 	// Actually builtin mock does implement MemoryWriteHook. So this should
@@ -1344,7 +1387,7 @@ func TestManager_SubmitSync_ProviderNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	done := make(chan error, 1)
 	op := SyncOp{
@@ -1400,7 +1443,7 @@ func TestManager_PrefetchContext_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	ctx := context.Background()
 	result, err := mgr.PrefetchContext(ctx, "test query")
@@ -1418,7 +1461,7 @@ func TestManager_PrefetchContext_StoresResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	_, err = mgr.PrefetchContext(context.Background(), "store me")
 	if err != nil {
@@ -1444,10 +1487,10 @@ func TestManager_PrefetchContext_SkipWhenInFlight(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	// Start a prefetch that blocks.
-	go mgr.PrefetchContext(context.Background(), "blocking")
+	go func() { _, _ = mgr.PrefetchContext(context.Background(), "blocking") }()
 
 	// Give the goroutine time to acquire the in-flight flag.
 	time.Sleep(50 * time.Millisecond)
@@ -1476,7 +1519,7 @@ func TestManager_PrefetchContext_Timeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	// Set a very short timeout.
 	mgr.SetPrefetchTimeout(10 * time.Millisecond)
@@ -1496,7 +1539,7 @@ func TestManager_SetPrefetchTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	// Set custom timeout.
 	mgr.SetPrefetchTimeout(5 * time.Second)
@@ -1520,7 +1563,7 @@ func TestManager_NotifyMemoryToolWrite_DispatchesToExternal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	mgr.NotifyMemoryToolWrite("session-1", "add", "notes", "hello world")
 
@@ -1550,7 +1593,7 @@ func TestManager_NotifyMemoryToolWrite_NoOpWithoutExternal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	// Should not panic or error when no external provider is active.
 	mgr.NotifyMemoryToolWrite("session-1", "add", "notes", "content")
@@ -1564,7 +1607,7 @@ func TestManager_NotifyMemoryToolWrite_NoOpWhenExternalUnavailable(t *testing.T)
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	// Should not panic when external provider is unavailable.
 	mgr.NotifyMemoryToolWrite("session-1", "add", "notes", "content")
@@ -1578,7 +1621,7 @@ func TestManager_ScanContent_NoScannerReturnsNone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	result := mgr.ScanContent("anything")
 	if result.Level != ThreatNone {
@@ -1592,7 +1635,7 @@ func TestManager_ScanContent_DisabledReturnsNone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	mgr.SetScanner(&DefaultScanner{})
 	mgr.SetScanDisabled(true)
@@ -1609,7 +1652,7 @@ func TestManager_ScanContent_DetectsPromptInjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	mgr.SetScanner(&DefaultScanner{})
 
@@ -1626,7 +1669,7 @@ func TestManager_ScanContent_RejectModeBlocksPromptInjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	mgr.SetScanner(&DefaultScanner{})
 	mgr.SetScanReject(true)
@@ -1643,7 +1686,7 @@ func TestManager_ScanContent_DetectsSensitiveData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	mgr.SetScanner(&DefaultScanner{})
 
@@ -1659,7 +1702,7 @@ func TestManager_ScanContent_CleanContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	mgr.SetScanner(&DefaultScanner{})
 
@@ -1675,7 +1718,7 @@ func TestManager_SetScanner_NilClears(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	mgr.SetScanner(&DefaultScanner{})
 	if mgr.Scanner() == nil {
@@ -1830,7 +1873,7 @@ func TestManager_SetShutdownTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	defer mgr.Shutdown()
+	defer func() { _ = mgr.Shutdown() }()
 
 	mgr.SetShutdownTimeout(30 * time.Second)
 	if got := mgr.shutdownTimeout; got != 30*time.Second {

@@ -136,8 +136,8 @@ func TestScrubber_PartialOpenTag_SplitAtAngle(t *testing.T) {
 	var buf bytes.Buffer
 	s := New(&buf)
 
-	s.Write([]byte("Hello <"))
-	s.Write([]byte("memory>secret</memory> World"))
+	_, _ = s.Write([]byte("Hello <"))
+	_, _ = s.Write([]byte("memory>secret</memory> World"))
 
 	if err := s.Flush(); err != nil {
 		t.Fatalf("Flush error: %v", err)
@@ -169,8 +169,8 @@ func TestScrubber_PartialOpenTag_SplitMidTag(t *testing.T) {
 			var buf bytes.Buffer
 			s := New(&buf)
 
-			s.Write([]byte(tt.chunk1))
-			s.Write([]byte(tt.chunk2))
+			_, _ = s.Write([]byte(tt.chunk1))
+			_, _ = s.Write([]byte(tt.chunk2))
 
 			if err := s.Flush(); err != nil {
 				t.Fatalf("Flush error: %v", err)
@@ -205,8 +205,8 @@ func TestScrubber_PartialCloseTag_SplitMidTag(t *testing.T) {
 			var buf bytes.Buffer
 			s := New(&buf)
 
-			s.Write([]byte(tt.chunk1))
-			s.Write([]byte(tt.chunk2))
+			_, _ = s.Write([]byte(tt.chunk1))
+			_, _ = s.Write([]byte(tt.chunk2))
 
 			if err := s.Flush(); err != nil {
 				t.Fatalf("Flush error: %v", err)
@@ -253,8 +253,8 @@ func TestScrubber_PartialTag_NotActuallyATag(t *testing.T) {
 			var buf bytes.Buffer
 			s := New(&buf)
 
-			s.Write([]byte(tt.chunk1))
-			s.Write([]byte(tt.chunk2))
+			_, _ = s.Write([]byte(tt.chunk1))
+			_, _ = s.Write([]byte(tt.chunk2))
 
 			if err := s.Flush(); err != nil {
 				t.Fatalf("Flush error: %v", err)
@@ -289,9 +289,9 @@ func TestScrubber_OpenTagAtExactChunkBoundary(t *testing.T) {
 	var buf bytes.Buffer
 	s := New(&buf)
 
-	s.Write([]byte("Hello "))
-	s.Write([]byte("<memory>secret</memory>"))
-	s.Write([]byte(" World"))
+	_, _ = s.Write([]byte("Hello "))
+	_, _ = s.Write([]byte("<memory>secret</memory>"))
+	_, _ = s.Write([]byte(" World"))
 
 	if err := s.Flush(); err != nil {
 		t.Fatalf("Flush error: %v", err)
@@ -306,8 +306,8 @@ func TestScrubber_CloseTagAtExactChunkBoundary(t *testing.T) {
 	var buf bytes.Buffer
 	s := New(&buf)
 
-	s.Write([]byte("Hello <memory>secret"))
-	s.Write([]byte("</memory> World"))
+	_, _ = s.Write([]byte("Hello <memory>secret"))
+	_, _ = s.Write([]byte("</memory> World"))
 
 	if err := s.Flush(); err != nil {
 		t.Fatalf("Flush error: %v", err)
@@ -324,7 +324,7 @@ func TestScrubber_SingleByteChunks(t *testing.T) {
 	s := New(&buf)
 
 	for i := 0; i < len(input); i++ {
-		s.Write([]byte{input[i]})
+		_, _ = s.Write([]byte{input[i]})
 	}
 	if err := s.Flush(); err != nil {
 		t.Fatalf("Flush error: %v", err)
@@ -342,7 +342,7 @@ func TestScrubber_TwoByteChunks(t *testing.T) {
 
 	for i := 0; i < len(input); i += 2 {
 		end := min(i+2, len(input))
-		s.Write([]byte(input[i:end]))
+		_, _ = s.Write([]byte(input[i:end]))
 	}
 	if err := s.Flush(); err != nil {
 		t.Fatalf("Flush error: %v", err)
@@ -357,8 +357,8 @@ func TestScrubber_ChunkEndingWithOpenTagStart(t *testing.T) {
 	var buf bytes.Buffer
 	s := New(&buf)
 
-	s.Write([]byte("text <"))
-	s.Write([]byte("notmemory> more"))
+	_, _ = s.Write([]byte("text <"))
+	_, _ = s.Write([]byte("notmemory> more"))
 
 	if err := s.Flush(); err != nil {
 		t.Fatalf("Flush error: %v", err)
@@ -427,7 +427,7 @@ func TestScrubber_Process_StreamingEquivalence(t *testing.T) {
 	for _, ch := range chunks {
 		streamingResult.WriteString(s2.Process(ch))
 	}
-	s2.Flush()
+	_ = s2.Flush()
 	streamingResult.WriteString(s2.Process("")) // drain any final output
 
 	if streamingResult.String() != oneShot {
@@ -472,7 +472,7 @@ func TestScrubber_Reset_MidStream(t *testing.T) {
 	var buf bytes.Buffer
 	s := New(&buf)
 
-	s.Write([]byte("A <memory>secret"))
+	_, _ = s.Write([]byte("A <memory>secret"))
 	if s.InMemoryBlock() == false {
 		t.Error("expected to be in memory block")
 	}
@@ -487,8 +487,8 @@ func TestScrubber_Reset_MidStream(t *testing.T) {
 		t.Errorf("BlocksStripped = %d after Reset, want 0", s.BlocksStripped())
 	}
 
-	s.Write([]byte("clean <memory>gone</memory> text"))
-	s.Flush()
+	_, _ = s.Write([]byte("clean <memory>gone</memory> text"))
+	_ = s.Flush()
 
 	if got := buf.String(); got != "clean  text" {
 		t.Errorf("after Reset: got %q, want %q", got, "clean  text")
@@ -541,12 +541,12 @@ func TestScrubber_InMemoryBlock(t *testing.T) {
 		t.Error("InMemoryBlock should be false initially")
 	}
 
-	s.Write([]byte("before <memory>"))
+	_, _ = s.Write([]byte("before <memory>"))
 	if !s.InMemoryBlock() {
 		t.Error("InMemoryBlock should be true after open tag")
 	}
 
-	s.Write([]byte("content</memory> after"))
+	_, _ = s.Write([]byte("content</memory> after"))
 	if s.InMemoryBlock() {
 		t.Error("InMemoryBlock should be false after close tag")
 	}
@@ -560,22 +560,22 @@ func TestScrubber_Depth(t *testing.T) {
 		t.Errorf("Depth = %d initially, want 0", s.Depth())
 	}
 
-	s.Write([]byte("<memory>"))
+	_, _ = s.Write([]byte("<memory>"))
 	if s.Depth() != 1 {
 		t.Errorf("Depth = %d after first open, want 1", s.Depth())
 	}
 
-	s.Write([]byte("<memory>"))
+	_, _ = s.Write([]byte("<memory>"))
 	if s.Depth() != 2 {
 		t.Errorf("Depth = %d after second open, want 2", s.Depth())
 	}
 
-	s.Write([]byte("</memory>"))
+	_, _ = s.Write([]byte("</memory>"))
 	if s.Depth() != 1 {
 		t.Errorf("Depth = %d after first close, want 1", s.Depth())
 	}
 
-	s.Write([]byte("</memory>"))
+	_, _ = s.Write([]byte("</memory>"))
 	if s.Depth() != 0 {
 		t.Errorf("Depth = %d after second close, want 0", s.Depth())
 	}
@@ -610,7 +610,7 @@ func TestScrubber_IOWriter_Chain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("io.WriteString error: %v", err)
 	}
-	s.Flush()
+	_ = s.Flush()
 
 	if got := buf.String(); got != "Hello  World" {
 		t.Errorf("got %q, want %q", got, "Hello  World")
@@ -629,9 +629,9 @@ func TestScrubber_MemoryBlockAcrossManyChunks(t *testing.T) {
 
 	for i := 0; i < len(input); i += 3 {
 		end := min(i+3, len(input))
-		s.Write([]byte(input[i:end]))
+		_, _ = s.Write([]byte(input[i:end]))
 	}
-	s.Flush()
+	_ = s.Flush()
 
 	expected := "visible_startvisible_end"
 	if got := buf.String(); got != expected {
@@ -643,14 +643,14 @@ func TestScrubber_ConsecutivePartialTags(t *testing.T) {
 	var buf bytes.Buffer
 	s := New(&buf)
 
-	s.Write([]byte("a <"))    // partial
-	s.Write([]byte("m"))      // still partial
-	s.Write([]byte("emory>")) // complete!
-	s.Write([]byte("hidden"))
-	s.Write([]byte("</"))      // partial close
-	s.Write([]byte("memory>")) // complete close
-	s.Write([]byte("b"))
-	s.Flush()
+	_, _ = s.Write([]byte("a <"))    // partial
+	_, _ = s.Write([]byte("m"))      // still partial
+	_, _ = s.Write([]byte("emory>")) // complete!
+	_, _ = s.Write([]byte("hidden"))
+	_, _ = s.Write([]byte("</"))      // partial close
+	_, _ = s.Write([]byte("memory>")) // complete close
+	_, _ = s.Write([]byte("b"))
+	_ = s.Flush()
 
 	if got := buf.String(); got != "a b" {
 		t.Errorf("got %q, want %q", got, "a b")
@@ -728,11 +728,11 @@ func TestScrubber_UnicodeSplitAcrossChunks(t *testing.T) {
 	var buf bytes.Buffer
 	s := New(&buf)
 
-	s.Write([]byte("Hi <m"))
-	s.Write([]byte("emory>")) // completes the open tag
-	s.Write([]byte("世界</memory> Bye"))
+	_, _ = s.Write([]byte("Hi <m"))
+	_, _ = s.Write([]byte("emory>")) // completes the open tag
+	_, _ = s.Write([]byte("世界</memory> Bye"))
 
-	s.Flush()
+	_ = s.Flush()
 
 	if got := buf.String(); got != "Hi  Bye" {
 		t.Errorf("got %q, want %q", got, "Hi  Bye")
@@ -809,7 +809,7 @@ func TestScrubber_Flush_PendingInMemoryBlock_NotEmitted(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			s := New(&buf)
-			s.Write([]byte(tt.input))
+			_, _ = s.Write([]byte(tt.input))
 			if err := s.Flush(); err != nil {
 				t.Fatalf("Flush error: %v", err)
 			}
@@ -825,7 +825,7 @@ func TestScrubber_Flush_PendingInMemoryBlock_StatsCorrect(t *testing.T) {
 	// on Flush inside a memory block.
 	var buf bytes.Buffer
 	s := New(&buf)
-	s.Write([]byte("<memory>abc<"))
+	_, _ = s.Write([]byte("<memory>abc<"))
 	// At this point: bytesStripped = 8 (<memory>) + 3 (abc) = 11, pending = "<"
 	if err := s.Flush(); err != nil {
 		t.Fatalf("Flush error: %v", err)
@@ -847,8 +847,8 @@ func TestScrubber_Flush_PendingInMemoryBlock_TwoChunks(t *testing.T) {
 	// memory block, second chunk is empty.
 	var buf bytes.Buffer
 	s := New(&buf)
-	s.Write([]byte("<memory>xyz<"))
-	s.Write([]byte("")) // empty chunk
+	_, _ = s.Write([]byte("<memory>xyz<"))
+	_, _ = s.Write([]byte("")) // empty chunk
 	if err := s.Flush(); err != nil {
 		t.Fatalf("Flush error: %v", err)
 	}
@@ -865,7 +865,7 @@ func TestScrubber_Flush_PendingOutsideMemoryBlock(t *testing.T) {
 	// This is the normal case for a partial tag that turns out not to be a tag.
 	var buf bytes.Buffer
 	s := New(&buf)
-	s.Write([]byte("hello <m"))
+	_, _ = s.Write([]byte("hello <m"))
 	if err := s.Flush(); err != nil {
 		t.Fatalf("Flush error: %v", err)
 	}
@@ -880,9 +880,9 @@ func TestScrubber_Flush_SingleByteChunkIntoMemoryBlock(t *testing.T) {
 	var buf bytes.Buffer
 	s := New(&buf)
 
-	s.Write([]byte("A <mem"))
-	s.Write([]byte("ory>xyz<"))
-	s.Flush()
+	_, _ = s.Write([]byte("A <mem"))
+	_, _ = s.Write([]byte("ory>xyz<"))
+	_ = s.Flush()
 
 	if got := buf.String(); got != "A " {
 		t.Errorf("got %q, want %q", got, "A ")
@@ -899,18 +899,18 @@ func TestScrubber_Write_ZeroLengthChunkWithPending(t *testing.T) {
 	var buf bytes.Buffer
 	s := New(&buf)
 	// Write text ending with a partial tag prefix.
-	s.Write([]byte("data <m"))
+	_, _ = s.Write([]byte("data <m"))
 	if len(s.pending) == 0 {
 		t.Error("pending should not be empty after partial tag")
 	}
-	s.Write([]byte("")) // zero-length write  --  no-op
+	_, _ = s.Write([]byte("")) // zero-length write  --  no-op
 	if len(s.pending) == 0 {
 		t.Error("pending should not be cleared by zero-length Write")
 	}
 	// Now write text that does NOT complete the tag: "<m" + "x..." = "<mx..."
 	// which is NOT "<memory>" so it should pass through.
-	s.Write([]byte("x abc"))
-	s.Flush()
+	_, _ = s.Write([]byte("x abc"))
+	_ = s.Flush()
 	if got := buf.String(); got != "data <mx abc" {
 		t.Errorf("got %q, want %q", got, "data <mx abc")
 	}
@@ -926,7 +926,7 @@ func TestScrubber_SatisfiesIOWriter(t *testing.T) {
 
 func TestScrubber_DebugString(t *testing.T) {
 	s := New(nil)
-	s.Write([]byte("<memory>test"))
+	_, _ = s.Write([]byte("<memory>test"))
 
 	ds := s.DebugString()
 	if !strings.Contains(ds, "depth=1") {
@@ -942,9 +942,9 @@ func BenchmarkScrubber_NoMemoryBlock(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for b.Loop() {
-		s.Write(input)
+		_, _ = s.Write(input)
 	}
-	s.Flush()
+	_ = s.Flush()
 }
 
 func BenchmarkScrubber_SingleMemoryBlock(b *testing.B) {
@@ -954,8 +954,8 @@ func BenchmarkScrubber_SingleMemoryBlock(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		s.Reset()
-		s.Write(input)
-		s.Flush()
+		_, _ = s.Write(input)
+		_ = s.Flush()
 	}
 }
 
@@ -973,9 +973,9 @@ func BenchmarkScrubber_ManySmallChunks(b *testing.B) {
 	for b.Loop() {
 		s.Reset()
 		for _, ch := range chunks {
-			s.Write(ch)
+			_, _ = s.Write(ch)
 		}
-		s.Flush()
+		_ = s.Flush()
 	}
 }
 
@@ -1004,8 +1004,8 @@ func BenchmarkScrubber_LargeInputManyBlocks(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		s.Reset()
-		s.Write(data)
-		s.Flush()
+		_, _ = s.Write(data)
+		_ = s.Flush()
 	}
 }
 
@@ -1016,7 +1016,7 @@ func BenchmarkScrubber_NestedBlocks(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		s.Reset()
-		s.Write(input)
-		s.Flush()
+		_, _ = s.Write(input)
+		_ = s.Flush()
 	}
 }

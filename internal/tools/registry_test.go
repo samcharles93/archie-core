@@ -103,7 +103,7 @@ func TestRegistryAll(t *testing.T) {
 
 	t.Run("returns copy of tools", func(t *testing.T) {
 		r := NewRegistry()
-		r.Register(ToolEntry{Name: "x", Handler: noopHandler})
+		_ = r.Register(ToolEntry{Name: "x", Handler: noopHandler})
 		all := r.All()
 		all[0].Name = "mutated"
 		// Original registry must be unaffected.
@@ -115,10 +115,10 @@ func TestRegistryAll(t *testing.T) {
 
 func TestRegistryByToolset(t *testing.T) {
 	r := NewRegistry()
-	r.Register(ToolEntry{Name: "f1", Toolset: "file", Handler: noopHandler})
-	r.Register(ToolEntry{Name: "f2", Toolset: "file", Handler: noopHandler})
-	r.Register(ToolEntry{Name: "g1", Toolset: "git", Handler: noopHandler})
-	r.Register(ToolEntry{Name: "u1", Toolset: "", Handler: noopHandler}) // ungrouped
+	_ = r.Register(ToolEntry{Name: "f1", Toolset: "file", Handler: noopHandler})
+	_ = r.Register(ToolEntry{Name: "f2", Toolset: "file", Handler: noopHandler})
+	_ = r.Register(ToolEntry{Name: "g1", Toolset: "git", Handler: noopHandler})
+	_ = r.Register(ToolEntry{Name: "u1", Toolset: "", Handler: noopHandler}) // ungrouped
 
 	t.Run("filters by toolset", func(t *testing.T) {
 		file := r.ByToolset("file")
@@ -152,9 +152,9 @@ func TestRegistryByToolset(t *testing.T) {
 
 func TestRegistryAvailable(t *testing.T) {
 	r := NewRegistry()
-	r.Register(ToolEntry{Name: "always", Handler: noopHandler})
-	r.Register(ToolEntry{Name: "offline", Handler: noopHandler, CheckFn: func() bool { return false }})
-	r.Register(ToolEntry{Name: "conditional", Handler: noopHandler, CheckFn: func() bool { return true }})
+	_ = r.Register(ToolEntry{Name: "always", Handler: noopHandler})
+	_ = r.Register(ToolEntry{Name: "offline", Handler: noopHandler, CheckFn: func() bool { return false }})
+	_ = r.Register(ToolEntry{Name: "conditional", Handler: noopHandler, CheckFn: func() bool { return true }})
 
 	t.Run("returns only available tools", func(t *testing.T) {
 		avail := r.Available()
@@ -175,7 +175,7 @@ func TestRegistryAvailable(t *testing.T) {
 
 	t.Run("dynamic availability reflected", func(t *testing.T) {
 		flag := true
-		r.Register(ToolEntry{
+		_ = r.Register(ToolEntry{
 			Name:    "toggle",
 			Handler: noopHandler,
 			CheckFn: func() bool { return flag },
@@ -317,10 +317,10 @@ func TestRegistryAvailableReentrySafety(t *testing.T) {
 	// calling All(), ByToolset(), or even Register() from inside
 	// CheckFn cannot deadlock.
 	r := NewRegistry()
-	r.Register(ToolEntry{Name: "safe", Handler: noopHandler})
+	_ = r.Register(ToolEntry{Name: "safe", Handler: noopHandler})
 
 	called := false
-	r.Register(ToolEntry{
+	_ = r.Register(ToolEntry{
 		Name:    "reentrant",
 		Handler: noopHandler,
 		CheckFn: func() bool {

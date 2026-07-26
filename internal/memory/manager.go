@@ -342,7 +342,7 @@ func (m *Manager) OnTurnStart(sessionID string) {
 
 	for _, p := range providers {
 		if h, ok := p.(TurnStartHook); ok {
-			safeGo(func() { h.OnTurnStart(sessionID) })
+			safeGo(func() { _ = h.OnTurnStart(sessionID) })
 		}
 	}
 }
@@ -354,7 +354,7 @@ func (m *Manager) OnSessionEnd(sessionID string) {
 
 	for _, p := range providers {
 		if h, ok := p.(SessionEndHook); ok {
-			safeGo(func() { h.OnSessionEnd(sessionID) })
+			safeGo(func() { _ = h.OnSessionEnd(sessionID) })
 		}
 	}
 }
@@ -366,7 +366,7 @@ func (m *Manager) OnSessionSwitch(oldSessionID, newSessionID string) {
 
 	for _, p := range providers {
 		if h, ok := p.(SessionSwitchHook); ok {
-			safeGo(func() { h.OnSessionSwitch(oldSessionID, newSessionID) })
+			safeGo(func() { _ = h.OnSessionSwitch(oldSessionID, newSessionID) })
 		}
 	}
 }
@@ -378,7 +378,7 @@ func (m *Manager) OnPreCompress(sessionID string) {
 
 	for _, p := range providers {
 		if h, ok := p.(PreCompressHook); ok {
-			safeGo(func() { h.OnPreCompress(sessionID) })
+			safeGo(func() { _ = h.OnPreCompress(sessionID) })
 		}
 	}
 }
@@ -390,7 +390,7 @@ func (m *Manager) OnMemoryWrite(sessionID string, content string) {
 
 	for _, p := range providers {
 		if h, ok := p.(MemoryWriteHook); ok {
-			safeGo(func() { h.OnMemoryWrite(sessionID, content) })
+			safeGo(func() { _ = h.OnMemoryWrite(sessionID, content) })
 		}
 	}
 }
@@ -402,7 +402,7 @@ func (m *Manager) OnDelegation(sessionID string) {
 
 	for _, p := range providers {
 		if h, ok := p.(DelegationHook); ok {
-			safeGo(func() { h.OnDelegation(sessionID) })
+			safeGo(func() { _ = h.OnDelegation(sessionID) })
 		}
 	}
 }

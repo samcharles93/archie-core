@@ -543,7 +543,7 @@ func TestMaybeRetryParkedUnderThreshold(t *testing.T) {
 	is := forge.Issue{Number: 1, Labels: []string{}}
 	repo := config.Repo{Owner: "acme", Name: "todo"}
 
-	d.maybeRetryParked(ctx, d.Forge, repo, is)
+	d.maybeRetryParked(ctx, repo, is)
 
 	task, err := s.TaskByIssue(ctx, "acme", "todo", 1)
 	if err != nil || task == nil {
@@ -572,7 +572,7 @@ func TestMaybeRetryParkedAtThreshold(t *testing.T) {
 	is := forge.Issue{Number: 1, Labels: []string{}}
 	repo := config.Repo{Owner: "acme", Name: "todo"}
 
-	d.maybeRetryParked(ctx, d.Forge, repo, is)
+	d.maybeRetryParked(ctx, repo, is)
 
 	task, err := s.TaskByIssue(ctx, "acme", "todo", 1)
 	if err != nil || task == nil {
@@ -601,7 +601,7 @@ func TestMaybeRetryParkedSkipsDead(t *testing.T) {
 	is := forge.Issue{Number: 1, Labels: []string{}}
 	repo := config.Repo{Owner: "acme", Name: "todo"}
 
-	d.maybeRetryParked(ctx, d.Forge, repo, is)
+	d.maybeRetryParked(ctx, repo, is)
 
 	if len(fg.stateLabels) != 0 {
 		t.Fatalf("expected no state label calls, got %d", len(fg.stateLabels))
@@ -689,7 +689,7 @@ func TestMaybeRetryParkedStillParked(t *testing.T) {
 	is := forge.Issue{Number: 1, Labels: []string{"archie:parked", "bug"}}
 	repo := config.Repo{Owner: "acme", Name: "todo"}
 
-	d.maybeRetryParked(ctx, d.Forge, repo, is)
+	d.maybeRetryParked(ctx, repo, is)
 
 	if len(fg.stateLabels) != 0 {
 		t.Fatalf("expected no state label calls, got %d", len(fg.stateLabels))
@@ -705,7 +705,7 @@ func TestMaybeRetryParkedRepoOverride(t *testing.T) {
 	is := forge.Issue{Number: 1, Labels: []string{}}
 	repo := config.Repo{Owner: "acme", Name: "todo", MaxRetries: 1}
 
-	d.maybeRetryParked(ctx, d.Forge, repo, is)
+	d.maybeRetryParked(ctx, repo, is)
 
 	task, err := s.TaskByIssue(ctx, "acme", "todo", 1)
 	if err != nil || task == nil {

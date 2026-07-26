@@ -104,13 +104,13 @@ func (g *Gateway) Stop(ctx context.Context) error {
 
 // handleSMTP processes one SMTP session.
 func (g *Gateway) handleSMTP(conn net.Conn) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	r := bufio.NewReader(conn)
 	w := bufio.NewWriter(conn)
 
 	write := func(code int, msg string) {
-		fmt.Fprintf(w, "%d %s\r\n", code, msg)
-		w.Flush()
+		_, _ = fmt.Fprintf(w, "%d %s\r\n", code, msg)
+		_ = w.Flush()
 	}
 	readLine := func() (string, error) {
 		line, err := r.ReadString('\n')
@@ -290,7 +290,7 @@ func (g *Gateway) sendReply(to, from, text string) error {
 	if err != nil {
 		return fmt.Errorf("dial relay: %w", err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	if ok, _ := c.Extension("STARTTLS"); ok {
 		tlsCfg := &tls.Config{ServerName: serverName(g.RelayAddr)}

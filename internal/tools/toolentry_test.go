@@ -316,7 +316,7 @@ func TestToolEntryZeroValue(t *testing.T) {
 		t.Error("zero ToolEntry should fail Validate")
 	}
 	if !e.Available() {
-		// nil CheckFn = available  --  this is correct even for zero value.
+		t.Error("zero ToolEntry should be Available (nil CheckFn = available)")
 	}
 	if e.ResolvedSchema() != nil {
 		t.Error("zero ToolEntry should have nil resolved schema")

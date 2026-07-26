@@ -21,7 +21,7 @@ func TestHTTPTransportSendReturnsResponse(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"jsonrpc":"2.0","id":"1","result":{"status":"ok"}}`)
+		_, _ = fmt.Fprint(w, `{"jsonrpc":"2.0","id":"1","result":{"status":"ok"}}`)
 	}))
 	defer srv.Close()
 
@@ -42,7 +42,7 @@ func TestHTTPTransportSendReturnsResponse(t *testing.T) {
 func TestHTTPTransportSendReturnsErrorOnNon200(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprint(w, "boom")
+		_, _ = fmt.Fprint(w, "boom")
 	}))
 	defer srv.Close()
 
@@ -107,7 +107,7 @@ func TestHTTPTransportSendWithCustomHeaders(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedHeader = r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"jsonrpc":"2.0","id":"1","result":{}}`)
+		_, _ = fmt.Fprint(w, `{"jsonrpc":"2.0","id":"1","result":{}}`)
 	}))
 	defer srv.Close()
 
