@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -22,15 +23,35 @@ var gatewayCommands = []models.BotCommand{
 	{Command: "help", Description: "Show available commands"},
 }
 
-// registerCommands publishes the command menu. A failure here costs
-// discoverability, not function  --  every command still works when typed  --
-// so it is logged rather than treated as fatal.
+// commandScopes are the scopes the menu is published to.
+//
+// Telegram resolves a chat's menu by scope specificity, not recency: a
+// list set on all_private_chats wins over the default scope in every DM.
+// Publishing only to the default scope therefore leaves the bot showing
+// whatever a previous owner of the token registered against the narrower
+// scopes  --  state that lives on Telegram's side and survives redeploys,
+// rewrites and migrations. Writing every scope we care about overwrites
+// those leftovers instead of being shadowed by them.
+var commandScopes = []models.BotCommandScope{
+	&models.BotCommandScopeDefault{},
+	&models.BotCommandScopeAllPrivateChats{},
+	&models.BotCommandScopeAllGroupChats{},
+}
+
+// registerCommands publishes the command menu to every scope. A failure
+// here costs discoverability, not function  --  every command still works
+// when typed  --  so it is logged rather than treated as fatal, and one
+// failing scope does not stop the others.
 func (g *Gateway) registerCommands(ctx context.Context, b *bot.Bot) {
-	if _, err := b.SetMyCommands(ctx, &bot.SetMyCommandsParams{
-		Commands: gatewayCommands,
-	}); err != nil {
-		g.log.Warn("set command menu failed", "error", err)
-		return
+	for _, scope := range commandScopes {
+		if _, err := b.SetMyCommands(ctx, &bot.SetMyCommandsParams{
+			Commands: gatewayCommands,
+			Scope:    scope,
+		}); err != nil {
+			g.log.Warn("set command menu failed", "scope", fmt.Sprintf("%T", scope), "error", err)
+			continue
+		}
 	}
-	g.log.Info("command menu registered", "commands", len(gatewayCommands))
+	g.log.Info("command menu registered",
+		"commands", len(gatewayCommands), "scopes", len(commandScopes))
 }
