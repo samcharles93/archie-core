@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -584,13 +585,16 @@ func TestDispatchPerToolLimitSpillFailureFallback(t *testing.T) {
 	// limit was silently bypassed, leaving the full 500-char preview.
 
 	dir := t.TempDir()
-	// Make spill directory read-only to force write failure.
-	if err := os.Chmod(dir, 0o444); err != nil {
-		t.Fatalf("chmod: %v", err)
+	// Create a file where we need a directory component so that
+	// os.WriteFile fails with ENOTDIR even when running as root.
+	blocker := filepath.Join(dir, "blocker")
+	if err := os.WriteFile(blocker, nil, 0o644); err != nil {
+		t.Fatalf("write blocker: %v", err)
 	}
-	defer func() { _ = os.Chmod(dir, 0o755) }()
+	// spillDir includes "blocker" as a parent, but blocker is a file.
+	spillDir := filepath.Join(dir, "blocker", "sub")
 
-	budget := NewTurnBudget(100_000, dir)
+	budget := NewTurnBudget(100_000, spillDir)
 	e := ToolEntry{
 		Name:               "big-output",
 		Handler:            echoHandler,
