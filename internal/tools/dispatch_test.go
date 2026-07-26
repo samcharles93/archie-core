@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -583,14 +584,19 @@ func TestDispatchPerToolLimitSpillFailureFallback(t *testing.T) {
 	// Before fix: the "spill failed" path had no fallback; the per-tool
 	// limit was silently bypassed, leaving the full 500-char preview.
 
-	dir := t.TempDir()
-	// Make spill directory read-only to force write failure.
-	if err := os.Chmod(dir, 0o444); err != nil {
-		t.Fatalf("chmod: %v", err)
+	// Create a regular file and use a sub-path as the spill directory.
+	// Even root cannot write a file when a path component is a regular
+	// file, making this test reliable regardless of privileges.
+	f, err := os.CreateTemp("", "archie-test-spill-blocker")
+	if err != nil {
+		t.Fatal(err)
 	}
-	defer func() { _ = os.Chmod(dir, 0o755) }()
+	f.Close()
+	defer os.Remove(f.Name())
 
-	budget := NewTurnBudget(100_000, dir)
+	spillDir := filepath.Join(f.Name(), "sub")
+
+	budget := NewTurnBudget(100_000, spillDir)
 	e := ToolEntry{
 		Name:               "big-output",
 		Handler:            echoHandler,

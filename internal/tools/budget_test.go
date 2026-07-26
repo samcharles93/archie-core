@@ -206,14 +206,20 @@ func TestTurnBudgetSpillFileNaming(t *testing.T) {
 }
 
 func TestTurnBudgetSpillDirPermissions(t *testing.T) {
-	dir := t.TempDir()
-	// Make dir read-only.
-	if err := os.Chmod(dir, 0o444); err != nil {
-		t.Fatalf("chmod: %v", err)
+	// Create a regular file and use a sub-path as the spill directory.
+	// Even root cannot write a file when a path component is a regular
+	// file, making this test reliable regardless of privileges.
+	f, err := os.CreateTemp("", "archie-test-spill-blocker")
+	if err != nil {
+		t.Fatal(err)
 	}
-	defer func() { _ = os.Chmod(dir, 0o755) }()
+	f.Close()
+	defer os.Remove(f.Name())
 
-	b := NewTurnBudget(100_000, dir)
+	// spillDir is a sub-path of the regular file — WriteFile must fail.
+	spillDir := filepath.Join(f.Name(), "sub")
+
+	b := NewTurnBudget(100_000, spillDir)
 	ref := b.Spill("tool", []byte("data"))
 
 	// Spill should handle write failure gracefully.
