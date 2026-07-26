@@ -222,22 +222,44 @@ func run() int {
 				_ = sessionStore.SaveMessage(ctx, sessionKey, msg)
 
 				// Load recent conversation history for context.
-				history, _ := sessionStore.RecentMessages(ctx, sessionKey, 20)
-				messages := make([]chat.Message, 0, len(history)+1)
+				// Use a larger fetch window so compression has room to work
+				// — older messages get summarised, recent ones stay intact.
+				history, _ := sessionStore.RecentMessages(ctx, sessionKey, 100)
+				compressed := make([]gateway.CompressedMessage, 0, len(history)+1)
 				for _, h := range history {
-					role := chat.RoleUser
+					role := "user"
 					if h.From == cfg.BotUser {
-						role = chat.RoleAssistant
+						role = "assistant"
 					}
-					messages = append(messages, chat.Message{
+					compressed = append(compressed, gateway.CompressedMessage{
 						Role:    role,
 						Content: h.Text,
 					})
 				}
-				messages = append(messages, chat.Message{
-					Role:    chat.RoleUser,
+				compressed = append(compressed, gateway.CompressedMessage{
+					Role:    "user",
 					Content: msg.Text,
 				})
+
+				// Apply context compression for long-running sessions.
+				compCfg := gateway.DefaultCompressionConfig()
+				view := gateway.CompressHistory(compressed, compCfg)
+
+				// Convert to chat.Message for the LLM.
+				messages := make([]chat.Message, len(view.Messages))
+				for i, cm := range view.Messages {
+					role := chat.RoleUser
+					switch cm.Role {
+					case "assistant":
+						role = chat.RoleAssistant
+					case "system":
+						role = chat.RoleSystem
+					}
+					messages[i] = chat.Message{
+						Role:    role,
+						Content: cm.Content,
+					}
+				}
 
 				result, err := llm.Chat(ctx, chatModel, core.GenerateOptions{
 					Messages: messages,
