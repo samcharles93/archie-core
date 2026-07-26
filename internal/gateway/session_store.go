@@ -96,6 +96,8 @@ func (s *nellSessionStore) Save(ctx context.Context, sc SessionContext) error {
 }
 
 func (s *nellSessionStore) Get(ctx context.Context, sessionID string) (*SessionContext, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	doc, err := s.db.Get(ctx, sessionID)
 	if err != nil {
 		if errors.Is(err, sdk.ErrNotFound) {
@@ -108,7 +110,9 @@ func (s *nellSessionStore) Get(ctx context.Context, sessionID string) (*SessionC
 }
 
 func (s *nellSessionStore) GetByChannel(ctx context.Context, platform, channelID string) ([]SessionContext, error) {
-	all, err := s.listAll(ctx)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	all, err := s.listAllLocked(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +155,9 @@ func (s *nellSessionStore) Touch(ctx context.Context, sessionID string) error {
 }
 
 func (s *nellSessionStore) List(ctx context.Context) ([]SessionContext, error) {
-	return s.listAll(ctx)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.listAllLocked(ctx)
 }
 
 func (s *nellSessionStore) Close() error {
@@ -160,7 +166,7 @@ func (s *nellSessionStore) Close() error {
 
 // ── Internal helpers ───────────────────────────────────────────────────────
 
-func (s *nellSessionStore) listAll(ctx context.Context) ([]SessionContext, error) {
+func (s *nellSessionStore) listAllLocked(ctx context.Context) ([]SessionContext, error) {
 	result, err := s.db.AllDocs(ctx, sdk.DocRange{IncludeDocs: true})
 	if err != nil {
 		return nil, fmt.Errorf("sessionstore: list: %w", err)
@@ -266,6 +272,8 @@ func (s *nellSessionStore) SaveMessage(ctx context.Context, sessionID string, ms
 }
 
 func (s *nellSessionStore) RecentMessages(ctx context.Context, sessionID string, n int) ([]Message, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	prefix := sessionID + ":"
 	result, err := s.msgDB.AllDocs(ctx, sdk.DocRange{
 		StartKey:    prefix,

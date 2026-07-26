@@ -11,7 +11,7 @@ import (
 )
 
 // knownFeatureNames is the set of recognised config.<name>.yaml feature files.
-// Any config.<name>.yaml file whose <name> is not in this set is rejected  -- 
+// Any config.<name>.yaml file whose <name> is not in this set is rejected  --
 // silent ignores would hide typos.
 var knownFeatureNames = map[string]bool{
 	"gateway":    true,
@@ -189,6 +189,9 @@ func loadDirInto(cfg *Config, dir string, requireMain bool) error {
 // under a "memory:" or "tools:" key  --  decode those into their target
 // sub-struct directly.
 func loadFeatureFile(cfg *Config, feature, path string) error {
+	if cfg == nil {
+		return fmt.Errorf("config must not be nil")
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("reading %s: %w", path, err)

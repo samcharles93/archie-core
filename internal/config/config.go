@@ -58,7 +58,7 @@ type Repo struct {
 	// it in capture-proof. Workflow stages may extend or override
 	// Gate (a TDD repro stage inverts the test command).
 	Gate [][]string `toml:"gate" json:"gate" yaml:"gate"`
-	// Protect lists path suffixes agents must never write directly  -- 
+	// Protect lists path suffixes agents must never write directly  --
 	// generated files (e.g. "_templ.go") whose sources they should edit
 	// instead. Enforced environmentally via agentloop.ProtectPaths.
 	Protect []string `toml:"protect" json:"protect" yaml:"protect"`
@@ -455,8 +455,8 @@ type ChatConfig struct {
 	Email EmailConfig `toml:"email" yaml:"email"`
 	// WebhookAddr is the host:port for the inbound webhook gateway.
 	// Empty disables the webhook gateway.
-	WebhookAddr string `toml:"webhook_addr" yaml:"webhook_addr"`
-	Telegram TelegramConfig `toml:"telegram" yaml:"telegram"`
+	WebhookAddr string         `toml:"webhook_addr" yaml:"webhook_addr"`
+	Telegram    TelegramConfig `toml:"telegram" yaml:"telegram"`
 }
 
 // TelegramConfig configures the Telegram Bot API channel.
@@ -528,9 +528,7 @@ func finalize(cfg Config) (Config, error) {
 	if cfg.PollInterval == 0 {
 		cfg.PollInterval = Duration(60 * time.Second)
 	}
-	if cfg.Label == "" {
-		cfg.Label = ""
-	}
+
 	if cfg.DiffCapLines == 0 {
 		cfg.DiffCapLines = 400
 	}

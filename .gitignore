@@ -12,3 +12,4 @@ task.json
 .beads/backup/
 .beads/last-touched
 .hermes-carina/
+config.production.toml

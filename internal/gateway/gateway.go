@@ -213,6 +213,9 @@ func (r *Router) handleSpawn(ctx context.Context, title string) (string, error) 
 }
 
 func (r *Router) handleStatus(ctx context.Context) (string, error) {
+	if r.Store == nil {
+		return "store not configured", nil
+	}
 	counts, err := r.Store.StatusCounts(ctx)
 	if err != nil {
 		return "", fmt.Errorf("status: %w", err)
