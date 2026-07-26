@@ -44,9 +44,10 @@ tasks:
       - go test ./... -count=1
 
   check:
-    desc: "Full quality gate: fmt, vet, build, test (matches [[repos.gate]] in config.toml)"
+    desc: "Full quality gate: fmt, go fix, vet, build, test (matches [[repos.gate]] in config.toml)"
     cmds:
       - task: fmt
+      - go fix ./...
       - task: vet
       - task: build
       - task: test

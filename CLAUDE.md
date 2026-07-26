@@ -16,7 +16,7 @@ task test       # go test ./... -count=1
 task fmt        # gofumpt -w . && go fix ./...
 task vet        # go vet ./...
 task lint       # golangci-lint run ./...
-task check      # fmt + vet + build + test — matches the per-repo [[repos.gate]] archied runs on itself
+task check      # fmt + go fix + vet + build + test — matches the per-repo [[repos.gate]] archied runs on itself
 ```
 
 Run a single test: `go test ./internal/workflow/... -run TestName -v`.
@@ -49,12 +49,12 @@ Full details live in `ARCHITECTURE.md` — do not duplicate it here; skim it whe
 
 This is not optional style guidance — every code change in this repo follows this sequence. It mirrors what the `implement-and-verify` workflow (`.claude/workflows/implement-and-verify.js`) automates for `archie-core-abg` beads, and it's the same discipline archied enforces on *itself* via the TDD workflow in `ARCHITECTURE.md`.
 
-**`task check` is the definitive quality gate.** `task check` = `fmt` + `vet` + `build` + `test`, and it is the one command that must pass, clean, before any change is considered done — it's the literal analogue of the `[[repos.gate]]` archied runs against every PR it opens. Don't hand-pick a subset of `go test`/`go vet`/`go build` and call it good; run `task check` (or the scoped equivalent, e.g. `go test ./internal/foo/... -count=1` + `golangci-lint run ./internal/foo/...` for a single package) and confirm it's clean.
+**`task check` is the definitive quality gate.** `task check` = `fmt` + `go fix ./...` + `vet` + `build` + `test`, and it is the one command that must pass, clean, before any change is considered done — it's the literal analogue of the `[[repos.gate]]` archied runs against every PR it opens. Don't hand-pick a subset of `go test`/`go vet`/`go build` and call it good; run `task check` (or the scoped equivalent, e.g. `go test ./internal/foo/... -count=1` + `golangci-lint run ./internal/foo/...` for a single package) and confirm it's clean.
 
 **Red-then-green, definitively:**
 1. **Red** — write the failing test(s) first, against the *intended* behavior, before any implementation code exists. Run them and confirm they fail for the right reason (not a compile error).
 2. **Green** — write the minimum implementation to make those tests pass. No implementation code is written before its test exists and fails.
-3. Confirm via `task check` (or scoped `go test .../... -count=1`) that the suite is green, `golangci-lint run` reports zero findings, and `gofmt -l` / `gofumpt -l` report no unformatted files.
+3. Confirm via `task check` (or scoped `go test .../... -count=1`) that the suite is green, `golangci-lint run` reports zero findings, and `gofumpt -w .` reports no unformatted files.
 4. No hardcoded values in tests (use parameterized test tables), no hardcoded identity/config values in implementation code, and every error path gets a test.
 
 **Adversarial verification is mandatory, and it runs as a separate pass from a fresh reviewer — never self-certified by the implementer.** After red-then-green is green:

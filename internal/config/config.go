@@ -1,6 +1,7 @@
 // Package config loads archied's TOML and YAML configuration. The forge API
 // token is deliberately not part of the file: it comes from a configurable env
 // var.
+
 package config
 
 import (
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+
 )
 
 // Duration is a time.Duration that unmarshals from TOML strings ("60s").
@@ -449,7 +451,7 @@ type ContainerConfig struct {
 
 // ChatConfig configures conversational front-ends (multi-agent
 // collaboration PRD, phase C  --  docs/prds/multi-agent-collaboration.md).
-// Empty (Telegram.TokenEnv == "") disables chat entirely.
+// Empty (Telegram.Token.Key == "") disables chat entirely.
 type ChatConfig struct {
 	// Email configures the inbound email gateway via SMTP.
 	Email EmailConfig `toml:"email" yaml:"email"`
