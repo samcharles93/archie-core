@@ -12,6 +12,7 @@ import (
 	"runtime/debug"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -177,7 +178,7 @@ func (g *Gateway) helpHandler() bot.HandlerFunc {
 			return
 		}
 		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
-			"🤖 <b>Archie Gateway</b>\n\n"+
+			"🤖 **Archie Gateway**\n\n"+
 				"/status  --  Show task status\n"+
 				"/help  --  This message\n\n"+
 				"Anything else: chat with the LLM (not yet wired  --  coming soon).")
@@ -193,6 +194,11 @@ func (g *Gateway) defaultHandler(router *gateway.Router) bot.HandlerFunc {
 			return
 		}
 
+		// Routing a non-command message runs an LLM turn, which can take
+		// many seconds. Show a typing indicator for the whole wait so the
+		// chat doesn't look dead.
+		stopTyping := g.startTyping(ctx, b, msg.Chat.ID, msg.MessageThreadID)
+
 		// If it starts with / but wasn't matched by a registered
 		// handler, it's unknown  --  let the router handle it (which
 		// will say "unrecognized").
@@ -202,6 +208,7 @@ func (g *Gateway) defaultHandler(router *gateway.Router) bot.HandlerFunc {
 			From:      msg.From.Username,
 			Text:      msg.Text,
 		})
+		stopTyping()
 		if err != nil {
 			g.log.Error("route failed", "error", err)
 			return
@@ -238,6 +245,45 @@ func (g *Gateway) authorizedMessage(ctx context.Context, b *bot.Bot, update *mod
 	return nil, false
 }
 
+// typingRefresh is how often the typing action is re-sent. Telegram clears
+// the indicator after ~5s, so it must be refreshed to stay visible for the
+// length of an LLM turn.
+const typingRefresh = 4 * time.Second
+
+// startTyping shows the "typing…" indicator and keeps it alive until the
+// returned stop function is called. Errors are logged at debug level only:
+// a missing typing indicator must never block or fail the actual reply.
+func (g *Gateway) startTyping(ctx context.Context, b *bot.Bot, chatID int64, messageThreadID int) (stop func()) {
+	send := func() {
+		params := &bot.SendChatActionParams{
+			ChatID: chatID,
+			Action: models.ChatActionTyping,
+		}
+		if messageThreadID != 0 {
+			params.MessageThreadID = messageThreadID
+		}
+		if _, err := b.SendChatAction(ctx, params); err != nil {
+			g.log.Debug("send chat action failed", "error", err)
+		}
+	}
+
+	typingCtx, cancel := context.WithCancel(ctx)
+	send()
+	go func() {
+		ticker := time.NewTicker(typingRefresh)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-typingCtx.Done():
+				return
+			case <-ticker.C:
+				send()
+			}
+		}
+	}()
+	return cancel
+}
+
 func (g *Gateway) isChatAllowed(chatID int64) bool {
 	if len(g.AllowedChatIDs) == 0 {
 		return true
@@ -249,16 +295,7 @@ func (g *Gateway) sendMessage(ctx context.Context, b *bot.Bot, chatID int64, mes
 	// Split long messages to stay under Telegram's 4096 character limit.
 	const maxLen = 4000
 	if len(text) <= maxLen {
-		params := &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   text,
-		}
-		if messageThreadID != 0 {
-			params.MessageThreadID = messageThreadID
-		}
-		if _, err := b.SendMessage(ctx, params); err != nil {
-			g.log.Error("send message failed", "error", err)
-		}
+		g.send(ctx, b, chatID, messageThreadID, text, "send message failed")
 		return
 	}
 	parts := splitLongMessage(text, maxLen)
@@ -267,16 +304,39 @@ func (g *Gateway) sendMessage(ctx context.Context, b *bot.Bot, chatID int64, mes
 		if i < len(parts)-1 {
 			partText += "\n\n_(continued...)_"
 		}
-		params := &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   partText,
-		}
-		if messageThreadID != 0 {
-			params.MessageThreadID = messageThreadID
-		}
-		if _, err := b.SendMessage(ctx, params); err != nil {
-			g.log.Error("send message part failed", "error", err, "part", i)
-		}
+		g.send(ctx, b, chatID, messageThreadID, partText, "send message part failed")
+	}
+}
+
+// send delivers one message, rendering Markdown as Telegram HTML.
+//
+// Splitting a long reply can cut an HTML tag in half, and a hand-written
+// converter can always meet Markdown it maps wrongly; in both cases
+// Telegram rejects the whole message with a parse error. Rather than lose
+// the reply, fall back to sending the original unformatted text  --  the user
+// sees raw Markdown, which is what happened before formatting existed, but
+// never silence.
+func (g *Gateway) send(ctx context.Context, b *bot.Bot, chatID int64, messageThreadID int, text, errMsg string) {
+	params := &bot.SendMessageParams{
+		ChatID:    chatID,
+		Text:      markdownToHTML(text),
+		ParseMode: models.ParseModeHTML,
+	}
+	if messageThreadID != 0 {
+		params.MessageThreadID = messageThreadID
+	}
+	if _, err := b.SendMessage(ctx, params); err == nil {
+		return
+	} else {
+		g.log.Warn("formatted send failed, retrying unformatted", "error", err)
+	}
+
+	plain := &bot.SendMessageParams{ChatID: chatID, Text: text}
+	if messageThreadID != 0 {
+		plain.MessageThreadID = messageThreadID
+	}
+	if _, err := b.SendMessage(ctx, plain); err != nil {
+		g.log.Error(errMsg, "error", err)
 	}
 }
 
