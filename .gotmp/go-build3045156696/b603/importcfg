@@ -1,0 +1,12 @@
+# import config
+packagefile context=/home/sam/.cache/go-build/11/11a17cafd6d5486615da907938044f4b238d195c2704a292c54118a53d460147-d
+packagefile github.com/samcharles93/archie-core/internal/memory=/home/sam/.cache/go-build/0c/0c9d10c730cf984543d91949522a27d2556ffa38d58153fa6bc35e64d9514d41-d
+packagefile github.com/samcharles93/archie-core/internal/plugin=/home/sam/.cache/go-build/1c/1cea53a7404346b0e3b4bd299faeaa83710d8e6541e4f8e5fc51b8c32cf437d0-d
+packagefile github.com/samcharles93/archie-core/internal/tools=/home/sam/.cache/go-build/17/17c5b0508e8e60bd10937106240c0b427a5a1360919e7d2e00d2afed2d896a9d-d
+packagefile testing=/home/sam/.cache/go-build/13/131537cf32c8c7a2a4ddd087679fd49a2cec0c40ce5344df25762df048555ac8-d
+packagefile context=/home/sam/.cache/go-build/11/11a17cafd6d5486615da907938044f4b238d195c2704a292c54118a53d460147-d
+packagefile errors=/home/sam/.cache/go-build/aa/aa42c84009b1c7e2e983fd7a088992d52053be9527d8c93ea9affc7db1ee5ce5-d
+packagefile github.com/samcharles93/archie-core/internal/memory=/home/sam/.cache/go-build/0c/0c9d10c730cf984543d91949522a27d2556ffa38d58153fa6bc35e64d9514d41-d
+packagefile github.com/samcharles93/archie-core/internal/plugin=/home/sam/.cache/go-build/1c/1cea53a7404346b0e3b4bd299faeaa83710d8e6541e4f8e5fc51b8c32cf437d0-d
+packagefile github.com/samcharles93/archie-core/internal/tools=/home/sam/.cache/go-build/17/17c5b0508e8e60bd10937106240c0b427a5a1360919e7d2e00d2afed2d896a9d-d
+packagefile github.com/samcharles93/archie-core/internal/tools/provider/memory=/home/sam/.cache/go-build/05/051aff19e3c1069897533603973692bf67d1a858a508eabd9dead4565d566a70-d

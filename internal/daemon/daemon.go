@@ -6,6 +6,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"github.com/samcharles93/ai-sdk/core"
 	"github.com/samcharles93/ai-sdk/runtime"
 
+	natsio "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
@@ -49,6 +51,19 @@ type Daemon struct {
 	// Nats is the optional NATS client for task distribution. Nil means
 	// NATS is not configured; the existing SQLite ClaimNext flow is used.
 	Nats *arnats.Client
+	// TaskRunReadyTimeout bounds how long runViaAgent retries an initial
+	// taskrun request that fails with nats.ErrNoResponders, giving a
+	// freshly spawned archie-agent container time to connect to NATS, set
+	// up its JetStream stream/consumer, and subscribe before the daemon
+	// gives up and parks the task. ContainerPool.Acquire returns as soon
+	// as Docker has issued the start syscall, not once that setup
+	// finishes, so without this bound the very first request after a
+	// container spawn fails deterministically. Zero uses
+	// defaultTaskRunReadyTimeout.
+	TaskRunReadyTimeout time.Duration
+	// TaskRunRetryBackoff is the delay between retry attempts within
+	// TaskRunReadyTimeout. Zero uses defaultTaskRunRetryBackoff.
+	TaskRunRetryBackoff time.Duration
 	// ContainerPool manages Docker container lifecycle. Nil when [containers]
 	// is not configured. When non-nil, every task gets a fresh container.
 	ContainerPool *container.Pool
@@ -1012,7 +1027,7 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *store.Task, repo config.
 		return
 	}
 
-	reply, err := d.Nats.Conn().RequestWithContext(ctx, taskrun.SubjectForTask(task.ID), data)
+	reply, err := d.requestTaskRun(ctx, task.ID, data)
 	if err != nil {
 		d.Log.Error("taskrun request failed", "task", task.ID, "err", err)
 		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "taskrun request failed: "+err.Error())
@@ -1032,6 +1047,60 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *store.Task, repo config.
 	}
 
 	d.Log.Info("taskrun complete", "task", task.ID, "status", resp.Status)
+}
+
+const (
+	// defaultTaskRunReadyTimeout is how long requestTaskRun retries a
+	// nats.ErrNoResponders before giving up, when Daemon.TaskRunReadyTimeout
+	// is unset.
+	defaultTaskRunReadyTimeout = 20 * time.Second
+	// defaultTaskRunRetryBackoff is the delay between retry attempts, when
+	// Daemon.TaskRunRetryBackoff is unset.
+	defaultTaskRunRetryBackoff = 250 * time.Millisecond
+)
+
+func (d *Daemon) taskRunReadyTimeout() time.Duration {
+	if d.TaskRunReadyTimeout > 0 {
+		return d.TaskRunReadyTimeout
+	}
+	return defaultTaskRunReadyTimeout
+}
+
+func (d *Daemon) taskRunRetryBackoff() time.Duration {
+	if d.TaskRunRetryBackoff > 0 {
+		return d.TaskRunRetryBackoff
+	}
+	return defaultTaskRunRetryBackoff
+}
+
+// requestTaskRun publishes the taskrun request and retries while no
+// archie-agent has subscribed yet (nats.ErrNoResponders): the container
+// pool's Acquire returns as soon as Docker has issued the start syscall,
+// not once the spawned container has connected to NATS, set up its
+// JetStream stream/consumer, and subscribed to this per-task subject  --
+// a gap of hundreds of milliseconds to a few seconds that would otherwise
+// fail the very first request deterministically, every time, on every
+// task. Any error other than ErrNoResponders (encode failures, a context
+// that's already done, etc.) is returned immediately without retrying,
+// since those don't mean "not ready yet".
+func (d *Daemon) requestTaskRun(ctx context.Context, taskID int64, data []byte) (*natsio.Msg, error) {
+	subject := taskrun.SubjectForTask(taskID)
+	deadline := time.Now().Add(d.taskRunReadyTimeout())
+	backoff := d.taskRunRetryBackoff()
+	for {
+		reply, err := d.Nats.Conn().RequestWithContext(ctx, subject, data)
+		if err == nil {
+			return reply, nil
+		}
+		if !errors.Is(err, natsio.ErrNoResponders) || !time.Now().Before(deadline) {
+			return nil, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(backoff):
+		}
+	}
 }
 
 func (d *Daemon) containerEnv() []string {

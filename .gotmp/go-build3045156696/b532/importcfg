@@ -1,0 +1,25 @@
+# import config
+packagefile context=/home/sam/.cache/go-build/11/11a17cafd6d5486615da907938044f4b238d195c2704a292c54118a53d460147-d
+packagefile github.com/go-telegram/bot=/home/sam/.cache/go-build/bb/bb14169f6b98d83267ea6c787697b8f85fe5dac2598c674dbf67ec0b4853bd66-d
+packagefile github.com/go-telegram/bot/models=/home/sam/.cache/go-build/3e/3e69e7e7df4f89a9bddc8a37654fc119a9d3b80a11a1ac2c25fbe1e6e3c830be-d
+packagefile github.com/samcharles93/archie-core/internal/gateway=/home/sam/.cache/go-build/2d/2dc6c975681de4f15aeed60ce2bd654a2a151dc2b4776beaafc5ea5d483833c6-d
+packagefile log/slog=/home/sam/.cache/go-build/ae/ae9e257b7eccac6ecb8f55e7c1a52d55ee84901e0c9a2f34da7e5053e7fc899e-d
+packagefile net/http=/home/sam/.cache/go-build/a3/a31fb6032489f11f701f106bdfb810d47d55ef15498d9054ae14a0ea49239f2a-d
+packagefile net/http/httptest=/home/sam/.cache/go-build/c4/c493765039cbfc72e5a35815713304b54bcc1135e27ad6547d1cacded9aef9ab-d
+packagefile os=/home/sam/.cache/go-build/65/656284abd507295354e63575736c7ef397e1450c4a3905ab3ecc568d66407102-d
+packagefile strings=/home/sam/.cache/go-build/13/1356685d30a463f54b608511ab75b32f09a3fa3b6f967a52f3f528dd596a2069-d
+packagefile testing=/home/sam/.cache/go-build/13/131537cf32c8c7a2a4ddd087679fd49a2cec0c40ce5344df25762df048555ac8-d
+packagefile time=/home/sam/.cache/go-build/71/7117fd0c82027582f4922d4541a42b4e6a0281dd54f7f4ad5ec044d596d49cb6-d
+packagefile context=/home/sam/.cache/go-build/11/11a17cafd6d5486615da907938044f4b238d195c2704a292c54118a53d460147-d
+packagefile encoding/json=/home/sam/.cache/go-build/88/88989689d7899d567a5ead8b11e6912047ff62e213ccfe81039f48857961d82a-d
+packagefile fmt=/home/sam/.cache/go-build/ba/ba2872b84dec52ad16c6c4aa99fda3dafa9761faffe0bd91c0fb085b4916d415-d
+packagefile github.com/go-telegram/bot=/home/sam/.cache/go-build/bb/bb14169f6b98d83267ea6c787697b8f85fe5dac2598c674dbf67ec0b4853bd66-d
+packagefile github.com/go-telegram/bot/models=/home/sam/.cache/go-build/3e/3e69e7e7df4f89a9bddc8a37654fc119a9d3b80a11a1ac2c25fbe1e6e3c830be-d
+packagefile github.com/samcharles93/archie-core/internal/channels=/home/sam/.cache/go-build/36/36b8a06707ecaeb5cc3d779ecbef35ea2ca5440b875abebc1321298e32e812bb-d
+packagefile github.com/samcharles93/archie-core/internal/gateway=/home/sam/.cache/go-build/2d/2dc6c975681de4f15aeed60ce2bd654a2a151dc2b4776beaafc5ea5d483833c6-d
+packagefile log/slog=/home/sam/.cache/go-build/ae/ae9e257b7eccac6ecb8f55e7c1a52d55ee84901e0c9a2f34da7e5053e7fc899e-d
+packagefile net/http=/home/sam/.cache/go-build/a3/a31fb6032489f11f701f106bdfb810d47d55ef15498d9054ae14a0ea49239f2a-d
+packagefile runtime/debug=/home/sam/.cache/go-build/3b/3b3b4ec3e50fd87cab6ad463d17d3a9f59b0a7c0b1bf09ca111f4bb993f0d633-d
+packagefile slices=/home/sam/.cache/go-build/37/37154b083e6e10cd24665765e279fc034749a0fe234f8c2bdb4b8729b41da26a-d
+packagefile strings=/home/sam/.cache/go-build/13/1356685d30a463f54b608511ab75b32f09a3fa3b6f967a52f3f528dd596a2069-d
+packagefile github.com/samcharles93/archie-core/internal/channels/telegram=/home/sam/.cache/go-build/b2/b2be7b565f5edd433f760a415fd7d5c47b0c3634d33b0eca700ba4f51c0c81b1-d

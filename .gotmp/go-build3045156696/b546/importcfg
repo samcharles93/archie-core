@@ -1,0 +1,19 @@
+# import config
+packagefile context=/home/sam/.cache/go-build/11/11a17cafd6d5486615da907938044f4b238d195c2704a292c54118a53d460147-d
+packagefile errors=/home/sam/.cache/go-build/aa/aa42c84009b1c7e2e983fd7a088992d52053be9527d8c93ea9affc7db1ee5ce5-d
+packagefile github.com/nats-io/nats-server/v2/server=/home/sam/.cache/go-build/ec/ec9775dac2952900cb8a6abeb8feca500f2da0f34b0d084d4698f115813e7423-d
+packagefile github.com/nats-io/nats-server/v2/test=/home/sam/.cache/go-build/de/deee3a49f0ad7bc514b4d5c731b3aa9d2cb3694824f81c1109408f720869290b-d
+packagefile github.com/nats-io/nats.go=/home/sam/.cache/go-build/e2/e2987439f966bbe9f7bba922b88385e1e173a28152d4af0dc3d7d535337c3433-d
+packagefile github.com/samcharles93/archie-core/internal/forge=/home/sam/.cache/go-build/cf/cf7b483c12bef5281a4335a40b0e9ba84831e0bdbf762565d880bbf225e700c3-d
+packagefile log/slog=/home/sam/.cache/go-build/ae/ae9e257b7eccac6ecb8f55e7c1a52d55ee84901e0c9a2f34da7e5053e7fc899e-d
+packagefile testing=/home/sam/.cache/go-build/13/131537cf32c8c7a2a4ddd087679fd49a2cec0c40ce5344df25762df048555ac8-d
+packagefile time=/home/sam/.cache/go-build/71/7117fd0c82027582f4922d4541a42b4e6a0281dd54f7f4ad5ec044d596d49cb6-d
+packagefile context=/home/sam/.cache/go-build/11/11a17cafd6d5486615da907938044f4b238d195c2704a292c54118a53d460147-d
+packagefile encoding/json=/home/sam/.cache/go-build/88/88989689d7899d567a5ead8b11e6912047ff62e213ccfe81039f48857961d82a-d
+packagefile fmt=/home/sam/.cache/go-build/ba/ba2872b84dec52ad16c6c4aa99fda3dafa9761faffe0bd91c0fb085b4916d415-d
+packagefile github.com/nats-io/nats.go=/home/sam/.cache/go-build/e2/e2987439f966bbe9f7bba922b88385e1e173a28152d4af0dc3d7d535337c3433-d
+packagefile github.com/samcharles93/archie-core/internal/forge=/home/sam/.cache/go-build/cf/cf7b483c12bef5281a4335a40b0e9ba84831e0bdbf762565d880bbf225e700c3-d
+packagefile github.com/samcharles93/archie-core/internal/natsrpc=/home/sam/.cache/go-build/49/4968c153099ccfaa2023b5c2a440e55c3992d8b75f32a632ebb48dcfe9234b41-d
+packagefile log/slog=/home/sam/.cache/go-build/ae/ae9e257b7eccac6ecb8f55e7c1a52d55ee84901e0c9a2f34da7e5053e7fc899e-d
+packagefile time=/home/sam/.cache/go-build/71/7117fd0c82027582f4922d4541a42b4e6a0281dd54f7f4ad5ec044d596d49cb6-d
+packagefile github.com/samcharles93/archie-core/internal/forgerpc=/home/sam/.cache/go-build/64/64d834c9c7ee7a67e82a44253f9b4d895d54680dd6c15e0970942f8b4396312d-d

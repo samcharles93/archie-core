@@ -1,0 +1,11 @@
+# import config
+packagefile os=/home/sam/.cache/go-build/65/656284abd507295354e63575736c7ef397e1450c4a3905ab3ecc568d66407102-d
+packagefile path/filepath=/home/sam/.cache/go-build/f8/f8cf89779f1efe4f68e82849ffc73dc5c0c75f72029d769dfe896dd8a0b6af36-d
+packagefile testing=/home/sam/.cache/go-build/13/131537cf32c8c7a2a4ddd087679fd49a2cec0c40ce5344df25762df048555ac8-d
+packagefile bytes=/home/sam/.cache/go-build/e9/e94e3a36d9f265f6ffd286bcdc815eb482c6d9708db5e9dbfd34273a46b0a4ab-d
+packagefile fmt=/home/sam/.cache/go-build/ba/ba2872b84dec52ad16c6c4aa99fda3dafa9761faffe0bd91c0fb085b4916d415-d
+packagefile github.com/samcharles93/archie-core/internal/yaegiutil=/home/sam/.cache/go-build/61/614891fde48850230fcb2473ed035a65b72b9232cca84b3f74f117eacafa22e3-d
+packagefile github.com/traefik/yaegi/interp=/home/sam/.cache/go-build/a5/a55ff227ef120db9e775faf5b392615eefdd443e4d80d6638a49a1b3e281499b-d
+packagefile github.com/traefik/yaegi/stdlib/unrestricted=/home/sam/.cache/go-build/c7/c7da48df64f481c983471a454b8955ebd149d63c51594176ff2790cac90e4620-d
+packagefile os=/home/sam/.cache/go-build/65/656284abd507295354e63575736c7ef397e1450c4a3905ab3ecc568d66407102-d
+packagefile github.com/samcharles93/archie-core/internal/skillscript=/home/sam/.cache/go-build/34/345bb9762dc1636bc9b2af3ab99d394f64a59a24881570f31b03e2b2badaa615-d

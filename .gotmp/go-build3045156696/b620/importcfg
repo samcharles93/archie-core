@@ -1,0 +1,5 @@
+# import config
+packagefile github.com/traefik/yaegi/interp=/home/sam/.cache/go-build/a5/a55ff227ef120db9e775faf5b392615eefdd443e4d80d6638a49a1b3e281499b-d
+packagefile strings=/home/sam/.cache/go-build/13/1356685d30a463f54b608511ab75b32f09a3fa3b6f967a52f3f528dd596a2069-d
+packagefile testing=/home/sam/.cache/go-build/13/131537cf32c8c7a2a4ddd087679fd49a2cec0c40ce5344df25762df048555ac8-d
+packagefile github.com/samcharles93/archie-core/internal/yaegiutil=/home/sam/.cache/go-build/61/614891fde48850230fcb2473ed035a65b72b9232cca84b3f74f117eacafa22e3-d

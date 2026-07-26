@@ -295,6 +295,11 @@ func daemonWithNATS(t *testing.T) (*Daemon, *store.Store) {
 
 func TestRunViaAgentParksOnRequestFailure(t *testing.T) {
 	d, s := daemonWithNATS(t)
+	// Bound the no-responders retry window tightly so this test proves
+	// "no archie-agent ever showed up" parks the task, without waiting out
+	// the real production default (20s).
+	d.TaskRunReadyTimeout = 50 * time.Millisecond
+	d.TaskRunRetryBackoff = 10 * time.Millisecond
 	ctx := context.Background()
 
 	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "t", "b", "", ""); err != nil {
@@ -305,9 +310,9 @@ func TestRunViaAgentParksOnRequestFailure(t *testing.T) {
 		t.Fatalf("claim: (%v, %v)", task, err)
 	}
 
-	// No responder registered on the taskrun subject  --  the request must
-	// fail, and runViaAgent must park rather than leave the task stuck
-	// running.
+	// No responder registered on the taskrun subject, ever  --  the retry
+	// window must exhaust and runViaAgent must park rather than leave the
+	// task stuck running.
 	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget"})
 
 	got, err := s.TaskByIssue(ctx, "acme", "widget", 1)
@@ -316,6 +321,84 @@ func TestRunViaAgentParksOnRequestFailure(t *testing.T) {
 	}
 	if got.Status != store.StatusParked {
 		t.Fatalf("status = %q, want %q", got.Status, store.StatusParked)
+	}
+}
+
+// TestRunViaAgentRetriesUntilResponderAppears is a regression test for the
+// deterministic race where a freshly spawned archie-agent container hasn't
+// finished connecting to NATS and subscribing yet when the daemon
+// publishes its very first taskrun request: ContainerPool.Acquire returns
+// as soon as Docker issues the start syscall, well before the container's
+// NATS/JetStream setup completes, so the request used to fail with
+// nats.ErrNoResponders and park the task on effectively every run. This
+// simulates that exact ordering  --  no subscriber at request time, one
+// registers shortly after  --  and asserts the retry recovers instead of
+// parking.
+func TestRunViaAgentRetriesUntilResponderAppears(t *testing.T) {
+	d, s := daemonWithNATS(t)
+	d.TaskRunReadyTimeout = time.Second
+	d.TaskRunRetryBackoff = 20 * time.Millisecond
+	ctx := context.Background()
+
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 6, "t", "b", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("claim: (%v, %v)", task, err)
+	}
+
+	// Register the subscriber only after a short delay, simulating the
+	// spawned container's NATS/JetStream startup lag  --  the very race
+	// this retry loop exists to survive.
+	go func() {
+		time.Sleep(80 * time.Millisecond)
+		sub, err := d.Nats.Conn().Subscribe(taskrun.SubjectForTask(task.ID), func(msg *natsio.Msg) {
+			data, _ := json.Marshal(taskrun.Response{Status: store.StatusPROpen})
+			_ = msg.Respond(data)
+		})
+		if err != nil {
+			t.Errorf("late subscribe: %v", err)
+			return
+		}
+		t.Cleanup(func() { _ = sub.Unsubscribe() })
+	}()
+
+	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget"})
+
+	got, err := s.TaskByIssue(ctx, "acme", "widget", 6)
+	if err != nil || got == nil {
+		t.Fatalf("TaskByIssue: (%+v, %v)", got, err)
+	}
+	if got.Status == store.StatusParked {
+		t.Fatal("runViaAgent parked a task whose responder appeared within the retry window")
+	}
+}
+
+// TestRunViaAgentDoesNotRetryOnContextCancellation proves requestTaskRun
+// doesn't confuse a caller-cancelled context with the "not ready yet"
+// no-responders case: it must return promptly (well under the retry
+// window) rather than looping through backoff attempts.
+func TestRunViaAgentDoesNotRetryOnContextCancellation(t *testing.T) {
+	d, s := daemonWithNATS(t)
+	d.TaskRunReadyTimeout = 5 * time.Second
+	d.TaskRunRetryBackoff = 500 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := s.EnqueueIssue(context.Background(), "acme", "widget", 7, "t", "b", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(context.Background())
+	if err != nil || task == nil {
+		t.Fatalf("claim: (%v, %v)", task, err)
+	}
+
+	start := time.Now()
+	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget"})
+	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
+		t.Fatalf("runViaAgent took %s with an already-cancelled context, want it to return immediately without retrying", elapsed)
 	}
 }
 

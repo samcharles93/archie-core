@@ -1,0 +1,17 @@
+# import config
+packagefile context=/home/sam/.cache/go-build/11/11a17cafd6d5486615da907938044f4b238d195c2704a292c54118a53d460147-d
+packagefile os=/home/sam/.cache/go-build/65/656284abd507295354e63575736c7ef397e1450c4a3905ab3ecc568d66407102-d
+packagefile path/filepath=/home/sam/.cache/go-build/f8/f8cf89779f1efe4f68e82849ffc73dc5c0c75f72029d769dfe896dd8a0b6af36-d
+packagefile strings=/home/sam/.cache/go-build/13/1356685d30a463f54b608511ab75b32f09a3fa3b6f967a52f3f528dd596a2069-d
+packagefile testing=/home/sam/.cache/go-build/13/131537cf32c8c7a2a4ddd087679fd49a2cec0c40ce5344df25762df048555ac8-d
+packagefile context=/home/sam/.cache/go-build/11/11a17cafd6d5486615da907938044f4b238d195c2704a292c54118a53d460147-d
+packagefile fmt=/home/sam/.cache/go-build/ba/ba2872b84dec52ad16c6c4aa99fda3dafa9761faffe0bd91c0fb085b4916d415-d
+packagefile github.com/samcharles93/archie-core/internal/tools=/home/sam/.cache/go-build/17/17c5b0508e8e60bd10937106240c0b427a5a1360919e7d2e00d2afed2d896a9d-d
+packagefile github.com/samcharles93/archie-core/internal/yaegiutil=/home/sam/.cache/go-build/61/614891fde48850230fcb2473ed035a65b72b9232cca84b3f74f117eacafa22e3-d
+packagefile github.com/traefik/yaegi/interp=/home/sam/.cache/go-build/a5/a55ff227ef120db9e775faf5b392615eefdd443e4d80d6638a49a1b3e281499b-d
+packagefile gopkg.in/yaml.v3=/home/sam/.cache/go-build/5a/5a1e8d422602c683b368aebc4db602490e8bb20d0837024e9fb1f80318d740cd-d
+packagefile os=/home/sam/.cache/go-build/65/656284abd507295354e63575736c7ef397e1450c4a3905ab3ecc568d66407102-d
+packagefile path/filepath=/home/sam/.cache/go-build/f8/f8cf89779f1efe4f68e82849ffc73dc5c0c75f72029d769dfe896dd8a0b6af36-d
+packagefile sort=/home/sam/.cache/go-build/8f/8f6f2048d7bc4253093319e25524a086eab548dc7d7d8bfe21e510b3767d0fe0-d
+packagefile strings=/home/sam/.cache/go-build/13/1356685d30a463f54b608511ab75b32f09a3fa3b6f967a52f3f528dd596a2069-d
+packagefile github.com/samcharles93/archie-core/internal/skill=/home/sam/.cache/go-build/f5/f5fc6f0a213cc8708cbd24d832fe3d8ffea2441d0eee38f8e501a5d2f5781199-d

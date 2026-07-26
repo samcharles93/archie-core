@@ -1,0 +1,10 @@
+{
+	"Patterns": {
+		"index.html": [
+			"index.html"
+		]
+	},
+	"Files": {
+		"index.html": "/work/apps/archie-core/internal/webui/index.html"
+	}
+}

@@ -1,0 +1,6 @@
+# import config
+packagefile reflect=/home/sam/.cache/go-build/0c/0c4056fea713184a8e3492cbbfd13374f2b1cffd33af3192f6dd825dab3d607c-d
+packagefile testing=/home/sam/.cache/go-build/13/131537cf32c8c7a2a4ddd087679fd49a2cec0c40ce5344df25762df048555ac8-d
+packagefile github.com/samcharles93/archie-core/internal/gate=/home/sam/.cache/go-build/30/30374ffbeec7cfe15752c1c5b46eb1c00cfced9f06327f87d61fbd8393488e20-d
+packagefile reflect=/home/sam/.cache/go-build/0c/0c4056fea713184a8e3492cbbfd13374f2b1cffd33af3192f6dd825dab3d607c-d
+packagefile github.com/samcharles93/archie-core/internal/gate/gateextract=/home/sam/.cache/go-build/fd/fd41c6d7e8a4191fc68a0cabb4d9010616e98698cc2c08852eb6d8efacf78626-d
