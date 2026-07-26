@@ -32,10 +32,20 @@ type Gateway struct {
 	// is public, and chat tools run with the daemon's authority, so failing
 	// open would expose those tools to any stranger who finds the bot.
 	AllowedUserIDs []int64
-	log            *slog.Logger
-	bot            *bot.Bot
-	webhookCancel  context.CancelFunc
-	running        bool
+	// Reload re-reads configuration during /restart and applies it to g.
+	// Supplied by the composition root, which owns config paths. Nil
+	// restarts with the settings already in memory.
+	Reload func(*Gateway) error
+
+	// restartCh carries /restart requests from a bot handler to the
+	// supervisor loop in Start. Buffered so a handler never blocks.
+	restartCh      chan restartRequest
+	pendingRestart *restartRequest
+
+	log           *slog.Logger
+	bot           *bot.Bot
+	webhookCancel context.CancelFunc
+	running       bool
 }
 
 // New returns an unstarted Gateway. Call Start to begin webhook
@@ -46,20 +56,63 @@ func New(token, webhookURL, webhookSecret string, allowedUserIDs []int64, log *s
 		WebhookURL:     webhookURL,
 		WebhookSecret:  webhookSecret,
 		AllowedUserIDs: allowedUserIDs,
+		restartCh:      make(chan restartRequest, 1),
 		log:            log.With("component", "gateway-telegram"),
 	}
 }
 
 func (g *Gateway) Name() string { return "telegram" }
 
-// Start builds the bot, registers handlers, sets the webhook (if
-// configured), and begins processing. Blocks until ctx is cancelled.
+// Start supervises the bot: it launches an instance and relaunches it
+// whenever a restart is requested, blocking until ctx is cancelled.
+//
+// Restarts are scoped to this gateway. The daemon keeps running, so
+// in-flight agent tasks are untouched  --  the whole point of the escape
+// hatch is to recover chat without disturbing work in progress.
 func (g *Gateway) Start(ctx context.Context, router *gateway.Router) error {
 	if g.Token == "" {
 		return fmt.Errorf("telegram bot token is required")
 	}
 	g.log.Info("starting telegram gateway")
 
+	for {
+		runCtx, cancel := context.WithCancel(ctx)
+		b, err := g.launch(runCtx, router)
+		if err != nil {
+			cancel()
+			return err
+		}
+		// Confirm to whoever asked, now that the new instance can send.
+		if req := g.pendingRestart; req != nil {
+			g.sendMessage(runCtx, b, req.chatID, req.threadID, "✅ Gateway restarted.")
+			g.pendingRestart = nil
+		}
+
+		select {
+		case <-ctx.Done():
+			cancel()
+			return g.Stop(context.Background())
+		case req := <-g.restartCh:
+			g.log.Info("restarting telegram gateway", "requested_by", req.chatID)
+			cancel()
+			if err := g.Stop(context.Background()); err != nil {
+				g.log.Warn("stop during restart failed", "error", err)
+			}
+			if g.Reload != nil {
+				if err := g.Reload(g); err != nil {
+					// Keep the previous settings rather than dying: a bad
+					// config edit must not take the gateway down for good.
+					g.log.Error("config reload failed, restarting with previous settings", "error", err)
+				}
+			}
+			g.pendingRestart = &req
+		}
+	}
+}
+
+// launch builds one bot instance, registers handlers and begins receiving.
+// It returns as soon as delivery is running; the caller owns ctx.
+func (g *Gateway) launch(ctx context.Context, router *gateway.Router) (*bot.Bot, error) {
 	opts := []bot.Option{
 		bot.WithErrorsHandler(func(err error) {
 			g.log.Error("telegram pipeline error", "error", err)
@@ -76,13 +129,14 @@ func (g *Gateway) Start(ctx context.Context, router *gateway.Router) error {
 
 	b, err := bot.New(g.Token, opts...)
 	if err != nil {
-		return fmt.Errorf("create bot: %w", err)
+		return nil, fmt.Errorf("create bot: %w", err)
 	}
 	g.bot = b
 
 	// Gateway-local commands: handled directly, no LLM.
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/status", bot.MatchTypePrefix, g.statusHandler(router))
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/help", bot.MatchTypePrefix, g.helpHandler())
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/restart", bot.MatchTypePrefix, g.restartHandler())
 
 	// Publish the command list so Telegram renders a menu. Without this
 	// the commands are undiscoverable and the LLM, having no idea they
@@ -99,7 +153,7 @@ func (g *Gateway) Start(ctx context.Context, router *gateway.Router) error {
 			DropPendingUpdates: true,
 		}
 		if _, err := b.SetWebhook(ctx, params); err != nil {
-			return fmt.Errorf("set webhook: %w", err)
+			return nil, fmt.Errorf("set webhook: %w", err)
 		}
 		g.log.Info("webhook set", "url", g.WebhookURL)
 
@@ -124,8 +178,7 @@ func (g *Gateway) Start(ctx context.Context, router *gateway.Router) error {
 		go b.Start(ctx)
 	}
 
-	<-ctx.Done()
-	return nil
+	return b, nil
 }
 
 // Stop gracefully shuts down the bot and deletes the webhook.

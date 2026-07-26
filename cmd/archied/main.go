@@ -277,6 +277,30 @@ func run() int {
 		}
 		tg := telegram.New(tgToken, "", "", cfg.Chat.Telegram.AllowedUserIDs, log)
 
+		// /restart re-reads config from disk so allowlist and token edits
+		// apply without restarting the daemon and killing running tasks.
+		// Only gateway-scoped fields are refreshed; everything else needs a
+		// full restart, since it was wired into the daemon at construction.
+		tg.Reload = func(g *telegram.Gateway) error {
+			newCfg, err := config.LoadOverlay(*cfgPath, *overlayPath)
+			if err != nil {
+				return fmt.Errorf("reload config: %w", err)
+			}
+			tokenEnv := newCfg.Chat.Telegram.TokenEnv
+			if tokenEnv == "" {
+				return fmt.Errorf("reload config: chat.telegram.token_env is unset")
+			}
+			token := os.Getenv(tokenEnv)
+			if token == "" {
+				return fmt.Errorf("reload config: %s is empty", tokenEnv)
+			}
+			g.Token = token
+			g.AllowedUserIDs = newCfg.Chat.Telegram.AllowedUserIDs
+			log.Info("chat gateway config reloaded",
+				"allowed_user_ids", len(g.AllowedUserIDs))
+			return nil
+		}
+
 		// Session store backed by the same NellDB log as task state.
 		// Sessions and messages survive daemon restarts.
 		var sessionStore gateway.SessionStore
