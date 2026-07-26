@@ -1,5 +1,0 @@
-# import config
-packagefile os=/home/sam/.cache/go-build/65/656284abd507295354e63575736c7ef397e1450c4a3905ab3ecc568d66407102-d
-packagefile path/filepath=/home/sam/.cache/go-build/f8/f8cf89779f1efe4f68e82849ffc73dc5c0c75f72029d769dfe896dd8a0b6af36-d
-packagefile strings=/home/sam/.cache/go-build/13/1356685d30a463f54b608511ab75b32f09a3fa3b6f967a52f3f528dd596a2069-d
-packagefile testing=/home/sam/.cache/go-build/13/131537cf32c8c7a2a4ddd087679fd49a2cec0c40ce5344df25762df048555ac8-d
