@@ -31,8 +31,23 @@ func TestNewStoresFields(t *testing.T) {
 	if g.WebhookURL != "https://example.com/webhook" {
 		t.Errorf("WebhookURL = %q", g.WebhookURL)
 	}
-	if len(g.AllowedChatIDs) != 1 || g.AllowedChatIDs[0] != 42 {
-		t.Errorf("AllowedChatIDs = %v", g.AllowedChatIDs)
+	if len(g.AllowedUserIDs) != 1 || g.AllowedUserIDs[0] != 42 {
+		t.Errorf("AllowedUserIDs = %v", g.AllowedUserIDs)
+	}
+}
+
+// The allowlist must fail closed: a bot handle is public, so an unset
+// allowlist has to deny rather than admit everyone.
+func TestSenderAllowlistFailsClosed(t *testing.T) {
+	if New("t", "", "", nil, slog.Default()).isSenderAllowed(1312197967) {
+		t.Error("empty allowlist must deny every sender")
+	}
+	g := New("t", "", "", []int64{1312197967}, slog.Default())
+	if !g.isSenderAllowed(1312197967) {
+		t.Error("listed sender must be allowed")
+	}
+	if g.isSenderAllowed(999) {
+		t.Error("unlisted sender must be denied")
 	}
 }
 
@@ -188,40 +203,36 @@ func TestSplitLongMessage(t *testing.T) {
 	})
 }
 
-func TestIsChatAllowed(t *testing.T) {
+func TestIsSenderAllowed(t *testing.T) {
 	g := New("tok", "", "", []int64{100, 200, 300}, slog.Default())
 
-	t.Run("empty allowlist allows all", func(t *testing.T) {
+	t.Run("empty allowlist denies all", func(t *testing.T) {
 		g2 := New("tok", "", "", nil, slog.Default())
-		if !g2.isChatAllowed(999999) {
-			t.Error("empty allowlist should allow any chat")
+		if g2.isSenderAllowed(999999) {
+			t.Error("empty allowlist must deny every sender, not admit them")
 		}
 	})
 
-	t.Run("explicit allowed chats", func(t *testing.T) {
-		if !g.isChatAllowed(100) {
-			t.Error("chat 100 should be allowed")
-		}
-		if !g.isChatAllowed(300) {
-			t.Error("chat 300 should be allowed")
+	t.Run("explicit allowed senders", func(t *testing.T) {
+		for _, id := range []int64{100, 200, 300} {
+			if !g.isSenderAllowed(id) {
+				t.Errorf("sender %d should be allowed", id)
+			}
 		}
 	})
 
 	t.Run("not in allowlist", func(t *testing.T) {
-		if g.isChatAllowed(999) {
-			t.Error("chat 999 should not be allowed")
+		if g.isSenderAllowed(999) {
+			t.Error("sender 999 should not be allowed")
 		}
 	})
 
-	t.Run("negative chat IDs", func(t *testing.T) {
+	t.Run("zero and negative ids", func(t *testing.T) {
 		g3 := New("tok", "", "", []int64{-1, 0, 1}, slog.Default())
-		if !g3.isChatAllowed(-1) {
-			t.Error("-1 should be allowed")
+		if !g3.isSenderAllowed(-1) || !g3.isSenderAllowed(0) {
+			t.Error("explicitly listed -1 and 0 should be allowed")
 		}
-		if !g3.isChatAllowed(0) {
-			t.Error("0 should be allowed")
-		}
-		if g3.isChatAllowed(2) {
+		if g3.isSenderAllowed(2) {
 			t.Error("2 should not be allowed")
 		}
 	})

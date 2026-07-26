@@ -268,7 +268,14 @@ func run() int {
 			log.Error("chat.telegram configured but token env var is empty", "env", cfg.Chat.Telegram.TokenEnv)
 			return 1
 		}
-		tg := telegram.New(tgToken, "", "", nil, log)
+		// Deny-by-default: an empty allowlist blocks everyone. A bot handle
+		// is public, so failing open would expose the chat agent's tools,
+		// which run with this daemon's authority, to any stranger.
+		if len(cfg.Chat.Telegram.AllowedUserIDs) == 0 {
+			log.Warn("chat.telegram has no allowed_user_ids: every sender will be rejected. " +
+				"Add your Telegram user id to chat.telegram.allowed_user_ids to enable the bot.")
+		}
+		tg := telegram.New(tgToken, "", "", cfg.Chat.Telegram.AllowedUserIDs, log)
 
 		// Session store backed by the same NellDB log as task state.
 		// Sessions and messages survive daemon restarts.

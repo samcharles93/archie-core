@@ -26,8 +26,12 @@ type Gateway struct {
 	Token         string
 	WebhookURL    string
 	WebhookSecret string
-	// AllowedChatIDs restricts which chats may use the bot. Empty = anyone.
-	AllowedChatIDs []int64
+	// AllowedUserIDs lists the Telegram user IDs allowed to use the bot,
+	// matched against the sender rather than the chat so the bot cannot be
+	// reached by adding it to a group. Empty denies everyone: a bot handle
+	// is public, and chat tools run with the daemon's authority, so failing
+	// open would expose those tools to any stranger who finds the bot.
+	AllowedUserIDs []int64
 	log            *slog.Logger
 	bot            *bot.Bot
 	webhookCancel  context.CancelFunc
@@ -36,12 +40,12 @@ type Gateway struct {
 
 // New returns an unstarted Gateway. Call Start to begin webhook
 // processing.
-func New(token, webhookURL, webhookSecret string, allowedChatIDs []int64, log *slog.Logger) *Gateway {
+func New(token, webhookURL, webhookSecret string, allowedUserIDs []int64, log *slog.Logger) *Gateway {
 	return &Gateway{
 		Token:          token,
 		WebhookURL:     webhookURL,
 		WebhookSecret:  webhookSecret,
-		AllowedChatIDs: allowedChatIDs,
+		AllowedUserIDs: allowedUserIDs,
 		log:            log.With("component", "gateway-telegram"),
 	}
 }
@@ -79,6 +83,11 @@ func (g *Gateway) Start(ctx context.Context, router *gateway.Router) error {
 	// Gateway-local commands: handled directly, no LLM.
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/status", bot.MatchTypePrefix, g.statusHandler(router))
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/help", bot.MatchTypePrefix, g.helpHandler())
+
+	// Publish the command list so Telegram renders a menu. Without this
+	// the commands are undiscoverable and the LLM, having no idea they
+	// exist, tells users there are none.
+	g.registerCommands(ctx, b)
 
 	// Set up webhook or fall back to long polling.
 	if g.WebhookURL != "" {
@@ -234,15 +243,21 @@ func threadIDString(id int) string {
 }
 
 func (g *Gateway) authorizedMessage(ctx context.Context, b *bot.Bot, update *models.Update) (*models.Message, bool) {
-	if update.Message == nil {
+	if update.Message == nil || update.Message.From == nil {
 		return nil, false
 	}
-	if g.isChatAllowed(update.Message.Chat.ID) {
+	if g.isSenderAllowed(update.Message.From.ID) {
 		return update.Message, true
 	}
-	g.log.Warn("message from unauthorized chat", "chat_id", update.Message.Chat.ID)
+	g.log.Warn("message from unauthorized sender",
+		"user_id", update.Message.From.ID,
+		"username", update.Message.From.Username,
+		"chat_id", update.Message.Chat.ID,
+	)
+	// Reply so an authorised user who is simply missing from the list can
+	// tell the bot is alive and misconfigured, rather than dead.
 	g.sendMessage(ctx, b, update.Message.Chat.ID, update.Message.MessageThreadID,
-		"⛔ This bot is not available in this chat.")
+		"⛔ You are not authorised to use this bot.")
 	return nil, false
 }
 
@@ -285,11 +300,10 @@ func (g *Gateway) startTyping(ctx context.Context, b *bot.Bot, chatID int64, mes
 	return cancel
 }
 
-func (g *Gateway) isChatAllowed(chatID int64) bool {
-	if len(g.AllowedChatIDs) == 0 {
-		return true
-	}
-	return slices.Contains(g.AllowedChatIDs, chatID)
+// isSenderAllowed reports whether a message's sender may use the bot.
+// An empty allowlist denies everyone (see Gateway.AllowedUserIDs).
+func (g *Gateway) isSenderAllowed(userID int64) bool {
+	return slices.Contains(g.AllowedUserIDs, userID)
 }
 
 func (g *Gateway) sendMessage(ctx context.Context, b *bot.Bot, chatID int64, messageThreadID int, text string) {

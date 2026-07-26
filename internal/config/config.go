@@ -479,7 +479,17 @@ type ChatConfig struct {
 }
 
 // TelegramConfig configures the Telegram Bot API channel.
+//
+// AllowedUserIDs is a deny-by-default allowlist: a Telegram bot is
+// reachable by anyone who knows its handle, so an empty list means the
+// gateway answers nobody rather than everybody. Chat tools run with the
+// daemon's own authority, so an open bot is an open shell.
 type TelegramConfig struct {
+	// AllowedUserIDs lists the Telegram user IDs permitted to talk to the
+	// bot. It matches the sender (from.id), not the chat, so adding the
+	// bot to a group does not grant that group's members access. Empty
+	// denies everyone.
+	AllowedUserIDs []int64 `toml:"allowed_user_ids" yaml:"allowed_user_ids"`
 	// TokenEnv names the env var holding the bot token from @BotFather.
 	// Empty disables the Telegram channel.
 	TokenEnv string `toml:"token_env" yaml:"token_env"`
