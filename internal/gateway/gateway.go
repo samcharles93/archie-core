@@ -12,6 +12,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -67,11 +68,40 @@ type ModelManager interface {
 	SetActiveModel(ctx context.Context, ref string) error
 }
 
-// TaskCreator creates a task from a chat command. The daemon supplies
-// an implementation backed by the store. When nil on a Router, /spawn
-// returns "not configured".
+// SpawnRequest is a chat-originated task creation request. Repo and
+// Workflow are optional  --  empty means "the daemon's configured
+// default for this identity".
+type SpawnRequest struct {
+	Title    string
+	Repo     string // "owner/name"; empty = identity's default repo
+	Workflow string // empty = daemon's default workflow routing
+	Identity string // the identity spawning this task; propagated from Router.Identity
+}
+
+// TaskCreator creates a native (non-forge-backed) task from a chat
+// command. The daemon supplies an implementation backed by the store.
+// When nil on a Router, /spawn returns "not configured". CreateTask
+// must return the task's real, durable database ID  --  never a
+// synthetic or fabricated value.
 type TaskCreator interface {
-	CreateTask(ctx context.Context, title string) (int64, error)
+	CreateTask(ctx context.Context, req SpawnRequest) (taskID int64, err error)
+}
+
+// TaskController approves or cancels a chat-originated task. Both
+// methods must enforce authorization (identity must own the task) and
+// valid state transitions; see gateway.tasks.go's StoreTaskController
+// for the reference implementation. When nil on a Router, /approve and
+// /cancel return "not configured".
+type TaskController interface {
+	// Approve moves a waiting_human task back to queued. Returns an
+	// error (surfaced to the user, not the LLM) if the task doesn't
+	// exist, isn't owned by identity, or isn't in waiting_human.
+	Approve(ctx context.Context, taskID int64, identity string) error
+	// Cancel moves an active (non-terminal, non-running) task to a
+	// rejected/cancelled terminal state. Returns an error if the task
+	// doesn't exist, isn't owned by identity, or is already terminal
+	// or actively running.
+	Cancel(ctx context.Context, taskID int64, identity string) error
 }
 
 // Router dispatches inbound messages. Gateway-local commands (like
@@ -79,10 +109,17 @@ type TaskCreator interface {
 // responder. Gateway implementations call Route on every inbound
 // message.
 type Router struct {
-	Store       StatusReader
-	Models      ModelManager // nil = /model and /models not configured
-	Tasks       TaskCreator  // nil = /spawn not configured
-	LLM         LLMResponder // nil = LLM not wired yet
+	Store      StatusReader
+	Models     ModelManager   // nil = /model and /models not configured
+	Tasks      TaskCreator    // nil = /spawn not configured
+	Controller TaskController // nil = /approve and /cancel not configured
+	LLM        LLMResponder   // nil = LLM not wired yet
+	// Identity is the archie identity this router belongs to (empty in
+	// single-identity deployments). Propagated into SpawnRequest and
+	// used to scope /approve and /cancel authorization  --  a task
+	// spawned under one identity cannot be controlled from another's
+	// chat session.
+	Identity    string
 	gatewayName string
 }
 
@@ -108,8 +145,12 @@ func (r *Router) Route(ctx context.Context, msg Message) (string, error) {
 		return r.handleModel(ctx, arg)
 	case "/spawn":
 		// Title is everything after "/spawn"  --  keep the multi-word text.
-		title := restAfter(text, cmd, r.gatewayName)
-		return r.handleSpawn(ctx, title)
+		rest := restAfter(text, cmd, r.gatewayName)
+		return r.handleSpawn(ctx, rest)
+	case "/approve":
+		return r.handleApprove(ctx, restAfter(text, cmd, r.gatewayName))
+	case "/cancel":
+		return r.handleCancel(ctx, restAfter(text, cmd, r.gatewayName))
 	default:
 		if r.LLM == nil {
 			return "I'm running but LLM processing isn't wired yet. Try /status.", nil
@@ -198,18 +239,97 @@ func restAfter(text, cmd, gatewayName string) string {
 	return strings.TrimSpace(s)
 }
 
-func (r *Router) handleSpawn(ctx context.Context, title string) (string, error) {
+// handleSpawn parses optional leading identity, repo, and workflow tokens
+// off rest, treating whatever remains as the task title.
+func (r *Router) handleSpawn(ctx context.Context, rest string) (string, error) {
 	if r.Tasks == nil {
 		return "Task creation is not configured.", nil
 	}
-	if title == "" {
-		return "Usage: /spawn <title>", nil
+	req := SpawnRequest{Identity: r.Identity}
+	fields := strings.Fields(rest)
+	i := 0
+	for i < len(fields) {
+		if after, ok := strings.CutPrefix(fields[i], "identity="); ok {
+			req.Identity = after
+			i++
+			continue
+		}
+		if after, ok := strings.CutPrefix(fields[i], "repo="); ok {
+			req.Repo = after
+			i++
+			continue
+		}
+		if after, ok := strings.CutPrefix(fields[i], "workflow="); ok {
+			req.Workflow = after
+			i++
+			continue
+		}
+		break // remaining fields are all title
 	}
-	id, err := r.Tasks.CreateTask(ctx, title)
+	req.Title = strings.TrimSpace(strings.Join(fields[i:], " "))
+	if req.Title == "" {
+		return "Usage: /spawn [identity=name] [repo=owner/name] [workflow=name] <title>", nil
+	}
+	id, err := r.Tasks.CreateTask(ctx, req)
 	if err != nil {
 		return fmt.Sprintf("Failed to create task: %v", err), nil
 	}
-	return fmt.Sprintf("Created task %d: %s", id, title), nil
+	return fmt.Sprintf("Created task %d: %s", id, req.Title), nil
+}
+
+// parseTaskID parses a chat command argument as a task database ID.
+func parseTaskID(arg string) (int64, error) {
+	if arg == "" {
+		return 0, fmt.Errorf("missing task ID")
+	}
+	id, err := strconv.ParseInt(arg, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not a valid task ID", arg)
+	}
+	return id, nil
+}
+
+func (r *Router) handleApprove(ctx context.Context, rest string) (string, error) {
+	if r.Controller == nil {
+		return "Task control is not configured.", nil
+	}
+	identity, arg := parseTaskControl(rest, r.Identity)
+	id, err := parseTaskID(arg)
+	if err != nil {
+		return "Usage: /approve [identity=name] <task-id>", nil
+	}
+	if err := r.Controller.Approve(ctx, id, identity); err != nil {
+		return fmt.Sprintf("Cannot approve task %d: %v", id, err), nil
+	}
+	return fmt.Sprintf("Task %d approved and requeued.", id), nil
+}
+
+func (r *Router) handleCancel(ctx context.Context, rest string) (string, error) {
+	if r.Controller == nil {
+		return "Task control is not configured.", nil
+	}
+	identity, arg := parseTaskControl(rest, r.Identity)
+	id, err := parseTaskID(arg)
+	if err != nil {
+		return "Usage: /cancel [identity=name] <task-id>", nil
+	}
+	if err := r.Controller.Cancel(ctx, id, identity); err != nil {
+		return fmt.Sprintf("Cannot cancel task %d: %v", id, err), nil
+	}
+	return fmt.Sprintf("Task %d cancelled.", id), nil
+}
+
+func parseTaskControl(rest, defaultIdentity string) (identity, taskID string) {
+	fields := strings.Fields(rest)
+	identity = defaultIdentity
+	if len(fields) > 0 && strings.HasPrefix(fields[0], "identity=") {
+		identity = strings.TrimPrefix(fields[0], "identity=")
+		fields = fields[1:]
+	}
+	if len(fields) != 1 {
+		return identity, ""
+	}
+	return identity, fields[0]
 }
 
 func (r *Router) handleStatus(ctx context.Context) (string, error) {

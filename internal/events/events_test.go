@@ -113,7 +113,7 @@ func TestSlowSubscriberDoesNotBlockOthers(t *testing.T) {
 	b := NewBus()
 	defer b.Close()
 
-	slow := b.Subscribe(1)  // tiny buffer
+	slow := b.Subscribe(1)   // tiny buffer
 	fast := b.Subscribe(100) // large buffer
 
 	// Publish enough to overflow slow subscriber.
@@ -199,4 +199,3 @@ func TestPublishDoesNotOverwritePreSetAt(t *testing.T) {
 		t.Errorf("At = %v, want %v (preset should not be overwritten)", e.At, preset)
 	}
 }
-

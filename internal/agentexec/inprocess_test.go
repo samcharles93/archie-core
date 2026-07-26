@@ -10,6 +10,8 @@ import (
 
 	"github.com/samcharles93/ai-sdk/agentloop"
 	"github.com/samcharles93/ai-sdk/runtime"
+
+	"github.com/samcharles93/archie-core/internal/tools"
 )
 
 func TestInProcessRunnerMapsRequestAndCapturesOutput(t *testing.T) {
@@ -48,6 +50,79 @@ func TestInProcessRunnerMapsRequestAndCapturesOutput(t *testing.T) {
 	}
 	if len(got.Captures["decide"]) != 1 || string(got.Captures["decide"][0]) != `{"fit":true}` {
 		t.Fatalf("captures = %v", got.Captures)
+	}
+}
+
+func TestInProcessRunnerIncludesAvailableCentralTools(t *testing.T) {
+	registry := tools.NewRegistry()
+	if err := registry.Register(tools.ToolEntry{
+		Name: "memory_search",
+		Handler: func(context.Context, map[string]any) (any, error) {
+			return "found", nil
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runner := &InProcessRunner{
+		runtime: runtime.NewRuntime(runtime.Config{}),
+		tools:   registry,
+		run: func(ctx context.Context, cfg agentloop.Config) (agentloop.Result, error) {
+			tool, ok := cfg.Extra["memory_search"]
+			if !ok {
+				t.Fatal("central tool is not present in agentloop Config.Extra")
+			}
+			got, err := tool.Execute(ctx, `{}`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != `"found"` {
+				t.Fatalf("tool output = %q, want JSON string", got)
+			}
+			return agentloop.Result{Status: agentloop.StatusPassed}, nil
+		},
+	}
+	_, err := runner.Run(context.Background(), "/workspace", Request{
+		Version: ProtocolVersion,
+		TaskID:  1,
+		Attempt: 1,
+		Stage:   "build",
+		Model:   "provider/model",
+		Mission: "mission",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInProcessRunnerRejectsInvalidCentralToolSchemas(t *testing.T) {
+	registry := tools.NewRegistry()
+	if err := registry.Register(tools.ToolEntry{
+		Name:    "invalid",
+		Handler: func(context.Context, map[string]any) (any, error) { return nil, nil },
+		DynamicSchemaOverrides: func(tools.JSONSchema) tools.JSONSchema {
+			panic("schema panic")
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runner := &InProcessRunner{
+		runtime: runtime.NewRuntime(runtime.Config{}),
+		tools:   registry,
+		run: func(context.Context, agentloop.Config) (agentloop.Result, error) {
+			t.Fatal("agent loop ran with an invalid central tool schema")
+			return agentloop.Result{}, nil
+		},
+	}
+	_, err := runner.Run(context.Background(), "/workspace", Request{
+		Version: ProtocolVersion,
+		TaskID:  1,
+		Attempt: 1,
+		Stage:   "build",
+		Model:   "provider/model",
+		Mission: "mission",
+	})
+	if err == nil {
+		t.Fatal("Run() error = nil, want invalid central tool schema error")
 	}
 }
 

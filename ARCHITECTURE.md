@@ -165,6 +165,45 @@ Every lifecycle event flows through an internal event bus:
 - Live dashboard via SSE (server-sent events)
 - Bounded subscriber buffers  --  slow consumers drop events, never block the daemon
 
+## Plugin engine rule (strict)
+
+“Engine” is reserved for a typed, lifecycle-managed capability family. It is
+not a synonym for a generic plugin hook. Every new plugin engine must satisfy
+all of these invariants:
+
+1. **Typed domain contract.** The engine interface exposes real
+   capability-specific operations in addition to identity metadata. Examples
+   are resolving a secret, delivering a message, or running an agent. A plugin
+   that only exposes `Name` and `Version` is metadata, not an engine.
+2. **Owning family manager.** The capability package owns a `Registry` or
+   `Manager` that controls provider registration and discovery,
+   initialization, or access. Providers do not register arbitrary callbacks
+   directly on the daemon.
+3. **Lifecycle and health.** When an implementation owns resources or
+   background work, its typed family contract must expose start, health, and
+   stop semantics. The owning manager invokes them and defines failure
+   isolation and shutdown ordering. Stateless providers may make these
+   operations explicit no-ops.
+4. **Narrow host access.** Plugins receive the typed family registrar and only
+   the host services their declared capability requires. They never receive
+   `*daemon.Daemon`, a service locator, or an untyped hook map.
+5. **Metadata-only generic plugin contract.** `plugin.Plugin` remains limited
+   to `Name()` and `Version()`. Domain hooks belong on typed engine interfaces;
+   adding capability methods to the generic interface is forbidden.
+6. **Trust boundary stays explicit.** Explicitly trusted, operator-installed
+   plugins—including third-party secret-engine plugins the operator chooses
+   to trust—may run in-process and have daemon privileges. Repository-supplied
+   code runs in the task container. Integrations that are not trusted as
+   daemon code run out of process through MCP or a versioned protocol and, when
+   a confidentiality or integrity boundary is required, inside a real
+   container sandbox. A subprocess boundary alone is not a security sandbox,
+   and calling Yaegi-loaded code a plugin does not isolate it.
+
+`internal/plugin/architecture_test.go` enforces the mechanically testable
+parts of this rule: the generic plugin method set, the shared agent-instruction
+source, and the requirement that engine interfaces have domain behavior plus
+an owning registry or manager.
+
 ## Key Design Decisions
 
 1. **Environmental constraints over prompt rules.** The gate, test-file protection, and diff cap are code enforcement  --  not "please don't do that" in the system prompt.

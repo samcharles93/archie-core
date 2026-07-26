@@ -105,3 +105,48 @@ func TestStageCommitPushClosesIssueWhenBuildNoChanges(t *testing.T) {
 		t.Error("expected a comment about no changes required")
 	}
 }
+
+func TestStageCommitPushDoesNotUseSyntheticIssueForChatNoOp(t *testing.T) {
+	f := &fakeForge{}
+	stage := StageCommitPush(func(*TaskContext) string { return "commit msg" })
+	tc := &TaskContext{
+		Forge:          f,
+		BuildSummary:   "already fixed",
+		BuildNoChanges: true,
+		Task: &store.Task{
+			ID:          1,
+			Owner:       "o",
+			Repo:        "r",
+			IssueNumber: 999_001,
+			Source:      store.SourceChat,
+		},
+	}
+
+	if err := stage.Run(context.Background(), tc); err != nil {
+		t.Fatalf("StageCommitPush.Run(): %v", err)
+	}
+	if f.closed != 0 || len(f.commented) != 0 {
+		t.Fatalf("chat no-op used synthetic issue: close=%d comments=%d", f.closed, len(f.commented))
+	}
+	if tc.Outcome.Status != store.StatusMerged {
+		t.Errorf("Outcome.Status = %q, want %q", tc.Outcome.Status, store.StatusMerged)
+	}
+}
+
+func TestIssueClosureReferenceOnlyForForgeTasks(t *testing.T) {
+	tests := []struct {
+		name string
+		task *store.Task
+		want string
+	}{
+		{name: "forge", task: &store.Task{IssueNumber: 42}, want: "\n\nCloses #42"},
+		{name: "chat", task: &store.Task{IssueNumber: 999_001, Source: store.SourceChat}, want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := issueClosureReference(tt.task); got != tt.want {
+				t.Errorf("issueClosureReference() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

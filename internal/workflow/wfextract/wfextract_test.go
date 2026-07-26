@@ -39,7 +39,7 @@ func TestSymbolsContainsExpectedWorkflowEntries(t *testing.T) {
 			t.Errorf("required type %q missing from Symbols", name)
 			continue
 		}
-		if v.Kind() != reflect.Ptr {
+		if v.Kind() != reflect.Pointer {
 			t.Errorf("%s kind = %v, want Ptr", name, v.Kind())
 		}
 	}

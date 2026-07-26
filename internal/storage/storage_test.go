@@ -606,11 +606,8 @@ func diffBytes(a, b []byte) string {
 	linesA := strings.Split(string(a), "\n")
 	linesB := strings.Split(string(b), "\n")
 	var out strings.Builder
-	maxLine := len(linesA)
-	if len(linesB) > maxLine {
-		maxLine = len(linesB)
-	}
-	for i := 0; i < maxLine; i++ {
+	maxLine := max(len(linesB), len(linesA))
+	for i := range maxLine {
 		var lineA, lineB string
 		if i < len(linesA) {
 			lineA = linesA[i]

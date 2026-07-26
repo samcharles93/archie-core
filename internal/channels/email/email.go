@@ -238,8 +238,8 @@ func extractBody(raw string) string {
 			boundary := extractBoundary(headers[idx:])
 			if boundary != "" {
 				// Find text/plain part within boundaries.
-				sections := strings.Split(body, "--"+boundary)
-				for _, sec := range sections {
+				sections := strings.SplitSeq(body, "--"+boundary)
+				for sec := range sections {
 					if strings.Contains(strings.ToLower(sec), "content-type: text/plain") {
 						if parts := strings.SplitN(sec, "\r\n\r\n", 2); len(parts) == 2 {
 							return strings.TrimSpace(strings.TrimRight(parts[1], "\r\n-"))

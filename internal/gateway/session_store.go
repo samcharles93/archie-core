@@ -285,10 +285,7 @@ func (s *nellSessionStore) RecentMessages(ctx context.Context, sessionID string,
 	}
 
 	// Rows are sorted by key (which includes the seq). Take the last n.
-	start := len(result.Rows) - n
-	if start < 0 {
-		start = 0
-	}
+	start := max(len(result.Rows)-n, 0)
 	out := make([]Message, 0, n)
 	for _, row := range result.Rows[start:] {
 		if row.Doc == nil {

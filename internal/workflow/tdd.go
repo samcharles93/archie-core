@@ -29,13 +29,13 @@ func TDD() Workflow {
 				ReadOnly: true,
 				Mission: func(tc *TaskContext) string {
 					return fmt.Sprintf(
-						"Analyse this bug report for the repository %s and determine the problem surface.\n\n"+
-							"<issue number=%d>\n# %s\n\n%s\n</issue>\n\n"+
+						"Analyse this %s for the repository %s and determine the problem surface.\n\n"+
+							"%s\n\n"+
 							"Explore the code read-only and call finish with status \"passed\" and a summary "+
 							"containing: the root cause (file and function), the exact conditions that trigger it, "+
 							"the expected vs actual behaviour, and which test cases would prove the bug. "+
 							"Call finish with status \"blocked\" if you cannot locate a plausible cause.",
-						tc.Repo.FullName(), tc.Task.IssueNumber, tc.Task.Title, tc.Task.Body,
+						taskKind(tc.Task), tc.Repo.FullName(), taskPromptBlock(tc.Task),
 					)
 				},
 				OnResult: func(tc *TaskContext, res agentexec.Result) error {
@@ -57,12 +57,12 @@ func TDD() Workflow {
 					cmd := testCommand(tc.Repo)
 					return fmt.Sprintf(
 						"Write tests that REPRODUCE this bug in the repository %s. Do NOT fix the bug yet.\n\n"+
-							"<issue number=%d>\n# %s\n\n%s\n</issue>\n\n<analysis>\n%s\n</analysis>\n\n"+
+							"%s\n\n<analysis>\n%s\n</analysis>\n\n"+
 							"Add tests that pass once the bug is fixed but FAIL today because of it. The gate is "+
 							"inverted for this stage: it requires the full gate to pass EXCEPT %s which is required "+
 							"to FAIL. Do not touch non-test files. Call finish with status \"passed\" once the failing "+
 							"repro is in place, summarising which tests capture the bug.",
-						tc.Repo.FullName(), tc.Task.IssueNumber, tc.Task.Title, tc.Task.Body, tc.Task.Plan, cmd,
+						tc.Repo.FullName(), taskPromptBlock(tc.Task), tc.Task.Plan, cmd,
 					)
 				},
 			}.Stage(),
@@ -85,7 +85,7 @@ func TDD() Workflow {
 			}},
 
 			StageCommit("commit-repro", func(tc *TaskContext) string {
-				return fmt.Sprintf("test: failing repro for #%d", tc.Task.IssueNumber)
+				return "test: failing repro" + commitIssueReference("Refs", tc.Task)
 			}),
 
 			AgentStage{
@@ -108,11 +108,11 @@ func TDD() Workflow {
 				Mission: func(tc *TaskContext) string {
 					return fmt.Sprintf(
 						"Fix the bug in the repository %s. Failing repro tests are already committed; make them pass.\n\n"+
-							"<issue number=%d>\n# %s\n\n%s\n</issue>\n\n<analysis>\n%s\n</analysis>\n\n"+
+							"%s\n\n<analysis>\n%s\n</analysis>\n\n"+
 							"The full quality gate (including 'go test ./...') must pass. Make the smallest fix "+
 							"that makes the repro tests pass without changing them. Call finish with status "+
 							"\"passed\" and a summary for the PR reviewer: root cause, the fix, and verification.",
-						tc.Repo.FullName(), tc.Task.IssueNumber, tc.Task.Title, tc.Task.Body, tc.Task.Plan,
+						tc.Repo.FullName(), taskPromptBlock(tc.Task), tc.Task.Plan,
 					)
 				},
 				OnResult: func(tc *TaskContext, res agentexec.Result) error {
@@ -122,7 +122,8 @@ func TDD() Workflow {
 			}.Stage(),
 
 			StageCommitPush(func(tc *TaskContext) string {
-				return fmt.Sprintf("fix: %s (archie)\n\nFixes #%d", tc.Task.Title, tc.Task.IssueNumber)
+				return fmt.Sprintf("fix: %s (archie)", tc.Task.Title) +
+					commitIssueReference("Fixes", tc.Task)
 			}),
 			StageYaegiGate(),
 			StageDiffCap(),
@@ -130,8 +131,9 @@ func TDD() Workflow {
 			// Open the PR, then post the captured failing-test output as
 			// evidence the bug was reproduced before the fix.
 			{Name: "open-pr", Run: func(ctx context.Context, tc *TaskContext) error {
-				body := fmt.Sprintf("%s\n\n---\n*workflow: tdd (failing repro committed first) · %d iterations · %d tokens*\n\nCloses #%d",
-					tc.BuildSummary, tc.Task.Iterations, tc.Task.TokensUsed, tc.Task.IssueNumber)
+				body := fmt.Sprintf("%s\n\n---\n*workflow: tdd (failing repro committed first) · %d iterations · %d tokens*",
+					tc.BuildSummary, tc.Task.Iterations, tc.Task.TokensUsed) +
+					issueClosureReference(tc.Task)
 				if err := OpenPR(ctx, tc, body); err != nil {
 					return err
 				}

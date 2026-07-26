@@ -108,17 +108,20 @@ func Implement() Workflow {
 						prd = "\n<approved_prd>\n" + tc.Task.Plan + "\n</approved_prd>\n"
 					}
 					return fmt.Sprintf(
-						"Produce a concrete implementation plan for this GitHub issue on the repository %s.\n"+prd+"\n"+
-							"<issue number=%d>\n# %s\n\n%s\n</issue>\n\n"+
+						"Produce a concrete implementation plan for this %s on the repository %s.\n"+prd+"\n"+
+							"%s\n\n"+
 							"Explore the codebase with your read-only tools, then call finish with status "+
 							"\"passed\" and the plan as the summary: files to touch, the approach, acceptance "+
-							"criteria, and what tests should prove it. Keep the plan tightly scoped to the issue  --  "+
-							"call finish with status \"blocked\" if the issue is too vague or too large for one PR.",
-						tc.Repo.FullName(), tc.Task.IssueNumber, tc.Task.Title, tc.Task.Body,
+							"criteria, and what tests should prove it. Keep the plan tightly scoped to the task  --  "+
+							"call finish with status \"blocked\" if the task is too vague or too large for one PR.",
+						taskKind(tc.Task), tc.Repo.FullName(), taskPromptBlock(tc.Task),
 					)
 				},
 				OnResult: func(tc *TaskContext, res agentexec.Result) error {
 					tc.Task.Plan = res.Summary
+					if !tc.Task.IsForgeBacked() {
+						return nil
+					}
 					body := fmt.Sprintf("**archie's plan** (review now if you want to veto  --  building starts immediately):\n\n%s", res.Summary)
 					if _, err := tc.Forge.Comment(context.Background(), tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, body); err != nil {
 						tc.Log.Warn("failed to post plan comment", "err", err)
@@ -137,13 +140,13 @@ func Implement() Workflow {
 					"write-blocked  --  edit their sources instead; the gate regenerates them.",
 				Mission: func(tc *TaskContext) string {
 					return fmt.Sprintf(
-						"Implement this GitHub issue on the repository %s, following the plan below.\n\n"+
-							"<issue number=%d>\n# %s\n\n%s\n</issue>\n\n<plan>\n%s\n</plan>\n\n"+
-							"Make the smallest change that satisfies the issue and the plan's acceptance criteria. "+
+						"Implement this %s on the repository %s, following the plan below.\n\n"+
+							"%s\n\n<plan>\n%s\n</plan>\n\n"+
+							"Make the smallest change that satisfies the task and the plan's acceptance criteria. "+
 							"Do not run git  --  the orchestrator commits and pushes for you. When done, call finish "+
 							"with status \"passed\" and a summary written for the human who will review the pull "+
 							"request: what changed, why, and how it was verified.",
-						tc.Repo.FullName(), tc.Task.IssueNumber, tc.Task.Title, tc.Task.Body, tc.Task.Plan,
+						taskKind(tc.Task), tc.Repo.FullName(), taskPromptBlock(tc.Task), tc.Task.Plan,
 					)
 				},
 				OnResult: func(tc *TaskContext, res agentexec.Result) error {
@@ -156,13 +159,15 @@ func Implement() Workflow {
 			}.Stage(),
 
 			StageCommitPush(func(tc *TaskContext) string {
-				return fmt.Sprintf("%s (archie)\n\nImplements #%d", tc.Task.Title, tc.Task.IssueNumber)
+				return fmt.Sprintf("%s (archie)", tc.Task.Title) +
+					commitIssueReference("Implements", tc.Task)
 			}),
 			StageYaegiGate(),
 			StageDiffCap(),
 			StageOpenPR(func(tc *TaskContext) string {
-				return fmt.Sprintf("%s\n\n---\n*workflow: implement · %d iterations · %d tokens*\n\nCloses #%d",
-					tc.BuildSummary, tc.Task.Iterations, tc.Task.TokensUsed, tc.Task.IssueNumber)
+				return fmt.Sprintf("%s\n\n---\n*workflow: implement · %d iterations · %d tokens*",
+					tc.BuildSummary, tc.Task.Iterations, tc.Task.TokensUsed) +
+					issueClosureReference(tc.Task)
 			}),
 		},
 	}

@@ -5,13 +5,13 @@ package telegram
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+	"slices"
 	"strings"
-
-	"encoding/json"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -242,12 +242,7 @@ func (g *Gateway) isChatAllowed(chatID int64) bool {
 	if len(g.AllowedChatIDs) == 0 {
 		return true
 	}
-	for _, id := range g.AllowedChatIDs {
-		if id == chatID {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(g.AllowedChatIDs, chatID)
 }
 
 func (g *Gateway) sendMessage(ctx context.Context, b *bot.Bot, chatID int64, messageThreadID int, text string) {
@@ -300,10 +295,7 @@ func splitLongMessage(text string, maxLen int) []string {
 			}
 			if len(line) > maxLen {
 				for i := 0; i < len(line); i += maxLen {
-					end := i + maxLen
-					if end > len(line) {
-						end = len(line)
-					}
+					end := min(i+maxLen, len(line))
 					parts = append(parts, line[i:end])
 				}
 				continue

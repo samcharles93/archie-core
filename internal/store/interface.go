@@ -16,10 +16,12 @@ import (
 type TaskStore interface {
 	// ── Task lifecycle ──────────────────────────────────────────────
 
-	EnqueueIssue(ctx context.Context, owner, repo string, number int, title, body, labels string) (bool, error)
+	EnqueueIssue(ctx context.Context, owner, repo string, number int, title, body, labels, identity string) (bool, error)
+	EnqueueChatTask(ctx context.Context, owner, repo, title, body, workflow, identity string, issueNumber int) (*Task, error)
 	ClaimNext(ctx context.Context) (*Task, error)
 	ClaimByIssue(ctx context.Context, owner, repo string, number int) (*Task, error)
 	TaskByIssue(ctx context.Context, owner, repo string, number int) (*Task, error)
+	TaskByID(ctx context.Context, taskID int64) (*Task, error)
 	Transition(ctx context.Context, taskID int64, from, to, detail string) error
 	Update(ctx context.Context, t *Task) error
 	Requeue(ctx context.Context, taskID int64, fromStatus, workflow string) error

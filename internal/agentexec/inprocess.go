@@ -14,6 +14,7 @@ import (
 	"github.com/samcharles93/ai-sdk/runtime"
 
 	"github.com/samcharles93/archie-core/internal/skillscript"
+	"github.com/samcharles93/archie-core/internal/tools"
 )
 
 // Runner executes one autonomous stage against an already prepared workspace.
@@ -30,10 +31,19 @@ type InProcessRunner struct {
 	runtime *runtime.Runtime
 	log     *slog.Logger
 	run     loopFunc
+	tools   *tools.Registry
 }
 
-func NewInProcessRunner(rt *runtime.Runtime, log *slog.Logger) *InProcessRunner {
-	return &InProcessRunner{runtime: rt, log: log, run: agentloop.Run}
+func NewInProcessRunner(
+	rt *runtime.Runtime,
+	log *slog.Logger,
+	registries ...*tools.Registry,
+) *InProcessRunner {
+	runner := &InProcessRunner{runtime: rt, log: log, run: agentloop.Run}
+	if len(registries) > 0 {
+		runner.tools = registries[0]
+	}
+	return runner
 }
 
 func (r *InProcessRunner) Run(ctx context.Context, workspace string, req Request) (Result, error) {
@@ -49,6 +59,10 @@ func (r *InProcessRunner) Run(ctx context.Context, workspace string, req Request
 
 	notes := &memoryNotes{initial: req.Notes}
 	captures := make(map[string][]json.RawMessage)
+	centralTools, err := BuildToolSet(r.tools)
+	if err != nil {
+		return Result{}, fmt.Errorf("build central tool set: %w", err)
+	}
 	res, err := r.run(ctx, agentloop.Config{
 		Runtime:      r.runtime,
 		ModelRef:     req.Model,
@@ -61,8 +75,12 @@ func (r *InProcessRunner) Run(ctx context.Context, workspace string, req Request
 		Budget:       agentloop.Budget(req.Budget),
 		ReadOnly:     req.ReadOnly,
 		ProtectPaths: protectionMatcher(req.Protection, req.ReadOnly),
-		Extra:        mergeToolSets(captureToolSet(req.CaptureTools, captures), scriptToolSet(workspace)),
-		Logger:       r.logger(req),
+		Extra: mergeToolSets(
+			centralTools,
+			captureToolSet(req.CaptureTools, captures),
+			scriptToolSet(workspace),
+		),
+		Logger: r.logger(req),
 	})
 	result := Result{
 		Version:       ProtocolVersion,

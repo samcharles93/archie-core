@@ -22,14 +22,14 @@ func TestSymbolsContainsExpectedPluginEntries(t *testing.T) {
 	// Registry must be a pointer type.
 	if v, ok := pkg["Registry"]; !ok {
 		t.Error("Registry missing from Symbols")
-	} else if v.Kind() != reflect.Ptr {
+	} else if v.Kind() != reflect.Pointer {
 		t.Errorf("Registry kind = %v, want Ptr", v.Kind())
 	}
 
 	// Plugin must be a pointer type.
 	if v, ok := pkg["Plugin"]; !ok {
 		t.Error("Plugin missing from Symbols")
-	} else if v.Kind() != reflect.Ptr {
+	} else if v.Kind() != reflect.Pointer {
 		t.Errorf("Plugin kind = %v, want Ptr", v.Kind())
 	}
 }
@@ -50,7 +50,7 @@ func TestGeneratedWrapperHasNilGuards(t *testing.T) {
 	// Plugin is an interface type — yaegi represents interfaces
 	// differently from struct pointers.
 	kind := pluginType.Kind()
-	if kind != reflect.Interface && kind != reflect.Ptr {
+	if kind != reflect.Interface && kind != reflect.Pointer {
 		t.Errorf("Plugin type kind = %v, want Interface or Ptr", kind)
 	}
 
@@ -63,4 +63,3 @@ func TestGeneratedWrapperHasNilGuards(t *testing.T) {
 		}
 	}
 }
-

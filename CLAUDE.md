@@ -43,6 +43,7 @@ Full details live in `ARCHITECTURE.md` — do not duplicate it here; skim it whe
 - `ai-sdk/runtime`, `ai-sdk/agentloop`, `ai-sdk/core` are external — shared with the `tau` project at the module level, not vendored copies. Changes there affect both repos.
 - Non-interactive shell commands only: some environments alias `cp`/`mv`/`rm` to `-i`. Use `cp -f`, `mv -f`, `rm -f`/`rm -rf`, `scp -o BatchMode=yes`, `ssh -o BatchMode=yes`, `apt-get -y`.
 - Environmental enforcement over prompt rules: gates, test-file protection, and diff caps are code-level checks the agent cannot talk its way around — follow this pattern for any new safety constraint rather than adding it to a system prompt.
+- **Plugin engine rule (strict):** “engine” means a typed, lifecycle-managed capability family with an owning registry or manager; it never means another method on the generic plugin interface. Keep `plugin.Plugin` metadata-only, give plugins narrow typed registrars instead of daemon access, and apply the lifecycle and trust-boundary requirements in [ARCHITECTURE.md#plugin-engine-rule-strict](ARCHITECTURE.md#plugin-engine-rule-strict). Its mechanically testable structure is enforced by `internal/plugin/architecture_test.go`; reviewers enforce its lifecycle, access, and trust semantics.
 - The model/agent never runs git directly — worktree operations (`internal/worktree/`) are deterministic daemon-owned steps, not agent tools.
 
 ## Development Protocol (mandatory)

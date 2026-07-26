@@ -43,21 +43,61 @@ func NewRegistry() *Registry {
 // entry fails [ToolEntry.Validate], or if a tool with the same name is
 // already registered (wrapping [ErrDuplicateTool]).
 func (r *Registry) Register(e ToolEntry) error {
-	if err := e.Validate(); err != nil {
-		return err
+	return r.RegisterBatch([]ToolEntry{e})
+}
+
+// RegisterBatch adds all entries or none.
+func (r *Registry) RegisterBatch(entries []ToolEntry) error {
+	clones := make([]ToolEntry, len(entries))
+	names := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		if err := entry.Validate(); err != nil {
+			return err
+		}
+		if _, exists := names[entry.Name]; exists {
+			return fmt.Errorf("%w: %q", ErrDuplicateTool, entry.Name)
+		}
+		names[entry.Name] = struct{}{}
+	}
+	for i, entry := range entries {
+		clones[i] = entry.Clone()
 	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, exists := r.tools[e.Name]; exists {
-		return fmt.Errorf("%w: %q", ErrDuplicateTool, e.Name)
+	for name := range names {
+		if _, exists := r.tools[name]; exists {
+			return fmt.Errorf("%w: %q", ErrDuplicateTool, name)
+		}
 	}
-
-	// Defensive copy  --  sever shared Schema/RequiresEnv references so the
-	// caller cannot mutate them and race with concurrent readers.
-	r.tools[e.Name] = e.Clone()
+	for _, entry := range clones {
+		r.tools[entry.Name] = entry
+	}
 	return nil
+}
+
+// Unregister removes the named tools. Unknown names are ignored.
+func (r *Registry) Unregister(names ...string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, name := range names {
+		delete(r.tools, name)
+	}
+}
+
+// Get returns the tool entry registered under name, and whether it was
+// found. The returned entry is a defensive copy  --  mutating it does not
+// affect the registry.
+func (r *Registry) Get(name string) (ToolEntry, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	e, ok := r.tools[name]
+	if !ok {
+		return ToolEntry{}, false
+	}
+	return e.Clone(), true
 }
 
 // All returns all registered tool entries. The returned slice is a

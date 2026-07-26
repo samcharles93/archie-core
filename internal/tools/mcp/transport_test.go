@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -79,6 +80,12 @@ func (s *testMCPServer) serve() error {
 }
 
 func (s *testMCPServer) handle(msg Message) (*Message, error) {
+	if len(msg.ID) == 0 {
+		// A notification  --  no response expected. Record it so a
+		// subsequent request's echo can report whether one arrived.
+		notificationsReceived.Add(1)
+		return nil, nil
+	}
 	switch s.behavior {
 	case "hang-on-start":
 		// Respond to initialize then hang (no more output)
@@ -97,7 +104,7 @@ func (s *testMCPServer) handle(msg Message) (*Message, error) {
 
 	case "bad-framing":
 		// Write malformed output (no Content-Length)
-		fmt.Fprint(os.Stdout, `{"jsonrpc":"2.0","id":1,"result":{}}`)
+		_, _ = fmt.Fprint(os.Stdout, `{"jsonrpc":"2.0","id":1,"result":{}}`)
 		return nil, nil
 
 	default:
@@ -106,13 +113,21 @@ func (s *testMCPServer) handle(msg Message) (*Message, error) {
 }
 
 func (s *testMCPServer) echo(msg Message) *Message {
-	result, _ := json.Marshal(map[string]string{"echoed": msg.Method})
+	result, _ := json.Marshal(map[string]any{
+		"echoed":                 msg.Method,
+		"notifications_received": notificationsReceived.Load(),
+	})
 	return &Message{
 		JSONRPC: "2.0",
 		ID:      msg.ID,
 		Result:  result,
 	}
 }
+
+// notificationsReceived counts notifications (messages with no "id") seen
+// by this subprocess, so a follow-up Send can report the count back  --
+// a notification itself gets no response to observe from the test side.
+var notificationsReceived atomic.Int64
 
 // ── Transport Tests ─────────────────────────────────────────────────────
 
@@ -293,7 +308,7 @@ func TestStdioTransportSendAndReceive(t *testing.T) {
 	if err := tr.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	defer tr.Stop(context.Background())
+	defer func() { _ = tr.Stop(context.Background()) }()
 
 	resp, err := tr.Send(context.Background(), []byte(`{"jsonrpc":"2.0","method":"ping","id":1}`))
 	if err != nil {
@@ -321,7 +336,7 @@ func TestStdioTransportSendTimeout(t *testing.T) {
 	if err := tr.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	defer tr.Stop(context.Background())
+	defer func() { _ = tr.Stop(context.Background()) }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
@@ -329,6 +344,47 @@ func TestStdioTransportSendTimeout(t *testing.T) {
 	if err != nil {
 		t.Logf("Send error (expected due to short timeout): %v", err)
 	}
+}
+
+// blockingWriter never returns from Write until release is closed, letting
+// tests deterministically exercise writeMessageWithTimeout's timeout branch
+// without depending on OS pipe buffer sizes or subprocess scheduling.
+type blockingWriter struct {
+	release <-chan struct{}
+}
+
+func (b blockingWriter) Write(p []byte) (int, error) {
+	<-b.release
+	return len(p), nil
+}
+
+func TestWriteMessageWithTimeout(t *testing.T) {
+	t.Run("zero timeout writes unbounded", func(t *testing.T) {
+		var buf bytes.Buffer
+		if err := writeMessageWithTimeout(&buf, []byte(`{}`), 0); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if buf.Len() == 0 {
+			t.Fatal("expected data to be written")
+		}
+	})
+
+	t.Run("completes within timeout", func(t *testing.T) {
+		var buf bytes.Buffer
+		if err := writeMessageWithTimeout(&buf, []byte(`{}`), time.Second); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("times out on a blocked writer", func(t *testing.T) {
+		release := make(chan struct{})
+		defer close(release) // let the leaked write goroutine finish
+		w := blockingWriter{release: release}
+		err := writeMessageWithTimeout(w, []byte(`{}`), 10*time.Millisecond)
+		if err == nil {
+			t.Fatal("expected timeout error")
+		}
+	})
 }
 
 func TestStdioTransportRestartOnCrash(t *testing.T) {
@@ -402,7 +458,7 @@ func TestStdioTransportConcurrentRequests(t *testing.T) {
 	if err := tr.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	defer tr.Stop(context.Background())
+	defer func() { _ = tr.Stop(context.Background()) }()
 
 	const concurrency = 10
 	var wg sync.WaitGroup
@@ -479,6 +535,42 @@ func TestStdioTransportRestartAfterStop(t *testing.T) {
 	_ = tr.Stop(context.Background())
 }
 
+// TestStdioTransportConcurrentStartDuringStop is a regression test for a
+// race where Start() could see StateStopping (not guarded against) and spawn
+// a fresh subprocess while Stop() was still tearing down the previous one,
+// leaving the transport reporting a state inconsistent with what was
+// actually running. Start() now rejects StateStopping outright, so the
+// racing Start() must either fail cleanly or, if it loses the race entirely
+// and runs after Stop() finishes, succeed cleanly  --  either way the final
+// state must be well-defined and self-consistent.
+func TestStdioTransportConcurrentStartDuringStop(t *testing.T) {
+	tr := helperTransport(t, "normal")
+	if err := tr.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	var startErr error
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		startErr = tr.Start(context.Background())
+	}()
+	go func() {
+		defer wg.Done()
+		_ = tr.Stop(context.Background())
+	}()
+	wg.Wait()
+
+	state := tr.State()
+	if state != StateStopped && state != StateRunning {
+		t.Fatalf("state after concurrent Start/Stop = %v, want Stopped or Running", state)
+	}
+	t.Logf("concurrent Start error: %v, final state: %v", startErr, state)
+
+	_ = tr.Stop(context.Background())
+}
+
 // ── Error State Tests ───────────────────────────────────────────────────
 
 func TestStdioTransportRestartFromError(t *testing.T) {
@@ -546,6 +638,157 @@ func TestStdioTransportSendAfterStop(t *testing.T) {
 	_, err := tr.Send(context.Background(), []byte(`{"jsonrpc":"2.0","method":"ping","id":1}`))
 	if err == nil {
 		t.Error("expected error sending after stop")
+	}
+}
+
+func TestStdioTransportNotify(t *testing.T) {
+	tr := helperTransport(t, "normal")
+	if err := tr.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tr.Stop(context.Background()) }()
+
+	if err := tr.Notify(context.Background(), []byte(`{"jsonrpc":"2.0","method":"notifications/test"}`)); err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+
+	// A follow-up Send (which DOES get a response) reports how many
+	// notifications the subprocess has seen, proving Notify's write
+	// actually reached the server without Notify itself blocking for a
+	// reply (it has none to wait for).
+	resp, err := tr.Send(context.Background(), []byte(`{"jsonrpc":"2.0","method":"ping","id":1}`))
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	var msg Message
+	if err := json.Unmarshal(resp, &msg); err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		NotificationsReceived int64 `json:"notifications_received"`
+	}
+	if err := json.Unmarshal(msg.Result, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.NotificationsReceived < 1 {
+		t.Fatalf("subprocess reports %d notifications received, want >= 1", result.NotificationsReceived)
+	}
+}
+
+func TestStdioTransportNotifyBeforeStartReturnsError(t *testing.T) {
+	tr := helperTransport(t, "normal")
+	err := tr.Notify(context.Background(), []byte(`{"jsonrpc":"2.0","method":"notifications/test"}`))
+	if err == nil {
+		t.Fatal("expected error notifying a transport that was never started")
+	}
+}
+
+func TestStdioTransportNotifyAfterStopReturnsError(t *testing.T) {
+	tr := helperTransport(t, "normal")
+	if err := tr.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := tr.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	err := tr.Notify(context.Background(), []byte(`{"jsonrpc":"2.0","method":"notifications/test"}`))
+	if err == nil {
+		t.Fatal("expected error notifying a stopped transport")
+	}
+}
+
+// ── Additional server-behavior and error-path coverage ─────────────────
+
+// TestStdioTransportSendContextCancellationWhileWaiting exercises the
+// ctx.Done() branch in Send: a server that answers "initialize" once and
+// then goes silent forever, so a follow-up Send can only be resolved by the
+// caller's context deadline, not by a subprocess response.
+func TestStdioTransportSendContextCancellationWhileWaiting(t *testing.T) {
+	tr := helperTransport(t, "hang-on-start")
+	if err := tr.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tr.Stop(context.Background()) }()
+
+	if _, err := tr.Send(context.Background(), []byte(`{"jsonrpc":"2.0","method":"initialize","id":1}`)); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	_, err := tr.Send(ctx, []byte(`{"jsonrpc":"2.0","method":"never-answered","id":2}`))
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("got %v, want context.DeadlineExceeded", err)
+	}
+}
+
+// TestStdioTransportBadFraming exercises the reader's malformed-framing
+// path against a real, live subprocess (rather than a synthetic
+// strings.Reader as in TestReadMessage): the server writes a response with
+// no Content-Length header, which readMessage cannot parse, so the reader
+// goroutine treats the transport as dead and fails pending requests.
+func TestStdioTransportBadFraming(t *testing.T) {
+	tr := helperTransportWithConfig(t, "bad-framing", StdioTransportConfig{
+		InitialBackoff: 10 * time.Millisecond,
+		MaxBackoff:     50 * time.Millisecond,
+		MaxRetries:     1,
+	})
+	if err := tr.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tr.Stop(context.Background()) }()
+
+	_, err := tr.Send(context.Background(), []byte(`{"jsonrpc":"2.0","method":"ping","id":1}`))
+	if err == nil {
+		t.Fatal("expected error: malformed response framing should fail the pending request")
+	}
+}
+
+// TestStdioTransportSendUnparsableID exercises extractMessageID's error
+// branch as reached through Send, which must reject the body before ever
+// touching the subprocess.
+func TestStdioTransportSendUnparsableID(t *testing.T) {
+	tr := helperTransport(t, "normal")
+	if err := tr.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tr.Stop(context.Background()) }()
+
+	_, err := tr.Send(context.Background(), []byte(`not json`))
+	if err == nil {
+		t.Fatal("expected error for unparsable message id")
+	}
+}
+
+// TestStdioTransportSendWriteFailureCleansPending exercises Send's
+// write-failure cleanup branch by closing the subprocess's stdin out from
+// under it directly (same package, so the unexported field is reachable),
+// simulating a pipe that breaks mid-write.
+func TestStdioTransportSendWriteFailureCleansPending(t *testing.T) {
+	tr := helperTransport(t, "normal")
+	if err := tr.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tr.Stop(context.Background()) }()
+
+	tr.mu.Lock()
+	stdin := tr.stdin
+	tr.mu.Unlock()
+	if err := stdin.Close(); err != nil {
+		t.Fatalf("close stdin: %v", err)
+	}
+
+	_, err := tr.Send(context.Background(), []byte(`{"jsonrpc":"2.0","method":"ping","id":1}`))
+	if err == nil {
+		t.Fatal("expected write error after stdin closed")
+	}
+
+	tr.mu.Lock()
+	_, stillPending := tr.pending["1"]
+	tr.mu.Unlock()
+	if stillPending {
+		t.Fatal("pending entry was not cleaned up after write failure")
 	}
 }
 

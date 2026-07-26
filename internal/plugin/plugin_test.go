@@ -330,7 +330,7 @@ var Plugin = plugin._Plugin{
 }
 
 func TestLoadDirPluginWithPanicInNameFunc(t *testing.T) {
-	// A plugin whose Name() function panics must still be loadable  -- 
+	// A plugin whose Name() function panics must still be loadable  --
 	// the panic only fires on call, not on load.
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "panicky.go"), []byte(`package main

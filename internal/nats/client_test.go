@@ -78,7 +78,7 @@ func TestConnectAndPublish(t *testing.T) {
 	defer client.Close()
 
 	// Publish a task.
-	if err := client.PublishTask(ctx, "acme", "todo", 1, "fix bug", "body text", "bug"); err != nil {
+	if err := client.PublishTask(ctx, "acme", "todo", 1, "fix bug", "body text", "bug", ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -113,7 +113,7 @@ func TestDedup(t *testing.T) {
 	defer client.Close()
 
 	// Publish one task and verify it's consumable.
-	if err := client.PublishTask(ctx, "acme", "app", 1, "first", "body", "bug"); err != nil {
+	if err := client.PublishTask(ctx, "acme", "app", 1, "first", "body", "bug", ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -127,7 +127,7 @@ func TestDedup(t *testing.T) {
 	_ = msg.Ack()
 
 	// Second publish with same Msg-Id should be deduped.
-	if err := client.PublishTask(ctx, "acme", "app", 1, "second", "body-v2", "bug"); err != nil {
+	if err := client.PublishTask(ctx, "acme", "app", 1, "second", "body-v2", "bug", ""); err != nil {
 		t.Fatal(err)
 	}
 

@@ -113,9 +113,9 @@ func TestTokenEstimate(t *testing.T) {
 		want  int
 	}{
 		{"", 0},
-		{"four", 1},          // 4 chars / 4 = 1
-		{"hello world", 2},   // 11 chars / 4 = 2
-		{"12345678", 2},      // 8 chars / 4 = 2
+		{"four", 1},        // 4 chars / 4 = 1
+		{"hello world", 2}, // 11 chars / 4 = 2
+		{"12345678", 2},    // 8 chars / 4 = 2
 		{strings.Repeat("x", 100), 25},
 	}
 
@@ -129,7 +129,7 @@ func TestTokenEstimate(t *testing.T) {
 
 func TestEstimateTotal(t *testing.T) {
 	msgs := []CompressedMessage{
-		{Role: "user", Content: "hello"},      // 5 → 1
+		{Role: "user", Content: "hello"},       // 5 → 1
 		{Role: "assistant", Content: "world!"}, // 6 → 1
 	}
 	got := estimateTotal(msgs)

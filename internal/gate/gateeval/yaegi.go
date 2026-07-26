@@ -1,6 +1,6 @@
 // Package gateeval evaluates a repo's .archie/gate.go via Yaegi. Split
 // from internal/gate (which only declares the GateContext/Finding types)
-// because the generated symbol table in gateextract imports internal/gate  -- 
+// because the generated symbol table in gateextract imports internal/gate  --
 // this package sits above both to avoid the resulting import cycle.
 package gateeval
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -114,11 +115,9 @@ func (f *fakeModelManager) SetActiveModel(_ context.Context, ref string) error {
 	if f.setErr != nil {
 		return f.setErr
 	}
-	for _, m := range f.models {
-		if m == ref {
-			f.activeModel = ref
-			return nil
-		}
+	if slices.Contains(f.models, ref) {
+		f.activeModel = ref
+		return nil
 	}
 	return fmt.Errorf("unknown model: %s", ref)
 }
@@ -278,13 +277,15 @@ func TestRouteModelNoManager(t *testing.T) {
 
 type fakeTaskCreator struct {
 	tasks    []string
-	createFn func(ctx context.Context, title string) (int64, error)
+	requests []SpawnRequest
+	createFn func(ctx context.Context, req SpawnRequest) (int64, error)
 }
 
-func (f *fakeTaskCreator) CreateTask(ctx context.Context, title string) (int64, error) {
-	f.tasks = append(f.tasks, title)
+func (f *fakeTaskCreator) CreateTask(ctx context.Context, req SpawnRequest) (int64, error) {
+	f.tasks = append(f.tasks, req.Title)
+	f.requests = append(f.requests, req)
 	if f.createFn != nil {
-		return f.createFn(ctx, title)
+		return f.createFn(ctx, req)
 	}
 	return int64(len(f.tasks)), nil
 }
@@ -347,7 +348,7 @@ func TestRouteSpawnNoManager(t *testing.T) {
 
 func TestRouteSpawnHandlesCreationError(t *testing.T) {
 	tc := &fakeTaskCreator{
-		createFn: func(ctx context.Context, title string) (int64, error) {
+		createFn: func(ctx context.Context, req SpawnRequest) (int64, error) {
 			return 0, fmt.Errorf("store unavailable")
 		},
 	}
@@ -359,5 +360,251 @@ func TestRouteSpawnHandlesCreationError(t *testing.T) {
 	}
 	if !strings.Contains(reply, "Failed") {
 		t.Errorf("reply should mention failure: %q", reply)
+	}
+}
+
+func TestRouteSpawnParsesRepoAndWorkflow(t *testing.T) {
+	tc := &fakeTaskCreator{}
+	r := NewRouter(nil, nil, "test-gw")
+	r.Tasks = tc
+	r.Identity = "archie"
+	reply, err := r.Route(context.Background(), Message{Text: "/spawn repo=sam/tau workflow=tdd Fix the flaky test"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Created task") {
+		t.Errorf("reply = %q, want task creation confirmation", reply)
+	}
+	if len(tc.requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(tc.requests))
+	}
+	got := tc.requests[0]
+	if got.Repo != "sam/tau" || got.Workflow != "tdd" || got.Title != "Fix the flaky test" || got.Identity != "archie" {
+		t.Errorf("request = %+v, want {Repo:sam/tau Workflow:tdd Title:\"Fix the flaky test\" Identity:archie}", got)
+	}
+}
+
+func TestRouteSpawnParsesIdentity(t *testing.T) {
+	tc := &fakeTaskCreator{}
+	r := NewRouter(nil, nil, "test-gw")
+	r.Tasks = tc
+	r.Identity = "default"
+
+	reply, err := r.Route(context.Background(), Message{
+		Text: "/spawn identity=reviewer repo=sam/tau workflow=tdd Fix the flaky test",
+	})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Created task") {
+		t.Errorf("reply = %q, want task creation confirmation", reply)
+	}
+	got := tc.requests[0]
+	if got.Identity != "reviewer" || got.Repo != "sam/tau" || got.Workflow != "tdd" || got.Title != "Fix the flaky test" {
+		t.Errorf("request = %+v, want selected identity, repo, workflow, and full title", got)
+	}
+}
+
+func TestRouteSpawnWithoutRepoOrWorkflowUsesDefaults(t *testing.T) {
+	tc := &fakeTaskCreator{}
+	r := NewRouter(nil, nil, "test-gw")
+	r.Tasks = tc
+	reply, err := r.Route(context.Background(), Message{Text: "/spawn Fix the login bug"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Created task") {
+		t.Errorf("reply = %q", reply)
+	}
+	got := tc.requests[0]
+	if got.Repo != "" || got.Workflow != "" || got.Title != "Fix the login bug" {
+		t.Errorf("request = %+v, want empty Repo/Workflow and full title", got)
+	}
+}
+
+func TestRouteSpawnTitleLooksLikeKeyValueIsPreserved(t *testing.T) {
+	// A title that happens to contain "=" after the repo=/workflow=
+	// tokens must not be mistaken for another key=value token.
+	tc := &fakeTaskCreator{}
+	r := NewRouter(nil, nil, "test-gw")
+	r.Tasks = tc
+	if _, err := r.Route(context.Background(), Message{Text: "/spawn repo=sam/tau Fix x=y in config"}); err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	got := tc.requests[0]
+	if got.Repo != "sam/tau" || got.Title != "Fix x=y in config" {
+		t.Errorf("request = %+v, want Repo:sam/tau Title:\"Fix x=y in config\"", got)
+	}
+}
+
+// -- TaskController fakes for /approve and /cancel tests --
+
+type fakeTaskController struct {
+	approveFn  func(ctx context.Context, taskID int64, identity string) error
+	cancelFn   func(ctx context.Context, taskID int64, identity string) error
+	approved   []int64
+	cancelled  []int64
+	identities []string
+}
+
+func (f *fakeTaskController) Approve(ctx context.Context, taskID int64, identity string) error {
+	f.approved = append(f.approved, taskID)
+	f.identities = append(f.identities, identity)
+	if f.approveFn != nil {
+		return f.approveFn(ctx, taskID, identity)
+	}
+	return nil
+}
+
+func (f *fakeTaskController) Cancel(ctx context.Context, taskID int64, identity string) error {
+	f.cancelled = append(f.cancelled, taskID)
+	f.identities = append(f.identities, identity)
+	if f.cancelFn != nil {
+		return f.cancelFn(ctx, taskID, identity)
+	}
+	return nil
+}
+
+func TestRouteApproveParsesIdentity(t *testing.T) {
+	fc := &fakeTaskController{}
+	r := NewRouter(nil, nil, "test-gw")
+	r.Controller = fc
+	r.Identity = "default"
+
+	reply, err := r.Route(context.Background(), Message{Text: "/approve identity=reviewer 42"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "approved") {
+		t.Errorf("reply = %q, want mention of approval", reply)
+	}
+	if len(fc.approved) != 1 || fc.approved[0] != 42 || fc.identities[0] != "reviewer" {
+		t.Errorf("approved/identities = %v/%v, want [42]/[reviewer]", fc.approved, fc.identities)
+	}
+}
+
+func TestRouteApproveSuccess(t *testing.T) {
+	fc := &fakeTaskController{}
+	r := NewRouter(nil, nil, "test-gw")
+	r.Controller = fc
+	reply, err := r.Route(context.Background(), Message{Text: "/approve 42"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "approved") {
+		t.Errorf("reply = %q, want mention of approval", reply)
+	}
+	if len(fc.approved) != 1 || fc.approved[0] != 42 {
+		t.Errorf("approved = %v, want [42]", fc.approved)
+	}
+}
+
+func TestRouteApproveNotConfigured(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	reply, err := r.Route(context.Background(), Message{Text: "/approve 1"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "not configured") {
+		t.Errorf("reply = %q, want 'not configured'", reply)
+	}
+}
+
+func TestRouteApproveBadID(t *testing.T) {
+	fc := &fakeTaskController{}
+	r := NewRouter(nil, nil, "test-gw")
+	r.Controller = fc
+	reply, err := r.Route(context.Background(), Message{Text: "/approve notanumber"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Usage") {
+		t.Errorf("reply = %q, want usage message", reply)
+	}
+	if len(fc.approved) != 0 {
+		t.Error("Approve must not be called with an invalid ID")
+	}
+}
+
+func TestRouteApproveWrongStateSurfacesError(t *testing.T) {
+	fc := &fakeTaskController{
+		approveFn: func(ctx context.Context, taskID int64, identity string) error {
+			return fmt.Errorf("task is queued, not waiting_human")
+		},
+	}
+	r := NewRouter(nil, nil, "test-gw")
+	r.Controller = fc
+	reply, err := r.Route(context.Background(), Message{Text: "/approve 7"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Cannot approve") || !strings.Contains(reply, "waiting_human") {
+		t.Errorf("reply = %q, want error surfaced to user", reply)
+	}
+}
+
+func TestRouteCancelSuccess(t *testing.T) {
+	fc := &fakeTaskController{}
+	r := NewRouter(nil, nil, "test-gw")
+	r.Controller = fc
+	reply, err := r.Route(context.Background(), Message{Text: "/cancel 5"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "cancelled") {
+		t.Errorf("reply = %q, want mention of cancellation", reply)
+	}
+	if len(fc.cancelled) != 1 || fc.cancelled[0] != 5 {
+		t.Errorf("cancelled = %v, want [5]", fc.cancelled)
+	}
+}
+
+func TestRouteCancelParsesIdentity(t *testing.T) {
+	fc := &fakeTaskController{}
+	r := NewRouter(nil, nil, "test-gw")
+	r.Controller = fc
+	r.Identity = "default"
+
+	reply, err := r.Route(context.Background(), Message{Text: "/cancel identity=reviewer 5"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "cancelled") {
+		t.Errorf("reply = %q, want mention of cancellation", reply)
+	}
+	if len(fc.cancelled) != 1 || fc.cancelled[0] != 5 || fc.identities[0] != "reviewer" {
+		t.Errorf("cancelled/identities = %v/%v, want [5]/[reviewer]", fc.cancelled, fc.identities)
+	}
+}
+
+func TestRouteCancelCrossIdentityRejected(t *testing.T) {
+	fc := &fakeTaskController{
+		cancelFn: func(ctx context.Context, taskID int64, identity string) error {
+			if identity != "archie" {
+				return fmt.Errorf("task belongs to a different identity")
+			}
+			return nil
+		},
+	}
+	r := NewRouter(nil, nil, "test-gw")
+	r.Controller = fc
+	r.Identity = "winter"
+	reply, err := r.Route(context.Background(), Message{Text: "/cancel 9"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Cannot cancel") || !strings.Contains(reply, "different identity") {
+		t.Errorf("reply = %q, want cross-identity rejection surfaced", reply)
+	}
+}
+
+func TestRouteCancelNotConfigured(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	reply, err := r.Route(context.Background(), Message{Text: "/cancel 1"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "not configured") {
+		t.Errorf("reply = %q, want 'not configured'", reply)
 	}
 }

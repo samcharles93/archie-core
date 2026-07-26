@@ -123,4 +123,3 @@ func TestRegisterAllRollbackOnError(t *testing.T) {
 		t.Logf("RegisterAll with nil conn and empty regs: err=%v", err)
 	}
 }
-

@@ -16,7 +16,7 @@ import (
 // against the project's direction, close it with reasons when it
 // doesn't fit, otherwise produce a PRD, deliver it to Sam (issue
 // comment + notify webhook), and hand the task to waiting_human. The
-// daemon watches for Sam's reply and  --  LLM-judged, not keyword-matched  -- 
+// daemon watches for Sam's reply and  --  LLM-judged, not keyword-matched  --
 // requeues approved features under the implement workflow or closes
 // rejected ones. Routed via the "feature" label.
 func Feasibility() Workflow {
@@ -33,12 +33,12 @@ func Feasibility() Workflow {
 				Mission: func(tc *TaskContext) string {
 					return fmt.Sprintf(
 						"Assess whether this feature request fits the project %s.\n\n"+
-							"<issue number=%d>\n# %s\n\n%s\n</issue>\n\n"+
+							"%s\n\n"+
 							"Read the repository's AGENT.md, ROADMAP.md, and README (whichever exist) plus "+
 							"enough code to judge scope and architectural fit. Then call the decide tool "+
 							"EXACTLY ONCE with fit=true or fit=false and your reasons, and afterwards call "+
 							"finish with status \"passed\" summarising the assessment.",
-						tc.Repo.FullName(), tc.Task.IssueNumber, tc.Task.Title, tc.Task.Body,
+						tc.Repo.FullName(), taskPromptBlock(tc.Task),
 					)
 				},
 				OnResult: func(tc *TaskContext, res agentexec.Result) error {
@@ -61,9 +61,11 @@ func Feasibility() Workflow {
 					}
 					tc.decision = &decision{Fit: *captured.Fit, Reasons: captured.Reasons}
 					if !tc.decision.Fit {
-						comment := fmt.Sprintf("**archie assessed this feature as not a fit  --  closing as won't-do.**\n\n%s\n\n_Reopen and re-assign if you disagree._", tc.decision.Reasons)
-						if err := tc.Forge.CloseIssue(context.Background(), tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, comment); err != nil {
-							return err
+						if tc.Task.IsForgeBacked() {
+							comment := fmt.Sprintf("**archie assessed this feature as not a fit  --  closing as won't-do.**\n\n%s\n\n_Reopen and re-assign if you disagree._", tc.decision.Reasons)
+							if err := tc.Forge.CloseIssue(context.Background(), tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, comment); err != nil {
+								return err
+							}
 						}
 						tc.Outcome = Outcome{Status: store.StatusClosedWontDo, Detail: tc.decision.Reasons}
 					}
@@ -78,12 +80,12 @@ func Feasibility() Workflow {
 				Mission: func(tc *TaskContext) string {
 					return fmt.Sprintf(
 						"Write a PRD for this accepted feature request on %s.\n\n"+
-							"<issue number=%d>\n# %s\n\n%s\n</issue>\n\n<assessment>\n%s\n</assessment>\n\n"+
+							"%s\n\n<assessment>\n%s\n</assessment>\n\n"+
 							"Explore the affected code surface, then call finish with status \"passed\" and the "+
 							"PRD as the summary: problem, proposed solution, files/components affected, "+
 							"acceptance criteria, explicit non-goals, and estimated diff size. It will be read "+
 							"by a human deciding whether to green-light implementation.",
-						tc.Repo.FullName(), tc.Task.IssueNumber, tc.Task.Title, tc.Task.Body, tc.decision.Reasons,
+						tc.Repo.FullName(), taskPromptBlock(tc.Task), tc.decision.Reasons,
 					)
 				},
 				OnResult: func(tc *TaskContext, res agentexec.Result) error {
@@ -96,12 +98,14 @@ func Feasibility() Workflow {
 			// channel the daemon watches) plus the notify webhook (n8n →
 			// email).
 			{Name: "deliver", Run: func(ctx context.Context, tc *TaskContext) error {
-				body := fmt.Sprintf("**archie's PRD  --  awaiting your go/no-go.** Reply on this issue; I'll read your answer.\n\n%s", tc.Task.Plan)
-				commentID, err := tc.Forge.Comment(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, body)
-				if err != nil {
-					return err
+				if tc.Task.IsForgeBacked() {
+					body := fmt.Sprintf("**archie's PRD  --  awaiting your go/no-go.** Reply on this issue; I'll read your answer.\n\n%s", tc.Task.Plan)
+					commentID, err := tc.Forge.Comment(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, body)
+					if err != nil {
+						return err
+					}
+					tc.Task.WatchCommentID = commentID
 				}
-				tc.Task.WatchCommentID = commentID
 				notify(ctx, tc, "feasibility_prd")
 				tc.Outcome = Outcome{Status: store.StatusWaitingHuman, Detail: "PRD delivered, awaiting go/no-go"}
 				return nil
@@ -142,11 +146,17 @@ func notify(ctx context.Context, tc *TaskContext, kind string) {
 	if url == "" {
 		return
 	}
-	payload, _ := json.Marshal(map[string]any{
-		"type": kind, "repo": tc.Repo.FullName(), "issue": tc.Task.IssueNumber,
+	fields := map[string]any{
+		"type": kind, "repo": tc.Repo.FullName(), "task_id": tc.Task.ID,
+		"source": tc.Task.Source, "identity": tc.Task.Identity,
 		"title": tc.Task.Title, "prd": tc.Task.Plan,
-		"issue_url": fmt.Sprintf("%s/%s/issues/%d", tc.Cfg.Forge.Host, tc.Repo.FullName(), tc.Task.IssueNumber),
-	})
+	}
+	if tc.Task.IsForgeBacked() {
+		fields["issue"] = tc.Task.IssueNumber
+		fields["issue_url"] = fmt.Sprintf("%s/%s/issues/%d",
+			tc.Cfg.Forge.Host, tc.Repo.FullName(), tc.Task.IssueNumber)
+	}
+	payload, _ := json.Marshal(fields)
 	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, url, bytes.NewReader(payload))

@@ -53,7 +53,7 @@ func newTestServer(t *testing.T) (*store.Store, *nats.Conn, *Client) {
 func enqueueTask(t *testing.T, s *store.Store) *store.Task {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "title", "body", ""); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "title", "body", "", ""); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	task, err := s.ClaimNext(ctx)

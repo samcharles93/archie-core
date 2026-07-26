@@ -207,4 +207,3 @@ func TestWriteTaskJSONMinimalPayload(t *testing.T) {
 		t.Error("minimal payload ID mismatch")
 	}
 }
-

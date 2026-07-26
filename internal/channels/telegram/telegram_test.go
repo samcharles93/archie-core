@@ -94,9 +94,11 @@ func TestStartAndStopLifecycle(t *testing.T) {
 }
 
 // Compile-time guard: Gateway implements gateway.Gateway.
-var _ gateway.Gateway = (*Gateway)(nil)
-var _ = (*bot.Bot)(nil)
-var _ = models.Update{}
+var (
+	_ gateway.Gateway = (*Gateway)(nil)
+	_                 = (*bot.Bot)(nil)
+	_                 = models.Update{}
+)
 
 // ── Regression tests for previously untested paths ────────────────────
 

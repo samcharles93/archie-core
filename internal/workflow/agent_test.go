@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
@@ -93,7 +94,7 @@ func TestAgentStagePersistsReturnedNotes(t *testing.T) {
 		}
 	})
 	ctx := context.Background()
-	if _, err := st.EnqueueIssue(ctx, "owner", "repo", 1, "title", "body", ""); err != nil {
+	if _, err := st.EnqueueIssue(ctx, "owner", "repo", 1, "title", "body", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	task, err := st.ClaimNext(ctx)
@@ -155,6 +156,83 @@ func TestFeasibilityDecisionCrossesAsCapturedData(t *testing.T) {
 	if tc.decision == nil || !tc.decision.Fit || tc.decision.Reasons != "aligned" {
 		t.Fatalf("decision = %#v", tc.decision)
 	}
+}
+
+func TestImplementPlanTreatsChatSourceAsNativeTask(t *testing.T) {
+	runner := &fakeAgentRunner{result: agentexec.Result{
+		Status: agentexec.StatusPassed, Summary: "plan",
+	}}
+	forgeClient := &fakeForge{}
+	tc := &TaskContext{
+		Task: &store.Task{
+			ID: 1, IssueNumber: 999_001, Title: "Fix chat task", Source: store.SourceChat,
+		},
+		Agent: runner,
+		Forge: forgeClient,
+		Log:   slog.New(slog.DiscardHandler),
+		Cfg:   config.Config{Models: map[string]string{"planner": "provider/model"}},
+		Repo:  config.Repo{Owner: "owner", Name: "repo"},
+	}
+
+	if err := Implement().Stages[3].Run(context.Background(), tc); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(runner.request.Mission, "999001") ||
+		!strings.Contains(runner.request.Mission, `<task source="chat">`) {
+		t.Errorf("chat mission uses synthetic issue semantics:\n%s", runner.request.Mission)
+	}
+	if len(forgeClient.commented) != 0 {
+		t.Fatalf("chat planning posted %d issue comments", len(forgeClient.commented))
+	}
+}
+
+func TestFeasibilityChatTaskAvoidsIssueOperations(t *testing.T) {
+	t.Run("not fit", func(t *testing.T) {
+		runner := &fakeAgentRunner{result: agentexec.Result{
+			Status: agentexec.StatusPassed,
+			Captures: map[string][]json.RawMessage{
+				"decide": {json.RawMessage(`{"fit":false,"reasons":"out of scope"}`)},
+			},
+		}}
+		forgeClient := &fakeForge{}
+		tc := &TaskContext{
+			Task: &store.Task{
+				ID: 1, IssueNumber: 999_001, Title: "Feature", Source: store.SourceChat,
+			},
+			Agent: runner,
+			Forge: forgeClient,
+			Log:   slog.New(slog.DiscardHandler),
+			Cfg:   config.Config{Models: map[string]string{"planner": "provider/model"}},
+			Repo:  config.Repo{Owner: "owner", Name: "repo"},
+		}
+
+		if err := Feasibility().Stages[1].Run(context.Background(), tc); err != nil {
+			t.Fatal(err)
+		}
+		if forgeClient.closed != 0 || tc.Outcome.Status != store.StatusClosedWontDo {
+			t.Fatalf("close calls/outcome = %d/%q", forgeClient.closed, tc.Outcome.Status)
+		}
+	})
+
+	t.Run("await approval", func(t *testing.T) {
+		forgeClient := &fakeForge{}
+		tc := &TaskContext{
+			Task: &store.Task{
+				ID: 1, IssueNumber: 999_001, Plan: "PRD", Source: store.SourceChat,
+			},
+			Forge: forgeClient,
+			Log:   slog.New(slog.DiscardHandler),
+		}
+
+		if err := Feasibility().Stages[3].Run(context.Background(), tc); err != nil {
+			t.Fatal(err)
+		}
+		if len(forgeClient.commented) != 0 || tc.Task.WatchCommentID != 0 ||
+			tc.Outcome.Status != store.StatusWaitingHuman {
+			t.Fatalf("comments/watch/outcome = %d/%d/%q",
+				len(forgeClient.commented), tc.Task.WatchCommentID, tc.Outcome.Status)
+		}
+	})
 }
 
 func TestFeasibilityRejectsNullFitValue(t *testing.T) {
@@ -251,7 +329,7 @@ func TestRunLeavesInterruptedTaskForCrashRecovery(t *testing.T) {
 			t.Errorf("close store: %v", err)
 		}
 	})
-	if _, err := st.EnqueueIssue(context.Background(), "owner", "repo", 2, "title", "body", ""); err != nil {
+	if _, err := st.EnqueueIssue(context.Background(), "owner", "repo", 2, "title", "body", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	task, err := st.ClaimNext(context.Background())

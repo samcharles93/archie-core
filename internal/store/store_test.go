@@ -67,7 +67,7 @@ func TestClearTerminalTasks(t *testing.T) {
 
 	statuses := []string{StatusMerged, StatusParked, StatusRejected, StatusClosedWontDo, StatusQueued}
 	for i, status := range statuses {
-		if _, err := s.EnqueueIssue(ctx, "acme", "widget", i+1, "t", "b", ""); err != nil {
+		if _, err := s.EnqueueIssue(ctx, "acme", "widget", i+1, "t", "b", "", ""); err != nil {
 			t.Fatal(err)
 		}
 		task, err := s.TaskByIssue(ctx, "acme", "widget", i+1)
@@ -110,11 +110,11 @@ func TestEnqueueIsIdempotent(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	ins, err := s.EnqueueIssue(ctx, "acme", "todo", 1, "add tests", "body", "widget")
+	ins, err := s.EnqueueIssue(ctx, "acme", "todo", 1, "add tests", "body", "widget", "")
 	if err != nil || !ins {
 		t.Fatalf("first enqueue = (%v, %v)", ins, err)
 	}
-	ins, err = s.EnqueueIssue(ctx, "acme", "todo", 1, "add tests", "body", "widget")
+	ins, err = s.EnqueueIssue(ctx, "acme", "todo", 1, "add tests", "body", "widget", "")
 	if err != nil || ins {
 		t.Fatalf("duplicate enqueue must be a no-op, got (%v, %v)", ins, err)
 	}
@@ -159,7 +159,7 @@ func TestIncrementRetryCount(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	if _, err := s.EnqueueIssue(ctx, "acme", "todo", 1, "t", "", ""); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "todo", 1, "t", "", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	task, err := s.ClaimNext(ctx)
@@ -192,7 +192,7 @@ func TestRetryCountColumn(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	if _, err := s.EnqueueIssue(ctx, "acme", "todo", 1, "t", "", ""); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "todo", 1, "t", "", "", ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -211,10 +211,9 @@ func TestClaimTransitionAndRecovery(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	if _, err := s.EnqueueIssue(ctx, "acme", "todo", 7, "t", "", "archie,bug"); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "todo", 7, "t", "", "archie,bug", ""); err != nil {
 		t.Fatal(err)
 	}
-
 	task, err := s.ClaimNext(ctx)
 	if err != nil || task == nil {
 		t.Fatalf("claim = (%v, %v)", task, err)
@@ -246,5 +245,74 @@ func TestClaimTransitionAndRecovery(t *testing.T) {
 	open, err := s.OpenPRs(ctx)
 	if err != nil || len(open) != 1 || open[0].PRNumber != 3 {
 		t.Fatalf("open PRs = (%+v, %v)", open, err)
+	}
+}
+
+func TestRecoverStalePreservesChatTaskRouting(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	created, err := s.EnqueueChatTask(ctx, "acme", "todo", "chat task", "", "tdd", "reviewer", 999_001)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := s.ClaimNext(ctx)
+	if err != nil || claimed == nil || claimed.ID != created.ID {
+		t.Fatalf("ClaimNext() = (%+v, %v), want task %d", claimed, err, created.ID)
+	}
+	if n, err := s.RecoverStale(ctx); err != nil || n != 1 {
+		t.Fatalf("RecoverStale() = (%d, %v), want (1, nil)", n, err)
+	}
+	recovered, err := s.TaskByID(ctx, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered == nil {
+		t.Fatal("TaskByID() returned nil after recovery")
+	}
+	if recovered.Status != StatusQueued || recovered.Source != SourceChat ||
+		recovered.Identity != "reviewer" || recovered.Workflow != "tdd" {
+		t.Errorf("recovered task = %+v, want queued chat task routed to reviewer/tdd", recovered)
+	}
+}
+
+func TestLifecycleQueriesPreserveChatTaskRouting(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	waiting, err := s.EnqueueChatTask(ctx, "acme", "todo", "needs approval", "", "feasibility", "reviewer", 999_001)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Transition(ctx, waiting.ID, StatusQueued, StatusWaitingHuman, "await approval"); err != nil {
+		t.Fatal(err)
+	}
+	waitingTasks, err := s.WaitingTasks(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(waitingTasks) != 1 || waitingTasks[0].Source != SourceChat ||
+		waitingTasks[0].Identity != "reviewer" {
+		t.Fatalf("WaitingTasks() = %+v, want chat/reviewer routing", waitingTasks)
+	}
+
+	pr, err := s.EnqueueChatTask(ctx, "acme", "todo", "open PR", "", "implement", "builder", 999_002)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pr.PRNumber = 7
+	if err := s.Update(ctx, pr); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Transition(ctx, pr.ID, StatusQueued, StatusPROpen, "PR #7"); err != nil {
+		t.Fatal(err)
+	}
+	openPRs, err := s.OpenPRs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(openPRs) != 1 || openPRs[0].Source != SourceChat ||
+		openPRs[0].Identity != "builder" {
+		t.Fatalf("OpenPRs() = %+v, want chat/builder routing", openPRs)
 	}
 }

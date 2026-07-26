@@ -47,6 +47,11 @@ type StdioTransportConfig struct {
 	// SendTimeout is how long to wait for the write to complete (not the
 	// response). 0 means no timeout.
 	SendTimeout time.Duration
+
+	// ShutdownGrace is how long Stop waits for the subprocess to exit
+	// after an interrupt signal before forcibly killing it.
+	// Default: 5s.
+	ShutdownGrace time.Duration
 }
 
 func (c StdioTransportConfig) effectiveInitialBackoff() time.Duration {
@@ -61,6 +66,13 @@ func (c StdioTransportConfig) effectiveMaxBackoff() time.Duration {
 		return 30 * time.Second
 	}
 	return c.MaxBackoff
+}
+
+func (c StdioTransportConfig) effectiveShutdownGrace() time.Duration {
+	if c.ShutdownGrace <= 0 {
+		return 5 * time.Second
+	}
+	return c.ShutdownGrace
 }
 
 // ── Transport ───────────────────────────────────────────────────────────
@@ -144,6 +156,10 @@ func (t *StdioTransport) Start(ctx context.Context) error {
 		t.mu.Unlock()
 		return fmt.Errorf("mcp: already starting")
 	}
+	if t.state == StateStopping {
+		t.mu.Unlock()
+		return fmt.Errorf("mcp: stop in progress")
+	}
 	t.state = StateStarting
 	// Create a fresh context for this lifecycle. If we're restarting from
 	// Error state, the previous context was already cancelled; make a new one.
@@ -185,7 +201,7 @@ func (t *StdioTransport) stopSubprocess() {
 		}()
 		select {
 		case <-done:
-		case <-time.After(5 * time.Second):
+		case <-time.After(t.config.effectiveShutdownGrace()):
 			_ = cmd.Process.Kill()
 			<-done
 		}
@@ -201,12 +217,11 @@ func (t *StdioTransport) Stop(_ context.Context) error {
 		t.mu.Unlock()
 		return nil
 	}
+	// Set StateStopping and cancel the transport context atomically, in the
+	// same critical section. Splitting these across two lock acquisitions
+	// opens a window where a concurrent Start() could see a state it isn't
+	// guarding against and race a fresh subprocess against this shutdown.
 	t.state = StateStopping
-	t.mu.Unlock()
-
-	// Cancel the transport context  --  this signals all background
-	// goroutines (reader, restart timer) to stop.
-	t.mu.Lock()
 	if t.cancel != nil {
 		t.cancel()
 	}
@@ -261,7 +276,7 @@ func (t *StdioTransport) Send(ctx context.Context, body []byte) ([]byte, error) 
 	// Write the framed message under writeMu to prevent interleaving with
 	// concurrent Send calls on the same pipe.
 	t.writeMu.Lock()
-	err = writeMessage(stdin, body)
+	err = writeMessageWithTimeout(stdin, body, t.config.SendTimeout)
 	t.writeMu.Unlock()
 
 	if err != nil {
@@ -295,6 +310,32 @@ func (t *StdioTransport) Send(ctx context.Context, body []byte) ([]byte, error) 
 		}
 		return resp, nil
 	}
+}
+
+// Notify writes a JSON-RPC 2.0 notification (a message with no "id") to
+// the subprocess stdin without waiting for a response  --  notifications
+// have none by definition. Using [StdioTransport.Send] for a
+// notification would hang until ctx is cancelled, since Send always
+// waits for a reply keyed by the (absent) id.
+func (t *StdioTransport) Notify(ctx context.Context, body []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	t.mu.Lock()
+	if t.state != StateRunning {
+		t.mu.Unlock()
+		return ErrTransportStopped
+	}
+	stdin := t.stdin // capture under lock
+	t.mu.Unlock()
+
+	t.writeMu.Lock()
+	defer t.writeMu.Unlock()
+	if err := writeMessageWithTimeout(stdin, body, t.config.SendTimeout); err != nil {
+		return fmt.Errorf("mcp: notify write: %w", err)
+	}
+	return nil
 }
 
 // ── Internal subprocess management ─────────────────────────────────────
@@ -501,8 +542,21 @@ func (t *StdioTransport) attemptRestart() {
 			continue
 		}
 
-		// Success  --  update state and start the reader.
+		// Success  --  update state and start the reader. Re-check for a
+		// concurrent Stop() that ran while spawnProcess was in flight: if it
+		// already cancelled the context, discard this subprocess instead of
+		// reporting StateRunning for one Stop() already considers torn down.
 		t.mu.Lock()
+		if t.ctx.Err() != nil {
+			t.state = StateStopped
+			t.mu.Unlock()
+			_ = stdin.Close()
+			if cmd.Process != nil {
+				_ = cmd.Process.Kill()
+				_ = cmd.Wait()
+			}
+			return
+		}
 		t.cmd = cmd
 		t.stdin = stdin
 		t.state = StateRunning
@@ -526,6 +580,34 @@ func (t *StdioTransport) computeBackoffLocked() time.Duration {
 		}
 	}
 	return d
+}
+
+// writeMessageWithTimeout writes a framed message to w, bounding the write
+// itself (not any subsequent response wait) by timeout. A non-positive
+// timeout writes with no bound, matching writeMessage directly.
+//
+// The write runs in a goroutine so a wedged writer (e.g. a full stdin pipe
+// because the subprocess has stopped reading) cannot block the caller past
+// timeout. Since io.Writer gives no way to cancel an in-flight Write, the
+// goroutine is left to finish on its own if the timeout fires; the errCh
+// buffer of 1 lets it deliver into a channel nobody is receiving on anymore
+// without leaking.
+func writeMessageWithTimeout(w io.Writer, data []byte, timeout time.Duration) error {
+	if timeout <= 0 {
+		return writeMessage(w, data)
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- writeMessage(w, data)
+	}()
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-time.After(timeout):
+		return fmt.Errorf("mcp: write timed out after %s", timeout)
+	}
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────

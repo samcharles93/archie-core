@@ -16,6 +16,7 @@ func (s *stubAdapter) Disconnect(ctx context.Context) error { return nil }
 func (s *stubAdapter) Send(ctx context.Context, e MessageEvent) (SendResult, error) {
 	return SendResult{Success: true, MessageID: "msg-1"}, nil
 }
+
 func (s *stubAdapter) ChatInfo(ctx context.Context) (ChatInfo, error) {
 	return s.info, nil
 }

@@ -55,6 +55,43 @@ func TestRegistryRegister(t *testing.T) {
 	})
 }
 
+func TestRegistryGet(t *testing.T) {
+	t.Run("found", func(t *testing.T) {
+		r := NewRegistry()
+		if err := r.Register(ToolEntry{Name: "hello", Description: "hi", Handler: noopHandler}); err != nil {
+			t.Fatalf("register: %v", err)
+		}
+		e, ok := r.Get("hello")
+		if !ok {
+			t.Fatal("expected found=true")
+		}
+		if e.Name != "hello" || e.Description != "hi" {
+			t.Errorf("Get returned %+v", e)
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		r := NewRegistry()
+		_, ok := r.Get("nonexistent")
+		if ok {
+			t.Error("expected found=false for unregistered name")
+		}
+	})
+
+	t.Run("returned entry is a defensive copy", func(t *testing.T) {
+		r := NewRegistry()
+		if err := r.Register(ToolEntry{Name: "hello", Schema: JSONSchema{"type": "object"}, Handler: noopHandler}); err != nil {
+			t.Fatalf("register: %v", err)
+		}
+		e, _ := r.Get("hello")
+		e.Schema["type"] = "mutated"
+		e2, _ := r.Get("hello")
+		if e2.Schema["type"] != "object" {
+			t.Errorf("Get did not defensively copy: registry's schema was mutated to %v", e2.Schema["type"])
+		}
+	})
+}
+
 func TestRegistryAll(t *testing.T) {
 	t.Run("empty registry", func(t *testing.T) {
 		r := NewRegistry()
@@ -437,4 +474,91 @@ func TestRegistryPackageLevelHelpers(t *testing.T) {
 			t.Errorf("expected 0, got %d", len(got))
 		}
 	})
+}
+
+func TestRegistryRegisterBatchIsAtomic(t *testing.T) {
+	tests := []struct {
+		name     string
+		existing []ToolEntry
+		batch    []ToolEntry
+		wantErr  bool
+		want     []string
+	}{
+		{
+			name: "registers complete batch",
+			batch: []ToolEntry{
+				{Name: "one", Handler: noopHandler},
+				{Name: "two", Handler: noopHandler},
+			},
+			want: []string{"one", "two"},
+		},
+		{
+			name:     "existing collision registers nothing",
+			existing: []ToolEntry{{Name: "taken", Handler: noopHandler}},
+			batch: []ToolEntry{
+				{Name: "new", Handler: noopHandler},
+				{Name: "taken", Handler: noopHandler},
+			},
+			wantErr: true,
+			want:    []string{"taken"},
+		},
+		{
+			name: "duplicate inside batch registers nothing",
+			batch: []ToolEntry{
+				{Name: "same", Handler: noopHandler},
+				{Name: "same", Handler: noopHandler},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid entry registers nothing",
+			batch: []ToolEntry{
+				{Name: "valid", Handler: noopHandler},
+				{Name: "invalid"},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registry := NewRegistry()
+			for _, entry := range tt.existing {
+				if err := registry.Register(entry); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			err := registry.RegisterBatch(tt.batch)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("RegisterBatch() error = %v, wantErr %t", err, tt.wantErr)
+			}
+			got := make([]string, 0, len(registry.All()))
+			for _, entry := range registry.All() {
+				got = append(got, entry.Name)
+			}
+			slices.Sort(got)
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("registered names = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRegistryUnregister(t *testing.T) {
+	registry := NewRegistry()
+	for _, name := range []string{"keep", "remove"} {
+		if err := registry.Register(ToolEntry{Name: name, Handler: noopHandler}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	registry.Unregister("remove", "unknown")
+
+	if _, ok := registry.Get("remove"); ok {
+		t.Fatal("removed tool remains registered")
+	}
+	if _, ok := registry.Get("keep"); !ok {
+		t.Fatal("unrelated tool was removed")
+	}
 }

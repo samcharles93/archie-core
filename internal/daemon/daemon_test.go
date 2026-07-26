@@ -297,7 +297,7 @@ func TestRunViaAgentParksOnRequestFailure(t *testing.T) {
 	d, s := daemonWithNATS(t)
 	ctx := context.Background()
 
-	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "t", "b", ""); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "t", "b", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	task, err := s.ClaimNext(ctx)
@@ -323,7 +323,7 @@ func TestRunViaAgentParksOnRunError(t *testing.T) {
 	d, s := daemonWithNATS(t)
 	ctx := context.Background()
 
-	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 2, "t", "b", ""); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 2, "t", "b", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	task, err := s.ClaimNext(ctx)
@@ -356,7 +356,7 @@ func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
 	d.Cfg.DiffCapLines = 999
 	ctx := context.Background()
 
-	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 3, "t", "b", ""); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 3, "t", "b", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	task, err := s.ClaimNext(ctx)
@@ -511,7 +511,7 @@ func setupParkedTask(t *testing.T, s *store.Store, retryCount int) *store.Task {
 	t.Helper()
 	ctx := context.Background()
 
-	if _, err := s.EnqueueIssue(ctx, "acme", "todo", 1, "t", "b", ""); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "todo", 1, "t", "b", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	task, err := s.ClaimNext(ctx)
@@ -543,7 +543,7 @@ func TestMaybeRetryParkedUnderThreshold(t *testing.T) {
 	is := forge.Issue{Number: 1, Labels: []string{}}
 	repo := config.Repo{Owner: "acme", Name: "todo"}
 
-	d.maybeRetryParked(ctx, repo, is)
+	d.maybeRetryParked(ctx, d.Forge, repo, is)
 
 	task, err := s.TaskByIssue(ctx, "acme", "todo", 1)
 	if err != nil || task == nil {
@@ -572,7 +572,7 @@ func TestMaybeRetryParkedAtThreshold(t *testing.T) {
 	is := forge.Issue{Number: 1, Labels: []string{}}
 	repo := config.Repo{Owner: "acme", Name: "todo"}
 
-	d.maybeRetryParked(ctx, repo, is)
+	d.maybeRetryParked(ctx, d.Forge, repo, is)
 
 	task, err := s.TaskByIssue(ctx, "acme", "todo", 1)
 	if err != nil || task == nil {
@@ -601,7 +601,7 @@ func TestMaybeRetryParkedSkipsDead(t *testing.T) {
 	is := forge.Issue{Number: 1, Labels: []string{}}
 	repo := config.Repo{Owner: "acme", Name: "todo"}
 
-	d.maybeRetryParked(ctx, repo, is)
+	d.maybeRetryParked(ctx, d.Forge, repo, is)
 
 	if len(fg.stateLabels) != 0 {
 		t.Fatalf("expected no state label calls, got %d", len(fg.stateLabels))
@@ -689,7 +689,7 @@ func TestMaybeRetryParkedStillParked(t *testing.T) {
 	is := forge.Issue{Number: 1, Labels: []string{"archie:parked", "bug"}}
 	repo := config.Repo{Owner: "acme", Name: "todo"}
 
-	d.maybeRetryParked(ctx, repo, is)
+	d.maybeRetryParked(ctx, d.Forge, repo, is)
 
 	if len(fg.stateLabels) != 0 {
 		t.Fatalf("expected no state label calls, got %d", len(fg.stateLabels))
@@ -705,7 +705,7 @@ func TestMaybeRetryParkedRepoOverride(t *testing.T) {
 	is := forge.Issue{Number: 1, Labels: []string{}}
 	repo := config.Repo{Owner: "acme", Name: "todo", MaxRetries: 1}
 
-	d.maybeRetryParked(ctx, repo, is)
+	d.maybeRetryParked(ctx, d.Forge, repo, is)
 
 	task, err := s.TaskByIssue(ctx, "acme", "todo", 1)
 	if err != nil || task == nil {
@@ -713,5 +713,143 @@ func TestMaybeRetryParkedRepoOverride(t *testing.T) {
 	}
 	if task.Status != store.StatusDead {
 		t.Fatalf("expected status dead with repo override, got %s", task.Status)
+	}
+}
+
+// ── Multi-identity isolation (archie-core-abg.37) ──────────────────────
+//
+// Two identities ("archie" and "winter") are both configured to work the
+// same owner/repo  --  the exact overlapping-assignment scenario the bead
+// exists to make safe. A task enqueued under one identity's name must
+// only ever be acted on through that identity's own forge client and
+// worktree manager; it must never fall back to the root d.Forge/d.Trees
+// or leak into the other identity's client.
+func twoIdentityDaemon(t *testing.T) (d *Daemon, s *store.Store, rootFg, archieFg, winterFg *testForge) {
+	t.Helper()
+	s = store.OpenTest(t)
+	rootFg = &testForge{}
+	archieFg = &testForge{}
+	winterFg = &testForge{}
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	repo := config.Repo{Owner: "acme", Name: "shared"}
+	d = &Daemon{
+		Cfg: config.Config{
+			Dispatch: config.Dispatch{
+				Labels: map[string]string{
+					"queued": "archie:queued",
+					"dead":   "archie:dead",
+				},
+			},
+			Repos: []config.Repo{repo}, // root/legacy repo list  --  must NOT be consulted for identity tasks
+		},
+		Store: s,
+		Forge: rootFg, // must NOT be called for identity-owned tasks
+		Log:   log,
+		Identities: []*IdentityRunner{
+			{Name: "archie", Forge: archieFg, Trees: &worktree.Manager{}, Repos: []config.Repo{repo}, Cfg: config.IdentityConfig{Name: "archie"}, Log: log},
+			{Name: "winter", Forge: winterFg, Trees: &worktree.Manager{}, Repos: []config.Repo{repo}, Cfg: config.IdentityConfig{Name: "winter"}, Log: log},
+		},
+	}
+	return d, s, rootFg, archieFg, winterFg
+}
+
+func TestIdentityForResolvesOwningRunner(t *testing.T) {
+	d, _, _, _, _ := twoIdentityDaemon(t)
+
+	if id := d.identityFor(&store.Task{Identity: "archie"}); id == nil || id.Name != "archie" {
+		t.Fatalf("identityFor(archie) = %v, want archie runner", id)
+	}
+	if id := d.identityFor(&store.Task{Identity: "winter"}); id == nil || id.Name != "winter" {
+		t.Fatalf("identityFor(winter) = %v, want winter runner", id)
+	}
+	if id := d.identityFor(&store.Task{Identity: ""}); id != nil {
+		t.Fatalf("identityFor(\"\") = %v, want nil (legacy single-identity path)", id)
+	}
+	if id := d.identityFor(&store.Task{Identity: "nonexistent"}); id != nil {
+		t.Fatalf("identityFor(nonexistent) = %v, want nil", id)
+	}
+}
+
+func TestAcknowledgeUsesOwningIdentityForgeNotRoot(t *testing.T) {
+	d, _, rootFg, archieFg, winterFg := twoIdentityDaemon(t)
+	ctx := context.Background()
+	repo := config.Repo{Owner: "acme", Name: "shared"}
+	is := forge.Issue{Number: 1, Title: "shared issue"}
+
+	// archie's poll cycle acknowledges via its own forge client.
+	d.acknowledge(ctx, archieFg, repo, is)
+	if len(archieFg.stateLabels) != 1 {
+		t.Fatalf("archie forge got %d state label calls, want 1", len(archieFg.stateLabels))
+	}
+	if len(winterFg.stateLabels) != 0 || len(rootFg.stateLabels) != 0 {
+		t.Fatal("acknowledge leaked a state label call to winter's or root's forge client")
+	}
+}
+
+func TestMarkDeadResolvesForgeFromTaskIdentityNotCaller(t *testing.T) {
+	d, s, rootFg, archieFg, winterFg := twoIdentityDaemon(t)
+	ctx := context.Background()
+
+	// Two tasks for the SAME owner/repo, owned by different identities.
+	if _, err := s.EnqueueIssue(ctx, "acme", "shared", 1, "t1", "b", "", "archie"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.EnqueueIssue(ctx, "acme", "shared", 2, "t2", "b", "", "winter"); err != nil {
+		t.Fatal(err)
+	}
+	archieTask, err := s.TaskByIssue(ctx, "acme", "shared", 1)
+	if err != nil || archieTask == nil {
+		t.Fatalf("TaskByIssue(1) = (%+v, %v)", archieTask, err)
+	}
+	winterTask, err := s.TaskByIssue(ctx, "acme", "shared", 2)
+	if err != nil || winterTask == nil {
+		t.Fatalf("TaskByIssue(2) = (%+v, %v)", winterTask, err)
+	}
+	if err := s.Transition(ctx, archieTask.ID, store.StatusQueued, store.StatusParked, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Transition(ctx, winterTask.ID, store.StatusQueued, store.StatusParked, "test"); err != nil {
+		t.Fatal(err)
+	}
+	archieTask, _ = s.TaskByIssue(ctx, "acme", "shared", 1)
+	winterTask, _ = s.TaskByIssue(ctx, "acme", "shared", 2)
+
+	repo := config.Repo{Owner: "acme", Name: "shared"}
+	d.markDead(ctx, repo, archieTask, 0)
+	d.markDead(ctx, repo, winterTask, 0)
+
+	if len(archieFg.stateLabels) != 1 || archieFg.stateLabels[0].number != 1 {
+		t.Fatalf("archie forge state labels = %+v, want exactly issue 1", archieFg.stateLabels)
+	}
+	if len(winterFg.stateLabels) != 1 || winterFg.stateLabels[0].number != 2 {
+		t.Fatalf("winter forge state labels = %+v, want exactly issue 2", winterFg.stateLabels)
+	}
+	if len(rootFg.stateLabels) != 0 {
+		t.Fatal("markDead used the root forge client instead of the owning identity's")
+	}
+	if len(archieFg.comments) != 1 || len(winterFg.comments) != 1 {
+		t.Fatalf("expected one dead-comment per identity, got archie=%d winter=%d", len(archieFg.comments), len(winterFg.comments))
+	}
+}
+
+func TestRepoForPrefersOwningIdentityRepoList(t *testing.T) {
+	d, _, _, _, _ := twoIdentityDaemon(t)
+
+	// Identity-only repo, absent from the root Cfg.Repos list.
+	identityOnlyRepo := config.Repo{Owner: "sam", Name: "identity-only"}
+	d.Identities[0].Repos = append(d.Identities[0].Repos, identityOnlyRepo)
+
+	got, ok := d.repoFor(&store.Task{Owner: "sam", Repo: "identity-only", Identity: "archie"})
+	if !ok {
+		t.Fatal("repoFor did not find an identity-only repo via the owning identity's repo list")
+	}
+	if got.Owner != "sam" || got.Name != "identity-only" {
+		t.Fatalf("repoFor = %+v, want sam/identity-only", got)
+	}
+
+	// The same repo name must NOT resolve for an unrelated identity.
+	if _, ok := d.repoFor(&store.Task{Owner: "sam", Repo: "identity-only", Identity: "winter"}); ok {
+		t.Fatal("repoFor leaked archie's identity-only repo to winter")
 	}
 }

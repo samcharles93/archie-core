@@ -84,8 +84,10 @@ func (a *Adapter) Close() error {
 // ── Task lifecycle ───────────────────────────────────────────────────────────
 
 // EnqueueIssue inserts a new queued task; returns false if the issue is
-// already tracked (the idempotency key is owner/repo/number).
-func (a *Adapter) EnqueueIssue(ctx context.Context, owner, repo string, number int, title, body, labels string) (bool, error) {
+// already tracked (the idempotency key is owner/repo/number). identity is
+// the archie identity whose forge poll discovered this issue (empty for
+// single-identity deployments).
+func (a *Adapter) EnqueueIssue(ctx context.Context, owner, repo string, number int, title, body, labels, identity string) (bool, error) {
 	key := taskKey(owner, repo, number)
 
 	// Short-circuit if already tracked.
@@ -135,6 +137,60 @@ func (a *Adapter) EnqueueIssue(ctx context.Context, owner, repo string, number i
 		return false, fmt.Errorf("nell: enqueue: %w", err)
 	}
 	return true, nil
+}
+
+// EnqueueChatTask inserts a new queued task with source "chat" and no
+// backing forge issue, returning the full created row with its real
+// database ID. issueNumber is a synthetic value used only to satisfy
+// the (owner, repo, issue_number) key uniqueness  --  callers must not
+// treat it as a real forge issue number (see store.Task.IsForgeBacked).
+func (a *Adapter) EnqueueChatTask(ctx context.Context, owner, repo, title, body, workflow, identity string, issueNumber int) (*store.Task, error) {
+	key := taskKey(owner, repo, issueNumber)
+
+	a.mu.Lock()
+	taskID, err := a.nextTaskID(ctx)
+	a.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+
+	doc := sdk.Doc{
+		sdk.FieldID:        key,
+		"id":               taskID,
+		"owner":            owner,
+		"repo":             repo,
+		"issue_number":     int64(issueNumber),
+		"title":            title,
+		"body":             body,
+		"labels":           "chat",
+		"status":           store.StatusQueued,
+		"workflow":         workflow,
+		"stage":            "",
+		"branch":           "",
+		"plan":             "",
+		"notes":            "",
+		"pr_number":        int64(0),
+		"tokens_used":      int64(0),
+		"iterations":       int64(0),
+		"attempt":          int64(0),
+		"park_reason":      "",
+		"retry_count":      int64(0),
+		"watch_comment_id": int64(0),
+		"source":           store.SourceChat,
+		"identity":         identity,
+		"created_at":       time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	if _, err := a.tasks.Put(ctx, doc); err != nil {
+		return nil, fmt.Errorf("nell: enqueue chat task: %w", err)
+	}
+	return docToTask(doc), nil
+}
+
+// TaskByID returns the task with the given database ID, or nil. Used by
+// chat controls (/approve, /cancel) that reference a task by its real
+// ID rather than a forge issue number.
+func (a *Adapter) TaskByID(ctx context.Context, taskID int64) (*store.Task, error) {
+	return a.findTaskByID(ctx, taskID)
 }
 
 // ClaimNext atomically moves the oldest queued task to running and returns
@@ -752,7 +808,20 @@ func docToTask(doc sdk.Doc) *store.Task {
 		ParkReason:     strField(doc, "park_reason"),
 		RetryCount:     int(intField(doc, "retry_count")),
 		WatchCommentID: intField(doc, "watch_comment_id"),
+		Source:         sourceOrDefault(strField(doc, "source")),
+		Identity:       strField(doc, "identity"),
 	}
+}
+
+// sourceOrDefault returns store.SourceForge for docs written before the
+// source field existed (empty string), preserving the "forge-backed
+// unless explicitly chat-sourced" default the SQLite column default
+// also encodes.
+func sourceOrDefault(s string) string {
+	if s == "" {
+		return store.SourceForge
+	}
+	return s
 }
 
 // taskFields copies every mutable Task field into the Doc.  It does not

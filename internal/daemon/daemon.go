@@ -55,13 +55,10 @@ type Daemon struct {
 	// Storage is the pluggable storage backend for container mounts.
 	// When nil (no containers configured), mount setup is skipped.
 	Storage storage.Backend
-	// PluginRegistry holds core daemon plugins loaded from the configured
-	// plugin_dir at startup (Layer 2). Nil when no plugin_dir is configured.
-	//
-	// Reserved for future daemon extension points (forge resolvers, storage
-	// backends, notification handlers). Loaded plugins are logged at startup;
-	// the registry is available when extension point interfaces are defined.
-	PluginRegistry *plugin.Registry
+	// CapabilityHost owns validated plugin manifests and cross-family
+	// lifecycle. Typed capability registries remain in their domain packages;
+	// the host never exposes daemon internals or an untyped service locator.
+	CapabilityHost *plugin.Host
 	// CustomStages discovers a repo's per-repo Yaegi custom stages
 	// (.archie/stages/*.go) from its prepared worktree. Set by the
 	// composition root (cmd/archied) to wfeval.Discover; nil disables
@@ -218,9 +215,9 @@ func (d *Daemon) cycleForIdentity(ctx context.Context, id *IdentityRunner) {
 		for _, is := range issues {
 			labels := strings.Join(is.Labels, ",")
 			if d.Nats != nil {
-				d.pollNATS(ctx, repo, is, labels)
+				d.pollNATS(ctx, id.Forge, repo, is, labels, id.Name)
 			} else {
-				d.pollSQLite(ctx, repo, is, labels)
+				d.pollSQLite(ctx, id.Forge, repo, is, labels, id.Name)
 			}
 		}
 	}
@@ -454,31 +451,35 @@ func (d *Daemon) poll(ctx context.Context) {
 		for _, is := range issues {
 			labels := strings.Join(is.Labels, ",")
 			if d.Nats != nil {
-				d.pollNATS(ctx, repo, is, labels)
+				d.pollNATS(ctx, d.Forge, repo, is, labels, "")
 			} else {
-				d.pollSQLite(ctx, repo, is, labels)
+				d.pollSQLite(ctx, d.Forge, repo, is, labels, "")
 			}
 		}
 	}
 }
 
 // pollSQLite enqueues discovered issues directly into SQLite (existing flow).
-func (d *Daemon) pollSQLite(ctx context.Context, repo config.Repo, is forge.Issue, labels string) {
+// fg is the forge client that discovered is  --  d.Forge for the legacy
+// single-identity path, or an identity's own client from cycleForIdentity.
+// identity records which identity owns the resulting task; empty for
+// single-identity deployments.
+func (d *Daemon) pollSQLite(ctx context.Context, fg forge.Forge, repo config.Repo, is forge.Issue, labels, identity string) {
 	inserted, err := d.Store.EnqueueIssue(ctx,
-		repo.Owner, repo.Name, is.Number, is.Title, is.Body, labels)
+		repo.Owner, repo.Name, is.Number, is.Title, is.Body, labels, identity)
 	if err != nil {
 		d.Log.Error("enqueue failed", "repo", repo.FullName(), "issue", is.Number, "err", err)
 		return
 	}
 	if inserted {
-		d.acknowledge(ctx, repo, is)
+		d.acknowledge(ctx, fg, repo, is)
 		return
 	}
-	d.maybeRetryParked(ctx, repo, is)
+	d.maybeRetryParked(ctx, fg, repo, is)
 }
 
 // pollNATS publishes discovered issues to NATS (new flow).
-func (d *Daemon) pollNATS(ctx context.Context, repo config.Repo, is forge.Issue, labels string) {
+func (d *Daemon) pollNATS(ctx context.Context, fg forge.Forge, repo config.Repo, is forge.Issue, labels, identity string) {
 	// Read-only existence check  --  needed for maybeRetryParked.
 	existing, err := d.Store.TaskByIssue(ctx, repo.Owner, repo.Name, is.Number)
 	if err != nil {
@@ -486,25 +487,26 @@ func (d *Daemon) pollNATS(ctx context.Context, repo config.Repo, is forge.Issue,
 		return
 	}
 	if existing != nil {
-		d.maybeRetryParked(ctx, repo, is)
+		d.maybeRetryParked(ctx, fg, repo, is)
 		return
 	}
-	if err := d.Nats.PublishTask(ctx, repo.Owner, repo.Name, is.Number, is.Title, is.Body, labels); err != nil {
+	if err := d.Nats.PublishTask(ctx, repo.Owner, repo.Name, is.Number, is.Title, is.Body, labels, identity); err != nil {
 		d.Log.Error("nats publish failed", "repo", repo.FullName(), "issue", is.Number, "err", err)
 		return
 	}
-	d.acknowledge(ctx, repo, is)
+	d.acknowledge(ctx, fg, repo, is)
 }
 
-// acknowledge posts the pickup reaction, state label, and queued event.
-func (d *Daemon) acknowledge(ctx context.Context, repo config.Repo, is forge.Issue) {
+// acknowledge posts the pickup reaction, state label, and queued event
+// using fg  --  the forge client that owns repo (identity-scoped or root).
+func (d *Daemon) acknowledge(ctx context.Context, fg forge.Forge, repo config.Repo, is forge.Issue) {
 	d.Log.Info("issue queued", "repo", repo.FullName(), "issue", is.Number, "title", is.Title)
 	if ack := d.Cfg.Dispatch.AckReaction; ack != "" {
-		if err := d.Forge.React(ctx, repo.Owner, repo.Name, is.Number, ack); err != nil {
+		if err := fg.React(ctx, repo.Owner, repo.Name, is.Number, ack); err != nil {
 			d.Log.Warn("ack reaction failed", "issue", is.Number, "err", err)
 		}
 	}
-	d.Forge.SetStateLabel(ctx, repo.Owner, repo.Name, is.Number, d.Cfg.Dispatch.StateLabel("queued"), d.Cfg.Dispatch.LabelValues())
+	fg.SetStateLabel(ctx, repo.Owner, repo.Name, is.Number, d.Cfg.Dispatch.StateLabel("queued"), d.Cfg.Dispatch.LabelValues())
 	d.emit(events.Event{
 		Kind: events.KindTaskQueued, Repo: repo.FullName(),
 		Issue: is.Number, Detail: is.Title,
@@ -525,7 +527,7 @@ func (d *Daemon) processNATSTask(ctx context.Context, msg jetstream.Msg) {
 		return
 	}
 
-	inserted, err := d.Store.EnqueueIssue(ctx, tm.Owner, tm.Repo, tm.Number, tm.Title, tm.Body, tm.Labels)
+	inserted, err := d.Store.EnqueueIssue(ctx, tm.Owner, tm.Repo, tm.Number, tm.Title, tm.Body, tm.Labels, tm.Identity)
 	if err != nil {
 		d.Log.Error("nats enqueue failed", "err", err)
 		if err := msg.Nak(); err != nil {
@@ -618,7 +620,10 @@ func (d *Daemon) pollEither(ctx context.Context, repo config.Repo) []forge.Issue
 // maybeRetryParked requeues a parked task whose state label a human has
 // removed  --  the forge-native retry trigger. When retry_count reaches the
 // configured max_retries the task moves to dead instead of requeuing.
-func (d *Daemon) maybeRetryParked(ctx context.Context, repo config.Repo, is forge.Issue) {
+// fg is only used before task is loaded (the hasLabel short-circuit needs
+// no forge call); once task is available its own Identity is authoritative
+// for which forge client owns it, resolved via forgeFor.
+func (d *Daemon) maybeRetryParked(ctx context.Context, fg forge.Forge, repo config.Repo, is forge.Issue) {
 	if hasLabel(is.Labels, d.Cfg.Dispatch.StateLabel("parked")) {
 		return
 	}
@@ -626,6 +631,7 @@ func (d *Daemon) maybeRetryParked(ctx context.Context, repo config.Repo, is forg
 	if err != nil || task == nil || task.Status != store.StatusParked {
 		return
 	}
+	fg = d.forgeFor(task)
 
 	maxRetries := repo.EffectiveMaxRetries(d.Cfg.MaxRetries)
 
@@ -651,21 +657,26 @@ func (d *Daemon) maybeRetryParked(ctx context.Context, repo config.Repo, is forg
 
 // markDead permanently parks a task that has exhausted its max_retries.
 func (d *Daemon) markDead(ctx context.Context, repo config.Repo, task *store.Task, maxRetries int) {
+	fg := d.forgeFor(task)
 	reason := fmt.Sprintf("max retries reached (%d/%d)  --  task parked permanently", task.RetryCount, maxRetries)
 	if err := d.Store.Transition(ctx, task.ID, store.StatusParked, store.StatusDead, reason); err != nil {
 		d.Log.Error("transition to dead failed", "task", task.ID, "err", err)
 		return
 	}
-	d.Forge.SetStateLabel(ctx, task.Owner, task.Repo, task.IssueNumber,
-		d.Cfg.Dispatch.StateLabel("dead"), d.Cfg.Dispatch.LabelValues())
+	if task.IsForgeBacked() {
+		fg.SetStateLabel(ctx, task.Owner, task.Repo, task.IssueNumber,
+			d.Cfg.Dispatch.StateLabel("dead"), d.Cfg.Dispatch.LabelValues())
+	}
 	d.Log.Warn("task permanently parked after max retries",
 		"issue", task.IssueNumber, "retry_count", task.RetryCount, "max_retries", maxRetries)
-	body := fmt.Sprintf("**Max retries reached (%d/%d)  --  task parked permanently.**\n\n"+
-		"The task failed %d times and has been moved to `dead` status. "+
-		"Manual intervention is required to recover this task.",
-		task.RetryCount, maxRetries, task.RetryCount)
-	if _, err := d.Forge.Comment(ctx, task.Owner, task.Repo, task.IssueNumber, body); err != nil {
-		d.Log.Error("failed to post dead comment", "issue", task.IssueNumber, "err", err)
+	if task.IsForgeBacked() {
+		body := fmt.Sprintf("**Max retries reached (%d/%d)  --  task parked permanently.**\n\n"+
+			"The task failed %d times and has been moved to `dead` status. "+
+			"Manual intervention is required to recover this task.",
+			task.RetryCount, maxRetries, task.RetryCount)
+		if _, err := fg.Comment(ctx, task.Owner, task.Repo, task.IssueNumber, body); err != nil {
+			d.Log.Error("failed to post dead comment", "issue", task.IssueNumber, "err", err)
+		}
 	}
 	d.emit(events.Event{
 		Kind: events.KindTaskDead, TaskID: task.ID,
@@ -686,7 +697,13 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 		return
 	}
 	for _, t := range tasks {
-		state, err := d.Forge.PRState(ctx, t.Owner, t.Repo, t.PRNumber)
+		fg := d.forgeFor(&t)
+		trees := d.treesFor(&t)
+		// PRState/PR reconciliation is valid regardless of Source  --  a
+		// chat-sourced task can still open a real PR against a real
+		// branch. Only the issue-label call (tied to the synthetic
+		// issue number) is forge-only.
+		state, err := fg.PRState(ctx, t.Owner, t.Repo, t.PRNumber)
 		if err != nil {
 			d.Log.Warn("PR state check failed", "pr", t.PRNumber, "err", err)
 			continue
@@ -694,8 +711,10 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 		switch state {
 		case "merged":
 			_ = d.Store.Transition(ctx, t.ID, store.StatusPROpen, store.StatusMerged, "")
-			_ = d.Trees.Cleanup(t.Owner, t.Repo, t.IssueNumber)
-			d.Forge.SetStateLabel(ctx, t.Owner, t.Repo, t.IssueNumber, "", d.Cfg.Dispatch.LabelValues())
+			_ = trees.Cleanup(t.Owner, t.Repo, t.IssueNumber)
+			if t.IsForgeBacked() {
+				fg.SetStateLabel(ctx, t.Owner, t.Repo, t.IssueNumber, "", d.Cfg.Dispatch.LabelValues())
+			}
 			d.Log.Info("PR merged", "repo", t.Owner+"/"+t.Repo, "pr", t.PRNumber)
 			d.emit(events.Event{
 				Kind: events.KindPRMerged, TaskID: t.ID,
@@ -704,8 +723,10 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 			})
 		case "closed":
 			_ = d.Store.Transition(ctx, t.ID, store.StatusPROpen, store.StatusRejected, "PR closed without merge")
-			_ = d.Trees.Cleanup(t.Owner, t.Repo, t.IssueNumber)
-			d.Forge.SetStateLabel(ctx, t.Owner, t.Repo, t.IssueNumber, "", d.Cfg.Dispatch.LabelValues())
+			_ = trees.Cleanup(t.Owner, t.Repo, t.IssueNumber)
+			if t.IsForgeBacked() {
+				fg.SetStateLabel(ctx, t.Owner, t.Repo, t.IssueNumber, "", d.Cfg.Dispatch.LabelValues())
+			}
 			d.Log.Info("PR rejected", "repo", t.Owner+"/"+t.Repo, "pr", t.PRNumber)
 			d.emit(events.Event{
 				Kind: events.KindPRRejected, TaskID: t.ID,
@@ -727,7 +748,14 @@ func (d *Daemon) checkWaiting(ctx context.Context) {
 		return
 	}
 	for _, t := range tasks {
-		replies, err := d.Forge.RepliesAfter(ctx, t.Owner, t.Repo, t.IssueNumber, t.WatchCommentID, d.Cfg.BotUser)
+		if !t.IsForgeBacked() {
+			// Chat-sourced waiting_human tasks resolve via /approve and
+			// /cancel, not forge issue replies  --  there is no issue
+			// to poll.
+			continue
+		}
+		fg := d.forgeFor(&t)
+		replies, err := fg.RepliesAfter(ctx, t.Owner, t.Repo, t.IssueNumber, t.WatchCommentID, d.Cfg.BotUser)
 		if err != nil {
 			d.Log.Warn("reply check failed", "issue", t.IssueNumber, "err", err)
 			continue
@@ -751,18 +779,18 @@ func (d *Daemon) checkWaiting(ctx context.Context) {
 				d.Log.Error("requeue failed", "issue", t.IssueNumber, "err", err)
 				continue
 			}
-			_, _ = d.Forge.Comment(ctx, t.Owner, t.Repo, t.IssueNumber,
+			_, _ = fg.Comment(ctx, t.Owner, t.Repo, t.IssueNumber,
 				"**Go-ahead received  --  implementation is queued.** ("+reason+")")
-			d.Forge.SetStateLabel(ctx, t.Owner, t.Repo, t.IssueNumber, d.Cfg.Dispatch.StateLabel("queued"), d.Cfg.Dispatch.LabelValues())
+			fg.SetStateLabel(ctx, t.Owner, t.Repo, t.IssueNumber, d.Cfg.Dispatch.StateLabel("queued"), d.Cfg.Dispatch.LabelValues())
 			d.emit(events.Event{
 				Kind: "human_approved", TaskID: t.ID,
 				Repo: t.Owner + "/" + t.Repo, Issue: t.IssueNumber, Detail: reason,
 			})
 		case "reject":
 			_ = d.Store.Transition(ctx, t.ID, store.StatusWaitingHuman, store.StatusClosedWontDo, reason)
-			_ = d.Forge.CloseIssue(ctx, t.Owner, t.Repo, t.IssueNumber,
+			_ = fg.CloseIssue(ctx, t.Owner, t.Repo, t.IssueNumber,
 				"**Understood  --  closing without implementation.** ("+reason+")")
-			d.Forge.SetStateLabel(ctx, t.Owner, t.Repo, t.IssueNumber, "", d.Cfg.Dispatch.LabelValues())
+			fg.SetStateLabel(ctx, t.Owner, t.Repo, t.IssueNumber, "", d.Cfg.Dispatch.LabelValues())
 			d.emit(events.Event{
 				Kind: "human_rejected", TaskID: t.ID,
 				Repo: t.Owner + "/" + t.Repo, Issue: t.IssueNumber, Detail: reason,
@@ -817,6 +845,8 @@ func clip(s string, n int) string {
 }
 
 func (d *Daemon) process(ctx context.Context, task *store.Task) {
+	fg := d.forgeFor(task)
+	trees := d.treesFor(task)
 	repo, ok := d.repoFor(task)
 	if !ok {
 		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "repo no longer in config")
@@ -826,7 +856,7 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	// exists (e.g. retry, waiting_human → implement handoff), scan
 	// it for .agents/skills/ that declare workflows. Worktree skills
 	// override the startup registry for this task only.
-	workDir := d.Trees.Dir(task.Owner, task.Repo, task.IssueNumber)
+	workDir := trees.Dir(task.Owner, task.Repo, task.IssueNumber)
 	registry := d.Workflows
 	if _, err := os.Stat(workDir); err == nil {
 		aug, err := skillbuild.AugmentRegistry(workDir, d.Workflows)
@@ -850,12 +880,12 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	var branch string
 	var err error
 	if repo.PersistentStorage && d.Cfg.Containers.VolumeTTL.Std() > 0 {
-		_, branch, err = d.Trees.PreparePersistent(
+		_, branch, err = trees.PreparePersistent(
 			ctx, task.Owner, task.Repo, repo.Base, task.IssueNumber,
 			task.Title, task.Body, task.Labels, d.Cfg.Containers.VolumeTTL.Std(),
 		)
 	} else {
-		_, branch, err = d.Trees.Prepare(ctx, task.Owner, task.Repo, repo.Base, task.IssueNumber, task.Title, task.Body, task.Labels)
+		_, branch, err = trees.Prepare(ctx, task.Owner, task.Repo, repo.Base, task.IssueNumber, task.Title, task.Body, task.Labels)
 	}
 	if err != nil {
 		d.Log.Error("worktree prepare failed", "err", err)
@@ -910,13 +940,23 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 
 	// Set the working label only after successful container setup (or when no
 	// container is needed). This prevents label/database divergence on failure.
-	d.Forge.SetStateLabel(ctx, task.Owner, task.Repo, task.IssueNumber, d.Cfg.Dispatch.StateLabel("working"), d.Cfg.Dispatch.LabelValues())
+	// Chat-sourced tasks have no real forge issue to label.
+	if task.IsForgeBacked() {
+		fg.SetStateLabel(ctx, task.Owner, task.Repo, task.IssueNumber, d.Cfg.Dispatch.StateLabel("working"), d.Cfg.Dispatch.LabelValues())
+	}
 
 	// Sandboxed path: hand the whole task to archie-agent in one NATS round
 	// trip instead of running the stage loop here. archie-agent proxies
 	// Store/Forge/worktree-push calls back to archied over storerpc/
 	// forgerpc/worktreerpc  --  by the time runViaAgent returns, the task's
 	// terminal state already landed via those calls.
+	//
+	// NOTE: the RPC servers registered in cmd/archied (forgerpc/worktreerpc)
+	// are still wired to the root d.Forge/d.Trees, not per-identity clients
+	// (see registerTaskRPCServers in main.go). A container-mode task owned
+	// by a non-root identity will have its RPC calls served by the wrong
+	// identity's forge/worktree until that registration is made
+	// identity-aware; the in-process path below is fully identity-scoped.
 	if d.ContainerPool != nil {
 		d.runViaAgent(ctx, task, repo)
 	} else {
@@ -924,9 +964,9 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 			Task:         task,
 			Repo:         repo,
 			Cfg:          d.Cfg,
-			Forge:        d.Forge,
+			Forge:        fg,
 			Store:        d.Store,
-			Trees:        d.Trees,
+			Trees:        trees,
 			SystemPrompt: d.memoryPrompt,
 			Guardrails:   d.Guardrails,
 			Agent:        d.Agent,
@@ -1013,8 +1053,49 @@ func (d *Daemon) containerEnv() []string {
 	return env
 }
 
+// identityFor resolves the IdentityRunner that owns task, or nil for
+// legacy single-identity deployments and forge-sourced tasks recorded
+// before multi-identity routing existed (task.Identity == ""). Callers
+// must fall back to the root d.Forge/d.Trees/d.Cfg when this returns nil.
+func (d *Daemon) identityFor(task *store.Task) *IdentityRunner {
+	if task == nil || task.Identity == "" {
+		return nil
+	}
+	for _, id := range d.Identities {
+		if id.Name == task.Identity {
+			return id
+		}
+	}
+	return nil
+}
+
+// forgeFor returns the forge client that owns task: the identity's own
+// client when task.Identity names a configured identity, else the root
+// d.Forge. This is the safety boundary that keeps one identity's forge
+// token from being used against another identity's repos.
+func (d *Daemon) forgeFor(task *store.Task) forge.Forge {
+	if id := d.identityFor(task); id != nil {
+		return id.Forge
+	}
+	return d.Forge
+}
+
+// treesFor returns the worktree manager that owns task, mirroring forgeFor.
+func (d *Daemon) treesFor(task *store.Task) *worktree.Manager {
+	if id := d.identityFor(task); id != nil {
+		return id.Trees
+	}
+	return d.Trees
+}
+
+// repoFor resolves task's repo config from the owning identity's repo
+// list when task.Identity is set, else the root Cfg.Repos.
 func (d *Daemon) repoFor(t *store.Task) (config.Repo, bool) {
-	for _, r := range d.Cfg.Repos {
+	repos := d.Cfg.Repos
+	if id := d.identityFor(t); id != nil {
+		repos = id.Repos
+	}
+	for _, r := range repos {
 		if r.Owner == t.Owner && r.Name == t.Repo {
 			return r, true
 		}

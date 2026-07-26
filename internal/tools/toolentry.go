@@ -1,5 +1,5 @@
 // Package tools is the central tool subsystem for archie-core. It defines
-// the ToolEntry data type that every tool  --  built-in, MCP, or plugin  -- 
+// the ToolEntry data type that every tool  --  built-in, MCP, or plugin  --
 // registers with. The registry (17.2) and guardrails (17.10–17.15) are
 // built on top of this type.
 package tools
@@ -33,7 +33,9 @@ type SchemaOverrideFn func(schema JSONSchema) JSONSchema
 
 // ToolEntry is the foundational data type for the tools subsystem. Every
 // tool  --  built-in, MCP server, plugin-provided, or dynamically registered
-//  --  is represented by a ToolEntry. Fields with `json:"-"` tags are
+//
+//	--  is represented by a ToolEntry. Fields with `json:"-"` tags are
+//
 // runtime-only (not serialized).
 type ToolEntry struct {
 	// Name uniquely identifies this tool (e.g. "read_file", "write_file",

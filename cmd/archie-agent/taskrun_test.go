@@ -149,7 +149,7 @@ func TestRunTaskExecutesBootstrapWorkflowEndToEnd(t *testing.T) {
 	// archied side: real Store, a capturing Forge, and the Manager that
 	// actually holds the (unused-for-file-remotes) push token.
 	st := store.OpenTest(t)
-	if _, err := st.EnqueueIssue(ctx, "acme", "widget", 1, "feat: bootstrap test", "", "bootstrap"); err != nil {
+	if _, err := st.EnqueueIssue(ctx, "acme", "widget", 1, "feat: bootstrap test", "", "bootstrap", ""); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	task, err := st.ClaimNext(ctx)
@@ -166,7 +166,7 @@ func TestRunTaskExecutesBootstrapWorkflowEndToEnd(t *testing.T) {
 		BaseURL:  "file://" + host,
 	}
 
-	// The daemon always prepares the worktree before container acquire  -- 
+	// The daemon always prepares the worktree before container acquire  --
 	// reproduce that here so the container's bind mount has real content.
 	hostDir, _, err := daemonTrees.Prepare(ctx, "acme", "widget", "main", 1, task.Title, "", "bootstrap")
 	if err != nil {

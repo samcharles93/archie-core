@@ -5,8 +5,11 @@ import (
 	"testing"
 )
 
-func intPtr(v int) *int     { return &v }
-func i64Ptr(v int64) *int64 { return &v }
+//go:fix inline
+func intPtr(v int) *int { return new(v) }
+
+//go:fix inline
+func i64Ptr(v int64) *int64 { return new(v) }
 
 func TestMessageEventToLegacy(t *testing.T) {
 	e := MessageEvent{
@@ -100,9 +103,9 @@ func TestMessageEventMediaAttachment(t *testing.T) {
 				Type:     "image",
 				FileID:   "file-abc",
 				MIMEType: "image/png",
-				FileSize: i64Ptr(102400),
-				Width:    intPtr(800),
-				Height:   intPtr(600),
+				FileSize: new(int64(102400)),
+				Width:    new(800),
+				Height:   new(600),
 			},
 		},
 	}
@@ -297,9 +300,9 @@ func TestMessageEventDocExample(t *testing.T) {
 			Type:     "image",
 			FileID:   "AgACAgIAAxkBAA...",
 			MIMEType: "image/png",
-			FileSize: i64Ptr(245760),
-			Width:    intPtr(1920),
-			Height:   intPtr(1080),
+			FileSize: new(int64(245760)),
+			Width:    new(1920),
+			Height:   new(1080),
 		}},
 		Timestamp: 1734567890123,
 	}

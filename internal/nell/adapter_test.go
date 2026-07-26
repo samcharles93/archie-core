@@ -31,11 +31,11 @@ func TestEnqueueIdempotent(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	ins, err := s.EnqueueIssue(ctx, "acme", "todo", 1, "add tests", "body", "widget")
+	ins, err := s.EnqueueIssue(ctx, "acme", "todo", 1, "add tests", "body", "widget", "")
 	if err != nil || !ins {
 		t.Fatalf("first enqueue = (%v, %v)", ins, err)
 	}
-	ins, err = s.EnqueueIssue(ctx, "acme", "todo", 1, "add tests", "body", "widget")
+	ins, err = s.EnqueueIssue(ctx, "acme", "todo", 1, "add tests", "body", "widget", "")
 	if err != nil || ins {
 		t.Fatalf("duplicate enqueue must be no-op, got (%v, %v)", ins, err)
 	}
@@ -45,7 +45,7 @@ func TestClaimNextAndRecovery(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	if _, err := s.EnqueueIssue(ctx, "acme", "todo", 7, "t", "", "archie,bug"); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "todo", 7, "t", "", "archie,bug", ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -72,11 +72,49 @@ func TestClaimNextAndRecovery(t *testing.T) {
 	}
 }
 
+func TestChatTaskLifecyclePreservesRouting(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	task, err := s.EnqueueChatTask(ctx, "acme", "todo", "chat task", "", "feasibility", "reviewer", 999_001)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := s.ClaimNext(ctx)
+	if err != nil || claimed == nil || claimed.ID != task.ID {
+		t.Fatalf("ClaimNext() = (%+v, %v), want task %d", claimed, err, task.ID)
+	}
+	if n, err := s.RecoverStale(ctx); err != nil || n != 1 {
+		t.Fatalf("RecoverStale() = (%d, %v), want (1, nil)", n, err)
+	}
+	recovered, err := s.TaskByID(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered == nil || recovered.Source != store.SourceChat ||
+		recovered.Identity != "reviewer" || recovered.Workflow != "feasibility" ||
+		recovered.Status != store.StatusQueued {
+		t.Fatalf("recovered task = %+v, want queued chat/reviewer/feasibility", recovered)
+	}
+
+	if err := s.Transition(ctx, task.ID, store.StatusQueued, store.StatusWaitingHuman, "await approval"); err != nil {
+		t.Fatal(err)
+	}
+	waiting, err := s.WaitingTasks(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(waiting) != 1 || waiting[0].Source != store.SourceChat ||
+		waiting[0].Identity != "reviewer" {
+		t.Fatalf("WaitingTasks() = %+v, want chat/reviewer routing", waiting)
+	}
+}
+
 func TestTransitionAndUpdate(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "t", "b", ""); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "t", "b", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	task, err := s.ClaimNext(ctx)
@@ -135,7 +173,7 @@ func TestStatusCounts(t *testing.T) {
 	ctx := context.Background()
 
 	for i := range 5 {
-		if _, err := s.EnqueueIssue(ctx, "acme", "todo", i+1, "t", "", ""); err != nil {
+		if _, err := s.EnqueueIssue(ctx, "acme", "todo", i+1, "t", "", "", ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -155,7 +193,7 @@ func TestClearTerminalTasks(t *testing.T) {
 
 	statuses := []string{store.StatusMerged, store.StatusParked, store.StatusRejected, store.StatusClosedWontDo, store.StatusQueued}
 	for i, status := range statuses {
-		if _, err := s.EnqueueIssue(ctx, "acme", "widget", i+1, "t", "b", ""); err != nil {
+		if _, err := s.EnqueueIssue(ctx, "acme", "widget", i+1, "t", "b", "", ""); err != nil {
 			t.Fatal(err)
 		}
 		task, err := s.TaskByIssue(ctx, "acme", "widget", i+1)
@@ -193,7 +231,7 @@ func TestPersistenceAcrossRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s1.EnqueueIssue(ctx, "acme", "todo", 1, "survive restart", "", ""); err != nil {
+	if _, err := s1.EnqueueIssue(ctx, "acme", "todo", 1, "survive restart", "", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := s1.Close(); err != nil {
@@ -293,7 +331,7 @@ func TestConcurrentEnqueueAndClaim(t *testing.T) {
 		wg.Add(1)
 		go func(num int) {
 			defer wg.Done()
-			_, err := s.EnqueueIssue(ctx, "acme", "repo", num, "title", "", "")
+			_, err := s.EnqueueIssue(ctx, "acme", "repo", num, "title", "", "", "")
 			if err != nil {
 				t.Errorf("enqueue %d: %v", num, err)
 			}
@@ -313,9 +351,7 @@ func TestConcurrentEnqueueAndClaim(t *testing.T) {
 	// Concurrent claims.
 	var claimed int32
 	for range n {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			task, err := s.ClaimNext(ctx)
 			if err != nil {
 				t.Errorf("ClaimNext: %v", err)
@@ -324,7 +360,7 @@ func TestConcurrentEnqueueAndClaim(t *testing.T) {
 			if task != nil {
 				atomic.AddInt32(&claimed, 1)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -335,7 +371,7 @@ func TestConcurrentEnqueueAndClaim(t *testing.T) {
 
 func TestContextCancellation(t *testing.T) {
 	s := openTest(t)
-	_, _ = s.EnqueueIssue(context.Background(), "acme", "repo", 1, "t", "", "")
+	_, _ = s.EnqueueIssue(context.Background(), "acme", "repo", 1, "t", "", "", "")
 
 	t.Run("cancelled context on ClaimNext", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -423,8 +459,8 @@ func TestStatusCountsAfterTransitions(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	s.EnqueueIssue(ctx, "acme", "repo", 1, "t1", "", "")
-	s.EnqueueIssue(ctx, "acme", "repo", 2, "t2", "", "")
+	s.EnqueueIssue(ctx, "acme", "repo", 1, "t1", "", "", "")
+	s.EnqueueIssue(ctx, "acme", "repo", 2, "t2", "", "", "")
 
 	task1, _ := s.ClaimNext(ctx)
 	task2, _ := s.ClaimNext(ctx)
@@ -505,4 +541,3 @@ func TestClearTerminalTasksEmptyStore(t *testing.T) {
 		t.Errorf("ClearTerminalTasks on empty store should return 0, got %d", n)
 	}
 }
-

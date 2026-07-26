@@ -14,7 +14,9 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
+	"time"
 
 	natsio "github.com/nats-io/nats.go"
 
@@ -39,10 +41,14 @@ import (
 	"github.com/samcharles93/archie-core/internal/nell"
 	"github.com/samcharles93/archie-core/internal/tools"
 	"github.com/samcharles93/archie-core/internal/tools/mcp"
+	toolprovider "github.com/samcharles93/archie-core/internal/tools/provider"
+	mcptoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/mcp"
+	memorytoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/memory"
 
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
 	"github.com/samcharles93/archie-core/internal/secret"
+	"github.com/samcharles93/archie-core/internal/skill"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/storerpc"
@@ -55,6 +61,46 @@ import (
 
 func main() {
 	os.Exit(run())
+}
+
+const defaultChatMaxSteps = 8
+
+func chatGenerateOptions(
+	messages []chat.Message,
+	registry *tools.Registry,
+) (core.GenerateOptions, error) {
+	toolSet, err := agentexec.BuildToolSet(registry)
+	if err != nil {
+		return core.GenerateOptions{}, err
+	}
+	return core.GenerateOptions{
+		Messages: messages,
+		Tools:    toolSet,
+		MaxSteps: defaultChatMaxSteps,
+	}, nil
+}
+
+func configuredMCPProvider(server config.MCPServer) (toolprovider.Engine, error) {
+	name := strings.TrimSpace(server.Name)
+	if name == "" {
+		return nil, fmt.Errorf("MCP server name is required")
+	}
+	transportType := strings.ToLower(strings.TrimSpace(server.Transport))
+	if transportType == "" {
+		transportType = "stdio"
+	}
+	if transportType != "stdio" {
+		return nil, fmt.Errorf("MCP transport %q is not supported", transportType)
+	}
+	command := strings.TrimSpace(server.Command)
+	if command == "" {
+		return nil, fmt.Errorf("MCP stdio server %q requires a command", name)
+	}
+	transport := mcp.NewStdioTransport(mcp.StdioTransportConfig{
+		Command: command,
+		Args:    append([]string(nil), server.Args...),
+	})
+	return mcptoolprovider.New(name, transport), nil
 }
 
 func run() int {
@@ -193,12 +239,28 @@ func run() int {
 	// Telegram router for non-command message processing.
 	providers := executionProviders(cfg)
 	llm := agentexec.NewRuntime(providers)
+	toolReg := tools.NewRegistry()
 
 	// ── Persona registry ─────────────────────────────────────────────
 	personas := gateway.NewPersonaRegistry(gateway.DefaultPersonas())
 
+	profiles, defaultChatIdentity := chatTaskProfiles(cfg)
+	var chatTasks gateway.TaskCreator
+	if len(profiles) > 0 {
+		chatTasks = gateway.NewStoreTaskCreatorForProfiles(
+			chatTaskWriterAdapter{enqueue: st.EnqueueChatTask},
+			profiles,
+		)
+	}
+	chatController := gateway.NewStoreTaskController(chatTaskControllerAdapter{
+		taskByID:   st.TaskByID,
+		requeue:    st.Requeue,
+		transition: st.Transition,
+	})
+
 	// ── Gateways ──────────────────────────────────────────────────────
 	// Multi-agent collaboration PRD phase C (docs/prds/multi-agent-collaboration.md).
+	var startGateways []func()
 	if cfg.Chat.Telegram.TokenEnv != "" {
 		tgToken := os.Getenv(cfg.Chat.Telegram.TokenEnv)
 		if tgToken == "" {
@@ -278,10 +340,15 @@ func run() int {
 					}
 				}
 
-				result, err := llm.Chat(ctx, chatModel, core.GenerateOptions{
-					Messages: messages,
-					MaxSteps: 1,
-				})
+				options, err := chatGenerateOptions(messages, toolReg)
+				if err != nil {
+					return "", fmt.Errorf("build chat tools: %w", err)
+				}
+				result, err := llm.Chat(
+					ctx,
+					chatModel,
+					options,
+				)
 				if err != nil {
 					return "", fmt.Errorf("llm chat: %w", err)
 				}
@@ -297,27 +364,30 @@ func run() int {
 		}
 
 		router := gateway.NewRouter(st, llmResponder, "telegram")
-		if len(cfg.Repos) > 0 {
-			router.Tasks = gateway.NewStoreTaskCreator(st, cfg.Repos[0].Owner, cfg.Repos[0].Name)
-		}
-		go func() {
-			if err := tg.Start(ctx, router); err != nil && ctx.Err() == nil {
-				log.Error("telegram gateway stopped", "err", err)
-			}
-		}()
-		log.Info("telegram gateway started")
+		configureTaskCommands(router, chatTasks, chatController, defaultChatIdentity)
+		startGateways = append(startGateways, func() {
+			go func() {
+				if err := tg.Start(ctx, router); err != nil && ctx.Err() == nil {
+					log.Error("telegram gateway stopped", "err", err)
+				}
+			}()
+			log.Info("telegram gateway started")
+		})
 	}
 
 	// ── Email gateway (optional) ───────────────────────────────────
 	if cfg.Chat.Email.ListenAddr != "" {
 		em := email.New(cfg.Chat.Email.ListenAddr, cfg.Chat.Email.RelayAddr, log)
 		emRouter := gateway.NewRouter(st, nil, "email")
-		go func() {
-			if err := em.Start(ctx, emRouter); err != nil && ctx.Err() == nil {
-				log.Error("email gateway stopped", "err", err)
-			}
-		}()
-		log.Info("email gateway started", "addr", cfg.Chat.Email.ListenAddr)
+		configureTaskCommands(emRouter, chatTasks, chatController, defaultChatIdentity)
+		startGateways = append(startGateways, func() {
+			go func() {
+				if err := em.Start(ctx, emRouter); err != nil && ctx.Err() == nil {
+					log.Error("email gateway stopped", "err", err)
+				}
+			}()
+			log.Info("email gateway started", "addr", cfg.Chat.Email.ListenAddr)
+		})
 	}
 
 	// ── Webhook gateway (optional) ─────────────────────────────────
@@ -330,12 +400,15 @@ func run() int {
 			log,
 		)
 		whRouter := gateway.NewRouter(st, nil, "webhook")
-		go func() {
-			if err := wh.Start(ctx, whRouter); err != nil && ctx.Err() == nil {
-				log.Error("webhook gateway stopped", "err", err)
-			}
-		}()
-		log.Info("webhook gateway started", "addr", fmt.Sprintf("%s:%d", host, port))
+		configureTaskCommands(whRouter, chatTasks, chatController, defaultChatIdentity)
+		startGateways = append(startGateways, func() {
+			go func() {
+				if err := wh.Start(ctx, whRouter); err != nil && ctx.Err() == nil {
+					log.Error("webhook gateway stopped", "err", err)
+				}
+			}()
+			log.Info("webhook gateway started", "addr", fmt.Sprintf("%s:%d", host, port))
+		})
 	}
 
 	var agentRunner agentexec.Runner
@@ -350,7 +423,7 @@ func run() int {
 				Providers:     providers,
 			}
 		case "inprocess":
-			agentRunner = agentexec.NewInProcessRunner(llm, log)
+			agentRunner = agentexec.NewInProcessRunner(llm, log, toolReg)
 		case "nats":
 			if natsClient == nil {
 				log.Error("agent.mode is nats but [nats] is not configured")
@@ -378,17 +451,24 @@ func run() int {
 
 	// Load daemon plugins from the configured plugin directory (Layer 2).
 	// Failed plugins are skipped  --  the daemon starts with the remaining set.
-	var pluginReg *plugin.Registry
+	capabilityHost := plugin.NewHost()
 	if cfg.PluginDir != "" {
 		plugins, err := plugin.LoadDir(cfg.PluginDir, pluginextract.Symbols)
 		if err != nil {
 			log.Error("plugin load failed", "dir", cfg.PluginDir, "err", err)
 			return 1
 		}
-		pluginReg = &plugin.Registry{}
 		for _, p := range plugins {
-			pluginReg.Register(p)
 			name, version := safePluginInfo(p)
+			module, err := plugin.AdaptLegacy(p)
+			if err != nil {
+				log.Warn("daemon plugin capability registration skipped", "name", name, "version", version, "err", err)
+				continue
+			}
+			if err := capabilityHost.Register(module); err != nil {
+				log.Warn("daemon plugin capability registration skipped", "name", name, "version", version, "err", err)
+				continue
+			}
 			log.Info("daemon plugin loaded", "name", name, "version", version)
 		}
 	}
@@ -399,6 +479,40 @@ func run() int {
 		BotUser:  cfg.BotUser,
 		BotEmail: cfg.BotEmail,
 		BaseURL:  cfg.Forge.Host,
+	}
+
+	// ── Multi-identity composition ──────────────────────────────────────
+	// Each configured identity gets its own forge client (its own token,
+	// possibly its own forge type/host) and its own worktree manager (a
+	// distinct WorkDir so concurrent identities never collide on the same
+	// clone). When cfg.Identities is empty, Daemon.Identities stays nil
+	// and Run() takes the legacy single-identity path unchanged.
+	var identityRunners []*daemon.IdentityRunner
+	for _, idCfg := range cfg.Identities {
+		idToken, err := idCfg.Forge.Token.Resolve(secrets)
+		if err != nil || idToken == "" {
+			log.Error("identity forge token unresolved", "identity", idCfg.Name, "err", err)
+			return 1
+		}
+		idForge, err := forge.New(idCfg.Forge.Type, idToken, idCfg.Forge.Host, log)
+		if err != nil {
+			log.Error("identity forge client failed", "identity", idCfg.Name, "err", err)
+			return 1
+		}
+		idTrees := &worktree.Manager{
+			WorkDir:  filepath.Join(cfg.WorkDir, "identity-"+idCfg.Name),
+			Token:    idToken,
+			BotUser:  idCfg.BotUser,
+			BotEmail: idCfg.BotEmail,
+			BaseURL:  idCfg.Forge.Host,
+		}
+		runner, err := daemon.NewIdentityRunner(ctx, idCfg, idForge, idTrees, log)
+		if err != nil {
+			log.Error("identity construction failed", "identity", idCfg.Name, "err", err)
+			return 1
+		}
+		identityRunners = append(identityRunners, runner)
+		log.Info("identity configured", "identity", idCfg.Name, "bot_user", idCfg.BotUser, "repos", len(idCfg.Repos))
 	}
 
 	// Let archie-agent containers (which hold no DB connection, forge
@@ -432,6 +546,13 @@ func run() int {
 	if err := memManager.Initialize("daemon"); err != nil {
 		log.Warn("memory manager initialize", "err", err)
 	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := memManager.ShutdownContext(shutdownCtx); err != nil {
+			log.Error("memory manager shutdown", "err", err)
+		}
+	}()
 	log.Info("memory manager started", "dir", memDir)
 
 	// ── Guardrail engine ───────────────────────────────────────────────
@@ -444,21 +565,42 @@ func run() int {
 	)
 
 	// ── Tool registry ──────────────────────────────────────────────────
-	toolReg := tools.NewRegistry()
+	providerRegistry := toolprovider.NewRegistry(toolReg)
+	if err := providerRegistry.Register(memorytoolprovider.New(memManager)); err != nil {
+		log.Error("memory tool provider registration failed", "err", err)
+		return 1
+	}
 	for _, srv := range cfg.Tools.MCPServers {
-		transport := mcp.NewStdioTransport(mcp.StdioTransportConfig{
-			Command: srv.Command,
-			Args:    srv.Args,
-		})
-		if err := transport.Start(context.Background()); err != nil {
-			log.Error("mcp server start failed", "name", srv.Name, "err", err)
+		provider, err := configuredMCPProvider(srv)
+		if err != nil {
+			log.Warn("mcp tool provider skipped", "name", srv.Name, "err", err)
 			continue
 		}
-		log.Info("mcp server started", "name", srv.Name)
+		if err := providerRegistry.Register(provider); err != nil {
+			log.Error("mcp tool provider registration failed", "name", srv.Name, "err", err)
+			return 1
+		}
 	}
-	// Built-in tools and MCP-discovered tools are registered at startup
-	// via init() and the MCP transport. Tool discovery via Yaegi is
-	// deferred to the container/agent runtime.
+	if err := capabilityHost.Register(providerRegistry); err != nil {
+		log.Error("tool-provider capability registration failed", "err", err)
+		return 1
+	}
+
+	// Skill catalog → skill_activate tool (progressive disclosure: the
+	// catalog's name+description is always in the tool schema; the full
+	// SKILL.md body loads only when the model activates one).
+	if catalog, err := skill.Catalog(cfg.WorkDir); err != nil {
+		log.Warn("skill catalog load failed", "err", err)
+	} else if entry := skill.ActivateTool(cfg.WorkDir, catalog); entry != nil {
+		if err := toolReg.Register(*entry); err != nil {
+			log.Warn("skill_activate registration failed", "err", err)
+		} else {
+			log.Info("skill catalog registered", "skills", len(catalog))
+		}
+	}
+
+	// Built-in tools are registered at startup via init(). Tool discovery
+	// via Yaegi is deferred to the container/agent runtime.
 
 	d := &daemon.Daemon{
 		Cfg:            cfg,
@@ -469,7 +611,7 @@ func run() int {
 		Runtime:        llm,
 		Agent:          agentRunner,
 		Workflows:      registry,
-		PluginRegistry: pluginReg,
+		CapabilityHost: capabilityHost,
 		Storage:        storeBackend,
 		Log:            log,
 		CustomStages:   wfeval.Discover,
@@ -478,11 +620,27 @@ func run() int {
 		Memory:         memManager,
 		Guardrails:     guardrails,
 		ToolRegistry:   toolReg,
+		Identities:     identityRunners,
+	}
+
+	defer func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := capabilityHost.Stop(stopCtx); err != nil {
+			log.Error("capability host shutdown", "err", err)
+		}
+	}()
+	if err := capabilityHost.Start(ctx); err != nil {
+		log.Error("capability host startup", "err", err)
+		return 1
 	}
 
 	if err := d.Startup(ctx); err != nil {
 		log.Error("startup", "err", err)
 		return 1
+	}
+	for _, startGateway := range startGateways {
+		startGateway()
 	}
 
 	if *once {
@@ -495,6 +653,111 @@ func run() int {
 		return 1
 	}
 	return 0
+}
+
+type chatTaskWriterAdapter struct {
+	enqueue func(
+		ctx context.Context,
+		owner, repo, title, body, workflow, identity string,
+		issueNumber int,
+	) (*store.Task, error)
+}
+
+func (a chatTaskWriterAdapter) EnqueueChatTask(
+	ctx context.Context,
+	owner, repo, title, body, workflow, identity string,
+	issueNumber int,
+) (int64, error) {
+	task, err := a.enqueue(ctx, owner, repo, title, body, workflow, identity, issueNumber)
+	if err != nil {
+		return 0, err
+	}
+	if task == nil {
+		return 0, fmt.Errorf("enqueue chat task returned no task")
+	}
+	return task.ID, nil
+}
+
+type chatTaskControllerAdapter struct {
+	taskByID   func(context.Context, int64) (*store.Task, error)
+	requeue    func(context.Context, int64, string, string) error
+	transition func(context.Context, int64, string, string, string) error
+}
+
+func (a chatTaskControllerAdapter) ChatTaskStatus(ctx context.Context, taskID int64) (gateway.ChatTaskStatus, bool, error) {
+	task, err := a.taskByID(ctx, taskID)
+	if err != nil {
+		return gateway.ChatTaskStatus{}, false, err
+	}
+	if task == nil {
+		return gateway.ChatTaskStatus{}, false, nil
+	}
+	if !task.IsForgeBacked() {
+		return gateway.ChatTaskStatus{Status: task.Status, Identity: task.Identity}, true, nil
+	}
+	return gateway.ChatTaskStatus{}, false, fmt.Errorf("task %d is not chat-originated", taskID)
+}
+
+func (a chatTaskControllerAdapter) ApproveChatTask(ctx context.Context, taskID int64) error {
+	return a.requeue(ctx, taskID, store.StatusWaitingHuman, "implement")
+}
+
+func (a chatTaskControllerAdapter) CancelChatTask(ctx context.Context, taskID int64, reason string) error {
+	task, err := a.taskByID(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if task == nil {
+		return fmt.Errorf("task %d not found", taskID)
+	}
+	if task.IsForgeBacked() {
+		return fmt.Errorf("task %d is not chat-originated", taskID)
+	}
+	return a.transition(ctx, taskID, task.Status, store.StatusRejected, reason)
+}
+
+func chatTaskProfiles(cfg config.Config) ([]gateway.TaskProfile, string) {
+	if len(cfg.Identities) > 0 {
+		profiles := make([]gateway.TaskProfile, 0, len(cfg.Identities))
+		for _, identity := range cfg.Identities {
+			if len(identity.Repos) == 0 {
+				continue
+			}
+			profiles = append(profiles, newChatTaskProfile(identity.Name, identity.Repos))
+		}
+		if len(profiles) == 0 {
+			return nil, ""
+		}
+		return profiles, profiles[0].Identity
+	}
+	if len(cfg.Repos) == 0 {
+		return nil, ""
+	}
+	return []gateway.TaskProfile{newChatTaskProfile("", cfg.Repos)}, ""
+}
+
+func newChatTaskProfile(identity string, repos []config.Repo) gateway.TaskProfile {
+	allowed := make([]string, 0, len(repos))
+	for _, repo := range repos {
+		allowed = append(allowed, repo.Owner+"/"+repo.Name)
+	}
+	return gateway.TaskProfile{
+		Identity:     identity,
+		DefaultOwner: repos[0].Owner,
+		DefaultRepo:  repos[0].Name,
+		Repos:        allowed,
+	}
+}
+
+func configureTaskCommands(
+	router *gateway.Router,
+	tasks gateway.TaskCreator,
+	controller gateway.TaskController,
+	identity string,
+) {
+	router.Tasks = tasks
+	router.Controller = controller
+	router.Identity = identity
 }
 
 // parseListenAddr splits "host:port" into components, using defaults

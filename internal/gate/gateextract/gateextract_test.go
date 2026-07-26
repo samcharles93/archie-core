@@ -22,14 +22,14 @@ func TestSymbolsContainsExpectedEntries(t *testing.T) {
 	// Finding must be a pointer type.
 	if v, ok := pkg["Finding"]; !ok {
 		t.Error("Finding not found in Symbols")
-	} else if v.Kind() != reflect.Ptr {
+	} else if v.Kind() != reflect.Pointer {
 		t.Errorf("Finding kind = %v, want Ptr", v.Kind())
 	}
 
 	// GateContext must be a pointer type.
 	if v, ok := pkg["GateContext"]; !ok {
 		t.Error("GateContext not found in Symbols")
-	} else if v.Kind() != reflect.Ptr {
+	} else if v.Kind() != reflect.Pointer {
 		t.Errorf("GateContext kind = %v, want Ptr", v.Kind())
 	}
 }

@@ -89,7 +89,7 @@ type CompressedMessage struct {
 func CompressHistory(messages []CompressedMessage, cfg CompressionConfig) CompressedView {
 	if !cfg.Enabled || cfg.ContextWindow <= 0 {
 		return CompressedView{
-			Messages:  messages,
+			Messages:    messages,
 			TokensAfter: estimateTotal(messages),
 		}
 	}
@@ -99,21 +99,15 @@ func CompressHistory(messages []CompressedMessage, cfg CompressionConfig) Compre
 
 	if totalTokens <= threshold || len(messages) <= cfg.ProtectFirst+cfg.ProtectLast {
 		return CompressedView{
-			Messages:      messages,
-			TokensBefore:  totalTokens,
-			TokensAfter:   totalTokens,
+			Messages:     messages,
+			TokensBefore: totalTokens,
+			TokensAfter:  totalTokens,
 		}
 	}
 
 	// Compression: keep first N + summary marker + last N.
-	protectLast := cfg.ProtectLast
-	if protectLast > len(messages) {
-		protectLast = len(messages)
-	}
-	protectFirst := cfg.ProtectFirst
-	if protectFirst > len(messages)-protectLast {
-		protectFirst = len(messages) - protectLast
-	}
+	protectLast := min(cfg.ProtectLast, len(messages))
+	protectFirst := min(cfg.ProtectFirst, len(messages)-protectLast)
 
 	// Build a summary of the truncated middle.
 	truncated := messages[protectFirst : len(messages)-protectLast]
@@ -127,10 +121,10 @@ func CompressHistory(messages []CompressedMessage, cfg CompressionConfig) Compre
 	compressedTokens := estimateTotal(compressed)
 
 	return CompressedView{
-		Messages:       compressed,
-		WasCompressed:  true,
-		TokensBefore:   totalTokens,
-		TokensAfter:    compressedTokens,
+		Messages:      compressed,
+		WasCompressed: true,
+		TokensBefore:  totalTokens,
+		TokensAfter:   compressedTokens,
 	}
 }
 

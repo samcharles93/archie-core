@@ -252,21 +252,23 @@ func (m *mockProvider) BackupPaths() []string {
 //
 // Verify mockProvider satisfies every interface in the package.
 
-var _ MemoryProvider = (*mockProvider)(nil)
-var _ SystemPromptProvider = (*mockProvider)(nil)
-var _ PrefetchProvider = (*mockProvider)(nil)
-var _ SyncTurnProvider = (*mockProvider)(nil)
-var _ ToolCallProvider = (*mockProvider)(nil)
-var _ ShutdownProvider = (*mockProvider)(nil)
-var _ TurnStartHook = (*mockProvider)(nil)
-var _ SessionEndHook = (*mockProvider)(nil)
-var _ SessionSwitchHook = (*mockProvider)(nil)
-var _ PreCompressHook = (*mockProvider)(nil)
-var _ MemoryWriteHook = (*mockProvider)(nil)
-var _ DelegationHook = (*mockProvider)(nil)
-var _ ConfigSchemaProvider = (*mockProvider)(nil)
-var _ SaveConfigProvider = (*mockProvider)(nil)
-var _ BackupProvider = (*mockProvider)(nil)
+var (
+	_ MemoryProvider       = (*mockProvider)(nil)
+	_ SystemPromptProvider = (*mockProvider)(nil)
+	_ PrefetchProvider     = (*mockProvider)(nil)
+	_ SyncTurnProvider     = (*mockProvider)(nil)
+	_ ToolCallProvider     = (*mockProvider)(nil)
+	_ ShutdownProvider     = (*mockProvider)(nil)
+	_ TurnStartHook        = (*mockProvider)(nil)
+	_ SessionEndHook       = (*mockProvider)(nil)
+	_ SessionSwitchHook    = (*mockProvider)(nil)
+	_ PreCompressHook      = (*mockProvider)(nil)
+	_ MemoryWriteHook      = (*mockProvider)(nil)
+	_ DelegationHook       = (*mockProvider)(nil)
+	_ ConfigSchemaProvider = (*mockProvider)(nil)
+	_ SaveConfigProvider   = (*mockProvider)(nil)
+	_ BackupProvider       = (*mockProvider)(nil)
+)
 
 // ── Tests ───────────────────────────────────────────────────────────────
 
@@ -1163,29 +1165,36 @@ func (p *panickyProvider) GetToolSchemas() []tools.ToolEntry {
 func (p *panickyProvider) OnTurnStart(sessionID string) error {
 	panic("OnTurnStart panicked")
 }
+
 func (p *panickyProvider) OnSessionEnd(sessionID string) error {
 	panic("OnSessionEnd panicked")
 }
+
 func (p *panickyProvider) OnSessionSwitch(oldSessionID, newSessionID string) error {
 	panic("OnSessionSwitch panicked")
 }
+
 func (p *panickyProvider) OnPreCompress(sessionID string) error {
 	panic("OnPreCompress panicked")
 }
+
 func (p *panickyProvider) OnMemoryWrite(sessionID string, content string) error {
 	panic("OnMemoryWrite panicked")
 }
+
 func (p *panickyProvider) OnDelegation(sessionID string) error {
 	panic("OnDelegation panicked")
 }
 
-var _ MemoryProvider = (*panickyProvider)(nil)
-var _ TurnStartHook = (*panickyProvider)(nil)
-var _ SessionEndHook = (*panickyProvider)(nil)
-var _ SessionSwitchHook = (*panickyProvider)(nil)
-var _ PreCompressHook = (*panickyProvider)(nil)
-var _ MemoryWriteHook = (*panickyProvider)(nil)
-var _ DelegationHook = (*panickyProvider)(nil)
+var (
+	_ MemoryProvider    = (*panickyProvider)(nil)
+	_ TurnStartHook     = (*panickyProvider)(nil)
+	_ SessionEndHook    = (*panickyProvider)(nil)
+	_ SessionSwitchHook = (*panickyProvider)(nil)
+	_ PreCompressHook   = (*panickyProvider)(nil)
+	_ MemoryWriteHook   = (*panickyProvider)(nil)
+	_ DelegationHook    = (*panickyProvider)(nil)
+)
 
 // ── Sync pipeline tests (18.7) ──────────────────────────────────────────
 
@@ -1690,7 +1699,7 @@ func TestManager_ShutdownContext_DrainsPipeline(t *testing.T) {
 	}
 
 	// Submit a few ops.
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		done := make(chan error, 1)
 		op := SyncOp{
 			Type:      SyncOpMemoryWrite,
@@ -1752,7 +1761,7 @@ func TestManager_ShutdownContext_AbandonedCount(t *testing.T) {
 	}
 
 	// Submit ops that will block in processing.
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		op := SyncOp{
 			Type:      SyncOpMemoryWrite,
 			Provider:  ext.Name(),

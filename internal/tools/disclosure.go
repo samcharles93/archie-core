@@ -34,7 +34,7 @@ func IsBridgeTool(name string) bool {
 }
 
 // ToolSummary is a lightweight representation of a tool used in bridge
-// tool search results. It contains only name, description, and emoji  -- 
+// tool search results. It contains only name, description, and emoji  --
 // enough for the LLM to decide whether to call tool_describe for full schema.
 type ToolSummary struct {
 	Name        string `json:"name"`

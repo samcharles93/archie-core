@@ -28,6 +28,10 @@ type TaskMessage struct {
 	Title  string `json:"title"`
 	Body   string `json:"body"`
 	Labels string `json:"labels"` // comma-separated
+	// Identity is the archie identity whose forge poll discovered this
+	// issue (empty for single-identity deployments). Carried through so
+	// the consuming daemon can enqueue the task with the right owner.
+	Identity string `json:"identity,omitempty"`
 }
 
 // Client manages the NATS connection and JetStream resources.
@@ -113,14 +117,15 @@ func (c *Client) NewReplyInbox() (*nats.Subscription, error) {
 
 // PublishTask publishes a discovered issue to the appropriate NATS subject.
 // The Nats-Msg-Id header enables JetStream dedup within the dedup window.
-func (c *Client) PublishTask(ctx context.Context, owner, repo string, number int, title, body, labels string) error {
+func (c *Client) PublishTask(ctx context.Context, owner, repo string, number int, title, body, labels, identity string) error {
 	msg := TaskMessage{
-		Owner:  owner,
-		Repo:   repo,
-		Number: number,
-		Title:  title,
-		Body:   body,
-		Labels: labels,
+		Owner:    owner,
+		Repo:     repo,
+		Number:   number,
+		Title:    title,
+		Body:     body,
+		Labels:   labels,
+		Identity: identity,
 	}
 	data, err := json.Marshal(msg)
 	if err != nil {

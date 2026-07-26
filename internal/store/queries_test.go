@@ -16,7 +16,7 @@ func TestTaskByIssue(t *testing.T) {
 		t.Fatalf("TaskByIssue on empty store = (%+v, %v)", got, err)
 	}
 
-	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "title", "body", "bug"); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "title", "body", "bug", ""); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.TaskByIssue(ctx, "acme", "widget", 1)
@@ -36,7 +36,7 @@ func TestWaitingTasksAndRequeue(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "t", "b", ""); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "t", "b", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	task, err := s.ClaimNext(ctx)
@@ -117,7 +117,7 @@ func TestTasksListingAndStatusCounts(t *testing.T) {
 	ctx := context.Background()
 
 	for i, status := range []string{StatusQueued, StatusRunning, StatusPROpen} {
-		if _, err := s.EnqueueIssue(ctx, "acme", "widget", i+1, "t", "b", ""); err != nil {
+		if _, err := s.EnqueueIssue(ctx, "acme", "widget", i+1, "t", "b", "", ""); err != nil {
 			t.Fatal(err)
 		}
 		task, err := s.TaskByIssue(ctx, "acme", "widget", i+1)
@@ -157,7 +157,7 @@ func TestWorkflowStats(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "t", "b", ""); err != nil {
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "t", "b", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	task, err := s.ClaimNext(ctx)

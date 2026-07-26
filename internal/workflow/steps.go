@@ -31,7 +31,7 @@ func StagePrepareWorktree() Stage {
 	}}
 }
 
-// StageCommit commits everything in the worktree without pushing  -- 
+// StageCommit commits everything in the worktree without pushing  --
 // used mid-workflow so a PR tells its story in multiple commits (TDD:
 // failing tests first, fix second). An empty tree parks.
 func StageCommit(name string, message func(*TaskContext) string) Stage {
@@ -54,14 +54,16 @@ func StageCommit(name string, message func(*TaskContext) string) Stage {
 func StageCommitPush(message func(*TaskContext) string) Stage {
 	return Stage{Name: "commit-push", Run: func(ctx context.Context, tc *TaskContext) error {
 		if tc.BuildNoChanges {
-			body := fmt.Sprintf("**archie closed this issue  --  no changes required.**\n\n%s", tc.BuildSummary)
-			if _, err := tc.Forge.Comment(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, body); err != nil {
-				tc.Log.Warn("no-op close comment failed", "err", err)
+			if tc.Task.IsForgeBacked() {
+				body := fmt.Sprintf("**archie closed this issue  --  no changes required.**\n\n%s", tc.BuildSummary)
+				if _, err := tc.Forge.Comment(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, body); err != nil {
+					tc.Log.Warn("no-op close comment failed", "err", err)
+				}
+				if err := tc.Forge.CloseIssue(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, ""); err != nil {
+					return err
+				}
 			}
-			if err := tc.Forge.CloseIssue(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, ""); err != nil {
-				return err
-			}
-			tc.Outcome = Outcome{Status: store.StatusMerged, Detail: "closed  --  no changes required"}
+			tc.Outcome = Outcome{Status: store.StatusMerged, Detail: "completed  --  no changes required"}
 			return nil
 		}
 		commit := StageCommit("commit-push", message)
@@ -72,7 +74,7 @@ func StageCommitPush(message func(*TaskContext) string) Stage {
 	}}
 }
 
-// StageDiffCap parks tasks whose diff exceeds the configured line cap  -- 
+// StageDiffCap parks tasks whose diff exceeds the configured line cap  --
 // oversized changes need human pre-approval, not an auto-opened PR.
 func StageDiffCap() Stage {
 	return Stage{Name: "diff-cap", Run: func(ctx context.Context, tc *TaskContext) error {
@@ -190,6 +192,35 @@ func StageOpenPR(body func(*TaskContext) string) Stage {
 	}}
 }
 
+func issueClosureReference(task *store.Task) string {
+	if !task.IsForgeBacked() {
+		return ""
+	}
+	return fmt.Sprintf("\n\nCloses #%d", task.IssueNumber)
+}
+
+func taskPromptBlock(task *store.Task) string {
+	if task.IsForgeBacked() {
+		return fmt.Sprintf("<issue number=%d>\n# %s\n\n%s\n</issue>",
+			task.IssueNumber, task.Title, task.Body)
+	}
+	return fmt.Sprintf("<task source=\"chat\">\n# %s\n\n%s\n</task>", task.Title, task.Body)
+}
+
+func taskKind(task *store.Task) string {
+	if task.IsForgeBacked() {
+		return "GitHub issue"
+	}
+	return "chat-originated task"
+}
+
+func commitIssueReference(verb string, task *store.Task) string {
+	if !task.IsForgeBacked() {
+		return ""
+	}
+	return fmt.Sprintf("\n\n%s #%d", verb, task.IssueNumber)
+}
+
 // Bootstrap is the deterministic no-LLM workflow that proves the
 // plumbing: it adds a marker file and opens a PR referencing the issue.
 // It stays registered as a diagnostics workflow (label a test issue and
@@ -204,16 +235,17 @@ func Bootstrap() Workflow {
 				if err := os.MkdirAll(dir, 0o755); err != nil {
 					return err
 				}
-				content := fmt.Sprintf("# archie bootstrap\n\nIssue: #%d  --  %s\nTime: %s\n\nThis file proves the archie pipeline (poll → worktree → push → PR) works for this repository.\n",
-					tc.Task.IssueNumber, tc.Task.Title, time.Now().UTC().Format(time.RFC3339))
+				content := fmt.Sprintf("# archie bootstrap\n\n%s\nTime: %s\n\nThis file proves the archie pipeline (queue → worktree → push → PR) works for this repository.\n",
+					taskPromptBlock(tc.Task), time.Now().UTC().Format(time.RFC3339))
 				return os.WriteFile(filepath.Join(dir, "bootstrap.md"), []byte(content), 0o644)
 			}},
 			StageCommitPush(func(tc *TaskContext) string {
-				return fmt.Sprintf("chore: archie bootstrap marker for #%d", tc.Task.IssueNumber)
+				return "chore: archie bootstrap marker" + commitIssueReference("Refs", tc.Task)
 			}),
 			StageDiffCap(),
 			StageOpenPR(func(tc *TaskContext) string {
-				return fmt.Sprintf("Deterministic bootstrap PR from archie's plumbing walk-through.\n\nCloses #%d", tc.Task.IssueNumber)
+				return "Deterministic bootstrap PR from archie's plumbing walk-through." +
+					issueClosureReference(tc.Task)
 			}),
 		},
 	}

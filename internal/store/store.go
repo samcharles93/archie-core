@@ -55,6 +55,32 @@ type Task struct {
 	// WatchCommentID: replies to the issue after this comment are the
 	// human input a waiting_human task is blocked on.
 	WatchCommentID int64 `json:"watch_comment_id"`
+	// Source is "forge" (default; a real forge issue backs this task) or
+	// "chat" (created via /spawn with no forge issue). Workflow stages
+	// and daemon reconciliation must skip forge-only operations (issue
+	// labels, comments, replies) for chat-sourced tasks; IssueNumber on
+	// a chat task is a synthetic value, not a real forge issue.
+	Source string `json:"source"`
+	// Identity is the archie identity that owns this task (chat-spawned
+	// tasks only; empty for forge-sourced tasks and single-identity
+	// deployments). Used to scope /approve and /cancel authorization so
+	// one identity cannot control another's chat-spawned tasks.
+	Identity string `json:"identity"`
+}
+
+// SourceForge and SourceChat are the valid values for Task.Source.
+// Legacy rows and forge-polled tasks have Source == SourceForge (the
+// zero value defaults there via the SQLite column default).
+const (
+	SourceForge = "forge"
+	SourceChat  = "chat"
+)
+
+// IsForgeBacked reports whether t corresponds to a real forge issue.
+// Chat-spawned tasks (Source == SourceChat) have a synthetic
+// IssueNumber and must not be used in forge label/comment/reply calls.
+func (t Task) IsForgeBacked() bool {
+	return t.Source != SourceChat
 }
 
 type Store struct{ db *sql.DB }
@@ -77,6 +103,14 @@ func Open(path string) (*Store, error) {
 		return nil, errors.Join(fmt.Errorf("store: migrate: %w", err), db.Close())
 	}
 	if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column") {
+		return nil, errors.Join(fmt.Errorf("store: migrate: %w", err), db.Close())
+	}
+	if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN source TEXT NOT NULL DEFAULT 'forge'`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column") {
+		return nil, errors.Join(fmt.Errorf("store: migrate: %w", err), db.Close())
+	}
+	if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN identity TEXT NOT NULL DEFAULT ''`); err != nil &&
 		!strings.Contains(err.Error(), "duplicate column") {
 		return nil, errors.Join(fmt.Errorf("store: migrate: %w", err), db.Close())
 	}
@@ -138,17 +172,40 @@ func (s *Store) IncrementRetryCount(ctx context.Context, taskID int64) error {
 
 // EnqueueIssue inserts a new queued task for the issue; returns false if
 // the issue is already tracked (the idempotency key is owner/repo/number).
-func (s *Store) EnqueueIssue(ctx context.Context, owner, repo string, number int, title, body, labels string) (bool, error) {
+// The task's Source defaults to "forge" (the SQLite column default).
+// identity is the archie identity whose forge poll discovered this issue
+// (empty for single-identity deployments); it scopes which identity's
+// forge client, worktree manager, and config downstream processing uses.
+func (s *Store) EnqueueIssue(ctx context.Context, owner, repo string, number int, title, body, labels, identity string) (bool, error) {
 	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO tasks (owner, repo, issue_number, title, body, labels)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO tasks (owner, repo, issue_number, title, body, labels, identity)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(owner, repo, issue_number) DO NOTHING`,
-		owner, repo, number, title, body, labels)
+		owner, repo, number, title, body, labels, identity)
 	if err != nil {
 		return false, err
 	}
 	n, _ := res.RowsAffected()
 	return n > 0, nil
+}
+
+// EnqueueChatTask inserts a new queued task with Source "chat" and no
+// backing forge issue, returning the full created row (with its real
+// database ID  --  callers must not synthesize an ID from issueNumber).
+// issueNumber is a synthetic value used only to satisfy the
+// (owner, repo, issue_number) uniqueness constraint; workflow stages and
+// daemon reconciliation must check Task.IsForgeBacked() before treating
+// it as a real forge issue number.
+func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, workflow, identity string, issueNumber int) (*Task, error) {
+	row := s.db.QueryRowContext(ctx, `
+		INSERT INTO tasks (owner, repo, issue_number, title, body, labels, workflow, source, identity)
+		VALUES (?, ?, ?, ?, ?, 'chat', ?, 'chat', ?)
+		RETURNING id, owner, repo, issue_number, title, body, labels, status,
+			workflow, stage, branch, plan, notes, pr_number, tokens_used,
+			iterations, attempt, park_reason, watch_comment_id, retry_count,
+			source, identity`,
+		owner, repo, issueNumber, title, body, workflow, identity)
+	return scanTask(row)
 }
 
 // ClaimNext atomically moves the oldest queued task to running and
@@ -159,7 +216,8 @@ func (s *Store) ClaimNext(ctx context.Context) (*Task, error) {
 		WHERE id = (SELECT id FROM tasks WHERE status='queued' ORDER BY id LIMIT 1)
 		RETURNING id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
-			iterations, attempt, park_reason, watch_comment_id, retry_count`)
+			iterations, attempt, park_reason, watch_comment_id, retry_count,
+			source, identity`)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -172,7 +230,7 @@ func scanTask(row *sql.Row) (*Task, error) {
 	err := row.Scan(&t.ID, &t.Owner, &t.Repo, &t.IssueNumber, &t.Title, &t.Body,
 		&t.Labels, &t.Status, &t.Workflow, &t.Stage, &t.Branch, &t.Plan, &t.Notes,
 		&t.PRNumber, &t.TokensUsed, &t.Iterations, &t.Attempt, &t.ParkReason,
-		&t.WatchCommentID, &t.RetryCount)
+		&t.WatchCommentID, &t.RetryCount, &t.Source, &t.Identity)
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +247,8 @@ func (s *Store) ClaimByIssue(ctx context.Context, owner, repo string, number int
 		WHERE owner=? AND repo=? AND issue_number=? AND status='queued'
 		RETURNING id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
-			iterations, attempt, park_reason, watch_comment_id, retry_count`, owner, repo, number)
+			iterations, attempt, park_reason, watch_comment_id, retry_count,
+			source, identity`, owner, repo, number)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -227,8 +286,26 @@ func (s *Store) TaskByIssue(ctx context.Context, owner, repo string, number int)
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
-			iterations, attempt, park_reason, watch_comment_id, retry_count
+			iterations, attempt, park_reason, watch_comment_id, retry_count,
+			source, identity
 		FROM tasks WHERE owner=? AND repo=? AND issue_number=?`, owner, repo, number)
+	t, err := scanTask(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return t, err
+}
+
+// TaskByID returns the task with the given database ID, or nil. Used by
+// chat controls (/approve, /cancel) that reference a task by its real
+// ID rather than a forge issue number.
+func (s *Store) TaskByID(ctx context.Context, taskID int64) (*Task, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, owner, repo, issue_number, title, body, labels, status,
+			workflow, stage, branch, plan, notes, pr_number, tokens_used,
+			iterations, attempt, park_reason, watch_comment_id, retry_count,
+			source, identity
+		FROM tasks WHERE id=?`, taskID)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -240,7 +317,7 @@ func (s *Store) TaskByIssue(ctx context.Context, owner, repo string, number int)
 func (s *Store) WaitingTasks(ctx context.Context) (tasks []Task, retErr error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, owner, repo, issue_number, title, body, plan, workflow,
-			watch_comment_id, status
+			watch_comment_id, status, source, identity
 		FROM tasks WHERE status='waiting_human'`)
 	if err != nil {
 		return nil, err
@@ -251,7 +328,8 @@ func (s *Store) WaitingTasks(ctx context.Context) (tasks []Task, retErr error) {
 	for rows.Next() {
 		var t Task
 		if err := rows.Scan(&t.ID, &t.Owner, &t.Repo, &t.IssueNumber, &t.Title,
-			&t.Body, &t.Plan, &t.Workflow, &t.WatchCommentID, &t.Status); err != nil {
+			&t.Body, &t.Plan, &t.Workflow, &t.WatchCommentID, &t.Status,
+			&t.Source, &t.Identity); err != nil {
 			return nil, err
 		}
 		tasks = append(tasks, t)
@@ -289,7 +367,8 @@ func (s *Store) RecoverStale(ctx context.Context) (int64, error) {
 // OpenPRs returns tasks whose PR state should be reconciled with GitHub.
 func (s *Store) OpenPRs(ctx context.Context) (tasks []Task, retErr error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, owner, repo, issue_number, pr_number, status FROM tasks WHERE status='pr_open'`)
+		SELECT id, owner, repo, issue_number, pr_number, status, source, identity
+		FROM tasks WHERE status='pr_open'`)
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +377,8 @@ func (s *Store) OpenPRs(ctx context.Context) (tasks []Task, retErr error) {
 	}()
 	for rows.Next() {
 		var t Task
-		if err := rows.Scan(&t.ID, &t.Owner, &t.Repo, &t.IssueNumber, &t.PRNumber, &t.Status); err != nil {
+		if err := rows.Scan(&t.ID, &t.Owner, &t.Repo, &t.IssueNumber, &t.PRNumber,
+			&t.Status, &t.Source, &t.Identity); err != nil {
 			return nil, err
 		}
 		tasks = append(tasks, t)

@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"strings"
 	"testing"
 )
@@ -114,9 +115,7 @@ func TestToolEntryResolvedSchema(t *testing.T) {
 			Schema:  JSONSchema{"type": "object"},
 			DynamicSchemaOverrides: func(s JSONSchema) JSONSchema {
 				out := JSONSchema{}
-				for k, v := range s {
-					out[k] = v
-				}
+				maps.Copy(out, s)
 				out["dynamic"] = true
 				return out
 			},

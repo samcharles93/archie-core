@@ -146,5 +146,7 @@ func TestTruncateSubject(t *testing.T) {
 }
 
 // Compile-time guard.
-var _ gateway.Gateway = (*Gateway)(nil)
-var _ = smtp.PlainAuth
+var (
+	_ gateway.Gateway = (*Gateway)(nil)
+	_                 = smtp.PlainAuth
+)
