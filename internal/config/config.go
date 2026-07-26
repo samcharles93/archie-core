@@ -451,6 +451,9 @@ type ContainerConfig struct {
 // collaboration PRD, phase C  --  docs/prds/multi-agent-collaboration.md).
 // Empty (Telegram.TokenEnv == "") disables chat entirely.
 type ChatConfig struct {
+	// WebhookAddr is the host:port for the inbound webhook gateway.
+	// Empty disables the webhook gateway.
+	WebhookAddr string `toml:"webhook_addr" yaml:"webhook_addr"`
 	Telegram TelegramConfig `toml:"telegram" yaml:"telegram"`
 }
 

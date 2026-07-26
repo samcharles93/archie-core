@@ -12,6 +12,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"net"
+	"strconv"
 	"syscall"
 
 	natsio "github.com/nats-io/nats.go"
@@ -22,6 +24,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/channels/telegram"
+	"github.com/samcharles93/archie-core/internal/channels/webhook"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/daemon"
@@ -188,6 +191,9 @@ func run() int {
 	providers := executionProviders(cfg)
 	llm := agentexec.NewRuntime(providers)
 
+	// ── Persona registry ─────────────────────────────────────────────
+	personas := gateway.NewPersonaRegistry(gateway.DefaultPersonas())
+
 	// ── Gateways ──────────────────────────────────────────────────────
 	// Multi-agent collaboration PRD phase C (docs/prds/multi-agent-collaboration.md).
 	if cfg.Chat.Telegram.TokenEnv != "" {
@@ -245,6 +251,14 @@ func run() int {
 				compCfg := gateway.DefaultCompressionConfig()
 				view := gateway.CompressHistory(compressed, compCfg)
 
+				// Prepend persona prompt if one is active for this session.
+				if personaPrompt := personas.GetActive(sessionKey); personaPrompt != "" {
+					view.Messages = append(
+						[]gateway.CompressedMessage{{Role: "system", Content: personaPrompt}},
+						view.Messages...,
+					)
+				}
+
 				// Convert to chat.Message for the LLM.
 				messages := make([]chat.Message, len(view.Messages))
 				for i, cm := range view.Messages {
@@ -289,6 +303,24 @@ func run() int {
 			}
 		}()
 		log.Info("telegram gateway started")
+	}
+
+	// ── Webhook gateway (optional) ─────────────────────────────────
+	// Enabled when chat.webhook is set to a host:port listen address.
+	if cfg.Chat.WebhookAddr != "" {
+		host, port := parseListenAddr(cfg.Chat.WebhookAddr, "0.0.0.0", 8644)
+		wh := webhook.New(
+			host, port,
+			[]webhook.RouteConfig{{Path: "/webhook"}},
+			log,
+		)
+		whRouter := gateway.NewRouter(st, nil, "webhook")
+		go func() {
+			if err := wh.Start(ctx, whRouter); err != nil && ctx.Err() == nil {
+				log.Error("webhook gateway stopped", "err", err)
+			}
+		}()
+		log.Info("webhook gateway started", "addr", fmt.Sprintf("%s:%d", host, port))
 	}
 
 	var agentRunner agentexec.Runner
@@ -448,6 +480,23 @@ func run() int {
 		return 1
 	}
 	return 0
+}
+
+// parseListenAddr splits "host:port" into components, using defaults
+// when the input is empty or missing a part.
+func parseListenAddr(addr, defaultHost string, defaultPort int) (string, int) {
+	if addr == "" {
+		return defaultHost, defaultPort
+	}
+	host, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return defaultHost, defaultPort
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port <= 0 {
+		return host, defaultPort
+	}
+	return host, port
 }
 
 // sessionKey builds a deterministic session identifier from a gateway
