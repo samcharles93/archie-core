@@ -1,2 +1,0 @@
-#!/bin/sh
-echo "$ARCHIE_GIT_TOKEN"

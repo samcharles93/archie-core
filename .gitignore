@@ -13,3 +13,4 @@ task.json
 .beads/last-touched
 .hermes-carina/
 config.production.toml
+.gotmp/
