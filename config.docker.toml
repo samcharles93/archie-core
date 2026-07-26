@@ -15,6 +15,7 @@ mode = "nats"
 url = "nats://nats:4222"
 
 [containers]
+network = "archie-core_default"
 enabled = true
 image = "git.catlow.cloud/sam/archie-agent:latest"
 max_concurrency = 4
