@@ -284,12 +284,17 @@ func run() int {
 		// other messages are routed through the LLM with conversation
 		// history from the session store.
 		var llmResponder gateway.LLMResponder
+		var llmStream gateway.LLMStreamResponder
 		if llm != nil {
 			chatModel := cfg.Models["chat"]
 			if chatModel == "" {
 				chatModel = cfg.Models["builder"]
 			}
-			llmResponder = func(ctx context.Context, msg gateway.Message) (string, error) {
+			// respond runs one chat turn. When onDelta is non-nil the reply
+			// is streamed and each fragment reported as it arrives; the
+			// assembled text is returned either way, so both the blocking
+			// and streaming responders share this single path.
+			respond := func(ctx context.Context, msg gateway.Message, onDelta func(string)) (string, error) {
 				sessionKey := sessionKey(msg)
 				_ = sessionStore.SaveMessage(ctx, sessionKey, msg)
 
@@ -345,26 +350,51 @@ func run() int {
 				if err != nil {
 					return "", fmt.Errorf("build chat tools: %w", err)
 				}
-				result, err := llm.Chat(
-					ctx,
-					chatModel,
-					options,
-				)
-				if err != nil {
-					return "", fmt.Errorf("llm chat: %w", err)
+				var text string
+				if onDelta == nil {
+					result, err := llm.Chat(ctx, chatModel, options)
+					if err != nil {
+						return "", fmt.Errorf("llm chat: %w", err)
+					}
+					text = result.Text
+				} else {
+					stream, err := llm.ChatStream(ctx, chatModel, options)
+					if err != nil {
+						return "", fmt.Errorf("llm chat stream: %w", err)
+					}
+					var sb strings.Builder
+					for delta := range stream.TextStream {
+						sb.WriteString(delta)
+						onDelta(delta)
+					}
+					// FinishReason resolves only once the stream is drained,
+					// so a mid-stream provider failure surfaces here rather
+					// than being mistaken for a short but complete reply.
+					if _, err := stream.FinishReason(); err != nil {
+						return "", fmt.Errorf("llm chat stream: %w", err)
+					}
+					text = sb.String()
 				}
 
 				// Persist the response.
 				_ = sessionStore.SaveMessage(ctx, sessionKey, gateway.Message{
 					From: cfg.BotUser,
-					Text: result.Text,
+					Text: text,
 				})
 
-				return result.Text, nil
+				return text, nil
+			}
+
+			llmResponder = func(ctx context.Context, msg gateway.Message) (string, error) {
+				return respond(ctx, msg, nil)
+			}
+			llmStream = func(ctx context.Context, msg gateway.Message, onDelta func(string)) (string, error) {
+				return respond(ctx, msg, onDelta)
 			}
 		}
 
 		router := gateway.NewRouter(st, llmResponder, "telegram")
+		router.LLMStream = llmStream
 		configureTaskCommands(router, chatTasks, chatController, defaultChatIdentity)
 		startGateways = append(startGateways, func() {
 			go func() {

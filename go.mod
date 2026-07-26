@@ -56,7 +56,7 @@ require (
 
 require (
 	code.gitea.io/sdk/gitea v0.25.1
-	github.com/go-telegram/bot v1.18.0
+	github.com/go-telegram/bot v1.22.0
 	github.com/moby/moby/api v1.55.0
 	github.com/moby/moby/client v0.5.0
 	github.com/nats-io/nats-server/v2 v2.14.3

@@ -194,20 +194,21 @@ func (g *Gateway) defaultHandler(router *gateway.Router) bot.HandlerFunc {
 			return
 		}
 
-		// Routing a non-command message runs an LLM turn, which can take
-		// many seconds. Show a typing indicator for the whole wait so the
-		// chat doesn't look dead.
+		// An LLM turn takes many seconds. Stream it into a draft so the
+		// reply appears as it is written; the typing indicator covers the
+		// gap before the first token and any non-streaming path.
 		stopTyping := g.startTyping(ctx, b, msg.Chat.ID, msg.MessageThreadID)
+		draft := g.newDraft(b, msg.Chat.ID, msg.MessageThreadID)
 
 		// If it starts with / but wasn't matched by a registered
 		// handler, it's unknown  --  let the router handle it (which
 		// will say "unrecognized").
-		reply, err := router.Route(ctx, gateway.Message{
+		reply, err := router.RouteStream(ctx, gateway.Message{
 			ChannelID: fmt.Sprintf("%d", msg.Chat.ID),
 			ThreadID:  threadIDString(msg.MessageThreadID),
 			From:      msg.From.Username,
 			Text:      msg.Text,
-		})
+		}, draft.onDelta)
 		stopTyping()
 		if err != nil {
 			g.log.Error("route failed", "error", err)
@@ -308,27 +309,29 @@ func (g *Gateway) sendMessage(ctx context.Context, b *bot.Bot, chatID int64, mes
 	}
 }
 
-// send delivers one message, rendering Markdown as Telegram HTML.
+// send delivers one message as a rich message, letting Telegram render the
+// Markdown an LLM already emits.
 //
-// Splitting a long reply can cut an HTML tag in half, and a hand-written
-// converter can always meet Markdown it maps wrongly; in both cases
-// Telegram rejects the whole message with a parse error. Rather than lose
-// the reply, fall back to sending the original unformatted text  --  the user
-// sees raw Markdown, which is what happened before formatting existed, but
-// never silence.
+// sendRichMessage takes Markdown natively and supports constructs the
+// legacy parse modes cannot express at all  --  notably tables, which LLM
+// replies use freely. That removes the need to translate Markdown into the
+// narrow HTML subset the older API accepted.
+//
+// Rich messages are a recent Bot API addition, so a rejection here is
+// treated as "unsupported" rather than fatal: fall back to a plain send so
+// the user still receives the reply, unformatted, instead of silence.
 func (g *Gateway) send(ctx context.Context, b *bot.Bot, chatID int64, messageThreadID int, text, errMsg string) {
-	params := &bot.SendMessageParams{
-		ChatID:    chatID,
-		Text:      markdownToHTML(text),
-		ParseMode: models.ParseModeHTML,
+	rich := &bot.SendRichMessageParams{
+		ChatID:      chatID,
+		RichMessage: models.InputRichMessage{Markdown: text},
 	}
 	if messageThreadID != 0 {
-		params.MessageThreadID = messageThreadID
+		rich.MessageThreadID = messageThreadID
 	}
-	if _, err := b.SendMessage(ctx, params); err == nil {
+	if _, err := b.SendRichMessage(ctx, rich); err == nil {
 		return
 	} else {
-		g.log.Warn("formatted send failed, retrying unformatted", "error", err)
+		g.log.Warn("rich send failed, retrying unformatted", "error", err)
 	}
 
 	plain := &bot.SendMessageParams{ChatID: chatID, Text: text}
