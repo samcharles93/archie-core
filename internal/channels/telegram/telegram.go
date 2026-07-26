@@ -371,3 +371,12 @@ func updateMetadata(update *models.Update) (kind string, chatID int64, hasChat b
 		return "other", 0, false
 	}
 }
+
+// updateThreadID extracts the message_thread_id from an update for logging
+// and session routing. Returns 0 for flat chats / non-message updates.
+func updateThreadID(update *models.Update) int {
+	if update == nil || update.Message == nil {
+		return 0
+	}
+	return update.Message.MessageThreadID
+}
