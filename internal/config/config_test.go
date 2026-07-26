@@ -358,6 +358,52 @@ func TestLoadDispatchAckReaction(t *testing.T) {
 	}
 }
 
+// TestLoadForgeTokenEnvBackwardCompat guards against a real production
+// incident: the secrets-engine migration replaced [forge]'s flat
+// token_env string with a {engine, key} struct, but TOML silently ignores
+// unknown fields — so deployed configs still using the old token_env key
+// had their token config dropped entirely and finalize() defaulted to
+// demanding ARCHIE_GITHUB_TOKEN, crash-looping a gitea-backed daemon.
+func TestLoadForgeTokenEnvBackwardCompat(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	contents := "bot_user = \"widget\"\n" +
+		"[forge]\ntype = \"gitea\"\nhost = \"https://git.example.test\"\ntoken_env = \"MY_GITEA_TOKEN\"\n" +
+		"[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Forge.Token != (secret.SecretRef{Engine: "env", Key: "MY_GITEA_TOKEN"}) {
+		t.Errorf("Forge.Token = %#v, want {env MY_GITEA_TOKEN} (from legacy token_env)", cfg.Forge.Token)
+	}
+}
+
+// TestLoadForgeTokenTakesPrecedenceOverTokenEnv verifies the new-style
+// [forge.token] wins when both the legacy token_env and the new token
+// struct are present (e.g. mid-migration configs).
+func TestLoadForgeTokenTakesPrecedenceOverTokenEnv(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	contents := "bot_user = \"widget\"\n" +
+		"[forge]\ntype = \"gitea\"\ntoken_env = \"OLD_TOKEN\"\n" +
+		"[forge.token]\nengine = \"env\"\nkey = \"NEW_TOKEN\"\n" +
+		"[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Forge.Token != (secret.SecretRef{Engine: "env", Key: "NEW_TOKEN"}) {
+		t.Errorf("Forge.Token = %#v, want {env NEW_TOKEN} (new-style token wins)", cfg.Forge.Token)
+	}
+}
+
 func TestLoadRejectsInvalidConfigEnumsAndGlobs(t *testing.T) {
 	tests := []struct {
 		name  string
