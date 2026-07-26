@@ -91,7 +91,22 @@ func runTask(ctx context.Context, req taskrun.Request, nc *natsio.Conn, newRunne
 		localDir: workDir,
 	}
 
-	agent := newRunner(req.Providers, log)
+	// Start MCP providers and build a local tool registry.
+	mcpSet, mcpErr := startMCPProviders(ctx, req.MCPServers, log)
+	if mcpSet != nil {
+		defer mcpSet.cleanup(ctx)
+	}
+	if mcpErr != nil {
+		log.Warn("mcp providers had errors, continuing with available tools", "err", mcpErr)
+	}
+
+	// Build a runner with MCP-discovered tools when available.
+	var agent agentexec.Runner
+	if mcpSet != nil && mcpSet.registry != nil {
+		agent = agentexec.NewInProcessRunner(agentexec.NewRuntime(req.Providers), log, mcpSet.registry)
+	} else {
+		agent = newRunner(req.Providers, log)
+	}
 	if agent == nil {
 		return nil, fmt.Errorf("no agent runner configured for task %d", req.Task.ID)
 	}

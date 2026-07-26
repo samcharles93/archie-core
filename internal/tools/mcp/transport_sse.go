@@ -485,5 +485,12 @@ func readSSEEvent(r *bufio.Reader) (event, data string, err error) {
 	}
 }
 
+// State returns the current transport state.
+func (t *SSETransport) State() TransportState {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.state
+}
+
 // Compile-time interface check.
 var _ Transport = (*SSETransport)(nil)

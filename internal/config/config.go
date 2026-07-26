@@ -268,6 +268,13 @@ type MCPServer struct {
 	Command   string   `yaml:"command" json:"command,omitempty"`
 	Args      []string `yaml:"args" json:"args,omitempty"`
 	URL       string   `yaml:"url" json:"url,omitempty"`
+	// Headers are additional HTTP headers sent with every request (auth, etc.).
+	Headers map[string]string `yaml:"headers" json:"headers,omitempty"`
+	// SSEEndpoint is the GET URL for the server→client event stream.
+	SSEEndpoint string `yaml:"sse_endpoint" json:"sse_endpoint,omitempty"`
+	// MessageEndpoint is the POST URL for client→server messages. When
+	// empty, the client discovers it from the server's "endpoint" SSE event.
+	MessageEndpoint string `yaml:"message_endpoint" json:"message_endpoint,omitempty"`
 }
 
 // ToolPolicy holds tool execution limits.

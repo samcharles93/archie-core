@@ -102,5 +102,15 @@ func (t *HTTPTransport) do(ctx context.Context, body []byte) (*http.Response, er
 	return resp, nil
 }
 
+// Start is a no-op: HTTP transport is always ready.
+func (t *HTTPTransport) Start(_ context.Context) error { return nil }
+
+// Stop is a no-op: HTTP transport has no persistent resources to release.
+func (t *HTTPTransport) Stop(_ context.Context) error { return nil }
+
+// State always returns StateRunning: HTTP is stateless, so the transport is
+// always considered ready.
+func (t *HTTPTransport) State() TransportState { return StateRunning }
+
 // Compile-time interface check.
 var _ Transport = (*HTTPTransport)(nil)

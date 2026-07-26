@@ -89,18 +89,45 @@ func configuredMCPProvider(server config.MCPServer) (toolprovider.Engine, error)
 	if transportType == "" {
 		transportType = "stdio"
 	}
-	if transportType != "stdio" {
+
+	switch transportType {
+	case "stdio":
+		command := strings.TrimSpace(server.Command)
+		if command == "" {
+			return nil, fmt.Errorf("MCP stdio server %q requires a command", name)
+		}
+		transport := mcp.NewStdioTransport(mcp.StdioTransportConfig{
+			Command: command,
+			Args:    append([]string(nil), server.Args...),
+		})
+		return mcptoolprovider.New(name, transport), nil
+
+	case "http", "streamablehttp":
+		url := strings.TrimSpace(server.URL)
+		if url == "" {
+			return nil, fmt.Errorf("MCP http server %q requires a url", name)
+		}
+		transport := mcp.NewHTTPTransport(mcp.HTTPTransportConfig{
+			Endpoint: url,
+			Headers:  server.Headers,
+		})
+		return mcptoolprovider.New(name, transport), nil
+
+	case "sse":
+		sseEndpoint := strings.TrimSpace(server.SSEEndpoint)
+		if sseEndpoint == "" {
+			return nil, fmt.Errorf("MCP sse server %q requires an sse_endpoint", name)
+		}
+		transport := mcp.NewSSETransport(mcp.SSETransportConfig{
+			SSEEndpoint:     sseEndpoint,
+			MessageEndpoint: strings.TrimSpace(server.MessageEndpoint),
+			Headers:         server.Headers,
+		})
+		return mcptoolprovider.New(name, transport), nil
+
+	default:
 		return nil, fmt.Errorf("MCP transport %q is not supported", transportType)
 	}
-	command := strings.TrimSpace(server.Command)
-	if command == "" {
-		return nil, fmt.Errorf("MCP stdio server %q requires a command", name)
-	}
-	transport := mcp.NewStdioTransport(mcp.StdioTransportConfig{
-		Command: command,
-		Args:    append([]string(nil), server.Args...),
-	})
-	return mcptoolprovider.New(name, transport), nil
 }
 
 func run() int {
@@ -502,9 +529,10 @@ func run() int {
 				return 1
 			}
 			agentRunner = &agentexec.NATSRunner{
-				Nats:      natsClient,
-				Providers: providers,
-				Log:       log,
+				Nats:       natsClient,
+				Providers:  providers,
+				MCPServers: cfg.Tools.MCPServers,
+				Log:        log,
 			}
 		}
 	}

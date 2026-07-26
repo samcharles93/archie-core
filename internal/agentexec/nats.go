@@ -10,6 +10,7 @@ import (
 
 	natsio "github.com/nats-io/nats.go"
 
+	"github.com/samcharles93/archie-core/internal/config"
 	arnats "github.com/samcharles93/archie-core/internal/nats"
 )
 
@@ -24,8 +25,12 @@ type AgentRequestMessage struct {
 	Channel   string              `json:"channel,omitempty"` // "response" (default) or "system"
 	Workspace string              `json:"workspace"`
 	Request   Request             `json:"request"`
-	Stages    []Request           `json:"stages,omitempty"` // batch: all agent stages for this task
+	Stages    []Request           `json:"stages,omitempty"`    // batch: all agent stages for this task
 	Providers map[string]Provider `json:"providers,omitempty"`
+	// MCPServers carries MCP server definitions so the agent can construct
+	// transports, discover tools, and register them locally. Absent/empty
+	// means no MCP servers (backward compatible).
+	MCPServers []config.MCPServer `json:"mcp_servers,omitempty"`
 }
 
 // AgentResponseEnvelope is the response payload published to the reply inbox.
@@ -42,9 +47,10 @@ const defaultAgentTimeout = 30 * time.Minute
 // NATSRunner sends agent stage execution requests over NATS JetStream and
 // waits for replies on core NATS inboxes. It implements Runner.
 type NATSRunner struct {
-	Nats      *arnats.Client
-	Providers map[string]Provider
-	Log       *slog.Logger
+	Nats       *arnats.Client
+	Providers  map[string]Provider
+	MCPServers []config.MCPServer
+	Log        *slog.Logger
 }
 
 // Run publishes a stage execution request to JetStream with an X-Archie-Reply
@@ -73,13 +79,14 @@ func (r *NATSRunner) Run(ctx context.Context, workspace string, req Request) (Re
 
 	// 3. Publish request with reply header.
 	msg := AgentRequestMessage{
-		TaskID:    req.TaskID,
-		Attempt:   req.Attempt,
-		Stage:     req.Stage,
-		Workflow:  req.Workflow,
-		Workspace: workspace,
-		Request:   req,
-		Providers: r.Providers,
+		TaskID:     req.TaskID,
+		Attempt:    req.Attempt,
+		Stage:      req.Stage,
+		Workflow:   req.Workflow,
+		Workspace:  workspace,
+		Request:    req,
+		Providers:  r.Providers,
+		MCPServers: r.MCPServers,
 	}
 	data, err := json.Marshal(msg)
 	if err != nil {

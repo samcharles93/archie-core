@@ -29,6 +29,10 @@ type Request struct {
 	Repo      config.Repo                   `json:"repo"`
 	Cfg       config.TaskConfig             `json:"cfg"`
 	Providers map[string]agentexec.Provider `json:"providers"`
+	// MCPServers carries MCP server definitions so the agent can construct
+	// transports, discover tools, and register them locally. Absent/empty
+	// means no MCP servers (backward compatible).
+	MCPServers []config.MCPServer `json:"mcp_servers,omitempty"`
 }
 
 // Response reports the task's final state after archie-agent runs its

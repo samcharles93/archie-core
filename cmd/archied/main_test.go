@@ -87,7 +87,7 @@ func TestGatewaysStartOnlyAfterCapabilityHostAndDaemonStartup(t *testing.T) {
 	}
 }
 
-func TestConfiguredMCPProviderSupportsOnlyExecutableStdioServers(t *testing.T) {
+func TestConfiguredMCPProviderSupportsAllTransportTypes(t *testing.T) {
 	tests := []struct {
 		name    string
 		server  config.MCPServer
@@ -105,9 +105,14 @@ func TestConfiguredMCPProviderSupportsOnlyExecutableStdioServers(t *testing.T) {
 			wantID: "mcp.local",
 		},
 		{
-			name:    "http is not advertised without executable transport",
-			server:  config.MCPServer{Name: "remote", Transport: "http", URL: "https://example.invalid"},
-			wantErr: true,
+			name:   "http transport creates HTTPTransport",
+			server: config.MCPServer{Name: "remote", Transport: "http", URL: "https://example.invalid"},
+			wantID: "mcp.remote",
+		},
+		{
+			name:   "sse transport creates SSETransport",
+			server: config.MCPServer{Name: "sse-server", Transport: "sse", SSEEndpoint: "https://example.invalid/sse"},
+			wantID: "mcp.sse-server",
 		},
 		{
 			name:    "unknown transport",
@@ -120,8 +125,18 @@ func TestConfiguredMCPProviderSupportsOnlyExecutableStdioServers(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "missing command",
+			name:    "missing command for stdio",
 			server:  config.MCPServer{Name: "missing", Transport: "stdio"},
+			wantErr: true,
+		},
+		{
+			name:    "missing url for http",
+			server:  config.MCPServer{Name: "http-missing", Transport: "http"},
+			wantErr: true,
+		},
+		{
+			name:    "missing sse_endpoint for sse",
+			server:  config.MCPServer{Name: "sse-missing", Transport: "sse"},
 			wantErr: true,
 		},
 	}
