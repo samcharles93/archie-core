@@ -114,6 +114,8 @@ github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
 github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0tI/otEQ=
 github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=
+github.com/samcharles93/NellDB v0.2.5 h1:VEasjyB4opTFAfWnV3s9TEHkfA41ee+7gYD8LqKnvns=
+github.com/samcharles93/NellDB v0.2.5/go.mod h1:vyfd6/T2Cp5U0acoh2LrebJteZqoFObedDZTxP0j4W0=
 github.com/samcharles93/ai-sdk v0.1.17 h1:yH48jrYVyFv+VO1qYkbReVpVxP063XMs0T/Jb90bkEY=
 github.com/samcharles93/ai-sdk v0.1.17/go.mod h1:a4JYsUrwGsmm2eiXgrpcKExtYe7uHQ5zsHDbbkcPB6o=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
