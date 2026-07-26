@@ -456,6 +456,14 @@ type ContainerConfig struct {
 	VolumeTTL Duration `toml:"volume_ttl" yaml:"volume_ttl"`
 	// PullPolicy controls image pulling: "missing" (default) or "always".
 	PullPolicy string `toml:"pull_policy" yaml:"pull_policy"`
+	// Network is the Docker network spawned agent containers join, so they
+	// can resolve sibling compose services (nats, etc.) by name. Empty
+	// falls back to auto-detecting the daemon's own network, which is
+	// best-effort and silently yields the default bridge network (no
+	// hostname resolution) if detection fails — set this explicitly in
+	// compose/production deployments (e.g. "archie-core_default") rather
+	// than relying on auto-detection.
+	Network string `toml:"network" yaml:"network"`
 }
 
 // ChatConfig configures conversational front-ends (multi-agent

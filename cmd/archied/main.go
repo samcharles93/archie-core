@@ -219,6 +219,7 @@ func run() int {
 			MaxConcurrency: cfg.Containers.MaxConcurrency,
 			MaxUptime:      cfg.Containers.MaxUptime.Std(),
 			PullPolicy:     cfg.Containers.PullPolicy,
+			Network:        cfg.Containers.Network,
 			DockerClient:   dockerCli,
 		}, cfg.NATS.URL, log)
 		if err != nil {

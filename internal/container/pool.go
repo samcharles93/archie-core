@@ -83,6 +83,9 @@ type Config struct {
 	// (gate re-runs, human replies) during this window. PRD §1.
 	GracePeriod time.Duration
 	PullPolicy  string
+	// Network is the Docker network spawned agent containers join. Empty
+	// falls back to selfNetwork's best-effort auto-detection.
+	Network string
 	// DockerClient is an optional pre-connected Docker client. When nil,
 	// NewPool creates its own via client.New(client.FromEnv). Pass a
 	// shared client to avoid multiple independent connections.
@@ -104,13 +107,18 @@ func NewPool(ctx context.Context, cfg Config, natsURL string, log *slog.Logger) 
 		}
 	}
 
+	network := cfg.Network
+	if network == "" {
+		network = selfNetwork(ctx, cli, log)
+	}
+
 	p := &Pool{
 		cli:     cli,
 		cfg:     cfg,
 		log:     log,
 		natsURL: natsURL,
 		ownCli:  cfg.DockerClient == nil,
-		network: selfNetwork(ctx, cli, log),
+		network: network,
 	}
 
 	// Pull image if needed.
@@ -296,13 +304,16 @@ func (p *Pool) pullImage(ctx context.Context) error {
 func selfNetwork(ctx context.Context, cli *client.Client, log *slog.Logger) string {
 	hostname, err := os.Hostname()
 	if err != nil {
+		log.Warn("container network auto-detect: os.Hostname failed, spawned containers will use the default bridge network and won't resolve sibling services by name — set containers.network explicitly", "err", err)
 		return ""
 	}
 	self, err := cli.ContainerInspect(ctx, hostname, client.ContainerInspectOptions{})
 	if err != nil {
+		log.Warn("container network auto-detect: could not inspect self by hostname, spawned containers will use the default bridge network and won't resolve sibling services by name — set containers.network explicitly", "hostname", hostname, "err", err)
 		return ""
 	}
 	if self.Container.NetworkSettings == nil {
+		log.Warn("container network auto-detect: self container has no NetworkSettings, spawned containers will use the default bridge network — set containers.network explicitly", "hostname", hostname)
 		return ""
 	}
 	for name := range self.Container.NetworkSettings.Networks {
