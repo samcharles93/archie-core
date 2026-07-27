@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/samcharles93/ai-sdk/agentloop"
 	"github.com/samcharles93/ai-sdk/runtime"
@@ -244,5 +245,49 @@ func TestInProcessRunnerPreservesCallerCancellation(t *testing.T) {
 	})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run error = %v, want context.Canceled", err)
+	}
+}
+
+// TestScriptToolHonorsContextCancellation proves that the run_go_script
+// tool handler discards the incoming context (the handler is declared as
+// func(_ context.Context, input string) and calls skillscript.Run without
+// forwarding ctx). Every other execution path in archie-core respects
+// context cancellation (SubprocessRunner uses exec.CommandContext,
+// InProcessRunner checks context.Cause), but a cancelled/timed-out context
+// has zero effect on run_go_script — a blocking script wedges the
+// goroutine permanently.
+func TestScriptToolHonorsContextCancellation(t *testing.T) {
+	workspace := t.TempDir()
+	src := `package main
+
+func main() {
+	select {}
+}
+`
+	if err := os.WriteFile(filepath.Join(workspace, "blocker.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // immediately cancelled — the tool should return promptly
+
+	tool := scriptToolSet(workspace)["run_go_script"]
+
+	done := make(chan struct{})
+	go func() {
+		tool.Execute(ctx, `{"path":"blocker.go"}`)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// After the fix, the tool returns quickly because the cancelled
+		// context propagates through to skillscript.Run, which selects
+		// on ctx.Done() and abandons the blocking EvalPath goroutine.
+		t.Log("run_go_script returned promptly (context was honored)")
+	case <-time.After(3 * time.Second):
+		t.Error("run_go_script ignores context cancellation: " +
+			"the handler discards its context parameter (declared as _) " +
+			"and calls skillscript.Run without forwarding it (issue #45)")
 	}
 }
