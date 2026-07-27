@@ -2,11 +2,13 @@ package nats
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"testing"
 
 	"github.com/nats-io/nats-server/v2/server"
 	natssrv "github.com/nats-io/nats-server/v2/test"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 // startEmbedded starts an embedded NATS server with JetStream file storage.
@@ -160,5 +162,107 @@ func TestSubjectRouting(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("SubjectForLabels(%v) = %q, want %q", tt.labels, got, tt.want)
 		}
+	}
+}
+
+// --- mock types for Fetch error propagation tests ---
+
+// errSentinel is a distinguishable error used in mock MessageBatch.Error().
+var errSentinel = errors.New("nats: consumer deleted")
+
+// mockMessageBatch implements jetstream.MessageBatch.
+type mockMessageBatch struct {
+	msgs <-chan jetstream.Msg
+	err  error
+}
+
+func (m *mockMessageBatch) Messages() <-chan jetstream.Msg { return m.msgs }
+func (m *mockMessageBatch) Error() error                   { return m.err }
+
+// mockConsumer implements jetstream.Consumer.
+// Only Fetch is exercised by Client.Fetch; the remaining methods panic to
+// flag accidental usage.
+type mockConsumer struct {
+	batch jetstream.MessageBatch
+}
+
+func (m *mockConsumer) Fetch(int, ...jetstream.FetchOpt) (jetstream.MessageBatch, error) {
+	return m.batch, nil
+}
+func (m *mockConsumer) FetchBytes(int, ...jetstream.FetchOpt) (jetstream.MessageBatch, error) {
+	panic("FetchBytes not implemented")
+}
+func (m *mockConsumer) FetchNoWait(int) (jetstream.MessageBatch, error) {
+	panic("FetchNoWait not implemented")
+}
+func (m *mockConsumer) Consume(jetstream.MessageHandler, ...jetstream.PullConsumeOpt) (jetstream.ConsumeContext, error) {
+	panic("Consume not implemented")
+}
+func (m *mockConsumer) Messages(...jetstream.PullMessagesOpt) (jetstream.MessagesContext, error) {
+	panic("Messages not implemented")
+}
+func (m *mockConsumer) Next(...jetstream.FetchOpt) (jetstream.Msg, error) {
+	panic("Next not implemented")
+}
+func (m *mockConsumer) Info(context.Context) (*jetstream.ConsumerInfo, error) {
+	panic("Info not implemented")
+}
+func (m *mockConsumer) CachedInfo() *jetstream.ConsumerInfo {
+	panic("CachedInfo not implemented")
+}
+
+func TestFetchPropagatesBatchErrorWhenNoMessages(t *testing.T) {
+	// Reproduces issue #35: when JetStream reports an error by closing the
+	// Messages() channel with zero messages and setting a non-nil batch error,
+	// Client.Fetch must propagate that error instead of returning (nil, nil).
+	ch := make(chan jetstream.Msg)
+	close(ch) // zero messages
+
+	batch := &mockMessageBatch{msgs: ch, err: errSentinel}
+	cons := &mockConsumer{batch: batch}
+
+	client := &Client{
+		consumer: cons,
+		log:      slog.New(slog.DiscardHandler),
+	}
+
+	msg, err := client.Fetch(context.Background())
+	if err == nil {
+		t.Fatal("expected an error from Fetch when batch has an error and no messages, got nil")
+	}
+	if msg != nil {
+		t.Fatalf("expected nil message when batch has an error, got %v", msg)
+	}
+	if !errors.Is(err, errSentinel) {
+		t.Fatalf("expected errSentinel, got %v", err)
+	}
+}
+
+func TestFetchPropagatesBatchErrorEvenWhenLastMessageSeen(t *testing.T) {
+	// Companion: when the batch delivers a message but also has a non-nil
+	// error (the existing inside-loop check), we confirm the existing path
+	// still works. This is not the reported bug but guards against
+	// regressions.
+	ch := make(chan jetstream.Msg, 1)
+	ch <- nil // nil message triggers the msg==nil continue
+	close(ch)
+
+	batch := &mockMessageBatch{msgs: ch, err: errSentinel}
+	cons := &mockConsumer{batch: batch}
+
+	client := &Client{
+		consumer: cons,
+		log:      slog.New(slog.DiscardHandler),
+	}
+
+	msg, err := client.Fetch(context.Background())
+	if err == nil {
+		t.Fatal("expected an error from Fetch when batch has an error, got nil")
+	}
+	if msg != nil {
+		t.Fatalf("expected nil message when batch has an error, got %v", msg)
+	}
+	if !errors.Is(err, errSentinel) {
+		t.Fatalf("expected errSentinel, got %v", err)
 	}
 }

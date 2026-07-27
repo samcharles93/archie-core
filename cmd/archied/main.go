@@ -49,6 +49,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
 	"github.com/samcharles93/archie-core/internal/releaseannounce"
+	"github.com/samcharles93/archie-core/internal/releaseupdate"
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/skill"
 	"github.com/samcharles93/archie-core/internal/storage"
@@ -294,6 +295,16 @@ func run() int {
 		tg := telegram.New(tgToken, "", "", cfg.Chat.Telegram.AllowedUserIDs, log)
 		tg.Version = func() string {
 			return fmt.Sprintf("Archie\nGateway: %s\nRuntime: %s", gatewayVersion, runtimeVersion)
+		}
+		if len(cfg.Chat.Telegram.UpdateCheckCommand) != 0 {
+			updates := &releaseupdate.Service{
+				Catalog:   releaseupdate.CommandCatalog{Command: cfg.Chat.Telegram.UpdateCheckCommand},
+				StatePath: filepath.Join(cfg.WorkDir, "telegram-update-deferrals.json"),
+			}
+			if len(cfg.Chat.Telegram.UpdateInstallCommand) != 0 {
+				updates.Installer = releaseupdate.CommandInstaller{Command: cfg.Chat.Telegram.UpdateInstallCommand}
+			}
+			tg.Updates = updates
 		}
 		releaseAnnouncements := &releaseannounce.Announcer{
 			StatePath: releaseAnnouncementStatePath(cfg.WorkDir, cfg.BotUser),
