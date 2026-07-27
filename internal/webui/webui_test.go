@@ -37,6 +37,7 @@ type stubStore struct {
 	workflowStatsErr error
 	stageStatsErr    error
 	tokensByDayErr   error
+	eventsSinceErr   error
 }
 
 func (s *stubStore) WorkflowStats(ctx context.Context) ([]store.WorkflowStat, error) {
@@ -58,6 +59,13 @@ func (s *stubStore) TokensByDay(ctx context.Context, days int) ([]store.DayToken
 		return nil, s.tokensByDayErr
 	}
 	return s.TaskStore.TokensByDay(ctx, days)
+}
+
+func (s *stubStore) EventsSince(ctx context.Context, sinceID int64, limit int) ([]events.Event, error) {
+	if s.eventsSinceErr != nil {
+		return nil, s.eventsSinceErr
+	}
+	return s.TaskStore.EventsSince(ctx, sinceID, limit)
 }
 
 func TestHandleSummary(t *testing.T) {
@@ -265,6 +273,57 @@ func TestIndexHasResponsiveFeatures(t *testing.T) {
 			t.Errorf("missing responsive feature %q: %q", r.name, r.want)
 		}
 	}
+}
+
+// TestHandleSSEEventsSinceError proves that handleSSE does not silently
+// discard an error from EventsSince.  Today the handler has no else
+// branch for err != nil, so the error is swallowed and the client
+// receives no signal that catch-up was skipped: this test FAILS.
+func TestHandleSSEEventsSinceError(t *testing.T) {
+	real := newTestServer(t)
+	srv := &Server{
+		Store: &stubStore{
+			TaskStore:      real.Store,
+			eventsSinceErr: fmt.Errorf("db locked"),
+		},
+		Log: real.Log,
+	}
+
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", ts.URL+"/events?since=0", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("EventsSince error silently swallowed — SSE handler never responded: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	// The SSE stream must surface the EventsSince error to the client.
+	// Today the error is silently swallowed, so no error line is ever
+	// sent and the test FAILS.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			break
+		}
+		if strings.Contains(line, "error") {
+			return // PASS: error was surfaced to the client
+		}
+	}
+	t.Fatal("EventsSince error was silently swallowed — no error sent to SSE client")
 }
 
 func TestHandleSSEBacklogAndLive(t *testing.T) {
