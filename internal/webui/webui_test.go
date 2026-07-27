@@ -2,7 +2,9 @@ package webui
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -27,6 +29,37 @@ func newTestServer(t *testing.T) *Server {
 	return &Server{Store: s, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 }
 
+// stubStore wraps a real TaskStore and overrides selected methods to
+// inject errors. Methods that are not overridden delegate to the inner
+// store via the embedded interface.
+type stubStore struct {
+	store.TaskStore
+	workflowStatsErr error
+	stageStatsErr    error
+	tokensByDayErr   error
+}
+
+func (s *stubStore) WorkflowStats(ctx context.Context) ([]store.WorkflowStat, error) {
+	if s.workflowStatsErr != nil {
+		return nil, s.workflowStatsErr
+	}
+	return s.TaskStore.WorkflowStats(ctx)
+}
+
+func (s *stubStore) StageStats(ctx context.Context) ([]store.StageStat, error) {
+	if s.stageStatsErr != nil {
+		return nil, s.stageStatsErr
+	}
+	return s.TaskStore.StageStats(ctx)
+}
+
+func (s *stubStore) TokensByDay(ctx context.Context, days int) ([]store.DayTokens, error) {
+	if s.tokensByDayErr != nil {
+		return nil, s.tokensByDayErr
+	}
+	return s.TaskStore.TokensByDay(ctx, days)
+}
+
 func TestHandleSummary(t *testing.T) {
 	srv := newTestServer(t)
 	ctx := t.Context()
@@ -49,6 +82,71 @@ func TestHandleSummary(t *testing.T) {
 		if _, ok := got[key]; !ok {
 			t.Errorf("summary missing key %q: %+v", key, got)
 		}
+	}
+}
+
+// TestHandleSummaryWorkflowStatsError proves that handleSummary does not
+// silently discard an error from WorkflowStats.  Today the handler uses
+// blank-identifier assignment (workflows, _ := ...), so this test FAILS
+// (wants 500, gets 200 with nil workflows).
+func TestHandleSummaryWorkflowStatsError(t *testing.T) {
+	real := newTestServer(t)
+	srv := &Server{
+		Store: &stubStore{
+			TaskStore:        real.Store,
+			workflowStatsErr: fmt.Errorf("db locked"),
+		},
+		Log: real.Log,
+	}
+
+	req := httptest.NewRequest("GET", "/api/summary", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 — WorkflowStats error was silently discarded", w.Code)
+	}
+}
+
+// TestHandleSummaryStageStatsError proves that handleSummary does not
+// silently discard an error from StageStats.
+func TestHandleSummaryStageStatsError(t *testing.T) {
+	real := newTestServer(t)
+	srv := &Server{
+		Store: &stubStore{
+			TaskStore:     real.Store,
+			stageStatsErr: fmt.Errorf("db locked"),
+		},
+		Log: real.Log,
+	}
+
+	req := httptest.NewRequest("GET", "/api/summary", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 — StageStats error was silently discarded", w.Code)
+	}
+}
+
+// TestHandleSummaryTokensByDayError proves that handleSummary does not
+// silently discard an error from TokensByDay.
+func TestHandleSummaryTokensByDayError(t *testing.T) {
+	real := newTestServer(t)
+	srv := &Server{
+		Store: &stubStore{
+			TaskStore:      real.Store,
+			tokensByDayErr: fmt.Errorf("db locked"),
+		},
+		Log: real.Log,
+	}
+
+	req := httptest.NewRequest("GET", "/api/summary", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 — TokensByDay error was silently discarded", w.Code)
 	}
 }
 

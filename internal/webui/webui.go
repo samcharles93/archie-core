@@ -84,9 +84,21 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	workflows, _ := s.Store.WorkflowStats(ctx)
-	stages, _ := s.Store.StageStats(ctx)
-	days, _ := s.Store.TokensByDay(ctx, 14)
+	workflows, err := s.Store.WorkflowStats(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	stages, err := s.Store.StageStats(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	days, err := s.Store.TokensByDay(ctx, 14)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
 	writeJSON(w, map[string]any{
 		"statuses": statuses, "workflows": workflows,
 		"stages": stages, "tokens_by_day": days,

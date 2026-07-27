@@ -115,7 +115,17 @@ func TestTaskPayloadWrittenAsVolumeFile(t *testing.T) {
 // ── Regression tests for error paths ────────────────────────────────
 
 func TestWriteTaskJSONNonexistentDir(t *testing.T) {
-	err := WriteTaskJSON("/nonexistent/path/that/does/not/exist", TaskPayload{ID: 1})
+	// Create a regular file and then try to use a path where that file
+	// would need to be a directory. Even root cannot mkdir through a
+	// regular file, making this test reliable regardless of privileges.
+	f, err := os.CreateTemp("", "archie-test-blocker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	defer os.Remove(f.Name())
+
+	err = WriteTaskJSON(filepath.Join(f.Name(), "subdir"), TaskPayload{ID: 1})
 	if err == nil {
 		t.Error("expected error writing to nonexistent directory")
 	}
