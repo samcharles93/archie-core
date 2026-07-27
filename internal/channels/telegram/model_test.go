@@ -155,6 +155,9 @@ func TestModelCommandShowsInlineSelector(t *testing.T) {
 	if !found {
 		t.Fatalf("/model did not send an inline keyboard; requests: %#v", *requests)
 	}
+	if got := modelSelectorText("deepseek/deepseek-v4-pro"); got != "Select a model:\nCurrent Provider: DeepSeek\nActive: deepseek-v4-pro" {
+		t.Errorf("model selector text = %q", got)
+	}
 	if got := len(markup.InlineKeyboard); got != len(manager.models) {
 		t.Fatalf("keyboard rows = %d, want %d", got, len(manager.models))
 	}
@@ -163,8 +166,8 @@ func TestModelCommandShowsInlineSelector(t *testing.T) {
 			t.Fatalf("keyboard row %d has %d buttons, want 1", index, len(row))
 		}
 		button := row[0]
-		if button.CallbackData != fmt.Sprintf("model:%d", index) {
-			t.Errorf("button %d callback = %q", index, button.CallbackData)
+		if !strings.HasPrefix(button.CallbackData, modelCallbackPrefix) || button.CallbackData == fmt.Sprintf("model:%d", index) {
+			t.Errorf("button %d callback = %q, want a stable model token", index, button.CallbackData)
 		}
 		_, modelLabel, _ := strings.Cut(manager.models[index], "/")
 		if !strings.Contains(button.Text, modelLabel) {
@@ -173,6 +176,11 @@ func TestModelCommandShowsInlineSelector(t *testing.T) {
 	}
 	if !strings.HasPrefix(markup.InlineKeyboard[1][0].Text, "✓ ") {
 		t.Errorf("active model button is not marked: %q", markup.InlineKeyboard[1][0].Text)
+	}
+	for _, row := range markup.InlineKeyboard {
+		if strings.Contains(row[0].Text, "provider/") {
+			t.Errorf("model button must not repeat the provider: %q", row[0].Text)
+		}
 	}
 }
 
@@ -207,11 +215,12 @@ func TestProviderCommandFiltersSubsequentModelSelector(t *testing.T) {
 	}
 
 	*requests = nil
+	providerCallback := providerMarkup.InlineKeyboard[1][0].CallbackData
 	g.defaultHandler(router)(context.Background(), b, &models.Update{
 		CallbackQuery: &models.CallbackQuery{
 			ID:   "provider-callback",
 			From: models.User{ID: allowedUserID},
-			Data: "provider:1",
+			Data: providerCallback,
 			Message: models.MaybeInaccessibleMessage{
 				Type:    models.MaybeInaccessibleMessageTypeMessage,
 				Message: &models.Message{ID: 9, Chat: models.Chat{ID: 7, Type: models.ChatTypePrivate}},
@@ -248,6 +257,32 @@ func TestProviderCommandFiltersSubsequentModelSelector(t *testing.T) {
 	}
 }
 
+func TestProviderCallbackHonoursTheProviderRenderedInTheSelector(t *testing.T) {
+	const allowedUserID = int64(42)
+	manager := &modelManagerStub{
+		models: []string{"openai/gpt-5.6", "openrouter/openai/gpt-5.6"},
+		active: "openai/gpt-5.6",
+	}
+	router := gateway.NewRouter(nil, nil, "telegram")
+	router.Models = manager
+	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	b, _ := newTelegramTestBot(t)
+
+	markup := g.providerSelectorKeyboard(manager)
+	renderedCallback := markup.InlineKeyboard[0][0].CallbackData
+	manager.models = []string{"deepseek/deepseek-v4-pro", "openai/gpt-5.6", "openrouter/openai/gpt-5.6"}
+
+	g.handleProviderCallback(context.Background(), b, &models.Update{CallbackQuery: &models.CallbackQuery{
+		ID:   "callback-id",
+		From: models.User{ID: allowedUserID},
+		Data: renderedCallback,
+	}}, router)
+
+	if got := manager.ActiveProvider(); got != "openai" {
+		t.Errorf("stale selector chose %q, want the originally rendered provider", got)
+	}
+}
+
 func TestModelCallbackSwitchesAndUpdatesSelector(t *testing.T) {
 	const allowedUserID = int64(42)
 	manager := &modelManagerStub{
@@ -263,7 +298,7 @@ func TestModelCallbackSwitchesAndUpdatesSelector(t *testing.T) {
 		CallbackQuery: &models.CallbackQuery{
 			ID:   "callback-id",
 			From: models.User{ID: allowedUserID},
-			Data: "model:1",
+			Data: g.modelCallbackToken("provider/beta"),
 			Message: models.MaybeInaccessibleMessage{
 				Type:    models.MaybeInaccessibleMessageTypeMessage,
 				Message: &models.Message{ID: 9, Chat: models.Chat{ID: 7, Type: models.ChatTypePrivate}},
@@ -276,11 +311,44 @@ func TestModelCallbackSwitchesAndUpdatesSelector(t *testing.T) {
 	}
 	var answered, edited bool
 	for _, request := range *requests {
-		answered = answered || request.method == "answerCallbackQuery"
+		if request.method == "answerCallbackQuery" {
+			answered = true
+			if got := request.form["text"]; got != "The model has been changed to: beta" {
+				t.Errorf("selection acknowledgement = %q", got)
+			}
+		}
 		edited = edited || request.method == "editMessageText"
 	}
 	if !answered || !edited {
 		t.Fatalf("callback answered=%t edited=%t, requests: %#v", answered, edited, *requests)
+	}
+}
+
+func TestModelCallbackHonoursTheModelRenderedInTheSelector(t *testing.T) {
+	const allowedUserID = int64(42)
+	manager := &modelManagerStub{
+		models: []string{"openai/gpt-5.6", "openrouter/openai/gpt-5.6"},
+		active: "openai/gpt-5.6",
+	}
+	router := gateway.NewRouter(nil, nil, "telegram")
+	router.Models = manager
+	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	b, _ := newTelegramTestBot(t)
+
+	markup := g.modelSelectorKeyboard(manager)
+	renderedCallback := markup.InlineKeyboard[0][0].CallbackData
+	if err := manager.SetActiveProvider(context.Background(), "openrouter"); err != nil {
+		t.Fatal(err)
+	}
+
+	g.handleModelCallback(context.Background(), b, &models.Update{CallbackQuery: &models.CallbackQuery{
+		ID:   "callback-id",
+		From: models.User{ID: allowedUserID},
+		Data: renderedCallback,
+	}}, router)
+
+	if got := manager.ActiveModel(); got != "openai/gpt-5.6" {
+		t.Errorf("stale selector chose %q, want the originally rendered model", got)
 	}
 }
 

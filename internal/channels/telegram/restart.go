@@ -30,7 +30,7 @@ func (g *Gateway) restartHandler() bot.HandlerFunc {
 
 		// Acknowledge on the current instance: it is about to be torn
 		// down, and the relaunched one confirms completion.
-		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, "🔄 Restarting gateway…")
+		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, "🔄 Reloading Archie…")
 
 		// Hand off to the supervisor rather than tearing down from inside
 		// this handler, which runs on the very bot being stopped. Never

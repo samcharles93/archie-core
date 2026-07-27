@@ -26,7 +26,7 @@ var gatewayCommandSpecs = []commandSpec{
 	{Command: "spawn", Description: "Create a tracked task", Usage: "/spawn [identity=name] [repo=owner/name] [workflow=name] <title>"},
 	{Command: "approve", Description: "Approve and requeue a waiting task", Usage: "/approve [identity=name] <task-id>"},
 	{Command: "cancel", Description: "Cancel a queued or waiting task", Usage: "/cancel [identity=name] <task-id>"},
-	{Command: "restart", Description: "Restart the gateway and reload its config", Usage: "/restart"},
+	{Command: "restart", Description: "Reload Archie and its configuration", Usage: "/restart"},
 	{Command: "help", Description: "Show this guide", Usage: "/help"},
 }
 
@@ -45,7 +45,7 @@ var gatewayCommands = func() []models.BotCommand {
 
 func gatewayHelpText() string {
 	var help strings.Builder
-	help.WriteString("🤖 **Archie Gateway**\n\n")
+	help.WriteString("🤖 **Archie**\n\n")
 	help.WriteString("Send a message to chat with Archie. Replies stream into Telegram as they are generated.\n\n")
 	help.WriteString("**Commands**\n")
 	for _, spec := range gatewayCommandSpecs {

@@ -1,13 +1,17 @@
 package gateway
 
 import (
+	"strings"
 	"testing"
 )
 
 func TestPersonaRegistryDefault(t *testing.T) {
 	r := NewPersonaRegistry(DefaultPersonas())
-	if len(r.List()) != 5 {
-		t.Errorf("expected 5 default personas, got %d", len(r.List()))
+	if len(r.List()) != 6 {
+		t.Errorf("expected 6 default personas, got %d", len(r.List()))
+	}
+	if prompt := r.GetActive("new-session"); !strings.Contains(prompt, "You are Archie") {
+		t.Errorf("new sessions must receive Archie's identity prompt, got %q", prompt)
 	}
 }
 
@@ -25,9 +29,12 @@ func TestPersonaRegistrySetAndGetActive(t *testing.T) {
 	if prompt == "" {
 		t.Error("GetActive should return prompt for active persona")
 	}
+	if !strings.Contains(prompt, "You are Archie") || !strings.Contains(prompt, "concise assistant") {
+		t.Errorf("selected styles must modify Archie's baseline identity, got %q", prompt)
+	}
 
-	if prompt := r.GetActive("session-2"); prompt != "" {
-		t.Error("GetActive should return empty for unset session")
+	if prompt := r.GetActive("session-2"); !strings.Contains(prompt, "You are Archie") {
+		t.Errorf("GetActive should return the Archie default for unset sessions, got %q", prompt)
 	}
 }
 

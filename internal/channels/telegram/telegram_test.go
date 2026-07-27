@@ -82,8 +82,22 @@ func TestHelpDescribesPublishedCommandsAndChat(t *testing.T) {
 	if strings.Contains(sentText, "not yet wired") {
 		t.Errorf("help text still claims working LLM chat is not wired:\n%s", sentText)
 	}
+	if !strings.Contains(sentText, "🤖 **Archie**") {
+		t.Errorf("help should identify Archie directly:\n%s", sentText)
+	}
+	if strings.Contains(sentText, "Archie Gateway") {
+		t.Errorf("help must not expose internal gateway terminology:\n%s", sentText)
+	}
 	if !strings.Contains(strings.ToLower(sentText), "chat") {
 		t.Errorf("help text does not describe free-text chat:\n%s", sentText)
+	}
+}
+
+func TestTelegramUserFacingCommandCopyDoesNotCallArchieAGateway(t *testing.T) {
+	for _, spec := range gatewayCommandSpecs {
+		if strings.Contains(strings.ToLower(spec.Description), "gateway") {
+			t.Errorf("/%s exposes internal gateway terminology: %q", spec.Command, spec.Description)
+		}
 	}
 }
 

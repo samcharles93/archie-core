@@ -12,6 +12,7 @@ import (
 	"runtime/debug"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-telegram/bot"
@@ -43,8 +44,12 @@ type Gateway struct {
 
 	// restartCh carries /restart requests from a bot handler to the
 	// supervisor loop in Start. Buffered so a handler never blocks.
-	restartCh      chan restartRequest
-	pendingRestart *restartRequest
+	restartCh         chan restartRequest
+	pendingRestart    *restartRequest
+	modelMu           sync.RWMutex
+	modelCallbacks    map[string]string
+	providerMu        sync.RWMutex
+	providerCallbacks map[string]string
 
 	log           *slog.Logger
 	bot           *bot.Bot
@@ -64,12 +69,14 @@ type ReleaseAnnouncer interface {
 // processing.
 func New(token, webhookURL, webhookSecret string, allowedUserIDs []int64, log *slog.Logger) *Gateway {
 	return &Gateway{
-		Token:          token,
-		WebhookURL:     webhookURL,
-		WebhookSecret:  webhookSecret,
-		AllowedUserIDs: allowedUserIDs,
-		restartCh:      make(chan restartRequest, 1),
-		log:            log.With("component", "gateway-telegram"),
+		Token:             token,
+		WebhookURL:        webhookURL,
+		WebhookSecret:     webhookSecret,
+		AllowedUserIDs:    allowedUserIDs,
+		restartCh:         make(chan restartRequest, 1),
+		modelCallbacks:    make(map[string]string),
+		providerCallbacks: make(map[string]string),
+		log:               log.With("component", "gateway-telegram"),
 	}
 }
 
@@ -96,7 +103,7 @@ func (g *Gateway) Start(ctx context.Context, router *gateway.Router) error {
 		}
 		// Confirm to whoever asked, now that the new instance can send.
 		if req := g.pendingRestart; req != nil {
-			g.sendMessage(runCtx, b, req.chatID, req.threadID, "✅ Gateway restarted.")
+			g.sendMessage(runCtx, b, req.chatID, req.threadID, "✅ Archie reloaded.")
 			g.pendingRestart = nil
 		}
 

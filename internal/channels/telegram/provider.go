@@ -2,8 +2,8 @@ package telegram
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/go-telegram/bot"
@@ -37,7 +37,7 @@ func (g *Gateway) sendProviderSelector(
 	params := &bot.SendMessageParams{
 		ChatID:      msg.Chat.ID,
 		Text:        providerSelectorText(manager.ActiveProvider()),
-		ReplyMarkup: providerSelectorKeyboard(manager),
+		ReplyMarkup: g.providerSelectorKeyboard(manager),
 	}
 	if msg.MessageThreadID != 0 {
 		params.MessageThreadID = msg.MessageThreadID
@@ -54,21 +54,37 @@ func providerSelectorText(active string) string {
 	return "Choose a provider:\nActive: " + providerDisplayName(active)
 }
 
-func providerSelectorKeyboard(manager gateway.ProviderModelManager) *models.InlineKeyboardMarkup {
+func (g *Gateway) providerSelectorKeyboard(manager gateway.ProviderModelManager) *models.InlineKeyboardMarkup {
 	active := manager.ActiveProvider()
 	providers := manager.Providers()
 	rows := make([][]models.InlineKeyboardButton, 0, len(providers))
-	for index, provider := range providers {
+	for _, provider := range providers {
 		label := providerDisplayName(provider)
 		if provider == active {
 			label = "✓ " + label
 		}
 		rows = append(rows, []models.InlineKeyboardButton{{
 			Text:         label,
-			CallbackData: providerCallbackPrefix + strconv.Itoa(index),
+			CallbackData: g.providerCallbackToken(provider),
 		}})
 	}
 	return &models.InlineKeyboardMarkup{InlineKeyboard: rows}
+}
+
+func (g *Gateway) providerCallbackToken(provider string) string {
+	sum := sha256.Sum256([]byte(provider))
+	token := fmt.Sprintf("%s%x", providerCallbackPrefix, sum[:24])
+	g.providerMu.Lock()
+	g.providerCallbacks[token] = provider
+	g.providerMu.Unlock()
+	return token
+}
+
+func (g *Gateway) providerForCallback(token string) (string, bool) {
+	g.providerMu.RLock()
+	defer g.providerMu.RUnlock()
+	provider, ok := g.providerCallbacks[token]
+	return provider, ok
 }
 
 func providerDisplayName(provider string) string {
@@ -110,14 +126,11 @@ func (g *Gateway) handleProviderCallback(
 		g.answerModelCallback(ctx, b, query.ID, "Provider switching is not configured.", true)
 		return
 	}
-	indexText := strings.TrimPrefix(query.Data, providerCallbackPrefix)
-	index, err := strconv.Atoi(indexText)
-	providers := manager.Providers()
-	if err != nil || index < 0 || index >= len(providers) {
+	selected, ok := g.providerForCallback(query.Data)
+	if !ok {
 		g.answerModelCallback(ctx, b, query.ID, "That provider selection is no longer valid.", true)
 		return
 	}
-	selected := providers[index]
 	if err := manager.SetActiveProvider(ctx, selected); err != nil {
 		g.answerModelCallback(ctx, b, query.ID, fmt.Sprintf("Cannot switch: %v", err), true)
 		return
@@ -134,7 +147,7 @@ func (g *Gateway) updateProviderSelector(
 ) {
 	params := &bot.EditMessageTextParams{
 		Text:        providerSelectorText(manager.ActiveProvider()),
-		ReplyMarkup: providerSelectorKeyboard(manager),
+		ReplyMarkup: g.providerSelectorKeyboard(manager),
 	}
 	switch {
 	case query.Message.Message != nil:

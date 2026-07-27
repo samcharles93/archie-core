@@ -2,8 +2,8 @@ package telegram
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/go-telegram/bot"
@@ -42,7 +42,7 @@ func (g *Gateway) sendModelSelector(
 	params := &bot.SendMessageParams{
 		ChatID:      msg.Chat.ID,
 		Text:        modelSelectorText(router.Models.ActiveModel()),
-		ReplyMarkup: modelSelectorKeyboard(router.Models),
+		ReplyMarkup: g.modelSelectorKeyboard(router.Models),
 	}
 	if msg.MessageThreadID != 0 {
 		params.MessageThreadID = msg.MessageThreadID
@@ -54,12 +54,17 @@ func (g *Gateway) sendModelSelector(
 
 func modelSelectorText(active string) string {
 	if active == "" {
-		return "Choose a model:"
+		return "Select a model:"
 	}
-	return "Choose a model:\nActive: " + active
+	provider, _, ok := strings.Cut(active, "/")
+	if !ok {
+		return "Select a model:\nActive: " + active
+	}
+	return "Select a model:\nCurrent Provider: " + providerDisplayName(provider) +
+		"\nActive: " + modelDisplayName(active, provider)
 }
 
-func modelSelectorKeyboard(manager gateway.ModelManager) *models.InlineKeyboardMarkup {
+func (g *Gateway) modelSelectorKeyboard(manager gateway.ModelManager) *models.InlineKeyboardMarkup {
 	active := manager.ActiveModel()
 	available := selectableModels(manager)
 	activeProvider := ""
@@ -67,20 +72,49 @@ func modelSelectorKeyboard(manager gateway.ModelManager) *models.InlineKeyboardM
 		activeProvider = providerManager.ActiveProvider()
 	}
 	rows := make([][]models.InlineKeyboardButton, 0, len(available))
-	for index, model := range available {
-		label := model
-		if activeProvider != "" {
-			label = strings.TrimPrefix(model, activeProvider+"/")
-		}
+	for _, model := range available {
+		label := modelDisplayName(model, activeProvider)
 		if model == active {
-			label = "✓ " + model
+			label = "✓ " + label
 		}
 		rows = append(rows, []models.InlineKeyboardButton{{
 			Text:         label,
-			CallbackData: modelCallbackPrefix + strconv.Itoa(index),
+			CallbackData: g.modelCallbackToken(model),
 		}})
 	}
 	return &models.InlineKeyboardMarkup{InlineKeyboard: rows}
+}
+
+// modelCallbackToken records a stable model identity for an inline button.
+// A positional index is unsafe: provider changes can reorder the selectable
+// list after Telegram has rendered the keyboard.
+func (g *Gateway) modelCallbackToken(model string) string {
+	sum := sha256.Sum256([]byte(model))
+	// 192 bits keeps the callback well below Telegram's 64-byte limit while
+	// making a collision infeasible for a configured model catalog.
+	token := fmt.Sprintf("%s%x", modelCallbackPrefix, sum[:24])
+	g.modelMu.Lock()
+	g.modelCallbacks[token] = model
+	g.modelMu.Unlock()
+	return token
+}
+
+func (g *Gateway) modelForCallback(token string) (string, bool) {
+	g.modelMu.RLock()
+	defer g.modelMu.RUnlock()
+	model, ok := g.modelCallbacks[token]
+	return model, ok
+}
+
+// modelDisplayName removes routing/provider prefixes from a model reference.
+// The selected provider is already shown in the selector heading; repeating it
+// in every button makes provider-aware selection needlessly noisy.
+func modelDisplayName(ref, provider string) string {
+	name := strings.TrimPrefix(ref, provider+"/")
+	if slash := strings.LastIndexByte(name, '/'); slash >= 0 {
+		name = name[slash+1:]
+	}
+	return name
 }
 
 func selectableModels(manager gateway.ModelManager) []string {
@@ -110,20 +144,19 @@ func (g *Gateway) handleModelCallback(
 		return
 	}
 
-	indexText := strings.TrimPrefix(query.Data, modelCallbackPrefix)
-	index, err := strconv.Atoi(indexText)
-	available := selectableModels(router.Models)
-	if err != nil || index < 0 || index >= len(available) {
+	selected, ok := g.modelForCallback(query.Data)
+	if !ok {
 		g.answerModelCallback(ctx, b, query.ID, "That model selection is no longer valid.", true)
 		return
 	}
-	selected := available[index]
 	if err := router.Models.SetActiveModel(ctx, selected); err != nil {
 		g.answerModelCallback(ctx, b, query.ID, fmt.Sprintf("Cannot switch: %v", err), true)
 		return
 	}
 
-	g.answerModelCallback(ctx, b, query.ID, "Active model: "+selected, false)
+	provider, _, _ := strings.Cut(selected, "/")
+	g.answerModelCallback(ctx, b, query.ID,
+		"The model has been changed to: "+modelDisplayName(selected, provider), false)
 	g.updateModelSelector(ctx, b, query, router.Models)
 }
 
@@ -151,7 +184,7 @@ func (g *Gateway) updateModelSelector(
 ) {
 	params := &bot.EditMessageTextParams{
 		Text:        modelSelectorText(manager.ActiveModel()),
-		ReplyMarkup: modelSelectorKeyboard(manager),
+		ReplyMarkup: g.modelSelectorKeyboard(manager),
 	}
 	switch {
 	case query.Message.Message != nil:
