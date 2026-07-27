@@ -210,7 +210,7 @@ func scriptToolSet(workspace string) core.ToolSet {
 			"run_go_script",
 			"Run a Yaegi-interpreted Go script (e.g. a skill's bundled scripts/*.go helper) and return everything it printed.",
 			json.RawMessage(params),
-			func(_ context.Context, input string) (string, error) {
+			func(ctx context.Context, input string) (string, error) {
 				var args struct {
 					Path string `json:"path"`
 				}
@@ -221,7 +221,7 @@ func scriptToolSet(workspace string) core.ToolSet {
 				if rel, err := filepath.Rel(workspace, full); err != nil || strings.HasPrefix(rel, "..") {
 					return "run_go_script rejected: path escapes the workspace", nil
 				}
-				out, err := skillscript.Run(full)
+				out, err := skillscript.RunContext(ctx, full)
 				if err != nil {
 					return fmt.Sprintf("run_go_script failed: %v\n%s", err, out), nil
 				}
