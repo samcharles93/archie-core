@@ -159,10 +159,10 @@ func (c *Client) Fetch(ctx context.Context) (jetstream.Msg, error) {
 		if msg == nil {
 			continue
 		}
-		if err := batch.Error(); err != nil {
-			return nil, fmt.Errorf("nats fetch batch: %w", err)
-		}
 		return msg, nil
+	}
+	if err := batch.Error(); err != nil {
+		return nil, fmt.Errorf("nats fetch batch: %w", err)
 	}
 	return nil, nil
 }
