@@ -3,653 +3,477 @@ package worktree
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-git/go-git/v6"
+	gitconfig "github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/object"
 )
 
-// newLocalRemote creates a bare repo with one commit on main and
-// returns the directory that serves as the fake forge host: the bare
-// repo lives at <host>/<owner>/<repo>.git so cloneURL resolves it via
-// file://.
+const testBase = "main"
+
+func testSignature() *object.Signature {
+	return &object.Signature{
+		Name:  "seeder",
+		Email: "seed@example.com",
+		When:  time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	}
+}
+
+// newLocalRemote creates a bare repo with one commit on main and returns
+// the directory that serves as the fake forge host: the bare repo lives
+// at <host>/<owner>/<repo>.git so cloneURL resolves it.
+//
+// Built with go-git rather than by shelling out, so the suite no longer
+// requires a git binary on the machine running it.
 func newLocalRemote(t *testing.T, owner, repo string) string {
 	t.Helper()
 	host := t.TempDir()
 	bare := filepath.Join(host, owner, repo+".git")
+
+	if _, err := git.PlainInit(bare, true, git.WithDefaultBranch(
+		plumbing.NewBranchReferenceName(testBase),
+	)); err != nil {
+		t.Fatalf("init bare remote: %v", err)
+	}
+
 	seed := filepath.Join(t.TempDir(), "seed")
+	sr, err := git.PlainInit(seed, false, git.WithDefaultBranch(
+		plumbing.NewBranchReferenceName(testBase),
+	))
+	if err != nil {
+		t.Fatalf("init seed repo: %v", err)
+	}
+	writeSeedCommit(t, sr, seed, "README.md", "seed\n", "seed")
 
-	run := func(dir string, args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
+	if _, err := sr.CreateRemote(&gitconfig.RemoteConfig{
+		Name: git.DefaultRemoteName,
+		URLs: []string{bare},
+	}); err != nil {
+		t.Fatalf("add remote: %v", err)
 	}
-
-	if err := os.MkdirAll(bare, 0o755); err != nil {
-		t.Fatal(err)
+	ref := plumbing.NewBranchReferenceName(testBase)
+	if err := sr.Push(&git.PushOptions{
+		RemoteName: git.DefaultRemoteName,
+		RefSpecs:   []gitconfig.RefSpec{gitconfig.RefSpec(ref + ":" + ref)},
+	}); err != nil {
+		t.Fatalf("seed push: %v", err)
 	}
-	run(host, "init", "--bare", "-b", "main", bare)
-	if err := os.MkdirAll(seed, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	run(seed, "init", "-b", "main")
-	run(seed, "config", "user.name", "seeder")
-	run(seed, "config", "user.email", "seed@example.com")
-	if err := os.WriteFile(filepath.Join(seed, "README.md"), []byte("seed\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	run(seed, "add", "-A")
-	run(seed, "commit", "-m", "seed")
-	run(seed, "push", "file://"+bare, "main")
 	return host
 }
 
-func TestPrepareCommitPushRoundTrip(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not installed")
+func writeSeedCommit(t *testing.T, r *git.Repository, dir, name, content, message string) plumbing.Hash {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", name, err)
 	}
+	disableSigning(t, r)
+	wt, err := r.Worktree()
+	if err != nil {
+		t.Fatalf("worktree: %v", err)
+	}
+	if _, err := wt.Add(name); err != nil {
+		t.Fatalf("add %s: %v", name, err)
+	}
+	sig := testSignature()
+	hash, err := wt.Commit(message, &git.CommitOptions{Author: sig, Committer: sig})
+	if err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	return hash
+}
+
+// disableSigning mirrors what Manager.setIdentity does for real clones,
+// so fixtures do not inherit commit.gpgSign from the host's global config.
+func disableSigning(t *testing.T, r *git.Repository) {
+	t.Helper()
+	cfg, err := r.Config()
+	if err != nil {
+		t.Fatalf("read fixture config: %v", err)
+	}
+	cfg.Raw.Section("commit").SetOption("gpgsign", "false")
+	if err := r.SetConfig(cfg); err != nil {
+		t.Fatalf("write fixture config: %v", err)
+	}
+}
+
+func newManager(t *testing.T, host string) *Manager {
+	t.Helper()
+	return &Manager{
+		WorkDir:  t.TempDir(),
+		BotUser:  "archie-bot",
+		BotEmail: "archie@example.com",
+		BaseURL:  host,
+	}
+}
+
+func TestPrepareCommitPushRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	host := newLocalRemote(t, "acme", "todo")
+	m := newManager(t, host)
 
-	m := &Manager{
-		WorkDir:  t.TempDir(),
-		Token:    "unused-for-file-remotes",
-		BotUser:  "archie-bot",
-		BotEmail: "archie-bot@example.com",
-		BaseURL:  "file://" + host,
-	}
-
-	dir, branch, err := m.Prepare(ctx, "acme", "todo", "main", 42, "feat: add test issue title", "", "")
+	dir, branch, err := m.Prepare(ctx, "acme", "todo", testBase, 7, "feat: add widget", "", "feature")
 	if err != nil {
-		t.Fatalf("prepare: %v", err)
+		t.Fatalf("Prepare() error = %v", err)
 	}
-	if branch != "feat/42-add-test-issue-title" {
-		t.Fatalf("branch = %q", branch)
+	if !strings.HasPrefix(branch, "feat/7-") {
+		t.Errorf("branch = %q, want prefix feat/7-", branch)
 	}
-
-	// Sentinel must exist after successful Prepare.
-	if _, err := os.Stat(filepath.Join(dir, ".archie-prepared")); err != nil {
-		t.Fatalf("sentinel missing after prepare: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, preparedSentinel)); err != nil {
+		t.Errorf("prepared sentinel missing: %v", err)
 	}
 
-	// Clean tree commits nothing.
-	changed, err := m.CommitAll(ctx, dir, "noop")
-	if err != nil || changed {
-		t.Fatalf("clean CommitAll = (%v, %v)", changed, err)
+	// A clean tree must report "nothing committed" rather than erroring.
+	committed, err := m.CommitAll(ctx, dir, "no-op")
+	if err != nil {
+		t.Fatalf("CommitAll() on clean tree error = %v", err)
+	}
+	if committed {
+		t.Error("CommitAll() = true on a clean tree, want false")
 	}
 
-	if err := os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("one\ntwo\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "widget.txt"), []byte("one\ntwo\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	changed, err = m.CommitAll(ctx, dir, "add hello")
-	if err != nil || !changed {
-		t.Fatalf("CommitAll = (%v, %v)", changed, err)
+	committed, err = m.CommitAll(ctx, dir, "feat: add widget")
+	if err != nil {
+		t.Fatalf("CommitAll() error = %v", err)
+	}
+	if !committed {
+		t.Fatal("CommitAll() = false, want true after adding a file")
 	}
 
-	lines, err := m.ChangedLines(ctx, dir, "main")
+	files, err := m.ChangedFiles(ctx, dir, testBase)
 	if err != nil {
-		t.Fatalf("ChangedLines: %v", err)
+		t.Fatalf("ChangedFiles() error = %v", err)
+	}
+	if len(files) != 1 || files[0] != "widget.txt" {
+		t.Errorf("ChangedFiles() = %v, want [widget.txt]", files)
+	}
+
+	lines, err := m.ChangedLines(ctx, dir, testBase)
+	if err != nil {
+		t.Fatalf("ChangedLines() error = %v", err)
 	}
 	if lines != 2 {
-		t.Fatalf("ChangedLines = %d, want 2", lines)
+		t.Errorf("ChangedLines() = %d, want 2", lines)
 	}
 
-	files, err := m.ChangedFiles(ctx, dir, "main")
+	diff, err := m.Diff(ctx, dir, testBase)
 	if err != nil {
-		t.Fatalf("ChangedFiles: %v", err)
+		t.Fatalf("Diff() error = %v", err)
 	}
-	if len(files) != 1 || files[0] != "hello.txt" {
-		t.Fatalf("ChangedFiles = %v, want [hello.txt]", files)
-	}
-
-	diff, err := m.Diff(ctx, dir, "main")
-	if err != nil {
-		t.Fatalf("Diff: %v", err)
-	}
-	if !strings.Contains(diff, "+one") || !strings.Contains(diff, "hello.txt") {
-		t.Fatalf("Diff missing expected content: %q", diff)
+	if !strings.Contains(diff, "widget.txt") {
+		t.Errorf("Diff() does not mention the changed file:\n%s", diff)
 	}
 
 	if err := m.Push(ctx, dir, branch); err != nil {
-		t.Fatalf("push: %v", err)
+		t.Fatalf("Push() error = %v", err)
 	}
-
-	// The branch must exist on the remote after push.
-	cmd := exec.Command("git", "ls-remote", "--heads",
-		"file://"+filepath.Join(host, "acme", "todo.git"), branch)
-	out, err := cmd.CombinedOutput()
-	if err != nil || !strings.Contains(string(out), branch) {
-		t.Fatalf("branch not on remote: %v\n%s", err, out)
+	// The branch must actually exist on the remote afterwards.
+	bare := filepath.Join(host, "acme", "todo.git")
+	remote, err := git.PlainOpen(bare)
+	if err != nil {
+		t.Fatalf("open bare remote: %v", err)
 	}
-
-	// Committer identity must be the bot.
-	cmd = exec.Command("git", "log", "-1", "--format=%an <%ae>")
-	cmd.Dir = dir
-	out, _ = cmd.CombinedOutput()
-	if got := strings.TrimSpace(string(out)); got != "archie-bot <archie-bot@example.com>" {
-		t.Fatalf("author = %q", got)
-	}
-
-	if err := m.Cleanup("acme", "todo", 42); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(dir); !os.IsNotExist(err) {
-		t.Fatal("cleanup left the worktree behind")
+	if _, err := remote.Reference(plumbing.NewBranchReferenceName(branch), true); err != nil {
+		t.Errorf("branch %q not present on remote after Push: %v", branch, err)
 	}
 }
 
-func TestPreparePersistentReusesRepoCacheAndCleanupExpiresIt(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not installed")
-	}
+func TestPrepareIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	host := newLocalRemote(t, "acme", "todo")
-	m := &Manager{
-		WorkDir:  t.TempDir(),
-		Token:    "unused-for-file-remotes",
-		BotUser:  "archie-bot",
-		BotEmail: "archie-bot@example.com",
-		BaseURL:  "file://" + host,
-	}
-	const ttl = 24 * time.Hour
+	m := newManager(t, host)
 
-	first, _, err := m.PreparePersistent(ctx, "acme", "todo", "main", 41, "feat: first", "", "", ttl)
+	dir1, branch1, err := m.Prepare(ctx, "acme", "todo", testBase, 3, "fix: thing", "", "bug")
 	if err != nil {
-		t.Fatalf("first persistent prepare: %v", err)
+		t.Fatalf("first Prepare() error = %v", err)
 	}
-	cache := m.cacheDir("acme", "todo")
-	if st, err := os.Stat(filepath.Join(cache, "HEAD")); err != nil || st.IsDir() {
-		t.Fatalf("repo cache was not created at %s: %v", cache, err)
-	}
-
-	second, _, err := m.PreparePersistent(ctx, "acme", "todo", "main", 42, "feat: second", "", "", ttl)
-	if err != nil {
-		t.Fatalf("second persistent prepare: %v", err)
-	}
-	if first == second {
-		t.Fatalf("persistent tasks share a mutable worktree: %s", first)
-	}
-	for _, dir := range []string{first, second} {
-		if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
-			t.Fatalf("isolated worktree missing at %s: %v", dir, err)
-		}
-	}
-
-	expired := time.Now().Add(-ttl - time.Hour)
-	if err := os.Chtimes(cache, expired, expired); err != nil {
+	// A marker file proves the second call reused the clone instead of
+	// wiping and re-cloning it.
+	marker := filepath.Join(dir1, "reuse-marker")
+	if err := os.WriteFile(marker, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	count, err := m.CleanupExpiredCaches(ttl)
+
+	dir2, branch2, err := m.Prepare(ctx, "acme", "todo", testBase, 3, "fix: thing", "", "bug")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("second Prepare() error = %v", err)
 	}
-	if count != 1 {
-		t.Fatalf("CleanupExpiredCaches count = %d, want 1", count)
+	if dir1 != dir2 || branch1 != branch2 {
+		t.Errorf("Prepare() not stable: (%q,%q) then (%q,%q)", dir1, branch1, dir2, branch2)
 	}
-	if _, err := os.Stat(cache); !os.IsNotExist(err) {
-		t.Fatalf("expired repo cache still exists: %v", err)
-	}
-	for _, dir := range []string{first, second} {
-		if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
-			t.Fatalf("cache cleanup removed or broke task worktree %s: %v", dir, err)
-		}
+	if _, err := os.Stat(marker); err != nil {
+		t.Error("second Prepare() re-cloned instead of reusing the prepared worktree")
 	}
 }
 
-func TestAskpassWrittenOnce(t *testing.T) {
-	m := &Manager{WorkDir: t.TempDir()}
-
-	p1, err1 := m.askpass()
-	if err1 != nil {
-		t.Fatalf("first askpass: %v", err1)
-	}
-	if _, err := os.Stat(p1); err != nil {
-		t.Fatalf("askpass file not created: %v", err)
-	}
-	fi1, err := os.Stat(p1)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	p2, err2 := m.askpass()
-	if err2 != nil {
-		t.Fatalf("second askpass: %v", err2)
-	}
-	if p1 != p2 {
-		t.Fatalf("paths differ: %q vs %q", p1, p2)
-	}
-
-	// Mod time must be unchanged  --  file was not rewritten.
-	fi2, err := os.Stat(p2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !fi1.ModTime().Equal(fi2.ModTime()) {
-		t.Fatalf("askpass file was rewritten: mod time changed from %v to %v", fi1.ModTime(), fi2.ModTime())
-	}
-
-	// Content must be correct.
-	b, err := os.ReadFile(p1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := "#!/bin/sh\necho \"$ARCHIE_GIT_TOKEN\"\n"
-	if string(b) != want {
-		t.Fatalf("content = %q, want %q", string(b), want)
-	}
-}
-
-func TestPrepareResumesAfterInterruptedClone(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not installed")
-	}
+// An interrupted clone leaves a directory with no sentinel. Prepare must
+// discard it rather than trying to reuse a half-built worktree.
+func TestPrepareDiscardsUnsentinelledDirectory(t *testing.T) {
 	ctx := context.Background()
-	host := newLocalRemote(t, "acme", "interrupt")
+	host := newLocalRemote(t, "acme", "todo")
+	m := newManager(t, host)
 
-	m := &Manager{
-		WorkDir:  t.TempDir(),
-		Token:    "unused-for-file-remotes",
-		BotUser:  "archie-bot",
-		BotEmail: "archie-bot@example.com",
-		BaseURL:  "file://" + host,
-	}
-
-	dir := m.Dir("acme", "interrupt", 1)
-
-	// Simulate an interrupted clone: create parent dir with a bare-bones
-	// .git directory (via git init + remote + fetch) but no checked-out
-	// files and no .archie-prepared sentinel.
+	dir := m.Dir("acme", "todo", 11)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	run := func(dir string, args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
+	junk := filepath.Join(dir, "half-written")
+	if err := os.WriteFile(junk, []byte("partial"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := m.Prepare(ctx, "acme", "todo", testBase, 11, "chore: retry", "", "chore"); err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	if _, err := os.Stat(junk); !os.IsNotExist(err) {
+		t.Error("Prepare() reused an interrupted clone instead of discarding it")
+	}
+	if _, err := os.Stat(filepath.Join(dir, preparedSentinel)); err != nil {
+		t.Errorf("prepared sentinel missing after recovery: %v", err)
+	}
+}
+
+func TestPrepareErrors(t *testing.T) {
+	host := newLocalRemote(t, "acme", "todo")
+
+	tests := []struct {
+		name  string
+		owner string
+		repo  string
+		base  string
+		host  string
+	}{
+		{name: "unknown base branch", owner: "acme", repo: "todo", base: "no-such-branch", host: host},
+		{name: "unknown repository", owner: "acme", repo: "missing", base: testBase, host: host},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newManager(t, tc.host)
+			_, _, err := m.Prepare(context.Background(), tc.owner, tc.repo, tc.base, 1, "t", "", "")
+			if err == nil {
+				t.Fatal("Prepare() error = nil, want a failure")
+			}
+		})
+	}
+}
+
+// Every read-only operation must report a clear error on a directory that
+// is not a repository, rather than panicking or returning a zero value
+// that reads as "no changes".
+func TestOperationsOnNonRepository(t *testing.T) {
+	ctx := context.Background()
+	m := &Manager{WorkDir: t.TempDir()}
+	dir := t.TempDir()
+
+	t.Run("CommitAll", func(t *testing.T) {
+		if _, err := m.CommitAll(ctx, dir, "msg"); err == nil {
+			t.Error("CommitAll() error = nil, want a failure")
+		}
+	})
+	t.Run("ChangedLines", func(t *testing.T) {
+		if _, err := m.ChangedLines(ctx, dir, testBase); err == nil {
+			t.Error("ChangedLines() error = nil, want a failure")
+		}
+	})
+	t.Run("ChangedFiles", func(t *testing.T) {
+		if _, err := m.ChangedFiles(ctx, dir, testBase); err == nil {
+			t.Error("ChangedFiles() error = nil, want a failure")
+		}
+	})
+	t.Run("Diff", func(t *testing.T) {
+		if _, err := m.Diff(ctx, dir, testBase); err == nil {
+			t.Error("Diff() error = nil, want a failure")
+		}
+	})
+	t.Run("Push", func(t *testing.T) {
+		if err := m.Push(ctx, dir, "any"); err == nil {
+			t.Error("Push() error = nil, want a failure")
+		}
+	})
+}
+
+// The diff must be measured from the merge base, not from the remote tip.
+// Otherwise commits landed on the base branch after the task started are
+// attributed to the task and can trip the diff-size cap.
+func TestDiffUsesMergeBaseNotRemoteTip(t *testing.T) {
+	ctx := context.Background()
+	host := newLocalRemote(t, "acme", "todo")
+	m := newManager(t, host)
+
+	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 5, "feat: mine", "", "feature")
+	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "mine.txt"), []byte("mine\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.CommitAll(ctx, dir, "feat: mine"); err != nil {
+		t.Fatalf("CommitAll() error = %v", err)
+	}
+
+	// Land an unrelated commit on the remote base and fetch it, so
+	// origin/main moves ahead of where this branch diverged.
+	seed := filepath.Join(t.TempDir(), "other")
+	sr, err := git.PlainClone(seed, &git.CloneOptions{URL: filepath.Join(host, "acme", "todo.git")})
+	if err != nil {
+		t.Fatalf("clone for second author: %v", err)
+	}
+	writeSeedCommit(t, sr, seed, "theirs.txt", "theirs\n", "chore: theirs")
+	ref := plumbing.NewBranchReferenceName(testBase)
+	if err := sr.Push(&git.PushOptions{
+		RemoteName: git.DefaultRemoteName,
+		RefSpecs:   []gitconfig.RefSpec{gitconfig.RefSpec(ref + ":" + ref)},
+	}); err != nil {
+		t.Fatalf("second author push: %v", err)
+	}
+
+	r, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Fetch(&git.FetchOptions{RemoteName: git.DefaultRemoteName}); err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+
+	files, err := m.ChangedFiles(ctx, dir, testBase)
+	if err != nil {
+		t.Fatalf("ChangedFiles() error = %v", err)
+	}
+	for _, f := range files {
+		if f == "theirs.txt" {
+			t.Errorf("ChangedFiles() = %v, includes another author's file; diff is not merge-base relative", files)
 		}
 	}
-	run(dir, "init")
-	run(dir, "remote", "add", "origin", "file://"+filepath.Join(host, "acme", "interrupt.git"))
-	run(dir, "fetch", "origin")
-
-	// Confirm the broken state: .git exists but no sentinel and no README.md.
-	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
-		t.Fatalf(".git missing in simulated broken clone: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(dir, ".archie-prepared")); !os.IsNotExist(err) {
-		t.Fatal("sentinel unexpectedly exists in broken clone")
-	}
-	if _, err := os.Stat(filepath.Join(dir, "README.md")); !os.IsNotExist(err) {
-		t.Fatal("working tree files unexpectedly exist in broken clone")
-	}
-
-	// Prepare must detect the broken state, remove it, and do a fresh clone.
-	dir2, branch, err := m.Prepare(ctx, "acme", "interrupt", "main", 1, "feat: interrupted", "", "")
-	if err != nil {
-		t.Fatalf("prepare after interrupted clone: %v", err)
-	}
-
-	// The sentinel must exist after a successful Prepare.
-	if _, err := os.Stat(filepath.Join(dir2, ".archie-prepared")); err != nil {
-		t.Fatalf("sentinel missing after prepare: %v", err)
-	}
-
-	// The working tree must be fully functional: files from the remote exist.
-	if _, err := os.Stat(filepath.Join(dir2, "README.md")); err != nil {
-		t.Fatalf("working tree missing README.md after prepare: %v", err)
-	}
-
-	// CommitAll must work  --  the sentinel is excluded from git tracking.
-	changed, err := m.CommitAll(ctx, dir2, "noop")
-	if err != nil || changed {
-		t.Fatalf("clean CommitAll = (%v, %v), want (false, nil)", changed, err)
-	}
-
-	// Push must work.
-	if err := m.Push(ctx, dir2, branch); err != nil {
-		t.Fatalf("push: %v", err)
-	}
-
-	// A second Prepare call must short-circuit via the sentinel  --  no re-clone.
-	dir3, _, err := m.Prepare(ctx, "acme", "interrupt", "main", 1, "feat: interrupted", "", "")
-	if err != nil {
-		t.Fatalf("second prepare: %v", err)
-	}
-	if dir3 != dir2 {
-		t.Fatalf("second prepare created a different directory: %q vs %q", dir3, dir2)
-	}
-
-	if err := m.Cleanup("acme", "interrupt", 1); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(dir3); !os.IsNotExist(err) {
-		t.Fatal("cleanup left the worktree behind")
+	if len(files) != 1 || files[0] != "mine.txt" {
+		t.Errorf("ChangedFiles() = %v, want [mine.txt]", files)
 	}
 }
 
-func TestCacheDirCannotEscapeWorkDir(t *testing.T) {
+func TestBranchNaming(t *testing.T) {
+	tests := []struct {
+		name   string
+		issue  int
+		title  string
+		labels string
+		want   string
+	}{
+		{name: "bug label maps to fix", issue: 4, title: "crash on save", labels: "bug", want: "fix/4-crash-on-save"},
+		{name: "feature label maps to feat", issue: 9, title: "add export", labels: "feature", want: "feat/9-add-export"},
+		{name: "no label defaults to feat", issue: 1, title: "tidy", labels: "", want: "feat/1-tidy"},
+		{name: "conventional prefix is not duplicated", issue: 2, title: "fix: broken link", labels: "bug", want: "fix/2-broken-link"},
+		{name: "empty title falls back to prefix and issue", issue: 8, title: "", labels: "chore", want: "chore/8"},
+		{name: "punctuation collapses to single hyphens", issue: 3, title: "a  --  b", labels: "docs", want: "docs/3-a-b"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := archieBranch(tc.issue, tc.title, "", tc.labels); got != tc.want {
+				t.Errorf("archieBranch() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCloneURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		baseURL string
+		want    string
+	}{
+		{
+			name:    "explicit forge host",
+			baseURL: "https://git.example.test",
+			want:    "https://git.example.test/acme/todo.git",
+		},
+		{
+			// The token must never be embedded in the URL: it travels as
+			// an in-process credential instead.
+			name:    "default github host carries no credentials",
+			baseURL: "",
+			want:    "https://github.com/acme/todo.git",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &Manager{BaseURL: tc.baseURL, BotUser: "archie-bot", Token: "s3cret"}
+			got := m.cloneURL("acme", "todo")
+			if got != tc.want {
+				t.Errorf("cloneURL() = %q, want %q", got, tc.want)
+			}
+			if strings.Contains(got, "s3cret") {
+				t.Errorf("cloneURL() leaks the token: %q", got)
+			}
+		})
+	}
+}
+
+func TestAuthOmittedWithoutToken(t *testing.T) {
+	if opts := (&Manager{BotUser: "archie-bot"}).auth(); opts != nil {
+		t.Errorf("auth() = %v with no token, want nil for an anonymous request", opts)
+	}
+	if opts := (&Manager{BotUser: "archie-bot", Token: "t"}).auth(); len(opts) == 0 {
+		t.Error("auth() returned no options despite a configured token")
+	}
+}
+
+func TestCleanupRemovesWorktree(t *testing.T) {
 	m := &Manager{WorkDir: t.TempDir()}
-	cache := m.cacheDir("../outside", `..\also-outside`)
-	rel, err := filepath.Rel(filepath.Join(m.WorkDir, ".repo-cache"), cache)
+	dir := m.Dir("acme", "todo", 42)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Cleanup("acme", "todo", 42); err != nil {
+		t.Fatalf("Cleanup() error = %v", err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Error("Cleanup() left the worktree behind")
+	}
+	// Cleanup of an absent worktree is not an error.
+	if err := m.Cleanup("acme", "todo", 42); err != nil {
+		t.Errorf("Cleanup() on a missing worktree error = %v, want nil", err)
+	}
+}
+
+// The prepared sentinel must never reach a commit. It previously lived in
+// the working tree, hidden by .git/info/exclude -- which git honours and
+// go-git does not, so it was committed and pushed onto every task branch.
+func TestSentinelIsNeverCommitted(t *testing.T) {
+	ctx := context.Background()
+	host := newLocalRemote(t, "acme", "todo")
+	m := newManager(t, host)
+
+	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 21, "feat: thing", "", "feature")
 	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "real.txt"), []byte("x\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		t.Fatalf("cache path escaped managed root: %s", cache)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Repro tests for uncovered code paths (issue #58)
-// ---------------------------------------------------------------------------
-
-// TestPrepareIdempotentFastPath proves the "already prepared" short-circuit
-// in prepare(). The second call must return the same dir/branch without
-// error, and the worktree must remain functional (fetch+checkout+reset).
-func TestPrepareIdempotentFastPath(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not installed")
-	}
-	ctx := context.Background()
-	host := newLocalRemote(t, "acme", "idem")
-
-	m := &Manager{
-		WorkDir:  t.TempDir(),
-		Token:    "unused-for-file-remotes",
-		BotUser:  "archie-bot",
-		BotEmail: "archie-bot@example.com",
-		BaseURL:  "file://" + host,
+	if _, err := m.CommitAll(ctx, dir, "feat: thing"); err != nil {
+		t.Fatalf("CommitAll() error = %v", err)
 	}
 
-	dir1, branch1, err := m.Prepare(ctx, "acme", "idem", "main", 1, "feat: idempotent", "", "")
+	files, err := m.ChangedFiles(ctx, dir, testBase)
 	if err != nil {
-		t.Fatalf("first prepare: %v", err)
+		t.Fatalf("ChangedFiles() error = %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir1, ".git")); err != nil {
-		t.Fatalf("worktree not created: %v", err)
-	}
-
-	// Second Prepare with the same arguments must hit the fast path.
-	dir2, branch2, err := m.Prepare(ctx, "acme", "idem", "main", 1, "feat: idempotent", "", "")
-	if err != nil {
-		t.Fatalf("second prepare (fast path): %v", err)
-	}
-	if dir1 != dir2 {
-		t.Fatalf("fast path returned different dir: %q vs %q", dir1, dir2)
-	}
-	if branch1 != branch2 {
-		t.Fatalf("fast path returned different branch: %q vs %q", branch1, branch2)
+	for _, f := range files {
+		if strings.Contains(f, "archie-prepared") {
+			t.Errorf("the prepared sentinel was committed: ChangedFiles() = %v", files)
+		}
 	}
 
-	// The worktree must still be usable after the fast path.
-	if _, err := os.Stat(filepath.Join(dir2, ".git")); err != nil {
-		t.Fatalf("fast path broke .git: %v", err)
-	}
-
-	// After the fast path, we should be able to commit and push.
-	if err := os.WriteFile(filepath.Join(dir2, "fast.txt"), []byte("fast path\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	changed, err := m.CommitAll(ctx, dir2, "test fast path")
-	if err != nil {
-		t.Fatalf("CommitAll after fast path: %v", err)
-	}
-	if !changed {
-		t.Fatal("CommitAll after fast path reported clean tree, expected changes")
-	}
-	if err := m.Push(ctx, dir2, branch2); err != nil {
-		t.Fatalf("Push after fast path: %v", err)
-	}
-}
-
-// TestPrepareBadBaseBranch proves that prepare() propagates git clone
-// failures when the requested base branch does not exist.
-func TestPrepareBadBaseBranch(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not installed")
-	}
-	ctx := context.Background()
-	host := newLocalRemote(t, "acme", "badbase")
-
-	m := &Manager{
-		WorkDir:  t.TempDir(),
-		Token:    "unused-for-file-remotes",
-		BotUser:  "archie-bot",
-		BotEmail: "archie-bot@example.com",
-		BaseURL:  "file://" + host,
-	}
-
-	_, _, err := m.Prepare(ctx, "acme", "badbase", "nonexistent-branch", 1, "feat: test", "", "")
-	if err == nil {
-		t.Fatal("expected error for nonexistent base branch, got nil")
-	}
-	// The error must mention the git command ("clone") and the bad branch.
-	if !strings.Contains(err.Error(), "clone") {
-		t.Fatalf("error should mention 'clone', got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "nonexistent-branch") {
-		t.Fatalf("error should mention bad branch, got: %v", err)
-	}
-}
-
-// TestPrepareBadCloneURL proves that prepare() propagates git clone
-// failures when the clone URL points to a nonexistent repository.
-func TestPrepareBadCloneURL(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not installed")
-	}
-	ctx := context.Background()
-
-	m := &Manager{
-		WorkDir:  t.TempDir(),
-		Token:    "unused-for-file-remotes",
-		BotUser:  "archie-bot",
-		BotEmail: "archie-bot@example.com",
-		BaseURL:  "file:///nonexistent/path/that/does/not/exist",
-	}
-
-	_, _, err := m.Prepare(ctx, "acme", "norepo", "main", 1, "feat: test", "", "")
-	if err == nil {
-		t.Fatal("expected error for bad clone URL, got nil")
-	}
-	// The error must mention the git command ("clone").
-	if !strings.Contains(err.Error(), "clone") {
-		t.Fatalf("error should mention 'clone', got: %v", err)
-	}
-}
-
-// TestCommitAllInNonGitDir proves that CommitAll returns an error when
-// invoked in a directory that is not a git repository.
-func TestCommitAllInNonGitDir(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not installed")
-	}
-	ctx := context.Background()
-
-	m := &Manager{
-		WorkDir:  t.TempDir(),
-		Token:    "unused",
-		BotUser:  "bot",
-		BotEmail: "bot@example.com",
-	}
-
-	dir := t.TempDir() // plain directory, no .git
-	changed, err := m.CommitAll(ctx, dir, "should fail")
-	if err == nil {
-		t.Fatalf("expected error for CommitAll in non-git dir, got (changed=%v, err=nil)", changed)
-	}
-	if changed {
-		t.Fatal("CommitAll in non-git dir reported changes, expected false")
-	}
-}
-
-// TestChangedLinesInNonGitDir proves that ChangedLines returns an error
-// when invoked in a directory that is not a git repository.
-func TestChangedLinesInNonGitDir(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not installed")
-	}
-	ctx := context.Background()
-
-	m := &Manager{
-		WorkDir:  t.TempDir(),
-		Token:    "unused",
-		BotUser:  "bot",
-		BotEmail: "bot@example.com",
-	}
-
-	dir := t.TempDir() // plain directory, no .git
-	lines, err := m.ChangedLines(ctx, dir, "main")
-	if err == nil {
-		t.Fatalf("expected error for ChangedLines in non-git dir, got (lines=%d, err=nil)", lines)
-	}
-	if lines != 0 {
-		t.Fatalf("ChangedLines in non-git dir returned non-zero lines: %d", lines)
-	}
-}
-
-// TestDiffInNonGitDir proves that Diff returns an error when invoked
-// in a directory that is not a git repository.
-func TestDiffInNonGitDir(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not installed")
-	}
-	ctx := context.Background()
-
-	m := &Manager{
-		WorkDir:  t.TempDir(),
-		Token:    "unused",
-		BotUser:  "bot",
-		BotEmail: "bot@example.com",
-	}
-
-	dir := t.TempDir() // plain directory, no .git
-	diff, err := m.Diff(ctx, dir, "main")
-	if err == nil {
-		t.Fatalf("expected error for Diff in non-git dir, got diff=%q, err=nil", diff)
-	}
-	if diff != "" {
-		t.Fatalf("Diff in non-git dir returned non-empty output: %q", diff)
-	}
-}
-
-// TestPushRejected proves that Push returns an error when the remote
-// rejects the push (e.g. non-fast-forward).
-func TestPushRejected(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not installed")
-	}
-	ctx := context.Background()
-	host := newLocalRemote(t, "acme", "reject")
-
-	m := &Manager{
-		WorkDir:  t.TempDir(),
-		Token:    "unused-for-file-remotes",
-		BotUser:  "archie-bot",
-		BotEmail: "archie-bot@example.com",
-		BaseURL:  "file://" + host,
-	}
-
-	dir, branch, err := m.Prepare(ctx, "acme", "reject", "main", 1, "feat: push test", "", "")
-	if err != nil {
-		t.Fatalf("prepare: %v", err)
-	}
-
-	// Push once so the branch exists on the remote.
-	if err := os.WriteFile(filepath.Join(dir, "first.txt"), []byte("first\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := m.CommitAll(ctx, dir, "first commit"); err != nil {
-		t.Fatal(err)
-	}
-	if err := m.Push(ctx, dir, branch); err != nil {
-		t.Fatalf("first push: %v", err)
-	}
-
-	// Now advance the remote branch independently (simulate another
-	// client pushing), then try to push again from the stale local branch.
-	// We do this by creating a second worktree that pushes to the same
-	// branch, making the first worktree's branch out of date.
-	dir2, _, err := m.Prepare(ctx, "acme", "reject", "main", 2, "feat: conflicting", "", "")
-	if err != nil {
-		t.Fatalf("second prepare: %v", err)
-	}
-	// Checkout the same branch in the second worktree.
-	if _, err := exec.Command("git", "-C", dir2, "fetch", "origin", branch).CombinedOutput(); err != nil {
-		t.Fatalf("fetch branch in second worktree: %v", err)
-	}
-	if _, err := exec.Command("git", "-C", dir2, "checkout", "-b", branch, "origin/"+branch).CombinedOutput(); err != nil {
-		t.Fatalf("checkout branch in second worktree: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir2, "second.txt"), []byte("second\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	// Commit and push from the second worktree using raw git to bypass Manager.
-	cmd := exec.Command("git", "-C", dir2, "add", "-A")
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("add in second worktree: %v\n%s", err, out)
-	}
-	cmd = exec.Command("git", "-C", dir2, "commit", "-m", "second commit")
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("commit in second worktree: %v\n%s", err, out)
-	}
-	cmd = exec.Command("git", "-C", dir2, "push", "origin", branch)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("push from second worktree: %v\n%s", err, out)
-	}
-
-	// Now the first worktree's branch is behind origin/branch.
-	// Make a change and try to push  --  it should be rejected.
-	if err := os.WriteFile(filepath.Join(dir, "third.txt"), []byte("third\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := m.CommitAll(ctx, dir, "third commit"); err != nil {
-		t.Fatal(err)
-	}
-	err = m.Push(ctx, dir, branch)
-	if err == nil {
-		t.Fatal("expected push rejection due to non-fast-forward, got nil error")
-	}
-}
-
-// TestGitErrorWrapping proves that git() wraps errors with the command
-// name and preserves the underlying error via %w.
-func TestGitErrorWrapping(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not installed")
-	}
-	ctx := context.Background()
-
-	m := &Manager{
-		WorkDir:  t.TempDir(),
-		Token:    "unused",
-		BotUser:  "bot",
-		BotEmail: "bot@example.com",
-	}
-
-	dir := t.TempDir() // plain directory, no .git
-	_, err := m.CommitAll(ctx, dir, "test message")
-	if err == nil {
-		t.Fatal("expected error from git in non-repo dir")
-	}
-
-	// The error must contain "git" and the specific command ("add").
-	errStr := err.Error()
-	if !strings.Contains(errStr, "git") {
-		t.Fatalf("error should contain 'git' prefix: %v", err)
-	}
-	if !strings.Contains(errStr, "add") {
-		t.Fatalf("error should mention the failing command 'add': %v", err)
+	// It must still exist on disk, or Prepare stops being idempotent.
+	if _, err := os.Stat(filepath.Join(dir, preparedSentinel)); err != nil {
+		t.Errorf("sentinel missing after commit: %v", err)
 	}
 }

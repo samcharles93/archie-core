@@ -322,15 +322,6 @@ func (d *Daemon) cleanupExpiredStorage(ctx context.Context) {
 			d.Log.Info("expired persistent volumes removed", "count", n)
 		}
 	}
-	if d.Trees != nil {
-		n, err := d.Trees.CleanupExpiredCaches(ttl)
-		if err != nil {
-			d.Log.Warn("repo cache cleanup failed", "err", err)
-		}
-		if n > 0 {
-			d.Log.Info("expired repo caches removed", "count", n)
-		}
-	}
 }
 
 // drainSQLite claims queued tasks from SQLite and dispatches them concurrently.
@@ -892,14 +883,12 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	// must exist before Acquire is called.
 	var branch string
 	var err error
-	if repo.PersistentStorage && d.Cfg.Containers.VolumeTTL.Std() > 0 {
-		_, branch, err = trees.PreparePersistent(
-			ctx, task.Owner, task.Repo, repo.Base, task.IssueNumber,
-			task.Title, task.Body, task.Labels, d.Cfg.Containers.VolumeTTL.Std(),
-		)
-	} else {
-		_, branch, err = trees.Prepare(ctx, task.Owner, task.Repo, repo.Base, task.IssueNumber, task.Title, task.Body, task.Labels)
-	}
+	// Every task gets an independent full clone. The former
+	// PreparePersistent path shared objects with a per-repo bare cache;
+	// go-git has no --dissociate, so a shared cache would stay a live
+	// dependency of each worktree and expiring one would corrupt running
+	// tasks. repo.PersistentStorage still governs the container volume.
+	_, branch, err = trees.Prepare(ctx, task.Owner, task.Repo, repo.Base, task.IssueNumber, task.Title, task.Body, task.Labels)
 	if err != nil {
 		d.Log.Error("worktree prepare failed", "err", err)
 		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "worktree prepare failed: "+err.Error())
