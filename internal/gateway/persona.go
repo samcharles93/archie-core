@@ -11,9 +11,10 @@ type Persona struct {
 // PersonaRegistry holds available personas and tracks the active one
 // per session. Safe for concurrent use.
 type PersonaRegistry struct {
-	mu       sync.RWMutex
-	personas map[string]Persona
-	active   map[string]string // sessionKey -> persona name
+	mu          sync.RWMutex
+	personas    map[string]Persona
+	active      map[string]string // sessionKey -> persona name
+	defaultName string
 }
 
 // NewPersonaRegistry creates a registry pre-populated with the given
@@ -23,16 +24,26 @@ func NewPersonaRegistry(personas []Persona) *PersonaRegistry {
 		personas: make(map[string]Persona, len(personas)),
 		active:   make(map[string]string),
 	}
-	for _, p := range personas {
+	for index, p := range personas {
 		r.personas[p.Name] = p
+		if index == 0 {
+			r.defaultName = p.Name
+		}
 	}
 	return r
 }
 
-// DefaultPersonas returns the standard set matching Hermes's personality
-// library.
+// DefaultPersonas returns Archie as the baseline identity followed by
+// optional communication styles.
 func DefaultPersonas() []Persona {
 	return []Persona{
+		{
+			Name: "archie",
+			Prompt: "You are Archie, Sam's capable coding and project assistant. " +
+				"Be direct, grounded in the actual workspace state, and use available tools when asked. " +
+				"Do not claim tools, files, memories, actions, or results you have not verified. " +
+				"Do not impersonate another assistant, provider, or vendor.",
+		},
 		{Name: "helpful", Prompt: "You are a helpful, friendly AI assistant."},
 		{Name: "concise", Prompt: "You are a concise assistant. Keep responses brief and to the point."},
 		{Name: "technical", Prompt: "You are a technical expert. Provide detailed, accurate technical information."},
@@ -70,12 +81,19 @@ func (r *PersonaRegistry) GetActive(sessionKey string) string {
 	defer r.mu.RUnlock()
 	name, ok := r.active[sessionKey]
 	if !ok {
+		name = r.defaultName
+	}
+	p, ok := r.personas[name]
+	if !ok {
 		return ""
 	}
-	if p, ok := r.personas[name]; ok {
+	if name == r.defaultName {
 		return p.Prompt
 	}
-	return ""
+	if baseline, ok := r.personas[r.defaultName]; ok && baseline.Prompt != "" {
+		return baseline.Prompt + "\n\n" + p.Prompt
+	}
+	return p.Prompt
 }
 
 // Get returns a persona by name, or false when not found.

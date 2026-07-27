@@ -78,5 +78,3 @@ bd close <id>           # Complete work
 - Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists.
 - Use `bd remember` / `bd memories <keyword>` for persistent knowledge — do NOT use MEMORY.md files.
 - Issues live in a local Dolt DB; sync uses `refs/dolt/data` on the git remote; `.beads/issues.jsonl` is a passive export, not the source of truth. See [SYNC_CONCEPTS.md](https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md).
-
-**Git/session policy (conservative, default):** do not commit, push, or run Dolt remote sync unless explicitly asked. At session end: file beads for remaining work, run quality gates if code changed, update issue status, report `git status` and proposed commands, and wait for approval before any git operation.

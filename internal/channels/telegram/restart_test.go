@@ -1,9 +1,34 @@
 package telegram
 
 import (
+	"context"
+	"encoding/json"
 	"log/slog"
 	"testing"
+
+	"github.com/go-telegram/bot/models"
 )
+
+func TestRestartAcknowledgesArchie(t *testing.T) {
+	g := New("1:test", "", "", []int64{42}, slog.Default())
+	b, requests := newTelegramTestBot(t)
+
+	g.restartHandler()(context.Background(), b, &models.Update{Message: &models.Message{
+		From: &models.User{ID: 42},
+		Chat: models.Chat{ID: 7, Type: models.ChatTypePrivate},
+	}})
+
+	if len(*requests) != 1 {
+		t.Fatalf("restart acknowledgement = %#v", *requests)
+	}
+	var rich models.InputRichMessage
+	if err := json.Unmarshal([]byte((*requests)[0].form["rich_message"]), &rich); err != nil {
+		t.Fatal(err)
+	}
+	if rich.Markdown != "🔄 Reloading Archie…" {
+		t.Fatalf("restart acknowledgement = %#v, want Archie wording", *requests)
+	}
+}
 
 // The restart channel is buffered so a handler can hand off without
 // blocking: the handler runs on the very bot the supervisor is about to

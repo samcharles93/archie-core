@@ -32,6 +32,9 @@ type StdioTransportConfig struct {
 	Command string
 	// Args are passed to the server executable.
 	Args []string
+	// Dir is the subprocess working directory. Empty inherits the daemon's
+	// working directory.
+	Dir string
 	// Env is additional environment variables in NAME=value format.
 	// The subprocess inherits the parent process environment; these are added
 	// on top of it.
@@ -79,7 +82,7 @@ func (c StdioTransportConfig) effectiveShutdownGrace() time.Duration {
 
 // StdioTransport manages an MCP server subprocess, sending JSON-RPC 2.0
 // messages to its stdin and receiving responses from its stdout. Messages
-// are framed with Content-Length headers.
+// use MCP's newline-delimited JSON framing.
 //
 // The transport supports automatic restart with exponential backoff when
 // the subprocess dies unexpectedly. Use [StdioTransport.Start] to begin,
@@ -399,6 +402,7 @@ func (t *StdioTransport) commitSpawnedProcess(cmd *exec.Cmd, stdin io.WriteClose
 func (t *StdioTransport) spawnProcess() (*exec.Cmd, io.WriteCloser, *bufio.Reader, error) {
 	cmd := exec.CommandContext(t.ctx, t.config.Command, t.config.Args...)
 	cmd.Env = append(os.Environ(), t.config.Env...)
+	cmd.Dir = t.config.Dir
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -420,7 +424,7 @@ func (t *StdioTransport) spawnProcess() (*exec.Cmd, io.WriteCloser, *bufio.Reade
 	return cmd, stdin, bufio.NewReader(stdout), nil
 }
 
-// runReader loops reading Content-Length framed messages from the
+// runReader loops reading newline-delimited JSON messages from the
 // subprocess's stdout, routing responses to the matching pending
 // channels. On error (process crash, pipe close), it initiates the
 // auto-restart sequence.
@@ -491,12 +495,17 @@ func (t *StdioTransport) handleProcessDeath() {
 
 	t.crashCount++
 	t.state = StateStarting
+	cmd := t.cmd
 	t.cmd = nil
 	t.stdin = nil
 
 	// Fail all pending requests  --  the subprocess is gone.
 	t.failAllPendingLocked()
 	t.mu.Unlock()
+
+	if cmd != nil {
+		_ = cmd.Wait()
+	}
 
 	// Attempt restart (outside lock because it waits).
 	t.attemptRestart()

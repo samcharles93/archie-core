@@ -11,6 +11,7 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -77,6 +78,16 @@ type ModelManager interface {
 	// SetActiveModel switches the active model. Returns an error if the
 	// reference is unknown.
 	SetActiveModel(ctx context.Context, ref string) error
+}
+
+// ProviderModelManager is the optional provider-aware extension used by
+// gateways that offer a provider selector before model selection.
+type ProviderModelManager interface {
+	ModelManager
+	Providers() []string
+	ActiveProvider() string
+	ModelsForProvider(provider string) []string
+	SetActiveProvider(ctx context.Context, provider string) error
 }
 
 // SpawnRequest is a chat-originated task creation request. Repo and
@@ -167,6 +178,9 @@ func (r *Router) Route(ctx context.Context, msg Message) (string, error) {
 	case "/cancel":
 		return r.handleCancel(ctx, restAfter(text, cmd, r.gatewayName))
 	default:
+		if strings.HasPrefix(cmd, "/") {
+			return fmt.Sprintf("Unknown command %s. Try /help.", cmd), nil
+		}
 		if r.LLM == nil {
 			return "I'm running but LLM processing isn't wired yet. Try /status.", nil
 		}
@@ -189,23 +203,25 @@ func (r *Router) RouteStream(ctx context.Context, msg Message, onDelta func(stri
 		return r.Route(ctx, msg)
 	}
 	cmd, _ := parseCmd(strings.TrimSpace(msg.Text), r.gatewayName)
-	if isLocalCommand(cmd) {
+	if isLocalCommand(cmd) || strings.HasPrefix(cmd, "/") {
 		return r.Route(ctx, msg)
 	}
-	// Unrecognised "/foo" is not a local command: Route sends it to the
-	// LLM, so it streams like any other free text.
 	return r.LLMStream(ctx, msg, onDelta)
 }
 
+var localCommands = []string{"/status", "/models", "/model", "/spawn", "/approve", "/cancel"}
+
+// LocalCommands returns the command names Route answers from local state.
+// Gateways use this to verify that their published command surfaces match
+// the executable router surface.
+func LocalCommands() []string {
+	return slices.Clone(localCommands)
+}
+
 // isLocalCommand reports whether cmd is answered from local state by
-// Route rather than handed to the LLM. Keep in sync with Route's switch.
+// Route rather than handed to the LLM.
 func isLocalCommand(cmd string) bool {
-	switch cmd {
-	case "/status", "/models", "/model", "/spawn", "/approve", "/cancel":
-		return true
-	default:
-		return false
-	}
+	return slices.Contains(localCommands, cmd)
 }
 
 // parseCmd extracts the command name from text, stripping an optional
@@ -232,6 +248,9 @@ func (r *Router) handleModels(ctx context.Context) (string, error) {
 		return "Model management is not configured.", nil
 	}
 	models := r.Models.Models()
+	if manager, ok := r.Models.(ProviderModelManager); ok {
+		models = manager.ModelsForProvider(manager.ActiveProvider())
+	}
 	if len(models) == 0 {
 		return "No models configured.", nil
 	}
@@ -255,6 +274,9 @@ func (r *Router) handleModel(ctx context.Context, arg string) (string, error) {
 	}
 	if arg == "" {
 		models := r.Models.Models()
+		if manager, ok := r.Models.(ProviderModelManager); ok {
+			models = manager.ModelsForProvider(manager.ActiveProvider())
+		}
 		if len(models) == 0 {
 			return "No models configured.\nUsage: /model <provider/model>", nil
 		}
@@ -389,7 +411,7 @@ func (r *Router) handleStatus(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("status: %w", err)
 	}
-	if len(counts) == 0 {
+	if len(counts) == 0 && r.Models == nil {
 		return "No tasks yet.", nil
 	}
 	statuses := make([]string, 0, len(counts))
@@ -399,9 +421,19 @@ func (r *Router) handleStatus(ctx context.Context) (string, error) {
 	sort.Strings(statuses)
 
 	var b strings.Builder
-	b.WriteString("Task status:\n")
-	for _, s := range statuses {
-		fmt.Fprintf(&b, "  %s: %d\n", s, counts[s])
+	if len(statuses) == 0 {
+		b.WriteString("No tasks yet.\n")
+	} else {
+		b.WriteString("Task status:\n")
+		for _, s := range statuses {
+			fmt.Fprintf(&b, "  %s: %d\n", s, counts[s])
+		}
 	}
-	return b.String(), nil
+	if r.Models != nil {
+		if manager, ok := r.Models.(ProviderModelManager); ok {
+			fmt.Fprintf(&b, "\nProvider: %s\n", manager.ActiveProvider())
+		}
+		fmt.Fprintf(&b, "Model: %s\n", r.Models.ActiveModel())
+	}
+	return strings.TrimSpace(b.String()), nil
 }

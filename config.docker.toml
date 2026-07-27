@@ -20,7 +20,14 @@ enabled = true
 image = "git.catlow.cloud/sam/archie-agent:latest"
 max_concurrency = 4
 max_uptime = "60m"
-pull_policy = "missing"
+pull_policy = "always"
 
 [web]
 listen = "0.0.0.0:8484"
+
+[[tools.mcp_servers]]
+name = "desktop-commander"
+transport = "stdio"
+command = "npx"
+args = ["-y", "@wonderwhy-er/desktop-commander@0.2.46", "--no-onboarding"]
+work_dir = "/workspace"

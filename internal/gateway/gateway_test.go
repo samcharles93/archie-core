@@ -33,6 +33,25 @@ func TestRouteStatusWithTasks(t *testing.T) {
 	}
 }
 
+func TestRouteStatusIncludesActiveProviderAndModel(t *testing.T) {
+	manager := &fakeProviderModelManager{
+		fakeModelManager: fakeModelManager{
+			models:      []string{"openai/gpt-5.6", "openrouter/openai/gpt-5.6"},
+			activeModel: "openai/gpt-5.6",
+		},
+	}
+	r := NewRouter(&fakeStore{counts: map[string]int{"running": 1}}, nil, "test")
+	r.Models = manager
+
+	reply, err := r.Route(context.Background(), Message{Text: "/status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(reply, "Provider: openai") || !strings.Contains(reply, "Model: openai/gpt-5.6") {
+		t.Fatalf("status missing active provider/model:\n%s", reply)
+	}
+}
+
 func TestRouteStatusAtMention(t *testing.T) {
 	r := NewRouter(&fakeStore{counts: map[string]int{"running": 3}}, nil, "archie")
 	reply, err := r.Route(context.Background(), Message{Text: "/status@archie"})
@@ -85,13 +104,34 @@ func TestRouteNonCommandWithoutLLM(t *testing.T) {
 }
 
 func TestRouterRejectsUnknownCommand(t *testing.T) {
-	r := NewRouter(nil, nil, "test")
-	reply, err := r.Route(context.Background(), Message{Text: "/frobnicate"})
-	if err != nil {
-		t.Fatalf("Route: %v", err)
+	tests := []string{
+		"/frobnicate",
+		"/frobnicate with arguments",
+		"/frobnicate@test with arguments",
 	}
-	if !strings.Contains(reply, "/status") {
-		t.Errorf("reply = %q, want mention of /status", reply)
+	for _, text := range tests {
+		t.Run(text, func(t *testing.T) {
+			llmCalls := 0
+			r := NewRouter(nil, func(context.Context, Message) (string, error) {
+				llmCalls++
+				return "fabricated command behavior", nil
+			}, "test")
+			r.LLMStream = func(context.Context, Message, func(string)) (string, error) {
+				llmCalls++
+				return "fabricated streaming behavior", nil
+			}
+
+			reply, err := r.RouteStream(context.Background(), Message{Text: text}, func(string) {})
+			if err != nil {
+				t.Fatalf("RouteStream: %v", err)
+			}
+			if llmCalls != 0 {
+				t.Fatalf("unknown command invoked LLM %d times", llmCalls)
+			}
+			if !strings.Contains(reply, "/frobnicate") || !strings.Contains(reply, "/help") {
+				t.Errorf("reply = %q, want unknown command and /help guidance", reply)
+			}
+		})
 	}
 }
 
@@ -101,6 +141,38 @@ type fakeModelManager struct {
 	models      []string
 	activeModel string
 	setErr      error
+}
+
+type fakeProviderModelManager struct {
+	fakeModelManager
+}
+
+func (f *fakeProviderModelManager) Providers() []string {
+	return []string{"openai", "openrouter"}
+}
+
+func (f *fakeProviderModelManager) ActiveProvider() string {
+	provider, _, _ := strings.Cut(f.activeModel, "/")
+	return provider
+}
+
+func (f *fakeProviderModelManager) ModelsForProvider(provider string) []string {
+	var models []string
+	for _, model := range f.models {
+		if strings.HasPrefix(model, provider+"/") {
+			models = append(models, model)
+		}
+	}
+	return models
+}
+
+func (f *fakeProviderModelManager) SetActiveProvider(_ context.Context, provider string) error {
+	models := f.ModelsForProvider(provider)
+	if len(models) == 0 {
+		return fmt.Errorf("unknown provider: %s", provider)
+	}
+	f.activeModel = models[0]
+	return nil
 }
 
 func (f *fakeModelManager) Models() []string {
@@ -139,6 +211,32 @@ func TestRouteModels(t *testing.T) {
 	}
 	if strings.Contains(reply, "active") {
 		t.Errorf("reply should not flag an active model when none is set: %q", reply)
+	}
+}
+
+func TestRouteModelsFiltersActiveProvider(t *testing.T) {
+	manager := &fakeProviderModelManager{
+		fakeModelManager: fakeModelManager{
+			models: []string{
+				"openrouter/openai/gpt-5.6",
+				"openai/gpt-5.6",
+				"openai/o3",
+			},
+			activeModel: "openai/gpt-5.6",
+		},
+	}
+	router := NewRouter(nil, nil, "test")
+	router.Models = manager
+
+	reply, err := router.Route(context.Background(), Message{Text: "/models"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(reply, "openrouter/") {
+		t.Fatalf("/models leaked another provider:\n%s", reply)
+	}
+	if !strings.Contains(reply, "openai/gpt-5.6") || !strings.Contains(reply, "openai/o3") {
+		t.Fatalf("/models omitted active-provider models:\n%s", reply)
 	}
 }
 

@@ -263,11 +263,12 @@ type MemoryConfig struct {
 
 // MCPServer describes one MCP server connection.
 type MCPServer struct {
-	Name      string   `yaml:"name" json:"name"`
-	Transport string   `yaml:"transport" json:"transport"`
-	Command   string   `yaml:"command" json:"command,omitempty"`
-	Args      []string `yaml:"args" json:"args,omitempty"`
-	URL       string   `yaml:"url" json:"url,omitempty"`
+	Name      string   `toml:"name" yaml:"name" json:"name"`
+	Transport string   `toml:"transport" yaml:"transport" json:"transport"`
+	Command   string   `toml:"command" yaml:"command" json:"command,omitempty"`
+	Args      []string `toml:"args" yaml:"args" json:"args,omitempty"`
+	WorkDir   string   `toml:"work_dir" yaml:"work_dir" json:"work_dir,omitempty"`
+	URL       string   `toml:"url" yaml:"url" json:"url,omitempty"`
 }
 
 // ToolPolicy holds tool execution limits.
@@ -278,8 +279,8 @@ type ToolPolicy struct {
 
 // ToolsConfig holds MCP server and tool policy configuration.
 type ToolsConfig struct {
-	MCPServers []MCPServer `yaml:"mcp_servers" json:"mcp_servers"`
-	Policy     ToolPolicy  `yaml:"tool_policy" json:"tool_policy"`
+	MCPServers []MCPServer `toml:"mcp_servers" yaml:"mcp_servers" json:"mcp_servers"`
+	Policy     ToolPolicy  `toml:"tool_policy" yaml:"tool_policy" json:"tool_policy"`
 }
 
 // Config is the daemon configuration.
@@ -470,6 +471,10 @@ type ContainerConfig struct {
 // collaboration PRD, phase C  --  docs/prds/multi-agent-collaboration.md).
 // Empty (Telegram.Token.Key == "") disables chat entirely.
 type ChatConfig struct {
+	// Models is the optional interactive-chat model catalog. When empty,
+	// chat falls back to the distinct model references assigned to workflow
+	// roles in the top-level [models] table.
+	Models []string `toml:"models" yaml:"models"`
 	// Email configures the inbound email gateway via SMTP.
 	Email EmailConfig `toml:"email" yaml:"email"`
 	// WebhookAddr is the host:port for the inbound webhook gateway.

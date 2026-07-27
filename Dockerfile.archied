@@ -6,11 +6,21 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o /usr/local/bin/archied ./cmd/archied/
+ARG GATEWAY_VERSION=dev
+ARG RUNTIME_VERSION=dev
+RUN CGO_ENABLED=0 go build \
+    -ldflags "-X main.gatewayVersion=${GATEWAY_VERSION} -X main.runtimeVersion=${RUNTIME_VERSION}" \
+    -o /usr/local/bin/archied ./cmd/archied/
 
 FROM ubuntu:24.04
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates git && \
+    ca-certificates git nodejs npm && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=builder /usr/local/bin/archied /usr/local/bin/archied
+ARG GATEWAY_VERSION=dev
+ARG RUNTIME_VERSION=dev
+LABEL org.opencontainers.image.version="${GATEWAY_VERSION}"
+LABEL cloud.catlow.archie.runtime-version="${RUNTIME_VERSION}"
+COPY CHANGELOG.archied.md /usr/share/archie/CHANGELOG.archied.md
+COPY CHANGELOG.archie.md /usr/share/archie/CHANGELOG.archie.md
 ENTRYPOINT ["archied"]

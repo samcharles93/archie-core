@@ -67,9 +67,7 @@ func TestRouteStreamDoesNotStreamLocalCommands(t *testing.T) {
 	}
 }
 
-// An unrecognised slash command is handed to the LLM by Route, so it should
-// stream like any other free text.
-func TestRouteStreamStreamsUnknownCommand(t *testing.T) {
+func TestRouteStreamRejectsUnknownCommandLocally(t *testing.T) {
 	r := NewRouter(nil, nil, "telegram")
 	streamed := false
 	r.LLMStream = func(context.Context, Message, func(string)) (string, error) {
@@ -77,10 +75,14 @@ func TestRouteStreamStreamsUnknownCommand(t *testing.T) {
 		return "ok", nil
 	}
 
-	if _, err := r.RouteStream(context.Background(), Message{Text: "/commands"}, func(string) {}); err != nil {
+	reply, err := r.RouteStream(context.Background(), Message{Text: "/commands"}, func(string) {})
+	if err != nil {
 		t.Fatalf("RouteStream: %v", err)
 	}
-	if !streamed {
-		t.Error("unknown /commands should stream, since Route sends it to the LLM")
+	if streamed {
+		t.Error("unknown /commands must not reach the streaming responder")
+	}
+	if !strings.Contains(reply, "/help") {
+		t.Fatalf("reply = %q, want /help guidance", reply)
 	}
 }
