@@ -7,7 +7,7 @@
 # Run:   docker run -e NATS_URL=nats://host:4222 archie-agent:latest
 
 # ── builder ───────────────────────────────────────────────────────────
-FROM golang:1.26-bookworm AS builder
+FROM golang:1.26-trixie AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

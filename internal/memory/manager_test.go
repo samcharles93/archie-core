@@ -63,7 +63,7 @@ type mockProvider struct {
 	// Override functions let tests inject custom behavior without
 	// defining new mock types. When nil, the default behavior is used.
 	prefetchFunc    func(query string) (string, error)
-	memoryWriteFunc func(sessionID string, content string) error
+	memoryWriteFunc func(sessionID, content string) error
 }
 
 func newMockProvider(name string) *mockProvider {
@@ -197,7 +197,7 @@ func (m *mockProvider) OnPreCompress(sessionID string) error {
 	return nil
 }
 
-func (m *mockProvider) OnMemoryWrite(sessionID string, content string) error {
+func (m *mockProvider) OnMemoryWrite(sessionID, content string) error {
 	m.mu.Lock()
 	m.memoryWriteCalls++
 	m.lastMemorySessionID = sessionID
@@ -1221,7 +1221,7 @@ func (p *panickyProvider) OnPreCompress(sessionID string) error {
 	panic("OnPreCompress panicked")
 }
 
-func (p *panickyProvider) OnMemoryWrite(sessionID string, content string) error {
+func (p *panickyProvider) OnMemoryWrite(sessionID, content string) error {
 	panic("OnMemoryWrite panicked")
 }
 
@@ -1788,7 +1788,7 @@ func TestManager_ShutdownContext_AbandonedCount(t *testing.T) {
 
 	// Make the external provider's OnMemoryWrite block so sync ops never complete.
 	blocking := make(chan struct{})
-	ext.memoryWriteFunc = func(sessionID string, content string) error {
+	ext.memoryWriteFunc = func(sessionID, content string) error {
 		<-blocking
 		// Still record the call for correctness.
 		ext.mu.Lock()

@@ -1,7 +1,6 @@
 package forge
 
 import (
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -27,5 +26,5 @@ func newTestClient(t *testing.T) (*GitHubClient, *http.ServeMux) {
 	gh.BaseURL = base
 	gh.UploadURL = base
 
-	return &GitHubClient{gh: gh, log: slog.New(slog.NewTextHandler(io.Discard, nil))}, mux
+	return &GitHubClient{gh: gh, log: slog.New(slog.DiscardHandler)}, mux
 }

@@ -139,7 +139,7 @@ type Manager struct {
 //   - Prefetch timeout: 8 seconds
 //   - Shutdown drain timeout: 10 seconds
 //   - Threat scanning: disabled (no scanner configured)
-func NewManager(builtin MemoryProvider, external MemoryProvider) (*Manager, error) {
+func NewManager(builtin, external MemoryProvider) (*Manager, error) {
 	m := &Manager{
 		builtin:  builtin,
 		external: external,
@@ -383,7 +383,7 @@ func (m *Manager) OnPreCompress(sessionID string) {
 	}
 }
 
-func (m *Manager) OnMemoryWrite(sessionID string, content string) {
+func (m *Manager) OnMemoryWrite(sessionID, content string) {
 	m.mu.RLock()
 	providers := m.activeProvidersLocked()
 	m.mu.RUnlock()
@@ -512,6 +512,9 @@ func (m *Manager) PrefetchContext(ctx context.Context, query string) (string, er
 		// shorter deadline.
 		if _, hasDeadline := ctx.Deadline(); !hasDeadline {
 			var cancel context.CancelFunc
+			// Assignment, not declaration: `:=` here would scope the
+			// timeout-bearing ctx to this if-block, so the deadline would
+			// silently never apply to the call below.
 			ctx, cancel = context.WithTimeout(ctx, m.prefetchTimeout)
 			defer cancel()
 		}

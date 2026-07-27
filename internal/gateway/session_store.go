@@ -50,7 +50,7 @@ type SessionStore interface {
 	// SearchMessages returns messages matching query via semantic
 	// vector search (NellDB SearchSimilar). Falls back to substring
 	// match on message text when vector search is unavailable.
-	SearchMessages(ctx context.Context, sessionID string, query string, limit int) ([]Message, error)
+	SearchMessages(ctx context.Context, sessionID, query string, limit int) ([]Message, error)
 
 	// Close shuts down the underlying store.
 	Close() error
@@ -301,7 +301,7 @@ func (s *nellSessionStore) RecentMessages(ctx context.Context, sessionID string,
 	return out, nil
 }
 
-func (s *nellSessionStore) SearchMessages(ctx context.Context, sessionID string, query string, limit int) ([]Message, error) {
+func (s *nellSessionStore) SearchMessages(ctx context.Context, sessionID, query string, limit int) ([]Message, error) {
 	// Substring match on recent messages. Vector search via NellDB
 	// SearchSimilar requires an embedding model — deferred to future
 	// integration with the memory provider's vector store.

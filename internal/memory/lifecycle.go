@@ -53,7 +53,7 @@ type MemoryWriteHook interface {
 	// OnMemoryWrite is invoked after content has been written to memory.
 	// sessionID identifies the session that performed the write.
 	// content is the full text that was stored.
-	OnMemoryWrite(sessionID string, content string) error
+	OnMemoryWrite(sessionID, content string) error
 }
 
 // DelegationHook is called when the agent delegates work to a sub-agent

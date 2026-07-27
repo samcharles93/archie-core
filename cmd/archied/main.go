@@ -19,12 +19,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/moby/moby/client"
 	natsio "github.com/nats-io/nats.go"
-
 	"github.com/samcharles93/ai-sdk/chat"
 	"github.com/samcharles93/ai-sdk/core"
 
-	"github.com/moby/moby/client"
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/channels/email"
 	"github.com/samcharles93/archie-core/internal/channels/telegram"
@@ -40,12 +39,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/memory/builtin"
 	"github.com/samcharles93/archie-core/internal/nats"
 	"github.com/samcharles93/archie-core/internal/nell"
-	"github.com/samcharles93/archie-core/internal/tools"
-	"github.com/samcharles93/archie-core/internal/tools/mcp"
-	toolprovider "github.com/samcharles93/archie-core/internal/tools/provider"
-	mcptoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/mcp"
-	memorytoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/memory"
-
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
 	"github.com/samcharles93/archie-core/internal/releaseannounce"
@@ -55,6 +48,11 @@ import (
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/storerpc"
+	"github.com/samcharles93/archie-core/internal/tools"
+	"github.com/samcharles93/archie-core/internal/tools/mcp"
+	toolprovider "github.com/samcharles93/archie-core/internal/tools/provider"
+	mcptoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/mcp"
+	memorytoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/memory"
 	"github.com/samcharles93/archie-core/internal/webui"
 	"github.com/samcharles93/archie-core/internal/workflow/skillbuild"
 	"github.com/samcharles93/archie-core/internal/workflow/wfeval"

@@ -563,7 +563,7 @@ func (f *testForge) React(context.Context, string, string, int, string) error   
 func (f *testForge) VerifyPush(context.Context, string, string) error              { return nil }
 func (f *testForge) LinkBranch(context.Context, string, string, int, string) error { return nil }
 
-func testDaemon(t *testing.T, maxRetries int, _ int) (*Daemon, *store.Store, *testForge) {
+func testDaemon(t *testing.T, maxRetries, _ int) (*Daemon, *store.Store, *testForge) {
 	t.Helper()
 
 	s := store.OpenTest(t)

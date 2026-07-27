@@ -15,11 +15,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/samcharles93/ai-sdk/core"
-	"github.com/samcharles93/ai-sdk/runtime"
-
 	natsio "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/samcharles93/ai-sdk/core"
+	"github.com/samcharles93/ai-sdk/runtime"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"

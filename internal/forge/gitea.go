@@ -194,7 +194,7 @@ func (c *GiteaClient) React(ctx context.Context, owner, repo string, number int,
 func (c *GiteaClient) LinkBranch(ctx context.Context, owner, repo string, issueNumber int, branch string) error {
 	url := fmt.Sprintf("%s/api/v1/repos/%s/%s/issues/%d/refs", c.host, owner, repo, issueNumber)
 	body := fmt.Sprintf(`{"ref": "%s"}`, branch)
-	req, _ := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(body))
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(body))
 	req.Header.Set("Authorization", "token "+c.token)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)

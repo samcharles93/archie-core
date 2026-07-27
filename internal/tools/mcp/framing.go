@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 )
@@ -49,7 +50,7 @@ func readMessageFromBufio(br *bufio.Reader) ([]byte, error) {
 		if err == nil {
 			break
 		}
-		if err != bufio.ErrBufferFull {
+		if !errors.Is(err, bufio.ErrBufferFull) {
 			if err == io.EOF && len(message) > 0 {
 				return nil, fmt.Errorf("read message: missing newline: %w", io.ErrUnexpectedEOF)
 			}

@@ -26,7 +26,7 @@ func newTestServer(t *testing.T) *Server {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
-	return &Server{Store: s, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	return &Server{Store: s, Log: slog.New(slog.DiscardHandler)}
 }
 
 // stubStore wraps a real TaskStore and overrides selected methods to
@@ -67,7 +67,7 @@ func TestHandleSummary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest("GET", "/api/summary", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/summary", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -99,7 +99,7 @@ func TestHandleSummaryWorkflowStatsError(t *testing.T) {
 		Log: real.Log,
 	}
 
-	req := httptest.NewRequest("GET", "/api/summary", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/summary", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -120,7 +120,7 @@ func TestHandleSummaryStageStatsError(t *testing.T) {
 		Log: real.Log,
 	}
 
-	req := httptest.NewRequest("GET", "/api/summary", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/summary", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -141,7 +141,7 @@ func TestHandleSummaryTokensByDayError(t *testing.T) {
 		Log: real.Log,
 	}
 
-	req := httptest.NewRequest("GET", "/api/summary", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/summary", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -157,7 +157,7 @@ func TestHandleTasks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest("GET", "/api/tasks", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/tasks", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -187,7 +187,7 @@ func TestHandleTask(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest("GET", "/api/tasks/"+strconv.FormatInt(task.ID, 10), nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/tasks/"+strconv.FormatInt(task.ID, 10), nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -205,7 +205,7 @@ func TestHandleTask(t *testing.T) {
 
 func TestHandleTaskBadID(t *testing.T) {
 	srv := newTestServer(t)
-	req := httptest.NewRequest("GET", "/api/tasks/not-a-number", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/tasks/not-a-number", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -215,7 +215,7 @@ func TestHandleTaskBadID(t *testing.T) {
 
 func TestHandleIndex(t *testing.T) {
 	srv := newTestServer(t)
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -228,7 +228,7 @@ func TestHandleIndex(t *testing.T) {
 
 func TestIndexContainsViewportMeta(t *testing.T) {
 	srv := newTestServer(t)
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -242,7 +242,7 @@ func TestIndexContainsViewportMeta(t *testing.T) {
 
 func TestIndexHasResponsiveFeatures(t *testing.T) {
 	srv := newTestServer(t)
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -305,7 +305,7 @@ func TestHandleSSEBacklogAndLive(t *testing.T) {
 
 func TestIndexEscapesSingleQuotesInOnclick(t *testing.T) {
 	srv := newTestServer(t)
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -331,7 +331,7 @@ func TestIndexEscapesSingleQuotesInOnclick(t *testing.T) {
 
 func TestIndexEscDoesNotEscapeSingleQuotes(t *testing.T) {
 	srv := newTestServer(t)
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 

@@ -20,7 +20,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/samcharles93/NellDB"
+	nell "github.com/samcharles93/NellDB"
 	"github.com/samcharles93/NellDB/logstore"
 	"github.com/samcharles93/NellDB/sdk"
 

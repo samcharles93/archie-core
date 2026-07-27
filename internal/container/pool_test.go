@@ -118,7 +118,7 @@ func TestWriteTaskJSONNonexistentDir(t *testing.T) {
 	// Create a regular file and then try to use a path where that file
 	// would need to be a directory. Even root cannot mkdir through a
 	// regular file, making this test reliable regardless of privileges.
-	f, err := os.CreateTemp("", "archie-test-blocker")
+	f, err := os.CreateTemp(t.TempDir(), "archie-test-blocker")
 	if err != nil {
 		t.Fatal(err)
 	}

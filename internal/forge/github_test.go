@@ -1,7 +1,6 @@
 package forge
 
 import (
-	"io"
 	"log/slog"
 	"testing"
 )
@@ -29,7 +28,7 @@ func TestNewConfiguresHost(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			f, err := New("github", "token", tt.host, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			f, err := New("github", "token", tt.host, slog.New(slog.DiscardHandler))
 			if err != nil {
 				t.Fatal(err)
 			}

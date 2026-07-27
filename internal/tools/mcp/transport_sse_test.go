@@ -212,12 +212,12 @@ func TestSSETransportConcurrentSendsGetCorrectResponses(t *testing.T) {
 			resp, err := tr.Send(context.Background(),
 				fmt.Appendf(nil, `{"jsonrpc":"2.0","id":%d,"method":"test"}`, id))
 			if err != nil {
-				results <- fmt.Errorf("id %d: Send: %v", id, err)
+				results <- fmt.Errorf("id %d: Send: %w", id, err)
 				return
 			}
 			var msg Message
 			if err := json.Unmarshal(resp, &msg); err != nil {
-				results <- fmt.Errorf("id %d: parse: %v", id, err)
+				results <- fmt.Errorf("id %d: parse: %w", id, err)
 				return
 			}
 			if string(msg.ID) != fmt.Sprintf("%d", id) {

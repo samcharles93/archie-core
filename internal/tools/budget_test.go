@@ -209,7 +209,7 @@ func TestTurnBudgetSpillDirPermissions(t *testing.T) {
 	// Create a regular file and use a sub-path as the spill directory.
 	// Even root cannot write a file when a path component is a regular
 	// file, making this test reliable regardless of privileges.
-	f, err := os.CreateTemp("", "archie-test-spill-blocker")
+	f, err := os.CreateTemp(t.TempDir(), "archie-test-spill-blocker")
 	if err != nil {
 		t.Fatal(err)
 	}

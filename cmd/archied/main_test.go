@@ -14,7 +14,6 @@ import (
 	"github.com/nats-io/nats-server/v2/server"
 	natssrv "github.com/nats-io/nats-server/v2/test"
 	natsio "github.com/nats-io/nats.go"
-
 	"github.com/samcharles93/ai-sdk/chat"
 
 	"github.com/samcharles93/archie-core/internal/config"

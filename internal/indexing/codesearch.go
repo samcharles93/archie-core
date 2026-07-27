@@ -33,7 +33,6 @@ import (
 
 	"github.com/google/codesearch/index"
 	"github.com/google/uuid"
-
 	_ "modernc.org/sqlite"
 )
 
