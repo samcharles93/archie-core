@@ -188,7 +188,10 @@ func TestProvider_HandleToolCall_Replace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replace: %v", err)
 	}
-	result := out.(map[string]any)
+	result, ok := out.(map[string]any)
+	if !ok {
+		t.Fatalf("out is %T, want map[string]any", out)
+	}
 	if result["action"] != "replace" {
 		t.Fatalf("expected action replace, got %v", result["action"])
 	}
@@ -210,7 +213,10 @@ func TestProvider_HandleToolCall_Remove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("remove: %v", err)
 	}
-	result := out.(map[string]any)
+	result, ok := out.(map[string]any)
+	if !ok {
+		t.Fatalf("out is %T, want map[string]any", out)
+	}
 	if result["action"] != "remove" {
 		t.Fatalf("expected action remove, got %v", result["action"])
 	}

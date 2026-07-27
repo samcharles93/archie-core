@@ -93,8 +93,14 @@ func TestBridgeToolSearch(t *testing.T) {
 		if err != nil {
 			t.Fatalf("tool_search error: %v", err)
 		}
-		result := out.(map[string]any)
-		tools := result["tools"].([]ToolSummary)
+		result, ok := out.(map[string]any)
+		if !ok {
+			t.Fatalf("out is %T, want map[string]any", out)
+		}
+		tools, ok := result["tools"].([]ToolSummary)
+		if !ok {
+			t.Fatalf("result[\"tools\"] is %T, want []ToolSummary", result["tools"])
+		}
 		if len(tools) != 3 {
 			t.Errorf("expected 3 tools, got %d", len(tools))
 		}
@@ -105,8 +111,14 @@ func TestBridgeToolSearch(t *testing.T) {
 		if err != nil {
 			t.Fatalf("tool_search error: %v", err)
 		}
-		result := out.(map[string]any)
-		tools := result["tools"].([]ToolSummary)
+		result, ok := out.(map[string]any)
+		if !ok {
+			t.Fatalf("out is %T, want map[string]any", out)
+		}
+		tools, ok := result["tools"].([]ToolSummary)
+		if !ok {
+			t.Fatalf("result[\"tools\"] is %T, want []ToolSummary", result["tools"])
+		}
 		if len(tools) != 2 {
 			t.Errorf("expected 2 file tools, got %d", len(tools))
 		}
@@ -117,8 +129,14 @@ func TestBridgeToolSearch(t *testing.T) {
 		if err != nil {
 			t.Fatalf("tool_search error: %v", err)
 		}
-		result := out.(map[string]any)
-		tools := result["tools"].([]ToolSummary)
+		result, ok := out.(map[string]any)
+		if !ok {
+			t.Fatalf("out is %T, want map[string]any", out)
+		}
+		tools, ok := result["tools"].([]ToolSummary)
+		if !ok {
+			t.Fatalf("result[\"tools\"] is %T, want []ToolSummary", result["tools"])
+		}
 		if len(tools) != 0 {
 			t.Errorf("expected 0 tools, got %d", len(tools))
 		}
@@ -129,8 +147,14 @@ func TestBridgeToolSearch(t *testing.T) {
 		if err != nil {
 			t.Fatalf("tool_search error: %v", err)
 		}
-		result := out.(map[string]any)
-		tools := result["tools"].([]ToolSummary)
+		result, ok := out.(map[string]any)
+		if !ok {
+			t.Fatalf("out is %T, want map[string]any", out)
+		}
+		tools, ok := result["tools"].([]ToolSummary)
+		if !ok {
+			t.Fatalf("result[\"tools\"] is %T, want []ToolSummary", result["tools"])
+		}
 		for _, ts := range tools {
 			if IsBridgeTool(ts.Name) {
 				t.Errorf("bridge tool %q should not appear in search results", ts.Name)
@@ -169,8 +193,14 @@ func TestBridgeToolDescribe(t *testing.T) {
 		if err != nil {
 			t.Fatalf("tool_describe error: %v", err)
 		}
-		result := out.(map[string]any)
-		toolMap := result["tool"].(map[string]any)
+		result, ok := out.(map[string]any)
+		if !ok {
+			t.Fatalf("out is %T, want map[string]any", out)
+		}
+		toolMap, ok := result["tool"].(map[string]any)
+		if !ok {
+			t.Fatalf("result[\"tool\"] is %T, want map[string]any", result["tool"])
+		}
 		if toolMap["name"] != "read_file" {
 			t.Errorf("name = %v, want 'read_file'", toolMap["name"])
 		}
@@ -224,7 +254,10 @@ func TestBridgeToolCall(t *testing.T) {
 		if err != nil {
 			t.Fatalf("tool_call error: %v", err)
 		}
-		m := out.(map[string]any)
+		m, ok := out.(map[string]any)
+		if !ok {
+			t.Fatalf("out is %T, want map[string]any", out)
+		}
 		if m["msg"] != "hello" {
 			t.Errorf("msg = %v, want 'hello'", m["msg"])
 		}

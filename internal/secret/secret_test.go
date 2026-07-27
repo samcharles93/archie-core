@@ -1,13 +1,11 @@
 package secret
 
 import (
-	"os"
 	"testing"
 )
 
 func TestEnvEngineResolve(t *testing.T) {
-	_ = os.Setenv("TEST_SECRET_KEY", "test-value")
-	defer func() { _ = os.Unsetenv("TEST_SECRET_KEY") }()
+	t.Setenv("TEST_SECRET_KEY", "test-value")
 
 	e := &envEngine{}
 	if e.Name() != "env" {
@@ -65,8 +63,7 @@ func TestRegistryGetMissing(t *testing.T) {
 }
 
 func TestRegistryResolve(t *testing.T) {
-	_ = os.Setenv("TEST_SECRET", "resolved")
-	defer func() { _ = os.Unsetenv("TEST_SECRET") }()
+	t.Setenv("TEST_SECRET", "resolved")
 
 	r := NewRegistry()
 	v, err := r.Resolve(SecretRef{Engine: "env", Key: "TEST_SECRET"})

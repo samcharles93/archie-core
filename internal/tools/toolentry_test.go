@@ -204,25 +204,47 @@ func TestToolEntryCloneDeepNested(t *testing.T) {
 	clone := e.Clone()
 
 	// Mutate nested map in original.
-	props := e.Schema["properties"].(JSONSchema)
+	props, ok := e.Schema["properties"].(JSONSchema)
+	if !ok {
+		t.Fatalf("e.Schema[\"properties\"] is %T, want JSONSchema", e.Schema["properties"])
+	}
 	props["name"] = JSONSchema{"type": "integer"}
-	cloneProps := clone.Schema["properties"].(JSONSchema)
-	if cloneProps["name"].(JSONSchema)["type"] != "string" {
+	cloneProps, ok := clone.Schema["properties"].(JSONSchema)
+	if !ok {
+		t.Fatalf("clone.Schema[\"properties\"] is %T, want JSONSchema", clone.Schema["properties"])
+	}
+	clonePropName, ok := cloneProps["name"].(JSONSchema)
+	if !ok {
+		t.Fatalf("cloneProps[\"name\"] is %T, want JSONSchema", cloneProps["name"])
+	}
+	if clonePropName["type"] != "string" {
 		t.Error("nested schema map mutation leaked into clone")
 	}
 
 	// Mutate nested slice in original.
-	req := e.Schema["required"].([]any)
+	req, ok := e.Schema["required"].([]any)
+	if !ok {
+		t.Fatalf("e.Schema[\"required\"] is %T, want []any", e.Schema["required"])
+	}
 	req[0] = "email"
-	cloneReq := clone.Schema["required"].([]any)
+	cloneReq, ok := clone.Schema["required"].([]any)
+	if !ok {
+		t.Fatalf("clone.Schema[\"required\"] is %T, want []any", clone.Schema["required"])
+	}
 	if cloneReq[0] != "name" {
 		t.Error("nested schema []any slice mutation leaked into clone")
 	}
 
 	// Mutate string slice in original.
-	tags := e.Schema["tags"].([]string)
+	tags, ok := e.Schema["tags"].([]string)
+	if !ok {
+		t.Fatalf("e.Schema[\"tags\"] is %T, want []string", e.Schema["tags"])
+	}
 	tags[0] = "mutated"
-	cloneTags := clone.Schema["tags"].([]string)
+	cloneTags, ok := clone.Schema["tags"].([]string)
+	if !ok {
+		t.Fatalf("clone.Schema[\"tags\"] is %T, want []string", clone.Schema["tags"])
+	}
 	if cloneTags[0] != "a" {
 		t.Error("nested schema []string slice mutation leaked into clone")
 	}

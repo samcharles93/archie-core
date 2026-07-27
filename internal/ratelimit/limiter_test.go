@@ -7,9 +7,9 @@ import (
 	"time"
 )
 
-func newTestLimiter(window time.Duration, max int) (*Limiter, *fakeClock) {
+func newTestLimiter(window time.Duration, maxRequests int) (*Limiter, *fakeClock) {
 	clock := &fakeClock{t: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
-	l := New(window, max)
+	l := New(window, maxRequests)
 	l.now = clock.Now
 	return l, clock
 }

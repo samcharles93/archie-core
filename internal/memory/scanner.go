@@ -115,9 +115,9 @@ func (s *DefaultScanner) ScanContent(content string) ThreatResult {
 // truncateMatch limits the matched string for log/error messages so that
 // a long match (e.g. an entire private key) is not echoed in full.
 func truncateMatch(s string) string {
-	const max = 40
-	if len(s) <= max {
+	const maxMatchLen = 40
+	if len(s) <= maxMatchLen {
 		return s
 	}
-	return s[:max] + "..."
+	return s[:maxMatchLen] + "..."
 }

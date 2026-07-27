@@ -310,7 +310,12 @@ func TestWriteMultimodalResultConcurrentCallsDoNotClobberFiles(t *testing.T) {
 				errs[i] = err
 				return
 			}
-			results[i] = out.(tools.MultimodalResult)
+			res, ok := out.(tools.MultimodalResult)
+			if !ok {
+				t.Errorf("call %d: out is %T, want tools.MultimodalResult", i, out)
+				return
+			}
+			results[i] = res
 		}(i)
 	}
 	wg.Wait()
@@ -356,7 +361,10 @@ func TestCallToolHandlerMultipleImagesGetDistinctFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result := out.(tools.MultimodalResult)
+	result, ok := out.(tools.MultimodalResult)
+	if !ok {
+		t.Fatalf("out is %T, want tools.MultimodalResult", out)
+	}
 	if len(result.Files) != 2 {
 		t.Fatalf("Files = %v, want 2 distinct files", result.Files)
 	}

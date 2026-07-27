@@ -32,7 +32,10 @@ func TestNewConfiguresHost(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			client := f.(*GitHubClient)
+			client, ok := f.(*GitHubClient)
+			if !ok {
+				t.Fatalf("f is %T, want *GitHubClient", f)
+			}
 			if got := client.gh.BaseURL.String(); got != tt.wantBase {
 				t.Errorf("BaseURL = %q, want %q", got, tt.wantBase)
 			}

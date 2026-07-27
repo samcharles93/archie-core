@@ -21,10 +21,10 @@ const CodeLength = 8
 // GenerateCode returns a random CodeLength-character code drawn
 // uniformly from Alphabet using crypto/rand.
 func GenerateCode() (string, error) {
-	max := big.NewInt(int64(len(Alphabet)))
+	alphabetLen := big.NewInt(int64(len(Alphabet)))
 	code := make([]byte, CodeLength)
 	for i := range code {
-		n, err := rand.Int(rand.Reader, max)
+		n, err := rand.Int(rand.Reader, alphabetLen)
 		if err != nil {
 			return "", fmt.Errorf("pairing: generate code: %w", err)
 		}

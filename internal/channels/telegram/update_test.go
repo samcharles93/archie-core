@@ -46,7 +46,11 @@ func TestUpdateCallbackRejectsUnauthorizedSender(t *testing.T) {
 		ID: "callback", From: models.User{ID: 99}, Data: updateApproveCallback,
 	}})
 
-	if g.Updates.(*updateStub).installCalls != 0 {
+	stub, ok := g.Updates.(*updateStub)
+	if !ok {
+		t.Fatalf("g.Updates is %T, want *updateStub", g.Updates)
+	}
+	if stub.installCalls != 0 {
 		t.Error("unauthorized callback started an installation")
 	}
 	if len(*requests) != 1 || (*requests)[0].method != "answerCallbackQuery" {

@@ -344,10 +344,10 @@ func (t *SSETransport) reconnect() {
 	}
 }
 
-func nextBackoff(d, max time.Duration) time.Duration {
+func nextBackoff(d, ceiling time.Duration) time.Duration {
 	d *= 2
-	if d > max {
-		return max
+	if d > ceiling {
+		return ceiling
 	}
 	return d
 }

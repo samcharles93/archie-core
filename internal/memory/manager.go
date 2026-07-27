@@ -974,11 +974,11 @@ func (m *Manager) BackupPaths() []string {
 // truncateQuery limits the query string for log messages so a very long
 // query does not flood the log output.
 func truncateQuery(q string) string {
-	const max = 80
-	if len(q) <= max {
+	const maxQueryLen = 80
+	if len(q) <= maxQueryLen {
 		return q
 	}
-	return q[:max] + "..."
+	return q[:maxQueryLen] + "..."
 }
 
 // ── Internal helpers ───────────────────────────────────────────────────

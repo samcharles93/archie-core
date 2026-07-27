@@ -90,13 +90,13 @@ func TestHandleSummary(t *testing.T) {
 // blank-identifier assignment (workflows, _ := ...), so this test FAILS
 // (wants 500, gets 200 with nil workflows).
 func TestHandleSummaryWorkflowStatsError(t *testing.T) {
-	real := newTestServer(t)
+	base := newTestServer(t)
 	srv := &Server{
 		Store: &stubStore{
-			TaskStore:        real.Store,
+			TaskStore:        base.Store,
 			workflowStatsErr: fmt.Errorf("db locked"),
 		},
-		Log: real.Log,
+		Log: base.Log,
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/summary", nil)
@@ -111,13 +111,13 @@ func TestHandleSummaryWorkflowStatsError(t *testing.T) {
 // TestHandleSummaryStageStatsError proves that handleSummary does not
 // silently discard an error from StageStats.
 func TestHandleSummaryStageStatsError(t *testing.T) {
-	real := newTestServer(t)
+	base := newTestServer(t)
 	srv := &Server{
 		Store: &stubStore{
-			TaskStore:     real.Store,
+			TaskStore:     base.Store,
 			stageStatsErr: fmt.Errorf("db locked"),
 		},
-		Log: real.Log,
+		Log: base.Log,
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/summary", nil)
@@ -132,13 +132,13 @@ func TestHandleSummaryStageStatsError(t *testing.T) {
 // TestHandleSummaryTokensByDayError proves that handleSummary does not
 // silently discard an error from TokensByDay.
 func TestHandleSummaryTokensByDayError(t *testing.T) {
-	real := newTestServer(t)
+	base := newTestServer(t)
 	srv := &Server{
 		Store: &stubStore{
-			TaskStore:      real.Store,
+			TaskStore:      base.Store,
 			tokensByDayErr: fmt.Errorf("db locked"),
 		},
-		Log: real.Log,
+		Log: base.Log,
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/summary", nil)

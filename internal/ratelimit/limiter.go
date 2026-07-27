@@ -29,13 +29,13 @@ type limiterKey struct {
 	userID   string
 }
 
-// New returns a Limiter allowing at most max requests in any rolling
-// window-length interval, per (platform, userID) pair. A max of 0 blocks
-// every request.
-func New(window time.Duration, max int) *Limiter {
+// New returns a Limiter allowing at most maxRequests requests in any
+// rolling window-length interval, per (platform, userID) pair. A
+// maxRequests of 0 blocks every request.
+func New(window time.Duration, maxRequests int) *Limiter {
 	return &Limiter{
 		window: window,
-		max:    max,
+		max:    maxRequests,
 		now:    time.Now,
 		hits:   map[limiterKey][]time.Time{},
 	}
