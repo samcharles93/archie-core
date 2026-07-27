@@ -244,3 +244,87 @@ func TestTokensByDay(t *testing.T) {
 		t.Fatalf("TokensByDay with limit = (%+v, %v)", limited, err)
 	}
 }
+
+func TestStageStats(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	// Insert 6 stage_finish events across 2 workflows × 3 stage groups.
+	// plan/draft: 3 runs, avg 400 ms, 1 error
+	// plan/review: 1 run, avg 300 ms, 0 errors
+	// implement/build: 2 runs, avg 1500 ms, 1 error
+
+	type stageEvent struct {
+		workflow   string
+		stage      string
+		durationMs int
+		errorMsg   string // empty means no error key
+	}
+
+	inputs := []stageEvent{
+		{workflow: "plan", stage: "draft", durationMs: 200},
+		{workflow: "plan", stage: "draft", durationMs: 400},
+		{workflow: "plan", stage: "draft", durationMs: 600, errorMsg: "something broke"},
+
+		{workflow: "plan", stage: "review", durationMs: 300},
+
+		{workflow: "implement", stage: "build", durationMs: 1000},
+		{workflow: "implement", stage: "build", durationMs: 2000, errorMsg: "build failed"},
+	}
+
+	for _, in := range inputs {
+		data := map[string]any{"duration_ms": in.durationMs}
+		if in.errorMsg != "" {
+			data["error"] = in.errorMsg
+		}
+		if _, err := s.InsertEvent(ctx, events.Event{
+			Kind:     "stage_finish",
+			Workflow: in.workflow,
+			Stage:    in.stage,
+			Data:     data,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	stats, err := s.StageStats(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(stats) != 3 {
+		t.Fatalf("StageStats: got %d groups, want 3: %+v", len(stats), stats)
+	}
+
+	// Verify ordering: workflow then stage.
+	want := []struct {
+		workflow string
+		stage    string
+		runs     int
+		avgMs    int
+		errors   int
+	}{
+		{workflow: "implement", stage: "build", runs: 2, avgMs: 1500, errors: 1},
+		{workflow: "plan", stage: "draft", runs: 3, avgMs: 400, errors: 1},
+		{workflow: "plan", stage: "review", runs: 1, avgMs: 300, errors: 0},
+	}
+
+	for i, w := range want {
+		got := stats[i]
+		if got.Workflow != w.workflow {
+			t.Fatalf("stats[%d].Workflow = %q, want %q", i, got.Workflow, w.workflow)
+		}
+		if got.Stage != w.stage {
+			t.Fatalf("stats[%d].Stage = %q, want %q", i, got.Stage, w.stage)
+		}
+		if got.Runs != w.runs {
+			t.Fatalf("stats[%d].Runs = %d, want %d", i, got.Runs, w.runs)
+		}
+		if got.AvgMs != w.avgMs {
+			t.Fatalf("stats[%d].AvgMs = %d, want %d", i, got.AvgMs, w.avgMs)
+		}
+		if got.Errors != w.errors {
+			t.Fatalf("stats[%d].Errors = %d, want %d", i, got.Errors, w.errors)
+		}
+	}
+}
