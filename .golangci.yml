@@ -1,0 +1,166 @@
+# golangci-lint configuration for archie-core.
+#
+# Schema: https://golangci-lint.run/jsonschema/golangci.jsonschema.json
+# Every option is documented upstream in .golangci.reference.yml.
+# Validate changes with `golangci-lint config verify` before committing.
+#
+# Philosophy: this repo's gate is `task check`, and archied runs that same
+# gate against its own PRs. A linter here is therefore an environmental
+# constraint an agent cannot argue its way around -- the doctrine CLAUDE.md
+# applies to safety, applied to structure. Curated over exhaustive: a noisy
+# gate gets disabled, and a disabled gate enforces nothing.
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  go: "1.26"
+
+linters:
+  # The standard set (errcheck, govet, ineffassign, staticcheck, unused)
+  # plus the curated additions below. Deliberately not `all`: the
+  # formatting-opinion linters (wsl_v5, nlreturn, varnamelen) and the
+  # absolutist ones (exhaustruct, err113, wrapcheck) produce more noise
+  # than signal here.
+  default: standard
+  enable:
+    # -- Structure and complexity ------------------------------------
+    # Their absence is why a 180-line, cognitive-complexity-106
+    # finalize() in a 745-line file reported clean.
+    - cyclop
+    - dupl
+    - funlen
+    - gocognit
+    - gocyclo
+    - maintidx
+    - nestif
+
+    # -- Architecture -------------------------------------------------
+    - depguard
+    - importas
+    - interfacebloat
+
+    # -- Correctness --------------------------------------------------
+    - bodyclose
+    - containedctx
+    - contextcheck
+    - copyloopvar
+    - durationcheck
+    - errorlint
+    - fatcontext
+    - forcetypeassert
+    - makezero
+    - nilerr
+    - nilnesserr
+    - noctx
+    - reassign
+    - recvcheck
+    - rowserrcheck
+    - sqlclosecheck
+
+    # -- Idiom and hygiene --------------------------------------------
+    - gocritic # also the host for ruleguard dynamic AST rules
+    - godox
+    - misspell
+    - predeclared
+    - sloglint # this daemon logs with log/slog throughout
+    - unconvert
+    - usestdlibvars
+    - usetesting
+
+  settings:
+    cyclop:
+      max-complexity: 15
+    dupl:
+      threshold: 150
+    funlen:
+      lines: 80
+      statements: 50
+    gocognit:
+      min-complexity: 30
+    gocyclo:
+      min-complexity: 20
+    maintidx:
+      under: 20
+    nestif:
+      min-complexity: 5
+
+    godox:
+      # TODO is deliberately absent: tracked work lives in beads, and
+      # flagging every TODO trains people to delete the marker rather
+      # than the debt. FIXME/HACK/BUG should not survive review.
+      keywords:
+        - FIXME
+        - HACK
+        - BUG
+
+    interfacebloat:
+      max: 8
+
+    sloglint:
+      no-mixed-args: true
+      key-naming-case: snake
+
+    depguard:
+      rules:
+        # Code ported from tau must stay a straight diff against its
+        # upstream original, so it may not reach into archie-core's own
+        # configuration layer. It takes config as constructor params.
+        ported-stays-portable:
+          files:
+            - "**/internal/indexing/**"
+          deny:
+            - pkg: github.com/samcharles93/archie-core/internal/config
+              desc: ported from tau and must remain refreshable by diff; take configuration as constructor parameters
+
+  exclusions:
+    generated: lax
+    warn-unused: true
+    presets:
+      - comments
+      - std-error-handling
+      - common-false-positives
+      - legacy
+    rules:
+      # Table-driven tests are supposed to resemble each other, and
+      # splitting one to satisfy a complexity budget makes it harder to
+      # read. Correctness linters still apply to tests.
+      - path: _test\.go
+        linters:
+          - cyclop
+          - dupl
+          - funlen
+          - gocognit
+          - gocyclo
+          - maintidx
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+    - gci
+  settings:
+    gofumpt:
+      extra-rules: true
+    gci:
+      # Matches the grouping already used across this repo.
+      sections:
+        - standard
+        - default
+        - prefix(github.com/samcharles93/archie-core)
+      custom-order: true
+  exclusions:
+    generated: strict
+
+issues:
+  # 0 = report everything. The defaults (50 per linter, 3 per message)
+  # silently truncate, which turns the issue count into a number you
+  # cannot track downward.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+output:
+  show-stats: true
+  sort-order:
+    - linter
+    - file
