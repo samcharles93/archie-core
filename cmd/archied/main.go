@@ -63,6 +63,12 @@ import (
 )
 
 func main() {
+	// The codesearch helper is dispatched before the daemon's flags are
+	// parsed: it is this same binary re-invoked as a short-lived child by
+	// internal/indexing, and it must not touch config, the store or NATS.
+	if args := os.Args[1:]; isCodesearchHelperArgs(args) {
+		os.Exit(runCodesearchHelper(args[1:], os.Stdout))
+	}
 	os.Exit(run())
 }
 
