@@ -248,3 +248,24 @@ func runGit(t *testing.T, dir string, args ...string) {
 		t.Fatalf("git %v: %v: %s", args, err, out)
 	}
 }
+
+// A Manager built as a struct literal has no logger. Logging on the build
+// path must not panic, since that path runs in a background goroutine where
+// a panic takes the whole daemon down.
+func TestManagerLoggerIsNilSafe(t *testing.T) {
+	tests := []struct {
+		name string
+		m    *Manager
+	}{
+		{name: "zero manager", m: &Manager{}},
+		{name: "nil manager", m: nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.m.logger(); got == nil {
+				t.Fatal("logger() returned nil")
+			}
+			tc.m.logger().Warn("must not panic")
+		})
+	}
+}

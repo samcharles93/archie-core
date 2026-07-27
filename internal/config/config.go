@@ -333,6 +333,8 @@ type Config struct {
 
 	// Tools holds MCP server and tool policy configuration (from config.tools.yaml).
 	Tools ToolsConfig `toml:"tools" yaml:"tools"`
+	// Indexing locates the workspace codesearch index.
+	Indexing IndexingConfig `toml:"indexing" yaml:"indexing"`
 
 	// Identities declares multi-identity configurations. When non-empty,
 	// each identity runs its own poll loop with its own forge client,
@@ -564,6 +566,7 @@ func finalize(cfg Config) (Config, error) {
 	if cfg.DBPath == "" {
 		cfg.DBPath = filepath.Join(dataHome(), "archie", "archie.db")
 	}
+	cfg.Indexing = cfg.Indexing.withDefaults(cfg.WorkDir)
 	if cfg.PollInterval == 0 {
 		cfg.PollInterval = Duration(60 * time.Second)
 	}

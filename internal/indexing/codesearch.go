@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -58,6 +59,17 @@ type Manager struct {
 	indexPath string
 	dbPath    string
 	runner    helperRunner
+	log       *slog.Logger
+}
+
+// logger is nil-safe: a Manager may be constructed as a struct literal
+// (the tests do), so defaulting at the point of use rather than in the
+// constructor is what actually holds.
+func (m *Manager) logger() *slog.Logger {
+	if m == nil || m.log == nil {
+		return slog.Default()
+	}
+	return m.log
 }
 
 type helperRunner interface {
@@ -69,22 +81,20 @@ type processRunner struct{}
 
 // Config locates the index storage for a Manager.
 //
-// tau derived these from process-global helpers. archied owns its paths in
-// daemon config and passes them down, so they are parameters here: two
-// daemons on one host (archie and winter) must not share one index.
+// tau derived these from process-global helpers. archied resolves them in
+// its own config layer ([indexing] in config.toml, defaulted off work_dir by
+// config.finalize) and passes them down. Defaulting deliberately does NOT
+// live here: this package stays free of archie-core's config so it remains
+// a straight diff against its tau original.
 type Config struct {
 	// IndexDir holds the mmap-friendly codesearch sidecar files.
 	IndexDir string
 	// DBPath is the SQLite database holding index lifecycle metadata.
 	DBPath string
-}
-
-// DefaultConfig derives index paths from a daemon work directory.
-func DefaultConfig(workDir string) Config {
-	return Config{
-		IndexDir: filepath.Join(workDir, "indexes"),
-		DBPath:   filepath.Join(workDir, "workspace-indexes.db"),
-	}
+	// Log receives index build failures. Without it a failed build is
+	// invisible: the manager degrades to unindexed search and the reason
+	// is only ever written to a database column nobody reads.
+	Log *slog.Logger
 }
 
 // NewManager prepares lifecycle storage and starts an asynchronous atomic
@@ -108,6 +118,7 @@ func NewManager(ctx context.Context, cfg Config, root string) (*Manager, error) 
 		indexPath: filepath.Join(cfg.IndexDir, workspaceKey(absRoot)+".csearch"),
 		dbPath:    cfg.DBPath,
 		runner:    processRunner{},
+		log:       cfg.Log,
 	}
 	if err := m.ensureSchema(ctx); err != nil {
 		return nil, err
@@ -205,7 +216,15 @@ func (m *Manager) refreshAsync(parent context.Context) {
 		buildID := uuid.NewString()
 		previous, _ := m.state(ctx)
 		claimed, err := m.claimBuild(ctx, startedAt, buildID)
-		if err != nil || !claimed {
+		if err != nil {
+			// Degrading to unindexed search is safe but slow, and until
+			// this is logged the only record of why is a database column
+			// with no reader.
+			m.logger().Warn("workspace index build not claimed", "root", m.root, "error", err)
+			return
+		}
+		if !claimed {
+			// Another process holds the build claim; not an error.
 			return
 		}
 		finalPath := m.indexPath + "." + buildID
@@ -213,18 +232,24 @@ func (m *Manager) refreshAsync(parent context.Context) {
 		_ = os.Remove(tmp)
 		if err := m.runner.Build(ctx, m.root, tmp); err != nil {
 			_ = os.Remove(tmp)
+			m.logger().Warn("workspace index build failed; falling back to unindexed search",
+				"root", m.root, "error", err)
 			m.finishBuild(parent, buildID, "error", time.Time{}, "", err.Error())
 			return
 		}
 		if err := os.Rename(tmp, finalPath); err != nil {
 			_ = os.Remove(tmp)
+			m.logger().Warn("workspace index could not be published",
+				"root", m.root, "error", err)
 			m.finishBuild(parent, buildID, "error", time.Time{}, "", err.Error())
 			return
 		}
 		if !m.finishBuild(parent, buildID, "ready", startedAt, finalPath, "") {
 			_ = os.Remove(finalPath)
+			m.logger().Warn("workspace index build superseded before publication", "root", m.root)
 			return
 		}
+		m.logger().Info("workspace index ready", "root", m.root, "index", finalPath)
 		if previous.IndexPath != "" && previous.IndexPath != finalPath &&
 			(previous.IndexPath == m.indexPath || strings.HasPrefix(previous.IndexPath, m.indexPath+".")) {
 			_ = os.Remove(previous.IndexPath)

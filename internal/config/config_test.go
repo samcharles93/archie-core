@@ -833,3 +833,52 @@ func LoadBytes(data []byte) (Config, error) {
 	_ = tmp.Close()
 	return Load(tmp.Name())
 }
+
+func TestFinalizeIndexingDefaults(t *testing.T) {
+	tests := []struct {
+		name        string
+		extra       string
+		wantIndex   string
+		wantDBIsSet bool
+	}{
+		{
+			name: "defaults derive from work_dir",
+			// Both paths must land under the daemon's own work_dir so two
+			// archied instances on one host cannot share an index.
+			extra:       "\nwork_dir = \"/srv/archie/work\"\n",
+			wantIndex:   filepath.Join("/srv/archie/work", "indexes"),
+			wantDBIsSet: true,
+		},
+		{
+			name: "explicit index_dir is preserved",
+			extra: "\nwork_dir = \"/srv/archie/work\"\n" +
+				"[indexing]\nindex_dir = \"/mnt/fast/idx\"\n",
+			wantIndex:   "/mnt/fast/idx",
+			wantDBIsSet: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			// tc.extra precedes the table sections: a top-level key written
+			// after [[repos]] would be parsed as a member of that table.
+			contents := "bot_user = \"widget\"\n" + tc.extra +
+				"[forge]\ntype = \"gitea\"\nhost = \"https://git.example.test\"\ntoken_env = \"T\"\n" +
+				"[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
+			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := Load(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Indexing.IndexDir != tc.wantIndex {
+				t.Errorf("Indexing.IndexDir = %q, want %q", cfg.Indexing.IndexDir, tc.wantIndex)
+			}
+			if tc.wantDBIsSet && cfg.Indexing.DBPath == "" {
+				t.Error("Indexing.DBPath is empty; want a default derived from work_dir")
+			}
+		})
+	}
+}
