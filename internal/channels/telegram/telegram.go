@@ -20,6 +20,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/releaseupdate"
 )
 
 // Gateway is a Telegram gateway.Gateway backed by go-telegram/bot.
@@ -44,6 +45,9 @@ type Gateway struct {
 	// Version reports installed component versions. The composition root owns
 	// build metadata; Telegram only renders it for authorized users.
 	Version func() string
+	// Updates is injected by the composition root. It owns release discovery,
+	// deferral persistence, and installation; Telegram only presents it.
+	Updates UpdateService
 
 	// restartCh carries /restart requests from a bot handler to the
 	// supervisor loop in Start. Buffered so a handler never blocks.
@@ -53,11 +57,21 @@ type Gateway struct {
 	modelCallbacks    map[string]string
 	providerMu        sync.RWMutex
 	providerCallbacks map[string]string
+	updateMu          sync.Mutex
+	updateInProgress  bool
+	updateActions     map[string]updateAction
 
 	log           *slog.Logger
 	bot           *bot.Bot
 	webhookCancel context.CancelFunc
 	running       bool
+}
+
+type UpdateService interface {
+	Check(context.Context, int64) (releaseupdate.Snapshot, error)
+	Defer(context.Context, int64, releaseupdate.Snapshot) error
+	Install(context.Context, func(string)) error
+	CanInstall() bool
 }
 
 type ReleaseAnnouncer interface {
@@ -79,6 +93,7 @@ func New(token, webhookURL, webhookSecret string, allowedUserIDs []int64, log *s
 		restartCh:         make(chan restartRequest, 1),
 		modelCallbacks:    make(map[string]string),
 		providerCallbacks: make(map[string]string),
+		updateActions:     make(map[string]updateAction),
 		log:               log.With("component", "gateway-telegram"),
 	}
 }
@@ -158,6 +173,7 @@ func (g *Gateway) launch(ctx context.Context, router *gateway.Router) (*bot.Bot,
 	// Gateway-local commands: handled directly, no LLM.
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/status", bot.MatchTypeExact, g.statusHandler(router))
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/version", bot.MatchTypeExact, g.versionHandler())
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/update", bot.MatchTypeExact, g.updateHandler())
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, g.startHandler())
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/help", bot.MatchTypeExact, g.helpHandler())
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/restart", bot.MatchTypeExact, g.restartHandler())
@@ -174,7 +190,7 @@ func (g *Gateway) launch(ctx context.Context, router *gateway.Router) (*bot.Bot,
 			URL:                g.WebhookURL,
 			SecretToken:        g.WebhookSecret,
 			MaxConnections:     40,
-			AllowedUpdates:     []string{"message"},
+			AllowedUpdates:     []string{"message", "callback_query"},
 			DropPendingUpdates: true,
 		}
 		if _, err := b.SetWebhook(ctx, params); err != nil {
@@ -318,6 +334,8 @@ func (g *Gateway) defaultHandler(router *gateway.Router) bot.HandlerFunc {
 				g.handleProviderCallback(ctx, b, update, router)
 			case strings.HasPrefix(update.CallbackQuery.Data, modelCallbackPrefix):
 				g.handleModelCallback(ctx, b, update, router)
+			case strings.HasPrefix(update.CallbackQuery.Data, updateCallbackPrefix):
+				g.handleUpdateCallback(ctx, b, update)
 			}
 			return
 		}

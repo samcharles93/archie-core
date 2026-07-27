@@ -498,6 +498,11 @@ type TelegramConfig struct {
 	// TokenEnv names the env var holding the bot token from @BotFather.
 	// Empty disables the Telegram channel.
 	TokenEnv string `toml:"token_env" yaml:"token_env"`
+	// UpdateCheckCommand writes a releaseupdate.Snapshot JSON document to
+	// stdout. UpdateInstallCommand applies an already-approved update. Both
+	// are argv arrays, never shell snippets.
+	UpdateCheckCommand   []string `toml:"update_check_command" yaml:"update_check_command"`
+	UpdateInstallCommand []string `toml:"update_install_command" yaml:"update_install_command"`
 }
 
 // EmailConfig configures the inbound email channel via SMTP.
