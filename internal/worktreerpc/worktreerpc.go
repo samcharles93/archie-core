@@ -59,11 +59,33 @@ type PrepareResponse struct {
 	natsrpc.Envelope
 }
 
+// defaultHandlerTimeout bounds a single prepare or push when the Server
+// has no explicit Timeout. A clone of a large repository over a slow link
+// is the long pole, so this is generous rather than tight.
+const defaultHandlerTimeout = 15 * time.Minute
+
 // Server proxies push requests to a real worktree.Manager holding the
 // forge push token.
 type Server struct {
 	Trees *worktree.Manager
 	Log   *slog.Logger
+	// Timeout bounds a single prepare or push. Zero uses
+	// defaultHandlerTimeout.
+	Timeout time.Duration
+}
+
+// handlerContext returns the context a single request runs under.
+//
+// NATS request/reply carries no deadline from the caller, and the work
+// now runs in-process through go-git rather than as a killable child
+// process, so the server has to impose its own bound. Without one an
+// unresponsive forge holds this handler's goroutine forever.
+func (s *Server) handlerContext() (context.Context, context.CancelFunc) {
+	timeout := s.Timeout
+	if timeout <= 0 {
+		timeout = defaultHandlerTimeout
+	}
+	return context.WithTimeout(context.Background(), timeout)
 }
 
 // Register subscribes the push and prepare handlers on nc. The returned
@@ -81,8 +103,10 @@ func (s *Server) handlePush(msg *nats.Msg) {
 		s.respond(msg, err)
 		return
 	}
+	ctx, cancel := s.handlerContext()
+	defer cancel()
 	dir := s.Trees.Dir(req.Owner, req.Repo, req.Issue)
-	s.respond(msg, s.Trees.Push(context.Background(), dir, req.Branch))
+	s.respond(msg, s.Trees.Push(ctx, dir, req.Branch))
 }
 
 func (s *Server) handlePrepare(msg *nats.Msg) {
@@ -91,7 +115,9 @@ func (s *Server) handlePrepare(msg *nats.Msg) {
 		s.respondPrepare(msg, "", "", err)
 		return
 	}
-	dir, branch, err := s.Trees.Prepare(context.Background(), req.Owner, req.Repo, req.Base, req.Issue, req.Title, req.Body, req.Labels)
+	ctx, cancel := s.handlerContext()
+	defer cancel()
+	dir, branch, err := s.Trees.Prepare(ctx, req.Owner, req.Repo, req.Base, req.Issue, req.Title, req.Body, req.Labels)
 	s.respondPrepare(msg, dir, branch, err)
 }
 

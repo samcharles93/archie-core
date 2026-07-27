@@ -4,11 +4,14 @@ import (
 	"context"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/go-git/go-git/v6"
+	gitconfig "github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/nats-io/nats-server/v2/server"
 	natssrv "github.com/nats-io/nats-server/v2/test"
 	"github.com/nats-io/nats.go"
@@ -33,58 +36,80 @@ func connect(t *testing.T, url string) *nats.Conn {
 	return nc
 }
 
-// newLocalRemote creates a bare repo with one commit on main, reachable
-// via file://<host>/<owner>/<repo>.git  --  mirrors worktree_test.go's helper.
+// newLocalRemote creates a bare repo with one commit on main at
+// <host>/<owner>/<repo>.git. Built with go-git, so this package's tests
+// no longer require a git binary on the machine running them.
 func newLocalRemote(t *testing.T, owner, repo string) string {
 	t.Helper()
 	host := t.TempDir()
 	bare := filepath.Join(host, owner, repo+".git")
+	mainRef := plumbing.NewBranchReferenceName("main")
+
+	if _, err := git.PlainInit(bare, true, git.WithDefaultBranch(mainRef)); err != nil {
+		t.Fatalf("init bare remote: %v", err)
+	}
+
 	seed := filepath.Join(t.TempDir(), "seed")
-
-	run := func(dir string, args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
+	sr, err := git.PlainInit(seed, false, git.WithDefaultBranch(mainRef))
+	if err != nil {
+		t.Fatalf("init seed repo: %v", err)
+	}
+	// Fixtures must not inherit commit.gpgSign from the host's global
+	// git config: go-git cannot sign and would fail the commit.
+	cfg, err := sr.Config()
+	if err != nil {
+		t.Fatalf("read seed config: %v", err)
+	}
+	cfg.Raw.Section("commit").SetOption("gpgsign", "false")
+	if err := sr.SetConfig(cfg); err != nil {
+		t.Fatalf("write seed config: %v", err)
 	}
 
-	if err := os.MkdirAll(bare, 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(seed, "README.md"), []byte("seed\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	run(host, "init", "--bare", "-b", "main", bare)
-	if err := os.MkdirAll(seed, 0o755); err != nil {
-		t.Fatal(err)
+	wt, err := sr.Worktree()
+	if err != nil {
+		t.Fatalf("seed worktree: %v", err)
 	}
-	run(seed, "init", "-b", "main")
-	run(seed, "config", "user.name", "seeder")
-	run(seed, "config", "user.email", "seed@example.com")
-	if err := os.WriteFile(filepath.Join(seed, "README.md"), []byte("seed\n"), 0o644); err != nil {
-		t.Fatal(err)
+	if _, err := wt.Add("README.md"); err != nil {
+		t.Fatalf("seed add: %v", err)
 	}
-	run(seed, "add", "-A")
-	run(seed, "commit", "-m", "seed")
-	run(seed, "push", "file://"+bare, "main")
+	sig := &object.Signature{
+		Name:  "seeder",
+		Email: "seed@example.com",
+		When:  time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	}
+	if _, err := wt.Commit("seed", &git.CommitOptions{Author: sig, Committer: sig}); err != nil {
+		t.Fatalf("seed commit: %v", err)
+	}
+	if _, err := sr.CreateRemote(&gitconfig.RemoteConfig{
+		Name: git.DefaultRemoteName,
+		URLs: []string{bare},
+	}); err != nil {
+		t.Fatalf("seed remote: %v", err)
+	}
+	if err := sr.Push(&git.PushOptions{
+		RemoteName: git.DefaultRemoteName,
+		RefSpecs:   []gitconfig.RefSpec{gitconfig.RefSpec(mainRef + ":" + mainRef)},
+	}); err != nil {
+		t.Fatalf("seed push: %v", err)
+	}
 	return host
 }
 
 func remoteHasBranch(t *testing.T, host, owner, repo, branch string) bool {
 	t.Helper()
 	bare := filepath.Join(host, owner, repo+".git")
-	cmd := exec.Command("git", "ls-remote", "--heads", bare, branch)
-	out, err := cmd.CombinedOutput()
+	r, err := git.PlainOpen(bare)
 	if err != nil {
-		t.Fatalf("ls-remote: %v\n%s", err, out)
+		t.Fatalf("open bare remote: %v", err)
 	}
-	return len(out) > 0
+	_, err = r.Reference(plumbing.NewBranchReferenceName(branch), true)
+	return err == nil
 }
 
 func TestClientPreparePublishesViaServer(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not installed")
-	}
 	ctx := context.Background()
 	host := newLocalRemote(t, "acme", "widget")
 
@@ -93,7 +118,7 @@ func TestClientPreparePublishesViaServer(t *testing.T) {
 		Token:    "unused-for-file-remotes",
 		BotUser:  "archie-bot",
 		BotEmail: "archie-bot@example.com",
-		BaseURL:  "file://" + host,
+		BaseURL:  host,
 	}
 
 	srv := startEmbedded(t)
@@ -120,9 +145,6 @@ func TestClientPreparePublishesViaServer(t *testing.T) {
 }
 
 func TestClientPushPublishesViaServer(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not installed")
-	}
 	ctx := context.Background()
 	host := newLocalRemote(t, "acme", "widget")
 
@@ -131,7 +153,7 @@ func TestClientPushPublishesViaServer(t *testing.T) {
 		Token:    "unused-for-file-remotes",
 		BotUser:  "archie-bot",
 		BotEmail: "archie-bot@example.com",
-		BaseURL:  "file://" + host,
+		BaseURL:  host,
 	}
 
 	dir, branch, err := m.Prepare(ctx, "acme", "widget", "main", 1, "feat: test", "", "")
@@ -192,5 +214,37 @@ func TestClientPushTimesOutWithNoResponder(t *testing.T) {
 	err := client.Push(context.Background(), "acme", "widget", 1, "branch")
 	if err == nil {
 		t.Fatal("expected Push to time out with no server registered")
+	}
+}
+
+// A handler must impose its own deadline. NATS request/reply carries no
+// deadline to the server, and a clone or push now runs in-process via
+// go-git, so an unresponsive forge would otherwise wedge the handler
+// goroutine forever.
+func TestServerHandlerContextIsBounded(t *testing.T) {
+	tests := []struct {
+		name    string
+		timeout time.Duration
+		wantMax time.Duration
+	}{
+		{name: "explicit timeout is honoured", timeout: 42 * time.Second, wantMax: 42 * time.Second},
+		{name: "zero falls back to the default", timeout: 0, wantMax: defaultHandlerTimeout},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &Server{Timeout: tc.timeout}
+			ctx, cancel := s.handlerContext()
+			defer cancel()
+
+			deadline, ok := ctx.Deadline()
+			if !ok {
+				t.Fatal("handlerContext() returned a context with no deadline")
+			}
+			remaining := time.Until(deadline)
+			if remaining <= 0 || remaining > tc.wantMax {
+				t.Errorf("deadline in %v, want a positive value no greater than %v", remaining, tc.wantMax)
+			}
+		})
 	}
 }
