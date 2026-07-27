@@ -43,7 +43,11 @@ func TestArchiedWiresTypedProvidersAndExecutableConsumers(t *testing.T) {
 		"memorytoolprovider.New(memManager)",
 		"configuredMCPProvider(srv)",
 		"capabilityHost.Register(providerRegistry)",
-		"chatGenerateOptions(messages, toolReg",
+		// The chat turn builds its toolset from the registry before the
+		// system prompt is rendered, so the prompt can advertise exactly
+		// the tools the model is handed.
+		"chatGenerateOptions(nil, toolReg",
+		"toolSummaries(options.Tools)",
 		"agentexec.NewInProcessRunner(llm, log, toolReg)",
 	} {
 		if !strings.Contains(text, required) {

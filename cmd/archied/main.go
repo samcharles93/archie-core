@@ -397,13 +397,29 @@ func run() int {
 				compCfg := gateway.DefaultCompressionConfig()
 				view := gateway.CompressHistory(compressed, compCfg)
 
-				// Prepend persona prompt if one is active for this session.
-				if personaPrompt := personas.GetActive(sessionKey); personaPrompt != "" {
-					view.Messages = append(
-						[]gateway.CompressedMessage{{Role: "system", Content: personaPrompt}},
-						view.Messages...,
-					)
+				// Build the toolset first so the system prompt can advertise
+				// exactly the tools the model is about to be handed. Deriving
+				// the inventory from any other source lets the prompt drift
+				// from reality, which is what made the agent offer to run
+				// commands it had no tool for.
+				options, err := chatGenerateOptions(nil, toolReg)
+				if err != nil {
+					return "", fmt.Errorf("build chat tools: %w", err)
 				}
+
+				chatModel := chatModels.ActiveModel()
+				systemPrompt := gateway.BuildSystemPrompt(gateway.SystemPromptConfig{
+					Persona:   personas.GetActive(sessionKey),
+					Tools:     toolSummaries(options.Tools),
+					Channel:   tg.Name(),
+					Model:     chatModel,
+					SessionID: sessionKey,
+					Now:       time.Now(),
+				})
+				view.Messages = append(
+					[]gateway.CompressedMessage{{Role: "system", Content: systemPrompt}},
+					view.Messages...,
+				)
 
 				// Convert to chat.Message for the LLM.
 				messages := make([]chat.Message, len(view.Messages))
@@ -421,11 +437,8 @@ func run() int {
 					}
 				}
 
-				options, err := chatGenerateOptions(messages, toolReg)
-				if err != nil {
-					return "", fmt.Errorf("build chat tools: %w", err)
-				}
-				chatModel := chatModels.ActiveModel()
+				options.Messages = messages
+
 				var text string
 				if onDelta == nil {
 					result, err := llm.Chat(ctx, chatModel, options)
