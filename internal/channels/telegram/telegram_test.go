@@ -101,6 +101,20 @@ func TestTelegramUserFacingCommandCopyDoesNotCallArchieAGateway(t *testing.T) {
 	}
 }
 
+func TestCommandSurfaceUsesOneModelSelectorAndUsefulHelpCopy(t *testing.T) {
+	for _, spec := range gatewayCommandSpecs {
+		if spec.Command == "models" {
+			t.Fatal("/models is redundant beside /model and must not be published")
+		}
+		if spec.Command == "help" && spec.Description == "Show this guide" {
+			t.Fatal("/help menu copy is self-referential")
+		}
+	}
+	if strings.Contains(gatewayHelpText(), "/models") {
+		t.Fatal("/help must not advertise the removed /models command")
+	}
+}
+
 func TestStartHasDeterministicGatewayResponse(t *testing.T) {
 	const allowedUserID = int64(42)
 	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())

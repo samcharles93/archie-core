@@ -16,7 +16,7 @@
 | Gateway code | ~40 files | 3 files (gateway.go, tasks.go + tests) |
 | Platform adapters | 30+ (built-in + plugin) | 1 (Telegram) |
 | Built-in tools | 80+ | ~5 (capture, script) |
-| Slash commands | 42 | 5 (/status, /help, /model, /models, /spawn) |
+| Slash commands | 42 | 5 (/status, /help, /provider, /model, /spawn) |
 | Plugin system | Full hooks + MCP + middleware | Minimal Yaegi loader |
 | Memory | Pluggable providers (Honcho, Mem0) | Ephemeral in-memory notes |
 | CLI commands | 60+ | 4 flags |

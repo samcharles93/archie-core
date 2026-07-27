@@ -345,7 +345,7 @@ func run() int {
 		}
 
 		// Build an LLM responder from the runtime. Gateway-local commands
-		// (/status, /models, /model, /spawn) are handled directly; all
+		// (/status, /model, /spawn) are handled directly; all
 		// other messages are routed through the LLM with conversation
 		// history from the session store.
 		var llmResponder gateway.LLMResponder

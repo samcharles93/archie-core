@@ -67,8 +67,8 @@ type LLMStreamResponder func(ctx context.Context, msg Message, onDelta func(stri
 
 // ModelManager provides access to available models and allows switching the
 // active LLM model. The daemon supplies an implementation backed by its
-// runtime provider catalog. When nil on a Router, /model and /models
-// return "not configured" messages.
+// runtime provider catalog. When nil on a Router, /model returns a
+// "not configured" message.
 type ModelManager interface {
 	// Models returns all available model references in "provider/model" format.
 	Models() []string
@@ -132,7 +132,7 @@ type TaskController interface {
 // message.
 type Router struct {
 	Store      StatusReader
-	Models     ModelManager   // nil = /model and /models not configured
+	Models     ModelManager   // nil = /model not configured
 	Tasks      TaskCreator    // nil = /spawn not configured
 	Controller TaskController // nil = /approve and /cancel not configured
 	LLM        LLMResponder   // nil = LLM not wired yet
@@ -156,7 +156,7 @@ func NewRouter(store StatusReader, llm LLMResponder, gatewayName string) *Router
 }
 
 // Route dispatches msg and returns the reply. Gateway-local commands
-// (like /status, /model, /models) are handled directly; everything
+// (like /status and /model) are handled directly; everything
 // else goes to the LLM responder.
 func (r *Router) Route(ctx context.Context, msg Message) (string, error) {
 	text := strings.TrimSpace(msg.Text)
@@ -165,8 +165,6 @@ func (r *Router) Route(ctx context.Context, msg Message) (string, error) {
 	switch cmd {
 	case "/status":
 		return r.handleStatus(ctx)
-	case "/models":
-		return r.handleModels(ctx)
 	case "/model":
 		return r.handleModel(ctx, arg)
 	case "/spawn":
@@ -209,7 +207,7 @@ func (r *Router) RouteStream(ctx context.Context, msg Message, onDelta func(stri
 	return r.LLMStream(ctx, msg, onDelta)
 }
 
-var localCommands = []string{"/status", "/models", "/model", "/spawn", "/approve", "/cancel"}
+var localCommands = []string{"/status", "/model", "/spawn", "/approve", "/cancel"}
 
 // LocalCommands returns the command names Route answers from local state.
 // Gateways use this to verify that their published command surfaces match
@@ -241,31 +239,6 @@ func parseCmd(text, gatewayName string) (cmd, arg string) {
 		return raw, fields[1]
 	}
 	return raw, ""
-}
-
-func (r *Router) handleModels(ctx context.Context) (string, error) {
-	if r.Models == nil {
-		return "Model management is not configured.", nil
-	}
-	models := r.Models.Models()
-	if manager, ok := r.Models.(ProviderModelManager); ok {
-		models = manager.ModelsForProvider(manager.ActiveProvider())
-	}
-	if len(models) == 0 {
-		return "No models configured.", nil
-	}
-	active := r.Models.ActiveModel()
-
-	var b strings.Builder
-	b.WriteString("Available models:\n")
-	for _, m := range models {
-		if m == active {
-			fmt.Fprintf(&b, "  %s (active)\n", m)
-		} else {
-			fmt.Fprintf(&b, "  %s\n", m)
-		}
-	}
-	return b.String(), nil
 }
 
 func (r *Router) handleModel(ctx context.Context, arg string) (string, error) {

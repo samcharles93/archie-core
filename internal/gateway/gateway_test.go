@@ -135,7 +135,7 @@ func TestRouterRejectsUnknownCommand(t *testing.T) {
 	}
 }
 
-// -- ModelManager fakes for /model and /models tests --
+// -- ModelManager fakes for /model tests --
 
 type fakeModelManager struct {
 	models      []string
@@ -194,108 +194,18 @@ func (f *fakeModelManager) SetActiveModel(_ context.Context, ref string) error {
 	return fmt.Errorf("unknown model: %s", ref)
 }
 
-// -- /models tests --
+// -- /model tests --
 
-func TestRouteModels(t *testing.T) {
-	mgr := &fakeModelManager{
-		models: []string{"a/b", "c/d"},
-	}
+func TestRouteModelsIsNoLongerACommand(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	r.Models = mgr
 	reply, err := r.Route(context.Background(), Message{Text: "/models"})
-	if err != nil {
-		t.Fatalf("Route: %v", err)
-	}
-	if !strings.Contains(reply, "a/b") || !strings.Contains(reply, "c/d") {
-		t.Errorf("reply missing model names: %q", reply)
-	}
-	if strings.Contains(reply, "active") {
-		t.Errorf("reply should not flag an active model when none is set: %q", reply)
-	}
-}
-
-func TestRouteModelsFiltersActiveProvider(t *testing.T) {
-	manager := &fakeProviderModelManager{
-		fakeModelManager: fakeModelManager{
-			models: []string{
-				"openrouter/openai/gpt-5.6",
-				"openai/gpt-5.6",
-				"openai/o3",
-			},
-			activeModel: "openai/gpt-5.6",
-		},
-	}
-	router := NewRouter(nil, nil, "test")
-	router.Models = manager
-
-	reply, err := router.Route(context.Background(), Message{Text: "/models"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(reply, "openrouter/") {
-		t.Fatalf("/models leaked another provider:\n%s", reply)
-	}
-	if !strings.Contains(reply, "openai/gpt-5.6") || !strings.Contains(reply, "openai/o3") {
-		t.Fatalf("/models omitted active-provider models:\n%s", reply)
+	if !strings.Contains(reply, "Unknown command /models") {
+		t.Errorf("reply = %q, want /models to be unavailable", reply)
 	}
 }
-
-func TestRouteModelsWithActive(t *testing.T) {
-	mgr := &fakeModelManager{
-		models:      []string{"a/b", "c/d"},
-		activeModel: "c/d",
-	}
-	r := NewRouter(nil, nil, "test-gw")
-	r.Models = mgr
-	reply, err := r.Route(context.Background(), Message{Text: "/models"})
-	if err != nil {
-		t.Fatalf("Route: %v", err)
-	}
-	if !strings.Contains(reply, "a/b") || !strings.Contains(reply, "c/d (active)") {
-		t.Errorf("reply should flag active model: %q", reply)
-	}
-}
-
-func TestRouteModelsAtMention(t *testing.T) {
-	mgr := &fakeModelManager{
-		models: []string{"a/b"},
-	}
-	r := NewRouter(nil, nil, "test-gw")
-	r.Models = mgr
-	reply, err := r.Route(context.Background(), Message{Text: "/models@test-gw"})
-	if err != nil {
-		t.Fatalf("Route: %v", err)
-	}
-	if !strings.Contains(reply, "a/b") {
-		t.Errorf("reply missing model names: %q", reply)
-	}
-}
-
-func TestRouteModelsEmpty(t *testing.T) {
-	mgr := &fakeModelManager{}
-	r := NewRouter(nil, nil, "test-gw")
-	r.Models = mgr
-	reply, err := r.Route(context.Background(), Message{Text: "/models"})
-	if err != nil {
-		t.Fatalf("Route: %v", err)
-	}
-	if !strings.Contains(reply, "No models") {
-		t.Errorf("reply = %q, want 'No models' message", reply)
-	}
-}
-
-func TestRouteModelsNoManager(t *testing.T) {
-	r := NewRouter(nil, nil, "test-gw")
-	reply, err := r.Route(context.Background(), Message{Text: "/models"})
-	if err != nil {
-		t.Fatalf("Route: %v", err)
-	}
-	if !strings.Contains(reply, "not configured") {
-		t.Errorf("reply = %q, want 'not configured' message", reply)
-	}
-}
-
-// -- /model tests --
 
 func TestRouteModelSwitch(t *testing.T) {
 	mgr := &fakeModelManager{
