@@ -189,24 +189,31 @@ type mockConsumer struct {
 func (m *mockConsumer) Fetch(int, ...jetstream.FetchOpt) (jetstream.MessageBatch, error) {
 	return m.batch, nil
 }
+
 func (m *mockConsumer) FetchBytes(int, ...jetstream.FetchOpt) (jetstream.MessageBatch, error) {
 	panic("FetchBytes not implemented")
 }
+
 func (m *mockConsumer) FetchNoWait(int) (jetstream.MessageBatch, error) {
 	panic("FetchNoWait not implemented")
 }
+
 func (m *mockConsumer) Consume(jetstream.MessageHandler, ...jetstream.PullConsumeOpt) (jetstream.ConsumeContext, error) {
 	panic("Consume not implemented")
 }
+
 func (m *mockConsumer) Messages(...jetstream.PullMessagesOpt) (jetstream.MessagesContext, error) {
 	panic("Messages not implemented")
 }
+
 func (m *mockConsumer) Next(...jetstream.FetchOpt) (jetstream.Msg, error) {
 	panic("Next not implemented")
 }
+
 func (m *mockConsumer) Info(context.Context) (*jetstream.ConsumerInfo, error) {
 	panic("Info not implemented")
 }
+
 func (m *mockConsumer) CachedInfo() *jetstream.ConsumerInfo {
 	panic("CachedInfo not implemented")
 }

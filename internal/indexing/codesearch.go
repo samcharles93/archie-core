@@ -523,7 +523,7 @@ func WorkspaceFiles(ctx context.Context, root string) ([]string, error) {
 	var files []string
 	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			return nil
+			return nil //nolint:nilerr // an unreadable entry skips that path and continues the walk; a best-effort index must not abort on one bad file
 		}
 		if path != root && strings.HasPrefix(entry.Name(), ".") {
 			if entry.IsDir() {

@@ -52,7 +52,7 @@ func Catalog(dir string) ([]CatalogEntry, error) {
 	if err != nil {
 		// A file at .agents/skills (ENOTDIR) is not fatal  --  treat as no skills.
 		// Same for permission errors and other non-fatal ReadDir failures.
-		return nil, nil
+		return nil, nil //nolint:nilerr // documented above: a non-directory or unreadable skills path means no skills, not a fatal error
 	}
 
 	var names []string

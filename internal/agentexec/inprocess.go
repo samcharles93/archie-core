@@ -171,7 +171,7 @@ func captureToolSet(specs []CaptureTool, captures map[string][]json.RawMessage) 
 				}
 				var object map[string]json.RawMessage
 				if err := json.Unmarshal(value, &object); err != nil {
-					return spec.Name + " rejected: arguments must be a JSON object", nil
+					return spec.Name + " rejected: arguments must be a JSON object", nil //nolint:nilerr // the agent loop must see malformed tool arguments as feedback it can correct, not as a failed tool call
 				}
 				for _, field := range spec.RequiredFields {
 					if _, ok := object[field]; !ok {
@@ -181,13 +181,13 @@ func captureToolSet(specs []CaptureTool, captures map[string][]json.RawMessage) 
 				for _, field := range spec.NonEmptyStrings {
 					var text string
 					if raw, ok := object[field]; !ok || json.Unmarshal(raw, &text) != nil || strings.TrimSpace(text) == "" {
-						return fmt.Sprintf("%s rejected: %s must be a non-empty string", spec.Name, field), nil
+						return fmt.Sprintf("%s rejected: %s must be a non-empty string", spec.Name, field), nil //nolint:nilerr // same: a rejection message lets the model retry with a valid argument
 					}
 				}
 				for _, field := range spec.BooleanFields {
 					var value bool
 					if raw, ok := object[field]; !ok || json.Unmarshal(raw, &value) != nil {
-						return fmt.Sprintf("%s rejected: %s must be a boolean", spec.Name, field), nil
+						return fmt.Sprintf("%s rejected: %s must be a boolean", spec.Name, field), nil //nolint:nilerr // same: a rejection message lets the model retry with a valid argument
 					}
 				}
 				captures[spec.Name] = append(captures[spec.Name], append(json.RawMessage(nil), value...))
@@ -215,11 +215,11 @@ func scriptToolSet(workspace string) core.ToolSet {
 					Path string `json:"path"`
 				}
 				if err := json.Unmarshal([]byte(input), &args); err != nil || strings.TrimSpace(args.Path) == "" {
-					return "run_go_script rejected: arguments must be a JSON object with a non-empty path field", nil
+					return "run_go_script rejected: arguments must be a JSON object with a non-empty path field", nil //nolint:nilerr // same: a rejection message lets the model retry with a valid path
 				}
 				full := filepath.Join(workspace, args.Path)
 				if rel, err := filepath.Rel(workspace, full); err != nil || strings.HasPrefix(rel, "..") {
-					return "run_go_script rejected: path escapes the workspace", nil
+					return "run_go_script rejected: path escapes the workspace", nil //nolint:nilerr // same: a rejection message lets the model retry with a valid path
 				}
 				out, err := skillscript.Run(full)
 				if err != nil {

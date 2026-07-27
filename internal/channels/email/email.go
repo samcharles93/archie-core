@@ -82,7 +82,7 @@ func (g *Gateway) Start(ctx context.Context, router *gateway.Router) error {
 		conn, err := ln.Accept()
 		if err != nil {
 			if ctx.Err() != nil {
-				return nil
+				return nil //nolint:nilerr // Accept failed because the listener was closed by context cancellation, which is a clean shutdown, not a failure
 			}
 			g.log.Error("email accept", "err", err)
 			continue

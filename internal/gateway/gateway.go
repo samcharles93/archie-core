@@ -340,7 +340,7 @@ func (r *Router) handleApprove(ctx context.Context, rest string) (string, error)
 	identity, arg := parseTaskControl(rest, r.Identity)
 	id, err := parseTaskID(arg)
 	if err != nil {
-		return "Usage: /approve [identity=name] <task-id>", nil
+		return "Usage: /approve [identity=name] <task-id>", nil //nolint:nilerr // chat commands report problems as text to the human, never as Go errors, which would surface as a gateway fault
 	}
 	if err := r.Controller.Approve(ctx, id, identity); err != nil {
 		return fmt.Sprintf("Cannot approve task %d: %v", id, err), nil
@@ -355,7 +355,7 @@ func (r *Router) handleCancel(ctx context.Context, rest string) (string, error) 
 	identity, arg := parseTaskControl(rest, r.Identity)
 	id, err := parseTaskID(arg)
 	if err != nil {
-		return "Usage: /cancel [identity=name] <task-id>", nil
+		return "Usage: /cancel [identity=name] <task-id>", nil //nolint:nilerr // chat commands report problems as text to the human, never as Go errors, which would surface as a gateway fault
 	}
 	if err := r.Controller.Cancel(ctx, id, identity); err != nil {
 		return fmt.Sprintf("Cannot cancel task %d: %v", id, err), nil

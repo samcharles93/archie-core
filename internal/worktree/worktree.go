@@ -275,6 +275,7 @@ func archieBranch(issue int, title, body, labels string) string {
 // branchPrefix derives a conventional-commit prefix from the issue
 // labels, then falls back to "feat". Maps: bug→fix, feature→feat,
 // enhancement→feat, docs→docs, chore→chore, test→test.
+// FIXME - Unused parameters title and body where they should be used. - just a missing implementation by the looks of it.
 func branchPrefix(title, body, labels string) string {
 	for l := range strings.SplitSeq(labels, ",") {
 		switch strings.TrimSpace(strings.ToLower(l)) {

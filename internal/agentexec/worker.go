@@ -108,7 +108,7 @@ func runStages(ctx context.Context, runner Runner, msg AgentRequestMessage, chan
 				Error:   runErr.Error(),
 				Channel: channel,
 			}
-			return resp, nil
+			return resp, nil //nolint:nilerr // runErr is reported to the caller in the response envelope's Error field; returning it here as well would double-report and abort the NATS reply
 		}
 		totalTokens += result.TokensUsed
 		totalIter += result.Iterations
