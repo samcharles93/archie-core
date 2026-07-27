@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
@@ -464,5 +465,96 @@ var Plugin = plugin._Plugin{
 	}
 	if len(plugins) != 1 {
 		t.Errorf("LoadDir returned %d plugins from tagged file, want 1 (build tags are ignored in Yaegi)", len(plugins))
+	}
+}
+
+// ── Timeout tests (issue #43) ────────────────────────────────────────
+//
+// LoadDir calls yaegiutil.Resolve which calls i.Eval(src) with no
+// context, deadline, or goroutine+select guard. A plugin whose
+// package-level init code never returns (e.g. select{} in init())
+// hangs the entire daemon startup forever. These tests prove the bug:
+// they assert the CORRECT behaviour (timeout → skip the bad plugin)
+// and FAIL today because LoadDir hangs before returning.
+
+func TestLoadDirTimeoutOnBlockingPlugin(t *testing.T) {
+	// A single plugin whose init() blocks forever must be skipped,
+	// not hang LoadDir indefinitely. The daemon must start with zero
+	// plugins and no error — the blocking file is logged and skipped.
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "blocking.go"), []byte(`package main
+
+func init() { select {} }
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan struct{})
+	var plugins []plugin.Plugin
+	var loadErr error
+	go func() {
+		plugins, loadErr = plugin.LoadDir(dir, symbols)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		if loadErr != nil {
+			t.Errorf("LoadDir returned error: %v", loadErr)
+		}
+		if len(plugins) != 0 {
+			t.Errorf("LoadDir returned %d plugins, want 0 (blocking plugin should be skipped)", len(plugins))
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("LoadDir did not return within 5s — plugin eval has no timeout (issue #43)")
+	}
+}
+
+func TestLoadDirSkipsBlockingPluginButLoadsGoodOnes(t *testing.T) {
+	// A blocking plugin must not prevent good plugins from loading.
+	// LoadDir must return within the timeout with only the valid plugin.
+
+	dir := t.TempDir()
+	// Blocking plugin first (sorted first by filename).
+	if err := os.WriteFile(filepath.Join(dir, "00-blocking.go"), []byte(`package main
+
+func init() { select {} }
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Good plugin second.
+	if err := os.WriteFile(filepath.Join(dir, "01-good.go"), []byte(`package main
+
+import "github.com/samcharles93/archie-core/internal/plugin"
+
+var Plugin = plugin._Plugin{
+	WName:    func() string { return "good" },
+	WVersion: func() string { return "1.0.0" },
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan struct{})
+	var plugins []plugin.Plugin
+	var loadErr error
+	go func() {
+		plugins, loadErr = plugin.LoadDir(dir, symbols)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		if loadErr != nil {
+			t.Errorf("LoadDir returned error: %v", loadErr)
+		}
+		if len(plugins) != 1 {
+			t.Errorf("LoadDir returned %d plugins, want 1 (blocking plugin should be skipped, good plugin loaded)", len(plugins))
+		} else if plugins[0].Name() != "good" {
+			t.Errorf("plugin.Name() = %q, want good", plugins[0].Name())
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("LoadDir did not return within 5s — blocking plugin hang prevents loading good plugins (issue #43)")
 	}
 }
