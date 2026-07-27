@@ -12,6 +12,7 @@ package yaegiutil
 import (
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/traefik/yaegi/interp"
 	"github.com/traefik/yaegi/stdlib"
@@ -35,15 +36,39 @@ func New(opts interp.Options, extraSymbols ...map[string]map[string]reflect.Valu
 	return i, nil
 }
 
+// evalTimeout bounds the Yaegi Eval(src) call. Yaegi's Eval is not
+// cancellable mid-execution, so a plugin whose package-level init
+// blocks forever would hang the daemon without this guard. On timeout
+// the goroutine leaks (known limitation), but the daemon continues.
+const evalTimeout = 3 * time.Second
+
 // Resolve evaluates src in i and type-asserts exportPath's value
 // (e.g. "main.Stage", "gate.Check") to T. It does not itself recover
 // panics  --  wrap the call that invokes the returned T in Safe, since a
 // panic can happen either during Eval (e.g. an init()) or during the
 // caller's later invocation of the resolved function.
+//
+// The Eval call is guarded by evalTimeout: if package-level init code
+// blocks forever (e.g. select{} in init()), Resolve returns an error
+// instead of hanging the caller indefinitely. The underlying Yaegi
+// goroutine cannot be cancelled and will leak; this is an accepted
+// trade-off for daemon availability.
 func Resolve[T any](i *interp.Interpreter, src, exportPath string) (result T, err error) {
-	if _, err := i.Eval(src); err != nil {
-		return result, fmt.Errorf("evaluate: %w", err)
+	done := make(chan error, 1)
+	go func() {
+		_, evalErr := i.Eval(src)
+		done <- evalErr
+	}()
+
+	select {
+	case evalErr := <-done:
+		if evalErr != nil {
+			return result, fmt.Errorf("evaluate: %w", evalErr)
+		}
+	case <-time.After(evalTimeout):
+		return result, fmt.Errorf("evaluate: timed out after %v", evalTimeout)
 	}
+
 	v, err := i.Eval(exportPath)
 	if err != nil {
 		return result, fmt.Errorf("does not export %s: %w", exportPath, err)
