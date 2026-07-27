@@ -292,6 +292,9 @@ func run() int {
 				"Add your Telegram user id to chat.telegram.allowed_user_ids to enable the bot.")
 		}
 		tg := telegram.New(tgToken, "", "", cfg.Chat.Telegram.AllowedUserIDs, log)
+		tg.Version = func() string {
+			return fmt.Sprintf("Archie\nGateway: %s\nRuntime: %s", gatewayVersion, runtimeVersion)
+		}
 		releaseAnnouncements := &releaseannounce.Announcer{
 			StatePath: releaseAnnouncementStatePath(cfg.WorkDir, cfg.BotUser),
 			Components: []releaseannounce.Component{

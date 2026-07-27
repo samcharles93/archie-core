@@ -140,6 +140,22 @@ func TestStartHasDeterministicGatewayResponse(t *testing.T) {
 	}
 }
 
+func TestVersionReportsBothComponents(t *testing.T) {
+	const allowedUserID = int64(42)
+	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g.Version = func() string { return "Archie\nGateway: v1.2.3\nRuntime: v4.5.6" }
+	b, requests := newTelegramTestBot(t)
+
+	g.versionHandler()(context.Background(), b, &models.Update{Message: &models.Message{
+		From: &models.User{ID: allowedUserID},
+		Chat: models.Chat{ID: 7, Type: models.ChatTypePrivate},
+	}})
+
+	if len(*requests) != 1 || !strings.Contains((*requests)[0].form["rich_message"], "Gateway: v1.2.3") || !strings.Contains((*requests)[0].form["rich_message"], "Runtime: v4.5.6") {
+		t.Fatalf("version reply = %#v", *requests)
+	}
+}
+
 func TestPublishedCommandsMatchExecutableCommandSurface(t *testing.T) {
 	executable := make(map[string]bool)
 	for _, command := range gateway.LocalCommands() {

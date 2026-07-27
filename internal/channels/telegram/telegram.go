@@ -41,6 +41,9 @@ type Gateway struct {
 	// It is supplied by the composition root because version, changelog, and
 	// persistence paths are deployment concerns.
 	ReleaseAnnouncements ReleaseAnnouncer
+	// Version reports installed component versions. The composition root owns
+	// build metadata; Telegram only renders it for authorized users.
+	Version func() string
 
 	// restartCh carries /restart requests from a bot handler to the
 	// supervisor loop in Start. Buffered so a handler never blocks.
@@ -154,6 +157,7 @@ func (g *Gateway) launch(ctx context.Context, router *gateway.Router) (*bot.Bot,
 
 	// Gateway-local commands: handled directly, no LLM.
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/status", bot.MatchTypeExact, g.statusHandler(router))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/version", bot.MatchTypeExact, g.versionHandler())
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, g.startHandler())
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/help", bot.MatchTypeExact, g.helpHandler())
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/restart", bot.MatchTypeExact, g.restartHandler())
@@ -273,6 +277,20 @@ func (g *Gateway) statusHandler(router *gateway.Router) bot.HandlerFunc {
 			return
 		}
 		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, reply)
+	}
+}
+
+func (g *Gateway) versionHandler() bot.HandlerFunc {
+	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
+		msg, ok := g.authorizedMessage(ctx, b, update)
+		if !ok {
+			return
+		}
+		if g.Version == nil {
+			g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, "Version information is not configured.")
+			return
+		}
+		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, g.Version())
 	}
 }
 

@@ -20,6 +20,7 @@ type commandSpec struct {
 // together prevents a newly registered command from being omitted from help.
 var gatewayCommandSpecs = []commandSpec{
 	{Command: "status", Description: "Show task counts by state", Usage: "/status"},
+	{Command: "version", Description: "Show installed Archie versions", Usage: "/version"},
 	{Command: "provider", Description: "Choose the provider used for chat", Usage: "/provider"},
 	{Command: "model", Description: "Show the model selector or switch directly", Usage: "/model [provider/model]"},
 	{Command: "spawn", Description: "Create a tracked task", Usage: "/spawn [identity=name] [repo=owner/name] [workflow=name] <title>"},
@@ -29,7 +30,7 @@ var gatewayCommandSpecs = []commandSpec{
 	{Command: "help", Description: "See what Archie can do", Usage: "/help"},
 }
 
-var telegramOnlyCommands = []string{"provider", "restart", "help"}
+var telegramOnlyCommands = []string{"provider", "restart", "help", "version"}
 
 var gatewayCommands = func() []models.BotCommand {
 	commands := make([]models.BotCommand, 0, len(gatewayCommandSpecs))
