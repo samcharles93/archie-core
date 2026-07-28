@@ -3,8 +3,9 @@
 package wfextract
 
 import (
-	"github.com/samcharles93/archie-core/internal/workflow"
 	"reflect"
+
+	"github.com/samcharles93/archie-core/internal/workflow"
 )
 
 func init() {
