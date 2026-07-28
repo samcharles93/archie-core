@@ -133,7 +133,10 @@ type TaskController interface {
 type Router struct {
 	Store      StatusReader
 	Models     ModelManager   // nil = /model not configured
-	Tasks      TaskCreator    // nil = /spawn not configured
+	// ModelPersist persists the active model selection so it survives
+	// restarts (e.g. writing back to identity config). nil = not configured.
+	ModelPersist func(ctx context.Context, modelRef string) error
+	Tasks        TaskCreator    // nil = /spawn not configured
 	Controller TaskController // nil = /approve and /cancel not configured
 	LLM        LLMResponder   // nil = LLM not wired yet
 	// LLMStream is the optional streaming responder. When set, adapters
