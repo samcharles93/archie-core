@@ -163,6 +163,9 @@ func TestVersionReportsBothComponents(t *testing.T) {
 // appear on Telegram's discoverability surfaces.
 var telegramHiddenCommands = map[string]bool{
 	"approve": true,
+	"reset":   true, // alias for /new
+	"fork":    true, // alias for /branch
+	"compact": true, // alias for /compress
 }
 
 func TestPublishedCommandsMatchExecutableCommandSurface(t *testing.T) {

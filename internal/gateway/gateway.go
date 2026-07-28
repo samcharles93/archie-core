@@ -140,20 +140,19 @@ type Router struct {
 	// that can render partial output (see RouteStream) show the reply as
 	// it generates; when nil, everything falls back to LLM.
 	LLMStream LLMStreamResponder
-	// Personas is the persona registry for /personality. When nil, the
-	// command returns "not configured".
-	Personas *PersonaRegistry
-	// ModelPersist persists the active model globally when --global is
-	// passed to /model. When nil, --global is a no-op acknowledged to
-	// the user.
-	ModelPersist func(ctx context.Context, modelRef string) error
 	// Identity is the archie identity this router belongs to (empty in
 	// single-identity deployments). Propagated into SpawnRequest and
 	// used to scope /approve and /cancel authorization  --  a task
 	// spawned under one identity cannot be controlled from another's
 	// chat session.
-	Identity    string
-	gatewayName string
+	Identity string
+	// Sessions persists session metadata and conversation history.
+	// When set, session lifecycle commands (/new, /branch, /title,
+	// /undo, /retry, /compress) are available. When nil, those
+	// commands report "not configured".
+	Sessions       SessionStore
+	sessionTracker *sessionTracker
+	gatewayName    string
 }
 
 // NewRouter returns a Router. llm is optional  --  when nil, non-command
@@ -162,42 +161,80 @@ func NewRouter(store StatusReader, llm LLMResponder, gatewayName string) *Router
 	return &Router{Store: store, LLM: llm, gatewayName: gatewayName}
 }
 
+// InitSessions wires the session store and starts tracking sessions.
+// Must be called before session commands are used. Idempotent.
+func (r *Router) InitSessions(sessions SessionStore) {
+	r.Sessions = sessions
+	r.sessionTracker = newSessionTracker(sessions)
+}
+
 // Route dispatches msg and returns the reply. Gateway-local commands
-// (like /status and /model) are handled directly; everything
-// else goes to the LLM responder.
+// are handled directly; everything else goes to the LLM responder.
 func (r *Router) Route(ctx context.Context, msg Message) (string, error) {
 	text := strings.TrimSpace(msg.Text)
 	cmd, _ := parseCmd(text, r.gatewayName)
 
+	if reply, handled, err := r.dispatchLocal(ctx, msg, text, cmd); handled {
+		return reply, err
+	}
+
+	if strings.HasPrefix(cmd, "/") {
+		return fmt.Sprintf("Unknown command %s. Try /help.", cmd), nil
+	}
+	if r.LLM == nil {
+		return "I'm running but LLM processing isn't wired yet. Try /status.", nil
+	}
+	return r.LLM(ctx, msg)
+}
+
+// dispatchLocal handles recognized local commands. Returns (reply,
+// true) when the command was recognized and handled.
+func (r *Router) dispatchLocal(ctx context.Context, msg Message, text, cmd string) (string, bool, error) {
+	rest := restAfter(text, cmd, r.gatewayName)
+
 	switch cmd {
 	case "/status":
-		return r.handleStatus(ctx)
+		reply, err := r.handleStatus(ctx)
+		return reply, true, err
 	case "/model":
-		rest := restAfter(text, cmd, r.gatewayName)
-		return r.handleModel(ctx, rest)
-	case "/personality":
-		rest := restAfter(text, cmd, r.gatewayName)
-		return r.handlePersonality(ctx, rest)
+		_, arg := parseCmd(text, "")
+		reply, err := r.handleModel(ctx, arg)
+		return reply, true, err
 	case "/spawn":
-		// Title is everything after "/spawn"  --  keep the multi-word text.
-		rest := restAfter(text, cmd, r.gatewayName)
-		return r.handleSpawn(ctx, rest)
+		reply, err := r.handleSpawn(ctx, rest)
+		return reply, true, err
 	case "/approve":
-		// Reserved for dangerous-command approval (archie-core-alm.6).
-		// Telegram hides it from its menu/help; other gateways keep it
-		// wired until the new design is wired up.
-		return r.handleApprove(ctx, restAfter(text, cmd, r.gatewayName))
+		reply, err := r.handleApprove(ctx, rest)
+		return reply, true, err
 	case "/cancel":
-		return r.handleCancel(ctx, restAfter(text, cmd, r.gatewayName))
-	default:
-		if strings.HasPrefix(cmd, "/") {
-			return fmt.Sprintf("Unknown command %s. Try /help.", cmd), nil
-		}
-		if r.LLM == nil {
-			return "I'm running but LLM processing isn't wired yet. Try /status.", nil
-		}
-		return r.LLM(ctx, msg)
+		reply, err := r.handleCancel(ctx, rest)
+		return reply, true, err
+	case "/start":
+		reply, err := r.handleStart(ctx, msg)
+		return reply, true, err
+	case "/new", "/reset":
+		reply, err := r.handleNew(ctx, msg, rest)
+		return reply, true, err
+	case "/topic":
+		reply, err := r.handleTopic(ctx, msg, rest)
+		return reply, true, err
+	case "/retry":
+		reply, err := r.handleRetry(ctx, msg)
+		return reply, true, err
+	case "/undo":
+		reply, err := r.handleUndo(ctx, msg, rest)
+		return reply, true, err
+	case "/title":
+		reply, err := r.handleTitle(ctx, msg, rest)
+		return reply, true, err
+	case "/branch", "/fork":
+		reply, err := r.handleBranch(ctx, msg, rest)
+		return reply, true, err
+	case "/compress", "/compact":
+		reply, err := r.handleCompress(ctx, msg, rest)
+		return reply, true, err
 	}
+	return "", false, nil
 }
 
 // RouteStream is Route for adapters that can render a reply progressively.
@@ -221,7 +258,11 @@ func (r *Router) RouteStream(ctx context.Context, msg Message, onDelta func(stri
 	return r.LLMStream(ctx, msg, onDelta)
 }
 
-var localCommands = []string{"/status", "/model", "/spawn", "/approve", "/cancel", "/personality"}
+var localCommands = []string{
+	"/status", "/model", "/spawn", "/approve", "/cancel",
+	"/new", "/reset", "/topic", "/retry", "/undo",
+	"/title", "/branch", "/fork", "/compress", "/compact",
+}
 
 // LocalCommands returns the command names Route answers from local state.
 // Gateways use this to verify that their published command surfaces match
@@ -255,73 +296,20 @@ func parseCmd(text, gatewayName string) (cmd, arg string) {
 	return raw, ""
 }
 
-// modelArgs holds the parsed flags from a /model command rest text.
-type modelArgs struct {
-	Model    string
-	Provider string
-	Global   bool
-	Session  bool
-	Refresh  bool
-}
-
-// parseModelArgs extracts flags from rest-text after /model. Flags are
-// stripped; whatever remains (after the command token) is the model ref.
-func parseModelArgs(rest string) modelArgs {
-	fields := strings.Fields(rest)
-	ma := modelArgs{}
-	var modelParts []string
-	for _, f := range fields {
-		switch {
-		case f == "--global":
-			ma.Global = true
-		case f == "--session":
-			ma.Session = true
-		case f == "--refresh":
-			ma.Refresh = true
-		case strings.HasPrefix(f, "--provider"):
-			// Accept --provider=name and --provider name forms.
-			if after, ok := strings.CutPrefix(f, "--provider="); ok {
-				ma.Provider = after
-			} else if after, ok := strings.CutPrefix(f, "--provider"); ok && after == "" {
-				// next field is the provider value; parseModelArgs can't
-				// look ahead, so the caller (Telegram) will re-parse with
-				// full field context. The router's plain-text handler
-				// treats --provider as a flag without value.
-				ma.Provider = ""
-			} else {
-				ma.Provider = after
-			}
-		default:
-			modelParts = append(modelParts, f)
-		}
-	}
-	ma.Model = strings.Join(modelParts, " ")
-	return ma
-}
-
-func (r *Router) handleModel(ctx context.Context, rest string) (string, error) {
+func (r *Router) handleModel(ctx context.Context, arg string) (string, error) {
 	if r.Models == nil {
 		return "Model switching is not configured.", nil
 	}
-	ma := parseModelArgs(rest)
-
-	// --refresh: return the current active model (no catalog refresh in
-	// the plain-text path; Telegram handles this separately).
-	if ma.Refresh {
-		return fmt.Sprintf("Active model: %s.", r.Models.ActiveModel()), nil
-	}
-
-	// No model ref and no flags: list available models.
-	if ma.Model == "" && ma.Provider == "" {
+	if arg == "" {
 		models := r.Models.Models()
 		if manager, ok := r.Models.(ProviderModelManager); ok {
 			models = manager.ModelsForProvider(manager.ActiveProvider())
 		}
 		if len(models) == 0 {
-			return "No models configured.\nUsage: /model [model] [--provider name] [--global|--session] [--refresh]", nil
+			return "No models configured.\nUsage: /model <provider/model>", nil
 		}
 		var b strings.Builder
-		b.WriteString("Usage: /model [model] [--provider name] [--global|--session] [--refresh]\nAvailable models:\n")
+		b.WriteString("Usage: /model <provider/model>\nAvailable models:\n")
 		active := r.Models.ActiveModel()
 		for _, m := range models {
 			if m == active {
@@ -332,61 +320,10 @@ func (r *Router) handleModel(ctx context.Context, rest string) (string, error) {
 		}
 		return b.String(), nil
 	}
-
-	// --provider: switch provider first.
-	if ma.Provider != "" {
-		manager, ok := r.Models.(ProviderModelManager)
-		if !ok {
-			return "Provider switching is not configured.", nil
-		}
-		if err := manager.SetActiveProvider(ctx, ma.Provider); err != nil {
-			return fmt.Sprintf("Cannot switch provider: %v", err), nil
-		}
+	if err := r.Models.SetActiveModel(ctx, arg); err != nil {
+		return fmt.Sprintf("Cannot switch: %v", err), nil
 	}
-
-	// Model switch.
-	if ma.Model != "" {
-		if err := r.Models.SetActiveModel(ctx, ma.Model); err != nil {
-			return fmt.Sprintf("Cannot switch: %v", err), nil
-		}
-	}
-
-	active := r.Models.ActiveModel()
-	msg := fmt.Sprintf("Active model set to %s.", active)
-
-	// Persist if --global and a model was selected.
-	if ma.Global && ma.Model != "" {
-		if r.ModelPersist != nil {
-			if err := r.ModelPersist(ctx, active); err != nil {
-				return fmt.Sprintf("Model switched to %s but persistence failed: %v", active, err), nil
-			}
-		} else {
-			msg += " (global persistence is not configured)"
-		}
-	}
-	return msg, nil
-}
-
-func (r *Router) handlePersonality(ctx context.Context, rest string) (string, error) {
-	if r.Personas == nil {
-		return "Personality switching is not configured.", nil
-	}
-	if rest == "" {
-		names := r.Personas.List()
-		if len(names) == 0 {
-			return "No personalities configured.", nil
-		}
-		var b strings.Builder
-		b.WriteString("Usage: /personality <name>\nAvailable personalities:\n")
-		for _, name := range names {
-			b.WriteString("  " + name + "\n")
-		}
-		return b.String(), nil
-	}
-	if !r.Personas.SetActive("", rest) {
-		return fmt.Sprintf("Unknown personality %q. Use /personality to list available personalities.", rest), nil
-	}
-	return fmt.Sprintf("Active personality set to %q.", rest), nil
+	return fmt.Sprintf("Active model set to %s.", arg), nil
 }
 
 // restAfter returns the text after the command token, stripping the
