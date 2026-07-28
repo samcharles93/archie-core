@@ -172,6 +172,9 @@ func (r *Router) Route(ctx context.Context, msg Message) (string, error) {
 		rest := restAfter(text, cmd, r.gatewayName)
 		return r.handleSpawn(ctx, rest)
 	case "/approve":
+		// Reserved for dangerous-command approval (archie-core-alm.6).
+		// Telegram hides it from its menu/help; other gateways keep it
+		// wired until the new design is wired up.
 		return r.handleApprove(ctx, restAfter(text, cmd, r.gatewayName))
 	case "/cancel":
 		return r.handleCancel(ctx, restAfter(text, cmd, r.gatewayName))

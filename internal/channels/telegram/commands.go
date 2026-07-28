@@ -25,7 +25,6 @@ var gatewayCommandSpecs = []commandSpec{
 	{Command: "provider", Description: "Choose the provider used for chat", Usage: "/provider"},
 	{Command: "model", Description: "Show the model selector or switch directly", Usage: "/model [provider/model]"},
 	{Command: "spawn", Description: "Create a tracked task", Usage: "/spawn [identity=name] [repo=owner/name] [workflow=name] <title>"},
-	{Command: "approve", Description: "Approve and requeue a waiting task", Usage: "/approve [identity=name] <task-id>"},
 	{Command: "cancel", Description: "Cancel a queued or waiting task", Usage: "/cancel [identity=name] <task-id>"},
 	{Command: "restart", Description: "Reload Archie and its configuration", Usage: "/restart"},
 	{Command: "help", Description: "See what Archie can do", Usage: "/help"},
