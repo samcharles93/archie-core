@@ -501,6 +501,7 @@ func run() int {
 		router := gateway.NewRouter(st, llmResponder, "telegram")
 		router.LLMStream = llmStream
 		router.Models = chatModels
+		router.Personas = personas
 		configureTaskCommands(router, chatTasks, chatController, defaultChatIdentity)
 		startGateways = append(startGateways, func() {
 			go func() {
