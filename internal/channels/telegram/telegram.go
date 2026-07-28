@@ -172,6 +172,11 @@ func (g *Gateway) launch(ctx context.Context, router *gateway.Router) (*bot.Bot,
 
 	// Gateway-local commands: handled directly, no LLM.
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/status", bot.MatchTypeExact, g.statusHandler(router))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/whoami", bot.MatchTypeExact, g.whoamiHandler(router))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/profile", bot.MatchTypeExact, g.profileHandler(router))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/sessions", bot.MatchTypeExact, g.sessionsHandler(router))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/resume", bot.MatchTypeExact, g.resumeHandler(router))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/agents", bot.MatchTypeExact, g.agentsHandler(router))
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/version", bot.MatchTypeExact, g.versionHandler())
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/update", bot.MatchTypeExact, g.updateHandler())
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, g.startHandler())
@@ -277,6 +282,26 @@ func (g *Gateway) WebhookHandler() http.Handler {
 // ── command handlers (gateway-local  --  no LLM) ────────────────
 
 func (g *Gateway) statusHandler(router *gateway.Router) bot.HandlerFunc {
+	return g.routeCmdHandler(router, "/status")
+}
+
+func (g *Gateway) whoamiHandler(router *gateway.Router) bot.HandlerFunc {
+	return g.routeCmdHandler(router, "/whoami")
+}
+
+func (g *Gateway) profileHandler(router *gateway.Router) bot.HandlerFunc {
+	return g.routeCmdHandler(router, "/profile")
+}
+
+func (g *Gateway) sessionsHandler(router *gateway.Router) bot.HandlerFunc {
+	return g.routeCmdHandler(router, "/sessions")
+}
+
+func (g *Gateway) agentsHandler(router *gateway.Router) bot.HandlerFunc {
+	return g.routeCmdHandler(router, "/agents")
+}
+
+func (g *Gateway) resumeHandler(router *gateway.Router) bot.HandlerFunc {
 	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
 		msg, ok := g.authorizedMessage(ctx, b, update)
 		if !ok {
@@ -286,10 +311,32 @@ func (g *Gateway) statusHandler(router *gateway.Router) bot.HandlerFunc {
 			ChannelID: fmt.Sprintf("%d", msg.Chat.ID),
 			ThreadID:  threadIDString(msg.MessageThreadID),
 			From:      msg.From.Username,
-			Text:      "/status",
+			Text:      msg.Text,
 		})
 		if err != nil {
-			g.log.Error("status handler failed", "error", err)
+			g.log.Error("resume handler failed", "error", err)
+			return
+		}
+		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, reply)
+	}
+}
+
+// routeCmdHandler builds a handler that routes a fixed command through the
+// gateway.Router and sends the reply.
+func (g *Gateway) routeCmdHandler(router *gateway.Router, cmd string) bot.HandlerFunc {
+	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
+		msg, ok := g.authorizedMessage(ctx, b, update)
+		if !ok {
+			return
+		}
+		reply, err := router.Route(ctx, gateway.Message{
+			ChannelID: fmt.Sprintf("%d", msg.Chat.ID),
+			ThreadID:  threadIDString(msg.MessageThreadID),
+			From:      msg.From.Username,
+			Text:      cmd,
+		})
+		if err != nil {
+			g.log.Error("command handler failed", "command", cmd, "error", err)
 			return
 		}
 		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, reply)

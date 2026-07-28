@@ -616,3 +616,269 @@ func TestRouteCancelNotConfigured(t *testing.T) {
 		t.Errorf("reply = %q, want 'not configured'", reply)
 	}
 }
+
+// -- /whoami tests --
+
+func TestRouteWhoami(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	r.Identity = "archie"
+	reply, err := r.Route(context.Background(), Message{Text: "/whoami"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "archie") {
+		t.Errorf("reply = %q, want mention of identity", reply)
+	}
+}
+
+func TestRouteWhoamiNoIdentity(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	reply, err := r.Route(context.Background(), Message{Text: "/whoami"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Archie") {
+		t.Errorf("reply = %q, want mention of Archie", reply)
+	}
+}
+
+func TestRouteWhoamiWithModel(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	r.Identity = "archie"
+	r.Models = &fakeModelManager{
+		models:      []string{"a/b", "c/d"},
+		activeModel: "a/b",
+	}
+	reply, err := r.Route(context.Background(), Message{Text: "/whoami"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "archie") || !strings.Contains(reply, "a/b") {
+		t.Errorf("reply = %q, want identity and model", reply)
+	}
+}
+
+// -- /profile tests --
+
+func TestRouteProfile(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	r.Identity = "archie"
+	r.Models = &fakeModelManager{
+		models:      []string{"a/b", "c/d"},
+		activeModel: "a/b",
+	}
+	reply, err := r.Route(context.Background(), Message{Text: "/profile"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "archie") || !strings.Contains(reply, "a/b") {
+		t.Errorf("reply = %q, want identity and model", reply)
+	}
+}
+
+func TestRouteProfileNoIdentity(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	reply, err := r.Route(context.Background(), Message{Text: "/profile"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "not configured") {
+		t.Errorf("reply = %q, want mention of not configured", reply)
+	}
+}
+
+// -- /sessions tests --
+
+type fakeSessionLister struct {
+	sessions []SessionContext
+	err      error
+}
+
+func (f *fakeSessionLister) List(ctx context.Context) ([]SessionContext, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.sessions, nil
+}
+
+func TestRouteSessionsEmpty(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	r.Sessions = &fakeSessionLister{}
+	reply, err := r.Route(context.Background(), Message{Text: "/sessions"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "No sessions") {
+		t.Errorf("reply = %q, want 'No sessions'", reply)
+	}
+}
+
+func TestRouteSessionsNotConfigured(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	reply, err := r.Route(context.Background(), Message{Text: "/sessions"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "not configured") {
+		t.Errorf("reply = %q, want 'not configured'", reply)
+	}
+}
+
+func TestRouteSessionsError(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	r.Sessions = &fakeSessionLister{err: fmt.Errorf("store unavailable")}
+	_, err := r.Route(context.Background(), Message{Text: "/sessions"})
+	if err == nil {
+		t.Error("expected error from Route when List fails")
+	}
+}
+
+// -- /resume tests --
+
+func TestRouteResumeNoArg(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	r.Sessions = &fakeSessionLister{}
+	reply, err := r.Route(context.Background(), Message{Text: "/resume"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Usage") {
+		t.Errorf("reply = %q, want usage", reply)
+	}
+}
+
+func TestRouteResumeNotConfigured(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	reply, err := r.Route(context.Background(), Message{Text: "/resume abc"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "not configured") {
+		t.Errorf("reply = %q, want 'not configured'", reply)
+	}
+}
+
+func TestRouteResumeNoMatch(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	r.Sessions = &fakeSessionLister{
+		sessions: []SessionContext{
+			{SessionID: "session-1"},
+		},
+	}
+	reply, err := r.Route(context.Background(), Message{Text: "/resume xyz"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "No session matching") {
+		t.Errorf("reply = %q, want 'No session matching'", reply)
+	}
+}
+
+func TestRouteResumeAmbiguous(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	r.Sessions = &fakeSessionLister{
+		sessions: []SessionContext{
+			{SessionID: "abc-123"},
+			{SessionID: "abc-456"},
+		},
+	}
+	reply, err := r.Route(context.Background(), Message{Text: "/resume abc"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Multiple sessions") {
+		t.Errorf("reply = %q, want 'Multiple sessions'", reply)
+	}
+}
+
+func TestRouteResumeExactMatch(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	r.Sessions = &fakeSessionLister{
+		sessions: []SessionContext{
+			{SessionID: "abc-123"},
+			{SessionID: "abc-456"},
+		},
+	}
+	reply, err := r.Route(context.Background(), Message{Text: "/resume abc-123"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Resumed session") {
+		t.Errorf("reply = %q, want 'Resumed session'", reply)
+	}
+}
+
+// -- /agents tests --
+
+type fakeAgentReader struct {
+	agents []AgentInfo
+	err    error
+}
+
+func (f *fakeAgentReader) AgentList(ctx context.Context) ([]AgentInfo, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.agents, nil
+}
+
+func TestRouteAgentsEmpty(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	r.Agents = &fakeAgentReader{}
+	reply, err := r.Route(context.Background(), Message{Text: "/agents"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "No active agents") {
+		t.Errorf("reply = %q, want 'No active agents'", reply)
+	}
+}
+
+func TestRouteAgentsNotConfigured(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	reply, err := r.Route(context.Background(), Message{Text: "/agents"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "not configured") {
+		t.Errorf("reply = %q, want 'not configured'", reply)
+	}
+}
+
+func TestRouteAgentsWithTasks(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	r.Agents = &fakeAgentReader{
+		agents: []AgentInfo{
+			{ID: 1, Title: "Fix the bug", Status: "running", Identity: "archie"},
+			{ID: 2, Title: "Add tests", Status: "waiting_human", Identity: "archie"},
+		},
+	}
+	reply, err := r.Route(context.Background(), Message{Text: "/agents"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Fix the bug") || !strings.Contains(reply, "Add tests") {
+		t.Errorf("reply = %q, want task titles", reply)
+	}
+	if !strings.Contains(reply, "running") || !strings.Contains(reply, "waiting_human") {
+		t.Errorf("reply = %q, want task statuses", reply)
+	}
+}
+
+func TestRouteAgentsError(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	r.Agents = &fakeAgentReader{err: fmt.Errorf("store unavailable")}
+	_, err := r.Route(context.Background(), Message{Text: "/agents"})
+	if err == nil {
+		t.Error("expected error from Route when AgentList fails")
+	}
+}
+
+func TestLocalCommandsIncludesNewCommands(t *testing.T) {
+	cmds := LocalCommands()
+	for _, want := range []string{"/whoami", "/profile", "/sessions", "/resume", "/agents"} {
+		if !slices.Contains(cmds, want) {
+			t.Errorf("LocalCommands() missing %s", want)
+		}
+	}
+}

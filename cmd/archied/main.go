@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -501,6 +502,8 @@ func run() int {
 		router := gateway.NewRouter(st, llmResponder, "telegram")
 		router.LLMStream = llmStream
 		router.Models = chatModels
+		router.Sessions = sessionStore
+		router.Agents = agentReaderAdapter{tasks: st.Tasks}
 		configureTaskCommands(router, chatTasks, chatController, defaultChatIdentity)
 		startGateways = append(startGateways, func() {
 			go func() {
@@ -790,6 +793,40 @@ func run() int {
 		return 1
 	}
 	return 0
+}
+
+// agentReaderAdapter implements gateway.AgentReader from the store's Task list.
+type agentReaderAdapter struct {
+	tasks func(ctx context.Context, limit int) ([]store.Task, error)
+}
+
+func (a agentReaderAdapter) AgentList(ctx context.Context) ([]gateway.AgentInfo, error) {
+	all, err := a.tasks(ctx, -1)
+	if err != nil {
+		return nil, err
+	}
+	// Show tasks that are actively running or waiting for human input.
+	active := []string{
+		store.StatusRunning,
+		store.StatusWaitingHuman,
+		store.StatusParked,
+	}
+	isActive := func(status string) bool {
+		return slices.Contains(active, status)
+	}
+	out := make([]gateway.AgentInfo, 0, len(all))
+	for _, t := range all {
+		if !isActive(t.Status) {
+			continue
+		}
+		out = append(out, gateway.AgentInfo{
+			ID:       t.ID,
+			Title:    t.Title,
+			Status:   t.Status,
+			Identity: t.Identity,
+		})
+	}
+	return out, nil
 }
 
 type chatTaskWriterAdapter struct {
