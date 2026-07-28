@@ -697,7 +697,7 @@ type fakeSessionLister struct {
 func (f *fakeSessionLister) Save(ctx context.Context, s SessionContext) error { return f.err }
 func (f *fakeSessionLister) Get(ctx context.Context, id string) (*SessionContext, error) {
 	for i := range f.sessions {
-		if f.sessions[i].ID == id {
+		if f.sessions[i].SessionID == id {
 			return &f.sessions[i], nil
 		}
 	}
