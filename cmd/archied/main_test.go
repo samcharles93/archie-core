@@ -215,7 +215,7 @@ func TestChatTaskProfilesUsesIdentityRepositories(t *testing.T) {
 		Identities: []config.IdentityConfig{
 			{Name: "builder", Repos: []config.Repo{{Owner: "sam", Name: "archie-core"}}},
 			{Name: "reviewer", Repos: []config.Repo{
-				{Owner: "sam", Name: "tau"},
+				{Owner: "sam", Name: "example-service"},
 				{Owner: "sam", Name: "ai-sdk"},
 			}},
 		},
@@ -229,7 +229,7 @@ func TestChatTaskProfilesUsesIdentityRepositories(t *testing.T) {
 		t.Fatalf("profiles = %d, want 2", len(profiles))
 	}
 	if profiles[1].Identity != "reviewer" || profiles[1].DefaultOwner != "sam" ||
-		profiles[1].DefaultRepo != "tau" ||
+		profiles[1].DefaultRepo != "example-service" ||
 		len(profiles[1].Repos) != 2 || profiles[1].Repos[1] != "sam/ai-sdk" {
 		t.Errorf("reviewer profile = %+v", profiles[1])
 	}

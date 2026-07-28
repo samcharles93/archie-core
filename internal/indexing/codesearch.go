@@ -1,16 +1,4 @@
 // Package indexing provides language-neutral workspace text indexing.
-//
-// Ported from tau: internal/indexing/codesearch.go @ 4893818d0c76 (2026-07-13).
-// Mutations from the original:
-//   - tau resolved its index paths from process-global config helpers
-//     (config.WorkspaceIndexDir/WorkspaceIndexDBPath). archied passes config
-//     explicitly, so paths arrive via [Config] instead.
-//   - the helper subcommand is archied's rather than tau's
-//     (cmd/archied/codesearch.go).
-//   - deferred db.Close calls are explicitly discarded; archie-core runs
-//     errcheck, tau does not.
-//
-// Refresh from upstream by diffing against that path and commit.
 package indexing
 
 import (
@@ -51,7 +39,7 @@ type CandidateProvider interface {
 }
 
 // Manager owns the workspace index lifecycle. The codesearch implementation
-// runs in a child Tau process so upstream fatal exits and mmap lifetime cannot
+// runs in a child process so upstream fatal exits and mmap lifetime cannot
 // terminate or leak inside the interactive agent process.
 type Manager struct {
 	root      string
@@ -80,11 +68,10 @@ type processRunner struct{}
 
 // Config locates the index storage for a Manager.
 //
-// tau derived these from process-global helpers. archied resolves them in
-// its own config layer ([indexing] in config.toml, defaulted off work_dir by
-// config.finalize) and passes them down. Defaulting deliberately does NOT
-// live here: this package stays free of archie-core's config so it remains
-// a straight diff against its tau original.
+// Archied resolves these in its config layer ([indexing] in config.toml,
+// defaulted off work_dir by config.finalize) and passes them down. Defaulting
+// deliberately does NOT live here so this package stays free of archie-core's
+// config.
 type Config struct {
 	// IndexDir holds the mmap-friendly codesearch sidecar files.
 	IndexDir string

@@ -188,14 +188,6 @@ type Forge struct {
 	Type  string           `toml:"type" yaml:"type"`
 	Host  string           `toml:"host" yaml:"host"`
 	Token secret.SecretRef `toml:"token" yaml:"token"`
-	// TokenEnv is the pre-secrets-engine way of naming the token's env var
-	// directly under [forge] (e.g. `token_env = "ARCHIE_GITEA_TOKEN"`).
-	// Deprecated: set token = {engine = "env", key = "..."} instead. Kept
-	// so existing deployed configs don't silently fall back to demanding
-	// ARCHIE_GITHUB_TOKEN (see finalize) — TOML decoding does not error on
-	// unknown fields, so a stale token_env would otherwise be dropped
-	// without any warning.
-	TokenEnv string `toml:"token_env" yaml:"token_env"`
 }
 
 // Dispatch configures how archied discovers work and reflects task state

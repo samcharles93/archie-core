@@ -3,8 +3,9 @@
 package secretextract
 
 import (
-	"github.com/samcharles93/archie-core/internal/secret"
 	"reflect"
+
+	"github.com/samcharles93/archie-core/internal/secret"
 )
 
 func init() {
@@ -28,7 +29,7 @@ func init() {
 // it holds the underlying concrete value for the interpreter's type system even
 // though Name()/Resolve()/Version() delegate to the function fields. Do not remove.
 type _github_com_samcharles93_archie_core_internal_secret_Engine struct {
-	IValue   interface{}
+	IValue   any
 	WName    func() string
 	WResolve func(key string) (string, error)
 	WVersion func() string

@@ -29,7 +29,7 @@ func (f *fakeChatTaskWriter) EnqueueChatTask(ctx context.Context, owner, repo, t
 
 func TestStoreTaskCreatorCreatesTask(t *testing.T) {
 	sw := &fakeChatTaskWriter{}
-	tc := NewStoreTaskCreator(sw, "sam", "tau", []string{"sam/tau"})
+	tc := NewStoreTaskCreator(sw, "sam", "example-service", []string{"sam/example-service"})
 	id, err := tc.CreateTask(context.Background(), SpawnRequest{Title: "Fix the login bug"})
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
@@ -37,8 +37,8 @@ func TestStoreTaskCreatorCreatesTask(t *testing.T) {
 	if id == 0 {
 		t.Error("task id should be non-zero")
 	}
-	if sw.owner != "sam" || sw.repo != "tau" {
-		t.Errorf("owner/repo = %s/%s, want sam/tau", sw.owner, sw.repo)
+	if sw.owner != "sam" || sw.repo != "example-service" {
+		t.Errorf("owner/repo = %s/%s, want sam/example-service", sw.owner, sw.repo)
 	}
 	if sw.title != "Fix the login bug" {
 		t.Errorf("title = %q", sw.title)
@@ -55,7 +55,7 @@ func TestStoreTaskCreatorRejectsEmptyRepo(t *testing.T) {
 
 func TestStoreTaskCreatorSyntheticNumbersDiffer(t *testing.T) {
 	sw := &fakeChatTaskWriter{}
-	tc := NewStoreTaskCreator(sw, "sam", "tau", []string{"sam/tau"})
+	tc := NewStoreTaskCreator(sw, "sam", "example-service", []string{"sam/example-service"})
 	if _, err := tc.CreateTask(context.Background(), SpawnRequest{Title: "first"}); err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestStoreTaskCreatorReturnsRealID(t *testing.T) {
 	// ID (whatever EnqueueChatTask returns), never the synthetic issue
 	// number used for uniqueness.
 	sw := &fakeChatTaskWriter{nextID: 999}
-	tc := NewStoreTaskCreator(sw, "sam", "tau", []string{"sam/tau"})
+	tc := NewStoreTaskCreator(sw, "sam", "example-service", []string{"sam/example-service"})
 	id, err := tc.CreateTask(context.Background(), SpawnRequest{Title: "task"})
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +92,7 @@ func TestStoreTaskCreatorReturnsRealID(t *testing.T) {
 
 func TestStoreTaskCreatorExplicitRepoAllowed(t *testing.T) {
 	sw := &fakeChatTaskWriter{}
-	tc := NewStoreTaskCreator(sw, "sam", "tau", []string{"sam/tau", "sam/archie-core"})
+	tc := NewStoreTaskCreator(sw, "sam", "example-service", []string{"sam/example-service", "sam/archie-core"})
 	_, err := tc.CreateTask(context.Background(), SpawnRequest{Title: "x", Repo: "sam/archie-core"})
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
@@ -104,7 +104,7 @@ func TestStoreTaskCreatorExplicitRepoAllowed(t *testing.T) {
 
 func TestStoreTaskCreatorExplicitRepoNotAllowedRejected(t *testing.T) {
 	sw := &fakeChatTaskWriter{}
-	tc := NewStoreTaskCreator(sw, "sam", "tau", []string{"sam/tau"})
+	tc := NewStoreTaskCreator(sw, "sam", "example-service", []string{"sam/example-service"})
 	_, err := tc.CreateTask(context.Background(), SpawnRequest{Title: "x", Repo: "someone-else/private-repo"})
 	if err == nil || !strings.Contains(err.Error(), "not configured for this identity") {
 		t.Errorf("err = %v, want repo-not-allowed error", err)
@@ -115,7 +115,7 @@ func TestStoreTaskCreatorExplicitRepoNotAllowedRejected(t *testing.T) {
 }
 
 func TestStoreTaskCreatorMalformedRepoRejected(t *testing.T) {
-	tc := NewStoreTaskCreator(&fakeChatTaskWriter{}, "sam", "tau", []string{"no-slash"})
+	tc := NewStoreTaskCreator(&fakeChatTaskWriter{}, "sam", "example-service", []string{"no-slash"})
 	_, err := tc.CreateTask(context.Background(), SpawnRequest{Title: "x", Repo: "no-slash"})
 	if err == nil || !strings.Contains(err.Error(), "owner/name") {
 		t.Errorf("err = %v, want owner/name format error", err)
@@ -124,7 +124,7 @@ func TestStoreTaskCreatorMalformedRepoRejected(t *testing.T) {
 
 func TestStoreTaskCreatorPropagatesWorkflowAndIdentity(t *testing.T) {
 	sw := &fakeChatTaskWriter{}
-	tc := NewStoreTaskCreator(sw, "sam", "tau", []string{"sam/tau"})
+	tc := NewStoreTaskCreator(sw, "sam", "example-service", []string{"sam/example-service"})
 	_, err := tc.CreateTask(context.Background(), SpawnRequest{Title: "x", Workflow: "tdd", Identity: "archie"})
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +136,7 @@ func TestStoreTaskCreatorPropagatesWorkflowAndIdentity(t *testing.T) {
 
 func TestStoreTaskCreatorPropagatesStoreError(t *testing.T) {
 	sw := &fakeChatTaskWriter{err: fmt.Errorf("store unavailable")}
-	tc := NewStoreTaskCreator(sw, "sam", "tau", []string{"sam/tau"})
+	tc := NewStoreTaskCreator(sw, "sam", "example-service", []string{"sam/example-service"})
 	_, err := tc.CreateTask(context.Background(), SpawnRequest{Title: "x"})
 	if err == nil || !strings.Contains(err.Error(), "store unavailable") {
 		t.Errorf("err = %v, want store error propagated", err)
@@ -147,15 +147,15 @@ func TestStoreTaskCreatorSelectsIdentityProfile(t *testing.T) {
 	sw := &fakeChatTaskWriter{}
 	tc := NewStoreTaskCreatorForProfiles(sw, []TaskProfile{
 		{Identity: "builder", DefaultOwner: "sam", DefaultRepo: "archie-core", Repos: []string{"sam/archie-core"}},
-		{Identity: "reviewer", DefaultOwner: "sam", DefaultRepo: "tau", Repos: []string{"sam/tau"}},
+		{Identity: "reviewer", DefaultOwner: "sam", DefaultRepo: "example-service", Repos: []string{"sam/example-service"}},
 	})
 
 	_, err := tc.CreateTask(context.Background(), SpawnRequest{Title: "review this", Identity: "reviewer"})
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
-	if sw.owner != "sam" || sw.repo != "tau" || sw.identity != "reviewer" {
-		t.Errorf("created task = %s/%s identity=%s, want sam/tau identity=reviewer", sw.owner, sw.repo, sw.identity)
+	if sw.owner != "sam" || sw.repo != "example-service" || sw.identity != "reviewer" {
+		t.Errorf("created task = %s/%s identity=%s, want sam/example-service identity=reviewer", sw.owner, sw.repo, sw.identity)
 	}
 }
 

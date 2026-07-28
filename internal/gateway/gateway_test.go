@@ -376,7 +376,7 @@ func TestRouteSpawnParsesRepoAndWorkflow(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
 	r.Tasks = tc
 	r.Identity = "archie"
-	reply, err := r.Route(context.Background(), Message{Text: "/spawn repo=sam/tau workflow=tdd Fix the flaky test"})
+	reply, err := r.Route(context.Background(), Message{Text: "/spawn repo=sam/example-service workflow=tdd Fix the flaky test"})
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -387,8 +387,8 @@ func TestRouteSpawnParsesRepoAndWorkflow(t *testing.T) {
 		t.Fatalf("requests = %d, want 1", len(tc.requests))
 	}
 	got := tc.requests[0]
-	if got.Repo != "sam/tau" || got.Workflow != "tdd" || got.Title != "Fix the flaky test" || got.Identity != "archie" {
-		t.Errorf("request = %+v, want {Repo:sam/tau Workflow:tdd Title:\"Fix the flaky test\" Identity:archie}", got)
+	if got.Repo != "sam/example-service" || got.Workflow != "tdd" || got.Title != "Fix the flaky test" || got.Identity != "archie" {
+		t.Errorf("request = %+v, want {Repo:sam/example-service Workflow:tdd Title:\"Fix the flaky test\" Identity:archie}", got)
 	}
 }
 
@@ -399,7 +399,7 @@ func TestRouteSpawnParsesIdentity(t *testing.T) {
 	r.Identity = "default"
 
 	reply, err := r.Route(context.Background(), Message{
-		Text: "/spawn identity=reviewer repo=sam/tau workflow=tdd Fix the flaky test",
+		Text: "/spawn identity=reviewer repo=sam/example-service workflow=tdd Fix the flaky test",
 	})
 	if err != nil {
 		t.Fatalf("Route: %v", err)
@@ -408,7 +408,7 @@ func TestRouteSpawnParsesIdentity(t *testing.T) {
 		t.Errorf("reply = %q, want task creation confirmation", reply)
 	}
 	got := tc.requests[0]
-	if got.Identity != "reviewer" || got.Repo != "sam/tau" || got.Workflow != "tdd" || got.Title != "Fix the flaky test" {
+	if got.Identity != "reviewer" || got.Repo != "sam/example-service" || got.Workflow != "tdd" || got.Title != "Fix the flaky test" {
 		t.Errorf("request = %+v, want selected identity, repo, workflow, and full title", got)
 	}
 }
@@ -436,12 +436,12 @@ func TestRouteSpawnTitleLooksLikeKeyValueIsPreserved(t *testing.T) {
 	tc := &fakeTaskCreator{}
 	r := NewRouter(nil, nil, "test-gw")
 	r.Tasks = tc
-	if _, err := r.Route(context.Background(), Message{Text: "/spawn repo=sam/tau Fix x=y in config"}); err != nil {
+	if _, err := r.Route(context.Background(), Message{Text: "/spawn repo=sam/example-service Fix x=y in config"}); err != nil {
 		t.Fatalf("Route: %v", err)
 	}
 	got := tc.requests[0]
-	if got.Repo != "sam/tau" || got.Title != "Fix x=y in config" {
-		t.Errorf("request = %+v, want Repo:sam/tau Title:\"Fix x=y in config\"", got)
+	if got.Repo != "sam/example-service" || got.Title != "Fix x=y in config" {
+		t.Errorf("request = %+v, want Repo:sam/example-service Title:\"Fix x=y in config\"", got)
 	}
 }
 

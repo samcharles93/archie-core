@@ -67,7 +67,7 @@ func TestHandleSummary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/summary", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/summary", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -91,6 +91,7 @@ func TestHandleSummary(t *testing.T) {
 // (wants 500, gets 200 with nil workflows).
 func TestHandleSummaryWorkflowStatsError(t *testing.T) {
 	base := newTestServer(t)
+	ctx := t.Context()
 	srv := &Server{
 		Store: &stubStore{
 			TaskStore:        base.Store,
@@ -99,7 +100,7 @@ func TestHandleSummaryWorkflowStatsError(t *testing.T) {
 		Log: base.Log,
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/summary", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/summary", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -112,6 +113,7 @@ func TestHandleSummaryWorkflowStatsError(t *testing.T) {
 // silently discard an error from StageStats.
 func TestHandleSummaryStageStatsError(t *testing.T) {
 	base := newTestServer(t)
+	ctx := t.Context()
 	srv := &Server{
 		Store: &stubStore{
 			TaskStore:     base.Store,
@@ -120,7 +122,7 @@ func TestHandleSummaryStageStatsError(t *testing.T) {
 		Log: base.Log,
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/summary", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/summary", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -133,6 +135,7 @@ func TestHandleSummaryStageStatsError(t *testing.T) {
 // silently discard an error from TokensByDay.
 func TestHandleSummaryTokensByDayError(t *testing.T) {
 	base := newTestServer(t)
+	ctx := t.Context()
 	srv := &Server{
 		Store: &stubStore{
 			TaskStore:      base.Store,
@@ -141,7 +144,7 @@ func TestHandleSummaryTokensByDayError(t *testing.T) {
 		Log: base.Log,
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/summary", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/summary", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -157,7 +160,7 @@ func TestHandleTasks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/tasks", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/tasks", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -187,7 +190,7 @@ func TestHandleTask(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/tasks/"+strconv.FormatInt(task.ID, 10), nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/tasks/"+strconv.FormatInt(task.ID, 10), nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -205,7 +208,8 @@ func TestHandleTask(t *testing.T) {
 
 func TestHandleTaskBadID(t *testing.T) {
 	srv := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/tasks/not-a-number", nil)
+	ctx := t.Context()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/tasks/not-a-number", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -215,7 +219,8 @@ func TestHandleTaskBadID(t *testing.T) {
 
 func TestHandleIndex(t *testing.T) {
 	srv := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	ctx := t.Context()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -228,7 +233,8 @@ func TestHandleIndex(t *testing.T) {
 
 func TestIndexContainsViewportMeta(t *testing.T) {
 	srv := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	ctx := t.Context()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -242,7 +248,8 @@ func TestIndexContainsViewportMeta(t *testing.T) {
 
 func TestIndexHasResponsiveFeatures(t *testing.T) {
 	srv := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	ctx := t.Context()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -278,7 +285,13 @@ func TestHandleSSEBacklogAndLive(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 
-	resp, err := http.Get(ts.URL + "/events")
+	// The request carries t.Context() so the SSE stream is torn down when
+	// the test ends rather than leaking the connection and its goroutine.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/events", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,7 +318,8 @@ func TestHandleSSEBacklogAndLive(t *testing.T) {
 
 func TestIndexEscapesSingleQuotesInOnclick(t *testing.T) {
 	srv := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	ctx := t.Context()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -331,7 +345,8 @@ func TestIndexEscapesSingleQuotesInOnclick(t *testing.T) {
 
 func TestIndexEscDoesNotEscapeSingleQuotes(t *testing.T) {
 	srv := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	ctx := t.Context()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 

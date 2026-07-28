@@ -90,27 +90,28 @@ func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
+	ctx := context.Background() // FIXME update context to use it correctly.
 	db, err := sql.Open("sqlite", path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, err
 	}
-	if _, err := db.Exec(schema + eventsSchema); err != nil {
+	if _, err := db.ExecContext(ctx, schema+eventsSchema); err != nil {
 		return nil, errors.Join(fmt.Errorf("store: init schema: %w", err), db.Close())
 	}
 	// Additive migrations; "duplicate column" means already applied.
-	if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN watch_comment_id INTEGER NOT NULL DEFAULT 0`); err != nil &&
+	if _, err := db.ExecContext(ctx, `ALTER TABLE tasks ADD COLUMN watch_comment_id INTEGER NOT NULL DEFAULT 0`); err != nil &&
 		!strings.Contains(err.Error(), "duplicate column") {
 		return nil, errors.Join(fmt.Errorf("store: migrate: %w", err), db.Close())
 	}
-	if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0`); err != nil &&
+	if _, err := db.ExecContext(ctx, `ALTER TABLE tasks ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0`); err != nil &&
 		!strings.Contains(err.Error(), "duplicate column") {
 		return nil, errors.Join(fmt.Errorf("store: migrate: %w", err), db.Close())
 	}
-	if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN source TEXT NOT NULL DEFAULT 'forge'`); err != nil &&
+	if _, err := db.ExecContext(ctx, `ALTER TABLE tasks ADD COLUMN source TEXT NOT NULL DEFAULT 'forge'`); err != nil &&
 		!strings.Contains(err.Error(), "duplicate column") {
 		return nil, errors.Join(fmt.Errorf("store: migrate: %w", err), db.Close())
 	}
-	if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN identity TEXT NOT NULL DEFAULT ''`); err != nil &&
+	if _, err := db.ExecContext(ctx, `ALTER TABLE tasks ADD COLUMN identity TEXT NOT NULL DEFAULT ''`); err != nil &&
 		!strings.Contains(err.Error(), "duplicate column") {
 		return nil, errors.Join(fmt.Errorf("store: migrate: %w", err), db.Close())
 	}

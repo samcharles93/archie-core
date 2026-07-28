@@ -718,7 +718,7 @@ forge = { type = "gitea", host = "https://git.example.test", token = { engine = 
 
 [[identities.repos]]
 owner = "sam"
-name = "tau"
+name = "example-service"
 base = "main"
 ecosystem = "go"
 `))
@@ -749,7 +749,7 @@ ecosystem = "go"
 	if cfg.Identities[1].Forge.Token != (secret.SecretRef{Engine: "env", Key: "WINTER_TOKEN"}) {
 		t.Errorf("Identities[1].Forge.Token = %#v", cfg.Identities[1].Forge.Token)
 	}
-	if len(cfg.Identities[1].Repos) != 1 || cfg.Identities[1].Repos[0].Name != "tau" {
+	if len(cfg.Identities[1].Repos) != 1 || cfg.Identities[1].Repos[0].Name != "example-service" {
 		t.Errorf("Identities[1].Repos = %+v", cfg.Identities[1].Repos)
 	}
 }

@@ -40,10 +40,12 @@ func TestRunWrapsExternalCommand(t *testing.T) {
 import (
 	"fmt"
 	"os/exec"
+	"context"
 )
 
 func main() {
-	out, _ := exec.Command("echo", "wrapped").CombinedOutput()
+	ctx := context.Background()
+	out, _ := exec.CommandContext(ctx, "sh", "-c", "echo", "wrapped").CombinedOutput()
 	fmt.Print(string(out))
 }
 `)

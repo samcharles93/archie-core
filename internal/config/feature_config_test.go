@@ -294,7 +294,7 @@ identities:
         key: WINTER_TOKEN
     repos:
       - owner: sam
-        name: tau
+        name: example-service
         ecosystem: go
 `)
 

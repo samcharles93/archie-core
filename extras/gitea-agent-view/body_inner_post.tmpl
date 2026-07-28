@@ -1,0 +1,36 @@
+{{/*
+  Copy to: $GITEA_CUSTOM/templates/custom/body_inner_post.tmpl
+  This is an optional hook file Gitea looks for if present (like
+  extra_links.tmpl) — nothing to diff against upstream, no maintenance
+  burden across Gitea version bumps, unlike overriding list.tmpl outright.
+
+  Confirmed empirically (2026-07-22): this hook gets the SAME per-page
+  context as templates/repo/actions/list.tmpl — .CurWorkflow, .Repository
+  etc. are all real values here, not a stripped-down base context.
+
+  Renders the agent terminal in place of the normal Actions runs list
+  when the tab link's sentinel ?workflow=__agent_monitor__ is present.
+
+  Does NOT hide or rebuild list.tmpl's sidebar/menu — that's real,
+  always-current Gitea markup (actual workflow files, actual routes) and
+  duplicating it here as static HTML would go stale the moment a
+  workflow is added/renamed/removed. Only the runs-list segment itself
+  (".ui.attached.segment" inside ".flex-container-main") gets its
+  content swapped for the terminal — done in JS (agent-monitor.js), not
+  here, since that's the element list.tmpl already sized correctly to
+  hold content; nesting the terminal inside other stock wrapper classes
+  (e.g. ".ui.top.attached.header", meant for a slim counter bar) is what
+  caused the tiny clipped box in testing.
+
+  The JS logic itself lives in the external agent-monitor.js (loaded via
+  <script src>, not inline) because Gitea's CSP requires a per-request
+  nonce for inline <script> blocks that custom/templates has no way to
+  supply — external script sources match the "*" already in script-src
+  and load fine without touching Gitea's CSP config at all.
+*/}}
+{{if eq $.CurWorkflow "__agent_monitor__"}}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5/css/xterm.css">
+<script src="https://cdn.jsdelivr.net/npm/xterm@5/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0/lib/addon-fit.js"></script>
+<script src="{{AppSubUrl}}/assets/agent-monitor.js" data-repo="{{.Repository.FullName}}"></script>
+{{end}}

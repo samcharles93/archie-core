@@ -1,4 +1,3 @@
-// Ported from tau: internal/indexing/codesearch_test.go @ 4893818d0c76 (2026-07-13).
 package indexing
 
 import (

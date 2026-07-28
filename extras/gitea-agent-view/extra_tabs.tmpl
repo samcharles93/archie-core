@@ -1,0 +1,18 @@
+{{/*
+  Copy to: $GITEA_CUSTOM/templates/custom/extra_tabs.tmpl
+  (on the gitea container: /data/gitea/templates/custom/extra_tabs.tmpl,
+  or wherever GITEA_CUSTOM points — check Site Administration > Configuration)
+
+  Adds an "Agent Run" tab to the repo header, matching the markup Gitea
+  uses for its own tabs (see templates/repo/header.tmpl upstream).
+  Restart Gitea after copying (custom/templates is only read at startup
+  unless RUN_MODE = dev).
+
+  Links into the real Actions list route with a sentinel ?workflow= value
+  that list.tmpl (see list.tmpl in this same directory) intercepts to
+  render agent_monitor.tmpl instead of the normal runs list — real
+  head/header/footer, no separate static page or route needed.
+*/}}
+<a class="item" href="{{AppSubUrl}}/{{.Repository.OwnerName}}/{{.Repository.Name}}/actions?workflow=__agent_monitor__">
+	{{svg "octicon-play" 16 "tw-mr-2"}}Agent Run
+</a>

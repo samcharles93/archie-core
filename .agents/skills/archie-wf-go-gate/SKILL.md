@@ -18,7 +18,7 @@ arcie-core enforces this gate after every builder agent stage. The specific comm
 come from the repository's `[[repos.gate]]` config, not this skill. This skill documents
 what a correct gate looks like and how to diagnose failures.
 
-## Standard gate (Tau and similar Go projects)
+## Standard gate
 
 Run in this exact order. archie-core does NOT run these  --  the `ai-sdk/agentloop` gate
 does. This list is what you should configure in `config.toml`:

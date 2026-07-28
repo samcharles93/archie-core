@@ -1,9 +1,7 @@
-// Package events is archied's in-process observability stream, adapted
-// from tau's eventbus but slimmed for a small daemon: one event type,
-// mutex fan-out instead of a router goroutine, and  --  unlike tau's
-// blocking delivery  --  bounded per-subscriber buffers that DROP on
-// overflow, so a stalled dashboard connection can never apply
-// backpressure to the task engine.
+// Package events is archied's in-process observability stream. It uses one
+// event type, mutex fan-out, and bounded per-subscriber buffers that DROP on
+// overflow, so a stalled dashboard connection can never apply backpressure to
+// the task engine.
 package events
 
 import (
