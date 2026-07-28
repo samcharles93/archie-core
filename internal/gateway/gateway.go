@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Message is an inbound message from a gateway connection.
@@ -46,6 +47,26 @@ type Gateway interface {
 // structurally.
 type StatusReader interface {
 	StatusCounts(ctx context.Context) (map[string]int, error)
+}
+
+// SessionLister is the read surface /sessions and /resume need.
+// The daemon supplies its session store, which satisfies this structurally.
+type SessionLister interface {
+	List(ctx context.Context) ([]SessionContext, error)
+}
+
+// AgentInfo carries one row for /agents.
+type AgentInfo struct {
+	ID       int64
+	Title    string
+	Status   string
+	Identity string
+}
+
+// AgentReader is the read surface /agents needs. The daemon supplies
+// its store, which satisfies this structurally.
+type AgentReader interface {
+	AgentList(ctx context.Context) ([]AgentInfo, error)
 }
 
 // LLMResponder routes a message to the LLM and returns the reply. When
@@ -146,12 +167,12 @@ type Router struct {
 	// spawned under one identity cannot be controlled from another's
 	// chat session.
 	Identity string
-	// State holds per-session goal, subgoal, steer, and queue state.
-	// When nil, /goal, /steer, /subgoal, and /queue return
-	// "not configured". The daemon wires one SessionState per router
-	// (one per gateway). Multi-identity deployments that need
-	// per-identity state should provide separate routers.
-	State       *SessionState
+	// Sessions supports /sessions and /resume. When nil those commands
+	// return "not configured".
+	Sessions SessionLister
+	// Agents supports /agents. When nil the command returns
+	// "not configured".
+	Agents      AgentReader
 	gatewayName string
 }
 
@@ -177,6 +198,16 @@ func (r *Router) Route(ctx context.Context, msg Message) (string, error) {
 		// Title is everything after "/spawn"  --  keep the multi-word text.
 		rest := restAfter(text, cmd, r.gatewayName)
 		return r.handleSpawn(ctx, rest)
+	case "/whoami":
+		return r.handleWhoami()
+	case "/profile":
+		return r.handleProfile()
+	case "/sessions":
+		return r.handleSessions(ctx)
+	case "/resume":
+		return r.handleResume(ctx, restAfter(text, cmd, r.gatewayName))
+	case "/agents":
+		return r.handleAgents(ctx)
 	case "/approve":
 		// Reserved for dangerous-command approval (archie-core-alm.6).
 		// Telegram hides it from its menu/help; other gateways keep it
@@ -184,14 +215,6 @@ func (r *Router) Route(ctx context.Context, msg Message) (string, error) {
 		return r.handleApprove(ctx, restAfter(text, cmd, r.gatewayName))
 	case "/cancel":
 		return r.handleCancel(ctx, restAfter(text, cmd, r.gatewayName))
-	case "/steer":
-		return r.handleSteer(ctx, restAfter(text, cmd, r.gatewayName))
-	case "/goal":
-		return r.handleGoal(ctx, restAfter(text, cmd, r.gatewayName))
-	case "/subgoal":
-		return r.handleSubgoal(ctx, restAfter(text, cmd, r.gatewayName))
-	case "/queue", "/q", "/background", "/bg", "/btw":
-		return r.handleQueue(ctx, restAfter(text, cmd, r.gatewayName))
 	default:
 		if strings.HasPrefix(cmd, "/") {
 			return fmt.Sprintf("Unknown command %s. Try /help.", cmd), nil
@@ -224,7 +247,7 @@ func (r *Router) RouteStream(ctx context.Context, msg Message, onDelta func(stri
 	return r.LLMStream(ctx, msg, onDelta)
 }
 
-var localCommands = []string{"/status", "/model", "/spawn", "/approve", "/cancel", "/steer", "/goal", "/subgoal", "/queue", "/q", "/background", "/bg", "/btw"}
+var localCommands = []string{"/status", "/model", "/spawn", "/whoami", "/profile", "/sessions", "/resume", "/agents", "/approve", "/cancel"}
 
 // LocalCommands returns the command names Route answers from local state.
 // Gateways use this to verify that their published command surfaces match
@@ -393,202 +416,6 @@ func parseTaskControl(rest, defaultIdentity string) (identity, taskID string) {
 	return identity, fields[0]
 }
 
-// ── /steer ────────────────────────────────────────────────────────
-
-func (r *Router) handleSteer(ctx context.Context, rest string) (string, error) {
-	if r.State == nil {
-		return "Steering is not configured.", nil
-	}
-	rest = strings.TrimSpace(rest)
-	if rest == "" {
-		if text, ok := r.State.PeekSteer(); ok {
-			return fmt.Sprintf("Pending steer: %s", text), nil
-		}
-		return "No steer pending. Usage: /steer <message>  — inject after next tool call.", nil
-	}
-	r.State.SetSteer(rest)
-	return fmt.Sprintf("Steer queued: %s", rest), nil
-}
-
-// ── /goal ──────────────────────────────────────────────────────────
-
-func (r *Router) handleGoal(ctx context.Context, rest string) (string, error) {
-	if r.State == nil {
-		return "Goals are not configured.", nil
-	}
-	rest = strings.TrimSpace(rest)
-	if rest == "" || rest == "show" {
-		return r.goalShow(), nil
-	}
-
-	subcmd, _ := splitFirst(rest)
-	switch subcmd {
-	case "draft":
-		return "Send a message describing what you want the goal to be, and I'll suggest one. Or use /goal <text> to set it directly.", nil
-	case "pause":
-		if !r.State.PauseGoal() {
-			return "No goal to pause.", nil
-		}
-		return "Goal paused.", nil
-	case "resume":
-		if !r.State.ResumeGoal() {
-			return "No goal to resume.", nil
-		}
-		return "Goal resumed.", nil
-	case "clear":
-		r.State.ClearGoal()
-		return "Goal and subgoals cleared.", nil
-	case "status":
-		return r.goalStatus(), nil
-	case "wait":
-		if !r.State.HasGoal() {
-			return "No goal to wait on.", nil
-		}
-		r.State.SetWait()
-		return "Goal wait flag set. I'll pause new work toward the goal until /goal unwait.", nil
-	case "unwait":
-		r.State.ClearWait()
-		return "Goal wait flag cleared. I may resume work toward the goal.", nil
-	default:
-		// Treat as goal text.
-		r.State.SetGoal(rest, false)
-		return fmt.Sprintf("Goal set: %s", rest), nil
-	}
-}
-
-func (r *Router) goalShow() string {
-	goals := r.State.Goals()
-	if len(goals) == 0 {
-		return "No goal set. Use /goal <text> to set one."
-	}
-	var b strings.Builder
-	b.WriteString("🎯 **Goal**")
-	if goals[0].Status == GoalPaused {
-		b.WriteString(" (paused)")
-	}
-	b.WriteString("\n")
-	b.WriteString(goals[0].Text)
-
-	subgoals := r.State.Subgoals()
-	if len(subgoals) > 0 {
-		b.WriteString("\n\n**Subgoals**\n")
-		for i, sg := range subgoals {
-			fmt.Fprintf(&b, "%d. %s\n", i+1, sg.Text)
-		}
-	}
-
-	if r.State.IsWaiting() {
-		b.WriteString("\n⏸️ Waiting — use /goal unwait to resume.")
-	}
-	return b.String()
-}
-
-func (r *Router) goalStatus() string {
-	goals := r.State.Goals()
-	if len(goals) == 0 {
-		return "No goal."
-	}
-	status := string(goals[0].Status)
-	if r.State.IsWaiting() {
-		status += ", waiting"
-	}
-	sgCount := len(r.State.Subgoals())
-	return fmt.Sprintf("Goal: %s (%d subgoals)", status, sgCount)
-}
-
-// ── /subgoal ───────────────────────────────────────────────────────
-
-func (r *Router) handleSubgoal(ctx context.Context, rest string) (string, error) {
-	if r.State == nil {
-		return "Subgoals are not configured.", nil
-	}
-	rest = strings.TrimSpace(rest)
-	if rest == "" || rest == "show" {
-		subgoals := r.State.Subgoals()
-		if len(subgoals) == 0 {
-			return "No subgoals. Use /subgoal <text> to add one.", nil
-		}
-		var b strings.Builder
-		b.WriteString("**Subgoals**\n")
-		for i, sg := range subgoals {
-			fmt.Fprintf(&b, "%d. %s\n", i+1, sg.Text)
-		}
-		return b.String(), nil
-	}
-
-	subcmd, arg := splitFirst(rest)
-	switch subcmd {
-	case "remove":
-		n, err := strconv.Atoi(arg)
-		if err != nil || n < 1 {
-			return "Usage: /subgoal remove <N>", nil
-		}
-		if !r.State.RemoveSubgoal(n) {
-			return fmt.Sprintf("No subgoal at position %d.", n), nil
-		}
-		return fmt.Sprintf("Subgoal %d removed.", n), nil
-	case "clear":
-		r.State.ClearSubgoals()
-		return "Subgoals cleared.", nil
-	default:
-		if !r.State.AddSubgoal(rest) {
-			return "No goal set. Use /goal <text> first.", nil
-		}
-		return fmt.Sprintf("Subgoal added: %s", rest), nil
-	}
-}
-
-// ── /queue (aliases /q, /background, /bg, /btw) ────────────────────
-
-func (r *Router) handleQueue(ctx context.Context, rest string) (string, error) {
-	if r.State == nil {
-		return "Queue is not configured.", nil
-	}
-	rest = strings.TrimSpace(rest)
-	if rest == "" || rest == "show" {
-		entries := r.State.QueueEntries()
-		if len(entries) == 0 {
-			return "Queue is empty. Use /queue <text> to add an item.", nil
-		}
-		var b strings.Builder
-		b.WriteString("**Queue**\n")
-		for i, e := range entries {
-			fmt.Fprintf(&b, "%d. %s\n", i+1, e.Text)
-		}
-		return b.String(), nil
-	}
-
-	subcmd, arg := splitFirst(rest)
-	switch subcmd {
-	case "remove":
-		n, err := strconv.Atoi(arg)
-		if err != nil || n < 1 {
-			return "Usage: /queue remove <N>", nil
-		}
-		if !r.State.RemoveFromQueue(n) {
-			return fmt.Sprintf("No queue item at position %d.", n), nil
-		}
-		return fmt.Sprintf("Queue item %d removed.", n), nil
-	case "clear":
-		r.State.ClearQueue()
-		return "Queue cleared.", nil
-	default:
-		r.State.AddToQueue(rest)
-		return fmt.Sprintf("Queued: %s", rest), nil
-	}
-}
-
-// splitFirst splits s on the first whitespace and returns the first
-// field and the remainder.
-func splitFirst(s string) (first, rest string) {
-	s = strings.TrimSpace(s)
-	before, after, ok := strings.Cut(s, " ")
-	if !ok {
-		return s, ""
-	}
-	return before, strings.TrimSpace(after)
-}
-
 func (r *Router) handleStatus(ctx context.Context) (string, error) {
 	if r.Store == nil {
 		return "store not configured", nil
@@ -620,6 +447,153 @@ func (r *Router) handleStatus(ctx context.Context) (string, error) {
 			fmt.Fprintf(&b, "\nProvider: %s\n", manager.ActiveProvider())
 		}
 		fmt.Fprintf(&b, "Model: %s\n", r.Models.ActiveModel())
+	}
+	return strings.TrimSpace(b.String()), nil
+}
+
+// ── /whoami ───────────────────────────────────────────────────────
+
+func (r *Router) handleWhoami() (string, error) {
+	var b strings.Builder
+	b.WriteString("You are talking to Archie")
+	if r.Identity != "" {
+		fmt.Fprintf(&b, " (%s)", r.Identity)
+	}
+	b.WriteString(".\n")
+
+	if r.Models != nil {
+		if manager, ok := r.Models.(ProviderModelManager); ok {
+			fmt.Fprintf(&b, "Provider: %s\n", manager.ActiveProvider())
+		}
+		fmt.Fprintf(&b, "Model: %s\n", r.Models.ActiveModel())
+	}
+	return strings.TrimSpace(b.String()), nil
+}
+
+// ── /profile ──────────────────────────────────────────────────────
+
+func (r *Router) handleProfile() (string, error) {
+	var b strings.Builder
+	fmt.Fprintf(&b, "*Archie profile*\n")
+	if r.Identity != "" {
+		fmt.Fprintf(&b, "Identity: `%s`\n", r.Identity)
+	} else {
+		b.WriteString("Identity: _(not configured)_\n")
+	}
+
+	if r.Models == nil {
+		return strings.TrimSpace(b.String()), nil
+	}
+
+	if manager, ok := r.Models.(ProviderModelManager); ok {
+		fmt.Fprintf(&b, "Provider: `%s`\n", manager.ActiveProvider())
+	}
+	fmt.Fprintf(&b, "Model: `%s`\n", r.Models.ActiveModel())
+
+	models := r.Models.Models()
+	if manager, ok := r.Models.(ProviderModelManager); ok {
+		models = manager.ModelsForProvider(manager.ActiveProvider())
+	}
+	if len(models) == 0 {
+		return strings.TrimSpace(b.String()), nil
+	}
+
+	b.WriteString("Available models:\n")
+	active := r.Models.ActiveModel()
+	for _, m := range models {
+		if m == active {
+			fmt.Fprintf(&b, "  `%s` _(active)_\n", m)
+		} else {
+			fmt.Fprintf(&b, "  `%s`\n", m)
+		}
+	}
+	return strings.TrimSpace(b.String()), nil
+}
+
+// ── /sessions ─────────────────────────────────────────────────────
+
+func (r *Router) handleSessions(ctx context.Context) (string, error) {
+	if r.Sessions == nil {
+		return "Session listing is not configured.", nil
+	}
+	sessions, err := r.Sessions.List(ctx)
+	if err != nil {
+		return "", fmt.Errorf("sessions: %w", err)
+	}
+	if len(sessions) == 0 {
+		return "No sessions yet.", nil
+	}
+	var b strings.Builder
+	b.WriteString("*Sessions*\n")
+	for _, sc := range sessions {
+		ago := time.Since(sc.LastActiveAt).Truncate(time.Second)
+		fmt.Fprintf(&b, "`%s`\n  last active %s ago", sc.SessionID, ago)
+		if sc.Source.ThreadID != "" {
+			fmt.Fprintf(&b, " (thread %s)", sc.Source.ThreadID)
+		}
+		b.WriteByte('\n')
+	}
+	return strings.TrimSpace(b.String()), nil
+}
+
+// ── /resume ───────────────────────────────────────────────────────
+
+func (r *Router) handleResume(ctx context.Context, name string) (string, error) {
+	if r.Sessions == nil {
+		return "Session resume is not configured.", nil
+	}
+	if name == "" {
+		return "Usage: /resume <session-id or name prefix>", nil
+	}
+	sessions, err := r.Sessions.List(ctx)
+	if err != nil {
+		return "", fmt.Errorf("resume: %w", err)
+	}
+	// Match by exact session ID or prefix.
+	var matches []SessionContext
+	for _, sc := range sessions {
+		if sc.SessionID == name || strings.HasPrefix(sc.SessionID, name) {
+			matches = append(matches, sc)
+		}
+	}
+	if len(matches) == 0 {
+		return fmt.Sprintf("No session matching %q found.", name), nil
+	}
+	if len(matches) > 1 {
+		var b strings.Builder
+		b.WriteString("Multiple sessions match:\n")
+		for _, sc := range matches {
+			fmt.Fprintf(&b, "  `%s`\n", sc.SessionID)
+		}
+		b.WriteString("Use the full session ID to resume a specific one.")
+		return b.String(), nil
+	}
+	sc := matches[0]
+	return fmt.Sprintf("Resumed session `%s` (last active %s ago). Send a message to continue.",
+		sc.SessionID, time.Since(sc.LastActiveAt).Truncate(time.Second)), nil
+}
+
+// ── /agents ───────────────────────────────────────────────────────
+
+func (r *Router) handleAgents(ctx context.Context) (string, error) {
+	if r.Agents == nil {
+		return "Agent listing is not configured.", nil
+	}
+	agents, err := r.Agents.AgentList(ctx)
+	if err != nil {
+		return "", fmt.Errorf("agents: %w", err)
+	}
+	if len(agents) == 0 {
+		return "No active agents or running tasks.", nil
+	}
+	var b strings.Builder
+	b.WriteString("*Active agents*\n")
+	for _, a := range agents {
+		fmt.Fprintf(&b, "`%d` %s", a.ID, a.Title)
+		if a.Identity != "" {
+			fmt.Fprintf(&b, " _(%s)_", a.Identity)
+		}
+		fmt.Fprintf(&b, "  \nStatus: %s\n", a.Status)
 	}
 	return strings.TrimSpace(b.String()), nil
 }

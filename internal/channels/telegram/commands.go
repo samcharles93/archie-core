@@ -20,6 +20,11 @@ type commandSpec struct {
 // together prevents a newly registered command from being omitted from help.
 var gatewayCommandSpecs = []commandSpec{
 	{Command: "status", Description: "Show task counts by state", Usage: "/status"},
+	{Command: "whoami", Description: "Show which Archie identity you are talking to", Usage: "/whoami"},
+	{Command: "profile", Description: "Show the active Archie profile", Usage: "/profile"},
+	{Command: "sessions", Description: "List recent sessions", Usage: "/sessions"},
+	{Command: "resume", Description: "Resume a session by ID or name", Usage: "/resume [id]"},
+	{Command: "agents", Description: "List active agents and running tasks", Usage: "/agents"},
 	{Command: "version", Description: "Show installed Archie versions", Usage: "/version"},
 	{Command: "update", Description: "Check for Archie updates", Usage: "/update"},
 	{Command: "provider", Description: "Choose the provider used for chat", Usage: "/provider"},

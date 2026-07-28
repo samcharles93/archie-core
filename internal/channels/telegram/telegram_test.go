@@ -162,11 +162,7 @@ func TestVersionReportsBothComponents(t *testing.T) {
 // this set may still be executable if typed explicitly — they just shouldn't
 // appear on Telegram's discoverability surfaces.
 var telegramHiddenCommands = map[string]bool{
-	"approve":    true, // dangerous command, intentionally hidden
-	"bg":         true, // alias for /queue
-	"background": true, // alias for /queue
-	"btw":        true, // alias for /queue
-	"q":          true, // alias for /queue
+	"approve": true,
 }
 
 func TestPublishedCommandsMatchExecutableCommandSurface(t *testing.T) {
