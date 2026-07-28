@@ -709,7 +709,7 @@ func (f *fakeSessionStore) Close() error { return nil }
 
 func TestRouteSessionsEmpty(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	r.Sessions = &fakeSessionLister{fakeSessionStore{fakeSessionStore{}
+	r.Sessions = &fakeSessionStore{fakeSessionStore{}
 	reply, err := r.Route(context.Background(), Message{Text: "/sessions"})
 	if err != nil {
 		t.Fatalf("Route: %v", err)
@@ -732,7 +732,7 @@ func TestRouteSessionsNotConfigured(t *testing.T) {
 
 func TestRouteSessionsError(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	r.Sessions = &fakeSessionLister{fakeSessionStore{fakeSessionStore{err: fmt.Errorf("store unavailable")}
+	r.Sessions = &fakeSessionStore{fakeSessionStore{err: fmt.Errorf("store unavailable")}
 	_, err := r.Route(context.Background(), Message{Text: "/sessions"})
 	if err == nil {
 		t.Error("expected error from Route when List fails")
@@ -743,7 +743,7 @@ func TestRouteSessionsError(t *testing.T) {
 
 func TestRouteResumeNoArg(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	r.Sessions = &fakeSessionLister{fakeSessionStore{fakeSessionStore{}
+	r.Sessions = &fakeSessionStore{fakeSessionStore{}
 	reply, err := r.Route(context.Background(), Message{Text: "/resume"})
 	if err != nil {
 		t.Fatalf("Route: %v", err)
@@ -766,7 +766,7 @@ func TestRouteResumeNotConfigured(t *testing.T) {
 
 func TestRouteResumeNoMatch(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	r.Sessions = &fakeSessionLister{fakeSessionStore{fakeSessionStore{
+	r.Sessions = &fakeSessionStore{fakeSessionStore{
 		sessions: []SessionContext{
 			{SessionID: "session-1"},
 		},
@@ -782,7 +782,7 @@ func TestRouteResumeNoMatch(t *testing.T) {
 
 func TestRouteResumeAmbiguous(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	r.Sessions = &fakeSessionLister{fakeSessionStore{fakeSessionStore{
+	r.Sessions = &fakeSessionStore{fakeSessionStore{
 		sessions: []SessionContext{
 			{SessionID: "abc-123"},
 			{SessionID: "abc-456"},
@@ -799,7 +799,7 @@ func TestRouteResumeAmbiguous(t *testing.T) {
 
 func TestRouteResumeExactMatch(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	r.Sessions = &fakeSessionLister{fakeSessionStore{fakeSessionStore{
+	r.Sessions = &fakeSessionStore{fakeSessionStore{
 		sessions: []SessionContext{
 			{SessionID: "abc-123"},
 			{SessionID: "abc-456"},
