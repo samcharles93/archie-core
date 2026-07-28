@@ -47,6 +47,18 @@ type SessionStore interface {
 	// oldest first. Used to build the LLM conversation context.
 	RecentMessages(ctx context.Context, sessionID string, n int) ([]Message, error)
 
+	// DeleteRecentMessages removes the last n messages from the
+	// session's conversation history. Used by /undo and /retry.
+	// Returns the number of messages actually deleted.
+	DeleteRecentMessages(ctx context.Context, sessionID string, n int) (deleted int, err error)
+
+	// MessageCount returns the total number of messages stored for
+	// a session. Used by /compress --preview and /undo.
+	MessageCount(ctx context.Context, sessionID string) (int, error)
+
+	// SaveMessages bulk-saves messages for branch inheritance.
+	SaveMessages(ctx context.Context, sessionID string, msgs []Message) error
+
 	// SearchMessages returns messages matching query via semantic
 	// vector search (NellDB SearchSimilar). Falls back to substring
 	// match on message text when vector search is unavailable.
@@ -198,6 +210,15 @@ func sessionToDoc(sc SessionContext) sdk.Doc {
 	if sc.Source.ThreadID != "" {
 		doc["thread_id"] = sc.Source.ThreadID
 	}
+	if sc.Title != "" {
+		doc["title"] = sc.Title
+	}
+	if sc.ParentSessionID != "" {
+		doc["parent_session_id"] = sc.ParentSessionID
+	}
+	if sc.BranchName != "" {
+		doc["branch_name"] = sc.BranchName
+	}
 	return doc
 }
 
@@ -210,6 +231,9 @@ func docToSession(doc sdk.Doc) SessionContext {
 			ChannelID: strField(doc, "channel_id"),
 			ThreadID:  strField(doc, "thread_id"),
 		},
+		Title:           strField(doc, "title"),
+		ParentSessionID: strField(doc, "parent_session_id"),
+		BranchName:      strField(doc, "branch_name"),
 	}
 	if v := strField(doc, "created_at"); v != "" {
 		sc.CreatedAt, _ = time.Parse(time.RFC3339Nano, v)
@@ -299,6 +323,66 @@ func (s *nellSessionStore) RecentMessages(ctx context.Context, sessionID string,
 		})
 	}
 	return out, nil
+}
+
+func (s *nellSessionStore) DeleteRecentMessages(ctx context.Context, sessionID string, n int) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	prefix := sessionID + ":"
+	result, err := s.msgDB.AllDocs(ctx, sdk.DocRange{
+		StartKey:    prefix,
+		EndKey:      prefix + "\xff",
+		IncludeDocs: false,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("sessionstore: delete recent messages: %w", err)
+	}
+
+	toDelete := min(n, len(result.Rows))
+
+	// Delete the last n rows (newest messages).
+	for i := len(result.Rows) - toDelete; i < len(result.Rows); i++ {
+		if _, err := s.msgDB.Remove(ctx, result.Rows[i].ID); err != nil && !errors.Is(err, sdk.ErrNotFound) {
+			return toDelete, fmt.Errorf("sessionstore: delete message %s: %w", result.Rows[i].ID, err)
+		}
+	}
+	return toDelete, nil
+}
+
+func (s *nellSessionStore) MessageCount(ctx context.Context, sessionID string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	prefix := sessionID + ":"
+	result, err := s.msgDB.AllDocs(ctx, sdk.DocRange{
+		StartKey:    prefix,
+		EndKey:      prefix + "\xff",
+		IncludeDocs: false,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("sessionstore: message count: %w", err)
+	}
+	return len(result.Rows), nil
+}
+
+func (s *nellSessionStore) SaveMessages(ctx context.Context, sessionID string, msgs []Message) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, msg := range msgs {
+		doc := sdk.Doc{
+			sdk.FieldID:  msgKey(sessionID, int64(i)),
+			"session_id": sessionID,
+			"seq":        int64(i),
+			"from":       msg.From,
+			"text":       msg.Text,
+			"channel_id": msg.ChannelID,
+			"thread_id":  msg.ThreadID,
+			"at":         time.Now().UTC().Format(time.RFC3339Nano),
+		}
+		if _, err := s.msgDB.Put(ctx, doc); err != nil {
+			return fmt.Errorf("sessionstore: save messages: %w", err)
+		}
+	}
+	return nil
 }
 
 func (s *nellSessionStore) SearchMessages(ctx context.Context, sessionID, query string, limit int) ([]Message, error) {

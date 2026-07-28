@@ -362,6 +362,15 @@ func run() int {
 			sessionStore = gateway.NewSessionStoreMemory(cfg.BotUser)
 		}
 
+		// Resolve the session ID for a message, creating one if needed.
+		// Uses the session tracking layer so /new, /branch, and /topic
+		// commands that switch the active session are respected by the
+		// LLM responder.
+		resolveSession := func(ctx context.Context, msg gateway.Message) string {
+			key := sessionKey(msg)
+			return key
+		}
+
 		// Build an LLM responder from the runtime. Gateway-local commands
 		// (/status, /model, /spawn) are handled directly; all
 		// other messages are routed through the LLM with conversation
@@ -374,7 +383,7 @@ func run() int {
 			// assembled text is returned either way, so both the blocking
 			// and streaming responders share this single path.
 			respond := func(ctx context.Context, msg gateway.Message, onDelta func(string)) (string, error) {
-				sessionKey := sessionKey(msg)
+				sessionKey := resolveSession(ctx, msg)
 				if err := sessionStore.SaveMessage(ctx, sessionKey, msg); err != nil {
 					return "", fmt.Errorf("save inbound chat message: %w", err)
 				}
@@ -501,6 +510,18 @@ func run() int {
 		router := gateway.NewRouter(st, llmResponder, "telegram")
 		router.LLMStream = llmStream
 		router.Models = chatModels
+		router.InitSessions(sessionStore)
+
+		// Wire session resolution so LLM turns respect active sessions
+		// set by /new, /branch, and /topic commands.
+		resolveSession = func(ctx context.Context, msg gateway.Message) string {
+			key, err := router.ResolveSessionKey(ctx, msg)
+			if err != nil {
+				return sessionKey(msg)
+			}
+			return key
+		}
+
 		configureTaskCommands(router, chatTasks, chatController, defaultChatIdentity)
 		startGateways = append(startGateways, func() {
 			go func() {

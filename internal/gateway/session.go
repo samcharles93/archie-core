@@ -36,6 +36,18 @@ type SessionContext struct {
 	// Source identifies the platform, bot, and conversation.
 	Source SessionSource `json:"source"`
 
+	// Title is an optional human-readable name for the session, set
+	// via /title. Empty until set.
+	Title string `json:"title,omitempty"`
+
+	// ParentSessionID is the session this one was branched from, set
+	// by /branch or /fork. Empty for root sessions.
+	ParentSessionID string `json:"parent_session_id,omitempty"`
+
+	// BranchName is the name given when branching, set via
+	// /branch <name>. Empty for root sessions.
+	BranchName string `json:"branch_name,omitempty"`
+
 	// CreatedAt is when the session was first established.
 	CreatedAt time.Time `json:"created_at"`
 

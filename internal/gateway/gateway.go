@@ -145,8 +145,14 @@ type Router struct {
 	// used to scope /approve and /cancel authorization  --  a task
 	// spawned under one identity cannot be controlled from another's
 	// chat session.
-	Identity    string
-	gatewayName string
+	Identity string
+	// Sessions persists session metadata and conversation history.
+	// When set, session lifecycle commands (/new, /branch, /title,
+	// /undo, /retry, /compress) are available. When nil, those
+	// commands report "not configured".
+	Sessions       SessionStore
+	sessionTracker *sessionTracker
+	gatewayName    string
 }
 
 // NewRouter returns a Router. llm is optional  --  when nil, non-command
@@ -155,38 +161,80 @@ func NewRouter(store StatusReader, llm LLMResponder, gatewayName string) *Router
 	return &Router{Store: store, LLM: llm, gatewayName: gatewayName}
 }
 
+// InitSessions wires the session store and starts tracking sessions.
+// Must be called before session commands are used. Idempotent.
+func (r *Router) InitSessions(sessions SessionStore) {
+	r.Sessions = sessions
+	r.sessionTracker = newSessionTracker(sessions)
+}
+
 // Route dispatches msg and returns the reply. Gateway-local commands
-// (like /status and /model) are handled directly; everything
-// else goes to the LLM responder.
+// are handled directly; everything else goes to the LLM responder.
 func (r *Router) Route(ctx context.Context, msg Message) (string, error) {
 	text := strings.TrimSpace(msg.Text)
-	cmd, arg := parseCmd(text, r.gatewayName)
+	cmd, _ := parseCmd(text, r.gatewayName)
+
+	if reply, handled, err := r.dispatchLocal(ctx, msg, text, cmd); handled {
+		return reply, err
+	}
+
+	if strings.HasPrefix(cmd, "/") {
+		return fmt.Sprintf("Unknown command %s. Try /help.", cmd), nil
+	}
+	if r.LLM == nil {
+		return "I'm running but LLM processing isn't wired yet. Try /status.", nil
+	}
+	return r.LLM(ctx, msg)
+}
+
+// dispatchLocal handles recognized local commands. Returns (reply,
+// true) when the command was recognized and handled.
+func (r *Router) dispatchLocal(ctx context.Context, msg Message, text, cmd string) (string, bool, error) {
+	rest := restAfter(text, cmd, r.gatewayName)
 
 	switch cmd {
 	case "/status":
-		return r.handleStatus(ctx)
+		reply, err := r.handleStatus(ctx)
+		return reply, true, err
 	case "/model":
-		return r.handleModel(ctx, arg)
+		_, arg := parseCmd(text, "")
+		reply, err := r.handleModel(ctx, arg)
+		return reply, true, err
 	case "/spawn":
-		// Title is everything after "/spawn"  --  keep the multi-word text.
-		rest := restAfter(text, cmd, r.gatewayName)
-		return r.handleSpawn(ctx, rest)
+		reply, err := r.handleSpawn(ctx, rest)
+		return reply, true, err
 	case "/approve":
-		// Reserved for dangerous-command approval (archie-core-alm.6).
-		// Telegram hides it from its menu/help; other gateways keep it
-		// wired until the new design is wired up.
-		return r.handleApprove(ctx, restAfter(text, cmd, r.gatewayName))
+		reply, err := r.handleApprove(ctx, rest)
+		return reply, true, err
 	case "/cancel":
-		return r.handleCancel(ctx, restAfter(text, cmd, r.gatewayName))
-	default:
-		if strings.HasPrefix(cmd, "/") {
-			return fmt.Sprintf("Unknown command %s. Try /help.", cmd), nil
-		}
-		if r.LLM == nil {
-			return "I'm running but LLM processing isn't wired yet. Try /status.", nil
-		}
-		return r.LLM(ctx, msg)
+		reply, err := r.handleCancel(ctx, rest)
+		return reply, true, err
+	case "/start":
+		reply, err := r.handleStart(ctx, msg)
+		return reply, true, err
+	case "/new", "/reset":
+		reply, err := r.handleNew(ctx, msg, rest)
+		return reply, true, err
+	case "/topic":
+		reply, err := r.handleTopic(ctx, msg, rest)
+		return reply, true, err
+	case "/retry":
+		reply, err := r.handleRetry(ctx, msg)
+		return reply, true, err
+	case "/undo":
+		reply, err := r.handleUndo(ctx, msg, rest)
+		return reply, true, err
+	case "/title":
+		reply, err := r.handleTitle(ctx, msg, rest)
+		return reply, true, err
+	case "/branch", "/fork":
+		reply, err := r.handleBranch(ctx, msg, rest)
+		return reply, true, err
+	case "/compress", "/compact":
+		reply, err := r.handleCompress(ctx, msg, rest)
+		return reply, true, err
 	}
+	return "", false, nil
 }
 
 // RouteStream is Route for adapters that can render a reply progressively.
@@ -210,7 +258,11 @@ func (r *Router) RouteStream(ctx context.Context, msg Message, onDelta func(stri
 	return r.LLMStream(ctx, msg, onDelta)
 }
 
-var localCommands = []string{"/status", "/model", "/spawn", "/approve", "/cancel"}
+var localCommands = []string{
+	"/status", "/model", "/spawn", "/approve", "/cancel",
+	"/new", "/reset", "/topic", "/retry", "/undo",
+	"/title", "/branch", "/fork", "/compress", "/compact",
+}
 
 // LocalCommands returns the command names Route answers from local state.
 // Gateways use this to verify that their published command surfaces match

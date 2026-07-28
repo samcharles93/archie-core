@@ -19,6 +19,13 @@ type commandSpec struct {
 // published command menu and /help. Keeping the discoverability surfaces
 // together prevents a newly registered command from being omitted from help.
 var gatewayCommandSpecs = []commandSpec{
+	{Command: "new", Description: "Start a fresh session", Usage: "/new [name] (alias: /reset)"},
+	{Command: "title", Description: "Set or show the session title", Usage: "/title [name]"},
+	{Command: "branch", Description: "Branch session with inherited history", Usage: "/branch [name] (alias: /fork)"},
+	{Command: "topic", Description: "Switch between topic sessions", Usage: "/topic [off|help|<session-id>]"},
+	{Command: "retry", Description: "Retry the last turn", Usage: "/retry"},
+	{Command: "undo", Description: "Remove the last N messages", Usage: "/undo [N]"},
+	{Command: "compress", Description: "Compress conversation history", Usage: "/compress [here <N>|focus <topic>|--preview] (alias: /compact)"},
 	{Command: "status", Description: "Show task counts by state", Usage: "/status"},
 	{Command: "version", Description: "Show installed Archie versions", Usage: "/version"},
 	{Command: "update", Description: "Check for Archie updates", Usage: "/update"},
@@ -47,11 +54,26 @@ func gatewayHelpText() string {
 	var help strings.Builder
 	help.WriteString("🤖 **Archie**\n\n")
 	help.WriteString("Send a message to chat with Archie. Replies stream into Telegram as they are generated.\n\n")
-	help.WriteString("**Commands**\n")
-	for _, spec := range gatewayCommandSpecs {
-		fmt.Fprintf(&help, "`%s`\n%s\n\n", spec.Usage, spec.Description)
-	}
+	help.WriteString("**Session commands** (always available)\n")
+	appendCommandGroup(&help, isSessionCommand)
+	help.WriteString("**Other commands**\n")
+	appendCommandGroup(&help, func(cmd string) bool { return !isSessionCommand(cmd) })
 	return strings.TrimSpace(help.String())
+}
+
+var sessionCommands = map[string]bool{
+	"new": true, "title": true, "branch": true, "topic": true,
+	"retry": true, "undo": true, "compress": true,
+}
+
+func isSessionCommand(cmd string) bool { return sessionCommands[cmd] }
+
+func appendCommandGroup(help *strings.Builder, include func(string) bool) {
+	for _, spec := range gatewayCommandSpecs {
+		if include(spec.Command) {
+			fmt.Fprintf(help, "`%s`\n%s\n\n", spec.Usage, spec.Description)
+		}
+	}
 }
 
 // commandScopes are the scopes the menu is published to.

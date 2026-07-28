@@ -321,7 +321,14 @@ func (g *Gateway) helpHandler() bot.HandlerFunc {
 }
 
 func (g *Gateway) startHandler() bot.HandlerFunc {
-	return g.helpHandler()
+	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
+		msg, ok := g.authorizedMessage(ctx, b, update)
+		if !ok {
+			return
+		}
+		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
+			"Archie is running. Send a message to chat, or type /help for available commands.")
+	}
 }
 
 // ── default handler (non-command text → router) ─────────────
