@@ -114,6 +114,19 @@ type TaskCreator interface {
 // valid state transitions; see gateway.tasks.go's StoreTaskController
 // for the reference implementation. When nil on a Router, /approve and
 // /cancel return "not configured".
+// AgentInfo is a lightweight agent summary for /agents.
+type AgentInfo struct {
+	ID       int64
+	Title    string
+	Status   string
+	Identity string
+}
+
+// AgentReader is the read surface /agents uses.
+type AgentReader interface {
+	AgentList(ctx context.Context) ([]AgentInfo, error)
+}
+
 type TaskController interface {
 	// Approve moves a waiting_human task back to queued. Returns an
 	// error (surfaced to the user, not the LLM) if the task doesn't
