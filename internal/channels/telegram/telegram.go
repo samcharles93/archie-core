@@ -49,6 +49,11 @@ type Gateway struct {
 	// deferral persistence, and installation; Telegram only presents it.
 	Updates UpdateService
 
+	// Dangerous is the sandbox/process authority for /rollback and /stop.
+	// When nil, those commands return "not configured". The composition
+	// root supplies this; Telegram only renders approval UX.
+	Dangerous DangerousCommandAuthority
+
 	// restartCh carries /restart requests from a bot handler to the
 	// supervisor loop in Start. Buffered so a handler never blocks.
 	restartCh         chan restartRequest
@@ -60,6 +65,11 @@ type Gateway struct {
 	updateMu          sync.Mutex
 	updateInProgress  bool
 	updateActions     map[string]updateAction
+
+	// dangerous command approval state
+	dangerousMu        sync.Mutex
+	dangerousActions   map[string]dangerousAction
+	permanentApprovals []permanentApproval
 
 	log           *slog.Logger
 	bot           *bot.Bot
@@ -86,15 +96,17 @@ type ReleaseAnnouncer interface {
 // processing.
 func New(token, webhookURL, webhookSecret string, allowedUserIDs []int64, log *slog.Logger) *Gateway {
 	return &Gateway{
-		Token:             token,
-		WebhookURL:        webhookURL,
-		WebhookSecret:     webhookSecret,
-		AllowedUserIDs:    allowedUserIDs,
-		restartCh:         make(chan restartRequest, 1),
-		modelCallbacks:    make(map[string]string),
-		providerCallbacks: make(map[string]string),
-		updateActions:     make(map[string]updateAction),
-		log:               log.With("component", "gateway-telegram"),
+		Token:              token,
+		WebhookURL:         webhookURL,
+		WebhookSecret:      webhookSecret,
+		AllowedUserIDs:     allowedUserIDs,
+		restartCh:          make(chan restartRequest, 1),
+		modelCallbacks:     make(map[string]string),
+		providerCallbacks:  make(map[string]string),
+		updateActions:      make(map[string]updateAction),
+		dangerousActions:   make(map[string]dangerousAction),
+		permanentApprovals: nil,
+		log:                log.With("component", "gateway-telegram"),
 	}
 }
 
@@ -177,6 +189,10 @@ func (g *Gateway) launch(ctx context.Context, router *gateway.Router) (*bot.Bot,
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, g.startHandler())
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/help", bot.MatchTypeExact, g.helpHandler())
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/restart", bot.MatchTypeExact, g.restartHandler())
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/rollback", bot.MatchTypePrefix, g.rollbackHandler())
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/stop", bot.MatchTypePrefix, g.stopHandler())
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/approve", bot.MatchTypeExact, g.approveHandler())
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/deny", bot.MatchTypeExact, g.denyHandler())
 
 	// Publish the command list so Telegram renders a menu. Without this
 	// the commands are undiscoverable and the LLM, having no idea they
@@ -330,6 +346,8 @@ func (g *Gateway) defaultHandler(router *gateway.Router) bot.HandlerFunc {
 	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
 		if update.CallbackQuery != nil {
 			switch {
+			case strings.HasPrefix(update.CallbackQuery.Data, dangerousCmdPrefix):
+				g.handleDangerousCallback(ctx, b, update)
 			case strings.HasPrefix(update.CallbackQuery.Data, providerCallbackPrefix):
 				g.handleProviderCallback(ctx, b, update, router)
 			case strings.HasPrefix(update.CallbackQuery.Data, modelCallbackPrefix):

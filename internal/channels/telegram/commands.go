@@ -26,11 +26,13 @@ var gatewayCommandSpecs = []commandSpec{
 	{Command: "model", Description: "Show the model selector or switch directly", Usage: "/model [provider/model]"},
 	{Command: "spawn", Description: "Create a tracked task", Usage: "/spawn [identity=name] [repo=owner/name] [workflow=name] <title>"},
 	{Command: "cancel", Description: "Cancel a queued or waiting task", Usage: "/cancel [identity=name] <task-id>"},
+	{Command: "rollback", Description: "Restore a filesystem checkpoint", Usage: "/rollback [number]"},
+	{Command: "stop", Description: "Terminate a background process", Usage: "/stop <process-name>"},
 	{Command: "restart", Description: "Reload Archie and its configuration", Usage: "/restart"},
 	{Command: "help", Description: "See what Archie can do", Usage: "/help"},
 }
 
-var telegramOnlyCommands = []string{"provider", "restart", "help", "version", "update"}
+var telegramOnlyCommands = []string{"provider", "restart", "help", "version", "update", "rollback", "stop"}
 
 var gatewayCommands = func() []models.BotCommand {
 	commands := make([]models.BotCommand, 0, len(gatewayCommandSpecs))

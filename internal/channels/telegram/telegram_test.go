@@ -161,7 +161,7 @@ func TestVersionReportsBothComponents(t *testing.T) {
 // dangerous and should not be discoverable by casual chat users. Commands in
 // this set may still be executable if typed explicitly — they just shouldn't
 // appear on Telegram's discoverability surfaces.
-var telegramHiddenCommands = map[string]bool{"approve": true}
+var telegramHiddenCommands = map[string]bool{"approve": true, "deny": true}
 
 func TestPublishedCommandsMatchExecutableCommandSurface(t *testing.T) {
 	executable := make(map[string]bool)
