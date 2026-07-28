@@ -616,3 +616,506 @@ func TestRouteCancelNotConfigured(t *testing.T) {
 		t.Errorf("reply = %q, want 'not configured'", reply)
 	}
 }
+
+// -- /steer tests --
+
+func routerWithState() *Router {
+	r := NewRouter(nil, nil, "test-gw")
+	r.State = NewSessionState()
+	return r
+}
+
+func TestRouteSteerQueuesMessage(t *testing.T) {
+	r := routerWithState()
+	reply, err := r.Route(context.Background(), Message{Text: "/steer check the logs"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Steer queued") {
+		t.Errorf("reply = %q, want confirmation", reply)
+	}
+	if text, ok := r.State.PollSteer(); !ok || text != "check the logs" {
+		t.Errorf("PollSteer() = (%q, %v), want (check the logs, true)", text, ok)
+	}
+}
+
+func TestRouteSteerShowsPending(t *testing.T) {
+	r := routerWithState()
+	r.State.SetSteer("pending steer")
+	reply, err := r.Route(context.Background(), Message{Text: "/steer"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Pending steer") || !strings.Contains(reply, "pending steer") {
+		t.Errorf("reply = %q, want pending steer message", reply)
+	}
+}
+
+func TestRouteSteerEmpty(t *testing.T) {
+	r := routerWithState()
+	reply, err := r.Route(context.Background(), Message{Text: "/steer"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "No steer pending") {
+		t.Errorf("reply = %q, want usage message", reply)
+	}
+}
+
+func TestRouteSteerNotConfigured(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	reply, err := r.Route(context.Background(), Message{Text: "/steer do x"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "not configured") {
+		t.Errorf("reply = %q, want 'not configured'", reply)
+	}
+}
+
+// -- /goal tests --
+
+func TestRouteGoalSet(t *testing.T) {
+	r := routerWithState()
+	reply, err := r.Route(context.Background(), Message{Text: "/goal ship the feature"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Goal set") || !strings.Contains(reply, "ship the feature") {
+		t.Errorf("reply = %q, want goal set confirmation", reply)
+	}
+	goals := r.State.Goals()
+	if len(goals) != 1 || goals[0].Text != "ship the feature" {
+		t.Errorf("Goals() = %+v, want [ship the feature]", goals)
+	}
+}
+
+func TestRouteGoalShow(t *testing.T) {
+	r := routerWithState()
+	r.State.SetGoal("do the thing", false)
+	r.State.AddSubgoal("step one")
+	r.State.AddSubgoal("step two")
+
+	reply, err := r.Route(context.Background(), Message{Text: "/goal"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "do the thing") {
+		t.Error("reply missing goal text")
+	}
+	if !strings.Contains(reply, "step one") {
+		t.Error("reply missing subgoal")
+	}
+}
+
+func TestRouteGoalShowEmpty(t *testing.T) {
+	r := routerWithState()
+	reply, err := r.Route(context.Background(), Message{Text: "/goal"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "No goal set") {
+		t.Errorf("reply = %q, want 'No goal set'", reply)
+	}
+}
+
+func TestRouteGoalPauseResume(t *testing.T) {
+	r := routerWithState()
+	r.State.SetGoal("work", false)
+
+	reply, err := r.Route(context.Background(), Message{Text: "/goal pause"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Goal paused") {
+		t.Errorf("reply = %q, want Goal paused", reply)
+	}
+
+	reply, err = r.Route(context.Background(), Message{Text: "/goal resume"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Goal resumed") {
+		t.Errorf("reply = %q, want Goal resumed", reply)
+	}
+}
+
+func TestRouteGoalPauseWithoutGoal(t *testing.T) {
+	r := routerWithState()
+	reply, err := r.Route(context.Background(), Message{Text: "/goal pause"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "No goal to pause") {
+		t.Errorf("reply = %q, want 'No goal to pause'", reply)
+	}
+}
+
+func TestRouteGoalClear(t *testing.T) {
+	r := routerWithState()
+	r.State.SetGoal("x", false)
+	r.State.AddSubgoal("y")
+
+	reply, err := r.Route(context.Background(), Message{Text: "/goal clear"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "cleared") {
+		t.Errorf("reply = %q, want cleared", reply)
+	}
+	if r.State.HasGoal() {
+		t.Error("HasGoal() = true after /goal clear")
+	}
+	if len(r.State.Subgoals()) != 0 {
+		t.Error("subgoals not cleared")
+	}
+}
+
+func TestRouteGoalStatus(t *testing.T) {
+	r := routerWithState()
+	r.State.SetGoal("g", false)
+	r.State.AddSubgoal("sg")
+
+	reply, err := r.Route(context.Background(), Message{Text: "/goal status"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Goal:") || !strings.Contains(reply, "1 subgoal") {
+		t.Errorf("reply = %q, want status line", reply)
+	}
+}
+
+func TestRouteGoalWaitUnwait(t *testing.T) {
+	r := routerWithState()
+	r.State.SetGoal("g", false)
+
+	reply, err := r.Route(context.Background(), Message{Text: "/goal wait"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "wait flag set") {
+		t.Errorf("reply = %q, want wait flag set", reply)
+	}
+	if !r.State.IsWaiting() {
+		t.Error("IsWaiting() = false after /goal wait")
+	}
+
+	reply, err = r.Route(context.Background(), Message{Text: "/goal unwait"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "wait flag cleared") {
+		t.Errorf("reply = %q, want wait flag cleared", reply)
+	}
+	if r.State.IsWaiting() {
+		t.Error("IsWaiting() = true after /goal unwait")
+	}
+}
+
+func TestRouteGoalWaitWithoutGoal(t *testing.T) {
+	r := routerWithState()
+	reply, err := r.Route(context.Background(), Message{Text: "/goal wait"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "No goal to wait") {
+		t.Errorf("reply = %q, want 'No goal to wait'", reply)
+	}
+}
+
+func TestRouteGoalNotConfigured(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	reply, err := r.Route(context.Background(), Message{Text: "/goal show"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "not configured") {
+		t.Errorf("reply = %q, want 'not configured'", reply)
+	}
+}
+
+func TestRouteGoalDraft(t *testing.T) {
+	r := routerWithState()
+	reply, err := r.Route(context.Background(), Message{Text: "/goal draft"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "I'll suggest one") {
+		t.Errorf("reply = %q, want draft prompt", reply)
+	}
+}
+
+// -- /subgoal tests --
+
+func TestRouteSubgoalAdd(t *testing.T) {
+	r := routerWithState()
+	r.State.SetGoal("goal", false)
+
+	reply, err := r.Route(context.Background(), Message{Text: "/subgoal write tests"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Subgoal added") || !strings.Contains(reply, "write tests") {
+		t.Errorf("reply = %q, want confirmation", reply)
+	}
+	if len(r.State.Subgoals()) != 1 || r.State.Subgoals()[0].Text != "write tests" {
+		t.Error("subgoal not stored")
+	}
+}
+
+func TestRouteSubgoalAddWithoutGoal(t *testing.T) {
+	r := routerWithState()
+	reply, err := r.Route(context.Background(), Message{Text: "/subgoal do x"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "No goal set") {
+		t.Errorf("reply = %q, want 'No goal set'", reply)
+	}
+}
+
+func TestRouteSubgoalShow(t *testing.T) {
+	r := routerWithState()
+	r.State.SetGoal("g", false)
+	r.State.AddSubgoal("a")
+	r.State.AddSubgoal("b")
+
+	reply, err := r.Route(context.Background(), Message{Text: "/subgoal"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "a") || !strings.Contains(reply, "b") {
+		t.Errorf("reply = %q, want subgoals a and b", reply)
+	}
+}
+
+func TestRouteSubgoalShowEmpty(t *testing.T) {
+	r := routerWithState()
+	r.State.SetGoal("g", false)
+
+	reply, err := r.Route(context.Background(), Message{Text: "/subgoal"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "No subgoals") {
+		t.Errorf("reply = %q, want 'No subgoals'", reply)
+	}
+}
+
+func TestRouteSubgoalRemove(t *testing.T) {
+	r := routerWithState()
+	r.State.SetGoal("g", false)
+	r.State.AddSubgoal("a")
+	r.State.AddSubgoal("b")
+	r.State.AddSubgoal("c")
+
+	reply, err := r.Route(context.Background(), Message{Text: "/subgoal remove 2"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "removed") {
+		t.Errorf("reply = %q, want removed", reply)
+	}
+	sgs := r.State.Subgoals()
+	if len(sgs) != 2 || sgs[0].Text != "a" || sgs[1].Text != "c" {
+		t.Errorf("Subgoals() = %+v, want [a, c]", sgs)
+	}
+}
+
+func TestRouteSubgoalRemoveOutOfRange(t *testing.T) {
+	r := routerWithState()
+	r.State.SetGoal("g", false)
+
+	reply, err := r.Route(context.Background(), Message{Text: "/subgoal remove 5"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "No subgoal at position") {
+		t.Errorf("reply = %q, want 'No subgoal at position'", reply)
+	}
+}
+
+func TestRouteSubgoalClear(t *testing.T) {
+	r := routerWithState()
+	r.State.SetGoal("g", false)
+	r.State.AddSubgoal("a")
+	r.State.AddSubgoal("b")
+
+	reply, err := r.Route(context.Background(), Message{Text: "/subgoal clear"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "cleared") {
+		t.Errorf("reply = %q, want cleared", reply)
+	}
+	if len(r.State.Subgoals()) != 0 {
+		t.Error("Subgoals not cleared")
+	}
+}
+
+func TestRouteSubgoalNotConfigured(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	reply, err := r.Route(context.Background(), Message{Text: "/subgoal add x"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "not configured") {
+		t.Errorf("reply = %q, want 'not configured'", reply)
+	}
+}
+
+// -- /queue tests --
+
+func TestRouteQueueAdd(t *testing.T) {
+	r := routerWithState()
+	reply, err := r.Route(context.Background(), Message{Text: "/queue review the PR"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Queued") || !strings.Contains(reply, "review the PR") {
+		t.Errorf("reply = %q, want confirmation", reply)
+	}
+	if n := r.State.QueueLen(); n != 1 {
+		t.Errorf("QueueLen() = %d, want 1", n)
+	}
+}
+
+func TestRouteQueueShow(t *testing.T) {
+	r := routerWithState()
+	r.State.AddToQueue("a")
+	r.State.AddToQueue("b")
+
+	reply, err := r.Route(context.Background(), Message{Text: "/queue"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "a") || !strings.Contains(reply, "b") {
+		t.Errorf("reply = %q, want queue contents", reply)
+	}
+}
+
+func TestRouteQueueShowEmpty(t *testing.T) {
+	r := routerWithState()
+	reply, err := r.Route(context.Background(), Message{Text: "/queue"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "empty") {
+		t.Errorf("reply = %q, want 'empty'", reply)
+	}
+}
+
+func TestRouteQueueRemove(t *testing.T) {
+	r := routerWithState()
+	r.State.AddToQueue("a")
+	r.State.AddToQueue("b")
+	r.State.AddToQueue("c")
+
+	reply, err := r.Route(context.Background(), Message{Text: "/queue remove 2"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "removed") {
+		t.Errorf("reply = %q, want removed", reply)
+	}
+	entries := r.State.QueueEntries()
+	if len(entries) != 2 || entries[0].Text != "a" || entries[1].Text != "c" {
+		t.Errorf("QueueEntries() = %+v, want [a, c]", entries)
+	}
+}
+
+func TestRouteQueueClear(t *testing.T) {
+	r := routerWithState()
+	r.State.AddToQueue("a")
+	r.State.AddToQueue("b")
+
+	reply, err := r.Route(context.Background(), Message{Text: "/queue clear"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "cleared") {
+		t.Errorf("reply = %q, want cleared", reply)
+	}
+	if n := r.State.QueueLen(); n != 0 {
+		t.Errorf("QueueLen() = %d, want 0", n)
+	}
+}
+
+func TestRouteQueueAliases(t *testing.T) {
+	for _, cmd := range []string{"/q add this", "/background add this", "/bg add this", "/btw add this"} {
+		t.Run(cmd, func(t *testing.T) {
+			r := routerWithState()
+			reply, err := r.Route(context.Background(), Message{Text: cmd})
+			if err != nil {
+				t.Fatalf("Route: %v", err)
+			}
+			if !strings.Contains(reply, "Queued") {
+				t.Errorf("alias %q reply = %q, want Queued", cmd, reply)
+			}
+			if n := r.State.QueueLen(); n != 1 {
+				t.Errorf("QueueLen() = %d, want 1", n)
+			}
+		})
+	}
+}
+
+func TestRouteQueueNotConfigured(t *testing.T) {
+	r := NewRouter(nil, nil, "test-gw")
+	reply, err := r.Route(context.Background(), Message{Text: "/queue show"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "not configured") {
+		t.Errorf("reply = %q, want 'not configured'", reply)
+	}
+}
+
+// -- /goal show includes subgoals and wait status --
+
+func TestRouteGoalShowWithWait(t *testing.T) {
+	r := routerWithState()
+	r.State.SetGoal("big goal", false)
+	r.State.SetWait()
+
+	reply, err := r.Route(context.Background(), Message{Text: "/goal"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Waiting") {
+		t.Errorf("reply = %q, want Waiting indicator", reply)
+	}
+}
+
+// -- LocalCommands includes the new commands --
+
+func TestLocalCommandsIncludesNewCommands(t *testing.T) {
+	cmds := LocalCommands()
+	want := []string{"/steer", "/goal", "/subgoal", "/queue", "/q", "/background", "/bg", "/btw"}
+	for _, w := range want {
+		found := slices.Contains(cmds, w)
+		if !found {
+			t.Errorf("LocalCommands() missing %q", w)
+		}
+	}
+}
+
+func TestSplitFirst(t *testing.T) {
+	tests := []struct {
+		input     string
+		wantFirst string
+		wantRest  string
+	}{
+		{"show", "show", ""},
+		{"remove 2", "remove", "2"},
+		{"add do the thing", "add", "do the thing"},
+		{"  pause  ", "pause", ""},
+		{"", "", ""},
+	}
+	for _, tt := range tests {
+		first, rest := splitFirst(tt.input)
+		if first != tt.wantFirst || rest != tt.wantRest {
+			t.Errorf("splitFirst(%q) = (%q, %q), want (%q, %q)",
+				tt.input, first, rest, tt.wantFirst, tt.wantRest)
+		}
+	}
+}

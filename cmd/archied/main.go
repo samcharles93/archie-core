@@ -99,6 +99,42 @@ func chatGenerateOptions(
 	}, nil
 }
 
+// appendStepMessages appends the assistant turn and tool-result
+// messages for a single generation step to msgs so the next call
+// has the complete conversation history.
+func appendStepMessages(msgs []chat.Message, step core.StepResult) []chat.Message {
+	// Build assistant message with tool calls.
+	var toolCalls []chat.ToolCall
+	for _, tc := range step.ToolCalls {
+		toolCalls = append(toolCalls, chat.ToolCall{
+			ID:        tc.ToolCallID,
+			Name:      tc.ToolName,
+			Arguments: tc.Input,
+		})
+	}
+	msgs = append(msgs, chat.Message{
+		Role:      chat.RoleAssistant,
+		Content:   step.Text,
+		Parts:     step.Parts,
+		ToolCalls: toolCalls,
+	})
+
+	// Build one tool-result message per tool execution.
+	for _, tr := range step.ToolResults {
+		content := tr.Output
+		if tr.Error != "" {
+			content = tr.Error
+		}
+		msgs = append(msgs, chat.Message{
+			Role:       chat.RoleTool,
+			Content:    content,
+			ToolCallID: tr.ToolCallID,
+			Name:       tr.ToolName,
+		})
+	}
+	return msgs
+}
+
 func configuredMCPProvider(server config.MCPServer) (toolprovider.Engine, error) {
 	name := strings.TrimSpace(server.Name)
 	if name == "" {
@@ -362,6 +398,11 @@ func run() int {
 			sessionStore = gateway.NewSessionStoreMemory(cfg.BotUser)
 		}
 
+		// Session-scoped state for /goal, /steer, /subgoal, and /queue
+		// commands. Created before the LLM responder so it is in scope
+		// for the chat loop; wired into the router afterward.
+		sessionState := gateway.NewSessionState()
+
 		// Build an LLM responder from the runtime. Gateway-local commands
 		// (/status, /model, /spawn) are handled directly; all
 		// other messages are routed through the LLM with conversation
@@ -420,6 +461,14 @@ func run() int {
 					SessionID: sessionKey,
 					Now:       time.Now(),
 				})
+				// Inject standing goal and subgoals into the system
+				// prompt when set via /goal. The goal prompt is
+				// appended so it overrides nothing in the base
+				// prompt; the instruction-precedence hierarchy
+				// already ranks user requests above conventions.
+				if goalPrompt := sessionState.BuildGoalPrompt(); goalPrompt != "" {
+					systemPrompt += "\n\n" + goalPrompt
+				}
 				view.Messages = append(
 					[]gateway.CompressedMessage{{Role: "system", Content: systemPrompt}},
 					view.Messages...,
@@ -443,40 +492,99 @@ func run() int {
 
 				options.Messages = messages
 
+				// Run one model-call-plus-tool-execution at a time
+				// so /steer messages can be injected between steps.
+				// Each call to Chat/ChatStream processes exactly
+				// one step; the loop here manages the full
+				// conversation state by appending the model's
+				// response and tool results after each iteration.
+				options.MaxSteps = 1
+
 				var text string
-				if onDelta == nil {
-					result, err := llm.Chat(ctx, chatModel, options)
-					if err != nil {
-						return "", fmt.Errorf("llm chat: %w", err)
-					}
-					text = result.Text
-				} else {
-					stream, err := llm.ChatStream(ctx, chatModel, options)
-					if err != nil {
-						return "", fmt.Errorf("llm chat stream: %w", err)
-					}
-					// Consume FullStream, not TextStream. Per the ai-sdk
-					// channel contract FullStream is authoritative and MUST
-					// be drained until close: its writes are synchronous, so
-					// leaving it unread stalls the producer and deadlocks the
-					// whole turn. TextStream is a best-effort view that drops
-					// deltas when it is not being read, so it cannot be used
-					// to reconstruct the reply either.
-					var sb strings.Builder
-					for part := range stream.FullStream {
-						if part.Type != core.StreamPartTextDelta || part.TextDelta == "" {
-							continue
+				for {
+					if onDelta == nil {
+						result, err := llm.Chat(ctx, chatModel, options)
+						if err != nil {
+							return "", fmt.Errorf("llm chat: %w", err)
 						}
-						sb.WriteString(part.TextDelta)
-						onDelta(part.TextDelta)
+						text = result.Text
+
+						// Append the steps to messages so the next
+						// call has the full conversation history.
+						for _, step := range result.Steps {
+							options.Messages = appendStepMessages(options.Messages, step)
+						}
+
+						// No tool calls in the final step means
+						// the model finished.
+						if result.FinishReason != core.FinishReasonToolCalls {
+							break
+						}
+					} else {
+						stream, err := llm.ChatStream(ctx, chatModel, options)
+						if err != nil {
+							return "", fmt.Errorf("llm chat stream: %w", err)
+						}
+						// Consume FullStream, not TextStream. Per the
+						// ai-sdk channel contract FullStream is
+						// authoritative and MUST be drained until
+						// close.
+						var sb strings.Builder
+						var stepText strings.Builder
+						var stepToolCalls []core.ToolCall
+						var stepToolResults []core.ToolResult
+						var stepParts chat.Parts
+						for part := range stream.FullStream {
+							switch part.Type {
+							case core.StreamPartTextDelta:
+								if part.TextDelta != "" {
+									sb.WriteString(part.TextDelta)
+									stepText.WriteString(part.TextDelta)
+									onDelta(part.TextDelta)
+								}
+							case core.StreamPartToolCall:
+								if part.ToolCall != nil {
+									stepToolCalls = append(stepToolCalls, *part.ToolCall)
+								}
+							case core.StreamPartToolResult:
+								if part.ToolResult != nil {
+									stepToolResults = append(stepToolResults, *part.ToolResult)
+								}
+							case core.StreamPartFinishStep:
+								if part.StepResult != nil {
+									stepParts = part.StepResult.Parts
+								}
+							}
+						}
+						reason, err := stream.FinishReason()
+						if err != nil {
+							return "", fmt.Errorf("llm chat stream: %w", err)
+						}
+						text = sb.String()
+
+						// Append the step to the conversation.
+						options.Messages = appendStepMessages(options.Messages, core.StepResult{
+							Text:        stepText.String(),
+							Parts:       stepParts,
+							ToolCalls:   stepToolCalls,
+							ToolResults: stepToolResults,
+						})
+
+						// No more tool calls — done.
+						if len(stepToolCalls) == 0 && reason != core.FinishReasonToolCalls {
+							break
+						}
 					}
-					// Resolves once the producer completes, so a mid-stream
-					// failure surfaces here rather than a truncated reply
-					// passing as a short but complete one.
-					if _, err := stream.FinishReason(); err != nil {
-						return "", fmt.Errorf("llm chat stream: %w", err)
+
+					// Check for pending /steer messages. Inject after
+					// every tool-execution step so guidance arrives
+					// at the earliest safe point.
+					if steerText, ok := sessionState.PollSteer(); ok {
+						options.Messages = append(options.Messages, chat.Message{
+							Role:    chat.RoleUser,
+							Content: "[STEER] " + steerText,
+						})
 					}
-					text = sb.String()
 				}
 
 				// Persist the response.
@@ -501,6 +609,7 @@ func run() int {
 		router := gateway.NewRouter(st, llmResponder, "telegram")
 		router.LLMStream = llmStream
 		router.Models = chatModels
+		router.State = sessionState
 		configureTaskCommands(router, chatTasks, chatController, defaultChatIdentity)
 		startGateways = append(startGateways, func() {
 			go func() {

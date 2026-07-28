@@ -26,6 +26,11 @@ var gatewayCommandSpecs = []commandSpec{
 	{Command: "model", Description: "Show the model selector or switch directly", Usage: "/model [provider/model]"},
 	{Command: "spawn", Description: "Create a tracked task", Usage: "/spawn [identity=name] [repo=owner/name] [workflow=name] <title>"},
 	{Command: "cancel", Description: "Cancel a queued or waiting task", Usage: "/cancel [identity=name] <task-id>"},
+	{Command: "goal", Description: "Manage standing goals", Usage: "/goal [text|draft|show|pause|resume|clear|status|wait|unwait]"},
+	{Command: "subgoal", Description: "Manage subgoals under the current goal", Usage: "/subgoal [text|remove N|clear]"},
+	{Command: "steer", Description: "Queue a message to inject after the next tool call", Usage: "/steer <message>"},
+	{Command: "queue", Description: "Manage a background task queue", Usage: "/queue [text|remove N|clear]"},
+	{Command: "q", Description: "Alias for /queue", Usage: "/q [text|remove N|clear]"},
 	{Command: "restart", Description: "Reload Archie and its configuration", Usage: "/restart"},
 	{Command: "help", Description: "See what Archie can do", Usage: "/help"},
 }
