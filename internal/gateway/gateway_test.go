@@ -689,27 +689,19 @@ func TestRouteProfileNoIdentity(t *testing.T) {
 
 // -- /sessions tests --
 
-type fakeSessionStore struct {
+type fakeSessionLister struct {
+	*fakeSessionStore
 	sessions []SessionContext
 	err      error
 }
 
-func (f *fakeSessionStore) Save(ctx context.Context, s SessionContext) error        { return f.err }
-func (f *fakeSessionStore) Get(ctx context.Context, id string) (*SessionContext, error) {
-	for i := range f.sessions { if f.sessions[i].SessionID == id { return &f.sessions[i], nil } }
-	return nil, f.err
+func (f *fakeSessionLister) List(ctx context.Context) ([]SessionContext, error) {
+	return f.sessions, f.err
 }
-func (f *fakeSessionStore) GetByChannel(ctx context.Context, p, c string) ([]SessionContext, error) { return f.sessions, f.err }
-func (f *fakeSessionStore) Delete(ctx context.Context, id string) error { return f.err }
-func (f *fakeSessionStore) Touch(ctx context.Context, id string) error  { return f.err }
-func (f *fakeSessionStore) List(ctx context.Context) ([]SessionContext, error)     { return f.sessions, f.err }
-func (f *fakeSessionStore) SaveMessage(ctx context.Context, sid string, msg Message) error { return f.err }
-func (f *fakeSessionStore) RecentMessages(ctx context.Context, sid string, n int) ([]Message, error) { return nil, f.err }
-func (f *fakeSessionStore) Close() error { return nil }
 
 func TestRouteSessionsEmpty(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	r.Sessions = &fakeSessionStore{}
+	r.Sessions = &fakeSessionLister{fakeSessionStore: newFakeSessionStore()}
 	reply, err := r.Route(context.Background(), Message{Text: "/sessions"})
 	if err != nil {
 		t.Fatalf("Route: %v", err)
@@ -732,7 +724,7 @@ func TestRouteSessionsNotConfigured(t *testing.T) {
 
 func TestRouteSessionsError(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	r.Sessions = &fakeSessionStore{err: fmt.Errorf("store unavailable")}
+	r.Sessions = &fakeSessionLister{fakeSessionStore: newFakeSessionStore(), err: fmt.Errorf("store unavailable")}
 	_, err := r.Route(context.Background(), Message{Text: "/sessions"})
 	if err == nil {
 		t.Error("expected error from Route when List fails")
@@ -743,7 +735,7 @@ func TestRouteSessionsError(t *testing.T) {
 
 func TestRouteResumeNoArg(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	r.Sessions = &fakeSessionStore{}
+	r.Sessions = &fakeSessionLister{fakeSessionStore: newFakeSessionStore()}
 	reply, err := r.Route(context.Background(), Message{Text: "/resume"})
 	if err != nil {
 		t.Fatalf("Route: %v", err)
@@ -766,7 +758,7 @@ func TestRouteResumeNotConfigured(t *testing.T) {
 
 func TestRouteResumeNoMatch(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	r.Sessions = &fakeSessionStore{
+	r.Sessions = &fakeSessionLister{fakeSessionStore: newFakeSessionStore(), 
 		sessions: []SessionContext{
 			{SessionID: "session-1"},
 		},
@@ -782,7 +774,7 @@ func TestRouteResumeNoMatch(t *testing.T) {
 
 func TestRouteResumeAmbiguous(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	r.Sessions = &fakeSessionStore{
+	r.Sessions = &fakeSessionLister{fakeSessionStore: newFakeSessionStore(), 
 		sessions: []SessionContext{
 			{SessionID: "abc-123"},
 			{SessionID: "abc-456"},
@@ -799,7 +791,7 @@ func TestRouteResumeAmbiguous(t *testing.T) {
 
 func TestRouteResumeExactMatch(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	r.Sessions = &fakeSessionStore{
+	r.Sessions = &fakeSessionLister{fakeSessionStore: newFakeSessionStore(), 
 		sessions: []SessionContext{
 			{SessionID: "abc-123"},
 			{SessionID: "abc-456"},
