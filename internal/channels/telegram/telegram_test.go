@@ -156,6 +156,13 @@ func TestVersionReportsBothComponents(t *testing.T) {
 	}
 }
 
+// telegramHiddenCommands lists gateway-local commands that are intentionally
+// not advertised in Telegram's menu or help, because they are reserved or
+// dangerous and should not be discoverable by casual chat users. Commands in
+// this set may still be executable if typed explicitly — they just shouldn't
+// appear on Telegram's discoverability surfaces.
+var telegramHiddenCommands = map[string]bool{"approve": true}
+
 func TestPublishedCommandsMatchExecutableCommandSurface(t *testing.T) {
 	executable := make(map[string]bool)
 	for _, command := range gateway.LocalCommands() {
@@ -171,7 +178,7 @@ func TestPublishedCommandsMatchExecutableCommandSurface(t *testing.T) {
 	}
 
 	for command := range executable {
-		if !published[command] {
+		if !published[command] && !telegramHiddenCommands[command] {
 			t.Errorf("executable /%s command is missing from the menu and help", command)
 		}
 	}
