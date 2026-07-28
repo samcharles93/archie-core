@@ -14,6 +14,24 @@ before making non-trivial changes, since several invariants (env-enforced gates,
 model never runs git, agent execution as a data boundary) aren't obvious from
 the code alone.
 
+## Scope discipline (read this before planning anything)
+
+The architecture documentation in `docs/architecture/` is **complete and
+authoritative**. It is a design to implement against — not a draft to extend.
+
+- Do **not** produce new architecture documents, migration plans, ownership
+  ledgers, field-level inventories, current-state traces, decision records, or
+  review campaigns. If a design question isn't answered in
+  `docs/architecture/`, ask the maintainer in one sentence — don't write a
+  document to resolve it.
+- Do **not** open planning, review, or refactor issues. Open issues only for
+  concrete bugs and user-facing features.
+- This is a **solo project**. There is no review board, no handoff to a
+  zero-context engineer, no compliance requirement. Prefer the smallest change
+  that works over the most defensible one.
+- Default to producing a diff. If a task's output would be a document rather
+  than code, confirm that's actually wanted before starting.
+
 ## Build & Test
 
 Commands are defined in `Taskfile.yml` (uses [Task](https://taskfile.dev)); run
