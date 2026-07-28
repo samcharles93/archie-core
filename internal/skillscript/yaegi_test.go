@@ -45,7 +45,7 @@ import (
 
 func main() {
 	ctx := context.Background()
-	out, _ := exec.CommandContext(ctx, "sh", "-c", "echo", "wrapped").CombinedOutput()
+	out, _ := exec.CommandContext(ctx, "sh", "-c", "echo wrapped").CombinedOutput()
 	fmt.Print(string(out))
 }
 `)
