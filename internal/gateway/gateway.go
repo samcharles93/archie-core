@@ -169,6 +169,7 @@ type Router struct {
 	// /undo, /retry, /compress) are available. When nil, those
 	// commands report "not configured".
 	Sessions       SessionStore
+	Agents         AgentReader   // nil = /agents not configured
 	sessionTracker *sessionTracker
 	gatewayName    string
 }

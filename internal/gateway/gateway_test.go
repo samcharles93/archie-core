@@ -694,12 +694,19 @@ type fakeSessionLister struct {
 	err      error
 }
 
-func (f *fakeSessionLister) List(ctx context.Context) ([]SessionContext, error) {
-	if f.err != nil {
-		return nil, f.err
+func (f *fakeSessionLister) Save(ctx context.Context, s SessionContext) error { return f.err }
+func (f *fakeSessionLister) Get(ctx context.Context, id string) (*SessionContext, error) {
+	for i := range f.sessions {
+		if f.sessions[i].ID == id {
+			return &f.sessions[i], nil
+		}
 	}
-	return f.sessions, nil
+	return nil, f.err
 }
+func (f *fakeSessionLister) GetByChannel(ctx context.Context, platform, channelID string) ([]SessionContext, error) {
+	return f.sessions, f.err
+}
+func (f *fakeSessionLister) Close() error { return nil }
 
 func TestRouteSessionsEmpty(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
