@@ -15,7 +15,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // Message is an inbound message from a gateway connection.
@@ -47,26 +46,6 @@ type Gateway interface {
 // structurally.
 type StatusReader interface {
 	StatusCounts(ctx context.Context) (map[string]int, error)
-}
-
-// SessionLister is the read surface /sessions and /resume need.
-// The daemon supplies its session store, which satisfies this structurally.
-type SessionLister interface {
-	List(ctx context.Context) ([]SessionContext, error)
-}
-
-// AgentInfo carries one row for /agents.
-type AgentInfo struct {
-	ID       int64
-	Title    string
-	Status   string
-	Identity string
-}
-
-// AgentReader is the read surface /agents needs. The daemon supplies
-// its store, which satisfies this structurally.
-type AgentReader interface {
-	AgentList(ctx context.Context) ([]AgentInfo, error)
 }
 
 // LLMResponder routes a message to the LLM and returns the reply. When
@@ -161,18 +140,19 @@ type Router struct {
 	// that can render partial output (see RouteStream) show the reply as
 	// it generates; when nil, everything falls back to LLM.
 	LLMStream LLMStreamResponder
+	// Personas is the persona registry for /personality. When nil, the
+	// command returns "not configured".
+	Personas *PersonaRegistry
+	// ModelPersist persists the active model globally when --global is
+	// passed to /model. When nil, --global is a no-op acknowledged to
+	// the user.
+	ModelPersist func(ctx context.Context, modelRef string) error
 	// Identity is the archie identity this router belongs to (empty in
 	// single-identity deployments). Propagated into SpawnRequest and
 	// used to scope /approve and /cancel authorization  --  a task
 	// spawned under one identity cannot be controlled from another's
 	// chat session.
-	Identity string
-	// Sessions supports /sessions and /resume. When nil those commands
-	// return "not configured".
-	Sessions SessionLister
-	// Agents supports /agents. When nil the command returns
-	// "not configured".
-	Agents      AgentReader
+	Identity    string
 	gatewayName string
 }
 
@@ -187,27 +167,21 @@ func NewRouter(store StatusReader, llm LLMResponder, gatewayName string) *Router
 // else goes to the LLM responder.
 func (r *Router) Route(ctx context.Context, msg Message) (string, error) {
 	text := strings.TrimSpace(msg.Text)
-	cmd, arg := parseCmd(text, r.gatewayName)
+	cmd, _ := parseCmd(text, r.gatewayName)
 
 	switch cmd {
 	case "/status":
 		return r.handleStatus(ctx)
 	case "/model":
-		return r.handleModel(ctx, arg)
+		rest := restAfter(text, cmd, r.gatewayName)
+		return r.handleModel(ctx, rest)
+	case "/personality":
+		rest := restAfter(text, cmd, r.gatewayName)
+		return r.handlePersonality(ctx, rest)
 	case "/spawn":
 		// Title is everything after "/spawn"  --  keep the multi-word text.
 		rest := restAfter(text, cmd, r.gatewayName)
 		return r.handleSpawn(ctx, rest)
-	case "/whoami":
-		return r.handleWhoami()
-	case "/profile":
-		return r.handleProfile()
-	case "/sessions":
-		return r.handleSessions(ctx)
-	case "/resume":
-		return r.handleResume(ctx, restAfter(text, cmd, r.gatewayName))
-	case "/agents":
-		return r.handleAgents(ctx)
 	case "/approve":
 		// Reserved for dangerous-command approval (archie-core-alm.6).
 		// Telegram hides it from its menu/help; other gateways keep it
@@ -247,7 +221,7 @@ func (r *Router) RouteStream(ctx context.Context, msg Message, onDelta func(stri
 	return r.LLMStream(ctx, msg, onDelta)
 }
 
-var localCommands = []string{"/status", "/model", "/spawn", "/whoami", "/profile", "/sessions", "/resume", "/agents", "/approve", "/cancel"}
+var localCommands = []string{"/status", "/model", "/spawn", "/approve", "/cancel", "/personality"}
 
 // LocalCommands returns the command names Route answers from local state.
 // Gateways use this to verify that their published command surfaces match
@@ -281,20 +255,73 @@ func parseCmd(text, gatewayName string) (cmd, arg string) {
 	return raw, ""
 }
 
-func (r *Router) handleModel(ctx context.Context, arg string) (string, error) {
+// modelArgs holds the parsed flags from a /model command rest text.
+type modelArgs struct {
+	Model    string
+	Provider string
+	Global   bool
+	Session  bool
+	Refresh  bool
+}
+
+// parseModelArgs extracts flags from rest-text after /model. Flags are
+// stripped; whatever remains (after the command token) is the model ref.
+func parseModelArgs(rest string) modelArgs {
+	fields := strings.Fields(rest)
+	ma := modelArgs{}
+	var modelParts []string
+	for _, f := range fields {
+		switch {
+		case f == "--global":
+			ma.Global = true
+		case f == "--session":
+			ma.Session = true
+		case f == "--refresh":
+			ma.Refresh = true
+		case strings.HasPrefix(f, "--provider"):
+			// Accept --provider=name and --provider name forms.
+			if after, ok := strings.CutPrefix(f, "--provider="); ok {
+				ma.Provider = after
+			} else if after, ok := strings.CutPrefix(f, "--provider"); ok && after == "" {
+				// next field is the provider value; parseModelArgs can't
+				// look ahead, so the caller (Telegram) will re-parse with
+				// full field context. The router's plain-text handler
+				// treats --provider as a flag without value.
+				ma.Provider = ""
+			} else {
+				ma.Provider = after
+			}
+		default:
+			modelParts = append(modelParts, f)
+		}
+	}
+	ma.Model = strings.Join(modelParts, " ")
+	return ma
+}
+
+func (r *Router) handleModel(ctx context.Context, rest string) (string, error) {
 	if r.Models == nil {
 		return "Model switching is not configured.", nil
 	}
-	if arg == "" {
+	ma := parseModelArgs(rest)
+
+	// --refresh: return the current active model (no catalog refresh in
+	// the plain-text path; Telegram handles this separately).
+	if ma.Refresh {
+		return fmt.Sprintf("Active model: %s.", r.Models.ActiveModel()), nil
+	}
+
+	// No model ref and no flags: list available models.
+	if ma.Model == "" && ma.Provider == "" {
 		models := r.Models.Models()
 		if manager, ok := r.Models.(ProviderModelManager); ok {
 			models = manager.ModelsForProvider(manager.ActiveProvider())
 		}
 		if len(models) == 0 {
-			return "No models configured.\nUsage: /model <provider/model>", nil
+			return "No models configured.\nUsage: /model [model] [--provider name] [--global|--session] [--refresh]", nil
 		}
 		var b strings.Builder
-		b.WriteString("Usage: /model <provider/model>\nAvailable models:\n")
+		b.WriteString("Usage: /model [model] [--provider name] [--global|--session] [--refresh]\nAvailable models:\n")
 		active := r.Models.ActiveModel()
 		for _, m := range models {
 			if m == active {
@@ -305,10 +332,61 @@ func (r *Router) handleModel(ctx context.Context, arg string) (string, error) {
 		}
 		return b.String(), nil
 	}
-	if err := r.Models.SetActiveModel(ctx, arg); err != nil {
-		return fmt.Sprintf("Cannot switch: %v", err), nil
+
+	// --provider: switch provider first.
+	if ma.Provider != "" {
+		manager, ok := r.Models.(ProviderModelManager)
+		if !ok {
+			return "Provider switching is not configured.", nil
+		}
+		if err := manager.SetActiveProvider(ctx, ma.Provider); err != nil {
+			return fmt.Sprintf("Cannot switch provider: %v", err), nil
+		}
 	}
-	return fmt.Sprintf("Active model set to %s.", arg), nil
+
+	// Model switch.
+	if ma.Model != "" {
+		if err := r.Models.SetActiveModel(ctx, ma.Model); err != nil {
+			return fmt.Sprintf("Cannot switch: %v", err), nil
+		}
+	}
+
+	active := r.Models.ActiveModel()
+	msg := fmt.Sprintf("Active model set to %s.", active)
+
+	// Persist if --global and a model was selected.
+	if ma.Global && ma.Model != "" {
+		if r.ModelPersist != nil {
+			if err := r.ModelPersist(ctx, active); err != nil {
+				return fmt.Sprintf("Model switched to %s but persistence failed: %v", active, err), nil
+			}
+		} else {
+			msg += " (global persistence is not configured)"
+		}
+	}
+	return msg, nil
+}
+
+func (r *Router) handlePersonality(ctx context.Context, rest string) (string, error) {
+	if r.Personas == nil {
+		return "Personality switching is not configured.", nil
+	}
+	if rest == "" {
+		names := r.Personas.List()
+		if len(names) == 0 {
+			return "No personalities configured.", nil
+		}
+		var b strings.Builder
+		b.WriteString("Usage: /personality <name>\nAvailable personalities:\n")
+		for _, name := range names {
+			b.WriteString("  " + name + "\n")
+		}
+		return b.String(), nil
+	}
+	if !r.Personas.SetActive("", rest) {
+		return fmt.Sprintf("Unknown personality %q. Use /personality to list available personalities.", rest), nil
+	}
+	return fmt.Sprintf("Active personality set to %q.", rest), nil
 }
 
 // restAfter returns the text after the command token, stripping the
@@ -447,153 +525,6 @@ func (r *Router) handleStatus(ctx context.Context) (string, error) {
 			fmt.Fprintf(&b, "\nProvider: %s\n", manager.ActiveProvider())
 		}
 		fmt.Fprintf(&b, "Model: %s\n", r.Models.ActiveModel())
-	}
-	return strings.TrimSpace(b.String()), nil
-}
-
-// ── /whoami ───────────────────────────────────────────────────────
-
-func (r *Router) handleWhoami() (string, error) {
-	var b strings.Builder
-	b.WriteString("You are talking to Archie")
-	if r.Identity != "" {
-		fmt.Fprintf(&b, " (%s)", r.Identity)
-	}
-	b.WriteString(".\n")
-
-	if r.Models != nil {
-		if manager, ok := r.Models.(ProviderModelManager); ok {
-			fmt.Fprintf(&b, "Provider: %s\n", manager.ActiveProvider())
-		}
-		fmt.Fprintf(&b, "Model: %s\n", r.Models.ActiveModel())
-	}
-	return strings.TrimSpace(b.String()), nil
-}
-
-// ── /profile ──────────────────────────────────────────────────────
-
-func (r *Router) handleProfile() (string, error) {
-	var b strings.Builder
-	fmt.Fprintf(&b, "*Archie profile*\n")
-	if r.Identity != "" {
-		fmt.Fprintf(&b, "Identity: `%s`\n", r.Identity)
-	} else {
-		b.WriteString("Identity: _(not configured)_\n")
-	}
-
-	if r.Models == nil {
-		return strings.TrimSpace(b.String()), nil
-	}
-
-	if manager, ok := r.Models.(ProviderModelManager); ok {
-		fmt.Fprintf(&b, "Provider: `%s`\n", manager.ActiveProvider())
-	}
-	fmt.Fprintf(&b, "Model: `%s`\n", r.Models.ActiveModel())
-
-	models := r.Models.Models()
-	if manager, ok := r.Models.(ProviderModelManager); ok {
-		models = manager.ModelsForProvider(manager.ActiveProvider())
-	}
-	if len(models) == 0 {
-		return strings.TrimSpace(b.String()), nil
-	}
-
-	b.WriteString("Available models:\n")
-	active := r.Models.ActiveModel()
-	for _, m := range models {
-		if m == active {
-			fmt.Fprintf(&b, "  `%s` _(active)_\n", m)
-		} else {
-			fmt.Fprintf(&b, "  `%s`\n", m)
-		}
-	}
-	return strings.TrimSpace(b.String()), nil
-}
-
-// ── /sessions ─────────────────────────────────────────────────────
-
-func (r *Router) handleSessions(ctx context.Context) (string, error) {
-	if r.Sessions == nil {
-		return "Session listing is not configured.", nil
-	}
-	sessions, err := r.Sessions.List(ctx)
-	if err != nil {
-		return "", fmt.Errorf("sessions: %w", err)
-	}
-	if len(sessions) == 0 {
-		return "No sessions yet.", nil
-	}
-	var b strings.Builder
-	b.WriteString("*Sessions*\n")
-	for _, sc := range sessions {
-		ago := time.Since(sc.LastActiveAt).Truncate(time.Second)
-		fmt.Fprintf(&b, "`%s`\n  last active %s ago", sc.SessionID, ago)
-		if sc.Source.ThreadID != "" {
-			fmt.Fprintf(&b, " (thread %s)", sc.Source.ThreadID)
-		}
-		b.WriteByte('\n')
-	}
-	return strings.TrimSpace(b.String()), nil
-}
-
-// ── /resume ───────────────────────────────────────────────────────
-
-func (r *Router) handleResume(ctx context.Context, name string) (string, error) {
-	if r.Sessions == nil {
-		return "Session resume is not configured.", nil
-	}
-	if name == "" {
-		return "Usage: /resume <session-id or name prefix>", nil
-	}
-	sessions, err := r.Sessions.List(ctx)
-	if err != nil {
-		return "", fmt.Errorf("resume: %w", err)
-	}
-	// Match by exact session ID or prefix.
-	var matches []SessionContext
-	for _, sc := range sessions {
-		if sc.SessionID == name || strings.HasPrefix(sc.SessionID, name) {
-			matches = append(matches, sc)
-		}
-	}
-	if len(matches) == 0 {
-		return fmt.Sprintf("No session matching %q found.", name), nil
-	}
-	if len(matches) > 1 {
-		var b strings.Builder
-		b.WriteString("Multiple sessions match:\n")
-		for _, sc := range matches {
-			fmt.Fprintf(&b, "  `%s`\n", sc.SessionID)
-		}
-		b.WriteString("Use the full session ID to resume a specific one.")
-		return b.String(), nil
-	}
-	sc := matches[0]
-	return fmt.Sprintf("Resumed session `%s` (last active %s ago). Send a message to continue.",
-		sc.SessionID, time.Since(sc.LastActiveAt).Truncate(time.Second)), nil
-}
-
-// ── /agents ───────────────────────────────────────────────────────
-
-func (r *Router) handleAgents(ctx context.Context) (string, error) {
-	if r.Agents == nil {
-		return "Agent listing is not configured.", nil
-	}
-	agents, err := r.Agents.AgentList(ctx)
-	if err != nil {
-		return "", fmt.Errorf("agents: %w", err)
-	}
-	if len(agents) == 0 {
-		return "No active agents or running tasks.", nil
-	}
-	var b strings.Builder
-	b.WriteString("*Active agents*\n")
-	for _, a := range agents {
-		fmt.Fprintf(&b, "`%d` %s", a.ID, a.Title)
-		if a.Identity != "" {
-			fmt.Fprintf(&b, " _(%s)_", a.Identity)
-		}
-		fmt.Fprintf(&b, "  \nStatus: %s\n", a.Status)
 	}
 	return strings.TrimSpace(b.String()), nil
 }

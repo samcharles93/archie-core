@@ -381,6 +381,8 @@ func (g *Gateway) defaultHandler(router *gateway.Router) bot.HandlerFunc {
 				g.handleProviderCallback(ctx, b, update, router)
 			case strings.HasPrefix(update.CallbackQuery.Data, modelCallbackPrefix):
 				g.handleModelCallback(ctx, b, update, router)
+			case strings.HasPrefix(update.CallbackQuery.Data, personalityCallbackPrefix):
+				g.handlePersonalityCallback(ctx, b, update, router)
 			case strings.HasPrefix(update.CallbackQuery.Data, updateCallbackPrefix):
 				g.handleUpdateCallback(ctx, b, update)
 			}
@@ -395,12 +397,18 @@ func (g *Gateway) defaultHandler(router *gateway.Router) bot.HandlerFunc {
 			g.sendModelSelector(ctx, b, msg, router)
 			return
 		}
+		if isModelCommand(msg.Text) {
+			g.handleModelCommand(ctx, b, msg, router)
+			return
+		}
 		if isProviderSelectorRequest(msg.Text) {
 			g.sendProviderSelector(ctx, b, msg, router)
 			return
 		}
-
-		// An LLM turn takes many seconds. Stream it into a draft so the
+		if isPersonalityRequest(msg.Text) {
+			g.handlePersonalityCommand(ctx, b, msg, router)
+			return
+		}
 		// reply appears as it is written; the typing indicator covers the
 		// gap before the first token and any non-streaming path.
 		stopTyping := g.startTyping(ctx, b, msg.Chat.ID, msg.MessageThreadID)

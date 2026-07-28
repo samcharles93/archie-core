@@ -23,6 +23,151 @@ func isModelSelectorRequest(text string) bool {
 	return command == "/model"
 }
 
+// isModelCommand checks whether text is a /model command, with or without
+// arguments. When the user provides a model ref or flags, the inline
+// selector is skipped and the command is handled directly.
+func isModelCommand(text string) bool {
+	fields := strings.Fields(text)
+	if len(fields) == 0 {
+		return false
+	}
+	command, _, _ := strings.Cut(fields[0], "@")
+	return command == "/model"
+}
+
+// parseModelRest extracts model, provider, and scope flags from the text
+// after the /model command token. It handles --provider=<name>,
+// --provider <name>, --global, --session, and --refresh.
+func parseModelRest(rest string) (model, provider string, global, session, refresh bool) {
+	fields := strings.Fields(rest)
+	var modelParts []string
+	for i := 0; i < len(fields); i++ {
+		f := fields[i]
+		switch {
+		case f == "--global":
+			global = true
+		case f == "--session":
+			session = true
+		case f == "--refresh":
+			refresh = true
+		case strings.HasPrefix(f, "--provider"):
+			if after, ok := strings.CutPrefix(f, "--provider="); ok && after != "" {
+				provider = after
+			} else if after == "--provider" {
+				// Look ahead for the provider value.
+				if i+1 < len(fields) && !strings.HasPrefix(fields[i+1], "--") {
+					i++
+					provider = strings.TrimPrefix(fields[i], "--provider=")
+					if provider == fields[i] {
+						provider = fields[i]
+					}
+				}
+			} else {
+				provider = after
+			}
+		default:
+			modelParts = append(modelParts, f)
+		}
+	}
+	model = strings.Join(modelParts, " ")
+	return
+}
+
+// handleModelCommand handles /model with arguments, performing direct
+// model/provider switching, scope selection, and model refresh.
+func (g *Gateway) handleModelCommand(
+	ctx context.Context,
+	b *bot.Bot,
+	msg *models.Message,
+	router *gateway.Router,
+) {
+	if router.Models == nil {
+		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, "Model switching is not configured.")
+		return
+	}
+
+	text := strings.TrimSpace(msg.Text)
+	fields := strings.Fields(text)
+	// fields[0] is "/model" (possibly with @bot mention); rest is everything
+	// after it.
+	rest := ""
+	if len(fields) > 1 {
+		// Reconstruct rest by joining everything after the command token.
+		// We can't use strings.Join because fields splits by whitespace.
+		cmdToken := fields[0]
+		if _, after, ok := strings.Cut(text, cmdToken); ok {
+			rest = strings.TrimSpace(after)
+		}
+	}
+
+	model, provider, global, _, refresh := parseModelRest(rest)
+
+	// --refresh: no-op for now (catalog is loaded at startup). Show current.
+	if refresh {
+		active := router.Models.ActiveModel()
+		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
+			fmt.Sprintf("Active model: %s.", modelDisplayName(active, "")))
+		return
+	}
+
+	// --provider without a specific model: switch provider only.
+	if provider != "" && model == "" {
+		manager, ok := router.Models.(gateway.ProviderModelManager)
+		if !ok {
+			g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, "Provider switching is not configured.")
+			return
+		}
+		if err := manager.SetActiveProvider(ctx, provider); err != nil {
+			g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
+				fmt.Sprintf("Cannot switch provider: %v", err))
+			return
+		}
+		active := router.Models.ActiveModel()
+		p, _, _ := strings.Cut(active, "/")
+		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
+			fmt.Sprintf("Provider changed to %s.", providerDisplayName(p)))
+		return
+	}
+
+	// --provider with a model: set provider, then model.
+	if provider != "" && model != "" {
+		if manager, ok := router.Models.(gateway.ProviderModelManager); ok {
+			_ = manager.SetActiveProvider(ctx, provider)
+		}
+	}
+
+	// Switch model.
+	if model != "" {
+		if err := router.Models.SetActiveModel(ctx, model); err != nil {
+			g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
+				fmt.Sprintf("Cannot switch: %v", err))
+			return
+		}
+		active := router.Models.ActiveModel()
+		p, _, _ := strings.Cut(active, "/")
+		result := fmt.Sprintf("Model changed to %s.", modelDisplayName(active, p))
+
+		if global {
+			if router.ModelPersist != nil {
+				if err := router.ModelPersist(ctx, active); err != nil {
+					g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
+						fmt.Sprintf("Model switched to %s but persistence failed: %v",
+							modelDisplayName(active, p), err))
+					return
+				}
+				result += " (persisted globally)"
+			} else {
+				result += " (global persistence is not configured)"
+			}
+		}
+		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, result)
+		return
+	}
+
+	// Neither model nor provider: delegate to inline selector.
+	g.sendModelSelector(ctx, b, msg, router)
+}
+
 func (g *Gateway) sendModelSelector(
 	ctx context.Context,
 	b *bot.Bot,

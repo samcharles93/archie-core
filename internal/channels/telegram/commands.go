@@ -28,7 +28,8 @@ var gatewayCommandSpecs = []commandSpec{
 	{Command: "version", Description: "Show installed Archie versions", Usage: "/version"},
 	{Command: "update", Description: "Check for Archie updates", Usage: "/update"},
 	{Command: "provider", Description: "Choose the provider used for chat", Usage: "/provider"},
-	{Command: "model", Description: "Show the model selector or switch directly", Usage: "/model [provider/model]"},
+	{Command: "model", Description: "Show the model selector or switch directly", Usage: "/model [model] [--provider name] [--global|--session] [--refresh]"},
+	{Command: "personality", Description: "Set the conversation personality", Usage: "/personality [name]"},
 	{Command: "spawn", Description: "Create a tracked task", Usage: "/spawn [identity=name] [repo=owner/name] [workflow=name] <title>"},
 	{Command: "cancel", Description: "Cancel a queued or waiting task", Usage: "/cancel [identity=name] <task-id>"},
 	{Command: "goal", Description: "Manage standing goals", Usage: "/goal [text|draft|show|pause|resume|clear|status|wait|unwait]"},
@@ -40,7 +41,7 @@ var gatewayCommandSpecs = []commandSpec{
 	{Command: "help", Description: "See what Archie can do", Usage: "/help"},
 }
 
-var telegramOnlyCommands = []string{"provider", "restart", "help", "version", "update"}
+var telegramOnlyCommands = []string{"provider", "restart", "help", "version", "update", "personality"}
 
 var gatewayCommands = func() []models.BotCommand {
 	commands := make([]models.BotCommand, 0, len(gatewayCommandSpecs))
