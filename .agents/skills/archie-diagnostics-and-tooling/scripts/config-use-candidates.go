@@ -269,8 +269,8 @@ func excludedDirectory(relative, name string) bool {
 	case ".git", ".claude", ".references", "node_modules", "vendor", ".gotmp":
 		return true
 	}
-	return strings.HasPrefix(relative, "docs-2/.vitepress/cache") ||
-		strings.HasPrefix(relative, "docs-2/.vitepress/dist")
+	return strings.HasPrefix(relative, "docs/.vitepress/cache") ||
+		strings.HasPrefix(relative, "docs/.vitepress/dist")
 }
 
 func fail(code int, format string, arguments ...any) {

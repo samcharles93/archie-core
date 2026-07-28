@@ -25,9 +25,9 @@ installed version.
   `archie-config-and-flags`.
 - Do not use it to approve generated changes, dependency updates, cleanup, or
   gate changes. Load `archie-change-control`.
-- Do not use `docs-2/README.md` as onboarding documentation. It describes Tau,
+- Do not use `docs/README.md` as onboarding documentation. It describes Tau,
   and VitePress excludes it through `srcExclude` in
-  `docs-2/.vitepress/config.mts`.
+  `docs/.vitepress/config.mts`.
 
 ## Name the surfaces
 
@@ -38,7 +38,7 @@ Use these terms consistently:
 | Repository root | The directory containing `go.mod`, `Taskfile.yml`, and `CLAUDE.md`. |
 | Runtime module | The root Go module, `github.com/samcharles93/archie-core`. It owns `cmd/`, `domain/`, and `internal/`. |
 | Tools module | The independent nested Go module under `tools/`. It currently owns `tools/docsgen`. |
-| Docs site | The pnpm/VitePress project under `docs-2/`. |
+| Docs site | The pnpm/VitePress project under `docs/`. |
 | Cold cache | A dependency cache that does not yet contain the required modules or packages; filling it requires network access. |
 | Restricted sandbox | An environment that may allow file reads but deny loopback listeners, the container engine, or writes to default caches and temporary directories. |
 | Host run | A run on an environment that permits the listeners and process features used by the tests. |
@@ -255,15 +255,15 @@ go -C tools run ./docsgen \
   -repo-root .. \
   -out /tmp/archie-core-contracts.json
 cmp --silent \
-  docs-2/data/generated/contracts.json \
+  docs/data/generated/contracts.json \
   /tmp/archie-core-contracts.json
 ```
 
 The 2026-07-28 run wrote 10 schemas, the comparison passed, and
 `go -C tools test ./... -count=1` passed. The planned `docsgen all` and
 `docsgen check` commands described in
-`docs/prds/architecture/generated-documentation.md` do **not** exist yet.
-The checkout's `docs-2/data/generated/contracts.json` exists but is untracked
+`docs/architecture/generated-documentation.md` do **not** exist yet.
+The checkout's `docs/data/generated/contracts.json` exists but is untracked
 as of this snapshot. The comparison proves local generator parity, not
 version-controlled drift protection.
 
@@ -272,12 +272,12 @@ version-controlled drift protection.
 Treat dependency installation and site compilation as two separate gates:
 
 ```bash
-pnpm --dir docs-2 install --frozen-lockfile
-pnpm --dir docs-2 build
+pnpm --dir docs install --frozen-lockfile
+pnpm --dir docs build
 ```
 
 The install needs registry access on a cold pnpm store. The build writes
-`docs-2/.vitepress/dist`. GitHub Pages CI uses pnpm major 10, Node `latest`,
+`docs/.vitepress/dist`. GitHub Pages CI uses pnpm major 10, Node `latest`,
 the frozen lockfile, then `pnpm build`; it does not run Go tests or docsgen.
 
 The docs build could not be completed in the restricted 2026-07-28 session
@@ -285,14 +285,14 @@ because missing packages required npm registry access and DNS returned
 `EAI_AGAIN`. Record that as an environment result, not a passing or failing
 site build.
 
-Do not trust the checked-in `docs-2/node_modules` shape. It contains 237
+Do not trust the checked-in `docs/node_modules` shape. It contains 237
 tracked symlink entries as of the snapshot, introduced by commit `308c199`.
 Detect the condition:
 
 ```bash
-git ls-files -s 'docs-2/node_modules/**' \
+git ls-files -s 'docs/node_modules/**' \
   | awk '$1 == "120000" {count++} END {print count+0}'
-git status --short -- docs-2
+git status --short -- docs
 ```
 
 Do not stage, normalize, or mass-delete that tree as incidental setup. Route
@@ -374,7 +374,7 @@ required acceptance set.
 | Build | `go build -o /tmp/archie-core-archied ./cmd/archied` and the analogous `archie-agent` command | Both passed on 2026-07-28. |
 | Tools tests | `go -C tools test ./... -count=1` | Passed on 2026-07-28. |
 | Local generated contract parity | Temporary docsgen output plus `cmp --silent` | Passed for 10 schemas on 2026-07-28; the checkout output is untracked. |
-| Docs install/build | `pnpm --dir docs-2 install --frozen-lockfile` then `pnpm --dir docs-2 build` | Blocked by restricted network; unknown, not failed. |
+| Docs install/build | `pnpm --dir docs install --frozen-lockfile` then `pnpm --dir docs build` | Blocked by restricted network; unknown, not failed. |
 | Container build | `task docker-build` | Not verified in the restricted container environment. |
 | Repository gate | `task check` | Currently non-green because the root suite reaches the genuine skillscript failure; it may also rewrite files first. |
 
@@ -400,8 +400,8 @@ failure.
 ## Provenance and maintenance
 
 Ground this skill in `CLAUDE.md`, `Taskfile.yml`, `.golangci.yml`, `go.mod`,
-`tools/go.mod`, `tools/docsgen/`, `docs-2/package.json`,
-`docs-2/pnpm-lock.yaml`, `.github/workflows/docs.yml`, both Dockerfiles,
+`tools/go.mod`, `tools/docsgen/`, `docs/package.json`,
+`docs/pnpm-lock.yaml`, `.github/workflows/docs.yml`, both Dockerfiles,
 `docker-compose.yml`, `.gitea/workflows/deploy.yml`, `.gitignore`,
 `internal/worktree/`, and the tests named above.
 
@@ -412,13 +412,13 @@ Re-verify Task coverage:
 `sed -n '1,180p' Taskfile.yml; rg -n 'task: lint|go test.*race|go -C tools|docsgen|pnpm' Taskfile.yml`
 
 Re-verify docs and CI:
-`sed -n '1,120p' docs-2/package.json; sed -n '1,120p' .github/workflows/docs.yml; go -C tools test ./... -count=1`
+`sed -n '1,120p' docs/package.json; sed -n '1,120p' .github/workflows/docs.yml; go -C tools test ./... -count=1`
 
 Re-verify container inputs:
 `test -e .dockerignore || echo ABSENT; rg -n '^(FROM|[[:space:]]*image:)|@latest|:latest' Dockerfile Dockerfile.archied docker-compose.yml .gitea/workflows/deploy.yml`
 
 Re-verify artifact counts:
-`git ls-files 'docs-2/node_modules/**' | wc -l; git ls-files '.gotmp/**' | wc -l`
+`git ls-files 'docs/node_modules/**' | wc -l; git ls-files '.gotmp/**' | wc -l`
 
 Re-verify current failures:
 `go test ./internal/skillscript -run '^TestRunWrapsExternalCommand$' -count=1 -v; golangci-lint run ./...`

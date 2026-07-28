@@ -133,7 +133,7 @@ Start at these verified anchors:
 | Chat and channels | `internal/gateway/`, `internal/channels/` |
 | Configuration | `internal/config/`, `config.example.toml`, `config.docker.toml` |
 | Production/deploy shape | `cmd/archied/main.go`, `docker-compose.yml`, `.gitea/workflows/deploy.yml` |
-| Target map | `docs/prds/01-project-management.md` and linked `docs/prds/architecture/*.md` |
+| Target map | `docs/prds/01-project-management.md` and linked `docs/architecture/*.md` |
 
 Do not assume this table is complete after code moves. Re-find anchors with
 `go list` and `gopls`.
@@ -156,7 +156,7 @@ Map internal dependency direction:
 ```
 
 Treat imports as dependency evidence, not ownership proof. Compare the result
-with `docs/prds/architecture/dependencies-and-contracts.md` only after
+with `docs/architecture/dependencies-and-contracts.md` only after
 distinguishing current from target.
 
 ### Resolve symbols with gopls

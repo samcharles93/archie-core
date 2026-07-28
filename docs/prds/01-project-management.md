@@ -35,23 +35,23 @@ The words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative.
 
 | Scope                                                                                         | Authoritative document                                                                   |
 | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Repository layout, domains, composition, deployments, and optional material                   | [architecture/organisation.md](architecture/organisation.md)                             |
-| Dependency direction, domain contracts, infrastructure, commands, events, and wire contracts  | [architecture/dependencies-and-contracts.md](architecture/dependencies-and-contracts.md) |
-| External configuration, runtime settings, and dissolution of `internal/config`                | [architecture/configuration.md](architecture/configuration.md)                           |
-| Persistent actor identity, ownership, lifecycle, and attribution                              | [architecture/identity.md](architecture/identity.md)                                     |
-| Agent definitions, workflows, workflow executions, tools, and worker boundaries               | [architecture/agent-system.md](architecture/agent-system.md)                             |
-| Personal-assistant interactions, messaging channels, and optional promotion into durable work | [architecture/messaging-and-work-intake.md](architecture/messaging-and-work-intake.md)   |
-| Shared policy evaluation and domain-owned policy semantics                                    | [architecture/policy.md](architecture/policy.md)                                         |
-| Safe source/configuration changes, health supervision, and recovery                           | [architecture/safe-change-and-recovery.md](architecture/safe-change-and-recovery.md)     |
-| Plugin framework, plugin implementations, and extension isolation                             | [architecture/plugins-and-extensions.md](architecture/plugins-and-extensions.md)         |
-| Generated references, deprecations, and changelog generation                                  | [architecture/generated-documentation.md](architecture/generated-documentation.md)       |
-| Remaining package destinations, data migrations, runtime cutover, and completion criteria     | [architecture/migration-decisions.md](architecture/migration-decisions.md)               |
-| Domain/feature research, design interview, and required handoff                               | [architecture/package-review.md](architecture/package-review.md)                         |
+| Repository layout, domains, composition, deployments, and optional material                   | [architecture/organisation.md](/architecture/organisation)                             |
+| Dependency direction, domain contracts, infrastructure, commands, events, and wire contracts  | [architecture/dependencies-and-contracts.md](/architecture/dependencies-and-contracts) |
+| External configuration, runtime settings, and dissolution of `internal/config`                | [architecture/configuration.md](/architecture/configuration)                           |
+| Persistent actor identity, ownership, lifecycle, and attribution                              | [architecture/identity.md](/architecture/identity)                                     |
+| Agent definitions, workflows, workflow executions, tools, and worker boundaries               | [architecture/agent-system.md](/architecture/agent-system)                             |
+| Personal-assistant interactions, messaging channels, and optional promotion into durable work | [architecture/messaging-and-work-intake.md](/architecture/messaging-and-work-intake)   |
+| Shared policy evaluation and domain-owned policy semantics                                    | [architecture/policy.md](/architecture/policy)                                         |
+| Safe source/configuration changes, health supervision, and recovery                           | [architecture/safe-change-and-recovery.md](/architecture/safe-change-and-recovery)     |
+| Plugin framework, plugin implementations, and extension isolation                             | [architecture/plugins-and-extensions.md](/architecture/plugins-and-extensions)         |
+| Generated references, deprecations, and changelog generation                                  | [architecture/generated-documentation.md](/architecture/generated-documentation)       |
+| Remaining package destinations, data migrations, runtime cutover, and completion criteria     | [architecture/migration-decisions.md](/architecture/migration-decisions)               |
+| Domain/feature research, design interview, and required handoff                               | [architecture/package-review.md](/architecture/package-review)                         |
 
 ## Deferred decisions
 
 The remaining package-placement, data-migration, shared-mechanics, process-
 boundary, and cutover decisions are maintained in
-[architecture/migration-decisions.md](architecture/migration-decisions.md).
+[architecture/migration-decisions.md](/architecture/migration-decisions).
 
 Each decision is made in its focused document after code-grounded review.

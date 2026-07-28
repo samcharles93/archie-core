@@ -26,7 +26,7 @@ Use these labels exactly:
 | --- | --- | --- |
 | **CURRENT** | Behavior present in live code and production composition as of 2026-07-28. | Code, tests, and `cmd/archied/main.go` wiring |
 | **APPROVED TARGET** | Direction an implementation must approach, but which may not exist on disk. | `docs/prds/01-project-management.md` and documents whose status says approved |
-| **OPEN** | A migration or API decision no implementer may invent locally. | `docs/prds/architecture/migration-decisions.md` and documents marked in progress or under design |
+| **OPEN** | A migration or API decision no implementer may invent locally. | `docs/architecture/migration-decisions.md` and documents marked in progress or under design |
 
 > **Do not implement target prose as though it describes current code.**
 > Before treating a target package as available, prove that it exists and is
@@ -39,7 +39,7 @@ Resolve apparent disagreement in this order:
 1. Read live code and production composition for CURRENT behavior.
 2. Read `docs/prds/01-project-management.md` for APPROVED TARGET ownership.
 3. Read the focused decision document for the selected behavior.
-4. Read `docs/prds/architecture/migration-decisions.md` for OPEN work.
+4. Read `docs/architecture/migration-decisions.md` for OPEN work.
 5. Stop and use `archie-architecture-planning-campaign` if a required semantic
    decision remains open.
 
@@ -118,7 +118,7 @@ not a small local patch.
 | Generic plugins stay metadata-only | Keep `plugin.Plugin` at `Name()` and `Version()`. Put behavior on a typed capability interface with an owning `Registry` or `Manager`. | CURRENT-enforced rule: `internal/plugin/architecture_test.go`; `ARCHITECTURE.md#plugin-engine-rule-strict` |
 | Capability engines own lifecycle | Give resource-owning engines explicit start/health/stop semantics and failure isolation. Supply narrow registrars/services, never `*daemon.Daemon` or a service locator. | APPROVED rule: `ARCHITECTURE.md#plugin-engine-rule-strict`; reviewers enforce non-mechanical parts |
 | Trust is explicit | Treat trusted operator-installed in-process code, repository code, out-of-process integrations, and container-isolated code as different trust classes. Never call Yaegi or subprocess execution a sandbox. | APPROVED rule: `ARCHITECTURE.md#plugin-engine-rule-strict` |
-| Infrastructure stays replaceable | Keep forge, persistence, workspace, transport, container, and model details behind behavior-owned contracts. Do not leak broker messages, DB rows, SDK types, or config DTOs into domain models. | APPROVED TARGET: `docs/prds/architecture/dependencies-and-contracts.md` |
+| Infrastructure stays replaceable | Keep forge, persistence, workspace, transport, container, and model details behind behavior-owned contracts. Do not leak broker messages, DB rows, SDK types, or config DTOs into domain models. | APPROVED TARGET: `docs/architecture/dependencies-and-contracts.md` |
 | Same-repository execution serializes by default | Preserve the default unless an explicit scheduling policy permits concurrency. | CURRENT: `internal/config/config.go`; `internal/daemon/daemon.go` |
 
 Run the mechanical plugin guard after changing any plugin or `*Engine`
@@ -160,8 +160,8 @@ Enforce:
 7. Reject generic `entities`, `services`, `repositories`, `messages`, or
    `utils` layers that merely group mechanisms.
 
-Sources: `docs/prds/architecture/organisation.md` and
-`docs/prds/architecture/dependencies-and-contracts.md`.
+Sources: `docs/architecture/organisation.md` and
+`docs/architecture/dependencies-and-contracts.md`.
 
 ### Keep source ownership independent of deployment
 
@@ -177,7 +177,7 @@ Do not add a network protocol or duplicate service scaffolding for possible
 future extraction. A transport is an infrastructure implementation of a
 behavior-owned contract, not the owner of the behavior.
 
-Source: `docs/prds/architecture/organisation.md`.
+Source: `docs/architecture/organisation.md`.
 
 ### Separate interaction, admission, assistance, and execution
 
@@ -207,9 +207,9 @@ Do not equate an external issue/message with a WorkflowExecution. Do not let
 Work Intake create one directly. Do not require ordinary conversation or direct
 tool use to become durable workflow-backed work.
 
-Sources: `docs/prds/architecture/migration-decisions.md`,
-`docs/prds/architecture/agent-system.md`, and
-`docs/prds/architecture/messaging-and-work-intake.md`.
+Sources: `docs/architecture/migration-decisions.md`,
+`docs/architecture/agent-system.md`, and
+`docs/architecture/messaging-and-work-intake.md`.
 
 ### Separate identity, Agent, conversation, and memory
 
@@ -230,9 +230,9 @@ Preserve the four fixed target memory scopes:
 Resolve Agent and initiating user before loading memory. Do not use conversation
 branching as a fifth memory scope.
 
-Sources: `docs/prds/architecture/identity.md`,
-`docs/prds/architecture/agent-system.md`, and
-`docs/prds/architecture/migration-decisions.md`.
+Sources: `docs/architecture/identity.md`,
+`docs/architecture/agent-system.md`, and
+`docs/architecture/migration-decisions.md`.
 
 ### Dissolve global runtime configuration
 
@@ -253,7 +253,7 @@ Do not add another unrelated concern to the global config model without an
 explicit compatibility plan and deletion criterion. Use
 `archie-config-and-flags` for the field ledger.
 
-Source: `docs/prds/architecture/configuration.md`.
+Source: `docs/architecture/configuration.md`.
 
 ## Place new behavior deliberately
 
@@ -351,7 +351,7 @@ before architecture work:
 ```bash
 test ! -d internal/domain && echo 'target domain tree is not current'
 sed -n '1,90p' docs/prds/01-project-management.md
-sed -n '1,260p' docs/prds/architecture/migration-decisions.md
+sed -n '1,260p' docs/architecture/migration-decisions.md
 sed -n '1,320p' internal/store/store.go
 sed -n '1,240p' internal/workflow/workflow.go
 sed -n '1,220p' internal/agentexec/protocol.go

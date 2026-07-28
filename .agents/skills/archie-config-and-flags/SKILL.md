@@ -310,7 +310,7 @@ mutable `config.Config`. It passes that aggregate into `daemon.Daemon`,
 `workflow.TaskContext`, and a second worker DTO. Treat this as a current
 load-bearing weakness, not a pattern to copy.
 
-`docs/prds/architecture/configuration.md` is approved as of 2026-07-28:
+`docs/architecture/configuration.md` is approved as of 2026-07-28:
 
 - move file/env/secret/overlay loading to a private
   `internal/infrastructure/configuration` input boundary;
@@ -340,4 +340,4 @@ Re-verify config behavior: `env GOTMPDIR=/tmp GOCACHE=/tmp/archie-config-test-go
 
 Re-verify deployment passthrough: `rg -n 'command:|environment:|config\.toml|config\.docker\.toml|NATS_|TOKEN|API_KEY' docker-compose.yml config.docker.toml config.example.toml Dockerfile Dockerfile.archied`
 
-Re-verify target doctrine: `rg -n 'Ownership|Dissolution|Current configuration migration ledger|Universal change protocol|Completion criteria' docs/prds/architecture/configuration.md`
+Re-verify target doctrine: `rg -n 'Ownership|Dissolution|Current configuration migration ledger|Universal change protocol|Completion criteria' docs/architecture/configuration.md`

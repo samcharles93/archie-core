@@ -180,7 +180,7 @@ When an edge looks wrong:
 
 1. Run `archie-codebase-discovery` on the imported contract.
 2. Identify the concrete production consumer.
-3. Compare the current edge with `docs/prds/architecture/`.
+3. Compare the current edge with `docs/architecture/`.
 4. Route any boundary change through the architecture campaign.
 
 ### Find configuration-consumption candidates
@@ -412,7 +412,7 @@ Ground truth verified on 2026-07-28:
 `Taskfile.yml`, `.golangci.yml`, `go.mod`, `tools/go.mod`,
 `cmd/{archied,archie-agent}/`, `internal/{config,nell,skillscript}/`,
 `.github/workflows/docs.yml`, `.gitea/workflows/deploy.yml`,
-`docker-compose.yml`, `docs-2/package.json`, and `tools/docsgen/`.
+`docker-compose.yml`, `docs/package.json`, and `tools/docsgen/`.
 
 Re-verify scripts: `sh -n .claude/skills/archie-diagnostics-and-tooling/scripts/*.sh && go vet .claude/skills/archie-diagnostics-and-tooling/scripts/source-metrics.go && go vet .claude/skills/archie-diagnostics-and-tooling/scripts/config-use-candidates.go`
 

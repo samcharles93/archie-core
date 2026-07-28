@@ -22,7 +22,7 @@ func main() {
 	repoRoot := flag.String("repo-root", "..", "path to the Archie repository root")
 	out := flag.String(
 		"out",
-		"docs-2/data/generated/contracts.json",
+		"docs/data/generated/contracts.json",
 		"output path relative to the repository root",
 	)
 	flag.Parse()

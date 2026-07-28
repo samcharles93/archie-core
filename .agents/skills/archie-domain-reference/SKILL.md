@@ -51,10 +51,10 @@ settled:
 
 ```bash
 sed -n '1,180p' docs/prds/01-project-management.md
-rg -n '^\*\*Status:\*\*|^## Decisions still required|^## Remaining migration decisions' docs/prds/architecture
+rg -n '^\*\*Status:\*\*|^## Decisions still required|^## Remaining migration decisions' docs/architecture
 ```
 
-`docs/prds/architecture/agent-system.md` is marked current-state investigation
+`docs/architecture/agent-system.md` is marked current-state investigation
 in progress, and `messaging-and-work-intake.md` says foundation decisions are in
 progress. Treat only their constraints confirmed by approved documents or
 `migration-decisions.md` as settled target doctrine. Treat their explicit
@@ -154,7 +154,7 @@ Retain `task` only for:
 Never globally replace `task`. Classify each occurrence first:
 
 ```bash
-rg -n '\b(Task|task|TaskID|task_id)\b' --glob '*.go' --glob '*.md' cmd internal docs/prds/architecture
+rg -n '\b(Task|task|TaskID|task_id)\b' --glob '*.go' --glob '*.md' cmd internal docs/architecture
 ```
 
 ### Interpret the current lifecycle exactly
@@ -371,10 +371,10 @@ these one-line commands before relying on this skill after architecture or
 package changes:
 
 ```bash
-rg -n '^\*\*Status:\*\*|^## (Confirmed|Decisions still required|Remaining migration decisions|Completion criteria)' docs/prds/01-project-management.md docs/prds/architecture/*.md
+rg -n '^\*\*Status:\*\*|^## (Confirmed|Decisions still required|Remaining migration decisions|Completion criteria)' docs/prds/01-project-management.md docs/architecture/*.md
 rg -n '^type (Task|Workflow|Stage|TaskContext|Request|Result|Message|MessageEvent|SessionContext|Event|Plugin|Channel|BasePlatformAdapter)\b' internal
 rg -n 'Status[A-Za-z]+|status[A-Za-z]+|func \(s \*Store\) Transition' internal/store internal/gateway
-rg -n 'AgentID|IdentityID|ParentConversationID|ForkMessageID|WorkflowExecution|StepExecution|accepted work request' docs/prds/architecture
+rg -n 'AgentID|IdentityID|ParentConversationID|ForkMessageID|WorkflowExecution|StepExecution|accepted work request' docs/architecture
 for p in internal/domain internal/eventbus internal/policy internal/infrastructure internal/app; do test -d "$p" && echo "$p CURRENT" || echo "$p TARGET-ONLY"; done
 go test ./internal/plugin -run 'Test(GenericPluginContractRemainsMetadataOnly|EveryEngineInterfaceHasTypedCapabilityAndFamilyOwner)' -count=1
 ```

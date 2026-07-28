@@ -1,4 +1,0 @@
-interface:
-  display_name: "Archie Research Methodology"
-  short_description: "Turn Archie hunches into reproducible evidence"
-  default_prompt: "Use $archie-research-methodology to design a falsifiable Archie experiment and decision record."

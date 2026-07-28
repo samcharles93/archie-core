@@ -1,4 +1,0 @@
-interface:
-  display_name: "Archie Architecture Planning Campaign"
-  short_description: "Plan maintainable Archie architecture before coding"
-  default_prompt: "Use $archie-architecture-planning-campaign to design and gate an Archie architectural change before implementation."

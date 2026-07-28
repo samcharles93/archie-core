@@ -1,6 +1,6 @@
 ---
 name: archie-docs-and-writing
-description: Maintain Archie's documentation of record and write durable architecture decisions, migration plans, parity matrices, incident and dead-end records, feature ownership and deprecation records, operational runbooks, and documentation reviews. Use when deciding where an Archie fact belongs; reconciling code with ARCHITECTURE.md, CLAUDE.md, docs/prds, docs/archive, generated contracts, or the docs-2 VitePress site; changing tools/docsgen; documenting a feature so future maintainers can find its owners, consumers, invariants, superseded paths, deletion gates, evidence, and rollback; or checking documentation authority, drift, links, copied content, and source-artifact hygiene.
+description: Maintain Archie's documentation of record and write durable architecture decisions, migration plans, parity matrices, incident and dead-end records, feature ownership and deprecation records, operational runbooks, and documentation reviews. Use when deciding where an Archie fact belongs; reconciling code with ARCHITECTURE.md, CLAUDE.md, docs/prds, docs/archive, generated contracts, or the docs VitePress site; changing tools/docsgen; documenting a feature so future maintainers can find its owners, consumers, invariants, superseded paths, deletion gates, evidence, and rollback; or checking documentation authority, drift, links, copied content, and source-artifact hygiene.
 ---
 
 # Maintain Archie documentation
@@ -57,18 +57,18 @@ Treat this as a volatile map verified on 2026-07-28:
 | `CLAUDE.md` | Current contributor and safety protocol plus a compact architecture orientation | Verify operational claims against code and `Taskfile.yml`; `AGENTS.md` is a symlink to this file |
 | `ARCHITECTURE.md` | Useful architecture history and partial current overview | Corroborate every inventory/status claim; its “Planned” list is stale for implemented skill support |
 | `docs/prds/01-project-management.md` | Index and approved foundation for the target architecture | Add or change target decisions in the focused document it names |
-| `docs/prds/architecture/*.md` | Focused target decisions, active review procedure, and migration inventory | Read each file's status; distinguish fixed decisions from explicitly remaining decisions |
-| `docs/prds/architecture/migration-decisions.md` | `OPEN` migration inventory constrained by approved decisions | Close a question only after code-grounded review and an approved record |
+| `docs/architecture/*.md` | Focused target decisions, active review procedure, and migration inventory | Read each file's status; distinguish fixed decisions from explicitly remaining decisions |
+| `docs/architecture/migration-decisions.md` | `OPEN` migration inventory constrained by approved decisions | Close a question only after code-grounded review and an approved record |
 | `docs/archive/` | `HISTORICAL` material | Mine rationale and failure evidence; never restore authority from a title such as “Final” |
 | `CHANGELOG.md`, `CHANGELOG.archied.md`, `CHANGELOG.archie.md` | Component release-note index and packaged runtime inputs | Keep gateway and agent-runtime entries separate; `internal/releaseannounce` parses the version headings |
 | `tools/docsgen` | Current, partial generator implementation in the nested `tools` Go module | Treat its flags and tests—not planned PRD commands—as executable truth |
-| `docs-2/data/generated/contracts.json` | Current working-tree `GENERATED` output | Regenerate; never edit by hand; re-check whether it is tracked |
-| `docs-2/` | Staging VitePress site | Do not treat a rendered summary as the architecture record |
+| `docs/data/generated/contracts.json` | Current working-tree `GENERATED` output | Regenerate; never edit by hand; re-check whether it is tracked |
+| `docs/` | Staging VitePress site | Do not treat a rendered summary as the architecture record |
 | `.github/workflows/docs.yml` | Current Pages build/deploy workflow | It builds the site; it does not currently run Go setup, generator tests, or drift checking |
 
 The repository root has no `README.md` or `CONTRIBUTING.md` as of 2026-07-28.
 Record this as an onboarding coverage gap, not permission to invent a new
-authority. `docs-2/README.md` is excluded by VitePress and still contains copied
+authority. `docs/README.md` is excluded by VitePress and still contains copied
 Tau material; it is not a root onboarding guide.
 
 ## Choose one destination
@@ -88,11 +88,11 @@ Use this placement guide:
 | Content | Destination |
 |---|---|
 | Cross-cutting approved architecture index | `docs/prds/01-project-management.md` |
-| Focused domain or requirement decision | The matching `docs/prds/architecture/*.md` file |
-| Unresolved migration question or cutover requirement | `docs/prds/architecture/migration-decisions.md` |
+| Focused domain or requirement decision | The matching `docs/architecture/*.md` file |
+| Unresolved migration question or cutover requirement | `docs/architecture/migration-decisions.md` |
 | Contributor protocol that must load before work | `CLAUDE.md` |
 | Runtime/API/config reference derivable from code | Domain-owned registry/type, then `tools/docsgen` output |
-| User-facing staging site prose | `docs-2/`, linking back to its authority |
+| User-facing staging site prose | `docs/`, linking back to its authority |
 | Shipped release behavior | The matching component changelog; keep `CHANGELOG.md` as the two-component index |
 | Superseded design retained only for context | `docs/archive/`, with historical status |
 | Incident or rejected approach | `archie-failure-archaeology`'s authoritative chronology |
@@ -108,7 +108,7 @@ Run from the repository root:
 rg -n 'ExactTerm|RelatedTerm' --glob '*.go' --glob '*.md' --glob '*.toml' --glob '*.yml'
 rg -n 'type ExactType|func .*ExactMethod|ExactConfigField' cmd internal domain tools
 rg -n 'ExactType|ExactMethod' --glob '*_test.go'
-rg -n 'ExactTerm' docs/prds ARCHITECTURE.md CLAUDE.md docs/archive docs-2
+rg -n 'ExactTerm' docs/prds ARCHITECTURE.md CLAUDE.md docs/archive docs
 ```
 
 Then build a fact ledger:
@@ -198,7 +198,7 @@ release announcer.
 ## Maintain generated contracts
 
 The current implementation is smaller than the approved target in
-`docs/prds/architecture/generated-documentation.md`.
+`docs/architecture/generated-documentation.md`.
 
 ### Current behavior, verified 2026-07-28
 
@@ -208,7 +208,7 @@ The current implementation is smaller than the approved target in
   `asyncapi`, `all`, or `check` subcommands.
 - `currentContractTypes` explicitly publishes three top-level contracts and
   collects their referenced schemas into one JSON object.
-- Its default output is `docs-2/data/generated/contracts.json`.
+- Its default output is `docs/data/generated/contracts.json`.
 - The current test proves byte-identical repeated output, expected top-level
   contracts, resolvable local references, duplicate/conflict rejection, and
   filesystem/source error reporting.
@@ -221,7 +221,7 @@ Test and compare without changing the repository:
 GOTMPDIR=/tmp GOCACHE=/tmp/archie-docsgen-gocache go -C tools test ./docsgen -count=1
 docs_tmp="$(mktemp /tmp/archie-contracts.XXXXXX.json)"
 GOTMPDIR=/tmp GOCACHE=/tmp/archie-docsgen-gocache go -C tools run ./docsgen --repo-root .. --out "$docs_tmp"
-cmp "$docs_tmp" docs-2/data/generated/contracts.json
+cmp "$docs_tmp" docs/data/generated/contracts.json
 ```
 
 Exit status `0` from `cmp` means the one current output matches. This is not a
@@ -244,10 +244,10 @@ Current behavior, verified 2026-07-28:
 
 | Surface | Current state |
 |---|---|
-| Package | `docs-2/package.json`; VitePress `^1.6.4`; pnpm lockfile resolves 1.6.4 |
+| Package | `docs/package.json`; VitePress `^1.6.4`; pnpm lockfile resolves 1.6.4 |
 | Site config | Archie title, local search, clean URLs, last-updated metadata, output at `.vitepress/dist` |
 | Published prose | Handwritten home and architecture pages; no generated-data loader is present |
-| Copied content | `docs-2/README.md` describes Tau and is excluded by `srcExclude` |
+| Copied content | `docs/README.md` describes Tau and is excluded by `srcExclude` |
 | Workflow | Frozen-lockfile install, `pnpm build`, Pages artifact upload/deploy |
 | Versioning | pnpm major `10`; Node is `latest`, so the Node input is volatile |
 | Missing gates | No Go setup, docsgen test, generator drift check, or root `task check` integration |
@@ -255,8 +255,8 @@ Current behavior, verified 2026-07-28:
 Run the implemented site commands for review and acceptance:
 
 ```bash
-pnpm --dir docs-2 install --frozen-lockfile
-pnpm --dir docs-2 build
+pnpm --dir docs install --frozen-lockfile
+pnpm --dir docs build
 ```
 
 Use `build` for review evidence.
@@ -264,7 +264,7 @@ Use `build` for review evidence.
 ### Interactive authoring (not for automated acceptance)
 
 ```bash
-pnpm --dir docs-2 dev
+pnpm --dir docs dev
 ```
 
 This starts a long-running dev server at `http://localhost:5173` (by default).
@@ -274,18 +274,18 @@ versions in failure reports because CI currently permits version drift.
 
 ### Enforce source-artifact hygiene
 
-As of 2026-07-28, Git tracks 237 `docs-2/node_modules` symlink entries.
-Neither `docs-2/node_modules` nor `docs-2/.vitepress/dist` is ignored by the
+As of 2026-07-28, Git tracks 237 `docs/node_modules` symlink entries.
+Neither `docs/node_modules` nor `docs/.vitepress/dist` is ignored by the
 root `.gitignore`. Treat cleanup and ignore changes as a classified repository
 change; route them through `archie-change-control`.
 
 Before review, inspect rather than assuming:
 
 ```bash
-git ls-files -s 'docs-2/node_modules/**' | awk '$1 == 120000 { count++ } END { print count + 0 }'
-git ls-files 'docs-2/.vitepress/dist/**'
-git check-ignore -v docs-2/node_modules docs-2/.vitepress/dist || true
-rg -n -i 'tau|template|placeholder' docs-2 --glob '!node_modules/**'
+git ls-files -s 'docs/node_modules/**' | awk '$1 == 120000 { count++ } END { print count + 0 }'
+git ls-files 'docs/.vitepress/dist/**'
+git check-ignore -v docs/node_modules docs/.vitepress/dist || true
+rg -n -i 'tau|template|placeholder' docs --glob '!node_modules/**'
 ```
 
 Never stage dependency installs, VitePress output, generator scratch files,
@@ -309,7 +309,7 @@ Require all of the following:
 - [ ] Release notes use the correct component file, and release metadata,
   parser behavior, tests, and version headings agree.
 - [ ] Generator tests and a non-mutating drift comparison pass.
-- [ ] `pnpm --dir docs-2 build` passes for site changes.
+- [ ] `pnpm --dir docs build` passes for site changes.
 - [ ] Copied product text and tracked build/dependency artifacts are absent from
   the intended change.
 - [ ] Behavior-changing decisions passed `archie-change-control` and
@@ -330,11 +330,11 @@ test -L AGENTS.md && readlink AGENTS.md && test ! -e README.md && test ! -e CONT
 ```
 
 ```bash
-rg -n '^\\*\\*Status:\\*\\*|^# ' docs/prds/01-project-management.md docs/prds/architecture/*.md docs/archive/*.md
+rg -n '^\\*\\*Status:\\*\\*|^# ' docs/prds/01-project-management.md docs/architecture/*.md docs/archive/*.md
 ```
 
 ```bash
-rg -n 'docsgen|docs:|pnpm|vitepress|CHANGELOG' Taskfile.yml .github/workflows/docs.yml tools/docsgen docs-2/package.json docs-2/.vitepress/config.mts Dockerfile.archied internal/releaseannounce cmd/archied
+rg -n 'docsgen|docs:|pnpm|vitepress|CHANGELOG' Taskfile.yml .github/workflows/docs.yml tools/docsgen docs/package.json docs/.vitepress/config.mts Dockerfile.archied internal/releaseannounce cmd/archied
 ```
 
 ```bash
@@ -342,9 +342,9 @@ GOTMPDIR=/tmp GOCACHE=/tmp/archie-docsgen-gocache go -C tools test ./docsgen -co
 ```
 
 ```bash
-docs_tmp="$(mktemp /tmp/archie-contracts.XXXXXX.json)"; GOTMPDIR=/tmp GOCACHE=/tmp/archie-docsgen-gocache go -C tools run ./docsgen --repo-root .. --out "$docs_tmp" && cmp "$docs_tmp" docs-2/data/generated/contracts.json
+docs_tmp="$(mktemp /tmp/archie-contracts.XXXXXX.json)"; GOTMPDIR=/tmp GOCACHE=/tmp/archie-docsgen-gocache go -C tools run ./docsgen --repo-root .. --out "$docs_tmp" && cmp "$docs_tmp" docs/data/generated/contracts.json
 ```
 
 ```bash
-git status --short -- docs-2 tools docs/prds/architecture/generated-documentation.md .github/workflows/docs.yml; git ls-files -s 'docs-2/node_modules/**' | awk '$1 == 120000 { count++ } END { print count + 0 }'
+git status --short -- docs tools docs/architecture/generated-documentation.md .github/workflows/docs.yml; git ls-files -s 'docs/node_modules/**' | awk '$1 == 120000 { count++ } END { print count + 0 }'
 ```
