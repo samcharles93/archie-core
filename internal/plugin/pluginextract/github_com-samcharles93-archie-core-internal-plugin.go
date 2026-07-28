@@ -3,8 +3,9 @@
 package pluginextract
 
 import (
-	"github.com/samcharles93/archie-core/internal/plugin"
 	"reflect"
+
+	"github.com/samcharles93/archie-core/internal/plugin"
 )
 
 func init() {

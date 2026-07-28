@@ -3,8 +3,9 @@
 package gateextract
 
 import (
-	"github.com/samcharles93/archie-core/internal/gate"
 	"reflect"
+
+	"github.com/samcharles93/archie-core/internal/gate"
 )
 
 func init() {
