@@ -1,0 +1,4 @@
+interface:
+  display_name: "Archie Failure Archaeology"
+  short_description: "Avoid repeating Archie failure history"
+  default_prompt: "Use $archie-failure-archaeology to trace this symptom through Archies proven incidents before proposing a fix."

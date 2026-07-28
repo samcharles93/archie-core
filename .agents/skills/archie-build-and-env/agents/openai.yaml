@@ -1,0 +1,4 @@
+interface:
+  display_name: "Archie Build and Environment"
+  short_description: "Recreate and verify the Archie toolchain"
+  default_prompt: "Use $archie-build-and-env to recreate a clean Archie development environment and verify every build surface."

@@ -1,0 +1,400 @@
+{
+  "generatedBy": "tools/docsgen",
+  "schemas": {
+    "AgentExecutionRequest": {
+      "additionalProperties": false,
+      "description": "Request is the complete, serializable input for one agent stage.",
+      "properties": {
+        "attempt": {
+          "type": "integer"
+        },
+        "budget": {
+          "$ref": "#/schemas/Budget"
+        },
+        "capture_tools": {
+          "items": {
+            "$ref": "#/schemas/CaptureTool"
+          },
+          "type": "array"
+        },
+        "extra_rules": {
+          "type": "string"
+        },
+        "gate": {
+          "$ref": "#/schemas/Gate"
+        },
+        "mission": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "plugins": {
+          "description": "Plugins are bundled Yaegi plugins from the skill's plugins/\ndirectory. Each entry carries the name and source so the agent\ncan register them as tools. PRD section 5 Layer 1.",
+          "items": {
+            "$ref": "#/schemas/PluginSpec"
+          },
+          "type": "array"
+        },
+        "preflight": {
+          "items": {
+            "$ref": "#/schemas/Command"
+          },
+          "type": "array"
+        },
+        "protection": {
+          "$ref": "#/schemas/Protection"
+        },
+        "read_only": {
+          "type": "boolean"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "task_id": {
+          "type": "integer"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "workflow": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "task_id",
+        "attempt",
+        "stage",
+        "model",
+        "mission",
+        "budget",
+        "gate",
+        "protection"
+      ],
+      "type": "object"
+    },
+    "AgentExecutionResult": {
+      "additionalProperties": false,
+      "description": "Result is the serializable outcome of one agent stage.",
+      "properties": {
+        "appended_notes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "attempt": {
+          "type": "integer"
+        },
+        "captures": {
+          "additionalProperties": {
+            "items": true,
+            "type": "array"
+          },
+          "type": "object"
+        },
+        "changes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "iterations": {
+          "type": "integer"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "stop_reason": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "task_id": {
+          "type": "integer"
+        },
+        "tokens_used": {
+          "type": "integer"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "task_id",
+        "attempt",
+        "stage",
+        "status"
+      ],
+      "type": "object"
+    },
+    "Budget": {
+      "additionalProperties": false,
+      "description": "Budget bounds one autonomous execution.",
+      "properties": {
+        "max_steps": {
+          "type": "integer"
+        },
+        "max_tokens": {
+          "type": "integer"
+        },
+        "wall_clock": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "CaptureTool": {
+      "additionalProperties": false,
+      "description": "CaptureTool declares a structured-output tool whose calls are returned to the daemon as data.",
+      "properties": {
+        "boolean_fields": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "description": {
+          "type": "string"
+        },
+        "max_calls": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "non_empty_strings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "parameters": true,
+        "required_fields": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "Command": {
+      "additionalProperties": false,
+      "description": "Command is one executable gate or preflight command.",
+      "properties": {
+        "argv": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "expect_failure": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "argv"
+      ],
+      "type": "object"
+    },
+    "Gate": {
+      "additionalProperties": false,
+      "description": "Gate is the quality gate an agent must satisfy.",
+      "properties": {
+        "commands": {
+          "items": {
+            "$ref": "#/schemas/Command"
+          },
+          "type": "array"
+        },
+        "max_consecutive_failures": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "MediaAttachment": {
+      "additionalProperties": false,
+      "description": "MediaAttachment describes a file attached to a message.",
+      "properties": {
+        "duration": {
+          "description": "Duration is the play time in seconds for audio and video.",
+          "type": "integer"
+        },
+        "file_id": {
+          "description": "FileID is the platform-assigned identifier for download APIs.",
+          "type": "string"
+        },
+        "file_name": {
+          "description": "FileName is the original file name when known.",
+          "type": "string"
+        },
+        "file_size": {
+          "description": "FileSize is the attachment size in bytes. nil means unknown.",
+          "type": "integer"
+        },
+        "height": {
+          "description": "Height is the pixel height for images and video.",
+          "type": "integer"
+        },
+        "mime_type": {
+          "description": "MIMEType is the content type (e.g. \"image/png\", \"audio/ogg\").",
+          "type": "string"
+        },
+        "type": {
+          "description": "Type is \"image\", \"video\", \"audio\", or \"document\".",
+          "type": "string"
+        },
+        "url": {
+          "description": "URL is a direct download URL when available. May be empty for\nplatforms that require a download API call.",
+          "type": "string"
+        },
+        "width": {
+          "description": "Width is the pixel width for images and video. nil means unknown\nor not applicable.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "type",
+        "file_id"
+      ],
+      "type": "object"
+    },
+    "MessageEvent": {
+      "additionalProperties": false,
+      "description": "MessageEvent is the rich message model for all gateway channels.",
+      "properties": {
+        "callback_data": {
+          "description": "CallbackData is the payload from a button or inline-keyboard\npress (Type == MsgCallback).",
+          "type": "string"
+        },
+        "channel_id": {
+          "description": "ChannelID identifies the conversation within the platform\n(chat ID, channel name, DM thread).",
+          "type": "string"
+        },
+        "edited_from": {
+          "description": "EditedFrom is the original text before the edit. Set only when\nType is MsgEdited.",
+          "type": "string"
+        },
+        "id": {
+          "description": "ID is the platform-assigned message identifier. Used for reply\nthreading, reactions, and edit/delete tracking.",
+          "type": "string"
+        },
+        "media": {
+          "description": "Media holds attached files. Nil for text-only messages.",
+          "items": {
+            "$ref": "#/schemas/MediaAttachment"
+          },
+          "type": "array"
+        },
+        "platform": {
+          "description": "Platform names the source adapter (\"telegram\", \"discord\",\n\"web\", \"slack\").",
+          "type": "string"
+        },
+        "raw": {
+          "description": "Raw is the original platform-specific payload. Adapters set\nthis for debug logging or handlers that need platform details\nnot captured by the generic fields.",
+          "type": "object"
+        },
+        "reacted_to_id": {
+          "description": "ReactedToID is the message being reacted to.",
+          "type": "string"
+        },
+        "reaction": {
+          "description": "Reaction is the emoji used when Type is MsgReaction.",
+          "type": "string"
+        },
+        "reply_to_id": {
+          "description": "ReplyToID is the platform message ID this message is in reply\nto. Empty for top-level messages.",
+          "type": "string"
+        },
+        "sender_id": {
+          "description": "SenderID is the platform-specific sender identifier.",
+          "type": "string"
+        },
+        "sender_name": {
+          "description": "SenderName is the display name when available.",
+          "type": "string"
+        },
+        "text": {
+          "description": "Text is the human-readable message body. It carries the caption\nfor media messages and the full content for text and system\nmessages.",
+          "type": "string"
+        },
+        "thread_id": {
+          "description": "ThreadID identifies the conversation thread for platforms that\nsupport threading (Slack, Discord forums).",
+          "type": "string"
+        },
+        "timestamp": {
+          "description": "Timestamp is the platform-assigned message time in Unix\nmilliseconds. Zero when unknown.",
+          "type": "integer"
+        },
+        "type": {
+          "description": "Type discriminates the message kind.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "channel_id",
+        "platform",
+        "sender_id"
+      ],
+      "type": "object"
+    },
+    "PluginSpec": {
+      "additionalProperties": false,
+      "description": "PluginSpec is a bundled Yaegi plugin passed from daemon to agent.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "src": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "src"
+      ],
+      "type": "object"
+    },
+    "Protection": {
+      "additionalProperties": false,
+      "description": "Protection describes paths the agent may read but not mutate.",
+      "properties": {
+        "globs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "suffixes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  }
+}

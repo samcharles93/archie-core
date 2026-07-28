@@ -1,0 +1,4 @@
+interface:
+  display_name: "Archie Codebase Discovery"
+  short_description: "Trace Archie behavior from entrypoint to production"
+  default_prompt: "Use $archie-codebase-discovery to trace this behavior through production wiring before proposing a change."

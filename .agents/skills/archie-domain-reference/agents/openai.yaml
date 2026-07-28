@@ -1,0 +1,4 @@
+interface:
+  display_name: "Archie Domain Reference"
+  short_description: "Use Archie terminology without boundary mistakes"
+  default_prompt: "Use $archie-domain-reference to classify these Archie concepts and map current code terms to their approved target owners."

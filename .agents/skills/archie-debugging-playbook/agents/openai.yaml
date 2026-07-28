@@ -1,0 +1,4 @@
+interface:
+  display_name: "Archie Debugging Playbook"
+  short_description: "Diagnose Archie failures from symptoms"
+  default_prompt: "Use $archie-debugging-playbook to diagnose this Archie failure from symptoms and evidence."

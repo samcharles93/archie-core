@@ -1,0 +1,4 @@
+interface:
+  display_name: "Archie Architecture Contract"
+  short_description: "Protect Archie load-bearing architecture decisions"
+  default_prompt: "Use $archie-architecture-contract to place and review this change without violating current or target architecture."

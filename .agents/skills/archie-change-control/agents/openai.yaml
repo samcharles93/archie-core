@@ -1,0 +1,4 @@
+interface:
+  display_name: "Archie Change Control"
+  short_description: "Plan, gate, and accept Archie changes safely"
+  default_prompt: "Use $archie-change-control to classify, plan, verify, review, and accept this archie-core change."

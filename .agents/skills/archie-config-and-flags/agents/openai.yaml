@@ -1,0 +1,4 @@
+interface:
+  display_name: "Archie Config and Flags"
+  short_description: "Trace Archie configuration from input to runtime"
+  default_prompt: "Use $archie-config-and-flags to trace this Archie setting or CLI flag from declaration through production wiring."

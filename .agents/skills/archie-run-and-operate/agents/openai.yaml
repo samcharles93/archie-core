@@ -1,0 +1,4 @@
+interface:
+  display_name: "Run and Operate Archie"
+  short_description: "Run Archie safely and locate its operational state"
+  default_prompt: "Use $archie-run-and-operate to start Archie locally, inspect its runtime state, and stop it safely."

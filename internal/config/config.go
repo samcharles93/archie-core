@@ -185,9 +185,10 @@ type Agent struct {
 
 // Forge configures the code forge integration.
 type Forge struct {
-	Type  string           `toml:"type" yaml:"type"`
-	Host  string           `toml:"host" yaml:"host"`
-	Token secret.SecretRef `toml:"token" yaml:"token"`
+	Type     string           `toml:"type" yaml:"type"`
+	Host     string           `toml:"host" yaml:"host"`
+	Token    secret.SecretRef `toml:"token" yaml:"token"`
+	TokenEnv string           `toml:"token_env" yaml:"token_env"`
 }
 
 // Dispatch configures how archied discovers work and reflects task state
@@ -578,8 +579,6 @@ func finalize(cfg Config) (Config, error) {
 	if cfg.Forge.Token.Engine == "" && cfg.Forge.Token.Key == "" {
 		if cfg.Forge.TokenEnv != "" {
 			cfg.Forge.Token = secret.SecretRef{Engine: "env", Key: cfg.Forge.TokenEnv}
-		} else {
-			cfg.Forge.Token = secret.SecretRef{Engine: "env", Key: "ARCHIE_GITHUB_TOKEN"}
 		}
 	}
 	if cfg.Agent.Mode == "" {

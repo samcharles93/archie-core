@@ -1,0 +1,4 @@
+interface:
+  display_name: "Archie Technical Accountability"
+  short_description: "Prove maintainability before accepting changes"
+  default_prompt: "Use $archie-technical-accountability to audit this Archie change for maintainability, ownership, supersession, production wiring, and dead paths."

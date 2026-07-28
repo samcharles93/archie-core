@@ -1,0 +1,4 @@
+interface:
+  display_name: "Archie Diagnostics and Tooling"
+  short_description: "Measure maintainability, wiring, and delivery drift"
+  default_prompt: "Use $archie-diagnostics-and-tooling to collect a dated, reproducible evidence baseline before changing Archie."

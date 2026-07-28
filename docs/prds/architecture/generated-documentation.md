@@ -8,9 +8,12 @@
 
 Archie's documentation-generation approach is:
 
-- Go code and registries remain the source of truth for published contracts;
-- a repository-local Go generator produces schemas and reference pages;
-- VitePress renders handwritten and generated Markdown;
+- production Go code, registries, configuration, and CLI behaviour remain the
+  source of truth for published contracts;
+- a repository-local Go generator extracts and normalizes documentation data;
+- the generator writes deterministic JSON/data files and protocol schemas;
+- VitePress data loaders, components, and templates render the generated data
+  into reference pages;
 - GitHub Actions builds and publishes the static site.
 
 Hugo is not part of the target architecture.
@@ -90,8 +93,9 @@ authoritative tables.
 
 ## Target generation architecture
 
-`tools/docsgen` is Archie's documentation generator. It produces protocol
-specifications and Markdown reference pages.
+`tools/docsgen` is Archie's documentation extractor and normalizer. It produces
+structured documentation data and protocol specifications. It does not own
+page layout and MUST NOT generate Markdown pages or fragments.
 
 The generator is divided internally into reusable stages:
 
@@ -99,7 +103,7 @@ The generator is divided internally into reusable stages:
 load registries and types
   -> normalize documentation model
   -> validate ownership and identifiers
-  -> render target artifacts
+  -> serialize data and protocol artifacts
   -> compare or write output
 ```
 
@@ -111,14 +115,14 @@ defaults, validation, secret classifications, and relationships.
 Initial generator targets:
 
 ```text
+docsgen data
 docsgen asyncapi
-docsgen pages
 docsgen all
 docsgen check
 ```
 
+- `data` writes the normalized JSON consumed by VitePress.
 - `asyncapi` writes protocol schemas and envelopes.
-- `pages` writes generated Markdown reference and its manifest.
 - `all` generates every committed artifact.
 - `check` generates into a temporary directory and fails on drift.
 
@@ -132,36 +136,47 @@ a visibly owned subtree:
 
 ```text
 docs-2/
-  asyncapi/
-    header.yaml
-    archie.yaml
-  reference/
+  data/
     generated/
-      _index.md
-      cli/
-      configuration/
-      messaging/
-      agents/
-      workflows/
-      policies/
-      plugins/
-      tools/
-    manifest.json
+      catalog.json
+      contracts.json
+      cli.json
+      configuration.json
+      messaging.json
+      agents.json
+      workflows.json
+      policies.json
+      plugins.json
+      tools.json
+  public/
+    schemas/
+      asyncapi-header.yaml
+      archie.yaml
   .vitepress/
     config.mts
-    generated-sidebar.mts
+    data/
+      reference.data.ts
+    theme/
+      components/
+  .tmp/
 ```
 
-All files under `reference/generated/` carry a generated marker and MUST NOT be
-edited manually.
+All files under `data/generated/` and `public/schemas/` carry generated
+ownership metadata where their format permits it and MUST NOT be edited
+manually. `.tmp/` is generator-owned, ignored, and never committed.
 
-`manifest.json` is the deterministic machine-readable index used for:
+`catalog.json` is the deterministic machine-readable index used for:
 
-- generated sidebar and navigation entries;
+- reference navigation and route inputs;
 - duplicate-ID and duplicate-route validation;
 - coverage checks;
-- source-to-page drift diagnostics;
+- source-to-data drift diagnostics;
 - future external consumers.
+
+VitePress loads these files at build time through a typed `.data.ts` loader.
+Pages and components import the loader's `data` export and render reference
+views. Archie uses a custom loader because the authoritative inputs are JSON;
+VitePress `createContentLoader` is reserved for Markdown content collections.
 
 The final move from `docs-2/` to `docs/` occurs only after Archie content
 contains intentional Archie pages and the current architecture documents have an
@@ -181,10 +196,12 @@ require github.com/samcharles93/archie-core v0.0.0-00010101000000-000000000000
 replace github.com/samcharles93/archie-core => ../
 ```
 
-Keep generator-only dependencies such as `invopop/jsonschema` and YAML in the
-nested tools module. They MUST NOT enter the root module.
+Keep generator-only dependencies such as `invopop/jsonschema` and any future
+protocol-schema serializer in the nested tools module. They MUST NOT enter the
+root module.
 
-`docsgen` imports Archie-owned contracts and writes Archie reference artifacts.
+`docsgen` imports Archie-owned contracts and writes normalized Archie data and
+protocol artifacts.
 
 ### Step 2: establish authoritative registries
 
@@ -207,6 +224,10 @@ documentation-only duplicate registry is prohibited.
 Where the migration has not yet created a final domain registry, the generator
 may use a narrow compatibility adapter over the current registry. That adapter
 has explicit deletion criteria.
+
+The initial agent-execution and messaging schema set is such an adapter. It is
+deleted when those domains expose their production-owned documentation
+registries; adding another hardcoded type list to `docsgen` is prohibited.
 
 ### Step 3: generate AsyncAPI
 
@@ -232,15 +253,16 @@ The generator owns:
 The generated protocol artifact becomes:
 
 ```text
-docs-2/asyncapi/archie.yaml
+docs-2/public/schemas/archie.yaml
 ```
 
 The final owner of each wire registry is the domain or capability defining its
 meaning. `docsgen` renders the contract; it does not own the message semantics.
 
-### Step 4: add Markdown page generation
+### Step 4: add generated documentation data
 
-Add renderers for the missing reference categories one vertical slice at a time.
+Add extractors for the missing reference categories one vertical slice at a
+time.
 
 Recommended implementation order:
 
@@ -253,29 +275,27 @@ Recommended implementation order:
 7. tools and capability contracts;
 8. worker and external wire contracts.
 
-Each category renderer produces:
+Each category extractor contributes:
 
-- a section index;
-- one stable page per published definition where useful;
-- field/type/default/validation tables;
-- source links;
+- stable IDs, owners, routes, and display ordering;
+- fields, types, defaults, and validation metadata;
+- source references;
 - version and deprecation information;
-- cross-links to related commands, events, policies, and contracts.
+- relationships to commands, events, policies, and contracts.
 
-The first vertical slice proves the normalized model and templates. Later
-categories reuse them rather than introducing category-specific ad hoc
-generation.
+The first vertical slice proves the normalized model and deterministic JSON
+serialization. Later categories reuse it rather than introducing
+category-specific ad hoc output formats.
 
-### Step 5: generate VitePress navigation
+### Step 5: render data with VitePress
 
-Generate navigation data from `manifest.json`, not by manually duplicating every
-generated page in `.vitepress/config.mts`.
+Create typed data loaders, components, and page templates for the normalized
+data. The loaders watch `data/generated/*.json`, parse and validate the files,
+and return serializable data at build time.
 
-Handwritten top-level navigation remains explicit. Generated reference sections
-are imported from `.vitepress/generated-sidebar.mts`.
-
-The generated navigation file is deterministic and committed with the reference
-pages.
+Handwritten top-level navigation remains explicit. Reference navigation and
+routes derive from `catalog.json`; they are not emitted as generated TypeScript
+or duplicated manually in `.vitepress/config.mts`.
 
 ### Step 6: implement deterministic drift checking
 
@@ -283,7 +303,7 @@ pages.
 
 1. generates all artifacts into a temporary directory;
 2. normalizes line endings and file modes;
-3. compares the complete expected tree with committed outputs;
+3. compares the complete expected data and schema trees with committed outputs;
 4. reports missing, changed, and obsolete files;
 5. identifies the authoritative definition associated with each mismatch;
 6. exits non-zero without modifying the working tree.
@@ -415,7 +435,7 @@ CI:
 1. runs `task docs:check` without modifying committed output;
 2. builds the static site;
 3. publishes only from the approved branch or release;
-4. never treats generated reference as handwritten source.
+4. never treats generated data as handwritten source.
 
 A commit MUST NOT be created while generated documentation is stale.
 
@@ -439,7 +459,7 @@ Site validation covers:
 - frozen dependency installation;
 - VitePress production build;
 - dead internal links;
-- generated navigation imports;
+- generated-data loader imports;
 - expected output routes;
 - absence of unrelated product names and URLs;
 - absence of committed build artifacts.
@@ -453,8 +473,9 @@ The documentation migration is complete when:
 - `tools` belongs to Archie and builds against the working tree;
 - `docsgen` consumes Archie-owned registries and types;
 - AsyncAPI output describes Archie;
-- required reference categories are generated as committed Markdown;
-- generated navigation and manifest match generated pages;
+- required reference categories are generated as committed deterministic data;
+- `catalog.json` matches the generated definitions and rendered routes;
+- VitePress components and templates render the generated data;
 - two consecutive generations are byte-identical;
 - `docsgen check` detects changed, missing, and obsolete artifacts;
 - VitePress contains only intentional Archie content;

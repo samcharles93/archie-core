@@ -1,0 +1,4 @@
+interface:
+  display_name: "Archie Validation and QA"
+  short_description: "Build defensible test and quality evidence"
+  default_prompt: "Use $archie-validation-and-qa to design and run the evidence needed to accept this archie-core change."

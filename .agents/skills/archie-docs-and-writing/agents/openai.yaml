@@ -1,0 +1,4 @@
+interface:
+  display_name: "Archie Docs and Writing"
+  short_description: "Maintain authoritative Archie documentation"
+  default_prompt: "Use $archie-docs-and-writing to write or update an authoritative Archie design, migration, incident, ownership, or operations document."
