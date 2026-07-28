@@ -136,7 +136,9 @@ type Router struct {
 	// ModelPersist persists the active model selection so it survives
 	// restarts (e.g. writing back to identity config). nil = not configured.
 	ModelPersist func(ctx context.Context, modelRef string) error
-	Tasks        TaskCreator    // nil = /spawn not configured
+	// Personas holds the available personality registry for /personality.
+	Personas *PersonaRegistry
+	Tasks    TaskCreator    // nil = /spawn not configured
 	Controller TaskController // nil = /approve and /cancel not configured
 	LLM        LLMResponder   // nil = LLM not wired yet
 	// LLMStream is the optional streaming responder. When set, adapters
