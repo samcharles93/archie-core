@@ -26,7 +26,7 @@ type fileSet struct {
 
 // main returns the daemon-level config file and its format. YAML wins when
 // both are present; legacy config.toml is the fallback.
-func (fs fileSet) main() (path string, yaml bool, ok bool) {
+func (fs fileSet) main() (path string, yaml, ok bool) {
 	if fs.mainYAML != "" {
 		return fs.mainYAML, true, true
 	}

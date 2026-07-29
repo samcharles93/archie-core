@@ -57,7 +57,7 @@ func parseModelRest(rest string) (model, provider string, global, session, refre
 		}
 	}
 	model = strings.Join(modelParts, " ")
-	return
+	return model, provider, global, session, refresh
 }
 
 // extractProviderFlag extracts --provider=<value> or --provider <value>

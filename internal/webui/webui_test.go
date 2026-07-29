@@ -302,7 +302,7 @@ func TestHandleSSEEventsSinceError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", ts.URL+"/events?since=0", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/events?since=0", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func execRead(t *testing.T, cwd string, params string) Result {
+func execRead(t *testing.T, cwd, params string) Result {
 	t.Helper()
 	tool := NewReadTool(cwd, nil)
 	res, err := tool.Execute(context.Background(), json.RawMessage(params), nil)

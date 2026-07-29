@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -211,7 +212,8 @@ func makeGrepExecutor(cwd string, workspaceIndex GrepIndex) Executor {
 			output = stdout.String()
 		}
 		if output == "" && err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			exitErr := &exec.ExitError{}
+			if errors.As(err, &exitErr) {
 				return grepBackendResult(Result{Content: "no matches found"}, searchBackend, clamped), nil
 			}
 			errMsg := stderr.String()
@@ -413,7 +415,7 @@ func grepFallback(ctx context.Context, p GrepParams, searchPath, cwd string, tar
 			results = append(results, res...)
 			return nil
 		})
-		if err != nil && err != ctx.Err() {
+		if err != nil && !errors.Is(err, ctx.Err()) {
 			return "", err
 		}
 	}

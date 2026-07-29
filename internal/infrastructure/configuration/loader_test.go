@@ -342,6 +342,7 @@ func TestFinalizeIndexingDefaults(t *testing.T) {
 		})
 	}
 }
+
 func TestIdentitiesConfigParsesTwoIdentities(t *testing.T) {
 	cfg, err := loadBytes([]byte(`
 bot_user = "default-legacy"

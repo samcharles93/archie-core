@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -238,7 +239,7 @@ func runFindGoFallback(ctx context.Context, cwd, searchPath string, p FindParams
 		return nil
 	})
 
-	if err != nil && err != ctx.Err() {
+	if err != nil && !errors.Is(err, ctx.Err()) {
 		return Result{Content: fmt.Sprintf("find error: %v", err), IsError: true}, nil
 	}
 
