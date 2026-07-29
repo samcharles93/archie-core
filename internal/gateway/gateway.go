@@ -231,6 +231,31 @@ func (r *Router) dispatchLocal(ctx context.Context, msg Message, text, cmd strin
 	case "/start":
 		reply, err := r.handleStart(ctx, msg)
 		return reply, true, err
+	case "/whoami":
+		reply, err := r.handleWhoami(ctx)
+		return reply, true, err
+	case "/profile":
+		reply, err := r.handleProfile(ctx)
+		return reply, true, err
+	case "/sessions":
+		reply, err := r.handleSessions(ctx)
+		return reply, true, err
+	case "/resume":
+		reply, err := r.handleResume(ctx, msg, rest)
+		return reply, true, err
+	case "/agents":
+		reply, err := r.handleAgents(ctx)
+		return reply, true, err
+	}
+	return r.dispatchSessionCommand(ctx, msg, cmd, rest)
+}
+
+// dispatchSessionCommand handles the session-lifecycle command group
+// (/new, /topic, /retry, /undo, /title, /branch, /compress and their
+// aliases). Split out from dispatchLocal to keep cyclomatic complexity
+// down.
+func (r *Router) dispatchSessionCommand(ctx context.Context, msg Message, cmd, rest string) (string, bool, error) {
+	switch cmd {
 	case "/new", "/reset":
 		reply, err := r.handleNew(ctx, msg, rest)
 		return reply, true, err
@@ -281,6 +306,7 @@ var localCommands = []string{
 	"/status", "/model", "/spawn", "/approve", "/cancel",
 	"/new", "/reset", "/topic", "/retry", "/undo",
 	"/title", "/branch", "/fork", "/compress", "/compact",
+	"/whoami", "/profile", "/sessions", "/resume", "/agents",
 }
 
 // LocalCommands returns the command names Route answers from local state.
@@ -481,6 +507,117 @@ func (r *Router) handleStatus(ctx context.Context) (string, error) {
 			fmt.Fprintf(&b, "\nProvider: %s\n", manager.ActiveProvider())
 		}
 		fmt.Fprintf(&b, "Model: %s\n", r.Models.ActiveModel())
+	}
+	return strings.TrimSpace(b.String()), nil
+}
+
+func (r *Router) handleWhoami(ctx context.Context) (string, error) {
+	if r.Identity == "" {
+		return "I'm Archie, running without a configured identity.", nil
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "I'm %s.", r.Identity)
+	if r.Models != nil {
+		if active := r.Models.ActiveModel(); active != "" {
+			fmt.Fprintf(&b, " Running %s.", active)
+		}
+	}
+	return b.String(), nil
+}
+
+func (r *Router) handleProfile(ctx context.Context) (string, error) {
+	if r.Identity == "" {
+		return "Profile is not configured (no identity set).", nil
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Identity: %s\n", r.Identity)
+	if r.Models != nil {
+		fmt.Fprintf(&b, "Model: %s\n", r.Models.ActiveModel())
+	}
+	return strings.TrimSpace(b.String()), nil
+}
+
+func (r *Router) handleSessions(ctx context.Context) (string, error) {
+	if r.Sessions == nil {
+		return "Session management is not configured.", nil
+	}
+	sessions, err := r.Sessions.List(ctx)
+	if err != nil {
+		return "", fmt.Errorf("list sessions: %w", err)
+	}
+	if len(sessions) == 0 {
+		return "No sessions.", nil
+	}
+	var b strings.Builder
+	b.WriteString("Sessions:\n")
+	for _, s := range sessions {
+		prefix := s.SessionID[:min(8, len(s.SessionID))]
+		title := s.Title
+		if title == "" {
+			title = "(untitled)"
+		}
+		fmt.Fprintf(&b, "  %s — %s\n", prefix, title)
+	}
+	return strings.TrimSpace(b.String()), nil
+}
+
+// handleResume switches the active session for the current channel+thread
+// to the session whose ID matches or is uniquely prefixed by arg.
+func (r *Router) handleResume(ctx context.Context, msg Message, arg string) (string, error) {
+	arg = strings.TrimSpace(arg)
+	if arg == "" {
+		return "Usage: /resume <session-id>", nil
+	}
+	if r.Sessions == nil {
+		return "Session management is not configured.", nil
+	}
+	sessions, err := r.Sessions.List(ctx)
+	if err != nil {
+		return "", fmt.Errorf("list sessions: %w", err)
+	}
+	for _, s := range sessions {
+		if s.SessionID == arg {
+			return r.resumeSession(msg, s), nil
+		}
+	}
+	var matches []SessionContext
+	for _, s := range sessions {
+		if strings.HasPrefix(s.SessionID, arg) {
+			matches = append(matches, s)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return fmt.Sprintf("No session matching %q.", arg), nil
+	case 1:
+		return r.resumeSession(msg, matches[0]), nil
+	default:
+		return fmt.Sprintf("Multiple sessions match %q; be more specific.", arg), nil
+	}
+}
+
+func (r *Router) resumeSession(msg Message, s SessionContext) string {
+	if r.sessionTracker != nil {
+		r.sessionTracker.setActive(msg.ChannelID, msg.ThreadID, s.SessionID)
+	}
+	return fmt.Sprintf("Resumed session %s.", s.SessionID)
+}
+
+func (r *Router) handleAgents(ctx context.Context) (string, error) {
+	if r.Agents == nil {
+		return "Agent listing is not configured.", nil
+	}
+	agents, err := r.Agents.AgentList(ctx)
+	if err != nil {
+		return "", fmt.Errorf("list agents: %w", err)
+	}
+	if len(agents) == 0 {
+		return "No active agents.", nil
+	}
+	var b strings.Builder
+	b.WriteString("Active agents:\n")
+	for _, a := range agents {
+		fmt.Fprintf(&b, "  #%d %s — %s (%s)\n", a.ID, a.Title, a.Status, a.Identity)
 	}
 	return strings.TrimSpace(b.String()), nil
 }
