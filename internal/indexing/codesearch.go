@@ -129,6 +129,17 @@ func (m *Manager) Candidates(ctx context.Context, pattern string, literal, caseS
 
 	// The sidecar is a snapshot. Include files changed or created since the
 	// build began so indexed search cannot miss live workspace edits.
+	merged, ok := m.mergeCandidateFiles(ctx, files, state)
+	if !ok {
+		return nil, false
+	}
+	slices.Sort(merged)
+	return merged, true
+}
+
+// mergeCandidateFiles combines sidecar results with workspace files that
+// were changed or created since the index was built.
+func (m *Manager) mergeCandidateFiles(ctx context.Context, files []string, state indexState) ([]string, bool) {
 	workspaceFiles, err := WorkspaceFiles(ctx, m.root)
 	if err != nil {
 		return nil, false
@@ -162,7 +173,6 @@ func (m *Manager) Candidates(ctx context.Context, pattern string, literal, caseS
 	if len(merged) == 0 || len(merged) > MaxCandidateFiles || argumentBytes > maxCandidateArgBytes {
 		return nil, false
 	}
-	slices.Sort(merged)
 	return merged, true
 }
 

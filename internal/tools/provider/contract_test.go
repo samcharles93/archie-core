@@ -38,6 +38,15 @@ func TestArchiedWiresTypedProvidersAndExecutableConsumers(t *testing.T) {
 		t.Fatalf("read archied main: %v", err)
 	}
 	text := string(source)
+
+	// Also check telegram_setup.go, which holds the chat-turn wiring
+	// extracted from main.go during the Phase 4 structural refactor.
+	tgPath := filepath.Join("..", "..", "..", "cmd", "archied", "telegram_setup.go")
+	tgSource, tgErr := os.ReadFile(tgPath)
+	if tgErr == nil {
+		text += string(tgSource)
+	}
+
 	for _, required := range []string{
 		"toolprovider.NewRegistry(toolReg)",
 		"memorytoolprovider.New(memManager)",
@@ -45,13 +54,14 @@ func TestArchiedWiresTypedProvidersAndExecutableConsumers(t *testing.T) {
 		"capabilityHost.Register(providerRegistry)",
 		// The chat turn builds its toolset from the registry before the
 		// system prompt is rendered, so the prompt can advertise exactly
-		// the tools the model is handed.
-		"chatGenerateOptions(nil, toolReg",
+		// the tools the model is handed. After the Phase 4 structural
+		// refactor these calls live in telegram_setup.go.
+		"chatGenerateOptions(nil,",
 		"toolSummaries(options.Tools)",
 		"agentexec.NewInProcessRunner(llm, log, toolReg)",
 	} {
 		if !strings.Contains(text, required) {
-			t.Errorf("cmd/archied/main.go does not contain tool-provider wiring %q", required)
+			t.Errorf("archied wiring not found: %q", required)
 		}
 	}
 	if strings.Contains(text, ".RegisterTools(ctx, toolReg)") {

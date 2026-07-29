@@ -233,23 +233,8 @@ func extractBody(raw string) string {
 
 	// If multipart, look for the text/plain section.
 	if strings.Contains(strings.ToLower(headers), "content-type: multipart") {
-		// Crude boundary extraction for simple cases.
-		if idx := strings.Index(strings.ToLower(headers), "boundary="); idx >= 0 {
-			boundary := extractBoundary(headers[idx:])
-			if boundary != "" {
-				// Find text/plain part within boundaries.
-				sections := strings.SplitSeq(body, "--"+boundary)
-				for sec := range sections {
-					if strings.Contains(strings.ToLower(sec), "content-type: text/plain") {
-						if parts := strings.SplitN(sec, "\r\n\r\n", 2); len(parts) == 2 {
-							return strings.TrimSpace(strings.TrimRight(parts[1], "\r\n-"))
-						}
-						if parts := strings.SplitN(sec, "\n\n", 2); len(parts) == 2 {
-							return strings.TrimSpace(strings.TrimRight(parts[1], "\n-"))
-						}
-					}
-				}
-			}
+		if text := extractMultipartText(headers, body); text != "" {
+			return text
 		}
 	}
 
@@ -260,6 +245,32 @@ func extractBody(raw string) string {
 		body = parts[1]
 	}
 	return strings.TrimSpace(body)
+}
+
+// extractMultipartText looks for a text/plain section within a multipart
+// body. Returns the trimmed text body or an empty string when not found.
+func extractMultipartText(headers, body string) string {
+	idx := strings.Index(strings.ToLower(headers), "boundary=")
+	if idx < 0 {
+		return ""
+	}
+	boundary := extractBoundary(headers[idx:])
+	if boundary == "" {
+		return ""
+	}
+	sections := strings.SplitSeq(body, "--"+boundary)
+	for sec := range sections {
+		if !strings.Contains(strings.ToLower(sec), "content-type: text/plain") {
+			continue
+		}
+		if parts := strings.SplitN(sec, "\r\n\r\n", 2); len(parts) == 2 {
+			return strings.TrimSpace(strings.TrimRight(parts[1], "\r\n-"))
+		}
+		if parts := strings.SplitN(sec, "\n\n", 2); len(parts) == 2 {
+			return strings.TrimSpace(strings.TrimRight(parts[1], "\n-"))
+		}
+	}
+	return ""
 }
 
 func extractBoundary(line string) string {

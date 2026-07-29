@@ -553,6 +553,33 @@ func LoadOverlay(basePath, overlayPath string) (Config, error) {
 
 // finalize applies defaults and validates a decoded configuration.
 func finalize(cfg Config) (Config, error) {
+	applyGeneralDefaults(&cfg)
+	applyForgeDefaults(&cfg)
+	if err := applyAgentDefaults(&cfg); err != nil {
+		return cfg, err
+	}
+	if err := applyDispatchDefaults(&cfg); err != nil {
+		return cfg, err
+	}
+	if err := validateProviders(cfg.Providers); err != nil {
+		return cfg, err
+	}
+	if len(cfg.Identities) > 0 {
+		if err := validateIdentities(cfg.Identities); err != nil {
+			return cfg, err
+		}
+	} else {
+		if err := validateSingleIdentity(&cfg); err != nil {
+			return cfg, err
+		}
+	}
+	if err := validateContainers(&cfg); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}
+
+func applyGeneralDefaults(cfg *Config) {
 	if cfg.WorkDir == "" {
 		cfg.WorkDir = filepath.Join(dataHome(), "archie", "work")
 	}
@@ -563,24 +590,30 @@ func finalize(cfg Config) (Config, error) {
 	if cfg.PollInterval == 0 {
 		cfg.PollInterval = Duration(60 * time.Second)
 	}
-
 	if cfg.DiffCapLines == 0 {
 		cfg.DiffCapLines = 400
 	}
 	if cfg.Web.Listen == "" {
-		cfg.Web.Listen = "127.0.0.1:8484" // "off" disables
+		cfg.Web.Listen = "127.0.0.1:8484"
 	}
+	if cfg.MaxRetries == 0 {
+		cfg.MaxRetries = 3
+	}
+}
+
+func applyForgeDefaults(cfg *Config) {
 	if cfg.Forge.Type == "" {
 		cfg.Forge.Type = "github"
 	}
 	if cfg.Forge.Host == "" {
 		cfg.Forge.Host = "https://github.com"
 	}
-	if cfg.Forge.Token.Engine == "" && cfg.Forge.Token.Key == "" {
-		if cfg.Forge.TokenEnv != "" {
-			cfg.Forge.Token = secret.SecretRef{Engine: "env", Key: cfg.Forge.TokenEnv}
-		}
+	if cfg.Forge.Token.Engine == "" && cfg.Forge.Token.Key == "" && cfg.Forge.TokenEnv != "" {
+		cfg.Forge.Token = secret.SecretRef{Engine: "env", Key: cfg.Forge.TokenEnv}
 	}
+}
+
+func applyAgentDefaults(cfg *Config) error {
 	if cfg.Agent.Mode == "" {
 		if cfg.Containers.Enabled {
 			cfg.Agent.Mode = "nats"
@@ -591,38 +624,44 @@ func finalize(cfg Config) (Config, error) {
 	if cfg.Agent.Command == "" {
 		cfg.Agent.Command = "archie-agent"
 	}
-	switch cfg.Agent.Mode {
-	case "inprocess", "subprocess", "nats":
-	default:
-		return cfg, fmt.Errorf("config: agent.mode %q is invalid (want inprocess, subprocess, or nats)", cfg.Agent.Mode)
+	if !isValidAgentMode(cfg.Agent.Mode) {
+		return fmt.Errorf("config: agent.mode %q is invalid (want inprocess, subprocess, or nats)", cfg.Agent.Mode)
 	}
 	if cfg.Agent.Mode == "subprocess" && strings.TrimSpace(cfg.Agent.Command) == "" {
-		return cfg, fmt.Errorf("config: agent.command is required in subprocess mode")
+		return fmt.Errorf("config: agent.command is required in subprocess mode")
 	}
 	for i, name := range cfg.Agent.Env {
 		if strings.TrimSpace(name) == "" || strings.Contains(name, "=") {
-			return cfg, fmt.Errorf("config: agent.env[%d] %q is not an environment variable name", i, name)
+			return fmt.Errorf("config: agent.env[%d] %q is not an environment variable name", i, name)
 		}
 	}
-	for name, provider := range cfg.Providers {
+	return nil
+}
+
+func isValidAgentMode(m string) bool { return m == "inprocess" || m == "subprocess" || m == "nats" }
+
+func validateProviders(providers map[string]Provider) error {
+	for name, provider := range providers {
 		if provider.BaseURL == "" {
 			continue
 		}
 		u, err := url.Parse(provider.BaseURL)
 		if err != nil {
-			return cfg, fmt.Errorf("config: providers.%s.base_url is invalid: %w", name, err)
+			return fmt.Errorf("config: providers.%s.base_url is invalid: %w", name, err)
 		}
 		if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-			return cfg, fmt.Errorf("config: providers.%s.base_url must not contain userinfo, query parameters, or a fragment", name)
+			return fmt.Errorf("config: providers.%s.base_url must not contain userinfo, query parameters, or a fragment", name)
 		}
 	}
+	return nil
+}
+
+func applyDispatchDefaults(cfg *Config) error {
 	if cfg.Dispatch.Trigger == "" {
 		cfg.Dispatch.Trigger = "assignee"
 	}
-	switch cfg.Dispatch.Trigger {
-	case "assignee", "label", "either":
-	default:
-		return cfg, fmt.Errorf("config: dispatch.trigger %q is invalid (want assignee, label, or either)", cfg.Dispatch.Trigger)
+	if !isValidDispatchTrigger(cfg.Dispatch.Trigger) {
+		return fmt.Errorf("config: dispatch.trigger %q is invalid (want assignee, label, or either)", cfg.Dispatch.Trigger)
 	}
 	if cfg.Dispatch.AckReaction == "" {
 		cfg.Dispatch.AckReaction = "eyes"
@@ -637,97 +676,97 @@ func finalize(cfg Config) (Config, error) {
 			cfg.Dispatch.Labels[k] = v
 		}
 	}
-	if cfg.MaxRetries == 0 {
-		cfg.MaxRetries = 3
+	return nil
+}
+
+func isValidDispatchTrigger(t string) bool { return t == "assignee" || t == "label" || t == "either" }
+
+func validateIdentities(identities []IdentityConfig) error {
+	for i, id := range identities {
+		if id.Name == "" {
+			return fmt.Errorf("config: identities[%d].name is required", i)
+		}
+		if id.BotUser == "" {
+			return fmt.Errorf("config: identities[%d].bot_user is required", i)
+		}
+		if len(id.Repos) == 0 {
+			return fmt.Errorf("config: identities[%d] has no [[identities.repos]] entries  --  at least one is required", i)
+		}
+		if !validForgeType(id.Forge.Type) {
+			return fmt.Errorf("config: identities[%d].forge.type %q is not supported (want github or gitea)", i, id.Forge.Type)
+		}
+		if id.Forge.Token == (secret.SecretRef{}) {
+			return fmt.Errorf("config: identities[%d].forge.token is required (each identity needs its own secret reference; unlike the top-level [forge], there is no default)", i)
+		}
+		if err := validateRepos(id.Repos); err != nil {
+			return fmt.Errorf("config: identities[%d]: %w", i, err)
+		}
 	}
-	// Multi-identity mode: validate each identity independently and relax
-	// the top-level BotUser / Repos requirement (backward compat: when
-	// Identities is empty, the legacy single-identity fields are used).
-	if len(cfg.Identities) > 0 {
-		for i, id := range cfg.Identities {
-			if id.Name == "" {
-				return cfg, fmt.Errorf("config: identities[%d].name is required", i)
-			}
-			if id.BotUser == "" {
-				return cfg, fmt.Errorf("config: identities[%d].bot_user is required", i)
-			}
-			if len(id.Repos) == 0 {
-				return cfg, fmt.Errorf("config: identities[%d] has no [[identities.repos]] entries  --  at least one is required", i)
-			}
-			switch id.Forge.Type {
-			case "github", "gitea":
-			default:
-				return cfg, fmt.Errorf("config: identities[%d].forge.type %q is not supported (want github or gitea)", i, id.Forge.Type)
-			}
-			if id.Forge.Token == (secret.SecretRef{}) {
-				return cfg, fmt.Errorf("config: identities[%d].forge.token is required (each identity needs its own secret reference; unlike the top-level [forge], there is no default)", i)
-			}
-			for j, r := range id.Repos {
-				if r.Owner == "" || r.Name == "" {
-					return cfg, fmt.Errorf("config: identities[%d].repos[%d] needs owner and name", i, j)
-				}
-				if glob := r.ResolvedTestGlob(); glob != "" {
-					if _, err := filepath.Match(glob, ""); err != nil {
-						return cfg, fmt.Errorf("config: identities[%d].repos[%d] test_glob %q is invalid: %w", i, j, glob, err)
-					}
-				}
-			}
-		}
-	} else {
-		if cfg.BotUser == "" {
-			return cfg, errors.New("config: bot_user is required (or define [[identities]])")
-		}
-		if cfg.BotEmail == "" {
-			switch cfg.Forge.Type {
-			case "github":
-				cfg.BotEmail = cfg.BotUser + "@users.noreply.github.com"
-			case "gitea":
-				cfg.BotEmail = cfg.BotUser + "@gitea.local"
-			}
-		}
-		// Repos are optional in the new feature-based config path (they can
-		// come from config.identities.yaml). Legacy TOML callers should still
-		// include [[repos]], but LoadDir callers may omit them.
+	return nil
+}
+
+func validateSingleIdentity(cfg *Config) error {
+	if cfg.BotUser == "" {
+		return errors.New("config: bot_user is required (or define [[identities]])")
+	}
+	if cfg.BotEmail == "" {
 		switch cfg.Forge.Type {
-		case "github", "gitea":
-		default:
-			return cfg, fmt.Errorf("config: forge.type %q is not supported (want github or gitea)", cfg.Forge.Type)
+		case "github":
+			cfg.BotEmail = cfg.BotUser + "@users.noreply.github.com"
+		case "gitea":
+			cfg.BotEmail = cfg.BotUser + "@gitea.local"
 		}
-		for i, r := range cfg.Repos {
-			if r.Owner == "" || r.Name == "" {
-				return cfg, fmt.Errorf("config: repos[%d] needs owner and name", i)
-			}
-			if glob := r.ResolvedTestGlob(); glob != "" {
-				if _, err := filepath.Match(glob, ""); err != nil {
-					return cfg, fmt.Errorf("config: repos[%d] test_glob %q is invalid: %w", i, glob, err)
-				}
+	}
+	if !validForgeType(cfg.Forge.Type) {
+		return fmt.Errorf("config: forge.type %q is not supported (want github or gitea)", cfg.Forge.Type)
+	}
+	return validateRepos(cfg.Repos)
+}
+
+func validForgeType(t string) bool {
+	return t == "github" || t == "gitea"
+}
+
+func validateRepos(repos []Repo) error {
+	for i, r := range repos {
+		if r.Owner == "" || r.Name == "" {
+			return fmt.Errorf("repos[%d] needs owner and name", i)
+		}
+		if glob := r.ResolvedTestGlob(); glob != "" {
+			if _, err := filepath.Match(glob, ""); err != nil {
+				return fmt.Errorf("repos[%d] test_glob %q is invalid: %w", i, glob, err)
 			}
 		}
 	}
-	if cfg.Containers.Enabled {
-		if cfg.Containers.Image == "" {
-			return cfg, errors.New("config: containers.image is required when containers.enabled is true")
-		}
-		if cfg.Agent.Mode != "nats" {
-			return cfg, errors.New("config: agent.mode must be \"nats\" when containers.enabled is true")
-		}
-		if cfg.NATS.URL == "" {
-			return cfg, errors.New("config: [nats] url is required when containers.enabled is true")
-		}
-		if cfg.Containers.MaxUptime == 0 {
-			cfg.Containers.MaxUptime = Duration(60 * time.Minute)
-		}
-		if cfg.Containers.VolumeTTL < 0 {
-			return cfg, errors.New("config: containers.volume_ttl must not be negative")
-		}
-		if cfg.Containers.VolumeTTL == 0 {
-			cfg.Containers.VolumeTTL = Duration(72 * time.Hour)
-		}
-		if cfg.Containers.PullPolicy == "" {
-			cfg.Containers.PullPolicy = "missing"
-		}
+	return nil
+}
+
+func validateContainers(cfg *Config) error {
+	if !cfg.Containers.Enabled {
+		return nil
 	}
-	return cfg, nil
+	if cfg.Containers.Image == "" {
+		return errors.New("config: containers.image is required when containers.enabled is true")
+	}
+	if cfg.Agent.Mode != "nats" {
+		return errors.New("config: agent.mode must be \"nats\" when containers.enabled is true")
+	}
+	if cfg.NATS.URL == "" {
+		return errors.New("config: [nats] url is required when containers.enabled is true")
+	}
+	if cfg.Containers.MaxUptime == 0 {
+		cfg.Containers.MaxUptime = Duration(60 * time.Minute)
+	}
+	if cfg.Containers.VolumeTTL < 0 {
+		return errors.New("config: containers.volume_ttl must not be negative")
+	}
+	if cfg.Containers.VolumeTTL == 0 {
+		cfg.Containers.VolumeTTL = Duration(72 * time.Hour)
+	}
+	if cfg.Containers.PullPolicy == "" {
+		cfg.Containers.PullPolicy = "missing"
+	}
+	return nil
 }
 
 func dataHome() string {

@@ -79,55 +79,14 @@ func run() int {
 	log.Info("nats connected", "url", natsURL)
 
 	// JetStream setup.
-	js, err := jetstream.New(nc)
+	_, cons, err := setupJetStream(ctx, nc, *consumer)
 	if err != nil {
-		log.Error("jetstream init failed", "err", err)
+		log.Error("jetstream setup failed", "err", err)
 		return 1
 	}
 
-	stream, err := js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
-		Name:       streamName,
-		Subjects:   []string{"archie.task.>", "archie.agent.>"},
-		Storage:    jetstream.FileStorage,
-		Retention:  jetstream.WorkQueuePolicy,
-		Duplicates: dedupWindow,
-	})
-	if err != nil {
-		log.Error("stream setup failed", "err", err)
-		return 1
-	}
-
-	cons, err := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
-		Name:              *consumer,
-		Durable:           *consumer,
-		FilterSubject:     arnats.SubjectAgentWildcard,
-		AckPolicy:         jetstream.AckExplicitPolicy,
-		MaxDeliver:        3,
-		AckWait:           ackWait,
-		InactiveThreshold: 24 * time.Hour,
-	})
-	if err != nil {
-		log.Error("consumer setup failed", "err", err)
-		return 1
-	}
-
-	// Prefer a dedicated per-task subscription over the shared queue group
-	// whenever this container was spawned for a specific task (task.json
-	// present at the worktree mount): with concurrent multi-task dispatch,
-	// a queue-group member could otherwise pick up a message meant for a
-	// sibling container that has a *different* task's worktree mounted.
-	var taskRunSub *nats.Subscription
-	if taskID, ok := bootTaskID(storage.WorktreeMountDir, log); ok {
-		taskRunSub, err = nc.Subscribe(taskrun.SubjectForTask(taskID), func(msg *nats.Msg) {
-			handleTaskRun(ctx, msg, nc, log)
-		})
-		log.Info("taskrun: dedicated per-task subscription", "task", taskID)
-	} else {
-		taskRunSub, err = nc.QueueSubscribe(taskRunSubjectWildcard, taskRunQueueGroup, func(msg *nats.Msg) {
-			handleTaskRun(ctx, msg, nc, log)
-		})
-		log.Info("taskrun: shared queue-group subscription (no task.json found)")
-	}
+	// Subscribe to task run messages.
+	taskRunSub, err := subscribeTaskRuns(ctx, nc, log)
 	if err != nil {
 		log.Error("taskrun subscribe failed", "err", err)
 		return 1
@@ -139,51 +98,53 @@ func run() int {
 	}()
 
 	log.Info("archie-agent ready", "nats", natsURL, "consumer", *consumer)
+	return runMainLoop(ctx, cons, nc, log)
+}
 
-	// Main loop: fetch, run, reply, ack.
-	for {
-		if ctx.Err() != nil {
-			log.Info("archie-agent shutting down")
-			return 0
-		}
-
-		batch, err := cons.Fetch(1, jetstream.FetchMaxWait(pollTimeout))
-		if err != nil {
-			if ctx.Err() != nil {
-				return 0
-			}
-			log.Error("fetch failed", "err", err)
-			time.Sleep(1 * time.Second)
-			continue
-		}
-
-		var msg jetstream.Msg
-		for m := range batch.Messages() {
-			if m != nil {
-				msg = m
-				break
-			}
-		}
-		if err := batch.Error(); err != nil {
-			log.Error("fetch batch error", "err", err)
-			continue
-		}
-		if msg == nil {
-			continue
-		}
-
-		// Process the message.
-		if err := handle(ctx, msg, nc, log); err != nil {
-			log.Error("handle failed", "err", err)
-			if err := msg.Nak(); err != nil {
-				log.Warn("nak failed", "err", err)
-			}
-			continue
-		}
-		if err := msg.Ack(); err != nil {
-			log.Warn("ack failed", "err", err)
-		}
+func setupJetStream(ctx context.Context, nc *nats.Conn, consumerName string) (jetstream.JetStream, jetstream.Consumer, error) {
+	js, err := jetstream.New(nc)
+	if err != nil {
+		return nil, nil, err
 	}
+	stream, err := js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
+		Name:       streamName,
+		Subjects:   []string{"archie.task.>", "archie.agent.>"},
+		Storage:    jetstream.FileStorage,
+		Retention:  jetstream.WorkQueuePolicy,
+		Duplicates: dedupWindow,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	cons, err := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
+		Name:              consumerName,
+		Durable:           consumerName,
+		FilterSubject:     arnats.SubjectAgentWildcard,
+		AckPolicy:         jetstream.AckExplicitPolicy,
+		MaxDeliver:        3,
+		AckWait:           ackWait,
+		InactiveThreshold: 24 * time.Hour,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return js, cons, nil
+}
+
+// subscribeTaskRuns prefers a dedicated per-task subscription over the
+// shared queue group whenever this container was spawned for a specific
+// task (task.json present at the worktree mount).
+func subscribeTaskRuns(ctx context.Context, nc *nats.Conn, log *slog.Logger) (*nats.Subscription, error) {
+	if taskID, ok := bootTaskID(storage.WorktreeMountDir, log); ok {
+		log.Info("taskrun: dedicated per-task subscription", "task", taskID)
+		return nc.Subscribe(taskrun.SubjectForTask(taskID), func(msg *nats.Msg) {
+			handleTaskRun(ctx, msg, nc, log)
+		})
+	}
+	log.Info("taskrun: shared queue-group subscription (no task.json found)")
+	return nc.QueueSubscribe(taskRunSubjectWildcard, taskRunQueueGroup, func(msg *nats.Msg) {
+		handleTaskRun(ctx, msg, nc, log)
+	})
 }
 
 // bootTaskID reads the boot-time task.json brief the daemon writes into
@@ -204,6 +165,49 @@ func bootTaskID(mountDir string, log *slog.Logger) (int64, bool) {
 		return 0, false
 	}
 	return payload.ID, true
+}
+
+// runMainLoop runs the fetch-handle-ack loop until the context is cancelled.
+func runMainLoop(ctx context.Context, cons jetstream.Consumer, nc *nats.Conn, log *slog.Logger) int {
+	for {
+		if ctx.Err() != nil {
+			log.Info("archie-agent shutting down")
+			return 0
+		}
+		batch, err := cons.Fetch(1, jetstream.FetchMaxWait(pollTimeout))
+		if err != nil {
+			if ctx.Err() != nil {
+				return 0
+			}
+			log.Error("fetch failed", "err", err)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		var msg jetstream.Msg
+		for m := range batch.Messages() {
+			if m != nil {
+				msg = m
+				break
+			}
+		}
+		if err := batch.Error(); err != nil {
+			log.Error("fetch batch error", "err", err)
+			continue
+		}
+		if msg == nil {
+			continue
+		}
+		if err := handle(ctx, msg, nc, log); err != nil {
+			log.Error("handle failed", "err", err)
+			if err := msg.Nak(); err != nil {
+				log.Warn("nak failed", "err", err)
+			}
+			continue
+		}
+		if err := msg.Ack(); err != nil {
+			log.Warn("ack failed", "err", err)
+		}
+	}
 }
 
 func natsConnectionSettings(flagURL string, getenv func(string) string) (url, token string) {

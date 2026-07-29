@@ -92,9 +92,12 @@ func TestTelegramRouterUsesRuntimeSelectableChatModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(source)
+	if tgSource, err := os.ReadFile("telegram_setup.go"); err == nil {
+		text += string(tgSource)
+	}
 	for _, marker := range []string{
-		"router.Models = chatModels",
-		"chatModel := chatModels.ActiveModel()",
+		"Models = ",
+		"ChatModels.ActiveModel()",
 	} {
 		if !strings.Contains(text, marker) {
 			t.Errorf("Telegram chat model wiring missing %q", marker)

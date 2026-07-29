@@ -139,6 +139,11 @@ func (g *Gateway) handleUpdateCallback(ctx context.Context, b *bot.Bot, update *
 		g.answerModelCallback(ctx, b, query.ID, "That update action is no longer valid.", true)
 		return
 	}
+	g.dispatchUpdateAction(ctx, b, query, action)
+}
+
+// dispatchUpdateAction routes the callback to defer, approve, or reject.
+func (g *Gateway) dispatchUpdateAction(ctx context.Context, b *bot.Bot, query *models.CallbackQuery, action updateAction) {
 	switch {
 	case strings.HasPrefix(query.Data, updateDeferCallback):
 		if err := g.Updates.Defer(ctx, query.From.ID, action.snapshot); err != nil {

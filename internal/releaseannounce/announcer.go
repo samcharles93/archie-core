@@ -32,14 +32,7 @@ func (a Announcer) Announce(ctx context.Context, recipients []int64, send Sender
 	if len(recipients) == 0 {
 		return nil
 	}
-	hasReleasedComponent := false
-	for _, component := range a.Components {
-		if _, valid := parseReleaseVersion(component.Version); valid {
-			hasReleasedComponent = true
-			break
-		}
-	}
-	if !hasReleasedComponent {
+	if !hasReleasedComponent(a.Components) {
 		return nil
 	}
 	if send == nil {
@@ -52,75 +45,108 @@ func (a Announcer) Announce(ctx context.Context, recipients []int64, send Sender
 
 	var errs []error
 	for _, recipient := range recipients {
-		recipientPrefix := strconv.FormatInt(recipient, 10) + ":"
-		seenRecipient := false
-		for _, component := range a.Components {
-			if _, ok := state[recipientPrefix+component.ID]; ok {
-				seenRecipient = true
-				break
+		if err := a.announceTo(ctx, recipient, send, state); err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return err
 			}
-		}
-		if !seenRecipient {
-			for _, component := range a.Components {
-				if _, valid := parseReleaseVersion(component.Version); valid {
-					state[recipientPrefix+component.ID] = component.Version
-				}
-			}
-			if err := saveState(a.StatePath, state); err != nil {
-				return fmt.Errorf("baseline components for recipient %d: %w", recipient, err)
-			}
-			continue
-		}
-
-		changed := make(map[string]bool, len(a.Components))
-		stateChanged := false
-		for _, component := range a.Components {
-			current, validCurrent := parseReleaseVersion(component.Version)
-			if !validCurrent {
-				continue
-			}
-			key := recipientPrefix + component.ID
-			previousText, seen := state[key]
-			if !seen {
-				state[key] = component.Version
-				stateChanged = true
-				continue
-			}
-			previous, validPrevious := parseReleaseVersion(previousText)
-			if !validPrevious || compareVersions(current, previous) > 0 {
-				changed[component.ID] = true
-			}
-		}
-		if len(changed) == 0 {
-			if stateChanged {
-				if err := saveState(a.StatePath, state); err != nil {
-					return fmt.Errorf("baseline new components for recipient %d: %w", recipient, err)
-				}
-			}
-			continue
-		}
-
-		message, err := a.componentMessage(changed)
-		if err != nil {
-			return err
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if err := send(ctx, recipient, message); err != nil {
-			errs = append(errs, fmt.Errorf("notify recipient %d: %w", recipient, err))
-			continue
-		}
-		for _, component := range a.Components {
-			if changed[component.ID] {
-				state[recipientPrefix+component.ID] = component.Version
-			}
-		}
-		if err := saveState(a.StatePath, state); err != nil {
-			errs = append(errs, fmt.Errorf("record notification for recipient %d: %w", recipient, err))
+			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func hasReleasedComponent(components []Component) bool {
+	for _, component := range components {
+		if _, valid := parseReleaseVersion(component.Version); valid {
+			return true
+		}
+	}
+	return false
+}
+
+// announceTo sends one recipient the release announcement if it is their
+// first time, or if their components have changed since the last check.
+func (a Announcer) announceTo(ctx context.Context, recipient int64, send Sender, state map[string]string) error {
+	prefix := strconv.FormatInt(recipient, 10) + ":"
+
+	if !recipientSeen(state, prefix, a.Components) {
+		return a.baselineRecipient(state, prefix)
+	}
+
+	changed, stateChanged := a.detectChanged(state, prefix)
+	if len(changed) == 0 {
+		if stateChanged {
+			return saveState(a.StatePath, state)
+		}
+		return nil
+	}
+
+	return a.sendAndRecord(ctx, recipient, send, state, prefix, changed)
+}
+
+func recipientSeen(state map[string]string, prefix string, components []Component) bool {
+	for _, component := range components {
+		if _, ok := state[prefix+component.ID]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (a Announcer) baselineRecipient(state map[string]string, prefix string) error {
+	for _, component := range a.Components {
+		if _, valid := parseReleaseVersion(component.Version); valid {
+			state[prefix+component.ID] = component.Version
+		}
+	}
+	return saveState(a.StatePath, state)
+}
+
+// detectChanged finds components whose version has increased since the last
+// recorded state. It also detects previously-unseen components.
+func (a Announcer) detectChanged(state map[string]string, prefix string) (changed map[string]bool, stateChanged bool) {
+	changed = make(map[string]bool, len(a.Components))
+	for _, component := range a.Components {
+		current, validCurrent := parseReleaseVersion(component.Version)
+		if !validCurrent {
+			continue
+		}
+		key := prefix + component.ID
+		previousText, seen := state[key]
+		if !seen {
+			state[key] = component.Version
+			stateChanged = true
+			continue
+		}
+		previous, validPrevious := parseReleaseVersion(previousText)
+		if !validPrevious || compareVersions(current, previous) > 0 {
+			changed[component.ID] = true
+		}
+	}
+	return
+}
+
+// sendAndRecord sends the announcement and updates state on success.
+func (a Announcer) sendAndRecord(ctx context.Context, recipient int64, send Sender, state map[string]string, prefix string, changed map[string]bool) error {
+	message, err := a.componentMessage(changed)
+	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := send(ctx, recipient, message); err != nil {
+		return fmt.Errorf("notify recipient %d: %w", recipient, err)
+	}
+	for _, component := range a.Components {
+		if changed[component.ID] {
+			state[prefix+component.ID] = component.Version
+		}
+	}
+	if err := saveState(a.StatePath, state); err != nil {
+		return fmt.Errorf("record notification for recipient %d: %w", recipient, err)
+	}
+	return nil
 }
 
 func (a Announcer) componentMessage(changed map[string]bool) (string, error) {

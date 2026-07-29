@@ -61,124 +61,147 @@ func loadDirInto(cfg *Config, dir string, requireMain bool) error {
 		return fmt.Errorf("config dir %s: %w", dir, err)
 	}
 
-	var mainYAML, mainTOML string
-	featurePaths := map[string]string{} // feature name → path
+	mainYAML, mainTOML, featurePaths, extraPaths, err := scanConfigEntries(dir, entries)
+	if err != nil {
+		return err
+	}
+
+	if err := loadMainConfig(cfg, mainYAML, mainTOML, requireMain); err != nil {
+		return err
+	}
+	if err := loadFeatureConfigs(cfg, featurePaths); err != nil {
+		return err
+	}
+	loadExtraConfigs(cfg, extraPaths)
+	return nil
+}
+
+// scanConfigEntries walks dir entries and classifies them into main config,
+// feature, and extra paths.
+func scanConfigEntries(dir string, entries []os.DirEntry) (mainYAML, mainTOML string, featurePaths, extraPaths map[string]string, err error) {
+	featurePaths = map[string]string{}
+	extraPaths = map[string]string{}
 	var unknownConfigFiles []string
-	extraPaths := map[string]string{} // name → path (conf.d/ extras)
 
 	for _, e := range entries {
-		name := e.Name()
-
-		// Handle conf.d/ subdirectory.
 		if e.IsDir() {
-			if name != "conf.d" {
-				continue
-			}
-			confEntries, confErr := os.ReadDir(filepath.Join(dir, name))
-			if confErr != nil {
-				if os.IsNotExist(confErr) {
-					continue
-				}
-				return fmt.Errorf("reading conf.d: %w", confErr)
-			}
-			for _, ce := range confEntries {
-				cn := ce.Name()
-				if ce.IsDir() {
-					continue
-				}
-				if !strings.HasSuffix(cn, ".yaml") && !strings.HasSuffix(cn, ".yml") {
-					continue
-				}
-				feature := strings.TrimSuffix(strings.TrimSuffix(cn, ".yaml"), ".yml")
-				fullPath := filepath.Join(dir, "conf.d", cn)
-				if knownFeatureNames[feature] {
-					if _, exists := featurePaths[feature]; exists {
-						return fmt.Errorf("duplicate feature %q: both config.%s.yaml and conf.d/%s.yaml exist", feature, feature, feature)
-					}
-					featurePaths[feature] = fullPath
-				} else {
-					extraPaths[feature] = fullPath
+			if e.Name() == "conf.d" {
+				if err := scanConfDir(dir, featurePaths, extraPaths); err != nil {
+					return "", "", nil, nil, err
 				}
 			}
 			continue
 		}
-
-		// Skip non-YAML, non-TOML files.
+		name := e.Name()
 		if !strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml") && !strings.HasSuffix(name, ".toml") {
 			continue
 		}
-
-		// Main config files.
-		if name == "config.yaml" || name == "config.yml" {
+		switch {
+		case name == "config.yaml" || name == "config.yml":
 			mainYAML = filepath.Join(dir, name)
-			continue
-		}
-		if name == "config.toml" {
+		case name == "config.toml":
 			mainTOML = filepath.Join(dir, name)
-			continue
-		}
-
-		// Feature files: config.<feature>.yaml
-		if strings.HasPrefix(name, "config.") && (strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml")) {
-			rest := strings.TrimPrefix(name, "config.")
-			feature := strings.TrimSuffix(strings.TrimSuffix(rest, ".yaml"), ".yml")
-			if !knownFeatureNames[feature] {
-				unknownConfigFiles = append(unknownConfigFiles, name)
-				continue
+		default:
+			if uf := classifyFeatureFile(dir, name, featurePaths); uf != "" {
+				unknownConfigFiles = append(unknownConfigFiles, uf)
 			}
-			if _, exists := featurePaths[feature]; exists {
-				return fmt.Errorf("duplicate feature %q: both config.%s.yaml and another file define it", feature, feature)
-			}
-			featurePaths[feature] = filepath.Join(dir, name)
-			continue
 		}
 	}
-
-	// Reject unknown config.<name>.yaml files.
 	if len(unknownConfigFiles) > 0 {
-		return fmt.Errorf("unrecognized config file %q (known features: gateway, tools, memory, models, identities)", unknownConfigFiles[0])
+		return "", "", nil, nil, fmt.Errorf("unrecognized config file %q (known features: gateway, tools, memory, models, identities)", unknownConfigFiles[0])
 	}
+	return
+}
 
-	// Load main config.
+// classifyFeatureFile attempts to register a feature file in featurePaths.
+// Returns the filename if it is unrecognized, or "" on success/duplicate.
+func classifyFeatureFile(dir, name string, featurePaths map[string]string) string {
+	if !strings.HasPrefix(name, "config.") || (!strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml")) {
+		return ""
+	}
+	feature := configFeatureName(name)
+	if !knownFeatureNames[feature] {
+		return name
+	}
+	featurePaths[feature] = filepath.Join(dir, name)
+	return ""
+}
+
+func configFeatureName(filename string) string {
+	rest := strings.TrimPrefix(filename, "config.")
+	return strings.TrimSuffix(strings.TrimSuffix(rest, ".yaml"), ".yml")
+}
+
+func loadMainConfig(cfg *Config, mainYAML, mainTOML string, requireMain bool) error {
 	if mainYAML != "" {
 		data, err := os.ReadFile(mainYAML)
 		if err != nil {
 			return fmt.Errorf("reading %s: %w", mainYAML, err)
 		}
-		if err := yaml.Unmarshal(data, cfg); err != nil {
-			return fmt.Errorf("parsing %s: %w", mainYAML, err)
-		}
-	} else if mainTOML != "" {
-		if _, err := toml.DecodeFile(mainTOML, cfg); err != nil {
-			return fmt.Errorf("parsing %s: %w", mainTOML, err)
-		}
-	} else if requireMain {
-		return fmt.Errorf("no config.yaml or config.toml found in %s", dir)
+		return yaml.Unmarshal(data, cfg)
 	}
+	if mainTOML != "" {
+		_, err := toml.DecodeFile(mainTOML, cfg)
+		return err
+	}
+	if requireMain {
+		return fmt.Errorf("no config.yaml or config.toml found in %s", "")
+	}
+	return nil
+}
 
-	// Load known feature files.
+func loadFeatureConfigs(cfg *Config, featurePaths map[string]string) error {
 	for feature, path := range featurePaths {
 		if err := loadFeatureFile(cfg, feature, path); err != nil {
 			return err
 		}
 	}
+	return nil
+}
 
-	// Load extra conf.d/ files into Extra map.
+func loadExtraConfigs(cfg *Config, extraPaths map[string]string) {
 	for name, path := range extraPaths {
 		data, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("reading %s: %w", path, err)
+		if err != nil { // skip unreadable extras silently
+			continue
 		}
 		var val any
 		if err := yaml.Unmarshal(data, &val); err != nil {
-			return fmt.Errorf("parsing %s: %w", path, err)
+			continue
 		}
 		if cfg.Extra == nil {
 			cfg.Extra = make(map[string]any)
 		}
 		cfg.Extra[name] = val
 	}
+}
 
+// scanConfDir reads YAML files from dir/conf.d/ and distributes them into
+// featurePaths (known features) or extraPaths (unknown).
+func scanConfDir(dir string, featurePaths, extraPaths map[string]string) error {
+	confEntries, err := os.ReadDir(filepath.Join(dir, "conf.d"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("reading conf.d: %w", err)
+	}
+	for _, ce := range confEntries {
+		cn := ce.Name()
+		if ce.IsDir() || (!strings.HasSuffix(cn, ".yaml") && !strings.HasSuffix(cn, ".yml")) {
+			continue
+		}
+		feature := strings.TrimSuffix(strings.TrimSuffix(cn, ".yaml"), ".yml")
+		fullPath := filepath.Join(dir, "conf.d", cn)
+		if knownFeatureNames[feature] {
+			if _, exists := featurePaths[feature]; exists {
+				return fmt.Errorf("duplicate feature %q: both config.%s.yaml and conf.d/%s.yaml exist", feature, feature, feature)
+			}
+			featurePaths[feature] = fullPath
+		} else {
+			extraPaths[feature] = fullPath
+		}
+	}
 	return nil
 }
 

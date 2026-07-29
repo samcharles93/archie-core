@@ -41,36 +41,43 @@ func isModelCommand(text string) bool {
 func parseModelRest(rest string) (model, provider string, global, session, refresh bool) {
 	fields := strings.Fields(rest)
 	var modelParts []string
-	for i := 0; i < len(fields); i++ {
-		f := fields[i]
-		switch {
-		case f == "--global":
+	provider = extractProviderFlag(fields, &modelParts)
+	for _, f := range fields {
+		switch f {
+		case "--global":
 			global = true
-		case f == "--session":
+		case "--session":
 			session = true
-		case f == "--refresh":
+		case "--refresh":
 			refresh = true
-		case strings.HasPrefix(f, "--provider"):
-			if after, ok := strings.CutPrefix(f, "--provider="); ok && after != "" {
-				provider = after
-			} else if after == "--provider" {
-				// Look ahead for the provider value.
-				if i+1 < len(fields) && !strings.HasPrefix(fields[i+1], "--") {
-					i++
-					provider = strings.TrimPrefix(fields[i], "--provider=")
-					if provider == fields[i] {
-						provider = fields[i]
-					}
-				}
-			} else {
-				provider = after
-			}
 		default:
-			modelParts = append(modelParts, f)
+			if !strings.HasPrefix(f, "--provider") {
+				modelParts = append(modelParts, f)
+			}
 		}
 	}
 	model = strings.Join(modelParts, " ")
 	return
+}
+
+// extractProviderFlag extracts --provider=<value> or --provider <value>
+// from fields, returning the non-provider fields via modelParts.
+func extractProviderFlag(fields []string, modelParts *[]string) string {
+	for i := range fields {
+		f := fields[i]
+		if !strings.HasPrefix(f, "--provider") {
+			*modelParts = append(*modelParts, f)
+			continue
+		}
+		if after, ok := strings.CutPrefix(f, "--provider="); ok {
+			return after
+		}
+		// --provider <value> (space-separated)
+		if i+1 < len(fields) && !strings.HasPrefix(fields[i+1], "--") {
+			return fields[i+1]
+		}
+	}
+	return ""
 }
 
 // handleModelCommand handles /model with arguments, performing direct
@@ -138,34 +145,47 @@ func (g *Gateway) handleModelCommand(
 
 	// Switch model.
 	if model != "" {
-		if err := router.Models.SetActiveModel(ctx, model); err != nil {
-			g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
-				fmt.Sprintf("Cannot switch: %v", err))
-			return
-		}
-		active := router.Models.ActiveModel()
-		p, _, _ := strings.Cut(active, "/")
-		result := fmt.Sprintf("Model changed to %s.", modelDisplayName(active, p))
-
-		if global {
-			if router.ModelPersist != nil {
-				if err := router.ModelPersist(ctx, active); err != nil {
-					g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
-						fmt.Sprintf("Model switched to %s but persistence failed: %v",
-							modelDisplayName(active, p), err))
-					return
-				}
-				result += " (persisted globally)"
-			} else {
-				result += " (global persistence is not configured)"
-			}
-		}
-		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, result)
+		g.switchModel(ctx, b, msg, router, model, global)
 		return
 	}
 
 	// Neither model nor provider: delegate to inline selector.
 	g.sendModelSelector(ctx, b, msg, router)
+}
+
+// switchModel activates a model and sends confirmation. When global is true
+// the new selection is persisted across restarts.
+func (g *Gateway) switchModel(
+	ctx context.Context,
+	b *bot.Bot,
+	msg *models.Message,
+	router *gateway.Router,
+	model string,
+	global bool,
+) {
+	if err := router.Models.SetActiveModel(ctx, model); err != nil {
+		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
+			fmt.Sprintf("Cannot switch: %v", err))
+		return
+	}
+	active := router.Models.ActiveModel()
+	p, _, _ := strings.Cut(active, "/")
+	result := fmt.Sprintf("Model changed to %s.", modelDisplayName(active, p))
+
+	if global {
+		if router.ModelPersist != nil {
+			if err := router.ModelPersist(ctx, active); err != nil {
+				g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
+					fmt.Sprintf("Model switched to %s but persistence failed: %v",
+						modelDisplayName(active, p), err))
+				return
+			}
+			result += " (persisted globally)"
+		} else {
+			result += " (global persistence is not configured)"
+		}
+	}
+	g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, result)
 }
 
 func (g *Gateway) sendModelSelector(

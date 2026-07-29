@@ -62,39 +62,7 @@ func runCodesearchHelper(args []string, out io.Writer) int {
 		return 0
 
 	case "candidates":
-		fs := newHelperFlagSet("candidates")
-		index := fs.String("index", "", "path of the index sidecar to query")
-		pattern := fs.String("pattern", "", "search pattern")
-		literal := fs.Bool("literal", false, "treat the pattern as a literal string")
-		caseSensitive := fs.Bool("case-sensitive", false, "match case sensitively")
-		if err := fs.Parse(args[1:]); err != nil {
-			return 2
-		}
-		if *index == "" || *pattern == "" {
-			helperErrorf("candidates: --index and --pattern are required\n")
-			return 2
-		}
-		files, err := indexing.IndexCandidates(*index, *pattern, *literal, *caseSensitive)
-		if err != nil {
-			helperErrorf("candidates: %v\n", err)
-			return 1
-		}
-		// The parent decodes a JSON array and treats any decode failure as
-		// "no index", so a nil slice must still marshal as [] rather than
-		// null.
-		if files == nil {
-			files = []string{}
-		}
-		encoded, err := json.Marshal(files)
-		if err != nil {
-			helperErrorf("candidates: encode result: %v\n", err)
-			return 1
-		}
-		if _, err := out.Write(encoded); err != nil {
-			helperErrorf("candidates: write result: %v\n", err)
-			return 1
-		}
-		return 0
+		return runCandidates(args[1:], out)
 
 	default:
 		helperErrorf("%s: unknown subcommand %q\n", codesearchHelperCommand, args[0])
@@ -106,6 +74,43 @@ func newHelperFlagSet(name string) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(flagErrorOutput)
 	return fs
+}
+
+// runCandidates handles the "candidates" subcommand, returning candidate
+// file paths as a JSON array on stdout.
+func runCandidates(args []string, out io.Writer) int {
+	fs := newHelperFlagSet("candidates")
+	index := fs.String("index", "", "path of the index sidecar to query")
+	pattern := fs.String("pattern", "", "search pattern")
+	literal := fs.Bool("literal", false, "treat the pattern as a literal string")
+	caseSensitive := fs.Bool("case-sensitive", false, "match case sensitively")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *index == "" || *pattern == "" {
+		helperErrorf("candidates: --index and --pattern are required\n")
+		return 2
+	}
+	files, err := indexing.IndexCandidates(*index, *pattern, *literal, *caseSensitive)
+	if err != nil {
+		helperErrorf("candidates: %v\n", err)
+		return 1
+	}
+	// The parent decodes a JSON array and treats any decode failure as
+	// "no index", so a nil slice must still marshal as [] rather than null.
+	if files == nil {
+		files = []string{}
+	}
+	encoded, err := json.Marshal(files)
+	if err != nil {
+		helperErrorf("candidates: encode result: %v\n", err)
+		return 1
+	}
+	if _, err := out.Write(encoded); err != nil {
+		helperErrorf("candidates: write result: %v\n", err)
+		return 1
+	}
+	return 0
 }
 
 // helperErrorf writes a diagnostic to stderr. The write result is ignored
