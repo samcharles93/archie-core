@@ -89,27 +89,38 @@ type Registration struct {
 	Handler nats.MsgHandler
 }
 
-// RegisterAll subscribes every registration on nc. If any subscribe
-// call fails, every subscription made so far is unsubscribed before
-// returning the error  --  a server never ends up half-registered. The
-// returned func unsubscribes all of them.
+// RegisterAll subscribes every registration on nc and waits for the server
+// to acknowledge them. If any step fails, every subscription made so far is
+// unsubscribed before returning the error -- a server never ends up
+// half-registered. The returned func unsubscribes all of them.
+//
+// The flush is what makes a successful return meaningful. Subscribe only
+// queues the SUB frame on the client, so without it a caller that registers
+// and immediately requests can beat its own subscription to the server and
+// get nats.ErrNoResponders from a responder that is, by then, listening.
 func RegisterAll(nc *nats.Conn, regs []Registration) (unsubscribe func(), err error) {
 	subs := make([]*nats.Subscription, 0, len(regs))
-	for _, r := range regs {
-		sub, err := nc.Subscribe(r.Subject, r.Handler)
-		if err != nil {
-			for _, s := range subs {
-				_ = s.Unsubscribe()
-			}
-			return nil, fmt.Errorf("subscribe %s: %w", r.Subject, err)
-		}
-		subs = append(subs, sub)
-	}
-	return func() {
+	unsubscribeAll := func() {
 		for _, s := range subs {
 			_ = s.Unsubscribe()
 		}
-	}, nil
+	}
+
+	for _, r := range regs {
+		sub, subErr := nc.Subscribe(r.Subject, r.Handler)
+		if subErr != nil {
+			unsubscribeAll()
+			return nil, fmt.Errorf("subscribe %s: %w", r.Subject, subErr)
+		}
+		subs = append(subs, sub)
+	}
+
+	if err := nc.Flush(); err != nil {
+		unsubscribeAll()
+		return nil, fmt.Errorf("flush subscriptions: %w", err)
+	}
+
+	return unsubscribeAll, nil
 }
 
 // Respond marshals v and replies to msg, logging (rather than
