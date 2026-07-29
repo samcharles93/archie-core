@@ -1,0 +1,71 @@
+# ==============================================================================
+# Single-Forge GitHub Deployment Example
+#
+# Manages multiple GitHub repositories using a single bot account and token.
+# One [forge] block applies to ALL [[repos]] entries below.
+# ==============================================================================
+
+work_dir = "~/.local/share/archie/work"
+db_path  = "~/.local/share/archie/archie.db"
+poll_interval = "60s"
+label = "archie"
+bot_user = "archie-bot"
+bot_email = "archie-bot@users.noreply.github.com"
+diff_cap_lines = 400
+
+[forge]
+type = "github"
+host = "https://github.com"
+token = { engine = "env", key = "ARCHIE_GITHUB_TOKEN" }
+
+[dispatch]
+trigger = "assignee"      # "assignee", "label", or "either"
+ack_reaction = "eyes"    # Emoji reaction on issue pickup
+
+[dispatch.labels]
+queued  = "archie:queued"
+working = "archie:working"
+waiting = "archie:waiting"
+pr      = "archie:pr"
+parked  = "archie:parked"
+
+[models]
+triage  = "openai/gpt-4o"
+planner = "openai/gpt-4o"
+builder = "openai/gpt-4o"
+
+[providers.openai]
+class = "openai"
+api_key_env = "OPENAI_API_KEY"
+
+[agent]
+mode = "inprocess"
+command = "archie-agent"
+
+[budgets]
+max_steps = 60
+max_tokens = 400000
+wall_clock = "30m"
+
+# List of repositories managed by this single GitHub forge configuration:
+[[repos]]
+owner = "my-org"
+name = "frontend-app"
+base = "main"
+ecosystem = "node"
+
+[[repos]]
+owner = "my-org"
+name = "backend-service"
+base = "main"
+ecosystem = "go"
+gate = [
+  ["go", "vet", "./..."],
+  ["go", "test", "./...", "-count=1"]
+]
+
+[[repos]]
+owner = "my-org"
+name = "shared-library"
+base = "main"
+ecosystem = "go"

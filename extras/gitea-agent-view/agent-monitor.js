@@ -70,7 +70,7 @@
   // dashboard) is reachable from the browser — reverse-proxy it under
   // this same host to avoid CORS. Override per-load with ?webui=.
   const WEBUI_BASE = new URLSearchParams(location.search).get("webui")
-    || "https://gitea.catlow.cloud/agent-events";
+    || "https://gitea.example.com/agent-events";
 
   const term = new Terminal({ convertEol: true, disableStdin: true, cursorBlink: false, fontSize: 13 });
   term.open(el);

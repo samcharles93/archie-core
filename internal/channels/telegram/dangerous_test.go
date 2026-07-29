@@ -406,8 +406,7 @@ func TestStopCancelsRunningChatTurn(t *testing.T) {
 	const allowedUserID = int64(42)
 	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	g.turns = gateway.NewTurns(slog.Default())
 
 	// stopCurrentTurn resolves the session through the router; with none

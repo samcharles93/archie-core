@@ -1,0 +1,40 @@
+# ==============================================================================
+# Self-Hosted Ollama + Standalone Mode Deployment Example
+#
+# Runs local open-weights models via Ollama (e.g. llama3, qwen2.5) with forge
+# polling disabled (standalone execution mode).
+# ==============================================================================
+
+work_dir = "~/.local/share/archie/work"
+db_path  = "~/.local/share/archie/archie.db"
+poll_interval = "60s"
+
+# Standalone execution: Forge polling is disabled
+[forge]
+type = "none"
+
+[models]
+triage  = "ollama/llama3:latest"
+planner = "ollama/llama3:latest"
+builder = "ollama/llama3:latest"
+
+[providers.ollama]
+class = "ollama"
+
+# Optional chat workspace configuration
+[chat]
+operator = "Local Operator"
+workspace = "~/.local/share/archie/workspace"
+max_steps = 100
+models = [
+  "ollama/llama3:latest",
+  "ollama/qwen2.5:7b"
+]
+
+[agent]
+mode = "inprocess"
+command = "archie-agent"
+
+[budgets]
+max_steps = 60
+wall_clock = "30m"

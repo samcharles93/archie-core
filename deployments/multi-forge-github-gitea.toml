@@ -1,0 +1,82 @@
+# ==============================================================================
+# Multi-Forge (GitHub + Gitea) Deployment Example
+#
+# Runs GitHub and a self-hosted Gitea instance simultaneously.
+# Each [[identities]] entry defines its own forge, token, and repository list.
+# Each identity runs in an isolated background goroutine and worktree directory.
+# ==============================================================================
+
+work_dir = "~/.local/share/archie/work"
+db_path  = "~/.local/share/archie/archie.db"
+poll_interval = "60s"
+
+[models]
+triage  = "openai/gpt-4o"
+planner = "openai/gpt-4o"
+builder = "openai/gpt-4o"
+
+[providers.openai]
+class = "openai"
+api_key_env = "OPENAI_API_KEY"
+
+[agent]
+mode = "inprocess"
+command = "archie-agent"
+
+[budgets]
+max_steps = 60
+wall_clock = "30m"
+
+# ------------------------------------------------------------------------------
+# Identity 1: GitHub Bot
+# ------------------------------------------------------------------------------
+[[identities]]
+name = "github-bot"
+bot_user = "archie-github"
+bot_email = "archie-github@users.noreply.github.com"
+
+[identities.forge]
+type = "github"
+host = "https://github.com"
+token = { engine = "env", key = "ARCHIE_GITHUB_TOKEN" }
+
+[identities.dispatch]
+trigger = "assignee"
+ack_reaction = "eyes"
+
+[[identities.repos]]
+owner = "my-org"
+name = "github-repo-one"
+ecosystem = "go"
+
+[[identities.repos]]
+owner = "my-org"
+name = "github-repo-two"
+ecosystem = "node"
+
+# ------------------------------------------------------------------------------
+# Identity 2: Self-Hosted Gitea Bot
+# ------------------------------------------------------------------------------
+[[identities]]
+name = "gitea-bot"
+bot_user = "archie-gitea"
+bot_email = "archie-gitea@example.com"
+
+[identities.forge]
+type = "gitea"
+host = "https://gitea.example.com"
+token = { engine = "env", key = "ARCHIE_GITEA_TOKEN" }
+
+[identities.dispatch]
+trigger = "label"
+ack_reaction = "eyes"
+
+[[identities.repos]]
+owner = "internal-team"
+name = "gitea-repo-alpha"
+ecosystem = "go"
+
+[[identities.repos]]
+owner = "internal-team"
+name = "gitea-repo-beta"
+ecosystem = "python"

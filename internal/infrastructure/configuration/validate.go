@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/config"
@@ -17,8 +18,11 @@ const (
 	agentModeSubprocess = "subprocess"
 	agentModeNATS       = "nats"
 
-	forgeTypeGitHub = "github"
-	forgeTypeGitea  = "gitea"
+	forgeTypeGitHub   = "github"
+	forgeTypeGitea    = "gitea"
+	forgeTypeNone     = "none"
+	forgeTypeOff      = "off"
+	forgeTypeDisabled = "disabled"
 
 	dispatchTriggerAssignee = "assignee"
 	dispatchTriggerLabel    = "label"
@@ -27,7 +31,7 @@ const (
 
 var (
 	agentModes       = []string{agentModeInProcess, agentModeSubprocess, agentModeNATS}
-	forgeTypes       = []string{forgeTypeGitHub, forgeTypeGitea}
+	forgeTypes       = []string{forgeTypeGitHub, forgeTypeGitea, forgeTypeNone, forgeTypeOff, forgeTypeDisabled}
 	dispatchTriggers = []string{dispatchTriggerAssignee, dispatchTriggerLabel, dispatchTriggerEither}
 )
 
@@ -108,7 +112,7 @@ func validateIdentities(identities []config.IdentityConfig) error {
 		if !oneOf(id.Forge.Type, forgeTypes) {
 			return fmt.Errorf("%w: identities[%d].forge.type %q (want %s)", ErrInvalidInput, i, id.Forge.Type, list(forgeTypes))
 		}
-		if id.Forge.Token == (secret.SecretRef{}) {
+		if !isForgeDisabled(id.Forge.Type) && id.Forge.Token == (secret.SecretRef{}) {
 			return fmt.Errorf("%w: identities[%d].forge.token is required (each identity needs its own secret reference; unlike the top-level [forge], there is no default)", ErrInvalidInput, i)
 		}
 		if err := validateRepos(id.Repos); err != nil {
@@ -116,6 +120,10 @@ func validateIdentities(identities []config.IdentityConfig) error {
 		}
 	}
 	return nil
+}
+
+func isForgeDisabled(t string) bool {
+	return t == forgeTypeNone || t == forgeTypeOff || t == forgeTypeDisabled
 }
 
 func validateSingleIdentity(cfg *config.Config) error {
@@ -165,12 +173,7 @@ func validateContainers(cfg *config.Config) error {
 
 // oneOf reports whether value is in allowed.
 func oneOf(value string, allowed []string) bool {
-	for _, a := range allowed {
-		if value == a {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(allowed, value)
 }
 
 // list renders allowed values for an error message.

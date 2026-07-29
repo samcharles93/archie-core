@@ -116,8 +116,7 @@ func TestStopLeavesTheCallersContextAlone(t *testing.T) {
 	t.Parallel()
 
 	turns := testTurns(t)
-	callerCtx, callerCancel := context.WithCancel(context.Background())
-	defer callerCancel()
+	callerCtx := t.Context()
 
 	started := make(chan struct{})
 	turns.Submit(callerCtx, "s1", func(ctx context.Context) {

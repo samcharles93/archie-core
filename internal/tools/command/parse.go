@@ -63,7 +63,7 @@ func Split(line string) []Segment {
 	}
 
 	runes := []rune(line)
-	for i := 0; i < len(runes); i++ {
+	for i := range runes {
 		r := runes[i]
 
 		if escaped {

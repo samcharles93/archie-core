@@ -64,7 +64,7 @@ class = "ollama"
 # queued behind it.
 # [chat]
 # operator = "Ada Lovelace"
-# workspace = "/var/lib/archie/workspace"
+# workspace = "~/.local/share/archie/workspace"
 # max_steps = 100
 # models = [
 #   "openai/gpt-5.6-sol",
@@ -101,7 +101,7 @@ command = "archie-agent"    # executable path for subprocess mode (not used in n
 listen = "127.0.0.1:8484" # "off" disables
 
 [notify] # optional webhook for human-in-the-loop moments (n8n -> email)
-# webhook = "https://n8n.catlow.cloud/webhook/archie"
+# webhook = "https://n8n.example.com/webhook/archie"
 
 [budgets]
 max_steps = 60

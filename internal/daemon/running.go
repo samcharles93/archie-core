@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"sync"
 )
@@ -84,7 +85,7 @@ func (r *runningTasks) stopAll(identity string) []int64 {
 	for _, cancel := range cancels {
 		cancel()
 	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	slices.Sort(ids)
 	return ids
 }
 

@@ -3,6 +3,7 @@ package command
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -310,10 +311,8 @@ func checkKillAll(seg Segment) (string, bool) {
 	if baseName(seg.Name) != "kill" {
 		return "", false
 	}
-	for _, arg := range seg.Args {
-		if arg == "-1" {
-			return "signals every process on the system", true
-		}
+	if slices.Contains(seg.Args, "-1") {
+		return "signals every process on the system", true
 	}
 	return "", false
 }
@@ -438,20 +437,13 @@ func namesDaemon(arg string) bool {
 }
 
 func anyNamesDaemon(args []string) bool {
-	for _, arg := range args {
-		if namesDaemon(arg) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(args, namesDaemon)
 }
 
 func hasAny(args []string, wanted ...string) bool {
 	for _, arg := range args {
-		for _, w := range wanted {
-			if arg == w {
-				return true
-			}
+		if slices.Contains(wanted, arg) {
+			return true
 		}
 	}
 	return false

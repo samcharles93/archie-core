@@ -180,15 +180,23 @@ func run() int {
 	cfg := doc.Config
 
 	secrets := secret.NewRegistry()
-	token, err := cfg.Forge.Token.Resolve(secrets)
-	if err != nil || token == "" {
-		fmt.Fprintf(os.Stderr, "forge token (engine %q, key %q) is required: %v\n", cfg.Forge.Token.Engine, cfg.Forge.Token.Key, err)
-		return 1
-	}
-	forgeClient, err := forge.New(cfg.Forge.Type, token, cfg.Forge.Host, log)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+	var forgeClient forge.Forge
+	var token string
+	if cfg.Forge.Type == "none" || cfg.Forge.Type == "off" || cfg.Forge.Type == "disabled" {
+		forgeClient = forge.NewNoop(log)
+	} else {
+		var errToken error
+		token, errToken = cfg.Forge.Token.Resolve(secrets)
+		if errToken != nil || token == "" {
+			fmt.Fprintf(os.Stderr, "forge token (engine %q, key %q) is required: %v\n", cfg.Forge.Token.Engine, cfg.Forge.Token.Key, errToken)
+			return 1
+		}
+		var errForge error
+		forgeClient, errForge = forge.New(cfg.Forge.Type, token, cfg.Forge.Host, log)
+		if errForge != nil {
+			fmt.Fprintln(os.Stderr, errForge)
+			return 1
+		}
 	}
 
 	st, err := nell.OpenStore(cfg.DBPath, cfg.BotUser)
@@ -458,15 +466,23 @@ func run() int {
 	// and Run() takes the legacy single-identity path unchanged.
 	var identityRunners []*daemon.IdentityRunner
 	for _, idCfg := range cfg.Identities {
-		idToken, err := idCfg.Forge.Token.Resolve(secrets)
-		if err != nil || idToken == "" {
-			log.Error("identity forge token unresolved", "identity", idCfg.Name, "err", err)
-			return 1
-		}
-		idForge, err := forge.New(idCfg.Forge.Type, idToken, idCfg.Forge.Host, log)
-		if err != nil {
-			log.Error("identity forge client failed", "identity", idCfg.Name, "err", err)
-			return 1
+		var idForge forge.Forge
+		var idToken string
+		if idCfg.Forge.Type == "none" || idCfg.Forge.Type == "off" || idCfg.Forge.Type == "disabled" {
+			idForge = forge.NewNoop(log)
+		} else {
+			var errToken error
+			idToken, errToken = idCfg.Forge.Token.Resolve(secrets)
+			if errToken != nil || idToken == "" {
+				log.Error("identity forge token unresolved", "identity", idCfg.Name, "err", errToken)
+				return 1
+			}
+			var errForge error
+			idForge, errForge = forge.New(idCfg.Forge.Type, idToken, idCfg.Forge.Host, log)
+			if errForge != nil {
+				log.Error("identity forge client failed", "identity", idCfg.Name, "err", errForge)
+				return 1
+			}
 		}
 		idTrees := &worktree.Manager{
 			WorkDir:  filepath.Join(cfg.WorkDir, "identity-"+idCfg.Name),

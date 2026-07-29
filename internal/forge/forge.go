@@ -16,8 +16,10 @@ func New(forgeType, token, host string, log *slog.Logger) (Forge, error) {
 		return NewGitHub(token, host, log)
 	case "gitea":
 		return NewGitea(token, host, log)
+	case "none", "off", "disabled", "":
+		return NewNoop(log), nil
 	default:
-		return nil, fmt.Errorf("unsupported forge type %q (want github or gitea)", forgeType)
+		return nil, fmt.Errorf("unsupported forge type %q (want github, gitea, or none)", forgeType)
 	}
 }
 

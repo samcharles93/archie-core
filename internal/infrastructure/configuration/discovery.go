@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 )
 
@@ -44,7 +45,7 @@ func (fs fileSet) sortedFeatures() []Feature {
 	for f := range fs.features {
 		names = append(names, f)
 	}
-	sort.Slice(names, func(i, j int) bool { return names[i] < names[j] })
+	slices.Sort(names)
 	return names
 }
 

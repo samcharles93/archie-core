@@ -1,0 +1,447 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# install.sh - Installer for Archie Core (archied & archie-agent)
+#
+# Follows the XDG Base Directory Specification:
+#   Config: ${XDG_CONFIG_HOME:-~/.config}/archie
+#     - config.toml
+#     - env (environment variables & API secrets)
+#     - persona/
+#     - skills/
+#   Data:   ${XDG_DATA_HOME:-~/.local/share}/archie
+#     - archie.db
+#     - work/
+#     - memories/
+#     - tasks/
+#     - plugins/
+#   Bin:    ${XDG_BIN_HOME:-~/.local/bin}
+#     - archied
+#     - archie-agent
+# ==============================================================================
+
+set -euo pipefail
+
+# Determine script location / repo root if executed from within archie-core
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_URL="https://github.com/samcharles93/archie-core.git"
+
+# XDG Base Directory resolution
+XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}"
+XDG_DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
+XDG_BIN_HOME="${XDG_BIN_HOME:-${HOME}/.local/bin}"
+
+ARCHIE_CONFIG_DIR="${XDG_CONFIG_HOME}/archie"
+ARCHIE_DATA_DIR="${XDG_DATA_HOME}/archie"
+ARCHIE_BIN_DIR="${XDG_BIN_HOME}"
+ENV_FILE="${ARCHIE_CONFIG_DIR}/env"
+
+# Parse optional arguments
+INSTALL_SYSTEMD=true
+ENABLE_LINGER=true
+AUTO_START=true
+FORCE_BUILD=false
+INTERACTIVE=true
+
+[ ! -t 0 ] && INTERACTIVE=false
+
+for arg in "$@"; do
+  case "$arg" in
+    --no-systemd)
+      INSTALL_SYSTEMD=false
+      AUTO_START=false
+      shift
+      ;;
+    --no-linger)
+      ENABLE_LINGER=false
+      shift
+      ;;
+    --no-start)
+      AUTO_START=false
+      shift
+      ;;
+    --non-interactive|--batch)
+      INTERACTIVE=false
+      shift
+      ;;
+    --force)
+      FORCE_BUILD=true
+      shift
+      ;;
+    --help|-h)
+      echo "Usage: ./install.sh [options]"
+      echo ""
+      echo "Options:"
+      echo "  --no-systemd       Skip systemd user unit installation"
+      echo "  --no-linger        Skip loginctl enable-linger execution"
+      echo "  --no-start         Install service but do not auto-start archied"
+      echo "  --non-interactive  Run without interactive setup prompts"
+      echo "  --force            Force rebuild binaries even if up to date"
+      echo "  --help, -h         Show this help message"
+      echo ""
+      echo "XDG Target Directories:"
+      echo "  Config: ${ARCHIE_CONFIG_DIR}"
+      echo "  Data:   ${ARCHIE_DATA_DIR}"
+      echo "  Bin:    ${ARCHIE_BIN_DIR}"
+      exit 0
+      ;;
+  esac
+done
+
+echo "============================================================"
+echo "  Archie Core Installer (XDG Standard)"
+echo "============================================================"
+echo "Config directory : ${ARCHIE_CONFIG_DIR}"
+echo "Data directory   : ${ARCHIE_DATA_DIR}"
+echo "Bin directory    : ${ARCHIE_BIN_DIR}"
+echo "============================================================"
+echo ""
+
+# 1. Prerequisite checks
+echo "==> Checking prerequisites..."
+for cmd in git go; do
+  if ! command -v "$cmd" &>/dev/null; then
+    echo "Error: '$cmd' is required but not installed." >&2
+    exit 1
+  fi
+done
+
+GO_VERSION="$(go version | awk '{print $3}')"
+echo "  [OK] git: $(git --version)"
+echo "  [OK] go: ${GO_VERSION}"
+
+if command -v docker &>/dev/null; then
+  echo "  [OK] docker: $(docker --version)"
+else
+  echo "  [INFO] docker is not installed (required only for NATS container mode)."
+fi
+
+# 2. Create directory structure according to XDG standards
+echo "==> Creating XDG directory structure..."
+mkdir -p "${ARCHIE_CONFIG_DIR}"/{persona,skills}
+mkdir -p "${ARCHIE_DATA_DIR}"/{work,memories,tasks,plugins}
+mkdir -p "${ARCHIE_BIN_DIR}"
+
+# 3. Determine source location
+SRC_DIR=""
+if [ -f "${SCRIPT_DIR}/go.mod" ] && grep -q "github.com/samcharles93/archie-core" "${SCRIPT_DIR}/go.mod"; then
+  SRC_DIR="${SCRIPT_DIR}"
+  echo "==> Installing from local repository: ${SRC_DIR}"
+else
+  SRC_DIR="${ARCHIE_DATA_DIR}/src/archie-core"
+  if [ -d "${SRC_DIR}/.git" ]; then
+    echo "==> Updating source repository in ${SRC_DIR}..."
+    git -C "${SRC_DIR}" pull --rebase
+  else
+    echo "==> Cloning archie-core repository to ${SRC_DIR}..."
+    mkdir -p "$(dirname "${SRC_DIR}")"
+    git clone "${REPO_URL}" "${SRC_DIR}"
+  fi
+fi
+
+# 4. Build and install binaries
+echo "==> Building archied and archie-agent..."
+(
+  cd "${SRC_DIR}"
+  go build -o "${ARCHIE_BIN_DIR}/archied" ./cmd/archied
+  go build -o "${ARCHIE_BIN_DIR}/archie-agent" ./cmd/archie-agent
+)
+echo "  Installed binaries to ${ARCHIE_BIN_DIR}/"
+
+# 5. Interactive Configuration: Forge & LLM Provider Setup
+if [ ! -f "${ENV_FILE}" ]; then
+  touch "${ENV_FILE}"
+  chmod 600 "${ENV_FILE}"
+fi
+
+# Detect existing environment keys
+FOUND_ENV_KEYS=()
+[ -n "${OPENAI_API_KEY:-}" ] && FOUND_ENV_KEYS+=("OpenAI")
+[ -n "${ANTHROPIC_API_KEY:-}" ] && FOUND_ENV_KEYS+=("Anthropic")
+[ -n "${OPENROUTER_API_KEY:-}" ] && FOUND_ENV_KEYS+=("OpenRouter")
+[ -n "${GEMINI_API_KEY:-}" ] && FOUND_ENV_KEYS+=("Gemini")
+[ -n "${GROQ_API_KEY:-}" ] && FOUND_ENV_KEYS+=("Groq")
+[ -n "${DEEPSEEK_API_KEY:-}" ] && FOUND_ENV_KEYS+=("DeepSeek")
+[ -n "${MISTRAL_API_KEY:-}" ] && FOUND_ENV_KEYS+=("Mistral")
+
+# Detect local LLM binaries
+FOUND_OLLAMA=false
+FOUND_LLAMA_SERVER=false
+command -v ollama &>/dev/null && FOUND_OLLAMA=true
+command -v llama-server &>/dev/null && FOUND_LLAMA_SERVER=true
+
+FORGE_TYPE="github"
+GITEA_URL="https://gitea.example.com"
+SELF_HOST_LLM=false
+OLLAMA_MODEL=""
+
+if [ "${INTERACTIVE}" = true ]; then
+  echo ""
+  echo "------------------------------------------------------------"
+  echo "  Step 1: Code Forge Configuration (GitHub / Gitea / Standalone)"
+  echo "------------------------------------------------------------"
+  echo "Do you want to configure a code forge to watch for issues/PRs?"
+  echo "  1) GitHub (Default - recommended for GitHub repos)"
+  echo "  2) Gitea  (Self-hosted Gitea instance)"
+  echo "  3) None   (Run Archie in standalone mode without forge polling)"
+  read -rp "Select option [1-3, default=1]: " forge_option || forge_option="1"
+  forge_option="${forge_option:-1}"
+
+  case "${forge_option}" in
+    1)
+      FORGE_TYPE="github"
+      echo "  See docs/github-token.md for instructions (Note: Archie requires a Classic PAT, ghp_...)."
+      read -rp "Enter ARCHIE_GITHUB_TOKEN (leave blank to configure later): " gh_token_input || gh_token_input=""
+      if [ -n "${gh_token_input}" ]; then
+        echo "ARCHIE_GITHUB_TOKEN=\"${gh_token_input}\"" >> "${ENV_FILE}"
+      fi
+      ;;
+    2)
+      FORGE_TYPE="gitea"
+      read -rp "Enter Gitea Base URL [https://gitea.example.com]: " gitea_url_input || gitea_url_input=""
+      GITEA_URL="${gitea_url_input:-https://gitea.example.com}"
+      read -rp "Enter ARCHIE_GITEA_TOKEN (leave blank to configure later): " gitea_token_input || gitea_token_input=""
+      if [ -n "${gitea_token_input}" ]; then
+        echo "ARCHIE_GITEA_TOKEN=\"${gitea_token_input}\"" >> "${ENV_FILE}"
+      fi
+      # Copy Gitea plugin scripts if available
+      if [ -d "${SRC_DIR}/extras/gitea" ]; then
+        cp -rn "${SRC_DIR}/extras/gitea/"* "${ARCHIE_DATA_DIR}/plugins/" 2>/dev/null || true
+      fi
+      ;;
+    3)
+      FORGE_TYPE="none"
+      echo "  Forge polling disabled. Archie will run in standalone mode."
+      ;;
+  esac
+
+  echo ""
+  echo "------------------------------------------------------------"
+  echo "  Step 2: LLM Provider Configuration"
+  echo "------------------------------------------------------------"
+
+  if [ "${FOUND_OLLAMA}" = true ] || [ "${FOUND_LLAMA_SERVER}" = true ]; then
+    echo "Detected local LLM engines on your system:"
+    [ "${FOUND_OLLAMA}" = true ] && echo "  - Ollama"
+    [ "${FOUND_LLAMA_SERVER}" = true ] && echo "  - llama-server"
+    echo ""
+    read -rp "Do you want Archie to use a self-hosted local LLM? [y/N]: " self_host_choice || self_host_choice="n"
+    if [[ "${self_host_choice}" =~ ^[Yy] ]]; then
+      SELF_HOST_LLM=true
+    fi
+  else
+    read -rp "Do you want to set up Archie with a self-hosted local LLM (Ollama / llama.cpp)? [y/N]: " self_host_choice || self_host_choice="n"
+    if [[ "${self_host_choice}" =~ ^[Yy] ]]; then
+      SELF_HOST_LLM=true
+    fi
+  fi
+
+  if [ "${SELF_HOST_LLM}" = true ]; then
+    if [ "${FOUND_OLLAMA}" = true ]; then
+      echo "Querying installed Ollama models ('ollama list')..."
+      OLLAMA_MODELS=($(ollama list 2>/dev/null | tail -n +2 | awk '{print $1}'))
+
+      if [ ${#OLLAMA_MODELS[@]} -gt 0 ]; then
+        echo "Installed Ollama models found:"
+        for idx in "${!OLLAMA_MODELS[@]}"; do
+          echo "  $((idx+1))) ${OLLAMA_MODELS[$idx]}"
+        done
+        read -rp "Select model number [1-${#OLLAMA_MODELS[@]}, default=1]: " model_idx || model_idx="1"
+        model_idx="${model_idx:-1}"
+        selected_i=$((model_idx - 1))
+        if [ ${selected_i} -ge 0 ] && [ ${selected_i} -lt ${#OLLAMA_MODELS[@]} ]; then
+          OLLAMA_MODEL="${OLLAMA_MODELS[$selected_i]}"
+          echo "Selected model: ${OLLAMA_MODEL}"
+        fi
+      else
+        echo "No models found in Ollama yet."
+        read -rp "Enter model name to pull or use (e.g. llama3 or qwen2.5:7b): " OLLAMA_MODEL || OLLAMA_MODEL="llama3"
+      fi
+    else
+      echo "Ollama is not currently found on \$PATH."
+      echo "Install Ollama from https://ollama.com and pull a model (e.g. 'ollama pull llama3')."
+      read -rp "Enter model name to configure (default: llama3): " OLLAMA_MODEL || OLLAMA_MODEL="llama3"
+    fi
+  fi
+
+  # Prompt for cloud provider key if not self-hosting and no keys detected
+  if [ "${SELF_HOST_LLM}" = false ] && [ ${#FOUND_ENV_KEYS[@]} -eq 0 ]; then
+    echo "No existing cloud provider API keys were detected."
+    read -rp "Enter OPENAI_API_KEY (leave blank to configure later): " openai_key_input || openai_key_input=""
+    if [ -n "${openai_key_input}" ]; then
+      echo "OPENAI_API_KEY=\"${openai_key_input}\"" >> "${ENV_FILE}"
+      FOUND_ENV_KEYS+=("OpenAI")
+    fi
+  fi
+fi
+
+# Write config.toml with selected options if config.toml doesn't exist
+if [ ! -f "${ARCHIE_CONFIG_DIR}/config.toml" ]; then
+  echo "==> Generating initial config.toml..."
+  if [ "${SELF_HOST_LLM}" = true ] && [ -n "${OLLAMA_MODEL}" ]; then
+    cat <<EOF > "${ARCHIE_CONFIG_DIR}/config.toml"
+# archied configuration generated by install.sh
+poll_interval = "60s"
+label = "archie"
+bot_user = "archie-bot"
+
+[forge]
+type = "${FORGE_TYPE}"
+host = "${GITEA_URL}"
+token = { engine = "env", key = "ARCHIE_GITHUB_TOKEN" }
+
+[models]
+triage  = "ollama/${OLLAMA_MODEL}"
+planner = "ollama/${OLLAMA_MODEL}"
+builder = "ollama/${OLLAMA_MODEL}"
+
+[providers.ollama]
+class = "ollama"
+
+[agent]
+mode = "inprocess"
+command = "archie-agent"
+
+[budgets]
+max_steps = 60
+wall_clock = "30m"
+EOF
+  else
+    cp "${SRC_DIR}/config.example.toml" "${ARCHIE_CONFIG_DIR}/config.toml"
+    if [ "${FORGE_TYPE}" = "none" ]; then
+      sed -i 's/type = "github"/type = "none"/' "${ARCHIE_CONFIG_DIR}/config.toml" 2>/dev/null || true
+    elif [ "${FORGE_TYPE}" = "gitea" ]; then
+      sed -i 's/type = "github"/type = "gitea"/' "${ARCHIE_CONFIG_DIR}/config.toml" 2>/dev/null || true
+      sed -i "s|https://github.com|${GITEA_URL}|" "${ARCHIE_CONFIG_DIR}/config.toml" 2>/dev/null || true
+    fi
+  fi
+  chmod 600 "${ARCHIE_CONFIG_DIR}/config.toml"
+  echo "  Created ${ARCHIE_CONFIG_DIR}/config.toml"
+else
+  echo "  [SKIP] ${ARCHIE_CONFIG_DIR}/config.toml already exists (preserving user config)."
+fi
+
+# 6. Seed skills, personas, memories, and onboarding tasks
+echo "==> Seeding skills and templates..."
+
+# Copy built-in skills from .agents/skills and examples/skills
+if [ -d "${SRC_DIR}/.agents/skills" ]; then
+  cp -rf "${SRC_DIR}/.agents/skills/"* "${ARCHIE_CONFIG_DIR}/skills/" 2>/dev/null || true
+fi
+if [ -d "${SRC_DIR}/examples/skills" ]; then
+  cp -rn "${SRC_DIR}/examples/skills/"* "${ARCHIE_CONFIG_DIR}/skills/" 2>/dev/null || true
+fi
+
+# Seed example personas without overwriting existing files
+if [ -d "${SRC_DIR}/examples/persona" ]; then
+  cp -rn "${SRC_DIR}/examples/persona/"* "${ARCHIE_CONFIG_DIR}/persona/" 2>/dev/null || true
+fi
+
+# Seed initial tasks without overwriting existing files
+if [ -d "${SRC_DIR}/examples/tasks" ]; then
+  cp -rn "${SRC_DIR}/examples/tasks/"* "${ARCHIE_DATA_DIR}/tasks/" 2>/dev/null || true
+fi
+
+# 7. Systemd user service setup & linger configuration
+SERVICE_INSTALLED=false
+if [ "${INSTALL_SYSTEMD}" = true ] && command -v systemctl &>/dev/null && [ -d "${XDG_CONFIG_HOME}" ]; then
+  SYSTEMD_USER_DIR="${XDG_CONFIG_HOME}/systemd/user"
+  SERVICE_FILE="${SYSTEMD_USER_DIR}/archied.service"
+
+  echo "==> Configuring systemd user service..."
+  mkdir -p "${SYSTEMD_USER_DIR}"
+  cat <<EOF > "${SERVICE_FILE}"
+[Unit]
+Description=Archie Core Orchestrator Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${ARCHIE_BIN_DIR}/archied -config ${ARCHIE_CONFIG_DIR}/config.toml
+EnvironmentFile=-${ENV_FILE}
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target
+EOF
+  systemctl --user daemon-reload || true
+  SERVICE_INSTALLED=true
+  echo "  Installed ${SERVICE_FILE}"
+
+  # Enable linger so systemd --user runs continuously without an active login session
+  if [ "${ENABLE_LINGER}" = true ] && command -v loginctl &>/dev/null; then
+    if loginctl show-user "${USER}" 2>/dev/null | grep -q "Linger=no"; then
+      echo "==> Enabling systemd user linger (loginctl enable-linger ${USER})..."
+      loginctl enable-linger "${USER}" || echo "  Notice: Could not enable linger automatically. Run 'loginctl enable-linger ${USER}' manually if needed."
+    else
+      echo "  [OK] User linger is already enabled."
+    fi
+  fi
+
+  # Auto-enable and start service
+  if [ "${AUTO_START}" = true ]; then
+    echo "==> Enabling and starting archied systemd service..."
+    systemctl --user enable --now archied || echo "  Notice: Could not start service automatically. Check systemctl --user status archied"
+  fi
+fi
+
+# 8. Post-installation summary & instructions
+echo ""
+echo "============================================================"
+echo "  ✓ Archie Core Installation Complete!"
+echo "============================================================"
+echo ""
+echo "Installation Details:"
+echo "  - Binaries   : ${ARCHIE_BIN_DIR}/archied"
+echo "                 ${ARCHIE_BIN_DIR}/archie-agent"
+echo "  - Config     : ${ARCHIE_CONFIG_DIR}/config.toml"
+echo "  - Secrets    : ${ENV_FILE}"
+echo "  - Data       : ${ARCHIE_DATA_DIR}/"
+echo "  - Forge Mode : ${FORGE_TYPE}"
+
+if [ "${SELF_HOST_LLM}" = true ] && [ -n "${OLLAMA_MODEL}" ]; then
+  echo "  - LLM Model  : ollama/${OLLAMA_MODEL}"
+elif [ ${#FOUND_ENV_KEYS[@]} -gt 0 ]; then
+  echo "  - LLM Keys   : Found (${FOUND_ENV_KEYS[*]})"
+fi
+echo ""
+
+# Check PATH
+if [[ ":$PATH:" != *":${ARCHIE_BIN_DIR}:"* ]]; then
+  echo "NOTE: ${ARCHIE_BIN_DIR} is not in your current PATH."
+  echo "Add it to your shell configuration file (~/.bashrc or ~/.zshrc):"
+  echo "  export PATH=\"${ARCHIE_BIN_DIR}:\$PATH\""
+  echo ""
+fi
+
+if [ "${SELF_HOST_LLM}" = false ] && [ ${#FOUND_ENV_KEYS[@]} -eq 0 ] && ! grep -q "=" "${ENV_FILE}" 2>/dev/null; then
+  echo "============================================================"
+  echo "  Notice: LLM Provider Configuration Needed"
+  echo "============================================================"
+  echo "No LLM provider keys or local models were configured yet."
+  echo "Archie requires an LLM provider to run workflows."
+  echo ""
+  echo "To finish configuration:"
+  echo "  1. For Cloud Providers (OpenAI, Anthropic, OpenRouter, etc.):"
+  echo "     Add your API key to ${ENV_FILE}:"
+  echo "       OPENAI_API_KEY=\"sk-...\""
+  echo "  2. For Local LLMs (Ollama):"
+  echo "     Install Ollama (https://ollama.com), run 'ollama pull llama3',"
+  echo "     and set [models] in ${ARCHIE_CONFIG_DIR}/config.toml to 'ollama/llama3'."
+  echo ""
+  echo "See documentation: ${SRC_DIR}/docs/github-token.md"
+  echo "============================================================"
+  echo ""
+fi
+
+if [ "${SERVICE_INSTALLED}" = true ] && [ "${AUTO_START}" = true ]; then
+  echo "Service Management:"
+  echo "  - View live logs    : journalctl --user -u archied -f"
+  echo "  - Service status    : systemctl --user status archied"
+  echo "  - Restart daemon    : systemctl --user restart archied"
+else
+  echo "Manual Startup:"
+  echo "  1. Add tokens to ${ENV_FILE} or ${ARCHIE_CONFIG_DIR}/config.toml"
+  echo "  2. Run daemon       : archied"
+fi
+echo ""
