@@ -17,6 +17,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/tools"
 	toolsbuiltin "github.com/samcharles93/archie-core/internal/tools/builtin"
+	"github.com/samcharles93/archie-core/internal/tools/command"
 )
 
 // toolset groups these tools for progressive disclosure and guardrails.
@@ -137,6 +138,10 @@ func toEntry(tool toolsbuiltin.Tool) (tools.ToolEntry, error) {
 // and the guardrail engine both see it.
 func handlerFor(tool toolsbuiltin.Tool) tools.Handler {
 	return func(ctx context.Context, input map[string]any) (any, error) {
+		if err := screen(tool.Schema.Name, input); err != nil {
+			return nil, err
+		}
+
 		params := json.RawMessage("{}")
 		if len(input) > 0 {
 			encoded, err := json.Marshal(input)
@@ -161,6 +166,24 @@ func handlerFor(tool toolsbuiltin.Tool) tools.Handler {
 		}
 		return result.Content, nil
 	}
+}
+
+// screen applies the always-on command rules before a tool runs.
+//
+// This lives in the adapter rather than in the lifted shell tool so that
+// the copied files stay diffable against tau, and so the rules are archie's
+// to change. It is a floor, not a sandbox: anything with a shell has ways
+// around a rule list, and the point is only that the failures with no
+// recovery are not reachable by an ordinary mistake.
+func screen(name string, input map[string]any) error {
+	if name != "shell" {
+		return nil
+	}
+	line, _ := input["command"].(string)
+	if err := command.Hardline(line); err != nil {
+		return fmt.Errorf("tool shell: %w", err)
+	}
+	return nil
 }
 
 // classify tags each tool so the guardrail engine and budget enforcement

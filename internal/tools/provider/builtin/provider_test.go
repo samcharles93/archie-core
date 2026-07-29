@@ -101,6 +101,55 @@ func TestHandlerSurfacesToolFailureAsError(t *testing.T) {
 	t.Fatal("no read tool discovered")
 }
 
+// TestShellHandlerEnforcesHardlineRules checks the rules are actually
+// wired into the executing handler. The rules are tested in
+// internal/tools/command; what matters here is that a call cannot reach
+// tau's executor without passing through them.
+func TestShellHandlerEnforcesHardlineRules(t *testing.T) {
+	t.Parallel()
+
+	shell := shellHandler(t, t.TempDir())
+
+	if _, err := shell(context.Background(), map[string]any{"command": "rm -rf /"}); err == nil {
+		t.Error("the shell tool accepted a recursive delete of /")
+	} else if !strings.Contains(err.Error(), "refused") {
+		t.Errorf("error = %v, want a refusal naming the rule", err)
+	}
+}
+
+// TestShellHandlerAllowsOrdinaryCommands guards the other direction: the
+// screen must not stand between the model and normal work.
+func TestShellHandlerAllowsOrdinaryCommands(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	out, err := shellHandler(t, dir)(context.Background(), map[string]any{
+		"command": `echo "rm -rf / is only mentioned here"`,
+	})
+	if err != nil {
+		t.Fatalf("an ordinary echo was refused: %v", err)
+	}
+	if text, ok := out.(string); !ok || !strings.Contains(text, "only mentioned here") {
+		t.Errorf("shell returned %#v, want the echoed text", out)
+	}
+}
+
+func shellHandler(t *testing.T, workspace string) func(context.Context, map[string]any) (any, error) {
+	t.Helper()
+
+	entries, err := startedProvider(t, workspace).Discover(context.Background())
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	for _, e := range entries {
+		if e.Name == "shell" {
+			return e.Handler
+		}
+	}
+	t.Fatal("no shell tool discovered")
+	return nil
+}
+
 // TestUnconfiguredWorkspaceIsRejected keeps the tools from silently rooting
 // at the daemon's own working directory, which in the container is /.
 func TestUnconfiguredWorkspaceIsRejected(t *testing.T) {
