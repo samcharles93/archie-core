@@ -98,6 +98,16 @@ echo ""
 
 # 1. Prerequisite checks
 echo "==> Checking prerequisites..."
+
+# Linux only, deliberately. The installer depends on systemd user units and
+# loginctl linger, and uses GNU sed/bash 4 semantics throughout. Failing here
+# with a clear message beats failing three steps later inside a heredoc.
+if [ "$(uname -s)" != "Linux" ]; then
+  echo "Error: archie-core's installer supports Linux only (needs systemd and loginctl)." >&2
+  echo "       Detected: $(uname -s)" >&2
+  exit 1
+fi
+
 for cmd in git go; do
   if ! command -v "$cmd" &>/dev/null; then
     echo "Error: '$cmd' is required but not installed." >&2
@@ -129,8 +139,15 @@ if [ -f "${SCRIPT_DIR}/go.mod" ] && grep -q "github.com/samcharles93/archie-core
 else
   SRC_DIR="${ARCHIE_DATA_DIR}/src/archie-core"
   if [ -d "${SRC_DIR}/.git" ]; then
-    echo "==> Updating source repository in ${SRC_DIR}..."
-    git -C "${SRC_DIR}" pull --rebase
+    # The shipped tree is Archie's own working copy, so it may legitimately
+    # carry local commits or edits it made while investigating a fault. A bare
+    # `pull --rebase` fails on those and, under `set -e`, aborts the install.
+    # Local state wins: report it and build what is on disk.
+    if [ -n "$(git -C "${SRC_DIR}" status --porcelain)" ]; then
+      echo "==> Local changes in ${SRC_DIR}; skipping update and building as-is."
+    elif ! git -C "${SRC_DIR}" pull --ff-only; then
+      echo "==> Could not fast-forward ${SRC_DIR}; building the existing checkout."
+    fi
   else
     echo "==> Cloning archie-core repository to ${SRC_DIR}..."
     mkdir -p "$(dirname "${SRC_DIR}")"
@@ -152,6 +169,33 @@ if [ ! -f "${ENV_FILE}" ]; then
   touch "${ENV_FILE}"
   chmod 600 "${ENV_FILE}"
 fi
+
+# read_secret prompts without echoing. A token typed at a visible prompt stays
+# in terminal scrollback and in any screen recording, so it is never echoed
+# even though that costs the usual typo feedback.
+read_secret() {
+  local prompt="$1" varname="$2" value=""
+  read -rsp "${prompt}" value || value=""
+  echo >&2
+  printf -v "${varname}" '%s' "${value}"
+}
+
+# set_env_key writes KEY=value to the env file, replacing any existing entry.
+# Appending meant a second install run left the revoked token above the new one
+# and grew the file without bound.
+set_env_key() {
+  local key="$1" value="$2" tmp
+  tmp="$(mktemp "${ARCHIE_CONFIG_DIR}/.env.XXXXXX")"
+  chmod 600 "${tmp}"
+  if [ -f "${ENV_FILE}" ]; then
+    grep -v "^${key}=" "${ENV_FILE}" > "${tmp}" || true
+  fi
+  # Single quotes with embedded-quote escaping: systemd's EnvironmentFile takes
+  # the value literally, so a token containing " or \ must not be re-quoted.
+  printf "%s='%s'\n" "${key}" "${value//\'/\'\\\'\'}" >> "${tmp}"
+  mv "${tmp}" "${ENV_FILE}"
+  chmod 600 "${ENV_FILE}"
+}
 
 # Detect existing environment keys
 FOUND_ENV_KEYS=()
@@ -190,18 +234,18 @@ if [ "${INTERACTIVE}" = true ]; then
     1)
       FORGE_TYPE="github"
       echo "  See docs/github-token.md for instructions (Note: Archie requires a Classic PAT, ghp_...)."
-      read -rp "Enter ARCHIE_GITHUB_TOKEN (leave blank to configure later): " gh_token_input || gh_token_input=""
+      read_secret "Enter ARCHIE_GITHUB_TOKEN (leave blank to configure later): " gh_token_input
       if [ -n "${gh_token_input}" ]; then
-        echo "ARCHIE_GITHUB_TOKEN=\"${gh_token_input}\"" >> "${ENV_FILE}"
+        set_env_key ARCHIE_GITHUB_TOKEN "${gh_token_input}"
       fi
       ;;
     2)
       FORGE_TYPE="gitea"
       read -rp "Enter Gitea Base URL [https://gitea.example.com]: " gitea_url_input || gitea_url_input=""
       GITEA_URL="${gitea_url_input:-https://gitea.example.com}"
-      read -rp "Enter ARCHIE_GITEA_TOKEN (leave blank to configure later): " gitea_token_input || gitea_token_input=""
+      read_secret "Enter ARCHIE_GITEA_TOKEN (leave blank to configure later): " gitea_token_input
       if [ -n "${gitea_token_input}" ]; then
-        echo "ARCHIE_GITEA_TOKEN=\"${gitea_token_input}\"" >> "${ENV_FILE}"
+        set_env_key ARCHIE_GITEA_TOKEN "${gitea_token_input}"
       fi
       # Copy Gitea plugin scripts if available
       if [ -d "${SRC_DIR}/extras/gitea" ]; then
@@ -266,13 +310,40 @@ if [ "${INTERACTIVE}" = true ]; then
   # Prompt for cloud provider key if not self-hosting and no keys detected
   if [ "${SELF_HOST_LLM}" = false ] && [ ${#FOUND_ENV_KEYS[@]} -eq 0 ]; then
     echo "No existing cloud provider API keys were detected."
-    read -rp "Enter OPENAI_API_KEY (leave blank to configure later): " openai_key_input || openai_key_input=""
+    read_secret "Enter OPENAI_API_KEY (leave blank to configure later): " openai_key_input
     if [ -n "${openai_key_input}" ]; then
-      echo "OPENAI_API_KEY=\"${openai_key_input}\"" >> "${ENV_FILE}"
+      set_env_key OPENAI_API_KEY "${openai_key_input}"
       FOUND_ENV_KEYS+=("OpenAI")
     fi
   fi
 fi
+
+# Render the [forge] block from the answers actually given. Both config paths
+# below share this: the generated-config branch previously hardcoded the GitHub
+# token key and the Gitea host, so choosing Gitea produced a config pointing at
+# a token the installer never wrote, and choosing GitHub pointed host at
+# gitea.example.com.
+forge_block() {
+  printf '[forge]\ntype = "%s"\n' "${FORGE_TYPE}"
+  case "${FORGE_TYPE}" in
+    github)
+      printf 'host = "https://github.com"\n'
+      printf 'token = { engine = "env", key = "ARCHIE_GITHUB_TOKEN" }\n'
+      ;;
+    gitea)
+      printf 'host = "%s"\n' "${GITEA_URL}"
+      printf 'token = { engine = "env", key = "ARCHIE_GITEA_TOKEN" }\n'
+      ;;
+    none)
+      # Forge disabled: archied takes the NoopForge path and never resolves a
+      # token, so emitting one would only invite a stale key.
+      ;;
+  esac
+  # Trailing blank line keeps the section separated from whatever follows when
+  # this block is spliced into the example config. Command substitution strips
+  # it in the generated-config path, so it is harmless there.
+  printf '\n'
+}
 
 # Write config.toml with selected options if config.toml doesn't exist
 if [ ! -f "${ARCHIE_CONFIG_DIR}/config.toml" ]; then
@@ -284,10 +355,7 @@ poll_interval = "60s"
 label = "archie"
 bot_user = "archie-bot"
 
-[forge]
-type = "${FORGE_TYPE}"
-host = "${GITEA_URL}"
-token = { engine = "env", key = "ARCHIE_GITHUB_TOKEN" }
+$(forge_block)
 
 [models]
 triage  = "ollama/${OLLAMA_MODEL}"
@@ -306,13 +374,16 @@ max_steps = 60
 wall_clock = "30m"
 EOF
   else
-    cp "${SRC_DIR}/config.example.toml" "${ARCHIE_CONFIG_DIR}/config.toml"
-    if [ "${FORGE_TYPE}" = "none" ]; then
-      sed -i 's/type = "github"/type = "none"/' "${ARCHIE_CONFIG_DIR}/config.toml" 2>/dev/null || true
-    elif [ "${FORGE_TYPE}" = "gitea" ]; then
-      sed -i 's/type = "github"/type = "gitea"/' "${ARCHIE_CONFIG_DIR}/config.toml" 2>/dev/null || true
-      sed -i "s|https://github.com|${GITEA_URL}|" "${ARCHIE_CONFIG_DIR}/config.toml" 2>/dev/null || true
-    fi
+    # Replace the example's [forge] block wholesale rather than patching
+    # individual lines: seddding type and host still left the GitHub token key
+    # behind, so a Gitea install read a key the installer never wrote.
+    forge_block > "${ARCHIE_CONFIG_DIR}/.forge.block"
+    awk '
+      /^\[forge\]/ { skip = 1; while ((getline line < "'"${ARCHIE_CONFIG_DIR}"'/.forge.block") > 0) print line; next }
+      /^\[/        { skip = 0 }
+      !skip
+    ' "${SRC_DIR}/config.example.toml" > "${ARCHIE_CONFIG_DIR}/config.toml"
+    rm -f "${ARCHIE_CONFIG_DIR}/.forge.block"
   fi
   chmod 600 "${ARCHIE_CONFIG_DIR}/config.toml"
   echo "  Created ${ARCHIE_CONFIG_DIR}/config.toml"
