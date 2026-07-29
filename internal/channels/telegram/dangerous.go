@@ -436,18 +436,69 @@ func (g *Gateway) stopCurrentTurn(ctx context.Context, b *bot.Bot, msg *models.M
 		g.log.Info("stop requested", "session", session, "cancelled", cancelled, "dropped", dropped)
 	}
 
-	switch {
-	case cancelled && dropped > 0:
-		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
-			fmt.Sprintf("🛑 Stopped. %d queued message(s) discarded.", dropped))
-	case cancelled:
-		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, "🛑 Stopped.")
-	case dropped > 0:
-		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
-			fmt.Sprintf("🛑 Nothing was running. %d queued message(s) discarded.", dropped))
+	// The brake covers agent tasks as well as the conversation. Someone
+	// reaching for it wants everything to stop, and should not have to
+	// know a task ID -- or which of the two is currently misbehaving.
+	stoppedTasks := g.stopRunningTasks(ctx, router)
+
+	g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
+		stopReport(cancelled, dropped, stoppedTasks))
+}
+
+// stopRunningTasks interrupts the agent tasks currently executing and
+// returns their IDs. A failure here is logged and reported as none
+// stopped: /stop must still do whatever else it can.
+func (g *Gateway) stopRunningTasks(ctx context.Context, router *gateway.Router) []int64 {
+	if router == nil || router.Controller == nil {
+		return nil
+	}
+	stopped, err := router.Controller.StopRunning(ctx, router.Identity)
+	if err != nil {
+		g.log.Warn("stop running tasks failed", "error", err)
+		return nil
+	}
+	if len(stopped) > 0 {
+		g.log.Info("stopped running tasks", "tasks", stopped)
+	}
+	return stopped
+}
+
+// stopReport describes what a /stop actually stopped.
+//
+// It names the parts rather than saying "stopped" unconditionally.
+// Claiming success when nothing was running teaches the operator to
+// distrust the command at exactly the moment they need to believe it.
+func stopReport(cancelled bool, dropped int, tasks []int64) string {
+	var parts []string
+	if cancelled {
+		parts = append(parts, "the running reply")
+	}
+	if dropped > 0 {
+		parts = append(parts, fmt.Sprintf("%d queued message(s)", dropped))
+	}
+	if len(tasks) > 0 {
+		ids := make([]string, len(tasks))
+		for i, id := range tasks {
+			ids[i] = fmt.Sprintf("#%d", id)
+		}
+		parts = append(parts, "task(s) "+strings.Join(ids, ", "))
+	}
+
+	if len(parts) == 0 {
+		return "Nothing is running.\n\nUse /stop <process-name> to terminate a background process."
+	}
+	return "🛑 Stopped " + joinWithAnd(parts) + "."
+}
+
+// joinWithAnd renders a list the way it would be read aloud.
+func joinWithAnd(parts []string) string {
+	switch len(parts) {
+	case 1:
+		return parts[0]
+	case 2:
+		return parts[0] + " and " + parts[1]
 	default:
-		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
-			"Nothing is running.\n\nUse /stop <process-name> to terminate a background process.")
+		return strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
 	}
 }
 

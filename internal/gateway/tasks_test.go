@@ -275,15 +275,97 @@ func TestStoreTaskControllerCancelActiveStates(t *testing.T) {
 	}
 }
 
-func TestStoreTaskControllerCancelRejectsRunning(t *testing.T) {
+// fakeTaskRuntime records the interruptions a controller asks for.
+type fakeTaskRuntime struct {
+	cancelled []int64
+	running   bool
+	stopped   []int64
+	identity  string
+}
+
+func (f *fakeTaskRuntime) CancelTask(taskID int64) bool {
+	f.cancelled = append(f.cancelled, taskID)
+	return f.running
+}
+
+func (f *fakeTaskRuntime) CancelRunningTasks(identity string) []int64 {
+	f.identity = identity
+	return f.stopped
+}
+
+// TestStoreTaskControllerCancelInterruptsRunning covers the case that used
+// to be refused. A running task is the only one worth interrupting, so
+// cancelling it must reach the work and then record the outcome.
+func TestStoreTaskControllerCancelInterruptsRunning(t *testing.T) {
+	store := &fakeChatTaskStore{statuses: map[int64]ChatTaskStatus{1: {Status: statusRunning}}}
+	rt := &fakeTaskRuntime{running: true}
+	c := NewStoreTaskController(store).WithRuntime(rt)
+
+	if err := c.Cancel(context.Background(), 1, ""); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	if len(rt.cancelled) != 1 || rt.cancelled[0] != 1 {
+		t.Errorf("runtime cancellations = %v, want [1]; the task kept running", rt.cancelled)
+	}
+	if len(store.cancelled) != 1 {
+		t.Error("the cancellation was not recorded in the store")
+	}
+}
+
+// TestStoreTaskControllerCancelRecordsStaleRunning covers a task the store
+// calls running that nothing is executing -- a crashed or replaced daemon.
+// Recording the terminal state is what unsticks it.
+func TestStoreTaskControllerCancelRecordsStaleRunning(t *testing.T) {
+	store := &fakeChatTaskStore{statuses: map[int64]ChatTaskStatus{1: {Status: statusRunning}}}
+	rt := &fakeTaskRuntime{running: false}
+	c := NewStoreTaskController(store).WithRuntime(rt)
+
+	if err := c.Cancel(context.Background(), 1, ""); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	if len(store.cancelled) != 1 {
+		t.Error("a stale running task was left stuck")
+	}
+}
+
+// TestStoreTaskControllerCancelWithoutRuntimeRefusesRunning keeps the
+// refusal honest when nothing can interrupt the work: recording the task
+// as cancelled while it carries on would be a lie.
+func TestStoreTaskControllerCancelWithoutRuntimeRefusesRunning(t *testing.T) {
 	store := &fakeChatTaskStore{statuses: map[int64]ChatTaskStatus{1: {Status: statusRunning}}}
 	c := NewStoreTaskController(store)
+
 	err := c.Cancel(context.Background(), 1, "")
-	if err == nil || !strings.Contains(err.Error(), "actively running") {
-		t.Errorf("err = %v, want running-task rejection", err)
+	if err == nil || !strings.Contains(err.Error(), "no runtime control") {
+		t.Errorf("err = %v, want a refusal naming the missing runtime", err)
 	}
 	if len(store.cancelled) != 0 {
-		t.Error("CancelChatTask must not be called for a running task")
+		t.Error("CancelChatTask must not be called when the task cannot be interrupted")
+	}
+}
+
+// TestStoreTaskControllerStopRunningIsIdentityScoped checks the agent half
+// of /stop reaches the runtime and stays within the caller's identity.
+func TestStoreTaskControllerStopRunningIsIdentityScoped(t *testing.T) {
+	rt := &fakeTaskRuntime{stopped: []int64{4, 7}}
+	c := NewStoreTaskController(&fakeChatTaskStore{statuses: map[int64]ChatTaskStatus{}}).WithRuntime(rt)
+
+	stopped, err := c.StopRunning(context.Background(), "archie")
+	if err != nil {
+		t.Fatalf("StopRunning: %v", err)
+	}
+	if len(stopped) != 2 || stopped[0] != 4 || stopped[1] != 7 {
+		t.Errorf("stopped = %v, want [4 7]", stopped)
+	}
+	if rt.identity != "archie" {
+		t.Errorf("identity = %q, want the caller's identity", rt.identity)
+	}
+}
+
+func TestStoreTaskControllerStopRunningWithoutRuntime(t *testing.T) {
+	c := NewStoreTaskController(&fakeChatTaskStore{statuses: map[int64]ChatTaskStatus{}})
+	if _, err := c.StopRunning(context.Background(), ""); err == nil {
+		t.Error("StopRunning reported success with no runtime wired")
 	}
 }
 

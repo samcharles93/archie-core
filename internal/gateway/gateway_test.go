@@ -453,6 +453,10 @@ type fakeTaskController struct {
 	approved   []int64
 	cancelled  []int64
 	identities []string
+
+	stopRunning       []int64
+	stopRunningErr    error
+	stoppedIdentities []string
 }
 
 func (f *fakeTaskController) Approve(ctx context.Context, taskID int64, identity string) error {
@@ -471,6 +475,11 @@ func (f *fakeTaskController) Cancel(ctx context.Context, taskID int64, identity 
 		return f.cancelFn(ctx, taskID, identity)
 	}
 	return nil
+}
+
+func (f *fakeTaskController) StopRunning(_ context.Context, identity string) ([]int64, error) {
+	f.stoppedIdentities = append(f.stoppedIdentities, identity)
+	return f.stopRunning, f.stopRunningErr
 }
 
 func TestRouteApproveParsesIdentity(t *testing.T) {

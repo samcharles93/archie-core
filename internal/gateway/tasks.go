@@ -172,16 +172,38 @@ type chatTaskController interface {
 	CancelChatTask(ctx context.Context, taskID int64, reason string) error
 }
 
+// TaskRuntime reaches tasks that are currently executing. The daemon
+// implements it; the store cannot, because a row records what a task is
+// meant to be doing, not the goroutine doing it.
+type TaskRuntime interface {
+	// CancelTask interrupts one running task, reporting whether it was
+	// running.
+	CancelTask(taskID int64) bool
+	// CancelRunningTasks interrupts every task running for identity, or
+	// all of them when identity is empty, returning the IDs stopped.
+	CancelRunningTasks(identity string) []int64
+}
+
 // StoreTaskController implements TaskController backed by a store
 // interface. Authorization requires the caller identity to exactly
 // match the task identity, including the empty legacy identity.
 type StoreTaskController struct {
 	store chatTaskController
+	// runtime interrupts running work. Nil leaves running tasks
+	// uninterruptible, which is the pre-existing behaviour and is
+	// reported as such rather than silently succeeding.
+	runtime TaskRuntime
 }
 
 // NewStoreTaskController returns a TaskController backed by c.
 func NewStoreTaskController(c chatTaskController) *StoreTaskController {
 	return &StoreTaskController{store: c}
+}
+
+// WithRuntime returns a controller that can also interrupt running tasks.
+func (c *StoreTaskController) WithRuntime(rt TaskRuntime) *StoreTaskController {
+	c.runtime = rt
+	return c
 }
 
 func (c *StoreTaskController) Approve(ctx context.Context, taskID int64, identity string) error {
@@ -201,12 +223,39 @@ func (c *StoreTaskController) Cancel(ctx context.Context, taskID int64, identity
 		return err
 	}
 	switch st.Status {
-	case statusRunning:
-		return fmt.Errorf("task is actively running; cannot cancel until it reaches a waiting state")
 	case statusMerged, statusParked, statusRejected, statusDead, statusClosedWontDo:
 		return fmt.Errorf("task is already %s", st.Status)
+	case statusRunning:
+		// Cancelling a running task used to be refused outright, which
+		// left the only case worth interrupting as the one case that
+		// could not be. Interrupt the work first, then record it: the
+		// order matters, because writing the terminal state while the
+		// task is still executing invites it to write its own state
+		// afterwards and win.
+		if c.runtime == nil {
+			return fmt.Errorf("task is running and no runtime control is configured")
+		}
+		if !c.runtime.CancelTask(taskID) {
+			// The store says running but nothing is executing -- a
+			// crashed or migrated daemon. Recording the terminal state
+			// is still right, and is what unsticks the task.
+			break
+		}
 	}
 	return c.store.CancelChatTask(ctx, taskID, "cancelled via chat by "+identity)
+}
+
+// StopRunning interrupts every task executing for identity.
+//
+// It deliberately does not write terminal states. A stopped task unwinds
+// through its own error paths and lands wherever that leaves it, usually
+// parked, which is recoverable. Forcing every one to rejected would
+// discard work the operator may well want to resume.
+func (c *StoreTaskController) StopRunning(_ context.Context, identity string) ([]int64, error) {
+	if c.runtime == nil {
+		return nil, fmt.Errorf("no runtime control is configured")
+	}
+	return c.runtime.CancelRunningTasks(identity), nil
 }
 
 func (c *StoreTaskController) authorize(ctx context.Context, taskID int64, identity string) (ChatTaskStatus, error) {

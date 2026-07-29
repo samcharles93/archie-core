@@ -3,7 +3,6 @@ package gateway_test
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -15,7 +14,7 @@ import (
 
 func testTurns(t *testing.T) *gateway.Turns {
 	t.Helper()
-	return gateway.NewTurns(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return gateway.NewTurns(slog.New(slog.DiscardHandler))
 }
 
 // TestSubmitDoesNotBlockCaller is the whole reason this type exists: the

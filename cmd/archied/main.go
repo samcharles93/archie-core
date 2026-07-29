@@ -581,6 +581,12 @@ func run() int {
 		Identities:     identityRunners,
 	}
 
+	// Give /cancel and /stop a handle on work already in flight. The
+	// controller is built before the daemon exists, so the runtime is
+	// attached here; gateways start further down, after d.Startup, so no
+	// command can arrive before this is wired.
+	chatController.WithRuntime(d)
+
 	defer func() {
 		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

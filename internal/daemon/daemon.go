@@ -111,6 +111,11 @@ type Daemon struct {
 	// and passed as CaptureTools in agent requests. Nil means no dynamic
 	// tool discovery (backward compatible).
 	ToolRegistry *tools.Registry
+
+	// running holds a cancel function for every task currently executing,
+	// so /stop can reach work already in flight. Its zero value is ready
+	// to use.
+	running runningTasks
 }
 
 // memoryPrompt returns the memory manager's system prompt block, or an empty
@@ -898,6 +903,14 @@ func clip(s string, n int) string {
 }
 
 func (d *Daemon) process(ctx context.Context, task *store.Task) {
+	// Register before any work starts so the task is stoppable for its
+	// whole life, including the slow setup -- clone, worktree prepare,
+	// image pull -- which is exactly when someone realises they asked for
+	// the wrong thing. Every caller reaches execution through here, so
+	// this is the one place that has to do it.
+	ctx, finished := d.running.begin(ctx, task.ID, task.Identity)
+	defer finished()
+
 	fg := d.forgeFor(task)
 	trees := d.treesFor(task)
 	repo, ok := d.repoFor(task)
@@ -948,42 +961,8 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 
 	// Acquire a container for the task when Docker sandboxing is enabled.
 	if d.ContainerPool != nil {
-		// Write task.json  --  the container's boot-time brief.
-		if err := container.WriteTaskJSON(workDir, container.TaskPayload{
-			ID: task.ID, Owner: task.Owner, Repo: task.Repo,
-			Number: task.IssueNumber, Title: task.Title, Body: task.Body,
-			Labels:   strings.Split(task.Labels, ","),
-			Workflow: task.Workflow, Branch: task.Branch, Plan: task.Plan,
-		}); err != nil {
-			d.Log.Error("task.json write failed", "err", err)
-			_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "task.json write failed: "+err.Error())
-			return
-		}
-
-		// Build the mount list from the storage backend.
-		// Guard: Storage may be nil if the daemon was wired incorrectly.
-		// In normal operation, Storage is always set when ContainerPool is set.
-		if d.Storage == nil {
-			d.Log.Error("storage backend is nil  --  cannot acquire container")
-			_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "storage backend not configured")
-			return
-		}
-		mounts, err := d.Storage.Setup(ctx, storage.TaskRef{
-			WorktreeDir:       workDir,
-			Ecosystem:         repo.Ecosystem,
-			PersistentStorage: repo.PersistentStorage,
-			Owner:             task.Owner,
-			Repo:              task.Repo,
-		})
-		if err != nil {
-			d.Log.Error("storage setup failed", "err", err)
-			_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "storage setup failed: "+err.Error())
-			return
-		}
-		ctr, err := d.ContainerPool.Acquire(ctx, mounts, d.containerEnv())
-		if err != nil {
-			d.Log.Error("container acquire failed", "err", err)
-			_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "container acquire failed: "+err.Error())
+		ctr, ok := d.acquireTaskContainer(ctx, task, repo, workDir)
+		if !ok {
 			return
 		}
 		defer d.ContainerPool.Release(ctx, ctr)
@@ -1038,6 +1017,59 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 			Repo:              task.Repo,
 		})
 	}
+}
+
+// acquireTaskContainer prepares and acquires the sandbox container for a
+// task, reporting false when it could not -- having already parked the
+// task and logged why. The caller releases the container it returns.
+func (d *Daemon) acquireTaskContainer(
+	ctx context.Context,
+	task *store.Task,
+	repo config.Repo,
+	workDir string,
+) (*container.Container, bool) {
+	park := func(reason string, err error) {
+		d.Log.Error(reason, "err", err)
+		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, reason+": "+err.Error())
+	}
+
+	// Write task.json  --  the container's boot-time brief.
+	if err := container.WriteTaskJSON(workDir, container.TaskPayload{
+		ID: task.ID, Owner: task.Owner, Repo: task.Repo,
+		Number: task.IssueNumber, Title: task.Title, Body: task.Body,
+		Labels:   strings.Split(task.Labels, ","),
+		Workflow: task.Workflow, Branch: task.Branch, Plan: task.Plan,
+	}); err != nil {
+		park("task.json write failed", err)
+		return nil, false
+	}
+
+	// Guard: Storage may be nil if the daemon was wired incorrectly. In
+	// normal operation, Storage is always set when ContainerPool is set.
+	if d.Storage == nil {
+		d.Log.Error("storage backend is nil  --  cannot acquire container")
+		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "storage backend not configured")
+		return nil, false
+	}
+
+	mounts, err := d.Storage.Setup(ctx, storage.TaskRef{
+		WorktreeDir:       workDir,
+		Ecosystem:         repo.Ecosystem,
+		PersistentStorage: repo.PersistentStorage,
+		Owner:             task.Owner,
+		Repo:              task.Repo,
+	})
+	if err != nil {
+		park("storage setup failed", err)
+		return nil, false
+	}
+
+	ctr, err := d.ContainerPool.Acquire(ctx, mounts, d.containerEnv())
+	if err != nil {
+		park("container acquire failed", err)
+		return nil, false
+	}
+	return ctr, true
 }
 
 // containerEnv returns the environment variables passed to agent containers.

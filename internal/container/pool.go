@@ -218,7 +218,13 @@ func (p *Pool) Release(ctx context.Context, c *Container) {
 		time.Sleep(p.cfg.GracePeriod)
 	}
 
-	stopCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	// Detach from ctx before stopping. Release runs on the way out of a
+	// task, and the most important reason a task is on its way out is
+	// that it was cancelled -- at which point ctx is already dead, the
+	// graceful stop fails immediately, and the container is left to the
+	// forced remove below. Teardown is cleanup, so it gets its own
+	// deadline rather than inheriting the caller's cancellation.
+	stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 
 	if _, err := p.cli.ContainerStop(stopCtx, c.ID, client.ContainerStopOptions{}); err != nil {
