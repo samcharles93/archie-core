@@ -155,6 +155,106 @@ func TestEventLogRoundTrip(t *testing.T) {
 	}
 }
 
+// TestTransitionRejectsStaleFrom proves that Transition rejects a call
+// whose `from` parameter does not match the task's current status.
+// Today Transition ignores the `from` guard, so the call succeeds when
+// it should fail — this test captures that bug.
+func TestTransitionRejectsStaleFrom(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "t", "b", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("claim = (%v, %v)", task, err)
+	}
+	// Task is now StatusRunning. Transition with from=StatusQueued
+	// must fail because the task is not queued.
+	err = s.Transition(ctx, task.ID, StatusQueued, StatusPROpen, "stale from")
+	if err == nil {
+		t.Fatal("Transition with stale 'from' (StatusQueued) on a running task must return an error, but got nil")
+	}
+
+	// Verify the task was NOT changed.
+	got, err := s.TaskByID(ctx, task.ID)
+	if err != nil || got == nil {
+		t.Fatalf("TaskByID = (%+v, %v)", got, err)
+	}
+	if got.Status != StatusRunning {
+		t.Fatalf("task status changed to %q despite stale from guard; want %q", got.Status, StatusRunning)
+	}
+}
+
+// TestTransitionPreventsDoubleTransition proves that two callers racing
+// to transition the same task from the same `from` status cannot both
+// succeed — the second must get an error because the first already
+// changed the status.
+func TestTransitionPreventsDoubleTransition(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "t", "b", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("claim = (%v, %v)", task, err)
+	}
+
+	// First transition: running → pr_open should succeed.
+	if err := s.Transition(ctx, task.ID, StatusRunning, StatusPROpen, "first"); err != nil {
+		t.Fatalf("first transition = %v", err)
+	}
+
+	// Second transition: the task is now StatusPROpen, so
+	// from=StatusRunning must fail.
+	err = s.Transition(ctx, task.ID, StatusRunning, StatusMerged, "second")
+	if err == nil {
+		t.Fatal("second Transition with stale 'from' (StatusRunning) on a pr_open task must return an error, but got nil")
+	}
+
+	// Verify the task kept the first transition's status.
+	got, err := s.TaskByID(ctx, task.ID)
+	if err != nil || got == nil {
+		t.Fatalf("TaskByID = (%+v, %v)", got, err)
+	}
+	if got.Status != StatusPROpen {
+		t.Fatalf("task status = %q, want %q (second transition must not overwrite)", got.Status, StatusPROpen)
+	}
+}
+
+// TestRequeueRejectsStaleFrom proves that Requeue rejects a call whose
+// fromStatus does not match the task's current status.
+func TestRequeueRejectsStaleFrom(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "t", "b", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("claim = (%v, %v)", task, err)
+	}
+	// Task is StatusRunning. Requeue with fromStatus=StatusParked must
+	// fail because the task is not parked.
+	err = s.Requeue(ctx, task.ID, StatusParked, "implement")
+	if err == nil {
+		t.Fatal("Requeue with stale fromStatus (StatusParked) on a running task must return an error, but got nil")
+	}
+
+	// Verify the task was NOT changed.
+	got, err := s.TaskByID(ctx, task.ID)
+	if err != nil || got == nil {
+		t.Fatalf("TaskByID = (%+v, %v)", got, err)
+	}
+	if got.Status != StatusRunning {
+		t.Fatalf("task status changed to %q despite stale fromStatus guard; want %q", got.Status, StatusRunning)
+	}
+}
+
 func TestIncrementRetryCount(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()

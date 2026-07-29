@@ -257,16 +257,43 @@ func (s *Store) ClaimByIssue(ctx context.Context, owner, repo string, number int
 	return t, err
 }
 
+// ErrStaleTransition is returned when a guarded transition fails because
+// the task's current status does not match the expected from status.
+var ErrStaleTransition = errors.New("store: stale transition: task status does not match expected from status")
+
 // Transition moves a task to a new status, recording the change.
+// The from status acts as a guard: the UPDATE only affects rows whose
+// current status matches from. If no row matches, ErrStaleTransition is
+// returned and no audit row is written. Both statements execute in a
+// single transaction.
 func (s *Store) Transition(ctx context.Context, taskID int64, from, to, detail string) error {
-	if _, err := s.db.ExecContext(ctx,
-		`UPDATE tasks SET status=?, updated_at=datetime('now') WHERE id=?`, to, taskID); err != nil {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
 		return err
 	}
-	_, err := s.db.ExecContext(ctx,
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx,
+		`UPDATE tasks SET status=?, updated_at=datetime('now') WHERE id=? AND status=?`, to, taskID, from)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrStaleTransition
+	}
+
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO transitions (task_id, from_status, to_status, detail) VALUES (?, ?, ?, ?)`,
 		taskID, from, to, clip(detail, 4000))
-	return err
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // Update persists mutable task fields written by workflows.
@@ -341,18 +368,41 @@ func (s *Store) WaitingTasks(ctx context.Context) (tasks []Task, retErr error) {
 // Requeue puts a task back on the queue. A non-empty workflow forces it
 // (the waiting_human → approved → implement handoff); empty keeps the
 // task's current workflow (retrying a parked task).
+// The fromStatus acts as a guard: the UPDATE only affects rows whose
+// current status matches fromStatus. If no row matches, ErrStaleTransition
+// is returned and no audit row is written. Both statements execute in a
+// single transaction.
 func (s *Store) Requeue(ctx context.Context, taskID int64, fromStatus, workflow string) error {
-	if _, err := s.db.ExecContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx, `
 		UPDATE tasks SET status='queued',
 			workflow=CASE WHEN ?='' THEN workflow ELSE ? END,
 			stage='', park_reason='', updated_at=datetime('now')
-		WHERE id=?`, workflow, workflow, taskID); err != nil {
+		WHERE id=? AND status=?`, workflow, workflow, taskID, fromStatus)
+	if err != nil {
 		return err
 	}
-	_, err := s.db.ExecContext(ctx,
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrStaleTransition
+	}
+
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO transitions (task_id, from_status, to_status, detail) VALUES (?, ?, 'queued', ?)`,
 		taskID, fromStatus, "requeued "+workflow)
-	return err
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // RecoverStale re-queues tasks left running by a crashed daemon.
