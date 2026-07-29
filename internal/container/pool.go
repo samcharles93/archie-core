@@ -42,9 +42,16 @@ type TaskPayload struct {
 }
 
 // WriteTaskJSON writes the task payload to <workspace>/task.json.
+// The workspace directory must already exist; WriteTaskJSON will not
+// create directories.
 func WriteTaskJSON(workspace string, payload TaskPayload) error {
-	if err := os.MkdirAll(workspace, 0o755); err != nil {
-		return fmt.Errorf("task.json dir: %w", err)
+	if workspace == "" {
+		return fmt.Errorf("task.json: empty workspace path")
+	}
+	if info, err := os.Stat(workspace); err != nil {
+		return fmt.Errorf("task.json: workspace %s: %w", workspace, err)
+	} else if !info.IsDir() {
+		return fmt.Errorf("task.json: workspace %s is not a directory", workspace)
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {

@@ -184,6 +184,39 @@ func TestSSETransportConfigDefaults(t *testing.T) {
 	}
 }
 
+func TestSSETransportStateReflectsRunning(t *testing.T) {
+	fake := newSSETestServer(t)
+	defer fake.Close()
+
+	tr := NewSSETransport(SSETransportConfig{
+		SSEEndpoint:     fake.URL + "/sse",
+		MessageEndpoint: fake.URL + "/messages",
+	})
+
+	// Before Start, state should be StateStopped.
+	if state := tr.State(); state != StateStopped {
+		t.Errorf("State before Start = %v, want StateStopped", state)
+	}
+
+	if err := tr.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	// After Start, state should be StateRunning.
+	if state := tr.State(); state != StateRunning {
+		t.Errorf("State after Start = %v, want StateRunning", state)
+	}
+
+	if err := tr.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	// After Stop, state should be StateStopped.
+	if state := tr.State(); state != StateStopped {
+		t.Errorf("State after Stop = %v, want StateStopped", state)
+	}
+}
+
 func TestSSETransportConcurrentSendsGetCorrectResponses(t *testing.T) {
 	fake := newSSETestServer(t)
 	defer fake.Close()

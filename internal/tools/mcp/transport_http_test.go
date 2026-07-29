@@ -131,3 +131,30 @@ func TestHTTPTransportConfigDefaults(t *testing.T) {
 		t.Errorf("default timeout = %v, want 30s", timeout)
 	}
 }
+
+func TestHTTPTransportStateAlwaysRunning(t *testing.T) {
+	tr := NewHTTPTransport(HTTPTransportConfig{Endpoint: "http://localhost"})
+	if state := tr.State(); state != StateRunning {
+		t.Errorf("State() = %v, want StateRunning", state)
+	}
+}
+
+func TestHTTPTransportStartStopAreNoops(t *testing.T) {
+	tr := NewHTTPTransport(HTTPTransportConfig{Endpoint: "http://localhost"})
+	ctx := context.Background()
+	// Start and Stop must not error.
+	if err := tr.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	// State remains Running after Start.
+	if state := tr.State(); state != StateRunning {
+		t.Errorf("State after Start = %v, want StateRunning", state)
+	}
+	if err := tr.Stop(ctx); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	// State remains Running after Stop (stateless transport).
+	if state := tr.State(); state != StateRunning {
+		t.Errorf("State after Stop = %v, want StateRunning", state)
+	}
+}

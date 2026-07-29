@@ -202,6 +202,14 @@ func TestProviderSatisfiesEngine(t *testing.T) {
 	var _ toolprovider.Engine = New("compile", newFakeTransport())
 }
 
+// Compile-time checks: HTTP and SSE transports satisfy LifecycleTransport.
+func TestTransportsSatisfyLifecycleTransport(t *testing.T) {
+	var _ LifecycleTransport = (*protocol.HTTPTransport)(nil)
+	var _ LifecycleTransport = (*protocol.SSETransport)(nil)
+	// Also check StdioTransport, which already satisfied it.
+	var _ LifecycleTransport = (*protocol.StdioTransport)(nil)
+}
+
 func TestSanitizeSegmentsAreDeterministicASCII(t *testing.T) {
 	tests := []struct {
 		name     string

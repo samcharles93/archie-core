@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/eventbus"
 )
 
@@ -22,8 +23,12 @@ type AgentRequestMessage struct {
 	Channel   string              `json:"channel,omitempty"` // "response" (default) or "system"
 	Workspace string              `json:"workspace"`
 	Request   Request             `json:"request"`
-	Stages    []Request           `json:"stages,omitempty"` // batch: all agent stages for this task
+	Stages    []Request           `json:"stages,omitempty"`    // batch: all agent stages for this task
 	Providers map[string]Provider `json:"providers,omitempty"`
+	// MCPServers carries MCP server definitions so the agent can construct
+	// transports, discover tools, and register them locally. Absent/empty
+	// means no MCP servers (backward compatible).
+	MCPServers []config.MCPServer `json:"mcp_servers,omitempty"`
 }
 
 // AgentResponseEnvelope is the response payload published to the reply inbox.
@@ -54,9 +59,10 @@ type RequestBus interface {
 // The name is historical: it holds no NATS type and works with any bus
 // satisfying RequestBus.
 type NATSRunner struct {
-	Bus       RequestBus
-	Providers map[string]Provider
-	Log       *slog.Logger
+	Bus        RequestBus
+	Providers  map[string]Provider
+	MCPServers []config.MCPServer
+	Log        *slog.Logger
 }
 
 // Run publishes a stage execution request to JetStream with an X-Archie-Reply
@@ -85,13 +91,14 @@ func (r *NATSRunner) Run(ctx context.Context, workspace string, req Request) (Re
 
 	// 3. Publish request with reply header.
 	msg := AgentRequestMessage{
-		TaskID:    req.TaskID,
-		Attempt:   req.Attempt,
-		Stage:     req.Stage,
-		Workflow:  req.Workflow,
-		Workspace: workspace,
-		Request:   req,
-		Providers: r.Providers,
+		TaskID:     req.TaskID,
+		Attempt:    req.Attempt,
+		Stage:      req.Stage,
+		Workflow:   req.Workflow,
+		Workspace:  workspace,
+		Request:    req,
+		Providers:  r.Providers,
+		MCPServers: r.MCPServers,
 	}
 	data, err := json.Marshal(msg)
 	if err != nil {

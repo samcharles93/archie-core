@@ -17,18 +17,24 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/nats-io/nats.go"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/eventbus"
 	arnats "github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/taskrun"
+	"github.com/samcharles93/archie-core/internal/tools"
+	"github.com/samcharles93/archie-core/internal/tools/mcp"
+	toolprovider "github.com/samcharles93/archie-core/internal/tools/provider"
+	mcptoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/mcp"
 )
 
 const (
@@ -193,6 +199,127 @@ func natsConnectionSettings(flagURL string, getenv func(string) string) (url, to
 	return url, getenv("NATS_TOKEN")
 }
 
+// mcpProviderSet holds the resources needed to clean up MCP providers.
+type mcpProviderSet struct {
+	providers []toolprovider.Engine
+	registry  *tools.Registry
+}
+
+// startMCPProviders creates MCP transports from config, starts them,
+// discovers tools, and registers them into a local registry. Returns
+// nil when there are no servers configured.
+func startMCPProviders(ctx context.Context, servers []config.MCPServer, log *slog.Logger) (*mcpProviderSet, error) {
+	if len(servers) == 0 {
+		return nil, nil
+	}
+	reg := tools.NewRegistry()
+	var providers []toolprovider.Engine
+	var firstErr error
+
+	for _, srv := range servers {
+		name := strings.TrimSpace(srv.Name)
+		if name == "" {
+			log.Warn("mcp server skipped: empty name")
+			continue
+		}
+		transportType := strings.ToLower(strings.TrimSpace(srv.Transport))
+		if transportType == "" {
+			transportType = "stdio"
+		}
+
+		var transport mcptoolprovider.LifecycleTransport
+		switch transportType {
+		case "stdio":
+			command := strings.TrimSpace(srv.Command)
+			if command == "" {
+				err := fmt.Errorf("MCP stdio server %q requires a command", name)
+				log.Warn("mcp server skipped", "name", name, "err", err)
+				if firstErr == nil {
+					firstErr = err
+				}
+				continue
+			}
+			transport = mcp.NewStdioTransport(mcp.StdioTransportConfig{
+				Command: command,
+				Args:    append([]string(nil), srv.Args...),
+			})
+		case "http", "streamablehttp":
+			url := strings.TrimSpace(srv.URL)
+			if url == "" {
+				err := fmt.Errorf("MCP http server %q requires a url", name)
+				log.Warn("mcp server skipped", "name", name, "err", err)
+				if firstErr == nil {
+					firstErr = err
+				}
+				continue
+			}
+			transport = mcp.NewHTTPTransport(mcp.HTTPTransportConfig{
+				Endpoint: url,
+				Headers:  srv.Headers,
+			})
+		case "sse":
+			sseEndpoint := strings.TrimSpace(srv.SSEEndpoint)
+			if sseEndpoint == "" {
+				err := fmt.Errorf("MCP sse server %q requires an sse_endpoint", name)
+				log.Warn("mcp server skipped", "name", name, "err", err)
+				if firstErr == nil {
+					firstErr = err
+				}
+				continue
+			}
+			transport = mcp.NewSSETransport(mcp.SSETransportConfig{
+				SSEEndpoint:     sseEndpoint,
+				MessageEndpoint: strings.TrimSpace(srv.MessageEndpoint),
+				Headers:         srv.Headers,
+			})
+		default:
+			log.Warn("mcp server skipped: unknown transport", "name", name, "transport", transportType)
+			continue
+		}
+
+		provider := mcptoolprovider.New(name, transport)
+		if err := provider.Start(ctx); err != nil {
+			log.Warn("mcp provider start failed", "name", name, "err", err)
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+
+		entries, err := provider.Discover(ctx)
+		if err != nil {
+			log.Warn("mcp tool discovery failed", "name", name, "err", err)
+			// Stop the provider since we can't use it.
+			_ = provider.Stop(ctx)
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+
+		for _, entry := range entries {
+			if err := reg.Register(entry); err != nil {
+				log.Warn("mcp tool registration failed", "tool", entry.Name, "err", err)
+			}
+		}
+		providers = append(providers, provider)
+		log.Info("mcp provider started", "name", name, "transport", transportType, "tools", len(entries))
+	}
+
+	if len(providers) == 0 {
+		return nil, firstErr
+	}
+	return &mcpProviderSet{providers: providers, registry: reg}, nil
+}
+
+func (s *mcpProviderSet) cleanup(ctx context.Context, log *slog.Logger) {
+	for _, p := range s.providers {
+		if err := p.Stop(ctx); err != nil {
+			log.Warn("mcp provider stop failed", "err", err)
+		}
+	}
+}
+
 func handle(ctx context.Context, msg eventbus.Message, bus stageBus, log *slog.Logger) error {
 	var req agentexec.AgentRequestMessage
 	if err := json.Unmarshal(msg.Data(), &req); err != nil {
@@ -212,7 +339,25 @@ func handle(ctx context.Context, msg eventbus.Message, bus stageBus, log *slog.L
 		"reply_to", replyTo,
 	)
 
-	resp, err := agentexec.HandleMessage(ctx, req, log, agentexec.DefaultRunnerFactory)
+	// Start MCP providers and build a local tool registry.
+	mcpSet, mcpErr := startMCPProviders(ctx, req.MCPServers, log)
+	if mcpSet != nil {
+		defer mcpSet.cleanup(ctx, log)
+	}
+	if mcpErr != nil {
+		log.Warn("mcp providers had errors, continuing with available tools", "err", mcpErr)
+	}
+
+	// Build a runner factory that includes MCP-discovered tools.
+	factory := func(providers map[string]agentexec.Provider, log *slog.Logger) agentexec.Runner {
+		var registries []*tools.Registry
+		if mcpSet != nil {
+			registries = append(registries, mcpSet.registry)
+		}
+		return agentexec.NewInProcessRunner(agentexec.NewRuntime(providers), log, registries...)
+	}
+
+	resp, err := agentexec.HandleMessage(ctx, req, log, factory)
 	if err != nil {
 		return fmt.Errorf("handle: %w", err)
 	}

@@ -499,5 +499,12 @@ func (t *SSETransport) isStopped() bool {
 	}
 }
 
+// State returns the current transport state.
+func (t *SSETransport) State() TransportState {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.state
+}
+
 // Compile-time interface check.
 var _ Transport = (*SSETransport)(nil)
