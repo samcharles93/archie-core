@@ -477,6 +477,15 @@ type ContainerConfig struct {
 // collaboration PRD, phase C  --  docs/prds/multi-agent-collaboration.md).
 // Empty (Telegram.Token.Key == "") disables chat entirely.
 type ChatConfig struct {
+	// Operator is the display name of the person this deployment assists,
+	// shown to the chat agent as runtime metadata. Empty tells it nothing.
+	//
+	// This belongs in configuration, not in a prompt string: the operator's
+	// name is deployment data. It was previously compiled into the default
+	// persona, so every deployment claimed to work for one particular
+	// person, and that name was sent to the model provider on every turn
+	// regardless of who was running it.
+	Operator string `toml:"operator" yaml:"operator"`
 	// Models is the optional interactive-chat model catalog. When empty,
 	// chat falls back to the distinct model references assigned to workflow
 	// roles in the top-level [models] table.

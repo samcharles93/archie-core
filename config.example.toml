@@ -45,7 +45,13 @@ class = "ollama"
 # Optional interactive-chat catalog. /provider groups these references by
 # their first path segment, and /model shows only the selected provider's
 # entries. When omitted, Archie uses the distinct refs in [models].
+#
+# `operator` is the display name of the person this deployment assists. It is
+# passed to the chat agent as runtime metadata, which means it is sent to the
+# configured model provider on every turn -- leave it unset to tell the agent
+# nothing about who is running it.
 # [chat]
+# operator = "Ada Lovelace"
 # models = [
 #   "openai/gpt-5.6-sol",
 #   "openrouter/openai/gpt-5.6-sol",

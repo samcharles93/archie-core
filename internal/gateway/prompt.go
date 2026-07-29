@@ -38,6 +38,15 @@ type SystemPromptConfig struct {
 	Model string
 	// SessionID identifies the conversation.
 	SessionID string
+	// Operator is the display name of the person this deployment assists,
+	// from configuration. Empty renders nothing.
+	//
+	// It is a config value rather than prompt text because the operator's
+	// name is deployment data, not part of Archie's identity: it was
+	// previously compiled into the default persona, so every deployment
+	// claimed to work for one particular person and that person's name was
+	// sent to the model provider on every turn whether or not it was theirs.
+	Operator string
 	// Now stamps the prompt's date. The zero value omits nothing -- it
 	// simply renders the zero date -- so callers should always set it.
 	Now time.Time
@@ -118,6 +127,6 @@ func BuildSystemPrompt(cfg SystemPromptConfig) string {
 // fallbackSystemPrompt is the last-resort prompt used if template execution
 // fails. It keeps the two rules whose absence caused real misbehaviour:
 // never claim unverified capabilities, and stay brief.
-const fallbackSystemPrompt = "You are Archie, Sam's coding and project assistant. " +
+const fallbackSystemPrompt = "You are Archie, a coding and project assistant. " +
 	"Never claim a tool, file, memory, action or result you have not verified. " +
 	"Keep replies short and lead with the answer."

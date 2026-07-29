@@ -128,24 +128,33 @@ func makeTelegramSessionStore(s telegramSetup) gateway.SessionStore {
 }
 
 func buildTelegramRouter(ctx context.Context, tg *telegram.Gateway, s telegramSetup, sessionStore gateway.SessionStore) *gateway.Router {
-	llmResponder, llmStream := makeTelegramLLMResponder(ctx, tg, s, sessionStore)
-	router := gateway.NewRouter(s.St, llmResponder, "telegram")
-	router.LLMStream = llmStream
+	// The router is built before the responder so the responder can resolve
+	// sessions through it. Both orderings work at runtime -- the responder is
+	// a closure -- but this way the dependency is visible rather than
+	// captured by reference.
+	router := gateway.NewRouter(s.St, nil, "telegram")
 	router.Models = s.ChatModels
 	router.InitSessions(sessionStore)
 	configureTaskCommands(router, s.ChatTasks, s.ChatController, s.DefaultChatIdentity)
+
+	router.LLM, router.LLMStream = makeTelegramLLMResponder(ctx, tg, s, sessionStore, router)
 	return router
 }
 
-func makeTelegramLLMResponder(ctx context.Context, tg *telegram.Gateway, s telegramSetup, sessionStore gateway.SessionStore) (gateway.LLMResponder, gateway.LLMStreamResponder) {
+func makeTelegramLLMResponder(ctx context.Context, tg *telegram.Gateway, s telegramSetup, sessionStore gateway.SessionStore, router *gateway.Router) (gateway.LLMResponder, gateway.LLMStreamResponder) {
 	if s.LLM == nil {
 		return nil, nil
 	}
-	resolveSession := func(ctx context.Context, msg gateway.Message) string {
-		return sessionKey(msg)
-	}
 	respond := func(ctx context.Context, msg gateway.Message, onDelta func(string)) (string, error) {
-		sk := resolveSession(ctx, msg)
+		// Resolve through the router's session tracker, not a local
+		// channel-keyed helper. They agree until /new, /branch or /resume
+		// assigns a session a generated id; from then on the commands and
+		// the conversation address different histories, so /new would report
+		// history cleared while the next turn still saw all of it.
+		sk, err := router.ResolveSessionKey(ctx, msg)
+		if err != nil {
+			return "", fmt.Errorf("resolve chat session: %w", err)
+		}
 		if err := sessionStore.SaveMessage(ctx, sk, msg); err != nil {
 			return "", fmt.Errorf("save inbound chat message: %w", err)
 		}
@@ -153,6 +162,15 @@ func makeTelegramLLMResponder(ctx context.Context, tg *telegram.Gateway, s teleg
 		if err != nil {
 			return "", fmt.Errorf("load chat history: %w", err)
 		}
+		// Chat turns were entirely unlogged, so a report of lost context had
+		// no evidence to check against: session id, history depth and the
+		// resolved persona are the three things needed to tell "wrong
+		// session" from "history not loaded".
+		s.Log.Info("chat turn",
+			"session", sk,
+			"channel", msg.ChannelID,
+			"thread", msg.ThreadID,
+			"history_messages", len(history))
 		compressed := make([]gateway.CompressedMessage, 0, len(history))
 		for _, h := range history {
 			role := "user"
@@ -170,6 +188,7 @@ func makeTelegramLLMResponder(ctx context.Context, tg *telegram.Gateway, s teleg
 		systemPrompt := gateway.BuildSystemPrompt(gateway.SystemPromptConfig{
 			Persona: s.Personas.GetActive(sk), Tools: toolSummaries(options.Tools),
 			Channel: tg.Name(), Model: chatModel, SessionID: sk, Now: time.Now(),
+			Operator: s.Cfg.Chat.Operator,
 		})
 		view.Messages = append(
 			[]gateway.CompressedMessage{{Role: "system", Content: systemPrompt}}, view.Messages...,

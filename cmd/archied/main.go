@@ -713,13 +713,6 @@ func parseListenAddr(addr, defaultHost string, defaultPort int) (string, int) {
 // sessionKey builds a deterministic session identifier from a gateway
 // message's routing fields. Platform + channel + thread uniquely identify
 // a conversation for session persistence and history retrieval.
-func sessionKey(msg gateway.Message) string {
-	if msg.ThreadID != "" {
-		return msg.ChannelID + ":" + msg.ThreadID
-	}
-	return msg.ChannelID
-}
-
 func executionProviders(cfg config.Config) map[string]agentexec.Provider {
 	return agentexec.ProvidersFromConfig(cfg.Providers)
 }
