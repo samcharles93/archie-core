@@ -31,15 +31,19 @@ type Issue struct {
 
 // Forge is the interface for interacting with a git host.
 type Forge interface {
-	// AcceptInvitations auto-accepts pending repository invitations.
-	AcceptInvitations(ctx context.Context) error
+	IssueForge
+	PullRequestForge
+	RepoForge
+}
 
+// IssueForge is issue-level operations.
+type IssueForge interface {
 	// AssignedIssues returns open issues assigned to the given user,
 	// excluding PRs.
 	AssignedIssues(ctx context.Context, owner, repo, assignee string) ([]Issue, error)
 
 	// IssuesWithLabel returns open issues matching the given label,
-	// excluding PRs. Used when Dispatch.Trigger is "label" or "either".
+	// excluding PRs.
 	IssuesWithLabel(ctx context.Context, owner, repo, label string) ([]Issue, error)
 
 	// Comment posts an issue (or PR) comment and returns its id.
@@ -48,12 +52,6 @@ type Forge interface {
 	// RepliesAfter returns comments on the issue with id > afterID that
 	// were not written by exclude.
 	RepliesAfter(ctx context.Context, owner, repo string, number int, afterID int64, exclude string) ([]Reply, error)
-
-	// CreatePR opens a pull request and returns its number.
-	CreatePR(ctx context.Context, owner, repo, title, head, base, body string) (int, error)
-
-	// PRState returns "open", "merged", or "closed" for a PR.
-	PRState(ctx context.Context, owner, repo string, number int) (string, error)
 
 	// CloseIssue closes an issue with an optional final comment.
 	CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error
@@ -68,6 +66,21 @@ type Forge interface {
 	// other label that appears in knownLabels first. An empty label clears
 	// all state labels (terminal states).
 	SetStateLabel(ctx context.Context, owner, repo string, number int, label string, knownLabels []string)
+}
+
+// PullRequestForge is pull-request-level operations.
+type PullRequestForge interface {
+	// CreatePR opens a pull request and returns its number.
+	CreatePR(ctx context.Context, owner, repo, title, head, base, body string) (int, error)
+
+	// PRState returns "open", "merged", or "closed" for a PR.
+	PRState(ctx context.Context, owner, repo string, number int) (string, error)
+}
+
+// RepoForge is repository-level operations.
+type RepoForge interface {
+	// AcceptInvitations auto-accepts pending repository invitations.
+	AcceptInvitations(ctx context.Context) error
 
 	// VerifyPush confirms the token can push to the repo.
 	VerifyPush(ctx context.Context, owner, repo string) error

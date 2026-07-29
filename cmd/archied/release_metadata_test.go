@@ -81,13 +81,16 @@ func TestTelegramReleaseAnnouncementsAreWiredFromDeploymentMetadata(t *testing.T
 		t.Fatal(err)
 	}
 	text := string(source)
+	if tgSource, err := os.ReadFile("telegram_setup.go"); err == nil {
+		text += string(tgSource)
+	}
 	for _, marker := range []string{
 		"releaseannounce.Announcer{",
-		`Label:         "THE GATEWAY"`,
-		`Label:         "THE RUNTIME"`,
-		"Version:       gatewayVersion",
-		"Version:       runtimeVersion",
-		"tg.ReleaseAnnouncements = releaseAnnouncements",
+		`"THE GATEWAY"`,
+		`"THE RUNTIME"`,
+		"gatewayVersion",
+		"runtimeVersion",
+		"tg.ReleaseAnnouncements",
 	} {
 		if !strings.Contains(text, marker) {
 			t.Errorf("Telegram release announcement wiring missing %q", marker)

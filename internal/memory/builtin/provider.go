@@ -242,7 +242,6 @@ func (p *Provider) HandleToolCall(name string, args map[string]any) (any, error)
 	}
 
 	action, _ := args["action"].(string)
-	section, _ := args["section"].(string)
 	caseSensitive := true
 	if v, ok := args["case_sensitive"].(bool); ok {
 		caseSensitive = v
@@ -250,74 +249,86 @@ func (p *Provider) HandleToolCall(name string, args map[string]any) (any, error)
 
 	switch action {
 	case "add":
-		content, _ := args["content"].(string)
-		if content == "" {
-			return nil, fmt.Errorf("builtin: add requires non-empty \"content\"")
-		}
-		res, err := store.Add(section, content)
-		if err != nil {
-			return nil, err
-		}
-		verb := "appended to"
-		if res.Created {
-			verb = "created"
-		}
-		return map[string]any{
-			"success":       true,
-			"file":          fileLabel,
-			"action":        "add",
-			"section":       res.Section,
-			"chars_added":   res.CharsAdded,
-			"section_chars": res.SectionChars,
-			"file_bytes":    res.FileBytes,
-			"message":       fmt.Sprintf("%s section %q (%d chars added, %d bytes in file)", capitalize(verb), res.Section, res.CharsAdded, res.FileBytes),
-		}, nil
-
+		return p.handleAdd(store, fileLabel, args)
 	case "replace":
-		substring, _ := args["substring"].(string)
-		replacement, _ := args["replacement"].(string)
-		if substring == "" {
-			return nil, fmt.Errorf("builtin: replace requires non-empty \"substring\"")
-		}
-		res, err := store.Replace(section, substring, replacement, caseSensitive)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{
-			"success":       true,
-			"file":          fileLabel,
-			"action":        "replace",
-			"section":       res.Section,
-			"chars_removed": res.CharsRemoved,
-			"chars_added":   res.CharsAdded,
-			"section_chars": res.SectionChars,
-			"file_bytes":    res.FileBytes,
-			"message":       fmt.Sprintf("Replaced %d chars with %d chars in section %q (%d bytes in file)", res.CharsRemoved, res.CharsAdded, res.Section, res.FileBytes),
-		}, nil
-
+		return p.handleReplace(store, fileLabel, args, caseSensitive)
 	case "remove":
-		substring, _ := args["substring"].(string)
-		if substring == "" {
-			return nil, fmt.Errorf("builtin: remove requires non-empty \"substring\"")
-		}
-		res, err := store.Remove(section, substring, caseSensitive)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{
-			"success":       true,
-			"file":          fileLabel,
-			"action":        "remove",
-			"section":       res.Section,
-			"chars_removed": res.CharsRemoved,
-			"section_chars": res.SectionChars,
-			"file_bytes":    res.FileBytes,
-			"message":       fmt.Sprintf("Removed %d chars from section %q (%d bytes in file)", res.CharsRemoved, res.Section, res.FileBytes),
-		}, nil
-
+		return p.handleRemove(store, fileLabel, args, caseSensitive)
 	default:
 		return nil, fmt.Errorf("builtin: unknown action %q (want add, replace, or remove)", action)
 	}
+}
+
+func (p *Provider) handleAdd(store *Store, fileLabel string, args map[string]any) (any, error) {
+	content, _ := args["content"].(string)
+	if content == "" {
+		return nil, fmt.Errorf("builtin: add requires non-empty \"content\"")
+	}
+	section, _ := args["section"].(string)
+	res, err := store.Add(section, content)
+	if err != nil {
+		return nil, err
+	}
+	verb := "appended to"
+	if res.Created {
+		verb = "created"
+	}
+	return map[string]any{
+		"success":       true,
+		"file":          fileLabel,
+		"action":        "add",
+		"section":       res.Section,
+		"chars_added":   res.CharsAdded,
+		"section_chars": res.SectionChars,
+		"file_bytes":    res.FileBytes,
+		"message":       fmt.Sprintf("%s section %q (%d chars added, %d bytes in file)", capitalize(verb), res.Section, res.CharsAdded, res.FileBytes),
+	}, nil
+}
+
+func (p *Provider) handleReplace(store *Store, fileLabel string, args map[string]any, caseSensitive bool) (any, error) {
+	substring, _ := args["substring"].(string)
+	replacement, _ := args["replacement"].(string)
+	if substring == "" {
+		return nil, fmt.Errorf("builtin: replace requires non-empty \"substring\"")
+	}
+	section, _ := args["section"].(string)
+	res, err := store.Replace(section, substring, replacement, caseSensitive)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"success":       true,
+		"file":          fileLabel,
+		"action":        "replace",
+		"section":       res.Section,
+		"chars_removed": res.CharsRemoved,
+		"chars_added":   res.CharsAdded,
+		"section_chars": res.SectionChars,
+		"file_bytes":    res.FileBytes,
+		"message":       fmt.Sprintf("Replaced %d chars with %d chars in section %q (%d bytes in file)", res.CharsRemoved, res.CharsAdded, res.Section, res.FileBytes),
+	}, nil
+}
+
+func (p *Provider) handleRemove(store *Store, fileLabel string, args map[string]any, caseSensitive bool) (any, error) {
+	substring, _ := args["substring"].(string)
+	if substring == "" {
+		return nil, fmt.Errorf("builtin: remove requires non-empty \"substring\"")
+	}
+	section, _ := args["section"].(string)
+	res, err := store.Remove(section, substring, caseSensitive)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"success":       true,
+		"file":          fileLabel,
+		"action":        "remove",
+		"section":       res.Section,
+		"chars_removed": res.CharsRemoved,
+		"section_chars": res.SectionChars,
+		"file_bytes":    res.FileBytes,
+		"message":       fmt.Sprintf("Removed %d chars from section %q (%d bytes in file)", res.CharsRemoved, res.Section, res.FileBytes),
+	}, nil
 }
 
 // selectStore resolves the "file" argument to the corresponding store,

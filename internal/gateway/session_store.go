@@ -16,6 +16,12 @@ import (
 // history. Each session tracks one (platform, bot, channel) combination
 // for the lifetime of a connection.
 type SessionStore interface {
+	SessionLifecycle
+	MessageHistory
+}
+
+// SessionLifecycle manages session CRUD and listing.
+type SessionLifecycle interface {
 	// Save persists a session. If a session with the same ID already
 	// exists it is overwritten.
 	Save(ctx context.Context, s SessionContext) error
@@ -36,9 +42,10 @@ type SessionStore interface {
 
 	// List returns all sessions, newest first.
 	List(ctx context.Context) ([]SessionContext, error)
+}
 
-	// ── Message persistence ──────────────────────────────────────────
-
+// MessageHistory manages conversation messages within a session.
+type MessageHistory interface {
 	// SaveMessage appends a message turn to the session's conversation
 	// history. Messages are stored with causal ordering via the HLC.
 	SaveMessage(ctx context.Context, sessionID string, msg Message) error

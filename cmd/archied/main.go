@@ -26,7 +26,6 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/channels/email"
-	"github.com/samcharles93/archie-core/internal/channels/telegram"
 	"github.com/samcharles93/archie-core/internal/channels/webhook"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
@@ -41,8 +40,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/nell"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
-	"github.com/samcharles93/archie-core/internal/releaseannounce"
-	"github.com/samcharles93/archie-core/internal/releaseupdate"
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/skill"
 	"github.com/samcharles93/archie-core/internal/storage"
@@ -283,254 +280,17 @@ func run() int {
 	// ── Gateways ──────────────────────────────────────────────────────
 	// Multi-agent collaboration PRD phase C (docs/prds/multi-agent-collaboration.md).
 	var startGateways []func()
-	if cfg.Chat.Telegram.TokenEnv != "" {
-		tgToken := os.Getenv(cfg.Chat.Telegram.TokenEnv)
-		if tgToken == "" {
-			log.Error("chat.telegram configured but token env var is empty", "env", cfg.Chat.Telegram.TokenEnv)
-			return 1
-		}
-		// Deny-by-default: an empty allowlist blocks everyone. A bot handle
-		// is public, so failing open would expose the chat agent's tools,
-		// which run with this daemon's authority, to any stranger.
-		if len(cfg.Chat.Telegram.AllowedUserIDs) == 0 {
-			log.Warn("chat.telegram has no allowed_user_ids: every sender will be rejected. " +
-				"Add your Telegram user id to chat.telegram.allowed_user_ids to enable the bot.")
-		}
-		tg := telegram.New(tgToken, "", "", cfg.Chat.Telegram.AllowedUserIDs, log)
-		tg.Version = func() string {
-			return fmt.Sprintf("Archie\nGateway: %s\nRuntime: %s", gatewayVersion, runtimeVersion)
-		}
-		if len(cfg.Chat.Telegram.UpdateCheckCommand) != 0 {
-			updates := &releaseupdate.Service{
-				Catalog:   releaseupdate.CommandCatalog{Command: cfg.Chat.Telegram.UpdateCheckCommand},
-				StatePath: filepath.Join(cfg.WorkDir, "telegram-update-deferrals.json"),
-			}
-			if len(cfg.Chat.Telegram.UpdateInstallCommand) != 0 {
-				updates.Installer = releaseupdate.CommandInstaller{Command: cfg.Chat.Telegram.UpdateInstallCommand}
-			}
-			tg.Updates = updates
-		}
-		releaseAnnouncements := &releaseannounce.Announcer{
-			StatePath: releaseAnnouncementStatePath(cfg.WorkDir, cfg.BotUser),
-			Components: []releaseannounce.Component{
-				{
-					ID:            "gateway",
-					Label:         "THE GATEWAY",
-					Version:       gatewayVersion,
-					ChangelogPath: packagedGatewayChangelogPath,
-				},
-				{
-					ID:            "runtime",
-					Label:         "THE RUNTIME",
-					Version:       runtimeVersion,
-					ChangelogPath: packagedRuntimeChangelogPath,
-				},
-			},
-		}
-		tg.ReleaseAnnouncements = releaseAnnouncements
-
-		// /restart re-reads config from disk so allowlist and token edits
-		// apply without restarting the daemon and killing running tasks.
-		// Only gateway-scoped fields are refreshed; everything else needs a
-		// full restart, since it was wired into the daemon at construction.
-		tg.Reload = func(g *telegram.Gateway) error {
-			newCfg, err := config.LoadOverlay(*cfgPath, *overlayPath)
-			if err != nil {
-				return fmt.Errorf("reload config: %w", err)
-			}
-			tokenEnv := newCfg.Chat.Telegram.TokenEnv
-			if tokenEnv == "" {
-				return fmt.Errorf("reload config: chat.telegram.token_env is unset")
-			}
-			token := os.Getenv(tokenEnv)
-			if token == "" {
-				return fmt.Errorf("reload config: %s is empty", tokenEnv)
-			}
-			g.Token = token
-			g.AllowedUserIDs = newCfg.Chat.Telegram.AllowedUserIDs
-			log.Info("chat gateway config reloaded",
-				"allowed_user_ids", len(g.AllowedUserIDs))
-			return nil
-		}
-
-		// Session store backed by the same NellDB log as task state.
-		// Sessions and messages survive daemon restarts.
-		var sessionStore gateway.SessionStore
-		if nellAdapter, ok := st.(*nell.Adapter); ok {
-			sessionStore = gateway.NewSessionStore(nellAdapter.Store(), cfg.BotUser)
-		} else {
-			sessionStore = gateway.NewSessionStoreMemory(cfg.BotUser)
-		}
-
-		// Resolve the session ID for a message, creating one if needed.
-		// Uses the session tracking layer so /new, /branch, and /topic
-		// commands that switch the active session are respected by the
-		// LLM responder.
-		resolveSession := func(ctx context.Context, msg gateway.Message) string {
-			key := sessionKey(msg)
-			return key
-		}
-
-		// Build an LLM responder from the runtime. Gateway-local commands
-		// (/status, /model, /spawn) are handled directly; all
-		// other messages are routed through the LLM with conversation
-		// history from the session store.
-		var llmResponder gateway.LLMResponder
-		var llmStream gateway.LLMStreamResponder
-		if llm != nil {
-			// respond runs one chat turn. When onDelta is non-nil the reply
-			// is streamed and each fragment reported as it arrives; the
-			// assembled text is returned either way, so both the blocking
-			// and streaming responders share this single path.
-			respond := func(ctx context.Context, msg gateway.Message, onDelta func(string)) (string, error) {
-				sessionKey := resolveSession(ctx, msg)
-				if err := sessionStore.SaveMessage(ctx, sessionKey, msg); err != nil {
-					return "", fmt.Errorf("save inbound chat message: %w", err)
-				}
-
-				// Load recent conversation history for context.
-				// Use a larger fetch window so compression has room to work
-				// — older messages get summarised, recent ones stay intact.
-				history, err := sessionStore.RecentMessages(ctx, sessionKey, 100)
-				if err != nil {
-					return "", fmt.Errorf("load chat history: %w", err)
-				}
-				compressed := make([]gateway.CompressedMessage, 0, len(history))
-				for _, h := range history {
-					role := "user"
-					if h.From == cfg.BotUser {
-						role = "assistant"
-					}
-					compressed = append(compressed, gateway.CompressedMessage{
-						Role:    role,
-						Content: h.Text,
-					})
-				}
-				// Apply context compression for long-running sessions.
-				compCfg := gateway.DefaultCompressionConfig()
-				view := gateway.CompressHistory(compressed, compCfg)
-
-				// Build the toolset first so the system prompt can advertise
-				// exactly the tools the model is about to be handed. Deriving
-				// the inventory from any other source lets the prompt drift
-				// from reality, which is what made the agent offer to run
-				// commands it had no tool for.
-				options, err := chatGenerateOptions(nil, toolReg)
-				if err != nil {
-					return "", fmt.Errorf("build chat tools: %w", err)
-				}
-
-				chatModel := chatModels.ActiveModel()
-				systemPrompt := gateway.BuildSystemPrompt(gateway.SystemPromptConfig{
-					Persona:   personas.GetActive(sessionKey),
-					Tools:     toolSummaries(options.Tools),
-					Channel:   tg.Name(),
-					Model:     chatModel,
-					SessionID: sessionKey,
-					Now:       time.Now(),
-				})
-				view.Messages = append(
-					[]gateway.CompressedMessage{{Role: "system", Content: systemPrompt}},
-					view.Messages...,
-				)
-
-				// Convert to chat.Message for the LLM.
-				messages := make([]chat.Message, len(view.Messages))
-				for i, cm := range view.Messages {
-					role := chat.RoleUser
-					switch cm.Role {
-					case "assistant":
-						role = chat.RoleAssistant
-					case "system":
-						role = chat.RoleSystem
-					}
-					messages[i] = chat.Message{
-						Role:    role,
-						Content: cm.Content,
-					}
-				}
-
-				options.Messages = messages
-
-				var text string
-				if onDelta == nil {
-					result, err := llm.Chat(ctx, chatModel, options)
-					if err != nil {
-						return "", fmt.Errorf("llm chat: %w", err)
-					}
-					text = result.Text
-				} else {
-					stream, err := llm.ChatStream(ctx, chatModel, options)
-					if err != nil {
-						return "", fmt.Errorf("llm chat stream: %w", err)
-					}
-					// Consume FullStream, not TextStream. Per the ai-sdk
-					// channel contract FullStream is authoritative and MUST
-					// be drained until close: its writes are synchronous, so
-					// leaving it unread stalls the producer and deadlocks the
-					// whole turn. TextStream is a best-effort view that drops
-					// deltas when it is not being read, so it cannot be used
-					// to reconstruct the reply either.
-					var sb strings.Builder
-					for part := range stream.FullStream {
-						if part.Type != core.StreamPartTextDelta || part.TextDelta == "" {
-							continue
-						}
-						sb.WriteString(part.TextDelta)
-						onDelta(part.TextDelta)
-					}
-					// Resolves once the producer completes, so a mid-stream
-					// failure surfaces here rather than a truncated reply
-					// passing as a short but complete one.
-					if _, err := stream.FinishReason(); err != nil {
-						return "", fmt.Errorf("llm chat stream: %w", err)
-					}
-					text = sb.String()
-				}
-
-				// Persist the response.
-				if err := sessionStore.SaveMessage(ctx, sessionKey, gateway.Message{
-					From: cfg.BotUser,
-					Text: text,
-				}); err != nil {
-					return "", fmt.Errorf("save outbound chat message: %w", err)
-				}
-
-				return text, nil
-			}
-
-			llmResponder = func(ctx context.Context, msg gateway.Message) (string, error) {
-				return respond(ctx, msg, nil)
-			}
-			llmStream = func(ctx context.Context, msg gateway.Message, onDelta func(string)) (string, error) {
-				return respond(ctx, msg, onDelta)
-			}
-		}
-
-		router := gateway.NewRouter(st, llmResponder, "telegram")
-		router.LLMStream = llmStream
-		router.Models = chatModels
-		router.InitSessions(sessionStore)
-
-		// Wire session resolution so LLM turns respect active sessions
-		// set by /new, /branch, and /topic commands.
-		resolveSession = func(ctx context.Context, msg gateway.Message) string {
-			key, err := router.ResolveSessionKey(ctx, msg)
-			if err != nil {
-				return sessionKey(msg)
-			}
-			return key
-		}
-
-		configureTaskCommands(router, chatTasks, chatController, defaultChatIdentity)
-		startGateways = append(startGateways, func() {
-			go func() {
-				if err := tg.Start(ctx, router); err != nil && ctx.Err() == nil {
-					log.Error("telegram gateway stopped", "err", err)
-				}
-			}()
-			log.Info("telegram gateway started")
-		})
+	start, ok := setupTelegramGateway(ctx, telegramSetup{
+		Cfg: cfg, CfgPath: *cfgPath, OverlayPath: *overlayPath,
+		St: st, LLM: llm, ChatModels: chatModels, ToolReg: toolReg,
+		Personas: personas, ChatTasks: chatTasks, ChatController: chatController,
+		DefaultChatIdentity: defaultChatIdentity, Log: log,
+	})
+	if !ok {
+		return 1
+	}
+	if start != nil {
+		startGateways = append(startGateways, start)
 	}
 
 	// ── Email gateway (optional) ───────────────────────────────────

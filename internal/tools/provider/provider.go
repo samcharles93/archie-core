@@ -155,58 +155,12 @@ func (r *Registry) Start(ctx context.Context) error {
 
 	started := make([]runningProvider, 0, len(order))
 	for _, id := range order {
-		registration := providers[id]
-		if err := safeStart(ctx, registration.engine); err != nil {
-			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
-			cleanupErr := safeStop(cleanupCtx, registration.engine)
-			rollbackFailed, rollbackErr := rollback(cleanupCtx, r.index, started)
-			cancel()
-			if cleanupErr != nil {
-				rollbackFailed = append(rollbackFailed, runningProvider{registration: registration})
-			}
-			r.setFailed(rollbackFailed)
-			return errors.Join(
-				fmt.Errorf("start tool provider %q: %w", id, err),
-				wrapCleanupError(id, cleanupErr),
-				rollbackErr,
-			)
-		}
-
-		entries, err := safeDiscover(ctx, registration.engine)
+		reg := providers[id]
+		rp, err := r.startProvider(ctx, reg, started)
 		if err != nil {
-			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
-			cleanupErr := safeStop(cleanupCtx, registration.engine)
-			rollbackFailed, rollbackErr := rollback(cleanupCtx, r.index, started)
-			cancel()
-			if cleanupErr != nil {
-				rollbackFailed = append(rollbackFailed, runningProvider{registration: registration})
-			}
-			r.setFailed(rollbackFailed)
-			return errors.Join(
-				fmt.Errorf("discover tools from provider %q: %w", id, err),
-				wrapCleanupError(id, cleanupErr),
-				rollbackErr,
-			)
+			return err
 		}
-		if err := r.index.RegisterBatch(entries); err != nil {
-			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
-			cleanupErr := safeStop(cleanupCtx, registration.engine)
-			rollbackFailed, rollbackErr := rollback(cleanupCtx, r.index, started)
-			cancel()
-			if cleanupErr != nil {
-				rollbackFailed = append(rollbackFailed, runningProvider{registration: registration})
-			}
-			r.setFailed(rollbackFailed)
-			return errors.Join(
-				fmt.Errorf("index tools from provider %q: %w", id, err),
-				wrapCleanupError(id, cleanupErr),
-				rollbackErr,
-			)
-		}
-		started = append(started, runningProvider{
-			registration: registration,
-			toolNames:    namesOf(entries),
-		})
+		started = append(started, rp)
 	}
 
 	r.mu.Lock()
@@ -319,6 +273,43 @@ func (r *Registry) setFailed(running []runningProvider) {
 	r.running = append([]runningProvider(nil), running...)
 	r.state = stateFailed
 	r.mu.Unlock()
+}
+
+// startProvider starts, discovers, and indexes one provider. On failure
+// it rolls back previously-started providers and returns a joined error.
+func (r *Registry) startProvider(ctx context.Context, reg registration, started []runningProvider) (runningProvider, error) {
+	id := reg.manifest.ID
+	if err := safeStart(ctx, reg.engine); err != nil {
+		return runningProvider{}, r.failProvider(ctx, id, reg, started,
+			fmt.Errorf("start tool provider %q: %w", id, err))
+	}
+	entries, err := safeDiscover(ctx, reg.engine)
+	if err != nil {
+		return runningProvider{}, r.failProvider(ctx, id, reg, started,
+			fmt.Errorf("discover tools from provider %q: %w", id, err))
+	}
+	if err := r.index.RegisterBatch(entries); err != nil {
+		return runningProvider{}, r.failProvider(ctx, id, reg, started,
+			fmt.Errorf("index tools from provider %q: %w", id, err))
+	}
+	return runningProvider{
+		registration: reg,
+		toolNames:    namesOf(entries),
+	}, nil
+}
+
+// failProvider stops the failing provider, rolls back previously-started
+// providers, and returns a joined error.
+func (r *Registry) failProvider(ctx context.Context, id string, reg registration, started []runningProvider, cause error) error {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
+	defer cancel()
+	cleanupErr := safeStop(cleanupCtx, reg.engine)
+	rollbackFailed, rollbackErr := rollback(cleanupCtx, r.index, started)
+	if cleanupErr != nil {
+		rollbackFailed = append(rollbackFailed, runningProvider{registration: reg})
+	}
+	r.setFailed(rollbackFailed)
+	return errors.Join(cause, wrapCleanupError(id, cleanupErr), rollbackErr)
 }
 
 func cloneRegistrations(source map[string]registration) map[string]registration {

@@ -54,17 +54,7 @@ func StageCommit(name string, message func(*TaskContext) string) Stage {
 func StageCommitPush(message func(*TaskContext) string) Stage {
 	return Stage{Name: "commit-push", Run: func(ctx context.Context, tc *TaskContext) error {
 		if tc.BuildNoChanges {
-			if tc.Task.IsForgeBacked() {
-				body := fmt.Sprintf("**archie closed this issue  --  no changes required.**\n\n%s", tc.BuildSummary)
-				if _, err := tc.Forge.Comment(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, body); err != nil {
-					tc.Log.Warn("no-op close comment failed", "err", err)
-				}
-				if err := tc.Forge.CloseIssue(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, ""); err != nil {
-					return err
-				}
-			}
-			tc.Outcome = Outcome{Status: store.StatusMerged, Detail: "completed  --  no changes required"}
-			return nil
+			return closeNoChangesIssue(ctx, tc)
 		}
 		commit := StageCommit("commit-push", message)
 		if err := commit.Run(ctx, tc); err != nil {
@@ -72,6 +62,22 @@ func StageCommitPush(message func(*TaskContext) string) Stage {
 		}
 		return tc.Trees.Push(ctx, tc.Dir, tc.Branch)
 	}}
+}
+
+func closeNoChangesIssue(ctx context.Context, tc *TaskContext) error {
+	if !tc.Task.IsForgeBacked() {
+		tc.Outcome = Outcome{Status: store.StatusMerged, Detail: "completed  --  no changes required"}
+		return nil
+	}
+	body := fmt.Sprintf("**archie closed this issue  --  no changes required.**\n\n%s", tc.BuildSummary)
+	if _, err := tc.Forge.Comment(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, body); err != nil {
+		tc.Log.Warn("no-op close comment failed", "err", err)
+	}
+	if err := tc.Forge.CloseIssue(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, ""); err != nil {
+		return err
+	}
+	tc.Outcome = Outcome{Status: store.StatusMerged, Detail: "completed  --  no changes required"}
+	return nil
 }
 
 // StageDiffCap parks tasks whose diff exceeds the configured line cap  --

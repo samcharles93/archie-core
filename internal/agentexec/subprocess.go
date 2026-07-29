@@ -72,9 +72,15 @@ func (r *SubprocessRunner) Run(ctx context.Context, workspace string, req Reques
 	if stdout.truncated {
 		return Result{}, fmt.Errorf("archie-agent response exceeds %d bytes", maxProtocolBytes)
 	}
+	return decodeSubprocessResponse(bytes.NewReader(stdout.Bytes()), stderr.String(), req)
+}
+
+// decodeSubprocessResponse reads one Response from r and validates it
+// against req, returning the Result or an error.
+func decodeSubprocessResponse(r io.Reader, stderrText string, req Request) (Result, error) {
 	var response Response
-	if err := decodeOne(bytes.NewReader(stdout.Bytes()), &response); err != nil {
-		return Result{}, fmt.Errorf("decode archie-agent response: %w: %s", err, strings.TrimSpace(stderr.String()))
+	if err := decodeOne(r, &response); err != nil {
+		return Result{}, fmt.Errorf("decode archie-agent response: %w: %s", err, strings.TrimSpace(stderrText))
 	}
 	if response.Version != ProtocolVersion {
 		return Result{}, fmt.Errorf("archie-agent response protocol version %d is unsupported", response.Version)

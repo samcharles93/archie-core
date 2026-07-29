@@ -161,40 +161,57 @@ func captureToolSet(specs []CaptureTool, captures map[string][]json.RawMessage) 
 	tools := make(core.ToolSet, len(specs))
 	for _, spec := range specs {
 		tools[spec.Name] = core.NewTool(spec.Name, spec.Description, spec.Parameters,
-			func(_ context.Context, input string) (string, error) {
-				if spec.MaxCalls > 0 && len(captures[spec.Name]) >= spec.MaxCalls {
-					return fmt.Sprintf("%s rejected: maximum call count is %d", spec.Name, spec.MaxCalls), nil
-				}
-				value := json.RawMessage(input)
-				if !json.Valid(value) {
-					return spec.Name + " rejected: arguments are not valid JSON", nil
-				}
-				var object map[string]json.RawMessage
-				if err := json.Unmarshal(value, &object); err != nil {
-					return spec.Name + " rejected: arguments must be a JSON object", nil //nolint:nilerr // the agent loop must see malformed tool arguments as feedback it can correct, not as a failed tool call
-				}
-				for _, field := range spec.RequiredFields {
-					if _, ok := object[field]; !ok {
-						return fmt.Sprintf("%s rejected: %s is required", spec.Name, field), nil
-					}
-				}
-				for _, field := range spec.NonEmptyStrings {
-					var text string
-					if raw, ok := object[field]; !ok || json.Unmarshal(raw, &text) != nil || strings.TrimSpace(text) == "" {
-						return fmt.Sprintf("%s rejected: %s must be a non-empty string", spec.Name, field), nil //nolint:nilerr // same: a rejection message lets the model retry with a valid argument
-					}
-				}
-				for _, field := range spec.BooleanFields {
-					var value bool
-					if raw, ok := object[field]; !ok || json.Unmarshal(raw, &value) != nil {
-						return fmt.Sprintf("%s rejected: %s must be a boolean", spec.Name, field), nil //nolint:nilerr // same: a rejection message lets the model retry with a valid argument
-					}
-				}
-				captures[spec.Name] = append(captures[spec.Name], append(json.RawMessage(nil), value...))
-				return spec.Name + " recorded", nil
-			})
+			makeCaptureHandler(spec, captures))
 	}
 	return tools
+}
+
+// makeCaptureHandler builds a tool handler that validates and records
+// capture-tool invocations.
+func makeCaptureHandler(spec CaptureTool, captures map[string][]json.RawMessage) func(context.Context, string) (string, error) {
+	return func(_ context.Context, input string) (string, error) {
+		if spec.MaxCalls > 0 && len(captures[spec.Name]) >= spec.MaxCalls {
+			return fmt.Sprintf("%s rejected: maximum call count is %d", spec.Name, spec.MaxCalls), nil
+		}
+		value := json.RawMessage(input)
+		if !json.Valid(value) {
+			return spec.Name + " rejected: arguments are not valid JSON", nil
+		}
+		rejection, ok := validateCaptureArgs(spec, value)
+		if !ok {
+			return rejection, nil
+		}
+		captures[spec.Name] = append(captures[spec.Name], append(json.RawMessage(nil), value...))
+		return spec.Name + " recorded", nil
+	}
+}
+
+// validateCaptureArgs checks that the capture tool arguments satisfy all
+// constraints. Returns a rejection message and false on failure, or "" and
+// true on success.
+func validateCaptureArgs(spec CaptureTool, value json.RawMessage) (string, bool) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(value, &object); err != nil {
+		return spec.Name + " rejected: arguments must be a JSON object", false //nolint:nilerr // the agent loop must see malformed tool arguments as feedback it can correct, not as a failed tool call
+	}
+	for _, field := range spec.RequiredFields {
+		if _, ok := object[field]; !ok {
+			return fmt.Sprintf("%s rejected: %s is required", spec.Name, field), false
+		}
+	}
+	for _, field := range spec.NonEmptyStrings {
+		var text string
+		if raw, ok := object[field]; !ok || json.Unmarshal(raw, &text) != nil || strings.TrimSpace(text) == "" {
+			return fmt.Sprintf("%s rejected: %s must be a non-empty string", spec.Name, field), false //nolint:nilerr // same: a rejection message lets the model retry with a valid argument
+		}
+	}
+	for _, field := range spec.BooleanFields {
+		var val bool
+		if raw, ok := object[field]; !ok || json.Unmarshal(raw, &val) != nil {
+			return fmt.Sprintf("%s rejected: %s must be a boolean", spec.Name, field), false //nolint:nilerr // same: a rejection message lets the model retry with a valid argument
+		}
+	}
+	return "", true
 }
 
 // scriptToolSet exposes run_go_script: interpreting a Yaegi Go script
