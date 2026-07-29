@@ -50,6 +50,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/tools"
 	"github.com/samcharles93/archie-core/internal/tools/mcp"
 	toolprovider "github.com/samcharles93/archie-core/internal/tools/provider"
+	builtintoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/builtin"
 	mcptoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/mcp"
 	memorytoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/memory"
 	"github.com/samcharles93/archie-core/internal/webui"
@@ -502,6 +503,18 @@ func run() int {
 	if err := providerRegistry.Register(memorytoolprovider.New(memManager)); err != nil {
 		log.Error("memory tool provider registration failed", "err", err)
 		return 1
+	}
+	// Workspace file and shell tools. Registered only when a workspace is
+	// configured: these read, write and execute, so the directory is a
+	// deliberate choice rather than a default.
+	if workspace := cfg.Chat.Workspace; workspace != "" {
+		if err := providerRegistry.Register(builtintoolprovider.New(workspace)); err != nil {
+			log.Error("workspace tool provider registration failed", "err", err)
+			return 1
+		}
+		log.Info("workspace tools enabled", "workspace", workspace)
+	} else {
+		log.Info("workspace tools disabled (chat.workspace is unset)")
 	}
 	for _, srv := range cfg.Tools.MCPServers {
 		provider, err := configuredMCPProvider(srv)

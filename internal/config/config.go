@@ -486,6 +486,11 @@ type ChatConfig struct {
 	// person, and that name was sent to the model provider on every turn
 	// regardless of who was running it.
 	Operator string `toml:"operator" yaml:"operator"`
+	// Workspace is the directory the chat agent's file and shell tools are
+	// rooted at. Empty disables those tools entirely, which is the default:
+	// they read, write and execute, so the directory must be a deliberate
+	// choice rather than whatever the daemon happens to start in.
+	Workspace string `toml:"workspace" yaml:"workspace"`
 	// Models is the optional interactive-chat model catalog. When empty,
 	// chat falls back to the distinct model references assigned to workflow
 	// roles in the top-level [models] table.
