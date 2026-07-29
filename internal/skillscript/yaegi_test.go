@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func writeScript(t *testing.T, src string) string {
@@ -90,5 +91,38 @@ func notMain() {}
 func TestRunMissingFile(t *testing.T) {
 	if _, err := Run(filepath.Join(t.TempDir(), "missing.go")); err == nil {
 		t.Fatal("Run() error = nil, want an error for a missing file")
+	}
+}
+
+// TestRunBlocksIndefinitelyOnBlockingScript proves that skillscript.Run
+// has no cancellation mechanism. A skill script that blocks forever
+// (select{}) wedges the calling goroutine permanently. Every other
+// execution path in archie-core supports context cancellation
+// (exec.CommandContext in SubprocessRunner, context.Cause checks in
+// InProcessRunner), but Run cannot be canceled or timed out because it
+// takes no context.Context and calls i.EvalPath synchronously.
+func TestRunBlocksIndefinitelyOnBlockingScript(t *testing.T) {
+	path := writeScript(t, `package main
+
+func main() {
+	select {}
+}
+`)
+
+	done := make(chan struct{})
+	go func() {
+		Run(path)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Run returned from a script that should block forever.
+		// This is unexpected — the script contains select{}.
+		t.Log("Run returned unexpectedly from a select{} script")
+	case <-time.After(2 * time.Second):
+		t.Error("skillscript.Run blocks forever on a select{} script: " +
+			"Run needs a context.Context parameter for cancellation " +
+			"(issue #45)")
 	}
 }
