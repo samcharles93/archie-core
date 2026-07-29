@@ -21,4 +21,8 @@ var (
 
 	// ErrInvalidConfig reports a Config that cannot produce a usable client.
 	ErrInvalidConfig = errors.New("nats: invalid configuration")
+
+	// ErrUnknownTaskKind reports a publish whose TaskKind has no subject.
+	// Routing to the default queue instead would silently misdeliver work.
+	ErrUnknownTaskKind = errors.New("nats: unknown task kind")
 )

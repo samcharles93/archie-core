@@ -24,8 +24,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
-	"github.com/samcharles93/archie-core/internal/memory"
 	arnats "github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
+	"github.com/samcharles93/archie-core/internal/memory"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -347,30 +347,22 @@ func (d *Daemon) drainNATS(ctx context.Context) {
 	dispatcher := newTaskDispatcher(d.Cfg.Containers.MaxConcurrency, d.allowConcurrentFor)
 	for ctx.Err() == nil {
 		msg, err := d.Nats.Fetch(ctx)
-		if errors.Is(err, arnats.ErrNoMessage) {
-			continue
-		}
-		if err != nil {
+		if err != nil && !errors.Is(err, arnats.ErrNoMessage) {
 			d.Log.Error("nats fetch failed", "err", err)
 			break
 		}
-		{
-			tm, err := msg.Task()
-			if err != nil {
-				d.Log.Error("nats decode failed", "err", err)
-				_ = msg.Ack() // bad message, don't retry
-				continue
-			}
-			task := &store.Task{Owner: tm.Owner, Repo: tm.Repo}
-			dispatcher.Submit(ctx, task, func(ctx context.Context, _ *store.Task) {
-				d.processNATSTask(ctx, msg)
-			})
+		if err == nil {
+			d.submitNATSTask(ctx, dispatcher, msg)
 			continue
 		}
-		// Fall back to SQLite for requeued tasks.
-		task, err := d.Store.ClaimNext(ctx)
-		if err != nil {
-			d.Log.Error("sqlite claim failed", "err", err)
+
+		// ErrNoMessage means the stream is drained. That is precisely when
+		// the SQLite fallback must run: requeued tasks (waiting_human
+		// approval, retry-parked) never went through a NATS publish, so
+		// nothing will ever arrive on the stream to trigger them.
+		task, claimErr := d.Store.ClaimNext(ctx)
+		if claimErr != nil {
+			d.Log.Error("sqlite claim failed", "err", claimErr)
 			break
 		}
 		if task == nil {
@@ -379,6 +371,22 @@ func (d *Daemon) drainNATS(ctx context.Context) {
 		dispatcher.Submit(ctx, task, d.process)
 	}
 	dispatcher.Wait()
+}
+
+// submitNATSTask decodes a fetched message and queues it for processing. A
+// message that cannot be decoded is acked rather than redelivered: it will
+// never decode on a retry, so leaving it unacked would block the queue.
+func (d *Daemon) submitNATSTask(ctx context.Context, dispatcher *taskDispatcher, msg arnats.Message) {
+	envelope, err := msg.Task()
+	if err != nil {
+		d.Log.Error("nats decode failed", "subject", msg.Subject(), "err", err)
+		_ = msg.Ack()
+		return
+	}
+	task := &store.Task{Owner: envelope.Owner, Repo: envelope.Repo}
+	dispatcher.Submit(ctx, task, func(ctx context.Context, _ *store.Task) {
+		d.processNATSTask(ctx, msg)
+	})
 }
 
 // taskDispatcher bounds task execution globally while preserving the default
@@ -497,14 +505,18 @@ func (d *Daemon) pollNATS(ctx context.Context, fg forge.Forge, repo config.Repo,
 		d.maybeRetryParked(ctx, repo, is)
 		return
 	}
+	// Classify here, not in the bus: the label vocabulary belongs to the
+	// workflow package, which routes on the same kinds.
+	parsed := workflow.SplitLabels(labels)
 	if err := d.Nats.PublishTask(ctx, arnats.TaskEnvelope{
 		Owner:    repo.Owner,
 		Repo:     repo.Name,
 		Number:   is.Number,
 		Title:    is.Title,
 		Body:     is.Body,
-		Labels:   strings.Split(labels, ","),
+		Labels:   parsed,
 		Identity: identity,
+		Kind:     arnats.TaskKind(workflow.KindForLabels(parsed)),
 	}); err != nil {
 		d.Log.Error("nats publish failed", "repo", repo.FullName(), "issue", is.Number, "err", err)
 		return

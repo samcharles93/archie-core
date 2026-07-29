@@ -8,10 +8,14 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
-// PublishTask publishes a discovered issue to the subject its labels select.
+// PublishTask publishes a discovered issue to the subject its kind selects.
 // The dedup header suppresses republishing the same issue inside the
 // configured dedup window.
 func (c *Client) PublishTask(ctx context.Context, task TaskEnvelope) error {
+	if err := task.Kind.Validate(); err != nil {
+		return fmt.Errorf("publish task %s/%s#%d: %w", task.Owner, task.Repo, task.Number, err)
+	}
+
 	data, err := json.Marshal(task)
 	if err != nil {
 		return fmt.Errorf("encode task %s/%s#%d: %w", task.Owner, task.Repo, task.Number, err)
@@ -27,6 +31,7 @@ func (c *Client) PublishTask(ctx context.Context, task TaskEnvelope) error {
 
 	c.log.Debug("published task",
 		"subject", subject,
+		"kind", string(task.Kind),
 		"owner", task.Owner,
 		"repo", task.Repo,
 		"number", task.Number,

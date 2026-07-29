@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"time"
 
-
 	arnats "github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 )
 

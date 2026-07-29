@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
@@ -151,23 +150,13 @@ func Route(t *store.Task, reg Registry) Workflow {
 			return wf
 		}
 	}
-	labels := strings.SplitSeq(t.Labels, ",")
-	for l := range labels {
-		switch strings.TrimSpace(l) {
-		case "bug":
-			if wf, ok := reg["tdd"]; ok {
-				return wf
-			}
-		case "feature":
-			if wf, ok := reg["feasibility"]; ok {
-				return wf
-			}
-		case "bootstrap":
-			// Diagnostics: exercise the full pipeline deterministically
-			// (no LLM spend)  --  invites, clone, push, PR, labels.
-			if wf, ok := reg["bootstrap"]; ok {
-				return wf
-			}
+	for _, kind := range KindsForLabels(SplitLabels(t.Labels)) {
+		name, ok := kindWorkflows[kind]
+		if !ok {
+			continue
+		}
+		if wf, ok := reg[name]; ok {
+			return wf
 		}
 	}
 	if wf, ok := reg["implement"]; ok {

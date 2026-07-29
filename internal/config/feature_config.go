@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -19,6 +20,18 @@ var knownFeatureNames = map[string]bool{
 	"memory":     true,
 	"models":     true,
 	"identities": true,
+}
+
+// knownFeatureList renders the recognised feature names for error messages.
+// Derived from knownFeatureNames so the two cannot drift when a feature is
+// added.
+func knownFeatureList() string {
+	names := make([]string, 0, len(knownFeatureNames))
+	for name := range knownFeatureNames {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
 }
 
 // LoadDir loads configuration from a directory tree.
@@ -102,29 +115,41 @@ func scanConfigEntries(dir string, entries []os.DirEntry) (mainYAML, mainTOML st
 		case name == "config.toml":
 			mainTOML = filepath.Join(dir, name)
 		default:
-			if uf := classifyFeatureFile(dir, name, featurePaths); uf != "" {
-				unknownConfigFiles = append(unknownConfigFiles, uf)
+			unknown, classifyErr := classifyFeatureFile(dir, name, featurePaths)
+			if classifyErr != nil {
+				return "", "", nil, nil, classifyErr
+			}
+			if unknown != "" {
+				unknownConfigFiles = append(unknownConfigFiles, unknown)
 			}
 		}
 	}
 	if len(unknownConfigFiles) > 0 {
-		return "", "", nil, nil, fmt.Errorf("unrecognized config file %q (known features: gateway, tools, memory, models, identities)", unknownConfigFiles[0])
+		return "", "", nil, nil, fmt.Errorf("unrecognized config file %q (known features: %s)", unknownConfigFiles[0], knownFeatureList())
 	}
 	return
 }
 
-// classifyFeatureFile attempts to register a feature file in featurePaths.
-// Returns the filename if it is unrecognized, or "" on success/duplicate.
-func classifyFeatureFile(dir, name string, featurePaths map[string]string) string {
+// classifyFeatureFile registers a feature file in featurePaths.
+//
+// It returns the filename when the feature is unrecognised, so the caller can
+// report all such files together, and an error when two files claim the same
+// feature: silently preferring one would apply settings the operator cannot
+// see from the filenames alone.
+func classifyFeatureFile(dir, name string, featurePaths map[string]string) (string, error) {
 	if !strings.HasPrefix(name, "config.") || (!strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml")) {
-		return ""
+		return "", nil
 	}
 	feature := configFeatureName(name)
 	if !knownFeatureNames[feature] {
-		return name
+		return name, nil
 	}
-	featurePaths[feature] = filepath.Join(dir, name)
-	return ""
+	path := filepath.Join(dir, name)
+	if existing, ok := featurePaths[feature]; ok {
+		return "", fmt.Errorf("duplicate feature %q: both %s and %s define it", feature, existing, path)
+	}
+	featurePaths[feature] = path
+	return "", nil
 }
 
 func configFeatureName(filename string) string {

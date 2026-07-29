@@ -33,6 +33,11 @@ type TaskEnvelope struct {
 	// empty for single-identity deployments. Carried so the consuming daemon
 	// enqueues the task under the right owner.
 	Identity string `json:"identity,omitempty"`
+
+	// Kind is the routing category, chosen by the publisher. Empty means
+	// TaskKindDefault, which is also what messages queued before this field
+	// existed decode to.
+	Kind TaskKind `json:"kind,omitempty"`
 }
 
 // taskEnvelopeWire avoids infinite recursion in the JSON methods below.
@@ -66,7 +71,7 @@ func (t TaskEnvelope) DedupKey() string {
 }
 
 // Subject returns the task subject this envelope routes to.
-func (t TaskEnvelope) Subject() string { return SubjectForLabels(t.Labels) }
+func (t TaskEnvelope) Subject() string { return SubjectForKind(t.Kind) }
 
 // splitLabels parses the comma-separated wire form, dropping empty entries so
 // "bug,,feature" and a trailing comma do not produce blank labels.

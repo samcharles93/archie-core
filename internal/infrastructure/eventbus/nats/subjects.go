@@ -1,9 +1,6 @@
 package nats
 
-import (
-	"fmt"
-	"strings"
-)
+import "fmt"
 
 // Task distribution subjects. Each encodes the workflow type so a multi-daemon
 // deployment can filter by workflow.
@@ -24,23 +21,53 @@ const (
 // message's Reply field for its own PubAck, so the address travels as a header.
 const ReplyHeader = "X-Archie-Reply"
 
-// labelSubjects maps an issue label to its task subject. Declared once so the
-// mapping is data rather than a switch, and so SubjectForLabels and any future
-// reverse lookup cannot drift apart.
-var labelSubjects = map[string]string{
-	"bug":       SubjectTaskBug,
-	"feature":   SubjectTaskFeature,
-	"bootstrap": SubjectTaskBootstrap,
+// TaskKind is the routing token in a task subject.
+//
+// The bus deliberately does not derive this itself. It previously inspected
+// forge issue labels to choose a subject, which put a forge vocabulary
+// ("bug", "feature") inside infrastructure and duplicated the label table
+// already owned by the workflow package. The publisher now decides the kind
+// and the bus only renders it as a subject.
+type TaskKind string
+
+const (
+	TaskKindBug       TaskKind = "bug"
+	TaskKindFeature   TaskKind = "feature"
+	TaskKindBootstrap TaskKind = "bootstrap"
+
+	// TaskKindDefault carries tasks that match no more specific kind.
+	TaskKindDefault TaskKind = "default"
+)
+
+// taskSubjects is the closed set of routable kinds. A kind absent from this
+// map has no subject, so publishing it is a caller error rather than a
+// silent delivery to the default queue.
+var taskSubjects = map[TaskKind]string{
+	TaskKindBug:       SubjectTaskBug,
+	TaskKindFeature:   SubjectTaskFeature,
+	TaskKindBootstrap: SubjectTaskBootstrap,
+	TaskKindDefault:   SubjectTaskDefault,
 }
 
-// SubjectForLabels picks the task subject for a set of issue labels, mirroring
-// the label-to-workflow mapping in workflow.Route. The first recognised label
-// wins; unrecognised or empty label sets route to SubjectTaskDefault.
-func SubjectForLabels(labels []string) string {
-	for _, label := range labels {
-		if subject, ok := labelSubjects[strings.TrimSpace(label)]; ok {
-			return subject
-		}
+// Validate reports whether the kind is routable. The zero kind is accepted
+// and means TaskKindDefault, so callers that do not classify still publish.
+func (k TaskKind) Validate() error {
+	if k == "" {
+		return nil
+	}
+	if _, ok := taskSubjects[k]; !ok {
+		return fmt.Errorf("%w: %q", ErrUnknownTaskKind, string(k))
+	}
+	return nil
+}
+
+// SubjectForKind renders a kind as its task subject. The zero and any
+// unrecognised kind render as SubjectTaskDefault so a message is never
+// published to an unroutable subject; PublishTask rejects unknown kinds
+// before reaching here.
+func SubjectForKind(kind TaskKind) string {
+	if subject, ok := taskSubjects[kind]; ok {
+		return subject
 	}
 	return SubjectTaskDefault
 }

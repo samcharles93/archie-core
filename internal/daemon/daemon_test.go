@@ -355,7 +355,9 @@ func TestRunViaAgentRetriesUntilResponderAppears(t *testing.T) {
 		time.Sleep(80 * time.Millisecond)
 		coreConn, connErr := d.Nats.CoreConn()
 		if connErr != nil {
-			t.Fatalf("CoreConn: %v", connErr)
+			// Fatalf from a non-test goroutine does not stop the test.
+			t.Errorf("CoreConn: %v", connErr)
+			return
 		}
 		sub, err := coreConn.Subscribe(taskrun.SubjectForTask(task.ID), func(msg *natsio.Msg) {
 			data, _ := json.Marshal(taskrun.Response{Status: store.StatusPROpen})
