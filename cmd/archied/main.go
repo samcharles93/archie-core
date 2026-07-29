@@ -34,6 +34,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	"github.com/samcharles93/archie-core/internal/memory"
 	"github.com/samcharles93/archie-core/internal/memory/builtin"
@@ -130,11 +131,12 @@ func run() int {
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
-	cfg, err := config.LoadOverlay(*cfgPath, *overlayPath)
+	doc, err := configuration.New(log).Overlay(*cfgPath, *overlayPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	cfg := doc.Config
 
 	secrets := secret.NewRegistry()
 	token, err := cfg.Forge.Token.Resolve(secrets)

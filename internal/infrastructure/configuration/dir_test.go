@@ -17,7 +17,7 @@
 // Legacy config.toml is still supported as a fallback.
 // Overlay support: --config-overlay <dir> applies files from <dir>
 // on top of the base config directory.
-package config
+package configuration
 
 import (
 	"os"
@@ -62,7 +62,7 @@ max_retries: 5
 bot_user: archie
 `)
 
-	cfg, err := LoadDir(dir, "")
+	cfg, err := loadDir(dir, "")
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestLoadDirAppliesDefaultsForMissingDaemonFields(t *testing.T) {
 	dir := tmpConfigDir(t)
 	writeFile(t, dir, "config.yaml", `bot_user: solo`)
 
-	cfg, err := LoadDir(dir, "")
+	cfg, err := loadDir(dir, "")
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestLoadDirAppliesDefaultsForMissingDaemonFields(t *testing.T) {
 func TestLoadDirRequiresBotUser(t *testing.T) {
 	dir := tmpConfigDir(t)
 	writeFile(t, dir, "config.yaml", `db_path: /tmp/db`)
-	_, err := LoadDir(dir, "")
+	_, err := loadDir(dir, "")
 	if err == nil || !strings.Contains(err.Error(), "bot_user") {
 		t.Errorf("expected bot_user error, got: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestLoadDirMissingFeatureFilesSucceeds(t *testing.T) {
 	// Only config.yaml exists  --  no gateway, tools, memory, models, identities files.
 	writeFile(t, dir, "config.yaml", `bot_user: minimal`)
 
-	cfg, err := LoadDir(dir, "")
+	cfg, err := loadDir(dir, "")
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
@@ -143,7 +143,7 @@ web:
   listen: "0.0.0.0:9090"
 `)
 
-	cfg, err := LoadDir(dir, "")
+	cfg, err := loadDir(dir, "")
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
@@ -174,7 +174,7 @@ providers:
     api_key_env: ANTHROPIC_KEY
 `)
 
-	cfg, err := LoadDir(dir, "")
+	cfg, err := loadDir(dir, "")
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
@@ -206,7 +206,7 @@ provider_config:
 session_ttl: 72h
 `)
 
-	cfg, err := LoadDir(dir, "")
+	cfg, err := loadDir(dir, "")
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
@@ -241,7 +241,7 @@ tool_policy:
   parallel_execution: true
 `)
 
-	cfg, err := LoadDir(dir, "")
+	cfg, err := loadDir(dir, "")
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
@@ -298,7 +298,7 @@ identities:
         ecosystem: go
 `)
 
-	cfg, err := LoadDir(dir, "")
+	cfg, err := loadDir(dir, "")
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
@@ -328,7 +328,7 @@ custom_tools:
     command: /usr/local/bin/analyzer
 `)
 
-	cfg, err := LoadDir(dir, "")
+	cfg, err := loadDir(dir, "")
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
@@ -369,7 +369,7 @@ owner = "sam"
 name = "legacy-repo"
 `)
 
-	cfg, err := LoadDir(dir, "")
+	cfg, err := loadDir(dir, "")
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
@@ -390,7 +390,7 @@ func TestLoadDirYamlTakesPrecedenceOverToml(t *testing.T) {
 	writeFile(t, dir, "config.yaml", `bot_user: yaml-wins`)
 	writeFile(t, dir, "config.toml", `bot_user = "toml-loses"`)
 
-	cfg, err := LoadDir(dir, "")
+	cfg, err := loadDir(dir, "")
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
@@ -424,7 +424,7 @@ models:
   planner: overlay/planner
 `)
 
-	cfg, err := LoadDir(baseDir, overlayDir)
+	cfg, err := loadDir(baseDir, overlayDir)
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
@@ -461,7 +461,7 @@ chat:
     token_env: OVERLAY_TG_TOKEN
 `)
 
-	cfg, err := LoadDir(baseDir, overlayDir)
+	cfg, err := loadDir(baseDir, overlayDir)
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
@@ -475,9 +475,9 @@ func TestLoadDirOverlayEmptyDirIsNoop(t *testing.T) {
 	writeFile(t, baseDir, "config.yaml", `bot_user: base-only`)
 
 	overlayDir := tmpConfigDir(t)
-	// Empty overlay directory  --  same as calling LoadDir(baseDir, "").
+	// Empty overlay directory  --  same as calling loadDir(baseDir, "").
 
-	cfg, err := LoadDir(baseDir, overlayDir)
+	cfg, err := loadDir(baseDir, overlayDir)
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
@@ -493,7 +493,7 @@ func TestLoadDirRejectsInvalidFeatureFile(t *testing.T) {
 	writeFile(t, dir, "config.yaml", `bot_user: valid`)
 	writeFile(t, dir, "config.models.yaml", `this: [is: not: valid: yaml: }}`)
 
-	_, err := LoadDir(dir, "")
+	_, err := loadDir(dir, "")
 	if err == nil {
 		t.Fatal("expected error for malformed feature file")
 	}
@@ -505,7 +505,7 @@ func TestLoadDirRejectsUnknownFeatureFile(t *testing.T) {
 	// config.unknown.yaml is not a known feature  --  should error, not silently ignore.
 	writeFile(t, dir, "config.unknown.yaml", `foo: bar`)
 
-	_, err := LoadDir(dir, "")
+	_, err := loadDir(dir, "")
 	if err == nil {
 		t.Fatal("expected error for unknown feature file (silent ignore would hide typos)")
 	}
@@ -521,7 +521,7 @@ func TestLoadDirRejectsDuplicateFeatureFiles(t *testing.T) {
 	writeFile(t, dir, "config.gateway.yaml", `chat: {telegram: {token_env: FIRST}}`)
 	writeFile(t, dir, "conf.d/gateway.yaml", `chat: {telegram: {token_env: SECOND}}`)
 
-	_, err := LoadDir(dir, "")
+	_, err := loadDir(dir, "")
 	if err == nil {
 		t.Fatal("expected error for duplicate feature files")
 	}
@@ -533,7 +533,7 @@ func TestLoadDirRejectsDuplicateFeatureFiles(t *testing.T) {
 func TestLoadDirRequiresConfigYamlOrConfigToml(t *testing.T) {
 	dir := tmpConfigDir(t)
 	// Neither config.yaml nor config.toml exists.
-	_, err := LoadDir(dir, "")
+	_, err := loadDir(dir, "")
 	if err == nil || !strings.Contains(err.Error(), "config.yaml") && !strings.Contains(err.Error(), "config.toml") {
 		t.Errorf("expected error about missing config.yaml or config.toml, got: %v", err)
 	}
@@ -557,7 +557,7 @@ budgets:
   wall_clock: 30m
 `)
 
-	cfg, err := LoadDir(dir, "")
+	cfg, err := loadDir(dir, "")
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
@@ -588,7 +588,7 @@ containers:
   pull_policy: always
 `)
 
-	cfg, err := LoadDir(dir, "")
+	cfg, err := loadDir(dir, "")
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
@@ -618,7 +618,7 @@ dispatch:
     pr: bot:pr
 `)
 
-	cfg, err := LoadDir(dir, "")
+	cfg, err := loadDir(dir, "")
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
@@ -643,7 +643,7 @@ notify:
   webhook: https://hooks.example.test/archie
 `)
 
-	cfg, err := LoadDir(dir, "")
+	cfg, err := loadDir(dir, "")
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
@@ -661,7 +661,7 @@ bot_user: difftest
 diff_cap_lines: 200
 `)
 
-	cfg, err := LoadDir(dir, "")
+	cfg, err := loadDir(dir, "")
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
@@ -680,7 +680,7 @@ skills_dir: /opt/archie/skills
 plugin_dir: /opt/archie/plugins
 `)
 
-	cfg, err := LoadDir(dir, "")
+	cfg, err := loadDir(dir, "")
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
@@ -706,7 +706,7 @@ models:
   planner: openai/gpt
 `)
 
-	cfg, err := LoadDir(dir, "")
+	cfg, err := loadDir(dir, "")
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
@@ -746,7 +746,7 @@ owner = "sam"
 name = "old-repo"
 `)
 
-	cfg, err := Load(filepath.Join(dir, "config.toml"))
+	cfg, err := loadFile(filepath.Join(dir, "config.toml"))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -773,7 +773,7 @@ bot_user = "overlaid"
 max_retries = 5
 `)
 
-	cfg, err := LoadOverlay(
+	cfg, err := loadOverlay(
 		filepath.Join(baseDir, "config.toml"),
 		filepath.Join(overlayDir, "config.toml"),
 	)

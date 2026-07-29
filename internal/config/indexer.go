@@ -13,12 +13,12 @@ type IndexingConfig struct {
 	DBPath string `toml:"db_path" yaml:"db_path" json:"db_path,omitempty"`
 }
 
-// withDefaults fills unset paths from the daemon's work directory.
+// WithDefaults fills unset paths from the daemon's work directory.
 //
 // Deriving from workDir rather than a shared data home is deliberate: two
 // archied instances run on one host, each with its own work_dir, so this
 // keeps their indexes separate without either having to configure anything.
-func (c IndexingConfig) withDefaults(workDir string) IndexingConfig {
+func (c IndexingConfig) WithDefaults(workDir string) IndexingConfig {
 	if c.IndexDir == "" {
 		c.IndexDir = filepath.Join(workDir, "indexes")
 	}

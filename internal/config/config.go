@@ -1,21 +1,25 @@
-// Package config loads archied's TOML and YAML configuration. The forge API
-// token is deliberately not part of the file: it comes from a configurable env
-// var.
-
+// Package config holds archied's configuration types.
+//
+// Loading them -- locating files, decoding TOML and YAML, applying overlays,
+// defaulting and validating -- belongs to
+// internal/infrastructure/configuration. This package no longer performs any
+// I/O, so importing a settings type no longer drags in a file decoder.
+//
+// The forge API token is deliberately not part of the file: it comes from a
+// configurable env var.
+//
+// Per docs/architecture/configuration.md this package is scheduled for
+// dissolution: its types and methods are to be reassigned to the domains
+// whose behaviour they describe. Do not add new fields here that a single
+// domain could own.
 package config
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"maps"
-	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/BurntSushi/toml"
 
 	"github.com/samcharles93/archie-core/internal/secret"
 )
@@ -206,6 +210,13 @@ type Dispatch struct {
 	// independently; missing keys fall back to the legacy archie:*
 	// constants at call time via StateLabel().
 	Labels map[string]string `toml:"labels" json:"labels" yaml:"labels"`
+}
+
+// DispatchLabelDefaults returns a copy of the fallback label set, for the
+// configuration loader to fill absent entries with. A copy is returned so a
+// caller filling gaps cannot mutate the defaults for everyone else.
+func DispatchLabelDefaults() map[string]string {
+	return cloneStringMap(dispatchLabelDefaults)
 }
 
 // dispatchLabelDefaults is the fallback label set used when the user
@@ -521,258 +532,4 @@ type Web struct {
 	// Listen is the dashboard address; "off" disables the web UI.
 	// Bind localhost (or a LAN/tailnet address)  --  there is no auth.
 	Listen string `toml:"listen" yaml:"listen"`
-}
-
-// Load reads, parses, and defaults the configuration.
-func Load(path string) (Config, error) {
-	var cfg Config
-	if _, err := toml.DecodeFile(path, &cfg); err != nil {
-		return cfg, fmt.Errorf("config %s: %w", path, err)
-	}
-	return finalize(cfg)
-}
-
-// LoadOverlay reads basePath, then re-decodes overlayPath into the same
-// struct so only the fields overlayPath sets are overridden  --  every field
-// it omits keeps the value from basePath. This lets a deployment-specific
-// file (e.g. config.docker.toml) declare only what differs from the base
-// config instead of duplicating the whole schema. overlayPath == "" is
-// equivalent to Load(basePath).
-func LoadOverlay(basePath, overlayPath string) (Config, error) {
-	var cfg Config
-	if _, err := toml.DecodeFile(basePath, &cfg); err != nil {
-		return cfg, fmt.Errorf("config %s: %w", basePath, err)
-	}
-	if overlayPath != "" {
-		if _, err := toml.DecodeFile(overlayPath, &cfg); err != nil {
-			return cfg, fmt.Errorf("config %s: %w", overlayPath, err)
-		}
-	}
-	return finalize(cfg)
-}
-
-// finalize applies defaults and validates a decoded configuration.
-func finalize(cfg Config) (Config, error) {
-	applyGeneralDefaults(&cfg)
-	applyForgeDefaults(&cfg)
-	if err := applyAgentDefaults(&cfg); err != nil {
-		return cfg, err
-	}
-	if err := applyDispatchDefaults(&cfg); err != nil {
-		return cfg, err
-	}
-	if err := validateProviders(cfg.Providers); err != nil {
-		return cfg, err
-	}
-	if len(cfg.Identities) > 0 {
-		if err := validateIdentities(cfg.Identities); err != nil {
-			return cfg, err
-		}
-	} else {
-		if err := validateSingleIdentity(&cfg); err != nil {
-			return cfg, err
-		}
-	}
-	if err := validateContainers(&cfg); err != nil {
-		return cfg, err
-	}
-	return cfg, nil
-}
-
-func applyGeneralDefaults(cfg *Config) {
-	if cfg.WorkDir == "" {
-		cfg.WorkDir = filepath.Join(dataHome(), "archie", "work")
-	}
-	if cfg.DBPath == "" {
-		cfg.DBPath = filepath.Join(dataHome(), "archie", "archie.db")
-	}
-	cfg.Indexing = cfg.Indexing.withDefaults(cfg.WorkDir)
-	if cfg.PollInterval == 0 {
-		cfg.PollInterval = Duration(60 * time.Second)
-	}
-	if cfg.DiffCapLines == 0 {
-		cfg.DiffCapLines = 400
-	}
-	if cfg.Web.Listen == "" {
-		cfg.Web.Listen = "127.0.0.1:8484"
-	}
-	if cfg.MaxRetries == 0 {
-		cfg.MaxRetries = 3
-	}
-}
-
-func applyForgeDefaults(cfg *Config) {
-	if cfg.Forge.Type == "" {
-		cfg.Forge.Type = "github"
-	}
-	if cfg.Forge.Host == "" {
-		cfg.Forge.Host = "https://github.com"
-	}
-	if cfg.Forge.Token.Engine == "" && cfg.Forge.Token.Key == "" && cfg.Forge.TokenEnv != "" {
-		cfg.Forge.Token = secret.SecretRef{Engine: "env", Key: cfg.Forge.TokenEnv}
-	}
-}
-
-func applyAgentDefaults(cfg *Config) error {
-	if cfg.Agent.Mode == "" {
-		if cfg.Containers.Enabled {
-			cfg.Agent.Mode = "nats"
-		} else {
-			cfg.Agent.Mode = "inprocess"
-		}
-	}
-	if cfg.Agent.Command == "" {
-		cfg.Agent.Command = "archie-agent"
-	}
-	if !isValidAgentMode(cfg.Agent.Mode) {
-		return fmt.Errorf("config: agent.mode %q is invalid (want inprocess, subprocess, or nats)", cfg.Agent.Mode)
-	}
-	if cfg.Agent.Mode == "subprocess" && strings.TrimSpace(cfg.Agent.Command) == "" {
-		return fmt.Errorf("config: agent.command is required in subprocess mode")
-	}
-	for i, name := range cfg.Agent.Env {
-		if strings.TrimSpace(name) == "" || strings.Contains(name, "=") {
-			return fmt.Errorf("config: agent.env[%d] %q is not an environment variable name", i, name)
-		}
-	}
-	return nil
-}
-
-func isValidAgentMode(m string) bool { return m == "inprocess" || m == "subprocess" || m == "nats" }
-
-func validateProviders(providers map[string]Provider) error {
-	for name, provider := range providers {
-		if provider.BaseURL == "" {
-			continue
-		}
-		u, err := url.Parse(provider.BaseURL)
-		if err != nil {
-			return fmt.Errorf("config: providers.%s.base_url is invalid: %w", name, err)
-		}
-		if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-			return fmt.Errorf("config: providers.%s.base_url must not contain userinfo, query parameters, or a fragment", name)
-		}
-	}
-	return nil
-}
-
-func applyDispatchDefaults(cfg *Config) error {
-	if cfg.Dispatch.Trigger == "" {
-		cfg.Dispatch.Trigger = "assignee"
-	}
-	if !isValidDispatchTrigger(cfg.Dispatch.Trigger) {
-		return fmt.Errorf("config: dispatch.trigger %q is invalid (want assignee, label, or either)", cfg.Dispatch.Trigger)
-	}
-	if cfg.Dispatch.AckReaction == "" {
-		cfg.Dispatch.AckReaction = "eyes"
-	} else if strings.EqualFold(cfg.Dispatch.AckReaction, "off") {
-		cfg.Dispatch.AckReaction = ""
-	}
-	if cfg.Dispatch.Labels == nil {
-		cfg.Dispatch.Labels = map[string]string{}
-	}
-	for k, v := range dispatchLabelDefaults {
-		if cfg.Dispatch.Labels[k] == "" {
-			cfg.Dispatch.Labels[k] = v
-		}
-	}
-	return nil
-}
-
-func isValidDispatchTrigger(t string) bool { return t == "assignee" || t == "label" || t == "either" }
-
-func validateIdentities(identities []IdentityConfig) error {
-	for i, id := range identities {
-		if id.Name == "" {
-			return fmt.Errorf("config: identities[%d].name is required", i)
-		}
-		if id.BotUser == "" {
-			return fmt.Errorf("config: identities[%d].bot_user is required", i)
-		}
-		if len(id.Repos) == 0 {
-			return fmt.Errorf("config: identities[%d] has no [[identities.repos]] entries  --  at least one is required", i)
-		}
-		if !validForgeType(id.Forge.Type) {
-			return fmt.Errorf("config: identities[%d].forge.type %q is not supported (want github or gitea)", i, id.Forge.Type)
-		}
-		if id.Forge.Token == (secret.SecretRef{}) {
-			return fmt.Errorf("config: identities[%d].forge.token is required (each identity needs its own secret reference; unlike the top-level [forge], there is no default)", i)
-		}
-		if err := validateRepos(id.Repos); err != nil {
-			return fmt.Errorf("config: identities[%d]: %w", i, err)
-		}
-	}
-	return nil
-}
-
-func validateSingleIdentity(cfg *Config) error {
-	if cfg.BotUser == "" {
-		return errors.New("config: bot_user is required (or define [[identities]])")
-	}
-	if cfg.BotEmail == "" {
-		switch cfg.Forge.Type {
-		case "github":
-			cfg.BotEmail = cfg.BotUser + "@users.noreply.github.com"
-		case "gitea":
-			cfg.BotEmail = cfg.BotUser + "@gitea.local"
-		}
-	}
-	if !validForgeType(cfg.Forge.Type) {
-		return fmt.Errorf("config: forge.type %q is not supported (want github or gitea)", cfg.Forge.Type)
-	}
-	return validateRepos(cfg.Repos)
-}
-
-func validForgeType(t string) bool {
-	return t == "github" || t == "gitea"
-}
-
-func validateRepos(repos []Repo) error {
-	for i, r := range repos {
-		if r.Owner == "" || r.Name == "" {
-			return fmt.Errorf("repos[%d] needs owner and name", i)
-		}
-		if glob := r.ResolvedTestGlob(); glob != "" {
-			if _, err := filepath.Match(glob, ""); err != nil {
-				return fmt.Errorf("repos[%d] test_glob %q is invalid: %w", i, glob, err)
-			}
-		}
-	}
-	return nil
-}
-
-func validateContainers(cfg *Config) error {
-	if !cfg.Containers.Enabled {
-		return nil
-	}
-	if cfg.Containers.Image == "" {
-		return errors.New("config: containers.image is required when containers.enabled is true")
-	}
-	if cfg.Agent.Mode != "nats" {
-		return errors.New("config: agent.mode must be \"nats\" when containers.enabled is true")
-	}
-	if cfg.NATS.URL == "" {
-		return errors.New("config: [nats] url is required when containers.enabled is true")
-	}
-	if cfg.Containers.MaxUptime == 0 {
-		cfg.Containers.MaxUptime = Duration(60 * time.Minute)
-	}
-	if cfg.Containers.VolumeTTL < 0 {
-		return errors.New("config: containers.volume_ttl must not be negative")
-	}
-	if cfg.Containers.VolumeTTL == 0 {
-		cfg.Containers.VolumeTTL = Duration(72 * time.Hour)
-	}
-	if cfg.Containers.PullPolicy == "" {
-		cfg.Containers.PullPolicy = "missing"
-	}
-	return nil
-}
-
-func dataHome() string {
-	if x := os.Getenv("XDG_DATA_HOME"); x != "" {
-		return x
-	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".local", "share")
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/channels/telegram"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/nell"
 	"github.com/samcharles93/archie-core/internal/releaseannounce"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
@@ -99,10 +100,11 @@ func configureTelegramUpdates(tg *telegram.Gateway, s telegramSetup) {
 
 func makeTelegramReload(s telegramSetup) func(*telegram.Gateway) error {
 	return func(g *telegram.Gateway) error {
-		newCfg, err := config.LoadOverlay(s.CfgPath, s.OverlayPath)
+		doc, err := configuration.New(s.Log).Overlay(s.CfgPath, s.OverlayPath)
 		if err != nil {
 			return fmt.Errorf("reload config: %w", err)
 		}
+		newCfg := doc.Config
 		tokenEnv := newCfg.Chat.Telegram.TokenEnv
 		if tokenEnv == "" {
 			return fmt.Errorf("reload config: chat.telegram.token_env is unset")
