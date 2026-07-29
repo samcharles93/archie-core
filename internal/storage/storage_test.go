@@ -555,10 +555,15 @@ func dockerTestClient(t *testing.T, roundTrip func(*http.Request) (*http.Respons
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		resp, err := roundTrip(req)
 		if err != nil {
+			// roundTrip may return a partial response alongside the error.
+			if resp != nil {
+				resp.Body.Close()
+			}
 			t.Errorf("Docker test handler: %v", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		defer resp.Body.Close()
 		for key, values := range resp.Header {
 			for _, value := range values {
 				w.Header().Add(key, value)

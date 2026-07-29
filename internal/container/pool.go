@@ -191,7 +191,7 @@ func (p *Pool) Acquire(ctx context.Context, mounts []storage.Mount, env []string
 
 	if _, err := p.cli.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
 		// Best-effort cleanup.
-		if _, rmErr := p.cli.ContainerRemove(context.Background(), resp.ID, client.ContainerRemoveOptions{Force: true}); rmErr != nil {
+		if _, rmErr := p.cli.ContainerRemove(context.WithoutCancel(ctx), resp.ID, client.ContainerRemoveOptions{Force: true}); rmErr != nil {
 			p.log.Warn("container remove after start failure", "id", resp.ID[:12], "err", rmErr)
 		}
 		p.mu.Lock()
@@ -208,7 +208,7 @@ func (p *Pool) Acquire(ctx context.Context, mounts []storage.Mount, env []string
 // GracePeriod is configured, the container stays alive for that duration
 // before being killed  --  the agent can handle follow-ups (gate re-runs,
 // human replies) during this window. PRD section 1.
-func (p *Pool) Release(c *Container) {
+func (p *Pool) Release(ctx context.Context, c *Container) {
 	if c == nil {
 		return
 	}
@@ -218,13 +218,13 @@ func (p *Pool) Release(c *Container) {
 		time.Sleep(p.cfg.GracePeriod)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	stopCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	if _, err := p.cli.ContainerStop(ctx, c.ID, client.ContainerStopOptions{}); err != nil {
+	if _, err := p.cli.ContainerStop(stopCtx, c.ID, client.ContainerStopOptions{}); err != nil {
 		p.log.Warn("container stop failed", "id", c.ID[:12], "err", err)
 	}
-	if _, err := p.cli.ContainerRemove(context.Background(), c.ID, client.ContainerRemoveOptions{Force: true}); err != nil {
+	if _, err := p.cli.ContainerRemove(context.WithoutCancel(ctx), c.ID, client.ContainerRemoveOptions{Force: true}); err != nil {
 		p.log.Warn("container remove failed", "id", c.ID[:12], "err", err)
 	}
 

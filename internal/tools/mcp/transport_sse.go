@@ -72,8 +72,8 @@ type SSETransport struct {
 
 	pending map[string]chan []byte
 
-	ctx    context.Context
-	cancel context.CancelFunc
+	// stopCh is closed by Stop(). Background goroutines select on this.
+	stopCh chan struct{}
 
 	// The SSE reader goroutine.
 	readerWg sync.WaitGroup
@@ -100,7 +100,7 @@ func (t *SSETransport) Start(ctx context.Context) error {
 		return fmt.Errorf("mcp sse: already running")
 	}
 	t.state = StateStarting
-	t.ctx, t.cancel = context.WithCancel(context.Background())
+	t.stopCh = make(chan struct{})
 	t.messageEndpoint = t.config.MessageEndpoint // fallback; endpoint event overrides
 	t.mu.Unlock()
 
@@ -116,8 +116,12 @@ func (t *SSETransport) Stop(_ context.Context) error {
 		return nil
 	}
 	t.state = StateStopping
-	if t.cancel != nil {
-		t.cancel()
+	if t.stopCh != nil {
+		select {
+		case <-t.stopCh:
+		default:
+			close(t.stopCh)
+		}
 	}
 	if t.respBody != nil {
 		_ = t.respBody.Close()
@@ -240,13 +244,13 @@ func (t *SSETransport) connect(ctx context.Context) error {
 
 	// Start the background SSE event reader.
 	t.readerWg.Add(1)
-	go t.runReader(resp.Body, reader)
+	go t.runReader(ctx, resp.Body, reader)
 	return nil
 }
 
 // runReader loops reading SSE events from the stream, routing
 // "message" events to the corresponding pending channel.
-func (t *SSETransport) runReader(body io.Closer, reader *bufio.Reader) {
+func (t *SSETransport) runReader(ctx context.Context, body io.Closer, reader *bufio.Reader) {
 	defer t.readerWg.Done()
 	defer func() { _ = body.Close() }()
 
@@ -255,13 +259,13 @@ func (t *SSETransport) runReader(body io.Closer, reader *bufio.Reader) {
 		if err != nil {
 			// Stream closed or errored. Attempt reconnect.
 			t.mu.Lock()
-			cancelled := t.ctx.Err() != nil
+			cancelled := t.isStopped()
 			stopping := t.state == StateStopping || t.state == StateStopped
 			t.mu.Unlock()
 			if cancelled || stopping {
 				return
 			}
-			t.reconnect()
+			t.reconnect(ctx)
 			return
 		}
 		switch event {
@@ -283,11 +287,11 @@ func (t *SSETransport) runReader(body io.Closer, reader *bufio.Reader) {
 
 // reconnect attempts to re-establish the SSE connection with exponential
 // backoff. On success, the reader goroutine restarts.
-func (t *SSETransport) reconnect() {
+func (t *SSETransport) reconnect(ctx context.Context) {
 	backoff := t.config.effectiveReconnectBackoff()
 	for {
 		t.mu.Lock()
-		if t.ctx.Err() != nil {
+		if t.isStopped() {
 			t.state = StateStopped
 			t.mu.Unlock()
 			return
@@ -300,13 +304,13 @@ func (t *SSETransport) reconnect() {
 
 		timer := time.NewTimer(backoff)
 		select {
-		case <-t.ctx.Done():
+		case <-t.stopCh:
 			timer.Stop()
 			return
 		case <-timer.C:
 		}
 
-		req, err := http.NewRequestWithContext(t.ctx, http.MethodGet, t.config.SSEEndpoint, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.config.SSEEndpoint, nil)
 		if err != nil {
 			backoff = nextBackoff(backoff, t.config.effectiveMaxReconnectBackoff())
 			continue
@@ -339,7 +343,7 @@ func (t *SSETransport) reconnect() {
 		t.mu.Unlock()
 
 		t.readerWg.Add(1)
-		go t.runReader(resp.Body, reader)
+		go t.runReader(ctx, resp.Body, reader)
 		return
 	}
 }
@@ -482,6 +486,16 @@ func readSSEEvent(r *bufio.Reader) (event, data string, err error) {
 			continue
 		}
 		// Other fields (id:, retry:) are ignored.
+	}
+}
+
+// isStopped returns true if the transport stop channel has been closed.
+func (t *SSETransport) isStopped() bool {
+	select {
+	case <-t.stopCh:
+		return true
+	default:
+		return false
 	}
 }
 

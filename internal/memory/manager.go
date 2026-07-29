@@ -486,6 +486,15 @@ func (m *Manager) Prefetch(query string) (string, error) {
 // (18.8). Results from successful prefetches are stored and included in
 // SystemPromptBlock() output.
 func (m *Manager) PrefetchContext(ctx context.Context, query string) (string, error) {
+	// Apply the manager's default timeout if the caller hasn't set a
+	// shorter deadline. Derived before the loop so we never nest a
+	// context inside a loop (fatcontext).
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, m.prefetchTimeout)
+		defer cancel()
+	}
+
 	m.mu.RLock()
 	providers := m.activeProvidersLocked()
 	m.mu.RUnlock()
@@ -507,17 +516,6 @@ func (m *Manager) PrefetchContext(ctx context.Context, query string) (string, er
 			return "", nil
 		}
 		defer flag.Store(false)
-
-		// Apply the manager's default timeout if the caller hasn't set a
-		// shorter deadline.
-		if _, hasDeadline := ctx.Deadline(); !hasDeadline {
-			var cancel context.CancelFunc
-			// Assignment, not declaration: `:=` here would scope the
-			// timeout-bearing ctx to this if-block, so the deadline would
-			// silently never apply to the call below.
-			ctx, cancel = context.WithTimeout(ctx, m.prefetchTimeout)
-			defer cancel()
-		}
 
 		start := time.Now()
 

@@ -601,7 +601,7 @@ func TestStdioTransportConcurrentStartDuringStop(t *testing.T) {
 // regression test for a race where startSubprocess (the path Start() uses
 // to commit a freshly spawned subprocess) could clobber a StateStopped
 // already committed and reported by a concurrent Stop(): spawnProcess runs
-// without t.mu held (it's a real fork/exec), so Stop() can cancel t.ctx and
+// without t.mu held (it's a real fork/exec), so Stop() can close t.stopCh and
 // return Stopped to its own caller while a spawn is still in flight. The
 // commit path used to unconditionally set state = StateRunning afterward,
 // wedging the transport in a Running state no caller of Stop() would ever
@@ -623,21 +623,21 @@ func TestStdioTransportCommitSpawnedProcessDiscardsWhenContextRacesAhead(t *test
 
 	tr.mu.Lock()
 	tr.state = StateStarting
-	tr.ctx, tr.cancel = context.WithCancel(context.Background())
+	tr.stopCh = make(chan struct{})
 	tr.mu.Unlock()
 
-	cmd, stdin, stdout, err := tr.spawnProcess()
+	cmd, stdin, stdout, err := tr.spawnProcess(context.Background())
 	if err != nil {
 		t.Fatalf("spawnProcess: %v", err)
 	}
 
 	// Simulate a concurrent Stop() winning the race between spawn and
-	// commit: it would have cancelled this exact context.
+	// commit: it would have closed this exact stop channel.
 	tr.mu.Lock()
-	tr.cancel()
+	close(tr.stopCh)
 	tr.mu.Unlock()
 
-	err = tr.commitSpawnedProcess(cmd, stdin, stdout, false)
+	err = tr.commitSpawnedProcess(context.Background(), cmd, stdin, stdout, false)
 	if err == nil {
 		t.Fatal("expected error when context was cancelled before commit")
 	}
