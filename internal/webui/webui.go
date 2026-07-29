@@ -161,7 +161,11 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 		return true
 	}
 
-	if backlog, err := s.Store.EventsSince(r.Context(), since, 200); err == nil {
+	if backlog, err := s.Store.EventsSince(r.Context(), since, 200); err != nil {
+		s.Log.Error("sse backlog fetch failed", "error", err, "since", since)
+		w.Write([]byte(":error " + err.Error() + "\n"))
+		fl.Flush()
+	} else {
 		for _, e := range backlog {
 			if !send(e) {
 				return
