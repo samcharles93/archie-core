@@ -424,6 +424,11 @@ if [ "${INSTALL_SYSTEMD}" = true ] && command -v systemctl &>/dev/null && [ -d "
 [Unit]
 Description=Archie Core Orchestrator Daemon
 After=network.target
+# Give up after 5 failures in 5 minutes rather than restarting forever. A
+# genuinely broken install otherwise loops every RestartSec indefinitely,
+# burying the real error in the journal instead of surfacing a failed unit.
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple

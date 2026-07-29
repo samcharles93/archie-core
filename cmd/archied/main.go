@@ -162,6 +162,50 @@ func configuredMCPProvider(server config.MCPServer) (toolprovider.Engine, error)
 	}
 }
 
+// resolveForge builds the forge client for one forge configuration, returning
+// the resolved token alongside it for the worktree manager.
+//
+// A missing or unusable credential disables the forge; it does not stop the
+// daemon. The forge is one feature among many, and killing the process denies
+// the operator chat, the gateway and every other subsystem over a capability
+// they may not use at all -- under a systemd unit with Restart=on-failure that
+// becomes a crash loop where the error scrolls past unread. A malformed
+// configuration is a different matter and still fails fast in validation, well
+// before this point.
+func resolveForge(cfg config.Forge, secrets *secret.Registry, log *slog.Logger) (forge.Forge, string) {
+	if isForgeDisabled(cfg.Type) {
+		return forge.NewNoop(log), ""
+	}
+	token, err := cfg.Token.Resolve(secrets)
+	if err != nil || token == "" {
+		log.Warn("forge disabled: token unavailable",
+			"forge_type", cfg.Type,
+			"engine", cfg.Token.Engine,
+			"key", cfg.Token.Key,
+			"err", err)
+		return forge.NewNoop(log), ""
+	}
+	client, err := forge.New(cfg.Type, token, cfg.Host, log)
+	if err != nil {
+		log.Warn("forge disabled: client construction failed",
+			"forge_type", cfg.Type, "err", err)
+		return forge.NewNoop(log), ""
+	}
+	return client, token
+}
+
+// isForgeDisabled reports whether a forge type explicitly opts out of forge
+// integration. It mirrors the identically named check in the configuration
+// package, which is unexported there.
+func isForgeDisabled(forgeType string) bool {
+	switch forgeType {
+	case "none", "off", "disabled":
+		return true
+	default:
+		return false
+	}
+}
+
 func run() int {
 	defaultCfg := filepath.Join(configHome(), "archie", "config.toml")
 	cfgPath := flag.String("config", defaultCfg, "path to config.toml")
@@ -180,24 +224,7 @@ func run() int {
 	cfg := doc.Config
 
 	secrets := secret.NewRegistry()
-	var forgeClient forge.Forge
-	var token string
-	if cfg.Forge.Type == "none" || cfg.Forge.Type == "off" || cfg.Forge.Type == "disabled" {
-		forgeClient = forge.NewNoop(log)
-	} else {
-		var errToken error
-		token, errToken = cfg.Forge.Token.Resolve(secrets)
-		if errToken != nil || token == "" {
-			fmt.Fprintf(os.Stderr, "forge token (engine %q, key %q) is required: %v\n", cfg.Forge.Token.Engine, cfg.Forge.Token.Key, errToken)
-			return 1
-		}
-		var errForge error
-		forgeClient, errForge = forge.New(cfg.Forge.Type, token, cfg.Forge.Host, log)
-		if errForge != nil {
-			fmt.Fprintln(os.Stderr, errForge)
-			return 1
-		}
-	}
+	forgeClient, token := resolveForge(cfg.Forge, secrets, log)
 
 	st, err := nell.OpenStore(cfg.DBPath, cfg.BotUser)
 	if err != nil {
@@ -466,24 +493,10 @@ func run() int {
 	// and Run() takes the legacy single-identity path unchanged.
 	var identityRunners []*daemon.IdentityRunner
 	for _, idCfg := range cfg.Identities {
-		var idForge forge.Forge
-		var idToken string
-		if idCfg.Forge.Type == "none" || idCfg.Forge.Type == "off" || idCfg.Forge.Type == "disabled" {
-			idForge = forge.NewNoop(log)
-		} else {
-			var errToken error
-			idToken, errToken = idCfg.Forge.Token.Resolve(secrets)
-			if errToken != nil || idToken == "" {
-				log.Error("identity forge token unresolved", "identity", idCfg.Name, "err", errToken)
-				return 1
-			}
-			var errForge error
-			idForge, errForge = forge.New(idCfg.Forge.Type, idToken, idCfg.Forge.Host, log)
-			if errForge != nil {
-				log.Error("identity forge client failed", "identity", idCfg.Name, "err", errForge)
-				return 1
-			}
-		}
+		// Same reasoning as the primary forge: one identity whose credential is
+		// missing must not deny every other identity, and every other
+		// subsystem, the ability to run.
+		idForge, idToken := resolveForge(idCfg.Forge, secrets, log.With("identity", idCfg.Name))
 		idTrees := &worktree.Manager{
 			WorkDir:  filepath.Join(cfg.WorkDir, "identity-"+idCfg.Name),
 			Token:    idToken,

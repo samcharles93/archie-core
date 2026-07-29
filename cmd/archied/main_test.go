@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -21,12 +22,89 @@ import (
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/nell"
+	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/storerpc"
 	"github.com/samcharles93/archie-core/internal/tools"
 	"github.com/samcharles93/archie-core/internal/worktree"
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
 )
+
+// TestResolveForgeDegradesInsteadOfFailing guards a startup behaviour change:
+// a missing forge credential used to abort archied with exit 1. The forge is
+// one feature among many, so that denied the operator chat, the gateway and
+// every other subsystem -- and under the installed systemd unit
+// (Restart=on-failure, RestartSec=5s) it crash-looped where the error was
+// never read. A missing credential must disable the forge, not the daemon.
+func TestResolveForgeDegradesInsteadOfFailing(t *testing.T) {
+	t.Parallel()
+
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	tests := []struct {
+		name string
+		cfg  config.Forge
+	}{
+		{
+			name: "explicitly disabled",
+			cfg:  config.Forge{Type: "none"},
+		},
+		{
+			name: "token refers to an unset environment variable",
+			cfg: config.Forge{
+				Type:  "github",
+				Host:  "https://github.com",
+				Token: secret.SecretRef{Engine: "env", Key: "ARCHIE_TEST_TOKEN_DEFINITELY_UNSET"},
+			},
+		},
+		{
+			name: "token reference is empty",
+			cfg:  config.Forge{Type: "github", Host: "https://github.com"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			client, token := resolveForge(tc.cfg, secret.NewRegistry(), log)
+			if client == nil {
+				t.Fatal("resolveForge returned no forge client; startup would nil-panic")
+			}
+			if token != "" {
+				t.Errorf("token = %q, want empty when the forge is disabled", token)
+			}
+			// The no-op forge answers rather than erroring, which is what lets
+			// the rest of the daemon run against it unchanged.
+			issues, err := client.IssuesWithLabel(t.Context(), "owner", "repo", "archie")
+			if err != nil {
+				t.Errorf("disabled forge returned an error instead of no work: %v", err)
+			}
+			if len(issues) != 0 {
+				t.Errorf("disabled forge returned %d issues, want 0", len(issues))
+			}
+		})
+	}
+}
+
+// Not parallel: t.Setenv mutates process state and panics under t.Parallel.
+func TestResolveForgeBuildsClientWhenTokenResolves(t *testing.T) {
+	t.Setenv("ARCHIE_TEST_FORGE_TOKEN", "ghp_exampletoken")
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	client, token := resolveForge(config.Forge{
+		Type:  "github",
+		Host:  "https://github.com",
+		Token: secret.SecretRef{Engine: "env", Key: "ARCHIE_TEST_FORGE_TOKEN"},
+	}, secret.NewRegistry(), log)
+
+	if client == nil {
+		t.Fatal("resolveForge returned no forge client")
+	}
+	if token != "ghp_exampletoken" {
+		t.Errorf("token = %q, want the resolved value passed to the worktree manager", token)
+	}
+}
 
 func TestChatGenerateOptionsIncludesToolsAndMultipleSteps(t *testing.T) {
 	registry := tools.NewRegistry()
