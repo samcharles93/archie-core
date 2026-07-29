@@ -23,7 +23,7 @@ type AgentRequestMessage struct {
 	Channel   string              `json:"channel,omitempty"` // "response" (default) or "system"
 	Workspace string              `json:"workspace"`
 	Request   Request             `json:"request"`
-	Stages    []Request           `json:"stages,omitempty"`    // batch: all agent stages for this task
+	Stages    []Request           `json:"stages,omitempty"` // batch: all agent stages for this task
 	Providers map[string]Provider `json:"providers,omitempty"`
 	// MCPServers carries MCP server definitions so the agent can construct
 	// transports, discover tools, and register them locally. Absent/empty
