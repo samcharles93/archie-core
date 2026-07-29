@@ -220,6 +220,26 @@ func TestBuildSystemPromptNeverEmpty(t *testing.T) {
 	}
 }
 
+// TestBuildSystemPromptBalancesBrevityWithWarmth guards a regression where the
+// communication rules were entirely prohibitions. With nothing licensing
+// warmth, a bare "are you there?" drew "I'm here. What do you need?" -- the
+// brevity rules have no answer to lead with on a social turn, so they collapse
+// into a demand that the user justify getting in touch.
+func TestBuildSystemPromptBalancesBrevityWithWarmth(t *testing.T) {
+	t.Parallel()
+
+	prompt := BuildSystemPrompt(SystemPromptConfig{Now: fixedTime(t)})
+	for _, marker := range []string{
+		"does not mean being cold",
+		"social turn",
+		"What do you need?",
+	} {
+		if !strings.Contains(prompt, marker) {
+			t.Errorf("communication rules no longer temper brevity with warmth, missing %q:\n%s", marker, prompt)
+		}
+	}
+}
+
 func TestBuildSystemPromptRendersConfiguredOperator(t *testing.T) {
 	t.Parallel()
 
