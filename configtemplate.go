@@ -2,10 +2,11 @@
 // generate a first-run config.toml from the exact file operators already
 // read as documentation, instead of a second copy that can drift from it.
 //
-// It lives at the module root, rather than under internal/, because
-// go:embed patterns cannot reach outside the directory of the .go file
-// that declares them, and config.example.toml is kept at the root where
-// it is easy to find and hand-edit.
+// It lives at the module root, rather than under internal/, because embed
+// patterns cannot reach outside the directory of the .go file that declares
+// them, and config.example.toml is kept at the root where it is easy to
+// find and hand-edit. (Written without the directive prefix on purpose:
+// staticcheck reads "// go:embed" in prose as a malformed directive.)
 package configtemplate
 
 import _ "embed"
