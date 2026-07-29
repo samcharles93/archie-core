@@ -12,7 +12,7 @@ import (
 	natsio "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
-	arnats "github.com/samcharles93/archie-core/internal/nats"
+	arnats "github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 )
 
 // ── helpers ──────────────────────────────────────────────────────────
@@ -251,13 +251,13 @@ func TestNATSRunnerRoundTrip(t *testing.T) {
 	url := srv.ClientURL()
 
 	ctx := context.Background()
-	client, err := arnats.Connect(ctx, url, "", slog.New(slog.DiscardHandler))
+	client, err := arnats.Connect(ctx, arnats.Config{URL: url}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer client.Close()
 
-	startHandler(t, client.Conn())
+	startHandler(t, mustCoreConn(t, client))
 
 	runner := &NATSRunner{
 		Nats:      client,
@@ -288,4 +288,15 @@ func TestNATSRunnerRoundTrip(t *testing.T) {
 	if result.TokensUsed != 42 {
 		t.Fatalf("expected 42 tokens, got %d", result.TokensUsed)
 	}
+}
+
+// mustCoreConn returns the raw NATS connection for tests that drive core-NATS
+// subscriptions directly, failing the test if the client is not connected.
+func mustCoreConn(t *testing.T, c *arnats.Client) *natsio.Conn {
+	t.Helper()
+	conn, err := c.CoreConn()
+	if err != nil {
+		t.Fatalf("CoreConn: %v", err)
+	}
+	return conn
 }

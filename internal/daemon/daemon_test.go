@@ -17,7 +17,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/forge"
-	arnats "github.com/samcharles93/archie-core/internal/nats"
+	arnats "github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -273,7 +273,7 @@ func startEmbeddedNATSForDaemon(t *testing.T) *server.Server {
 func daemonWithNATS(t *testing.T) (*Daemon, *store.Store) {
 	t.Helper()
 	srv := startEmbeddedNATSForDaemon(t)
-	client, err := arnats.Connect(context.Background(), srv.ClientURL(), "", slog.New(slog.DiscardHandler))
+	client, err := arnats.Connect(context.Background(), arnats.Config{URL: srv.ClientURL()}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("nats connect: %v", err)
 	}
@@ -353,7 +353,11 @@ func TestRunViaAgentRetriesUntilResponderAppears(t *testing.T) {
 	// this retry loop exists to survive.
 	go func() {
 		time.Sleep(80 * time.Millisecond)
-		sub, err := d.Nats.Conn().Subscribe(taskrun.SubjectForTask(task.ID), func(msg *natsio.Msg) {
+		coreConn, connErr := d.Nats.CoreConn()
+		if connErr != nil {
+			t.Fatalf("CoreConn: %v", connErr)
+		}
+		sub, err := coreConn.Subscribe(taskrun.SubjectForTask(task.ID), func(msg *natsio.Msg) {
 			data, _ := json.Marshal(taskrun.Response{Status: store.StatusPROpen})
 			_ = msg.Respond(data)
 		})
@@ -414,7 +418,7 @@ func TestRunViaAgentParksOnRunError(t *testing.T) {
 		t.Fatalf("claim: (%v, %v)", task, err)
 	}
 
-	sub, err := d.Nats.Conn().Subscribe(taskrun.SubjectForTask(task.ID), func(msg *natsio.Msg) {
+	sub, err := mustCoreConn(t, d.Nats).Subscribe(taskrun.SubjectForTask(task.ID), func(msg *natsio.Msg) {
 		data, _ := json.Marshal(taskrun.Response{Error: "registry build failed"})
 		_ = msg.Respond(data)
 	})
@@ -448,7 +452,7 @@ func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
 	}
 
 	received := make(chan taskrun.Request, 1)
-	sub, err := d.Nats.Conn().Subscribe(taskrun.SubjectForTask(task.ID), func(msg *natsio.Msg) {
+	sub, err := mustCoreConn(t, d.Nats).Subscribe(taskrun.SubjectForTask(task.ID), func(msg *natsio.Msg) {
 		var req taskrun.Request
 		_ = json.Unmarshal(msg.Data, &req)
 		received <- req
@@ -935,4 +939,15 @@ func TestRepoForPrefersOwningIdentityRepoList(t *testing.T) {
 	if _, ok := d.repoFor(&store.Task{Owner: "sam", Repo: "identity-only", Identity: "winter"}); ok {
 		t.Fatal("repoFor leaked archie's identity-only repo to winter")
 	}
+}
+
+// mustCoreConn returns the raw NATS connection for tests that drive core-NATS
+// subscriptions directly, failing the test if the client is not connected.
+func mustCoreConn(t *testing.T, c *arnats.Client) *natsio.Conn {
+	t.Helper()
+	conn, err := c.CoreConn()
+	if err != nil {
+		t.Fatalf("CoreConn: %v", err)
+	}
+	return conn
 }

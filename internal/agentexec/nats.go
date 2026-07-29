@@ -8,9 +8,8 @@ import (
 	"log/slog"
 	"time"
 
-	natsio "github.com/nats-io/nats.go"
 
-	arnats "github.com/samcharles93/archie-core/internal/nats"
+	arnats "github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 )
 
 // AgentRequestMessage is the NATS payload for an agent stage execution request.
@@ -60,8 +59,8 @@ func (r *NATSRunner) Run(ctx context.Context, workspace string, req Request) (Re
 		return Result{}, fmt.Errorf("nats reply inbox: %w", err)
 	}
 	defer func() {
-		if err := replySub.Unsubscribe(); err != nil {
-			r.Log.Warn("reply inbox unsubscribe failed", "err", err)
+		if err := replySub.Close(); err != nil {
+			r.Log.Warn("reply inbox close failed", "err", err)
 		}
 	}()
 
@@ -87,26 +86,21 @@ func (r *NATSRunner) Run(ctx context.Context, workspace string, req Request) (Re
 	}
 
 	subject := arnats.SubjectForAgentRequest(req.TaskID)
-	headers := natsio.Header{}
-	headers.Set(arnats.ReplyHeader, replySub.Subject)
-
-	if _, err := r.Nats.PublishMsg(ctx, &natsio.Msg{
-		Subject: subject,
-		Data:    data,
-		Header:  headers,
-	}); err != nil {
+	if err := r.Nats.PublishRequest(ctx, subject, replySub.Subject(), data); err != nil {
 		return Result{}, fmt.Errorf("publish agent request: %w", err)
 	}
 
 	// 4. Wait for reply (blocking, matching SubprocessRunner.Run behaviour).
-	reply, err := replySub.NextMsg(timeout)
+	replyCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	reply, err := replySub.Next(replyCtx)
 	if err != nil {
 		return Result{}, fmt.Errorf("agent reply: %w", err)
 	}
 
 	// 5. Decode response.
 	var envelope AgentResponseEnvelope
-	if err := json.Unmarshal(reply.Data, &envelope); err != nil {
+	if err := json.Unmarshal(reply, &envelope); err != nil {
 		return Result{}, fmt.Errorf("decode agent response: %w", err)
 	}
 	if envelope.Error != "" {

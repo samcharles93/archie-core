@@ -16,7 +16,6 @@ import (
 	"time"
 
 	natsio "github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
 	"github.com/samcharles93/ai-sdk/core"
 	"github.com/samcharles93/ai-sdk/runtime"
 
@@ -26,7 +25,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/memory"
-	arnats "github.com/samcharles93/archie-core/internal/nats"
+	arnats "github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -348,12 +347,15 @@ func (d *Daemon) drainNATS(ctx context.Context) {
 	dispatcher := newTaskDispatcher(d.Cfg.Containers.MaxConcurrency, d.allowConcurrentFor)
 	for ctx.Err() == nil {
 		msg, err := d.Nats.Fetch(ctx)
+		if errors.Is(err, arnats.ErrNoMessage) {
+			continue
+		}
 		if err != nil {
 			d.Log.Error("nats fetch failed", "err", err)
 			break
 		}
-		if msg != nil {
-			tm, err := arnats.DecodeTask(msg)
+		{
+			tm, err := msg.Task()
 			if err != nil {
 				d.Log.Error("nats decode failed", "err", err)
 				_ = msg.Ack() // bad message, don't retry
@@ -495,7 +497,15 @@ func (d *Daemon) pollNATS(ctx context.Context, fg forge.Forge, repo config.Repo,
 		d.maybeRetryParked(ctx, repo, is)
 		return
 	}
-	if err := d.Nats.PublishTask(ctx, repo.Owner, repo.Name, is.Number, is.Title, is.Body, labels, identity); err != nil {
+	if err := d.Nats.PublishTask(ctx, arnats.TaskEnvelope{
+		Owner:    repo.Owner,
+		Repo:     repo.Name,
+		Number:   is.Number,
+		Title:    is.Title,
+		Body:     is.Body,
+		Labels:   strings.Split(labels, ","),
+		Identity: identity,
+	}); err != nil {
 		d.Log.Error("nats publish failed", "repo", repo.FullName(), "issue", is.Number, "err", err)
 		return
 	}
@@ -521,8 +531,8 @@ func (d *Daemon) acknowledge(ctx context.Context, fg forge.Forge, repo config.Re
 // processNATSTask decodes a NATS message, writes it to SQLite, claims it,
 // and runs the workflow. The message is ack'd on terminal (park is a valid
 // outcome). Nak on transient errors so NATS redelivers.
-func (d *Daemon) processNATSTask(ctx context.Context, msg jetstream.Msg) {
-	tm, err := arnats.DecodeTask(msg)
+func (d *Daemon) processNATSTask(ctx context.Context, msg arnats.Message) {
+	tm, err := msg.Task()
 	if err != nil {
 		d.Log.Error("nats decode failed", "err", err)
 		if err := msg.Ack(); err != nil {
@@ -532,7 +542,7 @@ func (d *Daemon) processNATSTask(ctx context.Context, msg jetstream.Msg) {
 		return
 	}
 
-	inserted, err := d.Store.EnqueueIssue(ctx, tm.Owner, tm.Repo, tm.Number, tm.Title, tm.Body, tm.Labels, tm.Identity)
+	inserted, err := d.Store.EnqueueIssue(ctx, tm.Owner, tm.Repo, tm.Number, tm.Title, tm.Body, strings.Join(tm.Labels, ","), tm.Identity)
 	if err != nil {
 		d.Log.Error("nats enqueue failed", "err", err)
 		if err := msg.Nak(); err != nil {
@@ -1023,7 +1033,7 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *store.Task, repo config.
 	}
 
 	var resp taskrun.Response
-	if err := json.Unmarshal(reply.Data, &resp); err != nil {
+	if err := json.Unmarshal(reply, &resp); err != nil {
 		d.Log.Error("taskrun decode response failed", "task", task.ID, "err", err)
 		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "taskrun decode response failed: "+err.Error())
 		return
@@ -1071,12 +1081,12 @@ func (d *Daemon) taskRunRetryBackoff() time.Duration {
 // task. Any error other than ErrNoResponders (encode failures, a context
 // that's already done, etc.) is returned immediately without retrying,
 // since those don't mean "not ready yet".
-func (d *Daemon) requestTaskRun(ctx context.Context, taskID int64, data []byte) (*natsio.Msg, error) {
+func (d *Daemon) requestTaskRun(ctx context.Context, taskID int64, data []byte) ([]byte, error) {
 	subject := taskrun.SubjectForTask(taskID)
 	deadline := time.Now().Add(d.taskRunReadyTimeout())
 	backoff := d.taskRunRetryBackoff()
 	for {
-		reply, err := d.Nats.Conn().RequestWithContext(ctx, subject, data)
+		reply, err := d.Nats.Request(ctx, subject, data)
 		if err == nil {
 			return reply, nil
 		}

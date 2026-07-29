@@ -24,7 +24,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/container"
-	arnats "github.com/samcharles93/archie-core/internal/nats"
+	arnats "github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 )

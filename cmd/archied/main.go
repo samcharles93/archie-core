@@ -37,7 +37,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/memory"
 	"github.com/samcharles93/archie-core/internal/memory/builtin"
-	"github.com/samcharles93/archie-core/internal/nats"
+	"github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	"github.com/samcharles93/archie-core/internal/nell"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
@@ -209,7 +209,10 @@ func run() int {
 			log.Error("nats credentials", "err", err)
 			return 1
 		}
-		natsClient, err = nats.Connect(ctx, cfg.NATS.URL, natsToken, log)
+		natsClient, err = nats.Connect(ctx, nats.Config{
+			URL:   cfg.NATS.URL,
+			Token: natsToken,
+		}, log)
 		if err != nil {
 			log.Error("nats connect failed", "err", err)
 			return 1
@@ -677,7 +680,12 @@ func run() int {
 	// token, or push credential) proxy Store/Forge/worktree operations
 	// back to archied over NATS.
 	if natsClient != nil {
-		unsubscribe, err := registerTaskRPCServers(natsClient.Conn(), st, forgeClient, trees, log)
+		coreConn, err := natsClient.CoreConn()
+		if err != nil {
+			log.Error("nats connection unavailable for task RPC", "err", err)
+			return 1
+		}
+		unsubscribe, err := registerTaskRPCServers(coreConn, st, forgeClient, trees, log)
 		if err != nil {
 			log.Error("task RPC server registration failed", "err", err)
 			return 1
