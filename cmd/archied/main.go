@@ -30,6 +30,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/daemon"
+	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
@@ -208,9 +209,13 @@ func run() int {
 			log.Error("nats credentials", "err", err)
 			return 1
 		}
+		// Composition owns the subject list: the bus must not know which
+		// subjects belong to which domain.
 		natsClient, err = nats.Connect(ctx, nats.Config{
-			URL:   cfg.NATS.URL,
-			Token: natsToken,
+			URL:           cfg.NATS.URL,
+			Token:         natsToken,
+			Subjects:      []string{workintake.SubjectTaskWildcard, agentexec.SubjectAgentWildcard},
+			FilterSubject: workintake.SubjectTaskWildcard,
 		}, log)
 		if err != nil {
 			log.Error("nats connect failed", "err", err)
@@ -353,7 +358,7 @@ func run() int {
 				return 1
 			}
 			agentRunner = &agentexec.NATSRunner{
-				Nats:      natsClient,
+				Bus:       natsClient,
 				Providers: providers,
 				Log:       log,
 			}
@@ -543,7 +548,7 @@ func run() int {
 		Storage:        storeBackend,
 		Log:            log,
 		CustomStages:   wfeval.Discover,
-		Nats:           natsClient,
+		Tasks:          natsClient,
 		ContainerPool:  containerPool,
 		Memory:         memManager,
 		Guardrails:     guardrails,

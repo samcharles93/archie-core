@@ -5,13 +5,12 @@ import (
 	"encoding/json"
 	"log/slog"
 	"testing"
-	"time"
 
 	"github.com/nats-io/nats-server/v2/server"
 	natssrv "github.com/nats-io/nats-server/v2/test"
-	natsio "github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
 
+	"github.com/samcharles93/archie-core/internal/domain/workintake"
+	"github.com/samcharles93/archie-core/internal/eventbus"
 	arnats "github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 )
 
@@ -169,8 +168,8 @@ func TestHandleMessageRoutesSystemMessagesSeparately(t *testing.T) {
 	}
 
 	// Verify the subject functions exist and are distinct.
-	respSubj := arnats.SubjectForAgentResponse(42)
-	sysSubj := arnats.SubjectForAgentSystem(42)
+	respSubj := SubjectForResponse(42)
+	sysSubj := SubjectForSystem(42)
 	if respSubj == sysSubj || respSubj == "" || sysSubj == "" {
 		t.Error("Gap 3: subject functions broken  --  verify SubjectForAgentResponse " +
 			"and SubjectForAgentSystem return distinct, non-empty subjects.")
@@ -189,61 +188,56 @@ func startEmbeddedNATS(t *testing.T) *server.Server {
 	return srv
 }
 
-func startHandler(t *testing.T, nc *natsio.Conn) {
+func startHandler(t *testing.T, client *arnats.Client) {
 	t.Helper()
-	js, err := jetstream.New(nc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stream, err := js.CreateOrUpdateStream(context.Background(), jetstream.StreamConfig{
-		Name:      "ARCHIE_TASKS",
-		Subjects:  []string{"archie.task.>", "archie.agent.>"},
-		Storage:   jetstream.FileStorage,
-		Retention: jetstream.WorkQueuePolicy,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	cons, err := stream.CreateOrUpdateConsumer(context.Background(), jetstream.ConsumerConfig{
-		Name:          "test-agent",
-		FilterSubject: arnats.SubjectAgentWildcard,
-		AckPolicy:     jetstream.AckExplicitPolicy,
-		MaxDeliver:    1,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	// Drain the client's own consumer rather than subscribing a second one:
+	// the stream uses work-queue retention, so two consumers with
+	// overlapping filter subjects conflict. This mirrors archie-agent.
 	go func() {
-		for {
-			batch, err := cons.Fetch(1, jetstream.FetchMaxWait(5*time.Second))
+		for ctx.Err() == nil {
+			msg, err := client.Fetch(ctx)
 			if err != nil {
-				return
+				continue
 			}
-			for msg := range batch.Messages() {
-				if msg == nil {
-					continue
-				}
-				var req AgentRequestMessage
-				_ = json.Unmarshal(msg.Data(), &req)
-				replyTo := msg.Headers().Get(arnats.ReplyHeader)
-				resp := AgentResponseEnvelope{
-					Version: req.Request.Version,
-					Result: Result{
-						Version:    ProtocolVersion,
-						TaskID:     req.TaskID,
-						Attempt:    req.Attempt,
-						Stage:      req.Stage,
-						Status:     StatusPassed,
-						Summary:    "handler-reply",
-						TokensUsed: 42,
-					},
-				}
-				data, _ := json.Marshal(resp)
-				_ = nc.Publish(replyTo, data)
-				_ = msg.Ack()
+			if err := replyToStage(ctx, client, msg); err != nil {
+				t.Errorf("stage handler: %v", err)
+				_ = msg.Nak()
+				continue
 			}
+			_ = msg.Ack()
 		}
 	}()
+}
+
+// replyToStage answers one stage request with a canned passing result.
+func replyToStage(ctx context.Context, client *arnats.Client, msg eventbus.Message) error {
+	var req AgentRequestMessage
+	if err := json.Unmarshal(msg.Data(), &req); err != nil {
+		return err
+	}
+	replyTo, err := msg.ReplyAddress()
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(AgentResponseEnvelope{
+		Version: req.Request.Version,
+		Result: Result{
+			Version:    ProtocolVersion,
+			TaskID:     req.TaskID,
+			Attempt:    req.Attempt,
+			Stage:      req.Stage,
+			Status:     StatusPassed,
+			Summary:    "handler-reply",
+			TokensUsed: 42,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	return client.Respond(ctx, replyTo, data)
 }
 
 func TestNATSRunnerRoundTrip(t *testing.T) {
@@ -251,16 +245,16 @@ func TestNATSRunnerRoundTrip(t *testing.T) {
 	url := srv.ClientURL()
 
 	ctx := context.Background()
-	client, err := arnats.Connect(ctx, arnats.Config{URL: url}, slog.New(slog.DiscardHandler))
+	client, err := arnats.Connect(ctx, arnats.Config{URL: url, Subjects: []string{workintake.SubjectTaskWildcard, SubjectAgentWildcard}, FilterSubject: SubjectAgentWildcard}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer client.Close()
 
-	startHandler(t, mustCoreConn(t, client))
+	startHandler(t, client)
 
 	runner := &NATSRunner{
-		Nats:      client,
+		Bus:       client,
 		Providers: map[string]Provider{"openai": {Class: "openai", APIKeyEnv: "TEST_KEY"}},
 		Log:       slog.New(slog.DiscardHandler),
 	}
@@ -288,15 +282,4 @@ func TestNATSRunnerRoundTrip(t *testing.T) {
 	if result.TokensUsed != 42 {
 		t.Fatalf("expected 42 tokens, got %d", result.TokensUsed)
 	}
-}
-
-// mustCoreConn returns the raw NATS connection for tests that drive core-NATS
-// subscriptions directly, failing the test if the client is not connected.
-func mustCoreConn(t *testing.T, c *arnats.Client) *natsio.Conn {
-	t.Helper()
-	conn, err := c.CoreConn()
-	if err != nil {
-		t.Fatalf("CoreConn: %v", err)
-	}
-	return conn
 }

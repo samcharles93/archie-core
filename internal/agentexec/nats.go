@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"time"
 
-	arnats "github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
+	"github.com/samcharles93/archie-core/internal/eventbus"
 )
 
 // AgentRequestMessage is the NATS payload for an agent stage execution request.
@@ -37,10 +37,24 @@ type AgentResponseEnvelope struct {
 
 const defaultAgentTimeout = 30 * time.Minute
 
-// NATSRunner sends agent stage execution requests over NATS JetStream and
-// waits for replies on core NATS inboxes. It implements Runner.
+// RequestBus is the messaging this runner needs: publish a request carrying a
+// reply address, and create the inbox that address points at.
+//
+// Declared here rather than taking eventbus.Bus because a domain defines the
+// smallest interface required to do its work -- this runner never fetches or
+// subscribes, and should not be able to.
+type RequestBus interface {
+	PublishRequest(ctx context.Context, subject, replyTo string, payload []byte) error
+	NewReplyInbox() (eventbus.ReplyInbox, error)
+}
+
+// NATSRunner sends agent stage execution requests over the bus and waits for
+// replies on a one-shot inbox. It implements Runner.
+//
+// The name is historical: it holds no NATS type and works with any bus
+// satisfying RequestBus.
 type NATSRunner struct {
-	Nats      *arnats.Client
+	Bus       RequestBus
 	Providers map[string]Provider
 	Log       *slog.Logger
 }
@@ -53,7 +67,7 @@ func (r *NATSRunner) Run(ctx context.Context, workspace string, req Request) (Re
 	}
 
 	// 1. Create reply inbox with auto-unsubscribe after one message.
-	replySub, err := r.Nats.NewReplyInbox()
+	replySub, err := r.Bus.NewReplyInbox()
 	if err != nil {
 		return Result{}, fmt.Errorf("nats reply inbox: %w", err)
 	}
@@ -84,8 +98,8 @@ func (r *NATSRunner) Run(ctx context.Context, workspace string, req Request) (Re
 		return Result{}, err
 	}
 
-	subject := arnats.SubjectForAgentRequest(req.TaskID)
-	if err := r.Nats.PublishRequest(ctx, subject, replySub.Subject(), data); err != nil {
+	subject := SubjectForRequest(req.TaskID)
+	if err := r.Bus.PublishRequest(ctx, subject, replySub.Subject(), data); err != nil {
 		return Result{}, fmt.Errorf("publish agent request: %w", err)
 	}
 

@@ -15,16 +15,16 @@ import (
 	"sync"
 	"time"
 
-	natsio "github.com/nats-io/nats.go"
 	"github.com/samcharles93/ai-sdk/core"
 	"github.com/samcharles93/ai-sdk/runtime"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
+	"github.com/samcharles93/archie-core/internal/domain/workintake"
+	"github.com/samcharles93/archie-core/internal/eventbus"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
-	arnats "github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	"github.com/samcharles93/archie-core/internal/memory"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/storage"
@@ -36,6 +36,18 @@ import (
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
+// TaskBus is the messaging the daemon needs: announce discovered work,
+// collect it back, and ask a worker to run a task.
+//
+// Declared here rather than taking eventbus.Bus because a domain defines the
+// smallest interface required to do its work -- the daemon never subscribes
+// or creates reply inboxes.
+type TaskBus interface {
+	PublishUnique(ctx context.Context, subject, idempotencyKey string, payload []byte) error
+	Fetch(ctx context.Context) (eventbus.Message, error)
+	Request(ctx context.Context, subject string, payload []byte) ([]byte, error)
+}
+
 type Daemon struct {
 	Cfg       config.Config
 	Store     store.TaskStore
@@ -46,9 +58,9 @@ type Daemon struct {
 	Bus       *events.Bus
 	Workflows workflow.Registry
 	Log       *slog.Logger
-	// Nats is the optional NATS client for task distribution. Nil means
-	// NATS is not configured; the existing SQLite ClaimNext flow is used.
-	Nats *arnats.Client
+	// Tasks is the optional message bus for task distribution. Nil means no
+	// bus is configured; the existing SQLite ClaimNext flow is used.
+	Tasks TaskBus
 	// TaskRunReadyTimeout bounds how long runViaAgent retries an initial
 	// taskrun request that fails with nats.ErrNoResponders, giving a
 	// freshly spawned archie-agent container time to connect to NATS, set
@@ -227,7 +239,7 @@ func (d *Daemon) cycleForIdentity(ctx context.Context, id *IdentityRunner) {
 		issues := d.pollIssuesWithForge(ctx, id.Forge, repo)
 		for _, is := range issues {
 			labels := strings.Join(is.Labels, ",")
-			if d.Nats != nil {
+			if d.Tasks != nil {
 				d.pollNATS(ctx, id.Forge, repo, is, labels, id.Name)
 			} else {
 				d.pollSQLite(ctx, id.Forge, repo, is, labels, id.Name)
@@ -236,7 +248,7 @@ func (d *Daemon) cycleForIdentity(ctx context.Context, id *IdentityRunner) {
 	}
 	// Draining is shared: ClaimNext returns the oldest queued task
 	// regardless of which identity enqueued it.
-	if d.Nats != nil {
+	if d.Tasks != nil {
 		d.drainNATS(ctx)
 	} else {
 		d.drainSQLite(ctx)
@@ -300,7 +312,7 @@ func (d *Daemon) Cycle(ctx context.Context) {
 	d.poll(ctx)
 	d.reconcilePRs(ctx)
 	d.checkWaiting(ctx)
-	if d.Nats != nil {
+	if d.Tasks != nil {
 		d.drainNATS(ctx)
 	} else {
 		d.drainSQLite(ctx)
@@ -346,8 +358,8 @@ func (d *Daemon) drainSQLite(ctx context.Context) {
 func (d *Daemon) drainNATS(ctx context.Context) {
 	dispatcher := newTaskDispatcher(d.Cfg.Containers.MaxConcurrency, d.allowConcurrentFor)
 	for ctx.Err() == nil {
-		msg, err := d.Nats.Fetch(ctx)
-		if err != nil && !errors.Is(err, arnats.ErrNoMessage) {
+		msg, err := d.Tasks.Fetch(ctx)
+		if err != nil && !errors.Is(err, eventbus.ErrNoMessage) {
 			d.Log.Error("nats fetch failed", "err", err)
 			break
 		}
@@ -376,8 +388,8 @@ func (d *Daemon) drainNATS(ctx context.Context) {
 // submitNATSTask decodes a fetched message and queues it for processing. A
 // message that cannot be decoded is acked rather than redelivered: it will
 // never decode on a retry, so leaving it unacked would block the queue.
-func (d *Daemon) submitNATSTask(ctx context.Context, dispatcher *taskDispatcher, msg arnats.Message) {
-	envelope, err := msg.Task()
+func (d *Daemon) submitNATSTask(ctx context.Context, dispatcher *taskDispatcher, msg eventbus.Message) {
+	envelope, err := workintake.DecodeTask(msg.Data())
 	if err != nil {
 		d.Log.Error("nats decode failed", "subject", msg.Subject(), "err", err)
 		_ = msg.Ack()
@@ -465,7 +477,7 @@ func (d *Daemon) poll(ctx context.Context) {
 		issues := d.pollIssues(ctx, repo)
 		for _, is := range issues {
 			labels := strings.Join(is.Labels, ",")
-			if d.Nats != nil {
+			if d.Tasks != nil {
 				d.pollNATS(ctx, d.Forge, repo, is, labels, "")
 			} else {
 				d.pollSQLite(ctx, d.Forge, repo, is, labels, "")
@@ -505,10 +517,10 @@ func (d *Daemon) pollNATS(ctx context.Context, fg forge.Forge, repo config.Repo,
 		d.maybeRetryParked(ctx, repo, is)
 		return
 	}
-	// Classify here, not in the bus: the label vocabulary belongs to the
-	// workflow package, which routes on the same kinds.
-	parsed := workflow.SplitLabels(labels)
-	if err := d.Nats.PublishTask(ctx, arnats.TaskEnvelope{
+	// Classify and encode here: the envelope, its routing kind and its
+	// subject belong to the work-intake domain, not to the transport.
+	parsed := workintake.SplitLabels(labels)
+	task := workintake.TaskEnvelope{
 		Owner:    repo.Owner,
 		Repo:     repo.Name,
 		Number:   is.Number,
@@ -516,12 +528,27 @@ func (d *Daemon) pollNATS(ctx context.Context, fg forge.Forge, repo config.Repo,
 		Body:     is.Body,
 		Labels:   parsed,
 		Identity: identity,
-		Kind:     arnats.TaskKind(workflow.KindForLabels(parsed)),
-	}); err != nil {
-		d.Log.Error("nats publish failed", "repo", repo.FullName(), "issue", is.Number, "err", err)
+		Kind:     workintake.KindForLabels(parsed),
+	}
+	if err := d.publishTask(ctx, task); err != nil {
+		d.Log.Error("task publish failed", "repo", repo.FullName(), "issue", is.Number, "err", err)
 		return
 	}
 	d.acknowledge(ctx, fg, repo, is)
+}
+
+// publishTask validates, encodes and publishes a task envelope. The
+// idempotency key means rediscovering the same issue on a later poll does not
+// enqueue the work twice.
+func (d *Daemon) publishTask(ctx context.Context, task workintake.TaskEnvelope) error {
+	if err := task.Kind.Validate(); err != nil {
+		return fmt.Errorf("publish task %s: %w", task.Ref(), err)
+	}
+	payload, err := task.Encode()
+	if err != nil {
+		return err
+	}
+	return d.Tasks.PublishUnique(ctx, task.Subject(), task.IdempotencyKey(), payload)
 }
 
 // acknowledge posts the pickup reaction, state label, and queued event
@@ -543,8 +570,8 @@ func (d *Daemon) acknowledge(ctx context.Context, fg forge.Forge, repo config.Re
 // processNATSTask decodes a NATS message, writes it to SQLite, claims it,
 // and runs the workflow. The message is ack'd on terminal (park is a valid
 // outcome). Nak on transient errors so NATS redelivers.
-func (d *Daemon) processNATSTask(ctx context.Context, msg arnats.Message) {
-	tm, err := msg.Task()
+func (d *Daemon) processNATSTask(ctx context.Context, msg eventbus.Message) {
+	tm, err := workintake.DecodeTask(msg.Data())
 	if err != nil {
 		d.Log.Error("nats decode failed", "err", err)
 		if err := msg.Ack(); err != nil {
@@ -1098,11 +1125,11 @@ func (d *Daemon) requestTaskRun(ctx context.Context, taskID int64, data []byte) 
 	deadline := time.Now().Add(d.taskRunReadyTimeout())
 	backoff := d.taskRunRetryBackoff()
 	for {
-		reply, err := d.Nats.Request(ctx, subject, data)
+		reply, err := d.Tasks.Request(ctx, subject, data)
 		if err == nil {
 			return reply, nil
 		}
-		if !errors.Is(err, natsio.ErrNoResponders) || !time.Now().Before(deadline) {
+		if !errors.Is(err, eventbus.ErrNoResponders) || !time.Now().Before(deadline) {
 			return nil, err
 		}
 		select {

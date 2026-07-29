@@ -150,14 +150,8 @@ func Route(t *store.Task, reg Registry) Workflow {
 			return wf
 		}
 	}
-	for _, kind := range KindsForLabels(SplitLabels(t.Labels)) {
-		name, ok := kindWorkflows[kind]
-		if !ok {
-			continue
-		}
-		if wf, ok := reg[name]; ok {
-			return wf
-		}
+	if wf, ok := workflowForLabels(reg, t.Labels); ok {
+		return wf
 	}
 	if wf, ok := reg["implement"]; ok {
 		return wf

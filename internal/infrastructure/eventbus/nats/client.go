@@ -7,35 +7,14 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+
+	"github.com/samcharles93/archie-core/internal/eventbus"
 )
 
-// Publisher publishes messages onto the bus. Declared as an interface so
-// callers depend on behaviour rather than *Client, and can be tested without a
-// broker -- the previous package exported only a concrete struct.
-type Publisher interface {
-	PublishTask(ctx context.Context, task TaskEnvelope) error
-	PublishRequest(ctx context.Context, subject, replyTo string, payload []byte) error
-	Publish(ctx context.Context, subject string, payload []byte) error
-}
-
-// Consumer reads messages from the bus.
-type Consumer interface {
-	// Fetch returns the next message, or ErrNoMessage if none arrives before
-	// the configured poll timeout.
-	Fetch(ctx context.Context) (Message, error)
-}
-
-// Requester performs core-NATS request/reply outside JetStream.
-type Requester interface {
-	NewReplyInbox() (ReplyInbox, error)
-}
-
-// Compile-time proof that Client satisfies every boundary interface.
-var (
-	_ Publisher = (*Client)(nil)
-	_ Consumer  = (*Client)(nil)
-	_ Requester = (*Client)(nil)
-)
+// Compile-time proof that Client satisfies the broker-neutral contract.
+// The interfaces live in internal/eventbus so domains can depend on the
+// behaviour without importing this package.
+var _ eventbus.Bus = (*Client)(nil)
 
 // Client owns the NATS connection and its JetStream stream and consumer.
 type Client struct {
@@ -81,7 +60,7 @@ func Connect(ctx context.Context, cfg Config, log *slog.Logger) (*Client, error)
 
 	stream, err := js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
 		Name:       cfg.StreamName,
-		Subjects:   []string{SubjectTaskWildcard, SubjectAgentWildcard},
+		Subjects:   cfg.Subjects,
 		Storage:    jetstream.FileStorage,
 		Retention:  jetstream.WorkQueuePolicy,
 		Duplicates: cfg.DedupWindow,
@@ -93,7 +72,7 @@ func Connect(ctx context.Context, cfg Config, log *slog.Logger) (*Client, error)
 	consumer, err := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
 		Name:              cfg.ConsumerName,
 		Durable:           cfg.ConsumerName,
-		FilterSubject:     SubjectTaskWildcard,
+		FilterSubject:     cfg.FilterSubject,
 		AckPolicy:         jetstream.AckExplicitPolicy,
 		MaxDeliver:        cfg.MaxDeliver,
 		AckWait:           cfg.AckWait,
@@ -156,7 +135,7 @@ func (c *Client) CoreConn() (*nats.Conn, error) { return c.connection() }
 // connection returns the live connection, or ErrNotConnected.
 func (c *Client) connection() (*nats.Conn, error) {
 	if c == nil || c.conn == nil || c.conn.IsClosed() {
-		return nil, ErrNotConnected
+		return nil, eventbus.ErrNotConnected
 	}
 	return c.conn, nil
 }

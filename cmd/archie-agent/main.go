@@ -10,6 +10,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -20,21 +21,23 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/container"
+	"github.com/samcharles93/archie-core/internal/domain/workintake"
+	"github.com/samcharles93/archie-core/internal/eventbus"
 	arnats "github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 )
 
 const (
-	streamName   = "ARCHIE_TASKS"
 	consumerName = "archie-agent"
-	dedupWindow  = 2 * time.Minute
 	pollTimeout  = 5 * time.Second
-	ackWait      = 30 * time.Minute
+
+	// ackWait exceeds the longest stage runtime: a stage still working must
+	// not have its message redelivered to another worker.
+	ackWait = 30 * time.Minute
 
 	// taskRunSubjectWildcard matches full-task handoffs (archie.taskrun.<id>).
 	// A queue group means only one archie-agent instance answers each
@@ -65,23 +68,29 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Connect to NATS.
-	var natsOptions []nats.Option
-	if natsToken != "" {
-		natsOptions = append(natsOptions, nats.Token(natsToken))
-	}
-	nc, err := nats.Connect(natsURL, natsOptions...)
+	// One bus client owns the stream definition. archied declares the same
+	// stream with the same subjects; this process previously declared its
+	// own copy, free to disagree about retention, dedup window and TTLs.
+	bus, err := arnats.Connect(ctx, arnats.Config{
+		URL:           natsURL,
+		Token:         natsToken,
+		Subjects:      []string{workintake.SubjectTaskWildcard, agentexec.SubjectAgentWildcard},
+		ConsumerName:  *consumer,
+		FilterSubject: agentexec.SubjectAgentWildcard,
+		PollTimeout:   pollTimeout,
+		AckWait:       ackWait,
+	}, log)
 	if err != nil {
 		log.Error("nats connect failed", "err", err)
 		return 1
 	}
-	defer nc.Close()
-	log.Info("nats connected", "url", natsURL)
+	defer bus.Close()
 
-	// JetStream setup.
-	_, cons, err := setupJetStream(ctx, nc, *consumer)
+	// Full-task handoffs use core NATS request/reply with a queue group,
+	// which the JetStream contract does not express.
+	nc, err := bus.CoreConn()
 	if err != nil {
-		log.Error("jetstream setup failed", "err", err)
+		log.Error("nats connection unavailable", "err", err)
 		return 1
 	}
 
@@ -98,37 +107,7 @@ func run() int {
 	}()
 
 	log.Info("archie-agent ready", "nats", natsURL, "consumer", *consumer)
-	return runMainLoop(ctx, cons, nc, log)
-}
-
-func setupJetStream(ctx context.Context, nc *nats.Conn, consumerName string) (jetstream.JetStream, jetstream.Consumer, error) {
-	js, err := jetstream.New(nc)
-	if err != nil {
-		return nil, nil, err
-	}
-	stream, err := js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
-		Name:       streamName,
-		Subjects:   []string{"archie.task.>", "archie.agent.>"},
-		Storage:    jetstream.FileStorage,
-		Retention:  jetstream.WorkQueuePolicy,
-		Duplicates: dedupWindow,
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	cons, err := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
-		Name:              consumerName,
-		Durable:           consumerName,
-		FilterSubject:     arnats.SubjectAgentWildcard,
-		AckPolicy:         jetstream.AckExplicitPolicy,
-		MaxDeliver:        3,
-		AckWait:           ackWait,
-		InactiveThreshold: 24 * time.Hour,
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	return js, cons, nil
+	return runMainLoop(ctx, bus, log)
 }
 
 // subscribeTaskRuns prefers a dedicated per-task subscription over the
@@ -167,15 +146,25 @@ func bootTaskID(mountDir string, log *slog.Logger) (int64, bool) {
 	return payload.ID, true
 }
 
+// stageBus is the messaging this loop needs: pull the next stage request and
+// answer it on the requester's inbox.
+type stageBus interface {
+	Fetch(ctx context.Context) (eventbus.Message, error)
+	Respond(ctx context.Context, replyAddress string, payload []byte) error
+}
+
 // runMainLoop runs the fetch-handle-ack loop until the context is cancelled.
-func runMainLoop(ctx context.Context, cons jetstream.Consumer, nc *nats.Conn, log *slog.Logger) int {
+func runMainLoop(ctx context.Context, bus stageBus, log *slog.Logger) int {
 	for {
 		if ctx.Err() != nil {
 			log.Info("archie-agent shutting down")
 			return 0
 		}
-		batch, err := cons.Fetch(1, jetstream.FetchMaxWait(pollTimeout))
-		if err != nil {
+		msg, err := bus.Fetch(ctx)
+		switch {
+		case errors.Is(err, eventbus.ErrNoMessage):
+			continue
+		case err != nil:
 			if ctx.Err() != nil {
 				return 0
 			}
@@ -183,21 +172,7 @@ func runMainLoop(ctx context.Context, cons jetstream.Consumer, nc *nats.Conn, lo
 			time.Sleep(1 * time.Second)
 			continue
 		}
-		var msg jetstream.Msg
-		for m := range batch.Messages() {
-			if m != nil {
-				msg = m
-				break
-			}
-		}
-		if err := batch.Error(); err != nil {
-			log.Error("fetch batch error", "err", err)
-			continue
-		}
-		if msg == nil {
-			continue
-		}
-		if err := handle(ctx, msg, nc, log); err != nil {
+		if err := handle(ctx, msg, bus, log); err != nil {
 			log.Error("handle failed", "err", err)
 			if err := msg.Nak(); err != nil {
 				log.Warn("nak failed", "err", err)
@@ -218,15 +193,15 @@ func natsConnectionSettings(flagURL string, getenv func(string) string) (url, to
 	return url, getenv("NATS_TOKEN")
 }
 
-func handle(ctx context.Context, msg jetstream.Msg, nc *nats.Conn, log *slog.Logger) error {
+func handle(ctx context.Context, msg eventbus.Message, bus stageBus, log *slog.Logger) error {
 	var req agentexec.AgentRequestMessage
 	if err := json.Unmarshal(msg.Data(), &req); err != nil {
 		return fmt.Errorf("decode request: %w", err)
 	}
 
-	replyTo := msg.Headers().Get(arnats.ReplyHeader)
-	if replyTo == "" {
-		return fmt.Errorf("missing %s header", arnats.ReplyHeader)
+	replyTo, err := msg.ReplyAddress()
+	if err != nil {
+		return fmt.Errorf("stage request on %s: %w", msg.Subject(), err)
 	}
 
 	log.Info("processing stage",
@@ -246,7 +221,7 @@ func handle(ctx context.Context, msg jetstream.Msg, nc *nats.Conn, log *slog.Log
 	if err != nil {
 		return fmt.Errorf("encode response: %w", err)
 	}
-	if err := nc.Publish(replyTo, data); err != nil {
+	if err := bus.Respond(ctx, replyTo, data); err != nil {
 		return fmt.Errorf("publish response: %w", err)
 	}
 

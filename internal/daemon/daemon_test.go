@@ -15,7 +15,9 @@ import (
 	natssrv "github.com/nats-io/nats-server/v2/test"
 	natsio "github.com/nats-io/nats.go"
 
+	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/forge"
 	arnats "github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	"github.com/samcharles93/archie-core/internal/secret"
@@ -270,10 +272,13 @@ func startEmbeddedNATSForDaemon(t *testing.T) *server.Server {
 	return srv
 }
 
-func daemonWithNATS(t *testing.T) (*Daemon, *store.Store) {
+// daemonWithNATS returns the daemon, its store, and the concrete bus
+// client -- tests that drive core-NATS subscriptions directly need the
+// connection, which the TaskBus contract deliberately does not expose.
+func daemonWithNATS(t *testing.T) (*Daemon, *store.Store, *arnats.Client) {
 	t.Helper()
 	srv := startEmbeddedNATSForDaemon(t)
-	client, err := arnats.Connect(context.Background(), arnats.Config{URL: srv.ClientURL()}, slog.New(slog.DiscardHandler))
+	client, err := arnats.Connect(context.Background(), arnats.Config{URL: srv.ClientURL(), Subjects: []string{workintake.SubjectTaskWildcard, agentexec.SubjectAgentWildcard}, FilterSubject: workintake.SubjectTaskWildcard}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("nats connect: %v", err)
 	}
@@ -287,14 +292,14 @@ func daemonWithNATS(t *testing.T) (*Daemon, *store.Store) {
 			}},
 		},
 		Store: s,
-		Nats:  client,
+		Tasks: client,
 		Log:   slog.New(slog.DiscardHandler),
 	}
-	return d, s
+	return d, s, client
 }
 
 func TestRunViaAgentParksOnRequestFailure(t *testing.T) {
-	d, s := daemonWithNATS(t)
+	d, s, _ := daemonWithNATS(t)
 	// Bound the no-responders retry window tightly so this test proves
 	// "no archie-agent ever showed up" parks the task, without waiting out
 	// the real production default (20s).
@@ -335,7 +340,7 @@ func TestRunViaAgentParksOnRequestFailure(t *testing.T) {
 // registers shortly after  --  and asserts the retry recovers instead of
 // parking.
 func TestRunViaAgentRetriesUntilResponderAppears(t *testing.T) {
-	d, s := daemonWithNATS(t)
+	d, s, busClient := daemonWithNATS(t)
 	d.TaskRunReadyTimeout = time.Second
 	d.TaskRunRetryBackoff = 20 * time.Millisecond
 	ctx := context.Background()
@@ -353,7 +358,7 @@ func TestRunViaAgentRetriesUntilResponderAppears(t *testing.T) {
 	// this retry loop exists to survive.
 	go func() {
 		time.Sleep(80 * time.Millisecond)
-		coreConn, connErr := d.Nats.CoreConn()
+		coreConn, connErr := busClient.CoreConn()
 		if connErr != nil {
 			// Fatalf from a non-test goroutine does not stop the test.
 			t.Errorf("CoreConn: %v", connErr)
@@ -386,7 +391,7 @@ func TestRunViaAgentRetriesUntilResponderAppears(t *testing.T) {
 // no-responders case: it must return promptly (well under the retry
 // window) rather than looping through backoff attempts.
 func TestRunViaAgentDoesNotRetryOnContextCancellation(t *testing.T) {
-	d, s := daemonWithNATS(t)
+	d, s, _ := daemonWithNATS(t)
 	d.TaskRunReadyTimeout = 5 * time.Second
 	d.TaskRunRetryBackoff = 500 * time.Millisecond
 
@@ -409,7 +414,7 @@ func TestRunViaAgentDoesNotRetryOnContextCancellation(t *testing.T) {
 }
 
 func TestRunViaAgentParksOnRunError(t *testing.T) {
-	d, s := daemonWithNATS(t)
+	d, s, busClient := daemonWithNATS(t)
 	ctx := context.Background()
 
 	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 2, "t", "b", "", ""); err != nil {
@@ -420,7 +425,7 @@ func TestRunViaAgentParksOnRunError(t *testing.T) {
 		t.Fatalf("claim: (%v, %v)", task, err)
 	}
 
-	sub, err := mustCoreConn(t, d.Nats).Subscribe(taskrun.SubjectForTask(task.ID), func(msg *natsio.Msg) {
+	sub, err := mustCoreConn(t, busClient).Subscribe(taskrun.SubjectForTask(task.ID), func(msg *natsio.Msg) {
 		data, _ := json.Marshal(taskrun.Response{Error: "registry build failed"})
 		_ = msg.Respond(data)
 	})
@@ -441,7 +446,7 @@ func TestRunViaAgentParksOnRunError(t *testing.T) {
 }
 
 func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
-	d, s := daemonWithNATS(t)
+	d, s, busClient := daemonWithNATS(t)
 	d.Cfg.DiffCapLines = 999
 	ctx := context.Background()
 
@@ -454,7 +459,7 @@ func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
 	}
 
 	received := make(chan taskrun.Request, 1)
-	sub, err := mustCoreConn(t, d.Nats).Subscribe(taskrun.SubjectForTask(task.ID), func(msg *natsio.Msg) {
+	sub, err := mustCoreConn(t, busClient).Subscribe(taskrun.SubjectForTask(task.ID), func(msg *natsio.Msg) {
 		var req taskrun.Request
 		_ = json.Unmarshal(msg.Data, &req)
 		received <- req

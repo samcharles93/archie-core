@@ -1,0 +1,45 @@
+package agentexec
+
+import "strconv"
+
+// Agent execution subjects.
+//
+// These belong to this package because it defines what an agent request and
+// response mean. They previously sat in the NATS package, which made the
+// transport the owner of Archie's agent protocol; see
+// docs/architecture/dependencies-and-contracts.md -- message schemas and the
+// subjects addressing them stay with the domain that defines them.
+//
+// The stage travels in the payload, not the subject: one subject per task
+// carrying sequential stage messages.
+const (
+	// SubjectAgentWildcard matches every agent subject.
+	SubjectAgentWildcard = "archie.agent.>"
+
+	subjectAgentPrefix = "archie.agent."
+)
+
+// SubjectForRequest returns the subject carrying stage execution requests for
+// a task.
+func SubjectForRequest(taskID int64) string {
+	return subjectForTask(taskID, "request")
+}
+
+// SubjectForResponse returns the subject for agent output destined for human
+// channels. The daemon reviews these before forwarding to issue comments,
+// labels, or pull requests.
+func SubjectForResponse(taskID int64) string {
+	return subjectForTask(taskID, "response")
+}
+
+// SubjectForSystem returns the subject for internal agent messages such as
+// log dumps, health, and PII warnings. The daemon reads these for
+// observability and never forwards them.
+func SubjectForSystem(taskID int64) string {
+	return subjectForTask(taskID, "system")
+}
+
+// subjectForTask builds a per-task agent subject.
+func subjectForTask(taskID int64, kind string) string {
+	return subjectAgentPrefix + strconv.FormatInt(taskID, 10) + "." + kind
+}

@@ -15,10 +15,6 @@ const (
 	DefaultAckWait      = 5 * time.Minute
 	DefaultMaxDeliver   = 3
 	DefaultInactiveTTL  = 24 * time.Hour
-
-	// dedupKeyPrefix namespaces the Nats-Msg-Id used for JetStream dedup so
-	// archie's keys cannot collide with another publisher on a shared server.
-	dedupKeyPrefix = "archie:"
 )
 
 // Config describes how to reach NATS and how the stream and consumer should
@@ -31,11 +27,24 @@ type Config struct {
 	// Token authenticates the connection. Empty means no token auth.
 	Token string
 
-	// StreamName is the JetStream stream holding task and agent subjects.
+	// StreamName is the JetStream stream holding the bound subjects.
 	StreamName string
 
-	// ConsumerName is the durable pull consumer the daemon reads tasks from.
+	// Subjects are the subjects the stream carries. Required.
+	//
+	// Composition supplies these rather than the package hardcoding them: the
+	// bus must not know which subjects belong to which domain, and archied
+	// and archie-agent previously declared the same stream separately, free
+	// to disagree about its subjects, retention and dedup window.
+	Subjects []string
+
+	// ConsumerName is the durable pull consumer Fetch reads from.
 	ConsumerName string
+
+	// FilterSubject restricts that consumer to a subset of the stream --
+	// archied consumes task subjects, archie-agent consumes agent subjects.
+	// Required.
+	FilterSubject string
 
 	// DedupWindow is how long JetStream remembers a Nats-Msg-Id, suppressing
 	// republished duplicates of the same issue within the window.
@@ -59,6 +68,12 @@ type Config struct {
 func (c Config) Validate() error {
 	if c.URL == "" {
 		return fmt.Errorf("%w: URL is required", ErrInvalidConfig)
+	}
+	if len(c.Subjects) == 0 {
+		return fmt.Errorf("%w: Subjects is required", ErrInvalidConfig)
+	}
+	if c.FilterSubject == "" {
+		return fmt.Errorf("%w: FilterSubject is required", ErrInvalidConfig)
 	}
 	if c.PollTimeout < 0 || c.AckWait < 0 || c.DedupWindow < 0 {
 		return fmt.Errorf("%w: durations must not be negative", ErrInvalidConfig)
