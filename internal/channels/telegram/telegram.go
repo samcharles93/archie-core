@@ -6,6 +6,7 @@ package telegram
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -70,6 +71,11 @@ type Gateway struct {
 	dangerousMu        sync.Mutex
 	dangerousActions   map[string]dangerousAction
 	permanentApprovals []permanentApproval
+
+	// turns serialises chat turns per session off the update worker and
+	// makes the running one cancellable by /stop. Rebuilt on every launch
+	// so a restart abandons in-flight turns with the old bot instance.
+	turns *gateway.Turns
 
 	log           *slog.Logger
 	bot           *bot.Bot
@@ -162,6 +168,11 @@ func (g *Gateway) Start(ctx context.Context, router *gateway.Router) error {
 // launch builds one bot instance, registers handlers and begins receiving.
 // It returns as soon as delivery is running; the caller owns ctx.
 func (g *Gateway) launch(ctx context.Context, router *gateway.Router) (*bot.Bot, error) {
+	// Turns are per-launch. Each queued turn carries the update handler's
+	// context, which is this launch's, so a /restart cancels everything
+	// still running under the outgoing bot instance.
+	g.turns = gateway.NewTurns(g.log)
+
 	opts := []bot.Option{
 		bot.WithErrorsHandler(func(err error) {
 			g.log.Error("telegram pipeline error", "error", err)
@@ -195,7 +206,7 @@ func (g *Gateway) launch(ctx context.Context, router *gateway.Router) (*bot.Bot,
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/help", bot.MatchTypeExact, g.helpHandler())
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/restart", bot.MatchTypeExact, g.restartHandler())
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/rollback", bot.MatchTypePrefix, g.rollbackHandler())
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/stop", bot.MatchTypePrefix, g.stopHandler())
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/stop", bot.MatchTypePrefix, g.stopHandler(router))
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/approve", bot.MatchTypeExact, g.approveHandler())
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/deny", bot.MatchTypeExact, g.denyHandler())
 
@@ -434,29 +445,63 @@ func (g *Gateway) defaultHandler(router *gateway.Router) bot.HandlerFunc {
 			g.handlePersonalityCommand(ctx, b, msg, router)
 			return
 		}
+		g.submitTurn(ctx, b, msg, router)
+	}
+}
+
+// submitTurn hands the message to its session's turn lane and returns at
+// once, leaving the bot's single update worker free.
+//
+// The turn must not run on the caller's goroutine. go-telegram/bot serves
+// updates from one worker that invokes handlers synchronously, so a turn
+// running here would block delivery of every later update -- including the
+// /stop meant to cancel it, which would sit unread until the turn it was
+// aimed at had already finished.
+func (g *Gateway) submitTurn(ctx context.Context, b *bot.Bot, msg *models.Message, router *gateway.Router) {
+	gm := gateway.Message{
+		ChannelID: fmt.Sprintf("%d", msg.Chat.ID),
+		ThreadID:  threadIDString(msg.MessageThreadID),
+		From:      msg.From.Username,
+		Text:      msg.Text,
+	}
+
+	// The lane key must be the session, so that /stop -- which resolves
+	// the same key -- reaches the turn the sender is actually watching.
+	session, err := router.ResolveSessionKey(ctx, gm)
+	if err != nil {
+		g.log.Error("resolve session for turn", "error", err)
+		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, "❌ Could not resolve this conversation's session.")
+		return
+	}
+
+	chatID, threadID := msg.Chat.ID, msg.MessageThreadID
+	g.turns.Submit(ctx, session, func(turnCtx context.Context) {
 		// reply appears as it is written; the typing indicator covers the
 		// gap before the first token and any non-streaming path.
-		stopTyping := g.startTyping(ctx, b, msg.Chat.ID, msg.MessageThreadID)
-		draft := g.newDraft(b, msg.Chat.ID, msg.MessageThreadID)
+		stopTyping := g.startTyping(turnCtx, b, chatID, threadID)
+		draft := g.newDraft(b, chatID, threadID)
 
 		// If it starts with / but wasn't matched by a registered
 		// handler, it's unknown  --  let the router handle it (which
 		// will say "unrecognized").
-		reply, err := router.RouteStream(ctx, gateway.Message{
-			ChannelID: fmt.Sprintf("%d", msg.Chat.ID),
-			ThreadID:  threadIDString(msg.MessageThreadID),
-			From:      msg.From.Username,
-			Text:      msg.Text,
-		}, draft.onDelta)
+		reply, err := router.RouteStream(turnCtx, gm, draft.onDelta)
 		stopTyping()
+
+		// A cancelled turn is a /stop, not a fault. The stop handler has
+		// already acknowledged it, and turnCtx is dead, so there is
+		// nothing useful left to send from here.
+		if errors.Is(err, context.Canceled) {
+			g.log.Info("chat turn stopped", "session", session)
+			return
+		}
 		if err != nil {
 			g.log.Error("route failed", "error", err)
 			return
 		}
 		if reply != "" {
-			g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, reply)
+			g.sendMessage(turnCtx, b, chatID, threadID, reply)
 		}
-	}
+	})
 }
 
 // ── helpers ──────────────────────────────────────────────────

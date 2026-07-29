@@ -491,6 +491,15 @@ type ChatConfig struct {
 	// they read, write and execute, so the directory must be a deliberate
 	// choice rather than whatever the daemon happens to start in.
 	Workspace string `toml:"workspace" yaml:"workspace"`
+	// MaxSteps caps how many model/tool round-trips one chat turn may take
+	// before the runtime stops and returns what it has. Zero uses the
+	// default.
+	//
+	// This is a real task budget, not a safety limit: a single question
+	// about a codebase routinely costs a read, several greps and a handful
+	// of edits, and running out mid-turn looks to the user like the agent
+	// simply gave up. Use /stop to interrupt, not a small step cap.
+	MaxSteps int `toml:"max_steps" yaml:"max_steps"`
 	// Models is the optional interactive-chat model catalog. When empty,
 	// chat falls back to the distinct model references assigned to workflow
 	// roles in the top-level [models] table.

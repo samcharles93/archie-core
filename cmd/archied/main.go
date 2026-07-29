@@ -71,7 +71,15 @@ func main() {
 }
 
 const (
-	defaultChatMaxSteps          = 8
+	// defaultChatMaxSteps bounds the model/tool round-trips in one chat
+	// turn when [config.ChatConfig.MaxSteps] is unset.
+	//
+	// It was 8, which is roughly one read, one grep and a couple of edits
+	// -- less than a single small change to a Go package costs. Turns hit
+	// the cap and stopped mid-task with no indication they had been cut
+	// off. Interruption is /stop's job; this only has to stop a genuine
+	// runaway, so it is set well above real work.
+	defaultChatMaxSteps          = 100
 	packagedGatewayChangelogPath = "/usr/share/archie/CHANGELOG.archied.md"
 	packagedRuntimeChangelogPath = "/usr/share/archie/CHANGELOG.archie.md"
 )
@@ -87,15 +95,19 @@ var (
 func chatGenerateOptions(
 	messages []chat.Message,
 	registry *tools.Registry,
+	maxSteps int,
 ) (core.GenerateOptions, error) {
 	toolSet, err := agentexec.BuildToolSet(registry)
 	if err != nil {
 		return core.GenerateOptions{}, err
 	}
+	if maxSteps <= 0 {
+		maxSteps = defaultChatMaxSteps
+	}
 	return core.GenerateOptions{
 		Messages: messages,
 		Tools:    toolSet,
-		MaxSteps: defaultChatMaxSteps,
+		MaxSteps: maxSteps,
 	}, nil
 }
 

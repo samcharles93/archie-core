@@ -12,6 +12,8 @@ import (
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+
+	"github.com/samcharles93/archie-core/internal/gateway"
 )
 
 // DangerousCommandAuthority is the sandbox/process/filesystem authority
@@ -405,25 +407,74 @@ func rollbackApprovalText(num int) string {
 
 // ── /stop handler ──────────────────────────────────────────────
 
-// stopHandler serves /stop: terminate a background process after approval.
-func (g *Gateway) stopHandler() bot.HandlerFunc {
+// stopCurrentTurn cancels whatever this conversation is currently doing.
+//
+// Cancellation propagates through the turn's context, so it reaches the
+// model stream and any tool running underneath it -- a shell command built
+// with exec.CommandContext is killed with the turn, which is the case that
+// matters. Whatever the reply had already streamed stays on screen: it is
+// the record of what Archie did before being stopped.
+func (g *Gateway) stopCurrentTurn(ctx context.Context, b *bot.Bot, msg *models.Message, router *gateway.Router) {
+	var cancelled bool
+	var dropped int
+
+	// turns is only built by launch, so a gateway that has never started
+	// simply has nothing to stop. Report that rather than failing.
+	if g.turns != nil && router != nil {
+		session, err := router.ResolveSessionKey(ctx, gateway.Message{
+			ChannelID: fmt.Sprintf("%d", msg.Chat.ID),
+			ThreadID:  threadIDString(msg.MessageThreadID),
+			From:      msg.From.Username,
+			Text:      msg.Text,
+		})
+		if err != nil {
+			g.log.Error("resolve session for stop", "error", err)
+			g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, "❌ Could not resolve this conversation's session.")
+			return
+		}
+		cancelled, dropped = g.turns.Stop(session)
+		g.log.Info("stop requested", "session", session, "cancelled", cancelled, "dropped", dropped)
+	}
+
+	switch {
+	case cancelled && dropped > 0:
+		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
+			fmt.Sprintf("🛑 Stopped. %d queued message(s) discarded.", dropped))
+	case cancelled:
+		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, "🛑 Stopped.")
+	case dropped > 0:
+		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
+			fmt.Sprintf("🛑 Nothing was running. %d queued message(s) discarded.", dropped))
+	default:
+		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
+			"Nothing is running.\n\nUse /stop <process-name> to terminate a background process.")
+	}
+}
+
+// stopHandler serves /stop.
+//
+// Bare /stop is the emergency brake: it cancels the conversation's running
+// turn immediately, with no approval step. Approval exists to protect
+// against destructive commands, and stopping is the opposite -- gating it
+// behind a confirmation round-trip would defeat the entire point.
+//
+// /stop <process-name> keeps the original behaviour of terminating a named
+// background process, which is destructive and still requires approval.
+func (g *Gateway) stopHandler(router *gateway.Router) bot.HandlerFunc {
 	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
 		msg, ok := g.authorizedMessage(ctx, b, update)
 		if !ok {
 			return
 		}
-		if g.Dangerous == nil {
-			g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, "Process control is not configured for this installation.")
+
+		rest := strings.TrimSpace(restAfterTelegram(msg.Text, "/stop", ""))
+		if rest == "" {
+			g.stopCurrentTurn(ctx, b, msg, router)
 			return
 		}
 
-		rest := restAfterTelegram(msg.Text, "/stop", "")
-		rest = strings.TrimSpace(rest)
-
-		if rest == "" {
-			g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
-				"Usage: /stop <process-name>\n\nTerminate a running background process. "+
-					"This requires approval because it may discard in-progress work.")
+		if g.Dangerous == nil {
+			g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, "Process control is not configured for this installation.")
 			return
 		}
 

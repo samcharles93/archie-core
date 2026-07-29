@@ -180,7 +180,7 @@ func makeTelegramLLMResponder(ctx context.Context, tg *telegram.Gateway, s teleg
 			compressed = append(compressed, gateway.CompressedMessage{Role: role, Content: h.Text})
 		}
 		view := gateway.CompressHistory(compressed, gateway.DefaultCompressionConfig())
-		options, err := chatGenerateOptions(nil, s.ToolReg)
+		options, err := chatGenerateOptions(nil, s.ToolReg, s.Cfg.Chat.MaxSteps)
 		if err != nil {
 			return "", fmt.Errorf("build chat tools: %w", err)
 		}

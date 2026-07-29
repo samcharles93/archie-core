@@ -55,9 +55,17 @@ class = "ollama"
 # shell, grep, find). Unset, those tools are not registered at all. Set it and
 # the agent can read, modify and execute inside that directory with the same
 # reach the daemon process has -- choose it deliberately.
+#
+# `max_steps` caps the model/tool round-trips in a single chat turn
+# (default 100). This is a task budget, not a safety limit: one question
+# about a codebase easily costs a read, several greps and a few edits, and
+# a turn that runs out stops mid-task looking like it gave up. To interrupt
+# a turn, send /stop -- that cancels it immediately and clears anything
+# queued behind it.
 # [chat]
 # operator = "Ada Lovelace"
 # workspace = "/var/lib/archie/workspace"
+# max_steps = 100
 # models = [
 #   "openai/gpt-5.6-sol",
 #   "openrouter/openai/gpt-5.6-sol",

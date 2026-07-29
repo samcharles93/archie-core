@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/go-telegram/bot/models"
+
+	"github.com/samcharles93/archie-core/internal/gateway"
 )
 
 // ── DangerousCommandAuthority stub ─────────────────────────────
@@ -303,7 +305,7 @@ func TestStopRequiresApproval(t *testing.T) {
 	g.Dangerous = stub
 	b, requests := newTelegramTestBot(t)
 
-	g.stopHandler()(context.Background(), b, &models.Update{
+	g.stopHandler(nil)(context.Background(), b, &models.Update{
 		Message: &models.Message{
 			From: &models.User{ID: allowedUserID},
 			Chat: models.Chat{ID: 7, Type: models.ChatTypePrivate},
@@ -333,7 +335,7 @@ func TestStopApprovalExecutes(t *testing.T) {
 	b, requests := newTelegramTestBot(t)
 
 	// Step 1: Trigger the approval prompt.
-	g.stopHandler()(context.Background(), b, &models.Update{
+	g.stopHandler(nil)(context.Background(), b, &models.Update{
 		Message: &models.Message{
 			From: &models.User{ID: allowedUserID},
 			Chat: models.Chat{ID: 7, Type: models.ChatTypePrivate},
@@ -367,14 +369,18 @@ func TestStopApprovalExecutes(t *testing.T) {
 	}
 }
 
-func TestStopNoArgument(t *testing.T) {
+// TestStopWithNoArgumentDoesNotRequireApproval is the emergency-brake
+// contract. Bare /stop targets the running chat turn, so it must act
+// immediately -- if it ever renders an approval prompt again, the brake has
+// been put behind a confirmation round-trip and no longer works.
+func TestStopWithNoArgumentDoesNotRequireApproval(t *testing.T) {
 	const allowedUserID = int64(42)
 	stub := &dangerousStub{}
 	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
 	g.Dangerous = stub
 	b, requests := newTelegramTestBot(t)
 
-	g.stopHandler()(context.Background(), b, &models.Update{
+	g.stopHandler(nil)(context.Background(), b, &models.Update{
 		Message: &models.Message{
 			From: &models.User{ID: allowedUserID},
 			Chat: models.Chat{ID: 7, Type: models.ChatTypePrivate},
@@ -383,8 +389,51 @@ func TestStopNoArgument(t *testing.T) {
 	})
 
 	text := messageText(*requests, 0)
-	if !strings.Contains(text, "Usage: /stop") {
-		t.Errorf("expected usage message, got: %s", text)
+	if strings.Contains(text, "Dangerous command") {
+		t.Errorf("bare /stop asked for approval: %s", text)
+	}
+	if !strings.Contains(text, "Nothing is running") {
+		t.Errorf("expected an idle report, got: %s", text)
+	}
+	if len(stub.stopCalls) != 0 {
+		t.Errorf("bare /stop terminated a named process: %v", stub.stopCalls)
+	}
+}
+
+// TestStopCancelsRunningChatTurn covers the whole point of the command:
+// a turn in flight is cancelled, and the queue behind it is discarded.
+func TestStopCancelsRunningChatTurn(t *testing.T) {
+	const allowedUserID = int64(42)
+	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	g.turns = gateway.NewTurns(slog.Default())
+
+	// stopCurrentTurn resolves the session through the router; with none
+	// wired, drive the lane directly and assert on the lane's state.
+	const session = "chat:7"
+	started := make(chan struct{})
+	stopped := make(chan struct{})
+	g.turns.Submit(ctx, session, func(turnCtx context.Context) {
+		close(started)
+		<-turnCtx.Done()
+		close(stopped)
+	})
+	<-started
+	g.turns.Submit(ctx, session, func(context.Context) {})
+
+	cancelled, dropped := g.turns.Stop(session)
+	if !cancelled {
+		t.Error("the running turn was not cancelled")
+	}
+	if dropped != 1 {
+		t.Errorf("dropped = %d, want 1", dropped)
+	}
+	select {
+	case <-stopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the turn did not observe cancellation")
 	}
 }
 
@@ -851,7 +900,7 @@ func TestStopNotConfigured(t *testing.T) {
 	// Dangerous is nil.
 	b, requests := newTelegramTestBot(t)
 
-	g.stopHandler()(context.Background(), b, &models.Update{
+	g.stopHandler(nil)(context.Background(), b, &models.Update{
 		Message: &models.Message{
 			From: &models.User{ID: allowedUserID},
 			Chat: models.Chat{ID: 7, Type: models.ChatTypePrivate},

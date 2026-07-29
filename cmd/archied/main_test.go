@@ -38,7 +38,7 @@ func TestChatGenerateOptionsIncludesToolsAndMultipleSteps(t *testing.T) {
 	}
 	messages := []chat.Message{{Role: chat.RoleUser, Content: "remember this"}}
 
-	options, err := chatGenerateOptions(messages, registry)
+	options, err := chatGenerateOptions(messages, registry, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,8 +64,21 @@ func TestChatGenerateOptionsReportsInvalidToolSchemas(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := chatGenerateOptions(nil, registry); err == nil {
+	if _, err := chatGenerateOptions(nil, registry, 0); err == nil {
 		t.Fatal("chatGenerateOptions() error = nil, want invalid tool schema error")
+	}
+}
+
+// TestChatGenerateOptionsHonoursConfiguredMaxSteps keeps the step budget
+// deployment-controlled. A cap that cannot be raised without a rebuild is
+// the situation this replaced.
+func TestChatGenerateOptionsHonoursConfiguredMaxSteps(t *testing.T) {
+	options, err := chatGenerateOptions(nil, tools.NewRegistry(), 250)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.MaxSteps != 250 {
+		t.Errorf("MaxSteps = %d, want the configured 250", options.MaxSteps)
 	}
 }
 
