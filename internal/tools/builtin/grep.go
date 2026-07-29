@@ -212,8 +212,13 @@ func makeGrepExecutor(cwd string, workspaceIndex GrepIndex) Executor {
 			output = stdout.String()
 		}
 		if output == "" && err != nil {
-			exitErr := &exec.ExitError{}
-			if errors.As(err, &exitErr) {
+			// Exit 1 means "no matches"; exit 2 means a real failure (bad
+			// pattern, unreadable path). Reporting the latter as an empty
+			// result would have the model state a file contains nothing when
+			// the search never ran, so the code must be checked, not just the
+			// error type.
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
 				return grepBackendResult(Result{Content: "no matches found"}, searchBackend, clamped), nil
 			}
 			errMsg := stderr.String()

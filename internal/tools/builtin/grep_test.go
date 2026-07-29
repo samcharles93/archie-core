@@ -32,6 +32,30 @@ func TestGrepUsesIndexCandidatesAsAdvisoryFileSet(t *testing.T) {
 	}
 }
 
+// TestGrepReportsSearchFailureRatherThanNoMatches guards the distinction
+// between ripgrep's exit 1 (no matches) and exit 2 (the search never ran). An
+// errorlint autofix once rewrote the check to match any *exec.ExitError and
+// dropped the exit code, which reported a failed search as an empty result --
+// the model would then state that a file contains nothing on the strength of a
+// search that never happened. An unterminated group is a parse error, so
+// ripgrep exits 2 here.
+func TestGrepReportsSearchFailureRatherThanNoMatches(t *testing.T) {
+	tmp := t.TempDir()
+	createGrepTestFile(t, tmp, "haystack.txt", "needle\n")
+	tool := NewGrepTool(tmp, nil)
+
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"pattern":"(unclosed"}`), nil)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if !result.IsError {
+		t.Fatalf("a failed search must be reported as an error, got %#v", result)
+	}
+	if strings.Contains(result.Content, "no matches found") {
+		t.Fatalf("a failed search was reported as an empty result: %s", result.Content)
+	}
+}
+
 func TestGrepRetriesDirectSearchWhenIndexedCandidatesAreStale(t *testing.T) {
 	tmp := t.TempDir()
 	createGrepTestFile(t, tmp, "live.txt", "needle\n")
