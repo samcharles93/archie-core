@@ -87,7 +87,7 @@ func (g *Gateway) Start(ctx context.Context, router *gateway.Router) error {
 			g.log.Error("email accept", "err", err)
 			continue
 		}
-		go g.handleSMTP(conn)
+		go g.handleSMTP(ctx, conn)
 	}
 }
 
@@ -103,7 +103,7 @@ func (g *Gateway) Stop(ctx context.Context) error {
 }
 
 // handleSMTP processes one SMTP session.
-func (g *Gateway) handleSMTP(conn net.Conn) {
+func (g *Gateway) handleSMTP(ctx context.Context, conn net.Conn) {
 	defer func() { _ = conn.Close() }()
 	r := bufio.NewReader(conn)
 	w := bufio.NewWriter(conn)
@@ -136,7 +136,7 @@ func (g *Gateway) handleSMTP(conn net.Conn) {
 		case inData:
 			if line == "." {
 				// End of DATA — process the message.
-				g.processMessage(mailFrom, rcptTo, dataBuf.String())
+				g.processMessage(ctx, mailFrom, rcptTo, dataBuf.String())
 				write(250, "OK: message accepted")
 				return
 			}
@@ -185,7 +185,7 @@ func extractAddr(line string) string {
 
 // processMessage extracts text from the raw email and routes it through
 // the gateway router. Replies are sent back via SMTP.
-func (g *Gateway) processMessage(from, to, raw string) {
+func (g *Gateway) processMessage(ctx context.Context, from, to, raw string) {
 	g.mu.Lock()
 	router := g.router
 	g.mu.Unlock()
@@ -204,7 +204,7 @@ func (g *Gateway) processMessage(from, to, raw string) {
 		From:      from,
 		Text:      text,
 	}
-	reply, err := router.Route(context.Background(), msg)
+	reply, err := router.Route(ctx, msg)
 	if err != nil {
 		g.log.Error("email route", "err", err, "from", from)
 		return

@@ -758,7 +758,8 @@ func TestRouteResumeNotConfigured(t *testing.T) {
 
 func TestRouteResumeNoMatch(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	r.Sessions = &fakeSessionLister{fakeSessionStore: newFakeSessionStore(), 
+	r.Sessions = &fakeSessionLister{
+		fakeSessionStore: newFakeSessionStore(),
 		sessions: []SessionContext{
 			{SessionID: "session-1"},
 		},
@@ -774,7 +775,8 @@ func TestRouteResumeNoMatch(t *testing.T) {
 
 func TestRouteResumeAmbiguous(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	r.Sessions = &fakeSessionLister{fakeSessionStore: newFakeSessionStore(), 
+	r.Sessions = &fakeSessionLister{
+		fakeSessionStore: newFakeSessionStore(),
 		sessions: []SessionContext{
 			{SessionID: "abc-123"},
 			{SessionID: "abc-456"},
@@ -791,7 +793,8 @@ func TestRouteResumeAmbiguous(t *testing.T) {
 
 func TestRouteResumeExactMatch(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	r.Sessions = &fakeSessionLister{fakeSessionStore: newFakeSessionStore(), 
+	r.Sessions = &fakeSessionLister{
+		fakeSessionStore: newFakeSessionStore(),
 		sessions: []SessionContext{
 			{SessionID: "abc-123"},
 			{SessionID: "abc-456"},

@@ -144,14 +144,14 @@ type TaskController interface {
 // responder. Gateway implementations call Route on every inbound
 // message.
 type Router struct {
-	Store      StatusReader
-	Models     ModelManager   // nil = /model not configured
+	Store  StatusReader
+	Models ModelManager // nil = /model not configured
 	// ModelPersist persists the active model selection so it survives
 	// restarts (e.g. writing back to identity config). nil = not configured.
 	ModelPersist func(ctx context.Context, modelRef string) error
 	// Personas holds the available personality registry for /personality.
-	Personas *PersonaRegistry
-	Tasks    TaskCreator    // nil = /spawn not configured
+	Personas   *PersonaRegistry
+	Tasks      TaskCreator    // nil = /spawn not configured
 	Controller TaskController // nil = /approve and /cancel not configured
 	LLM        LLMResponder   // nil = LLM not wired yet
 	// LLMStream is the optional streaming responder. When set, adapters
@@ -169,7 +169,7 @@ type Router struct {
 	// /undo, /retry, /compress) are available. When nil, those
 	// commands report "not configured".
 	Sessions       SessionStore
-	Agents         AgentReader   // nil = /agents not configured
+	Agents         AgentReader // nil = /agents not configured
 	sessionTracker *sessionTracker
 	gatewayName    string
 }

@@ -937,7 +937,7 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 			_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "container acquire failed: "+err.Error())
 			return
 		}
-		defer d.ContainerPool.Release(ctr)
+		defer d.ContainerPool.Release(ctx, ctr)
 	}
 
 	// Set the working label only after successful container setup (or when no

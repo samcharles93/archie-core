@@ -103,9 +103,8 @@ type StdioTransport struct {
 	// pending maps message IDs (as raw JSON) to response channels.
 	pending map[string]chan []byte
 
-	// ctx is cancelled by Stop(). Background goroutines select on this.
-	ctx    context.Context
-	cancel context.CancelFunc
+	// stopCh is closed by Stop(). Background goroutines select on this.
+	stopCh chan struct{}
 
 	// readerWg tracks the reader goroutine so Stop can wait for it.
 	readerWg sync.WaitGroup
@@ -164,18 +163,22 @@ func (t *StdioTransport) Start(ctx context.Context) error {
 		return fmt.Errorf("mcp: stop in progress")
 	}
 	t.state = StateStarting
-	// Create a fresh context for this lifecycle. If we're restarting from
-	// Error state, the previous context was already cancelled; make a new one.
-	if t.ctx != nil {
-		t.cancel()
+	// Create a fresh stop channel for this lifecycle. If we're restarting
+	// from Error state, the previous stop channel is already closed.
+	if t.stopCh != nil {
+		select {
+		case <-t.stopCh:
+		default:
+			close(t.stopCh)
+		}
 	}
-	t.ctx, t.cancel = context.WithCancel(context.Background())
+	t.stopCh = make(chan struct{})
 	// Reset crash and failure counters on explicit user start.
 	t.crashCount = 0
 	t.startupFailures = 0
 	t.mu.Unlock()
 
-	return t.startSubprocess()
+	return t.startSubprocess(context.WithoutCancel(ctx))
 }
 
 // stopSubprocess kills the current subprocess and waits for it to exit.
@@ -225,8 +228,12 @@ func (t *StdioTransport) Stop(_ context.Context) error {
 	// opens a window where a concurrent Start() could see a state it isn't
 	// guarding against and race a fresh subprocess against this shutdown.
 	t.state = StateStopping
-	if t.cancel != nil {
-		t.cancel()
+	if t.stopCh != nil {
+		select {
+		case <-t.stopCh:
+		default:
+			close(t.stopCh)
+		}
 	}
 	t.mu.Unlock()
 
@@ -345,22 +352,22 @@ func (t *StdioTransport) Notify(ctx context.Context, body []byte) error {
 
 // startSubprocess spawns the MCP server subprocess and starts the reader
 // goroutine. Must be called without t.mu held.
-func (t *StdioTransport) startSubprocess() error {
-	cmd, stdin, stdout, err := t.spawnProcess()
+func (t *StdioTransport) startSubprocess(ctx context.Context) error {
+	cmd, stdin, stdout, err := t.spawnProcess(ctx)
 	if err != nil {
 		t.mu.Lock()
 		t.state = StateError
 		t.mu.Unlock()
 		return err
 	}
-	return t.commitSpawnedProcess(cmd, stdin, stdout, false)
+	return t.commitSpawnedProcess(ctx, cmd, stdin, stdout, false)
 }
 
 // commitSpawnedProcess installs a freshly spawned subprocess as the
 // transport's active one and starts its reader goroutine. spawnProcess runs
 // without t.mu held (it performs a real fork/exec), so a concurrent Stop()
-// can cancel t.ctx and commit StateStopped while a spawn is still in
-// flight. commitSpawnedProcess re-checks t.ctx under the lock immediately
+// can close t.stopCh and commit StateStopped while a spawn is still in
+// flight. commitSpawnedProcess re-checks stopCh under the lock immediately
 // before committing: if Stop() already won, the just-spawned subprocess is
 // discarded (killed and reaped) instead of clobbering the Stopped state
 // Stop() already reported to its own caller. Both startSubprocess (a fresh
@@ -370,9 +377,9 @@ func (t *StdioTransport) startSubprocess() error {
 // resetStartupFailures resets the spawn-failure counter on success; it is
 // true only for attemptRestart, since Start() already resets both crash and
 // startup-failure counters itself before the first spawn attempt.
-func (t *StdioTransport) commitSpawnedProcess(cmd *exec.Cmd, stdin io.WriteCloser, stdout *bufio.Reader, resetStartupFailures bool) error {
+func (t *StdioTransport) commitSpawnedProcess(ctx context.Context, cmd *exec.Cmd, stdin io.WriteCloser, stdout *bufio.Reader, resetStartupFailures bool) error {
 	t.mu.Lock()
-	if t.ctx.Err() != nil {
+	if t.isStopped() {
 		t.state = StateStopped
 		t.mu.Unlock()
 		_ = stdin.Close()
@@ -380,7 +387,7 @@ func (t *StdioTransport) commitSpawnedProcess(cmd *exec.Cmd, stdin io.WriteClose
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()
 		}
-		return t.ctx.Err()
+		return errTransportStopped
 	}
 	t.cmd = cmd
 	t.stdin = stdin
@@ -392,15 +399,15 @@ func (t *StdioTransport) commitSpawnedProcess(cmd *exec.Cmd, stdin io.WriteClose
 
 	// Start the reader goroutine.
 	t.readerWg.Add(1)
-	go t.runReader(stdout)
+	go t.runReader(ctx, stdout)
 
 	return nil
 }
 
 // spawnProcess creates and starts the subprocess. Returns the cmd,
 // stdin writer, and buffered stdout reader.
-func (t *StdioTransport) spawnProcess() (*exec.Cmd, io.WriteCloser, *bufio.Reader, error) {
-	cmd := exec.CommandContext(t.ctx, t.config.Command, t.config.Args...)
+func (t *StdioTransport) spawnProcess(ctx context.Context) (*exec.Cmd, io.WriteCloser, *bufio.Reader, error) {
+	cmd := exec.CommandContext(ctx, t.config.Command, t.config.Args...)
 	cmd.Env = append(os.Environ(), t.config.Env...)
 	cmd.Dir = t.config.Dir
 
@@ -428,7 +435,7 @@ func (t *StdioTransport) spawnProcess() (*exec.Cmd, io.WriteCloser, *bufio.Reade
 // subprocess's stdout, routing responses to the matching pending
 // channels. On error (process crash, pipe close), it initiates the
 // auto-restart sequence.
-func (t *StdioTransport) runReader(reader *bufio.Reader) {
+func (t *StdioTransport) runReader(ctx context.Context, reader *bufio.Reader) {
 	defer t.readerWg.Done()
 
 	for {
@@ -437,7 +444,7 @@ func (t *StdioTransport) runReader(reader *bufio.Reader) {
 			// The subprocess is dead or the pipe is broken. Attempt restart
 			// if we weren't asked to stop.
 			t.mu.Lock()
-			cancelled := t.ctx.Err() != nil
+			cancelled := t.isStopped()
 			shuttingDown := t.state == StateStopping || t.state == StateStopped
 			t.mu.Unlock()
 
@@ -445,7 +452,7 @@ func (t *StdioTransport) runReader(reader *bufio.Reader) {
 				return
 			}
 
-			t.handleProcessDeath()
+			t.handleProcessDeath(ctx)
 			return
 		}
 
@@ -486,7 +493,7 @@ func (t *StdioTransport) deliverResponse(body []byte) {
 // handleProcessDeath is called when the reader detects the subprocess
 // has died. It increments crashCount for backoff, transitions to Starting,
 // closes pending channels, and initiates the auto-restart sequence.
-func (t *StdioTransport) handleProcessDeath() {
+func (t *StdioTransport) handleProcessDeath(ctx context.Context) {
 	t.mu.Lock()
 	if t.state != StateRunning {
 		t.mu.Unlock()
@@ -508,7 +515,7 @@ func (t *StdioTransport) handleProcessDeath() {
 	}
 
 	// Attempt restart (outside lock because it waits).
-	t.attemptRestart()
+	t.attemptRestart(ctx)
 }
 
 // failAllPendingLocked closes all pending response channels with an error.
@@ -528,11 +535,11 @@ func (t *StdioTransport) failAllPendingLocked() {
 // Crash loops where the process starts but immediately dies are bounded
 // by exponential backoff growing up to MaxBackoff. Spawn failures
 // (binary not found, permissions, etc.) count against MaxRetries.
-func (t *StdioTransport) attemptRestart() {
+func (t *StdioTransport) attemptRestart(ctx context.Context) {
 	for {
 		// Check preconditions under lock.
 		t.mu.Lock()
-		if t.ctx.Err() != nil {
+		if t.isStopped() {
 			t.state = StateStopped
 			t.mu.Unlock()
 			return
@@ -563,7 +570,7 @@ func (t *StdioTransport) attemptRestart() {
 		// Wait for the backoff period, but abort if the transport is stopped.
 		timer := time.NewTimer(backoff)
 		select {
-		case <-t.ctx.Done():
+		case <-t.stopCh:
 			timer.Stop()
 			t.mu.Lock()
 			t.state = StateStopped
@@ -573,7 +580,7 @@ func (t *StdioTransport) attemptRestart() {
 		}
 
 		// Try to start the subprocess.
-		cmd, stdin, stdout, err := t.spawnProcess()
+		cmd, stdin, stdout, err := t.spawnProcess(ctx)
 		if err != nil {
 			t.mu.Lock()
 			t.startupFailures++
@@ -585,7 +592,7 @@ func (t *StdioTransport) attemptRestart() {
 		// so a concurrent Stop() that cancelled the context while
 		// spawnProcess was in flight discards this subprocess instead of
 		// clobbering the Stopped state Stop() already reported.
-		_ = t.commitSpawnedProcess(cmd, stdin, stdout, true)
+		_ = t.commitSpawnedProcess(ctx, cmd, stdin, stdout, true)
 		return
 	}
 }
@@ -632,6 +639,22 @@ func writeMessageWithTimeout(w io.Writer, data []byte, timeout time.Duration) er
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
+
+// isStopped returns true if the transport stop channel has been closed.
+// Must be called with t.mu held or from a goroutine that doesn't need
+// the lock for ordering.
+func (t *StdioTransport) isStopped() bool {
+	select {
+	case <-t.stopCh:
+		return true
+	default:
+		return false
+	}
+}
+
+// errTransportStopped is returned by the lifecycle context when the
+// transport is stopped.
+var errTransportStopped = errors.New("mcp: transport stopped")
 
 // extractMessageID extracts the "id" field from a JSON body as a raw JSON
 // string. This is used as the key for correlating requests with responses.

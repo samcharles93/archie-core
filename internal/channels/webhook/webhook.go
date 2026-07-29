@@ -84,7 +84,7 @@ func (g *Gateway) Start(ctx context.Context, router *gateway.Router) error {
 	g.log.Info("webhook gateway listening", "addr", addr)
 	go func() {
 		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		_ = g.server.Shutdown(shutdownCtx)
 	}()

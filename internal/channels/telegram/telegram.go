@@ -140,11 +140,11 @@ func (g *Gateway) Start(ctx context.Context, router *gateway.Router) error {
 		select {
 		case <-ctx.Done():
 			cancel()
-			return g.Stop(context.Background())
+			return g.Stop(context.WithoutCancel(ctx))
 		case req := <-g.restartCh:
 			g.log.Info("restarting telegram gateway", "requested_by", req.chatID)
 			cancel()
-			if err := g.Stop(context.Background()); err != nil {
+			if err := g.Stop(context.WithoutCancel(ctx)); err != nil {
 				g.log.Warn("stop during restart failed", "error", err)
 			}
 			if g.Reload != nil {
