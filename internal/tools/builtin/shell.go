@@ -4,6 +4,13 @@
 // Mutations from upstream:
 //   - package renamed tools -> builtin (archie-core already has an
 //     internal/tools package holding the registry these are registered into).
+//   - the command runs in its own process group and cancellation signals
+//     the whole group. Upstream relies on exec.CommandContext's default,
+//     which kills only the direct shell, so `go test ./...` left its test
+//     binary running and `nohup x &` survived outright. archie's /stop
+//     cancels the turn context, so without this the command it was aimed
+//     at would keep going. tau applies the same treatment to spawned
+//     agents in agent.go; this extends it to the shell tool.
 //
 // Refresh by diffing against that path at a newer tau commit. Do not
 // edit without recording the change above.
@@ -20,12 +27,17 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 )
 
 const (
 	defaultShellTimeout = 120 * time.Second
 	maxShellTimeout     = 10 * time.Minute
+
+	// shellWaitDelay bounds how long Wait keeps reading from inherited
+	// pipes after the process group has been signalled.
+	shellWaitDelay = 2 * time.Second
 )
 
 // ShellParams are the parameters for the shell tool.
@@ -113,6 +125,23 @@ func makeShellExecutor(cwd string, mq *MutationQueue) Executor {
 		if cwd != "" {
 			cmd.Dir = cwd
 		}
+
+		// Run the command as its own process group and, on cancellation,
+		// signal the group rather than the shell alone.
+		//
+		// exec.CommandContext's default kills only the process it started.
+		// A shell's real work is almost always a child of that shell, so
+		// the default leaves the actual command running: cancelling
+		// `go test ./...` reaps the shell and lets the test binary carry
+		// on, and anything backgrounded with & or nohup is never touched.
+		// /stop cancels this context, so that gap is the difference
+		// between stopping a command and only appearing to.
+		setProcessGroup(cmd)
+		cmd.Cancel = func() error { return signalProcessGroup(cmd, syscall.SIGKILL) }
+		// Stop waiting on inherited pipes shortly after the kill. A
+		// grandchild holding stdout open would otherwise keep Wait
+		// blocked long after the group was signalled.
+		cmd.WaitDelay = shellWaitDelay
 
 		var stdout, stderr bytes.Buffer
 		bw := &bridgeWriter{bridge: bridge}
