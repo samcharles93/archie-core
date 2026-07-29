@@ -443,3 +443,62 @@ func TestProviderCallbackRejectsUnauthorizedAndMalformedSelections(t *testing.T)
 		})
 	}
 }
+
+// TestParseModelRestReturnsDeclaredValuesInOrder covers the naked return that a
+// nakedret autofix expanded in 6d4e0be. Every result shares a type with at
+// least one other -- two strings, three bools -- so a transposed pair compiles
+// silently and would surface only as /model switching the wrong scope. Each
+// case sets exactly one flag so no pair of bools can swap undetected.
+func TestParseModelRestReturnsDeclaredValuesInOrder(t *testing.T) {
+	tests := []struct {
+		name     string
+		rest     string
+		model    string
+		provider string
+		global   bool
+		session  bool
+		refresh  bool
+	}{
+		{name: "model only", rest: "gpt-5.6", model: "gpt-5.6"},
+		{name: "inline provider", rest: "gpt-5.6 --provider=openai", model: "gpt-5.6", provider: "openai"},
+		{name: "separated provider", rest: "gpt-5.6 --provider openai", model: "gpt-5.6", provider: "openai"},
+		{name: "global scope", rest: "gpt-5.6 --global", model: "gpt-5.6", global: true},
+		{name: "session scope", rest: "gpt-5.6 --session", model: "gpt-5.6", session: true},
+		{name: "refresh", rest: "--refresh", refresh: true},
+		{name: "provider without model", rest: "--provider=openai --global", provider: "openai", global: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model, provider, global, session, refresh := parseModelRest(tt.rest)
+			if model != tt.model || provider != tt.provider {
+				t.Fatalf("parseModelRest(%q) = model %q, provider %q; want %q, %q",
+					tt.rest, model, provider, tt.model, tt.provider)
+			}
+			if global != tt.global || session != tt.session || refresh != tt.refresh {
+				t.Fatalf("parseModelRest(%q) = global %v, session %v, refresh %v; want %v, %v, %v",
+					tt.rest, global, session, refresh, tt.global, tt.session, tt.refresh)
+			}
+		})
+	}
+}
+
+// TestParseModelRestDoesNotDoubleTheModelName guards the regression introduced
+// by the nestif extraction in 651de0a: the extracted helper appended surviving
+// fields to a slice the caller then appended to again, so "/model gpt-5.6"
+// asked the router for "gpt-5.6 gpt-5.6" and every direct model switch failed
+// as an unknown model. A separated provider value was doubled into the name
+// too. The assertion is on field count rather than equality so that a future
+// re-extraction cannot pass by doubling a different part of the string.
+func TestParseModelRestDoesNotDoubleTheModelName(t *testing.T) {
+	for _, rest := range []string{
+		"gpt-5.6",
+		"gpt-5.6 --global",
+		"gpt-5.6 --provider openai",
+		"gpt-5.6 --provider=openai --session",
+	} {
+		model, _, _, _, _ := parseModelRest(rest)
+		if fields := strings.Fields(model); len(fields) != 1 {
+			t.Fatalf("parseModelRest(%q) model = %q; want a single field", rest, model)
+		}
+	}
+}

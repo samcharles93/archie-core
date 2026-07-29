@@ -39,9 +39,8 @@ func isModelCommand(text string) bool {
 // after the /model command token. It handles --provider=<name>,
 // --provider <name>, --global, --session, and --refresh.
 func parseModelRest(rest string) (model, provider string, global, session, refresh bool) {
-	fields := strings.Fields(rest)
+	provider, fields := splitProviderFlag(strings.Fields(rest))
 	var modelParts []string
-	provider = extractProviderFlag(fields, &modelParts)
 	for _, f := range fields {
 		switch f {
 		case "--global":
@@ -51,33 +50,38 @@ func parseModelRest(rest string) (model, provider string, global, session, refre
 		case "--refresh":
 			refresh = true
 		default:
-			if !strings.HasPrefix(f, "--provider") {
-				modelParts = append(modelParts, f)
-			}
+			modelParts = append(modelParts, f)
 		}
 	}
 	model = strings.Join(modelParts, " ")
 	return model, provider, global, session, refresh
 }
 
-// extractProviderFlag extracts --provider=<value> or --provider <value>
-// from fields, returning the non-provider fields via modelParts.
-func extractProviderFlag(fields []string, modelParts *[]string) string {
-	for i := range fields {
+// splitProviderFlag extracts --provider=<value> or --provider <value> and
+// returns the provider along with the fields that remain. It is the only place
+// the surviving fields are accumulated: an earlier version handed a shared
+// slice to the helper and appended to it again in the caller's loop, so every
+// model name was doubled ("/model gpt-4o" asked for "gpt-4o gpt-4o"). A
+// space-separated provider value is removed with its flag rather than left in
+// the remainder, where it would be joined into the model name.
+func splitProviderFlag(fields []string) (provider string, remaining []string) {
+	for i := 0; i < len(fields); i++ {
 		f := fields[i]
 		if !strings.HasPrefix(f, "--provider") {
-			*modelParts = append(*modelParts, f)
+			remaining = append(remaining, f)
 			continue
 		}
 		if after, ok := strings.CutPrefix(f, "--provider="); ok {
-			return after
+			provider = after
+			continue
 		}
 		// --provider <value> (space-separated)
 		if i+1 < len(fields) && !strings.HasPrefix(fields[i+1], "--") {
-			return fields[i+1]
+			provider = fields[i+1]
+			i++
 		}
 	}
-	return ""
+	return provider, remaining
 }
 
 // handleModelCommand handles /model with arguments, performing direct
