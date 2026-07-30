@@ -181,20 +181,14 @@ func usableProvider(key string, source catalogProvider, opts Options) (Provider,
 	if len(models) == 0 {
 		return Provider{}, false
 	}
-	class, baseURL, supported := providerRuntimeDefaults(source)
+	class, baseURL := providerRuntimeDefaults(source)
 	if configured {
 		if override.Class != "" {
 			class = override.Class
-			// Explicit classes may be registered by the application before
-			// runtime construction, so configuration is authoritative here.
-			supported = true
 		}
 		if override.BaseURL != "" {
 			baseURL = override.BaseURL
 		}
-	}
-	if !supported {
-		return Provider{}, false
 	}
 	name := strings.TrimSpace(source.Name)
 	if name == "" {
@@ -206,9 +200,12 @@ func usableProvider(key string, source catalogProvider, opts Options) (Provider,
 	}, true
 }
 
-func providerRuntimeDefaults(source catalogProvider) (class, baseURL string, supported bool) {
-	class, supported = runtime.NPMClassMapping[source.NPM]
-	return class, source.API, supported
+func providerRuntimeDefaults(source catalogProvider) (class, baseURL string) {
+	class = "openai-compatible"
+	if mapped, ok := runtime.NPMClassMapping[source.NPM]; ok {
+		class = mapped
+	}
+	return class, source.API
 }
 
 func firstSetEnv(names []string, getenv func(string) string) string {

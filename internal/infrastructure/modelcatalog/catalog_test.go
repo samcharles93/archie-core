@@ -209,7 +209,7 @@ func TestLoadMapsGoogleCatalogProviderToSDKGeminiClass(t *testing.T) {
 	}
 }
 
-func TestLoadExcludesProviderWithoutSupportedSDKClass(t *testing.T) {
+func TestLoadUsesSDKOpenAICompatibleFallbackForUnknownPackage(t *testing.T) {
 	const body = `{
 		"native-only": {
 			"id":"native-only",
@@ -225,7 +225,7 @@ func TestLoadExcludesProviderWithoutSupportedSDKClass(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Providers) != 0 {
-		t.Fatalf("providers = %#v, want unsupported provider excluded", got.Providers)
+	if len(got.Providers) != 1 || got.Providers[0].Class != "openai-compatible" {
+		t.Fatalf("providers = %#v, want SDK openai-compatible fallback", got.Providers)
 	}
 }
