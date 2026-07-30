@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -103,6 +104,90 @@ func TestResolveForgeBuildsClientWhenTokenResolves(t *testing.T) {
 	if token != "ghp_exampletoken" {
 		t.Errorf("token = %q, want the resolved value passed to the worktree manager", token)
 	}
+}
+
+func TestResolveProviderSecretSetsPrivateRuntimeEnvironment(t *testing.T) {
+	registry := secret.NewRegistry()
+	registry.Register(providerSecretEngine{value: "provider-secret"})
+	cfg := config.Config{Providers: map[string]config.Provider{
+		"openai": {
+			Class:  "openai",
+			APIKey: secret.SecretRef{Engine: "provider-test", Key: "OPENAI_API_KEY"},
+		},
+	}}
+
+	if err := resolveProviderSecrets(&cfg, registry); err != nil {
+		t.Fatal(err)
+	}
+	provider := cfg.Providers["openai"]
+	if provider.APIKeyEnv == "" {
+		t.Fatal("resolved provider has no runtime environment name")
+	}
+	if provider.APIKey != (secret.SecretRef{}) {
+		t.Fatal("resolved provider retained serializable secret reference")
+	}
+	if got := os.Getenv(provider.APIKeyEnv); got != "provider-secret" {
+		t.Fatalf("runtime environment value = %q", got)
+	}
+	t.Cleanup(func() { _ = os.Unsetenv(provider.APIKeyEnv) })
+}
+
+func TestResolveProviderSecretsIsolatesIdentityCredentials(t *testing.T) {
+	registry := secret.NewRegistry()
+	registry.Register(mappedProviderSecretEngine{values: map[string]string{
+		"root-key": "root-secret", "one-key": "one-secret", "two-key": "two-secret",
+	}})
+	cfg := config.Config{
+		Providers: map[string]config.Provider{"openai": {
+			APIKey: secret.SecretRef{Engine: "provider-map", Key: "root-key"},
+		}},
+		Identities: []config.IdentityConfig{
+			{Name: "one", Providers: map[string]config.Provider{"openai": {
+				APIKey: secret.SecretRef{Engine: "provider-map", Key: "one-key"},
+			}}},
+			{Name: "two", Providers: map[string]config.Provider{"openai": {
+				APIKey: secret.SecretRef{Engine: "provider-map", Key: "two-key"},
+			}}},
+		},
+	}
+
+	if err := resolveProviderSecrets(&cfg, registry); err != nil {
+		t.Fatal(err)
+	}
+	names := []string{
+		cfg.Providers["openai"].APIKeyEnv,
+		cfg.Identities[0].Providers["openai"].APIKeyEnv,
+		cfg.Identities[1].Providers["openai"].APIKeyEnv,
+	}
+	if names[0] == names[1] || names[0] == names[2] || names[1] == names[2] {
+		t.Fatalf("credential environment names collide: %v", names)
+	}
+	for i, want := range []string{"root-secret", "one-secret", "two-secret"} {
+		if got := os.Getenv(names[i]); got != want {
+			t.Errorf("credential %d = %q, want %q", i, got, want)
+		}
+		t.Cleanup(func() { _ = os.Unsetenv(names[i]) })
+	}
+}
+
+type providerSecretEngine struct{ value string }
+
+func (providerSecretEngine) Name() string    { return "provider-test" }
+func (providerSecretEngine) Version() string { return "test" }
+func (e providerSecretEngine) Resolve(string) (string, error) {
+	return e.value, nil
+}
+
+type mappedProviderSecretEngine struct{ values map[string]string }
+
+func (mappedProviderSecretEngine) Name() string    { return "provider-map" }
+func (mappedProviderSecretEngine) Version() string { return "test" }
+func (e mappedProviderSecretEngine) Resolve(key string) (string, error) {
+	value, ok := e.values[key]
+	if !ok {
+		return "", fmt.Errorf("missing test secret")
+	}
+	return value, nil
 }
 
 func TestChatGenerateOptionsIncludesToolsAndMultipleSteps(t *testing.T) {

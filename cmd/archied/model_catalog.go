@@ -6,6 +6,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
+	"github.com/samcharles93/archie-core/internal/secret"
 )
 
 func applyModelCatalog(cfg *config.Config, snapshot modelcatalog.Snapshot) []string {
@@ -37,6 +38,9 @@ func mergeProviders(base, overrides map[string]config.Provider) map[string]confi
 		}
 		if override.APIKeyEnv != "" {
 			resolved.APIKeyEnv = override.APIKeyEnv
+		}
+		if override.APIKey != (secret.SecretRef{}) {
+			resolved.APIKey = override.APIKey
 		}
 		if override.BaseURL != "" {
 			resolved.BaseURL = override.BaseURL

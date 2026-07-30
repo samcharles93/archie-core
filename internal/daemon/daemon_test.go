@@ -31,6 +31,12 @@ type cleanupStorage struct {
 	ttl time.Duration
 }
 
+type identityRunnerStub struct{}
+
+func (*identityRunnerStub) Run(context.Context, string, agentexec.Request) (agentexec.Result, error) {
+	return agentexec.Result{}, nil
+}
+
 func (s *cleanupStorage) Setup(context.Context, storage.TaskRef) ([]storage.Mount, error) {
 	return nil, nil
 }
@@ -251,7 +257,7 @@ func TestContainerEnvIncludesConfiguredNATSCredentials(t *testing.T) {
 		},
 	}}
 
-	got := d.containerEnv()
+	got := d.containerEnv(nil)
 	for _, want := range []string{
 		"NATS_URL=nats://nats.example:4222",
 		"NATS_TOKEN=test-nats-token",
@@ -259,6 +265,30 @@ func TestContainerEnvIncludesConfiguredNATSCredentials(t *testing.T) {
 		if !slices.Contains(got, want) {
 			t.Errorf("containerEnv() = %q, want %q", got, want)
 		}
+	}
+}
+
+func TestContainerEnvUsesOnlyOwningIdentityProviderCredential(t *testing.T) {
+	t.Setenv("ROOT_PROVIDER_KEY", "root-secret")
+	t.Setenv("WORKER_PROVIDER_KEY", "worker-secret")
+	d := &Daemon{
+		Cfg: config.Config{Providers: map[string]config.Provider{
+			"openai": {Class: "openai", APIKeyEnv: "ROOT_PROVIDER_KEY"},
+		}},
+		Identities: []*IdentityRunner{{
+			Name: "worker",
+			Cfg: config.IdentityConfig{Name: "worker", Providers: map[string]config.Provider{
+				"openai": {Class: "openai", APIKeyEnv: "WORKER_PROVIDER_KEY"},
+			}},
+		}},
+	}
+
+	got := d.containerEnv(&store.Task{Identity: "worker"})
+	if !slices.Contains(got, "WORKER_PROVIDER_KEY=worker-secret") {
+		t.Fatalf("identity credential missing from container env: %q", got)
+	}
+	if slices.Contains(got, "ROOT_PROVIDER_KEY=root-secret") {
+		t.Fatalf("root credential leaked into identity container env: %q", got)
 	}
 }
 
@@ -761,6 +791,43 @@ func TestNewIdentityRunnerRejectsEmptyName(t *testing.T) {
 	_, err := NewIdentityRunner(ctx, config.IdentityConfig{Name: ""}, &testForge{}, nil, slog.New(slog.DiscardHandler))
 	if err == nil {
 		t.Error("expected error for empty name")
+	}
+}
+
+func TestExecutionForUsesIdentityConfigAgentAndProvider(t *testing.T) {
+	rootAgent := &identityRunnerStub{}
+	identityAgent := &identityRunnerStub{}
+	d := &Daemon{
+		Cfg: config.Config{
+			Models: map[string]string{"builder": "root/model"},
+			Providers: map[string]config.Provider{
+				"root": {Class: "openai", APIKeyEnv: "ROOT_KEY"},
+			},
+		},
+		Agent: rootAgent,
+		Identities: []*IdentityRunner{{
+			Name: "worker", Agent: identityAgent,
+			Cfg: config.IdentityConfig{
+				Name: "worker", Models: map[string]string{"builder": "worker/model"},
+				Providers: map[string]config.Provider{
+					"worker": {Class: "anthropic", APIKeyEnv: "WORKER_KEY"},
+				},
+			},
+		}},
+	}
+
+	cfg, runner := d.executionFor(&store.Task{Identity: "worker"})
+	if runner != identityAgent {
+		t.Fatal("executionFor returned root agent for identity task")
+	}
+	if cfg.Models["builder"] != "worker/model" {
+		t.Fatalf("builder model = %q", cfg.Models["builder"])
+	}
+	if _, ok := cfg.Providers["worker"]; !ok {
+		t.Fatal("identity provider missing from execution config")
+	}
+	if _, ok := cfg.Providers["root"]; ok {
+		t.Fatal("root provider leaked into identity execution config")
 	}
 }
 

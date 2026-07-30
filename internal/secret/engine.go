@@ -1,12 +1,10 @@
 // Package secret provides a pluggable secrets-engine registry. Engines
 // resolve SecretRef values (engine + key) into strings at daemon startup,
-// keeping credentials out of config files and environment variables.
+// keeping credentials out of config files and serialized worker contracts.
 //
-// Only the "env" engine is compiled in (see env.go). Other backends
-// (sops, Bitwarden Secrets Manager, Vault/OpenBao) ship as Yaegi-loaded
-// .go plugins under a configurable directory via Registry.LoadDir,
-// mirroring internal/plugin conventions  --  they are not hard-coded
-// into the binary.
+// The "env" and "bws" engines are compiled in. Other backends (sops,
+// Vault/OpenBao) may ship as Yaegi-loaded .go plugins under a configurable
+// directory via Registry.LoadDir, mirroring internal/plugin conventions.
 package secret
 
 import (
@@ -65,6 +63,41 @@ func (r *Registry) Get(name string) (Engine, bool) {
 	defer r.mu.RUnlock()
 	e, ok := r.engines[name]
 	return e, ok
+}
+
+// Getenv resolves an environment-shaped secret name. The real process
+// environment wins; registered external engines are tried in stable name
+// order. A resolved value is exported so SDKs and child processes that accept
+// only environment-variable credentials observe the same secret.
+func (r *Registry) Getenv(key string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	r.mu.RLock()
+	names := make([]string, 0, len(r.engines))
+	for name := range r.engines {
+		if name != "env" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	engines := make([]Engine, 0, len(names))
+	for _, name := range names {
+		engines = append(engines, r.engines[name])
+	}
+	r.mu.RUnlock()
+	for _, engine := range engines {
+		value, err := engine.Resolve(key)
+		value = strings.TrimSpace(value)
+		if err != nil || value == "" {
+			continue
+		}
+		if err := os.Setenv(key, value); err != nil {
+			return ""
+		}
+		return value
+	}
+	return ""
 }
 
 // Resolve resolves a SecretRef through the registered engine.
@@ -136,11 +169,16 @@ func DefaultRegistry() *Registry {
 	return defaultReg
 }
 
-var defaultReg = &Registry{engines: map[string]Engine{"env": &envEngine{}}}
+var defaultReg = &Registry{engines: map[string]Engine{
+	"env": &envEngine{},
+	"bws": newBWSEngine(),
+}}
 
-// NewRegistry creates a Registry pre-loaded with the built-in env engine.
+// NewRegistry creates a Registry pre-loaded with the built-in env and
+// Bitwarden Secrets Manager engines.
 func NewRegistry() *Registry {
 	r := &Registry{engines: make(map[string]Engine)}
 	r.Register(&envEngine{})
+	r.Register(newBWSEngine())
 	return r
 }

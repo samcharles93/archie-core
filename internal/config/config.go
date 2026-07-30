@@ -171,9 +171,10 @@ type Budgets struct {
 
 // Provider configures one LLM provider for the runtime catalog.
 type Provider struct {
-	Class     string `toml:"class" yaml:"class" json:"class"`
-	APIKeyEnv string `toml:"api_key_env" yaml:"api_key_env" json:"api_key_env"`
-	BaseURL   string `toml:"base_url" yaml:"base_url" json:"base_url"`
+	Class     string           `toml:"class" yaml:"class" json:"class"`
+	APIKeyEnv string           `toml:"api_key_env" yaml:"api_key_env" json:"api_key_env"`
+	APIKey    secret.SecretRef `toml:"api_key" yaml:"api_key" json:"-"`
+	BaseURL   string           `toml:"base_url" yaml:"base_url" json:"base_url"`
 }
 
 // Agent configures how archied executes autonomous stages.
@@ -311,9 +312,12 @@ type Config struct {
 	// variable satisfying the plugin.Plugin interface. Failed plugins
 	// are skipped  --  the daemon starts with the remaining set. When
 	// empty, no daemon plugins are loaded.
-	PluginDir    string   `toml:"plugin_dir" yaml:"plugin_dir"`
-	DBPath       string   `toml:"db_path" yaml:"db_path"`
-	PollInterval Duration `toml:"poll_interval" yaml:"poll_interval"`
+	PluginDir string `toml:"plugin_dir" yaml:"plugin_dir"`
+	// SecretEngineDir contains Yaegi secret-engine plugins. Built-in env and
+	// bws engines remain available when this is empty.
+	SecretEngineDir string   `toml:"secret_engine_dir" yaml:"secret_engine_dir"`
+	DBPath          string   `toml:"db_path" yaml:"db_path"`
+	PollInterval    Duration `toml:"poll_interval" yaml:"poll_interval"`
 	// Label marks issues archie should pick up.
 	Label   string `toml:"label" yaml:"label"`
 	BotUser string `toml:"bot_user" yaml:"bot_user"`

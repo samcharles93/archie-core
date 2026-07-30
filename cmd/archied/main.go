@@ -224,7 +224,11 @@ func run() int {
 	}
 	cfg := doc.Config
 
-	secrets := secret.NewRegistry()
+	secrets, err := configuredSecretRegistry(&cfg, log)
+	if err != nil {
+		log.Error("configure secrets", "err", err)
+		return 1
+	}
 	forgeClient, token := resolveForge(cfg.Forge, secrets, log)
 
 	st, err := nell.OpenStore(cfg.DBPath, cfg.BotUser)
@@ -254,7 +258,7 @@ func run() int {
 
 	catalog, err := modelcatalog.Load(ctx, modelcatalog.Options{
 		CachePath:  filepath.Join(filepath.Dir(*cfgPath), "models.json"),
-		Getenv:     os.Getenv,
+		Getenv:     secrets.Getenv,
 		Configured: cfg.Providers,
 	})
 	var catalogModels []string
@@ -523,6 +527,27 @@ func run() int {
 		if err != nil {
 			log.Error("identity construction failed", "identity", idCfg.Name, "err", err)
 			return 1
+		}
+		idProviders := agentexec.ProvidersFromConfig(idCfg.Providers)
+		idRuntime := agentexec.NewRuntime(idProviders)
+		if idRuntime != nil {
+			switch cfg.Agent.Mode {
+			case "subprocess":
+				runner.Agent = &agentexec.SubprocessRunner{
+					Command:       cfg.Agent.Command,
+					Environ:       os.Environ(),
+					AdditionalEnv: cfg.Agent.Env,
+					Diagnostics:   os.Stderr,
+					Providers:     idProviders,
+				}
+			case "inprocess":
+				runner.Agent = agentexec.NewInProcessRunner(idRuntime, log.With("identity", idCfg.Name), toolReg)
+			case "nats":
+				runner.Agent = &agentexec.NATSRunner{
+					Bus: natsClient, Providers: idProviders,
+					MCPServers: cfg.Tools.MCPServers, Log: log.With("identity", idCfg.Name),
+				}
+			}
 		}
 		identityRunners = append(identityRunners, runner)
 		log.Info("identity configured", "identity", idCfg.Name, "bot_user", idCfg.BotUser, "repos", len(idCfg.Repos))

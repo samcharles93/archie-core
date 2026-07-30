@@ -1,6 +1,10 @@
 package secret
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -81,6 +85,69 @@ func TestRegistryResolveUnknownEngine(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for unknown engine")
 	}
+}
+
+func TestRegistryGetenvFallsBackToNonEnvEngine(t *testing.T) {
+	t.Setenv("ARCHIE_TEST_BWS_PROVIDER_KEY", "")
+	r := NewRegistry()
+	r.Register(testEngine{name: "test-source", values: map[string]string{
+		"ARCHIE_TEST_BWS_PROVIDER_KEY": "resolved-value",
+	}})
+
+	if got := r.Getenv("ARCHIE_TEST_BWS_PROVIDER_KEY"); got != "resolved-value" {
+		t.Fatalf("Getenv() = %q, want resolved value", got)
+	}
+	if got := os.Getenv("ARCHIE_TEST_BWS_PROVIDER_KEY"); got != "resolved-value" {
+		t.Fatalf("resolved value was not exported for SDK/container consumers")
+	}
+}
+
+type testEngine struct {
+	name   string
+	values map[string]string
+}
+
+func TestBWSEngineLoadsNamedSecretsOnce(t *testing.T) {
+	dir := t.TempDir()
+	command := filepath.Join(dir, "bws")
+	countPath := filepath.Join(dir, "count")
+	script := fmt.Sprintf(`#!/bin/sh
+echo x >> %q
+printf '%%s' '[{"key":"OPENAI_API_KEY","value":"from-bws"}]'
+`, countPath)
+	if err := os.WriteFile(command, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+
+	engine := newBWSEngine()
+	got, err := engine.Resolve("OPENAI_API_KEY")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "from-bws" {
+		t.Fatalf("Resolve() = %q", got)
+	}
+	if _, err := engine.Resolve("OPENAI_API_KEY"); err != nil {
+		t.Fatal(err)
+	}
+	count, err := os.ReadFile(countPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(count), "x"); got != 1 {
+		t.Fatalf("bws invocation count = %d, want 1", got)
+	}
+}
+
+func (e testEngine) Name() string    { return e.name }
+func (e testEngine) Version() string { return "test" }
+func (e testEngine) Resolve(key string) (string, error) {
+	value, ok := e.values[key]
+	if !ok {
+		return "", fmt.Errorf("not found")
+	}
+	return value, nil
 }
 
 func TestLoadDirNonexistent(t *testing.T) {

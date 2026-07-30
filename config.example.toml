@@ -4,6 +4,7 @@
 # "env" engine reads key as an environment variable name. Custom engines
 # (sops, bws, vault/openbao, ...) are Yaegi plugins loaded from a
 # directory  --  see internal/secret.
+# secret_engine_dir = "~/.config/archie/secret-engines"
 
 # work_dir = "~/.local/share/archie/work"   # default
 # db_path  = "~/.local/share/archie/archie.db"
@@ -37,7 +38,8 @@ builder = "openai/gpt-5.4"
 
 [providers.openai]
 class = "openai"
-api_key_env = "OPENAI_API_KEY"
+api_key = { engine = "bws", key = "OPENAI_API_KEY" }
+# api_key_env = "OPENAI_API_KEY" # backwards-compatible environment form
 
 [providers.ollama]
 class = "ollama"

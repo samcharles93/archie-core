@@ -180,17 +180,18 @@ Daemon-level TOML (`~/.config/archie/config.toml`):
 Secrets (forge token, provider API keys, channel tokens) are not embedded in
 config files. `internal/secret` defines a pluggable `Engine` interface (`Name`,
 `Version`, `Resolve(key) (string, error)`) resolved through a `Registry`; the
-built-in `env` engine reads an environment variable by name. Custom engines
-(sops, Bitwarden Secrets Manager, Vault/OpenBao) are Yaegi-interpreted `.go`
-plugins loaded from a directory, following the same convention as
-`internal/plugin`'s daemon plugins. Config fields reference a secret as
+built-in `env` engine reads an environment variable by name and the built-in
+`bws` engine caches the accessible Bitwarden project at startup. Custom engines
+(sops, Vault/OpenBao) are Yaegi-interpreted `.go` plugins loaded from a
+directory, following the same convention as `internal/plugin`'s daemon plugins.
+Config fields reference a secret as
 `{engine, key}` (`secret.SecretRef`), e.g.
 `token = { engine = "env", key = "ARCHIE_GITHUB_TOKEN" }`. As of this writing
-only `Forge.Token` has been migrated to `SecretRef`; `Provider.APIKeyEnv`,
-`NATSConfig.TokenEnv`, and `TelegramConfig.TokenEnv` are still plain
-env-var-name strings pending a follow-up (they're forwarded by name to
-`ai-sdk/runtime` and subprocess workers rather than resolved centrally, which
-needs its own design pass before migrating).
+`Forge.Token` and `Provider.APIKey` use `SecretRef`; resolved provider values
+are exported under private, identity-scoped environment names because the SDK,
+subprocess, and container boundaries consume credential names rather than
+plaintext wire fields. Legacy `Provider.APIKeyEnv`, `NATSConfig.TokenEnv`, and
+`TelegramConfig.TokenEnv` remain supported.
 
 Subprocess mode is a migration transport boundary, not a security sandbox: the
 worker still runs under the daemon UID and can access daemon-readable host

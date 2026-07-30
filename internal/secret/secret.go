@@ -1,7 +1,7 @@
 package secret
 
-// SecretRef references a secret stored in a named engine. It replaces
-// the previous TokenEnv/APIKeyEnv string fields throughout config.
+// SecretRef references a secret stored in a named engine. Legacy environment
+// variable fields remain supported where required for backwards compatibility.
 //
 // Format in TOML/YAML:
 //

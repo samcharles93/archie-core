@@ -692,6 +692,40 @@ plugin_dir: /opt/archie/plugins
 	}
 }
 
+func TestLoadDirSecretEngineDir(t *testing.T) {
+	dir := tmpConfigDir(t)
+	writeFile(t, dir, "config.yaml", `
+bot_user: secrettest
+secret_engine_dir: /opt/archie/secret-engines
+`)
+
+	cfg, err := loadDir(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.SecretEngineDir; got != "/opt/archie/secret-engines" {
+		t.Fatalf("SecretEngineDir = %q", got)
+	}
+}
+
+func TestLoadDirExpandsSecretEngineHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := tmpConfigDir(t)
+	writeFile(t, dir, "config.yaml", `
+bot_user: secrettest
+secret_engine_dir: ~/.config/archie/secret-engines
+`)
+	cfg, err := loadDir(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(home, ".config", "archie", "secret-engines")
+	if cfg.SecretEngineDir != want {
+		t.Fatalf("SecretEngineDir = %q, want %q", cfg.SecretEngineDir, want)
+	}
+}
+
 // ── 18. API stability: ForTask must still work ─────────────────────
 
 func TestLoadDirForTaskRoundTrip(t *testing.T) {

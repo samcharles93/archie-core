@@ -1,7 +1,9 @@
 package configuration
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/config"
@@ -46,6 +48,7 @@ func (l *Loader) applyDefaults(cfg *config.Config) {
 // applyGeneralDefaults derives the paths and limits that have no owning
 // section.
 func (l *Loader) applyGeneralDefaults(cfg *config.Config) {
+	cfg.SecretEngineDir = expandHomePath(cfg.SecretEngineDir)
 	if cfg.WorkDir == "" {
 		cfg.WorkDir = filepath.Join(l.dataHome(), "archie", "work")
 	}
@@ -65,6 +68,20 @@ func (l *Loader) applyGeneralDefaults(cfg *config.Config) {
 	if cfg.MaxRetries == 0 {
 		cfg.MaxRetries = defaultMaxRetries
 	}
+}
+
+func expandHomePath(path string) string {
+	if path != "~" && !strings.HasPrefix(path, "~/") {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	if path == "~" {
+		return home
+	}
+	return filepath.Join(home, strings.TrimPrefix(path, "~/"))
 }
 
 // applyForgeDefaults fills the forge section, promoting the legacy

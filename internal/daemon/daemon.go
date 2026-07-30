@@ -139,7 +139,9 @@ type IdentityRunner struct {
 	// Cfg is the identity-scoped config subset (forge, models, dispatch,
 	// budgets, etc.).
 	Cfg config.IdentityConfig
-	Log *slog.Logger
+	// Agent is built from this identity's provider credentials.
+	Agent agentexec.Runner
+	Log   *slog.Logger
 }
 
 // NewIdentityRunner constructs an IdentityRunner from an identity config
@@ -913,6 +915,7 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 
 	fg := d.forgeFor(task)
 	trees := d.treesFor(task)
+	executionCfg, executionAgent := d.executionFor(task)
 	repo, ok := d.repoFor(task)
 	if !ok {
 		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "repo no longer in config")
@@ -993,13 +996,13 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 		workflow.Run(ctx, wf, &workflow.TaskContext{
 			Task:         task,
 			Repo:         repo,
-			Cfg:          d.Cfg,
+			Cfg:          executionCfg,
 			Forge:        fg,
 			Store:        d.Store,
 			Trees:        trees,
 			SystemPrompt: d.memoryPrompt,
 			Guardrails:   d.Guardrails,
-			Agent:        d.Agent,
+			Agent:        executionAgent,
 			Bus:          d.Bus,
 			Log:          d.Log,
 			CustomStages: d.CustomStages,
@@ -1064,7 +1067,7 @@ func (d *Daemon) acquireTaskContainer(
 		return nil, false
 	}
 
-	ctr, err := d.ContainerPool.Acquire(ctx, mounts, d.containerEnv())
+	ctr, err := d.ContainerPool.Acquire(ctx, mounts, d.containerEnv(task))
 	if err != nil {
 		park("container acquire failed", err)
 		return nil, false
@@ -1086,8 +1089,8 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *store.Task, repo config.
 	req := taskrun.Request{
 		Task:      task,
 		Repo:      repo,
-		Cfg:       d.Cfg.ForTask(),
-		Providers: agentexec.ProvidersFromConfig(d.Cfg.Providers),
+		Cfg:       d.configFor(task).ForTask(),
+		Providers: agentexec.ProvidersFromConfig(d.configFor(task).Providers),
 	}
 	data, err := json.Marshal(req)
 	if err != nil {
@@ -1172,7 +1175,7 @@ func (d *Daemon) requestTaskRun(ctx context.Context, taskID int64, data []byte) 
 	}
 }
 
-func (d *Daemon) containerEnv() []string {
+func (d *Daemon) containerEnv(task *store.Task) []string {
 	var env []string
 	env = append(env, "NATS_URL="+d.Cfg.NATS.URL)
 	if tokenEnv := d.Cfg.NATS.TokenEnv; tokenEnv != "" {
@@ -1180,7 +1183,7 @@ func (d *Daemon) containerEnv() []string {
 			env = append(env, "NATS_TOKEN="+token)
 		}
 	}
-	for _, p := range d.Cfg.Providers {
+	for _, p := range d.configFor(task).Providers {
 		if p.APIKeyEnv != "" {
 			if v := os.Getenv(p.APIKeyEnv); v != "" {
 				env = append(env, p.APIKeyEnv+"="+v)
@@ -1188,6 +1191,32 @@ func (d *Daemon) containerEnv() []string {
 		}
 	}
 	return env
+}
+
+func (d *Daemon) executionFor(task *store.Task) (config.Config, agentexec.Runner) {
+	if id := d.identityFor(task); id != nil {
+		return configForIdentity(d.Cfg, id.Cfg), id.Agent
+	}
+	return d.Cfg, d.Agent
+}
+
+func (d *Daemon) configFor(task *store.Task) config.Config {
+	cfg, _ := d.executionFor(task)
+	return cfg
+}
+
+func configForIdentity(root config.Config, identity config.IdentityConfig) config.Config {
+	root.BotUser = identity.BotUser
+	root.BotEmail = identity.BotEmail
+	root.DiffCapLines = identity.DiffCapLines
+	root.Forge = identity.Forge
+	root.Dispatch = identity.Dispatch
+	root.Models = identity.Models
+	root.Providers = identity.Providers
+	root.Budgets = identity.Budgets
+	root.Notify = identity.Notify
+	root.Repos = identity.Repos
+	return root
 }
 
 // identityFor resolves the IdentityRunner that owns task, or nil for
