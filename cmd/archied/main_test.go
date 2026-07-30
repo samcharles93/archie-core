@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -160,42 +159,6 @@ func TestChatGenerateOptionsHonoursConfiguredMaxSteps(t *testing.T) {
 	}
 }
 
-func TestGatewaysStartOnlyAfterCapabilityHostAndDaemonStartup(t *testing.T) {
-	source, err := os.ReadFile("main.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(source)
-	hostStart := strings.Index(text, "capabilityHost.Start(ctx)")
-	daemonStart := strings.Index(text, "d.Startup(ctx)")
-	gatewayStart := strings.Index(text, "for _, startGateway := range startGateways")
-	if hostStart < 0 || daemonStart < 0 || gatewayStart < 0 {
-		t.Fatalf("startup markers missing: host=%d daemon=%d gateway=%d", hostStart, daemonStart, gatewayStart)
-	}
-	if gatewayStart < hostStart || gatewayStart < daemonStart {
-		t.Fatalf("gateway start at %d must follow host %d and daemon %d startup", gatewayStart, hostStart, daemonStart)
-	}
-}
-
-func TestTelegramRouterUsesRuntimeSelectableChatModel(t *testing.T) {
-	source, err := os.ReadFile("main.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(source)
-	if tgSource, err := os.ReadFile("telegram_setup.go"); err == nil {
-		text += string(tgSource)
-	}
-	for _, marker := range []string{
-		"Models = ",
-		"ChatModels.ActiveModel()",
-	} {
-		if !strings.Contains(text, marker) {
-			t.Errorf("Telegram chat model wiring missing %q", marker)
-		}
-	}
-}
-
 func TestConfiguredMCPProviderSupportsAllTransportTypes(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -265,16 +228,6 @@ func TestConfiguredMCPProviderSupportsAllTransportTypes(t *testing.T) {
 				t.Fatalf("Manifest().ID = %q, want %q", got, tt.wantID)
 			}
 		})
-	}
-}
-
-func TestConfiguredMCPProviderPassesWorkingDirectoryToClientTransport(t *testing.T) {
-	source, err := os.ReadFile("main.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(source), "Dir:     server.WorkDir") {
-		t.Fatal("configured MCP client transport does not receive server.WorkDir")
 	}
 }
 

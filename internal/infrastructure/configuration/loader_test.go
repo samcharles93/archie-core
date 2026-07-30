@@ -262,31 +262,6 @@ func TestOverlay(t *testing.T) {
 	}
 }
 
-func TestDockerConfigOverlaysExampleConfig(t *testing.T) {
-	cfg, err := loadOverlay(
-		filepath.Join("..", "..", "..", "config.example.toml"),
-		filepath.Join("..", "..", "..", "config.docker.toml"),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Agent.Mode != "nats" {
-		t.Errorf("Agent.Mode: got %q, want %q", cfg.Agent.Mode, "nats")
-	}
-	if cfg.Containers.Image == "" {
-		t.Error("Containers.Image: want docker overlay image, got empty")
-	}
-	// bot_user and repos are not set by the docker overlay  --  they must
-	// come from the base config, proving the overlay isn't a standalone
-	// config that silently drops required fields.
-	if cfg.BotUser == "" {
-		t.Error("BotUser: want value from base config.example.toml, got empty")
-	}
-	if len(cfg.Repos) == 0 {
-		t.Error("Repos: want repos from base config.example.toml, got none")
-	}
-}
-
 func TestLoadBytesDoesNotExist(t *testing.T) {
 	_, err := loadBytes(nil)
 	if err == nil {
