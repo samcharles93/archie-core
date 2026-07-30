@@ -1,6 +1,6 @@
 # archie-core v2 Architecture -- Design Document
 
-**Author:** Archie (Hermes agent)  
+**Author:** Archie
 **Date:** 2026-07-21 (implementation status updated 2026-07-22)  
 **Status:** Final (substantially implemented  --  remaining aspirational items are pluggable storage backends and Layer 2 daemon plugin loader)
 

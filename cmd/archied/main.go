@@ -37,6 +37,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
+	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
 	"github.com/samcharles93/archie-core/internal/memory"
 	"github.com/samcharles93/archie-core/internal/memory/builtin"
 	"github.com/samcharles93/archie-core/internal/nell"
@@ -251,6 +252,19 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	catalog, err := modelcatalog.Load(ctx, modelcatalog.Options{
+		CachePath:  filepath.Join(filepath.Dir(*cfgPath), "models.json"),
+		Getenv:     os.Getenv,
+		Configured: cfg.Providers,
+	})
+	var catalogModels []string
+	if err != nil {
+		log.Warn("model catalog unavailable; using configured providers and models", "err", err)
+	} else {
+		catalogModels = applyModelCatalog(&cfg, catalog)
+		log.Info("model catalog loaded", "providers", len(catalog.Providers), "models", len(catalogModels))
+	}
+
 	// Observability: every event is logged to SQLite (stamped with its
 	// row id) and then fanned out to live dashboard connections.
 	bus := events.NewBus()
@@ -343,7 +357,8 @@ func run() int {
 	providers := executionProviders(cfg)
 	llm := agentexec.NewRuntime(providers)
 	toolReg := tools.NewRegistry()
-	chatModels := newChatModelManager(cfg.Models, cfg.Chat.Models)
+	chatModels := newChatModelManager(cfg.Models, cfg.Chat.Models, catalogModels)
+	chatModels.ApplyModelCatalog(catalog)
 
 	// ── Persona registry ─────────────────────────────────────────────
 	personas := gateway.NewPersonaRegistry(gateway.DefaultPersonas())

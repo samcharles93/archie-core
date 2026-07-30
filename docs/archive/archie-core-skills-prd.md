@@ -1,6 +1,6 @@
 # archie-core Workflows & Skills  --  Product Requirements Document
 
-**Author:** Archie (Hermes agent)
+**Author:** Archie
 **Date:** 2026-07-18
 **Status:** Draft
 
@@ -323,9 +323,9 @@ skill-name/
 
 `archie init --skill go-service` scaffolds a new project with the go-service skill's templates applied.
 
-### 4.5 Blueprint export (Hermes cron integration)
+### 4.5 Blueprint export (external cron integration)
 
-Following the Hermes Automation Blueprints model, any archie-core workflow can be exported as a Hermes blueprint:
+Any archie-core workflow can be exported as an automation blueprint:
 
 ```yaml
 metadata:
@@ -336,20 +336,20 @@ metadata:
       name: "CI monitor"
 ```
 
-The export produces a `SKILL.md` with `metadata.hermes.blueprint` that Hermes can schedule. The blueprint's prompt is the archie workflow's quality pipeline.
+The export produces a `SKILL.md` with scheduler metadata. The blueprint's prompt is the archie workflow's quality pipeline.
 
 ---
 
 ## 5. Comparison to Existing Systems
 
-| Feature | archie-core | GitHub Actions | Dagger | Taskfile | devcontainer | Hermes Skills |
+| Feature | archie-core | GitHub Actions | Dagger | Taskfile | devcontainer | External Skills |
 |---|---|---|---|---|---|---|
 | Language | YAML | YAML | Go/Python/TS | YAML | JSON | Markdown |
 | Gates | Named + composable | Steps in jobs | Functions | Tasks | Lifecycle scripts | N/A |
 | Engine abstraction | First-class | GitHub only | Dagger Engine | Shell only | None | Provider |
 | Skills | agentskills.io spec | Composite actions | Dagger Modules | Includes | Features | SKILL.md |
 | Worktree isolation | Built-in | No | Containers | No | Container | No |
-| Blueprint export | To Hermes cron | No | No | No | No | Native |
+| Blueprint export | To external cron | No | No | No | No | Native |
 | Multi-engine fallback | Yes (ordered list) | No | No | No | No | Provider config |
 | Progressive disclosure | Yes (skill spec) | No | No | No | Feature metadata | Yes |
 
@@ -390,6 +390,6 @@ The export produces a `SKILL.md` with `metadata.hermes.blueprint` that Hermes ca
 ## 7. Open Questions
 
 1. **Skill registry hosting:** Self-hosted on git.catlow.cloud, or use agentskills.io?
-2. **Hermes integration:** Should archie-core be a Hermes tool, a Hermes skill, or standalone?
+2. **External integration:** Should archie-core be exposed as a tool, a skill, or standalone?
 3. **Budget enforcement:** Per-skill budget vs. per-workflow budget vs. monthly cap?
 4. **Sandbox image building:** Pre-built images vs. Dockerfile in each skill?

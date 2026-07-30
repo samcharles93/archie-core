@@ -55,7 +55,7 @@ actual per-workflow/per-repo metrics.
 
 **Reasoning**: An agent killed mid-task at 1M tokens wastes every token
 it already consumed. There is no compaction or checkpointing yet, so a
-killed agent is a total loss. Hermes regularly uses 160+ steps and
+killed agent is a total loss. Long-running agents regularly use 160+ steps and
 hundreds of thousands of tokens per request. Large repositories need
 proportionally more.
 
@@ -189,4 +189,4 @@ must be in the PATH before starting the daemon.
 
 **Symptom**: `baseline red  --  gofumpt -w . fails` but manual run passes.
 Root cause: `which gofumpt` returns nothing because `~/go/bin` isn't on
-PATH in Hermes sessions.
+PATH in external agent sessions.

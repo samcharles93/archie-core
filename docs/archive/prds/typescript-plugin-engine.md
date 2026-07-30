@@ -1,6 +1,6 @@
 # archie-core TypeScript Plugin Engine  --  PRD
 
-**Author:** Archie (Hermes agent)  
+**Author:** Archie
 **Date:** 2026-07-21  
 **Status:** Draft
 

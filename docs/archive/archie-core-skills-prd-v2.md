@@ -1,6 +1,6 @@
 # archie-core Skills System  --  PRD
 
-**Author:** Archie (Hermes agent)
+**Author:** Archie
 **Date:** 2026-07-18
 **Status:** Draft
 
@@ -323,7 +323,7 @@ metadata:
 
 ## 6. Comparison: archie-core vs existing systems
 
-| | archie-core | Claude Code | Codex CLI | GitHub Actions | Hermes Agent |
+| | archie-core | Claude Code | Codex CLI | GitHub Actions | External Agent |
 |---|---|---|---|---|---|
 | **How it receives work** | GitHub issue assignment, Linear label, webhook | Chat, slash commands | Chat, slash commands | YAML triggers (push, PR, schedule) | Chat, cron, webhooks |
 | **What it does** | Analyse → implement → gate → PR | Analyse → implement → gate → PR | Analyse → implement → gate → PR | Run arbitrary shell commands | Analyse → implement → gate → PR |
@@ -331,7 +331,7 @@ metadata:
 | **Gates** | Named checkpoints in archie.yaml | Ad-hoc (CLAUDE.md + lint) | Ad-hoc | Steps in jobs | Skills with gates |
 | **Engine pluggable** | Yes | No (fixed to Claude) | No (fixed to Codex) | No (fixed to GitHub) | Yes (provider config) |
 | **Worktree isolation** | Yes | Yes (`--worktree`) | No | No (ephemeral runner) | No |
-| **Blueprint/cron** | Export to Hermes | No | No | Schedule trigger | Native |
+| **Blueprint/cron** | Export externally | No | No | Schedule trigger | Native |
 | **Where it runs** | Docker sandbox | Host | Host or sandbox | GitHub runner | Host, Docker, Modal, SSH |
 
 ---
@@ -361,7 +361,7 @@ metadata:
 - Gate overrides per skill
 - Skill templates for project scaffolding (`archie init --skill go-service`)
 - Remote skill libraries (git repos as skill sources)
-- Blueprint export to Hermes cron
+- Blueprint export to an external scheduler
 
 ### Phase 5: Additional interfaces
 - Linear webhook integration

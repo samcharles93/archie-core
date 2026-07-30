@@ -14,15 +14,6 @@ import (
 
 const providerCallbackPrefix = "provider:"
 
-func isProviderSelectorRequest(text string) bool {
-	fields := strings.Fields(text)
-	if len(fields) != 1 {
-		return false
-	}
-	command, _, _ := strings.Cut(fields[0], "@")
-	return command == "/provider"
-}
-
 func (g *Gateway) sendProviderSelector(
 	ctx context.Context,
 	b *bot.Bot,
@@ -36,7 +27,7 @@ func (g *Gateway) sendProviderSelector(
 	}
 	params := &bot.SendMessageParams{
 		ChatID:      msg.Chat.ID,
-		Text:        providerSelectorText(manager.ActiveProvider()),
+		Text:        providerSelectorText(manager.ActiveModel(), manager.ActiveProvider()),
 		ReplyMarkup: g.providerSelectorKeyboard(manager),
 	}
 	if msg.MessageThreadID != 0 {
@@ -47,28 +38,45 @@ func (g *Gateway) sendProviderSelector(
 	}
 }
 
-func providerSelectorText(active string) string {
-	if active == "" {
-		return "Choose a provider:"
-	}
-	return "Choose a provider:\nActive: " + providerDisplayName(active)
+func providerSelectorText(activeModel, activeProvider string) string {
+	return "⚙ Model Configuration\n\nCurrent model: " +
+		modelDisplayName(activeModel, activeProvider) +
+		"\nProvider: " + providerDisplayName(activeProvider) +
+		"\n\nSelect a provider:"
 }
 
 func (g *Gateway) providerSelectorKeyboard(manager gateway.ProviderModelManager) *models.InlineKeyboardMarkup {
 	active := manager.ActiveProvider()
 	providers := manager.Providers()
-	rows := make([][]models.InlineKeyboardButton, 0, len(providers))
+	buttons := make([]models.InlineKeyboardButton, 0, len(providers))
 	for _, provider := range providers {
-		label := providerDisplayName(provider)
+		label := fmt.Sprintf("%s (%d)", providerName(manager, provider), len(manager.ModelsForProvider(provider)))
 		if provider == active {
 			label = "✓ " + label
 		}
-		rows = append(rows, []models.InlineKeyboardButton{{
+		buttons = append(buttons, models.InlineKeyboardButton{
 			Text:         label,
 			CallbackData: g.providerCallbackToken(provider),
-		}})
+		})
 	}
+	rows := make([][]models.InlineKeyboardButton, 0, (len(buttons)+1)/2)
+	for i := 0; i < len(buttons); i += 2 {
+		end := min(i+2, len(buttons))
+		rows = append(rows, buttons[i:end])
+	}
+	rows = append(rows, []models.InlineKeyboardButton{{
+		Text: "✗ Cancel", CallbackData: modelCancelCallback,
+	}})
 	return &models.InlineKeyboardMarkup{InlineKeyboard: rows}
+}
+
+func providerName(manager gateway.ModelManager, provider string) string {
+	if namer, ok := manager.(gateway.ProviderDisplayNamer); ok {
+		if name := strings.TrimSpace(namer.ProviderDisplayName(provider)); name != "" {
+			return name
+		}
+	}
+	return providerDisplayName(provider)
 }
 
 func (g *Gateway) providerCallbackToken(provider string) string {
@@ -131,23 +139,24 @@ func (g *Gateway) handleProviderCallback(
 		g.answerModelCallback(ctx, b, query.ID, "That provider selection is no longer valid.", true)
 		return
 	}
-	if err := manager.SetActiveProvider(ctx, selected); err != nil {
-		g.answerModelCallback(ctx, b, query.ID, fmt.Sprintf("Cannot switch: %v", err), true)
+	if len(manager.ModelsForProvider(selected)) == 0 {
+		g.answerModelCallback(ctx, b, query.ID, "That provider has no selectable models.", true)
 		return
 	}
-	g.answerModelCallback(ctx, b, query.ID, "Active provider: "+providerDisplayName(selected), false)
-	g.updateProviderSelector(ctx, b, query, manager)
+	g.answerModelCallback(ctx, b, query.ID, "", false)
+	g.updateModelSelectorForProvider(ctx, b, query, manager, selected)
 }
 
-func (g *Gateway) updateProviderSelector(
+func (g *Gateway) updateModelSelectorForProvider(
 	ctx context.Context,
 	b *bot.Bot,
 	query *models.CallbackQuery,
 	manager gateway.ProviderModelManager,
+	provider string,
 ) {
 	params := &bot.EditMessageTextParams{
-		Text:        providerSelectorText(manager.ActiveProvider()),
-		ReplyMarkup: g.providerSelectorKeyboard(manager),
+		Text:        modelSelectorTextForProvider(provider, 0, len(manager.ModelsForProvider(provider))),
+		ReplyMarkup: g.modelSelectorKeyboardForProvider(manager, provider),
 	}
 	switch {
 	case query.Message.Message != nil:

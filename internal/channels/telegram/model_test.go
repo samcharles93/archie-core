@@ -22,6 +22,16 @@ type modelManagerStub struct {
 	active string
 }
 
+type detailedModelManagerStub struct {
+	*modelManagerStub
+	details map[string]gateway.ModelDetails
+}
+
+func (m *detailedModelManagerStub) ModelDetails(ref string) (gateway.ModelDetails, bool) {
+	details, ok := m.details[ref]
+	return details, ok
+}
+
 func (m *modelManagerStub) Models() []string {
 	return append([]string(nil), m.models...)
 }
@@ -124,7 +134,7 @@ func newTelegramTestBot(t *testing.T) (*bot.Bot, *[]telegramRequest) {
 func TestModelCommandShowsInlineSelector(t *testing.T) {
 	const allowedUserID = int64(42)
 	manager := &modelManagerStub{
-		models: []string{"provider/alpha", "provider/beta"},
+		models: []string{"provider/alpha", "provider/beta", "other/gamma"},
 		active: "provider/beta",
 	}
 	router := gateway.NewRouter(nil, nil, "telegram")
@@ -155,36 +165,24 @@ func TestModelCommandShowsInlineSelector(t *testing.T) {
 	if !found {
 		t.Fatalf("/model did not send an inline keyboard; requests: %#v", *requests)
 	}
-	if got := modelSelectorText("deepseek/deepseek-v4-pro"); got != "Select a model:\nCurrent Provider: DeepSeek\nActive: deepseek-v4-pro" {
-		t.Errorf("model selector text = %q", got)
+	if got := len(markup.InlineKeyboard); got != 2 {
+		t.Fatalf("provider keyboard rows = %d, want provider row and cancel row", got)
 	}
-	if got := len(markup.InlineKeyboard); got != len(manager.models) {
-		t.Fatalf("keyboard rows = %d, want %d", got, len(manager.models))
+	if got := len(markup.InlineKeyboard[0]); got != 2 {
+		t.Fatalf("provider buttons = %d, want 2", got)
 	}
-	for index, row := range markup.InlineKeyboard {
-		if len(row) != 1 {
-			t.Fatalf("keyboard row %d has %d buttons, want 1", index, len(row))
-		}
-		button := row[0]
-		if !strings.HasPrefix(button.CallbackData, modelCallbackPrefix) || button.CallbackData == fmt.Sprintf("model:%d", index) {
-			t.Errorf("button %d callback = %q, want a stable model token", index, button.CallbackData)
-		}
-		_, modelLabel, _ := strings.Cut(manager.models[index], "/")
-		if !strings.Contains(button.Text, modelLabel) {
-			t.Errorf("button %d text = %q, want model label %q", index, button.Text, modelLabel)
-		}
+	if !strings.Contains(markup.InlineKeyboard[0][0].Text, "(2)") {
+		t.Errorf("provider button lacks model count: %q", markup.InlineKeyboard[0][0].Text)
 	}
-	if !strings.HasPrefix(markup.InlineKeyboard[1][0].Text, "✓ ") {
-		t.Errorf("active model button is not marked: %q", markup.InlineKeyboard[1][0].Text)
+	if !strings.HasPrefix(markup.InlineKeyboard[0][0].Text, "✓ ") {
+		t.Errorf("active provider button is not marked: %q", markup.InlineKeyboard[0][0].Text)
 	}
-	for _, row := range markup.InlineKeyboard {
-		if strings.Contains(row[0].Text, "provider/") {
-			t.Errorf("model button must not repeat the provider: %q", row[0].Text)
-		}
+	if got := markup.InlineKeyboard[1][0].CallbackData; got != modelCancelCallback {
+		t.Errorf("provider cancel callback = %q", got)
 	}
 }
 
-func TestProviderCommandFiltersSubsequentModelSelector(t *testing.T) {
+func TestModelCommandDrillsFromProviderIntoFilteredModels(t *testing.T) {
 	const allowedUserID = int64(42)
 	manager := &modelManagerStub{
 		models: []string{
@@ -203,19 +201,19 @@ func TestProviderCommandFiltersSubsequentModelSelector(t *testing.T) {
 		Message: &models.Message{
 			From: &models.User{ID: allowedUserID},
 			Chat: models.Chat{ID: 7, Type: models.ChatTypePrivate},
-			Text: "/provider",
+			Text: "/model",
 		},
 	})
 	var providerMarkup models.InlineKeyboardMarkup
 	if err := json.Unmarshal([]byte((*requests)[0].form["reply_markup"]), &providerMarkup); err != nil {
 		t.Fatal(err)
 	}
-	if len(providerMarkup.InlineKeyboard) != 2 {
-		t.Fatalf("provider rows = %d, want 2", len(providerMarkup.InlineKeyboard))
+	if len(providerMarkup.InlineKeyboard) != 2 || len(providerMarkup.InlineKeyboard[0]) != 2 {
+		t.Fatalf("provider grid = %#v, want two-column row and cancel", providerMarkup.InlineKeyboard)
 	}
 
 	*requests = nil
-	providerCallback := providerMarkup.InlineKeyboard[1][0].CallbackData
+	providerCallback := providerMarkup.InlineKeyboard[0][1].CallbackData
 	g.defaultHandler(router)(context.Background(), b, &models.Update{
 		CallbackQuery: &models.CallbackQuery{
 			ID:   "provider-callback",
@@ -227,18 +225,10 @@ func TestProviderCommandFiltersSubsequentModelSelector(t *testing.T) {
 			},
 		},
 	})
-	if manager.ActiveProvider() != "openai" {
-		t.Fatalf("active provider = %q, want openai", manager.ActiveProvider())
+	if manager.ActiveProvider() != "openrouter" {
+		t.Fatalf("provider selection changed active model prematurely: %q", manager.ActiveProvider())
 	}
 
-	*requests = nil
-	g.defaultHandler(router)(context.Background(), b, &models.Update{
-		Message: &models.Message{
-			From: &models.User{ID: allowedUserID},
-			Chat: models.Chat{ID: 7, Type: models.ChatTypePrivate},
-			Text: "/model",
-		},
-	})
 	var modelMarkup models.InlineKeyboardMarkup
 	for _, request := range *requests {
 		if raw := request.form["reply_markup"]; raw != "" {
@@ -248,11 +238,73 @@ func TestProviderCommandFiltersSubsequentModelSelector(t *testing.T) {
 		}
 	}
 	if len(modelMarkup.InlineKeyboard) != 2 {
-		t.Fatalf("filtered model rows = %d, want 2", len(modelMarkup.InlineKeyboard))
+		t.Fatalf("filtered model rows = %d, want one two-column model row plus navigation", len(modelMarkup.InlineKeyboard))
 	}
-	for _, row := range modelMarkup.InlineKeyboard {
-		if strings.Contains(row[0].Text, "openrouter") {
-			t.Fatalf("OpenRouter model leaked into OpenAI selection: %q", row[0].Text)
+	for _, button := range modelMarkup.InlineKeyboard[0] {
+		if strings.Contains(button.Text, "openrouter") {
+			t.Fatalf("OpenRouter model leaked into OpenAI selection: %q", button.Text)
+		}
+	}
+}
+
+func TestModelSelectorPaginatesEightModelsWithBackAndCancel(t *testing.T) {
+	manager := &modelManagerStub{active: "provider/model-09"}
+	for i := 1; i <= 9; i++ {
+		manager.models = append(manager.models, fmt.Sprintf("provider/model-%02d", i))
+	}
+	g := New("1:test", "", "", []int64{42}, slog.Default())
+
+	first := g.modelSelectorKeyboardPage(manager, "provider", 0)
+	if got := len(first.InlineKeyboard); got != 6 {
+		t.Fatalf("first page rows = %d, want four model rows, pagination, and actions", got)
+	}
+	nav := first.InlineKeyboard[4]
+	if len(nav) != 2 || nav[0].Text != "1/2" || nav[1].Text != "Next ▶" {
+		t.Fatalf("first page navigation = %#v", nav)
+	}
+	actions := first.InlineKeyboard[5]
+	if len(actions) != 2 || actions[0].CallbackData != modelBackCallback ||
+		actions[1].CallbackData != modelCancelCallback {
+		t.Fatalf("actions = %#v", actions)
+	}
+
+	page, ok := g.modelPageForCallback(nav[1].CallbackData)
+	if !ok {
+		t.Fatal("next page callback was not recorded")
+	}
+	second := g.modelSelectorKeyboardPage(manager, page.Provider, page.Page)
+	if got := len(second.InlineKeyboard); got != 3 {
+		t.Fatalf("second page rows = %d, want model, pagination, and actions", got)
+	}
+	if got := second.InlineKeyboard[0][0].Text; got != "✓ model-09" {
+		t.Fatalf("second page model = %q", got)
+	}
+}
+
+func TestModelSelectionConfirmationIncludesCatalogMetadata(t *testing.T) {
+	const ref = "google/gemini-3.6-flash"
+	manager := &detailedModelManagerStub{
+		modelManagerStub: &modelManagerStub{models: []string{ref}, active: ref},
+		details: map[string]gateway.ModelDetails{
+			ref: {
+				Ref: ref, ContextWindow: 1_048_576, MaxOutputTokens: 65_536,
+				Reasoning: true, Tools: true, Structured: true,
+				InputModalities: []string{"text", "image", "audio"},
+			},
+		},
+	}
+
+	got := modelSelectionConfirmation(manager, ref)
+	for _, want := range []string{
+		"Model switched to gemini-3.6-flash",
+		"Provider: Google",
+		"Context: 1048576 tokens",
+		"Max output: 65536 tokens",
+		"Capabilities: reasoning, tools, image, audio, structured output",
+		"active for this daemon process; resets on restart",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("confirmation missing %q:\n%s", want, got)
 		}
 	}
 }
@@ -279,7 +331,7 @@ func TestProviderCallbackHonoursTheProviderRenderedInTheSelector(t *testing.T) {
 	}}, router)
 
 	if got := manager.ActiveProvider(); got != "openai" {
-		t.Errorf("stale selector chose %q, want the originally rendered provider", got)
+		t.Errorf("opening a provider page changed active provider to %q", got)
 	}
 }
 
@@ -321,6 +373,44 @@ func TestModelCallbackSwitchesAndUpdatesSelector(t *testing.T) {
 	}
 	if !answered || !edited {
 		t.Fatalf("callback answered=%t edited=%t, requests: %#v", answered, edited, *requests)
+	}
+}
+
+func TestDirectModelSelectionWithProviderIsAtomicOnFailure(t *testing.T) {
+	const allowedUserID = int64(42)
+	manager := &modelManagerStub{
+		models: []string{"openai/gpt-5.6", "anthropic/claude"},
+		active: "openai/gpt-5.6",
+	}
+	router := gateway.NewRouter(nil, nil, "telegram")
+	router.Models = manager
+	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	b, _ := newTelegramTestBot(t)
+
+	g.handleModelCommand(context.Background(), b, &models.Message{
+		From: &models.User{ID: allowedUserID},
+		Chat: models.Chat{ID: 7, Type: models.ChatTypePrivate},
+		Text: "/model missing --provider anthropic",
+	}, router)
+
+	if manager.active != "openai/gpt-5.6" {
+		t.Fatalf("failed selection changed active model to %q", manager.active)
+	}
+}
+
+func TestModelPageIndicatorCallbackIsAnswered(t *testing.T) {
+	const allowedUserID = int64(42)
+	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	b, requests := newTelegramTestBot(t)
+
+	g.defaultHandler(gateway.NewRouter(nil, nil, "telegram"))(context.Background(), b, &models.Update{
+		CallbackQuery: &models.CallbackQuery{
+			ID: "noop-id", From: models.User{ID: allowedUserID}, Data: modelNoopCallback,
+		},
+	})
+
+	if len(*requests) != 1 || (*requests)[0].method != "answerCallbackQuery" {
+		t.Fatalf("page indicator requests = %#v, want callback acknowledgement", *requests)
 	}
 }
 

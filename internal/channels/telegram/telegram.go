@@ -61,6 +61,7 @@ type Gateway struct {
 	pendingRestart    *restartRequest
 	modelMu           sync.RWMutex
 	modelCallbacks    map[string]string
+	modelPages        map[string]modelPage
 	providerMu        sync.RWMutex
 	providerCallbacks map[string]string
 	updateMu          sync.Mutex
@@ -113,6 +114,7 @@ func New(token, webhookURL, webhookSecret string, allowedUserIDs []int64, log *s
 		AllowedUserIDs:     allowedUserIDs,
 		restartCh:          make(chan restartRequest, 1),
 		modelCallbacks:     make(map[string]string),
+		modelPages:         make(map[string]modelPage),
 		providerCallbacks:  make(map[string]string),
 		updateActions:      make(map[string]updateAction),
 		dangerousActions:   make(map[string]dangerousAction),
@@ -426,6 +428,14 @@ func (g *Gateway) defaultHandler(router *gateway.Router) bot.HandlerFunc {
 				g.handleProviderCallback(ctx, b, update, router)
 			case strings.HasPrefix(update.CallbackQuery.Data, modelCallbackPrefix):
 				g.handleModelCallback(ctx, b, update, router)
+			case strings.HasPrefix(update.CallbackQuery.Data, modelPageCallbackPrefix):
+				g.handleModelPageCallback(ctx, b, update, router)
+			case update.CallbackQuery.Data == modelBackCallback:
+				g.handleModelBackCallback(ctx, b, update, router)
+			case update.CallbackQuery.Data == modelCancelCallback:
+				g.handleModelCancelCallback(ctx, b, update)
+			case update.CallbackQuery.Data == modelNoopCallback:
+				g.handleModelNoopCallback(ctx, b, update)
 			case strings.HasPrefix(update.CallbackQuery.Data, personalityCallbackPrefix):
 				g.handlePersonalityCallback(ctx, b, update, router)
 			case strings.HasPrefix(update.CallbackQuery.Data, updateCallbackPrefix):
@@ -439,15 +449,11 @@ func (g *Gateway) defaultHandler(router *gateway.Router) bot.HandlerFunc {
 			return
 		}
 		if isModelSelectorRequest(msg.Text) {
-			g.sendModelSelector(ctx, b, msg, router)
+			g.sendProviderSelector(ctx, b, msg, router)
 			return
 		}
 		if isModelCommand(msg.Text) {
 			g.handleModelCommand(ctx, b, msg, router)
-			return
-		}
-		if isProviderSelectorRequest(msg.Text) {
-			g.sendProviderSelector(ctx, b, msg, router)
 			return
 		}
 		if isPersonalityRequest(msg.Text) {

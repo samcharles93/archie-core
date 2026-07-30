@@ -6,15 +6,20 @@ import (
 	"slices"
 	"strings"
 	"sync"
+
+	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
 )
 
 // chatModelManager owns the process-local model selected for interactive chat.
 // The configured role-to-model map supplies the available catalog; switching
 // chat models does not rewrite daemon configuration or affect workflow roles.
 type chatModelManager struct {
-	mu     sync.RWMutex
-	models []string
-	active string
+	mu            sync.RWMutex
+	models        []string
+	active        string
+	details       map[string]gateway.ModelDetails
+	providerNames map[string]string
 }
 
 func newChatModelManager(configured map[string]string, catalogs ...[]string) *chatModelManager {
@@ -44,7 +49,42 @@ func newChatModelManager(configured map[string]string, catalogs ...[]string) *ch
 	if active == "" {
 		active = strings.TrimSpace(configured["builder"])
 	}
-	return &chatModelManager{models: models, active: active}
+	return &chatModelManager{
+		models: models, active: active,
+		details:       make(map[string]gateway.ModelDetails),
+		providerNames: make(map[string]string),
+	}
+}
+
+func (m *chatModelManager) ApplyModelCatalog(snapshot modelcatalog.Snapshot) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, provider := range snapshot.Providers {
+		m.providerNames[provider.ID] = provider.Name
+		for _, model := range provider.Models {
+			ref := provider.ID + "/" + model.ID
+			m.details[ref] = gateway.ModelDetails{
+				Ref: ref, Name: model.Name,
+				ContextWindow: model.ContextWindow, MaxOutputTokens: model.MaxOutputTokens,
+				Reasoning: model.Reasoning, Tools: true,
+				Attachment: model.Attachment, Structured: model.Structured,
+				InputModalities: slices.Clone(model.InputModalities),
+			}
+		}
+	}
+}
+
+func (m *chatModelManager) ProviderDisplayName(provider string) string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.providerNames[provider]
+}
+
+func (m *chatModelManager) ModelDetails(ref string) (gateway.ModelDetails, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	details, ok := m.details[ref]
+	return details, ok
 }
 
 func (m *chatModelManager) Models() []string {

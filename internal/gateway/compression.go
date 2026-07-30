@@ -38,7 +38,7 @@ type CompressionConfig struct {
 }
 
 // DefaultCompressionConfig returns a CompressionConfig with sensible
-// defaults matching Hermes: compression at 50% threshold, protecting
+// defaults: compression at 50% threshold, protecting
 // first 3 and last 20 messages. ContextWindow defaults to 128k.
 func DefaultCompressionConfig() CompressionConfig {
 	return CompressionConfig{

@@ -18,7 +18,7 @@ not just identity. `Config.BotUser` is a single global field, so one process
 = one identity today.
 
 The goal stated for archie-core overall is to become a fully extensible
-agentic workhorse -- comparable to and improving on OpenClaw/Hermes. This PRD
+agentic workhorse. This PRD
 scopes the "multi-agent" slice of that: what it takes to go from N processes
 to one daemon that can do what N processes do, plus the surrounding
 capabilities (chat channels, plugins, memory) needed to reach that bar.

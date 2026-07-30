@@ -12,7 +12,19 @@ import (
 	"github.com/samcharles93/archie-core/internal/gateway"
 )
 
-const modelCallbackPrefix = "model:"
+const (
+	modelCallbackPrefix     = "model:"
+	modelPageCallbackPrefix = "modelpage:"
+	modelBackCallback       = "modelback"
+	modelCancelCallback     = "modelcancel"
+	modelNoopCallback       = "modelnoop"
+	modelPageSize           = 8
+)
+
+type modelPage struct {
+	Provider string
+	Page     int
+}
 
 func isModelSelectorRequest(text string) bool {
 	fields := strings.Fields(text)
@@ -140,10 +152,10 @@ func (g *Gateway) handleModelCommand(
 		return
 	}
 
-	// --provider with a model: set provider, then model.
+	// A provider-qualified direct selection is one atomic model mutation.
 	if provider != "" && model != "" {
-		if manager, ok := router.Models.(gateway.ProviderModelManager); ok {
-			_ = manager.SetActiveProvider(ctx, provider)
+		if !strings.HasPrefix(model, provider+"/") {
+			model = provider + "/" + model
 		}
 	}
 
@@ -233,25 +245,92 @@ func modelSelectorText(active string) string {
 		"\nActive: " + modelDisplayName(active, provider)
 }
 
+func modelSelectorTextForProvider(provider string, page, count int) string {
+	start, end := pageBounds(page, count)
+	return fmt.Sprintf("⚙ Model Configuration\n\nProvider: %s (%d–%d of %d)\nSelect a model:",
+		providerDisplayName(provider), start+1, end, count)
+}
+
 func (g *Gateway) modelSelectorKeyboard(manager gateway.ModelManager) *models.InlineKeyboardMarkup {
-	active := manager.ActiveModel()
-	available := selectableModels(manager)
-	activeProvider := ""
+	provider := ""
 	if providerManager, ok := manager.(gateway.ProviderModelManager); ok {
-		activeProvider = providerManager.ActiveProvider()
+		provider = providerManager.ActiveProvider()
 	}
-	rows := make([][]models.InlineKeyboardButton, 0, len(available))
-	for _, model := range available {
-		label := modelDisplayName(model, activeProvider)
+	return g.modelSelectorKeyboardForProvider(manager, provider)
+}
+
+func (g *Gateway) modelSelectorKeyboardForProvider(manager gateway.ModelManager, provider string) *models.InlineKeyboardMarkup {
+	return g.modelSelectorKeyboardPage(manager, provider, 0)
+}
+
+func (g *Gateway) modelSelectorKeyboardPage(manager gateway.ModelManager, provider string, page int) *models.InlineKeyboardMarkup {
+	active := manager.ActiveModel()
+	available := manager.Models()
+	if providerManager, ok := manager.(gateway.ProviderModelManager); ok {
+		available = providerManager.ModelsForProvider(provider)
+	}
+	start, end := pageBounds(page, len(available))
+	buttons := make([]models.InlineKeyboardButton, 0, end-start)
+	for _, model := range available[start:end] {
+		label := modelDisplayName(model, provider)
 		if model == active {
 			label = "✓ " + label
 		}
-		rows = append(rows, []models.InlineKeyboardButton{{
+		buttons = append(buttons, models.InlineKeyboardButton{
 			Text:         label,
 			CallbackData: g.modelCallbackToken(model),
-		}})
+		})
 	}
+	rows := make([][]models.InlineKeyboardButton, 0, (len(buttons)+1)/2+2)
+	for i := 0; i < len(buttons); i += 2 {
+		rows = append(rows, buttons[i:min(i+2, len(buttons))])
+	}
+	pages := max(1, (len(available)+modelPageSize-1)/modelPageSize)
+	if pages > 1 {
+		var nav []models.InlineKeyboardButton
+		if page > 0 {
+			nav = append(nav, models.InlineKeyboardButton{
+				Text: "◀ Prev", CallbackData: g.modelPageCallbackToken(provider, page-1),
+			})
+		}
+		nav = append(nav, models.InlineKeyboardButton{
+			Text: fmt.Sprintf("%d/%d", page+1, pages), CallbackData: modelNoopCallback,
+		})
+		if page+1 < pages {
+			nav = append(nav, models.InlineKeyboardButton{
+				Text: "Next ▶", CallbackData: g.modelPageCallbackToken(provider, page+1),
+			})
+		}
+		rows = append(rows, nav)
+	}
+	rows = append(rows, []models.InlineKeyboardButton{
+		{Text: "◀ Back", CallbackData: modelBackCallback},
+		{Text: "✗ Cancel", CallbackData: modelCancelCallback},
+	})
 	return &models.InlineKeyboardMarkup{InlineKeyboard: rows}
+}
+
+func pageBounds(page, count int) (int, int) {
+	pages := max(1, (count+modelPageSize-1)/modelPageSize)
+	page = max(0, min(page, pages-1))
+	start := page * modelPageSize
+	return start, min(start+modelPageSize, count)
+}
+
+func (g *Gateway) modelPageCallbackToken(provider string, page int) string {
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s:%d", provider, page))
+	token := fmt.Sprintf("%s%x", modelPageCallbackPrefix, sum[:24])
+	g.modelMu.Lock()
+	g.modelPages[token] = modelPage{Provider: provider, Page: page}
+	g.modelMu.Unlock()
+	return token
+}
+
+func (g *Gateway) modelPageForCallback(token string) (modelPage, bool) {
+	g.modelMu.RLock()
+	defer g.modelMu.RUnlock()
+	page, ok := g.modelPages[token]
+	return page, ok
 }
 
 // modelCallbackToken records a stable model identity for an inline button.
@@ -284,13 +363,6 @@ func modelDisplayName(ref, provider string) string {
 		name = name[slash+1:]
 	}
 	return name
-}
-
-func selectableModels(manager gateway.ModelManager) []string {
-	if providerManager, ok := manager.(gateway.ProviderModelManager); ok {
-		return providerManager.ModelsForProvider(providerManager.ActiveProvider())
-	}
-	return manager.Models()
 }
 
 func (g *Gateway) handleModelCallback(
@@ -326,7 +398,160 @@ func (g *Gateway) handleModelCallback(
 	provider, _, _ := strings.Cut(selected, "/")
 	g.answerModelCallback(ctx, b, query.ID,
 		"The model has been changed to: "+modelDisplayName(selected, provider), false)
-	g.updateModelSelector(ctx, b, query, router.Models)
+	g.editModelPicker(ctx, b, query, modelSelectionConfirmation(router.Models, selected), nil)
+}
+
+func modelSelectionConfirmation(manager gateway.ModelManager, ref string) string {
+	provider, _, _ := strings.Cut(ref, "/")
+	var b strings.Builder
+	fmt.Fprintf(&b, "Model switched to %s\nProvider: %s",
+		modelDisplayName(ref, provider), providerDisplayName(provider))
+	detailed, ok := manager.(gateway.DetailedModelManager)
+	if !ok {
+		b.WriteString("\n\n_(active for this daemon process; resets on restart)_")
+		return b.String()
+	}
+	details, ok := detailed.ModelDetails(ref)
+	if !ok {
+		b.WriteString("\n\n_(active for this daemon process; resets on restart)_")
+		return b.String()
+	}
+	if details.ContextWindow > 0 {
+		fmt.Fprintf(&b, "\nContext: %d tokens", details.ContextWindow)
+	}
+	if details.MaxOutputTokens > 0 {
+		fmt.Fprintf(&b, "\nMax output: %d tokens", details.MaxOutputTokens)
+	}
+	var capabilities []string
+	if details.Reasoning {
+		capabilities = append(capabilities, "reasoning")
+	}
+	if details.Tools {
+		capabilities = append(capabilities, "tools")
+	}
+	for _, modality := range details.InputModalities {
+		if modality != "text" {
+			capabilities = append(capabilities, modality)
+		}
+	}
+	if details.Attachment {
+		capabilities = append(capabilities, "attachments")
+	}
+	if details.Structured {
+		capabilities = append(capabilities, "structured output")
+	}
+	if len(capabilities) > 0 {
+		fmt.Fprintf(&b, "\nCapabilities: %s", strings.Join(capabilities, ", "))
+	}
+	b.WriteString("\n\n_(active for this daemon process; resets on restart)_")
+	return b.String()
+}
+
+func (g *Gateway) handleModelPageCallback(
+	ctx context.Context,
+	b *bot.Bot,
+	update *models.Update,
+	router *gateway.Router,
+) {
+	query := update.CallbackQuery
+	if query == nil {
+		return
+	}
+	if !g.isSenderAllowed(query.From.ID) {
+		g.answerModelCallback(ctx, b, query.ID, "You are not authorised to use this bot.", true)
+		return
+	}
+	manager, ok := router.Models.(gateway.ProviderModelManager)
+	if !ok {
+		g.answerModelCallback(ctx, b, query.ID, "Model switching is not configured.", true)
+		return
+	}
+	page, ok := g.modelPageForCallback(query.Data)
+	if !ok {
+		g.answerModelCallback(ctx, b, query.ID, "That model page is no longer valid.", true)
+		return
+	}
+	models := manager.ModelsForProvider(page.Provider)
+	if page.Page < 0 || page.Page*modelPageSize >= len(models) {
+		g.answerModelCallback(ctx, b, query.ID, "That model page is no longer valid.", true)
+		return
+	}
+	g.answerModelCallback(ctx, b, query.ID, "", false)
+	g.editModelPicker(ctx, b, query,
+		modelSelectorTextForProvider(page.Provider, page.Page, len(manager.ModelsForProvider(page.Provider))),
+		g.modelSelectorKeyboardPage(manager, page.Provider, page.Page))
+}
+
+func (g *Gateway) handleModelBackCallback(
+	ctx context.Context,
+	b *bot.Bot,
+	update *models.Update,
+	router *gateway.Router,
+) {
+	query := update.CallbackQuery
+	if query == nil {
+		return
+	}
+	if !g.isSenderAllowed(query.From.ID) {
+		g.answerModelCallback(ctx, b, query.ID, "You are not authorised to use this bot.", true)
+		return
+	}
+	manager, ok := router.Models.(gateway.ProviderModelManager)
+	if !ok {
+		g.answerModelCallback(ctx, b, query.ID, "Model switching is not configured.", true)
+		return
+	}
+	g.answerModelCallback(ctx, b, query.ID, "", false)
+	g.editModelPicker(ctx, b, query,
+		providerSelectorText(manager.ActiveModel(), manager.ActiveProvider()),
+		g.providerSelectorKeyboard(manager))
+}
+
+func (g *Gateway) handleModelCancelCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
+	query := update.CallbackQuery
+	if query == nil {
+		return
+	}
+	if !g.isSenderAllowed(query.From.ID) {
+		g.answerModelCallback(ctx, b, query.ID, "You are not authorised to use this bot.", true)
+		return
+	}
+	g.answerModelCallback(ctx, b, query.ID, "", false)
+	g.editModelPicker(ctx, b, query, "Model selection cancelled.", nil)
+}
+
+func (g *Gateway) handleModelNoopCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
+	query := update.CallbackQuery
+	if query == nil {
+		return
+	}
+	if !g.isSenderAllowed(query.From.ID) {
+		g.answerModelCallback(ctx, b, query.ID, "You are not authorised to use this bot.", true)
+		return
+	}
+	g.answerModelCallback(ctx, b, query.ID, "", false)
+}
+
+func (g *Gateway) editModelPicker(
+	ctx context.Context,
+	b *bot.Bot,
+	query *models.CallbackQuery,
+	text string,
+	markup *models.InlineKeyboardMarkup,
+) {
+	params := &bot.EditMessageTextParams{Text: text, ReplyMarkup: markup}
+	switch {
+	case query.Message.Message != nil:
+		params.ChatID = query.Message.Message.Chat.ID
+		params.MessageID = query.Message.Message.ID
+	case query.InlineMessageID != "":
+		params.InlineMessageID = query.InlineMessageID
+	default:
+		return
+	}
+	if _, err := b.EditMessageText(ctx, params); err != nil {
+		g.log.Warn("update model picker failed", "error", err)
+	}
 }
 
 func (g *Gateway) answerModelCallback(
@@ -342,29 +567,5 @@ func (g *Gateway) answerModelCallback(
 		ShowAlert:       alert,
 	}); err != nil {
 		g.log.Warn("answer model callback failed", "error", err)
-	}
-}
-
-func (g *Gateway) updateModelSelector(
-	ctx context.Context,
-	b *bot.Bot,
-	query *models.CallbackQuery,
-	manager gateway.ModelManager,
-) {
-	params := &bot.EditMessageTextParams{
-		Text:        modelSelectorText(manager.ActiveModel()),
-		ReplyMarkup: g.modelSelectorKeyboard(manager),
-	}
-	switch {
-	case query.Message.Message != nil:
-		params.ChatID = query.Message.Message.Chat.ID
-		params.MessageID = query.Message.Message.ID
-	case query.InlineMessageID != "":
-		params.InlineMessageID = query.InlineMessageID
-	default:
-		return
-	}
-	if _, err := b.EditMessageText(ctx, params); err != nil {
-		g.log.Warn("update model selector failed", "error", err)
 	}
 }

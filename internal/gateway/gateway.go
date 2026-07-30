@@ -90,6 +90,31 @@ type ProviderModelManager interface {
 	SetActiveProvider(ctx context.Context, provider string) error
 }
 
+// ModelDetails is the catalog metadata rendered after an interactive model
+// selection. Limits are zero when the upstream catalog does not publish them.
+type ModelDetails struct {
+	Ref             string
+	Name            string
+	ContextWindow   int
+	MaxOutputTokens int
+	Reasoning       bool
+	Tools           bool
+	Attachment      bool
+	Structured      bool
+	InputModalities []string
+}
+
+// DetailedModelManager is the optional catalog-aware extension used by rich
+// model selectors. Runtime routing remains on ModelManager.
+type DetailedModelManager interface {
+	ModelManager
+	ModelDetails(ref string) (ModelDetails, bool)
+}
+
+type ProviderDisplayNamer interface {
+	ProviderDisplayName(provider string) string
+}
+
 // SpawnRequest is a chat-originated task creation request. Repo and
 // Workflow are optional  --  empty means "the daemon's configured
 // default for this identity".
