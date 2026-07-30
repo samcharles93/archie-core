@@ -1,5 +1,10 @@
 # archied changelog
 
+## [1.3.0] - 2026-07-31
+
+- fix(memory): replace framework-specific names with generic equivalents
+- feat: unify provider and model selection
+
 ## [1.2.0] - 2026-07-31
 
 - feat: add MCP client capabilities to archied and archie-agent
