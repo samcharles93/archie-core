@@ -930,7 +930,7 @@ func (m *Manager) GetConfigSchemas() map[string]map[string]any {
 // persists them via SaveConfigProvider. It returns ErrProviderNotFound
 // when the named provider is not active, and an error when the provider
 // does not implement SaveConfigProvider or when validation fails.
-func (m *Manager) SaveConfig(providerName string, values map[string]any, hermesHome string) error {
+func (m *Manager) SaveConfig(providerName string, values map[string]any, dataHome string) error {
 	m.mu.RLock()
 	p := m.providerByNameLocked(providerName)
 	m.mu.RUnlock()
@@ -944,7 +944,7 @@ func (m *Manager) SaveConfig(providerName string, values map[string]any, hermesH
 		return fmt.Errorf("memory: provider %q does not implement SaveConfigProvider", providerName)
 	}
 
-	return scp.SaveConfig(values, hermesHome)
+	return scp.SaveConfig(values, dataHome)
 }
 
 // ── Backup paths ───────────────────────────────────────────────────────

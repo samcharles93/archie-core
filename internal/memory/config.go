@@ -23,8 +23,8 @@ type ConfigSchemaProvider interface {
 type SaveConfigProvider interface {
 	// SaveConfig validates and persists the given configuration values.
 	// values is the complete set of provider-specific config key/value
-	// pairs. hermesHome is the root of the HERMES_HOME directory tree;
-	// the provider should write its config to a provider-specific location
-	// under this path.
-	SaveConfig(values map[string]any, hermesHome string) error
+	// pairs. dataHome is the root of the data directory tree; the provider
+	// should write its config to a provider-specific location under this
+	// path.
+	SaveConfig(values map[string]any, dataHome string) error
 }

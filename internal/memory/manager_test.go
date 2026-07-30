@@ -52,7 +52,7 @@ type mockProvider struct {
 	lastToolName           string
 	lastToolArgs           map[string]any
 	lastSaveValues         map[string]any
-	lastSaveHermesHome     string
+	lastSaveDataHome       string
 	lastConfigSchema       map[string]any
 	lastBackupPaths        []string
 
@@ -234,11 +234,11 @@ func (m *mockProvider) GetConfigSchema() map[string]any {
 	return schema
 }
 
-func (m *mockProvider) SaveConfig(values map[string]any, hermesHome string) error {
+func (m *mockProvider) SaveConfig(values map[string]any, dataHome string) error {
 	m.mu.Lock()
 	m.saveConfigCalls++
 	m.lastSaveValues = values
-	m.lastSaveHermesHome = hermesHome
+	m.lastSaveDataHome = dataHome
 	m.mu.Unlock()
 	return nil
 }
@@ -957,7 +957,7 @@ func TestManager_SaveConfig(t *testing.T) {
 	}
 
 	values := map[string]any{"key": "value"}
-	if err := mgr.SaveConfig("builtin", values, "/tmp/hermes"); err != nil {
+	if err := mgr.SaveConfig("builtin", values, "/tmp/archie-test"); err != nil {
 		t.Fatalf("SaveConfig() returned error: %v", err)
 	}
 
@@ -975,7 +975,7 @@ func TestManager_SaveConfig_UnknownProvider(t *testing.T) {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
 
-	err = mgr.SaveConfig("nonexistent", map[string]any{}, "/tmp/hermes")
+	err = mgr.SaveConfig("nonexistent", map[string]any{}, "/tmp/archie-test")
 	if err == nil {
 		t.Fatal("expected error for unknown provider, got nil")
 	}
@@ -988,7 +988,7 @@ func TestManager_SaveConfig_ProviderLacksSaveConfig(t *testing.T) {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
 
-	err = mgr.SaveConfig("minimal", map[string]any{}, "/tmp/hermes")
+	err = mgr.SaveConfig("minimal", map[string]any{}, "/tmp/archie-test")
 	if err == nil {
 		t.Fatal("expected error when provider lacks SaveConfigProvider, got nil")
 	}
