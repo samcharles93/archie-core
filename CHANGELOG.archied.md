@@ -1,5 +1,46 @@
 # archied changelog
 
+## [1.2.0] - 2026-07-31
+
+- feat: add MCP client capabilities to archied and archie-agent
+- fix: handleSummary ignores errors from WorkflowStats/StageStats/TokensByDay
+- feat: establish Archie identity and use stable callback tokens
+- refactor(telegram): keep one model selector command
+- fix: handleSSE silently swallows EventsSince backlog fetch errors
+- fix: Transition() ignores `from` status guard, allowing lost updates
+- fix: skillscript.Run ignores context, cannot be canceled/timed out
+- feat(telegram): report installed component versions
+- feat(telegram): add approved component updates
+- fix: LoadDir: no timeout around Yaegi Eval can hang daemon startup
+- feat(chat): real system prompt for Archie — identity, tools, env
+- feat(indexing): port tau's codesearch workspace index
+- fix(indexing): surface index config properly and stop silent degradation
+- refactor(worktree): replace git shell-out with go-git v6
+- fix(worktreerpc): bound handler contexts and drop the git binary from tests
+- refactor(nats): rebuild as infrastructure/eventbus/nats with real boundaries
+- refactor: route tasks on a typed kind, not forge labels
+- fix(natsrpc): make RegisterAll wait for the server to see subscriptions
+- refactor(config): move loading into infrastructure/configuration
+- fix(telegram): publish all executable session commands in menu and help
+- fix(telegram): publish the restored gateway commands
+- refactor: add internal/eventbus as the broker-neutral messaging contract
+- fix(chat): operator name from config, session wiring, prompt rules
+- feat(tools): lift tau's file and shell tools into the tool registry
+- feat: make /stop cancel the running chat turn
+- fix: kill the whole process group when a shell command is cancelled
+- feat: refuse unrecoverable shell commands
+- feat: make /stop reach running agent tasks
+- fix(chat): temper prompt brevity rules with warmth
+- fix: use errors.Is/As for context errors and cleanup
+- fix(grep): distinguish ripgrep exit 1 from a failed search
+- fix(archied): disable the forge on a missing credential, not the daemon
+- fix: restore /model parsing and close the 6d4e0be autofix audit
+- feat: embed config.example.toml and add comment-preserving TOML writer
+- fix(docker): install unzip and Node 24 so MCP servers can start
+- fix(docker): slim both images and repair unreachable Go tooling
+- fix(container): write the task boot brief under .git
+- fix(telegram): drop pending updates before long polling
+
 ## [1.1.0] - 2026-07-27
 
 - feat: add the Telegram gateway with persistent sessions, topic-thread support, streamed rich replies, typing indicators, and Markdown rendering
