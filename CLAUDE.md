@@ -65,19 +65,7 @@ agent` still work by name without activating the profile.
 
 **Config lives at `~/.config/archie/config.toml`**, outside the repo. Nothing
 in the repo working tree is load-bearing at runtime. The reference template is
-`deployments/docker-nats-stack.toml`. The docker overlay file that previously
-existed at the repo root (`config.docker.toml`) is gone — if an agent
-recreates it, `docker-compose.yml` no longer mounts it, so it won't break
-anything, but it doesn't belong there.
-
-**The `archied` binary on carina** is extracted from the CI-built image, not
-compiled on the host:
-
-```bash
-cid=$(docker create git.catlow.cloud/sam/archied:latest)
-docker cp "$cid":/usr/local/bin/archied ~/.local/bin/archied
-docker rm -f "$cid"
-```
+`deployments/docker-nats-stack.toml`.
 
 ## Release process
 
@@ -168,13 +156,6 @@ boundaries. Summary of what's evolved since that doc was last fully accurate:
   edit, find, grep, shell, test) cover what desktop-commander did. Adding
   an `[[tools.mcp_servers]]` entry to the config carries real blast radius:
   a failed provider exits the daemon, taking Telegram down with it.
-- **`.dockerignore`** exists — the build context no longer ships `.git`,
-  `docs/`, `bin/` or host-built binaries. All `go:embed` directives have
-  been verified against it; check before adding new ones.
-- **`GOTMPDIR`** is only needed on carina, where `/tmp` is a 32G tmpfs that
-  fills during `go test`. This host (helix) has the same layout but `task
-  check` runs fine without the override.
-
 **Task lifecycle** (from ARCHITECTURE.md, still current):
 `queued → running(workflow:stage) → pr_open → merged|rejected`, with
 `waiting_human` and `parked` side states. Crash recovery re-queues anything left
