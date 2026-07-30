@@ -55,7 +55,11 @@ network = "archie-core_default"
 image = "git.example.com/you/archie-agent:latest"
 max_concurrency = 4
 max_uptime = "60m"
-pull_policy = "if-not-present"
+# "always" so a freshly pushed agent image is used on the next task.
+# Watchtower cannot update this image -- it only restarts long-running
+# containers, and agent containers are spawned per task -- so with
+# "if-not-present" the daemon reuses a stale local copy indefinitely.
+pull_policy = "always"
 
 [web]
 # 0.0.0.0 so the dashboard is reachable through the published port.

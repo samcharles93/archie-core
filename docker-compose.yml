@@ -51,16 +51,26 @@ services:
 
   # ── agent image (built once, spawned per task by the daemon) ───────
   # Not a long-running service: the daemon starts agent containers itself
-  # via the Docker socket. This stanza exists so `docker compose build`
-  # produces the image locally.
+  # via the Docker socket. This stanza exists only so the image can be
+  # built locally.
+  #
+  # The build profile keeps `up -d` from starting it. Without it compose
+  # creates a container that exits 0 immediately and still reports
+  # "Started", which reads like a crash loop. Naming the service explicitly
+  # still works without activating the profile:
+  #
+  #   docker compose build agent     (also: task docker-build)
+  #   docker compose pull agent      -- plain `pull` skips profiled services
+  #
+  # Routine freshness is handled by the daemon, which pulls this image per
+  # task: see containers.pull_policy in the config. Watchtower cannot do it
+  # -- it only restarts long-running containers, and this is not one.
   agent:
+    profiles: ["build"]
     build:
       context: .
       dockerfile: Dockerfile
     image: git.catlow.cloud/sam/archie-agent:latest
-    command: ["true"]
-    entrypoint: [""]
-    restart: "no"
 
   # ── deploy watcher ──────────────────────────────────────────────────
   # Polls the registry for new archied/archie-agent images (pushed by
