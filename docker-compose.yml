@@ -1,0 +1,81 @@
+# archie-core stack: daemon, NATS, and agent containers.
+#
+# Start:  docker compose up -d
+# Stop:   docker compose down
+# Logs:   docker compose logs -f archied
+
+services:
+  # ── NATS JetStream ────────────────────────────────────────────────
+  nats:
+    image: nats:2.14-alpine3.22
+    command: -js -m 8222
+    ports:
+      - "4222:4222"   # client
+      - "8222:8222"   # monitoring (http://localhost:8222)
+    volumes:
+      - nats_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── archie daemon ──────────────────────────────────────────────────
+  archied:
+    image: git.catlow.cloud/sam/archied:latest
+    # Single config, mounted from outside the repo. Nothing in the working
+    # tree is required at runtime: a bind mount whose source is missing is
+    # created as a directory, and the loader rejects a directory, so a
+    # repo-root config file would take the daemon down on a fresh clone.
+    # See deployments/docker-nats-stack.toml for the template.
+    command: -config /etc/archie/config.toml
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8484:8484"   # web dashboard
+    environment:
+      - ARCHIE_GITEA_TOKEN
+      - ARCHIE_GITEA_TOKEN_ARCHIE
+      - HEYARCHIE_TELEGRAM_BOT_TOKEN
+      - DEEPSEEK_API_KEY
+    volumes:
+      - ${HOME}/.config/archie/config.toml:/etc/archie/config.toml:ro
+      - /var/lib/archie/work:/var/lib/archie/work
+      - /var/lib/archie/db:/var/lib/archie
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── agent image (built once, spawned per task by the daemon) ───────
+  # Not a long-running service: the daemon starts agent containers itself
+  # via the Docker socket. This stanza exists so `docker compose build`
+  # produces the image locally.
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: git.catlow.cloud/sam/archie-agent:latest
+    command: ["true"]
+    entrypoint: [""]
+    restart: "no"
+
+  # ── deploy watcher ──────────────────────────────────────────────────
+  # Polls the registry for new archied/archie-agent images (pushed by
+  # .gitea/workflows/deploy.yml on merge to main) and restarts the
+  # containers that changed. Registry auth comes from the host's
+  # existing `docker login` config, mounted read-only.
+  watchtower:
+    image: nickfedor/watchtower
+    environment:
+      - DOCKER_CONFIG=/
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${HOME}/.docker/config.json:/config.json:ro
+    command: --interval 60 --cleanup archie-core-archied-1
+    restart: unless-stopped
+
+volumes:
+  nats_data:

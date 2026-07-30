@@ -1,0 +1,104 @@
+# Docker Compose + NATS deployment.
+#
+# Copy to ~/.config/archie/config.toml -- docker-compose.yml mounts that path
+# read-only at /etc/archie/config.toml. This is a complete config, not an
+# overlay: the stack passes a single -config flag, so nothing in the repo
+# working tree needs to exist for the daemon to boot.
+#
+#   mkdir -p ~/.config/archie
+#   cp deployments/docker-nats-stack.toml ~/.config/archie/config.toml
+#   docker compose up -d
+#
+# Paths below are container paths. docker-compose.yml maps them to host
+# volumes (/var/lib/archie/work and /var/lib/archie/db).
+
+poll_interval = "60s"
+bot_user = "archie"
+diff_cap_lines = 0
+work_dir = "/var/lib/archie/work"
+db_path = "/var/lib/archie/archie.db"
+
+[forge]
+type = "gitea"
+host = "https://git.example.com"
+
+[forge.token]
+engine = "env"
+key = "ARCHIE_GITEA_TOKEN"
+
+[dispatch]
+trigger = "assignee"
+ack_reaction = "eyes"
+
+[dispatch.labels]
+queued = "agent:queued"
+working = "agent:working"
+waiting = "agent:waiting"
+pr = "agent:pr"
+parked = "agent:parked"
+
+# Stages run in sandboxed archie-agent containers over NATS. archied only
+# orchestrates: the agent image carries the toolchain and makes the model
+# calls, so gate commands resolve there, not in the daemon image. Setting
+# containers.enabled selects nats mode on its own, but pinning it here keeps
+# the intent explicit.
+[agent]
+mode = "nats"
+
+[nats]
+# "nats" is the compose service name, resolved on the stack's own network.
+url = "nats://nats:4222"
+
+[containers]
+enabled = true
+network = "archie-core_default"
+image = "git.example.com/you/archie-agent:latest"
+max_concurrency = 4
+max_uptime = "60m"
+pull_policy = "if-not-present"
+
+[web]
+# 0.0.0.0 so the dashboard is reachable through the published port.
+listen = "0.0.0.0:8484"
+
+[models]
+triage = "deepseek/deepseek-v4-pro"
+planner = "deepseek/deepseek-v4-pro"
+builder = "deepseek/deepseek-v4-pro"
+
+[providers.deepseek]
+class = "deepseek"
+api_key_env = "DEEPSEEK_API_KEY"
+
+# A local model server is reached from the agent container, not the daemon,
+# so localhost would be the container itself -- use host.docker.internal and
+# give the agent containers an extra_hosts entry.
+# [providers.local]
+# class = "openai"
+# base_url = "http://host.docker.internal:8081/v1"
+# api_key_env = "LOCAL_API_KEY"
+
+[budgets]
+max_steps = 90
+max_tokens = 100000000
+wall_clock = "60m"
+gate_max_failures = 5
+
+[[repos]]
+owner = "you"
+name = "your-repo"
+base = "main"
+ecosystem = "go"
+gate = [
+  ["go", "vet", "./..."],
+  ["go", "build", "./..."],
+  ["go", "test", "./...", "-count=1"],
+]
+
+# Every env var named here must appear BOTH in the host .env and in
+# docker-compose.yml's `environment:` passthrough list -- a missing
+# passthrough silently yields an empty value.
+[chat.telegram]
+token_env = "TELEGRAM_BOT_TOKEN"
+# Empty list denies everyone.
+allowed_user_ids = []
