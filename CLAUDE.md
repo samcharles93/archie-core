@@ -148,8 +148,6 @@ boundaries. Summary of what's evolved since that doc was last fully accurate:
 
 ### Per-package traps (things an agent will break if it doesn't check first)
 
-- **`internal/sensors/` does not exist.** It was an agent's mistake, fully
-  removed. There is no sensor monitoring in this app. Don't recreate it.
 - **`internal/channels/telegram/`** — the long-polling branch calls
   `dropPendingUpdates(ctx, b)` before `go b.Start(ctx)`. This clears
   Telegram's 24h undelivered-update queue so a reboot doesn't answer
