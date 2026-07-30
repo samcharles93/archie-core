@@ -1,9 +1,9 @@
 /archied
+/archie-agent
 /bin/
 .task/
 *.db
 .references/
-.claude/
 .env
 task.json
 
@@ -23,3 +23,5 @@ node_modules/
 # Scratch
 /tmp/
 .crew/
+.claude/
+.codex/
