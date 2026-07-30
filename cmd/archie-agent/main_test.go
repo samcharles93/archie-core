@@ -10,6 +10,17 @@ import (
 	"github.com/samcharles93/archie-core/internal/container"
 )
 
+// gitDir returns a temp mount dir with the .git directory the daemon writes
+// the boot brief into.
+func gitDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 func TestBootTaskID(t *testing.T) {
 	log := slog.New(slog.DiscardHandler)
 
@@ -21,12 +32,12 @@ func TestBootTaskID(t *testing.T) {
 	})
 
 	t.Run("valid task.json  --  dedicated per-task mode", func(t *testing.T) {
-		dir := t.TempDir()
+		dir := gitDir(t)
 		data, err := json.Marshal(container.TaskPayload{ID: 42, Owner: "acme", Repo: "widget"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, "task.json"), data, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, ".git", "task.json"), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
 		id, ok := bootTaskID(dir, log)
@@ -36,8 +47,8 @@ func TestBootTaskID(t *testing.T) {
 	})
 
 	t.Run("malformed task.json falls back to shared pool mode", func(t *testing.T) {
-		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, "task.json"), []byte("not json"), 0o644); err != nil {
+		dir := gitDir(t)
+		if err := os.WriteFile(filepath.Join(dir, ".git", "task.json"), []byte("not json"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		id, ok := bootTaskID(dir, log)
@@ -47,9 +58,9 @@ func TestBootTaskID(t *testing.T) {
 	})
 
 	t.Run("zero ID falls back to shared pool mode", func(t *testing.T) {
-		dir := t.TempDir()
+		dir := gitDir(t)
 		data, _ := json.Marshal(container.TaskPayload{Owner: "acme", Repo: "widget"})
-		if err := os.WriteFile(filepath.Join(dir, "task.json"), data, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, ".git", "task.json"), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
 		id, ok := bootTaskID(dir, log)

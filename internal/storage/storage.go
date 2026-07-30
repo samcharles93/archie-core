@@ -5,9 +5,10 @@
 // /data/ volume layout (implemented):
 //
 //	/data/
-//	  task.json           --  at /data/worktree/task.json (WriteTaskJSON writes
-//	                        to the worktree root, which is bind-mounted)
 //	  worktree/           --  bind mount of host worktree
+//	    .git/task.json    --  boot-time brief (WriteTaskJSON). Under .git so
+//	                        the agent's own commit cannot sweep it onto the
+//	                        task branch: go-git's Add ignores .gitignore.
 //	  repo/               --  per-repo persistent volume (optional, on request)
 //	  cache/
 //	    go/               --  GOMODCACHE (shared across all tasks)

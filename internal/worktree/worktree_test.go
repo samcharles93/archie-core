@@ -12,6 +12,8 @@ import (
 	gitconfig "github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
+
+	"github.com/samcharles93/archie-core/internal/container"
 )
 
 const testBase = "main"
@@ -475,5 +477,48 @@ func TestSentinelIsNeverCommitted(t *testing.T) {
 	// It must still exist on disk, or Prepare stops being idempotent.
 	if _, err := os.Stat(filepath.Join(dir, preparedSentinel)); err != nil {
 		t.Errorf("sentinel missing after commit: %v", err)
+	}
+}
+
+// The daemon writes the container's boot brief into the task worktree before
+// the container starts. CommitAll stages with go-git's All option, which does
+// not honour .gitignore or .git/info/exclude, so a brief written to the
+// worktree root is swept into the agent's commit and pushed onto the task
+// branch -- the same failure the prepared sentinel hit. It has to live
+// somewhere that can never be tracked.
+func TestTaskBriefIsNeverCommitted(t *testing.T) {
+	ctx := context.Background()
+	host := newLocalRemote(t, "acme", "todo")
+	m := newManager(t, host)
+
+	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 22, "feat: brief", "", "feature")
+	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	if err := container.WriteTaskJSON(dir, container.TaskPayload{
+		ID: 22, Owner: "acme", Repo: "todo", Number: 22, Title: "feat: brief",
+	}); err != nil {
+		t.Fatalf("WriteTaskJSON() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "real.txt"), []byte("x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.CommitAll(ctx, dir, "feat: brief"); err != nil {
+		t.Fatalf("CommitAll() error = %v", err)
+	}
+
+	files, err := m.ChangedFiles(ctx, dir, testBase)
+	if err != nil {
+		t.Fatalf("ChangedFiles() error = %v", err)
+	}
+	for _, f := range files {
+		if strings.Contains(f, "task.json") {
+			t.Errorf("the task brief was committed: ChangedFiles() = %v", files)
+		}
+	}
+
+	// The agent still has to be able to read it off its mount.
+	if _, err := os.Stat(filepath.Join(dir, ".git", "task.json")); err != nil {
+		t.Errorf("brief missing after commit: %v", err)
 	}
 }

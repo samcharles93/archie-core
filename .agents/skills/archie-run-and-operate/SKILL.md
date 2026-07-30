@@ -156,7 +156,7 @@ Actual task workers are spawned by `archied` through `/var/run/docker.sock`.
 | Tasks, events, chat sessions/messages | NellDB append log at `db_path`; default `~/.local/share/archie/archie.db`. |
 | Default task worktree | `<work_dir>/<owner>-<repo>/issue-<number>`; default root `~/.local/share/archie/work`. |
 | Identity worktree | `<work_dir>/identity-<identity>/<owner>-<repo>/issue-<number>`. |
-| Container worktree | Host worktree bind-mounted read/write at `/data/worktree`; `task.json` written at root. |
+| Container worktree | Host worktree bind-mounted read/write at `/data/worktree`; `task.json` written under `.git/` so the agent's commit cannot sweep it onto the task branch. |
 | Built-in memory | `<work_dir>/memory/MEMORY.md` and `<work_dir>/memory/USER.md`. |
 | Telegram update state | `<work_dir>/telegram-update-deferrals.json` plus hashed `release-announcements-*.json`. |
 | Codesearch candidates | Defaults derive as `<work_dir>/indexes` and `<work_dir>/workspace-indexes.db`; no `indexing.Manager` construction found in daemon composition root. |
@@ -177,7 +177,7 @@ for `archie.task.>` and `archie.agent.>`.
 |---|---|
 | Discovery | `archie.task.bug`, `.feature`, `.bootstrap`, or `.default`; daemon durable consumer `archie-daemon`, 5-min ack wait, max 3 deliveries. |
 | Legacy stages | `archie.agent.<id>.request`; worker durable consumer defaults to `archie-agent`, 30-min ack wait, max 3 deliveries; response address in `X-Archie-Reply`. |
-| Container task | Core NATS request/reply on `archie.taskrun.<id>`. Task container reads `/data/worktree/task.json` and creates dedicated subscription; shared worker uses queue group `archie-taskrun-workers`. |
+| Container task | Core NATS request/reply on `archie.taskrun.<id>`. Task container reads `/data/worktree/.git/task.json` and creates dedicated subscription; shared worker uses queue group `archie-taskrun-workers`. |
 | Privileged RPC | Store, forge, and worktree operations return to `archied` over core NATS subjects in `internal/storerpc`, `internal/forgerpc`, and `internal/worktreerpc`. |
 
 Set `containers.network` explicitly. `config.docker.toml` uses

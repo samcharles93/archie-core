@@ -26,8 +26,8 @@ type Container struct {
 	ID string
 }
 
-// TaskPayload is the boot-time brief written to /data/task.json before
-// the container starts, per PRD section 3.
+// TaskPayload is the boot-time brief written to /data/worktree/.git/task.json
+// before the container starts, per PRD section 3.
 type TaskPayload struct {
 	ID       int64    `json:"id"`
 	Owner    string   `json:"owner"`
@@ -41,9 +41,15 @@ type TaskPayload struct {
 	Plan     string   `json:"plan,omitempty"`
 }
 
-// WriteTaskJSON writes the task payload to <workspace>/task.json.
-// The workspace directory must already exist; WriteTaskJSON will not
-// create directories.
+// WriteTaskJSON writes the task payload to <workspace>/.git/task.json.
+// The workspace directory must already exist.
+//
+// It goes under .git deliberately. The workspace is the task worktree the
+// agent commits from, and worktree.CommitAll stages with go-git's All
+// option, which does not honour .gitignore or .git/info/exclude -- a brief
+// at the worktree root is swept into the agent's commit and pushed onto the
+// task branch. Nothing under .git can ever be tracked, which is the same
+// reasoning that moved the prepared sentinel there.
 func WriteTaskJSON(workspace string, payload TaskPayload) error {
 	if workspace == "" {
 		return fmt.Errorf("task.json: empty workspace path")
@@ -57,7 +63,11 @@ func WriteTaskJSON(workspace string, payload TaskPayload) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(workspace, "task.json"), data, 0o644)
+	gitDir := filepath.Join(workspace, ".git")
+	if err := os.MkdirAll(gitDir, 0o700); err != nil {
+		return fmt.Errorf("task.json: %w", err)
+	}
+	return os.WriteFile(filepath.Join(gitDir, "task.json"), data, 0o644)
 }
 
 // Pool manages a set of Docker containers running archie-agent.

@@ -118,7 +118,7 @@ func run() int {
 
 // subscribeTaskRuns prefers a dedicated per-task subscription over the
 // shared queue group whenever this container was spawned for a specific
-// task (task.json present at the worktree mount).
+// task (.git/task.json present at the worktree mount).
 func subscribeTaskRuns(ctx context.Context, nc *nats.Conn, log *slog.Logger) (*nats.Subscription, error) {
 	if taskID, ok := bootTaskID(storage.WorktreeMountDir, log); ok {
 		log.Info("taskrun: dedicated per-task subscription", "task", taskID)
@@ -126,7 +126,7 @@ func subscribeTaskRuns(ctx context.Context, nc *nats.Conn, log *slog.Logger) (*n
 			handleTaskRun(ctx, msg, nc, log)
 		})
 	}
-	log.Info("taskrun: shared queue-group subscription (no task.json found)")
+	log.Info("taskrun: shared queue-group subscription (no .git/task.json found)")
 	return nc.QueueSubscribe(taskRunSubjectWildcard, taskRunQueueGroup, func(msg *nats.Msg) {
 		handleTaskRun(ctx, msg, nc, log)
 	})
@@ -134,10 +134,12 @@ func subscribeTaskRuns(ctx context.Context, nc *nats.Conn, log *slog.Logger) (*n
 
 // bootTaskID reads the boot-time task.json brief the daemon writes into
 // the worktree before container acquire (container.WriteTaskJSON) and
-// returns its ID. Returns (0, false) when the file is absent, unparseable,
-// or has no ID  --  any of which mean "shared pool mode, no dedicated task."
+// returns its ID. It lives under .git so the agent's own commit can't sweep
+// it onto the task branch. Returns (0, false) when the file is absent,
+// unparseable, or has no ID  --  any of which mean "shared pool mode, no
+// dedicated task."
 func bootTaskID(mountDir string, log *slog.Logger) (int64, bool) {
-	data, err := os.ReadFile(filepath.Join(mountDir, "task.json"))
+	data, err := os.ReadFile(filepath.Join(mountDir, ".git", "task.json"))
 	if err != nil {
 		return 0, false
 	}

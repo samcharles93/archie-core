@@ -59,7 +59,7 @@ func TestWriteTaskJSONProducesValidFile(t *testing.T) {
 	if err := WriteTaskJSON(dir, payload); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "task.json"))
+	data, err := os.ReadFile(filepath.Join(dir, ".git", "task.json"))
 	if err != nil {
 		t.Fatal("task.json was not written:", err)
 	}
@@ -69,6 +69,23 @@ func TestWriteTaskJSONProducesValidFile(t *testing.T) {
 	}
 	if decoded.ID != 42 || decoded.Workflow != "tdd" {
 		t.Errorf("decoded payload = %+v", decoded)
+	}
+}
+
+// The brief goes under .git because the worktree it is written into is the
+// one the agent commits from, and go-git's Add ignores .gitignore and
+// .git/info/exclude. Anything left in the working tree gets pushed onto the
+// task branch; nothing under .git can ever be staged.
+func TestWriteTaskJSONLeavesWorkingTreeClean(t *testing.T) {
+	dir := t.TempDir()
+	if err := WriteTaskJSON(dir, TaskPayload{ID: 7, Owner: "acme", Repo: "todo"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "task.json")); !os.IsNotExist(err) {
+		t.Errorf("task.json written to the working tree root; err = %v, want IsNotExist", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".git", "task.json")); err != nil {
+		t.Errorf("task.json not written under .git: %v", err)
 	}
 }
 
@@ -157,7 +174,7 @@ func TestTaskPayloadRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(dir, "task.json"))
+	data, err := os.ReadFile(filepath.Join(dir, ".git", "task.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +209,7 @@ func TestWriteTaskJSONOverwrite(t *testing.T) {
 	_ = WriteTaskJSON(dir, p1)
 	_ = WriteTaskJSON(dir, p2) // overwrite
 
-	data, _ := os.ReadFile(filepath.Join(dir, "task.json"))
+	data, _ := os.ReadFile(filepath.Join(dir, ".git", "task.json"))
 	var decoded TaskPayload
 	_ = json.Unmarshal(data, &decoded)
 
@@ -209,7 +226,7 @@ func TestWriteTaskJSONMinimalPayload(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data, _ := os.ReadFile(filepath.Join(dir, "task.json"))
+	data, _ := os.ReadFile(filepath.Join(dir, ".git", "task.json"))
 	var decoded TaskPayload
 	_ = json.Unmarshal(data, &decoded)
 

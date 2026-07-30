@@ -218,7 +218,7 @@ DB sink buffer 256; SSE client buffers 64. Drop counter not read in production.
 Dashboard gap can coexist with correct task state.
 
 ### Containers, worktrees, and subprocess mode
-Container-mode: clones on host, mounts `/data/worktree`, writes `task.json`,
+Container-mode: clones on host, mounts `/data/worktree`, writes `.git/task.json`,
 dedicated `archie.taskrun.<id>` subscription. **Open:** container RPC is
 root-identity-bound; `SubprocessRunner` expects stdin JSON protocol.
 
