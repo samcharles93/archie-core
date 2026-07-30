@@ -328,7 +328,7 @@ bot_user = "archie"
 forge = { type = "gitea", host = "https://git.example.test", token = { engine = "env", key = "ARCHIE_TOKEN" } }
 
 [[identities.repos]]
-owner = "sam"
+owner = "acme"
 name = "archie-core"
 base = "main"
 ecosystem = "go"
@@ -339,7 +339,7 @@ bot_user = "winter"
 forge = { type = "gitea", host = "https://git.example.test", token = { engine = "env", key = "WINTER_TOKEN" } }
 
 [[identities.repos]]
-owner = "sam"
+owner = "acme"
 name = "example-service"
 base = "main"
 ecosystem = "go"
@@ -382,7 +382,7 @@ bot_user = "solo"
 forge = { type = "github", host = "https://github.test", token_env = "GH_TOKEN" }
 
 [[repos]]
-owner = "sam"
+owner = "acme"
 name = "my-repo"
 `))
 	if err != nil {
@@ -419,7 +419,7 @@ bot_user = "archie"
 forge = { type = "github" }
 
 [[identities.repos]]
-owner = "sam"
+owner = "acme"
 name = "archie-core"
 `))
 	if err == nil {

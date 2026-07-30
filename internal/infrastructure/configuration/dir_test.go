@@ -365,7 +365,7 @@ host = "https://github.test"
 token_env = "GH_TOKEN"
 
 [[repos]]
-owner = "sam"
+owner = "acme"
 name = "legacy-repo"
 `)
 
@@ -742,7 +742,7 @@ type = "github"
 token = { engine = "env", key = "GH_TOKEN" }
 
 [[repos]]
-owner = "sam"
+owner = "acme"
 name = "old-repo"
 `)
 
@@ -765,7 +765,7 @@ max_retries = 2
 type = "github"
 token = { engine = "env", key = "BASE_TOKEN" }
 [[repos]]
-owner = "sam"
+owner = "acme"
 name = "base-repo"
 `)
 	writeFile(t, overlayDir, "config.toml", `

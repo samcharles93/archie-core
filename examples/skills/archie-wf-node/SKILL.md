@@ -20,7 +20,7 @@ When archie-core's `[[repos]]` entry sets `ecosystem = "node"`, the daemon runs
 
 ```toml
 [[repos]]
-owner = "sam"
+owner = "acme"
 name = "my-node-project"
 ecosystem = "node"
 

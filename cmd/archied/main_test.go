@@ -275,10 +275,10 @@ func TestChatTaskProfilesUsesIdentityRepositories(t *testing.T) {
 	cfg := config.Config{
 		Repos: []config.Repo{{Owner: "legacy", Name: "ignored"}},
 		Identities: []config.IdentityConfig{
-			{Name: "builder", Repos: []config.Repo{{Owner: "sam", Name: "archie-core"}}},
+			{Name: "builder", Repos: []config.Repo{{Owner: "acme", Name: "archie-core"}}},
 			{Name: "reviewer", Repos: []config.Repo{
-				{Owner: "sam", Name: "example-service"},
-				{Owner: "sam", Name: "ai-sdk"},
+				{Owner: "acme", Name: "example-service"},
+				{Owner: "acme", Name: "ai-sdk"},
 			}},
 		},
 	}
@@ -290,9 +290,9 @@ func TestChatTaskProfilesUsesIdentityRepositories(t *testing.T) {
 	if len(profiles) != 2 {
 		t.Fatalf("profiles = %d, want 2", len(profiles))
 	}
-	if profiles[1].Identity != "reviewer" || profiles[1].DefaultOwner != "sam" ||
+	if profiles[1].Identity != "reviewer" || profiles[1].DefaultOwner != "acme" ||
 		profiles[1].DefaultRepo != "example-service" ||
-		len(profiles[1].Repos) != 2 || profiles[1].Repos[1] != "sam/ai-sdk" {
+		len(profiles[1].Repos) != 2 || profiles[1].Repos[1] != "acme/ai-sdk" {
 		t.Errorf("reviewer profile = %+v", profiles[1])
 	}
 }
@@ -355,7 +355,7 @@ func TestChatTaskCommandsEndToEnd(t *testing.T) {
 	profiles, defaultIdentity := chatTaskProfiles(config.Config{
 		Identities: []config.IdentityConfig{{
 			Name:  "reviewer",
-			Repos: []config.Repo{{Owner: "sam", Name: "archie-core"}},
+			Repos: []config.Repo{{Owner: "acme", Name: "archie-core"}},
 		}},
 	})
 	creator := gateway.NewStoreTaskCreatorForProfiles(
@@ -385,7 +385,7 @@ func TestChatTaskCommandsEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	if task == nil || task.Source != store.SourceChat || task.Identity != "reviewer" ||
-		task.Owner != "sam" || task.Repo != "archie-core" ||
+		task.Owner != "acme" || task.Repo != "archie-core" ||
 		task.Workflow != "feasibility" {
 		t.Fatalf("spawned task = %+v", task)
 	}

@@ -20,7 +20,7 @@ When archie-core's `[[repos]]` entry sets `ecosystem = "python"`, the daemon run
 
 ```toml
 [[repos]]
-owner = "sam"
+owner = "acme"
 name = "my-python-project"
 ecosystem = "python"
 

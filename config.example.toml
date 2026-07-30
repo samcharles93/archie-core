@@ -125,7 +125,7 @@ gate_max_failures = 5
 # pull_policy = "missing"          # "missing" or "always"
 
 [[repos]]
-owner = "samcharles93"
+owner = "your-github-username"
 name = "todo"
 base = "main"
 ecosystem = "go" # "go", "python", "node", "rust", or "custom"

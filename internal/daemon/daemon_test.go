@@ -931,19 +931,19 @@ func TestRepoForPrefersOwningIdentityRepoList(t *testing.T) {
 	d, _, _, _, _ := twoIdentityDaemon(t)
 
 	// Identity-only repo, absent from the root Cfg.Repos list.
-	identityOnlyRepo := config.Repo{Owner: "sam", Name: "identity-only"}
+	identityOnlyRepo := config.Repo{Owner: "acme", Name: "identity-only"}
 	d.Identities[0].Repos = append(d.Identities[0].Repos, identityOnlyRepo)
 
-	got, ok := d.repoFor(&store.Task{Owner: "sam", Repo: "identity-only", Identity: "archie"})
+	got, ok := d.repoFor(&store.Task{Owner: "acme", Repo: "identity-only", Identity: "archie"})
 	if !ok {
 		t.Fatal("repoFor did not find an identity-only repo via the owning identity's repo list")
 	}
-	if got.Owner != "sam" || got.Name != "identity-only" {
+	if got.Owner != "acme" || got.Name != "identity-only" {
 		t.Fatalf("repoFor = %+v, want sam/identity-only", got)
 	}
 
 	// The same repo name must NOT resolve for an unrelated identity.
-	if _, ok := d.repoFor(&store.Task{Owner: "sam", Repo: "identity-only", Identity: "winter"}); ok {
+	if _, ok := d.repoFor(&store.Task{Owner: "acme", Repo: "identity-only", Identity: "winter"}); ok {
 		t.Fatal("repoFor leaked archie's identity-only repo to winter")
 	}
 }
