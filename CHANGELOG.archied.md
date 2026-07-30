@@ -1,5 +1,9 @@
 # archied changelog
 
+## [1.3.1] - 2026-07-31
+
+- fix(telegram): omit empty model picker markup
+
 ## [1.3.0] - 2026-07-31
 
 - fix(memory): replace framework-specific names with generic equivalents
