@@ -52,6 +52,27 @@ tasks:
       - task: build
       - task: test
 
+  release:preview:
+    desc: "Show the release notes that would be generated (VERSION=1.2.0, or GATEWAY=/RUNTIME= to version the two components separately)"
+    cmds:
+      - tools/release.sh --gateway {{.GATEWAY | default .VERSION}} --runtime {{.RUNTIME | default .VERSION}} --dry-run
+    requires:
+      vars: [VERSION]
+
+  release:prepare:
+    desc: "Write the generated notes into the changelogs, uncommitted, for editing (VERSION=1.2.0)"
+    cmds:
+      - tools/release.sh --gateway {{.GATEWAY | default .VERSION}} --runtime {{.RUNTIME | default .VERSION}} --prepare
+    requires:
+      vars: [VERSION]
+
+  release:
+    desc: "Freeze the edited changelogs into a release commit and tags (VERSION=1.2.0). Run release:prepare first."
+    cmds:
+      - tools/release.sh --gateway {{.GATEWAY | default .VERSION}} --runtime {{.RUNTIME | default .VERSION}} --tag
+    requires:
+      vars: [VERSION]
+
   clean:
     desc: Remove build artifacts
     cmds:
