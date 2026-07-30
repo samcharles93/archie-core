@@ -52,7 +52,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/tasks", s.handleTasks)
 	mux.HandleFunc("GET /api/tasks/{id}", s.handleTask)
 	mux.HandleFunc("GET /api/tasks/clear", s.handleClearTasks)
-	mux.HandleFunc("GET /api/sensors", s.handleSensors)
 	mux.HandleFunc("GET /events", s.handleSSE)
 	return mux
 }
