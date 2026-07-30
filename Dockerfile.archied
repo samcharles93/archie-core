@@ -13,8 +13,23 @@ RUN CGO_ENABLED=0 go build \
     -o /usr/local/bin/archied ./cmd/archied/
 
 FROM ubuntu:24.04
+# This image launches MCP stdio servers via npx, so its Node toolchain is
+# load-bearing: when an MCP server fails to start, the tool-provider family
+# rolls back and the daemon exits.
+#
+# Node 24 from nodesource, matching the worker image. Ubuntu 24.04 ships Node
+# 18, and desktop-commander -- though it declares engines >=18 -- pulls
+# dependencies requiring >=20 and >=22.
+#
+# unzip is required because desktop-commander depends on puppeteer, whose
+# postinstall extracts a downloaded browser archive and fails with "no zip
+# archiver is available" without it. That install failure is what actually
+# killed startup: npx exited before writing a byte, and the MCP client
+# reported "transport closed while waiting for response".
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates git nodejs npm && \
+    ca-certificates curl git unzip && \
+    curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=builder /usr/local/bin/archied /usr/local/bin/archied
 ARG GATEWAY_VERSION=dev
