@@ -1,5 +1,9 @@
 # archied changelog
 
+## [1.4.0] - 2026-07-31
+
+- fix(secrets): wire provider credentials through engines
+
 ## [1.3.1] - 2026-07-31
 
 - fix(telegram): omit empty model picker markup
