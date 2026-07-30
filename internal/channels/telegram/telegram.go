@@ -81,6 +81,11 @@ type Gateway struct {
 	bot           *bot.Bot
 	webhookCancel context.CancelFunc
 	running       bool
+
+	// serverURL redirects the Bot API at a test server. Empty in production,
+	// where the library's default endpoint is used. It exists so launch's
+	// wiring can be tested without reaching api.telegram.org.
+	serverURL string
 }
 
 type UpdateService interface {
@@ -186,6 +191,9 @@ func (g *Gateway) launch(ctx context.Context, router *gateway.Router) (*bot.Bot,
 	if g.WebhookSecret != "" {
 		opts = append(opts, bot.WithWebhookSecretToken(g.WebhookSecret))
 	}
+	if g.serverURL != "" {
+		opts = append(opts, bot.WithServerURL(g.serverURL), bot.WithSkipGetMe())
+	}
 
 	b, err := bot.New(g.Token, opts...)
 	if err != nil {
@@ -247,6 +255,7 @@ func (g *Gateway) launch(ctx context.Context, router *gateway.Router) (*bot.Bot,
 		g.running = true
 		go b.StartWebhook(webhookCtx)
 	} else {
+		g.dropPendingUpdates(ctx, b)
 		g.running = true
 		go b.Start(ctx)
 	}
@@ -772,3 +781,29 @@ func (g *Gateway) ValidateConfig(cfg map[string]any) error {
 
 // Compile-time guard.
 var _ channels.Channel = (*Gateway)(nil)
+
+// dropPendingUpdates clears Telegram's queue of undelivered updates before
+// long polling starts.
+//
+// Telegram holds updates for 24h and replays them on the first getUpdates,
+// so without this a daemon that was down overnight boots and answers every
+// message sent while it was gone -- one LLM turn each, in a burst. The
+// webhook path already passes DropPendingUpdates when it registers; polling
+// has no equivalent, so it has to be asked for explicitly. deleteWebhook is
+// the call that carries the flag, and it doubles as a guard against a stale
+// webhook registration, which would make getUpdates fail with 409.
+//
+// This also runs on /restart, so a message sent during the restart window is
+// discarded rather than answered late. That matches the webhook branch, which
+// passes the same flag on every launch.
+//
+// Best-effort: a failure here is logged, not fatal. Chat availability matters
+// more than a clean queue, and the deadline keeps an unreachable Telegram
+// from holding up gateway startup.
+func (g *Gateway) dropPendingUpdates(ctx context.Context, b *bot.Bot) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if _, err := b.DeleteWebhook(ctx, &bot.DeleteWebhookParams{DropPendingUpdates: true}); err != nil {
+		g.log.Warn("could not drop pending telegram updates, backlog may be replayed", "error", err)
+	}
+}

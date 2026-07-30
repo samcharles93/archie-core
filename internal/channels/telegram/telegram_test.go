@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -540,5 +541,98 @@ func TestThreadIDString(t *testing.T) {
 				t.Errorf("threadIDString(%d) = %q, want %q", tt.id, got, tt.want)
 			}
 		})
+	}
+}
+
+// A restart must not answer messages that arrived while the daemon was
+// down. Telegram holds undelivered updates for 24h and replays them on the
+// first getUpdates, so a boot after an outage answers hours-old chatter.
+// The webhook path already passes DropPendingUpdates; long polling has to
+// clear the backlog explicitly.
+func TestDropPendingUpdatesClearsTheBacklog(t *testing.T) {
+	var gotPath string
+	var gotDrop bool
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		// The client sends multipart/form-data, not JSON.
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("parse Telegram request: %v", err)
+		}
+		gotDrop = r.FormValue("drop_pending_updates") == "true"
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+	}))
+	defer api.Close()
+
+	b, err := bot.New("1:test", bot.WithServerURL(api.URL), bot.WithSkipGetMe())
+	if err != nil {
+		t.Fatalf("new test bot: %v", err)
+	}
+	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+	g.dropPendingUpdates(context.Background(), b)
+
+	if !strings.Contains(gotPath, "deleteWebhook") {
+		t.Errorf("called %q, want deleteWebhook", gotPath)
+	}
+	if !gotDrop {
+		t.Error("drop_pending_updates was not set; the backlog would be replayed on boot")
+	}
+}
+
+// Clearing the backlog is best-effort. A Telegram error here must not stop
+// the gateway coming up -- chat availability matters more than a clean queue --
+// but it must say so, or a silently replayed backlog looks like a bot bug.
+func TestDropPendingUpdatesSurvivesAPIFailure(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"ok":false,"description":"boom"}`))
+	}))
+	defer api.Close()
+
+	b, err := bot.New("1:test", bot.WithServerURL(api.URL), bot.WithSkipGetMe())
+	if err != nil {
+		t.Fatalf("new test bot: %v", err)
+	}
+	var logged strings.Builder
+	g := New("1:test", "", "", []int64{42}, slog.New(slog.NewTextHandler(&logged, nil)))
+	g.dropPendingUpdates(context.Background(), b) // must not panic or block
+
+	if !strings.Contains(logged.String(), "could not drop pending telegram updates") {
+		t.Errorf("failure was swallowed silently; log = %q", logged.String())
+	}
+}
+
+// The helper working is not the fix; launch calling it is. Without this,
+// deleting the call from the polling branch leaves the suite green.
+func TestLaunchDropsPendingUpdatesBeforePolling(t *testing.T) {
+	var mu sync.Mutex
+	var dropped bool
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "deleteWebhook") {
+			if err := r.ParseMultipartForm(1 << 20); err == nil {
+				mu.Lock()
+				dropped = r.FormValue("drop_pending_updates") == "true"
+				mu.Unlock()
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+	}))
+	defer api.Close()
+
+	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+	g.serverURL = api.URL
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if _, err := g.launch(ctx, nil); err != nil {
+		t.Fatalf("launch() error = %v", err)
+	}
+	cancel()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !dropped {
+		t.Error("launch() started long polling without dropping pending updates")
 	}
 }
