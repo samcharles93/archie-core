@@ -1,8 +1,13 @@
-# archie-core stack: daemon, NATS, and agent containers.
+# archie-core stack: NATS, plus the agent image the daemon spawns per task.
+#
+# archied itself runs on the host under systemd, not here -- its chat tools
+# operate on host files, which a container cannot reach. See
+# deployments/systemd-user-service.md.
 #
 # Start:  docker compose up -d
 # Stop:   docker compose down
-# Logs:   docker compose logs -f archied
+# Logs:   journalctl --user -u archied -f   (the daemon)
+#         docker compose logs -f nats       (the bus)
 
 services:
   # ── NATS JetStream ────────────────────────────────────────────────
@@ -20,34 +25,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
-  # ── archie daemon ──────────────────────────────────────────────────
-  archied:
-    image: git.catlow.cloud/sam/archied:latest
-    # Single config, mounted from outside the repo. Nothing in the working
-    # tree is required at runtime: a bind mount whose source is missing is
-    # created as a directory, and the loader rejects a directory, so a
-    # repo-root config file would take the daemon down on a fresh clone.
-    # See deployments/docker-nats-stack.toml for the template.
-    command: -config /etc/archie/config.toml
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    ports:
-      - "8484:8484"   # web dashboard
-    environment:
-      - ARCHIE_GITEA_TOKEN
-      - ARCHIE_GITEA_TOKEN_ARCHIE
-      - HEYARCHIE_TELEGRAM_BOT_TOKEN
-      - DEEPSEEK_API_KEY
-    volumes:
-      - ${HOME}/.config/archie/config.toml:/etc/archie/config.toml:ro
-      - /var/lib/archie/work:/var/lib/archie/work
-      - /var/lib/archie/db:/var/lib/archie
-      - /var/run/docker.sock:/var/run/docker.sock
-    depends_on:
-      nats:
-        condition: service_healthy
-    restart: unless-stopped
 
   # ── agent image (built once, spawned per task by the daemon) ───────
   # Not a long-running service: the daemon starts agent containers itself
@@ -72,20 +49,16 @@ services:
       dockerfile: Dockerfile
     image: git.catlow.cloud/sam/archie-agent:latest
 
-  # ── deploy watcher ──────────────────────────────────────────────────
-  # Polls the registry for new archied/archie-agent images (pushed by
-  # .gitea/workflows/deploy.yml on merge to main) and restarts the
-  # containers that changed. Registry auth comes from the host's
-  # existing `docker login` config, mounted read-only.
-  watchtower:
-    image: nickfedor/watchtower
-    environment:
-      - DOCKER_CONFIG=/
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ${HOME}/.docker/config.json:/config.json:ro
-    command: --interval 60 --cleanup archie-core-archied-1
-    restart: unless-stopped
-
 volumes:
   nats_data:
+
+# The subnet is pinned because the daemon hands agent containers its own
+# NATS URL verbatim (daemon.go). Running on the host, that URL has to be one
+# both sides can reach: the gateway address works from the host and from any
+# container on this network. Letting Docker pick the subnet would silently
+# move that address when the network is recreated.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.19.0.0/16

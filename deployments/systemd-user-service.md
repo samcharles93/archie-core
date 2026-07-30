@@ -69,3 +69,38 @@ Restart or stop the service:
 systemctl --user restart archied
 systemctl --user stop archied
 ```
+
+---
+
+## 4. Running Alongside the Docker Stack
+
+`archied` on the host still needs NATS and still spawns agent containers, so
+`docker compose up -d` keeps running the bus and holds the network the agents
+join. Two things bite in this hybrid layout:
+
+**One NATS URL serves two network namespaces.** The daemon hands agent
+containers its own `nats.url` verbatim, so `nats://nats:4222` (resolvable only
+inside compose) and `nats://127.0.0.1:4222` (the container's own loopback) are
+both wrong. Use the compose network's gateway address, which the host and the
+containers can both reach:
+
+```toml
+[nats]
+url = "nats://172.19.0.1:4222"
+```
+
+`docker-compose.yml` pins the subnet so that address cannot drift when the
+network is recreated.
+
+**`pull_policy` must be `"missing"` against a private registry.** The daemon
+calls the Docker API with no registry credentials, so `"always"` gets a 401,
+which fails the container pool and exits the daemon. Refresh the agent image
+by hand instead:
+
+```bash
+docker compose pull agent
+```
+
+**Paths.** Under compose the daemon saw bind-mounted paths; on the host it sees
+the real ones. In particular `db_path` must point at the database's actual
+location, or the daemon starts against an empty one.
