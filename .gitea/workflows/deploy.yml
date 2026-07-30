@@ -10,7 +10,64 @@ on:
     tags: ["archied/v*", "archie/v*"]
 
 jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Quality gate
+        run: |
+          gofumpt -w .
+          go fix ./...
+          go vet ./...
+          go build ./...
+          go test ./... -count=1
+
+      - name: Release tags must match changelogs
+        run: |
+          set -e
+          fail=0
+          for tag in $(git tag --points-at HEAD); do
+            case "$tag" in
+              archied/v*)
+                ver="${tag#archied/}"
+                echo "  archied tag $tag  ->  looking for [$ver] in CHANGELOG.archied.md"
+                grep -q "^## \\[$ver\\]" CHANGELOG.archied.md || {
+                  echo "  FAIL: CHANGELOG.archied.md has no [$ver] section"
+                  fail=1
+                }
+                ;;
+              archie/v*)
+                ver="${tag#archie/}"
+                echo "  archie tag $tag  ->  looking for [$ver] in CHANGELOG.archie.md"
+                grep -q "^## \\[$ver\\]" CHANGELOG.archie.md || {
+                  echo "  FAIL: CHANGELOG.archie.md has no [$ver] section"
+                  fail=1
+                }
+                ;;
+            esac
+          done
+          if [ $fail -ne 0 ]; then
+            echo
+            echo "A release tag points at this commit but its changelog does not"
+            echo "describe that version. Run: task release:prepare VERSION=<ver>"
+            echo "edit the generated notes, then: task release VERSION=<ver>"
+            exit 1
+          fi
+          if ! git tag --points-at HEAD | grep -qE 'archie' ; then
+            echo "::warning ::No release tags at HEAD  --  images will be stamped 'dev'"
+          fi
+
   build-and-push:
+    needs: gate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

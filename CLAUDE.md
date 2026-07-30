@@ -32,6 +32,77 @@ authoritative**. It is a design to implement against — not a draft to extend.
 - Default to producing a diff. If a task's output would be a document rather
   than code, confirm that's actually wanted before starting.
 
+## Deployment model
+
+**archied runs on the host under systemd.** Its chat tools operate on host
+files (shell, read, write, edit, find, grep), which a container cannot reach.
+NATS and per-task archie-agent containers stay in Docker.
+
+```bash
+# On the deployment host (carina):
+systemctl --user status archied          # daemon
+journalctl --user -u archied -f          # logs
+docker compose -f ~/projects/archie-core/docker-compose.yml up -d
+docker compose pull agent                # refresh agent image after CI pushes
+```
+
+**The daemon hands agent containers its own `nats.url` verbatim**
+(`internal/daemon/daemon.go:1177`), so that URL must reachable from both the
+host *and* from inside containers. Use the compose network's gateway address
+(`172.19.0.1:4222`), not the service name or localhost. The subnet is pinned
+in `docker-compose.yml` so this address cannot drift.
+
+**`containers.pull_policy` can only be `"missing"`** (the default) or
+`"always"`. `"always"` against the private Gitea registry answers 401 because
+the daemon sends no credentials to the Docker API. Refresh the agent image by
+hand: `docker compose pull agent`.
+
+**`docker-compose.yml`** carries only NATS and the agent build stanza. The
+agent has a build profile so `up -d` skips it — without the profile, compose
+creates a container that exits 0 immediately and reports "Started", which
+reads as a crash loop. `docker compose build agent` and `docker compose pull
+agent` still work by name without activating the profile.
+
+**Config lives at `~/.config/archie/config.toml`**, outside the repo. Nothing
+in the repo working tree is load-bearing at runtime. The reference template is
+`deployments/docker-nats-stack.toml`. The docker overlay file that previously
+existed at the repo root (`config.docker.toml`) is gone — if an agent
+recreates it, `docker-compose.yml` no longer mounts it, so it won't break
+anything, but it doesn't belong there.
+
+**The `archied` binary on carina** is extracted from the CI-built image, not
+compiled on the host:
+
+```bash
+cid=$(docker create git.catlow.cloud/sam/archied:latest)
+docker cp "$cid":/usr/local/bin/archied ~/.local/bin/archied
+docker rm -f "$cid"
+```
+
+## Release process
+
+Two components, independently versioned: `archied` (gateway/daemon) and
+`archie-agent` (runtime). Tags use `archied/vX.Y.Z` and `archie/vX.Y.Z`.
+`CHANGELOG.md` documents the split.
+
+```
+task release:preview VERSION=1.3.0     # preview what would land
+task release:prepare VERSION=1.3.0     # write changelog sections, uncommitted
+# edit CHANGELOG.archied.md and CHANGELOG.archie.md  --  generated notes
+# are a starting point, not the release
+task release VERSION=1.3.0             # commit + tag
+git push origin main --follow-tags     # CI stamps images with real versions
+```
+
+Pass `GATEWAY=<ver>`/`RUNTIME=<ver>` to version them independently, or `skip`
+to hold one back. Linting ensures the changelogs can be parsed deterministically
+by `tools/release.sh`.
+
+CI (`deploy.yml`) now runs a gate job *before* building images: `task check`,
+then verifies that any release tag at HEAD has a matching `[version]` section
+in the corresponding changelog. A tag without a changelog entry is a hard
+failure. No tags at HEAD prints a warning (images get stamped `dev`).
+
 ## Build & Test
 
 Commands are defined in `Taskfile.yml` (uses [Task](https://taskfile.dev)); run
@@ -48,7 +119,7 @@ task check      # fmt + go fix + vet + build + test — matches the per-repo [[r
 
 Run a single test: `go test ./internal/workflow/... -run TestName -v`.
 
-Docker/NATS stack (multi-process split — see below): `task docker-build`,
+Docker/NATS stack: `task docker-build` (builds the agent image locally),
 `task docker-up`, `task docker-down`, `task docker-logs`.
 
 ## Architecture
@@ -74,6 +145,37 @@ boundaries. Summary of what's evolved since that doc was last fully accurate:
   `internal/container/`, `internal/plugin/`, `internal/tools/`,
   `internal/taskrun/` — not documented in ARCHITECTURE.md; read the package
   before modifying, its doc comment and tests are the source of truth.
+
+### Per-package traps (things an agent will break if it doesn't check first)
+
+- **`internal/sensors/` does not exist.** It was an agent's mistake, fully
+  removed. There is no sensor monitoring in this app. Don't recreate it.
+- **`internal/channels/telegram/`** — the long-polling branch calls
+  `dropPendingUpdates(ctx, b)` before `go b.Start(ctx)`. This clears
+  Telegram's 24h undelivered-update queue so a reboot doesn't answer
+  hours-old messages. It also runs on `/restart`. The webhook branch already
+  passes `DropPendingUpdates: true` in `SetWebhookParams`; both paths must
+  stay consistent.
+- **`internal/container/pool.go` `WriteTaskJSON`** — the per-task boot brief
+  goes to `<worktree>/.git/task.json`, not the worktree root.
+  `worktree.CommitAll` stages via go-git `Add{All:true}`, which ignores
+  `.gitignore` and `.git/info/exclude`, so anything in the worktree root is
+  pushed onto the task branch. Nothing under `.git` can be tracked;
+  `worktree.go:41-46` documents this reasoning for the prepared sentinel.
+  If you change the path, update `cmd/archie-agent/main.go` `bootTaskID`
+  (the reader) in lockstep.
+- **`cmd/archied/main.go:588-598`** — the daemon registers MCP providers
+  itself and returns a hard failure if one cannot start. No npx-launched
+  servers are configured in production; the builtin tools (read, write,
+  edit, find, grep, shell, test) cover what desktop-commander did. Adding
+  an `[[tools.mcp_servers]]` entry to the config carries real blast radius:
+  a failed provider exits the daemon, taking Telegram down with it.
+- **`.dockerignore`** exists — the build context no longer ships `.git`,
+  `docs/`, `bin/` or host-built binaries. All `go:embed` directives have
+  been verified against it; check before adding new ones.
+- **`GOTMPDIR`** is only needed on carina, where `/tmp` is a 32G tmpfs that
+  fills during `go test`. This host (helix) has the same layout but `task
+  check` runs fine without the override.
 
 **Task lifecycle** (from ARCHITECTURE.md, still current):
 `queued → running(workflow:stage) → pr_open → merged|rejected`, with
