@@ -539,7 +539,10 @@ func (g *Gateway) editModelPicker(
 	text string,
 	markup *models.InlineKeyboardMarkup,
 ) {
-	params := &bot.EditMessageTextParams{Text: text, ReplyMarkup: markup}
+	params := &bot.EditMessageTextParams{Text: text}
+	if markup != nil {
+		params.ReplyMarkup = markup
+	}
 	switch {
 	case query.Message.Message != nil:
 		params.ChatID = query.Message.Message.Chat.ID

@@ -369,7 +369,12 @@ func TestModelCallbackSwitchesAndUpdatesSelector(t *testing.T) {
 				t.Errorf("selection acknowledgement = %q", got)
 			}
 		}
-		edited = edited || request.method == "editMessageText"
+		if request.method == "editMessageText" {
+			edited = true
+			if markup, present := request.form["reply_markup"]; present {
+				t.Errorf("confirmation edit sent reply_markup=%q, want field omitted", markup)
+			}
+		}
 	}
 	if !answered || !edited {
 		t.Fatalf("callback answered=%t edited=%t, requests: %#v", answered, edited, *requests)
