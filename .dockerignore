@@ -1,0 +1,24 @@
+# Keep the build context to source + go.mod/go.sum. Everything here either
+# bloats the context or invalidates the COPY layer on every unrelated change.
+.git
+.beads
+.task
+.claude
+.codex
+.crew
+.agents
+.references
+bin/
+dist/
+docs/
+node_modules/
+
+# Stray host-built binaries committed at the repo root.
+/archied
+/archie-agent
+
+# Local config and secrets — never needed at build time.
+*.env
+.env*
+config.toml
+!config.example.toml

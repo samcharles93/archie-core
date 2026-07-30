@@ -1,7 +1,7 @@
 # archied — the archie daemon, built as a standalone container.
 # Run via docker compose alongside NATS.
 
-FROM golang:1.26-bookworm AS builder
+FROM golang:1.26-trixie AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -11,25 +11,19 @@ ARG RUNTIME_VERSION=dev
 RUN CGO_ENABLED=0 go build \
     -ldflags "-X main.gatewayVersion=${GATEWAY_VERSION} -X main.runtimeVersion=${RUNTIME_VERSION}" \
     -o /usr/local/bin/archied ./cmd/archied/
-
-FROM ubuntu:24.04
-# This image launches MCP stdio servers via npx, so its Node toolchain is
-# load-bearing: when an MCP server fails to start, the tool-provider family
-# rolls back and the daemon exits.
+# archied is static, but this can't be scratch: in inprocess mode the daemon
+# runs agent tools itself, and the shell tool invokes bash; codesearch shells
+# to git. Worktrees don't count — internal/worktree uses go-git. ripgrep is
+# embedded in the binary, so grep/find need nothing installed.
 #
-# Node 24 from nodesource, matching the worker image. Ubuntu 24.04 ships Node
-# 18, and desktop-commander -- though it declares engines >=18 -- pulls
-# dependencies requiring >=20 and >=22.
-#
-# unzip is required because desktop-commander depends on puppeteer, whose
-# postinstall extracts a downloaded browser archive and fails with "no zip
-# archiver is available" without it. That install failure is what actually
-# killed startup: npx exited before writing a byte, and the MCP client
-# reported "transport closed while waiting for response".
+# No Node: the builtin tools (read/write/edit/find/grep/shell/test) cover what
+# desktop-commander did. Any npx-launched MCP stdio server will now fail to
+# start, and a failed provider rolls back the tool-provider family and exits
+# the daemon — so remove tools.mcp_servers entries needing npx before
+# deploying this image.
+FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl git unzip && \
-    curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
-    apt-get install -y --no-install-recommends nodejs && \
+    ca-certificates git && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=builder /usr/local/bin/archied /usr/local/bin/archied
 ARG GATEWAY_VERSION=dev

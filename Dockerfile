@@ -1,7 +1,6 @@
-# archie-agent fat image: multi-ecosystem development environment for
-# generic agent workloads. Pre-installs system-level tools that agents
-# can't easily install themselves (no apt, no sudo). Language-specific
-# packages are installed by the agent at runtime via UV/npm/go.
+# archie-agent image: multi-ecosystem dev environment for agent workloads.
+# Pre-installs system tools agents can't install themselves (no apt, no sudo).
+# Language packages are installed at runtime via uv/npm/go.
 #
 # Build: docker build -t archie-agent:latest .
 # Run:   docker run -e NATS_URL=nats://host:4222 archie-agent:latest
@@ -14,15 +13,17 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -o /usr/local/bin/archie-agent ./cmd/archie-agent/
 
+# Same Debian release as the runtime, so glibc matches.
+FROM node:24-trixie-slim AS node
+
 # ── runtime ───────────────────────────────────────────────────────────
-FROM ubuntu:24.04
+FROM debian:trixie-slim
 ARG RUNTIME_VERSION=dev
 LABEL org.opencontainers.image.version="${RUNTIME_VERSION}"
 
-# Avoid interactive prompts during package installs.
 ENV DEBIAN_FRONTEND=noninteractive
 
-# ── system packages ───────────────────────────────────────────────────
+# build-essential is for agents building native npm/Python extensions.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
@@ -35,51 +36,53 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Go ────────────────────────────────────────────────────────────────
-# Latest stable Go for agent-driven Go tasks (build, test, lint).
-ARG GO_VERSION=1.26.5
-RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
-    | tar -C /usr/local -xz
-ENV PATH="/usr/local/go/bin:${PATH}"
-ENV GOPATH="/go"
-
-# Pre-install common Go tools that need a Go toolchain.
-RUN go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest && \
-    go install mvdan.cc/gofumpt@latest && \
-    go install github.com/bufbuild/buf/cmd/buf@latest && \
-    go install github.com/go-delve/delve/cmd/dlv@latest && \
-    rm -rf /go/pkg/mod/cache
-
-# ── Node.js 24 ────────────────────────────────────────────────────
-RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
-    apt-get install -y --no-install-recommends nodejs && \
-    rm -rf /var/lib/apt/lists/*
-RUN npm install -g pnpm typescript tsx esbuild stylelint htmlhint && \
+# ── Node.js 24 ────────────────────────────────────────────────────────
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/include/node /usr/local/include/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
+    ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx && \
+    npm install -g pnpm typescript tsx esbuild stylelint htmlhint && \
     npm cache clean --force
 
-# ── Python + UV ───────────────────────────────────────────────────────
-# Python 3.14 (3.14.6, latest) and 3.13 via deadsnakes PPA.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    software-properties-common && \
-    add-apt-repository -y ppa:deadsnakes/ppa && \
-    apt-get install -y --no-install-recommends \
-    python3.14 python3.14-dev python3.14-venv \
-    python3.13 python3.13-dev python3.13-venv \
-    && rm -rf /var/lib/apt/lists/*
+# ── Go ────────────────────────────────────────────────────────────────
+# Reuse the builder's toolchain so the runtime Go can't drift from the one
+# archie-agent was compiled with.
+COPY --from=builder /usr/local/go /usr/local/go
+ENV GOPATH="/go"
+# /go/bin must be on PATH or anything `go install` puts there is unreachable.
+ENV PATH="/usr/local/go/bin:/go/bin:${PATH}"
+
+# Pinned release binaries. Building these with `go install` pulled ~2GB of
+# module and build cache into the image. delve is omitted because it ships no
+# prebuilt binary; `go install ...@latest` at runtime if an agent needs it.
+ARG GOLANGCI_LINT_VERSION=2.12.2
+ARG GOFUMPT_VERSION=0.11.0
+ARG BUF_VERSION=1.72.0
+RUN curl -fsSL "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64.tar.gz" \
+      | tar -xz -C /usr/local/bin --strip-components=1 \
+        "golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64/golangci-lint" && \
+    curl -fsSL -o /usr/local/bin/gofumpt \
+      "https://github.com/mvdan/gofumpt/releases/download/v${GOFUMPT_VERSION}/gofumpt_v${GOFUMPT_VERSION}_linux_amd64" && \
+    curl -fsSL -o /usr/local/bin/buf \
+      "https://github.com/bufbuild/buf/releases/download/v${BUF_VERSION}/buf-Linux-x86_64" && \
+    chmod +x /usr/local/bin/gofumpt /usr/local/bin/buf
+
+# ── Python via uv ─────────────────────────────────────────────────────
+# uv manages its own interpreters — no apt Python, no deadsnakes PPA. One
+# version is the default; agents can `uv python install <other>` on demand.
+ARG PYTHON_VERSION=3.14
 RUN curl -fsSL https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:${PATH}"
+RUN uv python install --default "${PYTHON_VERSION}" && rm -rf /root/.cache/uv
 
-# ── Dolt + Beads ───────────────────────────────────────────────────────
-# Dolt: version-controlled SQL database (beads backend).
-RUN curl -fsSL https://github.com/dolthub/dolt/releases/latest/download/dolt-linux-amd64.tar.gz \
-    | tar xz -C /tmp && mv /tmp/dolt-linux-amd64/bin/dolt /usr/local/bin/ && \
-    rm -rf /tmp/dolt-linux-amd64
-# Beads: agent-native graph issue tracker.
-RUN npm install -g @beads/bd && npm cache clean --force
+# ── Beads ─────────────────────────────────────────────────────────────
+# bd runs Dolt embedded, so the standalone dolt binary isn't needed.
+ARG BEADS_VERSION=1.1.2
+RUN curl -fsSL "https://github.com/gastownhall/beads/releases/download/v${BEADS_VERSION}/beads_${BEADS_VERSION}_linux_amd64.tar.gz" \
+      | tar -xz -C /usr/local/bin bd
 
-# ── archie-agent ──────────────────────────────────────────────────────
 COPY --from=builder /usr/local/bin/archie-agent /usr/local/bin/archie-agent
 
-# ── entrypoint ────────────────────────────────────────────────────────
 # The daemon injects NATS_URL and, when configured, NATS_TOKEN.
 ENTRYPOINT ["archie-agent"]
