@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -131,6 +132,13 @@ func (f *fakeSessionStore) SaveMessages(_ context.Context, sessionID string, msg
 	copy(out, existing)
 	copy(out[len(existing):], msgs)
 	f.messages[sessionID] = out
+	return nil
+}
+
+func (f *fakeSessionStore) ReplaceMessages(_ context.Context, sessionID string, msgs []Message) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.messages[sessionID] = slices.Clone(msgs)
 	return nil
 }
 

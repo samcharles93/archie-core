@@ -131,7 +131,8 @@ func (a *Adapter) EnqueueIssue(ctx context.Context, owner, repo string, number i
 		"park_reason":      "",
 		"retry_count":      int64(0),
 		"watch_comment_id": int64(0),
-		"created_at":       time.Now().UTC().Format(time.RFC3339Nano),
+		"created_at":       nowRFC3339(),
+		"updated_at":       nowRFC3339(),
 	}
 	if _, err := a.tasks.Put(ctx, doc); err != nil {
 		return false, fmt.Errorf("nell: enqueue: %w", err)
@@ -178,7 +179,8 @@ func (a *Adapter) EnqueueChatTask(ctx context.Context, owner, repo, title, body,
 		"watch_comment_id": int64(0),
 		"source":           store.SourceChat,
 		"identity":         identity,
-		"created_at":       time.Now().UTC().Format(time.RFC3339Nano),
+		"created_at":       nowRFC3339(),
+		"updated_at":       nowRFC3339(),
 	}
 	if _, err := a.tasks.Put(ctx, doc); err != nil {
 		return nil, fmt.Errorf("nell: enqueue chat task: %w", err)
@@ -305,6 +307,7 @@ func (a *Adapter) Update(ctx context.Context, t *store.Task) error {
 	doc["iterations"] = int64(t.Iterations)
 	doc["park_reason"] = t.ParkReason
 	doc["watch_comment_id"] = t.WatchCommentID
+	doc["updated_at"] = nowRFC3339()
 	if _, err := a.tasks.Put(ctx, doc); err != nil {
 		return fmt.Errorf("nell: update task: %w", err)
 	}
@@ -796,6 +799,8 @@ func docToTask(doc sdk.Doc) *store.Task {
 		Body:           strField(doc, "body"),
 		Labels:         strField(doc, "labels"),
 		Status:         strField(doc, "status"),
+		CreatedAt:      timeField(doc, "created_at"),
+		UpdatedAt:      timeField(doc, "updated_at"),
 		Workflow:       strField(doc, "workflow"),
 		Stage:          strField(doc, "stage"),
 		Branch:         strField(doc, "branch"),
@@ -886,6 +891,7 @@ func (a *Adapter) putTask(ctx context.Context, key string, t *store.Task) error 
 		}
 	}
 	taskFields(t, doc)
+	doc["updated_at"] = nowRFC3339()
 	if _, err := a.tasks.Put(ctx, doc); err != nil {
 		return fmt.Errorf("nell: put task: %w", err)
 	}
@@ -992,4 +998,26 @@ func clip(s string, n int) string {
 		pos += size
 	}
 	return s[:pos]
+}
+
+// nowRFC3339 is the timestamp format task documents use. Kept in one place so
+// created_at and updated_at cannot drift apart in format.
+func nowRFC3339() string {
+	return time.Now().UTC().Format(time.RFC3339Nano)
+}
+
+// timeField parses an RFC3339 document field, returning the zero time when it
+// is absent or unparseable. Documents written before these fields existed
+// simply report a zero timestamp rather than failing the read.
+func timeField(doc sdk.Doc, key string) time.Time {
+	v := strField(doc, key)
+	if v == "" {
+		return time.Time{}
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
+		if parsed, err := time.Parse(layout, v); err == nil {
+			return parsed.UTC()
+		}
+	}
+	return time.Time{}
 }

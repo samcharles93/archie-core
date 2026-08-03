@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,6 +16,10 @@ import (
 // subsequent messages go to that session.
 type sessionTracker struct {
 	sessions SessionStore
+	// mu guards active. Channel gateways dispatch each inbound update in
+	// its own goroutine, so resolve, setActive and getActive all run
+	// concurrently.
+	mu sync.RWMutex
 	// active maps "channelID:threadID" → sessionID
 	active map[string]string
 }
@@ -30,11 +35,17 @@ func newSessionTracker(sessions SessionStore) *sessionTracker {
 // ThreadID may be empty for flat chats.
 func (t *sessionTracker) resolve(ctx context.Context, platform, botUser, channelID, threadID string) (string, error) {
 	key := sessionTrackerKey(channelID, threadID)
-	if id, ok := t.active[key]; ok {
+	t.mu.RLock()
+	id, ok := t.active[key]
+	t.mu.RUnlock()
+	if ok {
 		return id, nil
 	}
 
-	// Look up existing sessions for this channel+thread.
+	// Look up existing sessions for this channel+thread. The lock is not
+	// held across this I/O: concurrent callers may duplicate the lookup,
+	// but the session ID is derived deterministically from channel+thread
+	// so they converge on the same value and Save is an idempotent upsert.
 	sessions, err := t.sessions.GetByChannel(ctx, platform, channelID)
 	if err != nil {
 		return "", fmt.Errorf("resolve session: %w", err)
@@ -43,14 +54,13 @@ func (t *sessionTracker) resolve(ctx context.Context, platform, botUser, channel
 	// Find the most recent session matching this thread and bot.
 	for _, s := range sessions {
 		if s.Source.BotUser == botUser && s.Source.ThreadID == threadID {
-			t.active[key] = s.SessionID
-			return s.SessionID, nil
+			return t.cacheActive(key, s.SessionID), nil
 		}
 	}
 
 	// Create a new session with a deterministic key so it matches the
 	// legacy sessionKey format used by the LLM responder.
-	id := sessionKeyFromFields(channelID, threadID)
+	id = sessionKeyFromFields(channelID, threadID)
 	now := time.Now()
 	sc := SessionContext{
 		SessionID: id,
@@ -66,8 +76,20 @@ func (t *sessionTracker) resolve(ctx context.Context, platform, botUser, channel
 	if err := t.sessions.Save(ctx, sc); err != nil {
 		return "", fmt.Errorf("create session: %w", err)
 	}
-	t.active[key] = id
-	return id, nil
+	return t.cacheActive(key, id), nil
+}
+
+// cacheActive records the resolved session for a channel+thread. A racing
+// caller may have cached one first; its value wins so every caller returns
+// the same session ID.
+func (t *sessionTracker) cacheActive(key, sessionID string) string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if existing, ok := t.active[key]; ok {
+		return existing
+	}
+	t.active[key] = sessionID
+	return sessionID
 }
 
 func sessionKeyFromFields(channelID, threadID string) string {
@@ -77,13 +99,18 @@ func sessionKeyFromFields(channelID, threadID string) string {
 	return channelID + ":" + threadID
 }
 
-// setActive sets the current session for a channel+thread.
+// setActive sets the current session for a channel+thread, overriding any
+// previously resolved session (used by /new, /branch and /topic).
 func (t *sessionTracker) setActive(channelID, threadID, sessionID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.active[sessionTrackerKey(channelID, threadID)] = sessionID
 }
 
 // getActive returns the current session ID for a channel+thread.
 func (t *sessionTracker) getActive(channelID, threadID string) string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	return t.active[sessionTrackerKey(channelID, threadID)]
 }
 
@@ -265,10 +292,16 @@ func (r *Router) handleRetry(ctx context.Context, msg Message) (string, error) {
 		return "Nothing to retry — no messages remain.", nil
 	}
 
-	lastUserMsg := msgs[0]
 	if r.LLM == nil {
 		return "LLM is not configured. The last response has been removed; send another message to continue.", nil
 	}
+	// Replay the stored text, but route it with the live message's
+	// addressing. Stored history carries no channel or thread -- a session
+	// already is one -- so replaying the stored value verbatim would
+	// resolve to an empty session key and strand the reply.
+	lastUserMsg := msgs[0]
+	lastUserMsg.ChannelID = msg.ChannelID
+	lastUserMsg.ThreadID = msg.ThreadID
 	return r.LLM(ctx, lastUserMsg)
 }
 
@@ -476,6 +509,12 @@ func (r *Router) compressPreview(ctx context.Context, sessionID string) (string,
 	), nil
 }
 
+// compressedUserFrom is the sender recorded for user turns that survive
+// compression. The original username is not recoverable from a
+// CompressedMessage, and consumers only test From against the bot identity,
+// so any non-bot value reconstructs the user role correctly.
+const compressedUserFrom = "user"
+
 func (r *Router) messagesToCompressed(msgs []Message) []CompressedMessage {
 	compressed := make([]CompressedMessage, 0, len(msgs))
 	for _, h := range msgs {
@@ -492,7 +531,14 @@ func (r *Router) messagesToCompressed(msgs []Message) []CompressedMessage {
 }
 
 func (r *Router) applyCompress(ctx context.Context, sessionID string, cfg CompressionConfig) (string, error) {
-	msgs, err := r.sessionTracker.sessions.RecentMessages(ctx, sessionID, 200)
+	// Read the whole history: the replacement below becomes the session's
+	// entire history, so summarising only a recent window would silently
+	// discard everything older than it.
+	count, err := r.sessionTracker.sessions.MessageCount(ctx, sessionID)
+	if err != nil {
+		return "", fmt.Errorf("count messages: %w", err)
+	}
+	msgs, err := r.sessionTracker.sessions.RecentMessages(ctx, sessionID, count)
 	if err != nil {
 		return "", fmt.Errorf("load messages: %w", err)
 	}
@@ -503,20 +549,28 @@ func (r *Router) applyCompress(ctx context.Context, sessionID string, cfg Compre
 		return fmt.Sprintf("Compression not needed (%d messages, ~%d tokens).", len(msgs), view.TokensBefore), nil
 	}
 
-	// Replace messages with the compressed view. Delete all, then
-	// re-save the compressed messages.
-	allCount, _ := r.sessionTracker.sessions.MessageCount(ctx, sessionID)
-	_, _ = r.sessionTracker.sessions.DeleteRecentMessages(ctx, sessionID, allCount)
-
+	// Replace the history with the compressed view in one store-level
+	// operation. ReplaceMessages writes the replacement before removing
+	// the originals, so a failure leaves recoverable duplicates instead of
+	// wiping the session -- the previous delete-then-save order lost the
+	// entire history if anything went wrong in between.
+	// Write back sender identities, not role labels. Consumers reconstruct
+	// the role by comparing From against the bot's identity, so persisting
+	// the literal string "assistant" would make every retained bot turn
+	// replay to the model as a user turn.
 	compressedMsgs := make([]Message, 0, len(view.Messages))
 	for _, cm := range view.Messages {
+		from := compressedUserFrom
+		if cm.Role == "assistant" {
+			from = r.Identity
+		}
 		compressedMsgs = append(compressedMsgs, Message{
-			From: cm.Role,
+			From: from,
 			Text: cm.Content,
 		})
 	}
-	if err := r.sessionTracker.sessions.SaveMessages(ctx, sessionID, compressedMsgs); err != nil {
-		return "", fmt.Errorf("save compressed messages: %w", err)
+	if err := r.sessionTracker.sessions.ReplaceMessages(ctx, sessionID, compressedMsgs); err != nil {
+		return "", fmt.Errorf("replace with compressed messages: %w", err)
 	}
 
 	return fmt.Sprintf(

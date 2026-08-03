@@ -20,6 +20,17 @@ import (
 
 // Message is an inbound message from a gateway connection.
 type Message struct {
+	// MessageID is the canonical, application-generated identifier for
+	// this message. It is assigned by the message store, stable, and the
+	// handle branch points and related records correlate on. Populated on
+	// read; ignored on write.
+	MessageID string
+	// SourceID is the channel-native identifier (e.g. a Telegram
+	// message_id). It is external correlation metadata, never the
+	// canonical identity: the store derives a stable MessageID from it so
+	// redelivering an update is idempotent rather than duplicating. Empty
+	// for messages with no upstream identity, which are always appended.
+	SourceID string
 	// ChannelID identifies the conversation within the channel (e.g. a
 	// Telegram chat ID). Replies are sent back to this ID.
 	ChannelID string

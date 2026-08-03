@@ -2,8 +2,11 @@ package gateway
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/samcharles93/NellDB/logstore"
 )
 
 func TestSessionStore_SaveAndGet(t *testing.T) {
@@ -337,5 +340,59 @@ func TestSessionStore_List(t *testing.T) {
 	}
 	if len(all) != 3 {
 		t.Fatalf("expected 3 sessions, got %d", len(all))
+	}
+}
+
+// TestNellSessionStore_SourceIDSurvivesLogReopen proves the persisted
+// source_id representation survives the log store's JSON round-trip: after
+// a close and reopen of the same file, the freshly rebuilt DocDB decodes
+// the byte-value array back into the original UTF-8 string, and the
+// correlation ID is still invisible to SearchMessages. Reopen is the path
+// that exercises the JSON-decoded []any-of-float64 shape rather than the
+// in-process []int shape.
+func TestNellSessionStore_SourceIDSurvivesLogReopen(t *testing.T) {
+	ctx := context.Background()
+	logPath := filepath.Join(t.TempDir(), "messages.log")
+
+	const sourceID = "tg-идентификатор-42"
+	open := func() SessionStore {
+		ls, err := logstore.OpenLog(logPath, "test-node")
+		if err != nil {
+			t.Fatalf("OpenLog: %v", err)
+		}
+		return NewSessionStore(ls, "test-node")
+	}
+
+	st := open()
+	if err := st.SaveMessage(ctx, "sess", Message{SourceID: sourceID, From: "u", Text: "hello world", At: base}); err != nil {
+		t.Fatalf("SaveMessage: %v", err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	st2 := open()
+	defer func() { _ = st2.Close() }()
+
+	got, err := st2.RecentMessages(ctx, "sess", 10)
+	if err != nil {
+		t.Fatalf("RecentMessages after reopen: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d messages after reopen, want 1", len(got))
+	}
+	if got[0].SourceID != sourceID {
+		t.Errorf("SourceID after reopen = %q, want %q", got[0].SourceID, sourceID)
+	}
+	if got[0].MessageID == "" || got[0].MessageID == sourceID {
+		t.Errorf("canonical MessageID = %q after reopen, want non-empty and distinct from SourceID", got[0].MessageID)
+	}
+
+	page, err := st2.SearchMessages(ctx, "sess", MessageQuery{Query: sourceID, Limit: 10})
+	if err != nil {
+		t.Fatalf("SearchMessages after reopen: %v", err)
+	}
+	if len(page.Messages) != 0 {
+		t.Errorf("search for SourceID %q after reopen matched %v, want no matches", sourceID, texts(page.Messages))
 	}
 }
