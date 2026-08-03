@@ -74,7 +74,7 @@ require (
 	github.com/moby/moby/client v0.5.0
 	github.com/nats-io/nats-server/v2 v2.14.3
 	github.com/nats-io/nats.go v1.52.0
-	github.com/samcharles93/NellDB v0.2.5
+	github.com/samcharles93/NellDB v0.3.0
 	github.com/samcharles93/ai-sdk v0.1.19
 	github.com/traefik/yaegi v0.16.1
 	gopkg.in/yaml.v3 v3.0.1

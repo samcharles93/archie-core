@@ -25,3 +25,4 @@ node_modules/
 .crew/
 .claude/
 .codex/
+.pi-subagents/

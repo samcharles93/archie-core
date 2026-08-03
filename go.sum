@@ -148,6 +148,8 @@ github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0t
 github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=
 github.com/samcharles93/NellDB v0.2.5 h1:VEasjyB4opTFAfWnV3s9TEHkfA41ee+7gYD8LqKnvns=
 github.com/samcharles93/NellDB v0.2.5/go.mod h1:vyfd6/T2Cp5U0acoh2LrebJteZqoFObedDZTxP0j4W0=
+github.com/samcharles93/NellDB v0.3.0 h1:xRBJZhO0iuGuMFl5jxPAROw7tD+VdWU8kljbaNz9AwQ=
+github.com/samcharles93/NellDB v0.3.0/go.mod h1:vyfd6/T2Cp5U0acoh2LrebJteZqoFObedDZTxP0j4W0=
 github.com/samcharles93/ai-sdk v0.1.18 h1:Jvz2OSnzJ68XCAiTHdLKKvgoNI/rKrNw9LJ7jbZs55c=
 github.com/samcharles93/ai-sdk v0.1.18/go.mod h1:a4JYsUrwGsmm2eiXgrpcKExtYe7uHQ5zsHDbbkcPB6o=
 github.com/samcharles93/ai-sdk v0.1.19 h1:j/F4pRx9CEjsZmW41FLaM48P+1WRitMLLTqnvlJuBLI=
