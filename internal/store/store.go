@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	_ "modernc.org/sqlite"
@@ -66,6 +67,11 @@ type Task struct {
 	// deployments). Used to scope /approve and /cancel authorization so
 	// one identity cannot control another's chat-spawned tasks.
 	Identity string `json:"identity"`
+	// CreatedAt and UpdatedAt are the SQLite row timestamps, exposed so
+	// callers can show a task's age and last activity. They are written by
+	// column defaults and the UPDATE statements, never by the caller.
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // SourceForge and SourceChat are the valid values for Task.Source.
@@ -204,7 +210,7 @@ func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, w
 		RETURNING id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
-			source, identity`,
+			source, identity, created_at, updated_at`,
 		owner, repo, issueNumber, title, body, workflow, identity)
 	return scanTask(row)
 }
@@ -218,7 +224,7 @@ func (s *Store) ClaimNext(ctx context.Context) (*Task, error) {
 		RETURNING id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
-			source, identity`)
+			source, identity, created_at, updated_at`)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -231,7 +237,8 @@ func scanTask(row *sql.Row) (*Task, error) {
 	err := row.Scan(&t.ID, &t.Owner, &t.Repo, &t.IssueNumber, &t.Title, &t.Body,
 		&t.Labels, &t.Status, &t.Workflow, &t.Stage, &t.Branch, &t.Plan, &t.Notes,
 		&t.PRNumber, &t.TokensUsed, &t.Iterations, &t.Attempt, &t.ParkReason,
-		&t.WatchCommentID, &t.RetryCount, &t.Source, &t.Identity)
+		&t.WatchCommentID, &t.RetryCount, &t.Source, &t.Identity,
+		sqliteTime{&t.CreatedAt}, sqliteTime{&t.UpdatedAt})
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +256,7 @@ func (s *Store) ClaimByIssue(ctx context.Context, owner, repo string, number int
 		RETURNING id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
-			source, identity`, owner, repo, number)
+			source, identity, created_at, updated_at`, owner, repo, number)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -315,7 +322,7 @@ func (s *Store) TaskByIssue(ctx context.Context, owner, repo string, number int)
 		SELECT id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
-			source, identity
+			source, identity, created_at, updated_at
 		FROM tasks WHERE owner=? AND repo=? AND issue_number=?`, owner, repo, number)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -332,7 +339,7 @@ func (s *Store) TaskByID(ctx context.Context, taskID int64) (*Task, error) {
 		SELECT id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
-			source, identity
+			source, identity, created_at, updated_at
 		FROM tasks WHERE id=?`, taskID)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -462,4 +469,45 @@ func clip(s string, n int) string {
 		pos += size
 	}
 	return s[:pos]
+}
+
+// sqliteTime scans SQLite's TEXT datetime columns into a time.Time.
+//
+// The tasks table stores timestamps as TEXT via datetime('now') rather than a
+// typed column, so the driver hands back a string and the standard time.Time
+// scan fails. Parsing here keeps the column definition untouched -- changing
+// it would need a migration over existing rows for no behavioural gain.
+type sqliteTime struct{ t *time.Time }
+
+// sqliteTimeLayout is what datetime('now') produces: UTC, no zone suffix.
+const sqliteTimeLayout = "2006-01-02 15:04:05"
+
+func (s sqliteTime) Scan(v any) error {
+	switch value := v.(type) {
+	case nil:
+		return nil
+	case time.Time:
+		*s.t = value.UTC()
+		return nil
+	case []byte:
+		return s.parse(string(value))
+	case string:
+		return s.parse(value)
+	default:
+		return fmt.Errorf("store: cannot scan %T into time", v)
+	}
+}
+
+func (s sqliteTime) parse(v string) error {
+	if v == "" {
+		return nil
+	}
+	// RFC3339 first: rows written by other paths may carry a zone.
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, sqliteTimeLayout} {
+		if parsed, err := time.Parse(layout, v); err == nil {
+			*s.t = parsed.UTC()
+			return nil
+		}
+	}
+	return fmt.Errorf("store: unrecognised time %q", v)
 }

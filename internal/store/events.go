@@ -100,7 +100,8 @@ func (s *Store) TaskEvents(ctx context.Context, taskID int64) ([]events.Event, e
 func (s *Store) Tasks(ctx context.Context, limit int) (tasks []Task, retErr error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, owner, repo, issue_number, title, status, workflow, stage,
-			pr_number, tokens_used, iterations, attempt, park_reason, retry_count
+			pr_number, tokens_used, iterations, attempt, park_reason, retry_count,
+			created_at, updated_at
 		FROM tasks ORDER BY updated_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -112,7 +113,8 @@ func (s *Store) Tasks(ctx context.Context, limit int) (tasks []Task, retErr erro
 		var t Task
 		if err := rows.Scan(&t.ID, &t.Owner, &t.Repo, &t.IssueNumber, &t.Title,
 			&t.Status, &t.Workflow, &t.Stage, &t.PRNumber, &t.TokensUsed,
-			&t.Iterations, &t.Attempt, &t.ParkReason, &t.RetryCount); err != nil {
+			&t.Iterations, &t.Attempt, &t.ParkReason, &t.RetryCount,
+			sqliteTime{&t.CreatedAt}, sqliteTime{&t.UpdatedAt}); err != nil {
 			return nil, err
 		}
 		tasks = append(tasks, t)
@@ -143,14 +145,14 @@ func (s *Store) StatusCounts(ctx context.Context) (counts map[string]int, retErr
 
 // WorkflowStat is one row of the per-workflow metrics table.
 type WorkflowStat struct {
-	Workflow   string
-	Runs       int
-	Merged     int
-	PROpen     int
-	Parked     int
-	AvgTokens  int
-	AvgSteps   float64
-	TotalToken int
+	Workflow   string  `json:"workflow"`
+	Runs       int     `json:"runs"`
+	Merged     int     `json:"merged"`
+	PROpen     int     `json:"pr_open"`
+	Parked     int     `json:"parked"`
+	AvgTokens  int     `json:"avg_tokens"`
+	AvgSteps   float64 `json:"avg_steps"`
+	TotalToken int     `json:"total_tokens"`
 }
 
 // WorkflowStats aggregates outcomes and spend per workflow  --  the
@@ -180,10 +182,11 @@ func (s *Store) WorkflowStats(ctx context.Context) (stats []WorkflowStat, retErr
 
 // StageStat is average stage duration and failure counts per stage.
 type StageStat struct {
-	Workflow, Stage string
-	Runs            int
-	AvgMs           int
-	Errors          int
+	Workflow string `json:"workflow"`
+	Stage    string `json:"stage"`
+	Runs     int    `json:"runs"`
+	AvgMs    int    `json:"avg_ms"`
+	Errors   int    `json:"errors"`
 }
 
 // StageStats aggregates stage_finish events  --  where does time go, and
@@ -215,8 +218,8 @@ func (s *Store) StageStats(ctx context.Context) (stats []StageStat, retErr error
 
 // DayTokens is token spend per UTC day.
 type DayTokens struct {
-	Day    string
-	Tokens int
+	Day    string `json:"day"`
+	Tokens int    `json:"tokens"`
 }
 
 // TokensByDay sums agent token spend per day from agent_finish events.
