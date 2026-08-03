@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -76,6 +77,15 @@ type Provider struct {
 func New(cfg Config) (*Provider, error) {
 	if cfg.Dir == "" {
 		return nil, fmt.Errorf("builtin: Config.Dir must not be empty")
+	}
+
+	// Establish the directory up front. Both stores treat a missing file as
+	// an empty document, so without this a Dir that does not exist -- or one
+	// this process cannot write to -- is indistinguishable from a memory that
+	// simply has nothing in it yet: startup reports success and the failure
+	// surfaces at the agent's first memory write, mid-conversation.
+	if err := os.MkdirAll(cfg.Dir, 0o755); err != nil {
+		return nil, fmt.Errorf("builtin: memory directory %s unusable: %w", cfg.Dir, err)
 	}
 
 	memStore, err := NewStore(filepath.Join(cfg.Dir, "MEMORY.md"), cfg.MaxFileBytes)
