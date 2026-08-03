@@ -38,6 +38,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
+	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/memory"
 	"github.com/samcharles93/archie-core/internal/memory/builtin"
 	"github.com/samcharles93/archie-core/internal/nell"
@@ -223,6 +224,26 @@ func run() int {
 		return 1
 	}
 	cfg := doc.Config
+
+	// Re-create the logger now the config is known. Everything above this
+	// point logs to stderr only, which is unavoidable: the log destination is
+	// itself configuration. A file that cannot be opened is reported and the
+	// daemon continues on stderr -- losing the durable copy must not take the
+	// daemon down with it.
+	fileLog, logCloser, logErr := logging.New(logging.Options{
+		File:      cfg.Log.File,
+		MaxSizeMB: cfg.Log.MaxSizeMB,
+		Keep:      cfg.Log.Keep,
+		Level:     cfg.Log.Level,
+		Stderr:    !cfg.Log.Quiet,
+	})
+	log = fileLog
+	defer func() { _ = logCloser.Close() }()
+	if logErr != nil {
+		log.Error("file logging disabled", "err", logErr)
+	} else if cfg.Log.File != "" {
+		log.Info("logging to file", "path", cfg.Log.File)
+	}
 
 	secrets, err := configuredSecretRegistry(&cfg, log)
 	if err != nil {

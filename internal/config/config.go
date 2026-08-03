@@ -338,6 +338,7 @@ type Config struct {
 
 	Budgets    Budgets         `toml:"budgets" yaml:"budgets"`
 	Web        Web             `toml:"web" yaml:"web"`
+	Log        Log             `toml:"log" yaml:"log"`
 	Notify     Notify          `toml:"notify" yaml:"notify"`
 	NATS       NATSConfig      `toml:"nats" yaml:"nats"`
 	Containers ContainerConfig `toml:"containers" yaml:"containers"`
@@ -482,6 +483,29 @@ type ContainerConfig struct {
 	// compose/production deployments (e.g. "archie-core_default") rather
 	// than relying on auto-detection.
 	Network string `toml:"network" yaml:"network"`
+}
+
+// Log configures where archied writes its logs.
+//
+// Without File set, output goes only to stderr -- which under systemd means
+// journald holds the sole copy, and running by hand leaves no record at all.
+// A file gives a durable copy independent of the supervisor, and is what lets
+// the dashboard show history from before it connected.
+type Log struct {
+	// File is the log file path. Empty disables file logging. The parent
+	// directory is created if missing.
+	File string `toml:"file" yaml:"file"`
+	// MaxSizeMB rotates the file once it exceeds this size. Zero uses the
+	// package default.
+	MaxSizeMB int `toml:"max_size_mb" yaml:"max_size_mb"`
+	// Keep is how many rotated files to retain. Zero uses the package
+	// default.
+	Keep int `toml:"keep" yaml:"keep"`
+	// Level is "debug", "info", "warn" or "error". Empty means info.
+	Level string `toml:"level" yaml:"level"`
+	// Quiet suppresses stderr output when a file is configured. Off by
+	// default so journald and an interactive terminal still see logs.
+	Quiet bool `toml:"quiet" yaml:"quiet"`
 }
 
 // ChatConfig configures conversational front-ends (multi-agent
