@@ -134,8 +134,8 @@ func (f *fakeSessionStore) SaveMessages(_ context.Context, sessionID string, msg
 	return nil
 }
 
-func (f *fakeSessionStore) SearchMessages(_ context.Context, sessionID, query string, limit int) ([]Message, error) {
-	return nil, nil
+func (f *fakeSessionStore) SearchMessages(_ context.Context, sessionID string, q MessageQuery) (MessagePage, error) {
+	return MessagePage{}, nil
 }
 
 // newTestRouter returns a Router with a session store wired for testing.

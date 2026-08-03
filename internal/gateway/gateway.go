@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Message is an inbound message from a gateway connection.
@@ -30,6 +31,11 @@ type Message struct {
 	From string
 	// Text is the raw message text, including any leading slash command.
 	Text string
+	// At is when the message happened, in application time. It is the sole
+	// ordering key for conversation history: NellDB persists it as the
+	// record's _ts field and scans order on it. A zero value is stamped
+	// with the current time at save.
+	At time.Time
 }
 
 // A Gateway owns a persistent connection to a chat channel. Start blocks;
