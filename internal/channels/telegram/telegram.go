@@ -181,9 +181,7 @@ func (g *Gateway) launch(ctx context.Context, router *gateway.Router) (*bot.Bot,
 	g.turns = gateway.NewTurns(g.log)
 
 	opts := []bot.Option{
-		bot.WithErrorsHandler(func(err error) {
-			g.log.Error("telegram pipeline error", "error", err)
-		}),
+		bot.WithErrorsHandler(g.pipelineErrorHandler(ctx)),
 		bot.WithDebugHandler(func(format string, args ...any) {
 			g.log.Debug("telegram debug", "message", fmt.Sprintf(format, args...))
 		}),
@@ -474,10 +472,16 @@ func (g *Gateway) defaultHandler(router *gateway.Router) bot.HandlerFunc {
 // aimed at had already finished.
 func (g *Gateway) submitTurn(ctx context.Context, b *bot.Bot, msg *models.Message, router *gateway.Router) {
 	gm := gateway.Message{
+		// Telegram's message ID makes persistence idempotent, so a
+		// redelivered update updates the stored turn instead of appending
+		// a duplicate. Date is the sender's clock reading for the message
+		// and is what history should be ordered by.
+		SourceID:  fmt.Sprintf("%d", msg.ID),
 		ChannelID: fmt.Sprintf("%d", msg.Chat.ID),
 		ThreadID:  threadIDString(msg.MessageThreadID),
 		From:      msg.From.Username,
 		Text:      msg.Text,
+		At:        time.Unix(int64(msg.Date), 0).UTC(),
 	}
 
 	// The lane key must be the session, so that /stop -- which resolves
