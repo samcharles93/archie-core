@@ -4,6 +4,10 @@
 // Mutations from upstream:
 //   - package renamed tools -> builtin (archie-core already has an
 //     internal/tools package holding the registry these are registered into).
+//   - the embedded ripgrep binaries (upstream internal/tools/builtin/rg) were
+//     removed. They were 14MB of tracked binaries that were re-extracted to a
+//     temporary directory on every run. grepBinary now resolves rg from PATH
+//     and the existing pure-Go grepFallback covers its absence.
 //
 // Refresh by diffing against that path at a newer tau commit. Do not
 // edit without recording the change above.
@@ -21,8 +25,6 @@ import (
 	"regexp"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/samcharles93/archie-core/internal/tools/builtin/rg"
 )
 
 const (
@@ -574,9 +576,15 @@ func buildGrepArgs(p GrepParams) []string {
 	return args
 }
 
+// grepBinary resolves ripgrep from PATH. When it is absent the caller falls
+// back to grepFallback, the pure-Go search, so this returning an error is an
+// ordinary outcome rather than a failure.
+//
+// Upstream tau embeds ripgrep binaries for each platform and extracts one to
+// a temporary directory on demand. That cost 14MB of tracked binaries and
+// wrote the binary out again on every run, which is why it was removed here.
 func grepBinary() (string, error) {
-	// Use the embedded statically-linked ripgrep binary.
-	return rg.Path()
+	return exec.LookPath("rg")
 }
 
 // hasUppercase reports whether s contains any uppercase ASCII letter.
