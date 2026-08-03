@@ -45,6 +45,15 @@ func (l *Loader) applyDefaults(cfg *config.Config) {
 	applyContainerDefaults(cfg)
 }
 
+// DefaultWorkDir returns the work directory an unset work_dir would have been
+// given. Callers that must fall back when a configured path turns out to be
+// unusable use this so the fallback is the same location the operator would
+// have got by saying nothing, rather than a second guess that only this
+// caller knows about.
+func DefaultWorkDir() string {
+	return filepath.Join(xdgDataHome(), "archie", "work")
+}
+
 // applyGeneralDefaults derives the paths and limits that have no owning
 // section.
 func (l *Loader) applyGeneralDefaults(cfg *config.Config) {

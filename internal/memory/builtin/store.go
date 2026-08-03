@@ -77,6 +77,16 @@ func NewStore(path string, maxBytes int) (*Store, error) {
 	return s, nil
 }
 
+// emptyStore returns a Store bound to path with no content, for a file that
+// could not be read. Reads answer as empty and a later write still attempts
+// the file, so a directory that becomes usable repairs itself.
+func emptyStore(path string, maxBytes int) *Store {
+	if maxBytes <= 0 {
+		maxBytes = defaultMaxFileBytes
+	}
+	return &Store{path: path, maxBytes: maxBytes}
+}
+
 // Reload re-reads the backing file from disk, replacing all in-memory
 // state. A missing file resets the store to empty rather than erroring.
 func (s *Store) Reload() error {

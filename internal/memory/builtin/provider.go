@@ -65,11 +65,27 @@ type Provider struct {
 	// called and only used when frozenSnapshotEnabled is true.
 	frozenMemory string
 	frozenUser   string
+
+	// dirErr records a Config.Dir that could not be established. The
+	// provider stays usable for reads -- a memory that cannot be written is
+	// still better than a daemon that will not start -- and reports itself
+	// unavailable so the failure is visible rather than looking like a
+	// memory that simply has nothing in it yet.
+	dirErr error
 }
 
 // New creates a Provider backed by the two markdown files under cfg.Dir.
 // Both files are read immediately so the provider is ready for use as soon
 // as New returns.
+//
+// An unusable cfg.Dir is reported through IsAvailable and Err, not by
+// failing: memory is one capability among many, and a bad path is not worth
+// refusing to start over. The caller decides whether to fall back elsewhere.
+// Establishing the directory here is still what makes the problem visible at
+// all -- both stores treat a missing file as an empty document, so otherwise
+// a directory that does not exist is indistinguishable from a memory that
+// simply has nothing in it yet, and the failure surfaces at the agent's
+// first write, mid-conversation.
 //
 // FrozenSnapshot defaults to true (frozen snapshot enabled). Set it
 // explicitly to false to have SystemPromptBlock() read live content from
@@ -79,22 +95,26 @@ func New(cfg Config) (*Provider, error) {
 		return nil, fmt.Errorf("builtin: Config.Dir must not be empty")
 	}
 
-	// Establish the directory up front. Both stores treat a missing file as
-	// an empty document, so without this a Dir that does not exist -- or one
-	// this process cannot write to -- is indistinguishable from a memory that
-	// simply has nothing in it yet: startup reports success and the failure
-	// surfaces at the agent's first memory write, mid-conversation.
+	var dirErr error
 	if err := os.MkdirAll(cfg.Dir, 0o755); err != nil {
-		return nil, fmt.Errorf("builtin: memory directory %s unusable: %w", cfg.Dir, err)
+		dirErr = fmt.Errorf("builtin: memory directory %s unusable: %w", cfg.Dir, err)
 	}
 
+	// A store that cannot read its file starts empty rather than failing,
+	// for the same reason: reads must keep working on a degraded provider.
 	memStore, err := NewStore(filepath.Join(cfg.Dir, "MEMORY.md"), cfg.MaxFileBytes)
 	if err != nil {
-		return nil, err
+		if dirErr == nil {
+			dirErr = err
+		}
+		memStore = emptyStore(filepath.Join(cfg.Dir, "MEMORY.md"), cfg.MaxFileBytes)
 	}
 	userStore, err := NewStore(filepath.Join(cfg.Dir, "USER.md"), cfg.MaxFileBytes)
 	if err != nil {
-		return nil, err
+		if dirErr == nil {
+			dirErr = err
+		}
+		userStore = emptyStore(filepath.Join(cfg.Dir, "USER.md"), cfg.MaxFileBytes)
 	}
 
 	// Frozen snapshot is enabled by default (DisableFrozenSnapshot defaults
@@ -105,15 +125,22 @@ func New(cfg Config) (*Provider, error) {
 		memory:                memStore,
 		user:                  userStore,
 		frozenSnapshotEnabled: frozen,
+		dirErr:                dirErr,
 	}, nil
 }
 
 // Name returns the provider's identifier.
 func (p *Provider) Name() string { return providerName }
 
-// IsAvailable always returns true: the built-in provider has no external
-// dependency that can be unavailable.
-func (p *Provider) IsAvailable() bool { return true }
+// IsAvailable reports whether the backing directory could be established.
+// The built-in provider has one external dependency after all -- the
+// filesystem -- and a directory it cannot write to means memory reads as
+// empty and every write will fail.
+func (p *Provider) IsAvailable() bool { return p.dirErr == nil }
+
+// Err returns why the provider is unavailable, or nil. Callers log this: an
+// operator told only that memory is unavailable has nothing to act on.
+func (p *Provider) Err() error { return p.dirErr }
 
 // SystemPromptBlock implements memory.SystemPromptProvider. It returns a
 // markdown-formatted block containing the frozen snapshot of MEMORY.md and
