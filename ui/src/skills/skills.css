@@ -1,0 +1,34 @@
+/* Skills-only styles. */
+
+.skill-search {
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-2) var(--sp-3);
+  width: 220px;
+}
+
+.skill-search:focus {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 1px;
+}
+
+.skill-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.skill-desc {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  margin: 0 0 var(--sp-3);
+  flex: 1;
+}
+
+.skill-source {
+  font-size: var(--text-xs);
+  color: var(--fg-subtle);
+}

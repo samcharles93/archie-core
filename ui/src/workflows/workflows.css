@@ -1,0 +1,49 @@
+/* Workflows-only styles. */
+
+.wf-stage-card {
+  margin-top: var(--sp-4);
+}
+
+.wf-rate {
+  font-size: var(--text-sm);
+  color: var(--fg);
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+
+.wf-rate-sub {
+  font-size: var(--text-xs);
+  color: var(--fg-subtle);
+}
+
+.wf-bar {
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--border);
+  overflow: hidden;
+  margin-top: var(--sp-2);
+  width: 140px;
+}
+
+.wf-bar-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  transition: width var(--transition);
+}
+
+.wf-bar-ok {
+  background: var(--ok);
+}
+
+.wf-bar-warn {
+  background: var(--warn);
+}
+
+.wf-bar-danger {
+  background: var(--danger);
+}
+
+.wf-bar-info {
+  background: var(--info);
+}

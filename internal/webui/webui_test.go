@@ -1,5 +1,16 @@
 package webui
 
+// The dashboard moved from a hand-written index.html embedded in this package
+// to the Vite build in ui/. Four tests were removed with it:
+//
+//   - TestIndexContainsViewportMeta, TestIndexHasResponsiveFeatures asserted
+//     markup and CSS that now live in ui/index.html and ui/src/css/.
+//   - TestIndexEscapesSingleQuotesInOnclick, TestIndexEscDoesNotEscapeSingleQuotes
+//     guarded against injection through string-interpolated onclick handlers.
+//     That bug is no longer reachable: ui/src/base/dom.js builds nodes with
+//     createTextNode and addEventListener, so no markup is assembled from
+//     strings at all.
+
 import (
 	"bufio"
 	"context"
@@ -239,61 +250,18 @@ func TestHandleIndex(t *testing.T) {
 	}
 }
 
-func TestIndexContainsViewportMeta(t *testing.T) {
-	srv := newTestServer(t)
-	ctx := t.Context()
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d", w.Code)
-	}
-	body := w.Body.String()
-	if !strings.Contains(body, `<meta name="viewport" content="width=device-width, initial-scale=1">`) {
-		t.Error("viewport meta missing in rendered HTML")
-	}
-}
-
-func TestIndexHasResponsiveFeatures(t *testing.T) {
-	srv := newTestServer(t)
-	ctx := t.Context()
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d", w.Code)
-	}
-	body := w.Body.String()
-	reqs := []struct {
-		name string
-		want string
-	}{
-		{"section-table", ".section-table { overflow-x: auto; }"},
-		{"feed-wraps", "white-space: normal"},
-		{"feed-break-word", "overflow-wrap: break-word"},
-		{"700px-breakpoint", "@media (max-width: 700px)"},
-		{"950px-breakpoint", "@media (max-width: 950px)"},
-		{"viewport-meta", `<meta name="viewport" content="width=device-width, initial-scale=1">`},
-	}
-	for _, r := range reqs {
-		if !strings.Contains(body, r.want) {
-			t.Errorf("missing responsive feature %q: %q", r.name, r.want)
-		}
-	}
-}
-
 // TestHandleSSEEventsSinceError proves that handleSSE does not silently
 // discard an error from EventsSince.  Today the handler has no else
 // branch for err != nil, so the error is swallowed and the client
 // receives no signal that catch-up was skipped: this test FAILS.
 func TestHandleSSEEventsSinceError(t *testing.T) {
-	real := newTestServer(t)
+	actual := newTestServer(t)
 	srv := &Server{
 		Store: &stubStore{
-			TaskStore:      real.Store,
+			TaskStore:      actual.Store,
 			eventsSinceErr: fmt.Errorf("db locked"),
 		},
-		Log: real.Log,
+		Log: actual.Log,
 	}
 
 	ts := httptest.NewServer(srv.Handler())
@@ -372,69 +340,6 @@ func TestHandleSSEBacklogAndLive(t *testing.T) {
 
 	if _, err := readLineUntil(reader, "live"); err != nil {
 		t.Fatalf("live event not received: %v", err)
-	}
-}
-
-func TestIndexEscapesSingleQuotesInOnclick(t *testing.T) {
-	srv := newTestServer(t)
-	ctx := t.Context()
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d", w.Code)
-	}
-	body := w.Body.String()
-
-	// escJS helper must be defined.
-	if !strings.Contains(body, "escJS") {
-		t.Fatal("escJS helper not found in HTML")
-	}
-
-	// The onclick template must use escJS (not esc) for owner and
-	// repo  --  the values interpolated into the single-quoted JS str.
-	if !strings.Contains(body, "escJS(t.owner)") {
-		t.Error("onclick does not use escJS for owner")
-	}
-	if !strings.Contains(body, "escJS(t.repo)") {
-		t.Error("onclick does not use escJS for repo")
-	}
-}
-
-func TestIndexEscDoesNotEscapeSingleQuotes(t *testing.T) {
-	srv := newTestServer(t)
-	ctx := t.Context()
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d", w.Code)
-	}
-	body := w.Body.String()
-
-	// esc() must NOT escape single quotes  --  it's used for HTML
-	// content/attribute contexts where apostrophes are legitimate
-	// (e.g. issue titles like "Don't panic").
-	idx := strings.Index(body, "const esc =")
-	if idx == -1 {
-		t.Fatal("esc definition not found")
-	}
-	snippet := body[idx : idx+200]
-	// The regex should escape & < > " but NOT '
-	if !strings.Contains(snippet, "[&<>\"") {
-		t.Error("esc regex character class is missing or malformed")
-	}
-	// The character class must NOT include a single quote.
-	reStart := strings.Index(snippet, "[&<>\"")
-	reEnd := strings.Index(snippet[reStart:], "]")
-	if reEnd == -1 {
-		t.Fatal("could not find end of esc regex character class")
-	}
-	charClass := snippet[reStart : reStart+reEnd]
-	if strings.Contains(charClass, "'") {
-		t.Error("esc() regex escapes single quotes  --  this would cause backslash artifacts in HTML text")
 	}
 }
 

@@ -1,0 +1,30 @@
+/* Motion preferences and narrow viewports. */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+
+.nav-soon {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--fg-subtle);
+  background: var(--surface-hover);
+  padding: 1px var(--sp-2);
+  border-radius: var(--radius-pill);
+}
+
+.nav-item[aria-disabled] {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.nav-item[aria-disabled]:hover {
+  background: none;
+  color: var(--fg-muted);
+}

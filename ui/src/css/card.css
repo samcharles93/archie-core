@@ -1,0 +1,43 @@
+/* Cards and the grids that arrange them. */
+
+.card {
+  background: var(--surface-glass);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-5);
+  box-shadow: var(--shadow-sm);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+
+.card-title {
+  font-size: var(--text-base);
+  font-weight: 600;
+  margin: 0;
+}
+
+.card-sub {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  margin: var(--sp-1) 0 0;
+}
+
+.grid {
+  display: grid;
+  gap: var(--sp-4);
+}
+
+.grid-4 {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.grid-2 {
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+}

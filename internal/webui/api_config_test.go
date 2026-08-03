@@ -1,0 +1,208 @@
+package webui
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/secret"
+)
+
+// fakeSecrets are recognisable strings that must never appear anywhere in
+// handleConfig's response body. If any of these leak, the allowlist in
+// api_config.go has a hole -- see handleConfig's doc comment for why it is
+// built field by field rather than by marshalling config.Config directly.
+const (
+	fakeForgeToken  = "ghp_FAKESECRETTOKENVALUE123"
+	fakeProviderKey = "sk-FAKEPROVIDERKEYVALUE456"
+	fakeBWSKeyName  = "FAKE-BWS-SECRET-KEY-789"
+	fakeNATSToken   = "nats-FAKESECRETTOKEN000"
+)
+
+func configWithFakeSecrets() *config.Config {
+	return &config.Config{
+		WorkDir:   "/work/archie",
+		SkillsDir: "/work/archie/.agents/skills",
+		DBPath:    "/work/archie/archie.db",
+		BotUser:   "archie-bot",
+		BotEmail:  "archie@example.com",
+		Label:     "archie",
+		Forge: config.Forge{
+			Type:     "gitea",
+			Host:     "gitea.example.com",
+			TokenEnv: "GITEA_TOKEN",
+			Token:    secret.SecretRef{Engine: "env", Key: fakeForgeToken},
+		},
+		Models: map[string]string{"builder": "openai/gpt-4"},
+		Providers: map[string]config.Provider{
+			"openai": {
+				Class:     "openai",
+				APIKeyEnv: "OPENAI_API_KEY",
+				APIKey:    secret.SecretRef{Engine: "bws", Key: fakeBWSKeyName},
+				BaseURL:   "https://api.openai.com/v1",
+			},
+			"custom": {
+				Class:  "custom",
+				APIKey: secret.SecretRef{Engine: "literal", Key: fakeProviderKey},
+			},
+		},
+		Repos: []config.Repo{
+			{Owner: "acme", Name: "widget", Base: "main", Gate: [][]string{{"task", "check"}}},
+		},
+		Agent: config.Agent{Mode: "subprocess", Command: "/usr/local/bin/archie-agent", Env: []string{"HOME"}},
+		NATS:  config.NATSConfig{URL: "nats://127.0.0.1:4222", TokenEnv: "NATS_TOKEN"},
+		Chat: config.ChatConfig{
+			Telegram: config.TelegramConfig{TokenEnv: "TELEGRAM_TOKEN"},
+		},
+	}
+}
+
+// leakCandidates returns the set of fake secret strings a test should
+// confirm are absent from a response body. NATS token is included even
+// though handleConfig doesn't expose NATS today, guarding against a future
+// regression that starts serializing it wholesale.
+func leakCandidates() []string {
+	return []string{fakeForgeToken, fakeProviderKey, fakeBWSKeyName, fakeNATSToken}
+}
+
+func TestHandleConfigNeverLeaksSecrets(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  *config.Config
+	}{
+		{name: "populated config with secrets", cfg: configWithFakeSecrets()},
+		{name: "nil config", cfg: nil},
+		{name: "zero-value config", cfg: &config.Config{}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newTestServer(t)
+			srv.Cfg = tc.cfg
+
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
+			w := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, body = %s", w.Code, w.Body)
+			}
+
+			body := w.Body.String()
+			for _, leak := range leakCandidates() {
+				if strings.Contains(body, leak) {
+					t.Errorf("response body leaked secret value %q:\n%s", leak, body)
+				}
+			}
+
+			var got map[string]any
+			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+				t.Fatalf("response is not valid JSON: %v", err)
+			}
+		})
+	}
+}
+
+// TestHandleConfigSafeFieldsPresent proves the allowlisted, non-secret
+// fields still make it through -- a test that only checked for absence of
+// secrets could pass trivially by returning {}.
+func TestHandleConfigSafeFieldsPresent(t *testing.T) {
+	srv := newTestServer(t)
+	srv.Cfg = configWithFakeSecrets()
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	var got ConfigView
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if got.Identity.BotUser != "archie-bot" {
+		t.Errorf("Identity.BotUser = %q, want archie-bot", got.Identity.BotUser)
+	}
+	if got.Identity.ForgeHost != "gitea.example.com" {
+		t.Errorf("Identity.ForgeHost = %q, want gitea.example.com", got.Identity.ForgeHost)
+	}
+	if len(got.Repositories) != 1 || got.Repositories[0].Owner != "acme" {
+		t.Errorf("Repositories = %+v", got.Repositories)
+	}
+	if !got.Providers["openai"].Configured {
+		t.Errorf("Providers[openai].Configured = false, want true (APIKeyEnv is set)")
+	}
+	if got.Providers["openai"].APIKeyEnv != "OPENAI_API_KEY" {
+		t.Errorf("Providers[openai].APIKeyEnv = %q, want OPENAI_API_KEY", got.Providers["openai"].APIKeyEnv)
+	}
+	if got.Agent.Mode != "subprocess" {
+		t.Errorf("Agent.Mode = %q, want subprocess", got.Agent.Mode)
+	}
+	if got.Storage.WorkDir != "/work/archie" {
+		t.Errorf("Storage.WorkDir = %q", got.Storage.WorkDir)
+	}
+}
+
+func TestHandleChannelsReportsConfiguredState(t *testing.T) {
+	srv := newTestServer(t)
+	srv.Cfg = configWithFakeSecrets()
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/channels", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body)
+	}
+
+	body := w.Body.String()
+	for _, leak := range leakCandidates() {
+		if strings.Contains(body, leak) {
+			t.Errorf("channels response leaked secret value %q:\n%s", leak, body)
+		}
+	}
+
+	var got struct {
+		Channels []ChannelView `json:"channels"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	var telegram *ChannelView
+	for i := range got.Channels {
+		if got.Channels[i].Name == "Telegram" {
+			telegram = &got.Channels[i]
+		}
+	}
+	if telegram == nil {
+		t.Fatal("no Telegram channel in response")
+	}
+	if !telegram.Configured {
+		t.Errorf("Telegram.Configured = false, want true (TokenEnv is set)")
+	}
+}
+
+func TestHandleChannelsNilConfig(t *testing.T) {
+	srv := newTestServer(t)
+	srv.Cfg = nil
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/channels", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body)
+	}
+	var got struct {
+		Channels []ChannelView `json:"channels"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Channels) != 0 {
+		t.Errorf("Channels = %+v, want empty when Cfg is nil", got.Channels)
+	}
+}

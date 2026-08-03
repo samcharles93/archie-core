@@ -1,0 +1,28 @@
+# Live reload for archied during dashboard work.
+#
+# The frontend has its own loop -- `task ui:dev` runs Vite with HMR and proxies
+# /api and /events here -- so this watcher deliberately ignores ui/. Watching
+# it would rebuild the Go binary on every keystroke in a CSS file, and
+# rebuilding on ui/dist changes would loop against `task ui`.
+root = "."
+tmp_dir = ".air"
+
+[build]
+  cmd = "go build -o ./.air/archied ./cmd/archied"
+  # `bin` is deprecated in air; entrypoint is the current key.
+  entrypoint = "./.air/archied"
+  include_ext = ["go", "toml"]
+  exclude_dir = ["ui", "bin", "docs", ".git", ".task", ".air", ".beads", "tmp"]
+  exclude_regex = ["_test\\.go"]
+  stop_on_error = true
+  delay = 400
+
+[log]
+  time = true
+  # Only air's own build/restart lines. Without this it prints a "watching X"
+  # line per directory on every start, which buries Vite's output when both
+  # run in one terminal under `task dev`.
+  main_only = true
+
+[misc]
+  clean_on_exit = true

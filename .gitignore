@@ -26,3 +26,14 @@ node_modules/
 .claude/
 .codex/
 .pi-subagents/
+.playwright-mcp/
+
+# Frontend
+/ui/node_modules/
+/ui/.vite/
+/ui/*.tsbuildinfo
+# ui/dist IS committed: the Go build must not need a Node toolchain.
+
+# air live-reload
+/.air/
+/tmp/

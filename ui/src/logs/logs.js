@@ -1,0 +1,233 @@
+import "./logs.css";
+import { api, subscribeEvents } from "../base/api.js";
+import { el, empty, mount, pill } from "../base/dom.js";
+
+/**
+ * The log view: history from the file on disk, then live lines appended from
+ * the event stream.
+ *
+ * Filtering is applied server-side for history (the file is far larger than a
+ * page of it) and client-side for live lines (they are already in hand). Both
+ * paths go through the same matcher shape so a filter means the same thing
+ * either side of the join.
+ */
+
+const LEVELS = [
+  { value: "", label: "All levels" },
+  { value: "ERROR", label: "Errors" },
+  { value: "WARN,ERROR", label: "Warnings and errors" },
+  { value: "INFO,WARN,ERROR", label: "Info and above" },
+  { value: "DEBUG", label: "Debug only" },
+];
+
+function levelKind(level) {
+  switch ((level || "").toUpperCase()) {
+    case "ERROR":
+      return "danger";
+    case "WARN":
+      return "warn";
+    case "DEBUG":
+      return "idle";
+    default:
+      return "info";
+  }
+}
+
+export function logsPage() {
+  const root = el("div");
+  const list = el("div.log-list");
+  const streamState = pill("connecting", "idle");
+  const meta = el("span.log-meta");
+
+  let filters = { level: "", component: "", q: "" };
+  let paused = false;
+  let componentOptions = [];
+
+  const levelSelect = el(
+    "select.log-select",
+    { onchange: (e) => set({ level: e.target.value }) },
+    ...LEVELS.map((l) => el("option", { value: l.value }, l.label)),
+  );
+  const componentSelect = el("select.log-select", {
+    onchange: (e) => set({ component: e.target.value }),
+  });
+  const search = el("input.log-search", {
+    type: "search",
+    placeholder: "Search messages and fields…",
+    oninput: debounce((e) => set({ q: e.target.value }), 250),
+  });
+  const pauseBtn = el("button.btn", { onclick: togglePause }, "Pause");
+
+  render();
+  load();
+
+  const unsubscribe = subscribeEvents(
+    (event) => appendLive(event),
+    (state) => {
+      streamState.className = `pill pill-${state === "live" ? "ok" : "warn"}`;
+      streamState.textContent = state;
+    },
+  );
+  root.addEventListener("archie:teardown", unsubscribe);
+
+  function set(patch) {
+    filters = { ...filters, ...patch };
+    load();
+  }
+
+  function togglePause() {
+    paused = !paused;
+    pauseBtn.textContent = paused ? "Resume" : "Pause";
+    pauseBtn.classList.toggle("btn-primary", paused);
+  }
+
+  function render() {
+    mount(
+      root,
+      el(
+        "div.page-head",
+        el(
+          "div",
+          el("h1.page-title", "Logs"),
+          el("p.page-sub", "What Archie has been doing, newest last."),
+        ),
+        el("div.page-actions", pauseBtn, el("button.btn", { onclick: load }, "Refresh")),
+      ),
+      el(
+        "div.card",
+        el(
+          "div.card-head",
+          el("div.log-filters", levelSelect, componentSelect, search),
+          el("div.log-status", meta, streamState),
+        ),
+        list,
+      ),
+    );
+  }
+
+  async function load() {
+    mount(list, el("div.log-loading", "Loading…"));
+    try {
+      const res = await api.logs({
+        level: filters.level,
+        component: filters.component,
+        q: filters.q,
+        limit: 500,
+      });
+
+      if (res.disabled) {
+        mount(
+          list,
+          empty(
+            "File logging is off",
+            "Set [log] file in your config to keep a durable record. Live lines below still stream while this page is open.",
+          ),
+        );
+        meta.textContent = "";
+        return;
+      }
+
+      syncComponents(res.components || []);
+      meta.textContent = res.truncated
+        ? `showing the most recent matches from ${res.file}`
+        : res.file || "";
+
+      const entries = res.entries || [];
+      if (!entries.length) {
+        mount(list, empty("Nothing matches", "Try a wider level or clear the search."));
+        return;
+      }
+      mount(list, ...entries.map(row));
+      list.scrollTop = list.scrollHeight;
+    } catch (err) {
+      mount(list, empty("Cannot read logs", String(err.message || err)));
+    }
+  }
+
+  // Rebuild the component filter from what the log actually contains, so the
+  // options never drift from reality.
+  function syncComponents(components) {
+    if (sameList(components, componentOptions)) return;
+    componentOptions = components;
+    const current = filters.component;
+    mount(
+      componentSelect,
+      el("option", { value: "" }, "All components"),
+      ...components.map((c) => el("option", { value: c }, c)),
+    );
+    componentSelect.value = current;
+  }
+
+  function appendLive(event) {
+    if (paused) return;
+    const entry = {
+      time: event.at || new Date().toISOString(),
+      level: event.level || "INFO",
+      msg: event.detail || event.message || event.kind || "event",
+      fields: event.task_id ? { task: event.task_id } : null,
+    };
+    if (!matchesLocally(entry)) return;
+
+    // Only auto-scroll when already at the bottom, so reading history is not
+    // yanked away by an arriving line.
+    const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+    if (list.querySelector(".empty, .log-loading")) list.replaceChildren();
+    list.append(row({ ...entry, message: entry.msg }));
+    while (list.children.length > 1000) list.firstElementChild.remove();
+    if (atBottom) list.scrollTop = list.scrollHeight;
+  }
+
+  function matchesLocally(entry) {
+    if (filters.level && !filters.level.split(",").includes((entry.level || "").toUpperCase())) {
+      return false;
+    }
+    if (filters.component && entry.fields?.component !== filters.component) return false;
+    if (filters.q) {
+      const needle = filters.q.toLowerCase();
+      const hay = `${entry.msg} ${JSON.stringify(entry.fields || {})}`.toLowerCase();
+      if (!hay.includes(needle)) return false;
+    }
+    return true;
+  }
+
+  return root;
+}
+
+function row(entry) {
+  const fields = entry.fields || {};
+  return el(
+    `div.log-row.log-${levelKind(entry.level)}`,
+    el("span.log-time.mono", shortTime(entry.time)),
+    el("span.log-level", (entry.level || "info").toUpperCase()),
+    el(
+      "span.log-body",
+      el("span.log-msg", entry.message || entry.msg || ""),
+      ...Object.entries(fields).map(([k, v]) =>
+        el("span.log-field", el("span.log-field-key", k), String(fmtValue(v))),
+      ),
+    ),
+  );
+}
+
+function fmtValue(v) {
+  if (v == null) return "";
+  return typeof v === "object" ? JSON.stringify(v) : v;
+}
+
+function shortTime(value) {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "--:--:--";
+  return d.toTimeString().slice(0, 8);
+}
+
+function sameList(a, b) {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+function debounce(fn, ms) {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+}

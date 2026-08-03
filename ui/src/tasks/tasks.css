@@ -1,0 +1,84 @@
+/* Tasks-only styles. */
+
+.task-filters {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+}
+
+.task-search,
+.task-filter {
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-2) var(--sp-3);
+}
+
+.task-search {
+  width: 220px;
+}
+
+.task-search:focus,
+.task-filter:focus {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 1px;
+}
+
+.task-row {
+  cursor: pointer;
+}
+
+.task-timeline-row td {
+  background: var(--bg-raised);
+  padding: var(--sp-4);
+}
+
+.task-timeline-loading {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+
+.task-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.task-timeline-entry {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: flex-start;
+}
+
+.task-timeline-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.task-timeline-kind {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--fg);
+}
+
+.task-timeline-detail {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  margin-top: 2px;
+}
+
+.task-timeline-when {
+  font-size: var(--text-xs);
+  color: var(--fg-subtle);
+  margin-top: 2px;
+}

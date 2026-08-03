@@ -294,7 +294,7 @@ func run() int {
 	// row id) and then fanned out to live dashboard connections.
 	bus := events.NewBus()
 	defer bus.Close()
-	web := &webui.Server{Store: st, Log: log}
+	web := &webui.Server{Store: st, Log: log, Cfg: &cfg}
 	sink := bus.Subscribe(256)
 	go func() {
 		for e := range sink.C {
@@ -308,6 +308,7 @@ func run() int {
 		}
 	}()
 	if l := cfg.Web.Listen; l != "" && l != "off" {
+		web.Token = webTokenFor(l, cfg.DBPath, log)
 		go func() {
 			if err := web.Run(ctx, l); err != nil {
 				log.Error("web ui failed", "err", err)
@@ -340,41 +341,15 @@ func run() int {
 	}
 
 	// Container pool (optional  --  no containers when [containers] is absent).
-	var containerPool *container.Pool
-	var storeBackend storage.Backend
-	if cfg.Containers.Enabled {
-		// Single Docker client shared between pool and storage backend.
-		dockerCli, err := client.New(client.FromEnv)
-		if err != nil {
-			log.Error("docker client failed", "err", err)
-			return 1
-		}
-		defer func() {
-			if err := dockerCli.Close(); err != nil {
-				log.Warn("docker client close failed", "err", err)
-			}
-		}()
-
-		containerPool, err = container.NewPool(ctx, container.Config{
-			Image:          cfg.Containers.Image,
-			MaxConcurrency: cfg.Containers.MaxConcurrency,
-			MaxUptime:      cfg.Containers.MaxUptime.Std(),
-			PullPolicy:     cfg.Containers.PullPolicy,
-			Network:        cfg.Containers.Network,
-			DockerClient:   dockerCli,
-		}, cfg.NATS.URL, log)
-		if err != nil {
-			log.Error("container pool failed", "err", err)
-			return 1
-		}
-		defer func() {
-			if err := containerPool.Close(); err != nil {
-				log.Warn("container pool close failed", "err", err)
-			}
-		}()
-
-		storeBackend = storage.NewDockerBackend(dockerCli)
-	}
+	//
+	// Container setup degrades rather than aborting, for the same reason
+	// resolveForge does: containers are one capability among many, and
+	// refusing to start denies the operator chat, the dashboard and every
+	// other subsystem over a feature they may not be exercising right now.
+	// Under a systemd unit with Restart=on-failure it also turns a recoverable
+	// problem into a crash loop with the real error scrolling past unread.
+	containerPool, storeBackend, closeDocker := startContainers(ctx, cfg, log)
+	defer closeDocker()
 
 	// ── LLM runtime ──────────────────────────────────────────────────
 	// Created before gateways so the LLMResponder can be wired into the
@@ -607,6 +582,10 @@ func run() int {
 		log.Error("memory manager init failed", "err", err)
 		return 1
 	}
+	// The dashboard is built before memory exists, so it is wired in here
+	// rather than at construction.
+	web.Memory = memManager
+
 	if err := memManager.Initialize("daemon"); err != nil {
 		log.Warn("memory manager initialize", "err", err)
 	}
@@ -936,4 +915,83 @@ func safePluginInfo(p plugin.Plugin) (name, version string) {
 		}
 	}()
 	return p.Name(), p.Version()
+}
+
+// webTokenFor returns the dashboard token for a listen address, or "" when
+// none is needed.
+//
+// A loopback bind needs no token: local access already implies the agent's own
+// authority, since its shell and edit tools run as this user. A reachable bind
+// mints one and logs a URL to click, so an instance cannot be left exposed
+// merely by omitting configuration.
+func webTokenFor(listen, dbPath string, log *slog.Logger) string {
+	if webui.IsLoopback(listen) {
+		return ""
+	}
+	path := filepath.Join(filepath.Dir(dbPath), "web-token")
+	tok, err := webui.LoadOrCreateToken(path)
+	if err != nil {
+		log.Error("web ui token", "err", err)
+		return ""
+	}
+	log.Info("web ui token", "open", webui.DashboardURL(listen, tok), "stored", path)
+	return tok
+}
+
+// startContainers brings up the container pool and storage backend, returning
+// nils when containers are disabled or unavailable.
+//
+// Failure here degrades rather than aborting, for the same reason resolveForge
+// does: containers are one capability among many, and refusing to start denies
+// the operator chat, the dashboard and every other subsystem over a feature
+// they may not be exercising. Under Restart=on-failure it also turns a
+// recoverable problem into a crash loop with the real error scrolling past.
+func startContainers(
+	ctx context.Context,
+	cfg config.Config,
+	log *slog.Logger,
+) (*container.Pool, storage.Backend, func()) {
+	noop := func() {}
+	if !cfg.Containers.Enabled {
+		return nil, nil, noop
+	}
+
+	// Single Docker client shared between pool and storage backend.
+	dockerCli, err := client.New(client.FromEnv)
+	if err != nil {
+		log.Error("containers disabled: docker client unavailable", "err", err)
+		return nil, nil, noop
+	}
+	closeDocker := func() {
+		if err := dockerCli.Close(); err != nil {
+			log.Warn("docker client close failed", "err", err)
+		}
+	}
+
+	pool, err := container.NewPool(ctx, container.Config{
+		Image:          cfg.Containers.Image,
+		MaxConcurrency: cfg.Containers.MaxConcurrency,
+		MaxUptime:      cfg.Containers.MaxUptime.Std(),
+		PullPolicy:     cfg.Containers.PullPolicy,
+		Network:        cfg.Containers.Network,
+		DockerClient:   dockerCli,
+	}, cfg.NATS.URL, log)
+	if err != nil {
+		// A missing image is recoverable by hand. The daemon sends no registry
+		// credentials on pull (internal/container/pool.go), so a private
+		// registry always needs the operator's CLI to fetch it first.
+		log.Error("containers disabled: pool unavailable", "err", err,
+			"hint", "run `docker compose pull agent` (or `build agent`) so the image is present locally")
+		return nil, storage.NewDockerBackend(dockerCli), closeDocker
+	}
+
+	// contextcheck: Pool.Close takes no context by design -- it is a shutdown
+	// path that must run to completion after ctx is already cancelled.
+	//nolint:contextcheck
+	return pool, storage.NewDockerBackend(dockerCli), func() {
+		if err := pool.Close(); err != nil {
+			log.Warn("container pool close failed", "err", err)
+		}
+		closeDocker()
+	}
 }

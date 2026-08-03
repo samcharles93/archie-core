@@ -1,0 +1,32 @@
+/* Element defaults. Nothing here is component-specific. */
+
+/*
+ * App shell and shared primitives. Feature folders style their own specifics;
+ * anything that appears on more than one page lives here so pages cannot
+ * drift into three visual languages.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}

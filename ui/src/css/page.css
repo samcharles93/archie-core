@@ -1,0 +1,29 @@
+/* Page header: title, subtitle and the actions that belong to a page. */
+
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-5);
+  margin-bottom: var(--sp-6);
+  flex-wrap: wrap;
+}
+
+.page-title {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.page-sub {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  margin: var(--sp-1) 0 0;
+}
+
+.page-actions {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+}

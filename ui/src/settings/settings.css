@@ -1,0 +1,46 @@
+/* Configuration-only styles. */
+
+.cfg-section {
+  margin-bottom: var(--sp-4);
+}
+
+.cfg-subhead {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg-muted);
+  margin: var(--sp-4) 0 var(--sp-2);
+}
+
+.cfg-subhead:first-child {
+  margin-top: 0;
+}
+
+.cfg-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.cfg-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.cfg-row:last-child {
+  border-bottom: 0;
+}
+
+.cfg-label {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.cfg-value {
+  font-size: var(--text-sm);
+  color: var(--fg);
+  text-align: right;
+}

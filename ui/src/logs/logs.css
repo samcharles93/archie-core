@@ -1,0 +1,145 @@
+/* Log view. Dense by design: the point is scanning many lines quickly, so the
+   type is smaller and the rows tighter than elsewhere in the dashboard. */
+
+.log-filters {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.log-status {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: center;
+}
+
+.log-meta {
+  font-size: var(--text-xs);
+  color: var(--fg-subtle);
+  font-family: var(--font-mono);
+}
+
+.log-select,
+.log-search {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  color: var(--fg);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-2) var(--sp-3);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.log-search {
+  min-width: 220px;
+}
+
+.log-select:focus,
+.log-search:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.log-list {
+  max-height: 62vh;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  border-top: 1px solid var(--border);
+}
+
+.log-loading {
+  padding: var(--sp-5);
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+.log-row {
+  display: grid;
+  grid-template-columns: 62px 52px 1fr;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-1);
+  border-bottom: 1px solid var(--border);
+  align-items: baseline;
+}
+
+.log-row:hover {
+  background: var(--surface-hover);
+}
+
+.log-time {
+  color: var(--fg-subtle);
+}
+
+.log-level {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+/* Level colour lives on the row so the message inherits emphasis without a
+   second rule per level. */
+.log-danger .log-level {
+  color: var(--danger);
+}
+.log-warn .log-level {
+  color: var(--warn);
+}
+.log-info .log-level {
+  color: var(--info);
+}
+.log-idle .log-level {
+  color: var(--idle);
+}
+
+.log-danger .log-msg {
+  color: var(--fg);
+}
+
+.log-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: baseline;
+  min-width: 0;
+}
+
+.log-msg {
+  color: var(--fg);
+  word-break: break-word;
+}
+
+/* Structured fields read as attached detail, not part of the sentence. */
+.log-field {
+  color: var(--fg-muted);
+  background: var(--bg-raised);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--sp-2);
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.log-field-key {
+  color: var(--fg-subtle);
+}
+
+.log-field-key::after {
+  content: "=";
+  opacity: 0.6;
+}
+
+@media (max-width: 860px) {
+  .log-row {
+    grid-template-columns: 56px 1fr;
+  }
+  .log-level {
+    display: none;
+  }
+  .log-search {
+    min-width: 0;
+    flex: 1;
+  }
+}

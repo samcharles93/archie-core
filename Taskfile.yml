@@ -25,6 +25,40 @@ tasks:
     cmds:
       - golangci-lint run ./...
 
+  ui:
+    desc: Build the dashboard into ui/dist (committed; the Go build embeds it)
+    dir: ui
+    cmds:
+      - npm install --no-audit --no-fund
+      - npm run build
+
+  dev:
+    desc: "Develop: archied live-reload + Vite HMR together. Open http://localhost:5173"
+    summary: |
+      Runs both halves of the dev loop in one terminal:
+
+        * air        rebuilds and restarts archied on Go changes
+        * vite       serves the dashboard with hot reload on :5173,
+                     proxying /api and /events through to archied on :8484
+
+      Open http://localhost:5173 -- not :8484. The Vite server is the one with
+      hot reload; :8484 serves the last built dist/ and will look stale.
+
+      Ctrl-C stops both.
+    deps: [dev:daemon, dev:ui]
+
+  dev:daemon:
+    desc: archied only, live-reloading via air (prefer `task dev`)
+    cmds:
+      - air
+
+  dev:ui:
+    desc: Vite dev server only, expects archied already running (prefer `task dev`)
+    dir: ui
+    cmds:
+      - npm install --no-audit --no-fund
+      - npm run dev
+
   build:
     desc: Build archied and archie-agent binaries
     sources:

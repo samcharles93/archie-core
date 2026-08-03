@@ -1,0 +1,242 @@
+/* The shell: one contained, rounded application surface floating on a lit
+ * canvas.
+ *
+ * The dashboard is a *workspace*, not a document that fills the viewport --
+ * framing it gives the panels an edge to sit against, and lets the canvas
+ * behind read as light rather than wallpaper. Everything inside is translucent
+ * so that light carries through instead of stopping at the first opaque card.
+ */
+
+body {
+  /* The luminous canvas. Large, off-axis and low-frequency, so it lights the
+     workspace rather than competing with it. */
+  background:
+    radial-gradient(70rem 40rem at 8% -10%, var(--wash-a), transparent 62%),
+    radial-gradient(56rem 34rem at 92% 4%, var(--wash-b), transparent 58%),
+    radial-gradient(48rem 30rem at 50% 108%, var(--wash-c), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+  padding: var(--sp-4);
+}
+
+.shell {
+  min-height: calc(100vh - var(--sp-4) * 2);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--hairline);
+  background: var(--workspace);
+  backdrop-filter: blur(28px) saturate(120%);
+  box-shadow: var(--shadow-workspace);
+  overflow: hidden;
+}
+
+/* ── Command bar ────────────────────────────────────────────────────────── */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--bg-blur);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  letter-spacing: -0.01em;
+  flex: none;
+}
+
+.brand-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+/* Compact icon navigation: one pill, icons only, label on the active item. */
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 auto;
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-glass-strong);
+  border: 1px solid var(--hairline);
+}
+
+.nav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-pill);
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.nav-item:hover {
+  color: var(--fg);
+  background: var(--surface-hover);
+}
+
+.nav-item[aria-current="page"] {
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 500;
+  padding-right: var(--sp-4);
+}
+
+.nav-item .nav-label {
+  display: none;
+}
+
+.nav-item[aria-current="page"] .nav-label {
+  display: inline;
+}
+
+/* ── Utility cluster ────────────────────────────────────────────────────── */
+
+.topbar-end {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: none;
+}
+
+.topbar-search {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-pill);
+  background: var(--surface-glass-strong);
+  border: 1px solid var(--hairline);
+  color: var(--fg-subtle);
+}
+
+.topbar-search input {
+  background: none;
+  border: 0;
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--text-sm);
+  width: 8rem;
+  outline: none;
+}
+
+.topbar-search input::placeholder {
+  color: var(--fg-subtle);
+}
+
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--hairline);
+  background: var(--surface-glass-strong);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: color var(--transition), background var(--transition);
+}
+
+.icon-btn:hover {
+  color: var(--fg);
+  background: var(--surface-hover);
+}
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-pill);
+  display: grid;
+  place-items: center;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  cursor: pointer;
+  flex: none;
+}
+
+.ico {
+  flex: none;
+  display: block;
+}
+
+/* ── Canvas ─────────────────────────────────────────────────────────────── */
+
+.main {
+  padding: var(--sp-6);
+  width: 100%;
+  flex: 1;
+  overflow-x: hidden;
+}
+
+/* ── Narrow screens ─────────────────────────────────────────────────────── */
+
+/* The frame is a desktop affordance. Below the breakpoint the workspace goes
+   edge to edge -- a rounded card inset on a phone wastes the only axis that
+   matters -- and the icon bar becomes a scrollable labelled row. */
+@media (max-width: 900px) {
+  body {
+    padding: 0;
+  }
+
+  .shell {
+    min-height: 100vh;
+    border-radius: 0;
+    border: 0;
+    box-shadow: none;
+  }
+
+  .topbar {
+    flex-wrap: wrap;
+    padding: var(--sp-3);
+    gap: var(--sp-2);
+  }
+
+  .nav {
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+    justify-content: flex-start;
+    border-radius: var(--radius-lg);
+    scrollbar-width: none;
+  }
+
+  .nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-item .nav-label {
+    display: inline;
+  }
+
+  .topbar-search {
+    display: none;
+  }
+
+  .main {
+    padding: var(--sp-4);
+  }
+}

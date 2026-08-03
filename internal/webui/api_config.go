@@ -1,0 +1,278 @@
+package webui
+
+import (
+	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/samcharles93/archie-core/internal/config"
+)
+
+// ChannelView is one conversational front-end as shown on the dashboard's
+// Channels page: whether it is reachable today, and what configuring it
+// would unlock.
+type ChannelView struct {
+	Name        string `json:"name"`
+	Configured  bool   `json:"configured"`
+	Detail      string `json:"detail"`
+	Description string `json:"description"`
+}
+
+// handleChannels reports how a human can reach Archie today. It exists so
+// "how do I talk to this thing" has one answer that does not require
+// reading config.toml -- see ChatConfig in internal/config/config.go for
+// the fields this derives from.
+func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
+	if s.Cfg == nil {
+		writeJSON(w, map[string]any{"channels": []ChannelView{}})
+		return
+	}
+
+	chat := s.Cfg.Chat
+	views := []ChannelView{
+		telegramChannelView(chat.Telegram),
+		webhookChannelView(chat.WebhookAddr),
+		emailChannelView(chat.Email),
+	}
+
+	writeJSON(w, map[string]any{"channels": views})
+}
+
+func telegramChannelView(t config.TelegramConfig) ChannelView {
+	configured := strings.TrimSpace(t.TokenEnv) != ""
+	detail := "Not configured."
+	if configured {
+		n := len(t.AllowedUserIDs)
+		switch n {
+		case 0:
+			detail = "Token set, but the allowlist is empty -- the bot answers nobody."
+		case 1:
+			detail = "1 user allowed."
+		default:
+			detail = strconv.Itoa(n) + " users allowed."
+		}
+	}
+	return ChannelView{
+		Name:        "Telegram",
+		Configured:  configured,
+		Detail:      detail,
+		Description: "Talk to Archie and approve its work from your phone.",
+	}
+}
+
+func webhookChannelView(addr string) ChannelView {
+	configured := strings.TrimSpace(addr) != ""
+	detail := "Not configured."
+	if configured {
+		detail = "Listening for inbound chat requests."
+	}
+	return ChannelView{
+		Name:        "Webhook gateway",
+		Configured:  configured,
+		Detail:      detail,
+		Description: "Lets another service (e.g. a Telegram webhook, a custom front-end) push messages to Archie over HTTP instead of long-polling.",
+	}
+}
+
+func emailChannelView(e config.EmailConfig) ChannelView {
+	configured := strings.TrimSpace(e.ListenAddr) != ""
+	detail := "Not configured."
+	if configured {
+		detail = "Archie accepts inbound mail and can reply through the configured relay."
+	}
+	return ChannelView{
+		Name:        "Email",
+		Configured:  configured,
+		Detail:      detail,
+		Description: "Email Archie a task and it replies from its own inbound SMTP listener.",
+	}
+}
+
+// ConfigView is the read-only, secret-free projection of config.Config
+// shown on the dashboard's Configuration page. Every field here is an
+// explicit, hand-picked allowlist -- see handleConfig for why this is
+// built field by field rather than by marshalling config.Config directly.
+type ConfigView struct {
+	Identity     IdentityView            `json:"identity"`
+	Repositories []RepoView              `json:"repositories"`
+	Models       map[string]string       `json:"models"`
+	Providers    map[string]ProviderView `json:"providers"`
+	Budgets      BudgetsView             `json:"budgets"`
+	Agent        AgentView               `json:"agent"`
+	Storage      StorageView             `json:"storage"`
+	Containers   ContainersView          `json:"containers"`
+	Web          WebView                 `json:"web"`
+}
+
+// IdentityView is who Archie is on the forge -- never the token that
+// authenticates as that identity.
+type IdentityView struct {
+	BotUser      string `json:"bot_user"`
+	BotEmail     string `json:"bot_email"`
+	Label        string `json:"label"`
+	ForgeType    string `json:"forge_type"`
+	ForgeHost    string `json:"forge_host"`
+	DiffCapLines int    `json:"diff_cap_lines"`
+}
+
+// RepoView is one managed repository and the quality gate it must pass.
+// Gate and Preflight are shell command argv lists -- test runners and
+// linters, not secrets -- so they are safe to show verbatim.
+type RepoView struct {
+	Owner             string     `json:"owner"`
+	Name              string     `json:"name"`
+	Base              string     `json:"base"`
+	Gate              [][]string `json:"gate"`
+	Protect           []string   `json:"protect"`
+	Ecosystem         string     `json:"ecosystem"`
+	PersistentStorage bool       `json:"persistent_storage"`
+	AllowConcurrent   bool       `json:"allow_concurrent"`
+	MaxRetries        int        `json:"max_retries"`
+}
+
+// ProviderView is an LLM provider's shape, never its key. APIKeyEnv is the
+// name of an environment variable, not a value, so it is safe to show;
+// Configured reports whether either credential form (env or secret engine)
+// is actually set, without revealing which or what.
+type ProviderView struct {
+	Class      string `json:"class"`
+	BaseURL    string `json:"base_url,omitempty"`
+	APIKeyEnv  string `json:"api_key_env,omitempty"`
+	Configured bool   `json:"configured"`
+}
+
+// BudgetsView mirrors config.Budgets, none of which is secret.
+type BudgetsView struct {
+	MaxSteps        int    `json:"max_steps"`
+	MaxTokens       int    `json:"max_tokens"`
+	WallClock       string `json:"wall_clock"`
+	GateMaxFailures int    `json:"gate_max_failures"`
+}
+
+// AgentView is how archied executes autonomous stages. Env lists only
+// environment variable NAMES admitted to the worker's allowlist, never
+// their values.
+type AgentView struct {
+	Mode    string   `json:"mode"`
+	Command string   `json:"command,omitempty"`
+	Env     []string `json:"env,omitempty"`
+}
+
+// StorageView is where archied keeps its state on disk. All paths, no
+// secrets.
+type StorageView struct {
+	WorkDir         string `json:"work_dir"`
+	DBPath          string `json:"db_path"`
+	SkillsDir       string `json:"skills_dir,omitempty"`
+	PluginDir       string `json:"plugin_dir,omitempty"`
+	SecretEngineDir string `json:"secret_engine_dir,omitempty"`
+}
+
+// ContainersView is how sandboxed task execution is configured.
+type ContainersView struct {
+	Enabled        bool   `json:"enabled"`
+	Image          string `json:"image,omitempty"`
+	MaxConcurrency int    `json:"max_concurrency"`
+	MaxUptime      string `json:"max_uptime"`
+	VolumeTTL      string `json:"volume_ttl"`
+	PullPolicy     string `json:"pull_policy"`
+	Network        string `json:"network,omitempty"`
+}
+
+// WebView is the dashboard's own listen address.
+type WebView struct {
+	Listen string `json:"listen"`
+}
+
+// handleConfig returns a read-only, secret-free view of the running
+// configuration.
+//
+// This handler builds ConfigView field by field from an explicit allowlist
+// rather than marshalling config.Config and stripping fields afterward:
+// config.Config carries secret.SecretRef values (forge tokens, provider API
+// keys) and there is no way to guarantee a strip-after-marshal approach
+// keeps working as fields are added to Config in the future. An allowlist
+// fails safe -- a new secret field added upstream is simply absent here
+// until someone deliberately adds it.
+func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
+	if s.Cfg == nil {
+		writeJSON(w, map[string]any{})
+		return
+	}
+	cfg := s.Cfg
+
+	view := ConfigView{
+		Identity: IdentityView{
+			BotUser:      cfg.BotUser,
+			BotEmail:     cfg.BotEmail,
+			Label:        cfg.Label,
+			ForgeType:    cfg.Forge.Type,
+			ForgeHost:    cfg.Forge.Host,
+			DiffCapLines: cfg.DiffCapLines,
+		},
+		Repositories: reposView(cfg.Repos),
+		Models:       cfg.Models,
+		Providers:    providersView(cfg.Providers),
+		Budgets: BudgetsView{
+			MaxSteps:        cfg.Budgets.MaxSteps,
+			MaxTokens:       cfg.Budgets.MaxTokens,
+			WallClock:       cfg.Budgets.WallClock.Std().String(),
+			GateMaxFailures: cfg.Budgets.GateMaxFailures,
+		},
+		Agent: AgentView{
+			Mode:    cfg.Agent.Mode,
+			Command: cfg.Agent.Command,
+			Env:     cfg.Agent.Env,
+		},
+		Storage: StorageView{
+			WorkDir:         cfg.WorkDir,
+			DBPath:          cfg.DBPath,
+			SkillsDir:       cfg.SkillsDir,
+			PluginDir:       cfg.PluginDir,
+			SecretEngineDir: cfg.SecretEngineDir,
+		},
+		Containers: ContainersView{
+			Enabled:        cfg.Containers.Enabled,
+			Image:          cfg.Containers.Image,
+			MaxConcurrency: cfg.Containers.MaxConcurrency,
+			MaxUptime:      cfg.Containers.MaxUptime.Std().String(),
+			VolumeTTL:      cfg.Containers.VolumeTTL.Std().String(),
+			PullPolicy:     cfg.Containers.PullPolicy,
+			Network:        cfg.Containers.Network,
+		},
+		Web: WebView{Listen: cfg.Web.Listen},
+	}
+
+	writeJSON(w, view)
+}
+
+func reposView(repos []config.Repo) []RepoView {
+	out := make([]RepoView, 0, len(repos))
+	for _, r := range repos {
+		out = append(out, RepoView{
+			Owner:             r.Owner,
+			Name:              r.Name,
+			Base:              r.BaseBranch(),
+			Gate:              r.Gate,
+			Protect:           r.Protect,
+			Ecosystem:         r.Ecosystem,
+			PersistentStorage: r.PersistentStorage,
+			AllowConcurrent:   r.AllowConcurrent,
+			MaxRetries:        r.MaxRetries,
+		})
+	}
+	return out
+}
+
+func providersView(providers map[string]config.Provider) map[string]ProviderView {
+	out := make(map[string]ProviderView, len(providers))
+	for name, p := range providers {
+		out[name] = ProviderView{
+			Class:      p.Class,
+			BaseURL:    p.BaseURL,
+			APIKeyEnv:  p.APIKeyEnv,
+			Configured: strings.TrimSpace(p.APIKeyEnv) != "" || strings.TrimSpace(p.APIKey.Key) != "",
+		}
+	}
+	return out
+}
