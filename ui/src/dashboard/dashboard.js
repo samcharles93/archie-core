@@ -213,6 +213,10 @@ export function dashboardPage() {
     // Unknown setup (endpoint unreachable) or no checklist configured: omit
     // the panel and let the gate pulse take the full row, so the Health row
     // never shows an empty half beside the pulse.
+    // One place decides this class, reconciled from the data on every render.
+    // A second rule elsewhere in this function used to clear it again, which
+    // reads as two sources of truth for one bit of layout state even though
+    // the toggle above had already settled it.
     const omit = !setup?.steps?.length;
     topRow.classList.toggle("dash-top-standalone", omit);
     if (omit) return mount(setupSlot);
@@ -240,7 +244,6 @@ export function dashboardPage() {
     }
     // Every step done: show completion so the row beside the gate pulse is
     // not an empty hole on an otherwise healthy dashboard.
-    topRow.classList.remove("dash-top-standalone");
     mount(
       setupSlot,
       el(

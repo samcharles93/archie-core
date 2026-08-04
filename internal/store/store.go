@@ -14,20 +14,25 @@ import (
 	"unicode/utf8"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
 // Task lifecycle statuses. Workflows move tasks between them; the
 // daemon owns queued→running claims and crash recovery.
 const (
-	StatusQueued       = "queued"
-	StatusRunning      = "running"
-	StatusWaitingHuman = "waiting_human"
-	StatusPROpen       = "pr_open"
-	StatusMerged       = "merged"
-	StatusParked       = "parked"
-	StatusDead         = "dead"
-	StatusRejected     = "rejected"
-	StatusClosedWontDo = "closed_wont_do"
+	// Defined in internal/taskstate so the dashboard, chat and the store
+	// share one vocabulary. These names are kept as the store's public
+	// spelling; the values live in one place.
+	StatusQueued       = taskstate.Queued
+	StatusRunning      = taskstate.Running
+	StatusWaitingHuman = taskstate.WaitingHuman
+	StatusPROpen       = taskstate.PROpen
+	StatusMerged       = taskstate.Merged
+	StatusParked       = taskstate.Parked
+	StatusDead         = taskstate.Dead
+	StatusRejected     = taskstate.Rejected
+	StatusClosedWontDo = taskstate.Declined
 )
 
 type Task struct {

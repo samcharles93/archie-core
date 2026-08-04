@@ -9,6 +9,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
 func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
@@ -143,8 +144,8 @@ func storeFailed(w http.ResponseWriter, err error) bool {
 }
 
 func (s *Server) approveTask(ctx context.Context, w http.ResponseWriter, task *store.Task) *actionOutcome {
-	if task.Status != store.StatusWaitingHuman {
-		http.Error(w, "task is not awaiting approval", http.StatusConflict)
+	if err := taskstate.CheckApprove(task.Status); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
 		return nil
 	}
 	if storeFailed(w, s.Store.Requeue(ctx, task.ID, store.StatusWaitingHuman, "implement")) {
@@ -160,8 +161,8 @@ func (s *Server) approveTask(ctx context.Context, w http.ResponseWriter, task *s
 // every time could be retried without limit. At the cap the task belongs in
 // dead, which is what the setting exists to say.
 func (s *Server) retryTask(ctx context.Context, w http.ResponseWriter, task *store.Task) *actionOutcome {
-	if task.Status != store.StatusParked {
-		http.Error(w, "task is not parked", http.StatusConflict)
+	if err := taskstate.CheckRetry(task.Status); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
 		return nil
 	}
 	if limit := s.maxRetriesFor(task); limit > 0 && task.RetryCount >= limit {
@@ -192,11 +193,13 @@ func (s *Server) retireTask(ctx context.Context, task *store.Task, reason string
 }
 
 func (s *Server) rejectTask(ctx context.Context, w http.ResponseWriter, task *store.Task) *actionOutcome {
-	if task.Status != store.StatusWaitingHuman {
-		http.Error(w, "task is not awaiting approval", http.StatusConflict)
+	// The dashboard only offers Reject on a waiting_human task, but the rule
+	// is the shared one so the two surfaces cannot drift apart again.
+	if err := taskstate.CheckApprove(task.Status); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
 		return nil
 	}
-	err := s.Store.Transition(ctx, task.ID, store.StatusWaitingHuman, store.StatusClosedWontDo, "rejected via Web UI")
+	err := s.Store.Transition(ctx, task.ID, store.StatusWaitingHuman, store.StatusClosedWontDo, "declined from the dashboard")
 	if storeFailed(w, err) {
 		return nil
 	}

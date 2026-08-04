@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
 // ── StoreTaskCreator ─────────────────────────────────────────────────
@@ -202,7 +204,7 @@ func (f *fakeChatTaskStore) CancelChatTask(ctx context.Context, taskID int64, re
 }
 
 func TestStoreTaskControllerApproveWaitingHuman(t *testing.T) {
-	store := &fakeChatTaskStore{statuses: map[int64]ChatTaskStatus{1: {Status: statusWaitingHuman}}}
+	store := &fakeChatTaskStore{statuses: map[int64]ChatTaskStatus{1: {Status: taskstate.WaitingHuman}}}
 	c := NewStoreTaskController(store)
 	if err := c.Approve(context.Background(), 1, ""); err != nil {
 		t.Fatalf("Approve: %v", err)
@@ -235,7 +237,7 @@ func TestStoreTaskControllerApproveTaskNotFound(t *testing.T) {
 }
 
 func TestStoreTaskControllerApproveCrossIdentityRejected(t *testing.T) {
-	store := &fakeChatTaskStore{statuses: map[int64]ChatTaskStatus{1: {Status: statusWaitingHuman, Identity: "archie"}}}
+	store := &fakeChatTaskStore{statuses: map[int64]ChatTaskStatus{1: {Status: taskstate.WaitingHuman, Identity: "archie"}}}
 	c := NewStoreTaskController(store)
 	err := c.Approve(context.Background(), 1, "winter")
 	if err == nil || !strings.Contains(err.Error(), "different identity") {
@@ -247,7 +249,7 @@ func TestStoreTaskControllerApproveCrossIdentityRejected(t *testing.T) {
 }
 
 func TestStoreTaskControllerApproveSameIdentityAllowed(t *testing.T) {
-	store := &fakeChatTaskStore{statuses: map[int64]ChatTaskStatus{1: {Status: statusWaitingHuman, Identity: "archie"}}}
+	store := &fakeChatTaskStore{statuses: map[int64]ChatTaskStatus{1: {Status: taskstate.WaitingHuman, Identity: "archie"}}}
 	c := NewStoreTaskController(store)
 	if err := c.Approve(context.Background(), 1, "archie"); err != nil {
 		t.Fatalf("Approve: %v", err)
@@ -255,7 +257,7 @@ func TestStoreTaskControllerApproveSameIdentityAllowed(t *testing.T) {
 }
 
 func TestStoreTaskControllerRejectsCallerIdentityForLegacyTask(t *testing.T) {
-	store := &fakeChatTaskStore{statuses: map[int64]ChatTaskStatus{1: {Status: statusWaitingHuman}}}
+	store := &fakeChatTaskStore{statuses: map[int64]ChatTaskStatus{1: {Status: taskstate.WaitingHuman}}}
 	c := NewStoreTaskController(store)
 	if err := c.Approve(context.Background(), 1, "anyone"); err == nil || !strings.Contains(err.Error(), "different identity") {
 		t.Fatalf("Approve error = %v, want cross-identity rejection", err)
@@ -297,7 +299,7 @@ func (f *fakeTaskRuntime) CancelRunningTasks(identity string) []int64 {
 // to be refused. A running task is the only one worth interrupting, so
 // cancelling it must reach the work and then record the outcome.
 func TestStoreTaskControllerCancelInterruptsRunning(t *testing.T) {
-	store := &fakeChatTaskStore{statuses: map[int64]ChatTaskStatus{1: {Status: statusRunning}}}
+	store := &fakeChatTaskStore{statuses: map[int64]ChatTaskStatus{1: {Status: taskstate.Running}}}
 	rt := &fakeTaskRuntime{running: true}
 	c := NewStoreTaskController(store).WithRuntime(rt)
 
@@ -316,7 +318,7 @@ func TestStoreTaskControllerCancelInterruptsRunning(t *testing.T) {
 // calls running that nothing is executing -- a crashed or replaced daemon.
 // Recording the terminal state is what unsticks it.
 func TestStoreTaskControllerCancelRecordsStaleRunning(t *testing.T) {
-	store := &fakeChatTaskStore{statuses: map[int64]ChatTaskStatus{1: {Status: statusRunning}}}
+	store := &fakeChatTaskStore{statuses: map[int64]ChatTaskStatus{1: {Status: taskstate.Running}}}
 	rt := &fakeTaskRuntime{running: false}
 	c := NewStoreTaskController(store).WithRuntime(rt)
 
@@ -332,7 +334,7 @@ func TestStoreTaskControllerCancelRecordsStaleRunning(t *testing.T) {
 // refusal honest when nothing can interrupt the work: recording the task
 // as cancelled while it carries on would be a lie.
 func TestStoreTaskControllerCancelWithoutRuntimeRefusesRunning(t *testing.T) {
-	store := &fakeChatTaskStore{statuses: map[int64]ChatTaskStatus{1: {Status: statusRunning}}}
+	store := &fakeChatTaskStore{statuses: map[int64]ChatTaskStatus{1: {Status: taskstate.Running}}}
 	c := NewStoreTaskController(store)
 
 	err := c.Cancel(context.Background(), 1, "")
@@ -404,5 +406,5 @@ func TestStoreTaskControllerLookupErrorPropagates(t *testing.T) {
 }
 
 // statusQueuedForTest avoids a naming collision with the package's own
-// unexported statusRunning/statusWaitingHuman constants in test tables.
+// unexported taskstate.Running/taskstate.WaitingHuman constants in test tables.
 const statusQueuedForTest = "queued"

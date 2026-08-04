@@ -788,7 +788,13 @@ func (a chatTaskControllerAdapter) CancelChatTask(ctx context.Context, taskID in
 	if task.IsForgeBacked() {
 		return fmt.Errorf("task %d is not chat-originated", taskID)
 	}
-	return a.transition(ctx, taskID, task.Status, store.StatusRejected, reason)
+	// An operator declining work lands in the same state whichever surface
+	// they used. This used to record StatusRejected while the dashboard
+	// recorded StatusClosedWontDo, so the same decision showed up as two
+	// different states -- and StatusRejected, which the PR reconciler uses
+	// for "the pull request was closed without merging", stopped meaning one
+	// thing.
+	return a.transition(ctx, taskID, task.Status, store.StatusClosedWontDo, reason)
 }
 
 func chatTaskProfiles(cfg config.Config) ([]gateway.TaskProfile, string) {

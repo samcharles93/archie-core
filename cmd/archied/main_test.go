@@ -419,7 +419,11 @@ func TestChatTaskControllerAdapterTransitions(t *testing.T) {
 	if err := adapter.CancelChatTask(context.Background(), task.ID, "cancelled by test"); err != nil {
 		t.Fatalf("CancelChatTask(): %v", err)
 	}
-	if transitionFrom != store.StatusWaitingHuman || transitionTo != store.StatusRejected ||
+	// Declining from chat lands in the same state as declining from the
+	// dashboard. It used to record StatusRejected, which the PR reconciler
+	// also uses for "the pull request was closed without merging", so the
+	// state could not tell an operator's decision from a forge outcome.
+	if transitionFrom != store.StatusWaitingHuman || transitionTo != store.StatusClosedWontDo ||
 		transitionDetail != "cancelled by test" {
 		t.Errorf("transition = %q/%q/%q", transitionFrom, transitionTo, transitionDetail)
 	}
@@ -507,8 +511,9 @@ func TestChatTaskCommandsEndToEnd(t *testing.T) {
 	if err != nil || !strings.Contains(reply, "cancelled") {
 		t.Fatalf("cancel = (%q, %v)", reply, err)
 	}
+	// Same terminal state as the dashboard's Reject: one decision, one state.
 	cancelled, err := st.TaskByID(ctx, cancelID)
-	if err != nil || cancelled == nil || cancelled.Status != store.StatusRejected {
+	if err != nil || cancelled == nil || cancelled.Status != store.StatusClosedWontDo {
 		t.Fatalf("cancelled task = (%+v, %v)", cancelled, err)
 	}
 }

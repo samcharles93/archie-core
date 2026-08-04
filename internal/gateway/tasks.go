@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync/atomic"
 	"time"
+
+	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
 // StoreTaskCreator implements TaskCreator backed by a store interface.
@@ -135,19 +137,11 @@ func splitOwnerRepo(s string) (owner, repo string, ok bool) {
 	return "", "", false
 }
 
-// Task lifecycle status strings this controller reasons about. Kept as
-// local constants (rather than importing internal/store) to preserve
-// gateway's deliberate decoupling from the store package; must be kept
-// in sync with store.StatusX by hand  --  see StoreTaskController's doc.
-const (
-	statusRunning      = "running"
-	statusWaitingHuman = "waiting_human"
-	statusMerged       = "merged"
-	statusParked       = "parked"
-	statusRejected     = "rejected"
-	statusDead         = "dead"
-	statusClosedWontDo = "closed_wont_do"
-)
+// Task lifecycle statuses come from internal/taskstate, a leaf package with
+// no dependencies, so gateway stays decoupled from internal/store without
+// keeping a hand-synced copy of the strings. The copy that used to live here
+// is how the dashboard and chat ended up recording different states for the
+// same operator decision.
 
 // ChatTaskStatus is the minimal task state StoreTaskController needs to
 // authorize and validate /approve and /cancel.
@@ -211,8 +205,8 @@ func (c *StoreTaskController) Approve(ctx context.Context, taskID int64, identit
 	if err != nil {
 		return err
 	}
-	if st.Status != statusWaitingHuman {
-		return fmt.Errorf("task is %s, not waiting_human", st.Status)
+	if err := taskstate.CheckApprove(st.Status); err != nil {
+		return err
 	}
 	return c.store.ApproveChatTask(ctx, taskID)
 }
@@ -222,10 +216,14 @@ func (c *StoreTaskController) Cancel(ctx context.Context, taskID int64, identity
 	if err != nil {
 		return err
 	}
+	if err := taskstate.CheckDecline(st.Status); err != nil {
+		return err
+	}
 	switch st.Status {
-	case statusMerged, statusParked, statusRejected, statusDead, statusClosedWontDo:
-		return fmt.Errorf("task is already %s", st.Status)
-	case statusRunning:
+	case taskstate.Parked:
+		// Parked is declinable -- taskstate allows it -- but there is
+		// nothing running to interrupt, so fall through to record it.
+	case taskstate.Running:
 		// Cancelling a running task used to be refused outright, which
 		// left the only case worth interrupting as the one case that
 		// could not be. Interrupt the work first, then record it: the
