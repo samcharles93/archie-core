@@ -42,6 +42,26 @@ func equal(a, b []string) bool {
 
 // runSessionStoreSuite runs every SessionStore behavioural contract against
 // a store implementation. newStore must return a fresh, empty store.
+// supersededIDs returns the canonical IDs of a session's whole history, for
+// tests that mean "replace everything". Production callers name only what
+// they actually read; a test that wants a clean sweep has to say so.
+func supersededIDs(ctx context.Context, t *testing.T, s SessionStore, sessionID string) []string {
+	t.Helper()
+	count, err := s.MessageCount(ctx, sessionID)
+	if err != nil {
+		t.Fatalf("MessageCount: %v", err)
+	}
+	msgs, err := s.RecentMessages(ctx, sessionID, count)
+	if err != nil {
+		t.Fatalf("RecentMessages: %v", err)
+	}
+	ids := make([]string, 0, len(msgs))
+	for _, m := range msgs {
+		ids = append(ids, m.MessageID)
+	}
+	return ids
+}
+
 func runSessionStoreSuite(t *testing.T, newStore func(t *testing.T) SessionStore) {
 	t.Helper()
 
@@ -797,7 +817,7 @@ func testReplaceMessagesIsFailureSafe(t *testing.T, newStore func(t *testing.T) 
 			for i, text := range tc.replacement {
 				replacement = append(replacement, msg(text, dur(len(tc.existing)+i)))
 			}
-			if err := s.ReplaceMessages(ctx, "sess", replacement); err != nil {
+			if err := s.ReplaceMessages(ctx, "sess", replacement, supersededIDs(ctx, t, s, "sess")); err != nil {
 				t.Fatalf("ReplaceMessages: %v", err)
 			}
 
@@ -832,7 +852,7 @@ func testReplaceMessagesBeyondScanPageLimit(t *testing.T, newStore func(t *testi
 			t.Fatalf("SaveMessage: %v", err)
 		}
 	}
-	if err := s.ReplaceMessages(ctx, "sess", []Message{msg("summary", dur(total))}); err != nil {
+	if err := s.ReplaceMessages(ctx, "sess", []Message{msg("summary", dur(total))}, supersededIDs(ctx, t, s, "sess")); err != nil {
 		t.Fatalf("ReplaceMessages: %v", err)
 	}
 	got, err := s.RecentMessages(ctx, "sess", 100)
@@ -863,7 +883,7 @@ func testReplaceMessagesKeepsSurvivors(t *testing.T, newStore func(t *testing.T)
 	if err != nil {
 		t.Fatalf("RecentMessages: %v", err)
 	}
-	if err := s.ReplaceMessages(ctx, "sess", history[:2]); err != nil {
+	if err := s.ReplaceMessages(ctx, "sess", history[:2], supersededIDs(ctx, t, s, "sess")); err != nil {
 		t.Fatalf("ReplaceMessages: %v", err)
 	}
 

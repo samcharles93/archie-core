@@ -361,16 +361,23 @@ func (s *sqliteSessionStore) SaveMessages(ctx context.Context, sessionID string,
 	return nil
 }
 
-// ReplaceMessages makes msgs the session's entire history, atomically: the
-// replacement is written and the previous history removed inside a single
-// transaction, so a caller either sees the old history or the new one, never
-// an in-between or empty state.
+// ReplaceMessages writes msgs and removes exactly the messages named by
+// superseded, atomically: both happen inside one transaction, so a caller
+// either sees the old history or the new one, never an in-between state.
+//
+// Only the named messages are removed. Deleting the complement of msgs swept
+// up anything saved since the caller read the history -- a chat turn arriving
+// mid-compression was destroyed without ever being read.
 //
 // A replacement message that carries a canonical ID lands on the same row it
-// already occupied (saveMessage's immutability no-op), so a read-modify-write
-// caller -- ReplaceMessages(sess, history[:2]) -- keeps those rows rather than
-// deleting them: they are excluded from the survivor-complement delete below.
-func (s *sqliteSessionStore) ReplaceMessages(ctx context.Context, sessionID string, msgs []Message) error {
+// already occupied (saveMessage's immutability no-op), so an ID in both lists
+// is kept.
+func (s *sqliteSessionStore) ReplaceMessages(
+	ctx context.Context,
+	sessionID string,
+	msgs []Message,
+	superseded []string,
+) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -380,26 +387,29 @@ func (s *sqliteSessionStore) ReplaceMessages(ctx context.Context, sessionID stri
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	survivors := make([]string, 0, len(msgs))
+	survivors := make(map[string]struct{}, len(msgs))
 	for _, msg := range msgs {
 		id, err := saveMessage(ctx, tx, sessionID, msg)
 		if err != nil {
 			return fmt.Errorf("sessionstore: replace messages: %w", err)
 		}
-		survivors = append(survivors, id)
+		survivors[id] = struct{}{}
 	}
 
-	query := `DELETE FROM messages WHERE session_id = ?`
-	args := []any{sessionID}
-	if len(survivors) > 0 {
-		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(survivors)), ",")
-		query += ` AND message_id NOT IN (` + placeholders + `)`
-		for _, id := range survivors {
-			args = append(args, id)
+	doomed := make([]any, 0, len(superseded))
+	for _, id := range superseded {
+		if _, kept := survivors[id]; kept {
+			continue
 		}
+		doomed = append(doomed, id)
 	}
-	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
-		return fmt.Errorf("sessionstore: replace messages: delete old: %w", err)
+	if len(doomed) > 0 {
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(doomed)), ",")
+		query := `DELETE FROM messages WHERE session_id = ? AND message_id IN (` + placeholders + `)`
+		args := append([]any{sessionID}, doomed...)
+		if _, err := tx.ExecContext(ctx, query, args...); err != nil {
+			return fmt.Errorf("sessionstore: replace messages: delete old: %w", err)
+		}
 	}
 
 	if err := tx.Commit(); err != nil {

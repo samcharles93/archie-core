@@ -68,11 +68,20 @@ type MessageHistory interface {
 	// SaveMessages bulk-saves messages for branch inheritance.
 	SaveMessages(ctx context.Context, sessionID string, msgs []Message) error
 
-	// ReplaceMessages makes msgs the session's entire history. It is the
-	// /compress primitive. The replacement is written before the previous
-	// history is removed, so an interrupted call leaves both sets
-	// present -- recoverable duplicates -- rather than an empty session.
-	ReplaceMessages(ctx context.Context, sessionID string, msgs []Message) error
+	// ReplaceMessages writes msgs and removes exactly the messages named by
+	// superseded. It is the /compress primitive.
+	//
+	// The caller names what it is replacing rather than the store inferring
+	// it from the complement of msgs. A caller computes a replacement from a
+	// history it read, and a message that arrives in between is not part of
+	// that: inferring the delete set destroyed such a message without ever
+	// having read it, which is unrecoverable. Anything in neither list is
+	// left alone.
+	//
+	// The replacement is written before the removal, so an interrupted call
+	// leaves both sets present -- recoverable duplicates -- rather than an
+	// empty session. IDs appearing in both msgs and superseded are kept.
+	ReplaceMessages(ctx context.Context, sessionID string, msgs []Message, superseded []string) error
 
 	// SearchMessages returns one page of messages matching the query,
 	// searching the session's entire history rather than a recent window.
@@ -679,21 +688,22 @@ func (s *nellSessionStore) SaveMessages(ctx context.Context, sessionID string, m
 	return nil
 }
 
-func (s *nellSessionStore) ReplaceMessages(ctx context.Context, sessionID string, msgs []Message) error {
+func (s *nellSessionStore) ReplaceMessages(
+	ctx context.Context,
+	sessionID string,
+	msgs []Message,
+	superseded []string,
+) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	db := s.messagesFor(sessionID)
-	// Snapshot the current history first, so the delete below removes
-	// exactly what was there when the call started and never touches the
-	// replacement written after it.
-	existing, err := db.AllDocs(ctx, sdk.DocRange{IncludeDocs: false})
-	if err != nil {
-		return fmt.Errorf("sessionstore: replace messages: list existing: %w", err)
-	}
-	doomed := make(map[string]struct{}, len(existing.Rows))
-	for _, row := range existing.Rows {
-		doomed[row.ID] = struct{}{}
+	// Only what the caller named is removed. Deriving this from the store's
+	// current contents would sweep up messages saved since the caller read
+	// the history -- messages it never saw and never summarised.
+	doomed := make(map[string]struct{}, len(superseded))
+	for _, id := range superseded {
+		doomed[id] = struct{}{}
 	}
 
 	// Write the replacement before removing anything: an interruption here

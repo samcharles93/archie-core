@@ -691,12 +691,22 @@ func (r *Router) applyCompress(ctx context.Context, sessionID string, cfg Compre
 
 	compressedMsgs := compressedHistory(msgs, view, r.Identity)
 
-	// Replace the history with the compressed view in one store-level
-	// operation. ReplaceMessages writes the replacement before removing
-	// the originals, so a failure leaves recoverable duplicates instead of
-	// wiping the session -- the previous delete-then-save order lost the
-	// entire history if anything went wrong in between.
-	if err := r.sessionTracker.sessions.ReplaceMessages(ctx, sessionID, compressedMsgs); err != nil {
+	// Name exactly the messages this compression consumed. A turn that
+	// arrives between the read above and the write below was never read and
+	// never summarised, so it must not be swept away with the ones that
+	// were -- that was unrecoverable loss of a message nobody had seen.
+	superseded := make([]string, 0, len(msgs))
+	for _, m := range msgs {
+		if m.MessageID != "" {
+			superseded = append(superseded, m.MessageID)
+		}
+	}
+
+	// ReplaceMessages writes the replacement before removing the originals,
+	// so a failure leaves recoverable duplicates instead of wiping the
+	// session -- the previous delete-then-save order lost the entire history
+	// if anything went wrong in between.
+	if err := r.sessionTracker.sessions.ReplaceMessages(ctx, sessionID, compressedMsgs, superseded); err != nil {
 		return "", fmt.Errorf("replace with compressed messages: %w", err)
 	}
 

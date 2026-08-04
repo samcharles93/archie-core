@@ -141,7 +141,7 @@ func TestSQLiteSessionStore_ErrorPaths(t *testing.T) {
 		}
 	})
 	t.Run("ReplaceMessages after close", func(t *testing.T) {
-		if err := st.ReplaceMessages(ctx, "sess", nil); err == nil {
+		if err := st.ReplaceMessages(ctx, "sess", nil, nil); err == nil {
 			t.Error("expected error replacing messages on a closed store")
 		}
 	})
@@ -399,7 +399,7 @@ func TestSQLiteSessionStore_ReplaceMessagesAbortRollsBack(t *testing.T) {
 	installAbortTrigger(t, st, `BEFORE DELETE ON messages WHEN old.message_id = 'm-1'`)
 
 	replacement := []Message{{From: "summarizer", Text: "merged summary", At: sqliteBase().Add(time.Hour)}}
-	if err := st.ReplaceMessages(ctx, "sess-replace-abort", replacement); err == nil {
+	if err := st.ReplaceMessages(ctx, "sess-replace-abort", replacement, supersededIDs(ctx, t, st, "sess-replace-abort")); err == nil {
 		t.Fatal("expected ReplaceMessages to fail from the forced abort trigger")
 	}
 
@@ -526,7 +526,7 @@ func TestSQLiteSessionStore_FTSStaysCorrectThroughMutations(t *testing.T) {
 			mutate: func(ctx context.Context, t *testing.T, st SessionStore) error {
 				return st.ReplaceMessages(ctx, "a", []Message{{
 					From: "summarizer", Text: "merged needle summary", At: sqliteBase().Add(time.Hour),
-				}})
+				}}, supersededIDs(ctx, t, st, "a"))
 			},
 			wantA:       []string{"merged needle summary"},
 			wantANeedle: []string{"merged needle summary"},

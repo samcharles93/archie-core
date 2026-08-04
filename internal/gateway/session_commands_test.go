@@ -3,11 +3,12 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // fakeSessionStore implements SessionStore for tests. Messages are
@@ -135,10 +136,37 @@ func (f *fakeSessionStore) SaveMessages(_ context.Context, sessionID string, msg
 	return nil
 }
 
-func (f *fakeSessionStore) ReplaceMessages(_ context.Context, sessionID string, msgs []Message) error {
+// ReplaceMessages mirrors the real stores: it appends the replacement and
+// removes only what the caller named. A plain slice assignment could not
+// observe either, which is why the /compress contract went untested here.
+func (f *fakeSessionStore) ReplaceMessages(
+	_ context.Context,
+	sessionID string,
+	msgs []Message,
+	superseded []string,
+) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.messages[sessionID] = slices.Clone(msgs)
+
+	doomed := make(map[string]struct{}, len(superseded))
+	for _, id := range superseded {
+		doomed[id] = struct{}{}
+	}
+
+	kept := make([]Message, 0, len(f.messages[sessionID])+len(msgs))
+	for _, m := range f.messages[sessionID] {
+		if _, gone := doomed[m.MessageID]; gone {
+			continue
+		}
+		kept = append(kept, m)
+	}
+	for _, m := range msgs {
+		if m.MessageID == "" {
+			m.MessageID = uuid.NewString()
+		}
+		kept = append(kept, m)
+	}
+	f.messages[sessionID] = kept
 	return nil
 }
 
