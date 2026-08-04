@@ -283,11 +283,23 @@ func (s *nellSessionStore) listAllLocked(ctx context.Context) ([]SessionContext,
 		}
 		out = append(out, docToSession(row.Doc))
 	}
-	// Newest first.
-	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-		out[i], out[j] = out[j], out[i]
-	}
+	// Newest first. AllDocs sorts by document ID, which for sessions is the
+	// session ID -- reversing that produced reverse-lexicographic order and
+	// passed it off as recency, so a restart resolved into an arbitrary old
+	// session. Sort on the field that actually means recency, falling back
+	// to creation for records never touched.
+	slices.SortStableFunc(out, func(a, b SessionContext) int {
+		return sessionRecency(b).Compare(sessionRecency(a))
+	})
 	return out, nil
+}
+
+// sessionRecency is the instant a session was last meaningfully used.
+func sessionRecency(sc SessionContext) time.Time {
+	if !sc.LastActiveAt.IsZero() {
+		return sc.LastActiveAt
+	}
+	return sc.CreatedAt
 }
 
 func sessionToDoc(sc SessionContext) sdk.Doc {
