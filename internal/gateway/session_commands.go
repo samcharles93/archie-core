@@ -456,26 +456,48 @@ func (r *Router) handleCompress(ctx context.Context, msg Message, rest string) (
 		return "No active session. Send a message first.", nil
 	}
 
+	cfg := DefaultCompressionConfig()
 	fields := strings.Fields(rest)
-	isPreview := len(fields) == 0 || fields[0] == "--preview" || fields[0] == "--dry-run"
 
-	if isPreview {
-		return r.compressPreview(ctx, sessionID)
+	// Bare /compress applies. The preview's own closing line tells the
+	// operator to "Run /compress to apply", so routing it to the preview
+	// made that instruction circular -- the documented way to compress
+	// could never compress.
+	if len(fields) == 0 {
+		return r.applyCompress(ctx, sessionID, cfg)
 	}
 
-	cfg := DefaultCompressionConfig()
-	if fields[0] == "here" && len(fields) > 1 {
+	switch fields[0] {
+	case "--preview", "--dry-run":
+		return r.compressPreview(ctx, sessionID)
+
+	case "here":
+		if len(fields) < 2 {
+			return "Usage: /compress here <N> — keep the last N messages", nil
+		}
 		n, ok := parsePositiveInt(fields[1])
 		if !ok {
 			return "Usage: /compress here <N> — N must be a positive number", nil
 		}
 		cfg.ProtectLast = n
-	}
-	if fields[0] == "focus" && len(fields) < 2 {
-		return "Usage: /compress focus <topic>", nil
-	}
+		return r.applyCompress(ctx, sessionID, cfg)
 
-	return r.applyCompress(ctx, sessionID, cfg)
+	case "focus":
+		if len(fields) < 2 {
+			return "Usage: /compress focus <topic>", nil
+		}
+		// Nothing implements topic-focused summarisation: the config has no
+		// field for it, so this used to discard the topic and silently run a
+		// full default compression instead. Rewriting history is not
+		// something to do as a side effect of an unimplemented option.
+		return "Focused compression is not supported yet — /compress summarises " +
+			"the whole history. Use /compress here <N> to keep the last N messages.", nil
+
+	default:
+		// Anything unrecognised used to fall through and compress. An
+		// irreversible rewrite is the wrong response to a typo.
+		return "Usage: /compress [here <N> | focus <topic> | --preview]", nil
+	}
 }
 
 func (r *Router) compressPreview(ctx context.Context, sessionID string) (string, error) {
@@ -485,7 +507,11 @@ func (r *Router) compressPreview(ctx context.Context, sessionID string) (string,
 		return "", fmt.Errorf("message count: %w", err)
 	}
 
-	msgs, err := r.sessionTracker.sessions.RecentMessages(ctx, sessionID, 200)
+	// Read the same history applyCompress will. Reading a fixed window here
+	// while reporting count from the store made the two numbers in one
+	// sentence describe different conversations, and made the preview advise
+	// against a compression that was in fact needed.
+	msgs, err := r.sessionTracker.sessions.RecentMessages(ctx, sessionID, count)
 	if err != nil {
 		return "", fmt.Errorf("load messages: %w", err)
 	}
@@ -509,11 +535,41 @@ func (r *Router) compressPreview(ctx context.Context, sessionID string) (string,
 	), nil
 }
 
-// compressedUserFrom is the sender recorded for user turns that survive
-// compression. The original username is not recoverable from a
-// CompressedMessage, and consumers only test From against the bot identity,
-// so any non-bot value reconstructs the user role correctly.
-const compressedUserFrom = "user"
+// compressedHistory builds the message list that replaces a session's
+// history after compression.
+//
+// Protected messages are carried over as the ORIGINAL records, not rebuilt
+// from the compressed view. A rebuilt message is a different message: it gets
+// a fresh canonical MessageID, loses the upstream SourceID and has its
+// timestamp reset, so every message surviving a compression stops being
+// recognisable on redelivery and the session doubles the next time a channel
+// replays its queue. Only the summary is a new record.
+//
+// The summary is attributed to the bot. CompressHistory emits it with role
+// "system", which has no representation in the store -- consumers recover the
+// role by comparing From against the bot identity -- and attributing a
+// description of the conversation to the user makes the model replay it as
+// something the human said.
+func compressedHistory(original []Message, view CompressedView, identity string) []Message {
+	summaryAt := view.SummaryIndex()
+	if summaryAt < 0 {
+		return original
+	}
+
+	// Defend the slice arithmetic: a view whose protected counts do not fit
+	// the input would silently drop or duplicate history.
+	head := min(view.ProtectedFirst, len(original))
+	tail := min(view.ProtectedLast, len(original)-head)
+
+	out := make([]Message, 0, head+1+tail)
+	out = append(out, original[:head]...)
+	out = append(out, Message{
+		From: identity,
+		Text: view.Messages[summaryAt].Content,
+	})
+	out = append(out, original[len(original)-tail:]...)
+	return out
+}
 
 func (r *Router) messagesToCompressed(msgs []Message) []CompressedMessage {
 	compressed := make([]CompressedMessage, 0, len(msgs))
@@ -549,26 +605,13 @@ func (r *Router) applyCompress(ctx context.Context, sessionID string, cfg Compre
 		return fmt.Sprintf("Compression not needed (%d messages, ~%d tokens).", len(msgs), view.TokensBefore), nil
 	}
 
+	compressedMsgs := compressedHistory(msgs, view, r.Identity)
+
 	// Replace the history with the compressed view in one store-level
 	// operation. ReplaceMessages writes the replacement before removing
 	// the originals, so a failure leaves recoverable duplicates instead of
 	// wiping the session -- the previous delete-then-save order lost the
 	// entire history if anything went wrong in between.
-	// Write back sender identities, not role labels. Consumers reconstruct
-	// the role by comparing From against the bot's identity, so persisting
-	// the literal string "assistant" would make every retained bot turn
-	// replay to the model as a user turn.
-	compressedMsgs := make([]Message, 0, len(view.Messages))
-	for _, cm := range view.Messages {
-		from := compressedUserFrom
-		if cm.Role == "assistant" {
-			from = r.Identity
-		}
-		compressedMsgs = append(compressedMsgs, Message{
-			From: from,
-			Text: cm.Content,
-		})
-	}
 	if err := r.sessionTracker.sessions.ReplaceMessages(ctx, sessionID, compressedMsgs); err != nil {
 		return "", fmt.Errorf("replace with compressed messages: %w", err)
 	}

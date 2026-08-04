@@ -71,6 +71,20 @@ type CompressedView struct {
 
 	// TokensAfter is the estimated token count after compression.
 	TokensAfter int
+
+	// ProtectedFirst and ProtectedLast are how many leading and trailing
+	// input messages passed through untouched, and are only meaningful when
+	// WasCompressed is true.
+	//
+	// They exist so a caller persisting the result can write back the
+	// original records for those positions rather than rebuilding them from
+	// Role and Content. A rebuilt message is a different message: it loses
+	// its canonical MessageID, its upstream SourceID and its timestamp, which
+	// breaks redelivery deduplication permanently and contradicts the
+	// immutability requirement in docs/architecture/messaging-and-work-intake
+	// .md lines 112-114.
+	ProtectedFirst int
+	ProtectedLast  int
 }
 
 // CompressedMessage is a message in a compressed conversation view.
@@ -121,11 +135,24 @@ func CompressHistory(messages []CompressedMessage, cfg CompressionConfig) Compre
 	compressedTokens := estimateTotal(compressed)
 
 	return CompressedView{
-		Messages:      compressed,
-		WasCompressed: true,
-		TokensBefore:  totalTokens,
-		TokensAfter:   compressedTokens,
+		Messages:       compressed,
+		WasCompressed:  true,
+		TokensBefore:   totalTokens,
+		TokensAfter:    compressedTokens,
+		ProtectedFirst: protectFirst,
+		ProtectedLast:  protectLast,
 	}
+}
+
+// SummaryIndex returns the position of the generated summary within Messages,
+// or -1 when nothing was compressed. The summary is the one element of a
+// compressed view that is genuinely new; everything else corresponds to an
+// input message at a known offset.
+func (v CompressedView) SummaryIndex() int {
+	if !v.WasCompressed {
+		return -1
+	}
+	return v.ProtectedFirst
 }
 
 // estimateTotal returns the sum of estimated token counts across messages.
