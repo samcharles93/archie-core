@@ -58,6 +58,11 @@ CREATE TABLE IF NOT EXISTS sessions (
 	last_active_at    INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_channel ON sessions(platform, channel_id);
+-- Ordering is by recency, which is last_active_at when set and created_at
+-- otherwise (see sessionRecencySQL). The index matches that expression so
+-- the newest-first listings do not sort at query time.
+CREATE INDEX IF NOT EXISTS idx_sessions_recency
+	ON sessions(platform, channel_id, MAX(last_active_at, created_at) DESC);
 
 CREATE TABLE IF NOT EXISTS messages (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -170,7 +175,7 @@ func (s *sqliteSessionStore) Get(ctx context.Context, sessionID string) (*Sessio
 
 func (s *sqliteSessionStore) GetByChannel(ctx context.Context, platform, channelID string) ([]SessionContext, error) {
 	rows, err := s.db.QueryContext(ctx,
-		sessionSelect+` WHERE platform = ? AND channel_id = ? ORDER BY created_at DESC`,
+		sessionSelect+` WHERE platform = ? AND channel_id = ? ORDER BY `+sessionRecencySQL+` DESC`,
 		platform, channelID)
 	if err != nil {
 		return nil, fmt.Errorf("sessionstore: get by channel: %w", err)
@@ -214,12 +219,20 @@ func (s *sqliteSessionStore) Touch(ctx context.Context, sessionID string) error 
 }
 
 func (s *sqliteSessionStore) List(ctx context.Context) ([]SessionContext, error) {
-	rows, err := s.db.QueryContext(ctx, sessionSelect+` ORDER BY created_at DESC`)
+	rows, err := s.db.QueryContext(ctx, sessionSelect+` ORDER BY `+sessionRecencySQL+` DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("sessionstore: list: %w", err)
 	}
 	return scanSessions(rows)
 }
+
+// sessionRecencySQL is a session's recency: LastActiveAt when it has been
+// set, CreatedAt otherwise. It mirrors sessionRecency on the NellDB side, so
+// both backends answer "newest first" with the same order -- they previously
+// disagreed (created_at here, document order there) and the shared suite did
+// not catch it, which meant a backend cutover could change which session a
+// restart resumed.
+const sessionRecencySQL = `MAX(last_active_at, created_at)`
 
 const sessionSelect = `
 	SELECT session_id, platform, bot_user, channel_id, thread_id,

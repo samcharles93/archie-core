@@ -66,6 +66,7 @@ func runSessionStoreSuite(t *testing.T, newStore func(t *testing.T) SessionStore
 	t.Helper()
 
 	t.Run("SessionCRUD", func(t *testing.T) { testSessionCRUD(t, newStore) })
+	t.Run("NewestFirstOrdering", func(t *testing.T) { testNewestFirstOrdering(t, newStore) })
 	t.Run("SaveMessagesAppends", func(t *testing.T) { testSaveMessagesAppends(t, newStore) })
 	t.Run("DeleteThenSaveDoesNotReuseKeys", func(t *testing.T) { testDeleteThenSaveDoesNotReuseKeys(t, newStore) })
 	t.Run("MessagesOrderByTimestamp", func(t *testing.T) { testMessagesOrderByTimestamp(t, newStore) })
@@ -1213,4 +1214,86 @@ func testSearchEmptyQueryReturnsEmptyPage(t *testing.T, newStore func(t *testing
 // the NellDB-backed SessionStore implementation.
 func TestSessionStoreConformanceNell(t *testing.T) {
 	runSessionStoreSuite(t, func(t *testing.T) SessionStore { return NewSessionStoreMemory("test-node") })
+}
+
+// testNewestFirstOrdering pins the observable newest-first contract that List
+// and GetByChannel both document.
+//
+// The two backends disagreed and the suite did not notice: SQLite ordered by
+// created_at while NellDB reversed document order (by session ID). Recency is
+// LastActiveAt -- that is what Touch updates and what "newest" means to
+// someone reading /sessions -- so a session created first but used most
+// recently sorts first, and a cutover between backends must not change which
+// session a restart resumes.
+func testNewestFirstOrdering(t *testing.T, newStore func(t *testing.T) SessionStore) {
+	ctx := context.Background()
+	s := newStore(t)
+	t.Cleanup(func() { _ = s.Close() })
+
+	// Created oldest-to-newest, but used in a different order, so ordering
+	// by creation and ordering by recency give different answers. IDs also
+	// disagree with both, so document order cannot pass by luck.
+	seed := []struct {
+		id      string
+		created time.Duration
+		active  time.Duration
+	}{
+		{"zzz-created-first", 0, 3 * time.Hour},
+		{"aaa-created-second", time.Hour, time.Hour},
+		{"mmm-created-last", 2 * time.Hour, 2 * time.Hour},
+	}
+	for _, sd := range seed {
+		if err := s.Save(ctx, SessionContext{
+			SessionID: sd.id,
+			Source: SessionSource{
+				Platform:  "telegram",
+				BotUser:   "archie",
+				ChannelID: "chat-1",
+			},
+			CreatedAt:    base.Add(sd.created),
+			LastActiveAt: base.Add(sd.active),
+		}); err != nil {
+			t.Fatalf("Save %s: %v", sd.id, err)
+		}
+	}
+
+	want := []string{"zzz-created-first", "mmm-created-last", "aaa-created-second"}
+
+	assertOrder := func(what string, got []SessionContext) {
+		t.Helper()
+		if len(got) != len(want) {
+			t.Fatalf("%s returned %d sessions, want %d", what, len(got), len(want))
+		}
+		for i, w := range want {
+			if got[i].SessionID != w {
+				t.Errorf("%s[%d] = %q, want %q (full order %v)", what, i, got[i].SessionID, w, sessionIDs(got))
+			}
+		}
+	}
+
+	list, err := s.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	assertOrder("List", list)
+
+	byChannel, err := s.GetByChannel(ctx, "telegram", "chat-1")
+	if err != nil {
+		t.Fatalf("GetByChannel: %v", err)
+	}
+	assertOrder("GetByChannel", byChannel)
+
+	// Touch is the live path that makes a session the newest one. Ordering
+	// that ignores it silently resumes a stale conversation.
+	if err := s.Touch(ctx, "aaa-created-second"); err != nil {
+		t.Fatalf("Touch: %v", err)
+	}
+	touched, err := s.GetByChannel(ctx, "telegram", "chat-1")
+	if err != nil {
+		t.Fatalf("GetByChannel after Touch: %v", err)
+	}
+	if len(touched) == 0 || touched[0].SessionID != "aaa-created-second" {
+		t.Fatalf("after Touch, GetByChannel[0] = %v, want the touched session first",
+			sessionIDs(touched))
+	}
 }
