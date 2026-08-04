@@ -27,8 +27,6 @@ node_modules/
 .codex/
 .pi-subagents/
 .playwright-mcp/
-# Design reference screenshots, kept locally rather than in the repo.
-opspulse.jpeg
 
 # Frontend
 /ui/node_modules/
