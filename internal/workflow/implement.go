@@ -119,13 +119,6 @@ func Implement() Workflow {
 				},
 				OnResult: func(tc *TaskContext, res agentexec.Result) error {
 					tc.Task.Plan = res.Summary
-					if !tc.Task.IsForgeBacked() {
-						return nil
-					}
-					body := fmt.Sprintf("**archie's plan** (review now if you want to veto  --  building starts immediately):\n\n%s", res.Summary)
-					if _, err := tc.Forge.Comment(context.Background(), tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, body); err != nil {
-						tc.Log.Warn("failed to post plan comment", "err", err)
-					}
 					return nil
 				},
 			}.Stage(),
@@ -166,8 +159,7 @@ func Implement() Workflow {
 			StageDiffCap(),
 			StageOpenPR(func(tc *TaskContext) string {
 				return fmt.Sprintf("%s\n\n---\n*workflow: implement · %d iterations · %d tokens*",
-					tc.BuildSummary, tc.Task.Iterations, tc.Task.TokensUsed) +
-					issueClosureReference(tc.Task)
+					tc.BuildSummary, tc.Task.Iterations, tc.Task.TokensUsed)
 			}),
 		},
 	}

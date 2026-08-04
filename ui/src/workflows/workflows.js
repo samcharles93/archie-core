@@ -108,31 +108,34 @@ export function workflowsPage() {
           ),
         ),
         el(
-          "table.table",
+          "div.table-scroll",
           el(
-            "thead",
+            "table.table",
             el(
-              "tr",
-              ...["Workflow", "Runs", "Success rate", "Avg tokens", "Avg steps"].map((h) => el("th", h)),
-            ),
-          ),
-          el(
-            "tbody",
-            ...workflows.map((w) => {
-              const rate = pct(w.merged, w.runs);
-              return el(
+              "thead",
+              el(
                 "tr",
-                el("td.strong", workflowLabel(w.workflow)),
-                el("td", `${w.runs} run${w.runs === 1 ? "" : "s"}`),
-                el(
-                  "td",
-                  el("div.wf-rate", `${rate}%`, el("span.wf-rate-sub", `${w.merged} of ${w.runs} merged`)),
-                  bar(rate, rate >= 50 ? "ok" : "warn"),
-                ),
-                el("td.mono", w.avg_tokens ? w.avg_tokens.toLocaleString() : "—"),
-                el("td.mono", w.avg_steps ? w.avg_steps.toFixed(1) : "—"),
-              );
-            }),
+                ...["Workflow", "Runs", "Success rate", "Avg tokens", "Avg steps"].map((h) => el("th", h)),
+              ),
+            ),
+            el(
+              "tbody",
+              ...workflows.map((w) => {
+                const rate = pct(w.merged, w.runs);
+                return el(
+                  "tr",
+                  el("td.strong", workflowLabel(w.workflow)),
+                  el("td", `${w.runs} run${w.runs === 1 ? "" : "s"}`),
+                  el(
+                    "td",
+                    el("div.wf-rate", `${rate}%`, el("span.wf-rate-sub", `${w.merged} of ${w.runs} merged`)),
+                    bar(rate, rate >= 50 ? "ok" : "warn"),
+                  ),
+                  el("td.mono", w.avg_tokens ? w.avg_tokens.toLocaleString() : "—"),
+                  el("td.mono", w.avg_steps ? w.avg_steps.toFixed(1) : "—"),
+                );
+              }),
+            ),
           ),
         ),
       ),
@@ -167,20 +170,23 @@ export function workflowsPage() {
             el("div", el("h2.card-title", "Slowest stages"), el("p.card-sub", "Average duration, this workflow's stages")),
           ),
           el(
-            "table.table",
-            el("thead", el("tr", ...["Workflow", "Stage", "Runs", "Avg duration"].map((h) => el("th", h)))),
+            "div.table-scroll",
             el(
-              "tbody",
-              ...byDuration.map((s) =>
-                el(
-                  "tr",
-                  el("td", workflowLabel(s.workflow)),
-                  el("td.strong", s.stage),
-                  el("td", `${s.runs}`),
+              "table.table",
+              el("thead", el("tr", ...["Workflow", "Stage", "Runs", "Avg duration"].map((h) => el("th", h)))),
+              el(
+                "tbody",
+                ...byDuration.map((s) =>
                   el(
-                    "td",
-                    el("div.wf-rate", formatMs(s.avg_ms)),
-                    bar(pct(s.avg_ms, maxMs), "info"),
+                    "tr",
+                    el("td", workflowLabel(s.workflow)),
+                    el("td.strong", s.stage),
+                    el("td", `${s.runs}`),
+                    el(
+                      "td",
+                      el("div.wf-rate", formatMs(s.avg_ms)),
+                      bar(pct(s.avg_ms, maxMs), "info"),
+                    ),
                   ),
                 ),
               ),
@@ -195,19 +201,22 @@ export function workflowsPage() {
           ),
           byErrors.length
             ? el(
-                "table.table",
-                el("thead", el("tr", ...["Workflow", "Stage", "Failures"].map((h) => el("th", h)))),
+                "div.table-scroll",
                 el(
-                  "tbody",
-                  ...byErrors.map((s) =>
-                    el(
-                      "tr",
-                      el("td", workflowLabel(s.workflow)),
-                      el("td.strong", s.stage),
+                  "table.table",
+                  el("thead", el("tr", ...["Workflow", "Stage", "Failures"].map((h) => el("th", h)))),
+                  el(
+                    "tbody",
+                    ...byErrors.map((s) =>
                       el(
-                        "td",
-                        el("div.wf-rate", `${s.errors} of ${s.runs}`),
-                        bar(pct(s.errors, s.runs), "danger"),
+                        "tr",
+                        el("td", workflowLabel(s.workflow)),
+                        el("td.strong", s.stage),
+                        el(
+                          "td",
+                          el("div.wf-rate", `${s.errors} of ${s.runs}`),
+                          bar(pct(s.errors, s.runs), "danger"),
+                        ),
                       ),
                     ),
                   ),

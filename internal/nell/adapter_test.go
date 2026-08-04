@@ -100,13 +100,15 @@ func TestChatTaskLifecyclePreservesRouting(t *testing.T) {
 	if err := s.Transition(ctx, task.ID, store.StatusQueued, store.StatusWaitingHuman, "await approval"); err != nil {
 		t.Fatal(err)
 	}
-	waiting, err := s.WaitingTasks(ctx)
-	if err != nil {
-		t.Fatal(err)
+	// Routing metadata must survive a status transition: a chat task that
+	// stops for approval still has to come back to the identity that owns it.
+	waiting, err := s.TaskByID(ctx, task.ID)
+	if err != nil || waiting == nil {
+		t.Fatalf("TaskByID = (%+v, %v)", waiting, err)
 	}
-	if len(waiting) != 1 || waiting[0].Source != store.SourceChat ||
-		waiting[0].Identity != "reviewer" {
-		t.Fatalf("WaitingTasks() = %+v, want chat/reviewer routing", waiting)
+	if waiting.Status != store.StatusWaitingHuman || waiting.Source != store.SourceChat ||
+		waiting.Identity != "reviewer" {
+		t.Fatalf("waiting task = %+v, want waiting_human chat/reviewer routing", waiting)
 	}
 }
 
@@ -280,15 +282,6 @@ func TestEmptyStoreOperations(t *testing.T) {
 	}
 	if len(tasks) != 0 {
 		t.Errorf("Tasks on empty store should be empty, got %d", len(tasks))
-	}
-
-	// WaitingTasks on empty store.
-	waiting, err := s.WaitingTasks(ctx)
-	if err != nil {
-		t.Errorf("WaitingTasks on empty store: %v", err)
-	}
-	if len(waiting) != 0 {
-		t.Errorf("WaitingTasks on empty store should be empty, got %d", len(waiting))
 	}
 
 	// OpenPRs on empty store.

@@ -133,13 +133,14 @@ function start() {
     else show(path);
   }
 
-  function show(path) {
+  function show(rawPath) {
     // Let a page release its subscriptions before it is replaced, so the SSE
     // stream does not leak a connection per navigation.
     outlet.firstElementChild?.dispatchEvent(new CustomEvent("archie:teardown"));
+    const [path, query = ""] = rawPath.split("?", 2);
     const route = routes.find((r) => r.path === path) || routes[0];
     bar.highlight(route.path);
-    mount(outlet, route.view ? route.view() : comingSoon(route));
+    mount(outlet, route.view ? route.view(new URLSearchParams(query)) : comingSoon(route));
   }
 
   window.addEventListener("hashchange", () => show(location.hash.slice(1) || "/"));

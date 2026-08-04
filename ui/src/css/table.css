@@ -6,6 +6,19 @@
   font-size: var(--text-sm);
 }
 
+/* Contained horizontal scrolling for wide tables: the page stays put and the
+   table scrolls inside this wrapper, so a 7-column table is usable at 390px. */
+.table-scroll {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-scroll > .table {
+  min-width: 42rem;
+}
+
 .table th {
   text-align: left;
   font-weight: 500;

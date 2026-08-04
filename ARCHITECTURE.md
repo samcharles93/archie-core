@@ -147,7 +147,9 @@ A thin abstraction over GitHub (Gitea planned):
 | `VerifyPush`        | Confirm push permission at startup      |
 
 State labels (`archie:queued`, `archie:working`, etc.) are created on demand,
-removed when transitioning.
+removed when transitioning. They report state; they do not drive it. Removing
+a label no longer retries a parked task -- retries are an explicit operator
+action from the dashboard or chat, capped by `max_retries`.
 
 ## Worktree Manager
 

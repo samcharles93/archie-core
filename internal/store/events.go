@@ -101,7 +101,7 @@ func (s *Store) Tasks(ctx context.Context, limit int) (tasks []Task, retErr erro
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, owner, repo, issue_number, title, status, workflow, stage,
 			pr_number, tokens_used, iterations, attempt, park_reason, retry_count,
-			created_at, updated_at
+			created_at, updated_at, plan, source
 		FROM tasks ORDER BY updated_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -111,10 +111,15 @@ func (s *Store) Tasks(ctx context.Context, limit int) (tasks []Task, retErr erro
 	}()
 	for rows.Next() {
 		var t Task
+		// Plan and Source are read by the dashboard: Plan gates the
+		// "Decision required" panel on a waiting_human task, and Source
+		// decides whether an issue link is rendered at all -- a chat task's
+		// issue number is synthetic and links nowhere.
 		if err := rows.Scan(&t.ID, &t.Owner, &t.Repo, &t.IssueNumber, &t.Title,
 			&t.Status, &t.Workflow, &t.Stage, &t.PRNumber, &t.TokensUsed,
 			&t.Iterations, &t.Attempt, &t.ParkReason, &t.RetryCount,
-			sqliteTime{&t.CreatedAt}, sqliteTime{&t.UpdatedAt}); err != nil {
+			sqliteTime{&t.CreatedAt}, sqliteTime{&t.UpdatedAt},
+			&t.Plan, &t.Source); err != nil {
 			return nil, err
 		}
 		tasks = append(tasks, t)

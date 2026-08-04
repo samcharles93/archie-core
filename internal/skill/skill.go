@@ -37,6 +37,7 @@ type CatalogEntry struct {
 	Description string
 	Workflow    string // from metadata.archie.workflow  --  which workflow this skill handles
 	Dir         string // skill directory name
+	Root        string // catalog root containing .agents/skills
 }
 
 // Catalog scans dir/.agents/skills/*/SKILL.md and returns catalog entries
@@ -83,9 +84,68 @@ func Catalog(dir string) ([]CatalogEntry, error) {
 			Description: fm.Description,
 			Workflow:    wf,
 			Dir:         name,
+			Root:        dir,
 		})
 	}
 	return out, nil
+}
+
+// CatalogRoots merges catalogues from roots in precedence order. The first
+// root containing a skill name wins, so callers can layer project skills over
+// shared and user-global skills deterministically.
+func CatalogRoots(roots ...string) ([]CatalogEntry, error) {
+	seen := make(map[string]struct{})
+	var out []CatalogEntry
+	for _, root := range roots {
+		entries, err := Catalog(root)
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range entries {
+			if _, ok := seen[entry.Name]; ok {
+				continue
+			}
+			seen[entry.Name] = struct{}{}
+			out = append(out, entry)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// DefaultRoots returns the discovery roots for a daemon. Explicit project and
+// shared roots take precedence over the user's global skills directory.
+func DefaultRoots(workDir, sharedDir string) []string {
+	var roots []string
+	for _, root := range []string{workDir, sharedDir} {
+		if root != "" && !containsRoot(roots, root) {
+			roots = append(roots, root)
+		}
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" && !containsRoot(roots, home) {
+		roots = append(roots, home)
+	}
+	return roots
+}
+
+// containsRoot compares roots after normalising trailing separators, so
+// "/srv/skills" and "/srv/skills/" are one root rather than two -- otherwise
+// the same directory is scanned twice and every skill in it appears twice.
+func containsRoot(roots []string, root string) bool {
+	target := normaliseRoot(root)
+	for _, existing := range roots {
+		if normaliseRoot(existing) == target {
+			return true
+		}
+	}
+	return false
+}
+
+func normaliseRoot(root string) string {
+	if root == "" {
+		return root
+	}
+	return filepath.Clean(root)
 }
 
 // SkillForWorkflow returns the catalog entry whose Workflow field matches

@@ -294,7 +294,11 @@ func run() int {
 	// row id) and then fanned out to live dashboard connections.
 	bus := events.NewBus()
 	defer bus.Close()
-	web := &webui.Server{Store: st, Log: log, Cfg: &cfg}
+	web := &webui.Server{Store: st, Log: log, Cfg: &cfg, Events: bus}
+	// The dashboard closes the forge issue behind a rejected task, or the
+	// issue is re-polled and the work is done again. It gets only that one
+	// method, not the forge client.
+	web.Issues = forgeClient
 	sink := bus.Subscribe(256)
 	go func() {
 		for e := range sink.C {
@@ -649,7 +653,7 @@ func run() int {
 	// Skill catalog → skill_activate tool (progressive disclosure: the
 	// catalog's name+description is always in the tool schema; the full
 	// SKILL.md body loads only when the model activates one).
-	if catalog, err := skill.Catalog(cfg.WorkDir); err != nil {
+	if catalog, err := skill.CatalogRoots(skill.DefaultRoots(cfg.WorkDir, cfg.SkillsDir)...); err != nil {
 		log.Warn("skill catalog load failed", "err", err)
 	} else if entry := skill.ActivateTool(cfg.WorkDir, catalog); entry != nil {
 		if err := toolReg.Register(*entry); err != nil {
@@ -668,7 +672,6 @@ func run() int {
 		Bus:            bus,
 		Forge:          forgeClient,
 		Trees:          trees,
-		Runtime:        llm,
 		Agent:          agentRunner,
 		Workflows:      registry,
 		CapabilityHost: capabilityHost,

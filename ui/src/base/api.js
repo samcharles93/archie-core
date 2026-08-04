@@ -2,7 +2,13 @@
 // through this, so auth handling and error shape live in one file.
 
 async function req(path) {
-  const res = await fetch(path, { headers: { Accept: "application/json" } });
+  // A daemon that accepts the connection but never answers would otherwise
+  // leave the UI stuck in a loading state with no way back; the retry
+  // affordances rely on fetch settling, so bound it.
+  const res = await fetch(path, {
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(15000),
+  });
   if (res.status === 401) {
     throw new ApiError("unauthorised", 401);
   }
@@ -23,6 +29,20 @@ function qs(params) {
   return s ? `?${s}` : "";
 }
 
+// errorMessage prefers what the server actually said. archied answers these
+// with http.Error, i.e. a plain-text reason -- "task is not awaiting
+// approval", "max retries reached (3/3)" -- and discarding it in favour of
+// "409 Conflict" throws away the only part an operator can act on.
+async function errorMessage(res) {
+  try {
+    const body = (await res.text()).trim();
+    if (body) return body.split("\n")[0].slice(0, 200);
+  } catch {
+    // Body already consumed or unreadable; fall through to the status.
+  }
+  return `${res.status} ${res.statusText}`;
+}
+
 export class ApiError extends Error {
   constructor(message, status) {
     super(message);
@@ -34,6 +54,16 @@ export const api = {
   summary: () => req("/api/summary"),
   tasks: () => req("/api/tasks"),
   task: (id) => req(`/api/tasks/${id}`),
+  taskAction: async (id, action) => {
+    const res = await fetch(`/api/tasks/${id}/action`, {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+    return res.json();
+  },
   setup: () => req("/api/setup"),
   workflows: () => req("/api/workflows"),
   skills: () => req("/api/skills"),

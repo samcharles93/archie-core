@@ -32,6 +32,12 @@ tasks:
       - npm install --no-audit --no-fund
       - npm run build
 
+  test:ui:
+    desc: Run the dashboard's node tests (DOM-building primitives)
+    dir: ui
+    cmds:
+      - npm test
+
   dev:
     desc: "Develop: archied live-reload + Vite HMR together. Open http://localhost:5173"
     summary: |
@@ -59,6 +65,25 @@ tasks:
       - npm install --no-audit --no-fund
       - npm run dev
 
+  dev:mobile:
+    desc: Serve the dashboard on your LAN (token-protected) for phone viewing
+    summary: |
+      Starts archied with the [web] bind on 0.0.0.0 so the dashboard is
+      reachable from your phone, printing the URL (LAN IP + token) and a QR
+      code to scan. Stop `task dev` first: both use port 8484, and two daemons
+      sharing the bot identity would double-poll the forge. Frontend served is
+      the embedded dist, so run `task ui` if you changed the frontend.
+    deps:
+      - ui
+    cmds:
+      - cmd: |
+          IP=$(hostname -I | awk '{print $1}')
+          TOKEN=$(cat "${XDG_DATA_HOME:-$HOME/.local/share}/archie/web-token" 2>/dev/null)
+          URL="http://$IP:8484/?t=$TOKEN"
+          echo "Phone URL: $URL"
+          echo "$URL" | qrencode -t ANSIUTF8
+      - go run ./cmd/archied -config-overlay ~/.config/archie/mobile.toml
+
   build:
     desc: Build archied and archie-agent binaries
     sources:
@@ -78,13 +103,16 @@ tasks:
       - go test ./... -count=1
 
   check:
-    desc: "Full quality gate: fmt, go fix, vet, build, test (matches [[repos.gate]] in config.toml)"
+    desc: "Full quality gate: fmt, go fix, vet, build, test, ui tests (matches [[repos.gate]] in config.toml)"
     cmds:
       - task: fmt
       - go fix ./...
       - task: vet
       - task: build
       - task: test
+      # The dashboard's suite runs here too. Left out of the gate it rots
+      # silently: nothing else executes it, so a broken DOM primitive ships.
+      - task: test:ui
 
   release:preview:
     desc: "Show the release notes that would be generated (VERSION=1.2.0, or GATEWAY=/RUNTIME= to version the two components separately)"

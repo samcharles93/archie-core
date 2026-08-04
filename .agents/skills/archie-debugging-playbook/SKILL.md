@@ -19,8 +19,7 @@ Do not begin with `task check` (mutates via `gofumpt -w .`/`go fix ./...`).
 Compile, then run:
 
 ```bash
-env GOTMPDIR=/tmp GOCACHE=/tmp/archie-debug-gocache \
-  GIT_CONFIG_GLOBAL=/dev/null go test ./PATH/TO/PACKAGE -run '^TestName$' -count=1 -v
+GIT_CONFIG_GLOBAL=/dev/null go test ./PATH/TO/PACKAGE -run '^TestName$' -count=1 -v
 ```
 
 Classify: compile-only, listener failure, read-only tmp, code regression.
@@ -53,10 +52,6 @@ go version
 go env GOTMPDIR GOCACHE GOPATH GOMODCACHE GOENV
 ```
 
-This checkout can inherit `GOTMPDIR=/work/tmp`; that path is read-only in some
-sandboxes. Setting `GOTMPDIR=/tmp` and a task-specific `GOCACHE` is diagnostic
-isolation.
-
 Listener-dependent tests include embedded NATS, `httptest.NewServer`, and SMTP
 listeners:
 
@@ -70,12 +65,8 @@ repository-local mitigation. `worktree.Manager.setIdentity` pins
 `commit.gpgsign=false`. Isolate ambient global config:
 
 ```bash
-env GOTMPDIR=/tmp GOCACHE=/tmp/archie-worktree-gocache \
-  GIT_CONFIG_GLOBAL=/dev/null go test ./internal/worktree -count=1
+GIT_CONFIG_GLOBAL=/dev/null go test ./internal/worktree -count=1
 ```
-
-**Fixed history:** `.gotmp/` once held a workaround for tmpfs quota pressure and
-was accidentally committed. It is ignored now.
 
 ## Confirm the current known regression
 
@@ -231,4 +222,3 @@ root-identity-bound; `SubprocessRunner` expects stdin JSON protocol.
 | Skill catalog | Warn, continue without tool |
 | Worktree augmentation | Log error, use startup registry |
 | Workspace indexing | **Open:** no production `indexing.NewManager` call |
-

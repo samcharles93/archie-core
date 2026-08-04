@@ -19,16 +19,23 @@ export function dashboardPage() {
   const statsRow = el("div.grid.grid-4");
   const setupSlot = el("div");
   const pulseSlot = el("div");
+  const topRow = el("div.dash-top", setupSlot, pulseSlot);
   const forecastSlot = el("div");
   const actions = el("div.hero-actions-inner");
   const title = el("h1.hero-title", greeting());
   const streamState = pill("connecting", "idle");
+  const activity = [];
+  const taskIDsBySource = new Map();
 
   render();
   load();
 
   const unsubscribe = subscribeEvents(
-    (event) => prependRun(runs, event),
+    (event) => {
+      activity.unshift(event);
+      activity.splice(50);
+      renderActivity();
+    },
     (state) => {
       const kind = state === "live" ? "ok" : "warn";
       streamState.className = `pill pill-${kind}`;
@@ -55,7 +62,7 @@ export function dashboardPage() {
       el(
         "div.dash-section",
         el("div.dash-section-head", el("h2.dash-section-title", "Health")),
-        el("div.dash-top", setupSlot, pulseSlot),
+        topRow,
       ),
       el(
         "div.dash-section",
@@ -83,24 +90,43 @@ export function dashboardPage() {
             streamState,
           ),
           el(
-            "table.table",
-            el("thead", el("tr", ...["Event", "Task", "Detail", "When"].map((h) => el("th", h)))),
-            runs,
+            "div.table-scroll",
+            el(
+              "table.table",
+              el("thead", el("tr", ...["Event", "Task", "Detail", "When"].map((h) => el("th", h)))),
+              runs,
+            ),
           ),
         ),
         ),
       ),
     );
-    mount(runs, el("tr", el("td", { colspan: 4 }, empty("Waiting for activity", "Events appear here as Archie works."))));
+    renderActivity();
+  }
+
+  function renderActivity() {
+    if (!activity.length) {
+      mount(runs, el("tr", el("td", { colspan: 4 }, empty("Waiting for activity", "Events appear here as Archie works."))));
+      return;
+    }
+    mount(runs, ...activity.map((event) => activityRow(event, taskIDsBySource)));
   }
 
   async function load() {
     try {
-      const [summary, setup, workflows] = await Promise.all([
+      const [summary, setup, workflows, tasks] = await Promise.all([
         api.summary(),
         api.setup().catch(() => null),
         api.workflows().catch(() => null),
+        api.tasks().catch(() => []),
       ]);
+      taskIDsBySource.clear();
+      for (const task of tasks) {
+        if (task.owner && task.repo && task.issue_number) {
+          taskIDsBySource.set(`${task.owner}/${task.repo}#${task.issue_number}`, task.id);
+        }
+      }
+      renderActivity();
       renderActions(summary);
       // The greeting is only personalised when the deployment says who it
       // assists; an unconfigured instance greets without a name rather than
@@ -112,6 +138,13 @@ export function dashboardPage() {
       renderForecast(summary);
     } catch (err) {
       mount(statsRow, el("div.card", empty("Cannot reach archied", String(err.message || err))));
+      // The hero actions are only rendered on success, so a failed first load
+      // must offer its own retry rather than leaving the operator without a
+      // recovery path.
+      mount(
+        actions,
+        el("button.btn.btn-primary", { onclick: load }, icon("refresh", { size: 15 }), "Retry"),
+      );
     }
   }
 
@@ -177,26 +210,50 @@ export function dashboardPage() {
   }
 
   function renderSetup(setup) {
-    if (!setup?.steps?.length) return mount(setupSlot);
+    // Unknown setup (endpoint unreachable) or no checklist configured: omit
+    // the panel and let the gate pulse take the full row, so the Health row
+    // never shows an empty half beside the pulse.
+    const omit = !setup?.steps?.length;
+    topRow.classList.toggle("dash-top-standalone", omit);
+    if (omit) return mount(setupSlot);
     const remaining = setup.steps.filter((s) => !s.done);
-    if (!remaining.length) return mount(setupSlot);
-
-    const pct = Math.round(((setup.steps.length - remaining.length) / setup.steps.length) * 100);
+    if (remaining.length) {
+      const pct = Math.round(((setup.steps.length - remaining.length) / setup.steps.length) * 100);
+      mount(
+        setupSlot,
+        el(
+          "div.card.setup",
+          el(
+            "div.card-head",
+            el(
+              "div",
+              el("h2.card-title", "Finish setting up"),
+              el("p.card-sub", "Archie needs these before it can work on its own."),
+            ),
+            el("span.setup-pct", `${pct}%`),
+          ),
+          el("div.setup-bar", el("div.setup-bar-fill", { style: `width:${pct}%` })),
+          el("ul.setup-list", ...setup.steps.map(setupStep)),
+        ),
+      );
+      return;
+    }
+    // Every step done: show completion so the row beside the gate pulse is
+    // not an empty hole on an otherwise healthy dashboard.
+    topRow.classList.remove("dash-top-standalone");
     mount(
       setupSlot,
       el(
-        "div.card.setup",
+        "div.card.setup.setup-done",
         el(
           "div.card-head",
           el(
             "div",
-            el("h2.card-title", "Finish setting up"),
-            el("p.card-sub", "Archie needs these before it can work on its own."),
+            el("h2.card-title", "Setup complete"),
+            el("p.card-sub", "Archie is configured and ready to work."),
           ),
-          el("span.setup-pct", `${pct}%`),
+          el("span.setup-pct", icon("check", { size: 16 })),
         ),
-        el("div.setup-bar", el("div.setup-bar-fill", { style: `width:${pct}%` })),
-        el("ul.setup-list", ...setup.steps.map(setupStep)),
       ),
     );
   }
@@ -220,17 +277,40 @@ export function dashboardPage() {
   return root;
 }
 
-function prependRun(tbody, event) {
-  if (tbody.firstElementChild?.querySelector(".empty")) tbody.replaceChildren();
+function activityRow(event, taskIDsBySource) {
+  const taskID = taskIDForEvent(event, taskIDsBySource);
+  const hasTask = taskID > 0;
+  const openTask = () => {
+    if (hasTask) location.hash = `#/tasks?task=${encodeURIComponent(taskID)}`;
+  };
   const row = el(
-    "tr",
+    `tr${hasTask ? ".activity-row" : ""}`,
+    hasTask
+      ? {
+          role: "link",
+          tabindex: "0",
+          title: "Open task details",
+          onclick: openTask,
+          onkeydown: (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              openTask();
+            }
+          },
+        }
+      : undefined,
     el("td.strong", el("span", event.kind || event.type || "event")),
-    el("td.mono", event.task_id ? `#${event.task_id}` : "—"),
+    el("td.mono", hasTask ? `#${taskID}` : "—"),
     el("td", event.detail || event.message || ""),
     el("td", ago(event.at || Date.now())),
   );
-  tbody.prepend(row);
-  while (tbody.children.length > 50) tbody.lastElementChild.remove();
+  return row;
+}
+
+function taskIDForEvent(event, taskIDsBySource) {
+  if (Number(event.task_id) > 0) return Number(event.task_id);
+  if (!event.repo || !event.issue) return 0;
+  return Number(taskIDsBySource.get(`${event.repo}#${event.issue}`)) || 0;
 }
 
 function greeting() {

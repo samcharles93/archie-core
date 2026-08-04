@@ -7,6 +7,9 @@
   border-radius: var(--radius-lg);
   padding: var(--sp-5);
   box-shadow: var(--shadow-sm);
+  /* Wide content (data tables, long values) scrolls inside the card on
+     narrow screens instead of stretching the page. */
+  overflow-x: auto;
 }
 
 .card-head {
@@ -15,6 +18,7 @@
   justify-content: space-between;
   gap: var(--sp-3);
   margin-bottom: var(--sp-4);
+  flex-wrap: wrap;
 }
 
 .card-title {
@@ -32,6 +36,12 @@
 .grid {
   display: grid;
   gap: var(--sp-4);
+}
+
+/* Grid tracks never grow past the viewport: an item that would blow out
+   scrolls inside its own scroll container instead. */
+.grid > * {
+  min-width: 0;
 }
 
 .grid-4 {

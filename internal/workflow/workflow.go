@@ -23,10 +23,9 @@ import (
 // forge.Forge (the daemon's real implementations) and forgerpc.Client
 // (archie-agent's NATS-backed proxy) both satisfy it.
 type Forger interface {
-	Comment(ctx context.Context, owner, repo string, number int, body string) (int64, error)
 	CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error
 	CreatePR(ctx context.Context, owner, repo, title, head, base, body string) (int, error)
-	SetStateLabel(ctx context.Context, owner, repo string, number int, label string, knownLabels []string)
+	LinkBranch(ctx context.Context, owner, repo string, issueNumber int, branch string) error
 }
 
 // Trees is the subset of *worktree.Manager that workflow stages call
@@ -220,30 +219,8 @@ func finish(ctx context.Context, tc *TaskContext, log *slog.Logger) {
 	}
 	_ = tc.Store.Update(ctx, t)
 	_ = tc.Store.Transition(ctx, t.ID, store.StatusRunning, tc.Outcome.Status, tc.Outcome.Detail)
-	if t.IsForgeBacked() {
-		tc.Forge.SetStateLabel(ctx, t.Owner, t.Repo, t.IssueNumber, stateLabelFor(tc.Cfg.Dispatch, tc.Outcome.Status), tc.Cfg.Dispatch.LabelValues())
-	}
 	tc.Emit(events.KindOutcome, t.Stage, tc.Outcome.Detail, map[string]any{"status": tc.Outcome.Status})
 	log.Info("workflow finished", "status", tc.Outcome.Status)
-}
-
-// stateLabelFor maps a terminal workflow status to its forge label by
-// looking up the configured [dispatch.labels]; empty clears (done states
-//
-//	--  the issue closes or the PR speaks).
-func stateLabelFor(d config.Dispatch, status string) string {
-	switch status {
-	case store.StatusPROpen:
-		return d.StateLabel("pr")
-	case store.StatusWaitingHuman:
-		return d.StateLabel("waiting")
-	case store.StatusParked:
-		return d.StateLabel("parked")
-	case store.StatusDead:
-		return d.StateLabel("dead")
-	default:
-		return ""
-	}
 }
 
 func park(ctx context.Context, tc *TaskContext, reason string) {
@@ -252,18 +229,6 @@ func park(ctx context.Context, tc *TaskContext, reason string) {
 	_ = tc.Store.Update(ctx, t)
 	_ = tc.Store.Transition(ctx, t.ID, store.StatusRunning, store.StatusParked, reason)
 	tc.Emit(events.KindParked, t.Stage, reason, nil)
-	if !t.IsForgeBacked() {
-		// Chat-sourced tasks have no real forge issue to label or
-		// comment on; the park reason is visible via /status and the
-		// task's ParkReason field instead.
-		return
-	}
-	tc.Forge.SetStateLabel(ctx, t.Owner, t.Repo, t.IssueNumber, tc.Cfg.Dispatch.StateLabel("parked"), tc.Cfg.Dispatch.LabelValues())
-	body := fmt.Sprintf("**archie parked this task.**\n\n```\n%s\n```\n\nThe worktree is kept for inspection.",
-		clip(reason, 3000))
-	if _, err := tc.Forge.Comment(ctx, t.Owner, t.Repo, t.IssueNumber, body); err != nil {
-		tc.Log.Error("failed to post park comment", "err", err)
-	}
 }
 
 func clip(s string, n int) string {

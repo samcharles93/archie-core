@@ -29,9 +29,9 @@ function statusLabel(status) {
  * carries created_at/updated_at, so age is shown in the list and once
  * a row's timeline is loaded, sourced from its most recent event.
  */
-export function tasksPage() {
+export function tasksPage(params = new URLSearchParams()) {
   const root = el("div");
-  const summaryRow = el("div.grid.grid-4");
+  const summaryRow = el("div.grid.grid-4.task-summary");
   const body = el("tbody");
   const searchInput = el("input.task-search", {
     type: "search",
@@ -56,8 +56,16 @@ export function tasksPage() {
   let tasks = [];
   let filterStatus = "";
   let search = "";
-  let expandedId = null;
+  const requestedTask = Number(params.get("task"));
+  let expandedId = Number.isFinite(requestedTask) && requestedTask > 0 ? requestedTask : null;
+  let forgeHost = "";
   const eventCache = new Map();
+  // Keyed by task id. A single shared string leaked one row's failure into
+  // every other row's action cell.
+  const actionErrors = new Map();
+  // Tasks with an action in flight, so the buttons can be disabled rather
+  // than letting an impatient second click fire the same action twice.
+  const actionsInFlight = new Set();
 
   render();
   load();
@@ -83,15 +91,18 @@ export function tasksPage() {
           el("div.task-filters", searchInput, statusSelect),
         ),
         el(
-          "table.table",
+          "div.table-scroll",
           el(
-            "thead",
+            "table.table",
             el(
-              "tr",
-              ...["Repo", "Issue", "Title", "Status", "Workflow", "Stage", "Last activity"].map((h) => el("th", h)),
+              "thead",
+              el(
+                "tr",
+                ...["Repo", "Issue", "Title", "Status", "Workflow", "Stage", "Last activity", "Action"].map((h) => el("th", h)),
+              ),
             ),
+            body,
           ),
-          body,
         ),
       ),
     );
@@ -99,12 +110,18 @@ export function tasksPage() {
 
   async function load() {
     try {
-      tasks = await api.tasks();
+      [tasks, forgeHost] = await Promise.all([
+        api.tasks(),
+        api.config().then((cfg) => cfg?.identity?.forge_host || "").catch(() => ""),
+      ]);
       renderSummary();
       renderRows();
+      if (expandedId && tasks.some((task) => String(task.id) === String(expandedId))) {
+        loadTimeline(expandedId);
+      }
     } catch (err) {
       mount(summaryRow, el("div.card", empty("Cannot reach archied", String(err.message || err))));
-      mount(body, el("tr", el("td", { colspan: 7 }, empty("Cannot reach archied", String(err.message || err)))));
+      mount(body, el("tr", el("td", { colspan: 8 }, empty("Cannot reach archied", String(err.message || err)))));
     }
   }
 
@@ -160,7 +177,7 @@ export function tasksPage() {
           "tr",
           el(
             "td",
-            { colspan: 7 },
+            { colspan: 8 },
             empty("No tasks yet", "Tasks appear here once archied picks up an issue to work."),
           ),
         ),
@@ -170,7 +187,7 @@ export function tasksPage() {
     if (!rows.length) {
       mount(
         body,
-        el("tr", el("td", { colspan: 7 }, empty("No matching tasks", "Try a different search or status filter."))),
+        el("tr", el("td", { colspan: 8 }, empty("No matching tasks", "Try a different search or status filter."))),
       );
       return;
     }
@@ -191,8 +208,8 @@ export function tasksPage() {
           if (expandedId === t.id) loadTimeline(t.id);
         },
       },
-      el("td.mono", `${t.owner}/${t.repo}`),
-      el("td.mono", `#${t.issue_number}`),
+      el("td.mono", repoLink(t) ?? `${t.owner}/${t.repo}`),
+      el("td.mono", issueLink(t) ?? `#${t.issue_number}`),
       el("td.strong", t.title || "(untitled)"),
       el("td", pill(statusLabel(t.status), statusKind(t.status))),
       el("td", t.workflow || "—"),
@@ -200,6 +217,104 @@ export function tasksPage() {
       // updated_at moves on every transition, so this reads as "how long has
       // it been sitting like this" rather than "how old is the task".
       el("td", { title: t.created_at ? `Created ${ago(t.created_at)}` : "" }, ago(t.updated_at)),
+      el("td", taskActions(t)),
+    );
+  }
+
+  function taskActions(t) {
+    const message = actionErrors.get(t.id);
+    const error = message ? el("span.task-action-error", message) : null;
+    const busy = actionsInFlight.has(t.id);
+
+    // The row itself toggles the timeline on click, so every button has to
+    // stop the event or acting on a task also expands it.
+    const button = (cls, action, label, confirmText) =>
+      el(
+        cls,
+        {
+          type: "button",
+          disabled: busy,
+          onclick: (e) => {
+            e.stopPropagation();
+            if (confirmText && !window.confirm(confirmText)) return;
+            performAction(t.id, action);
+          },
+        },
+        label,
+      );
+
+    if (t.status === "waiting_human") {
+      return el(
+        "div.task-actions",
+        error,
+        button("button.btn.btn-small", "approve", "Approve"),
+        button(
+          "button.btn.btn-small.btn-quiet",
+          "reject",
+          "Reject",
+          `Reject "${t.title || "this task"}"? This closes the forge issue and cannot be undone from here.`,
+        ),
+      );
+    }
+    if (t.status === "parked") {
+      return el("div.task-actions", error, button("button.btn.btn-small", "retry", "Retry"));
+    }
+    return error || "—";
+  }
+
+  async function performAction(id, action) {
+    actionErrors.delete(id);
+    actionsInFlight.add(id);
+    renderRows();
+    try {
+      await api.taskAction(id, action);
+      actionsInFlight.delete(id);
+      await load();
+    } catch (err) {
+      actionsInFlight.delete(id);
+      actionErrors.set(id, err.message || "Action failed");
+      renderRows();
+    }
+  }
+
+  // Both forge links derive from the same host so they can never drift apart:
+  // one place builds the base, both anchors reuse it.
+  function forgeBase(t) {
+    if (!forgeHost || !t.owner || !t.repo) return null;
+    return `${forgeHost.replace(/\/+$/, "")}/${encodeURIComponent(t.owner)}/${encodeURIComponent(t.repo)}`;
+  }
+
+  function repoLink(t) {
+    const base = forgeBase(t);
+    if (!base) return null;
+    return el(
+      "a.task-source-link",
+      {
+        href: base,
+        target: "_blank",
+        rel: "noreferrer",
+        title: `Open ${t.owner}/${t.repo} on the forge`,
+        onclick: (e) => e.stopPropagation(),
+      },
+      `${t.owner}/${t.repo}`,
+    );
+  }
+
+  function issueLink(t) {
+    const base = forgeBase(t);
+    // A chat-sourced task has no issue on the forge, but its repo may still
+    // exist -- the repo link stays, the issue link does not.
+    if (t.source === "chat" || !base || !t.issue_number) return null;
+    return el(
+      "a.task-source-link",
+      {
+        href: `${base}/issues/${t.issue_number}`,
+        target: "_blank",
+        rel: "noreferrer",
+        title: `Open issue #${t.issue_number} on the forge`,
+        onclick: (e) => e.stopPropagation(),
+      },
+      `#${t.issue_number}`,
     );
   }
 
@@ -209,11 +324,24 @@ export function tasksPage() {
       "tr.task-timeline-row",
       el(
         "td",
-        { colspan: 7 },
+        { colspan: 8 },
+        t.status === "waiting_human" && t.plan
+          ? el("div.task-decision", el("div.task-decision-title", "Decision required"), el("div.task-decision-plan", t.plan))
+          : t.status === "parked" && t.park_reason
+            ? el("div.task-decision", el("div.task-decision-title", "Park reason"), el("div.task-decision-plan", t.park_reason))
+            : null,
         cached === undefined
           ? el("div.task-timeline-loading", "Loading timeline…")
           : cached === null
-            ? empty("Could not load timeline", "archied could not be reached for this task's events.")
+            ? el(
+                "div.task-timeline-error",
+                el("div.task-timeline-title", "Could not load timeline"),
+                el(
+                  "div.task-timeline-detail",
+                  "archied did not answer for this task's events. It may be restarting — retry, or check the daemon.",
+                ),
+                el("button.btn", { onclick: () => loadTimeline(t.id) }, "Retry"),
+              )
             : cached.length
               ? el("ul.task-timeline", ...cached.map(timelineEntry))
               : empty("No events yet", "This task has not recorded any transitions."),

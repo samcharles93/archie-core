@@ -1,4 +1,5 @@
 export:
     auto: true
 no-git-ops: true
-sync.remote: git+https://git.catlow.cloud/sam/archie-core.git
+# Remote sync intentionally disabled: Beads memories and issue history may
+# contain confidential infrastructure or operational details.

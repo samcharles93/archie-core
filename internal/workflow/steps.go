@@ -69,10 +69,6 @@ func closeNoChangesIssue(ctx context.Context, tc *TaskContext) error {
 		tc.Outcome = Outcome{Status: store.StatusMerged, Detail: "completed  --  no changes required"}
 		return nil
 	}
-	body := fmt.Sprintf("**archie closed this issue  --  no changes required.**\n\n%s", tc.BuildSummary)
-	if _, err := tc.Forge.Comment(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, body); err != nil {
-		tc.Log.Warn("no-op close comment failed", "err", err)
-	}
 	if err := tc.Forge.CloseIssue(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, ""); err != nil {
 		return err
 	}
@@ -182,6 +178,21 @@ func StageYaegiGate() Stage {
 func OpenPR(ctx context.Context, tc *TaskContext, body string) error {
 	t := tc.Task
 	title := fmt.Sprintf("%s (archie)", t.Title)
+	if t.IsForgeBacked() {
+		// Best-effort. The link is cosmetic -- it puts the branch in the
+		// issue's sidebar on Gitea and does nothing on GitHub -- so failing
+		// the stage on it meant the pull request, the entire point of the
+		// run, was never opened and the task parked. A retry then re-links
+		// the same branch, which Gitea answers with a conflict, so every
+		// retry parked again.
+		if err := tc.Forge.LinkBranch(ctx, t.Owner, t.Repo, t.IssueNumber, tc.Branch); err != nil {
+			if tc.Log != nil {
+				tc.Log.Warn("link branch to issue failed; opening the PR anyway",
+					"repo", t.Owner+"/"+t.Repo, "issue", t.IssueNumber,
+					"branch", tc.Branch, "err", err)
+			}
+		}
+	}
 	num, err := tc.Forge.CreatePR(ctx, t.Owner, t.Repo, title, tc.Branch, tc.Repo.BaseBranch(), body)
 	if err != nil {
 		return err
@@ -196,13 +207,6 @@ func StageOpenPR(body func(*TaskContext) string) Stage {
 	return Stage{Name: "open-pr", Run: func(ctx context.Context, tc *TaskContext) error {
 		return OpenPR(ctx, tc, body(tc))
 	}}
-}
-
-func issueClosureReference(task *store.Task) string {
-	if !task.IsForgeBacked() {
-		return ""
-	}
-	return fmt.Sprintf("\n\nCloses #%d", task.IssueNumber)
 }
 
 func taskPromptBlock(task *store.Task) string {
@@ -250,8 +254,7 @@ func Bootstrap() Workflow {
 			}),
 			StageDiffCap(),
 			StageOpenPR(func(tc *TaskContext) string {
-				return "Deterministic bootstrap PR from archie's plumbing walk-through." +
-					issueClosureReference(tc.Task)
+				return "Deterministic bootstrap PR from archie's plumbing walk-through."
 			}),
 		},
 	}

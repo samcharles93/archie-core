@@ -387,13 +387,15 @@ func TestLifecycleQueriesPreserveChatTaskRouting(t *testing.T) {
 	if err := s.Transition(ctx, waiting.ID, StatusQueued, StatusWaitingHuman, "await approval"); err != nil {
 		t.Fatal(err)
 	}
-	waitingTasks, err := s.WaitingTasks(ctx)
-	if err != nil {
-		t.Fatal(err)
+	// Routing metadata must survive a status transition: a chat task that
+	// stops for approval still has to come back to the identity that owns it.
+	waitingTask, err := s.TaskByID(ctx, waiting.ID)
+	if err != nil || waitingTask == nil {
+		t.Fatalf("TaskByID = (%+v, %v)", waitingTask, err)
 	}
-	if len(waitingTasks) != 1 || waitingTasks[0].Source != SourceChat ||
-		waitingTasks[0].Identity != "reviewer" {
-		t.Fatalf("WaitingTasks() = %+v, want chat/reviewer routing", waitingTasks)
+	if waitingTask.Status != StatusWaitingHuman || waitingTask.Source != SourceChat ||
+		waitingTask.Identity != "reviewer" {
+		t.Fatalf("waiting task = %+v, want waiting_human chat/reviewer routing", waitingTask)
 	}
 
 	pr, err := s.EnqueueChatTask(ctx, "acme", "todo", "open PR", "", "implement", "builder", 999_002)

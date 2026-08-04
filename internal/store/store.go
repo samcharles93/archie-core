@@ -169,8 +169,9 @@ func OpenTest(t interface{ TempDir() string }) *Store {
 	return s
 }
 
-// IncrementRetryCount atomically bumps retry_count by 1. Called after
-// a parked task is requeued by maybeRetryParked.
+// IncrementRetryCount atomically bumps retry_count by 1. Called when an
+// operator retries a parked task; the caller enforces max_retries against
+// the resulting count.
 func (s *Store) IncrementRetryCount(ctx context.Context, taskID int64) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE tasks SET retry_count = retry_count + 1, updated_at = datetime('now') WHERE id = ?`, taskID)
@@ -346,30 +347,6 @@ func (s *Store) TaskByID(ctx context.Context, taskID int64) (*Task, error) {
 		return nil, nil
 	}
 	return t, err
-}
-
-// WaitingTasks returns tasks blocked on human input.
-func (s *Store) WaitingTasks(ctx context.Context) (tasks []Task, retErr error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, owner, repo, issue_number, title, body, plan, workflow,
-			watch_comment_id, status, source, identity
-		FROM tasks WHERE status='waiting_human'`)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		retErr = errors.Join(retErr, rows.Close())
-	}()
-	for rows.Next() {
-		var t Task
-		if err := rows.Scan(&t.ID, &t.Owner, &t.Repo, &t.IssueNumber, &t.Title,
-			&t.Body, &t.Plan, &t.Workflow, &t.WatchCommentID, &t.Status,
-			&t.Source, &t.Identity); err != nil {
-			return nil, err
-		}
-		tasks = append(tasks, t)
-	}
-	return tasks, rows.Err()
 }
 
 // Requeue puts a task back on the queue. A non-empty workflow forces it

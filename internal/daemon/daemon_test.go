@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"slices"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -530,24 +529,18 @@ func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
 	}
 }
 
-func TestHasLabelUsesExactNames(t *testing.T) {
-	labels := []string{"bug", "archie:parked-old", "feature", "custom,label"}
-	if hasLabel(labels, "archie:parked") {
-		t.Fatal("hasLabel matched a label-name substring")
-	}
-	if !hasLabel(labels, "custom,label") {
-		t.Fatal("hasLabel did not preserve a label containing a comma")
-	}
-	labels = append(labels, "archie:parked")
-	if !hasLabel(labels, "archie:parked") {
-		t.Fatal("hasLabel did not match the exact label name")
-	}
-}
-
 // testForge implements forge.Forge for daemon tests.
 type testForge struct {
-	comments    []commentCall
-	stateLabels []stateLabelCall
+	comments     []commentCall
+	stateLabels  []stateLabelCall
+	closedIssues []closeIssueCall
+	prStates     map[int]string
+}
+
+type closeIssueCall struct {
+	owner, repo string
+	number      int
+	comment     string
 }
 
 type commentCall struct {
@@ -589,12 +582,16 @@ func (f *testForge) CreatePR(context.Context, string, string, string, string, st
 	panic("unexpected call")
 }
 
-func (f *testForge) PRState(context.Context, string, string, int) (string, error) {
+func (f *testForge) PRState(_ context.Context, _, _ string, number int) (string, error) {
+	if state, ok := f.prStates[number]; ok {
+		return state, nil
+	}
 	panic("unexpected call")
 }
 
-func (f *testForge) CloseIssue(context.Context, string, string, int, string) error {
-	panic("unexpected call")
+func (f *testForge) CloseIssue(_ context.Context, owner, repo string, number int, comment string) error {
+	f.closedIssues = append(f.closedIssues, closeIssueCall{owner, repo, number, comment})
+	return nil
 }
 
 func (f *testForge) CreateIssue(context.Context, string, string, string, string, []string) (int, error) {
@@ -627,112 +624,12 @@ func testDaemon(t *testing.T, maxRetries, _ int) (*Daemon, *store.Store, *testFo
 		Cfg:   cfg,
 		Store: s,
 		Forge: fg,
+		// Reconcile paths call Trees.Cleanup, which dereferences the
+		// manager. A zero Manager is enough: cleanup of a worktree that was
+		// never created is a no-op.
+		Trees: &worktree.Manager{},
 		Log:   log,
 	}, s, fg
-}
-
-func setupParkedTask(t *testing.T, s *store.Store, retryCount int) *store.Task {
-	t.Helper()
-	ctx := context.Background()
-
-	if _, err := s.EnqueueIssue(ctx, "acme", "todo", 1, "t", "b", "", ""); err != nil {
-		t.Fatal(err)
-	}
-	task, err := s.ClaimNext(ctx)
-	if err != nil || task == nil {
-		t.Fatalf("claim = (%v, %v)", task, err)
-	}
-	if err := s.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "parked"); err != nil {
-		t.Fatal(err)
-	}
-	for range retryCount {
-		if err := s.IncrementRetryCount(ctx, task.ID); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	task, err = s.TaskByIssue(ctx, "acme", "todo", 1)
-	if err != nil || task == nil {
-		t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
-	}
-	return task
-}
-
-func TestMaybeRetryParkedUnderThreshold(t *testing.T) {
-	d, s, fg := testDaemon(t, 3, 0)
-	ctx := context.Background()
-
-	_ = setupParkedTask(t, s, 0)
-
-	is := forge.Issue{Number: 1, Labels: []string{}}
-	repo := config.Repo{Owner: "acme", Name: "todo"}
-
-	d.maybeRetryParked(ctx, repo, is)
-
-	task, err := s.TaskByIssue(ctx, "acme", "todo", 1)
-	if err != nil || task == nil {
-		t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
-	}
-	if task.Status != store.StatusQueued {
-		t.Fatalf("expected status queued, got %s", task.Status)
-	}
-	if task.RetryCount != 1 {
-		t.Fatalf("expected retry_count=1, got %d", task.RetryCount)
-	}
-	if len(fg.stateLabels) != 1 || fg.stateLabels[0].label != "archie:queued" {
-		t.Fatalf("expected queued state label, got %+v", fg.stateLabels)
-	}
-	if len(fg.comments) != 0 {
-		t.Fatalf("expected no comments, got %d", len(fg.comments))
-	}
-}
-
-func TestMaybeRetryParkedAtThreshold(t *testing.T) {
-	d, s, fg := testDaemon(t, 3, 0)
-	ctx := context.Background()
-
-	_ = setupParkedTask(t, s, 3)
-
-	is := forge.Issue{Number: 1, Labels: []string{}}
-	repo := config.Repo{Owner: "acme", Name: "todo"}
-
-	d.maybeRetryParked(ctx, repo, is)
-
-	task, err := s.TaskByIssue(ctx, "acme", "todo", 1)
-	if err != nil || task == nil {
-		t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
-	}
-	if task.Status != store.StatusDead {
-		t.Fatalf("expected status dead, got %s", task.Status)
-	}
-	if len(fg.stateLabels) != 1 || fg.stateLabels[0].label != "archie:dead" {
-		t.Fatalf("expected dead state label, got %+v", fg.stateLabels)
-	}
-	if len(fg.comments) != 1 || !strings.Contains(fg.comments[0].body, "Max retries reached") {
-		t.Fatalf("expected dead comment, got %+v", fg.comments)
-	}
-}
-
-func TestMaybeRetryParkedSkipsDead(t *testing.T) {
-	d, s, fg := testDaemon(t, 3, 0)
-	ctx := context.Background()
-
-	task := setupParkedTask(t, s, 0)
-	if err := s.Transition(ctx, task.ID, store.StatusParked, store.StatusDead, "manual"); err != nil {
-		t.Fatal(err)
-	}
-
-	is := forge.Issue{Number: 1, Labels: []string{}}
-	repo := config.Repo{Owner: "acme", Name: "todo"}
-
-	d.maybeRetryParked(ctx, repo, is)
-
-	if len(fg.stateLabels) != 0 {
-		t.Fatalf("expected no state label calls, got %d", len(fg.stateLabels))
-	}
-	if len(fg.comments) != 0 {
-		t.Fatalf("expected no comments, got %d", len(fg.comments))
-	}
 }
 
 func TestNewIdentityRunnerPopulatesFromConfig(t *testing.T) {
@@ -843,40 +740,6 @@ func TestDaemonStoresIdentityRunners(t *testing.T) {
 	}
 }
 
-func TestMaybeRetryParkedStillParked(t *testing.T) {
-	d, _, fg := testDaemon(t, 3, 0)
-	ctx := context.Background()
-
-	is := forge.Issue{Number: 1, Labels: []string{"archie:parked", "bug"}}
-	repo := config.Repo{Owner: "acme", Name: "todo"}
-
-	d.maybeRetryParked(ctx, repo, is)
-
-	if len(fg.stateLabels) != 0 {
-		t.Fatalf("expected no state label calls, got %d", len(fg.stateLabels))
-	}
-}
-
-func TestMaybeRetryParkedRepoOverride(t *testing.T) {
-	d, s, _ := testDaemon(t, 3, 1)
-	ctx := context.Background()
-
-	_ = setupParkedTask(t, s, 1)
-
-	is := forge.Issue{Number: 1, Labels: []string{}}
-	repo := config.Repo{Owner: "acme", Name: "todo", MaxRetries: 1}
-
-	d.maybeRetryParked(ctx, repo, is)
-
-	task, err := s.TaskByIssue(ctx, "acme", "todo", 1)
-	if err != nil || task == nil {
-		t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
-	}
-	if task.Status != store.StatusDead {
-		t.Fatalf("expected status dead with repo override, got %s", task.Status)
-	}
-}
-
 // ── Multi-identity isolation (archie-core-abg.37) ──────────────────────
 //
 // Two identities ("archie" and "winter") are both configured to work the
@@ -940,57 +803,11 @@ func TestAcknowledgeUsesOwningIdentityForgeNotRoot(t *testing.T) {
 
 	// archie's poll cycle acknowledges via its own forge client.
 	d.acknowledge(ctx, archieFg, repo, is)
-	if len(archieFg.stateLabels) != 1 {
-		t.Fatalf("archie forge got %d state label calls, want 1", len(archieFg.stateLabels))
+	if len(archieFg.stateLabels) != 0 {
+		t.Fatalf("archie forge got %d state label calls, want 0", len(archieFg.stateLabels))
 	}
 	if len(winterFg.stateLabels) != 0 || len(rootFg.stateLabels) != 0 {
 		t.Fatal("acknowledge leaked a state label call to winter's or root's forge client")
-	}
-}
-
-func TestMarkDeadResolvesForgeFromTaskIdentityNotCaller(t *testing.T) {
-	d, s, rootFg, archieFg, winterFg := twoIdentityDaemon(t)
-	ctx := context.Background()
-
-	// Two tasks for the SAME owner/repo, owned by different identities.
-	if _, err := s.EnqueueIssue(ctx, "acme", "shared", 1, "t1", "b", "", "archie"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.EnqueueIssue(ctx, "acme", "shared", 2, "t2", "b", "", "winter"); err != nil {
-		t.Fatal(err)
-	}
-	archieTask, err := s.TaskByIssue(ctx, "acme", "shared", 1)
-	if err != nil || archieTask == nil {
-		t.Fatalf("TaskByIssue(1) = (%+v, %v)", archieTask, err)
-	}
-	winterTask, err := s.TaskByIssue(ctx, "acme", "shared", 2)
-	if err != nil || winterTask == nil {
-		t.Fatalf("TaskByIssue(2) = (%+v, %v)", winterTask, err)
-	}
-	if err := s.Transition(ctx, archieTask.ID, store.StatusQueued, store.StatusParked, "test"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Transition(ctx, winterTask.ID, store.StatusQueued, store.StatusParked, "test"); err != nil {
-		t.Fatal(err)
-	}
-	archieTask, _ = s.TaskByIssue(ctx, "acme", "shared", 1)
-	winterTask, _ = s.TaskByIssue(ctx, "acme", "shared", 2)
-
-	repo := config.Repo{Owner: "acme", Name: "shared"}
-	d.markDead(ctx, repo, archieTask, 0)
-	d.markDead(ctx, repo, winterTask, 0)
-
-	if len(archieFg.stateLabels) != 1 || archieFg.stateLabels[0].number != 1 {
-		t.Fatalf("archie forge state labels = %+v, want exactly issue 1", archieFg.stateLabels)
-	}
-	if len(winterFg.stateLabels) != 1 || winterFg.stateLabels[0].number != 2 {
-		t.Fatalf("winter forge state labels = %+v, want exactly issue 2", winterFg.stateLabels)
-	}
-	if len(rootFg.stateLabels) != 0 {
-		t.Fatal("markDead used the root forge client instead of the owning identity's")
-	}
-	if len(archieFg.comments) != 1 || len(winterFg.comments) != 1 {
-		t.Fatalf("expected one dead-comment per identity, got archie=%d winter=%d", len(archieFg.comments), len(winterFg.comments))
 	}
 }
 
@@ -1024,4 +841,98 @@ func mustCoreConn(t *testing.T, c *arnats.Client) *natsio.Conn {
 		t.Fatalf("CoreConn: %v", err)
 	}
 	return conn
+}
+
+// A merged PR must close the forge issue.
+//
+// "Closes #N" was removed from PR bodies in favour of LinkBranch, which is
+// sidebar linkage on Gitea and a no-op stub on GitHub -- neither closes
+// anything. So the issue stayed open, labelled and assigned, and the next
+// poll re-enqueued it. Once the operator uses the dashboard's Clear, which
+// deletes the task row, that is a second implementation and a second PR for
+// work already merged.
+func TestReconcilePRsClosesTheIssueOnMerge(t *testing.T) {
+	tests := []struct {
+		name       string
+		prState    string
+		wantClosed bool
+	}{
+		{name: "merged closes the issue", prState: "merged", wantClosed: true},
+		// A PR closed without merging usually means "try again", so the
+		// issue stays open deliberately.
+		{name: "closed without merge leaves it open", prState: "closed"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			d, s, fg := testDaemon(t, 3, 0)
+			ctx := context.Background()
+
+			if _, err := s.EnqueueIssue(ctx, "acme", "widget", 42, "a task", "", "", ""); err != nil {
+				t.Fatal(err)
+			}
+			task, err := s.ClaimNext(ctx)
+			if err != nil || task == nil {
+				t.Fatalf("ClaimNext = (%+v, %v)", task, err)
+			}
+			task.PRNumber = 7
+			if err := s.Update(ctx, task); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Transition(ctx, task.ID, store.StatusRunning, store.StatusPROpen, ""); err != nil {
+				t.Fatal(err)
+			}
+			fg.prStates = map[int]string{7: tc.prState}
+
+			d.reconcilePRs(ctx)
+
+			if tc.wantClosed {
+				if len(fg.closedIssues) != 1 {
+					t.Fatalf("CloseIssue calls = %d, want 1: the issue stays open "+
+						"and is re-polled, so the work is done twice", len(fg.closedIssues))
+				}
+				got := fg.closedIssues[0]
+				if got.owner != "acme" || got.repo != "widget" || got.number != 42 {
+					t.Errorf("closed %s/%s#%d, want acme/widget#42", got.owner, got.repo, got.number)
+				}
+				if got.comment == "" {
+					t.Error("closed with no comment")
+				}
+				return
+			}
+			if len(fg.closedIssues) != 0 {
+				t.Errorf("CloseIssue called %d times for a PR closed without merge",
+					len(fg.closedIssues))
+			}
+		})
+	}
+}
+
+// A chat task's issue number is synthetic, so closing it would close an
+// unrelated issue or error.
+func TestReconcilePRsSkipsChatTasks(t *testing.T) {
+	d, s, fg := testDaemon(t, 3, 0)
+	ctx := context.Background()
+
+	task, err := s.EnqueueChatTask(ctx, "acme", "widget", "chat task", "", "", "", 900001)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ClaimNext(ctx); err != nil {
+		t.Fatal(err)
+	}
+	task.PRNumber = 8
+	if err := s.Update(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Transition(ctx, task.ID, store.StatusRunning, store.StatusPROpen, ""); err != nil {
+		t.Fatal(err)
+	}
+	fg.prStates = map[int]string{8: "merged"}
+
+	d.reconcilePRs(ctx)
+
+	if len(fg.closedIssues) != 0 {
+		t.Errorf("CloseIssue called for a chat task: issue number is synthetic")
+	}
 }

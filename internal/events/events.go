@@ -21,7 +21,14 @@ const (
 	KindPRMerged    = "pr_merged"
 	KindPRRejected  = "pr_rejected"
 	KindTaskDead    = "task_dead"
-	KindLog         = "log" // data: level, msg
+	// Operator actions taken from the dashboard. Without these an
+	// intervention is recorded in the tasks table but invisible on the
+	// timeline and the activity stream -- the one kind of event most worth
+	// seeing, because it explains why a task changed course.
+	KindHumanApproved = "human_approved"
+	KindHumanRejected = "human_rejected"
+	KindTaskRetried   = "task_retried"
+	KindLog           = "log" // data: level, msg
 )
 
 // Event is the single wire type: task lifecycle, stage progress, agent

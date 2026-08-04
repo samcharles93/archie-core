@@ -4,9 +4,9 @@ import { el, empty, mount } from "../base/dom.js";
 
 /**
  * What Archie can actually do, beyond what is in the source. Backed by
- * GET /api/skills, which scans .agents/skills/<name>/SKILL.md (see
- * internal/skill.Catalog) and returns each skill's name, plain-language
- * description, and where it was found.
+ * GET /api/skills, which scans project, shared, and user-global
+ * .agents/skills/<name>/SKILL.md files and returns each skill's name,
+ * plain-language description, and where it was found.
  *
  * This page exists for someone who has never read the source: a search box
  * over a card grid, and an empty state that explains what a skill is and
@@ -47,7 +47,7 @@ export function skillsPage() {
         "div.card",
         el(
           "div.card-head",
-          el("div", el("h2.card-title", "Catalogue"), el("p.card-sub", "Discovered from .agents/skills/")),
+          el("div", el("h2.card-title", "Catalogue"), el("p.card-sub", "Project, shared, and user-global skills")),
           searchInput,
         ),
         cardGrid,
@@ -77,7 +77,7 @@ export function skillsPage() {
         cardGrid,
         empty(
           "No skills discovered yet",
-          "Skills live as SKILL.md files under .agents/skills/<name>/. Add one, or point skills_dir in config.toml at a shared skills directory, and it will appear here.",
+          "Skills live as SKILL.md files under project, shared, or user-global .agents/skills/<name>/ directories. Add one and refresh to make it available.",
         ),
       );
     }

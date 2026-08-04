@@ -69,6 +69,10 @@
   color: var(--accent);
 }
 
+.setup-done .setup-pct {
+  color: var(--ok);
+}
+
 .setup-bar {
   height: 5px;
   border-radius: var(--radius-pill);
@@ -168,14 +172,27 @@
 
 .dash-top {
   display: grid;
-  grid-template-columns: 1.6fr 1fr;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
   gap: var(--sp-4);
   margin-bottom: var(--sp-4);
 }
 
+/* Either column must be allowed to shrink below its content width so the
+   other one does not get pushed off-screen on narrow viewports. */
+.dash-top > *,
+.dash-split > * {
+  min-width: 0;
+}
+
+/* No setup panel to show: the gate pulse spans the whole row instead of
+   leaving an empty half. */
+.dash-top-standalone {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 @media (max-width: 1080px) {
   .dash-top {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -300,14 +317,14 @@
 
 .dash-split {
   display: grid;
-  grid-template-columns: 1fr 1.5fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
   gap: var(--sp-4);
   margin-top: var(--sp-4);
 }
 
 @media (max-width: 1080px) {
   .dash-split {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

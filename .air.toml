@@ -4,6 +4,13 @@
 # /api and /events here -- so this watcher deliberately ignores ui/. Watching
 # it would rebuild the Go binary on every keystroke in a CSS file, and
 # rebuilding on ui/dist changes would loop against `task ui`.
+#
+# ui/dist is NOT rebuilt here. During development the Vite server serves the
+# frontend directly with HMR, so dist is not what you are looking at; it only
+# matters for the embedded build, and `task ui` produces it before a commit.
+# An earlier rule here claimed to keep dist current and never ran: air
+# requires a file to satisfy include_dir AND include_file together, and ui/ is
+# excluded from the walk anyway.
 root = "."
 tmp_dir = ".air"
 

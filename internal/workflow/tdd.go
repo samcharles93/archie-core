@@ -132,16 +132,9 @@ func TDD() Workflow {
 			// evidence the bug was reproduced before the fix.
 			{Name: "open-pr", Run: func(ctx context.Context, tc *TaskContext) error {
 				body := fmt.Sprintf("%s\n\n---\n*workflow: tdd (failing repro committed first) · %d iterations · %d tokens*",
-					tc.BuildSummary, tc.Task.Iterations, tc.Task.TokensUsed) +
-					issueClosureReference(tc.Task)
+					tc.BuildSummary, tc.Task.Iterations, tc.Task.TokensUsed)
 				if err := OpenPR(ctx, tc, body); err != nil {
 					return err
-				}
-				if tc.ReproProof != "" {
-					proof := fmt.Sprintf("**Proof the repro tests failed before the fix** (commit 1 of this PR):\n\n```\n%s\n```", tc.ReproProof)
-					if _, err := tc.Forge.Comment(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.PRNumber, proof); err != nil {
-						tc.Log.Warn("failed to post repro proof", "err", err)
-					}
 				}
 				return nil
 			}},

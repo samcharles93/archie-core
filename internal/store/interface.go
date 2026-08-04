@@ -35,7 +35,6 @@ type TaskLifecycle interface {
 type TaskQueries interface {
 	TaskByIssue(ctx context.Context, owner, repo string, number int) (*Task, error)
 	TaskByID(ctx context.Context, taskID int64) (*Task, error)
-	WaitingTasks(ctx context.Context) ([]Task, error)
 	OpenPRs(ctx context.Context) ([]Task, error)
 	ClearTerminalTasks(ctx context.Context) (int64, error)
 	Tasks(ctx context.Context, limit int) ([]Task, error)

@@ -524,6 +524,7 @@ func (stubForge) CreatePR(context.Context, string, string, string, string, strin
 	return 1, nil
 }
 func (stubForge) SetStateLabel(context.Context, string, string, int, string, []string) {}
+func (stubForge) LinkBranch(context.Context, string, string, int, string) error        { return nil }
 func (stubForge) AcceptInvitations(context.Context) error                              { panic("unexpected call") }
 func (stubForge) AssignedIssues(context.Context, string, string, string) ([]forge.Issue, error) {
 	panic("unexpected call")
@@ -546,10 +547,6 @@ func (stubForge) CreateIssue(context.Context, string, string, string, string, []
 }
 func (stubForge) React(context.Context, string, string, int, string) error { panic("unexpected call") }
 func (stubForge) VerifyPush(context.Context, string, string) error         { panic("unexpected call") }
-func (stubForge) LinkBranch(context.Context, string, string, int, string) error {
-	panic("unexpected call")
-}
-
 func startEmbeddedNATS(t *testing.T) *server.Server {
 	t.Helper()
 	srv := natssrv.RunRandClientPortServer()

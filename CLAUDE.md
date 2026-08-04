@@ -166,7 +166,10 @@ boundaries. Summary of what's evolved since that doc was last fully accurate:
 **Task lifecycle** (from ARCHITECTURE.md, still current):
 `queued → running(workflow:stage) → pr_open → merged|rejected`, with
 `waiting_human` and `parked` side states. Crash recovery re-queues anything left
-`running`; parks always post a comment with the reason — never fail silently.
+`running`. A park records its reason on the task, which the dashboard and
+`/api/tasks` surface; it no longer comments on the forge issue. Retries are an
+explicit operator action (dashboard or chat), capped by `max_retries`, not a
+label a human removes.
 
 **Config** is daemon-level TOML (see `config.example.toml`), not per-repo files
 in this repo. Two live instances run on a separate host (`carina`), each with a

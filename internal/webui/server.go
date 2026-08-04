@@ -39,8 +39,31 @@ type Server struct {
 	// stay frictionless -- see IsLoopback.
 	Token string
 
+	// Issues closes the forge issue behind a rejected task. Optional: the
+	// action still records the operator's decision without it, and says so
+	// in the log. Deliberately the narrowest interface that does the job
+	// rather than the whole forge client -- the dashboard has no business
+	// commenting, labelling or opening PRs.
+	Issues IssueCloser
+
+	// Events publishes operator actions so they reach the task timeline and
+	// the live activity stream. Optional: nil means the action is recorded
+	// in the store but invisible to anyone watching.
+	Events EventPublisher
+
 	mu    sync.Mutex
 	conns map[chan events.Event]struct{}
+}
+
+// IssueCloser closes the forge issue behind a task.
+type IssueCloser interface {
+	CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error
+}
+
+// EventPublisher accepts events for the store and the live stream. The bus
+// in cmd/archied satisfies it.
+type EventPublisher interface {
+	Publish(events.Event)
 }
 
 // Broadcast fans an (ID-stamped) event out to every connected SSE
@@ -61,6 +84,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/summary", s.handleSummary)
 	mux.HandleFunc("GET /api/setup", s.handleSetup)
 	mux.HandleFunc("GET /api/tasks", s.handleTasks)
+	mux.HandleFunc("POST /api/tasks/{id}/action", s.handleTaskAction)
 	mux.HandleFunc("GET /api/tasks/{id}", s.handleTask)
 	mux.HandleFunc("GET /api/tasks/clear", s.handleClearTasks)
 	mux.HandleFunc("GET /api/workflows", s.handleWorkflows)

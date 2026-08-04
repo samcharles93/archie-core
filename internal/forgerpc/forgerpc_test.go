@@ -39,6 +39,7 @@ type fakeForge struct {
 	closes      []closeCall
 	prs         []prCall
 	stateLabels []stateLabelCall
+	branches    []branchCall
 
 	commentErr error
 	closeErr   error
@@ -63,6 +64,10 @@ type stateLabelCall struct {
 	number      int
 	label       string
 	knownLabels []string
+}
+type branchCall struct {
+	owner, repo, branch string
+	number              int
 }
 
 func (f *fakeForge) Comment(_ context.Context, owner, repo string, number int, body string) (int64, error) {
@@ -90,6 +95,11 @@ func (f *fakeForge) SetStateLabel(_ context.Context, owner, repo string, number 
 	f.stateLabels = append(f.stateLabels, stateLabelCall{owner, repo, number, label, knownLabels})
 }
 
+func (f *fakeForge) LinkBranch(_ context.Context, owner, repo string, number int, branch string) error {
+	f.branches = append(f.branches, branchCall{owner: owner, repo: repo, number: number, branch: branch})
+	return nil
+}
+
 func (f *fakeForge) AcceptInvitations(context.Context) error { panic("unexpected call") }
 func (f *fakeForge) AssignedIssues(context.Context, string, string, string) ([]forge.Issue, error) {
 	panic("unexpected call")
@@ -115,9 +125,6 @@ func (f *fakeForge) React(context.Context, string, string, int, string) error {
 	panic("unexpected call")
 }
 func (f *fakeForge) VerifyPush(context.Context, string, string) error { panic("unexpected call") }
-func (f *fakeForge) LinkBranch(context.Context, string, string, int, string) error {
-	panic("unexpected call")
-}
 
 func newTestServer(t *testing.T) (*fakeForge, *Client) {
 	t.Helper()
@@ -176,6 +183,17 @@ func TestClientCreatePRPersistsViaServer(t *testing.T) {
 	}
 	if len(fg.prs) != 1 || fg.prs[0] != (prCall{"acme", "widget", "title", "head", "main", "body"}) {
 		t.Fatalf("PR did not reach server, got %+v", fg.prs)
+	}
+}
+
+func TestClientLinkBranchPersistsViaServer(t *testing.T) {
+	f, client := newTestServer(t)
+
+	if err := client.LinkBranch(context.Background(), "acme", "widget", 4, "fix/4-bug"); err != nil {
+		t.Fatalf("LinkBranch: %v", err)
+	}
+	if len(f.branches) != 1 || f.branches[0] != (branchCall{owner: "acme", repo: "widget", number: 4, branch: "fix/4-bug"}) {
+		t.Fatalf("branch link did not reach server, got %+v", f.branches)
 	}
 }
 

@@ -32,7 +32,7 @@ func TestTaskByIssue(t *testing.T) {
 	}
 }
 
-func TestWaitingTasksAndRequeue(t *testing.T) {
+func TestRequeueFromWaitingHuman(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
@@ -44,16 +44,12 @@ func TestWaitingTasksAndRequeue(t *testing.T) {
 		t.Fatalf("claim = (%v, %v)", task, err)
 	}
 
-	if waiting, err := s.WaitingTasks(ctx); err != nil || len(waiting) != 0 {
-		t.Fatalf("WaitingTasks before transition = (%+v, %v)", waiting, err)
-	}
-
 	if err := s.Transition(ctx, task.ID, StatusRunning, StatusWaitingHuman, "needs input"); err != nil {
 		t.Fatal(err)
 	}
-	waiting, err := s.WaitingTasks(ctx)
-	if err != nil || len(waiting) != 1 || waiting[0].ID != task.ID {
-		t.Fatalf("WaitingTasks = (%+v, %v)", waiting, err)
+	waiting, err := s.TaskByID(ctx, task.ID)
+	if err != nil || waiting == nil || waiting.Status != StatusWaitingHuman {
+		t.Fatalf("after transition = (%+v, %v), want waiting_human", waiting, err)
 	}
 
 	// Requeue with a workflow forces it (waiting_human -> approved -> implement).

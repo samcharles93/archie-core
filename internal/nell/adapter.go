@@ -376,26 +376,6 @@ func (a *Adapter) IncrementRetryCount(ctx context.Context, taskID int64) error {
 
 // ── Queries ───────────────────────────────────────────────────────────────────
 
-// WaitingTasks returns tasks in waiting_human state.
-func (a *Adapter) WaitingTasks(ctx context.Context) ([]store.Task, error) {
-	result, err := a.tasks.AllDocs(ctx, sdk.DocRange{IncludeDocs: true})
-	if err != nil {
-		return nil, err
-	}
-	var out []store.Task
-	for _, row := range result.Rows {
-		if row.Doc == nil || isMetaKey(row.ID) {
-			continue
-		}
-		t := docToTask(row.Doc)
-		if t.Status != store.StatusWaitingHuman {
-			continue
-		}
-		out = append(out, *t)
-	}
-	return out, nil
-}
-
 // OpenPRs returns tasks in pr_open state.
 func (a *Adapter) OpenPRs(ctx context.Context) ([]store.Task, error) {
 	result, err := a.tasks.AllDocs(ctx, sdk.DocRange{IncludeDocs: true})

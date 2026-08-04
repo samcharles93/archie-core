@@ -23,10 +23,14 @@ func ActivateTool(dir string, catalog []CatalogEntry) *tools.ToolEntry {
 	names := make([]any, len(catalog))
 	descByName := make(map[string]string, len(catalog))
 	dirByName := make(map[string]string, len(catalog))
+	rootByName := make(map[string]string, len(catalog))
 	for i, e := range catalog {
 		names[i] = e.Name
 		descByName[e.Name] = e.Description
 		dirByName[e.Name] = e.Dir
+		if e.Root != "" {
+			rootByName[e.Name] = e.Root
+		}
 	}
 
 	return &tools.ToolEntry{
@@ -53,7 +57,11 @@ func ActivateTool(dir string, catalog []CatalogEntry) *tools.ToolEntry {
 			if !ok {
 				return nil, fmt.Errorf("skill_activate: unknown skill %q", name)
 			}
-			body := LoadBody(dir, skillDir)
+			root := dir
+			if catalogRoot := rootByName[name]; catalogRoot != "" {
+				root = catalogRoot
+			}
+			body := LoadBody(root, skillDir)
 			if body == "" {
 				return nil, fmt.Errorf("skill_activate: %q has no body (SKILL.md missing or empty)", name)
 			}

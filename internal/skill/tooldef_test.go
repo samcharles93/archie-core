@@ -81,6 +81,25 @@ func TestActivateToolHandlerReturnsFullBody(t *testing.T) {
 	}
 }
 
+func TestActivateToolHandlerLoadsFromCatalogEntryRoot(t *testing.T) {
+	global := t.TempDir()
+	writeSkill(t, global, "global-only", "global skill", "global body")
+
+	catalog, err := CatalogRoots(global)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := ActivateTool(t.TempDir(), catalog)
+
+	out, err := entry.Handler(context.Background(), map[string]any{"name": "global-only"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "global body" {
+		t.Errorf("body = %v, want global body", out)
+	}
+}
+
 func TestActivateToolHandlerRejectsUnknownSkill(t *testing.T) {
 	dir := t.TempDir()
 	writeSkill(t, dir, "alpha", "does alpha things", "alpha body")

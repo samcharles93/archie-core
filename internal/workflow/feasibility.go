@@ -62,8 +62,7 @@ func Feasibility() Workflow {
 					tc.decision = &decision{Fit: *captured.Fit, Reasons: captured.Reasons}
 					if !tc.decision.Fit {
 						if tc.Task.IsForgeBacked() {
-							comment := fmt.Sprintf("**archie assessed this feature as not a fit  --  closing as won't-do.**\n\n%s\n\n_Reopen and re-assign if you disagree._", tc.decision.Reasons)
-							if err := tc.Forge.CloseIssue(context.Background(), tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, comment); err != nil {
+							if err := tc.Forge.CloseIssue(context.Background(), tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, ""); err != nil {
 								return err
 							}
 						}
@@ -94,18 +93,9 @@ func Feasibility() Workflow {
 				},
 			}.Stage(),
 
-			// Deliver the PRD and block on Sam: issue comment (the reply
-			// channel the daemon watches) plus the notify webhook (n8n →
-			// email).
+			// Persist the PRD and block on Sam. Messaging and the Web UI are
+			// the decision surfaces; the forge issue is not a chat log.
 			{Name: "deliver", Run: func(ctx context.Context, tc *TaskContext) error {
-				if tc.Task.IsForgeBacked() {
-					body := fmt.Sprintf("**archie's PRD  --  awaiting your go/no-go.** Reply on this issue; I'll read your answer.\n\n%s", tc.Task.Plan)
-					commentID, err := tc.Forge.Comment(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, body)
-					if err != nil {
-						return err
-					}
-					tc.Task.WatchCommentID = commentID
-				}
 				notify(ctx, tc, "feasibility_prd")
 				tc.Outcome = Outcome{Status: store.StatusWaitingHuman, Detail: "PRD delivered, awaiting go/no-go"}
 				return nil

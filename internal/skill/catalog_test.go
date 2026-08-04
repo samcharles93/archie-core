@@ -75,6 +75,41 @@ func TestCatalogMissingDirReturnsEmpty(t *testing.T) {
 	}
 }
 
+func TestCatalogRootsUsesPrecedenceAndTracksRoot(t *testing.T) {
+	project := t.TempDir()
+	global := t.TempDir()
+	writeSkill := func(root, name, description string) {
+		dir := filepath.Join(root, ".agents", "skills", name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		content := "---\nname: " + name + "\ndescription: " + description + "\n---\nBody.\n"
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	writeSkill(project, "shared-name", "project copy")
+	writeSkill(project, "project-only", "project skill")
+	writeSkill(global, "shared-name", "global copy")
+	writeSkill(global, "global-only", "global skill")
+
+	entries, err := CatalogRoots(project, global)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("got %d catalog entries, want 3", len(entries))
+	}
+	for _, entry := range entries {
+		if entry.Name == "shared-name" {
+			if entry.Description != "project copy" || entry.Root != project {
+				t.Fatalf("shared-name = %#v, want project entry", entry)
+			}
+		}
+	}
+}
+
 // ── archie-wf-* naming convention ────────────────────────────────────
 
 func TestSkillsUseArchiewfNaming(t *testing.T) {

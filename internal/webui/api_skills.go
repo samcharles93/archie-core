@@ -19,26 +19,17 @@ type SkillView struct {
 // beyond what is in the source. It answers the same question a fresh
 // operator would ask by reading internal/skill/, without the reading.
 //
-// The catalogue is scanned from cfg.SkillsDir when configured (a shared
-// directory meant to be pointed at deliberately), falling back to
-// cfg.WorkDir's own .agents/skills/ otherwise. Both are legitimate --
-// skill.Catalog treats a missing directory as "no skills," not an error --
-// so an unconfigured deployment gets an empty, explained list rather than a
-// failure.
+// The catalogue layers project, explicitly shared, and user-global skills.
+// Earlier roots win when names collide. Missing roots are legitimate and
+// produce an empty or partial catalogue rather than a failed dashboard.
 func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
 	if s.Cfg == nil {
-		writeJSON(w, map[string]any{"skills": []SkillView{}, "dir": ""})
+		writeJSON(w, map[string]any{"skills": []SkillView{}})
 		return
 	}
 
-	dir := s.Cfg.SkillsDir
-	source := "shared skills directory"
-	if dir == "" {
-		dir = s.Cfg.WorkDir
-		source = "bundled with this project"
-	}
-
-	catalog, err := skill.Catalog(dir)
+	roots := skill.DefaultRoots(s.Cfg.WorkDir, s.Cfg.SkillsDir)
+	catalog, err := skill.CatalogRoots(roots...)
 	if err != nil {
 		http.Error(w, "failed to read skill catalogue: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -50,9 +41,28 @@ func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
 			Name:        entry.Name,
 			Description: entry.Description,
 			Workflow:    entry.Workflow,
-			Source:      source,
+			Source:      skillSource(entry.Root, s.Cfg.WorkDir, s.Cfg.SkillsDir),
 		})
 	}
 
-	writeJSON(w, map[string]any{"skills": views, "dir": dir})
+	// Each skill already carries its own Source, which is what the page
+	// renders. A top-level dir/dirs pair had no consumer and implied the
+	// catalog came from one place when it is merged from several.
+	writeJSON(w, map[string]any{"skills": views})
+}
+
+// skillSource labels where a skill was loaded from.
+//
+// sharedDir is checked first: when it equals workDir the roots collapse to one
+// entry, and matching workDir first labelled every shared skill as a project
+// skill.
+func skillSource(root, workDir, sharedDir string) string {
+	switch root {
+	case sharedDir:
+		return "shared skills"
+	case workDir:
+		return "project skills"
+	default:
+		return "user-global skills"
+	}
 }

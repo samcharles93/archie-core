@@ -49,6 +49,15 @@ type stubStore struct {
 	stageStatsErr    error
 	tokensByDayErr   error
 	eventsSinceErr   error
+	taskEventsErr    error
+	requeueErr       error
+}
+
+func (s *stubStore) Requeue(ctx context.Context, id int64, from, workflow string) error {
+	if s.requeueErr != nil {
+		return s.requeueErr
+	}
+	return s.TaskStore.Requeue(ctx, id, from, workflow)
 }
 
 func (s *stubStore) WorkflowStats(ctx context.Context) ([]store.WorkflowStat, error) {
@@ -77,6 +86,13 @@ func (s *stubStore) EventsSince(ctx context.Context, sinceID int64, limit int) (
 		return nil, s.eventsSinceErr
 	}
 	return s.TaskStore.EventsSince(ctx, sinceID, limit)
+}
+
+func (s *stubStore) TaskEvents(ctx context.Context, taskID int64) ([]events.Event, error) {
+	if s.taskEventsErr != nil {
+		return nil, s.taskEventsErr
+	}
+	return s.TaskStore.TaskEvents(ctx, taskID)
 }
 
 func TestHandleSummary(t *testing.T) {

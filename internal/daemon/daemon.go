@@ -10,13 +10,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"slices"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/samcharles93/ai-sdk/core"
-	"github.com/samcharles93/ai-sdk/runtime"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
@@ -53,7 +49,6 @@ type Daemon struct {
 	Store     store.TaskStore
 	Forge     forge.Forge
 	Trees     *worktree.Manager
-	Runtime   *runtime.Runtime
 	Agent     agentexec.Runner
 	Bus       *events.Bus
 	Workflows workflow.Registry
@@ -318,7 +313,6 @@ func (d *Daemon) Cycle(ctx context.Context) {
 	d.cleanupExpiredStorage(ctx)
 	d.poll(ctx)
 	d.reconcilePRs(ctx)
-	d.checkWaiting(ctx)
 	if d.Tasks != nil {
 		d.drainNATS(ctx)
 	} else {
@@ -509,19 +503,19 @@ func (d *Daemon) pollSQLite(ctx context.Context, fg forge.Forge, repo config.Rep
 		d.acknowledge(ctx, fg, repo, is)
 		return
 	}
-	d.maybeRetryParked(ctx, repo, is)
+	// Existing tasks are left untouched. Retry and approval are explicit
+	// operator actions in messaging or the Web UI, not forge-side label edits.
 }
 
 // pollNATS publishes discovered issues to NATS (new flow).
 func (d *Daemon) pollNATS(ctx context.Context, fg forge.Forge, repo config.Repo, is forge.Issue, labels, identity string) {
-	// Read-only existence check  --  needed for maybeRetryParked.
+	// Read-only existence check prevents rediscovering an existing task.
 	existing, err := d.Store.TaskByIssue(ctx, repo.Owner, repo.Name, is.Number)
 	if err != nil {
 		d.Log.Error("task lookup failed", "repo", repo.FullName(), "issue", is.Number, "err", err)
 		return
 	}
 	if existing != nil {
-		d.maybeRetryParked(ctx, repo, is)
 		return
 	}
 	// Classify and encode here: the envelope, its routing kind and its
@@ -558,7 +552,7 @@ func (d *Daemon) publishTask(ctx context.Context, task workintake.TaskEnvelope) 
 	return d.Tasks.PublishUnique(ctx, task.Subject(), task.IdempotencyKey(), payload)
 }
 
-// acknowledge posts the pickup reaction, state label, and queued event
+// acknowledge posts the pickup reaction and queued event
 // using fg  --  the forge client that owns repo (identity-scoped or root).
 func (d *Daemon) acknowledge(ctx context.Context, fg forge.Forge, repo config.Repo, is forge.Issue) {
 	d.Log.Info("issue queued", "repo", repo.FullName(), "issue", is.Number, "title", is.Title)
@@ -567,7 +561,6 @@ func (d *Daemon) acknowledge(ctx context.Context, fg forge.Forge, repo config.Re
 			d.Log.Warn("ack reaction failed", "issue", is.Number, "err", err)
 		}
 	}
-	fg.SetStateLabel(ctx, repo.Owner, repo.Name, is.Number, d.Cfg.Dispatch.StateLabel("queued"), d.Cfg.Dispatch.LabelValues())
 	d.emit(events.Event{
 		Kind: events.KindTaskQueued, Repo: repo.FullName(),
 		Issue: is.Number, Detail: is.Title,
@@ -678,74 +671,20 @@ func (d *Daemon) pollEither(ctx context.Context, repo config.Repo) []forge.Issue
 	return out
 }
 
-// maybeRetryParked requeues a parked task whose state label a human has
-// removed  --  the forge-native retry trigger. When retry_count reaches the
-// configured max_retries the task moves to dead instead of requeuing.
-// The forge client is resolved from the task's own Identity via forgeFor
-// (not passed in) since that's authoritative for which forge client owns it.
-func (d *Daemon) maybeRetryParked(ctx context.Context, repo config.Repo, is forge.Issue) {
-	if hasLabel(is.Labels, d.Cfg.Dispatch.StateLabel("parked")) {
+// closeResolvedIssue closes the forge issue behind a finished task.
+//
+// A chat task's issue number is synthetic and matches no forge issue, so it
+// is skipped. Failure is logged rather than returned: the task's own state is
+// already correct, and the next reconcile pass will not retry, so a warning
+// is the honest outcome -- the issue simply stays open.
+func (d *Daemon) closeResolvedIssue(ctx context.Context, fg forge.Forge, task *store.Task, comment string) {
+	if !task.IsForgeBacked() {
 		return
 	}
-	task, err := d.Store.TaskByIssue(ctx, repo.Owner, repo.Name, is.Number)
-	if err != nil || task == nil || task.Status != store.StatusParked {
-		return
+	if err := fg.CloseIssue(ctx, task.Owner, task.Repo, task.IssueNumber, comment); err != nil {
+		d.Log.Warn("closing resolved issue failed; it stays open and will be re-polled",
+			"repo", task.Owner+"/"+task.Repo, "issue", task.IssueNumber, "err", err)
 	}
-	fg := d.forgeFor(task)
-
-	maxRetries := repo.EffectiveMaxRetries(d.Cfg.MaxRetries)
-
-	if task.RetryCount >= maxRetries {
-		d.markDead(ctx, repo, task, maxRetries)
-		return
-	}
-
-	if err := d.Store.Requeue(ctx, task.ID, store.StatusParked, ""); err != nil {
-		d.Log.Error("label-triggered requeue failed", "issue", is.Number, "err", err)
-		return
-	}
-	if err := d.Store.IncrementRetryCount(ctx, task.ID); err != nil {
-		d.Log.Error("increment retry_count failed", "issue", is.Number, "err", err)
-	}
-	d.Log.Info("parked task requeued via label removal", "repo", repo.FullName(), "issue", is.Number, "retry_count", task.RetryCount+1, "max_retries", maxRetries)
-	fg.SetStateLabel(ctx, repo.Owner, repo.Name, is.Number, d.Cfg.Dispatch.StateLabel("queued"), d.Cfg.Dispatch.LabelValues())
-	d.emit(events.Event{
-		Kind: "task_retried", TaskID: task.ID,
-		Repo: repo.FullName(), Issue: is.Number, Detail: "parked label removed",
-	})
-}
-
-// markDead permanently parks a task that has exhausted its max_retries.
-func (d *Daemon) markDead(ctx context.Context, repo config.Repo, task *store.Task, maxRetries int) {
-	fg := d.forgeFor(task)
-	reason := fmt.Sprintf("max retries reached (%d/%d)  --  task parked permanently", task.RetryCount, maxRetries)
-	if err := d.Store.Transition(ctx, task.ID, store.StatusParked, store.StatusDead, reason); err != nil {
-		d.Log.Error("transition to dead failed", "task", task.ID, "err", err)
-		return
-	}
-	if task.IsForgeBacked() {
-		fg.SetStateLabel(ctx, task.Owner, task.Repo, task.IssueNumber,
-			d.Cfg.Dispatch.StateLabel("dead"), d.Cfg.Dispatch.LabelValues())
-	}
-	d.Log.Warn("task permanently parked after max retries",
-		"issue", task.IssueNumber, "retry_count", task.RetryCount, "max_retries", maxRetries)
-	if task.IsForgeBacked() {
-		body := fmt.Sprintf("**Max retries reached (%d/%d)  --  task parked permanently.**\n\n"+
-			"The task failed %d times and has been moved to `dead` status. "+
-			"Manual intervention is required to recover this task.",
-			task.RetryCount, maxRetries, task.RetryCount)
-		if _, err := fg.Comment(ctx, task.Owner, task.Repo, task.IssueNumber, body); err != nil {
-			d.Log.Error("failed to post dead comment", "issue", task.IssueNumber, "err", err)
-		}
-	}
-	d.emit(events.Event{
-		Kind: events.KindTaskDead, TaskID: task.ID,
-		Repo: repo.FullName(), Issue: task.IssueNumber, Detail: reason,
-	})
-}
-
-func hasLabel(labels []string, want string) bool {
-	return slices.Contains(labels, want)
 }
 
 // reconcilePRs moves pr_open tasks to merged/rejected from GitHub state
@@ -772,9 +711,15 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 		case "merged":
 			_ = d.Store.Transition(ctx, t.ID, store.StatusPROpen, store.StatusMerged, "")
 			_ = trees.Cleanup(t.Owner, t.Repo, t.IssueNumber)
-			if t.IsForgeBacked() {
-				fg.SetStateLabel(ctx, t.Owner, t.Repo, t.IssueNumber, "", d.Cfg.Dispatch.LabelValues())
-			}
+			// Close the issue ourselves rather than relying on the forge
+			// noticing a "Closes #N" in the PR body. Nothing else closes it:
+			// LinkBranch is sidebar linkage on Gitea and a no-op on GitHub.
+			// Left open the issue stays labelled and assigned, the next poll
+			// re-enqueues it, and once the dashboard's Clear removes the task
+			// row that is a second implementation and a second PR for work
+			// already merged.
+			d.closeResolvedIssue(ctx, fg, &t, fmt.Sprintf(
+				"Closed by #%d, merged by archie.", t.PRNumber))
 			d.Log.Info("PR merged", "repo", t.Owner+"/"+t.Repo, "pr", t.PRNumber)
 			d.emit(events.Event{
 				Kind: events.KindPRMerged, TaskID: t.ID,
@@ -784,9 +729,6 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 		case "closed":
 			_ = d.Store.Transition(ctx, t.ID, store.StatusPROpen, store.StatusRejected, "PR closed without merge")
 			_ = trees.Cleanup(t.Owner, t.Repo, t.IssueNumber)
-			if t.IsForgeBacked() {
-				fg.SetStateLabel(ctx, t.Owner, t.Repo, t.IssueNumber, "", d.Cfg.Dispatch.LabelValues())
-			}
 			d.Log.Info("PR rejected", "repo", t.Owner+"/"+t.Repo, "pr", t.PRNumber)
 			d.emit(events.Event{
 				Kind: events.KindPRRejected, TaskID: t.ID,
@@ -795,113 +737,6 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 			})
 		}
 	}
-}
-
-// checkWaiting looks for human replies on waiting_human tasks and asks
-// an LLM  --  not keyword matching  --  whether the reply is a go-ahead.
-// Approved tasks requeue under the implement workflow; rejections close
-// the issue with the human's reasoning acknowledged.
-func (d *Daemon) checkWaiting(ctx context.Context) {
-	tasks, err := d.Store.WaitingTasks(ctx)
-	if err != nil {
-		d.Log.Error("waiting query failed", "err", err)
-		return
-	}
-	for _, t := range tasks {
-		if !t.IsForgeBacked() {
-			// Chat-sourced waiting_human tasks resolve via /approve and
-			// /cancel, not forge issue replies  --  there is no issue
-			// to poll.
-			continue
-		}
-		fg := d.forgeFor(&t)
-		replies, err := fg.RepliesAfter(ctx, t.Owner, t.Repo, t.IssueNumber, t.WatchCommentID, d.Cfg.BotUser)
-		if err != nil {
-			d.Log.Warn("reply check failed", "issue", t.IssueNumber, "err", err)
-			continue
-		}
-		if len(replies) == 0 {
-			continue
-		}
-		var sb strings.Builder
-		for _, r := range replies {
-			fmt.Fprintf(&sb, "%s: %s\n", r.User, r.Body)
-		}
-		verdict, reason, err := d.judgeReply(ctx, t.Plan, sb.String())
-		if err != nil {
-			d.Log.Error("reply judge failed", "issue", t.IssueNumber, "err", err)
-			continue
-		}
-		d.Log.Info("human reply judged", "issue", t.IssueNumber, "verdict", verdict)
-		switch verdict {
-		case "approve":
-			if err := d.Store.Requeue(ctx, t.ID, store.StatusWaitingHuman, "implement"); err != nil {
-				d.Log.Error("requeue failed", "issue", t.IssueNumber, "err", err)
-				continue
-			}
-			_, _ = fg.Comment(ctx, t.Owner, t.Repo, t.IssueNumber,
-				"**Go-ahead received  --  implementation is queued.** ("+reason+")")
-			fg.SetStateLabel(ctx, t.Owner, t.Repo, t.IssueNumber, d.Cfg.Dispatch.StateLabel("queued"), d.Cfg.Dispatch.LabelValues())
-			d.emit(events.Event{
-				Kind: "human_approved", TaskID: t.ID,
-				Repo: t.Owner + "/" + t.Repo, Issue: t.IssueNumber, Detail: reason,
-			})
-		case "reject":
-			_ = d.Store.Transition(ctx, t.ID, store.StatusWaitingHuman, store.StatusClosedWontDo, reason)
-			_ = fg.CloseIssue(ctx, t.Owner, t.Repo, t.IssueNumber,
-				"**Understood  --  closing without implementation.** ("+reason+")")
-			fg.SetStateLabel(ctx, t.Owner, t.Repo, t.IssueNumber, "", d.Cfg.Dispatch.LabelValues())
-			d.emit(events.Event{
-				Kind: "human_rejected", TaskID: t.ID,
-				Repo: t.Owner + "/" + t.Repo, Issue: t.IssueNumber, Detail: reason,
-			})
-		default:
-			// Unclear: keep waiting; the humans can be more explicit.
-			d.Log.Info("reply unclear  --  still waiting", "issue", t.IssueNumber, "reason", reason)
-		}
-	}
-}
-
-// judgeReply classifies the human's response to a PRD as approve,
-// reject, or unclear.
-func (d *Daemon) judgeReply(ctx context.Context, prd, replies string) (verdict, reason string, err error) {
-	if d.Runtime == nil {
-		return "", "", fmt.Errorf("no LLM runtime configured")
-	}
-	model := d.Cfg.Models["triage"]
-	if model == "" {
-		model = d.Cfg.Models["planner"]
-	}
-	if model == "" {
-		return "", "", fmt.Errorf("no triage or planner model configured")
-	}
-	res, err := d.Runtime.Chat(ctx, model, core.GenerateOptions{
-		System: "You classify a project owner's reply to a proposed PRD. Answer with exactly one line: " +
-			"APPROVE, REJECT, or UNCLEAR, followed by ' - ' and a one-sentence justification. " +
-			"APPROVE only when the reply expresses a go-ahead (with or without caveats). " +
-			"REJECT when it declines or shelves the proposal. Anything ambiguous is UNCLEAR.",
-		Prompt: "PRD (abridged):\n" + clip(prd, 3000) + "\n\nOwner's reply:\n" + clip(replies, 2000),
-	})
-	if err != nil {
-		return "", "", err
-	}
-	line := strings.TrimSpace(res.Text)
-	word, rest, _ := strings.Cut(line, "-")
-	switch strings.ToUpper(strings.TrimSpace(strings.Trim(word, " :*"))) {
-	case "APPROVE":
-		return "approve", strings.TrimSpace(rest), nil
-	case "REJECT":
-		return "reject", strings.TrimSpace(rest), nil
-	default:
-		return "unclear", line, nil
-	}
-}
-
-func clip(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
 }
 
 func (d *Daemon) process(ctx context.Context, task *store.Task) {
@@ -969,13 +804,6 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 			return
 		}
 		defer d.ContainerPool.Release(ctx, ctr)
-	}
-
-	// Set the working label only after successful container setup (or when no
-	// container is needed). This prevents label/database divergence on failure.
-	// Chat-sourced tasks have no real forge issue to label.
-	if task.IsForgeBacked() {
-		fg.SetStateLabel(ctx, task.Owner, task.Repo, task.IssueNumber, d.Cfg.Dispatch.StateLabel("working"), d.Cfg.Dispatch.LabelValues())
 	}
 
 	// Sandboxed path: hand the whole task to archie-agent in one NATS round

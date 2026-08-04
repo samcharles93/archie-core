@@ -112,21 +112,24 @@ function repositoriesCard(repos) {
     "Repositories",
     "Each repository Archie polls, and the quality gate a change must pass before it opens a pull request.",
     el(
-      "table.table",
+      "div.table-scroll",
       el(
-        "thead",
-        el("tr", ...["Repository", "Base branch", "Ecosystem", "Quality gate", "Protected paths"].map((h) => el("th", h))),
-      ),
-      el(
-        "tbody",
-        ...repos.map((r) =>
-          el(
-            "tr",
-            el("td.strong", `${r.owner}/${r.name}`),
-            el("td.mono", r.base),
-            el("td", r.ecosystem || "go"),
-            el("td.mono", gateSummary(r.gate)),
-            el("td.mono", r.protect?.length ? r.protect.join(", ") : "—"),
+        "table.table",
+        el(
+          "thead",
+          el("tr", ...["Repository", "Base branch", "Ecosystem", "Quality gate", "Protected paths"].map((h) => el("th", h))),
+        ),
+        el(
+          "tbody",
+          ...repos.map((r) =>
+            el(
+              "tr",
+              el("td.strong", `${r.owner}/${r.name}`),
+              el("td.mono", r.base),
+              el("td", r.ecosystem || "go"),
+              el("td.mono", gateSummary(r.gate)),
+              el("td.mono", r.protect?.length ? r.protect.join(", ") : "—"),
+            ),
           ),
         ),
       ),
@@ -149,18 +152,21 @@ function modelsAndProvidersCard(models, providers) {
 
   const providerRows = providerEntries.length
     ? el(
-        "table.table",
-        el("thead", el("tr", ...["Provider", "Class", "Base URL", "API key env var", "Status"].map((h) => el("th", h)))),
+        "div.table-scroll",
         el(
-          "tbody",
-          ...providerEntries.map(([name, p]) =>
-            el(
-              "tr",
-              el("td.strong", name),
-              el("td", p.class),
-              el("td.mono", p.base_url || "default"),
-              el("td.mono", p.api_key_env || "—"),
-              el("td", p.configured ? pill("configured", "ok") : pill("missing credentials", "warn")),
+          "table.table",
+          el("thead", el("tr", ...["Provider", "Class", "Base URL", "API key env var", "Status"].map((h) => el("th", h)))),
+          el(
+            "tbody",
+            ...providerEntries.map(([name, p]) =>
+              el(
+                "tr",
+                el("td.strong", name),
+                el("td", p.class),
+                el("td.mono", p.base_url || "default"),
+                el("td.mono", p.api_key_env || "—"),
+                el("td", p.configured ? pill("configured", "ok") : pill("missing credentials", "warn")),
+              ),
             ),
           ),
         ),

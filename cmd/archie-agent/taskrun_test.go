@@ -94,7 +94,7 @@ func (f *prCapturingForge) VerifyPush(context.Context, string, string) error {
 }
 
 func (f *prCapturingForge) LinkBranch(context.Context, string, string, int, string) error {
-	panic("unexpected call")
+	return nil
 }
 
 // newLocalRemote mirrors worktree_test.go's helper: a bare repo with one

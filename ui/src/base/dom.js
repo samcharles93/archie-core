@@ -11,7 +11,10 @@ export function el(spec, attrs, ...children) {
   const node = document.createElement(tag || "div");
   if (classes.length) node.className = classes.join(" ");
 
-  if (attrs && (typeof attrs !== "object" || attrs instanceof Node)) {
+  // A falsy scalar first child (0, "", false) is a value, not a missing
+  // attrs object: unshift it so append() renders it instead of dropping it.
+  // undefined stays "no attrs" so `el("div", undefined, child)` still works.
+  if (attrs !== undefined && (typeof attrs !== "object" || attrs instanceof Node)) {
     children.unshift(attrs);
     attrs = null;
   }

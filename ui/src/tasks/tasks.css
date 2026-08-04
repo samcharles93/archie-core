@@ -1,9 +1,14 @@
 /* Tasks-only styles. */
 
+.task-summary {
+  margin-bottom: var(--sp-5);
+}
+
 .task-filters {
   display: flex;
   gap: var(--sp-2);
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .task-search,
@@ -31,6 +36,85 @@
   cursor: pointer;
 }
 
+.activity-row {
+  cursor: pointer;
+}
+
+.activity-row:hover td,
+.activity-row:focus td {
+  background: var(--surface-hover);
+}
+
+.activity-row:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.task-source-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.task-source-link:hover {
+  text-decoration: underline;
+}
+
+.task-actions {
+  display: flex;
+  gap: var(--sp-1);
+  white-space: nowrap;
+}
+
+.btn-small {
+  padding: var(--sp-1) var(--sp-2);
+  font-size: var(--text-xs);
+}
+
+.btn-quiet {
+  color: var(--fg-muted);
+}
+
+.task-action-error {
+  max-width: 180px;
+  color: var(--danger);
+  font-size: var(--text-xs);
+  white-space: normal;
+}
+
+.task-decision {
+  margin-bottom: var(--sp-4);
+  padding: var(--sp-3);
+  border-left: 3px solid var(--accent);
+  background: var(--surface);
+}
+
+.task-decision-title {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.task-decision-plan {
+  margin-top: var(--sp-2);
+  color: var(--fg-muted);
+  white-space: pre-wrap;
+}
+
+/* On phones the filter controls take their own row and full width instead of
+   crowding the card title. */
+@media (max-width: 700px) {
+  .task-filters {
+    width: 100%;
+  }
+
+  .task-search {
+    width: 100%;
+  }
+
+  .task-filter {
+    flex: 1 1 100%;
+  }
+}
+
 .task-timeline-row td {
   background: var(--bg-raised);
   padding: var(--sp-4);
@@ -39,6 +123,18 @@
 .task-timeline-loading {
   color: var(--fg-muted);
   font-size: var(--text-sm);
+}
+
+.task-timeline-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+}
+
+.task-timeline-error .task-timeline-title {
+  font-weight: 500;
+  color: var(--fg);
 }
 
 .task-timeline {

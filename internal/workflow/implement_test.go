@@ -2,9 +2,10 @@ package workflow
 
 import (
 	"context"
-	"strings"
+	"errors"
 	"testing"
 
+	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/store"
 )
@@ -13,6 +14,9 @@ import (
 type fakeForge struct {
 	closed    int
 	commented []string
+	calls     []string
+	linkErr   error
+	prNumber  int
 }
 
 func (f *fakeForge) CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error {
@@ -40,7 +44,11 @@ func (f *fakeForge) IssuesWithLabel(ctx context.Context, owner, repo, label stri
 }
 
 func (f *fakeForge) CreatePR(ctx context.Context, owner, repo, title, head, base, body string) (int, error) {
-	return 0, nil
+	f.calls = append(f.calls, "pr:"+head)
+	// A real forge never answers 0, and returning it let a test pass while
+	// the PR number was never recorded.
+	f.prNumber++
+	return f.prNumber, nil
 }
 
 func (f *fakeForge) PRState(ctx context.Context, owner, repo string, number int) (string, error) {
@@ -56,6 +64,11 @@ func (f *fakeForge) RepliesAfter(ctx context.Context, owner, repo string, number
 }
 
 func (f *fakeForge) SetStateLabel(ctx context.Context, owner, repo string, number int, label string, known []string) {
+}
+
+func (f *fakeForge) LinkBranch(ctx context.Context, owner, repo string, number int, branch string) error {
+	f.calls = append(f.calls, "link:"+branch)
+	return f.linkErr
 }
 func (f *fakeForge) VerifyPush(ctx context.Context, owner, repo string) error { return nil }
 
@@ -94,15 +107,24 @@ func TestStageCommitPushClosesIssueWhenBuildNoChanges(t *testing.T) {
 		t.Log("Outcome set to Merged (workflow stops)")
 	}
 
-	found := false
-	for _, c := range f.commented {
-		if strings.Contains(c, "no changes required") {
-			found = true
-			break
-		}
+	if len(f.commented) != 0 {
+		t.Errorf("expected no forge comments, got %d", len(f.commented))
 	}
-	if !found {
-		t.Error("expected a comment about no changes required")
+}
+
+func TestOpenPRLinksSourceBranchBeforeCreatingPR(t *testing.T) {
+	f := &fakeForge{}
+	tc := &TaskContext{
+		Forge:  f,
+		Task:   &store.Task{ID: 1, Owner: "acme", Repo: "widget", IssueNumber: 42, Title: "Fix bug"},
+		Repo:   config.Repo{Owner: "acme", Name: "widget", Base: "main"},
+		Branch: "fix/42-bug",
+	}
+	if err := OpenPR(context.Background(), tc, "summary"); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.calls) != 2 || f.calls[0] != "link:fix/42-bug" || f.calls[1] != "pr:fix/42-bug" {
+		t.Fatalf("forge calls = %v, want [link:fix/42-bug pr:fix/42-bug]", f.calls)
 	}
 }
 
@@ -133,19 +155,43 @@ func TestStageCommitPushDoesNotUseSyntheticIssueForChatNoOp(t *testing.T) {
 	}
 }
 
-func TestIssueClosureReferenceOnlyForForgeTasks(t *testing.T) {
+// LinkBranch is cosmetic: it puts the branch in the issue's sidebar on Gitea
+// and does nothing at all on GitHub. Failing the stage on it meant the pull
+// request -- the entire point of the run -- was never opened, and the task
+// parked. Worse, a retry re-links the same branch, which Gitea answers with
+// a conflict, so every retry parked again.
+func TestOpenPRSurvivesALinkBranchFailure(t *testing.T) {
 	tests := []struct {
-		name string
-		task *store.Task
-		want string
+		name    string
+		linkErr error
 	}{
-		{name: "forge", task: &store.Task{IssueNumber: 42}, want: "\n\nCloses #42"},
-		{name: "chat", task: &store.Task{IssueNumber: 999_001, Source: store.SourceChat}, want: ""},
+		{name: "already linked", linkErr: errors.New("409 Conflict: branch already linked")},
+		{name: "endpoint unavailable", linkErr: errors.New("404 Not Found")},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := issueClosureReference(tt.task); got != tt.want {
-				t.Errorf("issueClosureReference() = %q, want %q", got, tt.want)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &fakeForge{linkErr: tc.linkErr}
+			taskCtx := &TaskContext{
+				Forge:  f,
+				Task:   &store.Task{ID: 1, Owner: "acme", Repo: "widget", IssueNumber: 42, Title: "Fix bug"},
+				Repo:   config.Repo{Owner: "acme", Name: "widget", Base: "main"},
+				Branch: "fix/42-bug",
+			}
+
+			if err := OpenPR(context.Background(), taskCtx, "summary"); err != nil {
+				t.Fatalf("OpenPR: %v\nthe PR is the load-bearing step; cosmetic "+
+					"linkage must not stop it", err)
+			}
+			if taskCtx.Outcome.Status != store.StatusPROpen {
+				t.Errorf("Outcome.Status = %q, want %q", taskCtx.Outcome.Status, store.StatusPROpen)
+			}
+			if taskCtx.Task.PRNumber == 0 {
+				t.Error("PRNumber is 0: the pull request was never opened")
+			}
+			// The link is still attempted -- it is useful when it works.
+			if len(f.calls) != 2 || f.calls[0] != "link:fix/42-bug" {
+				t.Errorf("forge calls = %v, want the link attempted before the PR", f.calls)
 			}
 		})
 	}
