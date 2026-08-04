@@ -155,13 +155,28 @@ func makeTelegramLLMResponder(ctx context.Context, tg *telegram.Gateway, s teleg
 		if err != nil {
 			return "", fmt.Errorf("resolve chat session: %w", err)
 		}
-		if err := sessionStore.SaveMessage(ctx, sk, msg); err != nil {
-			return "", fmt.Errorf("save inbound chat message: %w", err)
-		}
 		history, err := sessionStore.RecentMessages(ctx, sk, 100)
 		if err != nil {
 			return "", fmt.Errorf("load chat history: %w", err)
 		}
+		// A redelivered update must not be answered twice. The store already
+		// refuses to store the message again, but that alone changed
+		// nothing here: the model still ran, costing a second billed turn,
+		// running any tool side effects again, and appending a second reply
+		// (replies carry no upstream reference, so they always append).
+		// Replaying the answer we already gave is both cheaper and correct.
+		if prior := gateway.PriorReply(history, sk, msg.SourceID, s.Cfg.BotUser); prior != "" {
+			s.Log.Info("replaying the reply to a redelivered message",
+				"session", sk, "source_id", msg.SourceID)
+			if onDelta != nil {
+				onDelta(prior)
+			}
+			return prior, nil
+		}
+		if err := sessionStore.SaveMessage(ctx, sk, msg); err != nil {
+			return "", fmt.Errorf("save inbound chat message: %w", err)
+		}
+		history = append(history, msg)
 		// Chat turns were entirely unlogged, so a report of lost context had
 		// no evidence to check against: session id, history depth and the
 		// resolved persona are the three things needed to tell "wrong

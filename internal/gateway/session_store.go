@@ -873,3 +873,53 @@ func (s *nellSessionStore) SearchMessages(ctx context.Context, sessionID string,
 		Truncated:  truncated && !hasMore,
 	}, nil
 }
+
+// CanonicalMessageID returns the identity the store assigns to a message
+// carrying sourceID in this session, or "" when there is no upstream
+// reference to derive one from.
+//
+// It exists so a caller can ask "have I already handled this upstream
+// message?" without duplicating the derivation. Duplicating it would let the
+// two drift, and a lookup that silently never matches looks exactly like a
+// message that has never been seen.
+func CanonicalMessageID(sessionID, sourceID string) string {
+	if sourceID == "" {
+		return ""
+	}
+	return newMessageID(sessionID, sourceID)
+}
+
+// PriorReply returns the reply already produced for an upstream message, or
+// "" when it has not been answered yet.
+//
+// Making the store idempotent stopped redelivery duplicating the inbound
+// *record*, but nothing consulted that: the chat path saved the message,
+// ignored the fact that nothing changed, and called the model again. That
+// meant a second billed turn, tool side effects run twice, and a second
+// assistant reply appended -- replies carry no upstream reference, so they
+// always get a fresh identity and always append.
+//
+// An answered message is one immediately followed by a turn from identity.
+// A message with no reply after it was never answered -- the turn may have
+// died partway -- and re-running is the right outcome there, since the user
+// is still owed an answer.
+//
+// history is the recent window the caller already loaded, so a redelivery of
+// something older than that window is not recognised. Channels redeliver only
+// their recent undelivered queue, so this covers the case that occurs.
+func PriorReply(history []Message, sessionID, sourceID, identity string) string {
+	id := CanonicalMessageID(sessionID, sourceID)
+	if id == "" {
+		return ""
+	}
+	for i, m := range history {
+		if m.MessageID != id {
+			continue
+		}
+		if i+1 < len(history) && history[i+1].From == identity {
+			return history[i+1].Text
+		}
+		return ""
+	}
+	return ""
+}
