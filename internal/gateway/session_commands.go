@@ -78,7 +78,18 @@ func (t *sessionTracker) resolve(ctx context.Context, platform, botUser, channel
 
 	// Create a new session with a deterministic key so it matches the
 	// legacy sessionKey format used by the LLM responder.
+	//
+	// Claim the cache slot before writing to the store, not after. Saving
+	// first and asking the cache who won afterwards meant the loser of a race
+	// had already persisted a session that nothing pointed at -- unreachable,
+	// but still listed by /topic and /sessions as "(untitled)", and
+	// resurrectable by a later restart now that resolution goes by recency.
+	// Whoever holds the slot is the only one that writes.
 	id = sessionKeyFromFields(channelID, threadID)
+	if winner, won := t.claimActive(key, id); !won {
+		return winner, nil
+	}
+
 	now := time.Now()
 	sc := SessionContext{
 		SessionID: id,
@@ -92,9 +103,38 @@ func (t *sessionTracker) resolve(ctx context.Context, platform, botUser, channel
 		LastActiveAt: now,
 	}
 	if err := t.sessions.Save(ctx, sc); err != nil {
+		// Drop the claim: leaving it would point every later message in this
+		// chat at a session that was never stored.
+		t.releaseActive(key, id)
 		return "", fmt.Errorf("create session: %w", err)
 	}
-	return t.cacheActive(key, id), nil
+	return id, nil
+}
+
+// claimActive reserves key for sessionID unless another caller already holds
+// it. It returns the winning session ID and whether this caller won.
+//
+// This is the same double-check cacheActive performs, moved ahead of the
+// store write so only the winner writes.
+func (t *sessionTracker) claimActive(key, sessionID string) (string, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if existing, ok := t.active[key]; ok && existing != "" {
+		return existing, false
+	}
+	t.active[key] = sessionID
+	return sessionID, true
+}
+
+// releaseActive drops a claim that could not be completed. It only removes
+// the entry when it is still this caller's, so a racing setActive that has
+// since replaced it is left alone.
+func (t *sessionTracker) releaseActive(key, sessionID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.active[key] == sessionID {
+		delete(t.active, key)
+	}
 }
 
 // cacheActive records the resolved session for a channel+thread. A racing
