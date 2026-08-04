@@ -354,6 +354,10 @@ func run() int {
 	// problem into a crash loop with the real error scrolling past unread.
 	containerPool, storeBackend, closeDocker := startContainers(ctx, cfg, log)
 	defer closeDocker()
+	// Sandboxing that was asked for and could not start must not silently
+	// become no sandboxing: the daemon stays up, but tasks park rather than
+	// running the agent loop on the host.
+	sandboxRequired := cfg.Containers.Enabled && containerPool == nil
 
 	// ── LLM runtime ──────────────────────────────────────────────────
 	// Created before gateways so the LLMResponder can be wired into the
@@ -667,23 +671,24 @@ func run() int {
 	// via Yaegi is deferred to the container/agent runtime.
 
 	d := &daemon.Daemon{
-		Cfg:            cfg,
-		Store:          st,
-		Bus:            bus,
-		Forge:          forgeClient,
-		Trees:          trees,
-		Agent:          agentRunner,
-		Workflows:      registry,
-		CapabilityHost: capabilityHost,
-		Storage:        storeBackend,
-		Log:            log,
-		CustomStages:   wfeval.Discover,
-		Tasks:          natsClient,
-		ContainerPool:  containerPool,
-		Memory:         memManager,
-		Guardrails:     guardrails,
-		ToolRegistry:   toolReg,
-		Identities:     identityRunners,
+		Cfg:             cfg,
+		Store:           st,
+		Bus:             bus,
+		Forge:           forgeClient,
+		Trees:           trees,
+		Agent:           agentRunner,
+		Workflows:       registry,
+		CapabilityHost:  capabilityHost,
+		Storage:         storeBackend,
+		Log:             log,
+		CustomStages:    wfeval.Discover,
+		Tasks:           natsClient,
+		ContainerPool:   containerPool,
+		SandboxRequired: sandboxRequired,
+		Memory:          memManager,
+		Guardrails:      guardrails,
+		ToolRegistry:    toolReg,
+		Identities:      identityRunners,
 	}
 
 	// Give /cancel and /stop a handle on work already in flight. The

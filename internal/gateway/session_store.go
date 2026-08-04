@@ -304,8 +304,14 @@ func (s *nellSessionStore) listAllLocked(ctx context.Context) ([]SessionContext,
 }
 
 // sessionRecency is the instant a session was last meaningfully used.
+//
+// The later of the two timestamps, matching the SQLite side's
+// MAX(last_active_at, created_at). Preferring LastActiveAt whenever it was
+// set diverged from that whenever it predated CreatedAt -- a clock step, or
+// a record written by an older version -- and the two backends then ordered
+// the same sessions differently.
 func sessionRecency(sc SessionContext) time.Time {
-	if !sc.LastActiveAt.IsZero() {
+	if sc.LastActiveAt.After(sc.CreatedAt) {
 		return sc.LastActiveAt
 	}
 	return sc.CreatedAt
@@ -596,7 +602,22 @@ func (s *nellSessionStore) SaveMessage(ctx context.Context, sessionID string, ms
 
 // saveMessageLocked persists one message and reports the document ID it was
 // written under. Callers must hold s.mu.
+// saveMessageLocked appends a message, clamping its timestamp so history
+// stays a strictly increasing sequence.
 func (s *nellSessionStore) saveMessageLocked(ctx context.Context, sessionID string, msg Message) (string, error) {
+	return s.saveMessageAt(ctx, sessionID, msg, true)
+}
+
+// saveMessageAt writes a message, optionally without the monotonic clamp.
+//
+// The clamp belongs to the append path: an inbound message must not sort
+// ahead of the one that provoked it. It is wrong for a caller rewriting
+// history, which is placing records deliberately -- a compression summary
+// stands in for the span it replaced and belongs where that span was, not at
+// the end. Clamping it there put the summary after the messages it was meant
+// to precede, so the model read the recent conversation and was only then
+// told that earlier context had been summarised.
+func (s *nellSessionStore) saveMessageAt(ctx context.Context, sessionID string, msg Message, clamp bool) (string, error) {
 	db := s.messagesFor(sessionID)
 	// A message carrying a canonical ID keeps it: re-saving one that was
 	// read back must not mint a new identity, or branch points and related
@@ -617,9 +638,15 @@ func (s *nellSessionStore) saveMessageLocked(ctx context.Context, sessionID stri
 		return "", fmt.Errorf("sessionstore: read existing message: %w", err)
 	}
 
-	at, err := s.nextTimestamp(ctx, sessionID, db, stamp(msg))
-	if err != nil {
-		return "", err
+	at := stamp(msg)
+	if clamp {
+		var err error
+		if at, err = s.nextTimestamp(ctx, sessionID, db, at); err != nil {
+			return "", err
+		}
+	} else if ms := at.UnixMilli(); ms > s.lastTS[sessionID] {
+		// Keep the cache honest so a later append still sorts after this.
+		s.lastTS[sessionID] = ms
 	}
 	if _, err := db.Put(ctx, messageToDoc(id, msg, at)); err != nil {
 		return "", fmt.Errorf("sessionstore: save message: %w", err)
@@ -711,7 +738,9 @@ func (s *nellSessionStore) ReplaceMessages(
 	// ReplaceMessages(sess, history[10:]) -- would rewrite the survivors
 	// and then delete them, emptying the session.
 	for _, msg := range msgs {
-		id, err := s.saveMessageLocked(ctx, sessionID, msg)
+		// No clamp: the caller is reconstructing a history and has already
+		// decided where each record belongs.
+		id, err := s.saveMessageAt(ctx, sessionID, msg, false)
 		if err != nil {
 			return fmt.Errorf("sessionstore: replace messages: %w", err)
 		}
@@ -911,10 +940,23 @@ func PriorReply(history []Message, sessionID, sourceID, identity string) string 
 		if m.MessageID != id {
 			continue
 		}
-		if i+1 < len(history) && history[i+1].From == identity {
+		if i+1 < len(history) && history[i+1].From == identity &&
+			!isCompressionSummary(history[i+1].Text) {
 			return history[i+1].Text
 		}
 		return ""
 	}
 	return ""
+}
+
+// isCompressionSummary reports whether a record is a compression summary
+// rather than a turn in the conversation.
+//
+// The summary is attributed to the bot so it replays to the model with the
+// right role, which makes it indistinguishable from a reply by sender alone.
+// Treating it as one meant a redelivered but unanswered question was
+// "answered" with the compression banner and the model was never called --
+// the user's question silently swallowed.
+func isCompressionSummary(text string) bool {
+	return strings.HasPrefix(text, DefaultCompressionConfig().SummaryMarker)
 }

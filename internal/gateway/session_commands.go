@@ -42,6 +42,7 @@ func (t *sessionTracker) resolve(ctx context.Context, platform, botUser, channel
 	// poisoned entry repairs itself instead of persisting every subsequent
 	// message under session "".
 	if ok && id != "" {
+		t.touch(ctx, id)
 		return id, nil
 	}
 
@@ -73,7 +74,9 @@ func (t *sessionTracker) resolve(ctx context.Context, platform, botUser, channel
 		}
 	}
 	if best != nil {
-		return t.cacheActive(key, best.SessionID), nil
+		resolved := t.cacheActive(key, best.SessionID)
+		t.touch(ctx, resolved)
+		return resolved, nil
 	}
 
 	// Create a new session with a deterministic key so it matches the
@@ -109,6 +112,23 @@ func (t *sessionTracker) resolve(ctx context.Context, platform, botUser, channel
 		return "", fmt.Errorf("create session: %w", err)
 	}
 	return id, nil
+}
+
+// touch records that a session is in use now.
+//
+// Nothing called Touch before, so LastActiveAt only ever held the creation
+// time and "resolve the most recently active session" really meant the most
+// recently created one -- an operator who switched to an older session with
+// /topic and worked there was dropped back into the newer, abandoned one on
+// the next restart.
+//
+// Best-effort: a failed timestamp update must not fail the turn, and the
+// worst case is the ordering this restores being stale again.
+func (t *sessionTracker) touch(ctx context.Context, sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	_ = t.sessions.Touch(ctx, sessionID)
 }
 
 // claimActive reserves key for sessionID unless another caller already holds
@@ -472,6 +492,14 @@ func (r *Router) handleBranch(ctx context.Context, msg Message, rest string) (st
 	channelID := msg.ChannelID
 	threadID := msg.ThreadID
 	parentID := r.sessionTracker.getActive(channelID, threadID)
+	if parentID == "" {
+		// Nothing to branch from. Telegram never reaches this -- submitTurn
+		// resolves first -- but the email and webhook channels call Route
+		// directly, and slicing an empty parent ID for the default title
+		// panicked. The email path runs in a goroutine with no recover, so
+		// that took the daemon down over a single message.
+		return "No active session to branch from. Send a message first.", nil
+	}
 
 	branchName := strings.TrimSpace(rest)
 
@@ -657,14 +685,43 @@ func compressedHistory(original []Message, view CompressedView, identity string)
 	head := min(view.ProtectedFirst, len(original))
 	tail := min(view.ProtectedLast, len(original)-head)
 
+	// The summary stands in for the span it replaced, so it takes a
+	// timestamp inside that span. Ordering is by timestamp, not by the order
+	// the caller writes: the retained messages keep their original times --
+	// that is what preserves their identity -- so a summary stamped with now
+	// would sort after the tail it is supposed to precede, and the model
+	// would read the recent conversation before being told earlier context
+	// was summarised.
+	if summaryAt >= len(view.Messages) {
+		// A view whose summary index is outside its own messages cannot be
+		// reconstructed; leaving history untouched is the safe answer.
+		return original
+	}
 	out := make([]Message, 0, head+1+tail)
 	out = append(out, original[:head]...)
 	out = append(out, Message{
 		From: identity,
 		Text: view.Messages[summaryAt].Content,
+		At:   summaryInstant(original, head, tail),
 	})
 	out = append(out, original[len(original)-tail:]...)
 	return out
+}
+
+// summaryInstant returns a time inside the gap the summary fills: after the
+// last retained head message and before the first retained tail message.
+func summaryInstant(original []Message, head, tail int) time.Time {
+	// The first message the summary replaces is the natural anchor -- the
+	// summary begins where the summarised span began.
+	if head < len(original)-tail {
+		return original[head].At
+	}
+	// Nothing was actually replaced. Sit just after the head instead of
+	// colliding with the tail.
+	if head > 0 {
+		return original[head-1].At.Add(time.Millisecond)
+	}
+	return time.Time{}
 }
 
 func (r *Router) messagesToCompressed(msgs []Message) []CompressedMessage {

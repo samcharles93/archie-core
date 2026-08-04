@@ -193,3 +193,101 @@ func sessionIDs(ss []SessionContext) []string {
 	}
 	return out
 }
+
+// The two backends must order the same records identically. The Go side used
+// to prefer LastActiveAt whenever it was set, while SQLite used
+// MAX(last_active_at, created_at); those agree only when LastActiveAt is the
+// later of the two. A clock step, or a record written by an older version,
+// made the store's own ORDER BY and the caller's pick disagree.
+func TestRecencyAgreesWhenLastActivePredatesCreation(t *testing.T) {
+	for name, newStore := range compressBackends() {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			store := newStore(t)
+
+			// X was created later but carries an older LastActiveAt.
+			save := func(id string, created, active time.Duration) {
+				t.Helper()
+				if err := store.Save(ctx, SessionContext{
+					SessionID:    id,
+					Source:       SessionSource{Platform: "telegram", BotUser: "archie", ChannelID: "chat-1"},
+					CreatedAt:    base.Add(created),
+					LastActiveAt: base.Add(active),
+				}); err != nil {
+					t.Fatalf("Save %s: %v", id, err)
+				}
+			}
+			save("x-created-late", 5*time.Hour, -5*time.Hour)
+			save("y-normal", 3*time.Hour, 3*time.Hour)
+
+			got, err := store.GetByChannel(ctx, "telegram", "chat-1")
+			if err != nil {
+				t.Fatalf("GetByChannel: %v", err)
+			}
+			if len(got) != 2 {
+				t.Fatalf("got %d sessions, want 2", len(got))
+			}
+			if got[0].SessionID != "x-created-late" {
+				t.Errorf("order = %v, want x-created-late first (its creation is "+
+					"the later instant)", sessionIDs(got))
+			}
+
+			// The caller's own pick must match the store's order.
+			tr := newSessionTracker(store)
+			resolved, err := tr.resolve(ctx, "telegram", "archie", "chat-1", "")
+			if err != nil {
+				t.Fatalf("resolve: %v", err)
+			}
+			if resolved != got[0].SessionID {
+				t.Errorf("resolve = %q but the store orders %q first: the caller "+
+					"and the store disagree", resolved, got[0].SessionID)
+			}
+		})
+	}
+}
+
+// Resolving a session is what "the session is in use" means, so it must
+// update LastActiveAt. Without it the recency ordering ranked by creation
+// time, and an operator who switched to an older session with /topic and
+// worked there was dropped back into the newer, abandoned one on restart.
+func TestResolveMarksTheSessionActive(t *testing.T) {
+	for name, newStore := range compressBackends() {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			store := newStore(t)
+
+			// "old" is the one the operator is actually working in.
+			for _, s := range []struct {
+				id     string
+				offset time.Duration
+			}{{"old", 0}, {"new", 5 * time.Hour}} {
+				if err := store.Save(ctx, SessionContext{
+					SessionID:    s.id,
+					Source:       SessionSource{Platform: "telegram", BotUser: "archie", ChannelID: "chat-1"},
+					CreatedAt:    base.Add(s.offset),
+					LastActiveAt: base.Add(s.offset),
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			tr := newSessionTracker(store)
+			tr.setActive("chat-1", "", "old")
+			if got, err := tr.resolve(ctx, "telegram", "archie", "chat-1", ""); err != nil || got != "old" {
+				t.Fatalf("resolve = (%q, %v), want old", got, err)
+			}
+
+			// A cold tracker, as after a restart, must now pick "old".
+			cold := newSessionTracker(store)
+			got, err := cold.resolve(ctx, "telegram", "archie", "chat-1", "")
+			if err != nil {
+				t.Fatalf("resolve: %v", err)
+			}
+			if got != "old" {
+				t.Errorf("after restart resolve = %q, want %q: working in a session "+
+					"did not mark it active, so recency still ranked by creation",
+					got, "old")
+			}
+		})
+	}
+}

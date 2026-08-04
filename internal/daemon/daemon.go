@@ -69,6 +69,14 @@ type Daemon struct {
 	// TaskRunRetryBackoff is the delay between retry attempts within
 	// TaskRunReadyTimeout. Zero uses defaultTaskRunRetryBackoff.
 	TaskRunRetryBackoff time.Duration
+	// SandboxRequired reports that [containers] asked for sandboxing that
+	// could not be brought up. It exists because ContainerPool == nil means
+	// two very different things: "sandboxing was never configured, run
+	// in-process" and "sandboxing was configured and failed". Treating them
+	// alike silently dropped the isolation boundary and ran agent loops on
+	// the host with the daemon's own authority.
+	SandboxRequired bool
+
 	// ContainerPool manages Docker container lifecycle. Nil when [containers]
 	// is not configured. When non-nil, every task gets a fresh container.
 	ContainerPool *container.Pool
@@ -796,6 +804,24 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	}
 	task.Branch = branch
 	_ = d.Store.Update(ctx, task)
+
+	// Refuse to run unsandboxed when sandboxing was asked for. Parking is
+	// recoverable -- fix the image, retry -- whereas running the agent loop
+	// in-process would hand it the host filesystem and the daemon's own
+	// authority, which is the one thing [containers] exists to prevent. The
+	// daemon itself stays up: chat and the dashboard are unaffected.
+	if d.SandboxRequired && d.ContainerPool == nil {
+		const reason = "containers are enabled but the pool is unavailable; " +
+			"refusing to run this task unsandboxed on the host"
+		d.Log.Error("task parked: sandbox unavailable", "task", task.ID,
+			"hint", "run `docker compose pull agent` (or `build agent`), then retry the task")
+		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, reason)
+		d.emit(events.Event{
+			Kind: events.KindParked, TaskID: task.ID,
+			Repo: repo.FullName(), Issue: task.IssueNumber, Detail: reason,
+		})
+		return
+	}
 
 	// Acquire a container for the task when Docker sandboxing is enabled.
 	if d.ContainerPool != nil {

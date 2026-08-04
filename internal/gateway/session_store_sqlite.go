@@ -301,6 +301,13 @@ func (s *sqliteSessionStore) SaveMessage(ctx context.Context, sessionID string, 
 // untouched: stored messages are immutable, so a redelivered edit is a
 // no-op rather than an overwrite.
 func saveMessage(ctx context.Context, ex execer, sessionID string, msg Message) (string, error) {
+	return saveMessageAt(ctx, ex, sessionID, msg, true)
+}
+
+// saveMessageAt writes a message, optionally without the monotonic clamp.
+// See the NellDB counterpart: the clamp belongs to the append path, not to a
+// caller rewriting history and placing records deliberately.
+func saveMessageAt(ctx context.Context, ex execer, sessionID string, msg Message, clamp bool) (string, error) {
 	id := msg.MessageID
 	if id == "" {
 		id = newMessageID(sessionID, msg.SourceID)
@@ -316,9 +323,12 @@ func saveMessage(ctx context.Context, ex execer, sessionID string, msg Message) 
 		return "", fmt.Errorf("sessionstore: read existing message: %w", err)
 	}
 
-	at, err := nextTimestampSQL(ctx, ex, sessionID, stamp(msg))
-	if err != nil {
-		return "", err
+	at := stamp(msg)
+	if clamp {
+		var err error
+		if at, err = nextTimestampSQL(ctx, ex, sessionID, at); err != nil {
+			return "", err
+		}
 	}
 	_, err = ex.ExecContext(ctx, `
 		INSERT INTO messages (message_id, session_id, source_id, sender, text, ts)
@@ -402,7 +412,8 @@ func (s *sqliteSessionStore) ReplaceMessages(
 
 	survivors := make(map[string]struct{}, len(msgs))
 	for _, msg := range msgs {
-		id, err := saveMessage(ctx, tx, sessionID, msg)
+		// No clamp: the caller has already decided where each record belongs.
+		id, err := saveMessageAt(ctx, tx, sessionID, msg, false)
 		if err != nil {
 			return fmt.Errorf("sessionstore: replace messages: %w", err)
 		}

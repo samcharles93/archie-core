@@ -102,3 +102,25 @@ func TestSetActiveRejectsAnEmptySession(t *testing.T) {
 		t.Fatal("resolve returned empty: an empty setActive left a poisoned entry")
 	}
 }
+
+// /branch with no active session sliced an empty parent ID for its default
+// title and panicked. Telegram resolves a session before routing, so it never
+// reached this -- but the email and webhook channels call Route directly, and
+// the email path runs in a goroutine with no recover, so one message took the
+// daemon down.
+func TestBranchWithNoActiveSessionDoesNotPanic(t *testing.T) {
+	store := NewSessionStoreMemory("test-node")
+	t.Cleanup(func() { _ = store.Close() })
+
+	r := NewRouter(nil, nil, "email")
+	r.InitSessions(store)
+	r.Identity = "archie"
+
+	reply, err := r.Route(context.Background(), Message{Text: "/branch", ChannelID: "inbox-1"})
+	if err != nil {
+		t.Fatalf("Route(/branch): %v", err)
+	}
+	if reply == "" {
+		t.Fatal("no reply; the user is told nothing")
+	}
+}
