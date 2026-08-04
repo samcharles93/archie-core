@@ -423,11 +423,6 @@ func (s *nellSessionStore) dropMsgDB(sessionID string) {
 	}
 }
 
-// msgID builds a time-ordered, collision-free document ID. Ordering is
-// driven by the _ts field, but a matching ID order keeps equal-timestamp
-// ties stable across scans and cursors. The counter disambiguates messages
-// that land within the same nanosecond; it resets on restart, so uniqueness
-// across restarts rests on the nanosecond timestamp.
 // messageIDNamespace scopes the deterministic derivation below. It is a
 // fixed, arbitrary UUID: only its stability matters.
 var messageIDNamespace = uuid.MustParse("6f8d2b1e-9c4a-4f37-8a56-1d0e7b3c9a42")

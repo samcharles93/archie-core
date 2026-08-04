@@ -22,8 +22,17 @@ import (
 type Message struct {
 	// MessageID is the canonical, application-generated identifier for
 	// this message. It is assigned by the message store, stable, and the
-	// handle branch points and related records correlate on. Populated on
-	// read; ignored on write.
+	// handle branch points and related records correlate on.
+	//
+	// Populated on read, and HONOURED on write: saving a message that
+	// already carries one keeps that identity, which is what lets a
+	// read-modify-write of a history preserve identities rather than
+	// minting new ones. A caller copying messages into a different session
+	// must therefore clear it, or two sessions end up claiming one
+	// identity -- see handleBranch.
+	//
+	// Leave it empty for a newly received message: the store derives one,
+	// from SourceID when there is one.
 	MessageID string
 	// SourceID is the channel-native identifier (e.g. a Telegram
 	// message_id). It is external correlation metadata, never the

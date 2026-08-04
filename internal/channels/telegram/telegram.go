@@ -472,10 +472,11 @@ func (g *Gateway) defaultHandler(router *gateway.Router) bot.HandlerFunc {
 // aimed at had already finished.
 func (g *Gateway) submitTurn(ctx context.Context, b *bot.Bot, msg *models.Message, router *gateway.Router) {
 	gm := gateway.Message{
-		// Telegram's message ID makes persistence idempotent, so a
-		// redelivered update updates the stored turn instead of appending
-		// a duplicate. Date is the sender's clock reading for the message
-		// and is what history should be ordered by.
+		// Telegram's message ID makes persistence idempotent: the store
+		// derives a canonical ID from it, so a redelivered update is a
+		// no-op rather than appending a duplicate or overwriting the
+		// stored record, which must stay immutable. Date is the sender's
+		// clock reading and is what history should be ordered by.
 		SourceID:  fmt.Sprintf("%d", msg.ID),
 		ChannelID: fmt.Sprintf("%d", msg.Chat.ID),
 		ThreadID:  threadIDString(msg.MessageThreadID),

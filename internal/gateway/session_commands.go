@@ -515,7 +515,19 @@ func (r *Router) handleBranch(ctx context.Context, msg Message, rest string) (st
 		return "", fmt.Errorf("inherit history: %w", err)
 	}
 	if len(msgs) > 0 {
-		if err := r.sessionTracker.sessions.SaveMessages(ctx, id, msgs); err != nil {
+		// Clear the canonical ID so the child derives its own. The store
+		// honours an incoming MessageID -- which is what lets a
+		// read-modify-write keep identities -- so copying the parent's
+		// messages verbatim made two sessions claim one identity, leaving
+		// branch-point correlation ambiguous. It also broke dedup in the
+		// child: an inherited message carried an ID derived from the
+		// parent's session, so redelivering it appended.
+		inherited := make([]Message, 0, len(msgs))
+		for _, m := range msgs {
+			m.MessageID = ""
+			inherited = append(inherited, m)
+		}
+		if err := r.sessionTracker.sessions.SaveMessages(ctx, id, inherited); err != nil {
 			return "", fmt.Errorf("copy history: %w", err)
 		}
 	}
