@@ -150,12 +150,19 @@ boundaries. Summary of what's evolved since that doc was last fully accurate:
   `worktree.go:41-46` documents this reasoning for the prepared sentinel.
   If you change the path, update `cmd/archie-agent/main.go` `bootTaskID`
   (the reader) in lockstep.
-- **`cmd/archied/main.go:588-598`** — the daemon registers MCP providers
-  itself and returns a hard failure if one cannot start. No npx-launched
-  servers are configured in production; the builtin tools (read, write,
-  edit, find, grep, shell, test) cover what desktop-commander did. Adding
-  an `[[tools.mcp_servers]]` entry to the config carries real blast radius:
-  a failed provider exits the daemon, taking Telegram down with it.
+- **MCP providers are registered by the daemon as *optional*** (`cmd/archied/
+  main.go`, `providerRegistry.RegisterOptional`). One that cannot start is
+  logged at error level, excluded from the running set, and reported through
+  `Registry.Health` as degraded — it does not roll back the other providers
+  or stop the daemon. That was previously a hard failure, so one broken npm
+  package unregistered every builtin tool and crash-looped archied under
+  `Restart=on-failure`, taking Telegram with it. Providers the daemon
+  genuinely requires still use `Register` and keep atomic rollback; check
+  `providerRegistry.Skipped()` when tools are mysteriously missing. No
+  npx-launched servers are configured in production anyway — the builtin
+  tools (read, write, edit, find, grep, shell, test) cover what
+  desktop-commander did.
+
 **Task lifecycle** (from ARCHITECTURE.md, still current):
 `queued → running(workflow:stage) → pr_open → merged|rejected`, with
 `waiting_human` and `parked` side states. Crash recovery re-queues anything left

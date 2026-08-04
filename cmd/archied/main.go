@@ -630,9 +630,15 @@ func run() int {
 			log.Warn("mcp tool provider skipped", "name", srv.Name, "err", err)
 			continue
 		}
-		if err := providerRegistry.Register(provider); err != nil {
-			log.Error("mcp tool provider registration failed", "name", srv.Name, "err", err)
-			return 1
+		// Optional: an MCP server is a third-party process pulled in at
+		// runtime, and it is exactly the category that is allowed to be
+		// absent. Registering it as required meant one failing npm package
+		// unregistered every builtin tool and exited the daemon, which under
+		// Restart=on-failure is a crash loop that takes chat and the gateway
+		// with it.
+		if err := providerRegistry.RegisterOptional(provider); err != nil {
+			log.Warn("mcp tool provider skipped", "name", srv.Name, "err", err)
+			continue
 		}
 	}
 	if err := capabilityHost.Register(providerRegistry); err != nil {
@@ -693,6 +699,12 @@ func run() int {
 	if err := capabilityHost.Start(ctx); err != nil {
 		log.Error("capability host startup", "err", err)
 		return 1
+	}
+	// Optional providers that could not start are excluded rather than fatal,
+	// so the only way an operator learns about one is this line.
+	for _, skipped := range providerRegistry.Skipped() {
+		log.Error("tool provider unavailable; archie is running without its tools",
+			"provider", skipped.ID, "err", skipped.Err)
 	}
 
 	if err := d.Startup(ctx); err != nil {

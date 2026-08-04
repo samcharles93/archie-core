@@ -46,6 +46,17 @@ const (
 type registration struct {
 	engine   Engine
 	manifest plugin.Manifest
+	// optional marks a provider the daemon can run without. Atomicity is
+	// right for a provider archied requires; it is wrong for an external
+	// MCP server pulled from a registry at runtime, which is exactly the
+	// category that is allowed to be absent.
+	optional bool
+}
+
+// SkippedProvider is an optional provider that could not be started, and why.
+type SkippedProvider struct {
+	ID  string
+	Err error
 }
 
 type runningProvider struct {
@@ -63,7 +74,11 @@ type Registry struct {
 	index     *tools.Registry
 	providers map[string]registration
 	running   []runningProvider
-	state     registryState
+	// skipped records optional providers excluded from the running set.
+	// Health reports it: a silent degradation is how one broken npm package
+	// went unnoticed until the daemon crash-looped.
+	skipped []SkippedProvider
+	state   registryState
 }
 
 // NewRegistry creates a provider registry backed by the central tool index.
@@ -77,8 +92,24 @@ func NewRegistry(index *tools.Registry) *Registry {
 	}
 }
 
-// Register adds an engine to the family.
+// Register adds an engine the daemon requires. Its failure to start or
+// discover fails the whole family, as before.
 func (r *Registry) Register(engine Engine) error {
+	return r.register(engine, false)
+}
+
+// RegisterOptional adds an engine the daemon can run without.
+//
+// An optional provider that fails to start or discover is logged, excluded
+// from the running set, and does not roll the family back or stop the daemon.
+// Required/optional is a deployment decision, not a property of the code, so
+// it is stated by the registrar rather than declared in the engine's own
+// manifest.
+func (r *Registry) RegisterOptional(engine Engine) error {
+	return r.register(engine, true)
+}
+
+func (r *Registry) register(engine Engine, optional bool) error {
 	if isNilEngine(engine) {
 		return errors.New("tool provider is nil")
 	}
@@ -102,8 +133,15 @@ func (r *Registry) Register(engine Engine) error {
 	if _, exists := r.providers[manifest.ID]; exists {
 		return fmt.Errorf("%w: %q", ErrDuplicateProvider, manifest.ID)
 	}
-	r.providers[manifest.ID] = registration{engine: engine, manifest: manifest}
+	r.providers[manifest.ID] = registration{engine: engine, manifest: manifest, optional: optional}
 	return nil
+}
+
+// Skipped returns the optional providers excluded from the running set.
+func (r *Registry) Skipped() []SkippedProvider {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return append([]SkippedProvider(nil), r.skipped...)
 }
 
 // Get returns a registered engine by manifest ID.
@@ -154,20 +192,66 @@ func (r *Registry) Start(ctx context.Context) error {
 	}
 
 	started := make([]runningProvider, 0, len(order))
+	var skipped []SkippedProvider
+	unavailable := make(map[string]struct{})
+
 	for _, id := range order {
 		reg := providers[id]
+
+		// A provider whose dependency was skipped cannot run either. If it
+		// is required, that is a hard failure: it declared it cannot work
+		// without something now absent, so running it anyway would be worse
+		// than not starting.
+		if missing, blocked := firstUnavailable(reg, unavailable); blocked {
+			cause := fmt.Errorf("tool provider %q depends on unavailable provider %q", id, missing)
+			if !reg.optional {
+				return r.failFamily(ctx, started, cause)
+			}
+			unavailable[id] = struct{}{}
+			skipped = append(skipped, SkippedProvider{ID: id, Err: cause})
+			continue
+		}
+
 		rp, err := r.startProvider(ctx, reg, started)
-		if err != nil {
+		if err == nil {
+			started = append(started, rp)
+			continue
+		}
+		if !reg.optional {
+			// failProvider has already rolled back and set the failed state.
 			return err
 		}
-		started = append(started, rp)
+		// Optional: the provider is out, the family carries on.
+		unavailable[id] = struct{}{}
+		skipped = append(skipped, SkippedProvider{ID: id, Err: err})
 	}
 
 	r.mu.Lock()
 	r.running = started
+	r.skipped = skipped
 	r.state = stateRunning
 	r.mu.Unlock()
 	return nil
+}
+
+// firstUnavailable reports the first dependency of reg that was skipped.
+func firstUnavailable(reg registration, unavailable map[string]struct{}) (string, bool) {
+	for _, dependency := range reg.manifest.Dependencies {
+		if _, missing := unavailable[dependency]; missing {
+			return dependency, true
+		}
+	}
+	return "", false
+}
+
+// failFamily rolls back everything started so far and marks the registry
+// failed, for a failure that is not attributable to one provider's own Start.
+func (r *Registry) failFamily(ctx context.Context, started []runningProvider, cause error) error {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
+	defer cancel()
+	rollbackFailed, rollbackErr := rollback(cleanupCtx, r.index, started)
+	r.setFailed(rollbackFailed)
+	return errors.Join(cause, rollbackErr)
 }
 
 // Health reports aggregate provider health.
@@ -175,6 +259,7 @@ func (r *Registry) Health(ctx context.Context) plugin.Health {
 	r.mu.RLock()
 	state := r.state
 	running := append([]runningProvider(nil), r.running...)
+	skipped := append([]SkippedProvider(nil), r.skipped...)
 	r.mu.RUnlock()
 
 	switch state {
@@ -187,6 +272,19 @@ func (r *Registry) Health(ctx context.Context) plugin.Health {
 
 	aggregate := plugin.Health{Status: plugin.HealthHealthy}
 	var messages []string
+
+	// An excluded optional provider is a degradation, not a clean start.
+	// Reporting healthy here is what let one broken npm package go unnoticed
+	// until the daemon crash-looped.
+	for _, s := range skipped {
+		aggregate.Status = plugin.HealthDegraded
+		message := s.ID + ": unavailable"
+		if s.Err != nil {
+			message = s.ID + ": " + s.Err.Error()
+		}
+		messages = append(messages, message)
+	}
+
 	for _, provider := range running {
 		health := safeHealth(ctx, provider.registration.engine)
 		switch health.Status {
@@ -275,27 +373,51 @@ func (r *Registry) setFailed(running []runningProvider) {
 	r.mu.Unlock()
 }
 
-// startProvider starts, discovers, and indexes one provider. On failure
-// it rolls back previously-started providers and returns a joined error.
+// startProvider starts, discovers, and indexes one provider.
+//
+// A required provider's failure rolls back previously-started providers and
+// returns a joined error. An optional provider's failure stops only itself
+// and returns the cause, leaving the family running -- Start decides which,
+// since only the registrar knows whether the daemon needs this provider.
 func (r *Registry) startProvider(ctx context.Context, reg registration, started []runningProvider) (runningProvider, error) {
 	id := reg.manifest.ID
+
+	fail := func(cause error, startedOK bool) (runningProvider, error) {
+		if reg.optional {
+			return runningProvider{}, r.abandonProvider(ctx, id, reg, cause, startedOK)
+		}
+		return runningProvider{}, r.failProvider(ctx, id, reg, started, cause)
+	}
+
 	if err := safeStart(ctx, reg.engine); err != nil {
-		return runningProvider{}, r.failProvider(ctx, id, reg, started,
-			fmt.Errorf("start tool provider %q: %w", id, err))
+		// Start failed, so there may or may not be anything to stop. Stop is
+		// still attempted: a provider that half-started (spawned a child
+		// process, opened a pipe) and then errored would otherwise leak it
+		// for the daemon's lifetime.
+		return fail(fmt.Errorf("start tool provider %q: %w", id, err), true)
 	}
 	entries, err := safeDiscover(ctx, reg.engine)
 	if err != nil {
-		return runningProvider{}, r.failProvider(ctx, id, reg, started,
-			fmt.Errorf("discover tools from provider %q: %w", id, err))
+		return fail(fmt.Errorf("discover tools from provider %q: %w", id, err), true)
 	}
 	if err := r.index.RegisterBatch(entries); err != nil {
-		return runningProvider{}, r.failProvider(ctx, id, reg, started,
-			fmt.Errorf("index tools from provider %q: %w", id, err))
+		return fail(fmt.Errorf("index tools from provider %q: %w", id, err), true)
 	}
 	return runningProvider{
 		registration: reg,
 		toolNames:    namesOf(entries),
 	}, nil
+}
+
+// abandonProvider stops one failed optional provider and returns why it was
+// excluded. Nothing else is touched: the rest of the family keeps running.
+func (r *Registry) abandonProvider(ctx context.Context, id string, reg registration, cause error, stop bool) error {
+	if !stop {
+		return cause
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
+	defer cancel()
+	return errors.Join(cause, wrapCleanupError(id, safeStop(cleanupCtx, reg.engine)))
 }
 
 // failProvider stops the failing provider, rolls back previously-started
