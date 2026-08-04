@@ -38,7 +38,10 @@ func (t *sessionTracker) resolve(ctx context.Context, platform, botUser, channel
 	t.mu.RLock()
 	id, ok := t.active[key]
 	t.mu.RUnlock()
-	if ok {
+	// An empty cached value is treated as a miss rather than an answer, so a
+	// poisoned entry repairs itself instead of persisting every subsequent
+	// message under session "".
+	if ok && id != "" {
 		return id, nil
 	}
 
@@ -100,7 +103,7 @@ func (t *sessionTracker) resolve(ctx context.Context, platform, botUser, channel
 func (t *sessionTracker) cacheActive(key, sessionID string) string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if existing, ok := t.active[key]; ok {
+	if existing, ok := t.active[key]; ok && existing != "" {
 		return existing
 	}
 	t.active[key] = sessionID
@@ -117,9 +120,35 @@ func sessionKeyFromFields(channelID, threadID string) string {
 // setActive sets the current session for a channel+thread, overriding any
 // previously resolved session (used by /new, /branch and /topic).
 func (t *sessionTracker) setActive(channelID, threadID, sessionID string) {
+	// An empty session ID is never meaningful, and caching one is actively
+	// destructive: resolve treats map presence as authoritative, so a "" here
+	// makes every later message in this chat persist under session "" with no
+	// way to recover. Rejecting it at the setter means no caller can poison
+	// the map, whatever it computes.
+	if sessionID == "" {
+		return
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.active[sessionTrackerKey(channelID, threadID)] = sessionID
+}
+
+// flattenTopic points a channel's flat key at whatever session its thread is
+// currently using, in one critical section.
+//
+// Doing this as setActive(get(...)) was two separate critical sections, so a
+// /resume or /branch landing between them was silently clobbered by the value
+// read before the switch.
+func (t *sessionTracker) flattenTopic(channelID, threadID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	current, ok := t.active[sessionTrackerKey(channelID, threadID)]
+	if !ok || current == "" {
+		// Nothing to carry over. The next message resolves from the store,
+		// which is the correct answer anyway.
+		return
+	}
+	t.active[sessionTrackerKey(channelID, "")] = current
 }
 
 // getActive returns the current session ID for a channel+thread.
@@ -212,7 +241,7 @@ func (r *Router) handleTopic(ctx context.Context, msg Message, rest string) (str
 
 	switch rest {
 	case "off":
-		r.sessionTracker.setActive(msg.ChannelID, "", r.sessionTracker.getActive(msg.ChannelID, msg.ThreadID))
+		r.sessionTracker.flattenTopic(msg.ChannelID, msg.ThreadID)
 		return "Topic routing disabled. Messages will use the General topic.", nil
 	case "help":
 		return topicHelpText(), nil
