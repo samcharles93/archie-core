@@ -273,13 +273,31 @@ func (a *Adapter) TaskByIssue(ctx context.Context, owner, repo string, number in
 }
 
 // Transition moves a task to the given status.
+//
+// from is a guard, not decoration: the write only happens when the task is
+// still in that status, and otherwise store.ErrStaleTransition is returned.
+// This adapter accepted the argument and ignored it, so every compare-and-swap
+// the callers rely on was absent on the backend that actually ships -- eight
+// concurrent dashboard retries requeued one task four times, and a
+// waiting_human task the daemon had since claimed could be yanked back to
+// queued and executed twice.
+//
+// The mutex is what makes the check meaningful. A document store has no
+// conditional update, so read-then-write has to be serialised; the daemon is
+// a single process, which is where the concurrency actually is.
 func (a *Adapter) Transition(ctx context.Context, taskID int64, from, to, detail string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	t, err := a.findTaskByID(ctx, taskID)
 	if err != nil {
 		return err
 	}
 	if t == nil {
 		return fmt.Errorf("nell: task %d not found", taskID)
+	}
+	if from != "" && t.Status != from {
+		return store.ErrStaleTransition
 	}
 	t.Status = to
 	return a.putTaskByID(ctx, t)
@@ -315,13 +333,23 @@ func (a *Adapter) Update(ctx context.Context, t *store.Task) error {
 }
 
 // Requeue puts a task back on the queue with an optional workflow override.
+//
+// fromStatus guards the write, matching Transition and the SQLite store: a
+// task that has moved on since the caller read it is not requeued, and
+// store.ErrStaleTransition says so.
 func (a *Adapter) Requeue(ctx context.Context, taskID int64, fromStatus, workflow string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	t, err := a.findTaskByID(ctx, taskID)
 	if err != nil {
 		return err
 	}
 	if t == nil {
 		return fmt.Errorf("nell: task %d not found", taskID)
+	}
+	if fromStatus != "" && t.Status != fromStatus {
+		return store.ErrStaleTransition
 	}
 	t.Status = store.StatusQueued
 	if workflow != "" {
@@ -362,7 +390,15 @@ func (a *Adapter) RecoverStale(ctx context.Context) (int64, error) {
 }
 
 // IncrementRetryCount bumps the retry_count on a task.
+// IncrementRetryCount bumps retry_count by one.
+//
+// Serialised: as a bare read-modify-write, twenty concurrent calls landed a
+// count of one, so the retry cap could be evaded indefinitely by holding the
+// dashboard's Retry button down.
 func (a *Adapter) IncrementRetryCount(ctx context.Context, taskID int64) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	t, err := a.findTaskByID(ctx, taskID)
 	if err != nil {
 		return err
