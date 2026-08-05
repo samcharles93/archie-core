@@ -77,5 +77,6 @@ require (
 	github.com/samcharles93/NellDB v0.3.0
 	github.com/samcharles93/ai-sdk v0.1.19
 	github.com/traefik/yaegi v0.16.1
+	golang.org/x/term v0.44.0
 	gopkg.in/yaml.v3 v3.0.1
 )
