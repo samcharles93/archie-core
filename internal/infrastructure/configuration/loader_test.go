@@ -210,8 +210,14 @@ func TestExampleConfigLoads(t *testing.T) {
 	if cfg.Dispatch.AckReaction != "eyes" {
 		t.Errorf("Dispatch.AckReaction: got %q", cfg.Dispatch.AckReaction)
 	}
-	if len(cfg.Repos) != 1 || cfg.Repos[0].ResolvedTestGlob() != "*_test.go" {
-		t.Errorf("Repos: got %+v", cfg.Repos)
+	// [[repos]] is commented out in the template on purpose: an active
+	// example here would validate as a normal repo (owner/name are only
+	// checked for non-empty) and archied would silently poll one that
+	// doesn't exist. At least one entry is required before archied will
+	// poll anything, but the template cannot supply it -- see the comment
+	// above [[repos]] in config.example.toml.
+	if len(cfg.Repos) != 0 {
+		t.Errorf("Repos: got %+v, want none: config.example.toml's [[repos]] entry is documentation, not a live default", cfg.Repos)
 	}
 }
 

@@ -128,24 +128,32 @@ gate_max_failures = 5
 # volume_ttl = "72h"               # max age for persistent repo volumes and Git clone caches
 # pull_policy = "missing"          # "missing" or "always"
 
-[[repos]]
-owner = "your-github-username"
-name = "todo"
-base = "main"
-ecosystem = "go" # "go", "python", "node", "rust", or "custom"
-# Override the ecosystem defaults when needed:
-# preflight = [["go", "version"]]
-# test_glob = "*_test.go"
-protect = ["_templ.go"]
-gate = [
-  ["templ", "generate", "./components/"],
-  ["go", "vet", "./..."],
-  ["go", "build", "./..."],
-  ["golangci-lint", "run"],
-  ["go", "test", "./...", "-count=1"],
-]
-# allow_concurrent = true  # let the daemon run multiple tasks for this repo at once instead of
-                           # FIFO-serializing them; only safe when concurrent worktrees won't collide
-                           # (e.g. different base branches or packages per task). Still bounded by
-                           # [containers].max_concurrency globally.
-# persistent_storage = true  # reuse a per-repo Docker volume and Git object cache until volume_ttl
+# At least one [[repos]] entry is required before archied will poll
+# anything -- it is deliberately left commented rather than shipped active:
+# an active example here validates as a normal, working repo (owner/name are
+# only checked for non-empty), so archied would silently start polling a
+# repository that doesn't exist. archied setup does not write this section
+# ([[repos]] is an array of tables, which the text-patching setup uses
+# cannot target) -- add at least one entry by hand.
+#
+# [[repos]]
+# owner = "your-github-username"
+# name = "todo"
+# base = "main"
+# ecosystem = "go" # "go", "python", "node", "rust", or "custom"
+# # Override the ecosystem defaults when needed:
+# # preflight = [["go", "version"]]
+# # test_glob = "*_test.go"
+# protect = ["_templ.go"]
+# gate = [
+#   ["templ", "generate", "./components/"],
+#   ["go", "vet", "./..."],
+#   ["go", "build", "./..."],
+#   ["golangci-lint", "run"],
+#   ["go", "test", "./...", "-count=1"],
+# ]
+# # allow_concurrent = true  # let the daemon run multiple tasks for this repo at once instead of
+#                            # FIFO-serializing them; only safe when concurrent worktrees won't collide
+#                            # (e.g. different base branches or packages per task). Still bounded by
+#                            # [containers].max_concurrency globally.
+# # persistent_storage = true  # reuse a per-repo Docker volume and Git object cache until volume_ttl
