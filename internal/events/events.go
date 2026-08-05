@@ -29,6 +29,13 @@ const (
 	KindHumanRejected = "human_rejected"
 	KindTaskRetried   = "task_retried"
 	KindLog           = "log" // data: level, msg
+
+	// Curator family activity (epic archie-core-yp9). Curator runs ride
+	// the same bus so background agents mutating memory stay observable:
+	// what ran, when, what changed, and why (archie-core-114).
+	KindCuratorRun    = "curator_run"    // data: curator, actions, at
+	KindCuratorAction = "curator_action" // data: curator, type, detail, reason
+	KindCuratorError  = "curator_error"  // data: curator, phase, err
 )
 
 // Event is the single wire type: task lifecycle, stage progress, agent

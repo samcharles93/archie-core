@@ -29,6 +29,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/channels/webhook"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
+	"github.com/samcharles93/archie-core/internal/curator"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -639,6 +640,38 @@ func run() int {
 	}()
 	log.Info("memory manager started", "dir", memDir)
 
+	// ── Curator engine family ────────────────────────────────────────
+	// The registry owns curator registration, lifecycle and shutdown
+	// ordering. The runtime loop (archie-core-89x) and the reference
+	// curators (archie-core-i7i, gs8) are wired by their issues; until
+	// then the registry is empty and Stop is a no-op. The event sink
+	// rides the in-process bus, whose bounded dropping per-subscriber
+	// buffers guarantee curator activity can never backpressure the
+	// daemon or a chat turn.
+	curatorRegistry := curator.NewRegistry(curator.Registrar{
+		Events: curatorEventSink{bus},
+	})
+	// The runtime owns the per-curator loops (archie-core-89x): one
+	// goroutine per curator, wake nudges, per-pass budgets, panic
+	// recovery, bounded shutdown. Stop order at shutdown: runtime first
+	// (cancels in-flight passes, then stops curator lifecycle), then the
+	// registry's own Stop below, which is a no-op by then.
+	curatorRuntime := curator.NewRuntime(curatorRegistry, curator.RuntimeConfig{})
+	defer func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := curatorRuntime.Stop(stopCtx); err != nil {
+			log.Error("curator runtime shutdown", "err", err)
+		}
+	}()
+	defer func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := curatorRegistry.Stop(stopCtx); err != nil {
+			log.Error("curator registry shutdown", "err", err)
+		}
+	}()
+
 	// ── Guardrail engine ───────────────────────────────────────────────
 	gc := tools.DefaultGuardrailConfig()
 	guardrails := tools.NewGuardrailEngine(gc)
@@ -722,6 +755,7 @@ func run() int {
 		Memory:          memManager,
 		Guardrails:      guardrails,
 		ToolRegistry:    toolReg,
+		Curators:        curatorRegistry,
 		Identities:      identityRunners,
 	}
 
@@ -753,6 +787,9 @@ func run() int {
 		log.Error("startup", "err", err)
 		return 1
 	}
+	if err := curatorRuntime.Start(ctx); err != nil {
+		log.Error("curator runtime startup", "err", err)
+	}
 	for _, startGateway := range startGateways {
 		startGateway()
 	}
@@ -767,6 +804,18 @@ func run() int {
 		return 1
 	}
 	return 0
+}
+
+// curatorEventSink adapts the in-process event bus to the curator family's
+// narrow emission contract. Bus publish is non-blocking with bounded,
+// dropping per-subscriber buffers, so curator activity can never
+// backpressure the daemon or a chat turn.
+type curatorEventSink struct {
+	b *events.Bus
+}
+
+func (s curatorEventSink) Emit(kind, detail string, data map[string]any) {
+	s.b.Publish(events.Event{Kind: kind, Detail: detail, Data: data})
 }
 
 type chatTaskWriterAdapter struct {

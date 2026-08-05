@@ -40,3 +40,34 @@ A plugin:
 
 Plugins may be internally cohesive like small services. They do not become
 network services without a concrete security or operational reason.
+
+## Curator surprisal sampling (deferred)
+
+The curator engine family (epic `archie-core-yp9`) selects which memories
+deserve agentic attention via surprisal-based sampling: score memories by how
+surprising they are and spend the sampled reasoner's agentic budget on the
+most surprising items. Wave 1 of the epic ships the `Sampler` strategy seam in
+`internal/curator` with cheap, embedding-free strategies (recency, random,
+all, and a staleness proxy). The embedding-backed strategy is a documented
+extension point and is gated behind an embedding capability Archie does not
+yet have — **any surprisal-style sampling is gated behind adding one**.
+
+Requirements for the deferred work, so it can be picked up without
+re-deriving the design (tracked as `archie-core-yp9.1` embeddings capability,
+then `archie-core-yp9.2` surprisal strategies):
+
+- A `Sampler` implementation behind the same interface as the cheap
+  strategies; selection deterministic given fixed inputs.
+- Algorithm: sample up to a candidate cap; build a k-NN graph over embedding
+  vectors; row-normalize the adjacency with self-loops; power-iterate to the
+  stationary distribution; surprisal = −log(stationary probability of the
+  nearest point); select the highest-surprisal items.
+- Degradation: content without an embedding is skipped; an embedding failure
+  aborts sampling and falls back to free exploration — a sampling failure
+  must never fail or crash a curator pass.
+- Cost bound: the graph build is quadratic in the candidate cap; the cap must
+  be a named constant with a documented bound.
+- The embedding capability itself: a narrow typed client usable by in-process
+  components, config-driven provider/model, credential-missing degrades to
+  "capability unavailable" (daemon still starts), timeouts on network calls,
+  tests via httptest only.

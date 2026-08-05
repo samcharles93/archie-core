@@ -17,6 +17,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
+	"github.com/samcharles93/archie-core/internal/curator"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/eventbus"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -92,6 +93,10 @@ type Daemon struct {
 	// composition root (cmd/archied) to wfeval.Discover; nil disables
 	// discovery.
 	CustomStages func(dir string) ([]workflow.Stage, error)
+	// Curators is the curator engine family registry (epic archie-core-yp9).
+	// The runtime loop (archie-core-89x) and reference curators (i7i, gs8)
+	// are driven through it; nil when the family is not composed.
+	Curators *curator.Registry
 	// Identities holds per-identity runner state for multi-identity mode.
 	// When non-empty, Run() starts one goroutine per identity instead of
 	// using the single-identity Forge/Trees/Cfg.Repos path.
