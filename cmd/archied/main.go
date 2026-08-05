@@ -402,7 +402,7 @@ func run() int {
 		Cfg: cfg, St: st, LLM: llm, ChatModels: chatModels, ToolReg: toolReg,
 		Personas: personas, ChatTasks: chatTasks, ChatController: chatController,
 		DefaultChatIdentity: defaultChatIdentity, SessionStore: chatSessionStore,
-		Log: log,
+		Bus: bus, Log: log,
 	}
 	webRouter.LLM, webRouter.LLMStream = makeChatLLMResponder(ctx, "web", webSetup, chatSessionStore, webRouter)
 	web.Chat = &webui.ChatService{
@@ -427,6 +427,7 @@ func run() int {
 		St: st, LLM: llm, ChatModels: chatModels, ToolReg: toolReg,
 		Personas: personas, ChatTasks: chatTasks, ChatController: chatController,
 		DefaultChatIdentity: defaultChatIdentity, SessionStore: chatSessionStore, Updates: updateService,
+		Bus:             bus,
 		RegisterRestart: func(request func() error) { restartTelegram = request }, Log: log,
 	})
 	if !ok {
@@ -657,6 +658,12 @@ func run() int {
 	// (cancels in-flight passes, then stops curator lifecycle), then the
 	// registry's own Stop below, which is a no-op by then.
 	curatorRuntime := curator.NewRuntime(curatorRegistry, curator.RuntimeConfig{})
+	// Primary chat turns wake input-driven curators (archie-core-035):
+	// the forwarder consumes only primary-input kinds, and curator
+	// output never produces them, so derived work cannot feed its own
+	// trigger. The subscriber buffer is bounded and dropping — a slow
+	// curator can never backpressure the chat publisher.
+	curator.WakeOnPrimaryInput(ctx, bus, curatorRuntime, events.KindTurnCompleted)
 	defer func() {
 		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

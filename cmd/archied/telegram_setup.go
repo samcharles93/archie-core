@@ -15,6 +15,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/channels/telegram"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/nell"
@@ -43,7 +44,11 @@ type telegramSetup struct {
 	Updates             telegram.UpdateService
 	Dangerous           gateway.DangerousCommandAuthority
 	RegisterRestart     func(func() error)
-	Log                 *slog.Logger
+	// Bus carries primary-input events (archie-core-035): a completed
+	// chat turn is published here so input-driven curators can wake. Nil
+	// disables turn events (tests, minimal setups).
+	Bus *events.Bus
+	Log *slog.Logger
 }
 
 // setupTelegramGateway initialises the Telegram chat gateway when a
@@ -248,6 +253,20 @@ func makeChatLLMResponder(ctx context.Context, channel string, s telegramSetup, 
 		}
 		if err := sessionStore.SaveMessage(ctx, sk, gateway.Message{From: s.Cfg.BotUser, Text: text}); err != nil {
 			return "", fmt.Errorf("save outbound chat message: %w", err)
+		}
+		// The turn is complete: both messages are persisted. Announce it
+		// as primary input (archie-core-035). Publish is non-blocking
+		// with bounded dropping subscriber buffers, so this never delays
+		// the chat path; a dropped event only delays a curator run to its
+		// next check-in. Curator output never produces this kind, so
+		// derived work cannot feed its own trigger. Redeliveries return
+		// above and never reach here.
+		if s.Bus != nil {
+			s.Bus.Publish(events.Event{
+				Kind:   events.KindTurnCompleted,
+				Detail: sk,
+				Data:   map[string]any{"session": sk, "channel": channel},
+			})
 		}
 		return text, nil
 	}

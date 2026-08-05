@@ -36,6 +36,12 @@ const (
 	KindCuratorRun    = "curator_run"    // data: curator, actions, at
 	KindCuratorAction = "curator_action" // data: curator, type, detail, reason
 	KindCuratorError  = "curator_error"  // data: curator, phase, err
+
+	// KindTurnCompleted marks one completed primary chat turn
+	// (archie-core-035). Input-driven curators wake on it. Curator output
+	// never produces this kind, so derived work cannot feed its own
+	// trigger. data: session, channel.
+	KindTurnCompleted = "turn_completed"
 )
 
 // Event is the single wire type: task lifecycle, stage progress, agent
