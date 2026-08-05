@@ -237,7 +237,6 @@ func runFindGoFallback(ctx context.Context, cwd, searchPath string, p FindParams
 		matches = append(matches, filepath.ToSlash(outputPath))
 		return nil
 	})
-
 	if err != nil {
 		return Result{Content: fmt.Sprintf("find error: %v", err), IsError: true}, nil
 	}
