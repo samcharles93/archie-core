@@ -110,6 +110,117 @@ Run a single test: `go test ./internal/workflow/... -run TestName -v`.
 Docker/NATS stack: `task docker-build` (builds the agent image locally),
 `task docker-up`, `task docker-down`, `task docker-logs`.
 
+## Organisation (strict)
+
+`docs/architecture/organisation.md` is authoritative and approved. This section
+is the enforcement summary — read that doc before any structural change, and
+change the doc first if the rule itself needs to change.
+
+**Archie is domain-driven, not flat.** `internal/` currently holds ~35 packages
+side by side. That is a migration in progress, not the target. Do **not** infer
+the structure from what is there: adding a sibling package next to
+`internal/gateway/` because that is where similar code lives today is how the
+flat layout keeps regrowing, and undoing it is measured in weeks.
+
+### The layers, and what each owns
+
+- **`internal/domain/<area>/`** — one cohesive job Archie performs. Owns that
+  job's language, state, rules, operations, commands, events, policy
+  implementations, runtime settings, and the *contracts* it needs from the
+  outside world. A domain declares the interface it needs; it never names who
+  implements it.
+- **`internal/infrastructure/<service>/`** — implementations of those
+  contracts: configuration, persistence, forge clients, event-bus transports,
+  anything that talks to something external.
+- **`internal/app/<application>/`** — composition. Constructs domains and
+  infrastructure, translates external configuration into domain settings,
+  connects commands and events, starts services in dependency order, owns
+  health aggregation and shutdown ordering. It is the only layer that knows
+  about both of the two above.
+- **`cmd/<binary>/`** — process-level input only: flags, environment, signals.
+  It MUST NOT contain substantive wiring and MUST NOT act as a service locator.
+
+These stay under `internal/`. That is a compiler-enforced visibility boundary,
+not a naming convention: moving a layer to the repository root would make
+Archie's domain types importable by any module that depends on this one, and
+silently commit us to API stability on exactly the code that most needs to keep
+changing.
+
+### Dependency direction is the invariant
+
+`cmd → app → {domain, infrastructure}`, and `infrastructure → domain` to
+implement its contracts. Nothing points back up: a domain importing
+infrastructure, or infrastructure importing app, is a defect regardless of how
+convenient it is. If a domain needs something an infrastructure package has,
+the domain declares an interface and app wires the implementation in.
+
+### Cross-cutting packages
+
+Some packages are neither domain nor infrastructure because they serve both —
+`logging`, `events`, `eventbus`, `policy`, `taskstate`. They sit as named
+top-level packages under `internal/`, each named for what it provides.
+
+The defining property is checkable, and it is the whole rule: **a cross-cutting
+package may be imported by any layer, and imports none of them.** Zero
+dependencies on domain, infrastructure or app. That is what lets it sit outside
+the dependency direction safely — it is a sink, never a source, so it cannot
+create a cycle or smuggle a dependency inward.
+
+It is also the failure test: the moment such a package imports a domain type it
+has stopped being cross-cutting and become domain code that has been misfiled.
+
+There is deliberately **no `shared/` directory**. "Shared" is a category, not a
+name, and a directory named for a category becomes the place things go when
+nobody can say what they are. `utils`, `helpers`, `common` and `misc` are
+prohibited for the same reason: if a package cannot be named for what it
+provides, it is misplaced, not shared.
+
+Cross-cutting utilities exist precisely to keep the code DRY — a function
+owned by no single package and used by many. Do not wait for a second consumer
+to justify one, and do not copy a helper into two domains to avoid creating
+one. (The "second consumer" rule below is about feature code, not this.)
+
+### Within a package: organise by concern, never by layer or type
+
+- One file per API area, named for it: `api_tasks.go`, `api_logs.go`,
+  `api_skills.go`. A new endpoint group is a new file. Cross-cutting wiring
+  gets its own file too: `server.go` (routes and construction only), `auth.go`,
+  `sse.go`.
+- **A package owns its own format end to end.** `internal/logging` defines the
+  on-disk log format *and* reads it (`reader.go`); `internal/webui/api_logs.go`
+  is transport and parses nothing. If two packages both know a format, one of
+  them is wrong.
+- Empty or ceremonial `entities`, `repositories` or `services` layers are
+  prohibited. Code that changes together lives together.
+- No grab-bag file. If you cannot name a file after the single thing it does,
+  it is doing more than one thing.
+
+### Frontend
+
+- One folder per feature under `ui/src/<feature>/`, holding its own `.js` and
+  `.css`, with the JS importing its own CSS. Changing logs cannot disturb
+  tasks.
+- Shared primitives live in `ui/src/base/` and `ui/src/css/`, one file per
+  primitive (`button.css`, `card.css`, `pill.css`, `table.css`).
+- Extract a feature's code into a shared primitive on the **second** real
+  consumer, never in anticipation of one.
+
+### When to split
+
+Split on concern, not line count. The triggers are: you scroll past unrelated
+code to change one thing, or two people editing different features collide in
+one file. Renaming a file to something vaguer to make new code fit is the
+failure this rule exists to prevent — add a file.
+
+### Why
+
+A domain that declares its own contracts can be tested, reviewed, replaced and
+reasoned about without the rest of the system. Once the direction of dependency
+inverts anywhere, that stops being true everywhere downstream. It also has an
+immediate cost with parallel sessions: `cmd/archied/main.go` had to be split
+hunk-by-hunk three times in one day because two sessions were editing it at
+once — a symptom of wiring living where it should not.
+
 ## Architecture
 
 Full details live in `ARCHITECTURE.md` — do not duplicate it here; skim it
