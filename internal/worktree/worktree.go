@@ -251,6 +251,10 @@ func (m *Manager) Push(ctx context.Context, dir, branch string) error {
 	if err != nil {
 		return fmt.Errorf("open worktree: %w", err)
 	}
+	if m.Token == "" && remoteUsesHTTP(r) {
+		return fmt.Errorf("push %s: no forge credential configured; "+
+			"set [forge].token (or the identity's forge.token) so archied can authenticate", branch)
+	}
 	ref := plumbing.NewBranchReferenceName(branch)
 	spec := gitconfig.RefSpec(fmt.Sprintf("%s:%s", ref, ref))
 	if err := r.PushContext(ctx, &git.PushOptions{
@@ -278,6 +282,25 @@ func (m *Manager) Push(ctx context.Context, dir, branch string) error {
 		return fmt.Errorf("record branch upstream: %w", err)
 	}
 	return nil
+}
+
+// remoteUsesHTTP reports whether the repository's origin remote is
+// configured over HTTP(S), the only transport that requires a token.
+func remoteUsesHTTP(r *git.Repository) bool {
+	cfg, err := r.Config()
+	if err != nil {
+		return false
+	}
+	remote, ok := cfg.Remotes[git.DefaultRemoteName]
+	if !ok {
+		return false
+	}
+	for _, u := range remote.URLs {
+		if strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://") {
+			return true
+		}
+	}
+	return false
 }
 
 // patch computes the diff of the task branch against base, from their

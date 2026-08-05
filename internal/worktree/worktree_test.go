@@ -418,6 +418,46 @@ func TestCloneURL(t *testing.T) {
 	}
 }
 
+// A missing forge credential over an HTTP(S) remote must fail with a
+// message naming the missing token as the cause, not a bare git transport
+// error discovered mid-push. Local (non-HTTP) remotes -- the test double
+// used throughout this file -- are unaffected: they never need a token.
+func TestPushWithoutTokenOverHTTPFailsWithClearMessage(t *testing.T) {
+	ctx := context.Background()
+	host := newLocalRemote(t, "acme", "todo")
+	seeder := newManager(t, host)
+	dir, branch, err := seeder.Prepare(ctx, "acme", "todo", testBase, 1, "t", "", "")
+	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+
+	// Point the already-cloned worktree's origin at an HTTPS remote, as if
+	// it had been cloned against a real forge rather than the local test
+	// double, then push with no token configured.
+	r, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatalf("PlainOpen: %v", err)
+	}
+	if err := r.DeleteRemote(git.DefaultRemoteName); err != nil {
+		t.Fatalf("DeleteRemote: %v", err)
+	}
+	if _, err := r.CreateRemote(&gitconfig.RemoteConfig{
+		Name: git.DefaultRemoteName,
+		URLs: []string{"https://forge.example.invalid/acme/todo.git"},
+	}); err != nil {
+		t.Fatalf("CreateRemote: %v", err)
+	}
+
+	m := &Manager{WorkDir: seeder.WorkDir, BotUser: "archie-bot"}
+	err = m.Push(ctx, dir, branch)
+	if err == nil {
+		t.Fatal("Push() error = nil, want a failure: no token is configured")
+	}
+	if !strings.Contains(err.Error(), "forge") && !strings.Contains(err.Error(), "token") {
+		t.Errorf("Push() error = %q, want it to name the missing forge credential as the cause", err.Error())
+	}
+}
+
 func TestAuthOmittedWithoutToken(t *testing.T) {
 	if opts := (&Manager{BotUser: "archie-bot"}).auth(); opts != nil {
 		t.Errorf("auth() = %v with no token, want nil for an anonymous request", opts)
