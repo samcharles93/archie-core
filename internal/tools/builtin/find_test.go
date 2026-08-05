@@ -136,6 +136,31 @@ func TestFindFallback_NotADirectory(t *testing.T) {
 	}
 }
 
+// A cancelled or timed-out walk must be reported as an error, not silently
+// returned as "no matches found" (or as whatever partial results happened to
+// accumulate before cancellation). The WalkDir callback swallows every
+// per-entry error and returns nil, so the only error that can ever reach the
+// caller is ctx.Err() from the cancellation select -- the old guard compared
+// that against itself and never fired.
+func TestFindFallback_CancelledWalkReportsError(t *testing.T) {
+	tmp := t.TempDir()
+	createTestFile(t, tmp, "foo.go", "package main")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	res, err := runFindGoFallback(ctx, tmp, tmp, FindParams{})
+	if err != nil {
+		t.Fatalf("runFindGoFallback returned an error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("expected an error result for a cancelled walk, got: %q", res.Content)
+	}
+	if res.Content == "no matches found" {
+		t.Fatal("cancelled walk reported as 'no matches found': the search never finished")
+	}
+}
+
 func createTestFile(t *testing.T, base, relPath, content string) {
 	t.Helper()
 	full := filepath.Join(base, relPath)
