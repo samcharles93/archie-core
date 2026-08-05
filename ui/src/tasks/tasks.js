@@ -2,6 +2,7 @@ import "./tasks.css";
 import { api } from "../base/api.js";
 import { ago, el, empty, mount, pill, statusKind } from "../base/dom.js";
 import { statTile } from "../base/statTile.js";
+import { taskRowA11y } from "./task-row.js";
 
 /**
  * Plain-language status labels. One place, so "waiting_human" only ever
@@ -199,16 +200,37 @@ export function tasksPage(params = new URLSearchParams()) {
   }
 
   function taskRow(t) {
+    const expanded = expandedId === t.id;
+    const timelineID = `task-timeline-${t.id}`;
+    const toggle = (event) => {
+      event?.stopPropagation();
+      expandedId = expandedId === t.id ? null : t.id;
+      renderRows();
+      if (expandedId === t.id) loadTimeline(t.id);
+    };
     return el(
       "tr.task-row",
       {
-        onclick: () => {
-          expandedId = expandedId === t.id ? null : t.id;
-          renderRows();
-          if (expandedId === t.id) loadTimeline(t.id);
+        ...taskRowA11y(t, expanded),
+        tabindex: "0",
+        onkeydown: (event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          toggle(event);
         },
+        onclick: toggle,
       },
-      el("td.mono", repoLink(t) ?? `${t.owner}/${t.repo}`),
+      el(
+        "td.mono",
+        el("button.task-expand", {
+          type: "button",
+          "aria-expanded": String(expanded),
+          "aria-controls": timelineID,
+          "aria-label": `${expanded ? "Collapse" : "Expand"} timeline for ${t.title || "untitled task"}`,
+          onclick: toggle,
+        }, expanded ? "−" : "+"),
+        repoLink(t) ?? `${t.owner}/${t.repo}`,
+      ),
       el("td.mono", issueLink(t) ?? `#${t.issue_number}`),
       el("td.strong", t.title || "(untitled)"),
       el("td", pill(statusLabel(t.status), statusKind(t.status))),
@@ -322,6 +344,7 @@ export function tasksPage(params = new URLSearchParams()) {
     const cached = eventCache.get(t.id);
     return el(
       "tr.task-timeline-row",
+      { id: `task-timeline-${t.id}` },
       el(
         "td",
         { colspan: 8 },

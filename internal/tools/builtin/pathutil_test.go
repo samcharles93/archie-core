@@ -9,6 +9,65 @@ import (
 	"testing"
 )
 
+// TestPathConfinementToggle covers the escape hatch for deployments where the
+// agent is a general-purpose operator rather than a coding assistant scoped to
+// one project -- formatting and mounting a new disk, migrating data between
+// filesystems, editing service units. Confining those to one directory makes
+// the agent useless, so the jail has to be switchable.
+//
+// Not parallel: the toggle is process-wide.
+func TestPathConfinementToggle(t *testing.T) {
+	const workspace = "/home/sam"
+	outside := []string{"/etc/fstab", "/mnt/newdisk/data", "/srv"}
+
+	t.Run("confined by default", func(t *testing.T) {
+		for _, target := range outside {
+			if isConfined(workspace, target) {
+				t.Errorf("isConfined(%q, %q) = true, want false by default", workspace, target)
+			}
+			if isReadConfined(workspace, target) {
+				t.Errorf("isReadConfined(%q, %q) = true, want false by default", workspace, target)
+			}
+		}
+	})
+
+	t.Run("unconfined when disabled", func(t *testing.T) {
+		SetPathConfinement(false)
+		t.Cleanup(func() { SetPathConfinement(true) })
+
+		for _, target := range outside {
+			if !isConfined(workspace, target) {
+				t.Errorf("isConfined(%q, %q) = false with confinement disabled", workspace, target)
+			}
+			if !isReadConfined(workspace, target) {
+				t.Errorf("isReadConfined(%q, %q) = false with confinement disabled", workspace, target)
+			}
+		}
+	})
+
+	t.Run("restored after re-enabling", func(t *testing.T) {
+		if isConfined(workspace, "/etc/fstab") {
+			t.Error("confinement did not come back after being re-enabled")
+		}
+	})
+}
+
+// TestResolvePathUnaffectedByConfinement pins the property that makes the
+// toggle safe to flip: relative paths stay rooted at the workspace either way,
+// so turning the jail off widens what an ABSOLUTE path can reach without
+// silently changing where a relative one lands.
+func TestResolvePathUnaffectedByConfinement(t *testing.T) {
+	SetPathConfinement(false)
+	t.Cleanup(func() { SetPathConfinement(true) })
+
+	if got := resolvePath("/home/sam", "notes.md"); got != "/home/sam/notes.md" {
+		t.Errorf("resolvePath relative = %q, want it still rooted at the workspace", got)
+	}
+	if got := resolvePath("/home/sam", "/etc/fstab"); got != "/etc/fstab" {
+		t.Errorf("resolvePath absolute = %q, want it untouched", got)
+	}
+}
+
 // withGoModCache points the module-cache lookup at a temp dir for the duration
 // of a test, so these tests never depend on the host's real GOMODCACHE.
 func withGoModCache(t *testing.T, dir string) {

@@ -329,6 +329,11 @@ func firstParallelSafeIdx(groups []gatedGroup) (int, bool) {
 
 // dispatchOne runs a single call with budget, guardrail, and per-tool
 // limit checks.
+//
+// Callers that do not own the batch cannot use this: it caps
+// DispatchResult.Preview, whereas a caller handing the result straight to a
+// model has to cap the payload it actually sends. [CapPayload] is the shared
+// rule between the two; this sequence is specific to batch dispatch.
 func dispatchOne(
 	ctx context.Context,
 	call ToolCall,
@@ -353,7 +358,7 @@ func dispatchOne(
 	result := invokeTool(ctx, call)
 
 	// Enforce per-tool result size limit (17.4).
-	enforcePerToolLimit(&result, call.Entry, budget)
+	capped := enforcePerToolLimit(&result, call.Entry, budget)
 
 	// Track guardrail.
 	if guardrail != nil {
@@ -366,63 +371,55 @@ func dispatchOne(
 
 	// Consume budget.
 	if budget != nil && !result.IsError() {
-		consumeBudgetForResult(&result, call.Entry, budget)
+		consumeBudgetForResult(&result, call.Entry, budget, capped)
 	}
 
 	return result
 }
 
-// enforcePerToolLimit checks whether the result exceeds the tool's
-// MaxResultSizeChars and spills or truncates accordingly. When a budget
-// is available, the full output is spilled to disk; otherwise it is
-// truncated inline. If spill-to-disk fails, falls back to inline
-// truncation.
-func enforcePerToolLimit(result *DispatchResult, entry ToolEntry, budget *TurnBudget) {
+// enforcePerToolLimit replaces the preview when the result exceeds the tool's
+// MaxResultSizeChars, spilling to disk when the budget offers a directory and
+// truncating inline otherwise. [CapPayload] owns that rule; this only decides
+// whether it applies.
+//
+// Returns whether the result was capped, so the budget accounting below does
+// not spill the same output a second time.
+func enforcePerToolLimit(result *DispatchResult, entry ToolEntry, budget *TurnBudget) bool {
 	if result.IsError() || entry.MaxResultSizeChars <= 0 || result.Output == nil {
-		return
+		return false
 	}
 
 	fullOutput := fmt.Sprint(result.Output)
-	if len(fullOutput) <= entry.MaxResultSizeChars {
-		return
+	capped := CapPayload(entry.Name, fullOutput, entry.MaxResultSizeChars, budget)
+	if capped == fullOutput {
+		return false
 	}
-
-	// Result exceeds per-tool limit.
-	if budget != nil {
-		ref := budget.Spill(entry.Name, []byte(fullOutput))
-		if ref.Path != "" {
-			result.Preview = fmt.Sprintf("[spilled to %s, %d chars]", ref.Path, ref.SizeChars)
-			return
-		}
-		// Spill failed  --  fall through to inline truncation.
-	}
-
-	// Truncate inline when no spill directory or spill failed.
-	if entry.MaxResultSizeChars > 0 && len(fullOutput) > entry.MaxResultSizeChars {
-		result.Preview = fullOutput[:entry.MaxResultSizeChars] +
-			"... [truncated (per-tool limit)]"
-	}
+	result.Preview = capped
+	return true
 }
 
 // consumeBudgetForResult accounts for the result against the turn budget.
 // When the budget is exceeded during consumption, the full output is
 // spilled to disk and the preview is replaced with a spill reference.
-func consumeBudgetForResult(result *DispatchResult, entry ToolEntry, budget *TurnBudget) {
+func consumeBudgetForResult(result *DispatchResult, entry ToolEntry, budget *TurnBudget, alreadyCapped bool) {
 	if budget == nil || result.IsError() {
 		return
 	}
 
-	// Only consume budget for fresh results (not already spilled by
-	// per-tool limit enforcement).
-	if !budget.Consume(len(result.Preview)) {
-		// Budget exceeded on this result  --  spill the full output.
-		if result.Output != nil {
-			fullOutput := fmt.Sprint(result.Output)
-			ref := budget.Spill(entry.Name, []byte(fullOutput))
-			if ref.Path != "" {
-				result.Preview = fmt.Sprintf("[spilled to %s, %d chars]", ref.Path, ref.SizeChars)
-			}
-		}
+	if budget.Consume(len(result.Preview)) {
+		return
+	}
+
+	// Budget exhausted on this result. Spill the full output so it is
+	// displaced rather than lost -- unless the per-tool limit already did,
+	// in which case repeating it would write a second identical file and
+	// orphan the first, whose path the preview already names.
+	if alreadyCapped || result.Output == nil {
+		return
+	}
+	fullOutput := fmt.Sprint(result.Output)
+	if ref := budget.WriteSpill(entry.Name, []byte(fullOutput)); ref.Path != "" {
+		result.Preview = fmt.Sprintf("[spilled to %s, %d chars]", ref.Path, ref.SizeChars)
 	}
 }
 

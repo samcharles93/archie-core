@@ -256,6 +256,20 @@ func TestChatUpdateEndpoints(t *testing.T) {
 	}
 }
 
+func TestChatUpdateEndpointRejectsTypedNilService(t *testing.T) {
+	var updates *releaseupdate.Service
+	sessions := gateway.NewSessionStoreMemory("test")
+	t.Cleanup(func() { _ = sessions.Close() })
+	router := gateway.NewRouter(chatStatusStub{}, nil, "web")
+	server := &Server{Chat: &ChatService{Router: router, Sessions: sessions, Updates: updates}}
+
+	res := httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/chat/update", nil))
+	if res.Code != http.StatusNotImplemented {
+		t.Fatalf("typed-nil update service status = %d, body = %s", res.Code, res.Body.String())
+	}
+}
+
 func TestChatDangerousApprovalEndpoints(t *testing.T) {
 	sessions := gateway.NewSessionStoreMemory("test")
 	t.Cleanup(func() { _ = sessions.Close() })

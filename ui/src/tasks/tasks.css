@@ -36,6 +36,26 @@
   cursor: pointer;
 }
 
+.task-expand {
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-right: var(--sp-2);
+  padding: 0;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.task-expand:hover,
+.task-expand:focus-visible {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+
 .activity-row {
   cursor: pointer;
 }

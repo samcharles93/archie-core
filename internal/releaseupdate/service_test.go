@@ -61,6 +61,23 @@ func TestServiceInstallForwardsProgressAndFailure(t *testing.T) {
 	}
 }
 
+func TestNilServiceReturnsConfigurationErrors(t *testing.T) {
+	var service *Service
+
+	if _, err := service.Check(context.Background(), 0); err == nil {
+		t.Fatal("nil service check returned nil error")
+	}
+	if err := service.Defer(context.Background(), 0, Snapshot{}); err == nil {
+		t.Fatal("nil service defer returned nil error")
+	}
+	if err := service.Install(context.Background(), nil); err == nil {
+		t.Fatal("nil service install returned nil error")
+	}
+	if service.CanInstall() {
+		t.Fatal("nil service reports that installation is available")
+	}
+}
+
 func TestFormatSnapshotReportsAvailableAndUnchangedComponents(t *testing.T) {
 	got := FormatSnapshot(Snapshot{Components: []Component{
 		{Label: "THE GATEWAY", Installed: "v1", Available: "v2", Changelog: "- safer updates"},

@@ -4,6 +4,13 @@
 // Mutations from upstream:
 //   - package renamed tools -> builtin (archie-core already has an
 //     internal/tools package holding the registry these are registered into).
+//   - path confinement is switchable (SetPathConfinement). tau's agent is a
+//     coding assistant scoped to one project, where a workspace jail is always
+//     right. archie's chat agent is also used as a general-purpose operator --
+//     partitioning a disk and mounting it, migrating data between filesystems,
+//     editing unit files -- and a jail makes that impossible. The shell tool
+//     was never confined anyway, so the jail only ever shaped which tool got
+//     used, not what the agent could reach.
 //
 // Refresh by diffing against that path at a newer tau commit. Do not
 // edit without recording the change above.
@@ -14,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 const (
@@ -70,9 +78,41 @@ func isReadConfined(base, target string) bool {
 	return cache != "" && isConfined(cache, target)
 }
 
+// pathConfinement gates the workspace jail on the file tools. It defaults to
+// on; see SetPathConfinement.
+//
+// Process-wide rather than per-tool because it is a deployment posture, not a
+// property of one tool: a daemon either trusts its agent with the filesystem or
+// it does not, and there is one builtin tool set per process.
+var pathConfinement atomic.Bool
+
+func init() { pathConfinement.Store(true) }
+
+// SetPathConfinement turns the workspace jail on the read, write, edit, find
+// and grep tools on or off. It is set once at startup from configuration.
+//
+// Disabling it makes those tools reach any absolute path. That is the point:
+// an agent asked to partition a new disk, mount it and migrate data onto it is
+// working across the filesystem by definition, and a jail turns a capable
+// operator into a useless one.
+//
+// It widens which TOOL can do the work, not what the agent can reach. The shell
+// tool has never been confined -- it can cd anywhere, and only command.Hardline
+// screens it -- so a jailed deployment simply pushed the agent into doing
+// everything through shell, losing the truncation, line numbering,
+// read-before-write tracking and structured errors the dedicated tools provide.
+//
+// Relative paths still resolve against the workspace either way (see
+// resolvePath), so turning this off does not silently move where an existing
+// relative path lands.
+func SetPathConfinement(enabled bool) { pathConfinement.Store(enabled) }
+
 // isConfined checks whether target is within (or equal to) the base directory.
 // Returns false if target escapes via ../ or is an unrelated absolute path.
 func isConfined(base, target string) bool {
+	if !pathConfinement.Load() {
+		return true // confinement disabled by configuration
+	}
 	if base == "" {
 		return true // no confinement if cwd is unset
 	}

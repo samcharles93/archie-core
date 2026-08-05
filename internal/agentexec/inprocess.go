@@ -32,6 +32,10 @@ type InProcessRunner struct {
 	log     *slog.Logger
 	run     loopFunc
 	tools   *tools.Registry
+
+	// Limits bounds the size of tool results fed back into the stage. The
+	// zero value applies no limits.
+	Limits ToolLimits
 }
 
 func NewInProcessRunner(
@@ -46,6 +50,18 @@ func NewInProcessRunner(
 	return runner
 }
 
+// workspaceToolset names the central-registry toolset a task agent must not
+// inherit. Those tools are rooted at the chat workspace, not the task's
+// worktree, and they reach the filesystem through their own handlers -- so
+// agentloop's ReadOnly and ProtectPaths, which gate only the tools agentloop
+// registers itself, do not apply to them. A feasibility stage running
+// ReadOnly could otherwise write, and a TDD fix stage could edit the very
+// tests it is being graded against.
+//
+// This is an invariant of task execution rather than a deployment choice, so
+// it is not configurable.
+const workspaceToolset = "workspace"
+
 func (r *InProcessRunner) Run(ctx context.Context, workspace string, req Request) (Result, error) {
 	if err := req.Validate(); err != nil {
 		return Result{}, err
@@ -59,7 +75,7 @@ func (r *InProcessRunner) Run(ctx context.Context, workspace string, req Request
 
 	notes := &memoryNotes{initial: req.Notes}
 	captures := make(map[string][]json.RawMessage)
-	centralTools, err := BuildToolSet(r.tools)
+	centralTools, err := BuildToolSet(r.tools, r.Limits.Options(workspaceToolset))
 	if err != nil {
 		return Result{}, fmt.Errorf("build central tool set: %w", err)
 	}

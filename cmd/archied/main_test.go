@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -17,6 +16,7 @@ import (
 	natsio "github.com/nats-io/nats.go"
 	"github.com/samcharles93/ai-sdk/chat"
 
+	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
@@ -39,7 +39,7 @@ import (
 func TestResolveForgeDegradesInsteadOfFailing(t *testing.T) {
 	t.Parallel()
 
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	log := slog.New(slog.DiscardHandler)
 
 	tests := []struct {
 		name string
@@ -90,7 +90,7 @@ func TestResolveForgeDegradesInsteadOfFailing(t *testing.T) {
 // Not parallel: t.Setenv mutates process state and panics under t.Parallel.
 func TestResolveForgeBuildsClientWhenTokenResolves(t *testing.T) {
 	t.Setenv("ARCHIE_TEST_FORGE_TOKEN", "ghp_exampletoken")
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	log := slog.New(slog.DiscardHandler)
 
 	client, token := resolveForge(config.Forge{
 		Type:  "github",
@@ -200,7 +200,7 @@ func TestChatGenerateOptionsIncludesToolsAndMultipleSteps(t *testing.T) {
 	}
 	messages := []chat.Message{{Role: chat.RoleUser, Content: "remember this"}}
 
-	options, err := chatGenerateOptions(messages, registry, 0)
+	options, err := chatGenerateOptions(messages, registry, 0, agentexec.ToolLimits{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestChatGenerateOptionsReportsInvalidToolSchemas(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := chatGenerateOptions(nil, registry, 0); err == nil {
+	if _, err := chatGenerateOptions(nil, registry, 0, agentexec.ToolLimits{}, nil); err == nil {
 		t.Fatal("chatGenerateOptions() error = nil, want invalid tool schema error")
 	}
 }
@@ -235,7 +235,7 @@ func TestChatGenerateOptionsReportsInvalidToolSchemas(t *testing.T) {
 // deployment-controlled. A cap that cannot be raised without a rebuild is
 // the situation this replaced.
 func TestChatGenerateOptionsHonoursConfiguredMaxSteps(t *testing.T) {
-	options, err := chatGenerateOptions(nil, tools.NewRegistry(), 250)
+	options, err := chatGenerateOptions(nil, tools.NewRegistry(), 250, agentexec.ToolLimits{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

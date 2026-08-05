@@ -12,6 +12,11 @@ import (
 	"time"
 )
 
+// maxTruncationNotice bounds the explanatory notice CapPayload appends when it
+// truncates inline. Tests assert the capped payload plus this allowance, so a
+// notice that grew without bound would fail rather than quietly eat context.
+const maxTruncationNotice = 128
+
 func TestExecutionClassString(t *testing.T) {
 	tests := []struct {
 		c    ExecutionClass
@@ -612,10 +617,12 @@ func TestDispatchPerToolLimitSpillFailureFallback(t *testing.T) {
 	}
 
 	// Should be truncated to MaxResultSizeChars even though spill failed.
-	if !strings.Contains(results[0].Preview, "truncated (per-tool limit)") {
+	if !strings.Contains(results[0].Preview, "truncated") {
 		t.Errorf("expected inline truncation fallback, got: %s", results[0].Preview)
 	}
-	maxPreview := len("[... truncated (per-tool limit)]") + e.MaxResultSizeChars
+	// The payload is cut to the limit; the notice explaining the cut is the
+	// only thing allowed past it.
+	maxPreview := e.MaxResultSizeChars + maxTruncationNotice
 	if len(results[0].Preview) > maxPreview {
 		t.Errorf("preview too long (%d chars), expected at most %d", len(results[0].Preview), maxPreview)
 	}
@@ -667,7 +674,7 @@ func TestDispatchPerToolLimitNoBudgetTruncates(t *testing.T) {
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
-	if !strings.Contains(results[0].Preview, "truncated (per-tool limit)") {
+	if !strings.Contains(results[0].Preview, "truncated") {
 		t.Errorf("expected truncation with nil budget, got: %s", results[0].Preview)
 	}
 }

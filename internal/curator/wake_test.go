@@ -47,7 +47,7 @@ func TestWakeOnPrimaryInputForwardsOnlyPrimaryKinds(t *testing.T) {
 
 	// Derived curator output and unrelated events must not wake the
 	// curator: no check, no pass.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		bus.Publish(events.Event{Kind: events.KindCuratorRun})
 		bus.Publish(events.Event{Kind: events.KindCuratorAction})
 		bus.Publish(events.Event{Kind: events.KindCuratorError})

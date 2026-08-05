@@ -8,6 +8,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/secret"
+	"github.com/samcharles93/archie-core/internal/tools"
 )
 
 // Defaults applied to absent input. Named so a reader can find the value
@@ -25,6 +26,19 @@ const (
 	defaultContainerUptime = 60 * time.Minute
 	defaultVolumeTTL       = 72 * time.Hour
 	defaultPullPolicy      = "missing"
+
+	// defaultMaxResultChars bounds one tool result. It matches the 50KB the
+	// lifted workspace tools already truncate themselves at
+	// (tools/builtin.DefaultMaxBytes), so those stay the binding limit and
+	// only tools with no truncation of their own -- skill bodies, MCP
+	// results -- see a change.
+	defaultMaxResultChars = 50_000
+
+	defaultWebFetchTimeout = 30 * time.Second
+	// defaultWebFetchMaxBytes bounds a fetched body before the result limit
+	// above trims it further. Generous enough for a documentation page,
+	// small enough that a large download cannot occupy the daemon.
+	defaultWebFetchMaxBytes = 2_000_000
 )
 
 // applyDefaults fills in every absent value. It never reports an error and
@@ -43,6 +57,43 @@ func (l *Loader) applyDefaults(cfg *config.Config) {
 	applyDispatchDefaults(cfg)
 	applyIdentityDefaults(cfg)
 	applyContainerDefaults(cfg)
+	applyToolPolicyDefaults(cfg)
+}
+
+// applyToolPolicyDefaults fills the tool result limits.
+//
+// Zero means "unset" and takes the default; a negative value is the operator
+// saying "no limit" and is left alone. See [config.ToolPolicy].
+func applyToolPolicyDefaults(cfg *config.Config) {
+	if cfg.Tools.Policy.MaxResultChars == 0 {
+		cfg.Tools.Policy.MaxResultChars = defaultMaxResultChars
+	}
+	if cfg.Tools.Policy.TurnBudgetChars == 0 {
+		cfg.Tools.Policy.TurnBudgetChars = tools.DefaultTurnBudgetChars
+	}
+	// SpillDir is deliberately NOT defaulted.
+	//
+	// Spilling hands the model a file path to read back, and the read tool is
+	// confined to chat.workspace. A default under work_dir is outside that for
+	// any workspace narrower than the whole home directory, and always outside
+	// a task agent's worktree -- so the model would be given a path it cannot
+	// open and the result would be lost rather than displaced. Truncating
+	// inline at least shows the first part of the result and says so.
+	//
+	// An operator who wants spilling points this at a directory inside the
+	// workspace; startup warns when it is not (see cmd/archied).
+	applyWebFetchDefaults(cfg)
+}
+
+// applyWebFetchDefaults fills the fetch tool's settings. Enabled is left alone
+// when the operator set it either way; see [config.WebFetchConfig].
+func applyWebFetchDefaults(cfg *config.Config) {
+	if cfg.Tools.WebFetch.Timeout == 0 {
+		cfg.Tools.WebFetch.Timeout = config.Duration(defaultWebFetchTimeout)
+	}
+	if cfg.Tools.WebFetch.MaxBytes == 0 {
+		cfg.Tools.WebFetch.MaxBytes = defaultWebFetchMaxBytes
+	}
 }
 
 // DefaultWorkDir returns the work directory an unset work_dir would have been

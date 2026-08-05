@@ -151,6 +151,143 @@ func TestLoadAgentDefaultsAndOverrides(t *testing.T) {
 	}
 }
 
+// TestLoadToolPolicyDefaultsAndOverrides covers the result-size and turn-budget
+// limits end to end from TOML. Before these fields carried toml tags they could
+// not be set from the daemon's config at all, so a test that only exercised
+// defaulting would have passed against a setting no operator could reach.
+//
+// A negative value means "disabled" rather than zero: defaulting cannot tell an
+// explicit 0 from an absent key, so zero has to stay available as "unset".
+func TestLoadToolPolicyDefaultsAndOverrides(t *testing.T) {
+	tests := []struct {
+		name           string
+		policy         string
+		wantMaxResult  int
+		wantTurnBudget int
+		wantSpillDir   string
+	}{
+		{
+			// SpillDir has no default on purpose: a path outside
+			// chat.workspace is one the read tool refuses, so the model would
+			// be handed a reference it cannot open. Absent means truncate
+			// inline.
+			name:           "defaults",
+			wantMaxResult:  50_000,
+			wantTurnBudget: 200_000,
+			wantSpillDir:   "",
+		},
+		{
+			name:           "explicit values",
+			policy:         "[tools.tool_policy]\nmax_result_chars = 1234\nturn_budget_chars = 5678\nspill_dir = \"/var/spool/archie\"\n",
+			wantMaxResult:  1234,
+			wantTurnBudget: 5678,
+			wantSpillDir:   "/var/spool/archie",
+		},
+		{
+			name:           "negative disables both caps",
+			policy:         "[tools.tool_policy]\nmax_result_chars = -1\nturn_budget_chars = -1\n",
+			wantMaxResult:  -1,
+			wantTurnBudget: -1,
+			wantSpillDir:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			contents := "bot_user = \"widget\"\n" + tt.policy +
+				"\n[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
+			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			cfg, err := loadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			policy := cfg.Tools.Policy
+			if policy.MaxResultChars != tt.wantMaxResult {
+				t.Errorf("MaxResultChars = %d, want %d", policy.MaxResultChars, tt.wantMaxResult)
+			}
+			if policy.TurnBudgetChars != tt.wantTurnBudget {
+				t.Errorf("TurnBudgetChars = %d, want %d", policy.TurnBudgetChars, tt.wantTurnBudget)
+			}
+			if policy.SpillDir != tt.wantSpillDir {
+				t.Errorf("SpillDir = %q, want %q", policy.SpillDir, tt.wantSpillDir)
+			}
+		})
+	}
+}
+
+// TestLoadWebFetchDefaultsAndOverrides covers the fetch tool's settings.
+//
+// The enabled case matters most: it is a pointer precisely so an operator can
+// turn the tool off, which a plain bool could not express because defaulting
+// cannot tell `enabled = false` from an absent key.
+func TestLoadWebFetchDefaultsAndOverrides(t *testing.T) {
+	tests := []struct {
+		name         string
+		webFetch     string
+		wantEnabled  bool
+		wantTimeout  time.Duration
+		wantMaxBytes int64
+		wantPrivate  bool
+	}{
+		{
+			name:         "defaults",
+			wantEnabled:  true,
+			wantTimeout:  30 * time.Second,
+			wantMaxBytes: 2_000_000,
+		},
+		{
+			name:         "explicitly disabled",
+			webFetch:     "[tools.web_fetch]\nenabled = false\n",
+			wantEnabled:  false,
+			wantTimeout:  30 * time.Second,
+			wantMaxBytes: 2_000_000,
+		},
+		{
+			name:         "overrides",
+			webFetch:     "[tools.web_fetch]\ntimeout = \"5s\"\nmax_bytes = 4096\nallow_private_networks = true\n",
+			wantEnabled:  true,
+			wantTimeout:  5 * time.Second,
+			wantMaxBytes: 4096,
+			wantPrivate:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			contents := "bot_user = \"widget\"\n" + tt.webFetch +
+				"\n[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
+			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			cfg, err := loadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			wf := cfg.Tools.WebFetch
+			if got := wf.IsEnabled(); got != tt.wantEnabled {
+				t.Errorf("IsEnabled() = %v, want %v", got, tt.wantEnabled)
+			}
+			if got := wf.Timeout.Std(); got != tt.wantTimeout {
+				t.Errorf("Timeout = %s, want %s", got, tt.wantTimeout)
+			}
+			if wf.MaxBytes != tt.wantMaxBytes {
+				t.Errorf("MaxBytes = %d, want %d", wf.MaxBytes, tt.wantMaxBytes)
+			}
+			if wf.AllowPrivateNetworks != tt.wantPrivate {
+				t.Errorf("AllowPrivateNetworks = %v, want %v", wf.AllowPrivateNetworks, tt.wantPrivate)
+			}
+		})
+	}
+}
+
 func TestLoadContainerVolumeTTL(t *testing.T) {
 	tests := []struct {
 		name    string

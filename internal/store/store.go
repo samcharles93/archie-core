@@ -284,7 +284,7 @@ func (s *Store) Transition(ctx context.Context, taskID int64, from, to, detail s
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	res, err := tx.ExecContext(ctx,
 		`UPDATE tasks SET status=?, updated_at=datetime('now') WHERE id=? AND status=?`, to, taskID, from)
@@ -366,7 +366,7 @@ func (s *Store) Requeue(ctx context.Context, taskID int64, fromStatus, workflow 
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	res, err := tx.ExecContext(ctx, `
 		UPDATE tasks SET status='queued',

@@ -21,9 +21,8 @@ authoritative**. It is a design to implement against — not a draft to extend.
 
 - Do **not** produce new architecture documents, migration plans, ownership
   ledgers, field-level inventories, current-state traces, decision records, or
-  review campaigns. If a design question isn't answered in
-  `docs/architecture/`, ask the maintainer in one sentence — don't write a
-  document to resolve it.
+  review campaigns. If a design question isn't answered in `docs/architecture/`,
+  ask the maintainer in one sentence — don't write a document to resolve it.
 - Do **not** open planning, review, or refactor issues. Open issues only for
   concrete bugs and user-facing features.
 - This is a **solo project**. There is no review board, no handoff to a
@@ -34,9 +33,9 @@ authoritative**. It is a design to implement against — not a draft to extend.
 
 ## Deployment model
 
-**archied runs on the host under systemd.** Its chat tools operate on host
-files (shell, read, write, edit, find, grep), which a container cannot reach.
-NATS and per-task archie-agent containers stay in Docker.
+**archied runs on the host under systemd.** Its chat tools operate on host files
+(shell, read, write, edit, find, grep), which a container cannot reach. NATS and
+per-task archie-agent containers stay in Docker.
 
 ```bash
 # On the deployment host (carina):
@@ -48,23 +47,23 @@ docker compose pull agent                # refresh agent image after CI pushes
 
 **The daemon hands agent containers its own `nats.url` verbatim**
 (`internal/daemon/daemon.go:1177`), so that URL must reachable from both the
-host *and* from inside containers. Use the compose network's gateway address
-(`172.19.0.1:4222`), not the service name or localhost. The subnet is pinned
-in `docker-compose.yml` so this address cannot drift.
+host _and_ from inside containers. Use the compose network's gateway address
+(`172.19.0.1:4222`), not the service name or localhost. The subnet is pinned in
+`docker-compose.yml` so this address cannot drift.
 
 **`containers.pull_policy` can only be `"missing"`** (the default) or
 `"always"`. `"always"` against the private Gitea registry answers 401 because
 the daemon sends no credentials to the Docker API. Refresh the agent image by
 hand: `docker compose pull agent`.
 
-**`docker-compose.yml`** carries only NATS and the agent build stanza. The
-agent has a build profile so `up -d` skips it — without the profile, compose
-creates a container that exits 0 immediately and reports "Started", which
-reads as a crash loop. `docker compose build agent` and `docker compose pull
-agent` still work by name without activating the profile.
+**`docker-compose.yml`** carries only NATS and the agent build stanza. The agent
+has a build profile so `up -d` skips it — without the profile, compose creates a
+container that exits 0 immediately and reports "Started", which reads as a crash
+loop. `docker compose build agent` and `docker compose pull agent` still work by
+name without activating the profile.
 
-**Config lives at `~/.config/archie/config.toml`**, outside the repo. Nothing
-in the repo working tree is load-bearing at runtime. The reference template is
+**Config lives at `~/.config/archie/config.toml`**, outside the repo. Nothing in
+the repo working tree is load-bearing at runtime. The reference template is
 `deployments/docker-nats-stack.toml`.
 
 ## Release process
@@ -82,14 +81,14 @@ task release VERSION=1.3.0             # commit + tag
 git push origin main --follow-tags     # CI stamps images with real versions
 ```
 
-Pass `GATEWAY=<ver>`/`RUNTIME=<ver>` to version them independently, or `skip`
-to hold one back. Linting ensures the changelogs can be parsed deterministically
-by `tools/release.sh`.
+Pass `GATEWAY=<ver>`/`RUNTIME=<ver>` to version them independently, or `skip` to
+hold one back. Linting ensures the changelogs can be parsed deterministically by
+`tools/release.sh`.
 
-CI (`deploy.yml`) now runs a gate job *before* building images: `task check`,
-then verifies that any release tag at HEAD has a matching `[version]` section
-in the corresponding changelog. A tag without a changelog entry is a hard
-failure. No tags at HEAD prints a warning (images get stamped `dev`).
+CI (`deploy.yml`) now runs a gate job _before_ building images: `task check`,
+then verifies that any release tag at HEAD has a matching `[version]` section in
+the corresponding changelog. A tag without a changelog entry is a hard failure.
+No tags at HEAD prints a warning (images get stamped `dev`).
 
 ## Build & Test
 
@@ -126,17 +125,17 @@ flat layout keeps regrowing, and undoing it is measured in weeks.
 
 - **`internal/domain/<area>/`** — one cohesive job Archie performs. Owns that
   job's language, state, rules, operations, commands, events, policy
-  implementations, runtime settings, and the *contracts* it needs from the
+  implementations, runtime settings, and the _contracts_ it needs from the
   outside world. A domain declares the interface it needs; it never names who
   implements it.
-- **`internal/infrastructure/<service>/`** — implementations of those
-  contracts: configuration, persistence, forge clients, event-bus transports,
-  anything that talks to something external.
+- **`internal/infrastructure/<service>/`** — implementations of those contracts:
+  configuration, persistence, forge clients, event-bus transports, anything that
+  talks to something external.
 - **`internal/app/<application>/`** — composition. Constructs domains and
   infrastructure, translates external configuration into domain settings,
-  connects commands and events, starts services in dependency order, owns
-  health aggregation and shutdown ordering. It is the only layer that knows
-  about both of the two above.
+  connects commands and events, starts services in dependency order, owns health
+  aggregation and shutdown ordering. It is the only layer that knows about both
+  of the two above.
 - **`cmd/<binary>/`** — process-level input only: flags, environment, signals.
   It MUST NOT contain substantive wiring and MUST NOT act as a service locator.
 
@@ -151,8 +150,8 @@ changing.
 `cmd → app → {domain, infrastructure}`, and `infrastructure → domain` to
 implement its contracts. Nothing points back up: a domain importing
 infrastructure, or infrastructure importing app, is a defect regardless of how
-convenient it is. If a domain needs something an infrastructure package has,
-the domain declares an interface and app wires the implementation in.
+convenient it is. If a domain needs something an infrastructure package has, the
+domain declares an interface and app wires the implementation in.
 
 ### Cross-cutting packages
 
@@ -175,31 +174,30 @@ nobody can say what they are. `utils`, `helpers`, `common` and `misc` are
 prohibited for the same reason: if a package cannot be named for what it
 provides, it is misplaced, not shared.
 
-Cross-cutting utilities exist precisely to keep the code DRY — a function
-owned by no single package and used by many. Do not wait for a second consumer
-to justify one, and do not copy a helper into two domains to avoid creating
-one. (The "second consumer" rule below is about feature code, not this.)
+Cross-cutting utilities exist precisely to keep the code DRY — a function owned
+by no single package and used by many. Do not wait for a second consumer to
+justify one, and do not copy a helper into two domains to avoid creating one.
+(The "second consumer" rule below is about feature code, not this.)
 
 ### Within a package: organise by concern, never by layer or type
 
 - One file per API area, named for it: `api_tasks.go`, `api_logs.go`,
-  `api_skills.go`. A new endpoint group is a new file. Cross-cutting wiring
-  gets its own file too: `server.go` (routes and construction only), `auth.go`,
+  `api_skills.go`. A new endpoint group is a new file. Cross-cutting wiring gets
+  its own file too: `server.go` (routes and construction only), `auth.go`,
   `sse.go`.
 - **A package owns its own format end to end.** `internal/logging` defines the
-  on-disk log format *and* reads it (`reader.go`); `internal/webui/api_logs.go`
+  on-disk log format _and_ reads it (`reader.go`); `internal/webui/api_logs.go`
   is transport and parses nothing. If two packages both know a format, one of
   them is wrong.
 - Empty or ceremonial `entities`, `repositories` or `services` layers are
   prohibited. Code that changes together lives together.
-- No grab-bag file. If you cannot name a file after the single thing it does,
-  it is doing more than one thing.
+- No grab-bag file. If you cannot name a file after the single thing it does, it
+  is doing more than one thing.
 
 ### Frontend
 
 - One folder per feature under `ui/src/<feature>/`, holding its own `.js` and
-  `.css`, with the JS importing its own CSS. Changing logs cannot disturb
-  tasks.
+  `.css`, with the JS importing its own CSS. Changing logs cannot disturb tasks.
 - Shared primitives live in `ui/src/base/` and `ui/src/css/`, one file per
   primitive (`button.css`, `card.css`, `pill.css`, `table.css`).
 - Extract a feature's code into a shared primitive on the **second** real
@@ -218,8 +216,8 @@ A domain that declares its own contracts can be tested, reviewed, replaced and
 reasoned about without the rest of the system. Once the direction of dependency
 inverts anywhere, that stops being true everywhere downstream. It also has an
 immediate cost with parallel sessions: `cmd/archied/main.go` had to be split
-hunk-by-hunk three times in one day because two sessions were editing it at
-once — a symptom of wiring living where it should not.
+hunk-by-hunk three times in one day because two sessions were editing it at once
+— a symptom of wiring living where it should not.
 
 ## Architecture
 
@@ -248,31 +246,31 @@ boundaries. Summary of what's evolved since that doc was last fully accurate:
 ### Per-package traps (things an agent will break if it doesn't check first)
 
 - **`internal/channels/telegram/`** — the long-polling branch calls
-  `dropPendingUpdates(ctx, b)` before `go b.Start(ctx)`. This clears
-  Telegram's 24h undelivered-update queue so a reboot doesn't answer
-  hours-old messages. It also runs on `/restart`. The webhook branch already
-  passes `DropPendingUpdates: true` in `SetWebhookParams`; both paths must
-  stay consistent.
+  `dropPendingUpdates(ctx, b)` before `go b.Start(ctx)`. This clears Telegram's
+  24h undelivered-update queue so a reboot doesn't answer hours-old messages. It
+  also runs on `/restart`. The webhook branch already passes
+  `DropPendingUpdates: true` in `SetWebhookParams`; both paths must stay
+  consistent.
 - **`internal/container/pool.go` `WriteTaskJSON`** — the per-task boot brief
   goes to `<worktree>/.git/task.json`, not the worktree root.
   `worktree.CommitAll` stages via go-git `Add{All:true}`, which ignores
   `.gitignore` and `.git/info/exclude`, so anything in the worktree root is
   pushed onto the task branch. Nothing under `.git` can be tracked;
-  `worktree.go:41-46` documents this reasoning for the prepared sentinel.
-  If you change the path, update `cmd/archie-agent/main.go` `bootTaskID`
-  (the reader) in lockstep.
-- **MCP providers are registered by the daemon as *optional*** (`cmd/archied/
-  main.go`, `providerRegistry.RegisterOptional`). One that cannot start is
-  logged at error level, excluded from the running set, and reported through
-  `Registry.Health` as degraded — it does not roll back the other providers
-  or stop the daemon. That was previously a hard failure, so one broken npm
-  package unregistered every builtin tool and crash-looped archied under
-  `Restart=on-failure`, taking Telegram with it. Providers the daemon
+  `worktree.go:41-46` documents this reasoning for the prepared sentinel. If you
+  change the path, update `cmd/archie-agent/main.go` `bootTaskID` (the reader)
+  in lockstep.
+- **MCP providers are registered by the daemon as _optional_**
+  (`cmd/archied/ main.go`, `providerRegistry.RegisterOptional`). One that cannot
+  start is logged at error level, excluded from the running set, and reported
+  through `Registry.Health` as degraded — it does not roll back the other
+  providers or stop the daemon. That was previously a hard failure, so one
+  broken npm package unregistered every builtin tool and crash-looped archied
+  under `Restart=on-failure`, taking Telegram with it. Providers the daemon
   genuinely requires still use `Register` and keep atomic rollback; check
   `providerRegistry.Skipped()` when tools are mysteriously missing. No
-  npx-launched servers are configured in production anyway — the builtin
-  tools (read, write, edit, find, grep, shell, test) cover what
-  desktop-commander did.
+  npx-launched servers are configured in production anyway — the builtin tools
+  (read, write, edit, find, grep, shell) and `web_fetch`. There is no `test`
+  tool; gates run test commands, the model does not.
 
 **Task lifecycle** (from ARCHITECTURE.md, still current):
 `queued → running(workflow:stage) → pr_open → merged|rejected`, with
@@ -290,7 +288,7 @@ behavior.
 
 ## Conventions
 
-- Go 1.26.3, module `github.com/samcharles93/archie-core`.
+- Go 1.26.5, module `github.com/samcharles93/archie-core`.
 - `ai-sdk/runtime`, `ai-sdk/agentloop`, `ai-sdk/core` are external other
   projects, not vendored copies. Changes affect other repos.
 - Non-interactive shell commands only: some environments alias `cp`/`mv`/`rm` to

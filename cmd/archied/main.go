@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"os"
 	"os/signal"
@@ -56,6 +57,7 @@ import (
 	builtintoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/builtin"
 	mcptoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/mcp"
 	memorytoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/memory"
+	"github.com/samcharles93/archie-core/internal/tools/webfetch"
 	"github.com/samcharles93/archie-core/internal/webui"
 	"github.com/samcharles93/archie-core/internal/workflow/skillbuild"
 	"github.com/samcharles93/archie-core/internal/workflow/wfeval"
@@ -76,12 +78,6 @@ func main() {
 const (
 	// defaultChatMaxSteps bounds the model/tool round-trips in one chat
 	// turn when [config.ChatConfig.MaxSteps] is unset.
-	//
-	// It was 8, which is roughly one read, one grep and a couple of edits
-	// -- less than a single small change to a Go package costs. Turns hit
-	// the cap and stopped mid-task with no indication they had been cut
-	// off. Interruption is /stop's job; this only has to stop a genuine
-	// runaway, so it is set well above real work.
 	defaultChatMaxSteps          = 100
 	packagedGatewayChangelogPath = "/usr/share/archie/CHANGELOG.archied.md"
 	packagedRuntimeChangelogPath = "/usr/share/archie/CHANGELOG.archie.md"
@@ -95,15 +91,24 @@ var (
 	runtimeVersion = "dev"
 )
 
+// chatGenerateOptions builds one chat turn's request.
 func chatGenerateOptions(
 	messages []chat.Message,
 	registry *tools.Registry,
 	maxSteps int,
+	limits agentexec.ToolLimits,
+	extra []tools.ToolEntry,
 ) (core.GenerateOptions, error) {
-	toolSet, err := agentexec.BuildToolSet(registry)
+	toolOpts := limits.Options()
+	toolSet, err := agentexec.BuildToolSet(registry, toolOpts)
 	if err != nil {
 		return core.GenerateOptions{}, err
 	}
+	extraSet, err := agentexec.BuildToolSetFrom(extra, toolOpts)
+	if err != nil {
+		return core.GenerateOptions{}, err
+	}
+	maps.Copy(toolSet, extraSet)
 	if maxSteps <= 0 {
 		maxSteps = defaultChatMaxSteps
 	}
@@ -112,6 +117,71 @@ func chatGenerateOptions(
 		Tools:    toolSet,
 		MaxSteps: maxSteps,
 	}, nil
+}
+
+// isWithin reports whether target sits inside base.
+func isWithin(base, target string) bool {
+	absBase, err := filepath.Abs(base)
+	if err != nil {
+		return false
+	}
+	absTarget, err := filepath.Abs(target)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(absBase, absTarget)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// toolLimits reads the configured per-turn result limits.
+func toolLimits(cfg config.Config) agentexec.ToolLimits {
+	return agentexec.ToolLimits{
+		MaxResultChars:  cfg.Tools.Policy.MaxResultChars,
+		TurnBudgetChars: cfg.Tools.Policy.TurnBudgetChars,
+		SpillDir:        cfg.Tools.Policy.SpillDir,
+	}
+}
+
+// taskListOverRead multiplies the requested limit when reading rows that are
+// filtered by identity afterwards.
+const taskListOverRead = 5
+
+// chatTaskListerAdapter gives the gateway a read view of one identity's tasks.
+// gateway deliberately does not import internal/store, so the projection
+// happens here, as it does for the writer and controller adapters below.
+type chatTaskListerAdapter struct {
+	tasks func(context.Context, int) ([]store.Task, error)
+}
+
+func (a chatTaskListerAdapter) ListChatTasks(ctx context.Context, identity string, limit int) ([]gateway.ChatTaskSummary, error) {
+	// Over-read before filtering: Tasks applies its limit across the whole
+	// table, so asking for exactly `limit` would return fewer than that for
+	// this identity whenever another identity's work is more recent.
+	rows, err := a.tasks(ctx, limit*taskListOverRead)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]gateway.ChatTaskSummary, 0, limit)
+	for _, task := range rows {
+		if task.Identity != identity {
+			continue
+		}
+		if len(out) >= limit {
+			break
+		}
+		out = append(out, gateway.ChatTaskSummary{
+			ID:       task.ID,
+			Repo:     task.Owner + "/" + task.Repo,
+			Title:    task.Title,
+			Status:   task.Status,
+			Workflow: task.Workflow,
+			PRNumber: task.PRNumber,
+		})
+	}
+	return out, nil
 }
 
 func configuredMCPProvider(server config.MCPServer) (toolprovider.Engine, error) {
@@ -394,21 +464,27 @@ func run() int {
 		}
 	}
 	webRouter.Models = chatModels
-	webRouter.Updates = updateService
+	if updateService != nil {
+		webRouter.Updates = updateService
+	}
 	webRouter.Personas = personas
 	webRouter.InitSessions(chatSessionStore)
 	configureTaskCommands(webRouter, chatTasks, chatController, defaultChatIdentity)
 	webSetup := telegramSetup{
 		Cfg: cfg, St: st, LLM: llm, ChatModels: chatModels, ToolReg: toolReg,
 		Personas: personas, ChatTasks: chatTasks, ChatController: chatController,
+		ChatTaskLister:      chatTaskListerAdapter{tasks: st.Tasks},
 		DefaultChatIdentity: defaultChatIdentity, SessionStore: chatSessionStore,
 		Bus: bus, Log: log,
 	}
-	webRouter.LLM, webRouter.LLMStream = makeChatLLMResponder(ctx, "web", webSetup, chatSessionStore, webRouter)
+	webRouter.LLM, webRouter.LLMStream = makeChatLLMResponder("web", webSetup, chatSessionStore, webRouter)
 	web.Chat = &webui.ChatService{
 		Router: webRouter, Sessions: chatSessionStore,
 		Turns:  gateway.NewTurns(log),
-		Models: chatModels, Personas: personas, Updates: updateService,
+		Models: chatModels, Personas: personas,
+	}
+	if updateService != nil {
+		web.Chat.Updates = updateService
 	}
 	if l := cfg.Web.Listen; l != "" && l != "off" {
 		web.Token = webTokenFor(l, cfg.DBPath, log)
@@ -426,6 +502,7 @@ func run() int {
 		Cfg: cfg, CfgPath: *cfgPath, OverlayPath: *overlayPath,
 		St: st, LLM: llm, ChatModels: chatModels, ToolReg: toolReg,
 		Personas: personas, ChatTasks: chatTasks, ChatController: chatController,
+		ChatTaskLister:      chatTaskListerAdapter{tasks: st.Tasks},
 		DefaultChatIdentity: defaultChatIdentity, SessionStore: chatSessionStore, Updates: updateService,
 		Bus:             bus,
 		RegisterRestart: func(request func() error) { restartTelegram = request }, Log: log,
@@ -485,7 +562,9 @@ func run() int {
 				Providers:     providers,
 			}
 		case "inprocess":
-			agentRunner = agentexec.NewInProcessRunner(llm, log, toolReg)
+			inproc := agentexec.NewInProcessRunner(llm, log, toolReg)
+			inproc.Limits = toolLimits(cfg)
+			agentRunner = inproc
 		case "nats":
 			if natsClient == nil {
 				log.Error("agent.mode is nats but [nats] is not configured")
@@ -581,7 +660,9 @@ func run() int {
 					Providers:     idProviders,
 				}
 			case "inprocess":
-				runner.Agent = agentexec.NewInProcessRunner(idRuntime, log.With("identity", idCfg.Name), toolReg)
+				idRunner := agentexec.NewInProcessRunner(idRuntime, log.With("identity", idCfg.Name), toolReg)
+				idRunner.Limits = toolLimits(cfg)
+				runner.Agent = idRunner
 			case "nats":
 				runner.Agent = &agentexec.NATSRunner{
 					Bus: natsClient, Providers: idProviders,
@@ -698,11 +779,16 @@ func run() int {
 	// configured: these read, write and execute, so the directory is a
 	// deliberate choice rather than a default.
 	if workspace := cfg.Chat.Workspace; workspace != "" {
-		if err := providerRegistry.Register(builtintoolprovider.New(workspace)); err != nil {
+		unrestricted := cfg.Chat.UnrestrictedFilesystem
+		if err := providerRegistry.Register(builtintoolprovider.New(workspace, unrestricted)); err != nil {
 			log.Error("workspace tool provider registration failed", "err", err)
 			return 1
 		}
-		log.Info("workspace tools enabled", "workspace", workspace)
+		// Logged at the same level either way: which of the two postures is
+		// running is the first thing worth knowing when a file tool refuses a
+		// path, or reaches one it should not have.
+		log.Info("workspace tools enabled",
+			"workspace", workspace, "unrestricted_filesystem", unrestricted)
 	} else {
 		log.Info("workspace tools disabled (chat.workspace is unset)")
 	}
@@ -739,6 +825,45 @@ func run() int {
 		} else {
 			log.Info("skill catalog registered", "skills", len(catalog))
 		}
+	}
+
+	// Tool results too large to inline are written here. Created once, at
+	// startup: the write failure inside a turn is silent, so without this
+	// every oversized result would quietly fall back to truncation and
+	// spilling would look configured while doing nothing.
+	if spillDir := cfg.Tools.Policy.SpillDir; spillDir != "" {
+		if err := toolLimits(cfg).EnsureSpillDir(); err != nil {
+			log.Warn("tool spill directory unavailable; large results will be truncated instead", "err", err)
+		} else if ws := cfg.Chat.Workspace; ws != "" && !cfg.Chat.UnrestrictedFilesystem && !isWithin(ws, spillDir) {
+			// A spill hands the model a path to read back, and a confined read
+			// tool refuses anything outside the workspace. Outside it, the
+			// spill reference is a dead end and the result is lost rather than
+			// displaced -- worse than truncating in the first place.
+			//
+			// Not a concern when the filesystem is unrestricted: the read tool
+			// can reach the spill wherever it lives.
+			log.Warn("tool spill directory is outside chat.workspace; the model cannot read back what is spilled there",
+				"spill_dir", spillDir, "workspace", ws)
+		}
+	}
+
+	// web_fetch. Registered directly rather than as a tool provider: it has
+	// no process to start or stop, so the provider lifecycle would buy
+	// nothing. Disabled by configuration returns nil and advertises nothing.
+	if entry := webfetch.Tool(webfetch.Config{
+		Enabled:              cfg.Tools.WebFetch.IsEnabled(),
+		Timeout:              cfg.Tools.WebFetch.Timeout.Std(),
+		MaxBytes:             cfg.Tools.WebFetch.MaxBytes,
+		AllowPrivateNetworks: cfg.Tools.WebFetch.AllowPrivateNetworks,
+	}); entry != nil {
+		if err := toolReg.Register(*entry); err != nil {
+			log.Warn("web_fetch registration failed", "err", err)
+		} else {
+			log.Info("web fetch enabled",
+				"allow_private_networks", cfg.Tools.WebFetch.AllowPrivateNetworks)
+		}
+	} else {
+		log.Info("web fetch disabled")
 	}
 
 	// Built-in tools are registered at startup via init(). Tool discovery

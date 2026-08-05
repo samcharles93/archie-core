@@ -1,0 +1,65 @@
+<div class="chat-page">
+  <div class="chat-page-content">
+    <header class="chat-topbar">
+      <div><span class="chat-kicker">ARCHIE WORKSPACE</span><h1 class="page-title">Chat</h1></div>
+      <div class="chat-topbar-actions">
+        <span class="chat-status" data-chat-ref="status">Ready</span>
+        <button class="btn" data-chat-ref="restart" hidden>Reload Telegram</button>
+        <button class="btn" data-chat-ref="checkUpdates">Check updates</button>
+        <select class="chat-select" data-chat-ref="persona" aria-label="Personality"><option value="">Personality</option></select>
+        <select class="chat-select" data-chat-ref="provider" aria-label="Provider" hidden><option value="">Provider</option></select>
+        <select class="chat-select" data-chat-ref="model" aria-label="Model"><option value="">Model</option></select>
+      </div>
+    </header>
+    <div class="chat-update-panel" data-chat-ref="updatePanel"></div>
+    <div class="chat-dangerous-panel" data-chat-ref="dangerousPanel" hidden></div>
+    <div class="chat-layout">
+      <aside class="chat-sidebar">
+        <div class="chat-sidebar-head">
+          <strong>Conversations</strong>
+          <button class="btn btn-primary" data-chat-ref="newChat" type="button">+ New chat</button>
+        </div>
+        <div class="chat-session-list" data-chat-ref="sessionList"></div>
+      </aside>
+      <section class="chat-workspace">
+        <div class="chat-workspace-head">
+          <span class="chat-workspace-label">PERSONAL ASSISTANT</span>
+          <details class="chat-command-help" data-chat-ref="commandHelp"></details>
+          <details class="chat-session-tools" data-chat-ref="sessionTools">
+            <summary>Session actions</summary>
+            <div class="chat-session-tool-list">
+              <button class="btn" data-chat-action="retry" type="button">Retry</button>
+              <button class="btn" data-chat-action="undo" type="button">Undo</button>
+              <button class="btn" data-chat-action="title" type="button">Rename</button>
+              <button class="btn" data-chat-action="branch" type="button">Branch</button>
+              <button class="btn" data-chat-action="compress" type="button">Preview compression</button>
+            </div>
+          </details>
+        </div>
+        <div class="chat-transcript" data-chat-ref="transcript">
+          <div class="chat-empty-state" data-chat-ref="emptyState">
+            <span class="chat-empty-mark">A</span>
+            <h2>What are we working on?</h2>
+            <p>Ask Archie anything, or start with one of these prompts.</p>
+            <div class="chat-prompt-grid">
+              <button class="chat-prompt" data-chat-prompt="Summarise active tasks" type="button">Summarise active tasks</button>
+              <button class="chat-prompt" data-chat-prompt="Show running agents" type="button">Show running agents</button>
+              <button class="chat-prompt" data-chat-prompt="Check system status" type="button">Check system status</button>
+            </div>
+          </div>
+        </div>
+        <div class="chat-compose">
+          <div class="chat-composer-shell">
+            <textarea class="chat-composer" data-chat-ref="composer" rows="3" placeholder="Message Archie…  (commands like /status and /new work here)" aria-label="Message Archie"></textarea>
+            <div class="chat-command-menu" data-chat-ref="commandMenu" hidden role="listbox" aria-label="Commands"></div>
+            <div class="chat-compose-actions">
+              <span class="chat-hint">⌘/Ctrl + Enter to send</span>
+              <button class="btn" data-chat-ref="stop" type="button" disabled>Stop</button>
+              <button class="btn btn-primary" data-chat-ref="send" type="button">Send</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>

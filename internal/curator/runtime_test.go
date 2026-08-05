@@ -370,7 +370,7 @@ func TestRuntimeMaxConcurrentPasses(t *testing.T) {
 	// b is woken, but the slot is taken: b's pass count cannot advance
 	// past its initial run while a is in flight.
 	before := b.passCalls.Load()
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		rt.Nudge("b")
 	}
 	time.Sleep(100 * time.Millisecond)

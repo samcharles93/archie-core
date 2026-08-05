@@ -28,6 +28,10 @@ type Provider struct {
 	// workspace is the directory file and shell operations are rooted at.
 	workspace string
 
+	// unrestricted lifts the workspace jail from the file tools. See
+	// config.ChatConfig.UnrestrictedFilesystem for when that is wanted.
+	unrestricted bool
+
 	// registry holds the constructed tools. Built once in Start so
 	// Discover cannot partially fail.
 	registry *toolsbuiltin.Registry
@@ -36,8 +40,11 @@ type Provider struct {
 // New creates a provider rooted at workspace. An empty workspace is a
 // configuration error, reported by Start rather than silently defaulting to
 // the daemon's own working directory.
-func New(workspace string) *Provider {
-	return &Provider{workspace: workspace}
+//
+// unrestricted lets the file tools reach absolute paths outside workspace;
+// relative paths still resolve against it either way.
+func New(workspace string, unrestricted bool) *Provider {
+	return &Provider{workspace: workspace, unrestricted: unrestricted}
 }
 
 // Manifest declares the adapter's tool capability.
@@ -59,6 +66,11 @@ func (p *Provider) Start(ctx context.Context) error {
 	if p.workspace == "" {
 		return errors.New("workspace tool provider: workspace directory is not configured")
 	}
+	// Set before the tools are built. Confinement is consulted per call, so
+	// ordering only matters in that it must precede the first tool call, but
+	// keeping it next to construction is where a reader will look for it.
+	toolsbuiltin.SetPathConfinement(!p.unrestricted)
+
 	registry := toolsbuiltin.NewRegistry()
 	if err := toolsbuiltin.RegisterBuiltins(registry, p.workspace); err != nil {
 		return fmt.Errorf("workspace tool provider: register builtins: %w", err)

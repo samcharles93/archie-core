@@ -12,7 +12,7 @@ import (
 
 func startedProvider(t *testing.T, workspace string) *provider.Provider {
 	t.Helper()
-	p := provider.New(workspace)
+	p := provider.New(workspace, false)
 	if err := p.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -155,7 +155,80 @@ func shellHandler(t *testing.T, workspace string) func(context.Context, map[stri
 func TestUnconfiguredWorkspaceIsRejected(t *testing.T) {
 	t.Parallel()
 
-	if err := provider.New("").Start(context.Background()); err == nil {
+	if err := provider.New("", false).Start(context.Background()); err == nil {
 		t.Error("a provider with no workspace started successfully")
 	}
+}
+
+// TestUnrestrictedFilesystemReachesOutsideWorkspace covers the operator
+// posture end to end, through a real read of a real file.
+//
+// A deployment whose agent partitions disks, mounts them and migrates data is
+// working across the filesystem by definition. Confined, every one of those
+// touches has to go through shell -- which was never confined anyway -- so the
+// jail only ever decided which tool did the work, not what the agent reached.
+//
+// Not parallel: confinement is process-wide, so these two subtests must not
+// run beside tests that assume the default.
+func TestUnrestrictedFilesystemReachesOutsideWorkspace(t *testing.T) {
+	// A file deliberately outside the workspace, as /etc or a fresh mount
+	// would be.
+	outside := filepath.Join(t.TempDir(), "fstab")
+	if err := os.WriteFile(outside, []byte("UUID=1234 /mnt/newdisk ext4 defaults 0 2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name         string
+		unrestricted bool
+		wantErr      bool
+	}{
+		{name: "confined refuses", unrestricted: false, wantErr: true},
+		{name: "unrestricted reads", unrestricted: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p := provider.New(t.TempDir(), tc.unrestricted)
+			if err := p.Start(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = p.Stop(context.Background()) })
+
+			entries, err := p.Discover(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			var read func(context.Context, map[string]any) (any, error)
+			for _, e := range entries {
+				if e.Name == "read" {
+					read = e.Handler
+				}
+			}
+			if read == nil {
+				t.Fatal("no read tool discovered")
+			}
+
+			out, err := read(context.Background(), map[string]any{"path": outside})
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("read reached outside the workspace while confined")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("read was refused with confinement disabled: %v", err)
+			}
+			if text, ok := out.(string); !ok || !strings.Contains(text, "/mnt/newdisk") {
+				t.Errorf("read returned %#v, want the file contents", out)
+			}
+		})
+	}
+
+	// Leave the process as we found it for any test that runs after.
+	t.Cleanup(func() {
+		p := provider.New(t.TempDir(), false)
+		_ = p.Start(context.Background())
+		_ = p.Stop(context.Background())
+	})
 }

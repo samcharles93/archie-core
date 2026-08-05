@@ -16,6 +16,10 @@ class Node {
   append(...cs) {
     for (const c of cs.flat(Infinity)) {
       if (c == null || c === false) continue;
+      if (c instanceof DocumentFragment) {
+        this.append(...c.childNodes);
+        continue;
+      }
       this.childNodes.push(c instanceof Node ? c : new TextNode(String(c)));
     }
   }
@@ -87,6 +91,8 @@ class TextNode extends Node {
   }
 }
 
+class DocumentFragment extends Node {}
+
 class Element extends Node {
   constructor(tag) {
     super();
@@ -97,8 +103,10 @@ class Element extends Node {
 globalThis.Node = Node;
 globalThis.Element = Element;
 globalThis.TextNode = TextNode;
+globalThis.DocumentFragment = DocumentFragment;
 globalThis.document = {
   createElement: (tag) => new Element(tag),
   createElementNS: () => new Element("svg"),
+  createDocumentFragment: () => new DocumentFragment(),
   createTextNode: (text) => new TextNode(String(text)),
 };

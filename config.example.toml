@@ -1,20 +1,25 @@
-# archied configuration. Copy to ~/.config/archie/config.toml.
-# Secrets are NOT configured here directly: each one is a {engine, key}
-# reference resolved through a secrets engine at startup. The built-in
-# "env" engine reads key as an environment variable name. Custom engines
-# (sops, bws, vault/openbao, ...) are Yaegi plugins loaded from a
-# directory  --  see internal/secret.
+#
+# archied configuration
+#
+# Secrets are NOT stored here: each one is a {engine, key}
+# reference resolved through a secrets engine at startup.
+# The built-in "env" engine reads key as an environment variable name.
+# Custom engines (sops, bws, vault/openbao, ...) 
+# are Yaegi plugins loaded from a directory -- see internal/secret.
 # secret_engine_dir = "~/.config/archie/secret-engines"
 
 # work_dir = "~/.local/share/archie/work"   # default
 # db_path  = "~/.local/share/archie/archie.db"
+
 poll_interval = "60s"
 label = "archie"
 bot_user = "vectis-labs-archie"
 diff_cap_lines = 400
-# max_retries = 3  # how many operator-triggered retries a parked task gets
-                   # before it moves to dead (global default; set per-repo to
-                   # override). Enforced by the dashboard's retry action.
+
+# how many operator-triggered retries a parked task gets
+# before it moves to dead (global default; set per-repo to
+# override). Enforced by the dashboard's retry action.
+# max_retries = 3  
 
 [forge]
 type = "github"
@@ -22,9 +27,21 @@ host = "https://github.com"
 token = { engine = "env", key = "ARCHIE_GITHUB_TOKEN" }
 
 [dispatch]
-trigger = "assignee"      # "assignee", "label", or "either"
-ack_reaction = "eyes"    # "off" disables pickup reactions
+# Can be of "assignee", "label", or "either"
+# this sets the method archie uses to pick up tasks.
+trigger = "assignee"
 
+# Optionally set a reaction to show that archie has picked up a task.
+# setting this to "off" disables the pickup reactions.
+ack_reaction = "eyes"
+
+# dispatch.labels maps each task lifecycle state to the label
+# Archie applies on the issue.
+# You can rename labels to match your project's conventions,
+# or comment one out to skip that transition.
+# The labels are the *source of truth* for the dispatch loop: Archie
+# scans for issues bearing queued, then moves them through working →
+# waiting → pr → parked (→ dead when max_retries is exhausted).
 [dispatch.labels]
 queued = "archie:queued"
 working = "archie:working"
@@ -33,7 +50,7 @@ pr = "archie:pr"
 parked = "archie:parked"
 # dead = "archie:dead"  # state label for a task that exhausted max_retries
 
-[models] # role -> ai-sdk runtime ref (used by agent workflows, Phase 4b)
+[models] # role -> ai-sdk runtime ref (used by agent workflows)
 triage  = "openai/gpt-5.4"
 planner = "openai/gpt-5.4"
 builder = "openai/gpt-5.4"
@@ -46,30 +63,34 @@ api_key = { engine = "bws", key = "OPENAI_API_KEY" }
 [providers.ollama]
 class = "ollama"
 
-# Optional interactive-chat catalog. /provider groups these references by
-# their first path segment, and /model shows only the selected provider's
-# entries. When omitted, Archie uses the distinct refs in [models].
-#
-# `operator` is the display name of the person this deployment assists. It is
+# [chat]
+# `operator` is the display name of user. It is
 # passed to the chat agent as runtime metadata, which means it is sent to the
 # configured model provider on every turn -- leave it unset to tell the agent
 # nothing about who is running it.
-#
+# operator = "John Smith"
+
 # `workspace` roots the chat agent's file and shell tools (read, write, edit,
-# shell, grep, find). Unset, those tools are not registered at all. Set it and
-# the agent can read, modify and execute inside that directory with the same
-# reach the daemon process has -- choose it deliberately.
-#
-# `max_steps` caps the model/tool round-trips in a single chat turn
-# (default 100). This is a task budget, not a safety limit: one question
-# about a codebase easily costs a read, several greps and a few edits, and
-# a turn that runs out stops mid-task looking like it gave up. To interrupt
-# a turn, send /stop -- that cancels it immediately and clears anything
-# queued behind it.
-# [chat]
-# operator = "Ada Lovelace"
+# shell, grep, find). If unser, the tools aren't registered.
+# Set it to let the agent read, modify and execute inside that directory
+# choose it deliberately
 # workspace = "~/.local/share/archie/workspace"
+
+# `max_steps` caps the model/tool round-trips in a single chat turn
+# (default 100). This is a task budget, not a safety limit.
 # max_steps = 100
+
+# Let read/write/edit/find/grep tools reach absolute paths outside the
+# workspace jail. Relative paths still resolve against workspace.
+# The shell tool is never confined, so a jail only pushes the agent into
+# using shell for everything, losing truncation, line numbering, and
+# read-before-write protection. Enable when the agent needs to work
+# cross-filesystem (disk ops, system edits, etc.). Grant deliberately.
+# unrestricted_filesystem = true
+
+# Optional interactive-chat catalog. /provider groups these references by
+# their first path segment, and /model shows only the selected provider's
+# entries. When omitted, Archie uses the distinct refs in [models].
 # models = [
 #   "openai/gpt-5.6-sol",
 #   "openrouter/openai/gpt-5.6-sol",
@@ -91,20 +112,36 @@ class = "ollama"
 # work_dir = "/path/to/workspace"
 
 [agent]
-mode = "inprocess"          # "subprocess" runs each stage through archie-agent (stdin/stdout); "nats" sends stages over NATS
-command = "archie-agent"    # executable path for subprocess mode (not used in nats mode)
-# Subprocess mode isolates the protocol and process lifecycle, not OS privileges.
-# The worker still runs as the daemon user until the Docker sandbox phase lands.
-# env = ["GOCACHE"]         # extra environment variable names forwarded to the worker
+# How the daemon invokes the agent:
+#   "inprocess"   – run agent logic directly in the daemon (default)
+#   "subprocess"  – spawn `command` as a child, communicating over stdin/stdout
+#   "nats"        – dispatch tasks over NATS (requires [nats]; add [containers] for Docker sandboxing)
+mode = "inprocess"
+# Binary to launch when mode = "subprocess".
+command = "archie-agent"
+# Environment variables forwarded to the agent process (subprocess/nats modes).
+# env = ["GOCACHE"]
 
-[indexing] # workspace codesearch index; both paths default under work_dir
-# index_dir = "/var/lib/archie/indexes"        # codesearch sidecar files
-# db_path   = "/var/lib/archie/workspace-indexes.db"  # index lifecycle metadata
+# Workspace code-search index. Paths default under work_dir when unset.
+[indexing]
+# Code-search index files (default: <work_dir>/indexes).
+# index_dir = "/var/lib/archie/indexes"
+# Per-index lifecycle metadata DB (default: <work_dir>/workspace-indexes.db).
+# db_path   = "/var/lib/archie/workspace-indexes.db"
 
-[web] # observability dashboard (read-only, no auth  --  keep it local/tailnet)
-listen = "127.0.0.1:8484" # "off" disables
+# Web dashboard and API: task board, activity stream, chat, config,
+# logs, memory, SSE events. Served as an embedded SPA with a full REST
+# and streaming API. Auth is token-based for non-loopback addresses;
+# loopback binds (127.0.0.1, ::1, localhost) skip auth automatically.
+# Set to "off" (or leave empty) to disable.
+[web]
+listen = "127.0.0.1:8484"
 
-[notify] # optional webhook for human-in-the-loop moments (n8n -> email)
+# Notifications for human-in-the-loop moments
+# (approval requests, gate failures, parked tasks).
+# Archie POSTs a JSON payload to the webhook
+# wire it to n8n, email, Slack, or any HTTP endpoint.
+[notify]
 # webhook = "https://n8n.example.com/webhook/archie"
 
 [budgets]
@@ -157,3 +194,37 @@ gate_max_failures = 5
 #                            # (e.g. different base branches or packages per task). Still bounded by
 #                            # [containers].max_concurrency globally.
 # # persistent_storage = true  # reuse a per-repo Docker volume and Git object cache until volume_ttl
+
+# ── Tools ───────────────────────────────────────────────────────────────────
+# Limits on what a tool may return. These bound how much of the context window
+# one tool call can spend: the workspace file tools truncate themselves, but
+# skill bodies and MCP server results otherwise arrive whole.
+#
+# Zero (or absent) takes the default. A NEGATIVE value disables the limit --
+# zero cannot mean "off" because it is indistinguishable from an unset key.
+# [tools.tool_policy]
+# max_result_chars = 50000     # cap on one tool result; -1 for no cap
+# turn_budget_chars = 200000   # cap on all tool results in one chat turn; -1 for no cap
+# spill_dir = ""               # unset by default, which truncates oversized results
+#                              # inline. When set, a result over the cap is written
+#                              # here in full and the model is handed the path.
+#                              # It MUST be inside chat.workspace: the read tool
+#                              # refuses paths outside it, so a spill anywhere else
+#                              # is a reference the model cannot open -- worse than
+#                              # truncating. Startup warns if it is outside.
+#                              # Task agents work in their own worktree and cannot
+#                              # read it at all; they always truncate.
+
+# The web_fetch tool: retrieve a URL and return readable text.
+# [tools.web_fetch]
+# enabled = true               # set false to withdraw the tool entirely
+# timeout = "30s"
+# max_bytes = 2000000
+# allow_private_networks = false
+#   # Off by default, and worth leaving off. archied's own dashboard, NATS and
+#   # the Docker API answer on loopback and private addresses, and the URL to
+#   # fetch arrives through chat -- an untrusted path, since a forge issue body
+#   # or an inbound email can be quoted into a turn. The address is checked at
+#   # dial time rather than on the URL string, so a public name that resolves to
+#   # a private address is refused too. Turn this on only for a homelab endpoint
+#   # you intend Archie to reach.

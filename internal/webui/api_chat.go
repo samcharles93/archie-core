@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -70,13 +71,26 @@ func (s *Server) chatReady(w http.ResponseWriter) (*ChatService, bool) {
 		http.Error(w, "chat is not configured", http.StatusNotImplemented)
 		return nil, false
 	}
-	if s.Chat.Router.Updates == nil && s.Chat.Updates != nil {
+	if !chatUpdateServiceConfigured(s.Chat.Router.Updates) && chatUpdateServiceConfigured(s.Chat.Updates) {
 		s.Chat.Router.Updates = s.Chat.Updates
 	}
 	if s.Chat.Router.Dangerous == nil && s.Chat.Dangerous != nil {
 		s.Chat.Router.Dangerous = s.Chat.Dangerous
 	}
 	return s.Chat, true
+}
+
+func chatUpdateServiceConfigured(updates ChatUpdateService) bool {
+	if updates == nil {
+		return false
+	}
+	value := reflect.ValueOf(updates)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return !value.IsNil()
+	default:
+		return true
+	}
 }
 
 func (s *Server) handleChatSessions(w http.ResponseWriter, r *http.Request) {
@@ -329,7 +343,7 @@ func (s *Server) handleChatUpdate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if chat.Updates == nil {
+	if !chatUpdateServiceConfigured(chat.Updates) {
 		http.Error(w, "updates are not configured", http.StatusNotImplemented)
 		return
 	}
@@ -350,7 +364,7 @@ func (s *Server) handleChatUpdateDefer(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if chat.Updates == nil {
+	if !chatUpdateServiceConfigured(chat.Updates) {
 		http.Error(w, "updates are not configured", http.StatusNotImplemented)
 		return
 	}
@@ -371,7 +385,7 @@ func (s *Server) handleChatUpdateInstall(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	if chat.Updates == nil || !chat.Updates.CanInstall() {
+	if !chatUpdateServiceConfigured(chat.Updates) || !chat.Updates.CanInstall() {
 		http.Error(w, "update installation is not configured", http.StatusNotImplemented)
 		return
 	}

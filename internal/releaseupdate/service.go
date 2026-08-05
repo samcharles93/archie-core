@@ -79,7 +79,7 @@ type Service struct {
 }
 
 func (s *Service) Check(ctx context.Context, recipient int64) (Snapshot, error) {
-	if s.Catalog == nil {
+	if s == nil || s.Catalog == nil {
 		return Snapshot{}, errors.New("update discovery is not configured")
 	}
 	snapshot, err := s.Catalog.Check(ctx)
@@ -109,7 +109,7 @@ func (s *Service) Check(ctx context.Context, recipient int64) (Snapshot, error) 
 // Defer records only the exact versions the caller displayed. It refuses a
 // changed catalog rather than silently suppressing a release the user never saw.
 func (s *Service) Defer(ctx context.Context, recipient int64, expected Snapshot) error {
-	if s.Catalog == nil {
+	if s == nil || s.Catalog == nil {
 		return errors.New("update discovery is not configured")
 	}
 	if s.StatePath == "" {
@@ -139,13 +139,13 @@ func (s *Service) Defer(ctx context.Context, recipient int64, expected Snapshot)
 }
 
 func (s *Service) Install(ctx context.Context, progress func(string)) error {
-	if s.Installer == nil {
+	if s == nil || s.Installer == nil {
 		return errors.New("update installation is not configured")
 	}
 	return s.Installer.Install(ctx, progress)
 }
 
-func (s *Service) CanInstall() bool { return s.Installer != nil }
+func (s *Service) CanInstall() bool { return s != nil && s.Installer != nil }
 
 type deferrals map[string]map[string]string
 

@@ -123,7 +123,7 @@ func (a Announcer) detectChanged(state map[string]string, prefix string) (change
 			changed[component.ID] = true
 		}
 	}
-	return
+	return changed, stateChanged
 }
 
 // sendAndRecord sends the announcement and updates state on success.

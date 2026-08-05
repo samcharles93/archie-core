@@ -39,6 +39,7 @@ type telegramSetup struct {
 	Personas            *gateway.PersonaRegistry
 	ChatTasks           gateway.TaskCreator
 	ChatController      gateway.TaskController
+	ChatTaskLister      gateway.ChatTaskLister
 	DefaultChatIdentity string
 	SessionStore        gateway.SessionStore
 	Updates             telegram.UpdateService
@@ -164,20 +165,26 @@ func buildTelegramRouter(ctx context.Context, tg *telegram.Gateway, s telegramSe
 	router.InitSessions(sessionStore)
 	configureTaskCommands(router, s.ChatTasks, s.ChatController, s.DefaultChatIdentity)
 
-	router.LLM, router.LLMStream = makeChatLLMResponder(ctx, tg.Name(), s, sessionStore, router)
+	router.LLM, router.LLMStream = makeChatLLMResponder(tg.Name(), s, sessionStore, router)
 	return router
 }
 
-func makeChatLLMResponder(ctx context.Context, channel string, s telegramSetup, sessionStore gateway.SessionStore, router *gateway.Router) (gateway.LLMResponder, gateway.LLMStreamResponder) {
+func makeChatLLMResponder(
+	channel string,
+	s telegramSetup,
+	sessionStore gateway.SessionStore,
+	router *gateway.Router,
+) (gateway.LLMResponder, gateway.LLMStreamResponder) {
 	if s.LLM == nil {
 		return nil, nil
 	}
+	// Built once: these carry this gateway's identity, which does not change
+	// between turns, so there is nothing per-turn to rebuild.
+	taskTools := gateway.TaskTools(s.ChatTaskLister, s.ChatTasks, s.DefaultChatIdentity)
 	respond := func(ctx context.Context, msg gateway.Message, onDelta func(string)) (string, error) {
-		// Resolve through the router's session tracker, not a local
-		// channel-keyed helper. They agree until /new, /branch or /resume
-		// assigns a session a generated id; from then on the commands and
-		// the conversation address different histories, so /new would report
-		// history cleared while the next turn still saw all of it.
+		// Use the router's session tracker, not a local channel-keyed helper.
+		// Commands like /new, /branch, or /resume may reassign a session to a
+		// generated ID; after that, only the router sees the correct history.
 		sk, err := router.ResolveSessionKey(ctx, msg)
 		if err != nil {
 			return "", fmt.Errorf("resolve chat session: %w", err)
@@ -186,12 +193,10 @@ func makeChatLLMResponder(ctx context.Context, channel string, s telegramSetup, 
 		if err != nil {
 			return "", fmt.Errorf("load chat history: %w", err)
 		}
-		// A redelivered update must not be answered twice. The store already
-		// refuses to store the message again, but that alone changed
-		// nothing here: the model still ran, costing a second billed turn,
-		// running any tool side effects again, and appending a second reply
-		// (replies carry no upstream reference, so they always append).
-		// Replaying the answer we already gave is both cheaper and correct.
+		// Deduplicate redelivered updates: the store already rejects the
+		// duplicate message, but that alone doesn't prevent a second model
+		// call with its cost and side effects. Replaying the prior reply
+		// is both cheaper and correct.
 		if prior := gateway.PriorReply(history, sk, msg.SourceID, s.Cfg.BotUser); prior != "" {
 			s.Log.Info("replaying the reply to a redelivered message",
 				"session", sk, "source_id", msg.SourceID)
@@ -204,10 +209,8 @@ func makeChatLLMResponder(ctx context.Context, channel string, s telegramSetup, 
 			return "", fmt.Errorf("save inbound chat message: %w", err)
 		}
 		history = append(history, msg)
-		// Chat turns were entirely unlogged, so a report of lost context had
-		// no evidence to check against: session id, history depth and the
-		// resolved persona are the three things needed to tell "wrong
-		// session" from "history not loaded".
+		// Log session id, history depth, and resolved persona to
+		// distinguish "wrong session" bugs from "history not loaded".
 		s.Log.Info("chat turn",
 			"session", sk,
 			"channel", msg.ChannelID,
@@ -222,7 +225,7 @@ func makeChatLLMResponder(ctx context.Context, channel string, s telegramSetup, 
 			compressed = append(compressed, gateway.CompressedMessage{Role: role, Content: h.Text})
 		}
 		view := gateway.CompressHistory(compressed, gateway.DefaultCompressionConfig())
-		options, err := chatGenerateOptions(nil, s.ToolReg, s.Cfg.Chat.MaxSteps)
+		options, err := chatGenerateOptions(nil, s.ToolReg, s.Cfg.Chat.MaxSteps, toolLimits(s.Cfg), taskTools)
 		if err != nil {
 			return "", fmt.Errorf("build chat tools: %w", err)
 		}

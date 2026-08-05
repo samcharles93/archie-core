@@ -284,15 +284,57 @@ type MCPServer struct {
 }
 
 // ToolPolicy holds tool execution limits.
+//
+// The size limits use a negative value for "no limit". Defaulting cannot
+// distinguish an explicit 0 from an absent key, so zero has to stay available
+// as "unset, give me the default" -- which leaves negative as the only way an
+// operator can turn a cap off deliberately.
 type ToolPolicy struct {
-	MaxResultChars    int  `yaml:"max_result_chars" json:"max_result_chars"`
-	ParallelExecution bool `yaml:"parallel_execution" json:"parallel_execution"`
+	// MaxResultChars caps a single tool result before it reaches the model.
+	// Tools that set ToolEntry.MaxResultSizeChars override it.
+	MaxResultChars int `toml:"max_result_chars" yaml:"max_result_chars" json:"max_result_chars"`
+	// TurnBudgetChars caps the aggregate size of all tool results in one
+	// chat turn or agent stage.
+	TurnBudgetChars int `toml:"turn_budget_chars" yaml:"turn_budget_chars" json:"turn_budget_chars"`
+	// SpillDir is where results too large to inline are written so the model
+	// can be handed a path instead of losing the content. Empty disables
+	// spilling, leaving inline truncation as the only option.
+	SpillDir          string `toml:"spill_dir" yaml:"spill_dir" json:"spill_dir"`
+	ParallelExecution bool   `toml:"parallel_execution" yaml:"parallel_execution" json:"parallel_execution"`
 }
+
+// WebFetchConfig controls the web_fetch tool.
+type WebFetchConfig struct {
+	// Enabled advertises the tool to the model. Nil means unset, which
+	// defaults to true.
+	//
+	// This is a pointer rather than a bool because defaulting cannot tell
+	// `enabled = false` from an absent key, and turning the tool off has to
+	// be expressible. Use IsEnabled rather than reading it directly.
+	Enabled *bool `toml:"enabled" yaml:"enabled" json:"enabled"`
+
+	// Timeout bounds one fetch including redirects.
+	Timeout Duration `toml:"timeout" yaml:"timeout" json:"timeout"`
+
+	// MaxBytes bounds how much of a response body is read.
+	MaxBytes int64 `toml:"max_bytes" yaml:"max_bytes" json:"max_bytes"`
+
+	// AllowPrivateNetworks permits fetching loopback, private and
+	// link-local addresses. Off by default: this daemon's own dashboard,
+	// NATS and the Docker API answer on those, and the URL to fetch
+	// arrives through chat, which is an untrusted path.
+	AllowPrivateNetworks bool `toml:"allow_private_networks" yaml:"allow_private_networks" json:"allow_private_networks"`
+}
+
+// IsEnabled reports whether the fetch tool should be registered, treating an
+// absent setting as enabled.
+func (c WebFetchConfig) IsEnabled() bool { return c.Enabled == nil || *c.Enabled }
 
 // ToolsConfig holds MCP server and tool policy configuration.
 type ToolsConfig struct {
-	MCPServers []MCPServer `toml:"mcp_servers" yaml:"mcp_servers" json:"mcp_servers"`
-	Policy     ToolPolicy  `toml:"tool_policy" yaml:"tool_policy" json:"tool_policy"`
+	MCPServers []MCPServer    `toml:"mcp_servers" yaml:"mcp_servers" json:"mcp_servers"`
+	Policy     ToolPolicy     `toml:"tool_policy" yaml:"tool_policy" json:"tool_policy"`
+	WebFetch   WebFetchConfig `toml:"web_fetch" yaml:"web_fetch" json:"web_fetch"`
 }
 
 // Config is the daemon configuration.
@@ -526,6 +568,24 @@ type ChatConfig struct {
 	// they read, write and execute, so the directory must be a deliberate
 	// choice rather than whatever the daemon happens to start in.
 	Workspace string `toml:"workspace" yaml:"workspace"`
+	// UnrestrictedFilesystem lifts the workspace jail from the chat agent's
+	// read, write, edit, find and grep tools, letting them reach any absolute
+	// path. Relative paths still resolve against Workspace.
+	//
+	// Off by default. Turn it on when the agent is a general-purpose operator
+	// rather than an assistant scoped to one project: partitioning and
+	// mounting a disk, migrating data between filesystems, or editing service
+	// units are all cross-filesystem by nature, and a jail makes them
+	// impossible.
+	//
+	// This widens which TOOL can do the work, not what the agent can reach.
+	// The shell tool has never been confined, so a jailed deployment only
+	// pushed the agent into doing everything through shell -- losing the
+	// truncation, line numbering and read-before-write protection the
+	// dedicated tools give it. Grant it deliberately all the same: it is the
+	// difference between an agent that can edit /etc directly and one that has
+	// to be asked to.
+	UnrestrictedFilesystem bool `toml:"unrestricted_filesystem" yaml:"unrestricted_filesystem"`
 	// MaxSteps caps how many model/tool round-trips one chat turn may take
 	// before the runtime stops and returns what it has. Zero uses the
 	// default.
