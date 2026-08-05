@@ -39,10 +39,25 @@ ENV_FILE="${ARCHIE_CONFIG_DIR}/env"
 INSTALL_SYSTEMD=true
 ENABLE_LINGER=true
 AUTO_START=true
-FORCE_BUILD=false
 INTERACTIVE=true
 
 [ ! -t 0 ] && INTERACTIVE=false
+
+usage() {
+  echo "Usage: ./install.sh [options]"
+  echo ""
+  echo "Options:"
+  echo "  --no-systemd       Skip systemd user unit installation"
+  echo "  --no-linger        Skip loginctl enable-linger execution"
+  echo "  --no-start         Install service but do not auto-start archied"
+  echo "  --non-interactive  Run without interactive setup prompts"
+  echo "  --help, -h         Show this help message"
+  echo ""
+  echo "XDG Target Directories:"
+  echo "  Config: ${ARCHIE_CONFIG_DIR}"
+  echo "  Data:   ${ARCHIE_DATA_DIR}"
+  echo "  Bin:    ${ARCHIE_BIN_DIR}"
+}
 
 for arg in "$@"; do
   case "$arg" in
@@ -63,26 +78,15 @@ for arg in "$@"; do
       INTERACTIVE=false
       shift
       ;;
-    --force)
-      FORCE_BUILD=true
-      shift
-      ;;
     --help|-h)
-      echo "Usage: ./install.sh [options]"
-      echo ""
-      echo "Options:"
-      echo "  --no-systemd       Skip systemd user unit installation"
-      echo "  --no-linger        Skip loginctl enable-linger execution"
-      echo "  --no-start         Install service but do not auto-start archied"
-      echo "  --non-interactive  Run without interactive setup prompts"
-      echo "  --force            Force rebuild binaries even if up to date"
-      echo "  --help, -h         Show this help message"
-      echo ""
-      echo "XDG Target Directories:"
-      echo "  Config: ${ARCHIE_CONFIG_DIR}"
-      echo "  Data:   ${ARCHIE_DATA_DIR}"
-      echo "  Bin:    ${ARCHIE_BIN_DIR}"
+      usage
       exit 0
+      ;;
+    *)
+      echo "Error: unknown option '${arg}'" >&2
+      echo "" >&2
+      usage >&2
+      exit 1
       ;;
   esac
 done
@@ -444,13 +448,21 @@ EOF
   SERVICE_INSTALLED=true
   echo "  Installed ${SERVICE_FILE}"
 
-  # Enable linger so systemd --user runs continuously without an active login session
+  # Enable linger so systemd --user runs continuously without an active login
+  # session. $(id -un) is used rather than $USER, which is unset in some
+  # container and cron contexts and would abort under `set -u`. Only a
+  # positive "Linger=yes" counts as already enabled -- a failed or empty
+  # `loginctl show-user` (no logind session, a container) falls through to
+  # enable-linger rather than being reported as already OK, since nothing
+  # was actually observed. enable-linger is idempotent, so a redundant call
+  # here is harmless.
   if [ "${ENABLE_LINGER}" = true ] && command -v loginctl &>/dev/null; then
-    if loginctl show-user "${USER}" 2>/dev/null | grep -q "Linger=no"; then
-      echo "==> Enabling systemd user linger (loginctl enable-linger ${USER})..."
-      loginctl enable-linger "${USER}" || echo "  Notice: Could not enable linger automatically. Run 'loginctl enable-linger ${USER}' manually if needed."
-    else
+    LINGER_USER="$(id -un)"
+    if loginctl show-user "${LINGER_USER}" 2>/dev/null | grep -q "Linger=yes"; then
       echo "  [OK] User linger is already enabled."
+    else
+      echo "==> Enabling systemd user linger (loginctl enable-linger ${LINGER_USER})..."
+      loginctl enable-linger "${LINGER_USER}" || echo "  Notice: Could not enable linger automatically. Run 'loginctl enable-linger ${LINGER_USER}' manually if needed."
     fi
   fi
 
