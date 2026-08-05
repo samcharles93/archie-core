@@ -175,7 +175,7 @@ func (l *Loader) decodeMain(cfg *config.Config, path string, isYAMLFile bool) er
 // wrote.
 func (l *Loader) finalize(doc *Document) (*Document, error) {
 	l.applyDefaults(&doc.Config)
-	if err := validate(&doc.Config); err != nil {
+	if err := Validate(&doc.Config); err != nil {
 		return nil, err
 	}
 	l.log.Debug("configuration loaded", "sources", doc.Provenance.String())

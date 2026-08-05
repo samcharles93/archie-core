@@ -35,6 +35,24 @@ var (
 	dispatchTriggers = []string{dispatchTriggerAssignee, dispatchTriggerLabel, dispatchTriggerEither}
 )
 
+// Validate runs the same checks Loader applies before accepting a config,
+// against a config.Config value already built in memory -- e.g. by archied
+// setup, before it has written anything to disk.
+//
+// Like validate, it does not apply defaults. Several checks (agent.mode,
+// dispatch.trigger, forge.type) only pass once a default has been filled
+// in, and defaulting is currently unexported ((*Loader).applyDefaults). A
+// cfg built by hand, with those fields left zero-valued, will fail
+// validation that a config loaded through [Loader.File] would pass. Callers
+// that build a config directly (rather than decoding one through a Loader)
+// must fill in the same defaults themselves, or -- the safer option, since
+// it can't drift from what the real load path does -- render the config to
+// TOML and load it back through a Loader instead of calling Validate on the
+// in-memory value directly.
+func Validate(cfg *config.Config) error {
+	return validate(cfg)
+}
+
 // validate reports the first problem that would stop the daemon running.
 // It does not modify cfg -- run applyDefaults first.
 func validate(cfg *config.Config) error {
