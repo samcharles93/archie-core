@@ -158,6 +158,81 @@ func TestApply_Idempotent_SecondRunLeavesOtherEditByteIdentical(t *testing.T) {
 	}
 }
 
+// [models], [indexing], [web], and [notify] in the real template all carry
+// a trailing "# ..." comment on the header line itself
+// ("[models] # role -> ..."). The header regexes were anchored with no
+// allowance for that, so Apply's table-tracking never recognised these as
+// table headers at all -- an edit targeting "models" fell through every
+// matching stage and got appended as a brand-new duplicate [models] table
+// at EOF, which BurntSushi/toml then refuses to decode ("Key 'models' has
+// already been defined"). archied setup's models step targets exactly this
+// table.
+func TestApply_ActiveHeaderWithTrailingComment_IsRecognised(t *testing.T) {
+	src := `[models] # role -> ai-sdk runtime ref
+triage = "openai/gpt-5.4"
+
+[budgets]
+max_steps = 60
+`
+	out, err := tomlwrite.Apply([]byte(src), []tomlwrite.Edit{
+		{Table: "models", Key: "planner", Value: tomlwrite.String("openai/gpt-5.4")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(out)
+	if strings.Count(got, "planner") != 1 {
+		t.Fatalf("expected exactly one planner line, got:\n%s", got)
+	}
+	if strings.Contains(got, "\n[models]\n") {
+		t.Fatalf("a second, commentless [models] table was appended instead of reusing the commented-header one:\n%s", got)
+	}
+	var decoded config.Config
+	if _, err := toml.Decode(got, &decoded); err != nil {
+		t.Fatalf("output does not parse as TOML: %v\n%s", err, got)
+	}
+	if decoded.Models["triage"] != "openai/gpt-5.4" || decoded.Models["planner"] != "openai/gpt-5.4" {
+		t.Fatalf("models did not round-trip: got %+v", decoded.Models)
+	}
+}
+
+// The real template must decode after a models-table edit -- the actual
+// regression this bug produces (a duplicate-key decode error), rather than
+// a hand-built fixture.
+func TestGenerate_RealTemplate_ModelsTableEditDecodes(t *testing.T) {
+	out, err := tomlwrite.Generate(configtemplate.Example, []tomlwrite.Edit{
+		{Table: "models", Key: "triage", Value: tomlwrite.String("ollama/llama3")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded config.Config
+	if _, err := toml.Decode(string(out), &decoded); err != nil {
+		t.Fatalf("generated config does not parse as TOML: %v\n%s", err, out)
+	}
+	if decoded.Models["triage"] != "ollama/llama3" {
+		t.Fatalf("models.triage did not round-trip: got %+v", decoded.Models)
+	}
+}
+
+// The commented form of a header can carry a trailing comment too; it must
+// be recognised the same way the active form now is.
+func TestApply_CommentedHeaderWithTrailingComment_IsRecognised(t *testing.T) {
+	src := `# [web] # observability dashboard
+# addr = "127.0.0.1:8080"
+`
+	out, err := tomlwrite.Apply([]byte(src), []tomlwrite.Edit{
+		{Table: "web", Key: "addr", Value: tomlwrite.String("127.0.0.1:9090")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(out)
+	if !strings.Contains(got, "[web]\naddr = \"127.0.0.1:9090\"\n") {
+		t.Fatalf("expected header uncommented and addr set, got:\n%s", got)
+	}
+}
+
 func TestGenerate_RealTemplate_ProducesReadableConfig(t *testing.T) {
 	out, err := tomlwrite.Generate(configtemplate.Example, []tomlwrite.Edit{
 		{Table: "", Key: "bot_user", Value: tomlwrite.String("acme-archie")},

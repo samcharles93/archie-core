@@ -70,8 +70,8 @@ func Ref(engine, key string) string {
 }
 
 var (
-	activeHeaderRe    = regexp.MustCompile(`^\[([A-Za-z0-9_.]+)\]\s*$`)
-	commentedHeaderRe = regexp.MustCompile(`^#\s*\[([A-Za-z0-9_.]+)\]\s*$`)
+	activeHeaderRe    = regexp.MustCompile(`^\[([A-Za-z0-9_.]+)\]\s*(#.*)?$`)
+	commentedHeaderRe = regexp.MustCompile(`^#\s*\[([A-Za-z0-9_.]+)\]\s*(#.*)?$`)
 	activeKeyRe       = regexp.MustCompile(`^(\s*)([A-Za-z0-9_.]+)(\s*=\s*)(.*)$`)
 	commentedKeyRe    = regexp.MustCompile(`^(\s*)#\s?([A-Za-z0-9_.]+)(\s*=\s*)(.*)$`)
 )
