@@ -71,6 +71,67 @@ export const api = {
   config: () => req("/api/config"),
   logs: (params) => req("/api/logs" + qs(params)),
   memory: () => req("/api/memory"),
+  chatSessions: () => req("/api/chat/sessions"),
+  chatMessages: (id) => req(`/api/chat/sessions/${encodeURIComponent(id)}/messages`),
+  chatCancel: async (sessionID) => {
+    const res = await fetch("/api/chat/cancel", {
+      method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionID }), signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+    return res.json();
+  },
+  chatMessage: async (channelID, text) => {
+    const res = await fetch("/api/chat/message", {
+      method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ channel_id: channelID, source_id: crypto.randomUUID(), text }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+    return res.json();
+  },
+  chatPersona: async (sessionID, name) => {
+    const res = await fetch("/api/chat/persona", {
+      method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionID, name }), signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+    return res.json();
+  },
+  chatUpdate: () => req("/api/chat/update"),
+  chatUpdateDefer: async (snapshot) => {
+    const res = await fetch("/api/chat/update/defer", {
+      method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ snapshot }), signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+    return res.json();
+  },
+  chatUpdateInstall: async (snapshot) => {
+    const res = await fetch("/api/chat/update/install", {
+      method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ snapshot }), signal: AbortSignal.timeout(120000),
+    });
+    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+    return res.json();
+  },
+  chatDangerous: () => req("/api/chat/dangerous"),
+  chatDangerousRequest: async (kind, spec) => {
+    const res = await fetch(`/api/chat/dangerous/${encodeURIComponent(kind)}`, {
+      method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ spec }), signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+    return res.json();
+  },
+  chatDangerousDecision: async (id, decision) => {
+    const res = await fetch(`/api/chat/dangerous/${encodeURIComponent(id)}/decision`, {
+      method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ decision }), signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+    return res.json();
+  },
 };
 
 /**

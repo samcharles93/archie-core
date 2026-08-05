@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"strings"
 	"time"
 
@@ -62,26 +61,7 @@ func (g *Gateway) sendUpdateMessage(ctx context.Context, b *bot.Bot, chatID int6
 }
 
 func updateText(snapshot releaseupdate.Snapshot) string {
-	if len(snapshot.Available()) == 0 && !snapshot.Deferred {
-		return "Archie is up to date."
-	}
-	if len(snapshot.Available()) == 0 && snapshot.Deferred {
-		return "The available update is deferred. Archie will ask again when a newer release is available."
-	}
-	var text strings.Builder
-	text.WriteString("Archie has an update available:")
-	for _, component := range snapshot.Components {
-		fmt.Fprintf(&text, "\n\n--- %s ---\n", component.Label)
-		if component.Available == "" || component.Available == component.Installed {
-			fmt.Fprintf(&text, "No %s changes as part of this release.", strings.ToLower(strings.TrimPrefix(component.Label, "THE ")))
-			continue
-		}
-		fmt.Fprintf(&text, "%s available", component.Available)
-		if component.Changelog != "" {
-			fmt.Fprintf(&text, "\n\n%s", component.Changelog)
-		}
-	}
-	return text.String()
+	return releaseupdate.FormatSnapshot(snapshot)
 }
 
 func (g *Gateway) updateKeyboard(recipient int64, snapshot releaseupdate.Snapshot) *models.InlineKeyboardMarkup {
@@ -203,20 +183,7 @@ func (g *Gateway) installUpdate(ctx context.Context, b *bot.Bot, query *models.C
 }
 
 func sameUpdateSnapshot(left, right releaseupdate.Snapshot) bool {
-	leftAvailable, rightAvailable := left.Available(), right.Available()
-	if len(leftAvailable) != len(rightAvailable) {
-		return false
-	}
-	versions := make(map[string]string, len(leftAvailable))
-	for _, component := range leftAvailable {
-		versions[component.ID] = component.Available
-	}
-	for _, component := range rightAvailable {
-		if versions[component.ID] != component.Available {
-			return false
-		}
-	}
-	return true
+	return releaseupdate.SameAvailable(left, right)
 }
 
 func (g *Gateway) editUpdateMessage(ctx context.Context, b *bot.Bot, query *models.CallbackQuery, text string) {

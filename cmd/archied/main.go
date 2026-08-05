@@ -262,6 +262,7 @@ func run() int {
 			log.Error("close store", "err", err)
 		}
 	}()
+	chatSessionStore := makeTelegramSessionStore(telegramSetup{St: st, Cfg: cfg})
 
 	if *requeue > 0 {
 		if err := st.Requeue(context.Background(), *requeue, "manual", ""); err != nil {
@@ -311,15 +312,6 @@ func run() int {
 			web.Broadcast(e)
 		}
 	}()
-	if l := cfg.Web.Listen; l != "" && l != "off" {
-		web.Token = webTokenFor(l, cfg.DBPath, log)
-		go func() {
-			if err := web.Run(ctx, l); err != nil {
-				log.Error("web ui failed", "err", err)
-			}
-		}()
-	}
-
 	// NATS client (optional  --  SQLite flow unchanged when [nats] is absent).
 	var natsClient *nats.Client
 	if cfg.NATS.URL != "" {
@@ -384,6 +376,47 @@ func run() int {
 		requeue:    st.Requeue,
 		transition: st.Transition,
 	})
+	updateService := makeUpdateService(telegramSetup{Cfg: cfg})
+
+	// The dashboard is another gateway, not a second chat implementation. It
+	// shares the router, session history, model selection, personas and LLM
+	// responder with Telegram while using a stable browser channel id.
+	var restartTelegram func() error
+	webRouter := gateway.NewRouter(st, nil, "web")
+	webRouter.Version = fmt.Sprintf("Archie\nGateway: %s\nRuntime: %s", gatewayVersion, runtimeVersion)
+	if cfg.Chat.Telegram.TokenEnv != "" {
+		webRouter.Restart = func(context.Context) error {
+			if restartTelegram == nil {
+				return fmt.Errorf("telegram gateway is not ready")
+			}
+			return restartTelegram()
+		}
+	}
+	webRouter.Models = chatModels
+	webRouter.Updates = updateService
+	webRouter.Personas = personas
+	webRouter.InitSessions(chatSessionStore)
+	configureTaskCommands(webRouter, chatTasks, chatController, defaultChatIdentity)
+	webSetup := telegramSetup{
+		Cfg: cfg, St: st, LLM: llm, ChatModels: chatModels, ToolReg: toolReg,
+		Personas: personas, ChatTasks: chatTasks, ChatController: chatController,
+		DefaultChatIdentity: defaultChatIdentity, SessionStore: chatSessionStore,
+		Log: log,
+	}
+	webRouter.LLM, webRouter.LLMStream = makeChatLLMResponder(ctx, "web", webSetup, chatSessionStore, webRouter)
+	web.Chat = &webui.ChatService{
+		Router: webRouter, Sessions: chatSessionStore,
+		Turns:  gateway.NewTurns(log),
+		Models: chatModels, Personas: personas, Updates: updateService,
+	}
+	if l := cfg.Web.Listen; l != "" && l != "off" {
+		web.Token = webTokenFor(l, cfg.DBPath, log)
+		go func() {
+			if err := web.Run(ctx, l); err != nil {
+				log.Error("web ui failed", "err", err)
+			}
+		}()
+	}
 
 	// ── Gateways ──────────────────────────────────────────────────────
 	// Multi-agent collaboration PRD phase C (docs/prds/multi-agent-collaboration.md).
@@ -392,7 +425,8 @@ func run() int {
 		Cfg: cfg, CfgPath: *cfgPath, OverlayPath: *overlayPath,
 		St: st, LLM: llm, ChatModels: chatModels, ToolReg: toolReg,
 		Personas: personas, ChatTasks: chatTasks, ChatController: chatController,
-		DefaultChatIdentity: defaultChatIdentity, Log: log,
+		DefaultChatIdentity: defaultChatIdentity, SessionStore: chatSessionStore, Updates: updateService,
+		RegisterRestart: func(request func() error) { restartTelegram = request }, Log: log,
 	})
 	if !ok {
 		return 1

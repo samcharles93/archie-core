@@ -220,9 +220,6 @@ func (c *StoreTaskController) Cancel(ctx context.Context, taskID int64, identity
 		return err
 	}
 	switch st.Status {
-	case taskstate.Parked:
-		// Parked is declinable -- taskstate allows it -- but there is
-		// nothing running to interrupt, so fall through to record it.
 	case taskstate.Running:
 		// Cancelling a running task used to be refused outright, which
 		// left the only case worth interrupting as the one case that
@@ -240,7 +237,7 @@ func (c *StoreTaskController) Cancel(ctx context.Context, taskID int64, identity
 			break
 		}
 	}
-	return c.store.CancelChatTask(ctx, taskID, "cancelled via chat by "+identity)
+	return c.store.CancelChatTask(ctx, taskID, "declined by "+identity)
 }
 
 // StopRunning interrupts every task executing for identity.

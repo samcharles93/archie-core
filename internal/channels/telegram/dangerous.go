@@ -16,35 +16,13 @@ import (
 	"github.com/samcharles93/archie-core/internal/gateway"
 )
 
-// DangerousCommandAuthority is the sandbox/process/filesystem authority
-// that validates and executes dangerous commands after human approval.
-// The daemon's container pool, worktree manager, or similar sandbox owner
-// implements this interface. It must not claim control over host
-// resources Archie does not own.
-type DangerousCommandAuthority interface {
-	// StopProcess terminates a running background process identified by
-	// spec (a process name, ID, or other identifier understood by the
-	// sandbox). Returns an error if the process cannot be found or
-	// stopped.
-	StopProcess(ctx context.Context, spec string) error
-
-	// Rollback restores the worktree/sandbox filesystem to a numbered
-	// checkpoint. Returns a summary of the restored state, or an error
-	// if the checkpoint does not exist or restoration fails.
-	Rollback(ctx context.Context, checkpointNumber int) (string, error)
-
-	// ListCheckpoints returns available filesystem checkpoints, newest
-	// first. Returns an empty slice when no checkpoints exist.
-	ListCheckpoints(ctx context.Context) ([]CheckpointInfo, error)
-}
-
-// CheckpointInfo describes a saved filesystem checkpoint.
-type CheckpointInfo struct {
-	Number    int
-	Timestamp time.Time
-	Label     string
-	Size      string
-}
+// These aliases keep Telegram's public configuration surface source
+// compatible while making the authority contract reusable by other
+// interactive adapters such as the Web UI.
+type (
+	DangerousCommandAuthority = gateway.DangerousCommandAuthority
+	CheckpointInfo            = gateway.CheckpointInfo
+)
 
 // ── dangerous command approval system ─────────────────────────────
 

@@ -1,6 +1,11 @@
 package gateway
 
-import "sync"
+import (
+	"context"
+	"fmt"
+	"strings"
+	"sync"
+)
 
 // Persona is a named communication style that modifies the system prompt.
 type Persona struct {
@@ -96,10 +101,51 @@ func (r *PersonaRegistry) GetActive(sessionKey string) string {
 	return p.Prompt
 }
 
+// ActiveName returns the selected persona name for a session, falling back to
+// the registry default. It is used by channel adapters that render a compact
+// selector summary rather than the full prompt.
+func (r *PersonaRegistry) ActiveName(sessionKey string) string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if name := r.active[sessionKey]; name != "" {
+		return name
+	}
+	return r.defaultName
+}
+
 // Get returns a persona by name, or false when not found.
 func (r *PersonaRegistry) Get(name string) (Persona, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	p, ok := r.personas[name]
 	return p, ok
+}
+
+func (r *Router) handlePersonality(ctx context.Context, msg Message, rest string) (string, error) {
+	if r.Personas == nil {
+		return "Personality switching is not configured.", nil
+	}
+	name := strings.ToLower(strings.TrimSpace(rest))
+	if name == "" {
+		return fmt.Sprintf("Active personality: %s\nAvailable: %s", r.Personas.ActiveName(r.sessionKey(ctx, msg)), strings.Join(r.Personas.List(), ", ")), nil
+	}
+	if !r.Personas.SetActive(r.sessionKey(ctx, msg), name) {
+		return fmt.Sprintf("Unknown personality %q. Available: %s", name, strings.Join(r.Personas.List(), ", ")), nil
+	}
+	return fmt.Sprintf("Personality set to %q.", name), nil
+}
+
+func (r *Router) sessionKey(ctx context.Context, msg Message) string {
+	if r.sessionTracker == nil {
+		return msg.ChannelID
+	}
+	key, err := r.ResolveSessionKey(ctx, msg)
+	if err != nil {
+		return msg.ChannelID
+	}
+	return key
+}
+
+func (r *Router) helpText() string {
+	return "Send a message to chat with Archie. Available commands:\n" + strings.Join(LocalCommands(), " ")
 }

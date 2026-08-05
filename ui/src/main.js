@@ -9,6 +9,7 @@ import { channelsPage } from "./channels/channels.js";
 import { settingsPage } from "./settings/settings.js";
 import { logsPage } from "./logs/logs.js";
 import { memoryPage } from "./memory/memory.js";
+import { chatPage } from "./chat/chat.js";
 
 /**
  * Routes are declared once here. Adding a section means adding a feature
@@ -20,6 +21,7 @@ import { memoryPage } from "./memory/memory.js";
  */
 const routes = [
   { path: "/", label: "Dashboard", icon: "dashboard", view: dashboardPage },
+  { path: "/chat", label: "Chat", icon: "chat", view: chatPage },
   { path: "/tasks", label: "Tasks", icon: "tasks", view: tasksPage },
   { path: "/logs", label: "Logs", icon: "logs", view: logsPage },
   { path: "/skills", label: "Skills", icon: "skills", view: skillsPage },

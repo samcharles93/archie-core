@@ -26,7 +26,10 @@ node_modules/
 .claude/
 .codex/
 .pi-subagents/
+.pi/
 .playwright-mcp/
+# Working screenshots from UI sessions.
+*.png
 
 # Frontend
 /ui/node_modules/

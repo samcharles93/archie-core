@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/samcharles93/archie-core/internal/releaseupdate"
 )
 
 // Message is an inbound message from a gateway connection.
@@ -141,6 +143,22 @@ type ProviderDisplayNamer interface {
 	ProviderDisplayName(provider string) string
 }
 
+// UpdateService is the shared release workflow used by chat adapters. The
+// recipient id scopes deferrals; each adapter chooses its own stable id.
+type UpdateService interface {
+	Check(context.Context, int64) (releaseupdate.Snapshot, error)
+	Defer(context.Context, int64, releaseupdate.Snapshot) error
+	Install(context.Context, func(string)) error
+	CanInstall() bool
+}
+
+// DangerousApprover is the adapter-neutral decision surface for pending
+// sandbox actions. Numeric /approve arguments remain task approvals; action
+// IDs are routed here when this capability is present.
+type DangerousApprover interface {
+	Decide(context.Context, string, string) (string, error)
+}
+
 // SpawnRequest is a chat-originated task creation request. Repo and
 // Workflow are optional  --  empty means "the daemon's configured
 // default for this identity".
@@ -220,6 +238,16 @@ type Router struct {
 	// spawned under one identity cannot be controlled from another's
 	// chat session.
 	Identity string
+	// Version is shown by the shared /version command when supplied by the
+	// composition root. Empty means version information is unavailable.
+	Version string
+	// Updates handles the shared /update command. Nil means unavailable.
+	Updates UpdateService
+	// Dangerous handles typed approval decisions for sandbox actions.
+	Dangerous DangerousApprover
+	// Restart requests a scoped chat-adapter reload. It deliberately does not
+	// restart the daemon; Telegram's /restart has this same boundary.
+	Restart func(context.Context) error
 	// Sessions persists session metadata and conversation history.
 	// When set, session lifecycle commands (/new, /branch, /title,
 	// /undo, /retry, /compress) are available. When nil, those
@@ -279,8 +307,21 @@ func (r *Router) dispatchLocal(ctx context.Context, msg Message, text, cmd strin
 		reply, err := r.handleSpawn(ctx, rest)
 		return reply, true, err
 	case "/approve":
-		reply, err := r.handleApprove(ctx, rest)
+		reply, err := r.handleApproveCommand(ctx, rest)
 		return reply, true, err
+	case "/deny":
+		if r.Dangerous == nil {
+			return "Dangerous approvals are not configured.", true, nil
+		}
+		fields := strings.Fields(rest)
+		if len(fields) != 1 {
+			return "Usage: /deny <action-id>", true, nil
+		}
+		result, err := r.Dangerous.Decide(ctx, fields[0], "deny")
+		if err != nil {
+			return fmt.Sprintf("Cannot deny action: %v", err), true, nil
+		}
+		return result, true, nil
 	case "/cancel":
 		reply, err := r.handleCancel(ctx, rest)
 		return reply, true, err
@@ -302,6 +343,33 @@ func (r *Router) dispatchLocal(ctx context.Context, msg Message, text, cmd strin
 	case "/agents":
 		reply, err := r.handleAgents(ctx)
 		return reply, true, err
+	case "/personality":
+		reply, err := r.handlePersonality(ctx, msg, rest)
+		return reply, true, err
+	case "/help":
+		return r.helpText(), true, nil
+	case "/version":
+		if r.Version == "" {
+			return "Version information is not configured.", true, nil
+		}
+		return r.Version, true, nil
+	case "/update":
+		if r.Updates == nil {
+			return "Updates are not configured.", true, nil
+		}
+		snapshot, err := r.Updates.Check(ctx, 0)
+		if err != nil {
+			return fmt.Sprintf("Could not check for updates: %v", err), true, nil
+		}
+		return releaseupdate.FormatSnapshot(snapshot), true, nil
+	case "/restart":
+		if r.Restart == nil {
+			return "Chat adapter restart is not configured.", true, nil
+		}
+		if err := r.Restart(ctx); err != nil {
+			return fmt.Sprintf("Could not restart the chat adapter: %v", err), true, nil
+		}
+		return "Chat adapter reload requested.", true, nil
 	}
 	return r.dispatchSessionCommand(ctx, msg, cmd, rest)
 }
@@ -360,9 +428,49 @@ func (r *Router) RouteStream(ctx context.Context, msg Message, onDelta func(stri
 
 var localCommands = []string{
 	"/status", "/model", "/spawn", "/approve", "/cancel",
+	"/start",
 	"/new", "/reset", "/topic", "/retry", "/undo",
 	"/title", "/branch", "/fork", "/compress", "/compact",
 	"/whoami", "/profile", "/sessions", "/resume", "/agents",
+	"/personality", "/help", "/version", "/update", "/restart",
+}
+
+// CommandSpec describes a local command for adapter-provided discovery.
+// Keeping this beside the executable command list prevents help surfaces from
+// drifting when a command is added or removed.
+type CommandSpec struct {
+	Command     string `json:"command"`
+	Description string `json:"description"`
+	Usage       string `json:"usage"`
+}
+
+var localCommandSpecs = []CommandSpec{
+	{Command: "/status", Description: "Show task counts by state", Usage: "/status"},
+	{Command: "/model", Description: "Choose a provider and model", Usage: "/model [provider/model]"},
+	{Command: "/spawn", Description: "Create a tracked task", Usage: "/spawn <title>"},
+	{Command: "/approve", Description: "Approve a waiting task", Usage: "/approve <task-id>"},
+	{Command: "/cancel", Description: "Cancel a queued or waiting task", Usage: "/cancel <task-id>"},
+	{Command: "/start", Description: "Confirm that Archie is running", Usage: "/start"},
+	{Command: "/new", Description: "Start a fresh conversation", Usage: "/new [title]"},
+	{Command: "/reset", Description: "Alias for /new", Usage: "/reset [title]"},
+	{Command: "/topic", Description: "List or switch conversation topics", Usage: "/topic [session-id]"},
+	{Command: "/retry", Description: "Replay the last message", Usage: "/retry"},
+	{Command: "/undo", Description: "Remove recent messages", Usage: "/undo [N]"},
+	{Command: "/title", Description: "Show or set the conversation title", Usage: "/title [name]"},
+	{Command: "/branch", Description: "Create a child conversation", Usage: "/branch [name]"},
+	{Command: "/fork", Description: "Alias for /branch", Usage: "/fork [name]"},
+	{Command: "/compress", Description: "Compress conversation context", Usage: "/compress [options]"},
+	{Command: "/compact", Description: "Alias for /compress", Usage: "/compact [options]"},
+	{Command: "/whoami", Description: "Show the active identity and model", Usage: "/whoami"},
+	{Command: "/profile", Description: "Show the active identity profile", Usage: "/profile"},
+	{Command: "/sessions", Description: "List this channel's conversations", Usage: "/sessions"},
+	{Command: "/resume", Description: "Switch to a conversation", Usage: "/resume <session-id>"},
+	{Command: "/agents", Description: "List tasks currently being worked", Usage: "/agents"},
+	{Command: "/personality", Description: "Choose a communication style", Usage: "/personality [name]"},
+	{Command: "/help", Description: "See what Archie can do", Usage: "/help"},
+	{Command: "/version", Description: "Show installed Archie versions", Usage: "/version"},
+	{Command: "/update", Description: "Check for Archie updates", Usage: "/update"},
+	{Command: "/restart", Description: "Reload the chat adapter", Usage: "/restart"},
 }
 
 // LocalCommands returns the command names Route answers from local state.
@@ -370,6 +478,12 @@ var localCommands = []string{
 // the executable router surface.
 func LocalCommands() []string {
 	return slices.Clone(localCommands)
+}
+
+// LocalCommandSpecs returns a copy safe for adapters to enrich with their
+// optional capabilities.
+func LocalCommandSpecs() []CommandSpec {
+	return slices.Clone(localCommandSpecs)
 }
 
 // isLocalCommand reports whether cmd is answered from local state by
@@ -487,6 +601,30 @@ func parseTaskID(arg string) (int64, error) {
 		return 0, fmt.Errorf("%q is not a valid task ID", arg)
 	}
 	return id, nil
+}
+
+func (r *Router) handleApproveCommand(ctx context.Context, rest string) (string, error) {
+	fields := strings.Fields(rest)
+	if r.Dangerous != nil && len(fields) == 1 && !isTaskID(fields[0]) {
+		result, err := r.Dangerous.Decide(ctx, fields[0], "approve")
+		if err != nil {
+			return fmt.Sprintf("Cannot approve action: %v", err), nil
+		}
+		return result, nil
+	}
+	if r.Dangerous != nil && len(fields) == 2 && strings.EqualFold(fields[0], "permanent") {
+		result, err := r.Dangerous.Decide(ctx, fields[1], "permanent")
+		if err != nil {
+			return fmt.Sprintf("Cannot approve action: %v", err), nil
+		}
+		return result, nil
+	}
+	return r.handleApprove(ctx, rest)
+}
+
+func isTaskID(value string) bool {
+	_, err := strconv.ParseInt(value, 10, 64)
+	return err == nil
 }
 
 func (r *Router) handleApprove(ctx context.Context, rest string) (string, error) {

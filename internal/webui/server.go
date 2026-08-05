@@ -35,6 +35,10 @@ type Server struct {
 	// unavailable rather than failing when it is nil.
 	Memory *memory.Manager
 
+	// Chat exposes the same gateway router used by the conversational
+	// channels. Optional: the dashboard simply omits chat when it is nil.
+	Chat *ChatService
+
 	// Token gates access. Empty means no check, which is how loopback binds
 	// stay frictionless -- see IsLoopback.
 	Token string
@@ -93,6 +97,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/config", s.handleConfig)
 	mux.HandleFunc("GET /api/logs", s.handleLogs)
 	mux.HandleFunc("GET /api/memory", s.handleMemory)
+	mux.HandleFunc("GET /api/chat/sessions", s.handleChatSessions)
+	mux.HandleFunc("GET /api/chat/sessions/{id}/messages", s.handleChatMessages)
+	mux.HandleFunc("POST /api/chat/message", s.handleChatMessage)
+	mux.HandleFunc("POST /api/chat/stream", s.handleChatStream)
+	mux.HandleFunc("POST /api/chat/cancel", s.handleChatCancel)
+	mux.HandleFunc("POST /api/chat/persona", s.handleChatPersona)
+	mux.HandleFunc("GET /api/chat/update", s.handleChatUpdate)
+	mux.HandleFunc("POST /api/chat/update/defer", s.handleChatUpdateDefer)
+	mux.HandleFunc("POST /api/chat/update/install", s.handleChatUpdateInstall)
+	mux.HandleFunc("GET /api/chat/dangerous", s.handleChatDangerousState)
+	mux.HandleFunc("POST /api/chat/dangerous/{kind}", s.handleChatDangerousRequest)
+	mux.HandleFunc("POST /api/chat/dangerous/{id}/decision", s.handleChatDangerousDecision)
 	mux.HandleFunc("GET /events", s.handleSSE)
 	mux.Handle("GET /", s.assets())
 	return s.requireToken(mux)

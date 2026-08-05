@@ -125,6 +125,18 @@ func New(token, webhookURL, webhookSecret string, allowedUserIDs []int64, log *s
 
 func (g *Gateway) Name() string { return "telegram" }
 
+// RequestRestart asks the gateway supervisor to reload this adapter. It is
+// safe for callers outside Telegram (such as the local Web UI) and never
+// blocks when a restart is already queued.
+func (g *Gateway) RequestRestart() error {
+	select {
+	case g.restartCh <- restartRequest{}:
+		return nil
+	default:
+		return errors.New("telegram gateway restart already in progress")
+	}
+}
+
 // Start supervises the bot: it launches an instance and relaunches it
 // whenever a restart is requested, blocking until ctx is cancelled.
 //
@@ -145,8 +157,10 @@ func (g *Gateway) Start(ctx context.Context, router *gateway.Router) error {
 			return err
 		}
 		// Confirm to whoever asked, now that the new instance can send.
-		if req := g.pendingRestart; req != nil {
+		if req := g.pendingRestart; req != nil && req.chatID != 0 {
 			g.sendMessage(runCtx, b, req.chatID, req.threadID, "✅ Archie reloaded.")
+		}
+		if g.pendingRestart != nil {
 			g.pendingRestart = nil
 		}
 

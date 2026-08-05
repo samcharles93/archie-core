@@ -39,6 +39,10 @@ type telegramSetup struct {
 	ChatTasks           gateway.TaskCreator
 	ChatController      gateway.TaskController
 	DefaultChatIdentity string
+	SessionStore        gateway.SessionStore
+	Updates             telegram.UpdateService
+	Dangerous           gateway.DangerousCommandAuthority
+	RegisterRestart     func(func() error)
 	Log                 *slog.Logger
 }
 
@@ -59,10 +63,18 @@ func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), o
 			"Add your Telegram user id to chat.telegram.allowed_user_ids to enable the bot.")
 	}
 	tg := telegram.New(tgToken, "", "", s.Cfg.Chat.Telegram.AllowedUserIDs, s.Log)
+	if s.RegisterRestart != nil {
+		s.RegisterRestart(tg.RequestRestart)
+	}
 	tg.Version = func() string {
 		return fmt.Sprintf("Archie\nGateway: %s\nRuntime: %s", gatewayVersion, runtimeVersion)
 	}
-	configureTelegramUpdates(tg, s)
+	if s.Updates != nil {
+		tg.Updates = s.Updates
+	} else {
+		configureTelegramUpdates(tg, s)
+	}
+	tg.Dangerous = s.Dangerous
 	tg.ReleaseAnnouncements = &releaseannounce.Announcer{
 		StatePath: releaseAnnouncementStatePath(s.Cfg.WorkDir, s.Cfg.BotUser),
 		Components: []releaseannounce.Component{
@@ -72,7 +84,10 @@ func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), o
 	}
 	tg.Reload = makeTelegramReload(s)
 
-	sessionStore := makeTelegramSessionStore(s)
+	sessionStore := s.SessionStore
+	if sessionStore == nil {
+		sessionStore = makeTelegramSessionStore(s)
+	}
 	router := buildTelegramRouter(ctx, tg, s, sessionStore)
 	return func() {
 		go func() {
@@ -85,8 +100,14 @@ func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), o
 }
 
 func configureTelegramUpdates(tg *telegram.Gateway, s telegramSetup) {
+	if updates := makeUpdateService(s); updates != nil {
+		tg.Updates = updates
+	}
+}
+
+func makeUpdateService(s telegramSetup) *releaseupdate.Service {
 	if len(s.Cfg.Chat.Telegram.UpdateCheckCommand) == 0 {
-		return
+		return nil
 	}
 	updates := &releaseupdate.Service{
 		Catalog:   releaseupdate.CommandCatalog{Command: s.Cfg.Chat.Telegram.UpdateCheckCommand},
@@ -95,7 +116,7 @@ func configureTelegramUpdates(tg *telegram.Gateway, s telegramSetup) {
 	if len(s.Cfg.Chat.Telegram.UpdateInstallCommand) != 0 {
 		updates.Installer = releaseupdate.CommandInstaller{Command: s.Cfg.Chat.Telegram.UpdateInstallCommand}
 	}
-	tg.Updates = updates
+	return updates
 }
 
 func makeTelegramReload(s telegramSetup) func(*telegram.Gateway) error {
@@ -134,14 +155,15 @@ func buildTelegramRouter(ctx context.Context, tg *telegram.Gateway, s telegramSe
 	// captured by reference.
 	router := gateway.NewRouter(s.St, nil, "telegram")
 	router.Models = s.ChatModels
+	router.Updates = s.Updates
 	router.InitSessions(sessionStore)
 	configureTaskCommands(router, s.ChatTasks, s.ChatController, s.DefaultChatIdentity)
 
-	router.LLM, router.LLMStream = makeTelegramLLMResponder(ctx, tg, s, sessionStore, router)
+	router.LLM, router.LLMStream = makeChatLLMResponder(ctx, tg.Name(), s, sessionStore, router)
 	return router
 }
 
-func makeTelegramLLMResponder(ctx context.Context, tg *telegram.Gateway, s telegramSetup, sessionStore gateway.SessionStore, router *gateway.Router) (gateway.LLMResponder, gateway.LLMStreamResponder) {
+func makeChatLLMResponder(ctx context.Context, channel string, s telegramSetup, sessionStore gateway.SessionStore, router *gateway.Router) (gateway.LLMResponder, gateway.LLMStreamResponder) {
 	if s.LLM == nil {
 		return nil, nil
 	}
@@ -202,7 +224,7 @@ func makeTelegramLLMResponder(ctx context.Context, tg *telegram.Gateway, s teleg
 		chatModel := s.ChatModels.ActiveModel()
 		systemPrompt := gateway.BuildSystemPrompt(gateway.SystemPromptConfig{
 			Persona: s.Personas.GetActive(sk), Tools: toolSummaries(options.Tools),
-			Channel: tg.Name(), Model: chatModel, SessionID: sk, Now: time.Now(),
+			Channel: channel, Model: chatModel, SessionID: sk, Now: time.Now(),
 			Operator: s.Cfg.Chat.Operator,
 		})
 		view.Messages = append(

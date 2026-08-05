@@ -49,6 +49,26 @@ func (s Snapshot) Available() []Component {
 	return available
 }
 
+// SameAvailable reports whether two snapshots offer the same component
+// versions. Metadata such as changelogs may change without changing the
+// release the operator is approving, so only installable versions matter.
+func SameAvailable(left, right Snapshot) bool {
+	leftAvailable, rightAvailable := left.Available(), right.Available()
+	if len(leftAvailable) != len(rightAvailable) {
+		return false
+	}
+	versions := make(map[string]string, len(leftAvailable))
+	for _, component := range leftAvailable {
+		versions[component.ID] = component.Available
+	}
+	for _, component := range rightAvailable {
+		if versions[component.ID] != component.Available {
+			return false
+		}
+	}
+	return true
+}
+
 // Service persists a user's decision to defer an exact available version. A
 // later version is deliberately shown again rather than being silently hidden.
 type Service struct {
@@ -109,30 +129,13 @@ func (s *Service) Defer(ctx context.Context, recipient int64, expected Snapshot)
 	if state[key] == nil {
 		state[key] = make(map[string]string)
 	}
-	if !sameAvailable(snapshot, expected) {
+	if !SameAvailable(snapshot, expected) {
 		return errors.New("available releases changed; check again")
 	}
 	for _, component := range expected.Available() {
 		state[key][component.ID] = component.Available
 	}
 	return saveDeferrals(s.StatePath, state)
-}
-
-func sameAvailable(left, right Snapshot) bool {
-	leftAvailable, rightAvailable := left.Available(), right.Available()
-	if len(leftAvailable) != len(rightAvailable) {
-		return false
-	}
-	versions := make(map[string]string, len(leftAvailable))
-	for _, component := range leftAvailable {
-		versions[component.ID] = component.Available
-	}
-	for _, component := range rightAvailable {
-		if versions[component.ID] != component.Available {
-			return false
-		}
-	}
-	return true
 }
 
 func (s *Service) Install(ctx context.Context, progress func(string)) error {

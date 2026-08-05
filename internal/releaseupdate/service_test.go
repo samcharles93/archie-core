@@ -3,6 +3,7 @@ package releaseupdate
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -57,6 +58,30 @@ func TestServiceInstallForwardsProgressAndFailure(t *testing.T) {
 	}
 	if len(progress) != 1 || progress[0] != "Pulling release..." {
 		t.Errorf("progress = %#v", progress)
+	}
+}
+
+func TestFormatSnapshotReportsAvailableAndUnchangedComponents(t *testing.T) {
+	got := FormatSnapshot(Snapshot{Components: []Component{
+		{Label: "THE GATEWAY", Installed: "v1", Available: "v2", Changelog: "- safer updates"},
+		{Label: "THE RUNTIME", Installed: "v1"},
+	}})
+	for _, want := range []string{"Archie has an update available", "v2 available", "safer updates", "No runtime changes"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("formatted snapshot missing %q: %s", want, got)
+		}
+	}
+}
+
+func TestSameAvailableIgnoresMetadataAndDetectsVersionChanges(t *testing.T) {
+	left := Snapshot{Components: []Component{{ID: "gateway", Installed: "v1", Available: "v2", Changelog: "old"}}}
+	right := Snapshot{Components: []Component{{ID: "gateway", Installed: "v1", Available: "v2", Changelog: "new"}}}
+	if !SameAvailable(left, right) {
+		t.Fatal("matching available versions should be equal")
+	}
+	right.Components[0].Available = "v3"
+	if SameAvailable(left, right) {
+		t.Fatal("changed available versions should not be equal")
 	}
 }
 

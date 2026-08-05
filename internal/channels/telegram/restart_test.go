@@ -59,6 +59,19 @@ func TestRestartRequestNeverBlocksHandler(t *testing.T) {
 	}
 }
 
+func TestRequestRestartQueuesScopedReload(t *testing.T) {
+	g := New("tok", "", "", []int64{1}, slog.Default())
+	if err := g.RequestRestart(); err != nil {
+		t.Fatalf("RequestRestart: %v", err)
+	}
+	if got := len(g.restartCh); got != 1 {
+		t.Fatalf("restart queue length = %d, want 1", got)
+	}
+	if req := <-g.restartCh; req.chatID != 0 {
+		t.Fatalf("chatID = %d, want zero for Web-originated restart", req.chatID)
+	}
+}
+
 // A failing Reload must not be fatal: a bad config edit should leave the
 // gateway running on its previous settings, not take chat down for good.
 func TestReloadFailureKeepsPreviousSettings(t *testing.T) {
