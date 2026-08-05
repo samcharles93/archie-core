@@ -53,7 +53,12 @@ func OpenStore(path, nodeID string) (store.TaskStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("nell: open log: %w", err)
 	}
-	return newAdapter(st, nodeID), nil
+	a, err := openAdapter(st, nodeID)
+	if err != nil {
+		_ = st.Close()
+		return nil, fmt.Errorf("nell: migrate counters: %w", err)
+	}
+	return a, nil
 }
 
 // OpenMemory creates an in-memory TaskStore backed by nell.MemoryStore,
@@ -74,6 +79,15 @@ func newAdapter(st nell.Store, nodeID string) *Adapter {
 		events: sdk.New(st, nodeID, "events"),
 		nodeID: nodeID,
 	}
+}
+
+func openAdapter(st nell.Store, nodeID string) (*Adapter, error) {
+	a := newAdapter(st, nodeID)
+	// Carry forward a pre-rename ID sequence before anything can allocate.
+	if err := a.migrateCounters(context.Background()); err != nil {
+		return nil, err
+	}
+	return a, nil
 }
 
 // Close shuts down the underlying store (flushes and closes the log file).
@@ -131,8 +145,13 @@ func (a *Adapter) EnqueueIssue(ctx context.Context, owner, repo string, number i
 		"park_reason":      "",
 		"retry_count":      int64(0),
 		"watch_comment_id": int64(0),
-		"created_at":       nowRFC3339(),
-		"updated_at":       nowRFC3339(),
+		// The identity whose poll found this issue. Dropping it here (as this
+		// did) left every forge-originated task unattributed, so multi-identity
+		// dispatch and any per-identity listing saw an empty queue. The SQLite
+		// store has always persisted it; this keeps the two in step.
+		"identity":   identity,
+		"created_at": nowRFC3339(),
+		"updated_at": nowRFC3339(),
 	}
 	if _, err := a.tasks.Put(ctx, doc); err != nil {
 		return false, fmt.Errorf("nell: enqueue: %w", err)
@@ -209,7 +228,7 @@ func (a *Adapter) ClaimNext(ctx context.Context) (*store.Task, error) {
 	// Scan for the oldest queued task (lowest task ID).
 	var best *store.Task
 	for _, row := range result.Rows {
-		if row.Doc == nil || isMetaKey(row.ID) {
+		if row.Doc == nil || isReservedKey(row.ID) {
 			continue
 		}
 		t := docToTask(row.Doc)
@@ -373,7 +392,7 @@ func (a *Adapter) RecoverStale(ctx context.Context) (int64, error) {
 
 	var count int64
 	for _, row := range result.Rows {
-		if row.Doc == nil || isMetaKey(row.ID) {
+		if row.Doc == nil || isReservedKey(row.ID) {
 			continue
 		}
 		t := docToTask(row.Doc)
@@ -420,7 +439,7 @@ func (a *Adapter) OpenPRs(ctx context.Context) ([]store.Task, error) {
 	}
 	var out []store.Task
 	for _, row := range result.Rows {
-		if row.Doc == nil || isMetaKey(row.ID) {
+		if row.Doc == nil || isReservedKey(row.ID) {
 			continue
 		}
 		t := docToTask(row.Doc)
@@ -444,7 +463,7 @@ func (a *Adapter) ClearTerminalTasks(ctx context.Context) (int64, error) {
 	}
 	var count int64
 	for _, row := range result.Rows {
-		if row.Doc == nil || isMetaKey(row.ID) {
+		if row.Doc == nil || isReservedKey(row.ID) {
 			continue
 		}
 		t := docToTask(row.Doc)
@@ -508,7 +527,7 @@ func (a *Adapter) EventsSince(ctx context.Context, sinceID int64, limit int) ([]
 	}
 	var out []events.Event
 	for _, row := range all.Rows {
-		if row.Doc == nil || isMetaKey(row.ID) {
+		if row.Doc == nil || isReservedKey(row.ID) {
 			continue
 		}
 		e := docToEvent(row.Doc)
@@ -532,7 +551,7 @@ func (a *Adapter) RecentEvents(ctx context.Context, limit int) ([]events.Event, 
 	}
 	var out []events.Event
 	for _, row := range all.Rows {
-		if row.Doc == nil || isMetaKey(row.ID) {
+		if row.Doc == nil || isReservedKey(row.ID) {
 			continue
 		}
 		e := docToEvent(row.Doc)
@@ -553,7 +572,7 @@ func (a *Adapter) TaskEvents(ctx context.Context, taskID int64) ([]events.Event,
 	}
 	var out []events.Event
 	for _, row := range all.Rows {
-		if row.Doc == nil || isMetaKey(row.ID) {
+		if row.Doc == nil || isReservedKey(row.ID) {
 			continue
 		}
 		e := docToEvent(row.Doc)
@@ -574,7 +593,7 @@ func (a *Adapter) Tasks(ctx context.Context, limit int) ([]store.Task, error) {
 	}
 	var out []store.Task
 	for _, row := range result.Rows {
-		if row.Doc == nil || isMetaKey(row.ID) {
+		if row.Doc == nil || isReservedKey(row.ID) {
 			continue
 		}
 		t := docToTask(row.Doc)
@@ -595,7 +614,7 @@ func (a *Adapter) StatusCounts(ctx context.Context) (map[string]int, error) {
 	}
 	counts := map[string]int{}
 	for _, row := range result.Rows {
-		if row.Doc == nil || isMetaKey(row.ID) {
+		if row.Doc == nil || isReservedKey(row.ID) {
 			continue
 		}
 		t := docToTask(row.Doc)
@@ -622,7 +641,7 @@ func (a *Adapter) WorkflowStats(ctx context.Context) ([]store.WorkflowStat, erro
 	agg := map[string]*acc{}
 
 	for _, row := range result.Rows {
-		if row.Doc == nil || isMetaKey(row.ID) {
+		if row.Doc == nil || isReservedKey(row.ID) {
 			continue
 		}
 		t := docToTask(row.Doc)
@@ -701,7 +720,7 @@ func (a *Adapter) StageStats(ctx context.Context) ([]store.StageStat, error) {
 	agg := map[stageKey]*acc{}
 
 	for _, row := range all.Rows {
-		if row.Doc == nil || isMetaKey(row.ID) {
+		if row.Doc == nil || isReservedKey(row.ID) {
 			continue
 		}
 		e := docToEvent(row.Doc)
@@ -762,7 +781,7 @@ func (a *Adapter) TokensByDay(ctx context.Context, days int) ([]store.DayTokens,
 	var dayKeys []string
 
 	for _, row := range all.Rows {
-		if row.Doc == nil || isMetaKey(row.ID) {
+		if row.Doc == nil || isReservedKey(row.ID) {
 			continue
 		}
 		e := docToEvent(row.Doc)
@@ -799,8 +818,25 @@ func taskKey(owner, repo string, number int) string {
 	return fmt.Sprintf("%s:%s:%d", owner, repo, number)
 }
 
-// isMetaKey returns true for internal meta documents (e.g. counters).
-func isMetaKey(key string) bool {
+// isReservedKey returns true for bookkeeping documents that share a collection
+// with real records and must be skipped by every scan.
+//
+// The counter documents are matched by exact id, not by prefix. Task keys are
+// "<owner>:<repo>:<number>", so a prefix rule would also match every task in a
+// repository owned by "counter" -- EnqueueIssue would report success and the
+// task would then be invisible to ClaimNext, Tasks and StatusCounts, never run
+// and never be re-enqueued. Exact matching costs nothing and removes that whole
+// class.
+//
+// "meta:" stays a prefix match: it covers the pre-rename counters plus the
+// SDK's own meta:clock / meta:vector records, which do surface in AllDocs and
+// would otherwise be parsed as tasks. It carries the same owner-named-"meta"
+// caveat, which predates this change.
+func isReservedKey(key string) bool {
+	switch key {
+	case taskCounterID, eventCounterID:
+		return true
+	}
 	return strings.HasPrefix(key, "meta:")
 }
 
@@ -927,7 +963,7 @@ func (a *Adapter) findTaskByID(ctx context.Context, taskID int64) (*store.Task, 
 		return nil, err
 	}
 	for _, row := range result.Rows {
-		if row.Doc == nil || isMetaKey(row.ID) {
+		if row.Doc == nil || isReservedKey(row.ID) {
 			continue
 		}
 		t := docToTask(row.Doc)
@@ -940,39 +976,144 @@ func (a *Adapter) findTaskByID(ctx context.Context, taskID int64) (*store.Task, 
 
 // ── Auto-increment counters ─────────────────────────────────────────────────
 
+// Counter document keys.
+//
+// These deliberately do NOT use a "meta:" prefix. The SDK reserves that prefix
+// for its own bookkeeping (meta:clock, meta:vector) and matches it by prefix,
+// not by exact name: sdk.isInternalID is `id[:5] == "meta:"`. Two consequences
+// followed from squatting on it, and both were live defects:
+//
+//   - DocDB.reindex skips internal ids when rebuilding the in-memory rev cache
+//     on open, while the record itself stays in the log. After a restart, Get
+//     returned the counter complete with its _rev but the cache had no entry,
+//     and putIn rejects exactly that pairing with ErrConflict. Every task
+//     enqueue and every event insert failed, permanently, for the life of the
+//     database.
+//   - isInternalID exists to keep SDK bookkeeping out of replication, so the
+//     counters were silently excluded from it. Two instances sharing a log
+//     would have allocated colliding task IDs.
+//
+// Renaming fixes both. Do not move these back under "meta:".
+//
+// Renaming does NOT make allocation multi-writer safe. The increment is a
+// read-modify-write serialised only by Adapter.mu, which is process-local: two
+// adapters or disconnected replicas can still allocate the same id, and an
+// event write to the same "event:<id>" key would then be resolved by LWW,
+// silently dropping one. Nothing in archie wires an sdk.Replicator today, so
+// each log must have exactly one writing adapter; a replicated deployment
+// needs a different, distributed-atomic allocation scheme.
+const (
+	counterPrefix  = "counter:"
+	taskCounterID  = counterPrefix + "task_id"
+	eventCounterID = counterPrefix + "event_id"
+
+	// Legacy keys, read once by migrateCounters and never written again.
+	legacyTaskCounterID  = "meta:task_id_counter"
+	legacyEventCounterID = "meta:event_id_counter"
+)
+
+// migrateCounters seeds the counters from their pre-rename documents.
+//
+// The old documents are readable -- only writing them fails -- and the value
+// in them is load-bearing: starting a fresh sequence at 1 would hand out IDs
+// that already belong to live tasks and events. The old document is left in
+// place because removing it is the operation that cannot succeed; scans skip
+// it via isReservedKey.
+//
+// Runs at open, before any caller can allocate. A missing legacy counter is
+// normal for a fresh install; any other read or write failure aborts opening
+// the store so allocation cannot silently restart at one.
+func (a *Adapter) migrateCounters(ctx context.Context) error {
+	migrate := func(db *sdk.DocDB, current, legacy string) error {
+		doc, err := db.Get(ctx, current)
+		if err == nil {
+			if next := intField(doc, "next_id"); next < 1 {
+				return fmt.Errorf("current counter %q has invalid next_id %d", current, next)
+			}
+			return nil // already migrated
+		}
+		if !errors.Is(err, sdk.ErrNotFound) {
+			return fmt.Errorf("read current counter %q: %w", current, err)
+		}
+		old, err := db.Get(ctx, legacy)
+		if errors.Is(err, sdk.ErrNotFound) {
+			return nil // fresh database, nothing to carry over
+		}
+		if err != nil {
+			return fmt.Errorf("read legacy counter %q: %w", legacy, err)
+		}
+		next := intField(old, "next_id")
+		if next < 1 {
+			return fmt.Errorf("legacy counter %q has invalid next_id %d", legacy, next)
+		}
+		// A new document, so no _rev is carried across from the old one.
+		if _, err := db.Put(ctx, sdk.Doc{sdk.FieldID: current, "next_id": next}); err != nil {
+			return fmt.Errorf("write current counter %q: %w", current, err)
+		}
+		return nil
+	}
+	if err := migrate(a.tasks, taskCounterID, legacyTaskCounterID); err != nil {
+		return err
+	}
+	return migrate(a.events, eventCounterID, legacyEventCounterID)
+}
+
 // nextTaskID atomically reads and increments the task ID counter.
 // Must be called under a.mu.
 func (a *Adapter) nextTaskID(ctx context.Context) (int64, error) {
-	return a.nextCounter(ctx, a.tasks, "meta:task_id_counter")
+	return a.nextCounter(ctx, a.tasks, taskCounterID, legacyTaskCounterID)
 }
 
 // nextEventID atomically reads and increments the event ID counter.
 // Must be called under a.mu.
 func (a *Adapter) nextEventID(ctx context.Context) (int64, error) {
-	return a.nextCounter(ctx, a.events, "meta:event_id_counter")
+	return a.nextCounter(ctx, a.events, eventCounterID, legacyEventCounterID)
 }
 
 // nextCounter implements the read-modify-write for a counter doc.
+// If eager migration failed, it retries from the legacy counter rather than
+// restarting at one and reissuing an existing ID.
 // Must be called under a.mu so that no two callers race on the _rev.
-func (a *Adapter) nextCounter(ctx context.Context, db *sdk.DocDB, metaKey string) (int64, error) {
-	doc, err := db.Get(ctx, metaKey)
+func (a *Adapter) nextCounter(ctx context.Context, db *sdk.DocDB, counterID, legacyID string) (int64, error) {
+	doc, err := db.Get(ctx, counterID)
+	if errors.Is(err, sdk.ErrNotFound) {
+		return initializeCounter(ctx, db, counterID, legacyID)
+	}
 	if err != nil {
-		if errors.Is(err, sdk.ErrNotFound) {
-			// First use: initialise to 2 (next call returns 1).
-			doc = sdk.Doc{sdk.FieldID: metaKey, "next_id": int64(2)}
-			if _, err := db.Put(ctx, doc); err != nil {
-				return 0, err
-			}
-			return 1, nil
-		}
 		return 0, err
 	}
 	next := intField(doc, "next_id")
+	if next < 1 {
+		return 0, fmt.Errorf("nell: counter %q has invalid next_id %d", counterID, next)
+	}
 	doc["next_id"] = next + 1
 	if _, err := db.Put(ctx, doc); err != nil {
 		return 0, err
 	}
 	return next, nil
+}
+
+func initializeCounter(ctx context.Context, db *sdk.DocDB, counterID, legacyID string) (int64, error) {
+	legacy, err := db.Get(ctx, legacyID)
+	if err == nil {
+		next := intField(legacy, "next_id")
+		if next < 1 {
+			return 0, fmt.Errorf("nell: legacy counter %q has invalid next_id %d", legacyID, next)
+		}
+		if _, err := db.Put(ctx, sdk.Doc{sdk.FieldID: counterID, "next_id": next + 1}); err != nil {
+			return 0, fmt.Errorf("nell: migrate counter %q: %w", legacyID, err)
+		}
+		return next, nil
+	}
+	if !errors.Is(err, sdk.ErrNotFound) {
+		return 0, fmt.Errorf("nell: read legacy counter %q: %w", legacyID, err)
+	}
+
+	// First use: initialise to 2 (next call returns 1).
+	if _, err := db.Put(ctx, sdk.Doc{sdk.FieldID: counterID, "next_id": int64(2)}); err != nil {
+		return 0, err
+	}
+	return 1, nil
 }
 
 // ── Type-safe doc accessors ──────────────────────────────────────────────────
