@@ -94,7 +94,7 @@ func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), o
 	if sessionStore == nil {
 		sessionStore = makeTelegramSessionStore(s)
 	}
-	router := buildTelegramRouter(ctx, tg, s, sessionStore)
+	router := buildTelegramRouter(tg, s, sessionStore)
 	return func() {
 		go func() {
 			if err := tg.Start(ctx, router); err != nil && ctx.Err() == nil {
@@ -154,7 +154,7 @@ func makeTelegramSessionStore(s telegramSetup) gateway.SessionStore {
 	return gateway.NewSessionStoreMemory(s.Cfg.BotUser)
 }
 
-func buildTelegramRouter(ctx context.Context, tg *telegram.Gateway, s telegramSetup, sessionStore gateway.SessionStore) *gateway.Router {
+func buildTelegramRouter(tg *telegram.Gateway, s telegramSetup, sessionStore gateway.SessionStore) *gateway.Router {
 	// The router is built before the responder so the responder can resolve
 	// sessions through it. Both orderings work at runtime -- the responder is
 	// a closure -- but this way the dependency is visible rather than

@@ -48,8 +48,6 @@ var gatewayCommandSpecs = []commandSpec{
 	{Command: "help", Description: "See what Archie can do", Usage: "/help"},
 }
 
-var telegramOnlyCommands = []string{"restart", "help", "version", "update", "rollback", "stop"}
-
 var gatewayCommands = func() []models.BotCommand {
 	commands := make([]models.BotCommand, 0, len(gatewayCommandSpecs))
 	for _, spec := range gatewayCommandSpecs {

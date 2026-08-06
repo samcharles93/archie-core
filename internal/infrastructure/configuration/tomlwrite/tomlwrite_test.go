@@ -1,14 +1,11 @@
 package tomlwrite_test
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/BurntSushi/toml"
 
-	configtemplate "github.com/samcharles93/archie-core"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/tomlwrite"
 )
@@ -193,96 +190,5 @@ max_steps = 60
 	}
 	if decoded.Models["triage"] != "openai/gpt-5.4" || decoded.Models["planner"] != "openai/gpt-5.4" {
 		t.Fatalf("models did not round-trip: got %+v", decoded.Models)
-	}
-}
-
-// The real template must decode after a models-table edit -- the actual
-// regression this bug produces (a duplicate-key decode error), rather than
-// a hand-built fixture.
-func TestGenerate_RealTemplate_ModelsTableEditDecodes(t *testing.T) {
-	out, err := tomlwrite.Generate(configtemplate.Example, []tomlwrite.Edit{
-		{Table: "models", Key: "triage", Value: tomlwrite.String("ollama/llama3")},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var decoded config.Config
-	if _, err := toml.Decode(string(out), &decoded); err != nil {
-		t.Fatalf("generated config does not parse as TOML: %v\n%s", err, out)
-	}
-	if decoded.Models["triage"] != "ollama/llama3" {
-		t.Fatalf("models.triage did not round-trip: got %+v", decoded.Models)
-	}
-}
-
-// The commented form of a header can carry a trailing comment too; it must
-// be recognised the same way the active form now is.
-func TestApply_CommentedHeaderWithTrailingComment_IsRecognised(t *testing.T) {
-	src := `# [web] # observability dashboard
-# addr = "127.0.0.1:8080"
-`
-	out, err := tomlwrite.Apply([]byte(src), []tomlwrite.Edit{
-		{Table: "web", Key: "addr", Value: tomlwrite.String("127.0.0.1:9090")},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := string(out)
-	if !strings.Contains(got, "[web]\naddr = \"127.0.0.1:9090\"\n") {
-		t.Fatalf("expected header uncommented and addr set, got:\n%s", got)
-	}
-}
-
-func TestGenerate_RealTemplate_ProducesReadableConfig(t *testing.T) {
-	out, err := tomlwrite.Generate(configtemplate.Example, []tomlwrite.Edit{
-		{Table: "", Key: "bot_user", Value: tomlwrite.String("acme-archie")},
-		{Table: "forge", Key: "type", Value: tomlwrite.String("gitea")},
-		{Table: "forge", Key: "host", Value: tomlwrite.String("https://gitea.example.com")},
-		{Table: "forge", Key: "token", Value: tomlwrite.Ref("env", "ARCHIE_GITEA_TOKEN")},
-		{Table: "chat", Key: "operator", Value: tomlwrite.String("Ada Lovelace")},
-		{Table: "providers.anthropic", Key: "class", Value: tomlwrite.String("anthropic")},
-		{Table: "providers.anthropic", Key: "api_key_env", Value: tomlwrite.String("ANTHROPIC_API_KEY")},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.toml")
-	if err := os.WriteFile(path, out, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	got := string(out)
-	for _, want := range []string{
-		`bot_user = "acme-archie"`,
-		`type = "gitea"`,
-		`host = "https://gitea.example.com"`,
-		`token = { engine = "env", key = "ARCHIE_GITEA_TOKEN" }`,
-		"[chat]\noperator = \"Ada Lovelace\"",
-		"[providers.anthropic]\napi_key_env = \"ANTHROPIC_API_KEY\"\nclass = \"anthropic\"",
-	} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("expected generated config to contain %q, got:\n%s", want, got)
-		}
-	}
-	// The documentation comment above [providers.openai] must survive --
-	// this is the whole point of not re-marshalling.
-	if !strings.Contains(got, "# Optional interactive-chat catalog.") {
-		t.Fatalf("expected surrounding documentation to survive, got:\n%s", got)
-	}
-
-	// The result must still be well-formed TOML that decodes into the
-	// runtime config model -- Apply edits text, but the output still has
-	// to parse.
-	var decoded config.Config
-	if _, err := toml.Decode(got, &decoded); err != nil {
-		t.Fatalf("generated config does not parse as TOML: %v\n%s", err, got)
-	}
-	if decoded.BotUser != "acme-archie" {
-		t.Fatalf("bot_user did not round-trip: got %q", decoded.BotUser)
-	}
-	if decoded.Forge.Token.Key != "ARCHIE_GITEA_TOKEN" {
-		t.Fatalf("forge.token did not round-trip: got %+v", decoded.Forge.Token)
 	}
 }

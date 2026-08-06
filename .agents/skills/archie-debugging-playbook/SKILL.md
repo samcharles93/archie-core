@@ -89,7 +89,7 @@ commit `308c199`, not proof that Yaegi cannot run external commands.
 | Surface | Subject or resource | Bound/current behavior |
 |---|---|---|
 | Task discovery | `archie.task.>` in `ARCHIE_TASKS` | Work-queue retention; daemon durable `archie-daemon`; max deliver 3 |
-| Legacy agent stage | `archie.agent.<task>.request` | Reply inbox in `X-Archie-Reply`; wall-clock budget or 30m |
+| Per-stage agent request | `archie.agent.<task>.request` | Reply inbox in `X-Archie-Reply`; wall-clock budget or 30m |
 | Full task handoff | `archie.taskrun.<task-id>` | Core request/reply; no-responder retry 20s every 250ms |
 | Store RPC | `archie.store.update`, `.transition` | Client timeout 60s by `cmd/archie-agent/taskrun.go` |
 | Forge RPC | `archie.forge.*` | Error travels in a JSON envelope |
@@ -143,7 +143,7 @@ For environment failures:
   forwards configured provider key variables.
 - `SubprocessRunner` forwards default compatibility variables, configured
   `[agent].env` names, and only the requested provider key.
-- Legacy top-level `[forge] token_env` is converted to an env `SecretRef` by
+- Top-level `[forge] token_env` is converted to an env `SecretRef` by
   `finalize`; explicit `[forge.token]` wins.
 
 Do not print secret values.

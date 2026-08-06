@@ -326,13 +326,13 @@ func (r *Router) dispatchLocal(ctx context.Context, msg Message, text, cmd strin
 		reply, err := r.handleCancel(ctx, rest)
 		return reply, true, err
 	case "/start":
-		reply, err := r.handleStart(ctx, msg)
+		reply, err := r.handleStart()
 		return reply, true, err
 	case "/whoami":
-		reply, err := r.handleWhoami(ctx)
+		reply, err := r.handleWhoami()
 		return reply, true, err
 	case "/profile":
-		reply, err := r.handleProfile(ctx)
+		reply, err := r.handleProfile()
 		return reply, true, err
 	case "/sessions":
 		reply, err := r.handleSessions(ctx)
@@ -705,7 +705,7 @@ func (r *Router) handleStatus(ctx context.Context) (string, error) {
 	return strings.TrimSpace(b.String()), nil
 }
 
-func (r *Router) handleWhoami(ctx context.Context) (string, error) {
+func (r *Router) handleWhoami() (string, error) {
 	if r.Identity == "" {
 		return "I'm Archie, running without a configured identity.", nil
 	}
@@ -719,7 +719,7 @@ func (r *Router) handleWhoami(ctx context.Context) (string, error) {
 	return b.String(), nil
 }
 
-func (r *Router) handleProfile(ctx context.Context) (string, error) {
+func (r *Router) handleProfile() (string, error) {
 	if r.Identity == "" {
 		return "Profile is not configured (no identity set).", nil
 	}

@@ -195,8 +195,8 @@ diff cap, notification, and forge host. `TaskConfig.ToConfig` reconstructs
 only those fields. Forge tokens, provider values, NATS credential references,
 repos, and infrastructure settings do not enter `TaskConfig`.
 
-At top-level `[forge]`, prefer `token = {engine = "env", key = "NAME"}`. Legacy
-`token_env = "NAME"` is converted only when structured reference is empty;
+At top-level `[forge]`, prefer `token = {engine = "env", key = "NAME"}`. The
+`token_env = "NAME"` form is converted only when structured reference is empty;
 structured reference wins when both appear. This compatibility rule exists
 because an earlier migration silently dropped deployed `token_env` values and
 crash-looped the daemon. `finalize` does not apply that conversion inside each

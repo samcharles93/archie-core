@@ -197,20 +197,6 @@ func TestClientLinkBranchPersistsViaServer(t *testing.T) {
 	}
 }
 
-func TestClientSetStateLabelPersistsViaServer(t *testing.T) {
-	fg, client := newTestServer(t)
-
-	client.SetStateLabel(context.Background(), "acme", "widget", 3, "archie:working", []string{"archie:queued", "archie:working"})
-
-	if len(fg.stateLabels) != 1 {
-		t.Fatalf("expected 1 state label call, got %d", len(fg.stateLabels))
-	}
-	got := fg.stateLabels[0]
-	if got.owner != "acme" || got.repo != "widget" || got.number != 3 || got.label != "archie:working" {
-		t.Fatalf("state label call mismatch: %+v", got)
-	}
-}
-
 func TestClientPropagatesServerError(t *testing.T) {
 	fg := &fakeForge{commentErr: errors.New("forge unavailable")}
 	srv := startEmbedded(t)

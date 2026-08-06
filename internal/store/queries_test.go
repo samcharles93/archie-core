@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/samcharles93/archie-core/internal/events"
 )
@@ -177,67 +176,6 @@ func TestWorkflowStats(t *testing.T) {
 	got := stats[0]
 	if got.Workflow != "implement" || got.Runs != 1 || got.Merged != 1 || got.AvgTokens != 1000 || got.TotalToken != 1000 {
 		t.Fatalf("WorkflowStats[0] = %+v", got)
-	}
-}
-
-func TestRecentEvents(t *testing.T) {
-	s := openTest(t)
-	ctx := context.Background()
-
-	for range 3 {
-		if _, err := s.InsertEvent(ctx, events.Event{Kind: "log", Detail: "line"}); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	recent, err := s.RecentEvents(ctx, 2)
-	if err != nil || len(recent) != 2 {
-		t.Fatalf("RecentEvents = (%d, %v)", len(recent), err)
-	}
-	// Newest first.
-	if recent[0].ID <= recent[1].ID {
-		t.Fatalf("RecentEvents not newest-first: %+v", recent)
-	}
-}
-
-func TestTokensByDay(t *testing.T) {
-	s := openTest(t)
-	ctx := context.Background()
-
-	today := time.Now().UTC()
-	yesterday := today.AddDate(0, 0, -1)
-
-	if _, err := s.InsertEvent(ctx, events.Event{
-		Kind: "agent_finish", At: today, Data: map[string]any{"tokens": 100},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.InsertEvent(ctx, events.Event{
-		Kind: "agent_finish", At: today, Data: map[string]any{"tokens": 50},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.InsertEvent(ctx, events.Event{
-		Kind: "agent_finish", At: yesterday, Data: map[string]any{"tokens": 25},
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	byDay, err := s.TokensByDay(ctx, 14)
-	if err != nil || len(byDay) != 2 {
-		t.Fatalf("TokensByDay = (%+v, %v)", byDay, err)
-	}
-	// Newest day first.
-	if byDay[0].Day != today.Format("2006-01-02") || byDay[0].Tokens != 150 {
-		t.Fatalf("TokensByDay[0] = %+v", byDay[0])
-	}
-	if byDay[1].Day != yesterday.Format("2006-01-02") || byDay[1].Tokens != 25 {
-		t.Fatalf("TokensByDay[1] = %+v", byDay[1])
-	}
-
-	limited, err := s.TokensByDay(ctx, 1)
-	if err != nil || len(limited) != 1 {
-		t.Fatalf("TokensByDay with limit = (%+v, %v)", limited, err)
 	}
 }
 

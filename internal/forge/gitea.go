@@ -234,7 +234,7 @@ func (c *GiteaClient) SetStateLabel(ctx context.Context, owner, repo string, num
 		return
 	}
 	// Find or create the target label and add it by ID.
-	labelID := c.resolveLabelID(ctx, owner, repo, label)
+	labelID := c.resolveLabelID(owner, repo, label)
 	if labelID == 0 {
 		return // ensureLabel already logged
 	}
@@ -246,7 +246,7 @@ func (c *GiteaClient) SetStateLabel(ctx context.Context, owner, repo string, num
 }
 
 // resolveLabelID returns the ID of a label, creating it if necessary.
-func (c *GiteaClient) resolveLabelID(ctx context.Context, owner, repo, name string) int64 {
+func (c *GiteaClient) resolveLabelID(owner, repo, name string) int64 {
 	labels, _, err := c.cli.ListRepoLabels(owner, repo, gitea.ListLabelsOptions{ListOptions: gitea.ListOptions{PageSize: 100}})
 	if err != nil {
 		c.log.Warn("list repo labels failed", "err", err)
@@ -258,7 +258,7 @@ func (c *GiteaClient) resolveLabelID(ctx context.Context, owner, repo, name stri
 		}
 	}
 	// Create the label.
-	c.ensureLabel(ctx, owner, repo, name)
+	c.ensureLabel(owner, repo, name)
 	// Re-list to get the new ID.
 	labels, _, err = c.cli.ListRepoLabels(owner, repo, gitea.ListLabelsOptions{ListOptions: gitea.ListOptions{PageSize: 100}})
 	if err != nil {
@@ -307,7 +307,7 @@ var giteaStateLabelColors = map[string]string{
 	"archie:parked":  "#d93f0b",
 }
 
-func (c *GiteaClient) ensureLabel(ctx context.Context, owner, repo, name string) {
+func (c *GiteaClient) ensureLabel(owner, repo, name string) {
 	key := owner + "/" + repo + "/" + name
 	c.labelMu.Lock()
 	seen := c.labelsEnsured[key]

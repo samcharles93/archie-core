@@ -208,7 +208,7 @@ type Dispatch struct {
 	AckReaction string `toml:"ack_reaction" json:"ack_reaction" yaml:"ack_reaction"`
 	// Labels maps state names ("queued", "working", "waiting", "pr",
 	// "parked") to their forge label strings. Each key is defaulted
-	// independently; missing keys fall back to the legacy archie:*
+	// independently; missing keys fall back to the archie:*
 	// constants at call time via StateLabel().
 	Labels map[string]string `toml:"labels" json:"labels" yaml:"labels"`
 }
@@ -232,7 +232,7 @@ var dispatchLabelDefaults = map[string]string{
 }
 
 // StateLabel returns the configured label for a state name. Falls back
-// to the legacy archie:* constant when the key is missing or empty.
+// to the archie:* constant when the key is missing or empty.
 func (d Dispatch) StateLabel(state string) string {
 	if s, ok := d.Labels[state]; ok && s != "" {
 		return s
@@ -397,7 +397,7 @@ type Config struct {
 	// Identities declares multi-identity configurations. When non-empty,
 	// each identity runs its own poll loop with its own forge client,
 	// worktree manager, repo list, model/provider config, and NATS subject
-	// namespace. When empty, the legacy single-identity fields (BotUser,
+	// namespace. When empty, the single-identity fields (BotUser,
 	// Forge, Repos, Models, Providers, Dispatch, PollInterval) are used
 	// unchanged for backward compatibility.
 	Identities []IdentityConfig `toml:"identities" yaml:"identities"`

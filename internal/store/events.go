@@ -76,16 +76,6 @@ func (s *Store) EventsSince(ctx context.Context, sinceID int64, limit int) ([]ev
 	return scanEvents(rows)
 }
 
-// RecentEvents returns the newest limit events, newest first.
-func (s *Store) RecentEvents(ctx context.Context, limit int) ([]events.Event, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+eventCols+` FROM events ORDER BY id DESC LIMIT ?`, limit)
-	if err != nil {
-		return nil, err
-	}
-	return scanEvents(rows)
-}
-
 // TaskEvents returns a task's full timeline, oldest first.
 func (s *Store) TaskEvents(ctx context.Context, taskID int64) ([]events.Event, error) {
 	rows, err := s.db.QueryContext(ctx,

@@ -86,43 +86,6 @@ func TestConfinedWorkspaceFileRejectsIntermediateSymlinkEscape(t *testing.T) {
 	}
 }
 
-func TestManagerCandidatesIncludeFilesChangedSinceSnapshot(t *testing.T) {
-	root := t.TempDir()
-	runGit(t, root, "init", "-q")
-	oldPath := filepath.Join(root, "old.txt")
-	newPath := filepath.Join(root, "new.txt")
-	writeTestFile(t, root, "old.txt", "old\n")
-	runGit(t, root, "add", "old.txt")
-	indexedAt := time.Now().UTC().Add(-time.Second)
-	writeTestFile(t, root, "new.txt", "new\n")
-	staleTime := indexedAt.Add(-time.Hour)
-	if err := os.Chtimes(newPath, staleTime, staleTime); err != nil {
-		t.Fatal(err)
-	}
-	indexPath := filepath.Join(t.TempDir(), "workspace.csearch")
-	writeTestFile(t, filepath.Dir(indexPath), filepath.Base(indexPath), "placeholder")
-	outside := filepath.Join(t.TempDir(), "outside.txt")
-	if err := os.WriteFile(outside, []byte("outside"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	dbPath := filepath.Join(t.TempDir(), "indexes.db")
-	m := &Manager{root: root, indexPath: indexPath, dbPath: dbPath, runner: fakeRunner{files: []string{oldPath, outside}}}
-	if err := m.ensureSchema(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if err := m.setState(context.Background(), "ready", indexedAt, ""); err != nil {
-		t.Fatal(err)
-	}
-
-	files, ok := m.Candidates(context.Background(), "new", false, false)
-	if !ok || !slices.Contains(files, oldPath) || !slices.Contains(files, newPath) {
-		t.Fatalf("Candidates() = %v, %v", files, ok)
-	}
-	if slices.Contains(files, outside) {
-		t.Fatalf("outside candidate accepted: %v", files)
-	}
-}
-
 func TestManagerRefreshBuildsAtomicallyAndRecordsGeneration(t *testing.T) {
 	root := t.TempDir()
 	dir := t.TempDir()

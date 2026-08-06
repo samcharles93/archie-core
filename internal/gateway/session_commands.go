@@ -80,7 +80,7 @@ func (t *sessionTracker) resolve(ctx context.Context, platform, botUser, channel
 	}
 
 	// Create a new session with a deterministic key so it matches the
-	// legacy sessionKey format used by the LLM responder.
+	// sessionKey format used by the LLM responder.
 	//
 	// Claim the cache slot before writing to the store, not after. Saving
 	// first and asking the cache who won afterwards meant the loser of a race
@@ -253,7 +253,7 @@ func sessionKeyFromMsg(msg Message) string {
 // ── Router session command handlers ────────────────────────────────────────
 
 // handleStart acknowledges the bot is running without consuming a reply.
-func (r *Router) handleStart(ctx context.Context, msg Message) (string, error) {
+func (r *Router) handleStart() (string, error) {
 	return "Archie is running. Send a message to chat, or type /help for available commands.", nil
 }
 

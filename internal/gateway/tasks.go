@@ -180,7 +180,7 @@ type TaskRuntime interface {
 
 // StoreTaskController implements TaskController backed by a store
 // interface. Authorization requires the caller identity to exactly
-// match the task identity, including the empty legacy identity.
+// match the task identity, including the empty identity (single-identity deployments).
 type StoreTaskController struct {
 	store chatTaskController
 	// runtime interrupts running work. Nil leaves running tasks

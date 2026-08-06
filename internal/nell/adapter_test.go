@@ -494,17 +494,6 @@ func TestInsertEventsSinceAndRecent(t *testing.T) {
 		t.Errorf("EventsSince order: evs[0].ID=%d, evs[1].ID=%d, want oldest first", evs[0].ID, evs[1].ID)
 	}
 
-	// RecentEvents returns newest first.
-	recent, err := s.RecentEvents(ctx, 10)
-	if err != nil {
-		t.Fatalf("RecentEvents: %v", err)
-	}
-	if len(recent) < 2 {
-		t.Fatalf("expected at least 2 recent events, got %d", len(recent))
-	}
-	if recent[0].ID < recent[1].ID {
-		t.Error("RecentEvents should return newest first")
-	}
 	_ = id1
 	_ = id2
 }

@@ -38,9 +38,8 @@ type MediaAttachment struct {
 }
 
 // MessageEvent is the rich message model for all gateway channels. It
-// replaces the legacy 3-field Message struct for new adapters while
-// remaining backward-compatible via the Text(), FromID() helpers and
-// the ToLegacy() conversion.
+// extends the 3-field Message struct for new adapters while
+// remaining backward-compatible via the Text() and FromID() helpers.
 //
 // Every field except Type is optional. A minimal text message needs
 // only Type=MsgText, Text, ChannelID, Platform, and SenderID.
@@ -122,17 +121,6 @@ type MessageEvent struct {
 	// this for debug logging or handlers that need platform details
 	// not captured by the generic fields.
 	Raw map[string]any `json:"raw,omitempty"`
-}
-
-// ToLegacy converts the rich event back to the legacy 3-field Message
-// for backward compatibility with existing code.
-func (e MessageEvent) ToLegacy() Message {
-	return Message{
-		ChannelID: e.ChannelID,
-		ThreadID:  e.ThreadID,
-		From:      e.SenderID,
-		Text:      e.Text,
-	}
 }
 
 // FromID returns the sender identifier. Backward-compatible alias for

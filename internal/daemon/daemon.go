@@ -501,7 +501,7 @@ func (d *Daemon) poll(ctx context.Context) {
 }
 
 // pollSQLite enqueues discovered issues directly into SQLite (existing flow).
-// fg is the forge client that discovered is  --  d.Forge for the legacy
+// fg is the forge client that discovered is  --  d.Forge for the
 // single-identity path, or an identity's own client from cycleForIdentity.
 // identity records which identity owns the resulting task; empty for
 // single-identity deployments.
@@ -1079,7 +1079,7 @@ func configForIdentity(root config.Config, identity config.IdentityConfig) confi
 }
 
 // identityFor resolves the IdentityRunner that owns task, or nil for
-// legacy single-identity deployments and forge-sourced tasks recorded
+// single-identity deployments and forge-sourced tasks recorded
 // before multi-identity routing existed (task.Identity == ""). Callers
 // must fall back to the root d.Forge/d.Trees/d.Cfg when this returns nil.
 func (d *Daemon) identityFor(task *store.Task) *IdentityRunner {

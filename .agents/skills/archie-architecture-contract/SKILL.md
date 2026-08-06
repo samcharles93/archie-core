@@ -58,7 +58,7 @@ Do not simplify these facts into the target model:
 | Enforcement | Gates, read-only/protected paths, TDD inverted test gates, and diff caps are represented outside prompt prose. | `internal/agentexec/inprocess.go`; `internal/workflow/{agent,tdd,steps}.go` |
 | Configuration | `internal/config.Config`, `IdentityConfig`, `Repo`, and task snapshots mix input decoding with runtime concerns. | `internal/config/config.go` |
 | Identity | Configured names and bot usernames act as process-local identity keys. There is no durable Identity domain. | `internal/daemon/daemon.go`; `internal/store/store.go`; `internal/gateway/session.go` |
-| Messaging | `internal/gateway` contains both legacy `Message` flow and richer `MessageEvent`; channel routing and task control are mixed with conversational behavior. | `internal/gateway/{gateway,messageevent,tasks}.go`; `internal/channels/` |
+| Messaging | `internal/gateway` contains both the `Message` struct flow and richer `MessageEvent`; channel routing and task control are mixed with conversational behavior. | `internal/gateway/{gateway,messageevent,tasks}.go`; `internal/channels/` |
 | Plugins | `plugin.Plugin` exposes only `Name` and `Version`; current loading interprets operator-installed Go files with Yaegi. | `internal/plugin/plugin.go` |
 | Processes | Agent modes include in-process, subprocess, and NATS. Optional containers add a distinct boundary with known gaps. | `internal/config/config.go`; `cmd/archied/main.go`; `ARCHITECTURE.md` |
 

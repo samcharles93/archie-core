@@ -13,7 +13,7 @@ Treat source and tests as current; treat `docs/archive/` as history.
 | Term | Meaning here |
 |---|---|
 | `archied` | Resident orchestrator. Owns config, forge credentials, NellDB store, worktrees, gateways, dashboard, optional NATS/Docker orchestration. |
-| `archie-agent` | Current long-running NATS worker. Consumes legacy per-stage requests and full-task `archie.taskrun.>` requests. Not a stdin/stdout worker. |
+| `archie-agent` | Long-running NATS worker. Consumes per-stage `archie.agent.>` requests and full-task `archie.taskrun.>` requests. Not a stdin/stdout worker. |
 | Stage request | One autonomous workflow stage sent on `archie.agent.<task-id>.request`. |
 | Full-task handoff | A whole workflow sent on core NATS subject `archie.taskrun.<task-id>` to a task container. |
 | Work directory | `work_dir`: task clones plus memory and candidate index artifacts. |
@@ -176,7 +176,7 @@ for `archie.task.>` and `archie.agent.>`.
 | Plane | Subjects and behavior |
 |---|---|
 | Discovery | `archie.task.bug`, `.feature`, `.bootstrap`, or `.default`; daemon durable consumer `archie-daemon`, 5-min ack wait, max 3 deliveries. |
-| Legacy stages | `archie.agent.<id>.request`; worker durable consumer defaults to `archie-agent`, 30-min ack wait, max 3 deliveries; response address in `X-Archie-Reply`. |
+| Per-stage requests | `archie.agent.<id>.request`; worker durable consumer defaults to `archie-agent`, 30-min ack wait, max 3 deliveries; response address in `X-Archie-Reply`. |
 | Container task | Core NATS request/reply on `archie.taskrun.<id>`. Task container reads `/data/worktree/.git/task.json` and creates dedicated subscription; shared worker uses queue group `archie-taskrun-workers`. |
 | Privileged RPC | Store, forge, and worktree operations return to `archied` over core NATS subjects in `internal/storerpc`, `internal/forgerpc`, and `internal/worktreerpc`. |
 

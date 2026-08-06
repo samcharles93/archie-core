@@ -46,7 +46,7 @@ and optionally `"sessions"`/`"messages"` DocDBs.
 | Fact | Current evidence | Consequence |
 | --- | --- | --- |
 | `cmd/archied/main.go` unconditionally opens `nell.OpenStore(cfg.DBPath, cfg.BotUser)`. | `cmd/archied/main.go` | NellDB is the production task/event backend. No runtime backend selector. |
-| `internal/store.Store` still implements `TaskStore` using SQLite. | `internal/store/{interface,store,events}.go` | SQLite remains a test/legacy implementation. |
+| `internal/store.Store` still implements `TaskStore` using SQLite. | `internal/store/{interface,store,events}.go` | SQLite remains a test implementation; NellDB is the production backend. |
 | The same engine is lent to `gateway.NewSessionStore` only inside Telegram wiring. | `cmd/archied/main.go`; `internal/gateway/session_store.go` | Session/message collections exist only when that path writes them. |
 | `go.mod` pins `github.com/samcharles93/NellDB v0.2.5` with no `replace`. | `go.mod`; `go.sum` | Review against published v0.2.5 source. |
 | Archie does not call NellDB replication, compaction, changes-feed, or vector-search APIs. | No production matches | Do not claim those engine features are active. |

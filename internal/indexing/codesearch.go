@@ -365,33 +365,6 @@ func (m *Manager) state(ctx context.Context) (indexState, error) {
 	return indexState{IndexPath: indexPath, IndexedAt: at}, nil
 }
 
-func (m *Manager) setState(ctx context.Context, status string, indexedAt time.Time, lastError string) error {
-	db, err := openIndexDB(m.dbPath)
-	if err != nil {
-		return err
-	}
-	// Each helper opens its own single-connection handle and the write has
-	// already been committed by the time this runs, so a Close error carries
-	// no recoverable information.
-	defer func() { _ = db.Close() }()
-	indexed := ""
-	if !indexedAt.IsZero() {
-		indexed = indexedAt.Format(time.RFC3339Nano)
-	} else if current, stateErr := m.state(ctx); stateErr == nil && !current.IndexedAt.IsZero() {
-		indexed = current.IndexedAt.Format(time.RFC3339Nano)
-	}
-	_, err = db.ExecContext(ctx, `INSERT INTO workspace_indexes (root, index_path, status, indexed_at, last_error, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT(root) DO UPDATE SET index_path=excluded.index_path, status=excluded.status,
-		indexed_at=excluded.indexed_at, last_error=excluded.last_error, updated_at=excluded.updated_at,
-		generation=workspace_indexes.generation + CASE WHEN excluded.status = 'ready' THEN 1 ELSE 0 END`,
-		m.root, m.indexPath, status, indexed, lastError, time.Now().UTC().Format(time.RFC3339Nano))
-	if err != nil {
-		return fmt.Errorf("write workspace index metadata: %w", err)
-	}
-	return nil
-}
-
 func openIndexDB(path string) (*sql.DB, error) {
 	// modernc.org/sqlite only applies pragmas passed via repeated _pragma
 	// params; unrecognized keys like _journal_mode/_busy_timeout are

@@ -219,7 +219,7 @@ func (c *GitHubClient) CreateIssue(ctx context.Context, owner, repo, title, body
 // labels are the human-facing projection  --  and removing the parked
 // label is the forge-native retry trigger.
 // Label strings are configured via [dispatch.labels]; these are the
-// legacy defaults used as a fallback when config is absent.
+// built-in defaults used as a fallback when config is absent.
 
 // stateLabelColors maps label name → colour for on-demand creation.
 var stateLabelColors = map[string]string{

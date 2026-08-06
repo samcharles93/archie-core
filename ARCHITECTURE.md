@@ -192,8 +192,8 @@ Config fields reference a secret as
 `Forge.Token` and `Provider.APIKey` use `SecretRef`; resolved provider values
 are exported under private, identity-scoped environment names because the SDK,
 subprocess, and container boundaries consume credential names rather than
-plaintext wire fields. Legacy `Provider.APIKeyEnv`, `NATSConfig.TokenEnv`, and
-`TelegramConfig.TokenEnv` remain supported.
+plaintext wire fields. The older `Provider.APIKeyEnv`, `NATSConfig.TokenEnv`, and
+`TelegramConfig.TokenEnv` field names remain supported.
 
 Subprocess mode is a migration transport boundary, not a security sandbox: the
 worker still runs under the daemon UID and can access daemon-readable host

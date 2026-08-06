@@ -543,27 +543,6 @@ func (a *Adapter) EventsSince(ctx context.Context, sinceID int64, limit int) ([]
 	return out, nil
 }
 
-// RecentEvents returns the newest limit events, newest first.
-func (a *Adapter) RecentEvents(ctx context.Context, limit int) ([]events.Event, error) {
-	all, err := a.events.AllDocs(ctx, sdk.DocRange{IncludeDocs: true})
-	if err != nil {
-		return nil, err
-	}
-	var out []events.Event
-	for _, row := range all.Rows {
-		if row.Doc == nil || isReservedKey(row.ID) {
-			continue
-		}
-		e := docToEvent(row.Doc)
-		out = append(out, e)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
-	if limit > 0 && len(out) > limit {
-		out = out[:limit]
-	}
-	return out, nil
-}
-
 // TaskEvents returns a task's full event timeline, oldest first.
 func (a *Adapter) TaskEvents(ctx context.Context, taskID int64) ([]events.Event, error) {
 	all, err := a.events.AllDocs(ctx, sdk.DocRange{IncludeDocs: true})
@@ -1061,59 +1040,51 @@ func (a *Adapter) migrateCounters(ctx context.Context) error {
 // nextTaskID atomically reads and increments the task ID counter.
 // Must be called under a.mu.
 func (a *Adapter) nextTaskID(ctx context.Context) (int64, error) {
-	return a.nextCounter(ctx, a.tasks, taskCounterID, legacyTaskCounterID)
-}
-
-// nextEventID atomically reads and increments the event ID counter.
-// Must be called under a.mu.
-func (a *Adapter) nextEventID(ctx context.Context) (int64, error) {
-	return a.nextCounter(ctx, a.events, eventCounterID, legacyEventCounterID)
-}
-
-// nextCounter implements the read-modify-write for a counter doc.
-// If eager migration failed, it retries from the legacy counter rather than
-// restarting at one and reissuing an existing ID.
-// Must be called under a.mu so that no two callers race on the _rev.
-func (a *Adapter) nextCounter(ctx context.Context, db *sdk.DocDB, counterID, legacyID string) (int64, error) {
-	doc, err := db.Get(ctx, counterID)
+	doc, err := a.tasks.Get(ctx, taskCounterID)
 	if errors.Is(err, sdk.ErrNotFound) {
-		return initializeCounter(ctx, db, counterID, legacyID)
+		// First use: initialise to 2 so the first allocated ID is 1.
+		if _, err := a.tasks.Put(ctx, sdk.Doc{sdk.FieldID: taskCounterID, "next_id": int64(2)}); err != nil {
+			return 0, err
+		}
+		return 1, nil
 	}
 	if err != nil {
 		return 0, err
 	}
 	next := intField(doc, "next_id")
 	if next < 1 {
-		return 0, fmt.Errorf("nell: counter %q has invalid next_id %d", counterID, next)
+		return 0, fmt.Errorf("nell: counter %q has invalid next_id %d", taskCounterID, next)
 	}
 	doc["next_id"] = next + 1
-	if _, err := db.Put(ctx, doc); err != nil {
+	if _, err := a.tasks.Put(ctx, doc); err != nil {
 		return 0, err
 	}
 	return next, nil
 }
 
-func initializeCounter(ctx context.Context, db *sdk.DocDB, counterID, legacyID string) (int64, error) {
-	legacy, err := db.Get(ctx, legacyID)
-	if err == nil {
-		next := intField(legacy, "next_id")
-		if next < 1 {
-			return 0, fmt.Errorf("nell: legacy counter %q has invalid next_id %d", legacyID, next)
+// nextEventID atomically reads and increments the event ID counter.
+// Must be called under a.mu.
+func (a *Adapter) nextEventID(ctx context.Context) (int64, error) {
+	doc, err := a.events.Get(ctx, eventCounterID)
+	if errors.Is(err, sdk.ErrNotFound) {
+		// First use: initialise to 2 so the first allocated ID is 1.
+		if _, err := a.events.Put(ctx, sdk.Doc{sdk.FieldID: eventCounterID, "next_id": int64(2)}); err != nil {
+			return 0, err
 		}
-		if _, err := db.Put(ctx, sdk.Doc{sdk.FieldID: counterID, "next_id": next + 1}); err != nil {
-			return 0, fmt.Errorf("nell: migrate counter %q: %w", legacyID, err)
-		}
-		return next, nil
+		return 1, nil
 	}
-	if !errors.Is(err, sdk.ErrNotFound) {
-		return 0, fmt.Errorf("nell: read legacy counter %q: %w", legacyID, err)
-	}
-
-	// First use: initialise to 2 (next call returns 1).
-	if _, err := db.Put(ctx, sdk.Doc{sdk.FieldID: counterID, "next_id": int64(2)}); err != nil {
+	if err != nil {
 		return 0, err
 	}
-	return 1, nil
+	next := intField(doc, "next_id")
+	if next < 1 {
+		return 0, fmt.Errorf("nell: counter %q has invalid next_id %d", eventCounterID, next)
+	}
+	doc["next_id"] = next + 1
+	if _, err := a.events.Put(ctx, doc); err != nil {
+		return 0, err
+	}
+	return next, nil
 }
 
 // ── Type-safe doc accessors ──────────────────────────────────────────────────

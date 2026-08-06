@@ -46,7 +46,6 @@ type TaskQueries interface {
 type TaskEvents interface {
 	InsertEvent(ctx context.Context, e events.Event) (int64, error)
 	EventsSince(ctx context.Context, sinceID int64, limit int) ([]events.Event, error)
-	RecentEvents(ctx context.Context, limit int) ([]events.Event, error)
 	TaskEvents(ctx context.Context, taskID int64) ([]events.Event, error)
 	WorkflowStats(ctx context.Context) ([]WorkflowStat, error)
 	StageStats(ctx context.Context) ([]StageStat, error)

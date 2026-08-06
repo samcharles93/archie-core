@@ -5,51 +5,6 @@ import (
 	"testing"
 )
 
-func TestMessageEventToLegacy(t *testing.T) {
-	e := MessageEvent{
-		Type:      MsgText,
-		Text:      "hello world",
-		ChannelID: "chat-42",
-		Platform:  "telegram",
-		SenderID:  "alice",
-	}
-	m := e.ToLegacy()
-	if m.ChannelID != "chat-42" {
-		t.Errorf("ChannelID = %q", m.ChannelID)
-	}
-	if m.From != "alice" {
-		t.Errorf("From = %q", m.From)
-	}
-	if m.Text != "hello world" {
-		t.Errorf("Text = %q", m.Text)
-	}
-
-	// ToLegacy carries Text for non-text types too  --  callers decide
-	// how to interpret it.
-	img := MessageEvent{
-		Type:      MsgImage,
-		Text:      "photo caption",
-		ChannelID: "c1",
-		Platform:  "tg",
-		SenderID:  "u1",
-	}
-	leg := img.ToLegacy()
-	if leg.Text != "photo caption" {
-		t.Errorf("image caption = %q", leg.Text)
-	}
-
-	cb := MessageEvent{
-		Type:         MsgCallback,
-		CallbackData: `{"k":"v"}`,
-		ChannelID:    "c1",
-		Platform:     "tg",
-		SenderID:     "u1",
-	}
-	if cb.ToLegacy().Text != "" {
-		t.Errorf("callback legacy Text = %q, want empty", cb.ToLegacy().Text)
-	}
-}
-
 func TestMessageEventFromID(t *testing.T) {
 	e := MessageEvent{SenderID: "bob"}
 	if e.FromID() != "bob" {
@@ -247,38 +202,6 @@ func TestMessageEventMediaAttachmentZeroValue(t *testing.T) {
 	}
 }
 
-func TestMessageEventToLegacyThreadID(t *testing.T) {
-	// ThreadID must round-trip through ToLegacy for thread-aware routing.
-	e := MessageEvent{
-		Type:      MsgText,
-		Text:      "message in a thread",
-		ChannelID: "-100123",
-		ThreadID:  "5",
-		Platform:  "telegram",
-		SenderID:  "user1",
-	}
-	m := e.ToLegacy()
-	if m.ThreadID != "5" {
-		t.Errorf("legacy ThreadID = %q, want 5", m.ThreadID)
-	}
-	if m.ChannelID != "-100123" {
-		t.Errorf("legacy ChannelID = %q", m.ChannelID)
-	}
-
-	// Empty ThreadID preserves emptiness.
-	e2 := MessageEvent{
-		Type:      MsgText,
-		Text:      "flat chat message",
-		ChannelID: "-100456",
-		Platform:  "telegram",
-		SenderID:  "user2",
-	}
-	m2 := e2.ToLegacy()
-	if m2.ThreadID != "" {
-		t.Errorf("expected empty ThreadID, got %q", m2.ThreadID)
-	}
-}
-
 func TestMessageEventDocExample(t *testing.T) {
 	// Exercise: full photo message as an adapter would construct it.
 	e := MessageEvent{
@@ -312,14 +235,5 @@ func TestMessageEventDocExample(t *testing.T) {
 	}
 	if e.SenderName != "Alice" {
 		t.Errorf("SenderName = %q", e.SenderName)
-	}
-
-	// Backward compat.
-	legacy := e.ToLegacy()
-	if legacy.From != "987654321" {
-		t.Errorf("legacy From = %q", legacy.From)
-	}
-	if legacy.Text != "check out this screenshot" {
-		t.Errorf("legacy Text = %q", legacy.Text)
 	}
 }

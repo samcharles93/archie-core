@@ -628,7 +628,7 @@ func run() int {
 	// possibly its own forge type/host) and its own worktree manager (a
 	// distinct WorkDir so concurrent identities never collide on the same
 	// clone). When cfg.Identities is empty, Daemon.Identities stays nil
-	// and Run() takes the legacy single-identity path unchanged.
+	// and Run() takes the single-identity path unchanged.
 	var identityRunners []*daemon.IdentityRunner
 	for _, idCfg := range cfg.Identities {
 		// Same reasoning as the primary forge: one identity whose credential is

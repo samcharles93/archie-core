@@ -13,10 +13,6 @@ func loadOverlay(basePath, overlayPath string) (config.Config, error) {
 	return unwrap(New(nil).Overlay(basePath, overlayPath))
 }
 
-func loadDir(baseDir, overlayDir string) (config.Config, error) {
-	return unwrap(New(nil).Dir(baseDir, overlayDir))
-}
-
 func unwrap(doc *Document, err error) (config.Config, error) {
 	if err != nil {
 		return config.Config{}, err

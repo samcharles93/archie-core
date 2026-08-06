@@ -1,10 +1,16 @@
 // Command archie-agent is a long-running NATS-connected worker. It answers
-// two request shapes: single-stage archie.agent.> requests over the
-// ARCHIE_TASKS JetStream stream (the legacy per-stage protocol), and full
-// task handoffs on archie.taskrun.> (core NATS, queue-grouped)  --  where it
-// runs workflow.Route/workflow.Run itself, proxying Store/Forge/worktree
-// operations back to archied over NATS instead of holding those
-// credentials directly.
+// two independent request shapes that serve different deployment modes:
+//
+//  1. Single-stage requests on archie.agent.> over the ARCHIE_TASKS
+//     JetStream stream  --  used when agent.mode is "nats" without
+//     container sandboxing. One stage is dispatched per message, and the
+//     agent replies on the caller's inbox.
+//
+//  2. Full-task handoffs on archie.taskrun.> (core NATS, queue-grouped)
+//     --  used with Docker container sandboxing. The agent runs
+//     workflow.Route/workflow.Run itself, proxying Store/Forge/worktree
+//     operations back to archied over NATS instead of holding those
+//     credentials directly.
 package main
 
 import (
