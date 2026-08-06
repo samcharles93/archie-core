@@ -93,15 +93,13 @@ type Skill struct {
 
 // EventSink publishes curator activity (what ran, what changed, why). It is
 // the emission side only; wake signals arrive through the runtime's own
-// subscription (archie-core-89x). Implementations MUST be non-blocking and
+// subscription. Implementations MUST be non-blocking and
 // bounded, matching the in-process event bus semantics.
 type EventSink interface {
 	Emit(kind, detail string, data map[string]any)
 }
 
 // Clock is injectable time: Now for timestamps and After for loop sleeps.
-// The runtime's loop timing is tested with a fake clock, never wall-clock
-// sleeps (archie-core-89x); the real implementation is the system clock.
 type Clock interface {
 	Now() time.Time
 	After(d time.Duration) <-chan time.Time

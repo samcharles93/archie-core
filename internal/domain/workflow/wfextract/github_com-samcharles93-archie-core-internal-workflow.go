@@ -5,11 +5,11 @@ package wfextract
 import (
 	"reflect"
 
-	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 func init() {
-	Symbols["github.com/samcharles93/archie-core/internal/workflow/workflow"] = map[string]reflect.Value{
+	Symbols["github.com/samcharles93/archie-core/internal/domain/workflow/workflow"] = map[string]reflect.Value{
 		// function, constant and variable definitions
 		"Bootstrap":            reflect.ValueOf(workflow.Bootstrap),
 		"Feasibility":          reflect.ValueOf(workflow.Feasibility),

@@ -6,7 +6,7 @@ import (
 )
 
 func TestSymbolsContainsExpectedWorkflowEntries(t *testing.T) {
-	pkgKey := "github.com/samcharles93/archie-core/internal/workflow/workflow"
+	pkgKey := "github.com/samcharles93/archie-core/internal/domain/workflow/workflow"
 	pkg, ok := Symbols[pkgKey]
 	if !ok {
 		t.Fatalf("Symbols missing key %q", pkgKey)
@@ -46,7 +46,7 @@ func TestSymbolsContainsExpectedWorkflowEntries(t *testing.T) {
 }
 
 func TestWFExtractSymbolCountReasonable(t *testing.T) {
-	pkgKey := "github.com/samcharles93/archie-core/internal/workflow/workflow"
+	pkgKey := "github.com/samcharles93/archie-core/internal/domain/workflow/workflow"
 	pkg := Symbols[pkgKey]
 	// Should have at least the core functions + types (10+ entries).
 	if len(pkg) < 10 {

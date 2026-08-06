@@ -14,9 +14,9 @@ import (
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/storerpc"
 	"github.com/samcharles93/archie-core/internal/taskrun"
-	"github.com/samcharles93/archie-core/internal/workflow"
-	"github.com/samcharles93/archie-core/internal/workflow/skillbuild"
-	"github.com/samcharles93/archie-core/internal/workflow/wfeval"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/wfeval"
 	"github.com/samcharles93/archie-core/internal/worktree"
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
 )

@@ -17,7 +17,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
-	"github.com/samcharles93/archie-core/internal/curator"
+	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/eventbus"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -28,8 +28,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/tools"
-	"github.com/samcharles93/archie-core/internal/workflow"
-	"github.com/samcharles93/archie-core/internal/workflow/skillbuild"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
 

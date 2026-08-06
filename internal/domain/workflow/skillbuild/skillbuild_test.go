@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 // ── workflows built from skill plugins ────────────────────────────────
@@ -39,7 +39,7 @@ Greet the world, then say goodbye.
 import (
 	"context"
 
-	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
@@ -57,7 +57,7 @@ func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
 import (
 	"context"
 
-	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
@@ -133,7 +133,7 @@ func TestBuildRegistryFromSkillCatalog(t *testing.T) {
 
 import (
 	"context"
-	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
@@ -167,7 +167,7 @@ Greet the user.
 
 import (
 	"context"
-	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
@@ -373,7 +373,7 @@ Custom worktree workflow.
 
 import (
 	"context"
-	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
@@ -449,7 +449,7 @@ Repo-custom implement.
 
 import (
 	"context"
-	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
@@ -608,7 +608,7 @@ Concurrent.
 
 import (
 	"context"
-	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
@@ -759,7 +759,7 @@ func TestBuildWorkflowSkipsBrokenPlugin(t *testing.T) {
 
 import (
 	"context"
-	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
@@ -784,7 +784,7 @@ this is %% NOT VALID GO @@@@
 
 import (
 	"context"
-	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
@@ -904,7 +904,7 @@ Custom implement.
 
 import (
 	"context"
-	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
@@ -972,7 +972,7 @@ First.
 
 import (
 	"context"
-	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
@@ -1007,7 +1007,7 @@ Second.
 
 import (
 	"context"
-	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
@@ -1095,7 +1095,7 @@ Custom.
 
 import (
 	"context"
-	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
@@ -1160,7 +1160,7 @@ First.
 
 import (
 	"context"
-	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
@@ -1194,7 +1194,7 @@ Second.
 
 import (
 	"context"
-	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
@@ -1257,7 +1257,7 @@ func TestBuildRegistrySkipsBrokenSkill(t *testing.T) {
 
 import (
 	"context"
-	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 func Stage() (string, func(context.Context, *workflow.TaskContext) error) {

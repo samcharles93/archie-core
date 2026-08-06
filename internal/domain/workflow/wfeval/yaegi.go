@@ -13,8 +13,8 @@ import (
 
 	"github.com/traefik/yaegi/interp"
 
-	"github.com/samcharles93/archie-core/internal/workflow"
-	"github.com/samcharles93/archie-core/internal/workflow/wfextract"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/wfextract"
 	"github.com/samcharles93/archie-core/internal/yaegiutil"
 )
 

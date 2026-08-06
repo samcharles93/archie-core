@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 func writeStageScript(t *testing.T, dir, name, src string) {
@@ -37,7 +37,7 @@ func TestDiscoverRunsStagesInFilenameOrder(t *testing.T) {
 import (
 	"context"
 
-	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 func Stage() workflow.Stage {
@@ -51,7 +51,7 @@ func Stage() workflow.Stage {
 import (
 	"context"
 
-	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 func Stage() workflow.Stage {
@@ -82,7 +82,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/samcharles93/archie-core/internal/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 func Stage() workflow.Stage {
@@ -125,7 +125,7 @@ func TestDiscoverPanicRecovered(t *testing.T) {
 	dir := t.TempDir()
 	writeStageScript(t, dir, "panics.go", `package stages
 
-import "github.com/samcharles93/archie-core/internal/workflow"
+import "github.com/samcharles93/archie-core/internal/domain/workflow"
 
 func Stage() workflow.Stage {
 	var files []string
