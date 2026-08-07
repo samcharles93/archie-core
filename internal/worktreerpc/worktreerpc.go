@@ -15,6 +15,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -27,6 +28,19 @@ const (
 	SubjectPush    = "archie.worktree.push"
 	SubjectPrepare = "archie.worktree.prepare"
 )
+
+// SubjectFor returns the subject for base, scoped to identity when set.
+// An empty identity uses the root subject (single-identity deployments and
+// agent images that predate identity routing). The daemon registers one
+// server per identity on these scoped subjects so a container-mode task
+// owned by a non-root identity has its push/prepare calls served by that
+// identity's own worktree manager (its own credential and workdir).
+func SubjectFor(identity, base string) string {
+	if identity == "" {
+		return base
+	}
+	return "archie.worktree." + identity + "." + strings.TrimPrefix(base, "archie.worktree.")
+}
 
 // PushRequest identifies the task's worktree by owner/repo/issue rather
 // than trusting a path from the (sandboxed) agent  --  the server resolves
@@ -88,12 +102,19 @@ func (s *Server) handlerContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), timeout)
 }
 
-// Register subscribes the push and prepare handlers on nc. The returned
-// func unsubscribes both.
+// Register subscribes the push and prepare handlers on nc under the root
+// (identity-less) subjects. RegisterFor(nc, identity) registers them under
+// that identity's scoped subjects; the daemon calls it once per identity.
 func (s *Server) Register(nc *nats.Conn) (unsubscribe func(), err error) {
+	return s.RegisterFor(nc, "")
+}
+
+// RegisterFor registers the push and prepare handlers under the subjects
+// scoped to identity.
+func (s *Server) RegisterFor(nc *nats.Conn, identity string) (unsubscribe func(), err error) {
 	return natsrpc.RegisterAll(nc, []natsrpc.Registration{
-		{Subject: SubjectPush, Handler: s.handlePush},
-		{Subject: SubjectPrepare, Handler: s.handlePrepare},
+		{Subject: SubjectFor(identity, SubjectPush), Handler: s.handlePush},
+		{Subject: SubjectFor(identity, SubjectPrepare), Handler: s.handlePrepare},
 	})
 }
 
@@ -135,15 +156,20 @@ type Client struct {
 	Conn *nats.Conn
 	// Timeout bounds each call when ctx has no deadline of its own.
 	Timeout time.Duration
+	// Identity scopes this client's calls to one identity's RPC server.
+	// Empty uses the root subjects (single-identity deployments).
+	Identity string
 }
 
 func (c *Client) rpc() *natsrpc.Client { return &natsrpc.Client{Conn: c.Conn, Timeout: c.Timeout} }
+
+func (c *Client) subject(base string) string { return SubjectFor(c.Identity, base) }
 
 // Push requests that archied push branch for owner/repo/issue's worktree
 // using its held forge credential.
 func (c *Client) Push(ctx context.Context, owner, repo string, issue int, branch string) error {
 	req := PushRequest{Owner: owner, Repo: repo, Issue: issue, Branch: branch}
-	resp, err := natsrpc.Call[Response](ctx, c.rpc(), SubjectPush, req)
+	resp, err := natsrpc.Call[Response](ctx, c.rpc(), c.subject(SubjectPush), req)
 	if err != nil {
 		return err
 	}
@@ -155,7 +181,7 @@ func (c *Client) Push(ctx context.Context, owner, repo string, issue int, branch
 // worktree.Manager.Prepare's signature.
 func (c *Client) Prepare(ctx context.Context, owner, repo, base string, issue int, title, body, labels string) (dir, branch string, err error) {
 	req := PrepareRequest{Owner: owner, Repo: repo, Base: base, Issue: issue, Title: title, Body: body, Labels: labels}
-	resp, err := natsrpc.Call[PrepareResponse](ctx, c.rpc(), SubjectPrepare, req)
+	resp, err := natsrpc.Call[PrepareResponse](ctx, c.rpc(), c.subject(SubjectPrepare), req)
 	if err != nil {
 		return "", "", err
 	}

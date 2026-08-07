@@ -217,6 +217,20 @@ func TestClientPushTimesOutWithNoResponder(t *testing.T) {
 	}
 }
 
+// SubjectFor leaves the root subject unchanged for an empty identity and
+// prefixes the identity for a non-empty one.
+func TestSubjectFor(t *testing.T) {
+	if got := SubjectFor("", SubjectPush); got != SubjectPush {
+		t.Fatalf("SubjectFor(\"\", %q) = %q, want unchanged root subject", SubjectPush, got)
+	}
+	if got := SubjectFor("winter", SubjectPush); got != "archie.worktree.winter.push" {
+		t.Fatalf("SubjectFor(\"winter\", %q) = %q", SubjectPush, got)
+	}
+	if got := SubjectFor("winter", SubjectPrepare); got != "archie.worktree.winter.prepare" {
+		t.Fatalf("SubjectFor(\"winter\", %q) = %q", SubjectPrepare, got)
+	}
+}
+
 // A handler must impose its own deadline. NATS request/reply carries no
 // deadline to the server, and a clone or push now runs in-process via
 // go-git, so an unresponsive forge would otherwise wedge the handler

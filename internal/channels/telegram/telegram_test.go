@@ -102,6 +102,21 @@ func TestTelegramUserFacingCommandCopyDoesNotCallArchieAGateway(t *testing.T) {
 	}
 }
 
+// /delete removes a stored conversation, so it has to appear in the menu
+// beside /sessions and /resume: an operator who can list a session and
+// switch to it must be able to see how to get rid of it.
+func TestSessionManagementCommandsArePublished(t *testing.T) {
+	found := make(map[string]bool, len(gatewayCommandSpecs))
+	for _, spec := range gatewayCommandSpecs {
+		found[spec.Command] = true
+	}
+	for _, cmd := range []string{"sessions", "resume", "delete"} {
+		if !found[cmd] {
+			t.Errorf("/%s is missing from gatewayCommandSpecs", cmd)
+		}
+	}
+}
+
 func TestCommandSurfaceUsesOneModelSelectorAndUsefulHelpCopy(t *testing.T) {
 	for _, spec := range gatewayCommandSpecs {
 		if spec.Command == "models" {

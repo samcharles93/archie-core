@@ -18,6 +18,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/eventbus"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -28,8 +30,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/tools"
-	"github.com/samcharles93/archie-core/internal/domain/workflow"
-	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
@@ -217,11 +217,25 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 }
 
-// runIdentities starts one goroutine per identity. Each goroutine runs an
-// independent poll loop. All identities share the daemon's store, NATS
-// connection, container pool, and event bus.
+// runIdentities starts one goroutine per identity plus one shared
+// maintenance-and-drain loop.
+//
+// Polling is identity-scoped: each identity goroutine polls only its own
+// repos via its own forge client and enqueues under its own name. It never
+// drains or reconciles. Maintenance and draining are store-wide, not
+// identity-scoped, so they run once in a single shared loop  --  that keeps
+// the global max_concurrency cap and the per-repo serialization intact
+// across identities (N per-identity dispatchers would multiply the cap and
+// split the same-repo lock), and it ensures reconcilePRs and storage
+// cleanup actually run in multi-identity mode.
 func (d *Daemon) runIdentities(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	var wg sync.WaitGroup
+
+	// One poll loop per identity. Polling is the only identity-scoped
+	// work; it never executes tasks.
 	for _, id := range d.Identities {
 		wg.Add(1)
 		go func(id *IdentityRunner) {
@@ -233,7 +247,7 @@ func (d *Daemon) runIdentities(ctx context.Context) error {
 			ticker := time.NewTicker(interval)
 			defer ticker.Stop()
 			for {
-				d.cycleForIdentity(ctx, id)
+				d.pollForIdentity(ctx, id)
 				select {
 				case <-ctx.Done():
 					return
@@ -242,27 +256,51 @@ func (d *Daemon) runIdentities(ctx context.Context) error {
 			}
 		}(id)
 	}
+
+	// One shared maintenance-and-drain loop.
+	wg.Go(func() {
+		ticker := time.NewTicker(d.Cfg.PollInterval.Std())
+		defer ticker.Stop()
+		for {
+			d.maintainAndDrain(ctx)
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	})
+
 	wg.Wait()
 	return ctx.Err()
 }
 
-// cycleForIdentity is a single poll-and-drain pass scoped to one identity's
-// forge client and repo list.
-func (d *Daemon) cycleForIdentity(ctx context.Context, id *IdentityRunner) {
-	// Poll the identity's repos via its own forge client.
+// pollForIdentity polls one identity's repos via its own forge client,
+// enqueuing any discovered issues under that identity's name. It never
+// drains or reconciles  --  those are store-wide and run in the shared
+// maintainAndDrain loop.
+func (d *Daemon) pollForIdentity(ctx context.Context, id *IdentityRunner) {
+	cfg := configForIdentity(d.Cfg, id.Cfg)
 	for _, repo := range id.Repos {
-		issues := d.pollIssuesWithForge(ctx, id.Forge, repo)
+		issues := d.pollIssuesWithConfig(ctx, id.Forge, cfg, repo)
 		for _, is := range issues {
 			labels := strings.Join(is.Labels, ",")
 			if d.Tasks != nil {
-				d.pollNATS(ctx, id.Forge, repo, is, labels, id.Name)
+				d.pollNATS(ctx, id.Forge, cfg, repo, is, labels, id.Name)
 			} else {
-				d.pollSQLite(ctx, id.Forge, repo, is, labels, id.Name)
+				d.pollSQLite(ctx, id.Forge, cfg, repo, is, labels, id.Name)
 			}
 		}
 	}
-	// Draining is shared: ClaimNext returns the oldest queued task
-	// regardless of which identity enqueued it.
+}
+
+// maintainAndDrain runs the store-wide passes of a multi-identity cycle:
+// storage cleanup, PR reconciliation, then task dispatch. A single shared
+// loop runs this so the global concurrency cap and per-repo serialization
+// hold across identities.
+func (d *Daemon) maintainAndDrain(ctx context.Context) {
+	d.cleanupExpiredStorage(ctx)
+	d.reconcilePRs(ctx)
 	if d.Tasks != nil {
 		d.drainNATS(ctx)
 	} else {
@@ -270,21 +308,23 @@ func (d *Daemon) cycleForIdentity(ctx context.Context, id *IdentityRunner) {
 	}
 }
 
-// pollIssuesWithForge is pollIssues using an explicit forge client rather
-// than d.Forge  --  used by multi-identity poll loops.
-func (d *Daemon) pollIssuesWithForge(ctx context.Context, fg forge.Forge, repo config.Repo) []forge.Issue {
-	switch d.Cfg.Dispatch.Trigger {
+// pollIssuesWithConfig discovers work for one repo using the given forge
+// client and dispatch config. Single-identity mode passes d.Forge/d.Cfg;
+// identity poll loops pass the identity's own forge and configForIdentity,
+// so each identity polls with its own bot user, label, and trigger.
+func (d *Daemon) pollIssuesWithConfig(ctx context.Context, fg forge.Forge, cfg config.Config, repo config.Repo) []forge.Issue {
+	switch cfg.Dispatch.Trigger {
 	case "label":
-		issues, err := fg.IssuesWithLabel(ctx, repo.Owner, repo.Name, d.Cfg.Label)
+		issues, err := fg.IssuesWithLabel(ctx, repo.Owner, repo.Name, cfg.Label)
 		if err != nil {
 			d.Log.Error("label poll failed", "repo", repo.FullName(), "err", err)
 			return nil
 		}
 		return issues
 	case "either":
-		return d.pollEitherWithForge(ctx, fg, repo)
+		return d.pollEitherWithConfig(ctx, fg, cfg, repo)
 	default: // "assignee" (default)
-		issues, err := fg.AssignedIssues(ctx, repo.Owner, repo.Name, d.Cfg.BotUser)
+		issues, err := fg.AssignedIssues(ctx, repo.Owner, repo.Name, cfg.BotUser)
 		if err != nil {
 			d.Log.Error("poll failed", "repo", repo.FullName(), "err", err)
 			return nil
@@ -293,11 +333,11 @@ func (d *Daemon) pollIssuesWithForge(ctx context.Context, fg forge.Forge, repo c
 	}
 }
 
-func (d *Daemon) pollEitherWithForge(ctx context.Context, fg forge.Forge, repo config.Repo) []forge.Issue {
+func (d *Daemon) pollEitherWithConfig(ctx context.Context, fg forge.Forge, cfg config.Config, repo config.Repo) []forge.Issue {
 	seen := map[int]bool{}
 	var out []forge.Issue
 
-	assigned, err := fg.AssignedIssues(ctx, repo.Owner, repo.Name, d.Cfg.BotUser)
+	assigned, err := fg.AssignedIssues(ctx, repo.Owner, repo.Name, cfg.BotUser)
 	if err != nil {
 		d.Log.Error("assigned poll failed", "repo", repo.FullName(), "err", err)
 	} else {
@@ -306,7 +346,7 @@ func (d *Daemon) pollEitherWithForge(ctx context.Context, fg forge.Forge, repo c
 			out = append(out, is)
 		}
 	}
-	labelled, err := fg.IssuesWithLabel(ctx, repo.Owner, repo.Name, d.Cfg.Label)
+	labelled, err := fg.IssuesWithLabel(ctx, repo.Owner, repo.Name, cfg.Label)
 	if err != nil {
 		d.Log.Error("label poll failed", "repo", repo.FullName(), "err", err)
 	} else {
@@ -351,7 +391,7 @@ func (d *Daemon) cleanupExpiredStorage(ctx context.Context) {
 
 // drainSQLite claims queued tasks from SQLite and dispatches them concurrently.
 func (d *Daemon) drainSQLite(ctx context.Context) {
-	dispatcher := newTaskDispatcher(d.Cfg.Containers.MaxConcurrency, d.allowConcurrentFor)
+	dispatcher := newTaskDispatcher(d.Cfg.Containers.MaxConcurrency, d.allowConcurrentForTask)
 	for ctx.Err() == nil {
 		task, err := d.Store.ClaimNext(ctx)
 		if err != nil {
@@ -370,7 +410,7 @@ func (d *Daemon) drainSQLite(ctx context.Context) {
 // requeued tasks (waiting_human approval, retry-parked) that didn't come
 // through a NATS publish.
 func (d *Daemon) drainNATS(ctx context.Context) {
-	dispatcher := newTaskDispatcher(d.Cfg.Containers.MaxConcurrency, d.allowConcurrentFor)
+	dispatcher := newTaskDispatcher(d.Cfg.Containers.MaxConcurrency, d.allowConcurrentForTask)
 	for ctx.Err() == nil {
 		msg, err := d.Tasks.Fetch(ctx)
 		if err != nil && !errors.Is(err, eventbus.ErrNoMessage) {
@@ -409,7 +449,7 @@ func (d *Daemon) submitNATSTask(ctx context.Context, dispatcher *taskDispatcher,
 		_ = msg.Ack()
 		return
 	}
-	task := &store.Task{Owner: envelope.Owner, Repo: envelope.Repo}
+	task := &store.Task{Owner: envelope.Owner, Repo: envelope.Repo, Identity: envelope.Identity}
 	dispatcher.Submit(ctx, task, func(ctx context.Context, _ *store.Task) {
 		d.processNATSTask(ctx, msg)
 	})
@@ -422,20 +462,20 @@ func (d *Daemon) submitNATSTask(ctx context.Context, dispatcher *taskDispatcher,
 // entirely  --  the global slot limit is the only bound on their concurrency.
 type taskDispatcher struct {
 	slots           chan struct{}
-	allowConcurrent func(owner, repo string) bool
+	allowConcurrent func(task *store.Task) bool
 
 	mu       sync.Mutex
 	repoTail map[string]chan struct{}
 	wg       sync.WaitGroup
 }
 
-func newTaskDispatcher(maxConcurrency int, allowConcurrent func(owner, repo string) bool) *taskDispatcher {
+func newTaskDispatcher(maxConcurrency int, allowConcurrent func(task *store.Task) bool) *taskDispatcher {
 	var slots chan struct{}
 	if maxConcurrency > 0 {
 		slots = make(chan struct{}, maxConcurrency)
 	}
 	if allowConcurrent == nil {
-		allowConcurrent = func(string, string) bool { return false }
+		allowConcurrent = func(*store.Task) bool { return false }
 	}
 	return &taskDispatcher{
 		slots:           slots,
@@ -452,7 +492,7 @@ func (d *taskDispatcher) Submit(
 	repo := task.Owner + "/" + task.Repo
 
 	var previous, done chan struct{}
-	if !d.allowConcurrent(task.Owner, task.Repo) {
+	if !d.allowConcurrent(task) {
 		done = make(chan struct{})
 		d.mu.Lock()
 		previous = d.repoTail[repo]
@@ -492,9 +532,9 @@ func (d *Daemon) poll(ctx context.Context) {
 		for _, is := range issues {
 			labels := strings.Join(is.Labels, ",")
 			if d.Tasks != nil {
-				d.pollNATS(ctx, d.Forge, repo, is, labels, "")
+				d.pollNATS(ctx, d.Forge, d.Cfg, repo, is, labels, "")
 			} else {
-				d.pollSQLite(ctx, d.Forge, repo, is, labels, "")
+				d.pollSQLite(ctx, d.Forge, d.Cfg, repo, is, labels, "")
 			}
 		}
 	}
@@ -502,10 +542,11 @@ func (d *Daemon) poll(ctx context.Context) {
 
 // pollSQLite enqueues discovered issues directly into SQLite (existing flow).
 // fg is the forge client that discovered is  --  d.Forge for the
-// single-identity path, or an identity's own client from cycleForIdentity.
+// single-identity path, or an identity's own client from pollForIdentity.
+// cfg is the dispatch config that owns this poll (root or identity-scoped).
 // identity records which identity owns the resulting task; empty for
 // single-identity deployments.
-func (d *Daemon) pollSQLite(ctx context.Context, fg forge.Forge, repo config.Repo, is forge.Issue, labels, identity string) {
+func (d *Daemon) pollSQLite(ctx context.Context, fg forge.Forge, cfg config.Config, repo config.Repo, is forge.Issue, labels, identity string) {
 	inserted, err := d.Store.EnqueueIssue(ctx,
 		repo.Owner, repo.Name, is.Number, is.Title, is.Body, labels, identity)
 	if err != nil {
@@ -513,7 +554,7 @@ func (d *Daemon) pollSQLite(ctx context.Context, fg forge.Forge, repo config.Rep
 		return
 	}
 	if inserted {
-		d.acknowledge(ctx, fg, repo, is)
+		d.acknowledge(ctx, fg, cfg, repo, is)
 		return
 	}
 	// Existing tasks are left untouched. Retry and approval are explicit
@@ -521,7 +562,7 @@ func (d *Daemon) pollSQLite(ctx context.Context, fg forge.Forge, repo config.Rep
 }
 
 // pollNATS publishes discovered issues to NATS (new flow).
-func (d *Daemon) pollNATS(ctx context.Context, fg forge.Forge, repo config.Repo, is forge.Issue, labels, identity string) {
+func (d *Daemon) pollNATS(ctx context.Context, fg forge.Forge, cfg config.Config, repo config.Repo, is forge.Issue, labels, identity string) {
 	// Read-only existence check prevents rediscovering an existing task.
 	existing, err := d.Store.TaskByIssue(ctx, repo.Owner, repo.Name, is.Number)
 	if err != nil {
@@ -548,7 +589,7 @@ func (d *Daemon) pollNATS(ctx context.Context, fg forge.Forge, repo config.Repo,
 		d.Log.Error("task publish failed", "repo", repo.FullName(), "issue", is.Number, "err", err)
 		return
 	}
-	d.acknowledge(ctx, fg, repo, is)
+	d.acknowledge(ctx, fg, cfg, repo, is)
 }
 
 // publishTask validates, encodes and publishes a task envelope. The
@@ -566,10 +607,11 @@ func (d *Daemon) publishTask(ctx context.Context, task workintake.TaskEnvelope) 
 }
 
 // acknowledge posts the pickup reaction and queued event
-// using fg  --  the forge client that owns repo (identity-scoped or root).
-func (d *Daemon) acknowledge(ctx context.Context, fg forge.Forge, repo config.Repo, is forge.Issue) {
+// using fg  --  the forge client that owns repo (identity-scoped or root) --
+// and the ack reaction from cfg, the dispatch config that owns this poll.
+func (d *Daemon) acknowledge(ctx context.Context, fg forge.Forge, cfg config.Config, repo config.Repo, is forge.Issue) {
 	d.Log.Info("issue queued", "repo", repo.FullName(), "issue", is.Number, "title", is.Title)
-	if ack := d.Cfg.Dispatch.AckReaction; ack != "" {
+	if ack := cfg.Dispatch.AckReaction; ack != "" {
 		if err := fg.React(ctx, repo.Owner, repo.Name, is.Number, ack); err != nil {
 			d.Log.Warn("ack reaction failed", "issue", is.Number, "err", err)
 		}
@@ -632,56 +674,11 @@ func (d *Daemon) processNATSTask(ctx context.Context, msg eventbus.Message) {
 	}
 }
 
-// pollIssues discovers work for one repo according to cfg.Dispatch.Trigger.
+// pollIssues discovers work for one repo according to the root dispatch
+// config, using the root forge client. Identity poll loops use
+// pollIssuesWithConfig with their own forge and config instead.
 func (d *Daemon) pollIssues(ctx context.Context, repo config.Repo) []forge.Issue {
-	switch d.Cfg.Dispatch.Trigger {
-	case "label":
-		issues, err := d.Forge.IssuesWithLabel(ctx, repo.Owner, repo.Name, d.Cfg.Label)
-		if err != nil {
-			d.Log.Error("label poll failed", "repo", repo.FullName(), "err", err)
-			return nil
-		}
-		return issues
-	case "either":
-		return d.pollEither(ctx, repo)
-	default: // "assignee" (default)
-		issues, err := d.Forge.AssignedIssues(ctx, repo.Owner, repo.Name, d.Cfg.BotUser)
-		if err != nil {
-			d.Log.Error("poll failed", "repo", repo.FullName(), "err", err)
-			return nil
-		}
-		return issues
-	}
-}
-
-// pollEither returns the union of assigned and labelled issues, deduped
-// by issue number. An issue both assigned and labelled appears once.
-func (d *Daemon) pollEither(ctx context.Context, repo config.Repo) []forge.Issue {
-	seen := map[int]bool{}
-	var out []forge.Issue
-
-	assigned, err := d.Forge.AssignedIssues(ctx, repo.Owner, repo.Name, d.Cfg.BotUser)
-	if err != nil {
-		d.Log.Error("assigned poll failed", "repo", repo.FullName(), "err", err)
-	} else {
-		for _, is := range assigned {
-			seen[is.Number] = true
-			out = append(out, is)
-		}
-	}
-
-	labelled, err := d.Forge.IssuesWithLabel(ctx, repo.Owner, repo.Name, d.Cfg.Label)
-	if err != nil {
-		d.Log.Error("label poll failed", "repo", repo.FullName(), "err", err)
-	} else {
-		for _, is := range labelled {
-			if !seen[is.Number] {
-				out = append(out, is)
-			}
-		}
-	}
-
-	return out
+	return d.pollIssuesWithConfig(ctx, d.Forge, d.Cfg, repo)
 }
 
 // closeResolvedIssue closes the forge issue behind a finished task.
@@ -808,7 +805,9 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 		return
 	}
 	task.Branch = branch
-	_ = d.Store.Update(ctx, task)
+	if err := d.Store.Update(ctx, task); err != nil {
+		d.Log.Warn("task branch not persisted", "task", task.ID, "err", err)
+	}
 
 	// Refuse to run unsandboxed when sandboxing was asked for. Parking is
 	// recoverable -- fix the image, retry -- whereas running the agent loop
@@ -841,14 +840,11 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	// trip instead of running the stage loop here. archie-agent proxies
 	// Store/Forge/worktree-push calls back to archied over storerpc/
 	// forgerpc/worktreerpc  --  by the time runViaAgent returns, the task's
-	// terminal state already landed via those calls.
-	//
-	// NOTE: the RPC servers registered in cmd/archied (forgerpc/worktreerpc)
-	// are still wired to the root d.Forge/d.Trees, not per-identity clients
-	// (see registerTaskRPCServers in main.go). A container-mode task owned
-	// by a non-root identity will have its RPC calls served by the wrong
-	// identity's forge/worktree until that registration is made
-	// identity-aware; the in-process path below is fully identity-scoped.
+	// terminal state already landed via those calls. The task's identity
+	// travels in the taskrun request; the agent scopes its forgerpc and
+	// worktreerpc clients to that identity, and the daemon registered one
+	// server pair per identity (plus the root pair), so a container-mode
+	// task is always served by its own forge client and worktree manager.
 	if d.ContainerPool != nil {
 		d.runViaAgent(ctx, task, repo)
 	} else {
@@ -928,6 +924,19 @@ func (d *Daemon) acquireTaskContainer(
 
 	ctr, err := d.ContainerPool.Acquire(ctx, mounts, d.containerEnv(task))
 	if err != nil {
+		// Roll back the storage we just set up: the mounts were created
+		// for this task but no container will use them. Leaking them until
+		// a later TTL sweep is not acceptable on a backend that allocates
+		// real resources (volumes, NFS leases).
+		if terr := d.Storage.Teardown(ctx, storage.TaskRef{
+			WorktreeDir:       workDir,
+			Ecosystem:         repo.Ecosystem,
+			PersistentStorage: repo.PersistentStorage,
+			Owner:             task.Owner,
+			Repo:              task.Repo,
+		}); terr != nil {
+			d.Log.Warn("storage teardown after acquire failure failed", "err", terr)
+		}
 		park("container acquire failed", err)
 		return nil, false
 	}
@@ -1128,14 +1137,13 @@ func (d *Daemon) repoFor(t *store.Task) (config.Repo, bool) {
 	return config.Repo{}, false
 }
 
-// allowConcurrentFor reports whether owner/repo has opted into concurrent
-// task dispatch (config.Repo.AllowConcurrent). Unknown repos default to the
-// safe, serialized behavior.
-func (d *Daemon) allowConcurrentFor(owner, repo string) bool {
-	for _, r := range d.Cfg.Repos {
-		if r.Owner == owner && r.Name == repo {
-			return r.AllowConcurrent
-		}
-	}
-	return false
+// allowConcurrentForTask reports whether the task's owning repo has opted
+// into concurrent task dispatch (config.Repo.AllowConcurrent). The repo is
+// resolved through repoFor, which selects the identity-scoped repo list when
+// task.Identity names a configured identity -- so multi-identity concurrency
+// policy comes from the identity's own config, not the root daemon's.
+// Unknown repos default to the safe, serialized behavior.
+func (d *Daemon) allowConcurrentForTask(task *store.Task) bool {
+	repo, ok := d.repoFor(task)
+	return ok && repo.AllowConcurrent
 }

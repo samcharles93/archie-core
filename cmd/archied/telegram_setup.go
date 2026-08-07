@@ -163,6 +163,8 @@ func buildTelegramRouter(tg *telegram.Gateway, s telegramSetup, sessionStore gat
 	router.Models = s.ChatModels
 	router.Updates = s.Updates
 	router.InitSessions(sessionStore)
+	router.Titles = newChatTitleGenerator(s)
+	router.Log = s.Log
 	configureTaskCommands(router, s.ChatTasks, s.ChatController, s.DefaultChatIdentity)
 
 	router.LLM, router.LLMStream = makeChatLLMResponder(tg.Name(), s, sessionStore, router)
@@ -304,4 +306,46 @@ func sendChatTurn(ctx context.Context, llm *runtime.Runtime, chatModel string, o
 		return "", fmt.Errorf("llm chat stream: %w", err)
 	}
 	return sb.String(), nil
+}
+
+// chatTitleGenerator proposes session titles through the chat model. It
+// is a pure proposal: it persists nothing, so a failed or slow title
+// call can never corrupt conversation history or fail the turn. The
+// gateway bounds the call with its own timeout; errors leave the session
+// untitled and are logged here.
+type chatTitleGenerator struct {
+	log        *slog.Logger
+	llm        *runtime.Runtime
+	chatModels gateway.ModelManager
+}
+
+// newChatTitleGenerator wires an LLM-backed title generator for a chat
+// setup, or nil when no model is available. Title generation is optional
+// everywhere, so every caller tolerates nil.
+func newChatTitleGenerator(s telegramSetup) gateway.TitleGenerator {
+	if s.LLM == nil || s.ChatModels == nil {
+		return nil
+	}
+	return &chatTitleGenerator{log: s.Log, llm: s.LLM, chatModels: s.ChatModels}
+}
+
+func (g *chatTitleGenerator) GenerateTitle(ctx context.Context, sessionID, firstMessage string) (string, error) {
+	messages := []chat.Message{
+		{Role: chat.RoleSystem, Content: gateway.TitleGenerationSystemPrompt},
+		{Role: chat.RoleUser, Content: firstMessage},
+	}
+	// No tools: a title is a single completion. The active model is read
+	// at call time so a /model switch applies to titles too.
+	text, err := sendChatTurn(ctx, g.llm, g.chatModels.ActiveModel(),
+		core.GenerateOptions{Messages: messages, MaxSteps: 1}, nil)
+	if err != nil {
+		if g.log != nil {
+			g.log.Error("session title generation failed", "session", sessionID, "err", err)
+		}
+		return "", fmt.Errorf("generate title for session %s: %w", sessionID, err)
+	}
+	if g.log != nil {
+		g.log.Info("session title generated", "session", sessionID)
+	}
+	return text, nil
 }

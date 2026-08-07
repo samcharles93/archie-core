@@ -11,10 +11,12 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
@@ -252,10 +254,23 @@ type Router struct {
 	// When set, session lifecycle commands (/new, /branch, /title,
 	// /undo, /retry, /compress) are available. When nil, those
 	// commands report "not configured".
-	Sessions       SessionStore
-	Agents         AgentReader // nil = /agents not configured
+	Sessions SessionStore
+	Agents   AgentReader // nil = /agents not configured
+	// Titles proposes display titles for untitled sessions (see
+	// TitleGenerator). Nil disables automatic title generation; when set,
+	// the router asks for a title after a successful turn on a session
+	// that still has none, in the background, and persists the result.
+	Titles TitleGenerator
+	// Log is the optional logger for the best-effort background title
+	// path. Nil drops those diagnostics silently; nothing on this path is
+	// important enough to fail the turn over.
+	Log            *slog.Logger
 	sessionTracker *sessionTracker
 	gatewayName    string
+	// titlingMu guards titling, the set of sessions with a title proposal
+	// in flight (see claimTitleInFlight). Zero value is ready to use.
+	titlingMu sync.Mutex
+	titling   map[string]struct{}
 }
 
 // NewRouter returns a Router. llm is optional  --  when nil, non-command
@@ -287,7 +302,11 @@ func (r *Router) Route(ctx context.Context, msg Message) (string, error) {
 	if r.LLM == nil {
 		return "I'm running but LLM processing isn't wired yet. Try /status.", nil
 	}
-	return r.LLM(ctx, msg)
+	reply, err := r.LLM(ctx, msg)
+	if err == nil {
+		r.maybeAutoTitle(ctx, msg)
+	}
+	return reply, err
 }
 
 // dispatchLocal handles recognized local commands. Returns (reply,
@@ -335,7 +354,7 @@ func (r *Router) dispatchLocal(ctx context.Context, msg Message, text, cmd strin
 		reply, err := r.handleProfile()
 		return reply, true, err
 	case "/sessions":
-		reply, err := r.handleSessions(ctx)
+		reply, err := r.handleSessions(ctx, msg)
 		return reply, true, err
 	case "/resume":
 		reply, err := r.handleResume(ctx, msg, rest)
@@ -401,6 +420,9 @@ func (r *Router) dispatchSessionCommand(ctx context.Context, msg Message, cmd, r
 	case "/compress", "/compact":
 		reply, err := r.handleCompress(ctx, msg, rest)
 		return reply, true, err
+	case "/delete":
+		reply, err := r.handleDelete(ctx, msg, rest)
+		return reply, true, err
 	}
 	return "", false, nil
 }
@@ -423,7 +445,11 @@ func (r *Router) RouteStream(ctx context.Context, msg Message, onDelta func(stri
 	if isLocalCommand(cmd) || strings.HasPrefix(cmd, "/") {
 		return r.Route(ctx, msg)
 	}
-	return r.LLMStream(ctx, msg, onDelta)
+	reply, err := r.LLMStream(ctx, msg, onDelta)
+	if err == nil {
+		r.maybeAutoTitle(ctx, msg)
+	}
+	return reply, err
 }
 
 var localCommands = []string{
@@ -431,7 +457,7 @@ var localCommands = []string{
 	"/start",
 	"/new", "/reset", "/topic", "/retry", "/undo",
 	"/title", "/branch", "/fork", "/compress", "/compact",
-	"/whoami", "/profile", "/sessions", "/resume", "/agents",
+	"/whoami", "/profile", "/sessions", "/resume", "/delete", "/agents",
 	"/personality", "/help", "/version", "/update", "/restart",
 }
 
@@ -465,6 +491,7 @@ var localCommandSpecs = []CommandSpec{
 	{Command: "/profile", Description: "Show the active identity profile", Usage: "/profile"},
 	{Command: "/sessions", Description: "List this channel's conversations", Usage: "/sessions"},
 	{Command: "/resume", Description: "Switch to a conversation", Usage: "/resume <session-id>"},
+	{Command: "/delete", Description: "Delete a conversation and its history", Usage: "/delete <session-id>"},
 	{Command: "/agents", Description: "List tasks currently being worked", Usage: "/agents"},
 	{Command: "/personality", Description: "Choose a communication style", Usage: "/personality [name]"},
 	{Command: "/help", Description: "See what Archie can do", Usage: "/help"},
@@ -731,7 +758,7 @@ func (r *Router) handleProfile() (string, error) {
 	return strings.TrimSpace(b.String()), nil
 }
 
-func (r *Router) handleSessions(ctx context.Context) (string, error) {
+func (r *Router) handleSessions(ctx context.Context, msg Message) (string, error) {
 	if r.Sessions == nil {
 		return "Session management is not configured.", nil
 	}
@@ -739,20 +766,115 @@ func (r *Router) handleSessions(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("list sessions: %w", err)
 	}
+	active := ""
+	if r.sessionTracker != nil {
+		active = r.sessionTracker.getActive(msg.ChannelID, msg.ThreadID)
+	}
+	return renderSessionList(sessions, active, time.Now()), nil
+}
+
+// renderSessionList formats sessions (already newest-first) as the
+// /sessions reply: a count header, then one numbered, column-aligned row
+// per session carrying an 8-character id prefix, its title, and a
+// recency suffix. The active session (matched by ID) is marked.
+func renderSessionList(sessions []SessionContext, active string, now time.Time) string {
 	if len(sessions) == 0 {
-		return "No sessions.", nil
+		return "No sessions."
 	}
-	var b strings.Builder
-	b.WriteString("Sessions:\n")
+	maxTitle := 0
 	for _, s := range sessions {
-		prefix := s.SessionID[:min(8, len(s.SessionID))]
-		title := s.Title
-		if title == "" {
-			title = "(untitled)"
+		if l := len([]rune(sessionDisplayTitle(s))); l > maxTitle {
+			maxTitle = l
 		}
-		fmt.Fprintf(&b, "  %s — %s\n", prefix, title)
 	}
-	return strings.TrimSpace(b.String()), nil
+	numW := len(strconv.Itoa(len(sessions)))
+	var b strings.Builder
+	fmt.Fprintf(&b, "Sessions (%d):\n", len(sessions))
+	for i, s := range sessions {
+		meta := relativeAge(sessionRecency(s), now)
+		if s.SessionID == active {
+			meta = "active · " + meta
+		}
+		fmt.Fprintf(&b, "  %*d. %s  %-*s · %s\n",
+			numW, i+1, shortSessionID(s.SessionID), maxTitle+1, sessionDisplayTitle(s), meta)
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// shortSessionIDLen is how much of a session ID the chat surfaces show. It
+// is also the shorthand /resume and /delete are given back, so every
+// listing must truncate to the same width.
+const shortSessionIDLen = 8
+
+// shortSessionID renders the abbreviated form of a session ID used
+// wherever a session is listed.
+//
+// Truncation is on a rune boundary: slicing bytes could split a
+// multi-byte channel-ID-derived session key mid-rune and emit invalid
+// UTF-8. UUID keys are ASCII, so this only differs for the exotic cases --
+// where it must stay well-formed.
+func shortSessionID(id string) string {
+	if r := []rune(id); len(r) > shortSessionIDLen {
+		return string(r[:shortSessionIDLen])
+	}
+	return id
+}
+
+// resolveSessionRef resolves an operator-supplied session reference
+// against a session list, the way /resume and /delete both accept one.
+//
+// An exact ID wins outright -- a full ID names one session unambiguously
+// even when it is also the prefix of a longer one -- otherwise the
+// reference must be a prefix of exactly one session. It returns (nil,
+// false) when nothing matches and (nil, true) when more than one session
+// shares the prefix.
+func resolveSessionRef(sessions []SessionContext, ref string) (match *SessionContext, ambiguous bool) {
+	for i, s := range sessions {
+		if s.SessionID == ref {
+			return &sessions[i], false
+		}
+	}
+	var found *SessionContext
+	for i, s := range sessions {
+		if !strings.HasPrefix(s.SessionID, ref) {
+			continue
+		}
+		if found != nil {
+			return nil, true
+		}
+		found = &sessions[i]
+	}
+	return found, false
+}
+
+// sessionDisplayTitle is the title a session is shown under, falling
+// back to the standard placeholder when none has been set or generated.
+func sessionDisplayTitle(sc SessionContext) string {
+	if sc.Title != "" {
+		return sc.Title
+	}
+	return "(untitled)"
+}
+
+// relativeAge renders an instant as a short human age ("5m ago") for
+// session listings. The zero time renders as an empty string.
+func relativeAge(t, now time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	d := now.Sub(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	case d < 7*24*time.Hour:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	default:
+		return t.Format("Jan 2")
+	}
 }
 
 // handleResume switches the active session for the current channel+thread
@@ -769,25 +891,14 @@ func (r *Router) handleResume(ctx context.Context, msg Message, arg string) (str
 	if err != nil {
 		return "", fmt.Errorf("list sessions: %w", err)
 	}
-	for _, s := range sessions {
-		if s.SessionID == arg {
-			return r.resumeSession(msg, s), nil
-		}
-	}
-	var matches []SessionContext
-	for _, s := range sessions {
-		if strings.HasPrefix(s.SessionID, arg) {
-			matches = append(matches, s)
-		}
-	}
-	switch len(matches) {
-	case 0:
-		return fmt.Sprintf("No session matching %q.", arg), nil
-	case 1:
-		return r.resumeSession(msg, matches[0]), nil
-	default:
+	match, ambiguous := resolveSessionRef(sessions, arg)
+	switch {
+	case ambiguous:
 		return fmt.Sprintf("Multiple sessions match %q; be more specific.", arg), nil
+	case match == nil:
+		return fmt.Sprintf("No session matching %q.", arg), nil
 	}
+	return r.resumeSession(msg, *match), nil
 }
 
 func (r *Router) resumeSession(msg Message, s SessionContext) string {

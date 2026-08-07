@@ -18,6 +18,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	"github.com/samcharles93/archie-core/internal/gateway"
@@ -573,7 +574,7 @@ func TestRegisterTaskRPCServersReachableFromClient(t *testing.T) {
 	trees := &worktree.Manager{WorkDir: t.TempDir()}
 	log := slog.New(slog.DiscardHandler)
 
-	unsubscribe, err := registerTaskRPCServers(serverConn, st, stubForge{}, trees, log)
+	unsubscribe, err := registerTaskRPCServers(serverConn, st, stubForge{}, trees, nil, log)
 	if err != nil {
 		t.Fatalf("registerTaskRPCServers: %v", err)
 	}
@@ -609,6 +610,107 @@ func TestRegisterTaskRPCServersReachableFromClient(t *testing.T) {
 		t.Fatal("expected Prepare to fail against a non-git remote, proving the RPC round-tripped")
 	} else if err.Error() == "" {
 		t.Fatal("expected a non-empty error from the worktreerpc round trip")
+	}
+}
+
+// identityForge records which forge instance served a CloseIssue call, so
+// tests can prove identity-scoped RPC routing reaches the right forge.
+type identityForge struct {
+	closes int
+}
+
+func (*identityForge) Comment(context.Context, string, string, int, string) (int64, error) {
+	return 1, nil
+}
+
+func (f *identityForge) CloseIssue(context.Context, string, string, int, string) error {
+	f.closes++
+	return nil
+}
+
+func (*identityForge) CreatePR(context.Context, string, string, string, string, string, string) (int, error) {
+	return 1, nil
+}
+func (*identityForge) SetStateLabel(context.Context, string, string, int, string, []string) {}
+func (*identityForge) LinkBranch(context.Context, string, string, int, string) error        { return nil }
+func (*identityForge) AcceptInvitations(context.Context) error                              { panic("unexpected") }
+func (*identityForge) AssignedIssues(context.Context, string, string, string) ([]forge.Issue, error) {
+	panic("unexpected")
+}
+
+func (*identityForge) IssuesWithLabel(context.Context, string, string, string) ([]forge.Issue, error) {
+	panic("unexpected")
+}
+
+func (*identityForge) RepliesAfter(context.Context, string, string, int, int64, string) ([]forge.Reply, error) {
+	panic("unexpected")
+}
+
+func (*identityForge) PRState(context.Context, string, string, int) (string, error) {
+	panic("unexpected")
+}
+
+func (*identityForge) CreateIssue(context.Context, string, string, string, string, []string) (int, error) {
+	panic("unexpected")
+}
+func (*identityForge) React(context.Context, string, string, int, string) error { panic("unexpected") }
+func (*identityForge) VerifyPush(context.Context, string, string) error         { panic("unexpected") }
+
+// A container-mode task owned by a non-root identity must have its RPC
+// calls served by that identity's own forge client, never the root's.
+// Before identity-scoped subjects existed, the single server set was wired
+// to the root d.Forge/d.Trees, so one identity's agent could act through
+// another identity's credential.
+func TestRegisterTaskRPCServersRoutesIdentityScopedCalls(t *testing.T) {
+	srv := startEmbeddedNATS(t)
+	serverConn, err := natsio.Connect(srv.ClientURL())
+	if err != nil {
+		t.Fatalf("nats connect: %v", err)
+	}
+	t.Cleanup(serverConn.Close)
+
+	st := store.OpenTest(t)
+	rootForge := &identityForge{}
+	archieForge := &identityForge{}
+	rootTrees := &worktree.Manager{WorkDir: t.TempDir()}
+	archieTrees := &worktree.Manager{WorkDir: t.TempDir()}
+
+	identities := []*daemon.IdentityRunner{
+		{Name: "archie", Forge: archieForge, Trees: archieTrees},
+	}
+	unsubscribe, err := registerTaskRPCServers(serverConn, st, rootForge, rootTrees, identities, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("registerTaskRPCServers: %v", err)
+	}
+	t.Cleanup(unsubscribe)
+
+	clientConn, err := natsio.Connect(srv.ClientURL())
+	if err != nil {
+		t.Fatalf("nats connect: %v", err)
+	}
+	t.Cleanup(clientConn.Close)
+
+	ctx := context.Background()
+
+	// An identity-scoped client must reach archie's forge, not the root's.
+	archieClient := &forgerpc.Client{Conn: clientConn, Timeout: 2 * time.Second, Identity: "archie"}
+	if err := archieClient.CloseIssue(ctx, "acme", "shared", 1, "done"); err != nil {
+		t.Fatalf("identity-scoped CloseIssue: %v", err)
+	}
+	if archieForge.closes != 1 {
+		t.Fatalf("identity forge closes = %d, want 1", archieForge.closes)
+	}
+	if rootForge.closes != 0 {
+		t.Fatalf("root forge closes = %d, want 0 (identity call leaked to root)", rootForge.closes)
+	}
+
+	// The root (identity-less) client must reach the root forge.
+	rootClient := &forgerpc.Client{Conn: clientConn, Timeout: 2 * time.Second}
+	if err := rootClient.CloseIssue(ctx, "acme", "shared", 2, "done"); err != nil {
+		t.Fatalf("root-scoped CloseIssue: %v", err)
+	}
+	if rootForge.closes != 1 {
+		t.Fatalf("root forge closes = %d, want 1", rootForge.closes)
 	}
 }
 

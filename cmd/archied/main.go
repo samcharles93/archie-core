@@ -32,6 +32,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/wfeval"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
@@ -59,8 +61,6 @@ import (
 	memorytoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/memory"
 	"github.com/samcharles93/archie-core/internal/tools/webfetch"
 	"github.com/samcharles93/archie-core/internal/webui"
-	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
-	"github.com/samcharles93/archie-core/internal/domain/workflow/wfeval"
 	"github.com/samcharles93/archie-core/internal/worktree"
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
 )
@@ -478,6 +478,8 @@ func run() int {
 		Bus: bus, Log: log,
 	}
 	webRouter.LLM, webRouter.LLMStream = makeChatLLMResponder("web", webSetup, chatSessionStore, webRouter)
+	webRouter.Titles = newChatTitleGenerator(webSetup)
+	webRouter.Log = log
 	web.Chat = &webui.ChatService{
 		Router: webRouter, Sessions: chatSessionStore,
 		Turns:  gateway.NewTurns(log),
@@ -683,7 +685,7 @@ func run() int {
 			log.Error("nats connection unavailable for task RPC", "err", err)
 			return 1
 		}
-		unsubscribe, err := registerTaskRPCServers(coreConn, st, forgeClient, trees, log)
+		unsubscribe, err := registerTaskRPCServers(coreConn, st, forgeClient, trees, identityRunners, log)
 		if err != nil {
 			log.Error("task RPC server registration failed", "err", err)
 			return 1
@@ -1088,34 +1090,82 @@ func executionProviders(cfg config.Config) map[string]agentexec.Provider {
 // registerTaskRPCServers subscribes the storerpc/forgerpc/worktreerpc
 // handlers on nc so an archie-agent container (which holds no DB
 // connection, forge token, or push credential) can proxy those operations
-// back to archied. The returned func unsubscribes all three.
-func registerTaskRPCServers(nc *natsio.Conn, st store.TaskStore, forgeClient forge.Forge, trees *worktree.Manager, log *slog.Logger) (unsubscribe func(), err error) {
+// back to archied. The returned func unsubscribes all of them.
+//
+// The store is shared across identities, so storerpc registers once on its
+// root subjects. Forge and worktree are identity-scoped: the root servers
+// answer the root (identity-less) subjects for single-identity deployments
+// and root-owned tasks, and one server pair per identity answers that
+// identity's scoped subjects so a container-mode task owned by a non-root
+// identity has its RPC calls served by its own forge client and worktree
+// manager.
+func registerTaskRPCServers(nc *natsio.Conn, st store.TaskStore, forgeClient forge.Forge, trees *worktree.Manager, identities []*daemon.IdentityRunner, log *slog.Logger) (unsubscribe func(), err error) {
+	unsubs := make([]func(), 0, 3+2*len(identities))
+	unsubAll := func() {
+		for _, u := range unsubs {
+			u()
+		}
+	}
+
 	storeServer := &storerpc.Server{Store: st, Log: log}
-	unsubStore, err := storeServer.Register(nc)
+	u, err := storeServer.Register(nc)
 	if err != nil {
 		return nil, fmt.Errorf("register storerpc: %w", err)
 	}
+	unsubs = append(unsubs, u)
 
-	forgeServer := &forgerpc.Server{Forge: forgeClient, Log: log}
-	unsubForge, err := forgeServer.Register(nc)
-	if err != nil {
-		unsubStore()
-		return nil, fmt.Errorf("register forgerpc: %w", err)
+	registerForge := func(fg forge.Forge, identity string) error {
+		srv := &forgerpc.Server{Forge: fg, Log: log.With("rpc_identity", identity)}
+		u, err := srv.RegisterFor(nc, identity)
+		if err != nil {
+			return fmt.Errorf("register forgerpc%s: %w", identitySuffix(identity), err)
+		}
+		unsubs = append(unsubs, u)
+		return nil
+	}
+	registerTrees := func(mgr *worktree.Manager, identity string) error {
+		srv := &worktreerpc.Server{Trees: mgr, Log: log.With("rpc_identity", identity)}
+		u, err := srv.RegisterFor(nc, identity)
+		if err != nil {
+			return fmt.Errorf("register worktreerpc%s: %w", identitySuffix(identity), err)
+		}
+		unsubs = append(unsubs, u)
+		return nil
 	}
 
-	treesServer := &worktreerpc.Server{Trees: trees, Log: log}
-	unsubTrees, err := treesServer.Register(nc)
-	if err != nil {
-		unsubStore()
-		unsubForge()
-		return nil, fmt.Errorf("register worktreerpc: %w", err)
+	// Root (identity-less) forge and worktree servers.
+	if err := registerForge(forgeClient, ""); err != nil {
+		unsubAll()
+		return nil, err
+	}
+	if err := registerTrees(trees, ""); err != nil {
+		unsubAll()
+		return nil, err
 	}
 
-	return func() {
-		unsubStore()
-		unsubForge()
-		unsubTrees()
-	}, nil
+	// One forge/worktree server pair per identity, on identity-scoped
+	// subjects.
+	for _, id := range identities {
+		if err := registerForge(id.Forge, id.Name); err != nil {
+			unsubAll()
+			return nil, err
+		}
+		if err := registerTrees(id.Trees, id.Name); err != nil {
+			unsubAll()
+			return nil, err
+		}
+	}
+
+	return unsubAll, nil
+}
+
+// identitySuffix renders a log suffix for an identity-scoped registration,
+// empty for the root set.
+func identitySuffix(identity string) string {
+	if identity == "" {
+		return ""
+	}
+	return " (" + identity + ")"
 }
 
 func configuredNATSToken(cfg config.NATSConfig, getenv func(string) string) (string, error) {

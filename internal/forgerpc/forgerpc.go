@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -37,6 +38,19 @@ const (
 	SubjectLinkBranch    = "archie.forge.link_branch"
 	SubjectSetStateLabel = "archie.forge.set_state_label"
 )
+
+// SubjectFor returns the subject for base, scoped to identity when set.
+// An empty identity uses the root subject, which is how single-identity
+// deployments and agent images that predate identity routing behave. The
+// daemon registers one server per identity on these scoped subjects so a
+// container-mode task owned by a non-root identity has its RPC calls
+// served by that identity's own forge client, not the root's.
+func SubjectFor(identity, base string) string {
+	if identity == "" {
+		return base
+	}
+	return "archie.forge." + identity + "." + strings.TrimPrefix(base, "archie.forge.")
+}
 
 type CommentRequest struct {
 	Owner, Repo string
@@ -88,15 +102,22 @@ type Server struct {
 	Log   *slog.Logger
 }
 
-// Register subscribes all handlers on nc. The returned func
-// unsubscribes all of them.
+// Register subscribes all handlers on nc under the root (identity-less)
+// subjects. RegisterFor(nc, identity) registers the same handlers under
+// that identity's scoped subjects; the daemon calls it once per identity
+// so container-mode tasks route to their own forge client.
 func (s *Server) Register(nc *nats.Conn) (unsubscribe func(), err error) {
+	return s.RegisterFor(nc, "")
+}
+
+// RegisterFor registers all handlers under the subjects scoped to identity.
+func (s *Server) RegisterFor(nc *nats.Conn, identity string) (unsubscribe func(), err error) {
 	return natsrpc.RegisterAll(nc, []natsrpc.Registration{
-		{Subject: SubjectComment, Handler: s.handleComment},
-		{Subject: SubjectCloseIssue, Handler: s.handleCloseIssue},
-		{Subject: SubjectCreatePR, Handler: s.handleCreatePR},
-		{Subject: SubjectLinkBranch, Handler: s.handleLinkBranch},
-		{Subject: SubjectSetStateLabel, Handler: s.handleSetStateLabel},
+		{Subject: SubjectFor(identity, SubjectComment), Handler: s.handleComment},
+		{Subject: SubjectFor(identity, SubjectCloseIssue), Handler: s.handleCloseIssue},
+		{Subject: SubjectFor(identity, SubjectCreatePR), Handler: s.handleCreatePR},
+		{Subject: SubjectFor(identity, SubjectLinkBranch), Handler: s.handleLinkBranch},
+		{Subject: SubjectFor(identity, SubjectSetStateLabel), Handler: s.handleSetStateLabel},
 	})
 }
 
@@ -161,9 +182,14 @@ type Client struct {
 	Conn *nats.Conn
 	// Timeout bounds each call when ctx has no deadline of its own.
 	Timeout time.Duration
+	// Identity scopes this client's calls to one identity's RPC server.
+	// Empty uses the root subjects (single-identity deployments).
+	Identity string
 }
 
 func (c *Client) rpc() *natsrpc.Client { return &natsrpc.Client{Conn: c.Conn, Timeout: c.Timeout} }
+
+func (c *Client) subject(base string) string { return SubjectFor(c.Identity, base) }
 
 // Comment and SetStateLabel are not in workflow.Forger, so no current agent
 // calls them. They stay as the client half of handlers kept for image skew
@@ -172,7 +198,7 @@ func (c *Client) rpc() *natsrpc.Client { return &natsrpc.Client{Conn: c.Conn, Ti
 // untested rather than merely unused.
 func (c *Client) Comment(ctx context.Context, owner, repo string, number int, body string) (int64, error) {
 	req := CommentRequest{Owner: owner, Repo: repo, Number: number, Body: body}
-	resp, err := natsrpc.Call[CommentResponse](ctx, c.rpc(), SubjectComment, req)
+	resp, err := natsrpc.Call[CommentResponse](ctx, c.rpc(), c.subject(SubjectComment), req)
 	if err != nil {
 		return 0, err
 	}
@@ -184,7 +210,7 @@ func (c *Client) Comment(ctx context.Context, owner, repo string, number int, bo
 
 func (c *Client) CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error {
 	req := CloseIssueRequest{Owner: owner, Repo: repo, Number: number, Comment: comment}
-	resp, err := natsrpc.Call[Response](ctx, c.rpc(), SubjectCloseIssue, req)
+	resp, err := natsrpc.Call[Response](ctx, c.rpc(), c.subject(SubjectCloseIssue), req)
 	if err != nil {
 		return err
 	}
@@ -193,7 +219,7 @@ func (c *Client) CloseIssue(ctx context.Context, owner, repo string, number int,
 
 func (c *Client) CreatePR(ctx context.Context, owner, repo, title, head, base, body string) (int, error) {
 	req := CreatePRRequest{Owner: owner, Repo: repo, Title: title, Head: head, Base: base, Body: body}
-	resp, err := natsrpc.Call[CreatePRResponse](ctx, c.rpc(), SubjectCreatePR, req)
+	resp, err := natsrpc.Call[CreatePRResponse](ctx, c.rpc(), c.subject(SubjectCreatePR), req)
 	if err != nil {
 		return 0, err
 	}
@@ -205,7 +231,7 @@ func (c *Client) CreatePR(ctx context.Context, owner, repo, title, head, base, b
 
 func (c *Client) LinkBranch(ctx context.Context, owner, repo string, issueNumber int, branch string) error {
 	req := LinkBranchRequest{Owner: owner, Repo: repo, IssueNumber: issueNumber, Branch: branch}
-	resp, err := natsrpc.Call[Response](ctx, c.rpc(), SubjectLinkBranch, req)
+	resp, err := natsrpc.Call[Response](ctx, c.rpc(), c.subject(SubjectLinkBranch), req)
 	if err != nil {
 		return err
 	}
@@ -216,5 +242,5 @@ func (c *Client) LinkBranch(ctx context.Context, owner, repo string, issueNumber
 // the current workflow deliberately never calls it.
 func (c *Client) SetStateLabel(ctx context.Context, owner, repo string, number int, label string, knownLabels []string) {
 	req := SetStateLabelRequest{Owner: owner, Repo: repo, Number: number, Label: label, KnownLabels: knownLabels}
-	_, _ = natsrpc.Call[Response](ctx, c.rpc(), SubjectSetStateLabel, req)
+	_, _ = natsrpc.Call[Response](ctx, c.rpc(), c.subject(SubjectSetStateLabel), req)
 }

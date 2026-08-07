@@ -225,3 +225,72 @@ func TestClientCommentTimesOutWithNoResponder(t *testing.T) {
 		t.Fatal("expected Comment to time out with no server registered")
 	}
 }
+
+// TestIdentityScopedRoutingIsolatesForges proves the critical fix: an
+// identity-scoped client must reach the forge wired to that identity's
+// subject, never the root forge. Before identity-scoped subjects existed,
+// every container-mode task's RPC was served by the root forge regardless
+// of which identity owned the task.
+func TestIdentityScopedRoutingIsolatesForges(t *testing.T) {
+	rootFg := &fakeForge{}
+	archieFg := &fakeForge{}
+	srv := startEmbedded(t)
+	url := srv.ClientURL()
+
+	serverConn := connect(t, url)
+	// Root server on root subjects.
+	unsubRoot, err := (&Server{Forge: rootFg, Log: slog.New(slog.DiscardHandler)}).Register(serverConn)
+	if err != nil {
+		t.Fatalf("register root: %v", err)
+	}
+	t.Cleanup(unsubRoot)
+	// Identity server on archie-scoped subjects.
+	unsubArch, err := (&Server{Forge: archieFg, Log: slog.New(slog.DiscardHandler)}).RegisterFor(serverConn, "archie")
+	if err != nil {
+		t.Fatalf("register archie: %v", err)
+	}
+	t.Cleanup(unsubArch)
+
+	clientConn := connect(t, url)
+	ctx := context.Background()
+
+	// Identity-scoped call reaches archie's forge only.
+	archieClient := &Client{Conn: clientConn, Timeout: 2 * time.Second, Identity: "archie"}
+	if err := archieClient.CloseIssue(ctx, "acme", "widget", 1, "done"); err != nil {
+		t.Fatalf("identity-scoped CloseIssue: %v", err)
+	}
+	if len(archieFg.closes) != 1 {
+		t.Fatalf("archie forge closes = %d, want 1", len(archieFg.closes))
+	}
+	if len(rootFg.closes) != 0 {
+		t.Fatalf("root forge closes = %d, want 0 (identity call leaked to root)", len(rootFg.closes))
+	}
+
+	// Root (identity-less) call reaches the root forge only.
+	rootClient := &Client{Conn: clientConn, Timeout: 2 * time.Second}
+	if err := rootClient.CloseIssue(ctx, "acme", "widget", 2, "done"); err != nil {
+		t.Fatalf("root-scoped CloseIssue: %v", err)
+	}
+	if len(rootFg.closes) != 1 {
+		t.Fatalf("root forge closes = %d, want 1", len(rootFg.closes))
+	}
+	if len(archieFg.closes) != 1 {
+		t.Fatalf("archie forge closes = %d, want still 1 (root call leaked to identity)", len(archieFg.closes))
+	}
+}
+
+// SubjectFor leaves the root subject unchanged for an empty identity and
+// prefixes the identity for a non-empty one -- the root subjects must stay
+// byte-identical so single-identity deployments and older agent images keep
+// working.
+func TestSubjectFor(t *testing.T) {
+	if got := SubjectFor("", SubjectComment); got != SubjectComment {
+		t.Fatalf("SubjectFor(\"\", %q) = %q, want unchanged root subject", SubjectComment, got)
+	}
+	if got := SubjectFor("archie", SubjectComment); got != "archie.forge.archie.comment" {
+		t.Fatalf("SubjectFor(\"archie\", %q) = %q", SubjectComment, got)
+	}
+	if got := SubjectFor("archie", SubjectCreatePR); got != "archie.forge.archie.create_pr" {
+		t.Fatalf("SubjectFor(\"archie\", %q) = %q", SubjectCreatePR, got)
+	}
+}

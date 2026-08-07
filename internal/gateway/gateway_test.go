@@ -892,3 +892,23 @@ func TestLocalCommandsIncludesNewCommands(t *testing.T) {
 		}
 	}
 }
+
+// The two command surfaces must describe the same set: /help lists the
+// names, adapters publish the specs, and a command in one but not the
+// other is either undiscoverable or advertised without an implementation.
+func TestLocalCommandSpecsAndCommandsAgree(t *testing.T) {
+	names := LocalCommands()
+	specs := LocalCommandSpecs()
+	specified := make(map[string]bool, len(specs))
+	for _, s := range specs {
+		specified[s.Command] = true
+		if !slices.Contains(names, s.Command) {
+			t.Errorf("LocalCommandSpecs() advertises %s, which Route does not handle", s.Command)
+		}
+	}
+	for _, name := range names {
+		if !specified[name] {
+			t.Errorf("LocalCommandSpecs() is missing %s", name)
+		}
+	}
+}

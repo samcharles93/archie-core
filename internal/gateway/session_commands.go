@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 	"sync"
@@ -211,6 +212,28 @@ func (t *sessionTracker) flattenTopic(channelID, threadID string) {
 	t.active[sessionTrackerKey(channelID, "")] = current
 }
 
+// forget drops every channel+thread whose active session is sessionID.
+//
+// It is the counterpart to deleting a session from the store. resolve
+// treats a cached entry as authoritative and never checks that the session
+// still exists, so a pointer left behind here would make every later
+// message in that chat persist under an ID the store no longer knows --
+// history written to a session nothing can list, resume or delete.
+//
+// One session can be active under more than one key (a flat chat and a
+// thread that /resume'd the same session), so every entry is swept, not
+// just the one the command was typed in.
+func (t *sessionTracker) forget(sessionID string) {
+	// An empty ID is a prefix of nothing and a value of everything a
+	// poisoned map would hold; sweeping on it would clear unrelated chats.
+	if sessionID == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	maps.DeleteFunc(t.active, func(_, id string) bool { return id == sessionID })
+}
+
 // getActive returns the current session ID for a channel+thread.
 func (t *sessionTracker) getActive(channelID, threadID string) string {
 	t.mu.RLock()
@@ -333,12 +356,7 @@ func (r *Router) topicListSessions(ctx context.Context, msg Message) (string, er
 		if s.SessionID == active {
 			marker = "*"
 		}
-		prefix := s.SessionID[:min(8, len(s.SessionID))]
-		title := s.Title
-		if title == "" {
-			title = "(untitled)"
-		}
-		fmt.Fprintf(&b, " %s %s — %s", marker, prefix, title)
+		fmt.Fprintf(&b, " %s %s — %s", marker, shortSessionID(s.SessionID), sessionDisplayTitle(s))
 		if s.BranchName != "" {
 			fmt.Fprintf(&b, " [branch: %s]", s.BranchName)
 		}
@@ -355,12 +373,8 @@ func (r *Router) topicSwitchSession(ctx context.Context, msg Message, rest strin
 	for _, s := range sessions {
 		if len(s.SessionID) >= len(rest) && s.SessionID[:len(rest)] == rest {
 			r.sessionTracker.setActive(msg.ChannelID, msg.ThreadID, s.SessionID)
-			prefix := s.SessionID[:min(8, len(s.SessionID))]
-			title := s.Title
-			if title == "" {
-				title = "(untitled)"
-			}
-			return fmt.Sprintf("Switched to session %s: %s", prefix, title), nil
+			return fmt.Sprintf("Switched to session %s: %s",
+				shortSessionID(s.SessionID), sessionDisplayTitle(s)), nil
 		}
 	}
 	return fmt.Sprintf("No session found matching %q. Use /topic to list available sessions.", rest), nil
@@ -406,7 +420,11 @@ func (r *Router) handleRetry(ctx context.Context, msg Message) (string, error) {
 	lastUserMsg := msgs[0]
 	lastUserMsg.ChannelID = msg.ChannelID
 	lastUserMsg.ThreadID = msg.ThreadID
-	return r.LLM(ctx, lastUserMsg)
+	reply, err := r.LLM(ctx, lastUserMsg)
+	if err == nil {
+		r.maybeAutoTitle(ctx, lastUserMsg)
+	}
+	return reply, err
 }
 
 // handleUndo removes the last N messages (default 1) from the session

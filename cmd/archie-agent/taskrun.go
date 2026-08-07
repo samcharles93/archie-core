@@ -10,13 +10,13 @@ import (
 	natsio "github.com/nats-io/nats.go"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/wfeval"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/storerpc"
 	"github.com/samcharles93/archie-core/internal/taskrun"
-	"github.com/samcharles93/archie-core/internal/domain/workflow"
-	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
-	"github.com/samcharles93/archie-core/internal/domain/workflow/wfeval"
 	"github.com/samcharles93/archie-core/internal/worktree"
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
 )
@@ -83,7 +83,7 @@ func runTask(ctx context.Context, req taskrun.Request, nc *natsio.Conn, newRunne
 	wf := workflow.Route(req.Task, registry)
 
 	trees := &hybridTrees{
-		push:     &worktreerpc.Client{Conn: nc, Timeout: rpcTimeout},
+		push:     &worktreerpc.Client{Conn: nc, Timeout: rpcTimeout, Identity: req.Task.Identity},
 		local:    &worktree.Manager{WorkDir: workDir},
 		owner:    req.Task.Owner,
 		repo:     req.Task.Repo,
@@ -115,7 +115,7 @@ func runTask(ctx context.Context, req taskrun.Request, nc *natsio.Conn, newRunne
 		Task:         req.Task,
 		Repo:         req.Repo,
 		Cfg:          req.Cfg.ToConfig(),
-		Forge:        &forgerpc.Client{Conn: nc, Timeout: rpcTimeout},
+		Forge:        &forgerpc.Client{Conn: nc, Timeout: rpcTimeout, Identity: req.Task.Identity},
 		Store:        &storerpc.Client{Conn: nc, Timeout: rpcTimeout},
 		Trees:        trees,
 		Agent:        agent,

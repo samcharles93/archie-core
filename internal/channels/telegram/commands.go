@@ -41,6 +41,7 @@ var gatewayCommandSpecs = []commandSpec{
 	{Command: "profile", Description: "Show the active identity's profile", Usage: "/profile"},
 	{Command: "sessions", Description: "List this channel's sessions", Usage: "/sessions"},
 	{Command: "resume", Description: "Switch to a session by id or unique prefix", Usage: "/resume <session-id>"},
+	{Command: "delete", Description: "Permanently delete a session and its history", Usage: "/delete <session-id>"},
 	{Command: "agents", Description: "List tasks currently being worked", Usage: "/agents"},
 	{Command: "rollback", Description: "Restore a filesystem checkpoint", Usage: "/rollback [number]"},
 	{Command: "stop", Description: "Terminate a background process", Usage: "/stop <process-name>"},

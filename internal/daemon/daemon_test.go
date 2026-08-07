@@ -167,8 +167,8 @@ func TestTaskDispatcherSerializesTasksForSameRepo(t *testing.T) {
 func TestTaskDispatcherRunsConcurrentReposInParallel(t *testing.T) {
 	t.Parallel()
 
-	dispatcher := newTaskDispatcher(3, func(owner, repo string) bool {
-		return owner == "acme" && repo == "widget"
+	dispatcher := newTaskDispatcher(3, func(task *store.Task) bool {
+		return task.Owner == "acme" && task.Repo == "widget"
 	})
 	releaseFirst := make(chan struct{})
 	firstStarted := make(chan struct{})
@@ -235,14 +235,45 @@ func TestDaemonAllowConcurrentForReadsRepoConfig(t *testing.T) {
 		},
 	}
 
-	if !d.allowConcurrentFor("acme", "widget") {
+	if !d.allowConcurrentForTask(&store.Task{Owner: "acme", Repo: "widget"}) {
 		t.Fatal("expected allow_concurrent=true repo to report concurrent-allowed")
 	}
-	if d.allowConcurrentFor("acme", "todo") {
+	if d.allowConcurrentForTask(&store.Task{Owner: "acme", Repo: "todo"}) {
 		t.Fatal("expected repo without allow_concurrent to report false")
 	}
-	if d.allowConcurrentFor("acme", "unknown") {
+	if d.allowConcurrentForTask(&store.Task{Owner: "acme", Repo: "unknown"}) {
 		t.Fatal("expected unknown repo to report false")
+	}
+}
+
+// allowConcurrentForTask must resolve the repo from the identity's own
+// repo list when the task names an identity -- root Cfg.Repos must not be
+// consulted, or an identity-only repo would silently fall back to the
+// serialized default and an overlapping identity repo would use the wrong
+// policy.
+func TestAllowConcurrentForTaskPrefersOwningIdentityRepo(t *testing.T) {
+	shared := config.Repo{Owner: "acme", Name: "shared"}
+	d := &Daemon{
+		Cfg: config.Config{
+			// Root (legacy) list: shared is NOT opted in.
+			Repos: []config.Repo{shared},
+		},
+		Identities: []*IdentityRunner{
+			{
+				Name: "archie",
+				// The identity's own list opts shared in.
+				Repos: []config.Repo{{Owner: "acme", Name: "shared", AllowConcurrent: true}},
+			},
+		},
+	}
+
+	if !d.allowConcurrentForTask(&store.Task{Owner: "acme", Repo: "shared", Identity: "archie"}) {
+		t.Fatal("identity-owned task must use the identity's repo allow_concurrent")
+	}
+	// A root-owned (identity-less) task must NOT inherit the identity's
+	// opt-in: it resolves through the root repo list.
+	if d.allowConcurrentForTask(&store.Task{Owner: "acme", Repo: "shared"}) {
+		t.Fatal("identity-less task leaked the identity's allow_concurrent")
 	}
 }
 
@@ -802,7 +833,7 @@ func TestAcknowledgeUsesOwningIdentityForgeNotRoot(t *testing.T) {
 	is := forge.Issue{Number: 1, Title: "shared issue"}
 
 	// archie's poll cycle acknowledges via its own forge client.
-	d.acknowledge(ctx, archieFg, repo, is)
+	d.acknowledge(ctx, archieFg, d.Cfg, repo, is)
 	if len(archieFg.stateLabels) != 0 {
 		t.Fatalf("archie forge got %d state label calls, want 0", len(archieFg.stateLabels))
 	}
@@ -841,6 +872,121 @@ func mustCoreConn(t *testing.T, c *arnats.Client) *natsio.Conn {
 		t.Fatalf("CoreConn: %v", err)
 	}
 	return conn
+}
+
+// Multi-identity mode must still run the store-wide maintenance passes:
+// storage cleanup and PR reconciliation. Before this loop was split into
+// per-identity polling plus a single shared maintainAndDrain loop, neither
+// ran in multi-identity mode -- merged PRs were never reconciled, tasks
+// stayed pr_open forever, and worktrees were never cleaned up.
+func TestMaintainAndDrainReconcilesPRsInMultiIdentityMode(t *testing.T) {
+	d, s, _, archieFg, _ := twoIdentityDaemon(t)
+	ctx := context.Background()
+
+	// A forge-sourced task owned by the "archie" identity whose PR merged.
+	if _, err := s.EnqueueIssue(ctx, "acme", "shared", 7, "t", "b", "", "archie"); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("ClaimNext = (%+v, %v)", task, err)
+	}
+	task.PRNumber = 42
+	if err := s.Update(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Transition(ctx, task.ID, store.StatusRunning, store.StatusPROpen, ""); err != nil {
+		t.Fatal(err)
+	}
+	archieFg.prStates = map[int]string{42: "merged"}
+
+	d.maintainAndDrain(ctx)
+
+	got, err := s.TaskByID(ctx, task.ID)
+	if err != nil || got == nil {
+		t.Fatalf("TaskByID = (%+v, %v)", got, err)
+	}
+	if got.Status != store.StatusMerged {
+		t.Fatalf("status = %q, want %q (multi-identity reconcile never ran)", got.Status, store.StatusMerged)
+	}
+	if len(archieFg.closedIssues) != 1 {
+		t.Fatalf("CloseIssue calls = %d, want 1 (issue must be closed on merge)", len(archieFg.closedIssues))
+	}
+}
+
+// The identity poll path must use the identity's own dispatch config --
+// its bot user, label, and trigger -- not the root daemon's. An identity
+// with a different bot user polling "assignee" would otherwise query for
+// issues assigned to the root bot user.
+func TestPollIssuesWithConfigUsesIdentityScopedDispatch(t *testing.T) {
+	fg := &recordingForge{}
+	d := &Daemon{Cfg: config.Config{}, Log: slog.New(slog.DiscardHandler)}
+
+	// Root uses bot_user "root"; the identity uses "winter". Both default
+	// to the assignee trigger.
+	rootCfg := config.Config{BotUser: "root", Dispatch: config.Dispatch{Trigger: "assignee"}}
+	idCfg := config.IdentityConfig{BotUser: "winter", Dispatch: config.Dispatch{Trigger: "assignee"}}
+
+	// Root poll queries root's bot user.
+	_ = d.pollIssuesWithConfig(context.Background(), fg, rootCfg, config.Repo{Owner: "acme", Name: "shared"})
+	_ = d.pollIssuesWithConfig(context.Background(), fg, configForIdentity(rootCfg, idCfg), config.Repo{Owner: "acme", Name: "shared"})
+
+	if got := fg.assigned; len(got) != 2 || got[0] != "root" || got[1] != "winter" {
+		t.Fatalf("AssignedIssues bot users = %v, want [root winter] (identity dispatch ignored)", got)
+	}
+}
+
+// recordingForge records the bot user/label passed to the discovery calls
+// so tests can assert identity-scoped polling. Everything else panics.
+type recordingForge struct {
+	assigned []string
+	labelled []string
+}
+
+func (f *recordingForge) AssignedIssues(_ context.Context, _, _, botUser string) ([]forge.Issue, error) {
+	f.assigned = append(f.assigned, botUser)
+	return nil, nil
+}
+
+func (f *recordingForge) IssuesWithLabel(_ context.Context, _, _, label string) ([]forge.Issue, error) {
+	f.labelled = append(f.labelled, label)
+	return nil, nil
+}
+
+func (f *recordingForge) Comment(context.Context, string, string, int, string) (int64, error) {
+	panic("unexpected call")
+}
+
+func (f *recordingForge) SetStateLabel(context.Context, string, string, int, string, []string) {
+	panic("unexpected call")
+}
+func (f *recordingForge) AcceptInvitations(context.Context) error { panic("unexpected call") }
+func (f *recordingForge) RepliesAfter(context.Context, string, string, int, int64, string) ([]forge.Reply, error) {
+	panic("unexpected call")
+}
+
+func (f *recordingForge) CreatePR(context.Context, string, string, string, string, string, string) (int, error) {
+	panic("unexpected call")
+}
+
+func (f *recordingForge) PRState(context.Context, string, string, int) (string, error) {
+	panic("unexpected call")
+}
+
+func (f *recordingForge) CloseIssue(context.Context, string, string, int, string) error {
+	panic("unexpected call")
+}
+
+func (f *recordingForge) CreateIssue(context.Context, string, string, string, string, []string) (int, error) {
+	panic("unexpected call")
+}
+
+func (f *recordingForge) React(context.Context, string, string, int, string) error {
+	panic("unexpected call")
+}
+func (f *recordingForge) VerifyPush(context.Context, string, string) error { panic("unexpected call") }
+func (f *recordingForge) LinkBranch(context.Context, string, string, int, string) error {
+	panic("unexpected call")
 }
 
 // A merged PR must close the forge issue.
