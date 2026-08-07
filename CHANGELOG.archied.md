@@ -1,5 +1,37 @@
 # archied changelog
 
+## [1.5.0] - 2026-08-08
+
+- feat(curator): engine family contract, registry, and runtime
+- feat(curator): trigger accounting — primary-input wake path
+- feat(setup): interactive setup steps with a TTY-gated prompter
+- feat(webui): rebuild the dashboard and add chat
+- feat(daemon): identity-scoped isolation plus gateway session titles and /delete
+- feat(logging): optional rotating log file
+- feat(configuration): export Validate for the setup flow
+- fix(gateway): durable message identity with a SQLite store
+- fix(gateway): consistent message ordering and paged search
+- fix(gateway): stop /compress destroying history it should have kept
+- fix(gateway): do not answer a redelivered message twice
+- fix(gateway): claim the session slot before writing it, not after
+- fix(gateway): keep /topic off from poisoning the session cache
+- fix(gateway): resolve the most recently active session, not an arbitrary one
+- fix(gateway): give branch-inherited messages their own identity
+- fix(gateway): make both backends agree on newest-first
+- fix(nell): honour the transition guard on the backend that ships
+- fix(nell): move ID counters off the SDK-reserved meta: prefix
+- fix(store): surface task timestamps and tag the summary structs
+- fix(telegram): pause the update loop when rate limited
+- fix(memory): fail startup on an unusable memory directory
+- fix(tools): let an optional provider fail without taking the daemon down
+- fix(tools): report a cancelled find walk as an error, not empty results
+- fix(worktree): name the missing forge credential when a push fails
+- fix(tomlwrite): recognise table headers carrying a trailing comment
+- fix: close the duplicate-work loop and the dead paths around it
+- perf(tools): drop the embedded ripgrep binaries
+- refactor: one definition of what approving or declining a task means
+- refactor: move workflow into its own domain
+
 ## [1.4.1] - 2026-07-31
 
 - fix(catalog): match SDK provider fallback

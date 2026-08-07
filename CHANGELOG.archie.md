@@ -1,5 +1,21 @@
 # archie-agent changelog
 
+## [1.3.0] - 2026-08-08
+
+- feat(curator): engine family contract, registry, and runtime
+- feat(curator): trigger accounting — primary-input wake path
+- feat(logging): optional rotating log file
+- feat(daemon): identity-scoped isolation
+- fix(secrets): wire provider credentials through engines
+- fix(store): surface task timestamps and tag the summary structs
+- fix(tools): let an optional provider fail without taking the daemon down
+- fix(tools): report a cancelled find walk as an error, not empty results
+- fix(worktree): name the missing forge credential when a push fails
+- fix: close the duplicate-work loop and the dead paths around it
+- perf(tools): drop the embedded ripgrep binaries
+- refactor: one definition of what approving or declining a task means
+- refactor: move workflow into its own domain
+
 ## [1.2.0] - 2026-07-31
 
 - feat: add MCP client capabilities to archied and archie-agent
