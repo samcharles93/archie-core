@@ -1,13 +1,14 @@
-.chat-page { min-height: calc(100vh - 5rem); }
-.chat-topbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.chat-page { height: calc(100vh - 5rem); display: flex; flex-direction: column; overflow: hidden; }
+.chat-page-content { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.chat-topbar { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 .chat-kicker, .chat-workspace-label { color: var(--fg-muted); font-size: .68rem; font-weight: 700; letter-spacing: .12em; }
 .chat-topbar-actions { display: flex; align-items: center; gap: .55rem; }
 .chat-topbar-actions .chat-select { max-width: 14rem; min-width: 0; }
-.chat-update-panel { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 0 0 .75rem; padding: .7rem .9rem; border: 1px solid var(--border); border-radius: .75rem; color: var(--fg-muted); font-size: .8rem; }
+.chat-update-panel { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 0 0 .75rem; padding: .7rem .9rem; border: 1px solid var(--border); border-radius: .75rem; color: var(--fg-muted); font-size: .8rem; }
 .chat-update-panel > div:first-child { display: grid; gap: .2rem; }
 .chat-update-panel strong { color: var(--fg); }
 .chat-update-actions { display: flex; gap: .45rem; flex-shrink: 0; }
-.chat-dangerous-panel { margin: 0 0 .75rem; padding: .8rem .9rem; border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border)); border-radius: .75rem; }
+.chat-dangerous-panel { flex: 0 0 auto; margin: 0 0 .75rem; padding: .8rem .9rem; border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border)); border-radius: .75rem; }
 .chat-dangerous-head, .chat-dangerous-controls, .chat-dangerous-pending { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
 .chat-dangerous-head { margin-bottom: .7rem; }
 .chat-dangerous-controls { align-items: stretch; flex-wrap: wrap; }
@@ -15,9 +16,9 @@
 .chat-dangerous-input { min-width: 0; flex: 1; padding: .5rem .65rem; background: var(--surface-hover); color: var(--fg); border: 1px solid var(--border-strong); border-radius: .5rem; font: inherit; }
 .chat-dangerous-pending-list { display: grid; gap: .45rem; margin-top: .75rem; }
 .chat-dangerous-pending { padding-top: .55rem; border-top: 1px solid var(--border); color: var(--fg-muted); font-size: .8rem; }
-.chat-layout { display: grid; grid-template-columns: 242px minmax(0, 1fr); gap: .75rem; min-height: 72vh; }
+.chat-layout { display: grid; grid-template-columns: 242px minmax(0, 1fr); gap: .75rem; flex: 1 1 auto; min-height: 0; overflow: hidden; }
 .chat-sidebar, .chat-workspace { background: var(--surface); border: 1px solid var(--border); border-radius: 1rem; }
-.chat-sidebar { padding: .8rem; }
+.chat-sidebar { padding: .8rem; overflow-y: auto; }
 .chat-sidebar-head, .chat-toolbar, .chat-compose-actions { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
 .chat-session-list { display: grid; gap: .35rem; margin-top: 1rem; }
 .chat-session { display: grid; gap: .25rem; text-align: left; background: transparent; color: var(--fg-muted); border: 1px solid transparent; border-radius: .65rem; padding: .7rem; cursor: pointer; }
