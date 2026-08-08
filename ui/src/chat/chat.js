@@ -4,7 +4,7 @@ import { createChatView } from "./chat-view.js";
 import { chatBubble } from "./chat-render.js";
 import { updateStreamingReply } from "./chat-stream.js";
 import { channelID } from "./chat-state.js";
-import { newChatTurn, retryChatTurn } from "./chat-retry.js";
+import { retryChatTurn, resolveTurn } from "./chat-retry.js";
 import { renderCommands, renderModels, renderSelectors, renderSessions } from "./chat-catalog.js";
 import { renderDangerous, renderUpdate } from "./chat-panels.js";
 
@@ -189,21 +189,20 @@ export function chatPage() {
   }
 
   async function sendMessage(retry = null) {
-    const text = retry?.turn.text || composer.value.trim();
+    const { text, turn, isRetry } = resolveTurn(retry, composer.value);
     if (!text || sending) return;
     hideCommandMenu();
-    const turn = retry ? retryChatTurn(retry.turn) : newChatTurn(text);
     sending = true;
     send.disabled = true;
     stop.disabled = false;
     composer.disabled = true;
-    status.textContent = retry ? "Retrying…" : "Thinking…";
-    if (!retry) {
+    status.textContent = isRetry ? "Retrying…" : "Thinking…";
+    if (!isRetry) {
       appendMessage({ from: "web", text });
       composer.value = "";
     }
-    const replyBubble = retry?.replyBubble || el("div.chat-bubble-row.assistant", el("div.chat-bubble", el("div.chat-bubble-meta", "Archie"), el("div.chat-bubble-text")));
-    if (!retry) transcript.append(replyBubble);
+    const replyBubble = isRetry ? retry.replyBubble : el("div.chat-bubble-row.assistant", el("div.chat-bubble", el("div.chat-bubble-meta", "Archie"), el("div.chat-bubble-text")));
+    if (!isRetry) transcript.append(replyBubble);
     replyBubble.querySelector(".chat-retry")?.remove();
     let replyText = replyBubble.querySelector(".chat-bubble-text");
     let streamedText = "";
@@ -280,7 +279,7 @@ export function chatPage() {
     }
   }
 
-  send.onclick = sendMessage;
+  send.onclick = () => sendMessage();
   stop.onclick = () => {
     const sessionID = currentSession;
     status.textContent = "Stopping…";
