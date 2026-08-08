@@ -1,13 +1,16 @@
-# Builds and pushes the archied and archie-agent images on every merge
-# to main. carina's watchtower container (see docker-compose.yml) picks
-# up the new images and restarts the running daemons  --  this workflow
-# never touches carina directly.
+# Builds and pushes the archied and archie-agent images to GHCR on every
+# merge to main. Mirrors .gitea/workflows/deploy.yml, which remains the
+# production build path against git.catlow.cloud until that's cut over.
 name: deploy
 
 on:
   push:
     branches: [main]
     tags: ["archied/v*", "archie/v*"]
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   gate:
@@ -87,8 +90,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Log in to registry
-        run: echo "${{ secrets.DEPLOY_TOKEN }}" | docker login git.catlow.cloud -u sam --password-stdin
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Build and push archied
         run: |
@@ -101,13 +104,13 @@ jobs:
           docker build \
             --build-arg GATEWAY_VERSION="$GATEWAY_VERSION" \
             --build-arg RUNTIME_VERSION="$RUNTIME_VERSION" \
-            -f Dockerfile.archied -t git.catlow.cloud/sam/archied:latest .
-          docker push git.catlow.cloud/sam/archied:latest
+            -f Dockerfile.archied -t ghcr.io/samcharles93/archied:latest .
+          docker push ghcr.io/samcharles93/archied:latest
 
       - name: Build and push archie-agent
         run: |
           RUNTIME_TAG="$(git tag --points-at HEAD --list 'archie/v*' | sort -V | tail -1)"
           RUNTIME_VERSION="${RUNTIME_TAG#archie/}"
           [ -n "$RUNTIME_VERSION" ] || RUNTIME_VERSION=dev
-          docker build --build-arg RUNTIME_VERSION="$RUNTIME_VERSION" -f Dockerfile -t git.catlow.cloud/sam/archie-agent:latest .
-          docker push git.catlow.cloud/sam/archie-agent:latest
+          docker build --build-arg RUNTIME_VERSION="$RUNTIME_VERSION" -f Dockerfile -t ghcr.io/samcharles93/archie-agent:latest .
+          docker push ghcr.io/samcharles93/archie-agent:latest
