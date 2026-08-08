@@ -118,7 +118,7 @@ func (s *Server) requireToken(h http.Handler) http.Handler {
 			q := clean.Query()
 			q.Del("t")
 			clean.RawQuery = q.Encode()
-			http.Redirect(w, r, clean.RequestURI(), http.StatusSeeOther)
+			http.Redirect(w, r, sameOriginPath(clean.Path, clean.RawQuery), http.StatusSeeOther)
 			return
 		}
 
@@ -135,6 +135,26 @@ func (s *Server) requireToken(h http.Handler) http.Handler {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		http.Error(w, "unauthorised: open the dashboard URL archied logged at startup", http.StatusUnauthorized)
 	})
+}
+
+// sameOriginPath rebuilds a redirect target from a request path and raw
+// query, collapsing any leading "//" down to a single slash first.
+//
+// A path of "//evil.example/x" is a valid http.Redirect Location that
+// browsers treat as protocol-relative, sending the client off-host. Since
+// this path is echoed back from the incoming request URL, an attacker can
+// choose it, so it must never reach http.Redirect verbatim.
+func sameOriginPath(path, rawQuery string) string {
+	for strings.HasPrefix(path, "//") {
+		path = path[1:]
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	if rawQuery != "" {
+		return path + "?" + rawQuery
+	}
+	return path
 }
 
 func tokenEqual(got, want string) bool {
