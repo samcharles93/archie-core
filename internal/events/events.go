@@ -25,10 +25,15 @@ const (
 	// intervention is recorded in the tasks table but invisible on the
 	// timeline and the activity stream -- the one kind of event most worth
 	// seeing, because it explains why a task changed course.
-	KindHumanApproved = "human_approved"
-	KindHumanRejected = "human_rejected"
-	KindTaskRetried   = "task_retried"
-	KindLog           = "log" // data: level, msg
+	KindHumanApproved        = "human_approved"
+	KindHumanRejected        = "human_rejected"
+	KindTaskRetried          = "task_retried"
+	KindTaskCancelled        = "task_cancelled"
+	KindTaskStopped          = "task_stopped"
+	KindTaskAbandoned        = "task_abandoned"
+	KindTaskArchiveRequested = "task_archive_requested"
+	KindWorkRequestSubmitted = "work_request_submitted"
+	KindLog                  = "log" // data: level, msg
 
 	// Curator family activity (epic archie-core-yp9). Curator runs ride
 	// the same bus so background agents mutating memory stay observable:

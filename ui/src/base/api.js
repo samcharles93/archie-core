@@ -57,7 +57,7 @@ export const api = {
   taskAction: async (id, action) => {
     const res = await fetch(`/api/tasks/${id}/action`, {
       method: "POST",
-      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      headers: { Accept: "application/json", "Content-Type": "application/json", "X-Archie-CSRF": "1" },
       body: JSON.stringify({ action }),
       signal: AbortSignal.timeout(15000),
     });
@@ -66,8 +66,25 @@ export const api = {
   },
   setup: () => req("/api/setup"),
   workflows: () => req("/api/workflows"),
+	workRequest: async (request) => {
+		const res = await fetch("/api/work-requests", {
+			method: "POST",
+			headers: { Accept: "application/json", "Content-Type": "application/json", "X-Archie-CSRF": "1" },
+			body: JSON.stringify(request), signal: AbortSignal.timeout(15000),
+		});
+		if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+		return res.json();
+	},
   skills: () => req("/api/skills"),
   channels: () => req("/api/channels"),
+	channelReload: async (id) => {
+		const res = await fetch(`/api/channels/${encodeURIComponent(id)}/reload`, {
+			method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json", "X-Archie-CSRF": "1" },
+			body: "{}", signal: AbortSignal.timeout(15000),
+		});
+		if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+		return res.json();
+	},
   config: () => req("/api/config"),
   logs: (params) => req("/api/logs" + qs(params)),
   memory: () => req("/api/memory"),
@@ -149,6 +166,16 @@ export function subscribeEvents(onEvent, onStateChange) {
     } catch {
       /* a malformed frame should not kill the stream */
     }
+  };
+  return () => src.close();
+}
+
+export function subscribeLogs(onEntry, onStateChange) {
+  const src = new EventSource("/api/logs/stream");
+  src.onopen = () => onStateChange?.("live");
+  src.onerror = () => onStateChange?.("reconnecting");
+  src.onmessage = (event) => {
+    try { onEntry(JSON.parse(event.data)); } catch { /* malformed log frame */ }
   };
   return () => src.close();
 }

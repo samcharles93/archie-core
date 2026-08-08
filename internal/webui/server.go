@@ -16,8 +16,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/memory"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/ui"
@@ -30,6 +34,28 @@ type Server struct {
 	// Cfg backs the setup checklist and configuration views. Optional: the
 	// dashboard degrades to task data alone when it is nil.
 	Cfg *config.Config
+
+	// Workflows is the executable registry snapshot supplied by composition.
+	Workflows []workflow.Definition
+	// WorkRequests admits dashboard requests through the same task-creation
+	// boundary used by chat; it never invokes a workflow runner directly.
+	WorkRequests gateway.TaskCreator
+	// LogFeed is the daemon diagnostic stream. It is separate from Events,
+	// which contains persisted task lifecycle activity only.
+	LogFeed *logging.Feed
+
+	// ConfigProvenance is supplied by composition from the production loader.
+	// It is safe to expose: it contains paths and precedence only, never values.
+	ConfigProvenance []ConfigOrigin
+
+	// Channels reports actual adapter lifecycle, independently of configuration
+	// presence. Nil preserves the configuration-only fallback for tests and
+	// minimal embedding.
+	Channels *channels.Manager
+
+	// ReloadChannel invokes a channel-specific reload seam. Only adapters that
+	// explicitly support reload are wired here; nil means reload is unavailable.
+	ReloadChannel func(context.Context, string) error
 
 	// Memory backs the memory view. Optional: the section reports memory as
 	// unavailable rather than failing when it is nil.
@@ -55,8 +81,22 @@ type Server struct {
 	// in the store but invisible to anyone watching.
 	Events EventPublisher
 
+	// TaskStopper reaches work that is actually executing. A store row cannot
+	// stop a goroutine or container; the daemon supplies this narrow runtime
+	// seam so the Stop action cancels work before parking its task record.
+	TaskStopper TaskStopper
+
 	mu    sync.Mutex
 	conns map[chan events.Event]struct{}
+}
+
+// ConfigOrigin explains one source file contributing to the effective
+// configuration. Sources are ordered from lowest to highest precedence.
+type ConfigOrigin struct {
+	Path    string `json:"path"`
+	Role    string `json:"role"`
+	Layer   string `json:"layer"`
+	Feature string `json:"feature,omitempty"`
 }
 
 // IssueCloser closes the forge issue behind a task.
@@ -68,6 +108,11 @@ type IssueCloser interface {
 // in cmd/archied satisfies it.
 type EventPublisher interface {
 	Publish(events.Event)
+}
+
+// TaskStopper interrupts one task currently executing in the daemon.
+type TaskStopper interface {
+	CancelTask(taskID int64) bool
 }
 
 // Broadcast fans an (ID-stamped) event out to every connected SSE
@@ -90,12 +135,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/tasks", s.handleTasks)
 	mux.HandleFunc("POST /api/tasks/{id}/action", s.handleTaskAction)
 	mux.HandleFunc("GET /api/tasks/{id}", s.handleTask)
-	mux.HandleFunc("GET /api/tasks/clear", s.handleClearTasks)
 	mux.HandleFunc("GET /api/workflows", s.handleWorkflows)
+	mux.HandleFunc("POST /api/work-requests", s.handleWorkRequest)
 	mux.HandleFunc("GET /api/skills", s.handleSkills)
 	mux.HandleFunc("GET /api/channels", s.handleChannels)
+	mux.HandleFunc("POST /api/channels/{id}/reload", s.handleChannelReload)
 	mux.HandleFunc("GET /api/config", s.handleConfig)
 	mux.HandleFunc("GET /api/logs", s.handleLogs)
+	mux.HandleFunc("GET /api/logs/stream", s.handleLogStream)
 	mux.HandleFunc("GET /api/memory", s.handleMemory)
 	mux.HandleFunc("GET /api/chat/sessions", s.handleChatSessions)
 	mux.HandleFunc("GET /api/chat/sessions/{id}/messages", s.handleChatMessages)

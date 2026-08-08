@@ -112,7 +112,7 @@ func (c *StoreTaskCreator) CreateTask(ctx context.Context, req SpawnRequest) (in
 	// store's existing (owner, repo, number) uniqueness constraint. The
 	// task's real ID (not this number) is what /approve and /cancel use.
 	number := nextSyntheticIssueNumber()
-	return c.store.EnqueueChatTask(ctx, owner, repo, req.Title, "", req.Workflow, req.Identity, number)
+	return c.store.EnqueueChatTask(ctx, owner, repo, req.Title, req.Body, req.Workflow, req.Identity, number)
 }
 
 func nextSyntheticIssueNumber() int {

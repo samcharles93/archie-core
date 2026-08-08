@@ -26,12 +26,14 @@ import (
 	"github.com/samcharles93/ai-sdk/core"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
+	channelruntime "github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/channels/email"
 	"github.com/samcharles93/archie-core/internal/channels/webhook"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/wfeval"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
@@ -285,15 +287,15 @@ func isForgeDisabled(forgeType string) bool {
 
 func run() int {
 	defaultCfg := filepath.Join(configHome(), "archie", "config.toml")
-	cfgPath := flag.String("config", defaultCfg, "path to config.toml")
-	overlayPath := flag.String("config-overlay", "", "path to a config.toml overlay applied on top of -config (only the fields it sets are overridden)")
+	cfgPath := flag.String("config", defaultCfg, "path to a TOML/YAML config file or configuration directory")
+	overlayPath := flag.String("config-overlay", "", "path to a TOML/YAML overlay file or configuration directory applied on top of -config")
 	once := flag.Bool("once", false, "run a single poll+process cycle and exit (systemd timer / testing)")
 	requeue := flag.Int64("requeue", 0, "requeue a parked/waiting task by id (keeps its workflow), then exit unless -once is also set")
 	flag.Parse()
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
-	doc, err := configuration.New(log).Overlay(*cfgPath, *overlayPath)
+	doc, err := configuration.New(log).Resolve(*cfgPath, *overlayPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -305,12 +307,14 @@ func run() int {
 	// itself configuration. A file that cannot be opened is reported and the
 	// daemon continues on stderr -- losing the durable copy must not take the
 	// daemon down with it.
+	logFeed := logging.NewFeed(1000)
 	fileLog, logCloser, logErr := logging.New(logging.Options{
 		File:      cfg.Log.File,
 		MaxSizeMB: cfg.Log.MaxSizeMB,
 		Keep:      cfg.Log.Keep,
 		Level:     cfg.Log.Level,
 		Stderr:    !cfg.Log.Quiet,
+		Feed:      logFeed,
 	})
 	log = fileLog
 	defer func() { _ = logCloser.Close() }()
@@ -370,23 +374,35 @@ func run() int {
 	// row id) and then fanned out to live dashboard connections.
 	bus := events.NewBus()
 	defer bus.Close()
-	web := &webui.Server{Store: st, Log: log, Cfg: &cfg, Events: bus}
+	var restartTelegram func() error
+	telegramDetail := ""
+	if cfg.Chat.Telegram.TokenEnv != "" && len(cfg.Chat.Telegram.AllowedUserIDs) == 0 {
+		telegramDetail = "Token set, but the allowlist is empty -- the bot answers nobody."
+	}
+	channelManager := channelruntime.NewManager([]channelruntime.Descriptor{
+		{ID: "telegram", Name: "Telegram", Configured: cfg.Chat.Telegram.TokenEnv != "", ReloadSupported: cfg.Chat.Telegram.TokenEnv != "", Detail: telegramDetail},
+		{ID: "email", Name: "Email", Configured: cfg.Chat.Email.ListenAddr != ""},
+		{ID: "webhook", Name: "Webhook gateway", Configured: cfg.Chat.WebhookAddr != ""},
+	})
+	configProvenance := make([]webui.ConfigOrigin, 0, len(doc.Provenance.Origins))
+	for _, origin := range doc.Provenance.Origins {
+		configProvenance = append(configProvenance, webui.ConfigOrigin{
+			Path: origin.Path, Role: string(origin.Role), Layer: string(origin.Layer), Feature: string(origin.Feature),
+		})
+	}
+	web := &webui.Server{Store: st, Log: log, LogFeed: logFeed, Cfg: &cfg, ConfigProvenance: configProvenance, Channels: channelManager, Events: bus}
+	web.ReloadChannel = func(ctx context.Context, id string) error {
+		if id != "telegram" || restartTelegram == nil {
+			return fmt.Errorf("channel reload unavailable")
+		}
+		return restartTelegram()
+	}
 	// The dashboard closes the forge issue behind a rejected task, or the
 	// issue is re-polled and the work is done again. It gets only that one
 	// method, not the forge client.
 	web.Issues = forgeClient
 	sink := bus.Subscribe(256)
-	go func() {
-		for e := range sink.C {
-			id, err := st.InsertEvent(context.Background(), e)
-			if err != nil {
-				log.Error("event sink insert failed", "err", err)
-				continue
-			}
-			e.ID = id
-			web.Broadcast(e)
-		}
-	}()
+	go persistAndBroadcastEvents(sink, st, web, log)
 	// NATS client (optional  --  SQLite flow unchanged when [nats] is absent).
 	var natsClient *nats.Client
 	if cfg.NATS.URL != "" {
@@ -452,11 +468,11 @@ func run() int {
 		transition: st.Transition,
 	})
 	updateService := makeUpdateService(telegramSetup{Cfg: cfg})
+	web.WorkRequests = chatTasks
 
 	// The dashboard is another gateway, not a second chat implementation. It
 	// shares the router, session history, model selection, personas and LLM
 	// responder with Telegram while using a stable browser channel id.
-	var restartTelegram func() error
 	webRouter := gateway.NewRouter(st, nil, "web")
 	webRouter.Version = fmt.Sprintf("Archie\nGateway: %s\nRuntime: %s", gatewayVersion, runtimeVersion)
 	if cfg.Chat.Telegram.TokenEnv != "" {
@@ -492,15 +508,6 @@ func run() int {
 	if updateService != nil {
 		web.Chat.Updates = updateService
 	}
-	if l := cfg.Web.Listen; l != "" && l != "off" {
-		web.Token = webTokenFor(l, cfg.DBPath, log)
-		go func() {
-			if err := web.Run(ctx, l); err != nil {
-				log.Error("web ui failed", "err", err)
-			}
-		}()
-	}
-
 	// ── Gateways ──────────────────────────────────────────────────────
 	// Multi-agent collaboration PRD phase C (docs/prds/multi-agent-collaboration.md).
 	var startGateways []func()
@@ -512,6 +519,7 @@ func run() int {
 		DefaultChatIdentity: defaultChatIdentity, SessionStore: chatSessionStore, Updates: updateService,
 		Bus:             bus,
 		RegisterRestart: func(request func() error) { restartTelegram = request }, Log: log,
+		ChannelManager: channelManager,
 	})
 	if !ok {
 		return 1
@@ -526,8 +534,10 @@ func run() int {
 		emRouter := gateway.NewRouter(st, nil, "email")
 		configureTaskCommands(emRouter, chatTasks, chatController, defaultChatIdentity)
 		startGateways = append(startGateways, func() {
+			channelManager.MarkStarting("email")
 			go func() {
 				if err := em.Start(ctx, emRouter); err != nil && ctx.Err() == nil {
+					channelManager.MarkFailed("email", err.Error())
 					log.Error("email gateway stopped", "err", err)
 				}
 			}()
@@ -547,8 +557,10 @@ func run() int {
 		whRouter := gateway.NewRouter(st, nil, "webhook")
 		configureTaskCommands(whRouter, chatTasks, chatController, defaultChatIdentity)
 		startGateways = append(startGateways, func() {
+			channelManager.MarkStarting("webhook")
 			go func() {
 				if err := wh.Start(ctx, whRouter); err != nil && ctx.Err() == nil {
+					channelManager.MarkFailed("webhook", err.Error())
 					log.Error("webhook gateway stopped", "err", err)
 				}
 			}()
@@ -590,12 +602,22 @@ func run() int {
 	if skillsBase == "" {
 		skillsBase = cfg.WorkDir
 	}
-	registry, err := skillbuild.BuildRegistry(skillsBase)
+	workflowCatalog, err := skillbuild.BuildCatalog(skillsBase)
 	if err != nil {
 		log.Error("skill registry build failed", "err", err)
 		return 1
 	}
+	registry := workflowCatalog.Registry
 	log.Info("workflow registry built", "workflows", len(registry))
+	web.Workflows = workflow.DefinitionsWithOrigins(registry, workflowCatalog.Origins)
+	if l := cfg.Web.Listen; l != "" && l != "off" {
+		web.Token = webTokenFor(l, cfg.DBPath, log)
+		go func() {
+			if err := web.Run(ctx, l); err != nil {
+				log.Error("web ui failed", "err", err)
+			}
+		}()
+	}
 
 	// Load daemon plugins from the configured plugin directory (Layer 2).
 	// Failed plugins are skipped  --  the daemon starts with the remaining set.
@@ -896,6 +918,7 @@ func run() int {
 		Curators:        curatorRegistry,
 		Identities:      identityRunners,
 	}
+	web.TaskStopper = d
 
 	// Give /cancel and /stop a handle on work already in flight. The
 	// controller is built before the daemon exists, so the runtime is
@@ -942,6 +965,20 @@ func run() int {
 		return 1
 	}
 	return 0
+}
+
+func persistAndBroadcastEvents(sink *events.Sub, st store.TaskStore, web *webui.Server, log *slog.Logger) {
+	for e := range sink.C {
+		if e.ID == 0 {
+			id, err := st.InsertEvent(context.Background(), e)
+			if err != nil {
+				log.Error("event sink insert failed", "err", err)
+				continue
+			}
+			e.ID = id
+		}
+		web.Broadcast(e)
+	}
 }
 
 // curatorEventSink adapts the in-process event bus to the curator family's
