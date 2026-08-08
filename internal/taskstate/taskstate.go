@@ -15,7 +15,28 @@
 // has no dependencies, so both can import it and the copy can go.
 package taskstate
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
+
+// Action is an operator control whose availability is determined solely by a
+// task's persisted lifecycle state. The Web API returns these values with each
+// task so every presentation surface derives from this table instead of
+// keeping its own copy.
+type Action string
+
+const (
+	ActionCancel    Action = "cancel"
+	ActionStop      Action = "stop"
+	ActionApprove   Action = "approve"
+	ActionReject    Action = "reject"
+	ActionRetry     Action = "retry"
+	ActionAbandon   Action = "abandon"
+	ActionOpenPR    Action = "open_pr"
+	ActionOpenIssue Action = "open_issue"
+	ActionArchive   Action = "archive"
+)
 
 // Task lifecycle statuses. The store persists these strings, so they are
 // part of the on-disk format: renaming one is a migration, not a rename.
@@ -49,6 +70,35 @@ func Terminal(status string) bool {
 	}
 }
 
+// Actions returns the ordered controls valid for status. Callers receive a
+// fresh slice so presentation code cannot mutate the lifecycle table.
+func Actions(status string) []Action {
+	var actions []Action
+	switch status {
+	case Queued:
+		actions = []Action{ActionCancel}
+	case Running:
+		actions = []Action{ActionStop}
+	case WaitingHuman:
+		actions = []Action{ActionApprove, ActionReject}
+	case Parked:
+		actions = []Action{ActionRetry, ActionAbandon}
+	case PROpen:
+		actions = []Action{ActionOpenPR, ActionOpenIssue}
+	case Merged, Rejected, Dead, Declined:
+		actions = []Action{ActionArchive}
+	}
+	return actions
+}
+
+// CheckAction rejects stale, illegal and unknown operator controls.
+func CheckAction(status string, action Action) error {
+	if slices.Contains(Actions(status), action) {
+		return nil
+	}
+	return fmt.Errorf("action %q is not available while task is %s", action, status)
+}
+
 // CheckApprove reports whether a task in this status can be approved.
 //
 // Approval releases work that is waiting on a human decision, so it is only
@@ -75,20 +125,16 @@ func CheckRetry(status string) error {
 
 // CheckDecline reports whether a task in this status can be declined.
 //
-// Work that is still progressing can be declined -- including a running task,
-// which is the case most worth being able to stop. Callers that can interrupt
-// running work should do so before recording the state, or the task may write
-// its own outcome afterwards and win.
-//
-// Parked is refused along with the terminal states. A parked task is not
-// progressing, so there is nothing to stop; it is retried, or left. Both the
-// dashboard and chat already behaved this way and this package preserves it
-// rather than widening the rule while unifying it. If declining a parked task
-// is ever wanted, change it here and both paths get it at once -- which is
-// the point.
+// The legacy chat command expresses cancel, stop, reject and abandon as one
+// operation. It remains available only where the canonical action table
+// exposes one of those controls; unknown, PR-open and terminal states fail
+// closed instead of permitting an arbitrary transition.
 func CheckDecline(status string) error {
-	if Terminal(status) || status == Parked {
-		return fmt.Errorf("task is already %s", status)
+	for _, action := range Actions(status) {
+		switch action {
+		case ActionCancel, ActionStop, ActionReject, ActionAbandon:
+			return nil
+		}
 	}
-	return nil
+	return fmt.Errorf("task cannot be declined while %s", status)
 }

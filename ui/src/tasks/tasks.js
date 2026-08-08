@@ -3,6 +3,7 @@ import { api } from "../base/api.js";
 import { ago, el, empty, mount, pill, statusKind } from "../base/dom.js";
 import { statTile } from "../base/statTile.js";
 import { taskRowA11y } from "./task-row.js";
+import { initialTaskFilter, taskMatchesStatus } from "./task-filters.js";
 
 /**
  * Plain-language status labels. One place, so "waiting_human" only ever
@@ -34,6 +35,20 @@ export function tasksPage(params = new URLSearchParams()) {
   const root = el("div");
   const summaryRow = el("div.grid.grid-4.task-summary");
   const body = el("tbody");
+  let tasks = [];
+  let filterStatus = initialTaskFilter(params);
+  let search = "";
+  const requestedTask = Number(params.get("task"));
+  let expandedId = Number.isFinite(requestedTask) && requestedTask > 0 ? requestedTask : null;
+  let focusRequestedTask = expandedId !== null;
+  let forgeHost = "";
+  const eventCache = new Map();
+  // Keyed by task id. A single shared string leaked one row's failure into
+  // every other row's action cell.
+  const actionErrors = new Map();
+  // Tasks with an action in flight, so the buttons can be disabled rather
+  // than letting an impatient second click fire the same action twice.
+  const actionsInFlight = new Set();
   const searchInput = el("input.task-search", {
     type: "search",
     placeholder: "Search by title or repo…",
@@ -51,22 +66,10 @@ export function tasksPage(params = new URLSearchParams()) {
       },
     },
     el("option", { value: "" }, "All statuses"),
-    ...Object.entries(STATUS_LABELS).map(([value, label]) => el("option", { value }, label)),
+    el("option", { value: "needs_you", selected: filterStatus === "needs_you" }, "Needs you"),
+    ...Object.entries(STATUS_LABELS).map(([value, label]) =>
+      el("option", { value, selected: filterStatus === value }, label)),
   );
-
-  let tasks = [];
-  let filterStatus = "";
-  let search = "";
-  const requestedTask = Number(params.get("task"));
-  let expandedId = Number.isFinite(requestedTask) && requestedTask > 0 ? requestedTask : null;
-  let forgeHost = "";
-  const eventCache = new Map();
-  // Keyed by task id. A single shared string leaked one row's failure into
-  // every other row's action cell.
-  const actionErrors = new Map();
-  // Tasks with an action in flight, so the buttons can be disabled rather
-  // than letting an impatient second click fire the same action twice.
-  const actionsInFlight = new Set();
 
   render();
   load();
@@ -120,6 +123,7 @@ export function tasksPage(params = new URLSearchParams()) {
       if (expandedId && tasks.some((task) => String(task.id) === String(expandedId))) {
         loadTimeline(expandedId);
       }
+      focusDirectTask();
     } catch (err) {
       mount(summaryRow, el("div.card", empty("Cannot reach archied", String(err.message || err))));
       mount(body, el("tr", el("td", { colspan: 8 }, empty("Cannot reach archied", String(err.message || err)))));
@@ -162,7 +166,7 @@ export function tasksPage(params = new URLSearchParams()) {
 
   function filtered() {
     return tasks.filter((t) => {
-      if (filterStatus && t.status !== filterStatus) return false;
+      if (!taskMatchesStatus(t, filterStatus)) return false;
       if (!search) return true;
       const hay = `${t.title} ${t.repo}`.toLowerCase();
       return hay.includes(search);
@@ -197,6 +201,18 @@ export function tasksPage(params = new URLSearchParams()) {
       body.append(taskRow(t));
       if (expandedId === t.id) body.append(timelineRow(t));
     }
+    focusDirectTask();
+  }
+
+  function focusDirectTask() {
+    if (!focusRequestedTask || !expandedId) return;
+    focusRequestedTask = false;
+    requestAnimationFrame(() => {
+      const row = document.getElementById(`task-row-${expandedId}`);
+      if (!row) return;
+      row.focus({ preventScroll: true });
+      row.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
   }
 
   function taskRow(t) {
@@ -212,6 +228,7 @@ export function tasksPage(params = new URLSearchParams()) {
       "tr.task-row",
       {
         ...taskRowA11y(t, expanded),
+        id: `task-row-${t.id}`,
         tabindex: "0",
         onkeydown: (event) => {
           if (event.key !== "Enter" && event.key !== " ") return;
@@ -222,24 +239,33 @@ export function tasksPage(params = new URLSearchParams()) {
       },
       el(
         "td.mono",
-        el("button.task-expand", {
-          type: "button",
-          "aria-expanded": String(expanded),
-          "aria-controls": timelineID,
-          "aria-label": `${expanded ? "Collapse" : "Expand"} timeline for ${t.title || "untitled task"}`,
-          onclick: toggle,
-        }, expanded ? "−" : "+"),
+        { "data-label": "Repository" },
+        el(
+          "button.task-expand",
+          {
+            type: "button",
+            "aria-expanded": String(expanded),
+            "aria-controls": timelineID,
+            "aria-label": `${expanded ? "Collapse" : "Expand"} timeline for ${t.title || "untitled task"}`,
+            onclick: toggle,
+          },
+          expanded ? "−" : "+",
+        ),
         repoLink(t) ?? `${t.owner}/${t.repo}`,
       ),
-      el("td.mono", issueLink(t) ?? `#${t.issue_number}`),
-      el("td.strong", t.title || "(untitled)"),
-      el("td", pill(statusLabel(t.status), statusKind(t.status))),
-      el("td", t.workflow || "—"),
-      el("td", t.stage || "—"),
+      el("td.mono", { "data-label": "Issue" }, issueLink(t) ?? `#${t.issue_number}`),
+      el("td.strong", { "data-label": "Title" }, t.title || "(untitled)"),
+      el("td", { "data-label": "Status" }, pill(statusLabel(t.status), statusKind(t.status))),
+      el("td", { "data-label": "Workflow" }, t.workflow || "—"),
+      el("td", { "data-label": "Stage" }, t.stage || "—"),
       // updated_at moves on every transition, so this reads as "how long has
       // it been sitting like this" rather than "how old is the task".
-      el("td", { title: t.created_at ? `Created ${ago(t.created_at)}` : "" }, ago(t.updated_at)),
-      el("td", taskActions(t)),
+      el(
+        "td",
+        { "data-label": "Last activity", title: t.created_at ? `Created ${ago(t.created_at)}` : "" },
+        ago(t.updated_at),
+      ),
+      el("td", { "data-label": "Actions" }, taskActions(t)),
     );
   }
 
@@ -265,23 +291,57 @@ export function tasksPage(params = new URLSearchParams()) {
         label,
       );
 
-    if (t.status === "waiting_human") {
-      return el(
-        "div.task-actions",
-        error,
-        button("button.btn.btn-small", "approve", "Approve"),
-        button(
-          "button.btn.btn-small.btn-quiet",
-          "reject",
-          "Reject",
-          `Reject "${t.title || "this task"}"? This closes the forge issue and cannot be undone from here.`,
-        ),
-      );
-    }
-    if (t.status === "parked") {
-      return el("div.task-actions", error, button("button.btn.btn-small", "retry", "Retry"));
-    }
-    return error || "—";
+    const controls = (t.actions || []).map((action) => {
+      switch (action) {
+        case "cancel":
+          return button(
+            "button.btn.btn-small.btn-quiet",
+            action,
+            "Cancel",
+            `Cancel "${t.title || "this task"}"? This closes the forge issue.`,
+          );
+        case "stop":
+          return button(
+            "button.btn.btn-small",
+            action,
+            "Stop",
+            `Stop "${t.title || "this task"}"? Recoverable work will remain parked.`,
+          );
+        case "approve":
+          return button("button.btn.btn-small", action, "Approve");
+        case "reject":
+          return button(
+            "button.btn.btn-small.btn-quiet",
+            action,
+            "Reject",
+            `Reject "${t.title || "this task"}"? This closes the forge issue.`,
+          );
+        case "retry":
+          return button("button.btn.btn-small", action, "Retry");
+        case "abandon":
+          return button(
+            "button.btn.btn-small.btn-quiet",
+            action,
+            "Abandon",
+            `Abandon "${t.title || "this task"}"? This closes the forge issue.`,
+          );
+        case "archive":
+          return button(
+            "button.btn.btn-small.btn-quiet",
+            action,
+            "Archive",
+            `Archive the local record for "${t.title || "this task"}"?`,
+          );
+        case "open_pr":
+          return taskLink(t, "pulls", t.pr_number, "Open PR");
+        case "open_issue":
+          return taskLink(t, "issues", t.issue_number, "Open issue");
+        default:
+          return null;
+      }
+    });
+    if (!controls.length && !error) return "—";
+    return el("div.task-actions", error, controls);
   }
 
   async function performAction(id, action) {
@@ -291,6 +351,7 @@ export function tasksPage(params = new URLSearchParams()) {
     try {
       await api.taskAction(id, action);
       actionsInFlight.delete(id);
+      if (action === "archive") expandedId = null;
       await load();
     } catch (err) {
       actionsInFlight.delete(id);
@@ -304,6 +365,27 @@ export function tasksPage(params = new URLSearchParams()) {
   function forgeBase(t) {
     if (!forgeHost || !t.owner || !t.repo) return null;
     return `${forgeHost.replace(/\/+$/, "")}/${encodeURIComponent(t.owner)}/${encodeURIComponent(t.repo)}`;
+  }
+
+  function taskLink(t, kind, number, label) {
+    const base = forgeBase(t);
+    if (!base || !number || (kind === "issues" && t.source === "chat")) {
+      return el(
+        "button.btn.btn-small",
+        { type: "button", disabled: true, title: `${label} is unavailable` },
+        label,
+      );
+    }
+    return el(
+      "a.btn.btn-small",
+      {
+        href: `${base}/${kind}/${number}`,
+        target: "_blank",
+        rel: "noreferrer",
+        onclick: (event) => event.stopPropagation(),
+      },
+      label,
+    );
   }
 
   function repoLink(t) {
@@ -348,6 +430,11 @@ export function tasksPage(params = new URLSearchParams()) {
       el(
         "td",
         { colspan: 8 },
+        el(
+          "div.task-detail-actions",
+          el("div.task-decision-title", "Available actions"),
+          taskActions(t),
+        ),
         t.status === "waiting_human" && t.plan
           ? el("div.task-decision", el("div.task-decision-title", "Decision required"), el("div.task-decision-plan", t.plan))
           : t.status === "parked" && t.park_reason

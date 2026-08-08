@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"unicode/utf8"
@@ -82,8 +83,8 @@ func TestClearTerminalTasks(t *testing.T) {
 	}
 
 	n, err := s.ClearTerminalTasks(ctx)
-	if err != nil || n != 4 {
-		t.Fatalf("ClearTerminalTasks = (%d, %v), want (4, nil)", n, err)
+	if err != nil || n != 3 {
+		t.Fatalf("ClearTerminalTasks = (%d, %v), want (3, nil)", n, err)
 	}
 
 	counts, err := s.StatusCounts(ctx)
@@ -93,7 +94,10 @@ func TestClearTerminalTasks(t *testing.T) {
 	if counts[StatusQueued] != 1 {
 		t.Fatalf("expected 1 queued, got %d", counts[StatusQueued])
 	}
-	for _, status := range []string{StatusMerged, StatusParked, StatusRejected, StatusClosedWontDo} {
+	if counts[StatusParked] != 1 {
+		t.Fatalf("recoverable parked task was cleared: count = %d", counts[StatusParked])
+	}
+	for _, status := range []string{StatusMerged, StatusRejected, StatusClosedWontDo} {
 		if counts[status] != 0 {
 			t.Fatalf("expected 0 for %s, got %d", status, counts[status])
 		}
@@ -103,6 +107,71 @@ func TestClearTerminalTasks(t *testing.T) {
 	n, err = s.ClearTerminalTasks(ctx)
 	if err != nil || n != 0 {
 		t.Fatalf("second ClearTerminalTasks = (%d, %v), want (0, nil)", n, err)
+	}
+}
+
+func TestArchiveTaskIsGuardedAndScoped(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	for number := 1; number <= 2; number++ {
+		if _, err := s.EnqueueIssue(ctx, "acme", "widget", number, "t", "b", "", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	task, err := s.TaskByIssue(ctx, "acme", "widget", 1)
+	if err != nil || task == nil {
+		t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
+	}
+	if err := s.Transition(ctx, task.ID, StatusQueued, StatusMerged, "done"); err != nil {
+		t.Fatal(err)
+	}
+
+	audit := events.Event{Kind: events.KindTaskArchiveRequested, TaskID: task.ID}
+	if _, err := s.ArchiveTask(ctx, task.ID, StatusQueued, audit); !errors.Is(err, ErrStaleTransition) {
+		t.Fatalf("ArchiveTask stale guard = %v, want ErrStaleTransition", err)
+	}
+	if got, err := s.TaskByID(ctx, task.ID); err != nil || got == nil {
+		t.Fatalf("stale archive removed task: (%+v, %v)", got, err)
+	}
+	eventID, err := s.ArchiveTask(ctx, task.ID, StatusMerged, audit)
+	if err != nil {
+		t.Fatalf("ArchiveTask = %v", err)
+	}
+	if eventID == 0 {
+		t.Fatal("ArchiveTask returned no durable event ID")
+	}
+	if got, err := s.TaskByID(ctx, task.ID); err != nil || got != nil {
+		t.Fatalf("archived task = (%+v, %v), want nil", got, err)
+	}
+	if other, err := s.TaskByIssue(ctx, "acme", "widget", 2); err != nil || other == nil {
+		t.Fatalf("archive removed another task: (%+v, %v)", other, err)
+	}
+}
+
+func TestArchiveAuditFailurePreservesTask(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "t", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, _ := s.TaskByIssue(ctx, "acme", "widget", 1)
+	if err := s.Transition(ctx, task.ID, StatusQueued, StatusMerged, "done"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.ExecContext(ctx, `
+		CREATE TRIGGER fail_archive_audit BEFORE INSERT ON events
+		WHEN NEW.kind = 'task_archive_requested'
+		BEGIN SELECT RAISE(FAIL, 'audit failed'); END`); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.ArchiveTask(ctx, task.ID, StatusMerged, events.Event{
+		Kind: events.KindTaskArchiveRequested, TaskID: task.ID,
+	}); err == nil {
+		t.Fatal("ArchiveTask succeeded despite forced audit failure")
+	}
+	if got, err := s.TaskByID(ctx, task.ID); err != nil || got == nil {
+		t.Fatalf("audit failure deleted task: (%+v, %v)", got, err)
 	}
 }
 
@@ -285,6 +354,63 @@ func TestIncrementRetryCount(t *testing.T) {
 	}
 	if got.RetryCount != 2 {
 		t.Fatalf("expected retry_count=2, got %d", got.RetryCount)
+	}
+}
+
+func TestRetryTaskAtomicallyRequeuesAndIncrements(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	if _, err := s.EnqueueIssue(ctx, "acme", "todo", 1, "t", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("ClaimNext = (%+v, %v)", task, err)
+	}
+	if err := s.Transition(ctx, task.ID, StatusRunning, StatusParked, "failed"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.RetryTask(ctx, task.ID, StatusParked, ""); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.TaskByID(ctx, task.ID)
+	if err != nil || got == nil {
+		t.Fatalf("TaskByID = (%+v, %v)", got, err)
+	}
+	if got.Status != StatusQueued || got.RetryCount != 1 {
+		t.Fatalf("task = status %q retry_count %d, want queued/1", got.Status, got.RetryCount)
+	}
+	if err := s.RetryTask(ctx, task.ID, StatusParked, ""); !errors.Is(err, ErrStaleTransition) {
+		t.Fatalf("stale RetryTask error = %v, want ErrStaleTransition", err)
+	}
+}
+
+func TestRetryTaskWriteFailureLeavesParkedCountUnchanged(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	if _, err := s.EnqueueIssue(ctx, "acme", "todo", 1, "t", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, _ := s.ClaimNext(ctx)
+	if err := s.Transition(ctx, task.ID, StatusRunning, StatusParked, "failed"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.ExecContext(ctx, `
+		CREATE TRIGGER fail_retry BEFORE UPDATE OF retry_count ON tasks
+		BEGIN SELECT RAISE(FAIL, 'retry failed'); END`); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.RetryTask(ctx, task.ID, StatusParked, ""); err == nil {
+		t.Fatal("RetryTask succeeded despite forced write failure")
+	}
+	got, err := s.TaskByID(ctx, task.ID)
+	if err != nil || got == nil {
+		t.Fatalf("TaskByID = (%+v, %v)", got, err)
+	}
+	if got.Status != StatusParked || got.RetryCount != 0 {
+		t.Fatalf("partial retry write: status %q retry_count %d", got.Status, got.RetryCount)
 	}
 }
 

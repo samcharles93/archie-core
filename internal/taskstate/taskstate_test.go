@@ -1,6 +1,9 @@
 package taskstate
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 // The rules must be the same wherever an operator acts. These cases are the
 // contract both the dashboard and chat are held to; a divergence between them
@@ -10,16 +13,17 @@ func TestActionRules(t *testing.T) {
 		status                  string
 		approve, retry, decline bool
 		terminal                bool
+		actions                 []Action
 	}{
-		{status: Queued, decline: true},
-		{status: Running, decline: true},
-		{status: WaitingHuman, approve: true, decline: true},
-		{status: PROpen, decline: true},
-		{status: Parked, retry: true},
-		{status: Merged, terminal: true},
-		{status: Rejected, terminal: true},
-		{status: Dead, terminal: true},
-		{status: Declined, terminal: true},
+		{status: Queued, decline: true, actions: []Action{ActionCancel}},
+		{status: Running, decline: true, actions: []Action{ActionStop}},
+		{status: WaitingHuman, approve: true, decline: true, actions: []Action{ActionApprove, ActionReject}},
+		{status: PROpen, actions: []Action{ActionOpenPR, ActionOpenIssue}},
+		{status: Parked, retry: true, decline: true, actions: []Action{ActionRetry, ActionAbandon}},
+		{status: Merged, terminal: true, actions: []Action{ActionArchive}},
+		{status: Rejected, terminal: true, actions: []Action{ActionArchive}},
+		{status: Dead, terminal: true, actions: []Action{ActionArchive}},
+		{status: Declined, terminal: true, actions: []Action{ActionArchive}},
 	}
 
 	for _, tc := range tests {
@@ -36,6 +40,14 @@ func TestActionRules(t *testing.T) {
 			if got := Terminal(tc.status); got != tc.terminal {
 				t.Errorf("Terminal = %v, want %v", got, tc.terminal)
 			}
+			if got := Actions(tc.status); !slices.Equal(got, tc.actions) {
+				t.Errorf("Actions = %v, want %v", got, tc.actions)
+			}
+			for _, action := range tc.actions {
+				if err := CheckAction(tc.status, action); err != nil {
+					t.Errorf("CheckAction(%q) = %v", action, err)
+				}
+			}
 		})
 	}
 }
@@ -50,10 +62,8 @@ func TestUnknownStatusIsNotApprovable(t *testing.T) {
 	if err := CheckRetry(unknown); err == nil {
 		t.Error("CheckRetry allowed an unknown status")
 	}
-	// Declining is deliberately permissive: refusing work archie does not
-	// recognise is safer than being unable to stop it.
-	if err := CheckDecline(unknown); err != nil {
-		t.Errorf("CheckDecline refused an unknown status: %v", err)
+	if err := CheckDecline(unknown); err == nil {
+		t.Error("CheckDecline allowed an unknown status")
 	}
 }
 
@@ -66,5 +76,13 @@ func TestRejectedAndDeclinedAreDistinct(t *testing.T) {
 	}
 	if !Terminal(Rejected) || !Terminal(Declined) {
 		t.Error("both must be terminal")
+	}
+}
+
+func TestActionsReturnsIndependentSlices(t *testing.T) {
+	first := Actions(WaitingHuman)
+	first[0] = ActionArchive
+	if got := Actions(WaitingHuman); !slices.Equal(got, []Action{ActionApprove, ActionReject}) {
+		t.Fatalf("mutating returned actions changed lifecycle table: %v", got)
 	}
 }

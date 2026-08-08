@@ -328,6 +328,9 @@ func (a *Adapter) Transition(ctx context.Context, taskID int64, from, to, detail
 // iterations, park_reason, watch_comment_id. Status and identity fields
 // (owner, repo, issue_number, title, body, labels) are preserved.
 func (a *Adapter) Update(ctx context.Context, t *store.Task) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	key := taskKey(t.Owner, t.Repo, t.IssueNumber)
 	doc, err := a.tasks.Get(ctx, key)
 	if err != nil {
@@ -377,6 +380,61 @@ func (a *Adapter) Requeue(ctx context.Context, taskID int64, fromStatus, workflo
 	t.Stage = ""
 	t.ParkReason = ""
 	return a.putTaskByID(ctx, t)
+}
+
+// RetryTask updates both lifecycle state and retry accounting with one Nell
+// document write under the same mutation lock used by transitions.
+func (a *Adapter) RetryTask(ctx context.Context, taskID int64, fromStatus, workflow string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	t, err := a.findTaskByID(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if t == nil {
+		return fmt.Errorf("nell: task %d not found", taskID)
+	}
+	if t.Status != fromStatus {
+		return store.ErrStaleTransition
+	}
+	t.Status = store.StatusQueued
+	t.RetryCount++
+	if workflow != "" {
+		t.Workflow = workflow
+	}
+	t.Stage = ""
+	t.ParkReason = ""
+	return a.putTaskByID(ctx, t)
+}
+
+// ArchiveTask removes one terminal task from the active task collection.
+// NellDB has no conditional delete, so the adapter mutex makes the guarded
+// read and remove one process-local operation, matching Transition/Requeue.
+func (a *Adapter) ArchiveTask(
+	ctx context.Context,
+	taskID int64,
+	fromStatus string,
+	audit events.Event,
+) (int64, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	t, err := a.findTaskByID(ctx, taskID)
+	if err != nil {
+		return 0, err
+	}
+	if t == nil || t.Status != fromStatus {
+		return 0, store.ErrStaleTransition
+	}
+	eventID, err := a.insertEventLocked(ctx, audit)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := a.tasks.Remove(ctx, taskKey(t.Owner, t.Repo, t.IssueNumber)); err != nil {
+		return 0, fmt.Errorf("nell: archive task after audit %d: %w", eventID, err)
+	}
+	return eventID, nil
 }
 
 // RecoverStale re-queues all tasks left in "running" status.  Returns the
@@ -468,7 +526,7 @@ func (a *Adapter) ClearTerminalTasks(ctx context.Context) (int64, error) {
 		}
 		t := docToTask(row.Doc)
 		switch t.Status {
-		case store.StatusMerged, store.StatusParked, store.StatusRejected, store.StatusClosedWontDo:
+		case store.StatusMerged, store.StatusRejected, store.StatusDead, store.StatusClosedWontDo:
 			if _, err := a.tasks.Remove(ctx, row.ID); err != nil {
 				return count, err
 			}
@@ -484,7 +542,13 @@ func (a *Adapter) ClearTerminalTasks(ctx context.Context) (int64, error) {
 func (a *Adapter) InsertEvent(ctx context.Context, e events.Event) (int64, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	return a.insertEventLocked(ctx, e)
+}
 
+func (a *Adapter) insertEventLocked(ctx context.Context, e events.Event) (int64, error) {
+	if e.At.IsZero() {
+		e.At = time.Now().UTC()
+	}
 	id, err := a.nextEventID(ctx)
 	if err != nil {
 		return 0, err

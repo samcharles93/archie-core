@@ -2,6 +2,7 @@ package nell
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -38,6 +39,41 @@ func TestEnqueueIdempotent(t *testing.T) {
 	ins, err = s.EnqueueIssue(ctx, "acme", "todo", 1, "add tests", "body", "widget", "")
 	if err != nil || ins {
 		t.Fatalf("duplicate enqueue must be no-op, got (%v, %v)", ins, err)
+	}
+}
+
+func TestArchiveTaskIsGuardedAndScoped(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	for number := 1; number <= 2; number++ {
+		if _, err := s.EnqueueIssue(ctx, "acme", "widget", number, "t", "b", "", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	task, err := s.TaskByIssue(ctx, "acme", "widget", 1)
+	if err != nil || task == nil {
+		t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
+	}
+	if err := s.Transition(ctx, task.ID, store.StatusQueued, store.StatusMerged, "done"); err != nil {
+		t.Fatal(err)
+	}
+
+	audit := events.Event{Kind: events.KindTaskArchiveRequested, TaskID: task.ID}
+	if _, err := s.ArchiveTask(ctx, task.ID, store.StatusQueued, audit); !errors.Is(err, store.ErrStaleTransition) {
+		t.Fatalf("ArchiveTask stale guard = %v, want ErrStaleTransition", err)
+	}
+	eventID, err := s.ArchiveTask(ctx, task.ID, store.StatusMerged, audit)
+	if err != nil {
+		t.Fatalf("ArchiveTask = %v", err)
+	}
+	if eventID == 0 {
+		t.Fatal("ArchiveTask returned no durable event ID")
+	}
+	if got, err := s.TaskByID(ctx, task.ID); err != nil || got != nil {
+		t.Fatalf("archived task = (%+v, %v), want nil", got, err)
+	}
+	if other, err := s.TaskByIssue(ctx, "acme", "widget", 2); err != nil || other == nil {
+		t.Fatalf("archive removed another task: (%+v, %v)", other, err)
 	}
 }
 
@@ -210,8 +246,8 @@ func TestClearTerminalTasks(t *testing.T) {
 	}
 
 	n, err := s.ClearTerminalTasks(ctx)
-	if err != nil || n != 4 {
-		t.Fatalf("ClearTerminalTasks = (%d, %v), want (4, nil)", n, err)
+	if err != nil || n != 3 {
+		t.Fatalf("ClearTerminalTasks = (%d, %v), want (3, nil)", n, err)
 	}
 
 	counts, err := s.StatusCounts(ctx)
@@ -220,6 +256,61 @@ func TestClearTerminalTasks(t *testing.T) {
 	}
 	if counts[store.StatusQueued] != 1 {
 		t.Fatalf("expected 1 queued, got %d", counts[store.StatusQueued])
+	}
+	if counts[store.StatusParked] != 1 {
+		t.Fatalf("recoverable parked task was cleared: count = %d", counts[store.StatusParked])
+	}
+}
+
+func TestUpdateUsesTaskMutationLock(t *testing.T) {
+	a, ok := openTest(t).(*Adapter)
+	if !ok {
+		t.Fatal("OpenStore did not return *Adapter")
+	}
+	ctx := t.Context()
+	if _, err := a.EnqueueIssue(ctx, "acme", "widget", 1, "t", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := a.TaskByIssue(ctx, "acme", "widget", 1)
+	if err != nil || task == nil {
+		t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
+	}
+	task.Stage = "write-tests"
+
+	a.mu.Lock()
+	done := make(chan error, 1)
+	go func() { done <- a.Update(ctx, task) }()
+	select {
+	case err := <-done:
+		a.mu.Unlock()
+		t.Fatalf("Update bypassed task mutation lock: %v", err)
+	case <-time.After(25 * time.Millisecond):
+	}
+	a.mu.Unlock()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRetryTaskRequeuesAndIncrementsTogether(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "t", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, _ := s.ClaimNext(ctx)
+	if err := s.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "failed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RetryTask(ctx, task.ID, store.StatusParked, ""); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.TaskByID(ctx, task.ID)
+	if err != nil || got == nil {
+		t.Fatalf("TaskByID = (%+v, %v)", got, err)
+	}
+	if got.Status != store.StatusQueued || got.RetryCount != 1 {
+		t.Fatalf("task = status %q retry_count %d, want queued/1", got.Status, got.RetryCount)
 	}
 }
 

@@ -17,6 +17,8 @@ type TaskStore interface {
 	TaskLifecycle
 	TaskEvents
 	TaskQueries
+	TaskArchiver
+	TaskRetryer
 }
 
 // TaskLifecycle manages the core task state machine and enqueuing.
@@ -29,6 +31,19 @@ type TaskLifecycle interface {
 	Update(ctx context.Context, t *Task) error
 	Requeue(ctx context.Context, taskID int64, fromStatus, workflow string) error
 	RecoverStale(ctx context.Context) (int64, error)
+}
+
+// TaskArchiver removes one terminal task's local record with an optimistic
+// status guard. It is separate from the already broad lifecycle contract so
+// consumers that only run tasks do not acquire an operator-only capability.
+type TaskArchiver interface {
+	ArchiveTask(ctx context.Context, taskID int64, fromStatus string, audit events.Event) (eventID int64, err error)
+}
+
+// TaskRetryer atomically requeues recoverable work and accounts for the new
+// attempt so a partial write cannot evade the retry cap.
+type TaskRetryer interface {
+	RetryTask(ctx context.Context, taskID int64, fromStatus, workflow string) error
 }
 
 // TaskQueries groups read-only task accessors.
