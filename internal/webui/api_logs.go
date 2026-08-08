@@ -1,7 +1,9 @@
 package webui
 
 import (
+	"encoding/json"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -21,9 +23,10 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		// Not an error: file logging is optional. Say so plainly so the UI can
 		// explain how to turn it on rather than showing an empty table.
 		writeJSON(w, map[string]any{
-			"entries":  []any{},
-			"file":     "",
-			"disabled": true,
+			"entries":    s.LogFeed.Snapshot(),
+			"file":       "",
+			"disabled":   true,
+			"components": mergeComponents(nil, s.LogFeed.Snapshot()),
 		})
 		return
 	}
@@ -48,13 +51,64 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		s.Log.Warn("log components unavailable", "err", err)
 		components = []string{}
 	}
+	liveEntries := s.LogFeed.Snapshot()
+	components = mergeComponents(components, liveEntries)
 
 	writeJSON(w, map[string]any{
-		"entries":    result.Entries,
+		"entries":    append(result.Entries, liveEntries...),
 		"truncated":  result.Truncated,
 		"file":       result.File,
 		"components": components,
 	})
+}
+
+func (s *Server) handleLogStream(w http.ResponseWriter, r *http.Request) {
+	if s.LogFeed == nil {
+		http.Error(w, "live daemon log feed unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	entries := s.LogFeed.Subscribe(r.Context())
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case entry, ok := <-entries:
+			if !ok {
+				return
+			}
+			data, err := json.Marshal(entry)
+			if err != nil {
+				continue
+			}
+			_, _ = w.Write([]byte("id: " + strconv.FormatInt(entry.ID, 10) + "\ndata: " + string(data) + "\n\n"))
+			flusher.Flush()
+		}
+	}
+}
+
+func mergeComponents(history []string, live []logging.Entry) []string {
+	seen := make(map[string]struct{}, len(history))
+	for _, component := range history {
+		seen[component] = struct{}{}
+	}
+	for _, entry := range live {
+		if component, ok := entry.Fields["component"].(string); ok && component != "" {
+			seen[component] = struct{}{}
+		}
+	}
+	components := make([]string, 0, len(seen))
+	for component := range seen {
+		components = append(components, component)
+	}
+	slices.Sort(components)
+	return components
 }
 
 // logFile reports the configured log path, or "" when file logging is off.

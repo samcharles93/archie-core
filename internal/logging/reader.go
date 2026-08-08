@@ -17,6 +17,7 @@ import (
 // changes with them in the same file, and no consumer has to know slog wrote
 // JSON with a "msg" key.
 type Entry struct {
+	ID      int64     `json:"id,omitempty"`
 	Time    time.Time `json:"time"`
 	Level   string    `json:"level"`
 	Message string    `json:"msg"`

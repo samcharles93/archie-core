@@ -1,5 +1,5 @@
 import "./logs.css";
-import { api, subscribeEvents } from "../base/api.js";
+import { api, subscribeLogs } from "../base/api.js";
 import { el, empty, mount, pill } from "../base/dom.js";
 
 /**
@@ -42,6 +42,9 @@ export function logsPage() {
   let filters = { level: "", component: "", q: "" };
   let paused = false;
   let componentOptions = [];
+	let historyEntries = [];
+	const liveEntries = new Map();
+	let durableUnavailable = false;
 
   const levelSelect = el(
     "select.log-select",
@@ -59,9 +62,8 @@ export function logsPage() {
   const pauseBtn = el("button.btn", { onclick: togglePause }, "Pause");
 
   render();
-  load();
 
-  const unsubscribe = subscribeEvents(
+  const unsubscribe = subscribeLogs(
     (event) => appendLive(event),
     (state) => {
       streamState.className = `pill pill-${state === "live" ? "ok" : "warn"}`;
@@ -69,6 +71,7 @@ export function logsPage() {
     },
   );
   root.addEventListener("archie:teardown", unsubscribe);
+  load();
 
   function set(patch) {
     filters = { ...filters, ...patch };
@@ -106,7 +109,7 @@ export function logsPage() {
   }
 
   async function load() {
-    mount(list, el("div.log-loading", "Loading…"));
+		meta.textContent = "Refreshing…";
     try {
       const res = await api.logs({
         level: filters.level,
@@ -115,30 +118,13 @@ export function logsPage() {
         limit: 500,
       });
 
-      if (res.disabled) {
-        mount(
-          list,
-          empty(
-            "File logging is off",
-            "Set [log] file in your config to keep a durable record. Live lines below still stream while this page is open.",
-          ),
-        );
-        meta.textContent = "";
-        return;
-      }
-
       syncComponents(res.components || []);
-      meta.textContent = res.truncated
+      durableUnavailable = !!res.disabled;
+      meta.textContent = res.disabled ? "Durable history unavailable; live daemon logs continue." : res.truncated
         ? `showing the most recent matches from ${res.file}`
         : res.file || "";
-
-      const entries = res.entries || [];
-      if (!entries.length) {
-        mount(list, empty("Nothing matches", "Try a wider level or clear the search."));
-        return;
-      }
-      mount(list, ...entries.map(row));
-      list.scrollTop = list.scrollHeight;
+		historyEntries = res.entries || [];
+		renderEntries();
     } catch (err) {
       mount(list, empty("Cannot read logs", String(err.message || err)));
     }
@@ -160,22 +146,25 @@ export function logsPage() {
 
   function appendLive(event) {
     if (paused) return;
-    const entry = {
-      time: event.at || new Date().toISOString(),
-      level: event.level || "INFO",
-      msg: event.detail || event.message || event.kind || "event",
-      fields: event.task_id ? { task: event.task_id } : null,
-    };
+		const entry = event;
     if (!matchesLocally(entry)) return;
-
-    // Only auto-scroll when already at the bottom, so reading history is not
-    // yanked away by an arriving line.
-    const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
-    if (list.querySelector(".empty, .log-loading")) list.replaceChildren();
-    list.append(row({ ...entry, message: entry.msg }));
-    while (list.children.length > 1000) list.firstElementChild.remove();
-    if (atBottom) list.scrollTop = list.scrollHeight;
+		liveEntries.set(entryKey(entry), entry);
+		if (entry.fields?.component) syncComponents([...componentOptions, entry.fields.component]);
+		renderEntries();
   }
+
+	function renderEntries() {
+		const byID = new Map();
+		for (const entry of historyEntries) byID.set(entryKey(entry), entry);
+		for (const [id, entry] of liveEntries) byID.set(id, entry);
+		const entries = [...byID.values()].filter(matchesLocally).slice(-1000);
+		if (!entries.length) {
+			mount(list, empty(durableUnavailable ? "Durable history unavailable" : "Nothing matches", durableUnavailable ? "Live daemon logs will appear here while this page is open." : "Try a wider level or clear the search."));
+			return;
+		}
+		mount(list, ...entries.map(row));
+		list.scrollTop = list.scrollHeight;
+	}
 
   function matchesLocally(entry) {
     if (filters.level && !filters.level.split(",").includes((entry.level || "").toUpperCase())) {
@@ -184,13 +173,17 @@ export function logsPage() {
     if (filters.component && entry.fields?.component !== filters.component) return false;
     if (filters.q) {
       const needle = filters.q.toLowerCase();
-      const hay = `${entry.msg} ${JSON.stringify(entry.fields || {})}`.toLowerCase();
+      const hay = `${entry.message || entry.msg || ""} ${JSON.stringify(entry.fields || {})}`.toLowerCase();
       if (!hay.includes(needle)) return false;
     }
     return true;
   }
 
   return root;
+}
+
+function entryKey(entry) {
+	return `${entry.time || ""}|${entry.level || ""}|${entry.message || entry.msg || ""}|${JSON.stringify(entry.fields || {})}`;
 }
 
 function row(entry) {

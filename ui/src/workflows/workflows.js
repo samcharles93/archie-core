@@ -50,6 +50,7 @@ export function workflowsPage() {
   const root = el("div");
   const workflowSlot = el("div");
   const stageSlot = el("div");
+	const startSlot = el("div");
 
   render();
   load();
@@ -66,6 +67,7 @@ export function workflowsPage() {
         ),
         el("div.page-actions", el("button.btn", { onclick: load }, "Refresh")),
       ),
+      startSlot,
       workflowSlot,
       stageSlot,
     );
@@ -74,7 +76,8 @@ export function workflowsPage() {
   async function load() {
     try {
       const data = await api.workflows();
-      renderWorkflows(data?.workflows || []);
+      renderStartWork(data?.definitions || []);
+      renderWorkflows(data?.workflows || [], data?.definitions || []);
       renderStages(data?.stages || []);
     } catch (err) {
       mount(workflowSlot, el("div.card", empty("Cannot reach archied", String(err.message || err))));
@@ -82,8 +85,40 @@ export function workflowsPage() {
     }
   }
 
-  function renderWorkflows(workflows) {
-    if (!workflows.length) {
+  function renderStartWork(definitions) {
+    if (!definitions.length) {
+      mount(startSlot);
+      return;
+    }
+    const identity = el("input", { placeholder: "Identity", required: true });
+    const repository = el("input", { placeholder: "owner/repository", required: true });
+    const workflow = el("select", { required: true }, ...definitions.filter((d) => d.enabled).map((d) => el("option", { value: d.id }, workflowLabel(d.name || d.id))));
+    const title = el("input", { placeholder: "Short task title", required: true });
+    const instructions = el("textarea", { placeholder: "Instructions for the work", required: true, rows: 3 });
+    const notice = el("p.card-sub");
+    const submit = el("button.btn", { type: "submit" }, "Start work");
+    const form = el("form.cfg-rows", {
+      onsubmit: async (event) => {
+        event.preventDefault();
+        submit.disabled = true;
+        try {
+          const result = await api.workRequest({ identity: identity.value, repository: repository.value, workflow: workflow.value, title: title.value, instructions: instructions.value });
+          notice.textContent = `Queued task #${result.task_id}.`;
+          form.reset();
+        } catch (err) {
+          notice.textContent = String(err.message || err);
+        } finally {
+          submit.disabled = false;
+        }
+      },
+    }, identity, repository, workflow, title, instructions, submit, notice);
+    mount(startSlot, el("div.card", el("div.card-head", el("div", el("h2.card-title", "Start work"), el("p.card-sub", "This enters Archie’s normal admitted task queue."))), form));
+  }
+
+  function renderWorkflows(workflows, definitions) {
+    const byID = new Map(workflows.map((workflow) => [workflow.workflow, workflow]));
+    const rows = definitions.map((definition) => ({ ...definition, ...(byID.get(definition.id) || { workflow: definition.id, runs: 0, merged: 0 }) }));
+    if (!rows.length) {
       mount(
         workflowSlot,
         el(
@@ -115,16 +150,17 @@ export function workflowsPage() {
               "thead",
               el(
                 "tr",
-                ...["Workflow", "Runs", "Success rate", "Avg tokens", "Avg steps"].map((h) => el("th", h)),
+                ...["Workflow", "Origin", "Runs", "Success rate", "Avg tokens", "Avg steps"].map((h) => el("th", h)),
               ),
             ),
             el(
               "tbody",
-              ...workflows.map((w) => {
+              ...rows.map((w) => {
                 const rate = pct(w.merged, w.runs);
                 return el(
                   "tr",
                   el("td.strong", workflowLabel(w.workflow)),
+				  el("td.mono", w.origin || "registry"),
                   el("td", `${w.runs} run${w.runs === 1 ? "" : "s"}`),
                   el(
                     "td",
