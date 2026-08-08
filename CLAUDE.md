@@ -313,10 +313,8 @@ behavior.
 ## Development Protocol (mandatory)
 
 This is not optional style guidance — every code change in this repo follows
-this sequence. It mirrors what the `implement-and-verify` workflow
-(`.claude/workflows/implement-and-verify.js`) automates for `archie-core-abg`
-beads, and it's the same discipline archied enforces on _itself_ via the TDD
-workflow in `ARCHITECTURE.md`.
+this sequence. It's the same discipline archied enforces on _itself_ via the
+TDD workflow in `ARCHITECTURE.md`.
 
 **`task check` is the definitive quality gate.** `task check` = `fmt` +
 `go fix ./...` + `vet` + `build` + `test`, and it is the one command that must
@@ -356,25 +354,12 @@ is green:
 - Findings are reported (use `ReportFindings` when running as a review agent),
   not silently fixed by the same pass that wrote the code — a finding that
   survives blocks closing the work, it doesn't get waved through.
-- Only close out (beads: `bd close`) once the adversarial pass reports zero
-  surviving findings.
+- Only close out the issue once the adversarial pass reports zero surviving
+  findings.
 
-## Beads Issue Tracker
+## Issue Tracking
 
-This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full
-workflow context and commands.
-
-```bash
-bd ready                # Find available work
-bd show <id>            # View issue details
-bd update <id> --claim  # Claim work
-bd close <id>           # Complete work
-```
-
-- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown
-  TODO lists.
-- Use `bd remember` / `bd memories <keyword>` for persistent knowledge — do NOT
-  use MEMORY.md files.
-- Issues live in a local Dolt DB; sync uses `refs/dolt/data` on the git remote;
-  `.beads/issues.jsonl` is a passive export, not the source of truth. See
-  [SYNC_CONCEPTS.md](https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md).
+This project uses **GitHub Issues** (`samcharles93/archie-core`) for issue
+tracking. Epics are parent issues; their work items are linked as native
+GitHub sub-issues. Labels: `task`, `feature`/`enhancement`, `bug`, `epic`,
+plus `in-progress` for active work.
