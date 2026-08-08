@@ -30,6 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     gh \
     jq \
+    ripgrep \
     unzip \
     xz-utils \
     build-essential \

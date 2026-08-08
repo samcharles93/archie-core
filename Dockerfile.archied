@@ -13,8 +13,11 @@ RUN CGO_ENABLED=0 go build \
     -o /usr/local/bin/archied ./cmd/archied/
 # archied is static, but this can't be scratch: in inprocess mode the daemon
 # runs agent tools itself, and the shell tool invokes bash; codesearch shells
-# to git. Worktrees don't count — internal/worktree uses go-git. ripgrep is
-# embedded in the binary, so grep/find need nothing installed.
+# to git. Worktrees don't count — internal/worktree uses go-git. This image
+# is not part of the current deployment (docker-compose.yml only builds
+# Dockerfile, the agent image; archied runs on the host under systemd), but
+# if it's ever used in inprocess mode, grep needs ripgrep on PATH -- it is
+# no longer embedded in the binary.
 #
 # No Node: the builtin tools (read/write/edit/find/grep/shell/test) cover what
 # desktop-commander did. Any npx-launched MCP stdio server will now fail to
