@@ -30,11 +30,22 @@ CREATE INDEX IF NOT EXISTS idx_events_kind ON events(kind, id);
 
 // InsertEvent appends an event to the log and returns its row id.
 func (s *Store) InsertEvent(ctx context.Context, e events.Event) (int64, error) {
+	return insertEvent(ctx, s.db, e)
+}
+
+type eventExecer interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+func insertEvent(ctx context.Context, execer eventExecer, e events.Event) (int64, error) {
+	if e.At.IsZero() {
+		e.At = time.Now().UTC()
+	}
 	data, err := json.Marshal(e.Data)
 	if err != nil {
 		data = fmt.Appendf(nil, `{"marshal_error":%q}`, err.Error())
 	}
-	res, err := s.db.ExecContext(ctx, `
+	res, err := execer.ExecContext(ctx, `
 		INSERT INTO events (at, kind, task_id, repo, issue, workflow, stage, detail, data)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.At.UTC().Format(time.RFC3339Nano), e.Kind, e.TaskID, e.Repo, e.Issue,
