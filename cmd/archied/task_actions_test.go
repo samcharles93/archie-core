@@ -77,6 +77,8 @@ func TestDashboardAndChatAgreeOnTerminalStates(t *testing.T) {
 				req := httptest.NewRequestWithContext(ctx, http.MethodPost,
 					"/api/tasks/"+strconv.FormatInt(task.ID, 10)+"/action",
 					bytes.NewBufferString(`{"action":"`+tc.action+`"}`))
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("X-Archie-CSRF", "1")
 				w := httptest.NewRecorder()
 				srv.Handler().ServeHTTP(w, req)
 				if w.Code != http.StatusOK {

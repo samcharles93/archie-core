@@ -15,6 +15,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
@@ -394,6 +395,76 @@ func (s *Store) Requeue(ctx context.Context, taskID int64, fromStatus, workflow 
 	return tx.Commit()
 }
 
+// RetryTask requeues a task and increments retry_count in the same guarded
+// transaction. A queued task with an uncounted retry would make max_retries a
+// suggestion rather than a cap.
+func (s *Store) RetryTask(ctx context.Context, taskID int64, fromStatus, workflow string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	res, err := tx.ExecContext(ctx, `
+		UPDATE tasks SET status='queued', retry_count=retry_count+1,
+			workflow=CASE WHEN ?='' THEN workflow ELSE ? END,
+			stage='', park_reason='', updated_at=datetime('now')
+		WHERE id=? AND status=?`, workflow, workflow, taskID, fromStatus)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrStaleTransition
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO transitions (task_id, from_status, to_status, detail) VALUES (?, ?, 'queued', ?)`,
+		taskID, fromStatus, "retried "+workflow); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ArchiveTask removes one terminal task from the active task board. The
+// expected status is part of the delete predicate so a stale browser cannot
+// remove a task that has since resumed or otherwise changed state. Historical
+// transition and activity rows remain as the operator audit trail.
+func (s *Store) ArchiveTask(
+	ctx context.Context,
+	taskID int64,
+	fromStatus string,
+	audit events.Event,
+) (int64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	eventID, err := insertEvent(ctx, tx, audit)
+	if err != nil {
+		return 0, err
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM tasks WHERE id=? AND status=?`, taskID, fromStatus)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if n == 0 {
+		return 0, ErrStaleTransition
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return eventID, nil
+}
+
 // RecoverStale re-queues tasks left running by a crashed daemon.
 func (s *Store) RecoverStale(ctx context.Context) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
@@ -426,11 +497,11 @@ func (s *Store) OpenPRs(ctx context.Context) (tasks []Task, retErr error) {
 	return tasks, rows.Err()
 }
 
-// ClearTerminalTasks deletes tasks whose status is terminal (merged, parked,
-// rejected, closed_wont_do). Returns the number of rows removed.
+// ClearTerminalTasks deletes tasks whose status is terminal. Parked work is
+// deliberately excluded because it is recoverable.
 func (s *Store) ClearTerminalTasks(ctx context.Context) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
-		`DELETE FROM tasks WHERE status IN ('merged','parked','rejected','closed_wont_do')`)
+		`DELETE FROM tasks WHERE status IN ('merged','rejected','dead','closed_wont_do')`)
 	if err != nil {
 		return 0, err
 	}

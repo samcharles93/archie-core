@@ -3,11 +3,14 @@ package webui
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
@@ -67,9 +70,39 @@ func postAction(t *testing.T, srv *Server, id int64, action string) *httptest.Re
 		"/api/tasks/"+strconv.FormatInt(id, 10)+"/action",
 		bytes.NewBufferString(fmt.Sprintf(`{"action":%q}`, action)))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Archie-CSRF", "1")
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	return w
+}
+
+type recordingTaskStopper struct {
+	calls  []int64
+	result bool
+}
+
+type archiveFailingStore struct {
+	store.TaskStore
+	err error
+}
+
+func (s *archiveFailingStore) ArchiveTask(
+	context.Context,
+	int64,
+	string,
+	events.Event,
+) (int64, error) {
+	return 0, s.err
+}
+
+func (s *recordingTaskStopper) CancelTask(id int64) bool {
+	s.calls = append(s.calls, id)
+	return s.result
+}
+
+func setTaskStopper(t *testing.T, srv *Server, stopper *recordingTaskStopper) {
+	t.Helper()
+	srv.TaskStopper = stopper
 }
 
 // max_retries is configured, defaulted and shown in /api/config, but nothing
@@ -258,6 +291,7 @@ func TestTaskActionErrorMapping(t *testing.T) {
 		setup      func(t *testing.T, srv *Server, id int64)
 		id         func(id int64) string
 		wantStatus int
+		wantHidden string
 	}{
 		{
 			name:       "unknown action",
@@ -282,6 +316,15 @@ func TestTaskActionErrorMapping(t *testing.T) {
 			wantStatus: http.StatusNotFound,
 		},
 		{
+			name: "store lookup failure is redacted",
+			body: `{"action":"approve"}`,
+			setup: func(_ *testing.T, srv *Server, _ int64) {
+				srv.Store = &stubStore{TaskStore: srv.Store, taskByIDErr: errors.New("database password leaked")}
+			},
+			wantStatus: http.StatusInternalServerError,
+			wantHidden: "password",
+		},
+		{
 			name: "wrong state",
 			body: `{"action":"retry"}`,
 			// The task is waiting_human, not parked.
@@ -302,11 +345,16 @@ func TestTaskActionErrorMapping(t *testing.T) {
 
 			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
 				"/api/tasks/"+path+"/action", bytes.NewBufferString(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Archie-CSRF", "1")
 			w := httptest.NewRecorder()
 			srv.Handler().ServeHTTP(w, req)
 
 			if w.Code != tc.wantStatus {
 				t.Fatalf("status = %d, want %d (body %s)", w.Code, tc.wantStatus, w.Body)
+			}
+			if tc.wantHidden != "" && strings.Contains(w.Body.String(), tc.wantHidden) {
+				t.Fatalf("response exposed internal error: %s", w.Body)
 			}
 		})
 	}
@@ -335,5 +383,234 @@ func TestTaskActionStoreFailureIs500(t *testing.T) {
 	w := postAction(t, srv, task.ID, "approve")
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500: a store failure is not a conflict", w.Code)
+	}
+}
+
+func TestTaskListExposesLifecycleActions(t *testing.T) {
+	srv := newTestServer(t)
+	ctx := t.Context()
+	want := map[string][]string{
+		store.StatusQueued:       {"cancel"},
+		store.StatusRunning:      {"stop"},
+		store.StatusWaitingHuman: {"approve", "reject"},
+		store.StatusParked:       {"retry", "abandon"},
+		store.StatusPROpen:       {"open_pr", "open_issue"},
+		store.StatusMerged:       {"archive"},
+		store.StatusRejected:     {"archive"},
+		store.StatusDead:         {"archive"},
+		store.StatusClosedWontDo: {"archive"},
+	}
+
+	number := 1
+	for status := range want {
+		if _, err := srv.Store.EnqueueIssue(ctx, "acme", "widget", number, status, "", "", ""); err != nil {
+			t.Fatal(err)
+		}
+		task, err := srv.Store.TaskByIssue(ctx, "acme", "widget", number)
+		if err != nil || task == nil {
+			t.Fatalf("TaskByIssue(%s) = (%+v, %v)", status, task, err)
+		}
+		if status != store.StatusQueued {
+			if err := srv.Store.Transition(ctx, task.ID, store.StatusQueued, status, "test"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		number++
+	}
+
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/tasks", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", w.Code, w.Body)
+	}
+	var got []struct {
+		Status  string   `json:"status"`
+		Actions []string `json:"actions"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	for _, task := range got {
+		if !slices.Equal(task.Actions, want[task.Status]) {
+			t.Errorf("actions for %s = %v, want %v", task.Status, task.Actions, want[task.Status])
+		}
+	}
+}
+
+func TestLifecycleSpecificTaskActions(t *testing.T) {
+	tests := []struct {
+		name, from, action, want string
+		stopperResult            bool
+		closesIssue              bool
+	}{
+		{name: "cancel queued", from: store.StatusQueued, action: "cancel", want: store.StatusClosedWontDo, closesIssue: true},
+		{name: "stop running", from: store.StatusRunning, action: "stop", want: store.StatusParked, stopperResult: true},
+		{name: "park stale running row", from: store.StatusRunning, action: "stop", want: store.StatusParked},
+		{name: "abandon parked", from: store.StatusParked, action: "abandon", want: store.StatusClosedWontDo, closesIssue: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newTestServer(t)
+			ctx := t.Context()
+			if _, err := srv.Store.EnqueueIssue(ctx, "acme", "widget", 11, "a task", "", "", ""); err != nil {
+				t.Fatal(err)
+			}
+			task, err := srv.Store.TaskByIssue(ctx, "acme", "widget", 11)
+			if err != nil || task == nil {
+				t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
+			}
+			if tc.from != store.StatusQueued {
+				if err := srv.Store.Transition(ctx, task.ID, store.StatusQueued, tc.from, "test"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			closer := &recordingCloser{}
+			srv.Issues = closer
+			bus := events.NewBus()
+			t.Cleanup(bus.Close)
+			srv.Events = bus
+			sub := bus.Subscribe(1)
+			if tc.action == "stop" {
+				setTaskStopper(t, srv, &recordingTaskStopper{result: tc.stopperResult})
+			}
+			if w := postAction(t, srv, task.ID, tc.action); w.Code != http.StatusOK {
+				t.Fatalf("status = %d, body %s", w.Code, w.Body)
+			}
+			got, err := srv.Store.TaskByID(ctx, task.ID)
+			if err != nil || got == nil || got.Status != tc.want {
+				t.Fatalf("task = (%+v, %v), want status %s", got, err, tc.want)
+			}
+			if got := len(closer.calls) > 0; got != tc.closesIssue {
+				t.Errorf("forge issue closed = %v, want %v", got, tc.closesIssue)
+			}
+			select {
+			case event := <-sub.C:
+				if event.TaskID != task.ID || event.Kind == "" {
+					t.Errorf("event = %+v", event)
+				}
+			default:
+				t.Error("operator action emitted no activity event")
+			}
+		})
+	}
+}
+
+func TestArchiveRemovesOnlyOneTerminalTask(t *testing.T) {
+	srv := newTestServer(t)
+	ctx := t.Context()
+	for number := 1; number <= 2; number++ {
+		if _, err := srv.Store.EnqueueIssue(ctx, "acme", "widget", number, "done", "", "", ""); err != nil {
+			t.Fatal(err)
+		}
+		task, err := srv.Store.TaskByIssue(ctx, "acme", "widget", number)
+		if err != nil || task == nil {
+			t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
+		}
+		if err := srv.Store.Transition(ctx, task.ID, store.StatusQueued, store.StatusMerged, "done"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	task, _ := srv.Store.TaskByIssue(ctx, "acme", "widget", 1)
+	bus := events.NewBus()
+	t.Cleanup(bus.Close)
+	srv.Events = bus
+	sub := bus.Subscribe(1)
+	if w := postAction(t, srv, task.ID, "archive"); w.Code != http.StatusOK {
+		t.Fatalf("archive status = %d, body %s", w.Code, w.Body)
+	}
+	if got, err := srv.Store.TaskByID(ctx, task.ID); err != nil || got != nil {
+		t.Fatalf("archived task = (%+v, %v), want nil", got, err)
+	}
+	if other, err := srv.Store.TaskByIssue(ctx, "acme", "widget", 2); err != nil || other == nil {
+		t.Fatalf("archive removed another task: (%+v, %v)", other, err)
+	}
+	history, err := srv.Store.EventsSince(ctx, 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 || history[0].Kind != events.KindTaskArchiveRequested || history[0].ID == 0 {
+		t.Fatalf("durable archive audit = %+v", history)
+	}
+	select {
+	case event := <-sub.C:
+		if event.Kind != events.KindTaskArchiveRequested || event.TaskID != task.ID {
+			t.Errorf("archive event = %+v", event)
+		}
+	default:
+		t.Error("archive emitted no activity event")
+	}
+}
+
+func TestArchiveAuditFailurePreservesTaskAndFailsRequest(t *testing.T) {
+	srv := newTestServer(t)
+	ctx := t.Context()
+	if _, err := srv.Store.EnqueueIssue(ctx, "acme", "widget", 1, "done", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, _ := srv.Store.TaskByIssue(ctx, "acme", "widget", 1)
+	if err := srv.Store.Transition(ctx, task.ID, store.StatusQueued, store.StatusMerged, "done"); err != nil {
+		t.Fatal(err)
+	}
+	base := srv.Store
+	srv.Store = &archiveFailingStore{TaskStore: base, err: errors.New("audit unavailable")}
+
+	if w := postAction(t, srv, task.ID, "archive"); w.Code != http.StatusInternalServerError {
+		t.Fatalf("archive status = %d, want 500", w.Code)
+	}
+	if got, err := base.TaskByID(ctx, task.ID); err != nil || got == nil {
+		t.Fatalf("failed archive removed task: (%+v, %v)", got, err)
+	}
+}
+
+func TestTaskActionRejectsUnsafeRequests(t *testing.T) {
+	srv := newTestServer(t)
+	ctx := t.Context()
+	if _, err := srv.Store.EnqueueIssue(ctx, "acme", "widget", 1, "queued", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, _ := srv.Store.TaskByIssue(ctx, "acme", "widget", 1)
+	path := "/api/tasks/" + strconv.FormatInt(task.ID, 10) + "/action"
+	tests := []struct {
+		name, body, contentType, csrf, origin string
+		want                                  int
+	}{
+		{name: "cross origin", body: `{"action":"cancel"}`, contentType: "application/json", csrf: "1", origin: "https://evil.example", want: http.StatusForbidden},
+		{name: "non JSON", body: `{"action":"cancel"}`, contentType: "text/plain", csrf: "1", want: http.StatusUnsupportedMediaType},
+		{name: "oversized", body: strings.Repeat(" ", 5000) + `{"action":"cancel"}`, contentType: "application/json", csrf: "1", want: http.StatusRequestEntityTooLarge},
+		{name: "unknown field", body: `{"action":"cancel","status":"queued"}`, contentType: "application/json", csrf: "1", want: http.StatusBadRequest},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(ctx, http.MethodPost, path, strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", tc.contentType)
+			req.Header.Set("X-Archie-CSRF", tc.csrf)
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+			w := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(w, req)
+			if w.Code != tc.want {
+				t.Fatalf("status = %d, want %d (body %s)", w.Code, tc.want, w.Body)
+			}
+		})
+	}
+}
+
+func TestTaskActionRequiresCSRFHeader(t *testing.T) {
+	srv := newTestServer(t)
+	ctx := t.Context()
+	if _, err := srv.Store.EnqueueIssue(ctx, "acme", "widget", 1, "queued", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, _ := srv.Store.TaskByIssue(ctx, "acme", "widget", 1)
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
+		"/api/tasks/"+strconv.FormatInt(task.ID, 10)+"/action",
+		bytes.NewBufferString(`{"action":"cancel"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 without CSRF header (body %s)", w.Code, w.Body)
 	}
 }

@@ -67,7 +67,8 @@ body {
   font-weight: 700;
 }
 
-/* Compact icon navigation: one pill, icons only, label on the active item. */
+/* Navigation is always labelled. Operators should never have to memorise an
+   icon vocabulary just to move around the control plane. */
 .nav {
   display: flex;
   align-items: center;
@@ -101,14 +102,9 @@ body {
   background: var(--accent);
   color: var(--accent-fg);
   font-weight: 500;
-  padding-right: var(--sp-4);
 }
 
 .nav-item .nav-label {
-  display: none;
-}
-
-.nav-item[aria-current="page"] .nav-label {
   display: inline;
 }
 
@@ -144,6 +140,10 @@ body {
 
 .topbar-search input::placeholder {
   color: var(--fg-subtle);
+}
+
+.mobile-search-toggle {
+	display: none;
 }
 
 .icon-btn {
@@ -192,6 +192,23 @@ body {
   overflow-x: hidden;
 }
 
+/* ── Constrained desktop ────────────────────────────────────────────────── */
+
+@media (max-width: 1220px) and (min-width: 901px) {
+	.topbar {
+		flex-wrap: wrap;
+	}
+
+	.nav {
+		order: 3;
+		width: 100%;
+		margin: 0;
+		justify-content: center;
+		flex-wrap: wrap;
+		border-radius: var(--radius-lg);
+	}
+}
+
 /* ── Narrow screens ─────────────────────────────────────────────────────── */
 
 /* The frame is a desktop affordance. Below the breakpoint the workspace goes
@@ -220,6 +237,7 @@ body {
     width: 100%;
     overflow-x: auto;
     justify-content: flex-start;
+	flex-wrap: nowrap;
     border-radius: var(--radius-lg);
     scrollbar-width: none;
   }
@@ -232,9 +250,43 @@ body {
     display: inline;
   }
 
-  .topbar-search {
-    display: none;
-  }
+
+	.topbar-search {
+		padding: 0;
+		border: 0;
+		background: transparent;
+		overflow: hidden;
+	}
+
+	.topbar-search-icon {
+		display: none;
+	}
+
+	.mobile-search-toggle {
+		display: grid;
+	}
+
+	.topbar-search input {
+		width: 0;
+		padding: 0;
+		opacity: 0;
+		pointer-events: none;
+		transition: width var(--transition), opacity var(--transition);
+	}
+
+	.topbar-search.is-open,
+	.topbar-search:focus-within {
+		padding-right: var(--sp-2);
+		border: 1px solid var(--hairline);
+		background: var(--surface-glass-strong);
+	}
+
+	.topbar-search.is-open input,
+	.topbar-search:focus-within input {
+		width: min(9rem, 34vw);
+		opacity: 1;
+		pointer-events: auto;
+	}
 
   .main {
     padding: var(--sp-4);

@@ -37,6 +37,7 @@ func TestHandleTaskActionApproveUsesRecordedState(t *testing.T) {
 
 	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/tasks/"+strconv.FormatInt(task.ID, 10)+"/action", bytes.NewBufferString(`{"action":"approve"}`))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Archie-CSRF", "1")
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -66,6 +67,8 @@ func TestHandleTaskActionRetriesParkedTask(t *testing.T) {
 	}
 
 	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/tasks/"+strconv.FormatInt(task.ID, 10)+"/action", bytes.NewBufferString(`{"action":"retry"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Archie-CSRF", "1")
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -149,15 +152,20 @@ func TestHandleTaskStoreError(t *testing.T) {
 	}
 }
 
-// TestHandleClearTasksProvenance proves the literal /api/tasks/clear route is
-// not captured by the {id} wildcard (which would 400 on "clear").
-func TestHandleClearTasksProvenance(t *testing.T) {
+func TestBulkClearRouteCannotMutateTasks(t *testing.T) {
 	srv := newTestServer(t)
+	if _, err := srv.Store.EnqueueIssue(t.Context(), "acme", "widget", 1, "task", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/tasks/clear", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 — /api/tasks/clear was captured by {id}", w.Code)
+	if w.Code == http.StatusOK {
+		t.Fatal("GET /api/tasks/clear still exposes a destructive mutation")
+	}
+	tasks, err := srv.Store.Tasks(t.Context(), 10)
+	if err != nil || len(tasks) != 1 {
+		t.Fatalf("tasks after legacy clear request = (%d, %v), want one preserved", len(tasks), err)
 	}
 }
