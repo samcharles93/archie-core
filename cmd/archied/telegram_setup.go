@@ -7,12 +7,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/samcharles93/ai-sdk/chat"
 	"github.com/samcharles93/ai-sdk/core"
 	"github.com/samcharles93/ai-sdk/runtime"
 
+	channelruntime "github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/channels/telegram"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -48,8 +48,9 @@ type telegramSetup struct {
 	// Bus carries primary-input events (archie-core-035): a completed
 	// chat turn is published here so input-driven curators can wake. Nil
 	// disables turn events (tests, minimal setups).
-	Bus *events.Bus
-	Log *slog.Logger
+	Bus            *events.Bus
+	Log            *slog.Logger
+	ChannelManager *channelruntime.Manager
 }
 
 // setupTelegramGateway initialises the Telegram chat gateway when a
@@ -96,8 +97,14 @@ func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), o
 	}
 	router := buildTelegramRouter(tg, s, sessionStore)
 	return func() {
+		if s.ChannelManager != nil {
+			s.ChannelManager.MarkStarting("telegram")
+		}
 		go func() {
 			if err := tg.Start(ctx, router); err != nil && ctx.Err() == nil {
+				if s.ChannelManager != nil {
+					s.ChannelManager.MarkFailed("telegram", err.Error())
+				}
 				s.Log.Error("telegram gateway stopped", "err", err)
 			}
 		}()
@@ -127,7 +134,7 @@ func makeUpdateService(s telegramSetup) *releaseupdate.Service {
 
 func makeTelegramReload(s telegramSetup) func(*telegram.Gateway) error {
 	return func(g *telegram.Gateway) error {
-		doc, err := configuration.New(s.Log).Overlay(s.CfgPath, s.OverlayPath)
+		doc, err := configuration.New(s.Log).Resolve(s.CfgPath, s.OverlayPath)
 		if err != nil {
 			return fmt.Errorf("reload config: %w", err)
 		}
@@ -167,7 +174,11 @@ func buildTelegramRouter(tg *telegram.Gateway, s telegramSetup, sessionStore gat
 	router.Log = s.Log
 	configureTaskCommands(router, s.ChatTasks, s.ChatController, s.DefaultChatIdentity)
 
-	router.LLM, router.LLMStream = makeChatLLMResponder(tg.Name(), s, sessionStore, router)
+	if s.LLM != nil {
+		turnRunner := newChatTurnRunner(tg.Name(), s, sessionStore, router)
+		router.LLM = turnRunner.Respond
+		router.LLMStream = turnRunner.RespondStream
+	}
 	return router
 }
 
@@ -180,110 +191,35 @@ func makeChatLLMResponder(
 	if s.LLM == nil {
 		return nil, nil
 	}
-	// Built once: these carry this gateway's identity, which does not change
-	// between turns, so there is nothing per-turn to rebuild.
-	taskTools := gateway.TaskTools(s.ChatTaskLister, s.ChatTasks, s.DefaultChatIdentity)
-	respond := func(ctx context.Context, msg gateway.Message, onDelta func(string)) (string, error) {
-		// Use the router's session tracker, not a local channel-keyed helper.
-		// Commands like /new, /branch, or /resume may reassign a session to a
-		// generated ID; after that, only the router sees the correct history.
-		sk, err := router.ResolveSessionKey(ctx, msg)
-		if err != nil {
-			return "", fmt.Errorf("resolve chat session: %w", err)
-		}
-		history, err := sessionStore.RecentMessages(ctx, sk, 100)
-		if err != nil {
-			return "", fmt.Errorf("load chat history: %w", err)
-		}
-		// Deduplicate redelivered updates: the store already rejects the
-		// duplicate message, but that alone doesn't prevent a second model
-		// call with its cost and side effects. Replaying the prior reply
-		// is both cheaper and correct.
-		if prior := gateway.PriorReply(history, sk, msg.SourceID, s.Cfg.BotUser); prior != "" {
-			s.Log.Info("replaying the reply to a redelivered message",
-				"session", sk, "source_id", msg.SourceID)
-			if onDelta != nil {
-				onDelta(prior)
-			}
-			return prior, nil
-		}
-		if err := sessionStore.SaveMessage(ctx, sk, msg); err != nil {
-			return "", fmt.Errorf("save inbound chat message: %w", err)
-		}
-		history = append(history, msg)
-		// Log session id, history depth, and resolved persona to
-		// distinguish "wrong session" bugs from "history not loaded".
-		s.Log.Info("chat turn",
-			"session", sk,
-			"channel", msg.ChannelID,
-			"thread", msg.ThreadID,
-			"history_messages", len(history))
-		compressed := make([]gateway.CompressedMessage, 0, len(history))
-		for _, h := range history {
-			role := "user"
-			if h.From == s.Cfg.BotUser {
-				role = "assistant"
-			}
-			compressed = append(compressed, gateway.CompressedMessage{Role: role, Content: h.Text})
-		}
-		view := gateway.CompressHistory(compressed, gateway.DefaultCompressionConfig())
-		sessionTools := gateway.SessionTools(sessionStore, router.SessionTracker(), channel, msg)
-		allTools := make([]tools.ToolEntry, 0, len(taskTools)+len(sessionTools))
-		allTools = append(allTools, taskTools...)
-		allTools = append(allTools, sessionTools...)
-		options, err := chatGenerateOptions(ctx, nil, s.ToolReg, s.Cfg.Chat.MaxSteps, toolLimits(s.Cfg), allTools)
-		if err != nil {
-			return "", fmt.Errorf("build chat tools: %w", err)
-		}
-		chatModel := s.ChatModels.ActiveModel()
-		systemPrompt := gateway.BuildSystemPrompt(gateway.SystemPromptConfig{
-			Persona: s.Personas.GetActive(sk), Tools: toolSummaries(options.Tools),
-			Channel: channel, Model: chatModel, SessionID: sk, Now: time.Now(),
-			Operator: s.Cfg.Chat.Operator,
-		})
-		view.Messages = append(
-			[]gateway.CompressedMessage{{Role: "system", Content: systemPrompt}}, view.Messages...,
-		)
-		messages := make([]chat.Message, len(view.Messages))
-		for i, cm := range view.Messages {
-			role := chat.RoleUser
-			switch cm.Role {
-			case "assistant":
-				role = chat.RoleAssistant
-			case "system":
-				role = chat.RoleSystem
-			}
-			messages[i] = chat.Message{Role: role, Content: cm.Content}
-		}
-		options.Messages = messages
-		text, err := sendChatTurn(ctx, s.LLM, chatModel, options, onDelta)
-		if err != nil {
-			return "", err
-		}
-		if err := sessionStore.SaveMessage(ctx, sk, gateway.Message{From: s.Cfg.BotUser, Text: text}); err != nil {
-			return "", fmt.Errorf("save outbound chat message: %w", err)
-		}
-		// The turn is complete: both messages are persisted. Announce it
-		// as primary input (archie-core-035). Publish is non-blocking
-		// with bounded dropping subscriber buffers, so this never delays
-		// the chat path; a dropped event only delays a curator run to its
-		// next check-in. Curator output never produces this kind, so
-		// derived work cannot feed its own trigger. Redeliveries return
-		// above and never reach here.
-		if s.Bus != nil {
-			s.Bus.Publish(events.Event{
-				Kind:   events.KindTurnCompleted,
-				Detail: sk,
-				Data:   map[string]any{"session": sk, "channel": channel},
-			})
-		}
-		return text, nil
+	runner := newChatTurnRunner(channel, s, sessionStore, router)
+	return runner.Respond, runner.RespondStream
+}
+
+func newChatTurnRunner(
+	channel string,
+	s telegramSetup,
+	sessionStore gateway.SessionStore,
+	router *gateway.Router,
+) *gateway.TurnRunner {
+	runner := gateway.NewTurnRunner(gateway.TurnRunnerConfig{
+		Router:       router,
+		Sessions:     sessionStore,
+		Models:       s.ChatModels,
+		Personas:     s.Personas,
+		Model:        newChatTurnModel(s.LLM, s.ToolReg, s.Cfg.Chat.MaxSteps, toolLimits(s.Cfg)),
+		TaskLister:   s.ChatTaskLister,
+		Tasks:        s.ChatTasks,
+		TaskIdentity: s.DefaultChatIdentity,
+		Bus:          s.Bus,
+		BotUser:      s.Cfg.BotUser,
+		Channel:      channel,
+		Operator:     s.Cfg.Chat.Operator,
+		Log:          s.Log,
+	})
+	if err := runner.Recover(context.Background()); err != nil && s.Log != nil {
+		s.Log.Error("recover chat turns", "channel", channel, "err", err)
 	}
-	return func(ctx context.Context, msg gateway.Message) (string, error) {
-			return respond(ctx, msg, nil)
-		}, func(ctx context.Context, msg gateway.Message, onDelta func(string)) (string, error) {
-			return respond(ctx, msg, onDelta)
-		}
+	return runner
 }
 
 func sendChatTurn(ctx context.Context, llm *runtime.Runtime, chatModel string, options core.GenerateOptions, onDelta func(string)) (string, error) {

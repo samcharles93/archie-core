@@ -152,6 +152,7 @@ const MaxSearchResults = nl.MaxTextSearchLimit
 // nellSessionStore implements SessionStore backed by a NellDB DocDB.
 type nellSessionStore struct {
 	db     *sdk.DocDB // sessions collection
+	turns  *sdk.DocDB // durable chat-turn ledger
 	store  nl.Store
 	nodeID string
 	mu     sync.Mutex
@@ -171,6 +172,7 @@ type nellSessionStore struct {
 func NewSessionStore(st nl.Store, nodeID string) SessionStore {
 	return &nellSessionStore{
 		db:     sdk.New(st, nodeID, "sessions"),
+		turns:  sdk.New(st, nodeID, "turns"),
 		store:  st,
 		nodeID: nodeID,
 		msgDBs: make(map[string]*sdk.DocDB),
@@ -182,6 +184,209 @@ func NewSessionStore(st nl.Store, nodeID string) SessionStore {
 // tests.
 func NewSessionStoreMemory(nodeID string) SessionStore {
 	return NewSessionStore(nl.NewMemoryStore(nodeID), nodeID)
+}
+
+func (s *nellSessionStore) ClaimTurn(ctx context.Context, initial TurnRecord) (TurnRecord, TurnClaim, error) {
+	if initial.TurnID == "" {
+		return TurnRecord{}, "", fmt.Errorf("sessionstore: turn ID is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now().UTC()
+	existing, err := s.turns.Get(ctx, initial.TurnID)
+	if errors.Is(err, sdk.ErrNotFound) {
+		initial.Status = TurnStatusRunning
+		initial.Attempt = 1
+		if initial.CreatedAt.IsZero() {
+			initial.CreatedAt = now
+		}
+		initial.UpdatedAt = now
+		if _, err := s.turns.Put(ctx, turnToDoc(initial)); err != nil {
+			return TurnRecord{}, "", fmt.Errorf("sessionstore: claim turn: %w", err)
+		}
+		return initial, TurnClaimOwned, nil
+	}
+	if err != nil {
+		return TurnRecord{}, "", fmt.Errorf("sessionstore: read turn: %w", err)
+	}
+	turn := docToTurn(existing)
+	switch turn.Status {
+	case TurnStatusCompleted:
+		return turn, TurnClaimCompleted, nil
+	case TurnStatusAccepted, TurnStatusRunning, TurnStatusPartial:
+		return turn, TurnClaimInProgress, nil
+	case TurnStatusFailed, TurnStatusCancelled:
+		if turn.AssistantMessageID != "" {
+			turn.Status = TurnStatusCompleted
+			turn.Error = ""
+			turn.UpdatedAt = now
+			if _, err := s.turns.Put(ctx, withTurnRevision(existing, turn)); err != nil {
+				return TurnRecord{}, "", fmt.Errorf("sessionstore: finalize turn: %w", err)
+			}
+			return turn, TurnClaimCompleted, nil
+		}
+		turn.Status = TurnStatusRunning
+		turn.Attempt++
+		turn.OwnerID = initial.OwnerID
+		turn.Error = ""
+		turn.UpdatedAt = now
+		if _, err := s.turns.Put(ctx, withTurnRevision(existing, turn)); err != nil {
+			return TurnRecord{}, "", fmt.Errorf("sessionstore: retry turn: %w", err)
+		}
+		return turn, TurnClaimOwned, nil
+	default:
+		return turn, TurnClaimInProgress, nil
+	}
+}
+
+func (s *nellSessionStore) RecoverTurns(ctx context.Context, ownerID string) error {
+	if ownerID == "" {
+		return fmt.Errorf("sessionstore: recovery owner ID is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result, err := s.turns.AllDocs(ctx, sdk.DocRange{IncludeDocs: true})
+	if err != nil {
+		return fmt.Errorf("sessionstore: recover turns: list: %w", err)
+	}
+	now := time.Now().UTC()
+	for _, row := range result.Rows {
+		if row.Doc == nil {
+			continue
+		}
+		turn := docToTurn(row.Doc)
+		if turn.Status != TurnStatusAccepted && turn.Status != TurnStatusRunning && turn.Status != TurnStatusPartial {
+			continue
+		}
+		if turn.OwnerID == ownerID {
+			continue
+		}
+		turn.Status = TurnStatusFailed
+		turn.Error = "recovered after process restart"
+		turn.UpdatedAt = now
+		if _, err := s.turns.Put(ctx, withTurnRevision(row.Doc, turn)); err != nil {
+			return fmt.Errorf("sessionstore: recover turn %s: %w", turn.TurnID, err)
+		}
+	}
+	return nil
+}
+
+func (s *nellSessionStore) GetTurn(ctx context.Context, turnID string) (TurnRecord, bool, error) {
+	if turnID == "" {
+		return TurnRecord{}, false, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	doc, err := s.turns.Get(ctx, turnID)
+	if errors.Is(err, sdk.ErrNotFound) {
+		return TurnRecord{}, false, nil
+	}
+	if err != nil {
+		return TurnRecord{}, false, fmt.Errorf("sessionstore: get turn: %w", err)
+	}
+	return docToTurn(doc), true, nil
+}
+
+func (s *nellSessionStore) SaveTurn(ctx context.Context, turn TurnRecord) error {
+	if turn.TurnID == "" {
+		return fmt.Errorf("sessionstore: turn ID is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, err := s.turns.Get(ctx, turn.TurnID)
+	if errors.Is(err, sdk.ErrNotFound) {
+		return fmt.Errorf("sessionstore: save turn: turn not found")
+	}
+	if err != nil {
+		return fmt.Errorf("sessionstore: save turn: read: %w", err)
+	}
+	currentTurn := docToTurn(current)
+	if currentTurn.OwnerID != turn.OwnerID || currentTurn.Attempt != turn.Attempt {
+		return fmt.Errorf("%w: %s", ErrTurnOwnershipLost, turn.TurnID)
+	}
+	if turn.UpdatedAt.IsZero() {
+		turn.UpdatedAt = time.Now().UTC()
+	}
+	if _, err := s.turns.Put(ctx, withTurnRevision(current, turn)); err != nil {
+		return fmt.Errorf("sessionstore: save turn: %w", err)
+	}
+	return nil
+}
+
+func (s *nellSessionStore) ListRecoverableTurns(ctx context.Context) ([]TurnRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result, err := s.turns.AllDocs(ctx, sdk.DocRange{IncludeDocs: true})
+	if err != nil {
+		return nil, fmt.Errorf("sessionstore: list recoverable turns: %w", err)
+	}
+	turns := make([]TurnRecord, 0)
+	for _, row := range result.Rows {
+		if row.Doc == nil {
+			continue
+		}
+		turn := docToTurn(row.Doc)
+		switch turn.Status {
+		case TurnStatusAccepted, TurnStatusRunning, TurnStatusPartial:
+			turns = append(turns, turn)
+		}
+	}
+	slices.SortFunc(turns, func(a, b TurnRecord) int {
+		return a.UpdatedAt.Compare(b.UpdatedAt)
+	})
+	return turns, nil
+}
+
+func turnToDoc(turn TurnRecord) sdk.Doc {
+	return sdk.Doc{
+		sdk.FieldID:            turn.TurnID,
+		"session_id":           turn.SessionID,
+		"source_id":            turn.SourceID,
+		"status":               string(turn.Status),
+		"attempt":              turn.Attempt,
+		"owner_id":             turn.OwnerID,
+		"input_message_id":     turn.InputMessageID,
+		"assistant_message_id": turn.AssistantMessageID,
+		"partial_text":         turn.PartialText,
+		"response_text":        turn.ResponseText,
+		"error":                turn.Error,
+		"created_at":           turn.CreatedAt.UnixMilli(),
+		"updated_at":           turn.UpdatedAt.UnixMilli(),
+	}
+}
+
+func withTurnRevision(current sdk.Doc, turn TurnRecord) sdk.Doc {
+	doc := turnToDoc(turn)
+	if revision, ok := current[sdk.FieldRev]; ok {
+		doc[sdk.FieldRev] = revision
+	}
+	return doc
+}
+
+func docToTurn(doc sdk.Doc) TurnRecord {
+	turn := TurnRecord{
+		TurnID:             strField(doc, sdk.FieldID),
+		SessionID:          strField(doc, "session_id"),
+		SourceID:           strField(doc, "source_id"),
+		Status:             TurnStatus(strField(doc, "status")),
+		OwnerID:            strField(doc, "owner_id"),
+		InputMessageID:     strField(doc, "input_message_id"),
+		AssistantMessageID: strField(doc, "assistant_message_id"),
+		PartialText:        strField(doc, "partial_text"),
+		ResponseText:       strField(doc, "response_text"),
+		Error:              strField(doc, "error"),
+	}
+	if attempt, ok := numField(doc, "attempt"); ok {
+		turn.Attempt = int(attempt)
+	}
+	if ms, ok := numField(doc, "created_at"); ok {
+		turn.CreatedAt = time.UnixMilli(ms).UTC()
+	}
+	if ms, ok := numField(doc, "updated_at"); ok {
+		turn.UpdatedAt = time.UnixMilli(ms).UTC()
+	}
+	return turn
 }
 
 func (s *nellSessionStore) Save(ctx context.Context, sc SessionContext) error {
@@ -243,6 +448,19 @@ func (s *nellSessionStore) Delete(ctx context.Context, sessionID string) error {
 		}
 	}
 	s.dropMsgDB(sessionID)
+
+	turns, err := s.turns.AllDocs(ctx, sdk.DocRange{IncludeDocs: true})
+	if err != nil {
+		return fmt.Errorf("sessionstore: delete turns: %w", err)
+	}
+	for _, row := range turns.Rows {
+		if row.Doc == nil || strField(row.Doc, "session_id") != sessionID {
+			continue
+		}
+		if _, err := s.turns.Remove(ctx, row.ID); err != nil && !errors.Is(err, sdk.ErrNotFound) {
+			return fmt.Errorf("sessionstore: delete turn %s: %w", row.ID, err)
+		}
+	}
 
 	if _, err := s.db.Remove(ctx, sessionID); err != nil && !errors.Is(err, sdk.ErrNotFound) {
 		return fmt.Errorf("sessionstore: delete: %w", err)
@@ -753,6 +971,45 @@ func (s *nellSessionStore) ReplaceMessages(
 		}
 	}
 	return nil
+}
+
+func (s *nellSessionStore) FindPriorReply(ctx context.Context, sessionID, sourceID, identity string) (string, error) {
+	if sourceID == "" {
+		return "", nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	id := CanonicalMessageID(sessionID, sourceID)
+	db := s.messagesFor(sessionID)
+	if _, err := db.Get(ctx, id); err != nil {
+		if errors.Is(err, sdk.ErrNotFound) {
+			return "", nil
+		}
+		return "", fmt.Errorf("sessionstore: find source message: %w", err)
+	}
+	count, err := s.messageCountLocked(ctx, sessionID)
+	if err != nil {
+		return "", err
+	}
+	rows, err := s.newestRows(ctx, sessionID, count)
+	if err != nil {
+		return "", fmt.Errorf("sessionstore: find prior reply: %w", err)
+	}
+	for i := len(rows) - 1; i >= 0; i-- {
+		if rows[i].Doc == nil || strField(rows[i].Doc, sdk.FieldID) != id {
+			continue
+		}
+		if i == 0 || rows[i-1].Doc == nil {
+			return "", nil
+		}
+		reply := docToMessage(rows[i-1].Doc)
+		if reply.From == identity && !isCompressionSummary(reply.Text) {
+			return reply.Text, nil
+		}
+		return "", nil
+	}
+	return "", nil
 }
 
 func (s *nellSessionStore) RecentMessages(ctx context.Context, sessionID string, n int) ([]Message, error) {

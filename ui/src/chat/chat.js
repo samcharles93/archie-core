@@ -4,6 +4,7 @@ import { createChatView } from "./chat-view.js";
 import { chatBubble } from "./chat-render.js";
 import { updateStreamingReply } from "./chat-stream.js";
 import { channelID } from "./chat-state.js";
+import { newChatTurn, retryChatTurn } from "./chat-retry.js";
 import { renderCommands, renderModels, renderSelectors, renderSessions } from "./chat-catalog.js";
 import { renderDangerous, renderUpdate } from "./chat-panels.js";
 
@@ -72,7 +73,7 @@ export function chatPage() {
       {
         type: "button",
         role: "option",
-        "aria-selected": index === commandSelection,
+        "aria-selected": String(index === commandSelection),
         onmousedown: (event) => event.preventDefault(),
         onclick: () => chooseCommand(index),
       },
@@ -187,29 +188,38 @@ export function chatPage() {
     if (!transcript.children.length) transcript.append(emptyState);
   }
 
-  async function sendMessage() {
-    const text = composer.value.trim();
+  async function sendMessage(retry = null) {
+    const text = retry?.turn.text || composer.value.trim();
     if (!text || sending) return;
     hideCommandMenu();
+    const turn = retry ? retryChatTurn(retry.turn) : newChatTurn(text);
     sending = true;
     send.disabled = true;
     stop.disabled = false;
     composer.disabled = true;
-    status.textContent = "Thinking…";
-    appendMessage({ from: "web", text });
-    composer.value = "";
-    const replyBubble = el("div.chat-bubble-row.assistant", el("div.chat-bubble", el("div.chat-bubble-meta", "Archie"), el("div.chat-bubble-text")));
-    transcript.append(replyBubble);
+    status.textContent = retry ? "Retrying…" : "Thinking…";
+    if (!retry) {
+      appendMessage({ from: "web", text });
+      composer.value = "";
+    }
+    const replyBubble = retry?.replyBubble || el("div.chat-bubble-row.assistant", el("div.chat-bubble", el("div.chat-bubble-meta", "Archie"), el("div.chat-bubble-text")));
+    if (!retry) transcript.append(replyBubble);
+    replyBubble.querySelector(".chat-retry")?.remove();
     let replyText = replyBubble.querySelector(".chat-bubble-text");
     let streamedText = "";
+    let finished = false;
+    let timedOut = false;
     let timeout;
     try {
       activeController = new AbortController();
-      timeout = setTimeout(() => activeController.abort(), 120000);
+      timeout = setTimeout(() => {
+        timedOut = true;
+        activeController.abort();
+      }, 120000);
       const response = await fetch("/api/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-        body: JSON.stringify({ channel_id: channelID(), source_id: crypto.randomUUID(), text }),
+        body: JSON.stringify({ channel_id: channelID(), source_id: turn.sourceID, text: turn.text }),
         signal: activeController.signal,
       });
       if (!response.ok) throw new Error((await response.text()) || `${response.status} ${response.statusText}`);
@@ -230,25 +240,34 @@ export function chatPage() {
             streamedText += event.text;
             replyText = updateStreamingReply(replyText, streamedText);
           }
-          if (event.type === "done" && !streamedText) {
-            streamedText = event.text;
-            replyText = updateStreamingReply(replyText, streamedText);
+          if (event.type === "done") {
+            finished = true;
+            if (!streamedText) {
+              streamedText = event.text;
+              replyText = updateStreamingReply(replyText, streamedText);
+            }
           }
           if (event.type === "error") throw new Error(event.text);
         }
         if (done) break;
       }
+      if (!finished) throw new Error("chat stream ended before completion");
       if (replyText.isConnected) replyText = updateStreamingReply(replyText, streamedText);
       status.textContent = "Ready";
       await refreshSessions();
-      if (currentSession) await selectSession(currentSession);
     } catch (err) {
-      if (err.name === "AbortError") {
+      if (err.name === "AbortError" && !timedOut) {
         replyText = updateStreamingReply(replyText, "Turn stopped.");
         status.textContent = "Stopped";
       } else {
         replyText = updateStreamingReply(replyText, `Unable to complete that turn: ${err.message || err}`);
-        status.textContent = "Error";
+        const failedTurn = retryChatTurn(turn);
+        const retryButton = el("button.btn.chat-retry", {
+          type: "button",
+          onclick: () => sendMessage({ turn: failedTurn, replyBubble }),
+        }, "Retry");
+        replyBubble.append(retryButton);
+        status.textContent = "Error — retry available";
       }
     } finally {
       clearTimeout(timeout);
@@ -271,6 +290,13 @@ export function chatPage() {
   composer.oninput = renderCommandMenu;
   composer.onkeydown = (event) => {
     if (!commandMenu.hidden && commandMatches.length) {
+      if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.metaKey
+        && commandMatches.some((spec) => spec.command === composer.value.trim())) {
+        event.preventDefault();
+        hideCommandMenu();
+        sendMessage();
+        return;
+      }
       if (event.key === "ArrowDown") {
         event.preventDefault();
         commandSelection = (commandSelection + 1) % commandMatches.length;
@@ -283,7 +309,7 @@ export function chatPage() {
         renderCommandMenu();
         return;
       }
-      if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
+      if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
         event.preventDefault();
         chooseCommand(commandSelection);
         return;

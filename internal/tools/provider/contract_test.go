@@ -37,14 +37,17 @@ func TestArchiedWiresTypedProvidersAndExecutableConsumers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read archied main: %v", err)
 	}
-	text := string(source)
+	var text strings.Builder
+	text.WriteString(string(source))
 
-	// Also check telegram_setup.go, which holds the chat-turn wiring
-	// extracted from main.go during the Phase 4 structural refactor.
-	tgPath := filepath.Join("..", "..", "..", "cmd", "archied", "telegram_setup.go")
-	tgSource, tgErr := os.ReadFile(tgPath)
-	if tgErr == nil {
-		text += string(tgSource)
+	// Also check the chat composition files, which hold the chat-turn wiring
+	// extracted from main.go during the structural refactor.
+	for _, name := range []string{"telegram_setup.go", "chat_turn_model.go"} {
+		path := filepath.Join("..", "..", "..", "cmd", "archied", name)
+		source, readErr := os.ReadFile(path)
+		if readErr == nil {
+			text.WriteString(string(source))
+		}
 	}
 
 	for _, required := range []string{
@@ -54,20 +57,20 @@ func TestArchiedWiresTypedProvidersAndExecutableConsumers(t *testing.T) {
 		"capabilityHost.Register(providerRegistry)",
 		// The chat turn builds its toolset from the registry before the
 		// system prompt is rendered, so the prompt can advertise exactly
-		// the tools the model is handed. After the Phase 4 structural
-		// refactor these calls live in telegram_setup.go.
+		// the tools the model is handed. After the structural refactor these
+		// calls live in the chat composition files.
 		"chatGenerateOptions(ctx,",
 		"toolSummaries(options.Tools)",
 		"agentexec.NewInProcessRunner(llm, log, toolReg)",
 	} {
-		if !strings.Contains(text, required) {
+		if !strings.Contains(text.String(), required) {
 			t.Errorf("archied wiring not found: %q", required)
 		}
 	}
-	if strings.Contains(text, ".RegisterTools(ctx, toolReg)") {
+	if strings.Contains(text.String(), ".RegisterTools(ctx, toolReg)") {
 		t.Error("composition bypasses the typed provider registry with direct MCP registration")
 	}
-	if strings.Contains(text, "memManager.GetToolSchemas()") {
+	if strings.Contains(text.String(), "memManager.GetToolSchemas()") {
 		t.Error("composition bypasses the typed memory tool provider")
 	}
 }

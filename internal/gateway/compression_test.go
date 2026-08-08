@@ -5,6 +5,54 @@ import (
 	"testing"
 )
 
+func TestCompressionConfigForModelReservesPromptAndOutputBudget(t *testing.T) {
+	details := ModelDetails{ContextWindow: 16384, MaxOutputTokens: 2048}
+	cfg, err := CompressionConfigForModel(details, 1024)
+	if err != nil {
+		t.Fatalf("CompressionConfigForModel() error = %v", err)
+	}
+
+	if got, want := cfg.MaxPromptTokens, 13312; got != want {
+		t.Fatalf("MaxPromptTokens = %d, want %d", got, want)
+	}
+	if got, want := cfg.ContextWindow, 16384; got != want {
+		t.Fatalf("ContextWindow = %d, want %d", got, want)
+	}
+}
+
+func TestCompressionConfigForModelUsesCompatibilityFallbackWithoutMetadata(t *testing.T) {
+	cfg, err := CompressionConfigForModel(ModelDetails{Ref: "provider/model"}, 1024)
+	if err != nil {
+		t.Fatalf("CompressionConfigForModel() error = %v", err)
+	}
+	if cfg.MaxPromptTokens != 126976 {
+		t.Fatalf("MaxPromptTokens = %d, want compatibility budget", cfg.MaxPromptTokens)
+	}
+}
+
+func TestCompressionConfigForModelRejectsOverReservedBudget(t *testing.T) {
+	_, err := CompressionConfigForModel(ModelDetails{Ref: "provider/model", ContextWindow: 4096, MaxOutputTokens: 2048}, 2048)
+	if err == nil {
+		t.Fatal("CompressionConfigForModel() error = nil, want over-reserved-budget error")
+	}
+}
+
+func TestCompressHistoryHonorsPromptBudget(t *testing.T) {
+	cfg := DefaultCompressionConfig()
+	cfg.MaxPromptTokens = 1000
+	cfg.ProtectFirst = 1
+	cfg.ProtectLast = 2
+	msgs := makeMessages(40, 300)
+
+	view := CompressHistory(msgs, cfg)
+	if !view.WasCompressed {
+		t.Fatal("expected compression")
+	}
+	if view.TokensAfter > cfg.MaxPromptTokens {
+		t.Fatalf("TokensAfter = %d, want <= %d", view.TokensAfter, cfg.MaxPromptTokens)
+	}
+}
+
 func TestCompressHistoryThresholdNotExceeded(t *testing.T) {
 	cfg := DefaultCompressionConfig()
 	cfg.ContextWindow = 1000000 // huge window
@@ -69,6 +117,22 @@ func TestCompressHistoryTruncatesMiddle(t *testing.T) {
 	}
 }
 
+func TestCompressHistorySmallConversationStillHonorsPromptBudget(t *testing.T) {
+	cfg := DefaultCompressionConfig()
+	cfg.MaxPromptTokens = 100
+	cfg.ProtectFirst = 3
+	cfg.ProtectLast = 20
+	msgs := makeMessages(4, 200)
+
+	view := CompressHistory(msgs, cfg)
+	if !view.WasCompressed {
+		t.Fatal("expected compression")
+	}
+	if view.TokensAfter > cfg.MaxPromptTokens {
+		t.Fatalf("TokensAfter = %d, want <= %d", view.TokensAfter, cfg.MaxPromptTokens)
+	}
+}
+
 func TestCompressHistorySmallConversation(t *testing.T) {
 	cfg := DefaultCompressionConfig()
 
@@ -116,6 +180,8 @@ func TestTokenEstimate(t *testing.T) {
 		{"four", 1},        // 4 chars / 4 = 1
 		{"hello world", 2}, // 11 chars / 4 = 2
 		{"12345678", 2},    // 8 chars / 4 = 2
+		{"你好世界", 4},        // non-ASCII runes reserve one token each
+		{"🙂🙂", 2},          // emoji must not be byte-divided to zero
 		{strings.Repeat("x", 100), 25},
 	}
 

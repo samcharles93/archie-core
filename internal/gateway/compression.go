@@ -24,6 +24,11 @@ type CompressionConfig struct {
 	// characters). Used with Threshold to decide when to compress.
 	ContextWindow int
 
+	// MaxPromptTokens is the effective history budget after reserving space
+	// for the system prompt, tools, and model output. A positive value takes
+	// precedence over ContextWindow*Threshold.
+	MaxPromptTokens int
+
 	// ProtectFirst keeps the first N messages unmodified (typically the
 	// system greeting and initial instructions).
 	ProtectFirst int
@@ -51,10 +56,50 @@ func DefaultCompressionConfig() CompressionConfig {
 	}
 }
 
+// CompressionConfigForModel derives the history budget from the selected
+// model rather than assuming every provider has the default context window.
+// promptReserve is the estimated system/tool prompt cost already known before
+// history is assembled.
+func CompressionConfigForModel(details ModelDetails, promptReserve int) (CompressionConfig, error) {
+	cfg := DefaultCompressionConfig()
+	if details.ContextWindow <= 0 {
+		// ModelDetails is an optional extension on ModelManager. Preserve
+		// compatibility for minimal adapters, while production catalog-backed
+		// managers still take the model-specific path below.
+		cfg.MaxPromptTokens = max(cfg.ContextWindow-max(promptReserve, 0), 1)
+		return cfg, nil
+	}
+
+	reserve := max(promptReserve, 0) + max(details.MaxOutputTokens, 0)
+	if reserve >= details.ContextWindow {
+		return CompressionConfig{}, fmt.Errorf("model %q context window %d is smaller than reserved prompt/output budget %d", details.Ref, details.ContextWindow, reserve)
+	}
+	cfg.ContextWindow = details.ContextWindow
+	cfg.MaxPromptTokens = max(details.ContextWindow-reserve, 1)
+	return cfg, nil
+}
+
 // tokenEstimate returns a rough estimate of the token count for a string.
-// Uses character / 4 which is a common approximation for English text.
+// ASCII text keeps the common four-characters-per-token approximation. Every
+// non-ASCII rune reserves one token because byte/rune averaging substantially
+// undercounts CJK text and emoji, which providers commonly tokenize more
+// densely than English text.
 func tokenEstimate(s string) int {
-	return len(s) / 4
+	ascii, nonASCII := 0, 0
+	for _, r := range s {
+		if r < 128 {
+			ascii++
+			continue
+		}
+		nonASCII++
+	}
+	return ascii/4 + nonASCII
+}
+
+// EstimateTokens exposes the same conservative estimate used by compression
+// so callers can reserve space for system prompts and tool descriptions.
+func EstimateTokens(s string) int {
+	return tokenEstimate(s)
 }
 
 // CompressedView holds the compressed representation of a conversation
@@ -109,9 +154,12 @@ func CompressHistory(messages []CompressedMessage, cfg CompressionConfig) Compre
 	}
 
 	totalTokens := estimateTotal(messages)
-	threshold := int(float64(cfg.ContextWindow) * cfg.Threshold)
+	threshold := cfg.MaxPromptTokens
+	if threshold <= 0 {
+		threshold = int(float64(cfg.ContextWindow) * cfg.Threshold)
+	}
 
-	if totalTokens <= threshold || len(messages) <= cfg.ProtectFirst+cfg.ProtectLast {
+	if totalTokens <= threshold || len(messages) == 0 {
 		return CompressedView{
 			Messages:     messages,
 			TokensBefore: totalTokens,
@@ -119,28 +167,40 @@ func CompressHistory(messages []CompressedMessage, cfg CompressionConfig) Compre
 		}
 	}
 
-	// Compression: keep first N + summary marker + last N.
+	// Compression: keep first N + summary marker + last N. If the protected
+	// tail itself exceeds the effective budget, reduce it until the resulting
+	// view fits. This matters for small-context local models.
 	protectLast := min(cfg.ProtectLast, len(messages))
 	protectFirst := min(cfg.ProtectFirst, len(messages)-protectLast)
+	for {
+		truncated := messages[protectFirst : len(messages)-protectLast]
+		summary := summariseTruncated(truncated, cfg)
 
-	// Build a summary of the truncated middle.
-	truncated := messages[protectFirst : len(messages)-protectLast]
-	summary := summariseTruncated(truncated, cfg)
-
-	compressed := make([]CompressedMessage, 0, protectFirst+1+protectLast)
-	compressed = append(compressed, messages[:protectFirst]...)
-	compressed = append(compressed, CompressedMessage{Role: "system", Content: summary})
-	compressed = append(compressed, messages[len(messages)-protectLast:]...)
-
-	compressedTokens := estimateTotal(compressed)
-
-	return CompressedView{
-		Messages:       compressed,
-		WasCompressed:  true,
-		TokensBefore:   totalTokens,
-		TokensAfter:    compressedTokens,
-		ProtectedFirst: protectFirst,
-		ProtectedLast:  protectLast,
+		compressed := make([]CompressedMessage, 0, protectFirst+1+protectLast)
+		compressed = append(compressed, messages[:protectFirst]...)
+		compressed = append(compressed, CompressedMessage{Role: "system", Content: summary})
+		compressed = append(compressed, messages[len(messages)-protectLast:]...)
+		compressedTokens := estimateTotal(compressed)
+		if compressedTokens <= threshold || (protectFirst == 0 && protectLast == 0) {
+			if compressedTokens > threshold && protectFirst == 0 && protectLast == 0 {
+				maxSummaryChars := max(threshold*4, 1)
+				compressed[0].Content = truncate(compressed[0].Content, maxSummaryChars)
+				compressedTokens = estimateTotal(compressed)
+			}
+			return CompressedView{
+				Messages:       compressed,
+				WasCompressed:  true,
+				TokensBefore:   totalTokens,
+				TokensAfter:    compressedTokens,
+				ProtectedFirst: protectFirst,
+				ProtectedLast:  protectLast,
+			}
+		}
+		if protectLast > 0 {
+			protectLast--
+			continue
+		}
+		protectFirst--
 	}
 }
 
@@ -206,17 +266,17 @@ func summariseTruncated(messages []CompressedMessage, cfg CompressionConfig) str
 
 // truncate cuts s to at most n runes.
 func truncate(s string, n int) string {
-	if len(s) <= n {
+	if n <= 0 {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= n {
 		return s
 	}
-	// Simple byte truncation is fine for ASCII; for multi-byte we'd
-	// need rune-safe slicing. English text is the primary case.
-	for i := n; i < len(s); i++ {
-		if s[i] < 128 {
-			return s[:i] + "..."
-		}
+	if n <= 3 {
+		return string(runes[:n])
 	}
-	return s[:n] + "..."
+	return string(runes[:n-3]) + "..."
 }
 
 // SortBySeq implements sort.Interface for ordering compressed messages

@@ -50,7 +50,15 @@ type stubStore struct {
 	tokensByDayErr   error
 	eventsSinceErr   error
 	taskEventsErr    error
+	taskByIDErr      error
 	requeueErr       error
+}
+
+func (s *stubStore) TaskByID(ctx context.Context, id int64) (*store.Task, error) {
+	if s.taskByIDErr != nil {
+		return nil, s.taskByIDErr
+	}
+	return s.TaskStore.TaskByID(ctx, id)
 }
 
 func (s *stubStore) Requeue(ctx context.Context, id int64, from, workflow string) error {
@@ -317,9 +325,54 @@ func TestHandleSSEEventsSinceError(t *testing.T) {
 	t.Fatal("EventsSince error was silently swallowed — no error sent to SSE client")
 }
 
+func TestHandleSSEUsesLastEventIDForCatchUp(t *testing.T) {
+	srv := newTestServer(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	first, err := srv.Store.InsertEvent(ctx, events.Event{Kind: "log", Detail: "first"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.Store.InsertEvent(ctx, events.Event{Kind: "log", Detail: "second"}); err != nil {
+		t.Fatal(err)
+	}
+
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/events", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Last-Event-ID", strconv.FormatInt(first, 10))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+
+	reader := bufio.NewReader(resp.Body)
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		line, readErr := reader.ReadString('\n')
+		if readErr != nil {
+			t.Fatalf("second event not received after Last-Event-ID: %v", readErr)
+		}
+		if strings.HasPrefix(line, "data:") {
+			if strings.Contains(line, "first") {
+				t.Fatalf("replayed event before Last-Event-ID: %q", line)
+			}
+			if strings.Contains(line, "second") {
+				return
+			}
+		}
+	}
+	t.Fatal("second event not received after Last-Event-ID")
+}
+
 func TestHandleSSEBacklogAndLive(t *testing.T) {
 	srv := newTestServer(t)
-	ctx := t.Context()
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
 	id, err := srv.Store.InsertEvent(ctx, events.Event{Kind: "log", Detail: "backlog"})
 	if err != nil {
 		t.Fatal(err)

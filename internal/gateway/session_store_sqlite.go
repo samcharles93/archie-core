@@ -93,6 +93,24 @@ CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
 	INSERT INTO messages_fts(messages_fts, rowid, sender, text) VALUES('delete', old.id, old.sender, old.text);
 	INSERT INTO messages_fts(rowid, sender, text) VALUES (new.id, new.sender, new.text);
 END;
+
+CREATE TABLE IF NOT EXISTS turns (
+	turn_id             TEXT PRIMARY KEY,
+	session_id          TEXT NOT NULL,
+	source_id           TEXT NOT NULL DEFAULT '',
+	status              TEXT NOT NULL,
+	attempt             INTEGER NOT NULL DEFAULT 0,
+	owner_id            TEXT NOT NULL DEFAULT '',
+	input_message_id    TEXT NOT NULL DEFAULT '',
+	assistant_message_id TEXT NOT NULL DEFAULT '',
+	partial_text       TEXT NOT NULL DEFAULT '',
+	response_text      TEXT NOT NULL DEFAULT '',
+	error              TEXT NOT NULL DEFAULT '',
+	created_at         INTEGER NOT NULL,
+	updated_at         INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_turns_session_source ON turns(session_id, source_id);
+CREATE INDEX IF NOT EXISTS idx_turns_status_updated ON turns(status, updated_at);
 `
 
 // OpenSQLiteSessionStore opens (creating if needed) a SQLite-backed
@@ -131,6 +149,252 @@ func openSQLiteSessionStore(dsn string) (SessionStore, error) {
 
 func (s *sqliteSessionStore) Close() error {
 	return s.db.Close()
+}
+
+func (s *sqliteSessionStore) ClaimTurn(ctx context.Context, initial TurnRecord) (TurnRecord, TurnClaim, error) {
+	if initial.TurnID == "" {
+		return TurnRecord{}, "", fmt.Errorf("sessionstore: turn ID is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return TurnRecord{}, "", fmt.Errorf("sessionstore: claim turn: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var turn TurnRecord
+	var createdMS, updatedMS int64
+	err = tx.QueryRowContext(ctx, `
+		SELECT turn_id, session_id, source_id, status, attempt, owner_id,
+		       input_message_id, assistant_message_id, partial_text,
+		       response_text, error, created_at, updated_at
+		FROM turns WHERE turn_id = ?`, initial.TurnID).Scan(
+		&turn.TurnID, &turn.SessionID, &turn.SourceID, &turn.Status, &turn.Attempt, &turn.OwnerID,
+		&turn.InputMessageID, &turn.AssistantMessageID, &turn.PartialText,
+		&turn.ResponseText, &turn.Error, &createdMS, &updatedMS)
+	if errors.Is(err, sql.ErrNoRows) {
+		now := time.Now().UTC()
+		initial.Status = TurnStatusRunning
+		initial.Attempt = 1
+		if initial.CreatedAt.IsZero() {
+			initial.CreatedAt = now
+		}
+		initial.UpdatedAt = now
+		result, err := tx.ExecContext(ctx, `
+			INSERT INTO turns (
+				turn_id, session_id, source_id, status, attempt, owner_id,
+				input_message_id, assistant_message_id, partial_text,
+				response_text, error, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(turn_id) DO NOTHING`, turnValues(initial)...)
+		if err != nil {
+			return TurnRecord{}, "", fmt.Errorf("sessionstore: claim turn: insert: %w", err)
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return TurnRecord{}, "", fmt.Errorf("sessionstore: claim turn: rows affected: %w", err)
+		}
+		if affected == 1 {
+			if err := tx.Commit(); err != nil {
+				return TurnRecord{}, "", fmt.Errorf("sessionstore: claim turn: commit: %w", err)
+			}
+			return initial, TurnClaimOwned, nil
+		}
+		// Another connection inserted the same turn between our read and
+		// insert. Read it in this transaction and apply the normal claim
+		// state machine instead of surfacing a uniqueness error.
+		err = tx.QueryRowContext(ctx, `
+			SELECT turn_id, session_id, source_id, status, attempt, owner_id,
+			       input_message_id, assistant_message_id, partial_text,
+			       response_text, error, created_at, updated_at
+			FROM turns WHERE turn_id = ?`, initial.TurnID).Scan(
+			&turn.TurnID, &turn.SessionID, &turn.SourceID, &turn.Status, &turn.Attempt, &turn.OwnerID,
+			&turn.InputMessageID, &turn.AssistantMessageID, &turn.PartialText,
+			&turn.ResponseText, &turn.Error, &createdMS, &updatedMS)
+	}
+	if err != nil {
+		return TurnRecord{}, "", fmt.Errorf("sessionstore: read turn: %w", err)
+	}
+	turn.CreatedAt = time.UnixMilli(createdMS).UTC()
+	turn.UpdatedAt = time.UnixMilli(updatedMS).UTC()
+
+	switch turn.Status {
+	case TurnStatusCompleted:
+		return turn, TurnClaimCompleted, nil
+	case TurnStatusAccepted, TurnStatusRunning, TurnStatusPartial:
+		return turn, TurnClaimInProgress, nil
+	case TurnStatusFailed, TurnStatusCancelled:
+		if turn.AssistantMessageID != "" {
+			result, err := tx.ExecContext(ctx, `
+				UPDATE turns SET status = ?, error = ?, updated_at = ?
+				WHERE turn_id = ? AND attempt = ? AND owner_id = ?`, string(TurnStatusCompleted), "",
+				time.Now().UTC().UnixMilli(), turn.TurnID, turn.Attempt, turn.OwnerID)
+			if err != nil {
+				return TurnRecord{}, "", fmt.Errorf("sessionstore: finalize turn: %w", err)
+			}
+			if affected, err := result.RowsAffected(); err != nil || affected != 1 {
+				return TurnRecord{}, "", fmt.Errorf("%w: %s", ErrTurnOwnershipLost, turn.TurnID)
+			}
+			if err := tx.Commit(); err != nil {
+				return TurnRecord{}, "", fmt.Errorf("sessionstore: finalize turn: commit: %w", err)
+			}
+			turn.Status = TurnStatusCompleted
+			turn.Error = ""
+			return turn, TurnClaimCompleted, nil
+		}
+		oldOwner, oldAttempt := turn.OwnerID, turn.Attempt
+		turn.Status = TurnStatusRunning
+		turn.Attempt++
+		turn.OwnerID = initial.OwnerID
+		turn.Error = ""
+		turn.UpdatedAt = time.Now().UTC()
+		result, err := tx.ExecContext(ctx, `
+			UPDATE turns SET status = ?, attempt = ?, owner_id = ?, error = ?, updated_at = ?
+			WHERE turn_id = ? AND attempt = ? AND owner_id = ?`, string(turn.Status), turn.Attempt, turn.OwnerID, turn.Error,
+			turn.UpdatedAt.UnixMilli(), turn.TurnID, oldAttempt, oldOwner)
+		if err != nil {
+			return TurnRecord{}, "", fmt.Errorf("sessionstore: retry turn: %w", err)
+		}
+		if affected, err := result.RowsAffected(); err != nil || affected != 1 {
+			return TurnRecord{}, "", fmt.Errorf("%w: %s", ErrTurnOwnershipLost, turn.TurnID)
+		}
+		if err := tx.Commit(); err != nil {
+			return TurnRecord{}, "", fmt.Errorf("sessionstore: retry turn: commit: %w", err)
+		}
+		return turn, TurnClaimOwned, nil
+	default:
+		return turn, TurnClaimInProgress, nil
+	}
+}
+
+func (s *sqliteSessionStore) RecoverTurns(ctx context.Context, ownerID string) error {
+	if ownerID == "" {
+		return fmt.Errorf("sessionstore: recovery owner ID is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE turns
+		SET status = ?, error = ?, updated_at = ?
+		WHERE status IN (?, ?, ?) AND owner_id <> ?`,
+		string(TurnStatusFailed), "recovered after process restart", time.Now().UTC().UnixMilli(),
+		string(TurnStatusAccepted), string(TurnStatusRunning), string(TurnStatusPartial), ownerID)
+	if err != nil {
+		return fmt.Errorf("sessionstore: recover turns: %w", err)
+	}
+	return nil
+}
+
+func (s *sqliteSessionStore) GetTurn(ctx context.Context, turnID string) (TurnRecord, bool, error) {
+	if turnID == "" {
+		return TurnRecord{}, false, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var turn TurnRecord
+	var createdMS, updatedMS int64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT turn_id, session_id, source_id, status, attempt, owner_id,
+		       input_message_id, assistant_message_id, partial_text,
+		       response_text, error, created_at, updated_at
+		FROM turns WHERE turn_id = ?`, turnID).Scan(
+		&turn.TurnID, &turn.SessionID, &turn.SourceID, &turn.Status, &turn.Attempt, &turn.OwnerID,
+		&turn.InputMessageID, &turn.AssistantMessageID, &turn.PartialText,
+		&turn.ResponseText, &turn.Error, &createdMS, &updatedMS)
+	if errors.Is(err, sql.ErrNoRows) {
+		return TurnRecord{}, false, nil
+	}
+	if err != nil {
+		return TurnRecord{}, false, fmt.Errorf("sessionstore: get turn: %w", err)
+	}
+	turn.CreatedAt = time.UnixMilli(createdMS).UTC()
+	turn.UpdatedAt = time.UnixMilli(updatedMS).UTC()
+	return turn, true, nil
+}
+
+func (s *sqliteSessionStore) SaveTurn(ctx context.Context, turn TurnRecord) error {
+	if turn.TurnID == "" {
+		return fmt.Errorf("sessionstore: turn ID is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var currentAttempt int
+	var currentOwner string
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT attempt, owner_id FROM turns WHERE turn_id = ?`, turn.TurnID).
+		Scan(&currentAttempt, &currentOwner); errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("sessionstore: save turn: turn not found")
+	} else if err != nil {
+		return fmt.Errorf("sessionstore: save turn: read: %w", err)
+	}
+	if currentAttempt != turn.Attempt || currentOwner != turn.OwnerID {
+		return fmt.Errorf("%w: %s", ErrTurnOwnershipLost, turn.TurnID)
+	}
+	if turn.UpdatedAt.IsZero() {
+		turn.UpdatedAt = time.Now().UTC()
+	}
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE turns SET
+			session_id = ?, source_id = ?, status = ?, attempt = ?, owner_id = ?,
+			input_message_id = ?, assistant_message_id = ?, partial_text = ?,
+			response_text = ?, error = ?, created_at = ?, updated_at = ?
+		WHERE turn_id = ? AND attempt = ? AND owner_id = ?`,
+		turn.SessionID, turn.SourceID, string(turn.Status), turn.Attempt, turn.OwnerID,
+		turn.InputMessageID, turn.AssistantMessageID, turn.PartialText,
+		turn.ResponseText, turn.Error, turn.CreatedAt.UnixMilli(), turn.UpdatedAt.UnixMilli(),
+		turn.TurnID, turn.Attempt, turn.OwnerID)
+	if err != nil {
+		return fmt.Errorf("sessionstore: save turn: %w", err)
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return fmt.Errorf("sessionstore: save turn: rows affected: %w", err)
+	} else if affected != 1 {
+		return fmt.Errorf("%w: %s", ErrTurnOwnershipLost, turn.TurnID)
+	}
+	return nil
+}
+
+func (s *sqliteSessionStore) ListRecoverableTurns(ctx context.Context) ([]TurnRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT turn_id, session_id, source_id, status, attempt, owner_id,
+		       input_message_id, assistant_message_id, partial_text,
+		       response_text, error, created_at, updated_at
+		FROM turns WHERE status IN (?, ?, ?) ORDER BY updated_at ASC`,
+		string(TurnStatusAccepted), string(TurnStatusRunning), string(TurnStatusPartial))
+	if err != nil {
+		return nil, fmt.Errorf("sessionstore: list recoverable turns: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []TurnRecord
+	for rows.Next() {
+		var turn TurnRecord
+		var createdMS, updatedMS int64
+		if err := rows.Scan(
+			&turn.TurnID, &turn.SessionID, &turn.SourceID, &turn.Status, &turn.Attempt, &turn.OwnerID,
+			&turn.InputMessageID, &turn.AssistantMessageID, &turn.PartialText,
+			&turn.ResponseText, &turn.Error, &createdMS, &updatedMS); err != nil {
+			return nil, fmt.Errorf("sessionstore: scan recoverable turn: %w", err)
+		}
+		turn.CreatedAt = time.UnixMilli(createdMS).UTC()
+		turn.UpdatedAt = time.UnixMilli(updatedMS).UTC()
+		out = append(out, turn)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sessionstore: list recoverable turns: %w", err)
+	}
+	return out, nil
+}
+
+func turnValues(turn TurnRecord) []any {
+	return []any{
+		turn.TurnID, turn.SessionID, turn.SourceID, string(turn.Status), turn.Attempt, turn.OwnerID,
+		turn.InputMessageID, turn.AssistantMessageID, turn.PartialText,
+		turn.ResponseText, turn.Error, turn.CreatedAt.UnixMilli(), turn.UpdatedAt.UnixMilli(),
+	}
 }
 
 // ── Sessions ────────────────────────────────────────────────────────────────
@@ -195,6 +459,9 @@ func (s *sqliteSessionStore) Delete(ctx context.Context, sessionID string) error
 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM messages WHERE session_id = ?`, sessionID); err != nil {
 		return fmt.Errorf("sessionstore: delete messages: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM turns WHERE session_id = ?`, sessionID); err != nil {
+		return fmt.Errorf("sessionstore: delete turns: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE session_id = ?`, sessionID); err != nil {
 		return fmt.Errorf("sessionstore: delete session: %w", err)
@@ -440,6 +707,40 @@ func (s *sqliteSessionStore) ReplaceMessages(
 		return fmt.Errorf("sessionstore: replace messages: commit: %w", err)
 	}
 	return nil
+}
+
+func (s *sqliteSessionStore) FindPriorReply(ctx context.Context, sessionID, sourceID, identity string) (string, error) {
+	if sourceID == "" {
+		return "", nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var ts int64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT ts FROM messages WHERE session_id = ? AND message_id = ?`,
+		sessionID, CanonicalMessageID(sessionID, sourceID)).Scan(&ts)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("sessionstore: find source message: %w", err)
+	}
+	var sender, text string
+	err = s.db.QueryRowContext(ctx, `
+		SELECT sender, text FROM messages
+		WHERE session_id = ? AND ts > ? ORDER BY ts ASC LIMIT 1`, sessionID, ts).
+		Scan(&sender, &text)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("sessionstore: find prior reply: %w", err)
+	}
+	if sender != identity || isCompressionSummary(text) {
+		return "", nil
+	}
+	return text, nil
 }
 
 func (s *sqliteSessionStore) RecentMessages(ctx context.Context, sessionID string, n int) ([]Message, error) {
