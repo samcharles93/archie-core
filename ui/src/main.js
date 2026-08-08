@@ -42,7 +42,6 @@ function currentTheme() {
   return localStorage.getItem(THEME_KEY) || "dark";
 }
 
-
 function commandBar(onNavigate) {
   const items = new Map();
 
@@ -85,11 +84,35 @@ function commandBar(onNavigate) {
   // Search jumps between sections. It is deliberately not a data search: the
   // sections own their own filtering, and a second search that means something
   // different in each place is worse than none.
+  let searchWrap;
+  const closeMobileSearch = () => {
+    searchWrap?.classList.remove("is-open");
+    searchToggle.setAttribute("aria-expanded", "false");
+  };
+  const searchToggle = el(
+    "button.icon-btn.mobile-search-toggle",
+    {
+      type: "button",
+      "aria-label": "Open Jump to navigation",
+      "aria-expanded": "false",
+      onclick: () => {
+        searchWrap.classList.add("is-open");
+        searchToggle.setAttribute("aria-expanded", "true");
+        search.focus();
+      },
+    },
+    icon("search", { size: 15 }),
+  );
   const search = el("input", {
     type: "search",
     placeholder: "Jump to\u2026",
     "aria-label": "Jump to a section",
     onkeydown: (e) => {
+      if (e.key === "Escape") {
+        closeMobileSearch();
+        e.target.blur();
+        return;
+      }
       if (e.key !== "Enter") return;
       const q = e.target.value.trim().toLowerCase();
       const hit = routes.find((r) => !r.soon && r.label.toLowerCase().startsWith(q));
@@ -97,9 +120,16 @@ function commandBar(onNavigate) {
         onNavigate(hit.path);
         e.target.value = "";
         e.target.blur();
+        closeMobileSearch();
       }
     },
   });
+  searchWrap = el(
+    "div.topbar-search",
+    el("span.topbar-search-icon", { "aria-hidden": "true" }, icon("search", { size: 15 })),
+    searchToggle,
+    search,
+  );
 
   return {
     node: el(
@@ -108,7 +138,7 @@ function commandBar(onNavigate) {
       nav,
       el(
         "div.topbar-end",
-        el("div.topbar-search", icon("search", { size: 15 }), search),
+        searchWrap,
         el("button.icon-btn", { title: "Documentation", "aria-label": "Documentation" }, icon("help")),
         themeBtn,
         el("div.avatar", { title: "Signed in locally" }, "A"),

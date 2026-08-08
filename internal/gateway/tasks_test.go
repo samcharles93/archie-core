@@ -265,7 +265,7 @@ func TestStoreTaskControllerRejectsCallerIdentityForLegacyTask(t *testing.T) {
 }
 
 func TestStoreTaskControllerCancelActiveStates(t *testing.T) {
-	for _, status := range []string{"queued", "waiting_human", "pr_open"} {
+	for _, status := range []string{taskstate.Queued, taskstate.WaitingHuman, taskstate.Parked} {
 		store := &fakeChatTaskStore{statuses: map[int64]ChatTaskStatus{1: {Status: status}}}
 		c := NewStoreTaskController(store)
 		if err := c.Cancel(context.Background(), 1, ""); err != nil {
@@ -372,7 +372,13 @@ func TestStoreTaskControllerStopRunningWithoutRuntime(t *testing.T) {
 }
 
 func TestStoreTaskControllerCancelRejectsTerminalStates(t *testing.T) {
-	for _, status := range []string{"merged", "parked", "rejected", "dead", "closed_wont_do"} {
+	for _, status := range []string{
+		taskstate.PROpen,
+		taskstate.Merged,
+		taskstate.Rejected,
+		taskstate.Dead,
+		taskstate.Declined,
+	} {
 		store := &fakeChatTaskStore{statuses: map[int64]ChatTaskStatus{1: {Status: status}}}
 		c := NewStoreTaskController(store)
 		err := c.Cancel(context.Background(), 1, "")
