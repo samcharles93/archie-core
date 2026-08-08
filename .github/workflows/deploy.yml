@@ -31,6 +31,9 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Install gofumpt
+        run: go install mvdan.cc/gofumpt@latest
+
       - name: Quality gate
         run: |
           gofumpt -w .
