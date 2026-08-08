@@ -39,11 +39,33 @@ func builtins() workflow.Registry {
 //
 // Skills define workflows. Plugins define stages. The daemon composes them.
 func BuildRegistry(worktree string) (workflow.Registry, error) {
-	reg := builtins()
-	if err := mergeSkillWorkflows(worktree, reg); err != nil {
+	catalog, err := BuildCatalog(worktree)
+	if err != nil {
 		return nil, err
 	}
-	return reg, nil
+	return catalog.Registry, nil
+}
+
+// Catalog is the executable workflow registry together with the source that
+// supplied each definition. The source remains separate from Workflow so
+// executable stages stay free of dashboard-facing metadata.
+type Catalog struct {
+	Registry workflow.Registry
+	Origins  map[string]string
+}
+
+// BuildCatalog constructs the executable registry and records whether each
+// definition remains bundled or was overridden by an installed skill.
+func BuildCatalog(worktree string) (Catalog, error) {
+	reg := builtins()
+	origins := make(map[string]string, len(reg))
+	for id := range reg {
+		origins[id] = "builtin"
+	}
+	if err := mergeSkillWorkflows(worktree, reg, origins); err != nil {
+		return Catalog{}, err
+	}
+	return Catalog{Registry: reg, Origins: origins}, nil
 }
 
 // SkillWorkflow is the subset of a catalog entry needed to build a
@@ -67,7 +89,7 @@ func AugmentRegistry(worktree string, base workflow.Registry) (workflow.Registry
 	// Copy base  --  never mutate the caller's registry.
 	reg := make(workflow.Registry, len(base))
 	maps.Copy(reg, base)
-	if err := mergeSkillWorkflows(worktree, reg); err != nil {
+	if err := mergeSkillWorkflows(worktree, reg, nil); err != nil {
 		return nil, err
 	}
 	return reg, nil
@@ -78,7 +100,7 @@ func AugmentRegistry(worktree string, base workflow.Registry) (workflow.Registry
 // result into reg in place. A skill whose workflow has no stages yet
 // (declared intent, no plugins/ directory) leaves reg's existing entry
 // (built-in or base) untouched.
-func mergeSkillWorkflows(worktree string, reg workflow.Registry) error {
+func mergeSkillWorkflows(worktree string, reg workflow.Registry, origins map[string]string) error {
 	catalog, err := skill.Catalog(worktree)
 	if err != nil {
 		return fmt.Errorf("skill catalog: %w", err)
@@ -112,6 +134,9 @@ func mergeSkillWorkflows(worktree string, reg workflow.Registry) error {
 			}
 			seenFromSkill[entry.Workflow] = entry.Dir
 			reg[entry.Workflow] = wf
+			if origins != nil {
+				origins[entry.Workflow] = "skill:" + entry.Dir
+			}
 		}
 	}
 

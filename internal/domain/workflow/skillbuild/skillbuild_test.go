@@ -113,6 +113,16 @@ func TestBuildWorkflowMissingSkillReturnsEmptyWorkflow(t *testing.T) {
 	}
 }
 
+func TestBuildCatalogMarksBuiltinWorkflowOrigins(t *testing.T) {
+	catalog, err := BuildCatalog(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := catalog.Origins["implement"]; got != "builtin" {
+		t.Errorf("implement origin = %q, want builtin", got)
+	}
+}
+
 // ── registry built from skill catalog ────────────────────────────────
 
 func TestBuildRegistryFromSkillCatalog(t *testing.T) {
@@ -192,10 +202,11 @@ Custom implementation workflow.
 		t.Fatal(err)
 	}
 
-	reg, err := BuildRegistry(dir)
+	catalog, err := BuildCatalog(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
+	reg := catalog.Registry
 
 	// Skill-defined workflows must be present.
 	t.Run("skill-defined workflow is registered", func(t *testing.T) {
@@ -220,6 +231,9 @@ Custom implementation workflow.
 			t.Errorf("BuildSummary = %q, want 'greet-plugin-ran'", tc.BuildSummary)
 		}
 	})
+	if got := catalog.Origins["greet"]; got != "skill:archie-wf-greet" {
+		t.Errorf("greet origin = %q, want skill:archie-wf-greet", got)
+	}
 
 	// Skill override of built-in must take precedence.
 	t.Run("skill overrides built-in workflow", func(t *testing.T) {
@@ -920,7 +934,7 @@ func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
 	capture := setSlogCapture(t)
 
 	reg := builtins()
-	if err := mergeSkillWorkflows(dir, reg); err != nil {
+	if err := mergeSkillWorkflows(dir, reg, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1023,7 +1037,7 @@ func Stage() (string, func(context.Context, *workflow.TaskContext) error) {
 	capture := setSlogCapture(t)
 
 	reg := make(workflow.Registry)
-	if err := mergeSkillWorkflows(dir, reg); err != nil {
+	if err := mergeSkillWorkflows(dir, reg, nil); err != nil {
 		t.Fatal(err)
 	}
 

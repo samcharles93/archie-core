@@ -19,6 +19,8 @@ import (
 // Options configures the logger. The zero value is a stderr-only JSON logger
 // at info level, which is what archied did before file logging existed.
 type Options struct {
+	// Feed receives structured live entries in addition to configured sinks.
+	Feed *Feed
 	// File is the log file path. Empty disables file logging.
 	File string
 	// MaxSizeMB rotates the file once it exceeds this size. Zero selects
@@ -51,12 +53,12 @@ func New(opts Options) (*slog.Logger, io.Closer, error) {
 	handlerOpts := &slog.HandlerOptions{Level: level}
 
 	if opts.File == "" {
-		return slog.New(slog.NewJSONHandler(os.Stderr, handlerOpts)), noopCloser{}, nil
+		return slog.New(withFeed(slog.NewJSONHandler(os.Stderr, handlerOpts), opts.Feed)), noopCloser{}, nil
 	}
 
 	w, err := newRotatingFile(opts.File, opts.MaxSizeMB, opts.Keep)
 	if err != nil {
-		return slog.New(slog.NewJSONHandler(os.Stderr, handlerOpts)), noopCloser{},
+		return slog.New(withFeed(slog.NewJSONHandler(os.Stderr, handlerOpts), opts.Feed)), noopCloser{},
 			fmt.Errorf("logging: open %s: %w", opts.File, err)
 	}
 
@@ -64,7 +66,14 @@ func New(opts Options) (*slog.Logger, io.Closer, error) {
 	if opts.Stderr {
 		sink = io.MultiWriter(os.Stderr, w)
 	}
-	return slog.New(slog.NewJSONHandler(sink, handlerOpts)), w, nil
+	return slog.New(withFeed(slog.NewJSONHandler(sink, handlerOpts), opts.Feed)), w, nil
+}
+
+func withFeed(handler slog.Handler, feed *Feed) slog.Handler {
+	if feed == nil {
+		return handler
+	}
+	return NewFeedHandler(handler, feed)
 }
 
 func parseLevel(s string) slog.Level {

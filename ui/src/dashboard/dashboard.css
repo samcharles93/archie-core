@@ -69,6 +69,19 @@
   color: var(--accent);
 }
 
+.setup-complete-actions {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-2);
+}
+
+.setup-dismiss {
+	width: 28px;
+	height: 28px;
+	font-size: var(--text-lg);
+	line-height: 1;
+}
+
 .setup-done .setup-pct {
   color: var(--ok);
 }

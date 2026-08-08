@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
@@ -140,6 +141,47 @@ type Workflow struct {
 // Registry maps workflow names to definitions.
 type Registry map[string]Workflow
 
+// Definition is the operator-safe snapshot of an executable workflow. It
+// contains only identity and stage order, never executable function values.
+type Definition struct {
+	ID      string   `json:"id"`
+	Name    string   `json:"name"`
+	Origin  string   `json:"origin"`
+	Enabled bool     `json:"enabled"`
+	Stages  []string `json:"stages"`
+}
+
+// Definitions snapshots a registry deterministically so installed workflows
+// remain visible even when they have not produced persisted run statistics.
+func Definitions(reg Registry) []Definition {
+	return DefinitionsWithOrigins(reg, nil)
+}
+
+// DefinitionsWithOrigins snapshots a registry with composition-supplied
+// provenance. Entries absent from origins are conservatively labelled
+// "registry", which keeps the helper useful for tests and non-catalog callers.
+func DefinitionsWithOrigins(reg Registry, origins map[string]string) []Definition {
+	ids := make([]string, 0, len(reg))
+	for id := range reg {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	definitions := make([]Definition, 0, len(ids))
+	for _, id := range ids {
+		wf := reg[id]
+		stages := make([]string, 0, len(wf.Stages))
+		for _, stage := range wf.Stages {
+			stages = append(stages, stage.Name)
+		}
+		origin := origins[id]
+		if origin == "" {
+			origin = "registry"
+		}
+		definitions = append(definitions, Definition{ID: id, Name: wf.Name, Origin: origin, Enabled: true, Stages: stages})
+	}
+	return definitions
+}
+
 // Route picks the workflow for a task. A pre-assigned workflow wins
 // (the waiting_human → approved handoff requeues under "implement");
 // otherwise labels decide, then the default.
@@ -148,6 +190,12 @@ func Route(t *store.Task, reg Registry) Workflow {
 		if wf, ok := reg[t.Workflow]; ok {
 			return wf
 		}
+		return Workflow{Name: "none", Stages: []Stage{{
+			Name: "fail",
+			Run: func(context.Context, *TaskContext) error {
+				return fmt.Errorf("requested workflow %q is unavailable", t.Workflow)
+			},
+		}}}
 	}
 	if wf, ok := workflowForLabels(reg, t.Labels); ok {
 		return wf

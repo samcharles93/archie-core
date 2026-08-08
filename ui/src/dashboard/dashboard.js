@@ -4,6 +4,8 @@ import { ago, compact, el, empty, mount, pill, statusKind } from "../base/dom.js
 import { statTile } from "../base/statTile.js";
 import { gauge, segmentBar } from "../base/gauge.js";
 import { icon } from "../base/icons.js";
+import { dismissSetupComplete, setupPanelState } from "./setup-preference.js";
+import { dashboardTaskTargets } from "./task-targets.js";
 
 /**
  * The control room. Answers, in order: is anything wrong, what is Archie doing
@@ -80,24 +82,24 @@ export function dashboardPage() {
           el("h2.dash-section-title", "Right now"),
         ),
         el(
-        "div.dash-split",
-        forecastSlot,
-        el(
-          "div.card",
+          "div.dash-split",
+          forecastSlot,
           el(
-            "div.card-head",
-            el("div", el("h2.card-title", "Live activity"), el("p.card-sub", "Last 50, newest first")),
-            streamState,
-          ),
-          el(
-            "div.table-scroll",
+            "div.card",
             el(
-              "table.table",
-              el("thead", el("tr", ...["Event", "Task", "Detail", "When"].map((h) => el("th", h)))),
-              runs,
+              "div.card-head",
+              el("div", el("h2.card-title", "Live activity"), el("p.card-sub", "Last 50, newest first")),
+              streamState,
+            ),
+            el(
+              "div.table-scroll",
+              el(
+                "table.table",
+                el("thead", el("tr", ...["Event", "Task", "Detail", "When"].map((h) => el("th", h)))),
+                runs,
+              ),
             ),
           ),
-        ),
         ),
       ),
     );
@@ -127,7 +129,7 @@ export function dashboardPage() {
         }
       }
       renderActivity();
-      renderActions(summary);
+      renderActions(tasks);
       // The greeting is only personalised when the deployment says who it
       // assists; an unconfigured instance greets without a name rather than
       // inventing one.
@@ -151,22 +153,22 @@ export function dashboardPage() {
   // Actions follow state: what needs you comes first, and the generic ones
   // only fill the space when nothing does. A row of buttons that is identical
   // whatever is happening teaches nobody anything.
-  function renderActions(summary) {
-    const counts = summary?.statuses || {};
-    const blocked = (counts.parked || 0) + (counts.waiting_human || 0);
-    const running = counts.running || 0;
+  function renderActions(tasks) {
+    const targets = dashboardTaskTargets(tasks);
+    const blocked = targets.attention.count;
+    const running = targets.running.count;
 
     mount(
       actions,
       blocked > 0 &&
         el(
           "a.btn.btn-attention",
-          { href: "#/tasks" },
+          { href: targets.attention.href },
           icon("tasks", { size: 15 }),
           `${blocked} need${blocked === 1 ? "s" : ""} you`,
         ),
       running > 0 &&
-        el("a.btn", { href: "#/tasks" }, icon("workflows", { size: 15 }), `${running} running`),
+        el("a.btn", { href: targets.running.href }, icon("workflows", { size: 15 }), `${running} running`),
       el("a.btn", { href: "#/logs" }, icon("logs", { size: 15 }), "Logs"),
       el("button.btn.btn-primary", { onclick: load }, icon("refresh", { size: 15 }), "Refresh"),
     );
@@ -213,14 +215,11 @@ export function dashboardPage() {
     // Unknown setup (endpoint unreachable) or no checklist configured: omit
     // the panel and let the gate pulse take the full row, so the Health row
     // never shows an empty half beside the pulse.
-    // One place decides this class, reconciled from the data on every render.
-    // A second rule elsewhere in this function used to clear it again, which
-    // reads as two sources of truth for one bit of layout state even though
-    // the toggle above had already settled it.
-    const omit = !setup?.steps?.length;
+    const state = setupPanelState(setup);
+    const omit = state.kind === "omit" || state.kind === "dismissed";
     topRow.classList.toggle("dash-top-standalone", omit);
     if (omit) return mount(setupSlot);
-    const remaining = setup.steps.filter((s) => !s.done);
+    const remaining = state.remaining;
     if (remaining.length) {
       const pct = Math.round(((setup.steps.length - remaining.length) / setup.steps.length) * 100);
       mount(
@@ -255,7 +254,23 @@ export function dashboardPage() {
             el("h2.card-title", "Setup complete"),
             el("p.card-sub", "Archie is configured and ready to work."),
           ),
-          el("span.setup-pct", icon("check", { size: 16 })),
+          el(
+            "div.setup-complete-actions",
+            el("span.setup-pct", icon("check", { size: 16 })),
+            el(
+              "button.icon-btn.setup-dismiss",
+              {
+                type: "button",
+                title: "Dismiss setup complete",
+                "aria-label": "Dismiss setup complete",
+                onclick: () => {
+                  dismissSetupComplete();
+                  renderSetup(setup);
+                },
+              },
+              "×",
+            ),
+          ),
         ),
       ),
     );
