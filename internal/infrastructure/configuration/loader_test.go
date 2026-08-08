@@ -40,6 +40,64 @@ func TestLoadDispatchAckReaction(t *testing.T) {
 	}
 }
 
+func TestResolveSelectsFileFormatsAndDirectories(t *testing.T) {
+	tests := []struct {
+		name     string
+		prepare  func(t *testing.T, dir string) string
+		wantUser string
+		wantPath string
+	}{
+		{
+			name: "toml file",
+			prepare: func(t *testing.T, dir string) string {
+				path := filepath.Join(dir, "config.toml")
+				if err := os.WriteFile(path, []byte("bot_user = \"toml-bot\"\n[[repos]]\nowner = \"acme\"\nname = \"app\"\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				return path
+			},
+			wantUser: "toml-bot", wantPath: "config.toml",
+		},
+		{
+			name: "yaml file",
+			prepare: func(t *testing.T, dir string) string {
+				path := filepath.Join(dir, "config.yaml")
+				if err := os.WriteFile(path, []byte("bot_user: yaml-bot\nrepos:\n  - owner: acme\n    name: app\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				return path
+			},
+			wantUser: "yaml-bot", wantPath: "config.yaml",
+		},
+		{
+			name: "directory",
+			prepare: func(t *testing.T, dir string) string {
+				if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("bot_user: directory-bot\nrepos:\n  - owner: acme\n    name: app\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				return dir
+			},
+			wantUser: "directory-bot", wantPath: "config.yaml",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			doc, err := New(nil).Resolve(tt.prepare(t, dir), "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if doc.Config.BotUser != tt.wantUser {
+				t.Errorf("BotUser = %q, want %q", doc.Config.BotUser, tt.wantUser)
+			}
+			if got := filepath.Base(doc.Provenance.Paths()[0]); got != tt.wantPath {
+				t.Errorf("provenance path = %q, want %q", got, tt.wantPath)
+			}
+		})
+	}
+}
+
 // TestLoadForgeTokenEnvBackwardCompat guards against a real production
 // incident: the secrets-engine migration replaced [forge]'s flat
 // token_env string with a {engine, key} struct, but TOML silently ignores

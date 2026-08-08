@@ -61,12 +61,21 @@ export function channelsPage() {
       el(
         "div.card-head",
         el("h3.card-title", channel.name),
-        channel.configured ? pill("connected", "ok") : pill("not configured", "idle"),
+        pill(channel.state || (channel.configured ? "configured" : "stopped"), stateTone(channel.state, channel.configured)),
       ),
       el("p.channel-desc", channel.description),
       el("p.channel-detail", channel.detail),
+		channel.reload_supported
+			? el("button.btn", { onclick: async (event) => { event.currentTarget.disabled = true; try { await api.channelReload(channel.id || channel.name.toLowerCase()); await load(); } catch (err) { event.currentTarget.disabled = false; } } }, "Reload")
+			: el("p.channel-detail", "Reload requires a daemon restart for this adapter."),
     );
   }
 
   return root;
+}
+
+function stateTone(state, configured) {
+  if (state === "running") return "ok";
+  if (state === "failed" || state === "degraded") return "warn";
+  return configured ? "idle" : "idle";
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/secret"
 )
@@ -204,5 +205,28 @@ func TestHandleChannelsNilConfig(t *testing.T) {
 	}
 	if len(got.Channels) != 0 {
 		t.Errorf("Channels = %+v, want empty when Cfg is nil", got.Channels)
+	}
+}
+
+func TestHandleChannelsUsesRuntimeManager(t *testing.T) {
+	srv := newTestServer(t)
+	srv.Cfg = configWithFakeSecrets()
+	srv.Channels = channels.NewManager([]channels.Descriptor{{
+		ID: "telegram", Name: "Telegram", Configured: true, ReloadSupported: true,
+	}})
+	srv.Channels.MarkFailed("telegram", "token rejected")
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/channels", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	var got struct {
+		Channels []ChannelView `json:"channels"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Channels) != 1 || got.Channels[0].State != "failed" || !got.Channels[0].ReloadSupported {
+		t.Fatalf("channels = %#v", got.Channels)
 	}
 }
