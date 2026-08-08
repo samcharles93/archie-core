@@ -65,10 +65,20 @@ export function settingsPage() {
       agentCard(cfg.agent),
       storageCard(cfg.storage, cfg.containers),
       webCard(cfg.web),
+	  provenanceCard(cfg.provenance),
     );
   }
 
   return root;
+}
+
+function provenanceCard(origins) {
+  if (!origins?.length) return section("Configuration sources", "The files that supplied the running configuration.", empty("Source provenance is unavailable."));
+  return section(
+    "Configuration sources",
+    "Applied from top to bottom; later entries take precedence over earlier ones.",
+    el("div.cfg-rows", ...origins.map((origin) => row(`${origin.layer} ${origin.role}${origin.feature ? ` (${origin.feature})` : ""}`, origin.path))),
+  );
 }
 
 function section(title, sub, ...children) {

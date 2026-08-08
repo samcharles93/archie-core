@@ -65,9 +65,43 @@ func xdgDataHome() string {
 	return filepath.Join(home, ".local", "share")
 }
 
-// File loads a single TOML configuration file.
+// File loads a single configuration file. TOML remains supported for existing
+// deployments; YAML files use the same defaults and validation path.
 func (l *Loader) File(path string) (*Document, error) {
-	return l.Overlay(path, "")
+	return l.Resolve(path, "")
+}
+
+// Resolve selects the configuration source from its filesystem type: a TOML
+// or YAML file, or a feature-config directory. This is the production entry
+// point. Keeping selection here ensures command-line loading and operator
+// tooling share the exact same precedence and validation rules.
+func (l *Loader) Resolve(basePath, overlayPath string) (*Document, error) {
+	info, err := os.Stat(basePath)
+	if err != nil {
+		return nil, fmt.Errorf("%w: config source %s: %w", ErrUnreadable, basePath, err)
+	}
+	if info.IsDir() {
+		if overlayPath != "" {
+			overlayInfo, statErr := os.Stat(overlayPath)
+			if statErr != nil {
+				return nil, fmt.Errorf("%w: config overlay %s: %w", ErrUnreadable, overlayPath, statErr)
+			}
+			if !overlayInfo.IsDir() {
+				return nil, fmt.Errorf("config overlay %s must be a directory when config source %s is a directory", overlayPath, basePath)
+			}
+		}
+		return l.Dir(basePath, overlayPath)
+	}
+	if overlayPath != "" {
+		overlayInfo, statErr := os.Stat(overlayPath)
+		if statErr != nil {
+			return nil, fmt.Errorf("%w: config overlay %s: %w", ErrUnreadable, overlayPath, statErr)
+		}
+		if overlayInfo.IsDir() {
+			return nil, fmt.Errorf("config overlay %s must be a file when config source %s is a file", overlayPath, basePath)
+		}
+	}
+	return l.overlayFile(basePath, overlayPath)
 }
 
 // Overlay loads basePath, then decodes overlayPath into the same value so
@@ -76,15 +110,19 @@ func (l *Loader) File(path string) (*Document, error) {
 // declare only what differs instead of restating the whole schema. An empty
 // overlayPath is equivalent to [Loader.File].
 func (l *Loader) Overlay(basePath, overlayPath string) (*Document, error) {
+	return l.overlayFile(basePath, overlayPath)
+}
+
+func (l *Loader) overlayFile(basePath, overlayPath string) (*Document, error) {
 	doc := &Document{}
 
-	if err := decodeTOML(basePath, &doc.Config); err != nil {
+	if err := decodeConfigFile(basePath, &doc.Config); err != nil {
 		return nil, err
 	}
 	doc.Provenance.record(Origin{Path: basePath, Role: RoleMain, Layer: LayerBase})
 
 	if overlayPath != "" {
-		if err := decodeTOML(overlayPath, &doc.Config); err != nil {
+		if err := decodeConfigFile(overlayPath, &doc.Config); err != nil {
 			return nil, err
 		}
 		doc.Provenance.record(Origin{Path: overlayPath, Role: RoleMain, Layer: LayerOverlay})

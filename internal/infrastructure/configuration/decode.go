@@ -3,12 +3,24 @@ package configuration
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/BurntSushi/toml"
 	"gopkg.in/yaml.v3"
 
 	"github.com/samcharles93/archie-core/internal/config"
 )
+
+func decodeConfigFile(path string, target any) error {
+	switch filepath.Ext(path) {
+	case ".yaml", ".yml":
+		return decodeYAML(path, target)
+	case ".toml":
+		return decodeTOML(path, target)
+	default:
+		return fmt.Errorf("%w: config file %s must end in .toml, .yaml, or .yml", ErrUnreadable, path)
+	}
+}
 
 // decodeTOML decodes a TOML file into target.
 func decodeTOML(path string, target any) error {

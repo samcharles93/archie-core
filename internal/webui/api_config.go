@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/config"
 )
 
@@ -12,10 +13,13 @@ import (
 // Channels page: whether it is reachable today, and what configuring it
 // would unlock.
 type ChannelView struct {
-	Name        string `json:"name"`
-	Configured  bool   `json:"configured"`
-	Detail      string `json:"detail"`
-	Description string `json:"description"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Configured      bool   `json:"configured"`
+	Detail          string `json:"detail"`
+	Description     string `json:"description"`
+	State           string `json:"state"`
+	ReloadSupported bool   `json:"reload_supported"`
 }
 
 // handleChannels reports how a human can reach Archie today. It exists so
@@ -23,6 +27,14 @@ type ChannelView struct {
 // reading config.toml -- see ChatConfig in internal/config/config.go for
 // the fields this derives from.
 func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
+	if s.Channels != nil {
+		views := make([]ChannelView, 0, len(s.Channels.Snapshot()))
+		for _, status := range s.Channels.Snapshot() {
+			views = append(views, channelViewFromStatus(status))
+		}
+		writeJSON(w, map[string]any{"channels": views})
+		return
+	}
 	if s.Cfg == nil {
 		writeJSON(w, map[string]any{"channels": []ChannelView{}})
 		return
@@ -36,6 +48,72 @@ func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, map[string]any{"channels": views})
+}
+
+func (s *Server) handleChannelReload(w http.ResponseWriter, r *http.Request) {
+	if !authorizeTaskMutation(w, r) {
+		return
+	}
+	id := r.PathValue("id")
+	if s.Channels == nil || s.ReloadChannel == nil {
+		http.Error(w, "channel reload unavailable", http.StatusNotImplemented)
+		return
+	}
+	var status *channels.Status
+	for _, candidate := range s.Channels.Snapshot() {
+		if candidate.ID == id {
+			status = &candidate
+			break
+		}
+	}
+	if status == nil || !status.ReloadSupported {
+		http.Error(w, "channel does not support reload", http.StatusConflict)
+		return
+	}
+	if err := s.ReloadChannel(r.Context(), id); err != nil {
+		http.Error(w, "channel reload failed", http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "channel": id})
+}
+
+func channelViewFromStatus(status channels.Status) ChannelView {
+	view := ChannelView{
+		ID: status.ID, Name: status.Name, Configured: status.Configured, Detail: status.Detail,
+		State: string(status.State), ReloadSupported: status.ReloadSupported,
+	}
+	switch status.ID {
+	case "telegram":
+		view.Description = "Talk to Archie and approve its work from your phone."
+	case "webhook":
+		view.Description = "Lets another service push messages to Archie over HTTP."
+	case "email":
+		view.Description = "Email Archie a task and receive replies through its inbound SMTP listener."
+	}
+	if view.Detail == "" {
+		view.Detail = channelStateDetail(status.State, status.Configured)
+	}
+	return view
+}
+
+func channelStateDetail(state channels.State, configured bool) string {
+	if !configured {
+		return "Not configured."
+	}
+	switch state {
+	case channels.StateConfigured:
+		return "Configured; waiting for the daemon to start it."
+	case channels.StateStarting:
+		return "Starting."
+	case channels.StateRunning:
+		return "Running."
+	case channels.StateDegraded:
+		return "Running with a degraded capability."
+	case channels.StateFailed:
+		return "Failed to start."
+	default:
+		return "Stopped."
+	}
 }
 
 func telegramChannelView(t config.TelegramConfig) ChannelView {
@@ -53,10 +131,13 @@ func telegramChannelView(t config.TelegramConfig) ChannelView {
 		}
 	}
 	return ChannelView{
-		Name:        "Telegram",
-		Configured:  configured,
-		Detail:      detail,
-		Description: "Talk to Archie and approve its work from your phone.",
+		ID:              "telegram",
+		Name:            "Telegram",
+		Configured:      configured,
+		Detail:          detail,
+		Description:     "Talk to Archie and approve its work from your phone.",
+		State:           string(channels.StateConfigured),
+		ReloadSupported: true,
 	}
 }
 
@@ -67,10 +148,12 @@ func webhookChannelView(addr string) ChannelView {
 		detail = "Listening for inbound chat requests."
 	}
 	return ChannelView{
+		ID:          "webhook",
 		Name:        "Webhook gateway",
 		Configured:  configured,
 		Detail:      detail,
 		Description: "Lets another service (e.g. a Telegram webhook, a custom front-end) push messages to Archie over HTTP instead of long-polling.",
+		State:       staticChannelState(configured),
 	}
 }
 
@@ -81,11 +164,20 @@ func emailChannelView(e config.EmailConfig) ChannelView {
 		detail = "Archie accepts inbound mail and can reply through the configured relay."
 	}
 	return ChannelView{
+		ID:          "email",
 		Name:        "Email",
 		Configured:  configured,
 		Detail:      detail,
 		Description: "Email Archie a task and it replies from its own inbound SMTP listener.",
+		State:       staticChannelState(configured),
 	}
+}
+
+func staticChannelState(configured bool) string {
+	if configured {
+		return string(channels.StateConfigured)
+	}
+	return string(channels.StateStopped)
 }
 
 // ConfigView is the read-only, secret-free projection of config.Config
@@ -102,6 +194,7 @@ type ConfigView struct {
 	Storage      StorageView             `json:"storage"`
 	Containers   ContainersView          `json:"containers"`
 	Web          WebView                 `json:"web"`
+	Provenance   []ConfigOrigin          `json:"provenance"`
 }
 
 // IdentityView is who Archie is on the forge -- never the token that
@@ -240,7 +333,8 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			PullPolicy:     cfg.Containers.PullPolicy,
 			Network:        cfg.Containers.Network,
 		},
-		Web: WebView{Listen: cfg.Web.Listen},
+		Web:        WebView{Listen: cfg.Web.Listen},
+		Provenance: append([]ConfigOrigin(nil), s.ConfigProvenance...),
 	}
 
 	writeJSON(w, view)
