@@ -1,5 +1,0 @@
-export:
-    auto: true
-no-git-ops: true
-# Remote sync intentionally disabled: Beads memories and issue history may
-# contain confidential infrastructure or operational details.
