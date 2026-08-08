@@ -319,7 +319,7 @@ export function chatPage() {
         return;
       }
     }
-    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+    if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       sendMessage();
     }
