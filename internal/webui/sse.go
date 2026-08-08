@@ -19,11 +19,18 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 
-	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
+	querySince, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
+	since := querySince
+	if headerValue := r.Header.Get("Last-Event-ID"); headerValue != "" {
+		if headerSince, err := strconv.ParseInt(headerValue, 10, 64); err == nil {
+			since = headerSince
+		}
+	}
 	send := func(e events.Event) bool {
 		b, err := json.Marshal(e)
 		if err != nil {
-			return true
+			s.Log.Error("sse event marshal failed", "error", err, "event_id", e.ID)
+			return false
 		}
 		if _, err := w.Write([]byte("id: " + strconv.FormatInt(e.ID, 10) + "\ndata: " + string(b) + "\n\n")); err != nil {
 			return false
@@ -32,21 +39,8 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 		return true
 	}
 
-	if backlog, err := s.Store.EventsSince(r.Context(), since, 200); err != nil {
-		s.Log.Error("sse backlog fetch failed", "error", err, "since", since)
-		// A comment frame keeps the stream open; the client sees the
-		// backlog gap rather than a silent truncation.
-		_, _ = w.Write([]byte(":error " + err.Error() + "\n"))
-		fl.Flush()
-	} else {
-		for _, e := range backlog {
-			if !send(e) {
-				return
-			}
-			since = e.ID
-		}
-	}
-
+	// Register before reading the backlog. An event published between the
+	// backlog read and subscription would otherwise be lost permanently.
 	c := make(chan events.Event, 64)
 	s.mu.Lock()
 	if s.conns == nil {
@@ -60,16 +54,58 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 	}()
 
+	catchUp := func(targetID int64) bool {
+		for {
+			before := since
+			backlog, err := s.Store.EventsSince(r.Context(), since, 200)
+			if err != nil {
+				s.Log.Error("sse backlog fetch failed", "error", err, "since", since)
+				// Comments are invisible to EventSource clients. Close after
+				// surfacing the gap so EventSource invokes its reconnect path.
+				_, _ = w.Write([]byte(":error " + err.Error() + "\n\n"))
+				fl.Flush()
+				return false
+			}
+			for _, e := range backlog {
+				if e.ID <= since {
+					continue
+				}
+				if !send(e) {
+					return false
+				}
+				since = e.ID
+				if targetID > 0 && since >= targetID {
+					return true
+				}
+			}
+			if len(backlog) < 200 || since == before || (targetID > 0 && since >= targetID) {
+				return true
+			}
+		}
+	}
+
+	if !catchUp(0) {
+		return
+	}
 	for {
 		select {
 		case <-r.Context().Done():
 			return
 		case e := <-c:
 			if e.ID <= since {
-				continue // already replayed from the backlog
+				continue
 			}
-			if !send(e) {
+			if !catchUp(e.ID) {
 				return
+			}
+			// Broadcast may carry an event that has not yet reached the
+			// durable store. Deliver that live event after filling any
+			// persisted gap, while keeping the ID deduplication invariant.
+			if e.ID > since {
+				if !send(e) {
+					return
+				}
+				since = e.ID
 			}
 		}
 	}
