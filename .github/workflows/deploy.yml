@@ -34,6 +34,9 @@ jobs:
       - name: Install gofumpt
         run: go install mvdan.cc/gofumpt@latest
 
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep
+
       - name: Quality gate
         run: |
           gofumpt -w .
