@@ -1,5 +1,17 @@
 # archied changelog
 
+## [1.6.0] - 2026-08-09
+
+- feat(gateway): tool-approval gate, session tools for chat, and /delete command
+- fix(webui): close open-redirect in dashboard token-exchange handler
+- feat(gateway): make chat turns durable and idempotent
+- feat(webui): lifecycle-safe task controls with atomic retry and archive
+- feat(config,channels): format-neutral config resolution and truthful channel state
+- feat(logging,workflow): daemon log feed and executable workflow registry
+- fix(store,gateway): taskstate constants and mobile jump-to search
+- feat(webui,gateway): wire config, channel, log-feed, and work-intake seams
+- fix(ui): hide inactive chat command menu
+
 ## [1.5.0] - 2026-08-08
 
 - feat(curator): engine family contract, registry, and runtime
