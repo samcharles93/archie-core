@@ -73,6 +73,13 @@ type Gateway struct {
 	dangerousActions   map[string]dangerousAction
 	permanentApprovals []permanentApproval
 
+	// tool approval state (gateway.ApprovalRequester). Kept separate from
+	// the dangerous-command state above: tool approvals deliver the human's
+	// decision on a channel to the blocked RequestApproval call rather than
+	// executing through an onApprove callback.
+	approvalMu       sync.Mutex
+	pendingApprovals map[string]*pendingApproval
+
 	// turns serialises chat turns per session off the update worker and
 	// makes the running one cancellable by /stop. Rebuilt on every launch
 	// so a restart abandons in-flight turns with the old bot instance.
@@ -119,6 +126,7 @@ func New(token, webhookURL, webhookSecret string, allowedUserIDs []int64, log *s
 		updateActions:      make(map[string]updateAction),
 		dangerousActions:   make(map[string]dangerousAction),
 		permanentApprovals: nil,
+		pendingApprovals:   make(map[string]*pendingApproval),
 		log:                log.With("component", "gateway-telegram"),
 	}
 }
@@ -433,26 +441,7 @@ func (g *Gateway) startHandler() bot.HandlerFunc {
 func (g *Gateway) defaultHandler(router *gateway.Router) bot.HandlerFunc {
 	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
 		if update.CallbackQuery != nil {
-			switch {
-			case strings.HasPrefix(update.CallbackQuery.Data, dangerousCmdPrefix):
-				g.handleDangerousCallback(ctx, b, update)
-			case strings.HasPrefix(update.CallbackQuery.Data, providerCallbackPrefix):
-				g.handleProviderCallback(ctx, b, update, router)
-			case strings.HasPrefix(update.CallbackQuery.Data, modelCallbackPrefix):
-				g.handleModelCallback(ctx, b, update, router)
-			case strings.HasPrefix(update.CallbackQuery.Data, modelPageCallbackPrefix):
-				g.handleModelPageCallback(ctx, b, update, router)
-			case update.CallbackQuery.Data == modelBackCallback:
-				g.handleModelBackCallback(ctx, b, update, router)
-			case update.CallbackQuery.Data == modelCancelCallback:
-				g.handleModelCancelCallback(ctx, b, update)
-			case update.CallbackQuery.Data == modelNoopCallback:
-				g.handleModelNoopCallback(ctx, b, update)
-			case strings.HasPrefix(update.CallbackQuery.Data, personalityCallbackPrefix):
-				g.handlePersonalityCallback(ctx, b, update, router)
-			case strings.HasPrefix(update.CallbackQuery.Data, updateCallbackPrefix):
-				g.handleUpdateCallback(ctx, b, update)
-			}
+			g.handleCallback(ctx, b, update, router)
 			return
 		}
 
@@ -473,6 +462,34 @@ func (g *Gateway) defaultHandler(router *gateway.Router) bot.HandlerFunc {
 			return
 		}
 		g.submitTurn(ctx, b, msg, router)
+	}
+}
+
+// handleCallback dispatches an inline-button callback query to the handler
+// for its prefix. Callback prefixes are mutually exclusive; an unknown
+// callback is ignored.
+func (g *Gateway) handleCallback(ctx context.Context, b *bot.Bot, update *models.Update, router *gateway.Router) {
+	switch {
+	case strings.HasPrefix(update.CallbackQuery.Data, approvalCallbackPrefix):
+		g.handleApprovalCallback(ctx, b, update)
+	case strings.HasPrefix(update.CallbackQuery.Data, dangerousCmdPrefix):
+		g.handleDangerousCallback(ctx, b, update)
+	case strings.HasPrefix(update.CallbackQuery.Data, providerCallbackPrefix):
+		g.handleProviderCallback(ctx, b, update, router)
+	case strings.HasPrefix(update.CallbackQuery.Data, modelCallbackPrefix):
+		g.handleModelCallback(ctx, b, update, router)
+	case strings.HasPrefix(update.CallbackQuery.Data, modelPageCallbackPrefix):
+		g.handleModelPageCallback(ctx, b, update, router)
+	case update.CallbackQuery.Data == modelBackCallback:
+		g.handleModelBackCallback(ctx, b, update, router)
+	case update.CallbackQuery.Data == modelCancelCallback:
+		g.handleModelCancelCallback(ctx, b, update)
+	case update.CallbackQuery.Data == modelNoopCallback:
+		g.handleModelNoopCallback(ctx, b, update)
+	case strings.HasPrefix(update.CallbackQuery.Data, personalityCallbackPrefix):
+		g.handlePersonalityCallback(ctx, b, update, router)
+	case strings.HasPrefix(update.CallbackQuery.Data, updateCallbackPrefix):
+		g.handleUpdateCallback(ctx, b, update)
 	}
 }
 
@@ -510,6 +527,12 @@ func (g *Gateway) submitTurn(ctx context.Context, b *bot.Bot, msg *models.Messag
 
 	chatID, threadID := msg.Chat.ID, msg.MessageThreadID
 	g.turns.Submit(ctx, session, func(turnCtx context.Context) {
+		// If the turn invokes a tool that requires human approval,
+		// the dispatch layer blocks on this approver. Nil is fine
+		// — most turns need no gating.
+		approver := g.NewApprover(b, chatID, threadID, msg.From.ID)
+		turnCtx = gateway.WithApprovalRequester(turnCtx, approver)
+
 		// reply appears as it is written; the typing indicator covers the
 		// gap before the first token and any non-streaming path.
 		stopTyping := g.startTyping(turnCtx, b, chatID, threadID)

@@ -273,6 +273,31 @@ func (g *Gateway) hasPermanentApproval(recipient int64, command string) bool {
 	return found
 }
 
+// hasPermanentApprovalExact is the exact-match variant used by the tool
+// approval path. Prefix matching is appropriate for slash commands
+// (/rollback covers /rollback 3); it is not for tool-approval keys
+// composed of action + resource, where "delete session abc" must not
+// grant on "delete session abc2".
+func (g *Gateway) hasPermanentApprovalExact(recipient int64, pattern string) bool {
+	g.dangerousMu.Lock()
+	defer g.dangerousMu.Unlock()
+
+	now := time.Now()
+	kept := g.permanentApprovals[:0]
+	found := false
+	for _, pa := range g.permanentApprovals {
+		if !pa.ExpiresAt.After(now) {
+			continue
+		}
+		kept = append(kept, pa)
+		if pa.Recipient == recipient && pa.CommandPattern == pattern {
+			found = true
+		}
+	}
+	g.permanentApprovals = kept
+	return found
+}
+
 func (g *Gateway) editDangerousMessage(ctx context.Context, b *bot.Bot, query *models.CallbackQuery, text string) {
 	if query.Message.Message == nil {
 		return

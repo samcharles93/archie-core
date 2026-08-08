@@ -180,17 +180,7 @@ func taskSpawnTool(creator TaskCreator, identity string) tools.ToolEntry {
 // JSON numbers decode as float64, but a model that emits an integer through a
 // different provider path can arrive as int, so both are accepted.
 func taskListLimit(input map[string]any) int {
-	var limit int
-	switch v := input["limit"].(type) {
-	case float64:
-		limit = int(v)
-	case int:
-		limit = v
-	}
-	if limit <= 0 {
-		return defaultTaskListLimit
-	}
-	return min(limit, maxTaskListLimit)
+	return tools.ListLimit(input, defaultTaskListLimit, maxTaskListLimit)
 }
 
 // asString reads a string field, tolerating an absent or wrongly-typed value

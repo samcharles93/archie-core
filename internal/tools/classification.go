@@ -1,5 +1,7 @@
 package tools
 
+import "strings"
+
 // ToolClassification is a bitmask that describes a tool's behavioral
 // characteristics for dispatch gating, guardrail decisions, and budget
 // enforcement.
@@ -14,6 +16,16 @@ const (
 	// creates resources, sends messages, etc.). Mutating tools require
 	// serialization, checkpointing, and stricter guardrail monitoring.
 	ClassMutating
+
+	// RequiresApproval marks a tool that must not execute without a human
+	// consent decision. The dispatch layer blocks the call until an
+	// ApprovalRequester resolves it (approve, permanently approve, or deny).
+	//
+	// It is independent of ClassMutating: writing a file is mutating but
+	// not necessarily gated (the agent loop's own path enforcement handles
+	// that), while deleting a session is gated because it is irreversible
+	// on a path the model controls.
+	RequiresApproval
 )
 
 // IsIdempotent reports whether the classification includes the idempotent
@@ -28,18 +40,29 @@ func (c ToolClassification) IsMutating() bool {
 	return c&ClassMutating != 0
 }
 
+// IsApprovalRequired reports whether the classification includes the
+// RequiresApproval flag. A zero-value classification reports false.
+func (c ToolClassification) IsApprovalRequired() bool {
+	return c&RequiresApproval != 0
+}
+
 // String returns a human-readable representation of the classification.
 func (c ToolClassification) String() string {
-	switch {
-	case c == 0:
+	if c == 0 {
 		return "default"
-	case c.IsIdempotent() && c.IsMutating():
-		return "idempotent|mutating"
-	case c.IsIdempotent():
-		return "idempotent"
-	case c.IsMutating():
-		return "mutating"
-	default:
+	}
+	var parts []string
+	if c.IsIdempotent() {
+		parts = append(parts, "idempotent")
+	}
+	if c.IsMutating() {
+		parts = append(parts, "mutating")
+	}
+	if c.IsApprovalRequired() {
+		parts = append(parts, "requires_approval")
+	}
+	if len(parts) == 0 {
 		return "unknown"
 	}
+	return strings.Join(parts, "|")
 }

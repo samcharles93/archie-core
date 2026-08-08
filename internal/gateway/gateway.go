@@ -286,6 +286,13 @@ func (r *Router) InitSessions(sessions SessionStore) {
 	r.sessionTracker = newSessionTracker(sessions)
 }
 
+// SessionTracker exposes the session tracker so that tool constructors
+// (SessionTools) can bind session_resume to the active session without
+// reaching into the Router's unexported fields.
+func (r *Router) SessionTracker() *sessionTracker {
+	return r.sessionTracker
+}
+
 // Route dispatches msg and returns the reply. Gateway-local commands
 // are handled directly; everything else goes to the LLM responder.
 func (r *Router) Route(ctx context.Context, msg Message) (string, error) {

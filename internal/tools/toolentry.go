@@ -85,6 +85,17 @@ type ToolEntry struct {
 	// "🌐"). Single character or short sequence. May be empty.
 	Emoji string `json:"emoji,omitempty"`
 
+	// BuildApprovalDescription is called with the decoded tool inputs to
+	// build the human-facing prompt shown when approval is required. When
+	// nil (the default), the tool's Description is used verbatim.
+	//
+	// The returned string should identify the specific resource being acted
+	// on so the human knows what they are consenting to. A prompt that says
+	// only "Delete a session" is not adequate; "Delete session 'Refactor
+	// auth' (abc12345)" is. This runs before the handler, so only the raw
+	// input is available — it cannot resolve references or look up titles.
+	BuildApprovalDescription func(input map[string]any) string `json:"-"`
+
 	// MaxResultSizeChars caps this tool's result size in characters.
 	// Zero means use the global default from [ToolPolicy.MaxResultChars].
 	MaxResultSizeChars int `json:"max_result_size_chars,omitempty"`

@@ -56,7 +56,7 @@ func TestArchiedWiresTypedProvidersAndExecutableConsumers(t *testing.T) {
 		// system prompt is rendered, so the prompt can advertise exactly
 		// the tools the model is handed. After the Phase 4 structural
 		// refactor these calls live in telegram_setup.go.
-		"chatGenerateOptions(nil,",
+		"chatGenerateOptions(ctx,",
 		"toolSummaries(options.Tools)",
 		"agentexec.NewInProcessRunner(llm, log, toolReg)",
 	} {

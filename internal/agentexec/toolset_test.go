@@ -471,3 +471,203 @@ func TestToolSetExcludesToolsets(t *testing.T) {
 		t.Error("memory tool was dropped, want only the workspace toolset excluded")
 	}
 }
+
+// testApprover is a scripted ApprovalRequester for the tool-approval gate
+// tests. It returns whatever decision and error the test wired up, so each
+// test exercises one branch of the gate.
+type testApprover struct {
+	decision tools.ApprovalDecision
+	err      error
+}
+
+func (a *testApprover) RequestApproval(context.Context, string, string) (tools.ApprovalDecision, error) {
+	return a.decision, a.err
+}
+
+// approvalEntry returns a single-entry registry whose tool is marked
+// RequiresApproval and records whether its handler ran.
+func approvalEntry(t *testing.T, reg *tools.Registry, ran *bool) {
+	t.Helper()
+	if err := reg.Register(tools.ToolEntry{
+		Name:           "gated",
+		Description:    "requires human consent",
+		Classification: tools.RequiresApproval,
+		Handler: func(context.Context, map[string]any) (any, error) {
+			*ran = true
+			return "ran", nil
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestToolSetApprovalApprovedExecutes(t *testing.T) {
+	reg := tools.NewRegistry()
+	ran := false
+	approvalEntry(t, reg, &ran)
+
+	set := mustBuildToolSetWith(t, reg, ToolSetOptions{Approval: &testApprover{decision: tools.ApprovalApproved}})
+	out, err := set["gated"].Execute(context.Background(), `{}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ran {
+		t.Error("handler did not run after approval was granted")
+	}
+	if out != `"ran"` {
+		t.Errorf("output = %q, want \"ran\"", out)
+	}
+}
+
+func TestToolSetApprovalDeniedReturnsError(t *testing.T) {
+	reg := tools.NewRegistry()
+	ran := false
+	approvalEntry(t, reg, &ran)
+
+	set := mustBuildToolSetWith(t, reg, ToolSetOptions{Approval: &testApprover{decision: tools.ApprovalDenied}})
+	_, err := set["gated"].Execute(context.Background(), `{}`)
+	if err == nil {
+		t.Fatal("expected an error when approval is denied")
+	}
+	if !errors.Is(err, tools.ErrApprovalDenied) {
+		t.Errorf("error = %v, want it to wrap ErrApprovalDenied", err)
+	}
+	if ran {
+		t.Error("handler ran despite the denial")
+	}
+}
+
+func TestToolSetApprovalPropagatesApproverError(t *testing.T) {
+	reg := tools.NewRegistry()
+	ran := false
+	approvalEntry(t, reg, &ran)
+
+	wantErr := errors.New("approver exploded")
+	set := mustBuildToolSetWith(t, reg, ToolSetOptions{Approval: &testApprover{err: wantErr}})
+	_, err := set["gated"].Execute(context.Background(), `{}`)
+	if err == nil {
+		t.Fatal("expected an error from the approver")
+	}
+	if !errors.Is(err, wantErr) {
+		t.Errorf("error = %v, want it to wrap the approver error", err)
+	}
+	if ran {
+		t.Error("handler ran despite the approver error")
+	}
+}
+
+func TestToolSetApprovalMissingApproverReturnsError(t *testing.T) {
+	ran := false
+	entry := tools.ToolEntry{
+		Name:           "gated",
+		Description:    "requires human consent",
+		Classification: tools.RequiresApproval,
+		Handler: func(context.Context, map[string]any) (any, error) {
+			ran = true
+			return "should not run", nil
+		},
+	}
+	// The build-time gate omits approval-requiring tools from a set built
+	// without an approver, so exercise the runtime gate directly: the execute
+	// closure must still refuse to run the tool.
+	tool := aicore.NewTool(entry.Name, entry.Description, json.RawMessage(`{"type":"object","properties":{}}`), toolExecute(entry, ToolSetOptions{}))
+	_, err := tool.Execute(context.Background(), `{}`)
+	if err == nil {
+		t.Fatal("expected an error when no approver is configured")
+	}
+	if !strings.Contains(err.Error(), "no approver") {
+		t.Errorf("error = %v, want it to name the missing approver", err)
+	}
+	if ran {
+		t.Error("handler ran despite there being no approver")
+	}
+}
+
+func TestToolSetWithoutApprovalFlagExecutesNormally(t *testing.T) {
+	reg := tools.NewRegistry()
+	if err := reg.Register(tools.ToolEntry{
+		Name:    "plain",
+		Handler: func(context.Context, map[string]any) (any, error) { return "ok", nil },
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Even with an approver that would deny, a non-gated tool must run.
+	set := mustBuildToolSetWith(t, reg, ToolSetOptions{Approval: &testApprover{decision: tools.ApprovalDenied}})
+	out, err := set["plain"].Execute(context.Background(), `{}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != `"ok"` {
+		t.Errorf("output = %q, want \"ok\"", out)
+	}
+}
+
+func TestBuildToolSetOmitsApprovalToolsWithoutApprover(t *testing.T) {
+	reg := tools.NewRegistry()
+	if err := reg.Register(tools.ToolEntry{
+		Name:           "gated",
+		Description:    "requires human consent",
+		Classification: tools.RequiresApproval,
+		Handler:        func(context.Context, map[string]any) (any, error) { return nil, nil },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.Register(tools.ToolEntry{
+		Name:    "plain",
+		Handler: func(context.Context, map[string]any) (any, error) { return nil, nil },
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	set := mustBuildToolSetWith(t, reg, ToolSetOptions{})
+	if _, ok := set["gated"]; ok {
+		t.Error("ToolSet included an approval-requiring tool with no approver")
+	}
+	if _, ok := set["plain"]; !ok {
+		t.Error("ToolSet dropped a non-approval tool")
+	}
+}
+
+func TestBuildToolSetIncludesApprovalToolsWithApprover(t *testing.T) {
+	reg := tools.NewRegistry()
+	if err := reg.Register(tools.ToolEntry{
+		Name:           "gated",
+		Description:    "requires human consent",
+		Classification: tools.RequiresApproval,
+		Handler:        func(context.Context, map[string]any) (any, error) { return nil, nil },
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	set := mustBuildToolSetWith(t, reg, ToolSetOptions{Approval: &testApprover{decision: tools.ApprovalApproved}})
+	if _, ok := set["gated"]; !ok {
+		t.Error("ToolSet omitted an approval-requiring tool with an approver configured")
+	}
+}
+
+func TestToolSetApprovalFailsClosedOnUnknownDecision(t *testing.T) {
+	reg := tools.NewRegistry()
+	ran := false
+	approvalEntry(t, reg, &ran)
+
+	// ApprovalDecision 999 is not a recognised constant. The gate must
+	// fail closed: an unknown value from a faulty approver must not
+	// execute the tool.
+	unknownDecision := tools.ApprovalDecision(999)
+	set := mustBuildToolSetWith(t, reg, ToolSetOptions{Approval: &testApprover{decision: unknownDecision}})
+	tool, ok := set["gated"]
+	if !ok {
+		t.Fatal("tool not in set")
+	}
+	_, err := tool.Execute(context.Background(), `{}`)
+	if err == nil {
+		t.Fatal("expected error for unknown decision, got nil")
+	}
+	if !strings.Contains(err.Error(), "unexpected decision") {
+		t.Errorf("error = %v, want 'unexpected decision'", err)
+	}
+	if ran {
+		t.Error("tool executed despite unknown approval decision")
+	}
+}

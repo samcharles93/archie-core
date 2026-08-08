@@ -150,6 +150,9 @@ func bridgeCallHandler(reg *Registry) Handler {
 				if e.Handler == nil {
 					return nil, fmt.Errorf("tool_call: tool %q has no handler", name)
 				}
+				if e.Classification.IsApprovalRequired() {
+					return nil, fmt.Errorf("tool_call: tool %q requires human approval and cannot be invoked through the bridge", name)
+				}
 				return e.Handler(ctx, callInput)
 			}
 		}

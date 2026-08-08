@@ -57,6 +57,41 @@ func TestToolClassificationCombined(t *testing.T) {
 	}
 }
 
+func TestToolClassificationIsApprovalRequired(t *testing.T) {
+	t.Run("zero value does not require approval", func(t *testing.T) {
+		var c ToolClassification
+		if c.IsApprovalRequired() {
+			t.Error("zero classification should not require approval")
+		}
+	})
+
+	t.Run("explicit approval flag", func(t *testing.T) {
+		if !RequiresApproval.IsApprovalRequired() {
+			t.Error("RequiresApproval should require approval")
+		}
+	})
+
+	t.Run("approval is independent of idempotent", func(t *testing.T) {
+		c := ClassIdempotent | RequiresApproval
+		if !c.IsApprovalRequired() {
+			t.Error("idempotent + approval should require approval")
+		}
+		if !c.IsIdempotent() {
+			t.Error("idempotent + approval should still be idempotent")
+		}
+	})
+
+	t.Run("approval is independent of mutating", func(t *testing.T) {
+		c := ClassMutating | RequiresApproval
+		if !c.IsApprovalRequired() {
+			t.Error("mutating + approval should require approval")
+		}
+		if !c.IsMutating() {
+			t.Error("mutating + approval should still be mutating")
+		}
+	})
+}
+
 func TestToolClassificationString(t *testing.T) {
 	tests := []struct {
 		c    ToolClassification
@@ -66,7 +101,9 @@ func TestToolClassificationString(t *testing.T) {
 		{ClassIdempotent, "idempotent"},
 		{ClassMutating, "mutating"},
 		{ClassIdempotent | ClassMutating, "idempotent|mutating"},
-		{ToolClassification(4), "unknown"},
+		{RequiresApproval, "requires_approval"},
+		{ClassMutating | RequiresApproval, "mutating|requires_approval"},
+		{ToolClassification(8), "unknown"},
 	}
 
 	for _, tt := range tests {

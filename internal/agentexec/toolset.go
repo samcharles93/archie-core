@@ -3,6 +3,7 @@ package agentexec
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -77,6 +78,11 @@ type ToolSetOptions struct {
 	// are rooted at a directory that is not the task's worktree and which
 	// bypass the agent loop's read-only and protected-path enforcement.
 	ExcludeToolsets []string
+
+	// Approval is the human-consent gate for tools marked RequiresApproval.
+	// Nil means no approver is configured — such tools are omitted from the
+	// built set rather than failing at call time.
+	Approval tools.ApprovalRequester
 }
 
 // resultLimit returns the cap that applies to one entry.
@@ -125,6 +131,13 @@ func BuildToolSetFrom(entries []tools.ToolEntry, opts ToolSetOptions) (aicore.To
 	set := aicore.ToolSet{}
 	for _, entry := range entries {
 		if opts.excludes(entry) {
+			continue
+		}
+		// A tool that requires approval must not appear in a set built without
+		// an approver: the model would see a tool it can never invoke. With an
+		// approver present the tool is built and the execute closure gates each
+		// call on the human's decision.
+		if entry.Classification.IsApprovalRequired() && opts.Approval == nil {
 			continue
 		}
 		available, err := safeToolAvailable(entry)
@@ -193,6 +206,44 @@ func toolExecute(entry tools.ToolEntry, opts ToolSetOptions) func(context.Contex
 		if input != "" {
 			if err := json.Unmarshal([]byte(input), &args); err != nil {
 				return "", fmt.Errorf("tool %s: decode input: %w", entry.Name, err)
+			}
+		}
+		if entry.Classification.IsApprovalRequired() {
+			if opts.Approval == nil {
+				return "", fmt.Errorf("tool %s requires approval but no approver is configured", entry.Name)
+			}
+			approveCtx, cancel := context.WithTimeout(ctx, tools.ToolApprovalTimeout)
+			defer cancel()
+			desc := entry.Description
+			if entry.BuildApprovalDescription != nil {
+				desc = entry.BuildApprovalDescription(args)
+			}
+			decision, err := opts.Approval.RequestApproval(approveCtx, entry.Name, desc)
+			if err != nil {
+				// Distinguish a tool-level timeout (our own deadline)
+				// from a turn-level cancellation (/stop). A turn
+				// cancellation must propagate as a context error; a
+				// tool timeout must surface as a plain error so the
+				// model can report it instead of the turn aborting.
+				if (errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)) && ctx.Err() == nil {
+					return "", fmt.Errorf("tool %s: approval timed out after %v", entry.Name, tools.ToolApprovalTimeout)
+				}
+				return "", fmt.Errorf("tool %s: approval: %w", entry.Name, err)
+			}
+			switch decision {
+			case tools.ApprovalApproved, tools.ApprovalPermanentlyApproved:
+				// Fall through to execution. PermanentlyApproved is
+				// handled by the adapter caching the decision; the
+				// dispatch layer treats both the same.
+			case tools.ApprovalDenied:
+				return "", fmt.Errorf("tool %s: %w", entry.Name, tools.ErrApprovalDenied)
+			default:
+				// Fail closed: an unrecognised decision value from
+				// a faulty or future Approver must not execute the
+				// tool. ApprovalDecision is an exported int type,
+				// so a value returned with nil error is a defect
+				// in the approver, not a grant.
+				return "", fmt.Errorf("tool %s: approval returned unexpected decision %v", entry.Name, decision)
 			}
 		}
 		out, err := entry.Handler(ctx, args)

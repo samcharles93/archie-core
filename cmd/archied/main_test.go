@@ -201,7 +201,7 @@ func TestChatGenerateOptionsIncludesToolsAndMultipleSteps(t *testing.T) {
 	}
 	messages := []chat.Message{{Role: chat.RoleUser, Content: "remember this"}}
 
-	options, err := chatGenerateOptions(messages, registry, 0, agentexec.ToolLimits{}, nil)
+	options, err := chatGenerateOptions(context.Background(), messages, registry, 0, agentexec.ToolLimits{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,8 +227,8 @@ func TestChatGenerateOptionsReportsInvalidToolSchemas(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := chatGenerateOptions(nil, registry, 0, agentexec.ToolLimits{}, nil); err == nil {
-		t.Fatal("chatGenerateOptions() error = nil, want invalid tool schema error")
+	if _, err := chatGenerateOptions(context.Background(), nil, registry, 0, agentexec.ToolLimits{}, nil); err == nil {
+		t.Fatal("chatGenerateOptions(context.Background(),) error = nil, want invalid tool schema error")
 	}
 }
 
@@ -236,7 +236,7 @@ func TestChatGenerateOptionsReportsInvalidToolSchemas(t *testing.T) {
 // deployment-controlled. A cap that cannot be raised without a rebuild is
 // the situation this replaced.
 func TestChatGenerateOptionsHonoursConfiguredMaxSteps(t *testing.T) {
-	options, err := chatGenerateOptions(nil, tools.NewRegistry(), 250, agentexec.ToolLimits{}, nil)
+	options, err := chatGenerateOptions(context.Background(), nil, tools.NewRegistry(), 250, agentexec.ToolLimits{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

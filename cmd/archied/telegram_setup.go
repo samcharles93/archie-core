@@ -227,7 +227,11 @@ func makeChatLLMResponder(
 			compressed = append(compressed, gateway.CompressedMessage{Role: role, Content: h.Text})
 		}
 		view := gateway.CompressHistory(compressed, gateway.DefaultCompressionConfig())
-		options, err := chatGenerateOptions(nil, s.ToolReg, s.Cfg.Chat.MaxSteps, toolLimits(s.Cfg), taskTools)
+		sessionTools := gateway.SessionTools(sessionStore, router.SessionTracker(), channel, msg)
+		allTools := make([]tools.ToolEntry, 0, len(taskTools)+len(sessionTools))
+		allTools = append(allTools, taskTools...)
+		allTools = append(allTools, sessionTools...)
+		options, err := chatGenerateOptions(ctx, nil, s.ToolReg, s.Cfg.Chat.MaxSteps, toolLimits(s.Cfg), allTools)
 		if err != nil {
 			return "", fmt.Errorf("build chat tools: %w", err)
 		}

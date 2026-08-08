@@ -93,6 +93,7 @@ var (
 
 // chatGenerateOptions builds one chat turn's request.
 func chatGenerateOptions(
+	ctx context.Context,
 	messages []chat.Message,
 	registry *tools.Registry,
 	maxSteps int,
@@ -100,6 +101,9 @@ func chatGenerateOptions(
 	extra []tools.ToolEntry,
 ) (core.GenerateOptions, error) {
 	toolOpts := limits.Options()
+	if approval := gateway.ApprovalFromContext(ctx); approval != nil {
+		toolOpts.Approval = approval
+	}
 	toolSet, err := agentexec.BuildToolSet(registry, toolOpts)
 	if err != nil {
 		return core.GenerateOptions{}, err

@@ -118,9 +118,19 @@ type ToolCall struct {
 }
 
 // invokeTool executes a single tool and returns a [DispatchResult].
+//
+// Tools that require human approval are refused. The dispatch path has no
+// ApprovalRequester — it is used by the agent execution loop, which runs
+// without a human in the loop. The chat path gates approval through
+// BuildToolSetFrom → toolExecute, which has the approver wired.
 func invokeTool(ctx context.Context, call ToolCall) DispatchResult {
 	start := time.Now()
 	result := DispatchResult{ToolName: call.Entry.Name}
+
+	if call.Entry.Classification.IsApprovalRequired() {
+		result.Error = fmt.Errorf("tool %s: requires human approval and cannot be invoked through the agent dispatch path", call.Entry.Name)
+		return result
+	}
 
 	output, err := call.Entry.Handler(ctx, call.Input)
 	result.Duration = time.Since(start)
