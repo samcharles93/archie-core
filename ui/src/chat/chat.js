@@ -7,6 +7,7 @@ import { channelID } from "./chat-state.js";
 import { retryChatTurn, resolveTurn } from "./chat-retry.js";
 import { renderCommands, renderModels, renderSelectors, renderSessions } from "./chat-catalog.js";
 import { renderDangerous, renderUpdate } from "./chat-panels.js";
+import { updateUnavailableMessage } from "./chat-update-status.js";
 
 import "./chat.css";
 
@@ -115,7 +116,12 @@ export function chatPage() {
         },
       });
     } catch (err) {
-      updatePanel.replaceChildren(el("span", err.message || "Updates unavailable"));
+      // A 501 means this deployment hasn't configured the update-check
+      // feature -- a normal, quiet state (same as an unconfigured chat
+      // channel), not a banner. Anything else is a genuine failure and gets
+      // a clear message, never the raw fetch error text.
+      const message = updateUnavailableMessage(err);
+      updatePanel.replaceChildren(...(message ? [el("span", message)] : []));
     }
   }
 
