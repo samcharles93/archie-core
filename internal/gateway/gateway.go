@@ -166,6 +166,7 @@ type DangerousApprover interface {
 // default for this identity".
 type SpawnRequest struct {
 	Title    string
+	Body     string // operator instructions carried into the admitted task
 	Repo     string // "owner/name"; empty = identity's default repo
 	Workflow string // empty = daemon's default workflow routing
 	Identity string // the identity spawning this task; propagated from Router.Identity
