@@ -34,17 +34,17 @@ func TestHolderConcurrentGetSetIsRaceFree(t *testing.T) {
 	const iters = 1000
 
 	var wg sync.WaitGroup
-	for i := 0; i < writers; i++ {
+	for range writers {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			for j := 0; j < iters; j++ {
+			for range iters {
 				h.Set(Config{BotUser: "w"})
 			}
 		}()
 		go func() {
 			defer wg.Done()
-			for j := 0; j < iters; j++ {
+			for range iters {
 				_ = h.Get()
 			}
 		}()
@@ -52,11 +52,14 @@ func TestHolderConcurrentGetSetIsRaceFree(t *testing.T) {
 	wg.Wait()
 }
 
-func TestHolderGetIsNilSafe(t *testing.T) {
+func TestHolderGetPanicsOnNil(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("Get on nil Holder did not panic")
+		}
+	}()
 	var h *Holder
-	if got := h.Get(); got.BotUser != "" {
-		t.Fatalf("nil Holder returned non-zero Config: %+v", got)
-	}
+	_ = h.Get()
 }
 
 func TestHolderSharedReferenceField(t *testing.T) {

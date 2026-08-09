@@ -1,5 +1,9 @@
 # archied changelog
 
+## [Unreleased]
+
+- feat(config): SIGHUP-triggered config reload with `--no-config-overlay` recovery flag
+
 ## [1.6.0] - 2026-08-09
 
 - feat(gateway): tool-approval gate, session tools for chat, and /delete command

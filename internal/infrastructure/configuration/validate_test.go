@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/config"
 )
@@ -14,8 +15,9 @@ import (
 // have supplied.
 func minimalValidConfig() config.Config {
 	return config.Config{
-		BotUser: "archie-bot",
-		Agent:   config.Agent{Mode: "inprocess"},
+		BotUser:      "archie-bot",
+		PollInterval: config.Duration(60 * time.Second),
+		Agent:        config.Agent{Mode: "inprocess"},
 		Dispatch: config.Dispatch{
 			Trigger: "assignee",
 		},
@@ -59,6 +61,16 @@ func TestValidate_RejectsTheSameProblemsAsLoaderLoad(t *testing.T) {
 		{
 			name:    "unrecognised forge.type",
 			mutate:  func(cfg *config.Config) { cfg.Forge.Type = "not-a-real-forge" },
+			wantErr: true,
+		},
+		{
+			name:    "negative poll_interval",
+			mutate:  func(cfg *config.Config) { cfg.PollInterval = config.Duration(-5 * time.Second) },
+			wantErr: true,
+		},
+		{
+			name:    "zero poll_interval",
+			mutate:  func(cfg *config.Config) { cfg.PollInterval = 0 },
 			wantErr: true,
 		},
 		{
