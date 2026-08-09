@@ -313,7 +313,7 @@ func run() int {
 	defaultCfg := filepath.Join(configHome(), "archie", "config.toml")
 	cfgPath := flag.String("config", defaultCfg, "path to a TOML/YAML config file or configuration directory")
 	overlayPath := flag.String("config-overlay", "", "path to a TOML/YAML overlay file or configuration directory applied on top of -config")
-	noConfigOverlay := flag.Bool("no-config-overlay", false, "ignore the runtime config overlay (recovery hatch: boots on file config alone)")
+	noConfigOverlay := flag.Bool("no-config-overlay", false, "skip the runtime config overlay (recovery hatch for the DB overlay; the -config-overlay file overlay still applies)")
 	once := flag.Bool("once", false, "run a single poll+process cycle and exit (systemd timer / testing)")
 	requeue := flag.Int64("requeue", 0, "requeue a parked/waiting task by id (keeps its workflow), then exit unless -once is also set")
 	flag.Parse()
@@ -979,6 +979,12 @@ func run() int {
 		TaskLogs:        taskLogs,
 	}
 	web.TaskStopper = d
+	// web and the daemon must share ONE Holder: a reload swaps d.Cfg and
+	// the dashboard reads the running config from the same snapshot. The
+	// webui Holder seeded in the literal above is replaced here; after
+	// this point /api/config and the daemon can never disagree about the
+	// published config.
+	web.Cfg = d.Cfg
 
 	// SIGHUP re-loads the config from disk and republishes it. The apply
 	// closure swaps the daemon's Holder and the dashboard's provenance;
@@ -986,6 +992,12 @@ func run() int {
 	// an operator never has to read the source to find out whether their
 	// edit took effect. web.LastReload exposes the outcome to /api/config.
 	reloadController := newReloadController(loader, *cfgPath, *overlayPath, func(doc *configuration.Document) {
+		// Boot merges catalog-discovered providers into cfg before the
+		// Holders are seeded; publishing the raw reloaded document would
+		// drop them from the running config even though the file is
+		// unchanged. Re-apply the same merge (idempotent: a catalog that
+		// failed to load merges to identity).
+		applyModelCatalog(&doc.Config, catalog)
 		old := d.Cfg.Get()
 		d.Cfg.Set(doc.Config)
 		provenance := make([]webui.ConfigOrigin, 0, len(doc.Provenance.Origins))
