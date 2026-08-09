@@ -146,7 +146,10 @@ func (r *TurnRunner) Run(ctx context.Context, msg Message, onDelta func(string))
 	if err != nil {
 		return "", fmt.Errorf("resolve chat session: %w", err)
 	}
-	turnID := CanonicalTurnID(sessionID, msg.SourceID)
+	turnID, err := r.canonicalTurnID(ctx, sessionID, msg.SourceID)
+	if err != nil {
+		return "", fmt.Errorf("resolve canonical turn ID: %w", err)
+	}
 	if turnID == "" {
 		turnID = NewTurnID()
 	}
@@ -301,6 +304,28 @@ func (r *TurnRunner) Run(ctx context.Context, msg Message, onDelta func(string))
 		})
 	}
 	return text, nil
+}
+
+// canonicalTurnID preserves a matching identifier written by the legacy
+// separator encoding. A legacy collision belonging to a different
+// session/source pair is ignored in favour of the injective identifier.
+func (r *TurnRunner) canonicalTurnID(ctx context.Context, sessionID, sourceID string) (string, error) {
+	current := CanonicalTurnID(sessionID, sourceID)
+	if current == "" {
+		return "", nil
+	}
+	legacy := legacyCanonicalTurnID(sessionID, sourceID)
+	if current == legacy {
+		return current, nil
+	}
+	turn, ok, err := r.Ledger.GetTurn(ctx, legacy)
+	if err != nil {
+		return "", err
+	}
+	if ok && turn.SessionID == sessionID && turn.SourceID == sourceID {
+		return legacy, nil
+	}
+	return current, nil
 }
 
 func (r *TurnRunner) failTurn(ctx context.Context, turn TurnRecord, cause error) error {

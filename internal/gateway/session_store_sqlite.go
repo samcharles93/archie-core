@@ -151,7 +151,41 @@ func openSQLiteSessionStore(dsn string) (SessionStore, error) {
 	if _, err := db.ExecContext(ctx, sqliteSessionSchema); err != nil {
 		return nil, errors.Join(fmt.Errorf("sessionstore: init schema: %w", err), db.Close())
 	}
+	if err := repairFutureMessageTimestamps(ctx, db, time.Now().UTC()); err != nil {
+		return nil, errors.Join(err, db.Close())
+	}
 	return &sqliteSessionStore{db: db}, nil
+}
+
+// repairFutureMessageTimestamps heals sessions poisoned by older versions
+// that accepted a platform timestamp arbitrarily far ahead of the daemon's
+// clock. Future rows retain their order and are rebased immediately after the
+// session's last non-future row. With no earlier row, they end at now. A dense
+// history can finish a few milliseconds beyond now, but never preserves the
+// original hours- or days-long skew.
+func repairFutureMessageTimestamps(ctx context.Context, db *sql.DB, now time.Time) error {
+	cutoff := now.UnixMilli()
+	_, err := db.ExecContext(ctx, `
+		WITH future AS MATERIALIZED (
+			SELECT m.id,
+				COALESCE(
+					(SELECT MAX(p.ts) FROM messages p
+					 WHERE p.session_id = m.session_id AND p.ts <= ?),
+					? - COUNT(*) OVER (PARTITION BY m.session_id)
+				) + ROW_NUMBER() OVER (
+					PARTITION BY m.session_id ORDER BY m.ts, m.id
+				) AS repaired_ts
+			FROM messages m
+			WHERE m.ts > ?
+		)
+		UPDATE messages
+		SET ts = (SELECT repaired_ts FROM future WHERE future.id = messages.id)
+		WHERE id IN (SELECT id FROM future) AND ts > ?`,
+		cutoff, cutoff, cutoff, cutoff)
+	if err != nil {
+		return fmt.Errorf("sessionstore: repair future message timestamps: %w", err)
+	}
+	return nil
 }
 
 func (s *sqliteSessionStore) Close() error {
@@ -579,8 +613,34 @@ func saveMessage(ctx context.Context, ex execer, sessionID string, msg Message) 
 // placing records deliberately.
 func saveMessageAt(ctx context.Context, ex execer, sessionID string, msg Message, clamp bool) (string, error) {
 	id := msg.MessageID
-	if id == "" {
-		id = newMessageID(sessionID, msg.SourceID)
+	legacyID := ""
+	if msg.SourceID == "" {
+		if id == "" {
+			id = newMessageID(sessionID, "")
+		}
+	} else {
+		currentID, compatibleLegacyID := canonicalMessageIDs(sessionID, msg.SourceID)
+		if id == "" {
+			id = currentID
+		}
+		// TurnRunner supplies the current canonical ID before calling the
+		// store. Still check the compatible legacy identity: a crash can
+		// leave the old message durable before its turn record names it.
+		if id == currentID {
+			legacyID = compatibleLegacyID
+		}
+	}
+	if legacyID != "" {
+		var existingID string
+		err := ex.QueryRowContext(ctx,
+			`SELECT message_id FROM messages WHERE session_id = ? AND message_id = ?`,
+			sessionID, legacyID).Scan(&existingID)
+		switch {
+		case err == nil:
+			return existingID, nil
+		case !errors.Is(err, sql.ErrNoRows):
+			return "", fmt.Errorf("sessionstore: read legacy message identity: %w", err)
+		}
 	}
 	at := stamp(msg)
 	if clamp {
@@ -710,10 +770,13 @@ func (s *sqliteSessionStore) FindPriorReply(ctx context.Context, sessionID, sour
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	currentID, legacyID := canonicalMessageIDs(sessionID, sourceID)
 	var ts int64
 	err := s.db.QueryRowContext(ctx, `
-		SELECT ts FROM messages WHERE session_id = ? AND message_id = ?`,
-		sessionID, CanonicalMessageID(sessionID, sourceID)).Scan(&ts)
+		SELECT ts FROM messages
+		WHERE session_id = ? AND message_id IN (?, ?)
+		ORDER BY CASE WHEN message_id = ? THEN 0 ELSE 1 END
+		LIMIT 1`, sessionID, currentID, legacyID, legacyID).Scan(&ts)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
