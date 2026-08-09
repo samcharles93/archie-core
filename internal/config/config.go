@@ -518,6 +518,9 @@ func (c Config) Clone() Config {
 }
 
 func cloneRepos(repos []Repo) []Repo {
+	if repos == nil {
+		return nil
+	}
 	out := make([]Repo, len(repos))
 	for i, r := range repos {
 		r.Gate = cloneStringSlices(r.Gate)
@@ -529,6 +532,9 @@ func cloneRepos(repos []Repo) []Repo {
 }
 
 func cloneIdentities(ids []IdentityConfig) []IdentityConfig {
+	if ids == nil {
+		return nil
+	}
 	out := make([]IdentityConfig, len(ids))
 	for i, id := range ids {
 		id.Models = cloneStringMap(id.Models)
@@ -541,6 +547,9 @@ func cloneIdentities(ids []IdentityConfig) []IdentityConfig {
 }
 
 func cloneMCPServers(servers []MCPServer) []MCPServer {
+	if servers == nil {
+		return nil
+	}
 	out := make([]MCPServer, len(servers))
 	for i, s := range servers {
 		s.Args = append([]string(nil), s.Args...)
@@ -551,6 +560,9 @@ func cloneMCPServers(servers []MCPServer) []MCPServer {
 }
 
 func cloneStringSlices(ss [][]string) [][]string {
+	if ss == nil {
+		return nil
+	}
 	out := make([][]string, len(ss))
 	for i, s := range ss {
 		out[i] = append([]string(nil), s...)
