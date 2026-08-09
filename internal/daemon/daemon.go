@@ -47,14 +47,23 @@ type TaskBus interface {
 }
 
 type Daemon struct {
-	Cfg       config.Config
-	Store     store.TaskStore
-	Forge     forge.Forge
-	Trees     *worktree.Manager
-	Agent     agentexec.Runner
-	Bus       *events.Bus
-	Workflows workflow.Registry
-	Log       *slog.Logger
+	// Cfg publishes the running configuration. Read through Cfg() so a
+	// reload swaps the published snapshot atomically. See config.Holder.
+	Cfg *config.Holder
+	// ConnectedNATS is the [nats] configuration the daemon's own client
+	// connected with at startup (the endpoint it publishes on). Container
+	// env is built from this, not from the live config, so a reload of
+	// nats.url/token_env cannot point new containers at a server the
+	// daemon is not publishing on. Zero value means NATS is not
+	// configured.
+	ConnectedNATS config.NATSConfig
+	Store         store.TaskStore
+	Forge         forge.Forge
+	Trees         *worktree.Manager
+	Agent         agentexec.Runner
+	Bus           *events.Bus
+	Workflows     workflow.Registry
+	Log           *slog.Logger
 	// Tasks is the optional message bus for task distribution. Nil means no
 	// bus is configured; the existing SQLite ClaimNext flow is used.
 	Tasks TaskBus
@@ -197,7 +206,7 @@ func (d *Daemon) Startup(ctx context.Context) error {
 	if err := d.Forge.AcceptInvitations(ctx); err != nil {
 		d.Log.Warn("invitation sweep failed", "err", err)
 	}
-	for _, r := range d.Cfg.Repos {
+	for _, r := range d.Cfg.Get().Repos {
 		if err := d.Forge.VerifyPush(ctx, r.Owner, r.Name); err != nil {
 			d.Log.Warn("repo not pushable  --  tasks from it will fail", "repo", r.FullName(), "err", err)
 		}
@@ -213,7 +222,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if len(d.Identities) > 0 {
 		return d.runIdentities(ctx)
 	}
-	ticker := time.NewTicker(d.Cfg.PollInterval.Std())
+	interval := d.Cfg.Get().PollInterval.Std()
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		d.Cycle(ctx)
@@ -221,6 +231,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
+			// PollInterval may have been reloaded; reset the ticker so a
+			// change takes effect on the next cycle.
+			if iv := d.Cfg.Get().PollInterval.Std(); iv != interval {
+				interval = iv
+				ticker.Reset(iv)
+			}
 		}
 	}
 }
@@ -248,7 +264,7 @@ func (d *Daemon) runIdentities(ctx context.Context) error {
 		wg.Add(1)
 		go func(id *IdentityRunner) {
 			defer wg.Done()
-			interval := d.Cfg.PollInterval.Std()
+			interval := d.Cfg.Get().PollInterval.Std()
 			if id.Cfg.PollInterval > 0 {
 				interval = id.Cfg.PollInterval.Std()
 			}
@@ -260,6 +276,16 @@ func (d *Daemon) runIdentities(ctx context.Context) error {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
+					// The identity's own override is frozen (identity config is
+					// startup-built); the root fallback may have been reloaded.
+					iv := d.Cfg.Get().PollInterval.Std()
+					if id.Cfg.PollInterval > 0 {
+						iv = id.Cfg.PollInterval.Std()
+					}
+					if iv != interval {
+						interval = iv
+						ticker.Reset(iv)
+					}
 				}
 			}
 		}(id)
@@ -267,7 +293,8 @@ func (d *Daemon) runIdentities(ctx context.Context) error {
 
 	// One shared maintenance-and-drain loop.
 	wg.Go(func() {
-		ticker := time.NewTicker(d.Cfg.PollInterval.Std())
+		interval := d.Cfg.Get().PollInterval.Std()
+		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
 			d.maintainAndDrain(ctx)
@@ -275,6 +302,12 @@ func (d *Daemon) runIdentities(ctx context.Context) error {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				// PollInterval may have been reloaded; reset the ticker so a
+				// change takes effect on the next cycle.
+				if iv := d.Cfg.Get().PollInterval.Std(); iv != interval {
+					interval = iv
+					ticker.Reset(iv)
+				}
 			}
 		}
 	})
@@ -288,7 +321,7 @@ func (d *Daemon) runIdentities(ctx context.Context) error {
 // drains or reconciles  --  those are store-wide and run in the shared
 // maintainAndDrain loop.
 func (d *Daemon) pollForIdentity(ctx context.Context, id *IdentityRunner) {
-	cfg := configForIdentity(d.Cfg, id.Cfg)
+	cfg := configForIdentity(d.Cfg.Get(), id.Cfg)
 	for _, repo := range id.Repos {
 		issues := d.pollIssuesWithConfig(ctx, id.Forge, cfg, repo)
 		for _, is := range issues {
@@ -382,7 +415,7 @@ func (d *Daemon) Cycle(ctx context.Context) {
 }
 
 func (d *Daemon) cleanupExpiredStorage(ctx context.Context) {
-	ttl := d.Cfg.Containers.VolumeTTL.Std()
+	ttl := d.Cfg.Get().Containers.VolumeTTL.Std()
 	if ttl <= 0 {
 		return
 	}
@@ -399,7 +432,7 @@ func (d *Daemon) cleanupExpiredStorage(ctx context.Context) {
 
 // drainSQLite claims queued tasks from SQLite and dispatches them concurrently.
 func (d *Daemon) drainSQLite(ctx context.Context) {
-	dispatcher := newTaskDispatcher(d.Cfg.Containers.MaxConcurrency, d.allowConcurrentForTask)
+	dispatcher := newTaskDispatcher(d.Cfg.Get().Containers.MaxConcurrency, d.allowConcurrentForTask)
 	for ctx.Err() == nil {
 		task, err := d.Store.ClaimNext(ctx)
 		if err != nil {
@@ -418,7 +451,7 @@ func (d *Daemon) drainSQLite(ctx context.Context) {
 // requeued tasks (waiting_human approval, retry-parked) that didn't come
 // through a NATS publish.
 func (d *Daemon) drainNATS(ctx context.Context) {
-	dispatcher := newTaskDispatcher(d.Cfg.Containers.MaxConcurrency, d.allowConcurrentForTask)
+	dispatcher := newTaskDispatcher(d.Cfg.Get().Containers.MaxConcurrency, d.allowConcurrentForTask)
 	for ctx.Err() == nil {
 		msg, err := d.Tasks.Fetch(ctx)
 		if err != nil && !errors.Is(err, eventbus.ErrNoMessage) {
@@ -535,14 +568,14 @@ func (d *taskDispatcher) Wait() {
 }
 
 func (d *Daemon) poll(ctx context.Context) {
-	for _, repo := range d.Cfg.Repos {
+	for _, repo := range d.Cfg.Get().Repos {
 		issues := d.pollIssues(ctx, repo)
 		for _, is := range issues {
 			labels := strings.Join(is.Labels, ",")
 			if d.Tasks != nil {
-				d.pollNATS(ctx, d.Forge, d.Cfg, repo, is, labels, "")
+				d.pollNATS(ctx, d.Forge, d.Cfg.Get(), repo, is, labels, "")
 			} else {
-				d.pollSQLite(ctx, d.Forge, d.Cfg, repo, is, labels, "")
+				d.pollSQLite(ctx, d.Forge, d.Cfg.Get(), repo, is, labels, "")
 			}
 		}
 	}
@@ -686,7 +719,7 @@ func (d *Daemon) processNATSTask(ctx context.Context, msg eventbus.Message) {
 // config, using the root forge client. Identity poll loops use
 // pollIssuesWithConfig with their own forge and config instead.
 func (d *Daemon) pollIssues(ctx context.Context, repo config.Repo) []forge.Issue {
-	return d.pollIssuesWithConfig(ctx, d.Forge, d.Cfg, repo)
+	return d.pollIssuesWithConfig(ctx, d.Forge, d.Cfg.Get(), repo)
 }
 
 // closeResolvedIssue closes the forge issue behind a finished task.
@@ -1072,8 +1105,11 @@ func (d *Daemon) requestTaskRun(ctx context.Context, taskID int64, data []byte) 
 
 func (d *Daemon) containerEnv(task *store.Task) []string {
 	var env []string
-	env = append(env, "NATS_URL="+d.Cfg.NATS.URL)
-	if tokenEnv := d.Cfg.NATS.TokenEnv; tokenEnv != "" {
+	// The endpoint the daemon's own client connected with at startup, not
+	// the live config: a reloaded [nats] section must not point new
+	// containers at a server the daemon is not publishing on.
+	env = append(env, "NATS_URL="+d.ConnectedNATS.URL)
+	if tokenEnv := d.ConnectedNATS.TokenEnv; tokenEnv != "" {
 		if token := os.Getenv(tokenEnv); token != "" {
 			env = append(env, "NATS_TOKEN="+token)
 		}
@@ -1090,9 +1126,9 @@ func (d *Daemon) containerEnv(task *store.Task) []string {
 
 func (d *Daemon) executionFor(task *store.Task) (config.Config, agentexec.Runner) {
 	if id := d.identityFor(task); id != nil {
-		return configForIdentity(d.Cfg, id.Cfg), id.Agent
+		return configForIdentity(d.Cfg.Get(), id.Cfg), id.Agent
 	}
-	return d.Cfg, d.Agent
+	return d.Cfg.Get(), d.Agent
 }
 
 func (d *Daemon) configFor(task *store.Task) config.Config {
@@ -1152,7 +1188,7 @@ func (d *Daemon) treesFor(task *store.Task) *worktree.Manager {
 // repoFor resolves task's repo config from the owning identity's repo
 // list when task.Identity is set, else the root Cfg.Repos.
 func (d *Daemon) repoFor(t *store.Task) (config.Repo, bool) {
-	repos := d.Cfg.Repos
+	repos := d.Cfg.Get().Repos
 	if id := d.identityFor(t); id != nil {
 		repos = id.Repos
 	}

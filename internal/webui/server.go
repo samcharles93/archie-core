@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/channels"
@@ -32,8 +33,16 @@ type Server struct {
 	Log   *slog.Logger
 
 	// Cfg backs the setup checklist and configuration views. Optional: the
-	// dashboard degrades to task data alone when it is nil.
-	Cfg *config.Config
+	// dashboard degrades to task data alone when it is nil. Held through a
+	// Holder so a reload swaps the snapshot atomically across handler
+	// goroutines that would otherwise race on the raw shared pointer.
+	//
+	// In production this is the daemon's OWN Holder (main.go wires
+	// web.Cfg = d.Cfg), so Set here publishes to the running daemon. A
+	// config-mutating handler must never call Set directly: it goes
+	// through the same path as reload -- apply to a copy, validate the
+	// materialised config, persist, then Set.
+	Cfg *config.Holder
 
 	// Workflows is the executable registry snapshot supplied by composition.
 	Workflows []workflow.Definition
@@ -48,9 +57,38 @@ type Server struct {
 	// logging not configured) makes that a no-op.
 	TaskLogs *logging.TaskRegistry
 
-	// ConfigProvenance is supplied by composition from the production loader.
-	// It is safe to expose: it contains paths and precedence only, never values.
-	ConfigProvenance []ConfigOrigin
+	// ConfigProvenance lists the files that produced the running config,
+	// in precedence order. Held through atomic.Pointer so a reload can
+	// swap it independently of Cfg. A reader may therefore observe the
+	// new config alongside the old provenance (or vice versa); this is
+	// display-only, and the skew is accepted rather than serialised.
+	ConfigProvenance atomic.Pointer[[]ConfigOrigin]
+
+	// LastReload reports the most recent config reload outcome, so the
+	// dashboard can tell the operator when the running config is stale
+	// (a reload failed validation and the daemon kept the previous
+	// config). Optional: when nil, the /api/config response omits the
+	// reload status.
+	LastReload func() config.ReloadStatus
+
+	// UpdateConfig applies a set of dotted-path config updates through
+	// the same validate-persist-publish path as reload (wired by the
+	// composition root). Optional: when nil, PATCH /api/config answers
+	// 503. The handler never touches the Cfg Holder directly -- see the
+	// Cfg field doc.
+	UpdateConfig func(context.Context, map[string]any) error
+
+	// ConfigOverrides lists the dotted config keys currently overridden
+	// by the runtime overlay, so the dashboard can mark those rows and
+	// offer a reset. Optional: when nil, the /api/config response omits
+	// the overridden list.
+	ConfigOverrides func(context.Context) ([]string, error)
+
+	// ResetConfig deletes one runtime-overlay row and republishes file +
+	// remaining overlay. Optional: when nil, POST /api/config/reset
+	// answers 503. Like UpdateConfig, it never touches the Cfg Holder
+	// directly.
+	ResetConfig func(context.Context, string) error
 
 	// Channels reports actual adapter lifecycle, independently of configuration
 	// presence. Nil preserves the configuration-only fallback for tests and
@@ -103,6 +141,11 @@ type ConfigOrigin struct {
 	Feature string `json:"feature,omitempty"`
 }
 
+// SetProvenance publishes a fresh provenance list after a config reload.
+func (s *Server) SetProvenance(origins []ConfigOrigin) {
+	s.ConfigProvenance.Store(&origins)
+}
+
 // IssueCloser closes the forge issue behind a task.
 type IssueCloser interface {
 	CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error
@@ -145,6 +188,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/channels", s.handleChannels)
 	mux.HandleFunc("POST /api/channels/{id}/reload", s.handleChannelReload)
 	mux.HandleFunc("GET /api/config", s.handleConfig)
+	mux.HandleFunc("PATCH /api/config", s.handleConfigUpdate)
+	mux.HandleFunc("POST /api/config/reset", s.handleConfigReset)
 	mux.HandleFunc("GET /api/logs", s.handleLogs)
 	mux.HandleFunc("GET /api/tasks/{id}/logs", s.handleTaskLogs)
 	mux.HandleFunc("GET /api/logs/stream", s.handleLogStream)

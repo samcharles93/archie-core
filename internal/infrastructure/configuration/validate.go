@@ -72,7 +72,23 @@ func validate(cfg *config.Config) error {
 	} else if err := validateSingleIdentity(cfg); err != nil {
 		return err
 	}
+	if err := validatePollInterval(cfg); err != nil {
+		return err
+	}
 	return validateContainers(cfg)
+}
+
+// validatePollInterval rejects a non-positive poll interval.
+// applyDefaults fills PollInterval == 0 with the default, so this only
+// fires on an explicit negative value -- which would panic
+// time.NewTicker/Reset in the daemon's poll loops, at boot and (worse)
+// on a SIGHUP reload mid-run, when the edit that broke it is no longer
+// fresh in the operator's mind.
+func validatePollInterval(cfg *config.Config) error {
+	if cfg.PollInterval <= 0 {
+		return fmt.Errorf("%w: poll_interval must be positive", ErrInvalidInput)
+	}
+	return nil
 }
 
 func validateAgent(cfg *config.Config) error {

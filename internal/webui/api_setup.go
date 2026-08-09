@@ -35,18 +35,19 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	// The operator's name is deployment data, configured once in [chat]. The
 	// dashboard greets with it rather than hardcoding a name, which would be
 	// wrong on every deployment but one.
-	operator := strings.TrimSpace(s.Cfg.Chat.Operator)
+	cfg := s.Cfg.Get()
+	operator := strings.TrimSpace(cfg.Chat.Operator)
 
 	steps = append(steps, SetupStep{
 		Title:  "Give Archie an identity",
 		Detail: "The account it commits and comments as.",
-		Done:   strings.TrimSpace(s.Cfg.BotUser) != "",
+		Done:   strings.TrimSpace(cfg.BotUser) != "",
 	})
 
 	steps = append(steps, SetupStep{
 		Title:  "Connect a repository",
 		Detail: "Archie polls these for issues assigned to it.",
-		Done:   len(s.Cfg.Repos) > 0,
+		Done:   len(cfg.Repos) > 0,
 	})
 
 	steps = append(steps, SetupStep{
@@ -75,6 +76,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 // Chat is disabled entirely when no channel token is set, so the presence of
 // one is the honest signal here.
 func (s *Server) hasChannel() bool {
-	return strings.TrimSpace(s.Cfg.Chat.Telegram.TokenEnv) != "" ||
-		strings.TrimSpace(s.Cfg.Chat.WebhookAddr) != ""
+	cfg := s.Cfg.Get()
+	return strings.TrimSpace(cfg.Chat.Telegram.TokenEnv) != "" ||
+		strings.TrimSpace(cfg.Chat.WebhookAddr) != ""
 }

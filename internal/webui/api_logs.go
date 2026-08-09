@@ -116,7 +116,7 @@ func (s *Server) logFile() string {
 	if s.Cfg == nil {
 		return ""
 	}
-	return strings.TrimSpace(s.Cfg.Log.File)
+	return strings.TrimSpace(s.Cfg.Get().Log.File)
 }
 
 func splitCSV(v string) []string {

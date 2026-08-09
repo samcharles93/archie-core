@@ -53,9 +53,9 @@ func (s *cleanupStorage) CleanupExpired(_ context.Context, ttl time.Duration) (i
 func TestCleanupExpiredStorageUsesConfiguredTTL(t *testing.T) {
 	backend := &cleanupStorage{}
 	d := &Daemon{
-		Cfg: config.Config{
+		Cfg: config.NewHolder(config.Config{
 			Containers: config.ContainerConfig{VolumeTTL: config.Duration(6 * time.Hour)},
-		},
+		}),
 		Storage: backend,
 		Log:     slog.New(slog.DiscardHandler),
 	}
@@ -252,12 +252,12 @@ func TestTaskDispatcherWaitsForRunningTasks(t *testing.T) {
 
 func TestDaemonAllowConcurrentForReadsRepoConfig(t *testing.T) {
 	d := &Daemon{
-		Cfg: config.Config{
+		Cfg: config.NewHolder(config.Config{
 			Repos: []config.Repo{
 				{Owner: "acme", Name: "widget", AllowConcurrent: true},
 				{Owner: "acme", Name: "todo"},
 			},
-		},
+		}),
 	}
 
 	if !d.allowConcurrentForTask(&store.Task{Owner: "acme", Repo: "widget"}) {
@@ -279,10 +279,10 @@ func TestDaemonAllowConcurrentForReadsRepoConfig(t *testing.T) {
 func TestAllowConcurrentForTaskPrefersOwningIdentityRepo(t *testing.T) {
 	shared := config.Repo{Owner: "acme", Name: "shared"}
 	d := &Daemon{
-		Cfg: config.Config{
+		Cfg: config.NewHolder(config.Config{
 			// Root (legacy) list: shared is NOT opted in.
 			Repos: []config.Repo{shared},
-		},
+		}),
 		Identities: []*IdentityRunner{
 			{
 				Name: "archie",
@@ -305,12 +305,18 @@ func TestAllowConcurrentForTaskPrefersOwningIdentityRepo(t *testing.T) {
 func TestContainerEnvIncludesConfiguredNATSCredentials(t *testing.T) {
 	t.Setenv("ARCHIE_NATS_SECRET", "test-nats-token")
 
-	d := &Daemon{Cfg: config.Config{
-		NATS: config.NATSConfig{
-			URL:      "nats://nats.example:4222",
-			TokenEnv: "ARCHIE_NATS_SECRET",
-		},
-	}}
+	// ConnectedNATS is the endpoint the daemon's own client connected with
+	// at startup; containerEnv deliberately reads this, not the live Cfg,
+	// so a reload of nats.url cannot point new containers at a server the
+	// daemon is not publishing on.
+	natsCfg := config.NATSConfig{
+		URL:      "nats://nats.example:4222",
+		TokenEnv: "ARCHIE_NATS_SECRET",
+	}
+	d := &Daemon{
+		Cfg:           config.NewHolder(config.Config{}),
+		ConnectedNATS: natsCfg,
+	}
 
 	got := d.containerEnv(nil)
 	for _, want := range []string{
@@ -327,9 +333,9 @@ func TestContainerEnvUsesOnlyOwningIdentityProviderCredential(t *testing.T) {
 	t.Setenv("ROOT_PROVIDER_KEY", "root-secret")
 	t.Setenv("WORKER_PROVIDER_KEY", "worker-secret")
 	d := &Daemon{
-		Cfg: config.Config{Providers: map[string]config.Provider{
+		Cfg: config.NewHolder(config.Config{Providers: map[string]config.Provider{
 			"openai": {Class: "openai", APIKeyEnv: "ROOT_PROVIDER_KEY"},
-		}},
+		}}),
 		Identities: []*IdentityRunner{{
 			Name: "worker",
 			Cfg: config.IdentityConfig{Name: "worker", Providers: map[string]config.Provider{
@@ -371,11 +377,11 @@ func daemonWithNATS(t *testing.T) (*Daemon, *store.Store, *arnats.Client) {
 
 	s := store.OpenTest(t)
 	d := &Daemon{
-		Cfg: config.Config{
+		Cfg: config.NewHolder(config.Config{
 			Dispatch: config.Dispatch{Labels: map[string]string{
 				"parked": "archie:parked", "queued": "archie:queued", "dead": "archie:dead",
 			}},
-		},
+		}),
 		Store: s,
 		Tasks: client,
 		Log:   slog.New(slog.DiscardHandler),
@@ -532,7 +538,9 @@ func TestRunViaAgentParksOnRunError(t *testing.T) {
 
 func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
 	d, s, busClient := daemonWithNATS(t)
-	d.Cfg.DiffCapLines = 999
+	prev := d.Cfg.Get()
+	prev.DiffCapLines = 999
+	d.Cfg.Set(prev)
 	ctx := context.Background()
 
 	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 3, "t", "b", "", ""); err != nil {
@@ -591,6 +599,54 @@ type testForge struct {
 	stateLabels  []stateLabelCall
 	closedIssues []closeIssueCall
 	prStates     map[int]string
+}
+
+// pollingForge records every repo the daemon asks about, so a test can
+// observe which repos are being polled -- including that a repo removed
+// by a reload stops new intake.
+type pollingForge struct {
+	testForge
+	asked []string
+}
+
+func (f *pollingForge) AssignedIssues(_ context.Context, owner, repo, _ string) ([]forge.Issue, error) {
+	f.asked = append(f.asked, owner+"/"+repo)
+	return nil, nil
+}
+
+// TestRemovingRepoStopsNewIntake pins the reload behaviour: when a repo
+// vanishes from the config, the next poll cycle no longer asks the forge
+// about it. In-flight tasks are unaffected because their TaskContext.Cfg
+// is a value snapshot taken at dispatch -- the type system guarantees
+// that half; this test covers the intake half.
+func TestRemovingRepoStopsNewIntake(t *testing.T) {
+	fg := &pollingForge{}
+	d := &Daemon{
+		Cfg: config.NewHolder(config.Config{
+			BotUser:  "archie",
+			Repos:    []config.Repo{{Owner: "acme", Name: "widget"}},
+			Dispatch: config.Dispatch{Trigger: "assignee"},
+		}),
+		Forge: fg,
+		Log:   slog.New(slog.DiscardHandler),
+	}
+
+	ctx := context.Background()
+	d.poll(ctx)
+	if len(fg.asked) != 1 || fg.asked[0] != "acme/widget" {
+		t.Fatalf("after first poll, asked = %v, want [acme/widget]", fg.asked)
+	}
+
+	// Simulate a reload that drops the repo: the polling loop re-reads
+	// d.Cfg.Get().Repos fresh, so the next poll asks about nothing.
+	d.Cfg.Set(config.Config{
+		BotUser:  "archie",
+		Dispatch: config.Dispatch{Trigger: "assignee"},
+	})
+	d.poll(ctx)
+	if len(fg.asked) != 1 {
+		t.Fatalf("after reload, asked = %v, want unchanged [acme/widget] (no new intake)", fg.asked)
+	}
 }
 
 type closeIssueCall struct {
@@ -677,7 +733,7 @@ func testDaemon(t *testing.T, maxRetries, _ int) (*Daemon, *store.Store, *testFo
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	return &Daemon{
-		Cfg:   cfg,
+		Cfg:   config.NewHolder(cfg),
 		Store: s,
 		Forge: fg,
 		// Reconcile paths call Trees.Cleanup, which dereferences the
@@ -751,12 +807,12 @@ func TestExecutionForUsesIdentityConfigAgentAndProvider(t *testing.T) {
 	rootAgent := &identityRunnerStub{}
 	identityAgent := &identityRunnerStub{}
 	d := &Daemon{
-		Cfg: config.Config{
+		Cfg: config.NewHolder(config.Config{
 			Models: map[string]string{"builder": "root/model"},
 			Providers: map[string]config.Provider{
 				"root": {Class: "openai", APIKeyEnv: "ROOT_KEY"},
 			},
-		},
+		}),
 		Agent: rootAgent,
 		Identities: []*IdentityRunner{{
 			Name: "worker", Agent: identityAgent,
@@ -814,7 +870,7 @@ func twoIdentityDaemon(t *testing.T) (d *Daemon, s *store.Store, rootFg, archieF
 
 	repo := config.Repo{Owner: "acme", Name: "shared"}
 	d = &Daemon{
-		Cfg: config.Config{
+		Cfg: config.NewHolder(config.Config{
 			Dispatch: config.Dispatch{
 				Labels: map[string]string{
 					"queued": "archie:queued",
@@ -822,7 +878,7 @@ func twoIdentityDaemon(t *testing.T) (d *Daemon, s *store.Store, rootFg, archieF
 				},
 			},
 			Repos: []config.Repo{repo}, // root/legacy repo list  --  must NOT be consulted for identity tasks
-		},
+		}),
 		Store: s,
 		Forge: rootFg, // must NOT be called for identity-owned tasks
 		Log:   log,
@@ -858,7 +914,7 @@ func TestAcknowledgeUsesOwningIdentityForgeNotRoot(t *testing.T) {
 	is := forge.Issue{Number: 1, Title: "shared issue"}
 
 	// archie's poll cycle acknowledges via its own forge client.
-	d.acknowledge(ctx, archieFg, d.Cfg, repo, is)
+	d.acknowledge(ctx, archieFg, d.Cfg.Get(), repo, is)
 	if len(archieFg.stateLabels) != 0 {
 		t.Fatalf("archie forge got %d state label calls, want 0", len(archieFg.stateLabels))
 	}
@@ -945,7 +1001,7 @@ func TestMaintainAndDrainReconcilesPRsInMultiIdentityMode(t *testing.T) {
 // issues assigned to the root bot user.
 func TestPollIssuesWithConfigUsesIdentityScopedDispatch(t *testing.T) {
 	fg := &recordingForge{}
-	d := &Daemon{Cfg: config.Config{}, Log: slog.New(slog.DiscardHandler)}
+	d := &Daemon{Cfg: config.NewHolder(config.Config{}), Log: slog.New(slog.DiscardHandler)}
 
 	// Root uses bot_user "root"; the identity uses "winter". Both default
 	// to the assignee trigger.

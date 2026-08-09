@@ -1,7 +1,9 @@
 package webui
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,8 +25,8 @@ const (
 	fakeNATSToken   = "nats-FAKESECRETTOKEN000"
 )
 
-func configWithFakeSecrets() *config.Config {
-	return &config.Config{
+func configWithFakeSecrets() *config.Holder {
+	return config.NewHolder(config.Config{
 		WorkDir:   "/work/archie",
 		SkillsDir: "/work/archie/.agents/skills",
 		DBPath:    "/work/archie/archie.db",
@@ -58,7 +60,7 @@ func configWithFakeSecrets() *config.Config {
 		Chat: config.ChatConfig{
 			Telegram: config.TelegramConfig{TokenEnv: "TELEGRAM_TOKEN"},
 		},
-	}
+	})
 }
 
 // leakCandidates returns the set of fake secret strings a test should
@@ -72,11 +74,11 @@ func leakCandidates() []string {
 func TestHandleConfigNeverLeaksSecrets(t *testing.T) {
 	cases := []struct {
 		name string
-		cfg  *config.Config
+		cfg  *config.Holder
 	}{
 		{name: "populated config with secrets", cfg: configWithFakeSecrets()},
 		{name: "nil config", cfg: nil},
-		{name: "zero-value config", cfg: &config.Config{}},
+		{name: "zero-value config", cfg: config.NewHolder(config.Config{})},
 	}
 
 	for _, tc := range cases {
@@ -143,6 +145,248 @@ func TestHandleConfigSafeFieldsPresent(t *testing.T) {
 	}
 	if got.Storage.WorkDir != "/work/archie" {
 		t.Errorf("Storage.WorkDir = %q", got.Storage.WorkDir)
+	}
+}
+
+// TestHandleConfigIncludesReloadStatus proves a failed reload is surfaced
+// in /api/config so the operator can see the running config is stale
+// without reading logs.
+func TestHandleConfigIncludesReloadStatus(t *testing.T) {
+	srv := newTestServer(t)
+	srv.Cfg = configWithFakeSecrets()
+	srv.LastReload = func() config.ReloadStatus {
+		return config.ReloadStatus{
+			LastError:   "poll_interval must be positive",
+			LastErrorAt: "2026-08-09T12:00:00Z",
+		}
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	var got ConfigView
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Reload == nil {
+		t.Fatal("Reload = nil, want the failed-reload status")
+	}
+	if got.Reload.LastError != "poll_interval must be positive" {
+		t.Errorf("Reload.LastError = %q", got.Reload.LastError)
+	}
+	if got.Reload.LastErrorAt != "2026-08-09T12:00:00Z" {
+		t.Errorf("Reload.LastErrorAt = %q", got.Reload.LastErrorAt)
+	}
+}
+
+// TestHandleConfigOmitsReloadStatusWhenUnavailable pins that the reload
+// field is absent (not empty) when the server has no reload seam wired.
+func TestHandleConfigOmitsReloadStatusWhenUnavailable(t *testing.T) {
+	srv := newTestServer(t)
+	srv.Cfg = configWithFakeSecrets()
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	var got ConfigView
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Reload != nil {
+		t.Errorf("Reload = %+v, want nil (no reload seam)", got.Reload)
+	}
+}
+
+// TestSetProvenancePublishesForConfigView proves a reloaded provenance
+// list reaches /api/config.
+func TestSetProvenancePublishesForConfigView(t *testing.T) {
+	srv := newTestServer(t)
+	srv.Cfg = configWithFakeSecrets()
+	srv.SetProvenance([]ConfigOrigin{
+		{Path: "/etc/archie/config.toml", Role: "main", Layer: "base"},
+		{Path: "/etc/archie/conf.d/docker.yaml", Role: "extra", Layer: "overlay", Feature: "docker"},
+	})
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	var got ConfigView
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Provenance) != 2 {
+		t.Fatalf("Provenance = %+v, want 2 origins", got.Provenance)
+	}
+	if got.Provenance[0].Path != "/etc/archie/config.toml" {
+		t.Errorf("Provenance[0].Path = %q", got.Provenance[0].Path)
+	}
+}
+
+// TestHandleConfigReportsLockedKeys proves the dashboard is told which
+// config keys it cannot edit and why, so it can disable those rows
+// instead of silently omitting the edit affordance.
+func TestHandleConfigReportsLockedKeys(t *testing.T) {
+	srv := newTestServer(t)
+	srv.Cfg = configWithFakeSecrets()
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	var got ConfigView
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, key := range []string{"db_path", "work_dir"} {
+		if got.Locked[key] == "" {
+			t.Errorf("Locked[%q] is empty, want a reason", key)
+		}
+	}
+}
+
+// TestHandleConfigUpdateAppliesViaSeam proves the PATCH handler passes
+// the decoded updates to the wired UpdateConfig seam and answers ok.
+func TestHandleConfigUpdateAppliesViaSeam(t *testing.T) {
+	srv := newTestServer(t)
+	var got map[string]any
+	srv.UpdateConfig = func(_ context.Context, updates map[string]any) error {
+		got = updates
+		return nil
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPatch, "/api/config",
+		strings.NewReader(`{"updates": {"budgets.max_steps": 12}}`))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body)
+	}
+	if got["budgets.max_steps"] != float64(12) {
+		t.Errorf("updates = %#v, want budgets.max_steps=12", got)
+	}
+}
+
+// TestHandleConfigUpdateInvalidMapsTo400 proves a rejected update (the
+// seam wraps its error with ErrConfigUpdateInvalid) answers 400.
+func TestHandleConfigUpdateInvalidMapsTo400(t *testing.T) {
+	srv := newTestServer(t)
+	srv.UpdateConfig = func(context.Context, map[string]any) error {
+		return fmt.Errorf("%w: label is not runtime-tunable", ErrConfigUpdateInvalid)
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPatch, "/api/config",
+		strings.NewReader(`{"updates": {"label": "x"}}`))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %s", w.Code, w.Body)
+	}
+}
+
+// TestHandleConfigUpdateUnavailableMapsTo503 proves a disabled overlay
+// (ErrConfigUpdateUnavailable) answers 503, as does a server with no
+// UpdateConfig seam at all.
+func TestHandleConfigUpdateUnavailableMapsTo503(t *testing.T) {
+	srv := newTestServer(t)
+	srv.UpdateConfig = func(context.Context, map[string]any) error {
+		return fmt.Errorf("%w: overlay disabled by recovery flag", ErrConfigUpdateUnavailable)
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPatch, "/api/config",
+		strings.NewReader(`{"updates": {"label": "x"}}`))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503, body = %s", w.Code, w.Body)
+	}
+}
+
+func TestHandleConfigUpdateWithoutSeamMapsTo503(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPatch, "/api/config",
+		strings.NewReader(`{"updates": {"label": "x"}}`))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503, body = %s", w.Code, w.Body)
+	}
+}
+
+// TestHandleConfigIncludesOverridden proves the overridden dotted keys
+// reach the view so the UI can mark rows shadowed by the runtime overlay.
+func TestHandleConfigIncludesOverridden(t *testing.T) {
+	srv := newTestServer(t)
+	srv.Cfg = configWithFakeSecrets()
+	srv.ConfigOverrides = func(context.Context) ([]string, error) {
+		return []string{"budgets.max_steps", "label"}, nil
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	var got ConfigView
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Overridden) != 2 || got.Overridden[0] != "budgets.max_steps" || got.Overridden[1] != "label" {
+		t.Errorf("Overridden = %v, want [budgets.max_steps label]", got.Overridden)
+	}
+}
+
+func TestHandleConfigResetCallsSeamAndAnswersOk(t *testing.T) {
+	srv := newTestServer(t)
+	var got string
+	srv.ResetConfig = func(_ context.Context, key string) error {
+		got = key
+		return nil
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/config/reset",
+		strings.NewReader(`{"key": "budgets.max_steps"}`))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body)
+	}
+	if got != "budgets.max_steps" {
+		t.Errorf("ResetConfig called with %q, want budgets.max_steps", got)
+	}
+}
+
+func TestHandleConfigResetWithoutSeamMapsTo503(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/config/reset",
+		strings.NewReader(`{"key": "label"}`))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503, body = %s", w.Code, w.Body)
+	}
+}
+
+func TestHandleConfigResetRejectsEmptyKey(t *testing.T) {
+	srv := newTestServer(t)
+	srv.ResetConfig = func(context.Context, string) error { return nil }
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/config/reset",
+		strings.NewReader(`{"key": ""}`))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %s", w.Code, w.Body)
 	}
 }
 

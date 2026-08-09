@@ -58,13 +58,21 @@ whether the jail is lifted together determine which filesystem those tools can
 reach; neither is something the code should assume. NATS and the per-task
 archie-agent containers are Docker regardless.
 
-**The daemon hands agent containers its own `nats.url` verbatim** — see
+**The daemon hands agent containers the NATS endpoint its own client connected with at startup** — see
 `containerEnv` in `internal/daemon/daemon.go`, which appends `NATS_URL=` from
-`d.Cfg.NATS.URL`. That URL must therefore be reachable from wherever the daemon
+`d.ConnectedNATS.URL`, captured at construction. That endpoint must therefore be reachable from wherever the daemon
 runs *and* from inside the containers. When the daemon is on the host, that
 means the compose network's gateway address, not the service name and not
 localhost. `docker-compose.yml` pins the subnet to `172.19.0.0/16` so the
 gateway address cannot drift when the network is recreated.
+
+The two URLs are the same today and deliberately *not* the same after a
+SIGHUP reload of `nats.url`: the daemon's own client is startup-built, so a
+reload that pointed new containers at the new URL would launch them on a
+server the daemon is not publishing on, and every task would park with
+`ErrNoResponders`. Freezing the connected endpoint makes that divergence
+impossible regardless of what the config says or who reloads it; a reloaded
+`nats.url` is logged as a change that requires a restart.
 
 **`containers.pull_policy` can only be `"missing"`** (the default) or
 `"always"`. `"always"` against a private registry answers 401, because the
