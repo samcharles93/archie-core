@@ -115,8 +115,19 @@ func reloadLoop(ctx context.Context, ch <-chan os.Signal, c *ReloadController, l
 	}
 }
 
-// reloadableFields are the Config fields the daemon re-reads per cycle
-// or per dispatched task, so a reload takes effect without a restart.
+// reloadableFields are the Config fields a reload takes effect on
+// without a restart. The criterion: a field is reloadable when EVERY
+// consumer re-reads it. That question read as "what does the daemon
+// re-read" while the daemon owned the only Holder; it stopped being
+// sufficient when webui began sharing that Holder, because webui
+// handlers re-read on every request. MaxRetries is the worked example:
+// its only consumer is api_tasks.go:380,383, reading per-request
+// s.Cfg.Get(), and nothing in the daemon reads it -- so it reloads.
+// Chat.Telegram.TokenEnv is the counter-example: webui reads it per
+// request AND a telegram bot built at startup consumes it, so it is
+// NOT reloadable, and treating "webui reads it" as sufficient would
+// display a new token while the bot uses the old one.
+//
 // This is deliberately an allowlist: a field added to Config later
 // defaults to requires-restart, which is the safe direction and forces
 // whoever adds it to decide deliberately.
@@ -140,6 +151,12 @@ var reloadableFields = map[string]bool{
 	// pinned by hand in TestReloadableFieldsCoverForTaskSnapshot.
 	"Label":   true,
 	"BotUser": true,
+	// Worked example of the every-consumer criterion above: the sole
+	// consumer is the webui maxRetriesFor handler (api_tasks.go:380,383),
+	// which re-reads per request; the daemon never reads MaxRetries. The
+	// per-task half of this list is pinned mechanically; this webui-only
+	// entry is pinned by TestChangedNonReloadableFields.
+	"MaxRetries": true,
 }
 
 // reloadableSubFields are sub-fields of structs that are otherwise

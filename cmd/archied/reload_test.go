@@ -207,6 +207,7 @@ func TestChangedNonReloadableFields(t *testing.T) {
 	reloadableOnly.Label = "archie"
 	reloadableOnly.BotUser = "new-bot"
 	reloadableOnly.Forge = config.Forge{Host: "https://new-forge.example"}
+	reloadableOnly.MaxRetries = 5
 	if got := changedNonReloadableFields(base, reloadableOnly); len(got) != 0 {
 		t.Fatalf("reloadable-only: got %v, want []", got)
 	}

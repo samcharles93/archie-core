@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -347,20 +348,26 @@ func run() int {
 	// migrator, no contention with the task store). Skipped under
 	// --no-config-overlay / ARCHIE_SKIP_CONFIG_OVERLAY=1, or when the
 	// store cannot be opened or its values fail validation -- a broken
-	// overlay must not brick the daemon.
+	// overlay must not brick the daemon. bootOverlayErr carries the
+	// degrade reason into /api/config's reload status so it is visible
+	// where the operator is looking, not only in logs.
 	var overlayStore *overlay.Store
+	var bootOverlayErr string
 	if !skipOverlay {
 		overlayStore, err = overlay.Open(ctx, configDBPath(doc.Config.DBPath))
 		if err != nil {
+			bootOverlayErr = err.Error()
 			log.Error("config overlay unavailable; booting on file config alone", "path", configDBPath(doc.Config.DBPath), "err", err)
 		} else {
 			defer overlayStore.Close()
 			if overrides, err := overlayStore.Snapshot(ctx); err != nil {
+				bootOverlayErr = err.Error()
 				log.Error("config overlay unreadable; booting on file config alone", "err", err)
 			} else if len(overrides) > 0 {
 				next := *doc
 				applied, err := loader.ApplyOverlay(&next, overrides)
 				if err != nil {
+					bootOverlayErr = err.Error()
 					log.Error("config overlay rejected by validation; booting on file config alone", "err", err)
 				} else {
 					doc = applied
@@ -1065,7 +1072,14 @@ func run() int {
 	if overlayStore != nil {
 		reloadController.WithOverlay(func() (map[string]any, error) { return overlayStore.Snapshot(ctx) })
 	}
-	web.LastReload = reloadController.Status
+	// LastReload merges the reload controller's outcome with the boot-time
+	// overlay degrade, so /api/config carries both the last reload result
+	// and whether the runtime overlay is in effect at all.
+	web.LastReload = func() config.ReloadStatus {
+		st := reloadController.Status()
+		st.OverlayUnavailable = bootOverlayErr
+		return st
+	}
 
 	// PATCH /api/config goes through the same publish path as reload:
 	// apply to a copy of the published config, validate the materialised
@@ -1100,7 +1114,58 @@ func run() int {
 			configuration.Origin{Path: "config_overlay (runtime)", Role: configuration.RoleMain, Layer: configuration.LayerOverlay})}
 		currentProvenance = prov
 		publishConfig(next, prov)
+		bootOverlayErr = "" // a successful write proves the overlay works again
 		log.Info("config updated from dashboard", "keys", len(updates))
+		return nil
+	}
+
+	// ConfigOverrides lists the dotted keys currently overridden by the
+	// runtime overlay, so the dashboard can mark those rows and offer a
+	// reset. A disabled store reports no overrides.
+	web.ConfigOverrides = func(ctx context.Context) ([]string, error) {
+		if overlayStore == nil {
+			return nil, nil
+		}
+		rows, err := overlayStore.Snapshot(ctx)
+		if err != nil {
+			return nil, err
+		}
+		keys := make([]string, 0, len(rows))
+		for k := range rows {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		return keys, nil
+	}
+
+	// ResetConfig deletes one overlay row and republishes file + remaining
+	// overlay, so a dashboard-created override can be removed without
+	// editing SQL -- and so an operator whose file edit is shadowed by an
+	// override can recover it with one click.
+	web.ResetConfig = func(ctx context.Context, key string) error {
+		if overlayStore == nil {
+			return fmt.Errorf("%w: config overlay is disabled", webui.ErrConfigUpdateUnavailable)
+		}
+		if err := overlayStore.Delete(ctx, key); err != nil {
+			return err
+		}
+		doc, err := loader.Resolve(*cfgPath, *overlayPath)
+		if err != nil {
+			return fmt.Errorf("%w: %v", webui.ErrConfigUpdateInvalid, err)
+		}
+		if overrides, err := overlayStore.Snapshot(ctx); err != nil {
+			return err
+		} else if len(overrides) > 0 {
+			next := *doc
+			if doc, err = loader.ApplyOverlay(&next, overrides); err != nil {
+				return fmt.Errorf("%w: %v", webui.ErrConfigUpdateInvalid, err)
+			}
+		}
+		applyModelCatalog(&doc.Config, catalog)
+		currentProvenance = doc.Provenance
+		publishConfig(doc.Config, doc.Provenance)
+		bootOverlayErr = ""
+		log.Info("config key reset to file value", "key", key)
 		return nil
 	}
 

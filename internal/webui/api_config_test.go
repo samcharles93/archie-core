@@ -320,6 +320,76 @@ func TestHandleConfigUpdateWithoutSeamMapsTo503(t *testing.T) {
 	}
 }
 
+// TestHandleConfigIncludesOverridden proves the overridden dotted keys
+// reach the view so the UI can mark rows shadowed by the runtime overlay.
+func TestHandleConfigIncludesOverridden(t *testing.T) {
+	srv := newTestServer(t)
+	srv.Cfg = configWithFakeSecrets()
+	srv.ConfigOverrides = func(context.Context) ([]string, error) {
+		return []string{"budgets.max_steps", "label"}, nil
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	var got ConfigView
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Overridden) != 2 || got.Overridden[0] != "budgets.max_steps" || got.Overridden[1] != "label" {
+		t.Errorf("Overridden = %v, want [budgets.max_steps label]", got.Overridden)
+	}
+}
+
+func TestHandleConfigResetCallsSeamAndAnswersOk(t *testing.T) {
+	srv := newTestServer(t)
+	var got string
+	srv.ResetConfig = func(_ context.Context, key string) error {
+		got = key
+		return nil
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/config/reset",
+		strings.NewReader(`{"key": "budgets.max_steps"}`))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body)
+	}
+	if got != "budgets.max_steps" {
+		t.Errorf("ResetConfig called with %q, want budgets.max_steps", got)
+	}
+}
+
+func TestHandleConfigResetWithoutSeamMapsTo503(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/config/reset",
+		strings.NewReader(`{"key": "label"}`))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503, body = %s", w.Code, w.Body)
+	}
+}
+
+func TestHandleConfigResetRejectsEmptyKey(t *testing.T) {
+	srv := newTestServer(t)
+	srv.ResetConfig = func(context.Context, string) error { return nil }
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/config/reset",
+		strings.NewReader(`{"key": ""}`))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %s", w.Code, w.Body)
+	}
+}
+
 func TestHandleChannelsReportsConfiguredState(t *testing.T) {
 	srv := newTestServer(t)
 	srv.Cfg = configWithFakeSecrets()

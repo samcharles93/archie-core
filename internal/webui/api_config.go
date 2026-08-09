@@ -221,6 +221,10 @@ type ConfigView struct {
 	// dashboard to the reason. The UI renders these rows disabled rather
 	// than silently omitting the edit affordance.
 	Locked map[string]string `json:"locked,omitempty"`
+	// Overridden lists the dotted config keys currently set by the
+	// runtime overlay, so the UI can mark those rows (their file value
+	// is shadowed until reset) and offer a per-row reset.
+	Overridden []string `json:"overridden,omitempty"`
 }
 
 // IdentityView is who Archie is on the forge -- never the token that
@@ -372,12 +376,52 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		Provenance: provenance,
 		Locked:     lockedConfigKeys(),
 	}
+	if s.ConfigOverrides != nil {
+		if overridden, err := s.ConfigOverrides(r.Context()); err == nil {
+			view.Overridden = overridden
+		}
+		// A failed read omits the list rather than failing the whole
+		// view; the reload status carries the overlay degrade reason.
+	}
 	if s.LastReload != nil {
 		rs := s.LastReload()
 		view.Reload = &rs
 	}
 
 	writeJSON(w, view)
+}
+
+// handleConfigReset deletes one runtime-overlay row via ResetConfig,
+// restoring the file value for that key. The dashboard offers this on
+// overridden rows so it can remove an override it created.
+func (s *Server) handleConfigReset(w http.ResponseWriter, r *http.Request) {
+	if s.ResetConfig == nil {
+		http.Error(w, ErrConfigUpdateUnavailable.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	var body struct {
+		Key string `json:"key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.Key == "" {
+		http.Error(w, "key required", http.StatusBadRequest)
+		return
+	}
+	if err := s.ResetConfig(r.Context(), body.Key); err != nil {
+		switch {
+		case errors.Is(err, ErrConfigUpdateUnavailable):
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		case errors.Is(err, ErrConfigUpdateInvalid):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		default:
+			http.Error(w, "config reset failed: "+err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true})
 }
 
 // lockedConfigKeys returns the dotted config keys the overlay refuses
