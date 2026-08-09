@@ -86,6 +86,17 @@ tasks:
 
   build:
     desc: Build archied and archie-agent binaries
+    # Version stamping used to live only in Dockerfile.archied, so any build
+    # from source  --  including a host deployment  --  reported "dev" for
+    # both components and /version was useless there. Derive the same
+    # -X values from the release tags so a source build is stamped too.
+    # git describe (without --abbrev=0) yields 1.7.0-2-gbb54786 when HEAD is
+    # past the tag, which is the honest answer for a mid-cycle build.
+    vars:
+      GATEWAY_VERSION:
+        sh: git describe --tags --match 'archied/v*' 2>/dev/null | sed 's|^archied/v||' || echo dev
+      RUNTIME_VERSION:
+        sh: git describe --tags --match 'archie/v*' 2>/dev/null | sed 's|^archie/v||' || echo dev
     sources:
       - "**/*.go"
       - go.mod
@@ -94,7 +105,7 @@ tasks:
       - "{{.BIN_DIR}}/archied"
       - "{{.BIN_DIR}}/archie-agent"
     cmds:
-      - go build -o {{.BIN_DIR}}/archied ./cmd/archied
+      - go build -ldflags "-X main.gatewayVersion={{.GATEWAY_VERSION}} -X main.runtimeVersion={{.RUNTIME_VERSION}}" -o {{.BIN_DIR}}/archied ./cmd/archied
       - go build -o {{.BIN_DIR}}/archie-agent ./cmd/archie-agent
 
   test:
