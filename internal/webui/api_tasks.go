@@ -287,6 +287,23 @@ func (s *Server) archiveTask(ctx context.Context, w http.ResponseWriter, task *s
 	if s.storeFailed(w, err) {
 		return nil
 	}
+	// Best-effort: an archived task's log files not getting cleaned up is
+	// far less costly than the archive action itself failing over it, so
+	// this never blocks the response the way s.storeFailed above does.
+	//
+	// Known, accepted gap: a task reaches a terminal status (satisfying
+	// ArchiveTask's precondition) partway through Daemon.process, but its
+	// TaskLogs sink isn't closed until process() itself returns -- which can
+	// be later, if teardown after the terminal transition takes any time at
+	// all. A system-log message landing in that window races this Remove
+	// with an open Write to the same directory. Not corrupting (the write
+	// lands on a soon-to-be-unlinked inode and is discarded) and not worth
+	// closing here: doing so would mean tying TaskLogs.Close to the store
+	// transition instead of to process()'s return, a larger change than
+	// this call site should make unilaterally.
+	if err := s.TaskLogs.Remove(task.ID); err != nil {
+		s.Log.Warn("task log cleanup failed", "task", task.ID, "err", err)
+	}
 	return &actionOutcome{kind: events.KindTaskArchiveRequested, detail: detail, eventID: eventID}
 }
 

@@ -24,6 +24,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/eventbus"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
+	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/memory"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/storage"
@@ -119,6 +120,13 @@ type Daemon struct {
 	// and passed as CaptureTools in agent requests. Nil means no dynamic
 	// tool discovery (backward compatible).
 	ToolRegistry *tools.Registry
+
+	// TaskLogs persists each task's own log output (including a sandboxed
+	// container's, which otherwise disappears at AutoRemove) and mirrors it
+	// live onto the dashboard feed, wired by the composition root. Nil
+	// disables task logging (backward compatible); every TaskRegistry
+	// method is nil-receiver-safe, so process() calls it unconditionally.
+	TaskLogs *logging.TaskRegistry
 
 	// running holds a cancel function for every task currently executing,
 	// so /stop can reach work already in flight. Its zero value is ready
@@ -757,6 +765,7 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	// this is the one place that has to do it.
 	ctx, finished := d.running.begin(ctx, task.ID, task.Identity)
 	defer finished()
+	defer d.openTaskLog(task)()
 
 	fg := d.forgeFor(task)
 	trees := d.treesFor(task)
@@ -874,6 +883,24 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 			Owner:             task.Owner,
 			Repo:              task.Repo,
 		})
+	}
+}
+
+// openTaskLog opens task's log sink for the lifetime of one process() call
+// and returns the function to close it, covering both dispatch paths below
+// (sandboxed container and in-process) uniformly regardless of which one
+// runs. A failure to open is not fatal to the task -- it means this
+// attempt's own output won't be recoverable if something goes wrong, which
+// is worse than the pre-existing state, not equal to it, so the run
+// proceeds rather than parking over a logging problem.
+func (d *Daemon) openTaskLog(task *store.Task) func() {
+	if err := d.TaskLogs.Open(task.ID, task.Attempt); err != nil {
+		d.Log.Warn("task log sink unavailable", "task", task.ID, "attempt", task.Attempt, "err", err)
+	}
+	return func() {
+		if err := d.TaskLogs.Close(task.ID); err != nil {
+			d.Log.Warn("task log sink close failed", "task", task.ID, "err", err)
+		}
 	}
 }
 
