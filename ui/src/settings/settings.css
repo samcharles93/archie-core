@@ -38,23 +38,62 @@
   margin-top: 0;
 }
 
-/* Key/value list. Capped width keeps the label-to-value distance readable
-   on an ultrawide monitor; without it the grid stretches and reintroduces
-   the very gap this rewrite exists to remove. */
+/* Key/value list.
+ *
+ * width: fit-content is what keeps this honest. A percentage or rem cap is a
+ * guess that is wrong at some viewport: too wide and the action column drifts
+ * away from the value, too narrow and long paths truncate for no reason.
+ * Sizing the container to its own children instead means each list is exactly
+ * as wide as its widest row, so the Edit column sits just past the longest
+ * value rather than at some arbitrary offset, and the dead space to the right
+ * belongs to the card rather than sitting inside the list.
+ *
+ * Not centred with `margin: 0 auto`: these lists share cards with full-width
+ * tables (Models & providers has both), and centring would misalign every
+ * list against its own card heading and against the table beneath it.
+ *
+ * max-width: 100% keeps a pathological value from pushing past the card; the
+ * value track then clamps and the ellipsis takes over.
+ */
+/* The list owns the columns, not the row. Each .kv used to be its own grid,
+   which meant no row could size a column against any other row: a
+   max-content label track would end at a different x per row and the values
+   would come out ragged. Declaring the tracks once on the list and having
+   each row adopt them with `subgrid` gives one shared label column, sized to
+   the longest label and no wider. */
 .kv-list {
-  display: flex;
-  flex-direction: column;
-  max-width: 72rem;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) auto;
+  column-gap: var(--sp-4);
+  row-gap: 0;
+  width: fit-content;
+  max-width: 100%;
 }
 
 .kv {
   display: grid;
-  grid-template-columns: minmax(10rem, 20rem) minmax(0, 1fr) auto;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
   align-items: center;
-  column-gap: var(--sp-4);
   row-gap: var(--sp-1);
-  padding: var(--sp-2) var(--sp-2);
+  padding: var(--sp-2) 0;
   border-radius: var(--radius-sm);
+}
+
+/* Without subgrid the row cannot borrow the list's tracks, so fall back to a
+   per-row grid with a bounded label column. Values align because every row
+   resolves the same fixed range against the same container width. */
+@supports not (grid-template-columns: subgrid) {
+  .kv-list {
+    display: flex;
+    flex-direction: column;
+    width: auto;
+  }
+
+  .kv {
+    grid-template-columns: minmax(8rem, 16rem) minmax(0, 1fr) auto;
+    column-gap: var(--sp-4);
+  }
 }
 
 .kv + .kv {
@@ -213,8 +252,18 @@
 /* Narrow viewports: stack label over value so neither has to truncate to a
    few characters. Actions move onto the label line to keep the row compact. */
 @media (max-width: 700px) {
+  /* Drop out of subgrid: a shared label column is the wrong shape once the
+     row stacks, and a row still adopting the list's three tracks would place
+     its stacked children into columns that no longer exist. */
+  .kv-list {
+    display: flex;
+    flex-direction: column;
+    width: auto;
+  }
+
   .kv {
     grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: var(--sp-4);
   }
 
   .kv-label {
