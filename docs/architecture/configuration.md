@@ -244,6 +244,10 @@ The application currently changes behavioural values through unrelated paths:
 | Persona selection                    | `PersonaRegistry.SetActive` mutates an in-memory per-session choice.                                                             | Agent-system session state. Persistence and audit requirements are owned by that domain, not the configuration loader.                                                                  |
 | Memory provider `SaveConfig`         | Accepts an untyped map, delegates validation/persistence to an optional provider interface, then providers reload backing files. | A typed provider-owned configuration command using candidate validation, versioning, atomic promotion, health observation, audit, and rollback.                                         |
 | File and environment overlays        | Applied while loading `internal/config`; defaults are filled by mutation in `finalize`.                                          | Configuration-infrastructure input processing that produces separately typed candidates. Defaults and derivations remain visible in provenance.                                         |
+| SIGHUP config reload (2026-08)        | Re-resolves the file config (+ the runtime overlay), validates, then atomically republishes through `config.Holder`. A failed reload keeps the running config and records `last_error`/`last_error_at` in `/api/config`.                                           | Candidate promotion with last-known-good retention: the running snapshot is untouched on failure. A bounded observation period and actor audit are not yet implemented.                                           |
+| Dashboard PATCH `/api/config` (2026-08) | Applies dotted-key updates to a deep copy of the published config, validates the materialised result, persists to the runtime overlay, then republishes. Denylisted keys (`db_path`, `work_dir`) return 400; a rejected candidate never reaches `Set`.                                          | The universal change protocol's validate-stage-promote path with the overlay store as persistence. Actor is recorded as `dashboard`; no per-field health observation or versioned audit trail yet.                                           |
+| Dashboard reset `POST /api/config/reset` (2026-08) | Deletes one overlay row after resolving and validating the target state, then republishes file + remaining overlay, so a dashboard-created override can be removed without editing SQL.                                          | Remediation/rollback: the last-known-good (file) value is restored for that key.                                           |
+| Runtime config overlay store (2026-08) | Dashboard-edited overrides in `cfg.DBPath + "-config.sqlite"` (own `user_version`, own migrator), layered over the file config at boot and on every reload. A broken overlay degrades to file config alone, surfaced via `ReloadStatus.OverlayUnavailable`.                                          | External configuration storage for runtime-tunable values, separate from the task/conversation stores so each file owns its migration. The `--no-config-overlay` / `ARCHIE_SKIP_CONFIG_OVERLAY=1` recovery hatch skips it entirely.                                           |
 
 Any further mutation seam discovered during migration MUST be added here before
 it is changed. Direct field assignment on a live settings object is prohibited.
@@ -273,6 +277,81 @@ unavailable.
 Settings that cannot safely reload in-process are marked restart-required. The
 change may still be validated and versioned immediately, but promotion occurs
 through a controlled restart with the same health and rollback semantics.
+
+## Implemented runtime reload and config overlay (2026-08)
+
+A first implementation of the universal change protocol now exists for the
+runtime-tunable surface: SIGHUP reload, the dashboard PATCH, and the runtime
+config overlay. The mechanics below are the current implementation; the
+aspirational protocol (bounded observation, versioned audit trail, per-actor
+audit) remains future work.
+
+### Published snapshot: `config.Holder`
+
+The running configuration is a published snapshot held in `config.Holder`
+(`internal/config/holder.go`). Get returns a value under RLock; Set replaces the
+whole snapshot. A published Config is immutable: reload constructs a fresh one
+and calls Set. `config.Clone` deep-copies every reference-type field so a failed
+decode cannot mutate the published snapshot's shared maps. `Holder.Get` panics
+on a nil receiver — a forgotten `NewHolder` must fail loudly, not boot a daemon
+that silently runs on an empty config.
+
+### The reloadable-field criterion
+
+The diff-and-warn on reload asks whether a changed field takes effect without a
+restart. The criterion is: **a field is reloadable when every consumer re-reads
+it.** That question read as "what does the daemon re-read" while the daemon owned
+the only Holder; it stopped being sufficient when webui began sharing that
+Holder, because webui handlers re-read on every request. The allowlist lives in
+`cmd/archied/reload.go` and is deliberately a deny-by-default list: a field added
+to Config later defaults to requires-restart, forcing whoever adds it to decide
+deliberately. A reload that changes any non-allowlisted field logs
+"requires a restart" with the field names; a fully-applied reload logs Info.
+
+### SIGHUP reload
+
+SIGHUP re-resolves the file config (plus the runtime overlay), validates, and
+atomically republishes through the shared Holder. A failed reload — bad file,
+bad overlay — keeps the running config and records `last_error`/`last_error_at`
+in `/api/config` so the stale state is visible where the operator is looking.
+The three poll tickers re-read `PollInterval` per iteration and reset on change,
+so a reloaded interval genuinely takes effect.
+
+### The runtime config overlay
+
+The dashboard's edits persist to a dedicated SQLite file
+(`cfg.DBPath + "-config.sqlite"`, its own `user_version` and migrator — no
+contention with the task or conversation stores). The `config_overlay` table
+stores dotted-path keys with JSON-encoded values; the daemon layers them over
+the file config at boot and on every reload, with the same field-level
+precedence as a file overlay.
+
+- **Denylist:** `db_path` and `work_dir` cannot be set (the daemon must read them
+  before it can open the overlay store; changing them could break the next
+  boot). Enforced at write time with a 400 and in the store.
+- **Bootstrap degrade:** a broken overlay (unopenable store, unreadable value,
+  values failing validation) degrades to file config alone — it must not brick
+the daemon. The reason is surfaced via `ReloadStatus.OverlayUnavailable` in
+`/api/config` and rendered as a banner by the dashboard.
+- **Recovery hatch:** `--no-config-overlay` / `ARCHIE_SKIP_CONFIG_OVERLAY=1`
+  skips the overlay entirely; removing the `-config.sqlite` file is the
+documented manual recovery. See safe-change-and-recovery.md.
+- **Shadowed file edits are visible:** `/api/config` reports which dotted keys
+the overlay currently sets (`overridden`), so the dashboard marks those rows and
+offers a per-row reset.
+
+### Dashboard PATCH and reset
+
+`PATCH /api/config` receives `{"updates": {"dotted.key": value}}`. It applies the
+updates to a deep copy of the published config, validates the materialised
+result, persists to the overlay, then republishes — it never calls Set directly
+from the handler, since the dashboard shares the daemon's Holder. Dotted keys
+are nested before decode (yaml cannot decode a dotted key as a struct field).
+Error classification: 400 for a denylisted key or failed validation, 503 when
+the overlay is disabled, 500 for a persistence failure. `POST /api/config/reset`
+deletes one overlay row after resolving and validating the target state,
+restoring the file value — the answer to "my file edit isn't taking effect
+because an override shadows it".
 
 ## Completion criteria
 

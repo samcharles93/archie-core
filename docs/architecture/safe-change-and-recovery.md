@@ -100,6 +100,41 @@ capabilities continue operating.
 Remediation MUST be bounded, observable, and policy-driven. Recovery MUST NOT
 silently oscillate between versions or retry forever.
 
+## Runtime config overlay: degrade paths and recovery (2026-08)
+
+The dashboard edits runtime-tunable settings into a dedicated overlay store
+(`cfg.DBPath + "-config.sqlite"`), layered over the file config at boot and on
+reload. The file remains the authoritative, editor-reachable source; the overlay
+is a runtime-tunable overlay on top of it. A broken overlay must never brick
+the daemon, for the same reason a bad file edit must not: the operator needs a
+path back that does not depend on the daemon's health.
+
+### Degrade paths (all verified by the reload design)
+
+| Failure | Boot behaviour | Where the operator sees it |
+| --- | --- | --- |
+| Overlay store cannot be opened (permissions, corrupt file) | Boots on file config alone; logs at error level | `/api/config` → `reload.overlay_unavailable` → dashboard banner |
+| Overlay snapshot unreadable (a row holds invalid JSON) | Boots on file config alone | Same |
+| Overlay values fail validation | Boots on file config alone; the overlay is rejected wholesale, never partially applied | Same |
+| SIGHUP reload with a bad file or bad overlay | Running config is kept; the reload records `last_error` / `last_error_at` | `/api/config` → `reload.last_error` → dashboard banner |
+
+The overlay degrade paths never partially apply: `Loader.ApplyOverlay` decodes
+into a deep copy (`config.Clone`) and validates before anything is published,
+so a rejected overlay leaves the boot config exactly as the file produced it.
+
+### Recovery
+
+1. **`--no-config-overlay`** (or `ARCHIE_SKIP_CONFIG_OVERLAY=1`) boots the
+daemon on file config alone, ignoring the overlay entirely. This is the escape
+hatch that works when the daemon will not start.
+2. **Remove the overlay file** (`rm <dbpath>-config.sqlite`) — the overlay is
+recreated empty on next boot, so the daemon returns to pure file config.
+3. **Dashboard reset** (`POST /api/config/reset`) removes a single override
+whose file edit is shadowed, without stopping the daemon.
+
+These are the documented recovery paths; they are deliberate, bounded, and do
+not require hand-editing SQL in a shared database.
+
 ## Gateway restart: two constraints learned the hard way
 
 Telegram `/restart` (`internal/channels/telegram/restart.go` plus the `Start`
