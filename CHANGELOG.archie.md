@@ -1,5 +1,26 @@
 # archie-agent changelog
 
+## [1.4.0] - 2026-08-10
+
+- feat(gateway): tool-approval gate, session tools for chat, and /delete command
+- feat(gateway): make chat turns durable and idempotent
+- feat(webui): lifecycle-safe task controls with atomic retry and archive
+- feat(logging,workflow): daemon log feed and executable workflow registry
+- fix(store,gateway): taskstate constants and mobile jump-to search
+- feat(webui,gateway): wire config, channel, log-feed, and work-intake seams
+- fix(build): install ripgrep where grep.go actually needs it on PATH
+- fix(workflow): carry gate output into the baseline park error
+- feat(logging): add a per-task log sink
+- feat(agentexec): publish agent-side logs to the task's system subject
+- feat(daemon): consume agent system logs into per-task sinks and the dashboard feed
+- feat(webui,gateway): add /api/tasks/{id}/logs endpoint and task_logs chat tool
+- refactor(store): replace legacy persistence with SQLite
+- refactor(daemon,webui): make Daemon.Cfg and webui.Server.Cfg reload-safe
+- feat(config): SIGHUP-triggered reload with requires-restart warnings
+- feat(config): surface overlay state, shadowed keys, and per-row reset
+- fix(config): close review blocker on the PATCH path; deep-copy snapshots; atomics for shared state
+- fix(config): preserve nil slices in Clone to avoid spurious reload warnings
+
 ## [1.3.0] - 2026-08-08
 
 - feat(curator): engine family contract, registry, and runtime
