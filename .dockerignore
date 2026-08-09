@@ -1,7 +1,6 @@
 # Keep the build context to source + go.mod/go.sum. Everything here either
 # bloats the context or invalidates the COPY layer on every unrelated change.
 .git
-.beads
 .task
 .claude
 .codex

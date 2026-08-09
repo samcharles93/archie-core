@@ -2,7 +2,7 @@
 
 **Status:** Initial generator and site scaffold in progress  
 **Date:** 2026-07-28  
-**Beads issue:** `archie-core-5d7`
+**Tracking issue:** [#73](https://github.com/samcharles93/archie-core/issues/73)
 
 ## Purpose
 

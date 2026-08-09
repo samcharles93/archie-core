@@ -1,7 +1,13 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with
-code in this repository.
+Guidance for any coding agent working in this repository.
+
+`AGENTS.md` is a symlink to this file, so Claude, Codex, Pi, Tau and anything
+else reading either name get the same instructions. **Keep every rule here
+harness-agnostic**: name the behaviour required, not the tool that provides it.
+"Spawn a fresh reviewer that did not write the code" is a rule; "run
+`/code-review`" is one harness's way of satisfying it. The single exception is
+the memory note under Issue Tracking, which is explicitly Claude-scoped.
 
 ## What this is
 
@@ -30,41 +36,51 @@ authoritative**. It is a design to implement against — not a draft to extend.
   that works over the most defensible one.
 - Default to producing a diff. If a task's output would be a document rather
   than code, confirm that's actually wanted before starting.
+- Issues are tracked in GitHub Issues, grouped issues can be linked under an epic, 
+  with subtasks linked to the epic.
 
 ## Deployment model
 
-**archied runs on the host under systemd.** Its chat tools operate on host files
-(shell, read, write, edit, find, grep), which a container cannot reach. NATS and
-per-task archie-agent containers stay in Docker.
+**archied supports several deployment shapes; systemd is not required.**
+`deployments/` holds the supported profiles — `single-forge-github.toml`,
+`multi-forge-github-gitea.toml`, `local-ollama-standalone.toml`,
+`docker-nats-stack.toml`, and `systemd-user-service.md` as one operational
+runbook among them. Do not write code or docs that assume a systemd unit exists.
 
-```bash
-# On the deployment host (carina):
-systemctl --user status archied          # daemon
-journalctl --user -u archied -f          # logs
-docker compose -f ~/projects/archie-core/docker-compose.yml up -d
-docker compose pull agent                # refresh agent image after CI pushes
-```
+**The chat agent's file tools are workspace-confined by default.** `builtin`
+tool construction calls `SetPathConfinement(!unrestricted)`, so read, write,
+edit, find and grep are jailed to the configured workspace unless
+`[chat] unrestricted_filesystem = true` lifts it
+(`internal/config/config.go`, `internal/tools/provider/builtin/provider.go`).
+That setting is commented out in `config.example.toml` — an operator opt-in, not
+the default, and not an architectural requirement. Where the daemon runs and
+whether the jail is lifted together determine which filesystem those tools can
+reach; neither is something the code should assume. NATS and the per-task
+archie-agent containers are Docker regardless.
 
-**The daemon hands agent containers its own `nats.url` verbatim**
-(`internal/daemon/daemon.go:1177`), so that URL must reachable from both the
-host _and_ from inside containers. Use the compose network's gateway address
-(`172.19.0.1:4222`), not the service name or localhost. The subnet is pinned in
-`docker-compose.yml` so this address cannot drift.
+**The daemon hands agent containers its own `nats.url` verbatim** — see
+`containerEnv` in `internal/daemon/daemon.go`, which appends `NATS_URL=` from
+`d.Cfg.NATS.URL`. That URL must therefore be reachable from wherever the daemon
+runs *and* from inside the containers. When the daemon is on the host, that
+means the compose network's gateway address, not the service name and not
+localhost. `docker-compose.yml` pins the subnet to `172.19.0.0/16` so the
+gateway address cannot drift when the network is recreated.
 
 **`containers.pull_policy` can only be `"missing"`** (the default) or
-`"always"`. `"always"` against the private Gitea registry answers 401 because
-the daemon sends no credentials to the Docker API. Refresh the agent image by
-hand: `docker compose pull agent`.
+`"always"`. `"always"` against a private registry answers 401, because the
+daemon sends no credentials to the Docker API. Refresh the agent image
+explicitly instead: `docker compose pull agent`.
 
 **`docker-compose.yml`** carries only NATS and the agent build stanza. The agent
-has a build profile so `up -d` skips it — without the profile, compose creates a
-container that exits 0 immediately and reports "Started", which reads as a crash
-loop. `docker compose build agent` and `docker compose pull agent` still work by
-name without activating the profile.
+has a `build` profile so `up -d` skips it — without the profile, compose creates
+a container that exits 0 immediately and reports "Started", which reads as a
+crash loop. `docker compose build agent` and `docker compose pull agent` still
+work by name without activating the profile.
 
-**Config lives at `~/.config/archie/config.toml`**, outside the repo. Nothing in
-the repo working tree is load-bearing at runtime. The reference template is
-`deployments/docker-nats-stack.toml`.
+**Config lives outside the repo**, at
+`${XDG_CONFIG_HOME:-~/.config}/archie/config.toml`. Nothing in the repo working
+tree is load-bearing at runtime. Reference templates are in `deployments/`;
+`config.example.toml` is the annotated schema.
 
 ## Release process
 
@@ -95,19 +111,51 @@ No tags at HEAD prints a warning (images get stamped `dev`).
 Commands are defined in `Taskfile.yml` (uses [Task](https://taskfile.dev)); run
 `task --list` to see everything.
 
+**Prerequisites:** Go 1.26.5 (matched exactly by `go.mod`), [Task], `gofumpt`,
+`golangci-lint`, and **Node/npm** — `task check` runs the dashboard suite too, so
+a Go-only toolchain cannot complete the gate.
+
+[Task]: https://taskfile.dev
+
 ```bash
 task build      # build archied and archie-agent binaries into bin/
 task test       # go test ./... -count=1
+task test:ui    # dashboard node tests (DOM-building primitives)
+task ui         # build the dashboard into ui/dist (committed — see below)
 task fmt        # gofumpt -w . && go fix ./...
 task vet        # go vet ./...
 task lint       # golangci-lint run ./...
-task check      # fmt + go fix + vet + build + test — matches the per-repo [[repos.gate]] archied runs on itself
+task check      # fmt + go fix + vet + build + test + test:ui
+task dev        # archied live-reload + Vite HMR together, on :5173
 ```
 
-Run a single test: `go test ./internal/workflow/... -run TestName -v`.
+`task check` is the gate, and it includes `test:ui` deliberately: nothing else
+runs the dashboard suite, so left out it rots silently and a broken DOM
+primitive ships. Note that `task fmt` **rewrites files**, so `check` is not a
+read-only verification step.
+
+Run a single test: `go test ./internal/domain/workflow/... -run TestName -v`.
 
 Docker/NATS stack: `task docker-build` (builds the agent image locally),
 `task docker-up`, `task docker-down`, `task docker-logs`.
+
+## Repository hygiene
+
+- **`ui/dist` is committed on purpose.** The Go build embeds it, so building
+  `archied` must never require a Node toolchain. If you change anything under
+  `ui/src`, run `task ui` and commit the rebuilt `ui/dist` in the same change.
+  Never add it to `.gitignore`.
+- **Do not commit** build artefacts or local state: `/archied`, `/archie-agent`,
+  `/bin/`, `*.db`, `*.png` working screenshots, `.references/`,
+  `config.production.toml`, `.env`, or the docs site's `node_modules/` and
+  `.vitepress/{cache,dist}/`. `.gitignore` already covers these; the point is not
+  to defeat it.
+- **Scratch files go outside the repo**, in the OS temp directory or your
+  harness's scratch area — not in the working tree, where `worktree.CommitAll`
+  will sweep them up (see the `WriteTaskJSON` trap below).
+- Commits follow **Conventional Commits** scoped by package:
+  `feat(webui): ...`, `fix(build): ...`, `ci: ...`, `chore(release): ...`.
+- Only commit or push when asked.
 
 ## Organisation (strict)
 
@@ -225,11 +273,16 @@ Full details live in `ARCHITECTURE.md` — do not duplicate it here; skim it
 whenever touching the daemon, workflow engine, or forge/worktree/store
 boundaries. Summary of what's evolved since that doc was last fully accurate:
 
+- **The domain migration has begun.** `internal/domain/` (curator, workflow,
+  workintake) and `internal/infrastructure/` (configuration, eventbus,
+  modelcatalog, terminalprompt) both exist. The tree is authoritative over any
+  package table; see `docs/architecture/migration-decisions.md` for the recorded
+  position and what was agreed next.
 - The daemon has grown an RPC split (`internal/forgerpc`, `internal/storerpc`,
-  `internal/worktreerpc`, `internal/natsrpc`, `internal/nats`) alongside the
-  in-process model described in ARCHITECTURE.md — check `internal/nats/` and
-  `docker-compose.yml` for the current split between `archied` and sandboxed
-  workers.
+  `internal/worktreerpc`, `internal/natsrpc`) alongside the in-process model
+  described in ARCHITECTURE.md. The eventbus transport is
+  `internal/infrastructure/eventbus/`. Check those plus `docker-compose.yml` for
+  the current split between `archied` and sandboxed workers.
 - `internal/gate/` — quality gate execution (the "environmental constraints over
   prompt rules" mechanism).
 - `internal/skill/`, `internal/skillscript/`, `internal/yaegiutil/` — SKILL.md
@@ -251,6 +304,63 @@ boundaries. Summary of what's evolved since that doc was last fully accurate:
   also runs on `/restart`. The webhook branch already passes
   `DropPendingUpdates: true` in `SetWebhookParams`; both paths must stay
   consistent.
+- **Telegram command menus resolve by SCOPE SPECIFICITY, not recency.** Order,
+  most specific first: `chat_member` > `chat` > `chat_administrators` >
+  `all_chat_administrators` > `all_group_chats` > `all_private_chats` >
+  `default`. So `SetMyCommands` on `default` alone is **invisible in DMs** if
+  anything was ever registered on `all_private_chats`. Hit when migrating a bot
+  token between applications: our 8 commands landed on `default` and logged
+  success while the menu still showed ~60 stale commands from the previous app.
+  Menus are server-side state owned by Telegram and keyed to the **bot token** —
+  they survive redeploys, rewrites and whole-application migrations. Inheriting a
+  token means inheriting its menu, webhook config and other bot-level settings,
+  so audit `getMyCommands` per scope and `getWebhookInfo` when taking one over.
+  `commands.go` publishes to `default` + `all_private_chats` + `all_group_chats`
+  so leftovers are overwritten rather than shadowing.
+- **`ai-sdk` streaming: `FullStream` is authoritative and MUST be drained until
+  close.** Its writes are *synchronous*, so an unread `FullStream` stalls the
+  producer and deadlocks the turn. `TextStream` is best-effort and silently
+  DROPS deltas when not drained — consuming it deadlocked every streamed reply
+  in production. Range `FullStream` and collect `core.StreamPartTextDelta`. See
+  the doc comment on `core/stream_impl.go`. Related: check the pinned
+  `go-telegram/bot` version against latest before hand-rolling anything — a
+  Markdown→HTML converter was written while 4 releases behind, and
+  `SendRichMessage` with `models.InputRichMessage{Markdown}` had made it
+  obsolete. `EscapeMarkdown` does the *inverse* of formatting, and
+  `ParseModeMarkdown == "MarkdownV2"` while `ParseModeMarkdownV1 == "Markdown"`
+  — the names disagree with the values.
+- **NATS, three behaviours that have each caused a real defect:**
+  (1) *Work-queue retention forbids overlapping consumers.* `ARCHIE_TASKS` uses
+  `jetstream.WorkQueuePolicy`, so two consumers with overlapping `FilterSubjects`
+  conflict and the later one silently receives nothing. `nats.Client.Subscribe`
+  creates a NEW consumer, so calling it on subjects the client's own durable
+  consumer already filters will never deliver — drain the existing consumer with
+  `Fetch` instead, as `cmd/archie-agent` and the agentexec round-trip fake do.
+  (2) *Reply inboxes are not stream subjects.* Answering a request must use core
+  NATS publish, not the JetStream path: a `Message.ReplyAddress` is an ephemeral
+  `_INBOX.*` belonging to one waiting caller and part of no stream, so a durable
+  publish to it fails. That is why `eventbus.Publisher` declares `Respond` as a
+  method distinct from `Publish` rather than a convenience over it.
+  (3) *Subscribe does not mean reachable.* `nc.Subscribe` only queues the SUB
+  frame client-side, so code that registers a responder and immediately issues a
+  request can beat its own subscription and get `ErrNoResponders` from a
+  responder that is, by then, listening. `natsrpc.RegisterAll` now flushes before
+  returning — this was the cause of the long-standing
+  `TestRunTaskExecutesBootstrapWorkflowEndToEnd` CI flake that passed in
+  isolation and failed under full-suite load.
+- **`internal/gateway/` chat prompt** — `BuildSystemPrompt` renders
+  `templates/archie.md.tpl`. The `<tools>` block is built from the **same**
+  `core.ToolSet` passed to the model, so the prompt cannot claim a tool the model
+  cannot call; never source the tool list from anywhere else. An empty toolset
+  deliberately renders "no tools are available" rather than an empty block,
+  because an empty block reads as "you have tools" and the model invents them.
+  Personas are the STYLE layer only — instruction precedence, core rules and the
+  `<tools>`/`<env>` blocks live in the template, so selecting a persona can never
+  strip rules or tool inventory. Do not move rules into persona strings.
+  `internal/tools/provider/contract_test.go` asserts the literal wiring strings
+  `chatGenerateOptions(nil, toolReg` and `toolSummaries(options.Tools)` in
+  `cmd/archied/main.go` — refactoring that call site fails that test **by
+  design**.
 - **`internal/container/pool.go` `WriteTaskJSON`** — the per-task boot brief
   goes to `<worktree>/.git/task.json`, not the worktree root.
   `worktree.CommitAll` stages via go-git `Add{All:true}`, which ignores
@@ -281,16 +391,35 @@ explicit operator action (dashboard or chat), capped by `max_retries`, not a
 label a human removes.
 
 **Config** is daemon-level TOML (see `config.example.toml`), not per-repo files
-in this repo. Two live instances run on a separate host (`carina`), each with a
-distinct `bot_user` — see the `two-archied-instances-run-on-host-carina-ssh`
-beads memory (`bd memories carina`) if working on multi-identity/dispatch
-behavior.
+in this repo. Multi-identity deployments run more than one identity from a
+single daemon, each with a distinct `bot_user`; see
+`deployments/multi-forge-github-gitea.toml` and `docs/architecture/identity.md`
+before changing multi-identity or dispatch behaviour. Details of any particular
+operator's hosts belong in that operator's own notes, not here.
 
 ## Conventions
 
 - Go 1.26.5, module `github.com/samcharles93/archie-core`.
 - `ai-sdk/runtime`, `ai-sdk/agentloop`, `ai-sdk/core` are external other
   projects, not vendored copies. Changes affect other repos.
+- **Commit the meaning, not just the change.** When a change alters what
+  something MEANS rather than what it does, say so explicitly in the commit body
+  and in the code comment: "X used to mean A; it now means B, because C." Update
+  the doc comment in the same commit — a comment that contradicts its code is
+  worse than no comment, because the next reader trusts it. This is not
+  ceremony: over 2026-08-04/05, three consecutive rounds of fixes each introduced
+  a regression the next round caught, and **every one passed `task check` with
+  tests written for it** (a summary that sorted to the end of history; a cache
+  slot claimed before the store write; a degraded container pool that silently
+  ran agent loops in-process with the daemon's own authority, removing the
+  isolation boundary `[containers]` exists to provide). Tests catch behaviour
+  that breaks; they do not catch behaviour that quietly starts meaning something
+  else. Roughly half of what adversarial reviewers found, they found by noticing
+  a doc comment or commit message that no longer matched the code.
+- **Lifting code from tau requires a provenance header** on every copied file,
+  naming the tau source path, the tau commit it came from, and the deliberate
+  mutations. This turns copy-paste drift into a diff instead of archaeology.
+  (Reuse strategy is copy-and-mutate, never extraction into shared libraries.)
 - Non-interactive shell commands only: some environments alias `cp`/`mv`/`rm` to
   `-i`. Use `cp -f`, `mv -f`, `rm -f`/`rm -rf`, `scp -o BatchMode=yes`,
   `ssh -o BatchMode=yes`, `apt-get -y`.
@@ -343,23 +472,62 @@ clean.
 fresh reviewer — never self-certified by the implementer.** After red-then-green
 is green:
 
-- Spawn a review with no memory of how the code was written (a fresh subagent,
-  or `/code-review`/`/security-review` as appropriate) and instruct it to assume
-  every line is wrong until proven correct.
+- Run the review from a context with no memory of how the code was written, and
+  instruct it to assume every line is wrong until proven correct. Any mechanism
+  that achieves this is fine — a fresh subagent, a separate session, a review
+  command your harness provides.
 - The checklist: all tests pass, lint is zero-findings, formatting is clean,
   then a manual read of every non-test file in the changed package for — dead
   code paths, unchecked error returns, hardcoded values that should be
   parameters/constants, interface satisfaction, nil-pointer risk, goroutine
   leaks, and races on shared mutable state.
-- Findings are reported (use `ReportFindings` when running as a review agent),
-  not silently fixed by the same pass that wrote the code — a finding that
-  survives blocks closing the work, it doesn't get waved through.
+- Findings are **reported**, not silently fixed by the same pass that wrote the
+  code — a finding that survives blocks closing the work, it doesn't get waved
+  through. (If your harness has a structured findings mechanism, use it;
+  otherwise a plain list is fine.)
 - Only close out the issue once the adversarial pass reports zero surviving
   findings.
 
+**Lint-driven changes are behaviour-bearing. Review them; never trust them.**
+Two confirmed regressions, one from each shape lint work takes:
+
+1. **Autofix.** A `golangci-lint --fix` batch across 8 files had its `errorlint`
+   fix in `internal/tools/builtin/grep.go` rewrite
+   `if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1` into
+   `errors.As(err, &exitErr)` **without the exit-code check**. ripgrep exit 1
+   means no matches; exit 2 means the search never ran. So every failure was
+   reported to the model as "no matches found", and the agent would state a file
+   contains nothing on the strength of a search that never happened. The fix kept
+   `errors.As` **and** restored the predicate — errorlint reports 0 issues on
+   that form, so satisfying the linter never required dropping it. *Pattern:*
+   fixers rewrite the error-matching part of a compound condition and can widen
+   or narrow the predicate around it. Any autofix touching a condition needs its
+   pre-fix behaviour checked.
+2. **Structural extraction** — the riskier shape. Clearing a `nestif` finding
+   extracted a helper that took a slice **by pointer** and appended every
+   surviving field to it; the caller's own loop then appended the same fields
+   again. Every model name doubled (`/model gpt-5.6` asked the router for
+   `gpt-5.6 gpt-5.6`), and an index loop becoming a range loop meant a
+   space-separated `--provider openai` value was no longer consumed with its
+   flag. Telegram model switching broke outright and nobody noticed. *Pattern:*
+   when a `gocognit`/`nestif`/`cyclop` extraction hands a collection to a helper
+   by pointer, or turns an index loop into a range loop, check the accumulation
+   and skip semantics. The compiler catches neither.
+
+**Verification discipline:** confirm a regression test actually fails against the
+buggy version before trusting it. The grep bug returned
+`Content: "no matches found", IsError: false`, which a naive test asserting only
+"no error" would have passed. For the doubled model name, assert **field count**
+rather than string equality, so a future re-extraction cannot pass by doubling a
+different part of the string.
+
 ## Issue Tracking
 
-This project uses **GitHub Issues** (`samcharles93/archie-core`) for issue
-tracking. Epics are parent issues; their work items are linked as native
+This project uses **GitHub Issues** (`samcharles93/archie-core`) via `gh` for
+issue tracking. Epics are parent issues; their work items are linked as native
 GitHub sub-issues. Labels: `task`, `feature`/`enhancement`, `bug`, `epic`,
 plus `in-progress` for active work.
+
+*Claude-specific:* project memory lives in
+`~/.claude/projects/-work-apps-archie-core/memory/`. Other harnesses should use
+their own equivalent — nothing in this repo depends on it.
