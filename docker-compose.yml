@@ -47,7 +47,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: git.catlow.cloud/sam/archie-agent:latest
+    image: ghcr.io/samcharles93/archie-agent:latest
 
 volumes:
   nats_data:
