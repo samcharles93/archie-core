@@ -72,7 +72,7 @@ func TestDashboardAndChatAgreeOnTerminalStates(t *testing.T) {
 					t.Fatalf("chat %s: %v", tc.action, actErr)
 				}
 			} else {
-				srv := &webui.Server{Store: st, Cfg: &config.Config{MaxRetries: 3}}
+				srv := &webui.Server{Store: st, Cfg: config.NewHolder(config.Config{MaxRetries: 3})}
 				req := httptest.NewRequestWithContext(ctx, http.MethodPost,
 					"/api/tasks/"+strconv.FormatInt(task.ID, 10)+"/action",
 					bytes.NewBufferString(`{"action":"`+tc.action+`"}`))

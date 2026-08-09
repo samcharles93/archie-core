@@ -28,7 +28,10 @@ import (
 // chat gateway. Every field is intentionally explicit so the function
 // signature acts as a contract of what the gateway depends on.
 type telegramSetup struct {
-	Cfg                 config.Config
+	// Cfg is read once per setup function via Get(); the daemon is not
+	// running yet at this point, so the reload-safe Holder is mostly a
+	// formality, but matching the daemon's API keeps callers honest.
+	Cfg                 *config.Holder
 	CfgPath             string
 	OverlayPath         string
 	St                  store.TaskStore
@@ -57,19 +60,20 @@ type telegramSetup struct {
 // token is configured. It returns a start function (nil when no token
 // is configured) and ok=false to signal the caller must exit early.
 func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), ok bool) {
-	if s.Cfg.Chat.Telegram.TokenEnv == "" {
+	cfg := s.Cfg.Get()
+	if cfg.Chat.Telegram.TokenEnv == "" {
 		return nil, true
 	}
-	tgToken := os.Getenv(s.Cfg.Chat.Telegram.TokenEnv)
+	tgToken := os.Getenv(cfg.Chat.Telegram.TokenEnv)
 	if tgToken == "" {
-		s.Log.Error("chat.telegram configured but token env var is empty", "env", s.Cfg.Chat.Telegram.TokenEnv)
+		s.Log.Error("chat.telegram configured but token env var is empty", "env", cfg.Chat.Telegram.TokenEnv)
 		return nil, false
 	}
-	if len(s.Cfg.Chat.Telegram.AllowedUserIDs) == 0 {
+	if len(cfg.Chat.Telegram.AllowedUserIDs) == 0 {
 		s.Log.Warn("chat.telegram has no allowed_user_ids: every sender will be rejected. " +
 			"Add your Telegram user id to chat.telegram.allowed_user_ids to enable the bot.")
 	}
-	tg := telegram.New(tgToken, "", "", s.Cfg.Chat.Telegram.AllowedUserIDs, s.Log)
+	tg := telegram.New(tgToken, "", "", cfg.Chat.Telegram.AllowedUserIDs, s.Log)
 	if s.RegisterRestart != nil {
 		s.RegisterRestart(tg.RequestRestart)
 	}
@@ -83,7 +87,7 @@ func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), o
 	}
 	tg.Dangerous = s.Dangerous
 	tg.ReleaseAnnouncements = &releaseannounce.Announcer{
-		StatePath: releaseAnnouncementStatePath(s.Cfg.WorkDir, s.Cfg.BotUser),
+		StatePath: releaseAnnouncementStatePath(cfg.WorkDir, cfg.BotUser),
 		Components: []releaseannounce.Component{
 			{ID: "gateway", Label: "THE GATEWAY", Version: gatewayVersion, ChangelogPath: packagedGatewayChangelogPath},
 			{ID: "runtime", Label: "THE RUNTIME", Version: runtimeVersion, ChangelogPath: packagedRuntimeChangelogPath},
@@ -120,15 +124,16 @@ func configureTelegramUpdates(tg *telegram.Gateway, s telegramSetup) {
 }
 
 func makeUpdateService(s telegramSetup) *releaseupdate.Service {
-	if len(s.Cfg.Chat.Telegram.UpdateCheckCommand) == 0 {
+	cfg := s.Cfg.Get()
+	if len(cfg.Chat.Telegram.UpdateCheckCommand) == 0 {
 		return nil
 	}
 	updates := &releaseupdate.Service{
-		Catalog:   releaseupdate.CommandCatalog{Command: s.Cfg.Chat.Telegram.UpdateCheckCommand},
-		StatePath: filepath.Join(s.Cfg.WorkDir, "telegram-update-deferrals.json"),
+		Catalog:   releaseupdate.CommandCatalog{Command: cfg.Chat.Telegram.UpdateCheckCommand},
+		StatePath: filepath.Join(cfg.WorkDir, "telegram-update-deferrals.json"),
 	}
-	if len(s.Cfg.Chat.Telegram.UpdateInstallCommand) != 0 {
-		updates.Installer = releaseupdate.CommandInstaller{Command: s.Cfg.Chat.Telegram.UpdateInstallCommand}
+	if len(cfg.Chat.Telegram.UpdateInstallCommand) != 0 {
+		updates.Installer = releaseupdate.CommandInstaller{Command: cfg.Chat.Telegram.UpdateInstallCommand}
 	}
 	return updates
 }
@@ -204,20 +209,21 @@ func newChatTurnRunner(
 	sessionStore gateway.SessionStore,
 	router *gateway.Router,
 ) *gateway.TurnRunner {
+	cfg := s.Cfg.Get()
 	runner := gateway.NewTurnRunner(gateway.TurnRunnerConfig{
 		Router:       router,
 		Sessions:     sessionStore,
 		Models:       s.ChatModels,
 		Personas:     s.Personas,
-		Model:        newChatTurnModel(s.LLM, s.ToolReg, s.Cfg.Chat.MaxSteps, toolLimits(s.Cfg)),
+		Model:        newChatTurnModel(s.LLM, s.ToolReg, cfg.Chat.MaxSteps, toolLimits(cfg)),
 		TaskLister:   s.ChatTaskLister,
 		Tasks:        s.ChatTasks,
 		TaskLogs:     s.ChatTaskLogs,
 		TaskIdentity: s.DefaultChatIdentity,
 		Bus:          s.Bus,
-		BotUser:      s.Cfg.BotUser,
+		BotUser:      cfg.BotUser,
 		Channel:      channel,
-		Operator:     s.Cfg.Chat.Operator,
+		Operator:     cfg.Chat.Operator,
 		Log:          s.Log,
 	})
 	if err := runner.Recover(context.Background()); err != nil && s.Log != nil {

@@ -16,8 +16,10 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -43,6 +45,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
+	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/overlay"
 	"github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
 	"github.com/samcharles93/archie-core/internal/logging"
@@ -293,6 +296,15 @@ func taskDBPath(configuredPath string) string {
 	return configuredPath + "-tasks.sqlite"
 }
 
+// configDBPath resolves the runtime config overlay file. It is a sibling
+// of the task and conversation stores (same configured path, own suffix)
+// so each file owns its user_version and its migrator with no
+// contention; recovery from a broken overlay is rm this file plus the
+// --no-config-overlay boot flag.
+func configDBPath(configuredPath string) string {
+	return configuredPath + "-config.sqlite"
+}
+
 func manualRequeueTask(ctx context.Context, st store.TaskStore, taskID int64) error {
 	task, err := st.TaskByID(ctx, taskID)
 	if err != nil {
@@ -313,6 +325,7 @@ func run() int {
 	defaultCfg := filepath.Join(configHome(), "archie", "config.toml")
 	cfgPath := flag.String("config", defaultCfg, "path to a TOML/YAML config file or configuration directory")
 	overlayPath := flag.String("config-overlay", "", "path to a TOML/YAML overlay file or configuration directory applied on top of -config")
+	noConfigOverlay := flag.Bool("no-config-overlay", false, "skip the runtime config overlay (recovery hatch for the DB overlay; the -config-overlay file overlay still applies)")
 	once := flag.Bool("once", false, "run a single poll+process cycle and exit (systemd timer / testing)")
 	requeue := flag.Int64("requeue", 0, "requeue a parked/waiting task by id (keeps its workflow), then exit unless -once is also set")
 	flag.Parse()
@@ -321,12 +334,53 @@ func run() int {
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
-	doc, err := configuration.New(log).Resolve(*cfgPath, *overlayPath)
+	loader := configuration.New(log)
+	skipOverlay := *noConfigOverlay || configuration.SkipOverlay()
+	if skipOverlay {
+		log.Info("runtime config overlay disabled (recovery hatch); booting on file config alone")
+	}
+	doc, err := loader.Resolve(*cfgPath, *overlayPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	// Runtime config overlay: dashboard-edited overrides layered over the
+	// file config from their own SQLite file (own user_version and
+	// migrator, no contention with the task store). Skipped under
+	// --no-config-overlay / ARCHIE_SKIP_CONFIG_OVERLAY=1, or when the
+	// store cannot be opened or its values fail validation -- a broken
+	// overlay must not brick the daemon. bootOverlayErr carries the
+	// degrade reason into /api/config's reload status so it is visible
+	// where the operator is looking, not only in logs.
+	var overlayStore *overlay.Store
+	var bootOverlayErr atomic.Pointer[string]
+	if !skipOverlay {
+		overlayStore, err = overlay.Open(ctx, configDBPath(doc.Config.DBPath))
+		if err != nil {
+			reason := err.Error()
+			bootOverlayErr.Store(&reason)
+			log.Error("config overlay unavailable; booting on file config alone", "path", configDBPath(doc.Config.DBPath), "err", err)
+		} else {
+			defer overlayStore.Close()
+			if overrides, err := overlayStore.Snapshot(ctx); err != nil {
+				reason := err.Error()
+				bootOverlayErr.Store(&reason)
+				log.Error("config overlay unreadable; booting on file config alone", "err", err)
+			} else if len(overrides) > 0 {
+				applied, err := loader.ApplyOverlay(doc, overrides)
+				if err != nil {
+					reason := err.Error()
+					bootOverlayErr.Store(&reason)
+					log.Error("config overlay rejected by validation; booting on file config alone", "err", err)
+				} else {
+					doc = applied
+				}
+			}
+		}
+	}
 	cfg := doc.Config
+	var currentProvenance atomic.Pointer[configuration.Provenance]
+	currentProvenance.Store(&doc.Provenance)
 
 	// Re-create the logger now the config is known. Everything above this
 	// point logs to stderr only, which is unavoidable: the log destination is
@@ -427,7 +481,8 @@ func run() int {
 			Path: origin.Path, Role: string(origin.Role), Layer: string(origin.Layer), Feature: string(origin.Feature),
 		})
 	}
-	web := &webui.Server{Store: st, Log: log, LogFeed: logFeed, TaskLogs: taskLogs, Cfg: &cfg, ConfigProvenance: configProvenance, Channels: channelManager, Events: bus}
+	web := &webui.Server{Store: st, Log: log, LogFeed: logFeed, TaskLogs: taskLogs, Cfg: config.NewHolder(cfg), Channels: channelManager, Events: bus}
+	web.SetProvenance(configProvenance)
 	web.ReloadChannel = func(ctx context.Context, id string) error {
 		if id != "telegram" || restartTelegram == nil {
 			return fmt.Errorf("channel reload unavailable")
@@ -504,7 +559,7 @@ func run() int {
 		requeue:    st.Requeue,
 		transition: st.Transition,
 	})
-	updateService := makeUpdateService(telegramSetup{Cfg: cfg})
+	updateService := makeUpdateService(telegramSetup{Cfg: config.NewHolder(cfg)})
 	web.WorkRequests = chatTasks
 
 	// The dashboard is another gateway, not a second chat implementation. It
@@ -528,7 +583,7 @@ func run() int {
 	webRouter.InitSessions(chatSessionStore)
 	configureTaskCommands(webRouter, chatTasks, chatController, defaultChatIdentity)
 	webSetup := telegramSetup{
-		Cfg: cfg, St: st, LLM: llm, ChatModels: chatModels, ToolReg: toolReg,
+		Cfg: config.NewHolder(cfg), St: st, LLM: llm, ChatModels: chatModels, ToolReg: toolReg,
 		Personas: personas, ChatTasks: chatTasks, ChatController: chatController,
 		ChatTaskLister: chatTaskListerAdapter{tasks: st.Tasks},
 		ChatTaskLogs: chatTaskLogReaderAdapter{
@@ -553,7 +608,7 @@ func run() int {
 	// Multi-agent collaboration PRD phase C (docs/prds/multi-agent-collaboration.md).
 	var startGateways []func()
 	start, ok := setupTelegramGateway(ctx, telegramSetup{
-		Cfg: cfg, CfgPath: *cfgPath, OverlayPath: *overlayPath,
+		Cfg: config.NewHolder(cfg), CfgPath: *cfgPath, OverlayPath: *overlayPath,
 		St: st, LLM: llm, ChatModels: chatModels, ToolReg: toolReg,
 		Personas: personas, ChatTasks: chatTasks, ChatController: chatController,
 		ChatTaskLister: chatTaskListerAdapter{tasks: st.Tasks},
@@ -950,7 +1005,8 @@ func run() int {
 	// via Yaegi is deferred to the container/agent runtime.
 
 	d := &daemon.Daemon{
-		Cfg:             cfg,
+		Cfg:             config.NewHolder(cfg),
+		ConnectedNATS:   cfg.NATS,
 		Store:           st,
 		Bus:             bus,
 		Forge:           forgeClient,
@@ -972,6 +1028,173 @@ func run() int {
 		TaskLogs:        taskLogs,
 	}
 	web.TaskStopper = d
+	// web and the daemon must share ONE Holder: a reload swaps d.Cfg and
+	// the dashboard reads the running config from the same snapshot. The
+	// webui Holder seeded in the literal above is replaced here; after
+	// this point /api/config and the daemon can never disagree about the
+	// published config.
+	web.Cfg = d.Cfg
+
+	// publishConfig publishes a config snapshot and its provenance to
+	// both the daemon and the dashboard (they share one Holder). Reload
+	// and the PATCH path both go through it, so the two can never
+	// diverge. currentProvenance (an atomic) is the last published
+	// provenance chain; the PATCH path appends the runtime-overlay
+	// origin to it.
+	publishConfig := func(cfg config.Config, provenance configuration.Provenance) {
+		d.Cfg.Set(cfg)
+		origins := make([]webui.ConfigOrigin, 0, len(provenance.Origins))
+		for _, origin := range provenance.Origins {
+			origins = append(origins, webui.ConfigOrigin{
+				Path: origin.Path, Role: string(origin.Role), Layer: string(origin.Layer), Feature: string(origin.Feature),
+			})
+		}
+		web.SetProvenance(origins)
+	}
+
+	// SIGHUP re-loads the config from disk, layers the runtime overlay,
+	// and republishes it. The reload log warns about changed fields that
+	// require a restart, so an operator never has to read the source to
+	// find out whether their edit took effect. web.LastReload exposes
+	// the outcome to /api/config.
+	reloadController := newReloadController(loader, *cfgPath, *overlayPath, func(doc *configuration.Document) {
+		// Boot merges catalog-discovered providers into cfg before the
+		// Holders are seeded; publishing the raw reloaded document would
+		// drop them from the running config even though the file is
+		// unchanged. Re-apply the same merge (idempotent: a catalog that
+		// failed to load merges to identity).
+		applyModelCatalog(&doc.Config, catalog)
+		old := d.Cfg.Get()
+		currentProvenance.Store(&doc.Provenance)
+		publishConfig(doc.Config, doc.Provenance)
+		if fields := changedNonReloadableFields(old, doc.Config); len(fields) > 0 {
+			log.Warn("config reloaded; some changes require a restart",
+				"fields", fields, "paths", doc.Provenance.Paths())
+		} else {
+			log.Info("config reloaded", "paths", doc.Provenance.Paths())
+		}
+	})
+	if overlayStore != nil {
+		reloadController.WithOverlay(func() (map[string]any, error) { return overlayStore.Snapshot(ctx) })
+	}
+	// LastReload merges the reload controller's outcome with the boot-time
+	// overlay degrade, so /api/config carries both the last reload result
+	// and whether the runtime overlay is in effect at all.
+	web.LastReload = func() config.ReloadStatus {
+		st := reloadController.Status()
+		if p := bootOverlayErr.Load(); p != nil {
+			st.OverlayUnavailable = *p
+		}
+		return st
+	}
+
+	// PATCH /api/config goes through the same publish path as reload:
+	// apply to a deep copy of the published config, validate the
+	// materialised result, persist to the overlay, then publish. It must
+	// never call Set directly from the handler -- web.Cfg is the daemon's
+	// own Holder -- and it decodes into a Clone so a failed validation
+	// cannot mutate the published snapshot's shared maps.
+	web.UpdateConfig = func(ctx context.Context, updates map[string]any) error {
+		if overlayStore == nil {
+			return fmt.Errorf("%w: config overlay is disabled (--no-config-overlay or ARCHIE_SKIP_CONFIG_OVERLAY=1)", webui.ErrConfigUpdateUnavailable)
+		}
+		for key := range updates {
+			if reason, denied := overlay.DeniedKeys[key]; denied {
+				return fmt.Errorf("%w: config key %s is not runtime-tunable: %s", webui.ErrConfigUpdateInvalid, key, reason)
+			}
+		}
+		next := d.Cfg.Get().Clone()
+		if err := applyDottedOverlay(&next, updates); err != nil {
+			return fmt.Errorf("%w: %w", webui.ErrConfigUpdateInvalid, err)
+		}
+		if err := configuration.Validate(&next); err != nil {
+			return fmt.Errorf("%w: %w", webui.ErrConfigUpdateInvalid, err)
+		}
+		for key, value := range updates {
+			data, err := json.Marshal(value)
+			if err != nil {
+				return fmt.Errorf("%w: %w", webui.ErrConfigUpdateInvalid, err)
+			}
+			if err := overlayStore.Set(ctx, key, string(data), "dashboard"); err != nil {
+				return err
+			}
+		}
+		// Provenance gets the runtime-overlay origin, replacing any prior
+		// one so the chain does not grow unboundedly across edits.
+		var kept []configuration.Origin
+		for _, origin := range currentProvenance.Load().Origins {
+			if origin.Path == "config_overlay (runtime)" {
+				continue
+			}
+			kept = append(kept, origin)
+		}
+		prov := configuration.Provenance{Origins: append(kept,
+			configuration.Origin{Path: "config_overlay (runtime)", Role: configuration.RoleMain, Layer: configuration.LayerOverlay})}
+		currentProvenance.Store(&prov)
+		publishConfig(next, prov)
+		bootOverlayErr.Store(nil) // a successful write proves the overlay works again
+		log.Info("config updated from dashboard", "keys", len(updates))
+		return nil
+	}
+
+	// ConfigOverrides lists the dotted keys currently overridden by the
+	// runtime overlay, so the dashboard can mark those rows and offer a
+	// reset. A disabled store reports no overrides.
+	web.ConfigOverrides = func(ctx context.Context) ([]string, error) {
+		if overlayStore == nil {
+			return nil, nil
+		}
+		rows, err := overlayStore.Snapshot(ctx)
+		if err != nil {
+			return nil, err
+		}
+		keys := make([]string, 0, len(rows))
+		for k := range rows {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		return keys, nil
+	}
+
+	// ResetConfig deletes one overlay row and republishes file + remaining
+	// overlay, so a dashboard-created override can be removed without
+	// editing SQL -- and so an operator whose file edit is shadowed by an
+	// override can recover it with one click. The file is resolved and
+	// the target state validated BEFORE the row is deleted, so a broken
+	// file cannot leave the store and the running config disagreeing.
+	web.ResetConfig = func(ctx context.Context, key string) error {
+		if overlayStore == nil {
+			return fmt.Errorf("%w: config overlay is disabled", webui.ErrConfigUpdateUnavailable)
+		}
+		overrides, err := overlayStore.Snapshot(ctx)
+		if err != nil {
+			return err
+		}
+		delete(overrides, key) // the target overlay state after the reset
+		doc, err := loader.Resolve(*cfgPath, *overlayPath)
+		if err != nil {
+			return fmt.Errorf("%w: %w", webui.ErrConfigUpdateInvalid, err)
+		}
+		if len(overrides) > 0 {
+			if doc, err = loader.ApplyOverlay(doc, overrides); err != nil {
+				return fmt.Errorf("%w: %w", webui.ErrConfigUpdateInvalid, err)
+			}
+		}
+		if err := overlayStore.Delete(ctx, key); err != nil {
+			return err
+		}
+		applyModelCatalog(&doc.Config, catalog)
+		currentProvenance.Store(&doc.Provenance)
+		publishConfig(doc.Config, doc.Provenance)
+		bootOverlayErr.Store(nil)
+		log.Info("config key reset to file value", "key", key)
+		return nil
+	}
+
+	reloadCh := make(chan os.Signal, 1)
+	signal.Notify(reloadCh, syscall.SIGHUP)
+	defer signal.Stop(reloadCh)
+	go reloadLoop(ctx, reloadCh, reloadController, log)
 
 	// Give /cancel and /stop a handle on work already in flight. The
 	// controller is built before the daemon exists, so the runtime is

@@ -28,7 +28,8 @@ func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	roots := skill.DefaultRoots(s.Cfg.WorkDir, s.Cfg.SkillsDir)
+	cfg := s.Cfg.Get()
+	roots := skill.DefaultRoots(cfg.WorkDir, cfg.SkillsDir)
 	catalog, err := skill.CatalogRoots(roots...)
 	if err != nil {
 		http.Error(w, "failed to read skill catalogue: "+err.Error(), http.StatusInternalServerError)
@@ -41,7 +42,7 @@ func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
 			Name:        entry.Name,
 			Description: entry.Description,
 			Workflow:    entry.Workflow,
-			Source:      skillSource(entry.Root, s.Cfg.WorkDir, s.Cfg.SkillsDir),
+			Source:      skillSource(entry.Root, cfg.WorkDir, cfg.SkillsDir),
 		})
 	}
 

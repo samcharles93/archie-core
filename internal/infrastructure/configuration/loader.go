@@ -113,6 +113,30 @@ func (l *Loader) Overlay(basePath, overlayPath string) (*Document, error) {
 	return l.overlayFile(basePath, overlayPath)
 }
 
+// ApplyOverlay decodes the runtime config overlay (a nested map of
+// dotted-path values from the overlay store) into a copy of doc with the
+// same field-level precedence as a file overlay, records the overlay
+// origin, then applies defaults and validates. It is used at boot and on
+// reload to layer dashboard-edited overrides over the file config.
+//
+// ApplyOverlay never mutates its input: the returned Document owns fresh
+// copies of the Config and the provenance chain, so a decode or
+// validation failure leaves the caller's document (and whatever it was
+// published from) exactly as it was.
+func (l *Loader) ApplyOverlay(doc *Document, overrides map[string]any) (*Document, error) {
+	next := *doc
+	next.Config = doc.Config.Clone()
+	next.Provenance.Origins = append([]Origin(nil), doc.Provenance.Origins...)
+	if len(overrides) == 0 {
+		return l.finalize(&next)
+	}
+	if err := ApplyOverlayValues(&next.Config, overrides); err != nil {
+		return nil, err
+	}
+	next.Provenance.record(Origin{Path: "config_overlay (runtime)", Role: RoleMain, Layer: LayerOverlay})
+	return l.finalize(&next)
+}
+
 func (l *Loader) overlayFile(basePath, overlayPath string) (*Document, error) {
 	doc := &Document{}
 
