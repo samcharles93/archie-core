@@ -1,6 +1,6 @@
 ---
 name: archie-config-and-flags
-description: Trace, add, rename, deprecate, or debug Archie configuration and command-line flags from external input through defaults, validation, overlays, environment and secret handling, worker snapshots, deployment passthrough, and the production consumer. Use for internal/config, config.example.toml, config.docker.toml, docker-compose.yml, archied or archie-agent flags, multi-identity settings, mode-parity questions, and reports of a setting that parses but has no effect.
+description: Trace, add, rename, deprecate, or debug Archie configuration and command-line flags from external input through defaults, validation, overlays, environment and secret handling, worker snapshots, deployment passthrough, and the production consumer. Use for internal/config, config.example.toml, deployments/*.toml, docker-compose.yml, archied or archie-agent flags, multi-identity settings, mode-parity questions, and reports of a setting that parses but has no effect.
 ---
 
 # Trace Archie configuration and flags
@@ -34,7 +34,7 @@ Never upgrade a status merely because decoding tests pass.
 5. Find the production composition site and final behavior-changing read.
 6. Find tests for decoding, defaulting, invalid input, production composition,
    and mode parity.
-7. Check `config.example.toml`, `config.docker.toml`, `docker-compose.yml`, and
+7. Check `config.example.toml`, `deployments/*.toml`, `docker-compose.yml`, and
    deployment environment passthrough.
 8. Assign one status from the table above.
 
@@ -49,13 +49,13 @@ rg -n 'FIELD_NAME|external_key|ENV_NAME' \
 
 | Input path | Current behavior | Status |
 | --- | --- | --- |
-| `archied -config PATH` | Defaults to `$XDG_CONFIG_HOME/archie/config.toml`, or `$HOME/.config/archie/config.toml`; `cmd/archied/main.go` calls `config.LoadOverlay`. | production-wired |
-| `archied -config-overlay PATH` | Decodes base TOML, then overlay TOML into the same `Config`, calls `finalize` once. Omitted overlay fields retain base values. | production-wired |
+| `archied -config PATH` | Defaults to `$XDG_CONFIG_HOME/archie/config.toml`, or `$HOME/.config/archie/config.toml`; `cmd/archied/main.go` calls `configuration.Loader.Resolve`. | production-wired |
+| `archied -config-overlay PATH` | Resolves a file or directory overlay through the same loader. Omitted overlay fields retain base values. | production-wired |
 | `config.Load(PATH)` | Loads one TOML and finalizes it; no current binary calls it directly. | test/library-only |
 | `config.LoadDir(base, overlay)` | Supports main YAML/TOML plus feature YAML and `conf.d`; no current entrypoint calls it. | test/library-only |
 | `config.example.toml` | Load-tested example, not a deployed configuration. | test/library-only |
-| `config.docker.toml` | Repository overlay mounted by Compose; still depends on host base config. | production-wired |
-| Host base config and environment on `carina` | Mounted from `${HOME}/.config/archie/config.toml`; contents absent from this repository. | external-production-unknown |
+| `deployments/docker-nats-stack.toml` | Complete host-daemon configuration for the Compose-managed NATS service. It is copied into the operator's config directory; Compose does not mount it. | supported-example |
+| Operator config and environment | Lives outside the repository; contents are deployment-specific. | external-production-unknown |
 
 Both TOML and YAML decoding are non-strict at the field level. Add explicit
 compatibility and typo tests; never use "the file loaded" as evidence that a
@@ -96,7 +96,7 @@ Do not expose these helper flags as daemon settings.
 
 | Keys | Default, validation, and consumer | Status |
 | --- | --- | --- |
-| `work_dir`, `db_path` | Derive from `$XDG_DATA_HOME/archie`, else `$HOME/.local/share/archie`; literal `~` in explicit value not expanded. | production-wired |
+| `work_dir`, `db_path` | Derive from `$XDG_DATA_HOME/archie`, else `$HOME/.local/share/archie`; explicit `~` paths are home-expanded. `db_path` is a prefix: tasks/events use `<db_path>-tasks.sqlite` and conversations use `<db_path>-conversations.sqlite`. | production-wired |
 | `skills_dir` | Empty falls back to `work_dir` for startup workflow registry. | partially-wired |
 | `plugin_dir` | Empty disables daemon plugin loading; configured directory loaded in `cmd/archied`. | production-wired |
 | `poll_interval` | Default `60s`; root poll loop uses it, identities may override only interval. | production-wired |
@@ -213,9 +213,8 @@ identity: identity forges require explicit structured `token`.
 `cmd/archied` creates `secret.NewRegistry`, which registers only the `env`
 engine. Non-env `SecretRef` values are not production-wired.
 
-Compose passes only `ARCHIE_GITEA_TOKEN`,
-`ARCHIE_GITEA_TOKEN_ARCHIE`, `HEYARCHIE_TELEGRAM_BOT_TOKEN`, and
-`DEEPSEEK_API_KEY` into `archied`.
+The host supervisor or launch shell supplies daemon secrets. Compose supplies
+no `archied` environment because the daemon is not a Compose service.
 
 ## Follow the approved target
 

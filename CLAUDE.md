@@ -291,7 +291,7 @@ boundaries. Summary of what's evolved since that doc was last fully accurate:
 - `internal/channels/` — inbound chat/notification channels (e.g. Telegram — see
   `internal/channels/telegram/`, `internal/channels/email/`); channel-agnostic
   interface in `internal/channels/channel.go`.
-- `internal/memory/`, `internal/nell/`, `internal/gateway/`,
+- `internal/memory/`, `internal/gateway/`,
   `internal/container/`, `internal/plugin/`, `internal/tools/`,
   `internal/taskrun/` — not documented in ARCHITECTURE.md; read the package
   before modifying, its doc comment and tests are the source of truth.

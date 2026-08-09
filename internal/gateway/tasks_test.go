@@ -13,14 +13,13 @@ import (
 
 type fakeChatTaskWriter struct {
 	owner, repo, title, body, workflow, identity string
-	issueNumber                                  int
 	calls                                        int
 	nextID                                       int64
 	err                                          error
 }
 
-func (f *fakeChatTaskWriter) EnqueueChatTask(ctx context.Context, owner, repo, title, body, workflow, identity string, issueNumber int) (int64, error) {
-	f.owner, f.repo, f.title, f.body, f.workflow, f.identity, f.issueNumber = owner, repo, title, body, workflow, identity, issueNumber
+func (f *fakeChatTaskWriter) EnqueueChatTask(ctx context.Context, owner, repo, title, body, workflow, identity string) (int64, error) {
+	f.owner, f.repo, f.title, f.body, f.workflow, f.identity = owner, repo, title, body, workflow, identity
 	f.calls++
 	if f.err != nil {
 		return 0, f.err
@@ -55,29 +54,23 @@ func TestStoreTaskCreatorRejectsEmptyRepo(t *testing.T) {
 	}
 }
 
-func TestStoreTaskCreatorSyntheticNumbersDiffer(t *testing.T) {
+func TestStoreTaskCreatorDelegatesIssueNumberAllocation(t *testing.T) {
 	sw := &fakeChatTaskWriter{}
 	tc := NewStoreTaskCreator(sw, "acme", "example-service", []string{"acme/example-service"})
 	if _, err := tc.CreateTask(context.Background(), SpawnRequest{Title: "first"}); err != nil {
 		t.Fatal(err)
 	}
-	first := sw.issueNumber
 	if _, err := tc.CreateTask(context.Background(), SpawnRequest{Title: "second"}); err != nil {
 		t.Fatal(err)
 	}
-	if first == sw.issueNumber {
-		t.Errorf("synthetic issue numbers collided: %d", first)
-	}
-	const maxExactJSONInteger = 1<<53 - 1
-	if sw.issueNumber > maxExactJSONInteger {
-		t.Errorf("synthetic issue number %d exceeds JSON's exact integer range", sw.issueNumber)
+	if sw.calls != 2 {
+		t.Fatalf("EnqueueChatTask calls = %d, want 2", sw.calls)
 	}
 }
 
 func TestStoreTaskCreatorReturnsRealID(t *testing.T) {
 	// The task ID returned to chat must be the store's real database
-	// ID (whatever EnqueueChatTask returns), never the synthetic issue
-	// number used for uniqueness.
+	// ID returned by EnqueueChatTask.
 	sw := &fakeChatTaskWriter{nextID: 999}
 	tc := NewStoreTaskCreator(sw, "acme", "example-service", []string{"acme/example-service"})
 	id, err := tc.CreateTask(context.Background(), SpawnRequest{Title: "task"})
@@ -86,9 +79,6 @@ func TestStoreTaskCreatorReturnsRealID(t *testing.T) {
 	}
 	if id != 1000 {
 		t.Errorf("id = %d, want 1000 (fake's nextID+1)", id)
-	}
-	if id == int64(sw.issueNumber) {
-		t.Error("returned ID must not equal the synthetic issue number")
 	}
 }
 

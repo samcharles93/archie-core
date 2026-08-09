@@ -31,7 +31,7 @@ func (h *hookStore) GetByChannel(ctx context.Context, platform, channelID string
 // resolves on the channel worker, so this interleaving is reachable.
 func TestResolveDoesNotOrphanASessionItLoses(t *testing.T) {
 	ctx := context.Background()
-	inner := NewSessionStoreMemory("test-node")
+	inner := NewSessionStoreMemory()
 	t.Cleanup(func() { _ = inner.Close() })
 	store := &hookStore{SessionStore: inner}
 
@@ -80,7 +80,7 @@ func TestResolveDoesNotOrphanASessionItLoses(t *testing.T) {
 // exist, or every later message in that chat addresses a phantom.
 func TestResolveReleasesItsClaimWhenSaveFails(t *testing.T) {
 	ctx := context.Background()
-	inner := NewSessionStoreMemory("test-node")
+	inner := NewSessionStoreMemory()
 	t.Cleanup(func() { _ = inner.Close() })
 	store := &failingSaveStore{SessionStore: inner, fail: true}
 

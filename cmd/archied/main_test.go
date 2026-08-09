@@ -23,7 +23,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/logging"
-	"github.com/samcharles93/archie-core/internal/nell"
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/storerpc"
@@ -318,6 +317,74 @@ func TestConfiguredMCPProviderSupportsAllTransportTypes(t *testing.T) {
 	}
 }
 
+func TestManualRequeueTaskUsesPersistedStatus(t *testing.T) {
+	tests := []string{store.StatusParked, store.StatusWaitingHuman}
+	for index, status := range tests {
+		t.Run(status, func(t *testing.T) {
+			st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "tasks.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = st.Close() })
+			if _, err := st.EnqueueIssue(t.Context(), "acme", "widget", index+1, "task", "", "", ""); err != nil {
+				t.Fatal(err)
+			}
+			task, err := st.TaskByIssue(t.Context(), "acme", "widget", index+1)
+			if err != nil || task == nil {
+				t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
+			}
+			if err := st.Transition(t.Context(), task.ID, store.StatusQueued, status, ""); err != nil {
+				t.Fatal(err)
+			}
+			if err := manualRequeueTask(t.Context(), st, task.ID); err != nil {
+				t.Fatal(err)
+			}
+			got, err := st.TaskByID(t.Context(), task.ID)
+			if err != nil || got == nil || got.Status != store.StatusQueued {
+				t.Fatalf("TaskByID after requeue = (%+v, %v), want queued", got, err)
+			}
+		})
+	}
+}
+
+func TestManualRequeueTaskRejectsOtherStatuses(t *testing.T) {
+	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "tasks.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if _, err := st.EnqueueIssue(t.Context(), "acme", "widget", 1, "task", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := st.TaskByIssue(t.Context(), "acme", "widget", 1)
+	if err != nil || task == nil {
+		t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
+	}
+	if err := manualRequeueTask(t.Context(), st, task.ID); err == nil {
+		t.Fatal("manualRequeueTask accepted a queued task")
+	}
+}
+
+func TestChatTaskListerAdapterReadsSQLiteIdentity(t *testing.T) {
+	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "tasks.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	want, err := st.EnqueueChatTask(t.Context(), "acme", "widget", "identity task", "", "tdd", "reviewer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lister := chatTaskListerAdapter{tasks: st.Tasks}
+	got, err := lister.ListChatTasks(t.Context(), "reviewer", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != want.ID || got[0].Title != want.Title {
+		t.Fatalf("ListChatTasks = %+v, want task %d", got, want.ID)
+	}
+}
+
 func TestChatTaskWriterAdapter(t *testing.T) {
 	t.Parallel()
 
@@ -339,14 +406,13 @@ func TestChatTaskWriterAdapter(t *testing.T) {
 				enqueue: func(
 					context.Context,
 					string, string, string, string, string, string,
-					int,
 				) (*store.Task, error) {
 					return tt.result, tt.err
 				},
 			}
 			id, err := adapter.EnqueueChatTask(
 				context.Background(),
-				"owner", "repo", "title", "body", "workflow", "identity", 123,
+				"owner", "repo", "title", "body", "workflow", "identity",
 			)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("EnqueueChatTask() error = %v, wantErr %t", err, tt.wantErr)
@@ -546,7 +612,7 @@ func TestChatTaskLogReaderAdapterRoundTrip(t *testing.T) {
 
 func TestChatTaskCommandsEndToEnd(t *testing.T) {
 	ctx := context.Background()
-	st, err := nell.OpenStore(filepath.Join(t.TempDir(), "tasks.db"), "test-node")
+	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "tasks.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

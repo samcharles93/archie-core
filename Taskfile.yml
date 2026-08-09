@@ -146,7 +146,7 @@ tasks:
       - docker compose build agent
 
   docker-up:
-    desc: Start the archied + NATS stack via docker compose
+    desc: Start the NATS service via docker compose
     cmds:
       - docker compose up -d
 
@@ -156,6 +156,6 @@ tasks:
       - docker compose down
 
   docker-logs:
-    desc: Follow the archied container logs
+    desc: Follow the NATS container logs
     cmds:
-      - docker compose logs -f archied
+      - docker compose logs -f nats

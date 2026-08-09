@@ -130,7 +130,7 @@ type Manager struct {
 // that kind is available.
 //
 // The built-in provider is always present and typically backed by the
-// filesystem or NellDB. The external provider is optional  --  pass nil
+// filesystem or a database. The external provider is optional  --  pass nil
 // and call RegisterExternal later, or pass a single external provider
 // at construction time.
 //

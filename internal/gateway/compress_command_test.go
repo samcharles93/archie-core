@@ -83,7 +83,7 @@ func TestCompressCommandDispatch(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			store := NewSessionStoreMemory("test-node")
+			store := NewSessionStoreMemory()
 			t.Cleanup(func() { _ = store.Close() })
 			r, sessionID := routerOn(t, store, "chat-1")
 
@@ -132,7 +132,7 @@ func TestCompressCommandDispatch(t *testing.T) {
 // fact needed.
 func TestCompressPreviewReadsTheWholeHistory(t *testing.T) {
 	ctx := context.Background()
-	store := NewSessionStoreMemory("test-node")
+	store := NewSessionStoreMemory()
 	t.Cleanup(func() { _ = store.Close() })
 	r, sessionID := routerOn(t, store, "chat-1")
 

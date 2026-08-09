@@ -170,8 +170,8 @@ builder tags omit patch/digest; Ubuntu base images omit digests; agent installs
 multiple `@latest` Go tools; Node from moving `setup_24.x` channel.
 
 `task docker-build` needs registry/network and functioning Compose.
-`task docker-up` additionally pulls images, binds ports 4222/8222/8484, mounts
-host paths and container socket.
+`task docker-up` starts the Compose-managed NATS service and binds ports
+4222/8222. The host daemon and its Docker-socket access are outside Compose.
 
 ## Separate environment failures from code failures
 

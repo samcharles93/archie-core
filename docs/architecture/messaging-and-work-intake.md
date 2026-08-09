@@ -287,17 +287,12 @@ Current intake is fragmented:
 
 ## Non-goal: semantic search over chat messages
 
-Decided 2026-08-03 while migrating `internal/gateway` to NellDB v0.3.0.
-Recovered 2026-08-09 from the pre-migration issue tracker.
-
 Semantic/vector search over chat messages is an **explicit non-goal** until usage
 data shows a real need.
 
-Message search is lexical only: collection-scoped `sdk.DocDB.TextSearch` over
-per-session collections, paged via `MessageQuery{Query,Limit,Offset}` →
-`MessagePage`. Do not add embeddings config, do not call
-`sdk.DocDB.SearchSimilar`, and do not write `nell.Record.Vector` on message
-records.
+Message search is lexical only: session-scoped SQLite FTS5 queries paged via
+`MessageQuery{Query,Limit,Offset}` → `MessagePage`. Do not add embeddings
+configuration or vector columns to message records.
 
 The rationale is cost without a demonstrated use case. Measured 2026-08-03 with
 `embeddinggemma:300m` — note this was never an infrastructure problem, the model
@@ -305,16 +300,9 @@ was already pulled and `ai-sdk/provider/ollama` already has `embed.go`:
 
 - 121 ms median warm per message on the write path, 12.5 s cold;
 - 768 dims = 3072 bytes per vector, roughly 15× a typical message payload;
-- the NellDB v0.3.0 store contract requires `Record.Clone` to deep-copy
-  `Vector`, so vectors on message records are cloned by **every** chronological
-  read — `RecentMessages(200)` would copy 600 KB of vectors it discards, on the
-  hot path of every turn;
-- `SearchSimilar` is a linear cosine scan (parallel only above 1000 records),
-  with no ANN index;
-- `LogStore` is append-only and v0.3.0 retains tombstones indefinitely, so the
-  growth does not compact away.
+- chronological reads would carry vector data they do not use on the hot path
+  of every turn;
+- similarity search requires an explicit indexing and retention design.
 
-If this is ever revisited: NellDB gates vector search on
-`Type == TypeVector && len(Vector) > 0`, so partial vectorisation is natively
-supported, and vectors belong in a sibling collection (`vectors:<sessionID>`) so
-chronological reads never clone them.
+If this is revisited, vectors belong in a sibling table so chronological reads
+never load them.

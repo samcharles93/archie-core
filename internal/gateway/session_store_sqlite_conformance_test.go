@@ -3,9 +3,7 @@ package gateway
 import "testing"
 
 // TestSessionStoreConformanceSQLite runs the shared SessionStore contract
-// against the SQLite implementation. It is the migration's actual gate:
-// both backends must satisfy identical behaviour, so this suite and its
-// NellDB counterpart must stay in lockstep.
+// against the SQLite implementation.
 func TestSessionStoreConformanceSQLite(t *testing.T) {
 	runSessionStoreSuite(t, func(t *testing.T) SessionStore {
 		s, err := NewSQLiteSessionStoreMemory()

@@ -118,8 +118,8 @@ sink automatically, with no separate delivery path to keep consistent.
 ### Retention
 
 Reuse the existing rotation (`MaxSizeMB`/`Keep`) semantics per task
-directory. Prune a task's log directory when `nell.ArchiveTask`
-(`internal/nell/adapter.go`) archives it, so task logs share the task's own
+directory. Prune a task's log directory when `store.ArchiveTask` archives
+it, so task logs share the task's own
 lifecycle rather than accumulating independently.
 
 ### Surfaces

@@ -159,9 +159,7 @@ func makeTelegramSessionStore(cfg config.Config) (gateway.SessionStore, error) {
 	return gateway.OpenSQLiteSessionStore(conversationDBPath(cfg.DBPath))
 }
 
-// conversationDBPath keeps conversation state separate while db_path still
-// names the NellDB task log. The suffix is deterministic so the eventual task
-// store cutover can open db_path as SQLite without moving conversation data.
+// conversationDBPath keeps conversation state in its own SQLite database.
 func conversationDBPath(taskDBPath string) string {
 	return taskDBPath + "-conversations.sqlite"
 }

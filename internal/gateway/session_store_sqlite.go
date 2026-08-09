@@ -17,10 +17,7 @@ import (
 // ── SQLite implementation ───────────────────────────────────────────────────
 //
 // sqliteSessionStore is the durable, transactional SessionStore described by
-// docs/architecture/messaging-and-work-intake.md (canonical session/message
-// store uses durable SQLite round trips). It coexists with nellSessionStore;
-// nothing in this file changes that implementation or the SessionStore
-// interface.
+// docs/architecture/messaging-and-work-intake.md.
 //
 // Schema:
 //
@@ -119,7 +116,17 @@ func OpenSQLiteSessionStore(path string) (SessionStore, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("sessionstore: mkdir: %w", err)
 	}
-	return openSQLiteSessionStore(path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
+	return openSQLiteSessionStore(sqliteSessionDSN(path))
+}
+
+func sqliteSessionDSN(path string) string {
+	separator := "?"
+	if strings.HasSuffix(path, "?") || strings.HasSuffix(path, "&") {
+		separator = ""
+	} else if strings.Contains(path, "?") {
+		separator = "&"
+	}
+	return path + separator + "_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
 }
 
 // NewSQLiteSessionStoreMemory returns an in-memory SQLite SessionStore for
@@ -494,11 +501,7 @@ func (s *sqliteSessionStore) List(ctx context.Context) ([]SessionContext, error)
 }
 
 // sessionRecencySQL is a session's recency: LastActiveAt when it has been
-// set, CreatedAt otherwise. It mirrors sessionRecency on the NellDB side, so
-// both backends answer "newest first" with the same order -- they previously
-// disagreed (created_at here, document order there) and the shared suite did
-// not catch it, which meant a backend cutover could change which session a
-// restart resumed.
+// set, CreatedAt otherwise.
 const sessionRecencySQL = `MAX(last_active_at, created_at)`
 
 const sessionSelect = `
@@ -572,12 +575,31 @@ func saveMessage(ctx context.Context, ex execer, sessionID string, msg Message) 
 }
 
 // saveMessageAt writes a message, optionally without the monotonic clamp.
-// See the NellDB counterpart: the clamp belongs to the append path, not to a
-// caller rewriting history and placing records deliberately.
+// The clamp belongs to the append path, not to a caller rewriting history and
+// placing records deliberately.
 func saveMessageAt(ctx context.Context, ex execer, sessionID string, msg Message, clamp bool) (string, error) {
 	id := msg.MessageID
 	if id == "" {
 		id = newMessageID(sessionID, msg.SourceID)
+	}
+	at := stamp(msg)
+	if clamp {
+		_, err := ex.ExecContext(ctx, `
+			INSERT INTO messages (message_id, session_id, source_id, sender, text, ts)
+			VALUES (?, ?, ?, ?, ?, (
+				SELECT CASE
+					WHEN MAX(ts) IS NOT NULL AND MAX(ts) >= ? THEN MAX(ts) + 1
+					ELSE ?
+				END
+				FROM messages WHERE session_id = ?
+			))
+			ON CONFLICT(session_id, message_id) DO NOTHING`,
+			id, sessionID, msg.SourceID, msg.From, msg.Text,
+			at.UnixMilli(), at.UnixMilli(), sessionID)
+		if err != nil {
+			return "", fmt.Errorf("sessionstore: save message: %w", err)
+		}
+		return id, nil
 	}
 
 	var exists int
@@ -590,13 +612,6 @@ func saveMessageAt(ctx context.Context, ex execer, sessionID string, msg Message
 		return "", fmt.Errorf("sessionstore: read existing message: %w", err)
 	}
 
-	at := stamp(msg)
-	if clamp {
-		var err error
-		if at, err = nextTimestampSQL(ctx, ex, sessionID, at); err != nil {
-			return "", err
-		}
-	}
 	_, err = ex.ExecContext(ctx, `
 		INSERT INTO messages (message_id, session_id, source_id, sender, text, ts)
 		VALUES (?, ?, ?, ?, ?, ?)`,
@@ -605,27 +620,6 @@ func saveMessageAt(ctx context.Context, ex execer, sessionID string, msg Message
 		return "", fmt.Errorf("sessionstore: save message: %w", err)
 	}
 	return id, nil
-}
-
-// nextTimestampSQL picks the timestamp a message is persisted under, kept
-// strictly increasing within a session so history stays an append-only
-// linear sequence. Channels report time at wildly different resolutions --
-// a Telegram message carries whole seconds while a locally generated reply
-// carries milliseconds -- so the sender's clock is honoured whenever it is
-// already ahead of the session's newest, and otherwise advanced by the
-// smallest representable step.
-func nextTimestampSQL(ctx context.Context, ex execer, sessionID string, want time.Time) (time.Time, error) {
-	var last sql.NullInt64
-	err := ex.QueryRowContext(ctx,
-		`SELECT MAX(ts) FROM messages WHERE session_id = ?`, sessionID).Scan(&last)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("sessionstore: read newest message: %w", err)
-	}
-	ms := want.UnixMilli()
-	if last.Valid && ms <= last.Int64 {
-		ms = last.Int64 + 1
-	}
-	return time.UnixMilli(ms).UTC(), nil
 }
 
 func (s *sqliteSessionStore) SaveMessages(ctx context.Context, sessionID string, msgs []Message) error {
@@ -815,12 +809,18 @@ func scanMessages(rows *sql.Rows) ([]Message, error) {
 // every message via its timestamp. An empty or whitespace-only query
 // returns an empty page without touching the database.
 //
-// SQLite gives an exact total match count, so paging here has no analogue
-// to NellDB's MaxTextSearchLimit ceiling: MessagePage.Truncated is always
+// SQLite gives an exact total match count, so MessagePage.Truncated is always
 // false.
 func (s *sqliteSessionStore) SearchMessages(ctx context.Context, sessionID string, q MessageQuery) (MessagePage, error) {
-	if strings.TrimSpace(q.Query) == "" {
+	query := strings.TrimSpace(q.Query)
+	if query == "" {
 		return MessagePage{}, nil
+	}
+	if len(query) > MaxMessageSearchQueryBytes {
+		return MessagePage{}, fmt.Errorf("sessionstore: search query exceeds %d bytes", MaxMessageSearchQueryBytes)
+	}
+	if terms := len(strings.Fields(query)); terms > MaxMessageSearchQueryTerms {
+		return MessagePage{}, fmt.Errorf("sessionstore: search query exceeds %d terms", MaxMessageSearchQueryTerms)
 	}
 	limit := q.Limit
 	if limit <= 0 {
@@ -829,7 +829,7 @@ func (s *sqliteSessionStore) SearchMessages(ctx context.Context, sessionID strin
 	limit = min(limit, MaxMessagePageSize)
 	offset := max(q.Offset, 0)
 
-	match := ftsMatchQuery(q.Query)
+	match := ftsMatchQuery(query)
 
 	var total int
 	err := s.db.QueryRowContext(ctx, `
