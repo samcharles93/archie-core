@@ -16,11 +16,11 @@ import "sync"
 // mutates the published snapshot too, and any other reader sees the
 // mutation outside the protection of the read lock.
 //
-// Reload paths (Loader.Reload, the file watcher, the UI PATCH handler)
-// construct a fresh Config and call Set; they never mutate an existing
-// one. Decode paths must finish constructing the new Config before Set
-// is called; the existing decode.go:80 cfg.Extra[name] = value is fine
-// because it runs pre-publish.
+// Reload paths (a SIGHUP reload re-calling Loader.Resolve, the UI PATCH
+// handler) construct a fresh Config and call Set; they never mutate an
+// existing one. Decode paths must finish constructing the new Config
+// before Set is called; the existing decode.go:80 cfg.Extra[name] = value
+// is fine because it runs pre-publish.
 //
 // # Torn reads across a field group
 //

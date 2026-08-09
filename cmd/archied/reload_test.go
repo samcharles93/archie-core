@@ -230,8 +230,11 @@ func TestChangedNonReloadableFields(t *testing.T) {
 	}
 	c3 := c1
 	c3.Containers.MaxConcurrency = 4
-	if got := changedNonReloadableFields(c1, c3); len(got) != 0 {
-		t.Fatalf("MaxConcurrency change: got %v, want []", got)
+	// MaxConcurrency is NOT reloadable: the dispatchers re-read it but the
+	// startup-built container pool captures it (container/pool.go:94), so
+	// a change only partially applies and must warn requires-restart.
+	if got := changedNonReloadableFields(c1, c3); len(got) != 1 || got[0] != "Containers.MaxConcurrency" {
+		t.Fatalf("MaxConcurrency change: got %v, want [Containers.MaxConcurrency]", got)
 	}
 	c4 := c1
 	c4.Containers.VolumeTTL = config.Duration(48 * time.Hour)

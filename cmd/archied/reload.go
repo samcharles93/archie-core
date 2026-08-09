@@ -67,8 +67,9 @@ func (c *ReloadController) Reload() error {
 			return err
 		}
 		if len(values) > 0 {
-			next := *doc
-			if doc, err = c.loader.ApplyOverlay(&next, values); err != nil {
+			// ApplyOverlay never mutates its input: on failure the
+			// resolved document (and the running config) is untouched.
+			if doc, err = c.loader.ApplyOverlay(doc, values); err != nil {
 				c.status.Store(&config.ReloadStatus{
 					LastError:   err.Error(),
 					LastErrorAt: time.Now().UTC().Format(time.RFC3339),
@@ -160,14 +161,17 @@ var reloadableFields = map[string]bool{
 }
 
 // reloadableSubFields are sub-fields of structs that are otherwise
-// startup-built. VolumeTTL and MaxConcurrency are re-read per cycle
-// (cleanupExpiredStorage, drainSQLite/drainNATS); everything else in
-// Containers (Image, Enabled, MaxUptime, PullPolicy, Network) is frozen
-// in the startup-built container pool. Forge.Host is carried into
-// TaskContext by ForTask (display/link building only); the forge client
-// itself is startup-built, so Type/Token/TokenEnv stay requires-restart.
+// startup-built. VolumeTTL is re-read per cycle in cleanupExpiredStorage;
+// everything else in Containers (Image, Enabled, MaxConcurrency,
+// MaxUptime, PullPolicy, Network) is frozen in the startup-built
+// container pool -- the dispatchers re-read MaxConcurrency but the pool
+// captures it at construction (container/pool.go:94,163), so a change
+// only partially applies and must warn requires-restart. Forge.Host is
+// carried into TaskContext by ForTask (display/link building only); the
+// forge client itself is startup-built, so Type/Token/TokenEnv stay
+// requires-restart.
 var reloadableSubFields = map[string]map[string]bool{
-	"Containers": {"VolumeTTL": true, "MaxConcurrency": true},
+	"Containers": {"VolumeTTL": true},
 	"Forge":      {"Host": true},
 }
 

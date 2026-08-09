@@ -489,6 +489,75 @@ func cloneStringMap(src map[string]string) map[string]string {
 	return dst
 }
 
+// Clone returns a deep copy of c: every reference-type field (maps,
+// slices, and the reference fields nested inside them) is copied, so
+// mutating the returned value cannot touch c or anything sharing memory
+// with it. It is used before the runtime overlay (or a dashboard PATCH)
+// decodes into a snapshot, so a failed or partial decode cannot mutate
+// the published config -- Holder.Get returns a shallow copy whose maps
+// are shared with the published snapshot.
+func (c Config) Clone() Config {
+	c.Models = cloneStringMap(c.Models)
+	c.Providers = maps.Clone(c.Providers)
+	c.Dispatch.Labels = cloneStringMap(c.Dispatch.Labels)
+	c.Agent.Env = append([]string(nil), c.Agent.Env...)
+	c.Repos = cloneRepos(c.Repos)
+	c.Identities = cloneIdentities(c.Identities)
+	c.Chat.Models = append([]string(nil), c.Chat.Models...)
+	c.Chat.Telegram.AllowedUserIDs = append([]int64(nil), c.Chat.Telegram.AllowedUserIDs...)
+	c.Chat.Telegram.UpdateCheckCommand = append([]string(nil), c.Chat.Telegram.UpdateCheckCommand...)
+	c.Chat.Telegram.UpdateInstallCommand = append([]string(nil), c.Chat.Telegram.UpdateInstallCommand...)
+	c.Tools.MCPServers = cloneMCPServers(c.Tools.MCPServers)
+	c.Memory.ProviderConfig = maps.Clone(c.Memory.ProviderConfig)
+	if c.Tools.WebFetch.Enabled != nil {
+		v := *c.Tools.WebFetch.Enabled
+		c.Tools.WebFetch.Enabled = &v
+	}
+	c.Extra = maps.Clone(c.Extra)
+	return c
+}
+
+func cloneRepos(repos []Repo) []Repo {
+	out := make([]Repo, len(repos))
+	for i, r := range repos {
+		r.Gate = cloneStringSlices(r.Gate)
+		r.Protect = append([]string(nil), r.Protect...)
+		r.Preflight = cloneStringSlices(r.Preflight)
+		out[i] = r
+	}
+	return out
+}
+
+func cloneIdentities(ids []IdentityConfig) []IdentityConfig {
+	out := make([]IdentityConfig, len(ids))
+	for i, id := range ids {
+		id.Models = cloneStringMap(id.Models)
+		id.Providers = maps.Clone(id.Providers)
+		id.Dispatch.Labels = cloneStringMap(id.Dispatch.Labels)
+		id.Repos = cloneRepos(id.Repos)
+		out[i] = id
+	}
+	return out
+}
+
+func cloneMCPServers(servers []MCPServer) []MCPServer {
+	out := make([]MCPServer, len(servers))
+	for i, s := range servers {
+		s.Args = append([]string(nil), s.Args...)
+		s.Headers = maps.Clone(s.Headers)
+		out[i] = s
+	}
+	return out
+}
+
+func cloneStringSlices(ss [][]string) [][]string {
+	out := make([][]string, len(ss))
+	for i, s := range ss {
+		out[i] = append([]string(nil), s...)
+	}
+	return out
+}
+
 // NATSConfig configures NATS JetStream for task distribution. When URL is
 // empty the existing SQLite ClaimNext flow is used unchanged.
 type NATSConfig struct {

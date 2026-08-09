@@ -57,10 +57,9 @@ func TestLoaderApplyOverlayLayersDefaultsValidatesAndRecordsProvenance(t *testin
 		t.Errorf("Origins = %+v, want 2 (file + runtime overlay)", applied.Provenance.Origins)
 	}
 
-	// An overlay that fails validation aborts; the base document is
-	// untouched when a copy is passed.
-	next := *doc
-	if _, err := l.ApplyOverlay(&next, map[string]any{"agent": map[string]any{"mode": "bogus"}}); err == nil {
+	// An overlay that fails validation aborts; ApplyOverlay never mutates
+	// its input, so the base document is untouched even without a copy.
+	if _, err := l.ApplyOverlay(doc, map[string]any{"agent": map[string]any{"mode": "bogus"}}); err == nil {
 		t.Fatal("invalid overlay accepted")
 	}
 	if doc.Config.Agent.Mode != "inprocess" {
