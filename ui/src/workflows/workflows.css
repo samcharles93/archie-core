@@ -47,3 +47,12 @@
 .wf-bar-info {
   background: var(--info);
 }
+
+/* Stacked form for "Start work". This was .cfg-rows, a class owned by the
+   Configuration page, so restyling Configuration could silently restyle
+   this form. Named for what it is and owned by this feature instead. */
+.wf-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}

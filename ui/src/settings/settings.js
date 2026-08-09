@@ -1,6 +1,7 @@
 import "./settings.css";
 import { api } from "../base/api.js";
 import { el, empty, mount, pill } from "../base/dom.js";
+import { row } from "./config-row.js";
 
 /**
  * A view of the config archied is actually running with, grouped by
@@ -92,7 +93,7 @@ function provenanceCard(origins) {
   return section(
     "Configuration sources",
     "Applied from top to bottom; later entries take precedence over earlier ones.",
-    el("div.cfg-rows", ...origins.map((origin) => row(`${origin.layer} ${origin.role}${origin.feature ? ` (${origin.feature})` : ""}`, origin.path))),
+    el("div.kv-list", ...origins.map((origin) => row(`${origin.layer} ${origin.role}${origin.feature ? ` (${origin.feature})` : ""}`, origin.path))),
   );
 }
 
@@ -104,132 +105,13 @@ function section(title, sub, ...children) {
   );
 }
 
-// row renders one label/value pair. opts.key makes it editable via a
-// PATCH to /api/config; opts.locked[key] disables it with the server's
-// reason; opts.overridden marks a key whose file value is shadowed by
-// the runtime overlay and offers a reset; no key means a plain read-only
-// row (structured values and provenance).
-function row(label, value, opts) {
-  const labelEl = el("span.cfg-label", label);
-  if (!opts?.key) {
-    return el("div.cfg-row", labelEl, el("span.cfg-value.mono", value ?? "—"));
-  }
-  if (opts.locked?.[opts.key]) {
-    return el(
-      "div.cfg-row",
-      labelEl,
-      el(
-        "div.cfg-value-cell",
-        el("span.cfg-value.mono", value ?? "—"),
-        el("span.cfg-locked", opts.locked[opts.key]),
-      ),
-    );
-  }
-  const display = el("span.cfg-value.mono", value ?? "—");
-  const editBtn = el("button.cfg-edit", { title: `Edit ${label}` }, "Edit");
-  const overridden = opts.overridden?.includes(opts.key);
-  const cell = el(
-    "div.cfg-value-cell",
-    display,
-    overridden && el("span.cfg-overridden", { title: "Set via the dashboard; edit the file, then reset" }, "overridden"),
-    editBtn,
-    overridden && el("button.cfg-edit", { title: "Reset to the file value" }, "Reset"),
-  );
-  const rowEl = el("div.cfg-row", labelEl, cell);
-  editBtn.addEventListener("click", () => startEdit(rowEl, cell, label, opts));
-  if (overridden) {
-    const resetBtn = cell.lastChild;
-    resetBtn.addEventListener("click", () => resetOverride(resetBtn, opts));
-  }
-  return rowEl;
-}
-
-// resetOverride deletes one runtime-overlay row via the reset seam, then
-// re-renders so the row returns to its file value. Errors show inline in
-// the row's marker slot.
-function resetOverride(btn, opts) {
-  const { key, onSaved } = opts;
-  const marker = btn.parentElement.querySelector(".cfg-overridden");
-  btn.disabled = true;
-  api
-    .configReset(key)
-    .then(() => onSaved?.())
-    .catch((err) => {
-      btn.disabled = false;
-      if (marker) {
-        marker.textContent = String(err.message || err);
-        marker.classList.add("cfg-error");
-      }
-    });
-}
-
-function startEdit(rowEl, cell, label, opts) {
-  const { key, type, raw, onSaved } = opts;
-  const input = type === "bool"
-    ? el(
-        "select.cfg-input",
-        el("option", { value: "true", selected: raw === true }, "true"),
-        el("option", { value: "false", selected: raw === false }, "false"),
-      )
-    : el("input.cfg-input", { type: "text", value: String(raw ?? "") });
-  const save = el("button.cfg-save", { type: "button" }, "Save");
-  const cancel = el("button.cfg-cancel", { type: "button" }, "Cancel");
-  const error = el("span.cfg-error");
-  const editing = el("div.cfg-value-cell.cfg-editing", input, save, cancel, error);
-  rowEl.replaceChild(editing, cell);
-  input.focus();
-
-  const done = () => rowEl.replaceChild(cell, editing);
-  cancel.addEventListener("click", done);
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") save.click();
-    if (e.key === "Escape") done();
-  });
-
-  save.addEventListener("click", async () => {
-    const parsed = parseEdit(type, input.value);
-    if (parsed.error) {
-      error.textContent = parsed.error;
-      return;
-    }
-    save.disabled = true;
-    try {
-      await api.configUpdate({ [key]: parsed.value });
-      onSaved?.();
-    } catch (err) {
-      // The server's reason (validation failure, denylisted key) is the
-      // part the operator can act on; show it instead of the status.
-      error.textContent = String(err.message || err);
-      save.disabled = false;
-    }
-  });
-}
-
-// parseEdit converts the input text to the JSON type the config field
-// expects. Durations and strings pass through (the server validates
-// duration syntax); ints are parsed client-side so a typo fails before
-// a round trip.
-function parseEdit(type, text) {
-  switch (type) {
-    case "int": {
-      const n = parseInt(text, 10);
-      if (Number.isNaN(n)) return { error: "Enter a whole number" };
-      return { value: n };
-    }
-    case "bool":
-      return { value: text === "true" };
-    default:
-      return { value: text };
-  }
-}
-
 function identityCard(identity, ctx) {
   if (!identity) return section("Identity", "Who Archie is on the forge.", empty("Not available"));
   return section(
     "Identity",
     "Who Archie is on the forge, and how it addresses commits and comments.",
     el(
-      "div.cfg-rows",
+      "div.kv-list",
       row("Bot account", identity.bot_user, { key: "bot_user", type: "string", raw: identity.bot_user, ...ctx }),
       row("Commit author email", identity.bot_email, { key: "bot_email", type: "string", raw: identity.bot_email, ...ctx }),
       row("Pickup label", identity.label, { key: "label", type: "string", raw: identity.label, ...ctx }),
@@ -287,7 +169,7 @@ function modelsAndProvidersCard(models, providers) {
   const providerEntries = Object.entries(providers || {});
 
   const modelRows = modelEntries.length
-    ? el("div.cfg-rows", ...modelEntries.map(([role, ref]) => row(roleLabel(role), ref)))
+    ? el("div.kv-list", ...modelEntries.map(([role, ref]) => row(roleLabel(role), ref)))
     : empty("No model roles configured", "Assign a model to at least one role (e.g. \"builder\") in [models].");
 
   const providerRows = providerEntries.length
@@ -334,7 +216,7 @@ function budgetsCard(budgets, ctx) {
     "Budgets",
     "The limits every autonomous stage runs under, so a stuck task cannot run forever.",
     el(
-      "div.cfg-rows",
+      "div.kv-list",
       row("Max steps", budgets.max_steps || "Unlimited", { key: "budgets.max_steps", type: "int", raw: budgets.max_steps, ...ctx }),
       row("Max tokens", budgets.max_tokens || "Unlimited", { key: "budgets.max_tokens", type: "int", raw: budgets.max_tokens, ...ctx }),
       row("Wall clock", budgets.wall_clock, { key: "budgets.wall_clock", type: "string", raw: budgets.wall_clock, ...ctx }),
@@ -349,7 +231,7 @@ function agentCard(agent, ctx) {
     "Agent execution",
     "How archied actually runs a stage of work.",
     el(
-      "div.cfg-rows",
+      "div.kv-list",
       row("Execution mode", agentModeLabel(agent.mode), { key: "agent.mode", type: "string", raw: agent.mode, ...ctx }),
       row("Worker command", agent.command, { key: "agent.command", type: "string", raw: agent.command, ...ctx }),
       row("Extra environment variables passed through", agent.env?.length ? agent.env.join(", ") : "None"),
@@ -376,7 +258,7 @@ function storageCard(storage, containers, ctx) {
     children.push(
       el("h3.cfg-subhead", "Paths"),
       el(
-        "div.cfg-rows",
+        "div.kv-list",
         row("Work directory", storage.work_dir, { key: "work_dir", type: "string", ...ctx }),
         row("State path prefix", storage.db_path, { key: "db_path", type: "string", ...ctx }),
         row("Shared skills directory", storage.skills_dir || "None (uses the work directory)", { key: "skills_dir", type: "string", raw: storage.skills_dir, ...ctx }),
@@ -389,7 +271,7 @@ function storageCard(storage, containers, ctx) {
     children.push(
       el("h3.cfg-subhead", "Sandboxed containers"),
       el(
-        "div.cfg-rows",
+        "div.kv-list",
         row("Sandboxing enabled", containers.enabled ? "Yes" : "No", { key: "containers.enabled", type: "bool", raw: containers.enabled, ...ctx }),
         row("Agent image", containers.image || "Not set", { key: "containers.image", type: "string", raw: containers.image, ...ctx }),
         row("Max concurrent tasks", containers.max_concurrency || "Unlimited", { key: "containers.max_concurrency", type: "int", raw: containers.max_concurrency, ...ctx }),
@@ -414,6 +296,6 @@ function webCard(web, ctx) {
   return section(
     "Dashboard",
     "This dashboard's own listen address.",
-    el("div.cfg-rows", row("Listen address", web.listen === "off" ? "Disabled" : web.listen, { key: "web.listen", type: "string", raw: web.listen === "off" ? "" : web.listen, ...ctx })),
+    el("div.kv-list", row("Listen address", web.listen === "off" ? "Disabled" : web.listen, { key: "web.listen", type: "string", raw: web.listen === "off" ? "" : web.listen, ...ctx })),
   );
 }

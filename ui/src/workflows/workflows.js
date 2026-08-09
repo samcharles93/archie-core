@@ -97,7 +97,7 @@ export function workflowsPage() {
     const instructions = el("textarea", { placeholder: "Instructions for the work", required: true, rows: 3 });
     const notice = el("p.card-sub");
     const submit = el("button.btn", { type: "submit" }, "Start work");
-    const form = el("form.cfg-rows", {
+    const form = el("form.wf-form", {
       onsubmit: async (event) => {
         event.preventDefault();
         submit.disabled = true;
