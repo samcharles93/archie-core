@@ -1,4 +1,27 @@
-/* Configuration-only styles. */
+/* Configuration-only styles.
+ *
+ * Rewritten because the previous layout had three compounding faults, all
+ * visible on a wide screen:
+ *
+ *  1. .cfg-row used `justify-content: space-between` on a full-width card,
+ *     so the label sat at the far left and the value at the far right with
+ *     ~1000px of dead space between them. Pairing a label to its value meant
+ *     tracking across the whole viewport. An earlier "tighten spacing" pass
+ *     reduced vertical padding only, which is why it did not help.
+ *  2. .cfg-value had no `min-width: 0`, so a long value could not shrink
+ *     inside its flex parent and overflowed into the Edit button, visually
+ *     truncating the number ("400" reading as "40") and colliding with it.
+ *  3. The locked-row reason was a flex sibling of an overflowing value, so
+ *     it ran straight onto the end of the path with no visible separation
+ *     ("...archie/work" + "pins the daemon's working layout").
+ *
+ * The replacement is a three-column grid: label, value, actions. Label and
+ * value are adjacent and left-aligned so the eye travels a fixed short
+ * distance regardless of viewport width; the value column is `minmax(0, 1fr)`
+ * so it can actually shrink; actions occupy a reserved column so nothing can
+ * ever overlap them. Secondary text (locked reason, override note, error)
+ * gets its own grid row rather than being crammed onto the value line.
+ */
 
 .cfg-section {
   margin-bottom: var(--sp-4);
@@ -8,107 +31,145 @@
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--fg-muted);
-  margin: var(--sp-4) 0 var(--sp-2);
+  margin: var(--sp-5) 0 var(--sp-2);
 }
 
 .cfg-subhead:first-child {
   margin-top: 0;
 }
 
-/* The .cfg-rows / .cfg-row class pair is shared with the Workflows
-   "Start work" form (form.cfg-rows, no .cfg-row children). The form
-   needs the 8px gap and `var(--sp-2) 0` padding for breathing room
-   between inputs; the Configuration page reads as dense metadata where
-   the border alone carries the rhythm. Keep the general rules for the
-   form and override under .cfg-section. */
-.cfg-rows {
+/* Key/value list. Capped width keeps the label-to-value distance readable
+   on an ultrawide monitor; without it the grid stretches and reintroduces
+   the very gap this rewrite exists to remove. */
+.kv-list {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
+  max-width: 72rem;
 }
 
-.cfg-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--sp-4);
-  padding: var(--sp-2) 0;
-  border-bottom: 1px solid var(--border);
+.kv {
+  display: grid;
+  grid-template-columns: minmax(10rem, 20rem) minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--sp-4);
+  row-gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-2);
+  border-radius: var(--radius-sm);
 }
 
-.cfg-section .cfg-rows {
-  gap: 0;
+.kv + .kv {
+  border-top: 1px solid var(--border);
 }
 
-.cfg-section .cfg-row {
-  padding: var(--sp-1) 0;
+.kv:hover {
+  background: var(--surface-hover);
 }
 
-.cfg-row:last-child {
-  border-bottom: 0;
-}
-
-.cfg-label {
+.kv-label {
   font-size: var(--text-sm);
   color: var(--fg-muted);
 }
 
-.cfg-value {
+/* min-width: 0 is load-bearing. A grid item defaults to min-width: auto,
+   which refuses to shrink below its content and is what pushed long paths
+   into the action column. */
+.kv-value {
+  min-width: 0;
   font-size: var(--text-sm);
   color: var(--fg);
-  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* Inline edit affordance: value + Edit on the right, input + Save /
-   Cancel while editing, and the server's reason for locked rows. */
-.cfg-value-cell {
+.kv-value.is-empty {
+  color: var(--fg-subtle);
+}
+
+.kv-actions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: var(--sp-2);
-  min-width: 0;
+  justify-self: end;
 }
 
-.cfg-edit {
+/* Secondary line: locked reason, override note, validation error. Starts in
+   the value column so it aligns under the value it describes. */
+.kv-note {
+  grid-column: 2 / -1;
+  font-size: var(--text-xs);
+  color: var(--fg-subtle);
+}
+
+.kv-note.is-error {
+  color: var(--danger);
+}
+
+.kv.is-locked .kv-value {
+  color: var(--fg-muted);
+}
+
+/* Actions stay visible rather than appearing on hover: a control that only
+   exists on hover is invisible to touch and to anyone scanning for what is
+   editable. Low contrast until the row is hovered or focused instead. */
+.kv-btn {
   font: inherit;
   font-size: var(--text-xs);
-  color: var(--fg-muted);
-  background: var(--surface-hover);
-  border: 1px solid var(--border-strong);
+  color: var(--fg-subtle);
+  background: transparent;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 2px var(--sp-2);
   cursor: pointer;
   flex: none;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
 }
 
-.cfg-edit:hover {
+.kv:hover .kv-btn,
+.kv:focus-within .kv-btn {
+  color: var(--fg-muted);
+  border-color: var(--border-strong);
+}
+
+.kv-btn:hover {
   color: var(--fg);
   border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
-.cfg-editing {
-  flex-wrap: wrap;
+.kv-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
-.cfg-input {
-  font: inherit;
+.kv-flag {
   font-size: var(--text-xs);
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-radius: var(--radius-pill);
+  padding: 1px var(--sp-2);
+  flex: none;
+}
+
+.kv-input {
+  font: inherit;
+  font-size: var(--text-sm);
   color: var(--fg);
-  background: var(--surface);
+  background: var(--bg, var(--surface));
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   padding: var(--sp-1) var(--sp-2);
   min-width: 0;
-  flex: 1 1 10rem;
+  width: 100%;
 }
 
-.cfg-input:focus {
+.kv-input:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
 }
 
-.cfg-save,
-.cfg-cancel {
+.kv-save,
+.kv-cancel {
   font: inherit;
   font-size: var(--text-xs);
   border-radius: var(--radius-sm);
@@ -117,37 +178,26 @@
   flex: none;
 }
 
-.cfg-save {
+.kv-save {
   background: var(--accent);
   border: 1px solid var(--accent);
   color: var(--accent-fg);
   font-weight: 500;
 }
 
-.cfg-save:disabled {
+.kv-save:disabled {
   opacity: 0.6;
   cursor: default;
 }
 
-.cfg-cancel {
+.kv-cancel {
   background: transparent;
   border: 1px solid var(--border-strong);
   color: var(--fg-muted);
 }
 
-.cfg-cancel:hover {
+.kv-cancel:hover {
   color: var(--fg);
-}
-
-.cfg-locked {
-  font-size: var(--text-xs);
-  color: var(--fg-subtle);
-  font-style: italic;
-}
-
-.cfg-overridden {
-  font-size: var(--text-xs);
-  color: var(--warn);
 }
 
 .cfg-notice {
@@ -160,9 +210,26 @@
   color: var(--warn);
 }
 
-.cfg-error {
-  font-size: var(--text-xs);
-  color: var(--danger);
-  flex-basis: 100%;
-  text-align: right;
+/* Narrow viewports: stack label over value so neither has to truncate to a
+   few characters. Actions move onto the label line to keep the row compact. */
+@media (max-width: 700px) {
+  .kv {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .kv-label {
+    grid-column: 1;
+  }
+
+  .kv-actions {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .kv-value,
+  .kv-note {
+    grid-column: 1 / -1;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
