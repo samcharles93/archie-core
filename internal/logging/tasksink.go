@@ -7,12 +7,18 @@ import (
 	"strconv"
 )
 
-// TaskLogPath returns the log file path for one task attempt under baseDir
-// (typically <state_dir>/logs/tasks). Each task gets its own subdirectory so
-// an attempt's rotated generations (attempt-N.jsonl.1, .2, ...) stay grouped
-// with that task rather than interleaved with every other task's.
+// TaskLogDir returns the directory holding every attempt's log files for one
+// task under baseDir (typically <state_dir>/logs/tasks).
+func TaskLogDir(baseDir string, taskID int64) string {
+	return filepath.Join(baseDir, strconv.FormatInt(taskID, 10))
+}
+
+// TaskLogPath returns the log file path for one task attempt under baseDir.
+// Each task gets its own subdirectory (TaskLogDir) so an attempt's rotated
+// generations (attempt-N.jsonl.1, .2, ...) stay grouped with that task
+// rather than interleaved with every other task's.
 func TaskLogPath(baseDir string, taskID int64, attempt int) string {
-	return filepath.Join(baseDir, strconv.FormatInt(taskID, 10), fmt.Sprintf("attempt-%d.jsonl", attempt))
+	return filepath.Join(TaskLogDir(baseDir, taskID), fmt.Sprintf("attempt-%d.jsonl", attempt))
 }
 
 // TaskSinkOptions configures a per-task log sink. The zero value selects the

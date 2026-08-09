@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
@@ -539,6 +541,44 @@ func TestArchiveRemovesOnlyOneTerminalTask(t *testing.T) {
 		}
 	default:
 		t.Error("archive emitted no activity event")
+	}
+}
+
+// TestArchiveRemovesTheTaskLogDirectory guards the cleanup half of task
+// logging: without this, an archived task's log files (and every rotated
+// generation under it) would accumulate on disk forever, since nothing else
+// in the system ever visits a task again once it leaves the active board.
+func TestArchiveRemovesTheTaskLogDirectory(t *testing.T) {
+	srv := newTestServer(t)
+	ctx := t.Context()
+	baseDir := t.TempDir()
+	srv.TaskLogs = logging.NewTaskRegistry(baseDir, logging.NewFeed(10), logging.TaskSinkOptions{})
+
+	if _, err := srv.Store.EnqueueIssue(ctx, "acme", "widget", 1, "done", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, _ := srv.Store.TaskByIssue(ctx, "acme", "widget", 1)
+	if err := srv.Store.Transition(ctx, task.ID, store.StatusQueued, store.StatusMerged, "done"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := srv.TaskLogs.Open(task.ID, task.Attempt); err != nil {
+		t.Fatal(err)
+	}
+	srv.TaskLogs.Write(task.ID, logging.Entry{Message: "line"})
+	if err := srv.TaskLogs.Close(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	dir := logging.TaskLogDir(baseDir, task.ID)
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("task log dir missing before archive: %v", err)
+	}
+
+	if w := postAction(t, srv, task.ID, "archive"); w.Code != http.StatusOK {
+		t.Fatalf("archive status = %d, body %s", w.Code, w.Body)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("task log dir still present after archive: err=%v", err)
 	}
 }
 
