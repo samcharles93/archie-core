@@ -18,7 +18,10 @@ import { row } from "./config-row.js";
  * keys (db_path, work_dir) render disabled with the server's reason.
  */
 export function settingsPage() {
-  const root = el("div");
+  // .cfg-page caps and centres the whole view. Constraining the container
+  // rather than the individual lists keeps the cards, key/value lists and
+  // tables on one shared measure; see settings.css.
+  const root = el("div.cfg-page");
   const body = el("div");
 
   render();
