@@ -71,6 +71,7 @@ type TurnRunnerConfig struct {
 	PersistenceTimeout time.Duration
 	TaskLister         ChatTaskLister
 	Tasks              TaskCreator
+	TaskLogs           ChatTaskLogReader
 	TaskIdentity       string
 	Bus                TurnEventPublisher
 	BotUser            string
@@ -219,7 +220,7 @@ func (r *TurnRunner) Run(ctx context.Context, msg Message, onDelta func(string))
 
 	compressed := compressTurnHistory(history, r.BotUser)
 	extraTools := append(
-		TaskTools(r.TaskLister, r.Tasks, r.TaskIdentity),
+		TaskTools(r.TaskLister, r.Tasks, r.TaskLogs, r.TaskIdentity),
 		SessionTools(r.Sessions, r.Router.SessionTracker(), r.Channel, msg)...,
 	)
 	modelName := r.Models.ActiveModel()

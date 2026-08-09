@@ -22,6 +22,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/nell"
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -427,6 +428,119 @@ func TestChatTaskControllerAdapterTransitions(t *testing.T) {
 	if transitionFrom != store.StatusWaitingHuman || transitionTo != store.StatusClosedWontDo ||
 		transitionDetail != "cancelled by test" {
 		t.Errorf("transition = %q/%q/%q", transitionFrom, transitionTo, transitionDetail)
+	}
+}
+
+func TestChatTaskLogReaderAdapterIdentityEnforcement(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		identity string
+		task     *store.Task
+		wantErr  bool
+	}{
+		{
+			name:     "own chat task allowed",
+			identity: "archie",
+			task:     &store.Task{ID: 42, Identity: "archie", Attempt: 1, Source: store.SourceChat},
+			wantErr:  false,
+		},
+		{
+			name:     "other identity chat task denied",
+			identity: "archie",
+			task:     &store.Task{ID: 42, Identity: "other-bot", Attempt: 1, Source: store.SourceChat},
+			wantErr:  true,
+		},
+		{
+			name:     "forge task (empty identity) denied",
+			identity: "archie",
+			task:     &store.Task{ID: 42, Identity: "", Attempt: 1, Source: store.SourceForge},
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			adapter := chatTaskLogReaderAdapter{
+				tasks: func(_ context.Context, _ int64) (*store.Task, error) { return tt.task, nil },
+			}
+			_, err := adapter.ReadChatTaskLogs(context.Background(), tt.identity, tt.task.ID, 0, gateway.ChatTaskLogQuery{})
+			if tt.wantErr && err == nil {
+				t.Error("expected error, got nil")
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestChatTaskLogReaderAdapterDefaultAttempt(t *testing.T) {
+	task := &store.Task{ID: 42, Identity: "archie", Attempt: 3, Source: store.SourceChat}
+	adapter := chatTaskLogReaderAdapter{
+		tasks: func(_ context.Context, _ int64) (*store.Task, error) { return task, nil },
+	}
+
+	result, err := adapter.ReadChatTaskLogs(context.Background(), "archie", task.ID, 0, gateway.ChatTaskLogQuery{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Attempt != 3 {
+		t.Errorf("attempt = %d, want 3 (resolved from task.Attempt when 0 is passed)", result.Attempt)
+	}
+}
+
+func TestChatTaskLogReaderAdapterEmptyResultWhenNoRegistry(t *testing.T) {
+	task := &store.Task{ID: 42, Identity: "archie", Attempt: 1, Source: store.SourceChat}
+	adapter := chatTaskLogReaderAdapter{
+		tasks:    func(_ context.Context, _ int64) (*store.Task, error) { return task, nil },
+		taskLogs: nil,
+	}
+
+	result, err := adapter.ReadChatTaskLogs(context.Background(), "archie", task.ID, 1, gateway.ChatTaskLogQuery{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Entries == nil {
+		t.Error("Entries is nil, want empty slice (non-nil avoids model retrying)")
+	}
+	if len(result.Entries) != 0 {
+		t.Errorf("Entries = %+v, want empty", result.Entries)
+	}
+}
+
+func TestChatTaskLogReaderAdapterRoundTrip(t *testing.T) {
+	baseDir := t.TempDir()
+	taskLogs := logging.NewTaskRegistry(baseDir, logging.NewFeed(10), logging.TaskSinkOptions{})
+	t.Cleanup(func() { _ = taskLogs.Remove(42) })
+
+	task := &store.Task{ID: 42, Identity: "archie", Attempt: 1, Source: store.SourceChat}
+	adapter := chatTaskLogReaderAdapter{
+		tasks:    func(_ context.Context, _ int64) (*store.Task, error) { return task, nil },
+		taskLogs: taskLogs,
+	}
+
+	// Write through the registry (same path the daemon's NATS consumer takes).
+	if err := taskLogs.Open(task.ID, task.Attempt); err != nil {
+		t.Fatal(err)
+	}
+	taskLogs.Write(task.ID, logging.Entry{Level: "ERROR", Message: "gate failed", Fields: map[string]any{"component": "gate"}})
+	if err := taskLogs.Close(task.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Read back through the adapter (same path the chat tool takes).
+	result, err := adapter.ReadChatTaskLogs(context.Background(), "archie", task.ID, 1, gateway.ChatTaskLogQuery{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(result.Entries))
+	}
+	entry := result.Entries[0]
+	if entry.Message != "gate failed" || entry.Level != "ERROR" {
+		t.Errorf("entry = %+v, want message=gate failed level=ERROR", entry)
 	}
 }
 
