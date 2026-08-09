@@ -9,6 +9,25 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec"
 )
 
+// Bounds on how much of a failing gate command's output rides along at each
+// point in this stage. They serve different purposes and are sized
+// independently, not derived from one another:
+//   - baselineWarnLogBytes is a daemon log line -- kept short so one baseline
+//     failure doesn't dominate the log around it.
+//   - baselineMissionBytes is what the builder agent sees -- generous, since
+//     it needs enough context to actually diagnose the failure.
+//   - baselineParkOutputBytes is what a human (or Archie's own chat tools)
+//     sees in the park reason when the builder couldn't fix it. It used to
+//     be zero: the returned error carried only a status string, so a park
+//     reason like "go build ./... fails ... (status: failed)" gave no way to
+//     see the actual compiler error. It stays comfortably under the store's
+//     own park-reason cap (see internal/store's Task.ParkReason clip).
+const (
+	baselineWarnLogBytes    = 200
+	baselineMissionBytes    = 3000
+	baselineParkOutputBytes = 2048
+)
+
 // StageBaselineGate verifies the repo's gate is green at the base commit.
 // If the gate is red due to pre-existing failures, the builder attempts to
 // fix them via TDD before proceeding. Only parks if the builder cannot fix
@@ -27,7 +46,7 @@ func StageBaselineGate() Stage {
 			}
 			tc.Log.Warn("baseline red  --  auto-fixing pre-existing gate failure",
 				"cmd", strings.Join(argv, " "),
-				"err", clip(string(out), 200))
+				"err", clip(string(out), baselineWarnLogBytes))
 
 			// Run builder to fix the failure via TDD.
 			mission := fmt.Sprintf(
@@ -41,7 +60,7 @@ func StageBaselineGate() Stage {
 					"5. Repeat until the gate `%s` passes for all packages\n\n"+
 					"Gate output:\n%s\n\n"+
 					"When the gate passes, call finish with status \"passed\".",
-				strings.Join(argv, " "), tc.Repo.FullName(), strings.Join(argv, " "), clip(string(out), 3000),
+				strings.Join(argv, " "), tc.Repo.FullName(), strings.Join(argv, " "), clip(string(out), baselineMissionBytes),
 			)
 
 			modelRef := tc.Cfg.Models["builder"]
@@ -67,8 +86,8 @@ func StageBaselineGate() Stage {
 				return fmt.Errorf("baseline-fix agent run: %w", agentErr)
 			}
 			if res.Status != agentexec.StatusPassed {
-				return fmt.Errorf("baseline red  --  %s fails and builder could not auto-fix (status: %s)",
-					strings.Join(argv, " "), res.Status)
+				return fmt.Errorf("baseline red  --  %s fails and builder could not auto-fix (status: %s)\n\ngate output:\n%s",
+					strings.Join(argv, " "), res.Status, clipTail(string(out), baselineParkOutputBytes))
 			}
 
 			// Commit the baseline fix.

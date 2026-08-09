@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"sort"
 	"time"
+	"unicode/utf8"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
@@ -284,4 +285,25 @@ func clip(s string, n int) string {
 		return s
 	}
 	return s[:n] + "\n…(truncated)"
+}
+
+// clipTail keeps the last n bytes of s, breaking on a rune boundary so a
+// multi-byte character straddling the cut point isn't split into invalid
+// UTF-8 -- this return value can be persisted (e.g. into a task's park
+// reason), not just logged, so mangled bytes would survive past this call.
+//
+// Head-clipping (clip, above) is right when the useful part comes first,
+// such as a compiler error. It is wrong for command output where the
+// explanation is at the end, such as a test runner's "--- FAIL" block after
+// pages of "ok" lines -- clip would keep exactly the part that doesn't say
+// why it failed.
+func clipTail(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	cut := len(s) - n
+	for cut < len(s) && !utf8.RuneStart(s[cut]) {
+		cut++
+	}
+	return "…(truncated)\n" + s[cut:]
 }

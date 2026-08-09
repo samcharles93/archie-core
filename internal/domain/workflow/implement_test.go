@@ -3,8 +3,14 @@ package workflow
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 
+	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -152,6 +158,81 @@ func TestStageCommitPushDoesNotUseSyntheticIssueForChatNoOp(t *testing.T) {
 	}
 	if tc.Outcome.Status != store.StatusMerged {
 		t.Errorf("Outcome.Status = %q, want %q", tc.Outcome.Status, store.StatusMerged)
+	}
+}
+
+// alwaysFailingRunner reports the gate as unfixable, so StageBaselineGate
+// falls through to its terminal error without needing a real agent loop.
+var alwaysFailingRunner = agentRunnerFunc(func(context.Context, string, agentexec.Request) (agentexec.Result, error) {
+	return agentexec.Result{Status: "failed"}, nil
+})
+
+// TestStageBaselineGateParkErrorCarriesGateOutput guards against the gate's
+// real failure output being thrown away. StageBaselineGate used to build the
+// park error from res.Status alone -- the actual compiler/test error was
+// never in it at all, so a park reason like "go build ./... fails ...
+// (status: failed)" gave no way to see why. It also guards the direction and
+// size of the bound: baselineParkOutputBytes keeps the *tail* of the output
+// (where a test runner's failure detail lives, after pages of "ok" lines),
+// not the head, and must actually truncate rather than always including
+// everything regardless of the constant's value.
+func TestStageBaselineGateParkErrorCarriesGateOutput(t *testing.T) {
+	tests := []struct {
+		name           string
+		script         string // shell body; markers must appear only in output, never in argv
+		wantContains   []string
+		wantNotContain []string
+	}{
+		{
+			name:         "short output is included in full",
+			script:       "echo shortmarker",
+			wantContains: []string{"shortmarker"},
+		},
+		{
+			name: "long output is bounded to the tail",
+			// filler comfortably exceeds baselineParkOutputBytes so the
+			// head marker falls outside the kept window and the tail
+			// marker falls inside it.
+			script: "echo headmarker; " +
+				"head -c " + strconv.Itoa(baselineParkOutputBytes*2) + " /dev/zero | tr '\\0' 'y'; " +
+				"echo; echo tailmarker",
+			wantContains:   []string{"tailmarker"},
+			wantNotContain: []string{"headmarker"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			script := filepath.Join(dir, "gate.sh")
+			if err := os.WriteFile(script, []byte("#!/bin/sh\n"+tt.script+"\nexit 1\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+
+			tc := &TaskContext{
+				Task:  &store.Task{ID: 1, Owner: "o", Repo: "r"},
+				Repo:  config.Repo{Gate: [][]string{{"sh", script}}},
+				Cfg:   config.Config{},
+				Agent: alwaysFailingRunner,
+				Dir:   dir,
+				Log:   slog.New(slog.DiscardHandler),
+			}
+
+			err := StageBaselineGate().Run(context.Background(), tc)
+			if err == nil {
+				t.Fatal("expected an error when the baseline gate is unfixable")
+			}
+			for _, want := range tt.wantContains {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("park error missing %q: %v", want, err)
+				}
+			}
+			for _, notWant := range tt.wantNotContain {
+				if strings.Contains(err.Error(), notWant) {
+					t.Errorf("park error contains %q, want truncated away: %v", notWant, err)
+				}
+			}
+		})
 	}
 }
 
