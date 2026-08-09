@@ -15,6 +15,12 @@
   margin-top: 0;
 }
 
+/* The .cfg-rows / .cfg-row class pair is shared with the Workflows
+   "Start work" form (form.cfg-rows, no .cfg-row children). The form
+   needs the 8px gap and `var(--sp-2) 0` padding for breathing room
+   between inputs; the Configuration page reads as dense metadata where
+   the border alone carries the rhythm. Keep the general rules for the
+   form and override under .cfg-section. */
 .cfg-rows {
   display: flex;
   flex-direction: column;
@@ -28,6 +34,14 @@
   gap: var(--sp-4);
   padding: var(--sp-2) 0;
   border-bottom: 1px solid var(--border);
+}
+
+.cfg-section .cfg-rows {
+  gap: 0;
+}
+
+.cfg-section .cfg-row {
+  padding: var(--sp-1) 0;
 }
 
 .cfg-row:last-child {
