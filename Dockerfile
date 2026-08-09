@@ -77,12 +77,6 @@ RUN curl -fsSL https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:${PATH}"
 RUN uv python install --default "${PYTHON_VERSION}" && rm -rf /root/.cache/uv
 
-# ── Beads ─────────────────────────────────────────────────────────────
-# bd runs Dolt embedded, so the standalone dolt binary isn't needed.
-ARG BEADS_VERSION=1.1.2
-RUN curl -fsSL "https://github.com/gastownhall/beads/releases/download/v${BEADS_VERSION}/beads_${BEADS_VERSION}_linux_amd64.tar.gz" \
-      | tar -xz -C /usr/local/bin bd
-
 COPY --from=builder /usr/local/bin/archie-agent /usr/local/bin/archie-agent
 
 # The daemon injects NATS_URL and, when configured, NATS_TOKEN.
