@@ -59,7 +59,9 @@ jobs:
           for tag in $(git tag --points-at HEAD); do
             case "$tag" in
               archied/v*)
-                ver="${tag#archied/}"
+                # Strip the "v" too: tags are archied/vX.Y.Z, changelog
+                # sections are "## [X.Y.Z]" (see tools/release.sh).
+                ver="${tag#archied/v}"
                 echo "  archied tag $tag  ->  looking for [$ver] in CHANGELOG.archied.md"
                 grep -q "^## \\[$ver\\]" CHANGELOG.archied.md || {
                   echo "  FAIL: CHANGELOG.archied.md has no [$ver] section"
@@ -67,7 +69,7 @@ jobs:
                 }
                 ;;
               archie/v*)
-                ver="${tag#archie/}"
+                ver="${tag#archie/v}"
                 echo "  archie tag $tag  ->  looking for [$ver] in CHANGELOG.archie.md"
                 grep -q "^## \\[$ver\\]" CHANGELOG.archie.md || {
                   echo "  FAIL: CHANGELOG.archie.md has no [$ver] section"
