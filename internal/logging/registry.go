@@ -109,6 +109,18 @@ func (r *TaskRegistry) Write(taskID int64, entry Entry) bool {
 	return true
 }
 
+// Path returns the on-disk path for one task attempt's log file under this
+// registry's baseDir, for callers that only need to read a task's history
+// (the API handler, chat tools) rather than write to it. Safe to call on a
+// nil registry -- returns "" the same way every write method reports "task
+// logging is not configured" on a nil receiver.
+func (r *TaskRegistry) Path(taskID int64, attempt int) string {
+	if r == nil {
+		return ""
+	}
+	return TaskLogPath(r.baseDir, taskID, attempt)
+}
+
 // Remove deletes taskID's entire log directory -- every attempt, every
 // rotated generation -- so task logs don't accumulate forever once a task
 // is archived. Safe to call whether or not a sink is currently open (Close

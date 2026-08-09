@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/tools"
 )
@@ -15,6 +16,12 @@ const (
 	// maxTaskListLimit bounds what the model can ask for. A queue of a few
 	// hundred tasks would otherwise land in the context window whole.
 	maxTaskListLimit = 100
+
+	// defaultTaskLogLimit is how many log entries a bare task_logs returns.
+	defaultTaskLogLimit = 200
+
+	// maxTaskLogLimit bounds what the model can ask for in one call.
+	maxTaskLogLimit = 2000
 )
 
 // ChatTaskSummary is the per-task view the task tools return. It is
@@ -48,6 +55,49 @@ type TaskSpawnResult struct {
 	Message string `json:"message"`
 }
 
+// ChatTaskLogEntry is one log line as task_logs returns it. It mirrors
+// internal/logging.Entry's shape without importing that package: gateway
+// keeps its independence from internal/logging the same way it already does
+// from internal/store, with the daemon adapting between them.
+type ChatTaskLogEntry struct {
+	Time    time.Time      `json:"time"`
+	Level   string         `json:"level"`
+	Message string         `json:"message"`
+	Fields  map[string]any `json:"fields,omitempty"`
+}
+
+// ChatTaskLogQuery filters a task_logs read.
+type ChatTaskLogQuery struct {
+	// Component matches the log entry's component field case-insensitively.
+	// Empty means any.
+	Component string
+	// Contains matches the message or any field value, case-insensitively.
+	Contains string
+	// Limit caps returned entries.
+	Limit int
+}
+
+// ChatTaskLogResult is what task_logs returns.
+type ChatTaskLogResult struct {
+	Entries []ChatTaskLogEntry `json:"entries"`
+	// Attempt is the attempt number actually read, so the model can tell
+	// the caller which run it looked at when none was requested explicitly.
+	Attempt int `json:"attempt"`
+	// Truncated reports that older matching entries exist beyond what this
+	// page examined.
+	Truncated bool `json:"truncated"`
+}
+
+// ChatTaskLogReader is the read surface task_logs needs. It mirrors the
+// ChatTaskLister pattern: gateway states what it needs and the daemon
+// supplies an adapter, so this package keeps its independence from
+// internal/store and internal/logging.
+type ChatTaskLogReader interface {
+	// ReadChatTaskLogs returns taskID's log entries for attempt (0 selects
+	// the task's current/latest attempt), scoped to identity's own tasks.
+	ReadChatTaskLogs(ctx context.Context, identity string, taskID int64, attempt int, q ChatTaskLogQuery) (ChatTaskLogResult, error)
+}
+
 // TaskTools builds the chat tools that let Archie see and add to its own work
 // queue. Until these existed, /spawn and the task list were slash commands only
 // a human could type, so "what are you working on?" had no tool path at all.
@@ -65,13 +115,16 @@ type TaskSpawnResult struct {
 // inbound email can be quoted into it -- so a tool that approves Archie's own
 // work would remove the only human checkpoint in the lifecycle. Cancel is
 // destructive on the same untrusted path. Both remain slash commands.
-func TaskTools(lister ChatTaskLister, creator TaskCreator, identity string) []tools.ToolEntry {
+func TaskTools(lister ChatTaskLister, creator TaskCreator, logs ChatTaskLogReader, identity string) []tools.ToolEntry {
 	var entries []tools.ToolEntry
 	if lister != nil {
 		entries = append(entries, taskListTool(lister, identity))
 	}
 	if creator != nil {
 		entries = append(entries, taskSpawnTool(creator, identity))
+	}
+	if logs != nil {
+		entries = append(entries, taskLogsTool(logs, identity))
 	}
 	return entries
 }
@@ -171,6 +224,84 @@ func taskSpawnTool(creator TaskCreator, identity string) tools.ToolEntry {
 				Message: fmt.Sprintf("queued task %d: %s", id, title),
 			}, nil
 		},
+	}
+}
+
+func taskLogsTool(reader ChatTaskLogReader, identity string) tools.ToolEntry {
+	return tools.ToolEntry{
+		Name:    "task_logs",
+		Toolset: "tasks",
+		Description: "Read a task's persisted log history -- gate output, agent activity, errors -- " +
+			"to answer questions like \"why did task N park?\" or \"what happened on task N?\" " +
+			"without an operator needing to open the dashboard. " +
+			"Defaults to the task's latest attempt when attempt is omitted.",
+		Classification: tools.ClassIdempotent,
+		Schema: tools.JSONSchema{
+			"type": "object",
+			"properties": map[string]any{
+				"task_id": map[string]any{
+					"type":        "integer",
+					"description": "ID of the task to read logs for.",
+				},
+				"attempt": map[string]any{
+					"type":        "integer",
+					"description": "Which attempt to read. Omit for the task's current/latest attempt.",
+				},
+				"component": map[string]any{
+					"type":        "string",
+					"description": "Only return entries from this component (e.g. \"gate\"). Omit for all components.",
+				},
+				"q": map[string]any{
+					"type":        "string",
+					"description": "Only return entries whose message or fields contain this text (case-insensitive).",
+				},
+				"limit": map[string]any{
+					"type": "integer",
+					"description": fmt.Sprintf(
+						"Maximum entries to return. Defaults to %d, capped at %d.",
+						defaultTaskLogLimit, maxTaskLogLimit),
+				},
+			},
+			"required": []any{"task_id"},
+		},
+		Handler: func(ctx context.Context, input map[string]any) (any, error) {
+			taskID, ok := asInt64(input["task_id"])
+			if !ok {
+				return nil, fmt.Errorf("task_logs: task_id is required")
+			}
+			attempt := 0
+			if v, ok := asInt64(input["attempt"]); ok {
+				attempt = int(v)
+			}
+			limit := tools.ListLimit(input, defaultTaskLogLimit, maxTaskLogLimit)
+
+			// The bound identity, never input["identity"].
+			result, err := reader.ReadChatTaskLogs(ctx, identity, taskID, attempt, ChatTaskLogQuery{
+				Component: strings.TrimSpace(asString(input["component"])),
+				Contains:  strings.TrimSpace(asString(input["q"])),
+				Limit:     limit,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("task_logs: %w", err)
+			}
+			return result, nil
+		},
+	}
+}
+
+// asInt64 reads an integer field. JSON numbers decode as float64, but a
+// model that emits an integer through a different provider path can arrive
+// as int or int64, so all three are accepted.
+func asInt64(v any) (int64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return int64(n), true
+	case int64:
+		return n, true
+	case int:
+		return int64(n), true
+	default:
+		return 0, false
 	}
 }
 
