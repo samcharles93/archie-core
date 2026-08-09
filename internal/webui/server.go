@@ -32,8 +32,10 @@ type Server struct {
 	Log   *slog.Logger
 
 	// Cfg backs the setup checklist and configuration views. Optional: the
-	// dashboard degrades to task data alone when it is nil.
-	Cfg *config.Config
+	// dashboard degrades to task data alone when it is nil. Held through a
+	// Holder so a reload swaps the snapshot atomically across handler
+	// goroutines that would otherwise race on the raw shared pointer.
+	Cfg *config.Holder
 
 	// Workflows is the executable registry snapshot supplied by composition.
 	Workflows []workflow.Definition

@@ -374,12 +374,13 @@ func (s *Server) maxRetriesFor(task *store.Task) int {
 	if s.Cfg == nil {
 		return 0
 	}
-	for _, repo := range s.Cfg.Repos {
+	cfg := s.Cfg.Get()
+	for _, repo := range cfg.Repos {
 		if repo.Owner == task.Owner && repo.Name == task.Repo {
-			return repo.EffectiveMaxRetries(s.Cfg.MaxRetries)
+			return repo.EffectiveMaxRetries(cfg.MaxRetries)
 		}
 	}
-	return s.Cfg.MaxRetries
+	return cfg.MaxRetries
 }
 
 // closeRejectedIssue closes the forge issue behind a task the operator has

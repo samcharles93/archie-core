@@ -23,8 +23,8 @@ const (
 	fakeNATSToken   = "nats-FAKESECRETTOKEN000"
 )
 
-func configWithFakeSecrets() *config.Config {
-	return &config.Config{
+func configWithFakeSecrets() *config.Holder {
+	return config.NewHolder(config.Config{
 		WorkDir:   "/work/archie",
 		SkillsDir: "/work/archie/.agents/skills",
 		DBPath:    "/work/archie/archie.db",
@@ -58,7 +58,7 @@ func configWithFakeSecrets() *config.Config {
 		Chat: config.ChatConfig{
 			Telegram: config.TelegramConfig{TokenEnv: "TELEGRAM_TOKEN"},
 		},
-	}
+	})
 }
 
 // leakCandidates returns the set of fake secret strings a test should
@@ -72,11 +72,11 @@ func leakCandidates() []string {
 func TestHandleConfigNeverLeaksSecrets(t *testing.T) {
 	cases := []struct {
 		name string
-		cfg  *config.Config
+		cfg  *config.Holder
 	}{
 		{name: "populated config with secrets", cfg: configWithFakeSecrets()},
 		{name: "nil config", cfg: nil},
-		{name: "zero-value config", cfg: &config.Config{}},
+		{name: "zero-value config", cfg: config.NewHolder(config.Config{})},
 	}
 
 	for _, tc := range cases {
