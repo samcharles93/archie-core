@@ -43,6 +43,10 @@ type Server struct {
 	// LogFeed is the daemon diagnostic stream. It is separate from Events,
 	// which contains persisted task lifecycle activity only.
 	LogFeed *logging.Feed
+	// TaskLogs holds each task's persisted log output. Archiving a task
+	// removes its log files here too, via TaskLogs.Remove -- nil (task
+	// logging not configured) makes that a no-op.
+	TaskLogs *logging.TaskRegistry
 
 	// ConfigProvenance is supplied by composition from the production loader.
 	// It is safe to expose: it contains paths and precedence only, never values.

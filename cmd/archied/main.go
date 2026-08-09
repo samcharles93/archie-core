@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -308,6 +309,11 @@ func run() int {
 	// daemon continues on stderr -- losing the durable copy must not take the
 	// daemon down with it.
 	logFeed := logging.NewFeed(1000)
+	// Task logs live alongside the store rather than under cfg.Log.File's
+	// directory: cfg.Log.File is optional (file logging can be off), while
+	// DBPath is required for the daemon to run at all, so it is the more
+	// reliable anchor for "where archie keeps its state" on this host.
+	taskLogs := logging.NewTaskRegistry(filepath.Join(filepath.Dir(cfg.DBPath), "logs", "tasks"), logFeed, logging.TaskSinkOptions{})
 	fileLog, logCloser, logErr := logging.New(logging.Options{
 		File:      cfg.Log.File,
 		MaxSizeMB: cfg.Log.MaxSizeMB,
@@ -390,7 +396,7 @@ func run() int {
 			Path: origin.Path, Role: string(origin.Role), Layer: string(origin.Layer), Feature: string(origin.Feature),
 		})
 	}
-	web := &webui.Server{Store: st, Log: log, LogFeed: logFeed, Cfg: &cfg, ConfigProvenance: configProvenance, Channels: channelManager, Events: bus}
+	web := &webui.Server{Store: st, Log: log, LogFeed: logFeed, TaskLogs: taskLogs, Cfg: &cfg, ConfigProvenance: configProvenance, Channels: channelManager, Events: bus}
 	web.ReloadChannel = func(ctx context.Context, id string) error {
 		if id != "telegram" || restartTelegram == nil {
 			return fmt.Errorf("channel reload unavailable")
@@ -717,6 +723,13 @@ func run() int {
 			return 1
 		}
 		defer unsubscribe()
+
+		unsubscribeSystemLogs, err := subscribeSystemLogs(coreConn, taskLogs, log)
+		if err != nil {
+			log.Error("system log subscribe failed", "err", err)
+			return 1
+		}
+		defer unsubscribeSystemLogs()
 	}
 
 	// ── Memory manager ────────────────────────────────────────────────
@@ -917,6 +930,7 @@ func run() int {
 		ToolRegistry:    toolReg,
 		Curators:        curatorRegistry,
 		Identities:      identityRunners,
+		TaskLogs:        taskLogs,
 	}
 	web.TaskStopper = d
 
@@ -1126,6 +1140,38 @@ func parseListenAddr(addr, defaultHost string, defaultPort int) (string, int) {
 // a conversation for session persistence and history retrieval.
 func executionProviders(cfg config.Config) map[string]agentexec.Provider {
 	return agentexec.ProvidersFromConfig(cfg.Providers)
+}
+
+// subscribeSystemLogs subscribes to every task's system log subject at once.
+// A sandboxed container's own stderr disappears at AutoRemove; archie-agent
+// ships it here instead (agentexec.SubjectForSystem), and this is where it
+// lands: one wildcard subscription demuxed by taskID and routed through
+// taskLogs, which is opened for a task's duration in Daemon.process, so a
+// message for a task not currently open there -- late, duplicate, or from
+// an attempt this instance never dispatched -- is expected and silently
+// dropped rather than treated as an error.
+func subscribeSystemLogs(nc *natsio.Conn, taskLogs *logging.TaskRegistry, log *slog.Logger) (unsubscribe func(), err error) {
+	sub, err := nc.Subscribe(agentexec.SubjectSystemWildcard, func(msg *natsio.Msg) {
+		taskID, ok := agentexec.TaskIDFromSystemSubject(msg.Subject)
+		if !ok {
+			log.Warn("system log message on unparseable subject", "subject", msg.Subject)
+			return
+		}
+		var entry logging.Entry
+		if err := json.Unmarshal(msg.Data, &entry); err != nil {
+			log.Warn("system log message undecodable", "task", taskID, "err", err)
+			return
+		}
+		taskLogs.Write(taskID, entry)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return func() {
+		if err := sub.Unsubscribe(); err != nil {
+			log.Warn("system log unsubscribe failed", "err", err)
+		}
+	}, nil
 }
 
 // registerTaskRPCServers subscribes the storerpc/forgerpc/worktreerpc
