@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func newTestSQLiteStore(t *testing.T) SessionStore {
@@ -90,6 +92,217 @@ func TestMessageIDsAreUnique(t *testing.T) {
 			t.Fatalf("duplicate message ID %q", id)
 		}
 		seen[id] = struct{}{}
+	}
+}
+
+func TestCanonicalMessageIDComponentsAreInjectivelyEncoded(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		firstSession  string
+		firstSource   string
+		secondSession string
+		secondSource  string
+	}{
+		{
+			name:          "separator can occur in session",
+			firstSession:  "a\x00b",
+			firstSource:   "c",
+			secondSession: "a",
+			secondSource:  "b\x00c",
+		},
+		{
+			name:          "empty session does not alias prefixed source",
+			firstSession:  "",
+			firstSource:   "a\x00b",
+			secondSession: "\x00a",
+			secondSource:  "b",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			first := CanonicalMessageID(tc.firstSession, tc.firstSource)
+			second := CanonicalMessageID(tc.secondSession, tc.secondSource)
+			if first == second {
+				t.Fatalf("CanonicalMessageID(%q, %q) = CanonicalMessageID(%q, %q) = %q",
+					tc.firstSession, tc.firstSource, tc.secondSession, tc.secondSource, first)
+			}
+		})
+	}
+}
+
+func TestSQLiteSessionStoreRecognisesLegacyCanonicalIDOnRedelivery(t *testing.T) {
+	t.Parallel()
+
+	store := newTestSQLiteStore(t)
+	ctx := t.Context()
+	const (
+		sessionID = "a\x00b"
+		sourceID  = "source"
+	)
+	legacyID := uuid.NewSHA1(messageIDNamespace, []byte(sessionID+"\x00"+sourceID)).String()
+	if _, err := sqliteStoreDB(t, store).ExecContext(ctx, `
+		INSERT INTO messages (message_id, session_id, source_id, sender, text, ts)
+		VALUES (?, ?, ?, 'alice', 'original', ?)`,
+		legacyID, sessionID, sourceID, time.Now().Add(-time.Minute).UnixMilli()); err != nil {
+		t.Fatalf("seed legacy message: %v", err)
+	}
+
+	if err := store.SaveMessage(ctx, sessionID, Message{
+		MessageID: CanonicalMessageID(sessionID, sourceID),
+		SourceID:  sourceID, From: "alice", Text: "redelivered",
+	}); err != nil {
+		t.Fatalf("SaveMessage(redelivery): %v", err)
+	}
+	messages, err := store.RecentMessages(ctx, sessionID, 10)
+	if err != nil {
+		t.Fatalf("RecentMessages: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("redelivery produced %d messages, want 1", len(messages))
+	}
+	if messages[0].MessageID != legacyID || messages[0].Text != "original" {
+		t.Fatalf("legacy message changed on redelivery: %#v", messages[0])
+	}
+}
+
+func TestSQLiteSessionStoreFindPriorReplyRecognisesLegacyCanonicalID(t *testing.T) {
+	t.Parallel()
+
+	store := newTestSQLiteStore(t)
+	ctx := t.Context()
+	const (
+		sessionID = "a\x00b"
+		sourceID  = "source"
+		identity  = "archie"
+	)
+	legacyID := uuid.NewSHA1(messageIDNamespace, []byte(sessionID+"\x00"+sourceID)).String()
+	inputAt := time.Now().Add(-time.Minute).UnixMilli()
+	statements := []struct {
+		id     string
+		source string
+		sender string
+		text   string
+		at     int64
+	}{
+		{id: legacyID, source: sourceID, sender: "alice", text: "question", at: inputAt},
+		{id: "reply", sender: identity, text: "answer", at: inputAt + 1},
+	}
+	for _, row := range statements {
+		if _, err := sqliteStoreDB(t, store).ExecContext(ctx, `
+			INSERT INTO messages (message_id, session_id, source_id, sender, text, ts)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			row.id, sessionID, row.source, row.sender, row.text, row.at); err != nil {
+			t.Fatalf("seed %s: %v", row.id, err)
+		}
+	}
+
+	replayStore, ok := store.(TurnReplayStore)
+	if !ok {
+		t.Fatalf("store is %T, want TurnReplayStore", store)
+	}
+	got, err := replayStore.FindPriorReply(ctx, sessionID, sourceID, identity)
+	if err != nil {
+		t.Fatalf("FindPriorReply: %v", err)
+	}
+	if got != "answer" {
+		t.Fatalf("FindPriorReply = %q, want legacy reply", got)
+	}
+}
+
+func TestSQLiteSessionStoreCapsFutureMessageTimestamp(t *testing.T) {
+	t.Parallel()
+
+	store := newTestSQLiteStore(t)
+	ctx := t.Context()
+	now := time.Now().UTC()
+	if err := store.SaveMessage(ctx, "sess", Message{
+		From: "alice", Text: "future", At: now.Add(24 * time.Hour),
+	}); err != nil {
+		t.Fatalf("SaveMessage(future): %v", err)
+	}
+	if err := store.SaveMessage(ctx, "sess", Message{
+		From: "alice", Text: "current", At: now,
+	}); err != nil {
+		t.Fatalf("SaveMessage(current): %v", err)
+	}
+
+	messages, err := store.RecentMessages(ctx, "sess", 10)
+	if err != nil {
+		t.Fatalf("RecentMessages: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("RecentMessages returned %d messages, want 2", len(messages))
+	}
+	if messages[0].At.After(time.Now().UTC().Add(time.Minute)) {
+		t.Fatalf("future timestamp was persisted as %s", messages[0].At)
+	}
+	if !messages[1].At.After(messages[0].At) {
+		t.Fatalf("current message timestamp %s does not follow capped future timestamp %s",
+			messages[1].At, messages[0].At)
+	}
+}
+
+func TestSQLiteSessionStoreRepairsPersistedFutureTimestampsOnReopen(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "future.db")
+	store, err := OpenSQLiteSessionStore(path)
+	if err != nil {
+		t.Fatalf("OpenSQLiteSessionStore: %v", err)
+	}
+	now := time.Now().UTC()
+	rows := []struct {
+		id   string
+		text string
+		at   time.Time
+	}{
+		{id: "past", text: "past", at: now.Add(-time.Minute)},
+		{id: "future-1", text: "future-1", at: now.Add(24 * time.Hour)},
+		{id: "future-2", text: "future-2", at: now.Add(25 * time.Hour)},
+	}
+	for _, row := range rows {
+		if _, err := sqliteStoreDB(t, store).ExecContext(ctx, `
+			INSERT INTO messages (message_id, session_id, sender, text, ts)
+			VALUES (?, 'sess', 'alice', ?, ?)`, row.id, row.text, row.at.UnixMilli()); err != nil {
+			t.Fatalf("seed %s: %v", row.id, err)
+		}
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close seeded store: %v", err)
+	}
+
+	reopened, err := OpenSQLiteSessionStore(path)
+	if err != nil {
+		t.Fatalf("reopen store: %v", err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	if err := reopened.SaveMessage(ctx, "sess", Message{
+		From: "alice", Text: "current", At: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("SaveMessage(current): %v", err)
+	}
+
+	messages, err := reopened.RecentMessages(ctx, "sess", 10)
+	if err != nil {
+		t.Fatalf("RecentMessages: %v", err)
+	}
+	want := []string{"past", "future-1", "future-2", "current"}
+	if got := texts(messages); !equal(got, want) {
+		t.Fatalf("history = %v, want %v", got, want)
+	}
+	for i := 1; i < len(messages); i++ {
+		if !messages[i].At.After(messages[i-1].At) {
+			t.Fatalf("timestamp %d (%s) does not follow %d (%s)",
+				i, messages[i].At, i-1, messages[i-1].At)
+		}
+	}
+	if messages[len(messages)-1].At.After(time.Now().UTC().Add(time.Second)) {
+		t.Fatalf("repaired history remains pinned in the future: last timestamp %s",
+			messages[len(messages)-1].At)
 	}
 }
 
