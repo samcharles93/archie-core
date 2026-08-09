@@ -23,6 +23,24 @@
  * gets its own grid row rather than being crammed onto the value line.
  */
 
+/* Cap and centre the whole page, not the individual lists.
+ *
+ * The page ran the full width of the shell, so a card was ~1300px of which
+ * the content used the left third. Earlier attempts fought that inside the
+ * card, capping or shrinking .kv-list, which only moved the imbalance around
+ * and left the Repositories and Providers tables stretched just as far.
+ *
+ * Constraining the page container fixes every child at once: cards, key/value
+ * lists and tables all take a readable measure, and the leftover space sits
+ * outside the cards where it reads as margin rather than as a hole in the
+ * layout. Scoped to this page rather than added to .page-head, which is
+ * shared with every other view.
+ */
+.cfg-page {
+  max-width: 70rem;
+  margin: 0 auto;
+}
+
 .cfg-section {
   margin-bottom: var(--sp-4);
 }
