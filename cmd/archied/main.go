@@ -347,7 +347,16 @@ func run() int {
 			log.Error("close store", "err", err)
 		}
 	}()
-	chatSessionStore := makeTelegramSessionStore(telegramSetup{St: st, Cfg: cfg})
+	chatSessionStore, err := makeTelegramSessionStore(cfg)
+	if err != nil {
+		log.Error("open conversation store", "path", conversationDBPath(cfg.DBPath), "err", err)
+		return 1
+	}
+	defer func() {
+		if err := chatSessionStore.Close(); err != nil {
+			log.Error("close conversation store", "err", err)
+		}
+	}()
 
 	if *requeue > 0 {
 		if err := st.Requeue(context.Background(), *requeue, "manual", ""); err != nil {
