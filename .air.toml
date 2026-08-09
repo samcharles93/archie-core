@@ -19,7 +19,7 @@ tmp_dir = ".air"
   # `bin` is deprecated in air; entrypoint is the current key.
   entrypoint = "./.air/archied"
   include_ext = ["go", "toml"]
-  exclude_dir = ["ui", "bin", "docs", ".git", ".task", ".air", ".beads", "tmp"]
+  exclude_dir = ["ui", "bin", "docs", ".git", ".task", ".air", "tmp"]
   exclude_regex = ["_test\\.go"]
   stop_on_error = true
   delay = 400

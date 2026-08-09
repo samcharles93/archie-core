@@ -2,7 +2,7 @@
 
 **Status:** Requirements approved; mechanics are under design  
 **Date:** 2026-07-28  
-**Beads issue:** `archie-core-5d7`
+**Tracking issue:** [#73](https://github.com/samcharles93/archie-core/issues/73)
 
 ## Purpose
 
@@ -99,3 +99,32 @@ capabilities continue operating.
 
 Remediation MUST be bounded, observable, and policy-driven. Recovery MUST NOT
 silently oscillate between versions or retry forever.
+
+## Gateway restart: two constraints learned the hard way
+
+Telegram `/restart` (`internal/channels/telegram/restart.go` plus the `Start`
+supervisor loop). Recovered 2026-08-09 from the pre-migration issue tracker.
+Both constraints must survive any refactor.
+
+**1. Deadlock.** The `/restart` handler runs *on* the bot instance the supervisor
+is about to stop. Tearing down inline from the handler deadlocks the restart it
+just asked for. So the handler sends on a **buffered** channel (`restartCh`,
+capacity 1) and returns immediately; the supervisor loop in `Start` does the
+teardown. Duplicate requests hit the default branch and are dropped, not queued.
+
+**2. Lockout.** A failed config reload must **not** be fatal. It logs and
+relaunches with the previous in-memory settings. If a bad config edit killed the
+gateway, it would also destroy the only means of fixing it remotely — which is
+the entire reason `/restart` exists.
+
+**Scope is gateway-only by design.** The daemon keeps running so in-flight agent
+tasks survive. Exiting the process would also restart under a `unless-stopped`
+policy, but would kill running work. `Reload` (supplied by `cmd/archied/main.go`)
+re-reads config from disk and refreshes **only** the token and `AllowedUserIDs`;
+everything else is wired into the daemon at construction and still needs a full
+restart.
+
+**Authorisation is inherited:** `authorizedMessage` rejects non-allowlisted
+senders before any handler runs, so all gateway commands are admin-only by
+construction. Do not add per-command auth without checking that invariant still
+holds.

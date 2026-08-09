@@ -2,7 +2,7 @@
 
 **Status:** Active migration inventory  
 **Date:** 2026-07-28  
-**Beads issue:** `archie-core-5d7`
+**Tracking issue:** [#73](https://github.com/samcharles93/archie-core/issues/73)
 
 ## Purpose
 
@@ -238,3 +238,35 @@ Migration design is complete when:
 
 Exact Go APIs, SQL statements, and mechanical refactoring steps MAY be finalized
 during implementation when they do not change these semantics.
+
+## Recorded migration position (2026-07-29)
+
+Recovered 2026-08-09 from the pre-migration issue tracker. This section records
+decisions the maintainer approved that the repository did not otherwise capture.
+
+**Completed:** `internal/infrastructure/eventbus/nats` (rebuilt, not relocated);
+`internal/infrastructure/configuration` (loading moved out of `internal/config`,
+which is now types-only and does no I/O); `internal/eventbus` (broker-neutral
+contract); `internal/domain/workintake` (the first `internal/domain/` package,
+owning `TaskEnvelope`, the routing `Kind`, the label vocabulary, and task
+subjects).
+
+**DECISION — private input DTO deferred (approved).**
+`configuration.Document.Config` is still `internal/config.Config` rather than the
+private per-domain input DTO this document mandates. Building an ~800-line
+parallel type tree while every consumer still reads `config.Config` would mean
+two shapes kept in sync by hand, with no consumer for the new one. It is named as
+a field so the compromise is visible at each use site, with the deletion
+condition recorded in that package's `doc.go`. Do this **with** the
+`internal/config` dissolution, not ahead of it.
+
+**Agreed next: `internal/app/{archied,agentworker}`.** `run()` in
+`cmd/archied/main.go` is ~460 lines, against `organisation.md`'s rule that
+`cmd/*` must not contain substantive wiring or act as a service locator. It is
+also the last non-infrastructure holder of the NATS SDK, and it is where the
+config DTO translation will land, so it unblocks the dissolution above.
+
+**Method constraint.** Do not write a separate recorded package-review document
+per area when the decisions are already dictated by
+`dependencies-and-contracts.md`. That is the ceremony pattern this project
+deliberately avoids.

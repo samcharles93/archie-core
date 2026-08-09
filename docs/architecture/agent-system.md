@@ -2,7 +2,7 @@
 
 **Status:** Current-state investigation in progress  
 **Date:** 2026-07-28  
-**Beads issue:** `archie-core-5d7`
+**Tracking issue:** [#73](https://github.com/samcharles93/archie-core/issues/73)
 
 ## Domain framing
 
@@ -352,3 +352,32 @@ implemented in different packages:
 - Record StepExecutions explicitly rather than treating one mutable `stage`
   field as complete execution history.
 - Keep Attempt as retry state within the same WorkflowExecution.
+
+## Curator isolation invariant
+
+Decided 2026-08-05
+([#435](https://github.com/samcharles93/archie-core/issues/435) epic,
+[#98](https://github.com/samcharles93/archie-core/issues/98) runtime).
+Recovered 2026-08-09 from the pre-migration issue tracker.
+
+**Curators are peers, not dependencies.** They must never block, delay, or take
+down chat turns, agent runs, or the daemon.
+
+1. Registry-owned goroutines, one per curator, with per-pass `recover()`,
+   per-pass budgets (max steps, tokens, timeout), and a configurable maximum of
+   concurrent passes (default 1) so curators cannot saturate the shared LLM
+   runtime against chat.
+2. Wake events ride the in-process `events.Bus`, which is mutex fan-out with
+   bounded per-subscriber buffers that **drop** on overflow
+   (`internal/events/events.go`). A slow curator can never backpressure the chat
+   publisher.
+3. Wake is a best-effort nudge. The trigger is a deterministic read of persisted
+   primary-input state at pass time, so a dropped wake only delays a run to the
+   next check-in and never corrupts trigger accounting
+   ([#22](https://github.com/samcharles93/archie-core/issues/22)).
+4. The curator registry lifecycle is independent of the agent loop. Daemon
+   shutdown cancels in-flight passes and waits bounded.
+
+Chat turns keep their per-session lanes; agent runs keep their workflow
+goroutines and containers. Rule of thumb: **no code path a curator executes may
+ever appear on a chat turn's critical path.**
