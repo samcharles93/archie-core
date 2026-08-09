@@ -1,7 +1,9 @@
 package webui
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -220,6 +222,101 @@ func TestSetProvenancePublishesForConfigView(t *testing.T) {
 	}
 	if got.Provenance[0].Path != "/etc/archie/config.toml" {
 		t.Errorf("Provenance[0].Path = %q", got.Provenance[0].Path)
+	}
+}
+
+// TestHandleConfigReportsLockedKeys proves the dashboard is told which
+// config keys it cannot edit and why, so it can disable those rows
+// instead of silently omitting the edit affordance.
+func TestHandleConfigReportsLockedKeys(t *testing.T) {
+	srv := newTestServer(t)
+	srv.Cfg = configWithFakeSecrets()
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	var got ConfigView
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, key := range []string{"db_path", "work_dir"} {
+		if got.Locked[key] == "" {
+			t.Errorf("Locked[%q] is empty, want a reason", key)
+		}
+	}
+}
+
+// TestHandleConfigUpdateAppliesViaSeam proves the PATCH handler passes
+// the decoded updates to the wired UpdateConfig seam and answers ok.
+func TestHandleConfigUpdateAppliesViaSeam(t *testing.T) {
+	srv := newTestServer(t)
+	var got map[string]any
+	srv.UpdateConfig = func(_ context.Context, updates map[string]any) error {
+		got = updates
+		return nil
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPatch, "/api/config",
+		strings.NewReader(`{"updates": {"budgets.max_steps": 12}}`))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body)
+	}
+	if got["budgets.max_steps"] != float64(12) {
+		t.Errorf("updates = %#v, want budgets.max_steps=12", got)
+	}
+}
+
+// TestHandleConfigUpdateInvalidMapsTo400 proves a rejected update (the
+// seam wraps its error with ErrConfigUpdateInvalid) answers 400.
+func TestHandleConfigUpdateInvalidMapsTo400(t *testing.T) {
+	srv := newTestServer(t)
+	srv.UpdateConfig = func(context.Context, map[string]any) error {
+		return fmt.Errorf("%w: label is not runtime-tunable", ErrConfigUpdateInvalid)
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPatch, "/api/config",
+		strings.NewReader(`{"updates": {"label": "x"}}`))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %s", w.Code, w.Body)
+	}
+}
+
+// TestHandleConfigUpdateUnavailableMapsTo503 proves a disabled overlay
+// (ErrConfigUpdateUnavailable) answers 503, as does a server with no
+// UpdateConfig seam at all.
+func TestHandleConfigUpdateUnavailableMapsTo503(t *testing.T) {
+	srv := newTestServer(t)
+	srv.UpdateConfig = func(context.Context, map[string]any) error {
+		return fmt.Errorf("%w: overlay disabled by recovery flag", ErrConfigUpdateUnavailable)
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPatch, "/api/config",
+		strings.NewReader(`{"updates": {"label": "x"}}`))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503, body = %s", w.Code, w.Body)
+	}
+}
+
+func TestHandleConfigUpdateWithoutSeamMapsTo503(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPatch, "/api/config",
+		strings.NewReader(`{"updates": {"label": "x"}}`))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503, body = %s", w.Code, w.Body)
 	}
 }
 

@@ -43,6 +43,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
+	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/overlay"
 	"github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
 	"github.com/samcharles93/archie-core/internal/logging"
@@ -293,6 +294,15 @@ func taskDBPath(configuredPath string) string {
 	return configuredPath + "-tasks.sqlite"
 }
 
+// configDBPath resolves the runtime config overlay file. It is a sibling
+// of the task and conversation stores (same configured path, own suffix)
+// so each file owns its user_version and its migrator with no
+// contention; recovery from a broken overlay is rm this file plus the
+// --no-config-overlay boot flag.
+func configDBPath(configuredPath string) string {
+	return configuredPath + "-config.sqlite"
+}
+
 func manualRequeueTask(ctx context.Context, st store.TaskStore, taskID int64) error {
 	task, err := st.TaskByID(ctx, taskID)
 	if err != nil {
@@ -323,13 +333,40 @@ func run() int {
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
 	loader := configuration.New(log)
-	if *noConfigOverlay || configuration.SkipOverlay() {
+	skipOverlay := *noConfigOverlay || configuration.SkipOverlay()
+	if skipOverlay {
 		log.Info("runtime config overlay disabled (recovery hatch); booting on file config alone")
 	}
 	doc, err := loader.Resolve(*cfgPath, *overlayPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
+	}
+	// Runtime config overlay: dashboard-edited overrides layered over the
+	// file config from their own SQLite file (own user_version and
+	// migrator, no contention with the task store). Skipped under
+	// --no-config-overlay / ARCHIE_SKIP_CONFIG_OVERLAY=1, or when the
+	// store cannot be opened or its values fail validation -- a broken
+	// overlay must not brick the daemon.
+	var overlayStore *overlay.Store
+	if !skipOverlay {
+		overlayStore, err = overlay.Open(ctx, configDBPath(doc.Config.DBPath))
+		if err != nil {
+			log.Error("config overlay unavailable; booting on file config alone", "path", configDBPath(doc.Config.DBPath), "err", err)
+		} else {
+			defer overlayStore.Close()
+			if overrides, err := overlayStore.Snapshot(ctx); err != nil {
+				log.Error("config overlay unreadable; booting on file config alone", "err", err)
+			} else if len(overrides) > 0 {
+				next := *doc
+				applied, err := loader.ApplyOverlay(&next, overrides)
+				if err != nil {
+					log.Error("config overlay rejected by validation; booting on file config alone", "err", err)
+				} else {
+					doc = applied
+				}
+			}
+		}
 	}
 	cfg := doc.Config
 
@@ -986,11 +1023,28 @@ func run() int {
 	// published config.
 	web.Cfg = d.Cfg
 
-	// SIGHUP re-loads the config from disk and republishes it. The apply
-	// closure swaps the daemon's Holder and the dashboard's provenance;
-	// the reload log warns about changed fields that require a restart, so
-	// an operator never has to read the source to find out whether their
-	// edit took effect. web.LastReload exposes the outcome to /api/config.
+	// publishConfig publishes a config snapshot and its provenance to
+	// both the daemon and the dashboard (they share one Holder). Reload
+	// and the PATCH path both go through it, so the two can never
+	// diverge. currentProvenance is the last published provenance chain;
+	// the PATCH path appends the runtime-overlay origin to it.
+	currentProvenance := doc.Provenance
+	publishConfig := func(cfg config.Config, provenance configuration.Provenance) {
+		d.Cfg.Set(cfg)
+		origins := make([]webui.ConfigOrigin, 0, len(provenance.Origins))
+		for _, origin := range provenance.Origins {
+			origins = append(origins, webui.ConfigOrigin{
+				Path: origin.Path, Role: string(origin.Role), Layer: string(origin.Layer), Feature: string(origin.Feature),
+			})
+		}
+		web.SetProvenance(origins)
+	}
+
+	// SIGHUP re-loads the config from disk, layers the runtime overlay,
+	// and republishes it. The reload log warns about changed fields that
+	// require a restart, so an operator never has to read the source to
+	// find out whether their edit took effect. web.LastReload exposes
+	// the outcome to /api/config.
 	reloadController := newReloadController(loader, *cfgPath, *overlayPath, func(doc *configuration.Document) {
 		// Boot merges catalog-discovered providers into cfg before the
 		// Holders are seeded; publishing the raw reloaded document would
@@ -999,14 +1053,8 @@ func run() int {
 		// failed to load merges to identity).
 		applyModelCatalog(&doc.Config, catalog)
 		old := d.Cfg.Get()
-		d.Cfg.Set(doc.Config)
-		provenance := make([]webui.ConfigOrigin, 0, len(doc.Provenance.Origins))
-		for _, origin := range doc.Provenance.Origins {
-			provenance = append(provenance, webui.ConfigOrigin{
-				Path: origin.Path, Role: string(origin.Role), Layer: string(origin.Layer), Feature: string(origin.Feature),
-			})
-		}
-		web.SetProvenance(provenance)
+		currentProvenance = doc.Provenance
+		publishConfig(doc.Config, doc.Provenance)
 		if fields := changedNonReloadableFields(old, doc.Config); len(fields) > 0 {
 			log.Warn("config reloaded; some changes require a restart",
 				"fields", fields, "paths", doc.Provenance.Paths())
@@ -1014,7 +1062,47 @@ func run() int {
 			log.Info("config reloaded", "paths", doc.Provenance.Paths())
 		}
 	})
+	if overlayStore != nil {
+		reloadController.WithOverlay(func() (map[string]any, error) { return overlayStore.Snapshot(ctx) })
+	}
 	web.LastReload = reloadController.Status
+
+	// PATCH /api/config goes through the same publish path as reload:
+	// apply to a copy of the published config, validate the materialised
+	// result, persist to the overlay, then publish. It must never call
+	// Set directly from the handler -- web.Cfg is the daemon's own Holder.
+	web.UpdateConfig = func(ctx context.Context, updates map[string]any) error {
+		if overlayStore == nil {
+			return fmt.Errorf("%w: config overlay is disabled (--no-config-overlay or ARCHIE_SKIP_CONFIG_OVERLAY=1)", webui.ErrConfigUpdateUnavailable)
+		}
+		for key := range updates {
+			if reason, denied := overlay.DeniedKeys[key]; denied {
+				return fmt.Errorf("%w: config key %s is not runtime-tunable: %s", webui.ErrConfigUpdateInvalid, key, reason)
+			}
+		}
+		next := d.Cfg.Get()
+		if err := configuration.ApplyOverlayValues(&next, updates); err != nil {
+			return fmt.Errorf("%w: %v", webui.ErrConfigUpdateInvalid, err)
+		}
+		if err := configuration.Validate(&next); err != nil {
+			return fmt.Errorf("%w: %v", webui.ErrConfigUpdateInvalid, err)
+		}
+		for key, value := range updates {
+			data, err := json.Marshal(value)
+			if err != nil {
+				return fmt.Errorf("%w: %v", webui.ErrConfigUpdateInvalid, err)
+			}
+			if err := overlayStore.Set(ctx, key, string(data), "dashboard"); err != nil {
+				return err
+			}
+		}
+		prov := configuration.Provenance{Origins: append(append([]configuration.Origin{}, currentProvenance.Origins...),
+			configuration.Origin{Path: "config_overlay (runtime)", Role: configuration.RoleMain, Layer: configuration.LayerOverlay})}
+		currentProvenance = prov
+		publishConfig(next, prov)
+		log.Info("config updated from dashboard", "keys", len(updates))
+		return nil
+	}
 
 	reloadCh := make(chan os.Signal, 1)
 	signal.Notify(reloadCh, syscall.SIGHUP)

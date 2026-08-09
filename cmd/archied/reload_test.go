@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -102,6 +103,53 @@ func TestReloadValidationFailureDoesNotApply(t *testing.T) {
 	}
 	if st := controller.Status(); st.LastError != "" || st.LastReloadAt == "" {
 		t.Fatalf("Status after recovery = %+v, want no error and a reload time", st)
+	}
+}
+
+func TestReloadAppliesOverlayBeforePublish(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	writeConfig(t, path, minimalConfigTOML("widget"))
+
+	loader := configuration.New(slog.New(slog.DiscardHandler))
+	var published config.Config
+	controller := newReloadController(loader, path, "", func(doc *configuration.Document) {
+		published = doc.Config
+	}).WithOverlay(func() (map[string]any, error) {
+		return map[string]any{"poll_interval": "90s"}, nil
+	})
+
+	if err := controller.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	if published.PollInterval != config.Duration(90*time.Second) {
+		t.Errorf("PollInterval = %v, want 90s (overlay applied before publish)", published.PollInterval)
+	}
+}
+
+// TestReloadOverlayFailureAborts pins that a failed overlay read or
+// validation aborts the reload exactly like a bad file: apply is not
+// called and the error is recorded.
+func TestReloadOverlayFailureAborts(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	writeConfig(t, path, minimalConfigTOML("widget"))
+
+	loader := configuration.New(slog.New(slog.DiscardHandler))
+	applied := 0
+	controller := newReloadController(loader, path, "", func(*configuration.Document) { applied++ }).
+		WithOverlay(func() (map[string]any, error) {
+			return nil, errors.New("overlay unreadable")
+		})
+
+	if err := controller.Reload(); err == nil {
+		t.Fatal("expected an error from the failed overlay")
+	}
+	if applied != 0 {
+		t.Fatalf("apply called %d times after overlay failure, want 0", applied)
+	}
+	if st := controller.Status(); st.LastError == "" {
+		t.Fatal("expected LastError recorded")
 	}
 }
 
