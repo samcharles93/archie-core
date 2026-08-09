@@ -93,21 +93,20 @@ func (h *FeedHandler) Enabled(ctx context.Context, level slog.Level) bool {
 }
 
 func (h *FeedHandler) Handle(ctx context.Context, record slog.Record) error {
-	fields := map[string]any{}
-	for _, attr := range h.attrs {
-		addAttr(fields, h.groups, attr)
-	}
-	record.Attrs(func(attr slog.Attr) bool { addAttr(fields, h.groups, attr); return true })
-	if len(fields) == 0 {
-		fields = nil
-	}
+	fields := FlattenAttrs(record, h.attrs, h.groups)
 	h.feed.append(Entry{Time: record.Time, Level: record.Level.String(), Message: record.Message, Fields: fields})
 	return h.next.Handle(ctx, record)
 }
 
+// WithAttrs bakes the current group prefix into each new attr's key
+// immediately, rather than storing it raw and re-deriving the key at
+// Handle-time from whatever the group chain has grown to by then. Deferring
+// it would nest an attr under a group added by a *later* WithGroup call it
+// was never actually inside -- slog's contract is that WithGroup affects
+// only attrs added afterwards.
 func (h *FeedHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	clone := *h
-	clone.attrs = append(append([]slog.Attr(nil), h.attrs...), attrs...)
+	clone.attrs = append(append([]slog.Attr(nil), h.attrs...), PrefixAttrs(attrs, h.groups)...)
 	return &clone
 }
 
@@ -115,6 +114,50 @@ func (h *FeedHandler) WithGroup(name string) slog.Handler {
 	clone := *h
 	clone.groups = append(append([]string(nil), h.groups...), name)
 	return &clone
+}
+
+// PrefixAttrs renames each attr's key with the given dotted group chain, so
+// it carries its grouping with it regardless of what the chain grows to
+// later. Call this from a slog.Handler's WithAttrs, never from Handle: a
+// record's own attrs are always evaluated at the current group nesting, so
+// they're flattened with the live chain instead (see FlattenAttrs).
+// Exported for the same reason as FlattenAttrs: more than one handler needs
+// to get slog's group-nesting contract right (FeedHandler here, and
+// agentexec's system-log handler).
+func PrefixAttrs(attrs []slog.Attr, groups []string) []slog.Attr {
+	if len(groups) == 0 {
+		return attrs
+	}
+	out := make([]slog.Attr, len(attrs))
+	for i, attr := range attrs {
+		key := attr.Key
+		for _, group := range groups {
+			if group != "" {
+				key = group + "." + key
+			}
+		}
+		out[i] = slog.Attr{Key: key, Value: attr.Value}
+	}
+	return out
+}
+
+// FlattenAttrs merges base (handler-bound attrs from WithAttrs, already
+// keyed with whatever group chain was active when each was added -- see
+// prefixAttrs) with a record's own attrs, grouped under the chain currently
+// active at Handle-time, into the single flat map Entry.Fields expects on
+// decode. Exported because more than one slog.Handler needs to produce
+// Entry-shaped output from a slog.Record: FeedHandler here, and agentexec's
+// system-log handler shipping a task's own logs.
+func FlattenAttrs(record slog.Record, base []slog.Attr, groups []string) map[string]any {
+	fields := map[string]any{}
+	for _, attr := range base {
+		addAttr(fields, nil, attr)
+	}
+	record.Attrs(func(attr slog.Attr) bool { addAttr(fields, groups, attr); return true })
+	if len(fields) == 0 {
+		return nil
+	}
+	return fields
 }
 
 func addAttr(fields map[string]any, groups []string, attr slog.Attr) {
