@@ -17,6 +17,7 @@ After=network.target
 Type=simple
 ExecStart=%h/.local/bin/archied -config %h/.config/archie/config.toml
 EnvironmentFile=-%h/.config/archie/env
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5s
 
