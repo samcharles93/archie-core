@@ -1,27 +1,38 @@
 # archie-core Architecture
 
-**archied** is a resident daemon that polls GitHub for issues labelled `archie`,
-works each one in an isolated worktree through a routed workflow, and opens pull
-requests for human review.
+**archied** is a resident daemon that polls its configured forges — GitHub and
+Gitea — for issues assigned to its bot user, carrying its label, or either
+(`dispatch` mode, per identity), works each one in an isolated worktree through
+a routed workflow, and opens pull requests for human review. A single daemon can
+serve several identities across several forges, each with its own `bot_user`,
+label, and repository set.
 
 ## Package Map
 
-| Package               | Role                                                                      |
-| --------------------- | ------------------------------------------------------------------------- |
-| `cmd/archied/`        | Binary entry: config→forge→store→runtime→workflows→daemon                 |
-| `cmd/archie-agent/`   | One-invocation autonomous stage worker (JSON stdin/stdout)                |
-| `internal/config/`    | TOML config, per-repo gates, budgets, providers, ecosystems               |
-| `internal/daemon/`    | Resident loop: poll, enqueue, claim, route, process, reconcile            |
-| `internal/workflow/`  | Engine: stage lists, routing, shared steps, workflow definitions          |
-| `internal/agentexec/` | Versioned agent-stage protocol, worker, and in-process/subprocess runners |
-| `internal/forge/`     | GitHub interface: issues, labels, PRs, comments, reactions                |
-| `internal/worktree/`  | Git operations: clone, branch, commit, push, diff, cleanup                |
-| `internal/store/`     | SQLite: task rows, status transitions, crash recovery                     |
-| `internal/events/`    | In-process event bus: publish/subscribe for observability                 |
-| `internal/webui/`     | SSE dashboard: live event stream, task status                             |
-| `ai-sdk/runtime`      | External: provider-agnostic LLM runtime                                   |
-| `ai-sdk/agentloop`    | External: gated agent loop with budgets and tool jails                    |
-| `ai-sdk/core`         | External: tool definitions, generate options                              |
+This lists the load-bearing packages, not all of them — `internal/` holds ~36.
+The domain migration is in progress (`internal/domain/`,
+`internal/infrastructure/`), so **the tree is authoritative over this table**.
+See `docs/architecture/organisation.md` for the target structure and
+`docs/architecture/migration-decisions.md` for the current position.
+
+| Package                      | Role                                                                      |
+| ---------------------------- | ------------------------------------------------------------------------- |
+| `cmd/archied/`               | Binary entry: config→forge→store→runtime→workflows→daemon                 |
+| `cmd/archie-agent/`          | One-invocation autonomous stage worker (JSON stdin/stdout)                |
+| `internal/config/`           | Config types only — loading lives in `infrastructure/configuration`       |
+| `internal/daemon/`           | Resident loop: poll, enqueue, claim, route, process, reconcile            |
+| `internal/domain/workflow/`  | Engine: stage lists, routing, shared steps, workflow definitions          |
+| `internal/domain/workintake/`| `TaskEnvelope`, routing `Kind`, label vocabulary, task subjects           |
+| `internal/agentexec/`        | Versioned agent-stage protocol, worker, and in-process/subprocess runners |
+| `internal/forge/`            | Forge interface: GitHub and Gitea implementations                         |
+| `internal/worktree/`         | Git operations: clone, branch, commit, push, diff, cleanup               |
+| `internal/store/`            | Task store interface; SQLite, RPC client, and nell adapters satisfy it    |
+| `internal/events/`           | In-process event bus: publish/subscribe for observability                 |
+| `internal/infrastructure/`   | Config loading, eventbus transport, model catalog                        |
+| `internal/webui/`            | SSE dashboard: live event stream, task status                             |
+| `ai-sdk/runtime`             | External: provider-agnostic LLM runtime                                   |
+| `ai-sdk/agentloop`           | External: gated agent loop with budgets and tool jails                    |
+| `ai-sdk/core`                | External: tool definitions, generate options                              |
 
 ## Task Lifecycle
 
@@ -34,7 +45,10 @@ queued → running(workflow:stage) → pr_open → merged | rejected
 ```
 
 **Crash recovery:** tasks left in `running` are re-queued on startup. Parks are
-never silent -- every park posts a comment with the reason and gate output.
+never silent, but they no longer comment on the forge issue: the reason is
+recorded on the task as `park_reason` (cleared on requeue) and surfaced by the
+dashboard and `/api/tasks`. Retries are an explicit operator action capped by
+`max_retries`, not a label a human removes.
 
 **PR reconciliation:** the daemon polls open PRs, checks GitHub state
 (`merged`/`closed`), transitions the task, and cleans up worktrees.
@@ -130,7 +144,11 @@ prepare → assess(planner, with decide tool) → [close_if_bad_fit | prd(planne
 
 ## Forge Interface
 
-A thin abstraction over GitHub (Gitea planned):
+A thin abstraction over the forge. GitHub (`github.go`) and Gitea (`gitea.go`)
+both implement it, plus a no-op (`noop.go`) used when no credential resolves —
+see the degradation rule in `docs/architecture/configuration.md`. A multi-forge
+deployment is configured per identity; see
+`deployments/multi-forge-github-gitea.toml`.
 
 | Method              | Purpose                                 |
 | ------------------- | --------------------------------------- |
