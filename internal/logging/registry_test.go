@@ -169,6 +169,32 @@ func TestTaskRegistryNilReceiverIsSafe(t *testing.T) {
 // TestTaskRegistryConcurrentTasksDoNotRace exercises the registry the way
 // the daemon actually will: many tasks' Open/Write/Close interleaved from
 // different goroutines (task dispatch vs. the NATS subscription handler),
+// TestTaskRegistryPathMirrorsTaskLogPath guards the reason a query surface
+// (the API handler, the chat tool) can hold only a *TaskRegistry rather than
+// also needing baseDir threaded through separately: Path must compute
+// exactly what TaskLogPath would from the same baseDir.
+func TestTaskRegistryPathMirrorsTaskLogPath(t *testing.T) {
+	baseDir := t.TempDir()
+	reg := NewTaskRegistry(baseDir, nil, TaskSinkOptions{})
+
+	got := reg.Path(42, 3)
+	want := TaskLogPath(baseDir, 42, 3)
+	if got != want {
+		t.Errorf("Path(42, 3) = %q, want %q", got, want)
+	}
+}
+
+// TestNilTaskRegistryPathIsEmpty guards the "nil means task logging is not
+// configured" convention every other TaskRegistry method already follows --
+// a query surface must be able to call Path on a possibly-nil registry
+// without a separate nil check.
+func TestNilTaskRegistryPathIsEmpty(t *testing.T) {
+	var reg *TaskRegistry
+	if got := reg.Path(42, 1); got != "" {
+		t.Errorf("Path() on nil registry = %q, want empty", got)
+	}
+}
+
 // none sharing a task ID. Run with -race.
 func TestTaskRegistryConcurrentTasksDoNotRace(t *testing.T) {
 	reg := NewTaskRegistry(t.TempDir(), NewFeed(100), TaskSinkOptions{})
