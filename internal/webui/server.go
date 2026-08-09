@@ -71,6 +71,13 @@ type Server struct {
 	// reload status.
 	LastReload func() config.ReloadStatus
 
+	// UpdateConfig applies a set of dotted-path config updates through
+	// the same validate-persist-publish path as reload (wired by the
+	// composition root). Optional: when nil, PATCH /api/config answers
+	// 503. The handler never touches the Cfg Holder directly -- see the
+	// Cfg field doc.
+	UpdateConfig func(context.Context, map[string]any) error
+
 	// Channels reports actual adapter lifecycle, independently of configuration
 	// presence. Nil preserves the configuration-only fallback for tests and
 	// minimal embedding.
@@ -169,6 +176,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/channels", s.handleChannels)
 	mux.HandleFunc("POST /api/channels/{id}/reload", s.handleChannelReload)
 	mux.HandleFunc("GET /api/config", s.handleConfig)
+	mux.HandleFunc("PATCH /api/config", s.handleConfigUpdate)
 	mux.HandleFunc("GET /api/logs", s.handleLogs)
 	mux.HandleFunc("GET /api/tasks/{id}/logs", s.handleTaskLogs)
 	mux.HandleFunc("GET /api/logs/stream", s.handleLogStream)

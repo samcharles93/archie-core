@@ -1,12 +1,31 @@
 package webui
 
 import (
+	"encoding/json"
+	"errors"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/overlay"
+)
+
+// Sentinel errors for handleConfigUpdate status classification. The
+// composition root wraps its UpdateConfig errors with these so the
+// handler can answer 400 (invalid input) or 503 (unavailable) without
+// reaching into infrastructure internals.
+var (
+	// ErrConfigUpdateUnavailable reports that config editing is not
+	// wired (no UpdateConfig seam, or the overlay is skipped by the
+	// recovery flag).
+	ErrConfigUpdateUnavailable = errors.New("config editing unavailable")
+	// ErrConfigUpdateInvalid reports a rejected update: a denylisted
+	// key, a failed validation of the materialised config, or an
+	// unparseable value.
+	ErrConfigUpdateInvalid = errors.New("config update invalid")
 )
 
 // ChannelView is one conversational front-end as shown on the dashboard's
@@ -198,6 +217,10 @@ type ConfigView struct {
 	// Reload reports the most recent config reload outcome. Omitted when
 	// the reload status is unavailable.
 	Reload *config.ReloadStatus `json:"reload,omitempty"`
+	// Locked maps dotted config keys that cannot be changed from the
+	// dashboard to the reason. The UI renders these rows disabled rather
+	// than silently omitting the edit affordance.
+	Locked map[string]string `json:"locked,omitempty"`
 }
 
 // IdentityView is who Archie is on the forge -- never the token that
@@ -347,6 +370,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		},
 		Web:        WebView{Listen: cfg.Web.Listen},
 		Provenance: provenance,
+		Locked:     lockedConfigKeys(),
 	}
 	if s.LastReload != nil {
 		rs := s.LastReload()
@@ -354,6 +378,50 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, view)
+}
+
+// lockedConfigKeys returns the dotted config keys the overlay refuses
+// to set, with the reason shown in the UI. These are the daemon's own
+// bootstrap inputs; changing them from the dashboard could break the
+// next boot.
+func lockedConfigKeys() map[string]string {
+	out := make(map[string]string, len(overlay.DeniedKeys))
+	maps.Copy(out, overlay.DeniedKeys)
+	return out
+}
+
+// handleConfigUpdate applies a set of dotted-path config updates via
+// UpdateConfig, which the composition root wires to the same
+// validate-persist-publish path as reload. The dashboard can then
+// change runtime-tunable settings without hand-editing TOML.
+func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
+	if s.UpdateConfig == nil {
+		http.Error(w, ErrConfigUpdateUnavailable.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	var body struct {
+		Updates map[string]any `json:"updates"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if len(body.Updates) == 0 {
+		http.Error(w, "no updates provided", http.StatusBadRequest)
+		return
+	}
+	if err := s.UpdateConfig(r.Context(), body.Updates); err != nil {
+		switch {
+		case errors.Is(err, ErrConfigUpdateUnavailable):
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		case errors.Is(err, ErrConfigUpdateInvalid):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		default:
+			http.Error(w, "config update failed: "+err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true})
 }
 
 func reposView(repos []config.Repo) []RepoView {
