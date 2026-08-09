@@ -22,17 +22,29 @@ import "sync"
 // is called; the existing decode.go:80 cfg.Extra[name] = value is fine
 // because it runs pre-publish.
 //
-// # Convention
+// # Torn reads across a field group
 //
-// Call Get once per logical operation and bind the result to a local:
+// A single field read inline (d.Cfg.Get().PollInterval) is fine: the
+// value is a primitive, and any other reader sees a whole Config
+// snapshot too. The risk is reading two or more fields of the same
+// snapshot when a Set could land in between, so each field would
+// derive from a different published version. When a logical operation
+// needs multiple fields, bind the snapshot to a local first:
 //
 //	cfg := d.Cfg.Get()
-//	interval := cfg.PollInterval.Std()
+//	if cfg.PollInterval > 0 { ... }
+//	for _, r := range cfg.Repos { ... }
 //
-// Inline accessors like d.Cfg.Get().Foo are a code smell: they may
-// torn-read across a Set if a reload lands between two consecutive
-// calls. With a single Get, every value in the local cfg came from
-// the same published snapshot.
+// A single Get per logical operation is the contract; inline single-
+// field access is not a smell.
+//
+// # Loud failures, not silent degradation
+//
+// Get panics on a nil receiver. A forgotten NewHolder that publishes
+// the zero Holder is a programming error and should crash at the first
+// consumer, not boot a daemon that runs forever with PollInterval 0
+// and empty Repos. Set has always panicked on nil for the same reason;
+// the asymmetry was wrong.
 //
 // # Why a pointer
 //
@@ -52,11 +64,10 @@ func NewHolder(c Config) *Holder {
 
 // Get returns the currently published Config. The returned value is a
 // shallow copy; the reference-type fields inside it are shared with the
-// published snapshot and must not be mutated. See the type doc comment.
+// published snapshot and must not be mutated. Get panics on a nil
+// receiver; a forgotten NewHolder is a programming error. See the type
+// doc comment.
 func (h *Holder) Get() Config {
-	if h == nil {
-		return Config{}
-	}
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.cfg
@@ -64,7 +75,8 @@ func (h *Holder) Get() Config {
 
 // Set replaces the published Config with c. The previous snapshot is
 // dropped; c becomes the new published value and its reference-type
-// fields become shared with all subsequent Get callers.
+// fields become shared with all subsequent Get callers. Set panics on
+// a nil receiver.
 func (h *Holder) Set(c Config) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

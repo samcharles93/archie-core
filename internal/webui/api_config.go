@@ -195,6 +195,9 @@ type ConfigView struct {
 	Containers   ContainersView          `json:"containers"`
 	Web          WebView                 `json:"web"`
 	Provenance   []ConfigOrigin          `json:"provenance"`
+	// Reload reports the most recent config reload outcome. Omitted when
+	// the reload status is unavailable.
+	Reload *config.ReloadStatus `json:"reload,omitempty"`
 }
 
 // IdentityView is who Archie is on the forge -- never the token that
@@ -298,6 +301,11 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	// is read from this local.
 	cfg := s.Cfg.Get()
 
+	var provenance []ConfigOrigin
+	if p := s.ConfigProvenance.Load(); p != nil {
+		provenance = append([]ConfigOrigin(nil), (*p)...)
+	}
+
 	view := ConfigView{
 		Identity: IdentityView{
 			BotUser:      cfg.BotUser,
@@ -338,7 +346,11 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			Network:        cfg.Containers.Network,
 		},
 		Web:        WebView{Listen: cfg.Web.Listen},
-		Provenance: append([]ConfigOrigin(nil), s.ConfigProvenance...),
+		Provenance: provenance,
+	}
+	if s.LastReload != nil {
+		rs := s.LastReload()
+		view.Reload = &rs
 	}
 
 	writeJSON(w, view)

@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/channels"
@@ -50,9 +51,19 @@ type Server struct {
 	// logging not configured) makes that a no-op.
 	TaskLogs *logging.TaskRegistry
 
-	// ConfigProvenance is supplied by composition from the production loader.
-	// It is safe to expose: it contains paths and precedence only, never values.
-	ConfigProvenance []ConfigOrigin
+	// ConfigProvenance lists the files that produced the running config,
+	// in precedence order. Held through atomic.Pointer so a reload can
+	// swap it independently of Cfg. A reader may therefore observe the
+	// new config alongside the old provenance (or vice versa); this is
+	// display-only, and the skew is accepted rather than serialised.
+	ConfigProvenance atomic.Pointer[[]ConfigOrigin]
+
+	// LastReload reports the most recent config reload outcome, so the
+	// dashboard can tell the operator when the running config is stale
+	// (a reload failed validation and the daemon kept the previous
+	// config). Optional: when nil, the /api/config response omits the
+	// reload status.
+	LastReload func() config.ReloadStatus
 
 	// Channels reports actual adapter lifecycle, independently of configuration
 	// presence. Nil preserves the configuration-only fallback for tests and
@@ -103,6 +114,11 @@ type ConfigOrigin struct {
 	Role    string `json:"role"`
 	Layer   string `json:"layer"`
 	Feature string `json:"feature,omitempty"`
+}
+
+// SetProvenance publishes a fresh provenance list after a config reload.
+func (s *Server) SetProvenance(origins []ConfigOrigin) {
+	s.ConfigProvenance.Store(&origins)
 }
 
 // IssueCloser closes the forge issue behind a task.

@@ -146,6 +146,83 @@ func TestHandleConfigSafeFieldsPresent(t *testing.T) {
 	}
 }
 
+// TestHandleConfigIncludesReloadStatus proves a failed reload is surfaced
+// in /api/config so the operator can see the running config is stale
+// without reading logs.
+func TestHandleConfigIncludesReloadStatus(t *testing.T) {
+	srv := newTestServer(t)
+	srv.Cfg = configWithFakeSecrets()
+	srv.LastReload = func() config.ReloadStatus {
+		return config.ReloadStatus{
+			LastError:   "poll_interval must be positive",
+			LastErrorAt: "2026-08-09T12:00:00Z",
+		}
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	var got ConfigView
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Reload == nil {
+		t.Fatal("Reload = nil, want the failed-reload status")
+	}
+	if got.Reload.LastError != "poll_interval must be positive" {
+		t.Errorf("Reload.LastError = %q", got.Reload.LastError)
+	}
+	if got.Reload.LastErrorAt != "2026-08-09T12:00:00Z" {
+		t.Errorf("Reload.LastErrorAt = %q", got.Reload.LastErrorAt)
+	}
+}
+
+// TestHandleConfigOmitsReloadStatusWhenUnavailable pins that the reload
+// field is absent (not empty) when the server has no reload seam wired.
+func TestHandleConfigOmitsReloadStatusWhenUnavailable(t *testing.T) {
+	srv := newTestServer(t)
+	srv.Cfg = configWithFakeSecrets()
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	var got ConfigView
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Reload != nil {
+		t.Errorf("Reload = %+v, want nil (no reload seam)", got.Reload)
+	}
+}
+
+// TestSetProvenancePublishesForConfigView proves a reloaded provenance
+// list reaches /api/config.
+func TestSetProvenancePublishesForConfigView(t *testing.T) {
+	srv := newTestServer(t)
+	srv.Cfg = configWithFakeSecrets()
+	srv.SetProvenance([]ConfigOrigin{
+		{Path: "/etc/archie/config.toml", Role: "main", Layer: "base"},
+		{Path: "/etc/archie/conf.d/docker.yaml", Role: "extra", Layer: "overlay", Feature: "docker"},
+	})
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	var got ConfigView
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Provenance) != 2 {
+		t.Fatalf("Provenance = %+v, want 2 origins", got.Provenance)
+	}
+	if got.Provenance[0].Path != "/etc/archie/config.toml" {
+		t.Errorf("Provenance[0].Path = %q", got.Provenance[0].Path)
+	}
+}
+
 func TestHandleChannelsReportsConfiguredState(t *testing.T) {
 	srv := newTestServer(t)
 	srv.Cfg = configWithFakeSecrets()

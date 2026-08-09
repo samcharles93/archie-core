@@ -313,6 +313,7 @@ func run() int {
 	defaultCfg := filepath.Join(configHome(), "archie", "config.toml")
 	cfgPath := flag.String("config", defaultCfg, "path to a TOML/YAML config file or configuration directory")
 	overlayPath := flag.String("config-overlay", "", "path to a TOML/YAML overlay file or configuration directory applied on top of -config")
+	noConfigOverlay := flag.Bool("no-config-overlay", false, "ignore the runtime config overlay (recovery hatch: boots on file config alone)")
 	once := flag.Bool("once", false, "run a single poll+process cycle and exit (systemd timer / testing)")
 	requeue := flag.Int64("requeue", 0, "requeue a parked/waiting task by id (keeps its workflow), then exit unless -once is also set")
 	flag.Parse()
@@ -321,7 +322,11 @@ func run() int {
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
-	doc, err := configuration.New(log).Resolve(*cfgPath, *overlayPath)
+	loader := configuration.New(log)
+	if *noConfigOverlay || configuration.SkipOverlay() {
+		log.Info("runtime config overlay disabled (recovery hatch); booting on file config alone")
+	}
+	doc, err := loader.Resolve(*cfgPath, *overlayPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -427,7 +432,8 @@ func run() int {
 			Path: origin.Path, Role: string(origin.Role), Layer: string(origin.Layer), Feature: string(origin.Feature),
 		})
 	}
-	web := &webui.Server{Store: st, Log: log, LogFeed: logFeed, TaskLogs: taskLogs, Cfg: config.NewHolder(cfg), ConfigProvenance: configProvenance, Channels: channelManager, Events: bus}
+	web := &webui.Server{Store: st, Log: log, LogFeed: logFeed, TaskLogs: taskLogs, Cfg: config.NewHolder(cfg), Channels: channelManager, Events: bus}
+	web.SetProvenance(configProvenance)
 	web.ReloadChannel = func(ctx context.Context, id string) error {
 		if id != "telegram" || restartTelegram == nil {
 			return fmt.Errorf("channel reload unavailable")
@@ -951,6 +957,7 @@ func run() int {
 
 	d := &daemon.Daemon{
 		Cfg:             config.NewHolder(cfg),
+		ConnectedNATS:   cfg.NATS,
 		Store:           st,
 		Bus:             bus,
 		Forge:           forgeClient,
@@ -972,6 +979,35 @@ func run() int {
 		TaskLogs:        taskLogs,
 	}
 	web.TaskStopper = d
+
+	// SIGHUP re-loads the config from disk and republishes it. The apply
+	// closure swaps the daemon's Holder and the dashboard's provenance;
+	// the reload log warns about changed fields that require a restart, so
+	// an operator never has to read the source to find out whether their
+	// edit took effect. web.LastReload exposes the outcome to /api/config.
+	reloadController := newReloadController(loader, *cfgPath, *overlayPath, func(doc *configuration.Document) {
+		old := d.Cfg.Get()
+		d.Cfg.Set(doc.Config)
+		provenance := make([]webui.ConfigOrigin, 0, len(doc.Provenance.Origins))
+		for _, origin := range doc.Provenance.Origins {
+			provenance = append(provenance, webui.ConfigOrigin{
+				Path: origin.Path, Role: string(origin.Role), Layer: string(origin.Layer), Feature: string(origin.Feature),
+			})
+		}
+		web.SetProvenance(provenance)
+		if fields := changedNonReloadableFields(old, doc.Config); len(fields) > 0 {
+			log.Warn("config reloaded; some changes require a restart",
+				"fields", fields, "paths", doc.Provenance.Paths())
+		} else {
+			log.Info("config reloaded", "paths", doc.Provenance.Paths())
+		}
+	})
+	web.LastReload = reloadController.Status
+
+	reloadCh := make(chan os.Signal, 1)
+	signal.Notify(reloadCh, syscall.SIGHUP)
+	defer signal.Stop(reloadCh)
+	go reloadLoop(ctx, reloadCh, reloadController, log)
 
 	// Give /cancel and /stop a handle on work already in flight. The
 	// controller is built before the daemon exists, so the runtime is

@@ -305,12 +305,18 @@ func TestAllowConcurrentForTaskPrefersOwningIdentityRepo(t *testing.T) {
 func TestContainerEnvIncludesConfiguredNATSCredentials(t *testing.T) {
 	t.Setenv("ARCHIE_NATS_SECRET", "test-nats-token")
 
-	d := &Daemon{Cfg: config.NewHolder(config.Config{
-		NATS: config.NATSConfig{
-			URL:      "nats://nats.example:4222",
-			TokenEnv: "ARCHIE_NATS_SECRET",
-		},
-	})}
+	// ConnectedNATS is the endpoint the daemon's own client connected with
+	// at startup; containerEnv deliberately reads this, not the live Cfg,
+	// so a reload of nats.url cannot point new containers at a server the
+	// daemon is not publishing on.
+	natsCfg := config.NATSConfig{
+		URL:      "nats://nats.example:4222",
+		TokenEnv: "ARCHIE_NATS_SECRET",
+	}
+	d := &Daemon{
+		Cfg:           config.NewHolder(config.Config{}),
+		ConnectedNATS: natsCfg,
+	}
 
 	got := d.containerEnv(nil)
 	for _, want := range []string{
@@ -593,6 +599,54 @@ type testForge struct {
 	stateLabels  []stateLabelCall
 	closedIssues []closeIssueCall
 	prStates     map[int]string
+}
+
+// pollingForge records every repo the daemon asks about, so a test can
+// observe which repos are being polled -- including that a repo removed
+// by a reload stops new intake.
+type pollingForge struct {
+	testForge
+	asked []string
+}
+
+func (f *pollingForge) AssignedIssues(_ context.Context, owner, repo, _ string) ([]forge.Issue, error) {
+	f.asked = append(f.asked, owner+"/"+repo)
+	return nil, nil
+}
+
+// TestRemovingRepoStopsNewIntake pins the reload behaviour: when a repo
+// vanishes from the config, the next poll cycle no longer asks the forge
+// about it. In-flight tasks are unaffected because their TaskContext.Cfg
+// is a value snapshot taken at dispatch -- the type system guarantees
+// that half; this test covers the intake half.
+func TestRemovingRepoStopsNewIntake(t *testing.T) {
+	fg := &pollingForge{}
+	d := &Daemon{
+		Cfg: config.NewHolder(config.Config{
+			BotUser:  "archie",
+			Repos:    []config.Repo{{Owner: "acme", Name: "widget"}},
+			Dispatch: config.Dispatch{Trigger: "assignee"},
+		}),
+		Forge: fg,
+		Log:   slog.New(slog.DiscardHandler),
+	}
+
+	ctx := context.Background()
+	d.poll(ctx)
+	if len(fg.asked) != 1 || fg.asked[0] != "acme/widget" {
+		t.Fatalf("after first poll, asked = %v, want [acme/widget]", fg.asked)
+	}
+
+	// Simulate a reload that drops the repo: the polling loop re-reads
+	// d.Cfg.Get().Repos fresh, so the next poll asks about nothing.
+	d.Cfg.Set(config.Config{
+		BotUser:  "archie",
+		Dispatch: config.Dispatch{Trigger: "assignee"},
+	})
+	d.poll(ctx)
+	if len(fg.asked) != 1 {
+		t.Fatalf("after reload, asked = %v, want unchanged [acme/widget] (no new intake)", fg.asked)
+	}
 }
 
 type closeIssueCall struct {

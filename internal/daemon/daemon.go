@@ -49,14 +49,21 @@ type TaskBus interface {
 type Daemon struct {
 	// Cfg publishes the running configuration. Read through Cfg() so a
 	// reload swaps the published snapshot atomically. See config.Holder.
-	Cfg       *config.Holder
-	Store     store.TaskStore
-	Forge     forge.Forge
-	Trees     *worktree.Manager
-	Agent     agentexec.Runner
-	Bus       *events.Bus
-	Workflows workflow.Registry
-	Log       *slog.Logger
+	Cfg *config.Holder
+	// ConnectedNATS is the [nats] configuration the daemon's own client
+	// connected with at startup (the endpoint it publishes on). Container
+	// env is built from this, not from the live config, so a reload of
+	// nats.url/token_env cannot point new containers at a server the
+	// daemon is not publishing on. Zero value means NATS is not
+	// configured.
+	ConnectedNATS config.NATSConfig
+	Store         store.TaskStore
+	Forge         forge.Forge
+	Trees         *worktree.Manager
+	Agent         agentexec.Runner
+	Bus           *events.Bus
+	Workflows     workflow.Registry
+	Log           *slog.Logger
 	// Tasks is the optional message bus for task distribution. Nil means no
 	// bus is configured; the existing SQLite ClaimNext flow is used.
 	Tasks TaskBus
@@ -215,7 +222,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if len(d.Identities) > 0 {
 		return d.runIdentities(ctx)
 	}
-	ticker := time.NewTicker(d.Cfg.Get().PollInterval.Std())
+	interval := d.Cfg.Get().PollInterval.Std()
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		d.Cycle(ctx)
@@ -223,6 +231,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
+			// PollInterval may have been reloaded; reset the ticker so a
+			// change takes effect on the next cycle.
+			if iv := d.Cfg.Get().PollInterval.Std(); iv != interval {
+				interval = iv
+				ticker.Reset(iv)
+			}
 		}
 	}
 }
@@ -262,6 +276,16 @@ func (d *Daemon) runIdentities(ctx context.Context) error {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
+					// The identity's own override is frozen (identity config is
+					// startup-built); the root fallback may have been reloaded.
+					iv := d.Cfg.Get().PollInterval.Std()
+					if id.Cfg.PollInterval > 0 {
+						iv = id.Cfg.PollInterval.Std()
+					}
+					if iv != interval {
+						interval = iv
+						ticker.Reset(iv)
+					}
 				}
 			}
 		}(id)
@@ -269,7 +293,8 @@ func (d *Daemon) runIdentities(ctx context.Context) error {
 
 	// One shared maintenance-and-drain loop.
 	wg.Go(func() {
-		ticker := time.NewTicker(d.Cfg.Get().PollInterval.Std())
+		interval := d.Cfg.Get().PollInterval.Std()
+		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
 			d.maintainAndDrain(ctx)
@@ -277,6 +302,12 @@ func (d *Daemon) runIdentities(ctx context.Context) error {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				// PollInterval may have been reloaded; reset the ticker so a
+				// change takes effect on the next cycle.
+				if iv := d.Cfg.Get().PollInterval.Std(); iv != interval {
+					interval = iv
+					ticker.Reset(iv)
+				}
 			}
 		}
 	})
@@ -1073,10 +1104,12 @@ func (d *Daemon) requestTaskRun(ctx context.Context, taskID int64, data []byte) 
 }
 
 func (d *Daemon) containerEnv(task *store.Task) []string {
-	cfg := d.Cfg.Get()
 	var env []string
-	env = append(env, "NATS_URL="+cfg.NATS.URL)
-	if tokenEnv := cfg.NATS.TokenEnv; tokenEnv != "" {
+	// The endpoint the daemon's own client connected with at startup, not
+	// the live config: a reloaded [nats] section must not point new
+	// containers at a server the daemon is not publishing on.
+	env = append(env, "NATS_URL="+d.ConnectedNATS.URL)
+	if tokenEnv := d.ConnectedNATS.TokenEnv; tokenEnv != "" {
 		if token := os.Getenv(tokenEnv); token != "" {
 			env = append(env, "NATS_TOKEN="+token)
 		}
