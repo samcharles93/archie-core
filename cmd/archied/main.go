@@ -328,7 +328,16 @@ func run() int {
 	noConfigOverlay := flag.Bool("no-config-overlay", false, "skip the runtime config overlay (recovery hatch for the DB overlay; the -config-overlay file overlay still applies)")
 	once := flag.Bool("once", false, "run a single poll+process cycle and exit (systemd timer / testing)")
 	requeue := flag.Int64("requeue", 0, "requeue a parked/waiting task by id (keeps its workflow), then exit unless -once is also set")
+	showVersion := flag.Bool("version", false, "print the gateway and runtime versions and exit")
 	flag.Parse()
+	// The versions were only reachable through the chat /version command,
+	// which needs a running daemon and a configured channel. An update-check
+	// adapter has to answer "what is installed?" from a shell, so expose the
+	// same two values here. Machine-readable: one "name version" per line.
+	if *showVersion {
+		fmt.Printf("archied %s\narchie-agent %s\n", gatewayVersion, runtimeVersion)
+		return 0
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
