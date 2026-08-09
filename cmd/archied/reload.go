@@ -92,22 +92,33 @@ var reloadableFields = map[string]bool{
 	"PollInterval": true,
 	// Poll loops re-read per cycle (daemon.go poll / pollForIdentity).
 	"Repos": true,
-	// Per-task snapshot: configFor -> executionFor -> d.Cfg.Get() at
-	// dispatch, carried by TaskConfig (config.go ForTask).
+	// Per-task snapshot: ForTask carries these into every dispatched
+	// TaskContext (config.go ForTask), built fresh from d.Cfg.Get() at
+	// dispatch. Pinned by TestReloadableFieldsCoverForTaskSnapshot so a
+	// field added to ForTask cannot silently drift out of this list.
 	"DiffCapLines": true,
 	"Budgets":      true,
-	// Dispatch is read per poll (daemon.go pollIssuesWithConfig switch)
-	// and carried per task like DiffCapLines.
-	"Dispatch": true,
+	"Dispatch":     true,
+	"Models":       true,
+	"Notify":       true,
+	// Per-poll reads off the live config in pollIssuesWithConfig:
+	// cfg.Label feeds IssuesWithLabel (daemon.go:359,390), cfg.BotUser
+	// feeds AssignedIssues (:368,381). Not carried by ForTask, so
+	// pinned by hand in TestReloadableFieldsCoverForTaskSnapshot.
+	"Label":   true,
+	"BotUser": true,
 }
 
 // reloadableSubFields are sub-fields of structs that are otherwise
 // startup-built. VolumeTTL and MaxConcurrency are re-read per cycle
 // (cleanupExpiredStorage, drainSQLite/drainNATS); everything else in
 // Containers (Image, Enabled, MaxUptime, PullPolicy, Network) is frozen
-// in the startup-built container pool.
+// in the startup-built container pool. Forge.Host is carried into
+// TaskContext by ForTask (display/link building only); the forge client
+// itself is startup-built, so Type/Token/TokenEnv stay requires-restart.
 var reloadableSubFields = map[string]map[string]bool{
 	"Containers": {"VolumeTTL": true, "MaxConcurrency": true},
+	"Forge":      {"Host": true},
 }
 
 // changedNonReloadableFields compares old and new and returns the
