@@ -462,6 +462,36 @@ func TestRouteUndoRemovesMultiple(t *testing.T) {
 	}
 }
 
+func TestRouteUndoReportsActualPartialRemoval(t *testing.T) {
+	r := newTestRouter("telegram")
+	ctx := t.Context()
+	const sessionID = "test-undo-partial"
+	sc := SessionContext{
+		SessionID: sessionID,
+		Source:    SessionSource{Platform: "telegram", BotUser: "archie", ChannelID: "chat-partial"},
+		CreatedAt: time.Now(), LastActiveAt: time.Now(),
+	}
+	if err := r.sessionTracker.sessions.Save(ctx, sc); err != nil {
+		t.Fatalf("Save session: %v", err)
+	}
+	for i := range 6 {
+		if err := r.sessionTracker.sessions.SaveMessage(ctx, sessionID, Message{
+			From: "alice", Text: fmt.Sprintf("msg%d", i),
+		}); err != nil {
+			t.Fatalf("SaveMessage(%d): %v", i, err)
+		}
+	}
+	r.sessionTracker.setActive("chat-partial", "", sessionID)
+
+	reply, err := r.Route(ctx, Message{Text: "/undo 10", ChannelID: "chat-partial"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Removed 6 messages") {
+		t.Fatalf("reply = %q, want actual removal count", reply)
+	}
+}
+
 func TestRouteUndoNoMessages(t *testing.T) {
 	r := newTestRouter("telegram")
 

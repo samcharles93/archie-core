@@ -76,16 +76,14 @@ func NewTurns(log *slog.Logger) *Turns {
 //
 // Submit never blocks and never rejects: messages queue.
 func (t *Turns) Submit(ctx context.Context, session string, run func(context.Context)) {
+	turnCtx, cancel := context.WithCancel(ctx)
+
 	t.mu.Lock()
 	l, ok := t.lanes[session]
 	if !ok {
 		l = &lane{}
 		t.lanes[session] = l
 	}
-	t.mu.Unlock()
-
-	turnCtx, cancel := context.WithCancel(ctx)
-
 	l.mu.Lock()
 	l.pending = append(l.pending, queued{run: func() { run(turnCtx) }, cancel: cancel})
 	depth := len(l.pending)
@@ -94,9 +92,10 @@ func (t *Turns) Submit(ctx context.Context, session string, run func(context.Con
 		l.working = true
 	}
 	l.mu.Unlock()
+	t.mu.Unlock()
 
 	if start {
-		go l.serve(t.log.With("session", session))
+		go t.serve(session, l)
 	}
 	if depth > 1 {
 		t.log.Info("chat turn queued", "session", session, "queue_depth", depth)
@@ -154,7 +153,8 @@ func (t *Turns) Queued(session string) int {
 	return len(l.pending)
 }
 
-// lane returns the session's lane, or nil if it has never been used.
+// lane returns the session's active lane, or nil if it has never been used or
+// its completed lane has already retired.
 func (t *Turns) lane(session string) *lane {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -164,19 +164,45 @@ func (t *Turns) lane(session string) *lane {
 // serve drains the lane's backlog one turn at a time and exits once it is
 // empty. Submit starts a fresh worker when more arrives, so an idle session
 // costs no goroutine.
-func (l *lane) serve(log *slog.Logger) {
+func (t *Turns) serve(session string, l *lane) {
+	log := t.log.With("session", session)
 	for {
 		next, ok := l.begin()
 		if !ok {
-			return
+			if t.retire(session, l) {
+				return
+			}
+			continue
 		}
 		l.runOne(next, log)
 	}
 }
 
+// retire removes an idle lane while holding the same two locks Submit uses to
+// find and append to it. Without that joint critical section, Submit could find
+// the old lane immediately before cleanup deleted it and strand the new turn on
+// a worker that had already exited.
+func (t *Turns) retire(session string, l *lane) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	current, ok := t.lanes[session]
+	if !ok || current != l {
+		return true
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.pending) != 0 {
+		return false
+	}
+	l.working = false
+	delete(t.lanes, session)
+	return true
+}
+
 // begin pops the oldest queued turn and publishes its cancel in the same
-// critical section, reporting false when the backlog is empty -- at which
-// point it also retires the worker.
+// critical section. It reports false when the backlog is empty; the owning
+// Turns then retires the worker and map entry under both locks.
 //
 // The pop and the publish must happen together. Were the turn popped first
 // and its cancel published after, a Stop landing in between would see an
@@ -187,11 +213,8 @@ func (l *lane) begin() (queued, bool) {
 	defer l.mu.Unlock()
 
 	if len(l.pending) == 0 {
-		// Retire under the same lock Submit uses to decide whether a
-		// worker is live, so a turn arriving now either starts a new
-		// worker or is picked up before this one retires -- never
-		// neither, which would strand the backlog forever.
-		l.working = false
+		// The owning Turns retires the lane under both the map and lane
+		// locks. Changing working here would race a concurrent Submit.
 		return queued{}, false
 	}
 

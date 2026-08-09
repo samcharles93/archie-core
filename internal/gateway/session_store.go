@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/binary"
 	"strings"
 	"time"
 
@@ -101,16 +102,42 @@ func sessionRecency(sc SessionContext) time.Time {
 // messageIDNamespace scopes deterministic canonical message identifiers.
 var messageIDNamespace = uuid.MustParse("6f8d2b1e-9c4a-4f37-8a56-1d0e7b3c9a42")
 
+// messageIDNamespaceV2 isolates the injective encoding used for inputs that
+// contain the legacy separator. Ordinary platform/session IDs keep their
+// existing canonical IDs, so an upgrade cannot duplicate redelivered messages.
+var messageIDNamespaceV2 = uuid.MustParse("e6ac7868-cf49-4e65-a5a1-a1549fd12f67")
+
 func newMessageID(sessionID, sourceID string) string {
 	if sourceID == "" {
 		return uuid.NewString()
 	}
-	return uuid.NewSHA1(messageIDNamespace, []byte(sessionID+"\x00"+sourceID)).String()
+	current, _ := canonicalMessageIDs(sessionID, sourceID)
+	return current
+}
+
+func canonicalMessageIDs(sessionID, sourceID string) (current, legacy string) {
+	legacy = uuid.NewSHA1(messageIDNamespace, []byte(sessionID+"\x00"+sourceID)).String()
+	if strings.ContainsRune(sessionID, '\x00') || strings.ContainsRune(sourceID, '\x00') {
+		return uuid.NewSHA1(messageIDNamespaceV2, encodeCanonicalPair(sessionID, sourceID)).String(), legacy
+	}
+	return legacy, ""
+}
+
+func encodeCanonicalPair(first, second string) []byte {
+	encoded := make([]byte, 8+len(first)+len(second))
+	binary.BigEndian.PutUint64(encoded, uint64(len(first)))
+	copy(encoded[8:], first)
+	copy(encoded[8+len(first):], second)
+	return encoded
 }
 
 func stamp(msg Message) time.Time {
-	if msg.At.IsZero() {
-		return time.Now().UTC()
+	now := time.Now().UTC()
+	if msg.At.IsZero() || msg.At.After(now) {
+		// At orders the canonical conversation; it is not an authoritative
+		// copy of a platform clock. Persisting a future platform timestamp
+		// would force every later message beyond it to preserve monotonicity.
+		return now
 	}
 	return msg.At.UTC()
 }
@@ -125,12 +152,12 @@ func CanonicalMessageID(sessionID, sourceID string) string {
 
 // PriorReply returns the reply already produced for an upstream message.
 func PriorReply(history []Message, sessionID, sourceID, identity string) string {
-	id := CanonicalMessageID(sessionID, sourceID)
-	if id == "" {
+	if sourceID == "" {
 		return ""
 	}
+	id, legacyID := canonicalMessageIDs(sessionID, sourceID)
 	for i, message := range history {
-		if message.MessageID != id {
+		if message.MessageID != id && message.MessageID != legacyID {
 			continue
 		}
 		if i+1 < len(history) && history[i+1].From == identity &&
