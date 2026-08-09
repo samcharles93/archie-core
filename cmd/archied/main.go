@@ -427,7 +427,7 @@ func run() int {
 			Path: origin.Path, Role: string(origin.Role), Layer: string(origin.Layer), Feature: string(origin.Feature),
 		})
 	}
-	web := &webui.Server{Store: st, Log: log, LogFeed: logFeed, TaskLogs: taskLogs, Cfg: &cfg, ConfigProvenance: configProvenance, Channels: channelManager, Events: bus}
+	web := &webui.Server{Store: st, Log: log, LogFeed: logFeed, TaskLogs: taskLogs, Cfg: config.NewHolder(cfg), ConfigProvenance: configProvenance, Channels: channelManager, Events: bus}
 	web.ReloadChannel = func(ctx context.Context, id string) error {
 		if id != "telegram" || restartTelegram == nil {
 			return fmt.Errorf("channel reload unavailable")
@@ -504,7 +504,7 @@ func run() int {
 		requeue:    st.Requeue,
 		transition: st.Transition,
 	})
-	updateService := makeUpdateService(telegramSetup{Cfg: cfg})
+	updateService := makeUpdateService(telegramSetup{Cfg: config.NewHolder(cfg)})
 	web.WorkRequests = chatTasks
 
 	// The dashboard is another gateway, not a second chat implementation. It
@@ -528,7 +528,7 @@ func run() int {
 	webRouter.InitSessions(chatSessionStore)
 	configureTaskCommands(webRouter, chatTasks, chatController, defaultChatIdentity)
 	webSetup := telegramSetup{
-		Cfg: cfg, St: st, LLM: llm, ChatModels: chatModels, ToolReg: toolReg,
+		Cfg: config.NewHolder(cfg), St: st, LLM: llm, ChatModels: chatModels, ToolReg: toolReg,
 		Personas: personas, ChatTasks: chatTasks, ChatController: chatController,
 		ChatTaskLister: chatTaskListerAdapter{tasks: st.Tasks},
 		ChatTaskLogs: chatTaskLogReaderAdapter{
@@ -553,7 +553,7 @@ func run() int {
 	// Multi-agent collaboration PRD phase C (docs/prds/multi-agent-collaboration.md).
 	var startGateways []func()
 	start, ok := setupTelegramGateway(ctx, telegramSetup{
-		Cfg: cfg, CfgPath: *cfgPath, OverlayPath: *overlayPath,
+		Cfg: config.NewHolder(cfg), CfgPath: *cfgPath, OverlayPath: *overlayPath,
 		St: st, LLM: llm, ChatModels: chatModels, ToolReg: toolReg,
 		Personas: personas, ChatTasks: chatTasks, ChatController: chatController,
 		ChatTaskLister: chatTaskListerAdapter{tasks: st.Tasks},
@@ -950,7 +950,7 @@ func run() int {
 	// via Yaegi is deferred to the container/agent runtime.
 
 	d := &daemon.Daemon{
-		Cfg:             cfg,
+		Cfg:             config.NewHolder(cfg),
 		Store:           st,
 		Bus:             bus,
 		Forge:           forgeClient,

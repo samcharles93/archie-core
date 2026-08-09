@@ -62,7 +62,7 @@ func actionServer(t *testing.T, status, parkReason string) (*Server, *store.Task
 
 	srv.Issues = closer
 	srv.Events = bus
-	srv.Cfg = &config.Config{MaxRetries: 3}
+	srv.Cfg = config.NewHolder(config.Config{MaxRetries: 3})
 	return srv, task, closer, bus, sub
 }
 
@@ -128,7 +128,7 @@ func TestRetryEnforcesMaxRetries(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, task, _, _, _ := actionServer(t, store.StatusParked, "it broke")
-			srv.Cfg = &config.Config{MaxRetries: tc.maxRetries}
+			srv.Cfg = config.NewHolder(config.Config{MaxRetries: tc.maxRetries})
 			ctx := t.Context()
 			for range tc.priorCount {
 				if err := srv.Store.IncrementRetryCount(ctx, task.ID); err != nil {
@@ -203,7 +203,7 @@ func TestRejectDoesNotCloseAChatTaskIssue(t *testing.T) {
 	ctx := t.Context()
 	closer := &recordingCloser{}
 	srv.Issues = closer
-	srv.Cfg = &config.Config{MaxRetries: 3}
+	srv.Cfg = config.NewHolder(config.Config{MaxRetries: 3})
 
 	task, err := srv.Store.EnqueueChatTask(ctx, "acme", "widget", "chat task", "", "", "")
 	if err != nil {
@@ -380,7 +380,7 @@ func TestTaskActionStoreFailureIs500(t *testing.T) {
 	srv := &Server{
 		Store: &stubStore{TaskStore: base.Store, requeueErr: errors.New("db locked")},
 		Log:   base.Log,
-		Cfg:   &config.Config{MaxRetries: 3},
+		Cfg:   config.NewHolder(config.Config{MaxRetries: 3}),
 	}
 	w := postAction(t, srv, task.ID, "approve")
 	if w.Code != http.StatusInternalServerError {

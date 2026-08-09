@@ -40,7 +40,7 @@ func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	chat := s.Cfg.Chat
+	chat := s.Cfg.Get().Chat
 	views := []ChannelView{
 		telegramChannelView(chat.Telegram),
 		webhookChannelView(chat.WebhookAddr),
@@ -292,7 +292,11 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{})
 		return
 	}
-	cfg := s.Cfg
+	// cfg := s.Cfg was a shared-pointer copy that aliased the live
+	// config. Under the Holder it becomes a value snapshot, which is
+	// what the read-only view always wanted -- every ConfigView field
+	// is read from this local.
+	cfg := s.Cfg.Get()
 
 	view := ConfigView{
 		Identity: IdentityView{
