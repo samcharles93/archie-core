@@ -63,9 +63,16 @@ export function settingsPage() {
       return;
     }
 
-    const ctx = { locked: cfg.locked || {}, onSaved: reload };
+    const ctx = { locked: cfg.locked || {}, overridden: cfg.overridden || [], onSaved: reload };
+    const banners = [
+      cfg.reload?.overlay_unavailable &&
+        el("div.card.cfg-notice", el("p", `The runtime config overlay is not in effect: ${cfg.reload.overlay_unavailable}`)),
+      cfg.reload?.last_error &&
+        el("div.card.cfg-notice", el("p", `The last config reload failed; the running config is unchanged: ${cfg.reload.last_error}`)),
+    ];
     mount(
       body,
+      ...banners,
       identityCard(cfg.identity, ctx),
       repositoriesCard(cfg.repositories),
       modelsAndProvidersCard(cfg.models, cfg.providers),
@@ -99,8 +106,9 @@ function section(title, sub, ...children) {
 
 // row renders one label/value pair. opts.key makes it editable via a
 // PATCH to /api/config; opts.locked[key] disables it with the server's
-// reason; no key means a plain read-only row (structured values and
-// provenance).
+// reason; opts.overridden marks a key whose file value is shadowed by
+// the runtime overlay and offers a reset; no key means a plain read-only
+// row (structured values and provenance).
 function row(label, value, opts) {
   const labelEl = el("span.cfg-label", label);
   if (!opts?.key) {
@@ -119,10 +127,40 @@ function row(label, value, opts) {
   }
   const display = el("span.cfg-value.mono", value ?? "—");
   const editBtn = el("button.cfg-edit", { title: `Edit ${label}` }, "Edit");
-  const cell = el("div.cfg-value-cell", display, editBtn);
+  const overridden = opts.overridden?.includes(opts.key);
+  const cell = el(
+    "div.cfg-value-cell",
+    display,
+    overridden && el("span.cfg-overridden", { title: "Set via the dashboard; edit the file, then reset" }, "overridden"),
+    editBtn,
+    overridden && el("button.cfg-edit", { title: "Reset to the file value" }, "Reset"),
+  );
   const rowEl = el("div.cfg-row", labelEl, cell);
   editBtn.addEventListener("click", () => startEdit(rowEl, cell, label, opts));
+  if (overridden) {
+    const resetBtn = cell.lastChild;
+    resetBtn.addEventListener("click", () => resetOverride(resetBtn, opts));
+  }
   return rowEl;
+}
+
+// resetOverride deletes one runtime-overlay row via the reset seam, then
+// re-renders so the row returns to its file value. Errors show inline in
+// the row's marker slot.
+function resetOverride(btn, opts) {
+  const { key, onSaved } = opts;
+  const marker = btn.parentElement.querySelector(".cfg-overridden");
+  btn.disabled = true;
+  api
+    .configReset(key)
+    .then(() => onSaved?.())
+    .catch((err) => {
+      btn.disabled = false;
+      if (marker) {
+        marker.textContent = String(err.message || err);
+        marker.classList.add("cfg-error");
+      }
+    });
 }
 
 function startEdit(rowEl, cell, label, opts) {

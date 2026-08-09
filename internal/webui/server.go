@@ -78,6 +78,18 @@ type Server struct {
 	// Cfg field doc.
 	UpdateConfig func(context.Context, map[string]any) error
 
+	// ConfigOverrides lists the dotted config keys currently overridden
+	// by the runtime overlay, so the dashboard can mark those rows and
+	// offer a reset. Optional: when nil, the /api/config response omits
+	// the overridden list.
+	ConfigOverrides func(context.Context) ([]string, error)
+
+	// ResetConfig deletes one runtime-overlay row and republishes file +
+	// remaining overlay. Optional: when nil, POST /api/config/reset
+	// answers 503. Like UpdateConfig, it never touches the Cfg Holder
+	// directly.
+	ResetConfig func(context.Context, string) error
+
 	// Channels reports actual adapter lifecycle, independently of configuration
 	// presence. Nil preserves the configuration-only fallback for tests and
 	// minimal embedding.
@@ -177,6 +189,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/channels/{id}/reload", s.handleChannelReload)
 	mux.HandleFunc("GET /api/config", s.handleConfig)
 	mux.HandleFunc("PATCH /api/config", s.handleConfigUpdate)
+	mux.HandleFunc("POST /api/config/reset", s.handleConfigReset)
 	mux.HandleFunc("GET /api/logs", s.handleLogs)
 	mux.HandleFunc("GET /api/tasks/{id}/logs", s.handleTaskLogs)
 	mux.HandleFunc("GET /api/logs/stream", s.handleLogStream)

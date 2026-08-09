@@ -14,4 +14,11 @@ type ReloadStatus struct {
 	// LastReloadAt is the RFC3339 UTC timestamp of the most recent
 	// successful reload. Empty until the first reload.
 	LastReloadAt string `json:"last_reload_at,omitempty"`
+	// OverlayUnavailable is the reason the runtime config overlay is not
+	// in effect, so the running config is file-only. Set at boot when
+	// the overlay store cannot be opened or its values fail validation,
+	// and cleared by a successful dashboard write or reset. The
+	// dashboard shows it so a boot-time degrade is visible where the
+	// operator is looking, not only in logs.
+	OverlayUnavailable string `json:"overlay_unavailable,omitempty"`
 }
