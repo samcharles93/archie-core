@@ -166,7 +166,7 @@ func TestRenderSessionListEmpty(t *testing.T) {
 
 func TestRouteSessionsRenderedList(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	store := NewSessionStoreMemory("test-node")
+	store := NewSessionStoreMemory()
 	ctx := context.Background()
 	now := time.Now()
 	for _, sc := range []SessionContext{

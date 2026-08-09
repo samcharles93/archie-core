@@ -1,22 +1,21 @@
-# Docker Compose + NATS deployment.
+# Host daemon + Docker Compose NATS deployment.
 #
-# Copy to ~/.config/archie/config.toml -- docker-compose.yml mounts that path
-# read-only at /etc/archie/config.toml. This is a complete config, not an
-# overlay: the stack passes a single -config flag, so nothing in the repo
-# working tree needs to exist for the daemon to boot.
+# Copy to ~/.config/archie/config.toml. docker-compose.yml starts NATS only;
+# run archied on the host (for example with systemd-user-service.md). This is
+# a complete config, not an overlay.
 #
 #   mkdir -p ~/.config/archie
 #   cp deployments/docker-nats-stack.toml ~/.config/archie/config.toml
-#   docker compose up -d
+#   docker compose up -d nats
+#   archied -config ~/.config/archie/config.toml
 #
-# Paths below are container paths. docker-compose.yml maps them to host
-# volumes (/var/lib/archie/work and /var/lib/archie/db).
+# Paths below are host paths. Explicit home-relative paths are expanded.
 
 poll_interval = "60s"
 bot_user = "archie"
 diff_cap_lines = 0
-work_dir = "/var/lib/archie/work"
-db_path = "/var/lib/archie/archie.db"
+work_dir = "~/.local/share/archie/work"
+db_path = "~/.local/share/archie/archie.db"
 
 [forge]
 type = "gitea"
@@ -46,8 +45,9 @@ parked = "agent:parked"
 mode = "nats"
 
 [nats]
-# "nats" is the compose service name, resolved on the stack's own network.
-url = "nats://nats:4222"
+# The pinned Compose-network gateway is reachable from both the host daemon
+# and the task containers it launches on archie-core_default.
+url = "nats://172.19.0.1:4222"
 
 [containers]
 enabled = true
@@ -61,8 +61,7 @@ max_uptime = "60m"
 pull_policy = "missing"
 
 [web]
-# 0.0.0.0 so the dashboard is reachable through the published port.
-listen = "0.0.0.0:8484"
+listen = "127.0.0.1:8484"
 
 [models]
 triage = "deepseek/deepseek-v4-pro"
@@ -98,9 +97,8 @@ gate = [
   ["go", "test", "./...", "-count=1"],
 ]
 
-# Every env var named here must appear BOTH in the host .env and in
-# docker-compose.yml's `environment:` passthrough list -- a missing
-# passthrough silently yields an empty value.
+# Every env var named here must be present in the environment of the host
+# archied process, normally through its configured supervisor or launch shell.
 [chat.telegram]
 token_env = "TELEGRAM_BOT_TOKEN"
 # Empty list denies everyone.

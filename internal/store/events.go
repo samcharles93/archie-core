@@ -102,7 +102,7 @@ func (s *Store) Tasks(ctx context.Context, limit int) (tasks []Task, retErr erro
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, owner, repo, issue_number, title, status, workflow, stage,
 			pr_number, tokens_used, iterations, attempt, park_reason, retry_count,
-			created_at, updated_at, plan, source
+			created_at, updated_at, plan, source, identity
 		FROM tasks ORDER BY updated_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -120,7 +120,7 @@ func (s *Store) Tasks(ctx context.Context, limit int) (tasks []Task, retErr erro
 			&t.Status, &t.Workflow, &t.Stage, &t.PRNumber, &t.TokensUsed,
 			&t.Iterations, &t.Attempt, &t.ParkReason, &t.RetryCount,
 			sqliteTime{&t.CreatedAt}, sqliteTime{&t.UpdatedAt},
-			&t.Plan, &t.Source); err != nil {
+			&t.Plan, &t.Source, &t.Identity); err != nil {
 			return nil, err
 		}
 		tasks = append(tasks, t)

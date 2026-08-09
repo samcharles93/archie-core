@@ -2,17 +2,306 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"unicode/utf8"
 
 	"github.com/samcharles93/archie-core/internal/events"
 )
 
+func TestOpenLimitsSQLiteToOneConnection(t *testing.T) {
+	s := openTest(t)
+	if got := s.db.Stats().MaxOpenConnections; got != 1 {
+		t.Fatalf("MaxOpenConnections = %d, want 1", got)
+	}
+}
+
+func TestOpenAppliesPragmasWithTrailingQueryDelimiter(t *testing.T) {
+	s, err := Open(t.Context(), filepath.Join(t.TempDir(), "tasks.db")+"?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	var mode string
+	if err := s.db.QueryRowContext(t.Context(), `PRAGMA journal_mode`).Scan(&mode); err != nil {
+		t.Fatal(err)
+	}
+	if mode != "wal" {
+		t.Fatalf("journal_mode = %q, want wal", mode)
+	}
+}
+
+func TestOpenHonorsCancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	s, err := Open(ctx, filepath.Join(t.TempDir(), "tasks.db"))
+	if s != nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("Open = (%+v, %v), want (nil, context.Canceled)", s, err)
+	}
+}
+
+func TestOpenMigratesUnversionedTaskSchemas(t *testing.T) {
+	tests := []struct {
+		name    string
+		columns string
+	}{
+		{name: "legacy", columns: "id INTEGER PRIMARY KEY"},
+		{name: "partially migrated", columns: "id INTEGER PRIMARY KEY, watch_comment_id INTEGER NOT NULL DEFAULT 0, source TEXT NOT NULL DEFAULT 'forge'"},
+		{name: "fully migrated", columns: "id INTEGER PRIMARY KEY, watch_comment_id INTEGER NOT NULL DEFAULT 0, retry_count INTEGER NOT NULL DEFAULT 0, source TEXT NOT NULL DEFAULT 'forge', identity TEXT NOT NULL DEFAULT ''"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "tasks.db")
+			db, err := sql.Open("sqlite", path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.ExecContext(t.Context(), `CREATE TABLE tasks (`+tt.columns+`)`); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			s, err := Open(t.Context(), path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = s.Close() }()
+			var version int
+			if err := s.db.QueryRowContext(t.Context(), `PRAGMA user_version`).Scan(&version); err != nil {
+				t.Fatal(err)
+			}
+			if version != taskSchemaVersion {
+				t.Fatalf("user_version = %d, want %d", version, taskSchemaVersion)
+			}
+			rows, err := s.db.QueryContext(t.Context(), `PRAGMA table_info(tasks)`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				if err := rows.Close(); err != nil {
+					t.Errorf("close table_info rows: %v", err)
+				}
+			}()
+			got := map[string]bool{}
+			for rows.Next() {
+				var cid, notNull, primaryKey int
+				var name, columnType string
+				var defaultValue any
+				if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+					t.Fatal(err)
+				}
+				got[name] = true
+			}
+			if err := rows.Err(); err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range []string{"watch_comment_id", "retry_count", "source", "identity"} {
+				if !got[name] {
+					t.Errorf("column %q was not migrated", name)
+				}
+			}
+		})
+	}
+}
+
+func TestOpenRejectsNewerSchemaVersion(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tasks.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `PRAGMA user_version = 2`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(t.Context(), path)
+	if s != nil || err == nil || !strings.Contains(err.Error(), "newer than supported") {
+		t.Fatalf("Open = (%+v, %v), want newer-schema error", s, err)
+	}
+}
+
+func TestPersistenceAcrossRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tasks.db")
+	ctx := t.Context()
+	s, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.EnqueueIssue(ctx, "acme", "todo", 1, "survive restart", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err = Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	task, err := s.TaskByIssue(ctx, "acme", "todo", 1)
+	if err != nil || task == nil {
+		t.Fatalf("TaskByIssue after reopen = (%+v, %v)", task, err)
+	}
+	if task.Title != "survive restart" {
+		t.Fatalf("Title = %q, want survive restart", task.Title)
+	}
+}
+
+func TestConcurrentEnqueueAndClaim(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	const count = 20
+	var wg sync.WaitGroup
+	for number := range count {
+		wg.Go(func() {
+			if _, err := s.EnqueueIssue(ctx, "acme", "repo", number, "title", "", "", ""); err != nil {
+				t.Errorf("EnqueueIssue(%d): %v", number, err)
+			}
+		})
+	}
+	wg.Wait()
+
+	claimed := make(map[int64]struct{}, count)
+	var mu sync.Mutex
+	for range count {
+		wg.Go(func() {
+			task, err := s.ClaimNext(ctx)
+			if err != nil {
+				t.Errorf("ClaimNext: %v", err)
+				return
+			}
+			if task == nil {
+				t.Error("ClaimNext returned nil task")
+				return
+			}
+			mu.Lock()
+			claimed[task.ID] = struct{}{}
+			mu.Unlock()
+		})
+	}
+	wg.Wait()
+	if len(claimed) != count {
+		t.Fatalf("claimed %d unique tasks, want %d", len(claimed), count)
+	}
+}
+
+func TestChatIssueNumbersAreDurableAcrossStoreInstances(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tasks.db")
+	stores := make([]*Store, 2)
+	for i := range stores {
+		var err error
+		stores[i], err = Open(t.Context(), path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func(s *Store) { _ = s.Close() }(stores[i])
+	}
+
+	const count = 20
+	numbers := make(map[int]struct{}, count)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for i := range count {
+		wg.Go(func() {
+			task, err := stores[i%len(stores)].EnqueueChatTask(
+				t.Context(), "acme", "widget", "chat task", "", "", "archie",
+			)
+			if err != nil {
+				t.Errorf("EnqueueChatTask: %v", err)
+				return
+			}
+			mu.Lock()
+			numbers[task.IssueNumber] = struct{}{}
+			mu.Unlock()
+		})
+	}
+	wg.Wait()
+	if len(numbers) != count {
+		t.Fatalf("allocated %d unique issue numbers, want %d", len(numbers), count)
+	}
+	for number := range numbers {
+		if number < 1_000_000_000_000_000 || number > 1<<53-1 {
+			t.Errorf("synthetic issue number %d is outside the reserved JSON-safe range", number)
+		}
+	}
+}
+
+func TestTasksIncludesIdentity(t *testing.T) {
+	s := openTest(t)
+	want, err := s.EnqueueChatTask(t.Context(), "acme", "widget", "chat task", "", "", "reviewer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Tasks(t.Context(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != want.ID || got[0].Identity != "reviewer" {
+		t.Fatalf("Tasks = %+v, want task %d with identity reviewer", got, want.ID)
+	}
+}
+
+func TestStoreOperationsHonorContextCancellation(t *testing.T) {
+	s := openTest(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if task, err := s.ClaimNext(ctx); task != nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("ClaimNext = (%+v, %v), want (nil, context.Canceled)", task, err)
+	}
+	if task, err := s.TaskByIssue(ctx, "acme", "repo", 1); task != nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("TaskByIssue = (%+v, %v), want (nil, context.Canceled)", task, err)
+	}
+}
+
+func TestOversizedEventPayload(t *testing.T) {
+	s := openTest(t)
+	detail := strings.Repeat("x", 5000)
+	id, err := s.InsertEvent(t.Context(), events.Event{Kind: events.KindLog, Detail: detail})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.EventsSince(t.Context(), id-1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Detail != detail[:4000] {
+		t.Fatalf("stored detail length = %d, want 4000", len(got[0].Detail))
+	}
+}
+
+func TestInsertEventWithUnmarshalableData(t *testing.T) {
+	s := openTest(t)
+	id, err := s.InsertEvent(t.Context(), events.Event{
+		Kind: events.KindLog,
+		Data: map[string]any{"channel": make(chan int)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.EventsSince(t.Context(), id-1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("events = %d, want 1", len(got))
+	}
+	if message, ok := got[0].Data["marshal_error"].(string); !ok || message == "" {
+		t.Fatalf("marshal_error = %#v, want non-empty string", got[0].Data["marshal_error"])
+	}
+}
+
 func openTest(t *testing.T) *Store {
 	t.Helper()
-	s, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	s, err := Open(t.Context(), filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -478,7 +767,7 @@ func TestRecoverStalePreservesChatTaskRouting(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	created, err := s.EnqueueChatTask(ctx, "acme", "todo", "chat task", "", "tdd", "reviewer", 999_001)
+	created, err := s.EnqueueChatTask(ctx, "acme", "todo", "chat task", "", "tdd", "reviewer")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -506,7 +795,7 @@ func TestLifecycleQueriesPreserveChatTaskRouting(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	waiting, err := s.EnqueueChatTask(ctx, "acme", "todo", "needs approval", "", "feasibility", "reviewer", 999_001)
+	waiting, err := s.EnqueueChatTask(ctx, "acme", "todo", "needs approval", "", "feasibility", "reviewer")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -524,7 +813,7 @@ func TestLifecycleQueriesPreserveChatTaskRouting(t *testing.T) {
 		t.Fatalf("waiting task = %+v, want waiting_human chat/reviewer routing", waitingTask)
 	}
 
-	pr, err := s.EnqueueChatTask(ctx, "acme", "todo", "open PR", "", "implement", "builder", 999_002)
+	pr, err := s.EnqueueChatTask(ctx, "acme", "todo", "open PR", "", "implement", "builder")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -3,8 +3,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"sync/atomic"
-	"time"
 
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
@@ -41,15 +39,13 @@ type taskProfile struct {
 	allowed      map[string]bool
 }
 
-var lastSyntheticIssueNumber atomic.Int64
-
 // chatTaskWriter is the write surface StoreTaskCreator needs. It
 // returns the created task's real database ID, not a *store.Task  --
 // gateway deliberately has no dependency on internal/store; the daemon
 // supplies an adapter closure over the store.TaskStore method of the
 // same name.
 type chatTaskWriter interface {
-	EnqueueChatTask(ctx context.Context, owner, repo, title, body, workflow, identity string, issueNumber int) (taskID int64, err error)
+	EnqueueChatTask(ctx context.Context, owner, repo, title, body, workflow, identity string) (taskID int64, err error)
 }
 
 // NewStoreTaskCreator returns a TaskCreator that enqueues chat-spawned
@@ -107,25 +103,7 @@ func (c *StoreTaskCreator) CreateTask(ctx context.Context, req SpawnRequest) (in
 	if owner == "" || repo == "" {
 		return 0, fmt.Errorf("no repo configured for chat-spawned tasks")
 	}
-	// Synthetic issue number  --  prevents collisions with real forge
-	// issues (which are small sequential ints) while staying within the
-	// store's existing (owner, repo, number) uniqueness constraint. The
-	// task's real ID (not this number) is what /approve and /cancel use.
-	number := nextSyntheticIssueNumber()
-	return c.store.EnqueueChatTask(ctx, owner, repo, req.Title, req.Body, req.Workflow, req.Identity, number)
-}
-
-func nextSyntheticIssueNumber() int {
-	candidate := time.Now().UnixMicro()
-	for {
-		previous := lastSyntheticIssueNumber.Load()
-		if candidate <= previous {
-			candidate = previous + 1
-		}
-		if lastSyntheticIssueNumber.CompareAndSwap(previous, candidate) {
-			return int(candidate)
-		}
-	}
+	return c.store.EnqueueChatTask(ctx, owner, repo, req.Title, req.Body, req.Workflow, req.Identity)
 }
 
 func splitOwnerRepo(s string) (owner, repo string, ok bool) {

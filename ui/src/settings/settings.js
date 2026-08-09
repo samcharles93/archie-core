@@ -248,7 +248,7 @@ function storageCard(storage, containers) {
       el(
         "div.cfg-rows",
         row("Work directory", storage.work_dir),
-        row("Task database", storage.db_path),
+        row("State path prefix", storage.db_path),
         row("Shared skills directory", storage.skills_dir || "None (uses the work directory)"),
         row("Daemon plugin directory", storage.plugin_dir || "None"),
         row("Secret engine plugin directory", storage.secret_engine_dir || "None (built-in engines only)"),

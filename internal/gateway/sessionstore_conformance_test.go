@@ -673,9 +673,8 @@ func testSourceIDRoundTrips(t *testing.T, newStore func(t *testing.T) SessionSto
 
 // testSourceIDIsNotSearchable pins that the channel-native SourceID is
 // persistence metadata, not conversation content: a query for it -- ASCII
-// or non-ASCII -- must match nothing on every backend. SQLite's FTS index
-// covers sender and text only; NellDB tokenizes every payload string, so a
-// store that persists source_id as a plain string fails this contract.
+// or non-ASCII -- must match nothing. SQLite's FTS index covers sender and
+// text only.
 func testSourceIDIsNotSearchable(t *testing.T, newStore func(t *testing.T) SessionStore) {
 	tests := []struct {
 		name     string
@@ -1210,21 +1209,12 @@ func testSearchEmptyQueryReturnsEmptyPage(t *testing.T, newStore func(t *testing
 	}
 }
 
-// TestSessionStoreConformanceNell runs the shared behavioural suite against
-// the NellDB-backed SessionStore implementation.
-func TestSessionStoreConformanceNell(t *testing.T) {
-	runSessionStoreSuite(t, func(t *testing.T) SessionStore { return NewSessionStoreMemory("test-node") })
-}
-
 // testNewestFirstOrdering pins the observable newest-first contract that List
 // and GetByChannel both document.
 //
-// The two backends disagreed and the suite did not notice: SQLite ordered by
-// created_at while NellDB reversed document order (by session ID). Recency is
-// LastActiveAt -- that is what Touch updates and what "newest" means to
-// someone reading /sessions -- so a session created first but used most
-// recently sorts first, and a cutover between backends must not change which
-// session a restart resumes.
+// Recency is LastActiveAt -- that is what Touch updates and what "newest"
+// means to someone reading /sessions -- so a session created first but used
+// most recently sorts first.
 func testNewestFirstOrdering(t *testing.T, newStore func(t *testing.T) SessionStore) {
 	ctx := context.Background()
 	s := newStore(t)

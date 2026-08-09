@@ -11,7 +11,6 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/gateway"
-	"github.com/samcharles93/archie-core/internal/nell"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
@@ -43,13 +42,13 @@ func TestDashboardAndChatAgreeOnTerminalStates(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			st, err := nell.OpenStore(filepath.Join(t.TempDir(), "tasks.db"), "test-node")
+			st, err := store.Open(ctx, filepath.Join(t.TempDir(), "tasks.db"))
 			if err != nil {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = st.Close() })
 
-			task, err := st.EnqueueChatTask(ctx, "acme", "widget", "decide on me", "", "", "reviewer", 900_001)
+			task, err := st.EnqueueChatTask(ctx, "acme", "widget", "decide on me", "", "", "reviewer")
 			if err != nil {
 				t.Fatal(err)
 			}

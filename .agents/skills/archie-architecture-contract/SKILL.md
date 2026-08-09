@@ -40,8 +40,8 @@ Resolve apparent disagreement in this order:
 5. Stop and use `archie-architecture-planning-campaign` if a required semantic
    decision remains open.
 
-Route to `archie-domain-reference` for glossary, `archie-nelldb` for
-persistence, `archie-config-and-flags` for config enumeration.
+Route to `archie-domain-reference` for glossary and
+`archie-config-and-flags` for config enumeration.
 
 ## Know the CURRENT system
 
@@ -191,7 +191,7 @@ Source: `docs/architecture/configuration.md`.
 | Capability-specific plugin behavior | Owning domain's typed registry/manager | Never add behavior to `plugin.Plugin`. |
 | Broker-neutral publication/subscription mechanics | `internal/eventbus` | Keep message meaning and schemas with their domain. |
 | Shared policy evaluation/evidence mechanics | `internal/policy` | Keep policy vocabulary, evaluators, and consequences with consuming domain. |
-| NATS, SQLite/NellDB, forge, config decoding, external SDK adapters | `internal/infrastructure/<capability>` | Implement a narrow owner-defined contract; translate at boundary. |
+| NATS, SQLite, forge, config decoding, external SDK adapters | `internal/infrastructure/<capability>` | Implement a narrow owner-defined contract; translate at boundary. |
 | Construction, cross-domain connection, startup/shutdown | `internal/app/archied` or `internal/app/agentworker` | Keep `cmd/*` thin; define health and shutdown order. |
 | Deploy assembly | `deployments/<assembly>` | Do not move application behavior into deployment files. |
 | Unreviewed memory/tools/workspace/gate/storage/web/RPC/scheduling | **OPEN** | Run `archie-architecture-planning-campaign`. |

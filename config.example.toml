@@ -9,7 +9,7 @@
 # secret_engine_dir = "~/.config/archie/secret-engines"
 
 # work_dir = "~/.local/share/archie/work"   # default
-# db_path  = "~/.local/share/archie/archie.db"
+# db_path  = "~/.local/share/archie/archie.db" # prefix for independent task and conversation SQLite files
 
 poll_interval = "60s"
 label = "archie"

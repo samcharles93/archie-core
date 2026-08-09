@@ -23,7 +23,7 @@ func TestSessionTrackerConcurrentResolve(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			store := NewSessionStoreMemory("test-node")
+			store := NewSessionStoreMemory()
 			t.Cleanup(func() { _ = store.Close() })
 			tracker := newSessionTracker(store)
 
@@ -48,7 +48,7 @@ func TestSessionTrackerConcurrentResolve(t *testing.T) {
 // interleaved messages cannot land in different sessions.
 func TestSessionTrackerResolveIsStable(t *testing.T) {
 	ctx := context.Background()
-	store := NewSessionStoreMemory("test-node")
+	store := NewSessionStoreMemory()
 	t.Cleanup(func() { _ = store.Close() })
 	tracker := newSessionTracker(store)
 

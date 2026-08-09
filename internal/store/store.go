@@ -97,37 +97,100 @@ func (t Task) IsForgeBacked() bool {
 
 type Store struct{ db *sql.DB }
 
+const taskSchemaVersion = 1
+
 // Open opens (creating if needed) the SQLite database and its schema.
-func Open(path string) (*Store, error) {
+func Open(ctx context.Context, path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	ctx := context.Background() // FIXME update context to use it correctly.
-	db, err := sql.Open("sqlite", path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
+	db, err := sql.Open("sqlite", sqliteDSN(path))
 	if err != nil {
 		return nil, err
 	}
+	db.SetMaxOpenConns(1)
 	if _, err := db.ExecContext(ctx, schema+eventsSchema); err != nil {
 		return nil, errors.Join(fmt.Errorf("store: init schema: %w", err), db.Close())
 	}
-	// Additive migrations; "duplicate column" means already applied.
-	if _, err := db.ExecContext(ctx, `ALTER TABLE tasks ADD COLUMN watch_comment_id INTEGER NOT NULL DEFAULT 0`); err != nil &&
-		!strings.Contains(err.Error(), "duplicate column") {
-		return nil, errors.Join(fmt.Errorf("store: migrate: %w", err), db.Close())
-	}
-	if _, err := db.ExecContext(ctx, `ALTER TABLE tasks ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0`); err != nil &&
-		!strings.Contains(err.Error(), "duplicate column") {
-		return nil, errors.Join(fmt.Errorf("store: migrate: %w", err), db.Close())
-	}
-	if _, err := db.ExecContext(ctx, `ALTER TABLE tasks ADD COLUMN source TEXT NOT NULL DEFAULT 'forge'`); err != nil &&
-		!strings.Contains(err.Error(), "duplicate column") {
-		return nil, errors.Join(fmt.Errorf("store: migrate: %w", err), db.Close())
-	}
-	if _, err := db.ExecContext(ctx, `ALTER TABLE tasks ADD COLUMN identity TEXT NOT NULL DEFAULT ''`); err != nil &&
-		!strings.Contains(err.Error(), "duplicate column") {
+	if err := migrateTasks(ctx, db); err != nil {
 		return nil, errors.Join(fmt.Errorf("store: migrate: %w", err), db.Close())
 	}
 	return &Store{db: db}, nil
+}
+
+func sqliteDSN(path string) string {
+	separator := "?"
+	if strings.HasSuffix(path, "?") || strings.HasSuffix(path, "&") {
+		separator = ""
+	} else if strings.Contains(path, "?") {
+		separator = "&"
+	}
+	return path + separator + "_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
+}
+
+func migrateTasks(ctx context.Context, db *sql.DB) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var version int
+	if err := tx.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil {
+		return err
+	}
+	if version > taskSchemaVersion {
+		return fmt.Errorf("database schema version %d is newer than supported version %d", version, taskSchemaVersion)
+	}
+	if version == taskSchemaVersion {
+		return tx.Commit()
+	}
+
+	columns, err := taskColumns(ctx, tx)
+	if err != nil {
+		return err
+	}
+
+	migrations := []struct {
+		column string
+		sql    string
+	}{
+		{"watch_comment_id", `ALTER TABLE tasks ADD COLUMN watch_comment_id INTEGER NOT NULL DEFAULT 0`},
+		{"retry_count", `ALTER TABLE tasks ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0`},
+		{"source", `ALTER TABLE tasks ADD COLUMN source TEXT NOT NULL DEFAULT 'forge'`},
+		{"identity", `ALTER TABLE tasks ADD COLUMN identity TEXT NOT NULL DEFAULT ''`},
+	}
+	for _, migration := range migrations {
+		if columns[migration.column] {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, migration.sql); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `PRAGMA user_version = 1`); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func taskColumns(ctx context.Context, tx *sql.Tx) (_ map[string]bool, retErr error) {
+	rows, err := tx.QueryContext(ctx, `PRAGMA table_info(tasks)`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { retErr = errors.Join(retErr, rows.Close()) }()
+	columns := make(map[string]bool)
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, columnType string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return nil, err
+		}
+		columns[name] = true
+	}
+	return columns, rows.Err()
 }
 
 const schema = `
@@ -150,6 +213,10 @@ CREATE TABLE IF NOT EXISTS tasks (
 	iterations    INTEGER NOT NULL DEFAULT 0,
 	attempt       INTEGER NOT NULL DEFAULT 0,
 	park_reason   TEXT NOT NULL DEFAULT '',
+	watch_comment_id INTEGER NOT NULL DEFAULT 0,
+	retry_count   INTEGER NOT NULL DEFAULT 0,
+	source        TEXT NOT NULL DEFAULT 'forge',
+	identity      TEXT NOT NULL DEFAULT '',
 	created_at    TEXT NOT NULL DEFAULT (datetime('now')),
 	updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
 	UNIQUE(owner, repo, issue_number)
@@ -167,8 +234,12 @@ CREATE TABLE IF NOT EXISTS transitions (
 func (s *Store) Close() error { return s.db.Close() }
 
 // OpenTest opens an in-memory SQLite store suitable for tests.
-func OpenTest(t interface{ TempDir() string }) *Store {
-	s, err := Open(filepath.Join(t.TempDir(), "test.db"))
+func OpenTest(t interface {
+	TempDir() string
+	Context() context.Context
+},
+) *Store {
+	s, err := Open(t.Context(), filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		panic(err)
 	}
@@ -205,20 +276,23 @@ func (s *Store) EnqueueIssue(ctx context.Context, owner, repo string, number int
 
 // EnqueueChatTask inserts a new queued task with Source "chat" and no
 // backing forge issue, returning the full created row (with its real
-// database ID  --  callers must not synthesize an ID from issueNumber).
-// issueNumber is a synthetic value used only to satisfy the
-// (owner, repo, issue_number) uniqueness constraint; workflow stages and
-// daemon reconciliation must check Task.IsForgeBacked() before treating
-// it as a real forge issue number.
-func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, workflow, identity string, issueNumber int) (*Task, error) {
+// database ID). The store allocates the synthetic issue number durably so
+// multiple processes sharing the database cannot generate the same value.
+// Workflow stages and daemon reconciliation must check Task.IsForgeBacked()
+// before treating it as a real forge issue number.
+func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, workflow, identity string) (*Task, error) {
+	const syntheticIssueNumberBase = 1_000_000_000_000_000
 	row := s.db.QueryRowContext(ctx, `
 		INSERT INTO tasks (owner, repo, issue_number, title, body, labels, workflow, source, identity)
-		VALUES (?, ?, ?, ?, ?, 'chat', ?, 'chat', ?)
+		VALUES (?, ?, COALESCE((
+			SELECT MAX(issue_number) FROM tasks
+			WHERE owner = ? AND repo = ? AND source = 'chat'
+		), ?) + 1, ?, ?, 'chat', ?, 'chat', ?)
 		RETURNING id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
 			source, identity, created_at, updated_at`,
-		owner, repo, issueNumber, title, body, workflow, identity)
+		owner, repo, owner, repo, syntheticIssueNumberBase-1, title, body, workflow, identity)
 	return scanTask(row)
 }
 
