@@ -1,6 +1,6 @@
 # Safe Change and Recovery
 
-**Status:** Requirements approved; mechanics are under design  
+**Status:** Requirements approved; mechanics are under design. The runtime config overlay subset is implemented (2026-08): see the degrade/recovery section below. The full runtime-supervision protocol (bounded observation, versioned audit trail) remains under design.
 **Date:** 2026-07-28  
 **Tracking issue:** [#73](https://github.com/samcharles93/archie-core/issues/73)
 
