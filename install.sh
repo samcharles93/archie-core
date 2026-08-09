@@ -439,6 +439,10 @@ StartLimitBurst=5
 Type=simple
 ExecStart=${ARCHIE_BIN_DIR}/archied -config ${ARCHIE_CONFIG_DIR}/config.toml
 EnvironmentFile=-${ENV_FILE}
+# archied reloads its configuration on SIGHUP. Without ExecReload,
+# 'systemctl --user reload archied' fails and the operator has to know
+# to run 'systemctl --user kill -s HUP' instead.
+ExecReload=/bin/kill -HUP \$MAINPID
 Restart=on-failure
 RestartSec=5s
 
