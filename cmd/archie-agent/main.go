@@ -106,8 +106,30 @@ func run() int {
 		return 1
 	}
 
+	// A dedicated per-task subscription (below) means this container was
+	// spawned for one task, which is also when its stderr is otherwise
+	// unrecoverable: container.Pool creates it with AutoRemove: true. Once
+	// nc exists, ship this process's own logs to the daemon over
+	// SubjectForSystem(taskID) so they survive the container's exit. Shared
+	// queue-group mode serves many unrelated tasks per process, so there is
+	// no single task subject to ship to -- it keeps the stderr-only logger.
+	//
+	// This only covers logging done through the `log` variable from here on.
+	// bus (arnats.Client) was constructed above with the pre-wrap logger and
+	// keeps it for its own lifetime, so its own wire-activity Debug lines
+	// (e.g. "published" on every bus.Respond) stay stderr-only regardless.
+	// That's a real, known gap, not an oversight: it's the bus's internal
+	// chatter about NATS itself, not the agent's own reasoning or tool
+	// output, and reordering construction to close it would mean connecting
+	// to NATS before knowing whether NATS is even needed for this call.
+	taskID, hasTaskID := bootTaskID(storage.WorktreeMountDir, log)
+	if hasTaskID {
+		log = slog.New(agentexec.NewSystemLogHandler(log.Handler(), nc, taskID))
+		log.Info("system log publisher attached", "task", taskID)
+	}
+
 	// Subscribe to task run messages.
-	taskRunSub, err := subscribeTaskRuns(ctx, nc, log)
+	taskRunSub, err := subscribeTaskRuns(ctx, nc, log, taskID, hasTaskID)
 	if err != nil {
 		log.Error("taskrun subscribe failed", "err", err)
 		return 1
@@ -124,9 +146,11 @@ func run() int {
 
 // subscribeTaskRuns prefers a dedicated per-task subscription over the
 // shared queue group whenever this container was spawned for a specific
-// task (.git/task.json present at the worktree mount).
-func subscribeTaskRuns(ctx context.Context, nc *nats.Conn, log *slog.Logger) (*nats.Subscription, error) {
-	if taskID, ok := bootTaskID(storage.WorktreeMountDir, log); ok {
+// task. taskID/hasTaskID come from bootTaskID (.git/task.json present at the
+// worktree mount) -- the caller resolves it once, since it also decides
+// whether to attach a per-task log publisher to log before this is called.
+func subscribeTaskRuns(ctx context.Context, nc *nats.Conn, log *slog.Logger, taskID int64, hasTaskID bool) (*nats.Subscription, error) {
+	if hasTaskID {
 		log.Info("taskrun: dedicated per-task subscription", "task", taskID)
 		return nc.Subscribe(taskrun.SubjectForTask(taskID), func(msg *nats.Msg) {
 			handleTaskRun(ctx, msg, nc, log)
