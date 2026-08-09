@@ -19,6 +19,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/forge"
 	arnats "github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
+	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -63,6 +64,30 @@ func TestCleanupExpiredStorageUsesConfiguredTTL(t *testing.T) {
 
 	if backend.ttl != 6*time.Hour {
 		t.Fatalf("CleanupExpired ttl = %s, want 6h", backend.ttl)
+	}
+}
+
+// TestOpenTaskLogOpensAndClosesTheRightSink guards process()'s wiring of
+// TaskLogs without the ~10-dependency harness a full process() test would
+// need (Store, Forge, Trees, ContainerPool, ...): openTaskLog only ever
+// touches d.TaskLogs and d.Log, so it's testable in complete isolation.
+// Uses TaskRegistry.Write's own true/false contract as the observable --
+// true right after opening (proving Open ran under this task's actual
+// ID/attempt, not a typo'd constant), false after the returned closer runs
+// (proving it's a real Close, not a no-op).
+func TestOpenTaskLogOpensAndClosesTheRightSink(t *testing.T) {
+	reg := logging.NewTaskRegistry(t.TempDir(), logging.NewFeed(10), logging.TaskSinkOptions{})
+	d := &Daemon{TaskLogs: reg, Log: slog.New(slog.DiscardHandler)}
+	task := &store.Task{ID: 5, Attempt: 2}
+
+	closeFn := d.openTaskLog(task)
+	if ok := reg.Write(5, logging.Entry{Message: "x"}); !ok {
+		t.Fatal("Write() = false right after openTaskLog, want true (sink should be open)")
+	}
+
+	closeFn()
+	if ok := reg.Write(5, logging.Entry{Message: "y"}); ok {
+		t.Error("Write() = true after openTaskLog's closer ran, want false (sink should be closed)")
 	}
 }
 

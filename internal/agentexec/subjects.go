@@ -1,6 +1,9 @@
 package agentexec
 
-import "strconv"
+import (
+	"strconv"
+	"strings"
+)
 
 // Agent execution subjects.
 //
@@ -16,7 +19,13 @@ const (
 	// SubjectAgentWildcard matches every agent subject.
 	SubjectAgentWildcard = "archie.agent.>"
 
-	subjectAgentPrefix = "archie.agent."
+	// SubjectSystemWildcard matches every task's system subject, for a
+	// daemon subscribing to all of them at once with a single core NATS
+	// subscription rather than one per running task.
+	SubjectSystemWildcard = subjectAgentPrefix + "*.system"
+
+	subjectAgentPrefix  = "archie.agent."
+	subjectSystemSuffix = ".system"
 )
 
 // SubjectForRequest returns the subject carrying stage execution requests for
@@ -42,4 +51,21 @@ func SubjectForSystem(taskID int64) string {
 // subjectForTask builds a per-task agent subject.
 func subjectForTask(taskID int64, kind string) string {
 	return subjectAgentPrefix + strconv.FormatInt(taskID, 10) + "." + kind
+}
+
+// TaskIDFromSystemSubject extracts the task ID from a subject produced by
+// SubjectForSystem, for a daemon demuxing a SubjectSystemWildcard
+// subscription. Rejects (0, false) for anything that isn't exactly that
+// shape, rather than parsing a partial or wrong-kind subject into a
+// misleading task ID.
+func TaskIDFromSystemSubject(subject string) (int64, bool) {
+	if !strings.HasPrefix(subject, subjectAgentPrefix) || !strings.HasSuffix(subject, subjectSystemSuffix) {
+		return 0, false
+	}
+	middle := strings.TrimSuffix(strings.TrimPrefix(subject, subjectAgentPrefix), subjectSystemSuffix)
+	id, err := strconv.ParseInt(middle, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, false
+	}
+	return id, true
 }
