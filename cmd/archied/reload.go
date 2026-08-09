@@ -25,7 +25,8 @@ type ReloadController struct {
 
 	// apply receives a freshly loaded, validated Document. It is the
 	// composition root's job to wire this to whatever owns the running
-	// config (the daemon's Holder, the dashboard's provenance).
+	// config (the daemon's Holder, the dashboard's provenance). Must be
+	// non-nil; newReloadController requires it.
 	apply func(*configuration.Document)
 
 	status atomic.Pointer[config.ReloadStatus]
@@ -115,9 +116,9 @@ var reloadableSubFields = map[string]map[string]bool{
 // operator knows their edit did not take effect until a restart --
 // the alternative is an operator who believes a reloaded poll interval
 // changed the forge token, and burns an hour discovering it did not.
-func changedNonReloadableFields(old, new config.Config) []string {
+func changedNonReloadableFields(old, next config.Config) []string {
 	var changed []string
-	ov, nv := reflect.ValueOf(old), reflect.ValueOf(new)
+	ov, nv := reflect.ValueOf(old), reflect.ValueOf(next)
 	ot := reflect.TypeFor[config.Config]()
 	for i := 0; i < ot.NumField(); i++ {
 		f := ot.Field(i)
