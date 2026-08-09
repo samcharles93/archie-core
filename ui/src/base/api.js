@@ -86,6 +86,16 @@ export const api = {
 		return res.json();
 	},
   config: () => req("/api/config"),
+  configUpdate: async (updates) => {
+    const res = await fetch("/api/config", {
+      method: "PATCH",
+      headers: { Accept: "application/json", "Content-Type": "application/json", "X-Archie-CSRF": "1" },
+      body: JSON.stringify({ updates }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+    return res.json();
+  },
   logs: (params) => req("/api/logs" + qs(params)),
   memory: () => req("/api/memory"),
   chatSessions: () => req("/api/chat/sessions"),
