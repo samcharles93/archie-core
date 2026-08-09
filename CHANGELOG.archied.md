@@ -1,8 +1,32 @@
 # archied changelog
 
-## [Unreleased]
+## [1.7.0] - 2026-08-10
 
-- feat(config): SIGHUP-triggered config reload with `--no-config-overlay` recovery flag
+- fix(build): install ripgrep where grep.go actually needs it on PATH
+- fix(webui): Send button no longer passes its click event to sendMessage
+- feat(webui): Enter sends, Shift+Enter inserts a newline
+- fix(chat): stop showing raw 501 banner for unconfigured update-check
+- fix(chat): give chat page a real height budget instead of a floor
+- fix(workflow): carry gate output into the baseline park error
+- feat(logging): add a per-task log sink
+- feat(agentexec): publish agent-side logs to the task's system subject
+- feat(daemon): consume agent system logs into per-task sinks and the dashboard feed
+- feat(webui,gateway): add /api/tasks/{id}/logs endpoint and task_logs chat tool
+- refactor(gateway): persist conversations in sqlite
+- refactor(store): replace legacy persistence with SQLite
+- fix(webui): tighten configuration KV row spacing
+- fix(gateway): harden session recovery paths
+- refactor(daemon,webui): make Daemon.Cfg and webui.Server.Cfg reload-safe
+- feat(config): SIGHUP-triggered reload with requires-restart warnings
+- fix(config): share one config Holder between daemon and dashboard; re-apply model catalog on reload
+- fix(config): complete the reloadable allowlist and pin it against ForTask
+- feat(config): runtime config overlay store, PATCH /api/config, and the `--no-config-overlay` recovery flag
+- feat(webui): inline config editing on the Configuration page
+- feat(config): surface overlay state, shadowed keys, and per-row reset
+- fix(config): close review blocker on the PATCH path; deep-copy snapshots; atomics for shared state
+- fix(config): preserve nil slices in Clone to avoid spurious reload warnings
+
+## [Unreleased]
 
 ## [1.6.0] - 2026-08-09
 
