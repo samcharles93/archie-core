@@ -499,7 +499,11 @@ func run() int {
 	webSetup := telegramSetup{
 		Cfg: cfg, St: st, LLM: llm, ChatModels: chatModels, ToolReg: toolReg,
 		Personas: personas, ChatTasks: chatTasks, ChatController: chatController,
-		ChatTaskLister:      chatTaskListerAdapter{tasks: st.Tasks},
+		ChatTaskLister: chatTaskListerAdapter{tasks: st.Tasks},
+		ChatTaskLogs: chatTaskLogReaderAdapter{
+			tasks:    st.TaskByID,
+			taskLogs: taskLogs,
+		},
 		DefaultChatIdentity: defaultChatIdentity, SessionStore: chatSessionStore,
 		Bus: bus, Log: log,
 	}
@@ -521,7 +525,11 @@ func run() int {
 		Cfg: cfg, CfgPath: *cfgPath, OverlayPath: *overlayPath,
 		St: st, LLM: llm, ChatModels: chatModels, ToolReg: toolReg,
 		Personas: personas, ChatTasks: chatTasks, ChatController: chatController,
-		ChatTaskLister:      chatTaskListerAdapter{tasks: st.Tasks},
+		ChatTaskLister: chatTaskListerAdapter{tasks: st.Tasks},
+		ChatTaskLogs: chatTaskLogReaderAdapter{
+			tasks:    st.TaskByID,
+			taskLogs: taskLogs,
+		},
 		DefaultChatIdentity: defaultChatIdentity, SessionStore: chatSessionStore, Updates: updateService,
 		Bus:             bus,
 		RegisterRestart: func(request func() error) { restartTelegram = request }, Log: log,
@@ -1072,6 +1080,70 @@ func (a chatTaskControllerAdapter) CancelChatTask(ctx context.Context, taskID in
 	// for "the pull request was closed without merging", stopped meaning one
 	// thing.
 	return a.transition(ctx, taskID, task.Status, store.StatusClosedWontDo, reason)
+}
+
+// chatTaskLogReaderAdapter gives the gateway a read view of a task's
+// persisted log history without importing internal/logging or internal/store
+// into the gateway package. Each identity's reader is scoped to its own
+// tasks: the identity bound at construction is used for authorization, so a
+// model cannot read another identity's task logs by passing a different
+// identity through the tool input.
+type chatTaskLogReaderAdapter struct {
+	tasks    func(context.Context, int64) (*store.Task, error)
+	taskLogs *logging.TaskRegistry
+}
+
+func (a chatTaskLogReaderAdapter) ReadChatTaskLogs(
+	ctx context.Context, identity string, taskID int64, attempt int, q gateway.ChatTaskLogQuery,
+) (gateway.ChatTaskLogResult, error) {
+	task, err := a.tasks(ctx, taskID)
+	if err != nil {
+		return gateway.ChatTaskLogResult{}, err
+	}
+	if task == nil {
+		return gateway.ChatTaskLogResult{}, fmt.Errorf("task %d not found", taskID)
+	}
+	// Match the filter chatTaskListerAdapter already applies: a model
+	// bound to one identity must not read logs for another identity's
+	// tasks, and tasks with no identity (forge-sourced) are not
+	// readable through a chat tool at all — they belong to the daemon,
+	// not a particular identity. "The empty string MUST NOT retain
+	// special meaning" (docs/architecture/identity.md).
+	if task.Identity != identity {
+		return gateway.ChatTaskLogResult{}, fmt.Errorf("task %d belongs to %q, not %q", taskID, task.Identity, identity)
+	}
+
+	if attempt <= 0 {
+		attempt = task.Attempt
+	}
+	path := a.taskLogs.Path(taskID, attempt)
+	if path == "" {
+		return gateway.ChatTaskLogResult{Attempt: attempt, Entries: []gateway.ChatTaskLogEntry{}}, nil
+	}
+
+	result, err := logging.Tail(path, logging.Query{
+		Component: q.Component,
+		Contains:  q.Contains,
+		Limit:     q.Limit,
+	})
+	if err != nil {
+		return gateway.ChatTaskLogResult{}, err
+	}
+
+	entries := make([]gateway.ChatTaskLogEntry, len(result.Entries))
+	for i, e := range result.Entries {
+		entries[i] = gateway.ChatTaskLogEntry{
+			Time:    e.Time,
+			Level:   e.Level,
+			Message: e.Message,
+			Fields:  e.Fields,
+		}
+	}
+	return gateway.ChatTaskLogResult{
+		Entries:   entries,
+		Attempt:   attempt,
+		Truncated: result.Truncated,
+	}, nil
 }
 
 func chatTaskProfiles(cfg config.Config) ([]gateway.TaskProfile, string) {
