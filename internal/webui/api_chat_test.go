@@ -97,7 +97,7 @@ func (*chatUpdateStub) CanInstall() bool { return true }
 
 func TestChatSessionAndMessageEndpoints(t *testing.T) {
 	t.Parallel()
-	sessions := gateway.NewSessionStoreMemory("test")
+	sessions := gateway.NewSessionStoreMemory()
 	t.Cleanup(func() { _ = sessions.Close() })
 	router := gateway.NewRouter(chatStatusStub{}, nil, "web")
 	router.InitSessions(sessions)
@@ -169,7 +169,7 @@ func TestChatSessionAndMessageEndpoints(t *testing.T) {
 }
 
 func TestChatSessionsExposeActiveSelectorState(t *testing.T) {
-	sessions := gateway.NewSessionStoreMemory("selector-state")
+	sessions := gateway.NewSessionStoreMemory()
 	t.Cleanup(func() { _ = sessions.Close() })
 	router := gateway.NewRouter(chatStatusStub{}, nil, "web")
 	router.InitSessions(sessions)
@@ -220,7 +220,7 @@ func TestChatSessionsExposeActiveSelectorState(t *testing.T) {
 
 func TestChatUpdateEndpoints(t *testing.T) {
 	updates := &chatUpdateStub{snapshot: releaseupdate.Snapshot{Components: []releaseupdate.Component{{ID: "gateway", Label: "Gateway", Installed: "1.0", Available: "1.1"}}}}
-	sessions := gateway.NewSessionStoreMemory("test")
+	sessions := gateway.NewSessionStoreMemory()
 	t.Cleanup(func() { _ = sessions.Close() })
 	router := gateway.NewRouter(chatStatusStub{}, nil, "web")
 	server := &Server{Chat: &ChatService{Router: router, Sessions: sessions, Updates: updates}}
@@ -258,7 +258,7 @@ func TestChatUpdateEndpoints(t *testing.T) {
 
 func TestChatUpdateEndpointRejectsTypedNilService(t *testing.T) {
 	var updates *releaseupdate.Service
-	sessions := gateway.NewSessionStoreMemory("test")
+	sessions := gateway.NewSessionStoreMemory()
 	t.Cleanup(func() { _ = sessions.Close() })
 	router := gateway.NewRouter(chatStatusStub{}, nil, "web")
 	server := &Server{Chat: &ChatService{Router: router, Sessions: sessions, Updates: updates}}
@@ -271,7 +271,7 @@ func TestChatUpdateEndpointRejectsTypedNilService(t *testing.T) {
 }
 
 func TestChatDangerousApprovalEndpoints(t *testing.T) {
-	sessions := gateway.NewSessionStoreMemory("test")
+	sessions := gateway.NewSessionStoreMemory()
 	t.Cleanup(func() { _ = sessions.Close() })
 	authority := &webDangerousStub{}
 	router := gateway.NewRouter(chatStatusStub{}, nil, "web")
@@ -304,7 +304,7 @@ func TestChatDangerousApprovalEndpoints(t *testing.T) {
 }
 
 func TestChatCommandCatalogIncludesEnabledCapabilities(t *testing.T) {
-	sessions := gateway.NewSessionStoreMemory("test")
+	sessions := gateway.NewSessionStoreMemory()
 	t.Cleanup(func() { _ = sessions.Close() })
 	router := gateway.NewRouter(chatStatusStub{}, nil, "web")
 	server := &Server{Chat: &ChatService{
@@ -334,7 +334,7 @@ func TestChatCommandCatalogIncludesEnabledCapabilities(t *testing.T) {
 }
 
 func TestChatCancelEndpointStopsSessionTurn(t *testing.T) {
-	sessions := gateway.NewSessionStoreMemory("cancel")
+	sessions := gateway.NewSessionStoreMemory()
 	t.Cleanup(func() { _ = sessions.Close() })
 	router := gateway.NewRouter(chatStatusStub{}, nil, "web")
 	router.InitSessions(sessions)
@@ -381,7 +381,7 @@ func TestChatCancelEndpointStopsSessionTurn(t *testing.T) {
 // gateway router on an in-memory session store.
 func chatTestServer(t *testing.T) (*Server, gateway.SessionStore) {
 	t.Helper()
-	sessions := gateway.NewSessionStoreMemory("test")
+	sessions := gateway.NewSessionStoreMemory()
 	t.Cleanup(func() { _ = sessions.Close() })
 	router := gateway.NewRouter(chatStatusStub{}, nil, "web")
 	router.InitSessions(sessions)

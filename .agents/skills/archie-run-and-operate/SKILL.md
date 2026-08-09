@@ -1,6 +1,6 @@
 ---
 name: archie-run-and-operate
-description: "Run and observe Archie safely from a local binary or the repository Docker Compose stack. Use when starting or stopping archied, running an archie-agent NATS worker, checking readiness, following logs, locating task state/worktrees/memory/container volumes, understanding inprocess/subprocess/NATS execution, inspecting the deployment watcher or image pipeline, or planning an operational rollback without changing architecture."
+description: "Run and observe Archie safely with a host daemon and the repository's Docker Compose NATS service. Use when starting or stopping archied, running an archie-agent NATS worker, checking readiness, following logs, locating task state/worktrees/memory/container volumes, understanding inprocess/subprocess/NATS execution, inspecting the image pipeline, or planning an operational rollback without changing architecture."
 ---
 
 # Run and operate Archie
@@ -12,12 +12,12 @@ Treat source and tests as current; treat `docs/archive/` as history.
 
 | Term | Meaning here |
 |---|---|
-| `archied` | Resident orchestrator. Owns config, forge credentials, NellDB store, worktrees, gateways, dashboard, optional NATS/Docker orchestration. |
+| `archied` | Resident orchestrator. Owns config, forge credentials, SQLite stores, worktrees, gateways, dashboard, optional NATS/Docker orchestration. |
 | `archie-agent` | Long-running NATS worker. Consumes per-stage `archie.agent.>` requests and full-task `archie.taskrun.>` requests. Not a stdin/stdout worker. |
 | Stage request | One autonomous workflow stage sent on `archie.agent.<task-id>.request`. |
 | Full-task handoff | A whole workflow sent on core NATS subject `archie.taskrun.<task-id>` to a task container. |
 | Work directory | `work_dir`: task clones plus memory and candidate index artifacts. |
-| State database | `db_path`: the NellDB append-log file holding tasks, events, and Nell-backed chat sessions/messages. Not SQLite despite the `.db` examples. |
+| State path prefix | `db_path`: the configured prefix. Task/event state uses `<db_path>-tasks.sqlite`; conversation state uses `<db_path>-conversations.sqlite`. |
 
 ## Apply the operational safety boundary
 
@@ -64,10 +64,10 @@ Both linked binaries may also display Go's `-quickchecks` flag from
 
 | Config shape | What runs | Operational status on 2026-07-28 |
 |---|---|---|
-| `agent.mode = "inprocess"` and no `[nats]` | `archied` polls and claims from NellDB, runs workflow stages and model tools in-process. | **Production-wired candidate.** No process or OS isolation. |
+| `agent.mode = "inprocess"` and no `[nats]` | `archied` polls and claims from SQLite, runs workflow stages and model tools in-process. | **Production-wired candidate.** No process or OS isolation. |
 | `agent.mode = "subprocess"` | `archied` starts `agent.command` per stage and expects one JSON invocation on stdin, one response on stdout. | **Open/broken with default command.** `cmd/archie-agent` is a long-running NATS worker and never calls `agentexec.ServeOne`. |
 | `agent.mode = "nats"`, `[nats]`, containers disabled | `archied` runs the workflow; each autonomous stage goes to a separately started `archie-agent`. | **Implemented but operator-assembled.** Launch and supervise a worker separately. |
-| `agent.mode = "nats"`, `[nats]`, `containers.enabled = true` | `archied` publishes task discovery through JetStream, prepares a worktree, spawns one agent container, sends the whole workflow on `archie.taskrun.<id>`. | **Repository Compose path.** `config.docker.toml` wires it. |
+| `agent.mode = "nats"`, `[nats]`, `containers.enabled = true` | `archied` publishes task discovery through JetStream, prepares a worktree, spawns one agent container, sends the whole workflow on `archie.taskrun.<id>`. | **Host daemon + Compose NATS path.** `deployments/docker-nats-stack.toml` demonstrates it. |
 
 ## Run a local foreground daemon
 
@@ -94,7 +94,7 @@ startup did not complete. The daemon has no HTTP health endpoint.
 
 Stop with `Ctrl-C`. The signal cancels active work, waits for dispatch
 goroutines, stops capability and memory managers, removes Archie-labelled
-containers, closes NATS, and closes the NellDB log.
+containers, closes NATS, and closes the SQLite stores.
 
 ## Run a standalone NATS worker
 
@@ -110,21 +110,20 @@ Do not use this to test subprocess mode.
 | Repository command | Actual scope |
 |---|---|
 | `task docker-build` | Build only the `agent` image from `Dockerfile`. |
-| `task docker-up` | Run `docker compose up -d` for **all** services, including watchtower. |
-| `task docker-logs` | Follow only the `archied` service logs. |
+| `task docker-up` | Start the Compose-managed NATS service. The profiled agent entry is not started. |
+| `task docker-logs` | Follow the NATS service logs. |
 | `task docker-down` | Run `docker compose down`. Does not request volume deletion. |
 
 Prefer the narrow start:
 
 ```bash
-docker compose up -d nats archied
+docker compose up -d nats
 ```
 
 Read-only observations:
 
 ```bash
 docker compose ps
-docker compose logs --tail=200 archied
 docker compose logs --tail=200 nats
 docker compose exec -T nats wget -q -O - http://localhost:8222/healthz
 ```
@@ -134,8 +133,9 @@ curl -fsS http://127.0.0.1:8484/api/summary
 curl -fsS http://127.0.0.1:8484/api/tasks
 ```
 
-The NATS healthcheck must become healthy before Compose starts `archied`.
-Require `archied running` in logs as the daemon readiness gate.
+Wait for the NATS healthcheck, then start `archied` on the host. Require the
+configured host supervisor to report it running and verify the dashboard API
+as the daemon readiness gate.
 
 Stop with:
 
@@ -144,16 +144,17 @@ task docker-down
 ```
 
 Never add `-v` during routine shutdown. The Compose `agent` service is a
-build-only placeholder that clears the image entrypoint and runs `true`.
-Actual task workers are spawned by `archied` through `/var/run/docker.sock`.
+build-profile image definition, not a long-running service. Actual task workers
+are spawned by the host `archied` process through `/var/run/docker.sock`.
 
 ## Locate output and durable state
 
 | Output or state | Current destination |
 |---|---|
-| Daemon logs | JSON on stderr; Docker's configured log driver captures them under Compose. |
+| Daemon logs | JSON on host stderr; the configured host supervisor captures them. |
 | Agent logs | JSON on worker/container stderr. Task containers use `AutoRemove`. |
-| Tasks, events, chat sessions/messages | NellDB append log at `db_path`; default `~/.local/share/archie/archie.db`. |
+| Tasks and events | SQLite database at `<db_path>-tasks.sqlite`; default `~/.local/share/archie/archie.db-tasks.sqlite`. |
+| Chat sessions and messages | SQLite database at `<db_path>-conversations.sqlite`. |
 | Default task worktree | `<work_dir>/<owner>-<repo>/issue-<number>`; default root `~/.local/share/archie/work`. |
 | Identity worktree | `<work_dir>/identity-<identity>/<owner>-<repo>/issue-<number>`. |
 | Container worktree | Host worktree bind-mounted read/write at `/data/worktree`; `task.json` written under `.git/` so the agent's commit cannot sweep it onto the task branch. |
@@ -164,9 +165,9 @@ Actual task workers are spawned by `archied` through `/var/run/docker.sock`.
 | Ecosystem cache volumes | `archie-cache-go`, `archie-cache-node`, etc., mounted below `/data/cache`. No code sets tool cache env vars to those mount paths. |
 | NATS data | Compose declares `nats_data:/data`; NATS command does not set a store directory. |
 
-In Compose, host paths are: `/var/lib/archie/work` for worktrees;
-`/var/lib/archie/db/archie.db` for the container's `/var/lib/archie/archie.db`;
-repository checkout mounted at `/workspace`; host Docker socket mounted into `archied`.
+Compose runs NATS only; `archied` and all configured state paths remain on the
+host. The host daemon talks to the local Docker socket directly and bind-mounts
+each task worktree into the agent container it creates.
 
 ## Understand NATS and container observation
 
@@ -180,7 +181,7 @@ for `archie.task.>` and `archie.agent.>`.
 | Container task | Core NATS request/reply on `archie.taskrun.<id>`. Task container reads `/data/worktree/.git/task.json` and creates dedicated subscription; shared worker uses queue group `archie-taskrun-workers`. |
 | Privileged RPC | Store, forge, and worktree operations return to `archied` over core NATS subjects in `internal/storerpc`, `internal/forgerpc`, and `internal/worktreerpc`. |
 
-Set `containers.network` explicitly. `config.docker.toml` uses
+Set `containers.network` explicitly. `deployments/docker-nats-stack.toml` uses
 `archie-core_default`. Auto-detection inspects the daemon container; on failure,
 workers join Docker's default bridge and cannot resolve `nats`. Initial
 `ErrNoResponders` is retried for 20s at 250ms intervals.
@@ -210,7 +211,7 @@ It injects component versions into labels/metadata but publishes no versioned
 tags. It runs no quality gate before Docker builds.
 
 Before promotion: record running image IDs/digests; config checksums (no
-secrets); task counts via safe GET; establish NellDB backup procedure.
+secrets); task counts via safe GET; establish a SQLite backup procedure.
 
 No complete rollback command exists, no versioned image tags. Restoring a binary
 does not undo forge changes, task transitions, or data-format changes.
@@ -220,4 +221,3 @@ does not undo forge changes, task transitions, or data-format changes.
 Repository guidance (2026-07-28): two instances on `carina` with distinct
 `bot_user` values. No live process list, config, image digest, service manager,
 or deployment was verified. Do not invent SSH, systemd, or service commands.
-

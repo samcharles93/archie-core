@@ -165,17 +165,17 @@ no dead-code analyzer.
 ## Collect test, race, coverage, and runtime evidence
 
 ```sh
-go test ./internal/nell -count=1 -coverprofile=/tmp/archie-nell.cover
-go tool cover -func=/tmp/archie-nell.cover
-go test -race ./internal/nell -count=1
+go test ./internal/store -count=1 -coverprofile=/tmp/archie-store.cover
+go tool cover -func=/tmp/archie-store.cover
+go test -race ./internal/store -count=1
 ```
 
 As of 2026-07-28, the package reported 65.2% statement coverage and passed its
 race run.
 
 ```sh
-docker compose logs archied >"$evidence_dir/archied.log"
 docker compose logs nats >"$evidence_dir/nats.log"
+journalctl --user -u archied >"$evidence_dir/archied.log"
 curl -fsS http://localhost:8222/healthz >"$evidence_dir/nats-health.txt"
 ```
 

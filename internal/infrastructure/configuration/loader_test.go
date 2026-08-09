@@ -40,6 +40,50 @@ func TestLoadDispatchAckReaction(t *testing.T) {
 	}
 }
 
+func TestLoadExpandsConfiguredHomePaths(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join(t.TempDir(), "config.toml")
+	contents := `
+bot_user = "widget"
+work_dir = "~/archie/work"
+db_path = "~/archie/archie.db"
+
+[chat]
+workspace = "~/archie/workspace"
+
+[[repos]]
+owner = "acme"
+name = "app"
+`
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wants := map[string]struct {
+		got  string
+		want string
+	}{
+		"work_dir":       {got: cfg.WorkDir, want: filepath.Join(home, "archie", "work")},
+		"db_path":        {got: cfg.DBPath, want: filepath.Join(home, "archie", "archie.db")},
+		"chat.workspace": {got: cfg.Chat.Workspace, want: filepath.Join(home, "archie", "workspace")},
+	}
+	for name, tt := range wants {
+		t.Run(name, func(t *testing.T) {
+			if tt.got != tt.want {
+				t.Errorf("got %q, want %q", tt.got, tt.want)
+			}
+		})
+	}
+}
+
 func TestResolveSelectsFileFormatsAndDirectories(t *testing.T) {
 	tests := []struct {
 		name     string

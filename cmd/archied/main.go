@@ -48,7 +48,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/memory"
 	"github.com/samcharles93/archie-core/internal/memory/builtin"
-	"github.com/samcharles93/archie-core/internal/nell"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
 	"github.com/samcharles93/archie-core/internal/secret"
@@ -286,6 +285,30 @@ func isForgeDisabled(forgeType string) bool {
 	}
 }
 
+func openProductionTaskStore(ctx context.Context, path string) (store.TaskStore, error) {
+	return store.Open(ctx, path)
+}
+
+func taskDBPath(configuredPath string) string {
+	return configuredPath + "-tasks.sqlite"
+}
+
+func manualRequeueTask(ctx context.Context, st store.TaskStore, taskID int64) error {
+	task, err := st.TaskByID(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if task == nil {
+		return fmt.Errorf("task %d not found", taskID)
+	}
+	switch task.Status {
+	case store.StatusParked, store.StatusWaitingHuman:
+		return st.Requeue(ctx, taskID, task.Status, "")
+	default:
+		return fmt.Errorf("task %d has status %q; only parked or waiting_human tasks can be requeued", taskID, task.Status)
+	}
+}
+
 func run() int {
 	defaultCfg := filepath.Join(configHome(), "archie", "config.toml")
 	cfgPath := flag.String("config", defaultCfg, "path to a TOML/YAML config file or configuration directory")
@@ -293,6 +316,8 @@ func run() int {
 	once := flag.Bool("once", false, "run a single poll+process cycle and exit (systemd timer / testing)")
 	requeue := flag.Int64("requeue", 0, "requeue a parked/waiting task by id (keeps its workflow), then exit unless -once is also set")
 	flag.Parse()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
@@ -337,7 +362,7 @@ func run() int {
 	}
 	forgeClient, token := resolveForge(cfg.Forge, secrets, log)
 
-	st, err := nell.OpenStore(cfg.DBPath, cfg.BotUser)
+	st, err := openProductionTaskStore(ctx, taskDBPath(cfg.DBPath))
 	if err != nil {
 		log.Error("open store", "err", err)
 		return 1
@@ -359,7 +384,7 @@ func run() int {
 	}()
 
 	if *requeue > 0 {
-		if err := st.Requeue(context.Background(), *requeue, "manual", ""); err != nil {
+		if err := manualRequeueTask(ctx, st, *requeue); err != nil {
 			log.Error("requeue failed", "task", *requeue, "err", err)
 			return 1
 		}
@@ -368,9 +393,6 @@ func run() int {
 			return 0
 		}
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	catalog, err := modelcatalog.Load(ctx, modelcatalog.Options{
 		CachePath:  filepath.Join(filepath.Dir(*cfgPath), "models.json"),
@@ -1028,16 +1050,14 @@ type chatTaskWriterAdapter struct {
 	enqueue func(
 		ctx context.Context,
 		owner, repo, title, body, workflow, identity string,
-		issueNumber int,
 	) (*store.Task, error)
 }
 
 func (a chatTaskWriterAdapter) EnqueueChatTask(
 	ctx context.Context,
 	owner, repo, title, body, workflow, identity string,
-	issueNumber int,
 ) (int64, error) {
-	task, err := a.enqueue(ctx, owner, repo, title, body, workflow, identity, issueNumber)
+	task, err := a.enqueue(ctx, owner, repo, title, body, workflow, identity)
 	if err != nil {
 		return 0, err
 	}

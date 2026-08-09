@@ -68,7 +68,7 @@ func (b *turnTestEvents) Publish(event events.Event) {
 }
 
 func TestTurnRunnerPersistsOneTurnAndPublishesCompletion(t *testing.T) {
-	store := NewSessionStoreMemory("test-node")
+	store := NewSessionStoreMemory()
 	router := NewRouter(nil, nil, "telegram")
 	router.Identity = "archie"
 	router.InitSessions(store)
@@ -139,7 +139,7 @@ func TestTurnRunnerPersistsOneTurnAndPublishesCompletion(t *testing.T) {
 }
 
 func TestTurnRunnerGenerationFailureLeavesInboundWithoutReply(t *testing.T) {
-	store := NewSessionStoreMemory("test-node")
+	store := NewSessionStoreMemory()
 	router := NewRouter(nil, nil, "telegram")
 	router.Identity = "archie"
 	router.InitSessions(store)
@@ -179,7 +179,7 @@ func TestTurnRunnerGenerationFailureLeavesInboundWithoutReply(t *testing.T) {
 }
 
 func TestTurnRunnerCancellationPersistsCancelledState(t *testing.T) {
-	store := NewSessionStoreMemory("test-node")
+	store := NewSessionStoreMemory()
 	router := NewRouter(nil, nil, "telegram")
 	router.Identity = "archie"
 	router.InitSessions(store)
@@ -212,7 +212,7 @@ func TestTurnRunnerCancellationPersistsCancelledState(t *testing.T) {
 }
 
 func TestTurnRunnerRecoversTurnOwnedByPreviousProcess(t *testing.T) {
-	store := NewSessionStoreMemory("test-node")
+	store := NewSessionStoreMemory()
 	router := NewRouter(nil, nil, "telegram")
 	router.Identity = "archie"
 	router.InitSessions(store)
@@ -247,7 +247,7 @@ func TestTurnRunnerRecoversTurnOwnedByPreviousProcess(t *testing.T) {
 }
 
 func TestTurnRunnerPreparationFailureLeavesInboundWithoutReply(t *testing.T) {
-	store := NewSessionStoreMemory("test-node")
+	store := NewSessionStoreMemory()
 	router := NewRouter(nil, nil, "telegram")
 	router.Identity = "archie"
 	router.InitSessions(store)
@@ -281,7 +281,7 @@ func TestTurnRunnerPreparationFailureLeavesInboundWithoutReply(t *testing.T) {
 }
 
 func TestTurnRunnerReplaysCompletedDuplicateOutsideRecentWindow(t *testing.T) {
-	store := NewSessionStoreMemory("test-node")
+	store := NewSessionStoreMemory()
 	router := NewRouter(nil, nil, "telegram")
 	router.Identity = "archie"
 	router.InitSessions(store)
@@ -322,7 +322,7 @@ func TestTurnRunnerReplaysCompletedDuplicateOutsideRecentWindow(t *testing.T) {
 }
 
 func TestTurnRunnerReplaysCompletedDuplicateWithoutGenerating(t *testing.T) {
-	store := NewSessionStoreMemory("test-node")
+	store := NewSessionStoreMemory()
 	router := NewRouter(nil, nil, "telegram")
 	router.Identity = "archie"
 	router.InitSessions(store)

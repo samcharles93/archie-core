@@ -26,7 +26,7 @@ See `docs/architecture/organisation.md` for the target structure and
 | `internal/agentexec/`        | Versioned agent-stage protocol, worker, and in-process/subprocess runners |
 | `internal/forge/`            | Forge interface: GitHub and Gitea implementations                         |
 | `internal/worktree/`         | Git operations: clone, branch, commit, push, diff, cleanup               |
-| `internal/store/`            | Task store interface; SQLite, RPC client, and nell adapters satisfy it    |
+| `internal/store/`            | Task store interface and SQLite implementation; RPC clients proxy it      |
 | `internal/events/`           | In-process event bus: publish/subscribe for observability                 |
 | `internal/infrastructure/`   | Config loading, eventbus transport, model catalog                        |
 | `internal/webui/`            | SSE dashboard: live event stream, task status                             |

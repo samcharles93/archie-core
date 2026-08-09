@@ -3,7 +3,10 @@ package gateway
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -19,6 +22,137 @@ func newTestSQLiteStore(t *testing.T) SessionStore {
 }
 
 func sqliteBase() time.Time { return time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC) }
+
+func TestSQLiteSessionStoreRejectsExcessiveSearchQueries(t *testing.T) {
+	st := newTestSQLiteStore(t)
+	tests := []struct {
+		name  string
+		query string
+	}{
+		{name: "bytes", query: strings.Repeat("a", 4097)},
+		{name: "terms", query: strings.Repeat("word ", 65)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := st.SearchMessages(t.Context(), "sess", MessageQuery{Query: tt.query}); err == nil {
+				t.Fatal("SearchMessages accepted an excessive query")
+			}
+		})
+	}
+}
+
+func TestOpenSQLiteSessionStoreAppliesPragmasWithTrailingQueryDelimiter(t *testing.T) {
+	st, err := OpenSQLiteSessionStore(filepath.Join(t.TempDir(), "messages.db") + "?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	sqliteStore, ok := st.(*sqliteSessionStore)
+	if !ok {
+		t.Fatalf("store type = %T, want *sqliteSessionStore", st)
+	}
+	var mode string
+	if err := sqliteStore.db.QueryRowContext(t.Context(), `PRAGMA journal_mode`).Scan(&mode); err != nil {
+		t.Fatal(err)
+	}
+	if mode != "wal" {
+		t.Fatalf("journal_mode = %q, want wal", mode)
+	}
+}
+
+func TestSQLiteSessionStoreThreadIDRoundTrip(t *testing.T) {
+	st := newTestSQLiteStore(t)
+	want := SessionContext{
+		SessionID: "sess-thread",
+		Source: SessionSource{
+			Platform: "telegram", BotUser: "archie", ChannelID: "-100123", ThreadID: "5",
+		},
+		CreatedAt: sqliteBase(), LastActiveAt: sqliteBase(),
+	}
+	if err := st.Save(t.Context(), want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.Get(t.Context(), want.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.Source.ThreadID != want.Source.ThreadID || got.Source.ChannelID != want.Source.ChannelID {
+		t.Fatalf("Get = %+v, want thread %q channel %q", got, want.Source.ThreadID, want.Source.ChannelID)
+	}
+}
+
+func TestMessageIDsAreUnique(t *testing.T) {
+	const count = 10_000
+	seen := make(map[string]struct{}, count)
+	for range count {
+		id := newMessageID("sess", "")
+		if _, exists := seen[id]; exists {
+			t.Fatalf("duplicate message ID %q", id)
+		}
+		seen[id] = struct{}{}
+	}
+}
+
+func TestSQLiteMessageTimestampRoundTrips(t *testing.T) {
+	st := newTestSQLiteStore(t)
+	want := sqliteBase().Add(90*time.Minute + 123*time.Millisecond)
+	if err := st.SaveMessage(t.Context(), "sess", Message{From: "user", Text: "hello", At: want}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.RecentMessages(t.Context(), "sess", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || !got[0].At.Equal(want) {
+		t.Fatalf("RecentMessages = %+v, want timestamp %s", got, want)
+	}
+}
+
+func TestSQLiteMessageTimestampsIncreaseAcrossStoreHandles(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "messages.db")
+	stores := make([]SessionStore, 2)
+	for i := range stores {
+		var err error
+		stores[i], err = OpenSQLiteSessionStore(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func(store SessionStore) { _ = store.Close() }(stores[i])
+	}
+
+	const perStore = 100
+	wantTime := sqliteBase()
+	var wg sync.WaitGroup
+	for storeIndex, st := range stores {
+		for messageIndex := range perStore {
+			wg.Go(func() {
+				err := st.SaveMessage(t.Context(), "sess", Message{
+					MessageID: fmt.Sprintf("%d-%d", storeIndex, messageIndex),
+					From:      "user",
+					Text:      "concurrent",
+					At:        wantTime,
+				})
+				if err != nil {
+					t.Errorf("SaveMessage: %v", err)
+				}
+			})
+		}
+	}
+	wg.Wait()
+
+	messages, err := stores[0].RecentMessages(t.Context(), "sess", perStore*len(stores))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != perStore*len(stores) {
+		t.Fatalf("messages = %d, want %d", len(messages), perStore*len(stores))
+	}
+	for i := 1; i < len(messages); i++ {
+		if !messages[i].At.After(messages[i-1].At) {
+			t.Fatalf("timestamp %d (%s) is not after timestamp %d (%s)", i, messages[i].At, i-1, messages[i-1].At)
+		}
+	}
+}
 
 // TestSQLiteSessionStore_DeleteIsAtomic pins invariant 4: Delete removes the
 // session and its messages together.

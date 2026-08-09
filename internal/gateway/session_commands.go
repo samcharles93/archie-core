@@ -58,13 +58,9 @@ func (t *sessionTracker) resolve(ctx context.Context, platform, botUser, channel
 
 	// Find the most recent session matching this thread and bot.
 	//
-	// Pick by LastActiveAt rather than trusting the store's order. This used
-	// to take the first match, which on the NellDB store is document order --
-	// i.e. by session ID, effectively arbitrary -- so a restart, which always
-	// re-resolves because the cache is in-memory, could drop the operator
-	// back into a session they had left with /new. The two backends also
-	// order GetByChannel differently, and this makes the caller independent
-	// of that.
+	// Pick by LastActiveAt rather than trusting storage order so a restart,
+	// which always re-resolves because the cache is in-memory, cannot drop the
+	// operator back into a session they had left with /new.
 	var best *SessionContext
 	for i, s := range sessions {
 		if s.Source.BotUser != botUser || s.Source.ThreadID != threadID {

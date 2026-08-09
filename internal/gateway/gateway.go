@@ -55,10 +55,9 @@ type Message struct {
 	From string
 	// Text is the raw message text, including any leading slash command.
 	Text string
-	// At is when the message happened, in application time. It is the sole
-	// ordering key for conversation history: NellDB persists it as the
-	// record's _ts field and scans order on it. A zero value is stamped
-	// with the current time at save.
+	// At is when the message happened in application time and is the sole
+	// ordering key for conversation history. A zero value is stamped with the
+	// current time at save.
 	At time.Time
 }
 
