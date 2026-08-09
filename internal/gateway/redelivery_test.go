@@ -3,7 +3,27 @@ package gateway
 import (
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
+
+func TestPriorReplyRecognisesLegacyCanonicalMessageID(t *testing.T) {
+	t.Parallel()
+
+	const (
+		sessionID = "a\x00b"
+		sourceID  = "source"
+		identity  = "archie"
+	)
+	legacyID := uuid.NewSHA1(messageIDNamespace, []byte(sessionID+"\x00"+sourceID)).String()
+	history := []Message{
+		{MessageID: legacyID, SourceID: sourceID, From: "alice", Text: "question"},
+		{From: identity, Text: "answer"},
+	}
+	if got := PriorReply(history, sessionID, sourceID, identity); got != "answer" {
+		t.Fatalf("PriorReply = %q, want legacy reply", got)
+	}
+}
 
 // Making the store idempotent only stopped the duplicate *record*. The chat
 // path saved the inbound message, ignored the fact that nothing changed, and

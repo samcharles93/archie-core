@@ -203,7 +203,10 @@ func TestSQLiteTurnLedgerSurvivesReopen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenSQLiteSessionStore() error = %v", err)
 	}
-	ledger := store.(TurnLedger)
+	ledger, ok := store.(TurnLedger)
+	if !ok {
+		t.Fatalf("store is %T, want TurnLedger", store)
+	}
 	turn := TurnRecord{
 		TurnID:    CanonicalTurnID("session-reopen", "source-reopen"),
 		SessionID: "session-reopen",
@@ -251,5 +254,81 @@ func TestCanonicalTurnIDIsStableAndSessionScoped(t *testing.T) {
 	}
 	if got := CanonicalTurnID("session-1", ""); got != "" {
 		t.Fatalf("empty source ID produced %q, want empty", got)
+	}
+}
+
+func TestCanonicalTurnIDComponentsAreInjectivelyEncoded(t *testing.T) {
+	t.Parallel()
+
+	first := CanonicalTurnID("a\x00b", "c")
+	second := CanonicalTurnID("a", "b\x00c")
+	if first == second {
+		t.Fatalf("ambiguous component pairs shared turn ID %q", first)
+	}
+}
+
+func TestTurnRunnerCanonicalTurnIDPreservesMatchingLegacyRecord(t *testing.T) {
+	t.Parallel()
+
+	store := newTestSQLiteStore(t)
+	ledger, ok := store.(TurnLedger)
+	if !ok {
+		t.Fatalf("store is %T, want TurnLedger", store)
+	}
+	ctx := t.Context()
+	const (
+		sessionID = "a\x00b"
+		sourceID  = "c"
+	)
+	legacyID := legacyCanonicalTurnID(sessionID, sourceID)
+	if _, claim, err := ledger.ClaimTurn(ctx, TurnRecord{
+		TurnID: legacyID, SessionID: sessionID, SourceID: sourceID,
+		Status: TurnStatusAccepted, OwnerID: "old-process",
+	}); err != nil || claim != TurnClaimOwned {
+		t.Fatalf("seed legacy turn = %q, %v", claim, err)
+	}
+
+	runner := NewTurnRunner(TurnRunnerConfig{Ledger: ledger})
+	got, err := runner.canonicalTurnID(ctx, sessionID, sourceID)
+	if err != nil {
+		t.Fatalf("canonicalTurnID: %v", err)
+	}
+	if got != legacyID {
+		t.Fatalf("canonicalTurnID = %q, want matching legacy ID %q", got, legacyID)
+	}
+}
+
+func TestTurnRunnerCanonicalTurnIDRejectsCollidingLegacyRecord(t *testing.T) {
+	t.Parallel()
+
+	store := newTestSQLiteStore(t)
+	ledger, ok := store.(TurnLedger)
+	if !ok {
+		t.Fatalf("store is %T, want TurnLedger", store)
+	}
+	ctx := t.Context()
+	const (
+		firstSession  = "a\x00b"
+		firstSource   = "c"
+		secondSession = "a"
+		secondSource  = "b\x00c"
+	)
+	collidingLegacyID := legacyCanonicalTurnID(firstSession, firstSource)
+	if _, claim, err := ledger.ClaimTurn(ctx, TurnRecord{
+		TurnID: collidingLegacyID, SessionID: firstSession, SourceID: firstSource,
+		Status: TurnStatusAccepted, OwnerID: "first-process",
+	}); err != nil || claim != TurnClaimOwned {
+		t.Fatalf("seed colliding turn = %q, %v", claim, err)
+	}
+
+	runner := NewTurnRunner(TurnRunnerConfig{Ledger: ledger})
+	got, err := runner.canonicalTurnID(ctx, secondSession, secondSource)
+	if err != nil {
+		t.Fatalf("canonicalTurnID: %v", err)
+	}
+	want := CanonicalTurnID(secondSession, secondSource)
+	if got != want || got == collidingLegacyID {
+		t.Fatalf("canonicalTurnID = %q, want isolated ID %q (legacy collision %q)",
+			got, want, collidingLegacyID)
 	}
 }
