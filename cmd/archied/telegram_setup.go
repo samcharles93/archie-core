@@ -18,7 +18,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
-	"github.com/samcharles93/archie-core/internal/nell"
 	"github.com/samcharles93/archie-core/internal/releaseannounce"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -94,7 +93,8 @@ func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), o
 
 	sessionStore := s.SessionStore
 	if sessionStore == nil {
-		sessionStore = makeTelegramSessionStore(s)
+		s.Log.Error("telegram conversation store is not configured")
+		return nil, false
 	}
 	router := buildTelegramRouter(tg, s, sessionStore)
 	return func() {
@@ -155,11 +155,15 @@ func makeTelegramReload(s telegramSetup) func(*telegram.Gateway) error {
 	}
 }
 
-func makeTelegramSessionStore(s telegramSetup) gateway.SessionStore {
-	if nellAdapter, ok := s.St.(*nell.Adapter); ok {
-		return gateway.NewSessionStore(nellAdapter.Store(), s.Cfg.BotUser)
-	}
-	return gateway.NewSessionStoreMemory(s.Cfg.BotUser)
+func makeTelegramSessionStore(cfg config.Config) (gateway.SessionStore, error) {
+	return gateway.OpenSQLiteSessionStore(conversationDBPath(cfg.DBPath))
+}
+
+// conversationDBPath keeps conversation state separate while db_path still
+// names the NellDB task log. The suffix is deterministic so the eventual task
+// store cutover can open db_path as SQLite without moving conversation data.
+func conversationDBPath(taskDBPath string) string {
+	return taskDBPath + "-conversations.sqlite"
 }
 
 func buildTelegramRouter(tg *telegram.Gateway, s telegramSetup, sessionStore gateway.SessionStore) *gateway.Router {
