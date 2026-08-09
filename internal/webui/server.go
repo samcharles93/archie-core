@@ -36,6 +36,12 @@ type Server struct {
 	// dashboard degrades to task data alone when it is nil. Held through a
 	// Holder so a reload swaps the snapshot atomically across handler
 	// goroutines that would otherwise race on the raw shared pointer.
+	//
+	// In production this is the daemon's OWN Holder (main.go wires
+	// web.Cfg = d.Cfg), so Set here publishes to the running daemon. A
+	// config-mutating handler must never call Set directly: it goes
+	// through the same path as reload -- apply to a copy, validate the
+	// materialised config, persist, then Set.
 	Cfg *config.Holder
 
 	// Workflows is the executable registry snapshot supplied by composition.

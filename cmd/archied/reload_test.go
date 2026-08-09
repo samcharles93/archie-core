@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"syscall"
 	"testing"
@@ -146,23 +147,27 @@ func TestChangedNonReloadableFields(t *testing.T) {
 		t.Fatalf("unchanged: got %v, want []", got)
 	}
 
-	// Reloadable-only changes (PollInterval, Repos, Budgets, Dispatch,
-	// DiffCapLines) -> empty.
+	// Reloadable-only changes -> empty.
 	reloadableOnly := base
 	reloadableOnly.PollInterval = config.Duration(60 * time.Second)
 	reloadableOnly.Repos = []config.Repo{{Owner: "x", Name: "z"}}
 	reloadableOnly.Budgets = config.Budgets{MaxSteps: 99}
 	reloadableOnly.Dispatch = config.Dispatch{Trigger: "label"}
 	reloadableOnly.DiffCapLines = 1234
+	reloadableOnly.Models = map[string]string{"builder": "provider/model"}
+	reloadableOnly.Notify = config.Notify{Webhook: "https://notify.example/hook"}
+	reloadableOnly.Label = "archie"
+	reloadableOnly.BotUser = "new-bot"
+	reloadableOnly.Forge = config.Forge{Host: "https://new-forge.example"}
 	if got := changedNonReloadableFields(base, reloadableOnly); len(got) != 0 {
 		t.Fatalf("reloadable-only: got %v, want []", got)
 	}
 
-	// A non-reloadable change is named.
+	// A non-reloadable change is named (Agent builds the startup runner).
 	nonReloadable := base
-	nonReloadable.BotUser = "b"
-	if got := changedNonReloadableFields(base, nonReloadable); len(got) != 1 || got[0] != "BotUser" {
-		t.Fatalf("BotUser change: got %v, want [BotUser]", got)
+	nonReloadable.Agent = config.Agent{Mode: "subprocess"}
+	if got := changedNonReloadableFields(base, nonReloadable); len(got) != 1 || got[0] != "Agent" {
+		t.Fatalf("Agent change: got %v, want [Agent]", got)
 	}
 
 	// Containers sub-field granularity: Image change warns, MaxConcurrency
@@ -191,5 +196,45 @@ func TestChangedNonReloadableFields(t *testing.T) {
 	natsChanged.NATS = config.NATSConfig{URL: "nats://new:4222"}
 	if got := changedNonReloadableFields(base, natsChanged); len(got) != 1 || got[0] != "NATS" {
 		t.Fatalf("NATS change: got %v, want [NATS]", got)
+	}
+
+	// Forge.Host is reloadable but Forge.Type is not: only the host is
+	// carried into TaskContext by ForTask.
+	forgeTypeChanged := base
+	forgeTypeChanged.Forge = config.Forge{Type: "gitea"}
+	if got := changedNonReloadableFields(base, forgeTypeChanged); len(got) != 1 || got[0] != "Forge.Type" {
+		t.Fatalf("Forge.Type change: got %v, want [Forge.Type]", got)
+	}
+}
+
+// TestReloadableFieldsCoverForTaskSnapshot pins the allowlist against
+// the per-dispatch snapshot: every field ForTask carries into a
+// TaskContext is re-read at dispatch, so a reload applies to new tasks.
+// If a field is added to ForTask later, this test fails until the
+// allowlist is updated -- a hand-maintained list that mirrors ForTask
+// otherwise drifts silently into a wrong 'requires a restart' warning.
+func TestReloadableFieldsCoverForTaskSnapshot(t *testing.T) {
+	tt := reflect.TypeFor[config.TaskConfig]()
+	for field := range tt.Fields() {
+		name := field.Name
+		if name == "Forge" {
+			// TaskConfig.Forge is TaskForge{Host}; it maps to the
+			// Config.Forge.Host sub-field allowlist entry.
+			if !reloadableSubFields["Forge"]["Host"] {
+				t.Errorf("ForTask field Forge (Host) is not allowlisted as reloadable")
+			}
+			continue
+		}
+		if !reloadableFields[name] {
+			t.Errorf("ForTask field %s is not allowlisted as reloadable", name)
+		}
+	}
+	// The poll-path fields (Label, BotUser) are not carried by ForTask;
+	// pin them explicitly so a refactor that moves their read site does
+	// not silently drop the allowlist entry.
+	for _, name := range []string{"Label", "BotUser"} {
+		if !reloadableFields[name] {
+			t.Errorf("poll-path field %s is not allowlisted as reloadable", name)
+		}
 	}
 }
