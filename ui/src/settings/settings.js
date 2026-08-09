@@ -3,11 +3,18 @@ import { api } from "../base/api.js";
 import { el, empty, mount, pill } from "../base/dom.js";
 
 /**
- * A read-only view of the config archied is actually running with, grouped
- * by domain and explained in plain language. Backed by GET /api/config,
+ * A view of the config archied is actually running with, grouped by
+ * domain and explained in plain language. Backed by GET /api/config,
  * which is built from an explicit, hand-picked allowlist on the Go side
- * (internal/webui/api_config.go handleConfig) -- secrets never reach this
- * page, so nothing here needs to be hidden or redacted client-side.
+ * (internal/webui/api_config.go handleConfig) -- secrets never reach
+ * this page, so nothing here needs to be hidden or redacted client-side.
+ *
+ * Scalar rows that are not denylisted are editable inline: Edit swaps
+ * the value for an input, Save PATCHes the dotted key to /api/config,
+ * which validates the materialised config before persisting to the
+ * runtime overlay and republishing. Structured values (repositories,
+ * models, providers -- arrays and maps) render read-only; denylisted
+ * keys (db_path, work_dir) render disabled with the server's reason.
  */
 export function settingsPage() {
   const root = el("div");
@@ -35,13 +42,13 @@ export function settingsPage() {
   async function load() {
     try {
       const cfg = await api.config();
-      renderBody(cfg);
+      renderBody(cfg, load);
     } catch (err) {
       mount(body, el("div.card", empty("Cannot reach archied", String(err.message || err))));
     }
   }
 
-  function renderBody(cfg) {
+  function renderBody(cfg, reload) {
     if (!cfg || Object.keys(cfg).length === 0) {
       mount(
         body,
@@ -56,16 +63,17 @@ export function settingsPage() {
       return;
     }
 
+    const ctx = { locked: cfg.locked || {}, onSaved: reload };
     mount(
       body,
-      identityCard(cfg.identity),
+      identityCard(cfg.identity, ctx),
       repositoriesCard(cfg.repositories),
       modelsAndProvidersCard(cfg.models, cfg.providers),
-      budgetsCard(cfg.budgets),
-      agentCard(cfg.agent),
-      storageCard(cfg.storage, cfg.containers),
-      webCard(cfg.web),
-	  provenanceCard(cfg.provenance),
+      budgetsCard(cfg.budgets, ctx),
+      agentCard(cfg.agent, ctx),
+      storageCard(cfg.storage, cfg.containers, ctx),
+      webCard(cfg.web, ctx),
+      provenanceCard(cfg.provenance),
     );
   }
 
@@ -89,23 +97,107 @@ function section(title, sub, ...children) {
   );
 }
 
-function row(label, value) {
-  return el("div.cfg-row", el("span.cfg-label", label), el("span.cfg-value.mono", value ?? "—"));
+// row renders one label/value pair. opts.key makes it editable via a
+// PATCH to /api/config; opts.locked[key] disables it with the server's
+// reason; no key means a plain read-only row (structured values and
+// provenance).
+function row(label, value, opts) {
+  const labelEl = el("span.cfg-label", label);
+  if (!opts?.key) {
+    return el("div.cfg-row", labelEl, el("span.cfg-value.mono", value ?? "—"));
+  }
+  if (opts.locked?.[opts.key]) {
+    return el(
+      "div.cfg-row",
+      labelEl,
+      el(
+        "div.cfg-value-cell",
+        el("span.cfg-value.mono", value ?? "—"),
+        el("span.cfg-locked", opts.locked[opts.key]),
+      ),
+    );
+  }
+  const display = el("span.cfg-value.mono", value ?? "—");
+  const editBtn = el("button.cfg-edit", { title: `Edit ${label}` }, "Edit");
+  const cell = el("div.cfg-value-cell", display, editBtn);
+  const rowEl = el("div.cfg-row", labelEl, cell);
+  editBtn.addEventListener("click", () => startEdit(rowEl, cell, label, opts));
+  return rowEl;
 }
 
-function identityCard(identity) {
+function startEdit(rowEl, cell, label, opts) {
+  const { key, type, raw, onSaved } = opts;
+  const input = type === "bool"
+    ? el(
+        "select.cfg-input",
+        el("option", { value: "true", selected: raw === true }, "true"),
+        el("option", { value: "false", selected: raw === false }, "false"),
+      )
+    : el("input.cfg-input", { type: "text", value: String(raw ?? "") });
+  const save = el("button.cfg-save", { type: "button" }, "Save");
+  const cancel = el("button.cfg-cancel", { type: "button" }, "Cancel");
+  const error = el("span.cfg-error");
+  const editing = el("div.cfg-value-cell.cfg-editing", input, save, cancel, error);
+  rowEl.replaceChild(editing, cell);
+  input.focus();
+
+  const done = () => rowEl.replaceChild(cell, editing);
+  cancel.addEventListener("click", done);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") save.click();
+    if (e.key === "Escape") done();
+  });
+
+  save.addEventListener("click", async () => {
+    const parsed = parseEdit(type, input.value);
+    if (parsed.error) {
+      error.textContent = parsed.error;
+      return;
+    }
+    save.disabled = true;
+    try {
+      await api.configUpdate({ [key]: parsed.value });
+      onSaved?.();
+    } catch (err) {
+      // The server's reason (validation failure, denylisted key) is the
+      // part the operator can act on; show it instead of the status.
+      error.textContent = String(err.message || err);
+      save.disabled = false;
+    }
+  });
+}
+
+// parseEdit converts the input text to the JSON type the config field
+// expects. Durations and strings pass through (the server validates
+// duration syntax); ints are parsed client-side so a typo fails before
+// a round trip.
+function parseEdit(type, text) {
+  switch (type) {
+    case "int": {
+      const n = parseInt(text, 10);
+      if (Number.isNaN(n)) return { error: "Enter a whole number" };
+      return { value: n };
+    }
+    case "bool":
+      return { value: text === "true" };
+    default:
+      return { value: text };
+  }
+}
+
+function identityCard(identity, ctx) {
   if (!identity) return section("Identity", "Who Archie is on the forge.", empty("Not available"));
   return section(
     "Identity",
     "Who Archie is on the forge, and how it addresses commits and comments.",
     el(
       "div.cfg-rows",
-      row("Bot account", identity.bot_user),
-      row("Commit author email", identity.bot_email),
-      row("Pickup label", identity.label),
-      row("Forge type", identity.forge_type),
-      row("Forge host", identity.forge_host),
-      row("Max diff size (lines)", identity.diff_cap_lines),
+      row("Bot account", identity.bot_user, { key: "bot_user", type: "string", raw: identity.bot_user, ...ctx }),
+      row("Commit author email", identity.bot_email, { key: "bot_email", type: "string", raw: identity.bot_email, ...ctx }),
+      row("Pickup label", identity.label, { key: "label", type: "string", raw: identity.label, ...ctx }),
+      row("Forge type", identity.forge_type, { key: "forge.type", type: "string", raw: identity.forge_type, ...ctx }),
+      row("Forge host", identity.forge_host, { key: "forge.host", type: "string", raw: identity.forge_host, ...ctx }),
+      row("Max diff size (lines)", identity.diff_cap_lines || "Unlimited", { key: "diff_cap_lines", type: "int", raw: identity.diff_cap_lines, ...ctx }),
     ),
   );
 }
@@ -198,30 +290,30 @@ function roleLabel(role) {
   return role.charAt(0).toUpperCase() + role.slice(1).replace(/_/g, " ");
 }
 
-function budgetsCard(budgets) {
+function budgetsCard(budgets, ctx) {
   if (!budgets) return section("Budgets", "Limits on every agent stage.", empty("Not available"));
   return section(
     "Budgets",
     "The limits every autonomous stage runs under, so a stuck task cannot run forever.",
     el(
       "div.cfg-rows",
-      row("Max steps", budgets.max_steps || "Unlimited"),
-      row("Max tokens", budgets.max_tokens || "Unlimited"),
-      row("Wall clock", budgets.wall_clock),
-      row("Max gate failures before parking", budgets.gate_max_failures || "Unlimited"),
+      row("Max steps", budgets.max_steps || "Unlimited", { key: "budgets.max_steps", type: "int", raw: budgets.max_steps, ...ctx }),
+      row("Max tokens", budgets.max_tokens || "Unlimited", { key: "budgets.max_tokens", type: "int", raw: budgets.max_tokens, ...ctx }),
+      row("Wall clock", budgets.wall_clock, { key: "budgets.wall_clock", type: "string", raw: budgets.wall_clock, ...ctx }),
+      row("Max gate failures before parking", budgets.gate_max_failures || "Unlimited", { key: "budgets.gate_max_failures", type: "int", raw: budgets.gate_max_failures, ...ctx }),
     ),
   );
 }
 
-function agentCard(agent) {
+function agentCard(agent, ctx) {
   if (!agent) return section("Agent execution", "How Archie runs autonomous stages.", empty("Not available"));
   return section(
     "Agent execution",
     "How archied actually runs a stage of work.",
     el(
       "div.cfg-rows",
-      row("Execution mode", agentModeLabel(agent.mode)),
-      row("Worker command", agent.command),
+      row("Execution mode", agentModeLabel(agent.mode), { key: "agent.mode", type: "string", raw: agent.mode, ...ctx }),
+      row("Worker command", agent.command, { key: "agent.command", type: "string", raw: agent.command, ...ctx }),
       row("Extra environment variables passed through", agent.env?.length ? agent.env.join(", ") : "None"),
     ),
   );
@@ -240,18 +332,18 @@ function agentModeLabel(mode) {
   }
 }
 
-function storageCard(storage, containers) {
+function storageCard(storage, containers, ctx) {
   const children = [];
   if (storage) {
     children.push(
       el("h3.cfg-subhead", "Paths"),
       el(
         "div.cfg-rows",
-        row("Work directory", storage.work_dir),
-        row("State path prefix", storage.db_path),
-        row("Shared skills directory", storage.skills_dir || "None (uses the work directory)"),
-        row("Daemon plugin directory", storage.plugin_dir || "None"),
-        row("Secret engine plugin directory", storage.secret_engine_dir || "None (built-in engines only)"),
+        row("Work directory", storage.work_dir, { key: "work_dir", type: "string", ...ctx }),
+        row("State path prefix", storage.db_path, { key: "db_path", type: "string", ...ctx }),
+        row("Shared skills directory", storage.skills_dir || "None (uses the work directory)", { key: "skills_dir", type: "string", raw: storage.skills_dir, ...ctx }),
+        row("Daemon plugin directory", storage.plugin_dir || "None", { key: "plugin_dir", type: "string", raw: storage.plugin_dir, ...ctx }),
+        row("Secret engine plugin directory", storage.secret_engine_dir || "None (built-in engines only)", { key: "secret_engine_dir", type: "string", raw: storage.secret_engine_dir, ...ctx }),
       ),
     );
   }
@@ -260,13 +352,13 @@ function storageCard(storage, containers) {
       el("h3.cfg-subhead", "Sandboxed containers"),
       el(
         "div.cfg-rows",
-        row("Sandboxing enabled", containers.enabled ? "Yes" : "No"),
-        row("Agent image", containers.image || "Not set"),
-        row("Max concurrent tasks", containers.max_concurrency || "Unlimited"),
-        row("Container max lifetime", containers.max_uptime),
-        row("Persistent volume retention", containers.volume_ttl),
-        row("How images are refreshed", pullPolicyLabel(containers.pull_policy)),
-        row("Docker network", containers.network || "Auto-detected"),
+        row("Sandboxing enabled", containers.enabled ? "Yes" : "No", { key: "containers.enabled", type: "bool", raw: containers.enabled, ...ctx }),
+        row("Agent image", containers.image || "Not set", { key: "containers.image", type: "string", raw: containers.image, ...ctx }),
+        row("Max concurrent tasks", containers.max_concurrency || "Unlimited", { key: "containers.max_concurrency", type: "int", raw: containers.max_concurrency, ...ctx }),
+        row("Container max lifetime", containers.max_uptime, { key: "containers.max_uptime", type: "string", raw: containers.max_uptime, ...ctx }),
+        row("Persistent volume retention", containers.volume_ttl, { key: "containers.volume_ttl", type: "string", raw: containers.volume_ttl, ...ctx }),
+        row("How images are refreshed", pullPolicyLabel(containers.pull_policy), { key: "containers.pull_policy", type: "string", raw: containers.pull_policy, ...ctx }),
+        row("Docker network", containers.network || "Auto-detected", { key: "containers.network", type: "string", raw: containers.network, ...ctx }),
       ),
     );
   }
@@ -279,11 +371,11 @@ function pullPolicyLabel(policy) {
   return "Only pull when the image is missing locally";
 }
 
-function webCard(web) {
+function webCard(web, ctx) {
   if (!web) return section("Dashboard", "This dashboard's own listen address.", empty("Not available"));
   return section(
     "Dashboard",
     "This dashboard's own listen address.",
-    el("div.cfg-rows", row("Listen address", web.listen === "off" ? "Disabled" : web.listen)),
+    el("div.cfg-rows", row("Listen address", web.listen === "off" ? "Disabled" : web.listen, { key: "web.listen", type: "string", raw: web.listen === "off" ? "" : web.listen, ...ctx })),
   );
 }

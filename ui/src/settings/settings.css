@@ -58,3 +58,96 @@
   color: var(--fg);
   text-align: right;
 }
+
+/* Inline edit affordance: value + Edit on the right, input + Save /
+   Cancel while editing, and the server's reason for locked rows. */
+.cfg-value-cell {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.cfg-edit {
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  background: var(--surface-hover);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 2px var(--sp-2);
+  cursor: pointer;
+  flex: none;
+}
+
+.cfg-edit:hover {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+
+.cfg-editing {
+  flex-wrap: wrap;
+}
+
+.cfg-input {
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-1) var(--sp-2);
+  min-width: 0;
+  flex: 1 1 10rem;
+}
+
+.cfg-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.cfg-save,
+.cfg-cancel {
+  font: inherit;
+  font-size: var(--text-xs);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-1) var(--sp-2);
+  cursor: pointer;
+  flex: none;
+}
+
+.cfg-save {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: var(--accent-fg);
+  font-weight: 500;
+}
+
+.cfg-save:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.cfg-cancel {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--fg-muted);
+}
+
+.cfg-cancel:hover {
+  color: var(--fg);
+}
+
+.cfg-locked {
+  font-size: var(--text-xs);
+  color: var(--fg-subtle);
+  font-style: italic;
+}
+
+.cfg-error {
+  font-size: var(--text-xs);
+  color: var(--danger);
+  flex-basis: 100%;
+  text-align: right;
+}
