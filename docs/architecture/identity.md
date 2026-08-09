@@ -2,7 +2,7 @@
 
 **Status:** Approved foundation; lifecycle details are deferred  
 **Date:** 2026-07-28  
-**Beads issue:** `archie-core-5d7`
+**Tracking issue:** [#73](https://github.com/samcharles93/archie-core/issues/73)
 
 ## Purpose
 
@@ -291,3 +291,28 @@ Focused tests verify that:
 The focused identity tests pass. Broader daemon and NATS suites could not open
 embedded listener ports in the current sandbox; their failures occurred before
 identity behaviour executed.
+
+## Three-layer identity model
+
+Agreed 2026-07-30; the frame for SOUL
+([#68](https://github.com/samcharles93/archie-core/issues/68)) and the curator
+([#435](https://github.com/samcharles93/archie-core/issues/435)).
+Recovered 2026-08-09 from the pre-migration issue tracker.
+
+**Layer 1 — invariants.** Instruction precedence, core rules, and the `<tools>`
+and `<env>` blocks live in `internal/gateway/templates/archie.md.tpl` and are
+unreachable at runtime by anyone.
+
+**Layer 2 — SOUL.** User-authored identity: agent name, register, warmth.
+Editable without a rebuild.
+
+**Layer 3 — representation.** Curator-derived knowledge about the user. It may
+only **propose** changes to SOUL and never apply them. If derived conclusions can
+silently rewrite tone, personality drifts and the user loses the control SOUL
+exists to give them. A proposal queue also makes the visibility requirement fall
+out for free, since pending conclusions are inherently reviewable.
+
+**Why SOUL comes first:** tone currently lives in Go string constants
+(`DefaultPersonas` in `internal/gateway/persona.go`), so fixing a rude reply on
+2026-07-29 required editing Go and rebuilding. SOUL is small, fixes a real
+defect, and defines the boundary the curator must respect.

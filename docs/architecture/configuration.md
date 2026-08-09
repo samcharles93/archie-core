@@ -2,7 +2,7 @@
 
 **Status:** Approved; existing-type assignment is ongoing  
 **Date:** 2026-07-28  
-**Beads issue:** `archie-core-5d7`
+**Tracking issue:** [#73](https://github.com/samcharles93/archie-core/issues/73)
 
 ## Ownership
 
@@ -290,3 +290,57 @@ The configuration rearchitecture is complete only when:
   mutability class, owner, and deprecation;
 - architecture tests prevent a new central runtime configuration model, direct
   live-setting mutation, and incorrectly fixed behavioural values.
+
+## Startup policy: missing credential degrades, invalid config is fatal
+
+Decided 2026-07-30. Recovered 2026-08-09 from the pre-migration issue tracker.
+
+A missing **credential** disables a capability. Only an **invalid config** stops
+the daemon. "Forge is a feature, not a requirement."
+
+Before `518a1a0`, an unresolvable forge token did `return 1` in
+`cmd/archied/main.go`, so a chat-only user who never configured GitHub got no
+chat, no gateway, nothing — and under a systemd unit with `Restart=on-failure`
+and no start limit it crash-looped every five seconds with the error scrolling
+past unread. Forge construction now lives in `resolveForge`, shared by the
+primary forge and every configured identity, and degrades to `forge.NewNoop`
+with a warning. The identity path had the same defect and was worse: one
+identity's missing credential killed all the others.
+
+Malformed configuration still fails fast in `configuration.Validate`, well
+before this point. That distinction is the whole design.
+
+Apply the same reasoning to any future capability credential, LLM keys
+especially: start, report the capability as unavailable, let the operator see it.
+Guarded by `TestResolveForgeDegradesInsteadOfFailing`.
+
+**Known consequence, tracked separately:** `worktree.Manager` still receives the
+empty token, so pushes fail late rather than at startup.
+
+## Config generation belongs to `archied setup`, not `install.sh`
+
+Decided 2026-07-30 ([#368](https://github.com/samcharles93/archie-core/issues/368)).
+Recovered 2026-08-09 from the pre-migration issue tracker.
+
+`install.sh` must stop generating `config.toml`; `archied setup` owns it. The
+installer hand-rolling TOML has already drifted from the schema once: the
+generated-config branch hardcoded `key = ARCHIE_GITHUB_TOKEN` and
+`host = ${GITEA_URL}` regardless of the answers given, so choosing Gitea produced
+a config naming a token the installer never wrote (archied then exited 1), and
+choosing GitHub pointed `host` at `gitea.example.com`. `61a5b35` patched this
+with a `forge_block` shell helper shared by both config paths — that helper is a
+**workaround**, deleted by
+[#72](https://github.com/samcharles93/archie-core/issues/72). The durable fix is
+that the code writing the config is the code that reads it.
+
+Why Go and not Python: the installer must run where nothing is installed yet, and
+`python3` with `tomllib` means 3.11+, which is not safe on LTS distros. `archied`
+is already being built two steps earlier.
+
+**Key constraint for the port:** `BurntSushi/toml` does **not** survive a
+decode/encode round trip with comments intact, and `config.example.toml` carries
+documentation users are meant to hand-edit. Decide the write strategy
+([#412](https://github.com/samcharles93/archie-core/issues/412)) before writing
+any prompting code. Do not port a separate `config.yaml`/`auth.yaml` secret
+split — Archie already has `secret.SecretRef{engine,key}`, so setup writes the
+reference to TOML and the value to the secret engine.

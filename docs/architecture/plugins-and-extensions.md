@@ -2,7 +2,7 @@
 
 **Status:** Approved foundation  
 **Date:** 2026-07-28  
-**Beads issue:** `archie-core-5d7`
+**Tracking issue:** [#73](https://github.com/samcharles93/archie-core/issues/73)
 
 ## Plugin framework
 
@@ -43,7 +43,13 @@ network services without a concrete security or operational reason.
 
 ## Curator surprisal sampling (deferred)
 
-The curator engine family (epic `archie-core-yp9`) selects which memories
+**Deferred by decision, 2026-08-05** — Archie has no embedding capability, and
+wave 1 ships the strategy seam without one. Pick the deferred work up in order:
+[#436](https://github.com/samcharles93/archie-core/issues/436) first, then
+[#437](https://github.com/samcharles93/archie-core/issues/437) which depends on it
+and on [#407](https://github.com/samcharles93/archie-core/issues/407).
+
+The curator engine family (epic [#435](https://github.com/samcharles93/archie-core/issues/435)) selects which memories
 deserve agentic attention via surprisal-based sampling: score memories by how
 surprising they are and spend the sampled reasoner's agentic budget on the
 most surprising items. Wave 1 of the epic ships the `Sampler` strategy seam in
@@ -53,8 +59,8 @@ extension point and is gated behind an embedding capability Archie does not
 yet have — **any surprisal-style sampling is gated behind adding one**.
 
 Requirements for the deferred work, so it can be picked up without
-re-deriving the design (tracked as `archie-core-yp9.1` embeddings capability,
-then `archie-core-yp9.2` surprisal strategies):
+re-deriving the design (tracked as [#436](https://github.com/samcharles93/archie-core/issues/436) embeddings capability,
+then [#437](https://github.com/samcharles93/archie-core/issues/437) surprisal strategies):
 
 - A `Sampler` implementation behind the same interface as the cheap
   strategies; selection deterministic given fixed inputs.
