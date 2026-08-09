@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -80,9 +81,19 @@ func assistantMessageIDForTurn(turnID string) string {
 	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("archie-assistant-turn:\x00"+turnID)).String()
 }
 
+var turnIDNamespaceV2 = uuid.MustParse("59ca315e-3b2d-4a2f-bd46-93e0ebf30788")
+
 func CanonicalTurnID(sessionID, sourceID string) string {
 	if sourceID == "" {
 		return ""
 	}
+	legacy := legacyCanonicalTurnID(sessionID, sourceID)
+	if strings.ContainsRune(sessionID, '\x00') || strings.ContainsRune(sourceID, '\x00') {
+		return uuid.NewSHA1(turnIDNamespaceV2, encodeCanonicalPair(sessionID, sourceID)).String()
+	}
+	return legacy
+}
+
+func legacyCanonicalTurnID(sessionID, sourceID string) string {
 	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("archie-turn:\x00"+sessionID+"\x00"+sourceID)).String()
 }
