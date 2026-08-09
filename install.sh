@@ -9,7 +9,8 @@
 #     - persona/
 #     - skills/
 #   Data:   ${XDG_DATA_HOME:-~/.local/share}/archie
-#     - archie.db
+#     - archie.db-tasks.sqlite
+#     - archie.db-conversations.sqlite
 #     - work/
 #     - memories/
 #     - tasks/

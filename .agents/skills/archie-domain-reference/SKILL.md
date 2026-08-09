@@ -1,6 +1,6 @@
 ---
 name: archie-domain-reference
-description: "Use when naming, designing, reviewing, documenting, tracing, or migrating Archie concepts such as Agent, Identity, user, Message, Conversation, work intake, WorkflowExecution, plugin engines, channels, events, policy, forge, worktrees, or gates; when current task/gateway/store vocabulary conflicts with the approved architecture; or when a feature risks crossing domain ownership boundaries. Provides project-specific current-to-target mappings, ownership rules, lifecycle language, and glossary checks. Do not use for NellDB API mechanics, general code tracing, config enumeration, debugging, or operations."
+description: "Use when naming, designing, reviewing, documenting, tracing, or migrating Archie concepts such as Agent, Identity, user, Message, Conversation, work intake, WorkflowExecution, plugin engines, channels, events, policy, forge, worktrees, or gates; when current task/gateway/store vocabulary conflicts with the approved architecture; or when a feature risks crossing domain ownership boundaries. Provides project-specific current-to-target mappings, ownership rules, lifecycle language, and glossary checks. Do not use for database API mechanics, general code tracing, config enumeration, debugging, or operations."
 ---
 
 # Archie Domain Reference

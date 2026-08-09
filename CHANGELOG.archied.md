@@ -30,8 +30,8 @@
 - fix(gateway): resolve the most recently active session, not an arbitrary one
 - fix(gateway): give branch-inherited messages their own identity
 - fix(gateway): make both backends agree on newest-first
-- fix(nell): honour the transition guard on the backend that ships
-- fix(nell): move ID counters off the SDK-reserved meta: prefix
+- fix(store): honour the transition guard in production persistence
+- fix(store): move ID counters away from the reserved metadata namespace
 - fix(store): surface task timestamps and tag the summary structs
 - fix(telegram): pause the update loop when rate limited
 - fix(memory): fail startup on an unusable memory directory
@@ -114,7 +114,7 @@
 - feat: add deny-by-default Telegram sender authorization and native command-menu publication
 - feat: connect Desktop Commander through Archie's managed MCP client so chat can use workspace file and process tools
 - feat: add multi-identity daemon configuration, persona routing, an email channel, and webhook platform support
-- feat: add NellDB-backed task, session, message, and memory persistence
+- feat: add durable task, session, message, and memory persistence
 - feat: add memory synchronization, prefetch, context scrubbing, threat scanning, and built-in memory tools
 - feat: add tool guardrails, classification, budgets, availability filtering, and disclosure controls
 - feat: add feature-based YAML configuration with `conf.d` overlay loading

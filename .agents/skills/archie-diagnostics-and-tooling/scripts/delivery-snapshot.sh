@@ -61,7 +61,7 @@ scan_literal gitea_container_publish gitea-workflows 'docker build|docker push' 
 
 scan_literal production_load_overlay composition-root 'config\.LoadOverlay\(' cmd/archied/main.go
 scan_literal production_load_dir composition-root 'config\.LoadDir\(' cmd/archied/main.go
-scan_literal production_nell_store composition-root 'nell\.OpenStore\(' cmd/archied/main.go
+scan_literal production_sqlite_store composition-root 'store\.Open\(' cmd/archied/main.go
 scan_literal production_daemon composition-root '&daemon\.Daemon\{' cmd/archied/main.go
 scan_literal production_rpc_servers composition-root 'registerTaskRPCServers\(' cmd/archied/main.go
 

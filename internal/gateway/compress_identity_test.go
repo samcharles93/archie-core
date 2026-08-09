@@ -7,17 +7,9 @@ import (
 	"testing"
 )
 
-// compressBackends is the pair every compression test runs against. The two
-// stores must agree here for the same reason the conformance suite exists:
-// identity is a store-level contract, and /compress is the one production
-// caller that rewrites history wholesale.
+// compressBackends provides the persistent store used by compression tests.
 func compressBackends() map[string]func(t *testing.T) SessionStore {
 	return map[string]func(t *testing.T) SessionStore{
-		"nell": func(t *testing.T) SessionStore {
-			s := NewSessionStoreMemory("test-node")
-			t.Cleanup(func() { _ = s.Close() })
-			return s
-		},
 		"sqlite": func(t *testing.T) SessionStore {
 			s, err := NewSQLiteSessionStoreMemory()
 			if err != nil {

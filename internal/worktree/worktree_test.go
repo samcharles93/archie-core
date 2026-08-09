@@ -217,7 +217,7 @@ func TestPrepareIsIdempotent(t *testing.T) {
 
 // An interrupted clone leaves a directory with no sentinel. Prepare must
 // discard it rather than trying to reuse a half-built worktree.
-func TestPrepareDiscardsUnsentinelledDirectory(t *testing.T) {
+func TestPrepareDiscardsDirectoryWithoutSentinel(t *testing.T) {
 	ctx := context.Background()
 	host := newLocalRemote(t, "acme", "todo")
 	m := newManager(t, host)

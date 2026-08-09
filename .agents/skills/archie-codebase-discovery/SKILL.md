@@ -66,10 +66,10 @@ Start at these verified anchors:
 | Sandboxed worker | `cmd/archie-agent/main.go`, `cmd/archie-agent/taskrun.go` |
 | Task orchestration | `internal/daemon/daemon.go`, `internal/workflow/` |
 | Task contracts and SQLite | `internal/store/interface.go`, `internal/store/` |
-| Production task persistence | `internal/nell/adapter.go`; `nell.OpenStore` in `cmd/archied/main.go` |
+| Production task persistence | `internal/store/`; `store.Open` in `cmd/archied/main.go` |
 | RPC split | `internal/{nats,taskrun,natsrpc,storerpc,forgerpc,worktreerpc}/` |
 | Chat and channels | `internal/gateway/`, `internal/channels/` |
-| Configuration | `internal/config/`, `config.example.toml`, `config.docker.toml` |
+| Configuration | `internal/config/`, `internal/infrastructure/configuration/`, `config.example.toml`, `deployments/*.toml` |
 | Target map | `docs/prds/01-project-management.md` and linked `docs/architecture/*.md` |
 
 ## Use syntax, type, and call evidence
@@ -181,18 +181,14 @@ test-only.
 6. Read contract/architecture tests.
 7. Confirm deploy inputs in Compose and CI.
 
-### Trace NellDB without guessing
+### Trace SQLite persistence
 
-Treat `internal/store` as application contract, `internal/nell` as one adapter.
+Treat `internal/store` as the application contract and production adapter.
 
 ```sh
-go doc github.com/samcharles93/NellDB.Store
 gopls implementation internal/store/interface.go:16:6
-rg -n 'sdk\.New|\.Get\(|\.Put\(|AllDocs|taskKey|docToTask|taskFields' internal/nell
+rg -n 'CREATE TABLE|CREATE INDEX|QueryContext|ExecContext|BeginTx' internal/store
 ```
-
-As of 2026-07-28, `Adapter.Transition` neither locks nor checks `from`. NellDB's
-`_id`/`_rev`, HLC, and conflict semantics come from the dependency API.
 
 ## Reject false confidence
 

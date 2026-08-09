@@ -84,7 +84,7 @@ func TestAgentStageBuildsExecutionRequestAndAppliesResult(t *testing.T) {
 }
 
 func TestAgentStagePersistsReturnedNotes(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "archie.db"))
+	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "archie.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,7 +320,7 @@ func TestReviewResultBlocksOnResultWhenRejected(t *testing.T) {
 }
 
 func TestRunLeavesInterruptedTaskForCrashRecovery(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "archie.db"))
+	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "archie.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

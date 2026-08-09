@@ -11,7 +11,7 @@ import (
 )
 
 func TestTelegramConversationStoreUsesFreshSQLiteWithoutReadingTaskLog(t *testing.T) {
-	taskLogPath := filepath.Join(t.TempDir(), "tasks.nell")
+	taskLogPath := filepath.Join(t.TempDir(), "tasks.db")
 	taskLog := []byte("not a SQLite database")
 	if err := os.WriteFile(taskLogPath, taskLog, 0o600); err != nil {
 		t.Fatalf("write task log fixture: %v", err)

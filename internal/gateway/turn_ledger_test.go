@@ -6,22 +6,13 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/samcharles93/NellDB/logstore"
 )
 
-func TestTurnLedgerClaimLifecycleIsIdempotentAcrossBackends(t *testing.T) {
+func TestTurnLedgerClaimLifecycleIsIdempotent(t *testing.T) {
 	tests := []struct {
 		name string
 		open func(t *testing.T) (TurnLedger, func())
 	}{
-		{
-			name: "nell memory",
-			open: func(t *testing.T) (TurnLedger, func()) {
-				store := NewSessionStoreMemory("test-node")
-				return store.(TurnLedger), func() { _ = store.Close() }
-			},
-		},
 		{
 			name: "sqlite memory",
 			open: func(t *testing.T) (TurnLedger, func()) {
@@ -114,13 +105,6 @@ func TestTurnLedgerReclaimsAcrossProcessOwnersAndRejectsStaleWrites(t *testing.T
 		open func(t *testing.T) (TurnLedger, func())
 	}{
 		{
-			name: "nell memory",
-			open: func(t *testing.T) (TurnLedger, func()) {
-				store := NewSessionStoreMemory("test-node")
-				return store.(TurnLedger), func() { _ = store.Close() }
-			},
-		},
-		{
 			name: "sqlite memory",
 			open: func(t *testing.T) (TurnLedger, func()) {
 				store, err := NewSQLiteSessionStoreMemory()
@@ -179,10 +163,6 @@ func TestSessionDeleteRemovesTurns(t *testing.T) {
 		open func(t *testing.T) SessionStore
 	}{
 		{
-			name: "nell memory",
-			open: func(t *testing.T) SessionStore { return NewSessionStoreMemory("test-node") },
-		},
-		{
 			name: "sqlite memory",
 			open: func(t *testing.T) SessionStore {
 				store, err := NewSQLiteSessionStoreMemory()
@@ -213,46 +193,6 @@ func TestSessionDeleteRemovesTurns(t *testing.T) {
 				t.Fatalf("GetTurn() after delete = ok %v, err %v; want absent", ok, err)
 			}
 		})
-	}
-}
-
-func TestNellTurnLedgerSurvivesLogReopen(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "sessions.log")
-	ctx := context.Background()
-	open := func() SessionStore {
-		log, err := logstore.OpenLog(path, "test-node")
-		if err != nil {
-			t.Fatalf("OpenLog() error = %v", err)
-		}
-		return NewSessionStore(log, "test-node")
-	}
-	store := open()
-	turn := TurnRecord{
-		TurnID:    CanonicalTurnID("session-nell-reopen", "source-nell-reopen"),
-		SessionID: "session-nell-reopen", SourceID: "source-nell-reopen",
-		OwnerID: "process-a", Status: TurnStatusAccepted,
-	}
-	claimed, claim, err := store.(TurnLedger).ClaimTurn(ctx, turn)
-	if err != nil || claim != TurnClaimOwned {
-		t.Fatalf("ClaimTurn() = %#v, %q, %v", claimed, claim, err)
-	}
-	claimed.Status = TurnStatusCompleted
-	claimed.ResponseText = "durable NellDB response"
-	if err := store.(TurnLedger).SaveTurn(ctx, claimed); err != nil {
-		t.Fatalf("SaveTurn() error = %v", err)
-	}
-	if err := store.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
-
-	reopened := open()
-	defer func() { _ = reopened.Close() }()
-	got, ok, err := reopened.(TurnLedger).GetTurn(ctx, turn.TurnID)
-	if err != nil || !ok {
-		t.Fatalf("GetTurn() after reopen = %#v, %v, %v", got, ok, err)
-	}
-	if got.Status != TurnStatusCompleted || got.ResponseText != "durable NellDB response" || got.OwnerID != "process-a" {
-		t.Fatalf("reopened turn = %#v, want completed durable record", got)
 	}
 }
 

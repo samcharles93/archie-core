@@ -102,5 +102,6 @@ docker compose pull agent
 ```
 
 **Paths.** Under compose the daemon saw bind-mounted paths; on the host it sees
-the real ones. In particular `db_path` must point at the database's actual
-location, or the daemon starts against an empty one.
+the real ones. In particular `db_path` is the state-path prefix from which the
+daemon derives independent task and conversation SQLite files; it must point
+at the intended host location, or the daemon starts against empty files.

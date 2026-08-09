@@ -31,7 +31,6 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/hashicorp/go-version v1.9.0 // indirect
 	github.com/kevinburke/ssh_config v1.6.0 // indirect
 	github.com/klauspost/compress v1.19.1 // indirect
@@ -73,7 +72,6 @@ require (
 	github.com/moby/moby/client v0.5.1
 	github.com/nats-io/nats-server/v2 v2.14.4
 	github.com/nats-io/nats.go v1.52.0
-	github.com/samcharles93/NellDB v0.3.1
 	github.com/samcharles93/ai-sdk v0.1.20
 	github.com/traefik/yaegi v0.16.1
 	golang.org/x/net v0.57.0

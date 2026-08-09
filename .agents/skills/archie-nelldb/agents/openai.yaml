@@ -1,4 +1,0 @@
-interface:
-  display_name: "Archie NellDB"
-  short_description: "Maintain Archie persistence on NellDB safely"
-  default_prompt: "Use $archie-nelldb to inspect or change Archie persistence without importing SQLite assumptions."

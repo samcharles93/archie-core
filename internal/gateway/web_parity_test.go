@@ -34,7 +34,7 @@ func TestSharedRouterWebParityCommands(t *testing.T) {
 	dangerous := &parityDangerousStub{}
 	r.Dangerous = dangerous
 	r.Personas = NewPersonaRegistry(DefaultPersonas())
-	sessions := NewSessionStoreMemory("test")
+	sessions := NewSessionStoreMemory()
 	t.Cleanup(func() { _ = sessions.Close() })
 	r.InitSessions(sessions)
 	msg := Message{ChannelID: "browser", From: "web"}

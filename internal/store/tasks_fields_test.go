@@ -28,7 +28,7 @@ func TestTasksSelectsFieldsTheUIReads(t *testing.T) {
 	}
 	forgeID := forgeTaskRow.ID
 
-	chatTaskRow, err := s.EnqueueChatTask(ctx, "o", "r", "chat task", "body", "", "", 900001)
+	chatTaskRow, err := s.EnqueueChatTask(ctx, "o", "r", "chat task", "body", "", "")
 	if err != nil {
 		t.Fatalf("EnqueueChatTask: %v", err)
 	}

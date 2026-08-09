@@ -134,7 +134,6 @@ If current behavior differs from chronicle, update the packet.
 | Memory scrubber `Flush` leak, 2026-07-26 | Stream ending inside `...secret</mem` emits buffered hidden memory to visible response. | Pending bytes did not retain whether captured inside `<memory>` block. | `b4aaaf0`. **Settled.** Test every streaming state at EOF. Flush is security boundary. |
 | Linter autofix shadowing, 2026-07-28 | 24-file "style" pass stops compiling. | `gocritic` changed `ctx, cancel = context.WithTimeout(...)` to `:=` inside conditional, shadowing context. | `9b44bac`. **Settled.** Treat autofix output as authored behavior. |
 | All eleven `nilerr` findings semantic false positives, 2026-07-28 | Mechanical "fixes" would return Go errors while tests pass, breaking model correction, chat, NATS envelopes, clean shutdown, indexing. | Linter cannot see failures carried as text, envelopes, shutdown signals, or skipped entries. | `86cfc19`. **Settled.** Review semantic channels one site at a time. |
-| NellDB local replace broke delivery, 2026-07-26 to 2026-07-27 | Every CI Docker build fails `go mod download` on `/work/apps/nell-engine`. | Local `replace` paths don't exist in CI/build contexts. | `07fb291` removes replace. **Settled.** Never commit machine-local `replace` directives. |
 | Broad checkpoint hid unresolved merge conflict, 2026-07-27 | Literal conflict marker reached committed source. | Unrelated surfaces combined without whole-diff conflict scan. | `4429ae5`. **Settled.** Keep commits cohesive. |
 
 ### Preserve the eight tool-registry review lessons

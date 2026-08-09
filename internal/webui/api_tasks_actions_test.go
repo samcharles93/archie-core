@@ -205,7 +205,7 @@ func TestRejectDoesNotCloseAChatTaskIssue(t *testing.T) {
 	srv.Issues = closer
 	srv.Cfg = &config.Config{MaxRetries: 3}
 
-	task, err := srv.Store.EnqueueChatTask(ctx, "acme", "widget", "chat task", "", "", "", 900001)
+	task, err := srv.Store.EnqueueChatTask(ctx, "acme", "widget", "chat task", "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

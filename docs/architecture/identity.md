@@ -268,7 +268,7 @@ Focused tests verify that:
   configured identity name;
 - cross-identity repository profiles do not leak;
 - chat task creation propagates the selected identity;
-- task and NellDB persistence retain the identity string;
+- task persistence retains the identity string;
 - chat task control rejects a different identity string.
 
 ## Current hazards

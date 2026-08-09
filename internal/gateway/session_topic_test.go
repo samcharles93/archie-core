@@ -28,7 +28,7 @@ func TestTopicOffDoesNotPoisonTheCache(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			store := NewSessionStoreMemory("test-node")
+			store := NewSessionStoreMemory()
 			t.Cleanup(func() { _ = store.Close() })
 
 			r := NewRouter(nil, nil, "telegram")
@@ -76,7 +76,7 @@ func TestTopicOffDoesNotPoisonTheCache(t *testing.T) {
 // An empty session ID is never a meaningful value to cache. Rejecting it at
 // the setter means no caller can poison the map, whatever it computes.
 func TestSetActiveRejectsAnEmptySession(t *testing.T) {
-	store := NewSessionStoreMemory("test-node")
+	store := NewSessionStoreMemory()
 	t.Cleanup(func() { _ = store.Close() })
 	tr := newSessionTracker(store)
 
@@ -109,7 +109,7 @@ func TestSetActiveRejectsAnEmptySession(t *testing.T) {
 // the email path runs in a goroutine with no recover, so one message took the
 // daemon down.
 func TestBranchWithNoActiveSessionDoesNotPanic(t *testing.T) {
-	store := NewSessionStoreMemory("test-node")
+	store := NewSessionStoreMemory()
 	t.Cleanup(func() { _ = store.Close() })
 
 	r := NewRouter(nil, nil, "email")

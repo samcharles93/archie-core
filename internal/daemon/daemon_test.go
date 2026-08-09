@@ -1085,7 +1085,7 @@ func TestReconcilePRsSkipsChatTasks(t *testing.T) {
 	d, s, fg := testDaemon(t, 3, 0)
 	ctx := context.Background()
 
-	task, err := s.EnqueueChatTask(ctx, "acme", "widget", "chat task", "", "", "", 900001)
+	task, err := s.EnqueueChatTask(ctx, "acme", "widget", "chat task", "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

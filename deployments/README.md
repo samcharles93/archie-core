@@ -14,7 +14,7 @@ This directory contains configuration templates and guides for different deploym
   Self-hosted deployment running local LLM models via Ollama (e.g., `llama3`, `qwen2.5`) with optional standalone (forge-disabled) operation.
 
 * **[`docker-nats-stack.toml`](./docker-nats-stack.toml)**:
-  The repository's `docker-compose.yml` stack — `archied` orchestrating sandboxed `archie-agent` containers over NATS. Copy to `~/.config/archie/config.toml`; the compose file mounts that path and passes it as the only `-config`.
+  Host-run `archied` orchestrating sandboxed `archie-agent` containers over the repository's Compose-managed NATS service. Copy to `~/.config/archie/config.toml`, start NATS with Compose, then start `archied` on the host.
 
 * **[`systemd-user-service.md`](./systemd-user-service.md)**:
   Operational runbook for running `archied` as a persistent 24/7 background service via systemd user units and `loginctl enable-linger`.

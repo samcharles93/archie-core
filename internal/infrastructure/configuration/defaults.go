@@ -109,6 +109,9 @@ func DefaultWorkDir() string {
 // section.
 func (l *Loader) applyGeneralDefaults(cfg *config.Config) {
 	cfg.SecretEngineDir = expandHomePath(cfg.SecretEngineDir)
+	cfg.WorkDir = expandHomePath(cfg.WorkDir)
+	cfg.DBPath = expandHomePath(cfg.DBPath)
+	cfg.Chat.Workspace = expandHomePath(cfg.Chat.Workspace)
 	if cfg.WorkDir == "" {
 		cfg.WorkDir = filepath.Join(l.dataHome(), "archie", "work")
 	}

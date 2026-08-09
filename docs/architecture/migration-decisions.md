@@ -88,7 +88,7 @@ decide:
 - how Agent, user, channel, Conversation, and branch ownership are added;
 - how Archie's parallel gateway session implementation is replaced;
 - how canonical Messages become immutable persisted records;
-- how existing NellDB sessions and messages are migrated;
+- how existing sessions and messages are migrated;
 - how outbound delivery, retry, acknowledgement, deduplication, and failure
   semantics are represented;
 - how current Telegram, email, webhook, forge, and Jira integrations migrate to
