@@ -1,6 +1,6 @@
 # Task Observability
 
-**Status:** Approved, not yet implemented
+**Status:** Implemented
 **Date:** 2026-08-09
 
 ## Problem
