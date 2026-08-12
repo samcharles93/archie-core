@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -145,16 +146,20 @@ func (s *Server) requireToken(h http.Handler) http.Handler {
 // this path is echoed back from the incoming request URL, an attacker can
 // choose it, so it must never reach http.Redirect verbatim.
 func sameOriginPath(path, rawQuery string) string {
+	// URL.Path has already been decoded by net/http. Treat backslashes as
+	// separators before checking for a protocol-relative path, because browsers
+	// do the same when interpreting a redirect Location.
+	path = strings.ReplaceAll(path, "\\", "/")
 	for strings.HasPrefix(path, "//") {
 		path = path[1:]
 	}
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
-	if rawQuery != "" {
-		return path + "?" + rawQuery
-	}
-	return path
+
+	// Re-encoding through URL.Path preserves decoded path characters such as
+	// '%', '?' and '#' as path data instead of reparsing them as URL syntax.
+	return (&url.URL{Path: path, RawQuery: rawQuery}).RequestURI()
 }
 
 func tokenEqual(got, want string) bool {
