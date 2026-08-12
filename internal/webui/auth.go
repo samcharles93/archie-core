@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,7 +139,8 @@ func (s *Server) requireToken(h http.Handler) http.Handler {
 }
 
 // sameOriginPath rebuilds a redirect target from a request path and raw
-// query, collapsing any leading "//" down to a single slash first.
+// query, collapsing any leading "//" down to a single slash first, and
+// validating that the resulting target is a local (same-origin) redirect.
 //
 // A path of "//evil.example/x" is a valid http.Redirect Location that
 // browsers treat as protocol-relative, sending the client off-host. Since
@@ -151,10 +153,28 @@ func sameOriginPath(path, rawQuery string) string {
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
+
+	target := path
 	if rawQuery != "" {
-		return path + "?" + rawQuery
+		target += "?" + rawQuery
 	}
-	return path
+
+	// Some clients treat '\' as '/', so normalize before parsing.
+	target = strings.ReplaceAll(target, "\\", "/")
+
+	u, err := url.Parse(target)
+	if err != nil {
+		return "/"
+	}
+	// Only allow local redirects.
+	if u.Scheme != "" || u.Host != "" || u.User != nil {
+		return "/"
+	}
+
+	if u.RawQuery != "" {
+		return u.Path + "?" + u.RawQuery
+	}
+	return u.Path
 }
 
 func tokenEqual(got, want string) bool {
