@@ -3,21 +3,23 @@
 **Status:** Implemented
 **Date:** 2026-08-09
 
-## Problem
+## Historical problem
 
-archied's own daemon logging (`internal/logging/`) is solid: a rotating file
-sink, a live `Feed` the dashboard subscribes to, and a reader the `/api/logs`
-endpoint serves from. None of that reaches inside a task.
+archied's own daemon logging (`internal/logging/`) was already solid: a
+rotating file sink, a live `Feed` the dashboard subscribes to, and a reader
+the `/api/logs` endpoint serves from. Before this implementation, none of
+that reached inside a task.
 
 A task's actual work happens in an `archie-agent` container, dispatched over
 NATS (`[agent] mode = "nats"` is the only supported mode; the in-process
 runner exists for tests and is being migrated away — see
 [Decision: no new functionality on non-NATS transports](#decision-no-new-functionality-on-non-nats-transports)).
-Four things currently destroy the evidence of what that container did:
+Before this design was implemented, five things destroyed the evidence of what
+that container did:
 
-1. **`cmd/archie-agent/main.go`** logs to `os.Stderr` only
-   (`log := slog.New(slog.NewJSONHandler(os.Stderr, nil))`). Nothing captures
-   it outside the container.
+1. **Worker startup** constructed an stderr-only logger and never replaced its
+   handler after discovering a dedicated boot task, so runtime records could
+   not leave the container.
 2. **`internal/container/pool.go`** creates every task container with
    `AutoRemove: true`. The container — and its stderr — is gone at exit,
    success or failure alike.
@@ -42,9 +44,9 @@ auto-fix (status: parked)` and there is no way — not from the dashboard, not
 from Telegram chat, not by SSH'ing into the deployment host — to see *why*
 `go build` failed. The container that knew is already gone.
 
-This matters beyond debugging convenience: the deployment model
-(`CLAUDE.md` "Deployment model") is a systemd daemon plus ephemeral Docker
-containers that may run unattended for weeks between operator logins, and is
+This matters beyond debugging convenience: supported deployments can combine
+a resident daemon with ephemeral Docker containers that run unattended for
+weeks between operator logins, and the system is
 intended to be usable by people other than the original operator. A system
 that is only debuggable by an operator who happens to be watching `docker ps`
 in real time does not meet that bar.
@@ -62,7 +64,7 @@ failure (connectivity/config) from the one this document addresses (a
 connected container's own output being unrecoverable), and is out of scope
 here.
 
-## Design
+## Implemented design
 
 The key property: **logs leave the container while it is alive**, so its
 death at `AutoRemove` no longer matters. Persistence happens in the daemon
@@ -79,25 +81,26 @@ task-scoped writer producing the same `logging.Entry` JSONL shape at
 
 ### Agent side: make the designed subject real
 
-`cmd/archie-agent/main.go` replaces the stderr-only `slog.Handler` with one
+`internal/app/agentworker` replaces the stderr-only `slog.Handler` with one
 that tees to stderr (kept for container-level operator debugging when a
 shell is attached) and publishes each record to
-`agentexec.SubjectForSystem(taskID)`, which already exists for this purpose
-and already has zero consumers to conflict with. The agent already holds its
-NATS client and task ID (`bootTaskID`, read from
-`<worktree>/.git/task.json` per the container/pool.go trap documented in
-`CLAUDE.md`). Publishing is fire-and-forget with a bounded local buffer: log
-shipping must never block or fail the run it is reporting on.
+`agentexec.SubjectForSystem(taskID)`, which already exists for this purpose.
+The application layer obtains only a narrow publisher from
+`internal/infrastructure/agenttransport/nats`; raw core-NATS types remain in
+infrastructure. `internal/infrastructure/agentboot.TaskID` reads the task ID
+from `<worktree>/.git/task.json` per the container/pool.go trap documented in
+`CLAUDE.md`. Publishing is fire-and-forget: log shipping must never block or
+fail the run it is reporting on.
 
 ### Daemon side
 
-Subscribe `agentexec.SubjectAgentWildcard` ("archie.agent.>") for the
-`.system` suffix once at startup (app-layer wiring — this composes the
-domain's log sink with the infrastructure NATS subscription, so it lives in
-`internal/app/`, not in `internal/domain/workflow` or `internal/nats`
-directly). Demux by task ID, append to that task's sink, and also publish
-into the existing `logging.Feed` so live task output appears on the
-dashboard exactly like daemon output does today.
+`cmd/archied/main.go` currently registers `subscribeSystemLogs` once at
+startup for the `.system` suffix of `agentexec.SubjectAgentWildcard`
+(`"archie.agent.>"`). It demultiplexes by task ID, appends to that task's
+sink, and publishes into the existing `logging.Feed` so live task output
+appears on the dashboard exactly like daemon output. The approved target is
+for this composition to move to `internal/app/archied`; that package does not
+yet exist, so this document does not claim the migration is complete.
 
 ### Gate output: stop discarding it
 
@@ -135,16 +138,14 @@ lifecycle rather than accumulating independently.
 
 `internal/logging` remains cross-cutting per `organisation.md` — it imports
 no domain, infrastructure, or app package, so extending it to be task-scoped
-does not change its classification. The workflow domain writes through an
-interface it declares (a `TaskLogSink` or equivalent, not a direct
-`internal/logging` import into `internal/domain/workflow`, unless
-`internal/logging` is judged to already be an acceptable cross-cutting
-dependency for a domain package — confirm against `organisation.md`'s
-concrete rule before writing the interface). `internal/app` wires the NATS
-subscription to the sink; `internal/agentexec` and `internal/nats` supply
-the transport underneath.
+does not change its classification. The workflow domain writes through the
+cross-cutting logging contract. On the agent side,
+`internal/app/agentworker` composes the narrow publisher supplied by
+`internal/infrastructure/agenttransport/nats`. On the daemon side,
+`cmd/archied/main.go` currently composes the NATS subscription with the task
+sink until the approved `internal/app/archied` migration is implemented.
 
-## Sequencing
+## Implementation sequence (completed)
 
 1. Gate-output capture (~30 lines, no NATS changes) — fixes the immediate
    symptom that prompted this document.

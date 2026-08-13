@@ -91,7 +91,7 @@ commit `308c199`, not proof that Yaegi cannot run external commands.
 | Task discovery | `archie.task.>` in `ARCHIE_TASKS` | Work-queue retention; daemon durable `archie-daemon`; max deliver 3 |
 | Per-stage agent request | `archie.agent.<task>.request` | Reply inbox in `X-Archie-Reply`; wall-clock budget or 30m |
 | Full task handoff | `archie.taskrun.<task-id>` | Core request/reply; no-responder retry 20s every 250ms |
-| Store RPC | `archie.store.update`, `.transition` | Client timeout 60s by `cmd/archie-agent/taskrun.go` |
+| Store RPC | `archie.store.update`, `.transition` | Client timeout 60s composed by `internal/app/agentworker/worker.go` through the infrastructure transport |
 | Forge RPC | `archie.forge.*` | Error travels in a JSON envelope |
 | Worktree RPC | `archie.worktree.prepare`, `.push` | Server default handler bound 15m |
 | Discovery dedup | `Nats-Msg-Id: archie:<owner>/<repo>/<issue>` | JetStream duplicate window 2m |

@@ -8,7 +8,8 @@ description: "Trace Archie behavior and blast radius through Go source, types, s
 Use evidence from the current checkout to explain a behavior before changing it.
 Volatile tool facts below were verified on **2026-07-28**.
 
-**Composition root**: `cmd/archied/main.go` and `cmd/archie-agent/`.
+**Composition roots**: `cmd/archied/main.go` (legacy wiring) and
+`internal/app/agentworker` (invoked by `cmd/archie-agent/main.go`).
 **Production wiring**: a path selected by a shipped entrypoint — not a
 constructor, decoder, or passing unit test. **State owner**: component with
 authority to validate and persist a state transition.
@@ -63,7 +64,7 @@ Start at these verified anchors:
 | Concern | Current anchor |
 |---|---|
 | Resident daemon | `cmd/archied/main.go` → `run()` → `daemon.Daemon` |
-| Sandboxed worker | `cmd/archie-agent/main.go`, `cmd/archie-agent/taskrun.go` |
+| Sandboxed worker | `cmd/archie-agent/main.go` → `internal/app/agentworker/`; NATS boundary in `internal/infrastructure/agenttransport/nats/` |
 | Task orchestration | `internal/daemon/daemon.go`, `internal/workflow/` |
 | Task contracts and SQLite | `internal/store/interface.go`, `internal/store/` |
 | Production task persistence | `internal/store/`; `store.Open` in `cmd/archied/main.go` |
@@ -176,7 +177,8 @@ test-only.
 1. Start at `cmd/archied/main.go:run`.
 2. Record config condition per branch.
 3. Follow concrete construction into `daemon.Daemon` and gateway start.
-4. For container/NATS behavior, also trace `cmd/archie-agent`.
+4. For container/NATS behavior, trace `cmd/archie-agent/main.go` into
+   `internal/app/agentworker` and `internal/infrastructure/agenttransport/nats`.
 5. Trace both sides of every RPC/transport and error/timeout paths.
 6. Read contract/architecture tests.
 7. Confirm deploy inputs in Compose and CI.
