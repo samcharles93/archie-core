@@ -3,12 +3,47 @@ package main
 import (
 	"context"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 )
+
+func TestMainConfiguresWorktreeSafetyOnce(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "main.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var markCalls, inlineCalls int
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == "markWorktreeSafe" {
+			markCalls++
+		}
+		for _, arg := range call.Args {
+			literal, ok := arg.(*ast.BasicLit)
+			if ok && literal.Kind == token.STRING && literal.Value == `"safe.directory"` {
+				inlineCalls++
+			}
+		}
+		return true
+	})
+
+	if markCalls != 1 {
+		t.Fatalf("main.go calls markWorktreeSafe %d times, want 1", markCalls)
+	}
+	if got := markCalls + inlineCalls; got != 1 {
+		t.Fatalf("main.go configures safe.directory %d times, want one authoritative setup path", got)
+	}
+}
 
 func TestMarkWorktreeSafe(t *testing.T) {
 	log := slog.New(slog.DiscardHandler)
