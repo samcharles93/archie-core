@@ -18,6 +18,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/forge"
+	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
 	arnats "github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/secret"
@@ -455,7 +456,7 @@ func TestRunViaAgentRetriesUntilResponderAppears(t *testing.T) {
 			t.Errorf("CoreConn: %v", connErr)
 			return
 		}
-		sub, err := coreConn.Subscribe(taskrun.SubjectForTask(task.ID), func(msg *natsio.Msg) {
+		sub, err := coreConn.Subscribe(agentnats.SubjectForTask(task.ID), func(msg *natsio.Msg) {
 			data, _ := json.Marshal(taskrun.Response{Status: store.StatusPROpen})
 			_ = msg.Respond(data)
 		})
@@ -516,7 +517,7 @@ func TestRunViaAgentParksOnRunError(t *testing.T) {
 		t.Fatalf("claim: (%v, %v)", task, err)
 	}
 
-	sub, err := mustCoreConn(t, busClient).Subscribe(taskrun.SubjectForTask(task.ID), func(msg *natsio.Msg) {
+	sub, err := mustCoreConn(t, busClient).Subscribe(agentnats.SubjectForTask(task.ID), func(msg *natsio.Msg) {
 		data, _ := json.Marshal(taskrun.Response{Error: "registry build failed"})
 		_ = msg.Respond(data)
 	})
@@ -552,7 +553,7 @@ func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
 	}
 
 	received := make(chan taskrun.Request, 1)
-	sub, err := mustCoreConn(t, busClient).Subscribe(taskrun.SubjectForTask(task.ID), func(msg *natsio.Msg) {
+	sub, err := mustCoreConn(t, busClient).Subscribe(agentnats.SubjectForTask(task.ID), func(msg *natsio.Msg) {
 		var req taskrun.Request
 		_ = json.Unmarshal(msg.Data, &req)
 		received <- req

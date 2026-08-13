@@ -1,4 +1,4 @@
-package main
+package agentworker
 
 import (
 	"context"
@@ -16,6 +16,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
+	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/storerpc"
 	"github.com/samcharles93/archie-core/internal/taskrun"
@@ -23,25 +24,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
 )
 
-func startEmbeddedForTaskRun(t *testing.T) *server.Server {
-	t.Helper()
-	srv := natssrv.RunRandClientPortServer()
-	t.Cleanup(srv.Shutdown)
-	return srv
-}
-
-func connectForTaskRun(t *testing.T, url string) *natsio.Conn {
-	t.Helper()
-	nc, err := natsio.Connect(url)
-	if err != nil {
-		t.Fatalf("nats connect: %v", err)
-	}
-	t.Cleanup(nc.Close)
-	return nc
-}
-
-// panicRunner fails the test if the bootstrap workflow (deterministic,
-// no LLM stages) ever invokes it.
 type panicRunner struct{ t *testing.T }
 
 func (r panicRunner) Run(context.Context, string, agentexec.Request) (agentexec.Result, error) {
@@ -49,8 +31,6 @@ func (r panicRunner) Run(context.Context, string, agentexec.Request) (agentexec.
 	return agentexec.Result{}, nil
 }
 
-// prCapturingForge records CreatePR calls and answers the four Forger
-// methods the bootstrap workflow needs; everything else panics.
 type prCapturingForge struct {
 	prs []struct{ owner, repo, title, head, base, body string }
 }
@@ -92,29 +72,39 @@ func (f *prCapturingForge) React(context.Context, string, string, int, string) e
 func (f *prCapturingForge) VerifyPush(context.Context, string, string) error {
 	panic("unexpected call")
 }
+func (f *prCapturingForge) LinkBranch(context.Context, string, string, int, string) error { return nil }
 
-func (f *prCapturingForge) LinkBranch(context.Context, string, string, int, string) error {
-	return nil
+type remoteManager struct {
+	manager *worktree.Manager
+	dir     string
 }
 
-// newLocalRemote mirrors worktree_test.go's helper: a bare repo with one
-// commit on main, reachable via file://<host>/<owner>/<repo>.git.
+func (r *remoteManager) Prepare(ctx context.Context, owner, repo, base string, issue int, title, body, labels string) (string, string, error) {
+	dir, branch, err := r.manager.Prepare(ctx, owner, repo, base, issue, title, body, labels)
+	if err == nil {
+		r.dir = dir
+	}
+	return dir, branch, err
+}
+
+func (r *remoteManager) Push(ctx context.Context, _, _ string, _ int, branch string) error {
+	return r.manager.Push(ctx, r.dir, branch)
+}
+
 func newLocalRemote(t *testing.T, owner, repo string) string {
 	t.Helper()
 	host := t.TempDir()
 	bare := filepath.Join(host, owner, repo+".git")
 	seed := filepath.Join(t.TempDir(), "seed")
-
 	run := func(dir string, args ...string) {
 		t.Helper()
-		cmd := exec.Command("git", args...)
+		cmd := exec.CommandContext(t.Context(), "git", args...)
 		cmd.Dir = dir
 		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
-
 	if err := os.MkdirAll(bare, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -134,20 +124,32 @@ func newLocalRemote(t *testing.T, owner, repo string) string {
 	return host
 }
 
-// TestRunTaskExecutesBootstrapWorkflowEndToEnd drives runTask through the
-// deterministic "bootstrap" workflow (no LLM calls) with real storerpc/
-// forgerpc/worktreerpc servers backing an RPC-constructed TaskContext,
-// proving the full archie-agent-side wiring: registry build, Route, Run,
-// and the hybrid Trees split between proxied Prepare/Push and local git.
+func startEmbeddedTaskRPCServer(t *testing.T) *server.Server {
+	t.Helper()
+	srv := natssrv.RunRandClientPortServer()
+	t.Cleanup(srv.Shutdown)
+	if err := srv.EnableJetStream(&server.JetStreamConfig{StoreDir: t.TempDir()}); err != nil {
+		t.Fatal(err)
+	}
+	return srv
+}
+
+func connectTaskRPC(t *testing.T, url string) *natsio.Conn {
+	t.Helper()
+	connection, err := natsio.Connect(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(connection.Close)
+	return connection
+}
+
 func TestRunTaskExecutesBootstrapWorkflowEndToEnd(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	host := newLocalRemote(t, "acme", "widget")
-
-	// archied side: real Store, a capturing Forge, and the Manager that
-	// actually holds the (unused-for-file-remotes) push token.
 	st := store.OpenTest(t)
 	if _, err := st.EnqueueIssue(ctx, "acme", "widget", 1, "feat: bootstrap test", "", "bootstrap", ""); err != nil {
 		t.Fatalf("enqueue: %v", err)
@@ -156,8 +158,50 @@ func TestRunTaskExecutesBootstrapWorkflowEndToEnd(t *testing.T) {
 	if err != nil || task == nil {
 		t.Fatalf("claim: (%v, %v)", task, err)
 	}
-
 	fg := &prCapturingForge{}
+	manager := &worktree.Manager{WorkDir: t.TempDir(), Token: "unused", BotUser: "archie-bot", BotEmail: "archie-bot@example.com", BaseURL: "file://" + host}
+	remote := &remoteManager{manager: manager}
+	hostDir, _, err := remote.Prepare(ctx, "acme", "widget", "main", 1, task.Title, "", "bootstrap")
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	req := taskrun.Request{Task: task, Repo: config.Repo{Owner: "acme", Name: "widget", Base: "main"}, Cfg: config.Config{}.ForTask()}
+	fakeRunner := agentexec.RunnerFactory(func(map[string]agentexec.Provider, *slog.Logger) agentexec.Runner { return panicRunner{t} })
+	response, err := runTask(ctx, req, taskDependencies{forge: fg, store: st, trees: remote}, fakeRunner, hostDir, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("runTask: %v", err)
+	}
+	if response.Status != store.StatusPROpen || len(fg.prs) != 1 {
+		t.Fatalf("response status/PRs = (%q, %d), want (%q, 1)", response.Status, len(fg.prs), store.StatusPROpen)
+	}
+	stored, err := st.TaskByIssue(ctx, "acme", "widget", 1)
+	if err != nil || stored == nil || stored.Status != store.StatusPROpen || stored.PRNumber != 5 {
+		t.Fatalf("stored task = (%+v, %v), want PR-open task #5", stored, err)
+	}
+	if _, err := os.Stat(filepath.Join(hostDir, ".archie", "bootstrap.md")); err != nil {
+		t.Fatalf("expected bootstrap marker file: %v", err)
+	}
+}
+
+// TestExecuteTaskRequestUsesInfrastructureRPCDependencies preserves the
+// application-to-infrastructure proof: the application asks Transport for its
+// forge/store/tree contracts, and those concrete clients cross embedded NATS
+// to daemon-side RPC servers before the bootstrap workflow can complete.
+func TestExecuteTaskRequestUsesInfrastructureRPCDependencies(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	ctx := t.Context()
+	host := newLocalRemote(t, "acme", "rpc-widget")
+	st := store.OpenTest(t)
+	if _, err := st.EnqueueIssue(ctx, "acme", "rpc-widget", 2, "feat: RPC bootstrap test", "", "bootstrap", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := st.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("claim = (%+v, %v)", task, err)
+	}
+	forge := &prCapturingForge{}
 	daemonTrees := &worktree.Manager{
 		WorkDir:  t.TempDir(),
 		Token:    "unused-for-file-remotes",
@@ -165,72 +209,54 @@ func TestRunTaskExecutesBootstrapWorkflowEndToEnd(t *testing.T) {
 		BotEmail: "archie-bot@example.com",
 		BaseURL:  "file://" + host,
 	}
-
-	// The daemon always prepares the worktree before container acquire  --
-	// reproduce that here so the container's bind mount has real content.
-	hostDir, _, err := daemonTrees.Prepare(ctx, "acme", "widget", "main", 1, task.Title, "", "bootstrap")
+	hostDir, _, err := daemonTrees.Prepare(ctx, "acme", "rpc-widget", "main", 2, task.Title, "", "bootstrap")
 	if err != nil {
-		t.Fatalf("daemon-side prepare: %v", err)
+		t.Fatal(err)
 	}
 
-	srv := startEmbeddedForTaskRun(t)
-	url := srv.ClientURL()
-	serverConn := connectForTaskRun(t, url)
-
+	srv := startEmbeddedTaskRPCServer(t)
+	serverConn := connectTaskRPC(t, srv.ClientURL())
 	unsubStore, err := (&storerpc.Server{Store: st, Log: slog.New(slog.DiscardHandler)}).Register(serverConn)
 	if err != nil {
-		t.Fatalf("register storerpc: %v", err)
+		t.Fatal(err)
 	}
 	t.Cleanup(unsubStore)
-	unsubForge, err := (&forgerpc.Server{Forge: fg, Log: slog.New(slog.DiscardHandler)}).Register(serverConn)
+	unsubForge, err := (&forgerpc.Server{Forge: forge, Log: slog.New(slog.DiscardHandler)}).Register(serverConn)
 	if err != nil {
-		t.Fatalf("register forgerpc: %v", err)
+		t.Fatal(err)
 	}
 	t.Cleanup(unsubForge)
 	unsubTrees, err := (&worktreerpc.Server{Trees: daemonTrees, Log: slog.New(slog.DiscardHandler)}).Register(serverConn)
 	if err != nil {
-		t.Fatalf("register worktreerpc: %v", err)
+		t.Fatal(err)
 	}
 	t.Cleanup(unsubTrees)
 
-	// archie-agent side: its own NATS connection, "bind mount" is just
-	// hostDir since this test runs in a single process/filesystem.
-	agentConn := connectForTaskRun(t, url)
+	transport, err := agentnats.Connect(ctx, agentnats.Config{
+		URL:          srv.ClientURL(),
+		ConsumerName: "rpc-bootstrap-test",
+	}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(transport.Close)
 
-	req := taskrun.Request{
+	request := taskrun.Request{
 		Task: task,
-		Repo: config.Repo{Owner: "acme", Name: "widget", Base: "main"},
+		Repo: config.Repo{Owner: "acme", Name: "rpc-widget", Base: "main"},
 		Cfg:  config.Config{}.ForTask(),
 	}
-
-	fakeRunner := agentexec.RunnerFactory(func(map[string]agentexec.Provider, *slog.Logger) agentexec.Runner {
-		return panicRunner{t}
-	})
-
-	resp, err := runTask(ctx, req, agentConn, fakeRunner, hostDir, slog.New(slog.DiscardHandler))
+	response, err := executeTaskRequest(ctx, request, transport, hostDir, slog.New(slog.DiscardHandler))
 	if err != nil {
-		t.Fatalf("runTask: %v", err)
+		t.Fatal(err)
 	}
-	if resp.Status != store.StatusPROpen {
-		t.Fatalf("resp.Status = %q, want %q (task: %+v)", resp.Status, store.StatusPROpen, resp.Task)
+	if response.Status != store.StatusPROpen || len(forge.prs) != 1 {
+		t.Fatalf("response status/PRs = (%q, %d), want (%q, 1)", response.Status, len(forge.prs), store.StatusPROpen)
 	}
-	if len(fg.prs) != 1 {
-		t.Fatalf("expected 1 CreatePR call, got %d: %+v", len(fg.prs), fg.prs)
+	stored, err := st.TaskByIssue(ctx, "acme", "rpc-widget", 2)
+	if err != nil || stored == nil || stored.Status != store.StatusPROpen || stored.PRNumber != 5 {
+		t.Fatalf("stored task = (%+v, %v), want RPC-persisted PR-open task #5", stored, err)
 	}
-
-	// The authoritative state landed in archied's store via storerpc, not
-	// just in the in-memory tc.Task.
-	stored, err := st.TaskByIssue(ctx, "acme", "widget", 1)
-	if err != nil || stored == nil {
-		t.Fatalf("TaskByIssue: (%+v, %v)", stored, err)
-	}
-	if stored.Status != store.StatusPROpen {
-		t.Fatalf("stored task status = %q, want %q", stored.Status, store.StatusPROpen)
-	}
-	if stored.PRNumber != 5 {
-		t.Fatalf("stored task PR number = %d, want 5", stored.PRNumber)
-	}
-
 	if _, err := os.Stat(filepath.Join(hostDir, ".archie", "bootstrap.md")); err != nil {
 		t.Fatalf("expected bootstrap marker file: %v", err)
 	}

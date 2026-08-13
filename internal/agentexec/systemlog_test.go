@@ -37,7 +37,7 @@ func (f *fakePublisher) calls() int {
 }
 
 // capturingHandler is a minimal slog.Handler that records every record it
-// receives, standing in for cmd/archie-agent's real stderr handler.
+// receives, standing in for the agentworker's wrapped process stderr handler.
 type capturingHandler struct {
 	mu      sync.Mutex
 	records []slog.Record

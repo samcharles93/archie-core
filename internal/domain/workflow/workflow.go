@@ -58,11 +58,11 @@ type TaskContext struct {
 	Log   *slog.Logger
 	// CustomStages discovers a repo's per-repo custom stages (Yaegi-
 	// interpreted from .archie/stages/*.go in the given worktree
-	// directory), returning them in the order they should run. Wired up
-	// by the composition root (cmd/archied)  --  nil disables discovery, so
-	// StageRepoStages is a no-op. Kept as an injected function rather
-	// than a direct import to avoid workflow depending on its own
-	// generated Yaegi symbol table (an import cycle).
+	// directory), returning them in the order they should run. Application
+	// composition injects it; nil disables discovery, so StageRepoStages is a
+	// no-op. The composition layer provides the implementation rather
+	// than importing the generated Yaegi symbol table here, which would create
+	// a workflow package import cycle.
 	CustomStages func(dir string) ([]Stage, error)
 
 	// SkillBody is the Markdown body of the loaded SKILL.md for this

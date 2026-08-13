@@ -343,7 +343,7 @@ boundaries. Summary of what's evolved since that doc was last fully accurate:
   conflict and the later one silently receives nothing. `nats.Client.Subscribe`
   creates a NEW consumer, so calling it on subjects the client's own durable
   consumer already filters will never deliver — drain the existing consumer with
-  `Fetch` instead, as `cmd/archie-agent` and the agentexec round-trip fake do.
+  `Fetch` instead, as `internal/app/agentworker` and the agentexec round-trip fake do.
   (2) *Reply inboxes are not stream subjects.* Answering a request must use core
   NATS publish, not the JetStream path: a `Message.ReplyAddress` is an ephemeral
   `_INBOX.*` belonging to one waiting caller and part of no stream, so a durable
@@ -375,8 +375,8 @@ boundaries. Summary of what's evolved since that doc was last fully accurate:
   `.gitignore` and `.git/info/exclude`, so anything in the worktree root is
   pushed onto the task branch. Nothing under `.git` can be tracked;
   `worktree.go:41-46` documents this reasoning for the prepared sentinel. If you
-  change the path, update `cmd/archie-agent/main.go` `bootTaskID` (the reader)
-  in lockstep.
+  change the path, update `internal/infrastructure/agentboot/task.go` `TaskID`
+  (the reader) in lockstep.
 - **MCP providers are registered by the daemon as _optional_**
   (`cmd/archied/ main.go`, `providerRegistry.RegisterOptional`). One that cannot
   start is logged at error level, excluded from the running set, and reported
