@@ -209,10 +209,12 @@ func (s *Server) handleChatMessage(w http.ResponseWriter, r *http.Request) {
 // assigns it, so a missing key would put the string "undefined" into the
 // transcript on a turn whose reply is empty.
 type chatStreamEvent struct {
-	Type      string `json:"type"`
-	Text      string `json:"text"`
-	Tool      string `json:"tool,omitempty"`
-	SessionID string `json:"session_id,omitempty"`
+	Type       string `json:"type"`
+	Text       string `json:"text"`
+	Tool       string `json:"tool,omitempty"`
+	ToolCallID string `json:"tool_call_id,omitempty"`
+	Parameters string `json:"parameters,omitempty"`
+	SessionID  string `json:"session_id,omitempty"`
 }
 
 // chatStreamSink adapts the stream writer to gateway.TurnStream so text and
@@ -224,7 +226,13 @@ func (f chatStreamSink) Delta(text string) {
 }
 
 func (f chatStreamSink) ToolCall(event gateway.ToolCallEvent) {
-	f(chatStreamEvent{Type: "tool", Tool: event.Name, Text: event.Summary()})
+	f(chatStreamEvent{
+		Type:       "tool",
+		Tool:       event.Name,
+		ToolCallID: event.ID,
+		Parameters: event.Parameters,
+		Text:       event.Summary(),
+	})
 }
 
 func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {

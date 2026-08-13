@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-telegram/bot"
@@ -55,11 +56,9 @@ type Gateway struct {
 	// root supplies this; Telegram only renders approval UX.
 	Dangerous DangerousCommandAuthority
 
-	// ShowToolCalls renders each completed tool call as an inline line in
-	// the reply, so the human can see which tools ran and what they
-	// returned rather than only the answer built from them. Off by default:
-	// it is debugging visibility, and it narrates every internal step.
-	ShowToolCalls bool
+	// showToolCalls controls whether new live replies render completed tool
+	// calls. Each reply snapshots it so reloads affect only later turns.
+	showToolCalls atomic.Bool
 
 	// restartCh carries /restart requests from a bot handler to the
 	// supervisor loop in Start. Buffered so a handler never blocks.
@@ -138,6 +137,16 @@ func New(token, webhookURL, webhookSecret string, allowedUserIDs []int64, log *s
 }
 
 func (g *Gateway) Name() string { return "telegram" }
+
+// SetShowToolCalls controls tool visibility for replies created after the call.
+func (g *Gateway) SetShowToolCalls(show bool) {
+	g.showToolCalls.Store(show)
+}
+
+// ShowToolCalls reports the visibility setting that a new reply must snapshot.
+func (g *Gateway) ShowToolCalls() bool {
+	return g.showToolCalls.Load()
+}
 
 // RequestRestart asks the gateway supervisor to reload this adapter. It is
 // safe for callers outside Telegram (such as the local Web UI) and never
@@ -542,7 +551,7 @@ func (g *Gateway) submitTurn(ctx context.Context, b *bot.Bot, msg *models.Messag
 		// reply appears as it is written; the typing indicator covers the
 		// gap before the first token and any non-streaming path.
 		stopTyping := g.startTyping(turnCtx, b, chatID, threadID)
-		live := g.newLiveReply(b, chatID, threadID)
+		live := g.newLiveReply(turnCtx, b, chatID, threadID, g.ShowToolCalls())
 
 		// If it starts with / but wasn't matched by a registered
 		// handler, it's unknown  --  let the router handle it (which
