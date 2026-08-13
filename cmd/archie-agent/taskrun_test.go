@@ -107,7 +107,7 @@ func newLocalRemote(t *testing.T, owner, repo string) string {
 
 	run := func(dir string, args ...string) {
 		t.Helper()
-		cmd := exec.Command("git", args...)
+		cmd := exec.CommandContext(t.Context(), "git", args...)
 		cmd.Dir = dir
 		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 		if out, err := cmd.CombinedOutput(); err != nil {
