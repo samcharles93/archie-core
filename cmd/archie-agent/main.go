@@ -95,6 +95,10 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Before anything can run a gate: the worktree is a host bind mount owned
+	// by another UID, and git refuses to work in it until it is marked safe.
+	markWorktreeSafe(ctx, storage.WorktreeMountDir, runGit, log)
+
 	// One bus client owns the stream definition. archied declares the same
 	// stream with the same subjects; this process previously declared its
 	// own copy, free to disagree about retention, dedup window and TTLs.
