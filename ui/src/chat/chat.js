@@ -1,8 +1,9 @@
 import { el } from "../base/dom.js";
 import { api } from "../base/api.js";
 import { createChatView } from "./chat-view.js";
-import { chatBubble } from "./chat-render.js";
+import { assistantBubble, chatBubble } from "./chat-render.js";
 import { updateStreamingReply } from "./chat-stream.js";
+import { appendToolCall } from "./chat-tools.js";
 import { channelID } from "./chat-state.js";
 import { retryChatTurn, resolveTurn } from "./chat-retry.js";
 import { renderCommands, renderModels, renderSelectors, renderSessions } from "./chat-catalog.js";
@@ -207,9 +208,13 @@ export function chatPage() {
       appendMessage({ from: "web", text });
       composer.value = "";
     }
-    const replyBubble = isRetry ? retry.replyBubble : el("div.chat-bubble-row.assistant", el("div.chat-bubble", el("div.chat-bubble-meta", "Archie"), el("div.chat-bubble-text")));
+    const replyBubble = isRetry ? retry.replyBubble : assistantBubble();
     if (!isRetry) transcript.append(replyBubble);
     replyBubble.querySelector(".chat-retry")?.remove();
+    // A retry reuses the failed turn's bubble, so its tool list still holds
+    // the attempt that did not finish. Clear it: appending to it would
+    // present another turn's work as this one's evidence.
+    replyBubble.querySelector(".chat-tools")?.replaceChildren();
     let replyText = replyBubble.querySelector(".chat-bubble-text");
     let streamedText = "";
     let finished = false;
@@ -244,6 +249,9 @@ export function chatPage() {
           if (event.type === "delta") {
             streamedText += event.text;
             replyText = updateStreamingReply(replyText, streamedText);
+          }
+          if (event.type === "tool") {
+            appendToolCall(replyBubble.querySelector(".chat-bubble") ?? replyBubble, event);
           }
           if (event.type === "done") {
             finished = true;

@@ -33,7 +33,10 @@ type turnTestPreparedModel struct {
 	generateN   int
 	generateErr error
 	generate    func(context.Context) (string, error)
-	lastRequest TurnModelRequest
+	// generateStream lets a test drive the reported progress  --  text and
+	// tool activity  --  rather than only the returned reply.
+	generateStream func(TurnStream) (string, error)
+	lastRequest    TurnModelRequest
 }
 
 func (m *turnTestPreparedModel) ToolSummaries() []ToolSummary {
@@ -44,17 +47,20 @@ func (m *turnTestPreparedModel) ToolSchemaTokens() int {
 	return m.toolTokens
 }
 
-func (m *turnTestPreparedModel) Generate(ctx context.Context, req TurnModelRequest, onDelta func(string)) (string, error) {
+func (m *turnTestPreparedModel) Generate(ctx context.Context, req TurnModelRequest, stream TurnStream) (string, error) {
 	m.generateN++
 	m.lastRequest = req
+	if m.generateStream != nil {
+		return m.generateStream(stream)
+	}
 	if m.generate != nil {
 		return m.generate(ctx)
 	}
 	if m.generateErr != nil {
 		return "", m.generateErr
 	}
-	if onDelta != nil {
-		onDelta(m.reply)
+	if stream != nil {
+		stream.Delta(m.reply)
 	}
 	return m.reply, nil
 }
@@ -99,7 +105,7 @@ func TestTurnRunnerPersistsOneTurnAndPublishesCompletion(t *testing.T) {
 		ChannelID: "chat-1",
 		SourceID:  "source-1",
 		Text:      "hello",
-	}, func(delta string) { streamed += delta })
+	}, DeltaFunc(func(delta string) { streamed += delta }))
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -342,7 +348,7 @@ func TestTurnRunnerReplaysCompletedDuplicateWithoutGenerating(t *testing.T) {
 		t.Fatalf("first Run() error = %v", err)
 	}
 	var replay string
-	reply, err := runner.Run(context.Background(), msg, func(delta string) { replay += delta })
+	reply, err := runner.Run(context.Background(), msg, DeltaFunc(func(delta string) { replay += delta }))
 	if err != nil {
 		t.Fatalf("duplicate Run() error = %v", err)
 	}

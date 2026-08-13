@@ -116,12 +116,12 @@ func TestRouterRejectsUnknownCommand(t *testing.T) {
 				llmCalls++
 				return "fabricated command behavior", nil
 			}, "test")
-			r.LLMStream = func(context.Context, Message, func(string)) (string, error) {
+			r.LLMStream = func(context.Context, Message, TurnStream) (string, error) {
 				llmCalls++
 				return "fabricated streaming behavior", nil
 			}
 
-			reply, err := r.RouteStream(context.Background(), Message{Text: text}, func(string) {})
+			reply, err := r.RouteStream(context.Background(), Message{Text: text}, DeltaFunc(func(string) {}))
 			if err != nil {
 				t.Fatalf("RouteStream: %v", err)
 			}
