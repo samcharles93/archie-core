@@ -14,9 +14,9 @@ func TestRouteStreamFallsBackWhenNoStreamResponder(t *testing.T) {
 	}, "telegram")
 
 	var deltas []string
-	got, err := r.RouteStream(context.Background(), Message{Text: "hello"}, func(d string) {
+	got, err := r.RouteStream(context.Background(), Message{Text: "hello"}, DeltaFunc(func(d string) {
 		deltas = append(deltas, d)
-	})
+	}))
 	if err != nil {
 		t.Fatalf("RouteStream: %v", err)
 	}
@@ -30,17 +30,17 @@ func TestRouteStreamFallsBackWhenNoStreamResponder(t *testing.T) {
 
 func TestRouteStreamStreamsFreeText(t *testing.T) {
 	r := NewRouter(nil, nil, "telegram")
-	r.LLMStream = func(_ context.Context, _ Message, onDelta func(string)) (string, error) {
+	r.LLMStream = func(_ context.Context, _ Message, stream TurnStream) (string, error) {
 		for _, d := range []string{"a", "b", "c"} {
-			onDelta(d)
+			stream.Delta(d)
 		}
 		return "abc", nil
 	}
 
 	var sb strings.Builder
-	got, err := r.RouteStream(context.Background(), Message{Text: "hello"}, func(d string) {
+	got, err := r.RouteStream(context.Background(), Message{Text: "hello"}, DeltaFunc(func(d string) {
 		sb.WriteString(d)
-	})
+	}))
 	if err != nil {
 		t.Fatalf("RouteStream: %v", err)
 	}
@@ -54,12 +54,12 @@ func TestRouteStreamStreamsFreeText(t *testing.T) {
 func TestRouteStreamDoesNotStreamLocalCommands(t *testing.T) {
 	r := NewRouter(nil, nil, "telegram")
 	streamed := false
-	r.LLMStream = func(context.Context, Message, func(string)) (string, error) {
+	r.LLMStream = func(context.Context, Message, TurnStream) (string, error) {
 		streamed = true
 		return "", nil
 	}
 
-	if _, err := r.RouteStream(context.Background(), Message{Text: "/status"}, func(string) {}); err != nil {
+	if _, err := r.RouteStream(context.Background(), Message{Text: "/status"}, DeltaFunc(func(string) {})); err != nil {
 		t.Fatalf("RouteStream: %v", err)
 	}
 	if streamed {
@@ -70,12 +70,12 @@ func TestRouteStreamDoesNotStreamLocalCommands(t *testing.T) {
 func TestRouteStreamRejectsUnknownCommandLocally(t *testing.T) {
 	r := NewRouter(nil, nil, "telegram")
 	streamed := false
-	r.LLMStream = func(context.Context, Message, func(string)) (string, error) {
+	r.LLMStream = func(context.Context, Message, TurnStream) (string, error) {
 		streamed = true
 		return "ok", nil
 	}
 
-	reply, err := r.RouteStream(context.Background(), Message{Text: "/commands"}, func(string) {})
+	reply, err := r.RouteStream(context.Background(), Message{Text: "/commands"}, DeltaFunc(func(string) {}))
 	if err != nil {
 		t.Fatalf("RouteStream: %v", err)
 	}

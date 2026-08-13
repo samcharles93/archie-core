@@ -201,6 +201,32 @@ func (s *Server) handleChatMessage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"reply": reply, "session_id": sessionID})
 }
 
+// chatStreamEvent is one `data: {...}` frame of the chat stream. A tool frame
+// names the tool in Tool and carries its one-line outcome in Text, so the
+// browser can style the two apart instead of parsing a rendered string.
+//
+// Text is always emitted, empty or not: the browser concatenates it and
+// assigns it, so a missing key would put the string "undefined" into the
+// transcript on a turn whose reply is empty.
+type chatStreamEvent struct {
+	Type      string `json:"type"`
+	Text      string `json:"text"`
+	Tool      string `json:"tool,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+}
+
+// chatStreamSink adapts the stream writer to gateway.TurnStream so text and
+// tool activity reach the browser through one ordered path.
+type chatStreamSink func(chatStreamEvent)
+
+func (f chatStreamSink) Delta(text string) {
+	f(chatStreamEvent{Type: "delta", Text: text})
+}
+
+func (f chatStreamSink) ToolCall(event gateway.ToolCallEvent) {
+	f(chatStreamEvent{Type: "tool", Tool: event.Name, Text: event.Summary()})
+}
+
 func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 	chat, ok := s.chatReady(w)
 	if !ok {
@@ -218,47 +244,52 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Accel-Buffering", "no")
-	writeChatEvent := func(kind, text, sessionID string) {
-		payload, _ := json.Marshal(map[string]string{"type": kind, "text": text, "session_id": sessionID})
+	writeChatEvent := func(event chatStreamEvent, sessionID string) {
+		event.SessionID = sessionID
+		payload, _ := json.Marshal(event)
 		_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
 		flusher.Flush()
 	}
 	sessionID, err := chat.Router.ResolveSessionKey(r.Context(), msg)
 	if err != nil {
-		writeChatEvent("error", err.Error(), "")
+		writeChatEvent(chatStreamEvent{Type: "error", Text: err.Error()}, "")
 		return
 	}
-	writeChatEvent("started", "", sessionID)
+	writeChatEvent(chatStreamEvent{Type: "started"}, sessionID)
 	var reply string
 	if chat.Turns == nil {
-		reply, err = chat.Router.RouteStream(r.Context(), msg, func(delta string) {
-			writeChatEvent("delta", delta, sessionID)
-		})
+		reply, err = chat.Router.RouteStream(r.Context(), msg, chatStreamSink(func(event chatStreamEvent) {
+			writeChatEvent(event, sessionID)
+		}))
 	} else {
 		type turnResult struct {
 			reply string
 			err   error
 		}
-		events := make(chan string, 32)
+		// One channel carries both text and tool events, because the
+		// order between them is the point: a tool line that overtakes
+		// the sentence it interrupted describes a turn that never
+		// happened.
+		events := make(chan chatStreamEvent, 32)
 		result := make(chan turnResult, 1)
 		chat.Turns.Submit(r.Context(), sessionID, func(turnCtx context.Context) {
-			turnReply, turnErr := chat.Router.RouteStream(turnCtx, msg, func(delta string) {
+			turnReply, turnErr := chat.Router.RouteStream(turnCtx, msg, chatStreamSink(func(event chatStreamEvent) {
 				select {
-				case events <- delta:
+				case events <- event:
 				case <-r.Context().Done():
 				}
-			})
+			}))
 			result <- turnResult{reply: turnReply, err: turnErr}
 		})
 		for {
 			select {
-			case delta := <-events:
-				writeChatEvent("delta", delta, sessionID)
+			case event := <-events:
+				writeChatEvent(event, sessionID)
 			case turn := <-result:
 				for {
 					select {
-					case delta := <-events:
-						writeChatEvent("delta", delta, sessionID)
+					case event := <-events:
+						writeChatEvent(event, sessionID)
 					default:
 						goto drained
 					}
@@ -274,13 +305,13 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 	turnDone:
 	}
 	if err != nil {
-		writeChatEvent("error", err.Error(), sessionID)
+		writeChatEvent(chatStreamEvent{Type: "error", Text: err.Error()}, sessionID)
 		return
 	}
 	if resolved, resolveErr := chat.Router.ResolveSessionKey(r.Context(), msg); resolveErr == nil {
 		sessionID = resolved
 	}
-	writeChatEvent("done", reply, sessionID)
+	writeChatEvent(chatStreamEvent{Type: "done", Text: reply}, sessionID)
 }
 
 func (s *Server) handleChatCancel(w http.ResponseWriter, r *http.Request) {

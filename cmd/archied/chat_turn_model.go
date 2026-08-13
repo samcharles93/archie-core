@@ -78,7 +78,7 @@ func (m *preparedChatTurnModel) ToolSchemaTokens() int {
 func (m *preparedChatTurnModel) Generate(
 	ctx context.Context,
 	request gateway.TurnModelRequest,
-	onDelta func(string),
+	stream gateway.TurnStream,
 ) (string, error) {
 	options := m.options
 	options.Messages = make([]chat.Message, len(request.Messages))
@@ -93,5 +93,5 @@ func (m *preparedChatTurnModel) Generate(
 		options.Messages[i] = chat.Message{Role: role, Content: message.Content}
 	}
 	options.MaxTokens = request.MaxTokens
-	return sendChatTurn(ctx, m.llm, m.model, options, onDelta)
+	return sendChatTurn(ctx, m.llm, m.model, options, stream)
 }
