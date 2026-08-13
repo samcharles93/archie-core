@@ -349,8 +349,8 @@ func TestRouteStreamAutoTitlesUntitledSession(t *testing.T) {
 	r.InitSessions(store)
 	gen := &stubTitleGenerator{titles: map[string]string{}}
 	r.Titles = gen
-	r.LLMStream = func(_ context.Context, _ Message, onDelta func(string)) (string, error) {
-		onDelta("r")
+	r.LLMStream = func(_ context.Context, _ Message, stream TurnStream) (string, error) {
+		stream.Delta("r")
 		return "reply ok", nil
 	}
 	ctx := context.Background()
@@ -359,7 +359,7 @@ func TestRouteStreamAutoTitlesUntitledSession(t *testing.T) {
 		t.Fatalf("resolve: %v", err)
 	}
 	gen.titles[sessionID] = "Stream topic"
-	if _, err := r.RouteStream(ctx, Message{ChannelID: "ch", From: "u", Text: "stream me"}, func(string) {}); err != nil {
+	if _, err := r.RouteStream(ctx, Message{ChannelID: "ch", From: "u", Text: "stream me"}, DeltaFunc(func(string) {})); err != nil {
 		t.Fatalf("RouteStream: %v", err)
 	}
 	waitForTitle(t, store, sessionID, "Stream topic")

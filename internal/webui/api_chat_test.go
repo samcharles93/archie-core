@@ -513,6 +513,7 @@ func TestChatSessionsFiltersNonWeb(t *testing.T) {
 type chatSSEEvent struct {
 	Type      string `json:"type"`
 	Text      string `json:"text"`
+	Tool      string `json:"tool"`
 	SessionID string `json:"session_id"`
 }
 
@@ -570,9 +571,9 @@ func TestChatStreamEndsWithDone(t *testing.T) {
 func TestChatStreamDeltas(t *testing.T) {
 	server, sessions := chatTestServer(t)
 	var gotDeltas []string
-	server.Chat.Router.LLMStream = func(_ context.Context, _ gateway.Message, onDelta func(string)) (string, error) {
-		onDelta("part one")
-		onDelta("part two")
+	server.Chat.Router.LLMStream = func(_ context.Context, _ gateway.Message, stream gateway.TurnStream) (string, error) {
+		stream.Delta("part one")
+		stream.Delta("part two")
 		return "full reply", nil
 	}
 	saveWebSession(t, sessions, "web-1")
@@ -595,6 +596,72 @@ func TestChatStreamDeltas(t *testing.T) {
 	}
 	if events[len(events)-1].Type != "done" || events[len(events)-1].Text != "full reply" {
 		t.Fatalf("final event = %#v, want done/full reply", events[len(events)-1])
+	}
+}
+
+// Tool activity has to reach the browser interleaved with the text that
+// surrounds it, on both stream paths: without a turn queue the responder
+// writes straight to the SSE writer, with one it hands events across a
+// goroutine, and an ordering that survives only the first is not a fix.
+func TestChatStreamReportsToolCalls(t *testing.T) {
+	stream := func(_ context.Context, _ gateway.Message, turn gateway.TurnStream) (string, error) {
+		turn.Delta("checking")
+		turn.ToolCall(gateway.ToolCallEvent{Name: "shell", Output: "exit 0\nignored trailing line"})
+		turn.ToolCall(gateway.ToolCallEvent{Name: "read", Err: "no such file"})
+		turn.Delta(" and answering")
+		return "checking and answering", nil
+	}
+
+	tests := []struct {
+		name   string
+		queued bool
+	}{
+		{name: "direct"},
+		{name: "queued", queued: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server, sessions := chatTestServer(t)
+			server.Chat.Router.LLMStream = stream
+			if tc.queued {
+				server.Chat.Turns = gateway.NewTurns(slog.Default())
+			}
+			saveWebSession(t, sessions, "web-1")
+
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/chat/stream",
+				strings.NewReader(`{"channel_id":"browser-web-1","text":"hello"}`))
+			req.Header.Set("Content-Type", "application/json")
+			res := httptest.NewRecorder()
+			server.Handler().ServeHTTP(res, req)
+			if res.Code != http.StatusOK {
+				t.Fatalf("status = %d, body = %s", res.Code, res.Body)
+			}
+
+			var got []string
+			for _, ev := range parseChatSSE(t, res.Body.String()) {
+				switch ev.Type {
+				case "delta":
+					got = append(got, "text:"+ev.Text)
+				case "tool":
+					got = append(got, "tool:"+ev.Tool+":"+ev.Text)
+				}
+			}
+			want := []string{
+				"text:checking",
+				"tool:shell:exit 0",
+				"tool:read:failed: no such file",
+				"text: and answering",
+			}
+			if len(got) != len(want) {
+				t.Fatalf("stream events = %v, want %v", got, want)
+			}
+			for i := range want {
+				if got[i] != want[i] {
+					t.Fatalf("stream events = %v, want %v", got, want)
+				}
+			}
+		})
 	}
 }
 

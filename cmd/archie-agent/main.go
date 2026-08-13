@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -78,22 +77,12 @@ func run() int {
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
-	// Worktrees are bind-mounted from the host into the container at
-	// /data/worktree. The host-side UID that owns the worktree differs
-	// from the container user's UID. Git refuses to operate when the
-	// containing directory is owned by another user ("fatal: detected
-	// dubious ownership in repository"). The Go toolchain calls git for
-	// VCS status during go build/test/vet, so every gate fails before
-	// any real work begins. Marking the mount directory as safe resolves
-	// this for the container's lifetime.
-	gitSafeDir := exec.Command("git", "config", "--global", "--add", "safe.directory", storage.WorktreeMountDir)
-	if out, gitErr := gitSafeDir.CombinedOutput(); gitErr != nil {
-		log.Warn("git safe.directory config failed (gate commands that shell out to git may encounter dubious-ownership errors)",
-			"dir", storage.WorktreeMountDir, "err", gitErr, "output", string(out))
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Before anything can run a gate: the worktree is a host bind mount owned
+	// by another UID, and git refuses to work in it until it is marked safe.
+	markWorktreeSafe(ctx, storage.WorktreeMountDir, runGit, log)
 
 	// One bus client owns the stream definition. archied declares the same
 	// stream with the same subjects; this process previously declared its

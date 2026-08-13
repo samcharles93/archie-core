@@ -86,6 +86,7 @@ func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), o
 		configureTelegramUpdates(tg, s)
 	}
 	tg.Dangerous = s.Dangerous
+	tg.ShowToolCalls = cfg.Chat.Telegram.ShowToolCalls
 	tg.ReleaseAnnouncements = &releaseannounce.Announcer{
 		StatePath: releaseAnnouncementStatePath(cfg.WorkDir, cfg.BotUser),
 		Components: []releaseannounce.Component{
@@ -155,7 +156,10 @@ func makeTelegramReload(s telegramSetup) func(*telegram.Gateway) error {
 		}
 		g.Token = token
 		g.AllowedUserIDs = newCfg.Chat.Telegram.AllowedUserIDs
-		s.Log.Info("chat gateway config reloaded", "allowed_user_ids", len(g.AllowedUserIDs))
+		g.ShowToolCalls = newCfg.Chat.Telegram.ShowToolCalls
+		s.Log.Info("chat gateway config reloaded",
+			"allowed_user_ids", len(g.AllowedUserIDs),
+			"show_tool_calls", g.ShowToolCalls)
 		return nil
 	}
 }
@@ -232,8 +236,8 @@ func newChatTurnRunner(
 	return runner
 }
 
-func sendChatTurn(ctx context.Context, llm *runtime.Runtime, chatModel string, options core.GenerateOptions, onDelta func(string)) (string, error) {
-	if onDelta == nil {
+func sendChatTurn(ctx context.Context, llm *runtime.Runtime, chatModel string, options core.GenerateOptions, turn gateway.TurnStream) (string, error) {
+	if turn == nil {
 		result, err := llm.Chat(ctx, chatModel, options)
 		if err != nil {
 			return "", fmt.Errorf("llm chat: %w", err)
@@ -244,18 +248,47 @@ func sendChatTurn(ctx context.Context, llm *runtime.Runtime, chatModel string, o
 	if err != nil {
 		return "", fmt.Errorf("llm chat stream: %w", err)
 	}
-	var sb strings.Builder
-	for part := range stream.FullStream {
-		if part.Type != core.StreamPartTextDelta || part.TextDelta == "" {
-			continue
-		}
-		sb.WriteString(part.TextDelta)
-		onDelta(part.TextDelta)
-	}
+	text := drainChatStream(stream.FullStream, turn)
 	if _, err := stream.FinishReason(); err != nil {
 		return "", fmt.Errorf("llm chat stream: %w", err)
 	}
-	return sb.String(), nil
+	return text, nil
+}
+
+// drainChatStream consumes a model stream to close, reporting assistant text
+// and each completed tool call to turn, and returns the assembled reply.
+//
+// FullStream is authoritative and its writes are synchronous, so it must be
+// drained to close even when turn is nil  --  an unread stream stalls the
+// generating goroutine.
+//
+// A tool is reported on its result, never on its call: the call part carries
+// no outcome yet, so reporting both would show every tool twice, once with
+// nothing to say.
+func drainChatStream(parts <-chan core.StreamPart, turn gateway.TurnStream) string {
+	var sb strings.Builder
+	for part := range parts {
+		switch part.Type {
+		case core.StreamPartTextDelta:
+			if part.TextDelta == "" {
+				continue
+			}
+			sb.WriteString(part.TextDelta)
+			if turn != nil {
+				turn.Delta(part.TextDelta)
+			}
+		case core.StreamPartToolResult:
+			if part.ToolResult == nil || turn == nil {
+				continue
+			}
+			turn.ToolCall(gateway.ToolCallEvent{
+				Name:   part.ToolResult.ToolName,
+				Output: part.ToolResult.Output,
+				Err:    part.ToolResult.Error,
+			})
+		}
+	}
+	return sb.String()
 }
 
 // chatTitleGenerator proposes session titles through the chat model. It
