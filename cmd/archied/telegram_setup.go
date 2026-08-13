@@ -86,7 +86,7 @@ func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), o
 		configureTelegramUpdates(tg, s)
 	}
 	tg.Dangerous = s.Dangerous
-	tg.ShowToolCalls = cfg.Chat.Telegram.ShowToolCalls
+	tg.SetShowToolCalls(cfg.Chat.Telegram.ShowToolCalls)
 	tg.ReleaseAnnouncements = &releaseannounce.Announcer{
 		StatePath: releaseAnnouncementStatePath(cfg.WorkDir, cfg.BotUser),
 		Components: []releaseannounce.Component{
@@ -156,10 +156,10 @@ func makeTelegramReload(s telegramSetup) func(*telegram.Gateway) error {
 		}
 		g.Token = token
 		g.AllowedUserIDs = newCfg.Chat.Telegram.AllowedUserIDs
-		g.ShowToolCalls = newCfg.Chat.Telegram.ShowToolCalls
+		g.SetShowToolCalls(newCfg.Chat.Telegram.ShowToolCalls)
 		s.Log.Info("chat gateway config reloaded",
 			"allowed_user_ids", len(g.AllowedUserIDs),
-			"show_tool_calls", g.ShowToolCalls)
+			"show_tool_calls", g.ShowToolCalls())
 		return nil
 	}
 }
@@ -266,7 +266,13 @@ func sendChatTurn(ctx context.Context, llm *runtime.Runtime, chatModel string, o
 // no outcome yet, so reporting both would show every tool twice, once with
 // nothing to say.
 func drainChatStream(parts <-chan core.StreamPart, turn gateway.TurnStream) string {
+	type pendingToolCall struct {
+		name       string
+		parameters string
+	}
+
 	var sb strings.Builder
+	pending := make(map[string]pendingToolCall)
 	for part := range parts {
 		switch part.Type {
 		case core.StreamPartTextDelta:
@@ -277,14 +283,30 @@ func drainChatStream(parts <-chan core.StreamPart, turn gateway.TurnStream) stri
 			if turn != nil {
 				turn.Delta(part.TextDelta)
 			}
+		case core.StreamPartToolCall:
+			if part.ToolCall == nil || part.ToolCall.ToolCallID == "" {
+				continue
+			}
+			pending[part.ToolCall.ToolCallID] = pendingToolCall{
+				name:       part.ToolCall.ToolName,
+				parameters: gateway.SummarizeToolParameters(part.ToolCall.Input),
+			}
 		case core.StreamPartToolResult:
 			if part.ToolResult == nil || turn == nil {
 				continue
 			}
+			call := pending[part.ToolResult.ToolCallID]
+			delete(pending, part.ToolResult.ToolCallID)
+			name := part.ToolResult.ToolName
+			if name == "" {
+				name = call.name
+			}
 			turn.ToolCall(gateway.ToolCallEvent{
-				Name:   part.ToolResult.ToolName,
-				Output: part.ToolResult.Output,
-				Err:    part.ToolResult.Error,
+				ID:         part.ToolResult.ToolCallID,
+				Name:       name,
+				Parameters: call.parameters,
+				Output:     part.ToolResult.Output,
+				Err:        part.ToolResult.Error,
 			})
 		}
 	}

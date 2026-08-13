@@ -1,19 +1,31 @@
 package gateway
 
-import "strings"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // toolSummaryMaxRunes bounds a rendered tool summary. Tool output is
 // unbounded  --  a grep can return thousands of lines  --  and the summary is
 // one line in a chat transcript, so it is cut rather than allowed to bury the
 // answer it precedes.
-const toolSummaryMaxRunes = 80
+const (
+	toolSummaryMaxRunes    = 80
+	toolParametersMaxRunes = 120
+	redactedParameterValue = "[redacted]"
+)
 
 // ToolCallEvent reports one completed tool invocation within a turn. It
 // carries the raw outcome rather than rendered text: presentation (emoji,
 // layout, whether to show it at all) belongs to the channel adapter.
 type ToolCallEvent struct {
+	// ID correlates the completed result with the model's invocation.
+	ID string
 	// Name is the tool the model invoked.
 	Name string
+	// Parameters is a bounded, redacted JSON summary of the invocation input.
+	// It is safe for channel adapters to render directly.
+	Parameters string
 	// Output is what the tool returned, verbatim.
 	Output string
 	// Err is non-empty when the tool failed, in which case Output is
@@ -32,6 +44,75 @@ func (e ToolCallEvent) Summary() string {
 		return truncateRunes(line, toolSummaryMaxRunes)
 	}
 	return "done"
+}
+
+// SummarizeToolParameters returns a bounded JSON shape of tool input. Every
+// string value is replaced rather than echoed because credentials can appear
+// inside ordinary parameters such as command, content, or body. Values under
+// secret-bearing keys use an explicit redaction marker; other strings retain
+// only their type. Invalid JSON is never echoed.
+func SummarizeToolParameters(input string) string {
+	if strings.TrimSpace(input) == "" {
+		return ""
+	}
+	decoder := json.NewDecoder(strings.NewReader(input))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return "[unavailable]"
+	}
+	value = redactToolParameters(value, false)
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return "[unavailable]"
+	}
+	return truncateRunesWithinLimit(string(encoded), toolParametersMaxRunes)
+}
+
+func redactToolParameters(value any, sensitive bool) any {
+	if sensitive {
+		return redactedParameterValue
+	}
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			typed[key] = redactToolParameters(child, sensitiveParameterKey(key))
+		}
+		return typed
+	case []any:
+		for i, child := range typed {
+			typed[i] = redactToolParameters(child, sensitive)
+		}
+		return typed
+	case string:
+		return "[string]"
+	default:
+		return value
+	}
+}
+
+func sensitiveParameterKey(key string) bool {
+	normalized := strings.NewReplacer("-", "_", " ", "_").Replace(strings.ToLower(key))
+	for _, marker := range []string{
+		"token", "secret", "password", "passwd", "api_key", "apikey",
+		"authorization", "credential", "cookie", "private_key",
+	} {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func truncateRunesWithinLimit(s string, limit int) string {
+	runes := []rune(s)
+	if len(runes) <= limit {
+		return s
+	}
+	if limit <= 1 {
+		return "…"
+	}
+	return string(runes[:limit-1]) + "…"
 }
 
 // TurnStream receives a turn's output as it is produced.

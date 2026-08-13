@@ -5,6 +5,39 @@ import (
 	"testing"
 )
 
+func TestSummarizeToolParameters(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "empty", input: "", want: ""},
+		{name: "compact object", input: `{ "path": "/tmp/file", "line": 2 }`, want: `{"line":2,"path":"[string]"}`},
+		{name: "nested secrets", input: `{"headers":{"Authorization":"Bearer secret"},"api-token":"secret","safe":"visible"}`, want: `{"api-token":"[redacted]","headers":{"Authorization":"[redacted]"},"safe":"[string]"}`},
+		{name: "secret embedded in ordinary value", input: `{"command":"curl -H 'Authorization: Bearer secret'"}`, want: `{"command":"[string]"}`},
+		{name: "secret in array", input: `[{"password":"secret"}]`, want: `[{"password":"[redacted]"}]`},
+		{name: "non-string secret", input: `{"password":123456,"token":true}`, want: `{"password":"[redacted]","token":"[redacted]"}`},
+		{name: "nested value under sensitive key", input: `{"credentials":{"user":"archie","password":"secret"}}`, want: `{"credentials":"[redacted]"}`},
+		{name: "invalid JSON", input: `token=secret`, want: "[unavailable]"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := SummarizeToolParameters(tc.input); got != tc.want {
+				t.Fatalf("SummarizeToolParameters() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+
+	got := SummarizeToolParameters(`{"value":[` + strings.Repeat("0,", toolParametersMaxRunes) + `0]}`)
+	if len([]rune(got)) != toolParametersMaxRunes {
+		t.Fatalf("bounded summary is %d runes, want %d", len([]rune(got)), toolParametersMaxRunes)
+	}
+	if !strings.HasSuffix(got, "…") {
+		t.Fatalf("bounded summary = %q, want ellipsis", got)
+	}
+}
+
 func TestToolCallEventSummary(t *testing.T) {
 	tests := []struct {
 		name  string
