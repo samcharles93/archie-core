@@ -708,6 +708,11 @@ type TelegramConfig struct {
 	// are argv arrays, never shell snippets.
 	UpdateCheckCommand   []string `toml:"update_check_command" yaml:"update_check_command"`
 	UpdateInstallCommand []string `toml:"update_install_command" yaml:"update_install_command"`
+	// ShowToolCalls renders each completed tool call inline in the reply,
+	// naming the tool and one line of its result. It is off by default: it
+	// exists to make a wrong tool choice visible from the chat, and it
+	// narrates every internal step to do so.
+	ShowToolCalls bool `toml:"show_tool_calls" yaml:"show_tool_calls"`
 }
 
 // EmailConfig configures the inbound email channel via SMTP.

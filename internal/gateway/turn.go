@@ -25,7 +25,10 @@ type TurnModel interface {
 type PreparedTurnModel interface {
 	ToolSummaries() []ToolSummary
 	ToolSchemaTokens() int
-	Generate(ctx context.Context, request TurnModelRequest, onDelta func(string)) (string, error)
+	// Generate runs the turn, reporting progress to stream as it goes.
+	// stream is nil when the caller cannot render partial output; an
+	// implementation must then generate without reporting anything.
+	Generate(ctx context.Context, request TurnModelRequest, stream TurnStream) (string, error)
 }
 
 // TurnModelRequest is the provider-neutral request assembled by the gateway.
@@ -116,13 +119,17 @@ func (r *TurnRunner) Respond(ctx context.Context, msg Message) (string, error) {
 }
 
 // RespondStream adapts the runner to Router.LLMStream.
-func (r *TurnRunner) RespondStream(ctx context.Context, msg Message, onDelta func(string)) (string, error) {
-	return r.Run(ctx, msg, onDelta)
+func (r *TurnRunner) RespondStream(ctx context.Context, msg Message, stream TurnStream) (string, error) {
+	return r.Run(ctx, msg, stream)
 }
 
-// Run executes one turn. A completed duplicate source message replays its
-// durable response without invoking the model again.
-func (r *TurnRunner) Run(ctx context.Context, msg Message, onDelta func(string)) (string, error) {
+// Run executes one turn, reporting progress to stream. A completed duplicate
+// source message replays its durable response without invoking the model
+// again; the replay reaches stream as one whole-text fragment, since there is
+// no generation left to watch.
+//
+// stream may be nil, which means the caller renders only the returned reply.
+func (r *TurnRunner) Run(ctx context.Context, msg Message, stream TurnStream) (string, error) {
 	if r.Router == nil {
 		return "", fmt.Errorf("chat turn router is not configured")
 	}
@@ -165,8 +172,8 @@ func (r *TurnRunner) Run(ctx context.Context, msg Message, onDelta func(string))
 	}
 	switch claim {
 	case TurnClaimCompleted:
-		if onDelta != nil && turn.ResponseText != "" {
-			onDelta(turn.ResponseText)
+		if stream != nil && turn.ResponseText != "" {
+			stream.Delta(turn.ResponseText)
 		}
 		return turn.ResponseText, nil
 	case TurnClaimInProgress:
@@ -198,8 +205,8 @@ func (r *TurnRunner) Run(ctx context.Context, msg Message, onDelta func(string))
 			r.Log.Info("replaying the reply to a redelivered message",
 				"session", sessionID, "source_id", msg.SourceID)
 		}
-		if onDelta != nil {
-			onDelta(prior)
+		if stream != nil {
+			stream.Delta(prior)
 		}
 		return prior, nil
 	}
@@ -280,7 +287,7 @@ func (r *TurnRunner) Run(ctx context.Context, msg Message, onDelta func(string))
 	text, err := prepared.Generate(ctx, TurnModelRequest{
 		Messages:  view.Messages,
 		MaxTokens: modelDetails.MaxOutputTokens,
-	}, onDelta)
+	}, stream)
 	if err != nil {
 		return "", r.failTurn(ctx, turn, err)
 	}

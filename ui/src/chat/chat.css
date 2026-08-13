@@ -59,6 +59,15 @@
 .chat-bubble-text table { width: 100%; margin: .7rem 0; border-collapse: collapse; font-size: .92em; }
 .chat-bubble-text th, .chat-bubble-text td { padding: .45rem .6rem; text-align: left; border: 1px solid var(--border); }
 .chat-bubble-text th { color: var(--fg); background: color-mix(in srgb, var(--surface) 70%, transparent); font-weight: 700; }
+/* Tool activity: a quiet log above the answer it produced. It is deliberately
+   smaller and dimmer than the reply -- it is evidence, not the point. An empty
+   list renders nothing, so a turn that called no tools looks untouched. */
+.chat-tools { display: grid; gap: .2rem; margin-bottom: .5rem; font-size: .78rem; }
+.chat-tools:empty { display: none; }
+.chat-tool { display: flex; gap: .4rem; align-items: baseline; color: var(--fg-muted); overflow-wrap: anywhere; }
+.chat-tool-name { color: var(--fg); font-weight: 600; }
+.chat-tool.failed .chat-tool-summary { color: var(--danger); }
+
 .chat-compose { padding: .85rem 1rem 1rem; border-top: 1px solid var(--border); }
 .chat-composer-shell { position: relative; padding: .7rem .8rem .55rem; background: var(--surface-hover); border: 1px solid var(--border-strong); border-radius: .9rem; }
 .chat-composer { width: 100%; min-height: 3.3rem; resize: vertical; box-sizing: border-box; background: transparent; color: var(--fg); border: 0; padding: .25rem 0; font: inherit; }

@@ -55,6 +55,12 @@ type Gateway struct {
 	// root supplies this; Telegram only renders approval UX.
 	Dangerous DangerousCommandAuthority
 
+	// ShowToolCalls renders each completed tool call as an inline line in
+	// the reply, so the human can see which tools ran and what they
+	// returned rather than only the answer built from them. Off by default:
+	// it is debugging visibility, and it narrates every internal step.
+	ShowToolCalls bool
+
 	// restartCh carries /restart requests from a bot handler to the
 	// supervisor loop in Start. Buffered so a handler never blocks.
 	restartCh         chan restartRequest
@@ -536,28 +542,38 @@ func (g *Gateway) submitTurn(ctx context.Context, b *bot.Bot, msg *models.Messag
 		// reply appears as it is written; the typing indicator covers the
 		// gap before the first token and any non-streaming path.
 		stopTyping := g.startTyping(turnCtx, b, chatID, threadID)
-		draft := g.newDraft(b, chatID, threadID)
+		live := g.newLiveReply(b, chatID, threadID)
 
 		// If it starts with / but wasn't matched by a registered
 		// handler, it's unknown  --  let the router handle it (which
 		// will say "unrecognized").
-		reply, err := router.RouteStream(turnCtx, gm, draft.onDelta)
+		reply, err := router.RouteStream(turnCtx, gm, live)
 		stopTyping()
 
 		// A cancelled turn is a /stop, not a fault. The stop handler has
 		// already acknowledged it, and turnCtx is dead, so there is
-		// nothing useful left to send from here.
-		if errors.Is(err, context.Canceled) {
-			g.log.Info("chat turn stopped", "session", session)
-			return
-		}
+		// nothing useful left to send from here  --  but whatever was
+		// already streamed stays, minus the cursor that would otherwise
+		// claim the answer is still being written.
+		//
+		// Both failure branches abandon through a live context, not
+		// turnCtx. A /stop is not reliably reported as context.Canceled:
+		// ai-sdk raises an aborted stream as ErrAborted with ctx.Err()
+		// formatted in, not wrapped, so errors.Is misses a cancellation
+		// that landed inside the step loop or a tool call and it arrives
+		// here as a plain error  --  with turnCtx already dead. Editing
+		// through a dead context fails, and the cursor this cleanup
+		// exists to remove would blink forever.
 		if err != nil {
-			g.log.Error("route failed", "error", err)
+			if errors.Is(err, context.Canceled) {
+				g.log.Info("chat turn stopped", "session", session)
+			} else {
+				g.log.Error("route failed", "error", err)
+			}
+			live.abandon(context.WithoutCancel(turnCtx))
 			return
 		}
-		if reply != "" {
-			g.sendMessage(turnCtx, b, chatID, threadID, reply)
-		}
+		live.finalize(turnCtx, reply)
 	})
 }
 
@@ -638,14 +654,16 @@ func (g *Gateway) isSenderAllowed(userID int64) bool {
 	return slices.Contains(g.AllowedUserIDs, userID)
 }
 
+// messageMaxLen keeps a single message under Telegram's 4096 character
+// limit, with room for the continuation marker split adds.
+const messageMaxLen = 4000
+
 func (g *Gateway) sendMessage(ctx context.Context, b *bot.Bot, chatID int64, messageThreadID int, text string) {
-	// Split long messages to stay under Telegram's 4096 character limit.
-	const maxLen = 4000
-	if len(text) <= maxLen {
+	if len(text) <= messageMaxLen {
 		g.send(ctx, b, chatID, messageThreadID, text, "send message failed")
 		return
 	}
-	parts := splitLongMessage(text, maxLen)
+	parts := splitLongMessage(text, messageMaxLen)
 	for i, part := range parts {
 		partText := part
 		if i < len(parts)-1 {
