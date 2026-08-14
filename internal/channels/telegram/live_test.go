@@ -695,3 +695,192 @@ func TestLiveReplyAbandonStaysCleanUnlikeAbandonFailed(t *testing.T) {
 		t.Fatalf("abandon (a /stop) was marked as a failure: %q", last.markdown)
 	}
 }
+
+// A gateway restart or shutdown cancels turnCtx without any guarantee that
+// the goroutine which owns a liveReply ever runs again to notice and clean
+// up after itself -- a full process exit gives it no chance to run at all.
+// abandonAllLive is what actually guarantees no message is stranded ending
+// in the cursor: it must find every reply still mid-turn and mark it,
+// without waiting on the turn's own goroutine.
+func TestGatewayAbandonAllLiveMarksInFlightRepliesAsRestarted(t *testing.T) {
+	live, calls := newTestLiveReply(t, false)
+
+	live.Delta("half an answer")
+	live.flushRendering()
+
+	live.g.abandonAllLive(context.Background())
+
+	last := (*calls)[len(*calls)-1]
+	if !strings.Contains(last.markdown, "half an answer") {
+		t.Fatalf("abandonAllLive lost the streamed partial: %q", last.markdown)
+	}
+	if !strings.Contains(last.markdown, "restarted") {
+		t.Fatalf("abandonAllLive did not mark the message as interrupted by a restart: %q", last.markdown)
+	}
+	if n := len(live.g.liveReplies); n != 0 {
+		t.Fatalf("registry still holds %d entries after abandonAllLive, want 0", n)
+	}
+}
+
+// A reply that already finished on its own must not be touched a second
+// time by a Stop landing moments later: finalize/abandon deregister
+// themselves, and abandonAllLive only acts on what is still registered.
+func TestGatewayAbandonAllLiveSkipsAnAlreadyFinishedReply(t *testing.T) {
+	live, calls := newTestLiveReply(t, false)
+
+	live.Delta("start")
+	live.finalize(context.Background(), "the finished answer")
+	callsBefore := len(*calls)
+
+	live.g.abandonAllLive(context.Background())
+
+	if len(*calls) != callsBefore {
+		t.Fatalf("abandonAllLive sent %d more calls to an already-finished reply, want 0", len(*calls)-callsBefore)
+	}
+	last := (*calls)[len(*calls)-1]
+	if strings.Contains(last.markdown, "restarted") {
+		t.Fatalf("a finished reply was retroactively marked as restarted: %q", last.markdown)
+	}
+}
+
+// Stop is the actual trigger for this cleanup in production: a running
+// gateway must abandon every in-flight reply as part of stopping, not only
+// when a test calls abandonAllLive directly.
+func TestGatewayStopAbandonsInFlightLiveReplies(t *testing.T) {
+	live, calls := newTestLiveReply(t, false)
+	live.g.running = true
+
+	live.Delta("still writing")
+	live.flushRendering()
+
+	if err := live.g.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop() = %v, want nil", err)
+	}
+
+	last := (*calls)[len(*calls)-1]
+	if !strings.Contains(last.markdown, "restarted") {
+		t.Fatalf("Stop did not abandon the in-flight reply: %q", last.markdown)
+	}
+}
+
+// A turn finishing naturally and a concurrent gateway shutdown can both
+// reach the same liveReply at once: finalize from the turn's own goroutine,
+// abandonRestarted from abandonAllLive. Without terminal serialising them,
+// both send their own edit for the same message and whichever Telegram
+// processes last wins nondeterministically -- including a real, complete
+// answer getting silently overwritten by the restart marker. Exactly one of
+// the two outcomes must win, never a mix and never neither.
+func TestLiveReplyFinalizeAndAbandonRestartedAreMutuallyExclusive(t *testing.T) {
+	const iterations = 20
+	for i := range iterations {
+		live, calls := newTestLiveReply(t, false)
+		live.Delta("streaming")
+		live.flushRendering()
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			live.finalize(context.Background(), "THE REAL ANSWER")
+		}()
+		go func() {
+			defer wg.Done()
+			live.abandonRestarted(context.Background())
+		}()
+		wg.Wait()
+
+		last := (*calls)[len(*calls)-1]
+		hasAnswer := strings.Contains(last.markdown, "THE REAL ANSWER")
+		hasRestart := strings.Contains(last.markdown, "restarted")
+		if hasAnswer == hasRestart {
+			t.Fatalf("iteration %d: final message = %q, want exactly one of the real answer or the restart marker, never both or neither",
+				i, last.markdown)
+		}
+	}
+}
+
+// abandonAllLive must not hang gateway Stop forever on one stalled Telegram
+// API call: a shutdown that never completes because a single reply's edit
+// never returns defeats the whole point of a bounded cleanup path.
+func TestGatewayAbandonAllLiveDoesNotBlockOnAHungReply(t *testing.T) {
+	// release is closed explicitly at the end of the test body, before the
+	// api.Close cleanup runs -- closing it via t.Cleanup instead would race
+	// api.Close (which blocks until the in-flight, permanently-hung request
+	// completes) and deadlock the test itself.
+	release := make(chan struct{})
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+	}))
+	t.Cleanup(api.Close)
+
+	b, err := bot.New("1:test", bot.WithServerURL(api.URL), bot.WithSkipGetMe())
+	if err != nil {
+		t.Fatalf("new test bot: %v", err)
+	}
+	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+	g.liveDrainTimeout = 50 * time.Millisecond
+
+	live := g.newLiveReply(context.Background(), b, 7, 0, false)
+	t.Cleanup(live.stopRendering)
+	live.mu.Lock()
+	live.messageID = 55 // pretend a message already exists, forcing a hung edit call
+	live.answerBuf.WriteString("stuck mid-edit")
+	live.mu.Unlock()
+
+	start := time.Now()
+	g.abandonAllLive(context.Background())
+	elapsed := time.Since(start)
+	close(release)
+
+	if elapsed > g.liveDrainTimeout+2*time.Second {
+		t.Fatalf("abandonAllLive took %v, want bounded near liveDrainTimeout (%v)", elapsed, g.liveDrainTimeout)
+	}
+}
+
+// A liveReply created in the narrow window after abandonAllLive has already
+// claimed the registry must still end up marked, not silently registered
+// into (and then lost from) a registry nothing will ever drain again.
+func TestGatewayRegisterLiveAfterStopAbandonsImmediately(t *testing.T) {
+	// registerLive's stopped path abandons on its own goroutine (see
+	// registerLive), so the assertion below must synchronize on that
+	// goroutine's completion rather than polling fakeAPI's shared calls
+	// slice, which is unsynchronized and only ever written from the single
+	// HTTP handler goroutine in every other test in this file.
+	type capturedRequest struct {
+		body string
+	}
+	received := make(chan capturedRequest, 1)
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := capturedCall(t, r)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":55,"date":1,"chat":{"id":7,"type":"private"}}}`))
+		received <- capturedRequest{body: call.markdown}
+	}))
+	t.Cleanup(api.Close)
+	b, err := bot.New("1:test", bot.WithServerURL(api.URL), bot.WithSkipGetMe())
+	if err != nil {
+		t.Fatalf("new test bot: %v", err)
+	}
+
+	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+	g.liveMu.Lock()
+	g.liveStopped = true
+	g.liveMu.Unlock()
+
+	live := g.newLiveReply(context.Background(), b, 7, 0, false)
+	t.Cleanup(live.stopRendering)
+	live.interval = 0
+
+	if n := len(g.liveReplies); n != 0 {
+		t.Fatalf("registry holds %d entries after a post-stop registration, want 0", n)
+	}
+
+	select {
+	case req := <-received:
+		if !strings.Contains(req.body, "restarted") {
+			t.Fatalf("post-stop registration produced %q, want the restart marker", req.body)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("a liveReply registered after stop was never abandoned")
+	}
+}

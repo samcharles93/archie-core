@@ -98,6 +98,19 @@ type liveReply struct {
 	rendered  string
 	messageID int
 	last      time.Time
+
+	// terminal guards finalize and abandon so exactly one of them actually
+	// runs its body. Without this, a turn finishing naturally (finalize)
+	// and a concurrent Gateway.Stop (abandon, via abandonRestarted) can
+	// both reach their own Telegram edit for the same message: both edits
+	// go through, and whichever HTTP response Telegram processes last
+	// decides what the user sees, nondeterministically -- including a
+	// completed real answer getting silently overwritten by a restart
+	// marker. The loser's call blocks until the winner's body returns
+	// (sync.Once's own guarantee), then does nothing, so cleanup that must
+	// happen exactly once (stopRendering, forgetLive) is never skipped or
+	// duplicated regardless of which side wins.
+	terminal sync.Once
 }
 
 // newLiveReply creates a renderer bound to one chat/thread. showToolCalls is
@@ -116,7 +129,105 @@ func (g *Gateway) newLiveReply(ctx context.Context, b *bot.Bot, chatID int64, me
 		renderDone:      make(chan struct{}),
 	}
 	go live.runRenderer(renderCtx)
+	g.registerLive(ctx, live)
 	return live
+}
+
+// resetLiveRegistry clears the previous launch's stopped mark. Called once
+// per launch, alongside rebuilding turns: a /restart's Stop marks the
+// registry stopped so nothing straggling from the outgoing bot instance
+// gets silently registered into it, but the incoming instance needs a live
+// registry of its own.
+func (g *Gateway) resetLiveRegistry() {
+	g.liveMu.Lock()
+	g.liveStopped = false
+	g.liveMu.Unlock()
+}
+
+// registerLive adds l to the set Stop drains on shutdown or restart. If a
+// drain already claimed the registry for this launch, l is abandoned
+// immediately instead of being registered: it arrived in the narrow window
+// between that claim and this call, and without this it would sit in no
+// registry, with nothing left to ever drain it.
+func (g *Gateway) registerLive(ctx context.Context, l *liveReply) {
+	g.liveMu.Lock()
+	if g.liveStopped {
+		g.liveMu.Unlock()
+		go l.abandonRestarted(context.WithoutCancel(ctx))
+		return
+	}
+	if g.liveReplies == nil {
+		g.liveReplies = make(map[*liveReply]struct{})
+	}
+	g.liveReplies[l] = struct{}{}
+	g.liveMu.Unlock()
+}
+
+// forgetLive removes l from the registry. Called at the top of doFinalize
+// and doAbandon -- reached through l.terminal, so by the time this runs the
+// caller has already exclusively won the right to decide this reply's
+// outcome (see the terminal field doc) -- so a reply that completed on its
+// own is never picked up a second time by a later Stop, and a reply Stop
+// has already claimed is never double-processed.
+func (g *Gateway) forgetLive(l *liveReply) {
+	g.liveMu.Lock()
+	defer g.liveMu.Unlock()
+	delete(g.liveReplies, l)
+}
+
+// abandonAllLiveTimeout bounds how long Stop waits for in-flight replies to
+// be marked before giving up and returning anyway. A single stalled
+// Telegram API call must not hang gateway (and therefore daemon) shutdown
+// indefinitely; entries still in flight past this deadline keep running in
+// the background and finish (or die with the process) on their own.
+const abandonAllLiveTimeout = 5 * time.Second
+
+// abandonAllLive drops the cursor, marked as interrupted, on every turn
+// still streaming when the gateway stops or restarts. It exists because
+// nothing else guarantees this happens: cancelling turnCtx does not
+// guarantee the goroutine that owns a liveReply ever runs again to notice
+// and clean up after itself, and a full daemon process exit gives it no
+// chance to run at all, so this must not wait on that goroutine and must not
+// skip a reply just because its owning turn is still technically running.
+//
+// Marking liveStopped and draining the registry happen together, under the
+// same lock, so registerLive can never observe "stopped" without also
+// observing an empty-of-this-entry registry, or vice versa.
+func (g *Gateway) abandonAllLive(ctx context.Context) {
+	g.liveMu.Lock()
+	g.liveStopped = true
+	live := make([]*liveReply, 0, len(g.liveReplies))
+	for l := range g.liveReplies {
+		live = append(live, l)
+	}
+	clear(g.liveReplies)
+	g.liveMu.Unlock()
+
+	if len(live) == 0 {
+		return
+	}
+
+	timeout := g.liveDrainTimeout
+	if timeout <= 0 {
+		timeout = abandonAllLiveTimeout
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		var wg sync.WaitGroup
+		for _, l := range live {
+			wg.Go(func() { l.abandonRestarted(ctx) })
+		}
+		wg.Wait()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(timeout):
+		g.log.Warn("gateway stop: gave up waiting for in-flight replies to be marked as restarted",
+			"pending", len(live), "timeout", timeout)
+	}
 }
 
 func (l *liveReply) runRenderer(ctx context.Context) {
@@ -249,8 +360,18 @@ func (l *liveReply) markRendered(body string) {
 // still attached, forever. Doing this inside finalize rather than trusting
 // each caller to pass a live context is what keeps this fix from silently
 // regressing the next time a caller is added.
+//
+// The actual work runs inside l.terminal so a concurrent abandon (a gateway
+// shutdown abandoning every in-flight reply while this turn is finishing
+// naturally, see Gateway.abandonAllLive) cannot send its own conflicting
+// edit for the same message  --  see the terminal field doc.
 func (l *liveReply) finalize(ctx context.Context, reply string) {
 	ctx = context.WithoutCancel(ctx)
+	l.terminal.Do(func() { l.doFinalize(ctx, reply) })
+}
+
+func (l *liveReply) doFinalize(ctx context.Context, reply string) {
+	l.g.forgetLive(l)
 
 	// Finish any queued live frame before replacing it, then retire the
 	// worker so no stale edit can race the authoritative delivery.
@@ -301,10 +422,18 @@ const abandonMarker = "\n\n❌ _turn failed before finishing_"
 // Like finalize, it strips ctx of cancellation before sending: abandon runs
 // precisely when a /stop has cancelled turnCtx, so honouring that
 // cancellation in the very edit meant to drop the cursor would leave the
-// cursor blinking on a message nothing will ever finish.
+// cursor blinking on a message nothing will ever finish. And like finalize,
+// the actual work runs inside l.terminal -- see the terminal field doc and
+// finalize's.
 func (l *liveReply) abandon(ctx context.Context) {
+	ctx = context.WithoutCancel(ctx)
+	l.terminal.Do(func() { l.doAbandon(ctx) })
+}
+
+func (l *liveReply) doAbandon(ctx context.Context) {
+	l.g.forgetLive(l)
 	l.stopRendering()
-	l.abandonStopped(context.WithoutCancel(ctx))
+	l.abandonStopped(ctx)
 }
 
 // abandonFailed leaves a failed turn readable and visibly marked as failed,
@@ -314,6 +443,25 @@ func (l *liveReply) abandon(ctx context.Context) {
 func (l *liveReply) abandonFailed(ctx context.Context) {
 	l.mu.Lock()
 	l.answerBuf.WriteString(abandonMarker)
+	l.mu.Unlock()
+	l.abandon(ctx)
+}
+
+// restartMarker distinguishes a gateway-restart abandon from both a clean
+// /stop (abandon) and a provider failure (abandonFailed): the turn was cut
+// off by an operational event rather than a fault in it or a deliberate
+// stop, and unlike either of those the user's message is still worth
+// resending once the gateway is back.
+const restartMarker = "\n\n⚠️ _archie restarted before finishing  --  send your message again_"
+
+// abandonRestarted leaves a turn interrupted by gateway shutdown or restart
+// readable and marked, for the same reason abandonFailed marks a provider
+// error: nothing will ever resume this turn, and an unmarked partial reads
+// as a finished answer either way. Called by Gateway.abandonAllLive, never
+// by the turn's own goroutine.
+func (l *liveReply) abandonRestarted(ctx context.Context) {
+	l.mu.Lock()
+	l.answerBuf.WriteString(restartMarker)
 	l.mu.Unlock()
 	l.abandon(ctx)
 }
