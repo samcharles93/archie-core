@@ -59,6 +59,15 @@ const (
 // finalize writes when the turn completes  --  if every live update failed,
 // the user simply sees the finished message appear the way it did before
 // streaming existed.
+//
+// A known, accepted trade-off of editing rather than sending: Telegram does
+// not change a message's date on edit, so the finished reply carries the
+// timestamp of the first streamed frame, not of finalize. A turn with a long
+// tool phase can therefore produce an answer timestamped before a user
+// message sent later, during that phase, and sort before the conversation
+// that produced it. Delete-and-resend on finalize would fix the ordering but
+// reintroduce the flicker/reorder streaming was built to avoid, so this is
+// left as-is rather than "fixed."
 type liveReply struct {
 	g               *Gateway
 	b               *bot.Bot
