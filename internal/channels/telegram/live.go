@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -72,11 +73,16 @@ type liveReply struct {
 	renderDone     chan struct{}
 
 	mu sync.Mutex
-	// buf is the canonical buffer: assistant text and tool lines in the
-	// order the model produced them.
-	buf strings.Builder
-	// toolLines holds the same tool entries separately, so the finished
-	// message can lead with them rather than with them buried mid-answer.
+	// answerBuf is the assistant text streamed so far, in the order the
+	// model produced it. Tool activity is not appended here: it is tracked
+	// separately in toolLines so it can be kept whole and in front of the
+	// answer at every rendering stage (mid-turn frame, abandon, finalize)
+	// instead of scrolling out of the frame once the answer grows past the
+	// live clamp.
+	answerBuf strings.Builder
+	// toolLines holds the tool activity for this turn, in call order, so
+	// every rendering stage can lead with it rather than have it buried
+	// mid-answer or clamped away.
 	toolLines []string
 	// rendered is the last body actually sent. Telegram rejects an edit
 	// that changes nothing, so an unchanged body is not sent at all.
@@ -151,7 +157,7 @@ func (l *liveReply) Delta(text string) {
 		return
 	}
 	l.mu.Lock()
-	l.buf.WriteString(text)
+	l.answerBuf.WriteString(text)
 	throttled := time.Since(l.last) < l.interval
 	l.mu.Unlock()
 	if throttled {
@@ -183,11 +189,6 @@ func (l *liveReply) ToolCall(event gateway.ToolCallEvent) {
 	line += " — " + bot.EscapeMarkdown(event.Summary())
 
 	l.mu.Lock()
-	if l.buf.Len() > 0 && !strings.HasSuffix(l.buf.String(), "\n") {
-		l.buf.WriteString("\n")
-	}
-	l.buf.WriteString(line)
-	l.buf.WriteString("\n")
 	l.toolLines = append(l.toolLines, line)
 	l.mu.Unlock()
 
@@ -277,8 +278,16 @@ func (l *liveReply) finalize(ctx context.Context, reply string) {
 	}
 }
 
-// abandon leaves a stopped or failed turn readable: the partial text stays,
-// but the cursor goes, so the message does not claim to still be writing.
+// abandonMarker is appended to a failed turn's partial text so it cannot be
+// mistaken for a finished answer: without it, a truncated reply and a
+// completed one are visually identical, and Telegram messages are
+// immutable, so nothing can correct that impression after the fact.
+const abandonMarker = "\n\n❌ _turn failed before finishing_"
+
+// abandon leaves a stopped turn readable: the partial text stays, but the
+// cursor goes, so the message does not claim to still be writing. A /stop is
+// a deliberate, acknowledged interruption, not a fault, so the partial is
+// left clean rather than marked as a failure.
 //
 // Like finalize, it strips ctx of cancellation before sending: abandon runs
 // precisely when a /stop has cancelled turnCtx, so honouring that
@@ -289,12 +298,24 @@ func (l *liveReply) abandon(ctx context.Context) {
 	l.abandonStopped(context.WithoutCancel(ctx))
 }
 
+// abandonFailed leaves a failed turn readable and visibly marked as failed,
+// unlike abandon: a provider error is not an acknowledged interruption, so
+// the partial text alone would read as the finished answer and the user
+// could act on incomplete information.
+func (l *liveReply) abandonFailed(ctx context.Context) {
+	l.mu.Lock()
+	l.answerBuf.WriteString(abandonMarker)
+	l.mu.Unlock()
+	l.abandon(ctx)
+}
+
 func (l *liveReply) abandonStopped(ctx context.Context) {
 	l.mu.Lock()
+	answer := strings.TrimRight(l.answerBuf.String(), " \t\n")
 	// Bounded for the same reason a live frame is: this is still one edit
 	// of one message, and a stopped turn that had already streamed past
 	// the limit would keep its cursor if the edit were rejected.
-	text := clampToOneMessage(strings.TrimRight(l.buf.String(), " \t\n"))
+	text := l.framedText(answer)
 	messageID := l.messageID
 	if text == "" || text == l.rendered {
 		l.mu.Unlock()
@@ -311,18 +332,44 @@ func (l *liveReply) abandonStopped(ctx context.Context) {
 	}
 }
 
-// body renders the canonical buffer for a mid-turn frame. The caller holds
-// the lock.
-//
-// A frame too long to send is cut to its tail: that is where the writing is
-// happening, and finalize replaces the whole thing with the authoritative
-// reply when the turn ends.
+// body renders a mid-turn frame: tool activity so far, then the answer text
+// streamed so far, then the cursor. The caller holds the lock.
 func (l *liveReply) body() string {
-	text := strings.TrimRight(l.buf.String(), " \t\n")
-	if text == "" {
+	answer := strings.TrimRight(l.answerBuf.String(), " \t\n")
+	if answer == "" && len(l.toolLines) == 0 {
 		return ""
 	}
-	return clampToOneMessage(text) + " " + liveCursor
+	return l.framedText(answer) + " " + liveCursor
+}
+
+// framedText composes tool activity ahead of the answer text and clamps the
+// whole thing to fit one Telegram message. The caller holds the lock.
+//
+// The tool block is kept whole rather than clamped along with the answer:
+// tools run before the answer in an agentic turn, so a single clamp over the
+// concatenation would cut the tool block first as the answer grows past the
+// bound, and the user watching mid-turn would see tool activity silently
+// vanish partway through, then reappear once finalize leads with it again.
+// Keeping the block outside the clamp makes the live frame, an abandoned
+// frame, and the finished message agree on shape throughout the turn.
+func (l *liveReply) framedText(answer string) string {
+	if len(l.toolLines) == 0 {
+		return clampToOneMessage(answer)
+	}
+	block := strings.Join(l.toolLines, "\n")
+	if answer == "" {
+		return clampToOneMessage(block)
+	}
+	// Only the answer tail is clamped, to whatever is left of the budget
+	// once the tool block is accounted for. A tool block alone big enough
+	// to exhaust the budget is the one case where it gets clamped too --
+	// exceedingly unlikely given how short a rendered tool line is, but
+	// still a single Telegram message rather than a rejected edit.
+	budget := liveBodyMaxRunes - utf8.RuneCountInString(block) - 2
+	if budget <= 0 {
+		return clampToOneMessage(block)
+	}
+	return block + "\n\n" + clampToRunes(answer, budget)
 }
 
 // clampToOneMessage cuts s to the tail that fits in a single Telegram
@@ -330,11 +377,17 @@ func (l *liveReply) body() string {
 // than bytes matches how Telegram measures the limit and keeps the cut off a
 // character boundary.
 func clampToOneMessage(s string) string {
+	return clampToRunes(s, liveBodyMaxRunes)
+}
+
+// clampToRunes cuts s to its last maxRunes runes, marking the cut with a
+// leading ellipsis.
+func clampToRunes(s string, maxRunes int) string {
 	runes := []rune(s)
-	if len(runes) <= liveBodyMaxRunes {
+	if len(runes) <= maxRunes {
 		return s
 	}
-	return "…" + string(runes[len(runes)-liveBodyMaxRunes:])
+	return "…" + string(runes[len(runes)-maxRunes:])
 }
 
 // finalText composes the finished message: the tool activity in the order it
@@ -344,6 +397,12 @@ func clampToOneMessage(s string) string {
 // turn actually returned and what was persisted to the conversation  --  a
 // dropped or throttled frame cannot leave the visible message disagreeing
 // with the stored one.
+//
+// A turn that ran tools but produced no reply text still needs to say so:
+// the tool block alone reads as a completed answer that said nothing, and
+// Telegram messages are immutable, so nothing can correct it after the
+// fact. An empty reply with no tool activity either is left to the
+// content == "" path in finalize, which abandons instead of sending.
 func (l *liveReply) finalText(reply string) string {
 	reply = strings.TrimSpace(reply)
 	if len(l.toolLines) == 0 {
@@ -351,7 +410,7 @@ func (l *liveReply) finalText(reply string) string {
 	}
 	block := strings.Join(l.toolLines, "\n")
 	if reply == "" {
-		return block
+		return block + "\n\n_(no response)_"
 	}
 	return block + "\n\n" + reply
 }

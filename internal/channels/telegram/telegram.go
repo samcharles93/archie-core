@@ -569,14 +569,19 @@ func (g *Gateway) submitTurn(ctx context.Context, b *bot.Bot, msg *models.Messag
 		// aborted by the /stop that triggered it.
 		//
 		// errors.Is(err, context.Canceled) reliably separates a /stop from a
-		// fault; either way turnCtx is dead by the time we get here.
+		// fault; either way turnCtx is dead by the time we get here. A
+		// genuine fault is marked as failed rather than left as a clean
+		// partial: /stop is an acknowledged interruption, a provider error
+		// is not, and an unmarked partial reads as a finished answer either
+		// way.
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				g.log.Info("chat turn stopped", "session", session)
+				live.abandon(turnCtx)
 			} else {
 				g.log.Error("route failed", "error", err)
+				live.abandonFailed(turnCtx)
 			}
-			live.abandon(turnCtx)
 			return
 		}
 		live.finalize(turnCtx, reply)
