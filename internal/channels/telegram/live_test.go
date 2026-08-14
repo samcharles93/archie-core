@@ -233,7 +233,7 @@ func TestLiveReplyToolCalls(t *testing.T) {
 		{
 			name:          "shown",
 			showToolCalls: true,
-			wantLive:      "checking\n🔧 shell — exit 0 ▌",
+			wantLive:      "🔧 shell — exit 0\n\nchecking ▌",
 			wantFinal:     "🔧 shell — exit 0\n\nchecking",
 		},
 		{
@@ -589,5 +589,109 @@ func TestLiveReplyFinalizeDeliversOnACancelledContext(t *testing.T) {
 	last := (*calls)[len(*calls)-1]
 	if last.markdown != "the authoritative reply" {
 		t.Fatalf("finalize on a cancelled context delivered %q, want the authoritative reply", last.markdown)
+	}
+}
+
+// Tool lines run before the answer in an agentic turn, so once the answer
+// grows past the live clamp they must not scroll out of the frame  --  the
+// user watching mid-turn should see the tool activity for the whole turn,
+// not have it vanish once the answer gets long and reappear at finalize.
+func TestLiveReplyToolLinesSurviveTheLiveClamp(t *testing.T) {
+	live, calls := newTestLiveReply(t, true)
+
+	live.ToolCall(toolEvent("shell", "exit 0", ""))
+	live.Delta(strings.Repeat("a", liveBodyMaxRunes*2))
+	live.flushRendering()
+
+	last := (*calls)[len(*calls)-1]
+	if !strings.HasPrefix(last.markdown, "🔧 shell — exit 0\n\n") {
+		t.Fatalf("live frame lost the tool line once the answer grew past the clamp: %.60q…", last.markdown)
+	}
+	if n := len([]rune(last.markdown)); n > 4096 {
+		t.Fatalf("frame is %d runes, want at most Telegram's 4096", n)
+	}
+}
+
+// A turn that ran tools but produced no reply text still finalizes to
+// something: the tool block alone would read as a completed answer that
+// said nothing, and the message can never be corrected afterward.
+func TestLiveReplyFinalizeWithToolsAndNoReplyMarksTheAbsence(t *testing.T) {
+	live, calls := newTestLiveReply(t, true)
+
+	live.ToolCall(toolEvent("shell", "exit 0", ""))
+	live.finalize(context.Background(), "")
+
+	last := (*calls)[len(*calls)-1]
+	if last.markdown == "🔧 shell — exit 0" {
+		t.Fatalf("finalize sent the bare tool line as the finished answer: %q", last.markdown)
+	}
+	if !strings.Contains(last.markdown, "🔧 shell — exit 0") {
+		t.Fatalf("finalize dropped the tool activity: %q", last.markdown)
+	}
+	if !strings.Contains(last.markdown, "no response") {
+		t.Fatalf("finalize did not mark the empty reply: %q", last.markdown)
+	}
+}
+
+// A tool block alone big enough to exhaust the frame budget is the one case
+// where framedText clamps the tool block itself rather than the answer --
+// the degenerate branch below the normal "clamp only the answer tail" path.
+// It must still produce one valid, bounded Telegram message rather than
+// panicking on a negative budget or emitting something oversized.
+func TestLiveReplyFramedTextClampsAnOversizedToolBlock(t *testing.T) {
+	live, calls := newTestLiveReply(t, true)
+
+	live.ToolCall(gateway.ToolCallEvent{
+		Name:       "shell",
+		Parameters: strings.Repeat("x", liveBodyMaxRunes*2),
+		Output:     "ok",
+	})
+	live.Delta("the answer")
+	live.flushRendering()
+
+	last := (*calls)[len(*calls)-1]
+	if n := len([]rune(last.markdown)); n > 4096 {
+		t.Fatalf("frame is %d runes, want at most Telegram's 4096", n)
+	}
+	if strings.Contains(last.markdown, "the answer") {
+		t.Fatalf("answer text survived an oversized tool block instead of the tool block alone being clamped: %.80q…", last.markdown)
+	}
+	if !strings.HasPrefix(last.markdown, "…") {
+		t.Fatalf("oversized tool block was not clamped with the leading ellipsis: %.20q…", last.markdown)
+	}
+}
+
+// A provider error is not an acknowledged interruption the way /stop is, so
+// the partial it leaves behind must be visibly marked as failed rather than
+// reading as a finished (if short) answer.
+func TestLiveReplyAbandonFailedMarksTheMessageAsFailed(t *testing.T) {
+	live, calls := newTestLiveReply(t, false)
+
+	live.Delta("three paragraphs of a")
+	live.flushRendering()
+	live.abandonFailed(context.Background())
+
+	last := (*calls)[len(*calls)-1]
+	if !strings.Contains(last.markdown, "three paragraphs of a") {
+		t.Fatalf("abandonFailed lost the streamed partial: %q", last.markdown)
+	}
+	if !strings.Contains(last.markdown, "❌") {
+		t.Fatalf("abandonFailed did not mark the message as failed: %q", last.markdown)
+	}
+}
+
+// /stop is a deliberate, acknowledged interruption, not a fault: the plain
+// abandon path must stay clean, with no failure marker, so the two are
+// visually distinguishable.
+func TestLiveReplyAbandonStaysCleanUnlikeAbandonFailed(t *testing.T) {
+	live, calls := newTestLiveReply(t, false)
+
+	live.Delta("half an answer")
+	live.flushRendering()
+	live.abandon(context.Background())
+
+	last := (*calls)[len(*calls)-1]
+	if strings.Contains(last.markdown, "❌") {
+		t.Fatalf("abandon (a /stop) was marked as a failure: %q", last.markdown)
 	}
 }
