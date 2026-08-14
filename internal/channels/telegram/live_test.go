@@ -178,8 +178,34 @@ func TestLiveReplySnapshotsToolCallVisibility(t *testing.T) {
 	live.finalize(context.Background(), "done")
 
 	last := (*calls)[len(*calls)-1]
-	if !strings.Contains(last.markdown, `🔧 shell {"cmd":"true"} — exit 0`) {
-		t.Fatalf("final reply = %q, want the visibility captured when the reply started", last.markdown)
+	if !strings.Contains(last.markdown, `🔧 shell \{"cmd":"true"\} — exit 0`) {
+		t.Fatalf("final reply = %q, want the visibility captured when the reply started (with Markdown metacharacters escaped)", last.markdown)
+	}
+}
+
+// The tool line and the model's reply share one Markdown body, so a stray
+// metacharacter in tool output (a grep hit, a JSON parameter) must not
+// unbalance the whole message and take the reply's own formatting down with
+// it.
+func TestLiveReplyToolCallEscapesMarkdownMetacharacters(t *testing.T) {
+	live, calls := newTestLiveReply(t, true)
+
+	live.ToolCall(gateway.ToolCallEvent{
+		Name:       "grep",
+		Parameters: `{"pattern":"*_foo_*"}`,
+		Output:     "found `*bold*` and _italic_ markers",
+	})
+	live.finalize(context.Background(), "**the answer**")
+
+	last := (*calls)[len(*calls)-1]
+	if strings.Contains(last.markdown, "found `*bold*` and _italic_ markers") {
+		t.Fatalf("tool summary rendered unescaped: %q", last.markdown)
+	}
+	if !strings.Contains(last.markdown, "**the answer**") {
+		t.Fatalf("model reply's own markdown was altered: %q", last.markdown)
+	}
+	if !strings.Contains(last.markdown, "found \\`\\*bold\\*\\` and \\_italic\\_ markers") {
+		t.Fatalf("tool summary not escaped as expected: %q", last.markdown)
 	}
 }
 
@@ -271,6 +297,25 @@ func TestLiveReplyAbandonDropsTheCursor(t *testing.T) {
 	}
 	if last.markdown != "half an ans" {
 		t.Fatalf("abandoned render = %q, want the buffer without a cursor", last.markdown)
+	}
+}
+
+// abandon runs precisely because turnCtx was cancelled by a /stop; the
+// cursor-drop edit it performs must not itself be aborted by that same
+// cancellation, or the message is stranded with its cursor forever.
+func TestLiveReplyAbandonDropsTheCursorOnACancelledContext(t *testing.T) {
+	live, calls := newTestLiveReply(t, false)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	live.Delta("half an ans")
+	live.flushRendering()
+	live.abandon(ctx)
+
+	last := (*calls)[len(*calls)-1]
+	if last.markdown != "half an ans" {
+		t.Fatalf("abandon on a cancelled context delivered %q, want the buffer without a cursor", last.markdown)
 	}
 }
 
@@ -526,5 +571,23 @@ func TestLiveReplyFinalizeSplitsAnOversizedReply(t *testing.T) {
 	if strings.Count(rendered.String(), "a") != strings.Count(long, "a") {
 		t.Fatalf("split reply lost content: rendered %d of %d lines",
 			strings.Count(rendered.String(), "a"), strings.Count(long, "a"))
+	}
+}
+
+// A /stop landing mid-finalize cancels turnCtx, but the reply is already
+// decided by the time finalize runs  --  every send it makes must go through
+// regardless, or the live message is stranded with its cursor forever.
+func TestLiveReplyFinalizeDeliversOnACancelledContext(t *testing.T) {
+	live, calls := newTestLiveReply(t, false)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	live.Delta("partial")
+	live.finalize(ctx, "the authoritative reply")
+
+	last := (*calls)[len(*calls)-1]
+	if last.markdown != "the authoritative reply" {
+		t.Fatalf("finalize on a cancelled context delivered %q, want the authoritative reply", last.markdown)
 	}
 }
