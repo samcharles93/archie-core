@@ -556,14 +556,11 @@ func (g *Gateway) submitTurn(ctx context.Context, b *bot.Bot, msg *models.Messag
 		// already streamed stays, minus the cursor that would otherwise
 		// claim the answer is still being written.
 		//
-		// Both failure branches abandon through a live context, not
-		// turnCtx. A /stop is not reliably reported as context.Canceled:
-		// ai-sdk raises an aborted stream as ErrAborted with ctx.Err()
-		// formatted in, not wrapped, so errors.Is misses a cancellation
-		// that landed inside the step loop or a tool call and it arrives
-		// here as a plain error  --  with turnCtx already dead. Editing
-		// through a dead context fails, and the cursor this cleanup
-		// exists to remove would blink forever.
+		// errors.Is(err, context.Canceled) reliably separates a /stop from
+		// a fault, but turnCtx is dead either way, so the cursor-drop edits
+		// through context.WithoutCancel(turnCtx)  --  a live context. A
+		// cancelled context would fail the edit and leave the cursor
+		// blinking on a message nothing will ever finish.
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				g.log.Info("chat turn stopped", "session", session)
