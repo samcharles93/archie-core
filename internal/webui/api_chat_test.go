@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -516,6 +517,7 @@ type chatSSEEvent struct {
 	Tool       string `json:"tool"`
 	ToolCallID string `json:"tool_call_id"`
 	Parameters string `json:"parameters"`
+	Failed     bool   `json:"failed"`
 	SessionID  string `json:"session_id"`
 }
 
@@ -610,6 +612,10 @@ func TestChatStreamReportsToolCalls(t *testing.T) {
 		turn.Delta("checking")
 		turn.ToolCall(gateway.ToolCallEvent{ID: "call-1", Name: "shell", Parameters: `{"cmd":"true"}`, Output: "exit 0\nignored trailing line"})
 		turn.ToolCall(gateway.ToolCallEvent{Name: "read", Err: "no such file"})
+		// A successful tool whose own output happens to start with
+		// "failed:" (a grep hit, a log line read back) must be reported
+		// as not failed: Failed is driven by Err, never by Text content.
+		turn.ToolCall(gateway.ToolCallEvent{Name: "grep", Output: "failed: no such file\nmatch"})
 		turn.Delta(" and answering")
 		return "checking and answering", nil
 	}
@@ -646,13 +652,14 @@ func TestChatStreamReportsToolCalls(t *testing.T) {
 				case "delta":
 					got = append(got, "text:"+ev.Text)
 				case "tool":
-					got = append(got, "tool:"+ev.ToolCallID+":"+ev.Tool+":"+ev.Parameters+":"+ev.Text)
+					got = append(got, fmt.Sprintf("tool:%s:%s:%s:%s:failed=%v", ev.ToolCallID, ev.Tool, ev.Parameters, ev.Text, ev.Failed))
 				}
 			}
 			want := []string{
 				"text:checking",
-				`tool:call-1:shell:{"cmd":"true"}:exit 0`,
-				"tool::read::failed: no such file",
+				`tool:call-1:shell:{"cmd":"true"}:exit 0:failed=false`,
+				"tool::read::failed: no such file:failed=true",
+				"tool::grep::failed: no such file:failed=false",
 				"text: and answering",
 			}
 			if len(got) != len(want) {

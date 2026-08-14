@@ -202,8 +202,10 @@ func (s *Server) handleChatMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 // chatStreamEvent is one `data: {...}` frame of the chat stream. A tool frame
-// names the tool in Tool and carries its one-line outcome in Text, so the
-// browser can style the two apart instead of parsing a rendered string.
+// names the tool in Tool, carries its one-line outcome in Text, and signals
+// failure through Failed  --  a structured field, so the browser styles the
+// two apart by reading it rather than by sniffing a "failed:" prefix out of
+// Text, which a successful tool's own output can start with too.
 //
 // Text is always emitted, empty or not: the browser concatenates it and
 // assigns it, so a missing key would put the string "undefined" into the
@@ -214,6 +216,7 @@ type chatStreamEvent struct {
 	Tool       string `json:"tool,omitempty"`
 	ToolCallID string `json:"tool_call_id,omitempty"`
 	Parameters string `json:"parameters,omitempty"`
+	Failed     bool   `json:"failed,omitempty"`
 	SessionID  string `json:"session_id,omitempty"`
 }
 
@@ -232,6 +235,7 @@ func (f chatStreamSink) ToolCall(event gateway.ToolCallEvent) {
 		ToolCallID: event.ID,
 		Parameters: event.Parameters,
 		Text:       event.Summary(),
+		Failed:     event.Err != "",
 	})
 }
 
