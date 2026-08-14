@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -377,6 +378,39 @@ func TestSplitLongMessage(t *testing.T) {
 			if len(p) > 4000 {
 				t.Errorf("part exceeds limit: %d chars", len(p))
 			}
+		}
+	})
+
+	t.Run("multi-byte oversized line splits on rune boundaries", func(t *testing.T) {
+		// '界' is 3 bytes in UTF-8. 1334 of them is 4002 bytes but only 1334
+		// runes, so a byte-based split at 4000 lands inside the last rune's
+		// continuation bytes while a rune-based split at 4000 does not.
+		longLine := strings.Repeat("界", 1334)
+		parts := splitLongMessage(longLine, 4000)
+
+		var rebuilt strings.Builder
+		for _, p := range parts {
+			if !utf8.ValidString(p) {
+				t.Fatalf("part is not valid UTF-8: %q", p)
+			}
+			if n := utf8.RuneCountInString(p); n > 4000 {
+				t.Errorf("part has %d runes, want at most 4000", n)
+			}
+			rebuilt.WriteString(p)
+		}
+		if rebuilt.String() != longLine {
+			t.Fatalf("split lost or corrupted content: got %d runes, want %d",
+				utf8.RuneCountInString(rebuilt.String()), utf8.RuneCountInString(longLine))
+		}
+	})
+
+	t.Run("multi-byte content respects the rune bound, not the byte length", func(t *testing.T) {
+		// 5 runes of '界' (15 bytes) must not be split at maxLen=10: 10 is a
+		// rune bound here, and 5 <= 10.
+		s := strings.Repeat("界", 5)
+		parts := splitLongMessage(s, 10)
+		if len(parts) != 1 || parts[0] != s {
+			t.Fatalf("expected the string kept whole, got %v", parts)
 		}
 	})
 }

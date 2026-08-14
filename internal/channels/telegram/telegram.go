@@ -16,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -563,20 +564,19 @@ func (g *Gateway) submitTurn(ctx context.Context, b *bot.Bot, msg *models.Messag
 		// already acknowledged it, and turnCtx is dead, so there is
 		// nothing useful left to send from here  --  but whatever was
 		// already streamed stays, minus the cursor that would otherwise
-		// claim the answer is still being written.
+		// claim the answer is still being written. abandon strips turnCtx's
+		// own cancellation before it edits, so the cursor-drop is not itself
+		// aborted by the /stop that triggered it.
 		//
-		// errors.Is(err, context.Canceled) reliably separates a /stop from
-		// a fault, but turnCtx is dead either way, so the cursor-drop edits
-		// through context.WithoutCancel(turnCtx)  --  a live context. A
-		// cancelled context would fail the edit and leave the cursor
-		// blinking on a message nothing will ever finish.
+		// errors.Is(err, context.Canceled) reliably separates a /stop from a
+		// fault; either way turnCtx is dead by the time we get here.
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				g.log.Info("chat turn stopped", "session", session)
 			} else {
 				g.log.Error("route failed", "error", err)
 			}
-			live.abandon(context.WithoutCancel(turnCtx))
+			live.abandon(turnCtx)
 			return
 		}
 		live.finalize(turnCtx, reply)
@@ -713,31 +713,43 @@ func (g *Gateway) send(ctx context.Context, b *bot.Bot, chatID int64, messageThr
 	}
 }
 
+// splitLongMessage divides text into parts of at most maxLen runes each,
+// preferring to cut on newlines. Bounds are counted in runes, not bytes,
+// and an oversized line is itself cut on rune boundaries  --  slicing by byte
+// offset instead would, for any line containing multi-byte UTF-8 (CJK,
+// emoji, ...), land a cut inside a rune's continuation bytes and produce a
+// part that is not valid UTF-8 on either side of the cut.
 func splitLongMessage(text string, maxLen int) []string {
-	if len(text) <= maxLen {
+	if utf8.RuneCountInString(text) <= maxLen {
 		return []string{text}
 	}
 	var parts []string
 	lines := strings.Split(text, "\n")
 	var cur strings.Builder
+	curRunes := 0
 	for _, line := range lines {
-		if cur.Len()+len(line)+1 > maxLen {
+		lineRunes := utf8.RuneCountInString(line)
+		if curRunes+lineRunes+1 > maxLen {
 			if cur.Len() > 0 {
 				parts = append(parts, cur.String())
 				cur.Reset()
+				curRunes = 0
 			}
-			if len(line) > maxLen {
-				for i := 0; i < len(line); i += maxLen {
-					end := min(i+maxLen, len(line))
-					parts = append(parts, line[i:end])
+			if lineRunes > maxLen {
+				runes := []rune(line)
+				for i := 0; i < len(runes); i += maxLen {
+					end := min(i+maxLen, len(runes))
+					parts = append(parts, string(runes[i:end]))
 				}
 				continue
 			}
 		}
 		if cur.Len() > 0 {
 			cur.WriteByte('\n')
+			curRunes++
 		}
 		cur.WriteString(line)
+		curRunes += lineRunes
 	}
 	if cur.Len() > 0 {
 		parts = append(parts, cur.String())

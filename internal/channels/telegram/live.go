@@ -165,15 +165,22 @@ func (l *liveReply) Delta(text string) {
 // Tool activity is opt-in per deployment: without it the user cannot tell a
 // hallucinated action from a real one, but it also narrates every internal
 // step, which is noise in a conversation that is going fine.
+//
+// The name, parameters and summary all come from tool execution, not the
+// model's prose, and can carry raw Markdown metacharacters (a grep hit with
+// '*', a JSON parameter with '_' or backticks). They are escaped before
+// joining the line because the tool line and the model's reply share one
+// Markdown body (finalText): an unbalanced marker in the tool line breaks
+// parsing for the whole message, including the reply's own formatting.
 func (l *liveReply) ToolCall(event gateway.ToolCallEvent) {
 	if !l.showToolCalls || event.Name == "" {
 		return
 	}
-	line := toolCallPrefix + event.Name
+	line := toolCallPrefix + bot.EscapeMarkdown(event.Name)
 	if event.Parameters != "" {
-		line += " " + event.Parameters
+		line += " " + bot.EscapeMarkdown(event.Parameters)
 	}
-	line += " — " + event.Summary()
+	line += " — " + bot.EscapeMarkdown(event.Summary())
 
 	l.mu.Lock()
 	if l.buf.Len() > 0 && !strings.HasSuffix(l.buf.String(), "\n") {
@@ -224,7 +231,17 @@ func (l *liveReply) markRendered(body string) {
 // led by the tool activity that produced it, and drops the cursor. When
 // nothing was ever streamed  --  a non-streaming provider, or a reply served
 // from the turn ledger  --  it sends the reply as a new message instead.
+//
+// ctx is stripped of cancellation before anything is sent: the reply is
+// already decided and persisted by the time finalize runs, so a /stop
+// landing mid-finalize must not abort delivery the way it aborts the turn
+// itself  --  that would strand the live message on a frame with the cursor
+// still attached, forever. Doing this inside finalize rather than trusting
+// each caller to pass a live context is what keeps this fix from silently
+// regressing the next time a caller is added.
 func (l *liveReply) finalize(ctx context.Context, reply string) {
+	ctx = context.WithoutCancel(ctx)
+
 	// Finish any queued live frame before replacing it, then retire the
 	// worker so no stale edit can race the authoritative delivery.
 	l.flushRendering()
@@ -262,9 +279,14 @@ func (l *liveReply) finalize(ctx context.Context, reply string) {
 
 // abandon leaves a stopped or failed turn readable: the partial text stays,
 // but the cursor goes, so the message does not claim to still be writing.
+//
+// Like finalize, it strips ctx of cancellation before sending: abandon runs
+// precisely when a /stop has cancelled turnCtx, so honouring that
+// cancellation in the very edit meant to drop the cursor would leave the
+// cursor blinking on a message nothing will ever finish.
 func (l *liveReply) abandon(ctx context.Context) {
 	l.stopRendering()
-	l.abandonStopped(ctx)
+	l.abandonStopped(context.WithoutCancel(ctx))
 }
 
 func (l *liveReply) abandonStopped(ctx context.Context) {
