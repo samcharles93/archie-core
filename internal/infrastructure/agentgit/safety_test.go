@@ -79,6 +79,32 @@ func TestMarkWorktreeSafe(t *testing.T) {
 	}
 }
 
+// The guard markSafe applies is existence, not mount-ness: a directory that
+// merely exists at mountDir -- a stale leftover from a prior run, never
+// actually bind-mounted this time -- still satisfies os.Stat and gets
+// configured. This is the documented, accepted behavior (see markSafe's
+// doc comment): a real mount check would need platform-specific mountinfo
+// parsing, and the resulting stale safe.directory entry is inert unless a
+// git repository later exists at that exact path. This test pins the
+// current contract so a future change to it is a deliberate decision, not
+// a silent regression either way.
+func TestMarkWorktreeSafeAcceptsAnExistingButUnmountedDirectory(t *testing.T) {
+	dir := t.TempDir() // exists on disk; nothing bind-mounted it here
+
+	var runs [][]string
+	run := func(_ context.Context, args ...string) ([]byte, error) {
+		runs = append(runs, args)
+		return []byte("output"), nil
+	}
+
+	if got := markSafe(context.Background(), dir, run, slog.New(slog.DiscardHandler)); !got {
+		t.Fatal("markSafe() = false for an existing (if unmounted) directory, want true per the documented existence-based guard")
+	}
+	if len(runs) != 1 {
+		t.Fatalf("git invoked %d times, want 1", len(runs))
+	}
+}
+
 // A mount path that is a file, not a directory, is not a worktree: git must
 // not be reconfigured for it.
 func TestMarkWorktreeSafeIgnoresNonDirectory(t *testing.T) {

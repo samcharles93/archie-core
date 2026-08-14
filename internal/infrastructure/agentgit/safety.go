@@ -34,13 +34,20 @@ func MarkSafe(ctx context.Context, mountDir string, log *slog.Logger) bool {
 // working a repo with no gate commands never needs it. A failure is logged and
 // the agent continues. Returns true only when git accepted the configuration.
 //
-// The mount is checked first so that running archie-agent directly on a host
-// (shared queue-group mode, no container) does not write to the operator's own
-// ~/.gitconfig for a path that was never mounted.
+// The guard is existence, not mount-ness: os.Stat confirms mountDir exists and
+// is a directory, which is what stops archie-agent running directly on a host
+// (shared queue-group mode, no container) from writing to the operator's own
+// ~/.gitconfig for a path that was never created at all. It does not detect a
+// stale directory that happens to exist at the same path without actually
+// being a bind mount -- a real mount check would need platform-specific
+// parsing (e.g. /proc/self/mountinfo on Linux) that this deliberately does
+// without. The failure mode is inert: git only rejects operations in a
+// directory that both exists at this path and is a real repository, and
+// safe.directory entries for a stale non-repo path do nothing.
 func markSafe(ctx context.Context, mountDir string, run gitRunner, log *slog.Logger) bool {
 	info, err := os.Stat(mountDir)
 	if err != nil || !info.IsDir() {
-		log.Debug("git safe.directory skipped: no worktree mounted", "dir", mountDir)
+		log.Debug("git safe.directory skipped: mountDir does not exist", "dir", mountDir)
 		return false
 	}
 
