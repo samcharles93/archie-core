@@ -1,4 +1,4 @@
-package main
+package agentgit
 
 import (
 	"context"
@@ -17,7 +17,12 @@ func runGit(ctx context.Context, args ...string) ([]byte, error) {
 	return exec.CommandContext(ctx, "git", args...).CombinedOutput()
 }
 
-// markWorktreeSafe adds mountDir to git's global safe.directory list.
+// MarkSafe adds mountDir to git's global safe.directory list on a best-effort basis.
+func MarkSafe(ctx context.Context, mountDir string, log *slog.Logger) bool {
+	return markSafe(ctx, mountDir, runGit, log)
+}
+
+// markSafe adds mountDir to git's global safe.directory list.
 //
 // The daemon bind-mounts the task worktree into the container from the host,
 // so the directory is owned by a UID the container user is not. Git refuses to
@@ -32,7 +37,7 @@ func runGit(ctx context.Context, args ...string) ([]byte, error) {
 // The mount is checked first so that running archie-agent directly on a host
 // (shared queue-group mode, no container) does not write to the operator's own
 // ~/.gitconfig for a path that was never mounted.
-func markWorktreeSafe(ctx context.Context, mountDir string, run gitRunner, log *slog.Logger) bool {
+func markSafe(ctx context.Context, mountDir string, run gitRunner, log *slog.Logger) bool {
 	info, err := os.Stat(mountDir)
 	if err != nil || !info.IsDir() {
 		log.Debug("git safe.directory skipped: no worktree mounted", "dir", mountDir)

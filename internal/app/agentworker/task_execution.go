@@ -1,27 +1,18 @@
-package main
+package agentworker
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
-	"time"
-
-	natsio "github.com/nats-io/nats.go"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/wfeval"
-	"github.com/samcharles93/archie-core/internal/forgerpc"
-	"github.com/samcharles93/archie-core/internal/storage"
-	"github.com/samcharles93/archie-core/internal/storerpc"
+	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/worktree"
-	"github.com/samcharles93/archie-core/internal/worktreerpc"
 )
-
-const rpcTimeout = 60 * time.Second
 
 // hybridTrees implements workflow.Trees by splitting operations: Prepare
 // and Push (network ops needing the daemon's forge credential) proxy over
@@ -31,8 +22,13 @@ const rpcTimeout = 60 * time.Second
 // Prepare deliberately discards the RPC response's directory (the
 // daemon's host-side path) and returns localDir instead  --  archied and
 // archie-agent see the same files at different paths.
+type remoteTrees interface {
+	Prepare(ctx context.Context, owner, repo, base string, issue int, title, body, labels string) (dir, branch string, err error)
+	Push(ctx context.Context, owner, repo string, issue int, branch string) error
+}
+
 type hybridTrees struct {
-	push        *worktreerpc.Client
+	push        remoteTrees
 	local       *worktree.Manager
 	owner, repo string
 	issue       int
@@ -69,12 +65,16 @@ func (h *hybridTrees) ChangedLines(ctx context.Context, dir, base string) (int, 
 
 var _ workflow.Trees = (*hybridTrees)(nil)
 
-// runTask builds a workflow.Registry from the container's own mounted
-// worktree, routes and runs req.Task's entire workflow, and reports the
-// terminal outcome. Store/Forge/worktree-push calls proxy back to archied
-// over nc; Store is archied's sole authority for task state  --  the
-// returned Response.Task is a best-effort snapshot for logging only.
-func runTask(ctx context.Context, req taskrun.Request, nc *natsio.Conn, newRunner agentexec.RunnerFactory, workDir string, log *slog.Logger) (*taskrun.Response, error) {
+type taskDependencies struct {
+	forge workflow.Forger
+	store store.WorkflowStore
+	trees remoteTrees
+}
+
+// runTask builds a workflow.Registry from the container's mounted worktree,
+// routes and runs the entire workflow, and reports its terminal outcome.
+// Store remains archied's authority; Response.Task is a logging snapshot.
+func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependencies, newRunner agentexec.RunnerFactory, workDir string, log *slog.Logger) (*taskrun.Response, error) {
 	registry, err := skillbuild.BuildRegistry(workDir)
 	if err != nil {
 		return nil, fmt.Errorf("build registry: %w", err)
@@ -83,7 +83,7 @@ func runTask(ctx context.Context, req taskrun.Request, nc *natsio.Conn, newRunne
 	wf := workflow.Route(req.Task, registry)
 
 	trees := &hybridTrees{
-		push:     &worktreerpc.Client{Conn: nc, Timeout: rpcTimeout, Identity: req.Task.Identity},
+		push:     dependencies.trees,
 		local:    &worktree.Manager{WorkDir: workDir},
 		owner:    req.Task.Owner,
 		repo:     req.Task.Repo,
@@ -115,8 +115,8 @@ func runTask(ctx context.Context, req taskrun.Request, nc *natsio.Conn, newRunne
 		Task:         req.Task,
 		Repo:         req.Repo,
 		Cfg:          req.Cfg.ToConfig(),
-		Forge:        &forgerpc.Client{Conn: nc, Timeout: rpcTimeout, Identity: req.Task.Identity},
-		Store:        &storerpc.Client{Conn: nc, Timeout: rpcTimeout},
+		Forge:        dependencies.forge,
+		Store:        dependencies.store,
 		Trees:        trees,
 		Agent:        agent,
 		Log:          log,
@@ -129,46 +129,4 @@ func runTask(ctx context.Context, req taskrun.Request, nc *natsio.Conn, newRunne
 		Task:   tc.Task,
 		Status: tc.Outcome.Status,
 	}, nil
-}
-
-// handleTaskRun decodes a taskrun.Request from msg, runs it via runTask
-// against the container's fixed worktree mount, and replies with the
-// outcome. Errors are reported in the reply, not returned  --  there's no
-// caller to return them to; this is a NATS subscription callback.
-func handleTaskRun(ctx context.Context, msg *natsio.Msg, nc *natsio.Conn, log *slog.Logger) {
-	var req taskrun.Request
-	if err := json.Unmarshal(msg.Data, &req); err != nil {
-		log.Error("taskrun decode failed", "err", err)
-		respondTaskRun(msg, nil, fmt.Errorf("decode taskrun request: %w", err), log)
-		return
-	}
-
-	log.Info("running task", "task", req.Task.ID, "repo", req.Repo.FullName(), "issue", req.Task.IssueNumber)
-
-	resp, err := runTask(ctx, req, nc, agentexec.DefaultRunnerFactory, storage.WorktreeMountDir, log)
-	if err != nil {
-		log.Error("task run failed", "task", req.Task.ID, "err", err)
-		respondTaskRun(msg, nil, err, log)
-		return
-	}
-
-	log.Info("task run complete", "task", req.Task.ID, "status", resp.Status)
-	respondTaskRun(msg, resp, nil, log)
-}
-
-func respondTaskRun(msg *natsio.Msg, resp *taskrun.Response, runErr error, log *slog.Logger) {
-	if resp == nil {
-		resp = &taskrun.Response{}
-	}
-	if runErr != nil {
-		resp.Error = runErr.Error()
-	}
-	data, err := json.Marshal(resp)
-	if err != nil {
-		log.Error("taskrun encode response failed", "err", err)
-		return
-	}
-	if err := msg.Respond(data); err != nil {
-		log.Error("taskrun respond failed", "err", err)
-	}
 }
