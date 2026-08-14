@@ -1,5 +1,13 @@
 # archied changelog
 
+## [1.9.0] - 2026-08-15
+
+- fix(webui): style tool-call failure from a structured field, not a string prefix
+- fix(config,webui): make show_tool_calls one cross-channel setting
+- fix(telegram): guarantee no message is stranded on gateway stop/restart
+- fix(telegram): use NewRequestWithContext to satisfy noctx
+- refactor(webui): decompose handleSSE to cut cognitive complexity
+
 ## [1.8.0] - 2026-08-15
 
 - feat(archied): add -version so the installed build can be read from a shell
