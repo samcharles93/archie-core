@@ -91,6 +91,28 @@ type Gateway struct {
 	// so a restart abandons in-flight turns with the old bot instance.
 	turns *gateway.Turns
 
+	// liveMu guards liveReplies and liveStopped.
+	liveMu sync.Mutex
+	// liveReplies tracks every liveReply currently mid-turn. Cancelling
+	// turnCtx (a /restart, a daemon shutdown) does not guarantee the
+	// goroutine that owns a liveReply ever runs again to notice and clean
+	// up after itself -- a full process exit gives it no chance at all --
+	// so Stop drains this registry directly rather than waiting on that
+	// goroutine. See abandonAllLive. The map itself survives a /restart
+	// (only turns above is rebuilt per launch); liveStopped is what scopes
+	// draining to one launch's lifecycle.
+	liveReplies map[*liveReply]struct{}
+	// liveDrainTimeout bounds abandonAllLive's wait for in-flight replies to
+	// be marked. Zero uses abandonAllLiveTimeout; tests shrink it so a
+	// deliberately-hung reply doesn't make the suite slow.
+	liveDrainTimeout time.Duration
+	// liveStopped is set the instant abandonAllLive claims the registry, so
+	// a newLiveReply that arrives in the narrow window between that claim
+	// and its caller actually registering is abandoned immediately instead
+	// of being added to a registry nothing will ever drain again. Reset to
+	// false at the start of the next launch.
+	liveStopped bool
+
 	log           *slog.Logger
 	bot           *bot.Bot
 	webhookCancel context.CancelFunc
@@ -217,6 +239,7 @@ func (g *Gateway) launch(ctx context.Context, router *gateway.Router) (*bot.Bot,
 	// context, which is this launch's, so a /restart cancels everything
 	// still running under the outgoing bot instance.
 	g.turns = gateway.NewTurns(g.log)
+	g.resetLiveRegistry()
 
 	opts := []bot.Option{
 		bot.WithErrorsHandler(g.pipelineErrorHandler(ctx)),
@@ -330,6 +353,8 @@ func (g *Gateway) Stop(ctx context.Context) error {
 	}
 	g.log.Info("stopping telegram gateway")
 	g.running = false
+
+	g.abandonAllLive(ctx)
 
 	if g.webhookCancel != nil {
 		g.webhookCancel()
