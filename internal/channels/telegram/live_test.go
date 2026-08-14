@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -81,8 +83,9 @@ func newTestLiveReply(t *testing.T, showToolCalls bool) (*liveReply, *[]apiCall)
 	t.Helper()
 	b, calls := fakeAPI(t)
 	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
-	g.ShowToolCalls = showToolCalls
-	live := g.newLiveReply(b, 7, 0)
+	g.SetShowToolCalls(showToolCalls)
+	live := g.newLiveReply(context.Background(), b, 7, 0, g.ShowToolCalls())
+	t.Cleanup(live.stopRendering)
 	live.interval = 0
 	return live, calls
 }
@@ -94,8 +97,11 @@ func TestLiveReplySendsOnceThenEditsWithTheWholeBuffer(t *testing.T) {
 	ctx := context.Background()
 
 	live.Delta("Now let me look")
+	live.flushRendering()
 	live.Delta(" at the shell tool")
+	live.flushRendering()
 	live.Delta(". Now I have the full picture")
+	live.flushRendering()
 	live.finalize(ctx, "Now let me look at the shell tool. Now I have the full picture")
 
 	if len(*calls) != 4 {
@@ -133,8 +139,11 @@ func TestLiveReplyKeepsExactlyOneCursorAtTheEnd(t *testing.T) {
 	live, calls := newTestLiveReply(t, true)
 
 	live.Delta("first")
+	live.flushRendering()
 	live.ToolCall(toolEvent("shell", "exit 0", ""))
+	live.flushRendering()
 	live.Delta("second")
+	live.flushRendering()
 
 	for i, call := range *calls {
 		if n := strings.Count(call.markdown, liveCursor); n != 1 {
@@ -152,12 +161,40 @@ func TestLiveReplySkipsUnchangedRenders(t *testing.T) {
 	live, calls := newTestLiveReply(t, false)
 
 	live.Delta("same")
+	live.flushRendering()
 	live.render(context.Background())
 	live.render(context.Background())
 
 	if len(*calls) != 1 {
 		t.Fatalf("calls = %d (%v), want 1  --  an unchanged body must not be re-sent", len(*calls), *calls)
 	}
+}
+
+func TestLiveReplySnapshotsToolCallVisibility(t *testing.T) {
+	live, calls := newTestLiveReply(t, true)
+	live.g.SetShowToolCalls(false)
+
+	live.ToolCall(gateway.ToolCallEvent{Name: "shell", Parameters: `{"cmd":"true"}`, Output: "exit 0"})
+	live.finalize(context.Background(), "done")
+
+	last := (*calls)[len(*calls)-1]
+	if !strings.Contains(last.markdown, `🔧 shell {"cmd":"true"} — exit 0`) {
+		t.Fatalf("final reply = %q, want the visibility captured when the reply started", last.markdown)
+	}
+}
+
+func TestLiveReplyToolCallSnapshotIsRaceFreeDuringReload(t *testing.T) {
+	live, _ := newTestLiveReply(t, true)
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for i := range 100 {
+			live.g.SetShowToolCalls(i%2 == 0)
+		}
+	})
+	for range 100 {
+		live.ToolCall(toolEvent("shell", "ok", ""))
+	}
+	wg.Wait()
 }
 
 func TestLiveReplyToolCalls(t *testing.T) {
@@ -225,6 +262,7 @@ func TestLiveReplyAbandonDropsTheCursor(t *testing.T) {
 	live, calls := newTestLiveReply(t, false)
 
 	live.Delta("half an ans")
+	live.flushRendering()
 	live.abandon(context.Background())
 
 	last := (*calls)[len(*calls)-1]
@@ -270,7 +308,8 @@ func TestLiveReplyEditFallsBackToPlainText(t *testing.T) {
 		t.Fatalf("new test bot: %v", err)
 	}
 	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
-	live := g.newLiveReply(b, 7, 0)
+	live := g.newLiveReply(context.Background(), b, 7, 0, g.ShowToolCalls())
+	t.Cleanup(live.stopRendering)
 	live.interval = 0
 
 	live.Delta("streamed")
@@ -285,6 +324,145 @@ func TestLiveReplyEditFallsBackToPlainText(t *testing.T) {
 	}
 }
 
+func TestLiveReplyCallbacksDoNotWaitForTelegram(t *testing.T) {
+	tests := []struct {
+		name string
+		call func(*liveReply)
+	}{
+		{name: "delta", call: func(live *liveReply) { live.Delta("streamed") }},
+		{name: "tool call", call: func(live *liveReply) { live.ToolCall(toolEvent("shell", "ok", "")) }},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			release := make(chan struct{})
+			started := make(chan struct{}, 1)
+			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				started <- struct{}{}
+				<-release
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":55,"date":1,"chat":{"id":7,"type":"private"}}}`))
+			}))
+			t.Cleanup(api.Close)
+			b, err := bot.New("1:test", bot.WithServerURL(api.URL), bot.WithSkipGetMe())
+			if err != nil {
+				t.Fatalf("new test bot: %v", err)
+			}
+			g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+			g.SetShowToolCalls(true)
+			live := g.newLiveReply(context.Background(), b, 7, 0, g.ShowToolCalls())
+			t.Cleanup(live.stopRendering)
+			live.interval = 0
+
+			returned := make(chan struct{})
+			go func() {
+				tc.call(live)
+				close(returned)
+			}()
+
+			select {
+			case <-returned:
+			case <-started:
+				select {
+				case <-returned:
+				case <-time.After(100 * time.Millisecond):
+					close(release)
+					t.Fatal("stream callback waited for Telegram HTTP")
+				}
+			case <-time.After(time.Second):
+				close(release)
+				t.Fatal("callback neither returned nor reached Telegram")
+			}
+			close(release)
+		})
+	}
+}
+
+func TestLiveReplyStopCancelsInFlightRendering(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	api := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		close(started)
+		<-release
+	}))
+	t.Cleanup(api.Close)
+	b, err := bot.New("1:test", bot.WithServerURL(api.URL), bot.WithSkipGetMe())
+	if err != nil {
+		t.Fatalf("new test bot: %v", err)
+	}
+	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+	ctx, cancel := context.WithCancel(context.Background())
+	live := g.newLiveReply(ctx, b, 7, 0, false)
+	t.Cleanup(live.stopRendering)
+	live.interval = 0
+
+	live.Delta("partial")
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("Telegram render did not start")
+	}
+	cancel()
+
+	select {
+	case <-live.renderDone:
+		close(release)
+	case <-time.After(time.Second):
+		close(release)
+		t.Fatal("turn cancellation did not cancel Telegram HTTP")
+	}
+}
+
+func TestLiveReplyFinalEditFailureSendsAuthoritativeReplyNormally(t *testing.T) {
+	calls := &[]apiCall{}
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := capturedCall(t, r)
+		*calls = append(*calls, call)
+		w.Header().Set("Content-Type", "application/json")
+		if call.method == "editMessageText" {
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte(`{"ok":false,"error_code":502,"description":"edit unavailable"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":55,"date":1,"chat":{"id":7,"type":"private"}}}`))
+	}))
+	t.Cleanup(api.Close)
+	b, err := bot.New("1:test", bot.WithServerURL(api.URL), bot.WithSkipGetMe())
+	if err != nil {
+		t.Fatalf("new test bot: %v", err)
+	}
+	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+	live := g.newLiveReply(context.Background(), b, 7, 0, g.ShowToolCalls())
+	t.Cleanup(live.stopRendering)
+	live.interval = 0
+
+	authoritative := strings.Repeat("a\n", messageMaxLen)
+	live.Delta("partial")
+	live.finalize(context.Background(), authoritative)
+
+	seenEdit := false
+	var fallback []apiCall
+	for _, call := range *calls {
+		if call.method == "editMessageText" {
+			seenEdit = true
+			continue
+		}
+		if seenEdit && call.method == "sendRichMessage" {
+			fallback = append(fallback, call)
+		}
+	}
+	if len(fallback) < 2 {
+		t.Fatalf("fallback calls = %+v, want normal split delivery", fallback)
+	}
+	var rendered strings.Builder
+	for _, call := range fallback {
+		rendered.WriteString(strings.TrimSuffix(call.markdown, "\n\n_(continued...)_"))
+	}
+	if strings.Count(rendered.String(), "a") != strings.Count(authoritative, "a") {
+		t.Fatalf("fallback delivered %d of %d reply lines", strings.Count(rendered.String(), "a"), strings.Count(authoritative, "a"))
+	}
+}
+
 // Telegram rejects an over-long message outright, so a reply that keeps
 // growing past the limit must not freeze the live message: every mid-turn
 // frame, and the abandoned frame a stopped turn leaves behind, has to stay
@@ -294,6 +472,7 @@ func TestLiveReplyFramesStayWithinOneMessage(t *testing.T) {
 
 	for range 4 {
 		live.Delta(strings.Repeat("a", liveBodyMaxRunes))
+		live.flushRendering()
 	}
 	live.abandon(context.Background())
 

@@ -15,11 +15,12 @@ test("a tool call is listed above the answer it produced", () => {
   const row = assistantBubble();
   const host = row.querySelector(".chat-bubble");
 
-  appendToolCall(host, { tool: "shell", text: "exit 0" });
+  appendToolCall(host, { tool: "shell", parameters: '{"cmd":"true"}', text: "exit 0" });
 
   const tools = host.querySelector(".chat-tools");
   assert.equal(tools.childNodes.length, 1);
   assert.equal(host.querySelector(".chat-tool-name").textContent, "shell");
+  assert.equal(host.querySelector(".chat-tool-parameters").textContent, '{"cmd":"true"}');
   assert.equal(host.querySelector(".chat-tool-summary").textContent, "exit 0");
   assert.ok(
     childIndex(host, ".chat-tools") < childIndex(host, ".chat-bubble-text"),

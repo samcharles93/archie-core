@@ -12,11 +12,13 @@ export function appendToolCall(host, event) {
   const name = event?.tool ?? "";
   if (!host || !name) return null;
 
+  const parameters = event.parameters ?? "";
   const summary = event.text ?? "";
   const line = el(
     "div.chat-tool",
     el("span.chat-tool-icon", "🔧"),
     el("span.chat-tool-name", name),
+    parameters && el("code.chat-tool-parameters", parameters),
     el("span.chat-tool-summary", summary),
   );
   // A failure reads as a completed step unless it is marked as one.
