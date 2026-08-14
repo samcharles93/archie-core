@@ -1,5 +1,14 @@
 # archie-agent changelog
 
+## [1.9.0] - 2026-08-15
+
+- fix(agent): resolve git dubious-ownership in sandbox containers
+- feat(agent): mark the mounted worktree as a git safe directory
+- fix(agent): route git safe.directory setup through markWorktreeSafe
+- feat(chat): show tool calls inline and stream replies into one message
+- refactor(agent): move worker runtime into application layer
+- fix(config,webui): make show_tool_calls one cross-channel setting
+
 ## [1.4.0] - 2026-08-10
 
 - feat(gateway): tool-approval gate, session tools for chat, and /delete command
