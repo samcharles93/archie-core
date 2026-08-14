@@ -24,6 +24,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/eventbus"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
+	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/memory"
 	"github.com/samcharles93/archie-core/internal/plugin"
@@ -1004,8 +1005,8 @@ func (d *Daemon) acquireTaskContainer(
 }
 
 // containerEnv returns the environment variables passed to agent containers.
-// runViaAgent publishes a full-task handoff to archie-agent over
-// archie.taskrun.<id> and waits for its completion report. Every durable
+// runViaAgent publishes a full-task handoff to archie-agent over the
+// infrastructure-owned task subject and waits for its completion report. Every durable
 // side effect (Store transitions, Forge calls, git push) happens inside
 // archie-agent's workflow.Run, proxied back to this daemon over
 // storerpc/forgerpc/worktreerpc  --  those RPC servers are the sole place a
@@ -1084,7 +1085,7 @@ func (d *Daemon) taskRunRetryBackoff() time.Duration {
 // that's already done, etc.) is returned immediately without retrying,
 // since those don't mean "not ready yet".
 func (d *Daemon) requestTaskRun(ctx context.Context, taskID int64, data []byte) ([]byte, error) {
-	subject := taskrun.SubjectForTask(taskID)
+	subject := agentnats.SubjectForTask(taskID)
 	deadline := time.Now().Add(d.taskRunReadyTimeout())
 	backoff := d.taskRunRetryBackoff()
 	for {

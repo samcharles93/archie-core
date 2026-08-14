@@ -1,73 +1,107 @@
 package main
 
 import (
-	"encoding/json"
+	"bytes"
+	"context"
+	"errors"
 	"log/slog"
-	"os"
-	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/samcharles93/archie-core/internal/container"
+	"github.com/samcharles93/archie-core/internal/app/agentworker"
 )
 
-// gitDir returns a temp mount dir with the .git directory the daemon writes
-// the boot brief into.
-func gitDir(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o700); err != nil {
-		t.Fatal(err)
+func TestRunCommandPreservesCLIExitSemantics(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		getenv   func(string) string
+		worker   workerRunner
+		wantCode int
+	}{
+		{name: "help", args: []string{"-h"}},
+		{name: "flag parse error", args: []string{"-unknown"}, wantCode: 2},
+		{name: "missing NATS URL", wantCode: 1},
+		{
+			name: "worker failure",
+			args: []string{"-nats-url", "nats://test"},
+			worker: func(context.Context, agentworker.Settings, *slog.Logger) error {
+				return errors.New("worker failed")
+			},
+			wantCode: 1,
+		},
+		{
+			name: "success",
+			args: []string{"-nats-url", "nats://test"},
+			worker: func(context.Context, agentworker.Settings, *slog.Logger) error {
+				return nil
+			},
+		},
 	}
-	return dir
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			getenv := test.getenv
+			if getenv == nil {
+				getenv = func(string) string { return "" }
+			}
+			worker := test.worker
+			if worker == nil {
+				worker = func(context.Context, agentworker.Settings, *slog.Logger) error {
+					t.Fatal("worker called")
+					return nil
+				}
+			}
+			if got := runCommand(test.args, getenv, &bytes.Buffer{}, worker); got != test.wantCode {
+				t.Fatalf("runCommand() = %d, want %d", got, test.wantCode)
+			}
+		})
+	}
 }
 
-func TestBootTaskID(t *testing.T) {
-	log := slog.New(slog.DiscardHandler)
-
-	t.Run("no task.json  --  shared pool mode", func(t *testing.T) {
-		id, ok := bootTaskID(t.TempDir(), log)
-		if ok || id != 0 {
-			t.Fatalf("bootTaskID() = (%d, %v), want (0, false)", id, ok)
-		}
+func TestRunCommandRequiresNATSURL(t *testing.T) {
+	var stderr bytes.Buffer
+	called := false
+	code := runCommand(nil, func(string) string { return "" }, &stderr, func(context.Context, agentworker.Settings, *slog.Logger) error {
+		called = true
+		return nil
 	})
+	if code != 1 || called {
+		t.Fatalf("(code, worker called) = (%d, %v), want (1, false)", code, called)
+	}
+	for _, want := range []string{"error: -nats-url or NATS_URL is required", "Usage of archie-agent:"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("stderr %q does not contain %q", stderr.String(), want)
+		}
+	}
+}
 
-	t.Run("valid task.json  --  dedicated per-task mode", func(t *testing.T) {
-		dir := gitDir(t)
-		data, err := json.Marshal(container.TaskPayload{ID: 42, Owner: "acme", Repo: "widget"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, ".git", "task.json"), data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-		id, ok := bootTaskID(dir, log)
-		if !ok || id != 42 {
-			t.Fatalf("bootTaskID() = (%d, %v), want (42, true)", id, ok)
-		}
-	})
-
-	t.Run("malformed task.json falls back to shared pool mode", func(t *testing.T) {
-		dir := gitDir(t)
-		if err := os.WriteFile(filepath.Join(dir, ".git", "task.json"), []byte("not json"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		id, ok := bootTaskID(dir, log)
-		if ok || id != 0 {
-			t.Fatalf("bootTaskID() = (%d, %v), want (0, false)", id, ok)
-		}
-	})
-
-	t.Run("zero ID falls back to shared pool mode", func(t *testing.T) {
-		dir := gitDir(t)
-		data, _ := json.Marshal(container.TaskPayload{Owner: "acme", Repo: "widget"})
-		if err := os.WriteFile(filepath.Join(dir, ".git", "task.json"), data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-		id, ok := bootTaskID(dir, log)
-		if ok || id != 0 {
-			t.Fatalf("bootTaskID() = (%d, %v), want (0, false)", id, ok)
-		}
-	})
+func TestRunCommandMapsWorkerOutcomeToExitStatus(t *testing.T) {
+	workerErr := errors.New("startup failed")
+	tests := []struct {
+		name      string
+		workerErr error
+		wantCode  int
+	}{
+		{name: "success"},
+		{name: "worker failure", workerErr: workerErr, wantCode: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var stderr bytes.Buffer
+			code := runCommand([]string{"-nats-url", "nats://flag", "-consumer", "custom"}, func(string) string { return "token" }, &stderr, func(_ context.Context, settings agentworker.Settings, _ *slog.Logger) error {
+				if settings.NATSURL != "nats://flag" || settings.NATSToken != "token" || settings.Consumer != "custom" {
+					t.Fatalf("settings = %#v", settings)
+				}
+				return test.workerErr
+			})
+			if code != test.wantCode {
+				t.Fatalf("code = %d, want %d", code, test.wantCode)
+			}
+			if test.workerErr != nil && stderr.Len() != 0 {
+				t.Fatalf("stderr = %q, want command not to duplicate application logging", stderr.String())
+			}
+		})
+	}
 }
 
 func TestNATSConnectionSettings(t *testing.T) {

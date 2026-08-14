@@ -53,7 +53,7 @@ Do not simplify these facts into the target model:
 | Durable work | `store.Task` combines forge/chat source data, workflow position, output, retry, identity, and PR state. | `internal/store/store.go` |
 | Workflow | `internal/workflow` routes a `store.Task` into a `map[string]Workflow`, mutates a broad `TaskContext` through sequential stages. | `internal/workflow/workflow.go` |
 | Agent-stage boundary | Versioned `agentexec.Request`/`Result` carries one autonomous stage; validation correlates task, attempt, and stage. | `internal/agentexec/protocol.go` |
-| Container handoff | `internal/taskrun` carries entire task plus `config.Repo` and `config.TaskConfig`; `archie-agent` runs routing and sequencing. | `internal/taskrun/taskrun.go`; `cmd/archie-agent/main.go` |
+| Container handoff | `internal/taskrun` carries entire task plus `config.Repo` and `config.TaskConfig`; `internal/app/agentworker` owns routing and sequencing while its NATS adapter owns wire mechanics. | `internal/taskrun/taskrun.go`; `internal/app/agentworker/`; `internal/infrastructure/agenttransport/nats/` |
 | Git ownership | Daemon-owned worktree operations clone, commit, push, diff, and clean up. | `internal/worktree/`; `internal/workflow/steps.go`; `ARCHITECTURE.md` |
 | Enforcement | Gates, read-only/protected paths, TDD inverted test gates, and diff caps are represented outside prompt prose. | `internal/agentexec/inprocess.go`; `internal/workflow/{agent,tdd,steps}.go` |
 | Configuration | `internal/config.Config`, `IdentityConfig`, `Repo`, and task snapshots mix input decoding with runtime concerns. | `internal/config/config.go` |

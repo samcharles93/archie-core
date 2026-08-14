@@ -1,49 +1,14 @@
-package main
+package agentgit
 
 import (
 	"context"
 	"errors"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 )
-
-func TestMainConfiguresWorktreeSafetyOnce(t *testing.T) {
-	file, err := parser.ParseFile(token.NewFileSet(), "main.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var markCalls, inlineCalls int
-	ast.Inspect(file, func(node ast.Node) bool {
-		call, ok := node.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == "markWorktreeSafe" {
-			markCalls++
-		}
-		for _, arg := range call.Args {
-			literal, ok := arg.(*ast.BasicLit)
-			if ok && literal.Kind == token.STRING && literal.Value == `"safe.directory"` {
-				inlineCalls++
-			}
-		}
-		return true
-	})
-
-	if markCalls != 1 {
-		t.Fatalf("main.go calls markWorktreeSafe %d times, want 1", markCalls)
-	}
-	if got := markCalls + inlineCalls; got != 1 {
-		t.Fatalf("main.go configures safe.directory %d times, want one authoritative setup path", got)
-	}
-}
 
 func TestMarkWorktreeSafe(t *testing.T) {
 	log := slog.New(slog.DiscardHandler)
@@ -95,10 +60,10 @@ func TestMarkWorktreeSafe(t *testing.T) {
 				return []byte("output"), tc.runErr
 			}
 
-			got := markWorktreeSafe(context.Background(), dir, run, log)
+			got := markSafe(context.Background(), dir, run, log)
 
 			if got != tc.want {
-				t.Fatalf("markWorktreeSafe() = %v, want %v", got, tc.want)
+				t.Fatalf("markSafe() = %v, want %v", got, tc.want)
 			}
 			if len(runs) != tc.wantRuns {
 				t.Fatalf("git invoked %d times, want %d (%v)", len(runs), tc.wantRuns, runs)
@@ -129,8 +94,8 @@ func TestMarkWorktreeSafeIgnoresNonDirectory(t *testing.T) {
 		return nil, nil
 	}
 
-	if got := markWorktreeSafe(context.Background(), file, run, slog.New(slog.DiscardHandler)); got {
-		t.Fatal("markWorktreeSafe() = true for a non-directory mount path, want false")
+	if got := markSafe(context.Background(), file, run, slog.New(slog.DiscardHandler)); got {
+		t.Fatal("markSafe() = true for a non-directory mount path, want false")
 	}
 	if invoked {
 		t.Fatal("git was invoked for a non-directory mount path")

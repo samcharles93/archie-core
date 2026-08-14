@@ -7,17 +7,13 @@
 package taskrun
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/store"
 )
-
-// SubjectForTask returns the per-task NATS subject for a full-task handoff.
-func SubjectForTask(taskID int64) string {
-	return fmt.Sprintf("archie.taskrun.%d", taskID)
-}
 
 // Request carries everything archie-agent needs to run a task's entire
 // workflow itself: the task row (already claimed by archied), the repo's
@@ -33,6 +29,18 @@ type Request struct {
 	// transports, discover tools, and register them locally. Absent/empty
 	// means no MCP servers (backward compatible).
 	MCPServers []config.MCPServer `json:"mcp_servers,omitempty"`
+}
+
+// Validate rejects a full-task request that cannot be correlated to a real
+// task. Transport-specific subject correlation is enforced by the adapter.
+func (r Request) Validate() error {
+	if r.Task == nil {
+		return errors.New("task is required")
+	}
+	if r.Task.ID <= 0 {
+		return fmt.Errorf("task ID must be positive, got %d", r.Task.ID)
+	}
+	return nil
 }
 
 // Response reports the task's final state after archie-agent runs its

@@ -50,6 +50,26 @@ func TestRequestJSONRoundTrip(t *testing.T) {
 	}
 }
 
+func TestRequestValidateRequiresPositiveTaskID(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		request Request
+		wantErr bool
+	}{
+		{name: "missing task", wantErr: true},
+		{name: "zero ID", request: Request{Task: &store.Task{}}, wantErr: true},
+		{name: "negative ID", request: Request{Task: &store.Task{ID: -1}}, wantErr: true},
+		{name: "positive ID", request: Request{Task: &store.Task{ID: 1}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.request.Validate()
+			if (err != nil) != test.wantErr {
+				t.Fatalf("Validate() error = %v, wantErr %v", err, test.wantErr)
+			}
+		})
+	}
+}
+
 func TestResponseJSONRoundTrip(t *testing.T) {
 	resp := Response{
 		Task:   &store.Task{ID: 1, Status: store.StatusPROpen},
@@ -65,11 +85,5 @@ func TestResponseJSONRoundTrip(t *testing.T) {
 	}
 	if got.Task == nil || got.Task.Status != store.StatusPROpen || got.Status != "passed" {
 		t.Fatalf("Response did not round-trip: %+v", got)
-	}
-}
-
-func TestSubjectForTask(t *testing.T) {
-	if got := SubjectForTask(42); got != "archie.taskrun.42" {
-		t.Fatalf("SubjectForTask(42) = %q", got)
 	}
 }

@@ -18,7 +18,11 @@ See `docs/architecture/organisation.md` for the target structure and
 | Package                      | Role                                                                      |
 | ---------------------------- | ------------------------------------------------------------------------- |
 | `cmd/archied/`               | Binary entry: config→forge→store→runtime→workflows→daemon                 |
-| `cmd/archie-agent/`          | One-invocation autonomous stage worker (JSON stdin/stdout)                |
+| `cmd/archie-agent/`          | Binary entry: flags, environment, signals, and agentworker invocation     |
+| `internal/app/agentworker/`  | Agent worker composition, lifecycle, routing, and workflow execution      |
+| `internal/infrastructure/agentboot/` | Worker boot-brief filesystem decoding                                  |
+| `internal/infrastructure/agentgit/` | Worker git safe-directory setup                                        |
+| `internal/infrastructure/agenttransport/nats/` | Worker NATS transport, stage/task wire boundaries, and RPC client construction |
 | `internal/config/`           | Config types only — loading lives in `infrastructure/configuration`       |
 | `internal/daemon/`           | Resident loop: poll, enqueue, claim, route, process, reconcile            |
 | `internal/domain/workflow/`  | Engine: stage lists, routing, shared steps, workflow definitions          |
