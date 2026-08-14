@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -31,6 +32,36 @@ import (
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
 )
 
+// recordingHandler captures warning messages so tests can distinguish the
+// silent disabled-forge path from the token-unavailable and
+// client-construction-failed fallbacks, which both log before returning the
+// same noop forge.
+type recordingHandler struct {
+	mu    sync.Mutex
+	warns []string
+}
+
+func (h *recordingHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *recordingHandler) Handle(_ context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if r.Level == slog.LevelWarn {
+		h.warns = append(h.warns, r.Message)
+	}
+	return nil
+}
+
+func (h *recordingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *recordingHandler) WithGroup(string) slog.Handler      { return h }
+
+// Warnings returns a copy of the captured warning messages.
+func (h *recordingHandler) Warnings() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]string(nil), h.warns...)
+}
+
 // TestResolveForgeDegradesInsteadOfFailing guards a startup behaviour change:
 // a missing forge credential used to abort archied with exit 1. The forge is
 // one feature among many, so that denied the operator chat, the gateway and
@@ -40,15 +71,28 @@ import (
 func TestResolveForgeDegradesInsteadOfFailing(t *testing.T) {
 	t.Parallel()
 
-	log := slog.New(slog.DiscardHandler)
-
 	tests := []struct {
 		name string
 		cfg  config.Forge
+		// wantWarnSubstring discriminates the disabled path from the
+		// fallback paths: a type ForgeDisabled accepts returns the noop forge
+		// silently, while a token that cannot resolve or a forge that cannot
+		// be constructed logs a warning first. Without this assertion the
+		// alias cases are indistinguishable from the fallbacks -- a future
+		// copy of the predicate that only recognized "none" would pass.
+		wantWarnSubstring string
 	}{
 		{
 			name: "explicitly disabled",
 			cfg:  config.Forge{Type: "none"},
+		},
+		{
+			name: "off alias",
+			cfg:  config.Forge{Type: "off"},
+		},
+		{
+			name: "disabled alias",
+			cfg:  config.Forge{Type: "disabled"},
 		},
 		{
 			name: "token refers to an unset environment variable",
@@ -57,10 +101,15 @@ func TestResolveForgeDegradesInsteadOfFailing(t *testing.T) {
 				Host:  "https://github.com",
 				Token: secret.SecretRef{Engine: "env", Key: "ARCHIE_TEST_TOKEN_DEFINITELY_UNSET"},
 			},
+			wantWarnSubstring: "token unavailable",
 		},
 		{
 			name: "token reference is empty",
 			cfg:  config.Forge{Type: "github", Host: "https://github.com"},
+			// The zero-value SecretRef resolves to an empty token, which hits
+			// the token-unavailable branch -- but only after logging. This
+			// stays discriminating: the disabled aliases return silently.
+			wantWarnSubstring: "token unavailable",
 		},
 	}
 
@@ -68,7 +117,8 @@ func TestResolveForgeDegradesInsteadOfFailing(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			client, token := resolveForge(tc.cfg, secret.NewRegistry(), log)
+			rec := &recordingHandler{}
+			client, token := resolveForge(tc.cfg, secret.NewRegistry(), slog.New(rec))
 			if client == nil {
 				t.Fatal("resolveForge returned no forge client; startup would nil-panic")
 			}
@@ -83,6 +133,16 @@ func TestResolveForgeDegradesInsteadOfFailing(t *testing.T) {
 			}
 			if len(issues) != 0 {
 				t.Errorf("disabled forge returned %d issues, want 0", len(issues))
+			}
+			if tc.wantWarnSubstring == "" {
+				if warns := rec.Warnings(); len(warns) != 0 {
+					t.Errorf("disabled alias logged %d warning(s), want none: %v", len(warns), warns)
+				}
+				return
+			}
+			warns := rec.Warnings()
+			if len(warns) != 1 || !strings.Contains(warns[0], tc.wantWarnSubstring) {
+				t.Errorf("warnings = %v, want exactly one containing %q", warns, tc.wantWarnSubstring)
 			}
 		})
 	}

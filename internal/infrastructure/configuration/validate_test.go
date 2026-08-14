@@ -25,6 +25,36 @@ func minimalValidConfig() config.Config {
 	}
 }
 
+// TestForgeDisabled pins the single definition of the disabled-forge
+// predicate: cmd/archied's resolveForge calls ForgeDisabled instead of
+// maintaining its own copy, so any alias added or removed here must hold
+// for both config validation and daemon startup. The table deliberately
+// includes a case-variant alias and the empty string to catch a future
+// implementation that lowercases or matches prefixes instead of comparing
+// the exact aliases.
+func TestForgeDisabled(t *testing.T) {
+	tests := []struct {
+		name string
+		typ  string
+		want bool
+	}{
+		{name: "none", typ: "none", want: true},
+		{name: "off", typ: "off", want: true},
+		{name: "disabled", typ: "disabled", want: true},
+		{name: "github", typ: "github", want: false},
+		{name: "gitea", typ: "gitea", want: false},
+		{name: "empty string", typ: "", want: false},
+		{name: "case variant is not an alias", typ: "None", want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ForgeDisabled(tc.typ); got != tc.want {
+				t.Errorf("ForgeDisabled(%q) = %v, want %v", tc.typ, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestValidate_IsCallableOutsideThePackage(t *testing.T) {
 	cfg := minimalValidConfig()
 	if err := Validate(&cfg); err != nil {
