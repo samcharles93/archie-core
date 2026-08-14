@@ -44,7 +44,7 @@ test("a failed tool call is marked so it does not read as success", () => {
   const row = assistantBubble();
   const host = row.querySelector(".chat-bubble");
 
-  appendToolCall(host, { tool: "read", text: "failed: no such file" });
+  appendToolCall(host, { tool: "read", text: "failed: no such file", failed: true });
 
   const line = host.querySelector(".chat-tool");
   assert.match(line.className, /failed/);
@@ -54,7 +54,19 @@ test("a successful tool call is not marked as failed", () => {
   const row = assistantBubble();
   const host = row.querySelector(".chat-bubble");
 
-  appendToolCall(host, { tool: "read", text: "42 lines" });
+  appendToolCall(host, { tool: "read", text: "42 lines", failed: false });
+
+  assert.doesNotMatch(host.querySelector(".chat-tool").className, /failed/);
+});
+
+// The styling decision reads the structured `failed` field, not the summary
+// text: a successful tool's own output can start with "failed:" (a grep
+// hit, a log line it read back), and that must not be styled as an error.
+test("a successful tool whose output starts with 'failed:' is not marked as failed", () => {
+  const row = assistantBubble();
+  const host = row.querySelector(".chat-bubble");
+
+  appendToolCall(host, { tool: "shell", text: "failed: no such file (grep match, exit 0)", failed: false });
 
   assert.doesNotMatch(host.querySelector(".chat-tool").className, /failed/);
 });

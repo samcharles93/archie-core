@@ -21,8 +21,12 @@ export function appendToolCall(host, event) {
     parameters && el("code.chat-tool-parameters", parameters),
     el("span.chat-tool-summary", summary),
   );
-  // A failure reads as a completed step unless it is marked as one.
-  if (summary.startsWith("failed:")) line.className = "chat-tool failed";
+  // A failure reads as a completed step unless it is marked as one. Styled
+  // from the structured `failed` field the server sends, not by sniffing
+  // the summary text: a successful tool can print output that itself starts
+  // with "failed:" (e.g. a grep hit, a log line), which a string prefix
+  // check would misread as the tool call itself having failed.
+  if (event.failed) line.className = "chat-tool failed";
 
   toolList(host).append(line);
   return line;
