@@ -243,7 +243,7 @@ func TestStartWithoutToken(t *testing.T) {
 func TestWebhookHandlerReturns503WhenNotStarted(t *testing.T) {
 	g := New("token", "", "", nil, slog.Default())
 	rec := httptest.NewRecorder()
-	g.WebhookHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/", nil))
+	g.WebhookHandler().ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/", nil))
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want 503", rec.Code)
 	}
