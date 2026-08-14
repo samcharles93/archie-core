@@ -1,5 +1,20 @@
 # archied changelog
 
+## [1.8.0] - 2026-08-15
+
+- feat(archied): add -version so the installed build can be read from a shell
+- fix(webui): rebuild the Configuration page layout so values stop colliding
+- fix(webui): size Configuration key/value lists to their own content
+- fix(webui): keep Configuration rows full width, hug only the label column
+- fix(webui): cap and centre the Configuration page instead of its lists
+- fix(webui): preserve encoded redirect path characters
+- feat(chat): show tool calls inline and stream replies into one message
+- fix(chat): harden inline tool call streaming
+- refactor(agent): move worker runtime into application layer
+- fix(telegram): harden live-reply delivery against /stop and multi-byte content
+- fix(telegram): keep tool activity visible and mark failed/empty turns
+- fix(config): de-duplicate disabled-forge predicate, export ForgeDisabled
+
 ## [1.7.0] - 2026-08-10
 
 - fix(build): install ripgrep where grep.go actually needs it on PATH
