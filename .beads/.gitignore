@@ -61,7 +61,9 @@ dolt-pprof/
 # Corrupt backup directories (created by bd doctor --fix recovery)
 *.corrupt.backup/
 
-# Backup data (auto-exported JSONL, local-only)
+# JSONL exports and backups are local interchange artifacts. Dolt is the
+# authoritative store and GitHub is the external issue surface.
+issues.jsonl
 backup/
 
 # Per-project environment file (Dolt connection config, GH#2520)
