@@ -2,6 +2,8 @@ package telegram
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -61,8 +63,13 @@ type liveReply struct {
 	b               *bot.Bot
 	chatID          int64
 	messageThreadID int
+	showToolCalls   bool
 	// interval throttles updates; zero renders every change.
 	interval time.Duration
+
+	cancelRender   context.CancelFunc
+	renderRequests chan chan struct{}
+	renderDone     chan struct{}
 
 	mu sync.Mutex
 	// buf is the canonical buffer: assistant text and tool lines in the
@@ -78,15 +85,63 @@ type liveReply struct {
 	last      time.Time
 }
 
-// newLiveReply creates a renderer bound to one chat/thread.
-func (g *Gateway) newLiveReply(b *bot.Bot, chatID int64, messageThreadID int) *liveReply {
-	return &liveReply{
+// newLiveReply creates a renderer bound to one chat/thread. showToolCalls is
+// copied into the reply so a config reload cannot change a turn mid-stream.
+func (g *Gateway) newLiveReply(ctx context.Context, b *bot.Bot, chatID int64, messageThreadID int, showToolCalls bool) *liveReply {
+	renderCtx, cancelRender := context.WithCancel(ctx)
+	live := &liveReply{
 		g:               g,
 		b:               b,
 		chatID:          chatID,
 		messageThreadID: messageThreadID,
+		showToolCalls:   showToolCalls,
 		interval:        liveInterval,
+		cancelRender:    cancelRender,
+		renderRequests:  make(chan chan struct{}, 1),
+		renderDone:      make(chan struct{}),
 	}
+	go live.runRenderer(renderCtx)
+	return live
+}
+
+func (l *liveReply) runRenderer(ctx context.Context) {
+	defer close(l.renderDone)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case completed := <-l.renderRequests:
+			l.render(ctx)
+			if completed != nil {
+				close(completed)
+			}
+		}
+	}
+}
+
+func (l *liveReply) requestRender() {
+	select {
+	case l.renderRequests <- nil:
+	default:
+	}
+}
+
+func (l *liveReply) flushRendering() {
+	completed := make(chan struct{})
+	select {
+	case l.renderRequests <- completed:
+	case <-l.renderDone:
+		return
+	}
+	select {
+	case <-completed:
+	case <-l.renderDone:
+	}
+}
+
+func (l *liveReply) stopRendering() {
+	l.cancelRender()
+	<-l.renderDone
 }
 
 // Delta appends the next fragment of assistant text. It satisfies
@@ -102,7 +157,7 @@ func (l *liveReply) Delta(text string) {
 	if throttled {
 		return
 	}
-	l.render(context.Background())
+	l.requestRender()
 }
 
 // ToolCall appends one tool-activity line. It satisfies gateway.TurnStream.
@@ -111,10 +166,14 @@ func (l *liveReply) Delta(text string) {
 // hallucinated action from a real one, but it also narrates every internal
 // step, which is noise in a conversation that is going fine.
 func (l *liveReply) ToolCall(event gateway.ToolCallEvent) {
-	if !l.g.ShowToolCalls || event.Name == "" {
+	if !l.showToolCalls || event.Name == "" {
 		return
 	}
-	line := toolCallPrefix + event.Name + " — " + event.Summary()
+	line := toolCallPrefix + event.Name
+	if event.Parameters != "" {
+		line += " " + event.Parameters
+	}
+	line += " — " + event.Summary()
 
 	l.mu.Lock()
 	if l.buf.Len() > 0 && !strings.HasSuffix(l.buf.String(), "\n") {
@@ -126,9 +185,9 @@ func (l *liveReply) ToolCall(event gateway.ToolCallEvent) {
 	l.mu.Unlock()
 
 	// A tool call is a discrete event rather than a token, and there are
-	// few of them: render it immediately so the user sees what ran while
-	// it is still relevant.
-	l.render(context.Background())
+	// few of them: wake the renderer immediately so the user sees what ran
+	// while it is still relevant. The callback itself never waits on HTTP.
+	l.requestRender()
 }
 
 // render writes the current buffer, cursor and all, to the live message.
@@ -139,8 +198,6 @@ func (l *liveReply) render(ctx context.Context) {
 		l.mu.Unlock()
 		return
 	}
-	l.rendered = body
-	l.last = time.Now()
 	messageID := l.messageID
 	l.mu.Unlock()
 
@@ -151,7 +208,16 @@ func (l *liveReply) render(ctx context.Context) {
 		l.open(ctx, body)
 		return
 	}
-	l.edit(ctx, messageID, body)
+	if err := l.edit(ctx, messageID, body); err == nil {
+		l.markRendered(body)
+	}
+}
+
+func (l *liveReply) markRendered(body string) {
+	l.mu.Lock()
+	l.rendered = body
+	l.last = time.Now()
+	l.mu.Unlock()
 }
 
 // finalize replaces the live message with the turn's authoritative reply,
@@ -159,14 +225,18 @@ func (l *liveReply) render(ctx context.Context) {
 // nothing was ever streamed  --  a non-streaming provider, or a reply served
 // from the turn ledger  --  it sends the reply as a new message instead.
 func (l *liveReply) finalize(ctx context.Context, reply string) {
+	// Finish any queued live frame before replacing it, then retire the
+	// worker so no stale edit can race the authoritative delivery.
+	l.flushRendering()
+	l.stopRendering()
+
 	l.mu.Lock()
 	content := l.finalText(reply)
-	l.rendered = content
 	messageID := l.messageID
 	l.mu.Unlock()
 
 	if content == "" {
-		l.abandon(ctx)
+		l.abandonStopped(ctx)
 		return
 	}
 	if messageID == 0 {
@@ -175,9 +245,16 @@ func (l *liveReply) finalize(ctx context.Context, reply string) {
 	}
 
 	// The live message is one message, so an oversized reply keeps it as
-	// the first part and sends the remainder after it.
+	// the first part and sends the remainder after it. If the edit cannot
+	// be delivered in either rich or plain form, send the complete reply
+	// through the normal split path rather than losing the authoritative
+	// answer behind a stale live frame.
 	parts := splitLongMessage(content, messageMaxLen)
-	l.edit(ctx, messageID, parts[0])
+	if err := l.edit(ctx, messageID, parts[0]); err != nil {
+		l.g.sendMessage(ctx, l.b, l.chatID, l.messageThreadID, content)
+		return
+	}
+	l.markRendered(parts[0])
 	for _, part := range parts[1:] {
 		l.g.sendMessage(ctx, l.b, l.chatID, l.messageThreadID, part)
 	}
@@ -186,20 +263,30 @@ func (l *liveReply) finalize(ctx context.Context, reply string) {
 // abandon leaves a stopped or failed turn readable: the partial text stays,
 // but the cursor goes, so the message does not claim to still be writing.
 func (l *liveReply) abandon(ctx context.Context) {
+	l.stopRendering()
+	l.abandonStopped(ctx)
+}
+
+func (l *liveReply) abandonStopped(ctx context.Context) {
 	l.mu.Lock()
 	// Bounded for the same reason a live frame is: this is still one edit
 	// of one message, and a stopped turn that had already streamed past
 	// the limit would keep its cursor if the edit were rejected.
 	text := clampToOneMessage(strings.TrimRight(l.buf.String(), " \t\n"))
 	messageID := l.messageID
-	if messageID == 0 || text == "" || text == l.rendered {
+	if text == "" || text == l.rendered {
 		l.mu.Unlock()
 		return
 	}
-	l.rendered = text
 	l.mu.Unlock()
 
-	l.edit(ctx, messageID, text)
+	if messageID == 0 {
+		l.g.sendMessage(ctx, l.b, l.chatID, l.messageThreadID, text)
+		return
+	}
+	if err := l.edit(ctx, messageID, text); err == nil {
+		l.markRendered(text)
+	}
 }
 
 // body renders the canonical buffer for a mid-turn frame. The caller holds
@@ -263,6 +350,8 @@ func (l *liveReply) open(ctx context.Context, body string) {
 	}
 	l.mu.Lock()
 	l.messageID = msg.ID
+	l.rendered = body
+	l.last = time.Now()
 	l.mu.Unlock()
 }
 
@@ -272,22 +361,27 @@ func (l *liveReply) open(ctx context.Context, body string) {
 // an edit that carries one, so a server that rejects the rich body rejects
 // the whole edit. As with send, that is treated as "unsupported" rather than
 // fatal: retry unformatted so the user still gets the reply.
-func (l *liveReply) edit(ctx context.Context, messageID int, body string) {
-	_, err := l.b.EditMessageText(ctx, &bot.EditMessageTextParams{
+func (l *liveReply) edit(ctx context.Context, messageID int, body string) error {
+	_, richErr := l.b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:      l.chatID,
 		MessageID:   messageID,
 		RichMessage: &models.InputRichMessage{Markdown: body},
 	})
-	if err == nil {
-		return
+	if richErr == nil {
+		return nil
 	}
-	l.g.log.Debug("live reply rich edit failed, retrying unformatted", "error", err)
+	l.g.log.Debug("live reply rich edit failed, retrying unformatted", "error", richErr)
 
-	if _, err := l.b.EditMessageText(ctx, &bot.EditMessageTextParams{
+	if _, plainErr := l.b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    l.chatID,
 		MessageID: messageID,
 		Text:      body,
-	}); err != nil {
-		l.g.log.Debug("live reply edit failed", "error", err)
+	}); plainErr != nil {
+		l.g.log.Debug("live reply edit failed", "error", plainErr)
+		return errors.Join(
+			fmt.Errorf("rich edit: %w", richErr),
+			fmt.Errorf("plain edit: %w", plainErr),
+		)
 	}
+	return nil
 }

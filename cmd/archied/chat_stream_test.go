@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/samcharles93/ai-sdk/core"
@@ -18,7 +19,7 @@ func (s *recordingStream) Delta(text string) {
 }
 
 func (s *recordingStream) ToolCall(event gateway.ToolCallEvent) {
-	s.events = append(s.events, "tool:"+event.Name+":"+event.Summary())
+	s.events = append(s.events, "tool:"+event.Name+":"+event.Parameters+":"+event.Summary())
 }
 
 func streamOf(parts ...core.StreamPart) <-chan core.StreamPart {
@@ -55,14 +56,14 @@ func TestDrainChatStream(t *testing.T) {
 				{Type: core.StreamPartTextDelta, TextDelta: " done"},
 			},
 			wantText:   "checking done",
-			wantEvents: []string{"text:checking", "tool:shell:exit 0", "text: done"},
+			wantEvents: []string{"text:checking", `tool:shell:{"cmd":"[string]"}:exit 0`, "text: done"},
 		},
 		{
 			name: "a failed tool is reported as a failure, not silence",
 			parts: []core.StreamPart{
 				{Type: core.StreamPartToolResult, ToolResult: &core.ToolResult{ToolName: "shell", Error: "exit status 2"}},
 			},
-			wantEvents: []string{"tool:shell:failed: exit status 2"},
+			wantEvents: []string{"tool:shell::failed: exit status 2"},
 		},
 		{
 			// The tool call part carries no outcome yet: reporting it as
@@ -104,6 +105,49 @@ func TestDrainChatStream(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestDrainChatStreamCorrelatesBoundsAndRedactsToolParameters(t *testing.T) {
+	secret := strings.Repeat("s", 200)
+	sink := &recordingStream{}
+	drainChatStream(streamOf(
+		core.StreamPart{Type: core.StreamPartToolCall, ToolCall: &core.ToolCall{
+			ToolCallID: "call-2",
+			ToolName:   "shell",
+			Input:      `{"cmd":"curl -H 'Authorization: Bearer ` + secret + `'","nested":{"api_token":"` + secret + `"}}`,
+		}},
+		core.StreamPart{Type: core.StreamPartToolCall, ToolCall: &core.ToolCall{
+			ToolCallID: "call-1",
+			ToolName:   "read",
+			Input:      `{"path":"/tmp/one"}`,
+		}},
+		core.StreamPart{Type: core.StreamPartToolResult, ToolResult: &core.ToolResult{
+			ToolCallID: "call-1",
+			ToolName:   "read",
+			Output:     "one",
+		}},
+		core.StreamPart{Type: core.StreamPartToolResult, ToolResult: &core.ToolResult{
+			ToolCallID: "call-2",
+			ToolName:   "shell",
+			Output:     "ok",
+		}},
+	), sink)
+
+	if len(sink.events) != 2 {
+		t.Fatalf("events = %v, want two completed calls", sink.events)
+	}
+	if sink.events[0] != `tool:read:{"path":"[string]"}:one` {
+		t.Fatalf("first event = %q, want parameters correlated by call ID", sink.events[0])
+	}
+	if strings.Contains(sink.events[1], secret) {
+		t.Fatalf("second event exposed secret parameters: %q", sink.events[1])
+	}
+	if !strings.Contains(sink.events[1], `"api_token":"[redacted]"`) {
+		t.Fatalf("second event = %q, want redacted token", sink.events[1])
+	}
+	if len([]rune(sink.events[1])) > 180 {
+		t.Fatalf("second event is %d runes, want bounded parameters", len([]rune(sink.events[1])))
 	}
 }
 

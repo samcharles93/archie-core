@@ -511,10 +511,12 @@ func TestChatSessionsFiltersNonWeb(t *testing.T) {
 
 // chatSSEEvent is one parsed `data: {...}` frame from the stream endpoint.
 type chatSSEEvent struct {
-	Type      string `json:"type"`
-	Text      string `json:"text"`
-	Tool      string `json:"tool"`
-	SessionID string `json:"session_id"`
+	Type       string `json:"type"`
+	Text       string `json:"text"`
+	Tool       string `json:"tool"`
+	ToolCallID string `json:"tool_call_id"`
+	Parameters string `json:"parameters"`
+	SessionID  string `json:"session_id"`
 }
 
 func parseChatSSE(t *testing.T, body string) []chatSSEEvent {
@@ -606,7 +608,7 @@ func TestChatStreamDeltas(t *testing.T) {
 func TestChatStreamReportsToolCalls(t *testing.T) {
 	stream := func(_ context.Context, _ gateway.Message, turn gateway.TurnStream) (string, error) {
 		turn.Delta("checking")
-		turn.ToolCall(gateway.ToolCallEvent{Name: "shell", Output: "exit 0\nignored trailing line"})
+		turn.ToolCall(gateway.ToolCallEvent{ID: "call-1", Name: "shell", Parameters: `{"cmd":"true"}`, Output: "exit 0\nignored trailing line"})
 		turn.ToolCall(gateway.ToolCallEvent{Name: "read", Err: "no such file"})
 		turn.Delta(" and answering")
 		return "checking and answering", nil
@@ -644,13 +646,13 @@ func TestChatStreamReportsToolCalls(t *testing.T) {
 				case "delta":
 					got = append(got, "text:"+ev.Text)
 				case "tool":
-					got = append(got, "tool:"+ev.Tool+":"+ev.Text)
+					got = append(got, "tool:"+ev.ToolCallID+":"+ev.Tool+":"+ev.Parameters+":"+ev.Text)
 				}
 			}
 			want := []string{
 				"text:checking",
-				"tool:shell:exit 0",
-				"tool:read:failed: no such file",
+				`tool:call-1:shell:{"cmd":"true"}:exit 0`,
+				"tool::read::failed: no such file",
 				"text: and answering",
 			}
 			if len(got) != len(want) {
