@@ -146,7 +146,7 @@ func validateIdentities(identities []config.IdentityConfig) error {
 		if !oneOf(id.Forge.Type, forgeTypes) {
 			return fmt.Errorf("%w: identities[%d].forge.type %q (want %s)", ErrInvalidInput, i, id.Forge.Type, list(forgeTypes))
 		}
-		if !isForgeDisabled(id.Forge.Type) && id.Forge.Token == (secret.SecretRef{}) {
+		if !ForgeDisabled(id.Forge.Type) && id.Forge.Token == (secret.SecretRef{}) {
 			return fmt.Errorf("%w: identities[%d].forge.token is required (each identity needs its own secret reference; unlike the top-level [forge], there is no default)", ErrInvalidInput, i)
 		}
 		if err := validateRepos(id.Repos); err != nil {
@@ -156,7 +156,13 @@ func validateIdentities(identities []config.IdentityConfig) error {
 	return nil
 }
 
-func isForgeDisabled(t string) bool {
+// ForgeDisabled reports whether a forge type explicitly opts out of forge
+// integration. It is the single definition shared by config validation and
+// cmd/archied's resolveForge: adding or removing an alias here applies to
+// both paths together. It is not consulted by forge.New, which has its own
+// construction-time dispatch for disabled types (and the empty string);
+// that dispatch is a different concern from this validation predicate.
+func ForgeDisabled(t string) bool {
 	return t == forgeTypeNone || t == forgeTypeOff || t == forgeTypeDisabled
 }
 

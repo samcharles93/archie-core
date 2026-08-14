@@ -255,7 +255,7 @@ func configuredMCPProvider(server config.MCPServer) (toolprovider.Engine, error)
 // configuration is a different matter and still fails fast in validation, well
 // before this point.
 func resolveForge(cfg config.Forge, secrets *secret.Registry, log *slog.Logger) (forge.Forge, string) {
-	if isForgeDisabled(cfg.Type) {
+	if configuration.ForgeDisabled(cfg.Type) {
 		return forge.NewNoop(log), ""
 	}
 	token, err := cfg.Token.Resolve(secrets)
@@ -274,18 +274,6 @@ func resolveForge(cfg config.Forge, secrets *secret.Registry, log *slog.Logger) 
 		return forge.NewNoop(log), ""
 	}
 	return client, token
-}
-
-// isForgeDisabled reports whether a forge type explicitly opts out of forge
-// integration. It mirrors the identically named check in the configuration
-// package, which is unexported there.
-func isForgeDisabled(forgeType string) bool {
-	switch forgeType {
-	case "none", "off", "disabled":
-		return true
-	default:
-		return false
-	}
 }
 
 func openProductionTaskStore(ctx context.Context, path string) (store.TaskStore, error) {
