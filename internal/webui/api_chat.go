@@ -222,14 +222,28 @@ type chatStreamEvent struct {
 
 // chatStreamSink adapts the stream writer to gateway.TurnStream so text and
 // tool activity reach the browser through one ordered path.
-type chatStreamSink func(chatStreamEvent)
-
-func (f chatStreamSink) Delta(text string) {
-	f(chatStreamEvent{Type: "delta", Text: text})
+//
+// showToolCalls gates ToolCall the same way Telegram's liveReply gates its
+// own tool narration: config.ChatConfig.ShowToolCalls is one setting for
+// every chat channel, so an operator who turned it off gets no tool frames
+// on the dashboard either, not just in Telegram. It is snapshotted into the
+// sink at stream start rather than read live, for the same reason Telegram
+// snapshots it per-reply -- a config reload mid-turn must not change what a
+// turn already in flight narrates.
+type chatStreamSink struct {
+	write         func(chatStreamEvent)
+	showToolCalls bool
 }
 
-func (f chatStreamSink) ToolCall(event gateway.ToolCallEvent) {
-	f(chatStreamEvent{
+func (s chatStreamSink) Delta(text string) {
+	s.write(chatStreamEvent{Type: "delta", Text: text})
+}
+
+func (s chatStreamSink) ToolCall(event gateway.ToolCallEvent) {
+	if !s.showToolCalls || event.Name == "" {
+		return
+	}
+	s.write(chatStreamEvent{
 		Type:       "tool",
 		Tool:       event.Name,
 		ToolCallID: event.ID,
@@ -237,6 +251,17 @@ func (f chatStreamSink) ToolCall(event gateway.ToolCallEvent) {
 		Text:       event.Summary(),
 		Failed:     event.Err != "",
 	})
+}
+
+// chatShowToolCalls reports config.ChatConfig.ShowToolCalls, the one setting
+// shared by every chat channel. Off (the default) when Cfg is nil, matching
+// the field's own off-by-default doc comment: a dashboard embedded without
+// live config must not narrate tool activity nobody opted into.
+func (s *Server) chatShowToolCalls() bool {
+	if s.Cfg == nil {
+		return false
+	}
+	return s.Cfg.Get().Chat.ShowToolCalls
 }
 
 func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
@@ -268,11 +293,15 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeChatEvent(chatStreamEvent{Type: "started"}, sessionID)
+	showToolCalls := s.chatShowToolCalls()
 	var reply string
 	if chat.Turns == nil {
-		reply, err = chat.Router.RouteStream(r.Context(), msg, chatStreamSink(func(event chatStreamEvent) {
-			writeChatEvent(event, sessionID)
-		}))
+		reply, err = chat.Router.RouteStream(r.Context(), msg, chatStreamSink{
+			showToolCalls: showToolCalls,
+			write: func(event chatStreamEvent) {
+				writeChatEvent(event, sessionID)
+			},
+		})
 	} else {
 		type turnResult struct {
 			reply string
@@ -285,12 +314,15 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		events := make(chan chatStreamEvent, 32)
 		result := make(chan turnResult, 1)
 		chat.Turns.Submit(r.Context(), sessionID, func(turnCtx context.Context) {
-			turnReply, turnErr := chat.Router.RouteStream(turnCtx, msg, chatStreamSink(func(event chatStreamEvent) {
-				select {
-				case events <- event:
-				case <-r.Context().Done():
-				}
-			}))
+			turnReply, turnErr := chat.Router.RouteStream(turnCtx, msg, chatStreamSink{
+				showToolCalls: showToolCalls,
+				write: func(event chatStreamEvent) {
+					select {
+					case events <- event:
+					case <-r.Context().Done():
+					}
+				},
+			})
 			result <- turnResult{reply: turnReply, err: turnErr}
 		})
 		for {

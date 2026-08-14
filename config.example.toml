@@ -88,6 +88,13 @@ class = "ollama"
 # cross-filesystem (disk ops, system edits, etc.). Grant deliberately.
 # unrestricted_filesystem = true
 
+# Render each completed tool call inline in the reply, naming the tool and one
+# line of its result, before the answer built from them. Off by default: it is
+# there to make a wrong tool choice visible from the chat, at the cost of
+# narrating every internal step. Applies to every chat channel -- Telegram
+# and the web dashboard both read this one setting.
+# show_tool_calls = true
+
 # Optional interactive-chat catalog. /provider groups these references by
 # their first path segment, and /model shows only the selected provider's
 # entries. When omitted, Archie uses the distinct refs in [models].
@@ -102,12 +109,6 @@ class = "ollama"
 # [chat.telegram]
 # update_check_command = ["/usr/local/bin/archie-update-check"]
 # update_install_command = ["/usr/local/bin/archie-update-install"]
-#
-# Render each completed tool call inline in the reply, naming the tool and one
-# line of its result, before the answer built from them. Off by default: it is
-# there to make a wrong tool choice visible from the chat, at the cost of
-# narrating every internal step.
-# show_tool_calls = true
 
 # External MCP tools are launched and managed by Archie's MCP client.
 # [[tools.mcp_servers]]
