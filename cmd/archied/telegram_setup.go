@@ -86,7 +86,7 @@ func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), o
 		configureTelegramUpdates(tg, s)
 	}
 	tg.Dangerous = s.Dangerous
-	tg.SetShowToolCalls(cfg.Chat.Telegram.ShowToolCalls)
+	tg.SetShowToolCalls(cfg.Chat.ShowToolCalls)
 	tg.ReleaseAnnouncements = &releaseannounce.Announcer{
 		StatePath: releaseAnnouncementStatePath(cfg.WorkDir, cfg.BotUser),
 		Components: []releaseannounce.Component{
@@ -156,7 +156,7 @@ func makeTelegramReload(s telegramSetup) func(*telegram.Gateway) error {
 		}
 		g.Token = token
 		g.AllowedUserIDs = newCfg.Chat.Telegram.AllowedUserIDs
-		g.SetShowToolCalls(newCfg.Chat.Telegram.ShowToolCalls)
+		g.SetShowToolCalls(newCfg.Chat.ShowToolCalls)
 		s.Log.Info("chat gateway config reloaded",
 			"allowed_user_ids", len(g.AllowedUserIDs),
 			"show_tool_calls", g.ShowToolCalls())

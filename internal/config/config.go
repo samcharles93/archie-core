@@ -667,6 +667,18 @@ type ChatConfig struct {
 	// difference between an agent that can edit /etc directly and one that has
 	// to be asked to.
 	UnrestrictedFilesystem bool `toml:"unrestricted_filesystem" yaml:"unrestricted_filesystem"`
+	// ShowToolCalls renders each completed tool call inline in the reply,
+	// naming the tool and one line of its result, before the answer built
+	// from them. It is off by default: it exists to make a wrong tool
+	// choice visible from the chat, and it narrates every internal step
+	// to do so, which is a privacy/noise cost on a chat surface anyone
+	// with dashboard or bot access can read.
+	//
+	// One setting, every chat channel: it lived under [chat.telegram]
+	// alone until the web dashboard grew its own tool narration with no
+	// way to turn it off, contradicting an operator who had already set
+	// this to false expecting no tool activity to be shown anywhere.
+	ShowToolCalls bool `toml:"show_tool_calls" yaml:"show_tool_calls"`
 	// MaxSteps caps how many model/tool round-trips one chat turn may take
 	// before the runtime stops and returns what it has. Zero uses the
 	// default.
@@ -708,11 +720,6 @@ type TelegramConfig struct {
 	// are argv arrays, never shell snippets.
 	UpdateCheckCommand   []string `toml:"update_check_command" yaml:"update_check_command"`
 	UpdateInstallCommand []string `toml:"update_install_command" yaml:"update_install_command"`
-	// ShowToolCalls renders each completed tool call inline in the reply,
-	// naming the tool and one line of its result. It is off by default: it
-	// exists to make a wrong tool choice visible from the chat, and it
-	// narrates every internal step to do so.
-	ShowToolCalls bool `toml:"show_tool_calls" yaml:"show_tool_calls"`
 }
 
 // EmailConfig configures the inbound email channel via SMTP.

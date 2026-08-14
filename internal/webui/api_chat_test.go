@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
 )
@@ -632,6 +633,10 @@ func TestChatStreamReportsToolCalls(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			server, sessions := chatTestServer(t)
 			server.Chat.Router.LLMStream = stream
+			// Enabled explicitly: this test exercises the tool-narration
+			// path itself, which is off by default (see
+			// TestChatStreamHidesToolCallsWhenShowToolCallsIsOff).
+			server.Cfg = config.NewHolder(config.Config{Chat: config.ChatConfig{ShowToolCalls: true}})
 			if tc.queued {
 				server.Chat.Turns = gateway.NewTurns(slog.Default())
 			}
@@ -668,6 +673,53 @@ func TestChatStreamReportsToolCalls(t *testing.T) {
 			for i := range want {
 				if got[i] != want[i] {
 					t.Fatalf("stream events = %v, want %v", got, want)
+				}
+			}
+		})
+	}
+}
+
+// config.ChatConfig.ShowToolCalls is off by default and shared by every chat
+// channel: an operator who left it unset (or explicitly turned it off) must
+// see no tool activity on the dashboard, not just in Telegram. Previously the
+// web stream narrated every tool call unconditionally, because nothing here
+// read this setting at all.
+func TestChatStreamHidesToolCallsWhenShowToolCallsIsOff(t *testing.T) {
+	stream := func(_ context.Context, _ gateway.Message, turn gateway.TurnStream) (string, error) {
+		turn.Delta("checking")
+		turn.ToolCall(gateway.ToolCallEvent{Name: "shell", Output: "exit 0"})
+		turn.Delta(" and answering")
+		return "checking and answering", nil
+	}
+
+	tests := []struct {
+		name string
+		cfg  *config.Holder
+	}{
+		{name: "no Cfg wired at all", cfg: nil},
+		{name: "Cfg present but show_tool_calls unset", cfg: config.NewHolder(config.Config{})},
+		{name: "show_tool_calls explicitly false", cfg: config.NewHolder(config.Config{Chat: config.ChatConfig{ShowToolCalls: false}})},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server, sessions := chatTestServer(t)
+			server.Chat.Router.LLMStream = stream
+			server.Cfg = tc.cfg
+			saveWebSession(t, sessions, "web-1")
+
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/chat/stream",
+				strings.NewReader(`{"channel_id":"browser-web-1","text":"hello"}`))
+			req.Header.Set("Content-Type", "application/json")
+			res := httptest.NewRecorder()
+			server.Handler().ServeHTTP(res, req)
+			if res.Code != http.StatusOK {
+				t.Fatalf("status = %d, body = %s", res.Code, res.Body)
+			}
+
+			for _, ev := range parseChatSSE(t, res.Body.String()) {
+				if ev.Type == "tool" {
+					t.Fatalf("got a tool frame with show_tool_calls off: %+v", ev)
 				}
 			}
 		})
