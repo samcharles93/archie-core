@@ -166,7 +166,7 @@ func runFindGoFallback(ctx context.Context, cwd, searchPath string, p FindParams
 
 	err = filepath.WalkDir(searchPath, func(walkPath string, d os.DirEntry, err error) error {
 		if err != nil {
-			return nil // skip inaccessible entries
+			return nil //nolint:nilerr // intentionally skip inaccessible entries
 		}
 
 		select {
