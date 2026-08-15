@@ -28,8 +28,9 @@ func TestRouteStatusWithTasks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
-	if !strings.Contains(reply, "queued: 2") || !strings.Contains(reply, "pr_open: 1") {
-		t.Errorf("reply missing counts: %q", reply)
+	want := "📊 Archie status\n\nTasks\n⏳ Queued: 2\n🔀 PR open: 1\n\nRuntime\nNot configured"
+	if reply != want {
+		t.Errorf("reply =\n%q\nwant:\n%q", reply, want)
 	}
 }
 
@@ -47,8 +48,9 @@ func TestRouteStatusIncludesActiveProviderAndModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(reply, "Provider: openai") || !strings.Contains(reply, "Model: openai/gpt-5.6") {
-		t.Fatalf("status missing active provider/model:\n%s", reply)
+	want := "📊 Archie status\n\nTasks\n▶ Running: 1\n\nRuntime\nProvider: OpenAI\nModel: openai/gpt-5.6"
+	if reply != want {
+		t.Fatalf("reply =\n%q\nwant:\n%q", reply, want)
 	}
 }
 
@@ -58,7 +60,7 @@ func TestRouteStatusAtMention(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
-	if !strings.Contains(reply, "running: 3") {
+	if !strings.Contains(reply, "▶ Running: 3") {
 		t.Errorf("reply missing counts: %q", reply)
 	}
 }
@@ -69,8 +71,128 @@ func TestRouteStatusEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
-	if reply != "No tasks yet." {
-		t.Errorf("reply = %q, want %q", reply, "No tasks yet.")
+	want := "📊 Archie status\n\nTasks\nNo tasks yet\n\nRuntime\nNot configured"
+	if reply != want {
+		t.Errorf("reply = %q, want %q", reply, want)
+	}
+}
+
+type fakeCustomDisplayNamerManager struct {
+	fakeProviderModelManager
+}
+
+func (f *fakeCustomDisplayNamerManager) ProviderDisplayName(provider string) string {
+	if provider == "openai" {
+		return "OpenAI Custom Enterprise"
+	}
+	return provider
+}
+
+func TestFormatStatus(t *testing.T) {
+	tests := []struct {
+		name   string
+		counts map[string]int
+		models ModelManager
+		want   string
+	}{
+		{
+			name:   "example from specification - single parked task with provider and model",
+			counts: map[string]int{"parked": 2},
+			models: &fakeProviderModelManager{
+				fakeModelManager: fakeModelManager{
+					activeModel: "openai/gpt-5.6-luna",
+				},
+			},
+			want: "📊 Archie status\n\nTasks\n⏸ Parked: 2\n\nRuntime\nProvider: OpenAI\nModel: openai/gpt-5.6-luna",
+		},
+		{
+			name: "multiple task states in canonical order",
+			counts: map[string]int{
+				"queued":         4,
+				"running":        1,
+				"waiting_human":  2,
+				"parked":         3,
+				"pr_open":        5,
+				"merged":         6,
+				"rejected":       7,
+				"closed_wont_do": 8,
+				"dead":           9,
+				"custom_state":   10,
+			},
+			models: &fakeProviderModelManager{
+				fakeModelManager: fakeModelManager{
+					activeModel: "deepseek/deepseek-v4-pro",
+				},
+			},
+			want: "📊 Archie status\n\nTasks\n▶ Running: 1\n👤 Waiting: 2\n⏸ Parked: 3\n⏳ Queued: 4\n🔀 PR open: 5\n✅ Merged: 6\n❌ Rejected: 7\n🚫 Declined: 8\n🛑 Dead: 9\n• Custom state: 10\n\nRuntime\nProvider: DeepSeek\nModel: deepseek/deepseek-v4-pro",
+		},
+		{
+			name:   "empty task counts with active model",
+			counts: map[string]int{},
+			models: &fakeModelManager{
+				activeModel: "anthropic/claude-3-5-sonnet",
+			},
+			want: "📊 Archie status\n\nTasks\nNo tasks yet\n\nRuntime\nProvider: Anthropic\nModel: anthropic/claude-3-5-sonnet",
+		},
+		{
+			name:   "nil counts with active model",
+			counts: nil,
+			models: &fakeModelManager{
+				activeModel: "google/gemini-2.5-flash",
+			},
+			want: "📊 Archie status\n\nTasks\nNo tasks yet\n\nRuntime\nProvider: Google\nModel: google/gemini-2.5-flash",
+		},
+		{
+			name:   "nil model manager",
+			counts: map[string]int{"running": 2},
+			models: nil,
+			want:   "📊 Archie status\n\nTasks\n▶ Running: 2\n\nRuntime\nNot configured",
+		},
+		{
+			name:   "empty counts and nil model manager",
+			counts: map[string]int{},
+			models: nil,
+			want:   "📊 Archie status\n\nTasks\nNo tasks yet\n\nRuntime\nNot configured",
+		},
+		{
+			name:   "custom display namer interface",
+			counts: map[string]int{"running": 1},
+			models: &fakeCustomDisplayNamerManager{
+				fakeProviderModelManager: fakeProviderModelManager{
+					fakeModelManager: fakeModelManager{
+						activeModel: "openai/gpt-5.6",
+					},
+				},
+			},
+			want: "📊 Archie status\n\nTasks\n▶ Running: 1\n\nRuntime\nProvider: OpenAI Custom Enterprise\nModel: openai/gpt-5.6",
+		},
+		{
+			name:   "provider set but model empty",
+			counts: map[string]int{"queued": 1},
+			models: &fakeProviderModelManager{
+				fakeModelManager: fakeModelManager{
+					activeModel: "",
+				},
+			},
+			want: "📊 Archie status\n\nTasks\n⏳ Queued: 1\n\nRuntime\nNot configured",
+		},
+		{
+			name:   "model without slash and no provider manager",
+			counts: map[string]int{"running": 1},
+			models: &fakeModelManager{
+				activeModel: "custom-local-model",
+			},
+			want: "📊 Archie status\n\nTasks\n▶ Running: 1\n\nRuntime\nProvider: Not configured\nModel: custom-local-model",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := formatStatus(tc.counts, tc.models)
+			if got != tc.want {
+				t.Errorf("formatStatus() =\n%q\nwant:\n%q\ndiff:\ngot:\n%s\nwant:\n%s", got, tc.want, got, tc.want)
+			}
+		})
 	}
 }
 

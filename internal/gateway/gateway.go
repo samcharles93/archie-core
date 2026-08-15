@@ -9,17 +9,19 @@
 package gateway
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
 // Message is an inbound message from a gateway connection.
@@ -714,31 +716,171 @@ func (r *Router) handleStatus(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("status: %w", err)
 	}
-	if len(counts) == 0 && r.Models == nil {
-		return "No tasks yet.", nil
-	}
+	return formatStatus(counts, r.Models), nil
+}
+
+type taskStateDisplay struct {
+	icon  string
+	label string
+}
+
+var taskStateDisplays = map[string]taskStateDisplay{
+	taskstate.Running:      {icon: "▶", label: "Running"},
+	taskstate.WaitingHuman: {icon: "👤", label: "Waiting"},
+	taskstate.Parked:       {icon: "⏸", label: "Parked"},
+	taskstate.Queued:       {icon: "⏳", label: "Queued"},
+	taskstate.PROpen:       {icon: "🔀", label: "PR open"},
+	taskstate.Merged:       {icon: "✅", label: "Merged"},
+	taskstate.Rejected:     {icon: "❌", label: "Rejected"},
+	taskstate.Declined:     {icon: "🚫", label: "Declined"},
+	"declined":             {icon: "🚫", label: "Declined"},
+	taskstate.Dead:         {icon: "🛑", label: "Dead"},
+}
+
+var statusOrder = []string{
+	taskstate.Running,
+	taskstate.WaitingHuman,
+	taskstate.Parked,
+	taskstate.Queued,
+	taskstate.PROpen,
+	taskstate.Merged,
+	taskstate.Rejected,
+	taskstate.Declined,
+	"declined",
+	taskstate.Dead,
+}
+
+func sortStatuses(counts map[string]int) []string {
 	statuses := make([]string, 0, len(counts))
 	for s := range counts {
 		statuses = append(statuses, s)
 	}
-	sort.Strings(statuses)
 
+	orderMap := make(map[string]int, len(statusOrder))
+	for i, s := range statusOrder {
+		orderMap[s] = i
+	}
+
+	slices.SortFunc(statuses, func(a, b string) int {
+		idxA, okA := orderMap[a]
+		idxB, okB := orderMap[b]
+		if okA && okB {
+			return cmp.Compare(idxA, idxB)
+		}
+		if okA {
+			return -1
+		}
+		if okB {
+			return 1
+		}
+		return strings.Compare(a, b)
+	})
+
+	return statuses
+}
+
+func formatCustomStatus(s string) string {
+	s = strings.TrimSpace(strings.ReplaceAll(s, "_", " "))
+	if s == "" {
+		return "Unknown"
+	}
+	r := []rune(s)
+	r[0] = unicode.ToUpper(r[0])
+	return string(r)
+}
+
+var knownProviderNames = map[string]string{
+	"openai":     "OpenAI",
+	"openrouter": "OpenRouter",
+	"anthropic":  "Anthropic",
+	"deepseek":   "DeepSeek",
+	"google":     "Google",
+	"ollama":     "Ollama",
+	"github":     "GitHub",
+	"gh":         "GitHub",
+	"groq":       "Groq",
+	"together":   "Together",
+	"bedrock":    "Bedrock",
+	"azure":      "Azure",
+}
+
+func formatProviderName(provider string) string {
+	trimmed := strings.TrimSpace(provider)
+	if trimmed == "" {
+		return ""
+	}
+	if name, ok := knownProviderNames[strings.ToLower(trimmed)]; ok {
+		return name
+	}
+	if strings.ToLower(trimmed) == trimmed {
+		r := []rune(trimmed)
+		r[0] = unicode.ToUpper(r[0])
+		return string(r)
+	}
+	return trimmed
+}
+
+func extractRuntimeInfo(models ModelManager) (provider, model string) {
+	if models == nil {
+		return "", ""
+	}
+	model = strings.TrimSpace(models.ActiveModel())
+	if pmm, ok := models.(ProviderModelManager); ok {
+		provider = strings.TrimSpace(pmm.ActiveProvider())
+	}
+	if provider == "" && model != "" {
+		if p, _, ok := strings.Cut(model, "/"); ok {
+			provider = p
+		}
+	}
+	if pdn, ok := models.(ProviderDisplayNamer); ok && provider != "" {
+		if name := strings.TrimSpace(pdn.ProviderDisplayName(provider)); name != "" {
+			return name, model
+		}
+	}
+	return formatProviderName(provider), model
+}
+
+func formatRuntimeSection(b *strings.Builder, provider, model string) {
+	b.WriteString("\nRuntime\n")
+	if provider == "" && model == "" {
+		b.WriteString("Not configured\n")
+		return
+	}
+	if provider == "" {
+		provider = "Not configured"
+	}
+	if model == "" {
+		model = "Not configured"
+	}
+	fmt.Fprintf(b, "Provider: %s\nModel: %s\n", provider, model)
+}
+
+// formatStatus formats the task counts and active runtime details into
+// a clean, mobile-friendly summary.
+func formatStatus(counts map[string]int, models ModelManager) string {
 	var b strings.Builder
+	b.WriteString("📊 Archie status\n\nTasks\n")
+
+	statuses := sortStatuses(counts)
 	if len(statuses) == 0 {
-		b.WriteString("No tasks yet.\n")
+		b.WriteString("No tasks yet\n")
 	} else {
-		b.WriteString("Task status:\n")
 		for _, s := range statuses {
-			fmt.Fprintf(&b, "  %s: %d\n", s, counts[s])
+			count := counts[s]
+			d, ok := taskStateDisplays[s]
+			if ok {
+				fmt.Fprintf(&b, "%s %s: %d\n", d.icon, d.label, count)
+			} else {
+				fmt.Fprintf(&b, "• %s: %d\n", formatCustomStatus(s), count)
+			}
 		}
 	}
-	if r.Models != nil {
-		if manager, ok := r.Models.(ProviderModelManager); ok {
-			fmt.Fprintf(&b, "\nProvider: %s\n", manager.ActiveProvider())
-		}
-		fmt.Fprintf(&b, "Model: %s\n", r.Models.ActiveModel())
-	}
-	return strings.TrimSpace(b.String()), nil
+
+	provider, model := extractRuntimeInfo(models)
+	formatRuntimeSection(&b, provider, model)
+
+	return strings.TrimSpace(b.String())
 }
 
 func (r *Router) handleWhoami() (string, error) {
