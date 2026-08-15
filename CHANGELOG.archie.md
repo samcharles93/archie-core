@@ -1,5 +1,9 @@
 # archie-agent changelog
 
+## [1.9.1] - 2026-08-15
+
+- fix(agentworker): forward workflow events across the NATS worker boundary
+
 ## [1.9.0] - 2026-08-15
 
 - fix(agent): resolve git dubious-ownership in sandbox containers

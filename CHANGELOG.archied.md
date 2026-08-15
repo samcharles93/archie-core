@@ -1,5 +1,11 @@
 # archied changelog
 
+## [1.9.1] - 2026-08-15
+
+- fix(agentworker): forward workflow events across the NATS worker boundary
+- fix(webui): filter turn_completed noise from the Live Activity SSE feed
+- feat(releaseupdate): stamp install type at build time, fail closed on unknown
+
 ## [1.9.0] - 2026-08-15
 
 - fix(webui): style tool-call failure from a structured field, not a string prefix
