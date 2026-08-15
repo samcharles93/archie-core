@@ -63,7 +63,7 @@ func TestWebhookHandlerMethodNotAllowed(t *testing.T) {
 	g := New("", 0, []RouteConfig{{Path: "/hook"}}, slog.Default())
 	handler := g.WebhookHandler()
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/hook", nil))
+	handler.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/hook", nil))
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("status = %d, want 405", rec.Code)
 	}
@@ -73,7 +73,7 @@ func TestWebhookHandlerEmptyBody(t *testing.T) {
 	g := New("", 0, []RouteConfig{{Path: "/hook"}}, slog.Default())
 	handler := g.WebhookHandler()
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/hook", nil))
+	handler.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/hook", nil))
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", rec.Code)
 	}
@@ -84,7 +84,7 @@ func TestWebhookHandlerNotStarted(t *testing.T) {
 	handler := g.WebhookHandler()
 	rec := httptest.NewRecorder()
 	body := strings.NewReader(`{"text":"hello"}`)
-	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/hook", body))
+	handler.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/hook", body))
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want 503", rec.Code)
 	}
@@ -98,7 +98,7 @@ func TestWebhookHandlerRoute(t *testing.T) {
 	handler := g.WebhookHandler()
 	payload := `{"text":"hello from webhook"}`
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/hook", strings.NewReader(payload)))
+	handler.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/hook", strings.NewReader(payload)))
 	if rec.Code != http.StatusAccepted {
 		t.Errorf("status = %d, want 202", rec.Code)
 	}
@@ -110,7 +110,7 @@ func TestWebhookHandlerInvalidSignature(t *testing.T) {
 
 	handler := g.WebhookHandler()
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/hook", strings.NewReader(`{"text":"x"}`)))
+	handler.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/hook", strings.NewReader(`{"text":"x"}`)))
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401", rec.Code)
 	}
@@ -127,7 +127,7 @@ func TestWebhookHandlerValidSignature(t *testing.T) {
 	g.router = gateway.NewRouter(nil, nil, "webhook")
 
 	handler := g.WebhookHandler()
-	req := httptest.NewRequest(http.MethodPost, "/hook", strings.NewReader(string(body)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/hook", strings.NewReader(string(body)))
 	req.Header.Set("X-Hub-Signature-256", sig)
 
 	rec := httptest.NewRecorder()

@@ -195,7 +195,7 @@ func TestChatSessionsExposeActiveSelectorState(t *testing.T) {
 	}
 
 	res := httptest.NewRecorder()
-	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/chat/sessions", nil))
+	server.Handler().ServeHTTP(res, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/chat/sessions", nil))
 	if res.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", res.Code, res.Body)
 	}
@@ -266,7 +266,7 @@ func TestChatUpdateEndpointRejectsTypedNilService(t *testing.T) {
 	server := &Server{Chat: &ChatService{Router: router, Sessions: sessions, Updates: updates}}
 
 	res := httptest.NewRecorder()
-	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/chat/update", nil))
+	server.Handler().ServeHTTP(res, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/chat/update", nil))
 	if res.Code != http.StatusNotImplemented {
 		t.Fatalf("typed-nil update service status = %d, body = %s", res.Code, res.Body.String())
 	}
@@ -280,13 +280,13 @@ func TestChatDangerousApprovalEndpoints(t *testing.T) {
 	server := &Server{Chat: &ChatService{Router: router, Sessions: sessions, Dangerous: NewDangerousService(authority)}}
 
 	state := httptest.NewRecorder()
-	server.Handler().ServeHTTP(state, httptest.NewRequest(http.MethodGet, "/api/chat/dangerous", nil))
+	server.Handler().ServeHTTP(state, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/chat/dangerous", nil))
 	if state.Code != http.StatusOK || !bytes.Contains(state.Body.Bytes(), []byte(`"Number":3`)) {
 		t.Fatalf("dangerous state = %d, body = %s", state.Code, state.Body.String())
 	}
 
 	request := httptest.NewRecorder()
-	server.Handler().ServeHTTP(request, httptest.NewRequest(http.MethodPost, "/api/chat/dangerous/rollback", bytes.NewBufferString(`{"spec":"3"}`)))
+	server.Handler().ServeHTTP(request, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/chat/dangerous/rollback", bytes.NewBufferString(`{"spec":"3"}`)))
 	if request.Code != http.StatusOK || len(authority.rollbackCalls) != 0 {
 		t.Fatalf("rollback request = %d, body = %s, calls=%v", request.Code, request.Body.String(), authority.rollbackCalls)
 	}
@@ -299,7 +299,7 @@ func TestChatDangerousApprovalEndpoints(t *testing.T) {
 
 	decisionBody := bytes.NewBufferString(`{"decision":"approve"}`)
 	decision := httptest.NewRecorder()
-	server.Handler().ServeHTTP(decision, httptest.NewRequest(http.MethodPost, "/api/chat/dangerous/"+pending.Action.ID+"/decision", decisionBody))
+	server.Handler().ServeHTTP(decision, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/chat/dangerous/"+pending.Action.ID+"/decision", decisionBody))
 	if decision.Code != http.StatusOK || len(authority.rollbackCalls) != 1 || authority.rollbackCalls[0] != 3 {
 		t.Fatalf("rollback decision = %d, body = %s, calls=%v", decision.Code, decision.Body.String(), authority.rollbackCalls)
 	}
@@ -314,7 +314,7 @@ func TestChatCommandCatalogIncludesEnabledCapabilities(t *testing.T) {
 		Updates: &chatUpdateStub{}, Dangerous: NewDangerousService(&webDangerousStub{}),
 	}}
 	res := httptest.NewRecorder()
-	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/chat/sessions", nil))
+	server.Handler().ServeHTTP(res, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/chat/sessions", nil))
 	if res.Code != http.StatusOK {
 		t.Fatalf("catalog status = %d, body = %s", res.Code, res.Body.String())
 	}
@@ -357,7 +357,7 @@ func TestChatCancelEndpointStopsSessionTurn(t *testing.T) {
 	})
 	<-started
 
-	req := httptest.NewRequest(http.MethodPost, "/api/chat/cancel", strings.NewReader(`{"session_id":"session-1"}`))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/chat/cancel", strings.NewReader(`{"session_id":"session-1"}`))
 	res := httptest.NewRecorder()
 	server.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK {

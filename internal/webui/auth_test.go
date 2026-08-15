@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,7 +14,7 @@ func TestRequireToken_RedirectRejectsProtocolRelativePath(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "http://archie.local//evil.example//x?t=secret-token", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "http://archie.local//evil.example//x?t=secret-token", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -59,7 +60,7 @@ func TestRequireToken_RedirectStripsTokenFromCleanURL(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "http://archie.local/dashboard?t=secret-token&foo=bar", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "http://archie.local/dashboard?t=secret-token&foo=bar", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
