@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -20,6 +21,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/daemon"
+	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	"github.com/samcharles93/archie-core/internal/gateway"
@@ -988,4 +990,132 @@ func TestConfiguredNATSToken(t *testing.T) {
 			t.Fatalf("configuredNATSToken() error = %v, want missing variable name", err)
 		}
 	})
+}
+
+// TestSubscribeAgentEventsPublishesDecodedEventsOnBus is the daemon-side half
+// of the archie-core-518 fix: an archie-agent worker's ForwardTaskEvents
+// ships events to SubjectForEvents(taskID); subscribeAgentEvents is what
+// decodes them back and republishes on the daemon's own Bus, the single
+// choke point persistAndBroadcastEvents drains into the SQLite events table
+// and SSE feed. Without this half, ForwardTaskEvents ships into the void.
+func TestSubscribeAgentEventsPublishesDecodedEventsOnBus(t *testing.T) {
+	srv := startEmbeddedNATS(t)
+	url := srv.ClientURL()
+
+	serverConn, err := natsio.Connect(url)
+	if err != nil {
+		t.Fatalf("nats connect: %v", err)
+	}
+	t.Cleanup(serverConn.Close)
+
+	bus := events.NewBus()
+	t.Cleanup(bus.Close)
+	sub := bus.Subscribe(8)
+
+	unsubscribe, err := subscribeAgentEvents(serverConn, bus, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("subscribeAgentEvents: %v", err)
+	}
+	t.Cleanup(unsubscribe)
+
+	clientConn, err := natsio.Connect(url)
+	if err != nil {
+		t.Fatalf("nats connect: %v", err)
+	}
+	t.Cleanup(clientConn.Close)
+
+	want := events.Event{Kind: events.KindStageFinish, TaskID: 99, Workflow: "bootstrap", Stage: "apply"}
+	payload, err := json.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := clientConn.Publish(agentexec.SubjectForEvents(99), payload); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	if err := clientConn.Flush(); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case got := <-sub.C:
+		if got.Kind != want.Kind || got.TaskID != want.TaskID || got.Workflow != want.Workflow || got.Stage != want.Stage {
+			t.Errorf("bus received %+v, want %+v", got, want)
+		}
+		if got.ID != 0 {
+			t.Errorf("bus event has ID %d set before store insertion, want 0 so persistAndBroadcastEvents inserts it fresh", got.ID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no event arrived on the daemon bus within 2s")
+	}
+}
+
+// TestSubscribeAgentEventsDropsUnparseableMessages proves the daemon does not
+// panic or misroute when a message on the events wildcard subject doesn't
+// match the shape SubjectForEvents/ForwardTaskEvents produce -- it is simply
+// dropped, since nothing else is subscribed to this daemon-internal subject.
+func TestSubscribeAgentEventsDropsUnparseableMessages(t *testing.T) {
+	tests := []struct {
+		name    string
+		subject string
+		payload []byte
+	}{
+		{"unparseable subject", "archie.agent.not-a-number.events", []byte(`{}`)},
+		{"undecodable payload", agentexec.SubjectForEvents(1), []byte(`not json`)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := startEmbeddedNATS(t)
+			url := srv.ClientURL()
+
+			serverConn, err := natsio.Connect(url)
+			if err != nil {
+				t.Fatalf("nats connect: %v", err)
+			}
+			t.Cleanup(serverConn.Close)
+
+			bus := events.NewBus()
+			t.Cleanup(bus.Close)
+			sub := bus.Subscribe(8)
+
+			unsubscribe, err := subscribeAgentEvents(serverConn, bus, slog.New(slog.DiscardHandler))
+			if err != nil {
+				t.Fatalf("subscribeAgentEvents: %v", err)
+			}
+			t.Cleanup(unsubscribe)
+
+			clientConn, err := natsio.Connect(url)
+			if err != nil {
+				t.Fatalf("nats connect: %v", err)
+			}
+			t.Cleanup(clientConn.Close)
+
+			if err := clientConn.Publish(tt.subject, tt.payload); err != nil {
+				t.Fatalf("publish: %v", err)
+			}
+			// A well-formed control message on the same subject family proves
+			// the subscriber is still alive and processing after the bad one,
+			// rather than merely proving nothing arrived within the timeout.
+			control := events.Event{Kind: events.KindStageStart, TaskID: 1}
+			controlPayload, err := json.Marshal(control)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := clientConn.Publish(agentexec.SubjectForEvents(1), controlPayload); err != nil {
+				t.Fatalf("publish control: %v", err)
+			}
+			if err := clientConn.Flush(); err != nil {
+				t.Fatal(err)
+			}
+
+			select {
+			case got := <-sub.C:
+				if got.Kind != control.Kind || got.TaskID != control.TaskID {
+					t.Errorf("bus received %+v, want the control event %+v", got, control)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("control event never arrived; the bad message may have wedged the subscriber")
+			}
+		})
+	}
 }

@@ -166,6 +166,11 @@ func (m *stageMessage) LogAttributes() []any {
 // LogPublisher returns the narrow fire-and-forget capability used by system logs.
 func (t *Transport) LogPublisher() agentexec.LogPublisher { return t.conn }
 
+// EventPublisher returns the narrow fire-and-forget capability used to ship
+// a task's workflow events (stage progress, outcome, parking) back to the
+// daemon over NATS.
+func (t *Transport) EventPublisher() agentexec.EventPublisher { return t.conn }
+
 // RemoteTrees is the proxied half of workflow.Trees.
 type RemoteTrees interface {
 	Prepare(ctx context.Context, owner, repo, base string, issue int, title, body, labels string) (dir, branch string, err error)

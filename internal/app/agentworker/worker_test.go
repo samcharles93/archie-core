@@ -36,11 +36,12 @@ func (s workerSubscription) Close() error {
 }
 
 type workerTransportStub struct {
-	events       *[]string
-	subscribeErr error
-	subCloseErr  error
-	publisher    agentexec.LogPublisher
-	dedicated    bool
+	events         *[]string
+	subscribeErr   error
+	subCloseErr    error
+	publisher      agentexec.LogPublisher
+	eventPublisher agentexec.EventPublisher
+	dedicated      bool
 }
 
 func (*workerTransportStub) FetchStage(context.Context) (agentexec.StageMessage, error) {
@@ -51,6 +52,14 @@ func (t *workerTransportStub) LogPublisher() agentexec.LogPublisher {
 	*t.events = append(*t.events, "log-publisher")
 	if t.publisher != nil {
 		return t.publisher
+	}
+	return workerPublisher{}
+}
+
+func (t *workerTransportStub) EventPublisher() agentexec.EventPublisher {
+	*t.events = append(*t.events, "event-publisher")
+	if t.eventPublisher != nil {
+		return t.eventPublisher
 	}
 	return workerPublisher{}
 }

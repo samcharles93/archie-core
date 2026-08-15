@@ -2,11 +2,14 @@ package agentworker
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/nats-io/nats-server/v2/server"
 	natssrv "github.com/nats-io/nats-server/v2/test"
@@ -14,6 +17,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
@@ -259,5 +263,143 @@ func TestExecuteTaskRequestUsesInfrastructureRPCDependencies(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(hostDir, ".archie", "bootstrap.md")); err != nil {
 		t.Fatalf("expected bootstrap marker file: %v", err)
+	}
+}
+
+// TestExecuteTaskRequestForwardsWorkflowEventsOverNATS is the regression test
+// for the "No events yet" dashboard bug (archie-core-518): a workflow run
+// through the NATS/container path publishes its stage/outcome events to an
+// in-process *events.Bus nothing on the daemon side could see, because
+// runTask never wired TaskContext.Bus. This proves the fix end to end -- a
+// bystander subscribed directly to SubjectForEvents(task.ID) on the same
+// embedded NATS server executeTaskRequest uses receives real events the
+// bootstrap workflow emits, exactly as the daemon's own subscriber would.
+func TestExecuteTaskRequestForwardsWorkflowEventsOverNATS(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	ctx := t.Context()
+	host := newLocalRemote(t, "acme", "events-widget")
+	st := store.OpenTest(t)
+	if _, err := st.EnqueueIssue(ctx, "acme", "events-widget", 3, "feat: events bootstrap test", "", "bootstrap", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := st.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("claim = (%+v, %v)", task, err)
+	}
+	forge := &prCapturingForge{}
+	daemonTrees := &worktree.Manager{
+		WorkDir:  t.TempDir(),
+		Token:    "unused-for-file-remotes",
+		BotUser:  "archie-bot",
+		BotEmail: "archie-bot@example.com",
+		BaseURL:  "file://" + host,
+	}
+	hostDir, _, err := daemonTrees.Prepare(ctx, "acme", "events-widget", "main", 3, task.Title, "", "bootstrap")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srv := startEmbeddedTaskRPCServer(t)
+	serverConn := connectTaskRPC(t, srv.ClientURL())
+	unsubStore, err := (&storerpc.Server{Store: st, Log: slog.New(slog.DiscardHandler)}).Register(serverConn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(unsubStore)
+	unsubForge, err := (&forgerpc.Server{Forge: forge, Log: slog.New(slog.DiscardHandler)}).Register(serverConn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(unsubForge)
+	unsubTrees, err := (&worktreerpc.Server{Trees: daemonTrees, Log: slog.New(slog.DiscardHandler)}).Register(serverConn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(unsubTrees)
+
+	// Stand in for the daemon's own SubjectEventsWildcard subscriber: bind
+	// to the exact per-task subject before the workflow runs, so nothing
+	// published during the run can be missed.
+	var (
+		mu       sync.Mutex
+		received []events.Event
+	)
+	bystander := connectTaskRPC(t, srv.ClientURL())
+	eventSub, err := bystander.Subscribe(agentexec.SubjectForEvents(task.ID), func(msg *natsio.Msg) {
+		var e events.Event
+		if err := json.Unmarshal(msg.Data, &e); err != nil {
+			t.Errorf("undecodable event message: %v", err)
+			return
+		}
+		mu.Lock()
+		received = append(received, e)
+		mu.Unlock()
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = eventSub.Unsubscribe() })
+	if err := bystander.Flush(); err != nil {
+		t.Fatal(err)
+	}
+
+	transport, err := agentnats.Connect(ctx, agentnats.Config{
+		URL:          srv.ClientURL(),
+		ConsumerName: "rpc-events-test",
+	}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(transport.Close)
+
+	request := taskrun.Request{
+		Task: task,
+		Repo: config.Repo{Owner: "acme", Name: "events-widget", Base: "main"},
+		Cfg:  config.Config{}.ForTask(),
+	}
+	response, err := executeTaskRequest(ctx, request, transport, hostDir, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Status != store.StatusPROpen {
+		t.Fatalf("response status = %q, want %q", response.Status, store.StatusPROpen)
+	}
+
+	deadline := time.After(2 * time.Second)
+	for {
+		mu.Lock()
+		sawOutcome := false
+		for _, e := range received {
+			if e.Kind == events.KindOutcome {
+				sawOutcome = true
+				break
+			}
+		}
+		mu.Unlock()
+		if sawOutcome {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("no \"outcome\" event arrived on SubjectForEvents(task.ID) within 2s")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	sawOutcome := false
+	for _, e := range received {
+		if e.TaskID != task.ID {
+			t.Errorf("event %+v carries TaskID %d, want %d", e, e.TaskID, task.ID)
+		}
+		if e.Kind == events.KindOutcome {
+			sawOutcome = true
+		}
+	}
+	if !sawOutcome {
+		t.Errorf("received %d events %+v, want at least one %q", len(received), received, events.KindOutcome)
 	}
 }

@@ -41,6 +41,7 @@ type workerTransport interface {
 	agentexec.StageConsumer
 	Close()
 	LogPublisher() agentexec.LogPublisher
+	EventPublisher() agentexec.EventPublisher
 	SubscribeTasks(context.Context, int64, bool, agentnats.TaskHandler, *slog.Logger) (agentnats.Subscription, error)
 	Forger(string, time.Duration) workflow.Forger
 	Store(time.Duration) store.WorkflowStore
@@ -129,14 +130,16 @@ type taskServiceTransport interface {
 	Forger(string, time.Duration) workflow.Forger
 	Store(time.Duration) store.WorkflowStore
 	Trees(string, time.Duration) agentnats.RemoteTrees
+	EventPublisher() agentexec.EventPublisher
 }
 
 func executeTaskRequest(ctx context.Context, request taskrun.Request, transport taskServiceTransport, workDir string, log *slog.Logger) (*taskrun.Response, error) {
 	log.Info("running task", "task", request.Task.ID, "repo", request.Repo.FullName(), "issue", request.Task.IssueNumber)
 	dependencies := taskDependencies{
-		forge: transport.Forger(request.Task.Identity, rpcTimeout),
-		store: transport.Store(rpcTimeout),
-		trees: transport.Trees(request.Task.Identity, rpcTimeout),
+		forge:  transport.Forger(request.Task.Identity, rpcTimeout),
+		store:  transport.Store(rpcTimeout),
+		trees:  transport.Trees(request.Task.Identity, rpcTimeout),
+		events: transport.EventPublisher(),
 	}
 	response, err := runTask(ctx, request, dependencies, agentexec.DefaultRunnerFactory, workDir, log)
 	if err != nil {
