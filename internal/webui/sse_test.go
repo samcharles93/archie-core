@@ -179,3 +179,35 @@ func TestSSEStreamCatchUpStopsAtTargetOnPageBoundary(t *testing.T) {
 func countSSEFrames(body string) int {
 	return strings.Count(body, "\ndata: ")
 }
+
+// TestSSEStreamSendPageSkipsNoiseKindsButAdvancesSince is the regression
+// test for archie-core-521: turn_completed fires on every chat turn with no
+// task correlation (Detail is a raw session ID, no TaskID), and dominated
+// the dashboard's Live Activity panel. It must never reach the SSE client,
+// but since must still advance past it -- otherwise the next catchUp
+// refetches the same filtered event forever, since EventsSince only ever
+// returns events with id > since.
+func TestSSEStreamSendPageSkipsNoiseKindsButAdvancesSince(t *testing.T) {
+	s, rec := newTestSSEStream(0)
+	backlog := []events.Event{
+		{ID: 1, Kind: events.KindTaskQueued},
+		{ID: 2, Kind: events.KindTurnCompleted, Detail: "1312197967"},
+		{ID: 3, Kind: events.KindTurnCompleted, Detail: "1312197967"},
+		{ID: 4, Kind: events.KindParked},
+	}
+
+	reachedTarget, ok := s.sendPage(backlog, 0)
+
+	if !ok || reachedTarget {
+		t.Fatalf("sendPage() = (%v, %v), want (false, true)", reachedTarget, ok)
+	}
+	if s.since != 4 {
+		t.Fatalf("since = %d, want 4 (advanced past every event, including filtered ones)", s.since)
+	}
+	if n := countSSEFrames(rec.Body.String()); n != 2 {
+		t.Fatalf("sent %d SSE frames, want 2 (turn_completed excluded)", n)
+	}
+	if strings.Contains(rec.Body.String(), "turn_completed") {
+		t.Error("SSE body contains a turn_completed frame, want it excluded entirely")
+	}
+}

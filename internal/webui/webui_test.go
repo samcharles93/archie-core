@@ -412,6 +412,56 @@ func TestHandleSSEBacklogAndLive(t *testing.T) {
 	}
 }
 
+// TestHandleSSEFiltersTurnCompletedFromLiveBroadcast covers the live half of
+// the archie-core-521 fix: sendPage's filtering is exercised directly in
+// sse_test.go, but the live broadcast path (drain) has its own send call.
+// A turn_completed broadcast between two ordinary events must never reach
+// the client, while the ordinary events either side of it still do.
+func TestHandleSSEFiltersTurnCompletedFromLiveBroadcast(t *testing.T) {
+	srv := newTestServer(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	id, err := srv.Store.InsertEvent(ctx, events.Event{Kind: "log", Detail: "backlog"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/events", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	if _, err := readLineUntil(reader, "backlog"); err != nil {
+		t.Fatalf("backlog event not received: %v", err)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+	srv.Broadcast(events.Event{ID: id + 1, Kind: events.KindTurnCompleted, Detail: "1312197967"})
+	srv.Broadcast(events.Event{ID: id + 2, Kind: "log", Detail: "after-noise"})
+
+	seen, err := readLinesUntil(reader, "after-noise")
+	if err != nil {
+		t.Fatalf("event after the filtered one was not received: %v", err)
+	}
+	for _, line := range seen {
+		if strings.Contains(line, "turn_completed") {
+			t.Fatalf("the filtered event's frame reached the client: %q", line)
+		}
+	}
+}
+
 // readLineUntil scans SSE "data:" lines until one contains want.
 func readLineUntil(r *bufio.Reader, want string) (string, error) {
 	deadline := time.Now().Add(3 * time.Second)
@@ -425,4 +475,27 @@ func readLineUntil(r *bufio.Reader, want string) (string, error) {
 		}
 	}
 	return "", io.EOF
+}
+
+// readLinesUntil scans SSE "data:" lines, collecting every one seen, until
+// one contains want -- unlike readLineUntil, callers get the full scan, not
+// just the matched line, so a frame that arrived before the match but was
+// never asserted on can't hide there.
+func readLinesUntil(r *bufio.Reader, want string) ([]string, error) {
+	var seen []string
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		line, err := r.ReadString('\n')
+		if err != nil {
+			return seen, err
+		}
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		seen = append(seen, line)
+		if strings.Contains(line, want) {
+			return seen, nil
+		}
+	}
+	return seen, io.EOF
 }

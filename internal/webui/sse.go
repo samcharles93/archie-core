@@ -14,6 +14,23 @@ import (
 // sseBacklogPageSize bounds one EventsSince fetch during catch-up.
 const sseBacklogPageSize = 200
 
+// sseNoiseKinds are event kinds published for internal wiring rather than
+// for a dashboard viewer: turn_completed fires on every chat turn so
+// input-driven curators can wake on it (see events.KindTurnCompleted), and
+// carries no task correlation (TaskID is always 0, Detail a raw session ID)
+// -- on a dashboard where "Live activity" is otherwise almost entirely
+// task lifecycle events, it drowned the signal it sits next to. Curators
+// read the Bus directly and are unaffected by excluding a kind here, at the
+// SSE boundary, rather than at publish.
+var sseNoiseKinds = map[string]bool{
+	events.KindTurnCompleted: true,
+}
+
+// sseVisible reports whether e should reach an SSE client.
+func sseVisible(e events.Event) bool {
+	return !sseNoiseKinds[e.Kind]
+}
+
 // handleSSE streams events: catch-up from the store (?since=<event id>, or
 // the Last-Event-ID header on a reconnect), then live from the broadcast
 // hub.
@@ -143,12 +160,17 @@ func (s *sseStream) catchUp(ctx context.Context, targetID int64) bool {
 // it goes. reachedTarget reports whether targetID was reached mid-page --
 // stopping there is correct, since nothing beyond it is needed yet -- and
 // ok reports whether every send succeeded.
+//
+// since advances past a filtered-out event (sseVisible false) exactly as it
+// would for a sent one: EventsSince only ever returns events with
+// id > since, so leaving since behind a filtered event would make the next
+// catchUp refetch it forever.
 func (s *sseStream) sendPage(backlog []events.Event, targetID int64) (reachedTarget, ok bool) {
 	for _, e := range backlog {
 		if e.ID <= s.since {
 			continue
 		}
-		if !s.send(e) {
+		if sseVisible(e) && !s.send(e) {
 			return false, false
 		}
 		s.since = e.ID
@@ -177,7 +199,7 @@ func (s *sseStream) drain(ctx context.Context, conn <-chan events.Event) {
 				return
 			}
 			if e.ID > s.since {
-				if !s.send(e) {
+				if sseVisible(e) && !s.send(e) {
 					return
 				}
 				s.since = e.ID
