@@ -821,6 +821,13 @@ func run() int {
 			return 1
 		}
 		defer unsubscribeSystemLogs()
+
+		unsubscribeAgentEvents, err := subscribeAgentEvents(coreConn, bus, log)
+		if err != nil {
+			log.Error("agent event subscribe failed", "err", err)
+			return 1
+		}
+		defer unsubscribeAgentEvents()
 	}
 
 	// ── Memory manager ────────────────────────────────────────────────
@@ -1491,6 +1498,39 @@ func subscribeSystemLogs(nc *natsio.Conn, taskLogs *logging.TaskRegistry, log *s
 	return func() {
 		if err := sub.Unsubscribe(); err != nil {
 			log.Warn("system log unsubscribe failed", "err", err)
+		}
+	}, nil
+}
+
+// subscribeAgentEvents subscribes to every task's events subject at once and
+// republishes each decoded event on bus. An archie-agent worker's
+// agentexec.ForwardTaskEvents ships a task's workflow events (stage
+// progress, outcome, parking) here because that worker's own *events.Bus is
+// in-process and invisible to the daemon; this is the other half of the
+// bridge, landing them on bus so persistAndBroadcastEvents -- the single
+// choke point that inserts into the SQLite events table and fans out over
+// SSE -- treats them exactly like an in-process daemon-run workflow's own
+// events. Mirrors subscribeSystemLogs's demux-by-taskID shape.
+func subscribeAgentEvents(nc *natsio.Conn, bus *events.Bus, log *slog.Logger) (unsubscribe func(), err error) {
+	sub, err := nc.Subscribe(agentexec.SubjectEventsWildcard, func(msg *natsio.Msg) {
+		taskID, ok := agentexec.TaskIDFromEventsSubject(msg.Subject)
+		if !ok {
+			log.Warn("task event message on unparseable subject", "subject", msg.Subject)
+			return
+		}
+		var e events.Event
+		if err := json.Unmarshal(msg.Data, &e); err != nil {
+			log.Warn("task event message undecodable", "task", taskID, "err", err)
+			return
+		}
+		bus.Publish(e)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return func() {
+		if err := sub.Unsubscribe(); err != nil {
+			log.Warn("task event unsubscribe failed", "err", err)
 		}
 	}, nil
 }

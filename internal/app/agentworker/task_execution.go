@@ -9,6 +9,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/wfeval"
+	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/worktree"
@@ -66,9 +67,10 @@ func (h *hybridTrees) ChangedLines(ctx context.Context, dir, base string) (int, 
 var _ workflow.Trees = (*hybridTrees)(nil)
 
 type taskDependencies struct {
-	forge workflow.Forger
-	store store.WorkflowStore
-	trees remoteTrees
+	forge  workflow.Forger
+	store  store.WorkflowStore
+	trees  remoteTrees
+	events agentexec.EventPublisher
 }
 
 // runTask builds a workflow.Registry from the container's mounted worktree,
@@ -111,6 +113,23 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 		return nil, fmt.Errorf("no agent runner configured for task %d", req.Task.ID)
 	}
 
+	// A workflow run in this process publishes to an in-process *events.Bus
+	// the daemon cannot see -- archied and archie-agent are separate
+	// processes connected only by NATS. Without this bridge, tc.Emit is a
+	// silent no-op for every stage/outcome/park event this run produces,
+	// which is why the dashboard timeline showed nothing for any task
+	// executed through the container/NATS path (archie-core-518). Nil
+	// dependencies.events (a caller with no NATS connection, e.g. tests
+	// that construct taskDependencies directly) leaves bus nil, and
+	// TaskContext.Emit is already nil-safe.
+	var bus *events.Bus
+	if dependencies.events != nil {
+		bus = events.NewBus()
+		sub := bus.Subscribe(64)
+		defer sub.Close()
+		go agentexec.ForwardTaskEvents(sub, dependencies.events, req.Task.ID, log)
+	}
+
 	tc := &workflow.TaskContext{
 		Task:         req.Task,
 		Repo:         req.Repo,
@@ -119,6 +138,7 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 		Store:        dependencies.store,
 		Trees:        trees,
 		Agent:        agent,
+		Bus:          bus,
 		Log:          log,
 		CustomStages: wfeval.Discover,
 	}
