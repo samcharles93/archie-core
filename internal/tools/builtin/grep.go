@@ -379,7 +379,7 @@ func grepFallback(ctx context.Context, p GrepParams, searchPath, cwd string, tar
 	} else {
 		err = filepath.WalkDir(searchPath, func(walkPath string, d os.DirEntry, err error) error {
 			if err != nil {
-				return nil // skip inaccessible
+				return nil //nolint:nilerr // intentionally skip inaccessible entries
 			}
 
 			select {
@@ -410,7 +410,7 @@ func grepFallback(ctx context.Context, p GrepParams, searchPath, cwd string, tar
 
 			res, err := grepFile(ctx, walkPath, matcher, p.ContextBefore, p.ContextAfter)
 			if err != nil {
-				return nil // skip files we can't read
+				return nil //nolint:nilerr // intentionally skip files we can't read
 			}
 			for i := range res {
 				res[i].relPath, _ = filepath.Rel(cwd, walkPath)
