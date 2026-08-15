@@ -215,6 +215,62 @@ func TestPrepareIsIdempotent(t *testing.T) {
 	}
 }
 
+// TestPrepareRecoversFromADirtyWorktreeOnRetry reproduces a real retry
+// failure seen in production: a task that got interrupted mid-stage (killed
+// container, or a stage that edits files before ever reaching commit)
+// leaves uncommitted local changes -- a modified tracked file plus an
+// untracked one -- sitting in the worktree. HEAD is already on the correct
+// branch (this is not the "no sentinel" case above). refresh's checkout,
+// without Force, resets in git's MergeReset mode, which can fail to
+// reconcile a working tree that differs from HEAD even when the target
+// commit hasn't moved -- and did fail here with
+// `checkout branch <branch>: a branch named "refs/heads/<branch>" already
+// exists`, since the fallback that mis-assumes "checkout failed means the
+// branch doesn't exist yet" then collides with the branch that, in fact,
+// already exists. Retry must recover from this on its own; a worktree that
+// refresh is about to hard-reset to base has no reason to fail here at all.
+func TestPrepareRecoversFromADirtyWorktreeOnRetry(t *testing.T) {
+	ctx := context.Background()
+	host := newLocalRemote(t, "acme", "todo")
+	m := newManager(t, host)
+
+	dir, branch, err := m.Prepare(ctx, "acme", "todo", testBase, 9, "fix: retry robustness", "", "bug")
+	if err != nil {
+		t.Fatalf("first Prepare() error = %v", err)
+	}
+
+	// Simulate an interrupted attempt: a tracked file edited but never
+	// committed, plus a new file the agent created and never added.
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("seed\nedited, uncommitted\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "scratch.txt"), []byte("uncommitted new file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	dir2, branch2, err := m.Prepare(ctx, "acme", "todo", testBase, 9, "fix: retry robustness", "", "bug")
+	if err != nil {
+		t.Fatalf("retry Prepare() on a dirty worktree error = %v, want recovery", err)
+	}
+	if dir2 != dir || branch2 != branch {
+		t.Errorf("retry Prepare() = (%q, %q), want the same (%q, %q)", dir2, branch2, dir, branch)
+	}
+
+	// refresh hard-resets to base immediately after checkout succeeds, so
+	// the tracked file's uncommitted edit must be gone -- restored to
+	// base, not merged in. (An untracked leftover like scratch.txt is real
+	// git's job for `git clean`, not `reset --hard`, and is harmless here:
+	// it doesn't block the retry, which is the only thing this test cares
+	// about.)
+	content, err := os.ReadFile(filepath.Join(dir, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "seed\n" {
+		t.Errorf("README.md = %q, want the base commit's content restored", content)
+	}
+}
+
 // An interrupted clone leaves a directory with no sentinel. Prepare must
 // discard it rather than trying to reuse a half-built worktree.
 func TestPrepareDiscardsDirectoryWithoutSentinel(t *testing.T) {
