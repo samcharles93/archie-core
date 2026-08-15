@@ -164,10 +164,19 @@ func (m *Manager) refresh(ctx context.Context, dir, base, branch string) error {
 	if err != nil {
 		return fmt.Errorf("open worktree: %w", err)
 	}
+	// Force discards whatever the working tree looks like right now: an
+	// interrupted prior attempt (killed container, a stage that edits
+	// files before ever reaching commit) can leave local modifications
+	// that make go-git's default MergeReset refuse to reconcile them, even
+	// onto a commit HEAD is already on. That refusal used to surface as
+	// "branch already exists" from the fallback below, which mis-assumed
+	// any checkout failure meant the branch didn't exist yet. Force is
+	// safe here regardless of cause: the hard reset to base a few lines
+	// down is about to discard the working tree anyway.
 	ref := plumbing.NewBranchReferenceName(branch)
-	if err := wt.Checkout(&git.CheckoutOptions{Branch: ref}); err != nil {
+	if err := wt.Checkout(&git.CheckoutOptions{Branch: ref, Force: true}); err != nil {
 		// The branch does not exist yet in this worktree.
-		if err := wt.Checkout(&git.CheckoutOptions{Branch: ref, Create: true}); err != nil {
+		if err := wt.Checkout(&git.CheckoutOptions{Branch: ref, Create: true, Force: true}); err != nil {
 			return fmt.Errorf("checkout branch %s: %w", branch, err)
 		}
 	}
