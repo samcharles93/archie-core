@@ -510,6 +510,7 @@ func (l *liveReply) body() string {
 // Keeping the block outside the clamp makes the live frame, an abandoned
 // frame, and the finished message agree on shape throughout the turn.
 func (l *liveReply) framedText(answer string) string {
+	answer = normalizeTelegramText(answer)
 	if len(l.toolLines) == 0 {
 		return clampToOneMessage(answer)
 	}
@@ -561,7 +562,7 @@ func clampToRunes(s string, maxRunes int) string {
 // fact. An empty reply with no tool activity either is left to the
 // content == "" path in finalize, which abandons instead of sending.
 func (l *liveReply) finalText(reply string) string {
-	reply = strings.TrimSpace(reply)
+	reply = normalizeTelegramText(strings.TrimSpace(reply))
 	if len(l.toolLines) == 0 {
 		return reply
 	}
@@ -583,8 +584,16 @@ func (l *liveReply) open(ctx context.Context, body string) {
 	}
 	msg, err := l.b.SendRichMessage(ctx, params)
 	if err != nil {
-		l.g.log.Debug("live reply send failed", "error", err)
-		return
+		l.g.log.Debug("live reply rich send failed, retrying unformatted", "error", err)
+		plain := &bot.SendMessageParams{ChatID: l.chatID, Text: body}
+		if l.messageThreadID != 0 {
+			plain.MessageThreadID = l.messageThreadID
+		}
+		msg, err = l.b.SendMessage(ctx, plain)
+		if err != nil {
+			l.g.log.Debug("live reply send failed", "error", err)
+			return
+		}
 	}
 	l.mu.Lock()
 	l.messageID = msg.ID

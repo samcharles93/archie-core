@@ -296,6 +296,108 @@ var (
 
 // ── Regression tests for previously untested paths ────────────────────
 
+func TestSendMessageSeparatesBareURLFromFollowingProse(t *testing.T) {
+	b, requests := newTelegramTestBot(t)
+	g := New("1:test", "", "", []int64{42}, slog.Default())
+	const url = "https://github.com/samcharles93/archie-core/issues/513"
+	g.sendMessage(context.Background(), b, 7, 0, url+"It includes model-independent safeguards...")
+
+	if len(*requests) != 1 {
+		t.Fatalf("requests = %d, want one send", len(*requests))
+	}
+	var rich models.InputRichMessage
+	if err := json.Unmarshal([]byte((*requests)[0].form["rich_message"]), &rich); err != nil {
+		t.Fatalf("decode rich message: %v", err)
+	}
+	want := url + "\n\nIt includes model-independent safeguards..."
+	if rich.Markdown != want {
+		t.Errorf("sent markdown = %q, want %q", rich.Markdown, want)
+	}
+}
+
+func TestNormalizeTelegramTextSeparatesBareURLsFromFollowingProse(t *testing.T) {
+	const url = "https://github.com/samcharles93/archie-core/issues/513"
+
+	tests := []struct {
+		name string
+		text string
+		want string
+	}{
+		{
+			name: "github issue URL followed by prose",
+			text: url + "It includes model-independent safeguards...",
+			want: url + "\n\nIt includes model-independent safeguards...",
+		},
+		{
+			name: "already separated URL is unchanged",
+			text: url + "\n\nIt includes model-independent safeguards...",
+			want: url + "\n\nIt includes model-independent safeguards...",
+		},
+		{
+			name: "URL at end is unchanged",
+			text: "See " + url,
+			want: "See " + url,
+		},
+		{
+			name: "markdown link keeps its closing delimiter",
+			text: "[issue](" + url + ")It includes model-independent safeguards...",
+			want: "[issue](" + url + ")\n\nIt includes model-independent safeguards...",
+		},
+		{
+			name: "autolink keeps its closing delimiter",
+			text: "<" + url + ">It includes model-independent safeguards...",
+			want: "<" + url + ">\n\nIt includes model-independent safeguards...",
+		},
+		{
+			name: "inline code keeps both delimiters",
+			text: "`" + url + "`It includes model-independent safeguards...",
+			want: "`" + url + "`\n\nIt includes model-independent safeguards...",
+		},
+		{
+			name: "emphasis keeps its closing delimiter",
+			text: "**" + url + "**It includes model-independent safeguards...",
+			want: "**" + url + "**\n\nIt includes model-independent safeguards...",
+		},
+		{
+			name: "single emphasis keeps its closing delimiter",
+			text: "*" + url + "*It includes model-independent safeguards...",
+			want: "*" + url + "*\n\nIt includes model-independent safeguards...",
+		},
+		{
+			name: "underscore emphasis keeps its closing delimiter",
+			text: "_" + url + "_It includes model-independent safeguards...",
+			want: "_" + url + "_\n\nIt includes model-independent safeguards...",
+		},
+		{
+			name: "triple emphasis keeps its closing delimiter",
+			text: "***" + url + "***It includes model-independent safeguards...",
+			want: "***" + url + "***\n\nIt includes model-independent safeguards...",
+		},
+		{
+			name: "triple underscore emphasis keeps its closing delimiter",
+			text: "___" + url + "___It includes model-independent safeguards...",
+			want: "___" + url + "___\n\nIt includes model-independent safeguards...",
+		},
+		{
+			name: "nested inline code remains inside a fenced code block",
+			text: "```\n`" + url + "`It includes model-independent safeguards...\n```",
+			want: "```\n`" + url + "`It includes model-independent safeguards...\n```",
+		},
+		{
+			name: "numeric URL prefix is not split from its path suffix",
+			text: url + "abc",
+			want: url + "abc",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizeTelegramText(tt.text); got != tt.want {
+				t.Errorf("normalizeTelegramText() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestSplitLongMessage(t *testing.T) {
 	t.Run("empty string", func(t *testing.T) {
 		parts := splitLongMessage("", 10)
@@ -308,6 +410,47 @@ func TestSplitLongMessage(t *testing.T) {
 		parts := splitLongMessage("hello", 4000)
 		if len(parts) != 1 || parts[0] != "hello" {
 			t.Errorf("expected [\"hello\"], got %v", parts)
+		}
+	})
+
+	t.Run("keeps URL independent when splitting at a paragraph boundary", func(t *testing.T) {
+		const url = "https://github.com/samcharles93/archie-core/issues/513"
+		parts := splitLongMessage(url+"It includes model-independent safeguards...", utf8.RuneCountInString(url)+1)
+		if len(parts) != 2 {
+			t.Fatalf("parts = %q, want URL and prose in separate parts", parts)
+		}
+		if strings.TrimRight(parts[0], "\n") != url {
+			t.Errorf("URL part = %q, want %q with only a boundary newline", parts[0], url)
+		}
+		if parts[1] != "\n\nIt includes model-independent safeguards..." {
+			t.Errorf("prose part = %q, want the remaining paragraph boundary preserved", parts[1])
+		}
+	})
+
+	t.Run("newline-only content is preserved", func(t *testing.T) {
+		text := strings.Repeat("\n", 17)
+		parts := splitLongMessage(text, 5)
+		var rebuilt strings.Builder
+		for _, part := range parts {
+			if part == "" {
+				t.Fatal("split produced an empty part")
+			}
+			rebuilt.WriteString(part)
+		}
+		if rebuilt.String() != text {
+			t.Errorf("rebuilt = %q, want %q", rebuilt.String(), text)
+		}
+	})
+
+	t.Run("trailing newline is preserved", func(t *testing.T) {
+		text := "aaaa\n"
+		parts := splitLongMessage(text, 4)
+		var rebuilt strings.Builder
+		for _, part := range parts {
+			rebuilt.WriteString(part)
+		}
+		if rebuilt.String() != text {
+			t.Errorf("rebuilt = %q, want %q", rebuilt.String(), text)
 		}
 	})
 

@@ -92,6 +92,23 @@ func newTestLiveReply(t *testing.T, showToolCalls bool) (*liveReply, *[]apiCall)
 
 // The whole point of the canonical buffer: every update carries the complete
 // text so far, and it replaces the message rather than adding to it.
+func TestLiveReplySeparatesURLFromFollowingStreamedProse(t *testing.T) {
+	live, calls := newTestLiveReply(t, false)
+	const url = "https://github.com/samcharles93/archie-core/issues/513"
+
+	live.Delta(url)
+	live.flushRendering()
+	live.Delta("It includes model-independent safeguards...")
+	live.finalize(context.Background(), url+"It includes model-independent safeguards...")
+
+	if got := (*calls)[len(*calls)-2].markdown; got != url+"\n\nIt includes model-independent safeguards... ▌" {
+		t.Fatalf("live render = %q, want URL and prose separated", got)
+	}
+	if got := (*calls)[len(*calls)-1].markdown; got != url+"\n\nIt includes model-independent safeguards..." {
+		t.Fatalf("final render = %q, want URL and prose separated", got)
+	}
+}
+
 func TestLiveReplySendsOnceThenEditsWithTheWholeBuffer(t *testing.T) {
 	live, calls := newTestLiveReply(t, false)
 	ctx := context.Background()
@@ -334,6 +351,44 @@ func TestLiveReplyAbandonWithoutAMessageIsSilent(t *testing.T) {
 // Rich messages are a recent Bot API addition, and an edit that carries only
 // a rich body is rejected by a server that does not support it. The reply
 // must still arrive, unformatted, rather than being lost to a failed edit.
+func TestLiveReplyOpenFallsBackToPlainText(t *testing.T) {
+	calls := &[]apiCall{}
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := capturedCall(t, r)
+		*calls = append(*calls, call)
+		w.Header().Set("Content-Type", "application/json")
+		if call.method == "sendRichMessage" && call.rich {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"ok":false,"error_code":400,"description":"Bad Request: rich_message is not supported"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":55,"date":1,"chat":{"id":7,"type":"private"}}}`))
+	}))
+	t.Cleanup(api.Close)
+	b, err := bot.New("1:test", bot.WithServerURL(api.URL), bot.WithSkipGetMe())
+	if err != nil {
+		t.Fatalf("new test bot: %v", err)
+	}
+	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+	live := g.newLiveReply(context.Background(), b, 7, 0, false)
+	t.Cleanup(live.stopRendering)
+	live.interval = 0
+
+	live.Delta("streamed")
+	live.flushRendering()
+	live.finalize(context.Background(), "the answer")
+
+	if len(*calls) < 3 {
+		t.Fatalf("calls = %+v, want rich send, plain send fallback, and final edit", *calls)
+	}
+	if (*calls)[0].method != "sendRichMessage" || !(*calls)[0].rich {
+		t.Fatalf("first call = %+v, want rich send", (*calls)[0])
+	}
+	if (*calls)[1].method != "sendMessage" || (*calls)[1].rich {
+		t.Fatalf("second call = %+v, want plain send fallback", (*calls)[1])
+	}
+}
+
 func TestLiveReplyEditFallsBackToPlainText(t *testing.T) {
 	calls := &[]apiCall{}
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
