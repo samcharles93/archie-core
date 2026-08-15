@@ -76,7 +76,8 @@ func TestSMTPReceiveAndRoute(t *testing.T) {
 	defer cancel()
 
 	// Start the server to get the assigned port, then connect.
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	var listenConfig net.ListenConfig
+	ln, err := listenConfig.Listen(ctx, "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +90,8 @@ func TestSMTPReceiveAndRoute(t *testing.T) {
 	defer func() { _ = g.Stop(context.Background()) }()
 
 	// Connect via SMTP and send a message.
-	conn, err := net.DialTimeout("tcp", addr, 1*time.Second)
+	dialer := net.Dialer{Timeout: 1 * time.Second}
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		t.Fatal(err)
 	}
