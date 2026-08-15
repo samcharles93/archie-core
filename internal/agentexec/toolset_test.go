@@ -87,6 +87,61 @@ func TestToolSetHandlerPropagatesHandlerError(t *testing.T) {
 	}
 }
 
+// TestToolSetReportsCompletedToolCalls pins archie-core-467's task-transcript
+// counterpart: every tool invocation built through BuildToolSet must notify
+// ToolSetOptions.OnToolCall exactly once, on both the success and failure
+// path, so a workflow stage can surface it on the task timeline.
+func TestToolSetReportsCompletedToolCalls(t *testing.T) {
+	tests := []struct {
+		name       string
+		handler    tools.Handler
+		wantFailed bool
+		wantDetail string
+	}{
+		{
+			name:       "success",
+			handler:    func(context.Context, map[string]any) (any, error) { return "wrote 3 lines", nil },
+			wantFailed: false,
+			wantDetail: `"wrote 3 lines"`,
+		},
+		{
+			name:       "failure",
+			handler:    func(context.Context, map[string]any) (any, error) { return nil, errors.New("permission denied") },
+			wantFailed: true,
+			wantDetail: "error: permission denied",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reg := tools.NewRegistry()
+			if err := reg.Register(tools.ToolEntry{Name: "write_file", Handler: tt.handler}); err != nil {
+				t.Fatal(err)
+			}
+
+			var reports []ToolCallReport
+			set := mustBuildToolSetWith(t, reg, ToolSetOptions{
+				OnToolCall: func(rep ToolCallReport) { reports = append(reports, rep) },
+			})
+			_, _ = set["write_file"].Execute(context.Background(), `{}`)
+
+			if len(reports) != 1 {
+				t.Fatalf("OnToolCall was called %d times, want 1: %+v", len(reports), reports)
+			}
+			got := reports[0]
+			if got.Tool != "write_file" {
+				t.Errorf("Tool = %q, want %q", got.Tool, "write_file")
+			}
+			if got.Failed != tt.wantFailed {
+				t.Errorf("Failed = %v, want %v", got.Failed, tt.wantFailed)
+			}
+			if got.Detail != tt.wantDetail {
+				t.Errorf("Detail = %q, want %q", got.Detail, tt.wantDetail)
+			}
+		})
+	}
+}
+
 func TestToolSetHandlerRejectsMalformedInput(t *testing.T) {
 	reg := tools.NewRegistry()
 	if err := reg.Register(tools.ToolEntry{

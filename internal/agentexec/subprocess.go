@@ -26,7 +26,9 @@ type SubprocessRunner struct {
 	Providers     map[string]Provider
 }
 
-func (r *SubprocessRunner) Run(ctx context.Context, workspace string, req Request) (Result, error) {
+// Run ignores report: the subprocess executes tools in its own process, so
+// there is nothing here to observe a call as it happens.
+func (r *SubprocessRunner) Run(ctx context.Context, workspace string, req Request, _ ToolCallReporter) (Result, error) {
 	providerName, _, ok := strings.Cut(req.Model, "/")
 	if !ok || providerName == "" {
 		return Result{}, fmt.Errorf("agent model %q must be provider/model", req.Model)

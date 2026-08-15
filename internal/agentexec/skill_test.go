@@ -13,7 +13,7 @@ type captureRunner struct {
 	callback func(Request)
 }
 
-func (c *captureRunner) Run(_ context.Context, _ string, req Request) (Result, error) {
+func (c *captureRunner) Run(_ context.Context, _ string, req Request, _ ToolCallReporter) (Result, error) {
 	c.callback(req)
 	return Result{
 		Version:    ProtocolVersion,

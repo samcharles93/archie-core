@@ -67,7 +67,10 @@ type NATSRunner struct {
 
 // Run publishes a stage execution request to JetStream with an X-Archie-Reply
 // header, blocks on the sync inbox subscription, and returns the result.
-func (r *NATSRunner) Run(ctx context.Context, workspace string, req Request) (Result, error) {
+//
+// report is ignored: execution happens on whatever remote worker answers the
+// request, a different process with no way to call back here per tool call.
+func (r *NATSRunner) Run(ctx context.Context, workspace string, req Request, _ ToolCallReporter) (Result, error) {
 	if err := req.Validate(); err != nil {
 		return Result{}, err
 	}

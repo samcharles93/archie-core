@@ -81,7 +81,7 @@ func StageBaselineGate() Stage {
 				Protection: agentexec.Protection{Suffixes: append([]string(nil), tc.Repo.Protect...)},
 			}
 
-			res, agentErr := tc.Agent.Run(ctx, tc.Dir, req)
+			res, agentErr := tc.Agent.Run(ctx, tc.Dir, req, tc.toolCallReporter("baseline-fix"))
 			if agentErr != nil {
 				return fmt.Errorf("baseline-fix agent run: %w", agentErr)
 			}

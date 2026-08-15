@@ -119,6 +119,20 @@ func (tc *TaskContext) Emit(kind, stage, detail string, data map[string]any) {
 	})
 }
 
+// toolCallReporter builds the agentexec.ToolCallReporter an agent stage
+// passes to tc.Agent.Run, so every completed tool call during that run
+// surfaces as a tool_call event on the task timeline (archie-core-467's
+// task-transcript counterpart -- the interactive chat gateway has its own,
+// separate ToolCallEvent). Safe to call on a nil Bus: Emit no-ops.
+func (tc *TaskContext) toolCallReporter(stage string) agentexec.ToolCallReporter {
+	return func(report agentexec.ToolCallReport) {
+		tc.Emit(events.KindToolCall, stage, report.Detail, map[string]any{
+			"tool":   report.Tool,
+			"failed": report.Failed,
+		})
+	}
+}
+
 // Outcome is a stage's terminal decision for the whole workflow. Stages
 // that don't end the workflow leave it zero.
 type Outcome struct {

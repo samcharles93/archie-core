@@ -83,6 +83,56 @@ type ToolSetOptions struct {
 	// Nil means no approver is configured — such tools are omitted from the
 	// built set rather than failing at call time.
 	Approval tools.ApprovalRequester
+
+	// OnToolCall, when non-nil, is notified once per completed tool call.
+	// InProcessRunner populates it so a workflow stage can surface tool
+	// activity on the task timeline (archie-core-467's task-transcript
+	// counterpart). Nil means no one is listening.
+	OnToolCall ToolCallReporter
+}
+
+// ToolCallReport is one completed tool invocation, reported through a
+// ToolCallReporter.
+type ToolCallReport struct {
+	Tool string
+	// Detail is a clipped one-line summary: the tool's result, or
+	// "error: <message>" if it failed.
+	Detail string
+	Failed bool
+}
+
+// ToolCallReporter receives one ToolCallReport per completed tool call. Only
+// a runner that executes in the same process as its tools can populate this
+// -- SubprocessRunner and NATSRunner dispatch to a different process and have
+// no visibility into individual calls from here. A nil reporter is valid and
+// reports nothing.
+type ToolCallReporter func(ToolCallReport)
+
+// toolCallDetailBytes caps the summary ToolCallReport.Detail carries. This
+// rides on every task's observability event stream, so one large file read
+// must not dominate it the way baselineMissionBytes-sized content is allowed
+// to dominate a builder's own context.
+const toolCallDetailBytes = 300
+
+func clipToolCallDetail(s string) string {
+	if len(s) <= toolCallDetailBytes {
+		return s
+	}
+	return s[:toolCallDetailBytes] + "…"
+}
+
+// reportToolCallCompletion notifies opts.OnToolCall, if set, of one
+// completed call. Factored out of toolExecute's closure so the branching
+// here doesn't add to that function's own cognitive-complexity budget.
+func reportToolCallCompletion(opts ToolSetOptions, entry tools.ToolEntry, result string, err error) {
+	if opts.OnToolCall == nil {
+		return
+	}
+	outcome := result
+	if err != nil {
+		outcome = "error: " + err.Error()
+	}
+	opts.OnToolCall(ToolCallReport{Tool: entry.Name, Detail: clipToolCallDetail(outcome), Failed: err != nil})
 }
 
 // resultLimit returns the cap that applies to one entry.
@@ -194,7 +244,9 @@ func safeResolvedSchema(entry tools.ToolEntry) (schema tools.JSONSchema, err err
 // value would bound the wrong string.
 func toolExecute(entry tools.ToolEntry, opts ToolSetOptions) func(context.Context, string) (string, error) {
 	limit := opts.resultLimit(entry)
-	return func(ctx context.Context, input string) (string, error) {
+	return func(ctx context.Context, input string) (result string, err error) {
+		defer func() { reportToolCallCompletion(opts, entry, result, err) }()
+
 		// A turn that has spent its budget must say so. Returning an error
 		// tells the model it has run out; returning an empty result would
 		// read as "the tool found nothing" and invite it to try again.

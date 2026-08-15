@@ -34,7 +34,7 @@ type cleanupStorage struct {
 
 type identityRunnerStub struct{}
 
-func (*identityRunnerStub) Run(context.Context, string, agentexec.Request) (agentexec.Result, error) {
+func (*identityRunnerStub) Run(context.Context, string, agentexec.Request, agentexec.ToolCallReporter) (agentexec.Result, error) {
 	return agentexec.Result{}, nil
 }
 

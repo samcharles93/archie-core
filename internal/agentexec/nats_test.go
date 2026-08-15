@@ -18,7 +18,7 @@ import (
 
 type mockRunner struct{}
 
-func (m *mockRunner) Run(_ context.Context, _ string, req Request) (Result, error) {
+func (m *mockRunner) Run(_ context.Context, _ string, req Request, _ ToolCallReporter) (Result, error) {
 	return Result{
 		Version:    ProtocolVersion,
 		TaskID:     req.TaskID,
@@ -269,7 +269,7 @@ func TestNATSRunnerRoundTrip(t *testing.T) {
 		Budget:  Budget{MaxSteps: 5, MaxTokens: 100},
 	}
 
-	result, err := runner.Run(ctx, "/tmp/test-workspace", req)
+	result, err := runner.Run(ctx, "/tmp/test-workspace", req, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

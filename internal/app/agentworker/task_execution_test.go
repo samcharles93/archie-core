@@ -30,7 +30,7 @@ import (
 
 type panicRunner struct{ t *testing.T }
 
-func (r panicRunner) Run(context.Context, string, agentexec.Request) (agentexec.Result, error) {
+func (r panicRunner) Run(context.Context, string, agentexec.Request, agentexec.ToolCallReporter) (agentexec.Result, error) {
 	r.t.Fatal("bootstrap workflow must not invoke an LLM runner")
 	return agentexec.Result{}, nil
 }
