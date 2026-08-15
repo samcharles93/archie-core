@@ -1,5 +1,10 @@
 # archied changelog
 
+## [1.9.4] - 2026-08-15
+
+- feat(gateway): polish /status command response format
+- fix(telegram): preserve URL boundaries in responses
+
 ## [1.9.3] - 2026-08-15
 
 - fix(webui): scroll selected command into view on keyboard navigation
