@@ -102,7 +102,7 @@ func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), o
 		s.Log.Error("telegram conversation store is not configured")
 		return nil, false
 	}
-	router := buildTelegramRouter(tg, s, sessionStore)
+	router := buildTelegramRouter(ctx, tg, s, sessionStore)
 	return func() {
 		if s.ChannelManager != nil {
 			s.ChannelManager.MarkStarting("telegram")
@@ -175,7 +175,7 @@ func conversationDBPath(taskDBPath string) string {
 	return taskDBPath + "-conversations.sqlite"
 }
 
-func buildTelegramRouter(tg *telegram.Gateway, s telegramSetup, sessionStore gateway.SessionStore) *gateway.Router {
+func buildTelegramRouter(ctx context.Context, tg *telegram.Gateway, s telegramSetup, sessionStore gateway.SessionStore) *gateway.Router {
 	// The router is built before the responder so the responder can resolve
 	// sessions through it. Both orderings work at runtime -- the responder is
 	// a closure -- but this way the dependency is visible rather than
@@ -189,7 +189,7 @@ func buildTelegramRouter(tg *telegram.Gateway, s telegramSetup, sessionStore gat
 	configureTaskCommands(router, s.ChatTasks, s.ChatController, s.DefaultChatIdentity)
 
 	if s.LLM != nil {
-		turnRunner := newChatTurnRunner(tg.Name(), s, sessionStore, router)
+		turnRunner := newChatTurnRunner(ctx, tg.Name(), s, sessionStore, router)
 		router.LLM = turnRunner.Respond
 		router.LLMStream = turnRunner.RespondStream
 	}
@@ -197,6 +197,7 @@ func buildTelegramRouter(tg *telegram.Gateway, s telegramSetup, sessionStore gat
 }
 
 func makeChatLLMResponder(
+	ctx context.Context,
 	channel string,
 	s telegramSetup,
 	sessionStore gateway.SessionStore,
@@ -205,11 +206,12 @@ func makeChatLLMResponder(
 	if s.LLM == nil {
 		return nil, nil
 	}
-	runner := newChatTurnRunner(channel, s, sessionStore, router)
+	runner := newChatTurnRunner(ctx, channel, s, sessionStore, router)
 	return runner.Respond, runner.RespondStream
 }
 
 func newChatTurnRunner(
+	ctx context.Context,
 	channel string,
 	s telegramSetup,
 	sessionStore gateway.SessionStore,
@@ -232,7 +234,7 @@ func newChatTurnRunner(
 		Operator:     cfg.Chat.Operator,
 		Log:          s.Log,
 	})
-	if err := runner.Recover(context.Background()); err != nil && s.Log != nil {
+	if err := runner.Recover(ctx); err != nil && s.Log != nil {
 		s.Log.Error("recover chat turns", "channel", channel, "err", err)
 	}
 	return runner

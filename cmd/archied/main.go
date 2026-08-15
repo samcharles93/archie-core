@@ -352,27 +352,9 @@ func run() int {
 	var overlayStore *overlay.Store
 	var bootOverlayErr atomic.Pointer[string]
 	if !skipOverlay {
-		overlayStore, err = overlay.Open(ctx, configDBPath(doc.Config.DBPath))
-		if err != nil {
-			reason := err.Error()
-			bootOverlayErr.Store(&reason)
-			log.Error("config overlay unavailable; booting on file config alone", "path", configDBPath(doc.Config.DBPath), "err", err)
-		} else {
+		overlayStore, doc = bootConfigOverlay(ctx, loader, doc, &bootOverlayErr, log)
+		if overlayStore != nil {
 			defer overlayStore.Close()
-			if overrides, err := overlayStore.Snapshot(ctx); err != nil {
-				reason := err.Error()
-				bootOverlayErr.Store(&reason)
-				log.Error("config overlay unreadable; booting on file config alone", "err", err)
-			} else if len(overrides) > 0 {
-				applied, err := loader.ApplyOverlay(doc, overrides)
-				if err != nil {
-					reason := err.Error()
-					bootOverlayErr.Store(&reason)
-					log.Error("config overlay rejected by validation; booting on file config alone", "err", err)
-				} else {
-					doc = applied
-				}
-			}
 		}
 	}
 	cfg := doc.Config
@@ -590,7 +572,7 @@ func run() int {
 		DefaultChatIdentity: defaultChatIdentity, SessionStore: chatSessionStore,
 		Bus: bus, Log: log,
 	}
-	webRouter.LLM, webRouter.LLMStream = makeChatLLMResponder("web", webSetup, chatSessionStore, webRouter)
+	webRouter.LLM, webRouter.LLMStream = makeChatLLMResponder(ctx, "web", webSetup, chatSessionStore, webRouter)
 	webRouter.Titles = newChatTitleGenerator(webSetup)
 	webRouter.Log = log
 	web.Chat = &webui.ChatService{
@@ -1245,6 +1227,54 @@ func run() int {
 		return 1
 	}
 	return 0
+}
+
+// bootConfigOverlay layers the runtime config overlay over the resolved
+// file config. Every failure degrades rather than aborts -- the daemon
+// boots on file config alone and the reason is recorded in bootOverlayErr,
+// which /api/config surfaces as the reload status. The returned store is
+// nil only when Open failed; a store that opened but could not be read
+// stays open and non-nil so the dashboard PATCH path and reload wiring
+// keep exactly the behaviour of the original inline block.
+func bootConfigOverlay(
+	ctx context.Context,
+	loader *configuration.Loader,
+	doc *configuration.Document,
+	bootOverlayErr *atomic.Pointer[string],
+	log *slog.Logger,
+) (*overlay.Store, *configuration.Document) {
+	store, err := overlay.Open(ctx, configDBPath(doc.Config.DBPath))
+	if err != nil {
+		recordBootOverlayError(bootOverlayErr, log, err,
+			"config overlay unavailable; booting on file config alone",
+			"path", configDBPath(doc.Config.DBPath))
+		return nil, doc
+	}
+	overrides, err := store.Snapshot(ctx)
+	if err != nil {
+		recordBootOverlayError(bootOverlayErr, log, err,
+			"config overlay unreadable; booting on file config alone")
+		return store, doc
+	}
+	if len(overrides) == 0 {
+		return store, doc
+	}
+	applied, err := loader.ApplyOverlay(doc, overrides)
+	if err != nil {
+		recordBootOverlayError(bootOverlayErr, log, err,
+			"config overlay rejected by validation; booting on file config alone")
+		return store, doc
+	}
+	return store, applied
+}
+
+// recordBootOverlayError stores the degrade reason for /api/config and
+// logs it, so the operator sees both where they are looking.
+func recordBootOverlayError(p *atomic.Pointer[string], log *slog.Logger, err error, msg string, args ...any) {
+	reason := err.Error()
+	p.Store(&reason)
+	args = append(args, "err", err)
+	log.Error(msg, args...)
 }
 
 func persistAndBroadcastEvents(sink *events.Sub, st store.TaskStore, web *webui.Server, log *slog.Logger) {

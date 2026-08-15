@@ -57,32 +57,9 @@ func TestDashboardAndChatAgreeOnTerminalStates(t *testing.T) {
 			}
 
 			if tc.viaChat {
-				controller := gateway.NewStoreTaskController(chatTaskControllerAdapter{
-					taskByID:   st.TaskByID,
-					requeue:    st.Requeue,
-					transition: st.Transition,
-				})
-				var actErr error
-				if tc.action == "approve" {
-					actErr = controller.Approve(ctx, task.ID, "reviewer")
-				} else {
-					actErr = controller.Cancel(ctx, task.ID, "reviewer")
-				}
-				if actErr != nil {
-					t.Fatalf("chat %s: %v", tc.action, actErr)
-				}
+				runChatAction(t, ctx, st, tc.action, task.ID)
 			} else {
-				srv := &webui.Server{Store: st, Cfg: config.NewHolder(config.Config{MaxRetries: 3})}
-				req := httptest.NewRequestWithContext(ctx, http.MethodPost,
-					"/api/tasks/"+strconv.FormatInt(task.ID, 10)+"/action",
-					bytes.NewBufferString(`{"action":"`+tc.action+`"}`))
-				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("X-Archie-CSRF", "1")
-				w := httptest.NewRecorder()
-				srv.Handler().ServeHTTP(w, req)
-				if w.Code != http.StatusOK {
-					t.Fatalf("dashboard %s: status %d, body %s", tc.action, w.Code, w.Body)
-				}
+				runDashboardAction(t, ctx, st, tc.action, task.ID)
 			}
 
 			got, err := st.TaskByID(ctx, task.ID)
@@ -94,5 +71,43 @@ func TestDashboardAndChatAgreeOnTerminalStates(t *testing.T) {
 					"what this action means", got.Status, tc.want)
 			}
 		})
+	}
+}
+
+// runChatAction performs the approve/cancel action through the chat
+// controller path and fails the test on error.
+func runChatAction(t *testing.T, ctx context.Context, st store.TaskStore, action string, taskID int64) {
+	t.Helper()
+	controller := gateway.NewStoreTaskController(chatTaskControllerAdapter{
+		taskByID:   st.TaskByID,
+		requeue:    st.Requeue,
+		transition: st.Transition,
+	})
+	var err error
+	if action == "approve" {
+		err = controller.Approve(ctx, taskID, "reviewer")
+	} else {
+		err = controller.Cancel(ctx, taskID, "reviewer")
+	}
+	if err != nil {
+		t.Fatalf("chat %s: %v", action, err)
+	}
+}
+
+// runDashboardAction performs the approve/cancel action through the
+// dashboard's HTTP handler and fails the test when the request is
+// rejected.
+func runDashboardAction(t *testing.T, ctx context.Context, st store.TaskStore, action string, taskID int64) {
+	t.Helper()
+	srv := &webui.Server{Store: st, Cfg: config.NewHolder(config.Config{MaxRetries: 3})}
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
+		"/api/tasks/"+strconv.FormatInt(taskID, 10)+"/action",
+		bytes.NewBufferString(`{"action":"`+action+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Archie-CSRF", "1")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("dashboard %s: status %d, body %s", action, w.Code, w.Body)
 	}
 }
