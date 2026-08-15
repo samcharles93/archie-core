@@ -97,22 +97,8 @@ func suggestPaths(cwd, missing string) string {
 	// shape of the real misses (internal/theme/theme.go, where the directory
 	// exists but holds colors.go), and it avoids the walk entirely.
 	if dir := filepath.Dir(missing); dir != "" {
-		if entries, err := os.ReadDir(dir); err == nil {
-			names := make([]string, 0, maxPathSuggestions)
-			for _, e := range entries {
-				if len(names) >= maxPathSuggestions {
-					names = append(names, "...")
-					break
-				}
-				names = append(names, e.Name())
-			}
-			if len(names) > 0 {
-				rel, relErr := filepath.Rel(cwd, dir)
-				if relErr != nil {
-					rel = dir
-				}
-				return fmt.Sprintf("%s exists and contains: %s", rel, strings.Join(names, ", "))
-			}
+		if suggestion := dirContentsSuggestion(cwd, dir); suggestion != "" {
+			return suggestion
 		}
 	}
 
@@ -148,6 +134,31 @@ func suggestPaths(cwd, missing string) string {
 		return ""
 	}
 	return "did you mean: " + strings.Join(found, ", ")
+}
+
+// dirContentsSuggestion lists the entries in an existing directory as a
+// "did you mean" hint, or returns "" when the directory is unreadable or empty.
+func dirContentsSuggestion(cwd, dir string) string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	names := make([]string, 0, maxPathSuggestions)
+	for _, e := range entries {
+		if len(names) >= maxPathSuggestions {
+			names = append(names, "...")
+			break
+		}
+		names = append(names, e.Name())
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	rel, relErr := filepath.Rel(cwd, dir)
+	if relErr != nil {
+		rel = dir
+	}
+	return fmt.Sprintf("%s exists and contains: %s", rel, strings.Join(names, ", "))
 }
 
 // skipSuggestionDir keeps the suggestion walk out of directories that are large
