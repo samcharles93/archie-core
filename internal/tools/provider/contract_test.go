@@ -42,7 +42,7 @@ func TestArchiedWiresTypedProvidersAndExecutableConsumers(t *testing.T) {
 
 	// Also check the chat composition files, which hold the chat-turn wiring
 	// extracted from main.go during the structural refactor.
-	for _, name := range []string{"telegram_setup.go", "chat_turn_model.go"} {
+	for _, name := range []string{"telegram_setup.go", "chat_turn_model.go", "bootstrap.go"} {
 		path := filepath.Join("..", "..", "..", "cmd", "archied", name)
 		source, readErr := os.ReadFile(path)
 		if readErr == nil {
@@ -51,17 +51,21 @@ func TestArchiedWiresTypedProvidersAndExecutableConsumers(t *testing.T) {
 	}
 
 	for _, required := range []string{
-		"toolprovider.NewRegistry(toolReg)",
-		"memorytoolprovider.New(memManager)",
+		// The provider registry, its engines and the consumer wiring live
+		// in bootstrap.go (the boot-phase carrier) since the composition
+		// root was decomposed; the receiver makes the arg expressions
+		// carry the b. prefix there.
+		"toolprovider.NewRegistry(b.toolReg)",
+		"memorytoolprovider.New(b.memManager)",
 		"configuredMCPProvider(srv)",
-		"capabilityHost.Register(providerRegistry)",
+		"capabilityHost.Register(b.providerRegistry)",
 		// The chat turn builds its toolset from the registry before the
 		// system prompt is rendered, so the prompt can advertise exactly
 		// the tools the model is handed. After the structural refactor these
 		// calls live in the chat composition files.
 		"chatGenerateOptions(ctx,",
 		"toolSummaries(options.Tools)",
-		"agentexec.NewInProcessRunner(llm, log, toolReg)",
+		"agentexec.NewInProcessRunner(b.llm, log, b.toolReg)",
 	} {
 		if !strings.Contains(text.String(), required) {
 			t.Errorf("archied wiring not found: %q", required)
