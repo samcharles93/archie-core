@@ -1,5 +1,11 @@
 # archied changelog
 
+## [1.9.3] - 2026-08-15
+
+- fix(webui): scroll selected command into view on keyboard navigation
+- fix(logging): resolve error attrs to their message string, not {}
+- feat(agentexec,workflow): surface tool calls on the task timeline
+
 ## [1.9.2] - 2026-08-15
 
 - fix(worktree): force checkout so retry recovers from a dirty worktree
