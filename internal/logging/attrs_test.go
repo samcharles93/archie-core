@@ -1,6 +1,9 @@
 package logging
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"testing"
 	"time"
@@ -71,6 +74,74 @@ func TestFlattenAttrs(t *testing.T) {
 				t.Errorf("FlattenAttrs() = %#v, want nil", got)
 			}
 		})
+	}
+}
+
+// TestFlattenAttrsConvertsErrorsToTheirMessageString pins the regression that
+// shipped archie-core's task/system logs full of "err":{}: SystemLogHandler
+// and FeedHandler both json.Marshal Entry.Fields directly rather than going
+// through slog's own JSON handler, and encoding/json has no idea an `error`
+// value should become its message -- it reflects the concrete type's fields,
+// which for a stdlib error are unexported, so the message vanishes into `{}`.
+func TestFlattenAttrsConvertsErrorsToTheirMessageString(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "plain error", err: errors.New("boom"), want: "boom"},
+		{name: "wrapped error", err: fmt.Errorf("outer: %w", errors.New("inner")), want: "outer: inner"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			record := slog.NewRecord(time.Now(), slog.LevelError, "handle failed", 0)
+			record.AddAttrs(slog.Any("err", tt.err))
+
+			got := FlattenAttrs(record, nil, nil)
+
+			value, ok := got["err"].(string)
+			if !ok {
+				t.Fatalf("FlattenAttrs()[%q] = %#v (%T), want a string", "err", got["err"], got["err"])
+			}
+			if value != tt.want {
+				t.Errorf("FlattenAttrs()[%q] = %q, want %q", "err", value, tt.want)
+			}
+
+			encoded, marshalErr := json.Marshal(map[string]any{"err": got["err"]})
+			if marshalErr != nil {
+				t.Fatalf("json.Marshal: %v", marshalErr)
+			}
+			if string(encoded) == `{"err":{}}` {
+				t.Errorf("json.Marshal(%#v) = %s, error message was discarded", got["err"], encoded)
+			}
+		})
+	}
+}
+
+// typedNilError has a pointer receiver Error() that dereferences itself, so
+// calling it on a nil *typedNilError panics -- the classic Go footgun where
+// a non-nil error interface wraps a nil concrete pointer.
+type typedNilError struct{ msg string }
+
+func (e *typedNilError) Error() string { return e.msg }
+
+// TestFlattenAttrsDoesNotPanicOnATypedNilError pins the case
+// TestFlattenAttrsConvertsErrorsToTheirMessageString's err != nil check
+// misses: `var e *typedNilError; var err error = e` is a non-nil interface,
+// so a naive nil check would call Error() on a nil receiver and crash the
+// process -- the one failure mode a logging package must never have.
+func TestFlattenAttrsDoesNotPanicOnATypedNilError(t *testing.T) {
+	var e *typedNilError
+	var err error = e
+
+	record := slog.NewRecord(time.Now(), slog.LevelError, "handle failed", 0)
+	record.AddAttrs(slog.Any("err", err))
+
+	got := FlattenAttrs(record, nil, nil) // must not panic
+
+	if _, err := json.Marshal(map[string]any{"err": got["err"]}); err != nil {
+		t.Fatalf("json.Marshal: %v", err)
 	}
 }
 
