@@ -177,10 +177,6 @@ func TestStaleBuilderCannotCompleteNewerLease(t *testing.T) {
 	}
 }
 
-type fakeRunner struct {
-	files []string
-}
-
 type writingRunner struct{}
 
 func (writingRunner) Build(_ context.Context, _, target string) error {
@@ -189,11 +185,6 @@ func (writingRunner) Build(_ context.Context, _, target string) error {
 
 func (writingRunner) Candidates(context.Context, string, string, bool, bool) ([]string, error) {
 	return nil, nil
-}
-
-func (f fakeRunner) Build(context.Context, string, string) error { return nil }
-func (f fakeRunner) Candidates(context.Context, string, string, bool, bool) ([]string, error) {
-	return slices.Clone(f.files), nil
 }
 
 func writeTestFile(t *testing.T, dir, name, content string) {
