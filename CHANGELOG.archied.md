@@ -1,5 +1,16 @@
 # archied changelog
 
+## [1.9.5] - 2026-08-16
+
+- refactor(archied): decompose the daemon bootstrap into phased wiring (no behaviour change; splits the ~950-line run() into focused setup phases so complexity linting passes)
+- refactor(archied): extract the config overlay boot helper and thread context through chat gateway setup
+- refactor(tools): split the read executor and flatten nested config/tool fallback logic to lower complexity
+- fix(tools): avoid predeclared `max` names
+- fix(email): use context-aware test networking
+- fix(indexing): remove the unused code search test runner
+- fix(tests): use contexts and type assertions in overlay and gateway tests
+- docs(architecture): document the memory engine family
+
 ## [1.9.4] - 2026-08-15
 
 - feat(gateway): polish /status command response format
