@@ -16,12 +16,10 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
-	"time"
 
 	"github.com/moby/moby/client"
 	natsio "github.com/nats-io/nats.go"
@@ -29,42 +27,26 @@ import (
 	"github.com/samcharles93/ai-sdk/core"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
-	channelruntime "github.com/samcharles93/archie-core/internal/channels"
-	"github.com/samcharles93/archie-core/internal/channels/email"
-	"github.com/samcharles93/archie-core/internal/channels/webhook"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/daemon"
-	"github.com/samcharles93/archie-core/internal/domain/curator"
-	"github.com/samcharles93/archie-core/internal/domain/workflow"
-	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
-	"github.com/samcharles93/archie-core/internal/domain/workflow/wfeval"
-	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/overlay"
-	"github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
-	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
 	"github.com/samcharles93/archie-core/internal/logging"
-	"github.com/samcharles93/archie-core/internal/memory"
 	"github.com/samcharles93/archie-core/internal/memory/builtin"
 	"github.com/samcharles93/archie-core/internal/plugin"
-	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
 	"github.com/samcharles93/archie-core/internal/secret"
-	"github.com/samcharles93/archie-core/internal/skill"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/storerpc"
 	"github.com/samcharles93/archie-core/internal/tools"
 	"github.com/samcharles93/archie-core/internal/tools/mcp"
 	toolprovider "github.com/samcharles93/archie-core/internal/tools/provider"
-	builtintoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/builtin"
 	mcptoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/mcp"
-	memorytoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/memory"
-	"github.com/samcharles93/archie-core/internal/tools/webfetch"
 	"github.com/samcharles93/archie-core/internal/webui"
 	"github.com/samcharles93/archie-core/internal/worktree"
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
@@ -329,904 +311,64 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
-
-	loader := configuration.New(log)
-	skipOverlay := *noConfigOverlay || configuration.SkipOverlay()
-	if skipOverlay {
-		log.Info("runtime config overlay disabled (recovery hatch); booting on file config alone")
-	}
-	doc, err := loader.Resolve(*cfgPath, *overlayPath)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	b := newBootstrap()
+	if err := b.loadConfig(ctx, *cfgPath, *overlayPath, *noConfigOverlay); err != nil {
 		return 1
 	}
-	// Runtime config overlay: dashboard-edited overrides layered over the
-	// file config from their own SQLite file (own user_version and
-	// migrator, no contention with the task store). Skipped under
-	// --no-config-overlay / ARCHIE_SKIP_CONFIG_OVERLAY=1, or when the
-	// store cannot be opened or its values fail validation -- a broken
-	// overlay must not brick the daemon. bootOverlayErr carries the
-	// degrade reason into /api/config's reload status so it is visible
-	// where the operator is looking, not only in logs.
-	var overlayStore *overlay.Store
-	var bootOverlayErr atomic.Pointer[string]
-	if !skipOverlay {
-		overlayStore, doc = bootConfigOverlay(ctx, loader, doc, &bootOverlayErr, log)
-		if overlayStore != nil {
-			defer overlayStore.Close()
-		}
-	}
-	cfg := doc.Config
-	var currentProvenance atomic.Pointer[configuration.Provenance]
-	currentProvenance.Store(&doc.Provenance)
+	defer b.cleanup()
 
-	// Re-create the logger now the config is known. Everything above this
-	// point logs to stderr only, which is unavoidable: the log destination is
-	// itself configuration. A file that cannot be opened is reported and the
-	// daemon continues on stderr -- losing the durable copy must not take the
-	// daemon down with it.
-	logFeed := logging.NewFeed(1000)
-	// Task logs live alongside the store rather than under cfg.Log.File's
-	// directory: cfg.Log.File is optional (file logging can be off), while
-	// DBPath is required for the daemon to run at all, so it is the more
-	// reliable anchor for "where archie keeps its state" on this host.
-	taskLogs := logging.NewTaskRegistry(filepath.Join(filepath.Dir(cfg.DBPath), "logs", "tasks"), logFeed, logging.TaskSinkOptions{})
-	fileLog, logCloser, logErr := logging.New(logging.Options{
-		File:      cfg.Log.File,
-		MaxSizeMB: cfg.Log.MaxSizeMB,
-		Keep:      cfg.Log.Keep,
-		Level:     cfg.Log.Level,
-		Stderr:    !cfg.Log.Quiet,
-		Feed:      logFeed,
-	})
-	log = fileLog
-	defer func() { _ = logCloser.Close() }()
-	if logErr != nil {
-		log.Error("file logging disabled", "err", logErr)
-	} else if cfg.Log.File != "" {
-		log.Info("logging to file", "path", cfg.Log.File)
-	}
-
-	secrets, err := configuredSecretRegistry(&cfg, log)
-	if err != nil {
-		log.Error("configure secrets", "err", err)
+	if err := b.openStores(ctx); err != nil {
 		return 1
 	}
-	forgeClient, token := resolveForge(cfg.Forge, secrets, log)
-
-	st, err := openProductionTaskStore(ctx, taskDBPath(cfg.DBPath))
-	if err != nil {
-		log.Error("open store", "err", err)
+	if exit, err := b.handleRequeue(ctx, *requeue, *once); err != nil {
 		return 1
-	}
-	defer func() {
-		if err := st.Close(); err != nil {
-			log.Error("close store", "err", err)
-		}
-	}()
-	chatSessionStore, err := makeTelegramSessionStore(cfg)
-	if err != nil {
-		log.Error("open conversation store", "path", conversationDBPath(cfg.DBPath), "err", err)
-		return 1
-	}
-	defer func() {
-		if err := chatSessionStore.Close(); err != nil {
-			log.Error("close conversation store", "err", err)
-		}
-	}()
-
-	if *requeue > 0 {
-		if err := manualRequeueTask(ctx, st, *requeue); err != nil {
-			log.Error("requeue failed", "task", *requeue, "err", err)
-			return 1
-		}
-		log.Info("task requeued", "task", *requeue)
-		if !*once {
-			return 0
-		}
-	}
-
-	catalog, err := modelcatalog.Load(ctx, modelcatalog.Options{
-		CachePath:  filepath.Join(filepath.Dir(*cfgPath), "models.json"),
-		Getenv:     secrets.Getenv,
-		Configured: cfg.Providers,
-	})
-	var catalogModels []string
-	if err != nil {
-		log.Warn("model catalog unavailable; using configured providers and models", "err", err)
-	} else {
-		catalogModels = applyModelCatalog(&cfg, catalog)
-		log.Info("model catalog loaded", "providers", len(catalog.Providers), "models", len(catalogModels))
-	}
-
-	// Observability: every event is logged to SQLite (stamped with its
-	// row id) and then fanned out to live dashboard connections.
-	bus := events.NewBus()
-	defer bus.Close()
-	var restartTelegram func() error
-	telegramDetail := ""
-	if cfg.Chat.Telegram.TokenEnv != "" && len(cfg.Chat.Telegram.AllowedUserIDs) == 0 {
-		telegramDetail = "Token set, but the allowlist is empty -- the bot answers nobody."
-	}
-	channelManager := channelruntime.NewManager([]channelruntime.Descriptor{
-		{ID: "telegram", Name: "Telegram", Configured: cfg.Chat.Telegram.TokenEnv != "", ReloadSupported: cfg.Chat.Telegram.TokenEnv != "", Detail: telegramDetail},
-		{ID: "email", Name: "Email", Configured: cfg.Chat.Email.ListenAddr != ""},
-		{ID: "webhook", Name: "Webhook gateway", Configured: cfg.Chat.WebhookAddr != ""},
-	})
-	configProvenance := make([]webui.ConfigOrigin, 0, len(doc.Provenance.Origins))
-	for _, origin := range doc.Provenance.Origins {
-		configProvenance = append(configProvenance, webui.ConfigOrigin{
-			Path: origin.Path, Role: string(origin.Role), Layer: string(origin.Layer), Feature: string(origin.Feature),
-		})
-	}
-	web := &webui.Server{Store: st, Log: log, LogFeed: logFeed, TaskLogs: taskLogs, Cfg: config.NewHolder(cfg), Channels: channelManager, Events: bus}
-	web.SetProvenance(configProvenance)
-	web.ReloadChannel = func(ctx context.Context, id string) error {
-		if id != "telegram" || restartTelegram == nil {
-			return fmt.Errorf("channel reload unavailable")
-		}
-		return restartTelegram()
-	}
-	// The dashboard closes the forge issue behind a rejected task, or the
-	// issue is re-polled and the work is done again. It gets only that one
-	// method, not the forge client.
-	web.Issues = forgeClient
-	sink := bus.Subscribe(256)
-	go persistAndBroadcastEvents(sink, st, web, log)
-	// NATS client (optional  --  SQLite flow unchanged when [nats] is absent).
-	var natsClient *nats.Client
-	if cfg.NATS.URL != "" {
-		natsToken, err := configuredNATSToken(cfg.NATS, os.Getenv)
-		if err != nil {
-			log.Error("nats credentials", "err", err)
-			return 1
-		}
-		// Composition owns the subject list: the bus must not know which
-		// subjects belong to which domain.
-		natsClient, err = nats.Connect(ctx, nats.Config{
-			URL:           cfg.NATS.URL,
-			Token:         natsToken,
-			Subjects:      []string{workintake.SubjectTaskWildcard, agentexec.SubjectAgentWildcard},
-			FilterSubject: workintake.SubjectTaskWildcard,
-		}, log)
-		if err != nil {
-			log.Error("nats connect failed", "err", err)
-			return 1
-		}
-		defer natsClient.Close()
-		log.Info("nats connected", "url", cfg.NATS.URL)
-	}
-
-	// Container pool (optional  --  no containers when [containers] is absent).
-	//
-	// Container setup degrades rather than aborting, for the same reason
-	// resolveForge does: containers are one capability among many, and
-	// refusing to start denies the operator chat, the dashboard and every
-	// other subsystem over a feature they may not be exercising right now.
-	// Under a systemd unit with Restart=on-failure it also turns a recoverable
-	// problem into a crash loop with the real error scrolling past unread.
-	containerPool, storeBackend, closeDocker := startContainers(ctx, cfg, log)
-	defer closeDocker()
-	// Sandboxing that was asked for and could not start must not silently
-	// become no sandboxing: the daemon stays up, but tasks park rather than
-	// running the agent loop on the host.
-	sandboxRequired := cfg.Containers.Enabled && containerPool == nil
-
-	// ── LLM runtime ──────────────────────────────────────────────────
-	// Created before gateways so the LLMResponder can be wired into the
-	// Telegram router for non-command message processing.
-	providers := executionProviders(cfg)
-	llm := agentexec.NewRuntime(providers)
-	toolReg := tools.NewRegistry()
-	chatModels := newChatModelManager(cfg.Models, cfg.Chat.Models, catalogModels)
-	chatModels.ApplyModelCatalog(catalog)
-
-	// ── Persona registry ─────────────────────────────────────────────
-	personas := gateway.NewPersonaRegistry(gateway.DefaultPersonas())
-
-	profiles, defaultChatIdentity := chatTaskProfiles(cfg)
-	var chatTasks gateway.TaskCreator
-	if len(profiles) > 0 {
-		chatTasks = gateway.NewStoreTaskCreatorForProfiles(
-			chatTaskWriterAdapter{enqueue: st.EnqueueChatTask},
-			profiles,
-		)
-	}
-	chatController := gateway.NewStoreTaskController(chatTaskControllerAdapter{
-		taskByID:   st.TaskByID,
-		requeue:    st.Requeue,
-		transition: st.Transition,
-	})
-	updateService := makeUpdateService(telegramSetup{Cfg: config.NewHolder(cfg)})
-	web.WorkRequests = chatTasks
-
-	// The dashboard is another gateway, not a second chat implementation. It
-	// shares the router, session history, model selection, personas and LLM
-	// responder with Telegram while using a stable browser channel id.
-	webRouter := gateway.NewRouter(st, nil, "web")
-	webRouter.Version = fmt.Sprintf("Archie\nGateway: %s\nRuntime: %s", gatewayVersion, runtimeVersion)
-	if cfg.Chat.Telegram.TokenEnv != "" {
-		webRouter.Restart = func(context.Context) error {
-			if restartTelegram == nil {
-				return fmt.Errorf("telegram gateway is not ready")
-			}
-			return restartTelegram()
-		}
-	}
-	webRouter.Models = chatModels
-	if updateService != nil {
-		webRouter.Updates = updateService
-	}
-	webRouter.Personas = personas
-	webRouter.InitSessions(chatSessionStore)
-	configureTaskCommands(webRouter, chatTasks, chatController, defaultChatIdentity)
-	webSetup := telegramSetup{
-		Cfg: config.NewHolder(cfg), St: st, LLM: llm, ChatModels: chatModels, ToolReg: toolReg,
-		Personas: personas, ChatTasks: chatTasks, ChatController: chatController,
-		ChatTaskLister: chatTaskListerAdapter{tasks: st.Tasks},
-		ChatTaskLogs: chatTaskLogReaderAdapter{
-			tasks:    st.TaskByID,
-			taskLogs: taskLogs,
-		},
-		DefaultChatIdentity: defaultChatIdentity, SessionStore: chatSessionStore,
-		Bus: bus, Log: log,
-	}
-	webRouter.LLM, webRouter.LLMStream = makeChatLLMResponder(ctx, "web", webSetup, chatSessionStore, webRouter)
-	webRouter.Titles = newChatTitleGenerator(webSetup)
-	webRouter.Log = log
-	web.Chat = &webui.ChatService{
-		Router: webRouter, Sessions: chatSessionStore,
-		Turns:  gateway.NewTurns(log),
-		Models: chatModels, Personas: personas,
-	}
-	if updateService != nil {
-		web.Chat.Updates = updateService
-	}
-	// ── Gateways ──────────────────────────────────────────────────────
-	// Multi-agent collaboration PRD phase C (docs/prds/multi-agent-collaboration.md).
-	var startGateways []func()
-	start, ok := setupTelegramGateway(ctx, telegramSetup{
-		Cfg: config.NewHolder(cfg), CfgPath: *cfgPath, OverlayPath: *overlayPath,
-		St: st, LLM: llm, ChatModels: chatModels, ToolReg: toolReg,
-		Personas: personas, ChatTasks: chatTasks, ChatController: chatController,
-		ChatTaskLister: chatTaskListerAdapter{tasks: st.Tasks},
-		ChatTaskLogs: chatTaskLogReaderAdapter{
-			tasks:    st.TaskByID,
-			taskLogs: taskLogs,
-		},
-		DefaultChatIdentity: defaultChatIdentity, SessionStore: chatSessionStore, Updates: updateService,
-		Bus:             bus,
-		RegisterRestart: func(request func() error) { restartTelegram = request }, Log: log,
-		ChannelManager: channelManager,
-	})
-	if !ok {
-		return 1
-	}
-	if start != nil {
-		startGateways = append(startGateways, start)
-	}
-
-	// ── Email gateway (optional) ───────────────────────────────────
-	if cfg.Chat.Email.ListenAddr != "" {
-		em := email.New(cfg.Chat.Email.ListenAddr, cfg.Chat.Email.RelayAddr, log)
-		emRouter := gateway.NewRouter(st, nil, "email")
-		configureTaskCommands(emRouter, chatTasks, chatController, defaultChatIdentity)
-		startGateways = append(startGateways, func() {
-			channelManager.MarkStarting("email")
-			go func() {
-				if err := em.Start(ctx, emRouter); err != nil && ctx.Err() == nil {
-					channelManager.MarkFailed("email", err.Error())
-					log.Error("email gateway stopped", "err", err)
-				}
-			}()
-			log.Info("email gateway started", "addr", cfg.Chat.Email.ListenAddr)
-		})
-	}
-
-	// ── Webhook gateway (optional) ─────────────────────────────────
-	// Enabled when chat.webhook is set to a host:port listen address.
-	if cfg.Chat.WebhookAddr != "" {
-		host, port := parseListenAddr(cfg.Chat.WebhookAddr, "0.0.0.0", 8644)
-		wh := webhook.New(
-			host, port,
-			[]webhook.RouteConfig{{Path: "/webhook"}},
-			log,
-		)
-		whRouter := gateway.NewRouter(st, nil, "webhook")
-		configureTaskCommands(whRouter, chatTasks, chatController, defaultChatIdentity)
-		startGateways = append(startGateways, func() {
-			channelManager.MarkStarting("webhook")
-			go func() {
-				if err := wh.Start(ctx, whRouter); err != nil && ctx.Err() == nil {
-					channelManager.MarkFailed("webhook", err.Error())
-					log.Error("webhook gateway stopped", "err", err)
-				}
-			}()
-			log.Info("webhook gateway started", "addr", fmt.Sprintf("%s:%d", host, port))
-		})
-	}
-
-	var agentRunner agentexec.Runner
-	if llm != nil {
-		switch cfg.Agent.Mode {
-		case "subprocess":
-			agentRunner = &agentexec.SubprocessRunner{
-				Command:       cfg.Agent.Command,
-				Environ:       os.Environ(),
-				AdditionalEnv: cfg.Agent.Env,
-				Diagnostics:   os.Stderr,
-				Providers:     providers,
-			}
-		case "inprocess":
-			inproc := agentexec.NewInProcessRunner(llm, log, toolReg)
-			inproc.Limits = toolLimits(cfg)
-			agentRunner = inproc
-		case "nats":
-			if natsClient == nil {
-				log.Error("agent.mode is nats but [nats] is not configured")
-				return 1
-			}
-			agentRunner = &agentexec.NATSRunner{
-				Bus:        natsClient,
-				Providers:  providers,
-				MCPServers: cfg.Tools.MCPServers,
-				Log:        log,
-			}
-		}
-	}
-	// Build the workflow registry from the skill catalog. Plugin-defined
-	// workflows override built-ins of the same name; built-ins fill gaps.
-	skillsBase := cfg.SkillsDir
-	if skillsBase == "" {
-		skillsBase = cfg.WorkDir
-	}
-	workflowCatalog, err := skillbuild.BuildCatalog(skillsBase)
-	if err != nil {
-		log.Error("skill registry build failed", "err", err)
-		return 1
-	}
-	registry := workflowCatalog.Registry
-	log.Info("workflow registry built", "workflows", len(registry))
-	web.Workflows = workflow.DefinitionsWithOrigins(registry, workflowCatalog.Origins)
-	if l := cfg.Web.Listen; l != "" && l != "off" {
-		web.Token = webTokenFor(l, cfg.DBPath, log)
-		go func() {
-			if err := web.Run(ctx, l); err != nil {
-				log.Error("web ui failed", "err", err)
-			}
-		}()
-	}
-
-	// Load daemon plugins from the configured plugin directory (Layer 2).
-	// Failed plugins are skipped  --  the daemon starts with the remaining set.
-	capabilityHost := plugin.NewHost()
-	if cfg.PluginDir != "" {
-		plugins, err := plugin.LoadDir(cfg.PluginDir, pluginextract.Symbols)
-		if err != nil {
-			log.Error("plugin load failed", "dir", cfg.PluginDir, "err", err)
-			return 1
-		}
-		for _, p := range plugins {
-			name, version := safePluginInfo(p)
-			module, err := plugin.AdaptLegacy(p)
-			if err != nil {
-				log.Warn("daemon plugin capability registration skipped", "name", name, "version", version, "err", err)
-				continue
-			}
-			if err := capabilityHost.Register(module); err != nil {
-				log.Warn("daemon plugin capability registration skipped", "name", name, "version", version, "err", err)
-				continue
-			}
-			log.Info("daemon plugin loaded", "name", name, "version", version)
-		}
-	}
-
-	trees := &worktree.Manager{
-		WorkDir:  cfg.WorkDir,
-		Token:    token,
-		BotUser:  cfg.BotUser,
-		BotEmail: cfg.BotEmail,
-		BaseURL:  cfg.Forge.Host,
-	}
-
-	// ── Multi-identity composition ──────────────────────────────────────
-	// Each configured identity gets its own forge client (its own token,
-	// possibly its own forge type/host) and its own worktree manager (a
-	// distinct WorkDir so concurrent identities never collide on the same
-	// clone). When cfg.Identities is empty, Daemon.Identities stays nil
-	// and Run() takes the single-identity path unchanged.
-	var identityRunners []*daemon.IdentityRunner
-	for _, idCfg := range cfg.Identities {
-		// Same reasoning as the primary forge: one identity whose credential is
-		// missing must not deny every other identity, and every other
-		// subsystem, the ability to run.
-		idForge, idToken := resolveForge(idCfg.Forge, secrets, log.With("identity", idCfg.Name))
-		idTrees := &worktree.Manager{
-			WorkDir:  filepath.Join(cfg.WorkDir, "identity-"+idCfg.Name),
-			Token:    idToken,
-			BotUser:  idCfg.BotUser,
-			BotEmail: idCfg.BotEmail,
-			BaseURL:  idCfg.Forge.Host,
-		}
-		runner, err := daemon.NewIdentityRunner(ctx, idCfg, idForge, idTrees, log)
-		if err != nil {
-			log.Error("identity construction failed", "identity", idCfg.Name, "err", err)
-			return 1
-		}
-		idProviders := agentexec.ProvidersFromConfig(idCfg.Providers)
-		idRuntime := agentexec.NewRuntime(idProviders)
-		if idRuntime != nil {
-			switch cfg.Agent.Mode {
-			case "subprocess":
-				runner.Agent = &agentexec.SubprocessRunner{
-					Command:       cfg.Agent.Command,
-					Environ:       os.Environ(),
-					AdditionalEnv: cfg.Agent.Env,
-					Diagnostics:   os.Stderr,
-					Providers:     idProviders,
-				}
-			case "inprocess":
-				idRunner := agentexec.NewInProcessRunner(idRuntime, log.With("identity", idCfg.Name), toolReg)
-				idRunner.Limits = toolLimits(cfg)
-				runner.Agent = idRunner
-			case "nats":
-				runner.Agent = &agentexec.NATSRunner{
-					Bus: natsClient, Providers: idProviders,
-					MCPServers: cfg.Tools.MCPServers, Log: log.With("identity", idCfg.Name),
-				}
-			}
-		}
-		identityRunners = append(identityRunners, runner)
-		log.Info("identity configured", "identity", idCfg.Name, "bot_user", idCfg.BotUser, "repos", len(idCfg.Repos))
-	}
-
-	// Let archie-agent containers (which hold no DB connection, forge
-	// token, or push credential) proxy Store/Forge/worktree operations
-	// back to archied over NATS.
-	if natsClient != nil {
-		coreConn, err := natsClient.CoreConn()
-		if err != nil {
-			log.Error("nats connection unavailable for task RPC", "err", err)
-			return 1
-		}
-		unsubscribe, err := registerTaskRPCServers(coreConn, st, forgeClient, trees, identityRunners, log)
-		if err != nil {
-			log.Error("task RPC server registration failed", "err", err)
-			return 1
-		}
-		defer unsubscribe()
-
-		unsubscribeSystemLogs, err := subscribeSystemLogs(coreConn, taskLogs, log)
-		if err != nil {
-			log.Error("system log subscribe failed", "err", err)
-			return 1
-		}
-		defer unsubscribeSystemLogs()
-
-		unsubscribeAgentEvents, err := subscribeAgentEvents(coreConn, bus, log)
-		if err != nil {
-			log.Error("agent event subscribe failed", "err", err)
-			return 1
-		}
-		defer unsubscribeAgentEvents()
-	}
-
-	// ── Memory manager ────────────────────────────────────────────────
-	// Built-in file-backed provider (MEMORY.md + USER.md) under the
-	// daemon work directory. External providers from config are added
-	// via RegisterExternal when cfg.Memory.Provider is set.
-	var memManager *memory.Manager
-	memProvider, memDir := memoryProvider(cfg.WorkDir, log)
-	if memProvider == nil {
-		log.Error("memory provider init failed", "dir", memDir)
-		return 1
-	}
-	memManager, err = memory.NewManager(memProvider, nil)
-	if err != nil {
-		log.Error("memory manager init failed", "err", err)
-		return 1
-	}
-	// The dashboard is built before memory exists, so it is wired in here
-	// rather than at construction.
-	web.Memory = memManager
-
-	if err := memManager.Initialize("daemon"); err != nil {
-		log.Warn("memory manager initialize", "err", err)
-	}
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := memManager.ShutdownContext(shutdownCtx); err != nil {
-			log.Error("memory manager shutdown", "err", err)
-		}
-	}()
-	log.Info("memory manager started", "dir", memDir)
-
-	// ── Curator engine family ────────────────────────────────────────
-	// The registry owns curator registration, lifecycle and shutdown
-	// ordering. The runtime loop (archie-core-89x) and the reference
-	// curators (archie-core-i7i, gs8) are wired by their issues; until
-	// then the registry is empty and Stop is a no-op. The event sink
-	// rides the in-process bus, whose bounded dropping per-subscriber
-	// buffers guarantee curator activity can never backpressure the
-	// daemon or a chat turn.
-	curatorRegistry := curator.NewRegistry(curator.Registrar{
-		Events: curatorEventSink{bus},
-	})
-	// The runtime owns the per-curator loops (archie-core-89x): one
-	// goroutine per curator, wake nudges, per-pass budgets, panic
-	// recovery, bounded shutdown. Stop order at shutdown: runtime first
-	// (cancels in-flight passes, then stops curator lifecycle), then the
-	// registry's own Stop below, which is a no-op by then.
-	curatorRuntime := curator.NewRuntime(curatorRegistry, curator.RuntimeConfig{})
-	// Primary chat turns wake input-driven curators (archie-core-035):
-	// the forwarder consumes only primary-input kinds, and curator
-	// output never produces them, so derived work cannot feed its own
-	// trigger. The subscriber buffer is bounded and dropping — a slow
-	// curator can never backpressure the chat publisher.
-	curator.WakeOnPrimaryInput(ctx, bus, curatorRuntime, events.KindTurnCompleted)
-	defer func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := curatorRuntime.Stop(stopCtx); err != nil {
-			log.Error("curator runtime shutdown", "err", err)
-		}
-	}()
-	defer func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := curatorRegistry.Stop(stopCtx); err != nil {
-			log.Error("curator registry shutdown", "err", err)
-		}
-	}()
-
-	// ── Guardrail engine ───────────────────────────────────────────────
-	gc := tools.DefaultGuardrailConfig()
-	guardrails := tools.NewGuardrailEngine(gc)
-	log.Info("guardrail engine enabled",
-		"exact_failure_warn", gc.ExactFailureWarnAfter,
-		"same_tool_failure_warn", gc.SameToolFailureWarnAfter,
-		"no_progress_warn", gc.NoProgressWarnAfter,
-	)
-
-	// ── Tool registry ──────────────────────────────────────────────────
-	providerRegistry := toolprovider.NewRegistry(toolReg)
-	if err := providerRegistry.Register(memorytoolprovider.New(memManager)); err != nil {
-		log.Error("memory tool provider registration failed", "err", err)
-		return 1
-	}
-	// Workspace file and shell tools. Registered only when a workspace is
-	// configured: these read, write and execute, so the directory is a
-	// deliberate choice rather than a default.
-	if workspace := cfg.Chat.Workspace; workspace != "" {
-		unrestricted := cfg.Chat.UnrestrictedFilesystem
-		if err := providerRegistry.Register(builtintoolprovider.New(workspace, unrestricted)); err != nil {
-			log.Error("workspace tool provider registration failed", "err", err)
-			return 1
-		}
-		// Logged at the same level either way: which of the two postures is
-		// running is the first thing worth knowing when a file tool refuses a
-		// path, or reaches one it should not have.
-		log.Info("workspace tools enabled",
-			"workspace", workspace, "unrestricted_filesystem", unrestricted)
-	} else {
-		log.Info("workspace tools disabled (chat.workspace is unset)")
-	}
-	for _, srv := range cfg.Tools.MCPServers {
-		provider, err := configuredMCPProvider(srv)
-		if err != nil {
-			log.Warn("mcp tool provider skipped", "name", srv.Name, "err", err)
-			continue
-		}
-		// Optional: an MCP server is a third-party process pulled in at
-		// runtime, and it is exactly the category that is allowed to be
-		// absent. Registering it as required meant one failing npm package
-		// unregistered every builtin tool and exited the daemon, which under
-		// Restart=on-failure is a crash loop that takes chat and the gateway
-		// with it.
-		if err := providerRegistry.RegisterOptional(provider); err != nil {
-			log.Warn("mcp tool provider skipped", "name", srv.Name, "err", err)
-			continue
-		}
-	}
-	if err := capabilityHost.Register(providerRegistry); err != nil {
-		log.Error("tool-provider capability registration failed", "err", err)
-		return 1
-	}
-
-	// Skill catalog → skill_activate tool (progressive disclosure: the
-	// catalog's name+description is always in the tool schema; the full
-	// SKILL.md body loads only when the model activates one).
-	if catalog, err := skill.CatalogRoots(skill.DefaultRoots(cfg.WorkDir, cfg.SkillsDir)...); err != nil {
-		log.Warn("skill catalog load failed", "err", err)
-	} else if entry := skill.ActivateTool(cfg.WorkDir, catalog); entry != nil {
-		if err := toolReg.Register(*entry); err != nil {
-			log.Warn("skill_activate registration failed", "err", err)
-		} else {
-			log.Info("skill catalog registered", "skills", len(catalog))
-		}
-	}
-
-	// Tool results too large to inline are written here. Created once, at
-	// startup: the write failure inside a turn is silent, so without this
-	// every oversized result would quietly fall back to truncation and
-	// spilling would look configured while doing nothing.
-	if spillDir := cfg.Tools.Policy.SpillDir; spillDir != "" {
-		if err := toolLimits(cfg).EnsureSpillDir(); err != nil {
-			log.Warn("tool spill directory unavailable; large results will be truncated instead", "err", err)
-		} else if ws := cfg.Chat.Workspace; ws != "" && !cfg.Chat.UnrestrictedFilesystem && !isWithin(ws, spillDir) {
-			// A spill hands the model a path to read back, and a confined read
-			// tool refuses anything outside the workspace. Outside it, the
-			// spill reference is a dead end and the result is lost rather than
-			// displaced -- worse than truncating in the first place.
-			//
-			// Not a concern when the filesystem is unrestricted: the read tool
-			// can reach the spill wherever it lives.
-			log.Warn("tool spill directory is outside chat.workspace; the model cannot read back what is spilled there",
-				"spill_dir", spillDir, "workspace", ws)
-		}
-	}
-
-	// web_fetch. Registered directly rather than as a tool provider: it has
-	// no process to start or stop, so the provider lifecycle would buy
-	// nothing. Disabled by configuration returns nil and advertises nothing.
-	if entry := webfetch.Tool(webfetch.Config{
-		Enabled:              cfg.Tools.WebFetch.IsEnabled(),
-		Timeout:              cfg.Tools.WebFetch.Timeout.Std(),
-		MaxBytes:             cfg.Tools.WebFetch.MaxBytes,
-		AllowPrivateNetworks: cfg.Tools.WebFetch.AllowPrivateNetworks,
-	}); entry != nil {
-		if err := toolReg.Register(*entry); err != nil {
-			log.Warn("web_fetch registration failed", "err", err)
-		} else {
-			log.Info("web fetch enabled",
-				"allow_private_networks", cfg.Tools.WebFetch.AllowPrivateNetworks)
-		}
-	} else {
-		log.Info("web fetch disabled")
-	}
-
-	// Built-in tools are registered at startup via init(). Tool discovery
-	// via Yaegi is deferred to the container/agent runtime.
-
-	d := &daemon.Daemon{
-		Cfg:             config.NewHolder(cfg),
-		ConnectedNATS:   cfg.NATS,
-		Store:           st,
-		Bus:             bus,
-		Forge:           forgeClient,
-		Trees:           trees,
-		Agent:           agentRunner,
-		Workflows:       registry,
-		CapabilityHost:  capabilityHost,
-		Storage:         storeBackend,
-		Log:             log,
-		CustomStages:    wfeval.Discover,
-		Tasks:           natsClient,
-		ContainerPool:   containerPool,
-		SandboxRequired: sandboxRequired,
-		Memory:          memManager,
-		Guardrails:      guardrails,
-		ToolRegistry:    toolReg,
-		Curators:        curatorRegistry,
-		Identities:      identityRunners,
-		TaskLogs:        taskLogs,
-	}
-	web.TaskStopper = d
-	// web and the daemon must share ONE Holder: a reload swaps d.Cfg and
-	// the dashboard reads the running config from the same snapshot. The
-	// webui Holder seeded in the literal above is replaced here; after
-	// this point /api/config and the daemon can never disagree about the
-	// published config.
-	web.Cfg = d.Cfg
-
-	// publishConfig publishes a config snapshot and its provenance to
-	// both the daemon and the dashboard (they share one Holder). Reload
-	// and the PATCH path both go through it, so the two can never
-	// diverge. currentProvenance (an atomic) is the last published
-	// provenance chain; the PATCH path appends the runtime-overlay
-	// origin to it.
-	publishConfig := func(cfg config.Config, provenance configuration.Provenance) {
-		d.Cfg.Set(cfg)
-		origins := make([]webui.ConfigOrigin, 0, len(provenance.Origins))
-		for _, origin := range provenance.Origins {
-			origins = append(origins, webui.ConfigOrigin{
-				Path: origin.Path, Role: string(origin.Role), Layer: string(origin.Layer), Feature: string(origin.Feature),
-			})
-		}
-		web.SetProvenance(origins)
-	}
-
-	// SIGHUP re-loads the config from disk, layers the runtime overlay,
-	// and republishes it. The reload log warns about changed fields that
-	// require a restart, so an operator never has to read the source to
-	// find out whether their edit took effect. web.LastReload exposes
-	// the outcome to /api/config.
-	reloadController := newReloadController(loader, *cfgPath, *overlayPath, func(doc *configuration.Document) {
-		// Boot merges catalog-discovered providers into cfg before the
-		// Holders are seeded; publishing the raw reloaded document would
-		// drop them from the running config even though the file is
-		// unchanged. Re-apply the same merge (idempotent: a catalog that
-		// failed to load merges to identity).
-		applyModelCatalog(&doc.Config, catalog)
-		old := d.Cfg.Get()
-		currentProvenance.Store(&doc.Provenance)
-		publishConfig(doc.Config, doc.Provenance)
-		if fields := changedNonReloadableFields(old, doc.Config); len(fields) > 0 {
-			log.Warn("config reloaded; some changes require a restart",
-				"fields", fields, "paths", doc.Provenance.Paths())
-		} else {
-			log.Info("config reloaded", "paths", doc.Provenance.Paths())
-		}
-	})
-	if overlayStore != nil {
-		reloadController.WithOverlay(func() (map[string]any, error) { return overlayStore.Snapshot(ctx) })
-	}
-	// LastReload merges the reload controller's outcome with the boot-time
-	// overlay degrade, so /api/config carries both the last reload result
-	// and whether the runtime overlay is in effect at all.
-	web.LastReload = func() config.ReloadStatus {
-		st := reloadController.Status()
-		if p := bootOverlayErr.Load(); p != nil {
-			st.OverlayUnavailable = *p
-		}
-		return st
-	}
-
-	// PATCH /api/config goes through the same publish path as reload:
-	// apply to a deep copy of the published config, validate the
-	// materialised result, persist to the overlay, then publish. It must
-	// never call Set directly from the handler -- web.Cfg is the daemon's
-	// own Holder -- and it decodes into a Clone so a failed validation
-	// cannot mutate the published snapshot's shared maps.
-	web.UpdateConfig = func(ctx context.Context, updates map[string]any) error {
-		if overlayStore == nil {
-			return fmt.Errorf("%w: config overlay is disabled (--no-config-overlay or ARCHIE_SKIP_CONFIG_OVERLAY=1)", webui.ErrConfigUpdateUnavailable)
-		}
-		for key := range updates {
-			if reason, denied := overlay.DeniedKeys[key]; denied {
-				return fmt.Errorf("%w: config key %s is not runtime-tunable: %s", webui.ErrConfigUpdateInvalid, key, reason)
-			}
-		}
-		next := d.Cfg.Get().Clone()
-		if err := applyDottedOverlay(&next, updates); err != nil {
-			return fmt.Errorf("%w: %w", webui.ErrConfigUpdateInvalid, err)
-		}
-		if err := configuration.Validate(&next); err != nil {
-			return fmt.Errorf("%w: %w", webui.ErrConfigUpdateInvalid, err)
-		}
-		for key, value := range updates {
-			data, err := json.Marshal(value)
-			if err != nil {
-				return fmt.Errorf("%w: %w", webui.ErrConfigUpdateInvalid, err)
-			}
-			if err := overlayStore.Set(ctx, key, string(data), "dashboard"); err != nil {
-				return err
-			}
-		}
-		// Provenance gets the runtime-overlay origin, replacing any prior
-		// one so the chain does not grow unboundedly across edits.
-		var kept []configuration.Origin
-		for _, origin := range currentProvenance.Load().Origins {
-			if origin.Path == "config_overlay (runtime)" {
-				continue
-			}
-			kept = append(kept, origin)
-		}
-		prov := configuration.Provenance{Origins: append(kept,
-			configuration.Origin{Path: "config_overlay (runtime)", Role: configuration.RoleMain, Layer: configuration.LayerOverlay})}
-		currentProvenance.Store(&prov)
-		publishConfig(next, prov)
-		bootOverlayErr.Store(nil) // a successful write proves the overlay works again
-		log.Info("config updated from dashboard", "keys", len(updates))
-		return nil
-	}
-
-	// ConfigOverrides lists the dotted keys currently overridden by the
-	// runtime overlay, so the dashboard can mark those rows and offer a
-	// reset. A disabled store reports no overrides.
-	web.ConfigOverrides = func(ctx context.Context) ([]string, error) {
-		if overlayStore == nil {
-			return nil, nil
-		}
-		rows, err := overlayStore.Snapshot(ctx)
-		if err != nil {
-			return nil, err
-		}
-		keys := make([]string, 0, len(rows))
-		for k := range rows {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		return keys, nil
-	}
-
-	// ResetConfig deletes one overlay row and republishes file + remaining
-	// overlay, so a dashboard-created override can be removed without
-	// editing SQL -- and so an operator whose file edit is shadowed by an
-	// override can recover it with one click. The file is resolved and
-	// the target state validated BEFORE the row is deleted, so a broken
-	// file cannot leave the store and the running config disagreeing.
-	web.ResetConfig = func(ctx context.Context, key string) error {
-		if overlayStore == nil {
-			return fmt.Errorf("%w: config overlay is disabled", webui.ErrConfigUpdateUnavailable)
-		}
-		overrides, err := overlayStore.Snapshot(ctx)
-		if err != nil {
-			return err
-		}
-		delete(overrides, key) // the target overlay state after the reset
-		doc, err := loader.Resolve(*cfgPath, *overlayPath)
-		if err != nil {
-			return fmt.Errorf("%w: %w", webui.ErrConfigUpdateInvalid, err)
-		}
-		if len(overrides) > 0 {
-			if doc, err = loader.ApplyOverlay(doc, overrides); err != nil {
-				return fmt.Errorf("%w: %w", webui.ErrConfigUpdateInvalid, err)
-			}
-		}
-		if err := overlayStore.Delete(ctx, key); err != nil {
-			return err
-		}
-		applyModelCatalog(&doc.Config, catalog)
-		currentProvenance.Store(&doc.Provenance)
-		publishConfig(doc.Config, doc.Provenance)
-		bootOverlayErr.Store(nil)
-		log.Info("config key reset to file value", "key", key)
-		return nil
-	}
-
-	reloadCh := make(chan os.Signal, 1)
-	signal.Notify(reloadCh, syscall.SIGHUP)
-	defer signal.Stop(reloadCh)
-	go reloadLoop(ctx, reloadCh, reloadController, log)
-
-	// Give /cancel and /stop a handle on work already in flight. The
-	// controller is built before the daemon exists, so the runtime is
-	// attached here; gateways start further down, after d.Startup, so no
-	// command can arrive before this is wired.
-	chatController.WithRuntime(d)
-
-	defer func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := capabilityHost.Stop(stopCtx); err != nil {
-			log.Error("capability host shutdown", "err", err)
-		}
-	}()
-	if err := capabilityHost.Start(ctx); err != nil {
-		log.Error("capability host startup", "err", err)
-		return 1
-	}
-	// Optional providers that could not start are excluded rather than fatal,
-	// so the only way an operator learns about one is this line.
-	for _, skipped := range providerRegistry.Skipped() {
-		log.Error("tool provider unavailable; archie is running without its tools",
-			"provider", skipped.ID, "err", skipped.Err)
-	}
-
-	if err := d.Startup(ctx); err != nil {
-		log.Error("startup", "err", err)
-		return 1
-	}
-	if err := curatorRuntime.Start(ctx); err != nil {
-		log.Error("curator runtime startup", "err", err)
-	}
-	for _, startGateway := range startGateways {
-		startGateway()
-	}
-
-	if *once {
-		d.Cycle(ctx)
+	} else if exit {
 		return 0
 	}
-	log.Info("archied running", "repos", len(cfg.Repos), "poll", cfg.PollInterval.Std().String(), "label", cfg.Label)
-	if err := d.Run(ctx); err != nil && ctx.Err() == nil {
-		log.Error("daemon exited", "err", err)
+	b.loadCatalog(ctx, *cfgPath)
+	b.setupObservability()
+
+	if err := b.setupBackends(ctx); err != nil {
 		return 1
 	}
-	return 0
+
+	b.setupLLMAndChat(ctx)
+	if !b.setupGateways(ctx, *cfgPath, *overlayPath) {
+		return 1
+	}
+
+	if err := b.buildAgentAndWorkflows(ctx); err != nil {
+		return 1
+	}
+	if err := b.loadPlugins(); err != nil {
+		return 1
+	}
+	if err := b.buildTreesAndIdentities(ctx); err != nil {
+		return 1
+	}
+
+	if err := b.registerNATSRPC(); err != nil {
+		return 1
+	}
+	if err := b.setupMemory(); err != nil {
+		return 1
+	}
+	b.setupCurators(ctx)
+
+	b.setupGuardrails()
+	if err := b.registerTools(); err != nil {
+		return 1
+	}
+	b.registerStandaloneTools()
+	b.buildDaemon()
+	b.wireConfigPublishing(ctx, *cfgPath, *overlayPath)
+	b.installUpdateConfigHandler()
+	b.installConfigHandlers(*cfgPath, *overlayPath)
+
+	if err := b.startServices(ctx); err != nil {
+		return 1
+	}
+	return exitCode(b.runLoop(ctx, *once))
 }
 
 // bootConfigOverlay layers the runtime config overlay over the resolved

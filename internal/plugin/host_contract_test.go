@@ -85,12 +85,28 @@ func TestCapabilityHostContractHasNoGenericCapabilityHooks(t *testing.T) {
 func TestArchiedWiresCapabilityHostLifecycle(t *testing.T) {
 	t.Parallel()
 
-	mainPath := filepath.Join("..", "..", "cmd", "archied", "main.go")
-	source, err := os.ReadFile(mainPath)
+	// The daemon composition lives in cmd/archied, whose wiring is now
+	// split across main.go (driver) and bootstrap.go (phase methods); the
+	// contract reads the whole package so the enforcement survives that
+	// split.
+	archiedDir := filepath.Join("..", "..", "cmd", "archied")
+	var text strings.Builder
+	entries, err := os.ReadDir(archiedDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := string(source)
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+		source, err := os.ReadFile(filepath.Join(archiedDir, entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		text.Write(source)
+		text.WriteString("\n")
+	}
+	wiring := text.String()
 	for _, required := range []string{
 		"plugin.NewHost()",
 		"plugin.AdaptLegacy(",
@@ -99,18 +115,18 @@ func TestArchiedWiresCapabilityHostLifecycle(t *testing.T) {
 		"capabilityHost.Stop(",
 		"CapabilityHost:",
 	} {
-		if !strings.Contains(text, required) {
-			t.Errorf("cmd/archied/main.go does not contain capability-host wiring %q", required)
+		if !strings.Contains(wiring, required) {
+			t.Errorf("cmd/archied does not contain capability-host wiring %q", required)
 		}
 	}
-	before, _, ok := strings.Cut(text, "if err := capabilityHost.Start(")
+	before, _, ok := strings.Cut(wiring, "capabilityHost.Start(")
 	if !ok {
 		t.Fatal("capability host Start call not found")
 	}
 	if !strings.Contains(before, "capabilityHost.Stop(") {
-		t.Error("capability host cleanup must be deferred before Start so failed rollback cleanup is retried")
+		t.Error("capability host cleanup must be registered before Start so failed rollback cleanup is retried")
 	}
-	if strings.Contains(text, "PluginRegistry:") {
+	if strings.Contains(wiring, "PluginRegistry:") {
 		t.Error("daemon composition exposes divergent legacy plugin inventory")
 	}
 }
