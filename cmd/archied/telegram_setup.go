@@ -18,6 +18,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
+	"github.com/samcharles93/archie-core/internal/installtype"
 	"github.com/samcharles93/archie-core/internal/releaseannounce"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -130,8 +131,9 @@ func makeUpdateService(s telegramSetup) *releaseupdate.Service {
 		return nil
 	}
 	updates := &releaseupdate.Service{
-		Catalog:   releaseupdate.CommandCatalog{Command: cfg.Chat.Telegram.UpdateCheckCommand},
-		StatePath: filepath.Join(cfg.WorkDir, "telegram-update-deferrals.json"),
+		Catalog:     releaseupdate.CommandCatalog{Command: cfg.Chat.Telegram.UpdateCheckCommand},
+		StatePath:   filepath.Join(cfg.WorkDir, "telegram-update-deferrals.json"),
+		InstallType: installtype.Type(),
 	}
 	if len(cfg.Chat.Telegram.UpdateInstallCommand) != 0 {
 		updates.Installer = releaseupdate.CommandInstaller{Command: cfg.Chat.Telegram.UpdateInstallCommand}

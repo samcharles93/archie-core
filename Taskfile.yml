@@ -105,7 +105,7 @@ tasks:
       - "{{.BIN_DIR}}/archied"
       - "{{.BIN_DIR}}/archie-agent"
     cmds:
-      - go build -ldflags "-X main.gatewayVersion={{.GATEWAY_VERSION}} -X main.runtimeVersion={{.RUNTIME_VERSION}}" -o {{.BIN_DIR}}/archied ./cmd/archied
+      - go build -ldflags "-X main.gatewayVersion={{.GATEWAY_VERSION}} -X main.runtimeVersion={{.RUNTIME_VERSION}} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" -o {{.BIN_DIR}}/archied ./cmd/archied
       - go build -o {{.BIN_DIR}}/archie-agent ./cmd/archie-agent
 
   test:

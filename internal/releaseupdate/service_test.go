@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/samcharles93/archie-core/internal/installtype"
 )
 
 func TestServiceDefersOnlyTheVersionsShownToThatRecipient(t *testing.T) {
@@ -48,7 +50,7 @@ func TestServiceDefersOnlyTheVersionsShownToThatRecipient(t *testing.T) {
 
 func TestServiceInstallForwardsProgressAndFailure(t *testing.T) {
 	installer := &installerStub{}
-	service := Service{Installer: installer}
+	service := Service{Installer: installer, InstallType: "binary"}
 	var progress []string
 	if err := service.Install(context.Background(), func(message string) { progress = append(progress, message) }); err != nil {
 		t.Fatal(err)
@@ -58,6 +60,37 @@ func TestServiceInstallForwardsProgressAndFailure(t *testing.T) {
 	}
 	if len(progress) != 1 || progress[0] != "Pulling release..." {
 		t.Errorf("progress = %#v", progress)
+	}
+}
+
+// TestServiceInstallRefusesAnUnknownInstallType is the fail-closed guarantee
+// that makes InstallType worth having: a binary the release pipeline never
+// stamped (or a caller that never wired InstallType at all) must not run
+// whatever install command happens to be configured -- there is no way to
+// know, at that point, whether it is even the right kind of update for how
+// this instance was actually deployed.
+func TestServiceInstallRefusesAnUnknownInstallType(t *testing.T) {
+	tests := []struct {
+		name        string
+		installType string
+	}{
+		{"unset InstallType", ""},
+		{"explicit unknown", installtype.Unknown},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			installer := &installerStub{}
+			service := Service{Installer: installer, InstallType: tt.installType}
+
+			err := service.Install(context.Background(), func(string) {})
+
+			if err == nil {
+				t.Fatal("Install() returned nil error, want a refusal")
+			}
+			if installer.called {
+				t.Error("installer was called despite an unknown install type")
+			}
+		})
 	}
 }
 
