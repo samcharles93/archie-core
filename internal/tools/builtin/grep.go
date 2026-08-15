@@ -376,58 +376,66 @@ func grepFallback(ctx context.Context, p GrepParams, searchPath, cwd string, tar
 			}
 		}
 		results = append(results, res...)
-	} else {
-		err = filepath.WalkDir(searchPath, func(walkPath string, d os.DirEntry, err error) error {
-			if err != nil {
-				return nil //nolint:nilerr // intentionally skip inaccessible entries
-			}
-
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-			}
-
-			if d.IsDir() {
-				// Skip hidden directories.
-				if d.Name() != "" && d.Name()[0] == '.' && walkPath != searchPath {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-
-			// Skip hidden files.
-			if d.Name() != "" && d.Name()[0] == '.' {
-				return nil
-			}
-
-			// Include filter.
-			if p.Include != "" {
-				if matched, _ := filepath.Match(p.Include, d.Name()); !matched {
-					return nil
-				}
-			}
-
-			res, err := grepFile(ctx, walkPath, matcher, p.ContextBefore, p.ContextAfter)
-			if err != nil {
-				return nil //nolint:nilerr // intentionally skip files we can't read
-			}
-			for i := range res {
-				res[i].relPath, _ = filepath.Rel(cwd, walkPath)
-				res[i].relPath = filepath.ToSlash(res[i].relPath)
-				if res[i].relPath == "" || res[i].relPath == "." {
-					res[i].relPath = filepath.ToSlash(filepath.Base(walkPath))
-				}
-			}
-			results = append(results, res...)
-			return nil
-		})
-		if err != nil && !errors.Is(err, ctx.Err()) {
-			return "", err
-		}
+	} else if err := grepDirFallback(ctx, searchPath, cwd, p, matcher, &results); err != nil {
+		return "", err
 	}
 
 	return formatGrepResults(results), nil
+}
+
+// grepDirFallback walks searchPath and appends every readable, non-hidden file
+// matching the include filter to results. It skips hidden directories and
+// unreadable files without failing the whole search.
+func grepDirFallback(ctx context.Context, searchPath, cwd string, p GrepParams, matcher func(string) bool, results *[]grepResult) error {
+	err := filepath.WalkDir(searchPath, func(walkPath string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil //nolint:nilerr // intentionally skip inaccessible entries
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		if d.IsDir() {
+			// Skip hidden directories.
+			if d.Name() != "" && d.Name()[0] == '.' && walkPath != searchPath {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// Skip hidden files.
+		if d.Name() != "" && d.Name()[0] == '.' {
+			return nil
+		}
+
+		// Include filter.
+		if p.Include != "" {
+			if matched, _ := filepath.Match(p.Include, d.Name()); !matched {
+				return nil
+			}
+		}
+
+		res, err := grepFile(ctx, walkPath, matcher, p.ContextBefore, p.ContextAfter)
+		if err != nil {
+			return nil //nolint:nilerr // intentionally skip files we can't read
+		}
+		for i := range res {
+			res[i].relPath, _ = filepath.Rel(cwd, walkPath)
+			res[i].relPath = filepath.ToSlash(res[i].relPath)
+			if res[i].relPath == "" || res[i].relPath == "." {
+				res[i].relPath = filepath.ToSlash(filepath.Base(walkPath))
+			}
+		}
+		*results = append(*results, res...)
+		return nil
+	})
+	if err != nil && !errors.Is(err, ctx.Err()) {
+		return err
+	}
+	return nil
 }
 
 // buildMatcher returns a line matcher based on grep parameters.

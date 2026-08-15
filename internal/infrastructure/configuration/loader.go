@@ -80,28 +80,33 @@ func (l *Loader) Resolve(basePath, overlayPath string) (*Document, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: config source %s: %w", ErrUnreadable, basePath, err)
 	}
+	if err := validateOverlayPath(overlayPath, basePath, info.IsDir()); err != nil {
+		return nil, err
+	}
 	if info.IsDir() {
-		if overlayPath != "" {
-			overlayInfo, statErr := os.Stat(overlayPath)
-			if statErr != nil {
-				return nil, fmt.Errorf("%w: config overlay %s: %w", ErrUnreadable, overlayPath, statErr)
-			}
-			if !overlayInfo.IsDir() {
-				return nil, fmt.Errorf("config overlay %s must be a directory when config source %s is a directory", overlayPath, basePath)
-			}
-		}
 		return l.Dir(basePath, overlayPath)
 	}
-	if overlayPath != "" {
-		overlayInfo, statErr := os.Stat(overlayPath)
-		if statErr != nil {
-			return nil, fmt.Errorf("%w: config overlay %s: %w", ErrUnreadable, overlayPath, statErr)
-		}
-		if overlayInfo.IsDir() {
-			return nil, fmt.Errorf("config overlay %s must be a file when config source %s is a file", overlayPath, basePath)
-		}
-	}
 	return l.overlayFile(basePath, overlayPath)
+}
+
+// validateOverlayPath checks that overlayPath, when non-empty, exists and has
+// the same filesystem kind as basePath: a directory overlay for a directory
+// source and a file overlay for a file source.
+func validateOverlayPath(overlayPath, basePath string, baseIsDir bool) error {
+	if overlayPath == "" {
+		return nil
+	}
+	overlayInfo, err := os.Stat(overlayPath)
+	if err != nil {
+		return fmt.Errorf("%w: config overlay %s: %w", ErrUnreadable, overlayPath, err)
+	}
+	if overlayInfo.IsDir() != baseIsDir {
+		if baseIsDir {
+			return fmt.Errorf("config overlay %s must be a directory when config source %s is a directory", overlayPath, basePath)
+		}
+		return fmt.Errorf("config overlay %s must be a file when config source %s is a file", overlayPath, basePath)
+	}
+	return nil
 }
 
 // Overlay loads basePath, then decodes overlayPath into the same value so
