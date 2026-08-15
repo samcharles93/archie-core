@@ -191,7 +191,7 @@ func testRequest() Request {
 
 func TestAgentHelperProcess(t *testing.T) {
 	ctx := t.Context()
-	
+
 	if os.Getenv("GO_WANT_AGENT_HELPER") != "1" {
 		return
 	}
