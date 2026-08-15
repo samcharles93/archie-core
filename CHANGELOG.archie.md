@@ -1,5 +1,9 @@
 # archie-agent changelog
 
+## [1.9.4] - 2026-08-15
+
+- chore: no user-facing changes
+
 ## [1.9.3] - 2026-08-15
 
 - fix(logging): resolve error attrs to their message string, not {}
