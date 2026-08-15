@@ -223,7 +223,11 @@ func TestTurnRunnerRecoversTurnOwnedByPreviousProcess(t *testing.T) {
 	router.Identity = "archie"
 	router.InitSessions(store)
 	turnID := CanonicalTurnID("chat-recover", "source-recover")
-	if _, claim, err := store.(TurnLedger).ClaimTurn(context.Background(), TurnRecord{
+	ledger, ok := store.(TurnLedger)
+	if !ok {
+		t.Fatalf("store is %T, want TurnLedger", store)
+	}
+	if _, claim, err := ledger.ClaimTurn(context.Background(), TurnRecord{
 		TurnID: turnID, SessionID: "chat-recover", SourceID: "source-recover",
 		OwnerID: "previous-process", Status: TurnStatusAccepted,
 	}); err != nil || claim != TurnClaimOwned {

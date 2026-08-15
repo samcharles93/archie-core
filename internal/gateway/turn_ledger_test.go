@@ -20,7 +20,11 @@ func TestTurnLedgerClaimLifecycleIsIdempotent(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				return store.(TurnLedger), func() { _ = store.Close() }
+				ledger, ok := store.(TurnLedger)
+				if !ok {
+					t.Fatalf("store is %T, want TurnLedger", store)
+				}
+				return ledger, func() { _ = store.Close() }
 			},
 		},
 	}
@@ -111,7 +115,11 @@ func TestTurnLedgerReclaimsAcrossProcessOwnersAndRejectsStaleWrites(t *testing.T
 				if err != nil {
 					t.Fatal(err)
 				}
-				return store.(TurnLedger), func() { _ = store.Close() }
+				ledger, ok := store.(TurnLedger)
+				if !ok {
+					t.Fatalf("store is %T, want TurnLedger", store)
+				}
+				return ledger, func() { _ = store.Close() }
 			},
 		},
 	}
@@ -177,7 +185,10 @@ func TestSessionDeleteRemovesTurns(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			store := tt.open(t)
 			t.Cleanup(func() { _ = store.Close() })
-			ledger := store.(TurnLedger)
+			ledger, ok := store.(TurnLedger)
+			if !ok {
+				t.Fatalf("store is %T, want TurnLedger", store)
+			}
 			ctx := context.Background()
 			turn := TurnRecord{
 				TurnID: CanonicalTurnID("session-delete", "source-delete"), SessionID: "session-delete",
@@ -232,7 +243,11 @@ func TestSQLiteTurnLedgerSurvivesReopen(t *testing.T) {
 		t.Fatalf("reopen error = %v", err)
 	}
 	defer func() { _ = reopened.Close() }()
-	got, ok, err := reopened.(TurnLedger).GetTurn(ctx, turn.TurnID)
+	reopenedLedger, ok := reopened.(TurnLedger)
+	if !ok {
+		t.Fatalf("reopened store is %T, want TurnLedger", reopened)
+	}
+	got, ok, err := reopenedLedger.GetTurn(ctx, turn.TurnID)
 	if err != nil || !ok {
 		t.Fatalf("GetTurn() after reopen = %#v, %v, %v", got, ok, err)
 	}

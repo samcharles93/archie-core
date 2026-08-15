@@ -38,16 +38,28 @@ func TestSetGetSnapshotRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got := snap["budgets"].(map[string]any)["max_steps"]; !reflect.DeepEqual(got, float64(12)) {
+	budgets, ok := snap["budgets"].(map[string]any)
+	if !ok {
+		t.Fatalf("budgets = %#v, want map", snap["budgets"])
+	}
+	if got := budgets["max_steps"]; !reflect.DeepEqual(got, float64(12)) {
 		t.Errorf("budgets.max_steps = %#v, want float64(12)", got)
 	}
 	if got := snap["label"]; got != "archie" {
 		t.Errorf("label = %#v, want archie", got)
 	}
-	if got := snap["containers"].(map[string]any)["enabled"]; got != true {
+	containers, ok := snap["containers"].(map[string]any)
+	if !ok {
+		t.Fatalf("containers = %#v, want map", snap["containers"])
+	}
+	if got := containers["enabled"]; got != true {
 		t.Errorf("containers.enabled = %#v, want true", got)
 	}
-	if got := snap["web"].(map[string]any)["listen"]; got != ":8643" {
+	web, ok := snap["web"].(map[string]any)
+	if !ok {
+		t.Fatalf("web = %#v, want map", snap["web"])
+	}
+	if got := web["listen"]; got != ":8643" {
 		t.Errorf("web.listen = %#v, want :8643", got)
 	}
 }
@@ -98,7 +110,14 @@ func TestNestBuildsNestedMaps(t *testing.T) {
 	if err := Nest(root, "a.b.d", "x"); err != nil {
 		t.Fatal(err)
 	}
-	ab := root["a"].(map[string]any)["b"].(map[string]any)
+	a, ok := root["a"].(map[string]any)
+	if !ok {
+		t.Fatalf("root[a] = %#v, want map", root["a"])
+	}
+	ab, ok := a["b"].(map[string]any)
+	if !ok {
+		t.Fatalf("root[a][b] = %#v, want map", a["b"])
+	}
 	if ab["c"] != 1 || ab["d"] != "x" {
 		t.Fatalf("nested map = %#v", root)
 	}
