@@ -470,10 +470,10 @@ func TestWriteSpillSanitisesToolName(t *testing.T) {
 func TestCapPayloadKeepsRunesIntact(t *testing.T) {
 	payload := strings.Repeat("é", 100) // 2 bytes per rune
 
-	for max := 1; max <= 20; max++ {
-		got := CapPayload("read", payload, max, nil)
+	for limit := 1; limit <= 20; limit++ {
+		got := CapPayload("read", payload, limit, nil)
 		if !utf8.ValidString(got) {
-			t.Errorf("max=%d: CapPayload() returned invalid UTF-8: %q", max, got)
+			t.Errorf("limit=%d: CapPayload() returned invalid UTF-8: %q", limit, got)
 		}
 	}
 }

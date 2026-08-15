@@ -316,8 +316,8 @@ func capGrepResult(output string, limit int) Result {
 
 // truncationBoundary returns the largest cut point <= max that does not split
 // a UTF-8 rune.
-func truncationBoundary(s string, max int) int {
-	cut := max
+func truncationBoundary(s string, limit int) int {
+	cut := limit
 	for cut > 0 && !utf8.RuneStart(s[cut]) {
 		cut--
 	}

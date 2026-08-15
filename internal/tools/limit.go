@@ -5,7 +5,7 @@ package tools
 //
 // JSON numbers decode as float64, but a model that emits an integer through
 // a different provider path can arrive as int, so both are accepted.
-func ListLimit(input map[string]any, def, max int) int {
+func ListLimit(input map[string]any, def, maxLimit int) int {
 	var limit int
 	switch v := input["limit"].(type) {
 	case float64:
@@ -16,8 +16,8 @@ func ListLimit(input map[string]any, def, max int) int {
 	if limit <= 0 {
 		return def
 	}
-	if limit > max {
-		return max
+	if limit > maxLimit {
+		return maxLimit
 	}
 	return limit
 }
