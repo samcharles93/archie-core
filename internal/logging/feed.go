@@ -3,6 +3,7 @@ package logging
 import (
 	"context"
 	"log/slog"
+	"reflect"
 	"sync"
 	"sync/atomic"
 )
@@ -170,5 +171,37 @@ func addAttr(fields map[string]any, groups []string, attr slog.Attr) {
 			key = group + "." + key
 		}
 	}
-	fields[key] = attr.Value.Any()
+	fields[key] = attrValue(attr.Value)
+}
+
+// attrValue resolves a slog attr to what Entry.Fields should hold on the
+// wire. Both consumers of FlattenAttrs (SystemLogHandler, FeedHandler)
+// json.Marshal Entry.Fields directly rather than through slog's own JSON
+// handler, so an `error` value must be resolved to its message string here:
+// encoding/json has no Error()-aware special case, and the concrete types
+// behind almost every Go error (errors.errorString, fmt.wrapError, ...) hold
+// only unexported fields, which marshal to `{}` and silently discard the
+// message.
+func attrValue(v slog.Value) any {
+	if v.Kind() == slog.KindAny {
+		if err, ok := v.Any().(error); ok && !isNilError(err) {
+			return err.Error()
+		}
+	}
+	return v.Any()
+}
+
+// isNilError reports whether err is nil in the way that matters before
+// calling Error(): a plain nil interface, or the classic Go footgun where a
+// non-nil interface wraps a nil concrete pointer (var e *T; var err error =
+// e -- err != nil is true). A logging package's whole job is to never be the
+// thing that crashes the process, so this checks for both rather than
+// trusting every Error() method in this module and its dependencies to
+// tolerate a nil receiver.
+func isNilError(err error) bool {
+	if err == nil {
+		return true
+	}
+	rv := reflect.ValueOf(err)
+	return rv.Kind() == reflect.Pointer && rv.IsNil()
 }
