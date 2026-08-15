@@ -1,5 +1,9 @@
 # archied changelog
 
+## [1.9.2] - 2026-08-15
+
+- fix(worktree): force checkout so retry recovers from a dirty worktree
+
 ## [1.9.1] - 2026-08-15
 
 - fix(agentworker): forward workflow events across the NATS worker boundary
