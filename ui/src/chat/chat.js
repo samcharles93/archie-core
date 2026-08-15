@@ -83,6 +83,7 @@ export function chatPage() {
       el("span", spec.description || spec.usage || ""),
     )));
     commandMenu.hidden = false;
+    commandMenu.children[commandSelection]?.scrollIntoView({ block: "nearest" });
   }
 
   function chooseCommand(index) {
