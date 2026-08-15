@@ -1,5 +1,11 @@
 # archie-agent changelog
 
+## [1.9.5] - 2026-08-16
+
+- refactor: decompose the daemon bootstrap into phased wiring (no behaviour change; complexity-driven restructure)
+- refactor(tools): split the read executor and flatten nested config/tool fallback logic to lower complexity
+- fix(tools): avoid predeclared `max` names
+
 ## [1.9.4] - 2026-08-15
 
 - chore: no user-facing changes
