@@ -82,29 +82,10 @@ func makeWriteExecutor(cwd string, mq *MutationQueue, rt *ReadTracker) Executor 
 			// Check for accidental overwrite and enforce read-before-write.
 			// Both checks only apply when the file already exists; new files
 			// are always allowed.
-			var oldContent string
-			if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
-				// Read-before-write: model must have read the file before mutating it.
-				if rt != nil {
-					if err := rt.CheckRead(cwd, p.Path); err != nil {
-						result = Result{Content: err.Error(), IsError: true}
-						return nil
-					}
-				}
-				// Overwrite protection: require explicit opt-in.
-				if !p.Overwrite {
-					result = Result{
-						Content: fmt.Sprintf(
-							"file %q already exists - set overwrite to true to replace it, or use the edit tool for partial changes",
-							path,
-						),
-						IsError: true,
-					}
-					return nil
-				}
-				if data, err := os.ReadFile(path); err == nil {
-					oldContent = string(data)
-				}
+			oldContent, block := checkExistingFile(path, cwd, p.Path, p.Overwrite, rt)
+			if block != nil {
+				result = *block
+				return nil
 			}
 
 			release := mq.Acquire(path)
@@ -136,4 +117,41 @@ func makeWriteExecutor(cwd string, mq *MutationQueue, rt *ReadTracker) Executor 
 
 		return result, nil
 	}
+}
+
+// isRegularFile reports whether path exists and is a regular file. A missing
+// file, a directory, a symlink, or any other non-regular entry returns false,
+// which lets new files skip the overwrite and read-before-write checks.
+func isRegularFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
+}
+
+// checkExistingFile returns the prior content of an existing regular file and,
+// when a write should not proceed, a blocking error result. It enforces the
+// read-before-write rule and overwrite opt-in, returning nil when the file may
+// be written. Non-regular or missing paths return an empty content and no
+// block.
+func checkExistingFile(path, cwd, relPath string, overwrite bool, rt *ReadTracker) (string, *Result) {
+	if !isRegularFile(path) {
+		return "", nil
+	}
+	if rt != nil {
+		if err := rt.CheckRead(cwd, relPath); err != nil {
+			return "", &Result{Content: err.Error(), IsError: true}
+		}
+	}
+	if !overwrite {
+		return "", &Result{
+			Content: fmt.Sprintf(
+				"file %q already exists - set overwrite to true to replace it, or use the edit tool for partial changes",
+				path,
+			),
+			IsError: true,
+		}
+	}
+	if data, err := os.ReadFile(path); err == nil {
+		return string(data), nil
+	}
+	return "", nil
 }
