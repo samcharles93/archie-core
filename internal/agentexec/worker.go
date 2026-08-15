@@ -36,7 +36,7 @@ func serveOne(ctx context.Context, in io.Reader, out io.Writer, newRunner func(I
 	if runner == nil {
 		return fmt.Errorf("agent runner is not configured")
 	}
-	result, runErr := runner.Run(ctx, invocation.Workspace, invocation.Request)
+	result, runErr := runner.Run(ctx, invocation.Workspace, invocation.Request, nil)
 	response := Response{Version: ProtocolVersion, Result: result}
 	if runErr != nil {
 		response.Error = runErr.Error()
@@ -57,6 +57,12 @@ type RunnerFactory func(Providers map[string]Provider, log *slog.Logger) Runner
 // HandleMessage processes one AgentRequestMessage. When msg.Stages is
 // populated and msg.Workflow is set, it runs all stages as a per-task
 // batch. Otherwise it falls back to single-stage execution.
+//
+// It passes a nil ToolCallReporter to every Run call: this path has no
+// TaskContext and therefore no events.Bus to report through. The workflow
+// engine's own AgentStage.Stage().Run (agent.go) is what wires a real
+// reporter into tc.Emit; this entry point predates that and is not reached
+// by workflow.Run.
 func HandleMessage(ctx context.Context, msg AgentRequestMessage, log *slog.Logger, newRunner RunnerFactory) (*AgentResponseEnvelope, error) {
 	runner := newRunner(msg.Providers, log)
 	if runner == nil {
@@ -74,7 +80,7 @@ func HandleMessage(ctx context.Context, msg AgentRequestMessage, log *slog.Logge
 	}
 
 	// Single-stage mode (backward compatible).
-	result, runErr := runner.Run(ctx, msg.Workspace, msg.Request)
+	result, runErr := runner.Run(ctx, msg.Workspace, msg.Request, nil)
 	resp := &AgentResponseEnvelope{
 		Version: msg.Request.Version,
 		Result:  result,
@@ -100,7 +106,7 @@ func runStages(ctx context.Context, runner Runner, msg AgentRequestMessage, chan
 
 	for i, stage := range msg.Stages {
 		log.Info("running stage", "stage", stage.Stage, "batch", fmt.Sprintf("%d/%d", i+1, len(msg.Stages)))
-		result, runErr := runner.Run(ctx, msg.Workspace, stage)
+		result, runErr := runner.Run(ctx, msg.Workspace, stage, nil)
 		if runErr != nil {
 			resp := &AgentResponseEnvelope{
 				Version: stage.Version,

@@ -163,7 +163,7 @@ func TestStageCommitPushDoesNotUseSyntheticIssueForChatNoOp(t *testing.T) {
 
 // alwaysFailingRunner reports the gate as unfixable, so StageBaselineGate
 // falls through to its terminal error without needing a real agent loop.
-var alwaysFailingRunner = agentRunnerFunc(func(context.Context, string, agentexec.Request) (agentexec.Result, error) {
+var alwaysFailingRunner = agentRunnerFunc(func(context.Context, string, agentexec.Request, agentexec.ToolCallReporter) (agentexec.Result, error) {
 	return agentexec.Result{Status: "failed"}, nil
 })
 

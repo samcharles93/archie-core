@@ -9,9 +9,11 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
@@ -20,17 +22,25 @@ type fakeAgentRunner struct {
 	request   agentexec.Request
 	result    agentexec.Result
 	err       error
+	// report is the reporter the caller passed to Run, captured so a test
+	// can invoke it directly and assert on the resulting tc.Emit call.
+	report agentexec.ToolCallReporter
 }
 
-type agentRunnerFunc func(context.Context, string, agentexec.Request) (agentexec.Result, error)
+type agentRunnerFunc func(context.Context, string, agentexec.Request, agentexec.ToolCallReporter) (agentexec.Result, error)
 
-func (f agentRunnerFunc) Run(ctx context.Context, workspace string, req agentexec.Request) (agentexec.Result, error) {
-	return f(ctx, workspace, req)
+func (f agentRunnerFunc) Run(
+	ctx context.Context, workspace string, req agentexec.Request, report agentexec.ToolCallReporter,
+) (agentexec.Result, error) {
+	return f(ctx, workspace, req, report)
 }
 
-func (r *fakeAgentRunner) Run(_ context.Context, workspace string, req agentexec.Request) (agentexec.Result, error) {
+func (r *fakeAgentRunner) Run(
+	_ context.Context, workspace string, req agentexec.Request, report agentexec.ToolCallReporter,
+) (agentexec.Result, error) {
 	r.workspace = workspace
 	r.request = req
+	r.report = report
 	if r.result.Version == 0 {
 		r.result.Version = agentexec.ProtocolVersion
 	}
@@ -83,6 +93,61 @@ func TestAgentStageBuildsExecutionRequestAndAppliesResult(t *testing.T) {
 	}
 }
 
+// TestAgentStageReportsToolCallsOnTheTaskBus pins archie-core-467's
+// task-transcript counterpart: the reporter AgentStage.Stage() passes into
+// tc.Agent.Run must, when invoked, publish a tool_call event onto tc.Bus
+// carrying the tool name and outcome -- otherwise a workflow task's own
+// transcript never shows what its tools actually did, only the chat
+// gateway's interactive turns do.
+func TestAgentStageReportsToolCallsOnTheTaskBus(t *testing.T) {
+	runner := &fakeAgentRunner{result: agentexec.Result{
+		Version: agentexec.ProtocolVersion, Status: agentexec.StatusPassed,
+	}}
+	stage := AgentStage{
+		Name:    "build",
+		Role:    "builder",
+		Mission: func(*TaskContext) string { return "implement the feature" },
+	}.Stage()
+
+	bus := events.NewBus()
+	sub := bus.Subscribe(8)
+	t.Cleanup(sub.Close)
+
+	task := &store.Task{ID: 9, Owner: "acme", Repo: "widget", Attempt: 1}
+	tc := &TaskContext{
+		Task: task, Agent: runner, Dir: "/tmp/workspace", Bus: bus, Log: slog.New(slog.DiscardHandler),
+		Cfg: config.Config{Models: map[string]string{"builder": "provider/model"}},
+	}
+	if err := stage.Run(context.Background(), tc); err != nil {
+		t.Fatal(err)
+	}
+
+	if runner.report == nil {
+		t.Fatal("AgentStage did not pass a ToolCallReporter to Run")
+	}
+	runner.report(agentexec.ToolCallReport{Tool: "read_file", Detail: `"package main"`, Failed: false})
+	runner.report(agentexec.ToolCallReport{Tool: "shell", Detail: "error: exit status 1", Failed: true})
+
+	var got []events.Event
+	for len(got) < 2 {
+		select {
+		case e := <-sub.C:
+			if e.Kind == events.KindToolCall {
+				got = append(got, e)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for tool_call events, got %d", len(got))
+		}
+	}
+
+	if got[0].Stage != "build" || got[0].Data["tool"] != "read_file" || got[0].Detail != `"package main"` || got[0].Data["failed"] != false {
+		t.Fatalf("first tool_call event = %#v", got[0])
+	}
+	if got[1].Data["tool"] != "shell" || got[1].Detail != "error: exit status 1" || got[1].Data["failed"] != true {
+		t.Fatalf("second tool_call event = %#v", got[1])
+	}
+}
+
 func TestAgentStagePersistsReturnedNotes(t *testing.T) {
 	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "archie.db"))
 	if err != nil {
@@ -122,7 +187,7 @@ func TestAgentStagePersistsReturnedNotes(t *testing.T) {
 
 func TestAgentStageDiscardsUnstampedErrorResult(t *testing.T) {
 	task := &store.Task{ID: 1, Attempt: 1, Notes: "existing\n"}
-	runner := agentRunnerFunc(func(context.Context, string, agentexec.Request) (agentexec.Result, error) {
+	runner := agentRunnerFunc(func(context.Context, string, agentexec.Request, agentexec.ToolCallReporter) (agentexec.Result, error) {
 		return agentexec.Result{AppendedNotes: []string{"untrusted"}}, errors.New("worker exited")
 	})
 	stage := AgentStage{

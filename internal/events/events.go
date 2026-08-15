@@ -16,11 +16,17 @@ const (
 	KindStageStart  = "stage_start"
 	KindStageFinish = "stage_finish" // data: duration_ms, error
 	KindAgentFinish = "agent_finish" // data: status, stop_reason, tokens, iterations, model
-	KindParked      = "parked"       // data: reason
-	KindOutcome     = "outcome"      // data: status, detail
-	KindPRMerged    = "pr_merged"
-	KindPRRejected  = "pr_rejected"
-	KindTaskDead    = "task_dead"
+	// KindToolCall marks one completed tool invocation during an agent
+	// stage run (archie-core-467's task-transcript counterpart -- the
+	// interactive chat gateway surfaces its own tool calls separately via
+	// gateway.ToolCallEvent). Only emitted for runners that execute in the
+	// same process as their tools; see agentexec.ToolCallReporter.
+	KindToolCall   = "tool_call" // data: tool, failed
+	KindParked     = "parked"    // data: reason
+	KindOutcome    = "outcome"   // data: status, detail
+	KindPRMerged   = "pr_merged"
+	KindPRRejected = "pr_rejected"
+	KindTaskDead   = "task_dead"
 	// Operator actions taken from the dashboard. Without these an
 	// intervention is recorded in the tasks table but invisible on the
 	// timeline and the activity stream -- the one kind of event most worth

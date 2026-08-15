@@ -15,7 +15,7 @@ import (
 
 func TestSubprocessRunnerRoundTrip(t *testing.T) {
 	req := testRequest()
-	result, err := helperRunner("success").Run(context.Background(), "/workspace", req)
+	result, err := helperRunner("success").Run(context.Background(), "/workspace", req, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +26,7 @@ func TestSubprocessRunnerRoundTrip(t *testing.T) {
 
 func TestSubprocessRunnerReturnsStampedWorkerError(t *testing.T) {
 	req := testRequest()
-	result, err := helperRunner("worker-error").Run(context.Background(), "/workspace", req)
+	result, err := helperRunner("worker-error").Run(context.Background(), "/workspace", req, nil)
 	if err == nil || err.Error() != "provider unavailable" {
 		t.Fatalf("error = %v", err)
 	}
@@ -38,7 +38,7 @@ func TestSubprocessRunnerReturnsStampedWorkerError(t *testing.T) {
 func TestSubprocessRunnerRejectsMalformedAndOversizedOutput(t *testing.T) {
 	for _, behavior := range []string{"malformed", "oversized", "multiple", "mismatched"} {
 		t.Run(behavior, func(t *testing.T) {
-			_, err := helperRunner(behavior).Run(context.Background(), "/workspace", testRequest())
+			_, err := helperRunner(behavior).Run(context.Background(), "/workspace", testRequest(), nil)
 			if err == nil {
 				t.Fatal("Run succeeded")
 			}
@@ -47,7 +47,7 @@ func TestSubprocessRunnerRejectsMalformedAndOversizedOutput(t *testing.T) {
 }
 
 func TestSubprocessRunnerReportsExitDiagnostics(t *testing.T) {
-	_, err := helperRunner("exit").Run(context.Background(), "/workspace", testRequest())
+	_, err := helperRunner("exit").Run(context.Background(), "/workspace", testRequest(), nil)
 	if err == nil || !strings.Contains(err.Error(), "child diagnostic") {
 		t.Fatalf("error = %v", err)
 	}
@@ -56,7 +56,7 @@ func TestSubprocessRunnerReportsExitDiagnostics(t *testing.T) {
 func TestSubprocessRunnerCancelsChild(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	_, err := helperRunner("hang").Run(ctx, "/workspace", testRequest())
+	_, err := helperRunner("hang").Run(ctx, "/workspace", testRequest(), nil)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("error = %v, want deadline exceeded", err)
 	}
@@ -69,7 +69,7 @@ func TestSubprocessRunnerCancellationKillsGrandchildren(t *testing.T) {
 	runner.AdditionalEnv = append(runner.AdditionalEnv, "AGENT_HELPER_MARKER")
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	_, err := runner.Run(ctx, "/workspace", testRequest())
+	_, err := runner.Run(ctx, "/workspace", testRequest(), nil)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("error = %v, want deadline exceeded", err)
 	}
@@ -83,7 +83,7 @@ func TestSubprocessRunnerForwardsOnlyRequestedProvider(t *testing.T) {
 	runner := helperRunner("provider-scope")
 	runner.Environ = append(runner.Environ, "OTHER_KEY=must-not-leak")
 	runner.Providers["other"] = Provider{Class: "openai", APIKeyEnv: "OTHER_KEY"}
-	if _, err := runner.Run(context.Background(), "/workspace", testRequest()); err != nil {
+	if _, err := runner.Run(context.Background(), "/workspace", testRequest(), nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -137,7 +137,7 @@ func TestServeOneWritesStampedExecutionError(t *testing.T) {
 	}
 	var output strings.Builder
 	err = serveOne(context.Background(), strings.NewReader(string(input)), &output, func(Invocation) Runner {
-		return runnerFunc(func(_ context.Context, _ string, req Request) (Result, error) {
+		return runnerFunc(func(_ context.Context, _ string, req Request, _ ToolCallReporter) (Result, error) {
 			return Result{
 				Version: ProtocolVersion, TaskID: req.TaskID, Attempt: req.Attempt,
 				Stage: req.Stage, Status: StatusPassed,
@@ -176,10 +176,10 @@ func helperRunner(behavior string) *SubprocessRunner {
 	}
 }
 
-type runnerFunc func(context.Context, string, Request) (Result, error)
+type runnerFunc func(context.Context, string, Request, ToolCallReporter) (Result, error)
 
-func (f runnerFunc) Run(ctx context.Context, workspace string, req Request) (Result, error) {
-	return f(ctx, workspace, req)
+func (f runnerFunc) Run(ctx context.Context, workspace string, req Request, report ToolCallReporter) (Result, error) {
+	return f(ctx, workspace, req, report)
 }
 
 func testRequest() Request {

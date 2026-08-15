@@ -19,7 +19,10 @@ import (
 
 // Runner executes one autonomous stage against an already prepared workspace.
 type Runner interface {
-	Run(ctx context.Context, workspace string, req Request) (Result, error)
+	// report, when non-nil, is notified once per completed tool call. Only
+	// a runner executing in the same process as its tools (InProcessRunner)
+	// can populate it; others accept and ignore it.
+	Run(ctx context.Context, workspace string, req Request, report ToolCallReporter) (Result, error)
 }
 
 type loopFunc func(context.Context, agentloop.Config) (agentloop.Result, error)
@@ -62,7 +65,7 @@ func NewInProcessRunner(
 // it is not configurable.
 const workspaceToolset = "workspace"
 
-func (r *InProcessRunner) Run(ctx context.Context, workspace string, req Request) (Result, error) {
+func (r *InProcessRunner) Run(ctx context.Context, workspace string, req Request, report ToolCallReporter) (Result, error) {
 	if err := req.Validate(); err != nil {
 		return Result{}, err
 	}
@@ -75,7 +78,9 @@ func (r *InProcessRunner) Run(ctx context.Context, workspace string, req Request
 
 	notes := &memoryNotes{initial: req.Notes}
 	captures := make(map[string][]json.RawMessage)
-	centralTools, err := BuildToolSet(r.tools, r.Limits.Options(workspaceToolset))
+	toolOpts := r.Limits.Options(workspaceToolset)
+	toolOpts.OnToolCall = report
+	centralTools, err := BuildToolSet(r.tools, toolOpts)
 	if err != nil {
 		return Result{}, fmt.Errorf("build central tool set: %w", err)
 	}

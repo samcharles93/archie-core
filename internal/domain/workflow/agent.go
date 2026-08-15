@@ -138,7 +138,7 @@ func (a AgentStage) Stage() Stage {
 			CaptureTools: captureTools,
 			Plugins:      pluginSpecs(tc.SkillPlugins),
 		}
-		res, err := tc.Agent.Run(ctx, tc.Dir, req)
+		res, err := tc.Agent.Run(ctx, tc.Dir, req, tc.toolCallReporter(a.Name))
 
 		// Record guardrail state: on success the guardrail engine checks
 		// no-progress thresholds; on failure it records the error pattern.

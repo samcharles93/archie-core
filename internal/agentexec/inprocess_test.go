@@ -39,7 +39,7 @@ func TestInProcessRunnerMapsRequestAndCapturesOutput(t *testing.T) {
 		Protection:   Protection{Suffixes: []string{"_templ.go"}, Globs: []string{"*_test.go"}},
 		CaptureTools: []CaptureTool{{Name: "decide", Parameters: json.RawMessage(`{"type":"object"}`), MaxCalls: 1}},
 	}
-	got, err := runner.Run(context.Background(), "/workspace", req)
+	got, err := runner.Run(context.Background(), "/workspace", req, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestInProcessRunnerIncludesAvailableCentralTools(t *testing.T) {
 		Stage:   "build",
 		Model:   "provider/model",
 		Mission: "mission",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestInProcessRunnerRejectsInvalidCentralToolSchemas(t *testing.T) {
 		Stage:   "build",
 		Model:   "provider/model",
 		Mission: "mission",
-	})
+	}, nil)
 	if err == nil {
 		t.Fatal("Run() error = nil, want invalid central tool schema error")
 	}
@@ -242,7 +242,7 @@ func TestInProcessRunnerPreservesCallerCancellation(t *testing.T) {
 	}
 	_, err := runner.Run(ctx, "/workspace", Request{
 		Version: ProtocolVersion, TaskID: 1, Attempt: 1, Stage: "build", Model: "provider/model", Mission: "mission",
-	})
+	}, nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run error = %v, want context.Canceled", err)
 	}
