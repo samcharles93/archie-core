@@ -190,6 +190,8 @@ func testRequest() Request {
 }
 
 func TestAgentHelperProcess(t *testing.T) {
+	ctx := t.Context()
+	
 	if os.Getenv("GO_WANT_AGENT_HELPER") != "1" {
 		return
 	}
@@ -227,7 +229,7 @@ func TestAgentHelperProcess(t *testing.T) {
 	case "hang":
 		time.Sleep(10 * time.Second)
 	case "spawn-grandchild":
-		cmd := exec.Command("/bin/sh", "-c", `sleep 0.2; printf survived > "$AGENT_HELPER_MARKER"`)
+		cmd := exec.CommandContext(ctx, "/bin/sh", "-c", `sleep 0.2; printf survived > "$AGENT_HELPER_MARKER"`)
 		cmd.Env = os.Environ()
 		if err := cmd.Start(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
