@@ -9,7 +9,7 @@ COPY . .
 ARG GATEWAY_VERSION=dev
 ARG RUNTIME_VERSION=dev
 RUN CGO_ENABLED=0 go build \
-    -ldflags "-X main.gatewayVersion=${GATEWAY_VERSION} -X main.runtimeVersion=${RUNTIME_VERSION}" \
+    -ldflags "-X main.gatewayVersion=${GATEWAY_VERSION} -X main.runtimeVersion=${RUNTIME_VERSION} -X github.com/samcharles93/archie-core/internal/installtype.buildType=container" \
     -o /usr/local/bin/archied ./cmd/archied/
 # archied is static, but this can't be scratch: in inprocess mode the daemon
 # runs agent tools itself, and the shell tool invokes bash; codesearch shells

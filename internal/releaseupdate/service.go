@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+
+	"github.com/samcharles93/archie-core/internal/installtype"
 )
 
 // Catalog discovers the currently installed and newest available releases.
@@ -75,7 +77,17 @@ type Service struct {
 	Catalog   Catalog
 	Installer Installer
 	StatePath string
-	mu        sync.Mutex
+
+	// InstallType gates Install: it must be a value the release pipeline
+	// actually stamps (see package installtype), never "" or
+	// installtype.Unknown, or Install refuses to run the configured
+	// Installer at all. The composition root wires this from
+	// installtype.Type() -- Service itself never reads that package
+	// directly, so a test can exercise every InstallType without touching
+	// process-wide state.
+	InstallType string
+
+	mu sync.Mutex
 }
 
 func (s *Service) Check(ctx context.Context, recipient int64) (Snapshot, error) {
@@ -138,9 +150,18 @@ func (s *Service) Defer(ctx context.Context, recipient int64, expected Snapshot)
 	return saveDeferrals(s.StatePath, state)
 }
 
+// ErrUnknownInstallType is returned by Install when InstallType is unset or
+// installtype.Unknown -- there is no way to know, without it, whether the
+// configured Installer is even the right kind of update for how this
+// instance was actually deployed.
+var ErrUnknownInstallType = errors.New("refusing to install: install type is unknown")
+
 func (s *Service) Install(ctx context.Context, progress func(string)) error {
 	if s == nil || s.Installer == nil {
 		return errors.New("update installation is not configured")
+	}
+	if s.InstallType == "" || s.InstallType == installtype.Unknown {
+		return ErrUnknownInstallType
 	}
 	return s.Installer.Install(ctx, progress)
 }

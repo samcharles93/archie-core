@@ -164,7 +164,11 @@ fi
 echo "==> Building archied and archie-agent..."
 (
   cd "${SRC_DIR}"
-  go build -o "${ARCHIE_BIN_DIR}/archied" ./cmd/archied
+  # installtype.buildType must be stamped here: an unstamped archied
+  # refuses to self-update (internal/releaseupdate.ErrUnknownInstallType)
+  # rather than guess whether /update's configured install command is
+  # even the right kind of update for a script-built native binary.
+  go build -ldflags "-X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" -o "${ARCHIE_BIN_DIR}/archied" ./cmd/archied
   go build -o "${ARCHIE_BIN_DIR}/archie-agent" ./cmd/archie-agent
 )
 echo "  Installed binaries to ${ARCHIE_BIN_DIR}/"
