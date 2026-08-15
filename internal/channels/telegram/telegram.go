@@ -10,12 +10,14 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/go-telegram/bot"
@@ -694,8 +696,166 @@ func (g *Gateway) isSenderAllowed(userID int64) bool {
 // limit, with room for the continuation marker split adds.
 const messageMaxLen = 4000
 
+// bareGitHubIssueURL identifies the stable part of a GitHub issue or pull
+// request URL. Telegram's URL detector ends a bare link at whitespace, so a
+// streamed URL followed immediately by prose becomes one malformed link. We
+// recognize the numeric issue/PR boundary rather than trying to parse every
+// possible URL, whose path segments can legitimately contain letters.
+var bareGitHubIssueURL = regexp.MustCompile(`(?i)https?://github\.com/[^\s<>()]+/(?:issues|pull)/[0-9]+`)
+
+// normalizeTelegramText preserves a paragraph boundary when a bare GitHub
+// issue or pull-request URL is immediately followed by prose. This is
+// deliberately idempotent because text passes through both the live renderer
+// and the final send/split path.
+func normalizeTelegramText(text string) string {
+	matches := bareGitHubIssueURL.FindAllStringIndex(text, -1)
+	if len(matches) == 0 {
+		return text
+	}
+
+	var b strings.Builder
+	cursor := 0
+	for _, match := range matches {
+		boundaryEnd, ok := telegramURLBoundary(text, match)
+		if !ok {
+			continue
+		}
+		b.WriteString(text[cursor:boundaryEnd])
+		b.WriteString("\n\n")
+		cursor = boundaryEnd
+	}
+	if cursor == 0 {
+		return text
+	}
+	b.WriteString(text[cursor:])
+	return b.String()
+}
+
+// telegramURLBoundary returns the end of the URL or its surrounding Markdown
+// delimiter when prose follows immediately. It refuses to edit a URL in a
+// code span unless the closing delimiter is immediately after it, and avoids
+// treating an alphanumeric URL suffix as prose.
+func telegramURLBoundary(text string, match []int) (int, bool) {
+	start, end := match[0], match[1]
+	boundaryEnd := end
+	if delimiter, inside := markdownCodeDelimiterAt(text, start); inside {
+		if !strings.HasPrefix(text[end:], delimiter) {
+			return 0, false
+		}
+		boundaryEnd += len(delimiter)
+	} else {
+		// A URL inside Markdown link, autolink, or emphasis syntax is
+		// followed by a closing delimiter. Insert after that delimiter,
+		// never inside it, so the rich-message parser keeps the link intact.
+		boundaryEnd = markdownClosingDelimiterEnd(text, start, end)
+	}
+	if boundaryEnd >= len(text) {
+		return 0, false
+	}
+	next, _ := utf8.DecodeRuneInString(text[boundaryEnd:])
+	if unicode.IsSpace(next) {
+		return 0, false
+	}
+	if !unicode.IsLetter(next) {
+		return 0, false
+	}
+	if unicode.IsUpper(next) {
+		return boundaryEnd, true
+	}
+	// Lower-case prose is valid too, but a path suffix such as "123abc"
+	// has no whitespace before it ends. A short look-ahead distinguishes the
+	// two without pretending to parse arbitrary URL grammars.
+	if slices.ContainsFunc([]rune(text[boundaryEnd:]), unicode.IsSpace) {
+		return boundaryEnd, true
+	}
+	return 0, false
+}
+
+func markdownClosingDelimiterEnd(text string, start, end int) int {
+	if boundary, ok := markdownBracketEnd(text, start, end); ok {
+		return boundary
+	}
+	if boundary, ok := markdownEmphasisEnd(text, start, end); ok {
+		return boundary
+	}
+	return end
+}
+
+func markdownBracketEnd(text string, start, end int) (int, bool) {
+	if end >= len(text) || start == 0 {
+		return 0, false
+	}
+	switch text[end] {
+	case ')':
+		if text[start-1] == '(' {
+			return end + 1, true
+		}
+	case '>':
+		if text[start-1] == '<' {
+			return end + 1, true
+		}
+	case ']':
+		if text[start-1] == '[' {
+			return end + 1, true
+		}
+	}
+	return 0, false
+}
+
+func markdownEmphasisEnd(text string, start, end int) (int, bool) {
+	if end >= len(text) {
+		return 0, false
+	}
+	for _, delimiter := range []string{"***", "___", "**", "__", "~~"} {
+		if start >= len(delimiter) &&
+			strings.HasPrefix(text[end:], delimiter) &&
+			text[start-len(delimiter):start] == delimiter {
+			return end + len(delimiter), true
+		}
+	}
+	if start > 0 && ((text[end] == '*' && text[start-1] == '*') ||
+		(text[end] == '_' && text[start-1] == '_')) {
+		return end + 1, true
+	}
+	return 0, false
+}
+
+func markdownCodeDelimiterAt(text string, position int) (string, bool) {
+	var delimiter string
+	for i := 0; i < position; {
+		if text[i] == '\\' {
+			_, size := utf8.DecodeRuneInString(text[i:])
+			i += size
+			if i < position {
+				_, size = utf8.DecodeRuneInString(text[i:])
+				i += size
+			}
+			continue
+		}
+		if text[i] != '`' {
+			_, size := utf8.DecodeRuneInString(text[i:])
+			i += size
+			continue
+		}
+		j := i
+		for j < position && text[j] == '`' {
+			j++
+		}
+		run := text[i:j]
+		switch delimiter {
+		case "":
+			delimiter = run
+		case run:
+			delimiter = ""
+		}
+		i = j
+	}
+	return delimiter, delimiter != ""
+}
+
 func (g *Gateway) sendMessage(ctx context.Context, b *bot.Bot, chatID int64, messageThreadID int, text string) {
-	if len(text) <= messageMaxLen {
+	text = normalizeTelegramText(text)
+	if utf8.RuneCountInString(text) <= messageMaxLen {
 		g.send(ctx, b, chatID, messageThreadID, text, "send message failed")
 		return
 	}
@@ -721,6 +881,7 @@ func (g *Gateway) sendMessage(ctx context.Context, b *bot.Bot, chatID int64, mes
 // treated as "unsupported" rather than fatal: fall back to a plain send so
 // the user still receives the reply, unformatted, instead of silence.
 func (g *Gateway) send(ctx context.Context, b *bot.Bot, chatID int64, messageThreadID int, text, errMsg string) {
+	text = normalizeTelegramText(text)
 	rich := &bot.SendRichMessageParams{
 		ChatID:      chatID,
 		RichMessage: models.InputRichMessage{Markdown: text},
@@ -744,45 +905,30 @@ func (g *Gateway) send(ctx context.Context, b *bot.Bot, chatID int64, messageThr
 }
 
 // splitLongMessage divides text into parts of at most maxLen runes each,
-// preferring to cut on newlines. Bounds are counted in runes, not bytes,
-// and an oversized line is itself cut on rune boundaries  --  slicing by byte
-// offset instead would, for any line containing multi-byte UTF-8 (CJK,
-// emoji, ...), land a cut inside a rune's continuation bytes and produce a
-// part that is not valid UTF-8 on either side of the cut.
+// preferring to cut immediately after a newline. Bounds are counted in
+// runes, not bytes, and every rune is retained, including blank lines and a
+// trailing newline. Preserving those boundaries matters for both Markdown
+// paragraphs and bare URLs that were separated from following prose.
 func splitLongMessage(text string, maxLen int) []string {
-	if utf8.RuneCountInString(text) <= maxLen {
+	text = normalizeTelegramText(text)
+	if maxLen <= 0 || utf8.RuneCountInString(text) <= maxLen {
 		return []string{text}
 	}
-	var parts []string
-	lines := strings.Split(text, "\n")
-	var cur strings.Builder
-	curRunes := 0
-	for _, line := range lines {
-		lineRunes := utf8.RuneCountInString(line)
-		if curRunes+lineRunes+1 > maxLen {
-			if cur.Len() > 0 {
-				parts = append(parts, cur.String())
-				cur.Reset()
-				curRunes = 0
-			}
-			if lineRunes > maxLen {
-				runes := []rune(line)
-				for i := 0; i < len(runes); i += maxLen {
-					end := min(i+maxLen, len(runes))
-					parts = append(parts, string(runes[i:end]))
+
+	runes := []rune(text)
+	parts := make([]string, 0, (len(runes)+maxLen-1)/maxLen)
+	for start := 0; start < len(runes); {
+		end := min(start+maxLen, len(runes))
+		if end < len(runes) {
+			for i := end - 1; i > start; i-- {
+				if runes[i] == '\n' {
+					end = i
+					break
 				}
-				continue
 			}
 		}
-		if cur.Len() > 0 {
-			cur.WriteByte('\n')
-			curRunes++
-		}
-		cur.WriteString(line)
-		curRunes += lineRunes
-	}
-	if cur.Len() > 0 {
-		parts = append(parts, cur.String())
+		parts = append(parts, string(runes[start:end]))
+		start = end
 	}
 	return parts
 }
