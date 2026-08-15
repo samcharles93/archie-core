@@ -274,6 +274,56 @@ of this rule: the generic plugin method set, the shared agent-instruction
 source, and the requirement that engine interfaces have domain behavior plus an
 owning registry or manager.
 
+### Memory engine family
+
+The current memory implementation is an engine family, not a collection of
+independent memory tools. `internal/memory.MemoryProvider` is the typed contract
+for built-in and external providers. It requires a provider name and availability
+check, session initialization, and tool-schema export. Optional capability
+contracts add system-prompt contributions, prefetch, conversation-turn sync,
+tool-call handling, and shutdown. Lifecycle hooks in `internal/memory/lifecycle.go`
+cover turn start, session end and switching, pre-compression, memory writes, and
+delegation.
+
+`internal/memory.Manager` is the owning family manager and the only entry point
+that agent lifecycle code should use. It owns the built-in provider and, in the
+current implementation, permits at most one external provider. It merges schemas
+from available providers, indexes tool ownership, routes calls, validates
+provider configuration through provider-owned schemas, and serializes background
+write synchronization. Providers do not register callbacks or tools directly on
+the daemon.
+
+The manager defines the lifecycle and failure-isolation contract:
+
+- construction starts the bounded background synchronization worker;
+- initialization attempts every active provider and returns the first error only
+after all providers have been attempted;
+- lifecycle hooks are dispatched asynchronously, with provider errors and panics
+recovered so a failing hook cannot interrupt the agent loop;
+- shutdown stops accepting new synchronization work, drains until the caller's
+context deadline, records abandoned work after a timeout, and shuts providers
+down in reverse registration order while still attempting every provider;
+- provider availability is checked before schemas and tool ownership are exposed,
+so an unavailable provider is isolated from normal dispatch rather than taking
+down the family.
+
+A memory backend is not trusted merely because it implements
+`MemoryProvider`. The built-in file-backed provider runs in the daemon's trusted
+process. A third-party backend may run in-process only when the operator has
+explicitly trusted it with daemon privileges. An untrusted or out-of-process
+backend must cross a versioned, scoped protocol owned by the memory manager; if
+confidentiality or integrity depends on process isolation, it must run in a real
+container sandbox. A subprocess boundary alone is not a security boundary, and
+the backend must never receive `*daemon.Daemon`, a service locator, unrestricted
+host files, or credentials by virtue of being a memory provider.
+
+These are the current `internal/memory` contracts and wiring. They do not close
+the OPEN placement, authoritative-record, retrieval, access-enforcement, or
+provenance decisions listed in
+[`docs/architecture/migration-decisions.md`](docs/architecture/migration-decisions.md#5-memory-placement-and-storage),
+nor do they change the four required scopes documented in
+[`docs/architecture/agent-system.md`](docs/architecture/agent-system.md#memory-scopes).
+
 ## Key Design Decisions
 
 1. **Environmental constraints over prompt rules.** The gate, test-file
