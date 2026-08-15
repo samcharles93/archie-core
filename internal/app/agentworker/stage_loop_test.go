@@ -148,13 +148,20 @@ func TestRunMainLoopNaksHandleErrorsAndContinues(t *testing.T) {
 			message := &stageMessageStub{requestErr: errors.New("decode request: invalid"), nakErr: test.nakErr}
 			bus := &stageBusStub{fetches: []stageFetch{{message: message}, {err: errors.New("cancelled"), before: cancel}}}
 			log, output := stageLoopLogger()
-			delay, _ := noDelay(t)
+			delay, delays := noDelay(t)
 			runMainLoopWithDelay(ctx, bus, log, delay)
 			if message.nakCalls != 1 || message.ackCalls != 0 {
 				t.Fatalf("nak/ack = (%d,%d), want (1,0)", message.nakCalls, message.ackCalls)
 			}
 			if got := strings.Contains(output.String(), "nak failed"); got != test.wantNakLog {
 				t.Fatalf("nak failure logged = %v, want %v", got, test.wantNakLog)
+			}
+			// A Nak requests redelivery, so without a backoff the very next
+			// FetchStage hands back the same failing message immediately --
+			// a deterministic failure (e.g. a broken gate) then spins as a
+			// tight log-flooding loop instead of backing off.
+			if len(*delays) != 1 || (*delays)[0] != time.Second {
+				t.Fatalf("delays = %v, want a single %v backoff before refetching a nak'd message", *delays, time.Second)
 			}
 		})
 	}

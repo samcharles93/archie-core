@@ -43,6 +43,11 @@ func runMainLoopWithDelay(ctx context.Context, bus stageBus, log *slog.Logger, d
 			if err := message.Nak(); err != nil {
 				log.Warn("nak failed", "err", err)
 			}
+			// A Nak requests redelivery. Without a backoff, a deterministic
+			// failure (a broken gate, a malformed request) refetches and
+			// fails again immediately, flooding the log with one line per
+			// loop iteration instead of one per genuine retry.
+			delay(time.Second)
 			continue
 		}
 		if err := message.Ack(); err != nil {
