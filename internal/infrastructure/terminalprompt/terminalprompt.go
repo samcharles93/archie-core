@@ -46,7 +46,8 @@ func New(in *os.File, out io.Writer) (*Terminal, error) {
 		return nil, fmt.Errorf(
 			"terminalprompt: %s is not a terminal; archied setup requires an "+
 				"interactive session (input cannot be piped, redirected, or "+
-				"scripted)", in.Name())
+				"scripted)", in.Name(),
+		)
 	}
 	return &Terminal{
 		in:         in,

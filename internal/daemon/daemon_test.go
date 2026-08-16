@@ -1084,6 +1084,7 @@ func (f *recordingForge) React(context.Context, string, string, int, string) err
 }
 
 func (f *recordingForge) VerifyPush(context.Context, string, string) error { panic("unexpected call") }
+
 func (f *recordingForge) LinkBranch(context.Context, string, string, int, string) error {
 	panic("unexpected call")
 }

@@ -305,7 +305,8 @@ func (g *Gateway) launch(ctx context.Context, router *gateway.Router) (*bot.Bot,
 		if err != nil {
 			g.log.Warn("failed to get webhook info", "error", err)
 		} else {
-			g.log.Info("webhook info",
+			g.log.Info(
+				"webhook info",
 				"url", info.URL,
 				"pending_update_count", info.PendingUpdateCount,
 				"last_error_message", info.LastErrorMessage,
@@ -635,7 +636,8 @@ func (g *Gateway) authorizedMessage(ctx context.Context, b *bot.Bot, update *mod
 	if g.isSenderAllowed(update.Message.From.ID) {
 		return update.Message, true
 	}
-	g.log.Warn("message from unauthorized sender",
+	g.log.Warn(
+		"message from unauthorized sender",
 		"user_id", update.Message.From.ID,
 		"username", update.Message.From.Username,
 		"chat_id", update.Message.Chat.ID,

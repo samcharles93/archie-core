@@ -42,13 +42,16 @@ type prCapturingForge struct {
 func (f *prCapturingForge) Comment(context.Context, string, string, int, string) (int64, error) {
 	return 1, nil
 }
+
 func (f *prCapturingForge) CloseIssue(context.Context, string, string, int, string) error { return nil }
+
 func (f *prCapturingForge) CreatePR(_ context.Context, owner, repo, title, head, base, body string) (int, error) {
 	f.prs = append(f.prs, struct{ owner, repo, title, head, base, body string }{owner, repo, title, head, base, body})
 	return 5, nil
 }
 func (f *prCapturingForge) SetStateLabel(context.Context, string, string, int, string, []string) {}
 func (f *prCapturingForge) AcceptInvitations(context.Context) error                              { panic("unexpected call") }
+
 func (f *prCapturingForge) AssignedIssues(context.Context, string, string, string) ([]forge.Issue, error) {
 	panic("unexpected call")
 }
@@ -76,6 +79,7 @@ func (f *prCapturingForge) React(context.Context, string, string, int, string) e
 func (f *prCapturingForge) VerifyPush(context.Context, string, string) error {
 	panic("unexpected call")
 }
+
 func (f *prCapturingForge) LinkBranch(context.Context, string, string, int, string) error { return nil }
 
 type remoteManager struct {

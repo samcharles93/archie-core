@@ -247,7 +247,8 @@ func (g *Gateway) handleApprovalCallback(ctx context.Context, b *bot.Bot, update
 		return
 	}
 
-	g.log.Info("tool approval decision",
+	g.log.Info(
+		"tool approval decision",
 		"action", pa.action, "decision", decision,
 		"recipient", query.From.ID, "username", query.From.Username,
 	)

@@ -53,7 +53,8 @@ func markSafe(ctx context.Context, mountDir string, run gitRunner, log *slog.Log
 
 	out, err := run(ctx, "config", "--global", "--add", "safe.directory", mountDir)
 	if err != nil {
-		log.Warn("git safe.directory config failed  --  gates that shell out to git may fail",
+		log.Warn(
+			"git safe.directory config failed  --  gates that shell out to git may fail",
 			"dir", mountDir,
 			"err", err,
 			"output", strings.TrimSpace(string(out)),

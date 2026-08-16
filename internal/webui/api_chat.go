@@ -127,7 +127,8 @@ func (s *Server) handleChatSessions(w http.ResponseWriter, r *http.Request) {
 func chatCommandSpecs(chat *ChatService) []gateway.CommandSpec {
 	specs := gateway.LocalCommandSpecs()
 	if chat.Dangerous != nil {
-		specs = append(specs,
+		specs = append(
+			specs,
 			gateway.CommandSpec{Command: "/rollback", Description: "Request approval to restore a filesystem checkpoint", Usage: "/rollback [number]"},
 			gateway.CommandSpec{Command: "/stop", Description: "Request approval to terminate a background process", Usage: "/stop <process-name>"},
 			gateway.CommandSpec{Command: "/deny", Description: "Deny a pending dangerous action", Usage: "/deny <action-id>"},

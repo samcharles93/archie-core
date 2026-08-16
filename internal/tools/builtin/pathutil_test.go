@@ -110,7 +110,8 @@ func TestGrepAllowsGoModCache(t *testing.T) {
 
 	tool := NewGrepTool(cwd, nil)
 	res, err := tool.Execute(context.Background(), json.RawMessage(
-		`{"pattern":"Needle","path":`+quote(cache)+`}`), nil)
+		`{"pattern":"Needle","path":`+quote(cache)+`}`,
+	), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -131,7 +132,8 @@ func TestWriteRejectsGoModCache(t *testing.T) {
 
 	tool := NewWriteTool(cwd, nil, NewReadTracker())
 	res, err := tool.Execute(context.Background(), json.RawMessage(
-		`{"path":`+quote(filepath.Join(cache, "evil.go"))+`,"content":"package evil\n"}`), nil)
+		`{"path":`+quote(filepath.Join(cache, "evil.go"))+`,"content":"package evil\n"}`,
+	), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -154,7 +156,8 @@ func TestEditRejectsGoModCache(t *testing.T) {
 	rt.MarkRead(cwd, target)
 	tool := NewEditTool(cwd, nil, rt)
 	res, err := tool.Execute(context.Background(), json.RawMessage(
-		`{"path":`+quote(target)+`,"edits":[{"old_text":"package dep","new_text":"package hacked"}]}`), nil)
+		`{"path":`+quote(target)+`,"edits":[{"old_text":"package dep","new_text":"package hacked"}]}`,
+	), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -148,7 +148,8 @@ func taskListTool(lister ChatTaskLister, identity string) tools.ToolEntry {
 					"type": "integer",
 					"description": fmt.Sprintf(
 						"Maximum tasks to return. Defaults to %d, capped at %d.",
-						defaultTaskListLimit, maxTaskListLimit),
+						defaultTaskListLimit, maxTaskListLimit,
+					),
 				},
 			},
 		},
@@ -259,7 +260,8 @@ func taskLogsTool(reader ChatTaskLogReader, identity string) tools.ToolEntry {
 					"type": "integer",
 					"description": fmt.Sprintf(
 						"Maximum entries to return. Defaults to %d, capped at %d.",
-						defaultTaskLogLimit, maxTaskLogLimit),
+						defaultTaskLogLimit, maxTaskLogLimit,
+					),
 				},
 			},
 			"required": []any{"task_id"},

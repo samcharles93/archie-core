@@ -27,7 +27,8 @@ func line(level, msg string, extra ...string) string {
 }
 
 func TestTailFilters(t *testing.T) {
-	path := writeLog(t,
+	path := writeLog(
+		t,
 		line("INFO", "started", `"component":"daemon"`),
 		line("WARN", "telegram rate limited", `"component":"gateway-telegram"`),
 		line("ERROR", "pull failed", `"component":"container"`),
@@ -175,7 +176,8 @@ func TestDecodeKeepsStructuredFields(t *testing.T) {
 }
 
 func TestComponents(t *testing.T) {
-	path := writeLog(t,
+	path := writeLog(
+		t,
 		line("INFO", "a", `"component":"daemon"`),
 		line("INFO", "b", `"component":"gateway-telegram"`),
 		line("INFO", "c", `"component":"daemon"`),

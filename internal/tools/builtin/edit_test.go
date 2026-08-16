@@ -277,7 +277,8 @@ func TestEdit_NotFoundReportsNearestMatch(t *testing.T) {
 
 	// Same code, wrong indentation on the body line.
 	res, err := tool.Execute(context.Background(), json.RawMessage(
-		`{"path":"f.go","edits":[{"old_text":"func handleCancel() {\n\tdoWork()\n}","new_text":"func handleCancel() { return }"}]}`), nil)
+		`{"path":"f.go","edits":[{"old_text":"func handleCancel() {\n\tdoWork()\n}","new_text":"func handleCancel() { return }"}]}`,
+	), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -313,7 +314,8 @@ func TestEdit_NotFoundWithNoPlausibleMatchStaysGeneric(t *testing.T) {
 	tool := NewEditTool(tmp, NewMutationQueue(), rt)
 
 	res, err := tool.Execute(context.Background(), json.RawMessage(
-		`{"path":"f.go","edits":[{"old_text":"nothing like this exists","new_text":"x"}]}`), nil)
+		`{"path":"f.go","edits":[{"old_text":"nothing like this exists","new_text":"x"}]}`,
+	), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
