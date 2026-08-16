@@ -390,6 +390,22 @@ func daemonWithNATS(t *testing.T) (*Daemon, *store.Store, *arnats.Client) {
 	return d, s, client
 }
 
+func TestRequestTaskRunDoesNotSleepPastReadyDeadline(t *testing.T) {
+	d, _, _ := daemonWithNATS(t)
+	d.TaskRunReadyTimeout = 10 * time.Millisecond
+	d.TaskRunRetryBackoff = time.Second
+
+	start := time.Now()
+	_, err := d.requestTaskRun(context.Background(), 1, nil)
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("requestTaskRun() error = nil, want no responders")
+	}
+	if elapsed >= 200*time.Millisecond {
+		t.Fatalf("requestTaskRun() took %s, want it to stop at the ready deadline", elapsed)
+	}
+}
+
 func TestRunViaAgentParksOnRequestFailure(t *testing.T) {
 	d, s, _ := daemonWithNATS(t)
 	// Bound the no-responders retry window tightly so this test proves
@@ -1066,6 +1082,7 @@ func (f *recordingForge) CreateIssue(context.Context, string, string, string, st
 func (f *recordingForge) React(context.Context, string, string, int, string) error {
 	panic("unexpected call")
 }
+
 func (f *recordingForge) VerifyPush(context.Context, string, string) error { panic("unexpected call") }
 func (f *recordingForge) LinkBranch(context.Context, string, string, int, string) error {
 	panic("unexpected call")

@@ -168,7 +168,9 @@ echo "==> Building archied and archie-agent..."
   # refuses to self-update (internal/releaseupdate.ErrUnknownInstallType)
   # rather than guess whether /update's configured install command is
   # even the right kind of update for a script-built native binary.
-  go build -ldflags "-X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" -o "${ARCHIE_BIN_DIR}/archied" ./cmd/archied
+  GATEWAY_VERSION="$(git describe --tags --match 'archied/v*' 2>/dev/null | sed 's|^archied/v||' || echo dev)"
+  RUNTIME_VERSION="$(git describe --tags --match 'archie/v*' 2>/dev/null | sed 's|^archie/v||' || echo dev)"
+  go build -ldflags "-X main.gatewayVersion=${GATEWAY_VERSION} -X main.runtimeVersion=${RUNTIME_VERSION} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" -o "${ARCHIE_BIN_DIR}/archied" ./cmd/archied
   go build -o "${ARCHIE_BIN_DIR}/archie-agent" ./cmd/archie-agent
 )
 echo "  Installed binaries to ${ARCHIE_BIN_DIR}/"
