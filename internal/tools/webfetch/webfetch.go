@@ -246,7 +246,8 @@ func (c *Client) dialContext(ctx context.Context, network, addr string) (net.Con
 	if len(refused) > 0 {
 		return nil, fmt.Errorf(
 			"refusing to connect to %s: it resolves to the private or loopback address %s, which is where this host's own services live; set tools.web_fetch.allow_private_networks to permit it",
-			host, strings.Join(refused, ", "))
+			host, strings.Join(refused, ", "),
+		)
 	}
 	return nil, fmt.Errorf("could not connect to %s", host)
 }

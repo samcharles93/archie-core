@@ -158,7 +158,8 @@ func (g *Gateway) handleDangerousCallback(ctx context.Context, b *bot.Bot, updat
 	}
 
 	decision, _ := parseDangerousCallback(query.Data)
-	g.log.Info("dangerous command decision",
+	g.log.Info(
+		"dangerous command decision",
 		"command", action.command, "decision", decision,
 		"recipient", query.From.ID, "username", query.From.Username,
 	)

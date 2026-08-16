@@ -47,7 +47,8 @@ func (r *Router) handleDelete(ctx context.Context, msg Message, rest string) (st
 		return fmt.Sprintf(
 			"Refusing to delete on %d characters — this cannot be undone. "+
 				"Give at least %d characters of the session id, or its full id.",
-			len([]rune(ref)), minDeleteRefLen), nil
+			len([]rune(ref)), minDeleteRefLen,
+		), nil
 	}
 
 	// Read the active session before the delete, so the reply can say

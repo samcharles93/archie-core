@@ -773,7 +773,9 @@ func (stubForge) CreatePR(context.Context, string, string, string, string, strin
 }
 func (stubForge) SetStateLabel(context.Context, string, string, int, string, []string) {}
 func (stubForge) LinkBranch(context.Context, string, string, int, string) error        { return nil }
-func (stubForge) AcceptInvitations(context.Context) error                              { panic("unexpected call") }
+
+func (stubForge) AcceptInvitations(context.Context) error { panic("unexpected call") }
+
 func (stubForge) AssignedIssues(context.Context, string, string, string) ([]forge.Issue, error) {
 	panic("unexpected call")
 }
@@ -793,8 +795,11 @@ func (stubForge) PRState(context.Context, string, string, int) (string, error) {
 func (stubForge) CreateIssue(context.Context, string, string, string, string, []string) (int, error) {
 	panic("unexpected call")
 }
+
 func (stubForge) React(context.Context, string, string, int, string) error { panic("unexpected call") }
-func (stubForge) VerifyPush(context.Context, string, string) error         { panic("unexpected call") }
+
+func (stubForge) VerifyPush(context.Context, string, string) error { panic("unexpected call") }
+
 func startEmbeddedNATS(t *testing.T) *server.Server {
 	t.Helper()
 	srv := natssrv.RunRandClientPortServer()
@@ -875,7 +880,9 @@ func (*identityForge) CreatePR(context.Context, string, string, string, string, 
 }
 func (*identityForge) SetStateLabel(context.Context, string, string, int, string, []string) {}
 func (*identityForge) LinkBranch(context.Context, string, string, int, string) error        { return nil }
-func (*identityForge) AcceptInvitations(context.Context) error                              { panic("unexpected") }
+
+func (*identityForge) AcceptInvitations(context.Context) error { panic("unexpected") }
+
 func (*identityForge) AssignedIssues(context.Context, string, string, string) ([]forge.Issue, error) {
 	panic("unexpected")
 }
@@ -895,8 +902,10 @@ func (*identityForge) PRState(context.Context, string, string, int) (string, err
 func (*identityForge) CreateIssue(context.Context, string, string, string, string, []string) (int, error) {
 	panic("unexpected")
 }
+
 func (*identityForge) React(context.Context, string, string, int, string) error { panic("unexpected") }
-func (*identityForge) VerifyPush(context.Context, string, string) error         { panic("unexpected") }
+
+func (*identityForge) VerifyPush(context.Context, string, string) error { panic("unexpected") }
 
 // A container-mode task owned by a non-root identity must have its RPC
 // calls served by that identity's own forge client, never the root's.

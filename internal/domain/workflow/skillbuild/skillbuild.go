@@ -115,7 +115,8 @@ func mergeSkillWorkflows(worktree string, reg workflow.Registry, origins map[str
 		sw := SkillWorkflow{Workflow: entry.Workflow, Dir: entry.Dir}
 		wf, err := BuildWorkflow(worktree, sw)
 		if err != nil {
-			slog.Default().Warn("skipping broken skill workflow",
+			slog.Default().Warn(
+				"skipping broken skill workflow",
 				"workflow", entry.Workflow,
 				"skill", entry.Dir,
 				"err", err,
@@ -126,7 +127,8 @@ func mergeSkillWorkflows(worktree string, reg workflow.Registry, origins map[str
 			// Only warn when TWO SKILLS declare the same workflow name.
 			// Overriding a built-in name is routine  --  don't log.
 			if prevSkill, dup := seenFromSkill[entry.Workflow]; dup {
-				slog.Default().Warn("duplicate workflow name across skills  --  overriding",
+				slog.Default().Warn(
+					"duplicate workflow name across skills  --  overriding",
 					"workflow", entry.Workflow,
 					"skill", entry.Dir,
 					"previous_skill", prevSkill,

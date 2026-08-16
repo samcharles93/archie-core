@@ -85,7 +85,8 @@ func handleSingleStageRequest(
 		return err
 	}
 
-	log.Info("stage complete",
+	log.Info(
+		"stage complete",
 		"task", request.TaskID,
 		"stage", request.Stage,
 		"status", response.Result.Status,

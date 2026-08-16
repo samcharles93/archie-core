@@ -770,7 +770,8 @@ func (b *boot) setupGuardrails() {
 	log := b.log
 	gc := tools.DefaultGuardrailConfig()
 	b.guardrails = tools.NewGuardrailEngine(gc)
-	log.Info("guardrail engine enabled",
+	log.Info(
+		"guardrail engine enabled",
 		"exact_failure_warn", gc.ExactFailureWarnAfter,
 		"same_tool_failure_warn", gc.SameToolFailureWarnAfter,
 		"no_progress_warn", gc.NoProgressWarnAfter,

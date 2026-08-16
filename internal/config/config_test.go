@@ -206,7 +206,8 @@ func TestRepoJSONRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertJSONKeys(t, data,
+	assertJSONKeys(
+		t, data,
 		"owner",
 		"name",
 		"base",

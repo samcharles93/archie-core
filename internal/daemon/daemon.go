@@ -771,7 +771,8 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 			// row that is a second implementation and a second PR for work
 			// already merged.
 			d.closeResolvedIssue(ctx, fg, &t, fmt.Sprintf(
-				"Closed by #%d, merged by archie.", t.PRNumber))
+				"Closed by #%d, merged by archie.", t.PRNumber,
+			))
 			d.Log.Info("PR merged", "repo", t.Owner+"/"+t.Repo, "pr", t.PRNumber)
 			d.emit(events.Event{
 				Kind: events.KindPRMerged, TaskID: t.ID,

@@ -214,7 +214,8 @@ func (s *sqliteSessionStore) ClaimTurn(ctx context.Context, initial TurnRecord) 
 		FROM turns WHERE turn_id = ?`, initial.TurnID).Scan(
 		&turn.TurnID, &turn.SessionID, &turn.SourceID, &turn.Status, &turn.Attempt, &turn.OwnerID,
 		&turn.InputMessageID, &turn.AssistantMessageID, &turn.PartialText,
-		&turn.ResponseText, &turn.Error, &createdMS, &updatedMS)
+		&turn.ResponseText, &turn.Error, &createdMS, &updatedMS,
+	)
 	if errors.Is(err, sql.ErrNoRows) {
 		now := time.Now().UTC()
 		initial.Status = TurnStatusRunning
@@ -253,7 +254,8 @@ func (s *sqliteSessionStore) ClaimTurn(ctx context.Context, initial TurnRecord) 
 			FROM turns WHERE turn_id = ?`, initial.TurnID).Scan(
 			&turn.TurnID, &turn.SessionID, &turn.SourceID, &turn.Status, &turn.Attempt, &turn.OwnerID,
 			&turn.InputMessageID, &turn.AssistantMessageID, &turn.PartialText,
-			&turn.ResponseText, &turn.Error, &createdMS, &updatedMS)
+			&turn.ResponseText, &turn.Error, &createdMS, &updatedMS,
+		)
 	}
 	if err != nil {
 		return TurnRecord{}, "", fmt.Errorf("sessionstore: read turn: %w", err)
@@ -343,7 +345,8 @@ func (s *sqliteSessionStore) GetTurn(ctx context.Context, turnID string) (TurnRe
 		FROM turns WHERE turn_id = ?`, turnID).Scan(
 		&turn.TurnID, &turn.SessionID, &turn.SourceID, &turn.Status, &turn.Attempt, &turn.OwnerID,
 		&turn.InputMessageID, &turn.AssistantMessageID, &turn.PartialText,
-		&turn.ResponseText, &turn.Error, &createdMS, &updatedMS)
+		&turn.ResponseText, &turn.Error, &createdMS, &updatedMS,
+	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return TurnRecord{}, false, nil
 	}
@@ -417,7 +420,8 @@ func (s *sqliteSessionStore) ListRecoverableTurns(ctx context.Context) ([]TurnRe
 		if err := rows.Scan(
 			&turn.TurnID, &turn.SessionID, &turn.SourceID, &turn.Status, &turn.Attempt, &turn.OwnerID,
 			&turn.InputMessageID, &turn.AssistantMessageID, &turn.PartialText,
-			&turn.ResponseText, &turn.Error, &createdMS, &updatedMS); err != nil {
+			&turn.ResponseText, &turn.Error, &createdMS, &updatedMS,
+		); err != nil {
 			return nil, fmt.Errorf("sessionstore: scan recoverable turn: %w", err)
 		}
 		turn.CreatedAt = time.UnixMilli(createdMS).UTC()
