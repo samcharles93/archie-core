@@ -1,5 +1,9 @@
 # archie-agent changelog
 
+## [1.9.6] - 2026-08-16
+
+- chore: no user-facing changes
+
 ## [1.9.5] - 2026-08-16
 
 - refactor: decompose the daemon bootstrap into phased wiring (no behaviour change; complexity-driven restructure)
