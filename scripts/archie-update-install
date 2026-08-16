@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# archie-update-install -- update installation adapter for archied's /update.
+#
+# archied runs this via CommandInstaller after the operator approves, and
+# captures CombinedOutput, so everything printed here reaches the chat on
+# failure. It is exec'd directly, without a shell.
+#
+# The restart is queued through a separate transient systemd unit. The
+# installer is a child of archied.service; restarting that unit directly
+# would make systemd kill this process before CommandInstaller can observe a
+# successful exit.
+set -euo pipefail
+
+REPO="${ARCHIE_REPO_DIR:-$HOME/projects/archie-core}"
+BIN_DIR="${ARCHIE_BIN_DIR:-$HOME/.local/bin}"
+export PATH="/usr/local/go/bin:$PATH"
+
+cd "$REPO"
+echo "==> fetching"
+git pull --ff-only
+
+GW="$(git describe --tags --match 'archied/v*' | sed 's|^archied/v||')"
+RT="$(git describe --tags --match 'archie/v*'  | sed 's|^archie/v||')"
+echo "==> building archied $GW / archie-agent $RT"
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+go build -ldflags "-X main.gatewayVersion=$GW -X main.runtimeVersion=$RT -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" \
+  -o "$tmp/archied" ./cmd/archied
+go build -o "$tmp/archie-agent" ./cmd/archie-agent
+
+echo "==> installing"
+install -m755 "$tmp/archied"      "$BIN_DIR/archied"
+install -m755 "$tmp/archie-agent" "$BIN_DIR/archie-agent"
+
+echo "==> rebuilding agent image"
+docker compose build agent
+
+echo "==> restarting (queued in a separate transient unit)"
+systemd-run --user --unit=archied-update-restart --collect --quiet \
+  /usr/bin/systemctl --user restart --no-block archied.service
+echo "update applied: archied $GW, archie-agent $RT"

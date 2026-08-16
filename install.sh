@@ -172,8 +172,9 @@ echo "==> Building archied and archie-agent..."
   RUNTIME_VERSION="$(git describe --tags --match 'archie/v*' 2>/dev/null | sed 's|^archie/v||' || echo dev)"
   go build -ldflags "-X main.gatewayVersion=${GATEWAY_VERSION} -X main.runtimeVersion=${RUNTIME_VERSION} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" -o "${ARCHIE_BIN_DIR}/archied" ./cmd/archied
   go build -o "${ARCHIE_BIN_DIR}/archie-agent" ./cmd/archie-agent
+  install -m755 "${SRC_DIR}/scripts/archie-update-install" "${ARCHIE_BIN_DIR}/archie-update-install"
 )
-echo "  Installed binaries to ${ARCHIE_BIN_DIR}/"
+echo "  Installed binaries and updater to ${ARCHIE_BIN_DIR}/"
 
 # 5. Interactive Configuration: Forge & LLM Provider Setup
 if [ ! -f "${ENV_FILE}" ]; then
