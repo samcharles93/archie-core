@@ -1096,10 +1096,14 @@ func (d *Daemon) requestTaskRun(ctx context.Context, taskID int64, data []byte) 
 		if !errors.Is(err, eventbus.ErrNoResponders) || !time.Now().Before(deadline) {
 			return nil, err
 		}
+		wait := min(backoff, time.Until(deadline))
+		if wait <= 0 {
+			return nil, err
+		}
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(backoff):
+		case <-time.After(wait):
 		}
 	}
 }
