@@ -221,6 +221,26 @@ func (p *Pool) Acquire(ctx context.Context, mounts []storage.Mount, env []string
 	return &Container{ID: resp.ID}, nil
 }
 
+// releaseDecision reports how Release should tear a container down: whether
+// to honour the configured post-completion grace period, and what Docker
+// stop timeout to request (nil means the container's configured timeout or
+// the engine default; a non-nil zero means stop immediately with SIGKILL,
+// skipping the graceful SIGTERM wait).
+//
+// A cancelled ctx means the release is happening because the task was
+// stopped, not because it finished -- /stop is an emergency brake, so
+// neither the grace period (meant for a task that completed on its own and
+// might get a follow-up) nor a graceful stop (meant to let a healthy
+// process wind down) apply. A still-live ctx is a normal completion, so
+// both keep their existing meaning.
+func releaseDecision(ctx context.Context, grace time.Duration) (honorGrace bool, stopTimeout *int) {
+	if ctx.Err() != nil {
+		zero := 0
+		return false, &zero
+	}
+	return grace > 0, nil
+}
+
 // Release stops and removes a container after a task completes. If
 // GracePeriod is configured, the container stays alive for that duration
 // before being killed  --  the agent can handle follow-ups (gate re-runs,
@@ -229,8 +249,8 @@ func (p *Pool) Release(ctx context.Context, c *Container) {
 	if c == nil {
 		return
 	}
-	// Honour the post-completion grace period.
-	if p.cfg.GracePeriod > 0 {
+	honorGrace, stopTimeout := releaseDecision(ctx, p.cfg.GracePeriod)
+	if honorGrace {
 		p.log.Info("container keeping alive for grace period", "id", c.ID[:12], "grace", p.cfg.GracePeriod)
 		time.Sleep(p.cfg.GracePeriod)
 	}
@@ -244,7 +264,7 @@ func (p *Pool) Release(ctx context.Context, c *Container) {
 	stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 
-	if _, err := p.cli.ContainerStop(stopCtx, c.ID, client.ContainerStopOptions{}); err != nil {
+	if _, err := p.cli.ContainerStop(stopCtx, c.ID, client.ContainerStopOptions{Timeout: stopTimeout}); err != nil {
 		p.log.Warn("container stop failed", "id", c.ID[:12], "err", err)
 	}
 	if _, err := p.cli.ContainerRemove(context.WithoutCancel(ctx), c.ID, client.ContainerRemoveOptions{Force: true}); err != nil {

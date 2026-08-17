@@ -1,6 +1,7 @@
 package container
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -47,6 +48,61 @@ func TestContainerSupportsGracePeriod(t *testing.T) {
 	// The container should stay alive for cfg.GracePeriod after
 	// the task completes, then be killed.
 	_ = cfg.GracePeriod
+}
+
+// ── regression: /stop must not wait out a grace period or a graceful
+// SIGTERM timeout it never asked for ─────────────────────────────────────
+
+// TestReleaseDecisionSkipsGracePeriodWhenCancelled: /stop cancels the
+// task's context before Release runs. A container being torn down because
+// it was cancelled must not sit through a configured post-completion grace
+// period meant for normal follow-ups (gate re-runs, human replies) -- that
+// window is for a task that finished on its own, not one that was killed.
+func TestReleaseDecisionSkipsGracePeriodWhenCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	honorGrace, timeout := releaseDecision(ctx, 5*time.Minute)
+
+	if honorGrace {
+		t.Error("a cancelled release must not honour the grace period")
+	}
+	if timeout == nil || *timeout != 0 {
+		t.Errorf("a cancelled release must stop immediately (Timeout 0), got %v", timeout)
+	}
+}
+
+// TestReleaseDecisionHonoursGracePeriodOnNormalCompletion: a task that
+// finished on its own (ctx still live) with a configured grace period
+// should keep the behaviour PRD section 1 describes -- stay alive for
+// follow-ups, then stop gracefully.
+func TestReleaseDecisionHonoursGracePeriodOnNormalCompletion(t *testing.T) {
+	ctx := context.Background()
+
+	honorGrace, timeout := releaseDecision(ctx, 5*time.Minute)
+
+	if !honorGrace {
+		t.Error("normal completion with a configured grace period must honour it")
+	}
+	if timeout != nil {
+		t.Errorf("normal completion must use the default graceful stop timeout, got %v", timeout)
+	}
+}
+
+// TestReleaseDecisionNoGracePeriodConfigured: no grace period configured
+// (the zero value, and the only value ever wired in production today) must
+// never sleep, on a live or cancelled context alike.
+func TestReleaseDecisionNoGracePeriodConfigured(t *testing.T) {
+	ctx := context.Background()
+
+	honorGrace, timeout := releaseDecision(ctx, 0)
+
+	if honorGrace {
+		t.Error("a zero grace period must never be honoured")
+	}
+	if timeout != nil {
+		t.Errorf("normal completion must use the default graceful stop timeout, got %v", timeout)
+	}
 }
 
 func TestWriteTaskJSONProducesValidFile(t *testing.T) {
