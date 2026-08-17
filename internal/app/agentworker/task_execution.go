@@ -3,7 +3,11 @@ package agentworker
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strconv"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
@@ -34,6 +38,14 @@ type hybridTrees struct {
 	owner, repo string
 	issue       int
 	localDir    string
+	// worktreeUID and worktreeGID are the daemon's own host UID/GID
+	// (WORKTREE_UID/WORKTREE_GID, set by containerEnv), or -1 when unset.
+	// The agent runs as root inside the container, so a commit it writes
+	// to the bind-mounted worktree lands owned by UID 0 on the host; Push
+	// reconciles ownership back to the daemon's UID before handing off,
+	// since the daemon -- running as its own non-root host user -- is the
+	// one that reads those objects to actually push (archie-core#520).
+	worktreeUID, worktreeGID int
 }
 
 func (h *hybridTrees) Prepare(ctx context.Context, owner, repo, base string, issue int, title, body, labels string) (dir, branch string, err error) {
@@ -49,6 +61,11 @@ func (h *hybridTrees) CommitAll(ctx context.Context, dir, message string) (bool,
 }
 
 func (h *hybridTrees) Push(ctx context.Context, dir, branch string) error {
+	if h.worktreeUID >= 0 && h.worktreeGID >= 0 {
+		if err := chownTree(dir, h.worktreeUID, h.worktreeGID); err != nil {
+			return fmt.Errorf("reconcile worktree ownership before push: %w", err)
+		}
+	}
 	return h.push.Push(ctx, h.owner, h.repo, h.issue, branch)
 }
 
@@ -65,6 +82,39 @@ func (h *hybridTrees) ChangedLines(ctx context.Context, dir, base string) (int, 
 }
 
 var _ workflow.Trees = (*hybridTrees)(nil)
+
+// chownTree recursively chowns dir to uid:gid so the daemon -- running as
+// its own host user -- can read loose objects the agent committed as root
+// inside the container.
+//
+// Lchown, not Chown: a repo can legitimately track a symlink whose target
+// doesn't exist inside the container (a relative link outside the
+// checkout, or to a tool the image doesn't ship). Chown follows the link
+// and fails on a dangling target, which would abort a push that would
+// otherwise have succeeded -- worse than the permission error this is
+// fixing. Lchown changes the link itself and never touches the target.
+func chownTree(dir string, uid, gid int) error {
+	return filepath.WalkDir(dir, func(path string, _ fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		return os.Lchown(path, uid, gid)
+	})
+}
+
+// worktreeOwnerID parses a WORKTREE_UID/WORKTREE_GID environment value,
+// returning -1 (unset/unconfigured) when it is empty or not a valid
+// non-negative integer.
+func worktreeOwnerID(env string) int {
+	if env == "" {
+		return -1
+	}
+	id, err := strconv.Atoi(env)
+	if err != nil || id < 0 {
+		return -1
+	}
+	return id
+}
 
 type taskDependencies struct {
 	forge  workflow.Forger
@@ -85,12 +135,14 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 	wf := workflow.Route(req.Task, registry)
 
 	trees := &hybridTrees{
-		push:     dependencies.trees,
-		local:    &worktree.Manager{WorkDir: workDir},
-		owner:    req.Task.Owner,
-		repo:     req.Task.Repo,
-		issue:    req.Task.IssueNumber,
-		localDir: workDir,
+		push:        dependencies.trees,
+		local:       &worktree.Manager{WorkDir: workDir},
+		owner:       req.Task.Owner,
+		repo:        req.Task.Repo,
+		issue:       req.Task.IssueNumber,
+		localDir:    workDir,
+		worktreeUID: worktreeOwnerID(os.Getenv("WORKTREE_UID")),
+		worktreeGID: worktreeOwnerID(os.Getenv("WORKTREE_GID")),
 	}
 
 	// Start MCP providers and build a local tool registry.

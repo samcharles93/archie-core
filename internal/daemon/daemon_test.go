@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"slices"
@@ -323,6 +324,30 @@ func TestContainerEnvIncludesConfiguredNATSCredentials(t *testing.T) {
 	for _, want := range []string{
 		"NATS_URL=nats://nats.example:4222",
 		"NATS_TOKEN=test-nats-token",
+	} {
+		if !slices.Contains(got, want) {
+			t.Errorf("containerEnv() = %q, want %q", got, want)
+		}
+	}
+}
+
+// TestContainerEnvIncludesWorktreeOwnership: the agent process inside a
+// container runs as root (no USER in the Dockerfile, no userns-remap), so
+// commits it writes to the bind-mounted worktree land owned by UID 0 on the
+// host. The daemon then reads those same loose objects to push, running as
+// its own non-root host user -- a UID mismatch that surfaces as
+// "openat objects/../..: permission denied" (archie-core#520). Passing the
+// daemon's own UID/GID lets the agent chown the worktree back before
+// pushing.
+func TestContainerEnvIncludesWorktreeOwnership(t *testing.T) {
+	d := &Daemon{
+		Cfg: config.NewHolder(config.Config{}),
+	}
+
+	got := d.containerEnv(nil)
+	for _, want := range []string{
+		fmt.Sprintf("WORKTREE_UID=%d", os.Getuid()),
+		fmt.Sprintf("WORKTREE_GID=%d", os.Getgid()),
 	} {
 		if !slices.Contains(got, want) {
 			t.Errorf("containerEnv() = %q, want %q", got, want)

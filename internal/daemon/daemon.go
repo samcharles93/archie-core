@@ -1120,6 +1120,15 @@ func (d *Daemon) containerEnv(task *store.Task) []string {
 			env = append(env, "NATS_TOKEN="+token)
 		}
 	}
+	// The agent process runs as root inside the container (no USER in the
+	// Dockerfile, no userns-remap), so a commit it writes to the bind-mounted
+	// worktree lands owned by UID 0 on the host. The daemon then reads those
+	// same loose objects to push, running as its own non-root host user --
+	// archie-core#520's "permission denied" on .git/objects. Passing the
+	// daemon's own UID/GID lets the agent chown the worktree back to it
+	// before pushing.
+	env = append(env, fmt.Sprintf("WORKTREE_UID=%d", os.Getuid()))
+	env = append(env, fmt.Sprintf("WORKTREE_GID=%d", os.Getgid()))
 	for _, p := range d.configFor(task).Providers {
 		if p.APIKeyEnv != "" {
 			if v := os.Getenv(p.APIKeyEnv); v != "" {

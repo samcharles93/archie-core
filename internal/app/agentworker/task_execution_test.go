@@ -28,6 +28,152 @@ import (
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
 )
 
+// ── regression: archie-core#520  --  worktree ownership must be
+// reconciled before push, since the agent commits as root inside the
+// container and the daemon reads those same loose objects as its own
+// non-root host user ──────────────────────────────────────────────────
+
+type fakePushTrees struct {
+	pushed  bool
+	pushErr error
+}
+
+func (f *fakePushTrees) Prepare(context.Context, string, string, string, int, string, string, string) (string, string, error) {
+	panic("unexpected call")
+}
+
+func (f *fakePushTrees) Push(context.Context, string, string, int, string) error {
+	f.pushed = true
+	return f.pushErr
+}
+
+func TestWorktreeOwnerIDParsesEnvValue(t *testing.T) {
+	cases := []struct {
+		name string
+		env  string
+		want int
+	}{
+		{"unset", "", -1},
+		{"zero is a valid uid (root)", "0", 0},
+		{"typical non-root uid", "1000", 1000},
+		{"garbage falls back to unset", "not-a-number", -1},
+		{"negative falls back to unset", "-1", -1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := worktreeOwnerID(c.env); got != c.want {
+				t.Errorf("worktreeOwnerID(%q) = %d, want %d", c.env, got, c.want)
+			}
+		})
+	}
+}
+
+// TestHybridTreesPushReconcilesOwnershipWhenConfigured chowns to the test
+// process's own uid/gid -- a permission no-op that succeeds without root --
+// so this proves the walk runs and still reaches the underlying push,
+// without needing privilege to chown to an arbitrary owner.
+func TestHybridTreesPushReconcilesOwnershipWhenConfigured(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sub", "nested.txt"), []byte("y"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fake := &fakePushTrees{}
+	trees := &hybridTrees{
+		push:        fake,
+		localDir:    dir,
+		worktreeUID: os.Getuid(),
+		worktreeGID: os.Getgid(),
+	}
+
+	if err := trees.Push(t.Context(), dir, "branch"); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	if !fake.pushed {
+		t.Fatal("Push did not reach the underlying remote push")
+	}
+}
+
+// TestHybridTreesPushReconcilesOwnershipWithDanglingSymlink: a repo can
+// legitimately track a symlink whose target doesn't exist inside the
+// container (e.g. a relative link to something outside the checkout, or to
+// a tool the image doesn't ship). Chowning must not follow it -- a
+// following chown fails on a dangling target, which would abort a push
+// that would otherwise have succeeded, a regression worse than the bug
+// being fixed here.
+func TestHybridTreesPushReconcilesOwnershipWithDanglingSymlink(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Symlink(filepath.Join(dir, "does-not-exist"), filepath.Join(dir, "broken-link")); err != nil {
+		t.Fatal(err)
+	}
+
+	fake := &fakePushTrees{}
+	trees := &hybridTrees{
+		push:        fake,
+		localDir:    dir,
+		worktreeUID: os.Getuid(),
+		worktreeGID: os.Getgid(),
+	}
+
+	if err := trees.Push(t.Context(), dir, "branch"); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	if !fake.pushed {
+		t.Fatal("Push did not reach the underlying remote push")
+	}
+}
+
+// TestHybridTreesPushSkipsReconciliationWhenNotConfigured: an unset
+// WORKTREE_UID/GID (archie-core's non-container and test callers) must not
+// attempt any chown at all -- a nonexistent dir would otherwise fail the
+// walk, so this proves the walk is skipped entirely, not just tolerant of
+// this one input.
+func TestHybridTreesPushSkipsReconciliationWhenNotConfigured(t *testing.T) {
+	fake := &fakePushTrees{}
+	trees := &hybridTrees{
+		push:        fake,
+		localDir:    filepath.Join(t.TempDir(), "does-not-exist"),
+		worktreeUID: -1,
+		worktreeGID: -1,
+	}
+
+	if err := trees.Push(t.Context(), trees.localDir, "branch"); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	if !fake.pushed {
+		t.Fatal("Push did not reach the underlying remote push")
+	}
+}
+
+// TestHybridTreesPushSurfacesOwnershipReconciliationFailure: a configured
+// but broken reconciliation (the dir push is asked to fix vanished) must
+// fail loudly rather than forward to a push that will only fail later with
+// a much more confusing git-internal permission error.
+func TestHybridTreesPushSurfacesOwnershipReconciliationFailure(t *testing.T) {
+	fake := &fakePushTrees{}
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+	trees := &hybridTrees{
+		push:        fake,
+		localDir:    missing,
+		worktreeUID: os.Getuid(),
+		worktreeGID: os.Getgid(),
+	}
+
+	err := trees.Push(t.Context(), missing, "branch")
+	if err == nil {
+		t.Fatal("expected an error reconciling ownership of a missing directory")
+	}
+	if fake.pushed {
+		t.Fatal("Push must not reach the underlying remote push when reconciliation fails")
+	}
+}
+
 type panicRunner struct{ t *testing.T }
 
 func (r panicRunner) Run(context.Context, string, agentexec.Request, agentexec.ToolCallReporter) (agentexec.Result, error) {
