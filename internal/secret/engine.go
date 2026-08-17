@@ -118,7 +118,10 @@ func (r *Registry) Resolve(ref SecretRef) (string, error) {
 // extraSymbols are additional Yaegi symbol tables made available to
 // interpreted code. Callers should pass secretextract.Symbols so that
 // interpreted types can satisfy the secret.Engine interface across the
-// Yaegi/Go boundary.
+// Yaegi/Go boundary, and enginehost.Symbols so plugins can run CLIs with
+// a real host environment (yaegi's interpreted os/exec cannot pass env
+// to children). See cmd/archied/provider_secrets.go for the production
+// wiring.
 func (r *Registry) LoadDir(dir string, extraSymbols ...map[string]map[string]reflect.Value) (int, error) {
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
@@ -146,7 +149,11 @@ func (r *Registry) LoadDir(dir string, extraSymbols ...map[string]map[string]ref
 		}
 		// Each file is package main  --  must use a fresh interpreter to
 		// avoid symbol collisions between files.
-		i, err := yaegiutil.New(interp.Options{}, extraSymbols...)
+		// The interpreter is seeded with the host environment: yaegi's
+		// interpreted os package keeps a private env otherwise, so
+		// plugins reading SOPS_FILE/VAULT_*/AGE_* via os.Getenv would
+		// silently see nothing.
+		i, err := yaegiutil.New(interp.Options{Env: os.Environ()}, extraSymbols...)
 		if err != nil {
 			slog.Default().Warn("skipping secret engine  --  interpreter setup failed", "file", name, "err", err)
 			continue
