@@ -238,6 +238,7 @@ func TestLiveReplyToolCallSnapshotIsRaceFreeDuringReload(t *testing.T) {
 		live.ToolCall(toolEvent("shell", "ok", ""))
 	}
 	wg.Wait()
+	live.flushRendering()
 }
 
 func TestLiveReplyToolCalls(t *testing.T) {
