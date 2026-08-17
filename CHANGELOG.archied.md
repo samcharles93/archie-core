@@ -1,5 +1,9 @@
 # archied changelog
 
+## [1.9.9] - 2026-08-18
+
+- fix(telegram): drain live renderer in concurrency test
+
 ## [1.9.8] - 2026-08-17
 
 - chore: no user-facing changes

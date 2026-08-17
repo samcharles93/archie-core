@@ -1,5 +1,9 @@
 # archie-agent changelog
 
+## [1.9.9] - 2026-08-18
+
+- chore: no user-facing changes
+
 ## [1.9.8] - 2026-08-17
 
 - chore: no user-facing changes
