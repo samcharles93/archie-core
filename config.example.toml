@@ -3,9 +3,13 @@
 #
 # Secrets are NOT stored here: each one is a {engine, key}
 # reference resolved through a secrets engine at startup.
-# The built-in "env" engine reads key as an environment variable name.
-# Custom engines (sops, bws, vault/openbao, ...) 
-# are Yaegi plugins loaded from a directory -- see internal/secret.
+# The built-in "env" engine reads key as an environment variable name;
+# "bws" (Bitwarden Secrets Manager) is compiled in. Custom engines are
+# Yaegi plugins loaded from this directory -- reference implementations
+# for sops, vault/openbao and age ship in examples/secret-engines/ and
+# each needs its CLI on PATH plus engine-specific env (sops: SOPS_FILE;
+# vault: VAULT_ADDR, VAULT_TOKEN, optional VAULT_SECRET_PATH;
+# age: AGE_FILE, AGE_IDENTITY).
 # secret_engine_dir = "~/.config/archie/secret-engines"
 
 # work_dir = "~/.local/share/archie/work"   # default

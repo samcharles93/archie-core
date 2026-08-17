@@ -7,15 +7,24 @@ import (
 	"os"
 	"strings"
 
+	"github.com/traefik/yaegi/stdlib/unrestricted"
+
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/secret"
+	"github.com/samcharles93/archie-core/internal/secret/enginehost"
 	"github.com/samcharles93/archie-core/internal/secret/secretextract"
 )
 
 func configuredSecretRegistry(cfg *config.Config, log *slog.Logger) (*secret.Registry, error) {
 	registry := secret.NewRegistry()
 	if cfg.SecretEngineDir != "" {
-		loaded, err := registry.LoadDir(cfg.SecretEngineDir, secretextract.Symbols)
+		// Secret engines are operator-authored code in the same trust
+		// domain as the daemon config, and the shipped engines run CLIs
+		// (sops, vault, age). They shell out through enginehost.Run (the
+		// host-side helper) because yaegi's interpreted os/exec cannot
+		// pass an environment to child processes; unrestricted symbols
+		// are included for parity with skillscript interpretation.
+		loaded, err := registry.LoadDir(cfg.SecretEngineDir, secretextract.Symbols, enginehost.Symbols, unrestricted.Symbols)
 		if err != nil {
 			return nil, fmt.Errorf("load secret engines from %q: %w", cfg.SecretEngineDir, err)
 		}
