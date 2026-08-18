@@ -1,5 +1,9 @@
 # archied changelog
 
+## [1.9.11] - 2026-08-19
+
+- fix(mcp): persist npx package cache across daemon restarts
+
 ## [1.9.10] - 2026-08-19
 
 - feat(update): `/update` now streams live progress while an update installs, reports a clear version summary (previous/installed, daemon/agent) once the build succeeds, and automatically rolls back and reports the outcome if the restarted daemon fails its post-update health check
