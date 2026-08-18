@@ -114,7 +114,14 @@ class = "ollama"
 # update_check_command = ["/usr/local/bin/archie-update-check"]
 # update_install_command = ["/usr/local/bin/archie-update-install"]
 
-# External MCP tools are launched and managed by Archie's MCP client.
+# External MCP tools are launched and managed by Archie's MCP client. A
+# command of "npx" gets a persistent package cache under work_dir
+# (top of this file) automatically, so a daemon restart reuses it instead
+# of re-resolving and re-downloading the package from the npm registry
+# every time. This does not cover a package's own separate downloads (e.g.
+# a Playwright/Puppeteer-based server fetching a browser binary from a CDN
+# via its postinstall script) -- consult that package's own env vars for
+# those.
 # [[tools.mcp_servers]]
 # name = "desktop-commander"
 # transport = "stdio"
