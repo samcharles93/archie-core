@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -362,7 +363,7 @@ func TestConfiguredMCPProviderSupportsAllTransportTypes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			provider, err := configuredMCPProvider(tt.server)
+			provider, err := configuredMCPProvider(tt.server, t.TempDir())
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("configuredMCPProvider() error = %v, wantErr %t", err, tt.wantErr)
 			}
@@ -374,6 +375,82 @@ func TestConfiguredMCPProviderSupportsAllTransportTypes(t *testing.T) {
 			}
 			if got := provider.Manifest().ID; got != tt.wantID {
 				t.Fatalf("Manifest().ID = %q, want %q", got, tt.wantID)
+			}
+		})
+	}
+}
+
+// TestNpmCacheServerEnvPersistsCacheAcrossRestarts: config.docker.toml
+// launched an MCP server with `npx -y @pkg@version`, and the container has
+// no persistent npm cache, so every daemon restart re-resolved and
+// re-downloaded the package (and its dependency tree) from the registry --
+// slow, and it turns a registry outage or yanked version into a daemon
+// outage. It amplified the crash loop observed on 2026-07-30, since each
+// restart repeated the whole download. Pointing NPM_CONFIG_CACHE at the
+// daemon's own persistent work dir means the second and later starts hit a
+// warm cache regardless of whether the daemon itself runs in an ephemeral
+// container. NPM_CONFIG_PREFER_OFFLINE keeps npm from making a registry
+// round trip at all when the cache already has what it needs.
+func TestNpmCacheServerEnvPersistsCacheAcrossRestarts(t *testing.T) {
+	cases := []struct {
+		name    string
+		command string
+		workDir string
+		want    []string
+	}{
+		{
+			name:    "npx gets a persistent cache under the daemon's work dir",
+			command: "npx",
+			workDir: "/var/lib/archie",
+			want: []string{
+				"NPM_CONFIG_CACHE=/var/lib/archie/mcp-npm-cache",
+				"NPM_CONFIG_PREFER_OFFLINE=true",
+			},
+		},
+		{
+			name:    "a non-npx command has no npm registry dependency to fix",
+			command: "/usr/local/bin/my-mcp-server",
+			workDir: "/var/lib/archie",
+			want:    nil,
+		},
+		{
+			name:    "empty command is left alone (configuredMCPProvider rejects it separately)",
+			command: "",
+			workDir: "/var/lib/archie",
+			want:    nil,
+		},
+		{
+			// This repo's own config.example.toml uses absolute paths for
+			// other daemon-launched commands (update_check_command,
+			// update_install_command), so an operator pinning npx the same
+			// way must still get the fix -- an exact "npx" match would
+			// silently skip it with no error, leaving the original bug in
+			// place unnoticed.
+			name:    "an absolute path to npx still gets the persistent cache",
+			command: "/usr/local/bin/npx",
+			workDir: "/var/lib/archie",
+			want: []string{
+				"NPM_CONFIG_CACHE=/var/lib/archie/mcp-npm-cache",
+				"NPM_CONFIG_PREFER_OFFLINE=true",
+			},
+		},
+		{
+			// workDir is unconditionally defaulted before this ever runs
+			// in production, but filepath.Join silently accepts an empty
+			// string -- defend explicitly rather than trust that
+			// invariant here too, matching memoryProvider's own guard
+			// against the same possibility.
+			name:    "an empty workDir is refused rather than caching into the daemon's CWD",
+			command: "npx",
+			workDir: "",
+			want:    nil,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := npmCacheServerEnv(c.command, c.workDir)
+			if !slices.Equal(got, c.want) {
+				t.Errorf("npmCacheServerEnv(%q, %q) = %v, want %v", c.command, c.workDir, got, c.want)
 			}
 		})
 	}
