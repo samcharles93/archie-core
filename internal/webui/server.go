@@ -208,7 +208,22 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/chat/dangerous/{id}/decision", s.handleChatDangerousDecision)
 	mux.HandleFunc("GET /events", s.handleSSE)
 	mux.Handle("GET /", s.assets())
-	return s.requireToken(mux)
+
+	top := http.NewServeMux()
+	top.HandleFunc("GET /healthz", s.handleHealthz)
+	top.Handle("/", s.requireToken(mux))
+	return top
+}
+
+// handleHealthz is a liveness probe for local, unauthenticated callers --
+// most notably the update watchdog script, which polls it after restarting
+// archied to decide whether the new version came up or the update needs to
+// be rolled back (see scripts/archie-update-watchdog). It deliberately
+// bypasses requireToken: the token protects the dashboard from remote
+// access, not this process's own local restart tooling.
+func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ok"))
 }
 
 // assets serves the embedded dashboard, falling back to index.html so client

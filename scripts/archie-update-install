@@ -2,20 +2,36 @@
 # archie-update-install -- update installation adapter for archied's /update.
 #
 # archied runs this via CommandInstaller after the operator approves, and
-# captures CombinedOutput, so everything printed here reaches the chat on
-# failure. It is exec'd directly, without a shell.
+# streams stdout to the chat live as each line is printed. The final line is
+# a single "ARCHIE_UPDATE_RESULT {json}" the Go side parses to report which
+# components changed; every other line is shown as plain progress text. It
+# is exec'd directly, without a shell.
 #
-# The restart is queued through a separate transient systemd unit. The
-# installer is a child of archied.service; restarting that unit directly
-# would make systemd kill this process before CommandInstaller can observe a
-# successful exit.
+# This script only covers the synchronous phase: fetch, build, install,
+# rebuild the agent image. Nothing here restarts archied directly -- that is
+# handed off to archie-update-watchdog, launched detached via systemd-run so
+# restarting archied.service doesn't kill this process before it can report
+# a clean exit. The watchdog is also the only place a crash-loop on the new
+# binary gets detected and rolled back, since by definition no Go code can
+# be running to do that itself.
 set -euo pipefail
+
+# json_escape minimally escapes a string for embedding in a JSON document
+# built by shell interpolation: backslashes first (so the quote-escaping
+# backslash it inserts next isn't itself re-escaped), then double quotes.
+json_escape() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
 
 REPO="${ARCHIE_REPO_DIR:-$HOME/projects/archie-core}"
 BIN_DIR="${ARCHIE_BIN_DIR:-$HOME/.local/bin}"
 export PATH="/usr/local/go/bin:$PATH"
 
 cd "$REPO"
+
+PREV_GW="$(git describe --tags --match 'archied/v*' 2>/dev/null | sed 's|^archied/v||' || echo unknown)"
+PREV_RT="$(git describe --tags --match 'archie/v*'  2>/dev/null | sed 's|^archie/v||'  || echo unknown)"
+
 echo "==> fetching"
 git pull --ff-only
 
@@ -30,6 +46,10 @@ go build -ldflags "-X main.gatewayVersion=$GW -X main.runtimeVersion=$RT -X gith
   -o "$tmp/archied" ./cmd/archied
 go build -o "$tmp/archie-agent" ./cmd/archie-agent
 
+echo "==> backing up current binaries"
+[ -f "$BIN_DIR/archied" ]      && cp -f "$BIN_DIR/archied"      "$BIN_DIR/archied.prev"
+[ -f "$BIN_DIR/archie-agent" ] && cp -f "$BIN_DIR/archie-agent" "$BIN_DIR/archie-agent.prev"
+
 echo "==> installing"
 install -m755 "$tmp/archied"      "$BIN_DIR/archied"
 install -m755 "$tmp/archie-agent" "$BIN_DIR/archie-agent"
@@ -37,7 +57,27 @@ install -m755 "$tmp/archie-agent" "$BIN_DIR/archie-agent"
 echo "==> rebuilding agent image"
 docker compose build agent
 
-echo "==> restarting (queued in a separate transient unit)"
+echo "==> handing off to the update watchdog for restart and health verification"
 systemd-run --user --unit=archied-update-restart --collect --quiet \
-  /usr/bin/systemctl --user restart --no-block archied.service
-echo "update applied: archied $GW, archie-agent $RT"
+  --setenv=ARCHIE_BIN_DIR="$BIN_DIR" \
+  --setenv=ARCHIE_HEALTH_URL="${ARCHIE_HEALTH_URL:-http://127.0.0.1:8420}" \
+  --setenv=ARCHIE_UPDATE_REPORT_PATH="${ARCHIE_UPDATE_REPORT_PATH:-}" \
+  --setenv=ARCHIE_UPDATE_CHANNEL="${ARCHIE_UPDATE_CHANNEL:-}" \
+  --setenv=ARCHIE_UPDATE_CHAT_ID="${ARCHIE_UPDATE_CHAT_ID:-0}" \
+  --setenv=ARCHIE_UPDATE_THREAD_ID="${ARCHIE_UPDATE_THREAD_ID:-0}" \
+  --setenv=ARCHIE_UPDATE_PREVIOUS_GATEWAY="$PREV_GW" \
+  --setenv=ARCHIE_UPDATE_PREVIOUS_RUNTIME="$PREV_RT" \
+  --setenv=ARCHIE_UPDATE_INSTALLED_GATEWAY="$GW" \
+  --setenv=ARCHIE_UPDATE_INSTALLED_RUNTIME="$RT" \
+  "$REPO/scripts/archie-update-watchdog"
+
+daemon_status="updated"
+[ "$PREV_GW" = "$GW" ] && daemon_status="unchanged"
+agent_status="updated"
+[ "$PREV_RT" = "$RT" ] && agent_status="unchanged"
+
+esc_prev_gw="$(json_escape "$PREV_GW")"
+esc_prev_rt="$(json_escape "$PREV_RT")"
+esc_gw="$(json_escape "$GW")"
+esc_rt="$(json_escape "$RT")"
+echo "ARCHIE_UPDATE_RESULT {\"previous\":{\"daemon\":\"$esc_prev_gw\",\"agent\":\"$esc_prev_rt\"},\"installed\":{\"daemon\":\"$esc_gw\",\"agent\":\"$esc_rt\"},\"components\":[{\"id\":\"daemon\",\"label\":\"daemon\",\"status\":\"$daemon_status\"},{\"id\":\"agent\",\"label\":\"agent\",\"status\":\"$agent_status\"}],\"restart_requested\":true}"

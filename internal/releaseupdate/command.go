@@ -1,11 +1,20 @@
 package releaseupdate
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strconv"
+	"strings"
 )
+
+// updateResultSentinel prefixes the one line an install command may print to
+// report its structured Result. Every other line is forwarded to progress
+// as-is.
+const updateResultSentinel = "ARCHIE_UPDATE_RESULT "
 
 // CommandCatalog reads a Snapshot JSON document from an explicitly configured
 // argv command. It never invokes a shell; deployment tooling remains an
@@ -29,13 +38,58 @@ func (c CommandCatalog) Check(ctx context.Context) (Snapshot, error) {
 
 type CommandInstaller struct{ Command []string }
 
-func (i CommandInstaller) Install(ctx context.Context, progress func(string)) error {
+// Install runs the configured command and streams its stdout to progress
+// line by line as the command emits it -- the earlier CombinedOutput-based
+// version buffered everything until exit, so callers saw nothing until the
+// whole update either finished or failed. One stdout line may be a
+// structured Result instead of prose; see updateResultSentinel.
+func (i CommandInstaller) Install(ctx context.Context, meta InstallMeta, progress func(string)) (Result, error) {
 	if len(i.Command) == 0 {
-		return fmt.Errorf("update install command is empty")
+		return Result{}, fmt.Errorf("update install command is empty")
 	}
-	progress("Installing approved update…")
-	if output, err := exec.CommandContext(ctx, i.Command[0], i.Command[1:]...).CombinedOutput(); err != nil {
-		return fmt.Errorf("run update installer: %w: %s", err, string(output))
+	cmd := exec.CommandContext(ctx, i.Command[0], i.Command[1:]...)
+	cmd.Env = append(cmd.Environ(),
+		"ARCHIE_UPDATE_CHANNEL="+meta.Channel,
+		"ARCHIE_UPDATE_CHAT_ID="+strconv.FormatInt(meta.ChatID, 10),
+		"ARCHIE_UPDATE_THREAD_ID="+strconv.Itoa(meta.ThreadID),
+		"ARCHIE_UPDATE_REPORT_PATH="+meta.ReportPath,
+	)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return Result{}, fmt.Errorf("open update installer stdout: %w", err)
 	}
-	return nil
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Start(); err != nil {
+		return Result{}, fmt.Errorf("start update installer: %w", err)
+	}
+
+	var result Result
+	var resultErr error
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if rest, ok := strings.CutPrefix(line, updateResultSentinel); ok {
+			if err := json.Unmarshal([]byte(rest), &result); err != nil {
+				resultErr = fmt.Errorf("decode update installer result: %w", err)
+			}
+			continue
+		}
+		progress(line)
+	}
+	if err := scanner.Err(); err != nil {
+		resultErr = fmt.Errorf("read update installer output: %w", err)
+	}
+
+	waitErr := cmd.Wait()
+	if waitErr != nil {
+		return result, fmt.Errorf("run update installer: %w: %s", waitErr, stderr.String())
+	}
+	if resultErr != nil {
+		return result, resultErr
+	}
+	return result, nil
 }

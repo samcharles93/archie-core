@@ -35,7 +35,7 @@ type ChatService struct {
 type ChatUpdateService interface {
 	Check(context.Context, int64) (releaseupdate.Snapshot, error)
 	Defer(context.Context, int64, releaseupdate.Snapshot) error
-	Install(context.Context, func(string)) error
+	Install(context.Context, releaseupdate.InstallMeta, func(string)) (releaseupdate.Result, error)
 	CanInstall() bool
 }
 
@@ -494,12 +494,12 @@ func (s *Server) handleChatUpdateInstall(w http.ResponseWriter, r *http.Request)
 	}()
 
 	progress := make([]string, 0, 4)
-	err = chat.Updates.Install(r.Context(), func(message string) { progress = append(progress, message) })
+	result, err := chat.Updates.Install(r.Context(), releaseupdate.InstallMeta{Channel: "webui"}, func(message string) { progress = append(progress, message) })
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	writeJSON(w, map[string]any{"ok": true, "progress": progress})
+	writeJSON(w, map[string]any{"ok": true, "progress": progress, "result": result})
 }
 
 func (s *Server) handleChatDangerousState(w http.ResponseWriter, r *http.Request) {

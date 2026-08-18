@@ -95,6 +95,7 @@ func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), o
 			{ID: "runtime", Label: "THE RUNTIME", Version: runtimeVersion, ChangelogPath: packagedRuntimeChangelogPath},
 		},
 	}
+	tg.UpdateReportPath = updateReportPath(cfg.WorkDir, cfg.BotUser)
 	tg.Reload = makeTelegramReload(s)
 
 	sessionStore := s.SessionStore
