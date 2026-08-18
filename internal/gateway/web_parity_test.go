@@ -14,8 +14,10 @@ func (parityUpdateStub) Check(context.Context, int64) (releaseupdate.Snapshot, e
 	return releaseupdate.Snapshot{Components: []releaseupdate.Component{{ID: "gateway", Label: "THE GATEWAY", Installed: "v1", Available: "v2"}}}, nil
 }
 func (parityUpdateStub) Defer(context.Context, int64, releaseupdate.Snapshot) error { return nil }
-func (parityUpdateStub) Install(context.Context, func(string)) error                { return nil }
-func (parityUpdateStub) CanInstall() bool                                           { return true }
+func (parityUpdateStub) Install(context.Context, releaseupdate.InstallMeta, func(string)) (releaseupdate.Result, error) {
+	return releaseupdate.Result{}, nil
+}
+func (parityUpdateStub) CanInstall() bool { return true }
 
 type parityDangerousStub struct{ decisions []string }
 

@@ -815,6 +815,18 @@ func releaseAnnouncementStatePath(workDir, identity string) string {
 	)
 }
 
+// updateReportPath is where the update watchdog leaves the phase-2 outcome
+// of an update for this identity to relay on its next launch. Hashed the
+// same way as releaseAnnouncementStatePath so multiple identities sharing
+// one daemon (see docs/architecture/identity.md) never collide.
+func updateReportPath(workDir, identity string) string {
+	identityHash := sha256.Sum256([]byte(identity))
+	return filepath.Join(
+		workDir,
+		fmt.Sprintf("update-report-%x.json", identityHash[:8]),
+	)
+}
+
 // safePluginInfo calls Name() and Version() on a plugin, recovering from
 // panics. A panicking plugin must not crash the daemon at startup.
 func safePluginInfo(p plugin.Plugin) (name, version string) {

@@ -274,6 +274,21 @@ func TestHandleIndex(t *testing.T) {
 	}
 }
 
+// TestHealthzIsReachableWithoutAToken: the update watchdog script polls
+// this endpoint from the local host after restarting archied, with no
+// dashboard session -- it must never require the dashboard token, unlike
+// every other route.
+func TestHealthzIsReachableWithoutAToken(t *testing.T) {
+	srv := newTestServer(t)
+	srv.Token = "dashboard-secret"
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/healthz", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %q", w.Code, w.Body.String())
+	}
+}
+
 // TestHandleSSEEventsSinceError proves that handleSSE does not silently
 // discard an error from EventsSince.  Today the handler has no else
 // branch for err != nil, so the error is swallowed and the client

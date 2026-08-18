@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/installtype"
 )
@@ -24,8 +25,11 @@ type Catalog interface {
 
 // Installer applies an approved update. It reports only work it has actually
 // started; callers remain responsible for telling users the final result.
+// The returned Result covers only the synchronous phase (fetch/build/
+// install) -- whether a subsequent restart actually came up healthy is
+// reported later, out of band, via a Report (see pending_report.go).
 type Installer interface {
-	Install(context.Context, func(string)) error
+	Install(context.Context, InstallMeta, func(string)) (Result, error)
 }
 
 type Component struct {
@@ -87,7 +91,8 @@ type Service struct {
 	// process-wide state.
 	InstallType string
 
-	mu sync.Mutex
+	mu         sync.Mutex
+	installing bool
 }
 
 func (s *Service) Check(ctx context.Context, recipient int64) (Snapshot, error) {
@@ -156,14 +161,53 @@ func (s *Service) Defer(ctx context.Context, recipient int64, expected Snapshot)
 // instance was actually deployed.
 var ErrUnknownInstallType = errors.New("refusing to install: install type is unknown")
 
-func (s *Service) Install(ctx context.Context, progress func(string)) error {
+// ErrInstallInProgress is returned by Install when another install is
+// already running. Telegram and the web dashboard each keep their own
+// local "already in progress" flag for a quick UI response, but both are
+// wired to the same Service in production -- this is the one guard that
+// actually sees both, since a caller-local bool would let one adapter start
+// a second install while the other's is still copying binaries.
+var ErrInstallInProgress = errors.New("an update is already in progress")
+
+// installTimeout bounds an install after it has been deliberately detached
+// from the caller's context (see below) -- otherwise a hung installer
+// script would hold the in-progress lock forever.
+const installTimeout = 30 * time.Minute
+
+// Install runs the configured Installer. The context it hands the
+// Installer is intentionally NOT ctx: ctx belongs to whatever triggered the
+// update (a chat message handler cancelled by /restart, an HTTP request
+// cancelled by a client disconnect), and exec.CommandContext SIGKILLs its
+// child the instant that context is cancelled. The install script backs up
+// and overwrites the live binaries with plain, non-atomic copies -- a kill
+// mid-copy can leave the daemon unable to start, with the one thing that
+// could roll that back (the watchdog) never launched because the script
+// never reached that line. Detaching the install from ctx, bounded by
+// installTimeout instead, is what actually makes the caller's own
+// lifecycle safe to interrupt without corrupting an in-flight update.
+func (s *Service) Install(ctx context.Context, meta InstallMeta, progress func(string)) (Result, error) {
 	if s == nil || s.Installer == nil {
-		return errors.New("update installation is not configured")
+		return Result{}, errors.New("update installation is not configured")
 	}
 	if s.InstallType == "" || s.InstallType == installtype.Unknown {
-		return ErrUnknownInstallType
+		return Result{}, ErrUnknownInstallType
 	}
-	return s.Installer.Install(ctx, progress)
+	s.mu.Lock()
+	if s.installing {
+		s.mu.Unlock()
+		return Result{}, ErrInstallInProgress
+	}
+	s.installing = true
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.installing = false
+		s.mu.Unlock()
+	}()
+
+	installCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), installTimeout)
+	defer cancel()
+	return s.Installer.Install(installCtx, meta, progress)
 }
 
 func (s *Service) CanInstall() bool { return s != nil && s.Installer != nil }
@@ -186,32 +230,46 @@ func loadDeferrals(path string) (deferrals, error) {
 }
 
 func saveDeferrals(path string, state deferrals) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("create update state directory: %w", err)
-	}
-	file, err := os.CreateTemp(filepath.Dir(path), ".update-deferrals-*")
+	data, err := json.Marshal(state)
 	if err != nil {
-		return fmt.Errorf("create update state: %w", err)
+		return fmt.Errorf("encode update deferrals: %w", err)
+	}
+	return writeFileAtomic(path, data)
+}
+
+// writeFileAtomic writes data to path via a temp file in the same
+// directory, synced and renamed into place, so a reader never observes a
+// partially written file. Shared by saveDeferrals and WritePendingReport --
+// both are small JSON state files under the same operational directory
+// (cfg.WorkDir) with the same durability requirement.
+func writeFileAtomic(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create state directory: %w", err)
+	}
+	file, err := os.CreateTemp(dir, ".update-state-*")
+	if err != nil {
+		return fmt.Errorf("create temp state file: %w", err)
 	}
 	tempPath := file.Name()
 	defer func() { _ = os.Remove(tempPath) }()
 	if err := file.Chmod(0o600); err != nil {
 		_ = file.Close()
-		return fmt.Errorf("protect update state: %w", err)
+		return fmt.Errorf("protect state file: %w", err)
 	}
-	if err := json.NewEncoder(file).Encode(state); err != nil {
+	if _, err := file.Write(data); err != nil {
 		_ = file.Close()
-		return fmt.Errorf("encode update deferrals: %w", err)
+		return fmt.Errorf("write state file: %w", err)
 	}
 	if err := file.Sync(); err != nil {
 		_ = file.Close()
-		return fmt.Errorf("sync update deferrals: %w", err)
+		return fmt.Errorf("sync state file: %w", err)
 	}
 	if err := file.Close(); err != nil {
-		return fmt.Errorf("close update state: %w", err)
+		return fmt.Errorf("close state file: %w", err)
 	}
 	if err := os.Rename(tempPath, path); err != nil {
-		return fmt.Errorf("replace update state: %w", err)
+		return fmt.Errorf("replace state file: %w", err)
 	}
 	return nil
 }

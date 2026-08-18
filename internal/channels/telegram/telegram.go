@@ -54,6 +54,13 @@ type Gateway struct {
 	// deferral persistence, and installation; Telegram only presents it.
 	Updates UpdateService
 
+	// UpdateReportPath is where the update watchdog (see
+	// scripts/archie-update-watchdog) leaves the phase-2 outcome of an
+	// update -- whether the restarted daemon came up healthy or was rolled
+	// back. Checked and relayed on every gateway launch (process boot and
+	// /restart alike), same as ReleaseAnnouncements. Empty disables it.
+	UpdateReportPath string
+
 	// Dangerous is the sandbox/process authority for /rollback and /stop.
 	// When nil, those commands return "not configured". The composition
 	// root supplies this; Telegram only renders approval UX.
@@ -129,7 +136,7 @@ type Gateway struct {
 type UpdateService interface {
 	Check(context.Context, int64) (releaseupdate.Snapshot, error)
 	Defer(context.Context, int64, releaseupdate.Snapshot) error
-	Install(context.Context, func(string)) error
+	Install(context.Context, releaseupdate.InstallMeta, func(string)) (releaseupdate.Result, error)
 	CanInstall() bool
 }
 
@@ -285,7 +292,7 @@ func (g *Gateway) launch(ctx context.Context, router *gateway.Router) (*bot.Bot,
 	// the commands are undiscoverable and the LLM, having no idea they
 	// exist, tells users there are none.
 	g.registerCommands(ctx, b)
-	g.announceRelease(ctx, b)
+	g.notifyLaunch(ctx, b)
 
 	// Set up webhook or fall back to long polling.
 	if g.WebhookURL != "" {
@@ -325,6 +332,15 @@ func (g *Gateway) launch(ctx context.Context, router *gateway.Router) (*bot.Bot,
 	}
 
 	return b, nil
+}
+
+// notifyLaunch sends the one-time notifications that belong to every
+// gateway launch, not just a process boot: a newly installed release's
+// changelog, and the phase-2 outcome of an update the watchdog finished
+// while this gateway was down.
+func (g *Gateway) notifyLaunch(ctx context.Context, b *bot.Bot) {
+	g.announceRelease(ctx, b)
+	g.reportPendingUpdate(ctx, b)
 }
 
 func (g *Gateway) announceRelease(ctx context.Context, b *bot.Bot) {

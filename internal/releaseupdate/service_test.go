@@ -2,9 +2,11 @@ package releaseupdate
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/installtype"
 )
@@ -52,14 +54,22 @@ func TestServiceInstallForwardsProgressAndFailure(t *testing.T) {
 	installer := &installerStub{}
 	service := Service{Installer: installer, InstallType: "binary"}
 	var progress []string
-	if err := service.Install(context.Background(), func(message string) { progress = append(progress, message) }); err != nil {
+	meta := InstallMeta{Channel: "telegram", ChatID: 42}
+	result, err := service.Install(context.Background(), meta, func(message string) { progress = append(progress, message) })
+	if err != nil {
 		t.Fatal(err)
 	}
 	if !installer.called {
 		t.Error("installer was not called")
 	}
+	if installer.gotMeta != meta {
+		t.Errorf("installer received meta = %#v, want %#v", installer.gotMeta, meta)
+	}
 	if len(progress) != 1 || progress[0] != "Pulling release..." {
 		t.Errorf("progress = %#v", progress)
+	}
+	if result.Installed["daemon"] != "1.1.0" {
+		t.Errorf("result = %#v", result)
 	}
 }
 
@@ -82,7 +92,7 @@ func TestServiceInstallRefusesAnUnknownInstallType(t *testing.T) {
 			installer := &installerStub{}
 			service := Service{Installer: installer, InstallType: tt.installType}
 
-			err := service.Install(context.Background(), func(string) {})
+			_, err := service.Install(context.Background(), InstallMeta{}, func(string) {})
 
 			if err == nil {
 				t.Fatal("Install() returned nil error, want a refusal")
@@ -91,6 +101,68 @@ func TestServiceInstallRefusesAnUnknownInstallType(t *testing.T) {
 				t.Error("installer was called despite an unknown install type")
 			}
 		})
+	}
+}
+
+// TestServiceInstallSurvivesCallerContextCancellation: the caller's context
+// belongs to the request/handler that triggered the update (a Telegram
+// message handler cancelled by /restart, or an HTTP request cancelled by a
+// client disconnect) -- it must not reach into the install child process.
+// Killing that process mid-run can leave binaries half-overwritten with no
+// rollback ever attempted, which is exactly the failure mode this feature
+// exists to prevent.
+func TestServiceInstallSurvivesCallerContextCancellation(t *testing.T) {
+	installer := &blockingInstallerStub{unblock: make(chan struct{}), started: make(chan struct{})}
+	service := Service{Installer: installer, InstallType: "binary"}
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := service.Install(ctx, InstallMeta{}, func(string) {})
+		done <- err
+	}()
+
+	<-installer.started
+	cancel() // simulate the triggering request/handler being torn down mid-install
+
+	select {
+	case <-installer.gotCancelled:
+		t.Fatal("installer observed its context as cancelled after only the caller's context was cancelled")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(installer.unblock)
+
+	if err := <-done; err != nil {
+		t.Fatalf("Install() error = %v, want nil", err)
+	}
+}
+
+// TestServiceInstallRefusesConcurrentInstalls: Telegram and the web
+// dashboard are two different callers of the same Service, each with its
+// own local "already in progress" flag -- neither knows about the other.
+// The authoritative guard against two installs racing the same binaries
+// and .prev backups has to live here, not duplicated per caller.
+func TestServiceInstallRefusesConcurrentInstalls(t *testing.T) {
+	installer := &blockingInstallerStub{unblock: make(chan struct{}), started: make(chan struct{})}
+	service := Service{Installer: installer, InstallType: "binary"}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := service.Install(context.Background(), InstallMeta{}, func(string) {})
+		done <- err
+	}()
+	<-installer.started
+
+	if _, err := service.Install(context.Background(), InstallMeta{}, func(string) {}); !errors.Is(err, ErrInstallInProgress) {
+		t.Fatalf("second Install() error = %v, want ErrInstallInProgress", err)
+	}
+
+	close(installer.unblock)
+	if err := <-done; err != nil {
+		t.Fatalf("first Install() error = %v, want nil", err)
+	}
+	if installer.calls != 1 {
+		t.Fatalf("installer.calls = %d, want exactly 1", installer.calls)
 	}
 }
 
@@ -103,7 +175,7 @@ func TestNilServiceReturnsConfigurationErrors(t *testing.T) {
 	if err := service.Defer(context.Background(), 0, Snapshot{}); err == nil {
 		t.Fatal("nil service defer returned nil error")
 	}
-	if err := service.Install(context.Background(), nil); err == nil {
+	if _, err := service.Install(context.Background(), InstallMeta{}, nil); err == nil {
 		t.Fatal("nil service install returned nil error")
 	}
 	if service.CanInstall() {
@@ -139,10 +211,38 @@ type catalogStub struct{ snapshot Snapshot }
 
 func (s *catalogStub) Check(context.Context) (Snapshot, error) { return s.snapshot, nil }
 
-type installerStub struct{ called bool }
+// blockingInstallerStub lets a test hold Install() open until it chooses to
+// release it, and records whether the context it was given ever reported
+// cancellation.
+type blockingInstallerStub struct {
+	unblock      chan struct{}
+	started      chan struct{}
+	gotCancelled chan struct{}
+	calls        int
+}
 
-func (s *installerStub) Install(_ context.Context, progress func(string)) error {
+func (s *blockingInstallerStub) Install(ctx context.Context, _ InstallMeta, _ func(string)) (Result, error) {
+	s.calls++
+	close(s.started)
+	if s.gotCancelled == nil {
+		s.gotCancelled = make(chan struct{})
+	}
+	go func() {
+		<-ctx.Done()
+		close(s.gotCancelled)
+	}()
+	<-s.unblock
+	return Result{}, nil
+}
+
+type installerStub struct {
+	called  bool
+	gotMeta InstallMeta
+}
+
+func (s *installerStub) Install(_ context.Context, meta InstallMeta, progress func(string)) (Result, error) {
 	s.called = true
+	s.gotMeta = meta
 	progress("Pulling release...")
-	return nil
+	return Result{Installed: map[string]string{"daemon": "1.1.0"}}, nil
 }
