@@ -357,6 +357,10 @@ func (d *Daemon) maintainAndDrain(ctx context.Context) {
 func (d *Daemon) pollIssuesWithConfig(ctx context.Context, fg forge.Forge, cfg config.Config, repo config.Repo) []forge.Issue {
 	switch cfg.Dispatch.Trigger {
 	case "label":
+		if cfg.Label == "" {
+			d.Log.Error("label trigger configured with an empty label; refusing to poll (an empty label matches every open issue)", "repo", repo.FullName())
+			return nil
+		}
 		issues, err := fg.IssuesWithLabel(ctx, repo.Owner, repo.Name, cfg.Label)
 		if err != nil {
 			d.Log.Error("label poll failed", "repo", repo.FullName(), "err", err)
@@ -387,6 +391,10 @@ func (d *Daemon) pollEitherWithConfig(ctx context.Context, fg forge.Forge, cfg c
 			seen[is.Number] = true
 			out = append(out, is)
 		}
+	}
+	if cfg.Label == "" {
+		d.Log.Error("either trigger configured with an empty label; skipping the label poll (an empty label matches every open issue)", "repo", repo.FullName())
+		return out
 	}
 	labelled, err := fg.IssuesWithLabel(ctx, repo.Owner, repo.Name, cfg.Label)
 	if err != nil {

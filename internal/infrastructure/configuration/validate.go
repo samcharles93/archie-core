@@ -106,9 +106,19 @@ func validateAgent(cfg *config.Config) error {
 	return nil
 }
 
+// validateDispatch rejects a "label" or "either" trigger left with no label
+// to match. GitHub's issues-list API treats an empty label filter as no
+// filter at all and returns every open issue in the repo -- a live incident
+// (GH#445) queued 124 unrelated issues in one poll cycle this way, after
+// [dispatch.labels] (a different field, mapping task states to their own
+// labels) was configured while the actual trigger-match label was left
+// blank.
 func validateDispatch(cfg *config.Config) error {
 	if !oneOf(cfg.Dispatch.Trigger, dispatchTriggers) {
 		return fmt.Errorf("%w: dispatch.trigger %q (want %s)", ErrInvalidInput, cfg.Dispatch.Trigger, list(dispatchTriggers))
+	}
+	if (cfg.Dispatch.Trigger == dispatchTriggerLabel || cfg.Dispatch.Trigger == dispatchTriggerEither) && cfg.Label == "" {
+		return fmt.Errorf("%w: label is required when dispatch.trigger is %q (an empty label matches every open issue)", ErrInvalidInput, cfg.Dispatch.Trigger)
 	}
 	return nil
 }
