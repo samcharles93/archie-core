@@ -252,26 +252,64 @@ func formatVersionChanges(result releaseupdate.Result) string {
 		if previous == "" || previous == installed {
 			continue
 		}
+		// A placeholder is not a release: rendering "1.0.0 → unknown" reads
+		// as a downgrade to a version by that name rather than as the
+		// missing bookkeeping it actually is.
+		if !releaseupdate.IsRecordedVersion(installed) {
+			continue
+		}
 		parts = append(parts, fmt.Sprintf("%s %s → %s", id, previous, installed))
 	}
 	return strings.Join(parts, ", ")
 }
 
-// formatPendingReport describes the phase-2 outcome. There are three
-// distinct cases, not two: the daemon came back up healthy; it didn't, and
-// was rolled back to its previous version; or it didn't, and there was no
-// backup to roll back to. That third case must never be worded like the
-// second -- claiming a rollback that didn't happen tells the operator to
-// stand down while the daemon may still be running the broken version, or
-// not running at all.
-func formatPendingReport(report releaseupdate.Report) string {
-	changes := formatVersionChanges(releaseupdate.Result{Previous: report.Previous, Installed: report.Installed})
+// formatPendingReport describes the phase-2 outcome. There are five distinct
+// cases, not two: the daemon came back up and confirms it is running what was
+// installed; it came back up but reports running something else; it came back
+// up and nothing could be checked either way; it didn't come up, and was
+// rolled back; or it didn't, and there was no backup to roll back to.
+//
+// Two of those are easy to collapse into a neighbour and must not be. A
+// no-backup failure worded like a rollback tells the operator to stand down
+// while the daemon may still be running the broken version, or not running
+// at all. An unverified success worded like a confirmed one re-asserts
+// exactly the claim that went unchecked in the incident this verification
+// was added for.
+//
+// running maps component ID to the version that component reports for
+// itself; see Report.Verify for why a passed health check is not on its own
+// evidence that the install took effect.
+func formatPendingReport(report releaseupdate.Report, running map[string]string) string {
 	if !report.RolledBack && report.HealthCheck == "passed" {
+		verification := report.Verify(running)
+		if len(verification.Drift) > 0 {
+			return formatVersionDrift(verification.Drift)
+		}
+		changes := formatVersionChanges(releaseupdate.Result{Previous: report.Previous, Installed: report.Installed})
 		text := "Update complete"
 		if changes != "" {
 			text += ": " + changes
 		}
-		return text + ". Health check passed — archie-core is healthy on the new version."
+		if len(verification.Confirmed) == 0 {
+			// Nothing self-reported a version we could check the claim
+			// against, so a passed health probe is all we have -- and it
+			// only ever proved that *something* answered. Saying "healthy
+			// on the new version" here would assert the exact thing that
+			// went unverified in the incident this check was added for.
+			return text + ". Health check passed, but I could not confirm which version is actually running."
+		}
+		text += ". Health check passed — archie-core is healthy on the new version."
+		if len(verification.Unverified) > 0 {
+			// Something WAS confirmed, so the headline is earned -- but the
+			// version change printed above covers every component the
+			// installer claimed, including ones nothing checked. Naming them
+			// keeps the confirmed part from silently vouching for the rest.
+			// This is the ordinary case, not an edge one: only the daemon
+			// can self-report today, so the agent lands here on every
+			// successful update.
+			text += " Not independently checked: " + strings.Join(verification.Unverified, ", ") + "."
+		}
+		return text
 	}
 
 	ids := make([]string, 0, len(report.Previous))
@@ -289,6 +327,34 @@ func formatPendingReport(report releaseupdate.Report) string {
 		return fmt.Sprintf("Update failed health check after restarting and was automatically rolled back to the previous version (%s). archie-core is running normally on the previous release.", previousVersions)
 	}
 	return fmt.Sprintf("Update failed health check after restarting and could NOT be rolled back automatically (no backup was found). archie-core may still be running the broken version, or may not be running at all — manual intervention is required. Previous version was %s.", previousVersions)
+}
+
+// formatVersionDrift words the case where the installer reported success and
+// the health check passed, but a component reports it is running something
+// other than what was installed.
+//
+// "still the version this update meant to replace" is attached PER COMPONENT
+// rather than stated once for the whole message, because a single sentence
+// cannot be true of a mixed set: one component can be sitting on the version
+// the update meant to replace while another is on some third version the
+// report never mentions. Asserting one cause for both would invent a fact
+// about at least one of them -- the same defect as the false success this
+// whole check exists to catch. The trailing sentence is therefore worded to
+// hold either way, and says only what a passed probe actually establishes.
+func formatVersionDrift(drift []releaseupdate.VersionDrift) string {
+	parts := make([]string, 0, len(drift))
+	for _, d := range drift {
+		part := fmt.Sprintf("%s reports %s, not the installed %s",
+			d.ID, strings.TrimSpace(d.Running), strings.TrimSpace(d.Claimed))
+		if d.RunningIsPrevious {
+			part += " (still the version this update meant to replace)"
+		}
+		parts = append(parts, part)
+	}
+	return "Update did NOT take effect: " + strings.Join(parts, "; ") + ". " +
+		"The health check passed because something was there to answer it, not because the new version " +
+		"is in service, so nothing was rolled back. " +
+		"Investigate before retrying — otherwise /update will report success again."
 }
 
 // reportPendingUpdate checks for a phase-2 outcome left by the update
@@ -327,7 +393,22 @@ func (g *Gateway) reportPendingUpdate(ctx context.Context, b *bot.Bot) {
 // process finds a pending report left by the previous boot's install; see
 // releaseupdate.ReadPendingReport.
 func (g *Gateway) SendPendingReport(ctx context.Context, b *bot.Bot, report releaseupdate.Report) {
-	g.sendMessage(ctx, b, report.ChatID, report.ThreadID, formatPendingReport(report))
+	g.sendMessage(ctx, b, report.ChatID, report.ThreadID, formatPendingReport(report, g.runningVersions()))
+}
+
+// runningVersions returns the versions components report for themselves, or
+// nil when the composition root wired none.
+//
+// Nil is not a no-op: with nothing to check against, every claim is
+// Unverified, so the relayed message says the versions could not be
+// confirmed rather than repeating the pre-verification "healthy on the new
+// version". That is deliberate -- an unwired gateway should read as
+// unchecked, not as verified.
+func (g *Gateway) runningVersions() map[string]string {
+	if g.RunningVersions == nil {
+		return nil
+	}
+	return g.RunningVersions()
 }
 
 func sameUpdateSnapshot(left, right releaseupdate.Snapshot) bool {

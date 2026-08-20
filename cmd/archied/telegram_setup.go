@@ -96,6 +96,7 @@ func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), o
 		},
 	}
 	tg.UpdateReportPath = updateReportPath(cfg.WorkDir, cfg.BotUser)
+	tg.RunningVersions = daemonRunningVersions
 	tg.Reload = makeTelegramReload(s)
 
 	sessionStore := s.SessionStore
@@ -118,6 +119,22 @@ func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), o
 		}()
 		s.Log.Info("telegram gateway started")
 	}, true
+}
+
+// daemonRunningVersions reports the component versions this process can
+// vouch for from its own build, for checking a pending update report against
+// (see releaseupdate.Report.Verify).
+//
+// Only the daemon is listed, and that is the whole point: gatewayVersion is
+// compiled into this binary, so if an installer claims it put a version into
+// service and this value disagrees, the installer is wrong. runtimeVersion
+// is deliberately NOT reported for the agent -- it records the agent version
+// archied's own release pipeline stamped, not the version the agent
+// container is actually running, and the two diverge in exactly the
+// situation this check exists to detect. An unverifiable component is left
+// out so it is reported as unchecked rather than as confirmed.
+func daemonRunningVersions() map[string]string {
+	return map[string]string{releaseupdate.ComponentDaemon: gatewayVersion}
 }
 
 func configureTelegramUpdates(tg *telegram.Gateway, s telegramSetup) {
