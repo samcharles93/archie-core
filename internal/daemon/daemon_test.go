@@ -1059,16 +1059,73 @@ func TestPollIssuesWithConfigUsesIdentityScopedDispatch(t *testing.T) {
 	}
 }
 
+// An empty cfg.Label with trigger "label" or "either" must never reach
+// IssuesWithLabel: GitHub's issues-list API treats an empty label filter as
+// "no filter" and returns every open issue in the repo. A live incident
+// (GH#445) queued 124 unrelated issues in one poll cycle this way, after
+// [dispatch.labels] (a different, unrelated field for task-state labels) was
+// configured while the actual trigger-match label was left unset.
+func TestPollIssuesWithConfigRefusesEmptyLabel(t *testing.T) {
+	tests := []struct {
+		name    string
+		trigger string
+	}{
+		{name: "label trigger", trigger: "label"},
+		{name: "either trigger", trigger: "either"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fg := &recordingForge{}
+			d := &Daemon{Cfg: config.NewHolder(config.Config{}), Log: slog.New(slog.DiscardHandler)}
+			cfg := config.Config{Dispatch: config.Dispatch{Trigger: tc.trigger}} // Label left blank.
+
+			issues := d.pollIssuesWithConfig(context.Background(), fg, cfg, config.Repo{Owner: "acme", Name: "shared"})
+
+			if issues != nil {
+				t.Fatalf("issues = %v, want nil when label is unset", issues)
+			}
+			if len(fg.labelled) != 0 {
+				t.Fatalf("IssuesWithLabel called with %v, want no call at all (empty label matches every open issue)", fg.labelled)
+			}
+		})
+	}
+}
+
+// The "either" trigger must keep polling by assignee when the label is
+// empty -- only the label side is unsafe, not the assignee side. A prior
+// version of this guard passed even when the empty-label branch dropped
+// assignee matches too (return nil instead of return out), because the
+// fixture always returned nil from AssignedIssues regardless.
+func TestPollIssuesWithConfigEitherTriggerKeepsAssigneeMatchesWhenLabelEmpty(t *testing.T) {
+	fg := &recordingForge{assignedIssues: []forge.Issue{{Number: 7}}}
+	d := &Daemon{Cfg: config.NewHolder(config.Config{}), Log: slog.New(slog.DiscardHandler)}
+	cfg := config.Config{BotUser: "archie", Dispatch: config.Dispatch{Trigger: "either"}} // Label left blank.
+
+	issues := d.pollIssuesWithConfig(context.Background(), fg, cfg, config.Repo{Owner: "acme", Name: "shared"})
+
+	if len(issues) != 1 || issues[0].Number != 7 {
+		t.Fatalf("issues = %v, want the one assignee-matched issue preserved", issues)
+	}
+	if len(fg.labelled) != 0 {
+		t.Fatalf("IssuesWithLabel called with %v, want no call at all (empty label matches every open issue)", fg.labelled)
+	}
+}
+
 // recordingForge records the bot user/label passed to the discovery calls
 // so tests can assert identity-scoped polling. Everything else panics.
 type recordingForge struct {
 	assigned []string
 	labelled []string
+
+	// assignedIssues is returned by AssignedIssues, letting tests confirm
+	// assignee matches survive alongside (or despite) the label poll.
+	assignedIssues []forge.Issue
 }
 
 func (f *recordingForge) AssignedIssues(_ context.Context, _, _, botUser string) ([]forge.Issue, error) {
 	f.assigned = append(f.assigned, botUser)
-	return nil, nil
+	return f.assignedIssues, nil
 }
 
 func (f *recordingForge) IssuesWithLabel(_ context.Context, _, _, label string) ([]forge.Issue, error) {
