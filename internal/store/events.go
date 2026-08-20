@@ -228,13 +228,31 @@ type DayTokens struct {
 	Tokens int    `json:"tokens"`
 }
 
-// TokensByDay sums agent token spend per day from agent_finish events.
+// TokensByDay sums task token spend per UTC day. Agent-finish events are
+// the per-run accounting source; tasks.tokens_used is the durable fallback for
+// older or remote runs whose events were not persisted.
 func (s *Store) TokensByDay(ctx context.Context, days int) (tokens []DayTokens, retErr error) {
+	tokens = make([]DayTokens, 0)
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT substr(at,1,10) AS day,
-			CAST(SUM(json_extract(data,'$.tokens')) AS INTEGER)
-		FROM events WHERE kind = 'agent_finish'
-		GROUP BY day ORDER BY day DESC LIMIT ?`, days)
+		WITH event_totals AS (
+			SELECT task_id, substr(at,1,10) AS day,
+				SUM(CASE WHEN json_type(data,'$.tokens') IN ('integer','real')
+					THEN CAST(json_extract(data,'$.tokens') AS INTEGER) ELSE 0 END) AS tokens,
+				SUM(CASE WHEN json_type(data,'$.tokens') IN ('integer','real') THEN 1 ELSE 0 END) AS valid_tokens
+			FROM events WHERE kind = 'agent_finish'
+			GROUP BY task_id, day
+		), usage AS (
+			SELECT day, tokens FROM event_totals WHERE valid_tokens > 0
+			UNION ALL
+			SELECT substr(t.updated_at,1,10), t.tokens_used
+			FROM tasks t
+			WHERE t.tokens_used != 0 AND NOT EXISTS (
+				SELECT 1 FROM event_totals e
+				WHERE e.task_id = t.id AND e.valid_tokens > 0
+			)
+		)
+		SELECT day, CAST(SUM(tokens) AS INTEGER)
+		FROM usage GROUP BY day ORDER BY day DESC LIMIT ?`, days)
 	if err != nil {
 		return nil, err
 	}

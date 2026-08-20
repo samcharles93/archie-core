@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"reflect"
 	"testing"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/events"
 )
@@ -176,6 +178,84 @@ func TestWorkflowStats(t *testing.T) {
 	got := stats[0]
 	if got.Workflow != "implement" || got.Runs != 1 || got.Merged != 1 || got.AvgTokens != 1000 || got.TotalToken != 1000 {
 		t.Fatalf("WorkflowStats[0] = %+v", got)
+	}
+}
+
+func TestTokensByDayFallsBackToTaskTotals(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "t", "b", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("claim = (%v, %v)", task, err)
+	}
+	task.TokensUsed = 904901
+	if err := s.Update(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE tasks SET updated_at=? WHERE id=?`, "2026-08-14 12:00:00", task.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.TokensByDay(ctx, 14)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []DayTokens{{Day: "2026-08-14", Tokens: 904901}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("TokensByDay = %#v, want %#v", got, want)
+	}
+}
+
+func TestTokensByDayUsesEventsAndIgnoresMalformedTokenFields(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "event task", "b", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	eventTask, err := s.ClaimNext(ctx)
+	if err != nil || eventTask == nil {
+		t.Fatalf("claim event task = (%v, %v)", eventTask, err)
+	}
+	eventTask.TokensUsed = 999
+	if err := s.Update(ctx, eventTask); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE tasks SET updated_at=? WHERE id=?`, "2026-08-14 12:00:00", eventTask.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range []events.Event{
+		{Kind: events.KindAgentFinish, TaskID: eventTask.ID, At: time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC), Data: map[string]any{"tokens": 30}},
+		{Kind: events.KindAgentFinish, TaskID: eventTask.ID, At: time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC), Data: map[string]any{"tokens": 70}},
+		{Kind: events.KindAgentFinish, TaskID: eventTask.ID, At: time.Date(2026, 8, 14, 13, 0, 0, 0, time.UTC), Data: map[string]any{"tokens": "bad"}},
+	} {
+		if _, err := s.InsertEvent(ctx, ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := s.TokensByDay(ctx, 14)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []DayTokens{{Day: "2026-08-14", Tokens: 70}, {Day: "2026-08-13", Tokens: 30}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("TokensByDay = %#v, want %#v", got, want)
+	}
+}
+
+func TestTokensByDayReturnsEmptySlice(t *testing.T) {
+	s := openTest(t)
+	got, err := s.TokensByDay(t.Context(), 14)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || len(got) != 0 {
+		t.Fatalf("TokensByDay = %#v, want non-nil empty slice", got)
 	}
 }
 
