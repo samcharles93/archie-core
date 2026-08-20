@@ -240,6 +240,35 @@ func TestBuildSystemPromptBalancesBrevityWithWarmth(t *testing.T) {
 	}
 }
 
+// TestBuildSystemPromptForbidsOverconfidentClaims guards the fix for a live
+// incident (archie-core-3jag / GH#524): asked whether logs go anywhere else,
+// the agent invented an entire subsystem with fake file paths and labelled it
+// "confirmed"; asked why a task failed, it presented a "Verified details"
+// list containing figures it had not actually checked. Both only got
+// corrected after the user pushed back. The rule text below is the fix, not
+// just documentation of a bug.
+func TestBuildSystemPromptForbidsOverconfidentClaims(t *testing.T) {
+	t.Parallel()
+
+	prompt := BuildSystemPrompt(SystemPromptConfig{Now: fixedTime(t)})
+	for _, marker := range []string{
+		// Rule 8: covers incident 2 -- unchecked figures labelled "Verified
+		// details".
+		"verified", // rule text must use the word claims got mislabelled with
+		"this turn",
+		"earlier in the conversation",
+		// Rule 9: covers incident 1 -- a fabricated "Hermes gateway"
+		// subsystem with invented file paths, stated as fact.
+		"file path",
+		"subsystem name",
+		"do not wait for the user to challenge",
+	} {
+		if !strings.Contains(strings.ToLower(prompt), strings.ToLower(marker)) {
+			t.Errorf("core rules do not address overconfident/fabricated claims, missing %q:\n%s", marker, prompt)
+		}
+	}
+}
+
 func TestBuildSystemPromptRendersConfiguredOperator(t *testing.T) {
 	t.Parallel()
 
