@@ -89,6 +89,33 @@ func TestValidate_RejectsTheSameProblemsAsLoaderLoad(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			// GH#445: an empty label matches every open issue via the forge
+			// API's issues-list filter, so a "label" trigger with no label
+			// set must fail validation rather than queue the whole repo.
+			name: "label trigger with empty label",
+			mutate: func(cfg *config.Config) {
+				cfg.Dispatch.Trigger = "label"
+				cfg.Label = ""
+			},
+			wantErr: true,
+		},
+		{
+			name: "either trigger with empty label",
+			mutate: func(cfg *config.Config) {
+				cfg.Dispatch.Trigger = "either"
+				cfg.Label = ""
+			},
+			wantErr: true,
+		},
+		{
+			name: "label trigger with a label set",
+			mutate: func(cfg *config.Config) {
+				cfg.Dispatch.Trigger = "label"
+				cfg.Label = "archie"
+			},
+			wantErr: false,
+		},
+		{
 			name:    "unrecognised forge.type",
 			mutate:  func(cfg *config.Config) { cfg.Forge.Type = "not-a-real-forge" },
 			wantErr: true,
