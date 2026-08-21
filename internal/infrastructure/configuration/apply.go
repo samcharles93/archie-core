@@ -24,10 +24,10 @@ func ApplyOverlayValues(cfg *config.Config, overrides map[string]any) error {
 	}
 	data, err := yaml.Marshal(overrides)
 	if err != nil {
-		return fmt.Errorf("%w: encoding config overlay: %v", ErrUnreadable, err)
+		return fmt.Errorf("%w: encoding config overlay: %w", ErrUnreadable, err)
 	}
 	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return fmt.Errorf("%w: parsing config overlay: %v", ErrUnreadable, err)
+		return fmt.Errorf("%w: parsing config overlay: %w", ErrUnreadable, err)
 	}
 	return nil
 }

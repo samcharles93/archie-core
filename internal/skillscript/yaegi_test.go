@@ -111,7 +111,9 @@ func main() {
 
 	done := make(chan struct{})
 	go func() {
-		Run(path)
+		// The result is irrelevant -- this goroutine only exists to prove
+		// Run never returns from a blocking script within the timeout.
+		_, _ = Run(path)
 		close(done)
 	}()
 
