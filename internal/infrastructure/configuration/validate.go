@@ -33,6 +33,7 @@ var (
 	agentModes       = []string{agentModeInProcess, agentModeSubprocess, agentModeNATS}
 	forgeTypes       = []string{forgeTypeGitHub, forgeTypeGitea, forgeTypeNone, forgeTypeOff, forgeTypeDisabled}
 	dispatchTriggers = []string{dispatchTriggerAssignee, dispatchTriggerLabel, dispatchTriggerEither}
+	natsModes        = []string{config.NATSModeEmbedded, config.NATSModeExternal, config.NATSModeOff}
 )
 
 // Validate runs the same checks Loader applies before accepting a config,
@@ -73,6 +74,9 @@ func validate(cfg *config.Config) error {
 		return err
 	}
 	if err := validatePollInterval(cfg); err != nil {
+		return err
+	}
+	if err := validateNATS(cfg); err != nil {
 		return err
 	}
 	if err := validateContainers(cfg); err != nil {
@@ -228,6 +232,48 @@ func validateRepos(repos []config.Repo) error {
 	return nil
 }
 
+// effectiveNATSMode resolves an unset nats.mode from url without mutating cfg,
+// so validation that reads the mode never has to know whether the operator
+// spelled it or left it to default. validateNATS and validateContainers both
+// consult it, so they cannot disagree about which mode a config is in.
+func effectiveNATSMode(cfg *config.Config) string {
+	if cfg.NATS.Mode != "" {
+		return cfg.NATS.Mode
+	}
+	if cfg.NATS.URL != "" {
+		return config.NATSModeExternal
+	}
+	return config.NATSModeEmbedded
+}
+
+// validateNATS checks the nats mode and its consistency with url and the
+// agent execution mode. It resolves an unset mode from url without mutating
+// cfg, so Validate (which documents it does not apply defaults) accepts a
+// hand-built config the same way Loader.File accepts its on-disk form.
+func validateNATS(cfg *config.Config) error {
+	mode := effectiveNATSMode(cfg)
+	if !oneOf(mode, natsModes) {
+		return fmt.Errorf("%w: nats.mode %q (want %s)", ErrInvalidInput, cfg.NATS.Mode, list(natsModes))
+	}
+	switch mode {
+	case config.NATSModeExternal:
+		if cfg.NATS.URL == "" {
+			return fmt.Errorf("%w: nats.url is required when nats.mode is %q", ErrInvalidInput, config.NATSModeExternal)
+		}
+	case config.NATSModeEmbedded, config.NATSModeOff:
+		if cfg.NATS.URL != "" {
+			return fmt.Errorf("%w: nats.url must be empty when nats.mode is %q", ErrInvalidInput, mode)
+		}
+	}
+	// Agent execution over NATS needs workers that can reach the server. An
+	// embedded server binds loopback on a random port, which workers cannot
+	// discover, so agent.mode="nats" requires an external URL.
+	if cfg.Agent.Mode == agentModeNATS && mode != config.NATSModeExternal {
+		return fmt.Errorf("%w: nats.mode must be %q when agent.mode is %q", ErrInvalidInput, config.NATSModeExternal, agentModeNATS)
+	}
+	return nil
+}
+
 // validateContainers checks the combination that container execution
 // requires: a NATS transport and somewhere to reach it.
 func validateContainers(cfg *config.Config) error {
@@ -240,8 +286,8 @@ func validateContainers(cfg *config.Config) error {
 	if cfg.Agent.Mode != agentModeNATS {
 		return fmt.Errorf("%w: agent.mode must be %q when containers.enabled is true", ErrInvalidInput, agentModeNATS)
 	}
-	if cfg.NATS.URL == "" {
-		return fmt.Errorf("%w: [nats] url is required when containers.enabled is true", ErrInvalidInput)
+	if effectiveNATSMode(cfg) != config.NATSModeExternal {
+		return fmt.Errorf("%w: nats.mode must be %q when containers.enabled is true (containers cannot reach an embedded loopback server)", ErrInvalidInput, config.NATSModeExternal)
 	}
 	if cfg.Containers.VolumeTTL < 0 {
 		return fmt.Errorf("%w: containers.volume_ttl must not be negative", ErrInvalidInput)

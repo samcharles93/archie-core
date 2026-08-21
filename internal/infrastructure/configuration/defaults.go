@@ -68,6 +68,7 @@ func (l *Loader) applyDefaults(cfg *config.Config) {
 	applyContainerDefaults(cfg)
 	applyToolPolicyDefaults(cfg)
 	applyCaptureDefaults(cfg)
+	applyNATSDefaults(cfg)
 }
 
 // applyCaptureDefaults fills the webhook capture endpoint's settings. See
@@ -188,6 +189,20 @@ func applyForgeDefaults(cfg *config.Config) {
 	}
 	if cfg.Forge.Token.Engine == "" && cfg.Forge.Token.Key == "" && cfg.Forge.TokenEnv != "" {
 		cfg.Forge.Token = secret.SecretRef{Engine: "env", Key: cfg.Forge.TokenEnv}
+	}
+}
+
+// applyNATSDefaults resolves the nats mode from URL when the operator left it
+// unset. URL set implies external; URL empty implies embedded. The previous
+// behaviour -- URL empty meaning "no NATS, SQLite only" -- is now the explicit
+// opt-out nats.mode = "off" (docs/prds/embedded-nats.md).
+func applyNATSDefaults(cfg *config.Config) {
+	if cfg.NATS.Mode == "" {
+		if cfg.NATS.URL != "" {
+			cfg.NATS.Mode = config.NATSModeExternal
+		} else {
+			cfg.NATS.Mode = config.NATSModeEmbedded
+		}
 	}
 }
 

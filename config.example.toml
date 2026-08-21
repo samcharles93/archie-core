@@ -168,11 +168,17 @@ max_tokens = 400000
 wall_clock = "30m"
 gate_max_failures = 5
 
-# NATS JetStream for distributed task queue. Remove or leave commented out
-# to run in single-process SQLite mode.
+# NATS JetStream for task distribution and reaction delivery. mode selects
+# how NATS is provided:
+#   "embedded"  – in-process nats-server (the default; no external server)
+#   "external"  – connect to url (required for agent.mode="nats" / [containers])
+#   "off"       – no NATS; the SQLite ClaimNext flow is used for tasks
+# Leave the section absent (or set no url) to run embedded; set mode="off"
+# only to opt out of NATS entirely.
 # [nats]
-# url = "nats://localhost:4222"
-# token_env = "NATS_TOKEN"          # optional; named variable must be set
+# mode = "embedded"                  # "embedded" | "external" | "off"
+# url = "nats://localhost:4222"      # required when mode = "external"
+# token_env = "NATS_TOKEN"           # optional; named variable must be set
 
 # Unbound webhook capture: POST /webhooks/capture/{source} accepts and
 # stores any inbound payload archie doesn't yet have a binding for, so it can

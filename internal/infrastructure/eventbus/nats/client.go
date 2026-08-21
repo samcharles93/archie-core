@@ -27,7 +27,8 @@ type Client struct {
 }
 
 // Connect dials the broker and provisions the stream and pull consumer. The
-// stream uses work-queue retention on file storage.
+// stream uses file storage and the retention policy from Config.Retention
+// (defaulting to work-queue for task distribution).
 //
 // On any failure the partially-built connection is closed before returning, so
 // a failed Connect leaks nothing.
@@ -62,7 +63,7 @@ func Connect(ctx context.Context, cfg Config, log *slog.Logger) (*Client, error)
 		Name:       cfg.StreamName,
 		Subjects:   cfg.Subjects,
 		Storage:    jetstream.FileStorage,
-		Retention:  jetstream.WorkQueuePolicy,
+		Retention:  *cfg.Retention,
 		Duplicates: cfg.DedupWindow,
 	})
 	if err != nil {

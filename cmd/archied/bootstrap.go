@@ -91,6 +91,11 @@ type boot struct {
 	web             *webui.Server
 
 	natsClient *nats.Client
+	// natsURL is the endpoint the daemon's own client connected with at
+	// startup. For external mode it is cfg.NATS.URL; for embedded mode it is
+	// the embedded server's ClientURL(). Recorded so Daemon.ConnectedNATS
+	// carries the real endpoint rather than an empty config URL.
+	natsURL string
 
 	containerPool   *container.Pool
 	storeBackend    storage.Backend
@@ -324,22 +329,45 @@ func (b *boot) setupObservability() {
 	go persistAndBroadcastEvents(sink, b.st, b.web, log)
 }
 
-// connectNATS opens the optional NATS client (the SQLite flow is
-// unchanged when [nats] is absent).
+// connectNATS opens the NATS client. External mode dials cfg.NATS.URL;
+// embedded mode starts an in-process nats-server and dials it, so single-
+// process deployments get task distribution and reaction delivery without a
+// separate server. Off mode returns nil and the SQLite ClaimNext flow runs.
 func (b *boot) connectNATS(ctx context.Context) error {
 	cfg, log := b.cfg, b.log
-	if cfg.NATS.URL == "" {
+	if cfg.NATS.Mode == config.NATSModeOff {
 		return nil
 	}
-	natsToken, err := configuredNATSToken(cfg.NATS, os.Getenv)
-	if err != nil {
-		log.Error("nats credentials", "err", err)
-		return err
+
+	url := cfg.NATS.URL
+	var natsToken string
+	if cfg.NATS.Mode == config.NATSModeExternal {
+		var err error
+		natsToken, err = configuredNATSToken(cfg.NATS, os.Getenv)
+		if err != nil {
+			log.Error("nats credentials", "err", err)
+			return err
+		}
+	} else {
+		// Embedded. Start the in-process server before dialing, and register
+		// its shutdown BEFORE the client close below so the client closes
+		// first (cleanups run LIFO).
+		srv, err := nats.StartEmbedded(ctx, nats.EmbeddedOptions{
+			StoreDir: filepath.Join(filepath.Dir(cfg.DBPath), "nats"),
+		}, log)
+		if err != nil {
+			log.Error("embedded nats start failed", "err", err)
+			return err
+		}
+		b.addCleanup(func() { srv.Shutdown() })
+		url = srv.ClientURL()
+		log.Info("embedded nats started", "url", url)
 	}
+
 	// Composition owns the subject list: the bus must not know which
 	// subjects belong to which domain.
 	natsClient, err := nats.Connect(ctx, nats.Config{
-		URL:           cfg.NATS.URL,
+		URL:           url,
 		Token:         natsToken,
 		Subjects:      []string{workintake.SubjectTaskWildcard, agentexec.SubjectAgentWildcard},
 		FilterSubject: workintake.SubjectTaskWildcard,
@@ -349,8 +377,9 @@ func (b *boot) connectNATS(ctx context.Context) error {
 		return err
 	}
 	b.natsClient = natsClient
+	b.natsURL = url
 	b.addCleanup(func() { natsClient.Close() })
-	log.Info("nats connected", "url", cfg.NATS.URL)
+	log.Info("nats connected", "url", url)
 	return nil
 }
 
@@ -544,8 +573,8 @@ func (b *boot) buildAgentRunner() error {
 		b.agentRunner = inproc
 	case "nats":
 		if b.natsClient == nil {
-			log.Error("agent.mode is nats but [nats] is not configured")
-			return fmt.Errorf("agent.mode is nats but [nats] is not configured")
+			log.Error("agent.mode is nats but nats is unavailable (nats.mode is off)")
+			return fmt.Errorf("agent.mode is nats but nats is unavailable (nats.mode is off)")
 		}
 		b.agentRunner = &agentexec.NATSRunner{
 			Bus:        b.natsClient,
@@ -904,9 +933,16 @@ func (b *boot) registerStandaloneTools() {
 // it shares with it.
 func (b *boot) buildDaemon() {
 	cfg, log := b.cfg, b.log
+	// ConnectedNATS must carry the endpoint the daemon's own client connected
+	// with at startup, not the raw config: for embedded mode the config URL is
+	// empty, but container env must never see an empty NATS_URL. (Containers
+	// are rejected in embedded mode by validation, but the field should mean
+	// the same thing regardless of mode.)
+	connectedNATS := cfg.NATS
+	connectedNATS.URL = b.natsURL
 	b.d = &daemon.Daemon{
 		Cfg:             config.NewHolder(cfg),
-		ConnectedNATS:   cfg.NATS,
+		ConnectedNATS:   connectedNATS,
 		Store:           b.st,
 		Bus:             b.bus,
 		Forge:           b.forgeClient,
