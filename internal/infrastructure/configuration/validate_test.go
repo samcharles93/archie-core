@@ -139,6 +139,36 @@ func TestValidate_RejectsTheSameProblemsAsLoaderLoad(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name:    "negative capture.retention",
+			mutate:  func(cfg *config.Config) { cfg.Capture.Retention = config.Duration(-time.Hour) },
+			wantErr: true,
+		},
+		{
+			name:    "negative capture.max_events",
+			mutate:  func(cfg *config.Config) { cfg.Capture.MaxEvents = -1 },
+			wantErr: true,
+		},
+		{
+			name:    "negative capture.max_body_bytes",
+			mutate:  func(cfg *config.Config) { cfg.Capture.MaxBodyBytes = -1 },
+			wantErr: true,
+		},
+		{
+			name:    "negative capture.rate_per_second",
+			mutate:  func(cfg *config.Config) { cfg.Capture.RatePerSecond = -1 },
+			wantErr: true,
+		},
+		{
+			name:    "negative capture.rate_burst",
+			mutate:  func(cfg *config.Config) { cfg.Capture.RateBurst = -1 },
+			wantErr: true,
+		},
+		{
+			name:    "zero capture fields are valid (defaults fill them)",
+			mutate:  func(cfg *config.Config) {},
+			wantErr: false,
+		},
 	}
 
 	for _, tc := range tests {

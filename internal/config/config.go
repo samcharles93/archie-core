@@ -385,6 +385,7 @@ type Config struct {
 	NATS       NATSConfig      `toml:"nats" yaml:"nats"`
 	Containers ContainerConfig `toml:"containers" yaml:"containers"`
 	Chat       ChatConfig      `toml:"chat" yaml:"chat"`
+	Capture    CaptureConfig   `toml:"capture" yaml:"capture"`
 
 	// Memory holds memory provider configuration (from config.memory.yaml).
 	Memory MemoryConfig `toml:"memory" yaml:"memory"`
@@ -579,6 +580,32 @@ type NATSConfig struct {
 	// TokenEnv optionally names an env var holding a NATS auth token.
 	// Empty means no authentication.
 	TokenEnv string `toml:"token_env" yaml:"token_env"`
+}
+
+// CaptureConfig configures the unbound webhook capture endpoint
+// (docs/prds/event-capture-storage.md). All fields have defaults; an empty
+// [capture] section is valid and produces them -- capture is on by default.
+type CaptureConfig struct {
+	// Retention is how long a captured event is kept before prune-on-write
+	// deletes it. Zero or absent means the 7-day default; a positive value
+	// configured explicitly is used as-is; a deployment that wants no age
+	// bound sets it very large rather than using a magic "0 = unlimited"
+	// spelling, since 0 already means "use the default" here.
+	Retention Duration `toml:"retention" yaml:"retention"`
+	// MaxEvents caps the table at this many newest rows; older rows are
+	// pruned on every insert regardless of age. Zero means the 5000 default.
+	MaxEvents int `toml:"max_events" yaml:"max_events"`
+	// MaxBodyBytes rejects (413) any single POST body larger than this
+	// before it is read into memory. Zero means the 256 KiB default.
+	MaxBodyBytes int `toml:"max_body_bytes" yaml:"max_body_bytes"`
+	// RatePerSecond and RateBurst configure the per-remote-address token
+	// bucket (webhookguard.RateLimiter) applied before a request's body is
+	// read. Keyed by remote address, not the source path segment, since
+	// that segment is unregistered and attacker-chosen by design -- see
+	// docs/prds/event-capture-storage.md's disk-bound mechanics. Zero means
+	// the defaults (1 req/s, burst 5).
+	RatePerSecond float64 `toml:"rate_per_second" yaml:"rate_per_second"`
+	RateBurst     int     `toml:"rate_burst" yaml:"rate_burst"`
 }
 
 // ContainerConfig configures Docker sandbox execution of archie-agent.

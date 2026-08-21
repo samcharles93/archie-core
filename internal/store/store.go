@@ -109,7 +109,7 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	if _, err := db.ExecContext(ctx, schema+eventsSchema); err != nil {
+	if _, err := db.ExecContext(ctx, schema+eventsSchema+capturesSchema); err != nil {
 		return nil, errors.Join(fmt.Errorf("store: init schema: %w", err), db.Close())
 	}
 	if err := migrateTasks(ctx, db); err != nil {

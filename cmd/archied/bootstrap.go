@@ -53,6 +53,7 @@ import (
 	builtintoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/builtin"
 	memorytoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/memory"
 	"github.com/samcharles93/archie-core/internal/tools/webfetch"
+	"github.com/samcharles93/archie-core/internal/webhookguard"
 	"github.com/samcharles93/archie-core/internal/webui"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
@@ -306,6 +307,19 @@ func (b *boot) setupObservability() {
 	// issue is re-polled and the work is done again. It gets only that one
 	// method, not the forge client.
 	b.web.Issues = b.forgeClient
+	// Capture storage: openProductionTaskStore's declared return type is the
+	// narrow store.TaskStore, so the CaptureStore surface (implemented by
+	// the same *store.Store) needs its own assertion here rather than a
+	// direct field reuse. See docs/prds/event-capture-storage.md.
+	if cs, ok := b.st.(store.CaptureStore); ok {
+		b.web.Captures = cs
+	} else {
+		log.Warn("capture storage unavailable: task store does not implement CaptureStore")
+	}
+	b.web.CaptureRetention = cfg.Capture.Retention.Std()
+	b.web.CaptureMaxEvents = cfg.Capture.MaxEvents
+	b.web.CaptureMaxBodyBytes = int64(cfg.Capture.MaxBodyBytes)
+	b.web.CaptureLimiter = webhookguard.NewRateLimiter(cfg.Capture.RatePerSecond, cfg.Capture.RateBurst, time.Now)
 	sink := bus.Subscribe(256)
 	go persistAndBroadcastEvents(sink, b.st, b.web, log)
 }

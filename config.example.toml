@@ -174,6 +174,21 @@ gate_max_failures = 5
 # url = "nats://localhost:4222"
 # token_env = "NATS_TOKEN"          # optional; named variable must be set
 
+# Unbound webhook capture: POST /webhooks/capture/{source} accepts and
+# stores any inbound payload archie doesn't yet have a binding for, so it can
+# be inspected and mapped later (see docs/prds/event-capture-storage.md).
+# Stored in the same SQLite database as tasks, not NATS -- capture has one
+# writer and one (human, dashboard) reader, so it doesn't need JetStream's
+# fan-out/replay machinery, and SQLite is available in every deployment
+# shape unconditionally. All fields default when the section is absent;
+# capture is on by default.
+# [capture]
+# retention      = "168h"  # 7 days; prune-on-write deletes anything older
+# max_events     = 5000    # row cap, pruned on every insert regardless of age
+# max_body_bytes = 262144  # 256 KiB; larger POSTs are rejected with 413
+# rate_per_second = 1.0    # per-remote-address token bucket
+# rate_burst      = 5
+
 # Docker sandbox execution of archie-agent. Requires [nats] and agent.mode = "nats".
 # [containers]
 # enabled = true
