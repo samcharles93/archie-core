@@ -571,14 +571,35 @@ func cloneStringSlices(ss [][]string) [][]string {
 	return out
 }
 
-// NATSConfig configures NATS JetStream for task distribution. When URL is
-// empty the existing SQLite ClaimNext flow is used unchanged.
+// NATS mode values for NATSConfig.Mode. The zero value (empty) resolves from
+// URL; these are the explicit spellings, shared with configuration validation
+// so the two cannot drift.
+const (
+	NATSModeEmbedded = "embedded"
+	NATSModeExternal = "external"
+	NATSModeOff      = "off"
+)
+
+// NATSConfig configures NATS JetStream for task distribution and reaction
+// delivery. The mode selects how NATS is provided:
+//
+//	"embedded"  – an in-process nats-server (default; no external server)
+//	"external"  – connect to URL (required; the only mode agent.mode="nats"
+//	              and [containers] can use)
+//	"off"       – no NATS; the SQLite ClaimNext flow is used unchanged
+//
+// An empty Mode resolves from URL: URL set means "external", URL empty means
+// "embedded". This is a meaning change from the previous behaviour, where an
+// empty URL alone meant "no NATS, SQLite only" -- that old behaviour is now
+// the explicit opt-out Mode == "off" (docs/prds/embedded-nats.md).
 type NATSConfig struct {
+	// Mode selects embedded, external or off. Empty resolves from URL.
+	Mode string `toml:"mode" yaml:"mode"`
 	// URL is the NATS server address, e.g. "nats://localhost:4222".
-	// Empty means NATS is not configured.
+	// Required when Mode is "external"; must be empty otherwise.
 	URL string `toml:"url" yaml:"url"`
 	// TokenEnv optionally names an env var holding a NATS auth token.
-	// Empty means no authentication.
+	// Empty means no authentication. Ignored when Mode is "embedded".
 	TokenEnv string `toml:"token_env" yaml:"token_env"`
 }
 

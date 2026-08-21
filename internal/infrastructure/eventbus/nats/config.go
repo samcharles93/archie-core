@@ -3,6 +3,8 @@ package nats
 import (
 	"fmt"
 	"time"
+
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 // Defaults for Config. Previously these were unexported package constants,
@@ -45,6 +47,17 @@ type Config struct {
 	// archied consumes task subjects, archie-agent consumes agent subjects.
 	// Required.
 	FilterSubject string
+
+	// Retention is the stream's retention policy. Nil defaults to
+	// jetstream.WorkQueuePolicy (each message claimed by exactly one
+	// consumer), which is correct for ARCHIE_TASKS task distribution. A
+	// fan-out reaction stream passes jetstream.LimitsPolicy so every
+	// registered consumer sees every matching event; under WorkQueuePolicy a
+	// second consumer on an overlapping filter subject silently receives
+	// nothing (the trap documented in CLAUDE.md). The pointer form is what
+	// lets "unset" default to WorkQueuePolicy when the policy's zero value
+	// (LimitsPolicy) is a valid explicit choice.
+	Retention *jetstream.RetentionPolicy
 
 	// DedupWindow is how long JetStream remembers a Nats-Msg-Id, suppressing
 	// republished duplicates of the same issue within the window.
@@ -107,6 +120,10 @@ func (c Config) withDefaults() Config {
 	}
 	if c.InactiveTTL == 0 {
 		c.InactiveTTL = DefaultInactiveTTL
+	}
+	if c.Retention == nil {
+		policy := jetstream.WorkQueuePolicy
+		c.Retention = &policy
 	}
 	return c
 }

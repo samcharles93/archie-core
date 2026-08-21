@@ -189,6 +189,77 @@ func TestValidate_RejectsTheSameProblemsAsLoaderLoad(t *testing.T) {
 	}
 }
 
+// TestValidateNATS pins the nats mode contract from docs/prds/embedded-nats.md:
+// an unset mode resolves from url without mutating cfg, external requires url,
+// embedded/off forbid a url, and agent.mode="nats" requires external.
+func TestValidateNATS(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    string
+		url     string
+		agent   string
+		wantErr bool
+	}{
+		{name: "unset mode with url resolves external", url: "nats://localhost:4222"},
+		{name: "unset mode without url resolves embedded"},
+		{name: "embedded with no url", mode: config.NATSModeEmbedded},
+		{name: "off with no url", mode: config.NATSModeOff},
+		{name: "external with url", mode: config.NATSModeExternal, url: "nats://localhost:4222"},
+		{name: "external without url", mode: config.NATSModeExternal, wantErr: true},
+		{name: "embedded with url", mode: config.NATSModeEmbedded, url: "nats://localhost:4222", wantErr: true},
+		{name: "off with url", mode: config.NATSModeOff, url: "nats://localhost:4222", wantErr: true},
+		{name: "unknown mode", mode: "not-a-mode", wantErr: true},
+		{name: "agent nats with embedded", mode: config.NATSModeEmbedded, agent: "nats", wantErr: true},
+		{name: "agent nats with external", mode: config.NATSModeExternal, url: "nats://localhost:4222", agent: "nats"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := minimalValidConfig()
+			cfg.NATS = config.NATSConfig{Mode: tc.mode, URL: tc.url}
+			if tc.agent != "" {
+				cfg.Agent.Mode = tc.agent
+			}
+			err := validateNATS(&cfg)
+			if tc.wantErr && err == nil {
+				t.Fatal("validateNATS() = nil, want an error")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("validateNATS() = %v, want nil", err)
+			}
+		})
+	}
+}
+
+// TestValidateContainersResolvesNATSMode pins that validateContainers reads
+// the *resolved* nats mode, not the raw field: a hand-built config with
+// containers enabled and a url but no explicit mode must validate the same way
+// the loader's on-disk form does (url implies external), rather than diverge
+// because validateContainers saw an empty mode.
+func TestValidateContainersResolvesNATSMode(t *testing.T) {
+	base := func() config.Config {
+		cfg := minimalValidConfig()
+		cfg.Containers = config.ContainerConfig{Enabled: true, Image: "archie-agent:latest"}
+		cfg.Agent.Mode = "nats"
+		return cfg
+	}
+
+	t.Run("unset mode with url resolves external", func(t *testing.T) {
+		cfg := base()
+		cfg.NATS.URL = "nats://localhost:4222"
+		if err := Validate(&cfg); err != nil {
+			t.Fatalf("Validate() = %v, want nil (unset mode + url resolves external)", err)
+		}
+	})
+
+	t.Run("embedded mode rejects containers", func(t *testing.T) {
+		cfg := base()
+		cfg.NATS.Mode = config.NATSModeEmbedded
+		if err := Validate(&cfg); err == nil {
+			t.Fatal("Validate() = nil, want an error for containers with embedded nats")
+		}
+	})
+}
+
 // Validate must run the exact same checks Loader.File applies internally --
 // this pins that a config Validate accepts on its own, once the same
 // defaults Loader.File would apply are filled in by hand, is also accepted

@@ -7,6 +7,30 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 )
 
+func TestApplyNATSDefaultsResolvesMode(t *testing.T) {
+	tests := []struct {
+		name string
+		mode string
+		url  string
+		want string
+	}{
+		{name: "url set implies external", url: "nats://localhost:4222", want: config.NATSModeExternal},
+		{name: "empty implies embedded", want: config.NATSModeEmbedded},
+		{name: "explicit off is preserved", mode: config.NATSModeOff, want: config.NATSModeOff},
+		{name: "explicit embedded is preserved", mode: config.NATSModeEmbedded, want: config.NATSModeEmbedded},
+		{name: "explicit external is preserved", mode: config.NATSModeExternal, url: "nats://localhost:4222", want: config.NATSModeExternal},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &config.Config{NATS: config.NATSConfig{Mode: tc.mode, URL: tc.url}}
+			applyNATSDefaults(cfg)
+			if cfg.NATS.Mode != tc.want {
+				t.Errorf("applyNATSDefaults() mode = %q, want %q", cfg.NATS.Mode, tc.want)
+			}
+		})
+	}
+}
+
 func TestApplyCaptureDefaultsFillsZeroValues(t *testing.T) {
 	cfg := &config.Config{}
 	applyCaptureDefaults(cfg)
