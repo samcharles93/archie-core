@@ -57,7 +57,11 @@ export:
   auto: true
   path: issues.jsonl
   interval: 60s
-  git-add: false
+  # issues.jsonl is tracked (see .beads/.gitignore), so the export must be
+  # staged with the commit that triggers it. With git-add off, the 60s
+  # auto-export would leave a tracked file permanently dirty in git status
+  # and block rebases and checkouts until stashed.
+  git-add: true
 import:
   path: issues.jsonl
 
