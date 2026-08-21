@@ -5,10 +5,20 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
+	"time"
 
+	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webhookguard"
 )
+
+// defaultCapturesListLimit is used when the limit query param is absent,
+// non-numeric, or non-positive. A raw strconv.Atoi zero value (its error
+// case) must never reach ListCaptures directly -- SQL "LIMIT 0" returns zero
+// rows, which would make an unrecognised or missing limit look identical to
+// "no captures exist" instead of "show the default page."
+const defaultCapturesListLimit = 100
 
 // handleCapture accepts an unbound inbound webhook POST and persists it --
 // no HMAC verification (there is by design no secret registered yet for a
@@ -59,19 +69,73 @@ func (s *Server) handleCapture(w http.ResponseWriter, r *http.Request) {
 		redactedBody = body
 	}
 
-	_, err = s.Captures.InsertCapture(r.Context(), store.CapturedEvent{
+	c := store.CapturedEvent{
+		ReceivedAt:  time.Now().UTC(),
 		Source:      source,
 		RemoteAddr:  r.RemoteAddr,
 		ContentType: r.Header.Get("Content-Type"),
 		Headers:     string(redactedHeaders),
 		Body:        string(redactedBody),
-	}, s.CaptureRetention, s.CaptureMaxEvents)
+	}
+	id, err := s.Captures.InsertCapture(r.Context(), c, s.CaptureRetention, s.CaptureMaxEvents)
 	if err != nil {
 		s.Log.Error("capture insert", "err", err, "source", source)
 		http.Error(w, "capture failed", http.StatusInternalServerError)
 		return
 	}
+	c.ID = id
+
+	// Reuses the existing operator-activity event pipeline (persist + live
+	// SSE fan-out) rather than inventing separate push plumbing -- see
+	// docs/prds/event-capture-storage.md. The dedicated captures view (t2db.2)
+	// filters this stream for Kind == "capture" and prepends the row directly,
+	// so a new capture appears without a manual refresh or extra round trip.
+	s.emit(r.Context(), events.Event{
+		Kind:   "capture",
+		Detail: "capture from " + source,
+		Data:   captureEventData(c),
+	})
+
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// captureEventData renders a CapturedEvent as the map shape used both by
+// GET /api/captures and the "capture" kind live SSE event, so the frontend
+// handles one row shape regardless of which path delivered it.
+func captureEventData(c store.CapturedEvent) map[string]any {
+	return map[string]any{
+		"id":            c.ID,
+		"received_at":   c.ReceivedAt,
+		"source":        c.Source,
+		"remote_addr":   c.RemoteAddr,
+		"content_type":  c.ContentType,
+		"headers":       c.Headers,
+		"body":          c.Body,
+		"authenticated": c.Authenticated,
+	}
+}
+
+// handleCaptures lists recent captured events, newest first, for the
+// dashboard's event inspector (t2db.2). Token-gated like every other
+// /api/* route -- captured payloads are visible only to an authenticated
+// operator, per docs/prds/webhook-intake-security.md point 5.
+func (s *Server) handleCaptures(w http.ResponseWriter, r *http.Request) {
+	if s.Captures == nil {
+		writeJSON(w, map[string]any{"captures": []any{}, "enabled": false})
+		return
+	}
+
+	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
+	if err != nil || limit <= 0 {
+		limit = defaultCapturesListLimit
+	}
+	captures, err := s.Captures.ListCaptures(r.Context(), limit)
+	if err != nil {
+		s.Log.Error("list captures", "err", err)
+		http.Error(w, "list captures failed", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{"captures": captures, "enabled": true})
 }
 
 // fallbackCaptureMaxBodyBytes bounds a capture body when CaptureMaxBodyBytes

@@ -1,0 +1,61 @@
+/* Event inspector: captured payloads, explorable per row. */
+
+.capture-row {
+  cursor: pointer;
+}
+
+.capture-row:hover {
+  background: var(--bg-raised);
+}
+
+.capture-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.capture-detail-row td {
+  padding: var(--sp-3) var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.capture-detail {
+  display: grid;
+  gap: var(--sp-4);
+  grid-template-columns: 1fr 1fr;
+}
+
+.capture-detail-section {
+  min-width: 0;
+}
+
+.capture-detail-title {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-subtle);
+  margin-bottom: var(--sp-2);
+}
+
+.capture-payload {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 24rem;
+  overflow: auto;
+}
+
+.capture-empty {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 640px) {
+  .capture-detail {
+    grid-template-columns: 1fr;
+  }
+}
