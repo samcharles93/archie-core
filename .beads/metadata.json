@@ -1,7 +1,7 @@
 {
   "database": "dolt",
   "backend": "dolt",
-  "dolt_mode": "server",
+  "dolt_mode": "embedded",
   "dolt_database": "archie_core",
   "project_id": "e8a66150-1f5f-42d2-8653-dcf8463cef74",
   "global_dolt_database": "beads_global",
