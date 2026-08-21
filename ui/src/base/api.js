@@ -107,6 +107,7 @@ export const api = {
     return res.json();
   },
   logs: (params) => req("/api/logs" + qs(params)),
+  captures: (limit) => req("/api/captures" + qs({ limit })),
   memory: () => req("/api/memory"),
   chatSessions: () => req("/api/chat/sessions"),
   chatMessages: (id) => req(`/api/chat/sessions/${encodeURIComponent(id)}/messages`),

@@ -206,6 +206,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/workflows", s.handleWorkflows)
 	mux.HandleFunc("POST /api/work-requests", s.handleWorkRequest)
 	mux.HandleFunc("GET /api/skills", s.handleSkills)
+	mux.HandleFunc("GET /api/captures", s.handleCaptures)
 	mux.HandleFunc("GET /api/channels", s.handleChannels)
 	mux.HandleFunc("POST /api/channels/{id}/reload", s.handleChannelReload)
 	mux.HandleFunc("GET /api/config", s.handleConfig)

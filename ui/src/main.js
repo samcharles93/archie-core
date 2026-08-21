@@ -8,6 +8,7 @@ import { workflowsPage } from "./workflows/workflows.js";
 import { channelsPage } from "./channels/channels.js";
 import { settingsPage } from "./settings/settings.js";
 import { logsPage } from "./logs/logs.js";
+import { capturesPage } from "./captures/captures.js";
 import { memoryPage } from "./memory/memory.js";
 import { chatPage } from "./chat/chat.js";
 
@@ -24,6 +25,7 @@ const routes = [
   { path: "/chat", label: "Chat", icon: "chat", view: chatPage },
   { path: "/tasks", label: "Tasks", icon: "tasks", view: tasksPage },
   { path: "/logs", label: "Logs", icon: "logs", view: logsPage },
+  { path: "/captures", label: "Event inspector", icon: "captures", view: capturesPage },
   { path: "/skills", label: "Skills", icon: "skills", view: skillsPage },
   { path: "/workflows", label: "Workflows", icon: "workflows", view: workflowsPage },
   { path: "/memory", label: "Memory", icon: "memory", view: memoryPage },

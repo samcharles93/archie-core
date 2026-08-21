@@ -2,6 +2,7 @@ package webui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -11,9 +12,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webhookguard"
 )
+
+// recordingPublisher captures every event.Publish call so a test can assert
+// a capture reached the live SSE pipeline without standing up a real
+// streaming HTTP connection.
+type recordingPublisher struct {
+	published []events.Event
+}
+
+func (r *recordingPublisher) Publish(e events.Event) {
+	r.published = append(r.published, e)
+}
 
 // captureTestServer builds a Server whose Captures field points at the same
 // concrete *store.Store as Store, so tests can assert on persisted rows
@@ -68,6 +81,45 @@ func TestHandleCaptureStoresRedactedBody(t *testing.T) {
 	}
 	if !strings.Contains(c.Body, `"action":"opened"`) {
 		t.Errorf("Body = %q, want the non-sensitive field preserved", c.Body)
+	}
+}
+
+// TestHandleCapturePublishesLiveEventOnSuccess pins the "no manual refresh"
+// acceptance criterion's actual mechanism: a successful capture must reach
+// the existing operator-activity event pipeline (Server.emit -> Events.Publish)
+// with Kind "capture" and the same field shape GET /api/captures returns, so
+// the dashboard's event inspector can prepend it directly. This does not open
+// a real SSE connection -- it asserts what handleCapture hands to the
+// publisher, which is the part this feature actually adds; Broadcast/handleSSE
+// themselves are pre-existing and separately tested.
+func TestHandleCapturePublishesLiveEventOnSuccess(t *testing.T) {
+	srv := captureTestServer(t)
+	pub := &recordingPublisher{}
+	srv.Events = pub
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhooks/capture/github", strings.NewReader(`{"action":"opened"}`))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusAccepted)
+	}
+	if len(pub.published) != 1 {
+		t.Fatalf("published events = %d, want 1", len(pub.published))
+	}
+	e := pub.published[0]
+	if e.Kind != "capture" {
+		t.Fatalf("Kind = %q, want \"capture\"", e.Kind)
+	}
+	if e.ID == 0 {
+		t.Fatalf("ID = 0, want the persisted events-table row id")
+	}
+	if got, _ := e.Data["source"].(string); got != "github" {
+		t.Fatalf("Data[\"source\"] = %v, want \"github\"", e.Data["source"])
+	}
+	body, _ := e.Data["body"].(string)
+	if !strings.Contains(body, `"action":"opened"`) {
+		t.Fatalf("Data[\"body\"] = %q, want the captured payload", body)
 	}
 }
 
@@ -265,5 +317,119 @@ func TestHandleCaptureStorageFailureIs500(t *testing.T) {
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
+func captureListResponse(t *testing.T, w *httptest.ResponseRecorder) map[string]any {
+	t.Helper()
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v; body = %s", err, w.Body.String())
+	}
+	return body
+}
+
+func TestHandleCapturesListsRecentCapturesNewestFirst(t *testing.T) {
+	srv := captureTestServer(t)
+	for _, src := range []string{"first", "second", "third"} {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhooks/capture/"+src, strings.NewReader(`{"n":1}`))
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusAccepted {
+			t.Fatalf("seed capture %q: status = %d", src, w.Code)
+		}
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/captures", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	body := captureListResponse(t, w)
+	if enabled, _ := body["enabled"].(bool); !enabled {
+		t.Fatalf("enabled = %v, want true", body["enabled"])
+	}
+	captures, ok := body["captures"].([]any)
+	if !ok || len(captures) != 3 {
+		t.Fatalf("captures = %#v, want 3 entries", body["captures"])
+	}
+	first, ok := captures[0].(map[string]any)
+	if !ok || first["source"] != "third" {
+		t.Fatalf("captures[0] = %#v, want newest-first (source=\"third\")", captures[0])
+	}
+}
+
+func TestHandleCapturesRespectsLimitQueryParam(t *testing.T) {
+	srv := captureTestServer(t)
+	for range 3 {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhooks/capture/src", strings.NewReader(`{}`))
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/captures?limit=1", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	body := captureListResponse(t, w)
+	captures, _ := body["captures"].([]any)
+	if len(captures) != 1 {
+		t.Fatalf("captures = %#v, want 1 entry (limit=1)", body["captures"])
+	}
+}
+
+func TestHandleCapturesDefaultsLimitWhenMissingOrInvalid(t *testing.T) {
+	srv := captureTestServer(t)
+	for range 3 {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhooks/capture/src", strings.NewReader(`{}`))
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+	}
+
+	for _, limit := range []string{"", "not-a-number", "-5", "0"} {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/captures?limit="+limit, nil)
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+
+		body := captureListResponse(t, w)
+		captures, _ := body["captures"].([]any)
+		if len(captures) != 3 {
+			t.Fatalf("limit=%q: captures = %#v, want all 3 (an invalid/absent limit must not become a 0-row LIMIT)", limit, body["captures"])
+		}
+	}
+}
+
+func TestHandleCapturesWithoutCapturesConfiguredIsEnabledFalse(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/captures", nil)
+	w := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (unconfigured is not an error, per the memory/skills precedent)", w.Code, http.StatusOK)
+	}
+	body := captureListResponse(t, w)
+	if enabled, _ := body["enabled"].(bool); enabled {
+		t.Fatalf("enabled = %v, want false when Captures is nil", body["enabled"])
+	}
+	captures, ok := body["captures"].([]any)
+	if !ok || len(captures) != 0 {
+		t.Fatalf("captures = %#v, want an empty list", body["captures"])
+	}
+}
+
+func TestHandleCapturesRequiresToken(t *testing.T) {
+	srv := captureTestServer(t)
+	srv.Token = "dashboard-secret"
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/captures", nil)
+	w := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code == http.StatusOK {
+		t.Fatalf("status = %d, want captures to require the dashboard token like every other /api/* route", w.Code)
 	}
 }
