@@ -61,9 +61,14 @@ dolt-pprof/
 # Corrupt backup directories (created by bd doctor --fix recovery)
 *.corrupt.backup/
 
-# JSONL exports and backups are local interchange artifacts. Dolt is the
-# authoritative store and GitHub is the external issue surface.
-issues.jsonl
+# issues.jsonl is deliberately TRACKED (see export.git-add in config.yaml).
+# Dolt remains the authoritative store and GitHub the external issue surface;
+# the tracked export exists so issue state is readable and recoverable from a
+# plain git clone, without a Dolt server. Removing it from this file is what
+# tracks it -- do NOT add a "!issues.jsonl" negation, which would override the
+# fork protection in .git/info/exclude (see the note at the end of this file).
+#
+# Backups stay local: they are point-in-time copies of the same data.
 backup/
 
 # Per-project environment file (Dolt connection config, GH#2520)
