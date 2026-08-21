@@ -10,7 +10,7 @@ import (
 func TestToolProviderEngineContractExists(t *testing.T) {
 	t.Parallel()
 
-	source, err := os.ReadFile(filepath.Join("provider.go"))
+	source, err := os.ReadFile("provider.go")
 	if err != nil {
 		t.Fatalf("read provider.go: %v", err)
 	}
