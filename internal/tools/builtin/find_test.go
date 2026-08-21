@@ -19,7 +19,9 @@ func TestFindFallback(t *testing.T) {
 	createTestFile(t, tmp, "subdir/baz.go", "package baz")
 	createTestFile(t, tmp, "subdir/nested/deep.txt", "deep")
 	createTestFile(t, tmp, "vendor/mod.go", "package mod")
-	os.MkdirAll(filepath.Join(tmp, "hiddendir"), 0o755)
+	if err := os.MkdirAll(filepath.Join(tmp, "hiddendir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	createTestFile(t, tmp, "hiddendir/visible.txt", "text")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

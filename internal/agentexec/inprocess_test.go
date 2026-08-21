@@ -275,7 +275,9 @@ func main() {
 
 	done := make(chan struct{})
 	go func() {
-		tool.Execute(ctx, `{"path":"blocker.go"}`)
+		// The result is irrelevant here -- this goroutine only exists to
+		// prove Execute returns promptly once ctx is cancelled.
+		_, _ = tool.Execute(ctx, `{"path":"blocker.go"}`)
 		close(done)
 	}()
 
