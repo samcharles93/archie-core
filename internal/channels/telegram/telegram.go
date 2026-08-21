@@ -61,6 +61,17 @@ type Gateway struct {
 	// /restart alike), same as ReleaseAnnouncements. Empty disables it.
 	UpdateReportPath string
 
+	// RunningVersions reports, per component ID (see
+	// releaseupdate.ComponentDaemon), the version that component reports for
+	// itself rather than the version an installer claimed to install. It is
+	// what turns a pending update report from a self-reported claim into a
+	// checked one: the daemon's own compiled-in build version cannot be
+	// talked out of being what is actually running. Only components that can
+	// genuinely self-report belong here -- a guess would re-introduce
+	// exactly the false success this check exists to catch. Nil leaves every
+	// claim unverified.
+	RunningVersions func() map[string]string
+
 	// Dangerous is the sandbox/process authority for /rollback and /stop.
 	// When nil, those commands return "not configured". The composition
 	// root supplies this; Telegram only renders approval UX.
