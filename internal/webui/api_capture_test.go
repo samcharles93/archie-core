@@ -87,11 +87,17 @@ func TestHandleCaptureStoresRedactedBody(t *testing.T) {
 // TestHandleCapturePublishesLiveEventOnSuccess pins the "no manual refresh"
 // acceptance criterion's actual mechanism: a successful capture must reach
 // the existing operator-activity event pipeline (Server.emit -> Events.Publish)
-// with Kind "capture" and the same field shape GET /api/captures returns, so
-// the dashboard's event inspector can prepend it directly. This does not open
-// a real SSE connection -- it asserts what handleCapture hands to the
-// publisher, which is the part this feature actually adds; Broadcast/handleSSE
-// themselves are pre-existing and separately tested.
+// with Kind "capture" so the dashboard's event inspector knows to refetch.
+// This does not open a real SSE connection -- it asserts what handleCapture
+// hands to the publisher, which is the part this feature actually adds;
+// Broadcast/handleSSE themselves are pre-existing and separately tested.
+//
+// The published event is deliberately LIGHTWEIGHT (id + source only, no
+// body/headers): the events table this feeds (internal/store/events.go) has
+// no retention or row-count prune, unlike captured_events, so embedding the
+// full (up to CaptureMaxBodyBytes) payload here would duplicate it into an
+// unbounded table and defeat the disk-bound guarantee InsertCapture's own
+// prune-on-write exists to provide. See docs/prds/event-capture-storage.md.
 func TestHandleCapturePublishesLiveEventOnSuccess(t *testing.T) {
 	srv := captureTestServer(t)
 	pub := &recordingPublisher{}
@@ -114,12 +120,24 @@ func TestHandleCapturePublishesLiveEventOnSuccess(t *testing.T) {
 	if e.ID == 0 {
 		t.Fatalf("ID = 0, want the persisted events-table row id")
 	}
+	captured, err := srv.Captures.ListCaptures(t.Context(), 1)
+	if err != nil {
+		t.Fatalf("ListCaptures: %v", err)
+	}
+	if len(captured) != 1 {
+		t.Fatalf("captured rows = %d, want 1", len(captured))
+	}
+	if got, want := e.Data["id"], captured[0].ID; got != want {
+		t.Fatalf("Data[\"id\"] = %v, want %v (the persisted captured_events row id, for frontend dedup)", got, want)
+	}
 	if got, _ := e.Data["source"].(string); got != "github" {
 		t.Fatalf("Data[\"source\"] = %v, want \"github\"", e.Data["source"])
 	}
-	body, _ := e.Data["body"].(string)
-	if !strings.Contains(body, `"action":"opened"`) {
-		t.Fatalf("Data[\"body\"] = %q, want the captured payload", body)
+	if _, hasBody := e.Data["body"]; hasBody {
+		t.Fatalf("Data[\"body\"] present, want it omitted -- embedding the full payload here duplicates it into the unbounded events table")
+	}
+	if _, hasHeaders := e.Data["headers"]; hasHeaders {
+		t.Fatalf("Data[\"headers\"] present, want it omitted -- same unbounded-duplication risk as body")
 	}
 }
 

@@ -12,7 +12,10 @@ import { captureRow } from "./capture-row.js";
  * Live updates ride the same /events SSE stream every other page uses
  * (Server.emit publishes a "capture" kind event on every successful
  * capture) rather than polling, so a captured event appears here without a
- * manual refresh.
+ * manual refresh. That event is deliberately lightweight (id + source only,
+ * no payload -- see handleCapture's comment on why): it is treated purely
+ * as an invalidation signal, triggering a refetch of the authoritative list
+ * rather than being merged into local state directly.
  */
 export function capturesPage() {
   const root = el("div");
@@ -29,9 +32,8 @@ export function capturesPage() {
 
   const unsubscribe = subscribeEvents(
     (event) => {
-      if (event.kind !== "capture" || event.data?.id == null) return;
-      captures = [event.data, ...captures.filter((c) => c.id !== event.data.id)].slice(0, 200);
-      renderRows();
+      if (event.kind !== "capture") return;
+      load();
     },
     (state) => {
       streamState.className = `pill pill-${state === "live" ? "ok" : "warn"}`;
