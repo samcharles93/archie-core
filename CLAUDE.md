@@ -22,22 +22,57 @@ the code alone.
 
 ## Scope discipline (read this before planning anything)
 
-The architecture documentation in `docs/architecture/` is **complete and
-authoritative**. It is a design to implement against — not a draft to extend.
+`docs/architecture/` is authoritative for everything it covers: implement
+against it, don't re-litigate it, don't restate it in a new document.
 
-- Do **not** produce new architecture documents, migration plans, ownership
-  ledgers, field-level inventories, current-state traces, decision records, or
-  review campaigns. If a design question isn't answered in `docs/architecture/`,
-  ask the maintainer in one sentence — don't write a document to resolve it.
-- Do **not** open planning, review, or refactor issues. Open issues only for
-  concrete bugs and user-facing features.
-- This is a **solo project**. There is no review board, no handoff to a
-  zero-context engineer, no compliance requirement. Prefer the smallest change
-  that works over the most defensible one.
-- Default to producing a diff. If a task's output would be a document rather
-  than code, confirm that's actually wanted before starting.
-- Issues are tracked in GitHub Issues, grouped issues can be linked under an epic, 
-  with subtasks linked to the epic.
+It does not cover everything, and this section used to claim it did — it
+called the design "complete" and banned design documents outright. That was
+wrong on its face: this repo is mid-migration to a domain-oriented structure,
+and `docs/architecture/migration-decisions.md` is an **open decision
+register** whose entire job is holding design that is not settled yet. A rule
+asserting the design is finished, in a tree that ships a list of what remains
+to be decided, pushed every genuinely new capability through a prohibition
+aimed only at sprawl. The ban was a proxy: what it meant to stop was prose
+substituting for a diff, not thinking before building something new.
+
+So the test is **is there a settled design for this**, never **is this a
+document**:
+
+- **Settled design exists** → implement it. Producing prose instead of a diff
+  is the failure. If one detail is missing, ask the maintainer in a sentence;
+  don't write a document to resolve a sentence-sized question.
+- **No settled design exists** — genuinely new capability, or an open item in
+  `migration-decisions.md` → design first, briefly and decisively. This is
+  required, not merely tolerated. Accreting diffs toward a new architecture
+  without deciding its shape is how the flat `internal/` layout happened, and
+  undoing that is measured in weeks.
+
+A design artifact earns its place by being short, decisive, and followed by
+code:
+
+- One page, and it **decides**. It does not survey options, inventory fields,
+  or trace current state — the code is the current state, so a document
+  restating it is stale on arrival.
+- It lands in a named home: `docs/prds/` for new capability, an entry in
+  `docs/architecture/migration-decisions.md` for an open migration question.
+  Promote it into `docs/architecture/` only once it is built and true.
+- It is not finished until a diff follows it. Design with no implementation is
+  the same sprawl in better clothes.
+- Failure test: cut anything a reader could have learned by reading the code.
+
+Still prohibited, and none of these were ever design:
+
+- Ownership ledgers, field-level inventories, current-state traces, parity
+  matrices written for their own sake, and review campaigns.
+- Planning, review, or refactor **issues**. Open issues only for concrete bugs
+  and user-facing features.
+
+This is a **solo project**. There is no review board, no handoff to a
+zero-context engineer, no compliance requirement. Prefer the smallest change
+that works over the most defensible one.
+
+Issues are tracked in GitHub Issues; grouped issues can be linked under an
+epic, with subtasks linked to the epic.
 
 ## Deployment model
 
