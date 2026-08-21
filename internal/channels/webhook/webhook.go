@@ -5,9 +5,6 @@ package webhook
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,6 +16,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/webhookguard"
 )
 
 // Gateway is a deliver-only webhook gateway. It listens for HTTP POST
@@ -137,7 +135,7 @@ func (g *Gateway) handleWebhook(route *RouteConfig) http.HandlerFunc {
 			if sig == "" {
 				sig = r.Header.Get("X-Signature-256")
 			}
-			if !validateHMAC(body, sig, route.Secret) {
+			if !webhookguard.VerifyHMAC(body, sig, route.Secret) {
 				g.log.Warn("webhook invalid signature", "path", route.Path)
 				http.Error(w, "invalid signature", http.StatusUnauthorized)
 				return
@@ -180,19 +178,6 @@ func (g *Gateway) handleWebhook(route *RouteConfig) http.HandlerFunc {
 			w.WriteHeader(http.StatusAccepted)
 		}
 	}
-}
-
-// validateHMAC checks a SHA-256 HMAC signature against the body.
-func validateHMAC(body []byte, signature, secret string) bool {
-	if signature == "" {
-		return false
-	}
-	// Strip "sha256=" prefix if present.
-	sigHex := strings.TrimPrefix(signature, "sha256=")
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write(body)
-	expected := hex.EncodeToString(mac.Sum(nil))
-	return hmac.Equal([]byte(sigHex), []byte(expected))
 }
 
 // ConfigSchema returns the JSON Schema for the webhook channel config.
