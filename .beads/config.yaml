@@ -54,17 +54,16 @@
 # Disabled by default; enable only when an integration needs fresh .beads/issues.jsonl.
 # Use relative paths under .beads/ for JSONL import/export filenames.
 export:
-  auto: true
-  path: issues.jsonl
-  interval: 60s
-  # issues.jsonl is tracked (see .beads/.gitignore), so the export must be
-  # staged with the commit that triggers it. With git-add off, the 60s
-  # auto-export would leave a tracked file permanently dirty in git status
-  # and block rebases and checkouts until stashed.
-  git-add: true
+    auto: true
+    path: issues.jsonl
+    interval: 60s
+    # issues.jsonl is tracked (see .beads/.gitignore), so the export must be
+    # staged with the commit that triggers it. With git-add off, the 60s
+    # auto-export would leave a tracked file permanently dirty in git status
+    # and block rebases and checkouts until stashed.
+    git-add: true
 import:
-  path: issues.jsonl
-
+    path: issues.jsonl
 # Integration settings (access with 'bd config get/set')
 # Non-secret keys (stored in the database):
 # - jira.url, jira.project
@@ -74,10 +73,9 @@ import:
 # Secret keys (stored in this file but prefer env vars to avoid git exposure):
 # - linear.api_key  → use LINEAR_API_KEY env var instead
 # - github.token    → use GITHUB_TOKEN env var instead
-
 sync.remote: "git+https://github.com/samcharles93/archie-core.git"
 dolt:
-    shared-server: true
+    shared-server: false
     auto-commit: "on"
 audit:
     enabled: true
