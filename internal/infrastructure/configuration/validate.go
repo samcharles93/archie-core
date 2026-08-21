@@ -75,7 +75,35 @@ func validate(cfg *config.Config) error {
 	if err := validatePollInterval(cfg); err != nil {
 		return err
 	}
-	return validateContainers(cfg)
+	if err := validateContainers(cfg); err != nil {
+		return err
+	}
+	return validateCapture(cfg)
+}
+
+// validateCapture rejects negative capture settings. applyDefaults fills
+// every zero value with a positive default, so this only fires on an
+// explicit negative value -- which would make time.Duration/AddDate math
+// and the token-bucket rate limiter behave nonsensically (e.g. a negative
+// retention window would prune every row on every insert, including the one
+// just written).
+func validateCapture(cfg *config.Config) error {
+	if cfg.Capture.Retention < 0 {
+		return fmt.Errorf("%w: capture.retention must not be negative", ErrInvalidInput)
+	}
+	if cfg.Capture.MaxEvents < 0 {
+		return fmt.Errorf("%w: capture.max_events must not be negative", ErrInvalidInput)
+	}
+	if cfg.Capture.MaxBodyBytes < 0 {
+		return fmt.Errorf("%w: capture.max_body_bytes must not be negative", ErrInvalidInput)
+	}
+	if cfg.Capture.RatePerSecond < 0 {
+		return fmt.Errorf("%w: capture.rate_per_second must not be negative", ErrInvalidInput)
+	}
+	if cfg.Capture.RateBurst < 0 {
+		return fmt.Errorf("%w: capture.rate_burst must not be negative", ErrInvalidInput)
+	}
+	return nil
 }
 
 // validatePollInterval rejects a non-positive poll interval.

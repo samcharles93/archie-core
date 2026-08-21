@@ -39,6 +39,15 @@ const (
 	// above trims it further. Generous enough for a documentation page,
 	// small enough that a large download cannot occupy the daemon.
 	defaultWebFetchMaxBytes = 2_000_000
+
+	// Capture defaults, per docs/prds/event-capture-storage.md's disk-bound
+	// mechanics: retention + row cap + per-request size cap + per-source
+	// rate limit, composed.
+	defaultCaptureRetention     = 7 * 24 * time.Hour
+	defaultCaptureMaxEvents     = 5000
+	defaultCaptureMaxBodyBytes  = 256 * 1024
+	defaultCaptureRatePerSecond = 1.0
+	defaultCaptureRateBurst     = 5
 )
 
 // applyDefaults fills in every absent value. It never reports an error and
@@ -58,6 +67,27 @@ func (l *Loader) applyDefaults(cfg *config.Config) {
 	applyIdentityDefaults(cfg)
 	applyContainerDefaults(cfg)
 	applyToolPolicyDefaults(cfg)
+	applyCaptureDefaults(cfg)
+}
+
+// applyCaptureDefaults fills the webhook capture endpoint's settings. See
+// [config.CaptureConfig].
+func applyCaptureDefaults(cfg *config.Config) {
+	if cfg.Capture.Retention == 0 {
+		cfg.Capture.Retention = config.Duration(defaultCaptureRetention)
+	}
+	if cfg.Capture.MaxEvents == 0 {
+		cfg.Capture.MaxEvents = defaultCaptureMaxEvents
+	}
+	if cfg.Capture.MaxBodyBytes == 0 {
+		cfg.Capture.MaxBodyBytes = defaultCaptureMaxBodyBytes
+	}
+	if cfg.Capture.RatePerSecond == 0 {
+		cfg.Capture.RatePerSecond = defaultCaptureRatePerSecond
+	}
+	if cfg.Capture.RateBurst == 0 {
+		cfg.Capture.RateBurst = defaultCaptureRateBurst
+	}
 }
 
 // applyToolPolicyDefaults fills the tool result limits.

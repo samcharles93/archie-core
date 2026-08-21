@@ -25,6 +25,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/memory"
 	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/webhookguard"
 	"github.com/samcharles93/archie-core/ui"
 )
 
@@ -128,6 +129,26 @@ type Server struct {
 	// seam so the Stop action cancels work before parking its task record.
 	TaskStopper TaskStopper
 
+	// Captures persists unbound webhook captures (docs/prds/event-capture-storage.md).
+	// Optional: nil makes POST /webhooks/capture/{source} answer 503 rather
+	// than the dashboard failing to start -- capture is a precondition for
+	// the no-code playbook epic, not a hard dependency of the dashboard.
+	Captures store.CaptureStore
+	// CaptureLimiter is the per-remote-address token bucket applied before a
+	// capture request's body is read (keyed by remote address, not the
+	// unregistered/attacker-chosen source path segment -- see
+	// handleCapture). Optional: nil disables rate limiting (every request is
+	// allowed), which composition never actually does in production -- it
+	// is nil only in tests that don't exercise this path.
+	CaptureLimiter *webhookguard.RateLimiter
+	// CaptureRetention and CaptureMaxEvents are passed straight through to
+	// InsertCapture's prune-on-write bounds. See config.CaptureConfig.
+	CaptureRetention time.Duration
+	CaptureMaxEvents int
+	// CaptureMaxBodyBytes rejects (413) a capture POST body larger than
+	// this via http.MaxBytesReader, before redaction or storage sees it.
+	CaptureMaxBodyBytes int64
+
 	mu    sync.Mutex
 	conns map[chan events.Event]struct{}
 }
@@ -211,6 +232,7 @@ func (s *Server) Handler() http.Handler {
 
 	top := http.NewServeMux()
 	top.HandleFunc("GET /healthz", s.handleHealthz)
+	top.HandleFunc("POST /webhooks/capture/{source}", s.handleCapture)
 	top.Handle("/", s.requireToken(mux))
 	return top
 }

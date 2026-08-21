@@ -5,6 +5,7 @@ package store
 
 import (
 	"context"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/events"
 )
@@ -74,8 +75,21 @@ type WorkflowStore interface {
 	Transition(ctx context.Context, taskID int64, from, to, detail string) error
 }
 
+// CaptureStore persists unbound inbound webhook captures -- events with no
+// workflow binding and no task association. Deliberately separate from
+// TaskStore: a consumer that only needs capture (the intake HTTP handler)
+// should not acquire the full task-lifecycle surface, mirroring why
+// TaskArchiver is split out above. See docs/prds/event-capture-storage.md.
+type CaptureStore interface {
+	InsertCapture(ctx context.Context, c CapturedEvent, retention time.Duration, maxEvents int) (int64, error)
+	ListCaptures(ctx context.Context, limit int) ([]CapturedEvent, error)
+}
+
 // Compile-time check: *Store satisfies TaskStore.
 var _ TaskStore = (*Store)(nil)
 
 // Compile-time check: *Store satisfies WorkflowStore.
 var _ WorkflowStore = (*Store)(nil)
+
+// Compile-time check: *Store satisfies CaptureStore.
+var _ CaptureStore = (*Store)(nil)
