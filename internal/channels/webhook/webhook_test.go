@@ -23,24 +23,11 @@ func TestName(t *testing.T) {
 	}
 }
 
-func TestValidateHMAC(t *testing.T) {
-	secret := "test-secret"
-	body := []byte(`{"key":"value"}`)
-
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write(body)
-	validSig := "sha256=" + hex.EncodeToString(mac.Sum(nil))
-
-	if !validateHMAC(body, validSig, secret) {
-		t.Error("valid signature should pass")
-	}
-	if validateHMAC(body, validSig, "wrong-secret") {
-		t.Error("wrong secret should fail")
-	}
-	if validateHMAC(body, "", secret) {
-		t.Error("empty signature should fail")
-	}
-}
+// HMAC signature verification itself is now internal/webhookguard.VerifyHMAC
+// and tested there; TestWebhookHandlerValidSignature and
+// TestWebhookHandlerInvalidSignature below cover this package's own
+// responsibility -- that the handler actually calls it and reacts correctly
+// to the result.
 
 func TestExtractText(t *testing.T) {
 	body := []byte(`{"issue":{"title":"fix bug","body":"details"}}`)
