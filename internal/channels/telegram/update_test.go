@@ -51,8 +51,8 @@ func TestInstallUpdateStreamsProgressAndReportsSuccess(t *testing.T) {
 	stub := &updateStub{
 		progressText: []string{"==> fetching", "==> building"},
 		result: releaseupdate.Result{
-			Previous:         map[string]string{"daemon": "1.0.0", "agent": "1.0.0"},
-			Installed:        map[string]string{"daemon": "1.1.0", "agent": "1.0.0"},
+			Previous:         map[string]string{releaseupdate.ComponentDaemon: "1.0.0", releaseupdate.ComponentAgent: "1.0.0"},
+			Installed:        map[string]string{releaseupdate.ComponentDaemon: "1.1.0", releaseupdate.ComponentAgent: "1.0.0"},
 			RestartRequested: true,
 		},
 	}
@@ -117,7 +117,7 @@ func TestReportPendingUpdateSendsAndClearsReport(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "update-report.json")
 	report := releaseupdate.Report{
 		Channel: "telegram", ChatID: 7, ThreadID: 3,
-		Previous: map[string]string{"daemon": "1.0.0"}, Installed: map[string]string{"daemon": "1.1.0"},
+		Previous: map[string]string{releaseupdate.ComponentDaemon: "1.0.0"}, Installed: map[string]string{releaseupdate.ComponentDaemon: "1.1.0"},
 		HealthCheck: "passed",
 	}
 	if err := releaseupdate.WritePendingReport(path, report); err != nil {
@@ -184,14 +184,149 @@ func TestReportPendingUpdateDisabledWhenPathEmpty(t *testing.T) {
 	}
 }
 
+// TestFormatPendingReportVerifiesAgainstRunningVersions is the regression
+// suite for the false-success bug: the watchdog's health probe passes
+// whenever *a* daemon answers it, so a report can claim an install that never
+// took effect. A claim the running system contradicts must not be worded as
+// success; a claim it cannot check must still be, since failing closed on
+// components that simply cannot self-report would call every update a
+// failure.
+func TestFormatPendingReportVerifiesAgainstRunningVersions(t *testing.T) {
+	const (
+		daemon       = releaseupdate.ComponentDaemon
+		agent        = releaseupdate.ComponentAgent
+		previousVer  = "1.0.0"
+		installedVer = "1.1.0"
+	)
+	tests := []struct {
+		name      string
+		previous  map[string]string
+		installed map[string]string
+		running   map[string]string
+		wantText  []string
+		denyText  []string
+	}{
+		{
+			name:      "running the version the update replaced",
+			previous:  map[string]string{daemon: previousVer},
+			installed: map[string]string{daemon: installedVer},
+			running:   map[string]string{daemon: previousVer},
+			wantText:  []string{daemon, previousVer, installedVer, "still the version this update meant to replace"},
+			denyText:  []string{"update complete", "healthy on the new version"},
+		},
+		{
+			name:      "running a version the report never mentions",
+			previous:  map[string]string{daemon: previousVer},
+			installed: map[string]string{daemon: installedVer},
+			running:   map[string]string{daemon: "9.9.9"},
+			wantText:  []string{daemon, "9.9.9", installedVer},
+			denyText:  []string{"update complete", "still the version this update meant to replace"},
+		},
+		{
+			// A single sentence covering all components cannot be true of a
+			// mixed set: the daemon here IS on the version the update meant
+			// to replace and the agent is on neither, so the explanation has
+			// to attach per component or it states a falsehood about one of
+			// them. The trailing semicolon in the agent assertion is what
+			// proves the annotation did not leak onto it.
+			name:      "mixed drift annotates each component separately",
+			previous:  map[string]string{daemon: previousVer, agent: previousVer},
+			installed: map[string]string{daemon: installedVer, agent: installedVer},
+			running:   map[string]string{daemon: previousVer, agent: "9.9.9"},
+			wantText: []string{
+				"agent reports 9.9.9, not the installed " + installedVer + ";",
+				"daemon reports " + previousVer + ", not the installed " + installedVer +
+					" (still the version this update meant to replace)",
+			},
+			denyText: []string{"update complete"},
+		},
+		{
+			name:      "claim confirmed by the running version",
+			previous:  map[string]string{daemon: previousVer},
+			installed: map[string]string{daemon: installedVer},
+			running:   map[string]string{daemon: installedVer},
+			wantText:  []string{"update complete"},
+			denyText:  []string{"did not take effect"},
+		},
+		{
+			// The ordinary production shape: only the daemon can self-report,
+			// so a successful update always confirms the daemon and leaves
+			// the agent unchecked. The headline is earned, but the version
+			// line above it covers the agent too, so the message has to say
+			// which components nothing actually verified -- otherwise the
+			// confirmed daemon silently vouches for the agent.
+			name:      "component that cannot self-report is named, not treated as drift",
+			previous:  map[string]string{daemon: previousVer, agent: previousVer},
+			installed: map[string]string{daemon: installedVer, agent: installedVer},
+			running:   map[string]string{daemon: installedVer},
+			wantText:  []string{"update complete", "not independently checked: " + agent},
+			denyText:  []string{"did not take effect"},
+		},
+		{
+			name:      "nothing is left unchecked when every component confirms",
+			previous:  map[string]string{daemon: previousVer},
+			installed: map[string]string{daemon: installedVer},
+			running:   map[string]string{daemon: installedVer},
+			wantText:  []string{"healthy on the new version"},
+			denyText:  []string{"not independently checked"},
+		},
+		{
+			name:      "nothing self-reports, so success is reported unconfirmed",
+			previous:  map[string]string{daemon: previousVer},
+			installed: map[string]string{daemon: installedVer},
+			running:   nil,
+			wantText:  []string{"could not confirm which version"},
+			denyText:  []string{"did not take effect", "healthy on the new version"},
+		},
+		{
+			name:      "an unrecorded claim is not a contradiction, but is not confirmed either",
+			previous:  map[string]string{daemon: previousVer},
+			installed: map[string]string{daemon: releaseupdate.VersionUnknown},
+			running:   map[string]string{daemon: installedVer},
+			wantText:  []string{"could not confirm which version"},
+			denyText:  []string{"did not take effect", "healthy on the new version", releaseupdate.VersionUnknown},
+		},
+		{
+			name:      "an unstamped running build cannot confirm or contradict",
+			previous:  map[string]string{daemon: previousVer},
+			installed: map[string]string{daemon: installedVer},
+			running:   map[string]string{daemon: releaseupdate.VersionDev},
+			wantText:  []string{"could not confirm which version"},
+			denyText:  []string{"did not take effect", "healthy on the new version"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			report := releaseupdate.Report{
+				Previous:    test.previous,
+				Installed:   test.installed,
+				HealthCheck: "passed",
+			}
+			text := formatPendingReport(report, test.running)
+			lower := strings.ToLower(text)
+			for _, want := range test.wantText {
+				if !strings.Contains(lower, strings.ToLower(want)) {
+					t.Errorf("report does not mention %q: %q", want, text)
+				}
+			}
+			for _, deny := range test.denyText {
+				if strings.Contains(lower, strings.ToLower(deny)) {
+					t.Errorf("report wrongly claims %q: %q", deny, text)
+				}
+			}
+		})
+	}
+}
+
 func TestFormatPendingReportDescribesSuccessAndRollback(t *testing.T) {
 	success := releaseupdate.Report{
-		Previous:    map[string]string{"daemon": "1.0.0"},
-		Installed:   map[string]string{"daemon": "1.1.0"},
+		Previous:    map[string]string{releaseupdate.ComponentDaemon: "1.0.0"},
+		Installed:   map[string]string{releaseupdate.ComponentDaemon: "1.1.0"},
 		HealthCheck: "passed",
 		RolledBack:  false,
 	}
-	text := formatPendingReport(success)
+	text := formatPendingReport(success, map[string]string{releaseupdate.ComponentDaemon: "1.1.0"})
 	for _, want := range []string{"1.0.0 → 1.1.0", "healthy"} {
 		if !strings.Contains(strings.ToLower(text), strings.ToLower(want)) {
 			t.Errorf("success report missing %q: %q", want, text)
@@ -199,12 +334,12 @@ func TestFormatPendingReportDescribesSuccessAndRollback(t *testing.T) {
 	}
 
 	failure := releaseupdate.Report{
-		Previous:    map[string]string{"daemon": "1.0.0"},
-		Installed:   map[string]string{"daemon": "1.1.0"},
+		Previous:    map[string]string{releaseupdate.ComponentDaemon: "1.0.0"},
+		Installed:   map[string]string{releaseupdate.ComponentDaemon: "1.1.0"},
 		HealthCheck: "failed",
 		RolledBack:  true,
 	}
-	text = formatPendingReport(failure)
+	text = formatPendingReport(failure, map[string]string{releaseupdate.ComponentDaemon: "1.0.0"})
 	for _, want := range []string{"rolled back", "1.0.0"} {
 		if !strings.Contains(strings.ToLower(text), strings.ToLower(want)) {
 			t.Errorf("rollback report missing %q: %q", want, text)
@@ -220,12 +355,12 @@ func TestFormatPendingReportDescribesSuccessAndRollback(t *testing.T) {
 // than reporting nothing, because it tells the operator to stand down.
 func TestFormatPendingReportDistinguishesUnrolledBackFailure(t *testing.T) {
 	notRolledBack := releaseupdate.Report{
-		Previous:    map[string]string{"daemon": "1.0.0"},
-		Installed:   map[string]string{"daemon": "1.1.0"},
+		Previous:    map[string]string{releaseupdate.ComponentDaemon: "1.0.0"},
+		Installed:   map[string]string{releaseupdate.ComponentDaemon: "1.1.0"},
 		HealthCheck: "failed",
 		RolledBack:  false,
 	}
-	text := strings.ToLower(formatPendingReport(notRolledBack))
+	text := strings.ToLower(formatPendingReport(notRolledBack, map[string]string{releaseupdate.ComponentDaemon: "1.1.0"}))
 	if strings.Contains(text, "was automatically rolled back") {
 		t.Errorf("report falsely claims a rollback happened: %q", text)
 	}
