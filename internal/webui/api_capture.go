@@ -83,36 +83,23 @@ func (s *Server) handleCapture(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "capture failed", http.StatusInternalServerError)
 		return
 	}
-	c.ID = id
-
 	// Reuses the existing operator-activity event pipeline (persist + live
 	// SSE fan-out) rather than inventing separate push plumbing -- see
-	// docs/prds/event-capture-storage.md. The dedicated captures view (t2db.2)
-	// filters this stream for Kind == "capture" and prepends the row directly,
-	// so a new capture appears without a manual refresh or extra round trip.
+	// docs/prds/event-capture-storage.md. Deliberately LIGHTWEIGHT: the
+	// events table this feeds (internal/store/events.go) has no retention or
+	// row-count prune, unlike captured_events, so embedding the full (up to
+	// CaptureMaxBodyBytes) body/headers here would duplicate the payload
+	// into an unbounded table and defeat InsertCapture's own disk-bound
+	// guarantee. The dedicated captures view (t2db.2) treats this purely as
+	// an invalidation signal and refetches GET /api/captures for the actual
+	// row data, rather than merging this event's fields into its list.
 	s.emit(r.Context(), events.Event{
 		Kind:   "capture",
 		Detail: "capture from " + source,
-		Data:   captureEventData(c),
+		Data:   map[string]any{"id": id, "source": source},
 	})
 
 	w.WriteHeader(http.StatusAccepted)
-}
-
-// captureEventData renders a CapturedEvent as the map shape used both by
-// GET /api/captures and the "capture" kind live SSE event, so the frontend
-// handles one row shape regardless of which path delivered it.
-func captureEventData(c store.CapturedEvent) map[string]any {
-	return map[string]any{
-		"id":            c.ID,
-		"received_at":   c.ReceivedAt,
-		"source":        c.Source,
-		"remote_addr":   c.RemoteAddr,
-		"content_type":  c.ContentType,
-		"headers":       c.Headers,
-		"body":          c.Body,
-		"authenticated": c.Authenticated,
-	}
 }
 
 // handleCaptures lists recent captured events, newest first, for the
