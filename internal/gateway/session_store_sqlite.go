@@ -224,19 +224,27 @@ func (s *sqliteSessionStore) ClaimTurn(ctx context.Context, initial TurnRecord) 
 			initial.CreatedAt = now
 		}
 		initial.UpdatedAt = now
-		result, err := tx.ExecContext(ctx, `
+		// insertErr is deliberately its own name, not err: this whole block
+		// is inside `if errors.Is(err, sql.ErrNoRows)`, so reusing err here
+		// would shadow the outer err for the rest of the block -- including
+		// the retry read below, whose result must reach the outer `if err
+		// != nil` after this block closes. A shadowed reassignment there
+		// would go out of scope silently, leaving the outer err at its
+		// original sql.ErrNoRows value regardless of how the retry read
+		// actually went.
+		result, insertErr := tx.ExecContext(ctx, `
 			INSERT INTO turns (
 				turn_id, session_id, source_id, status, attempt, owner_id,
 				input_message_id, assistant_message_id, partial_text,
 				response_text, error, created_at, updated_at
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(turn_id) DO NOTHING`, turnValues(initial)...)
-		if err != nil {
-			return TurnRecord{}, "", fmt.Errorf("sessionstore: claim turn: insert: %w", err)
+		if insertErr != nil {
+			return TurnRecord{}, "", fmt.Errorf("sessionstore: claim turn: insert: %w", insertErr)
 		}
-		affected, err := result.RowsAffected()
-		if err != nil {
-			return TurnRecord{}, "", fmt.Errorf("sessionstore: claim turn: rows affected: %w", err)
+		affected, insertErr := result.RowsAffected()
+		if insertErr != nil {
+			return TurnRecord{}, "", fmt.Errorf("sessionstore: claim turn: rows affected: %w", insertErr)
 		}
 		if affected == 1 {
 			if err := tx.Commit(); err != nil {
@@ -246,7 +254,9 @@ func (s *sqliteSessionStore) ClaimTurn(ctx context.Context, initial TurnRecord) 
 		}
 		// Another connection inserted the same turn between our read and
 		// insert. Read it in this transaction and apply the normal claim
-		// state machine instead of surfacing a uniqueness error.
+		// state machine instead of surfacing a uniqueness error. This
+		// assigns the OUTER err (see above) -- it is what the `if err !=
+		// nil` check below this block actually sees.
 		err = tx.QueryRowContext(ctx, `
 			SELECT turn_id, session_id, source_id, status, attempt, owner_id,
 			       input_message_id, assistant_message_id, partial_text,
