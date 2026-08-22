@@ -558,6 +558,126 @@ func TestSplitLongMessage(t *testing.T) {
 	})
 }
 
+func TestSplitLongMessageDoesNotCutInsideCodeFence(t *testing.T) {
+	tests := []struct {
+		name  string
+		text  string
+		limit int
+		parts int
+		first string
+	}{
+		{
+			name:  "unfenced text over limit uses ordinary boundary",
+			text:  "first paragraph\nsecond paragraph",
+			limit: 20,
+			parts: 2,
+			first: "first paragraph",
+		},
+		{
+			name:  "fenced text exactly at limit is unchanged",
+			text:  "```go\nhello\n```",
+			limit: 15,
+			parts: 1,
+			first: "```go\nhello\n```",
+		},
+		{
+			name:  "cut inside fence backs up before opening fence",
+			text:  "intro\n\n```go\nhello\n```\noutro",
+			limit: 18,
+			parts: 3,
+			first: "intro\n\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parts := splitLongMessage(tt.text, tt.limit)
+			if len(parts) != tt.parts {
+				t.Fatalf("parts = %q, want %d parts", parts, tt.parts)
+			}
+			if parts[0] != tt.first {
+				t.Errorf("first part = %q, want %q", parts[0], tt.first)
+			}
+			for i, part := range parts {
+				if strings.Count(part, "```")%2 != 0 {
+					t.Errorf("part %d cuts an open code fence: %q", i, part)
+				}
+				if got := utf8.RuneCountInString(part); got > tt.limit {
+					t.Errorf("part %d has %d runes, want at most %d", i, got, tt.limit)
+				}
+			}
+		})
+	}
+
+	t.Run("fence longer than one message is closed and reopened", func(t *testing.T) {
+		const limit = 20
+		text := "```go\n" + strings.Repeat("x", limit*2) + "\n```"
+		parts := splitLongMessage(text, limit)
+		if len(parts) < 3 {
+			t.Fatalf("parts = %q, want at least three bounded parts", parts)
+		}
+		for i, part := range parts {
+			if strings.Count(part, "```")%2 != 0 {
+				t.Errorf("part %d cuts an open code fence: %q", i, part)
+			}
+			if got := utf8.RuneCountInString(part); got > limit {
+				t.Errorf("part %d has %d runes, want at most %d", i, got, limit)
+			}
+		}
+		if got := strings.Count(strings.Join(parts, ""), "x"); got != limit*2 {
+			t.Errorf("split retained %d code runes, want %d", got, limit*2)
+		}
+	})
+
+	t.Run("long fence info string cannot exceed continuation budget", func(t *testing.T) {
+		const limit = 20
+		text := "```" + strings.Repeat("language", limit) + "\nbody\n```"
+		for i, part := range splitLongMessage(text, limit) {
+			if got := utf8.RuneCountInString(part); got > limit {
+				t.Errorf("part %d has %d runes, want at most %d", i, got, limit)
+			}
+		}
+	})
+
+	t.Run("limits too small for fence continuation preserve bounded plain text", func(t *testing.T) {
+		const text = "```important\nabc\n```"
+		for _, limit := range []int{3, 7, 8} {
+			parts := splitLongMessage(text, limit)
+			for i, part := range parts {
+				if strings.Contains(part, "```") {
+					t.Errorf("limit %d part %d retained an unsplitable fence: %q", limit, i, part)
+				}
+				if got := utf8.RuneCountInString(part); got > limit {
+					t.Errorf("limit %d part %d has %d runes, want at most %d", limit, i, got, limit)
+				}
+			}
+			if got := strings.Join(parts, ""); got != text {
+				t.Errorf("limit %d rebuilt = %q, want every source rune retained", limit, got)
+			}
+		}
+	})
+
+	t.Run("fence-like code line with trailing text is not a closer", func(t *testing.T) {
+		const limit = 24
+		text := "```go\nfirst\n```not closed\nsecond\n```\nafter"
+		parts := splitLongMessage(text, limit)
+		for i, part := range parts {
+			partRunes := []rune(part)
+			if _, open := openCodeFenceStart(partRunes, 0, len(partRunes)); open {
+				t.Errorf("part %d cuts an open code fence: %q", i, part)
+			}
+		}
+	})
+
+	t.Run("backtick in info string is not a code fence", func(t *testing.T) {
+		const text = "```foo`bar\nplain text that crosses the limit"
+		parts := splitLongMessage(text, 18)
+		if got := strings.Join(parts, ""); got != text {
+			t.Errorf("rebuilt = %q, want invalid fence syntax treated as plain text", got)
+		}
+	})
+}
+
 func TestIsSenderAllowed(t *testing.T) {
 	g := New("tok", "", "", []int64{100, 200, 300}, slog.Default())
 
