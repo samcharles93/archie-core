@@ -502,6 +502,58 @@ func TestDiffUsesMergeBaseNotRemoteTip(t *testing.T) {
 	}
 }
 
+func TestDiffOperationsRejectUnrelatedBaseHistory(t *testing.T) {
+	ctx := context.Background()
+	host := newLocalRemote(t, "acme", "todo")
+	m := newManager(t, host)
+	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 6, "feat: task", "", "feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "task.txt"), []byte("task\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := m.CommitAll(ctx, dir, "feat: task"); err != nil || !changed {
+		t.Fatalf("CommitAll() = (%v, %v)", changed, err)
+	}
+
+	orphanDir := t.TempDir()
+	orphan, err := git.PlainInit(orphanDir, false, git.WithDefaultBranch(plumbing.NewBranchReferenceName(testBase)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeSeedCommit(t, orphan, orphanDir, "orphan.txt", "unrelated\n", "orphan history")
+	if _, err := orphan.CreateRemote(&gitconfig.RemoteConfig{Name: git.DefaultRemoteName, URLs: []string{filepath.Join(host, "acme", "todo.git")}}); err != nil {
+		t.Fatal(err)
+	}
+	ref := plumbing.NewBranchReferenceName(testBase)
+	if err := orphan.Push(&git.PushOptions{RemoteName: git.DefaultRemoteName, RefSpecs: []gitconfig.RefSpec{gitconfig.RefSpec("+" + ref + ":" + ref)}}); err != nil {
+		t.Fatal(err)
+	}
+	r, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Fetch(&git.FetchOptions{RemoteName: git.DefaultRemoteName, Force: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, operation := range []struct {
+		name string
+		run  func() error
+	}{
+		{name: "Diff", run: func() error { _, err := m.Diff(ctx, dir, testBase); return err }},
+		{name: "ChangedFiles", run: func() error { _, err := m.ChangedFiles(ctx, dir, testBase); return err }},
+		{name: "ChangedLines", run: func() error { _, err := m.ChangedLines(ctx, dir, testBase); return err }},
+	} {
+		t.Run(operation.name, func(t *testing.T) {
+			if err := operation.run(); err == nil {
+				t.Fatal("operation accepted histories without a merge base")
+			}
+		})
+	}
+}
+
 func TestBranchNaming(t *testing.T) {
 	tests := []struct {
 		name   string
