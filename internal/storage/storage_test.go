@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/format"
 	"io"
@@ -413,6 +414,80 @@ func TestAppendJSONLineAppendsCompleteRecords(t *testing.T) {
 	}
 	if want := "{\"stage\":1}\n{\"stage\":2}\n"; string(got) != want {
 		t.Errorf("JSONL = %q, want %q", got, want)
+	}
+}
+
+type jsonlTestRecord struct {
+	Stage int `json:"stage"`
+}
+
+// The reader is AppendJSONLine's counterpart: a value written by one must
+// come back unchanged through the other, in the order written.
+func TestReadJSONLinesRoundTripsAppendJSONLine(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	for _, v := range []jsonlTestRecord{{Stage: 1}, {Stage: 2}, {Stage: 3}} {
+		if err := AppendJSONLine(path, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var got []jsonlTestRecord
+	if err := ReadJSONLines(path, func(v jsonlTestRecord) error {
+		got = append(got, v)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []jsonlTestRecord{{Stage: 1}, {Stage: 2}, {Stage: 3}}
+	if len(got) != len(want) {
+		t.Fatalf("records = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("records = %v, want %v", got, want)
+		}
+	}
+}
+
+// A log that has never been written is not an error: no memory yet and no
+// file yet mean the same thing to a caller.
+func TestReadJSONLinesMissingFileIsNotAnError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "never-written.jsonl")
+	called := false
+	if err := ReadJSONLines(path, func(jsonlTestRecord) error { called = true; return nil }); err != nil {
+		t.Fatalf("ReadJSONLines: %v", err)
+	}
+	if called {
+		t.Error("fn was called for a file that does not exist")
+	}
+}
+
+// A malformed line must fail loudly rather than silently skip a record --
+// project memory is meant to be trusted context for later sessions, so a
+// corrupt entry must not vanish unnoticed.
+func TestReadJSONLinesMalformedLineIsAnError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	if err := os.WriteFile(path, []byte("not json\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReadJSONLines(path, func(jsonlTestRecord) error { return nil }); err == nil {
+		t.Fatal("expected an error for a malformed line")
+	}
+}
+
+// fn's own error must stop the scan and propagate, so a caller can bail out
+// early (e.g. once it has enough records) without ReadJSONLines masking a
+// real failure as success.
+func TestReadJSONLinesPropagatesCallbackError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	if err := AppendJSONLine(path, jsonlTestRecord{Stage: 1}); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := errors.New("stop here")
+	err := ReadJSONLines(path, func(jsonlTestRecord) error { return sentinel })
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("err = %v, want it to wrap the callback's own error", err)
 	}
 }
 
