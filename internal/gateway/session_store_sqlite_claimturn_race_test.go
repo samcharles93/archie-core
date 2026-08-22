@@ -61,6 +61,7 @@ func TestClaimTurnConcurrentInsertRaceNeverReturnsAnError(t *testing.T) {
 	const stores = 2
 	const trials = 100
 	const maxRetriesPerAttempt = 20
+	const busyRetryDelay = time.Millisecond
 
 	openers := make([]TurnLedger, stores)
 	for i := range openers {
@@ -90,6 +91,7 @@ func TestClaimTurnConcurrentInsertRaceNeverReturnsAnError(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), "database is locked") {
 				return err
 			}
+			time.Sleep(busyRetryDelay)
 		}
 		return err
 	}
