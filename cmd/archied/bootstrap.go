@@ -997,6 +997,7 @@ func (b *boot) buildDaemon() {
 // polling too. Config validation already requires webhook_secret to be a
 // configured reference before intake="webhook"/"both" is accepted; this
 // handles the reference resolving to nothing at runtime.
+//
 // Single-identity only: the receiver has one dispatch config (root
 // Dispatch.Trigger/Label/BotUser), so a multi-identity deployment's
 // per-identity trigger/label/bot user cannot be matched correctly. Rather

@@ -31,6 +31,20 @@ func TestApplyNATSDefaultsResolvesMode(t *testing.T) {
 	}
 }
 
+func TestApplyForgeDefaultsIntake(t *testing.T) {
+	cfg := &config.Config{}
+	applyForgeDefaults(cfg)
+	if cfg.Forge.Intake != config.ForgeIntakePoll {
+		t.Errorf("applyForgeDefaults() intake = %q, want %q", cfg.Forge.Intake, config.ForgeIntakePoll)
+	}
+
+	explicit := &config.Config{Forge: config.Forge{Intake: config.ForgeIntakeWebhook}}
+	applyForgeDefaults(explicit)
+	if explicit.Forge.Intake != config.ForgeIntakeWebhook {
+		t.Errorf("applyForgeDefaults() intake = %q, want unchanged %q", explicit.Forge.Intake, config.ForgeIntakeWebhook)
+	}
+}
+
 func TestApplyCaptureDefaultsFillsZeroValues(t *testing.T) {
 	cfg := &config.Config{}
 	applyCaptureDefaults(cfg)

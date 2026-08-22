@@ -357,7 +357,9 @@ func (d *Daemon) maintainAndDrain(ctx context.Context) {
 func (d *Daemon) pollIssuesWithConfig(ctx context.Context, fg forge.Forge, cfg config.Config, repo config.Repo) []forge.Issue {
 	switch cfg.Dispatch.Trigger {
 	case "label":
-		if cfg.Label == "" {
+		// Empty-label rule shared with workintake.MatchesDispatch: a label
+		// trigger needs a non-empty label or it would match every open issue.
+		if workintake.RequiresLabel(cfg.Dispatch.Trigger) && cfg.Label == "" {
 			d.Log.Error("label trigger configured with an empty label; refusing to poll (an empty label matches every open issue)", "repo", repo.FullName())
 			return nil
 		}
@@ -392,7 +394,7 @@ func (d *Daemon) pollEitherWithConfig(ctx context.Context, fg forge.Forge, cfg c
 			out = append(out, is)
 		}
 	}
-	if cfg.Label == "" {
+	if workintake.RequiresLabel(cfg.Dispatch.Trigger) && cfg.Label == "" {
 		d.Log.Error("either trigger configured with an empty label; skipping the label poll (an empty label matches every open issue)", "repo", repo.FullName())
 		return out
 	}
@@ -635,17 +637,22 @@ func (d *Daemon) pollNATS(ctx context.Context, fg forge.Forge, cfg config.Config
 		Identity: identity,
 		Kind:     workintake.KindForLabels(parsed),
 	}
-	if err := d.publishTask(ctx, task); err != nil {
+	if err := d.PublishTask(ctx, task); err != nil {
 		d.Log.Error("task publish failed", "repo", repo.FullName(), "issue", is.Number, "err", err)
 		return
 	}
 	d.acknowledge(ctx, fg, cfg, repo, is)
 }
 
-// publishTask validates, encodes and publishes a task envelope. The
+// PublishTask validates, encodes and publishes a task envelope. The
 // idempotency key means rediscovering the same issue on a later poll does not
-// enqueue the work twice.
-func (d *Daemon) publishTask(ctx context.Context, task workintake.TaskEnvelope) error {
+// enqueue the work twice. It is the single enqueue path shared by the poller
+// and the forge webhook intake, so neither can drift in how a discovered issue
+// becomes a task.
+func (d *Daemon) PublishTask(ctx context.Context, task workintake.TaskEnvelope) error {
+	if d.Tasks == nil {
+		return fmt.Errorf("publish task %s: no task bus configured (nats.mode is off)", task.Ref())
+	}
 	if err := task.Kind.Validate(); err != nil {
 		return fmt.Errorf("publish task %s: %w", task.Ref(), err)
 	}

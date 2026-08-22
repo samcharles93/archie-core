@@ -190,6 +190,9 @@ func applyForgeDefaults(cfg *config.Config) {
 	if cfg.Forge.Token.Engine == "" && cfg.Forge.Token.Key == "" && cfg.Forge.TokenEnv != "" {
 		cfg.Forge.Token = secret.SecretRef{Engine: "env", Key: cfg.Forge.TokenEnv}
 	}
+	if cfg.Forge.Intake == "" {
+		cfg.Forge.Intake = config.ForgeIntakePoll
+	}
 }
 
 // applyNATSDefaults resolves the nats mode from URL when the operator left it
