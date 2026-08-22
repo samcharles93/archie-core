@@ -7,6 +7,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/events"
 )
 
@@ -85,6 +86,19 @@ type CaptureStore interface {
 	ListCaptures(ctx context.Context, limit int) ([]CapturedEvent, error)
 }
 
+// MappingStore persists payload field mappings (t2db.3). Deliberately
+// separate from TaskStore and CaptureStore for the same reason those are
+// split: the dashboard's mapping editor should only acquire the mapping
+// surface, not the full task or capture APIs. See
+// docs/prds/payload-field-mapping.md.
+type MappingStore interface {
+	InsertMapping(ctx context.Context, m mapping.Mapping) (int64, error)
+	GetMapping(ctx context.Context, id int64) (*mapping.Mapping, error)
+	ListMappings(ctx context.Context) ([]mapping.Mapping, error)
+	UpdateMapping(ctx context.Context, m mapping.Mapping) error
+	DeleteMapping(ctx context.Context, id int64) error
+}
+
 // Compile-time check: *Store satisfies TaskStore.
 var _ TaskStore = (*Store)(nil)
 
@@ -93,3 +107,6 @@ var _ WorkflowStore = (*Store)(nil)
 
 // Compile-time check: *Store satisfies CaptureStore.
 var _ CaptureStore = (*Store)(nil)
+
+// Compile-time check: *Store satisfies MappingStore.
+var _ MappingStore = (*Store)(nil)

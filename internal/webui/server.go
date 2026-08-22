@@ -149,6 +149,11 @@ type Server struct {
 	// this via http.MaxBytesReader, before redaction or storage sees it.
 	CaptureMaxBodyBytes int64
 
+	// Mappings persists payload field mappings (docs/prds/payload-field-mapping.md).
+	// Optional: nil makes every /api/mappings route answer 503 rather than
+	// the dashboard failing to start.
+	Mappings store.MappingStore
+
 	mu    sync.Mutex
 	conns map[chan events.Event]struct{}
 }
@@ -207,6 +212,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/work-requests", s.handleWorkRequest)
 	mux.HandleFunc("GET /api/skills", s.handleSkills)
 	mux.HandleFunc("GET /api/captures", s.handleCaptures)
+	mux.HandleFunc("GET /api/mappings", s.handleMappingsList)
+	mux.HandleFunc("POST /api/mappings", s.handleMappingCreate)
+	mux.HandleFunc("GET /api/mappings/{id}", s.handleMappingGet)
+	mux.HandleFunc("PATCH /api/mappings/{id}", s.handleMappingUpdate)
+	mux.HandleFunc("DELETE /api/mappings/{id}", s.handleMappingDelete)
+	mux.HandleFunc("POST /api/mappings/preview", s.handleMappingPreview)
 	mux.HandleFunc("GET /api/channels", s.handleChannels)
 	mux.HandleFunc("POST /api/channels/{id}/reload", s.handleChannelReload)
 	mux.HandleFunc("GET /api/config", s.handleConfig)

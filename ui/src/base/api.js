@@ -108,6 +108,45 @@ export const api = {
   },
   logs: (params) => req("/api/logs" + qs(params)),
   captures: (limit) => req("/api/captures" + qs({ limit })),
+  mappings: () => req("/api/mappings"),
+  mappingCreate: async (mapping) => {
+    const res = await fetch("/api/mappings", {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json", "X-Archie-CSRF": "1" },
+      body: JSON.stringify(mapping),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+    return res.json();
+  },
+  mappingUpdate: async (id, mapping) => {
+    const res = await fetch(`/api/mappings/${id}`, {
+      method: "PATCH",
+      headers: { Accept: "application/json", "Content-Type": "application/json", "X-Archie-CSRF": "1" },
+      body: JSON.stringify(mapping),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+    return res.json();
+  },
+  mappingDelete: async (id) => {
+    const res = await fetch(`/api/mappings/${id}`, {
+      method: "DELETE",
+      headers: { Accept: "application/json", "X-Archie-CSRF": "1" },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+  },
+  mappingPreview: async (captureId, fields) => {
+    const res = await fetch("/api/mappings/preview", {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json", "X-Archie-CSRF": "1" },
+      body: JSON.stringify({ capture_id: captureId, fields }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+    return res.json();
+  },
   memory: () => req("/api/memory"),
   chatSessions: () => req("/api/chat/sessions"),
   chatMessages: (id) => req(`/api/chat/sessions/${encodeURIComponent(id)}/messages`),
