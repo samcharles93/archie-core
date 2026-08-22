@@ -47,4 +47,29 @@ func TestMultimodalResultOmitsEmptyOptionalFields(t *testing.T) {
 	if _, ok := got["files"]; ok {
 		t.Error("files should be omitted when empty")
 	}
+	if _, ok := got["urls"]; ok {
+		t.Error("urls should be omitted when empty")
+	}
+}
+
+// A tool whose media lives at a remote URL (a generation API's hosted
+// result) rather than local bytes has nowhere to put it in Files, which is
+// always a path under SubdirHint. URLs is that case.
+func TestMultimodalResultURLsRoundTrip(t *testing.T) {
+	r := MultimodalResult{
+		IsMultimodal: true,
+		Summary:      "generated a video",
+		URLs:         []MediaRef{{Type: "video", URL: "https://example.com/v.mp4"}},
+	}
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got MultimodalResult
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.URLs) != 1 || got.URLs[0].Type != "video" || got.URLs[0].URL != "https://example.com/v.mp4" {
+		t.Errorf("URLs round-trip = %+v, want [{video https://example.com/v.mp4}]", got.URLs)
+	}
 }
