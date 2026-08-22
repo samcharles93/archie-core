@@ -198,7 +198,8 @@ Docker/NATS stack: `task docker-build` (builds the agent image locally),
   will sweep them up (see the `WriteTaskJSON` trap below).
 - Commits follow **Conventional Commits** scoped by package:
   `feat(webui): ...`, `fix(build): ...`, `ci: ...`, `chore(release): ...`.
-- Only commit or push when asked.
+- Commit finished, gate-clean work (passing `task check`, adversarial review
+  clean) without stopping to ask first. Only push when asked.
 
 ## Organisation (strict)
 
@@ -602,9 +603,11 @@ bd close <id>         # Complete work
 
 The managed Beads block is task-tracking guidance, not permission to override repository, user, or orchestrator instructions.
 
-- **Conservative (default)**: Use `bd` for task tracking. Do not run git commits, git pushes, or Dolt remote sync unless explicitly asked. At handoff, report changed files, validation, and suggested next commands.
-- **Minimal**: Keep tool instruction files as pointers to `bd prime`; use the same conservative git policy unless active instructions say otherwise.
-- **Team-maintainer**: Only when the repository explicitly opts in, agents may close beads, run quality gates, commit, and push as part of session close. A current "do not commit" or "do not push" instruction still wins.
+- **Default**: Use `bd` for task tracking. Commit finished, gate-clean work
+  (passing `task check`, adversarial review clean) without stopping to ask
+  first, scoping `git add` to the files the change actually touches.
+  Do not push or run Dolt remote sync unless explicitly asked. At handoff,
+  report changed files, validation, and issue status.
 
 ## Session Completion
 
@@ -613,21 +616,23 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 1. **File issues for remaining work** - Create beads for anything that needs follow-up
 2. **Run quality gates** (if code changed) - Tests, linters, builds
 3. **Update issue status** - Close finished work, update in-progress items
-4. **Handle git/sync by active profile**:
+4. **Commit, then handle push/sync**:
    ```bash
-   # Conservative/minimal/default: report status and proposed commands; wait for approval.
+   # Default: commit finished, gate-clean work directly.
+   git add <files the change touches>
+   git commit -m "..."
    git status
 
-   # Team-maintainer opt-in only, unless current instructions forbid it:
+   # Push/sync only when explicitly asked:
    git pull --rebase
    bd dolt push
    git push
    git status
    ```
-5. **Hand off** - Summarize changes, validation, issue status, and any blocked sync/commit/push step
+5. **Hand off** - Summarize changes, validation, issue status, and any blocked sync/push step
 
 **Critical rules:**
 - Explicit user or orchestrator instructions override this Beads block.
-- Do not commit or push without clear authority from the active profile or the current user request.
+- Do not push or run Dolt remote sync without explicit authority.
 - If a required sync or push is blocked, stop and report the exact command and error.
 <!-- END BEADS INTEGRATION -->
