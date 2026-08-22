@@ -12,7 +12,9 @@ import (
 	"github.com/samcharles93/ai-sdk/agentloop"
 	"github.com/samcharles93/ai-sdk/core"
 	"github.com/samcharles93/ai-sdk/runtime"
+	"github.com/samcharles93/ai-sdk/toolkit"
 
+	"github.com/samcharles93/archie-core/internal/skill"
 	"github.com/samcharles93/archie-core/internal/skillscript"
 	"github.com/samcharles93/archie-core/internal/tools"
 )
@@ -84,6 +86,12 @@ func (r *InProcessRunner) Run(ctx context.Context, workspace string, req Request
 	if err != nil {
 		return Result{}, fmt.Errorf("build central tool set: %w", err)
 	}
+	captureTools := captureToolSet(req.CaptureTools, captures)
+	scriptTools := scriptToolSet(workspace)
+	pluginTools, err := pluginToolSet(req, workspace, centralTools, captureTools, scriptTools)
+	if err != nil {
+		return Result{}, err
+	}
 	res, err := r.run(ctx, agentloop.Config{
 		Runtime:      r.runtime,
 		ModelRef:     req.Model,
@@ -98,8 +106,9 @@ func (r *InProcessRunner) Run(ctx context.Context, workspace string, req Request
 		ProtectPaths: protectionMatcher(req.Protection, req.ReadOnly),
 		Extra: mergeToolSets(
 			centralTools,
-			captureToolSet(req.CaptureTools, captures),
-			scriptToolSet(workspace),
+			captureTools,
+			scriptTools,
+			pluginTools,
 		),
 		Logger: r.logger(req),
 	})
@@ -129,6 +138,48 @@ func (r *InProcessRunner) Run(ctx context.Context, workspace string, req Request
 		return result, cause
 	}
 	return result, err
+}
+
+func pluginToolSet(req Request, workspace string, occupied ...core.ToolSet) (core.ToolSet, error) {
+	if req.ReadOnly || len(req.Protection.Suffixes)+len(req.Protection.Globs) > 0 || len(req.Gate.Commands) > 0 {
+		return nil, nil
+	}
+	const params = `{"type":"object","properties":{"input":{"type":"string"}},"required":["input"]}`
+	builtins := toolkit.NewRegistry()
+	if err := toolkit.RegisterBuiltins(builtins, workspace); err != nil {
+		return nil, fmt.Errorf("register built-in tools for plugin collision check: %w", err)
+	}
+	reserved := map[string]struct{}{"finish": {}, "write_note": {}}
+	for _, name := range builtins.Names() {
+		reserved[name] = struct{}{}
+	}
+	set := make(core.ToolSet, len(req.Plugins))
+	for _, spec := range req.Plugins {
+		if _, exists := reserved[spec.Name]; exists {
+			return nil, fmt.Errorf("plugin tool %q conflicts with an agent-loop tool", spec.Name)
+		}
+		for _, tools := range occupied {
+			if _, exists := tools[spec.Name]; exists {
+				return nil, fmt.Errorf("plugin tool %q conflicts with an existing tool", spec.Name)
+			}
+		}
+		plugin := skill.Plugin{Name: spec.Name, Src: spec.Src}
+		set[spec.Name] = core.NewTool(
+			spec.Name,
+			"Run the project-bundled "+spec.Name+" plugin.",
+			json.RawMessage(params),
+			func(_ context.Context, input string) (string, error) {
+				var args struct {
+					Input string `json:"input"`
+				}
+				if err := json.Unmarshal([]byte(input), &args); err != nil {
+					return spec.Name + " rejected: arguments must be a JSON object with an input field", nil //nolint:nilerr // rejection feedback lets the model retry with valid arguments
+				}
+				return plugin.Run(args.Input)
+			},
+		)
+	}
+	return set, nil
 }
 
 func (r *InProcessRunner) logger(req Request) *slog.Logger {

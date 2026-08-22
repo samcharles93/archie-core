@@ -10,6 +10,9 @@
 //	                        the agent's own commit cannot sweep it onto the
 //	                        task branch: go-git's Add ignores .gitignore.
 //	  repo/               --  per-repo persistent volume (optional, on request)
+//	    session.jsonl     --  agent session transcript, appended per stage
+//	    memory.jsonl      --  cross-session project memory
+//	    plugins/          --  daemon-staged bundled plugins
 //	  cache/
 //	    go/               --  GOMODCACHE (shared across all tasks)
 //	    node/             --  npm cache (shared)
@@ -19,20 +22,17 @@
 //	    pip/              --  pip cache (shared)
 //	    cargo/            --  Rust cargo cache (shared)
 //
-// TODO(PRD §3): session.jsonl, memory.jsonl, plugins/ volume  --  these
-// require agent-side implementation before the storage layer can mount
-// them. session.jsonl needs per-stage structured output from the agent;
-// memory.jsonl needs cross-session persistence; plugins/ needs daemon-
-// staged bundled plugins.
-//
 // Cache volumes are named Docker volumes created once and shared across all
 // tasks. They are never deleted  --  the daemon operator manages them.
 package storage
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -65,11 +65,74 @@ const (
 	MountTypeVolume = "volume"
 )
 
+// AppendJSONLine appends one complete JSON value to a JSONL file. The value is
+// marshalled before opening the file so a marshal failure cannot leave a
+// partial record behind.
+func AppendJSONLine(path string, value any) error {
+	record, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("marshal JSONL record: %w", err)
+	}
+	record = append(record, '\n')
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create JSONL directory: %w", err)
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("open JSONL file: %w", err)
+	}
+	if _, err := f.Write(record); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("append JSONL record: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close JSONL file: %w", err)
+	}
+	return nil
+}
+
+// StagePlugin writes a bundled plugin unless persistent project storage
+// already contains a plugin with the same filename. Persistent copies are
+// operator-owned overrides and therefore win over daemon-staged source.
+func StagePlugin(dir, name string, source []byte) error {
+	if filepath.Base(name) != name || name == "." || name == "" {
+		return fmt.Errorf("invalid plugin filename %q", name)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create plugin directory: %w", err)
+	}
+	path := filepath.Join(dir, name)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if errors.Is(err, os.ErrExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("create staged plugin: %w", err)
+	}
+	if _, err := f.Write(source); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("write staged plugin: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close staged plugin: %w", err)
+	}
+	return nil
+}
+
 // WorktreeMountDir is the fixed container path where a task's worktree is
 // bind-mounted. archie-agent uses this path directly rather than the host
 // path archied's worktree.Manager reports  --  the two processes see the same
 // files at different paths.
 const WorktreeMountDir = "/data/worktree"
+
+// Persistent storage paths share the per-repository volume so session output,
+// project memory, and staged plugins survive individual task containers.
+const (
+	PersistentMountDir = "/data/repo"
+	SessionPath        = PersistentMountDir + "/session.jsonl"
+	MemoryPath         = PersistentMountDir + "/memory.jsonl"
+	PluginsDir         = PersistentMountDir + "/plugins"
+)
 
 // Backend prepares container storage. Each container runtime backend
 // (Docker, future containerd, etc.) implements this interface.
@@ -237,7 +300,7 @@ func (d *DockerBackend) Setup(ctx context.Context, task TaskRef) ([]Mount, error
 		mounts = append(mounts, Mount{
 			Type:        MountTypeVolume,
 			Source:      volName,
-			Destination: "/data/repo",
+			Destination: PersistentMountDir,
 		})
 	}
 

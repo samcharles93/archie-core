@@ -14,6 +14,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/wfeval"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/worktree"
@@ -164,6 +165,7 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 	if agent == nil {
 		return nil, fmt.Errorf("no agent runner configured for task %d", req.Task.ID)
 	}
+	agent = persistentRunner{Runner: agent, enabled: req.Repo.PersistentStorage}
 
 	// A workflow run in this process publishes to an in-process *events.Bus
 	// the daemon cannot see -- archied and archie-agent are separate
@@ -193,6 +195,15 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 		Bus:          bus,
 		Log:          log,
 		CustomStages: wfeval.Discover,
+	}
+	if req.Repo.PersistentStorage {
+		memory, readErr := readProjectMemory(storage.MemoryPath)
+		if readErr != nil {
+			return nil, fmt.Errorf("read project memory: %w", readErr)
+		}
+		if memory != "" {
+			tc.SystemPrompt = func() string { return memory }
+		}
 	}
 
 	workflow.Run(ctx, wf, tc)
