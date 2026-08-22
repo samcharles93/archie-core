@@ -1,10 +1,7 @@
 package agentworker
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -30,32 +27,18 @@ type memoryRecord struct {
 
 func readProjectMemory(path string) (string, error) {
 	const maxEntries = 100
-	f, err := os.Open(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
 	var entries []string
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
-	for scanner.Scan() {
-		var record memoryRecord
-		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
-			return "", fmt.Errorf("decode memory record: %w", err)
-		}
+	err := storage.ReadJSONLines(path, func(record memoryRecord) error {
 		if strings.TrimSpace(record.Content) != "" {
 			entries = append(entries, "- "+record.Content)
 			if len(entries) > maxEntries {
 				entries = entries[len(entries)-maxEntries:]
 			}
 		}
-	}
-	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("scan memory records: %w", err)
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("read project memory: %w", err)
 	}
 	if len(entries) == 0 {
 		return "", nil
