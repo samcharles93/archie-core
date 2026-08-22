@@ -279,3 +279,16 @@ gate_max_failures = 5
 #   # dial time rather than on the URL string, so a public name that resolves to
 #   # a private address is refused too. Turn this on only for a homelab endpoint
 #   # you intend Archie to reach.
+
+# The generate_video tool: text-to-video via MiniMax's API. Off by default,
+# unlike web_fetch -- this spends real API credits per call, so it needs an
+# explicit opt-in and a working key before it is registered at all.
+# [tools.minimax]
+# enabled = true
+# api_key = { engine = "env", key = "MINIMAX_API_KEY" }
+# base_url = ""                # override the API host; leave unset in normal operation
+#   # Generation is synchronous from the model's point of view: the tool call
+#   # blocks until MiniMax reports the video ready or failed, which can take
+#   # several minutes. The result is a hosted URL delivered through whatever
+#   # channel supports gateway.MediaSender (Telegram today); channels without
+#   # that support get the URL as a plain link in the reply text instead.

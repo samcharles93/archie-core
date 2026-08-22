@@ -22,6 +22,10 @@ func (s *recordingStream) ToolCall(event gateway.ToolCallEvent) {
 	s.events = append(s.events, "tool:"+event.Name+":"+event.Parameters+":"+event.Summary())
 }
 
+func (s *recordingStream) Media(event gateway.MediaEvent) {
+	s.events = append(s.events, "media:"+event.ToolName+":"+event.Attachment.Type)
+}
+
 func streamOf(parts ...core.StreamPart) <-chan core.StreamPart {
 	ch := make(chan core.StreamPart, len(parts))
 	for _, part := range parts {
@@ -85,6 +89,40 @@ func TestDrainChatStream(t *testing.T) {
 				{Type: core.StreamPartFinish},
 			},
 			wantEvents: nil,
+		},
+		{
+			// A tool's output carrying a tools.MultimodalResult envelope
+			// must report both the ordinary tool-call event (so the turn
+			// narrates what ran) and a Media event per URL, so the
+			// channel has something to actually deliver.
+			name: "a tool result carrying MultimodalResult URLs reports Media",
+			parts: []core.StreamPart{
+				{Type: core.StreamPartToolCall, ToolCall: &core.ToolCall{ToolCallID: "1", ToolName: "generate_video"}},
+				{Type: core.StreamPartToolResult, ToolResult: &core.ToolResult{
+					ToolCallID: "1",
+					ToolName:   "generate_video",
+					Output:     `{"is_multimodal":true,"urls":[{"type":"video","url":"https://x/v"}]}`,
+				}},
+			},
+			wantEvents: []string{
+				`tool:generate_video::{"is_multimodal":true,"urls":[{"type":"video","url":"https://x/v"}]}`,
+				"media:generate_video:video",
+			},
+		},
+		{
+			// An ordinary JSON tool result that happens to be a JSON
+			// object but isn't a MultimodalResult (no is_multimodal, or
+			// false) must not be misread as carrying media.
+			name: "a plain JSON tool result reports no Media event",
+			parts: []core.StreamPart{
+				{Type: core.StreamPartToolCall, ToolCall: &core.ToolCall{ToolCallID: "1", ToolName: "read_file"}},
+				{Type: core.StreamPartToolResult, ToolResult: &core.ToolResult{
+					ToolCallID: "1",
+					ToolName:   "read_file",
+					Output:     `{"path":"a.txt","content":"hello"}`,
+				}},
+			},
+			wantEvents: []string{`tool:read_file::{"path":"a.txt","content":"hello"}`},
 		},
 	}
 
