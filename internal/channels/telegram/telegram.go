@@ -934,26 +934,183 @@ func (g *Gateway) send(ctx context.Context, b *bot.Bot, chatID int64, messageThr
 }
 
 // splitLongMessage divides text into parts of at most maxLen runes each,
-// preferring to cut immediately after a newline. Bounds are counted in
-// runes, not bytes, and every rune is retained, including blank lines and a
-// trailing newline. Preserving those boundaries matters for both Markdown
-// paragraphs and bare URLs that were separated from following prose.
+// preferring to cut immediately after a newline. A cut that would leave a
+// Markdown code fence open backs up to the boundary before that fence. Bounds
+// are counted in runes, not bytes, and every rune is retained, including blank
+// lines and a trailing newline. Preserving those boundaries matters for both
+// Markdown paragraphs and bare URLs that were separated from following prose.
 func splitLongMessage(text string, maxLen int) []string {
 	text = normalizeTelegramText(text)
 	if maxLen <= 0 || utf8.RuneCountInString(text) <= maxLen {
 		return []string{text}
 	}
+	if hasUnsplitableFence(text, maxLen) {
+		return splitFenceSyntaxAsPlainText(text, maxLen)
+	}
 
+	runes := []rune(text)
+	parts := make([]string, 0, (len(runes)+maxLen-1)/maxLen)
+	reopen := ""
+	for start := 0; start < len(runes); {
+		part, end, nextReopen := nextMessagePart(runes, start, maxLen, reopen)
+		parts = append(parts, part)
+		start, reopen = end, nextReopen
+	}
+	return parts
+}
+
+func nextMessagePart(runes []rune, start, maxLen int, reopen string) (string, int, string) {
+	prefixLen := utf8.RuneCountInString(reopen)
+	end := preferredMessageSplit(runes, start, maxLen-prefixLen)
+	if end == len(runes) {
+		return reopen + string(runes[start:end]), end, ""
+	}
+
+	candidate := []rune(reopen + string(runes[start:end]))
+	fenceStart, open := openCodeFenceStart(candidate, 0, len(candidate))
+	if !open {
+		return reopen + string(runes[start:end]), end, ""
+	}
+	if reopen == "" && fenceStart > 0 {
+		end = start + fenceStart
+		return string(runes[start:end]), end, ""
+	}
+
+	delimiter := codeFenceDelimiter(candidate, fenceStart)
+	opener := delimiter
+	if reopen != "" {
+		opener = strings.TrimSuffix(reopen, "\n")
+	}
+	suffix := "\n" + delimiter
+	contentBudget := maxLen - prefixLen - utf8.RuneCountInString(suffix)
+	if contentBudget <= 0 {
+		return reopen + string(runes[start:end]), end, ""
+	}
+	end = min(start+contentBudget, len(runes))
+	candidate = []rune(reopen + string(runes[start:end]))
+	if _, stillOpen := openCodeFenceStart(candidate, 0, len(candidate)); !stillOpen {
+		return reopen + string(runes[start:end]), end, ""
+	}
+	return reopen + string(runes[start:end]) + suffix, end, opener + "\n"
+}
+
+func preferredMessageSplit(runes []rune, start, budget int) int {
+	end := min(start+budget, len(runes))
+	if end == len(runes) {
+		return end
+	}
+	for i := end - 1; i > start; i-- {
+		if runes[i] == '\n' {
+			return i
+		}
+	}
+	return end
+}
+
+func codeFenceDelimiter(runes []rune, start int) string {
+	end := start
+	for end < len(runes) && runes[end] != '\n' {
+		end++
+	}
+	line := string(runes[start:end])
+	markerStart := 0
+	for markerStart < len(line) && markerStart < 3 && line[markerStart] == ' ' {
+		markerStart++
+	}
+	markerEnd := markerStart
+	for markerEnd < len(line) && line[markerEnd] == line[markerStart] {
+		markerEnd++
+	}
+	return line[markerStart:markerEnd]
+}
+
+// openCodeFenceStart reports the opening delimiter of a fenced Markdown block
+// that remains open at end. CommonMark permits up to three leading spaces and
+// uses runs of at least three backticks or tildes as fence delimiters.
+func openCodeFenceStart(runes []rune, start, end int) (int, bool) {
+	openAt := -1
+	marker := rune(0)
+	width := 0
+	for lineStart := start; lineStart < end; {
+		lineEnd := lineStart
+		for lineEnd < end && runes[lineEnd] != '\n' {
+			lineEnd++
+		}
+		lineMarker, lineWidth, trailingBlank, fenced := codeFenceRun(runes, lineStart, lineEnd)
+		if fenced && openAt < 0 && validCodeFenceOpening(runes, lineStart, lineEnd, lineMarker, lineWidth) {
+			openAt, marker, width = lineStart, lineMarker, lineWidth
+		} else if fenced && trailingBlank && lineMarker == marker && lineWidth >= width {
+			openAt, marker, width = -1, 0, 0
+		}
+		lineStart = lineEnd + 1
+	}
+	return openAt, openAt >= 0
+}
+
+func validCodeFenceOpening(runes []rune, lineStart, lineEnd int, marker rune, width int) bool {
+	if marker != '`' {
+		return true
+	}
+	markAt := lineStart
+	for markAt < lineEnd && runes[markAt] == ' ' {
+		markAt++
+	}
+	return !slices.Contains(runes[markAt+width:lineEnd], '`')
+}
+
+func codeFenceRun(runes []rune, lineStart, lineEnd int) (rune, int, bool, bool) {
+	markAt := lineStart
+	for markAt < lineEnd && markAt-lineStart < 3 && runes[markAt] == ' ' {
+		markAt++
+	}
+	if markAt == lineEnd || (runes[markAt] != '`' && runes[markAt] != '~') {
+		return 0, 0, false, false
+	}
+	runEnd := markAt
+	for runEnd < lineEnd && runes[runEnd] == runes[markAt] {
+		runEnd++
+	}
+	width := runEnd - markAt
+	trailingBlank := true
+	for i := runEnd; i < lineEnd; i++ {
+		if runes[i] != ' ' && runes[i] != '\t' {
+			trailingBlank = false
+			break
+		}
+	}
+	return runes[markAt], width, trailingBlank, width >= 3
+}
+
+// hasUnsplitableFence reports whether the bound is too small to close and
+// reopen a fence while consuming at least one source rune.
+func hasUnsplitableFence(text string, maxLen int) bool {
+	runes := []rune(text)
+	for lineStart := 0; lineStart < len(runes); {
+		lineEnd := lineStart
+		for lineEnd < len(runes) && runes[lineEnd] != '\n' {
+			lineEnd++
+		}
+		_, width, _, fenced := codeFenceRun(runes, lineStart, lineEnd)
+		if fenced && 2*width+2 >= maxLen {
+			return true
+		}
+		lineStart = lineEnd + 1
+	}
+	return false
+}
+
+// splitFenceSyntaxAsPlainText preserves every source rune when a tiny bound
+// cannot carry valid fenced Markdown. Delimiter runs are divided across parts,
+// so no individual part presents an unterminated fence to the renderer.
+func splitFenceSyntaxAsPlainText(text string, maxLen int) []string {
 	runes := []rune(text)
 	parts := make([]string, 0, (len(runes)+maxLen-1)/maxLen)
 	for start := 0; start < len(runes); {
 		end := min(start+maxLen, len(runes))
-		if end < len(runes) {
-			for i := end - 1; i > start; i-- {
-				if runes[i] == '\n' {
-					end = i
-					break
-				}
+		for i := start; i+2 < end; i++ {
+			if (runes[i] == '`' || runes[i] == '~') && runes[i+1] == runes[i] && runes[i+2] == runes[i] {
+				end = i + 2
+				break
 			}
 		}
 		parts = append(parts, string(runes[start:end]))
