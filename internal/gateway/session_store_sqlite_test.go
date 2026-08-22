@@ -25,6 +25,74 @@ func newTestSQLiteStore(t *testing.T) SessionStore {
 
 func sqliteBase() time.Time { return time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC) }
 
+// TestOpenSQLiteSessionStoreMigratesPreExistingTurnsTable simulates a
+// database created before the tool_calls column existed: CREATE TABLE IF NOT
+// EXISTS leaves such a table alone, so opening it must add the column rather
+// than fail or silently keep the old shape.
+func TestOpenSQLiteSessionStoreMigratesPreExistingTurnsTable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	raw, err := sql.Open("sqlite", sqliteSessionDSN(path))
+	if err != nil {
+		t.Fatalf("sql.Open() error = %v", err)
+	}
+	if _, err := raw.ExecContext(t.Context(), `CREATE TABLE turns (
+		turn_id             TEXT PRIMARY KEY,
+		session_id          TEXT NOT NULL,
+		source_id           TEXT NOT NULL DEFAULT '',
+		status              TEXT NOT NULL,
+		attempt             INTEGER NOT NULL DEFAULT 0,
+		owner_id            TEXT NOT NULL DEFAULT '',
+		input_message_id    TEXT NOT NULL DEFAULT '',
+		assistant_message_id TEXT NOT NULL DEFAULT '',
+		partial_text       TEXT NOT NULL DEFAULT '',
+		response_text      TEXT NOT NULL DEFAULT '',
+		error              TEXT NOT NULL DEFAULT '',
+		created_at         INTEGER NOT NULL,
+		updated_at         INTEGER NOT NULL
+	)`); err != nil {
+		t.Fatalf("create legacy turns table: %v", err)
+	}
+	if _, err := raw.ExecContext(t.Context(), `INSERT INTO turns (
+		turn_id, session_id, source_id, status, attempt, owner_id,
+		input_message_id, assistant_message_id, partial_text, response_text,
+		error, created_at, updated_at
+	) VALUES ('legacy-turn', 'legacy-session', 'legacy-source', 'completed', 1, 'owner',
+		'', 'assistant-1', '', 'legacy answer', '', 0, 0)`); err != nil {
+		t.Fatalf("insert legacy turn row: %v", err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("close legacy handle: %v", err)
+	}
+
+	store, err := OpenSQLiteSessionStore(path)
+	if err != nil {
+		t.Fatalf("OpenSQLiteSessionStore() on legacy schema error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	ledger, ok := store.(TurnLedger)
+	if !ok {
+		t.Fatalf("store is %T, want TurnLedger", store)
+	}
+	turn, ok, err := ledger.GetTurn(t.Context(), "legacy-turn")
+	if err != nil || !ok {
+		t.Fatalf("GetTurn() after migration = %#v, %v, %v; want the legacy row", turn, ok, err)
+	}
+	if turn.ResponseText != "legacy answer" || len(turn.ToolCalls) != 0 {
+		t.Fatalf("migrated turn = %#v, want legacy text with no tool calls", turn)
+	}
+
+	// Reopening a second time must not fail on the "duplicate column name"
+	// the migration produces once the column already exists.
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	reopened, err := OpenSQLiteSessionStore(path)
+	if err != nil {
+		t.Fatalf("second OpenSQLiteSessionStore() error = %v", err)
+	}
+	_ = reopened.Close()
+}
+
 func TestSQLiteSessionStoreRejectsExcessiveSearchQueries(t *testing.T) {
 	st := newTestSQLiteStore(t)
 	tests := []struct {

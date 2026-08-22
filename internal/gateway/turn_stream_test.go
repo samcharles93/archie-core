@@ -99,6 +99,85 @@ func TestTurnRunnerReplayStreamsStoredReplyOnce(t *testing.T) {
 	}
 }
 
+// A completed-duplicate replay (NATS redelivery, restart RecoverTurns
+// redelivery) must narrate the same tool activity the original turn did, in
+// the same order, ahead of the answer -- otherwise the duplicate disagrees
+// with the original about what ran (archie-core-ippu).
+func TestTurnRunnerReplayCompletedDuplicateReplaysToolCalls(t *testing.T) {
+	prepared := &turnTestPreparedModel{reply: "done"}
+	prepared.generateStream = func(stream TurnStream) (string, error) {
+		stream.ToolCall(ToolCallEvent{Name: "shell", Output: "exit 0"})
+		stream.Delta("done")
+		return "done", nil
+	}
+	runner := newStreamTestRunner(t, prepared)
+	msg := Message{From: "user", ChannelID: "chat-1", SourceID: "source-1", Text: "hello"}
+
+	if _, err := runner.Run(context.Background(), msg, &recordingStream{}); err != nil {
+		t.Fatalf("first Run() error = %v", err)
+	}
+
+	sink := &recordingStream{}
+	reply, err := runner.Run(context.Background(), msg, sink)
+	if err != nil {
+		t.Fatalf("replay Run() error = %v", err)
+	}
+	if reply != "done" {
+		t.Fatalf("replayed reply = %q", reply)
+	}
+	want := []string{"tool:shell:exit 0", "text:done"}
+	if len(sink.events) != len(want) {
+		t.Fatalf("replay stream events = %v, want %v", sink.events, want)
+	}
+	for i := range want {
+		if sink.events[i] != want[i] {
+			t.Fatalf("replay stream events = %v, want %v", sink.events, want)
+		}
+	}
+	if prepared.generateN != 1 {
+		t.Fatalf("Generate calls = %d, want 1  --  a replay must not call the model", prepared.generateN)
+	}
+
+	turn, ok, err := runner.Ledger.GetTurn(context.Background(), CanonicalTurnID("chat-1", "source-1"))
+	if err != nil || !ok {
+		t.Fatalf("GetTurn() = %#v, %v, %v; want persisted turn", turn, ok, err)
+	}
+	if len(turn.ToolCalls) != 1 || turn.ToolCalls[0].Name != "shell" {
+		t.Fatalf("persisted turn tool calls = %#v, want one recorded shell call", turn.ToolCalls)
+	}
+}
+
+// A turn's recorded tool activity is captured even when the original caller
+// did not stream (Router.LLM, a nil sink): a later duplicate delivered to a
+// streaming caller must still be able to replay it.
+func TestTurnRunnerRecordsToolCallsEvenWithoutOriginalStream(t *testing.T) {
+	prepared := &turnTestPreparedModel{reply: "done"}
+	prepared.generateStream = func(stream TurnStream) (string, error) {
+		stream.ToolCall(ToolCallEvent{Name: "grep", Output: "3 matches"})
+		return "done", nil
+	}
+	runner := newStreamTestRunner(t, prepared)
+	msg := Message{From: "user", ChannelID: "chat-1", SourceID: "source-1", Text: "hello"}
+
+	if _, err := runner.Run(context.Background(), msg, nil); err != nil {
+		t.Fatalf("first Run() error = %v", err)
+	}
+
+	sink := &recordingStream{}
+	if _, err := runner.Run(context.Background(), msg, sink); err != nil {
+		t.Fatalf("replay Run() error = %v", err)
+	}
+	want := []string{"tool:grep:3 matches", "text:done"}
+	if len(sink.events) != len(want) {
+		t.Fatalf("replay stream events = %v, want %v", sink.events, want)
+	}
+	for i := range want {
+		if sink.events[i] != want[i] {
+			t.Fatalf("replay stream events = %v, want %v", sink.events, want)
+		}
+	}
+}
+
 // A nil sink means "not streaming": the turn still runs and returns its reply.
 func TestTurnRunnerAcceptsNoStream(t *testing.T) {
 	prepared := &turnTestPreparedModel{reply: "quiet answer"}
