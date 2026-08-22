@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -211,12 +212,7 @@ func repositoryUsesURL(dir, want string) bool {
 	if !ok {
 		return false
 	}
-	for _, got := range remote.URLs {
-		if got == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(remote.URLs, want)
 }
 
 // refresh brings an already-prepared worktree back in line with the
