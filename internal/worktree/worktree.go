@@ -488,11 +488,14 @@ func (m *Manager) patch(ctx context.Context, dir, base string) (*object.Patch, e
 	if err != nil {
 		return nil, fmt.Errorf("load head commit: %w", err)
 	}
-	from := baseCommit
-	if bases, err := baseCommit.MergeBase(headCommit); err == nil && len(bases) > 0 {
-		from = bases[0]
+	bases, err := baseCommit.MergeBase(headCommit)
+	if err != nil {
+		return nil, fmt.Errorf("find merge base for %s...HEAD: %w", remoteBase(base), err)
 	}
-	p, err := from.PatchContext(ctx, headCommit)
+	if len(bases) == 0 {
+		return nil, fmt.Errorf("find merge base for %s...HEAD: no common ancestor", remoteBase(base))
+	}
+	p, err := bases[0].PatchContext(ctx, headCommit)
 	if err != nil {
 		return nil, fmt.Errorf("diff %s...HEAD: %w", remoteBase(base), err)
 	}
