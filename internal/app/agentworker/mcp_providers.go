@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/tools"
 	"github.com/samcharles93/archie-core/internal/tools/mcp"
 	toolprovider "github.com/samcharles93/archie-core/internal/tools/provider"
@@ -102,9 +103,17 @@ func mcpTransportForServer(
 		if command == "" {
 			return nil, fmt.Errorf("MCP stdio server %q requires a command", name)
 		}
+		// storage.MCPNPMCacheMountDir is a shared Docker volume mounted on
+		// every task container (internal/storage's alwaysOnCacheVolumes),
+		// so an npx-launched MCP server reuses a warm npm cache across
+		// tasks instead of re-resolving/re-downloading from the registry
+		// in each fresh ephemeral container. Mirrors the daemon's own
+		// npx MCP servers (cmd/archied/main.go's npmCacheServerEnv),
+		// which persists across daemon restarts the same way.
 		return mcp.NewStdioTransport(mcp.StdioTransportConfig{
 			Command: command,
 			Args:    append([]string(nil), server.Args...),
+			Env:     mcp.NpmCacheEnv(command, storage.MCPNPMCacheMountDir),
 		}), nil
 	case "http", "streamablehttp":
 		url := strings.TrimSpace(server.URL)

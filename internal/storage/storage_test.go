@@ -88,10 +88,27 @@ func TestMountListForEcosystemRust(t *testing.T) {
 	}
 }
 
-func TestMountListUnknownEcosystemReturnsBaseOnly(t *testing.T) {
+func TestMountListUnknownEcosystemReturnsAlwaysOnOnly(t *testing.T) {
 	mounts := cacheMounts("custom")
-	if len(mounts) != 0 {
-		t.Errorf("custom ecosystem returned %d mounts, want 0", len(mounts))
+	names := mountDestinations(mounts)
+	if !contains(names, MCPNPMCacheMountDir) {
+		t.Errorf("unknown ecosystem missing always-on mcp-npm cache in %v", names)
+	}
+	if len(mounts) != len(alwaysOnCacheVolumes) {
+		t.Errorf("custom ecosystem returned %d mounts, want %d (always-on only)", len(mounts), len(alwaysOnCacheVolumes))
+	}
+}
+
+func TestMountListAlwaysIncludesMCPNPMCache(t *testing.T) {
+	// The npm cache for per-task MCP servers isn't tied to the task repo's
+	// ecosystem, so it must be present regardless of which ecosystem (or
+	// none) is requested.
+	for _, eco := range []string{"go", "node", "python", "rust", "custom", ""} {
+		mounts := cacheMounts(eco)
+		names := mountDestinations(mounts)
+		if !contains(names, MCPNPMCacheMountDir) {
+			t.Errorf("ecosystem %q missing always-on mcp-npm cache in %v", eco, names)
+		}
 	}
 }
 
@@ -183,6 +200,42 @@ func TestDockerBackendSetupIncludesCacheMounts(t *testing.T) {
 	}
 }
 
+func TestDockerBackendSetupIncludesMCPNPMCacheRegardlessOfEcosystem(t *testing.T) {
+	// The npx package cache for per-task MCP servers must be mounted on
+	// every task container, not just ones matching an ecosystem with its
+	// own cache volumes: MCP servers are daemon-wide config, unrelated to
+	// the repo the task happens to run against.
+	dir := t.TempDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	backend := &DockerBackend{}
+	mounts, err := backend.Setup(context.Background(), TaskRef{
+		WorktreeDir: dir,
+		Ecosystem:   "rust",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, m := range mounts {
+		if m.Destination == MCPNPMCacheMountDir {
+			found = true
+			if m.Type != MountTypeVolume {
+				t.Errorf("mcp-npm cache mount type = %q, want volume", m.Type)
+			}
+			if m.Source != "archie-cache-mcp-npm" {
+				t.Errorf("mcp-npm cache mount source = %q, want archie-cache-mcp-npm", m.Source)
+			}
+		}
+	}
+	if !found {
+		t.Error("Setup did not include the mcp-npm cache mount")
+	}
+}
+
 func TestDockerBackendSetupWorktreeMountIsFirst(t *testing.T) {
 	// Worktree bind mount must be the first entry  --  container create
 	// depends on this order for overlay semantics.
@@ -266,7 +319,8 @@ func TestDockerBackendSetupEmptyEcosystem(t *testing.T) {
 }
 
 func TestDockerBackendSetupUnknownEcosystemSkipped(t *testing.T) {
-	// Unknown ecosystem must not add cache mounts, but must not error.
+	// Unknown ecosystem must not add ecosystem-specific cache mounts (only
+	// the always-on ones), but must not error.
 	dir := t.TempDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -281,7 +335,7 @@ func TestDockerBackendSetupUnknownEcosystemSkipped(t *testing.T) {
 		t.Fatal("Setup errored on unknown ecosystem:", err)
 	}
 	for _, m := range mounts {
-		if m.Destination != "/data/worktree" {
+		if m.Destination != "/data/worktree" && m.Destination != MCPNPMCacheMountDir {
 			t.Errorf("unexpected mount %s for unknown ecosystem", m.Destination)
 		}
 	}
@@ -437,7 +491,11 @@ func TestRepoVolumeName(t *testing.T) {
 }
 
 func TestDockerBackendLabelsPersistentRepoVolumes(t *testing.T) {
-	var createBody string
+	// Setup also ensures the always-on mcp-npm cache volume (and any
+	// ecosystem-specific ones) alongside the per-repo volume, so every
+	// /volumes/create body must be collected rather than captured into a
+	// single variable that the last request would overwrite.
+	var createBodies []string
 	cli := dockerTestClient(t, func(req *http.Request) (*http.Response, error) {
 		path := dockerAPIPath(req.URL.Path)
 		switch {
@@ -448,7 +506,7 @@ func TestDockerBackendLabelsPersistentRepoVolumes(t *testing.T) {
 			if readErr != nil {
 				return nil, readErr
 			}
-			createBody = string(data)
+			createBodies = append(createBodies, string(data))
 			return dockerResponse(http.StatusCreated, `{"Name":"archie-repo-alice-demo","Driver":"local","Labels":{}}`), nil
 		default:
 			return dockerResponse(http.StatusNotFound, `{"message":"unexpected request"}`), nil
@@ -465,6 +523,7 @@ func TestDockerBackendLabelsPersistentRepoVolumes(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	createBody := strings.Join(createBodies, "\n")
 	if !strings.Contains(createBody, `"com.samcharles93.archie.storage":"repo"`) {
 		t.Fatalf("persistent volume create body lacks Archie repo label: %s", createBody)
 	}
