@@ -27,6 +27,7 @@
 package storage
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -87,6 +88,42 @@ func AppendJSONLine(path string, value any) error {
 	}
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("close JSONL file: %w", err)
+	}
+	return nil
+}
+
+// ReadJSONLines decodes each line of the JSONL file at path as a T, calling
+// fn for each. A path that does not exist yet is not an error -- no log
+// written and an empty log mean the same thing to a caller -- so fn is
+// simply never called. A malformed line, or an error fn itself returns,
+// stops the scan and is returned wrapped.
+//
+// This is AppendJSONLine's read-side counterpart, kept in the package that
+// owns the format: see organisation.md's "a package owns its own format end
+// to end."
+func ReadJSONLines[T any](path string, fn func(T) error) error {
+	f, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("open JSONL file: %w", err)
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
+	for scanner.Scan() {
+		var record T
+		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
+			return fmt.Errorf("decode JSONL record: %w", err)
+		}
+		if err := fn(record); err != nil {
+			return fmt.Errorf("handle JSONL record: %w", err)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("scan JSONL file: %w", err)
 	}
 	return nil
 }
