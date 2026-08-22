@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/secret"
 )
 
 // A minimal config that satisfies every check validate applies without
@@ -258,6 +259,47 @@ func TestValidateContainersResolvesNATSMode(t *testing.T) {
 			t.Fatal("Validate() = nil, want an error for containers with embedded nats")
 		}
 	})
+}
+
+// TestValidateForgeIntake pins the forge.intake contract: an unset intake
+// resolves to poll without mutating cfg, and webhook/both require a webhook
+// secret and listen address.
+func TestValidateForgeIntake(t *testing.T) {
+	tests := []struct {
+		name     string
+		intake   string
+		secret   secret.SecretRef
+		addr     string
+		natsMode string
+		wantErr  bool
+	}{
+		{name: "unset resolves poll"},
+		{name: "poll is valid", intake: config.ForgeIntakePoll},
+		{name: "webhook requires secret", intake: config.ForgeIntakeWebhook, addr: "0.0.0.0:8645", wantErr: true},
+		{name: "webhook requires addr", intake: config.ForgeIntakeWebhook, secret: secret.SecretRef{Engine: "env", Key: "SECRET"}, wantErr: true},
+		{name: "webhook with secret and addr is valid", intake: config.ForgeIntakeWebhook, secret: secret.SecretRef{Engine: "env", Key: "SECRET"}, addr: "0.0.0.0:8645"},
+		{name: "both with secret and addr is valid", intake: config.ForgeIntakeBoth, secret: secret.SecretRef{Engine: "env", Key: "SECRET"}, addr: "0.0.0.0:8645"},
+		{name: "webhook with nats off is rejected", intake: config.ForgeIntakeWebhook, secret: secret.SecretRef{Engine: "env", Key: "SECRET"}, addr: "0.0.0.0:8645", natsMode: config.NATSModeOff, wantErr: true},
+		{name: "unknown intake", intake: "not-a-mode", wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := minimalValidConfig()
+			cfg.Forge.Intake = tc.intake
+			cfg.Forge.WebhookSecret = tc.secret
+			cfg.Forge.WebhookAddr = tc.addr
+			if tc.natsMode != "" {
+				cfg.NATS.Mode = tc.natsMode
+			}
+			err := validateForgeIntake(&cfg)
+			if tc.wantErr && err == nil {
+				t.Fatal("validateForgeIntake() = nil, want an error")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("validateForgeIntake() = %v, want nil", err)
+			}
+		})
+	}
 }
 
 // Validate must run the exact same checks Loader.File applies internally --

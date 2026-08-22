@@ -188,12 +188,31 @@ type Agent struct {
 	Env []string `toml:"env" yaml:"env"`
 }
 
+// Forge intake modes for Forge.Intake. Poll is the default; webhook reacts to
+// forge events as they arrive instead of (or in addition to) polling.
+const (
+	ForgeIntakePoll    = "poll"
+	ForgeIntakeWebhook = "webhook"
+	ForgeIntakeBoth    = "both"
+)
+
 // Forge configures the code forge integration.
 type Forge struct {
 	Type     string           `toml:"type" yaml:"type"`
 	Host     string           `toml:"host" yaml:"host"`
 	Token    secret.SecretRef `toml:"token" yaml:"token"`
 	TokenEnv string           `toml:"token_env" yaml:"token_env"`
+	// Intake selects how forge issues become work: "poll" (default),
+	// "webhook", or "both". Webhook intake reacts to forge events the moment
+	// they arrive instead of up to poll_interval later.
+	Intake string `toml:"intake" yaml:"intake"`
+	// WebhookSecret is the shared secret used to verify GitHub webhook
+	// signatures (X-Hub-Signature-256). Required when Intake is "webhook" or
+	// "both".
+	WebhookSecret secret.SecretRef `toml:"webhook_secret" yaml:"webhook_secret"`
+	// WebhookAddr is the host:port the webhook receiver listens on. Required
+	// when Intake is "webhook" or "both".
+	WebhookAddr string `toml:"webhook_addr" yaml:"webhook_addr"`
 }
 
 // Dispatch configures how archied discovers work and reflects task state

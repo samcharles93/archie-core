@@ -29,6 +29,18 @@ diff_cap_lines = 400
 type = "github"
 host = "https://github.com"
 token = { engine = "env", key = "ARCHIE_GITHUB_TOKEN" }
+# How forge issues become work:
+#   "poll"    – re-discover issues each poll_interval (default)
+#   "webhook" – react to GitHub webhook events the moment they arrive
+#   "both"    – webhook plus the poll as a backstop
+# intake = "poll"
+# Required when intake is "webhook" or "both": the shared secret configured
+# on the GitHub webhook, and the host:port the receiver listens on. On
+# GitHub, set the webhook's Content type to application/json (the UI
+# default) -- the alternate form-encoded delivery is not supported.
+# Not supported alongside [[identities]] (each identity keeps polling).
+# webhook_secret = { engine = "env", key = "ARCHIE_WEBHOOK_SECRET" }
+# webhook_addr = "0.0.0.0:8645"
 
 [dispatch]
 # Can be of "assignee", "label", or "either"

@@ -34,6 +34,7 @@ var (
 	forgeTypes       = []string{forgeTypeGitHub, forgeTypeGitea, forgeTypeNone, forgeTypeOff, forgeTypeDisabled}
 	dispatchTriggers = []string{dispatchTriggerAssignee, dispatchTriggerLabel, dispatchTriggerEither}
 	natsModes        = []string{config.NATSModeEmbedded, config.NATSModeExternal, config.NATSModeOff}
+	forgeIntakes     = []string{config.ForgeIntakePoll, config.ForgeIntakeWebhook, config.ForgeIntakeBoth}
 )
 
 // Validate runs the same checks Loader applies before accepting a config,
@@ -61,6 +62,9 @@ func validate(cfg *config.Config) error {
 		return err
 	}
 	if err := validateDispatch(cfg); err != nil {
+		return err
+	}
+	if err := validateForgeIntake(cfg); err != nil {
 		return err
 	}
 	if err := validateProviders(cfg.Providers); err != nil {
@@ -151,6 +155,34 @@ func validateDispatch(cfg *config.Config) error {
 	}
 	if (cfg.Dispatch.Trigger == dispatchTriggerLabel || cfg.Dispatch.Trigger == dispatchTriggerEither) && cfg.Label == "" {
 		return fmt.Errorf("%w: label is required when dispatch.trigger is %q (an empty label matches every open issue)", ErrInvalidInput, cfg.Dispatch.Trigger)
+	}
+	return nil
+}
+
+// validateForgeIntake checks the forge intake mode and that webhook intake has
+// the secret and listen address it needs. An unset intake resolves to "poll"
+// without mutating cfg, so Validate (which does not apply defaults) accepts a
+// hand-built config the same way Loader.File accepts its on-disk form.
+func validateForgeIntake(cfg *config.Config) error {
+	intake := cfg.Forge.Intake
+	if intake == "" {
+		intake = config.ForgeIntakePoll
+	}
+	if !oneOf(intake, forgeIntakes) {
+		return fmt.Errorf("%w: forge.intake %q (want %s)", ErrInvalidInput, cfg.Forge.Intake, list(forgeIntakes))
+	}
+	if intake == config.ForgeIntakeWebhook || intake == config.ForgeIntakeBoth {
+		if cfg.Forge.WebhookSecret == (secret.SecretRef{}) {
+			return fmt.Errorf("%w: forge.webhook_secret is required when forge.intake is %q", ErrInvalidInput, intake)
+		}
+		if cfg.Forge.WebhookAddr == "" {
+			return fmt.Errorf("%w: forge.webhook_addr is required when forge.intake is %q", ErrInvalidInput, intake)
+		}
+		// Webhook intake publishes to the task queue, which is NATS (embedded
+		// or external). nats.mode="off" leaves no queue to publish to.
+		if effectiveNATSMode(cfg) == config.NATSModeOff {
+			return fmt.Errorf("%w: forge.intake %q requires NATS (nats.mode must not be %q)", ErrInvalidInput, intake, config.NATSModeOff)
+		}
 	}
 	return nil
 }
