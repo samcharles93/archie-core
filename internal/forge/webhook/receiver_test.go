@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -245,5 +246,143 @@ func TestPublishedEnvelopeCarriesIssueIdentityAndKind(t *testing.T) {
 	}
 	if task.IdempotencyKey() != "archie:owner/repo/42" {
 		t.Errorf("idempotency key = %q, want archie:owner/repo/42", task.IdempotencyKey())
+	}
+}
+
+// TestReceiverStatusTracksAuthenticatedDeliveries pins the observability this
+// receiver needs for archie-core-7d5u.5: a wedged or non-delivering receiver
+// must not be indistinguishable from an idle repo. Deliveries counts every
+// authenticated, parseable delivery (proof GitHub is reaching the process at
+// all) independent of whether that delivery matched the dispatch predicate;
+// Publishes counts only what actually became work. An unauthenticated
+// request must not inflate either counter -- that would let anyone spamming
+// the endpoint with a bad signature manufacture a false "receiver is alive
+// and busy" signal.
+func TestReceiverStatusTracksAuthenticatedDeliveries(t *testing.T) {
+	r := New(testSecret, "label", testLabel, testBot, nil, nil)
+
+	before := r.Status()
+	if before.Deliveries != 0 || before.Publishes != 0 {
+		t.Fatalf("initial status = %+v, want zero counters", before)
+	}
+	if before.LastReceivedAt != nil {
+		t.Fatalf("initial LastReceivedAt = %v, want nil", before.LastReceivedAt)
+	}
+
+	// Invalid signature: not a real GitHub delivery, must not count.
+	rejected := issueEvent(t, "labeled", func(ev *github.IssuesEvent) {
+		ev.Issue.Labels = []*github.Label{{Name: new(testLabel)}}
+	})
+	rejectedPayload, err := json.Marshal(rejected)
+	if err != nil {
+		t.Fatalf("marshal event: %v", err)
+	}
+	serve(t, r, signedRequest(t, "wrong-secret", "issues", rejectedPayload))
+	afterRejected := r.Status()
+	if afterRejected.Deliveries != 0 {
+		t.Fatalf("Deliveries after unauthenticated request = %d, want 0", afterRejected.Deliveries)
+	}
+
+	// Authenticated but dispatch-ineligible: counts as a delivery (GitHub
+	// really did reach the receiver), not as a publish.
+	ineligible := issueEvent(t, "unlabeled", func(ev *github.IssuesEvent) {
+		ev.Issue.Labels = []*github.Label{{Name: new(testLabel)}}
+	})
+	ineligiblePayload, err := json.Marshal(ineligible)
+	if err != nil {
+		t.Fatalf("marshal event: %v", err)
+	}
+	serve(t, r, signedRequest(t, testSecret, "issues", ineligiblePayload))
+	afterIneligible := r.Status()
+	if afterIneligible.Deliveries != 1 {
+		t.Fatalf("Deliveries after ineligible authenticated request = %d, want 1", afterIneligible.Deliveries)
+	}
+	if afterIneligible.Publishes != 0 {
+		t.Fatalf("Publishes after ineligible authenticated request = %d, want 0", afterIneligible.Publishes)
+	}
+	if afterIneligible.LastReceivedAt == nil {
+		t.Fatal("LastReceivedAt after authenticated request = nil, want set")
+	}
+
+	// Authenticated and dispatch-eligible: counts as both.
+	matched := issueEvent(t, "labeled", func(ev *github.IssuesEvent) {
+		ev.Issue.Labels = []*github.Label{{Name: new(testLabel)}}
+	})
+	matchedPayload, err := json.Marshal(matched)
+	if err != nil {
+		t.Fatalf("marshal event: %v", err)
+	}
+	serve(t, r, signedRequest(t, testSecret, "issues", matchedPayload))
+	final := r.Status()
+	if final.Deliveries != 2 {
+		t.Fatalf("Deliveries = %d, want 2", final.Deliveries)
+	}
+	if final.Publishes != 1 {
+		t.Fatalf("Publishes = %d, want 1", final.Publishes)
+	}
+}
+
+// TestReceiverStatusDoesNotCountFailedPublish pins that a Publisher error
+// still counts the delivery (GitHub really did reach the receiver, and the
+// payload really was dispatch-eligible) but must not count as a publish --
+// otherwise Status would report work that never actually reached the queue.
+func TestReceiverStatusDoesNotCountFailedPublish(t *testing.T) {
+	r := New(testSecret, "label", testLabel, testBot, nil, nil)
+	r.publish = func(context.Context, workintake.TaskEnvelope) error {
+		return errors.New("publish unavailable")
+	}
+
+	ev := issueEvent(t, "labeled", func(ev *github.IssuesEvent) {
+		ev.Issue.Labels = []*github.Label{{Name: new(testLabel)}}
+	})
+	payload, err := json.Marshal(ev)
+	if err != nil {
+		t.Fatalf("marshal event: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, signedRequest(t, testSecret, "issues", payload))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	got := r.Status()
+	if got.Deliveries != 1 {
+		t.Errorf("Deliveries = %d, want 1", got.Deliveries)
+	}
+	if got.Publishes != 0 {
+		t.Errorf("Publishes = %d, want 0 (publish failed)", got.Publishes)
+	}
+}
+
+// TestReceiverServesStatusOnGET proves the counters are reachable without a
+// separate health-check subsystem: any GET is answered with the JSON status
+// body, since GitHub only ever POSTs to this receiver.
+func TestReceiverServesStatusOnGET(t *testing.T) {
+	r := New(testSecret, "label", testLabel, testBot, nil, nil)
+	ev := issueEvent(t, "labeled", func(ev *github.IssuesEvent) {
+		ev.Issue.Labels = []*github.Label{{Name: new(testLabel)}}
+	})
+	payload, err := json.Marshal(ev)
+	if err != nil {
+		t.Fatalf("marshal event: %v", err)
+	}
+	serve(t, r, signedRequest(t, testSecret, "issues", payload))
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, want 200", rec.Code)
+	}
+	var got Status
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode status body: %v (%s)", err, rec.Body.String())
+	}
+	if got.Deliveries != 1 || got.Publishes != 1 {
+		t.Errorf("decoded status = %+v, want Deliveries=1 Publishes=1", got)
+	}
+	if got.LastReceivedAt == nil {
+		t.Error("decoded status LastReceivedAt = nil, want set")
 	}
 }
