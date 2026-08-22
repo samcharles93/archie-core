@@ -349,11 +349,34 @@ type WebFetchConfig struct {
 // absent setting as enabled.
 func (c WebFetchConfig) IsEnabled() bool { return c.Enabled == nil || *c.Enabled }
 
+// MinimaxConfig controls the generate_video tool
+// (internal/tools/minimax). Unlike WebFetchConfig, absent is disabled, not
+// enabled: web_fetch needs no credential and is safe as a silent default,
+// while this tool spends real API credits per call, so it stays off until
+// an operator explicitly turns it on and supplies a key.
+type MinimaxConfig struct {
+	// Enabled advertises the tool. Defaults to false (see the type doc).
+	Enabled bool `toml:"enabled" yaml:"enabled" json:"enabled"`
+
+	// APIKey authenticates against the MiniMax API.
+	APIKey secret.SecretRef `toml:"api_key" yaml:"api_key" json:"-"`
+
+	// BaseURL overrides the API host. Empty uses the client's built-in
+	// default. Exists for a proxy or a self-hosted-compatible endpoint,
+	// not expected to be set in normal operation.
+	BaseURL string `toml:"base_url" yaml:"base_url" json:"base_url,omitempty"`
+}
+
+// IsEnabled reports whether the video-generation tool should be
+// registered.
+func (c MinimaxConfig) IsEnabled() bool { return c.Enabled }
+
 // ToolsConfig holds MCP server and tool policy configuration.
 type ToolsConfig struct {
 	MCPServers []MCPServer    `toml:"mcp_servers" yaml:"mcp_servers" json:"mcp_servers"`
 	Policy     ToolPolicy     `toml:"tool_policy" yaml:"tool_policy" json:"tool_policy"`
 	WebFetch   WebFetchConfig `toml:"web_fetch" yaml:"web_fetch" json:"web_fetch"`
+	Minimax    MinimaxConfig  `toml:"minimax" yaml:"minimax" json:"minimax"`
 }
 
 // Config is the daemon configuration.

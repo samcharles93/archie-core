@@ -51,6 +51,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/tools"
+	"github.com/samcharles93/archie-core/internal/tools/minimax"
 	toolprovider "github.com/samcharles93/archie-core/internal/tools/provider"
 	builtintoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/builtin"
 	memorytoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/memory"
@@ -937,6 +938,43 @@ func (b *boot) registerStandaloneTools() {
 	} else {
 		log.Info("web fetch disabled")
 	}
+
+	b.registerMinimaxTool(cfg, log)
+}
+
+// registerMinimaxTool registers generate_video. Off by default -- see
+// MinimaxConfig's doc comment, it spends real API credits per call -- and,
+// unlike web_fetch, needs a resolved credential before it can be
+// registered at all: a tool advertised with no working key would fail
+// every call, the same "don't advertise a broken capability" reasoning as
+// disabled-by-config. Split out of registerStandaloneTools to keep that
+// function's branching flat rather than nesting this tool's three failure
+// modes (resolve error, empty key, registration error) inside it.
+func (b *boot) registerMinimaxTool(cfg config.Config, log *slog.Logger) {
+	if !cfg.Tools.Minimax.IsEnabled() {
+		log.Info("minimax video generation disabled")
+		return
+	}
+
+	apiKey, err := cfg.Tools.Minimax.APIKey.Resolve(b.secrets)
+	if err != nil {
+		log.Warn("minimax video generation enabled but the API key failed to resolve; tool not registered", "err", err)
+		return
+	}
+	if apiKey == "" {
+		log.Warn("minimax video generation enabled but no API key is configured; tool not registered")
+		return
+	}
+
+	entry := minimax.Tool(minimax.Config{Enabled: true, APIKey: apiKey, BaseURL: cfg.Tools.Minimax.BaseURL})
+	if entry == nil {
+		return
+	}
+	if err := b.toolReg.Register(*entry); err != nil {
+		log.Warn("generate_video registration failed", "err", err)
+		return
+	}
+	log.Info("minimax video generation enabled")
 }
 
 // buildDaemon constructs the daemon and hands the dashboard the handles
