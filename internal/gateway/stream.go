@@ -115,6 +115,16 @@ func truncateRunesWithinLimit(s string, limit int) string {
 	return string(runes[:limit-1]) + "…"
 }
 
+// MediaEvent reports one media attachment produced during a turn, so a
+// channel can deliver it (e.g. through gateway.MediaSender) in the same
+// ordered pass as the text and tool activity that surrounded it.
+type MediaEvent struct {
+	// ToolName is the tool call that produced the attachment.
+	ToolName string
+	// Attachment is the media to deliver.
+	Attachment MediaAttachment
+}
+
 // TurnStream receives a turn's output as it is produced.
 //
 // It replaces the plain delta callback so a channel can render tool activity
@@ -129,6 +139,11 @@ type TurnStream interface {
 	Delta(text string)
 	// ToolCall reports a tool invocation that has finished executing.
 	ToolCall(event ToolCallEvent)
+	// Media reports a media attachment a tool call produced during the
+	// turn. A channel that cannot deliver it inline (see
+	// gateway.CapabilitiesOf) is expected to fall back to rendering the
+	// attachment's URL as text instead of dropping it silently.
+	Media(event MediaEvent)
 }
 
 // DeltaFunc adapts a plain text-delta callback to TurnStream for callers that
@@ -146,6 +161,9 @@ func (f DeltaFunc) Delta(text string) {
 
 // ToolCall discards the event: a text-only caller has nowhere to put it.
 func (f DeltaFunc) ToolCall(ToolCallEvent) {}
+
+// Media discards the event: a text-only caller has nowhere to put it.
+func (f DeltaFunc) Media(MediaEvent) {}
 
 // toolCallRecorder wraps a TurnStream, forwarding every event to it
 // unchanged while also recording the tool calls in arrival order. The
@@ -171,6 +189,16 @@ func (r *toolCallRecorder) ToolCall(event ToolCallEvent) {
 	r.events = append(r.events, event)
 	if r.next != nil {
 		r.next.ToolCall(event)
+	}
+}
+
+// Media forwards the event to the wrapped stream, if any. Unlike ToolCall,
+// it is not recorded: media persistence and replay are not yet a supported
+// path (see archie-core-1786748942243-6-f109697e), so recording it here
+// would create a ledger field nothing reads.
+func (r *toolCallRecorder) Media(event MediaEvent) {
+	if r.next != nil {
+		r.next.Media(event)
 	}
 }
 
