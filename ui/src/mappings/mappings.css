@@ -1,0 +1,82 @@
+/* Field mapping editor: bind named fields to JSON paths by clicking a
+   captured event's payload, then preview the resolution before saving. */
+
+.mapping-form,
+.mapping-fields,
+.mapping-payload {
+  margin-bottom: var(--sp-4);
+  padding: var(--sp-4);
+}
+
+.mapping-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-3);
+  font-size: var(--text-sm);
+  color: var(--fg-subtle);
+}
+
+.mapping-input,
+.mapping-select {
+  padding: var(--sp-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font: inherit;
+}
+
+.mapping-section-title {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-subtle);
+  margin-bottom: var(--sp-2);
+}
+
+.mapping-fields-table .mapping-input {
+  width: 100%;
+}
+
+.mapping-empty-fields {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  padding: var(--sp-3) 0;
+}
+
+.mapping-error {
+  color: var(--danger, #e5484d);
+  font-size: var(--text-sm);
+  margin-bottom: var(--sp-3);
+}
+
+.mapping-tree-list {
+  list-style: none;
+  margin: 0;
+  padding-left: var(--sp-4);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.mapping-tree-item {
+  padding: 2px 0;
+}
+
+.mapping-tree-key,
+.mapping-tree-value {
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  padding: 0 4px;
+}
+
+.mapping-tree-key:hover,
+.mapping-tree-value:hover {
+  background: var(--bg-raised);
+  outline: 1px solid var(--accent);
+}
+
+.mapping-tree-value {
+  color: var(--fg-subtle);
+  margin-left: var(--sp-1);
+}

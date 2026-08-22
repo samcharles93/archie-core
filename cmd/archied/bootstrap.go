@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -34,6 +35,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
+	forgewebhook "github.com/samcharles93/archie-core/internal/forge/webhook"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/overlay"
@@ -325,6 +327,14 @@ func (b *boot) setupObservability() {
 	b.web.CaptureMaxEvents = cfg.Capture.MaxEvents
 	b.web.CaptureMaxBodyBytes = int64(cfg.Capture.MaxBodyBytes)
 	b.web.CaptureLimiter = webhookguard.NewRateLimiter(cfg.Capture.RatePerSecond, cfg.Capture.RateBurst, time.Now)
+	// Mapping storage: same narrow-assertion pattern as CaptureStore above,
+	// for the same reason -- openProductionTaskStore's declared return type
+	// doesn't expose it. See docs/prds/payload-field-mapping.md.
+	if ms, ok := b.st.(store.MappingStore); ok {
+		b.web.Mappings = ms
+	} else {
+		log.Warn("mapping storage unavailable: task store does not implement MappingStore")
+	}
 	sink := bus.Subscribe(256)
 	go persistAndBroadcastEvents(sink, b.st, b.web, log)
 }
@@ -970,6 +980,64 @@ func (b *boot) buildDaemon() {
 	// this point /api/config and the daemon can never disagree about the
 	// published config.
 	b.web.Cfg = b.d.Cfg
+	b.setupForgeWebhook()
+}
+
+// setupForgeWebhook starts the forge webhook receiver when intake is "webhook"
+// or "both". It decodes GitHub issue events into task envelopes and publishes
+// them through the same path the poller uses, so a labelled or assigned issue
+// becomes work immediately instead of on the next poll. Called from
+// buildDaemon, since it needs the freshly built (*daemon.Daemon).PublishTask.
+//
+// A secret that fails to resolve degrades rather than aborts boot, same
+// reasoning as resolveForge: under intake="both" the poll is the deployment's
+// explicit backstop for exactly this kind of misconfiguration (CLAUDE.md's
+// "polling has to remain a first-class option, not a legacy fallback"), so a
+// typo'd env var name must not take the whole daemon down and silently stop
+// polling too. Config validation already requires webhook_secret to be a
+// configured reference before intake="webhook"/"both" is accepted; this
+// handles the reference resolving to nothing at runtime.
+// Single-identity only: the receiver has one dispatch config (root
+// Dispatch.Trigger/Label/BotUser), so a multi-identity deployment's
+// per-identity trigger/label/bot user cannot be matched correctly. Rather
+// than run with the wrong identity's rules and silently misclassify or drop
+// events for identity-scoped repos, webhook intake refuses to start when
+// [[identities]] is configured; those repos keep working via their own
+// per-identity poll loop, unaffected. Extending this to multi-identity is a
+// separate feature, not a bug in this one.
+func (b *boot) setupForgeWebhook() {
+	cfg, log := b.cfg, b.log
+	if cfg.Forge.Intake != config.ForgeIntakeWebhook && cfg.Forge.Intake != config.ForgeIntakeBoth {
+		return
+	}
+	if len(cfg.Identities) > 0 {
+		log.Error("forge webhook disabled: multi-identity deployments are not supported yet (each identity's own poll loop is unaffected)")
+		return
+	}
+	secretValue, err := cfg.Forge.WebhookSecret.Resolve(b.secrets)
+	if err != nil || secretValue == "" {
+		log.Error("forge webhook disabled: secret unavailable",
+			"engine", cfg.Forge.WebhookSecret.Engine, "key", cfg.Forge.WebhookSecret.Key, "err", err)
+		return
+	}
+	receiver := forgewebhook.New(secretValue, cfg.Dispatch.Trigger, cfg.Label, cfg.BotUser, b.d.PublishTask, log)
+	host, port := parseListenAddr(cfg.Forge.WebhookAddr, "0.0.0.0", 8645)
+	addr := fmt.Sprintf("%s:%d", host, port)
+	srv := &http.Server{Addr: addr, Handler: receiver}
+
+	b.startGateways = append(b.startGateways, func() {
+		go func() {
+			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Error("forge webhook server stopped", "err", err)
+			}
+		}()
+		log.Info("forge webhook listening", "addr", addr)
+	})
+	b.addCleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	})
 }
 
 // publishConfig publishes a config snapshot and its provenance to both
