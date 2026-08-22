@@ -12,13 +12,33 @@
 // GitHub's webhook must be configured with "Content type: application/json"
 // (the UI default). The alternate application/x-www-form-urlencoded delivery
 // is not decoded here and is rejected as a bad payload.
+//
+// Idempotency is not this package's job: it decodes into the same
+// TaskEnvelope and calls the same publish path the poller uses, so
+// PublishUnique's dedup (keyed on TaskEnvelope.IdempotencyKey) covers both
+// sources for free -- see archie-core-7d5u.5. What this package does own is
+// making a wedged or non-delivering receiver observable: a GET to the
+// listen address (GitHub only ever POSTs) returns Status, tracking
+// authenticated deliveries and successful publishes separately so an
+// operator can tell "receiver is up but nothing is arriving" apart from
+// "repo has no issue activity."
+//
+// The GET/Status route is deliberately unauthenticated, on the same
+// internet-facing listener GitHub POSTs signed payloads to: it reveals
+// counters and timestamps only, never repo data, issue content, or the
+// webhook secret, so treating it as a public liveness probe (the same
+// tradeoff an unauthenticated /healthz makes) is an acceptable exchange for
+// not requiring a second credential just to check if the receiver is alive.
 package webhook
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/google/go-github/v78/github"
 
@@ -45,6 +65,12 @@ type Receiver struct {
 	botUser string
 	publish PublishFunc
 	log     *slog.Logger
+
+	mu             sync.Mutex
+	startedAt      time.Time
+	lastReceivedAt time.Time
+	deliveries     uint64
+	publishes      uint64
 }
 
 // New returns an unstarted Receiver.
@@ -53,17 +79,73 @@ func New(secret, trigger, label, botUser string, publish PublishFunc, log *slog.
 		log = slog.New(slog.DiscardHandler)
 	}
 	return &Receiver{
-		secret:  secret,
-		trigger: trigger,
-		label:   label,
-		botUser: botUser,
-		publish: publish,
-		log:     log.With("component", "forge-webhook"),
+		secret:    secret,
+		trigger:   trigger,
+		label:     label,
+		botUser:   botUser,
+		publish:   publish,
+		log:       log.With("component", "forge-webhook"),
+		startedAt: time.Now(),
 	}
 }
 
-// ServeHTTP handles one forge webhook delivery.
+// Status reports the receiver's delivery activity so an operator can tell a
+// wedged or non-delivering receiver apart from a repo with no issue
+// activity (archie-core-7d5u.5): Deliveries counts every authenticated,
+// parseable webhook -- proof GitHub reached this process at all -- while
+// Publishes counts only what the dispatch predicate turned into work.
+// LastReceivedAt is nil until the first authenticated delivery arrives.
+type Status struct {
+	StartedAt      time.Time  `json:"started_at"`
+	LastReceivedAt *time.Time `json:"last_received_at"`
+	Deliveries     uint64     `json:"deliveries"`
+	Publishes      uint64     `json:"publishes"`
+}
+
+// Status returns a snapshot of the receiver's activity counters.
+func (r *Receiver) Status() Status {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s := Status{
+		StartedAt:  r.startedAt,
+		Deliveries: r.deliveries,
+		Publishes:  r.publishes,
+	}
+	if !r.lastReceivedAt.IsZero() {
+		last := r.lastReceivedAt
+		s.LastReceivedAt = &last
+	}
+	return s
+}
+
+// recordDelivery marks one authenticated, parseable webhook as received.
+// Called only after HMAC verification and payload parsing succeed, so an
+// unauthenticated request (anyone spamming the endpoint with a bad
+// signature) can never inflate the "receiver is alive" signal.
+func (r *Receiver) recordDelivery() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.deliveries++
+	r.lastReceivedAt = time.Now()
+}
+
+// recordPublish marks one delivery as having produced a task.
+func (r *Receiver) recordPublish() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.publishes++
+}
+
+// ServeHTTP handles one forge webhook delivery. GitHub only ever POSTs here,
+// so any GET is answered with the receiver's Status instead -- an operator
+// (or a monitor) can curl the same address the webhook is configured against
+// to check liveness, with no separate health-check surface to wire up.
 func (r *Receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if req.Method == http.MethodGet {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(r.Status())
+		return
+	}
 	if req.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -91,6 +173,9 @@ func (r *Receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "bad payload", http.StatusBadRequest)
 		return
 	}
+	// Authenticated and parseable: this is a genuine GitHub delivery,
+	// independent of whether it turns out to be dispatch-eligible.
+	r.recordDelivery()
 
 	issueEvent, ok := event.(*github.IssuesEvent)
 	if !ok {
@@ -113,6 +198,8 @@ func (r *Receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "publish failed", http.StatusInternalServerError)
 		return
 	}
+	r.recordPublish()
+	r.log.Info("published", "task", task.Ref())
 	w.WriteHeader(http.StatusAccepted)
 }
 
