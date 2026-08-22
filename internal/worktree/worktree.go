@@ -31,6 +31,7 @@ import (
 	gitconfig "github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	gitclient "github.com/go-git/go-git/v6/plumbing/client"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	githttp "github.com/go-git/go-git/v6/plumbing/transport/http"
 )
@@ -253,14 +254,92 @@ func (m *Manager) refresh(ctx context.Context, dir, base, branch string) error {
 		}
 	}
 
-	// Reset onto the freshly fetched base. A missing remote base is not
-	// fatal: the branch may exist only locally on a first attempt.
+	// Reset onto the freshly fetched base. This is a prepared clone, so a
+	// missing base is configuration or repository drift and must fail closed.
 	baseHash, err := resolveBase(r, base)
 	if err != nil {
-		return nil //nolint:nilerr // no remote base yet is a normal first-attempt state, not a failure
+		return err
 	}
 	if err := wt.Reset(&git.ResetOptions{Commit: baseHash, Mode: git.HardReset}); err != nil {
 		return fmt.Errorf("reset to %s: %w", remoteBase(base), err)
+	}
+	if err := cleanUntracked(r, dir); err != nil {
+		return fmt.Errorf("clean abandoned worktree files: %w", err)
+	}
+	return nil
+}
+
+func cleanUntracked(r *git.Repository, dir string) error {
+	head, err := r.Head()
+	if err != nil {
+		return fmt.Errorf("resolve HEAD: %w", err)
+	}
+	commit, err := r.CommitObject(head.Hash())
+	if err != nil {
+		return fmt.Errorf("load HEAD commit: %w", err)
+	}
+	tree, err := commit.Tree()
+	if err != nil {
+		return fmt.Errorf("load HEAD tree: %w", err)
+	}
+	files := make(map[string]struct{})
+	dirs := make(map[string]struct{})
+	opaqueDirs := make(map[string]struct{})
+	if err := collectTrackedPaths(tree, "", files, dirs, opaqueDirs); err != nil {
+		return err
+	}
+	return filepath.WalkDir(dir, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == dir {
+			return nil
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if rel == ".git" {
+			return filepath.SkipDir
+		}
+		if entry.IsDir() {
+			if _, ok := opaqueDirs[rel]; ok {
+				return filepath.SkipDir
+			}
+			if _, ok := dirs[rel]; ok {
+				return nil
+			}
+			if err := os.RemoveAll(path); err != nil {
+				return err
+			}
+			return filepath.SkipDir
+		}
+		if _, ok := files[rel]; ok {
+			return nil
+		}
+		return os.Remove(path)
+	})
+}
+
+func collectTrackedPaths(tree *object.Tree, prefix string, files, dirs, opaqueDirs map[string]struct{}) error {
+	for _, entry := range tree.Entries {
+		path := filepath.ToSlash(filepath.Join(prefix, entry.Name))
+		switch entry.Mode {
+		case filemode.Dir:
+			dirs[path] = struct{}{}
+			child, err := tree.Tree(entry.Name)
+			if err != nil {
+				return fmt.Errorf("load tracked directory %s: %w", path, err)
+			}
+			if err := collectTrackedPaths(child, path, files, dirs, opaqueDirs); err != nil {
+				return err
+			}
+		case filemode.Submodule:
+			opaqueDirs[path] = struct{}{}
+		default:
+			files[path] = struct{}{}
+		}
 	}
 	return nil
 }
