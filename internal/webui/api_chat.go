@@ -254,6 +254,21 @@ func (s chatStreamSink) ToolCall(event gateway.ToolCallEvent) {
 	})
 }
 
+// Media has no inline rendering path on the dashboard yet (see
+// archie-core-1786748942243-6-f109697e), so it degrades to a link in the
+// delta stream -- the same fallback Telegram's liveReply uses when its own
+// SendMedia call fails. An attachment with no URL has nothing to link to
+// and is skipped rather than emitting an empty line.
+func (s chatStreamSink) Media(event gateway.MediaEvent) {
+	if event.Attachment.URL == "" {
+		return
+	}
+	s.write(chatStreamEvent{
+		Type: "delta",
+		Text: "\n\n📎 " + event.Attachment.Type + ": " + event.Attachment.URL,
+	})
+}
+
 // chatShowToolCalls reports config.ChatConfig.ShowToolCalls, the one setting
 // shared by every chat channel. Off (the default) when Cfg is nil, matching
 // the field's own off-by-default doc comment: a dashboard embedded without
