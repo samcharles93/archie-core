@@ -58,6 +58,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/webhookguard"
 	"github.com/samcharles93/archie-core/internal/webui"
 	"github.com/samcharles93/archie-core/internal/worktree"
+	"github.com/samcharles93/archie-core/internal/worktreerpc"
 )
 
 // boot is the mutable wiring state assembled by the run() composition
@@ -120,6 +121,7 @@ type boot struct {
 	registry         workflow.Registry
 	capabilityHost   *plugin.Host
 	trees            *worktree.Manager
+	worktreeGrants   *worktreerpc.Grants
 	identityRunners  []*daemon.IdentityRunner
 	memManager       *memory.Manager
 	curatorRegistry  *curator.Registry
@@ -730,7 +732,8 @@ func (b *boot) registerNATSRPC() error {
 		log.Error("nats connection unavailable for task RPC", "err", err)
 		return err
 	}
-	unsubscribe, err := registerTaskRPCServers(coreConn, b.st, b.forgeClient, b.trees, b.identityRunners, log)
+	b.worktreeGrants = worktreerpc.NewGrants()
+	unsubscribe, err := registerTaskRPCServers(coreConn, b.st, b.forgeClient, b.trees, b.identityRunners, b.worktreeGrants, log)
 	if err != nil {
 		log.Error("task RPC server registration failed", "err", err)
 		return err
@@ -964,6 +967,7 @@ func (b *boot) buildDaemon() {
 		Log:             log,
 		CustomStages:    wfeval.Discover,
 		Tasks:           b.natsClient,
+		WorktreeGrants:  b.worktreeGrants,
 		ContainerPool:   b.containerPool,
 		SandboxRequired: b.sandboxRequired,
 		Memory:          b.memManager,

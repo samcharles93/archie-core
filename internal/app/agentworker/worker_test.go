@@ -75,9 +75,9 @@ func (t *workerTransportStub) SubscribeTasks(_ context.Context, _ int64, dedicat
 		closeErr: t.subCloseErr,
 	}, nil
 }
-func (*workerTransportStub) Forger(string, time.Duration) workflow.Forger      { return nil }
-func (*workerTransportStub) Store(time.Duration) store.WorkflowStore           { return nil }
-func (*workerTransportStub) Trees(string, time.Duration) agentnats.RemoteTrees { return nil }
+func (*workerTransportStub) Forger(string, time.Duration) workflow.Forger              { return nil }
+func (*workerTransportStub) Store(time.Duration) store.WorkflowStore                   { return nil }
+func (*workerTransportStub) Trees(string, string, time.Duration) agentnats.RemoteTrees { return nil }
 
 func TestRunPassesCompleteTransportConfiguration(t *testing.T) {
 	var got agentnats.Config

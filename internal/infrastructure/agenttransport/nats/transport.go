@@ -173,8 +173,7 @@ func (t *Transport) EventPublisher() agentexec.EventPublisher { return t.conn }
 
 // RemoteTrees is the proxied half of workflow.Trees.
 type RemoteTrees interface {
-	Prepare(ctx context.Context, owner, repo, base string, issue int, title, body, labels string) (dir, branch string, err error)
-	Push(ctx context.Context, owner, repo string, issue int, branch string) error
+	Push(ctx context.Context) error
 }
 
 // The top-level forgerpc, storerpc, and worktreerpc packages remain legacy
@@ -192,8 +191,8 @@ func (t *Transport) Store(timeout time.Duration) store.WorkflowStore {
 }
 
 // Trees constructs the identity-scoped worktree RPC client.
-func (t *Transport) Trees(identity string, timeout time.Duration) RemoteTrees {
-	return &worktreerpc.Client{Conn: t.conn, Timeout: timeout, Identity: identity}
+func (t *Transport) Trees(identity, grant string, timeout time.Duration) RemoteTrees {
+	return &worktreerpc.Client{Conn: t.conn, Timeout: timeout, Identity: identity, Grant: grant}
 }
 
 // TaskHandler executes one decoded full-task request.

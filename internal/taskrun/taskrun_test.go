@@ -24,6 +24,7 @@ func TestRequestJSONRoundTrip(t *testing.T) {
 		Providers: map[string]agentexec.Provider{
 			"anthropic": {Class: "anthropic", APIKeyEnv: "ANTHROPIC_API_KEY"},
 		},
+		WorktreeGrant: "grant",
 	}
 
 	data, err := json.Marshal(req)
@@ -48,6 +49,9 @@ func TestRequestJSONRoundTrip(t *testing.T) {
 	if got.Providers["anthropic"].APIKeyEnv != "ANTHROPIC_API_KEY" {
 		t.Fatalf("Providers did not round-trip: %+v", got.Providers)
 	}
+	if got.WorktreeGrant != "grant" {
+		t.Fatalf("WorktreeGrant did not round-trip: %q", got.WorktreeGrant)
+	}
 }
 
 func TestRequestValidateRequiresPositiveTaskID(t *testing.T) {
@@ -59,7 +63,8 @@ func TestRequestValidateRequiresPositiveTaskID(t *testing.T) {
 		{name: "missing task", wantErr: true},
 		{name: "zero ID", request: Request{Task: &store.Task{}}, wantErr: true},
 		{name: "negative ID", request: Request{Task: &store.Task{ID: -1}}, wantErr: true},
-		{name: "positive ID", request: Request{Task: &store.Task{ID: 1}}},
+		{name: "missing worktree grant", request: Request{Task: &store.Task{ID: 1}}, wantErr: true},
+		{name: "valid request", request: Request{Task: &store.Task{ID: 1}, WorktreeGrant: "grant"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			err := test.request.Validate()

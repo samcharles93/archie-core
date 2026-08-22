@@ -25,20 +25,17 @@ import (
 // worktreerpc; CommitAll/Diff/ChangedFiles/ChangedLines are local git
 // operations run directly against the container's bind-mounted worktree.
 //
-// Prepare deliberately discards the RPC response's directory (the
-// daemon's host-side path) and returns localDir instead  --  archied and
-// archie-agent see the same files at different paths.
+// Prepare returns the bind-mounted worktree that archied prepared before the
+// container started. The sandbox has no remote prepare capability.
 type remoteTrees interface {
-	Prepare(ctx context.Context, owner, repo, base string, issue int, title, body, labels string) (dir, branch string, err error)
-	Push(ctx context.Context, owner, repo string, issue int, branch string) error
+	Push(ctx context.Context) error
 }
 
 type hybridTrees struct {
-	push        remoteTrees
-	local       *worktree.Manager
-	owner, repo string
-	issue       int
-	localDir    string
+	push     remoteTrees
+	local    *worktree.Manager
+	localDir string
+	branch   string
 	// worktreeUID and worktreeGID are the daemon's own host UID/GID
 	// (WORKTREE_UID/WORKTREE_GID, set by containerEnv), or -1 when unset.
 	// The agent runs as root inside the container, so a commit it writes
@@ -50,11 +47,7 @@ type hybridTrees struct {
 }
 
 func (h *hybridTrees) Prepare(ctx context.Context, owner, repo, base string, issue int, title, body, labels string) (dir, branch string, err error) {
-	_, branch, err = h.push.Prepare(ctx, owner, repo, base, issue, title, body, labels)
-	if err != nil {
-		return "", "", err
-	}
-	return h.localDir, branch, nil
+	return h.localDir, h.branch, nil
 }
 
 func (h *hybridTrees) CommitAll(ctx context.Context, dir, message string) (bool, error) {
@@ -67,7 +60,7 @@ func (h *hybridTrees) Push(ctx context.Context, dir, branch string) error {
 			return fmt.Errorf("reconcile worktree ownership before push: %w", err)
 		}
 	}
-	return h.push.Push(ctx, h.owner, h.repo, h.issue, branch)
+	return h.push.Push(ctx)
 }
 
 func (h *hybridTrees) Diff(ctx context.Context, dir, base string) (string, error) {
@@ -138,10 +131,8 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 	trees := &hybridTrees{
 		push:        dependencies.trees,
 		local:       &worktree.Manager{WorkDir: workDir},
-		owner:       req.Task.Owner,
-		repo:        req.Task.Repo,
-		issue:       req.Task.IssueNumber,
 		localDir:    workDir,
+		branch:      req.Task.Branch,
 		worktreeUID: worktreeOwnerID(os.Getenv("WORKTREE_UID")),
 		worktreeGID: worktreeOwnerID(os.Getenv("WORKTREE_GID")),
 	}

@@ -45,7 +45,7 @@ type workerTransport interface {
 	SubscribeTasks(context.Context, int64, bool, agentnats.TaskHandler, *slog.Logger) (agentnats.Subscription, error)
 	Forger(string, time.Duration) workflow.Forger
 	Store(time.Duration) store.WorkflowStore
-	Trees(string, time.Duration) agentnats.RemoteTrees
+	Trees(string, string, time.Duration) agentnats.RemoteTrees
 }
 
 type workerDependencies struct {
@@ -129,7 +129,7 @@ func run(ctx context.Context, settings Settings, log *slog.Logger, dependencies 
 type taskServiceTransport interface {
 	Forger(string, time.Duration) workflow.Forger
 	Store(time.Duration) store.WorkflowStore
-	Trees(string, time.Duration) agentnats.RemoteTrees
+	Trees(string, string, time.Duration) agentnats.RemoteTrees
 	EventPublisher() agentexec.EventPublisher
 }
 
@@ -138,7 +138,7 @@ func executeTaskRequest(ctx context.Context, request taskrun.Request, transport 
 	dependencies := taskDependencies{
 		forge:  transport.Forger(request.Task.Identity, rpcTimeout),
 		store:  transport.Store(rpcTimeout),
-		trees:  transport.Trees(request.Task.Identity, rpcTimeout),
+		trees:  transport.Trees(request.Task.Identity, request.WorktreeGrant, rpcTimeout),
 		events: transport.EventPublisher(),
 	}
 	response, err := runTask(ctx, request, dependencies, agentexec.DefaultRunnerFactory, workDir, log)

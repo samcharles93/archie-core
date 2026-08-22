@@ -29,6 +29,10 @@ type Request struct {
 	// transports, discover tools, and register them locally. Absent/empty
 	// means no MCP servers (backward compatible).
 	MCPServers []config.MCPServer `json:"mcp_servers,omitempty"`
+	// WorktreeGrant is an opaque, per-dispatch capability authorizing the
+	// daemon to publish this task's already-prepared branch. Repository
+	// coordinates never cross back from the sandbox as authority.
+	WorktreeGrant string `json:"worktree_grant,omitempty"`
 }
 
 // Validate rejects a full-task request that cannot be correlated to a real
@@ -39,6 +43,9 @@ func (r Request) Validate() error {
 	}
 	if r.Task.ID <= 0 {
 		return fmt.Errorf("task ID must be positive, got %d", r.Task.ID)
+	}
+	if r.WorktreeGrant == "" {
+		return errors.New("worktree grant is required")
 	}
 	return nil
 }

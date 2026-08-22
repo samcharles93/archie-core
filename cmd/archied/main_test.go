@@ -898,7 +898,7 @@ func TestRegisterTaskRPCServersReachableFromClient(t *testing.T) {
 	trees := &worktree.Manager{WorkDir: t.TempDir()}
 	log := slog.New(slog.DiscardHandler)
 
-	unsubscribe, err := registerTaskRPCServers(serverConn, st, stubForge{}, trees, nil, log)
+	unsubscribe, err := registerTaskRPCServers(serverConn, st, stubForge{}, trees, nil, worktreerpc.NewGrants(), log)
 	if err != nil {
 		t.Fatalf("registerTaskRPCServers: %v", err)
 	}
@@ -930,8 +930,8 @@ func TestRegisterTaskRPCServersReachableFromClient(t *testing.T) {
 	}
 
 	treesClient := &worktreerpc.Client{Conn: clientConn, Timeout: 2 * time.Second}
-	if _, _, err := treesClient.Prepare(ctx, "acme", "widget", "main", 1, "feat: x", "", ""); err == nil {
-		t.Fatal("expected Prepare to fail against a non-git remote, proving the RPC round-tripped")
+	if err := treesClient.Push(ctx); err == nil {
+		t.Fatal("expected Push without a dispatch grant to fail, proving the RPC round-tripped")
 	} else if err.Error() == "" {
 		t.Fatal("expected a non-empty error from the worktreerpc round trip")
 	}
@@ -1006,7 +1006,7 @@ func TestRegisterTaskRPCServersRoutesIdentityScopedCalls(t *testing.T) {
 	identities := []*daemon.IdentityRunner{
 		{Name: "archie", Forge: archieForge, Trees: archieTrees},
 	}
-	unsubscribe, err := registerTaskRPCServers(serverConn, st, rootForge, rootTrees, identities, slog.New(slog.DiscardHandler))
+	unsubscribe, err := registerTaskRPCServers(serverConn, st, rootForge, rootTrees, identities, worktreerpc.NewGrants(), slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("registerTaskRPCServers: %v", err)
 	}

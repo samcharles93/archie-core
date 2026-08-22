@@ -408,11 +408,18 @@ func daemonWithNATS(t *testing.T) (*Daemon, *store.Store, *arnats.Client) {
 				"parked": "archie:parked", "queued": "archie:queued", "dead": "archie:dead",
 			}},
 		}),
-		Store: s,
-		Tasks: client,
-		Log:   slog.New(slog.DiscardHandler),
+		Store:          s,
+		Tasks:          client,
+		WorktreeGrants: fixedGrantIssuer{token: "test-worktree-grant"},
+		Log:            slog.New(slog.DiscardHandler),
 	}
 	return d, s, client
+}
+
+type fixedGrantIssuer struct{ token string }
+
+func (g fixedGrantIssuer) Issue(*store.Task) (string, func(), error) {
+	return g.token, func() {}, nil
 }
 
 func TestRequestTaskRunDoesNotSleepPastReadyDeadline(t *testing.T) {
@@ -619,6 +626,9 @@ func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
 		}
 		if req.Cfg.DiffCapLines != 999 {
 			t.Fatalf("request Cfg.DiffCapLines = %d, want 999", req.Cfg.DiffCapLines)
+		}
+		if req.WorktreeGrant != "test-worktree-grant" {
+			t.Fatalf("request WorktreeGrant = %q, want dispatch grant", req.WorktreeGrant)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("archied did not publish a taskrun request")

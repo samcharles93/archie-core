@@ -99,7 +99,7 @@ func TestSubscribeTasksPreservesDedicatedAndSharedSubjects(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = subscription.Close() })
 
-			payload, err := json.Marshal(taskrun.Request{Task: &store.Task{ID: test.requestID}})
+			payload, err := json.Marshal(taskrun.Request{Task: &store.Task{ID: test.requestID}, WorktreeGrant: "grant"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -140,8 +140,9 @@ func TestSubscribeTasksOwnsWireErrors(t *testing.T) {
 		{name: "missing task", payload: []byte(`{}`), want: "validate taskrun request: task is required"},
 		{name: "null task", payload: []byte(`{"task":null}`), want: "validate taskrun request: task is required"},
 		{name: "nonpositive task ID", payload: []byte(`{"task":{"id":0}}`), want: "validate taskrun request: task ID must be positive, got 0"},
-		{name: "payload subject mismatch", payload: []byte(`{"task":{"id":8}}`), want: "validate taskrun request: task ID 8 does not match subject task ID 9"},
-		{name: "handler", payload: []byte(`{"task":{"id":9}}`), want: "run failed", wantHandlerCalls: 1},
+		{name: "missing worktree grant", payload: []byte(`{"task":{"id":9}}`), want: "validate taskrun request: worktree grant is required"},
+		{name: "payload subject mismatch", payload: []byte(`{"task":{"id":8},"worktree_grant":"grant"}`), want: "validate taskrun request: task ID 8 does not match subject task ID 9"},
+		{name: "handler", payload: []byte(`{"task":{"id":9},"worktree_grant":"grant"}`), want: "run failed", wantHandlerCalls: 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			before := handlerCalls
@@ -204,7 +205,7 @@ func TestHandleTaskRejectsSubjectCorrelationErrors(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			payload, err := json.Marshal(taskrun.Request{Task: &store.Task{ID: test.requestID}})
+			payload, err := json.Marshal(taskrun.Request{Task: &store.Task{ID: test.requestID}, WorktreeGrant: "grant"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -424,8 +425,8 @@ func TestRPCFactoriesPreserveIdentityAndTimeout(t *testing.T) {
 	if !ok || storeClient.Timeout != timeout {
 		t.Fatalf("store client = %#v", storeClient)
 	}
-	treeClient, ok := transport.Trees("identity-a", timeout).(*worktreerpc.Client)
-	if !ok || treeClient.Identity != "identity-a" || treeClient.Timeout != timeout {
+	treeClient, ok := transport.Trees("identity-a", "grant-a", timeout).(*worktreerpc.Client)
+	if !ok || treeClient.Identity != "identity-a" || treeClient.Grant != "grant-a" || treeClient.Timeout != timeout {
 		t.Fatalf("tree client = %#v", treeClient)
 	}
 }
