@@ -15,6 +15,47 @@ import (
 	"github.com/samcharles93/archie-core/internal/tools"
 )
 
+func TestPluginToolSetExecutesBundledPlugin(t *testing.T) {
+	set, err := pluginToolSet(Request{Plugins: []PluginSpec{{Name: "echo", Src: "package main\nfunc Run(input string) string { return input + \"!\" }"}}}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool := set["echo"]
+	got, err := tool.Execute(context.Background(), `{"input":"hello"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "hello!" {
+		t.Errorf("plugin output = %q, want hello!", got)
+	}
+}
+
+func TestPluginToolSetExcludedFromConstrainedStages(t *testing.T) {
+	requests := []Request{
+		{ReadOnly: true, Plugins: []PluginSpec{{Name: "unsafe"}}},
+		{Protection: Protection{Suffixes: []string{"_test.go"}}, Plugins: []PluginSpec{{Name: "unsafe"}}},
+		{Gate: Gate{Commands: []Command{{Name: "test"}}}, Plugins: []PluginSpec{{Name: "unsafe"}}},
+	}
+	for _, request := range requests {
+		set, err := pluginToolSet(request, t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(set) != 0 {
+			t.Error("plugin tool exposed in constrained stage")
+		}
+	}
+}
+
+func TestPluginToolSetRejectsAgentLoopCollisions(t *testing.T) {
+	for _, name := range []string{"write", "finish"} {
+		_, err := pluginToolSet(Request{Plugins: []PluginSpec{{Name: name}}}, t.TempDir())
+		if err == nil {
+			t.Errorf("plugin %q did not conflict with agent-loop tool", name)
+		}
+	}
+}
+
 func TestInProcessRunnerMapsRequestAndCapturesOutput(t *testing.T) {
 	runner := &InProcessRunner{
 		runtime: runtime.NewRuntime(runtime.Config{}),

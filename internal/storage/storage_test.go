@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -321,6 +322,60 @@ func TestDockerBackendSetupWithPersistentStorage(t *testing.T) {
 	}
 	if !found {
 		t.Error("persistent storage enabled but /data/repo mount missing")
+	}
+}
+
+func TestPersistentStoragePaths(t *testing.T) {
+	tests := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{name: "root", got: PersistentMountDir, want: "/data/repo"},
+		{name: "session", got: SessionPath, want: "/data/repo/session.jsonl"},
+		{name: "memory", got: MemoryPath, want: "/data/repo/memory.jsonl"},
+		{name: "plugins", got: PluginsDir, want: "/data/repo/plugins"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.got != tt.want {
+				t.Errorf("path = %q, want %q", tt.got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAppendJSONLineAppendsCompleteRecords(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested", "session.jsonl")
+	for _, value := range []map[string]int{{"stage": 1}, {"stage": 2}} {
+		if err := AppendJSONLine(path, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "{\"stage\":1}\n{\"stage\":2}\n"; string(got) != want {
+		t.Errorf("JSONL = %q, want %q", got, want)
+	}
+}
+
+func TestStagePluginPreservesPersistentOverride(t *testing.T) {
+	dir := t.TempDir()
+	if err := StagePlugin(dir, "check.go", []byte("bundled")); err != nil {
+		t.Fatal(err)
+	}
+	if err := StagePlugin(dir, "check.go", []byte("replacement")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "check.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "bundled" {
+		t.Errorf("plugin = %q, want persistent override", got)
 	}
 }
 
