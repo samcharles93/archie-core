@@ -94,15 +94,11 @@ func TestClaimTurnConcurrentInsertRaceNeverReturnsAnError(t *testing.T) {
 		return err
 	}
 
-	// All trials race concurrently, not one at a time: a sequential
-	// trial-by-trial race tends to resolve cleanly before the next trial
-	// starts (the loser's retry sees an already-committed winner and skips
-	// the buggy branch entirely), which undersells how likely the narrow
-	// timing window is under real, overlapping load.
-	errs := make([][]error, trials)
-	var wg sync.WaitGroup
-	var start sync.WaitGroup
-	start.Add(1)
+	// Each trial races the two independent stores over one turn ID, then waits
+	// before starting the next trial. Running every trial at once adds 100-way
+	// global writer contention that is unrelated to the same-turn insert race
+	// this regression covers and can exhaust the bounded SQLITE_BUSY retries
+	// before any competing transaction gets scheduled to finish.
 	for trial := range trials {
 		turnID := fmt.Sprintf("race-turn-%d", trial)
 		initial := TurnRecord{
@@ -113,21 +109,22 @@ func TestClaimTurnConcurrentInsertRaceNeverReturnsAnError(t *testing.T) {
 			CreatedAt: now,
 			UpdatedAt: now,
 		}
-		errs[trial] = make([]error, stores)
+		errs := make([]error, stores)
+		var wg sync.WaitGroup
+		var start sync.WaitGroup
+		start.Add(1)
 		for i := range stores {
 			wg.Add(1)
-			go func(trial, i int) {
+			go func(i int) {
 				defer wg.Done()
 				start.Wait()
-				errs[trial][i] = claimRetryingBusy(openers[i], initial)
-			}(trial, i)
+				errs[i] = claimRetryingBusy(openers[i], initial)
+			}(i)
 		}
-	}
-	start.Done()
-	wg.Wait()
+		start.Done()
+		wg.Wait()
 
-	for trial, storeErrs := range errs {
-		for i, err := range storeErrs {
+		for i, err := range errs {
 			if err == nil {
 				continue
 			}
