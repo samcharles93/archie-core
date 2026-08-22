@@ -38,11 +38,7 @@ type fakePushTrees struct {
 	pushErr error
 }
 
-func (f *fakePushTrees) Prepare(context.Context, string, string, string, int, string, string, string) (string, string, error) {
-	panic("unexpected call")
-}
-
-func (f *fakePushTrees) Push(context.Context, string, string, int, string) error {
+func (f *fakePushTrees) Push(context.Context) error {
 	f.pushed = true
 	return f.pushErr
 }
@@ -231,18 +227,20 @@ func (f *prCapturingForge) LinkBranch(context.Context, string, string, int, stri
 type remoteManager struct {
 	manager *worktree.Manager
 	dir     string
+	branch  string
 }
 
 func (r *remoteManager) Prepare(ctx context.Context, owner, repo, base string, issue int, title, body, labels string) (string, string, error) {
 	dir, branch, err := r.manager.Prepare(ctx, owner, repo, base, issue, title, body, labels)
 	if err == nil {
 		r.dir = dir
+		r.branch = branch
 	}
 	return dir, branch, err
 }
 
-func (r *remoteManager) Push(ctx context.Context, _, _ string, _ int, branch string) error {
-	return r.manager.Push(ctx, r.dir, branch)
+func (r *remoteManager) Push(ctx context.Context) error {
+	return r.manager.Push(ctx, r.dir, r.branch)
 }
 
 func newLocalRemote(t *testing.T, owner, repo string) string {
@@ -363,10 +361,17 @@ func TestExecuteTaskRequestUsesInfrastructureRPCDependencies(t *testing.T) {
 		BotEmail: "archie-bot@example.com",
 		BaseURL:  "file://" + host,
 	}
-	hostDir, _, err := daemonTrees.Prepare(ctx, "acme", "rpc-widget", "main", 2, task.Title, "", "bootstrap")
+	hostDir, branch, err := daemonTrees.Prepare(ctx, "acme", "rpc-widget", "main", 2, task.Title, "", "bootstrap")
 	if err != nil {
 		t.Fatal(err)
 	}
+	task.Branch = branch
+	grants := worktreerpc.NewGrants()
+	grant, revokeGrant, err := grants.Issue(task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(revokeGrant)
 
 	srv := startEmbeddedTaskRPCServer(t)
 	serverConn := connectTaskRPC(t, srv.ClientURL())
@@ -380,7 +385,7 @@ func TestExecuteTaskRequestUsesInfrastructureRPCDependencies(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(unsubForge)
-	unsubTrees, err := (&worktreerpc.Server{Trees: daemonTrees, Log: slog.New(slog.DiscardHandler)}).Register(serverConn)
+	unsubTrees, err := (&worktreerpc.Server{Trees: daemonTrees, Grants: grants, Log: slog.New(slog.DiscardHandler)}).Register(serverConn)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,9 +401,10 @@ func TestExecuteTaskRequestUsesInfrastructureRPCDependencies(t *testing.T) {
 	t.Cleanup(transport.Close)
 
 	request := taskrun.Request{
-		Task: task,
-		Repo: config.Repo{Owner: "acme", Name: "rpc-widget", Base: "main"},
-		Cfg:  config.Config{}.ForTask(),
+		Task:          task,
+		Repo:          config.Repo{Owner: "acme", Name: "rpc-widget", Base: "main"},
+		Cfg:           config.Config{}.ForTask(),
+		WorktreeGrant: grant,
 	}
 	response, err := executeTaskRequest(ctx, request, transport, hostDir, slog.New(slog.DiscardHandler))
 	if err != nil {
@@ -446,10 +452,17 @@ func TestExecuteTaskRequestForwardsWorkflowEventsOverNATS(t *testing.T) {
 		BotEmail: "archie-bot@example.com",
 		BaseURL:  "file://" + host,
 	}
-	hostDir, _, err := daemonTrees.Prepare(ctx, "acme", "events-widget", "main", 3, task.Title, "", "bootstrap")
+	hostDir, branch, err := daemonTrees.Prepare(ctx, "acme", "events-widget", "main", 3, task.Title, "", "bootstrap")
 	if err != nil {
 		t.Fatal(err)
 	}
+	task.Branch = branch
+	grants := worktreerpc.NewGrants()
+	grant, revokeGrant, err := grants.Issue(task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(revokeGrant)
 
 	srv := startEmbeddedTaskRPCServer(t)
 	serverConn := connectTaskRPC(t, srv.ClientURL())
@@ -463,7 +476,7 @@ func TestExecuteTaskRequestForwardsWorkflowEventsOverNATS(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(unsubForge)
-	unsubTrees, err := (&worktreerpc.Server{Trees: daemonTrees, Log: slog.New(slog.DiscardHandler)}).Register(serverConn)
+	unsubTrees, err := (&worktreerpc.Server{Trees: daemonTrees, Grants: grants, Log: slog.New(slog.DiscardHandler)}).Register(serverConn)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -505,9 +518,10 @@ func TestExecuteTaskRequestForwardsWorkflowEventsOverNATS(t *testing.T) {
 	t.Cleanup(transport.Close)
 
 	request := taskrun.Request{
-		Task: task,
-		Repo: config.Repo{Owner: "acme", Name: "events-widget", Base: "main"},
-		Cfg:  config.Config{}.ForTask(),
+		Task:          task,
+		Repo:          config.Repo{Owner: "acme", Name: "events-widget", Base: "main"},
+		Cfg:           config.Config{}.ForTask(),
+		WorktreeGrant: grant,
 	}
 	response, err := executeTaskRequest(ctx, request, transport, hostDir, slog.New(slog.DiscardHandler))
 	if err != nil {

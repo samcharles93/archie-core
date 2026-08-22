@@ -16,6 +16,7 @@ import (
 	natssrv "github.com/nats-io/nats-server/v2/test"
 	"github.com/nats-io/nats.go"
 
+	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
@@ -109,10 +110,29 @@ func remoteHasBranch(t *testing.T, host, owner, repo, branch string) bool {
 	return err == nil
 }
 
-func TestClientPreparePublishesViaServer(t *testing.T) {
+func TestManagerPrepareCannotDeleteOutsideWorkDir(t *testing.T) {
 	ctx := context.Background()
-	host := newLocalRemote(t, "acme", "widget")
+	root := t.TempDir()
+	workDir := filepath.Join(root, "worktrees")
+	outside := filepath.Join(root, "escape-widget", "issue-7")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(outside, "keep")
+	if err := os.WriteFile(marker, []byte("operator data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
+	m := &worktree.Manager{WorkDir: workDir, BaseURL: t.TempDir()}
+	_, _, _ = m.Prepare(ctx, "../escape", "widget", "main", 7, "feat: test", "", "")
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("Prepare removed a path outside WorkDir: %v", err)
+	}
+}
+
+func TestClientPushRejectsTaskMismatchedCoordinates(t *testing.T) {
+	ctx := context.Background()
+	host := newLocalRemote(t, "other", "widget")
 	m := &worktree.Manager{
 		WorkDir:  t.TempDir(),
 		Token:    "unused-for-file-remotes",
@@ -120,27 +140,32 @@ func TestClientPreparePublishesViaServer(t *testing.T) {
 		BotEmail: "archie-bot@example.com",
 		BaseURL:  host,
 	}
+	dir, branch, err := m.Prepare(ctx, "other", "widget", "main", 9, "feat: other", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "unexpected.txt"), []byte("unexpected\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := m.CommitAll(ctx, dir, "unexpected"); err != nil || !changed {
+		t.Fatalf("CommitAll = (%v, %v)", changed, err)
+	}
 
 	srv := startEmbedded(t)
-	url := srv.ClientURL()
-
-	rpcServer := &Server{Trees: m, Log: slog.New(slog.DiscardHandler)}
-	unsub, err := rpcServer.Register(connect(t, url))
+	grants := NewGrants()
+	rpcServer := &Server{Trees: m, Grants: grants, Log: slog.New(slog.DiscardHandler)}
+	unsub, err := rpcServer.Register(connect(t, srv.ClientURL()))
 	if err != nil {
-		t.Fatalf("register: %v", err)
+		t.Fatal(err)
 	}
 	t.Cleanup(unsub)
 
-	client := &Client{Conn: connect(t, url), Timeout: 5 * time.Second}
-	dir, branch, err := client.Prepare(ctx, "acme", "widget", "main", 1, "feat: test", "", "")
-	if err != nil {
-		t.Fatalf("Prepare: %v", err)
+	client := &Client{Conn: connect(t, srv.ClientURL()), Timeout: 5 * time.Second}
+	if err := client.Push(ctx); err == nil {
+		t.Fatal("Push accepted coordinates that were not correlated to an authoritative task")
 	}
-	if dir == "" || branch != "feat/1-test" {
-		t.Fatalf("Prepare = (%q, %q)", dir, branch)
-	}
-	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
-		t.Fatalf("expected worktree cloned at %q: %v", dir, err)
+	if remoteHasBranch(t, host, "other", "widget", branch) {
+		t.Fatalf("task-mismatched branch %q was published", branch)
 	}
 }
 
@@ -170,15 +195,21 @@ func TestClientPushPublishesViaServer(t *testing.T) {
 	srv := startEmbedded(t)
 	url := srv.ClientURL()
 
-	rpcServer := &Server{Trees: m, Log: slog.New(slog.DiscardHandler)}
+	grants := NewGrants()
+	token, revoke, err := grants.Issue(&store.Task{ID: 1, Owner: "acme", Repo: "widget", IssueNumber: 1, Branch: branch})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(revoke)
+	rpcServer := &Server{Trees: m, Grants: grants, Log: slog.New(slog.DiscardHandler)}
 	unsub, err := rpcServer.Register(connect(t, url))
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	t.Cleanup(unsub)
 
-	client := &Client{Conn: connect(t, url), Timeout: 5 * time.Second}
-	if err := client.Push(ctx, "acme", "widget", 1, branch); err != nil {
+	client := &Client{Conn: connect(t, url), Timeout: 5 * time.Second, Grant: token}
+	if err := client.Push(ctx); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 
@@ -192,7 +223,7 @@ func TestClientPropagatesServerError(t *testing.T) {
 	srv := startEmbedded(t)
 	url := srv.ClientURL()
 
-	rpcServer := &Server{Trees: m, Log: slog.New(slog.DiscardHandler)}
+	rpcServer := &Server{Trees: m, Grants: NewGrants(), Log: slog.New(slog.DiscardHandler)}
 	unsub, err := rpcServer.Register(connect(t, url))
 	if err != nil {
 		t.Fatalf("register: %v", err)
@@ -201,7 +232,7 @@ func TestClientPropagatesServerError(t *testing.T) {
 
 	client := &Client{Conn: connect(t, url), Timeout: 5 * time.Second}
 	// No worktree ever prepared at this dir  --  push must fail.
-	err = client.Push(context.Background(), "acme", "nonexistent", 999, "some-branch")
+	err = client.Push(context.Background())
 	if err == nil {
 		t.Fatal("expected Push to propagate the server-side git error")
 	}
@@ -211,7 +242,7 @@ func TestClientPushTimesOutWithNoResponder(t *testing.T) {
 	srv := startEmbedded(t)
 	client := &Client{Conn: connect(t, srv.ClientURL()), Timeout: 100 * time.Millisecond}
 
-	err := client.Push(context.Background(), "acme", "widget", 1, "branch")
+	err := client.Push(context.Background())
 	if err == nil {
 		t.Fatal("expected Push to time out with no server registered")
 	}
@@ -226,8 +257,39 @@ func TestSubjectFor(t *testing.T) {
 	if got := SubjectFor("winter", SubjectPush); got != "archie.worktree.winter.push" {
 		t.Fatalf("SubjectFor(\"winter\", %q) = %q", SubjectPush, got)
 	}
-	if got := SubjectFor("winter", SubjectPrepare); got != "archie.worktree.winter.prepare" {
-		t.Fatalf("SubjectFor(\"winter\", %q) = %q", SubjectPrepare, got)
+}
+
+func TestGrantIsScopedAndRevocable(t *testing.T) {
+	grants := NewGrants()
+	token, revoke, err := grants.Issue(&store.Task{
+		ID: 1, Identity: "winter", Owner: "acme", Repo: "widget",
+		IssueNumber: 7, Branch: "feat/7-widget",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := grants.resolve(token, ""); err == nil {
+		t.Fatal("root identity accepted another identity's grant")
+	}
+	if _, err := grants.resolve(token, "winter"); err != nil {
+		t.Fatalf("owning identity rejected grant: %v", err)
+	}
+	revoke()
+	if _, err := grants.resolve(token, "winter"); err == nil {
+		t.Fatal("revoked grant remained usable")
+	}
+}
+
+func TestGrantRejectsIncompleteTask(t *testing.T) {
+	grants := NewGrants()
+	for _, task := range []*store.Task{
+		nil,
+		{ID: 1, Owner: "../escape", Repo: "widget", IssueNumber: 7, Branch: "feat/7-widget"},
+		{ID: 1, Owner: "acme", Repo: "widget", IssueNumber: 7},
+	} {
+		if _, _, err := grants.Issue(task); err == nil {
+			t.Fatalf("Issue(%+v) error = nil", task)
+		}
 	}
 }
 

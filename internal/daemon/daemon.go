@@ -47,6 +47,13 @@ type TaskBus interface {
 	Request(ctx context.Context, subject string, payload []byte) ([]byte, error)
 }
 
+// WorktreeGrantIssuer gives one container dispatch the narrow authority to
+// publish its already-prepared branch. The daemon owns grant lifetime; the
+// transport implementation owns token mechanics.
+type WorktreeGrantIssuer interface {
+	Issue(task *store.Task) (token string, revoke func(), err error)
+}
+
 type Daemon struct {
 	// Cfg publishes the running configuration. Read through Cfg() so a
 	// reload swaps the published snapshot atomically. See config.Holder.
@@ -67,7 +74,8 @@ type Daemon struct {
 	Log           *slog.Logger
 	// Tasks is the optional message bus for task distribution. Nil means no
 	// bus is configured; the existing SQLite ClaimNext flow is used.
-	Tasks TaskBus
+	Tasks          TaskBus
+	WorktreeGrants WorktreeGrantIssuer
 	// TaskRunReadyTimeout bounds how long runViaAgent retries an initial
 	// taskrun request that fails with nats.ErrNoResponders, giving a
 	// freshly spawned archie-agent container time to connect to NATS, set
@@ -1031,11 +1039,25 @@ func (d *Daemon) acquireTaskContainer(
 // never answered by) an archie-agent, or archie-agent failed before its
 // own workflow.Run got a chance to record an outcome.
 func (d *Daemon) runViaAgent(ctx context.Context, task *store.Task, repo config.Repo) {
+	if d.WorktreeGrants == nil {
+		const reason = "worktree publication grants are unavailable"
+		d.Log.Error(reason, "task", task.ID)
+		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, reason)
+		return
+	}
+	grant, revoke, err := d.WorktreeGrants.Issue(task)
+	if err != nil {
+		d.Log.Error("worktree publication grant failed", "task", task.ID, "err", err)
+		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "worktree publication grant failed: "+err.Error())
+		return
+	}
+	defer revoke()
 	req := taskrun.Request{
-		Task:      task,
-		Repo:      repo,
-		Cfg:       d.configFor(task).ForTask(),
-		Providers: agentexec.ProvidersFromConfig(d.configFor(task).Providers),
+		Task:          task,
+		Repo:          repo,
+		Cfg:           d.configFor(task).ForTask(),
+		Providers:     agentexec.ProvidersFromConfig(d.configFor(task).Providers),
+		WorktreeGrant: grant,
 	}
 	data, err := json.Marshal(req)
 	if err != nil {

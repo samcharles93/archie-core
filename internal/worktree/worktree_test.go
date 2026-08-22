@@ -541,6 +541,112 @@ func TestCleanupRemovesWorktree(t *testing.T) {
 	}
 }
 
+func TestDirDistinguishesRepositoryTuples(t *testing.T) {
+	m := &Manager{WorkDir: t.TempDir()}
+	first := m.Dir("a-b", "c", 1)
+	second := m.Dir("a", "b-c", 1)
+	if first == second {
+		t.Fatalf("distinct repositories share worktree path %q", first)
+	}
+}
+
+func TestPrepareMigratesMatchingLegacyWorktree(t *testing.T) {
+	ctx := context.Background()
+	host := newLocalRemote(t, "acme", "todo")
+	m := newManager(t, host)
+	legacy := filepath.Join(m.WorkDir, "acme-todo", "issue-44")
+	if _, err := git.PlainCloneContext(ctx, legacy, &git.CloneOptions{
+		URL:           m.cloneURL("acme", "todo"),
+		ReferenceName: plumbing.NewBranchReferenceName(testBase),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacy, preparedSentinel), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(legacy, "legacy-marker")
+	if err := os.WriteFile(marker, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 44, "feat: migrate", "", "feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir != m.Dir("acme", "todo", 44) {
+		t.Fatalf("Prepare dir = %q, want %q", dir, m.Dir("acme", "todo", 44))
+	}
+	if _, err := os.Stat(filepath.Join(dir, "legacy-marker")); err != nil {
+		t.Fatalf("legacy worktree was not migrated: %v", err)
+	}
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Fatalf("legacy path still exists after migration: %v", err)
+	}
+}
+
+func TestPreparePreservesMismatchedLegacyWorktree(t *testing.T) {
+	ctx := context.Background()
+	desiredHost := newLocalRemote(t, "acme", "todo")
+	otherHost := newLocalRemote(t, "other", "widget")
+	m := newManager(t, desiredHost)
+	legacy := filepath.Join(m.WorkDir, "acme-todo", "issue-45")
+	if _, err := git.PlainCloneContext(ctx, legacy, &git.CloneOptions{
+		URL:           filepath.Join(otherHost, "other", "widget.git"),
+		ReferenceName: plumbing.NewBranchReferenceName(testBase),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacy, preparedSentinel), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(legacy, "keep")
+	if err := os.WriteFile(marker, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := m.Prepare(ctx, "acme", "todo", testBase, 45, "feat: safe migration", "", "feature"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("mismatched legacy worktree was altered: %v", err)
+	}
+}
+
+func TestCleanupHandlesLegacyWorktreesByOrigin(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		matching   bool
+		wantExists bool
+	}{
+		{name: "matching origin is removed", matching: true},
+		{name: "mismatched origin is preserved", wantExists: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			desiredHost := newLocalRemote(t, "acme", "todo")
+			m := newManager(t, desiredHost)
+			cloneURL := m.cloneURL("acme", "todo")
+			if !tc.matching {
+				otherHost := newLocalRemote(t, "other", "widget")
+				cloneURL = filepath.Join(otherHost, "other", "widget.git")
+			}
+			legacy := filepath.Join(m.WorkDir, "acme-todo", "issue-46")
+			if _, err := git.PlainClone(legacy, &git.CloneOptions{URL: cloneURL}); err != nil {
+				t.Fatal(err)
+			}
+			if err := m.Cleanup("acme", "todo", 46); err != nil {
+				t.Fatal(err)
+			}
+			_, err := os.Stat(legacy)
+			if tc.wantExists && err != nil {
+				t.Fatalf("legacy worktree should remain: %v", err)
+			}
+			if !tc.wantExists && !os.IsNotExist(err) {
+				t.Fatalf("legacy worktree still exists: %v", err)
+			}
+		})
+	}
+}
+
 // The prepared sentinel must never reach a commit. It previously lived in
 // the working tree, hidden by .git/info/exclude -- which git honours and
 // go-git does not, so it was committed and pushed onto every task branch.

@@ -19,6 +19,7 @@ package worktree
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -62,7 +63,17 @@ type Manager struct {
 
 // Dir is the worktree path for a task.
 func (m *Manager) Dir(owner, repo string, issue int) string {
-	return filepath.Join(m.WorkDir, owner+"-"+repo, fmt.Sprintf("issue-%d", issue))
+	ownerKey := base64.RawURLEncoding.EncodeToString([]byte(owner))
+	repoKey := base64.RawURLEncoding.EncodeToString([]byte(repo))
+	return filepath.Join(m.WorkDir, ownerKey, repoKey, fmt.Sprintf("issue-%d", issue))
+}
+
+// ValidCoordinates reports whether owner, repo, and issue can safely identify
+// a task worktree without being interpreted as filesystem navigation.
+func ValidCoordinates(owner, repo string, issue int) bool {
+	return owner != "" && repo != "" && issue > 0 &&
+		filepath.Base(owner) == owner && filepath.Base(repo) == repo &&
+		owner != "." && owner != ".." && repo != "." && repo != ".."
 }
 
 // auth builds the HTTP credential for clone, fetch and push.
@@ -100,10 +111,21 @@ func (m *Manager) Prepare(
 	issue int,
 	title, body, labels string,
 ) (dir, branch string, err error) {
+	if !ValidCoordinates(owner, repo, issue) {
+		return "", "", fmt.Errorf("invalid worktree coordinates")
+	}
 	dir = m.Dir(owner, repo, issue)
 	branch = archieBranch(issue, title, body, labels)
 
 	if _, statErr := os.Stat(filepath.Join(dir, preparedSentinel)); statErr == nil {
+		if err := m.refresh(ctx, dir, base, branch); err != nil {
+			return "", "", err
+		}
+		return dir, branch, nil
+	}
+	if migrated, migrateErr := m.migrateLegacy(owner, repo, issue, dir); migrateErr != nil {
+		return "", "", migrateErr
+	} else if migrated {
 		if err := m.refresh(ctx, dir, base, branch); err != nil {
 			return "", "", err
 		}
@@ -144,6 +166,56 @@ func (m *Manager) Prepare(
 		return "", "", err
 	}
 	return dir, branch, nil
+}
+
+func (m *Manager) legacyDir(owner, repo string, issue int) string {
+	return filepath.Join(m.WorkDir, owner+"-"+repo, fmt.Sprintf("issue-%d", issue))
+}
+
+// migrateLegacy preserves worktrees created before repository coordinates
+// were encoded as separate path components. The old flattened key was
+// ambiguous, so migration is allowed only when the clone's origin exactly
+// matches the requested repository; an uncertain directory is left untouched.
+func (m *Manager) migrateLegacy(owner, repo string, issue int, dir string) (bool, error) {
+	legacy := m.legacyDir(owner, repo, issue)
+	if _, err := os.Stat(filepath.Join(legacy, preparedSentinel)); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("inspect legacy worktree: %w", err)
+	}
+	if !repositoryUsesURL(legacy, m.cloneURL(owner, repo)) {
+		return false, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+		return false, fmt.Errorf("create migrated worktree parent: %w", err)
+	}
+	if err := os.Rename(legacy, dir); err != nil {
+		return false, fmt.Errorf("migrate legacy worktree: %w", err)
+	}
+	_ = os.Remove(filepath.Dir(legacy))
+	return true, nil
+}
+
+func repositoryUsesURL(dir, want string) bool {
+	r, err := git.PlainOpen(dir)
+	if err != nil {
+		return false
+	}
+	cfg, err := r.Config()
+	if err != nil {
+		return false
+	}
+	remote, ok := cfg.Remotes[git.DefaultRemoteName]
+	if !ok {
+		return false
+	}
+	for _, got := range remote.URLs {
+		if got == want {
+			return true
+		}
+	}
+	return false
 }
 
 // refresh brings an already-prepared worktree back in line with the
@@ -406,7 +478,20 @@ func (m *Manager) ChangedFiles(ctx context.Context, dir, base string) ([]string,
 // Cleanup removes a task's worktree (merged/rejected); parked worktrees
 // are kept for post-mortems.
 func (m *Manager) Cleanup(owner, repo string, issue int) error {
-	return os.RemoveAll(m.Dir(owner, repo, issue))
+	if !ValidCoordinates(owner, repo, issue) {
+		return fmt.Errorf("invalid worktree coordinates")
+	}
+	if err := os.RemoveAll(m.Dir(owner, repo, issue)); err != nil {
+		return err
+	}
+	legacy := m.legacyDir(owner, repo, issue)
+	if repositoryUsesURL(legacy, m.cloneURL(owner, repo)) {
+		if err := os.RemoveAll(legacy); err != nil {
+			return err
+		}
+		_ = os.Remove(filepath.Dir(legacy))
+	}
+	return nil
 }
 
 func remoteBase(base string) string {
@@ -457,7 +542,6 @@ func archieBranch(issue int, title, body, labels string) string {
 // branchPrefix derives a conventional-commit prefix from the issue
 // labels, then falls back to "feat". Maps: bug→fix, feature→feat,
 // enhancement→feat, docs→docs, chore→chore, test→test.
-// FIXME - Unused parameters title and body where they should be used. - just a missing implementation by the looks of it.
 func branchPrefix(title, body, labels string) string {
 	for l := range strings.SplitSeq(labels, ",") {
 		switch strings.TrimSpace(strings.ToLower(l)) {
