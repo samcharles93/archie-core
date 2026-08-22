@@ -147,6 +147,33 @@ func (f DeltaFunc) Delta(text string) {
 // ToolCall discards the event: a text-only caller has nowhere to put it.
 func (f DeltaFunc) ToolCall(ToolCallEvent) {}
 
+// toolCallRecorder wraps a TurnStream, forwarding every event to it
+// unchanged while also recording the tool calls in arrival order. The
+// recording happens regardless of whether next is nil (a non-streaming
+// caller, e.g. Router.LLM) so a turn's tool activity is captured for
+// persistence and later replay even when nothing rendered it live the first
+// time.
+type toolCallRecorder struct {
+	next   TurnStream
+	events []ToolCallEvent
+}
+
+// Delta forwards the fragment to the wrapped stream, if any.
+func (r *toolCallRecorder) Delta(text string) {
+	if r.next != nil {
+		r.next.Delta(text)
+	}
+}
+
+// ToolCall records the event, then forwards it to the wrapped stream, if
+// any.
+func (r *toolCallRecorder) ToolCall(event ToolCallEvent) {
+	r.events = append(r.events, event)
+	if r.next != nil {
+		r.next.ToolCall(event)
+	}
+}
+
 // firstNonEmptyLine returns the first line of s that holds something other
 // than whitespace, trimmed. It returns "" when there is no such line.
 func firstNonEmptyLine(s string) string {
