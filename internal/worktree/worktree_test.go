@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v6"
 	gitconfig "github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/object"
 
 	"github.com/samcharles93/archie-core/internal/container"
@@ -198,7 +199,7 @@ func TestPrepareIsIdempotent(t *testing.T) {
 	}
 	// A marker file proves the second call reused the clone instead of
 	// wiping and re-cloning it.
-	marker := filepath.Join(dir1, "reuse-marker")
+	marker := filepath.Join(dir1, ".git", "reuse-marker")
 	if err := os.WriteFile(marker, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -232,6 +233,30 @@ func TestPrepareIsIdempotent(t *testing.T) {
 func TestPrepareRecoversFromADirtyWorktreeOnRetry(t *testing.T) {
 	ctx := context.Background()
 	host := newLocalRemote(t, "acme", "todo")
+	seedDir := filepath.Join(t.TempDir(), "ignore-seed")
+	seedRepo, err := git.PlainClone(seedDir, &git.CloneOptions{URL: filepath.Join(host, "acme", "todo.git")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeSeedCommit(t, seedRepo, seedDir, ".gitignore", "bin/\n", "chore: ignore build output")
+	if err := os.Symlink("README.md", filepath.Join(seedDir, "readme-link")); err != nil {
+		t.Fatal(err)
+	}
+	seedWorktree, err := seedRepo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := seedWorktree.Add("readme-link"); err != nil {
+		t.Fatal(err)
+	}
+	sig := testSignature()
+	if _, err := seedWorktree.Commit("chore: add tracked symlink", &git.CommitOptions{Author: sig, Committer: sig}); err != nil {
+		t.Fatal(err)
+	}
+	baseRef := plumbing.NewBranchReferenceName(testBase)
+	if err := seedRepo.Push(&git.PushOptions{RemoteName: git.DefaultRemoteName, RefSpecs: []gitconfig.RefSpec{gitconfig.RefSpec(baseRef + ":" + baseRef)}}); err != nil {
+		t.Fatal(err)
+	}
 	m := newManager(t, host)
 
 	dir, branch, err := m.Prepare(ctx, "acme", "todo", testBase, 9, "fix: retry robustness", "", "bug")
@@ -247,6 +272,12 @@ func TestPrepareRecoversFromADirtyWorktreeOnRetry(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "scratch.txt"), []byte("uncommitted new file\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(dir, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bin", "stale"), []byte("ignored output\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	dir2, branch2, err := m.Prepare(ctx, "acme", "todo", testBase, 9, "fix: retry robustness", "", "bug")
 	if err != nil {
@@ -256,18 +287,62 @@ func TestPrepareRecoversFromADirtyWorktreeOnRetry(t *testing.T) {
 		t.Errorf("retry Prepare() = (%q, %q), want the same (%q, %q)", dir2, branch2, dir, branch)
 	}
 
-	// refresh hard-resets to base immediately after checkout succeeds, so
-	// the tracked file's uncommitted edit must be gone -- restored to
-	// base, not merged in. (An untracked leftover like scratch.txt is real
-	// git's job for `git clean`, not `reset --hard`, and is harmless here:
-	// it doesn't block the retry, which is the only thing this test cares
-	// about.)
+	// Retry starts from the base commit: neither tracked edits nor untracked
+	// output abandoned by the previous attempt may survive into the commit
+	// that CommitAll will publish for this attempt.
 	content, err := os.ReadFile(filepath.Join(dir, "README.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(content) != "seed\n" {
 		t.Errorf("README.md = %q, want the base commit's content restored", content)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "scratch.txt")); !os.IsNotExist(err) {
+		t.Fatalf("abandoned untracked file survived retry: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "bin", "stale")); !os.IsNotExist(err) {
+		t.Fatalf("ignored abandoned file survived retry: %v", err)
+	}
+	if target, err := os.Readlink(filepath.Join(dir, "readme-link")); err != nil || target != "README.md" {
+		t.Fatalf("tracked symlink = (%q, %v), want README.md", target, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, preparedSentinel)); err != nil {
+		t.Fatalf("retry removed prepared sentinel: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "intended.txt"), []byte("new attempt\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := m.CommitAll(ctx, dir, "feat: intended retry change"); err != nil || !changed {
+		t.Fatalf("CommitAll() = (%v, %v), want a commit", changed, err)
+	}
+	files, err := m.ChangedFiles(ctx, dir, testBase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 || files[0] != "intended.txt" {
+		t.Fatalf("ChangedFiles() = %v, want only intended.txt", files)
+	}
+}
+
+func TestCollectTrackedPathsClassifiesGitEntries(t *testing.T) {
+	files := make(map[string]struct{})
+	dirs := make(map[string]struct{})
+	opaque := make(map[string]struct{})
+	tree := &object.Tree{Entries: []object.TreeEntry{
+		{Name: "file", Mode: filemode.Regular},
+		{Name: "link", Mode: filemode.Symlink},
+		{Name: "dependency", Mode: filemode.Submodule},
+	}}
+	if err := collectTrackedPaths(tree, "", files, dirs, opaque); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"file", "link"} {
+		if _, ok := files[name]; !ok {
+			t.Errorf("tracked file %q was not classified", name)
+		}
+	}
+	if _, ok := opaque["dependency"]; !ok {
+		t.Error("submodule was not classified as an opaque directory")
 	}
 }
 
@@ -320,6 +395,18 @@ func TestPrepareErrors(t *testing.T) {
 				t.Fatal("Prepare() error = nil, want a failure")
 			}
 		})
+	}
+}
+
+func TestPrepareRefreshRejectsUnknownBase(t *testing.T) {
+	ctx := context.Background()
+	host := newLocalRemote(t, "acme", "todo")
+	m := newManager(t, host)
+	if _, _, err := m.Prepare(ctx, "acme", "todo", testBase, 12, "fix: base", "", "bug"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := m.Prepare(ctx, "acme", "todo", "missing-base", 12, "fix: base", "", "bug"); err == nil {
+		t.Fatal("prepared worktree accepted an unknown base")
 	}
 }
 
@@ -564,7 +651,7 @@ func TestPrepareMigratesMatchingLegacyWorktree(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(legacy, preparedSentinel), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	marker := filepath.Join(legacy, "legacy-marker")
+	marker := filepath.Join(legacy, ".git", "legacy-marker")
 	if err := os.WriteFile(marker, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -576,7 +663,7 @@ func TestPrepareMigratesMatchingLegacyWorktree(t *testing.T) {
 	if dir != m.Dir("acme", "todo", 44) {
 		t.Fatalf("Prepare dir = %q, want %q", dir, m.Dir("acme", "todo", 44))
 	}
-	if _, err := os.Stat(filepath.Join(dir, "legacy-marker")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, ".git", "legacy-marker")); err != nil {
 		t.Fatalf("legacy worktree was not migrated: %v", err)
 	}
 	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
