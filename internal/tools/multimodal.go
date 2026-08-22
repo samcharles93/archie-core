@@ -22,4 +22,19 @@ type MultimodalResult struct {
 	// Files lists the full paths written under SubdirHint, in the order
 	// the source content blocks appeared.
 	Files []string `json:"files,omitempty"`
+	// URLs lists media that lives at a remote, already-hosted URL rather
+	// than local bytes  --  a generation API's result, for example, which
+	// has nowhere to go in Files: there is no SubdirHint to write it under
+	// because nothing was downloaded.
+	URLs []MediaRef `json:"urls,omitempty"`
+}
+
+// MediaRef is one piece of remote-hosted media within a MultimodalResult.
+type MediaRef struct {
+	// Type is "image", "video", "audio", or "document"  --  the same
+	// vocabulary gateway.MediaAttachment.Type uses, so a caller can build
+	// one directly from this without translation.
+	Type string `json:"type"`
+	// URL is where the media is hosted.
+	URL string `json:"url"`
 }

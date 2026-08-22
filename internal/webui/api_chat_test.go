@@ -679,6 +679,72 @@ func TestChatStreamReportsToolCalls(t *testing.T) {
 	}
 }
 
+// The dashboard has no inline media rendering path yet (see
+// archie-core-1786748942243-6-f109697e), so a MediaEvent has to degrade to
+// a link in the text stream rather than being silently dropped -- the same
+// fallback Telegram's liveReply uses when SendMedia itself fails.
+func TestChatStreamRendersMediaAsALinkFallback(t *testing.T) {
+	stream := func(_ context.Context, _ gateway.Message, turn gateway.TurnStream) (string, error) {
+		turn.Delta("here you go")
+		turn.Media(gateway.MediaEvent{
+			ToolName:   "video_gen",
+			Attachment: gateway.MediaAttachment{Type: "video", URL: "https://example.com/v.mp4"},
+		})
+		return "here you go", nil
+	}
+
+	server, sessions := chatTestServer(t)
+	server.Chat.Router.LLMStream = stream
+	saveWebSession(t, sessions, "web-1")
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/chat/stream",
+		strings.NewReader(`{"channel_id":"browser-web-1","text":"make me a video"}`))
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body)
+	}
+
+	var joined string
+	for _, ev := range parseChatSSE(t, res.Body.String()) {
+		if ev.Type == "delta" {
+			joined += ev.Text
+		}
+	}
+	if !strings.Contains(joined, "https://example.com/v.mp4") {
+		t.Fatalf("delta stream = %q, want it to contain the asset URL", joined)
+	}
+}
+
+// An event with no URL has nothing to link to, so it must not add an
+// empty or broken-looking line to the transcript.
+func TestChatStreamSkipsMediaWithNoURL(t *testing.T) {
+	stream := func(_ context.Context, _ gateway.Message, turn gateway.TurnStream) (string, error) {
+		turn.Media(gateway.MediaEvent{ToolName: "video_gen", Attachment: gateway.MediaAttachment{Type: "video"}})
+		return "", nil
+	}
+
+	server, sessions := chatTestServer(t)
+	server.Chat.Router.LLMStream = stream
+	saveWebSession(t, sessions, "web-1")
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/chat/stream",
+		strings.NewReader(`{"channel_id":"browser-web-1","text":"make me a video"}`))
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body)
+	}
+
+	for _, ev := range parseChatSSE(t, res.Body.String()) {
+		if ev.Type == "delta" && ev.Text != "" {
+			t.Fatalf("got a delta for a URL-less media event: %q", ev.Text)
+		}
+	}
+}
+
 // config.ChatConfig.ShowToolCalls is off by default and shared by every chat
 // channel: an operator who left it unset (or explicitly turned it off) must
 // see no tool activity on the dashboard, not just in Telegram. Previously the
