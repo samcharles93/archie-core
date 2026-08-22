@@ -180,20 +180,10 @@ func (a chatTaskListerAdapter) ListChatTasks(ctx context.Context, identity strin
 // restarts, instead of npm re-resolving and re-downloading the package
 // from the registry every time the daemon starts. Rooted under the
 // daemon's own work dir so it persists regardless of whether the daemon
-// itself runs in an ephemeral container. Empty for any command other than
-// npx, which has no such registry dependency to begin with.
-//
-// This covers the npm package itself, not a package's own separate
-// download path -- e.g. Playwright/Puppeteer-based servers fetch browser
-// binaries from a CDN via a postinstall script, gated by their own env
-// vars, which this does not touch.
-//
-// Matched by base name, not exact string: this repo's own
-// config.example.toml uses absolute paths for other daemon-launched
-// commands (update_check_command, update_install_command), so an operator
-// who pins npx the same way ("/usr/local/bin/npx") must still get the
-// fix -- an exact match would skip it silently, with no error logged,
-// leaving the original bug in place unnoticed.
+// itself runs in an ephemeral container. See mcp.NpmCacheEnv for the
+// command-matching and env var details shared with archie-agent's
+// per-task equivalent (internal/app/agentworker/mcp_providers.go), which
+// points at a mounted cache volume instead of a work-dir subdirectory.
 //
 // workDir is unconditionally defaulted before registerTools runs
 // (internal/infrastructure/configuration's applyGeneralDefaults), but
@@ -202,13 +192,10 @@ func (a chatTaskListerAdapter) ListChatTasks(ctx context.Context, identity strin
 // persistent data directory -- guard it explicitly rather than trust that
 // invariant here too, the way memoryProvider already does nearby.
 func npmCacheServerEnv(command, workDir string) []string {
-	if filepath.Base(command) != "npx" || workDir == "" {
+	if workDir == "" {
 		return nil
 	}
-	return []string{
-		"NPM_CONFIG_CACHE=" + filepath.Join(workDir, "mcp-npm-cache"),
-		"NPM_CONFIG_PREFER_OFFLINE=true",
-	}
+	return mcp.NpmCacheEnv(command, filepath.Join(workDir, "mcp-npm-cache"))
 }
 
 func configuredMCPProvider(server config.MCPServer, workDir string) (toolprovider.Engine, error) {
