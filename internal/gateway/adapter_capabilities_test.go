@@ -5,42 +5,42 @@ import (
 	"testing"
 )
 
-// mediaStubAdapter implements BasePlatformAdapter, MediaSender, and
-// CapabilityReporter, reporting Media: true.
-type mediaStubAdapter struct {
-	stubAdapter
-}
+type noMediaSender struct{}
 
-func (s *mediaStubAdapter) SendMedia(ctx context.Context, e MessageEvent) (SendResult, error) {
+// mediaStubSender implements the two optional media-delivery contracts
+// directly. It deliberately has no channel lifecycle methods: media senders
+// are launch-scoped values, not platform adapters.
+type mediaStubSender struct{}
+
+func (s *mediaStubSender) SendMedia(ctx context.Context, e MessageEvent) (SendResult, error) {
 	return SendResult{Success: true, MessageID: "media-1"}, nil
 }
 
-func (s *mediaStubAdapter) Capabilities() AdapterCapabilities {
+func (s *mediaStubSender) Capabilities() AdapterCapabilities {
 	return AdapterCapabilities{Media: true}
 }
 
 var (
-	_ BasePlatformAdapter = (*mediaStubAdapter)(nil)
-	_ MediaSender         = (*mediaStubAdapter)(nil)
-	_ CapabilityReporter  = (*mediaStubAdapter)(nil)
+	_ MediaSender        = (*mediaStubSender)(nil)
+	_ CapabilityReporter = (*mediaStubSender)(nil)
 )
 
 func TestCapabilitiesOf_MatchesImplementedInterfaces(t *testing.T) {
 	tests := []struct {
 		name       string
-		adapter    any
+		sender     any
 		wantMedia  bool
 		implsMedia bool
 	}{
 		{
-			name:       "adapter without media support",
-			adapter:    &stubAdapter{},
+			name:       "sender without media support",
+			sender:     &noMediaSender{},
 			wantMedia:  false,
 			implsMedia: false,
 		},
 		{
-			name:       "adapter with media support",
-			adapter:    &mediaStubAdapter{},
+			name:       "sender with media support",
+			sender:     &mediaStubSender{},
 			wantMedia:  true,
 			implsMedia: true,
 		},
@@ -48,12 +48,12 @@ func TestCapabilitiesOf_MatchesImplementedInterfaces(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			caps := CapabilitiesOf(tt.adapter)
+			caps := CapabilitiesOf(tt.sender)
 			if caps.Media != tt.wantMedia {
 				t.Errorf("CapabilitiesOf(%s).Media = %v, want %v", tt.name, caps.Media, tt.wantMedia)
 			}
 
-			_, implementsMediaSender := tt.adapter.(MediaSender)
+			_, implementsMediaSender := tt.sender.(MediaSender)
 			if implementsMediaSender != tt.implsMedia {
 				t.Errorf("%s: MediaSender type assertion = %v, want %v", tt.name, implementsMediaSender, tt.implsMedia)
 			}
@@ -68,7 +68,7 @@ func TestCapabilitiesOf_MatchesImplementedInterfaces(t *testing.T) {
 }
 
 func TestMediaSender_SendMedia(t *testing.T) {
-	a := &mediaStubAdapter{}
+	a := &mediaStubSender{}
 	sr, err := a.SendMedia(context.Background(), MessageEvent{
 		Type:  MsgVideo,
 		Media: []MediaAttachment{{Type: "video", URL: "https://example.com/v.mp4"}},
