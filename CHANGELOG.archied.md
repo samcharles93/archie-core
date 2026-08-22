@@ -1,5 +1,21 @@
 # archied changelog
 
+## [1.10.0] - 2026-08-22
+
+- feat(forge): GitHub webhook receiver for immediate issue dispatch
+- feat(webhookguard): shared HMAC, rate-limit, and redaction mechanics
+- feat(nats): run an embedded server when no external NATS is configured
+- feat(capture): store unbound webhook events, retention-bounded
+- feat(webui): event inspector -- see captured payloads in the dashboard
+- feat(webui): payload field mapping -- bind JSON paths to named fields, preview before saving
+- fix(webui): stop the capture live-event notification duplicating payloads into the unbounded events table
+- fix(update): verify an update took effect instead of trusting the report (#530)
+- fix(daemon): refuse to poll on an empty label-trigger match (#529)
+- fix(gateway): stop persona from asserting unverified claims as fact (#528)
+- fix(gateway): stop ClaimTurn's insert-race branch losing its own retry read
+- fix: restore provider gate and dashboard token accounting
+- fix: address simple findings from a repo-wide golangci-lint sweep
+
 ## [1.9.11] - 2026-08-19
 
 - fix(mcp): persist npx package cache across daemon restarts
