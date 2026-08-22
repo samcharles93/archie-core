@@ -30,6 +30,10 @@ const (
 	// toolCallPrefix opens an inline tool-activity line.
 	toolCallPrefix = "🔧 "
 
+	// fallbackMediaLinePrefix opens the line Media appends when it could
+	// not deliver an attachment inline, so the user still gets the asset.
+	fallbackMediaLinePrefix = "📎 "
+
 	// liveBodyMaxRunes bounds one mid-turn frame. Telegram rejects a
 	// message over its character limit outright, so an unbounded frame
 	// means every edit past that point fails and the live message freezes
@@ -76,6 +80,19 @@ type liveReply struct {
 	showToolCalls   bool
 	// interval throttles updates; zero renders every change.
 	interval time.Duration
+
+	// mediaWg lets tests (and a future bounded drain, mirroring
+	// abandonAllLive) wait for in-flight Media deliveries. Callers other
+	// than tests must not block on it: Media is fire-and-forget by
+	// contract, same as Delta and ToolCall.
+	mediaWg sync.WaitGroup
+
+	// newMediaSender builds the MediaSender Media delivers through.
+	// Defaults to g.NewMediaSender; tests override it to inject a sender
+	// with fixed Capabilities(), which the real Telegram one can't
+	// express (it always reports Media: true) but a future channel or a
+	// capability-limited deployment might.
+	newMediaSender func(b *bot.Bot, chatID int64, threadID int) gateway.MediaSender
 
 	cancelRender   context.CancelFunc
 	renderRequests chan chan struct{}
@@ -124,6 +141,7 @@ func (g *Gateway) newLiveReply(ctx context.Context, b *bot.Bot, chatID int64, me
 		messageThreadID: messageThreadID,
 		showToolCalls:   showToolCalls,
 		interval:        liveInterval,
+		newMediaSender:  g.NewMediaSender,
 		cancelRender:    cancelRender,
 		renderRequests:  make(chan chan struct{}, 1),
 		renderDone:      make(chan struct{}),
@@ -316,6 +334,76 @@ func (l *liveReply) ToolCall(event gateway.ToolCallEvent) {
 	// few of them: wake the renderer immediately so the user sees what ran
 	// while it is still relevant. The callback itself never waits on HTTP.
 	l.requestRender()
+}
+
+// mediaSendTimeout bounds one Media delivery. It is independent of the
+// render loop's own lifecycle (unlike answerBuf/toolLines, which a
+// /restart abandons via abandonAllLive): an upload in flight when the live
+// reply finalizes should still be allowed to land, since the asset is worth
+// delivering on its own even after the surrounding turn is done narrating.
+const mediaSendTimeout = 30 * time.Second
+
+// Media delivers the attachment through the media-specific Bot API, off the
+// generating goroutine: unlike Delta/ToolCall, this is a real network
+// upload, and TurnStream implementations must not block generation on one.
+// It satisfies gateway.TurnStream.
+//
+// A missing URL is silently skipped rather than surfaced: an attachment
+// telegramMediaSender.SendMedia would reject as invalid_message has nothing
+// worth falling back to either, and Media has no error return to report it
+// through.
+func (l *liveReply) Media(event gateway.MediaEvent) {
+	if event.Attachment.URL == "" {
+		return
+	}
+
+	l.mediaWg.Go(func() {
+		sender := l.newMediaSender(l.b, l.chatID, l.messageThreadID)
+
+		// Checked before attempting delivery, not just on failure: that is
+		// the entire point of CapabilityReporter over attempt-then-catch
+		// -- a sender that already knows it cannot deliver a given media
+		// kind should never cost a doomed network round trip to find out.
+		if !gateway.CapabilitiesOf(sender).Media {
+			l.g.log.Debug("channel cannot deliver media inline, falling back to a link",
+				"tool", event.ToolName, "type", event.Attachment.Type)
+			l.appendFallbackLine(event.Attachment)
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), mediaSendTimeout)
+		defer cancel()
+
+		_, err := sender.SendMedia(ctx, gateway.MessageEvent{
+			Media: []gateway.MediaAttachment{event.Attachment},
+		})
+		if err == nil {
+			return
+		}
+
+		l.g.log.Warn("media delivery failed, falling back to a link",
+			"tool", event.ToolName, "type", event.Attachment.Type, "error", err)
+		l.appendFallbackLine(event.Attachment)
+	})
+}
+
+// appendFallbackLine renders att as a visible link in the reply, for a
+// MediaEvent that could not be (or was not attempted to be) delivered
+// inline.
+func (l *liveReply) appendFallbackLine(att gateway.MediaAttachment) {
+	line := fallbackMediaLinePrefix + bot.EscapeMarkdown(att.Type) + ": " + att.URL
+
+	l.mu.Lock()
+	l.toolLines = append(l.toolLines, line)
+	l.mu.Unlock()
+	l.requestRender()
+}
+
+// waitMedia blocks until every Media delivery started so far has finished.
+// Tests only: production callers never wait on Media's fire-and-forget
+// goroutines.
+func (l *liveReply) waitMedia() {
+	l.mediaWg.Wait()
 }
 
 // render writes the current buffer, cursor and all, to the live message.

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -330,9 +331,35 @@ func drainChatStream(parts <-chan core.StreamPart, turn gateway.TurnStream) stri
 				Output:     part.ToolResult.Output,
 				Err:        part.ToolResult.Error,
 			})
+			for _, ref := range multimodalMediaRefs(part.ToolResult.Output) {
+				turn.Media(gateway.MediaEvent{
+					ToolName:   name,
+					Attachment: gateway.MediaAttachment{Type: ref.Type, URL: ref.URL},
+				})
+			}
 		}
 	}
 	return sb.String()
+}
+
+// multimodalMediaRefs extracts the URLs a tool result carries when its
+// output is a tools.MultimodalResult, so drainChatStream can report each as
+// a gateway.MediaEvent alongside the ordinary ToolCall event.
+//
+// output is decoded with json.Unmarshal directly rather than checked
+// against a schema first: most tool output is plain text or unrelated
+// JSON, and unmarshalling into MultimodalResult simply leaves IsMultimodal
+// false for anything that doesn't match, which is exactly "not multimodal"
+// -- no separate detection step earns its keep here.
+func multimodalMediaRefs(output string) []tools.MediaRef {
+	if output == "" {
+		return nil
+	}
+	var result tools.MultimodalResult
+	if err := json.Unmarshal([]byte(output), &result); err != nil || !result.IsMultimodal {
+		return nil
+	}
+	return result.URLs
 }
 
 // chatTitleGenerator proposes session titles through the chat model. It
