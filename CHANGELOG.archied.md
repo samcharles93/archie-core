@@ -1,5 +1,16 @@
 # archied changelog
 
+## [1.11.0] - 2026-08-23
+
+- feat(forge): make webhook intake observable and deduplicate concurrent delivery
+- fix(telegram): preserve code fences across message splits
+- fix(gateway): replay completed-duplicate turns with their tool activity
+- feat(storage): persist agent project state across sessions
+- fix(container): persist npm cache for per-task MCP servers
+- fix(worktree): bind publication to dispatch grants, reset retries to a pristine base, and reject diffs without a merge base
+- feat(media): deliver generated media through Telegram with link fallback in the dashboard
+- feat(tools): generate videos through MiniMax, gated by provider configuration
+
 ## [1.10.0] - 2026-08-22
 
 - feat(forge): GitHub webhook receiver for immediate issue dispatch
