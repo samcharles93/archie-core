@@ -20,6 +20,10 @@ func (s *recordingStream) ToolCall(event ToolCallEvent) {
 	s.events = append(s.events, "tool:"+event.Name+":"+event.Summary())
 }
 
+func (s *recordingStream) Media(event MediaEvent) {
+	s.events = append(s.events, "media:"+event.ToolName+":"+event.Attachment.Type)
+}
+
 func newStreamTestRunner(t *testing.T, prepared *turnTestPreparedModel) *TurnRunner {
 	t.Helper()
 	store := NewSessionStoreMemory()
