@@ -207,6 +207,68 @@ func TestSessionDeleteRemovesTurns(t *testing.T) {
 	}
 }
 
+func TestTurnLedgerPersistsToolCallsAcrossClaimAndReopen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sessions.db")
+	ctx := context.Background()
+	store, err := OpenSQLiteSessionStore(path)
+	if err != nil {
+		t.Fatalf("OpenSQLiteSessionStore() error = %v", err)
+	}
+	ledger, ok := store.(TurnLedger)
+	if !ok {
+		t.Fatalf("store is %T, want TurnLedger", store)
+	}
+	turn := TurnRecord{
+		TurnID:    CanonicalTurnID("session-tools", "source-tools"),
+		SessionID: "session-tools",
+		SourceID:  "source-tools",
+		OwnerID:   "process-a",
+		Status:    TurnStatusAccepted,
+	}
+	claimed, claim, err := ledger.ClaimTurn(ctx, turn)
+	if err != nil || claim != TurnClaimOwned {
+		t.Fatalf("ClaimTurn() = %#v, %q, %v", claimed, claim, err)
+	}
+	claimed.Status = TurnStatusCompleted
+	claimed.ResponseText = "answer"
+	claimed.AssistantMessageID = "assistant-1"
+	claimed.ToolCalls = []ToolCallEvent{
+		{ID: "call-1", Name: "shell", Parameters: `{"cmd":"ls"}`, Output: "a.txt"},
+		{ID: "call-2", Name: "grep", Err: "no matches"},
+	}
+	if err := ledger.SaveTurn(ctx, claimed); err != nil {
+		t.Fatalf("SaveTurn() error = %v", err)
+	}
+
+	completed, claim, err := ledger.ClaimTurn(ctx, turn)
+	if err != nil || claim != TurnClaimCompleted {
+		t.Fatalf("re-claim = %#v, %q, %v", completed, claim, err)
+	}
+	if len(completed.ToolCalls) != 2 || completed.ToolCalls[0].Name != "shell" || completed.ToolCalls[1].Err != "no matches" {
+		t.Fatalf("re-claimed tool calls = %#v, want the two saved events in order", completed.ToolCalls)
+	}
+
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	reopened, err := OpenSQLiteSessionStore(path)
+	if err != nil {
+		t.Fatalf("reopen error = %v", err)
+	}
+	defer func() { _ = reopened.Close() }()
+	reopenedLedger, ok := reopened.(TurnLedger)
+	if !ok {
+		t.Fatalf("reopened store is %T, want TurnLedger", reopened)
+	}
+	got, ok, err := reopenedLedger.GetTurn(ctx, turn.TurnID)
+	if err != nil || !ok {
+		t.Fatalf("GetTurn() after reopen = %#v, %v, %v", got, ok, err)
+	}
+	if len(got.ToolCalls) != 2 || got.ToolCalls[0].Name != "shell" || got.ToolCalls[1].Name != "grep" {
+		t.Fatalf("reopened tool calls = %#v, want the two saved events in order", got.ToolCalls)
+	}
+}
+
 func TestSQLiteTurnLedgerSurvivesReopen(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sessions.db")
 	ctx := context.Background()

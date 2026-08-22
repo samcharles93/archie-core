@@ -125,8 +125,20 @@ func (r *TurnRunner) RespondStream(ctx context.Context, msg Message, stream Turn
 
 // Run executes one turn, reporting progress to stream. A completed duplicate
 // source message replays its durable response without invoking the model
-// again; the replay reaches stream as one whole-text fragment, since there is
-// no generation left to watch.
+// again; the replay reaches stream as the turn's recorded tool-call events,
+// in the order they originally ran, followed by one whole-text fragment for
+// the answer, since there is no generation left to watch. Replaying the tool
+// events first is what keeps a redelivered or restart-recovered duplicate
+// from disagreeing with the original about what ran.
+//
+// The prior-reply fallback below (matching an already-answered source
+// message by conversation history rather than by turn ID) is deliberately
+// text-only: it exists for the narrow race where a process crashed after
+// saving the assistant message but before the turn record was marked
+// completed, so the original turn's structured tool record -- saved in the
+// same call as ResponseText -- never made it to durable storage either. It
+// has nothing to replay, so it must not synthesize a tool block it cannot
+// verify.
 //
 // stream may be nil, which means the caller renders only the returned reply.
 func (r *TurnRunner) Run(ctx context.Context, msg Message, stream TurnStream) (string, error) {
@@ -172,8 +184,13 @@ func (r *TurnRunner) Run(ctx context.Context, msg Message, stream TurnStream) (s
 	}
 	switch claim {
 	case TurnClaimCompleted:
-		if stream != nil && turn.ResponseText != "" {
-			stream.Delta(turn.ResponseText)
+		if stream != nil {
+			for _, event := range turn.ToolCalls {
+				stream.ToolCall(event)
+			}
+			if turn.ResponseText != "" {
+				stream.Delta(turn.ResponseText)
+			}
 		}
 		return turn.ResponseText, nil
 	case TurnClaimInProgress:
@@ -284,10 +301,11 @@ func (r *TurnRunner) Run(ctx context.Context, msg Message, stream TurnStream) (s
 	view.Messages = append(
 		[]CompressedMessage{{Role: "system", Content: systemPrompt}}, view.Messages...,
 	)
+	recorder := &toolCallRecorder{next: stream}
 	text, err := prepared.Generate(ctx, TurnModelRequest{
 		Messages:  view.Messages,
 		MaxTokens: modelDetails.MaxOutputTokens,
-	}, stream)
+	}, recorder)
 	if err != nil {
 		return "", r.failTurn(ctx, turn, err)
 	}
@@ -298,6 +316,7 @@ func (r *TurnRunner) Run(ctx context.Context, msg Message, stream TurnStream) (s
 	turn.Status = TurnStatusCompleted
 	turn.AssistantMessageID = assistant.MessageID
 	turn.ResponseText = text
+	turn.ToolCalls = recorder.events
 	turn.Error = ""
 	turn.UpdatedAt = time.Now().UTC()
 	if err := r.saveTurn(ctx, turn); err != nil {
