@@ -2,29 +2,49 @@ package gateway
 
 import "context"
 
-// AdapterCapabilities reports which optional BasePlatformAdapter behaviors
-// an adapter implements, so callers can check support before attempting an
-// optional call rather than discovering it via a failed type assertion or a
-// runtime error.
+// SendResult captures the outcome of a platform media delivery. It classifies
+// failures so callers can apply retry policy without inspecting
+// platform-specific error types.
+type SendResult struct {
+	// MessageID is the platform-assigned identifier of the sent message.
+	// Empty when the send failed before the platform acknowledged it.
+	MessageID string
+
+	// Success is true when the platform accepted the message.
+	Success bool
+
+	// Retryable is true when the failure is transient and the caller may
+	// retry with backoff.
+	Retryable bool
+
+	// Error is the underlying error when Success is false.
+	Error error
+
+	// ErrorCode classifies the failure for observability and retry policy.
+	// Current values are "rate_limited", "network", "auth",
+	// "invalid_message", and "internal"; success uses the empty string.
+	ErrorCode string
+}
+
+// AdapterCapabilities reports which optional delivery behaviors a sender
+// implements, so callers can check support before attempting an optional call.
 type AdapterCapabilities struct {
-	// Media is true when the adapter implements MediaSender.
+	// Media is true when the sender implements MediaSender.
 	Media bool
 }
 
-// MediaSender is the optional interface a BasePlatformAdapter implements
-// when it can deliver a MessageEvent carrying MediaAttachments (image,
-// video, audio, document) through a platform-specific media API distinct
-// from plain-text Send  --  e.g. Telegram's SendPhoto/SendVideo versus
-// SendMessage.
+// MediaSender delivers a MessageEvent carrying MediaAttachments (image,
+// video, audio, document) through a platform-specific media API. Senders are
+// launch-scoped delivery values, separate from a channel's connection
+// lifecycle; for example, Telegram binds one to a bot launch and chat.
 type MediaSender interface {
 	SendMedia(ctx context.Context, event MessageEvent) (SendResult, error)
 }
 
-// CapabilityReporter is the optional interface an adapter implements to
+// CapabilityReporter is the optional interface a sender implements to
 // self-report which optional behaviors it supports. Callers should go
 // through CapabilitiesOf rather than type-asserting this directly, so an
-// adapter that implements MediaSender but forgets CapabilityReporter still
-// reports correctly.
+// implementation's capability declaration is checked consistently.
 type CapabilityReporter interface {
 	Capabilities() AdapterCapabilities
 }
@@ -36,11 +56,8 @@ type CapabilityReporter interface {
 // contract every Capabilities() implementation must honor  --  see the
 // regression coverage in adapter_capabilities_test.go.
 //
-// It takes any rather than BasePlatformAdapter deliberately: the live
-// channels (telegram, email, webhook) implement channels.Channel, not
-// BasePlatformAdapter, and media is delivered by launch-scoped sender
-// values that are neither. Binding this helper to BasePlatformAdapter
-// would tie it to a type slated for removal (archie-core-azbo).
+// It takes any deliberately: media is delivered by launch-scoped sender
+// values, not by a channel lifecycle interface.
 func CapabilitiesOf(sender any) AdapterCapabilities {
 	if reporter, ok := sender.(CapabilityReporter); ok {
 		return reporter.Capabilities()
