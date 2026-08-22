@@ -21,6 +21,9 @@
 //	    bun/              --  Bun package cache (shared)
 //	    pip/              --  pip cache (shared)
 //	    cargo/            --  Rust cargo cache (shared)
+//	    mcp-npm/          --  npm cache for npx-launched per-task MCP
+//	                        servers (shared, mounted regardless of the
+//	                        task repo's ecosystem  --  see MCPNPMCacheMountDir)
 //
 // Cache volumes are named Docker volumes created once and shared across all
 // tasks. They are never deleted  --  the daemon operator manages them.
@@ -134,6 +137,15 @@ const (
 	PluginsDir         = PersistentMountDir + "/plugins"
 )
 
+// MCPNPMCacheMountDir is the fixed container path where the npm package
+// cache for npx-launched per-task MCP servers is mounted. Unlike the
+// ecosystem caches below, this is mounted on every task container
+// regardless of the task repo's language: per-task MCP servers come from
+// daemon-wide config (config.MCPServer), not from anything specific to the
+// checked-out repo, so an npx-based server needs the cache warm whether the
+// task is a Go repo, a Python repo, or anything else.
+const MCPNPMCacheMountDir = "/data/cache/mcp-npm"
+
 // Backend prepares container storage. Each container runtime backend
 // (Docker, future containerd, etc.) implements this interface.
 type Backend interface {
@@ -153,6 +165,16 @@ type Backend interface {
 type cacheVolume struct {
 	Name      string // Docker volume name
 	MountPath string // container destination path
+}
+
+// alwaysOnCacheVolumes are shared cache volumes mounted on every task
+// container regardless of the task repo's ecosystem, because what they
+// cache isn't tied to the repo being worked on. The npx package cache for
+// per-task MCP servers is the only current instance: MCP servers are
+// daemon-wide config, not per-repo, so an npx-based one needs a warm cache
+// no matter which repo the task happens to be against.
+var alwaysOnCacheVolumes = []cacheVolume{
+	{Name: "archie-cache-mcp-npm", MountPath: MCPNPMCacheMountDir},
 }
 
 // cacheVolumesByEcosystem maps ecosystem names to their shared cache volumes.
@@ -183,14 +205,15 @@ var cacheVolumesByEcosystem = map[string][]cacheVolume{
 	},
 }
 
-// cacheMounts returns the cache mount specs for an ecosystem, sorted by
-// destination path for deterministic container configuration.
-// Ecosystem is case-insensitive  --  "Python" and "python" are equivalent.
+// cacheMounts returns the cache mount specs for an ecosystem -- the
+// always-on volumes plus any matched by ecosystem -- sorted by destination
+// path for deterministic container configuration. Ecosystem is
+// case-insensitive  --  "Python" and "python" are equivalent. An unknown or
+// empty ecosystem still returns the always-on volumes.
 func cacheMounts(ecosystem string) []Mount {
-	vols, ok := cacheVolumesByEcosystem[strings.ToLower(ecosystem)]
-	if !ok {
-		return nil
-	}
+	vols := append([]cacheVolume(nil), alwaysOnCacheVolumes...)
+	vols = append(vols, cacheVolumesByEcosystem[strings.ToLower(ecosystem)]...)
+
 	mounts := make([]Mount, len(vols))
 	for i, v := range vols {
 		mounts[i] = Mount{
@@ -279,9 +302,10 @@ func repoVolumeName(owner, repo string) string {
 }
 
 // Setup returns the mount list for a task container. Mounts are ordered:
-// 1. /data/worktree bind mount (always first)
-// 2. /data/repo volume mount (only when PersistentStorage is true)
-// 3. /data/cache/<ecosystem> volume mounts (sorted by destination)
+//  1. /data/worktree bind mount (always first)
+//  2. /data/repo volume mount (only when PersistentStorage is true)
+//  3. cache volume mounts: the always-on volumes plus /data/cache/<ecosystem>
+//     (sorted together by destination)
 func (d *DockerBackend) Setup(ctx context.Context, task TaskRef) ([]Mount, error) {
 	mounts := []Mount{
 		{

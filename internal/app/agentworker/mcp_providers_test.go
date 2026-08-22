@@ -10,6 +10,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/plugin"
+	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/tools"
 	protocolmcp "github.com/samcharles93/archie-core/internal/tools/mcp"
 	toolprovider "github.com/samcharles93/archie-core/internal/tools/provider"
@@ -72,6 +73,7 @@ func TestBuildMCPProviderSelectsTransport(t *testing.T) {
 		wantType            any
 		wantCommand         string
 		wantArgs            []string
+		wantEnv             []string
 		wantEndpoint        string
 		wantMessageEndpoint string
 		wantHeaders         map[string]string
@@ -92,6 +94,29 @@ func TestBuildMCPProviderSelectsTransport(t *testing.T) {
 			wantTransport: "stdio",
 			wantType:      (*protocolmcp.StdioTransport)(nil),
 			wantCommand:   "server",
+		},
+		{
+			// Task containers are ephemeral, so an npx-launched MCP server
+			// must be pointed at the shared mcp-npm cache volume mounted on
+			// every container -- otherwise it re-resolves/re-downloads from
+			// the registry on every single task.
+			name:          "npx stdio server gets the persistent npm cache",
+			server:        config.MCPServer{Name: "local", Command: "npx", Args: []string{"-y", "some-mcp-server"}},
+			wantTransport: "stdio",
+			wantType:      (*protocolmcp.StdioTransport)(nil),
+			wantCommand:   "npx",
+			wantArgs:      []string{"-y", "some-mcp-server"},
+			wantEnv: []string{
+				"NPM_CONFIG_CACHE=" + storage.MCPNPMCacheMountDir,
+				"NPM_CONFIG_PREFER_OFFLINE=true",
+			},
+		},
+		{
+			name:          "non-npx stdio server gets no npm cache env",
+			server:        config.MCPServer{Name: "local", Command: "/usr/local/bin/my-mcp-server"},
+			wantTransport: "stdio",
+			wantType:      (*protocolmcp.StdioTransport)(nil),
+			wantCommand:   "/usr/local/bin/my-mcp-server",
 		},
 		{
 			name:          "http",
@@ -175,7 +200,7 @@ func TestBuildMCPProviderSelectsTransport(t *testing.T) {
 			if got, want := transport.Elem().Type(), reflect.TypeOf(tc.wantType); got != want {
 				t.Fatalf("transport type = %v, want %v", got, want)
 			}
-			assertMCPTransportConfig(t, transport.Elem(), tc.wantCommand, tc.wantArgs, tc.wantEndpoint, tc.wantMessageEndpoint, tc.wantHeaders)
+			assertMCPTransportConfig(t, transport.Elem(), tc.wantCommand, tc.wantArgs, tc.wantEnv, tc.wantEndpoint, tc.wantMessageEndpoint, tc.wantHeaders)
 		})
 	}
 }
@@ -185,6 +210,7 @@ func assertMCPTransportConfig(
 	transport reflect.Value,
 	wantCommand string,
 	wantArgs []string,
+	wantEnv []string,
 	wantEndpoint string,
 	wantMessageEndpoint string,
 	wantHeaders map[string]string,
@@ -226,6 +252,21 @@ func assertMCPTransportConfig(
 			if got := headers.MapIndex(reflect.ValueOf(key)).String(); got != want {
 				t.Errorf("transport config Headers[%q] = %q, want %q", key, got, want)
 			}
+		}
+	}
+
+	// Env only exists on StdioTransportConfig; other transports have no
+	// registry-fetch dependency for this check to apply to.
+	if envField := config.FieldByName("Env"); envField.Kind() != reflect.Invalid {
+		got := make([]string, envField.Len())
+		for i := range envField.Len() {
+			got[i] = envField.Index(i).String()
+		}
+		if len(got) == 0 {
+			got = nil
+		}
+		if !reflect.DeepEqual(got, wantEnv) {
+			t.Errorf("transport config Env = %v, want %v", got, wantEnv)
 		}
 	}
 }
