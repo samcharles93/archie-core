@@ -940,3 +940,122 @@ func TestGatewayRegisterLiveAfterStopAbandonsImmediately(t *testing.T) {
 		t.Fatal("a liveReply registered after stop was never abandoned")
 	}
 }
+
+// Media must actually deliver the attachment through the Bot API's
+// media-specific endpoint, not just buffer it like Delta/ToolCall  --
+// there is no later render pass that turns a MediaEvent into anything.
+func TestLiveReplyMediaDeliversTheAttachment(t *testing.T) {
+	live, calls := newTestLiveReply(t, false)
+
+	live.Media(gateway.MediaEvent{
+		ToolName:   "video_gen",
+		Attachment: gateway.MediaAttachment{Type: "video", URL: "https://example.com/v.mp4"},
+	})
+	live.waitMedia()
+
+	if len(*calls) != 1 {
+		t.Fatalf("api calls = %d, want 1", len(*calls))
+	}
+	if (*calls)[0].method != "sendVideo" {
+		t.Fatalf("called %q, want sendVideo", (*calls)[0].method)
+	}
+}
+
+// An event with no URL has nothing to deliver and nothing to fall back to,
+// so it must not reach the API at all.
+func TestLiveReplyMediaWithNoURLIsANoop(t *testing.T) {
+	live, calls := newTestLiveReply(t, false)
+
+	live.Media(gateway.MediaEvent{ToolName: "video_gen", Attachment: gateway.MediaAttachment{Type: "video"}})
+	live.waitMedia()
+
+	if len(*calls) != 0 {
+		t.Fatalf("api calls = %d, want 0", len(*calls))
+	}
+}
+
+// When delivery fails, the user must still get the URL as a link rather
+// than silence: a generated video that can't be uploaded is still a result
+// worth handing back.
+func TestLiveReplyMediaFallsBackToALinkOnFailure(t *testing.T) {
+	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":false,"error_code":400,"description":"boom"}`))
+	}))
+	t.Cleanup(failing.Close)
+	b, err := bot.New("1:test", bot.WithServerURL(failing.URL), bot.WithSkipGetMe())
+	if err != nil {
+		t.Fatalf("new test bot: %v", err)
+	}
+
+	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+	live := g.newLiveReply(context.Background(), b, 7, 0, false)
+	t.Cleanup(live.stopRendering)
+	live.interval = 0
+
+	live.Media(gateway.MediaEvent{
+		ToolName:   "video_gen",
+		Attachment: gateway.MediaAttachment{Type: "video", URL: "https://example.com/v.mp4"},
+	})
+	live.waitMedia()
+
+	live.mu.Lock()
+	lines := strings.Join(live.toolLines, "\n")
+	live.mu.Unlock()
+	if !strings.Contains(lines, "https://example.com/v.mp4") {
+		t.Fatalf("fallback lines = %q, want it to contain the asset URL", lines)
+	}
+}
+
+// capabilityLimitedSender reports Media: false regardless of what it is
+// asked to send, so tests can prove Media actually consults
+// gateway.CapabilitiesOf before attempting delivery, rather than always
+// attempting and only ever falling back on a network failure.
+type capabilityLimitedSender struct {
+	sendCalled bool
+}
+
+func (s *capabilityLimitedSender) SendMedia(context.Context, gateway.MessageEvent) (gateway.SendResult, error) {
+	s.sendCalled = true
+	return gateway.SendResult{Success: true}, nil
+}
+
+func (s *capabilityLimitedSender) Capabilities() gateway.AdapterCapabilities {
+	return gateway.AdapterCapabilities{Media: false}
+}
+
+var (
+	_ gateway.MediaSender        = (*capabilityLimitedSender)(nil)
+	_ gateway.CapabilityReporter = (*capabilityLimitedSender)(nil)
+)
+
+// When the bound sender reports it cannot deliver media at all, Media must
+// go straight to the text-link fallback without attempting SendMedia --
+// checking capability first is the whole point of CapabilityReporter over
+// attempt-then-catch, so a call site that ignores it makes the mechanism
+// dead weight.
+func TestLiveReplyMediaSkipsDeliveryWhenCapabilityReportsUnsupported(t *testing.T) {
+	live, calls := newTestLiveReply(t, false)
+	sender := &capabilityLimitedSender{}
+	live.newMediaSender = func(*bot.Bot, int64, int) gateway.MediaSender { return sender }
+
+	live.Media(gateway.MediaEvent{
+		ToolName:   "video_gen",
+		Attachment: gateway.MediaAttachment{Type: "video", URL: "https://example.com/v.mp4"},
+	})
+	live.waitMedia()
+
+	if sender.sendCalled {
+		t.Error("SendMedia was called despite Capabilities().Media == false")
+	}
+	if len(*calls) != 0 {
+		t.Errorf("api calls = %d, want 0 (capability check should short-circuit before any request)", len(*calls))
+	}
+
+	live.mu.Lock()
+	lines := strings.Join(live.toolLines, "\n")
+	live.mu.Unlock()
+	if !strings.Contains(lines, "https://example.com/v.mp4") {
+		t.Fatalf("fallback lines = %q, want it to contain the asset URL", lines)
+	}
+}
