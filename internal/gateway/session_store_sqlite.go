@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -102,6 +103,7 @@ CREATE TABLE IF NOT EXISTS turns (
 	assistant_message_id TEXT NOT NULL DEFAULT '',
 	partial_text       TEXT NOT NULL DEFAULT '',
 	response_text      TEXT NOT NULL DEFAULT '',
+	tool_calls         TEXT NOT NULL DEFAULT '[]',
 	error              TEXT NOT NULL DEFAULT '',
 	created_at         INTEGER NOT NULL,
 	updated_at         INTEGER NOT NULL
@@ -150,6 +152,15 @@ func openSQLiteSessionStore(dsn string) (SessionStore, error) {
 	ctx := context.Background()
 	if _, err := db.ExecContext(ctx, sqliteSessionSchema); err != nil {
 		return nil, errors.Join(fmt.Errorf("sessionstore: init schema: %w", err), db.Close())
+	}
+	// A database created before tool_calls existed has a turns table without
+	// it; CREATE TABLE IF NOT EXISTS above leaves an existing table alone, so
+	// the column is added here. The duplicate-column error is the documented
+	// way to detect "already migrated" with this driver -- there is no
+	// IF NOT EXISTS clause for ADD COLUMN.
+	if _, err := db.ExecContext(ctx, `ALTER TABLE turns ADD COLUMN tool_calls TEXT NOT NULL DEFAULT '[]'`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column name") {
+		return nil, errors.Join(fmt.Errorf("sessionstore: migrate turns table: %w", err), db.Close())
 	}
 	if err := repairFutureMessageTimestamps(ctx, db, time.Now().UTC()); err != nil {
 		return nil, errors.Join(err, db.Close())
@@ -207,14 +218,15 @@ func (s *sqliteSessionStore) ClaimTurn(ctx context.Context, initial TurnRecord) 
 
 	var turn TurnRecord
 	var createdMS, updatedMS int64
+	var toolCallsRaw string
 	err = tx.QueryRowContext(ctx, `
 		SELECT turn_id, session_id, source_id, status, attempt, owner_id,
 		       input_message_id, assistant_message_id, partial_text,
-		       response_text, error, created_at, updated_at
+		       response_text, tool_calls, error, created_at, updated_at
 		FROM turns WHERE turn_id = ?`, initial.TurnID).Scan(
 		&turn.TurnID, &turn.SessionID, &turn.SourceID, &turn.Status, &turn.Attempt, &turn.OwnerID,
 		&turn.InputMessageID, &turn.AssistantMessageID, &turn.PartialText,
-		&turn.ResponseText, &turn.Error, &createdMS, &updatedMS,
+		&turn.ResponseText, &toolCallsRaw, &turn.Error, &createdMS, &updatedMS,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		now := time.Now().UTC()
@@ -224,6 +236,10 @@ func (s *sqliteSessionStore) ClaimTurn(ctx context.Context, initial TurnRecord) 
 			initial.CreatedAt = now
 		}
 		initial.UpdatedAt = now
+		initialToolCalls, marshalErr := marshalToolCalls(initial.ToolCalls)
+		if marshalErr != nil {
+			return TurnRecord{}, "", marshalErr
+		}
 		// insertErr is deliberately its own name, not err: this whole block
 		// is inside `if errors.Is(err, sql.ErrNoRows)`, so reusing err here
 		// would shadow the outer err for the rest of the block -- including
@@ -236,9 +252,9 @@ func (s *sqliteSessionStore) ClaimTurn(ctx context.Context, initial TurnRecord) 
 			INSERT INTO turns (
 				turn_id, session_id, source_id, status, attempt, owner_id,
 				input_message_id, assistant_message_id, partial_text,
-				response_text, error, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(turn_id) DO NOTHING`, turnValues(initial)...)
+				response_text, tool_calls, error, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(turn_id) DO NOTHING`, turnValues(initial, initialToolCalls)...)
 		if insertErr != nil {
 			return TurnRecord{}, "", fmt.Errorf("sessionstore: claim turn: insert: %w", insertErr)
 		}
@@ -260,11 +276,11 @@ func (s *sqliteSessionStore) ClaimTurn(ctx context.Context, initial TurnRecord) 
 		err = tx.QueryRowContext(ctx, `
 			SELECT turn_id, session_id, source_id, status, attempt, owner_id,
 			       input_message_id, assistant_message_id, partial_text,
-			       response_text, error, created_at, updated_at
+			       response_text, tool_calls, error, created_at, updated_at
 			FROM turns WHERE turn_id = ?`, initial.TurnID).Scan(
 			&turn.TurnID, &turn.SessionID, &turn.SourceID, &turn.Status, &turn.Attempt, &turn.OwnerID,
 			&turn.InputMessageID, &turn.AssistantMessageID, &turn.PartialText,
-			&turn.ResponseText, &turn.Error, &createdMS, &updatedMS,
+			&turn.ResponseText, &toolCallsRaw, &turn.Error, &createdMS, &updatedMS,
 		)
 	}
 	if err != nil {
@@ -272,6 +288,9 @@ func (s *sqliteSessionStore) ClaimTurn(ctx context.Context, initial TurnRecord) 
 	}
 	turn.CreatedAt = time.UnixMilli(createdMS).UTC()
 	turn.UpdatedAt = time.UnixMilli(updatedMS).UTC()
+	if turn.ToolCalls, err = unmarshalToolCalls(toolCallsRaw); err != nil {
+		return TurnRecord{}, "", err
+	}
 
 	switch turn.Status {
 	case TurnStatusCompleted:
@@ -348,14 +367,15 @@ func (s *sqliteSessionStore) GetTurn(ctx context.Context, turnID string) (TurnRe
 	defer s.mu.Unlock()
 	var turn TurnRecord
 	var createdMS, updatedMS int64
+	var toolCallsRaw string
 	err := s.db.QueryRowContext(ctx, `
 		SELECT turn_id, session_id, source_id, status, attempt, owner_id,
 		       input_message_id, assistant_message_id, partial_text,
-		       response_text, error, created_at, updated_at
+		       response_text, tool_calls, error, created_at, updated_at
 		FROM turns WHERE turn_id = ?`, turnID).Scan(
 		&turn.TurnID, &turn.SessionID, &turn.SourceID, &turn.Status, &turn.Attempt, &turn.OwnerID,
 		&turn.InputMessageID, &turn.AssistantMessageID, &turn.PartialText,
-		&turn.ResponseText, &turn.Error, &createdMS, &updatedMS,
+		&turn.ResponseText, &toolCallsRaw, &turn.Error, &createdMS, &updatedMS,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return TurnRecord{}, false, nil
@@ -365,6 +385,9 @@ func (s *sqliteSessionStore) GetTurn(ctx context.Context, turnID string) (TurnRe
 	}
 	turn.CreatedAt = time.UnixMilli(createdMS).UTC()
 	turn.UpdatedAt = time.UnixMilli(updatedMS).UTC()
+	if turn.ToolCalls, err = unmarshalToolCalls(toolCallsRaw); err != nil {
+		return TurnRecord{}, false, err
+	}
 	return turn, true, nil
 }
 
@@ -389,15 +412,19 @@ func (s *sqliteSessionStore) SaveTurn(ctx context.Context, turn TurnRecord) erro
 	if turn.UpdatedAt.IsZero() {
 		turn.UpdatedAt = time.Now().UTC()
 	}
+	toolCallsJSON, err := marshalToolCalls(turn.ToolCalls)
+	if err != nil {
+		return err
+	}
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE turns SET
 			session_id = ?, source_id = ?, status = ?, attempt = ?, owner_id = ?,
 			input_message_id = ?, assistant_message_id = ?, partial_text = ?,
-			response_text = ?, error = ?, created_at = ?, updated_at = ?
+			response_text = ?, tool_calls = ?, error = ?, created_at = ?, updated_at = ?
 		WHERE turn_id = ? AND attempt = ? AND owner_id = ?`,
 		turn.SessionID, turn.SourceID, string(turn.Status), turn.Attempt, turn.OwnerID,
 		turn.InputMessageID, turn.AssistantMessageID, turn.PartialText,
-		turn.ResponseText, turn.Error, turn.CreatedAt.UnixMilli(), turn.UpdatedAt.UnixMilli(),
+		turn.ResponseText, toolCallsJSON, turn.Error, turn.CreatedAt.UnixMilli(), turn.UpdatedAt.UnixMilli(),
 		turn.TurnID, turn.Attempt, turn.OwnerID)
 	if err != nil {
 		return fmt.Errorf("sessionstore: save turn: %w", err)
@@ -416,7 +443,7 @@ func (s *sqliteSessionStore) ListRecoverableTurns(ctx context.Context) ([]TurnRe
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT turn_id, session_id, source_id, status, attempt, owner_id,
 		       input_message_id, assistant_message_id, partial_text,
-		       response_text, error, created_at, updated_at
+		       response_text, tool_calls, error, created_at, updated_at
 		FROM turns WHERE status IN (?, ?, ?) ORDER BY updated_at ASC`,
 		string(TurnStatusAccepted), string(TurnStatusRunning), string(TurnStatusPartial))
 	if err != nil {
@@ -427,15 +454,19 @@ func (s *sqliteSessionStore) ListRecoverableTurns(ctx context.Context) ([]TurnRe
 	for rows.Next() {
 		var turn TurnRecord
 		var createdMS, updatedMS int64
+		var toolCallsRaw string
 		if err := rows.Scan(
 			&turn.TurnID, &turn.SessionID, &turn.SourceID, &turn.Status, &turn.Attempt, &turn.OwnerID,
 			&turn.InputMessageID, &turn.AssistantMessageID, &turn.PartialText,
-			&turn.ResponseText, &turn.Error, &createdMS, &updatedMS,
+			&turn.ResponseText, &toolCallsRaw, &turn.Error, &createdMS, &updatedMS,
 		); err != nil {
 			return nil, fmt.Errorf("sessionstore: scan recoverable turn: %w", err)
 		}
 		turn.CreatedAt = time.UnixMilli(createdMS).UTC()
 		turn.UpdatedAt = time.UnixMilli(updatedMS).UTC()
+		if turn.ToolCalls, err = unmarshalToolCalls(toolCallsRaw); err != nil {
+			return nil, err
+		}
 		out = append(out, turn)
 	}
 	if err := rows.Err(); err != nil {
@@ -444,12 +475,40 @@ func (s *sqliteSessionStore) ListRecoverableTurns(ctx context.Context) ([]TurnRe
 	return out, nil
 }
 
-func turnValues(turn TurnRecord) []any {
+func turnValues(turn TurnRecord, toolCallsJSON string) []any {
 	return []any{
 		turn.TurnID, turn.SessionID, turn.SourceID, string(turn.Status), turn.Attempt, turn.OwnerID,
 		turn.InputMessageID, turn.AssistantMessageID, turn.PartialText,
-		turn.ResponseText, turn.Error, turn.CreatedAt.UnixMilli(), turn.UpdatedAt.UnixMilli(),
+		turn.ResponseText, toolCallsJSON, turn.Error, turn.CreatedAt.UnixMilli(), turn.UpdatedAt.UnixMilli(),
 	}
+}
+
+// marshalToolCalls encodes a turn's recorded tool activity for storage. An
+// empty slice becomes "[]" rather than SQL NULL or the JSON "null" so an
+// unmigrated-looking row (the column's own DEFAULT) and a turn that recorded
+// no tool calls are indistinguishable in the database, and both round-trip
+// through unmarshalToolCalls to a nil slice.
+func marshalToolCalls(events []ToolCallEvent) (string, error) {
+	if len(events) == 0 {
+		return "[]", nil
+	}
+	encoded, err := json.Marshal(events)
+	if err != nil {
+		return "", fmt.Errorf("sessionstore: marshal tool calls: %w", err)
+	}
+	return string(encoded), nil
+}
+
+// unmarshalToolCalls decodes tool activity persisted by marshalToolCalls.
+func unmarshalToolCalls(raw string) ([]ToolCallEvent, error) {
+	if raw == "" || raw == "[]" {
+		return nil, nil
+	}
+	var events []ToolCallEvent
+	if err := json.Unmarshal([]byte(raw), &events); err != nil {
+		return nil, fmt.Errorf("sessionstore: unmarshal tool calls: %w", err)
+	}
+	return events, nil
 }
 
 // ── Sessions ────────────────────────────────────────────────────────────────
