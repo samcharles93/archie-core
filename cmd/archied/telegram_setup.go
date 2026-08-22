@@ -202,6 +202,7 @@ func buildTelegramRouter(ctx context.Context, tg *telegram.Gateway, s telegramSe
 	router := gateway.NewRouter(s.St, nil, "telegram")
 	router.Models = s.ChatModels
 	router.Updates = s.Updates
+	router.Personas = s.Personas
 	router.InitSessions(sessionStore)
 	router.Titles = newChatTitleGenerator(s)
 	router.Log = s.Log

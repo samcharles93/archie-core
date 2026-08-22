@@ -147,6 +147,12 @@ func (g *Gateway) dispatchUpdateAction(ctx context.Context, b *bot.Bot, query *m
 		}
 		g.answerModelCallback(ctx, b, query.ID, "Starting update…", false)
 		g.editUpdateMessage(ctx, b, query, "Update approved. Starting now…")
+		// The callback context belongs to Telegram's short-lived update
+		// handler and is cancelled as soon as this handler returns. The
+		// installer may build an image for several minutes, so detach only
+		// the install operation from that request lifetime. Progress and
+		// final-message edits still use ctx and may harmlessly fail when the
+		// callback request is gone.
 		go g.installUpdate(ctx, b, query)
 	default:
 		g.answerModelCallback(ctx, b, query.ID, "That update action is no longer valid.", true)
@@ -196,7 +202,8 @@ func (g *Gateway) installUpdate(ctx context.Context, b *bot.Bot, query *models.C
 		}
 	}
 
-	result, err := g.Updates.Install(ctx, meta, progress)
+	installCtx := context.WithoutCancel(ctx)
+	result, err := g.Updates.Install(installCtx, meta, progress)
 	if err != nil {
 		g.log.Error("approved update failed", "error", err)
 		lines = append(lines, formatInstallFailure(err))
