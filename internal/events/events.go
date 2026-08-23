@@ -53,6 +53,13 @@ const (
 	// never produces this kind, so derived work cannot feed its own
 	// trigger. data: session, channel.
 	KindTurnCompleted = "turn_completed"
+
+	// KindUpdateReport carries the phase-2 outcome of a dashboard-initiated
+	// update -- whether the restarted daemon came back up healthy and on
+	// the version it claimed, relayed once on the boot that finds the
+	// pending report left by the update watchdog (archie-core-nln7).
+	// data: health_check, rolled_back, confirmed, drift, unverified.
+	KindUpdateReport = "update_report"
 )
 
 // Event is the single wire type: task lifecycle, stage progress, agent

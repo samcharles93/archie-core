@@ -509,7 +509,8 @@ func (s *Server) handleChatUpdateInstall(w http.ResponseWriter, r *http.Request)
 	}()
 
 	progress := make([]string, 0, 4)
-	result, err := chat.Updates.Install(r.Context(), releaseupdate.InstallMeta{Channel: "webui"}, func(message string) { progress = append(progress, message) })
+	meta := releaseupdate.InstallMeta{Channel: "webui", ReportPath: s.UpdateReportPath}
+	result, err := chat.Updates.Install(r.Context(), meta, func(message string) { progress = append(progress, message) })
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
