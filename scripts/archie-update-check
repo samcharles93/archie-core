@@ -1,88 +1,76 @@
 #!/usr/bin/env bash
-# archie-update-check -- update discovery adapter for archied's /update.
+# archie-update-check -- update discovery adapter for archied's /update command.
 #
-# archied runs this via CommandCatalog and decodes its stdout straight into
-# a releaseupdate.Snapshot JSON document -- {"Components":[...]}, one entry
-# per component, ID/Label/Installed/Available/Changelog/InstallType/
-# Reference (Component has no json tags, so field names are exact Go
-# casing; decode is case-insensitive regardless). It is exec'd directly,
-# without a shell, and must not mutate anything: unlike
-# archie-update-install, this runs on every /update check, possibly far
-# more often than an actual install.
+# Writes a releaseupdate.Snapshot JSON document to stdout. archied runs this
+# via CommandCatalog (internal/releaseupdate/command.go), which never invokes
+# a shell, so this file must be directly executable.
+#
+# "Installed" is the release the running binary was ACTUALLY built from,
+# read via `archied -version` rather than trusted from git or filesystem
+# state -- if a prior build/install step silently failed partway, the
+# checkout can disagree with what's really running, and -version is the one
+# source that cannot be wrong about that. The build stamp carries a
+# git-describe suffix when HEAD has moved past the tag (1.7.0-4-g0736708);
+# that suffix is stripped for the comparison, because unreleased commits are
+# not an available update and would otherwise report one forever.
+#
+# "Available" is the newest release tag on the origin remote, via
+# ls-remote -- no local fetch or working-tree state required, so this
+# script has no side effects and no dependency on the checkout being
+# buildable.
 #
 # Component IDs are "daemon" and "agent" -- the same convention
-# releaseupdate.ComponentDaemon/ComponentAgent and archie-update-watchdog's
-# report use, so a Service.Enrich hook (installtype.Type(), an observed
-# archie-agent version) and Report.Verify both recognise these components
-# without any operator-side configuration. A check command using different
-# IDs would still work for showing Available/Installed, just without that
-# enrichment or verification.
-#
-# InstallType/Reference are deliberately left unset here: this script only
-# knows what git and go build report, not how this particular instance was
-# actually deployed (systemd binary vs Docker container vs something else)
-# -- that's exactly what Service.Enrich (wired in cmd/archied) fills in
-# from sources that DO know, so guessing here would risk overwriting a
-# correct value with a wrong one. See internal/releaseupdate/service.go.
+# releaseupdate.ComponentDaemon/ComponentAgent, archie-update-watchdog's
+# report, and Service.Enrich (installtype.Type(), an observed archie-agent
+# version) all expect. A check command using different IDs still works for
+# the raw Installed/Available display, just without that enrichment or
+# Report.Verify recognising it after an install.
 set -euo pipefail
 
 REPO="${ARCHIE_REPO_DIR:-$HOME/projects/archie-core}"
-cd "$REPO"
+BIN="${ARCHIE_BIN:-$HOME/.local/bin/archied}"
 
-# json_escape minimally escapes a string for embedding in a JSON document
-# built by shell interpolation: backslashes first (so the quote-escaping
-# backslash it inserts next isn't itself re-escaped), then double quotes,
-# then newlines (changelog text is multi-line).
-json_escape() {
-  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | awk '{printf "%s\\n", $0}' | sed '$ s/\\n$//'
+# base 1.7.0-4-g0736708 -> 1.7.0
+base() { printf '%s\n' "${1%%-*}"; }
+
+installed_for() {
+  "$BIN" -version 2>/dev/null | awk -v n="$1" '$1 == n { print $2; exit }'
 }
 
-# installed_version <tag-prefix> -- the version currently checked out, from
-# the nearest matching tag reachable from HEAD. "unknown" (a placeholder,
-# never a real version -- see releaseupdate.VersionUnknown) if the checkout
-# has no such tag reachable, e.g. a shallow clone or a tag-less mirror.
-installed_version() {
-  git describe --tags --match "$1" 2>/dev/null | sed "s|^${1%\**}||" || echo unknown
+latest_tag() {
+  git -C "$REPO" ls-remote --tags --refs origin "$1/v*" 2>/dev/null |
+    sed 's|.*refs/tags/||' | sed "s|^$1/v||" |
+    sort -V | tail -1
 }
 
-# available_version <tag-prefix> -- the newest matching tag on the remote's
-# default branch, without touching the working tree. Requires a prior
-# `git fetch --tags` (done once, below, for both components).
-available_version() {
-  git describe --tags --match "$1" origin/main 2>/dev/null | sed "s|^${1%\**}||" || echo unknown
-}
+daemon_installed="$(base "$(installed_for archied || true)")"
+agent_installed="$(base "$(installed_for archie-agent || true)")"
+daemon_available="$(latest_tag archied || true)"
+agent_available="$(latest_tag archie || true)"
 
-# changelog_section <file> <version> -- the "## [version]" section of a
-# Keep a Changelog-style file, verbatim, or empty if the file or the
-# section is missing. Best-effort: a missing changelog must never fail the
-# whole check, just leave that component's Changelog blank.
-changelog_section() {
-  local file="$1" version="$2"
-  [ -f "$file" ] || return 0
-  awk -v prefix="## [$version]" '
-    index($0, prefix) == 1 { found = 1; next }
-    found && /^## \[/ { exit }
-    found { print }
-  ' "$file" | sed '/^$/d'
-}
-
-git fetch --tags --quiet origin 2>/dev/null || true
-
-daemon_installed="$(installed_version 'archied/v*')"
-daemon_available="$(available_version 'archied/v*')"
-agent_installed="$(installed_version 'archie/v*')"
-agent_available="$(available_version 'archie/v*')"
-
-daemon_changelog=""
-[ "$daemon_available" != "unknown" ] && [ "$daemon_available" != "$daemon_installed" ] &&
-  daemon_changelog="$(changelog_section "$REPO/CHANGELOG.archied.md" "$daemon_available")"
-agent_changelog=""
-[ "$agent_available" != "unknown" ] && [ "$agent_available" != "$agent_installed" ] &&
-  agent_changelog="$(changelog_section "$REPO/CHANGELOG.archie.md" "$agent_available")"
+# An unreachable remote must not look like "up to date": leaving Available
+# empty makes Snapshot.Available() skip the component rather than claim
+# parity it never verified.
+esc() { printf '%s' "${1:-}" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 
 cat <<EOF
-{"Components":[
-  {"ID":"daemon","Label":"archied","Installed":"$(json_escape "$daemon_installed")","Available":"$(json_escape "$daemon_available")","Changelog":"$(json_escape "$daemon_changelog")"},
-  {"ID":"agent","Label":"archie-agent","Installed":"$(json_escape "$agent_installed")","Available":"$(json_escape "$agent_available")","Changelog":"$(json_escape "$agent_changelog")"}
-]}
+{
+  "Components": [
+    {
+      "ID": "daemon",
+      "Label": "Gateway",
+      "Installed": "$(esc "$daemon_installed")",
+      "Available": "$(esc "$daemon_available")",
+      "Changelog": "https://github.com/samcharles93/archie-core/blob/main/CHANGELOG.archied.md"
+    },
+    {
+      "ID": "agent",
+      "Label": "Runtime",
+      "Installed": "$(esc "$agent_installed")",
+      "Available": "$(esc "$agent_available")",
+      "Changelog": "https://github.com/samcharles93/archie-core/blob/main/CHANGELOG.archie.md"
+    }
+  ],
+  "Deferred": false
+}
 EOF
