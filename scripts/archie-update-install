@@ -35,6 +35,12 @@ PREV_RT="$(git describe --tags --match 'archie/v*'  2>/dev/null | sed 's|^archie
 echo "==> fetching"
 git pull --ff-only
 
+# Refresh the installed adapters from the checkout just fetched. The running
+# shell continues with the old script, but the next /update uses the current
+# implementation even when this invocation was started by an older install.
+install -m755 "$REPO/scripts/archie-update-install" "$BIN_DIR/archie-update-install"
+install -m755 "$REPO/scripts/archie-update-watchdog" "$BIN_DIR/archie-update-watchdog"
+
 GW="$(git describe --tags --match 'archied/v*' | sed 's|^archied/v||')"
 RT="$(git describe --tags --match 'archie/v*'  | sed 's|^archie/v||')"
 echo "==> building archied $GW / archie-agent $RT"
