@@ -1,5 +1,12 @@
 # archied changelog
 
+## [1.12.0] - 2026-08-23
+
+- fix(webui): give dashboard-initiated updates a phase-2 report
+- feat(agent): stamp archie-agent's build and report it back to the daemon
+- feat(releaseupdate): enrich components with install type and reference
+- feat(webui): surface per-component update status on /api/version and Configuration
+
 ## [1.11.1] - 2026-08-23
 
 - fix(update): wire Telegram personas and survive callback cancellation
