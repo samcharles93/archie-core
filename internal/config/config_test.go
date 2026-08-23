@@ -16,7 +16,7 @@ func TestTaskConfigToConfigRoundTrip(t *testing.T) {
 	cfg := Config{
 		DiffCapLines: 321,
 		Models:       map[string]string{"builder": "anthropic/claude"},
-		Budgets:      Budgets{MaxSteps: 12, MaxTokens: 34_000, WallClock: Duration(45 * time.Minute), GateMaxFailures: 3},
+		Budgets:      Budgets{MaxSteps: 12, WallClock: Duration(45 * time.Minute), GateMaxFailures: 3},
 		Dispatch:     Dispatch{Trigger: "label", AckReaction: "eyes", Labels: map[string]string{"working": "bot:working"}},
 		Notify:       Notify{Webhook: "https://notify.example.test/hook"},
 		Forge:        Forge{Type: "github", Host: "https://forge.example.test", Token: secret.SecretRef{Engine: "env", Key: "TOP_SECRET"}},
@@ -91,8 +91,8 @@ func TestConfigForTaskJSONRoundTrip(t *testing.T) {
 			"planner": "openai/gpt",
 		},
 		Budgets: Budgets{
-			MaxSteps:        12,
-			MaxTokens:       34_000,
+			MaxSteps: 12,
+
 			WallClock:       Duration(45 * time.Minute),
 			GateMaxFailures: 3,
 		},

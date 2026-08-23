@@ -117,7 +117,7 @@ func TestInvokeToolError(t *testing.T) {
 // --- Sequential dispatch ---
 
 func TestDispatchSequentialEmpty(t *testing.T) {
-	results := DispatchSequential(context.Background(), nil, nil, nil)
+	results := DispatchSequential(context.Background(), nil, "", nil)
 	if len(results) != 0 {
 		t.Errorf("expected 0 results, got %d", len(results))
 	}
@@ -134,7 +134,7 @@ func TestDispatchSequentialBasic(t *testing.T) {
 		{Entry: e, Input: map[string]any{"msg": "second"}},
 	}
 
-	results := DispatchSequential(context.Background(), calls, nil, nil)
+	results := DispatchSequential(context.Background(), calls, "", nil)
 
 	if len(results) != 2 {
 		t.Fatalf("expected 2 results, got %d", len(results))
@@ -149,7 +149,7 @@ func TestDispatchSequentialBasic(t *testing.T) {
 	}
 }
 
-func TestDispatchSequentialBudgetLimit(t *testing.T) {
+func TestDispatchSequentialOutputVolumeDoesNotStop(t *testing.T) {
 	e := ToolEntry{
 		Name:    "big-echo",
 		Handler: echoHandler,
@@ -160,19 +160,16 @@ func TestDispatchSequentialBudgetLimit(t *testing.T) {
 		{Entry: e, Input: map[string]any{"msg": strings.Repeat("y", 100)}},
 	}
 
-	budget := NewTurnBudget(50, "") // Very small budget.
+	spillDir := "" // Aggregate output volume never stops dispatch.
 
-	results := DispatchSequential(context.Background(), calls, budget, nil)
+	results := DispatchSequential(context.Background(), calls, spillDir, nil)
 
-	// First call should consume budget (preview > 50 chars).
-	// Second should be skipped.
 	if len(results) != 2 {
 		t.Fatalf("expected 2 results, got %d", len(results))
 	}
-	if budget.Exceeded() {
-		// Budget was exceeded  --  second result should have an error.
-		if !results[1].IsError() {
-			t.Error("second result should be an error after budget exceeded")
+	for i, result := range results {
+		if result.IsError() {
+			t.Errorf("result %d failed after accumulated output: %v", i, result.Error)
 		}
 	}
 }
@@ -196,7 +193,7 @@ func TestDispatchSequentialGuardrailHardStop(t *testing.T) {
 		{Entry: e}, {Entry: e}, {Entry: e},
 	}
 
-	results := DispatchSequential(context.Background(), calls, nil, g)
+	results := DispatchSequential(context.Background(), calls, "", g)
 
 	// First call: warn, second call: hard-stop → abort.
 	// Should stop before completing all 3.
@@ -205,32 +202,10 @@ func TestDispatchSequentialGuardrailHardStop(t *testing.T) {
 	}
 }
 
-func TestDispatchSequentialSpillOnBudgetExceeded(t *testing.T) {
-	dir := t.TempDir()
-	budget := NewTurnBudget(10, dir) // Very small, with spill dir.
-
-	e := ToolEntry{
-		Name:    "verbose",
-		Handler: echoHandler,
-	}
-
-	calls := []ToolCall{
-		{Entry: e, Input: map[string]any{"msg": strings.Repeat("a", 100)}},
-	}
-
-	results := DispatchSequential(context.Background(), calls, budget, nil)
-
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
-	}
-	// Budget should be exceeded when preview is large enough.
-	_ = results
-}
-
 // --- Concurrent dispatch ---
 
 func TestDispatchConcurrentEmpty(t *testing.T) {
-	results := DispatchConcurrent(context.Background(), nil, nil, nil)
+	results := DispatchConcurrent(context.Background(), nil, "", nil)
 	if len(results) != 0 {
 		t.Errorf("expected 0 results, got %d", len(results))
 	}
@@ -255,7 +230,7 @@ func TestDispatchConcurrentParallel(t *testing.T) {
 		{Entry: makeTool("d")},
 	}
 
-	results := DispatchConcurrent(context.Background(), calls, nil, nil)
+	results := DispatchConcurrent(context.Background(), calls, "", nil)
 
 	if len(results) != 4 {
 		t.Fatalf("expected 4 results, got %d", len(results))
@@ -299,7 +274,7 @@ func TestDispatchConcurrentNeverParallelIsolated(t *testing.T) {
 		{Entry: makeMutating("m2")},
 	}
 
-	results := DispatchConcurrent(context.Background(), calls, nil, nil)
+	results := DispatchConcurrent(context.Background(), calls, "", nil)
 
 	if len(results) != 2 {
 		t.Fatalf("expected 2 results, got %d", len(results))
@@ -338,7 +313,7 @@ func TestDispatchConcurrentPathScoped(t *testing.T) {
 		{Entry: makePathScoped("b", "path-2")}, // Different path → can run concurrently with "a".
 	}
 
-	results := DispatchConcurrent(context.Background(), calls, nil, nil)
+	results := DispatchConcurrent(context.Background(), calls, "", nil)
 	if len(results) != 2 {
 		t.Fatalf("expected 2 results, got %d", len(results))
 	}
@@ -423,7 +398,7 @@ func TestDispatchSequentialErrorCapture(t *testing.T) {
 		},
 	}
 
-	results := DispatchSequential(context.Background(), []ToolCall{{Entry: e}}, nil, nil)
+	results := DispatchSequential(context.Background(), []ToolCall{{Entry: e}}, "", nil)
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
@@ -435,34 +410,10 @@ func TestDispatchSequentialErrorCapture(t *testing.T) {
 	}
 }
 
-func TestDispatchBudgetSpillFilePath(t *testing.T) {
-	dir := t.TempDir()
-	budget := NewTurnBudget(5, dir)
-
-	e := ToolEntry{
-		Name:    "verbose",
-		Handler: echoHandler,
-	}
-
-	results := DispatchSequential(context.Background(), []ToolCall{
-		{Entry: e, Input: map[string]any{"msg": strings.Repeat("x", 200)}},
-	}, budget, nil)
-
-	if results[0].Preview != "" && strings.Contains(results[0].Preview, "[spilled") {
-		// Verify the spill file exists.
-		spilled := budget.Spilled()
-		if len(spilled) > 0 && spilled[0].Path != "" {
-			if _, err := os.Stat(spilled[0].Path); err != nil {
-				t.Errorf("spill file not found: %v", err)
-			}
-		}
-	}
-}
-
 func TestDispatchPerToolResultSizeLimit(t *testing.T) {
 	// 17.4  --  Per-tool max_result_size_chars enforcement.
 	dir := t.TempDir()
-	budget := NewTurnBudget(100_000, dir)
+	spillDir := dir
 
 	e := ToolEntry{
 		Name:               "big-output",
@@ -472,7 +423,7 @@ func TestDispatchPerToolResultSizeLimit(t *testing.T) {
 
 	results := DispatchSequential(context.Background(), []ToolCall{
 		{Entry: e, Input: map[string]any{"msg": strings.Repeat("x", 200)}},
-	}, budget, nil)
+	}, spillDir, nil)
 
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
@@ -492,7 +443,7 @@ func TestDispatchPerToolLimitNoSpillDir(t *testing.T) {
 
 	results := DispatchSequential(context.Background(), []ToolCall{
 		{Entry: e, Input: map[string]any{"msg": strings.Repeat("x", 200)}},
-	}, nil, nil)
+	}, "", nil)
 
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
@@ -582,8 +533,8 @@ func TestBuildGatingGroupsIndexTracking(t *testing.T) {
 }
 
 func TestDispatchPerToolLimitSpillFailureFallback(t *testing.T) {
-	// Regression: when per-tool MaxResultSizeChars is set, budget is
-	// non-nil but the spill directory is unwritable, inline truncation
+	// Regression: when per-tool MaxResultSizeChars is set but the configured
+	// spill directory is unwritable, inline truncation
 	// must still be applied.
 	//
 	// Before fix: the "spill failed" path had no fallback; the per-tool
@@ -601,7 +552,6 @@ func TestDispatchPerToolLimitSpillFailureFallback(t *testing.T) {
 
 	spillDir := filepath.Join(f.Name(), "sub")
 
-	budget := NewTurnBudget(100_000, spillDir)
 	e := ToolEntry{
 		Name:               "big-output",
 		Handler:            echoHandler,
@@ -610,7 +560,7 @@ func TestDispatchPerToolLimitSpillFailureFallback(t *testing.T) {
 
 	results := DispatchSequential(context.Background(), []ToolCall{
 		{Entry: e, Input: map[string]any{"msg": strings.Repeat("x", 500)}},
-	}, budget, nil)
+	}, spillDir, nil)
 
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
@@ -628,38 +578,33 @@ func TestDispatchPerToolLimitSpillFailureFallback(t *testing.T) {
 	}
 }
 
-func TestDispatchSequentialBudgetExceededBreaks(t *testing.T) {
-	// Regression: DispatchSequential used 'continue' when budget exceeded,
-	// appending redundant errors for every remaining call. After fix it
-	// uses 'break' — only one budget-exceeded error.
-
+func TestDispatchSequentialOutputVolumeNeverStopsCalls(t *testing.T) {
 	e := ToolEntry{
 		Name:    "echo",
 		Handler: echoHandler,
 	}
 
-	budget := NewTurnBudget(5, "")
+	spillDir := ""
 	calls := []ToolCall{
 		{Entry: e, Input: map[string]any{"msg": "short"}},
 		{Entry: e, Input: map[string]any{"msg": "also-short"}},
 		{Entry: e, Input: map[string]any{"msg": "never-runs"}},
 	}
 
-	results := DispatchSequential(context.Background(), calls, budget, nil)
+	results := DispatchSequential(context.Background(), calls, spillDir, nil)
 
-	// Budget exceeded after first call (preview of "short" > 5 chars).
-	// Only 2 results: first call result + one budget-exceeded error.
-	// The third call must not produce a redundant error.
-	if len(results) > 2 {
-		t.Errorf("expected at most 2 results (first call + one budget-exceeded), got %d", len(results))
+	if len(results) != len(calls) {
+		t.Errorf("output accumulation stopped dispatch: got %d results, want %d", len(results), len(calls))
+	}
+	for i, result := range results {
+		if result.Error != nil {
+			t.Errorf("result %d failed after accumulated output: %v", i, result.Error)
+		}
 	}
 }
 
-func TestDispatchPerToolLimitNoBudgetTruncates(t *testing.T) {
-	// Regression: when budget is nil, per-tool limit must still
-	// enforce inline truncation. Before fix: the inline truncation
-	// was inside an 'else' branch and unreachable when budget != nil.
-	// Verify it works when budget IS nil.
+func TestDispatchPerToolLimitWithoutSpillTruncates(t *testing.T) {
+	// A per-tool limit without a spill directory must truncate explicitly.
 
 	e := ToolEntry{
 		Name:               "verbose",
@@ -669,13 +614,13 @@ func TestDispatchPerToolLimitNoBudgetTruncates(t *testing.T) {
 
 	results := DispatchSequential(context.Background(), []ToolCall{
 		{Entry: e, Input: map[string]any{"msg": strings.Repeat("y", 300)}},
-	}, nil, nil)
+	}, "", nil)
 
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
 	if !strings.Contains(results[0].Preview, "truncated") {
-		t.Errorf("expected truncation with nil budget, got: %s", results[0].Preview)
+		t.Errorf("expected truncation without spill directory, got: %s", results[0].Preview)
 	}
 }
 
@@ -689,7 +634,7 @@ func TestDispatchPerToolLimitWithinLimit(t *testing.T) {
 
 	results := DispatchSequential(context.Background(), []ToolCall{
 		{Entry: e, Input: map[string]any{"msg": "short"}},
-	}, nil, nil)
+	}, "", nil)
 
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))

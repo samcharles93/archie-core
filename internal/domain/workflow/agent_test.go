@@ -69,7 +69,7 @@ func TestAgentStageBuildsExecutionRequestAndAppliesResult(t *testing.T) {
 		Task: task, Agent: runner, Dir: "/tmp/workspace", Log: slog.New(slog.DiscardHandler),
 		Cfg: config.Config{
 			Models:  map[string]string{"builder": "provider/fallback"},
-			Budgets: config.Budgets{MaxSteps: 50, MaxTokens: 5000},
+			Budgets: config.Budgets{MaxSteps: 50},
 		},
 		Repo: config.Repo{Protect: []string{"_templ.go"}, Preflight: [][]string{{"go", "version"}}},
 	}

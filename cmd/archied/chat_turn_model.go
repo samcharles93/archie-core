@@ -92,6 +92,8 @@ func (m *preparedChatTurnModel) Generate(
 		}
 		options.Messages[i] = chat.Message{Role: role, Content: message.Content}
 	}
-	options.MaxTokens = request.MaxTokens
+	// This is one provider response's output allowance, not a turn-
+	// continuation budget. Tool loops remain free to continue.
+	options.MaxTokens = request.MaxOutputTokens
 	return sendChatTurn(ctx, m.llm, m.model, options, stream)
 }

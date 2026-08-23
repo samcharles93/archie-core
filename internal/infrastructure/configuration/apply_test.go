@@ -28,10 +28,6 @@ func TestApplyOverlayValuesFieldLevelMerge(t *testing.T) {
 	if cfg.BotUser != "a" {
 		t.Errorf("BotUser = %q, want a (unchanged)", cfg.BotUser)
 	}
-	// Unrelated nested fields keep their value too.
-	if cfg.Budgets.MaxTokens != 0 {
-		t.Errorf("MaxTokens = %d, want 0 (untouched)", cfg.Budgets.MaxTokens)
-	}
 }
 
 func TestLoaderApplyOverlayLayersDefaultsValidatesAndRecordsProvenance(t *testing.T) {

@@ -75,7 +75,6 @@ func (a AgentStage) Stage() Stage {
 
 		budget := agentexec.Budget{
 			MaxSteps:  tc.Cfg.Budgets.MaxSteps,
-			MaxTokens: tc.Cfg.Budgets.MaxTokens,
 			WallClock: tc.Cfg.Budgets.WallClock.Std(),
 		}
 		if a.MaxSteps > 0 {
