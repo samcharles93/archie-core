@@ -56,3 +56,32 @@
   flex-direction: column;
   gap: var(--sp-2);
 }
+
+.wf-form input,
+.wf-form select,
+.wf-form textarea {
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-2);
+  width: 100%;
+}
+
+.wf-form textarea {
+  resize: vertical;
+}
+
+.wf-form input:focus,
+.wf-form select:focus,
+.wf-form textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.wf-form input::placeholder,
+.wf-form textarea::placeholder {
+  color: var(--fg-subtle);
+}
