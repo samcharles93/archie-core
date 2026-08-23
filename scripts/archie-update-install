@@ -40,6 +40,7 @@ git pull --ff-only
 # implementation even when this invocation was started by an older install.
 install -m755 "$REPO/scripts/archie-update-install" "$BIN_DIR/archie-update-install"
 install -m755 "$REPO/scripts/archie-update-watchdog" "$BIN_DIR/archie-update-watchdog"
+install -m755 "$REPO/scripts/archie-update-check" "$BIN_DIR/archie-update-check"
 
 GW="$(git describe --tags --match 'archied/v*' | sed 's|^archied/v||')"
 RT="$(git describe --tags --match 'archie/v*'  | sed 's|^archie/v||')"
