@@ -157,6 +157,40 @@ func daemonRunningVersions(agentStatus *daemon.AgentStatus) map[string]string {
 	return versions
 }
 
+// componentInstallTypeEnricher builds Service.Enrich: it knows how to
+// describe the three component kinds this daemon can say anything true
+// about. Anything else (a check command reporting a component ID this
+// process has no source for) is left alone -- an empty return leaves
+// whatever the check command itself set.
+func componentInstallTypeEnricher(agentStatus *daemon.AgentStatus, nats config.NATSConfig) func(string) (string, string) {
+	return func(componentID string) (installType, reference string) {
+		switch componentID {
+		case releaseupdate.ComponentDaemon:
+			return installtype.Type(), ""
+		case releaseupdate.ComponentAgent:
+			if agentStatus == nil {
+				return "", ""
+			}
+			_, observedInstallType, ok := agentStatus.Snapshot()
+			if !ok {
+				return "", ""
+			}
+			return observedInstallType, ""
+		case releaseupdate.ComponentNATS:
+			switch nats.Mode {
+			case config.NATSModeEmbedded:
+				return config.NATSModeEmbedded, ""
+			case config.NATSModeExternal:
+				return config.NATSModeExternal, nats.URL
+			default:
+				return "", ""
+			}
+		default:
+			return "", ""
+		}
+	}
+}
+
 func configureTelegramUpdates(tg *telegram.Gateway, s telegramSetup) {
 	if updates := makeUpdateService(s); updates != nil {
 		tg.Updates = updates
@@ -172,6 +206,7 @@ func makeUpdateService(s telegramSetup) *releaseupdate.Service {
 		Catalog:     releaseupdate.CommandCatalog{Command: cfg.Chat.Telegram.UpdateCheckCommand},
 		StatePath:   filepath.Join(cfg.WorkDir, "telegram-update-deferrals.json"),
 		InstallType: installtype.Type(),
+		Enrich:      componentInstallTypeEnricher(s.AgentStatus, cfg.NATS),
 	}
 	if len(cfg.Chat.Telegram.UpdateInstallCommand) != 0 {
 		updates.Installer = releaseupdate.CommandInstaller{Command: cfg.Chat.Telegram.UpdateInstallCommand}

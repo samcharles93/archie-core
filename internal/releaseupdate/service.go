@@ -38,6 +38,17 @@ type Component struct {
 	Installed string
 	Available string
 	Changelog string
+	// InstallType and Reference describe how this component is actually
+	// deployed -- "binary"/"container"/"embedded"/"external", and a
+	// deployment-specific pointer such as an image digest or a NATS URL.
+	// The external check command that populates Installed/Available cannot
+	// know either of these: it reports what version exists, not how this
+	// particular instance was installed. See Service.Enrich, which fills
+	// them in from sources that actually know (this process's own build
+	// stamp, an observed archie-agent version, deployment configuration for
+	// a third-party dependency this repo doesn't build).
+	InstallType string
+	Reference   string
 }
 
 type Snapshot struct {
@@ -91,6 +102,18 @@ type Service struct {
 	// process-wide state.
 	InstallType string
 
+	// Enrich supplies InstallType/Reference for a known component ID (see
+	// ComponentDaemon, ComponentAgent, ComponentNATS), using sources the
+	// external check command has no way to know -- this process's own
+	// compiled-in installtype.Type(), an archie-agent version actually
+	// observed at runtime (daemon.AgentStatus), or deployment configuration
+	// for a third-party dependency archie doesn't build. Optional: nil (or
+	// a component ID Enrich doesn't recognise, or an empty installType
+	// return) leaves whatever the check command itself reported untouched,
+	// so a check command that DOES report its own value is never silently
+	// overwritten.
+	Enrich func(componentID string) (installType, reference string)
+
 	mu         sync.Mutex
 	installing bool
 }
@@ -102,6 +125,15 @@ func (s *Service) Check(ctx context.Context, recipient int64) (Snapshot, error) 
 	snapshot, err := s.Catalog.Check(ctx)
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("check for updates: %w", err)
+	}
+	if s.Enrich != nil {
+		for index := range snapshot.Components {
+			component := &snapshot.Components[index]
+			if installType, reference := s.Enrich(component.ID); installType != "" {
+				component.InstallType = installType
+				component.Reference = reference
+			}
+		}
 	}
 	if s.StatePath == "" {
 		return snapshot, nil

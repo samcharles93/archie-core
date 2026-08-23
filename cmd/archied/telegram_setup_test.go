@@ -27,6 +27,80 @@ func TestMakeUpdateServiceWiresInstallType(t *testing.T) {
 	if service.InstallType != installtype.Type() {
 		t.Errorf("Service.InstallType = %q, want installtype.Type() = %q", service.InstallType, installtype.Type())
 	}
+	if service.Enrich == nil {
+		t.Fatal("Service.Enrich is nil; component InstallType/Reference will never be populated")
+	}
+}
+
+func TestComponentInstallTypeEnricherDaemon(t *testing.T) {
+	enrich := componentInstallTypeEnricher(nil, config.NATSConfig{})
+
+	gotType, gotRef := enrich(releaseupdate.ComponentDaemon)
+	if gotType != installtype.Type() || gotRef != "" {
+		t.Errorf("daemon = (%q, %q), want (%q, \"\")", gotType, gotRef, installtype.Type())
+	}
+}
+
+func TestComponentInstallTypeEnricherAgentBeforeAnyObservation(t *testing.T) {
+	var status daemon.AgentStatus
+	enrich := componentInstallTypeEnricher(&status, config.NATSConfig{})
+
+	gotType, gotRef := enrich(releaseupdate.ComponentAgent)
+	if gotType != "" || gotRef != "" {
+		t.Errorf("agent before any Observe = (%q, %q), want (\"\", \"\")", gotType, gotRef)
+	}
+}
+
+func TestComponentInstallTypeEnricherAgentAfterObservation(t *testing.T) {
+	var status daemon.AgentStatus
+	status.Observe("1.9.11", "container")
+	enrich := componentInstallTypeEnricher(&status, config.NATSConfig{})
+
+	gotType, _ := enrich(releaseupdate.ComponentAgent)
+	if gotType != "container" {
+		t.Errorf("agent InstallType = %q, want the observed install type %q", gotType, "container")
+	}
+}
+
+func TestComponentInstallTypeEnricherAgentNilStatus(t *testing.T) {
+	enrich := componentInstallTypeEnricher(nil, config.NATSConfig{})
+
+	gotType, gotRef := enrich(releaseupdate.ComponentAgent)
+	if gotType != "" || gotRef != "" {
+		t.Errorf("agent with nil AgentStatus = (%q, %q), want (\"\", \"\")", gotType, gotRef)
+	}
+}
+
+func TestComponentInstallTypeEnricherNATS(t *testing.T) {
+	tests := []struct {
+		name     string
+		nats     config.NATSConfig
+		wantType string
+		wantRef  string
+	}{
+		{name: "embedded", nats: config.NATSConfig{Mode: "embedded"}, wantType: "embedded", wantRef: ""},
+		{name: "external", nats: config.NATSConfig{Mode: "external", URL: "nats://nats.internal:4222"}, wantType: "external", wantRef: "nats://nats.internal:4222"},
+		{name: "off", nats: config.NATSConfig{Mode: "off"}, wantType: "", wantRef: ""},
+		{name: "unset", nats: config.NATSConfig{}, wantType: "", wantRef: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			enrich := componentInstallTypeEnricher(nil, test.nats)
+			gotType, gotRef := enrich(releaseupdate.ComponentNATS)
+			if gotType != test.wantType || gotRef != test.wantRef {
+				t.Errorf("nats(%+v) = (%q, %q), want (%q, %q)", test.nats, gotType, gotRef, test.wantType, test.wantRef)
+			}
+		})
+	}
+}
+
+func TestComponentInstallTypeEnricherUnknownComponent(t *testing.T) {
+	enrich := componentInstallTypeEnricher(nil, config.NATSConfig{})
+
+	gotType, gotRef := enrich("something-else")
+	if gotType != "" || gotRef != "" {
+		t.Errorf("unknown component = (%q, %q), want (\"\", \"\")", gotType, gotRef)
+	}
 }
 
 // TestDaemonRunningVersionsVouchesOnlyForItselfWithoutAgentStatus: the point

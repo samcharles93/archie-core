@@ -15,6 +15,12 @@ import (
 const (
 	ComponentDaemon = "daemon"
 	ComponentAgent  = "agent"
+	// ComponentNATS identifies the NATS server in a Snapshot's Components,
+	// by the same convention -- a third-party dependency archie doesn't
+	// build and Report never claims to have installed, but Service.Enrich
+	// can still describe from deployment configuration (embedded vs
+	// external, and the URL an external server was configured with).
+	ComponentNATS = "nats"
 )
 
 // Version placeholders that carry no release information. Both mean "nobody

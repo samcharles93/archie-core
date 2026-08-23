@@ -50,6 +50,74 @@ func TestServiceDefersOnlyTheVersionsShownToThatRecipient(t *testing.T) {
 	}
 }
 
+// TestServiceCheckEnrichesInstallTypeAndReference is the regression proof
+// for archie-core-1786751948782-3-837a8fd0 point 4: the external check
+// command reports what version exists, not how this instance was actually
+// deployed, so Service.Check must fill in InstallType/Reference from Enrich
+// rather than leaving every component's deployment shape unknown forever.
+func TestServiceCheckEnrichesInstallTypeAndReference(t *testing.T) {
+	catalog := &catalogStub{snapshot: Snapshot{Components: []Component{
+		{ID: ComponentDaemon, Label: "Gateway", Installed: "1.0.0"},
+		{ID: ComponentNATS, Label: "NATS", Installed: "n/a"},
+	}}}
+	service := Service{Catalog: catalog, Enrich: func(id string) (string, string) {
+		switch id {
+		case ComponentDaemon:
+			return "binary", ""
+		case ComponentNATS:
+			return "external", "nats://nats.internal:4222"
+		default:
+			return "", ""
+		}
+	}}
+
+	snapshot, err := service.Check(context.Background(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := snapshot.Components[0]; got.InstallType != "binary" || got.Reference != "" {
+		t.Errorf("daemon component = %+v, want InstallType=binary, Reference=\"\"", got)
+	}
+	if got := snapshot.Components[1]; got.InstallType != "external" || got.Reference != "nats://nats.internal:4222" {
+		t.Errorf("nats component = %+v, want InstallType=external, Reference=nats://nats.internal:4222", got)
+	}
+}
+
+// TestServiceCheckEnrichLeavesUnrecognisedComponentsUntouched: a component
+// ID Enrich has no source for (an operator's check command reporting
+// something this process cannot describe) must not have its InstallType
+// silently set to empty over whatever, if anything, the check command
+// itself already reported.
+func TestServiceCheckEnrichLeavesUnrecognisedComponentsUntouched(t *testing.T) {
+	catalog := &catalogStub{snapshot: Snapshot{Components: []Component{
+		{ID: "third-party-tool", Label: "Tool", Installed: "1.0.0", InstallType: "reported-by-check-command"},
+	}}}
+	service := Service{Catalog: catalog, Enrich: func(string) (string, string) { return "", "" }}
+
+	snapshot, err := service.Check(context.Background(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := snapshot.Components[0].InstallType; got != "reported-by-check-command" {
+		t.Errorf("InstallType = %q, want the check command's own value untouched", got)
+	}
+}
+
+func TestServiceCheckWithNilEnrichLeavesComponentsUnchanged(t *testing.T) {
+	catalog := &catalogStub{snapshot: Snapshot{Components: []Component{
+		{ID: ComponentDaemon, Installed: "1.0.0"},
+	}}}
+	service := Service{Catalog: catalog}
+
+	snapshot, err := service.Check(context.Background(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := snapshot.Components[0].InstallType; got != "" {
+		t.Errorf("InstallType = %q, want empty with no Enrich configured", got)
+	}
+}
+
 func TestServiceInstallForwardsProgressAndFailure(t *testing.T) {
 	installer := &installerStub{}
 	service := Service{Installer: installer, InstallType: "binary"}
