@@ -41,18 +41,56 @@ if [ -z "$components" ]; then
   exit 0
 fi
 
+valid_release_version() {
+  [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]
+}
+
+for target in "$GW_TARGET" "$RT_TARGET"; do
+  if [ -n "$target" ] && ! valid_release_version "$target"; then
+    echo "refusing non-release component version '$target'" >&2
+    exit 1
+  fi
+done
+
 cd "$REPO"
 echo "==> fetching approved component releases"
 git pull --ff-only
 
-# Refresh adapters from the fetched checkout. The running shell continues with
-# this copy; subsequent updates use the current contract.
-install -m755 "$REPO/scripts/archie-update-install" "$BIN_DIR/archie-update-install"
-install -m755 "$REPO/scripts/archie-update-watchdog" "$BIN_DIR/archie-update-watchdog"
-install -m755 "$REPO/scripts/archie-update-check" "$BIN_DIR/archie-update-check"
+# Build from the exact approved release commit, not the moving branch tip. A
+# temporary worktree keeps the operator's main checkout on its branch.
+if [[ ",$components," == *,daemon,* ]]; then
+  gw_commit="$(git -C "$REPO" rev-parse --verify "refs/tags/archied/v$GW^{commit}")"
+fi
+if [[ ",$components," == *,agent,* ]]; then
+  rt_commit="$(git -C "$REPO" rev-parse --verify "refs/tags/archie/v$RT^{commit}")"
+fi
+case "$components" in
+  daemon) build_commit="$gw_commit" ;;
+  agent) build_commit="$rt_commit" ;;
+  daemon,agent)
+    if [ "$gw_commit" != "$rt_commit" ]; then
+      echo "approved component tags do not identify the same source commit" >&2
+      exit 1
+    fi
+    build_commit="$gw_commit"
+    ;;
+esac
 
 tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
+source_dir="$tmp/source"
+cleanup() {
+  git -C "$REPO" worktree remove --force "$source_dir" >/dev/null 2>&1 || true
+  rm -rf "$tmp"
+}
+trap cleanup EXIT
+git -C "$REPO" worktree add --detach "$source_dir" "$build_commit"
+cd "$source_dir"
+
+# Refresh adapters from the approved release source. The running shell
+# continues with this copy; subsequent updates use the current contract.
+install -m755 "$source_dir/scripts/archie-update-install" "$BIN_DIR/archie-update-install"
+install -m755 "$source_dir/scripts/archie-update-watchdog" "$BIN_DIR/archie-update-watchdog"
+install -m755 "$source_dir/scripts/archie-update-check" "$BIN_DIR/archie-update-check"
 
 if [[ ",$components," == *,daemon,* ]]; then
   echo "==> building archied $GW"
@@ -93,7 +131,7 @@ systemd-run --user --unit=archied-update-restart --collect --quiet \
   --setenv=ARCHIE_UPDATE_PREVIOUS_RUNTIME="$PREV_RT" \
   --setenv=ARCHIE_UPDATE_INSTALLED_GATEWAY="$GW" \
   --setenv=ARCHIE_UPDATE_INSTALLED_RUNTIME="$RT" \
-  "$REPO/scripts/archie-update-watchdog"
+  "$BIN_DIR/archie-update-watchdog"
 
 case "$components" in
   daemon)
