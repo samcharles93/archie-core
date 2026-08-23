@@ -225,7 +225,6 @@ listen = "127.0.0.1:8484"
 
 [budgets]
 max_steps = 60
-max_tokens = 400000
 wall_clock = "30m"
 gate_max_failures = 5
 
@@ -305,7 +304,6 @@ gate_max_failures = 5
 # zero cannot mean "off" because it is indistinguishable from an unset key.
 # [tools.tool_policy]
 # max_result_chars = 50000     # cap on one tool result; -1 for no cap
-# turn_budget_chars = 200000   # cap on all tool results in one chat turn; -1 for no cap
 # spill_dir = ""               # unset by default, which truncates oversized results
 #                              # inline. When set, a result over the cap is written
 #                              # here in full and the model is handed the path.

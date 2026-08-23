@@ -4,6 +4,8 @@
 // Mutations from upstream:
 //   - package renamed tools -> builtin (archie-core already has an
 //     internal/tools package holding the registry these are registered into).
+//   - discovery is confined to the active workspace. Module-cache and other
+//     absolute paths are rejected so find cannot list home or pkg/mod trees.
 //
 // Refresh by diffing against that path at a newer tau commit. Do not
 // edit without recording the change above.
@@ -40,7 +42,7 @@ var findSchema = Schema{
 		"properties": {
 			"path": {
 				"type": "string",
-				"description": "Directory to search in. Defaults to current directory."
+				"description": "Directory to search in. Defaults to the active workspace. Paths outside that workspace are rejected."
 			},
 			"pattern": {
 				"type": "string",
@@ -87,8 +89,8 @@ func makeFindExecutor(cwd string) Executor {
 			searchPath = resolvePath(cwd, p.Path)
 		}
 
-		if !isReadConfined(cwd, searchPath) {
-			return Result{Content: "error: path escapes working directory", IsError: true}, nil
+		if !isConfined(cwd, searchPath) {
+			return Result{Content: "error: path escapes working directory", IsError: true, ErrorKind: "sandbox_escape"}, nil
 		}
 
 		info, err := os.Stat(searchPath)

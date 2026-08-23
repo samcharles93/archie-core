@@ -267,7 +267,6 @@ type ProviderView struct {
 // BudgetsView mirrors config.Budgets, none of which is secret.
 type BudgetsView struct {
 	MaxSteps        int    `json:"max_steps"`
-	MaxTokens       int    `json:"max_tokens"`
 	WallClock       string `json:"wall_clock"`
 	GateMaxFailures int    `json:"gate_max_failures"`
 }
@@ -347,7 +346,6 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		Providers:    providersView(cfg.Providers),
 		Budgets: BudgetsView{
 			MaxSteps:        cfg.Budgets.MaxSteps,
-			MaxTokens:       cfg.Budgets.MaxTokens,
 			WallClock:       cfg.Budgets.WallClock.Std().String(),
 			GateMaxFailures: cfg.Budgets.GateMaxFailures,
 		},

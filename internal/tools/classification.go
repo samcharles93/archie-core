@@ -3,8 +3,8 @@ package tools
 import "strings"
 
 // ToolClassification is a bitmask that describes a tool's behavioral
-// characteristics for dispatch gating, guardrail decisions, and budget
-// enforcement.
+// characteristics for dispatch gating, guardrail decisions, and per-result
+// limit enforcement.
 type ToolClassification int
 
 const (

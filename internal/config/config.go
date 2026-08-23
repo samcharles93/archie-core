@@ -164,7 +164,6 @@ func (r Repo) EffectiveMaxRetries(global int) int {
 // Budgets bound every agent stage. Zero disables a limit.
 type Budgets struct {
 	MaxSteps        int      `toml:"max_steps" json:"max_steps" yaml:"max_steps"`
-	MaxTokens       int      `toml:"max_tokens" json:"max_tokens" yaml:"max_tokens"`
 	WallClock       Duration `toml:"wall_clock" json:"wall_clock" yaml:"wall_clock"`
 	GateMaxFailures int      `toml:"gate_max_failures" json:"gate_max_failures" yaml:"gate_max_failures"`
 }
@@ -312,9 +311,7 @@ type ToolPolicy struct {
 	// MaxResultChars caps a single tool result before it reaches the model.
 	// Tools that set ToolEntry.MaxResultSizeChars override it.
 	MaxResultChars int `toml:"max_result_chars" yaml:"max_result_chars" json:"max_result_chars"`
-	// TurnBudgetChars caps the aggregate size of all tool results in one
-	// chat turn or agent stage.
-	TurnBudgetChars int `toml:"turn_budget_chars" yaml:"turn_budget_chars" json:"turn_budget_chars"`
+
 	// SpillDir is where results too large to inline are written so the model
 	// can be handed a path instead of losing the content. Empty disables
 	// spilling, leaving inline truncation as the only option.

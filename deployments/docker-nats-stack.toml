@@ -82,7 +82,6 @@ api_key_env = "DEEPSEEK_API_KEY"
 
 [budgets]
 max_steps = 90
-max_tokens = 100000000
 wall_clock = "60m"
 gate_max_failures = 5
 

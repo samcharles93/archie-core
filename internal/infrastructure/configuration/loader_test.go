@@ -1,6 +1,7 @@
 package configuration
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -262,35 +263,32 @@ func TestLoadAgentDefaultsAndOverrides(t *testing.T) {
 // explicit 0 from an absent key, so zero has to stay available as "unset".
 func TestLoadToolPolicyDefaultsAndOverrides(t *testing.T) {
 	tests := []struct {
-		name           string
-		policy         string
-		wantMaxResult  int
-		wantTurnBudget int
-		wantSpillDir   string
+		name          string
+		policy        string
+		wantMaxResult int
+		wantSpillDir  string
 	}{
 		{
 			// SpillDir has no default on purpose: a path outside
 			// chat.workspace is one the read tool refuses, so the model would
 			// be handed a reference it cannot open. Absent means truncate
 			// inline.
-			name:           "defaults",
-			wantMaxResult:  50_000,
-			wantTurnBudget: 200_000,
-			wantSpillDir:   "",
+			name:          "defaults",
+			wantMaxResult: 50_000,
+
+			wantSpillDir: "",
 		},
 		{
-			name:           "explicit values",
-			policy:         "[tools.tool_policy]\nmax_result_chars = 1234\nturn_budget_chars = 5678\nspill_dir = \"/var/spool/archie\"\n",
-			wantMaxResult:  1234,
-			wantTurnBudget: 5678,
-			wantSpillDir:   "/var/spool/archie",
+			name:          "explicit values",
+			policy:        "[tools.tool_policy]\nmax_result_chars = 1234\nspill_dir = \"/var/spool/archie\"\n",
+			wantMaxResult: 1234,
+			wantSpillDir:  "/var/spool/archie",
 		},
 		{
-			name:           "negative disables both caps",
-			policy:         "[tools.tool_policy]\nmax_result_chars = -1\nturn_budget_chars = -1\n",
-			wantMaxResult:  -1,
-			wantTurnBudget: -1,
-			wantSpillDir:   "",
+			name:          "negative disables the per-result cap",
+			policy:        "[tools.tool_policy]\nmax_result_chars = -1\n",
+			wantMaxResult: -1,
+			wantSpillDir:  "",
 		},
 	}
 
@@ -312,13 +310,37 @@ func TestLoadToolPolicyDefaultsAndOverrides(t *testing.T) {
 			if policy.MaxResultChars != tt.wantMaxResult {
 				t.Errorf("MaxResultChars = %d, want %d", policy.MaxResultChars, tt.wantMaxResult)
 			}
-			if policy.TurnBudgetChars != tt.wantTurnBudget {
-				t.Errorf("TurnBudgetChars = %d, want %d", policy.TurnBudgetChars, tt.wantTurnBudget)
-			}
+
 			if policy.SpillDir != tt.wantSpillDir {
 				t.Errorf("SpillDir = %q, want %q", policy.SpillDir, tt.wantSpillDir)
 			}
 		})
+	}
+}
+
+func TestRemovedTurnCapsAreIgnoredByLegacyConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	contents := "bot_user = \"widget\"\n[budgets]\nmax_tokens = 1\n" +
+		"[tools.tool_policy]\nmax_result_chars = 1234\nturn_budget_chars = 1\n" +
+		"[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, removed := range []string{"max_tokens", "turn_budget_chars"} {
+		if strings.Contains(string(encoded), removed) {
+			t.Fatalf("removed turn cap %q survived config decode: %s", removed, encoded)
+		}
+	}
+	if cfg.Tools.Policy.MaxResultChars != 1234 {
+		t.Fatalf("per-tool result cap = %d, want 1234", cfg.Tools.Policy.MaxResultChars)
 	}
 }
 

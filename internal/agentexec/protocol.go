@@ -35,7 +35,6 @@ type Gate struct {
 // Budget bounds one autonomous execution.
 type Budget struct {
 	MaxSteps  int           `json:"max_steps,omitempty"`
-	MaxTokens int           `json:"max_tokens,omitempty"`
 	WallClock time.Duration `json:"wall_clock,omitempty"`
 }
 
