@@ -195,8 +195,8 @@ func TestLiveReplySnapshotsToolCallVisibility(t *testing.T) {
 	live.finalize(context.Background(), "done")
 
 	last := (*calls)[len(*calls)-1]
-	if !strings.Contains(last.markdown, `🔧 shell \{"cmd":"true"\} — exit 0`) {
-		t.Fatalf("final reply = %q, want the visibility captured when the reply started (with Markdown metacharacters escaped)", last.markdown)
+	if !strings.Contains(last.markdown, "🔧 shell\n```text\nexit 0\n```") {
+		t.Fatalf("final reply = %q, want the visibility captured when the reply started", last.markdown)
 	}
 }
 
@@ -215,14 +215,14 @@ func TestLiveReplyToolCallEscapesMarkdownMetacharacters(t *testing.T) {
 	live.finalize(context.Background(), "**the answer**")
 
 	last := (*calls)[len(*calls)-1]
-	if strings.Contains(last.markdown, "found `*bold*` and _italic_ markers") {
-		t.Fatalf("tool summary rendered unescaped: %q", last.markdown)
+	if !strings.Contains(last.markdown, "```text\nfound `*bold*` and _italic_ markers\n```") {
+		t.Fatalf("tool output was not rendered in a fenced block: %q", last.markdown)
 	}
 	if !strings.Contains(last.markdown, "**the answer**") {
 		t.Fatalf("model reply's own markdown was altered: %q", last.markdown)
 	}
-	if !strings.Contains(last.markdown, "found \\`\\*bold\\*\\` and \\_italic\\_ markers") {
-		t.Fatalf("tool summary not escaped as expected: %q", last.markdown)
+	if strings.Contains(last.markdown, "schema") || strings.Contains(last.markdown, "Parameters") {
+		t.Fatalf("tool parameters/schema leaked into render: %q", last.markdown)
 	}
 }
 
@@ -251,8 +251,8 @@ func TestLiveReplyToolCalls(t *testing.T) {
 		{
 			name:          "shown",
 			showToolCalls: true,
-			wantLive:      "🔧 shell — exit 0\n\nchecking ▌",
-			wantFinal:     "🔧 shell — exit 0\n\nchecking",
+			wantLive:      "🔧 shell\n```text\nexit 0\n```\n\nchecking ▌",
+			wantFinal:     "🔧 shell\n```text\nexit 0\n```\n\nchecking",
 		},
 		{
 			name:          "hidden",
@@ -660,7 +660,7 @@ func TestLiveReplyToolLinesSurviveTheLiveClamp(t *testing.T) {
 	live.flushRendering()
 
 	last := (*calls)[len(*calls)-1]
-	if !strings.HasPrefix(last.markdown, "🔧 shell — exit 0\n\n") {
+	if !strings.HasPrefix(last.markdown, "🔧 shell\n```text\nexit 0\n```\n\n") {
 		t.Fatalf("live frame lost the tool line once the answer grew past the clamp: %.60q…", last.markdown)
 	}
 	if n := len([]rune(last.markdown)); n > 4096 {
@@ -678,10 +678,10 @@ func TestLiveReplyFinalizeWithToolsAndNoReplyMarksTheAbsence(t *testing.T) {
 	live.finalize(context.Background(), "")
 
 	last := (*calls)[len(*calls)-1]
-	if last.markdown == "🔧 shell — exit 0" {
+	if last.markdown == "🔧 shell\n```text\nexit 0\n```" {
 		t.Fatalf("finalize sent the bare tool line as the finished answer: %q", last.markdown)
 	}
-	if !strings.Contains(last.markdown, "🔧 shell — exit 0") {
+	if !strings.Contains(last.markdown, "🔧 shell\n```text\nexit 0\n```") {
 		t.Fatalf("finalize dropped the tool activity: %q", last.markdown)
 	}
 	if !strings.Contains(last.markdown, "no response") {
@@ -700,7 +700,7 @@ func TestLiveReplyFramedTextClampsAnOversizedToolBlock(t *testing.T) {
 	live.ToolCall(gateway.ToolCallEvent{
 		Name:       "shell",
 		Parameters: strings.Repeat("x", liveBodyMaxRunes*2),
-		Output:     "ok",
+		Output:     strings.Repeat("ok\n", liveBodyMaxRunes*2),
 	})
 	live.Delta("the answer")
 	live.flushRendering()
@@ -709,11 +709,11 @@ func TestLiveReplyFramedTextClampsAnOversizedToolBlock(t *testing.T) {
 	if n := len([]rune(last.markdown)); n > 4096 {
 		t.Fatalf("frame is %d runes, want at most Telegram's 4096", n)
 	}
-	if strings.Contains(last.markdown, "the answer") {
-		t.Fatalf("answer text survived an oversized tool block instead of the tool block alone being clamped: %.80q…", last.markdown)
+	if !strings.Contains(last.markdown, "the answer") {
+		t.Fatalf("answer was lost after bounding oversized tool output: %.80q…", last.markdown)
 	}
-	if !strings.HasPrefix(last.markdown, "…") {
-		t.Fatalf("oversized tool block was not clamped with the leading ellipsis: %.20q…", last.markdown)
+	if !strings.Contains(last.markdown, "…") {
+		t.Fatalf("oversized tool output was not marked as bounded: %.80q…", last.markdown)
 	}
 }
 

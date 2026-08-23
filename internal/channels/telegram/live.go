@@ -27,9 +27,6 @@ const (
 	// exactly one cursor and it is always at the current end.
 	liveCursor = "▌"
 
-	// toolCallPrefix opens an inline tool-activity line.
-	toolCallPrefix = "🔧 "
-
 	// fallbackMediaLinePrefix opens the line Media appends when it could
 	// not deliver an attachment inline, so the user still gets the asset.
 	fallbackMediaLinePrefix = "📎 "
@@ -320,11 +317,10 @@ func (l *liveReply) ToolCall(event gateway.ToolCallEvent) {
 	if !l.showToolCalls || event.Name == "" {
 		return
 	}
-	line := toolCallPrefix + bot.EscapeMarkdown(event.Name)
-	if event.Parameters != "" {
-		line += " " + bot.EscapeMarkdown(event.Parameters)
-	}
-	line += " — " + bot.EscapeMarkdown(event.Summary())
+	// Render the completed result as a compact fenced block. Do not append the
+	// raw/JSON-shaped parameters: they are noisy, can expose secrets, and were
+	// the source of unreadable schema placeholders in Telegram.
+	line := event.RenderToolCall()
 
 	l.mu.Lock()
 	l.toolLines = append(l.toolLines, line)

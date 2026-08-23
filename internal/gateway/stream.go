@@ -46,6 +46,27 @@ func (e ToolCallEvent) Summary() string {
 	return "done"
 }
 
+// RenderToolCall returns the channel-neutral compact representation used by
+// chat surfaces. Parameters are intentionally omitted: JSON/schema-shaped
+// inputs are noisy, often contain secrets, and are not useful progress text.
+// The bounded fenced block keeps multiline command output readable without
+// allowing one result to bury the answer or exceed Telegram's message limit.
+func (e ToolCallEvent) RenderToolCall() string {
+	header := "🔧 " + strings.TrimSpace(e.Name)
+	if line := firstNonEmptyLine(e.Err); line != "" {
+		return header + " — ❌ " + truncateRunes(line, toolSummaryMaxRunes)
+	}
+	if strings.TrimSpace(e.Output) == "" {
+		return header + " — done"
+	}
+	const maxOutputRunes = 480
+	output := strings.TrimSpace(e.Output)
+	output = truncateRunes(output, maxOutputRunes)
+	// A nested fence would terminate the block early in Markdown renderers.
+	output = strings.ReplaceAll(output, "```", "''' ")
+	return header + "\n```text\n" + output + "\n```"
+}
+
 // SummarizeToolParameters returns a bounded JSON shape of tool input. Every
 // string value is replaced rather than echoed because credentials can appear
 // inside ordinary parameters such as command, content, or body. Values under
