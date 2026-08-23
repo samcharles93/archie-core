@@ -43,17 +43,22 @@ type CommandInstaller struct{ Command []string }
 // version buffered everything until exit, so callers saw nothing until the
 // whole update either finished or failed. One stdout line may be a
 // structured Result instead of prose; see updateResultSentinel.
-func (i CommandInstaller) Install(ctx context.Context, meta InstallMeta, progress func(string)) (Result, error) {
+func (i CommandInstaller) Install(ctx context.Context, snapshot Snapshot, meta InstallMeta, progress func(string)) (Result, error) {
 	if len(i.Command) == 0 {
 		return Result{}, fmt.Errorf("update install command is empty")
 	}
 	cmd := exec.CommandContext(ctx, i.Command[0], i.Command[1:]...)
+	versions := componentVersions(snapshot)
 	cmd.Env = append(
 		cmd.Environ(),
 		"ARCHIE_UPDATE_CHANNEL="+meta.Channel,
 		"ARCHIE_UPDATE_CHAT_ID="+strconv.FormatInt(meta.ChatID, 10),
 		"ARCHIE_UPDATE_THREAD_ID="+strconv.Itoa(meta.ThreadID),
 		"ARCHIE_UPDATE_REPORT_PATH="+meta.ReportPath,
+		"ARCHIE_UPDATE_DAEMON_PREVIOUS="+versions[ComponentDaemon].Installed,
+		"ARCHIE_UPDATE_DAEMON_VERSION="+versions[ComponentDaemon].Available,
+		"ARCHIE_UPDATE_AGENT_PREVIOUS="+versions[ComponentAgent].Installed,
+		"ARCHIE_UPDATE_AGENT_VERSION="+versions[ComponentAgent].Available,
 	)
 
 	stdout, err := cmd.StdoutPipe()
@@ -93,4 +98,25 @@ func (i CommandInstaller) Install(ctx context.Context, meta InstallMeta, progres
 		return result, resultErr
 	}
 	return result, nil
+}
+
+// componentVersions reduces an approved snapshot to the two components the
+// reference binary installer owns. Available is intentionally blank for an
+// unchanged component: the install script treats these values as the complete
+// approved plan, not as hints to rediscover work after approval.
+func componentVersions(snapshot Snapshot) map[string]Component {
+	versions := map[string]Component{
+		ComponentDaemon: {},
+		ComponentAgent:  {},
+	}
+	for _, component := range snapshot.Components {
+		if component.ID != ComponentDaemon && component.ID != ComponentAgent {
+			continue
+		}
+		if component.Available == component.Installed {
+			component.Available = ""
+		}
+		versions[component.ID] = component
+	}
+	return versions
 }

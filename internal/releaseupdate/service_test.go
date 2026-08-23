@@ -123,7 +123,8 @@ func TestServiceInstallForwardsProgressAndFailure(t *testing.T) {
 	service := Service{Installer: installer, InstallType: "binary"}
 	var progress []string
 	meta := InstallMeta{Channel: "telegram", ChatID: 42}
-	result, err := service.Install(context.Background(), meta, func(message string) { progress = append(progress, message) })
+	snapshot := Snapshot{Components: []Component{{ID: ComponentDaemon, Installed: "1.0.0", Available: "1.1.0"}}}
+	result, err := service.Install(context.Background(), snapshot, meta, func(message string) { progress = append(progress, message) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,6 +133,9 @@ func TestServiceInstallForwardsProgressAndFailure(t *testing.T) {
 	}
 	if installer.gotMeta != meta {
 		t.Errorf("installer received meta = %#v, want %#v", installer.gotMeta, meta)
+	}
+	if !SameAvailable(installer.gotSnapshot, snapshot) {
+		t.Errorf("installer received snapshot = %#v, want %#v", installer.gotSnapshot, snapshot)
 	}
 	if len(progress) != 1 || progress[0] != "Pulling release..." {
 		t.Errorf("progress = %#v", progress)
@@ -160,7 +164,7 @@ func TestServiceInstallRefusesAnUnknownInstallType(t *testing.T) {
 			installer := &installerStub{}
 			service := Service{Installer: installer, InstallType: tt.installType}
 
-			_, err := service.Install(context.Background(), InstallMeta{}, func(string) {})
+			_, err := service.Install(context.Background(), Snapshot{}, InstallMeta{}, func(string) {})
 
 			if err == nil {
 				t.Fatal("Install() returned nil error, want a refusal")
@@ -186,7 +190,7 @@ func TestServiceInstallSurvivesCallerContextCancellation(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := service.Install(ctx, InstallMeta{}, func(string) {})
+		_, err := service.Install(ctx, Snapshot{}, InstallMeta{}, func(string) {})
 		done <- err
 	}()
 
@@ -216,12 +220,12 @@ func TestServiceInstallRefusesConcurrentInstalls(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := service.Install(context.Background(), InstallMeta{}, func(string) {})
+		_, err := service.Install(context.Background(), Snapshot{}, InstallMeta{}, func(string) {})
 		done <- err
 	}()
 	<-installer.started
 
-	if _, err := service.Install(context.Background(), InstallMeta{}, func(string) {}); !errors.Is(err, ErrInstallInProgress) {
+	if _, err := service.Install(context.Background(), Snapshot{}, InstallMeta{}, func(string) {}); !errors.Is(err, ErrInstallInProgress) {
 		t.Fatalf("second Install() error = %v, want ErrInstallInProgress", err)
 	}
 
@@ -243,7 +247,7 @@ func TestNilServiceReturnsConfigurationErrors(t *testing.T) {
 	if err := service.Defer(context.Background(), 0, Snapshot{}); err == nil {
 		t.Fatal("nil service defer returned nil error")
 	}
-	if _, err := service.Install(context.Background(), InstallMeta{}, nil); err == nil {
+	if _, err := service.Install(context.Background(), Snapshot{}, InstallMeta{}, nil); err == nil {
 		t.Fatal("nil service install returned nil error")
 	}
 	if service.CanInstall() {
@@ -289,7 +293,7 @@ type blockingInstallerStub struct {
 	calls        int
 }
 
-func (s *blockingInstallerStub) Install(ctx context.Context, _ InstallMeta, _ func(string)) (Result, error) {
+func (s *blockingInstallerStub) Install(ctx context.Context, _ Snapshot, _ InstallMeta, _ func(string)) (Result, error) {
 	s.calls++
 	close(s.started)
 	if s.gotCancelled == nil {
@@ -304,13 +308,15 @@ func (s *blockingInstallerStub) Install(ctx context.Context, _ InstallMeta, _ fu
 }
 
 type installerStub struct {
-	called  bool
-	gotMeta InstallMeta
+	called      bool
+	gotMeta     InstallMeta
+	gotSnapshot Snapshot
 }
 
-func (s *installerStub) Install(_ context.Context, meta InstallMeta, progress func(string)) (Result, error) {
+func (s *installerStub) Install(_ context.Context, snapshot Snapshot, meta InstallMeta, progress func(string)) (Result, error) {
 	s.called = true
 	s.gotMeta = meta
+	s.gotSnapshot = snapshot
 	progress("Pulling release...")
 	return Result{Installed: map[string]string{"daemon": "1.1.0"}}, nil
 }

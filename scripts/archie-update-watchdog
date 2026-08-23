@@ -1,16 +1,10 @@
 #!/usr/bin/env bash
-# archie-update-watchdog -- restarts archied after an update, verifies the
-# new version comes up healthy, and rolls back automatically if it doesn't.
+# archie-update-watchdog -- restarts archied after an update, verifies health,
+# and rolls back only the components named by ARCHIE_UPDATE_COMPONENTS.
 #
-# Launched detached (via systemd-run) by archie-update-install, after that
-# script's own synchronous build/install work already completed and
-# reported success back to chat. This script owns everything that happens
-# after that point: nothing here can be observed by the Go process that
-# requested the update, because restarting archied.service kills it.
-#
-# This is deliberately the ONLY place a crash-loop on the newly installed
-# binary gets detected and rolled back -- by definition, no archied Go code
-# can be running to do that itself if the new binary never gets that far.
+# Runtime-only updates still restart archied: the restart is the existing
+# phase-2 handoff that makes the daemon consume and deliver the health report.
+# It does not rebuild or reinstall the gateway binary.
 set -uo pipefail
 
 BIN_DIR="${ARCHIE_BIN_DIR:-$HOME/.local/bin}"
@@ -18,21 +12,41 @@ HEALTH_URL="${ARCHIE_HEALTH_URL:-http://127.0.0.1:8420}"
 REPORT_PATH="${ARCHIE_UPDATE_REPORT_PATH:-}"
 HEALTH_TIMEOUT_SECONDS="${ARCHIE_UPDATE_HEALTH_TIMEOUT:-60}"
 POLL_INTERVAL_SECONDS=3
+COMPONENTS="${ARCHIE_UPDATE_COMPONENTS:-daemon,agent}"
 
-# json_escape minimally escapes a string for embedding in a JSON document
-# built by shell interpolation: backslashes first (so the quote-escaping
-# backslash it inserts next isn't itself re-escaped), then double quotes.
 json_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+report_versions() {
+  case "$COMPONENTS" in
+    daemon)
+      previous_json="{\"daemon\":\"$(json_escape "${ARCHIE_UPDATE_PREVIOUS_GATEWAY:-unknown}")\"}"
+      installed_json="{\"daemon\":\"$(json_escape "${ARCHIE_UPDATE_INSTALLED_GATEWAY:-unknown}")\"}"
+      ;;
+    agent)
+      previous_json="{\"agent\":\"$(json_escape "${ARCHIE_UPDATE_PREVIOUS_RUNTIME:-unknown}")\"}"
+      installed_json="{\"agent\":\"$(json_escape "${ARCHIE_UPDATE_INSTALLED_RUNTIME:-unknown}")\"}"
+      ;;
+    daemon,agent)
+      previous_json="{\"daemon\":\"$(json_escape "${ARCHIE_UPDATE_PREVIOUS_GATEWAY:-unknown}")\",\"agent\":\"$(json_escape "${ARCHIE_UPDATE_PREVIOUS_RUNTIME:-unknown}")\"}"
+      installed_json="{\"daemon\":\"$(json_escape "${ARCHIE_UPDATE_INSTALLED_GATEWAY:-unknown}")\",\"agent\":\"$(json_escape "${ARCHIE_UPDATE_INSTALLED_RUNTIME:-unknown}")\"}"
+      ;;
+    *)
+      echo "invalid ARCHIE_UPDATE_COMPONENTS: $COMPONENTS" >&2
+      return 1
+      ;;
+  esac
 }
 
 write_report() {
   local health_check="$1" rolled_back="$2"
   [ -z "$REPORT_PATH" ] && return 0
+  report_versions || return 1
   mkdir -p "$(dirname "$REPORT_PATH")"
   tmp="$(mktemp "$(dirname "$REPORT_PATH")/.update-report-XXXXXX")"
   cat >"$tmp" <<EOF
-{"channel":"$(json_escape "${ARCHIE_UPDATE_CHANNEL:-}")","chat_id":${ARCHIE_UPDATE_CHAT_ID:-0},"thread_id":${ARCHIE_UPDATE_THREAD_ID:-0},"previous":{"daemon":"$(json_escape "${ARCHIE_UPDATE_PREVIOUS_GATEWAY:-unknown}")","agent":"$(json_escape "${ARCHIE_UPDATE_PREVIOUS_RUNTIME:-unknown}")"},"installed":{"daemon":"$(json_escape "${ARCHIE_UPDATE_INSTALLED_GATEWAY:-unknown}")","agent":"$(json_escape "${ARCHIE_UPDATE_INSTALLED_RUNTIME:-unknown}")"},"health_check":"$health_check","rolled_back":$rolled_back}
+{"channel":"$(json_escape "${ARCHIE_UPDATE_CHANNEL:-}")","chat_id":${ARCHIE_UPDATE_CHAT_ID:-0},"thread_id":${ARCHIE_UPDATE_THREAD_ID:-0},"previous":$previous_json,"installed":$installed_json,"health_check":"$health_check","rolled_back":$rolled_back}
 EOF
   chmod 600 "$tmp"
   mv -f "$tmp" "$REPORT_PATH"
@@ -49,6 +63,15 @@ wait_healthy() {
   return 1
 }
 
+rollback_component() {
+  local name="$1"
+  if [ ! -f "$BIN_DIR/$name.prev" ]; then
+    echo "==> no backup for $name; cannot roll it back automatically" >&2
+    return 1
+  fi
+  cp -f "$BIN_DIR/$name.prev" "$BIN_DIR/$name"
+}
+
 echo "==> restarting archied.service"
 systemctl --user restart archied.service
 
@@ -58,19 +81,40 @@ if wait_healthy; then
   exit 0
 fi
 
-echo "==> health check failed after ${HEALTH_TIMEOUT_SECONDS}s; rolling back"
+echo "==> health check failed after ${HEALTH_TIMEOUT_SECONDS}s; rolling back changed components"
 rolled_back=false
-if [ -f "$BIN_DIR/archied.prev" ] && [ -f "$BIN_DIR/archie-agent.prev" ]; then
-  cp -f "$BIN_DIR/archied.prev"      "$BIN_DIR/archied"
-  cp -f "$BIN_DIR/archie-agent.prev" "$BIN_DIR/archie-agent"
-  rolled_back=true
+case "$COMPONENTS" in
+  daemon)
+    if [ -f "$BIN_DIR/archied.prev" ]; then
+      rollback_component archied && rolled_back=true
+    else
+      echo "==> no backup for archied; cannot roll it back automatically" >&2
+    fi
+    ;;
+  agent)
+    if [ -f "$BIN_DIR/archie-agent.prev" ]; then
+      rollback_component archie-agent && rolled_back=true
+    else
+      echo "==> no backup for archie-agent; cannot roll it back automatically" >&2
+    fi
+    ;;
+  daemon,agent)
+    # Preserve the old all-or-nothing rollback guarantee: never restore one
+    # component and leave the other on the failed release.
+    if [ -f "$BIN_DIR/archied.prev" ] && [ -f "$BIN_DIR/archie-agent.prev" ]; then
+      if rollback_component archied && rollback_component archie-agent; then
+        rolled_back=true
+      fi
+    else
+      echo "==> not all changed-component backups exist; cannot roll back automatically" >&2
+    fi
+    ;;
+  *)
+    echo "invalid ARCHIE_UPDATE_COMPONENTS: $COMPONENTS" >&2
+    ;;
+esac
+if [ "$rolled_back" = true ]; then
   systemctl --user restart archied.service
-else
-  echo "==> no backup binaries found; cannot roll back automatically" >&2
 fi
 
-# rolled_back reflects what actually happened, not what was attempted: a
-# report claiming a healed system when no backup existed to restore from
-# would tell an operator to stand down while the broken version is still
-# what's running (or still failing to start at all).
 write_report "failed" "$rolled_back"
