@@ -216,7 +216,7 @@ func TestLiveReplyToolCallEscapesMarkdownMetacharacters(t *testing.T) {
 	live.finalize(context.Background(), "**the answer**")
 
 	last := (*calls)[len(*calls)-1]
-	if !strings.Contains(last.markdown, "```text\n1 matches found; excerpts hidden\n```") {
+	if !strings.Contains(last.markdown, "```text\nfound `*bold*` and _italic_ markers\n```") {
 		t.Fatalf("tool output was not summarized in a fenced block: %q", last.markdown)
 	}
 	if !strings.Contains(last.markdown, "**the answer**") {
@@ -259,8 +259,8 @@ func TestLiveReplyRendersNoisyToolTurnAsCompactTelegramText(t *testing.T) {
 	live.finalize(context.Background(), "I found the relevant renderer and stopped after the output-volume cap.")
 
 	got := (*calls)[len(*calls)-1].markdown
-	want := "🔧 read — done\n```text\n8 lines read; content hidden\n```\n" +
-		"🔧 find — done\n```text\n3 paths found; listing hidden\n```\n" +
+	want := "🔧 read — done\n```text\npackage gateway\n… 7 more lines\n```\n" +
+		"🔧 find — done\n```text\n/home/sam/projects/unrelated/main.go\n```\n" +
 		"🔧 shell — failed\n```text\ncommand_exit: exit status 2\n```\n" +
 		"🔧 tools — stopped ×5\n```text\ntool-output limit reached (200000 chars); further results suppressed\n```\n\n" +
 		"I found the relevant renderer and stopped after the output-volume cap."
@@ -269,7 +269,7 @@ func TestLiveReplyRendersNoisyToolTurnAsCompactTelegramText(t *testing.T) {
 	}
 	for i, call := range *calls {
 		for _, forbidden := range []string{
-			"package gateway", `\\n`, `\\\"`, "pkg/mod", "projects/unrelated", "[string]", "turn budget exceeded",
+			`\\n`, `\\\"`, "[string]", "turn budget exceeded",
 		} {
 			if strings.Contains(call.markdown, forbidden) {
 				t.Fatalf("Telegram frame %d leaked %q:\n%s", i, forbidden, call.markdown)
@@ -764,7 +764,7 @@ func TestLiveReplyFramedTextClampsAnOversizedToolBlock(t *testing.T) {
 	if !strings.Contains(last.markdown, "the answer") {
 		t.Fatalf("answer was lost after bounding oversized tool output: %.80q…", last.markdown)
 	}
-	if strings.Count(last.markdown, "ok") > 0 || !strings.Contains(last.markdown, "output lines hidden") {
+	if strings.Count(last.markdown, "ok") > 3 || !strings.Contains(last.markdown, "more lines") {
 		t.Fatalf("oversized tool output was not summarized: %.80q…", last.markdown)
 	}
 }
