@@ -15,6 +15,9 @@
 # work_dir = "~/.local/share/archie/work"   # default
 # db_path  = "~/.local/share/archie/archie.db" # prefix for independent task and conversation SQLite files
 
+# skills_dir = "~/.local/share/archie/skills"  # SKILL.md search path; defaults under work_dir when unset
+# plugin_dir = "~/.local/share/archie/plugins" # daemon plugin manifests; unset means no plugins are loaded
+
 poll_interval = "60s"
 label = "archie"
 bot_user = "vectis-labs-archie"
@@ -41,6 +44,15 @@ token = { engine = "env", key = "ARCHIE_GITHUB_TOKEN" }
 # Not supported alongside [[identities]] (each identity keeps polling).
 # webhook_secret = { engine = "env", key = "ARCHIE_WEBHOOK_SECRET" }
 # webhook_addr = "0.0.0.0:8645"
+
+# [[identities]] runs more than one bot identity from a single daemon, each
+# with its own forge/dispatch/models/providers/budgets/notify -- see
+# docs/architecture/identity.md for the full design and constraints (e.g.
+# not combinable with [forge].intake = "webhook"/"both"). Minimal shape:
+# [[identities]]
+# name = "personal"       # required; namespaces logs/events/NATS subjects
+# bot_user = "your-bot"   # required
+# forge = { type = "github", host = "https://github.com", token = { engine = "env", key = "ARCHIE_GITHUB_TOKEN_PERSONAL" } }
 
 [dispatch]
 # Can be of "assignee", "label", or "either"
@@ -126,6 +138,18 @@ class = "ollama"
 # update_check_command = ["/usr/local/bin/archie-update-check"]
 # update_install_command = ["/usr/local/bin/archie-update-install"]
 
+# Inbound email as a chat channel, via SMTP. Empty listen_addr disables it.
+# [chat.email]
+# listen_addr = "0.0.0.0:2525"          # inbound SMTP server
+# relay_addr  = "smtp.example.com:587"  # outbound relay for replies
+
+# Generic inbound webhook gateway: external services push messages into
+# chat for LLM processing (deliver-only, no outbound reply channel). This
+# is a distinct surface from [forge].webhook_addr (forge issue events) and
+# [capture] (unbound event storage for later binding) -- three different
+# inbound HTTP concerns that happen to share the word "webhook".
+# webhook_addr = "0.0.0.0:8646"   # under [chat], not [chat.telegram]
+
 # External MCP tools are launched and managed by Archie's MCP client. A
 # command of "npx" gets a persistent package cache under work_dir
 # (top of this file) automatically, so a daemon restart reuses it instead
@@ -166,6 +190,31 @@ command = "archie-agent"
 # Set to "off" (or leave empty) to disable.
 [web]
 listen = "127.0.0.1:8484"
+
+# Where archied writes its logs. Without file set, output goes only to
+# stderr -- which under systemd means journald holds the sole copy, and
+# running by hand leaves no record at all. Setting file gives a durable
+# copy independent of the supervisor, and is what lets the dashboard show
+# history from before it connected. Both stderr and the file get output
+# unless quiet is set.
+# [log]
+# file        = "~/.local/share/archie/logs/archied.log"
+# max_size_mb = 20       # rotate once the file exceeds this; 0 uses the default (20)
+# keep        = 5        # rotated files to retain; 0 uses the default (5)
+# level       = "info"   # "debug" | "info" | "warn" | "error"
+# quiet       = false    # true suppresses stderr once a file is configured
+
+# The built-in file-backed memory provider (MEMORY.md + USER.md under
+# work_dir) is always on -- nothing here is required to get memory at all.
+# [memory] exists to register an EXTERNAL provider alongside it, but as of
+# this writing that wiring (memory.Manager.RegisterExternal) is not called
+# anywhere in cmd/archied, so setting this section currently has no effect.
+# Left here so the schema is documented, not because it does anything yet.
+# [memory]
+# provider = ""             # external provider identifier; currently unwired
+# session_ttl = "0s"
+# [memory.provider_config]
+# # key = "value"           # provider-specific settings
 
 # Notifications for human-in-the-loop moments
 # (approval requests, gate failures, parked tasks).
@@ -245,6 +294,7 @@ gate_max_failures = 5
 #                            # (e.g. different base branches or packages per task). Still bounded by
 #                            # [containers].max_concurrency globally.
 # # persistent_storage = true  # reuse a per-repo Docker volume and Git object cache until volume_ttl
+# # max_retries = 5             # per-repo override of the global max_retries above
 
 # ── Tools ───────────────────────────────────────────────────────────────────
 # Limits on what a tool may return. These bound how much of the context window
