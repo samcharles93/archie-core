@@ -48,7 +48,8 @@ func (i CommandInstaller) Install(ctx context.Context, meta InstallMeta, progres
 		return Result{}, fmt.Errorf("update install command is empty")
 	}
 	cmd := exec.CommandContext(ctx, i.Command[0], i.Command[1:]...)
-	cmd.Env = append(cmd.Environ(),
+	cmd.Env = append(
+		cmd.Environ(),
 		"ARCHIE_UPDATE_CHANNEL="+meta.Channel,
 		"ARCHIE_UPDATE_CHAT_ID="+strconv.FormatInt(meta.ChatID, 10),
 		"ARCHIE_UPDATE_THREAD_ID="+strconv.Itoa(meta.ThreadID),
