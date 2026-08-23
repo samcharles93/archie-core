@@ -152,7 +152,7 @@ type ProviderDisplayNamer interface {
 type UpdateService interface {
 	Check(context.Context, int64) (releaseupdate.Snapshot, error)
 	Defer(context.Context, int64, releaseupdate.Snapshot) error
-	Install(context.Context, releaseupdate.InstallMeta, func(string)) (releaseupdate.Result, error)
+	Install(context.Context, releaseupdate.Snapshot, releaseupdate.InstallMeta, func(string)) (releaseupdate.Result, error)
 	CanInstall() bool
 }
 

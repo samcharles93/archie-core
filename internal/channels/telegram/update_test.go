@@ -63,7 +63,7 @@ func TestInstallUpdateStreamsProgressAndReportsSuccess(t *testing.T) {
 	g.installUpdate(context.Background(), b, &models.CallbackQuery{
 		From:    models.User{ID: 42},
 		Message: models.MaybeInaccessibleMessage{Message: message},
-	})
+	}, releaseupdate.Snapshot{})
 
 	if stub.gotMeta.Channel != "telegram" || stub.gotMeta.ChatID != 7 || stub.gotMeta.ThreadID != 3 {
 		t.Errorf("gotMeta = %#v, want channel/chat/thread forwarded", stub.gotMeta)
@@ -97,7 +97,7 @@ func TestInstallUpdateReportsBuildFailureWithoutClaimingRestart(t *testing.T) {
 	g.installUpdate(context.Background(), b, &models.CallbackQuery{
 		From:    models.User{ID: 42},
 		Message: models.MaybeInaccessibleMessage{Message: message},
-	})
+	}, releaseupdate.Snapshot{})
 
 	last := (*requests)[len(*requests)-1]
 	text := strings.ToLower(last.form["text"])
@@ -408,7 +408,7 @@ func (s *updateStub) Check(context.Context, int64) (releaseupdate.Snapshot, erro
 	return s.snapshot, nil
 }
 func (s *updateStub) Defer(context.Context, int64, releaseupdate.Snapshot) error { return nil }
-func (s *updateStub) Install(_ context.Context, meta releaseupdate.InstallMeta, progress func(string)) (releaseupdate.Result, error) {
+func (s *updateStub) Install(_ context.Context, _ releaseupdate.Snapshot, meta releaseupdate.InstallMeta, progress func(string)) (releaseupdate.Result, error) {
 	s.installCalls++
 	s.gotMeta = meta
 	for _, line := range s.progressText {

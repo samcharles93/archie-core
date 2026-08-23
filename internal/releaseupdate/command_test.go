@@ -32,7 +32,7 @@ echo 'ARCHIE_UPDATE_RESULT {"previous":{"daemon":"1.0.0"},"installed":{"daemon":
 `)
 	installer := CommandInstaller{Command: []string{script}}
 	var progress []string
-	result, err := installer.Install(context.Background(), InstallMeta{}, func(line string) { progress = append(progress, line) })
+	result, err := installer.Install(context.Background(), Snapshot{}, InstallMeta{}, func(line string) { progress = append(progress, line) })
 	if err != nil {
 		t.Fatalf("Install() error = %v", err)
 	}
@@ -58,7 +58,7 @@ func TestCommandInstallerMissingSentinelReturnsEmptyResult(t *testing.T) {
 	script := writeFixtureScript(t, `echo "==> done, no sentinel"`)
 	installer := CommandInstaller{Command: []string{script}}
 	var progress []string
-	result, err := installer.Install(context.Background(), InstallMeta{}, func(line string) { progress = append(progress, line) })
+	result, err := installer.Install(context.Background(), Snapshot{}, InstallMeta{}, func(line string) { progress = append(progress, line) })
 	if err != nil {
 		t.Fatalf("Install() error = %v", err)
 	}
@@ -77,7 +77,7 @@ func TestCommandInstallerMissingSentinelReturnsEmptyResult(t *testing.T) {
 func TestCommandInstallerMalformedSentinelReturnsError(t *testing.T) {
 	script := writeFixtureScript(t, `echo 'ARCHIE_UPDATE_RESULT {not valid json}'`)
 	installer := CommandInstaller{Command: []string{script}}
-	_, err := installer.Install(context.Background(), InstallMeta{}, func(string) {})
+	_, err := installer.Install(context.Background(), Snapshot{}, InstallMeta{}, func(string) {})
 	if err == nil {
 		t.Fatal("Install() error = nil, want a decode error")
 	}
@@ -95,7 +95,7 @@ exit 1
 `)
 	installer := CommandInstaller{Command: []string{script}}
 	var progress []string
-	_, err := installer.Install(context.Background(), InstallMeta{}, func(line string) { progress = append(progress, line) })
+	_, err := installer.Install(context.Background(), Snapshot{}, InstallMeta{}, func(line string) { progress = append(progress, line) })
 	if err == nil {
 		t.Fatal("Install() error = nil, want non-zero exit error")
 	}
@@ -117,7 +117,7 @@ echo "channel=$ARCHIE_UPDATE_CHANNEL chat=$ARCHIE_UPDATE_CHAT_ID thread=$ARCHIE_
 	installer := CommandInstaller{Command: []string{script}}
 	meta := InstallMeta{Channel: "telegram", ChatID: 123, ThreadID: 7, ReportPath: "/var/lib/archie/update-report.json"}
 	var progress []string
-	if _, err := installer.Install(context.Background(), meta, func(line string) { progress = append(progress, line) }); err != nil {
+	if _, err := installer.Install(context.Background(), Snapshot{}, meta, func(line string) { progress = append(progress, line) }); err != nil {
 		t.Fatalf("Install() error = %v", err)
 	}
 	want := "channel=telegram chat=123 thread=7 report=/var/lib/archie/update-report.json"
@@ -126,9 +126,28 @@ echo "channel=$ARCHIE_UPDATE_CHANNEL chat=$ARCHIE_UPDATE_CHAT_ID thread=$ARCHIE_
 	}
 }
 
+func TestCommandInstallerForwardsApprovedComponentPlanAsEnv(t *testing.T) {
+	script := writeFixtureScript(t, `
+echo "daemon=$ARCHIE_UPDATE_DAEMON_PREVIOUS->$ARCHIE_UPDATE_DAEMON_VERSION agent=$ARCHIE_UPDATE_AGENT_PREVIOUS->$ARCHIE_UPDATE_AGENT_VERSION"
+`)
+	installer := CommandInstaller{Command: []string{script}}
+	snapshot := Snapshot{Components: []Component{
+		{ID: ComponentDaemon, Installed: "1.12.0", Available: "1.13.0"},
+		{ID: ComponentAgent, Installed: "1.9.9", Available: "1.9.9"},
+	}}
+	var progress []string
+	if _, err := installer.Install(context.Background(), snapshot, InstallMeta{}, func(line string) { progress = append(progress, line) }); err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+	want := "daemon=1.12.0->1.13.0 agent=1.9.9->"
+	if len(progress) != 1 || progress[0] != want {
+		t.Fatalf("progress = %#v, want [%q]", progress, want)
+	}
+}
+
 func TestCommandInstallerEmptyCommandReturnsError(t *testing.T) {
 	installer := CommandInstaller{}
-	if _, err := installer.Install(context.Background(), InstallMeta{}, func(string) {}); err == nil {
+	if _, err := installer.Install(context.Background(), Snapshot{}, InstallMeta{}, func(string) {}); err == nil {
 		t.Fatal("Install() error = nil, want empty-command error")
 	}
 }

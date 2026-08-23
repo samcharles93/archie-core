@@ -1,24 +1,12 @@
 #!/usr/bin/env bash
-# archie-update-install -- update installation adapter for archied's /update.
+# archie-update-install -- component-aware update installation adapter.
 #
-# archied runs this via CommandInstaller after the operator approves, and
-# streams stdout to the chat live as each line is printed. The final line is
-# a single "ARCHIE_UPDATE_RESULT {json}" the Go side parses to report which
-# components changed; every other line is shown as plain progress text. It
-# is exec'd directly, without a shell.
-#
-# This script only covers the synchronous phase: fetch, build, install,
-# rebuild the agent image. Nothing here restarts archied directly -- that is
-# handed off to archie-update-watchdog, launched detached via systemd-run so
-# restarting archied.service doesn't kill this process before it can report
-# a clean exit. The watchdog is also the only place a crash-loop on the new
-# binary gets detected and rolled back, since by definition no Go code can
-# be running to do that itself.
+# CommandInstaller passes the freshly revalidated, approved snapshot through
+# ARCHIE_UPDATE_{DAEMON,AGENT}_{PREVIOUS,VERSION}. A VERSION is non-empty only
+# when that component changed in the approved snapshot. This script must never
+# rediscover a broader plan after approval.
 set -euo pipefail
 
-# json_escape minimally escapes a string for embedding in a JSON document
-# built by shell interpolation: backslashes first (so the quote-escaping
-# backslash it inserts next isn't itself re-escaped), then double quotes.
 json_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
@@ -27,43 +15,70 @@ REPO="${ARCHIE_REPO_DIR:-$HOME/projects/archie-core}"
 BIN_DIR="${ARCHIE_BIN_DIR:-$HOME/.local/bin}"
 export PATH="/usr/local/go/bin:$PATH"
 
+PREV_GW="${ARCHIE_UPDATE_DAEMON_PREVIOUS:-}"
+PREV_RT="${ARCHIE_UPDATE_AGENT_PREVIOUS:-}"
+GW_TARGET="${ARCHIE_UPDATE_DAEMON_VERSION:-}"
+RT_TARGET="${ARCHIE_UPDATE_AGENT_VERSION:-}"
+GW="$PREV_GW"
+RT="$PREV_RT"
+components=""
+
+if [ -n "$GW_TARGET" ] && [ "$GW_TARGET" != "$PREV_GW" ]; then
+  GW="$GW_TARGET"
+  components="daemon"
+fi
+if [ -n "$RT_TARGET" ] && [ "$RT_TARGET" != "$PREV_RT" ]; then
+  case "$RT_TARGET" in
+    dev|unknown) echo "refusing to build a released runtime image with version '$RT_TARGET'" >&2; exit 1 ;;
+  esac
+  RT="$RT_TARGET"
+  components="${components:+$components,}agent"
+fi
+
+if [ -z "$components" ]; then
+  echo '==> no approved component changes; nothing to install'
+  echo 'ARCHIE_UPDATE_RESULT {"previous":{},"installed":{},"components":[],"restart_requested":false}'
+  exit 0
+fi
+
 cd "$REPO"
-
-PREV_GW="$(git describe --tags --match 'archied/v*' 2>/dev/null | sed 's|^archied/v||' || echo unknown)"
-PREV_RT="$(git describe --tags --match 'archie/v*'  2>/dev/null | sed 's|^archie/v||'  || echo unknown)"
-
-echo "==> fetching"
+echo "==> fetching approved component releases"
 git pull --ff-only
 
-# Refresh the installed adapters from the checkout just fetched. The running
-# shell continues with the old script, but the next /update uses the current
-# implementation even when this invocation was started by an older install.
+# Refresh adapters from the fetched checkout. The running shell continues with
+# this copy; subsequent updates use the current contract.
 install -m755 "$REPO/scripts/archie-update-install" "$BIN_DIR/archie-update-install"
 install -m755 "$REPO/scripts/archie-update-watchdog" "$BIN_DIR/archie-update-watchdog"
 install -m755 "$REPO/scripts/archie-update-check" "$BIN_DIR/archie-update-check"
 
-GW="$(git describe --tags --match 'archied/v*' | sed 's|^archied/v||')"
-RT="$(git describe --tags --match 'archie/v*'  | sed 's|^archie/v||')"
-echo "==> building archied $GW / archie-agent $RT"
-
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-go build -ldflags "-X main.gatewayVersion=$GW -X main.runtimeVersion=$RT -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" \
-  -o "$tmp/archied" ./cmd/archied
-go build -ldflags "-X github.com/samcharles93/archie-core/internal/app/agentworker.version=$RT -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" \
-  -o "$tmp/archie-agent" ./cmd/archie-agent
+if [[ ",$components," == *,daemon,* ]]; then
+  echo "==> building archied $GW"
+  go build -ldflags "-X main.gatewayVersion=$GW -X main.runtimeVersion=$RT -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" \
+    -o "$tmp/archied" ./cmd/archied
+fi
+if [[ ",$components," == *,agent,* ]]; then
+  echo "==> building archie-agent $RT"
+  go build -ldflags "-X github.com/samcharles93/archie-core/internal/app/agentworker.version=$RT -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" \
+    -o "$tmp/archie-agent" ./cmd/archie-agent
+fi
 
-echo "==> backing up current binaries"
-[ -f "$BIN_DIR/archied" ]      && cp -f "$BIN_DIR/archied"      "$BIN_DIR/archied.prev"
-[ -f "$BIN_DIR/archie-agent" ] && cp -f "$BIN_DIR/archie-agent" "$BIN_DIR/archie-agent.prev"
-
-echo "==> installing"
-install -m755 "$tmp/archied"      "$BIN_DIR/archied"
-install -m755 "$tmp/archie-agent" "$BIN_DIR/archie-agent"
-
-echo "==> rebuilding agent image"
-docker compose build agent
+if [[ ",$components," == *,daemon,* ]]; then
+  echo "==> backing up current archied binary"
+  [ -f "$BIN_DIR/archied" ] && cp -f "$BIN_DIR/archied" "$BIN_DIR/archied.prev"
+  echo "==> installing archied"
+  install -m755 "$tmp/archied" "$BIN_DIR/archied"
+fi
+if [[ ",$components," == *,agent,* ]]; then
+  echo "==> backing up current archie-agent binary"
+  [ -f "$BIN_DIR/archie-agent" ] && cp -f "$BIN_DIR/archie-agent" "$BIN_DIR/archie-agent.prev"
+  echo "==> installing archie-agent"
+  install -m755 "$tmp/archie-agent" "$BIN_DIR/archie-agent"
+  echo "==> rebuilding agent image for runtime $RT"
+  docker compose build --build-arg "RUNTIME_VERSION=$RT" agent
+fi
 
 echo "==> handing off to the update watchdog for restart and health verification"
 systemd-run --user --unit=archied-update-restart --collect --quiet \
@@ -73,19 +88,28 @@ systemd-run --user --unit=archied-update-restart --collect --quiet \
   --setenv=ARCHIE_UPDATE_CHANNEL="${ARCHIE_UPDATE_CHANNEL:-}" \
   --setenv=ARCHIE_UPDATE_CHAT_ID="${ARCHIE_UPDATE_CHAT_ID:-0}" \
   --setenv=ARCHIE_UPDATE_THREAD_ID="${ARCHIE_UPDATE_THREAD_ID:-0}" \
+  --setenv=ARCHIE_UPDATE_COMPONENTS="$components" \
   --setenv=ARCHIE_UPDATE_PREVIOUS_GATEWAY="$PREV_GW" \
   --setenv=ARCHIE_UPDATE_PREVIOUS_RUNTIME="$PREV_RT" \
   --setenv=ARCHIE_UPDATE_INSTALLED_GATEWAY="$GW" \
   --setenv=ARCHIE_UPDATE_INSTALLED_RUNTIME="$RT" \
   "$REPO/scripts/archie-update-watchdog"
 
-daemon_status="updated"
-[ "$PREV_GW" = "$GW" ] && daemon_status="unchanged"
-agent_status="updated"
-[ "$PREV_RT" = "$RT" ] && agent_status="unchanged"
-
-esc_prev_gw="$(json_escape "$PREV_GW")"
-esc_prev_rt="$(json_escape "$PREV_RT")"
-esc_gw="$(json_escape "$GW")"
-esc_rt="$(json_escape "$RT")"
-echo "ARCHIE_UPDATE_RESULT {\"previous\":{\"daemon\":\"$esc_prev_gw\",\"agent\":\"$esc_prev_rt\"},\"installed\":{\"daemon\":\"$esc_gw\",\"agent\":\"$esc_rt\"},\"components\":[{\"id\":\"daemon\",\"label\":\"daemon\",\"status\":\"$daemon_status\"},{\"id\":\"agent\",\"label\":\"agent\",\"status\":\"$agent_status\"}],\"restart_requested\":true}"
+case "$components" in
+  daemon)
+    previous="{\"daemon\":\"$(json_escape "$PREV_GW")\"}"
+    installed="{\"daemon\":\"$(json_escape "$GW")\"}"
+    results='[{"id":"daemon","label":"daemon","status":"updated"}]'
+    ;;
+  agent)
+    previous="{\"agent\":\"$(json_escape "$PREV_RT")\"}"
+    installed="{\"agent\":\"$(json_escape "$RT")\"}"
+    results='[{"id":"agent","label":"agent","status":"updated"}]'
+    ;;
+  daemon,agent)
+    previous="{\"daemon\":\"$(json_escape "$PREV_GW")\",\"agent\":\"$(json_escape "$PREV_RT")\"}"
+    installed="{\"daemon\":\"$(json_escape "$GW")\",\"agent\":\"$(json_escape "$RT")\"}"
+    results='[{"id":"daemon","label":"daemon","status":"updated"},{"id":"agent","label":"agent","status":"updated"}]'
+    ;;
+esac
+echo "ARCHIE_UPDATE_RESULT {\"previous\":$previous,\"installed\":$installed,\"components\":$results,\"restart_requested\":true}"
