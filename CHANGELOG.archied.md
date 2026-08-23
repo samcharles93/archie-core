@@ -1,5 +1,9 @@
 # archied changelog
 
+## [1.13.0] - 2026-08-23
+
+- fix(telegram): render tool progress as bounded code blocks
+
 ## [1.12.0] - 2026-08-23
 
 - fix(webui): give dashboard-initiated updates a phase-2 report
