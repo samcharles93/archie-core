@@ -1,5 +1,10 @@
 # archied changelog
 
+## [1.11.1] - 2026-08-23
+
+- fix(update): wire Telegram personas and survive callback cancellation
+- fix(webui): theme the Workflows 'Start work' form controls
+
 ## [1.11.0] - 2026-08-23
 
 - feat(forge): make webhook intake observable and deduplicate concurrent delivery
