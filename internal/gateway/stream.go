@@ -89,33 +89,39 @@ func toolProgressBlock(name, status, preview string) string {
 }
 
 func toolPreview(name, output string) string {
-	content, structured := unwrapToolContent(output)
-	trimmed := strings.TrimSpace(content)
-	lowerName := strings.ToLower(strings.TrimSpace(name))
-	lines := countNonEmptyOrContentLines(content)
+	content, _ := unwrapToolContent(output)
+	preview, skipped := compactToolPreview(content)
+	if preview == "" {
+		if strings.TrimSpace(content) == "" {
+			return "completed"
+		}
+		return "completed with no printable preview"
+	}
+	remaining := countNonEmptyOrContentLines(content) - 1 - skipped
+	if remaining < 0 {
+		remaining = 0
+	}
+	if remaining > 0 {
+		return fmt.Sprintf("%s\n… %d more lines", preview, remaining)
+	}
+	_ = name
+	return preview
+}
 
-	switch {
-	case strings.Contains(lowerName, "read"):
-		if lines == 0 {
-			return "file read completed"
+func compactToolPreview(output string) (string, int) {
+	skipped := 0
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
 		}
-		return fmt.Sprintf("%d lines read; content hidden", lines)
-	case strings.Contains(lowerName, "find") || strings.Contains(lowerName, "list"):
-		return fmt.Sprintf("%d paths found; listing hidden", lines)
-	case strings.Contains(lowerName, "grep") || strings.Contains(lowerName, "search"):
-		return fmt.Sprintf("%d matches found; excerpts hidden", lines)
-	case strings.Contains(lowerName, "shell") || strings.Contains(lowerName, "terminal"):
-		if lines > 1 || looksLikeSourceOrListing(trimmed) || structured {
-			return fmt.Sprintf("command completed; %d output lines hidden", lines)
+		if strings.Contains(line, "/pkg/mod/") {
+			skipped++
+			continue
 		}
+		return truncateRunes(line, 120), skipped
 	}
-	if structured {
-		return "structured result received; details hidden"
-	}
-	if looksLikeSourceOrListing(trimmed) {
-		return fmt.Sprintf("%d output lines hidden", lines)
-	}
-	return firstNonEmptyLine(trimmed)
+	return "", skipped
 }
 
 func unwrapToolContent(output string) (string, bool) {
@@ -142,12 +148,6 @@ func countNonEmptyOrContentLines(s string) int {
 	}
 	trimmed := strings.TrimRight(s, "\r\n")
 	return strings.Count(trimmed, "\n") + 1
-}
-
-func looksLikeSourceOrListing(s string) bool {
-	return strings.Contains(s, "\n") && (strings.Contains(s, "package ") ||
-		strings.Contains(s, "module ") || strings.Contains(s, "/pkg/mod/") ||
-		strings.Contains(s, "/home/") || strings.Contains(s, "func "))
 }
 
 func cleanToolError(name, raw string) string {
