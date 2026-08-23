@@ -154,6 +154,21 @@ type Server struct {
 	// the dashboard failing to start.
 	Mappings store.MappingStore
 
+	// UpdateReportPath is where the update watchdog leaves the phase-2
+	// outcome of a dashboard-initiated install for this process to relay on
+	// its next boot -- the webui counterpart of
+	// channels/telegram.Gateway.UpdateReportPath. Empty (the default unless
+	// composition wires it) means dashboard-initiated updates get no
+	// phase-2 report (archie-core-nln7): the operator only sees the
+	// synchronous install result, never restart/health/version outcome.
+	UpdateReportPath string
+
+	// RunningVersions reports, per component ID (see releaseupdate.Report.Verify),
+	// the version that component reports for itself right now. Optional:
+	// nil leaves every claim in a relayed update report Unverified rather
+	// than Confirmed.
+	RunningVersions func() map[string]string
+
 	mu    sync.Mutex
 	conns map[chan events.Event]struct{}
 }
@@ -291,6 +306,7 @@ func trimLeadingSlash(p string) string {
 
 // Run serves until ctx ends.
 func (s *Server) Run(ctx context.Context, listen string) error {
+	s.reportPendingUpdate(ctx)
 	srv := &http.Server{Addr: listen, Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		<-ctx.Done()

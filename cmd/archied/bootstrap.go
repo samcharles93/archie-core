@@ -306,6 +306,8 @@ func (b *boot) setupObservability() {
 		})
 	}
 	b.web = &webui.Server{Store: b.st, Log: log, LogFeed: b.logFeed, TaskLogs: b.taskLogs, Cfg: config.NewHolder(cfg), Channels: b.channelManager, Events: bus}
+	b.web.UpdateReportPath = updateReportPath(cfg.WorkDir, "webui")
+	b.web.RunningVersions = daemonRunningVersions
 	b.web.SetProvenance(configProvenance)
 	b.web.ReloadChannel = func(ctx context.Context, id string) error {
 		if id != "telegram" || b.restartTelegram == nil {

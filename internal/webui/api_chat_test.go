@@ -57,9 +57,10 @@ func (s *chatProviderModelStub) ModelsForProvider(provider string) []string {
 func (*chatProviderModelStub) SetActiveProvider(context.Context, string) error { return nil }
 
 type chatUpdateStub struct {
-	snapshot  releaseupdate.Snapshot
-	deferred  releaseupdate.Snapshot
-	installed bool
+	snapshot      releaseupdate.Snapshot
+	deferred      releaseupdate.Snapshot
+	installed     bool
+	installedMeta releaseupdate.InstallMeta
 }
 
 type webDangerousStub struct {
@@ -90,8 +91,9 @@ func (s *chatUpdateStub) Defer(_ context.Context, _ int64, snapshot releaseupdat
 	return nil
 }
 
-func (s *chatUpdateStub) Install(_ context.Context, _ releaseupdate.InstallMeta, progress func(string)) (releaseupdate.Result, error) {
+func (s *chatUpdateStub) Install(_ context.Context, meta releaseupdate.InstallMeta, progress func(string)) (releaseupdate.Result, error) {
 	s.installed = true
+	s.installedMeta = meta
 	progress("install started")
 	return releaseupdate.Result{}, nil
 }
@@ -706,14 +708,14 @@ func TestChatStreamRendersMediaAsALinkFallback(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", res.Code, res.Body)
 	}
 
-	var joined string
+	var joined strings.Builder
 	for _, ev := range parseChatSSE(t, res.Body.String()) {
 		if ev.Type == "delta" {
-			joined += ev.Text
+			joined.WriteString(ev.Text)
 		}
 	}
-	if !strings.Contains(joined, "https://example.com/v.mp4") {
-		t.Fatalf("delta stream = %q, want it to contain the asset URL", joined)
+	if !strings.Contains(joined.String(), "https://example.com/v.mp4") {
+		t.Fatalf("delta stream = %q, want it to contain the asset URL", joined.String())
 	}
 }
 
