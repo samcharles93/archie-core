@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# archie-update-check -- update discovery adapter for archied's /update.
+#
+# archied runs this via CommandCatalog and decodes its stdout straight into
+# a releaseupdate.Snapshot JSON document -- {"Components":[...]}, one entry
+# per component, ID/Label/Installed/Available/Changelog/InstallType/
+# Reference (Component has no json tags, so field names are exact Go
+# casing; decode is case-insensitive regardless). It is exec'd directly,
+# without a shell, and must not mutate anything: unlike
+# archie-update-install, this runs on every /update check, possibly far
+# more often than an actual install.
+#
+# Component IDs are "daemon" and "agent" -- the same convention
+# releaseupdate.ComponentDaemon/ComponentAgent and archie-update-watchdog's
+# report use, so a Service.Enrich hook (installtype.Type(), an observed
+# archie-agent version) and Report.Verify both recognise these components
+# without any operator-side configuration. A check command using different
+# IDs would still work for showing Available/Installed, just without that
+# enrichment or verification.
+#
+# InstallType/Reference are deliberately left unset here: this script only
+# knows what git and go build report, not how this particular instance was
+# actually deployed (systemd binary vs Docker container vs something else)
+# -- that's exactly what Service.Enrich (wired in cmd/archied) fills in
+# from sources that DO know, so guessing here would risk overwriting a
+# correct value with a wrong one. See internal/releaseupdate/service.go.
+set -euo pipefail
+
+REPO="${ARCHIE_REPO_DIR:-$HOME/projects/archie-core}"
+cd "$REPO"
+
+# json_escape minimally escapes a string for embedding in a JSON document
+# built by shell interpolation: backslashes first (so the quote-escaping
+# backslash it inserts next isn't itself re-escaped), then double quotes,
+# then newlines (changelog text is multi-line).
+json_escape() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | awk '{printf "%s\\n", $0}' | sed '$ s/\\n$//'
+}
+
+# installed_version <tag-prefix> -- the version currently checked out, from
+# the nearest matching tag reachable from HEAD. "unknown" (a placeholder,
+# never a real version -- see releaseupdate.VersionUnknown) if the checkout
+# has no such tag reachable, e.g. a shallow clone or a tag-less mirror.
+installed_version() {
+  git describe --tags --match "$1" 2>/dev/null | sed "s|^${1%\**}||" || echo unknown
+}
+
+# available_version <tag-prefix> -- the newest matching tag on the remote's
+# default branch, without touching the working tree. Requires a prior
+# `git fetch --tags` (done once, below, for both components).
+available_version() {
+  git describe --tags --match "$1" origin/main 2>/dev/null | sed "s|^${1%\**}||" || echo unknown
+}
+
+# changelog_section <file> <version> -- the "## [version]" section of a
+# Keep a Changelog-style file, verbatim, or empty if the file or the
+# section is missing. Best-effort: a missing changelog must never fail the
+# whole check, just leave that component's Changelog blank.
+changelog_section() {
+  local file="$1" version="$2"
+  [ -f "$file" ] || return 0
+  awk -v prefix="## [$version]" '
+    index($0, prefix) == 1 { found = 1; next }
+    found && /^## \[/ { exit }
+    found { print }
+  ' "$file" | sed '/^$/d'
+}
+
+git fetch --tags --quiet origin 2>/dev/null || true
+
+daemon_installed="$(installed_version 'archied/v*')"
+daemon_available="$(available_version 'archied/v*')"
+agent_installed="$(installed_version 'archie/v*')"
+agent_available="$(available_version 'archie/v*')"
+
+daemon_changelog=""
+[ "$daemon_available" != "unknown" ] && [ "$daemon_available" != "$daemon_installed" ] &&
+  daemon_changelog="$(changelog_section "$REPO/CHANGELOG.archied.md" "$daemon_available")"
+agent_changelog=""
+[ "$agent_available" != "unknown" ] && [ "$agent_available" != "$agent_installed" ] &&
+  agent_changelog="$(changelog_section "$REPO/CHANGELOG.archie.md" "$agent_available")"
+
+cat <<EOF
+{"Components":[
+  {"ID":"daemon","Label":"archied","Installed":"$(json_escape "$daemon_installed")","Available":"$(json_escape "$daemon_available")","Changelog":"$(json_escape "$daemon_changelog")"},
+  {"ID":"agent","Label":"archie-agent","Installed":"$(json_escape "$agent_installed")","Available":"$(json_escape "$agent_available")","Changelog":"$(json_escape "$agent_changelog")"}
+]}
+EOF

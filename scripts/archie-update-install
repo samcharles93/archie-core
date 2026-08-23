@@ -50,7 +50,8 @@ trap 'rm -rf "$tmp"' EXIT
 
 go build -ldflags "-X main.gatewayVersion=$GW -X main.runtimeVersion=$RT -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" \
   -o "$tmp/archied" ./cmd/archied
-go build -o "$tmp/archie-agent" ./cmd/archie-agent
+go build -ldflags "-X github.com/samcharles93/archie-core/internal/app/agentworker.version=$RT -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" \
+  -o "$tmp/archie-agent" ./cmd/archie-agent
 
 echo "==> backing up current binaries"
 [ -f "$BIN_DIR/archied" ]      && cp -f "$BIN_DIR/archied"      "$BIN_DIR/archied.prev"
