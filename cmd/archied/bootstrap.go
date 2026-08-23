@@ -131,11 +131,19 @@ type boot struct {
 	providerRegistry *toolprovider.Registry
 	d                *daemon.Daemon
 
+	// agentStatus records the most recent version/install-type an
+	// archie-agent worker reported about itself. Allocated up front, before
+	// any gateway goroutine (Telegram, webui) that might read it via
+	// RunningVersions starts, so those closures never see a nil pointer or
+	// race its assignment -- only its own internal mutex guards concurrent
+	// Observe/Snapshot calls once tasks start completing.
+	agentStatus *daemon.AgentStatus
+
 	cleanups []func()
 }
 
 func newBootstrap() *boot {
-	return &boot{log: slog.New(slog.NewJSONHandler(os.Stderr, nil))}
+	return &boot{log: slog.New(slog.NewJSONHandler(os.Stderr, nil)), agentStatus: &daemon.AgentStatus{}}
 }
 
 func (b *boot) addCleanup(fn func()) {
@@ -307,7 +315,8 @@ func (b *boot) setupObservability() {
 	}
 	b.web = &webui.Server{Store: b.st, Log: log, LogFeed: b.logFeed, TaskLogs: b.taskLogs, Cfg: config.NewHolder(cfg), Channels: b.channelManager, Events: bus}
 	b.web.UpdateReportPath = updateReportPath(cfg.WorkDir, "webui")
-	b.web.RunningVersions = daemonRunningVersions
+	agentStatus := b.agentStatus
+	b.web.RunningVersions = func() map[string]string { return daemonRunningVersions(agentStatus) }
 	b.web.SetProvenance(configProvenance)
 	b.web.ReloadChannel = func(ctx context.Context, id string) error {
 		if id != "telegram" || b.restartTelegram == nil {
@@ -517,7 +526,7 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 		DefaultChatIdentity: b.defaultChatIdentity, SessionStore: b.chatSessionStore, Updates: b.updateService,
 		Bus:             b.bus,
 		RegisterRestart: func(request func() error) { b.restartTelegram = request }, Log: log,
-		ChannelManager: b.channelManager,
+		ChannelManager: b.channelManager, AgentStatus: b.agentStatus,
 	})
 	if !ok {
 		return false
@@ -1016,6 +1025,7 @@ func (b *boot) buildDaemon() {
 		Curators:        b.curatorRegistry,
 		Identities:      b.identityRunners,
 		TaskLogs:        b.taskLogs,
+		AgentStatus:     b.agentStatus,
 	}
 	b.web.TaskStopper = b.d
 	// web and the daemon must share ONE Holder: a reload swaps d.Cfg and

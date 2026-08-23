@@ -14,6 +14,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/wfeval"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/installtype"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskrun"
@@ -200,7 +201,9 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 	workflow.Run(ctx, wf, tc)
 
 	return &taskrun.Response{
-		Task:   tc.Task,
-		Status: tc.Outcome.Status,
+		Task:             tc.Task,
+		Status:           tc.Outcome.Status,
+		AgentVersion:     Version(),
+		AgentInstallType: installtype.Type(),
 	}, nil
 }

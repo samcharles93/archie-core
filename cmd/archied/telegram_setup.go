@@ -16,6 +16,7 @@ import (
 	channelruntime "github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/channels/telegram"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
@@ -56,6 +57,10 @@ type telegramSetup struct {
 	Bus            *events.Bus
 	Log            *slog.Logger
 	ChannelManager *channelruntime.Manager
+	// AgentStatus is the composition root's shared tracker for the most
+	// recently observed archie-agent version (see daemon.AgentStatus).
+	// Nil disables the agent component of RunningVersions.
+	AgentStatus *daemon.AgentStatus
 }
 
 // setupTelegramGateway initialises the Telegram chat gateway when a
@@ -97,7 +102,8 @@ func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), o
 		},
 	}
 	tg.UpdateReportPath = updateReportPath(cfg.WorkDir, cfg.BotUser)
-	tg.RunningVersions = daemonRunningVersions
+	agentStatus := s.AgentStatus
+	tg.RunningVersions = func() map[string]string { return daemonRunningVersions(agentStatus) }
 	tg.Reload = makeTelegramReload(s)
 
 	sessionStore := s.SessionStore
@@ -123,19 +129,32 @@ func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), o
 }
 
 // daemonRunningVersions reports the component versions this process can
-// vouch for from its own build, for checking a pending update report against
-// (see releaseupdate.Report.Verify).
+// vouch for, for checking a pending update report against (see
+// releaseupdate.Report.Verify).
 //
-// Only the daemon is listed, and that is the whole point: gatewayVersion is
-// compiled into this binary, so if an installer claims it put a version into
-// service and this value disagrees, the installer is wrong. runtimeVersion
-// is deliberately NOT reported for the agent -- it records the agent version
-// archied's own release pipeline stamped, not the version the agent
-// container is actually running, and the two diverge in exactly the
-// situation this check exists to detect. An unverifiable component is left
-// out so it is reported as unchecked rather than as confirmed.
-func daemonRunningVersions() map[string]string {
-	return map[string]string{releaseupdate.ComponentDaemon: gatewayVersion}
+// The daemon component is always vouched for from its own build:
+// gatewayVersion is compiled into this binary, so if an installer claims it
+// put a version into service and this value disagrees, the installer is
+// wrong. runtimeVersion is deliberately NOT used for the agent component --
+// it records the agent version archied's own release pipeline stamped, not
+// the version an agent container is actually running, and the two diverge in
+// exactly the situation this check exists to detect.
+//
+// The agent component is included only once agentStatus has actually
+// observed one running -- self-reported by an archie-agent worker in a
+// taskrun.Response (see daemon.AgentStatus), since every archie-agent
+// process is task-scoped and ephemeral, not something this process can query
+// directly. Before the first task completes, or when agentStatus is nil
+// (composition never wired one), the agent component is left out entirely
+// so it reports as unchecked rather than as confirmed.
+func daemonRunningVersions(agentStatus *daemon.AgentStatus) map[string]string {
+	versions := map[string]string{releaseupdate.ComponentDaemon: gatewayVersion}
+	if agentStatus != nil {
+		if version, _, ok := agentStatus.Snapshot(); ok {
+			versions[releaseupdate.ComponentAgent] = version
+		}
+	}
+	return versions
 }
 
 func configureTelegramUpdates(tg *telegram.Gateway, s telegramSetup) {
