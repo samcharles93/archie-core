@@ -91,7 +91,7 @@ func (s *chatUpdateStub) Defer(_ context.Context, _ int64, snapshot releaseupdat
 	return nil
 }
 
-func (s *chatUpdateStub) Install(_ context.Context, meta releaseupdate.InstallMeta, progress func(string)) (releaseupdate.Result, error) {
+func (s *chatUpdateStub) Install(_ context.Context, _ releaseupdate.Snapshot, meta releaseupdate.InstallMeta, progress func(string)) (releaseupdate.Result, error) {
 	s.installed = true
 	s.installedMeta = meta
 	progress("install started")

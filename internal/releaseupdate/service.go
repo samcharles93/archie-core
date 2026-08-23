@@ -29,7 +29,7 @@ type Catalog interface {
 // install) -- whether a subsequent restart actually came up healthy is
 // reported later, out of band, via a Report (see pending_report.go).
 type Installer interface {
-	Install(context.Context, InstallMeta, func(string)) (Result, error)
+	Install(context.Context, Snapshot, InstallMeta, func(string)) (Result, error)
 }
 
 type Component struct {
@@ -217,7 +217,7 @@ const installTimeout = 30 * time.Minute
 // never reached that line. Detaching the install from ctx, bounded by
 // installTimeout instead, is what actually makes the caller's own
 // lifecycle safe to interrupt without corrupting an in-flight update.
-func (s *Service) Install(ctx context.Context, meta InstallMeta, progress func(string)) (Result, error) {
+func (s *Service) Install(ctx context.Context, snapshot Snapshot, meta InstallMeta, progress func(string)) (Result, error) {
 	if s == nil || s.Installer == nil {
 		return Result{}, errors.New("update installation is not configured")
 	}
@@ -239,7 +239,7 @@ func (s *Service) Install(ctx context.Context, meta InstallMeta, progress func(s
 
 	installCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), installTimeout)
 	defer cancel()
-	return s.Installer.Install(installCtx, meta, progress)
+	return s.Installer.Install(installCtx, snapshot, meta, progress)
 }
 
 func (s *Service) CanInstall() bool { return s != nil && s.Installer != nil }

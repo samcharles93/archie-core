@@ -24,7 +24,7 @@ func (s *contextAwareUpdateStub) Defer(context.Context, int64, releaseupdate.Sna
 	return nil
 }
 func (s *contextAwareUpdateStub) CanInstall() bool { return true }
-func (s *contextAwareUpdateStub) Install(ctx context.Context, _ releaseupdate.InstallMeta, _ func(string)) (releaseupdate.Result, error) {
+func (s *contextAwareUpdateStub) Install(ctx context.Context, _ releaseupdate.Snapshot, _ releaseupdate.InstallMeta, _ func(string)) (releaseupdate.Result, error) {
 	s.seen = ctx
 	close(s.started)
 	return releaseupdate.Result{}, nil
@@ -43,7 +43,7 @@ func TestInstallUpdateDetachesInstallerFromCallbackContext(t *testing.T) {
 		g.installUpdate(callbackCtx, b, &models.CallbackQuery{
 			From:    models.User{ID: 42},
 			Message: models.MaybeInaccessibleMessage{Message: message},
-		})
+		}, releaseupdate.Snapshot{})
 		close(done)
 	}()
 	<-stub.started
