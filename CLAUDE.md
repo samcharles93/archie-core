@@ -127,27 +127,10 @@ tree is load-bearing at runtime. Reference templates are in `deployments/`;
 
 ## Release process
 
-Two components, independently versioned: `archied` (gateway/daemon) and
-`archie-agent` (runtime). Tags use `archied/vX.Y.Z` and `archie/vX.Y.Z`.
-`CHANGELOG.md` documents the split.
-
-```
-task release:preview VERSION=1.3.0     # preview what would land
-task release:prepare VERSION=1.3.0     # write changelog sections, uncommitted
-# edit CHANGELOG.archied.md and CHANGELOG.archie.md  --  generated notes
-# are a starting point, not the release
-task release VERSION=1.3.0             # commit + tag
-git push origin main --follow-tags     # CI stamps images with real versions
-```
-
-Pass `GATEWAY=<ver>`/`RUNTIME=<ver>` to version them independently, or `skip` to
-hold one back. Linting ensures the changelogs can be parsed deterministically by
-`tools/release.sh`.
-
-CI (`deploy.yml`) now runs a gate job _before_ building images: `task check`,
-then verifies that any release tag at HEAD has a matching `[version]` section in
-the corresponding changelog. A tag without a changelog entry is a hard failure.
-No tags at HEAD prints a warning (images get stamped `dev`).
+See `RELEASING.md` for the full process and the standing rule on when to
+version each component — most sessions only touch `archied`, so most releases
+are gateway-only (`RUNTIME=skip`) by default. Don't ask whether to skip an
+untouched component; skip it and say so in the handoff.
 
 ## Build & Test
 
