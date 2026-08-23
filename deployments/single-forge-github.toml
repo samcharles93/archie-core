@@ -44,7 +44,6 @@ command = "archie-agent"
 
 [budgets]
 max_steps = 60
-max_tokens = 400000
 wall_clock = "30m"
 
 # List of repositories managed by this single GitHub forge configuration:

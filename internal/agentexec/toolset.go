@@ -20,17 +20,16 @@ import (
 // A negative limit means no limit; see config.ToolPolicy for why zero cannot
 // carry that meaning.
 type ToolLimits struct {
-	MaxResultChars  int
-	TurnBudgetChars int
-	SpillDir        string
+	MaxResultChars int
+	SpillDir       string
 }
 
 // EnsureSpillDir creates the spill directory if one is configured.
 //
-// Call it once at startup. Without it the directory never exists, and because
-// TurnBudget's write failure is silent every oversized result falls back to
-// inline truncation -- spilling looks configured and does nothing. An empty
-// SpillDir is not an error: it selects inline truncation deliberately.
+// Call it once at startup. Without it the directory never exists, and a
+// failed spill write falls back to inline truncation -- spilling looks
+// configured and does nothing. An empty SpillDir is not an error: it
+// selects inline truncation deliberately.
 func (l ToolLimits) EnsureSpillDir() error {
 	if l.SpillDir == "" {
 		return nil
@@ -43,18 +42,13 @@ func (l ToolLimits) EnsureSpillDir() error {
 	return nil
 }
 
-// Options builds the tool-set options for a single turn or stage, minting a
-// fresh TurnBudget each time.
-//
-// The budget must never outlive one turn: a shared counter would let one
-// task's tool output exhaust another's allowance, and nothing would reset it.
+// Options builds the tool-set options for a single turn or stage.
+// There is no aggregate turn output budget; only per-result caps apply.
 func (l ToolLimits) Options(excludeToolsets ...string) ToolSetOptions {
 	opts := ToolSetOptions{
 		MaxResultChars:  l.MaxResultChars,
 		ExcludeToolsets: excludeToolsets,
-	}
-	if l.TurnBudgetChars > 0 {
-		opts.Budget = tools.NewTurnBudget(l.TurnBudgetChars, l.SpillDir)
+		SpillDir:        l.SpillDir,
 	}
 	return opts
 }
@@ -64,10 +58,9 @@ func (l ToolLimits) Options(excludeToolsets ...string) ToolSetOptions {
 // The zero value builds every available tool with no result limits, which is
 // the behaviour this package had before the options existed.
 type ToolSetOptions struct {
-	// Budget accounts for the aggregate size of tool results across one chat
-	// turn or agent stage, and supplies the spill directory oversized results
-	// are displaced to. Nil disables budget accounting entirely.
-	Budget *tools.TurnBudget
+	// SpillDir receives complete results displaced by the per-tool cap. Empty
+	// selects inline truncation. There is deliberately no aggregate turn cap.
+	SpillDir string
 
 	// MaxResultChars caps a single tool result. Entries setting
 	// ToolEntry.MaxResultSizeChars override it. Zero or negative means no cap.
@@ -247,13 +240,6 @@ func toolExecute(entry tools.ToolEntry, opts ToolSetOptions) func(context.Contex
 	return func(ctx context.Context, input string) (result string, err error) {
 		defer func() { reportToolCallCompletion(opts, entry, result, err) }()
 
-		// A turn that has spent its budget must say so. Returning an error
-		// tells the model it has run out; returning an empty result would
-		// read as "the tool found nothing" and invite it to try again.
-		if opts.Budget != nil && opts.Budget.Exceeded() {
-			return "", fmt.Errorf("tool %s: turn budget exceeded (%d chars)", entry.Name, opts.Budget.MaxChars)
-		}
-
 		var args map[string]any
 		if input != "" {
 			if err := json.Unmarshal([]byte(input), &args); err != nil {
@@ -307,10 +293,7 @@ func toolExecute(entry tools.ToolEntry, opts ToolSetOptions) func(context.Contex
 			return "", fmt.Errorf("tool %s: encode output: %w", entry.Name, err)
 		}
 
-		payload := tools.CapPayload(entry.Name, string(data), limit, opts.Budget)
-		if opts.Budget != nil {
-			opts.Budget.Consume(len(payload))
-		}
+		payload := tools.CapPayload(entry.Name, string(data), limit, opts.SpillDir)
 		return payload, nil
 	}
 }

@@ -74,7 +74,6 @@ func StageBaselineGate() Stage {
 				Mission:  mission,
 				Budget: agentexec.Budget{
 					MaxSteps:  tc.Cfg.Budgets.MaxSteps,
-					MaxTokens: tc.Cfg.Budgets.MaxTokens,
 					WallClock: tc.Cfg.Budgets.WallClock.Std(),
 				},
 				Gate:       GateFromRepo(tc.Repo, tc.Cfg.Budgets),

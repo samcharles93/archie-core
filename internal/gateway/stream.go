@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -49,22 +50,125 @@ func (e ToolCallEvent) Summary() string {
 // RenderToolCall returns the channel-neutral compact representation used by
 // chat surfaces. Parameters are intentionally omitted: JSON/schema-shaped
 // inputs are noisy, often contain secrets, and are not useful progress text.
-// The bounded fenced block keeps multiline command output readable without
-// allowing one result to bury the answer or exceed Telegram's message limit.
+// Results are reduced semantically instead of clipped blindly: file contents,
+// listings and structured envelopes are described, never echoed.
 func (e ToolCallEvent) RenderToolCall() string {
-	header := "🔧 " + strings.TrimSpace(e.Name)
-	if line := firstNonEmptyLine(e.Err); line != "" {
-		return header + " — ❌ " + truncateRunes(line, toolSummaryMaxRunes)
+	if limit, ok := legacyTurnBudgetLimit(e.Err); ok {
+		return toolProgressBlock("tools", "stopped", fmt.Sprintf("tool-output limit reached (%s chars); further results suppressed", limit))
 	}
-	if strings.TrimSpace(e.Output) == "" {
-		return header + " — done"
+	if line := cleanToolError(e.Name, e.Err); line != "" {
+		return toolProgressBlock(e.Name, "failed", line)
 	}
-	const maxOutputRunes = 480
-	output := strings.TrimSpace(e.Output)
-	output = truncateRunes(output, maxOutputRunes)
-	// A nested fence would terminate the block early in Markdown renderers.
-	output = strings.ReplaceAll(output, "```", "''' ")
-	return header + "\n```text\n" + output + "\n```"
+	return toolProgressBlock(e.Name, "done", toolPreview(e.Name, e.Output))
+}
+
+// FailureKey identifies equivalent failures for channel adapters that collapse
+// retries. Legacy aggregate-output-limit errors deliberately share one key
+// across tool names: they are one obsolete turn-level condition, not five
+// independently useful failures.
+func (e ToolCallEvent) FailureKey() string {
+	if _, ok := legacyTurnBudgetLimit(e.Err); ok {
+		return "legacy-turn-output-limit"
+	}
+	if line := cleanToolError(e.Name, e.Err); line != "" {
+		return strings.TrimSpace(e.Name) + "\x00" + line
+	}
+	return ""
+}
+
+func toolProgressBlock(name, status, preview string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "tool"
+	}
+	preview = strings.ReplaceAll(strings.TrimSpace(preview), "```", "''' ")
+	if preview == "" {
+		preview = "completed"
+	}
+	return "🔧 " + name + " — " + status + "\n```text\n" + truncateRunes(preview, 180) + "\n```"
+}
+
+func toolPreview(name, output string) string {
+	content, structured := unwrapToolContent(output)
+	trimmed := strings.TrimSpace(content)
+	lowerName := strings.ToLower(strings.TrimSpace(name))
+	lines := countNonEmptyOrContentLines(content)
+
+	switch {
+	case strings.Contains(lowerName, "read"):
+		if lines == 0 {
+			return "file read completed"
+		}
+		return fmt.Sprintf("%d lines read; content hidden", lines)
+	case strings.Contains(lowerName, "find") || strings.Contains(lowerName, "list"):
+		return fmt.Sprintf("%d paths found; listing hidden", lines)
+	case strings.Contains(lowerName, "grep") || strings.Contains(lowerName, "search"):
+		return fmt.Sprintf("%d matches found; excerpts hidden", lines)
+	case strings.Contains(lowerName, "shell") || strings.Contains(lowerName, "terminal"):
+		if lines > 1 || looksLikeSourceOrListing(trimmed) || structured {
+			return fmt.Sprintf("command completed; %d output lines hidden", lines)
+		}
+	}
+	if structured {
+		return "structured result received; details hidden"
+	}
+	if looksLikeSourceOrListing(trimmed) {
+		return fmt.Sprintf("%d output lines hidden", lines)
+	}
+	return firstNonEmptyLine(trimmed)
+}
+
+func unwrapToolContent(output string) (string, bool) {
+	trimmed := strings.TrimSpace(output)
+	if trimmed == "" {
+		return "", false
+	}
+	var envelope struct {
+		Content string `json:"content"`
+	}
+	if json.Unmarshal([]byte(trimmed), &envelope) == nil && envelope.Content != "" {
+		return envelope.Content, true
+	}
+	var quoted string
+	if json.Unmarshal([]byte(trimmed), &quoted) == nil {
+		return quoted, true
+	}
+	return output, false
+}
+
+func countNonEmptyOrContentLines(s string) int {
+	if strings.TrimSpace(s) == "" {
+		return 0
+	}
+	trimmed := strings.TrimRight(s, "\r\n")
+	return strings.Count(trimmed, "\n") + 1
+}
+
+func looksLikeSourceOrListing(s string) bool {
+	return strings.Contains(s, "\n") && (strings.Contains(s, "package ") ||
+		strings.Contains(s, "module ") || strings.Contains(s, "/pkg/mod/") ||
+		strings.Contains(s, "/home/") || strings.Contains(s, "func "))
+}
+
+func cleanToolError(name, raw string) string {
+	line := firstNonEmptyLine(raw)
+	prefix := "tool " + strings.TrimSpace(name) + ": "
+	line = strings.TrimPrefix(line, prefix)
+	return truncateRunes(strings.TrimSpace(line), toolSummaryMaxRunes)
+}
+
+func legacyTurnBudgetLimit(raw string) (string, bool) {
+	const marker = "turn budget exceeded ("
+	_, after, ok := strings.Cut(raw, marker)
+	if !ok {
+		return "", false
+	}
+	rest := after
+	end := strings.Index(rest, " chars)")
+	if end < 1 {
+		return "", false
+	}
+	return rest[:end], true
 }
 
 // SummarizeToolParameters returns a bounded JSON shape of tool input. Every

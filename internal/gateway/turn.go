@@ -34,8 +34,8 @@ type PreparedTurnModel interface {
 // TurnModelRequest is the provider-neutral request assembled by the gateway.
 // Messages include the system prompt as their first entry.
 type TurnModelRequest struct {
-	Messages  []CompressedMessage
-	MaxTokens int
+	Messages        []CompressedMessage
+	MaxOutputTokens int
 }
 
 // PersonaPromptSource supplies the active persona prompt for a session.
@@ -303,8 +303,8 @@ func (r *TurnRunner) Run(ctx context.Context, msg Message, stream TurnStream) (s
 	)
 	recorder := &toolCallRecorder{next: stream}
 	text, err := prepared.Generate(ctx, TurnModelRequest{
-		Messages:  view.Messages,
-		MaxTokens: modelDetails.MaxOutputTokens,
+		Messages:        view.Messages,
+		MaxOutputTokens: modelDetails.MaxOutputTokens,
 	}, recorder)
 	if err != nil {
 		return "", r.failTurn(ctx, turn, err)

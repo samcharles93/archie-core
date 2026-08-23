@@ -72,8 +72,7 @@ type DispatchResult struct {
 	// inclusion in the conversation context. It is at most 500 chars.
 	Preview string
 
-	// Error is the error returned by the handler, or a dispatch-level
-	// error (e.g. tool not found, budget exceeded).
+	// Error is the error returned by the handler or dispatch layer.
 	Error error
 
 	// Duration is the wall-clock time spent executing the tool
@@ -153,16 +152,15 @@ func invokeTool(ctx context.Context, call ToolCall) DispatchResult {
 // previews and classifying errors. Each result includes a truncated
 // preview for inclusion in the conversation context.
 //
-// If budget is non-nil, each result's output size is consumed from the
-// budget. When the budget is exceeded, remaining calls are skipped with
-// a budget-exceeded error.
+// spillDir controls displacement of individual oversized results. Aggregate
+// output volume never stops dispatch.
 //
 // If guardrail is non-nil, failures are recorded and the dispatch may
 // abort early on a hard-stop decision.
 func DispatchSequential(
 	ctx context.Context,
 	calls []ToolCall,
-	budget *TurnBudget,
+	spillDir string,
 	guardrail *GuardrailEngine,
 ) []DispatchResult {
 	results := make([]DispatchResult, 0, len(calls))
@@ -177,18 +175,7 @@ func DispatchSequential(
 			break
 		}
 
-		// Check budget before dispatching. Once exceeded, skip all
-		// remaining calls (break, not continue  --  no point appending
-		// redundant budget-exceeded errors for every remaining call).
-		if budget != nil && budget.Exceeded() {
-			results = append(results, DispatchResult{
-				ToolName: call.Entry.Name,
-				Error:    fmt.Errorf("turn budget exceeded (%d chars)", budget.MaxChars),
-			})
-			break
-		}
-
-		result := dispatchOne(ctx, call, budget, guardrail)
+		result := dispatchOne(ctx, call, spillDir, guardrail)
 		results = append(results, result)
 
 		// Abort on hard-stop.
@@ -224,7 +211,7 @@ type gatedGroup struct {
 func DispatchConcurrent(
 	ctx context.Context,
 	calls []ToolCall,
-	budget *TurnBudget,
+	spillDir string,
 	guardrail *GuardrailEngine,
 ) []DispatchResult {
 	if len(calls) == 0 {
@@ -243,12 +230,12 @@ func DispatchConcurrent(
 		if group.class == ExecNeverParallel || len(group.calls) == 1 {
 			// Run sequentially.
 			for _, call := range group.calls {
-				results[resultIdx] = dispatchOne(ctx, call, budget, guardrail)
+				results[resultIdx] = dispatchOne(ctx, call, spillDir, guardrail)
 				resultIdx++
 			}
 		} else {
 			// Run in parallel within group.
-			res := dispatchParallel(ctx, group.calls, budget, guardrail)
+			res := dispatchParallel(ctx, group.calls, spillDir, guardrail)
 			for _, r := range res {
 				results[resultIdx] = r
 				resultIdx++
@@ -337,8 +324,7 @@ func firstParallelSafeIdx(groups []gatedGroup) (int, bool) {
 	return 0, false
 }
 
-// dispatchOne runs a single call with budget, guardrail, and per-tool
-// limit checks.
+// dispatchOne runs a single call with guardrail and per-tool limit checks.
 //
 // Callers that do not own the batch cannot use this: it caps
 // DispatchResult.Preview, whereas a caller handing the result straight to a
@@ -347,17 +333,9 @@ func firstParallelSafeIdx(groups []gatedGroup) (int, bool) {
 func dispatchOne(
 	ctx context.Context,
 	call ToolCall,
-	budget *TurnBudget,
+	spillDir string,
 	guardrail *GuardrailEngine,
 ) DispatchResult {
-	// Check budget.
-	if budget != nil && budget.Exceeded() {
-		return DispatchResult{
-			ToolName: call.Entry.Name,
-			Error:    fmt.Errorf("turn budget exceeded (%d chars)", budget.MaxChars),
-		}
-	}
-
 	if guardrail != nil && guardrail.HardStopped() {
 		return DispatchResult{
 			ToolName: call.Entry.Name,
@@ -368,7 +346,7 @@ func dispatchOne(
 	result := invokeTool(ctx, call)
 
 	// Enforce per-tool result size limit (17.4).
-	capped := enforcePerToolLimit(&result, call.Entry, budget)
+	enforcePerToolLimit(&result, call.Entry, spillDir)
 
 	// Track guardrail.
 	if guardrail != nil {
@@ -379,28 +357,22 @@ func dispatchOne(
 		}
 	}
 
-	// Consume budget.
-	if budget != nil && !result.IsError() {
-		consumeBudgetForResult(&result, call.Entry, budget, capped)
-	}
-
 	return result
 }
 
 // enforcePerToolLimit replaces the preview when the result exceeds the tool's
-// MaxResultSizeChars, spilling to disk when the budget offers a directory and
+// MaxResultSizeChars, spilling to disk when a directory is configured and
 // truncating inline otherwise. [CapPayload] owns that rule; this only decides
 // whether it applies.
 //
-// Returns whether the result was capped, so the budget accounting below does
-// not spill the same output a second time.
-func enforcePerToolLimit(result *DispatchResult, entry ToolEntry, budget *TurnBudget) bool {
+// Returns whether the result was capped.
+func enforcePerToolLimit(result *DispatchResult, entry ToolEntry, spillDir string) bool {
 	if result.IsError() || entry.MaxResultSizeChars <= 0 || result.Output == nil {
 		return false
 	}
 
 	fullOutput := fmt.Sprint(result.Output)
-	capped := CapPayload(entry.Name, fullOutput, entry.MaxResultSizeChars, budget)
+	capped := CapPayload(entry.Name, fullOutput, entry.MaxResultSizeChars, spillDir)
 	if capped == fullOutput {
 		return false
 	}
@@ -408,37 +380,12 @@ func enforcePerToolLimit(result *DispatchResult, entry ToolEntry, budget *TurnBu
 	return true
 }
 
-// consumeBudgetForResult accounts for the result against the turn budget.
-// When the budget is exceeded during consumption, the full output is
-// spilled to disk and the preview is replaced with a spill reference.
-func consumeBudgetForResult(result *DispatchResult, entry ToolEntry, budget *TurnBudget, alreadyCapped bool) {
-	if budget == nil || result.IsError() {
-		return
-	}
-
-	if budget.Consume(len(result.Preview)) {
-		return
-	}
-
-	// Budget exhausted on this result. Spill the full output so it is
-	// displaced rather than lost -- unless the per-tool limit already did,
-	// in which case repeating it would write a second identical file and
-	// orphan the first, whose path the preview already names.
-	if alreadyCapped || result.Output == nil {
-		return
-	}
-	fullOutput := fmt.Sprint(result.Output)
-	if ref := budget.WriteSpill(entry.Name, []byte(fullOutput)); ref.Path != "" {
-		result.Preview = fmt.Sprintf("[spilled to %s, %d chars]", ref.Path, ref.SizeChars)
-	}
-}
-
 // dispatchParallel runs multiple calls concurrently and returns results
 // in the same order.
 func dispatchParallel(
 	ctx context.Context,
 	calls []ToolCall,
-	budget *TurnBudget,
+	spillDir string,
 	guardrail *GuardrailEngine,
 ) []DispatchResult {
 	results := make([]DispatchResult, len(calls))
@@ -448,7 +395,7 @@ func dispatchParallel(
 	for i, call := range calls {
 		go func(idx int, c ToolCall) {
 			defer wg.Done()
-			results[idx] = dispatchOne(ctx, c, budget, guardrail)
+			results[idx] = dispatchOne(ctx, c, spillDir, guardrail)
 		}(i, call)
 	}
 

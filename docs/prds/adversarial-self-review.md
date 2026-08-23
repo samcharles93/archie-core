@@ -125,7 +125,7 @@ that works," not a mandated model-diversity policy.
 
 **Effort/budget:** reuse the per-stage budget override `AgentStage` already
 supports (`agent.go:35`), not a new config surface -- a repo wanting a
-cheaper or more thorough reviewer sets `MaxSteps`/`MaxTokens` the same way
+cheaper or more thorough reviewer sets `MaxSteps` the same way
 the plan stage already can.
 
 **Opt-in, not automatic:** `h019.5` (calibration -- confirm findings

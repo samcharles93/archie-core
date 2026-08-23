@@ -56,7 +56,7 @@ func TestHandleMessageReadsWorkflowField(t *testing.T) {
 		Request: Request{
 			Version: ProtocolVersion, TaskID: 1, Attempt: 1,
 			Stage: "plan", Model: "test/model", Mission: "single",
-			Budget: Budget{MaxSteps: 1, MaxTokens: 10},
+			Budget: Budget{MaxSteps: 1},
 		},
 		Providers: providers,
 	}
@@ -81,18 +81,18 @@ func TestHandleMessageReadsWorkflowField(t *testing.T) {
 		Request: Request{
 			Version: ProtocolVersion, TaskID: 2, Attempt: 1,
 			Stage: "plan", Model: "test/model", Mission: "multi-1",
-			Budget: Budget{MaxSteps: 1, MaxTokens: 10},
+			Budget: Budget{MaxSteps: 1},
 		},
 		Stages: []Request{
 			{
 				Version: ProtocolVersion, TaskID: 2, Attempt: 1,
 				Stage: "plan", Model: "test/model", Mission: "multi-plan",
-				Budget: Budget{MaxSteps: 1, MaxTokens: 10},
+				Budget: Budget{MaxSteps: 1},
 			},
 			{
 				Version: ProtocolVersion, TaskID: 2, Attempt: 1,
 				Stage: "build", Model: "test/model", Mission: "multi-build",
-				Budget: Budget{MaxSteps: 1, MaxTokens: 10},
+				Budget: Budget{MaxSteps: 1},
 			},
 		},
 		Providers: providers,
@@ -137,7 +137,7 @@ func TestHandleMessageRoutesSystemMessagesSeparately(t *testing.T) {
 			Stage:   "plan",
 			Model:   "test/model",
 			Mission: "test",
-			Budget:  Budget{MaxSteps: 1, MaxTokens: 10},
+			Budget:  Budget{MaxSteps: 1},
 		},
 		Providers: map[string]Provider{"test": {Class: "openai", APIKeyEnv: "FAKE"}},
 	}
@@ -266,7 +266,7 @@ func TestNATSRunnerRoundTrip(t *testing.T) {
 		Stage:   "test",
 		Model:   "openai/gpt",
 		Mission: "test mission",
-		Budget:  Budget{MaxSteps: 5, MaxTokens: 100},
+		Budget:  Budget{MaxSteps: 5},
 	}
 
 	result, err := runner.Run(ctx, "/tmp/test-workspace", req, nil)

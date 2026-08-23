@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -195,7 +196,7 @@ func TestLiveReplySnapshotsToolCallVisibility(t *testing.T) {
 	live.finalize(context.Background(), "done")
 
 	last := (*calls)[len(*calls)-1]
-	if !strings.Contains(last.markdown, "🔧 shell\n```text\nexit 0\n```") {
+	if !strings.Contains(last.markdown, "🔧 shell — done\n```text\nexit 0\n```") {
 		t.Fatalf("final reply = %q, want the visibility captured when the reply started", last.markdown)
 	}
 }
@@ -215,14 +216,65 @@ func TestLiveReplyToolCallEscapesMarkdownMetacharacters(t *testing.T) {
 	live.finalize(context.Background(), "**the answer**")
 
 	last := (*calls)[len(*calls)-1]
-	if !strings.Contains(last.markdown, "```text\nfound `*bold*` and _italic_ markers\n```") {
-		t.Fatalf("tool output was not rendered in a fenced block: %q", last.markdown)
+	if !strings.Contains(last.markdown, "```text\n1 matches found; excerpts hidden\n```") {
+		t.Fatalf("tool output was not summarized in a fenced block: %q", last.markdown)
 	}
 	if !strings.Contains(last.markdown, "**the answer**") {
 		t.Fatalf("model reply's own markdown was altered: %q", last.markdown)
 	}
 	if strings.Contains(last.markdown, "schema") || strings.Contains(last.markdown, "Parameters") {
 		t.Fatalf("tool parameters/schema leaked into render: %q", last.markdown)
+	}
+}
+
+// This is the regression seam for #604: realistic completed ToolCallEvents are
+// fed through the live Telegram renderer and asserted at the Bot API boundary.
+// It deliberately includes the production failure shapes Sam observed: a
+// JSON-quoted source file, a module-cache listing, a failed shell probe, and
+// repeated aggregate tool-output character-limit errors.
+func TestLiveReplyRendersNoisyToolTurnAsCompactTelegramText(t *testing.T) {
+	live, calls := newTestLiveReply(t, true)
+
+	source := "package gateway\n\nimport (\n	\"context\"\n	\"fmt\"\n)\n\nfunc run() {}\n"
+	live.ToolCall(gateway.ToolCallEvent{
+		Name:       "read",
+		Parameters: `{"path":"[string]","offset":1,"limit":2000}`,
+		Output:     `{"content":` + strconv.Quote(source) + `,"is_error":false}`,
+	})
+	live.flushRendering()
+	live.ToolCall(gateway.ToolCallEvent{
+		Name:   "find",
+		Output: `{"content":"/home/sam/go/pkg/mod/example.org/a@v1.0.0/go.mod\n/home/sam/go/pkg/mod/example.org/b@v2.0.0/file.go\n/home/sam/projects/unrelated/main.go\n"}`,
+	})
+	live.flushRendering()
+	live.ToolCall(gateway.ToolCallEvent{
+		Name: "shell",
+		Err:  "tool shell: command_exit: exit status 2\n[stderr]\ngrep: unmatched [",
+	})
+	live.flushRendering()
+	for _, name := range []string{"read", "read", "read", "read", "shell"} {
+		live.ToolCall(gateway.ToolCallEvent{Name: name, Err: "tool " + name + ": turn budget exceeded (200000 chars)"})
+	}
+	live.flushRendering()
+	live.finalize(context.Background(), "I found the relevant renderer and stopped after the output-volume cap.")
+
+	got := (*calls)[len(*calls)-1].markdown
+	want := "🔧 read — done\n```text\n8 lines read; content hidden\n```\n" +
+		"🔧 find — done\n```text\n3 paths found; listing hidden\n```\n" +
+		"🔧 shell — failed\n```text\ncommand_exit: exit status 2\n```\n" +
+		"🔧 tools — stopped ×5\n```text\ntool-output limit reached (200000 chars); further results suppressed\n```\n\n" +
+		"I found the relevant renderer and stopped after the output-volume cap."
+	if got != want {
+		t.Fatalf("Telegram-visible text:\n%s\n\nwant:\n%s", got, want)
+	}
+	for i, call := range *calls {
+		for _, forbidden := range []string{
+			"package gateway", `\\n`, `\\\"`, "pkg/mod", "projects/unrelated", "[string]", "turn budget exceeded",
+		} {
+			if strings.Contains(call.markdown, forbidden) {
+				t.Fatalf("Telegram frame %d leaked %q:\n%s", i, forbidden, call.markdown)
+			}
+		}
 	}
 }
 
@@ -251,8 +303,8 @@ func TestLiveReplyToolCalls(t *testing.T) {
 		{
 			name:          "shown",
 			showToolCalls: true,
-			wantLive:      "🔧 shell\n```text\nexit 0\n```\n\nchecking ▌",
-			wantFinal:     "🔧 shell\n```text\nexit 0\n```\n\nchecking",
+			wantLive:      "🔧 shell — done\n```text\nexit 0\n```\n\nchecking ▌",
+			wantFinal:     "🔧 shell — done\n```text\nexit 0\n```\n\nchecking",
 		},
 		{
 			name:          "hidden",
@@ -660,7 +712,7 @@ func TestLiveReplyToolLinesSurviveTheLiveClamp(t *testing.T) {
 	live.flushRendering()
 
 	last := (*calls)[len(*calls)-1]
-	if !strings.HasPrefix(last.markdown, "🔧 shell\n```text\nexit 0\n```\n\n") {
+	if !strings.HasPrefix(last.markdown, "🔧 shell — done\n```text\nexit 0\n```\n\n") {
 		t.Fatalf("live frame lost the tool line once the answer grew past the clamp: %.60q…", last.markdown)
 	}
 	if n := len([]rune(last.markdown)); n > 4096 {
@@ -678,10 +730,10 @@ func TestLiveReplyFinalizeWithToolsAndNoReplyMarksTheAbsence(t *testing.T) {
 	live.finalize(context.Background(), "")
 
 	last := (*calls)[len(*calls)-1]
-	if last.markdown == "🔧 shell\n```text\nexit 0\n```" {
+	if last.markdown == "🔧 shell — done\n```text\nexit 0\n```" {
 		t.Fatalf("finalize sent the bare tool line as the finished answer: %q", last.markdown)
 	}
-	if !strings.Contains(last.markdown, "🔧 shell\n```text\nexit 0\n```") {
+	if !strings.Contains(last.markdown, "🔧 shell — done\n```text\nexit 0\n```") {
 		t.Fatalf("finalize dropped the tool activity: %q", last.markdown)
 	}
 	if !strings.Contains(last.markdown, "no response") {
@@ -712,8 +764,8 @@ func TestLiveReplyFramedTextClampsAnOversizedToolBlock(t *testing.T) {
 	if !strings.Contains(last.markdown, "the answer") {
 		t.Fatalf("answer was lost after bounding oversized tool output: %.80q…", last.markdown)
 	}
-	if !strings.Contains(last.markdown, "…") {
-		t.Fatalf("oversized tool output was not marked as bounded: %.80q…", last.markdown)
+	if strings.Count(last.markdown, "ok") > 0 || !strings.Contains(last.markdown, "output lines hidden") {
+		t.Fatalf("oversized tool output was not summarized: %.80q…", last.markdown)
 	}
 }
 

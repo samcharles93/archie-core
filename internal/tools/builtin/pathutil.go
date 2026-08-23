@@ -64,12 +64,11 @@ var goModCacheDir = sync.OnceValue(func() string {
 	return filepath.Join(home, "go", "pkg", "mod")
 })
 
-// isReadConfined reports whether a read-only tool may touch target. It permits
-// the workspace plus the Go module cache: sandbox_escape on module-cache paths
-// was the largest avoidable error class across analysed sessions, and every
-// occurrence was a legitimate attempt to read dependency source. The cache is
-// deliberately NOT extended to the mutating tools (edit, write), which stay
-// confined to the workspace so the agent cannot corrupt shared dependencies.
+// isReadConfined reports whether an explicit read may touch target. It permits
+// the workspace plus the Go module cache so a known dependency file can be
+// opened by path. Discovery tools (find, grep) use isConfined instead and stay
+// inside the active project/worktree. The cache is deliberately NOT extended
+// to the mutating tools (edit, write).
 func isReadConfined(base, target string) bool {
 	if isConfined(base, target) {
 		return true

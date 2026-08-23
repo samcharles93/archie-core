@@ -76,7 +76,7 @@ Analyse the bug. Write repro tests. Fix.
 			Version: ProtocolVersion, TaskID: 1, Attempt: 1,
 			Stage: "analyse", Model: "test/model",
 			Mission: alreadyPrepended,
-			Budget:  Budget{MaxSteps: 1, MaxTokens: 10},
+			Budget:  Budget{MaxSteps: 1},
 		},
 		Providers: map[string]Provider{"test": {Class: "openai", APIKeyEnv: "FAKE"}},
 	}
