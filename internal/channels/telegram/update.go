@@ -153,7 +153,7 @@ func (g *Gateway) dispatchUpdateAction(ctx context.Context, b *bot.Bot, query *m
 		// the install operation from that request lifetime. Progress and
 		// final-message edits still use ctx and may harmlessly fail when the
 		// callback request is gone.
-		go g.installUpdate(ctx, b, query)
+		go g.installUpdate(ctx, b, query, fresh)
 	default:
 		g.answerModelCallback(ctx, b, query.ID, "That update action is no longer valid.", true)
 	}
@@ -177,7 +177,7 @@ func (g *Gateway) beginUpdate() bool {
 // whether the new version actually comes up healthy -- happens after this
 // function returns. That outcome is reported separately, by whichever
 // archied process boots next, via SendPendingReport.
-func (g *Gateway) installUpdate(ctx context.Context, b *bot.Bot, query *models.CallbackQuery) {
+func (g *Gateway) installUpdate(ctx context.Context, b *bot.Bot, query *models.CallbackQuery, snapshot releaseupdate.Snapshot) {
 	defer func() {
 		g.updateMu.Lock()
 		g.updateInProgress = false
@@ -203,7 +203,7 @@ func (g *Gateway) installUpdate(ctx context.Context, b *bot.Bot, query *models.C
 	}
 
 	installCtx := context.WithoutCancel(ctx)
-	result, err := g.Updates.Install(installCtx, meta, progress)
+	result, err := g.Updates.Install(installCtx, snapshot, meta, progress)
 	if err != nil {
 		g.log.Error("approved update failed", "error", err)
 		lines = append(lines, formatInstallFailure(err))
