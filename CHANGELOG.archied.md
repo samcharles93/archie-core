@@ -1,5 +1,10 @@
 # archied changelog
 
+## [1.14.0] - 2026-08-23
+
+- fix(telegram): compact tool output and drop turn caps
+- fix(update): install only approved components
+
 ## [1.13.0] - 2026-08-23
 
 - fix(telegram): render tool progress as bounded code blocks
