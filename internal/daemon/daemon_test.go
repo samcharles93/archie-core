@@ -645,6 +645,79 @@ func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
 	}
 }
 
+// TestRunViaAgentObservesReportedAgentVersion is the regression proof for
+// daemon.AgentStatus actually being fed: every archie-agent process is
+// task-scoped and ephemeral, so a completed taskrun.Response is the only
+// channel the daemon has to learn what build is really running (see
+// cmd/archied's daemonRunningVersions, which reads this back out via
+// Snapshot for releaseupdate.Report.Verify).
+func TestRunViaAgentObservesReportedAgentVersion(t *testing.T) {
+	d, s, busClient := daemonWithNATS(t)
+	var status AgentStatus
+	d.AgentStatus = &status
+	ctx := context.Background()
+
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 4, "t", "b", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("claim: (%v, %v)", task, err)
+	}
+
+	sub, err := mustCoreConn(t, busClient).Subscribe(agentnats.SubjectForTask(task.ID), func(msg *natsio.Msg) {
+		data, _ := json.Marshal(taskrun.Response{
+			Status: store.StatusPROpen, AgentVersion: "1.9.11", AgentInstallType: "container",
+		})
+		_ = msg.Respond(data)
+	})
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	t.Cleanup(func() { _ = sub.Unsubscribe() })
+
+	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget"})
+
+	version, installType, ok := status.Snapshot()
+	if !ok || version != "1.9.11" || installType != "container" {
+		t.Fatalf("Snapshot() = (%q, %q, %v), want (\"1.9.11\", \"container\", true)", version, installType, ok)
+	}
+}
+
+// TestRunViaAgentIgnoresEmptyAgentVersion: a worker older than this field,
+// or one whose build was never stamped, reports an empty AgentVersion.
+// Recording that as observed would read as a confirmed "unknown" version
+// rather than as nothing having been reported yet.
+func TestRunViaAgentIgnoresEmptyAgentVersion(t *testing.T) {
+	d, s, busClient := daemonWithNATS(t)
+	var status AgentStatus
+	d.AgentStatus = &status
+	ctx := context.Background()
+
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 5, "t", "b", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("claim: (%v, %v)", task, err)
+	}
+
+	sub, err := mustCoreConn(t, busClient).Subscribe(agentnats.SubjectForTask(task.ID), func(msg *natsio.Msg) {
+		data, _ := json.Marshal(taskrun.Response{Status: store.StatusPROpen})
+		_ = msg.Respond(data)
+	})
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	t.Cleanup(func() { _ = sub.Unsubscribe() })
+
+	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget"})
+
+	if _, _, ok := status.Snapshot(); ok {
+		t.Fatal("Snapshot() reports observed after an empty AgentVersion response")
+	}
+}
+
 // testForge implements forge.Forge for daemon tests.
 type testForge struct {
 	comments     []commentCall

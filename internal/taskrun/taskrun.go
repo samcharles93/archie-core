@@ -58,4 +58,13 @@ type Response struct {
 	Task   *store.Task `json:"task"`
 	Status string      `json:"status"`
 	Error  string      `json:"error,omitempty"`
+	// AgentVersion and AgentInstallType report the build of archie-agent
+	// that actually ran this task -- self-reported by the worker, not the
+	// version archied's release pipeline expected to be running. Every
+	// archie-agent process is task-scoped and ephemeral, so this response
+	// is the only channel the daemon has to observe what is really in
+	// service; see daemon.AgentStatus. Empty AgentVersion means an
+	// unstamped build ("dev") or a worker older than this field.
+	AgentVersion     string `json:"agent_version,omitempty"`
+	AgentInstallType string `json:"agent_install_type,omitempty"`
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
+	"github.com/samcharles93/archie-core/internal/installtype"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/storerpc"
 	"github.com/samcharles93/archie-core/internal/taskrun"
@@ -412,6 +413,15 @@ func TestExecuteTaskRequestUsesInfrastructureRPCDependencies(t *testing.T) {
 	}
 	if response.Status != store.StatusPROpen || len(forge.prs) != 1 {
 		t.Fatalf("response status/PRs = (%q, %d), want (%q, 1)", response.Status, len(forge.prs), store.StatusPROpen)
+	}
+	// archie-core-1786751948782-3-837a8fd0 point 4: every response reports
+	// what this worker actually is, since it's the only channel the daemon
+	// has to learn what's really running (see daemon.AgentStatus).
+	if response.AgentVersion != Version() {
+		t.Errorf("response.AgentVersion = %q, want Version() = %q", response.AgentVersion, Version())
+	}
+	if response.AgentInstallType != installtype.Type() {
+		t.Errorf("response.AgentInstallType = %q, want installtype.Type() = %q", response.AgentInstallType, installtype.Type())
 	}
 	stored, err := st.TaskByIssue(ctx, "acme", "rpc-widget", 2)
 	if err != nil || stored == nil || stored.Status != store.StatusPROpen || stored.PRNumber != 5 {

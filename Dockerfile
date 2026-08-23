@@ -7,11 +7,14 @@
 
 # ── builder ───────────────────────────────────────────────────────────
 FROM golang:1.26-trixie AS builder
+ARG RUNTIME_VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o /usr/local/bin/archie-agent ./cmd/archie-agent/
+RUN CGO_ENABLED=0 go build \
+    -ldflags "-X github.com/samcharles93/archie-core/internal/app/agentworker.version=${RUNTIME_VERSION} -X github.com/samcharles93/archie-core/internal/installtype.buildType=container" \
+    -o /usr/local/bin/archie-agent ./cmd/archie-agent/
 
 # Same Debian release as the runtime, so glibc matches.
 FROM node:24-trixie-slim AS node

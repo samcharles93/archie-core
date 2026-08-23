@@ -97,6 +97,14 @@ type Daemon struct {
 	// the host with the daemon's own authority.
 	SandboxRequired bool
 
+	// AgentStatus records the version/install-type the most recently
+	// completed archie-agent task response reported about itself, for
+	// releaseupdate.Report.Verify to check an update claim against. Nil
+	// disables observation -- runViaAgent skips the Observe call rather
+	// than reporting the agent as unverifiable via a zero value, which
+	// would read as a checked "unknown" rather than "never wired".
+	AgentStatus *AgentStatus
+
 	// ContainerPool manages Docker container lifecycle. Nil when [containers]
 	// is not configured. When non-nil, every task gets a fresh container.
 	ContainerPool *container.Pool
@@ -1083,6 +1091,14 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *store.Task, repo config.
 		d.Log.Error("taskrun run failed", "task", task.ID, "err", resp.Error)
 		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "taskrun run failed: "+resp.Error)
 		return
+	}
+
+	// Reached only past every failure return above, so this is always a
+	// fully decoded, error-free response -- a version is never recorded off
+	// a request that never reached an agent, or a response describing a
+	// parked/errored task.
+	if d.AgentStatus != nil && resp.AgentVersion != "" {
+		d.AgentStatus.Observe(resp.AgentVersion, resp.AgentInstallType)
 	}
 
 	d.Log.Info("taskrun complete", "task", task.ID, "status", resp.Status)
