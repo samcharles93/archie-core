@@ -107,6 +107,10 @@ type liveReply struct {
 	// every rendering stage can lead with it rather than have it buried
 	// mid-answer or clamped away.
 	toolLines []string
+	// failureLines and failureCounts let ToolCall replace a repeated failure
+	// in place with one counted entry instead of appending noisy retries.
+	failureLines  map[string]int
+	failureCounts map[string]int
 	// rendered is the last body actually sent. Telegram rejects an edit
 	// that changes nothing, so an unchanged body is not sent at all.
 	rendered  string
@@ -142,6 +146,8 @@ func (g *Gateway) newLiveReply(ctx context.Context, b *bot.Bot, chatID int64, me
 		cancelRender:    cancelRender,
 		renderRequests:  make(chan chan struct{}, 1),
 		renderDone:      make(chan struct{}),
+		failureLines:    make(map[string]int),
+		failureCounts:   make(map[string]int),
 	}
 	go live.runRenderer(renderCtx)
 	g.registerLive(ctx, live)
@@ -321,15 +327,35 @@ func (l *liveReply) ToolCall(event gateway.ToolCallEvent) {
 	// raw/JSON-shaped parameters: they are noisy, can expose secrets, and were
 	// the source of unreadable schema placeholders in Telegram.
 	line := event.RenderToolCall()
+	key := event.FailureKey()
 
 	l.mu.Lock()
-	l.toolLines = append(l.toolLines, line)
+	if index, ok := l.failureLines[key]; key != "" && ok {
+		l.failureCounts[key]++
+		l.toolLines[index] = countedToolLine(line, l.failureCounts[key])
+	} else {
+		l.toolLines = append(l.toolLines, line)
+		if key != "" {
+			l.failureLines[key] = len(l.toolLines) - 1
+			l.failureCounts[key] = 1
+		}
+	}
 	l.mu.Unlock()
 
 	// A tool call is a discrete event rather than a token, and there are
 	// few of them: wake the renderer immediately so the user sees what ran
 	// while it is still relevant. The callback itself never waits on HTTP.
 	l.requestRender()
+}
+
+func countedToolLine(line string, count int) string {
+	if count <= 1 {
+		return line
+	}
+	if newline := strings.IndexByte(line, '\n'); newline >= 0 {
+		return line[:newline] + fmt.Sprintf(" ×%d", count) + line[newline:]
+	}
+	return line + fmt.Sprintf(" ×%d", count)
 }
 
 // mediaSendTimeout bounds one Media delivery. It is independent of the

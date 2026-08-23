@@ -93,15 +93,18 @@ func (r *InProcessRunner) Run(ctx context.Context, workspace string, req Request
 		return Result{}, err
 	}
 	res, err := r.run(ctx, agentloop.Config{
-		Runtime:      r.runtime,
-		ModelRef:     req.Model,
-		WorkDir:      workspace,
-		Mission:      req.Mission,
-		ExtraRules:   req.ExtraRules,
-		Notes:        notes,
-		Gate:         toAgentGate(req.Gate),
-		Preflight:    toAgentCommands(req.Preflight),
-		Budget:       agentloop.Budget(req.Budget),
+		Runtime:    r.runtime,
+		ModelRef:   req.Model,
+		WorkDir:    workspace,
+		Mission:    req.Mission,
+		ExtraRules: projectScopedRules(workspace, req.ExtraRules),
+		Notes:      notes,
+		Gate:       toAgentGate(req.Gate),
+		Preflight:  toAgentCommands(req.Preflight),
+		Budget: agentloop.Budget{
+			MaxSteps:  req.Budget.MaxSteps,
+			WallClock: req.Budget.WallClock,
+		},
 		ReadOnly:     req.ReadOnly,
 		ProtectPaths: protectionMatcher(req.Protection, req.ReadOnly),
 		Extra: mergeToolSets(
@@ -138,6 +141,14 @@ func (r *InProcessRunner) Run(ctx context.Context, workspace string, req Request
 		return result, cause
 	}
 	return result, err
+}
+
+func projectScopedRules(workspace, extra string) string {
+	rule := "Confine discovery to " + workspace + ". Do not inspect home directories, dependency/module caches, or unrelated projects unless the mission explicitly requests that external path."
+	if strings.TrimSpace(extra) == "" {
+		return rule
+	}
+	return rule + "\n" + extra
 }
 
 func pluginToolSet(req Request, workspace string, occupied ...core.ToolSet) (core.ToolSet, error) {

@@ -517,7 +517,7 @@ func tmpConfigDir(t *testing.T) string {
 //     - NO_COLOR
 // budgets:
 //   max_steps: 60
-//   max_tokens: 500000
+
 //   wall_clock: 30m
 // `)
 

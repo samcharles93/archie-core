@@ -71,14 +71,14 @@ func TestApply_CommentedTable_UncommentsOnlyRequestedKey(t *testing.T) {
 
 func TestApply_MissingKeyInExistingActiveTable_Appends(t *testing.T) {
 	out, err := tomlwrite.Apply([]byte(sample), []tomlwrite.Edit{
-		{Table: "budgets", Key: "max_tokens", Value: "400000"},
+		{Table: "budgets", Key: "wall_clock", Value: "\"45m\""},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := string(out)
-	if !strings.Contains(got, "[budgets]\nmax_steps = 60\nmax_tokens = 400000\n") {
-		t.Fatalf("expected max_tokens appended after max_steps, got:\n%s", got)
+	if !strings.Contains(got, "[budgets]\nmax_steps = 60\nwall_clock = \"45m\"\n") {
+		t.Fatalf("expected wall_clock appended after max_steps, got:\n%s", got)
 	}
 }
 

@@ -241,7 +241,6 @@ function budgetsCard(budgets, ctx) {
     el(
       "div.kv-list",
       row("Max steps", budgets.max_steps || "Unlimited", { key: "budgets.max_steps", type: "int", raw: budgets.max_steps, ...ctx }),
-      row("Max tokens", budgets.max_tokens || "Unlimited", { key: "budgets.max_tokens", type: "int", raw: budgets.max_tokens, ...ctx }),
       row("Wall clock", budgets.wall_clock, { key: "budgets.wall_clock", type: "string", raw: budgets.wall_clock, ...ctx }),
       row("Max gate failures before parking", budgets.gate_max_failures || "Unlimited", { key: "budgets.gate_max_failures", type: "int", raw: budgets.gate_max_failures, ...ctx }),
     ),

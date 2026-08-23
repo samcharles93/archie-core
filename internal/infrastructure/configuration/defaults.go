@@ -8,7 +8,6 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/secret"
-	"github.com/samcharles93/archie-core/internal/tools"
 )
 
 // Defaults applied to absent input. Named so a reader can find the value
@@ -99,9 +98,7 @@ func applyToolPolicyDefaults(cfg *config.Config) {
 	if cfg.Tools.Policy.MaxResultChars == 0 {
 		cfg.Tools.Policy.MaxResultChars = defaultMaxResultChars
 	}
-	if cfg.Tools.Policy.TurnBudgetChars == 0 {
-		cfg.Tools.Policy.TurnBudgetChars = tools.DefaultTurnBudgetChars
-	}
+
 	// SpillDir is deliberately NOT defaulted.
 	//
 	// Spilling hands the model a file path to read back, and the read tool is

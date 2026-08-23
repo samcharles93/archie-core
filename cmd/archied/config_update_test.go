@@ -18,10 +18,6 @@ func TestApplyDottedOverlayNestsBeforeDecode(t *testing.T) {
 	if cfg.Budgets.MaxSteps != 20 {
 		t.Fatalf("MaxSteps = %d, want 20 (dotted key must be nested before decode)", cfg.Budgets.MaxSteps)
 	}
-	// A field the update does not name keeps its value.
-	if cfg.Budgets.MaxTokens != 0 {
-		t.Errorf("MaxTokens = %d, want 0 (untouched)", cfg.Budgets.MaxTokens)
-	}
 }
 
 // TestApplyDottedOverlayRejectsEmptyKey pins that a malformed dotted key

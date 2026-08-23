@@ -198,7 +198,7 @@ func screen(name string, input map[string]any) error {
 	return nil
 }
 
-// classify tags each tool so the guardrail engine and budget enforcement
+// classify tags each tool so the guardrail engine and result-limit enforcement
 // can reason about it. This is categorisation, not a jail: it describes
 // what a tool does and does not gate whether it may run.
 //

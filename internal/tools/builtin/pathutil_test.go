@@ -99,7 +99,7 @@ func TestReadAllowsGoModCache(t *testing.T) {
 	}
 }
 
-func TestGrepAllowsGoModCache(t *testing.T) {
+func TestGrepRejectsGoModCache(t *testing.T) {
 	cwd := t.TempDir()
 	cache := t.TempDir()
 	withGoModCache(t, cache)
@@ -115,11 +115,45 @@ func TestGrepAllowsGoModCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if res.IsError {
-		t.Fatalf("expected grep of the module cache to succeed, got: %s", res.Content)
+	if !res.IsError || !strings.Contains(res.Content, "escapes working directory") {
+		t.Fatalf("expected grep of the module cache to be rejected, got: %#v", res)
 	}
-	if !strings.Contains(res.Content, "Needle") {
-		t.Fatalf("unexpected content: %s", res.Content)
+}
+
+func TestFindRejectsOutsideWorkspace(t *testing.T) {
+	cwd := t.TempDir()
+	cache := t.TempDir()
+	other := t.TempDir()
+	withGoModCache(t, cache)
+
+	if err := os.MkdirAll(filepath.Join(cache, "example.com", "dep@v1.0.0"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(other, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tool := NewFindTool(cwd)
+	for _, path := range []string{cache, other, "/home/sam"} {
+		res, err := tool.Execute(context.Background(), json.RawMessage(`{"path":`+quote(path)+`}`), nil)
+		if err != nil {
+			t.Fatalf("path %s: unexpected error: %v", path, err)
+		}
+		if !res.IsError || !strings.Contains(res.Content, "escapes working directory") {
+			t.Fatalf("path %s: expected workspace-confined find, got: %#v", path, res)
+		}
+	}
+
+	inside := filepath.Join(cwd, "keep.go")
+	if err := os.WriteFile(inside, []byte("package keep\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := tool.Execute(context.Background(), json.RawMessage(`{"pattern":"keep.go"}`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError || !strings.Contains(res.Content, "keep.go") {
+		t.Fatalf("expected workspace find to succeed, got: %#v", res)
 	}
 }
 

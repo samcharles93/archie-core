@@ -8,6 +8,8 @@
 //     removed. They were 14MB of tracked binaries that were re-extracted to a
 //     temporary directory on every run. grepBinary now resolves rg from PATH
 //     and the existing pure-Go grepFallback covers its absence.
+//   - discovery is confined to the active workspace. Module-cache and other
+//     absolute paths are rejected so grep cannot search home or pkg/mod trees.
 //
 // Refresh by diffing against that path at a newer tau commit. Do not
 // edit without recording the change above.
@@ -144,7 +146,7 @@ func makeGrepExecutor(cwd string, workspaceIndex GrepIndex) Executor {
 			searchPath = resolvePath(cwd, p.Path)
 		}
 
-		if !isReadConfined(cwd, searchPath) {
+		if !isConfined(cwd, searchPath) {
 			return Result{Content: "error: path escapes working directory", IsError: true, ErrorKind: "sandbox_escape"}, nil
 		}
 

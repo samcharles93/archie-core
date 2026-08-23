@@ -130,9 +130,8 @@ func isWithin(base, target string) bool {
 // toolLimits reads the configured per-turn result limits.
 func toolLimits(cfg config.Config) agentexec.ToolLimits {
 	return agentexec.ToolLimits{
-		MaxResultChars:  cfg.Tools.Policy.MaxResultChars,
-		TurnBudgetChars: cfg.Tools.Policy.TurnBudgetChars,
-		SpillDir:        cfg.Tools.Policy.SpillDir,
+		MaxResultChars: cfg.Tools.Policy.MaxResultChars,
+		SpillDir:       cfg.Tools.Policy.SpillDir,
 	}
 }
 

@@ -7,6 +7,30 @@ changing anything that contradicts a prior decision.
 
 ---
 
+## 2026-08-24  --  Turn continuation is never output-volume or token gated
+
+**Decision**: A turn is never stopped because an aggregate token count or
+aggregate tool-result character count was reached. `max_tokens` and
+`turn_budget_chars` are not runtime continuation controls. Tool output is
+bounded only per invocation with `max_result_chars`; oversized individual
+results are spilled when a workspace-readable spill directory is configured,
+or explicitly truncated otherwise.
+
+**Reasoning**: Aggregate caps discard useful work and caused the model to emit
+repeated `turn budget exceeded (200000 chars)` tool failures instead of
+finishing. Model context/output accounting and tool-result volume are distinct:
+provider output limits may describe one model response, but they must never be
+used to terminate the multi-step turn.
+
+**Context**: GitHub #604 showed full file and module listings followed by four
+identical read failures and a shell failure at the old 200,000-character cap.
+The renderer now summarizes those legacy events for replay, while current
+dispatch never creates them. Find and grep are confined to the active
+workspace/worktree; the Go module cache remains readable only by explicit
+path, not by discovery.
+
+---
+
 ## 2026-07-23  --  Forge-agnostic issue creation via CreateIssue
 
 **Decision**: Add `CreateIssue(ctx, owner, repo, title, body, labels)
@@ -48,6 +72,9 @@ in archie-core (`.beads/`). Six issues seeded for the scaling roadmap.
 ---
 
 ## 2026-07-23  --  Token budgets must be generous, not predictive
+
+> **Superseded by the 2026-08-24 decision above.** There is no configured
+> aggregate token cap; model token usage remains accounting only.
 
 **Decision**: Set `max_tokens` to 100,000,000 (100M). Do not attempt to
 predict what a task needs without data. Lower limits later based on

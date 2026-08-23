@@ -147,9 +147,6 @@
         "max_steps": {
           "type": "integer"
         },
-        "max_tokens": {
-          "type": "integer"
-        },
         "wall_clock": {
           "type": "integer"
         }
