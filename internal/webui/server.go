@@ -236,6 +236,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/channels", s.handleChannels)
 	mux.HandleFunc("POST /api/channels/{id}/reload", s.handleChannelReload)
 	mux.HandleFunc("GET /api/config", s.handleConfig)
+	mux.HandleFunc("GET /api/version", s.handleVersion)
 	mux.HandleFunc("PATCH /api/config", s.handleConfigUpdate)
 	mux.HandleFunc("POST /api/config/reset", s.handleConfigReset)
 	mux.HandleFunc("GET /api/logs", s.handleLogs)

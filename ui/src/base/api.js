@@ -86,6 +86,7 @@ export const api = {
 		return res.json();
 	},
   config: () => req("/api/config"),
+  version: () => req("/api/version"),
   configUpdate: async (updates) => {
     const res = await fetch("/api/config", {
       method: "PATCH",

@@ -2,6 +2,7 @@ import "./settings.css";
 import { api } from "../base/api.js";
 import { el, empty, mount, pill } from "../base/dom.js";
 import { row } from "./config-row.js";
+import { updateStatusCard } from "./update-status.js";
 
 /**
  * A view of the config archied is actually running with, grouped by
@@ -23,9 +24,11 @@ export function settingsPage() {
   // tables on one shared measure; see settings.css.
   const root = el("div.cfg-page");
   const body = el("div");
+  const versionSlot = el("div");
 
   render();
   load();
+  loadVersionStatus();
 
   function render() {
     mount(
@@ -37,8 +40,9 @@ export function settingsPage() {
           el("h1.page-title", "Configuration"),
           el("p.page-sub", "What archied is actually running with right now."),
         ),
-        el("div.page-actions", el("button.btn", { onclick: load }, "Refresh")),
+        el("div.page-actions", el("button.btn", { onclick: () => { load(); loadVersionStatus(); } }, "Refresh")),
       ),
+      versionSlot,
       body,
     );
   }
@@ -49,6 +53,22 @@ export function settingsPage() {
       renderBody(cfg, load);
     } catch (err) {
       mount(body, el("div.card", empty("Cannot reach archied", String(err.message || err))));
+    }
+  }
+
+  async function loadVersionStatus() {
+    try {
+      const data = await api.version();
+      mount(versionSlot, updateStatusCard(data?.components || []));
+    } catch (err) {
+      // 501 means updates just aren't configured for this deployment --
+      // that's the ordinary state for most installs, not a failure to
+      // report as loudly as an unreachable daemon.
+      if (err?.status === 501) {
+        mount(versionSlot);
+        return;
+      }
+      mount(versionSlot, el("div.card", empty("Update status unavailable", String(err.message || err))));
     }
   }
 
