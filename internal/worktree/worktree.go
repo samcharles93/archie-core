@@ -22,6 +22,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -61,6 +62,16 @@ type Manager struct {
 	// BaseURL overrides the forge host. Set from config [forge].host.
 	// Empty falls back to https://github.com.
 	BaseURL string
+	// Log optionally receives diagnostics and non-fatal warnings from
+	// worktree operations.
+	Log *slog.Logger
+}
+
+func (m *Manager) logger() *slog.Logger {
+	if m != nil && m.Log != nil {
+		return m.Log
+	}
+	return slog.Default()
 }
 
 // Dir is the worktree path for a task.
@@ -117,7 +128,7 @@ func (m *Manager) Prepare(
 		return "", "", fmt.Errorf("invalid worktree coordinates")
 	}
 	dir = m.Dir(owner, repo, issue)
-	branch = archieBranch(issue, title, body, labels)
+	branch = archieBranch(issue, title, labels)
 
 	if _, statErr := os.Stat(filepath.Join(dir, preparedSentinel)); statErr == nil {
 		if err := m.refresh(ctx, dir, base, branch); err != nil {
@@ -384,17 +395,29 @@ func writeSentinel(dir string) error {
 
 // CommitAll stages everything and commits; returns false when the tree
 // is clean (nothing to commit).
-func (m *Manager) CommitAll(_ context.Context, dir, message string) (bool, error) {
+func (m *Manager) CommitAll(ctx context.Context, dir, message string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	r, err := git.PlainOpen(dir)
 	if err != nil {
 		return false, fmt.Errorf("open worktree: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
 	}
 	wt, err := r.Worktree()
 	if err != nil {
 		return false, fmt.Errorf("open worktree: %w", err)
 	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	if err := wt.AddWithOptions(&git.AddOptions{All: true}); err != nil {
 		return false, fmt.Errorf("stage changes: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
 	}
 	status, err := wt.Status()
 	if err != nil {
@@ -402,6 +425,9 @@ func (m *Manager) CommitAll(_ context.Context, dir, message string) (bool, error
 	}
 	if status.IsClean() {
 		return false, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
 	}
 	sig := m.signature()
 	if _, err := wt.Commit(message, &git.CommitOptions{Author: sig, Committer: sig}); err != nil {
@@ -430,7 +456,15 @@ func (m *Manager) Push(ctx context.Context, dir, branch string) error {
 		return fmt.Errorf("push %s: %w", branch, err)
 	}
 	// Record the upstream so the branch tracks origin, matching what
-	// `git push -u` left behind previously.
+	// `git push -u` left behind previously. A post-publication metadata
+	// failure must not cause push to report an error.
+	if err := m.recordUpstream(r, branch, ref); err != nil {
+		m.logger().Warn("record branch upstream", "branch", branch, "err", err)
+	}
+	return nil
+}
+
+func (m *Manager) recordUpstream(r *git.Repository, branch string, ref plumbing.ReferenceName) error {
 	cfg, err := r.Config()
 	if err != nil {
 		return fmt.Errorf("read repo config: %w", err)
@@ -444,7 +478,7 @@ func (m *Manager) Push(ctx context.Context, dir, branch string) error {
 		Merge:  ref,
 	}
 	if err := r.SetConfig(cfg); err != nil {
-		return fmt.Errorf("record branch upstream: %w", err)
+		return fmt.Errorf("write repo config: %w", err)
 	}
 	return nil
 }
@@ -608,17 +642,11 @@ func resolveBase(r *git.Repository, base string) (plumbing.Hash, error) {
 }
 
 // archieBranch builds a descriptive branch name. Uses conventional
-// commit prefix (feat/fix/chore) from the issue title when possible,
-// falls back to labels, then a plain "archie" prefix.
-func archieBranch(issue int, title, body, labels string) string {
-	prefix, rest := branchPrefix(title, body, labels), title
-	// Strip conventional prefix from slug to avoid duplication.
-	if p := strings.TrimSuffix(prefix, ""); p != "" {
-		t := strings.ToLower(title)
-		if strings.HasPrefix(t, p+":") {
-			rest = strings.TrimSpace(title[len(p)+1:])
-		}
-	}
+// commit prefix (feat/fix/chore/etc.) from the issue title when present,
+// falls back to labels, then defaults to "feat".
+func archieBranch(issue int, title, labels string) string {
+	prefix := branchPrefix(title, labels)
+	_, rest := parseTitlePrefix(title)
 	slug := branchSlug(rest)
 	if slug == "" {
 		return fmt.Sprintf("%s/%d", prefix, issue)
@@ -626,10 +654,38 @@ func archieBranch(issue int, title, body, labels string) string {
 	return fmt.Sprintf("%s/%d-%s", prefix, issue, slug)
 }
 
-// branchPrefix derives a conventional-commit prefix from the issue
-// labels, then falls back to "feat". Maps: bug→fix, feature→feat,
-// enhancement→feat, docs→docs, chore→chore, test→test.
-func branchPrefix(title, body, labels string) string {
+// branchPrefix derives a conventional-commit prefix from the issue title
+// when present, falls back to labels, and defaults to "feat".
+// Supported label mappings: bug→fix, feature/enhancement→feat, docs→docs,
+// chore→chore, test→test, refactor→refactor.
+func branchPrefix(title, labels string) string {
+	if prefix, _ := parseTitlePrefix(title); prefix != "" {
+		return prefix
+	}
+	return labelPrefix(labels)
+}
+
+func parseTitlePrefix(title string) (prefix, rest string) {
+	idx := strings.Index(title, ":")
+	if idx == -1 {
+		return "", title
+	}
+	lead := strings.TrimSpace(strings.ToLower(title[:idx]))
+	if open := strings.Index(lead, "("); open != -1 && strings.HasSuffix(lead, ")") {
+		lead = lead[:open]
+	}
+	switch lead {
+	case "fix", "feat", "chore", "docs", "test", "refactor", "perf", "build", "ci", "style", "revert":
+		return lead, strings.TrimSpace(title[idx+1:])
+	case "bug":
+		return "fix", strings.TrimSpace(title[idx+1:])
+	case "feature", "enhancement":
+		return "feat", strings.TrimSpace(title[idx+1:])
+	}
+	return "", title
+}
+
+func labelPrefix(labels string) string {
 	for l := range strings.SplitSeq(labels, ",") {
 		switch strings.TrimSpace(strings.ToLower(l)) {
 		case "bug":
@@ -650,7 +706,7 @@ func branchPrefix(title, body, labels string) string {
 }
 
 // branchSlug converts a title to a kebab-case slug suitable for a git
-// branch. Only keeps lowercase alphanumerics and hyphens, max 40 chars.
+// branch. Only keeps lowercase alphanumerics and hyphens, max 60 chars.
 func branchSlug(title string) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(title) {
