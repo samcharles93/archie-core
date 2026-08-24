@@ -2,6 +2,7 @@ package nats
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"log/slog"
 	"time"
@@ -19,14 +20,16 @@ import (
 // owns the lifecycle: StartEmbedded before dialing the client, Shutdown after
 // the client closes.
 type EmbeddedServer struct {
-	srv *server.Server
-	log *slog.Logger
+	srv   *server.Server
+	log   *slog.Logger
+	token string
 }
 
 // EmbeddedOptions configures StartEmbedded.
 type EmbeddedOptions struct {
-	// Host is the bind address. Empty means "127.0.0.1" (loopback only,
-	// which is correct: an embedded server carries no authentication).
+	// Host is the bind address. Empty means "127.0.0.1" (loopback only).
+	// Container-backed deployments pass the host gateway address of the
+	// Docker bridge their workers join.
 	Host string
 	// Port is the listen port. Zero means a random port.
 	Port int
@@ -50,13 +53,15 @@ func StartEmbedded(ctx context.Context, opts EmbeddedOptions, log *slog.Logger) 
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
+	token := rand.Text()
 
 	srv, err := server.NewServer(&server.Options{
-		Host:      opts.Host,
-		Port:      opts.Port,
-		JetStream: true,
-		StoreDir:  opts.StoreDir,
-		NoSigs:    true, // the daemon owns signals, not the embedded server
+		Host:          opts.Host,
+		Port:          opts.Port,
+		JetStream:     true,
+		StoreDir:      opts.StoreDir,
+		Authorization: token,
+		NoSigs:        true, // the daemon owns signals, not the embedded server
 		// NoLog leaves the server's logger nil (ConfigureLogger is only ever
 		// called on reload). A nil logger makes the server's Fatalf a no-op
 		// rather than an os.Exit, so a JetStream startup failure cannot crash
@@ -83,13 +88,18 @@ func StartEmbedded(ctx context.Context, opts EmbeddedOptions, log *slog.Logger) 
 	}
 
 	log.Info("embedded nats ready", "url", srv.ClientURL())
-	return &EmbeddedServer{srv: srv, log: log}, nil
+	return &EmbeddedServer{srv: srv, log: log, token: token}, nil
 }
 
 // ClientURL returns the address the server is listening on. It is the URL the
 // client must dial, and the value the daemon records as the endpoint its own
 // connection used.
 func (e *EmbeddedServer) ClientURL() string { return e.srv.ClientURL() }
+
+// Token returns the per-start credential required by every embedded NATS
+// client. Composition keeps it in memory and passes it only to the daemon's
+// client and managed worker environments; it must never be logged or persisted.
+func (e *EmbeddedServer) Token() string { return e.token }
 
 // Shutdown stops the server and waits for it to finish. It is safe to call on
 // a nil server so callers can defer it unconditionally.

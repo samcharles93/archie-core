@@ -979,13 +979,14 @@ func startContainers(
 	}
 
 	pool, err := container.NewPool(ctx, container.Config{
-		Image:          cfg.Containers.Image,
-		MaxConcurrency: cfg.Containers.MaxConcurrency,
-		MaxUptime:      cfg.Containers.MaxUptime.Std(),
-		PullPolicy:     cfg.Containers.PullPolicy,
-		Network:        cfg.Containers.Network,
-		DockerClient:   dockerCli,
-	}, cfg.NATS.URL, log)
+		Image:              cfg.Containers.Image,
+		MaxConcurrency:     cfg.Containers.MaxConcurrency,
+		MaxUptime:          cfg.Containers.MaxUptime.Std(),
+		PullPolicy:         cfg.Containers.PullPolicy,
+		Network:            cfg.Containers.Network,
+		DockerClient:       dockerCli,
+		RequireHostGateway: cfg.NATS.Mode == config.NATSModeEmbedded,
+	}, log)
 	if err != nil {
 		// A missing image is recoverable by hand. The daemon sends no registry
 		// credentials on pull (internal/container/pool.go), so a private

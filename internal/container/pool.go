@@ -72,17 +72,19 @@ func WriteTaskJSON(workspace string, payload TaskPayload) error {
 
 // Pool manages a set of Docker containers running archie-agent.
 type Pool struct {
-	cli     *client.Client
-	ownCli  bool // true when the pool created the client (owns Close)
-	cfg     Config
-	log     *slog.Logger
-	natsURL string
-	// network is the user-defined Docker network spawned containers join,
-	// detected from the daemon's own container so they can resolve
-	// sibling services (nats, etc.) by compose service name. Empty when
-	// the daemon isn't running in a container on such a network, or when
-	// detection fails  --  Docker then falls back to its default bridge.
+	cli    *client.Client
+	ownCli bool // true when the pool created the client (owns Close)
+	cfg    Config
+	log    *slog.Logger
+	// network is the Docker network spawned containers join. External broker
+	// deployments may leave it empty to use Docker's implicit default bridge;
+	// embedded deployments resolve that default explicitly as "bridge" so its
+	// host gateway can be inspected.
 	network string
+	// hostGateway is the local IPv4 gateway of network. It is populated when
+	// embedded broker reachability is required, so native composition can bind
+	// the listener to an address visible only to workers on this bridge.
+	hostGateway string
 
 	mu     sync.Mutex
 	active int
@@ -107,6 +109,9 @@ type Config struct {
 	// NewPool creates its own via client.New(client.FromEnv). Pass a
 	// shared client to avoid multiple independent connections.
 	DockerClient *client.Client
+	// RequireHostGateway resolves and validates a local Docker bridge gateway.
+	// Embedded NATS needs this address; external brokers do not.
+	RequireHostGateway bool
 }
 
 // NewPool connects to the Docker daemon, optionally pulls the image,
@@ -114,7 +119,7 @@ type Config struct {
 //
 // If cfg.DockerClient is set, it is reused (caller owns Close).
 // Otherwise a new client is created via client.FromEnv (pool owns Close).
-func NewPool(ctx context.Context, cfg Config, natsURL string, log *slog.Logger) (*Pool, error) {
+func NewPool(ctx context.Context, cfg Config, log *slog.Logger) (*Pool, error) {
 	cli := cfg.DockerClient
 	if cli == nil {
 		var err error
@@ -128,14 +133,27 @@ func NewPool(ctx context.Context, cfg Config, natsURL string, log *slog.Logger) 
 	if network == "" {
 		network = selfNetwork(ctx, cli, log)
 	}
+	if cfg.RequireHostGateway && network == "" {
+		// A native daemon is not itself attached to a Docker network. Its
+		// managed workers use Docker's default bridge unless configured
+		// otherwise, so that is the bridge whose host gateway must be bound.
+		network = "bridge"
+	}
+	hostGateway, err := resolveHostGateway(ctx, cli, network, cfg.RequireHostGateway)
+	if err != nil {
+		if cfg.DockerClient == nil {
+			_ = cli.Close()
+		}
+		return nil, err
+	}
 
 	p := &Pool{
-		cli:     cli,
-		cfg:     cfg,
-		log:     log,
-		natsURL: natsURL,
-		ownCli:  cfg.DockerClient == nil,
-		network: network,
+		cli:         cli,
+		cfg:         cfg,
+		log:         log,
+		ownCli:      cfg.DockerClient == nil,
+		network:     network,
+		hostGateway: hostGateway,
 	}
 
 	// Pull image if needed.

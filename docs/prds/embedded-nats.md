@@ -1,86 +1,76 @@
-# Embedded NATS -- decision
+# Embedded NATS execution -- decision
 
-**Status:** Decided, not yet implemented
-**Date:** 2026-08-22
-**Beads issue:** `archie-core-7d5u.2`
+**Status:** Amended; implementation in progress
 
-`event-sources-and-reactions.md` settled the reaction-delivery mechanism (reuse
-`internal/infrastructure/eventbus/nats`, a second stream under a fan-out
-retention policy) and left the deployment shape to this issue. This document
-decides that shape. `github.com/nats-io/nats-server/v2` is already a direct
-dependency, used today only in `_test.go` files; the gap is that production
-startup only knows "external URL configured" vs "no NATS, use SQLite
-`ClaimNext`".
+**Date:** 2026-08-24
 
-## 1. Embedded runs alongside SQLite, not instead of it
+**Beads epic:** `archie-core-q15y`
 
-The SQLite store remains authoritative for task state. NATS -- external or
-embedded -- is the *distribution* path, and `drainNATS` already falls back to
-`Store.ClaimNext` for requeued tasks (waiting_human approval, retry-parked)
-that never went through a NATS publish. So wiring embedded NATS does not
-remove the SQLite flow; it makes `Daemon.Tasks != nil` true in single-process
-deployments, which routes poll→enqueue through `pollNATS` and drain through
-`drainNATS` exactly as an external-NATS deployment already does. `ClaimNext`
-stays as the requeue fallback inside `drainNATS`. No new drain path, no second
-eventbus type.
+This decision supersedes the 2026-08-22 position that embedded NATS was only a
+distribution mechanism and could not be an agent-execution topology. That was
+true only because the embedded listener was unauthenticated loopback. It left a
+second production architecture in which `archied` ran autonomous workflows in
+its own process, weakening the isolation boundary that managed task containers
+exist to provide.
 
-## 2. Config: `[nats] mode = "embedded" | "external" | "off"`
+## One execution architecture, two broker deployments
 
-`NATSConfig` gains a `mode` field. `url` no longer doubles as the on/off
-switch -- that coupling is what made "no NATS" a permanent stance instead of a
-deployment shape.
+Every autonomous repository workflow is handed over as one complete task via
+NATS and runs in a task-scoped `archie-agent` container. `archied` remains a
+native, long-lived orchestration and interactive-chat process; its operator
+configured host filesystem access is unchanged. It owns task admission,
+state, forge and worktree operations, container lifecycle, and the broker when
+the embedded deployment is selected. It does not run an autonomous model loop.
 
-| mode       | meaning                                                        |
-|------------|----------------------------------------------------------------|
-| `external` | connect to `url` (today's behaviour). `url` is required.       |
-| `embedded` | start an in-process nats-server; the client connects to it.    |
-| `off`      | no NATS at all; the old SQLite-only flow (`ClaimNext`).        |
+NATS has two supported deployment shapes:
 
-Default resolution: `url` set → `external`; `url` empty and `mode` unset or
-`embedded` → `embedded`; `mode = "off"` → `off`. `mode = "external"` with no
-`url` is a validation error; `mode = "off"`/`"embedded"` with a `url` set is a
-validation error. This is a meaning change and is stated as one: `url` empty
-*used to mean* "no NATS, SQLite only"; it *now means* "embedded NATS", and
-getting the old behaviour requires the explicit opt-out `mode = "off"`.
+| mode | meaning |
+| --- | --- |
+| `embedded` | `archied` owns an in-process JetStream server (default). |
+| `external` | `archied` and workers connect to the configured NATS URL. |
 
-`agent.mode = "nats"` and `[containers]` require `mode = "external"` (a
-container cannot reach an in-process loopback server, and embedded NATS is not
-an agent-execution topology).
+Both shapes have identical task semantics: one container and one full-task
+request per workflow. Broker placement must not select a different executor.
+The legacy `nats.mode = "off"`, `agent.mode = "inprocess"`, per-stage NATS, and
+subprocess execution paths are migration inputs only and will be removed rather
+than retained as production fallbacks.
 
-## 3. The daemon owns the embedded server's lifecycle
+SQLite remains authoritative for task state. NATS is the sole autonomous work
+handoff. SQLite recovery may identify work that needs republishing, but it must
+not cause `archied` to call `workflow.Run` locally.
 
-`internal/infrastructure/eventbus/nats` gains an `EmbeddedServer` type that
-wraps `nats-server/v2/server.Server`, exposing only `ClientURL()` and
-`Shutdown()`. The composition root (`cmd/archied/bootstrap.go`) starts it in
-`connectNATS` (before dialing the client), binds it to `127.0.0.1` on a random
-port, enables JetStream with a store dir under the daemon's data directory
-(`<dir of DBPath>/nats`), and registers a cleanup that shuts the server down
-*after* the client closes. Cleanup ordering is LIFO: the server shutdown is
-registered before the client close, so the client closes first.
+## Embedded reachability and authentication
 
-## Retention is a Config field, not a constant
+An embedded listener uses a cryptographically random bearer token generated for
+each daemon start. The token exists only in process memory and the environment
+of managed worker containers; it is never written to config or logs.
 
-`nats.Config` gains `Retention *jetstream.RetentionPolicy`, defaulting to
-`jetstream.WorkQueuePolicy` in `withDefaults`, replacing the hardcoded value in
-`Connect` (`client.go:65`). `WorkQueuePolicy` is correct for `ARCHIE_TASKS`
-(one consumer claims each message) and wrong for reactions (fan-out). This is
-the enabler for the second reaction stream: `event-sources-and-reactions.md`
-requires it, and nothing here creates the reaction stream itself -- that is
-provisioned by the beads that build reaction producers and consumers, which do
-not exist yet. A test proves the parameterization: two overlapping `Subscribe`
-consumers both receive a message under `LimitsPolicy` (fan-out) and starve
-under `WorkQueuePolicy`, the exact trap `CLAUDE.md` documents.
+For a native daemon with managed containers, startup resolves the Docker bridge
+the workers will join. The listener binds only to that bridge's host gateway
+address on a random port. Both the native daemon and workers use that same
+reachable endpoint, and every client supplies the generated token. Binding a
+Docker bridge address keeps the listener off ordinary LAN interfaces without
+publishing a host port. A configured user bridge is respected; otherwise the
+Docker default bridge is used. A network without a usable local IPv4 gateway is
+a startup error for autonomous execution.
 
-## Packages this touches
+If Docker is unavailable, interactive chat may still start and embedded NATS
+may remain loopback-only, but autonomous tasks park with an explicit container
+capability failure. They never fall back to host execution.
 
-- `internal/infrastructure/eventbus/nats`: `Retention` on `Config`, an
-  `EmbeddedServer` type.
-- `internal/config`: `NATSConfig.Mode`.
-- `internal/infrastructure/configuration`: `mode` defaulting and validation.
-- `cmd/archied/bootstrap.go`: start/stop the embedded server; set
-  `Daemon.ConnectedNATS.URL` to the embedded client URL so container env (if
-  ever enabled) never receives an empty endpoint.
-- `config.example.toml`: document `mode`. The `deployments/*` profiles are
-  unchanged on purpose: their absent `[nats]` section now selects embedded by
-  default, which is the intended single-process behaviour this issue exists to
-  provide, not a regression to paper over with `mode = "off"`.
+## Ownership and lifecycle
+
+- `internal/infrastructure/eventbus/nats` owns the authenticated embedded
+  server and exposes its runtime endpoint, not the server implementation.
+- `internal/container` resolves the worker bridge and gateway and owns task
+  container lifecycle.
+- `internal/app` composition selects embedded or external broker deployment,
+  freezes the connected runtime endpoint for worker environments, and wires the
+  full-task handoff.
+- `cmd/archied` remains process input only as the domain migration reaches this
+  composition path.
+
+The daemon starts the embedded server before its client, closes clients before
+the server, and keeps JetStream data beneath the daemon data directory. NATS URL
+and token are startup-built values: a reload cannot send new workers to a broker
+different from the one the daemon is using.

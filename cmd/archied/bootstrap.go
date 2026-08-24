@@ -100,6 +100,9 @@ type boot struct {
 	// the embedded server's ClientURL(). Recorded so Daemon.ConnectedNATS
 	// carries the real endpoint rather than an empty config URL.
 	natsURL string
+	// natsToken is the credential the daemon's client connected with at
+	// startup. Embedded mode generates it; external mode resolves it once.
+	natsToken string
 
 	containerPool   *container.Pool
 	storeBackend    storage.Backend
@@ -376,7 +379,12 @@ func (b *boot) connectNATS(ctx context.Context) error {
 		// Embedded. Start the in-process server before dialing, and register
 		// its shutdown BEFORE the client close below so the client closes
 		// first (cleanups run LIFO).
+		host := ""
+		if b.containerPool != nil {
+			host = b.containerPool.HostGateway()
+		}
 		srv, err := nats.StartEmbedded(ctx, nats.EmbeddedOptions{
+			Host:     host,
 			StoreDir: filepath.Join(filepath.Dir(cfg.DBPath), "nats"),
 		}, log)
 		if err != nil {
@@ -385,6 +393,7 @@ func (b *boot) connectNATS(ctx context.Context) error {
 		}
 		b.addCleanup(func() { srv.Shutdown() })
 		url = srv.ClientURL()
+		natsToken = srv.Token()
 		log.Info("embedded nats started", "url", url)
 	}
 
@@ -402,6 +411,7 @@ func (b *boot) connectNATS(ctx context.Context) error {
 	}
 	b.natsClient = natsClient
 	b.natsURL = url
+	b.natsToken = natsToken
 	b.addCleanup(func() { natsClient.Close() })
 	log.Info("nats connected", "url", url)
 	return nil
@@ -414,15 +424,15 @@ func (b *boot) connectNATS(ctx context.Context) error {
 // feature they may not be exercising right now. Under a systemd unit
 // with Restart=on-failure it also turns a recoverable problem into a
 // crash loop with the real error scrolling past unread.
-func (b *boot) setupContainers(ctx context.Context) {
+func (b *boot) setupContainers(ctx context.Context) func() {
 	containerPool, storeBackend, closeDocker := startContainers(ctx, b.cfg, b.log)
 	b.containerPool = containerPool
 	b.storeBackend = storeBackend
-	b.addCleanup(closeDocker)
 	// Sandboxing that was asked for and could not start must not silently
 	// become no sandboxing: the daemon stays up, but tasks park rather than
 	// running the agent loop on the host.
 	b.sandboxRequired = b.cfg.Containers.Enabled && containerPool == nil
+	return closeDocker
 }
 
 // setupLLMAndChat wires the runtime, tool registry, model management,
@@ -995,16 +1005,9 @@ func (b *boot) registerMinimaxTool(cfg config.Config, log *slog.Logger) {
 // it shares with it.
 func (b *boot) buildDaemon() {
 	cfg, log := b.cfg, b.log
-	// ConnectedNATS must carry the endpoint the daemon's own client connected
-	// with at startup, not the raw config: for embedded mode the config URL is
-	// empty, but container env must never see an empty NATS_URL. (Containers
-	// are rejected in embedded mode by validation, but the field should mean
-	// the same thing regardless of mode.)
-	connectedNATS := cfg.NATS
-	connectedNATS.URL = b.natsURL
 	b.d = &daemon.Daemon{
 		Cfg:             config.NewHolder(cfg),
-		ConnectedNATS:   connectedNATS,
+		ConnectedNATS:   daemon.NATSEndpoint{URL: b.natsURL, Token: b.natsToken},
 		Store:           b.st,
 		Bus:             b.bus,
 		Forge:           b.forgeClient,
@@ -1323,11 +1326,14 @@ func (b *boot) startServices(ctx context.Context) error {
 // setupBackends wires the optional runtime backends: the NATS client
 // and the container pool.
 func (b *boot) setupBackends(ctx context.Context) error {
-	if err := b.connectNATS(ctx); err != nil {
-		return err
-	}
-	b.setupContainers(ctx)
-	return nil
+	closeContainers := b.setupContainers(ctx)
+	err := b.connectNATS(ctx)
+	// Container discovery must precede embedded NATS so it can bind the
+	// worker bridge gateway, but cleanup registration comes afterwards.
+	// cleanups run LIFO: workers stop first, then the daemon client closes,
+	// then the embedded server shuts down.
+	b.addCleanup(closeContainers)
+	return err
 }
 
 // buildAgentAndWorkflows builds the agent runner and the workflow

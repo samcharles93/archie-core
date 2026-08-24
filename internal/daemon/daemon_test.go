@@ -305,20 +305,17 @@ func TestAllowConcurrentForTaskPrefersOwningIdentityRepo(t *testing.T) {
 }
 
 func TestContainerEnvIncludesConfiguredNATSCredentials(t *testing.T) {
-	t.Setenv("ARCHIE_NATS_SECRET", "test-nats-token")
-
 	// ConnectedNATS is the endpoint the daemon's own client connected with
-	// at startup; containerEnv deliberately reads this, not the live Cfg,
-	// so a reload of nats.url cannot point new containers at a server the
-	// daemon is not publishing on.
-	natsCfg := config.NATSConfig{
-		URL:      "nats://nats.example:4222",
-		TokenEnv: "ARCHIE_NATS_SECRET",
-	}
+	// at startup; containerEnv deliberately reads this frozen runtime value,
+	// not live config or environment.
 	d := &Daemon{
 		Cfg:           config.NewHolder(config.Config{}),
-		ConnectedNATS: natsCfg,
+		ConnectedNATS: NATSEndpoint{URL: "nats://nats.example:4222", Token: "test-nats-token"},
 	}
+	// Runtime credentials are frozen when the daemon connects. Mutating the
+	// source environment later must not send new workers to the same endpoint
+	// with a credential the broker never adopted.
+	t.Setenv("ARCHIE_NATS_SECRET", "changed-after-startup")
 
 	got := d.containerEnv(nil)
 	for _, want := range []string{

@@ -623,8 +623,7 @@ const (
 // delivery. The mode selects how NATS is provided:
 //
 //	"embedded"  – an in-process nats-server (default; no external server)
-//	"external"  – connect to URL (required; the only mode agent.mode="nats"
-//	              and [containers] can use)
+//	"external"  – connect to URL (required)
 //	"off"       – no NATS; the SQLite ClaimNext flow is used unchanged
 //
 // An empty Mode resolves from URL: URL set means "external", URL empty means
@@ -637,8 +636,8 @@ type NATSConfig struct {
 	// URL is the NATS server address, e.g. "nats://localhost:4222".
 	// Required when Mode is "external"; must be empty otherwise.
 	URL string `toml:"url" yaml:"url"`
-	// TokenEnv optionally names an env var holding a NATS auth token.
-	// Empty means no authentication. Ignored when Mode is "embedded".
+	// TokenEnv optionally names an env var holding an external NATS auth token.
+	// Empty means no authentication. Embedded mode generates a per-start token.
 	TokenEnv string `toml:"token_env" yaml:"token_env"`
 }
 
@@ -685,13 +684,11 @@ type ContainerConfig struct {
 	VolumeTTL Duration `toml:"volume_ttl" yaml:"volume_ttl"`
 	// PullPolicy controls image pulling: "missing" (default) or "always".
 	PullPolicy string `toml:"pull_policy" yaml:"pull_policy"`
-	// Network is the Docker network spawned agent containers join, so they
-	// can resolve sibling compose services (nats, etc.) by name. Empty
-	// falls back to auto-detecting the daemon's own network, which is
-	// best-effort and silently yields the default bridge network (no
-	// hostname resolution) if detection fails — set this explicitly in
-	// compose/production deployments (e.g. "archie-core_default") rather
-	// than relying on auto-detection.
+	// Network is the Docker network spawned agent containers join. Empty first
+	// tries the daemon's own network (for containerized composition), then uses
+	// Docker's default bridge. Embedded NATS binds the selected bridge's host
+	// gateway; external deployments can set a Compose network explicitly when
+	// workers must resolve broker service names (e.g. "archie-core_default").
 	Network string `toml:"network" yaml:"network"`
 }
 
