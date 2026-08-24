@@ -112,9 +112,10 @@ export function chatPage() {
         },
         onInstall: async () => {
           status.textContent = "Installing…";
-          await api.chatUpdateInstall(updateSnapshot);
-          status.textContent = "Update started";
-          refreshUpdate();
+          const result = await api.chatUpdateInstall(updateSnapshot);
+          updateSnapshot = null;
+          renderUpdate(updatePanel, { snapshot: {}, available: [] }, { onDefer: () => {}, onInstall: () => {} });
+          status.textContent = result?.result?.restart_requested ? "Update installed; restart queued" : "Update complete";
         },
       });
     } catch (err) {
@@ -191,8 +192,17 @@ export function chatPage() {
     transcript.replaceChildren();
     await api.chatMessage(channelID(), `/resume ${id}`);
     persona.value = selectorData.active_personas?.[id] || selectorData.active_persona || "";
-    const messages = await api.chatMessages(id);
-    for (const message of messages) appendMessage(message);
+    const [messages, turns] = await Promise.all([api.chatMessages(id), api.chatTurns(id)]);
+    const byAssistantMessage = new Map();
+    for (const turn of turns || []) {
+      const assistantID = turn.assistant_message_id || turn.AssistantMessageID;
+      if (assistantID) byAssistantMessage.set(assistantID, turn);
+    }
+    for (const message of messages) {
+      const messageID = message.message_id || message.MessageID;
+      const turn = byAssistantMessage.get(messageID);
+      appendMessage(turn ? { ...message, tool_calls: turn.tool_calls || turn.ToolCalls || [] } : message);
+    }
     if (!transcript.children.length) transcript.append(emptyState);
   }
 

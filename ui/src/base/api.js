@@ -1,5 +1,6 @@
 // Single place that knows how to talk to archied. Every feature folder goes
 // through this, so auth handling and error shape live in one file.
+import { randomUUID } from "./uuid.js";
 
 async function req(path) {
   // A daemon that accepts the connection but never answers would otherwise
@@ -151,6 +152,7 @@ export const api = {
   memory: () => req("/api/memory"),
   chatSessions: () => req("/api/chat/sessions"),
   chatMessages: (id) => req(`/api/chat/sessions/${encodeURIComponent(id)}/messages`),
+  chatTurns: (id) => req(`/api/chat/sessions/${encodeURIComponent(id)}/turns`),
   chatCancel: async (sessionID) => {
     const res = await fetch("/api/chat/cancel", {
       method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
@@ -162,7 +164,7 @@ export const api = {
   chatMessage: async (channelID, text) => {
     const res = await fetch("/api/chat/message", {
       method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ channel_id: channelID, source_id: crypto.randomUUID(), text }),
+      body: JSON.stringify({ channel_id: channelID, source_id: randomUUID(), text }),
       signal: AbortSignal.timeout(15000),
     });
     if (!res.ok) throw new ApiError(await errorMessage(res), res.status);

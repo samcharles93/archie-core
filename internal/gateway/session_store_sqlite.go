@@ -391,6 +391,50 @@ func (s *sqliteSessionStore) GetTurn(ctx context.Context, turnID string) (TurnRe
 	return turn, true, nil
 }
 
+func (s *sqliteSessionStore) RecentTurns(ctx context.Context, sessionID string, n int) ([]TurnRecord, error) {
+	if n <= 0 {
+		return []TurnRecord{}, nil
+	}
+	if n > 500 {
+		n = 500
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT turn_id, session_id, source_id, status, attempt, owner_id,
+		       input_message_id, assistant_message_id, partial_text,
+		       response_text, tool_calls, error, created_at, updated_at
+		FROM turns WHERE session_id = ? ORDER BY created_at DESC LIMIT ?`, sessionID, n)
+	if err != nil {
+		return nil, fmt.Errorf("sessionstore: recent turns: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	turns := make([]TurnRecord, 0)
+	for rows.Next() {
+		var turn TurnRecord
+		var createdMS, updatedMS int64
+		var raw string
+		if err := rows.Scan(&turn.TurnID, &turn.SessionID, &turn.SourceID, &turn.Status, &turn.Attempt, &turn.OwnerID,
+			&turn.InputMessageID, &turn.AssistantMessageID, &turn.PartialText, &turn.ResponseText, &raw, &turn.Error,
+			&createdMS, &updatedMS); err != nil {
+			return nil, fmt.Errorf("sessionstore: scan recent turn: %w", err)
+		}
+		turn.CreatedAt = time.UnixMilli(createdMS).UTC()
+		turn.UpdatedAt = time.UnixMilli(updatedMS).UTC()
+		if turn.ToolCalls, err = unmarshalToolCalls(raw); err != nil {
+			return nil, err
+		}
+		turns = append(turns, turn)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sessionstore: recent turns: %w", err)
+	}
+	for left, right := 0, len(turns)-1; left < right; left, right = left+1, right-1 {
+		turns[left], turns[right] = turns[right], turns[left]
+	}
+	return turns, nil
+}
+
 func (s *sqliteSessionStore) SaveTurn(ctx context.Context, turn TurnRecord) error {
 	if turn.TurnID == "" {
 		return fmt.Errorf("sessionstore: turn ID is required")

@@ -1,5 +1,7 @@
+import { randomUUID } from "../base/uuid.js";
+
 export function newChatTurn(text) {
-  return { text, sourceID: crypto.randomUUID() };
+  return { text, sourceID: randomUUID() };
 }
 
 export function retryChatTurn(turn) {

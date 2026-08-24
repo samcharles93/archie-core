@@ -25,6 +25,35 @@ func newTestSQLiteStore(t *testing.T) SessionStore {
 
 func sqliteBase() time.Time { return time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC) }
 
+func TestSQLiteSessionStoreRecentTurnsReturnsReplayableToolHistory(t *testing.T) {
+	st := newTestSQLiteStore(t)
+	ledger, ok := st.(TurnLedger)
+	if !ok {
+		t.Fatalf("store is %T, want TurnLedger", st)
+	}
+	turn, claim, err := ledger.ClaimTurn(t.Context(), TurnRecord{
+		TurnID: "turn-history", SessionID: "session-history", SourceID: "source-history", OwnerID: "owner",
+		ToolCalls: []ToolCallEvent{{Name: "shell", Output: "exit 0"}},
+	})
+	if err != nil || claim != TurnClaimOwned {
+		t.Fatalf("ClaimTurn() = %#v, %v, %v", turn, claim, err)
+	}
+	turn.Status = TurnStatusCompleted
+	turn.ResponseText = "answer"
+	turn.UpdatedAt = time.Now().UTC()
+	if err := ledger.SaveTurn(t.Context(), turn); err != nil {
+		t.Fatalf("SaveTurn() error = %v", err)
+	}
+	history, ok := st.(TurnHistory)
+	if !ok {
+		t.Fatalf("store is %T, want TurnHistory", st)
+	}
+	got, err := history.RecentTurns(t.Context(), "session-history", 10)
+	if err != nil || len(got) != 1 || len(got[0].ToolCalls) != 1 || got[0].ResponseText != "answer" {
+		t.Fatalf("RecentTurns() = %#v, %v; want one replayable turn", got, err)
+	}
+}
+
 // TestOpenSQLiteSessionStoreMigratesPreExistingTurnsTable simulates a
 // database created before the tool_calls column existed: CREATE TABLE IF NOT
 // EXISTS leaves such a table alone, so opening it must add the column rather

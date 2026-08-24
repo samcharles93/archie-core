@@ -58,6 +58,22 @@ type chatUpdateRequest struct {
 	Snapshot releaseupdate.Snapshot `json:"snapshot"`
 }
 
+type chatTurnView struct {
+	TurnID             string             `json:"turn_id"`
+	AssistantMessageID string             `json:"assistant_message_id,omitempty"`
+	Status             gateway.TurnStatus `json:"status"`
+	Error              string             `json:"error,omitempty"`
+	ToolCalls          []chatToolView     `json:"tool_calls,omitempty"`
+}
+
+type chatToolView struct {
+	ID         string `json:"id,omitempty"`
+	Name       string `json:"name"`
+	Parameters string `json:"parameters,omitempty"`
+	Summary    string `json:"summary"`
+	Failed     bool   `json:"failed"`
+}
+
 type dangerousRequest struct {
 	Spec string `json:"spec"`
 }
@@ -158,6 +174,49 @@ func (s *Server) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, messages)
+}
+
+func (s *Server) handleChatTurns(w http.ResponseWriter, r *http.Request) {
+	chat, ok := s.chatReady(w)
+	if !ok {
+		return
+	}
+	sessionID := r.PathValue("id")
+	session, err := chat.Sessions.Get(r.Context(), sessionID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if session == nil || session.Source.Platform != "web" {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
+	history, ok := chat.Sessions.(gateway.TurnHistory)
+	if !ok {
+		writeJSON(w, []gateway.TurnRecord{})
+		return
+	}
+	turns, err := history.RecentTurns(r.Context(), sessionID, 200)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	views := make([]chatTurnView, 0, len(turns))
+	for _, turn := range turns {
+		view := chatTurnView{
+			TurnID: turn.TurnID, AssistantMessageID: turn.AssistantMessageID,
+			Status: turn.Status, Error: turn.Error,
+			ToolCalls: make([]chatToolView, 0, len(turn.ToolCalls)),
+		}
+		for _, tool := range turn.ToolCalls {
+			view.ToolCalls = append(view.ToolCalls, chatToolView{
+				ID: tool.ID, Name: tool.Name, Parameters: tool.Parameters,
+				Summary: tool.Summary(), Failed: tool.Err != "",
+			})
+		}
+		views = append(views, view)
+	}
+	writeJSON(w, views)
 }
 
 func (s *Server) decodeChatMessage(w http.ResponseWriter, r *http.Request) (gateway.Message, bool) {
@@ -663,5 +722,9 @@ func personaNames(personas *gateway.PersonaRegistry) []string {
 }
 
 func newChatSourceID() string {
-	return "web-" + uuid.NewString()
+	id, err := uuid.NewV7()
+	if err != nil {
+		return "web-" + uuid.NewString()
+	}
+	return "web-" + id.String()
 }

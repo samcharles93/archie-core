@@ -93,6 +93,7 @@ type Gateway struct {
 	updateMu          sync.Mutex
 	updateInProgress  bool
 	updateActions     map[string]updateAction
+	updateReportMu    sync.Mutex
 
 	// dangerous command approval state
 	dangerousMu        sync.Mutex
@@ -352,6 +353,23 @@ func (g *Gateway) launch(ctx context.Context, router *gateway.Router) (*bot.Bot,
 func (g *Gateway) notifyLaunch(ctx context.Context, b *bot.Bot) {
 	g.announceRelease(ctx, b)
 	g.reportPendingUpdate(ctx, b)
+	go g.watchPendingUpdate(ctx, b)
+}
+
+// watchPendingUpdate closes the watchdog/startup race: the watchdog writes
+// the health result only after this process answers its health probe, so the
+// launch-time read can miss the report for the boot it describes.
+func (g *Gateway) watchPendingUpdate(ctx context.Context, b *bot.Bot) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			g.reportPendingUpdate(ctx, b)
+		}
+	}
 }
 
 func (g *Gateway) announceRelease(ctx context.Context, b *bot.Bot) {

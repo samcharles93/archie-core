@@ -25,6 +25,17 @@ type sessionTracker struct {
 	active map[string]string
 }
 
+// newSessionID uses time-ordered UUIDv7 identifiers so session listings and
+// storage indexes retain creation order in the identifier itself.
+func newSessionID() string {
+	id, err := uuid.NewV7()
+	if err != nil {
+		// Preserve session creation if the host entropy source is unavailable.
+		return uuid.NewString()
+	}
+	return id.String()
+}
+
 func newSessionTracker(sessions SessionStore) *sessionTracker {
 	return &sessionTracker{
 		sessions: sessions,
@@ -283,7 +294,7 @@ func (r *Router) handleNew(ctx context.Context, msg Message, rest string) (strin
 		return "Session management is not configured.", nil
 	}
 
-	id := uuid.NewString()
+	id := newSessionID()
 	now := time.Now()
 	title := strings.TrimSpace(rest)
 
@@ -523,7 +534,7 @@ func (r *Router) handleBranch(ctx context.Context, msg Message, rest string) (st
 		return "", fmt.Errorf("get parent session: %w", err)
 	}
 
-	id := uuid.NewString()
+	id := newSessionID()
 	now := time.Now()
 	title := branchName
 	if parentSC != nil && parentSC.Title != "" && branchName == "" {
