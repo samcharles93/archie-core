@@ -56,6 +56,11 @@ func (d Duration) Std() time.Duration { return time.Duration(d) }
 type Repo struct {
 	Owner string `toml:"owner" json:"owner" yaml:"owner"`
 	Name  string `toml:"name" json:"name" yaml:"name"`
+	// Type, Host, and Token optionally override the top-level forge for this
+	// repository. Empty values inherit the daemon (or identity) forge.
+	Type  string           `toml:"type" json:"type,omitempty" yaml:"type"`
+	Host  string           `toml:"host" json:"host,omitempty" yaml:"host"`
+	Token secret.SecretRef `toml:"token" json:"token,omitempty" yaml:"token"`
 	// Base is the branch PRs target. Defaults to "main".
 	Base string `toml:"base" json:"base" yaml:"base"`
 	// Gate is the quality-gate command list for this repo, e.g.
@@ -96,6 +101,30 @@ type Repo struct {
 	// won't collide (e.g. different base branches or packages per
 	// task). Still bounded by [containers].max_concurrency globally.
 	AllowConcurrent bool `toml:"allow_concurrent" json:"allow_concurrent" yaml:"allow_concurrent"`
+}
+
+// MarshalJSON keeps legacy repository JSON stable by omitting unset forge
+// overrides. TOML/YAML decoding still sees the fields above normally.
+func (r Repo) MarshalJSON() ([]byte, error) {
+	type plain Repo
+	data, err := json.Marshal(plain(r))
+	if err != nil {
+		return nil, err
+	}
+	var object map[string]any
+	if err := json.Unmarshal(data, &object); err != nil {
+		return nil, err
+	}
+	if r.Type == "" {
+		delete(object, "type")
+	}
+	if r.Host == "" {
+		delete(object, "host")
+	}
+	if r.Token == (secret.SecretRef{}) {
+		delete(object, "token")
+	}
+	return json.Marshal(object)
 }
 
 // Protected reports whether path matches a protected suffix.
