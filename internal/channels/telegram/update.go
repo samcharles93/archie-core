@@ -374,6 +374,8 @@ func formatVersionDrift(drift []releaseupdate.VersionDrift) string {
 // the same decode and the chat that approved the update would never learn
 // any outcome at all.
 func (g *Gateway) reportPendingUpdate(ctx context.Context, b *bot.Bot) {
+	g.updateReportMu.Lock()
+	defer g.updateReportMu.Unlock()
 	if g.UpdateReportPath == "" {
 		return
 	}

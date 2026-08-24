@@ -175,8 +175,9 @@ type Server struct {
 	// When Cfg is present, Cfg.Get().Web.TrustForwardedHeaders is also checked.
 	TrustForwardedHeaders bool
 
-	mu    sync.Mutex
-	conns map[chan events.Event]struct{}
+	mu             sync.Mutex
+	conns          map[chan events.Event]struct{}
+	updateReportMu sync.Mutex
 }
 
 func (s *Server) trustForwardedHeaders() bool {
@@ -264,6 +265,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/memory", s.handleMemory)
 	mux.HandleFunc("GET /api/chat/sessions", s.handleChatSessions)
 	mux.HandleFunc("GET /api/chat/sessions/{id}/messages", s.handleChatMessages)
+	mux.HandleFunc("GET /api/chat/sessions/{id}/turns", s.handleChatTurns)
 	mux.HandleFunc("POST /api/chat/message", s.handleChatMessage)
 	mux.HandleFunc("POST /api/chat/stream", s.handleChatStream)
 	mux.HandleFunc("POST /api/chat/cancel", s.handleChatCancel)
@@ -327,6 +329,7 @@ func trimLeadingSlash(p string) string {
 // Run serves until ctx ends.
 func (s *Server) Run(ctx context.Context, listen string) error {
 	s.reportPendingUpdate(ctx)
+	go s.watchPendingUpdate(ctx)
 	srv := &http.Server{Addr: listen, Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -339,6 +342,22 @@ func (s *Server) Run(ctx context.Context, listen string) error {
 		return err
 	}
 	return nil
+}
+
+// watchPendingUpdate closes the watchdog/startup race: the watchdog writes
+// the health result only after this process answers /healthz, so a startup
+// read alone can always miss a report for the very boot it describes.
+func (s *Server) watchPendingUpdate(ctx context.Context) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.reportPendingUpdate(ctx)
+		}
+	}
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

@@ -30,7 +30,21 @@ export function chatBubble(message) {
     el(
       "div.chat-bubble",
       el("div.chat-bubble-meta", isAssistant ? "Archie" : "You"),
-      isAssistant ? renderMarkdown(text) : el("div.chat-bubble-text", text),
+      isAssistant ? assistantContent(message, text) : el("div.chat-bubble-text", text),
     ),
   );
+}
+
+function assistantContent(message, text) {
+  const tools = message.tool_calls || message.ToolCalls || [];
+  const children = [el("div.chat-tools")];
+  for (const tool of tools) {
+    const failed = Boolean(tool.err || tool.Err);
+    children[0].append(el("div.chat-tool" + (failed ? ".failed" : ""),
+      el("span.chat-tool-icon", "🔧"),
+      el("span.chat-tool-name", tool.name || tool.Name || "tool"),
+      el("span.chat-tool-summary", tool.summary || tool.Summary || tool.err || tool.Err || "done")));
+  }
+  children.push(renderMarkdown(text));
+  return children;
 }

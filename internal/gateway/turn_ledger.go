@@ -74,6 +74,13 @@ type TurnLedger interface {
 	ListRecoverableTurns(ctx context.Context) ([]TurnRecord, error)
 }
 
+// TurnHistory exposes durable generation records for operator-facing
+// transcript replay. It is separate from TurnLedger so narrow embedders can
+// persist turns without committing to a listing API.
+type TurnHistory interface {
+	RecentTurns(ctx context.Context, sessionID string, n int) ([]TurnRecord, error)
+}
+
 // NewTurnID returns a unique ID for an unsourced turn.
 func NewTurnID() string {
 	return uuid.NewString()

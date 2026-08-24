@@ -21,6 +21,8 @@ import (
 // unreadable -- so a later boot never retries it and two boots never race
 // to relay the same outcome.
 func (s *Server) reportPendingUpdate(ctx context.Context) {
+	s.updateReportMu.Lock()
+	defer s.updateReportMu.Unlock()
 	if s.UpdateReportPath == "" {
 		return
 	}
