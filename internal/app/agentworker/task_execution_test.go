@@ -319,7 +319,7 @@ func TestRunTaskExecutesBootstrapWorkflowEndToEnd(t *testing.T) {
 		t.Fatalf("prepare: %v", err)
 	}
 	req := taskrun.Request{Task: task, Repo: config.Repo{Owner: "acme", Name: "widget", Base: "main"}, Cfg: config.Config{}.ForTask()}
-	fakeRunner := agentexec.RunnerFactory(func(map[string]agentexec.Provider, *slog.Logger) agentexec.Runner { return panicRunner{t} })
+	fakeRunner := runnerFactory(func(map[string]agentexec.Provider, *slog.Logger) agentexec.Runner { return panicRunner{t} })
 	response, err := runTask(ctx, req, taskDependencies{forge: fg, store: st, trees: remote}, fakeRunner, hostDir, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("runTask: %v", err)
@@ -392,10 +392,7 @@ func TestExecuteTaskRequestUsesInfrastructureRPCDependencies(t *testing.T) {
 	}
 	t.Cleanup(unsubTrees)
 
-	transport, err := agentnats.Connect(ctx, agentnats.Config{
-		URL:          srv.ClientURL(),
-		ConsumerName: "rpc-bootstrap-test",
-	}, slog.New(slog.DiscardHandler))
+	transport, err := agentnats.Connect(ctx, agentnats.Config{URL: srv.ClientURL()}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -518,10 +515,7 @@ func TestExecuteTaskRequestForwardsWorkflowEventsOverNATS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	transport, err := agentnats.Connect(ctx, agentnats.Config{
-		URL:          srv.ClientURL(),
-		ConsumerName: "rpc-events-test",
-	}, slog.New(slog.DiscardHandler))
+	transport, err := agentnats.Connect(ctx, agentnats.Config{URL: srv.ClientURL()}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}

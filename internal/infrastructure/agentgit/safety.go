@@ -35,9 +35,10 @@ func MarkSafe(ctx context.Context, mountDir string, log *slog.Logger) bool {
 // the agent continues. Returns true only when git accepted the configuration.
 //
 // The guard is existence, not mount-ness: os.Stat confirms mountDir exists and
-// is a directory, which is what stops archie-agent running directly on a host
-// (shared queue-group mode, no container) from writing to the operator's own
-// ~/.gitconfig for a path that was never created at all. It does not detect a
+// is a directory, which prevents a misconfigured archie-agent from writing to
+// the operator's own ~/.gitconfig for a workspace path that was never mounted.
+// Mandatory task boot metadata independently rejects non-task workers before
+// they subscribe. This check does not detect a
 // stale directory that happens to exist at the same path without actually
 // being a bind mount -- a real mount check would need platform-specific
 // parsing (e.g. /proc/self/mountinfo on Linux) that this deliberately does

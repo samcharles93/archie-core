@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
@@ -41,12 +40,9 @@ type workerTransportStub struct {
 	subCloseErr    error
 	publisher      agentexec.LogPublisher
 	eventPublisher agentexec.EventPublisher
-	dedicated      bool
+	taskID         int64
 }
 
-func (*workerTransportStub) FetchStage(context.Context) (agentexec.StageMessage, error) {
-	return nil, nil
-}
 func (t *workerTransportStub) Close() { *t.events = append(*t.events, "transport-close") }
 func (t *workerTransportStub) LogPublisher() agentexec.LogPublisher {
 	*t.events = append(*t.events, "log-publisher")
@@ -64,9 +60,9 @@ func (t *workerTransportStub) EventPublisher() agentexec.EventPublisher {
 	return workerPublisher{}
 }
 
-func (t *workerTransportStub) SubscribeTasks(_ context.Context, _ int64, dedicated bool, _ agentnats.TaskHandler, _ *slog.Logger) (agentnats.Subscription, error) {
+func (t *workerTransportStub) SubscribeTasks(_ context.Context, taskID int64, _ agentnats.TaskHandler, _ *slog.Logger) (agentnats.Subscription, error) {
 	*t.events = append(*t.events, "subscribe")
-	t.dedicated = dedicated
+	t.taskID = taskID
 	if t.subscribeErr != nil {
 		return nil, t.subscribeErr
 	}
@@ -93,15 +89,15 @@ func TestRunPassesCompleteTransportConfiguration(t *testing.T) {
 			got = config
 			return transport, nil
 		},
-		bootID:  func(string) (int64, bool, error) { return 0, false, nil },
-		runLoop: func(context.Context, stageBus, *slog.Logger) int { cancel(); return 0 },
+		bootID: func(string) (int64, error) { return 42, nil },
+		wait:   func(context.Context, *slog.Logger) { cancel() },
 	}
-	settings := Settings{NATSURL: "nats://test", NATSToken: "secret", Consumer: "worker", WorkDir: "/worktree"}
+	settings := Settings{NATSURL: "nats://test", NATSToken: "secret", WorkDir: "/worktree"}
 	if err := run(ctx, settings, slog.New(slog.DiscardHandler), dependencies); err != nil {
 		t.Fatal(err)
 	}
-	if got.URL != settings.NATSURL || got.Token != settings.NATSToken || got.ConsumerName != settings.Consumer {
-		t.Fatalf("connection config = %#v, want URL/token/consumer from settings", got)
+	if got.URL != settings.NATSURL || got.Token != settings.NATSToken {
+		t.Fatalf("connection config = %#v, want URL/token from settings", got)
 	}
 }
 
@@ -117,19 +113,18 @@ func TestRunPreservesStartupAndReverseCleanupOrder(t *testing.T) {
 			events = append(events, "connect")
 			return transport, nil
 		},
-		bootID: func(string) (int64, bool, error) {
+		bootID: func(string) (int64, error) {
 			events = append(events, "boot-id")
-			return 42, true, nil
+			return 42, nil
 		},
-		runLoop: func(context.Context, stageBus, *slog.Logger) int {
-			events = append(events, "stage-loop")
-			return 0
+		wait: func(context.Context, *slog.Logger) {
+			events = append(events, "wait")
 		},
 	}
-	if err := run(t.Context(), Settings{NATSURL: "nats://test", Consumer: "worker", WorkDir: "/worktree"}, slog.New(slog.DiscardHandler), dependencies); err != nil {
+	if err := run(t.Context(), Settings{NATSURL: "nats://test", WorkDir: "/worktree"}, slog.New(slog.DiscardHandler), dependencies); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"git-safety", "connect", "boot-id", "log-publisher", "subscribe", "stage-loop", "subscription-close", "transport-close"}
+	want := []string{"git-safety", "connect", "boot-id", "log-publisher", "subscribe", "wait", "subscription-close", "transport-close"}
 	if len(events) != len(want) {
 		t.Fatalf("events = %v, want %v", events, want)
 	}
@@ -138,8 +133,8 @@ func TestRunPreservesStartupAndReverseCleanupOrder(t *testing.T) {
 			t.Fatalf("events = %v, want %v", events, want)
 		}
 	}
-	if !transport.dedicated {
-		t.Fatal("dedicated boot ID did not select dedicated subscription")
+	if transport.taskID != 42 {
+		t.Fatalf("subscription task ID = %d, want 42", transport.taskID)
 	}
 }
 
@@ -152,11 +147,11 @@ func TestRunWarnsWhenNormalSubscriptionCleanupFails(t *testing.T) {
 		connect: func(context.Context, agentnats.Config, *slog.Logger) (workerTransport, error) {
 			return transport, nil
 		},
-		bootID:  func(string) (int64, bool, error) { return 0, false, nil },
-		runLoop: func(context.Context, stageBus, *slog.Logger) int { return 0 },
+		bootID: func(string) (int64, error) { return 42, nil },
+		wait:   func(context.Context, *slog.Logger) {},
 	}
 	var output bytes.Buffer
-	if err := run(t.Context(), Settings{NATSURL: "nats://test", Consumer: "worker"}, slog.New(slog.NewTextHandler(&output, nil)), dependencies); err != nil {
+	if err := run(t.Context(), Settings{NATSURL: "nats://test"}, slog.New(slog.NewTextHandler(&output, nil)), dependencies); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), "task run unsubscribe failed") || !strings.Contains(output.String(), closeErr.Error()) {
@@ -173,15 +168,13 @@ func TestRunStartupFailuresCleanUpOwnedResources(t *testing.T) {
 		connectErr    error
 		bootErr       error
 		subscribeErr  error
-		dedicated     bool
 		wantErr       error
 		wantOperation string
 		wantClosed    bool
 	}{
 		{name: "connect", connectErr: connectErr, wantErr: connectErr, wantOperation: "nats connect failed"},
-		{name: "core connection", connectErr: fmt.Errorf("%w: unavailable", agentnats.ErrCoreConnectionUnavailable), wantErr: agentnats.ErrCoreConnectionUnavailable, wantOperation: "nats connection unavailable"},
 		{name: "boot metadata", bootErr: bootErr, wantErr: bootErr, wantOperation: "task boot failed", wantClosed: true},
-		{name: "subscribe", subscribeErr: subscribeErr, dedicated: true, wantErr: subscribeErr, wantOperation: "taskrun subscribe failed", wantClosed: true},
+		{name: "subscribe", subscribeErr: subscribeErr, wantErr: subscribeErr, wantOperation: "taskrun subscribe failed", wantClosed: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -193,19 +186,16 @@ func TestRunStartupFailuresCleanUpOwnedResources(t *testing.T) {
 				connect: func(context.Context, agentnats.Config, *slog.Logger) (workerTransport, error) {
 					return transport, test.connectErr
 				},
-				bootID: func(string) (int64, bool, error) {
+				bootID: func(string) (int64, error) {
 					if test.bootErr != nil {
-						return 0, false, test.bootErr
+						return 0, test.bootErr
 					}
-					if test.dedicated {
-						return 42, true, nil
-					}
-					return 0, false, nil
+					return 42, nil
 				},
-				runLoop: func(context.Context, stageBus, *slog.Logger) int { t.Fatal("stage loop called"); return 0 },
+				wait: func(context.Context, *slog.Logger) { t.Fatal("wait called") },
 			}
 			var output bytes.Buffer
-			err := run(t.Context(), Settings{NATSURL: "nats://test", Consumer: "worker"}, slog.New(slog.NewTextHandler(&output, nil)), dependencies)
+			err := run(t.Context(), Settings{NATSURL: "nats://test"}, slog.New(slog.NewTextHandler(&output, nil)), dependencies)
 			if !errors.Is(err, test.wantErr) {
 				t.Fatalf("error = %v, want %v", err, test.wantErr)
 			}

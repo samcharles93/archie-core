@@ -101,7 +101,6 @@ export function settingsPage() {
       repositoriesCard(cfg.repositories),
       modelsAndProvidersCard(cfg.models, cfg.providers),
       budgetsCard(cfg.budgets, ctx),
-      agentCard(cfg.agent, ctx),
       storageCard(cfg.storage, cfg.containers, ctx),
       webCard(cfg.web, ctx),
       provenanceCard(cfg.provenance),
@@ -245,33 +244,6 @@ function budgetsCard(budgets, ctx) {
       row("Max gate failures before parking", budgets.gate_max_failures || "Unlimited", { key: "budgets.gate_max_failures", type: "int", raw: budgets.gate_max_failures, ...ctx }),
     ),
   );
-}
-
-function agentCard(agent, ctx) {
-  if (!agent) return section("Agent execution", "How Archie runs autonomous stages.", empty("Not available"));
-  return section(
-    "Agent execution",
-    "How archied actually runs a stage of work.",
-    el(
-      "div.kv-list",
-      row("Execution mode", agentModeLabel(agent.mode), { key: "agent.mode", type: "string", raw: agent.mode, ...ctx }),
-      row("Worker command", agent.command, { key: "agent.command", type: "string", raw: agent.command, ...ctx }),
-      row("Extra environment variables passed through", agent.env?.length ? agent.env.join(", ") : "None"),
-    ),
-  );
-}
-
-function agentModeLabel(mode) {
-  switch (mode) {
-    case "inprocess":
-      return "In-process (same binary as the daemon)";
-    case "subprocess":
-      return "Subprocess (separate archie-agent process)";
-    case "nats":
-      return "NATS (dispatched to a worker over the message bus)";
-    default:
-      return mode || "Not set";
-  }
 }
 
 function storageCard(storage, containers, ctx) {

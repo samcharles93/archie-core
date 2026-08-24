@@ -118,10 +118,16 @@ type taskDependencies struct {
 	events agentexec.EventPublisher
 }
 
+type runnerFactory func(map[string]agentexec.Provider, *slog.Logger) agentexec.Runner
+
+func newTaskRunner(providers map[string]agentexec.Provider, log *slog.Logger) agentexec.Runner {
+	return agentexec.NewLoopRunner(agentexec.NewRuntime(providers), log)
+}
+
 // runTask builds a workflow.Registry from the container's mounted worktree,
 // routes and runs the entire workflow, and reports its terminal outcome.
 // Store remains archied's authority; Response.Task is a logging snapshot.
-func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependencies, newRunner agentexec.RunnerFactory, workDir string, log *slog.Logger) (*taskrun.Response, error) {
+func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependencies, newRunner runnerFactory, workDir string, log *slog.Logger) (*taskrun.Response, error) {
 	registry, err := skillbuild.BuildRegistry(workDir)
 	if err != nil {
 		return nil, fmt.Errorf("build registry: %w", err)
@@ -150,7 +156,7 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 	// Build a runner with MCP-discovered tools when available.
 	var agent agentexec.Runner
 	if mcpSet != nil && mcpSet.registry != nil {
-		agent = agentexec.NewInProcessRunner(agentexec.NewRuntime(req.Providers), log, mcpSet.registry)
+		agent = agentexec.NewLoopRunner(agentexec.NewRuntime(req.Providers), log, mcpSet.registry)
 	} else {
 		agent = newRunner(req.Providers, log)
 	}

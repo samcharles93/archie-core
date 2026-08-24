@@ -306,8 +306,9 @@ boundaries. Summary of what's evolved since that doc was last fully accurate:
   package table; see `docs/architecture/migration-decisions.md` for the recorded
   position and what was agreed next.
 - The daemon has grown an RPC split (`internal/forgerpc`, `internal/storerpc`,
-  `internal/worktreerpc`, `internal/natsrpc`) alongside the in-process model
-  described in ARCHITECTURE.md. The eventbus transport is
+  `internal/worktreerpc`, `internal/natsrpc`) used by the task-scoped
+  `archie-agent` worker. Autonomous workflows cross one full-task core-NATS
+  handoff; the daemon has no local workflow runner. The eventbus transport is
   `internal/infrastructure/eventbus/`. Check those plus `docker-compose.yml` for
   the current split between `archied` and sandboxed workers.
 - `internal/gate/` — quality gate execution (the "environmental constraints over
@@ -362,12 +363,14 @@ boundaries. Summary of what's evolved since that doc was last fully accurate:
   conflict and the later one silently receives nothing. `nats.Client.Subscribe`
   creates a NEW consumer, so calling it on subjects the client's own durable
   consumer already filters will never deliver — drain the existing consumer with
-  `Fetch` instead, as `internal/app/agentworker` and the agentexec round-trip fake do.
+  `Fetch` instead. `internal/app/agentworker` deliberately uses core NATS only;
+  restoring a worker JetStream consumer would also restore the deleted
+  single-stage execution topology.
   (2) *Reply inboxes are not stream subjects.* Answering a request must use core
-  NATS publish, not the JetStream path: a `Message.ReplyAddress` is an ephemeral
-  `_INBOX.*` belonging to one waiting caller and part of no stream, so a durable
-  publish to it fails. That is why `eventbus.Publisher` declares `Respond` as a
-  method distinct from `Publish` rather than a convenience over it.
+  NATS: the request message's reply address is an ephemeral `_INBOX.*` belonging
+  to one waiting caller and part of no stream, so a durable publish to it fails.
+  Full-task and RPC responders use core `msg.Respond`; never route their replies
+  through `eventbus.Publisher`.
   (3) *Subscribe does not mean reachable.* `nc.Subscribe` only queues the SUB
   frame client-side, so code that registers a responder and immediately issues a
   request can beat its own subscription and get `ErrNoResponders` from a

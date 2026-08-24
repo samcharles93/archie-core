@@ -185,7 +185,8 @@ running after crash -> queued
 
 Workflows select and sequence deterministic and agent-run stages. Implement,
 TDD, feasibility, and bootstrap are current Workflow definitions.
-WorkflowExecutions may run in-process or be handed wholesale to `archie-agent`.
+Every WorkflowExecution is handed wholesale over core NATS to a task-scoped
+`archie-agent` container, which owns the workflow stage loop.
 
 ## Current workflow-feature placement
 
@@ -222,7 +223,7 @@ each meaning deliberately; a global text replacement is prohibited.
 | Per-stage `agentexec.Request.TaskID`               | `internal/agentexec`                                            | WorkflowExecutionID correlation                          | An agent invocation is a bounded WorkflowStep execution. Correlate request/result with WorkflowExecutionID, StepExecutionID, attempt, and protocol version.                                                                                                                                                                                                                       |
 | NATS `TaskMessage` and `archie.task.*`             | `internal/nats`                                                 | Channel request or WorkflowExecution transport           | Discovery messages and execution dispatch are different contracts and subjects. Domain meaning stays outside NATS infrastructure. Identity and source-message idempotency must be explicit.                                                                                                                                                                                       |
 | `taskDispatcher` work item                         | `internal/daemon`                                               | WorkflowExecution scheduling                             | Scheduling operates on execution references and declared concurrency policy. Repository serialization is policy, not identity derived from an incomplete task struct.                                                                                                                                                                                                             |
-| `container.TaskPayload` and `task.json`            | `internal/container`; read by `internal/infrastructure/agentboot`        | WorkflowExecution brief                                  | Rename the boot artifact and schema. It identifies the mounted execution and required workspace only; it is not an alternative execution definition. Malformed input must fail safely rather than silently joining an unrelated shared queue.                                                                                                                                     |
+| `container.TaskPayload` and `task.json`            | `internal/container`; read by `internal/infrastructure/agentboot`        | WorkflowExecution brief                                  | Rename the boot artifact and schema. It identifies the mounted execution and required workspace only; it is not an alternative execution definition. Missing or malformed input must fail startup before the worker subscribes.                                                                                                                                                   |
 | `storage.TaskRef`                                  | `internal/storage`                                              | WorkflowExecution workspace lease                        | Storage receives the minimal execution/workspace reference and policy required to provision and release resources. It does not receive the WorkflowExecution aggregate.                                                                                                                                                                                                           |
 | Gateway `TaskCreator`                              | `internal/gateway`                                              | Accepted work request handoff                            | A channel may carry a request for durable workflow-backed work, but it does not request or create a WorkflowExecution directly. Work intake admits and routes the request; the Agent System consumes the accepted work request and is the sole owner of selecting a Workflow version and creating the WorkflowExecution. Ordinary agent interactions do not require this handoff. |
 | Gateway `TaskController` and `ChatTaskStatus`      | `internal/gateway/tasks.go`                                     | WorkflowExecution commands and query view                | Approve, cancel, and status use Agent System contracts. Channel code does not duplicate lifecycle constants or decide transitions.                                                                                                                                                                                                                                                |
@@ -315,8 +316,8 @@ implemented in different packages:
   configuration plus forge, store, worktree, agent, event bus, logging, memory,
   guardrails, skills, and scratch state.
 - Lifecycle changes occur in both daemon and workflow code.
-- In-process and container execution place workflow orchestration on different
-  sides of the process boundary.
+- Workflow orchestration runs inside task-scoped agent containers while the
+  daemon retains lifecycle, admission, and authority-bearing RPC ownership.
 - Forge-backed and chat-created work share one record through source flags and
   synthetic issue numbers.
 - Repository labels currently select workflows and mirror task state, coupling

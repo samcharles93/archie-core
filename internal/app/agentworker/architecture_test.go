@@ -49,3 +49,18 @@ func TestApplicationOwnsNoTransportWireMechanics(t *testing.T) {
 		})
 	}
 }
+
+// Full-task request/reply is the worker's only production entry point. A
+// single-stage loop would recreate the obsolete split where archied owns the
+// workflow and remotely invokes each stage.
+func TestApplicationContainsNoSingleStageWorkerLoop(t *testing.T) {
+	for _, path := range []string{"single_stage_request.go", "stage_loop.go"} {
+		matches, err := filepath.Glob(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(matches) != 0 {
+			t.Errorf("legacy single-stage worker file still exists: %s", path)
+		}
+	}
+}

@@ -19,7 +19,6 @@ const (
 	defaultMaxRetries      = 3
 	defaultForgeType       = "github"
 	defaultForgeHost       = "https://github.com"
-	defaultAgentCommand    = "archie-agent"
 	defaultDispatchTrigger = "assignee"
 	defaultAckReaction     = "eyes"
 	defaultContainerUptime = 60 * time.Minute
@@ -61,7 +60,6 @@ const (
 func (l *Loader) applyDefaults(cfg *config.Config) {
 	l.applyGeneralDefaults(cfg)
 	applyForgeDefaults(cfg)
-	applyAgentDefaults(cfg)
 	applyDispatchDefaults(cfg)
 	applyIdentityDefaults(cfg)
 	applyContainerDefaults(cfg)
@@ -203,21 +201,6 @@ func applyNATSDefaults(cfg *config.Config) {
 		} else {
 			cfg.NATS.Mode = config.NATSModeEmbedded
 		}
-	}
-}
-
-// applyAgentDefaults picks the execution mode. Containers require the NATS
-// transport, so enabling them selects it unless the operator said otherwise.
-func applyAgentDefaults(cfg *config.Config) {
-	if cfg.Agent.Mode == "" {
-		if cfg.Containers.Enabled {
-			cfg.Agent.Mode = agentModeNATS
-		} else {
-			cfg.Agent.Mode = agentModeInProcess
-		}
-	}
-	if cfg.Agent.Command == "" {
-		cfg.Agent.Command = defaultAgentCommand
 	}
 }
 

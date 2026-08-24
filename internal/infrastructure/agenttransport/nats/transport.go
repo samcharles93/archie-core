@@ -5,7 +5,6 @@ package nats
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -16,152 +15,69 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
-	"github.com/samcharles93/archie-core/internal/domain/workintake"
-	"github.com/samcharles93/archie-core/internal/eventbus"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
-	busnats "github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/storerpc"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
 )
 
-// Config contains the process and deployment inputs for the worker transport.
-// Stream subjects, filtering, and delivery timing are transport invariants.
+// Config contains the broker endpoint and credential for the worker transport.
 type Config struct {
-	URL          string
-	Token        string
-	ConsumerName string
+	URL   string
+	Token string
 }
 
 const (
-	stagePollTimeout             = 5 * time.Second
-	stageAckWait                 = 30 * time.Minute
 	taskSubscriptionFlushTimeout = 5 * time.Second
 )
-
-// ErrCoreConnectionUnavailable identifies failure to obtain the core-NATS
-// connection after the durable bus connected successfully.
-var ErrCoreConnectionUnavailable = errors.New("core NATS connection unavailable")
 
 type sdkSubscription interface {
 	Unsubscribe() error
 }
 
-// Transport owns the worker's durable event bus and its shared core-NATS connection.
+// Transport owns the worker's core-NATS connection. Full-task handoff, RPC,
+// logs, and events are all request/reply or fire-and-forget core subjects; the
+// worker has no JetStream consumer.
 type Transport struct {
-	bus  *busnats.Client
 	conn *natsio.Conn
 
-	subscribe      func(string, natsio.MsgHandler) (sdkSubscription, error)
-	queueSubscribe func(string, string, natsio.MsgHandler) (sdkSubscription, error)
-	flush          func(time.Duration) error
+	subscribe func(string, natsio.MsgHandler) (sdkSubscription, error)
+	flush     func(time.Duration) error
 }
 
-type busConnector func(context.Context, busnats.Config, *slog.Logger) (*busnats.Client, error)
-
-// Connect establishes both worker transports over one NATS connection.
+// Connect establishes the worker's core-NATS connection.
 func Connect(ctx context.Context, config Config, log *slog.Logger) (*Transport, error) {
-	return connect(ctx, config, log, busnats.Connect)
-}
-
-func connect(ctx context.Context, config Config, log *slog.Logger, connectBus busConnector) (*Transport, error) {
-	bus, err := connectBus(ctx, busnats.Config{
-		URL:           config.URL,
-		Token:         config.Token,
-		Subjects:      []string{workintake.SubjectTaskWildcard, agentexec.SubjectAgentWildcard},
-		ConsumerName:  config.ConsumerName,
-		FilterSubject: agentexec.SubjectAgentWildcard,
-		PollTimeout:   stagePollTimeout,
-		AckWait:       stageAckWait,
-	}, log)
-	if err != nil {
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return transportFromBus(bus)
-}
-
-func transportFromBus(bus *busnats.Client) (*Transport, error) {
-	conn, err := bus.CoreConn()
-	if err != nil {
-		bus.Close()
-		return nil, fmt.Errorf("%w: %w", ErrCoreConnectionUnavailable, err)
+	options := []natsio.Option{natsio.Name("archie-agent")}
+	if config.Token != "" {
+		options = append(options, natsio.Token(config.Token))
 	}
+	conn, err := natsio.Connect(config.URL, options...)
+	if err != nil {
+		return nil, fmt.Errorf("connect core NATS: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	log.Info("worker transport connected", "url", conn.ConnectedUrl())
 	return &Transport{
-		bus:  bus,
 		conn: conn,
 		subscribe: func(subject string, handler natsio.MsgHandler) (sdkSubscription, error) {
 			return conn.Subscribe(subject, handler)
-		},
-		queueSubscribe: func(subject, queue string, handler natsio.MsgHandler) (sdkSubscription, error) {
-			return conn.QueueSubscribe(subject, queue, handler)
 		},
 		flush: conn.FlushTimeout,
 	}, nil
 }
 
 // Close releases all broker resources.
-func (t *Transport) Close() { t.bus.Close() }
-
-type stageMessage struct {
-	wire         eventbus.Message
-	request      agentexec.AgentRequestMessage
-	requestErr   error
-	replyAddress string
-	encode       func(any) ([]byte, error)
-	respond      func(context.Context, string, []byte) error
-}
-
-var _ agentexec.StageMessage = (*stageMessage)(nil)
-
-// FetchStage receives and decodes the next durable single-stage request while
-// retaining its reply inbox and acknowledgement controls inside infrastructure.
-func (t *Transport) FetchStage(ctx context.Context) (agentexec.StageMessage, error) {
-	wire, err := t.bus.Fetch(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return newStageMessage(wire, t.bus.Respond), nil
-}
-
-func newStageMessage(wire eventbus.Message, respond func(context.Context, string, []byte) error) agentexec.StageMessage {
-	message := &stageMessage{wire: wire, encode: json.Marshal, respond: respond}
-	if err := json.Unmarshal(wire.Data(), &message.request); err != nil {
-		message.requestErr = fmt.Errorf("decode request: %w", err)
-		return message
-	}
-	var err error
-	message.replyAddress, err = wire.ReplyAddress()
-	if err != nil {
-		message.requestErr = fmt.Errorf("stage request on %s: %w", wire.Subject(), err)
-	}
-	return message
-}
-
-func (m *stageMessage) Request() (agentexec.AgentRequestMessage, error) {
-	return m.request, m.requestErr
-}
-
-func (m *stageMessage) Respond(ctx context.Context, response *agentexec.AgentResponseEnvelope) error {
-	data, err := m.encode(response)
-	if err != nil {
-		return fmt.Errorf("encode response: %w", err)
-	}
-	if err := m.respond(ctx, m.replyAddress, data); err != nil {
-		return fmt.Errorf("publish response: %w", err)
-	}
-	return nil
-}
-
-func (m *stageMessage) Ack() error { return m.wire.Ack() }
-func (m *stageMessage) Nak() error { return m.wire.Nak() }
-
-func (m *stageMessage) LogAttributes() []any {
-	if m.replyAddress == "" {
-		return nil
-	}
-	return []any{"reply_to", m.replyAddress}
-}
+func (t *Transport) Close() { t.conn.Close() }
 
 // LogPublisher returns the narrow fire-and-forget capability used by system logs.
 func (t *Transport) LogPublisher() agentexec.LogPublisher { return t.conn }
@@ -208,9 +124,7 @@ type subscription struct{ sub sdkSubscription }
 func (s subscription) Close() error { return s.sub.Unsubscribe() }
 
 const (
-	taskRunSubjectPrefix   = "archie.taskrun."
-	taskRunSubjectWildcard = taskRunSubjectPrefix + ">"
-	taskRunQueueGroup      = "archie-taskrun-workers"
+	taskRunSubjectPrefix = "archie.taskrun."
 )
 
 // SubjectForTask returns the canonical core-NATS subject for one full-task handoff.
@@ -230,20 +144,14 @@ func taskIDFromSubject(subject string) (int64, error) {
 	return taskID, nil
 }
 
-// SubscribeTasks selects a dedicated task subject when a boot ID is present,
-// otherwise the shared worker queue. Wire decoding and inbox replies remain here.
-func (t *Transport) SubscribeTasks(ctx context.Context, taskID int64, dedicated bool, handler TaskHandler, log *slog.Logger) (Subscription, error) {
-	callback := func(msg *natsio.Msg) { t.handleTask(ctx, msg, taskID, dedicated, handler, log) }
+// SubscribeTasks serves the one task named by the worker's mandatory boot
+// metadata. Wire decoding, task correlation, and inbox replies remain here.
+func (t *Transport) SubscribeTasks(ctx context.Context, taskID int64, handler TaskHandler, log *slog.Logger) (Subscription, error) {
+	callback := func(msg *natsio.Msg) { t.handleTask(ctx, msg, taskID, handler, log) }
 	subscribe := t.subscribe
 	if subscribe == nil {
 		subscribe = func(subject string, handler natsio.MsgHandler) (sdkSubscription, error) {
 			return t.conn.Subscribe(subject, handler)
-		}
-	}
-	queueSubscribe := t.queueSubscribe
-	if queueSubscribe == nil {
-		queueSubscribe = func(subject, queue string, handler natsio.MsgHandler) (sdkSubscription, error) {
-			return t.conn.QueueSubscribe(subject, queue, handler)
 		}
 	}
 	flush := t.flush
@@ -251,17 +159,8 @@ func (t *Transport) SubscribeTasks(ctx context.Context, taskID int64, dedicated 
 		flush = t.conn.FlushTimeout
 	}
 
-	var (
-		sub sdkSubscription
-		err error
-	)
-	if dedicated {
-		log.Info("taskrun: dedicated per-task subscription", "task", taskID)
-		sub, err = subscribe(SubjectForTask(taskID), callback)
-	} else {
-		log.Info("taskrun: shared queue-group subscription (no .git/task.json found)")
-		sub, err = queueSubscribe(taskRunSubjectWildcard, taskRunQueueGroup, callback)
-	}
+	log.Info("taskrun: dedicated per-task subscription", "task", taskID)
+	sub, err := subscribe(SubjectForTask(taskID), callback)
 	if err != nil {
 		return nil, err
 	}
@@ -278,7 +177,6 @@ func (t *Transport) handleTask(
 	ctx context.Context,
 	msg *natsio.Msg,
 	bootTaskID int64,
-	dedicated bool,
 	handler TaskHandler,
 	log *slog.Logger,
 ) {
@@ -288,7 +186,7 @@ func (t *Transport) handleTask(
 		t.respondTask(msg, nil, fmt.Errorf("decode taskrun request: %w", err), log)
 		return
 	}
-	if err := validateTaskRequest(msg.Subject, request, bootTaskID, dedicated); err != nil {
+	if err := validateTaskRequest(msg.Subject, request, bootTaskID); err != nil {
 		log.Error("taskrun validation failed", "subject", msg.Subject, "err", err)
 		t.respondTask(msg, nil, fmt.Errorf("validate taskrun request: %w", err), log)
 		return
@@ -297,7 +195,7 @@ func (t *Transport) handleTask(
 	t.respondTask(msg, response, err, log)
 }
 
-func validateTaskRequest(subject string, request taskrun.Request, bootTaskID int64, dedicated bool) error {
+func validateTaskRequest(subject string, request taskrun.Request, bootTaskID int64) error {
 	subjectTaskID, err := taskIDFromSubject(subject)
 	if err != nil {
 		return err
@@ -308,8 +206,8 @@ func validateTaskRequest(subject string, request taskrun.Request, bootTaskID int
 	if request.Task.ID != subjectTaskID {
 		return fmt.Errorf("task ID %d does not match subject task ID %d", request.Task.ID, subjectTaskID)
 	}
-	if dedicated && subjectTaskID != bootTaskID {
-		return fmt.Errorf("task ID %d does not match dedicated boot task ID %d", subjectTaskID, bootTaskID)
+	if subjectTaskID != bootTaskID {
+		return fmt.Errorf("task ID %d does not match boot task ID %d", subjectTaskID, bootTaskID)
 	}
 	return nil
 }

@@ -55,8 +55,8 @@ func configWithFakeSecrets() *config.Holder {
 		Repos: []config.Repo{
 			{Owner: "acme", Name: "widget", Base: "main", Gate: [][]string{{"task", "check"}}},
 		},
-		Agent: config.Agent{Mode: "subprocess", Command: "/usr/local/bin/archie-agent", Env: []string{"HOME"}},
-		NATS:  config.NATSConfig{URL: "nats://127.0.0.1:4222", TokenEnv: "NATS_TOKEN"},
+		LegacyAgent: config.LegacyAgent{Mode: "subprocess", Command: "/usr/local/bin/archie-agent", Env: []string{"HOME"}},
+		NATS:        config.NATSConfig{URL: "nats://127.0.0.1:4222", TokenEnv: "NATS_TOKEN"},
 		Chat: config.ChatConfig{
 			Telegram: config.TelegramConfig{TokenEnv: "TELEGRAM_TOKEN"},
 		},
@@ -140,11 +140,11 @@ func TestHandleConfigSafeFieldsPresent(t *testing.T) {
 	if got.Providers["openai"].APIKeyEnv != "OPENAI_API_KEY" {
 		t.Errorf("Providers[openai].APIKeyEnv = %q, want OPENAI_API_KEY", got.Providers["openai"].APIKeyEnv)
 	}
-	if got.Agent.Mode != "subprocess" {
-		t.Errorf("Agent.Mode = %q, want subprocess", got.Agent.Mode)
-	}
 	if got.Storage.WorkDir != "/work/archie" {
 		t.Errorf("Storage.WorkDir = %q", got.Storage.WorkDir)
+	}
+	if strings.Contains(w.Body.String(), `"agent"`) {
+		t.Errorf("removed agent execution selector leaked through config API: %s", w.Body)
 	}
 }
 

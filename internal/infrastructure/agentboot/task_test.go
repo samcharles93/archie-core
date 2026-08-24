@@ -18,17 +18,16 @@ func bootGitDir(t *testing.T) string {
 	return dir
 }
 
-func TestTaskIDDistinguishesSharedDedicatedAndInvalidBoots(t *testing.T) {
+func TestTaskIDRequiresValidDedicatedTaskMetadata(t *testing.T) {
 	tests := []struct {
 		name    string
 		payload []byte
 		write   bool
 		wantID  int64
-		wantOK  bool
 		wantErr bool
 	}{
-		{name: "absent uses shared mode"},
-		{name: "valid uses dedicated mode", payload: mustTaskPayload(t, container.TaskPayload{ID: 42}), write: true, wantID: 42, wantOK: true},
+		{name: "absent fails closed", wantErr: true},
+		{name: "valid selects task", payload: mustTaskPayload(t, container.TaskPayload{ID: 42}), write: true, wantID: 42},
 		{name: "malformed fails closed", payload: []byte("not json"), write: true, wantErr: true},
 		{name: "zero ID fails closed", payload: mustTaskPayload(t, container.TaskPayload{}), write: true, wantErr: true},
 		{name: "negative ID fails closed", payload: mustTaskPayload(t, container.TaskPayload{ID: -1}), write: true, wantErr: true},
@@ -41,12 +40,12 @@ func TestTaskIDDistinguishesSharedDedicatedAndInvalidBoots(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			id, ok, err := TaskID(dir)
+			id, err := TaskID(dir)
 			if (err != nil) != test.wantErr {
 				t.Fatalf("TaskID() error = %v, wantErr %v", err, test.wantErr)
 			}
-			if id != test.wantID || ok != test.wantOK {
-				t.Fatalf("TaskID() = (%d, %v), want (%d, %v)", id, ok, test.wantID, test.wantOK)
+			if id != test.wantID {
+				t.Fatalf("TaskID() ID = %d, want %d", id, test.wantID)
 			}
 		})
 	}
@@ -59,12 +58,12 @@ func TestTaskIDFailsClosedOnNonMissingReadError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	id, dedicated, err := TaskID(dir)
+	id, err := TaskID(dir)
 	if err == nil {
 		t.Fatal("TaskID() error = nil for unreadable task.json path")
 	}
-	if id != 0 || dedicated {
-		t.Fatalf("TaskID() = (%d, %v), want (0, false)", id, dedicated)
+	if id != 0 {
+		t.Fatalf("TaskID() ID = %d, want 0", id)
 	}
 }
 

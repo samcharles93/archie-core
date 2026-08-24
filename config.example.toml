@@ -255,8 +255,8 @@ gate_max_failures = 5
 # rate_per_second = 1.0    # per-remote-address token bucket
 # rate_burst      = 5
 
-# Docker sandbox execution of archie-agent. Requires NATS and agent.mode = "nats";
-# embedded and external broker modes are both supported.
+# Docker sandbox execution of archie-agent. This is the only autonomous
+# workflow execution path; embedded and external NATS are both supported.
 # [containers]
 # enabled = true
 # image = "archie-agent:latest"    # Docker image to run

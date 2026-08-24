@@ -21,18 +21,16 @@ import (
 
 // Runner executes one autonomous stage against an already prepared workspace.
 type Runner interface {
-	// report, when non-nil, is notified once per completed tool call. Only
-	// a runner executing in the same process as its tools (InProcessRunner)
-	// can populate it; others accept and ignore it.
+	// report, when non-nil, is notified once per completed tool call.
 	Run(ctx context.Context, workspace string, req Request, report ToolCallReporter) (Result, error)
 }
 
 type loopFunc func(context.Context, agentloop.Config) (agentloop.Result, error)
 
-// InProcessRunner preserves the current execution behavior behind the v1
-// agent protocol. It is replaced by a subprocess or container runner without
-// changing workflow orchestration.
-type InProcessRunner struct {
+// LoopRunner executes one workflow stage through ai-sdk's agent loop. It is
+// worker-local: archie-agent owns the complete workflow and uses this runner
+// for each stage inside its task-scoped container.
+type LoopRunner struct {
 	runtime *runtime.Runtime
 	log     *slog.Logger
 	run     loopFunc
@@ -43,12 +41,12 @@ type InProcessRunner struct {
 	Limits ToolLimits
 }
 
-func NewInProcessRunner(
+func NewLoopRunner(
 	rt *runtime.Runtime,
 	log *slog.Logger,
 	registries ...*tools.Registry,
-) *InProcessRunner {
-	runner := &InProcessRunner{runtime: rt, log: log, run: agentloop.Run}
+) *LoopRunner {
+	runner := &LoopRunner{runtime: rt, log: log, run: agentloop.Run}
 	if len(registries) > 0 {
 		runner.tools = registries[0]
 	}
@@ -67,7 +65,7 @@ func NewInProcessRunner(
 // it is not configurable.
 const workspaceToolset = "workspace"
 
-func (r *InProcessRunner) Run(ctx context.Context, workspace string, req Request, report ToolCallReporter) (Result, error) {
+func (r *LoopRunner) Run(ctx context.Context, workspace string, req Request, report ToolCallReporter) (Result, error) {
 	if err := req.Validate(); err != nil {
 		return Result{}, err
 	}
@@ -194,7 +192,7 @@ func pluginToolSet(req Request, workspace string, occupied ...core.ToolSet) (cor
 	return set, nil
 }
 
-func (r *InProcessRunner) logger(req Request) *slog.Logger {
+func (r *LoopRunner) logger(req Request) *slog.Logger {
 	if r.log == nil {
 		return slog.New(slog.DiscardHandler)
 	}

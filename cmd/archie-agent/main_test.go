@@ -21,6 +21,7 @@ func TestRunCommandPreservesCLIExitSemantics(t *testing.T) {
 	}{
 		{name: "help", args: []string{"-h"}},
 		{name: "flag parse error", args: []string{"-unknown"}, wantCode: 2},
+		{name: "removed consumer flag", args: []string{"-consumer", "legacy"}, wantCode: 2},
 		{name: "missing NATS URL", wantCode: 1},
 		{
 			name: "worker failure",
@@ -88,8 +89,8 @@ func TestRunCommandMapsWorkerOutcomeToExitStatus(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			var stderr bytes.Buffer
-			code := runCommand([]string{"-nats-url", "nats://flag", "-consumer", "custom"}, func(string) string { return "token" }, &stderr, func(_ context.Context, settings agentworker.Settings, _ *slog.Logger) error {
-				if settings.NATSURL != "nats://flag" || settings.NATSToken != "token" || settings.Consumer != "custom" {
+			code := runCommand([]string{"-nats-url", "nats://flag"}, func(string) string { return "token" }, &stderr, func(_ context.Context, settings agentworker.Settings, _ *slog.Logger) error {
+				if settings.NATSURL != "nats://flag" || settings.NATSToken != "token" {
 					t.Fatalf("settings = %#v", settings)
 				}
 				return test.workerErr

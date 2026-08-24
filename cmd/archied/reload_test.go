@@ -31,7 +31,7 @@ func minimalConfigTOML(botUser string) string {
 }
 
 func invalidConfigTOML() string {
-	return "bot_user = \"widget\"\nagent = { mode = \"bogus-mode\" }\n[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
+	return "bot_user = \"widget\"\ndispatch = { trigger = \"bogus-trigger\" }\n[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
 }
 
 func TestReloadAppliesAndPublishes(t *testing.T) {
@@ -212,11 +212,12 @@ func TestChangedNonReloadableFields(t *testing.T) {
 		t.Fatalf("reloadable-only: got %v, want []", got)
 	}
 
-	// A non-reloadable change is named (Agent builds the startup runner).
-	nonReloadable := base
-	nonReloadable.Agent = config.Agent{Mode: "subprocess"}
-	if got := changedNonReloadableFields(base, nonReloadable); len(got) != 1 || got[0] != "Agent" {
-		t.Fatalf("Agent change: got %v, want [Agent]", got)
+	// The removed [agent] section remains decode-only for old files. Changing
+	// it has no running consumer and must not claim a restart will apply it.
+	legacyOnly := base
+	legacyOnly.LegacyAgent = config.LegacyAgent{Mode: "subprocess"}
+	if got := changedNonReloadableFields(base, legacyOnly); len(got) != 0 {
+		t.Fatalf("legacy agent change: got %v, want []", got)
 	}
 
 	// Containers sub-field granularity: Image change warns, MaxConcurrency

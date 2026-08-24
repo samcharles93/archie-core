@@ -1,7 +1,7 @@
 // Package container manages Docker containers running archie-agent.
 // A Pool acquires and releases containers per task, handling image pull,
-// creation, startup, health check, and teardown. The daemon's existing
-// NATSRunner handles agent communication unchanged.
+// creation, startup, health check, and teardown. The daemon hands each task to
+// its container as one core-NATS request.
 package container
 
 import (

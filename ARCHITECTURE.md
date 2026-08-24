@@ -22,12 +22,12 @@ See `docs/architecture/organisation.md` for the target structure and
 | `internal/app/agentworker/`  | Agent worker composition, lifecycle, routing, and workflow execution      |
 | `internal/infrastructure/agentboot/` | Worker boot-brief filesystem decoding                                  |
 | `internal/infrastructure/agentgit/` | Worker git safe-directory setup                                        |
-| `internal/infrastructure/agenttransport/nats/` | Worker NATS transport, stage/task wire boundaries, and RPC client construction |
+| `internal/infrastructure/agenttransport/nats/` | Worker core-NATS full-task handoff and RPC client construction                |
 | `internal/config/`           | Config types only — loading lives in `infrastructure/configuration`       |
 | `internal/daemon/`           | Resident loop: poll, enqueue, claim, route, process, reconcile            |
 | `internal/domain/workflow/`  | Engine: stage lists, routing, shared steps, workflow definitions          |
 | `internal/domain/workintake/`| `TaskEnvelope`, routing `Kind`, label vocabulary, task subjects           |
-| `internal/agentexec/`        | Versioned agent-stage protocol, worker, and in-process/subprocess runners |
+| `internal/agentexec/`        | Worker-local stage protocol and ai-sdk loop runner                        |
 | `internal/forge/`            | Forge interface: GitHub and Gitea implementations                         |
 | `internal/worktree/`         | Git operations: clone, branch, commit, push, diff, cleanup               |
 | `internal/store/`            | Task store interface and SQLite implementation; RPC clients proxy it      |
@@ -195,8 +195,8 @@ Daemon-level TOML (`~/.config/archie/config.toml`):
   ecosystem
 - `[models]` -- planner, builder, triage (provider/model refs)
 - `[providers]` -- LLM provider configs
-- `[agent]` -- execution mode (`inprocess` or `subprocess`), worker command,
-  environment allowlist
+- `[nats]` -- embedded or external broker deployment
+- `[containers]` -- managed `archie-agent` image, limits, storage, and network
 - `[budgets]` -- max steps, max tokens, wall clock, gate max failures
 - `[web]` -- dashboard listen address
 - `[notify]` -- webhook URL for notifications
@@ -212,16 +212,10 @@ Config fields reference a secret as
 `{engine, key}` (`secret.SecretRef`), e.g.
 `token = { engine = "env", key = "ARCHIE_GITHUB_TOKEN" }`. As of this writing
 `Forge.Token` and `Provider.APIKey` use `SecretRef`; resolved provider values
-are exported under private, identity-scoped environment names because the SDK,
-subprocess, and container boundaries consume credential names rather than
+are exported under private, identity-scoped environment names because the SDK
+and container boundary consume credential names rather than
 plaintext wire fields. The older `Provider.APIKeyEnv`, `NATSConfig.TokenEnv`, and
 `TelegramConfig.TokenEnv` field names remain supported.
-
-Subprocess mode is a migration transport boundary, not a security sandbox: the
-worker still runs under the daemon UID and can access daemon-readable host
-resources. The "daemon never runs untrusted code" boundary requires the later
-container runner with a separate user, a restricted filesystem and process
-namespace, and explicit mounts.
 
 Per-repo gates are command lists: `[[repos.gate]] = ["go", "vet", "./..."]`. The
 last command is the test runner (by convention -- TDD inverts it).

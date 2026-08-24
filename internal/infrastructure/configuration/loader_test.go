@@ -195,9 +195,6 @@ func TestLoadRejectsInvalidConfigEnumsAndGlobs(t *testing.T) {
 		extra string
 	}{
 		{name: "dispatch trigger", extra: "\n[dispatch]\ntrigger = \"labels\"\n"},
-		{name: "agent mode", extra: "\n[agent]\nmode = \"remote\"\n"},
-		{name: "agent command", extra: "\n[agent]\nmode = \"subprocess\"\ncommand = \"   \"\n"},
-		{name: "agent env", extra: "\n[agent]\nenv = [\"TOKEN=value\"]\n"},
 		{name: "provider userinfo", extra: "\n[providers.openai]\nclass = \"openai\"\nbase_url = \"https://token@example.com/v1\"\n"},
 		{name: "provider query secret", extra: "\n[providers.openai]\nclass = \"openai\"\nbase_url = \"https://example.com/v1?api_key=secret\"\n"},
 		{name: "test glob", extra: "\n[[repos]]\nowner = \"acme\"\nname = \"app\"\ntest_glob = \"[\"\n"},
@@ -222,7 +219,7 @@ func TestLoadRejectsInvalidConfigEnumsAndGlobs(t *testing.T) {
 	}
 }
 
-func TestLoadAgentDefaultsAndOverrides(t *testing.T) {
+func TestLoadLegacyAgentSectionWithoutApplyingExecutionDefaults(t *testing.T) {
 	tests := []struct {
 		name        string
 		agent       string
@@ -230,10 +227,10 @@ func TestLoadAgentDefaultsAndOverrides(t *testing.T) {
 		wantCommand string
 		wantEnv     []string
 	}{
-		{name: "defaults", wantMode: "inprocess", wantCommand: "archie-agent"},
+		{name: "absent section stays empty"},
 		{
-			name: "subprocess", agent: "\n[agent]\nmode = \"subprocess\"\ncommand = \"/opt/archie-agent\"\nenv = [\"GOCACHE\"]\n",
-			wantMode: "subprocess", wantCommand: "/opt/archie-agent", wantEnv: []string{"GOCACHE"},
+			name: "legacy values decode without validation", agent: "\n[agent]\nmode = \"removed-mode\"\ncommand = \"/opt/old-agent\"\nenv = [\"TOKEN=value\"]\n",
+			wantMode: "removed-mode", wantCommand: "/opt/old-agent", wantEnv: []string{"TOKEN=value"},
 		},
 	}
 	for _, tt := range tests {
@@ -247,8 +244,8 @@ func TestLoadAgentDefaultsAndOverrides(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if cfg.Agent.Mode != tt.wantMode || cfg.Agent.Command != tt.wantCommand || strings.Join(cfg.Agent.Env, ",") != strings.Join(tt.wantEnv, ",") {
-				t.Fatalf("agent config = %#v", cfg.Agent)
+			if cfg.LegacyAgent.Mode != tt.wantMode || cfg.LegacyAgent.Command != tt.wantCommand || strings.Join(cfg.LegacyAgent.Env, ",") != strings.Join(tt.wantEnv, ",") {
+				t.Fatalf("legacy agent config = %#v", cfg.LegacyAgent)
 			}
 		})
 	}
@@ -425,7 +422,6 @@ func TestLoadContainerVolumeTTL(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.toml")
 			contents := "bot_user = \"widget\"\n" +
-				"[agent]\nmode = \"nats\"\n" +
 				"[nats]\nurl = \"nats://localhost:4222\"\n" +
 				"[containers]\nenabled = true\nimage = \"archie-agent:test\"\n" + tt.ttl +
 				"[[repos]]\nowner = \"acme\"\nname = \"app\"\npersistent_storage = true\n"
@@ -447,7 +443,6 @@ func TestLoadContainerVolumeTTL(t *testing.T) {
 func TestLoadRejectsNegativeContainerVolumeTTL(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	contents := "bot_user = \"widget\"\n" +
-		"[agent]\nmode = \"nats\"\n" +
 		"[nats]\nurl = \"nats://localhost:4222\"\n" +
 		"[containers]\nenabled = true\nimage = \"archie-agent:test\"\nvolume_ttl = \"-1h\"\n" +
 		"[[repos]]\nowner = \"acme\"\nname = \"app\"\npersistent_storage = true\n"
@@ -508,8 +503,8 @@ func TestOverlay(t *testing.T) {
 	if cfg.WorkDir != "/var/lib/archie/work" {
 		t.Errorf("WorkDir: got %q, want overlay value", cfg.WorkDir)
 	}
-	if cfg.Agent.Mode != "nats" {
-		t.Errorf("Agent.Mode: got %q, want %q", cfg.Agent.Mode, "nats")
+	if cfg.LegacyAgent.Mode != "nats" {
+		t.Errorf("LegacyAgent.Mode: got %q, want %q", cfg.LegacyAgent.Mode, "nats")
 	}
 	// Fields the overlay omits keep the base value.
 	if cfg.BotUser != "widget" {
@@ -524,8 +519,8 @@ func TestOverlay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if baseOnly.Agent.Mode != "inprocess" {
-		t.Errorf("Agent.Mode with empty overlay: got %q, want %q", baseOnly.Agent.Mode, "inprocess")
+	if baseOnly.LegacyAgent.Mode != "inprocess" {
+		t.Errorf("LegacyAgent.Mode with empty overlay: got %q, want %q", baseOnly.LegacyAgent.Mode, "inprocess")
 	}
 }
 
