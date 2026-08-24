@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/taskstate"
 	"github.com/samcharles93/archie-core/internal/tools"
 )
 
@@ -55,6 +56,22 @@ type TaskSpawnResult struct {
 	Message string `json:"message"`
 }
 
+// TaskActionResult is what task_action returns.
+type TaskActionResult struct {
+	TaskID  int64  `json:"task_id"`
+	Action  string `json:"action"`
+	Message string `json:"message"`
+}
+
+// ChatTaskActor is the mutation surface task_action needs. It mirrors the
+// ChatTaskLister pattern: gateway states what it needs and the daemon
+// supplies an adapter over the store and runtime, so this package keeps its
+// independence from internal/store.
+type ChatTaskActor interface {
+	// ApplyChatTaskAction executes action on taskID, scoped to identity's own tasks.
+	ApplyChatTaskAction(ctx context.Context, identity string, taskID int64, action taskstate.Action) (TaskActionResult, error)
+}
+
 // ChatTaskLogEntry is one log line as task_logs returns it. It mirrors
 // internal/logging.Entry's shape without importing that package: gateway
 // keeps its independence from internal/logging the same way it already does
@@ -98,24 +115,17 @@ type ChatTaskLogReader interface {
 	ReadChatTaskLogs(ctx context.Context, identity string, taskID int64, attempt int, q ChatTaskLogQuery) (ChatTaskLogResult, error)
 }
 
-// TaskTools builds the chat tools that let Archie see and add to its own work
+// TaskTools builds the chat tools that let Archie see, add to, and manage its own work
 // queue. Until these existed, /spawn and the task list were slash commands only
 // a human could type, so "what are you working on?" had no tool path at all.
 //
-// Both tools are bound to identity at construction. The model never supplies
-// it: a model that could name an identity could read or file work belonging to
-// another instance on the same host.
+// All tools are bound to identity at construction. The model never supplies
+// it: a model that could name an identity could read, mutate or file work
+// belonging to another instance on the same host.
 //
 // A nil backend omits its tool rather than registering one that always fails,
 // so a daemon without chat task support advertises nothing.
-//
-// Deliberately absent: task_approve and task_cancel. waiting_human is the one
-// point in the task lifecycle where a person must act, and /approve is that
-// gate. The text reaching a chat turn is untrusted -- a forge issue body or an
-// inbound email can be quoted into it -- so a tool that approves Archie's own
-// work would remove the only human checkpoint in the lifecycle. Cancel is
-// destructive on the same untrusted path. Both remain slash commands.
-func TaskTools(lister ChatTaskLister, creator TaskCreator, logs ChatTaskLogReader, identity string) []tools.ToolEntry {
+func TaskTools(lister ChatTaskLister, creator TaskCreator, logs ChatTaskLogReader, actor ChatTaskActor, identity string) []tools.ToolEntry {
 	var entries []tools.ToolEntry
 	if lister != nil {
 		entries = append(entries, taskListTool(lister, identity))
@@ -125,6 +135,9 @@ func TaskTools(lister ChatTaskLister, creator TaskCreator, logs ChatTaskLogReade
 	}
 	if logs != nil {
 		entries = append(entries, taskLogsTool(logs, identity))
+	}
+	if actor != nil {
+		entries = append(entries, taskActionTool(actor, identity))
 	}
 	return entries
 }
@@ -224,6 +237,52 @@ func taskSpawnTool(creator TaskCreator, identity string) tools.ToolEntry {
 				ID:      id,
 				Message: fmt.Sprintf("queued task %d: %s", id, title),
 			}, nil
+		},
+	}
+}
+
+func taskActionTool(actor ChatTaskActor, identity string) tools.ToolEntry {
+	return tools.ToolEntry{
+		Name:    "task_action",
+		Toolset: "tasks",
+		Description: "Perform an operator action on a task (e.g. abandon, archive, retry, stop, cancel, approve, reject). " +
+			"Use it when the user asks to close, abandon, archive, retry, stop or approve a task.",
+		Classification: tools.ClassMutating | tools.RequiresApproval,
+		BuildApprovalDescription: func(input map[string]any) string {
+			action := strings.TrimSpace(asString(input["action"]))
+			taskID, _ := asInt64(input["task_id"])
+			return fmt.Sprintf("Apply action %q to task %d.", action, taskID)
+		},
+		Schema: tools.JSONSchema{
+			"type": "object",
+			"properties": map[string]any{
+				"task_id": map[string]any{
+					"type":        "integer",
+					"description": "ID of the task to act on.",
+				},
+				"action": map[string]any{
+					"type":        "string",
+					"description": "The action to perform: abandon, archive, retry, stop, cancel, approve, reject.",
+				},
+			},
+			"required": []any{"task_id", "action"},
+		},
+		Handler: func(ctx context.Context, input map[string]any) (any, error) {
+			taskID, ok := asInt64(input["task_id"])
+			if !ok {
+				return nil, fmt.Errorf("task_action: task_id is required")
+			}
+			actionStr := strings.TrimSpace(strings.ToLower(asString(input["action"])))
+			if actionStr == "" {
+				return nil, fmt.Errorf("task_action: action is required")
+			}
+
+			// The bound identity, never input["identity"].
+			result, err := actor.ApplyChatTaskAction(ctx, identity, taskID, taskstate.Action(actionStr))
+			if err != nil {
+				return nil, fmt.Errorf("task_action: %w", err)
+			}
+			return result, nil
 		},
 	}
 }
