@@ -387,9 +387,21 @@ func drainChatStream(parts <-chan core.StreamPart, turn gateway.TurnStream) stri
 				Err:        part.ToolResult.Error,
 			})
 			for _, ref := range multimodalMediaRefs(part.ToolResult.Output) {
+				// Path and URL are alternatives, not a pair: the channel
+				// uploads one and fetches the other. A ref carrying
+				// neither names nothing deliverable, so it is dropped
+				// rather than sent as an empty attachment.
+				if ref.URL == "" && ref.Path == "" {
+					continue
+				}
 				turn.Media(gateway.MediaEvent{
-					ToolName:   name,
-					Attachment: gateway.MediaAttachment{Type: ref.Type, URL: ref.URL},
+					ToolName: name,
+					Attachment: gateway.MediaAttachment{
+						Type:     ref.Type,
+						URL:      ref.URL,
+						Path:     ref.Path,
+						FileName: ref.FileName,
+					},
 				})
 			}
 		}

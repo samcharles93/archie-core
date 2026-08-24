@@ -54,6 +54,7 @@ import (
 	toolprovider "github.com/samcharles93/archie-core/internal/tools/provider"
 	builtintoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/builtin"
 	memorytoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/memory"
+	"github.com/samcharles93/archie-core/internal/tools/sendfile"
 	"github.com/samcharles93/archie-core/internal/tools/webfetch"
 	"github.com/samcharles93/archie-core/internal/webhookguard"
 	"github.com/samcharles93/archie-core/internal/webui"
@@ -887,6 +888,20 @@ func (b *boot) registerStandaloneTools() {
 		}
 	} else {
 		log.Info("web fetch disabled")
+	}
+
+	// send_file. Rooted at the same workspace as the file tools and gated
+	// by the same confinement, because it hands a host file to an outbound
+	// message: a send that could reach paths the read tool refuses would
+	// be a way around whatever confinement is configured.
+	if entry := sendfile.Tool(cfg.Chat.Workspace); entry != nil {
+		if err := b.toolReg.Register(*entry); err != nil {
+			log.Warn("send_file registration failed", "err", err)
+		} else {
+			log.Info("file sending enabled", "workspace", cfg.Chat.Workspace)
+		}
+	} else {
+		log.Info("file sending disabled (chat.workspace is unset)")
 	}
 
 	b.registerMinimaxTool(cfg, log)

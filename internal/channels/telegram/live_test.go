@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -1109,5 +1110,47 @@ func TestLiveReplyMediaSkipsDeliveryWhenCapabilityReportsUnsupported(t *testing.
 	live.mu.Unlock()
 	if !strings.Contains(lines, "https://example.com/v.mp4") {
 		t.Fatalf("fallback lines = %q, want it to contain the asset URL", lines)
+	}
+}
+
+// failingSender reports every send as failed, so the fallback path can be
+// exercised without a network.
+type failingSender struct{}
+
+func (failingSender) SendMedia(context.Context, gateway.MessageEvent) (gateway.SendResult, error) {
+	return gateway.SendResult{Success: false}, errors.New("upload refused")
+}
+
+func (failingSender) Capabilities() gateway.AdapterCapabilities {
+	return gateway.AdapterCapabilities{Media: true}
+}
+
+// A local attachment has no URL, so the URL fallback has nothing to offer.
+// It must say the file was not sent rather than render an empty link,
+// which reads as a delivered file -- success and silent non-delivery
+// looking alike is the whole defect here.
+func TestLiveReplyMediaFallbackReportsUndeliveredLocalFile(t *testing.T) {
+	live, _ := newTestLiveReply(t, false)
+	live.newMediaSender = func(*bot.Bot, int64, int) gateway.MediaSender { return failingSender{} }
+
+	live.Media(gateway.MediaEvent{
+		ToolName: "send_file",
+		Attachment: gateway.MediaAttachment{
+			Type:     "document",
+			Path:     "/var/log/archie/session.log",
+			FileName: "session.log",
+		},
+	})
+	live.waitMedia()
+
+	live.mu.Lock()
+	lines := strings.Join(live.toolLines, "\n")
+	live.mu.Unlock()
+
+	if !strings.Contains(lines, "could not send") {
+		t.Errorf("fallback lines = %q, want them to report the failure", lines)
+	}
+	if !strings.Contains(lines, bot.EscapeMarkdown("session.log")) {
+		t.Errorf("fallback lines = %q, want them to name the file", lines)
 	}
 }

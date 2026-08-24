@@ -370,12 +370,16 @@ const mediaSendTimeout = 30 * time.Second
 // upload, and TurnStream implementations must not block generation on one.
 // It satisfies gateway.TurnStream.
 //
-// A missing URL is silently skipped rather than surfaced: an attachment
-// telegramMediaSender.SendMedia would reject as invalid_message has nothing
-// worth falling back to either, and Media has no error return to report it
-// through.
+// An attachment carrying neither a URL to fetch nor a local Path to
+// upload is silently skipped: SendMedia would reject it as
+// invalid_message, there is nothing to fall back to, and Media has no
+// error return to report it through.
+//
+// This used to skip on a missing URL alone, which dropped every local
+// file before it reached the sender -- the guard, not just the sender,
+// was part of making a local path undeliverable.
 func (l *liveReply) Media(event gateway.MediaEvent) {
-	if event.Attachment.URL == "" {
+	if event.Attachment.URL == "" && event.Attachment.Path == "" {
 		return
 	}
 
@@ -413,7 +417,18 @@ func (l *liveReply) Media(event gateway.MediaEvent) {
 // MediaEvent that could not be (or was not attempted to be) delivered
 // inline.
 func (l *liveReply) appendFallbackLine(att gateway.MediaAttachment) {
+	// A local attachment has no URL to fall back to, and printing an empty
+	// one reads as a delivered file. Say plainly that it was not sent:
+	// the whole defect this path exists around is that non-delivery and
+	// success looked the same to everyone downstream, the agent included.
 	line := fallbackMediaLinePrefix + bot.EscapeMarkdown(att.Type) + ": " + att.URL
+	if att.URL == "" {
+		name := att.FileName
+		if name == "" {
+			name = att.Path
+		}
+		line = fallbackMediaLinePrefix + "could not send " + bot.EscapeMarkdown(name)
+	}
 
 	l.mu.Lock()
 	l.toolLines = append(l.toolLines, line)

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -22,10 +24,15 @@ import (
 // the new one. That is the same lifetime rule the per-launch turns
 // registry documents.
 //
-// Delivery is URL-only. A MediaAttachment.FileID identifies a file on the
-// platform it was uploaded from and is meaningless as an outbound handle
-// here, so only URL is accepted; uploading local bytes is a separate
-// concern from routing a generated asset to a chat.
+// An attachment is delivered one of two ways, chosen by what it carries:
+// a URL is handed to Telegram to FETCH, while a Path is UPLOADED from this
+// host. Delivery used to be URL-only, which meant a locally produced file
+// was passed off as a URL Telegram could not fetch and the send did
+// nothing useful while reporting success.
+//
+// A MediaAttachment.FileID is still not accepted: it identifies a file on
+// the platform it was uploaded from and is meaningless as an outbound
+// handle here.
 type telegramMediaSender struct {
 	bot      *bot.Bot
 	chatID   int64
@@ -50,11 +57,23 @@ func (s *telegramMediaSender) Capabilities() gateway.AdapterCapabilities {
 	return gateway.AdapterCapabilities{Media: true}
 }
 
-// errNoMedia and errNoURL are the two ways an event can be undeliverable
-// before any request is made.
+// errNoMedia and errNoSource are the two ways an event can be
+// undeliverable before any request is made.
 var (
 	errNoMedia = errors.New("message event carries no media attachment")
-	errNoURL   = errors.New("media attachment has no URL")
+	// errNoSource replaces the former errNoURL: an attachment is now
+	// deliverable with either a URL or a local Path, so having neither  --
+	// not having no URL  --  is what makes it undeliverable.
+	errNoSource = errors.New("media attachment has neither a URL nor a local path")
+)
+
+// Bot API upload ceilings, in bytes. Photos are capped far lower than
+// everything else, and exceeding either is a 400 from Telegram with a
+// message the operator never sees; checking here turns that into a
+// reported failure with the actual size in it.
+const (
+	maxPhotoUploadBytes int64 = 10 * 1024 * 1024
+	maxFileUploadBytes  int64 = 50 * 1024 * 1024
 )
 
 // SendMedia delivers the event's first attachment, captioned with the
@@ -66,11 +85,17 @@ func (s *telegramMediaSender) SendMedia(ctx context.Context, event gateway.Messa
 		return invalidMedia(errNoMedia)
 	}
 	att := event.Media[0]
-	if att.URL == "" {
-		return invalidMedia(fmt.Errorf("%w (type %q)", errNoURL, att.Type))
+	if att.URL == "" && att.Path == "" {
+		return invalidMedia(fmt.Errorf("%w (type %q)", errNoSource, att.Type))
 	}
 
-	msg, err := s.dispatch(ctx, att, event.Text)
+	file, closeFile, err := s.source(att)
+	if err != nil {
+		return invalidMedia(err)
+	}
+	defer closeFile()
+
+	msg, err := s.dispatch(ctx, att, file, event.Text)
 	if err != nil {
 		if errors.Is(err, errUnsupportedMediaType) {
 			return invalidMedia(err)
@@ -87,15 +112,70 @@ func (s *telegramMediaSender) SendMedia(ctx context.Context, event gateway.Messa
 	return gateway.SendResult{Success: true, MessageID: id}, nil
 }
 
-var errUnsupportedMediaType = errors.New("unsupported media type")
+var (
+	errUnsupportedMediaType = errors.New("unsupported media type")
+	errNotRegularFile       = errors.New("not a regular file")
+	errTooLarge             = errors.New("file exceeds the Telegram upload limit")
+)
+
+// source builds the Bot API file value for att, and a function to release
+// whatever it holds open.
+//
+// A URL becomes an InputFileString, which tells Telegram to fetch it. A
+// local path becomes an InputFileUpload carrying an open *os.File, which
+// the library streams as multipart form data  --  the only way bytes that
+// exist solely on this host can reach a chat.
+//
+// The size check happens here rather than being left to Telegram: over the
+// limit the API answers a bad request whose text nobody reads, and the
+// operator sees an attachment that never arrived. The returned error is
+// classified invalid_message by the caller, so it is not retried  --  a
+// file does not get smaller on a second attempt.
+func (s *telegramMediaSender) source(att gateway.MediaAttachment) (models.InputFile, func(), error) {
+	noop := func() {}
+	if att.Path == "" {
+		return &models.InputFileString{Data: att.URL}, noop, nil
+	}
+
+	info, err := os.Stat(att.Path)
+	if err != nil {
+		return nil, noop, fmt.Errorf("attach %s: %w", att.Path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, noop, fmt.Errorf("attach %s: %w", att.Path, errNotRegularFile)
+	}
+	if limit := uploadLimit(att.Type); info.Size() > limit {
+		return nil, noop, fmt.Errorf("attach %s: %w: %d bytes exceeds %d",
+			att.Path, errTooLarge, info.Size(), limit)
+	}
+
+	f, err := os.Open(att.Path)
+	if err != nil {
+		return nil, noop, fmt.Errorf("attach %s: %w", att.Path, err)
+	}
+
+	name := att.FileName
+	if name == "" {
+		name = filepath.Base(att.Path)
+	}
+	return &models.InputFileUpload{Filename: name, Data: f}, func() { _ = f.Close() }, nil
+}
+
+// uploadLimit reports the Bot API ceiling for a media kind. Photos have
+// their own, much lower one; everything else shares the general file
+// limit.
+func uploadLimit(mediaType string) int64 {
+	if mediaType == "image" {
+		return maxPhotoUploadBytes
+	}
+	return maxFileUploadBytes
+}
 
 // dispatch routes an attachment to the Bot API method for its kind. The
 // media type, not the MessageEvent type, decides: the event type describes
 // the message while the attachment describes the file, and Telegram
 // rejects a video sent through sendPhoto.
-func (s *telegramMediaSender) dispatch(ctx context.Context, att gateway.MediaAttachment, caption string) (*models.Message, error) {
-	file := &models.InputFileString{Data: att.URL}
-
+func (s *telegramMediaSender) dispatch(ctx context.Context, att gateway.MediaAttachment, file models.InputFile, caption string) (*models.Message, error) {
 	switch att.Type {
 	case "video":
 		p := &bot.SendVideoParams{ChatID: s.chatID, Video: file, Caption: caption}
