@@ -316,9 +316,9 @@ func (r *Router) handleNew(ctx context.Context, msg Message, rest string) (strin
 	r.sessionTracker.setActive(msg.ChannelID, msg.ThreadID, id)
 
 	if title != "" {
-		return fmt.Sprintf("New session created: %s (%s)", title, id[:8]), nil
+		return fmt.Sprintf("New session created: %s (%s)", title, shortSessionID(id)), nil
 	}
-	return fmt.Sprintf("New session created (%s). Conversation history has been cleared.", id[:8]), nil
+	return fmt.Sprintf("New session created (%s). Conversation history has been cleared.", shortSessionID(id)), nil
 }
 
 // handleTopic manages topic/session switching for threaded conversations.
@@ -346,7 +346,7 @@ func topicHelpText() string {
 	return "Usage: /topic [off|help|<session-id>]\n" +
 		"  off          — disable topic routing\n" +
 		"  help         — show this help\n" +
-		"  <session-id> — switch to a session by its first 8 characters"
+		"  <session-id> — switch to a session by the ID shown in /topic"
 }
 
 func (r *Router) topicListSessions(ctx context.Context, msg Message) (string, error) {
@@ -377,12 +377,14 @@ func (r *Router) topicSwitchSession(ctx context.Context, msg Message, rest strin
 	if err != nil {
 		return "", fmt.Errorf("list sessions: %w", err)
 	}
-	for _, s := range sessions {
-		if len(s.SessionID) >= len(rest) && s.SessionID[:len(rest)] == rest {
-			r.sessionTracker.setActive(msg.ChannelID, msg.ThreadID, s.SessionID)
-			return fmt.Sprintf("Switched to session %s: %s",
-				shortSessionID(s.SessionID), sessionDisplayTitle(s)), nil
-		}
+	match, ambiguous := resolveSessionRef(sessions, rest)
+	if ambiguous {
+		return fmt.Sprintf("Multiple sessions match %q. Use more of the session ID.", rest), nil
+	}
+	if match != nil {
+		r.sessionTracker.setActive(msg.ChannelID, msg.ThreadID, match.SessionID)
+		return fmt.Sprintf("Switched to session %s: %s",
+			shortSessionID(match.SessionID), sessionDisplayTitle(*match)), nil
 	}
 	return fmt.Sprintf("No session found matching %q. Use /topic to list available sessions.", rest), nil
 }
@@ -541,7 +543,7 @@ func (r *Router) handleBranch(ctx context.Context, msg Message, rest string) (st
 		title = parentSC.Title + " (branch)"
 	}
 	if title == "" {
-		title = "Branch of " + parentID[:8]
+		title = "Branch of " + shortSessionID(parentID)
 	}
 
 	sc := SessionContext{
@@ -588,9 +590,9 @@ func (r *Router) handleBranch(ctx context.Context, msg Message, rest string) (st
 	r.sessionTracker.setActive(channelID, threadID, id)
 
 	if branchName != "" {
-		return fmt.Sprintf("Branched to \"%s\" (%s) with %d inherited messages.", branchName, id[:8], len(msgs)), nil
+		return fmt.Sprintf("Branched to \"%s\" (%s) with %d inherited messages.", branchName, shortSessionID(id), len(msgs)), nil
 	}
-	return fmt.Sprintf("Branched session (%s) with %d inherited messages.", id[:8], len(msgs)), nil
+	return fmt.Sprintf("Branched session (%s) with %d inherited messages.", shortSessionID(id), len(msgs)), nil
 }
 
 // handleCompress applies context compression to the current session's

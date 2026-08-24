@@ -325,7 +325,7 @@ func TestRouteTopicSwitch(t *testing.T) {
 	secondID := r.sessionTracker.getActive("chat-6", "")
 
 	// Switch back to first using prefix.
-	prefix := firstID[:min(8, len(firstID))]
+	prefix := shortSessionID(firstID)
 	reply, err := r.Route(context.Background(), Message{Text: "/topic " + prefix, ChannelID: "chat-6"})
 	if err != nil {
 		t.Fatalf("Route: %v", err)
@@ -336,7 +336,26 @@ func TestRouteTopicSwitch(t *testing.T) {
 
 	current := r.sessionTracker.getActive("chat-6", "")
 	if current != firstID {
-		t.Errorf("active = %s, want %s (firstID=%s, secondID=%s)", current[:8], firstID[:8], firstID[:8], secondID[:8])
+		t.Errorf("active = %s, want %s (secondID=%s)", current, firstID, secondID)
+	}
+}
+
+func TestRouteTopicRejectsAmbiguousPrefix(t *testing.T) {
+	r := newTestRouter("telegram")
+	_, _ = r.Route(context.Background(), Message{Text: "/new first", ChannelID: "chat-ambiguous"})
+	firstID := r.sessionTracker.getActive("chat-ambiguous", "")
+	_, _ = r.Route(context.Background(), Message{Text: "/new second", ChannelID: "chat-ambiguous"})
+	secondID := r.sessionTracker.getActive("chat-ambiguous", "")
+
+	reply, err := r.Route(context.Background(), Message{Text: "/topic " + firstID[:8], ChannelID: "chat-ambiguous"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if !strings.Contains(reply, "Multiple sessions") {
+		t.Errorf("reply = %q, want ambiguity warning", reply)
+	}
+	if current := r.sessionTracker.getActive("chat-ambiguous", ""); current != secondID {
+		t.Errorf("ambiguous switch changed active session to %q, want %q", current, secondID)
 	}
 }
 

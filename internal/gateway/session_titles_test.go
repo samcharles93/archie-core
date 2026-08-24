@@ -150,9 +150,9 @@ func TestRenderSessionList(t *testing.T) {
 	}
 	got := renderSessionList(sessions, "aaaaaaaa-1111-2222-3333-444444444444", now)
 	want := "Sessions (3):\n" +
-		"  1. aaaaaaaa  Deploy NATS worker image  · active · 5m ago\n" +
-		"  2. bbbbbbbb  Fix telegram redelivery   · 2h ago\n" +
-		"  3. cccccccc  (untitled)                · 3d ago"
+		"  1. aaaaaaaa-1111-2222-3333-444444444444  Deploy NATS worker image  · active · 5m ago\n" +
+		"  2. bbbbbbbb-1111-2222-3333-444444444444  Fix telegram redelivery   · 2h ago\n" +
+		"  3. cccccccc-1111-2222-3333-444444444444  (untitled)                · 3d ago"
 	if got != want {
 		t.Errorf("renderSessionList:\n got:\n%q\nwant:\n%q", got, want)
 	}
@@ -190,8 +190,8 @@ func TestRouteSessionsRenderedList(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Sessions (2):",
-		"1. aaaaaaaa  Deploy NATS worker image",
-		"2. bbbbbbbb  (untitled)",
+		"1. aaaaaaaa-1111-2222-3333-444444444444  Deploy NATS worker image",
+		"2. bbbbbbbb-1111-2222-3333-444444444444  (untitled)",
 		"5m ago",
 		"2h ago",
 	} {

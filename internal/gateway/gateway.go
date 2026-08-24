@@ -955,7 +955,10 @@ func renderSessionList(sessions []SessionContext, active string, now time.Time) 
 // shortSessionIDLen is how much of a session ID the chat surfaces show. It
 // is also the shorthand /resume and /delete are given back, so every
 // listing must truncate to the same width.
-const shortSessionIDLen = 8
+// UUIDv7 stores its timestamp at the front, so no fixed shorter prefix is
+// guaranteed to distinguish sessions. UUID session references therefore use
+// all 36 characters. The limit only abbreviates longer legacy/non-UUID keys.
+const shortSessionIDLen = 36
 
 // shortSessionID renders the abbreviated form of a session ID used
 // wherever a session is listed.
