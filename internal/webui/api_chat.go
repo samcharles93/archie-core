@@ -257,16 +257,29 @@ func (s chatStreamSink) ToolCall(event gateway.ToolCallEvent) {
 // Media has no inline rendering path on the dashboard yet (see
 // archie-core-1786748942243-6-f109697e), so it degrades to a link in the
 // delta stream -- the same fallback Telegram's liveReply uses when its own
-// SendMedia call fails. An attachment with no URL has nothing to link to
-// and is skipped rather than emitting an empty line.
+// SendMedia call fails.
+//
+// A local file cannot be linked and this channel cannot upload one, so it
+// is REPORTED as undelivered rather than skipped. Skipping was right while
+// media meant a hosted URL; once send_file could hand this sink a host
+// path, silence here meant the model announced a file it had sent and
+// nothing arrived -- the precise defect send_file was built to end,
+// reappearing on the channel that cannot deliver.
 func (s chatStreamSink) Media(event gateway.MediaEvent) {
-	if event.Attachment.URL == "" {
-		return
+	att := event.Attachment
+	switch {
+	case att.URL != "":
+		s.write(chatStreamEvent{Type: "delta", Text: "\n\n📎 " + att.Type + ": " + att.URL})
+	case att.Path != "":
+		name := att.FileName
+		if name == "" {
+			name = att.Path
+		}
+		s.write(chatStreamEvent{
+			Type: "delta",
+			Text: "\n\n📎 could not send " + name + ": this channel cannot deliver a local file. It is on the daemon host at " + att.Path + ".",
+		})
 	}
-	s.write(chatStreamEvent{
-		Type: "delta",
-		Text: "\n\n📎 " + event.Attachment.Type + ": " + event.Attachment.URL,
-	})
 }
 
 // chatShowToolCalls reports config.ChatConfig.ShowToolCalls, the one setting

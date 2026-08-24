@@ -33,6 +33,11 @@ func TestPrepareReturnsLocalPathRef(t *testing.T) {
 		{"markdown is a document", "transcript.md", "document"},
 		{"unknown extension is a document", "dump.bin", "document"},
 		{"png is an image", "shot.png", "image"},
+		{"jpeg is an image", "photo.jpg", "image"},
+		// An svg IS an image, but no photo endpoint accepts one, so
+		// calling it one turns a deliverable file into a failed send.
+		{"svg is a document, not a photo", "diagram.svg", "document"},
+		{"tiff is a document, not a photo", "scan.tiff", "document"},
 		{"mp4 is a video", "clip.mp4", "video"},
 		{"mp3 is audio", "note.mp3", "audio"},
 	}
@@ -80,6 +85,14 @@ func TestPrepareFailuresAreErrors(t *testing.T) {
 	ws := t.TempDir()
 	outside := t.TempDir()
 	writeFile(t, outside, "secret.txt", 8)
+	locked := writeFile(t, ws, "locked.txt", 8)
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	if os.Geteuid() == 0 {
+		// root ignores the mode bits, so the probe cannot fail this way.
+		t.Skip("running as root: an unreadable file is still readable")
+	}
 	big := writeFile(t, ws, "big.bin", 0)
 	if err := os.Truncate(big, MaxUploadBytes+1); err != nil {
 		t.Fatalf("truncate: %v", err)
@@ -94,6 +107,7 @@ func TestPrepareFailuresAreErrors(t *testing.T) {
 		{name: "empty path", path: "   ", wantSub: "path is required"},
 		{name: "missing file", path: "nope.txt", wantErr: os.ErrNotExist},
 		{name: "directory", path: ".", wantSub: "not a regular file"},
+		{name: "unreadable file", path: "locked.txt", wantErr: os.ErrPermission},
 		{name: "over the upload limit", path: "big.bin", wantSub: "upload limit"},
 		{
 			name:    "outside the workspace",
@@ -118,6 +132,32 @@ func TestPrepareFailuresAreErrors(t *testing.T) {
 				t.Errorf("err = %v, want it to mention %q", err, tc.wantSub)
 			}
 		})
+	}
+}
+
+// An image is capped far lower than everything else by the platform that
+// delivers it. Checking one 50 MB ceiling for every type told the model an
+// 11 MB screenshot was sent and left the rejection to a layer it cannot
+// see -- the early check has to be the check that actually applies.
+func TestPrepareAppliesTheImageLimit(t *testing.T) {
+	ws := t.TempDir()
+	png := writeFile(t, ws, "shot.png", 0)
+	if err := os.Truncate(png, MaxImageUploadBytes+1); err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+	if _, err := prepare(ws, "shot.png", ""); err == nil ||
+		!strings.Contains(err.Error(), "upload limit") {
+		t.Fatalf("err = %v, want an over-the-image-limit error", err)
+	}
+
+	// The same size as a document is fine: the limits must stay
+	// per-type rather than collapsing into one conservative number.
+	doc := writeFile(t, ws, "dump.bin", 0)
+	if err := os.Truncate(doc, MaxImageUploadBytes+1); err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+	if _, err := prepare(ws, "dump.bin", ""); err != nil {
+		t.Fatalf("prepare document of image-limit+1 bytes: %v", err)
 	}
 }
 
