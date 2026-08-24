@@ -1,5 +1,43 @@
 # archied changelog
 
+## [1.15.0] - 2026-08-24
+
+**Autonomous workflows now have exactly one production execution path.** Every
+task is handed complete to a scoped `archie-agent` container over core NATS;
+`archied` no longer runs an agent loop in-process. Embedded NATS is the
+default and generates a per-start token, binding to the resolved Docker bridge
+so managed workers can reach it; external NATS changes only broker placement.
+The legacy `[agent]` section and `containers.enabled` still decode for
+migration but can no longer select an execution path, and a reloaded
+`nats.url` is logged as requiring a restart. Operators upgrading from a
+`agent.mode = inprocess` configuration get the managed-worker topology
+automatically; see `deployments/` for the supported profiles.
+
+- feat(nats): expose the embedded broker to managed task containers behind a
+  generated per-start credential
+- fix(daemon): park before worktree access when the container pool or task
+  transport is unavailable, rather than silently executing locally
+- refactor(agentexec): remove the in-process, subprocess and single-stage
+  execution paths
+- fix(worktree): report a successful push as successful even when writing
+  local upstream tracking metadata afterwards fails, so a published branch no
+  longer parks the task as failed
+- fix(worktree): honour context cancellation in `CommitAll`, so a cancelled
+  task can no longer stage or commit
+- fix(daemon): remove the worktree when a task completes with no changes,
+  which previously leaked a full clone per no-change task; parked worktrees
+  are still retained for post-mortems
+- fix(worktree): derive the branch prefix from the issue title before falling
+  back to labels, matching the documented contract
+- fix(worktree): clean untracked files when `.git` is a gitdir file
+- fix(agentexec): recover agents that end a turn without the required finish
+  call
+- feat(scheduling): ticker engine with a configurable interval and pools
+- fix(telegram): keep tool-call context when compacting tool output (#609)
+- feat(workflow): add the adversarial-review findings contract, where only a
+  confirmed finding blocks and "review found nothing" is distinct from
+  "review did not run" (contract only; no review stage runs yet)
+
 ## [1.14.0] - 2026-08-23
 
 - fix(telegram): compact tool output and drop turn caps
