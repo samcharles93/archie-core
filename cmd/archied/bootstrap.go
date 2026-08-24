@@ -104,9 +104,8 @@ type boot struct {
 	// startup. Embedded mode generates it; external mode resolves it once.
 	natsToken string
 
-	containerPool   *container.Pool
-	storeBackend    storage.Backend
-	sandboxRequired bool
+	containerPool *container.Pool
+	storeBackend  storage.Backend
 
 	providers map[string]agentexec.Provider
 	llm       *runtime.Runtime
@@ -428,10 +427,6 @@ func (b *boot) setupContainers(ctx context.Context) func() {
 	containerPool, storeBackend, closeDocker := startContainers(ctx, b.cfg, b.log)
 	b.containerPool = containerPool
 	b.storeBackend = storeBackend
-	// Sandboxing that was asked for and could not start must not silently
-	// become no sandboxing: the daemon stays up, but tasks park rather than
-	// running the agent loop on the host.
-	b.sandboxRequired = b.cfg.Containers.Enabled && containerPool == nil
 	return closeDocker
 }
 
@@ -1006,29 +1001,27 @@ func (b *boot) registerMinimaxTool(cfg config.Config, log *slog.Logger) {
 func (b *boot) buildDaemon() {
 	cfg, log := b.cfg, b.log
 	b.d = &daemon.Daemon{
-		Cfg:             config.NewHolder(cfg),
-		ConnectedNATS:   daemon.NATSEndpoint{URL: b.natsURL, Token: b.natsToken},
-		Store:           b.st,
-		Bus:             b.bus,
-		Forge:           b.forgeClient,
-		Trees:           b.trees,
-		Agent:           b.agentRunner,
-		Workflows:       b.registry,
-		CapabilityHost:  b.capabilityHost,
-		Storage:         b.storeBackend,
-		Log:             log,
-		CustomStages:    wfeval.Discover,
-		Tasks:           b.natsClient,
-		WorktreeGrants:  b.worktreeGrants,
-		ContainerPool:   b.containerPool,
-		SandboxRequired: b.sandboxRequired,
-		Memory:          b.memManager,
-		Guardrails:      b.guardrails,
-		ToolRegistry:    b.toolReg,
-		Curators:        b.curatorRegistry,
-		Identities:      b.identityRunners,
-		TaskLogs:        b.taskLogs,
-		AgentStatus:     b.agentStatus,
+		Cfg:            config.NewHolder(cfg),
+		ConnectedNATS:  daemon.NATSEndpoint{URL: b.natsURL, Token: b.natsToken},
+		Store:          b.st,
+		Bus:            b.bus,
+		Forge:          b.forgeClient,
+		Trees:          b.trees,
+		Agent:          b.agentRunner,
+		Workflows:      b.registry,
+		CapabilityHost: b.capabilityHost,
+		Storage:        b.storeBackend,
+		Log:            log,
+		CustomStages:   wfeval.Discover,
+		Tasks:          b.natsClient,
+		WorktreeGrants: b.worktreeGrants,
+		ContainerPool:  b.containerPool,
+		Guardrails:     b.guardrails,
+		ToolRegistry:   b.toolReg,
+		Curators:       b.curatorRegistry,
+		Identities:     b.identityRunners,
+		TaskLogs:       b.taskLogs,
+		AgentStatus:    b.agentStatus,
 	}
 	b.web.TaskStopper = b.d
 	// web and the daemon must share ONE Holder: a reload swaps d.Cfg and
