@@ -113,7 +113,7 @@ func TestReviewFindingBlockingMatrix(t *testing.T) {
 	}
 }
 
-func TestBlockingReviewFindingsSlice(t *testing.T) {
+func TestReviewBlockingSlice(t *testing.T) {
 	tests := []struct {
 		name         string
 		findings     []ReviewFinding
@@ -244,9 +244,6 @@ func TestBlockingReviewFindingsSlice(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := BlockingReviewFindings(tt.findings); got != tt.wantBlocking {
-				t.Errorf("BlockingReviewFindings() = %v, want %v", got, tt.wantBlocking)
-			}
 			if got := ReviewBlocking(tt.findings); got != tt.wantBlocking {
 				t.Errorf("ReviewBlocking() = %v, want %v", got, tt.wantBlocking)
 			}
@@ -276,8 +273,8 @@ func TestBlockingReviewFindingsSlice(t *testing.T) {
 			Category:        ReviewCategoryNilRisk,
 		}
 
-		if !BlockingReviewFindings(findings) {
-			t.Error("BlockingReviewFindings() = false, want true for confirmed error at index 750")
+		if !ReviewBlocking(findings) {
+			t.Error("ReviewBlocking() = false, want true for confirmed error at index 750")
 		}
 	})
 }
