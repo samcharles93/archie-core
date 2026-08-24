@@ -3,7 +3,8 @@
 # Language packages are installed at runtime via uv/npm/go.
 #
 # Build: docker build -t archie-agent:latest .
-# Run:   docker run -e NATS_URL=nats://host:4222 archie-agent:latest
+# This image is launched only by archied with a daemon-written task brief,
+# task worktree mount, and authenticated NATS environment.
 
 # ── builder ───────────────────────────────────────────────────────────
 FROM golang:1.26-trixie AS builder

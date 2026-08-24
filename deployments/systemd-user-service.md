@@ -73,36 +73,71 @@ systemctl --user stop archied
 
 ---
 
-## 4. Running Alongside the Docker Stack
+## 4. Default: Native Daemon, Embedded NATS, Managed Containers
 
-`archied` on the host still needs NATS and still spawns agent containers, so
-`docker compose up -d` keeps running the bus and holds the network the agents
-join. Two things bite in this hybrid layout:
+Embedded NATS is the default. The systemd service runs `archied` natively, so
+interactive chat keeps the host access the operator configured, while every
+autonomous repository workflow runs in a task-scoped Docker container. No
+Compose service or host `archie-agent` binary is required.
 
-**One NATS URL serves two network namespaces.** The daemon hands agent
-containers its own `nats.url` verbatim, so `nats://nats:4222` (resolvable only
-inside compose) and `nats://127.0.0.1:4222` (the container's own loopback) are
-both wrong. Use the compose network's gateway address, which the host and the
-containers can both reach:
+Docker must be installed and reachable by the service user. With no explicit
+broker or container settings, Archie uses embedded NATS and the published
+`ghcr.io/samcharles93/archie-agent:latest` image. An explicit equivalent is:
 
 ```toml
 [nats]
-url = "nats://172.19.0.1:4222"
+mode = "embedded"
+
+[containers]
+image = "ghcr.io/samcharles93/archie-agent:latest"
+pull_policy = "missing"
 ```
 
-`docker-compose.yml` pins the subnet so that address cannot drift when the
-network is recreated.
+At startup Archie resolves the Docker bridge used by its task containers,
+binds the authenticated embedded broker only to that bridge's host gateway,
+and passes the resulting endpoint to each worker. There is no port to publish
+and no broker URL to maintain.
 
-**`pull_policy` must be `"missing"` against a private registry.** The daemon
-calls the Docker API with no registry credentials, so `"always"` gets a 401,
-which fails the container pool and exits the daemon. Refresh the agent image
-by hand instead:
+If Docker or the image is unavailable, `archied` still serves chat and the
+dashboard. Autonomous tasks park with an explicit capability error; they never
+fall back to a host model loop.
+
+The bundled update adapter snapshots the configured `[containers].image` before
+rebuilding it and restores that image if the restarted daemon fails its health
+check. A custom image reference is therefore supported directly in
+`config.toml`; `ARCHIE_AGENT_IMAGE` is only an override for deployments that
+cannot make that configuration file available to the update command.
+
+## 5. Optional: External Compose NATS
+
+External NATS changes only broker deployment. It does not change the worker
+executor. Start the optional service and configure the pinned Compose gateway:
+
+```bash
+docker compose up -d nats
+```
+
+```toml
+[nats]
+mode = "external"
+url = "nats://172.19.0.1:4222"
+
+[containers]
+network = "archie-core_default"
+```
+
+The daemon hands workers the URL its own client connected to. The Compose
+service name is not resolvable from the native host, and localhost inside a
+worker is the worker itself; the pinned network gateway is reachable from both.
+
+`pull_policy = "always"` cannot authenticate to a private registry because the
+daemon sends no registry credentials to the Docker API. Refresh a private image
+with the operator's Docker credentials and retain `pull_policy = "missing"`:
 
 ```bash
 docker compose pull agent
 ```
 
-**Paths.** Under compose the daemon saw bind-mounted paths; on the host it sees
-the real ones. In particular `db_path` is the state-path prefix from which the
-daemon derives independent task and conversation SQLite files; it must point
-at the intended host location, or the daemon starts against empty files.
+`db_path` and other paths are native host paths. Point them at the intended
+state directory; changing from an old containerized daemon path can otherwise
+start Archie against empty state files.

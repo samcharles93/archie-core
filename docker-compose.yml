@@ -1,11 +1,13 @@
-# archie-core stack: NATS, plus the agent image the daemon spawns per task.
+# Optional external NATS, plus the agent image the daemon spawns per task.
 #
 # archied itself runs on the host under systemd, not here -- its chat tools
 # operate on host files, which a container cannot reach. See
 # deployments/systemd-user-service.md.
 #
-# Start:  docker compose up -d
-# Stop:   docker compose down
+# Embedded NATS is the normal deployment and needs no Compose service.
+# External broker: docker compose up -d nats
+# Build worker:    docker compose build agent
+# Stop external:   docker compose down
 # Logs:   journalctl --user -u archied -f   (the daemon)
 #         docker compose logs -f nats       (the bus)
 
@@ -52,11 +54,9 @@ services:
 volumes:
   nats_data:
 
-# The subnet is pinned because the daemon hands agent containers its own
-# NATS URL verbatim (daemon.go). Running on the host, that URL has to be one
-# both sides can reach: the gateway address works from the host and from any
-# container on this network. Letting Docker pick the subnet would silently
-# move that address when the network is recreated.
+# The subnet is pinned for the optional external-broker profile because its
+# configured URL must be reachable from both the native daemon and workers.
+# Embedded mode discovers its selected bridge gateway at startup instead.
 networks:
   default:
     ipam:

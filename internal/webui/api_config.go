@@ -282,7 +282,6 @@ type StorageView struct {
 
 // ContainersView is how sandboxed task execution is configured.
 type ContainersView struct {
-	Enabled        bool   `json:"enabled"`
 	Image          string `json:"image,omitempty"`
 	MaxConcurrency int    `json:"max_concurrency"`
 	MaxUptime      string `json:"max_uptime"`
@@ -347,7 +346,6 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			SecretEngineDir: cfg.SecretEngineDir,
 		},
 		Containers: ContainersView{
-			Enabled:        cfg.Containers.Enabled,
 			Image:          cfg.Containers.Image,
 			MaxConcurrency: cfg.Containers.MaxConcurrency,
 			MaxUptime:      cfg.Containers.MaxUptime.Std().String(),

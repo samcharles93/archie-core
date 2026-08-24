@@ -28,7 +28,7 @@ const (
 var (
 	forgeTypes       = []string{forgeTypeGitHub, forgeTypeGitea, forgeTypeNone, forgeTypeOff, forgeTypeDisabled}
 	dispatchTriggers = []string{dispatchTriggerAssignee, dispatchTriggerLabel, dispatchTriggerEither}
-	natsModes        = []string{config.NATSModeEmbedded, config.NATSModeExternal, config.NATSModeOff}
+	natsModes        = []string{config.NATSModeEmbedded, config.NATSModeExternal}
 	forgeIntakes     = []string{config.ForgeIntakePoll, config.ForgeIntakeWebhook, config.ForgeIntakeBoth}
 )
 
@@ -155,11 +155,6 @@ func validateForgeIntake(cfg *config.Config) error {
 		if cfg.Forge.WebhookAddr == "" {
 			return fmt.Errorf("%w: forge.webhook_addr is required when forge.intake is %q", ErrInvalidInput, intake)
 		}
-		// Webhook intake publishes to the task queue, which is NATS (embedded
-		// or external). nats.mode="off" leaves no queue to publish to.
-		if effectiveNATSMode(cfg) == config.NATSModeOff {
-			return fmt.Errorf("%w: forge.intake %q requires NATS (nats.mode must not be %q)", ErrInvalidInput, intake, config.NATSModeOff)
-		}
 	}
 	return nil
 }
@@ -269,7 +264,7 @@ func validateNATS(cfg *config.Config) error {
 		if cfg.NATS.URL == "" {
 			return fmt.Errorf("%w: nats.url is required when nats.mode is %q", ErrInvalidInput, config.NATSModeExternal)
 		}
-	case config.NATSModeEmbedded, config.NATSModeOff:
+	case config.NATSModeEmbedded:
 		if cfg.NATS.URL != "" {
 			return fmt.Errorf("%w: nats.url must be empty when nats.mode is %q", ErrInvalidInput, mode)
 		}
@@ -277,18 +272,11 @@ func validateNATS(cfg *config.Config) error {
 	return nil
 }
 
-// validateContainers checks the combination container execution requires.
-// Embedded and external NATS are both worker-reachable deployment shapes;
-// composition resolves the Docker bridge gateway for embedded mode.
+// validateContainers checks the mandatory managed-worker configuration.
+// Embedded and external NATS are both worker-reachable deployment shapes.
 func validateContainers(cfg *config.Config) error {
-	if !cfg.Containers.Enabled {
-		return nil
-	}
 	if cfg.Containers.Image == "" {
-		return fmt.Errorf("%w: containers.image is required when containers.enabled is true", ErrInvalidInput)
-	}
-	if effectiveNATSMode(cfg) == config.NATSModeOff {
-		return fmt.Errorf("%w: nats.mode must not be %q when containers.enabled is true", ErrInvalidInput, config.NATSModeOff)
+		return fmt.Errorf("%w: containers.image is required for autonomous workflow workers", ErrInvalidInput)
 	}
 	if cfg.Containers.VolumeTTL < 0 {
 		return fmt.Errorf("%w: containers.volume_ttl must not be negative", ErrInvalidInput)

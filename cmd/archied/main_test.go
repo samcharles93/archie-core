@@ -1205,3 +1205,13 @@ func TestSubscribeAgentEventsDropsUnparseableMessages(t *testing.T) {
 		})
 	}
 }
+
+func TestSubscribeAgentEventsFlushesBeforeReturning(t *testing.T) {
+	source, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(source), "flush task event subscription") {
+		t.Fatal("subscribeAgentEvents does not flush its NATS subscription before returning")
+	}
+}

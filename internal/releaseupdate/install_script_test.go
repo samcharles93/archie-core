@@ -41,9 +41,10 @@ func TestUpdateInstallRuntimeOnlySkipsGatewayBuild(t *testing.T) {
 		"ARCHIE_UPDATE_AGENT_VERSION":   "1.10.0",
 	})
 
-	assertCallContains(t, calls, "go build", "./cmd/archie-agent")
 	assertCallAbsent(t, calls, "./cmd/archied")
-	assertCallContains(t, calls, "docker compose build", "--build-arg RUNTIME_VERSION=1.10.0", "agent")
+	assertCallAbsent(t, calls, "./cmd/archie-agent")
+	assertCallContains(t, calls, "docker image save", "registry.example/archie-agent:stable")
+	assertCallContains(t, calls, "docker build", "--build-arg RUNTIME_VERSION=1.10.0", "--tag registry.example/archie-agent:stable")
 	if got := result.Installed[ComponentAgent]; got != "1.10.0" {
 		t.Fatalf("installed agent = %q, want 1.10.0", got)
 	}
@@ -52,7 +53,7 @@ func TestUpdateInstallRuntimeOnlySkipsGatewayBuild(t *testing.T) {
 	}
 }
 
-func TestUpdateInstallBothComponentsBuildsAndInstallsBoth(t *testing.T) {
+func TestUpdateInstallBothComponentsBuildsDaemonAndManagedWorkerImage(t *testing.T) {
 	result, calls := runUpdateInstallScript(t, map[string]string{
 		"ARCHIE_UPDATE_DAEMON_PREVIOUS": "1.12.0",
 		"ARCHIE_UPDATE_DAEMON_VERSION":  "1.13.0",
@@ -61,8 +62,9 @@ func TestUpdateInstallBothComponentsBuildsAndInstallsBoth(t *testing.T) {
 	})
 
 	assertCallContains(t, calls, "go build", "./cmd/archied")
-	assertCallContains(t, calls, "go build", "./cmd/archie-agent")
-	assertCallContains(t, calls, "docker compose build", "RUNTIME_VERSION=1.10.0")
+	assertCallAbsent(t, calls, "./cmd/archie-agent")
+	assertCallContains(t, calls, "docker image save", "registry.example/archie-agent:stable")
+	assertCallContains(t, calls, "docker build", "RUNTIME_VERSION=1.10.0", "--tag registry.example/archie-agent:stable")
 	if result.Installed[ComponentDaemon] != "1.13.0" || result.Installed[ComponentAgent] != "1.10.0" {
 		t.Fatalf("installed = %#v, want both release versions", result.Installed)
 	}
@@ -82,22 +84,27 @@ func TestUpdateInstallNoopDoesNotFetchBuildInstallOrRestart(t *testing.T) {
 	}
 }
 
-func TestUpdateWatchdogRollsBackAndReportsOnlyChangedComponents(t *testing.T) {
+func TestUpdateWatchdogRollsBackManagedWorkerImageAndReportsOnlyChangedComponents(t *testing.T) {
 	tests := []struct {
-		name       string
-		components string
-		wantDaemon string
-		wantAgent  string
+		name              string
+		components        string
+		wantDaemon        string
+		wantImageRollback bool
 	}{
-		{name: "gateway only", components: "daemon", wantDaemon: "old daemon", wantAgent: "new agent"},
-		{name: "runtime only", components: "agent", wantDaemon: "new daemon", wantAgent: "old agent"},
-		{name: "both", components: "daemon,agent", wantDaemon: "old daemon", wantAgent: "old agent"},
+		{name: "gateway only", components: "daemon", wantDaemon: "old daemon"},
+		{name: "runtime only", components: "agent", wantDaemon: "new daemon", wantImageRollback: true},
+		{name: "both", components: "daemon,agent", wantDaemon: "old daemon", wantImageRollback: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			report, daemon, agent := runUpdateWatchdogFailure(t, tt.components)
-			if daemon != tt.wantDaemon || agent != tt.wantAgent {
-				t.Fatalf("binaries after rollback = daemon %q agent %q, want %q / %q", daemon, agent, tt.wantDaemon, tt.wantAgent)
+			report, daemon, calls := runUpdateWatchdogFailure(t, tt.components)
+			if daemon != tt.wantDaemon {
+				t.Fatalf("daemon after rollback = %q, want %q", daemon, tt.wantDaemon)
+			}
+			if tt.wantImageRollback {
+				assertCallContains(t, calls, "docker image load", "archie-agent-image.prev.tar")
+			} else {
+				assertCallAbsent(t, calls, "docker image load")
 			}
 			if !report.RolledBack || report.HealthCheck != "failed" {
 				t.Fatalf("report = %#v, want failed rollback", report)
@@ -120,9 +127,13 @@ func runUpdateInstallScript(t *testing.T, environment map[string]string) (Result
 	}
 	work := t.TempDir()
 	binDir := filepath.Join(work, "bin")
+	configPath := filepath.Join(work, "config.toml")
 	fakeDir := filepath.Join(work, "fake-bin")
 	callsPath := filepath.Join(work, "calls")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte("[containers]\nimage = 'registry.example/archie-agent:stable'\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"archied", "archie-agent"} {
@@ -159,7 +170,18 @@ done
 mkdir -p "$(dirname "$out")"
 printf 'built\n' > "$out"
 `)
-	writeFakeCommand(t, fakeDir, "docker", `printf '%s\n' "docker $*" >> "$ARCHIE_TEST_CALLS"`)
+	writeFakeCommand(t, fakeDir, "docker", `
+printf '%s\n' "docker $*" >> "$ARCHIE_TEST_CALLS"
+if [ "$1" = image ] && [ "$2" = save ]; then
+  while [ "$#" -gt 0 ]; do
+    if [ "$1" = --output ]; then
+      : > "$2"
+      break
+    fi
+    shift
+  done
+fi
+`)
 	writeFakeCommand(t, fakeDir, "systemd-run", `printf '%s\n' "systemd-run $*" >> "$ARCHIE_TEST_CALLS"`)
 	writeFakeCommand(t, fakeDir, "install", `
 printf '%s\n' "install $*" >> "$ARCHIE_TEST_CALLS"
@@ -188,6 +210,7 @@ printf '%s\n' "cp $*" >> "$ARCHIE_TEST_CALLS"
 		"PATH="+fakeDir+":"+os.Getenv("PATH"),
 		"ARCHIE_REPO_DIR="+root,
 		"ARCHIE_BIN_DIR="+binDir,
+		"ARCHIE_CONFIG_PATH="+configPath,
 		"ARCHIE_TEST_CALLS="+callsPath,
 	)
 	for key, value := range environment {
@@ -233,7 +256,7 @@ func writeFakeCommand(t *testing.T, dir, name, body string) {
 	}
 }
 
-func runUpdateWatchdogFailure(t *testing.T, components string) (Report, string, string) {
+func runUpdateWatchdogFailure(t *testing.T, components string) (Report, string, []string) {
 	t.Helper()
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
@@ -248,7 +271,7 @@ func runUpdateWatchdogFailure(t *testing.T, components string) (Report, string, 
 	}
 	files := map[string]string{
 		"archied": "new daemon", "archied.prev": "old daemon",
-		"archie-agent": "new agent", "archie-agent.prev": "old agent",
+		"archie-agent-image.prev.tar": "saved old image",
 	}
 	for name, content := range files {
 		if err := os.WriteFile(filepath.Join(binDir, name), []byte(content), 0o755); err != nil {
@@ -257,12 +280,16 @@ func runUpdateWatchdogFailure(t *testing.T, components string) (Report, string, 
 	}
 	writeFakeCommand(t, fakeDir, "systemctl", `exit 0`)
 	writeFakeCommand(t, fakeDir, "curl", `exit 1`)
+	writeFakeCommand(t, fakeDir, "docker", `printf '%s\n' "docker $*" >> "$ARCHIE_TEST_CALLS"`)
+	callsPath := filepath.Join(work, "calls")
 
 	cmd := exec.Command(filepath.Join(root, "scripts", "archie-update-watchdog"))
 	cmd.Env = append(
 		os.Environ(),
 		"PATH="+fakeDir+":"+os.Getenv("PATH"),
 		"ARCHIE_BIN_DIR="+binDir,
+		"ARCHIE_TEST_CALLS="+callsPath,
+		"ARCHIE_AGENT_IMAGE=registry.example/archie-agent:stable",
 		"ARCHIE_UPDATE_REPORT_PATH="+reportPath,
 		"ARCHIE_UPDATE_HEALTH_TIMEOUT=0",
 		"ARCHIE_UPDATE_COMPONENTS="+components,
@@ -286,11 +313,15 @@ func runUpdateWatchdogFailure(t *testing.T, components string) (Report, string, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent, err := os.ReadFile(filepath.Join(binDir, "archie-agent"))
-	if err != nil {
+	callsData, err := os.ReadFile(callsPath)
+	if err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
-	return report, string(daemon), string(agent)
+	var calls []string
+	if len(callsData) > 0 {
+		calls = strings.Split(strings.TrimSpace(string(callsData)), "\n")
+	}
+	return report, string(daemon), calls
 }
 
 func assertCallContains(t *testing.T, calls []string, fragments ...string) {

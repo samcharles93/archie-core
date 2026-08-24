@@ -13,7 +13,39 @@ json_escape() {
 
 REPO="${ARCHIE_REPO_DIR:-$HOME/projects/archie-core}"
 BIN_DIR="${ARCHIE_BIN_DIR:-$HOME/.local/bin}"
+CONFIG_PATH="${ARCHIE_CONFIG_PATH:-${XDG_CONFIG_HOME:-$HOME/.config}/archie/config.toml}"
 export PATH="/usr/local/go/bin:$PATH"
+
+# The worker image is daemon configuration, not an updater-specific setting.
+# Honour an explicit environment override for nonstandard deployers; otherwise
+# read the [containers] image from the same config archied starts with.  This
+# deliberately understands only that one scalar, rather than trying to parse
+# general TOML in shell. The daemon remains the authority for validation.
+configured_agent_image() {
+  local image
+  image="$(awk '
+    /^\[containers\][[:space:]]*(#.*)?$/ { in_containers = 1; next }
+    /^\[/ { in_containers = 0 }
+    in_containers && /^[[:space:]]*image[[:space:]]*=/ {
+      value = $0
+      sub(/^[[:space:]]*image[[:space:]]*=[[:space:]]*/, "", value)
+      sub(/[[:space:]]*(#.*)?$/, "", value)
+      if (value ~ /^".*"$/) {
+        sub(/^"/, "", value)
+        sub(/"$/, "", value)
+        print value
+      } else if (length(value) >= 2 && substr(value, 1, 1) == sprintf("%c", 39) && substr(value, length(value), 1) == sprintf("%c", 39)) {
+        print substr(value, 2, length(value) - 2)
+      }
+      exit
+    }
+  ' "$CONFIG_PATH" 2>/dev/null || true)"
+  printf '%s' "$image"
+}
+
+AGENT_IMAGE="${ARCHIE_AGENT_IMAGE:-$(configured_agent_image)}"
+AGENT_IMAGE="${AGENT_IMAGE:-ghcr.io/samcharles93/archie-agent:latest}"
+AGENT_IMAGE_BACKUP="$BIN_DIR/archie-agent-image.prev.tar"
 
 PREV_GW="${ARCHIE_UPDATE_DAEMON_PREVIOUS:-}"
 PREV_RT="${ARCHIE_UPDATE_AGENT_PREVIOUS:-}"
@@ -97,12 +129,6 @@ if [[ ",$components," == *,daemon,* ]]; then
   go build -ldflags "-X main.gatewayVersion=$GW -X main.runtimeVersion=$RT -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" \
     -o "$tmp/archied" ./cmd/archied
 fi
-if [[ ",$components," == *,agent,* ]]; then
-  echo "==> building archie-agent $RT"
-  go build -ldflags "-X github.com/samcharles93/archie-core/internal/app/agentworker.version=$RT -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" \
-    -o "$tmp/archie-agent" ./cmd/archie-agent
-fi
-
 if [[ ",$components," == *,daemon,* ]]; then
   echo "==> backing up current archied binary"
   [ -f "$BIN_DIR/archied" ] && cp -f "$BIN_DIR/archied" "$BIN_DIR/archied.prev"
@@ -110,12 +136,10 @@ if [[ ",$components," == *,daemon,* ]]; then
   install -m755 "$tmp/archied" "$BIN_DIR/archied"
 fi
 if [[ ",$components," == *,agent,* ]]; then
-  echo "==> backing up current archie-agent binary"
-  [ -f "$BIN_DIR/archie-agent" ] && cp -f "$BIN_DIR/archie-agent" "$BIN_DIR/archie-agent.prev"
-  echo "==> installing archie-agent"
-  install -m755 "$tmp/archie-agent" "$BIN_DIR/archie-agent"
-  echo "==> rebuilding agent image for runtime $RT"
-  docker compose build --build-arg "RUNTIME_VERSION=$RT" agent
+  echo "==> saving managed worker image $AGENT_IMAGE for rollback"
+  docker image save --output "$AGENT_IMAGE_BACKUP" "$AGENT_IMAGE"
+  echo "==> rebuilding managed worker image $AGENT_IMAGE for runtime $RT"
+  docker build --build-arg "RUNTIME_VERSION=$RT" --tag "$AGENT_IMAGE" .
 fi
 
 echo "==> handing off to the update watchdog for restart and health verification"
@@ -131,6 +155,8 @@ systemd-run --user --unit=archied-update-restart --collect --quiet \
   --setenv=ARCHIE_UPDATE_PREVIOUS_RUNTIME="$PREV_RT" \
   --setenv=ARCHIE_UPDATE_INSTALLED_GATEWAY="$GW" \
   --setenv=ARCHIE_UPDATE_INSTALLED_RUNTIME="$RT" \
+  --setenv=ARCHIE_AGENT_IMAGE="$AGENT_IMAGE" \
+  --setenv=ARCHIE_AGENT_IMAGE_BACKUP="$AGENT_IMAGE_BACKUP" \
   "$BIN_DIR/archie-update-watchdog"
 
 case "$components" in

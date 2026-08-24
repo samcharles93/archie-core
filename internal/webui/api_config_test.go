@@ -146,6 +146,15 @@ func TestHandleConfigSafeFieldsPresent(t *testing.T) {
 	if strings.Contains(w.Body.String(), `"agent"`) {
 		t.Errorf("removed agent execution selector leaked through config API: %s", w.Body)
 	}
+	var raw struct {
+		Containers map[string]any `json:"containers"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode raw config view: %v", err)
+	}
+	if _, exists := raw.Containers["enabled"]; exists {
+		t.Errorf("removed container execution switch leaked through config API: %s", w.Body)
+	}
 }
 
 // TestHandleConfigIncludesReloadStatus proves a failed reload is surfaced

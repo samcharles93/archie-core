@@ -25,7 +25,7 @@ func TestSetGetSnapshotRoundTrip(t *testing.T) {
 	}{
 		{"budgets.max_steps", "12"},
 		{"label", `"archie"`},
-		{"containers.enabled", "true"},
+		{"containers.image", `"archie-agent:test"`},
 		{"web.listen", `":8643"`},
 	} {
 		if err := s.Set(ctx, tc.key, tc.value, "test"); err != nil {
@@ -52,8 +52,8 @@ func TestSetGetSnapshotRoundTrip(t *testing.T) {
 	if !ok {
 		t.Fatalf("containers = %#v, want map", snap["containers"])
 	}
-	if got := containers["enabled"]; got != true {
-		t.Errorf("containers.enabled = %#v, want true", got)
+	if got := containers["image"]; got != "archie-agent:test" {
+		t.Errorf("containers.image = %#v, want archie-agent:test", got)
 	}
 	web, ok := snap["web"].(map[string]any)
 	if !ok {
