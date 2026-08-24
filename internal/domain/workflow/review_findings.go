@@ -1,4 +1,3 @@
-// Package workflow defines pipeline stages, contracts, and execution rules.
 package workflow
 
 import (
@@ -117,20 +116,17 @@ func (f ReviewFinding) Blocking() bool {
 	return f.Verdict == ReviewVerdictConfirmed && f.Level == ReviewLevelError
 }
 
-// BlockingReviewFindings reports whether any finding in the slice is blocking.
-// It returns true if at least one finding is confirmed with level "error".
-func BlockingReviewFindings(findings []ReviewFinding) bool {
+// ReviewBlocking reports whether any finding in the slice is blocking.
+// The load-bearing rule: ONLY a finding with Verdict == ReviewVerdictConfirmed
+// and Level == ReviewLevelError blocks. Plausible findings and warn-level findings
+// never block.
+func ReviewBlocking(findings []ReviewFinding) bool {
 	for _, f := range findings {
 		if f.Blocking() {
 			return true
 		}
 	}
 	return false
-}
-
-// ReviewBlocking is an alias for BlockingReviewFindings to match package-level naming conventions.
-func ReviewBlocking(findings []ReviewFinding) bool {
-	return BlockingReviewFindings(findings)
 }
 
 // Ran reports whether the adversarial reviewer actually executed to completion.
@@ -142,7 +138,7 @@ func (r ReviewReport) Ran() bool {
 
 // Blocking reports whether any finding within the report is blocking.
 func (r ReviewReport) Blocking() bool {
-	return BlockingReviewFindings(r.Findings)
+	return ReviewBlocking(r.Findings)
 }
 
 // Passed reports whether the review ran to completion and produced no blocking findings.
