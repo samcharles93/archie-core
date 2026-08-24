@@ -1,5 +1,10 @@
 # archied changelog
 
+## [1.17.1] - 2026-08-25
+
+- fix(update): remove source checkout dependency
+- fix(gateway): make UUIDv7 session references unambiguous
+
 ## [1.17.0] - 2026-08-25
 
 - fix(webui): add nil receiver guard to Server.trustForwardedHeaders

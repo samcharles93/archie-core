@@ -1,5 +1,9 @@
 # archie-agent changelog
 
+## [1.16.1] - 2026-08-25
+
+- fix(agentworker): reconcile task clone ownership after commits
+
 ## [1.16.0] - 2026-08-25
 
 **Version realigned with `archied`.** This release jumps from 1.9.9 to 1.16.0
