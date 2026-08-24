@@ -11,7 +11,7 @@ json_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
-REPO="${ARCHIE_REPO_DIR:-$HOME/projects/archie-core}"
+SOURCE_URL="${ARCHIE_SOURCE_URL:-https://github.com/samcharles93/archie-core.git}"
 BIN_DIR="${ARCHIE_BIN_DIR:-$HOME/.local/bin}"
 CONFIG_PATH="${ARCHIE_CONFIG_PATH:-${XDG_CONFIG_HOME:-$HOME/.config}/archie/config.toml}"
 export PATH="/usr/local/go/bin:$PATH"
@@ -84,17 +84,24 @@ for target in "$GW_TARGET" "$RT_TARGET"; do
   fi
 done
 
-cd "$REPO"
+tmp="$(mktemp -d)"
+source_dir="$tmp/source"
+trap 'rm -rf "$tmp"' EXIT
+
 echo "==> fetching approved component releases"
-git pull --ff-only
+# Updates are independent of the agent/operator checkout. Fetch into an
+# invocation-scoped clone, resolve the approved tags there, and build the
+# installed binary from that isolated source tree.
+git clone --quiet --filter=blob:none --no-checkout "$SOURCE_URL" "$source_dir"
+git -C "$source_dir" fetch --quiet --tags origin
 
 # Build from the exact approved release commit, not the moving branch tip. A
 # temporary worktree keeps the operator's main checkout on its branch.
 if [[ ",$components," == *,daemon,* ]]; then
-  gw_commit="$(git -C "$REPO" rev-parse --verify "refs/tags/archied/v$GW^{commit}")"
+  gw_commit="$(git -C "$source_dir" rev-parse --verify "refs/tags/archied/v$GW^{commit}")"
 fi
 if [[ ",$components," == *,agent,* ]]; then
-  rt_commit="$(git -C "$REPO" rev-parse --verify "refs/tags/archie/v$RT^{commit}")"
+  rt_commit="$(git -C "$source_dir" rev-parse --verify "refs/tags/archie/v$RT^{commit}")"
 fi
 case "$components" in
   daemon) build_commit="$gw_commit" ;;
@@ -108,14 +115,7 @@ case "$components" in
     ;;
 esac
 
-tmp="$(mktemp -d)"
-source_dir="$tmp/source"
-cleanup() {
-  git -C "$REPO" worktree remove --force "$source_dir" >/dev/null 2>&1 || true
-  rm -rf "$tmp"
-}
-trap cleanup EXIT
-git -C "$REPO" worktree add --detach "$source_dir" "$build_commit"
+git -C "$source_dir" checkout --quiet --detach "$build_commit"
 cd "$source_dir"
 
 # Refresh adapters from the approved release source. The running shell

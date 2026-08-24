@@ -17,9 +17,11 @@ func TestUpdateInstallGatewayOnlySkipsRuntimeWork(t *testing.T) {
 		"ARCHIE_UPDATE_AGENT_PREVIOUS":  "1.9.9",
 	})
 
-	assertCallContains(t, calls, "git pull --ff-only")
+	assertCallContains(t, calls, "git clone", "--no-checkout", "https://example.invalid/archie-core.git")
+	assertCallContains(t, calls, "fetch --quiet --tags origin")
+	assertCallAbsent(t, calls, "git pull")
 	assertCallContains(t, calls, "git -C", "rev-parse --verify refs/tags/archied/v1.13.0^{commit}")
-	assertCallContains(t, calls, "git -C", "worktree add --detach")
+	assertCallContains(t, calls, "checkout --quiet --detach approved-release-commit")
 	assertCallContains(t, calls, "go build", "main.runtimeVersion=1.9.9", "./cmd/archied")
 	assertCallAbsent(t, calls, "./cmd/archie-agent")
 	assertCallAbsent(t, calls, "docker compose build agent")
@@ -144,20 +146,13 @@ func runUpdateInstallScript(t *testing.T, environment map[string]string) (Result
 	writeFakeCommand(t, fakeDir, "git", `
 printf '%s\n' "git $*" >> "$ARCHIE_TEST_CALLS"
 case "$*" in
-  *"rev-parse --verify refs/tags/"*) echo approved-release-commit ;;
-  *"worktree add --detach"*)
-    while [ "$#" -gt 0 ]; do
-      if [ "$1" = "--detach" ]; then
-        source_dir="$2"
-        mkdir -p "$source_dir"
-        /usr/bin/cp -R "$ARCHIE_REPO_DIR/scripts" "$source_dir/scripts"
-        : > "$source_dir/docker-compose.yml"
-        break
-      fi
-      shift
-    done
+  *"clone "*)
+    source_dir="${@: -1}"
+    mkdir -p "$source_dir"
+    /usr/bin/cp -R "$ARCHIE_TEST_SOURCE_DIR/scripts" "$source_dir/scripts"
+    : > "$source_dir/docker-compose.yml"
     ;;
-  *"worktree remove --force"*) ;;
+  *"rev-parse --verify refs/tags/"*) echo approved-release-commit ;;
 esac
 `)
 	writeFakeCommand(t, fakeDir, "go", `
@@ -208,7 +203,8 @@ printf '%s\n' "cp $*" >> "$ARCHIE_TEST_CALLS"
 	cmd.Env = append(
 		os.Environ(),
 		"PATH="+fakeDir+":"+os.Getenv("PATH"),
-		"ARCHIE_REPO_DIR="+root,
+		"ARCHIE_SOURCE_URL=https://example.invalid/archie-core.git",
+		"ARCHIE_TEST_SOURCE_DIR="+root,
 		"ARCHIE_BIN_DIR="+binDir,
 		"ARCHIE_CONFIG_PATH="+configPath,
 		"ARCHIE_TEST_CALLS="+callsPath,

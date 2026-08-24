@@ -159,3 +159,38 @@ func TestHandleChatUpdateInstallSetsReportPath(t *testing.T) {
 		t.Errorf("ReportPath = %q, want %q", updates.installedMeta.ReportPath, reportPath)
 	}
 }
+
+func TestHandleChatUpdateInstallRoutesRestartReportToTelegram(t *testing.T) {
+	reportPath := filepath.Join(t.TempDir(), "telegram-update-report.json")
+	updates := &chatUpdateStub{snapshot: releaseupdate.Snapshot{
+		Components: []releaseupdate.Component{{ID: "gateway", Label: "Gateway", Installed: "1.0", Available: "1.1"}},
+	}}
+	sessions := gateway.NewSessionStoreMemory()
+	t.Cleanup(func() { _ = sessions.Close() })
+	router := gateway.NewRouter(chatStatusStub{}, nil, "web")
+	server := &Server{
+		Chat:                     &ChatService{Router: router, Sessions: sessions, Updates: updates},
+		UpdateReportPath:         filepath.Join(t.TempDir(), "webui-update-report.json"),
+		TelegramUpdateReportPath: reportPath,
+		TelegramUpdateChatID:     42,
+	}
+
+	body, err := json.Marshal(chatUpdateRequest{Snapshot: updates.snapshot})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/chat/update/install", bytes.NewReader(body)))
+	if res.Code != http.StatusOK || !updates.installed {
+		t.Fatalf("update install = %d, body = %s", res.Code, res.Body.String())
+	}
+	if updates.installedMeta.Channel != "telegram" {
+		t.Errorf("Channel = %q, want telegram", updates.installedMeta.Channel)
+	}
+	if updates.installedMeta.ChatID != 42 {
+		t.Errorf("ChatID = %d, want 42", updates.installedMeta.ChatID)
+	}
+	if updates.installedMeta.ReportPath != reportPath {
+		t.Errorf("ReportPath = %q, want %q", updates.installedMeta.ReportPath, reportPath)
+	}
+}

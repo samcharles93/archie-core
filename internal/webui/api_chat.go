@@ -582,6 +582,11 @@ func (s *Server) handleChatUpdateInstall(w http.ResponseWriter, r *http.Request)
 
 	progress := make([]string, 0, 4)
 	meta := releaseupdate.InstallMeta{Channel: "webui", ReportPath: s.UpdateReportPath}
+	if s.TelegramUpdateReportPath != "" && s.TelegramUpdateChatID != 0 {
+		meta.Channel = "telegram"
+		meta.ChatID = s.TelegramUpdateChatID
+		meta.ReportPath = s.TelegramUpdateReportPath
+	}
 	result, err := chat.Updates.Install(r.Context(), fresh, meta, func(message string) { progress = append(progress, message) })
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
