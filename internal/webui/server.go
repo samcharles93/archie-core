@@ -180,6 +180,9 @@ type Server struct {
 }
 
 func (s *Server) trustForwardedHeaders() bool {
+	if s == nil {
+		return false
+	}
 	if s.TrustForwardedHeaders {
 		return true
 	}
