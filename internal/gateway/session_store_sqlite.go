@@ -204,8 +204,9 @@ func (s *sqliteSessionStore) Close() error {
 }
 
 func (s *sqliteSessionStore) ClaimTurn(ctx context.Context, initial TurnRecord) (TurnRecord, TurnClaim, error) {
-	if initial.TurnID == "" {
-		return TurnRecord{}, "", fmt.Errorf("sessionstore: turn ID is required")
+	initial, initialToolCalls, err := prepareInitialTurn(initial, time.Now().UTC())
+	if err != nil {
+		return TurnRecord{}, "", err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -215,6 +216,22 @@ func (s *sqliteSessionStore) ClaimTurn(ctx context.Context, initial TurnRecord) 
 		return TurnRecord{}, "", fmt.Errorf("sessionstore: claim turn: begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	// Claim by writing first. Under WAL, a transaction that reads and then
+	// upgrades to a writer can fail immediately with SQLITE_BUSY_SNAPSHOT;
+	// busy_timeout only waits for ordinary writer contention. INSERT ... ON
+	// CONFLICT acquires writer intent before any snapshot read, so concurrent
+	// claimers wait normally and the loser can inspect the committed turn.
+	inserted, err := insertInitialTurn(ctx, tx, initial, initialToolCalls)
+	if err != nil {
+		return TurnRecord{}, "", err
+	}
+	if inserted {
+		if err := tx.Commit(); err != nil {
+			return TurnRecord{}, "", fmt.Errorf("sessionstore: claim turn: commit: %w", err)
+		}
+		return initial, TurnClaimOwned, nil
+	}
 
 	var turn TurnRecord
 	var createdMS, updatedMS int64
@@ -228,61 +245,6 @@ func (s *sqliteSessionStore) ClaimTurn(ctx context.Context, initial TurnRecord) 
 		&turn.InputMessageID, &turn.AssistantMessageID, &turn.PartialText,
 		&turn.ResponseText, &toolCallsRaw, &turn.Error, &createdMS, &updatedMS,
 	)
-	if errors.Is(err, sql.ErrNoRows) {
-		now := time.Now().UTC()
-		initial.Status = TurnStatusRunning
-		initial.Attempt = 1
-		if initial.CreatedAt.IsZero() {
-			initial.CreatedAt = now
-		}
-		initial.UpdatedAt = now
-		initialToolCalls, marshalErr := marshalToolCalls(initial.ToolCalls)
-		if marshalErr != nil {
-			return TurnRecord{}, "", marshalErr
-		}
-		// insertErr is deliberately its own name, not err: this whole block
-		// is inside `if errors.Is(err, sql.ErrNoRows)`, so reusing err here
-		// would shadow the outer err for the rest of the block -- including
-		// the retry read below, whose result must reach the outer `if err
-		// != nil` after this block closes. A shadowed reassignment there
-		// would go out of scope silently, leaving the outer err at its
-		// original sql.ErrNoRows value regardless of how the retry read
-		// actually went.
-		result, insertErr := tx.ExecContext(ctx, `
-			INSERT INTO turns (
-				turn_id, session_id, source_id, status, attempt, owner_id,
-				input_message_id, assistant_message_id, partial_text,
-				response_text, tool_calls, error, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(turn_id) DO NOTHING`, turnValues(initial, initialToolCalls)...)
-		if insertErr != nil {
-			return TurnRecord{}, "", fmt.Errorf("sessionstore: claim turn: insert: %w", insertErr)
-		}
-		affected, insertErr := result.RowsAffected()
-		if insertErr != nil {
-			return TurnRecord{}, "", fmt.Errorf("sessionstore: claim turn: rows affected: %w", insertErr)
-		}
-		if affected == 1 {
-			if err := tx.Commit(); err != nil {
-				return TurnRecord{}, "", fmt.Errorf("sessionstore: claim turn: commit: %w", err)
-			}
-			return initial, TurnClaimOwned, nil
-		}
-		// Another connection inserted the same turn between our read and
-		// insert. Read it in this transaction and apply the normal claim
-		// state machine instead of surfacing a uniqueness error. This
-		// assigns the OUTER err (see above) -- it is what the `if err !=
-		// nil` check below this block actually sees.
-		err = tx.QueryRowContext(ctx, `
-			SELECT turn_id, session_id, source_id, status, attempt, owner_id,
-			       input_message_id, assistant_message_id, partial_text,
-			       response_text, tool_calls, error, created_at, updated_at
-			FROM turns WHERE turn_id = ?`, initial.TurnID).Scan(
-			&turn.TurnID, &turn.SessionID, &turn.SourceID, &turn.Status, &turn.Attempt, &turn.OwnerID,
-			&turn.InputMessageID, &turn.AssistantMessageID, &turn.PartialText,
-			&turn.ResponseText, &toolCallsRaw, &turn.Error, &createdMS, &updatedMS,
-		)
-	}
 	if err != nil {
 		return TurnRecord{}, "", fmt.Errorf("sessionstore: read turn: %w", err)
 	}
@@ -291,7 +253,10 @@ func (s *sqliteSessionStore) ClaimTurn(ctx context.Context, initial TurnRecord) 
 	if turn.ToolCalls, err = unmarshalToolCalls(toolCallsRaw); err != nil {
 		return TurnRecord{}, "", err
 	}
+	return claimExistingTurn(ctx, tx, turn, initial)
+}
 
+func claimExistingTurn(ctx context.Context, tx *sql.Tx, turn, initial TurnRecord) (TurnRecord, TurnClaim, error) {
 	switch turn.Status {
 	case TurnStatusCompleted:
 		return turn, TurnClaimCompleted, nil
@@ -339,6 +304,38 @@ func (s *sqliteSessionStore) ClaimTurn(ctx context.Context, initial TurnRecord) 
 	default:
 		return turn, TurnClaimInProgress, nil
 	}
+}
+
+func insertInitialTurn(ctx context.Context, tx *sql.Tx, initial TurnRecord, toolCalls string) (bool, error) {
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO turns (
+			turn_id, session_id, source_id, status, attempt, owner_id,
+			input_message_id, assistant_message_id, partial_text,
+			response_text, tool_calls, error, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(turn_id) DO NOTHING`, turnValues(initial, toolCalls)...)
+	if err != nil {
+		return false, fmt.Errorf("sessionstore: claim turn: insert: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("sessionstore: claim turn: rows affected: %w", err)
+	}
+	return affected == 1, nil
+}
+
+func prepareInitialTurn(initial TurnRecord, now time.Time) (TurnRecord, string, error) {
+	if initial.TurnID == "" {
+		return TurnRecord{}, "", fmt.Errorf("sessionstore: turn ID is required")
+	}
+	initial.Status = TurnStatusRunning
+	initial.Attempt = 1
+	if initial.CreatedAt.IsZero() {
+		initial.CreatedAt = now
+	}
+	initial.UpdatedAt = now
+	toolCalls, err := marshalToolCalls(initial.ToolCalls)
+	return initial, toolCalls, err
 }
 
 func (s *sqliteSessionStore) RecoverTurns(ctx context.Context, ownerID string) error {

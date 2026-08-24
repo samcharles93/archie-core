@@ -287,9 +287,11 @@ func TestReloadableFieldsCoverForTaskSnapshot(t *testing.T) {
 			t.Errorf("ForTask field %s is not allowlisted as reloadable", name)
 		}
 	}
-	// The poll-path fields (Label, BotUser) are not carried by ForTask;
-	// pin them explicitly so a refactor that moves their read site does
-	// not silently drop the allowlist entry.
+	// Label is not carried by ForTask; BotUser now is, but it is also read
+	// on the poll path independently of the task snapshot. Pin both by hand
+	// so a refactor that moves either read site -- including one that drops
+	// BotUser from ForTask again -- does not silently drop the allowlist
+	// entry the poll path still depends on.
 	for _, name := range []string{"Label", "BotUser"} {
 		if !reloadableFields[name] {
 			t.Errorf("poll-path field %s is not allowlisted as reloadable", name)

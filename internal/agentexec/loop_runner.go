@@ -103,6 +103,12 @@ func (r *LoopRunner) Run(ctx context.Context, workspace string, req Request, rep
 			MaxSteps:  req.Budget.MaxSteps,
 			WallClock: req.Budget.WallClock,
 		},
+		Compact: agentloop.CompactionConfig{
+			Enabled:        req.ContextWindow > 0,
+			ContextWindow:  req.ContextWindow,
+			ThresholdRatio: 0.5,
+			TargetRatio:    0.15,
+		},
 		Completion:   agentloop.CompletionForceFinish,
 		ReadOnly:     req.ReadOnly,
 		ProtectPaths: protectionMatcher(req.Protection, req.ReadOnly),
@@ -114,19 +120,34 @@ func (r *LoopRunner) Run(ctx context.Context, workspace string, req Request, rep
 		),
 		Logger: r.logger(req),
 	})
+	result := resultFromRun(req, res, notes.appended, captures)
+	if cause := context.Cause(ctx); cause != nil {
+		return result, cause
+	}
+	return result, err
+}
+
+func resultFromRun(req Request, res agentloop.Result, appended []string, captures map[string][]json.RawMessage) Result {
 	result := Result{
-		Version:       ProtocolVersion,
-		TaskID:        req.TaskID,
-		Attempt:       req.Attempt,
-		Stage:         req.Stage,
-		Status:        string(res.Status),
-		StopReason:    res.StopReason,
-		Changes:       res.Changes,
-		Iterations:    res.Iterations,
-		TokensUsed:    res.TokensUsed,
+		Version:    ProtocolVersion,
+		TaskID:     req.TaskID,
+		Attempt:    req.Attempt,
+		Stage:      req.Stage,
+		Status:     string(res.Status),
+		StopReason: res.StopReason,
+		Changes:    res.Changes,
+		Iterations: res.Iterations,
+		TokensUsed: res.TokensUsed,
+		Usage: Usage{
+			PromptTokens:        res.Usage.PromptTokens,
+			CompletionTokens:    res.Usage.CompletionTokens,
+			TotalTokens:         res.Usage.TotalTokens,
+			CachedTokens:        res.Usage.CachedTokens,
+			CacheCreationTokens: res.Usage.CacheCreationTokens,
+		},
 		Summary:       res.Summary,
 		Detail:        res.Detail,
-		AppendedNotes: notes.appended,
+		AppendedNotes: appended,
 		Captures:      captures,
 	}
 	// agentloop may return a zero-valued status on early exit (model
@@ -136,10 +157,7 @@ func (r *LoopRunner) Run(ctx context.Context, workspace string, req Request, rep
 		result.Status = "blocked"
 		result.Detail = "agent returned no status (possible model connectivity issue)"
 	}
-	if cause := context.Cause(ctx); cause != nil {
-		return result, cause
-	}
-	return result, err
+	return result
 }
 
 func projectScopedRules(workspace, extra string) string {

@@ -4,6 +4,7 @@ import { ago, el, empty, mount, pill, statusKind } from "../base/dom.js";
 import { statTile } from "../base/statTile.js";
 import { taskRowA11y } from "./task-row.js";
 import { initialTaskFilter, taskMatchesStatus } from "./task-filters.js";
+import { describeTimelineEvent } from "./timeline-event.js";
 
 /**
  * Plain-language status labels. One place, so "waiting_human" only ever
@@ -41,7 +42,6 @@ export function tasksPage(params = new URLSearchParams()) {
   const requestedTask = Number(params.get("task"));
   let expandedId = Number.isFinite(requestedTask) && requestedTask > 0 ? requestedTask : null;
   let focusRequestedTask = expandedId !== null;
-  let forgeHost = "";
   const eventCache = new Map();
   // Keyed by task id. A single shared string leaked one row's failure into
   // every other row's action cell.
@@ -114,10 +114,7 @@ export function tasksPage(params = new URLSearchParams()) {
 
   async function load() {
     try {
-      [tasks, forgeHost] = await Promise.all([
-        api.tasks(),
-        api.config().then((cfg) => cfg?.identity?.forge_host || "").catch(() => ""),
-      ]);
+      tasks = await api.tasks();
       renderSummary();
       renderRows();
       if (expandedId && tasks.some((task) => String(task.id) === String(expandedId))) {
@@ -333,9 +330,9 @@ export function tasksPage(params = new URLSearchParams()) {
             `Archive the local record for "${t.title || "this task"}"?`,
           );
         case "open_pr":
-          return taskLink(t, "pulls", t.pr_number, "Open PR");
+          return taskLink(t, "pull_request", t.pr_number, "Open PR");
         case "open_issue":
-          return taskLink(t, "issues", t.issue_number, "Open issue");
+          return taskLink(t, "issue", t.issue_number, "Open issue");
         default:
           return null;
       }
@@ -360,16 +357,9 @@ export function tasksPage(params = new URLSearchParams()) {
     }
   }
 
-  // Both forge links derive from the same host so they can never drift apart:
-  // one place builds the base, both anchors reuse it.
-  function forgeBase(t) {
-    if (!forgeHost || !t.owner || !t.repo) return null;
-    return `${forgeHost.replace(/\/+$/, "")}/${encodeURIComponent(t.owner)}/${encodeURIComponent(t.repo)}`;
-  }
-
   function taskLink(t, kind, number, label) {
-    const base = forgeBase(t);
-    if (!base || !number || (kind === "issues" && t.source === "chat")) {
+    const href = kind === "issue" ? t.issue_url : t.pr_url;
+    if (!href || !number || (kind === "issue" && t.source === "chat")) {
       return el(
         "button.btn.btn-small",
         { type: "button", disabled: true, title: `${label} is unavailable` },
@@ -379,7 +369,7 @@ export function tasksPage(params = new URLSearchParams()) {
     return el(
       "a.btn.btn-small",
       {
-        href: `${base}/${kind}/${number}`,
+        href,
         target: "_blank",
         rel: "noreferrer",
         onclick: (event) => event.stopPropagation(),
@@ -389,7 +379,7 @@ export function tasksPage(params = new URLSearchParams()) {
   }
 
   function repoLink(t) {
-    const base = forgeBase(t);
+    const base = t.repo_url;
     if (!base) return null;
     return el(
       "a.task-source-link",
@@ -405,14 +395,14 @@ export function tasksPage(params = new URLSearchParams()) {
   }
 
   function issueLink(t) {
-    const base = forgeBase(t);
+    const href = t.issue_url;
     // A chat-sourced task has no issue on the forge, but its repo may still
     // exist -- the repo link stays, the issue link does not.
-    if (t.source === "chat" || !base || !t.issue_number) return null;
+    if (t.source === "chat" || !href || !t.issue_number) return null;
     return el(
       "a.task-source-link",
       {
-        href: `${base}/issues/${t.issue_number}`,
+        href,
         target: "_blank",
         rel: "noreferrer",
         title: `Open issue #${t.issue_number} on the forge`,
@@ -460,13 +450,14 @@ export function tasksPage(params = new URLSearchParams()) {
   }
 
   function timelineEntry(ev) {
+    const description = describeTimelineEvent(ev);
     return el(
       "li.task-timeline-entry",
       el("span.task-timeline-dot"),
       el(
         "div",
-        el("div.task-timeline-kind", ev.kind || ev.type || "event"),
-        ev.detail && el("div.task-timeline-detail", ev.detail),
+        el("div.task-timeline-kind", description.title),
+        description.detail && el("div.task-timeline-detail", description.detail),
         el("div.task-timeline-when", ago(ev.at)),
       ),
     );

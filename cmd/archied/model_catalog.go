@@ -11,15 +11,19 @@ import (
 
 func applyModelCatalog(cfg *config.Config, snapshot modelcatalog.Snapshot) []string {
 	discovered := make(map[string]config.Provider, len(snapshot.Providers))
+	limits := make(map[string]config.ModelLimits)
 	var models []string
 	for _, provider := range snapshot.Providers {
 		discovered[provider.ID] = config.Provider{
 			Class: provider.Class, APIKeyEnv: provider.APIKeyEnv, BaseURL: provider.BaseURL,
 		}
 		for _, model := range provider.Models {
-			models = append(models, provider.ID+"/"+model.ID)
+			ref := provider.ID + "/" + model.ID
+			models = append(models, ref)
+			limits[ref] = config.ModelLimits{ContextWindow: model.ContextWindow, MaxOutputTokens: model.MaxOutputTokens}
 		}
 	}
+	cfg.ModelLimits = limits
 	cfg.Providers = mergeProviders(discovered, cfg.Providers)
 	for i := range cfg.Identities {
 		cfg.Identities[i].Providers = mergeProviders(discovered, cfg.Identities[i].Providers)

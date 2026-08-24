@@ -9,6 +9,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/skill"
 )
 
@@ -120,22 +121,23 @@ func (a AgentStage) Stage() Stage {
 		}
 
 		req := agentexec.Request{
-			Version:      agentexec.ProtocolVersion,
-			TaskID:       tc.Task.ID,
-			Attempt:      tc.Task.Attempt,
-			Stage:        a.Name,
-			Workflow:     tc.Task.Workflow,
-			Model:        modelRef,
-			Mission:      missionWithSkill(tc, a.Mission(tc)),
-			ExtraRules:   extraRules,
-			ReadOnly:     a.ReadOnly,
-			Budget:       budget,
-			Gate:         gate,
-			Preflight:    preflight,
-			Protection:   protection,
-			Notes:        tc.Task.Notes,
-			CaptureTools: captureTools,
-			Plugins:      pluginSpecs(tc.SkillPlugins),
+			Version:       agentexec.ProtocolVersion,
+			TaskID:        tc.Task.ID,
+			Attempt:       tc.Task.Attempt,
+			Stage:         a.Name,
+			Workflow:      tc.Task.Workflow,
+			Model:         modelRef,
+			ContextWindow: modelContextBudget(tc.Cfg, modelRef),
+			Mission:       missionWithSkill(tc, a.Mission(tc)),
+			ExtraRules:    extraRules,
+			ReadOnly:      a.ReadOnly,
+			Budget:        budget,
+			Gate:          gate,
+			Preflight:     preflight,
+			Protection:    protection,
+			Notes:         tc.Task.Notes,
+			CaptureTools:  captureTools,
+			Plugins:       pluginSpecs(tc.SkillPlugins),
 		}
 		res, err := tc.Agent.Run(ctx, tc.Dir, req, tc.toolCallReporter(a.Name))
 
@@ -163,16 +165,14 @@ func (a AgentStage) Stage() Stage {
 				return fmt.Errorf("persist agent notes: %w", saveErr)
 			}
 		}
+		tc.Task.TokensUsed += res.TokensUsed
+		tc.Task.Iterations += res.Iterations
+		if emitErr := tc.EmitDurable(ctx, events.KindAgentFinish, a.Name, res.Summary, agentFinishData(res, modelRef)); emitErr != nil {
+			return fmt.Errorf("persist agent finish: %w", emitErr)
+		}
 		if err != nil {
 			return fmt.Errorf("agent run: %w", err)
 		}
-
-		tc.Task.TokensUsed += res.TokensUsed
-		tc.Task.Iterations += res.Iterations
-		tc.Emit("agent_finish", a.Name, res.Summary, map[string]any{
-			"status": res.Status, "stop_reason": res.StopReason,
-			"tokens": res.TokensUsed, "iterations": res.Iterations, "model": modelRef,
-		})
 
 		if res.Status != agentexec.StatusPassed {
 			detail := res.Detail
@@ -192,6 +192,23 @@ func (a AgentStage) Stage() Stage {
 		}
 		return nil
 	}}
+}
+
+func modelContextBudget(cfg config.Config, modelRef string) int {
+	limits := cfg.ModelLimits[modelRef]
+	if limits.ContextWindow <= limits.MaxOutputTokens {
+		return 0
+	}
+	return limits.ContextWindow - limits.MaxOutputTokens
+}
+
+func agentFinishData(res agentexec.Result, modelRef string) map[string]any {
+	return map[string]any{
+		"status": res.Status, "stop_reason": res.StopReason,
+		"tokens": res.TokensUsed, "iterations": res.Iterations, "model": modelRef,
+		"prompt_tokens": res.Usage.PromptTokens, "completion_tokens": res.Usage.CompletionTokens,
+		"cached_tokens": res.Usage.CachedTokens, "cache_creation_tokens": res.Usage.CacheCreationTokens,
+	}
 }
 
 // GateFromRepo converts the repo's configured command lists into an

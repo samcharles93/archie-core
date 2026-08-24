@@ -63,6 +63,23 @@ func TestApplyForgeDefaultsIntake(t *testing.T) {
 	}
 }
 
+func TestApplyIdentityDefaultsDerivesEmailPerIdentity(t *testing.T) {
+	cfg := &config.Config{Identities: []config.IdentityConfig{
+		{BotUser: "github-bot", Forge: config.Forge{Type: forgeTypeGitHub}},
+		{BotUser: "gitea-bot", Forge: config.Forge{Type: forgeTypeGitea}},
+		{BotUser: "explicit", BotEmail: "bot@example.test", Forge: config.Forge{Type: forgeTypeGitHub}},
+	}}
+
+	applyIdentityDefaults(cfg)
+
+	want := []string{"github-bot@users.noreply.github.com", "gitea-bot@gitea.local", "bot@example.test"}
+	for i := range want {
+		if cfg.Identities[i].BotEmail != want[i] {
+			t.Errorf("identity %d BotEmail = %q, want %q", i, cfg.Identities[i].BotEmail, want[i])
+		}
+	}
+}
+
 func TestApplyCaptureDefaultsFillsZeroValues(t *testing.T) {
 	cfg := &config.Config{}
 	applyCaptureDefaults(cfg)

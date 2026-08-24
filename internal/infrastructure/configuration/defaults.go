@@ -225,18 +225,28 @@ func applyDispatchDefaults(cfg *config.Config) {
 	}
 }
 
-// applyIdentityDefaults derives the commit email for a single-identity
-// deployment. Multi-identity deployments configure each identity explicitly.
+// applyIdentityDefaults derives forge-appropriate commit emails wherever the
+// operator omitted one, for both deployment shapes.
 func applyIdentityDefaults(cfg *config.Config) {
-	if len(cfg.Identities) > 0 || cfg.BotUser == "" || cfg.BotEmail != "" {
-		return
+	if len(cfg.Identities) > 0 {
+		for i := range cfg.Identities {
+			cfg.Identities[i].BotEmail = defaultBotEmail(cfg.Identities[i].Forge.Type, cfg.Identities[i].BotUser, cfg.Identities[i].BotEmail)
+		}
 	}
-	switch cfg.Forge.Type {
+	cfg.BotEmail = defaultBotEmail(cfg.Forge.Type, cfg.BotUser, cfg.BotEmail)
+}
+
+func defaultBotEmail(forgeType, user, email string) string {
+	if user == "" || email != "" {
+		return email
+	}
+	switch forgeType {
 	case forgeTypeGitHub:
-		cfg.BotEmail = cfg.BotUser + "@users.noreply.github.com"
+		return user + "@users.noreply.github.com"
 	case forgeTypeGitea:
-		cfg.BotEmail = cfg.BotUser + "@gitea.local"
+		return user + "@gitea.local"
 	}
+	return email
 }
 
 // applyContainerDefaults makes managed task workers usable without an explicit

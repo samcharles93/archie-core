@@ -7,13 +7,15 @@ import (
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/events"
 )
 
 // Bounds on how much of a failing gate command's output rides along at each
 // point in this stage. They serve different purposes and are sized
 // independently, not derived from one another:
-//   - baselineWarnLogBytes is a daemon log line -- kept short so one baseline
-//     failure doesn't dominate the log around it.
+//   - baselineWarnLogBytes is the tail shown in daemon/container logs. Test
+//     runners put the useful failure after their long list of passing packages,
+//     so keeping the head made the operator log actively misleading.
 //   - baselineMissionBytes is what the builder agent sees -- generous, since
 //     it needs enough context to actually diagnose the failure.
 //   - baselineParkOutputBytes is what a human (or Archie's own chat tools)
@@ -23,7 +25,7 @@ import (
 //     see the actual compiler error. It stays comfortably under the store's
 //     own park-reason cap (see internal/store's Task.ParkReason clip).
 const (
-	baselineWarnLogBytes    = 200
+	baselineWarnLogBytes    = 2048
 	baselineMissionBytes    = 3000
 	baselineParkOutputBytes = 2048
 )
@@ -46,7 +48,7 @@ func StageBaselineGate() Stage {
 			}
 			tc.Log.Warn("baseline red  --  auto-fixing pre-existing gate failure",
 				"cmd", strings.Join(argv, " "),
-				"err", clip(string(out), baselineWarnLogBytes))
+				"err", clipTail(string(out), baselineWarnLogBytes))
 
 			// Run builder to fix the failure via TDD.
 			mission := fmt.Sprintf(
@@ -65,13 +67,14 @@ func StageBaselineGate() Stage {
 
 			modelRef := tc.Cfg.Models["builder"]
 			req := agentexec.Request{
-				Version:  agentexec.ProtocolVersion,
-				TaskID:   tc.Task.ID,
-				Attempt:  tc.Task.Attempt,
-				Stage:    "baseline-fix",
-				Workflow: tc.Task.Workflow,
-				Model:    modelRef,
-				Mission:  mission,
+				Version:       agentexec.ProtocolVersion,
+				TaskID:        tc.Task.ID,
+				Attempt:       tc.Task.Attempt,
+				Stage:         "baseline-fix",
+				Workflow:      tc.Task.Workflow,
+				Model:         modelRef,
+				ContextWindow: modelContextBudget(tc.Cfg, modelRef),
+				Mission:       mission,
 				Budget: agentexec.Budget{
 					MaxSteps:  tc.Cfg.Budgets.MaxSteps,
 					WallClock: tc.Cfg.Budgets.WallClock.Std(),
@@ -81,6 +84,14 @@ func StageBaselineGate() Stage {
 			}
 
 			res, agentErr := tc.Agent.Run(ctx, tc.Dir, req, tc.toolCallReporter("baseline-fix"))
+			if agentErr != nil && res.Version == 0 {
+				return fmt.Errorf("baseline-fix agent run: %w", agentErr)
+			}
+			tc.Task.TokensUsed += res.TokensUsed
+			tc.Task.Iterations += res.Iterations
+			if emitErr := tc.EmitDurable(ctx, events.KindAgentFinish, "baseline-fix", res.Summary, agentFinishData(res, modelRef)); emitErr != nil {
+				return fmt.Errorf("persist baseline-fix agent finish: %w", emitErr)
+			}
 			if agentErr != nil {
 				return fmt.Errorf("baseline-fix agent run: %w", agentErr)
 			}

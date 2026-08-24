@@ -145,11 +145,23 @@ var reloadableFields = map[string]bool{
 	"Budgets":      true,
 	"Dispatch":     true,
 	"Models":       true,
+	"ModelLimits":  true,
 	"Notify":       true,
-	// Per-poll reads off the live config in pollIssuesWithConfig:
-	// cfg.Label feeds IssuesWithLabel (daemon.go:359,390), cfg.BotUser
-	// feeds AssignedIssues (:368,381). Not carried by ForTask, so
-	// pinned by hand in TestReloadableFieldsCoverForTaskSnapshot.
+	// BotUser/BotEmail used to be poll-path only; ForTask now carries both
+	// into the task snapshot as well, because the sandboxed worker builds
+	// its own worktree.Manager and signs its own commits (agentworker
+	// task_execution.go, config.go ForTask). The commit identity is
+	// therefore per-dispatch and does reload. The startup-built daemon
+	// trees (bootstrap.go:654) still capture both, but only to record
+	// user.name/user.email in the clone's own .git/config
+	// (worktree.go setIdentity) -- cosmetic, not the signature go-git
+	// commits with -- so a reload applies where it counts and this stays
+	// reloadable rather than requires-restart.
+	"BotEmail": true,
+	// cfg.Label additionally feeds IssuesWithLabel per poll cycle
+	// (daemon.go:359,390) and cfg.BotUser feeds AssignedIssues (:364,377).
+	// Label is not carried by ForTask, so it is pinned by hand in
+	// TestReloadableFieldsCoverForTaskSnapshot.
 	"Label":   true,
 	"BotUser": true,
 	// Worked example of the every-consumer criterion above: the sole

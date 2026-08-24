@@ -15,7 +15,13 @@ const (
 	KindTaskQueued  = "task_queued"
 	KindStageStart  = "stage_start"
 	KindStageFinish = "stage_finish" // data: duration_ms, error
-	KindAgentFinish = "agent_finish" // data: status, stop_reason, tokens, iterations, model
+	// KindAgentFinish carries the stage's token economics as well as its
+	// outcome: tokens is the run total (agentexec.Result.TokensUsed) and the
+	// prompt/completion/cached/cache_creation breakdown is the provider's own
+	// accounting, forwarded verbatim for evaluation. The breakdown is absent
+	// on events persisted before it was carried across the agent boundary, so
+	// consumers must treat each field as optional rather than zero.
+	KindAgentFinish = "agent_finish" // data: status, stop_reason, tokens, iterations, model, prompt_tokens, completion_tokens, cached_tokens, cache_creation_tokens
 	// KindToolCall marks one completed tool invocation during an agent
 	// stage run (archie-core-467's task-transcript counterpart -- the
 	// interactive chat gateway surfaces its own tool calls separately via
@@ -31,9 +37,12 @@ const (
 	// intervention is recorded in the tasks table but invisible on the
 	// timeline and the activity stream -- the one kind of event most worth
 	// seeing, because it explains why a task changed course.
-	KindHumanApproved        = "human_approved"
-	KindHumanRejected        = "human_rejected"
-	KindTaskRetried          = "task_retried"
+	KindHumanApproved = "human_approved"
+	KindHumanRejected = "human_rejected"
+	// KindTaskRetried records what the retry was escaping from. RetryTask
+	// clears stage and park_reason in the same statement that increments the
+	// count, so this event is the only place that context survives.
+	KindTaskRetried          = "task_retried" // data: retry_count, previous_stage, previous_reason
 	KindTaskCancelled        = "task_cancelled"
 	KindTaskStopped          = "task_stopped"
 	KindTaskAbandoned        = "task_abandoned"

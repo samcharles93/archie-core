@@ -276,6 +276,11 @@ func TestActionsEmitEvents(t *testing.T) {
 				if ev.Kind == "" {
 					t.Error("event Kind is empty")
 				}
+				if tc.action == "retry" {
+					if ev.Data["retry_count"] != 1 || ev.Data["previous_reason"] != tc.reason {
+						t.Errorf("retry event Data = %#v, want retry count and previous failure", ev.Data)
+					}
+				}
 			default:
 				t.Fatalf("%s emitted no event: the activity stream and timeline "+
 					"never show that a human intervened", tc.action)

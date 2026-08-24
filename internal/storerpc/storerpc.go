@@ -12,14 +12,16 @@ import (
 
 	"github.com/nats-io/nats.go"
 
+	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/natsrpc"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // Subjects for the two store.TaskStore methods workflow stages call mid-run.
 const (
-	SubjectUpdate     = "archie.store.update"
-	SubjectTransition = "archie.store.transition"
+	SubjectUpdate      = "archie.store.update"
+	SubjectTransition  = "archie.store.transition"
+	SubjectInsertEvent = "archie.store.insert_event"
 )
 
 // UpdateRequest mirrors store.TaskStore.Update's argument.
@@ -35,9 +37,14 @@ type TransitionRequest struct {
 	Detail string `json:"detail"`
 }
 
+type InsertEventRequest struct {
+	Event events.Event `json:"event"`
+}
+
 // Response carries the result of an RPC. Error is empty on success.
 type Response struct {
 	natsrpc.Envelope
+	ID int64 `json:"id,omitempty"`
 }
 
 // Server handles storerpc requests against the daemon's TaskStore.
@@ -52,7 +59,18 @@ func (s *Server) Register(nc *nats.Conn) (unsubscribe func(), err error) {
 	return natsrpc.RegisterAll(nc, []natsrpc.Registration{
 		{Subject: SubjectUpdate, Handler: s.handleUpdate},
 		{Subject: SubjectTransition, Handler: s.handleTransition},
+		{Subject: SubjectInsertEvent, Handler: s.handleInsertEvent},
 	})
+}
+
+func (s *Server) handleInsertEvent(msg *nats.Msg) {
+	var req InsertEventRequest
+	if err := json.Unmarshal(msg.Data, &req); err != nil {
+		s.reply(msg, err)
+		return
+	}
+	id, err := s.Store.InsertEvent(context.Background(), req.Event)
+	natsrpc.Respond(msg, s.Log, "storerpc", Response{Envelope: natsrpc.NewEnvelope(err), ID: id})
 }
 
 func (s *Server) handleUpdate(msg *nats.Msg) {
@@ -104,6 +122,14 @@ func (c *Client) Transition(ctx context.Context, taskID int64, from, to, detail 
 		return err
 	}
 	return resp.Err()
+}
+
+func (c *Client) InsertEvent(ctx context.Context, event events.Event) (int64, error) {
+	resp, err := natsrpc.Call[Response](ctx, c.rpc(), SubjectInsertEvent, InsertEventRequest{Event: event})
+	if err != nil {
+		return 0, err
+	}
+	return resp.ID, resp.Err()
 }
 
 // Compile-time check: Client satisfies WorkflowStore.

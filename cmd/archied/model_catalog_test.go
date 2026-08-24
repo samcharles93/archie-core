@@ -23,7 +23,7 @@ func TestApplyModelCatalogNormalizesEveryExecutionScope(t *testing.T) {
 		{
 			ID: "openai", Class: "openai", APIKeyEnv: "OPENAI_API_KEY",
 			BaseURL: "https://api.openai.test/v1",
-			Models:  []modelcatalog.Model{{ID: "gpt-tool"}},
+			Models:  []modelcatalog.Model{{ID: "gpt-tool", ContextWindow: 128_000, MaxOutputTokens: 16_000}},
 		},
 		{
 			ID: "anthropic", Class: "anthropic", APIKeyEnv: "ANTHROPIC_API_KEY",
@@ -48,5 +48,8 @@ func TestApplyModelCatalogNormalizesEveryExecutionScope(t *testing.T) {
 	wantModels := []string{"anthropic/claude-tool", "openai/gpt-tool"}
 	if !reflect.DeepEqual(models, wantModels) {
 		t.Fatalf("models = %v, want %v", models, wantModels)
+	}
+	if got := cfg.ModelLimits["openai/gpt-tool"]; got.ContextWindow != 128_000 || got.MaxOutputTokens != 16_000 {
+		t.Fatalf("model limits = %+v, want catalog capacity", got)
 	}
 }

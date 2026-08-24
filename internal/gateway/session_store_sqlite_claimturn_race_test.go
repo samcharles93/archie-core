@@ -4,43 +4,23 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 )
 
-// TestClaimTurnConcurrentInsertRaceNeverReturnsAnError guards against a
-// variable-shadowing bug in ClaimTurn (session_store_sqlite.go), fixed
-// alongside this test: the branch handling "another connection inserted the
-// same turn between our read and insert" used to write its retry read's
-// result into an `err` shadowed inside the `errors.Is(err, sql.ErrNoRows)`
-// block by an earlier `result, err := tx.ExecContext(...)`. That shadowed
-// err went out of scope at the block's closing brace, so the outer err
-// checked afterward was still sql.ErrNoRows from the original read -- the
-// loser of that race would always return an error wrapped
-// "sessionstore: read turn: %w", even though the comment's own stated
-// intent is "apply the normal claim state machine instead of surfacing a
-// uniqueness error." Confirmed via careful reading of Go's block-scoping
-// rules, not assumed.
+// TestClaimTurnConcurrentInsertRaceResolvesToOneOwner verifies that ordinary
+// contention between processes sharing the session database is resolved by
+// ClaimTurn itself. Callers must not need to recognize and retry SQLite's
+// SQLITE_BUSY or SQLITE_BUSY_SNAPSHOT implementation details.
 //
-// Honest limitation: this test could NOT be made to reproduce that exact
-// branch through genuine concurrent access. A one-off diagnostic (real
-// two-connection race, sleep-widened to force overlap, reverted before this
-// commit -- never present in a shipped file) showed the loser instead fails
-// its own INSERT outright with SQLITE_BUSY_SNAPSHOT under WAL mode with this
-// driver, before ON CONFLICT DO NOTHING can ever report affected=0. That
-// means the specific "0 rows affected" branch this bug lived in may be
-// effectively unreachable via a same-driver, same-journal-mode race today.
-// The fix stands regardless -- the shadowing was real, wrong on its own
-// terms, and free to correct -- but this test cannot claim to exercise the
-// exact line that was fixed. What it verifies is the weaker, still real
-// property that matters operationally: many genuinely concurrent
-// same-turn-ID claims across separate connections never produce the bug's
-// specific error signature. Treat this as a guard against a regression
-// becoming reachable (a different SQLite version, journal mode, or driver
-// with weaker snapshot isolation), not as proof the original bug was ever
-// live in production.
+// Two invariants must hold under contention: every ClaimTurn call returns
+// without error, and EXACTLY ONE of the racers ends up TurnClaimOwned while
+// the other observes the committed row and returns a non-owning claim.
+// The second invariant matters more than the first: a bug that returns
+// TurnClaimOwned to both racers means two archied processes drive the same
+// turn to completion, and the assistant reply gets emitted twice to the
+// chat. The first invariant alone would not catch that.
 //
 // A single sqliteSessionStore instance cannot exhibit any of this: its own
 // mutex serializes every ClaimTurn call against that instance's connection,
@@ -48,20 +28,11 @@ import (
 // against the same file-backed database -- the real-world shape of the
 // scenario (two archied/worker processes or connections sharing one session
 // DB).
-//
-// SQLite's own write-lock contention (SQLITE_BUSY / SQLITE_BUSY_SNAPSHOT,
-// "database is locked") is infrastructure noise distinct from the bug: it
-// comes from BeginTx/ExecContext/Commit failing outright and is wrapped
-// with a different prefix ("claim turn: begin/insert/rows affected/commit").
-// Only the "sessionstore: read turn:" wrap was the bug's unique signature,
-// so transient busy errors are retried rather than treated as failures.
-func TestClaimTurnConcurrentInsertRaceNeverReturnsAnError(t *testing.T) {
+func TestClaimTurnConcurrentInsertRaceResolvesToOneOwner(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sessions.db")
 
 	const stores = 2
 	const trials = 100
-	const maxRetriesPerAttempt = 20
-	const busyRetryDelay = time.Millisecond
 
 	openers := make([]TurnLedger, stores)
 	for i := range openers {
@@ -84,23 +55,9 @@ func TestClaimTurnConcurrentInsertRaceNeverReturnsAnError(t *testing.T) {
 	ctx := context.Background()
 	now := time.UnixMilli(1000).UTC()
 
-	claimRetryingBusy := func(ledger TurnLedger, initial TurnRecord) error {
-		var err error
-		for range maxRetriesPerAttempt {
-			_, _, err = ledger.ClaimTurn(ctx, initial)
-			if err == nil || !strings.Contains(err.Error(), "database is locked") {
-				return err
-			}
-			time.Sleep(busyRetryDelay)
-		}
-		return err
-	}
-
 	// Each trial races the two independent stores over one turn ID, then waits
-	// before starting the next trial. Running every trial at once adds 100-way
-	// global writer contention that is unrelated to the same-turn insert race
-	// this regression covers and can exhaust the bounded SQLITE_BUSY retries
-	// before any competing transaction gets scheduled to finish.
+	// before starting the next trial. This isolates the same-turn claim race
+	// from unrelated 100-way global writer contention.
 	for trial := range trials {
 		turnID := fmt.Sprintf("race-turn-%d", trial)
 		initial := TurnRecord{
@@ -112,6 +69,7 @@ func TestClaimTurnConcurrentInsertRaceNeverReturnsAnError(t *testing.T) {
 			UpdatedAt: now,
 		}
 		errs := make([]error, stores)
+		claims := make([]TurnClaim, stores)
 		var wg sync.WaitGroup
 		var start sync.WaitGroup
 		start.Add(1)
@@ -120,20 +78,25 @@ func TestClaimTurnConcurrentInsertRaceNeverReturnsAnError(t *testing.T) {
 			go func(i int) {
 				defer wg.Done()
 				start.Wait()
-				errs[i] = claimRetryingBusy(openers[i], initial)
+				_, claims[i], errs[i] = openers[i].ClaimTurn(ctx, initial)
 			}(i)
 		}
 		start.Done()
 		wg.Wait()
 
 		for i, err := range errs {
-			if err == nil {
-				continue
+			if err != nil {
+				t.Fatalf("trial %d, store %d: ClaimTurn() unexpected error = %v", trial, i, err)
 			}
-			if strings.Contains(err.Error(), "sessionstore: read turn:") {
-				t.Fatalf("trial %d, store %d: ClaimTurn() error = %v -- a losing racer surfaced the winner's insert as a read failure instead of applying the normal claim state machine", trial, i, err)
+		}
+		owners := 0
+		for _, c := range claims {
+			if c == TurnClaimOwned {
+				owners++
 			}
-			t.Fatalf("trial %d, store %d: ClaimTurn() unexpected error = %v", trial, i, err)
+		}
+		if owners != 1 {
+			t.Fatalf("trial %d: expected exactly one TurnClaimOwned across %d racers, got %d (claims=%v)", trial, stores, owners, claims)
 		}
 	}
 }

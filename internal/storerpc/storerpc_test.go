@@ -10,6 +10,7 @@ import (
 	natssrv "github.com/nats-io/nats-server/v2/test"
 	"github.com/nats-io/nats.go"
 
+	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
@@ -105,6 +106,21 @@ func TestClientTransitionPersistsViaServer(t *testing.T) {
 	}
 	if got.Status != store.StatusPROpen {
 		t.Fatalf("expected status %s, got %s", store.StatusPROpen, got.Status)
+	}
+}
+
+func TestClientInsertEventPersistsViaServer(t *testing.T) {
+	s, _, client := newTestServer(t)
+	task := enqueueTask(t, s)
+	event := events.Event{Kind: events.KindAgentFinish, TaskID: task.ID, Data: map[string]any{"tokens": 42}}
+
+	id, err := client.InsertEvent(context.Background(), event)
+	if err != nil {
+		t.Fatalf("InsertEvent: %v", err)
+	}
+	got, err := s.TaskEvents(context.Background(), task.ID)
+	if err != nil || len(got) != 1 || got[0].ID != id || got[0].Kind != events.KindAgentFinish {
+		t.Fatalf("TaskEvents = (%+v, %v), want persisted agent_finish id %d", got, err, id)
 	}
 }
 

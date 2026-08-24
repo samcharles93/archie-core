@@ -147,8 +147,12 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 	wf := workflow.Route(req.Task, registry)
 
 	trees := &hybridTrees{
-		push:        dependencies.trees,
-		local:       &worktree.Manager{WorkDir: workDir},
+		push: dependencies.trees,
+		local: &worktree.Manager{
+			WorkDir:  workDir,
+			BotUser:  req.Cfg.BotUser,
+			BotEmail: req.Cfg.BotEmail,
+		},
 		localDir:    workDir,
 		branch:      req.Task.Branch,
 		worktreeUID: worktreeOwnerID(os.Getenv("WORKTREE_UID")),

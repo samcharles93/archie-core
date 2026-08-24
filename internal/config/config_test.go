@@ -14,6 +14,8 @@ import (
 
 func TestTaskConfigToConfigRoundTrip(t *testing.T) {
 	cfg := Config{
+		BotUser:      "archie-bot",
+		BotEmail:     "archie-bot@users.noreply.github.com",
 		DiffCapLines: 321,
 		Models:       map[string]string{"builder": "anthropic/claude"},
 		Budgets:      Budgets{MaxSteps: 12, WallClock: Duration(45 * time.Minute), GateMaxFailures: 3},
@@ -114,6 +116,8 @@ func TestConfigForTaskJSONRoundTrip(t *testing.T) {
 	}
 
 	want := TaskConfig{
+		BotUser:      cfg.BotUser,
+		BotEmail:     cfg.BotEmail,
 		Models:       cfg.Models,
 		Budgets:      cfg.Budgets,
 		Dispatch:     cfg.Dispatch,
@@ -146,7 +150,7 @@ func TestConfigForTaskJSONRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertJSONKeys(t, data, "models", "budgets", "dispatch", "diff_cap_lines", "notify", "forge")
+	assertJSONKeys(t, data, "bot_user", "bot_email", "models", "budgets", "dispatch", "diff_cap_lines", "notify", "forge")
 
 	var forgePayload map[string]json.RawMessage
 	var payload map[string]json.RawMessage

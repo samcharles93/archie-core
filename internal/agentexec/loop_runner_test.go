@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/samcharles93/ai-sdk/agentloop"
+	"github.com/samcharles93/ai-sdk/chat"
 	"github.com/samcharles93/ai-sdk/runtime"
 
 	"github.com/samcharles93/archie-core/internal/tools"
@@ -70,6 +71,9 @@ func TestLoopRunnerMapsRequestAndCapturesOutput(t *testing.T) {
 			if cfg.Completion != agentloop.CompletionForceFinish {
 				t.Fatalf("Completion = %q, want forced finish recovery", cfg.Completion)
 			}
+			if !cfg.Compact.Enabled || cfg.Compact.ContextWindow <= 0 {
+				t.Fatalf("Compact = %#v, want adaptive non-blocking history compaction", cfg.Compact)
+			}
 			if !strings.Contains(cfg.ExtraRules, "Confine discovery to /workspace") ||
 				!strings.Contains(cfg.ExtraRules, "unless the mission explicitly requests") {
 				t.Fatalf("project discovery rule missing from ExtraRules: %q", cfg.ExtraRules)
@@ -80,11 +84,14 @@ func TestLoopRunnerMapsRequestAndCapturesOutput(t *testing.T) {
 			if _, err := cfg.Extra["decide"].Execute(ctx, `{"fit":true}`); err != nil {
 				t.Fatal(err)
 			}
-			return agentloop.Result{Status: agentloop.StatusPassed, Summary: "done", TokensUsed: 10}, nil
+			return agentloop.Result{
+				Status: agentloop.StatusPassed, Summary: "done", TokensUsed: 10,
+				Usage: chat.Usage{PromptTokens: 8, CompletionTokens: 2, TotalTokens: 10, CachedTokens: 6},
+			}, nil
 		},
 	}
 	req := Request{
-		Version: ProtocolVersion, TaskID: 1, Attempt: 1, Stage: "assess", Model: "provider/model", Mission: "mission",
+		Version: ProtocolVersion, TaskID: 1, Attempt: 1, Stage: "assess", Model: "provider/model", ContextWindow: 120_000, Mission: "mission",
 		Protection:   Protection{Suffixes: []string{"_templ.go"}, Globs: []string{"*_test.go"}},
 		CaptureTools: []CaptureTool{{Name: "decide", Parameters: json.RawMessage(`{"type":"object"}`), MaxCalls: 1}},
 	}
@@ -94,6 +101,9 @@ func TestLoopRunnerMapsRequestAndCapturesOutput(t *testing.T) {
 	}
 	if got.Status != StatusPassed || got.Summary != "done" || got.TokensUsed != 10 {
 		t.Fatalf("unexpected result: %#v", got)
+	}
+	if got.Usage.PromptTokens != 8 || got.Usage.CompletionTokens != 2 || got.Usage.CachedTokens != 6 {
+		t.Fatalf("usage = %#v, want provider breakdown", got.Usage)
 	}
 	if len(got.AppendedNotes) != 1 || got.AppendedNotes[0] != "verified note" {
 		t.Fatalf("appended notes = %v", got.AppendedNotes)
