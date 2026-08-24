@@ -70,7 +70,7 @@ func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleChannelReload(w http.ResponseWriter, r *http.Request) {
-	if !authorizeTaskMutation(w, r) {
+	if !s.authorizeTaskMutation(w, r) {
 		return
 	}
 	id := r.PathValue("id")
@@ -290,9 +290,10 @@ type ContainersView struct {
 	Network        string `json:"network,omitempty"`
 }
 
-// WebView is the dashboard's own listen address.
+// WebView is the dashboard's own listen address and proxy header trust settings.
 type WebView struct {
-	Listen string `json:"listen"`
+	Listen                string `json:"listen"`
+	TrustForwardedHeaders bool   `json:"trust_forwarded_headers"`
 }
 
 // handleConfig returns a read-only, secret-free view of the running
@@ -353,7 +354,10 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			PullPolicy:     cfg.Containers.PullPolicy,
 			Network:        cfg.Containers.Network,
 		},
-		Web:        WebView{Listen: cfg.Web.Listen},
+		Web: WebView{
+			Listen:                cfg.Web.Listen,
+			TrustForwardedHeaders: cfg.Web.TrustForwardedHeaders,
+		},
 		Provenance: provenance,
 		Locked:     lockedConfigKeys(),
 	}

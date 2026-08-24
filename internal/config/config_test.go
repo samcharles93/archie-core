@@ -418,3 +418,46 @@ func TestEcosystemCustom(t *testing.T) {
 		t.Errorf("ResolvedPreflight custom: got %v, want nil", got)
 	}
 }
+
+func TestWebConfigTOML(t *testing.T) {
+	tests := []struct {
+		name               string
+		input              string
+		wantListen         string
+		wantTrustForwarded bool
+	}{
+		{
+			name:               "default trust_forwarded_headers is false when absent",
+			input:              `[web]` + "\n" + `listen = "127.0.0.1:8484"`,
+			wantListen:         "127.0.0.1:8484",
+			wantTrustForwarded: false,
+		},
+		{
+			name:               "explicit trust_forwarded_headers true",
+			input:              `[web]` + "\n" + `listen = "127.0.0.1:8484"` + "\n" + `trust_forwarded_headers = true`,
+			wantListen:         "127.0.0.1:8484",
+			wantTrustForwarded: true,
+		},
+		{
+			name:               "explicit trust_forwarded_headers false",
+			input:              `[web]` + "\n" + `listen = "127.0.0.1:8484"` + "\n" + `trust_forwarded_headers = false`,
+			wantListen:         "127.0.0.1:8484",
+			wantTrustForwarded: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var cfg Config
+			if _, err := toml.Decode(tc.input, &cfg); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if cfg.Web.Listen != tc.wantListen {
+				t.Errorf("Web.Listen = %q, want %q", cfg.Web.Listen, tc.wantListen)
+			}
+			if cfg.Web.TrustForwardedHeaders != tc.wantTrustForwarded {
+				t.Errorf("Web.TrustForwardedHeaders = %v, want %v", cfg.Web.TrustForwardedHeaders, tc.wantTrustForwarded)
+			}
+		})
+	}
+}

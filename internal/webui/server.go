@@ -169,8 +169,24 @@ type Server struct {
 	// than Confirmed.
 	RunningVersions func() map[string]string
 
+	// TrustForwardedHeaders controls whether X-Forwarded-Proto and
+	// X-Forwarded-Host are trusted when validating Origin on mutating
+	// requests. When false, Origin scheme must match the direct connection (r.TLS).
+	// When Cfg is present, Cfg.Get().Web.TrustForwardedHeaders is also checked.
+	TrustForwardedHeaders bool
+
 	mu    sync.Mutex
 	conns map[chan events.Event]struct{}
+}
+
+func (s *Server) trustForwardedHeaders() bool {
+	if s.TrustForwardedHeaders {
+		return true
+	}
+	if s.Cfg == nil {
+		return false
+	}
+	return s.Cfg.Get().Web.TrustForwardedHeaders
 }
 
 // ConfigOrigin explains one source file contributing to the effective

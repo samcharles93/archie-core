@@ -58,6 +58,9 @@ pull_policy = "missing"
 
 [web]
 listen = "127.0.0.1:8484"
+# Trust X-Forwarded-Proto when fronted by a reverse proxy (e.g. Traefik)
+# terminating TLS so dashboard mutations succeed with external HTTPS Origin.
+trust_forwarded_headers = true
 
 [models]
 triage = "deepseek/deepseek-v4-pro"

@@ -179,6 +179,19 @@ class = "ollama"
 # Set to "off" (or leave empty) to disable.
 [web]
 listen = "127.0.0.1:8484"
+# Trust X-Forwarded-Proto and X-Forwarded-Host headers when validating Origin
+# on mutating requests (CSRF protection).
+#
+# Off by default. When false, the expected Origin scheme is derived directly
+# from the daemon's own network connection (http unless TLS is terminated by
+# archied directly). Setting this to true causes archied to respect the
+# X-Forwarded-Proto header sent by a reverse proxy (e.g. Traefik, Caddy, Nginx).
+#
+# SECURITY WARNING: Enable ONLY when archied is deployed behind a trusted
+# reverse proxy that strips or overwrites any client-supplied X-Forwarded-*
+# headers. Enabling this on a directly exposed daemon allows untrusted
+# clients to spoof the Origin scheme and bypass CSRF protection.
+# trust_forwarded_headers = false
 
 # Where archied writes its logs. Without file set, output goes only to
 # stderr -- which under systemd means journald holds the sole copy, and

@@ -82,7 +82,7 @@ type taskActionRequest struct {
 }
 
 func (s *Server) handleTaskAction(w http.ResponseWriter, r *http.Request) {
-	if !authorizeTaskMutation(w, r) {
+	if !s.authorizeTaskMutation(w, r) {
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -194,7 +194,14 @@ func taskMutation(action taskstate.Action) bool {
 // boundary: JSON only, a non-simple custom header, and a matching Origin when
 // the browser supplies one. The custom header forces cross-origin callers
 // through a CORS preflight, which this server never permits.
-func authorizeTaskMutation(w http.ResponseWriter, r *http.Request) bool {
+//
+// Origin comparison previously validated against the daemon's own direct network
+// connection (r.TLS). It now validates against the effective external scheme
+// and host, deriving them from X-Forwarded-Proto and X-Forwarded-Host only when
+// explicit proxy header trust is enabled (Web.TrustForwardedHeaders). When trust
+// is disabled (the default), forwarded headers are ignored to prevent untrusted
+// clients from forging Origin scheme checks on exposed daemons.
+func (s *Server) authorizeTaskMutation(w http.ResponseWriter, r *http.Request) bool {
 	if r.Header.Get("X-Archie-CSRF") != "1" {
 		http.Error(w, "missing CSRF header", http.StatusForbidden)
 		return false
@@ -209,16 +216,52 @@ func authorizeTaskMutation(w http.ResponseWriter, r *http.Request) bool {
 		return true
 	}
 	u, err := url.Parse(origin)
-	wantScheme := "http"
-	if r.TLS != nil {
-		wantScheme = "https"
+	if err != nil {
+		http.Error(w, "cross-origin mutation refused", http.StatusForbidden)
+		return false
 	}
-	if err != nil || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" ||
-		!strings.EqualFold(u.Scheme, wantScheme) || !strings.EqualFold(u.Host, r.Host) {
+	wantScheme, wantHost := s.expectedOrigin(r)
+	if !validOrigin(u, wantScheme, wantHost) {
 		http.Error(w, "cross-origin mutation refused", http.StatusForbidden)
 		return false
 	}
 	return true
+}
+
+func (s *Server) expectedOrigin(r *http.Request) (scheme, host string) {
+	scheme = "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	host = r.Host
+	if s == nil || !s.trustForwardedHeaders() {
+		return scheme, host
+	}
+	if proto := firstForwardedValue(r.Header.Get("X-Forwarded-Proto")); proto != "" {
+		scheme = strings.ToLower(proto)
+	}
+	if fHost := firstForwardedValue(r.Header.Get("X-Forwarded-Host")); fHost != "" {
+		host = fHost
+	}
+	return scheme, host
+}
+
+func firstForwardedValue(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if first, _, ok := strings.Cut(raw, ","); ok {
+		raw = first
+	}
+	return strings.TrimSpace(raw)
+}
+
+func validOrigin(u *url.URL, wantScheme, wantHost string) bool {
+	if u == nil || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+		return false
+	}
+	return strings.EqualFold(u.Scheme, wantScheme) && strings.EqualFold(u.Host, wantHost)
 }
 
 // actionOutcome is what a completed operator action should record.
