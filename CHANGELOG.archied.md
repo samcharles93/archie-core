@@ -1,5 +1,10 @@
 # archied changelog
 
+## [1.17.0] - 2026-08-25
+
+- fix(webui): add nil receiver guard to Server.trustForwardedHeaders
+- fix(chat): restore transcript and update replay
+
 ## [1.16.0] - 2026-08-25
 
 **The agent can hand you a file, and the dashboard works behind a reverse
