@@ -72,7 +72,7 @@ require (
 	github.com/moby/moby/client v0.5.1
 	github.com/nats-io/nats-server/v2 v2.14.4
 	github.com/nats-io/nats.go v1.52.0
-	github.com/samcharles93/ai-sdk v0.1.21
+	github.com/samcharles93/ai-sdk v0.1.22
 	github.com/traefik/yaegi v0.16.1
 	golang.org/x/net v0.57.0
 	golang.org/x/term v0.45.0

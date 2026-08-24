@@ -105,6 +105,7 @@ func (r *InProcessRunner) Run(ctx context.Context, workspace string, req Request
 			MaxSteps:  req.Budget.MaxSteps,
 			WallClock: req.Budget.WallClock,
 		},
+		Completion:   agentloop.CompletionForceFinish,
 		ReadOnly:     req.ReadOnly,
 		ProtectPaths: protectionMatcher(req.Protection, req.ReadOnly),
 		Extra: mergeToolSets(
