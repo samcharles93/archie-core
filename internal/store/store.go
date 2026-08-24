@@ -349,11 +349,12 @@ func (s *Store) ClaimByIssue(ctx context.Context, owner, repo string, number int
 // the task's current status does not match the expected from status.
 var ErrStaleTransition = errors.New("store: stale transition: task status does not match expected from status")
 
-// Transition moves a task to a new status, recording the change.
-// The from status acts as a guard: the UPDATE only affects rows whose
-// current status matches from. If no row matches, ErrStaleTransition is
-// returned and no audit row is written. Both statements execute in a
-// single transaction.
+// Transition moves a task to a new status and records the audit detail. The
+// from status guards the update; a mismatch returns ErrStaleTransition without
+// writing an audit row. Transitioning to parked also stores detail as
+// ParkReason in the same transaction. Detail used to exist only in the
+// timeline, which left daemon-side parks looking reasonless in task APIs and
+// the dashboard.
 func (s *Store) Transition(ctx context.Context, taskID int64, from, to, detail string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -361,8 +362,13 @@ func (s *Store) Transition(ctx context.Context, taskID int64, from, to, detail s
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	res, err := tx.ExecContext(ctx,
-		`UPDATE tasks SET status=?, updated_at=datetime('now') WHERE id=? AND status=?`, to, taskID, from)
+	res, err := tx.ExecContext(ctx, `
+		UPDATE tasks
+		SET status=?,
+			park_reason=CASE WHEN ?=? THEN ? ELSE park_reason END,
+			updated_at=datetime('now')
+		WHERE id=? AND status=?`,
+		to, to, StatusParked, clip(detail, 4000), taskID, from)
 	if err != nil {
 		return err
 	}

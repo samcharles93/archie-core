@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -17,7 +18,9 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
+	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
 	arnats "github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
@@ -90,6 +93,90 @@ func TestOpenTaskLogOpensAndClosesTheRightSink(t *testing.T) {
 	closeFn()
 	if ok := reg.Write(5, logging.Entry{Message: "y"}); ok {
 		t.Error("Write() = true after openTaskLog's closer ran, want false (sink should be closed)")
+	}
+}
+
+func TestProcessParksWhenManagedWorkerCapabilityIsUnavailable(t *testing.T) {
+	tests := []struct {
+		name       string
+		pool       *container.Pool
+		wantReason string
+	}{
+		{
+			name:       "container pool unavailable",
+			wantReason: "managed agent container pool is unavailable; refusing to run this task on the host",
+		},
+		{
+			name:       "task transport unavailable",
+			pool:       &container.Pool{},
+			wantReason: "agent task transport is unavailable; refusing to run this task on the host",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d, st, _ := testDaemon(t, 3, 0)
+			d.Log = slog.New(slog.DiscardHandler)
+			d.Trees = nil // both guards must run before any worktree operation
+			d.ContainerPool = tt.pool
+			d.Cfg.Set(config.Config{
+				Repos: []config.Repo{{Owner: "acme", Name: "widget"}},
+			})
+
+			ctx := t.Context()
+			if _, err := st.EnqueueIssue(ctx, "acme", "widget", 42, "task", "", "", ""); err != nil {
+				t.Fatal(err)
+			}
+			task, err := st.ClaimNext(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if task == nil {
+				t.Fatal("ClaimNext = nil task")
+			}
+
+			d.process(ctx, task)
+
+			got, err := st.TaskByID(ctx, task.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Status != store.StatusParked {
+				t.Fatalf("task status = %q, want parked", got.Status)
+			}
+			if got.ParkReason != tt.wantReason {
+				t.Errorf("park reason = %q, want %q", got.ParkReason, tt.wantReason)
+			}
+		})
+	}
+}
+
+func TestProcessDoesNotEmitParkedWhenCapabilityTransitionLosesRace(t *testing.T) {
+	d, st, _ := testDaemon(t, 3, 0)
+	d.Log = slog.New(slog.DiscardHandler)
+	d.Trees = nil
+	d.Cfg.Set(config.Config{Repos: []config.Repo{{Owner: "acme", Name: "widget"}}})
+	d.Bus = events.NewBus()
+	sub := d.Bus.Subscribe(1)
+	t.Cleanup(sub.Close)
+
+	ctx := t.Context()
+	if _, err := st.EnqueueIssue(ctx, "acme", "widget", 42, "task", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := st.TaskByIssue(ctx, "acme", "widget", 42)
+	if err != nil || task == nil {
+		t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
+	}
+	// The task is still queued, simulating another actor winning the guarded
+	// running-state transition before this process reports its capability
+	// failure.
+	d.process(ctx, task)
+
+	select {
+	case event := <-sub.C:
+		t.Fatalf("event = %+v, want no false parked event after stale transition", event)
+	default:
 	}
 }
 
@@ -464,6 +551,9 @@ func TestRunViaAgentParksOnRequestFailure(t *testing.T) {
 	if got.Status != store.StatusParked {
 		t.Fatalf("status = %q, want %q", got.Status, store.StatusParked)
 	}
+	if !strings.Contains(got.ParkReason, "taskrun request failed") {
+		t.Errorf("ParkReason = %q, want taskrun request failure", got.ParkReason)
+	}
 }
 
 // TestRunViaAgentRetriesUntilResponderAppears is a regression test for the
@@ -580,6 +670,9 @@ func TestRunViaAgentParksOnRunError(t *testing.T) {
 	if got.Status != store.StatusParked {
 		t.Fatalf("status = %q, want %q", got.Status, store.StatusParked)
 	}
+	if got.ParkReason != "taskrun run failed: registry build failed" {
+		t.Errorf("ParkReason = %q, want worker run failure", got.ParkReason)
+	}
 }
 
 func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
@@ -598,7 +691,9 @@ func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
 	}
 
 	received := make(chan taskrun.Request, 1)
+	var requestCount atomic.Int32
 	sub, err := mustCoreConn(t, busClient).Subscribe(agentnats.SubjectForTask(task.ID), func(msg *natsio.Msg) {
+		requestCount.Add(1)
 		var req taskrun.Request
 		_ = json.Unmarshal(msg.Data, &req)
 		received <- req
@@ -629,6 +724,9 @@ func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("archied did not publish a taskrun request")
+	}
+	if got := requestCount.Load(); got != 1 {
+		t.Errorf("taskrun request count = %d, want exactly 1", got)
 	}
 
 	// Success path: runViaAgent must not park a task that archie-agent

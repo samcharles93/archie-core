@@ -19,14 +19,12 @@ import (
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
-	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/eventbus"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
 	"github.com/samcharles93/archie-core/internal/logging"
-	"github.com/samcharles93/archie-core/internal/memory"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -95,14 +93,6 @@ type Daemon struct {
 	// TaskRunRetryBackoff is the delay between retry attempts within
 	// TaskRunReadyTimeout. Zero uses defaultTaskRunRetryBackoff.
 	TaskRunRetryBackoff time.Duration
-	// SandboxRequired reports that [containers] asked for sandboxing that
-	// could not be brought up. It exists because ContainerPool == nil means
-	// two very different things: "sandboxing was never configured, run
-	// in-process" and "sandboxing was configured and failed". Treating them
-	// alike silently dropped the isolation boundary and ran agent loops on
-	// the host with the daemon's own authority.
-	SandboxRequired bool
-
 	// AgentStatus records the version/install-type the most recently
 	// completed archie-agent task response reported about itself, for
 	// releaseupdate.Report.Verify to check an update claim against. Nil
@@ -111,11 +101,12 @@ type Daemon struct {
 	// would read as a checked "unknown" rather than "never wired".
 	AgentStatus *AgentStatus
 
-	// ContainerPool manages Docker container lifecycle. Nil when [containers]
-	// is not configured. When non-nil, every task gets a fresh container.
+	// ContainerPool manages Docker container lifecycle. Nil means autonomous
+	// execution is unavailable and process parks tasks; every runnable task gets
+	// a fresh container.
 	ContainerPool *container.Pool
 	// Storage is the pluggable storage backend for container mounts.
-	// When nil (no containers configured), mount setup is skipped.
+	// A runnable task requires it; acquireTaskContainer parks on nil.
 	Storage storage.Backend
 	// CapabilityHost owns validated plugin manifests and cross-family
 	// lifecycle. Typed capability registries remain in their domain packages;
@@ -134,12 +125,6 @@ type Daemon struct {
 	// When non-empty, Run() starts one goroutine per identity instead of
 	// using the single-identity Forge/Trees/Cfg.Repos path.
 	Identities []*IdentityRunner
-
-	// Memory is the pluggable memory manager, wired by the composition root
-	// (cmd/archied). When non-nil, the system prompt includes memory context
-	// and memory tool calls are routed through the manager. Nil means memory
-	// is disabled (backward compatible).
-	Memory *memory.Manager
 
 	// Guardrails is the tool-call guardrail engine, wired by the composition
 	// root. When non-nil, tool successes and failures are recorded and
@@ -164,15 +149,6 @@ type Daemon struct {
 	// so /stop can reach work already in flight. Its zero value is ready
 	// to use.
 	running runningTasks
-}
-
-// memoryPrompt returns the memory manager's system prompt block, or an empty
-// string when memory is disabled. Safe to call from any goroutine.
-func (d *Daemon) memoryPrompt() string {
-	if d.Memory == nil {
-		return ""
-	}
-	return d.Memory.SystemPromptBlock()
 }
 
 // IdentityRunner bundles identity-specific state for a single agent
@@ -839,35 +815,42 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	defer finished()
 	defer d.openTaskLog(task)()
 
-	fg := d.forgeFor(task)
 	trees := d.treesFor(task)
-	executionCfg, executionAgent := d.executionFor(task)
 	repo, ok := d.repoFor(task)
 	if !ok {
 		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "repo no longer in config")
 		return
 	}
-	// Per-worktree registry augmentation: if the worktree already
-	// exists (e.g. retry, waiting_human → implement handoff), scan
-	// it for .agents/skills/ that declare workflows. Worktree skills
-	// override the startup registry for this task only.
-	workDir := trees.Dir(task.Owner, task.Repo, task.IssueNumber)
-	registry := d.Workflows
-	if _, err := os.Stat(workDir); err == nil {
-		aug, err := skillbuild.AugmentRegistry(workDir, d.Workflows)
-		if err != nil {
-			d.Log.Error("worktree registry augmentation failed  --  using startup registry", "dir", workDir, "err", err)
-			d.emit(events.Event{
-				Kind: "registry_augment_failed", TaskID: task.ID,
-				Repo: task.Owner + "/" + task.Repo, Issue: task.IssueNumber,
-				Detail: err.Error(),
-			})
-		} else {
-			registry = aug
+	if d.ContainerPool == nil {
+		const reason = "managed agent container pool is unavailable; refusing to run this task on the host"
+		d.Log.Error("task parked: managed worker unavailable", "task", task.ID,
+			"hint", "enable containers and make the archie-agent image available, then retry the task")
+		if err := d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, reason); err != nil {
+			d.Log.Warn("managed worker park transition failed", "task", task.ID, "err", err)
+			return
 		}
+		d.emit(events.Event{
+			Kind: events.KindParked, TaskID: task.ID,
+			Repo: repo.FullName(), Issue: task.IssueNumber, Detail: reason,
+		})
+		return
 	}
-	wf := workflow.Route(task, registry)
-	d.Log.Info("processing task", "repo", repo.FullName(), "issue", task.IssueNumber, "workflow", wf.Name, "attempt", task.Attempt)
+	if d.Tasks == nil {
+		const reason = "agent task transport is unavailable; refusing to run this task on the host"
+		d.Log.Error("task parked: agent task transport unavailable", "task", task.ID)
+		if err := d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, reason); err != nil {
+			d.Log.Warn("agent task transport park transition failed", "task", task.ID, "err", err)
+			return
+		}
+		d.emit(events.Event{
+			Kind: events.KindParked, TaskID: task.ID,
+			Repo: repo.FullName(), Issue: task.IssueNumber, Detail: reason,
+		})
+		return
+	}
+
+	workDir := trees.Dir(task.Owner, task.Repo, task.IssueNumber)
+	d.Log.Info("processing task", "repo", repo.FullName(), "issue", task.IssueNumber, "attempt", task.Attempt)
 
 	// Clone the worktree before Docker mount setup. The container
 	// binds /data/worktree to workDir on the host  --  the directory
@@ -890,60 +873,21 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 		d.Log.Warn("task branch not persisted", "task", task.ID, "err", err)
 	}
 
-	// Refuse to run unsandboxed when sandboxing was asked for. Parking is
-	// recoverable -- fix the image, retry -- whereas running the agent loop
-	// in-process would hand it the host filesystem and the daemon's own
-	// authority, which is the one thing [containers] exists to prevent. The
-	// daemon itself stays up: chat and the dashboard are unaffected.
-	if d.SandboxRequired && d.ContainerPool == nil {
-		const reason = "containers are enabled but the pool is unavailable; " +
-			"refusing to run this task unsandboxed on the host"
-		d.Log.Error("task parked: sandbox unavailable", "task", task.ID,
-			"hint", "run `docker compose pull agent` (or `build agent`), then retry the task")
-		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, reason)
-		d.emit(events.Event{
-			Kind: events.KindParked, TaskID: task.ID,
-			Repo: repo.FullName(), Issue: task.IssueNumber, Detail: reason,
-		})
+	ctr, ok := d.acquireTaskContainer(ctx, task, repo, workDir)
+	if !ok {
 		return
 	}
+	defer d.ContainerPool.Release(ctx, ctr)
 
-	// Acquire a container for the task when Docker sandboxing is enabled.
-	if d.ContainerPool != nil {
-		ctr, ok := d.acquireTaskContainer(ctx, task, repo, workDir)
-		if !ok {
-			return
-		}
-		defer d.ContainerPool.Release(ctx, ctr)
-	}
-
-	// Sandboxed path: hand the whole task to archie-agent in one NATS round
-	// trip instead of running the stage loop here. archie-agent proxies
-	// Store/Forge/worktree-push calls back to archied over storerpc/
+	// Hand the whole task to archie-agent in one NATS round trip. archie-agent
+	// proxies Store/Forge/worktree-push calls back to archied over storerpc/
 	// forgerpc/worktreerpc  --  by the time runViaAgent returns, the task's
 	// terminal state already landed via those calls. The task's identity
 	// travels in the taskrun request; the agent scopes its forgerpc and
 	// worktreerpc clients to that identity, and the daemon registered one
 	// server pair per identity (plus the root pair), so a container-mode
 	// task is always served by its own forge client and worktree manager.
-	if d.ContainerPool != nil {
-		d.runViaAgent(ctx, task, repo)
-	} else {
-		workflow.Run(ctx, wf, &workflow.TaskContext{
-			Task:         task,
-			Repo:         repo,
-			Cfg:          executionCfg,
-			Forge:        fg,
-			Store:        d.Store,
-			Trees:        trees,
-			SystemPrompt: d.memoryPrompt,
-			Guardrails:   d.Guardrails,
-			Agent:        executionAgent,
-			Bus:          d.Bus,
-			Log:          d.Log,
-			CustomStages: d.CustomStages,
-		})
-	}
+	d.runViaAgent(ctx, task, repo)
 
 	// Teardown storage after workflow completes. The Docker backend is a
 	// no-op; future backends (temp volumes, NFS leases) use this hook.
@@ -959,9 +903,9 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 }
 
 // openTaskLog opens task's log sink for the lifetime of one process() call
-// and returns the function to close it, covering both dispatch paths below
-// (sandboxed container and in-process) uniformly regardless of which one
-// runs. A failure to open is not fatal to the task -- it means this
+// and returns the function to close it. That lifetime covers preparation,
+// the full-task container handoff, and teardown. A failure to open is not
+// fatal to the task -- it means this
 // attempt's own output won't be recoverable if something goes wrong, which
 // is worse than the pre-existing state, not equal to it, so the run
 // proceeds rather than parking over a logging problem.

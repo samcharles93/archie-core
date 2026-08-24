@@ -583,6 +583,31 @@ func TestTransitionPreventsDoubleTransition(t *testing.T) {
 	}
 }
 
+func TestTransitionToParkedPersistsReasonOnTask(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "task", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("ClaimNext = (%+v, %v)", task, err)
+	}
+	const reason = "managed worker unavailable"
+	if err := s.Transition(ctx, task.ID, StatusRunning, StatusParked, reason); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.TaskByID(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ParkReason != reason {
+		t.Errorf("ParkReason = %q, want %q", got.ParkReason, reason)
+	}
+}
+
 // TestRequeueRejectsStaleFrom proves that Requeue rejects a call whose
 // fromStatus does not match the task's current status.
 func TestRequeueRejectsStaleFrom(t *testing.T) {
