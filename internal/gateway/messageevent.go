@@ -17,6 +17,16 @@ type MediaAttachment struct {
 	// platforms that require a download API call.
 	URL string `json:"url,omitempty"`
 
+	// Path is a local filesystem path on the host that produced the
+	// attachment. It is the alternative to URL for outbound delivery: a
+	// URL is fetched by the platform, a Path is uploaded by us. A file the
+	// agent wrote has no URL and never gets one -- publishing it would
+	// trade a delivery problem for a hosting and access-control one -- so
+	// senders that support upload must read this.
+	//
+	// Exactly one of URL and Path is meaningful for an outbound send.
+	Path string `json:"path,omitempty"`
+
 	// MIMEType is the content type (e.g. "image/png", "audio/ogg").
 	MIMEType string `json:"mime_type,omitempty"`
 

@@ -23,7 +23,9 @@ func (s *recordingStream) ToolCall(event gateway.ToolCallEvent) {
 }
 
 func (s *recordingStream) Media(event gateway.MediaEvent) {
-	s.events = append(s.events, "media:"+event.ToolName+":"+event.Attachment.Type)
+	// Path is recorded alongside the type: a local attachment that lost
+	// its path on the way through would still look like a media event.
+	s.events = append(s.events, "media:"+event.ToolName+":"+event.Attachment.Type+":"+event.Attachment.Path)
 }
 
 func streamOf(parts ...core.StreamPart) <-chan core.StreamPart {
@@ -106,8 +108,40 @@ func TestDrainChatStream(t *testing.T) {
 			},
 			wantEvents: []string{
 				`tool:generate_video::{"is_multimodal":true,"urls":[{"type":"video","url":"https://x/v"}]}`,
-				"media:generate_video:video",
+				"media:generate_video:video:",
 			},
+		},
+		{
+			// A local file has no URL and must not acquire one: the
+			// channel uploads it. Losing Path here is exactly the
+			// silent non-delivery send_file exists to end.
+			name: "a tool result carrying a local path reports Media with that path",
+			parts: []core.StreamPart{
+				{Type: core.StreamPartToolCall, ToolCall: &core.ToolCall{ToolCallID: "1", ToolName: "send_file"}},
+				{Type: core.StreamPartToolResult, ToolResult: &core.ToolResult{
+					ToolCallID: "1",
+					ToolName:   "send_file",
+					Output:     `{"is_multimodal":true,"urls":[{"type":"document","path":"/tmp/a.md"}]}`,
+				}},
+			},
+			wantEvents: []string{
+				"tool:send_file::" + `{"is_multimodal":true,"urls":[{"type":"document","path":"/tmp/a.md"}]}`,
+				"media:send_file:document:/tmp/a.md",
+			},
+		},
+		{
+			// A ref naming neither a URL nor a path is not deliverable,
+			// and an empty attachment would render as a delivered file.
+			name: "a media ref with no source reports no Media event",
+			parts: []core.StreamPart{
+				{Type: core.StreamPartToolCall, ToolCall: &core.ToolCall{ToolCallID: "1", ToolName: "odd_tool"}},
+				{Type: core.StreamPartToolResult, ToolResult: &core.ToolResult{
+					ToolCallID: "1",
+					ToolName:   "odd_tool",
+					Output:     `{"is_multimodal":true,"urls":[{"type":"document"}]}`,
+				}},
+			},
+			wantEvents: []string{"tool:odd_tool::" + `{"is_multimodal":true,"urls":[{"type":"document"}]}`},
 		},
 		{
 			// An ordinary JSON tool result that happens to be a JSON

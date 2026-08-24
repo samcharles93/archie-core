@@ -22,10 +22,15 @@ type MultimodalResult struct {
 	// Files lists the full paths written under SubdirHint, in the order
 	// the source content blocks appeared.
 	Files []string `json:"files,omitempty"`
-	// URLs lists media that lives at a remote, already-hosted URL rather
-	// than local bytes  --  a generation API's result, for example, which
-	// has nowhere to go in Files: there is no SubdirHint to write it under
-	// because nothing was downloaded.
+	// URLs lists media to deliver to the user's channel. Each ref carries
+	// either a remote URL  --  a generation API's result, for example,
+	// which has nowhere to go in Files because nothing was downloaded  --
+	// or a local Path the channel uploads.
+	//
+	// The field used to mean remote-hosted media only; it now means "media
+	// this result wants delivered", because a locally produced file has no
+	// URL and exposing one for it was rejected. The JSON name is unchanged
+	// so existing producers keep working.
 	URLs []MediaRef `json:"urls,omitempty"`
 }
 
@@ -35,6 +40,13 @@ type MediaRef struct {
 	// vocabulary gateway.MediaAttachment.Type uses, so a caller can build
 	// one directly from this without translation.
 	Type string `json:"type"`
-	// URL is where the media is hosted.
-	URL string `json:"url"`
+	// URL is where the media is hosted, for media the channel should
+	// fetch. Empty when the ref names a local file instead.
+	URL string `json:"url,omitempty"`
+	// Path is an absolute local filesystem path, for media the channel
+	// should upload. Empty when the ref names a hosted URL instead.
+	Path string `json:"path,omitempty"`
+	// FileName is the name to present the upload under. Ignored for a
+	// URL ref, which carries its own name.
+	FileName string `json:"file_name,omitempty"`
 }
