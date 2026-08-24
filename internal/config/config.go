@@ -825,4 +825,11 @@ type Web struct {
 	// Listen is the dashboard address; "off" disables the web UI.
 	// Bind localhost (or a LAN/tailnet address)  --  there is no auth.
 	Listen string `toml:"listen" yaml:"listen"`
+	// TrustForwardedHeaders enables deriving the effective request scheme and
+	// host from X-Forwarded-Proto and X-Forwarded-Host headers during mutation
+	// Origin validation. Off by default: trusting forwarded headers
+	// unconditionally allows untrusted clients to spoof Origin scheme checks
+	// and bypass CSRF protection. Enable ONLY when archied is deployed behind
+	// a trusted reverse proxy that overwrites/strips untrusted forwarded headers.
+	TrustForwardedHeaders bool `toml:"trust_forwarded_headers" yaml:"trust_forwarded_headers"`
 }
