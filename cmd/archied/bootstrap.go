@@ -485,6 +485,11 @@ func (b *boot) setupLLMAndChat(ctx context.Context) {
 			tasks:    b.st.TaskByID,
 			taskLogs: b.taskLogs,
 		},
+		ChatTaskActor: chatTaskActorAdapter{
+			tasks:   b.st.TaskByID,
+			handler: b.web.Handler(),
+			token:   func() string { return b.web.Token },
+		},
 		DefaultChatIdentity: b.defaultChatIdentity, SessionStore: b.chatSessionStore,
 		Bus: b.bus, Log: log,
 	}
@@ -516,6 +521,11 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 		ChatTaskLogs: chatTaskLogReaderAdapter{
 			tasks:    b.st.TaskByID,
 			taskLogs: b.taskLogs,
+		},
+		ChatTaskActor: chatTaskActorAdapter{
+			tasks:   b.st.TaskByID,
+			handler: b.web.Handler(),
+			token:   func() string { return b.web.Token },
 		},
 		DefaultChatIdentity: b.defaultChatIdentity, SessionStore: b.chatSessionStore, Updates: b.updateService,
 		Bus:             b.bus,

@@ -75,6 +75,7 @@ type TurnRunnerConfig struct {
 	TaskLister         ChatTaskLister
 	Tasks              TaskCreator
 	TaskLogs           ChatTaskLogReader
+	TaskActor          ChatTaskActor
 	TaskIdentity       string
 	Bus                TurnEventPublisher
 	BotUser            string
@@ -247,7 +248,7 @@ func (r *TurnRunner) Run(ctx context.Context, msg Message, stream TurnStream) (s
 
 	compressed := compressTurnHistory(history, r.BotUser)
 	extraTools := append(
-		TaskTools(r.TaskLister, r.Tasks, r.TaskLogs, r.TaskIdentity),
+		TaskTools(r.TaskLister, r.Tasks, r.TaskLogs, r.TaskActor, r.TaskIdentity),
 		SessionTools(r.Sessions, r.Router.SessionTracker(), r.Channel, msg)...,
 	)
 	modelName := r.Models.ActiveModel()
