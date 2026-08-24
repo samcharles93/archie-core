@@ -40,7 +40,7 @@ func TestAuthorizeTaskMutationOrigin(t *testing.T) {
 		},
 		{
 			name:              "1b. proxied https: trust enabled via Cfg holder, X-Forwarded-Proto https, plain HTTP, Origin https",
-			trustForwardedCfg: boolPtr(true),
+			trustForwardedCfg: new(true),
 			forwardedProto:    "https",
 			requestHost:       "archie.catlow.cloud",
 			tls:               false,
@@ -237,8 +237,9 @@ func TestAuthorizeTaskMutationOrigin(t *testing.T) {
 	}
 }
 
+//go:fix inline
 func boolPtr(b bool) *bool {
-	return &b
+	return new(b)
 }
 
 func TestWorkRequestOriginProxy(t *testing.T) {
