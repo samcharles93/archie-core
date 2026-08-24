@@ -154,6 +154,14 @@ type Server struct {
 	// the dashboard failing to start.
 	Mappings store.MappingStore
 
+	// TelegramUpdateReportPath and TelegramUpdateChatID let a dashboard-
+	// initiated update use the same post-restart notification route as a
+	// Telegram-initiated update. The web UI has no durable chat identity, so
+	// composition supplies an authorized Telegram recipient when one exists.
+	// When either value is empty, UpdateReportPath remains in use.
+	TelegramUpdateReportPath string
+	TelegramUpdateChatID     int64
+
 	// UpdateReportPath is where the update watchdog leaves the phase-2
 	// outcome of a dashboard-initiated install for this process to relay on
 	// its next boot -- the webui counterpart of
