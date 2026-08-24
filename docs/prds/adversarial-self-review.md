@@ -1,24 +1,24 @@
 # Adversarial self-review stage -- decision
 
-**Status:** Superseded; requires redesign before implementation
-**Date:** 2026-08-22
+**Status:** Active
+**Date:** 2026-08-22, section 1 replaced 2026-08-25
 **Beads issue:** `archie-core-h019.1`, blocks `h019.2/.3/.4/.5`
 
-> **Superseded 2026-08-24 by the full-task worker boundary.** This document is
-> retained as the record of the earlier decision, not as an implementation
-> contract. It assumes daemon-owned in-process execution and a daemon-side
-> second `Pool.Acquire`; both call sites were removed by `archie-core-q15y`.
-> The still-useful findings and lifecycle decisions below do not authorize an
-> implementation. The feature must first decide how a fresh reviewer receives
-> an isolated snapshot from inside the existing task-scoped worker without
-> creating a host executor or a nested container lifecycle.
+> **Section 1 was superseded on 2026-08-24 and re-decided on 2026-08-25.**
+> The original execution mechanism assumed daemon-owned in-process execution
+> and a daemon-side second `Pool.Acquire`; `archie-core-q15y` removed both
+> call sites, leaving one open question: how a fresh reviewer receives an
+> isolated snapshot from inside the task-scoped worker, without a host
+> executor or a nested container lifecycle. Section 1 below now answers it
+> with `agent.Subagent`. Sections 2-5 were never invalidated and still hold;
+> section 3's contract shipped as `archie-core-h019.2`.
 
 Answers the five questions in `h019.1`'s description against the actual
 implement workflow, not designed from scratch: the gate pattern, the
 container pool, and the workflow engine's `Outcome` mechanism already answer
 most of this.
 
-## 1. Where it runs: a second workspace, not a second worktree
+## 1. Where it runs: `agent.Subagent`, inside the task worker
 
 The implement workflow's stage list
 (`internal/domain/workflow/implement.go:110-185`) already has the right slot:
@@ -26,30 +26,57 @@ after `StageDiffCap()` (line 178), before `StageOpenPR()` (line 179) -- gates
 have passed, the diff is final, and nothing has told the forge about this
 change yet.
 
-**The isolating property is the workspace path, not container-vs-in-process.**
-Both execution modes already scope an agent's tools to a directory --
-`agentexec.Runner.Run(ctx, workspace string, ...)`
-(`internal/agentexec/inprocess.go:20-26`) roots tool access there in-process,
-and container mode mounts only what `Pool.Acquire`
-(`internal/container/pool.go:161-177`) is given. So "the reviewer cannot see
-the implementation" becomes an environmental fact by construction, in both
-deployment shapes, as long as the reviewer's workspace is never
-`tc.WorktreeDir`.
+**The reviewer is an `agent.Subagent` run, not a second container.** ai-sdk
+`v0.1.22` (already the pinned version) added `agent/subagent.go`: a nested,
+synchronous `core.GenerateText` call in the same process, with its own model,
+system prompt, toolset and step budget. That is what makes this feature
+buildable at all after `q15y` -- the reviewer runs inside the task-scoped
+`archie-agent` worker that is already executing the workflow, so there is no
+host executor, no second `Pool.Acquire`, and no nested container lifecycle.
 
-**What the workspace is:** before running the reviewer, the app-layer code
-that owns this stage exports a `.git`-free snapshot of the reviewed commit
-(`git archive <commit> | tar -x`) into a fresh scratch directory next to, not
-inside, the task's real worktree, then writes two files alongside it:
-`diff.patch` (the unified diff already computed for `StageYaegiGate`'s
-`Trees.Diff()`) and `issue.md` (the originating issue's title and body, read
-from `store.Task`, nothing else). The reviewer's `agentexec.Request.Workspace`
-points at this directory. Stripping `.git` is deliberate: it is what makes
-commit messages, branch name, and reflog -- the actual channel a multi-commit
-implementer's back-and-forth reasoning would leak through -- structurally
-unreachable rather than merely undisclosed. Container mode acquires a second,
-distinct container for this (`Pool.Acquire` again, different mounts); in-process
-mode builds a second `agentexec.Request` with this workspace. Neither needs a
-new execution mechanism.
+**Two isolations are needed, and Subagent only provides one of them.**
+
+*Conversation isolation is structural, and free.* `Subagent.Run`
+(`agent/subagent.go:76-96`) calls `GenerateText` with `Prompt` set and
+`Messages` never populated. The implementer's history has no code path into
+the nested run; only the prompt string crosses, and only text comes back.
+This is the literal form of "environmental enforcement over prompt rules":
+the reviewer is not told to ignore the implementer's reasoning, because
+nothing hands it any. `h019.3`'s required test asserts this as a construction
+fact.
+
+*Workspace isolation is still ours to build.* A sub-agent shares the parent's
+process, working directory and credentials. So the `.git`-free snapshot from
+the original decision survives unchanged and is load-bearing: export the
+reviewed commit (`git archive <commit> | tar -x`) into a fresh scratch
+directory beside, not inside, the task worktree, and write `diff.patch` (the
+diff already computed for `StageYaegiGate`'s `Trees.Diff()`) and `issue.md`
+(the originating issue's title and body, nothing else) alongside it. Stripping
+`.git` is what makes commit messages, branch name and reflog -- the actual
+channel a multi-commit implementer's reasoning leaks through -- structurally
+unreachable rather than merely undisclosed.
+
+`Subagent.Tools` therefore takes a **distinct read-only toolset rooted at the
+snapshot**. Never the worker's own toolset: it carries the `worktreerpc`
+publication grant, so a reviewer holding it could push the branch it exists to
+block.
+
+**Call `Run()`, not `Tool()`.** `Tool()` would register delegation as a tool
+the *implementer's* model may choose to invoke -- self-certification by the
+implementer, which is the exact failure this feature exists to prevent. The
+stage calls `Run()` unconditionally. That also sidesteps both of `Tool()`'s
+documented footguns: the parent's two-step minimum and the recursion risk of
+passing a toolset back to itself.
+
+**Findings return through a closure, not the return value.** `Run` yields only
+final text, so section 3's structured contract cannot ride the return. Because
+the sub-agent is in-process, the capture tool's Go implementation appends
+directly to a `[]workflow.ReviewFinding` the stage owns. This preserves the
+"cannot end its turn without calling a typed tool" property, and it defeats
+`Subagent`'s documented "no partial results on failure" limitation: findings
+already captured survive an error return, so **the stage reads the captured
+slice even when `Run` returns an error**. A reviewer that logged three defects
+and then hit its step limit still yields those three.
 
 ## 2. What it's given, and what it must never be given
 
@@ -122,6 +149,23 @@ returns `nil`, so `StageOpenPR` runs next. Attaching warn-level findings to
 the task record for PR-body/dashboard display is `h019.6`'s job, not decided
 here.
 
+**A review that fails to run is fail-closed** (decided 2026-08-25). The
+blocking rule is `Verdict == confirmed && Level == error`, so only a confirmed
+finding blocks -- but that governs findings, not the reviewer's own failure. A
+sub-agent that errors, is truncated, or produces no conclusion yields
+`ReviewStatusNotRun`, for which `ReviewReport.Passed()` is false and
+`Blocking()` is also false; the contract deliberately refuses to guess. This
+stage resolves that as **park, do not open the PR**. The reasoning is that
+`Repo.ReviewEnabled` is opt-in: an operator who turned the gate on wants the
+gate, and a provider outage silently degrading into "PR opened unreviewed" is
+the failure they were buying protection against. The cost is accepted -- a
+transient model error parks a task, and `Parked`'s retry action is the
+remedy. `Detail` must say the review did not run, never that it passed.
+
+Note this is why `h019.2` models "ran and found nothing" separately from "did
+not run": collapsing them to an empty slice would make an outage
+indistinguishable from a clean review, and fail-closed unimplementable.
+
 ## 5. Model, effort, and whether a repo even runs this yet
 
 **Model:** a new `"reviewer"` key in the existing `Config.Models` map (already
@@ -135,7 +179,16 @@ that works," not a mandated model-diversity policy.
 **Effort/budget:** reuse the per-stage budget override `AgentStage` already
 supports (`agent.go:35`), not a new config surface -- a repo wanting a
 cheaper or more thorough reviewer sets `MaxSteps` the same way
-the plan stage already can.
+the plan stage already can. Map that budget onto `Subagent.MaxSteps` and
+`Subagent.MaxTokens` deliberately: **`MaxTokens` is a per-call ceiling, not a
+cumulative budget**, so an N-step reviewer can emit up to N x `MaxTokens`.
+Setting it as though it bounded the whole run is a costing error, not a
+safety one. `Subagent.MaxSteps` defaults to 10 when unset.
+
+**Observability:** the nested run is synchronous and non-streaming -- nothing
+is emitted between the parent's call and its result, so a long review reads as
+a stalled stage. Emit task events around the call so the dashboard shows the
+reviewer working rather than a gap.
 
 **Opt-in, not automatic:** `h019.5` (calibration -- confirm findings
 adversarially before they surface) is a separate, lower-priority bead than
@@ -150,14 +203,19 @@ setting.
 ## Packages this touches
 
 - `internal/domain/workflow` (`h019.2`, `h019.4`): `ReviewFinding`,
-  `ReviewBlocking`, and a `ReviewStage` inserted between `StageDiffCap` and
-  `StageOpenPR` in `implement.go`. Contract only; no execution mechanism.
+  `ReviewReport`, `ReviewBlocking` -- shipped -- and a `ReviewStage` inserted
+  between `StageDiffCap` and `StageOpenPR` in `implement.go`. The domain owns
+  the contract and the pure blocking decision, and declares the reviewer
+  interface it needs; it never names `agent.Subagent`.
 - `internal/worktree` or a sibling package (`h019.3`): the clean-snapshot
   export (`git archive`, no `.git`) building the reviewer's isolated
-  workspace.
-- `internal/agentexec` / `internal/container` (`h019.3`): no new mechanism --
-  a second `Request`/`Pool.Acquire` scoped to the snapshot directory reuses
-  the existing `Runner` interface.
+  workspace. Still required -- `Subagent` isolates conversation, not
+  filesystem.
+- `internal/app/agentworker` (`h019.3`): constructs the `agent.Subagent` from
+  the worker's own resolved provider (`agentexec.NewRuntime`), with a
+  read-only toolset rooted at the snapshot and the findings capture tool. This
+  is app-layer wiring: the domain gets an implementation of its reviewer
+  interface, not an SDK type.
 - `internal/config` (`h019.4`): `Models["reviewer"]` (no type change) and
   `Repo.ReviewEnabled bool`.
 - `internal/store`/`internal/taskstate`: unchanged; reuses `StatusParked`.
