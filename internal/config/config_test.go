@@ -12,6 +12,68 @@ import (
 	"github.com/samcharles93/archie-core/internal/secret"
 )
 
+// TestRepoForgeOverridesDecodeAndRemainDistinct is a regression test for
+// GH-441. A root forge is shared by the daemon today, which means there is no
+// way for these two entries to identify the endpoints they actually belong
+// to. Keep this test at the configuration boundary so it also catches a
+// tempting partial fix that only changes polling and drops the per-repo
+// settings during reload/serialization.
+func TestRepoForgeOverridesDecodeAndRemainDistinct(t *testing.T) {
+	var cfg Config
+	_, err := toml.Decode(`
+[forge]
+type = "github"
+host = "https://api.github.com"
+
+[[repos]]
+owner = "sam"
+name = "archie-core"
+
+[[repos]]
+owner = "sam"
+name = "tau"
+type = "gitea"
+host = "https://gitea.example.test"
+token = { engine = "env", key = "TAU_TOKEN" }
+`, &cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Repos) != 2 {
+		t.Fatalf("Repos = %#v, want two entries", cfg.Repos)
+	}
+
+	// Use reflection deliberately: this repro must compile against the
+	// current version, where the fields are absent, and fail with a useful
+	// assertion rather than making the bug impossible to demonstrate.
+	tau := reflect.ValueOf(cfg.Repos[1])
+	for _, name := range []string{"Type", "Host", "Token"} {
+		if !tau.FieldByName(name).IsValid() {
+			t.Fatalf("config.Repo has no per-repo %s override; repos cannot span forges", name)
+		}
+	}
+	if got := tau.FieldByName("Type").String(); got != "gitea" {
+		t.Errorf("tau.Type = %q, want gitea", got)
+	}
+	if got := tau.FieldByName("Host").String(); got != "https://gitea.example.test" {
+		t.Errorf("tau.Host = %q, want the Gitea endpoint", got)
+	}
+	token := tau.FieldByName("Token")
+	if got := token.FieldByName("Engine").String(); got != "env" {
+		t.Errorf("tau.Token.Engine = %q, want env", got)
+	}
+	if got := token.FieldByName("Key").String(); got != "TAU_TOKEN" {
+		t.Errorf("tau.Token.Key = %q, want TAU_TOKEN", got)
+	}
+
+	// Empty overrides are intentional: the first repo must inherit the
+	// default [forge] configuration rather than requiring duplicate values.
+	defaultRepo := reflect.ValueOf(cfg.Repos[0])
+	if defaultRepo.FieldByName("Type").IsValid() && defaultRepo.FieldByName("Type").String() != "" {
+		t.Errorf("archie-core.Type = %q, want empty (inherit default forge)", defaultRepo.FieldByName("Type").String())
+	}
+}
+
 func TestTaskConfigToConfigRoundTrip(t *testing.T) {
 	cfg := Config{
 		DiffCapLines: 321,
