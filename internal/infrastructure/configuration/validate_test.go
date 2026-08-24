@@ -192,14 +192,16 @@ func TestValidate_RejectsTheSameProblemsAsLoaderLoad(t *testing.T) {
 
 // TestValidateNATS pins the nats mode contract from docs/prds/embedded-nats.md:
 // an unset mode resolves from url without mutating cfg, external requires url,
-// embedded/off forbid a url, and agent.mode="nats" requires external.
+// embedded/off forbid a url, and NATS agent execution works with either
+// embedded or external broker deployment.
 func TestValidateNATS(t *testing.T) {
 	tests := []struct {
-		name    string
-		mode    string
-		url     string
-		agent   string
-		wantErr bool
+		name       string
+		mode       string
+		url        string
+		agent      string
+		containers bool
+		wantErr    bool
 	}{
 		{name: "unset mode with url resolves external", url: "nats://localhost:4222"},
 		{name: "unset mode without url resolves embedded"},
@@ -210,7 +212,8 @@ func TestValidateNATS(t *testing.T) {
 		{name: "embedded with url", mode: config.NATSModeEmbedded, url: "nats://localhost:4222", wantErr: true},
 		{name: "off with url", mode: config.NATSModeOff, url: "nats://localhost:4222", wantErr: true},
 		{name: "unknown mode", mode: "not-a-mode", wantErr: true},
-		{name: "agent nats with embedded", mode: config.NATSModeEmbedded, agent: "nats", wantErr: true},
+		{name: "agent nats with embedded requires containers", mode: config.NATSModeEmbedded, agent: "nats", wantErr: true},
+		{name: "agent nats with embedded containers", mode: config.NATSModeEmbedded, agent: "nats", containers: true},
 		{name: "agent nats with external", mode: config.NATSModeExternal, url: "nats://localhost:4222", agent: "nats"},
 	}
 	for _, tc := range tests {
@@ -219,6 +222,9 @@ func TestValidateNATS(t *testing.T) {
 			cfg.NATS = config.NATSConfig{Mode: tc.mode, URL: tc.url}
 			if tc.agent != "" {
 				cfg.Agent.Mode = tc.agent
+			}
+			if tc.containers {
+				cfg.Containers.Enabled = true
 			}
 			err := validateNATS(&cfg)
 			if tc.wantErr && err == nil {
@@ -252,11 +258,11 @@ func TestValidateContainersResolvesNATSMode(t *testing.T) {
 		}
 	})
 
-	t.Run("embedded mode rejects containers", func(t *testing.T) {
+	t.Run("embedded mode supports containers", func(t *testing.T) {
 		cfg := base()
 		cfg.NATS.Mode = config.NATSModeEmbedded
-		if err := Validate(&cfg); err == nil {
-			t.Fatal("Validate() = nil, want an error for containers with embedded nats")
+		if err := Validate(&cfg); err != nil {
+			t.Fatalf("Validate() = %v, want nil for managed containers with embedded nats", err)
 		}
 	})
 }

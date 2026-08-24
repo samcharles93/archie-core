@@ -278,10 +278,10 @@ func effectiveNATSMode(cfg *config.Config) string {
 	return config.NATSModeEmbedded
 }
 
-// validateNATS checks the nats mode and its consistency with url and the
-// agent execution mode. It resolves an unset mode from url without mutating
-// cfg, so Validate (which documents it does not apply defaults) accepts a
-// hand-built config the same way Loader.File accepts its on-disk form.
+// validateNATS checks the nats mode and its consistency with url. It resolves
+// an unset mode from url without mutating cfg, so Validate (which documents it
+// does not apply defaults) accepts a hand-built config the same way Loader.File
+// accepts its on-disk form.
 func validateNATS(cfg *config.Config) error {
 	mode := effectiveNATSMode(cfg)
 	if !oneOf(mode, natsModes) {
@@ -297,17 +297,15 @@ func validateNATS(cfg *config.Config) error {
 			return fmt.Errorf("%w: nats.url must be empty when nats.mode is %q", ErrInvalidInput, mode)
 		}
 	}
-	// Agent execution over NATS needs workers that can reach the server. An
-	// embedded server binds loopback on a random port, which workers cannot
-	// discover, so agent.mode="nats" requires an external URL.
-	if cfg.Agent.Mode == agentModeNATS && mode != config.NATSModeExternal {
-		return fmt.Errorf("%w: nats.mode must be %q when agent.mode is %q", ErrInvalidInput, config.NATSModeExternal, agentModeNATS)
+	if cfg.Agent.Mode == agentModeNATS && mode == config.NATSModeEmbedded && !cfg.Containers.Enabled {
+		return fmt.Errorf("%w: containers.enabled must be true when agent.mode is %q and nats.mode is %q", ErrInvalidInput, agentModeNATS, config.NATSModeEmbedded)
 	}
 	return nil
 }
 
-// validateContainers checks the combination that container execution
-// requires: a NATS transport and somewhere to reach it.
+// validateContainers checks the combination container execution requires.
+// Embedded and external NATS are both worker-reachable deployment shapes;
+// composition resolves the Docker bridge gateway for embedded mode.
 func validateContainers(cfg *config.Config) error {
 	if !cfg.Containers.Enabled {
 		return nil
@@ -318,8 +316,8 @@ func validateContainers(cfg *config.Config) error {
 	if cfg.Agent.Mode != agentModeNATS {
 		return fmt.Errorf("%w: agent.mode must be %q when containers.enabled is true", ErrInvalidInput, agentModeNATS)
 	}
-	if effectiveNATSMode(cfg) != config.NATSModeExternal {
-		return fmt.Errorf("%w: nats.mode must be %q when containers.enabled is true (containers cannot reach an embedded loopback server)", ErrInvalidInput, config.NATSModeExternal)
+	if effectiveNATSMode(cfg) == config.NATSModeOff {
+		return fmt.Errorf("%w: nats.mode must not be %q when containers.enabled is true", ErrInvalidInput, config.NATSModeOff)
 	}
 	if cfg.Containers.VolumeTTL < 0 {
 		return fmt.Errorf("%w: containers.volume_ttl must not be negative", ErrInvalidInput)

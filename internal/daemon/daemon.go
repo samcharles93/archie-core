@@ -54,17 +54,23 @@ type WorktreeGrantIssuer interface {
 	Issue(task *store.Task) (token string, revoke func(), err error)
 }
 
+// NATSEndpoint is the broker address and credential archied connected with at
+// startup. It is runtime state rather than configuration: embedded mode
+// generates both values, and external secret references are resolved once.
+type NATSEndpoint struct {
+	URL   string
+	Token string
+}
+
 type Daemon struct {
 	// Cfg publishes the running configuration. Read through Cfg() so a
 	// reload swaps the published snapshot atomically. See config.Holder.
 	Cfg *config.Holder
-	// ConnectedNATS is the [nats] configuration the daemon's own client
-	// connected with at startup (the endpoint it publishes on). Container
-	// env is built from this, not from the live config, so a reload of
-	// nats.url/token_env cannot point new containers at a server the
-	// daemon is not publishing on. Zero value means NATS is not
-	// configured.
-	ConnectedNATS config.NATSConfig
+	// ConnectedNATS is the endpoint and credential the daemon's own client
+	// connected with at startup. Container env is built from this, not from
+	// live config or environment, so reload cannot point new containers at a
+	// broker the daemon is not publishing on. Zero value means no NATS.
+	ConnectedNATS NATSEndpoint
 	Store         store.TaskStore
 	Forge         forge.Forge
 	Trees         *worktree.Manager
@@ -1168,10 +1174,8 @@ func (d *Daemon) containerEnv(task *store.Task) []string {
 	// the live config: a reloaded [nats] section must not point new
 	// containers at a server the daemon is not publishing on.
 	env = append(env, "NATS_URL="+d.ConnectedNATS.URL)
-	if tokenEnv := d.ConnectedNATS.TokenEnv; tokenEnv != "" {
-		if token := os.Getenv(tokenEnv); token != "" {
-			env = append(env, "NATS_TOKEN="+token)
-		}
+	if token := d.ConnectedNATS.Token; token != "" {
+		env = append(env, "NATS_TOKEN="+token)
 	}
 	// The agent process runs as root inside the container (no USER in the
 	// Dockerfile, no userns-remap), so a commit it writes to the bind-mounted

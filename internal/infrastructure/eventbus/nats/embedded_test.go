@@ -21,11 +21,20 @@ func TestStartEmbeddedLifecycle(t *testing.T) {
 	if url == "" {
 		t.Fatal("ClientURL() = empty, want the bound address")
 	}
+	if unauthenticated, connectErr := nats.Connect(url); connectErr == nil {
+		unauthenticated.Close()
+		t.Fatal("unauthenticated connection succeeded, want embedded NATS to require its per-start token")
+	}
+	token := srv.Token()
+	if token == "" {
+		t.Fatal("Token() = empty, want a generated runtime token")
+	}
 
 	// Connecting and provisioning a stream proves JetStream is live, not just
 	// the core NATS socket.
 	c, err := Connect(t.Context(), Config{
 		URL:           url,
+		Token:         token,
 		Subjects:      []string{"embedded.test.>"},
 		FilterSubject: "embedded.test.>",
 	}, discardLogger())
