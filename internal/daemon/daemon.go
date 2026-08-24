@@ -809,7 +809,7 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	trees := d.treesFor(task)
 	repo, ok := d.repoFor(task)
 	if !ok {
-		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "repo no longer in config")
+		d.parkRunningTask(ctx, task.ID, "repo no longer in config")
 		return
 	}
 	if d.ContainerPool == nil {
@@ -856,7 +856,7 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	_, branch, err = trees.Prepare(ctx, task.Owner, task.Repo, repo.Base, task.IssueNumber, task.Title, task.Body, task.Labels)
 	if err != nil {
 		d.Log.Error("worktree prepare failed", "err", err)
-		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "worktree prepare failed: "+err.Error())
+		d.parkRunningTask(ctx, task.ID, "worktree prepare failed: "+err.Error())
 		return
 	}
 	task.Branch = branch
@@ -899,8 +899,15 @@ func (d *Daemon) cleanupTerminalTaskWorktree(ctx context.Context, task *store.Ta
 	if d.Store == nil || trees == nil || task == nil {
 		return
 	}
-	latest, err := d.Store.TaskByID(ctx, task.ID)
-	if err != nil || latest == nil {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+
+	latest, err := d.Store.TaskByID(cleanupCtx, task.ID)
+	if err != nil {
+		d.Log.Warn("terminal worktree cleanup task lookup failed", "task", task.ID, "err", err)
+		return
+	}
+	if latest == nil {
 		return
 	}
 	switch latest.Status {
@@ -942,7 +949,7 @@ func (d *Daemon) acquireTaskContainer(
 ) (*container.Container, bool) {
 	park := func(reason string, err error) {
 		d.Log.Error(reason, "err", err)
-		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, reason+": "+err.Error())
+		d.parkRunningTask(ctx, task.ID, reason+": "+err.Error())
 	}
 
 	// Write task.json  --  the container's boot-time brief.
@@ -960,7 +967,7 @@ func (d *Daemon) acquireTaskContainer(
 	// normal operation, Storage is always set when ContainerPool is set.
 	if d.Storage == nil {
 		d.Log.Error("storage backend is nil  --  cannot acquire container")
-		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "storage backend not configured")
+		d.parkRunningTask(ctx, task.ID, "storage backend not configured")
 		return nil, false
 	}
 
@@ -997,6 +1004,33 @@ func (d *Daemon) acquireTaskContainer(
 	return ctr, true
 }
 
+// parkRunningTask transitions a task from running to parked using a context
+// detached from caller cancellation, with a bounded timeout.
+//
+// When a task fails or is cancelled (e.g. via /stop or dashboard Stop), ctx is
+// already cancelled. Writing terminal state using the cancelled ctx fails
+// immediately in SQLite transactions and silently leaves the task row 'running'
+// indefinitely. Like container teardown in Pool.Release, terminal state
+// recording is cleanup on the way out of a task and must use a bounded context
+// that survives cancellation while preserving values.
+//
+// The transition remains guarded from StatusRunning: if the worker already
+// recorded a terminal state over storerpc, store.ErrStaleTransition is returned
+// and ignored. Unexpected store errors are logged as warnings.
+func (d *Daemon) parkRunningTask(ctx context.Context, taskID int64, reason string) {
+	if d.Store == nil {
+		return
+	}
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+
+	if err := d.Store.Transition(writeCtx, taskID, store.StatusRunning, store.StatusParked, reason); err != nil {
+		if !errors.Is(err, store.ErrStaleTransition) {
+			d.Log.Warn("terminal park transition failed", "task", taskID, "reason", reason, "err", err)
+		}
+	}
+}
+
 // containerEnv returns the environment variables passed to agent containers.
 // runViaAgent publishes a full-task handoff to archie-agent over the
 // infrastructure-owned task subject and waits for its completion report. Every durable
@@ -1011,13 +1045,13 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *store.Task, repo config.
 	if d.WorktreeGrants == nil {
 		const reason = "worktree publication grants are unavailable"
 		d.Log.Error(reason, "task", task.ID)
-		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, reason)
+		d.parkRunningTask(ctx, task.ID, reason)
 		return
 	}
 	grant, revoke, err := d.WorktreeGrants.Issue(task)
 	if err != nil {
 		d.Log.Error("worktree publication grant failed", "task", task.ID, "err", err)
-		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "worktree publication grant failed: "+err.Error())
+		d.parkRunningTask(ctx, task.ID, "worktree publication grant failed: "+err.Error())
 		return
 	}
 	defer revoke()
@@ -1031,26 +1065,26 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *store.Task, repo config.
 	data, err := json.Marshal(req)
 	if err != nil {
 		d.Log.Error("taskrun encode failed", "task", task.ID, "err", err)
-		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "taskrun encode failed: "+err.Error())
+		d.parkRunningTask(ctx, task.ID, "taskrun encode failed: "+err.Error())
 		return
 	}
 
 	reply, err := d.requestTaskRun(ctx, task.ID, data)
 	if err != nil {
 		d.Log.Error("taskrun request failed", "task", task.ID, "err", err)
-		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "taskrun request failed: "+err.Error())
+		d.parkRunningTask(ctx, task.ID, "taskrun request failed: "+err.Error())
 		return
 	}
 
 	var resp taskrun.Response
 	if err := json.Unmarshal(reply, &resp); err != nil {
 		d.Log.Error("taskrun decode response failed", "task", task.ID, "err", err)
-		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "taskrun decode response failed: "+err.Error())
+		d.parkRunningTask(ctx, task.ID, "taskrun decode response failed: "+err.Error())
 		return
 	}
 	if resp.Error != "" {
 		d.Log.Error("taskrun run failed", "task", task.ID, "err", resp.Error)
-		_ = d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "taskrun run failed: "+resp.Error)
+		d.parkRunningTask(ctx, task.ID, "taskrun run failed: "+resp.Error)
 		return
 	}
 
