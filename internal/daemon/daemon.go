@@ -891,6 +891,26 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 			Repo:              task.Repo,
 		})
 	}
+
+	d.cleanupTerminalTaskWorktree(ctx, task, trees)
+}
+
+func (d *Daemon) cleanupTerminalTaskWorktree(ctx context.Context, task *store.Task, trees *worktree.Manager) {
+	if d.Store == nil || trees == nil || task == nil {
+		return
+	}
+	latest, err := d.Store.TaskByID(ctx, task.ID)
+	if err != nil || latest == nil {
+		return
+	}
+	switch latest.Status {
+	case store.StatusMerged, store.StatusRejected, store.StatusClosedWontDo:
+		if latest.PRNumber == 0 {
+			if err := trees.Cleanup(task.Owner, task.Repo, task.IssueNumber); err != nil {
+				d.Log.Warn("terminal worktree cleanup failed", "task", task.ID, "err", err)
+			}
+		}
+	}
 }
 
 // openTaskLog opens task's log sink for the lifetime of one process() call
