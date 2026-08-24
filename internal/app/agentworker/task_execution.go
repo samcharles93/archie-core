@@ -2,6 +2,7 @@ package agentworker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -52,16 +53,26 @@ func (h *hybridTrees) Prepare(ctx context.Context, owner, repo, base string, iss
 }
 
 func (h *hybridTrees) CommitAll(ctx context.Context, dir, message string) (bool, error) {
-	return h.local.CommitAll(ctx, dir, message)
+	changed, commitErr := h.local.CommitAll(ctx, dir, message)
+	if ownershipErr := h.reconcileOwnership(dir); ownershipErr != nil {
+		ownershipErr = fmt.Errorf("reconcile worktree ownership after commit: %w", ownershipErr)
+		return changed, errors.Join(commitErr, ownershipErr)
+	}
+	return changed, commitErr
 }
 
 func (h *hybridTrees) Push(ctx context.Context, dir, branch string) error {
-	if h.worktreeUID >= 0 && h.worktreeGID >= 0 {
-		if err := chownTree(dir, h.worktreeUID, h.worktreeGID); err != nil {
-			return fmt.Errorf("reconcile worktree ownership before push: %w", err)
-		}
+	if err := h.reconcileOwnership(dir); err != nil {
+		return fmt.Errorf("reconcile worktree ownership before push: %w", err)
 	}
 	return h.push.Push(ctx)
+}
+
+func (h *hybridTrees) reconcileOwnership(dir string) error {
+	if h.worktreeUID < 0 || h.worktreeGID < 0 {
+		return nil
+	}
+	return chownTree(dir, h.worktreeUID, h.worktreeGID)
 }
 
 func (h *hybridTrees) Diff(ctx context.Context, dir, base string) (string, error) {

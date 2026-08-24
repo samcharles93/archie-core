@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -145,6 +146,24 @@ func TestHybridTreesPushSkipsReconciliationWhenNotConfigured(t *testing.T) {
 	}
 	if !fake.pushed {
 		t.Fatal("Push did not reach the underlying remote push")
+	}
+}
+
+func TestHybridTreesCommitReconcilesOwnershipEvenWhenCommitFails(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+	trees := &hybridTrees{
+		local:       &worktree.Manager{},
+		localDir:    missing,
+		worktreeUID: os.Getuid(),
+		worktreeGID: os.Getgid(),
+	}
+
+	_, err := trees.CommitAll(t.Context(), missing, "test commit")
+	if err == nil {
+		t.Fatal("CommitAll error = nil, want commit and ownership reconciliation failure")
+	}
+	if !strings.Contains(err.Error(), "reconcile worktree ownership after commit") {
+		t.Fatalf("CommitAll error = %q, want ownership reconciliation context", err)
 	}
 }
 
