@@ -48,6 +48,14 @@ const (
 	KindCuratorAction = "curator_action" // data: curator, type, detail, reason
 	KindCuratorError  = "curator_error"  // data: curator, phase, err
 
+	// Scheduled-job activity from the ticker engine
+	// (internal/domain/scheduling). A scheduled run has no task and no chat
+	// turn behind it, so without these a job that fired, stalled or failed
+	// is invisible everywhere. data: job, pool, duration_ms (run) and job,
+	// pool, phase, err (error).
+	KindJobRun   = "job_run"
+	KindJobError = "job_error"
+
 	// KindTurnCompleted marks one completed primary chat turn
 	// (archie-core-035). Input-driven curators wake on it. Curator output
 	// never produces this kind, so derived work cannot feed its own

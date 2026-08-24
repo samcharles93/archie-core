@@ -97,10 +97,7 @@ func toolPreview(name, output string) string {
 		}
 		return "completed with no printable preview"
 	}
-	remaining := countNonEmptyOrContentLines(content) - 1 - skipped
-	if remaining < 0 {
-		remaining = 0
-	}
+	remaining := max(countNonEmptyOrContentLines(content)-1-skipped, 0)
 	if remaining > 0 {
 		return fmt.Sprintf("%s\n… %d more lines", preview, remaining)
 	}
@@ -110,7 +107,7 @@ func toolPreview(name, output string) string {
 
 func compactToolPreview(output string) (string, int) {
 	skipped := 0
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
