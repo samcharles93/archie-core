@@ -1,5 +1,51 @@
 # archie-agent changelog
 
+## [1.16.0] - 2026-08-25
+
+**Version realigned with `archied`.** This release jumps from 1.9.9 to 1.16.0
+to put the two components on matching numbers; there are no 1.10-1.15 agent
+releases. It clears the accumulated runtime backlog in one cut rather than
+bundling it as a rider on a later change, so the list below spans several
+weeks of work rather than one session's.
+
+Highlights:
+
+- feat(nats): run an embedded server when no external NATS is configured, and
+  expose the embedded broker to managed task workers
+- feat(deployment): default to managed NATS workers; the daemon requires a
+  full-task worker handoff and the legacy in-process, subprocess and
+  single-stage execution paths are gone
+- feat(forge): GitHub webhook receiver for immediate issue dispatch, with
+  dedup regression proof; unbound webhook events are stored retention-bounded
+- feat(webui): payload field mapping -- bind JSON paths to named fields and
+  preview before saving
+- feat(scheduling): ticker engine with configurable interval and pools
+- feat(storage): persist agent project state
+- feat(agent): stamp archie-agent's build and report it back to the daemon
+- feat(tools): `generate_video` via MiniMax, gated behind config, and
+  `MultimodalResult.URLs` for remote-hosted media
+- feat(workflow): define the adversarial-review findings contract
+
+Fixes:
+
+- fix(worktree): bind publication to dispatch grants; reset retries to a
+  pristine base; reject diffs without a merge base; clean untracked files when
+  `.git` is a gitdir file; post-push metadata resilience, cancellation and
+  branch naming
+- fix(container): persist the npm cache for per-task MCP servers
+- fix(agentexec): recover omitted finish calls
+- fix(agentworker): move JSONL decode into storage, unblocking CI
+- fix(telegram): compact tool output and drop turn caps
+- fix(webui): give dashboard-initiated updates a phase-2 report; restore the
+  provider gate and dashboard token accounting
+- refactor: remove dead `BasePlatformAdapter` code and legacy execution paths
+
+Shared with archied 1.16.0 (these packages are in both closures):
+
+- feat(telegram): send local files as uploads, not fetchable URLs
+- fix(webui,sendfile): close three holes the adversarial review found
+- fix(webui): validate mutation Origin against the effective external scheme
+
 ## [1.9.9] - 2026-08-18
 
 - chore: no user-facing changes

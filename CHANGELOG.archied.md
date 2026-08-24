@@ -1,5 +1,34 @@
 # archied changelog
 
+## [1.16.0] - 2026-08-25
+
+**The agent can hand you a file, and the dashboard works behind a reverse
+proxy.** Media delivery was fetch-by-URL only, so a file the agent produced
+locally — a transcript, a log dump, a screenshot — was passed to Telegram as
+a URL it could not fetch: the send did nothing and reported success. The new
+`send_file` tool plus upload-by-reader delivery closes that, and every layer
+that cannot deliver now says so rather than staying silent. Dashboard
+mutations behind a TLS-terminating proxy were refused as cross-origin;
+forwarded headers are now honoured, but only under an explicit opt-in that is
+off by default.
+
+- feat(telegram): deliver a local file as an uploaded attachment, choosing
+  upload-by-reader or fetch-by-URL per attachment; `send_file` resolves paths
+  under the same confinement policy the read tool applies, so sending cannot
+  reach what reading cannot
+- feat(gateway): `task_action` chat tool for operator task management —
+  abandon, archive, retry, stop, cancel, approve and reject from chat, on the
+  same action path and state machine as the dashboard
+- fix(webui): validate mutation `Origin` against the effective external
+  scheme and host. `X-Forwarded-Proto`/`-Host` are honoured only when
+  `web.trust_forwarded_headers` is set, which is off by default and safe only
+  behind a proxy that overwrites or strips untrusted forwarded headers
+- fix(webui): report a local file the dashboard chat cannot upload as
+  undelivered instead of dropping the event, which had reproduced the exact
+  silent non-delivery `send_file` was built to end
+- fix(daemon): detach terminal state transitions and cleanup from a cancelled
+  context, so a stopped task still records its outcome
+
 ## [1.15.0] - 2026-08-24
 
 **Autonomous workflows now have exactly one production execution path.** Every
