@@ -42,7 +42,7 @@ type workRequest struct {
 }
 
 func (s *Server) handleWorkRequest(w http.ResponseWriter, r *http.Request) {
-	if !authorizeTaskMutation(w, r) {
+	if !s.authorizeTaskMutation(w, r) {
 		return
 	}
 	if s.WorkRequests == nil {
