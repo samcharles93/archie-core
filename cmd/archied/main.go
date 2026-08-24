@@ -5,6 +5,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -13,6 +14,8 @@ import (
 	"log/slog"
 	"maps"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -43,6 +46,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/storerpc"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 	"github.com/samcharles93/archie-core/internal/tools"
 	"github.com/samcharles93/archie-core/internal/tools/mcp"
 	toolprovider "github.com/samcharles93/archie-core/internal/tools/provider"
@@ -594,6 +598,73 @@ func (a chatTaskLogReaderAdapter) ReadChatTaskLogs(
 		Entries:   entries,
 		Attempt:   attempt,
 		Truncated: result.Truncated,
+	}, nil
+}
+
+// chatTaskActorAdapter executes operator actions on a task via the same
+// action path the dashboard uses, ensuring chat and webui cannot diverge.
+// It enforces identity scoping so an identity cannot mutate another
+// identity's tasks.
+type chatTaskActorAdapter struct {
+	tasks   func(context.Context, int64) (*store.Task, error)
+	handler http.Handler
+	token   func() string
+}
+
+func (a chatTaskActorAdapter) ApplyChatTaskAction(
+	ctx context.Context, identity string, taskID int64, action taskstate.Action,
+) (gateway.TaskActionResult, error) {
+	if a.tasks == nil || a.handler == nil {
+		return gateway.TaskActionResult{}, fmt.Errorf("task actions are not configured")
+	}
+	task, err := a.tasks(ctx, taskID)
+	if err != nil {
+		return gateway.TaskActionResult{}, err
+	}
+	if task == nil {
+		return gateway.TaskActionResult{}, fmt.Errorf("task %d not found", taskID)
+	}
+	// Match the filter chatTaskListerAdapter and chatTaskLogReaderAdapter apply:
+	// a model bound to one identity must not mutate another identity's tasks,
+	// and tasks with no identity (forge-sourced) are not actionable through a
+	// chat tool at all — they belong to the daemon, not a particular identity.
+	if task.Identity != identity {
+		return gateway.TaskActionResult{}, fmt.Errorf("task %d belongs to %q, not %q", taskID, task.Identity, identity)
+	}
+	if err := taskstate.CheckAction(task.Status, action); err != nil {
+		return gateway.TaskActionResult{}, err
+	}
+
+	body, err := json.Marshal(map[string]any{"action": string(action)})
+	if err != nil {
+		return gateway.TaskActionResult{}, fmt.Errorf("marshal action request: %w", err)
+	}
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
+		fmt.Sprintf("/api/tasks/%d/action", taskID),
+		bytes.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Archie-CSRF", "1")
+	if a.token != nil {
+		if tok := a.token(); tok != "" {
+			req.Header.Set("Authorization", "Bearer "+tok)
+		}
+	}
+	rec := httptest.NewRecorder()
+	a.handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		errMsg := strings.TrimSpace(rec.Body.String())
+		if errMsg == "" {
+			errMsg = fmt.Sprintf("HTTP %d", rec.Code)
+		}
+		return gateway.TaskActionResult{}, fmt.Errorf("action %s on task %d failed: %s", action, taskID, errMsg)
+	}
+
+	return gateway.TaskActionResult{
+		TaskID:  taskID,
+		Action:  string(action),
+		Message: fmt.Sprintf("Applied %s to task %d.", action, taskID),
 	}, nil
 }
 
