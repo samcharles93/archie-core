@@ -439,8 +439,9 @@ type Config struct {
 	// namespace. When empty, the single-identity fields (BotUser,
 	// Forge, Repos, Models, Providers, Dispatch, PollInterval) are used
 	// unchanged for backward compatibility.
-	Identities []IdentityConfig `toml:"identities" yaml:"identities"`
-	Repos      []Repo           `toml:"repos" yaml:"repos"`
+	Identities  []IdentityConfig       `toml:"identities" yaml:"identities"`
+	Repos       []Repo                 `toml:"repos" yaml:"repos"`
+	ModelLimits map[string]ModelLimits `toml:"-" yaml:"-" json:"-"`
 
 	// Extra holds additional feature configuration from conf.d/ files that
 	// don't match a known feature name. Keys are the filename stem (e.g.
@@ -475,15 +476,25 @@ type IdentityConfig struct {
 	Repos        []Repo              `toml:"repos" yaml:"repos"`
 }
 
+type ModelLimits struct {
+	ContextWindow   int `json:"context_window"`
+	MaxOutputTokens int `json:"max_output_tokens"`
+}
+
 // TaskConfig is the non-secret subset of Config needed to run workflow
 // stages. It is safe to send to an archie-agent container.
 type TaskConfig struct {
-	Models       map[string]string `json:"models"`
-	Budgets      Budgets           `json:"budgets"`
-	Dispatch     Dispatch          `json:"dispatch"`
-	DiffCapLines int               `json:"diff_cap_lines"`
-	Notify       Notify            `json:"notify"`
-	Forge        TaskForge         `json:"forge"`
+	// BotUser and BotEmail are non-secret commit attribution carried to the
+	// sandbox because the worker owns local deterministic commits.
+	BotUser      string                 `json:"bot_user"`
+	BotEmail     string                 `json:"bot_email"`
+	Models       map[string]string      `json:"models"`
+	ModelLimits  map[string]ModelLimits `json:"model_limits,omitempty"`
+	Budgets      Budgets                `json:"budgets"`
+	Dispatch     Dispatch               `json:"dispatch"`
+	DiffCapLines int                    `json:"diff_cap_lines"`
+	Notify       Notify                 `json:"notify"`
+	Forge        TaskForge              `json:"forge"`
 }
 
 // TaskForge is the non-secret forge configuration needed by workflow stages.
@@ -495,7 +506,10 @@ type TaskForge struct {
 // needed to run a workflow.
 func (c Config) ForTask() TaskConfig {
 	return TaskConfig{
+		BotUser:      c.BotUser,
+		BotEmail:     c.BotEmail,
 		Models:       cloneStringMap(c.Models),
+		ModelLimits:  maps.Clone(c.ModelLimits),
 		Budgets:      c.Budgets,
 		Dispatch:     Dispatch{Trigger: c.Dispatch.Trigger, AckReaction: c.Dispatch.AckReaction, Labels: cloneStringMap(c.Dispatch.Labels)},
 		DiffCapLines: c.DiffCapLines,
@@ -510,7 +524,10 @@ func (c Config) ForTask() TaskConfig {
 // workflow stages read via TaskContext.Cfg.
 func (tc TaskConfig) ToConfig() Config {
 	return Config{
+		BotUser:      tc.BotUser,
+		BotEmail:     tc.BotEmail,
 		Models:       cloneStringMap(tc.Models),
+		ModelLimits:  maps.Clone(tc.ModelLimits),
 		Budgets:      tc.Budgets,
 		Dispatch:     Dispatch{Trigger: tc.Dispatch.Trigger, AckReaction: tc.Dispatch.AckReaction, Labels: cloneStringMap(tc.Dispatch.Labels)},
 		DiffCapLines: tc.DiffCapLines,
@@ -537,6 +554,7 @@ func cloneStringMap(src map[string]string) map[string]string {
 // are shared with the published snapshot.
 func (c Config) Clone() Config {
 	c.Models = cloneStringMap(c.Models)
+	c.ModelLimits = maps.Clone(c.ModelLimits)
 	c.Providers = maps.Clone(c.Providers)
 	c.Dispatch.Labels = cloneStringMap(c.Dispatch.Labels)
 	c.LegacyAgent.Env = append([]string(nil), c.LegacyAgent.Env...)

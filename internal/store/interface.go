@@ -74,6 +74,7 @@ type TaskEvents interface {
 type WorkflowStore interface {
 	Update(ctx context.Context, t *Task) error
 	Transition(ctx context.Context, taskID int64, from, to, detail string) error
+	InsertEvent(ctx context.Context, e events.Event) (int64, error)
 }
 
 // CaptureStore persists unbound inbound webhook captures -- events with no

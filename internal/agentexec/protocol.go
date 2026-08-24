@@ -60,21 +60,22 @@ type CaptureTool struct {
 // map a host path to a fixed path without exposing host layout in the wire
 // protocol.
 type Request struct {
-	Version      int           `json:"version"`
-	TaskID       int64         `json:"task_id"`
-	Attempt      int           `json:"attempt"`
-	Stage        string        `json:"stage"`
-	Workflow     string        `json:"workflow,omitempty"`
-	Model        string        `json:"model"`
-	Mission      string        `json:"mission"`
-	ExtraRules   string        `json:"extra_rules,omitempty"`
-	ReadOnly     bool          `json:"read_only,omitempty"`
-	Budget       Budget        `json:"budget"`
-	Gate         Gate          `json:"gate"`
-	Preflight    []Command     `json:"preflight,omitempty"`
-	Protection   Protection    `json:"protection"`
-	Notes        string        `json:"notes,omitempty"`
-	CaptureTools []CaptureTool `json:"capture_tools,omitempty"`
+	Version       int           `json:"version"`
+	TaskID        int64         `json:"task_id"`
+	Attempt       int           `json:"attempt"`
+	Stage         string        `json:"stage"`
+	Workflow      string        `json:"workflow,omitempty"`
+	Model         string        `json:"model"`
+	ContextWindow int           `json:"context_window,omitempty"`
+	Mission       string        `json:"mission"`
+	ExtraRules    string        `json:"extra_rules,omitempty"`
+	ReadOnly      bool          `json:"read_only,omitempty"`
+	Budget        Budget        `json:"budget"`
+	Gate          Gate          `json:"gate"`
+	Preflight     []Command     `json:"preflight,omitempty"`
+	Protection    Protection    `json:"protection"`
+	Notes         string        `json:"notes,omitempty"`
+	CaptureTools  []CaptureTool `json:"capture_tools,omitempty"`
 	// Plugins are bundled Yaegi plugins from the skill's plugins/
 	// directory. Each entry carries the name and source so the agent
 	// can register them as tools. PRD section 5 Layer 1.
@@ -118,10 +119,21 @@ type Result struct {
 	Changes       []string                     `json:"changes,omitempty"`
 	Iterations    int                          `json:"iterations,omitempty"`
 	TokensUsed    int                          `json:"tokens_used,omitempty"`
+	Usage         Usage                        `json:"usage"`
 	Summary       string                       `json:"summary,omitempty"`
 	Detail        string                       `json:"detail,omitempty"`
 	AppendedNotes []string                     `json:"appended_notes,omitempty"`
 	Captures      map[string][]json.RawMessage `json:"captures,omitempty"`
+}
+
+// Usage preserves provider-reported token economics for evaluation. Total is
+// retained separately as TokensUsed for compatibility with stored task rows.
+type Usage struct {
+	PromptTokens        int `json:"prompt_tokens,omitempty"`
+	CompletionTokens    int `json:"completion_tokens,omitempty"`
+	TotalTokens         int `json:"total_tokens,omitempty"`
+	CachedTokens        int `json:"cached_tokens,omitempty"`
+	CacheCreationTokens int `json:"cache_creation_tokens,omitempty"`
 }
 
 // Provider describes how the worker resolves a model provider. API keys are

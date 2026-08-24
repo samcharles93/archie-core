@@ -7,6 +7,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -117,6 +118,29 @@ func (tc *TaskContext) Emit(kind, stage, detail string, data map[string]any) {
 		Detail:   detail,
 		Data:     data,
 	})
+}
+
+// EmitDurable persists evaluation-critical telemetry before publishing it to
+// the lossy live bus. The assigned ID tells the daemon sink to broadcast
+// without inserting a duplicate row.
+func (tc *TaskContext) EmitDurable(ctx context.Context, kind, stage, detail string, data map[string]any) error {
+	if tc.Store == nil {
+		tc.Emit(kind, stage, detail, data)
+		return nil
+	}
+	event := events.Event{
+		At: time.Now().UTC(), Kind: kind, TaskID: tc.Task.ID, Repo: tc.Task.Owner + "/" + tc.Task.Repo,
+		Issue: tc.Task.IssueNumber, Workflow: tc.Task.Workflow, Stage: stage, Detail: detail, Data: data,
+	}
+	id, err := tc.Store.InsertEvent(ctx, event)
+	if err != nil {
+		return err
+	}
+	event.ID = id
+	if tc.Bus != nil {
+		tc.Bus.Publish(event)
+	}
+	return nil
 }
 
 // toolCallReporter builds the agentexec.ToolCallReporter an agent stage
@@ -248,6 +272,9 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 		data := map[string]any{"duration_ms": time.Since(started).Milliseconds()}
 		if err != nil {
 			data["error"] = err.Error()
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				data["interrupted"] = true
+			}
 		}
 		tc.Emit(events.KindStageFinish, stage.Name, "", data)
 

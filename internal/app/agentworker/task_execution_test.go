@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-git/go-git/v6"
 	"github.com/nats-io/nats-server/v2/server"
 	natssrv "github.com/nats-io/nats-server/v2/test"
 	natsio "github.com/nats-io/nats.go"
@@ -337,7 +338,11 @@ func TestRunTaskExecutesBootstrapWorkflowEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
-	req := taskrun.Request{Task: task, Repo: config.Repo{Owner: "acme", Name: "widget", Base: "main"}, Cfg: config.Config{}.ForTask()}
+	req := taskrun.Request{
+		Task: task,
+		Repo: config.Repo{Owner: "acme", Name: "widget", Base: "main"},
+		Cfg:  config.Config{BotUser: "archie-bot", BotEmail: "archie-bot@example.com"}.ForTask(),
+	}
 	fakeRunner := runnerFactory(func(map[string]agentexec.Provider, *slog.Logger) agentexec.Runner { return panicRunner{t} })
 	response, err := runTask(ctx, req, taskDependencies{forge: fg, store: st, trees: remote}, fakeRunner, hostDir, slog.New(slog.DiscardHandler))
 	if err != nil {
@@ -352,6 +357,23 @@ func TestRunTaskExecutesBootstrapWorkflowEndToEnd(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(hostDir, ".archie", "bootstrap.md")); err != nil {
 		t.Fatalf("expected bootstrap marker file: %v", err)
+	}
+	repo, err := git.PlainOpen(hostDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := repo.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if commit.Author.Name != "archie-bot" || commit.Author.Email != "archie-bot@example.com" ||
+		commit.Committer.Name != "archie-bot" || commit.Committer.Email != "archie-bot@example.com" {
+		t.Fatalf("commit identity = author %q <%s>, committer %q <%s>",
+			commit.Author.Name, commit.Author.Email, commit.Committer.Name, commit.Committer.Email)
 	}
 }
 

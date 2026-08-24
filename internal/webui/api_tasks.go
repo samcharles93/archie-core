@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskstate"
@@ -53,14 +54,65 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	views := make([]taskView, len(tasks))
 	for i := range tasks {
-		views[i] = taskView{Task: tasks[i], Actions: taskstate.Actions(tasks[i].Status)}
+		repoURL, issueURL, prURL := s.taskURLs(tasks[i])
+		views[i] = taskView{Task: tasks[i], Actions: taskstate.Actions(tasks[i].Status), RepoURL: repoURL, IssueURL: issueURL, PRURL: prURL}
 	}
 	writeJSON(w, views)
 }
 
 type taskView struct {
 	store.Task
-	Actions []taskstate.Action `json:"actions"`
+	Actions  []taskstate.Action `json:"actions"`
+	RepoURL  string             `json:"repo_url,omitempty"`
+	IssueURL string             `json:"issue_url,omitempty"`
+	PRURL    string             `json:"pr_url,omitempty"`
+}
+
+func (s *Server) taskURLs(task store.Task) (repoURL, issueURL, prURL string) {
+	if s.Cfg == nil {
+		return "", "", ""
+	}
+	forgeCfg := forgeConfigForTask(s.Cfg.Get(), task)
+	if forgeCfg.Host == "" || task.Owner == "" || task.Repo == "" {
+		return "", "", ""
+	}
+	repoURL = strings.TrimRight(forgeCfg.Host, "/") + "/" + url.PathEscape(task.Owner) + "/" + url.PathEscape(task.Repo)
+	if task.IsForgeBacked() && task.IssueNumber > 0 {
+		issueURL = repoURL + "/issues/" + strconv.Itoa(task.IssueNumber)
+	}
+	if task.PRNumber > 0 {
+		segment := "pull"
+		if forgeCfg.Type == "gitea" {
+			segment = "pulls"
+		}
+		prURL = repoURL + "/" + segment + "/" + strconv.Itoa(task.PRNumber)
+	}
+	return repoURL, issueURL, prURL
+}
+
+func forgeConfigForTask(cfg config.Config, task store.Task) config.Forge {
+	for _, identity := range cfg.Identities {
+		if task.Identity != "" && identity.Name == task.Identity {
+			return identity.Forge
+		}
+	}
+	var matched *config.Forge
+	for i := range cfg.Identities {
+		identity := &cfg.Identities[i]
+		for _, repo := range identity.Repos {
+			if repo.Owner == task.Owner && repo.Name == task.Repo {
+				if matched != nil {
+					return cfg.Forge
+				}
+				forgeCopy := identity.Forge
+				matched = &forgeCopy
+			}
+		}
+	}
+	if matched != nil {
+		return *matched
+	}
+	return cfg.Forge
 }
 
 func (s *Server) handleTask(w http.ResponseWriter, r *http.Request) {
@@ -122,7 +174,7 @@ func (s *Server) handleTaskAction(w http.ResponseWriter, r *http.Request) {
 		ID:   outcome.eventID,
 		Kind: outcome.kind, TaskID: task.ID,
 		Repo: task.Owner + "/" + task.Repo, Issue: task.IssueNumber,
-		Detail: outcome.detail,
+		Detail: outcome.detail, Data: outcome.data,
 	})
 	writeJSON(w, map[string]any{"ok": true, "action": action, "task_id": id})
 }
@@ -268,6 +320,7 @@ func validOrigin(u *url.URL, wantScheme, wantHost string) bool {
 type actionOutcome struct {
 	kind    string
 	detail  string
+	data    map[string]any
 	eventID int64
 }
 
@@ -380,7 +433,15 @@ func (s *Server) retryTask(ctx context.Context, w http.ResponseWriter, task *sto
 	if s.storeFailed(w, s.Store.RetryTask(ctx, task.ID, store.StatusParked, "")) {
 		return nil
 	}
-	return &actionOutcome{kind: events.KindTaskRetried, detail: "retried via the dashboard"}
+	return &actionOutcome{
+		kind:   events.KindTaskRetried,
+		detail: "retried via the dashboard",
+		data: map[string]any{
+			"retry_count":     task.RetryCount + 1,
+			"previous_stage":  task.Stage,
+			"previous_reason": task.ParkReason,
+		},
+	}
 }
 
 // retireTask moves a spent task to dead. Failure is logged, not returned:

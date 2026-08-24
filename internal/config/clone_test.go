@@ -9,8 +9,9 @@ import "testing"
 func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 	enabled := true
 	orig := Config{
-		Models: map[string]string{"builder": "m"},
-		Repos:  []Repo{{Gate: [][]string{{"task", "check"}}, Protect: []string{"p"}}},
+		Models:      map[string]string{"builder": "m"},
+		ModelLimits: map[string]ModelLimits{"m": {ContextWindow: 128_000}},
+		Repos:       []Repo{{Gate: [][]string{{"task", "check"}}, Protect: []string{"p"}}},
 		Identities: []IdentityConfig{{
 			Models: map[string]string{"planner": "m2"},
 			Repos:  []Repo{{Gate: [][]string{{"go", "vet"}}}},
@@ -28,6 +29,7 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 
 	got := orig.Clone()
 	got.Models["builder"] = "changed"
+	got.ModelLimits["m"] = ModelLimits{ContextWindow: 1}
 	got.Repos[0].Gate[0][0] = "changed"
 	got.Repos[0].Protect[0] = "changed"
 	got.Identities[0].Models["planner"] = "changed"
@@ -43,6 +45,9 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 
 	if orig.Models["builder"] != "m" {
 		t.Error("Models map is shared")
+	}
+	if orig.ModelLimits["m"].ContextWindow != 128_000 {
+		t.Error("ModelLimits map is shared")
 	}
 	if orig.Repos[0].Gate[0][0] != "task" || orig.Repos[0].Protect[0] != "p" {
 		t.Error("Repo nested slices are shared")

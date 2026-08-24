@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"log/slog"
@@ -12,9 +13,113 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/worktree"
 )
+
+func TestStageBaselineGateAccountsForRepairAgentUsage(t *testing.T) {
+	dir := t.TempDir()
+	runGit(t, dir, "init")
+	script := filepath.Join(dir, "gate.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runner := agentRunnerFunc(func(context.Context, string, agentexec.Request, agentexec.ToolCallReporter) (agentexec.Result, error) {
+		return agentexec.Result{
+			Version: agentexec.ProtocolVersion, Status: agentexec.StatusPassed,
+			TokensUsed: 120, Iterations: 3,
+			Usage: agentexec.Usage{PromptTokens: 100, CompletionTokens: 20, TotalTokens: 120, CachedTokens: 80},
+		}, nil
+	})
+	task := &store.Task{ID: 1, Attempt: 1, Owner: "o", Repo: "r"}
+	tc := &TaskContext{
+		Task: task, Repo: config.Repo{Owner: "o", Name: "r", Gate: [][]string{{"sh", script}}},
+		Cfg:   config.Config{Models: map[string]string{"builder": "provider/model"}},
+		Agent: runner, Trees: &worktree.Manager{BotUser: "archie", BotEmail: "archie@example.com"},
+		Dir: dir, Log: slog.New(slog.DiscardHandler),
+	}
+	if err := StageBaselineGate().Run(t.Context(), tc); err != nil {
+		t.Fatal(err)
+	}
+	if task.TokensUsed != 120 || task.Iterations != 3 {
+		t.Fatalf("baseline usage = %d tokens/%d iterations, want 120/3", task.TokensUsed, task.Iterations)
+	}
+}
+
+func TestStageBaselineGateWarningIncludesFailureTail(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "gate.sh")
+	// Pad past baselineWarnLogBytes (2048) so clipTail short-circuit does
+	// NOT save head-clipping from being detected. The marker near the END
+	// would otherwise be inside the window either way; a marker past the
+	// window asserts the direction.
+	body := "echo headmarker; head -c 5000 /dev/zero | tr '\\0' x; echo; echo tailmarker; exit 1\n"
+	if err := os.WriteFile(script, []byte("#!/bin/sh\n"+body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	tc := &TaskContext{
+		Task:  &store.Task{ID: 1, Owner: "o", Repo: "r"},
+		Repo:  config.Repo{Gate: [][]string{{"sh", script}}},
+		Agent: alwaysFailingRunner,
+		Dir:   dir,
+		Log:   slog.New(slog.NewJSONHandler(&logs, nil)),
+	}
+
+	_ = StageBaselineGate().Run(t.Context(), tc)
+	logsStr := logs.String()
+	if !strings.Contains(logsStr, "tailmarker") {
+		t.Fatalf("baseline warning omitted the useful failure tail: %s", logsStr)
+	}
+	if strings.Contains(logsStr, "headmarker") {
+		t.Fatalf("baseline warning included the head marker -- clip is retaining the head instead of the tail")
+	}
+}
+
+// TestStageBaselineGateAgentRunErrorSkipsAgentFinish pins the ordering
+// inside StageBaselineGate: when the baseline-fix agent returns an error,
+// the stage must surface that error WITHOUT first emitting an
+// agent_finish event whose status/stop_reason/tokens are all zero. AgentStage
+// (internal/domain/workflow/agent.go) bails on every error path before its
+// own agent_finish emit, so the baseline-fix path must match.
+func TestStageBaselineGateAgentRunErrorSkipsAgentFinish(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "gate.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bus := events.NewBus()
+	sub := bus.Subscribe(8)
+	t.Cleanup(sub.Close)
+	runner := agentRunnerFunc(func(context.Context, string, agentexec.Request, agentexec.ToolCallReporter) (agentexec.Result, error) {
+		return agentexec.Result{}, errors.New("simulated transport failure")
+	})
+	task := &store.Task{ID: 1, Owner: "o", Repo: "r"}
+	tc := &TaskContext{
+		Task:  task,
+		Repo:  config.Repo{Owner: "o", Name: "r", Gate: [][]string{{"sh", script}}},
+		Cfg:   config.Config{Models: map[string]string{"builder": "provider/model"}},
+		Agent: runner,
+		Bus:   bus,
+		Dir:   dir,
+		Log:   slog.New(slog.DiscardHandler),
+	}
+	if err := StageBaselineGate().Run(t.Context(), tc); err == nil {
+		t.Fatal("expected StageBaselineGate to surface the agent error")
+	}
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Kind == "agent_finish" {
+				t.Fatalf("baseline-fix errored but agent_finish was still published: %+v", ev)
+			}
+		default:
+			return
+		}
+	}
+}
 
 // fakeForge implements forge.Forge for TestStageCommitPushCloses.
 type fakeForge struct {
