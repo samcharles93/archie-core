@@ -48,7 +48,7 @@ func toolNamed(t *testing.T, entries []tools.ToolEntry, name string) tools.ToolE
 }
 
 func TestTaskToolsValidate(t *testing.T) {
-	entries := TaskTools(&fakeLister{}, &fakeCreator{}, nil, "archie")
+	entries := TaskTools(&fakeLister{}, &fakeCreator{}, nil, nil, "archie")
 	if len(entries) == 0 {
 		t.Fatal("TaskTools() returned nothing")
 	}
@@ -76,7 +76,7 @@ func TestTaskToolsOmitNilBackends(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			entries := TaskTools(tc.lister, tc.creator, nil, "archie")
+			entries := TaskTools(tc.lister, tc.creator, nil, nil, "archie")
 			var got []string
 			for _, e := range entries {
 				got = append(got, e.Name)
@@ -93,7 +93,7 @@ func TestTaskToolsOmitNilBackends(t *testing.T) {
 // that could name an identity could read another instance's work.
 func TestTaskListUsesBoundIdentity(t *testing.T) {
 	lister := &fakeLister{tasks: []ChatTaskSummary{{ID: 7, Title: "wire the thing", Status: "running"}}}
-	entry := toolNamed(t, TaskTools(lister, nil, nil, "archie"), "task_list")
+	entry := toolNamed(t, TaskTools(lister, nil, nil, nil, "archie"), "task_list")
 
 	// The model supplies an identity; it must be ignored.
 	if _, err := entry.Handler(context.Background(), map[string]any{"identity": "someone-else"}); err != nil {
@@ -120,7 +120,7 @@ func TestTaskListLimit(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			lister := &fakeLister{}
-			entry := toolNamed(t, TaskTools(lister, nil, nil, "archie"), "task_list")
+			entry := toolNamed(t, TaskTools(lister, nil, nil, nil, "archie"), "task_list")
 			if _, err := entry.Handler(context.Background(), tc.input); err != nil {
 				t.Fatal(err)
 			}
@@ -137,7 +137,7 @@ func TestTaskListFiltersByStatus(t *testing.T) {
 		{ID: 2, Status: "queued"},
 		{ID: 3, Status: "running"},
 	}}
-	entry := toolNamed(t, TaskTools(lister, nil, nil, "archie"), "task_list")
+	entry := toolNamed(t, TaskTools(lister, nil, nil, nil, "archie"), "task_list")
 
 	out, err := entry.Handler(context.Background(), map[string]any{"status": "running"})
 	if err != nil {
@@ -160,7 +160,7 @@ func TestTaskListFiltersByStatus(t *testing.T) {
 // TestTaskListEmptyIsNotAnError guards against the model reading an empty
 // queue as a broken tool and retrying.
 func TestTaskListEmptyIsNotAnError(t *testing.T) {
-	entry := toolNamed(t, TaskTools(&fakeLister{}, nil, nil, "archie"), "task_list")
+	entry := toolNamed(t, TaskTools(&fakeLister{}, nil, nil, nil, "archie"), "task_list")
 
 	out, err := entry.Handler(context.Background(), map[string]any{})
 	if err != nil {
@@ -177,7 +177,7 @@ func TestTaskListEmptyIsNotAnError(t *testing.T) {
 
 func TestTaskListPropagatesStoreError(t *testing.T) {
 	lister := &fakeLister{err: errors.New("database is gone")}
-	entry := toolNamed(t, TaskTools(lister, nil, nil, "archie"), "task_list")
+	entry := toolNamed(t, TaskTools(lister, nil, nil, nil, "archie"), "task_list")
 
 	if _, err := entry.Handler(context.Background(), map[string]any{}); err == nil {
 		t.Fatal("handler error = nil, want the store failure surfaced")
@@ -228,7 +228,7 @@ func TestTaskSpawn(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			entry := toolNamed(t, TaskTools(nil, tc.creator, nil, "archie"), "task_spawn")
+			entry := toolNamed(t, TaskTools(nil, tc.creator, nil, nil, "archie"), "task_spawn")
 			out, err := entry.Handler(context.Background(), tc.input)
 			if tc.wantErr {
 				if err == nil {
@@ -264,7 +264,7 @@ func TestTaskSpawn(t *testing.T) {
 // model must not be able to file work under another instance's identity.
 func TestTaskSpawnIgnoresModelIdentity(t *testing.T) {
 	creator := &fakeCreator{id: 1}
-	entry := toolNamed(t, TaskTools(nil, creator, nil, "archie"), "task_spawn")
+	entry := toolNamed(t, TaskTools(nil, creator, nil, nil, "archie"), "task_spawn")
 
 	if _, err := entry.Handler(context.Background(), map[string]any{
 		"title":    "sneaky",
@@ -282,7 +282,7 @@ func TestTaskSpawnIgnoresModelIdentity(t *testing.T) {
 // an untrusted input path. If these are ever added they must be a considered
 // decision, not an accident.
 func TestTaskToolsExcludeApprovalTools(t *testing.T) {
-	entries := TaskTools(&fakeLister{}, &fakeCreator{}, nil, "archie")
+	entries := TaskTools(&fakeLister{}, &fakeCreator{}, nil, nil, "archie")
 	for _, e := range entries {
 		switch e.Name {
 		case "task_approve", "task_cancel":
@@ -313,7 +313,7 @@ func (f *fakeLogReader) ReadChatTaskLogs(_ context.Context, identity string, tas
 
 func TestTaskLogsUsesBoundIdentity(t *testing.T) {
 	reader := &fakeLogReader{result: ChatTaskLogResult{Attempt: 1}}
-	entry := toolNamed(t, TaskTools(nil, nil, reader, "archie"), "task_logs")
+	entry := toolNamed(t, TaskTools(nil, nil, reader, nil, "archie"), "task_logs")
 
 	if _, err := entry.Handler(context.Background(), map[string]any{
 		"task_id": float64(7), "identity": "someone-else",
@@ -327,7 +327,7 @@ func TestTaskLogsUsesBoundIdentity(t *testing.T) {
 
 func TestTaskLogsRequiresTaskID(t *testing.T) {
 	reader := &fakeLogReader{}
-	entry := toolNamed(t, TaskTools(nil, nil, reader, "archie"), "task_logs")
+	entry := toolNamed(t, TaskTools(nil, nil, reader, nil, "archie"), "task_logs")
 
 	if _, err := entry.Handler(context.Background(), map[string]any{}); err == nil {
 		t.Error("expected error for missing task_id, got nil")
@@ -336,7 +336,7 @@ func TestTaskLogsRequiresTaskID(t *testing.T) {
 
 func TestTaskLogsDefaultsAttemptToZero(t *testing.T) {
 	reader := &fakeLogReader{result: ChatTaskLogResult{Attempt: 0}}
-	entry := toolNamed(t, TaskTools(nil, nil, reader, "archie"), "task_logs")
+	entry := toolNamed(t, TaskTools(nil, nil, reader, nil, "archie"), "task_logs")
 
 	if _, err := entry.Handler(context.Background(), map[string]any{
 		"task_id": float64(7),
@@ -350,7 +350,7 @@ func TestTaskLogsDefaultsAttemptToZero(t *testing.T) {
 
 func TestTaskLogsHonoursExplicitAttempt(t *testing.T) {
 	reader := &fakeLogReader{result: ChatTaskLogResult{Attempt: 2}}
-	entry := toolNamed(t, TaskTools(nil, nil, reader, "archie"), "task_logs")
+	entry := toolNamed(t, TaskTools(nil, nil, reader, nil, "archie"), "task_logs")
 
 	if _, err := entry.Handler(context.Background(), map[string]any{
 		"task_id": float64(7), "attempt": float64(2),
@@ -377,7 +377,7 @@ func TestTaskLogsLimit(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			reader := &fakeLogReader{result: ChatTaskLogResult{}}
-			entry := toolNamed(t, TaskTools(nil, nil, reader, "archie"), "task_logs")
+			entry := toolNamed(t, TaskTools(nil, nil, reader, nil, "archie"), "task_logs")
 			if _, err := entry.Handler(context.Background(), tc.input); err != nil {
 				t.Fatal(err)
 			}
@@ -390,7 +390,7 @@ func TestTaskLogsLimit(t *testing.T) {
 
 func TestTaskLogsForwardsComponentAndContains(t *testing.T) {
 	reader := &fakeLogReader{result: ChatTaskLogResult{}}
-	entry := toolNamed(t, TaskTools(nil, nil, reader, "archie"), "task_logs")
+	entry := toolNamed(t, TaskTools(nil, nil, reader, nil, "archie"), "task_logs")
 
 	if _, err := entry.Handler(context.Background(), map[string]any{
 		"task_id": float64(7), "component": "gate", "q": "build failed",
@@ -406,7 +406,7 @@ func TestTaskLogsForwardsComponentAndContains(t *testing.T) {
 }
 
 func TestTaskLogsOmittedWhenReaderIsNil(t *testing.T) {
-	entries := TaskTools(&fakeLister{}, &fakeCreator{}, nil, "archie")
+	entries := TaskTools(&fakeLister{}, &fakeCreator{}, nil, nil, "archie")
 	for _, e := range entries {
 		if e.Name == "task_logs" {
 			t.Fatal("task_logs is in the tool set when reader is nil -- a tool that always fails must not be advertised")
@@ -415,6 +415,6 @@ func TestTaskLogsOmittedWhenReaderIsNil(t *testing.T) {
 }
 
 func TestTaskLogsAppearsWhenReaderIsNonNil(t *testing.T) {
-	entries := TaskTools(nil, nil, &fakeLogReader{}, "archie")
+	entries := TaskTools(nil, nil, &fakeLogReader{}, nil, "archie")
 	toolNamed(t, entries, "task_logs") // fails the test if absent
 }
