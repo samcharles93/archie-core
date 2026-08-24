@@ -67,6 +67,9 @@ func TestInProcessRunnerMapsRequestAndCapturesOutput(t *testing.T) {
 			if cfg.ProtectPaths == nil || !cfg.ProtectPaths("nested/file_test.go") || !cfg.ProtectPaths("view_templ.go") {
 				t.Fatal("declarative path protection was not applied")
 			}
+			if cfg.Completion != agentloop.CompletionForceFinish {
+				t.Fatalf("Completion = %q, want forced finish recovery", cfg.Completion)
+			}
 			if !strings.Contains(cfg.ExtraRules, "Confine discovery to /workspace") ||
 				!strings.Contains(cfg.ExtraRules, "unless the mission explicitly requests") {
 				t.Fatalf("project discovery rule missing from ExtraRules: %q", cfg.ExtraRules)

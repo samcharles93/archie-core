@@ -130,6 +130,8 @@ github.com/samcharles93/ai-sdk v0.1.20 h1:Z52dyMN293aV8Cpgjdyyd2zw6oNF5FSXKWfCux
 github.com/samcharles93/ai-sdk v0.1.20/go.mod h1:a4JYsUrwGsmm2eiXgrpcKExtYe7uHQ5zsHDbbkcPB6o=
 github.com/samcharles93/ai-sdk v0.1.21 h1:V/OqLnoWuZQ/8qw6MiVZuQU5qVLkULGex6WMQYCbCg4=
 github.com/samcharles93/ai-sdk v0.1.21/go.mod h1:a4JYsUrwGsmm2eiXgrpcKExtYe7uHQ5zsHDbbkcPB6o=
+github.com/samcharles93/ai-sdk v0.1.22 h1:IIV1HVOzCKMQl5MvZ23WzEzaOyHpnT8QcoN8ihFi9Xc=
+github.com/samcharles93/ai-sdk v0.1.22/go.mod h1:a4JYsUrwGsmm2eiXgrpcKExtYe7uHQ5zsHDbbkcPB6o=
 github.com/sergi/go-diff v1.4.0 h1:n/SP9D5ad1fORl+llWyN+D6qoUETXNZARKjyY2/KVCw=
 github.com/sergi/go-diff v1.4.0/go.mod h1:A0bzQcvG0E7Rwjx0REVgAGH58e96+X0MeOfepqsbeW4=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
