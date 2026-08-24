@@ -618,7 +618,7 @@ func TestBranchNaming(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := archieBranch(tc.issue, tc.title, "", tc.labels); got != tc.want {
+			if got := archieBranch(tc.issue, tc.title, tc.labels); got != tc.want {
 				t.Errorf("archieBranch() = %q, want %q", got, tc.want)
 			}
 		})
