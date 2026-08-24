@@ -1,6 +1,6 @@
 # Event capture storage -- decision
 
-**Status:** Decided, not yet implemented
+**Status:** Implemented
 **Date:** 2026-08-22
 **Beads issue:** `archie-core-t2db.1`
 
@@ -20,15 +20,14 @@ stream is introduced for capture.
 
 ### Why
 
-**NATS is not unconditionally available today.** `config.NATSConfig.URL`
-empty means no NATS client is constructed (`bootstrap.go`); embedded NATS
-(`7d5u.2`) that would remove this gap is still open. `t2db.1`'s own
-acceptance criteria require single-process behaviour to be a *deliberate*
-decision, not an accident -- making capture NATS-only today would silently
-regress the `local-ollama-standalone.toml` deployment profile, which this
-epic's own precondition line ("capture is the precondition for everything
-else") argues against. SQLite is the one store guaranteed present in every
-deployment shape, because it already backs task state unconditionally.
+**NATS availability does not make capture a broker concern.** NATS is now
+unconditional for autonomous workflow handoff, including embedded mode, but
+capture is also used by deployments with no repository workflow configured.
+SQLite is already guaranteed present because it backs daemon state, and keeps
+capture inspection independent of broker retention and consumer lifecycle.
+The original version of this decision cited optional NATS as an additional
+reason; that premise was superseded by `archie-core-q15y`, while the storage
+fit and independence arguments remain.
 
 **Capture's access pattern doesn't need what JetStream is for.** JetStream
 earns its complexity for reaction delivery (`7d5u.2`) because multiple

@@ -165,7 +165,7 @@ var reloadableFields = map[string]bool{
 
 // reloadableSubFields are sub-fields of structs that are otherwise
 // startup-built. VolumeTTL is re-read per cycle in cleanupExpiredStorage;
-// everything else in Containers (Image, Enabled, MaxConcurrency,
+// everything else in Containers (Image, MaxConcurrency,
 // MaxUptime, PullPolicy, Network) is frozen in the startup-built
 // container pool -- the dispatchers re-read MaxConcurrency but the pool
 // captures it at construction (container/pool.go:94,163), so a change
@@ -174,7 +174,7 @@ var reloadableFields = map[string]bool{
 // forge client itself is startup-built, so Type/Token/TokenEnv stay
 // requires-restart.
 var reloadableSubFields = map[string]map[string]bool{
-	"Containers": {"VolumeTTL": true},
+	"Containers": {"LegacyEnabled": true, "VolumeTTL": true},
 	"Forge":      {"Host": true},
 }
 

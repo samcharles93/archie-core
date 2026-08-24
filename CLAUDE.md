@@ -90,16 +90,17 @@ edit, find and grep are jailed to the configured workspace unless
 That setting is commented out in `config.example.toml` — an operator opt-in, not
 the default, and not an architectural requirement. Where the daemon runs and
 whether the jail is lifted together determine which filesystem those tools can
-reach; neither is something the code should assume. NATS and the per-task
-archie-agent containers are Docker regardless.
+reach; neither is something the code should assume. `archied` and embedded NATS
+run in the native daemon; per-task `archie-agent` workers run in Docker.
 
 **The daemon hands agent containers the NATS endpoint its own client connected with at startup** — see
 `containerEnv` in `internal/daemon/daemon.go`, which appends `NATS_URL=` from
-`d.ConnectedNATS.URL`, captured at construction. That endpoint must therefore be reachable from wherever the daemon
-runs *and* from inside the containers. When the daemon is on the host, that
-means the compose network's gateway address, not the service name and not
-localhost. `docker-compose.yml` pins the subnet to `172.19.0.0/16` so the
-gateway address cannot drift when the network is recreated.
+`d.ConnectedNATS.URL`, captured at construction. That endpoint must therefore
+be reachable from wherever the daemon runs *and* from inside the containers.
+Embedded mode resolves the selected Docker bridge first and binds its
+authenticated listener to that bridge's host gateway. External mode needs an
+operator-supplied URL reachable from both; for the optional Compose broker that
+is the pinned `172.19.0.1` gateway, not the service name and not localhost.
 
 The two URLs are the same today and deliberately *not* the same after a
 SIGHUP reload of `nats.url`: the daemon's own client is startup-built, so a
@@ -114,11 +115,12 @@ impossible regardless of what the config says or who reloads it; a reloaded
 daemon sends no credentials to the Docker API. Refresh the agent image
 explicitly instead: `docker compose pull agent`.
 
-**`docker-compose.yml`** carries only NATS and the agent build stanza. The agent
-has a `build` profile so `up -d` skips it — without the profile, compose creates
-a container that exits 0 immediately and reports "Started", which reads as a
-crash loop. `docker compose build agent` and `docker compose pull agent` still
-work by name without activating the profile.
+**`docker-compose.yml`** is optional in the default embedded deployment. It
+carries an external NATS service plus the agent build stanza. The agent has a
+`build` profile so `up -d nats` never starts it as a service — without the
+profile, Compose creates a container that exits 0 immediately and reports
+"Started", which reads as a crash loop. `docker compose build agent` and
+`docker compose pull agent` work by name without activating the profile.
 
 **Config lives outside the repo**, at
 `${XDG_CONFIG_HOME:-~/.config}/archie/config.toml`. Nothing in the repo working
@@ -162,8 +164,9 @@ read-only verification step.
 
 Run a single test: `go test ./internal/domain/workflow/... -run TestName -v`.
 
-Docker/NATS stack: `task docker-build` (builds the agent image locally),
-`task docker-up`, `task docker-down`, `task docker-logs`.
+Docker helpers: `task docker-build` builds the agent image locally;
+`task docker-up`, `task docker-down`, and `task docker-logs` manage the optional
+external NATS service.
 
 ## Repository hygiene
 

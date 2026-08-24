@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# install.sh - Installer for Archie Core (archied & archie-agent)
+# install.sh - Installer for Archie Core (native archied + managed agent image)
 #
 # Follows the XDG Base Directory Specification:
 #   Config: ${XDG_CONFIG_HOME:-~/.config}/archie
@@ -17,7 +17,6 @@
 #     - plugins/
 #   Bin:    ${XDG_BIN_HOME:-~/.local/bin}
 #     - archied
-#     - archie-agent
 # ==============================================================================
 
 set -euo pipefail
@@ -127,7 +126,7 @@ echo "  [OK] go: ${GO_VERSION}"
 if command -v docker &>/dev/null; then
   echo "  [OK] docker: $(docker --version)"
 else
-  echo "  [INFO] docker is not installed (required only for NATS container mode)."
+  echo "  [WARN] Docker is required for autonomous workflows; chat and the dashboard can still run without it."
 fi
 
 # 2. Create directory structure according to XDG standards
@@ -160,8 +159,10 @@ else
   fi
 fi
 
-# 4. Build and install binaries
-echo "==> Building archied and archie-agent..."
+# 4. Build and install the native daemon. archie-agent is deployed only as
+# the managed task image; installing a host binary would imply an unsupported
+# host execution path.
+echo "==> Building native archied..."
 (
   cd "${SRC_DIR}"
   # installtype.buildType must be stamped here: an unstamped archied
@@ -171,10 +172,9 @@ echo "==> Building archied and archie-agent..."
   GATEWAY_VERSION="$(git describe --tags --match 'archied/v*' 2>/dev/null | sed 's|^archied/v||' || echo dev)"
   RUNTIME_VERSION="$(git describe --tags --match 'archie/v*' 2>/dev/null | sed 's|^archie/v||' || echo dev)"
   go build -ldflags "-X main.gatewayVersion=${GATEWAY_VERSION} -X main.runtimeVersion=${RUNTIME_VERSION} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" -o "${ARCHIE_BIN_DIR}/archied" ./cmd/archied
-  go build -o "${ARCHIE_BIN_DIR}/archie-agent" ./cmd/archie-agent
   install -m755 "${SRC_DIR}/scripts/archie-update-install" "${ARCHIE_BIN_DIR}/archie-update-install"
 )
-echo "  Installed binaries and updater to ${ARCHIE_BIN_DIR}/"
+echo "  Installed archied and updater to ${ARCHIE_BIN_DIR}/"
 
 # 5. Interactive Configuration: Forge & LLM Provider Setup
 if [ ! -f "${ENV_FILE}" ]; then
@@ -377,9 +377,12 @@ builder = "ollama/${OLLAMA_MODEL}"
 [providers.ollama]
 class = "ollama"
 
-[agent]
-mode = "inprocess"
-command = "archie-agent"
+[nats]
+mode = "embedded"
+
+[containers]
+image = "ghcr.io/samcharles93/archie-agent:latest"
+pull_policy = "missing"
 
 [budgets]
 max_steps = 60
@@ -493,7 +496,7 @@ echo "============================================================"
 echo ""
 echo "Installation Details:"
 echo "  - Binaries   : ${ARCHIE_BIN_DIR}/archied"
-echo "                 ${ARCHIE_BIN_DIR}/archie-agent"
+echo "  - Agent image: ghcr.io/samcharles93/archie-agent:latest"
 echo "  - Config     : ${ARCHIE_CONFIG_DIR}/config.toml"
 echo "  - Secrets    : ${ENV_FILE}"
 echo "  - Data       : ${ARCHIE_DATA_DIR}/"

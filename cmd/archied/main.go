@@ -723,6 +723,12 @@ func subscribeAgentEvents(nc *natsio.Conn, bus *events.Bus, log *slog.Logger) (u
 	if err != nil {
 		return nil, err
 	}
+	if err := nc.Flush(); err != nil {
+		if cleanupErr := sub.Unsubscribe(); cleanupErr != nil {
+			log.Warn("task event subscription cleanup failed after flush failure", "err", cleanupErr)
+		}
+		return nil, fmt.Errorf("flush task event subscription: %w", err)
+	}
 	return func() {
 		if err := sub.Unsubscribe(); err != nil {
 			log.Warn("task event unsubscribe failed", "err", err)
@@ -948,28 +954,22 @@ func memoryProvider(workDir string, log *slog.Logger) (*builtin.Provider, string
 	return fb, fallback
 }
 
-// startContainers brings up the container pool and storage backend, returning
-// nils when containers are disabled or unavailable.
+// startContainers brings up the mandatory autonomous-worker pool and storage
+// backend, returning a degraded nil pool when Docker is unavailable.
 //
-// Failure here degrades rather than aborting, for the same reason resolveForge
-// does: containers are one capability among many, and refusing to start denies
-// the operator chat, the dashboard and every other subsystem over a feature
-// they may not be exercising. Under Restart=on-failure it also turns a
-// recoverable problem into a crash loop with the real error scrolling past.
+// Failure here degrades rather than aborting: the native interactive agent and
+// dashboard remain useful without Docker, while autonomous tasks park because
+// there is deliberately no host execution fallback.
 func startContainers(
 	ctx context.Context,
 	cfg config.Config,
 	log *slog.Logger,
 ) (*container.Pool, storage.Backend, func()) {
 	noop := func() {}
-	if !cfg.Containers.Enabled {
-		return nil, nil, noop
-	}
-
 	// Single Docker client shared between pool and storage backend.
 	dockerCli, err := client.New(client.FromEnv)
 	if err != nil {
-		log.Error("containers disabled: docker client unavailable", "err", err)
+		log.Error("autonomous workflows unavailable: docker client unavailable", "err", err)
 		return nil, nil, noop
 	}
 	closeDocker := func() {
@@ -991,7 +991,7 @@ func startContainers(
 		// A missing image is recoverable by hand. The daemon sends no registry
 		// credentials on pull (internal/container/pool.go), so a private
 		// registry always needs the operator's CLI to fetch it first.
-		log.Error("containers disabled: pool unavailable", "err", err,
+		log.Error("autonomous workflows unavailable: container pool unavailable", "err", err,
 			"hint", "run `docker compose pull agent` (or `build agent`) so the image is present locally")
 		return nil, storage.NewDockerBackend(dockerCli), closeDocker
 	}

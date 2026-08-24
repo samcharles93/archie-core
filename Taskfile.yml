@@ -157,9 +157,9 @@ tasks:
       - docker compose build agent
 
   docker-up:
-    desc: Start the NATS service via docker compose
+    desc: Start the optional external NATS service via docker compose
     cmds:
-      - docker compose up -d
+      - docker compose up -d nats
 
   docker-down:
     desc: Stop the docker compose stack

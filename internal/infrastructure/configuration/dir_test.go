@@ -546,7 +546,6 @@ func tmpConfigDir(t *testing.T) string {
 //   url: nats://nats.example:4222
 //   token_env: NATS_TOKEN
 // containers:
-//   enabled: true
 //   image: ghcr.io/sam/archie-agent:latest
 //   max_concurrency: 4
 //   pull_policy: always
@@ -558,9 +557,6 @@ func tmpConfigDir(t *testing.T) string {
 // 	}
 // 	if cfg.NATS.URL != "nats://nats.example:4222" {
 // 		t.Errorf("NATS.URL = %q", cfg.NATS.URL)
-// 	}
-// 	if !cfg.Containers.Enabled {
-// 		t.Error("Containers should be enabled")
 // 	}
 // 	if cfg.Containers.Image != "ghcr.io/sam/archie-agent:latest" {
 // 		t.Errorf("Containers.Image = %q", cfg.Containers.Image)

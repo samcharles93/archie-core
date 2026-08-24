@@ -22,6 +22,9 @@ func minimalValidConfig() config.Config {
 			Trigger: "assignee",
 		},
 		Forge: config.Forge{Type: "none"},
+		Containers: config.ContainerConfig{
+			Image: "ghcr.io/samcharles93/archie-agent:latest",
+		},
 	}
 }
 
@@ -198,11 +201,11 @@ func TestValidateNATS(t *testing.T) {
 		{name: "unset mode with url resolves external", url: "nats://localhost:4222"},
 		{name: "unset mode without url resolves embedded"},
 		{name: "embedded with no url", mode: config.NATSModeEmbedded},
-		{name: "off with no url", mode: config.NATSModeOff},
+		{name: "removed off mode", mode: "off", wantErr: true},
 		{name: "external with url", mode: config.NATSModeExternal, url: "nats://localhost:4222"},
 		{name: "external without url", mode: config.NATSModeExternal, wantErr: true},
 		{name: "embedded with url", mode: config.NATSModeEmbedded, url: "nats://localhost:4222", wantErr: true},
-		{name: "off with url", mode: config.NATSModeOff, url: "nats://localhost:4222", wantErr: true},
+		{name: "removed off mode with url", mode: "off", url: "nats://localhost:4222", wantErr: true},
 		{name: "unknown mode", mode: "not-a-mode", wantErr: true},
 	}
 	for _, tc := range tests {
@@ -225,10 +228,10 @@ func TestValidateNATS(t *testing.T) {
 // containers enabled and a url but no explicit mode must validate the same way
 // the loader's on-disk form does (url implies external), rather than diverge
 // because validateContainers saw an empty mode.
-func TestValidateContainersResolvesNATSMode(t *testing.T) {
+func TestValidateContainersSupportsBothBrokerDeployments(t *testing.T) {
 	base := func() config.Config {
 		cfg := minimalValidConfig()
-		cfg.Containers = config.ContainerConfig{Enabled: true, Image: "archie-agent:latest"}
+		cfg.Containers = config.ContainerConfig{Image: "archie-agent:latest"}
 		return cfg
 	}
 
@@ -267,7 +270,6 @@ func TestValidateForgeIntake(t *testing.T) {
 		{name: "webhook requires addr", intake: config.ForgeIntakeWebhook, secret: secret.SecretRef{Engine: "env", Key: "SECRET"}, wantErr: true},
 		{name: "webhook with secret and addr is valid", intake: config.ForgeIntakeWebhook, secret: secret.SecretRef{Engine: "env", Key: "SECRET"}, addr: "0.0.0.0:8645"},
 		{name: "both with secret and addr is valid", intake: config.ForgeIntakeBoth, secret: secret.SecretRef{Engine: "env", Key: "SECRET"}, addr: "0.0.0.0:8645"},
-		{name: "webhook with nats off is rejected", intake: config.ForgeIntakeWebhook, secret: secret.SecretRef{Engine: "env", Key: "SECRET"}, addr: "0.0.0.0:8645", natsMode: config.NATSModeOff, wantErr: true},
 		{name: "unknown intake", intake: "not-a-mode", wantErr: true},
 	}
 	for _, tc := range tests {

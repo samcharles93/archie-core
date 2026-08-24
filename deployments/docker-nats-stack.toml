@@ -38,19 +38,15 @@ parked = "agent:parked"
 
 # Stages run in sandboxed archie-agent containers over NATS. archied only
 # orchestrates: the agent image carries the toolchain and makes the model
-# calls, so gate commands resolve there, not in the daemon image. Setting
-# containers.enabled selects nats mode on its own, but pinning it here keeps
-# the intent explicit.
-[agent]
-mode = "nats"
+# calls, so gate commands resolve there, not in the native daemon.
 
 [nats]
+mode = "external"
 # The pinned Compose-network gateway is reachable from both the host daemon
 # and the task containers it launches on archie-core_default.
 url = "nats://172.19.0.1:4222"
 
 [containers]
-enabled = true
 network = "archie-core_default"
 image = "git.example.com/you/archie-agent:latest"
 max_concurrency = 4

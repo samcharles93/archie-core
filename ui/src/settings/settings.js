@@ -266,7 +266,6 @@ function storageCard(storage, containers, ctx) {
       el("h3.cfg-subhead", "Sandboxed containers"),
       el(
         "div.kv-list",
-        row("Sandboxing enabled", containers.enabled ? "Yes" : "No", { key: "containers.enabled", type: "bool", raw: containers.enabled, ...ctx }),
         row("Agent image", containers.image || "Not set", { key: "containers.image", type: "string", raw: containers.image, ...ctx }),
         row("Max concurrent tasks", containers.max_concurrency || "Unlimited", { key: "containers.max_concurrency", type: "int", raw: containers.max_concurrency, ...ctx }),
         row("Container max lifetime", containers.max_uptime, { key: "containers.max_uptime", type: "string", raw: containers.max_uptime, ...ctx }),

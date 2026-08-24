@@ -8,6 +8,8 @@
 set -uo pipefail
 
 BIN_DIR="${ARCHIE_BIN_DIR:-$HOME/.local/bin}"
+AGENT_IMAGE="${ARCHIE_AGENT_IMAGE:-ghcr.io/samcharles93/archie-agent:latest}"
+AGENT_IMAGE_BACKUP="${ARCHIE_AGENT_IMAGE_BACKUP:-$BIN_DIR/archie-agent-image.prev.tar}"
 HEALTH_URL="${ARCHIE_HEALTH_URL:-http://127.0.0.1:8420}"
 REPORT_PATH="${ARCHIE_UPDATE_REPORT_PATH:-}"
 HEALTH_TIMEOUT_SECONDS="${ARCHIE_UPDATE_HEALTH_TIMEOUT:-60}"
@@ -72,6 +74,14 @@ rollback_component() {
   cp -f "$BIN_DIR/$name.prev" "$BIN_DIR/$name"
 }
 
+rollback_agent_image() {
+  if [ ! -f "$AGENT_IMAGE_BACKUP" ]; then
+    echo "==> no backup for managed worker image $AGENT_IMAGE; cannot roll it back automatically" >&2
+    return 1
+  fi
+  docker image load --input "$AGENT_IMAGE_BACKUP"
+}
+
 echo "==> restarting archied.service"
 systemctl --user restart archied.service
 
@@ -92,17 +102,17 @@ case "$COMPONENTS" in
     fi
     ;;
   agent)
-    if [ -f "$BIN_DIR/archie-agent.prev" ]; then
-      rollback_component archie-agent && rolled_back=true
+    if [ -f "$AGENT_IMAGE_BACKUP" ]; then
+      rollback_agent_image && rolled_back=true
     else
-      echo "==> no backup for archie-agent; cannot roll it back automatically" >&2
+      echo "==> no backup for managed worker image $AGENT_IMAGE; cannot roll it back automatically" >&2
     fi
     ;;
   daemon,agent)
     # Preserve the old all-or-nothing rollback guarantee: never restore one
     # component and leave the other on the failed release.
-    if [ -f "$BIN_DIR/archied.prev" ] && [ -f "$BIN_DIR/archie-agent.prev" ]; then
-      if rollback_component archied && rollback_component archie-agent; then
+    if [ -f "$BIN_DIR/archied.prev" ] && [ -f "$AGENT_IMAGE_BACKUP" ]; then
+      if rollback_agent_image && rollback_component archied; then
         rolled_back=true
       fi
     else

@@ -21,6 +21,6 @@
 //	publisher.go publishing
 //	consumer.go  fetching
 //
-// When no NATS URL is configured the daemon uses its local SQLite claim flow
-// instead; nothing here is required for single-process operation.
+// An absent URL selects the authenticated embedded broker; external URLs change
+// broker placement only. There is no single-process autonomous fallback.
 package nats

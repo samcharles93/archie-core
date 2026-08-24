@@ -615,7 +615,6 @@ func cloneStringSlices(ss [][]string) [][]string {
 const (
 	NATSModeEmbedded = "embedded"
 	NATSModeExternal = "external"
-	NATSModeOff      = "off"
 )
 
 // NATSConfig configures NATS JetStream for task distribution and reaction
@@ -623,14 +622,12 @@ const (
 //
 //	"embedded"  – an in-process nats-server (default; no external server)
 //	"external"  – connect to URL (required)
-//	"off"       – no NATS; the SQLite ClaimNext flow is used unchanged
 //
 // An empty Mode resolves from URL: URL set means "external", URL empty means
-// "embedded". This is a meaning change from the previous behaviour, where an
-// empty URL alone meant "no NATS, SQLite only" -- that old behaviour is now
-// the explicit opt-out Mode == "off" (docs/prds/embedded-nats.md).
+// "embedded". Autonomous workflow handoff always uses NATS; there is no
+// broker-off execution mode (docs/prds/embedded-nats.md).
 type NATSConfig struct {
-	// Mode selects embedded, external or off. Empty resolves from URL.
+	// Mode selects embedded or external. Empty resolves from URL.
 	Mode string `toml:"mode" yaml:"mode"`
 	// URL is the NATS server address, e.g. "nats://localhost:4222".
 	// Required when Mode is "external"; must be empty otherwise.
@@ -668,8 +665,10 @@ type CaptureConfig struct {
 
 // ContainerConfig configures Docker sandbox execution of archie-agent.
 type ContainerConfig struct {
-	// Enabled activates autonomous workflow execution in managed containers.
-	Enabled bool `toml:"enabled" yaml:"enabled"`
+	// LegacyEnabled decodes the removed containers.enabled switch so existing
+	// operator files keep loading. It has no runtime consumer: autonomous
+	// workflows always require managed task containers.
+	LegacyEnabled bool `toml:"enabled" yaml:"enabled"`
 	// Image is the Docker image to run (e.g. "ghcr.io/sam/archie-agent:latest").
 	Image string `toml:"image" yaml:"image"`
 	// MaxConcurrency limits simultaneous daemon tasks and containers.

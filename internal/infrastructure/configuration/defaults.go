@@ -24,6 +24,7 @@ const (
 	defaultContainerUptime = 60 * time.Minute
 	defaultVolumeTTL       = 72 * time.Hour
 	defaultPullPolicy      = "missing"
+	defaultContainerImage  = "ghcr.io/samcharles93/archie-agent:latest"
 
 	// defaultMaxResultChars bounds one tool result. It matches the 50KB the
 	// lifted workspace tools already truncate themselves at
@@ -191,9 +192,7 @@ func applyForgeDefaults(cfg *config.Config) {
 }
 
 // applyNATSDefaults resolves the nats mode from URL when the operator left it
-// unset. URL set implies external; URL empty implies embedded. The previous
-// behaviour -- URL empty meaning "no NATS, SQLite only" -- is now the explicit
-// opt-out nats.mode = "off" (docs/prds/embedded-nats.md).
+// unset. URL set implies external; URL empty implies embedded.
 func applyNATSDefaults(cfg *config.Config) {
 	if cfg.NATS.Mode == "" {
 		if cfg.NATS.URL != "" {
@@ -240,11 +239,11 @@ func applyIdentityDefaults(cfg *config.Config) {
 	}
 }
 
-// applyContainerDefaults fills the container lifetimes. A negative VolumeTTL
-// is left alone for validation to reject rather than silently corrected.
+// applyContainerDefaults makes managed task workers usable without an explicit
+// [containers] section. A negative VolumeTTL is left for validation to reject.
 func applyContainerDefaults(cfg *config.Config) {
-	if !cfg.Containers.Enabled {
-		return
+	if cfg.Containers.Image == "" {
+		cfg.Containers.Image = defaultContainerImage
 	}
 	if cfg.Containers.MaxUptime == 0 {
 		cfg.Containers.MaxUptime = config.Duration(defaultContainerUptime)

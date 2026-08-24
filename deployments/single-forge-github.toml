@@ -38,9 +38,12 @@ builder = "openai/gpt-4o"
 class = "openai"
 api_key_env = "OPENAI_API_KEY"
 
-[agent]
-mode = "inprocess"
-command = "archie-agent"
+[nats]
+mode = "embedded"
+
+[containers]
+image = "ghcr.io/samcharles93/archie-agent:latest"
+pull_policy = "missing"
 
 [budgets]
 max_steps = 60

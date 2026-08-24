@@ -31,10 +31,6 @@ models = [
   "ollama/qwen2.5:7b"
 ]
 
-[agent]
-mode = "inprocess"
-command = "archie-agent"
-
 [budgets]
 max_steps = 60
 wall_clock = "30m"

@@ -1,6 +1,6 @@
 # Embedded NATS execution -- decision
 
-**Status:** Amended; implementation in progress
+**Status:** Implemented
 
 **Date:** 2026-08-24
 
@@ -31,9 +31,9 @@ NATS has two supported deployment shapes:
 
 Both shapes have identical task semantics: one container and one full-task
 request per workflow. Broker placement must not select a different executor.
-The legacy `nats.mode = "off"`, `agent.mode = "inprocess"`, per-stage NATS, and
-subprocess execution paths are migration inputs only and will be removed rather
-than retained as production fallbacks.
+The legacy `agent` section and `containers.enabled` key remain decode-only
+migration inputs. `nats.mode = "off"`, per-stage NATS, in-process execution,
+and subprocess execution are not production choices.
 
 SQLite remains authoritative for task state. NATS is the sole autonomous work
 handoff. SQLite recovery may identify work that needs republishing, but it must

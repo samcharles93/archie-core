@@ -219,6 +219,11 @@ func TestChangedNonReloadableFields(t *testing.T) {
 	if got := changedNonReloadableFields(base, legacyOnly); len(got) != 0 {
 		t.Fatalf("legacy agent change: got %v, want []", got)
 	}
+	legacyContainers := base
+	legacyContainers.Containers.LegacyEnabled = true
+	if got := changedNonReloadableFields(base, legacyContainers); len(got) != 0 {
+		t.Fatalf("legacy containers.enabled change: got %v, want []", got)
+	}
 
 	// Containers sub-field granularity: Image change warns, MaxConcurrency
 	// and VolumeTTL changes do not.

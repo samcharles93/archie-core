@@ -2,6 +2,7 @@ package configuration
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,6 +37,29 @@ func TestLoadDispatchAckReaction(t *testing.T) {
 			}
 			if cfg.Dispatch.AckReaction != tt.wantAck {
 				t.Errorf("AckReaction: got %q, want %q", cfg.Dispatch.AckReaction, tt.wantAck)
+			}
+		})
+	}
+}
+
+func TestLegacyContainersEnabledCannotSelectExecutionTopology(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		t.Run(map[bool]string{false: "disabled", true: "enabled"}[enabled], func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			contents := fmt.Sprintf("bot_user = \"widget\"\n[forge]\ntype = \"none\"\n[containers]\nenabled = %t\n", enabled)
+			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			doc, err := New(nil).File(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if doc.Config.Containers.LegacyEnabled != enabled {
+				t.Errorf("LegacyEnabled = %v, want decoded %v", doc.Config.Containers.LegacyEnabled, enabled)
+			}
+			if doc.Config.Containers.Image != defaultContainerImage {
+				t.Errorf("Image = %q, want mandatory default %q", doc.Config.Containers.Image, defaultContainerImage)
 			}
 		})
 	}

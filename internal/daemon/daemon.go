@@ -66,7 +66,8 @@ type Daemon struct {
 	// ConnectedNATS is the endpoint and credential the daemon's own client
 	// connected with at startup. Container env is built from this, not from
 	// live config or environment, so reload cannot point new containers at a
-	// broker the daemon is not publishing on. Zero value means no NATS.
+	// broker the daemon is not publishing on. The zero value is invalid in
+	// production composition and remains useful only to fail closed in tests.
 	ConnectedNATS NATSEndpoint
 	Store         store.TaskStore
 	Forge         forge.Forge
@@ -639,7 +640,7 @@ func (d *Daemon) pollNATS(ctx context.Context, fg forge.Forge, cfg config.Config
 // becomes a task.
 func (d *Daemon) PublishTask(ctx context.Context, task workintake.TaskEnvelope) error {
 	if d.Tasks == nil {
-		return fmt.Errorf("publish task %s: no task bus configured (nats.mode is off)", task.Ref())
+		return fmt.Errorf("publish task %s: no task bus configured", task.Ref())
 	}
 	if err := task.Kind.Validate(); err != nil {
 		return fmt.Errorf("publish task %s: %w", task.Ref(), err)

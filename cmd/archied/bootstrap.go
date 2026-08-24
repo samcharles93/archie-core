@@ -354,13 +354,9 @@ func (b *boot) setupObservability() {
 // connectNATS opens the NATS client. External mode dials cfg.NATS.URL;
 // embedded mode starts an in-process nats-server and dials it, so single-
 // process deployments get task distribution and reaction delivery without a
-// separate server. Off mode returns nil and the SQLite ClaimNext flow runs.
+// separate server. Broker deployment never changes the worker executor.
 func (b *boot) connectNATS(ctx context.Context) error {
 	cfg, log := b.cfg, b.log
-	if cfg.NATS.Mode == config.NATSModeOff {
-		return nil
-	}
-
 	url := cfg.NATS.URL
 	var natsToken string
 	if cfg.NATS.Mode == config.NATSModeExternal {
@@ -412,13 +408,10 @@ func (b *boot) connectNATS(ctx context.Context) error {
 	return nil
 }
 
-// setupContainers builds the optional container pool. Container setup
-// degrades rather than aborting, for the same reason resolveForge does:
-// containers are one capability among many, and refusing to start denies
-// the operator chat, the dashboard and every other subsystem over a
-// feature they may not be exercising right now. Under a systemd unit
-// with Restart=on-failure it also turns a recoverable problem into a
-// crash loop with the real error scrolling past unread.
+// setupContainers builds the managed autonomous-worker pool. Failure degrades
+// rather than aborting because the native interactive agent and dashboard do
+// not require Docker; repository tasks park instead of falling back to a host
+// model loop.
 func (b *boot) setupContainers(ctx context.Context) func() {
 	containerPool, storeBackend, closeDocker := startContainers(ctx, b.cfg, b.log)
 	b.containerPool = containerPool
@@ -1251,8 +1244,8 @@ func (b *boot) startServices(ctx context.Context) error {
 	return nil
 }
 
-// setupBackends wires the optional runtime backends: the NATS client
-// and the container pool.
+// setupBackends wires the autonomous-workflow backends. Container setup may
+// degrade, but NATS startup must succeed because there is no other task handoff.
 func (b *boot) setupBackends(ctx context.Context) error {
 	closeContainers := b.setupContainers(ctx)
 	err := b.connectNATS(ctx)

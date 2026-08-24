@@ -165,17 +165,6 @@ class = "ollama"
 # args = ["-y", "@wonderwhy-er/desktop-commander@0.2.46", "--no-onboarding"]
 # work_dir = "/path/to/workspace"
 
-[agent]
-# How the daemon invokes the agent:
-#   "inprocess"   – run agent logic directly in the daemon (default)
-#   "subprocess"  – spawn `command` as a child, communicating over stdin/stdout
-#   "nats"        – dispatch tasks over NATS (requires [nats]; add [containers] for Docker sandboxing)
-mode = "inprocess"
-# Binary to launch when mode = "subprocess".
-command = "archie-agent"
-# Environment variables forwarded to the agent process (subprocess/nats modes).
-# env = ["GOCACHE"]
-
 # Workspace code-search index. Paths default under work_dir when unset.
 [indexing]
 # Code-search index files (default: <work_dir>/indexes).
@@ -228,15 +217,13 @@ max_steps = 60
 wall_clock = "30m"
 gate_max_failures = 5
 
-# NATS JetStream for task distribution and reaction delivery. mode selects
-# how NATS is provided:
+# NATS is the sole autonomous workflow handoff. mode changes only where the
+# broker runs; every workflow still runs in a managed task container:
 #   "embedded"  – in-process nats-server (the default; no external server)
 #   "external"  – connect to url
-#   "off"       – no NATS; the SQLite ClaimNext flow is used for tasks
-# Leave the section absent (or set no url) to run embedded; set mode="off"
-# only to opt out of NATS entirely.
+# Leave the section absent to run embedded.
 # [nats]
-# mode = "embedded"                  # "embedded" | "external" | "off"
+# mode = "embedded"                  # "embedded" | "external"
 # url = "nats://localhost:4222"      # required when mode = "external"
 # token_env = "NATS_TOKEN"           # optional external-server credential; embedded generates one per start
 
@@ -255,12 +242,14 @@ gate_max_failures = 5
 # rate_per_second = 1.0    # per-remote-address token bucket
 # rate_burst      = 5
 
-# Docker sandbox execution of archie-agent. This is the only autonomous
-# workflow execution path; embedded and external NATS are both supported.
+# Docker sandbox execution of archie-agent is mandatory for autonomous
+# workflows. Omit this section to use the default image, lifetimes, and pull
+# policy; the options below show the available overrides. If Docker or
+# the image is unavailable, chat and the dashboard still start while tasks
+# park explicitly; archied never falls back to a host agent loop.
 # [containers]
-# enabled = true
-# image = "archie-agent:latest"    # Docker image to run
-# max_concurrency = 4              # max simultaneous tasks/containers
+# image = "ghcr.io/samcharles93/archie-agent:latest"
+# max_concurrency = 4              # optional cap; 0/absent means no global cap
 # max_uptime = "60m"               # container lifetime cap
 # volume_ttl = "72h"               # max age for persistent repo volumes and Git clone caches
 # pull_policy = "missing"          # "missing" or "always"

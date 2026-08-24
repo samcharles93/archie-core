@@ -16,7 +16,6 @@ func TestApplyNATSDefaultsResolvesMode(t *testing.T) {
 	}{
 		{name: "url set implies external", url: "nats://localhost:4222", want: config.NATSModeExternal},
 		{name: "empty implies embedded", want: config.NATSModeEmbedded},
-		{name: "explicit off is preserved", mode: config.NATSModeOff, want: config.NATSModeOff},
 		{name: "explicit embedded is preserved", mode: config.NATSModeEmbedded, want: config.NATSModeEmbedded},
 		{name: "explicit external is preserved", mode: config.NATSModeExternal, url: "nats://localhost:4222", want: config.NATSModeExternal},
 	}
@@ -28,6 +27,25 @@ func TestApplyNATSDefaultsResolvesMode(t *testing.T) {
 				t.Errorf("applyNATSDefaults() mode = %q, want %q", cfg.NATS.Mode, tc.want)
 			}
 		})
+	}
+}
+
+func TestApplyContainerDefaultsMakesManagedWorkersReadyByDefault(t *testing.T) {
+	cfg := &config.Config{}
+	applyContainerDefaults(cfg)
+
+	const wantImage = "ghcr.io/samcharles93/archie-agent:latest"
+	if cfg.Containers.Image != wantImage {
+		t.Errorf("Containers.Image = %q, want %q", cfg.Containers.Image, wantImage)
+	}
+	if cfg.Containers.MaxUptime.Std() != defaultContainerUptime {
+		t.Errorf("Containers.MaxUptime = %s, want %s", cfg.Containers.MaxUptime.Std(), defaultContainerUptime)
+	}
+	if cfg.Containers.VolumeTTL.Std() != defaultVolumeTTL {
+		t.Errorf("Containers.VolumeTTL = %s, want %s", cfg.Containers.VolumeTTL.Std(), defaultVolumeTTL)
+	}
+	if cfg.Containers.PullPolicy != defaultPullPolicy {
+		t.Errorf("Containers.PullPolicy = %q, want %q", cfg.Containers.PullPolicy, defaultPullPolicy)
 	}
 }
 
