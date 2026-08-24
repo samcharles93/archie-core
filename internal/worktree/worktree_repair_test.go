@@ -80,6 +80,9 @@ func TestPushSucceedsWhenPostPublicationMetadataFails(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.configPerm&0o222 == 0 && os.Geteuid() == 0 {
+				t.Skip("permission-based config failure is not observable when tests run as root")
+			}
 			logs := setSlogCapture(t)
 			ctx := context.Background()
 			host := newLocalRemote(t, "acme", "push-test")
@@ -152,6 +155,9 @@ func TestRecordUpstreamErrorPaths(t *testing.T) {
 		{
 			name: "write repo config fails when config is read only",
 			setup: func(t *testing.T, dir string) {
+				if os.Geteuid() == 0 {
+					t.Skip("permission-based config failure is not observable when tests run as root")
+				}
 				cfgPath := filepath.Join(dir, ".git", "config")
 				if err := os.Chmod(cfgPath, 0o400); err != nil {
 					t.Fatalf("Chmod config read-only error = %v", err)

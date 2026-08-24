@@ -86,5 +86,18 @@ func waitForPID(t *testing.T, path string) int {
 // processAlive reports whether pid still exists. Signal 0 performs the
 // permission and existence checks without delivering anything.
 func processAlive(pid int) bool {
-	return syscall.Kill(pid, 0) == nil
+	if syscall.Kill(pid, 0) != nil {
+		return false
+	}
+	// kill(pid, 0) also succeeds for zombies. A process killed as part of
+	// the group may briefly remain a zombie until its parent (or init) reaps
+	// it, but it is no longer runnable and cannot survive cancellation.
+	status, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		// /proc is Linux-specific; on other Unix systems the successful
+		// signal check is the best portable liveness check available.
+		return true
+	}
+	fields := strings.Fields(string(status))
+	return len(fields) >= 3 && fields[2] != "Z"
 }
