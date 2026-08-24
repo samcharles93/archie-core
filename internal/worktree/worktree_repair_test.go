@@ -393,7 +393,7 @@ func TestBranchNamingPrecedence(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := archieBranch(tc.issue, tc.title, "", tc.labels)
+			got := archieBranch(tc.issue, tc.title, tc.labels)
 			if got != tc.want {
 				t.Errorf("archieBranch(%d, %q, %q) = %q, want %q", tc.issue, tc.title, tc.labels, got, tc.want)
 			}

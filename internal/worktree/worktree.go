@@ -128,7 +128,7 @@ func (m *Manager) Prepare(
 		return "", "", fmt.Errorf("invalid worktree coordinates")
 	}
 	dir = m.Dir(owner, repo, issue)
-	branch = archieBranch(issue, title, body, labels)
+	branch = archieBranch(issue, title, labels)
 
 	if _, statErr := os.Stat(filepath.Join(dir, preparedSentinel)); statErr == nil {
 		if err := m.refresh(ctx, dir, base, branch); err != nil {
@@ -644,11 +644,9 @@ func resolveBase(r *git.Repository, base string) (plumbing.Hash, error) {
 // archieBranch builds a descriptive branch name. Uses conventional
 // commit prefix (feat/fix/chore/etc.) from the issue title when present,
 // falls back to labels, then defaults to "feat".
-func archieBranch(issue int, title, _ /* body */, labels string) string {
-	prefix, rest := parseTitlePrefix(title)
-	if prefix == "" {
-		prefix = labelPrefix(labels)
-	}
+func archieBranch(issue int, title, labels string) string {
+	prefix := branchPrefix(title, labels)
+	_, rest := parseTitlePrefix(title)
 	slug := branchSlug(rest)
 	if slug == "" {
 		return fmt.Sprintf("%s/%d", prefix, issue)
