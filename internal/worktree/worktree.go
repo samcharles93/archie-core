@@ -666,21 +666,21 @@ func branchPrefix(title, labels string) string {
 }
 
 func parseTitlePrefix(title string) (prefix, rest string) {
-	idx := strings.Index(title, ":")
-	if idx == -1 {
+	before, after, ok := strings.Cut(title, ":")
+	if !ok {
 		return "", title
 	}
-	lead := strings.TrimSpace(strings.ToLower(title[:idx]))
+	lead := strings.TrimSpace(strings.ToLower(before))
 	if open := strings.Index(lead, "("); open != -1 && strings.HasSuffix(lead, ")") {
 		lead = lead[:open]
 	}
 	switch lead {
 	case "fix", "feat", "chore", "docs", "test", "refactor", "perf", "build", "ci", "style", "revert":
-		return lead, strings.TrimSpace(title[idx+1:])
+		return lead, strings.TrimSpace(after)
 	case "bug":
-		return "fix", strings.TrimSpace(title[idx+1:])
+		return "fix", strings.TrimSpace(after)
 	case "feature", "enhancement":
-		return "feat", strings.TrimSpace(title[idx+1:])
+		return "feat", strings.TrimSpace(after)
 	}
 	return "", title
 }
