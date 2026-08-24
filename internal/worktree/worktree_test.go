@@ -324,6 +324,52 @@ func TestPrepareRecoversFromADirtyWorktreeOnRetry(t *testing.T) {
 	}
 }
 
+// A repository whose .git is a gitdir *file* rather than a directory (a
+// linked worktree, or a clone adopted by migrateLegacy) must still have its
+// abandoned untracked files cleaned. Returning filepath.SkipDir for a
+// non-directory aborts the remaining entries of its parent -- at the
+// worktree root that is the entire walk, so cleaning silently did nothing
+// and CommitAll published the leftovers on the next attempt.
+func TestCleanUntrackedHandlesGitdirFile(t *testing.T) {
+	ctx := context.Background()
+	host := newLocalRemote(t, "acme", "todo")
+	m := newManager(t, host)
+
+	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 12, "fix: gitdir file", "", "bug")
+	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+
+	// Relocate the repository metadata and leave a gitdir pointer behind.
+	gitDir := filepath.Join(t.TempDir(), "detached-gitdir")
+	if err := os.Rename(filepath.Join(dir, ".git"), gitDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".git"), []byte("gitdir: "+gitDir+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Sorts after ".git", so it is only reached if the walk continues.
+	abandoned := filepath.Join(dir, "scratch.txt")
+	if err := os.WriteFile(abandoned, []byte("abandoned\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatalf("PlainOpen() with a gitdir file error = %v", err)
+	}
+	if err := cleanUntracked(r, dir); err != nil {
+		t.Fatalf("cleanUntracked() error = %v", err)
+	}
+	if _, err := os.Stat(abandoned); !os.IsNotExist(err) {
+		t.Errorf("abandoned untracked file survived cleaning: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+		t.Errorf("gitdir pointer file was removed: %v", err)
+	}
+}
+
 func TestCollectTrackedPathsClassifiesGitEntries(t *testing.T) {
 	files := make(map[string]struct{})
 	dirs := make(map[string]struct{})
