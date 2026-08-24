@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"reflect"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -15,15 +15,24 @@ import (
 	natstest "github.com/nats-io/nats-server/v2/test"
 	natsio "github.com/nats-io/nats.go"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
-	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
-	busnats "github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/storerpc"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
 )
+
+func TestTransportContainsNoSharedTaskWorkerTopology(t *testing.T) {
+	source, err := os.ReadFile("transport.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"QueueSubscribe", "taskRunSubjectWildcard", "taskRunQueueGroup"} {
+		if strings.Contains(string(source), forbidden) {
+			t.Errorf("transport.go contains forbidden shared-worker mechanism %q", forbidden)
+		}
+	}
+}
 
 func testTransport(t *testing.T) (*Transport, *natsio.Conn) {
 	t.Helper()
@@ -72,56 +81,56 @@ func TestTaskRunSubjectOwnsCanonicalNATSTopology(t *testing.T) {
 	}
 }
 
-func TestSubscribeTasksPreservesDedicatedAndSharedSubjects(t *testing.T) {
-	tests := []struct {
-		name      string
-		taskID    int64
-		dedicated bool
-		subject   string
-		requestID int64
-	}{
-		{name: "dedicated", taskID: 42, dedicated: true, subject: SubjectForTask(42), requestID: 42},
-		{name: "shared queue", subject: SubjectForTask(7), requestID: 7},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			transport, conn := testTransport(t)
-			calls := 0
-			subscription, err := transport.SubscribeTasks(t.Context(), test.taskID, test.dedicated, func(_ context.Context, request taskrun.Request) (*taskrun.Response, error) {
-				calls++
-				if request.Task.ID != test.requestID {
-					t.Fatalf("task ID = %d, want %d", request.Task.ID, test.requestID)
-				}
-				return &taskrun.Response{Status: "done"}, nil
-			}, slog.New(slog.DiscardHandler))
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = subscription.Close() })
+// Full-task handoff and all worker RPC use core NATS. The worker must connect
+// to a broker with JetStream disabled; requiring a durable consumer would mean
+// the deleted per-stage transport still owns startup.
+func TestConnectRequiresOnlyCoreNATS(t *testing.T) {
+	srv := natstest.RunServer(&server.Options{Port: -1, Authorization: "worker-secret"})
+	t.Cleanup(srv.Shutdown)
 
-			payload, err := json.Marshal(taskrun.Request{Task: &store.Task{ID: test.requestID}, WorktreeGrant: "grant"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			message, err := conn.Request(test.subject, payload, time.Second)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var response taskrun.Response
-			if err := json.Unmarshal(message.Data, &response); err != nil {
-				t.Fatal(err)
-			}
-			if calls != 1 || response.Status != "done" {
-				t.Fatalf("handler/response = (%d, %q), want (1, done)", calls, response.Status)
-			}
-		})
+	transport, err := Connect(t.Context(), Config{URL: srv.ClientURL(), Token: "worker-secret"}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("Connect to core-only NATS: %v", err)
+	}
+	transport.Close()
+}
+
+func TestSubscribeTasksServesOnlyBootTaskSubject(t *testing.T) {
+	transport, conn := testTransport(t)
+	calls := 0
+	subscription, err := transport.SubscribeTasks(t.Context(), 42, func(_ context.Context, request taskrun.Request) (*taskrun.Response, error) {
+		calls++
+		if request.Task.ID != 42 {
+			t.Fatalf("task ID = %d, want 42", request.Task.ID)
+		}
+		return &taskrun.Response{Status: "done"}, nil
+	}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = subscription.Close() })
+
+	payload, err := json.Marshal(taskrun.Request{Task: &store.Task{ID: 42}, WorktreeGrant: "grant"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := conn.Request(SubjectForTask(42), payload, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response taskrun.Response
+	if err := json.Unmarshal(message.Data, &response); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || response.Status != "done" {
+		t.Fatalf("handler/response = (%d, %q), want (1, done)", calls, response.Status)
 	}
 }
 
 func TestSubscribeTasksOwnsWireErrors(t *testing.T) {
 	transport, conn := testTransport(t)
 	handlerCalls := 0
-	subscription, err := transport.SubscribeTasks(t.Context(), 9, true, func(context.Context, taskrun.Request) (*taskrun.Response, error) {
+	subscription, err := transport.SubscribeTasks(t.Context(), 9, func(context.Context, taskrun.Request) (*taskrun.Response, error) {
 		handlerCalls++
 		return nil, errors.New("run failed")
 	}, slog.New(slog.DiscardHandler))
@@ -169,7 +178,6 @@ func TestHandleTaskRejectsSubjectCorrelationErrors(t *testing.T) {
 		name       string
 		subject    string
 		bootTaskID int64
-		dedicated  bool
 		requestID  int64
 		want       string
 	}{
@@ -180,19 +188,18 @@ func TestHandleTaskRejectsSubjectCorrelationErrors(t *testing.T) {
 			want:      `validate taskrun request: invalid taskrun subject "archie.taskrun.invalid"`,
 		},
 		{
-			name:       "dedicated boot mismatch",
+			name:       "boot mismatch",
 			subject:    SubjectForTask(9),
 			bootTaskID: 42,
-			dedicated:  true,
 			requestID:  9,
-			want:       "validate taskrun request: task ID 9 does not match dedicated boot task ID 42",
+			want:       "validate taskrun request: task ID 9 does not match boot task ID 42",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			transport, conn := testTransport(t)
 			handlerCalls := 0
 			subscription, err := conn.Subscribe(test.subject, func(message *natsio.Msg) {
-				transport.handleTask(t.Context(), message, test.bootTaskID, test.dedicated, func(context.Context, taskrun.Request) (*taskrun.Response, error) {
+				transport.handleTask(t.Context(), message, test.bootTaskID, func(context.Context, taskrun.Request) (*taskrun.Response, error) {
 					handlerCalls++
 					return &taskrun.Response{Status: "unexpected"}, nil
 				}, slog.New(slog.DiscardHandler))
@@ -239,24 +246,20 @@ func (s *recordingSDKSubscription) Unsubscribe() error {
 
 func TestSubscribeTasksReportsSetupFailuresAndCleansUpFlushFailure(t *testing.T) {
 	subscribeErr := errors.New("subscribe failed")
-	queueErr := errors.New("queue subscribe failed")
 	flushErr := errors.New("flush failed")
 	cleanupErr := errors.New("unsubscribe failed")
 	tests := []struct {
 		name             string
-		dedicated        bool
 		subscribeErr     error
-		queueErr         error
 		flushErr         error
 		cleanupErr       error
 		wantErr          error
 		wantUnsubscribes int
 		wantCleanupLog   bool
 	}{
-		{name: "direct subscribe", dedicated: true, subscribeErr: subscribeErr, wantErr: subscribeErr},
-		{name: "queue subscribe", queueErr: queueErr, wantErr: queueErr},
-		{name: "flush cleanup succeeds", dedicated: true, flushErr: flushErr, wantErr: flushErr, wantUnsubscribes: 1},
-		{name: "flush cleanup fails", dedicated: true, flushErr: flushErr, cleanupErr: cleanupErr, wantErr: flushErr, wantUnsubscribes: 1, wantCleanupLog: true},
+		{name: "direct subscribe", subscribeErr: subscribeErr, wantErr: subscribeErr},
+		{name: "flush cleanup succeeds", flushErr: flushErr, wantErr: flushErr, wantUnsubscribes: 1},
+		{name: "flush cleanup fails", flushErr: flushErr, cleanupErr: cleanupErr, wantErr: flushErr, wantUnsubscribes: 1, wantCleanupLog: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -264,9 +267,6 @@ func TestSubscribeTasksReportsSetupFailuresAndCleansUpFlushFailure(t *testing.T)
 			transport := &Transport{
 				subscribe: func(string, natsio.MsgHandler) (sdkSubscription, error) {
 					return sub, test.subscribeErr
-				},
-				queueSubscribe: func(string, string, natsio.MsgHandler) (sdkSubscription, error) {
-					return sub, test.queueErr
 				},
 				flush: func(timeout time.Duration) error {
 					if timeout != taskSubscriptionFlushTimeout {
@@ -276,7 +276,7 @@ func TestSubscribeTasksReportsSetupFailuresAndCleansUpFlushFailure(t *testing.T)
 				},
 			}
 			var output bytes.Buffer
-			_, err := transport.SubscribeTasks(t.Context(), 42, test.dedicated, func(context.Context, taskrun.Request) (*taskrun.Response, error) {
+			_, err := transport.SubscribeTasks(t.Context(), 42, func(context.Context, taskrun.Request) (*taskrun.Response, error) {
 				t.Fatal("handler called")
 				return nil, nil
 			}, slog.New(slog.NewTextHandler(&output, nil)))
@@ -290,127 +290,6 @@ func TestSubscribeTasksReportsSetupFailuresAndCleansUpFlushFailure(t *testing.T)
 				t.Fatalf("cleanup warning logged = %v, want %v; output %q", got, test.wantCleanupLog, output.String())
 			}
 		})
-	}
-}
-
-func TestConnectOwnsWorkerTopology(t *testing.T) {
-	connectErr := errors.New("stop after config capture")
-	var got busnats.Config
-	_, err := connect(t.Context(), Config{
-		URL:          "nats://worker.test:4222",
-		Token:        "secret",
-		ConsumerName: "agent-worker",
-	}, slog.New(slog.DiscardHandler), func(_ context.Context, config busnats.Config, _ *slog.Logger) (*busnats.Client, error) {
-		got = config
-		return nil, connectErr
-	})
-	if !errors.Is(err, connectErr) {
-		t.Fatalf("connect error = %v, want %v", err, connectErr)
-	}
-	if got.URL != "nats://worker.test:4222" || got.Token != "secret" || got.ConsumerName != "agent-worker" {
-		t.Fatalf("deployment config = %#v", got)
-	}
-	wantSubjects := []string{workintake.SubjectTaskWildcard, agentexec.SubjectAgentWildcard}
-	if !reflect.DeepEqual(got.Subjects, wantSubjects) {
-		t.Fatalf("subjects = %v, want %v", got.Subjects, wantSubjects)
-	}
-	if got.FilterSubject != agentexec.SubjectAgentWildcard || got.PollTimeout != stagePollTimeout || got.AckWait != stageAckWait {
-		t.Fatalf("topology config = %#v, want filter=%q poll=%s ack=%s", got, agentexec.SubjectAgentWildcard, stagePollTimeout, stageAckWait)
-	}
-}
-
-type rawStageMessage struct {
-	data     []byte
-	subject  string
-	reply    string
-	replyErr error
-	ackErr   error
-	nakErr   error
-	ackCalls int
-	nakCalls int
-}
-
-func (m *rawStageMessage) Data() []byte                  { return m.data }
-func (m *rawStageMessage) Subject() string               { return m.subject }
-func (m *rawStageMessage) ReplyAddress() (string, error) { return m.reply, m.replyErr }
-func (m *rawStageMessage) Ack() error                    { m.ackCalls++; return m.ackErr }
-func (m *rawStageMessage) Nak() error                    { m.nakCalls++; return m.nakErr }
-
-func TestStageMessageOwnsDecodeReplyAndAcknowledgement(t *testing.T) {
-	replyErr := errors.New("no reply")
-	for _, test := range []struct {
-		name    string
-		wire    *rawStageMessage
-		wantErr string
-	}{
-		{name: "decode", wire: &rawStageMessage{data: []byte("not json"), subject: "archie.agent.bad"}, wantErr: "decode request:"},
-		{name: "reply", wire: &rawStageMessage{data: []byte(`{"task_id":7}`), subject: "archie.agent.no-reply", replyErr: replyErr}, wantErr: "stage request on archie.agent.no-reply:"},
-		{name: "typed request", wire: &rawStageMessage{data: []byte(`{"task_id":7,"stage":"test"}`), reply: "_INBOX.7"}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			message := newStageMessage(test.wire, func(context.Context, string, []byte) error { return nil })
-			request, err := message.Request()
-			if test.wantErr != "" {
-				if err == nil || !strings.Contains(err.Error(), test.wantErr) {
-					t.Fatalf("Request error = %v, want containing %q", err, test.wantErr)
-				}
-			} else if err != nil || request.TaskID != 7 || request.Stage != "test" {
-				t.Fatalf("Request = (%#v, %v), want typed task 7/test", request, err)
-			}
-			if err := message.Ack(); err != nil {
-				t.Fatal(err)
-			}
-			if err := message.Nak(); err != nil {
-				t.Fatal(err)
-			}
-			if test.wire.ackCalls != 1 || test.wire.nakCalls != 1 {
-				t.Fatalf("ack/nak calls = (%d,%d), want (1,1)", test.wire.ackCalls, test.wire.nakCalls)
-			}
-		})
-	}
-}
-
-func TestStageMessageDelegatesAcknowledgementErrors(t *testing.T) {
-	ackErr := errors.New("ack failed")
-	nakErr := errors.New("nak failed")
-	wire := &rawStageMessage{data: []byte(`{"task_id":7}`), reply: "_INBOX.7", ackErr: ackErr, nakErr: nakErr}
-	message := newStageMessage(wire, func(context.Context, string, []byte) error { return nil })
-	if err := message.Ack(); !errors.Is(err, ackErr) {
-		t.Fatalf("Ack error = %v, want %v", err, ackErr)
-	}
-	if err := message.Nak(); !errors.Is(err, nakErr) {
-		t.Fatalf("Nak error = %v, want %v", err, nakErr)
-	}
-}
-
-func TestStageMessageOwnsResponseEncodingAndInboxDelivery(t *testing.T) {
-	encodeErr := errors.New("encode failed")
-	respondErr := errors.New("respond failed")
-	response := &agentexec.AgentResponseEnvelope{Result: agentexec.Result{Status: agentexec.StatusPassed}}
-
-	wire := &rawStageMessage{data: []byte(`{"task_id":7}`), reply: "_INBOX.7"}
-	message := newStageMessage(wire, func(_ context.Context, reply string, data []byte) error {
-		if reply != "_INBOX.7" || !strings.Contains(string(data), `"status":"passed"`) {
-			t.Fatalf("reply/data = (%q,%s)", reply, data)
-		}
-		return nil
-	})
-	if err := message.Respond(t.Context(), response); err != nil {
-		t.Fatal(err)
-	}
-
-	concrete, ok := message.(*stageMessage)
-	if !ok {
-		t.Fatalf("message type = %T, want *stageMessage", message)
-	}
-	concrete.encode = func(any) ([]byte, error) { return nil, encodeErr }
-	if err := concrete.Respond(t.Context(), response); !errors.Is(err, encodeErr) || !strings.Contains(err.Error(), "encode response") {
-		t.Fatalf("encode error = %v", err)
-	}
-	concrete.encode = json.Marshal
-	concrete.respond = func(context.Context, string, []byte) error { return respondErr }
-	if err := concrete.Respond(t.Context(), response); !errors.Is(err, respondErr) || !strings.Contains(err.Error(), "publish response") {
-		t.Fatalf("respond error = %v", err)
 	}
 }
 
@@ -428,34 +307,5 @@ func TestRPCFactoriesPreserveIdentityAndTimeout(t *testing.T) {
 	treeClient, ok := transport.Trees("identity-a", "grant-a", timeout).(*worktreerpc.Client)
 	if !ok || treeClient.Identity != "identity-a" || treeClient.Grant != "grant-a" || treeClient.Timeout != timeout {
 		t.Fatalf("tree client = %#v", treeClient)
-	}
-}
-
-func TestTransportFromBusClassifiesUnavailableCoreConnection(t *testing.T) {
-	transport, err := transportFromBus(&busnats.Client{})
-	if transport != nil {
-		t.Fatalf("transport = %#v, want nil", transport)
-	}
-	if !errors.Is(err, ErrCoreConnectionUnavailable) {
-		t.Fatalf("error = %v, want ErrCoreConnectionUnavailable", err)
-	}
-}
-
-func TestConnectOwnsJetStreamAndCoreConnection(t *testing.T) {
-	srv := natstest.RunRandClientPortServer()
-	t.Cleanup(srv.Shutdown)
-	if err := srv.EnableJetStream(&server.JetStreamConfig{StoreDir: t.TempDir()}); err != nil {
-		t.Fatal(err)
-	}
-	transport, err := Connect(t.Context(), Config{
-		URL:          srv.ClientURL(),
-		ConsumerName: "worker-test",
-	}, slog.New(slog.DiscardHandler))
-	if err != nil {
-		t.Fatal(err)
-	}
-	transport.Close()
-	if _, err := transport.FetchStage(t.Context()); err == nil {
-		t.Fatal("FetchStage after Close returned nil error")
 	}
 }

@@ -65,7 +65,6 @@ func TestArchiedWiresTypedProvidersAndExecutableConsumers(t *testing.T) {
 		// calls live in the chat composition files.
 		"chatGenerateOptions(ctx,",
 		"toolSummaries(options.Tools)",
-		"agentexec.NewInProcessRunner(b.llm, log, b.toolReg)",
 	} {
 		if !strings.Contains(text.String(), required) {
 			t.Errorf("archied wiring not found: %q", required)
@@ -76,5 +75,8 @@ func TestArchiedWiresTypedProvidersAndExecutableConsumers(t *testing.T) {
 	}
 	if strings.Contains(text.String(), "memManager.GetToolSchemas()") {
 		t.Error("composition bypasses the typed memory tool provider")
+	}
+	if strings.Contains(text.String(), "NewLoopRunner") {
+		t.Error("archied constructs a worker-local autonomous runner")
 	}
 }

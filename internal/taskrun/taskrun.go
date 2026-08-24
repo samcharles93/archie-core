@@ -1,6 +1,5 @@
 // Package taskrun defines the wire format for handing an entire task off
-// from archied to archie-agent in one NATS round trip, replacing the
-// per-stage AgentRequestMessage protocol for the sandboxed container path.
+// from archied to archie-agent in one NATS round trip.
 // archie-agent runs workflow.Route and workflow.Run itself; archied's role
 // shrinks to worktree prepare, container acquire/release, and answering
 // the storerpc/forgerpc/worktreerpc calls archie-agent proxies back.

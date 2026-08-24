@@ -18,7 +18,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
-	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/eventbus"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -72,9 +71,7 @@ type Daemon struct {
 	Store         store.TaskStore
 	Forge         forge.Forge
 	Trees         *worktree.Manager
-	Agent         agentexec.Runner
 	Bus           *events.Bus
-	Workflows     workflow.Registry
 	Log           *slog.Logger
 	// Tasks is the optional message bus for task distribution. Nil means no
 	// bus is configured; the existing SQLite ClaimNext flow is used.
@@ -83,7 +80,7 @@ type Daemon struct {
 	// TaskRunReadyTimeout bounds how long runViaAgent retries an initial
 	// taskrun request that fails with nats.ErrNoResponders, giving a
 	// freshly spawned archie-agent container time to connect to NATS, set
-	// up its JetStream stream/consumer, and subscribe before the daemon
+	// up its task-scoped core-NATS subscription, and become reachable before the daemon
 	// gives up and parks the task. ContainerPool.Acquire returns as soon
 	// as Docker has issued the start syscall, not once that setup
 	// finishes, so without this bound the very first request after a
@@ -112,11 +109,6 @@ type Daemon struct {
 	// lifecycle. Typed capability registries remain in their domain packages;
 	// the host never exposes daemon internals or an untyped service locator.
 	CapabilityHost *plugin.Host
-	// CustomStages discovers a repo's per-repo Yaegi custom stages
-	// (.archie/stages/*.go) from its prepared worktree. Set by the
-	// composition root (cmd/archied) to wfeval.Discover; nil disables
-	// discovery.
-	CustomStages func(dir string) ([]workflow.Stage, error)
 	// Curators is the curator engine family registry (epic archie-core-yp9).
 	// The runtime loop (archie-core-89x) and reference curators (i7i, gs8)
 	// are driven through it; nil when the family is not composed.
@@ -163,9 +155,7 @@ type IdentityRunner struct {
 	// Cfg is the identity-scoped config subset (forge, models, dispatch,
 	// budgets, etc.).
 	Cfg config.IdentityConfig
-	// Agent is built from this identity's provider credentials.
-	Agent agentexec.Runner
-	Log   *slog.Logger
+	Log *slog.Logger
 }
 
 // NewIdentityRunner constructs an IdentityRunner from an identity config
@@ -1081,8 +1071,8 @@ func (d *Daemon) taskRunRetryBackoff() time.Duration {
 // requestTaskRun publishes the taskrun request and retries while no
 // archie-agent has subscribed yet (nats.ErrNoResponders): the container
 // pool's Acquire returns as soon as Docker has issued the start syscall,
-// not once the spawned container has connected to NATS, set up its
-// JetStream stream/consumer, and subscribed to this per-task subject  --
+// not once the spawned container has connected to core NATS and subscribed
+// to this per-task subject --
 // a gap of hundreds of milliseconds to a few seconds that would otherwise
 // fail the very first request deterministically, every time, on every
 // task. Any error other than ErrNoResponders (encode failures, a context
@@ -1140,16 +1130,11 @@ func (d *Daemon) containerEnv(task *store.Task) []string {
 	return env
 }
 
-func (d *Daemon) executionFor(task *store.Task) (config.Config, agentexec.Runner) {
-	if id := d.identityFor(task); id != nil {
-		return configForIdentity(d.Cfg.Get(), id.Cfg), id.Agent
-	}
-	return d.Cfg.Get(), d.Agent
-}
-
 func (d *Daemon) configFor(task *store.Task) config.Config {
-	cfg, _ := d.executionFor(task)
-	return cfg
+	if id := d.identityFor(task); id != nil {
+		return configForIdentity(d.Cfg.Get(), id.Cfg)
+	}
+	return d.Cfg.Get()
 }
 
 func configForIdentity(root config.Config, identity config.IdentityConfig) config.Config {

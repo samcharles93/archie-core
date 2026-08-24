@@ -8,14 +8,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/eventbus"
 )
 
-// replyHeader carries the requester's reply inbox.
-//
-// JetStream consumes a message's Reply field for its own PubAck, so the
-// address travels as a header instead. That is a NATS detail: the contract
-// exposes it as [eventbus.Message.ReplyAddress] and callers never name the
-// header.
-const replyHeader = "X-Archie-Reply"
-
 // idempotencyHeader is JetStream's deduplication key. Messages republished
 // with the same value inside Config.DedupWindow are suppressed by the server.
 const idempotencyHeader = "Nats-Msg-Id"
@@ -36,14 +28,6 @@ func (m message) Data() []byte { return m.msg.Data() }
 
 // Subject returns the subject the message arrived on.
 func (m message) Subject() string { return m.msg.Subject() }
-
-// ReplyAddress returns the requester's reply inbox.
-func (m message) ReplyAddress() (string, error) {
-	if addr := m.msg.Headers().Get(replyHeader); addr != "" {
-		return addr, nil
-	}
-	return "", fmt.Errorf("%w: on %s", eventbus.ErrNoReplyAddress, m.Subject())
-}
 
 // Ack marks the message handled so JetStream will not redeliver it.
 func (m message) Ack() error {

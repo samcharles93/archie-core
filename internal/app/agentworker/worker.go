@@ -3,7 +3,6 @@ package agentworker
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"time"
 
@@ -33,16 +32,14 @@ func (e *StartupError) Unwrap() error { return e.Err }
 type Settings struct {
 	NATSURL   string
 	NATSToken string
-	Consumer  string
 	WorkDir   string
 }
 
 type workerTransport interface {
-	agentexec.StageConsumer
 	Close()
 	LogPublisher() agentexec.LogPublisher
 	EventPublisher() agentexec.EventPublisher
-	SubscribeTasks(context.Context, int64, bool, agentnats.TaskHandler, *slog.Logger) (agentnats.Subscription, error)
+	SubscribeTasks(context.Context, int64, agentnats.TaskHandler, *slog.Logger) (agentnats.Subscription, error)
 	Forger(string, time.Duration) workflow.Forger
 	Store(time.Duration) store.WorkflowStore
 	Trees(string, string, time.Duration) agentnats.RemoteTrees
@@ -51,8 +48,8 @@ type workerTransport interface {
 type workerDependencies struct {
 	connect  func(context.Context, agentnats.Config, *slog.Logger) (workerTransport, error)
 	markSafe func(context.Context, string, *slog.Logger) bool
-	bootID   func(string) (int64, bool, error)
-	runLoop  func(context.Context, stageBus, *slog.Logger) int
+	bootID   func(string) (int64, error)
+	wait     func(context.Context, *slog.Logger)
 }
 
 func productionWorkerDependencies() workerDependencies {
@@ -62,12 +59,15 @@ func productionWorkerDependencies() workerDependencies {
 		},
 		markSafe: agentgit.MarkSafe,
 		bootID:   agentboot.TaskID,
-		runLoop:  runMainLoop,
+		wait: func(ctx context.Context, log *slog.Logger) {
+			<-ctx.Done()
+			log.Info("archie-agent shutting down")
+		},
 	}
 }
 
-// Run starts the worker, serves full-task and single-stage requests, and
-// returns after ctx cancellation or a startup failure.
+// Run starts the worker, serves full-task requests, and returns after ctx
+// cancellation or a startup failure.
 func Run(ctx context.Context, settings Settings, log *slog.Logger) error {
 	return run(ctx, settings, log, productionWorkerDependencies())
 }
@@ -84,31 +84,25 @@ func run(ctx context.Context, settings Settings, log *slog.Logger, dependencies 
 	dependencies.markSafe(ctx, workDir, log)
 
 	transport, err := dependencies.connect(ctx, agentnats.Config{
-		URL:          settings.NATSURL,
-		Token:        settings.NATSToken,
-		ConsumerName: settings.Consumer,
+		URL:   settings.NATSURL,
+		Token: settings.NATSToken,
 	}, log)
 	if err != nil {
 		operation := "nats connect failed"
-		if errors.Is(err, agentnats.ErrCoreConnectionUnavailable) {
-			operation = "nats connection unavailable"
-		}
 		log.Error(operation, "err", err)
 		return &StartupError{Operation: operation, Err: err}
 	}
 	defer transport.Close()
 
-	taskID, dedicated, err := dependencies.bootID(workDir)
+	taskID, err := dependencies.bootID(workDir)
 	if err != nil {
 		log.Error("task boot failed", "err", err)
 		return &StartupError{Operation: "task boot failed", Err: err}
 	}
-	if dedicated {
-		log = slog.New(agentexec.NewSystemLogHandler(log.Handler(), transport.LogPublisher(), taskID))
-		log.Info("system log publisher attached", "task", taskID)
-	}
+	log = slog.New(agentexec.NewSystemLogHandler(log.Handler(), transport.LogPublisher(), taskID))
+	log.Info("system log publisher attached", "task", taskID)
 
-	subscription, err := transport.SubscribeTasks(ctx, taskID, dedicated, func(ctx context.Context, request taskrun.Request) (*taskrun.Response, error) {
+	subscription, err := transport.SubscribeTasks(ctx, taskID, func(ctx context.Context, request taskrun.Request) (*taskrun.Response, error) {
 		return executeTaskRequest(ctx, request, transport, workDir, log)
 	}, log)
 	if err != nil {
@@ -121,8 +115,8 @@ func run(ctx context.Context, settings Settings, log *slog.Logger, dependencies 
 		}
 	}()
 
-	log.Info("archie-agent ready", "nats", settings.NATSURL, "consumer", settings.Consumer)
-	dependencies.runLoop(ctx, transport, log)
+	log.Info("archie-agent ready", "nats", settings.NATSURL)
+	dependencies.wait(ctx, log)
 	return nil
 }
 
@@ -141,7 +135,7 @@ func executeTaskRequest(ctx context.Context, request taskrun.Request, transport 
 		trees:  transport.Trees(request.Task.Identity, request.WorktreeGrant, rpcTimeout),
 		events: transport.EventPublisher(),
 	}
-	response, err := runTask(ctx, request, dependencies, agentexec.DefaultRunnerFactory, workDir, log)
+	response, err := runTask(ctx, request, dependencies, newTaskRunner, workDir, log)
 	if err != nil {
 		log.Error("task run failed", "task", request.Task.ID, "err", err)
 		return nil, err

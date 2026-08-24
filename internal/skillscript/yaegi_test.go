@@ -98,8 +98,8 @@ func TestRunMissingFile(t *testing.T) {
 // has no cancellation mechanism. A skill script that blocks forever
 // (select{}) wedges the calling goroutine permanently. Every other
 // execution path in archie-core supports context cancellation
-// (exec.CommandContext in SubprocessRunner, context.Cause checks in
-// InProcessRunner), but Run cannot be canceled or timed out because it
+// (context.Cause checks in LoopRunner), but Run cannot be canceled or timed
+// out because it
 // takes no context.Context and calls i.EvalPath synchronously.
 func TestRunBlocksIndefinitelyOnBlockingScript(t *testing.T) {
 	path := writeScript(t, `package main

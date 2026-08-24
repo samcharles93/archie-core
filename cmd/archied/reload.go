@@ -158,6 +158,9 @@ var reloadableFields = map[string]bool{
 	// per-task half of this list is pinned mechanically; this webui-only
 	// entry is pinned by TestChangedNonReloadableFields.
 	"MaxRetries": true,
+	// [agent] is a decode-only compatibility shim; changes have no runtime
+	// consumer and therefore require neither reload nor restart.
+	"LegacyAgent": true,
 }
 
 // reloadableSubFields are sub-fields of structs that are otherwise

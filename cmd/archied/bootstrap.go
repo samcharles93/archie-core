@@ -31,7 +31,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
-	"github.com/samcharles93/archie-core/internal/domain/workflow/wfeval"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
@@ -107,8 +106,7 @@ type boot struct {
 	containerPool *container.Pool
 	storeBackend  storage.Backend
 
-	providers map[string]agentexec.Provider
-	llm       *runtime.Runtime
+	llm *runtime.Runtime
 
 	toolReg             *tools.Registry
 	chatModels          gateway.ModelManager
@@ -120,8 +118,6 @@ type boot struct {
 	webRouter           *gateway.Router
 
 	startGateways    []func()
-	agentRunner      agentexec.Runner
-	registry         workflow.Registry
 	capabilityHost   *plugin.Host
 	trees            *worktree.Manager
 	worktreeGrants   *worktreerpc.Grants
@@ -401,7 +397,7 @@ func (b *boot) connectNATS(ctx context.Context) error {
 	natsClient, err := nats.Connect(ctx, nats.Config{
 		URL:           url,
 		Token:         natsToken,
-		Subjects:      []string{workintake.SubjectTaskWildcard, agentexec.SubjectAgentWildcard},
+		Subjects:      []string{workintake.SubjectTaskWildcard},
 		FilterSubject: workintake.SubjectTaskWildcard,
 	}, log)
 	if err != nil {
@@ -439,7 +435,6 @@ func (b *boot) setupLLMAndChat(ctx context.Context) {
 	// Created before gateways so the LLMResponder can be wired into the
 	// Telegram router for non-command message processing.
 	providers := executionProviders(cfg)
-	b.providers = providers
 	b.llm = agentexec.NewRuntime(providers)
 	b.toolReg = tools.NewRegistry()
 	chatModels := newChatModelManager(cfg.Models, cfg.Chat.Models, b.catalogModels)
@@ -582,39 +577,6 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 	return true
 }
 
-func (b *boot) buildAgentRunner() error {
-	cfg, log := b.cfg, b.log
-	if b.llm == nil {
-		return nil
-	}
-	switch cfg.Agent.Mode {
-	case "subprocess":
-		b.agentRunner = &agentexec.SubprocessRunner{
-			Command:       cfg.Agent.Command,
-			Environ:       os.Environ(),
-			AdditionalEnv: cfg.Agent.Env,
-			Diagnostics:   os.Stderr,
-			Providers:     b.providers,
-		}
-	case "inprocess":
-		inproc := agentexec.NewInProcessRunner(b.llm, log, b.toolReg)
-		inproc.Limits = toolLimits(cfg)
-		b.agentRunner = inproc
-	case "nats":
-		if b.natsClient == nil {
-			log.Error("agent.mode is nats but nats is unavailable (nats.mode is off)")
-			return fmt.Errorf("agent.mode is nats but nats is unavailable (nats.mode is off)")
-		}
-		b.agentRunner = &agentexec.NATSRunner{
-			Bus:        b.natsClient,
-			Providers:  b.providers,
-			MCPServers: cfg.Tools.MCPServers,
-			Log:        log,
-		}
-	}
-	return nil
-}
-
 // loadWorkflows builds the workflow registry from the skill catalog.
 // Plugin-defined workflows override built-ins of the same name;
 // built-ins fill gaps.
@@ -629,9 +591,8 @@ func (b *boot) loadWorkflows(ctx context.Context) error {
 		log.Error("skill registry build failed", "err", err)
 		return err
 	}
-	b.registry = workflowCatalog.Registry
-	log.Info("workflow registry built", "workflows", len(b.registry))
-	b.web.Workflows = workflow.DefinitionsWithOrigins(b.registry, workflowCatalog.Origins)
+	log.Info("workflow registry built", "workflows", len(workflowCatalog.Registry))
+	b.web.Workflows = workflow.DefinitionsWithOrigins(workflowCatalog.Registry, workflowCatalog.Origins)
 	if l := cfg.Web.Listen; l != "" && l != "off" {
 		b.web.Token = webTokenFor(l, cfg.DBPath, log)
 		go func() {
@@ -706,29 +667,6 @@ func (b *boot) buildTreesAndIdentities(ctx context.Context) error {
 		if err != nil {
 			log.Error("identity construction failed", "identity", idCfg.Name, "err", err)
 			return err
-		}
-		idProviders := agentexec.ProvidersFromConfig(idCfg.Providers)
-		idRuntime := agentexec.NewRuntime(idProviders)
-		if idRuntime != nil {
-			switch cfg.Agent.Mode {
-			case "subprocess":
-				runner.Agent = &agentexec.SubprocessRunner{
-					Command:       cfg.Agent.Command,
-					Environ:       os.Environ(),
-					AdditionalEnv: cfg.Agent.Env,
-					Diagnostics:   os.Stderr,
-					Providers:     idProviders,
-				}
-			case "inprocess":
-				idRunner := agentexec.NewInProcessRunner(idRuntime, log.With("identity", idCfg.Name), b.toolReg)
-				idRunner.Limits = toolLimits(cfg)
-				runner.Agent = idRunner
-			case "nats":
-				runner.Agent = &agentexec.NATSRunner{
-					Bus: b.natsClient, Providers: idProviders,
-					MCPServers: cfg.Tools.MCPServers, Log: log.With("identity", idCfg.Name),
-				}
-			}
 		}
 		b.identityRunners = append(b.identityRunners, runner)
 		log.Info("identity configured", "identity", idCfg.Name, "bot_user", idCfg.BotUser, "repos", len(idCfg.Repos))
@@ -1007,12 +945,9 @@ func (b *boot) buildDaemon() {
 		Bus:            b.bus,
 		Forge:          b.forgeClient,
 		Trees:          b.trees,
-		Agent:          b.agentRunner,
-		Workflows:      b.registry,
 		CapabilityHost: b.capabilityHost,
 		Storage:        b.storeBackend,
 		Log:            log,
-		CustomStages:   wfeval.Discover,
 		Tasks:          b.natsClient,
 		WorktreeGrants: b.worktreeGrants,
 		ContainerPool:  b.containerPool,
@@ -1327,15 +1262,6 @@ func (b *boot) setupBackends(ctx context.Context) error {
 	// then the embedded server shuts down.
 	b.addCleanup(closeContainers)
 	return err
-}
-
-// buildAgentAndWorkflows builds the agent runner and the workflow
-// registry it executes.
-func (b *boot) buildAgentAndWorkflows(ctx context.Context) error {
-	if err := b.buildAgentRunner(); err != nil {
-		return err
-	}
-	return b.loadWorkflows(ctx)
 }
 
 // shutdownCuratorRuntime returns a cleanup that stops the curator

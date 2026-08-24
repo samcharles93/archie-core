@@ -74,3 +74,37 @@ func reportLocalWorkflowRun(t *testing.T, fileset *token.FileSet, call *ast.Call
 	position := fileset.Position(call.Pos())
 	t.Errorf("%s calls workflow.Run; autonomous workflows must use the full-task worker handoff", position)
 }
+
+// Daemon and IdentityRunner carry routing and authority state only. Keeping a
+// stage runner or workflow registry on either type makes a host execution path
+// one call away from returning.
+func TestDaemonCarriesNoLocalWorkflowExecutionState(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "daemon.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forbidden := map[string]bool{"Agent": true, "Workflows": true, "CustomStages": true}
+	for _, declaration := range file.Decls {
+		gen, ok := declaration.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			typeSpec, ok := spec.(*ast.TypeSpec)
+			if !ok || (typeSpec.Name.Name != "Daemon" && typeSpec.Name.Name != "IdentityRunner") {
+				continue
+			}
+			structure, ok := typeSpec.Type.(*ast.StructType)
+			if !ok {
+				continue
+			}
+			for _, field := range structure.Fields.List {
+				for _, name := range field.Names {
+					if forbidden[name.Name] {
+						t.Errorf("%s carries local workflow execution field %s", typeSpec.Name.Name, name.Name)
+					}
+				}
+			}
+		}
+	}
+}

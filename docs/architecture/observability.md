@@ -10,10 +10,8 @@ rotating file sink, a live `Feed` the dashboard subscribes to, and a reader
 the `/api/logs` endpoint serves from. Before this implementation, none of
 that reached inside a task.
 
-A task's actual work happens in an `archie-agent` container, dispatched over
-NATS (`[agent] mode = "nats"` is the only supported mode; the in-process
-runner exists for tests and is being migrated away — see
-[Decision: no new functionality on non-NATS transports](#decision-no-new-functionality-on-non-nats-transports)).
+A task's actual work happens in a task-scoped `archie-agent` container,
+dispatched as one complete workflow over NATS.
 Before this design was implemented, five things destroyed the evidence of what
 that container did:
 
@@ -51,18 +49,14 @@ intended to be usable by people other than the original operator. A system
 that is only debuggable by an operator who happens to be watching `docker ps`
 in real time does not meet that bar.
 
-## Decision: NATS is the only transport this feature targets
+## Decision: NATS is the sole autonomous handoff
 
-`[agent] mode = "nats"` is the supported deployment; the agent image must
-already be able to reach NATS in every deployment, because it is the *only*
-channel carrying stage results back to the daemon — if it can't reach NATS,
-the task cannot complete regardless of logging. The in-process runner
-(`agentexec.InProcessRunner`) exists for tests and is being migrated away.
-New functionality is NOT added to it or to any non-NATS path. A container
+The agent image must reach NATS in every deployment, because the broker is the
+only autonomous task handoff and the only channel carrying task results back
+to the daemon. `archied` has no workflow runner or host fallback. A container
 that dies before establishing a NATS connection is a distinct, narrower
-failure (connectivity/config) from the one this document addresses (a
-connected container's own output being unrecoverable), and is out of scope
-here.
+failure (connectivity/config) from the one this document addresses (a connected
+container's own output being unrecoverable), and is out of scope here.
 
 ## Implemented design
 
@@ -94,9 +88,8 @@ fail the run it is reporting on.
 
 ### Daemon side
 
-`cmd/archied/main.go` currently registers `subscribeSystemLogs` once at
-startup for the `.system` suffix of `agentexec.SubjectAgentWildcard`
-(`"archie.agent.>"`). It demultiplexes by task ID, appends to that task's
+`cmd/archied/main.go` registers `subscribeSystemLogs` once at startup on
+`agentexec.SubjectSystemWildcard`. It demultiplexes by task ID, appends to that task's
 sink, and publishes into the existing `logging.Feed` so live task output
 appears on the dashboard exactly like daemon output. The approved target is
 for this composition to move to `internal/app/archied`; that package does not

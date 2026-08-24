@@ -209,7 +209,6 @@ type ConfigView struct {
 	Models       map[string]string       `json:"models"`
 	Providers    map[string]ProviderView `json:"providers"`
 	Budgets      BudgetsView             `json:"budgets"`
-	Agent        AgentView               `json:"agent"`
 	Storage      StorageView             `json:"storage"`
 	Containers   ContainersView          `json:"containers"`
 	Web          WebView                 `json:"web"`
@@ -269,15 +268,6 @@ type BudgetsView struct {
 	MaxSteps        int    `json:"max_steps"`
 	WallClock       string `json:"wall_clock"`
 	GateMaxFailures int    `json:"gate_max_failures"`
-}
-
-// AgentView is how archied executes autonomous stages. Env lists only
-// environment variable NAMES admitted to the worker's allowlist, never
-// their values.
-type AgentView struct {
-	Mode    string   `json:"mode"`
-	Command string   `json:"command,omitempty"`
-	Env     []string `json:"env,omitempty"`
 }
 
 // StorageView is where archied keeps its state on disk. All paths, no
@@ -348,11 +338,6 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			MaxSteps:        cfg.Budgets.MaxSteps,
 			WallClock:       cfg.Budgets.WallClock.Std().String(),
 			GateMaxFailures: cfg.Budgets.GateMaxFailures,
-		},
-		Agent: AgentView{
-			Mode:    cfg.Agent.Mode,
-			Command: cfg.Agent.Command,
-			Env:     cfg.Agent.Env,
 		},
 		Storage: StorageView{
 			WorkDir:         cfg.WorkDir,

@@ -14,10 +14,6 @@ import (
 // Recognised enum values, named so validation and its error message cannot
 // disagree about what is allowed.
 const (
-	agentModeInProcess  = "inprocess"
-	agentModeSubprocess = "subprocess"
-	agentModeNATS       = "nats"
-
 	forgeTypeGitHub   = "github"
 	forgeTypeGitea    = "gitea"
 	forgeTypeNone     = "none"
@@ -30,7 +26,6 @@ const (
 )
 
 var (
-	agentModes       = []string{agentModeInProcess, agentModeSubprocess, agentModeNATS}
 	forgeTypes       = []string{forgeTypeGitHub, forgeTypeGitea, forgeTypeNone, forgeTypeOff, forgeTypeDisabled}
 	dispatchTriggers = []string{dispatchTriggerAssignee, dispatchTriggerLabel, dispatchTriggerEither}
 	natsModes        = []string{config.NATSModeEmbedded, config.NATSModeExternal, config.NATSModeOff}
@@ -41,8 +36,8 @@ var (
 // against a config.Config value already built in memory -- e.g. by archied
 // setup, before it has written anything to disk.
 //
-// Like validate, it does not apply defaults. Several checks (agent.mode,
-// dispatch.trigger, forge.type) only pass once a default has been filled
+// Like validate, it does not apply defaults. Several checks (dispatch.trigger,
+// forge.type) only pass once a default has been filled
 // in, and defaulting is currently unexported ((*Loader).applyDefaults). A
 // cfg built by hand, with those fields left zero-valued, will fail
 // validation that a config loaded through [Loader.File] would pass. Callers
@@ -58,9 +53,6 @@ func Validate(cfg *config.Config) error {
 // validate reports the first problem that would stop the daemon running.
 // It does not modify cfg -- run applyDefaults first.
 func validate(cfg *config.Config) error {
-	if err := validateAgent(cfg); err != nil {
-		return err
-	}
 	if err := validateDispatch(cfg); err != nil {
 		return err
 	}
@@ -123,21 +115,6 @@ func validateCapture(cfg *config.Config) error {
 func validatePollInterval(cfg *config.Config) error {
 	if cfg.PollInterval <= 0 {
 		return fmt.Errorf("%w: poll_interval must be positive", ErrInvalidInput)
-	}
-	return nil
-}
-
-func validateAgent(cfg *config.Config) error {
-	if !oneOf(cfg.Agent.Mode, agentModes) {
-		return fmt.Errorf("%w: agent.mode %q (want %s)", ErrInvalidInput, cfg.Agent.Mode, list(agentModes))
-	}
-	if cfg.Agent.Mode == agentModeSubprocess && strings.TrimSpace(cfg.Agent.Command) == "" {
-		return fmt.Errorf("%w: agent.command is required in subprocess mode", ErrInvalidInput)
-	}
-	for i, name := range cfg.Agent.Env {
-		if strings.TrimSpace(name) == "" || strings.Contains(name, "=") {
-			return fmt.Errorf("%w: agent.env[%d] %q is not an environment variable name", ErrInvalidInput, i, name)
-		}
 	}
 	return nil
 }
@@ -297,9 +274,6 @@ func validateNATS(cfg *config.Config) error {
 			return fmt.Errorf("%w: nats.url must be empty when nats.mode is %q", ErrInvalidInput, mode)
 		}
 	}
-	if cfg.Agent.Mode == agentModeNATS && mode == config.NATSModeEmbedded && !cfg.Containers.Enabled {
-		return fmt.Errorf("%w: containers.enabled must be true when agent.mode is %q and nats.mode is %q", ErrInvalidInput, agentModeNATS, config.NATSModeEmbedded)
-	}
 	return nil
 }
 
@@ -312,9 +286,6 @@ func validateContainers(cfg *config.Config) error {
 	}
 	if cfg.Containers.Image == "" {
 		return fmt.Errorf("%w: containers.image is required when containers.enabled is true", ErrInvalidInput)
-	}
-	if cfg.Agent.Mode != agentModeNATS {
-		return fmt.Errorf("%w: agent.mode must be %q when containers.enabled is true", ErrInvalidInput, agentModeNATS)
 	}
 	if effectiveNATSMode(cfg) == config.NATSModeOff {
 		return fmt.Errorf("%w: nats.mode must not be %q when containers.enabled is true", ErrInvalidInput, config.NATSModeOff)

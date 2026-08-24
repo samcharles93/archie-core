@@ -20,10 +20,10 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 			MCPServers: []MCPServer{{Headers: map[string]string{"A": "b"}, Args: []string{"x"}}},
 			WebFetch:   WebFetchConfig{Enabled: &enabled},
 		},
-		Memory: MemoryConfig{ProviderConfig: map[string]string{"k": "v"}},
-		Chat:   ChatConfig{Telegram: TelegramConfig{AllowedUserIDs: []int64{1}}},
-		Agent:  Agent{Env: []string{"HOME"}},
-		Extra:  map[string]any{"custom": 1},
+		Memory:      MemoryConfig{ProviderConfig: map[string]string{"k": "v"}},
+		Chat:        ChatConfig{Telegram: TelegramConfig{AllowedUserIDs: []int64{1}}},
+		LegacyAgent: LegacyAgent{Env: []string{"HOME"}},
+		Extra:       map[string]any{"custom": 1},
 	}
 
 	got := orig.Clone()
@@ -37,7 +37,7 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 	got.Tools.MCPServers[0].Args[0] = "changed"
 	got.Memory.ProviderConfig["k"] = "changed"
 	got.Chat.Telegram.AllowedUserIDs[0] = 99
-	got.Agent.Env[0] = "changed"
+	got.LegacyAgent.Env[0] = "changed"
 	got.Extra["custom"] = 2
 	*got.Tools.WebFetch.Enabled = false
 
@@ -62,7 +62,7 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 	if orig.Chat.Telegram.AllowedUserIDs[0] != 1 {
 		t.Error("Telegram.AllowedUserIDs is shared")
 	}
-	if orig.Agent.Env[0] != "HOME" {
+	if orig.LegacyAgent.Env[0] != "HOME" {
 		t.Error("Agent.Env is shared")
 	}
 	if orig.Extra["custom"] != 1 {

@@ -18,7 +18,6 @@ func minimalValidConfig() config.Config {
 	return config.Config{
 		BotUser:      "archie-bot",
 		PollInterval: config.Duration(60 * time.Second),
-		Agent:        config.Agent{Mode: "inprocess"},
 		Dispatch: config.Dispatch{
 			Trigger: "assignee",
 		},
@@ -77,11 +76,6 @@ func TestValidate_RejectsTheSameProblemsAsLoaderLoad(t *testing.T) {
 		{
 			name:    "missing bot_user with no identities",
 			mutate:  func(cfg *config.Config) { cfg.BotUser = "" },
-			wantErr: true,
-		},
-		{
-			name:    "unrecognised agent.mode",
-			mutate:  func(cfg *config.Config) { cfg.Agent.Mode = "not-a-real-mode" },
 			wantErr: true,
 		},
 		{
@@ -192,16 +186,14 @@ func TestValidate_RejectsTheSameProblemsAsLoaderLoad(t *testing.T) {
 
 // TestValidateNATS pins the nats mode contract from docs/prds/embedded-nats.md:
 // an unset mode resolves from url without mutating cfg, external requires url,
-// embedded/off forbid a url, and NATS agent execution works with either
-// embedded or external broker deployment.
+// embedded/off forbid a url, and full-task workers work with either embedded
+// or external broker deployment.
 func TestValidateNATS(t *testing.T) {
 	tests := []struct {
-		name       string
-		mode       string
-		url        string
-		agent      string
-		containers bool
-		wantErr    bool
+		name    string
+		mode    string
+		url     string
+		wantErr bool
 	}{
 		{name: "unset mode with url resolves external", url: "nats://localhost:4222"},
 		{name: "unset mode without url resolves embedded"},
@@ -212,20 +204,11 @@ func TestValidateNATS(t *testing.T) {
 		{name: "embedded with url", mode: config.NATSModeEmbedded, url: "nats://localhost:4222", wantErr: true},
 		{name: "off with url", mode: config.NATSModeOff, url: "nats://localhost:4222", wantErr: true},
 		{name: "unknown mode", mode: "not-a-mode", wantErr: true},
-		{name: "agent nats with embedded requires containers", mode: config.NATSModeEmbedded, agent: "nats", wantErr: true},
-		{name: "agent nats with embedded containers", mode: config.NATSModeEmbedded, agent: "nats", containers: true},
-		{name: "agent nats with external", mode: config.NATSModeExternal, url: "nats://localhost:4222", agent: "nats"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := minimalValidConfig()
 			cfg.NATS = config.NATSConfig{Mode: tc.mode, URL: tc.url}
-			if tc.agent != "" {
-				cfg.Agent.Mode = tc.agent
-			}
-			if tc.containers {
-				cfg.Containers.Enabled = true
-			}
 			err := validateNATS(&cfg)
 			if tc.wantErr && err == nil {
 				t.Fatal("validateNATS() = nil, want an error")
@@ -246,7 +229,6 @@ func TestValidateContainersResolvesNATSMode(t *testing.T) {
 	base := func() config.Config {
 		cfg := minimalValidConfig()
 		cfg.Containers = config.ContainerConfig{Enabled: true, Image: "archie-agent:latest"}
-		cfg.Agent.Mode = "nats"
 		return cfg
 	}
 

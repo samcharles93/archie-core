@@ -5,20 +5,14 @@ import (
 	"strings"
 )
 
-// Agent execution subjects.
+// Agent observability subjects.
 //
 // These belong to this package because it defines what an agent request and
 // response mean. They previously sat in the NATS package, which made the
 // transport the owner of Archie's agent protocol; see
 // docs/architecture/dependencies-and-contracts.md -- message schemas and the
 // subjects addressing them stay with the domain that defines them.
-//
-// The stage travels in the payload, not the subject: one subject per task
-// carrying sequential stage messages.
 const (
-	// SubjectAgentWildcard matches every agent subject.
-	SubjectAgentWildcard = "archie.agent.>"
-
 	// SubjectSystemWildcard matches every task's system subject, for a
 	// daemon subscribing to all of them at once with a single core NATS
 	// subscription rather than one per running task.
@@ -33,19 +27,6 @@ const (
 	subjectSystemSuffix = ".system"
 	subjectEventsSuffix = ".events"
 )
-
-// SubjectForRequest returns the subject carrying stage execution requests for
-// a task.
-func SubjectForRequest(taskID int64) string {
-	return subjectForTask(taskID, "request")
-}
-
-// SubjectForResponse returns the subject for agent output destined for human
-// channels. The daemon reviews these before forwarding to issue comments,
-// labels, or pull requests.
-func SubjectForResponse(taskID int64) string {
-	return subjectForTask(taskID, "response")
-}
 
 // SubjectForSystem returns the subject for internal agent messages such as
 // log dumps, health, and PII warnings. The daemon reads these for

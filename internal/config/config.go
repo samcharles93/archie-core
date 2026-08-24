@@ -176,15 +176,14 @@ type Provider struct {
 	BaseURL   string           `toml:"base_url" yaml:"base_url" json:"base_url"`
 }
 
-// Agent configures how archied executes autonomous stages.
-type Agent struct {
-	// Mode is "inprocess" during migration or "subprocess" to invoke the
-	// standalone archie-agent worker for every autonomous stage.
-	Mode string `toml:"mode" yaml:"mode"`
-	// Command is the archie-agent executable path used in subprocess mode.
-	Command string `toml:"command" yaml:"command"`
-	// Env adds environment variable names to the worker allowlist.
-	Env []string `toml:"env" yaml:"env"`
+// LegacyAgent decodes the removed [agent] section so existing operator files
+// continue to load during migration. Its fields have no runtime consumers:
+// autonomous work always uses a task-scoped archie-agent container over NATS.
+// Remove the section from new and updated configurations.
+type LegacyAgent struct {
+	Mode    string   `toml:"mode" yaml:"mode"`
+	Command string   `toml:"command" yaml:"command"`
+	Env     []string `toml:"env" yaml:"env"`
 }
 
 // Forge intake modes for Forge.Intake. Poll is the default; webhook reacts to
@@ -414,8 +413,8 @@ type Config struct {
 	// model ref ("provider/model").
 	Models map[string]string `toml:"models" yaml:"models"`
 
-	Providers map[string]Provider `toml:"providers" yaml:"providers"`
-	Agent     Agent               `toml:"agent" yaml:"agent"`
+	Providers   map[string]Provider `toml:"providers" yaml:"providers"`
+	LegacyAgent LegacyAgent         `toml:"agent" yaml:"agent"`
 
 	Budgets    Budgets         `toml:"budgets" yaml:"budgets"`
 	Web        Web             `toml:"web" yaml:"web"`
@@ -540,7 +539,7 @@ func (c Config) Clone() Config {
 	c.Models = cloneStringMap(c.Models)
 	c.Providers = maps.Clone(c.Providers)
 	c.Dispatch.Labels = cloneStringMap(c.Dispatch.Labels)
-	c.Agent.Env = append([]string(nil), c.Agent.Env...)
+	c.LegacyAgent.Env = append([]string(nil), c.LegacyAgent.Env...)
 	c.Repos = cloneRepos(c.Repos)
 	c.Identities = cloneIdentities(c.Identities)
 	c.Chat.Models = append([]string(nil), c.Chat.Models...)
@@ -669,7 +668,7 @@ type CaptureConfig struct {
 
 // ContainerConfig configures Docker sandbox execution of archie-agent.
 type ContainerConfig struct {
-	// Enabled activates container execution. Requires agent.mode = "nats".
+	// Enabled activates autonomous workflow execution in managed containers.
 	Enabled bool `toml:"enabled" yaml:"enabled"`
 	// Image is the Docker image to run (e.g. "ghcr.io/sam/archie-agent:latest").
 	Image string `toml:"image" yaml:"image"`

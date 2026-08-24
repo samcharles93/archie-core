@@ -1,8 +1,17 @@
 # Adversarial self-review stage -- decision
 
-**Status:** Decided, not yet implemented
+**Status:** Superseded; requires redesign before implementation
 **Date:** 2026-08-22
 **Beads issue:** `archie-core-h019.1`, blocks `h019.2/.3/.4/.5`
+
+> **Superseded 2026-08-24 by the full-task worker boundary.** This document is
+> retained as the record of the earlier decision, not as an implementation
+> contract. It assumes daemon-owned in-process execution and a daemon-side
+> second `Pool.Acquire`; both call sites were removed by `archie-core-q15y`.
+> The still-useful findings and lifecycle decisions below do not authorize an
+> implementation. The feature must first decide how a fresh reviewer receives
+> an isolated snapshot from inside the existing task-scoped worker without
+> creating a host executor or a nested container lifecycle.
 
 Answers the five questions in `h019.1`'s description against the actual
 implement workflow, not designed from scratch: the gate pattern, the

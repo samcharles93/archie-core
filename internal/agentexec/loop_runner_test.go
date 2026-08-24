@@ -57,8 +57,8 @@ func TestPluginToolSetRejectsAgentLoopCollisions(t *testing.T) {
 	}
 }
 
-func TestInProcessRunnerMapsRequestAndCapturesOutput(t *testing.T) {
-	runner := &InProcessRunner{
+func TestLoopRunnerMapsRequestAndCapturesOutput(t *testing.T) {
+	runner := &LoopRunner{
 		runtime: runtime.NewRuntime(runtime.Config{}),
 		run: func(ctx context.Context, cfg agentloop.Config) (agentloop.Result, error) {
 			if cfg.WorkDir != "/workspace" || cfg.ModelRef != "provider/model" || cfg.Mission != "mission" {
@@ -103,7 +103,7 @@ func TestInProcessRunnerMapsRequestAndCapturesOutput(t *testing.T) {
 	}
 }
 
-func TestInProcessRunnerIncludesAvailableCentralTools(t *testing.T) {
+func TestLoopRunnerIncludesAvailableCentralTools(t *testing.T) {
 	registry := tools.NewRegistry()
 	if err := registry.Register(tools.ToolEntry{
 		Name: "memory_search",
@@ -113,7 +113,7 @@ func TestInProcessRunnerIncludesAvailableCentralTools(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	runner := &InProcessRunner{
+	runner := &LoopRunner{
 		runtime: runtime.NewRuntime(runtime.Config{}),
 		tools:   registry,
 		run: func(ctx context.Context, cfg agentloop.Config) (agentloop.Result, error) {
@@ -144,7 +144,7 @@ func TestInProcessRunnerIncludesAvailableCentralTools(t *testing.T) {
 	}
 }
 
-func TestInProcessRunnerRejectsInvalidCentralToolSchemas(t *testing.T) {
+func TestLoopRunnerRejectsInvalidCentralToolSchemas(t *testing.T) {
 	registry := tools.NewRegistry()
 	if err := registry.Register(tools.ToolEntry{
 		Name:    "invalid",
@@ -155,7 +155,7 @@ func TestInProcessRunnerRejectsInvalidCentralToolSchemas(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	runner := &InProcessRunner{
+	runner := &LoopRunner{
 		runtime: runtime.NewRuntime(runtime.Config{}),
 		tools:   registry,
 		run: func(context.Context, agentloop.Config) (agentloop.Result, error) {
@@ -280,10 +280,10 @@ func TestMergeToolSetsLaterWinsOnCollision(t *testing.T) {
 	}
 }
 
-func TestInProcessRunnerPreservesCallerCancellation(t *testing.T) {
+func TestLoopRunnerPreservesCallerCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	runner := &InProcessRunner{
+	runner := &LoopRunner{
 		runtime: runtime.NewRuntime(runtime.Config{}),
 		run: func(context.Context, agentloop.Config) (agentloop.Result, error) {
 			return agentloop.Result{Status: agentloop.StatusParked, StopReason: agentloop.StopTimedOut}, nil
@@ -301,8 +301,8 @@ func TestInProcessRunnerPreservesCallerCancellation(t *testing.T) {
 // tool handler discards the incoming context (the handler is declared as
 // func(_ context.Context, input string) and calls skillscript.Run without
 // forwarding ctx). Every other execution path in archie-core respects
-// context cancellation (SubprocessRunner uses exec.CommandContext,
-// InProcessRunner checks context.Cause), but a cancelled/timed-out context
+// context cancellation (LoopRunner checks context.Cause), but a
+// cancelled/timed-out context
 // has zero effect on run_go_script — a blocking script wedges the
 // goroutine permanently.
 func TestScriptToolHonorsContextCancellation(t *testing.T) {

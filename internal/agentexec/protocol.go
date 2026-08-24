@@ -1,13 +1,12 @@
-// Package agentexec defines the unprivileged agent execution boundary.
-// Workflow orchestration and external side effects remain daemon-owned.
+// Package agentexec defines worker-local workflow-stage execution. archie-agent
+// owns workflow orchestration; authority-bearing forge, store, and push effects
+// remain daemon-owned behind scoped RPC boundaries.
 package agentexec
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
-	"strings"
 	"time"
 )
 
@@ -131,59 +130,6 @@ type Provider struct {
 	Class     string `json:"class"`
 	APIKeyEnv string `json:"api_key_env,omitempty"`
 	BaseURL   string `json:"base_url,omitempty"`
-}
-
-func (p Provider) validate() error {
-	if strings.TrimSpace(p.Class) == "" {
-		return fmt.Errorf("provider class is required")
-	}
-	if p.BaseURL == "" {
-		return nil
-	}
-	u, err := url.Parse(p.BaseURL)
-	if err != nil {
-		return fmt.Errorf("parse provider base_url: %w", err)
-	}
-	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return fmt.Errorf("provider base_url must not contain userinfo, query parameters, or a fragment")
-	}
-	return nil
-}
-
-// Invocation is the single request accepted by archie-agent on stdin.
-type Invocation struct {
-	Version   int                 `json:"version"`
-	Workspace string              `json:"workspace"`
-	Request   Request             `json:"request"`
-	Providers map[string]Provider `json:"providers"`
-}
-
-// Validate rejects invocations that cannot be executed safely.
-func (i Invocation) Validate() error {
-	if i.Version != ProtocolVersion {
-		return fmt.Errorf("agent invocation protocol version %d is unsupported (want %d)", i.Version, ProtocolVersion)
-	}
-	if i.Workspace == "" {
-		return fmt.Errorf("agent invocation workspace is required")
-	}
-	if len(i.Providers) == 0 {
-		return fmt.Errorf("agent invocation providers are required")
-	}
-	for name, provider := range i.Providers {
-		if err := provider.validate(); err != nil {
-			return fmt.Errorf("agent invocation provider %q: %w", name, err)
-		}
-	}
-	return i.Request.Validate()
-}
-
-// Response is the single envelope written by archie-agent on stdout.
-// Error carries execution errors after the worker successfully decoded the
-// invocation; process-level protocol failures use a non-zero exit status.
-type Response struct {
-	Version int    `json:"version"`
-	Result  Result `json:"result"`
-	Error   string `json:"error,omitempty"`
 }
 
 // ValidateFor rejects incompatible or misrouted results before the daemon

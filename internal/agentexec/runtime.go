@@ -2,8 +2,8 @@ package agentexec
 
 import "github.com/samcharles93/ai-sdk/runtime"
 
-// NewRuntime builds the provider runtime shared by archied's in-process mode
-// and the archie-agent worker. Nil means no providers were configured.
+// NewRuntime builds a provider runtime for interactive chat or a worker-local
+// workflow stage. Nil means no providers were configured.
 func NewRuntime(providers map[string]Provider) *runtime.Runtime {
 	if len(providers) == 0 {
 		return nil

@@ -16,7 +16,6 @@ import (
 	natssrv "github.com/nats-io/nats-server/v2/test"
 	natsio "github.com/nats-io/nats.go"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
@@ -34,12 +33,6 @@ import (
 
 type cleanupStorage struct {
 	ttl time.Duration
-}
-
-type identityRunnerStub struct{}
-
-func (*identityRunnerStub) Run(context.Context, string, agentexec.Request, agentexec.ToolCallReporter) (agentexec.Result, error) {
-	return agentexec.Result{}, nil
 }
 
 func (s *cleanupStorage) Setup(context.Context, storage.TaskRef) ([]storage.Mount, error) {
@@ -479,7 +472,7 @@ func startEmbeddedNATSForDaemon(t *testing.T) *server.Server {
 func daemonWithNATS(t *testing.T) (*Daemon, *store.Store, *arnats.Client) {
 	t.Helper()
 	srv := startEmbeddedNATSForDaemon(t)
-	client, err := arnats.Connect(context.Background(), arnats.Config{URL: srv.ClientURL(), Subjects: []string{workintake.SubjectTaskWildcard, agentexec.SubjectAgentWildcard}, FilterSubject: workintake.SubjectTaskWildcard}, slog.New(slog.DiscardHandler))
+	client, err := arnats.Connect(context.Background(), arnats.Config{URL: srv.ClientURL(), Subjects: []string{workintake.SubjectTaskWildcard}, FilterSubject: workintake.SubjectTaskWildcard}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("nats connect: %v", err)
 	}
@@ -1023,9 +1016,7 @@ func TestNewIdentityRunnerRejectsEmptyName(t *testing.T) {
 	}
 }
 
-func TestExecutionForUsesIdentityConfigAgentAndProvider(t *testing.T) {
-	rootAgent := &identityRunnerStub{}
-	identityAgent := &identityRunnerStub{}
+func TestConfigForUsesIdentityConfigAndProvider(t *testing.T) {
 	d := &Daemon{
 		Cfg: config.NewHolder(config.Config{
 			Models: map[string]string{"builder": "root/model"},
@@ -1033,9 +1024,8 @@ func TestExecutionForUsesIdentityConfigAgentAndProvider(t *testing.T) {
 				"root": {Class: "openai", APIKeyEnv: "ROOT_KEY"},
 			},
 		}),
-		Agent: rootAgent,
 		Identities: []*IdentityRunner{{
-			Name: "worker", Agent: identityAgent,
+			Name: "worker",
 			Cfg: config.IdentityConfig{
 				Name: "worker", Models: map[string]string{"builder": "worker/model"},
 				Providers: map[string]config.Provider{
@@ -1045,10 +1035,7 @@ func TestExecutionForUsesIdentityConfigAgentAndProvider(t *testing.T) {
 		}},
 	}
 
-	cfg, runner := d.executionFor(&store.Task{Identity: "worker"})
-	if runner != identityAgent {
-		t.Fatal("executionFor returned root agent for identity task")
-	}
+	cfg := d.configFor(&store.Task{Identity: "worker"})
 	if cfg.Models["builder"] != "worker/model" {
 		t.Fatalf("builder model = %q", cfg.Models["builder"])
 	}

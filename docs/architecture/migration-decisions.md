@@ -171,19 +171,18 @@ and tests must decide:
 Conversation branches do not create another memory scope. A memory action has
 the same scoped effect regardless of which Conversation originated it.
 
-### 6. Runtime and process boundaries
+### 6. Runtime and process boundaries — DECIDED
 
-The migration must decide which current execution paths survive:
+`archied` is the native resident orchestration and interactive-chat process.
+Every autonomous repository workflow crosses one full-task core-NATS handoff
+into a task-scoped `archie-agent` container. Embedded versus external NATS
+changes broker deployment only; it never selects an executor. The former host
+in-process runner, per-stage NATS protocol, and subprocess runner are removed.
 
-- in-process execution;
-- `archie-agent` subprocess execution;
-- NATS worker execution;
-- container isolation;
-- forge, store, and worktree RPC services.
-
-The source architecture remains a modular monolith. A retained process boundary
-requires a concrete security-isolation, failure-containment, scaling, or
-operational justification. Possible future extraction is insufficient.
+Forge, store, and worktree authority remains in `archied` and is exposed to the
+task container through scoped RPC services. The worker runs the workflow and
+its worker-local ai-sdk loop; it does not receive forge credentials or direct
+store access. See `docs/prds/embedded-nats.md`.
 
 ### 7. Shared mechanics
 

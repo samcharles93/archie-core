@@ -360,7 +360,7 @@ func run() int {
 		return 1
 	}
 
-	if err := b.buildAgentAndWorkflows(ctx); err != nil {
+	if err := b.loadWorkflows(ctx); err != nil {
 		return 1
 	}
 	if err := b.loadPlugins(); err != nil {
@@ -704,8 +704,8 @@ func subscribeSystemLogs(nc *natsio.Conn, taskLogs *logging.TaskRegistry, log *s
 // in-process and invisible to the daemon; this is the other half of the
 // bridge, landing them on bus so persistAndBroadcastEvents -- the single
 // choke point that inserts into the SQLite events table and fans out over
-// SSE -- treats them exactly like an in-process daemon-run workflow's own
-// events. Mirrors subscribeSystemLogs's demux-by-taskID shape.
+// SSE -- treats them exactly like every other daemon-observed event. Mirrors
+// subscribeSystemLogs's demux-by-taskID shape.
 func subscribeAgentEvents(nc *natsio.Conn, bus *events.Bus, log *slog.Logger) (unsubscribe func(), err error) {
 	sub, err := nc.Subscribe(agentexec.SubjectEventsWildcard, func(msg *natsio.Msg) {
 		taskID, ok := agentexec.TaskIDFromEventsSubject(msg.Subject)

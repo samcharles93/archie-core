@@ -78,7 +78,7 @@ type ToolSetOptions struct {
 	Approval tools.ApprovalRequester
 
 	// OnToolCall, when non-nil, is notified once per completed tool call.
-	// InProcessRunner populates it so a workflow stage can surface tool
+	// LoopRunner populates it so a workflow stage can surface tool
 	// activity on the task timeline (archie-core-467's task-transcript
 	// counterpart). Nil means no one is listening.
 	OnToolCall ToolCallReporter
@@ -94,11 +94,8 @@ type ToolCallReport struct {
 	Failed bool
 }
 
-// ToolCallReporter receives one ToolCallReport per completed tool call. Only
-// a runner that executes in the same process as its tools can populate this
-// -- SubprocessRunner and NATSRunner dispatch to a different process and have
-// no visibility into individual calls from here. A nil reporter is valid and
-// reports nothing.
+// ToolCallReporter receives one ToolCallReport per completed tool call. A nil
+// reporter is valid and reports nothing.
 type ToolCallReporter func(ToolCallReport)
 
 // toolCallDetailBytes caps the summary ToolCallReport.Detail carries. This

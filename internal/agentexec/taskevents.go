@@ -23,8 +23,7 @@ type EventPublisher interface {
 // in-process *events.Bus the daemon cannot see -- the worker and the daemon
 // are separate processes connected only by NATS. This is the bridge that
 // makes those Emit calls (stage progress, outcome, parking) reach the
-// daemon's events table and dashboard timeline the same way an in-process,
-// daemon-run workflow's Bus already does.
+// daemon's events table and dashboard timeline.
 //
 // A marshal or publish failure is logged and the loop continues: one missing
 // event must never abort the ones after it, and event shipping must never
