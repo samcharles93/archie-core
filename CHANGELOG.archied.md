@@ -1,5 +1,12 @@
 # archied changelog
 
+## [1.18.0] - 2026-08-25
+
+- Fix concurrent chat-turn claims so SQLite writer contention no longer leaks as `SQLITE_BUSY`.
+- Make task timelines operationally useful with stage outcomes, durations, retry context, and durable per-stage token economics.
+- Return canonical repository, issue, and pull-request URLs for each task's owning GitHub or Gitea identity.
+- Preserve per-identity commit attribution and real model context limits across daemon-to-worker dispatch.
+
 ## [1.17.1] - 2026-08-25
 
 - fix(update): remove source checkout dependency

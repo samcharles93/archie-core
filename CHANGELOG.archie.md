@@ -1,5 +1,12 @@
 # archie-agent changelog
 
+## [1.17.0] - 2026-08-25
+
+- Compact task history against the selected model's real context capacity without imposing a token cap.
+- Preserve completed steps and billed usage when a later provider call fails; failed compaction now keeps the original history and continues.
+- Persist detailed agent-stage usage through the daemon-owned store before lossy live event fan-out.
+- Apply configured or forge-derived author and committer identity to sandboxed task commits.
+
 ## [1.16.1] - 2026-08-25
 
 - fix(agentworker): reconcile task clone ownership after commits
