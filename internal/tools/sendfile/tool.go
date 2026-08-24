@@ -33,13 +33,32 @@ import (
 // ToolName is the registry name of the file-delivery tool.
 const ToolName = "send_file"
 
-// MaxUploadBytes bounds what may be handed to a channel for upload. It is
-// the Telegram Bot API's 50 MB document ceiling, which is the tightest
-// limit among the channels that can deliver at all; checking it here means
-// an oversized file fails as a tool error the model can report instead of
-// as a delivery failure it never sees. The channel enforces its own real
-// limits regardless -- this is an early, visible check, not the authority.
-const MaxUploadBytes int64 = 50 * 1024 * 1024
+// Upload ceilings, in bytes. These are the Telegram Bot API's, the
+// tightest among the channels that can deliver at all; checking them here
+// means an oversized file fails as a tool error the model can report
+// instead of as a delivery failure it never sees. The channel enforces its
+// own limits regardless -- this is an early, visible check, not the
+// authority.
+//
+// Images have their own, much lower ceiling. Applying MaxUploadBytes to
+// every type made the early check useless for exactly the type that needed
+// it: a 20 MB screenshot passed here, was reported to the model as sent,
+// and was then rejected by a layer the model cannot see.
+const (
+	MaxUploadBytes      int64 = 50 * 1024 * 1024
+	MaxImageUploadBytes int64 = 10 * 1024 * 1024
+)
+
+// uploadLimit reports the ceiling for a media kind. It mirrors the
+// telegram sender's own limits by design: the two must agree, or the early
+// check either lets through what the send rejects or refuses what it would
+// have accepted.
+func uploadLimit(mediaType string) int64 {
+	if mediaType == "image" {
+		return MaxImageUploadBytes
+	}
+	return MaxUploadBytes
+}
 
 // Tool builds the registry entry rooted at workspace. Relative paths
 // resolve against it, and confinement (when enabled) is measured from it,
@@ -107,9 +126,10 @@ func prepare(workspace, path, caption string) (tools.MultimodalResult, error) {
 	if !info.Mode().IsRegular() {
 		return tools.MultimodalResult{}, fmt.Errorf("%s: %s: %w", ToolName, resolved, errNotRegularFile)
 	}
-	if info.Size() > MaxUploadBytes {
-		return tools.MultimodalResult{}, fmt.Errorf("%s: %s is %d bytes, over the %d byte upload limit",
-			ToolName, resolved, info.Size(), MaxUploadBytes)
+	mediaType := MediaType(resolved)
+	if limit := uploadLimit(mediaType); info.Size() > limit {
+		return tools.MultimodalResult{}, fmt.Errorf("%s: %s is %d bytes, over the %d byte upload limit for %s",
+			ToolName, resolved, info.Size(), limit, mediaType)
 	}
 	// Opened, not just stat'd: an unreadable file is a failure the model
 	// must see now rather than one the channel discovers after the turn
@@ -129,11 +149,23 @@ func prepare(workspace, path, caption string) (tools.MultimodalResult, error) {
 		IsMultimodal: true,
 		Summary:      summary,
 		URLs: []tools.MediaRef{{
-			Type:     MediaType(resolved),
+			Type:     mediaType,
 			Path:     resolved,
 			FileName: name,
 		}},
 	}, nil
+}
+
+// photoFormats are the image types a chat platform will accept through its
+// photo endpoint. Membership is by exact media type rather than an
+// "image/" prefix: image/svg+xml and image/tiff are images that a photo
+// endpoint rejects outright, so treating the whole prefix as photo-safe
+// turned a deliverable file into a failed send. As documents they arrive.
+var photoFormats = map[string]bool{
+	"image/jpeg": true,
+	"image/png":  true,
+	"image/gif":  true,
+	"image/webp": true,
 }
 
 // MediaType maps a filename onto the four-value media vocabulary
@@ -143,9 +175,10 @@ func prepare(workspace, path, caption string) (tools.MultimodalResult, error) {
 // arbitrary bytes: guessing "image" wrongly makes the platform reject the
 // send, while sending an image as a document still delivers the file.
 func MediaType(path string) string {
-	mt := mime.TypeByExtension(strings.ToLower(filepath.Ext(path)))
+	mt, _, _ := strings.Cut(mime.TypeByExtension(strings.ToLower(filepath.Ext(path))), ";")
+	mt = strings.TrimSpace(mt)
 	switch {
-	case strings.HasPrefix(mt, "image/"):
+	case photoFormats[mt]:
 		return "image"
 	case strings.HasPrefix(mt, "video/"):
 		return "video"

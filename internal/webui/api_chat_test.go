@@ -835,3 +835,47 @@ func postTo(server *Server, body string) *httptest.ResponseRecorder {
 	server.Handler().ServeHTTP(res, req)
 	return res
 }
+
+// The dashboard cannot upload a file at all, so a local attachment must
+// say so in the transcript. Skipping it silently is the same defect
+// send_file was built to end: the model reports a file as sent and
+// nothing arrives, with no signal either way.
+func TestChatStreamReportsUndeliverableLocalFile(t *testing.T) {
+	stream := func(_ context.Context, _ gateway.Message, turn gateway.TurnStream) (string, error) {
+		turn.Media(gateway.MediaEvent{
+			ToolName: "send_file",
+			Attachment: gateway.MediaAttachment{
+				Type:     "document",
+				Path:     "/var/log/archie/session.log",
+				FileName: "session.log",
+			},
+		})
+		return "", nil
+	}
+
+	server, sessions := chatTestServer(t)
+	server.Chat.Router.LLMStream = stream
+	saveWebSession(t, sessions, "web-1")
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/chat/stream",
+		strings.NewReader(`{"channel_id":"browser-web-1","text":"send me the log"}`))
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body)
+	}
+
+	var joined strings.Builder
+	for _, ev := range parseChatSSE(t, res.Body.String()) {
+		if ev.Type == "delta" {
+			joined.WriteString(ev.Text)
+		}
+	}
+	if !strings.Contains(joined.String(), "session.log") {
+		t.Errorf("delta stream = %q, want it to name the undelivered file", joined.String())
+	}
+	if !strings.Contains(joined.String(), "could not") {
+		t.Errorf("delta stream = %q, want it to report non-delivery", joined.String())
+	}
+}
