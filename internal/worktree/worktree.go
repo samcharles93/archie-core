@@ -297,7 +297,16 @@ func cleanUntracked(r *git.Repository, dir string) error {
 		}
 		rel = filepath.ToSlash(rel)
 		if rel == ".git" {
-			return filepath.SkipDir
+			// SkipDir on a non-directory skips the rest of the *parent*
+			// directory -- at the worktree root, the whole walk. .git is a
+			// file, not a directory, in a linked worktree, so returning
+			// SkipDir there would abandon cleaning entirely. Either shape
+			// is left untouched; only the directory shape needs descent
+			// suppressed.
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		if entry.IsDir() {
 			if _, ok := opaqueDirs[rel]; ok {
