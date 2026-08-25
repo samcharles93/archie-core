@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/tools"
 )
@@ -345,6 +346,111 @@ func TestTaskLogsDefaultsAttemptToZero(t *testing.T) {
 	}
 	if reader.gotAttempt != 0 {
 		t.Errorf("attempt = %d, want 0 (zero = 'latest', resolved by the adapter)", reader.gotAttempt)
+	}
+}
+
+// TestTaskLogsForwardsPaginationQuery pins the schema fields the issue
+// adds: Levels, Since, Until, AfterID, and Limit flow through to the
+// adapter exactly as supplied. The reader fake records the query it
+// received so a regression that drops or rewrites one of these would
+// fail here.
+func TestTaskLogsForwardsPaginationQuery(t *testing.T) {
+	reader := &fakeLogReader{}
+	entry := toolNamed(t, TaskTools(nil, nil, reader, nil, "archie"), "task_logs")
+
+	since := "2026-08-04T01:00:00Z"
+	until := "2026-08-04T01:59:59Z"
+	if _, err := entry.Handler(context.Background(), map[string]any{
+		"task_id":  float64(7),
+		"attempt":  float64(3),
+		"level":    []any{"ERROR", "WARN"},
+		"since":    since,
+		"until":    until,
+		"after_id": float64(12345),
+		"limit":    float64(500),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := reader.gotQuery
+	if got.Component != "" {
+		t.Errorf("Component = %q, want empty (none supplied)", got.Component)
+	}
+	if len(got.Levels) != 2 || got.Levels[0] != "ERROR" || got.Levels[1] != "WARN" {
+		t.Errorf("Levels = %v, want [ERROR WARN]", got.Levels)
+	}
+	if got.Since.Format(time.RFC3339) != since {
+		t.Errorf("Since = %v, want %s", got.Since, since)
+	}
+	if got.Until.Format(time.RFC3339) != until {
+		t.Errorf("Until = %v, want %s", got.Until, until)
+	}
+	if got.AfterID != 12345 {
+		t.Errorf("AfterID = %d, want 12345", got.AfterID)
+	}
+	if got.Limit != 500 {
+		t.Errorf("Limit = %d, want 500", got.Limit)
+	}
+}
+
+// TestTaskLogsAcceptsSingleLevelString confirms the JSON flexibility: a
+// model that emits a single string instead of an array still gets a
+// single-element Levels list. The schema declares array but real models
+// are inconsistent.
+func TestTaskLogsAcceptsSingleLevelString(t *testing.T) {
+	reader := &fakeLogReader{}
+	entry := toolNamed(t, TaskTools(nil, nil, reader, nil, "archie"), "task_logs")
+	if _, err := entry.Handler(context.Background(), map[string]any{
+		"task_id": float64(1), "level": "ERROR",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(reader.gotQuery.Levels) != 1 || reader.gotQuery.Levels[0] != "ERROR" {
+		t.Errorf("Levels = %v, want [ERROR]", reader.gotQuery.Levels)
+	}
+}
+
+// TestTaskLogsRejectsInvalidTimestamp pins the boundary: a malformed
+// since/until is rejected so the model cannot accidentally get the
+// entire log back by emitting nonsense.
+func TestTaskLogsRejectsInvalidTimestamp(t *testing.T) {
+	for field, key := range map[string]string{"since": "since", "until": "until"} {
+		t.Run(field, func(t *testing.T) {
+			reader := &fakeLogReader{}
+			entry := toolNamed(t, TaskTools(nil, nil, reader, nil, "archie"), "task_logs")
+			_, err := entry.Handler(context.Background(), map[string]any{
+				"task_id": float64(1),
+				key:       "not a timestamp",
+			})
+			if err == nil {
+				t.Errorf("%s: expected error on malformed timestamp, got nil", field)
+			}
+		})
+	}
+}
+
+// TestTaskLogsResultSurfacesCursorAndMoreAvailable confirms the response
+// shape: the cursor and more_available fields are passed through to the
+// caller so the model can continue paging without re-deriving them.
+func TestTaskLogsResultSurfacesCursorAndMoreAvailable(t *testing.T) {
+	reader := &fakeLogReader{result: ChatTaskLogResult{
+		Attempt:       2,
+		Cursor:        9999,
+		MoreAvailable: true,
+		Truncated:     true,
+		Entries:       []ChatTaskLogEntry{{Level: "INFO", Message: "x"}},
+	}}
+	entry := toolNamed(t, TaskTools(nil, nil, reader, nil, "archie"), "task_logs")
+	out, err := entry.Handler(context.Background(), map[string]any{"task_id": float64(7)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := out.(ChatTaskLogResult)
+	if !ok {
+		t.Fatalf("output type = %T, want ChatTaskLogResult", out)
+	}
+	if got.Cursor != 9999 || !got.MoreAvailable || !got.Truncated {
+		t.Errorf("page flags = (cursor=%d, more=%v, trunc=%v), want 9999/true/true",
+			got.Cursor, got.MoreAvailable, got.Truncated)
 	}
 }
 
