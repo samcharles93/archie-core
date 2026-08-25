@@ -90,6 +90,20 @@ type ChatTaskLogQuery struct {
 	Component string
 	// Contains matches the message or any field value, case-insensitively.
 	Contains string
+	// Levels restricts results to these levels (case-insensitive). Empty
+	// means all levels.
+	Levels []string
+	// Since excludes entries whose timestamp is strictly before this. Zero
+	// time disables the bound.
+	Since time.Time
+	// Until excludes entries whose timestamp is strictly after this. Zero
+	// time disables the bound.
+	Until time.Time
+	// AfterID is the byte-offset cursor returned in the previous page's
+	// Cursor field. Zero means "start at the beginning of the scanned
+	// window". The model treats this as opaque and just passes it back
+	// unchanged; the byte offset is not intended to be human-readable.
+	AfterID int64
 	// Limit caps returned entries.
 	Limit int
 }
@@ -101,8 +115,20 @@ type ChatTaskLogResult struct {
 	// the caller which run it looked at when none was requested explicitly.
 	Attempt int `json:"attempt"`
 	// Truncated reports that older matching entries exist beyond what this
-	// page examined.
+	// page examined (the on-disk scan hit its size cap before EOF).
 	Truncated bool `json:"truncated"`
+	// Cursor is the opaque byte offset to pass back as AfterID to read the
+	// next page. It is the file offset just past the last line this page
+	// returned, so a non-zero value after a full page means "resume here";
+	// when MoreAvailable is false the caller is done regardless of the
+	// value. Zero means the log was missing or empty, not "exhausted".
+	Cursor int64 `json:"cursor"`
+	// MoreAvailable is true when the scan saw more matching entries that
+	// did not fit in this page. Combine with Truncated: a result can be
+	// MoreAvailable=false while still Truncated=true when the scan ended
+	// at the size cap, or MoreAvailable=true while Truncated=false when
+	// more matches remain within the same scan window.
+	MoreAvailable bool `json:"more_available"`
 }
 
 // ChatTaskLogReader is the read surface task_logs needs. It mirrors the
@@ -294,37 +320,16 @@ func taskLogsTool(reader ChatTaskLogReader, identity string) tools.ToolEntry {
 		Description: "Read a task's persisted log history -- gate output, agent activity, errors -- " +
 			"to answer questions like \"why did task N park?\" or \"what happened on task N?\" " +
 			"without an operator needing to open the dashboard. " +
-			"Defaults to the task's latest attempt when attempt is omitted.",
+			"Defaults to the task's latest attempt when attempt is omitted. " +
+			fmt.Sprintf("One call returns at most %d entries. ", maxTaskLogLimit) +
+			"Two separate signals report incompleteness and they mean different things: " +
+			"more_available means this call left matching entries unread, so pass its " +
+			"cursor back as after_id to continue; truncated means the log is larger than " +
+			"the readable window, so its OLDEST entries cannot be reached by paging at all. " +
+			"If truncated is true, say so rather than implying you read the whole log, and " +
+			"use send_file when the operator wants the complete archive.",
 		Classification: tools.ClassIdempotent,
-		Schema: tools.JSONSchema{
-			"type": "object",
-			"properties": map[string]any{
-				"task_id": map[string]any{
-					"type":        "integer",
-					"description": "ID of the task to read logs for.",
-				},
-				"attempt": map[string]any{
-					"type":        "integer",
-					"description": "Which attempt to read. Omit for the task's current/latest attempt.",
-				},
-				"component": map[string]any{
-					"type":        "string",
-					"description": "Only return entries from this component (e.g. \"gate\"). Omit for all components.",
-				},
-				"q": map[string]any{
-					"type":        "string",
-					"description": "Only return entries whose message or fields contain this text (case-insensitive).",
-				},
-				"limit": map[string]any{
-					"type": "integer",
-					"description": fmt.Sprintf(
-						"Maximum entries to return. Defaults to %d, capped at %d.",
-						defaultTaskLogLimit, maxTaskLogLimit,
-					),
-				},
-			},
-			"required": []any{"task_id"},
-		},
+		Schema:         taskLogsSchema(),
 		Handler: func(ctx context.Context, input map[string]any) (any, error) {
 			taskID, ok := asInt64(input["task_id"])
 			if !ok {
@@ -336,10 +341,28 @@ func taskLogsTool(reader ChatTaskLogReader, identity string) tools.ToolEntry {
 			}
 			limit := tools.ListLimit(input, defaultTaskLogLimit, maxTaskLogLimit)
 
+			levels := asStringSlice(input["level"])
+			since, err := asRFC3339(input["since"])
+			if err != nil {
+				return nil, fmt.Errorf("task_logs: since: %w", err)
+			}
+			until, err := asRFC3339(input["until"])
+			if err != nil {
+				return nil, fmt.Errorf("task_logs: until: %w", err)
+			}
+			var afterID int64
+			if v, ok := asInt64(input["after_id"]); ok {
+				afterID = v
+			}
+
 			// The bound identity, never input["identity"].
 			result, err := reader.ReadChatTaskLogs(ctx, identity, taskID, attempt, ChatTaskLogQuery{
 				Component: strings.TrimSpace(asString(input["component"])),
 				Contains:  strings.TrimSpace(asString(input["q"])),
+				Levels:    levels,
+				Since:     since,
+				Until:     until,
+				AfterID:   afterID,
 				Limit:     limit,
 			})
 			if err != nil {
@@ -348,6 +371,103 @@ func taskLogsTool(reader ChatTaskLogReader, identity string) tools.ToolEntry {
 			return result, nil
 		},
 	}
+}
+
+// taskLogsSchema is the task_logs input schema. It lives apart from the
+// tool entry only because the literal is long; it is pure data, and the
+// handler is the sole consumer.
+func taskLogsSchema() tools.JSONSchema {
+	return tools.JSONSchema{
+		"type": "object",
+		"properties": map[string]any{
+			"task_id": map[string]any{
+				"type":        "integer",
+				"description": "ID of the task to read logs for.",
+			},
+			"attempt": map[string]any{
+				"type":        "integer",
+				"description": "Which attempt to read. Omit for the task's current/latest attempt.",
+			},
+			"component": map[string]any{
+				"type":        "string",
+				"description": "Only return entries from this component (e.g. \"gate\"). Omit for all components.",
+			},
+			"q": map[string]any{
+				"type":        "string",
+				"description": "Only return entries whose message or fields contain this text (case-insensitive).",
+			},
+			"level": map[string]any{
+				"type":        "array",
+				"items":       map[string]any{"type": "string"},
+				"description": "Only return entries whose level matches one of these (case-insensitive). Omit for all levels.",
+			},
+			"since": map[string]any{
+				"type":        "string",
+				"format":      "date-time",
+				"description": "RFC3339 timestamp; exclude entries strictly before this. Omit for no lower bound.",
+			},
+			"until": map[string]any{
+				"type":        "string",
+				"format":      "date-time",
+				"description": "RFC3339 timestamp; exclude entries strictly after this. Omit for no upper bound.",
+			},
+			"after_id": map[string]any{
+				"type":        "integer",
+				"description": "Opaque cursor from a previous task_logs result's \"cursor\" field. Omit for the first page.",
+			},
+			"limit": map[string]any{
+				"type": "integer",
+				"description": fmt.Sprintf(
+					"Maximum entries to return. Defaults to %d, capped at %d.",
+					defaultTaskLogLimit, maxTaskLogLimit,
+				),
+			},
+		},
+		"required": []any{"task_id"},
+	}
+}
+
+// asStringSlice reads a JSON array of strings, tolerating absent or
+// non-array values by returning nil. A model that emits a single string
+// instead of an array is normalised to a one-element slice.
+func asStringSlice(v any) []string {
+	switch t := v.(type) {
+	case []string:
+		return t
+	case []any:
+		out := make([]string, 0, len(t))
+		for _, item := range t {
+			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+				out = append(out, strings.TrimSpace(s))
+			}
+		}
+		return out
+	case string:
+		if s := strings.TrimSpace(t); s != "" {
+			return []string{s}
+		}
+	}
+	return nil
+}
+
+// asRFC3339 parses an RFC3339 timestamp string, treating the zero value
+// as "no bound" (returns time.Time{} without error). An obviously
+// malformed value is rejected so a model that emits nonsense does not
+// silently get every entry. The parser accepts RFC3339Nano (with
+// fractional seconds) as well as bare RFC3339 -- the schema advertises
+// "RFC3339 timestamp" and per Go's time package the two layouts both
+// match when no fractional component is present, but RFC3339 alone
+// rejects the fractional case. RFC3339Nano is a strict superset.
+func asRFC3339(v any) (time.Time, error) {
+	s, ok := v.(string)
+	if !ok || strings.TrimSpace(s) == "" {
+		return time.Time{}, nil
+	}
+	t, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(s))
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid timestamp %q: %w", s, err)
+	}
+	return t, nil
 }
 
 // asInt64 reads an integer field. JSON numbers decode as float64, but a

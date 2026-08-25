@@ -576,17 +576,20 @@ func (a chatTaskLogReaderAdapter) ReadChatTaskLogs(
 		return gateway.ChatTaskLogResult{Attempt: attempt, Entries: []gateway.ChatTaskLogEntry{}}, nil
 	}
 
-	result, err := logging.Tail(path, logging.Query{
+	page, err := logging.Page(path, logging.Query{
 		Component: q.Component,
 		Contains:  q.Contains,
+		Levels:    q.Levels,
+		Since:     q.Since,
+		Until:     q.Until,
 		Limit:     q.Limit,
-	})
+	}, q.AfterID)
 	if err != nil {
 		return gateway.ChatTaskLogResult{}, err
 	}
 
-	entries := make([]gateway.ChatTaskLogEntry, len(result.Entries))
-	for i, e := range result.Entries {
+	entries := make([]gateway.ChatTaskLogEntry, len(page.Entries))
+	for i, e := range page.Entries {
 		entries[i] = gateway.ChatTaskLogEntry{
 			Time:    e.Time,
 			Level:   e.Level,
@@ -595,9 +598,11 @@ func (a chatTaskLogReaderAdapter) ReadChatTaskLogs(
 		}
 	}
 	return gateway.ChatTaskLogResult{
-		Entries:   entries,
-		Attempt:   attempt,
-		Truncated: result.Truncated,
+		Entries:       entries,
+		Attempt:       attempt,
+		Truncated:     page.Truncated,
+		Cursor:        page.Cursor,
+		MoreAvailable: page.MoreAvailable,
 	}, nil
 }
 
