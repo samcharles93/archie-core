@@ -79,6 +79,7 @@ export const api = {
 	},
   skills: () => req("/api/skills"),
   channels: () => req("/api/channels"),
+  curators: () => req("/api/curators"),
 	channelReload: async (id) => {
 		const res = await fetch(`/api/channels/${encodeURIComponent(id)}/reload`, {
 			method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json", "X-Archie-CSRF": "1" },

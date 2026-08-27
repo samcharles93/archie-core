@@ -6,6 +6,7 @@ import { tasksPage } from "./tasks/tasks.js";
 import { skillsPage } from "./skills/skills.js";
 import { workflowsPage } from "./workflows/workflows.js";
 import { channelsPage } from "./channels/channels.js";
+import { curatorsPage } from "./curators/curators.js";
 import { settingsPage } from "./settings/settings.js";
 import { logsPage } from "./logs/logs.js";
 import { capturesPage } from "./captures/captures.js";
@@ -31,6 +32,7 @@ const routes = [
   { path: "/skills", label: "Skills", icon: "skills", view: skillsPage },
   { path: "/workflows", label: "Workflows", icon: "workflows", view: workflowsPage },
   { path: "/memory", label: "Memory", icon: "memory", view: memoryPage },
+  { path: "/curators", label: "Curators", icon: "curators", view: curatorsPage },
   { path: "/channels", label: "Channels", icon: "channels", view: channelsPage },
   { path: "/settings", label: "Configuration", icon: "settings", view: settingsPage },
 ];

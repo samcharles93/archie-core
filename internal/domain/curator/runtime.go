@@ -290,6 +290,8 @@ func (rt *Runtime) fail(name, phase string, err error) {
 // emitRun publishes one run summary plus one event per action, so what ran,
 // when, what it changed, and why all stay attributable (archie-core-114).
 func (rt *Runtime) emitRun(name string, at time.Time, result PassResult) {
+	rt.registry.RecordActivity(name, at, result.Actions)
+
 	sink := rt.registry.Host().Events
 	if sink == nil {
 		return

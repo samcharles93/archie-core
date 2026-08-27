@@ -981,6 +981,10 @@ func (b *boot) buildDaemon() {
 		AgentStatus:    b.agentStatus,
 	}
 	b.web.TaskStopper = b.d
+	// Curator observability (archie-core-1786637489932-6): GET
+	// /api/curators reads registered names, health and recent activity
+	// straight off the live registry the daemon already holds.
+	b.web.Curators = b.curatorRegistry
 	// web and the daemon must share ONE Holder: a reload swaps d.Cfg and
 	// the dashboard reads the running config from the same snapshot. The
 	// webui Holder seeded in the literal above is replaced here; after
