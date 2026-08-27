@@ -644,7 +644,8 @@ func (a chatTaskActorAdapter) ApplyChatTaskAction(
 	if err != nil {
 		return gateway.TaskActionResult{}, fmt.Errorf("marshal action request: %w", err)
 	}
-	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
+	req := httptest.NewRequestWithContext(
+		ctx, http.MethodPost,
 		fmt.Sprintf("/api/tasks/%d/action", taskID),
 		bytes.NewReader(body),
 	)
