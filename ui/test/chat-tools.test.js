@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import "./shim.js";
 import { assistantBubble } from "../src/chat/chat-render.js";
-import { appendToolCall } from "../src/chat/chat-tools.js";
+import { appendToolCall, appendNavigateChip } from "../src/chat/chat-tools.js";
 
 // childIndex reports where a node sits among its parent's children, which is
 // how the tests assert that the work is listed above the answer.
@@ -90,4 +90,29 @@ test("a bubble without a tool list still records tool activity", () => {
   appendToolCall(host, { tool: "shell", text: "exit 0" });
 
   assert.equal(host.querySelector(".chat-tool-name").textContent, "shell");
+});
+
+// A dashboard_navigate call is an explicit point-the-operator-somewhere
+// result, so it renders as a clickable chip link rather than a muted tool
+// line, and the chip must be a real link (the app routes on location.hash).
+test("a navigate chip is a clickable link to the resolved page", () => {
+  const row = assistantBubble();
+  const host = row.querySelector(".chat-bubble");
+
+  appendNavigateChip(host, { path: "/tasks", label: "Tasks" });
+
+  const chip = host.querySelector(".chat-nav-chip");
+  assert.ok(chip, "navigate chip should render");
+  assert.equal(chip.getAttribute("href"), "#/tasks");
+  assert.equal(chip.querySelector(".chat-nav-chip-label").textContent, "Tasks");
+  assert.equal(chip.getAttribute("aria-label"), "Go to Tasks");
+});
+
+test("a navigate chip without a path is not rendered", () => {
+  const row = assistantBubble();
+  const host = row.querySelector(".chat-bubble");
+
+  appendNavigateChip(host, { path: "", label: "Tasks" });
+
+  assert.equal(host.querySelector(".chat-nav-chip"), null);
 });

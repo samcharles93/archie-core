@@ -522,6 +522,8 @@ type chatSSEEvent struct {
 	Parameters string `json:"parameters"`
 	Failed     bool   `json:"failed"`
 	SessionID  string `json:"session_id"`
+	Path       string `json:"path"`
+	Label      string `json:"label"`
 }
 
 func parseChatSSE(t *testing.T, body string) []chatSSEEvent {
@@ -877,5 +879,80 @@ func TestChatStreamReportsUndeliverableLocalFile(t *testing.T) {
 	}
 	if !strings.Contains(joined.String(), "could not") {
 		t.Errorf("delta stream = %q, want it to report non-delivery", joined.String())
+	}
+}
+
+// TestChatStreamCarriesCurrentPage proves the web chat decodes the operator's
+// dashboard page from the request body and hands it to the agent as
+// Message.Page, so the system prompt can state where the operator is.
+func TestChatStreamCarriesCurrentPage(t *testing.T) {
+	server, sessions := chatTestServer(t)
+	var got gateway.Message
+	server.Chat.Router.LLMStream = func(_ context.Context, msg gateway.Message, stream gateway.TurnStream) (string, error) {
+		got = msg
+		stream.Delta("on it")
+		return "on it", nil
+	}
+	saveWebSession(t, sessions, "web-1")
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/chat/stream",
+		strings.NewReader(`{"channel_id":"browser-web-1","text":"where do I see that?","page":"/tasks"}`))
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body)
+	}
+	if got.Page != "/tasks" {
+		t.Fatalf("Message.Page = %q, want /tasks", got.Page)
+	}
+}
+
+// TestChatStreamEmitsNavigateChip proves a dashboard_navigate tool call emits
+// a dedicated navigate frame (with the resolved path/label) even when
+// ShowToolCalls is off, so the browser can render a clickable chip to route
+// the operator to the page.
+func TestChatStreamEmitsNavigateChip(t *testing.T) {
+	stream := func(_ context.Context, _ gateway.Message, turn gateway.TurnStream) (string, error) {
+		out, _ := json.Marshal(gateway.DashboardNavigateResult{Path: "/tasks", Label: "Tasks"})
+		turn.ToolCall(gateway.ToolCallEvent{ID: "nav-1", Name: "dashboard_navigate", Output: string(out)})
+		return "That is on the Tasks page.", nil
+	}
+
+	tests := []struct {
+		name string
+		cfg  *config.Holder
+	}{
+		{name: "show_tool_calls off (navigate is unconditional)", cfg: config.NewHolder(config.Config{Chat: config.ChatConfig{ShowToolCalls: false}})},
+		{name: "no Cfg wired at all", cfg: nil},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server, sessions := chatTestServer(t)
+			server.Chat.Router.LLMStream = stream
+			server.Cfg = tc.cfg
+			saveWebSession(t, sessions, "web-1")
+
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/chat/stream",
+				strings.NewReader(`{"channel_id":"browser-web-1","text":"show me tasks"}`))
+			req.Header.Set("Content-Type", "application/json")
+			res := httptest.NewRecorder()
+			server.Handler().ServeHTTP(res, req)
+			if res.Code != http.StatusOK {
+				t.Fatalf("status = %d, body = %s", res.Code, res.Body)
+			}
+			var chipFound bool
+			for _, ev := range parseChatSSE(t, res.Body.String()) {
+				if ev.Type == "navigate" && ev.Path == "/tasks" && ev.Label == "Tasks" {
+					chipFound = true
+				} else if ev.Type == "tool" {
+					t.Fatalf("navigate tool leaked as a tool frame: %+v", ev)
+				}
+			}
+			if !chipFound {
+				t.Fatalf("no navigate chip emitted; frames = %#v", parseChatSSE(t, res.Body.String()))
+			}
+		})
 	}
 }

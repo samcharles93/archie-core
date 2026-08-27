@@ -27,6 +27,7 @@ const paths = {
   trendUp: '<path d="M4 17L10 11l4 4 6-6"/><path d="M14 7h6v6"/>',
   trendDown: '<path d="M4 7l6 6 4-4 6 6"/><path d="M14 17h6v-6"/>',
   check: '<path d="M4.5 12.5l5 5 10-11"/>',
+  close: '<path d="M6 6l12 12M18 6L6 18"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.3 2.4c-.6.2-.9.8-.9 1.4v.4"/><path d="M12 17.2h.01"/>',
 };
 

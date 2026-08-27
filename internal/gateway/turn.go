@@ -251,6 +251,9 @@ func (r *TurnRunner) Run(ctx context.Context, msg Message, stream TurnStream) (s
 		TaskTools(r.TaskLister, r.Tasks, r.TaskLogs, r.TaskActor, r.TaskIdentity),
 		SessionTools(r.Sessions, r.Router.SessionTracker(), r.Channel, msg)...,
 	)
+	// The dashboard tools (page_index, dashboard_navigate) belong to the web
+	// UI only: a non-web channel has no dashboard to point at.
+	extraTools = append(extraTools, PageIndexTools(r.Channel)...)
 	modelName := r.Models.ActiveModel()
 	prepared, err := r.Model.Prepare(ctx, modelName, extraTools)
 	if err != nil {
@@ -272,6 +275,7 @@ func (r *TurnRunner) Run(ctx context.Context, msg Message, stream TurnStream) (s
 		SessionID: sessionID,
 		Now:       time.Now(),
 		Operator:  r.Operator,
+		Page:      msg.Page,
 	})
 	modelDetails := ModelDetails{}
 	if detailed, ok := r.Models.(DetailedModelManager); ok {

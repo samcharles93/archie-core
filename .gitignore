@@ -42,3 +42,6 @@ node_modules/
 .beads-credential-key
 .beads/proxieddb/
 *.gate.lock*
+# Impeccable design-tool scratch/critique snapshots (usable by $impeccable polish, never committed)
+.impeccable/
+.serena/

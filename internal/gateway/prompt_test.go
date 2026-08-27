@@ -102,6 +102,24 @@ func TestBuildSystemPromptSections(t *testing.T) {
 				"Session: telegram:1312197967",
 			},
 		},
+		{
+			name: "the current dashboard page is rendered in the env block when set",
+			cfg: SystemPromptConfig{
+				Now:   fixedTime(t),
+				Page:  "/tasks",
+				Model: "deepseek/deepseek-v4-pro",
+			},
+			contains: []string{
+				"Current page: /tasks",
+			},
+		},
+		{
+			name: "the current page line is omitted for non-web channels",
+			cfg:  SystemPromptConfig{Now: fixedTime(t), Channel: "telegram"},
+			absent: []string{
+				"Current page:",
+			},
+		},
 	}
 
 	for _, tc := range tests {

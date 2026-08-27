@@ -42,3 +42,27 @@ function toolList(host) {
   host.append(list);
   return list;
 }
+
+// appendNavigateChip renders a dashboard_navigate result as a clickable chip
+// that routes the operator to a dashboard page. It is an action, not a tool
+// narration line: the model called dashboard_navigate to point the operator
+// somewhere, so the chip is a real link (the app routes on location.hash),
+// and it is the only clickable navigation surface the transcript offers. The
+// label is the tool's resolved page name, never a markdown link the model
+// invented.
+export function appendNavigateChip(host, event) {
+  const path = event?.path ?? "";
+  const label = event?.label || path;
+  if (!host || !path) return null;
+  const chip = el("a.chat-nav-chip",
+    {
+      href: "#" + path,
+      title: "Go to " + label,
+      "aria-label": "Go to " + label,
+    },
+    el("span.chat-nav-chip-icon", { "aria-hidden": "true" }, "↗"),
+    el("span.chat-nav-chip-label", label),
+  );
+  toolList(host).append(chip);
+  return chip;
+}

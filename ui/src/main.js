@@ -46,7 +46,7 @@ function currentTheme() {
   return localStorage.getItem(THEME_KEY) || "dark";
 }
 
-function commandBar(onNavigate) {
+function commandBar(onNavigate, onToggleChat) {
   const items = new Map();
 
   const nav = el(
@@ -113,6 +113,9 @@ function commandBar(onNavigate) {
     "aria-label": "Jump to a section",
     onkeydown: (e) => {
       if (e.key === "Escape") {
+        // preventDefault so the window-level handler (chat drawer close) does
+        // not also fire: dismissing the search should not dismiss the drawer.
+        e.preventDefault();
         closeMobileSearch();
         e.target.blur();
         return;
@@ -143,6 +146,12 @@ function commandBar(onNavigate) {
       el(
         "div.topbar-end",
         searchWrap,
+        el("button.icon-btn.icon-btn-chat", {
+          "aria-label": "Open chat",
+          title: "Chat with Archie",
+          "aria-expanded": "false",
+          onclick: () => onToggleChat?.(),
+        }, icon("chat")),
         el("button.icon-btn", { title: "Documentation", "aria-label": "Documentation" }, icon("help")),
         themeBtn,
         el("div.avatar", { title: "Signed in locally" }, "A"),
@@ -161,11 +170,36 @@ function start() {
   applyTheme(currentTheme());
 
   const outlet = el("main.main");
-  const bar = commandBar(navigate);
-  mount(document.getElementById("app"), el("div.shell", bar.node, outlet));
+  // The chat drawer lives beside the outlet, mounted once. It is closed by
+  // default and opened from the topbar launcher; because it is a slide-over
+  // rather than a route, the operator can talk to Archie from any page
+  // without leaving the work that prompted the question. It hosts a single
+  // chatPage() instance, so session state and the stream survive navigation
+  // and are not duplicated per page.
+  const chatDrawer = el("aside.chat-drawer", { "aria-label": "Chat with Archie" });
+  const chatClose = el("button.icon-btn.chat-drawer-close", {
+    "aria-label": "Close chat",
+    title: "Close chat",
+    onclick: () => toggleChat(false),
+  }, icon("close"));
+  const drawerHead = el("div.chat-drawer-head", el("strong", "Archie"), chatClose);
+  chatDrawer.append(el("div.chat-drawer-panel", drawerHead, chatPage()),
+    el("div.chat-scrim", { onclick: () => toggleChat(false) }));
+  const bar = commandBar(navigate, () => toggleChat());
+  const shell = el("div.shell", bar.node, outlet, chatDrawer);
+  mount(document.getElementById("app"), shell);
+
+  function toggleChat(open) {
+    const shouldOpen = open === undefined ? !chatDrawer.classList.contains("is-open") : open;
+    chatDrawer.classList.toggle("is-open", shouldOpen);
+    document.body.classList.toggle("chat-open", shouldOpen);
+    const btn = shell.querySelector(".icon-btn-chat");
+    if (btn) btn.setAttribute("aria-expanded", String(shouldOpen));
+  }
+  window.__archieToggleChat = toggleChat;
 
   function navigate(path) {
-    if (location.hash !== `#${path}`) location.hash = path;
+    if (location.hash !== '#' + path) location.hash = path;
     else show(path);
   }
 
@@ -176,10 +210,26 @@ function start() {
     const [path, query = ""] = rawPath.split("?", 2);
     const route = routes.find((r) => r.path === path) || routes[0];
     bar.highlight(route.path);
+    // The chat is a drawer, not a page: /chat opens it rather than mounting a
+    // second chatPage() (which would duplicate session state and the stream).
+    if (route.path === "/chat") {
+      mount(outlet);
+      toggleChat(true);
+      return;
+    }
     mount(outlet, route.view ? route.view(new URLSearchParams(query)) : comingSoon(route));
+    // Navigating to a page dismisses the chat drawer; the operator has moved on.
+    toggleChat(false);
   }
 
   window.addEventListener("hashchange", () => show(location.hash.slice(1) || "/"));
+  window.addEventListener("keydown", (e) => {
+    // A focused control (the composer dismissing its command menu, or the
+    // topbar search) already handled Escape via preventDefault; closing the
+    // drawer too would make the menu impossible to dismiss alone.
+    if (e.defaultPrevented) return;
+    if (e.key === "Escape" && chatDrawer.classList.contains("is-open")) toggleChat(false);
+  });
   show(location.hash.slice(1) || "/");
 }
 

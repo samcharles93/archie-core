@@ -165,7 +165,7 @@ export const api = {
   chatMessage: async (channelID, text) => {
     const res = await fetch("/api/chat/message", {
       method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ channel_id: channelID, source_id: randomUUID(), text }),
+      body: JSON.stringify({ channel_id: channelID, source_id: randomUUID(), text, page: location.hash.slice(1) || "/" }),
       signal: AbortSignal.timeout(15000),
     });
     if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
