@@ -915,3 +915,84 @@ func TestLaunchDropsPendingUpdatesBeforePolling(t *testing.T) {
 		t.Error("launch() started long polling without dropping pending updates")
 	}
 }
+
+func TestRenderTelegramMarkdownBlocksHeadings(t *testing.T) {
+	// The exact report: a heading immediately after prose, no blank line,
+	// collapses into one paragraph under Telegram's Markdown semantics.
+	input := "rely on checkbox text alone.\n### Add a \"dangerous configuration\" review guard"
+	out := renderTelegramMarkdown(input)
+	if strings.Contains(out, "alone.\n### ") {
+		t.Fatalf("heading not separated from prose:\n%s", out)
+	}
+	if !strings.Contains(out, "alone.\n\n### Add a \"dangerous configuration\" review guard") {
+		t.Fatalf("expected a blank line before the heading, got:\n%s", out)
+	}
+}
+
+func TestRenderTelegramMarkdownBlocksLists(t *testing.T) {
+	input := "text\n- one\n- two\nmore"
+	out := renderTelegramMarkdown(input)
+	if !strings.Contains(out, "text\n\n- one\n- two\n\nmore") {
+		t.Fatalf("list block not separated, got:\n%s", out)
+	}
+
+	ordered := "intro\n1. first\n2. second\nafter"
+	outOrdered := renderTelegramMarkdown(ordered)
+	if !strings.Contains(outOrdered, "intro\n\n1. first\n2. second\n\nafter") {
+		t.Fatalf("ordered list block not separated, got:\n%s", outOrdered)
+	}
+}
+
+func TestRenderTelegramMarkdownLeavesFencesCompact(t *testing.T) {
+	// The SDK's tool block emits ````` text ```` fences tight against the tool
+	// line; those must not be re-spaced (that is what keeps a noisy tool turn
+	// compact). Only headings and lists get explicit block boundaries.
+	input := "🔧 shell — done\n```text\nexit 0\n```\ndone"
+	out := renderTelegramMarkdown(input)
+	if !strings.Contains(out, "done\n```text\nexit 0\n```\ndone") {
+		t.Fatalf("fence re-spaced; tool block must stay compact, got:\n%s", out)
+	}
+}
+
+func TestRenderTelegramMarkdownIsIdempotent(t *testing.T) {
+	input := "text\n### heading\n- item\n```\ncode\n```\nmore"
+	once := renderTelegramMarkdown(input)
+	twice := renderTelegramMarkdown(once)
+	if once != twice {
+		t.Fatalf("renderer is not idempotent:\nonce:\n%s\n\ntwice:\n%s", once, twice)
+	}
+}
+
+func TestRenderTelegramPlainStripsMarkdown(t *testing.T) {
+	input := "## Heading\n**bold** and *italic* and `code` and [a link](https://example.com)"
+	out := renderTelegramPlain(input)
+	if strings.Contains(out, "##") || strings.Contains(out, "**") ||
+		strings.Contains(out, "`") || strings.Contains(out, "](https://example.com)") {
+		t.Fatalf("plain fallback left raw Markdown artifacts:\n%s", out)
+	}
+	if !strings.Contains(out, "Heading") || !strings.Contains(out, "bold") ||
+		!strings.Contains(out, "italic") || !strings.Contains(out, "code") ||
+		!strings.Contains(out, "a link (https://example.com)") {
+		t.Fatalf("plain fallback lost content:\n%s", out)
+	}
+}
+
+func TestRenderTelegramPlainKeepsFenceContent(t *testing.T) {
+	input := "before\n```\nfunc main() {}\n```\nafter"
+	out := renderTelegramPlain(input)
+	if strings.Contains(out, "```") {
+		t.Fatalf("plain fallback kept fence markers:\n%s", out)
+	}
+	if !strings.Contains(out, "func main() {}") {
+		t.Fatalf("plain fallback dropped fenced code content:\n%s", out)
+	}
+}
+
+func TestRenderTelegramPlainKeepsListsAndBlockquotes(t *testing.T) {
+	input := "- item one\n- item two\n> a blockquote"
+	out := renderTelegramPlain(input)
+	if !strings.Contains(out, "- item one") || !strings.Contains(out, "- item two") ||
+		!strings.Contains(out, "> a blockquote") {
+		t.Fatalf("plain fallback dropped list/blockquote text:\n%s", out)
+	}
+}

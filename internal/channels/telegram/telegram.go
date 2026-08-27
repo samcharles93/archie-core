@@ -900,6 +900,136 @@ func markdownCodeDelimiterAt(text string, position int) (string, bool) {
 	return delimiter, delimiter != ""
 }
 
+// telegramRenderVersion identifies the renderer applied to outgoing Telegram
+// messages. It is included in the per-send log line so an old deployment
+// cannot be mistaken for the current code when diagnosing rendering
+// differences.
+const telegramRenderVersion = "rich-markdown-v2"
+
+var (
+	// atxHeadingLine matches an ATX heading (one to six # then whitespace or EOL).
+	atxHeadingLine = regexp.MustCompile(`^#{1,6}(?:[ 	]|$)`)
+	// listItemLine matches a Markdown unordered or ordered list item.
+	listItemLine = regexp.MustCompile(`^[ 	]*(?:[-*+]|[0-9]+[.)])[ 	]+`)
+	// inlineLink matches [label](url).
+	inlineLink = regexp.MustCompile(`\[([^\]]*)\]\(([^)]+)\)`)
+	// Emphasis/code delimiters stripped by telegramPlainText, longest first.
+	strikeMarkdown     = regexp.MustCompile(`~~(.+?)~~`)
+	boldMarkdown       = regexp.MustCompile(`\*\*(.+?)\*\*`)
+	underlineMarkdown  = regexp.MustCompile(`__(.+?)__`)
+	italicMarkdown     = regexp.MustCompile(`\*(.+?)\*`)
+	italicUnderscore   = regexp.MustCompile(`_(.+?)_`)
+	inlineCodeMarkdown = regexp.MustCompile("`([^`]*)`")
+)
+
+// renderTelegramMarkdown prepares text for Telegram's rich Markdown renderer:
+// it preserves bare-URL paragraph boundaries and inserts blank lines around
+// block-level constructs (headings, lists, fenced code) that Telegram's
+// Markdown semantics would otherwise collapse into the surrounding paragraph.
+func renderTelegramMarkdown(text string) string {
+	return telegramMarkdown(normalizeTelegramText(text))
+}
+
+// renderTelegramPlain prepares readable plain text for the fallback send that
+// runs when a server rejects the rich message: it strips Markdown syntax so the
+// user does not see raw "#", "**", backticks or link brackets.
+func renderTelegramPlain(text string) string {
+	return telegramPlainText(normalizeTelegramText(text))
+}
+
+// telegramMarkdown inserts a blank line before and after block-level Markdown
+// constructs that Telegram's renderer would otherwise collapse into the
+// surrounding paragraph. It is idempotent. Fenced code blocks are deliberately
+// left untouched: the SDK's tool block already emits compact triple-backtick
+// fences on their own lines, and adding blank lines around them would break that
+// layout without fixing any reported collapse.
+func telegramMarkdown(text string) string {
+	if text == "" {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	out := make([]string, 0, len(lines)*2)
+	var prev string
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		trimmed := strings.TrimSpace(line)
+
+		if atxHeadingLine.MatchString(trimmed) {
+			if prev != "" {
+				out = append(out, "")
+			}
+			out = append(out, line)
+			prev = line
+			if i+1 < len(lines) {
+				next := strings.TrimSpace(lines[i+1])
+				if next != "" && !atxHeadingLine.MatchString(next) && !listItemLine.MatchString(next) {
+					out = append(out, "")
+					prev = ""
+				}
+			}
+			continue
+		}
+		if listItemLine.MatchString(trimmed) {
+			if prev != "" {
+				out = append(out, "")
+			}
+			j := i
+			for j < len(lines) && listItemLine.MatchString(strings.TrimSpace(lines[j])) {
+				out = append(out, lines[j])
+				prev = lines[j]
+				j++
+			}
+			if j < len(lines) && strings.TrimSpace(lines[j]) != "" {
+				out = append(out, "")
+				prev = ""
+			}
+			i = j - 1
+			continue
+		}
+		out = append(out, line)
+		prev = line
+	}
+	return strings.Join(out, "\n")
+}
+
+// telegramPlainText converts Markdown into readable plain text for the
+// unformatted fallback: fenced code blocks keep their content (the fence lines
+// are dropped), ATX heading markers are removed, links become "label (url)",
+// and emphasis/code delimiters are stripped while their text is kept.
+func telegramPlainText(text string) string {
+	if text == "" {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	out := make([]string, 0, len(lines))
+	inFence := false
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			out = append(out, line)
+			continue
+		}
+		out = append(out, plainLine(line))
+	}
+	return strings.Join(out, "\n")
+}
+
+// plainLine strips one non-fence line's Markdown syntax.
+func plainLine(line string) string {
+	text := atxHeadingLine.ReplaceAllString(line, "")
+	text = inlineLink.ReplaceAllString(text, "$1 ($2)")
+	text = strikeMarkdown.ReplaceAllString(text, "$1")
+	text = boldMarkdown.ReplaceAllString(text, "$1")
+	text = underlineMarkdown.ReplaceAllString(text, "$1")
+	text = italicMarkdown.ReplaceAllString(text, "$1")
+	text = italicUnderscore.ReplaceAllString(text, "$1")
+	text = inlineCodeMarkdown.ReplaceAllString(text, "$1")
+	return text
+}
+
 func (g *Gateway) sendMessage(ctx context.Context, b *bot.Bot, chatID int64, messageThreadID int, text string) {
 	text = normalizeTelegramText(text)
 	if utf8.RuneCountInString(text) <= messageMaxLen {
@@ -928,26 +1058,29 @@ func (g *Gateway) sendMessage(ctx context.Context, b *bot.Bot, chatID int64, mes
 // treated as "unsupported" rather than fatal: fall back to a plain send so
 // the user still receives the reply, unformatted, instead of silence.
 func (g *Gateway) send(ctx context.Context, b *bot.Bot, chatID int64, messageThreadID int, text, errMsg string) {
-	text = normalizeTelegramText(text)
+	normalized := normalizeTelegramText(text)
 	rich := &bot.SendRichMessageParams{
 		ChatID:      chatID,
-		RichMessage: models.InputRichMessage{Markdown: text},
+		RichMessage: models.InputRichMessage{Markdown: telegramMarkdown(normalized)},
 	}
 	if messageThreadID != 0 {
 		rich.MessageThreadID = messageThreadID
 	}
 	if _, err := b.SendRichMessage(ctx, rich); err == nil {
+		g.log.Debug("telegram message sent", "renderer", telegramRenderVersion, "mode", "rich")
 		return
 	} else {
 		g.log.Warn("rich send failed, retrying unformatted", "error", err)
 	}
 
-	plain := &bot.SendMessageParams{ChatID: chatID, Text: text}
+	plain := &bot.SendMessageParams{ChatID: chatID, Text: telegramPlainText(normalized)}
 	if messageThreadID != 0 {
 		plain.MessageThreadID = messageThreadID
 	}
 	if _, err := b.SendMessage(ctx, plain); err != nil {
 		g.log.Error(errMsg, "error", err)
+	} else {
+		g.log.Warn("telegram message sent via plain fallback", "renderer", telegramRenderVersion, "mode", "plain")
 	}
 }
 

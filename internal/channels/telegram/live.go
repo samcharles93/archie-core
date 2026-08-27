@@ -702,7 +702,7 @@ func (l *liveReply) finalText(reply string) string {
 func (l *liveReply) open(ctx context.Context, body string) {
 	params := &bot.SendRichMessageParams{
 		ChatID:      l.chatID,
-		RichMessage: models.InputRichMessage{Markdown: body},
+		RichMessage: models.InputRichMessage{Markdown: telegramMarkdown(body)},
 	}
 	if l.messageThreadID != 0 {
 		params.MessageThreadID = l.messageThreadID
@@ -710,7 +710,7 @@ func (l *liveReply) open(ctx context.Context, body string) {
 	msg, err := l.b.SendRichMessage(ctx, params)
 	if err != nil {
 		l.g.log.Debug("live reply rich send failed, retrying unformatted", "error", err)
-		plain := &bot.SendMessageParams{ChatID: l.chatID, Text: body}
+		plain := &bot.SendMessageParams{ChatID: l.chatID, Text: telegramPlainText(body)}
 		if l.messageThreadID != 0 {
 			plain.MessageThreadID = l.messageThreadID
 		}
@@ -737,7 +737,7 @@ func (l *liveReply) edit(ctx context.Context, messageID int, body string) error 
 	_, richErr := l.b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:      l.chatID,
 		MessageID:   messageID,
-		RichMessage: &models.InputRichMessage{Markdown: body},
+		RichMessage: &models.InputRichMessage{Markdown: telegramMarkdown(body)},
 	})
 	if richErr == nil {
 		return nil
@@ -747,7 +747,7 @@ func (l *liveReply) edit(ctx context.Context, messageID int, body string) error 
 	if _, plainErr := l.b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    l.chatID,
 		MessageID: messageID,
-		Text:      body,
+		Text:      telegramPlainText(body),
 	}); plainErr != nil {
 		l.g.log.Debug("live reply edit failed", "error", plainErr)
 		return errors.Join(
