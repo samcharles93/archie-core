@@ -19,6 +19,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
@@ -103,6 +104,12 @@ type Server struct {
 	// Memory backs the memory view. Optional: the section reports memory as
 	// unavailable rather than failing when it is nil.
 	Memory *memory.Manager
+
+	// Curators is the daemon's live curator registry (epic archie-core-yp9).
+	// Backs GET /api/curators: registered names, per-curator health, and
+	// recent activity (archie-core-1786637489932-6). Optional: nil reports
+	// an empty curator list rather than failing the dashboard.
+	Curators *curator.Registry
 
 	// Chat exposes the same gateway router used by the conversational
 	// channels. Optional: the dashboard simply omits chat when it is nil.
@@ -255,6 +262,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/workflows", s.handleWorkflows)
 	mux.HandleFunc("POST /api/work-requests", s.handleWorkRequest)
 	mux.HandleFunc("GET /api/skills", s.handleSkills)
+	mux.HandleFunc("GET /api/curators", s.handleCurators)
 	mux.HandleFunc("GET /api/captures", s.handleCaptures)
 	mux.HandleFunc("GET /api/mappings", s.handleMappingsList)
 	mux.HandleFunc("POST /api/mappings", s.handleMappingCreate)

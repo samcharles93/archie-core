@@ -1,0 +1,62 @@
+/* Curators-only styles. */
+
+.curator-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.curator-health-message {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  margin: 0;
+}
+
+.curator-meta {
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+  margin: 0;
+}
+
+.curator-actions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.curator-action {
+  border-top: 1px solid var(--border);
+  padding-top: var(--sp-2);
+}
+
+.curator-action-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  font-size: var(--text-sm);
+}
+
+.curator-action-type {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.curator-action-time {
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+}
+
+.curator-action-detail {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  margin: var(--sp-1) 0 0;
+}
+
+.curator-action-reason {
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+  margin: var(--sp-1) 0 0;
+}

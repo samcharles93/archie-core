@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"slices"
 	"sync"
+	"time"
 )
 
 // Registry errors.
@@ -43,6 +44,11 @@ type Registry struct {
 	status   map[string]curatorStatus
 	order    []string
 	state    registryState
+
+	// activity tracks recent per-curator run history for observability
+	// (archie-core-1786637489932-6). It has its own mutex and is safe to
+	// use independently of r.mu.
+	activity *activityTracker
 }
 
 // NewRegistry builds the family registry. A nil Clock is replaced with the
@@ -56,7 +62,23 @@ func NewRegistry(host Registrar) *Registry {
 		host:     host,
 		curators: make(map[string]CuratorEngine),
 		status:   make(map[string]curatorStatus),
+		activity: newActivityTracker(),
 	}
+}
+
+// RecordActivity records one pass's outcome for the named curator so it is
+// inspectable at runtime: last run time, action count, and recent actions
+// with their reasons. Called by the runtime at the same point it emits the
+// curator_run/curator_action events (Runtime.emitRun), so the two views
+// never disagree.
+func (r *Registry) RecordActivity(name string, at time.Time, actions []Action) {
+	r.activity.record(name, at, actions)
+}
+
+// Activity returns the named curator's recorded activity, if any has been
+// recorded yet.
+func (r *Registry) Activity(name string) (Activity, bool) {
+	return r.activity.snapshot(name)
 }
 
 // Register validates the curator's declared shape against the registrar and
