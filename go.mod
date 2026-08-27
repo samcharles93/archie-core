@@ -65,7 +65,7 @@ require (
 require (
 	code.gitea.io/sdk/gitea v0.25.1
 	github.com/go-git/go-git/v6 v6.0.0-alpha.5
-	github.com/go-telegram/bot v1.23.0
+	github.com/go-telegram/bot v1.24.0
 	github.com/google/codesearch v1.3.0-rc.1
 	github.com/google/uuid v1.6.0
 	github.com/moby/moby/api v1.55.0
