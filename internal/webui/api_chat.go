@@ -43,6 +43,10 @@ type chatMessageRequest struct {
 	ChannelID string `json:"channel_id"`
 	SourceID  string `json:"source_id"`
 	Text      string `json:"text"`
+	// Page is the dashboard route the operator is on (e.g. "/tasks"). It is
+	// set by the web chat so the agent's system prompt can state where the
+	// operator is looking and point them somewhere relevant.
+	Page string `json:"page,omitempty"`
 }
 
 type chatPersonaRequest struct {
@@ -236,6 +240,7 @@ func (s *Server) decodeChatMessage(w http.ResponseWriter, r *http.Request) (gate
 	return gateway.Message{
 		SourceID: req.SourceID, ChannelID: req.ChannelID,
 		ThreadID: "", From: "web", Text: req.Text,
+		Page: req.Page,
 	}, true
 }
 
@@ -278,6 +283,11 @@ type chatStreamEvent struct {
 	Parameters string `json:"parameters,omitempty"`
 	Failed     bool   `json:"failed,omitempty"`
 	SessionID  string `json:"session_id,omitempty"`
+	// Path and Label carry a dashboard_navigate result so the browser can
+	// render a clickable chip that routes the operator to the page. Present
+	// only on a navigate event.
+	Path  string `json:"path,omitempty"`
+	Label string `json:"label,omitempty"`
 }
 
 // chatStreamSink adapts the stream writer to gateway.TurnStream so text and
@@ -300,6 +310,23 @@ func (s chatStreamSink) Delta(text string) {
 }
 
 func (s chatStreamSink) ToolCall(event gateway.ToolCallEvent) {
+	// A dashboard_navigate call is an explicit point-the-operator-there
+	// result, not tool narration, so it renders a clickable chip even when
+	// ShowToolCalls is off. Parse the resolved path/label from the tool's
+	// JSON result and emit a dedicated navigate frame.
+	if event.Name == "dashboard_navigate" && event.Err == "" {
+		var result gateway.DashboardNavigateResult
+		if err := json.Unmarshal([]byte(event.Output), &result); err == nil && result.Path != "" {
+			s.write(chatStreamEvent{
+				Type:       "navigate",
+				Tool:       event.Name,
+				ToolCallID: event.ID,
+				Path:       result.Path,
+				Label:      result.Label,
+			})
+			return
+		}
+	}
 	if !s.showToolCalls || event.Name == "" {
 		return
 	}

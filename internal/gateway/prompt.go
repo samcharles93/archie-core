@@ -47,6 +47,12 @@ type SystemPromptConfig struct {
 	// claimed to work for one particular person and that person's name was
 	// sent to the model provider on every turn whether or not it was theirs.
 	Operator string
+	// Page is the dashboard route the operator is on right now (e.g.
+	// "/tasks"). It is supplied per message by the web channel; empty for
+	// non-web channels, which have no page context. Rendered in the <env>
+	// runtime-metadata block so the agent knows where the operator is
+	// looking and can point them somewhere relevant.
+	Page string
 	// Now stamps the prompt's date. The zero value omits nothing -- it
 	// simply renders the zero date -- so callers should always set it.
 	Now time.Time

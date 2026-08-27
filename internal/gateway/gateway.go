@@ -57,6 +57,12 @@ type Message struct {
 	From string
 	// Text is the raw message text, including any leading slash command.
 	Text string
+	// Page is the dashboard route the operator is on when they sent this
+	// message (e.g. "/tasks", "/logs"). It is per-message, not per-session:
+	// the operator navigates freely while a conversation stays open, so the
+	// agent is told where they are right now. Empty for non-web channels,
+	// which have no page context.
+	Page string
 	// At is when the message happened in application time and is the sole
 	// ordering key for conversation history. A zero value is stamped with the
 	// current time at save.

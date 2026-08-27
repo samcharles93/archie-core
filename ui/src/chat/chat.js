@@ -3,7 +3,7 @@ import { api } from "../base/api.js";
 import { createChatView } from "./chat-view.js";
 import { assistantBubble, chatBubble } from "./chat-render.js";
 import { updateStreamingReply } from "./chat-stream.js";
-import { appendToolCall } from "./chat-tools.js";
+import { appendToolCall, appendNavigateChip } from "./chat-tools.js";
 import { channelID } from "./chat-state.js";
 import { retryChatTurn, resolveTurn } from "./chat-retry.js";
 import { renderCommands, renderModels, renderSelectors, renderSessions } from "./chat-catalog.js";
@@ -11,6 +11,15 @@ import { renderDangerous, renderUpdate } from "./chat-panels.js";
 import { updateUnavailableMessage } from "./chat-update-status.js";
 
 import "./chat.css";
+
+// currentPage is the dashboard route the operator is on right now (the hash
+// minus the leading "#"). It is sent with each chat message so the agent's
+// system prompt can state where the operator is looking and point them
+// somewhere relevant. A future global chat drawer still reads this live from
+// the URL, so it stays correct as the operator navigates.
+function currentPage() {
+  return location.hash.slice(1) || "/";
+}
 
 export function chatPage() {
   const { root, refs } = createChatView();
@@ -240,7 +249,7 @@ export function chatPage() {
       const response = await fetch("/api/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-        body: JSON.stringify({ channel_id: channelID(), source_id: turn.sourceID, text: turn.text }),
+        body: JSON.stringify({ channel_id: channelID(), source_id: turn.sourceID, text: turn.text, page: currentPage() }),
         signal: activeController.signal,
       });
       if (!response.ok) throw new Error((await response.text()) || `${response.status} ${response.statusText}`);
@@ -263,6 +272,9 @@ export function chatPage() {
           }
           if (event.type === "tool") {
             appendToolCall(replyBubble.querySelector(".chat-bubble") ?? replyBubble, event);
+          }
+          if (event.type === "navigate") {
+            appendNavigateChip(replyBubble.querySelector(".chat-bubble") ?? replyBubble, event);
           }
           if (event.type === "done") {
             finished = true;

@@ -192,6 +192,75 @@ body {
   overflow-x: hidden;
 }
 
+/* ── Chat drawer ─────────────────────────────────────────────────────── */
+/* The chat is a persistent slide-over, not a route: it is mounted once and
+   opened from the topbar, so the operator can talk to Archie from any page
+   without leaving the work that prompted the question. It overlays the
+   layout rather than replacing it, and the navigation/outlet stay interactive
+   behind the scrim. */
+.chat-drawer {
+  position: fixed;
+  inset: var(--sp-4);
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  pointer-events: none;
+  z-index: 40;
+}
+.chat-drawer-panel {
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(430px, 100%);
+  height: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+  opacity: 0;
+  transform: translateX(1.2rem);
+  transition: opacity var(--transition), transform var(--transition);
+}
+/* A closed (opacity-0, still mounted) panel must not block the page behind
+   it: opacity does not disable hit-testing, so without this the invisible
+   430px panel would make the whole right column unclickable at z-index 40. */
+.chat-drawer:not(.is-open) .chat-drawer-panel {
+  pointer-events: none;
+}
+.chat-drawer.is-open .chat-drawer-panel {
+  opacity: 1;
+  transform: none;
+}
+.chat-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+.chat-scrim {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--bg) 40%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition);
+}
+/* The scrim shows and closes from outside clicks only when the drawer is
+   open; it is driven by the drawer's own state so it can never be on top of
+   a closed drawer. */
+.chat-drawer.is-open .chat-scrim {
+  opacity: 1;
+  pointer-events: auto;
+}
+body.chat-open {
+  overflow: hidden;
+}
+
 /* ── Constrained desktop ────────────────────────────────────────────────── */
 
 @media (max-width: 1220px) and (min-width: 901px) {

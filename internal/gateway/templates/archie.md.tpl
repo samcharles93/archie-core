@@ -1,5 +1,3 @@
-{{- /* Chat agent system prompt. The persona supplies identity and style; */ -}}
-{{- /* everything below is the invariant substrate every turn depends on.  */ -}}
 {{- with .Persona}}{{.}}
 
 {{end -}}
@@ -88,6 +86,9 @@ Operator: {{xml .}}
 {{- end}}
 {{- with .Channel}}
 Channel: {{xml .}}
+{{- end}}
+{{- with .Page}}
+Current page: {{xml .}}
 {{- end}}
 {{- with .Model}}
 Model: {{xml .}}
