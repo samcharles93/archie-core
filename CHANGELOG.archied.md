@@ -1,5 +1,9 @@
 # archied changelog
 
+## [1.19.1] - 2026-08-27
+
+- fix(telegram): keep Markdown headings/lists as blocks and strip Markdown on plain fallback
+
 ## [1.19.0] - 2026-08-28
 
 - feat(logging): cursor pagination and filtering for task_logs
