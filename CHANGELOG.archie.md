@@ -1,5 +1,10 @@
 # archie-agent changelog
 
+## [1.18.0] - 2026-08-28
+
+- feat(logging): cursor pagination and filtering for task_logs
+- build(deps): upgrade github.com/samcharles93/ai-sdk to v0.1.29
+
 ## [1.17.0] - 2026-08-25
 
 - Compact task history against the selected model's real context capacity without imposing a token cap.
