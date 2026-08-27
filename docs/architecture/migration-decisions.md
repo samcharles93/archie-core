@@ -222,6 +222,58 @@ The final migration plan must order:
 Each legacy package requires objective removal criteria. No compatibility path
 may become an indefinite second implementation.
 
+### 9. Provider/chat SDK migration — ai-sdk to goai
+
+**DECIDED:** replace `github.com/samcharles93/ai-sdk` with
+`github.com/zendev-sh/goai` at the provider/chat boundary. Trigger:
+`ai-sdk/provider/openai` hardcodes `http.Client{Timeout: 5 * time.Minute}` as
+the fallback whenever `runtime.ProviderConfig.Timeout` is unset
+(`runtime/builtin.go:283-288`), and archie-core's only construction site,
+`internal/agentexec/runtime.go:14`, never sets it. A slow-but-alive router
+response (observed: `openai/gpt-5.6-luna`, build stage, task 4/issue #648,
+2026-08-25) is killed client-side at exactly 5 minutes regardless of the
+configured `[budgets] wall_clock` (60m) or container `max_uptime` (60m), and
+surfaces indistinguishably from a real budget timeout as `stop_reason:
+"timed_out"`. This is a design defect in ai-sdk's provider layer, not a
+config mistake: the failure mode is invisible until it fires, and nothing in
+`config.example.toml` exposes a knob to prevent it. `goai` does not have this
+class of bug — `options.go:75-76`'s `Timeout` is applied only when explicitly
+set (`generate.go:736,1198,1308`); with no override it defers entirely to the
+caller's `context.Context` deadline, which is what archie-core's own budget
+system already assumes everywhere else.
+
+**Scope — DECIDED:** the swap is the provider/chat boundary only:
+`internal/agentexec`'s construction of the model runtime and any direct
+`ai-sdk/core`, `ai-sdk/chat`, or `ai-sdk/runtime` call sites. It is NOT a
+workflow-engine swap. `internal/domain/workflow` (stage routing, TDD /
+feasibility / bootstrap workflows, the gate-and-park model, worktree
+integration) stays exactly as designed and does not move to zenflow or any
+other third-party workflow product — that logic is bespoke to how archied
+runs tasks and a third-party DSL would be a net loss of control for no
+identified payoff. Do not reopen this without contradictory evidence.
+
+**Still open — must be decided before implementation starts:**
+
+- Reimplementation of the gate mechanism (`ai-sdk/agentloop/gate.go`'s
+  mutating-tool-wrap + consecutive-failure-park pattern) on top of goai's
+  hook system (`hooks.go`: `OnRequest`, `OnResponse`, `OnToolCall`,
+  `OnBeforeToolExecute`) — goai has no packaged equivalent to
+  `agentloop`'s `WallClock`/`MaxSteps`/park-on-fail loop; that orchestration
+  becomes archie-core's own code sitting directly on goai's generate/hook
+  primitives.
+- Provider parity check: every provider currently configured in
+  `config.example.toml` / live deployments (openai, ollama, and whichever
+  `[providers.*]` entries exist per-operator) must have a goai equivalent
+  before cutover.
+- Cutover shape: whether `internal/agentexec` supports both SDKs
+  side-by-side during migration (dual-path, selected per provider or
+  globally) or cuts over in one change once the gate reimplementation is
+  proven in tests.
+- Deletion criteria for the `ai-sdk` dependency and any code that only
+  exists to work around its behaviour (e.g. once this lands, revisit whether
+  a `Timeout` field belongs on `agentexec.Provider` at all, or whether goai's
+  context-deadline-only model makes it unnecessary).
+
 ## Completion criteria
 
 Migration design is complete when:
