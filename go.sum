@@ -126,8 +126,8 @@ github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
 github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0tI/otEQ=
 github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=
-github.com/samcharles93/ai-sdk v0.1.25 h1:30cvHZBw01XRif2cOG/PToC7xTQUZ5DHwMOShT8zSnw=
-github.com/samcharles93/ai-sdk v0.1.25/go.mod h1:a4JYsUrwGsmm2eiXgrpcKExtYe7uHQ5zsHDbbkcPB6o=
+github.com/samcharles93/ai-sdk v0.1.29 h1:qK+TfjlOazAzKqBFlL1KLFeKDhR9tpKOsHO+FdlhArM=
+github.com/samcharles93/ai-sdk v0.1.29/go.mod h1:a4JYsUrwGsmm2eiXgrpcKExtYe7uHQ5zsHDbbkcPB6o=
 github.com/sergi/go-diff v1.4.0 h1:n/SP9D5ad1fORl+llWyN+D6qoUETXNZARKjyY2/KVCw=
 github.com/sergi/go-diff v1.4.0/go.mod h1:A0bzQcvG0E7Rwjx0REVgAGH58e96+X0MeOfepqsbeW4=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=

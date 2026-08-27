@@ -297,7 +297,8 @@ func appendInt(dst []byte, n int) []byte {
 // must still produce a Cursor equal to the input -- otherwise the caller
 // cannot distinguish "no matches ahead" from "I lost my place".
 func TestPageCursorAdvancesWithFile(t *testing.T) {
-	path := writeLog(t,
+	path := writeLog(
+		t,
 		line("INFO", "first"),
 		line("INFO", "second"),
 		line("INFO", "third"),
@@ -333,7 +334,8 @@ func TestPageCursorPastEOFIsEmpty(t *testing.T) {
 // boundary behaviour directly.
 func TestQuerySinceUntilFilters(t *testing.T) {
 	// Three entries: two seconds apart on the same minute.
-	path := writeLog(t,
+	path := writeLog(
+		t,
 		`{"time":"2026-08-04T01:00:00Z","level":"INFO","msg":"early"}`,
 		`{"time":"2026-08-04T01:00:02Z","level":"INFO","msg":"middle"}`,
 		`{"time":"2026-08-04T01:00:04Z","level":"INFO","msg":"late"}`,
@@ -388,7 +390,8 @@ func TestTimeBoundsExcludeUnparseableTimestamps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := writeLog(t,
+	path := writeLog(
+		t,
 		`{"level":"INFO","msg":"no-time-field"}`,
 		`{"time":"not a timestamp","level":"INFO","msg":"unparseable-time"}`,
 		`{"time":"2026-08-04T01:00:02Z","level":"INFO","msg":"has-time"}`,
@@ -472,7 +475,8 @@ func TestPageRespectsFilter(t *testing.T) {
 // unread, and a caller that follows PageResult's documented "cursor ==
 // file size means done" rule would loop.
 func TestPageCursorAtEOFWithTrailingNonMatchingLines(t *testing.T) {
-	path := writeLog(t,
+	path := writeLog(
+		t,
 		line("ERROR", "e1"),
 		line("INFO", "i1"),
 		line("INFO", "i2"),
