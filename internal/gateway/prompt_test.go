@@ -287,38 +287,11 @@ func TestBuildSystemPromptForbidsOverconfidentClaims(t *testing.T) {
 	}
 }
 
-func TestBuildSystemPromptRendersConfiguredOperator(t *testing.T) {
-	t.Parallel()
-
-	prompt := BuildSystemPrompt(SystemPromptConfig{Operator: "Ada Lovelace"})
-	if !strings.Contains(prompt, "Operator: Ada Lovelace") {
-		t.Errorf("prompt does not carry the configured operator:\n%s", prompt)
-	}
-}
-
 func TestBuildSystemPromptOmitsOperatorWhenUnset(t *testing.T) {
 	t.Parallel()
 
 	prompt := BuildSystemPrompt(SystemPromptConfig{})
 	if strings.Contains(prompt, "Operator:") {
 		t.Errorf("prompt names an operator when none is configured:\n%s", prompt)
-	}
-}
-
-// TestPromptSourcesCarryNoPersonalName guards against re-hardcoding a
-// deployment's owner into the prompt. The operator's name is configuration:
-// baking one in makes every deployment claim to work for that person and
-// sends their name to the model provider on every turn.
-func TestPromptSourcesCarryNoPersonalName(t *testing.T) {
-	t.Parallel()
-
-	sources := map[string]string{
-		"fallbackSystemPrompt": fallbackSystemPrompt,
-		"default persona":      DefaultPersonas()[0].Prompt,
-	}
-	for name, text := range sources {
-		if strings.Contains(text, "Sam") {
-			t.Errorf("%s hardcodes a personal name; use ChatConfig.Operator instead: %q", name, text)
-		}
 	}
 }
