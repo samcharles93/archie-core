@@ -1,12 +1,6 @@
 module github.com/samcharles93/archie-core
 
-go 1.26.5
-
-require (
-	github.com/BurntSushi/toml v1.6.0
-	github.com/google/go-github/v78 v78.0.0
-	modernc.org/sqlite v1.56.0
-)
+go 1.27.0
 
 require (
 	github.com/42wim/httpsig v1.2.4 // indirect
@@ -64,9 +58,11 @@ require (
 
 require (
 	code.gitea.io/sdk/gitea v0.25.1
+	github.com/BurntSushi/toml v1.6.0
 	github.com/go-git/go-git/v6 v6.0.0-alpha.5
 	github.com/go-telegram/bot v1.24.0
 	github.com/google/codesearch v1.3.0-rc.1
+	github.com/google/go-github/v78 v78.0.0
 	github.com/google/uuid v1.6.0
 	github.com/moby/moby/api v1.55.0
 	github.com/moby/moby/client v0.5.1
@@ -77,4 +73,5 @@ require (
 	golang.org/x/net v0.57.0
 	golang.org/x/term v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
+	modernc.org/sqlite v1.56.0
 )
