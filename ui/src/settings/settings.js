@@ -1,6 +1,7 @@
 import "./settings.css";
 import { api } from "../base/api.js";
 import { el, empty, mount, pill } from "../base/dom.js";
+import { statusKind, statusLabel } from "../base/task-meta.js";
 import { row } from "./config-row.js";
 import { updateStatusCard } from "./update-status.js";
 
@@ -25,10 +26,12 @@ export function settingsPage() {
   const root = el("div.cfg-page");
   const body = el("div");
   const versionSlot = el("div");
+  const lifecycleSlot = el("div");
 
   render();
   load();
   loadVersionStatus();
+  loadLifecycle();
 
   function render() {
     mount(
@@ -40,9 +43,10 @@ export function settingsPage() {
           el("h1.page-title", "Configuration"),
           el("p.page-sub", "What archied is actually running with right now."),
         ),
-        el("div.page-actions", el("button.btn", { onclick: () => { load(); loadVersionStatus(); } }, "Refresh")),
+        el("div.page-actions", el("button.btn", { onclick: () => { load(); loadVersionStatus(); loadLifecycle(); } }, "Refresh")),
       ),
       versionSlot,
+      lifecycleSlot,
       body,
     );
   }
@@ -69,6 +73,24 @@ export function settingsPage() {
         return;
       }
       mount(versionSlot, el("div.card", empty("Update status unavailable", String(err.message || err))));
+    }
+  }
+
+  async function loadLifecycle() {
+    try {
+      const data = await api.taskMeta();
+      mount(lifecycleSlot, lifecycleCard(data));
+    } catch (err) {
+      // The lifecycle vocabulary is optional metadata; if archied does not
+      // answer, show a quiet placeholder rather than a loud failure.
+      mount(
+        lifecycleSlot,
+        section(
+          "Work lifecycle",
+          "The task statuses and operator actions archied ships.",
+          empty("Lifecycle unavailable", String(err.message || err)),
+        ),
+      );
     }
   }
 
@@ -125,6 +147,54 @@ function section(title, sub, ...children) {
     el("div.card-head", el("div", el("h2.card-title", title), el("p.card-sub", sub))),
     ...children,
   );
+}
+
+// Work lifecycle: the vocabulary archied ships as a server catalog. Both the
+// statuses (label + pill severity) and the operator actions (label + button
+// variant) are rendered from the /api/task-meta payload, so a status or action
+// added on the backend appears here on the next load with no frontend change.
+// statusLabel/statusKind are used as fallbacks for an entry that arrives
+// without its own label/kind so the card degrades gracefully.
+function lifecycleCard(data) {
+  const statuses = data?.statuses || [];
+  const actions = data?.actions || [];
+
+  const statusList = statuses.length
+    ? el("div.kv-list", ...statuses.map((s) => statusLifecycleRow(s)))
+    : empty("No statuses reported", "The server did not return any lifecycle statuses.");
+
+  const actionList = actions.length
+    ? el("div.kv-list", ...actions.map((a) => actionLifecycleRow(a)))
+    : empty("No actions reported", "The server did not return any operator actions.");
+
+  return section(
+    "Work lifecycle",
+    "The task statuses and operator actions archied ships. Add one on the backend and it appears here without a frontend change.",
+    el("h3.cfg-subhead", "Statuses"),
+    statusList,
+    el("h3.cfg-subhead", "Actions"),
+    actionList,
+  );
+}
+
+function statusLifecycleRow(s) {
+  const label = s.label ?? statusLabel(s.id);
+  const kind = s.kind ?? statusKind(s.id);
+  return el("div.kv", el("span.kv-label", s.id), el("span.kv-value", pill(label, kind)));
+}
+
+function actionLifecycleRow(a) {
+  const label = a.label ?? a.id;
+  const cls = roleButtonClass(a.kind);
+  const spec = cls ? `button.btn.btn-small.${cls}` : "button.btn.btn-small";
+  return el("div.kv", el("span.kv-label", a.id), el("span.kv-value", el(spec, { type: "button", disabled: true }, label)));
+}
+
+// The button variant token for an action kind, matching the tasks board's
+// mapping: quiet/danger get their own tokens, everything else (primary, link)
+// falls back to the default .btn styling. A new kind never needs a new case.
+function roleButtonClass(kind) {
+  return kind === "quiet" ? "btn-quiet" : kind === "danger" ? "btn-danger" : "";
 }
 
 function identityCard(identity, ctx) {

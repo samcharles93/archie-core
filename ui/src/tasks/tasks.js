@@ -1,30 +1,11 @@
 import "./tasks.css";
 import { api } from "../base/api.js";
-import { ago, el, empty, mount, pill, statusKind } from "../base/dom.js";
+import { ago, el, empty, mount, pill } from "../base/dom.js";
 import { statTile } from "../base/statTile.js";
 import { taskRowA11y } from "./task-row.js";
 import { initialTaskFilter, taskMatchesStatus } from "./task-filters.js";
 import { describeTimelineEvent } from "./timeline-event.js";
-
-/**
- * Plain-language status labels. One place, so "waiting_human" only ever
- * reads as "Waiting for you" wherever a task list is shown.
- */
-const STATUS_LABELS = {
-  queued: "Queued",
-  running: "Working",
-  waiting_human: "Waiting for you",
-  pr_open: "In review",
-  merged: "Merged",
-  parked: "Parked",
-  dead: "Stopped (too many retries)",
-  rejected: "Rejected",
-  closed_wont_do: "Won't do",
-};
-
-function statusLabel(status) {
-  return STATUS_LABELS[status] || status || "Unknown";
-}
+import { actionFor, statusIds, statusKind, statusLabel } from "../base/task-meta.js";
 
 /**
  * The work board: every task archied knows about, filterable by status and
@@ -67,8 +48,8 @@ export function tasksPage(params = new URLSearchParams()) {
     },
     el("option", { value: "" }, "All statuses"),
     el("option", { value: "needs_you", selected: filterStatus === "needs_you" }, "Needs you"),
-    ...Object.entries(STATUS_LABELS).map(([value, label]) =>
-      el("option", { value, selected: filterStatus === value }, label)),
+    ...statusIds().map((value) =>
+      el("option", { value, selected: filterStatus === value }, statusLabel(value))),
   );
 
   render();
@@ -288,55 +269,29 @@ export function tasksPage(params = new URLSearchParams()) {
         label,
       );
 
-    const controls = (t.actions || []).map((action) => {
-      switch (action) {
-        case "cancel":
-          return button(
-            "button.btn.btn-small.btn-quiet",
-            action,
-            "Cancel",
-            `Cancel "${t.title || "this task"}"? This closes the forge issue.`,
-          );
-        case "stop":
-          return button(
-            "button.btn.btn-small",
-            action,
-            "Stop",
-            `Stop "${t.title || "this task"}"? Recoverable work will remain parked.`,
-          );
-        case "approve":
-          return button("button.btn.btn-small", action, "Approve");
-        case "reject":
-          return button(
-            "button.btn.btn-small.btn-quiet",
-            action,
-            "Reject",
-            `Reject "${t.title || "this task"}"? This closes the forge issue.`,
-          );
-        case "retry":
-          return button("button.btn.btn-small", action, "Retry");
-        case "abandon":
-          return button(
-            "button.btn.btn-small.btn-quiet",
-            action,
-            "Abandon",
-            `Abandon "${t.title || "this task"}"? This closes the forge issue.`,
-          );
-        case "archive":
-          return button(
-            "button.btn.btn-small.btn-quiet",
-            action,
-            "Archive",
-            `Archive the local record for "${t.title || "this task"}"?`,
-          );
-        case "open_pr":
-          return taskLink(t, "pull_request", t.pr_number, "Open PR");
-        case "open_issue":
-          return taskLink(t, "issue", t.issue_number, "Open issue");
-        default:
-          return null;
-      }
-    });
+    // Everything is derived from the server catalog: an action added on the
+    // backend renders here the moment task-meta ships it, no frontend redeploy
+    // needed. label, variant and confirm text all come from actionFor(action);
+    // a new variant kind just needs a token below, not a new case.
+    const variantToken = (kind) =>
+      kind === "quiet" ? "btn-quiet" : kind === "danger" ? "btn-danger" : "";
+
+    const controls = (t.actions || [])
+      .map((action) => {
+        const meta = actionFor(action);
+        if (!meta) return null; // unknown id -> render nothing for this entry
+        const title = t.title || "this task";
+        const confirmText = meta.confirm ? meta.confirm.replaceAll("{title}", title) : undefined;
+        const cls = ["button", "btn", "btn-small", variantToken(meta.kind)].filter(Boolean).join(".");
+        if (meta.kind === "link") {
+          // Only the forge links have a destination to navigate to; the label
+          // comes from the catalog rather than a hardcoded "Open PR".
+          if (action === "open_pr") return taskLink(t, "pull_request", t.pr_number, meta.label);
+          if (action === "open_issue") return taskLink(t, "issue", t.issue_number, meta.label);
+        }
+        return button(cls, action, meta.label, confirmText);
+      })
+      .filter(Boolean);
     if (!controls.length && !error) return "—";
     return el("div.task-actions", error, controls);
   }
