@@ -45,9 +45,9 @@ func (c *GiteaClient) AcceptInvitations(ctx context.Context) error {
 // AssignedIssues returns open issues assigned to the given user, excluding PRs.
 func (c *GiteaClient) AssignedIssues(ctx context.Context, owner, repo, assignee string) ([]Issue, error) {
 	opts := gitea.ListIssueOption{
-		ListOptions: gitea.ListOptions{PageSize: 50},
-		State:       gitea.StateOpen,
-		AssignedBy:  assignee,
+		PageSize:   50,
+		State:      gitea.StateOpen,
+		AssignedBy: assignee,
 	}
 	var out []Issue
 	for {
@@ -76,9 +76,9 @@ func (c *GiteaClient) AssignedIssues(ctx context.Context, owner, repo, assignee 
 // IssuesWithLabel returns open issues matching the given label, excluding PRs.
 func (c *GiteaClient) IssuesWithLabel(ctx context.Context, owner, repo, label string) ([]Issue, error) {
 	opts := gitea.ListIssueOption{
-		ListOptions: gitea.ListOptions{PageSize: 50},
-		State:       gitea.StateOpen,
-		Labels:      []string{label},
+		PageSize: 50,
+		State:    gitea.StateOpen,
+		Labels:   []string{label},
 	}
 	var out []Issue
 	for {
@@ -117,7 +117,7 @@ func (c *GiteaClient) Comment(ctx context.Context, owner, repo string, number in
 // by exclude.
 func (c *GiteaClient) RepliesAfter(ctx context.Context, owner, repo string, number int, afterID int64, exclude string) ([]Reply, error) {
 	comments, _, err := c.cli.ListIssueComments(owner, repo, int64(number), gitea.ListIssueCommentOptions{
-		ListOptions: gitea.ListOptions{PageSize: 50},
+		PageSize: 50,
 	})
 	if err != nil {
 		return nil, err
@@ -247,7 +247,7 @@ func (c *GiteaClient) SetStateLabel(ctx context.Context, owner, repo string, num
 
 // resolveLabelID returns the ID of a label, creating it if necessary.
 func (c *GiteaClient) resolveLabelID(owner, repo, name string) int64 {
-	labels, _, err := c.cli.ListRepoLabels(owner, repo, gitea.ListLabelsOptions{ListOptions: gitea.ListOptions{PageSize: 100}})
+	labels, _, err := c.cli.ListRepoLabels(owner, repo, gitea.ListLabelsOptions{PageSize: 100})
 	if err != nil {
 		c.log.Warn("list repo labels failed", "err", err)
 		return 0
@@ -260,7 +260,7 @@ func (c *GiteaClient) resolveLabelID(owner, repo, name string) int64 {
 	// Create the label.
 	c.ensureLabel(owner, repo, name)
 	// Re-list to get the new ID.
-	labels, _, err = c.cli.ListRepoLabels(owner, repo, gitea.ListLabelsOptions{ListOptions: gitea.ListOptions{PageSize: 100}})
+	labels, _, err = c.cli.ListRepoLabels(owner, repo, gitea.ListLabelsOptions{PageSize: 100})
 	if err != nil {
 		return 0
 	}

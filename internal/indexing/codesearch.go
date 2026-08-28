@@ -415,8 +415,7 @@ func runHelper(ctx context.Context, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, executable, append([]string{"workspace-codesearch"}, args...)...)
 	out, err := cmd.Output()
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			return nil, fmt.Errorf("codesearch helper: %s", strings.TrimSpace(string(exitErr.Stderr)))
 		}
 		return nil, fmt.Errorf("run codesearch helper: %w", err)

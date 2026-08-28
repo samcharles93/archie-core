@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"sort"
 	"sync/atomic"
 	"syscall"
@@ -150,8 +151,8 @@ func (b *boot) addCleanup(fn func()) {
 }
 
 func (b *boot) cleanup() {
-	for i := len(b.cleanups) - 1; i >= 0; i-- {
-		b.cleanups[i]()
+	for _, v := range slices.Backward(b.cleanups) {
+		v()
 	}
 }
 

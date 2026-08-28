@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"slices"
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
@@ -180,9 +181,9 @@ func testCommand(repo config.Repo) string {
 // testCommandArgv returns the test command argv (the last entry in
 // repo.Gate), or nil when no gate is configured.
 func testCommandArgv(repo config.Repo) []string {
-	for i := len(repo.Gate) - 1; i >= 0; i-- {
-		if len(repo.Gate[i]) > 0 {
-			return repo.Gate[i]
+	for _, v := range slices.Backward(repo.Gate) {
+		if len(v) > 0 {
+			return v
 		}
 	}
 	return nil

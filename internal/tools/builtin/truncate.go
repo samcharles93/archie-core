@@ -11,6 +11,7 @@ package builtin
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -116,8 +117,8 @@ func TruncateTail(content string, maxLines, maxBytes int) TruncationResult {
 	byteCount := 0
 	lineCount := 0
 
-	for i := len(lines) - 1; i >= 0; i-- {
-		lineLen := len(lines[i])
+	for i, line := range slices.Backward(lines) {
+		lineLen := len(line)
 		if i < len(lines)-1 {
 			lineLen++ // account for the \n
 		}

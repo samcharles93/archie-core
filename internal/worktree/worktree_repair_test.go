@@ -398,7 +398,7 @@ func TestBranchNamingPrecedence(t *testing.T) {
 				t.Errorf("archieBranch(%d, %q, %q) = %q, want %q", tc.issue, tc.title, tc.labels, got, tc.want)
 			}
 			gotPrefix := branchPrefix(tc.title, tc.labels)
-			wantPrefix := strings.Split(tc.want, "/")[0]
+			wantPrefix, _, _ := strings.Cut(tc.want, "/")
 			if gotPrefix != wantPrefix {
 				t.Errorf("branchPrefix(%q, %q) = %q, want %q", tc.title, tc.labels, gotPrefix, wantPrefix)
 			}

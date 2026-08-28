@@ -36,10 +36,8 @@ func TestRouteStatusWithTasks(t *testing.T) {
 
 func TestRouteStatusIncludesActiveProviderAndModel(t *testing.T) {
 	manager := &fakeProviderModelManager{
-		fakeModelManager: fakeModelManager{
-			models:      []string{"openai/gpt-5.6", "openrouter/openai/gpt-5.6"},
-			activeModel: "openai/gpt-5.6",
-		},
+		models:      []string{"openai/gpt-5.6", "openrouter/openai/gpt-5.6"},
+		activeModel: "openai/gpt-5.6",
 	}
 	r := NewRouter(&fakeStore{counts: map[string]int{"running": 1}}, nil, "test")
 	r.Models = manager
@@ -99,9 +97,7 @@ func TestFormatStatus(t *testing.T) {
 			name:   "example from specification - single parked task with provider and model",
 			counts: map[string]int{"parked": 2},
 			models: &fakeProviderModelManager{
-				fakeModelManager: fakeModelManager{
-					activeModel: "openai/gpt-5.6-luna",
-				},
+				activeModel: "openai/gpt-5.6-luna",
 			},
 			want: "📊 Archie status\n\nTasks\n⏸ Parked: 2\n\nRuntime\nProvider: OpenAI\nModel: openai/gpt-5.6-luna",
 		},
@@ -120,9 +116,7 @@ func TestFormatStatus(t *testing.T) {
 				"custom_state":   10,
 			},
 			models: &fakeProviderModelManager{
-				fakeModelManager: fakeModelManager{
-					activeModel: "deepseek/deepseek-v4-pro",
-				},
+				activeModel: "deepseek/deepseek-v4-pro",
 			},
 			want: "📊 Archie status\n\nTasks\n▶ Running: 1\n👤 Waiting: 2\n⏸ Parked: 3\n⏳ Queued: 4\n🔀 PR open: 5\n✅ Merged: 6\n❌ Rejected: 7\n🚫 Declined: 8\n🛑 Dead: 9\n• Custom state: 10\n\nRuntime\nProvider: DeepSeek\nModel: deepseek/deepseek-v4-pro",
 		},
@@ -158,11 +152,7 @@ func TestFormatStatus(t *testing.T) {
 			name:   "custom display namer interface",
 			counts: map[string]int{"running": 1},
 			models: &fakeCustomDisplayNamerManager{
-				fakeProviderModelManager: fakeProviderModelManager{
-					fakeModelManager: fakeModelManager{
-						activeModel: "openai/gpt-5.6",
-					},
-				},
+				activeModel: "openai/gpt-5.6",
 			},
 			want: "📊 Archie status\n\nTasks\n▶ Running: 1\n\nRuntime\nProvider: OpenAI Custom Enterprise\nModel: openai/gpt-5.6",
 		},
@@ -170,9 +160,7 @@ func TestFormatStatus(t *testing.T) {
 			name:   "provider set but model empty",
 			counts: map[string]int{"queued": 1},
 			models: &fakeProviderModelManager{
-				fakeModelManager: fakeModelManager{
-					activeModel: "",
-				},
+				activeModel: "",
 			},
 			want: "📊 Archie status\n\nTasks\n⏳ Queued: 1\n\nRuntime\nNot configured",
 		},
