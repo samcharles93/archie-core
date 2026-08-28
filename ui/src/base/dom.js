@@ -52,27 +52,10 @@ export function pill(text, kind = "idle") {
   return el(`span.pill.pill-${kind}`, text);
 }
 
-/**
- * Map an archie task status onto a pill kind. Centralised so "merged" is the
- * same green everywhere it appears.
- */
-export function statusKind(status) {
-  switch (status) {
-    case "running":
-      return "info";
-    case "merged":
-    case "pr_open":
-      return "ok";
-    case "parked":
-    case "waiting_human":
-      return "warn";
-    case "dead":
-    case "rejected":
-      return "danger";
-    default:
-      return "idle";
-  }
-}
+// Re-exported from task-meta.js so the pill severity vocabulary has a single
+// source (the server catalog). Importers that pull statusKind from dom.js --
+// e.g. dashboard.js -- keep working, and the hardcoded switch is gone.
+export { statusKind } from "./task-meta.js";
 
 /** Humanised relative time: "2 min ago". Raw timestamps make people do maths. */
 export function ago(value) {
