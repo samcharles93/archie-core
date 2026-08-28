@@ -458,13 +458,14 @@ func (s *Server) retireTask(ctx context.Context, task *store.Task, reason string
 }
 
 func (s *Server) rejectTask(ctx context.Context, w http.ResponseWriter, task *store.Task) *actionOutcome {
-	// The dashboard only offers Reject on a waiting_human task, but the rule
-	// is the shared one so the two surfaces cannot drift apart again.
-	if err := taskstate.CheckApprove(task.Status); err != nil {
-		http.Error(w, err.Error(), http.StatusConflict)
-		return nil
+	// Reject is available from any non-terminal lifecycle state: work the
+	// operator refuses belongs in the terminal Declined state regardless of
+	// where it currently sits. Running work is interrupted first so nothing
+	// keeps executing against a task that is being closed out.
+	if task.Status == store.StatusRunning && s.TaskStopper != nil {
+		s.TaskStopper.CancelTask(task.ID)
 	}
-	err := s.Store.Transition(ctx, task.ID, store.StatusWaitingHuman, store.StatusClosedWontDo, "declined from the dashboard")
+	err := s.Store.Transition(ctx, task.ID, task.Status, store.StatusClosedWontDo, "declined from the dashboard")
 	if s.storeFailed(w, err) {
 		return nil
 	}

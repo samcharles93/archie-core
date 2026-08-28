@@ -72,19 +72,24 @@ func Terminal(status string) bool {
 
 // Actions returns the ordered controls valid for status. Callers receive a
 // fresh slice so presentation code cannot mutate the lifecycle table.
+//
+// Reject is deliberately present in every non-terminal state: an operator can
+// refuse work no matter where it currently sits, and the refusal always lands
+// in the terminal Declined state. Terminal states are already resolved, so
+// they only expose archive.
 func Actions(status string) []Action {
 	var actions []Action
 	switch status {
 	case Queued:
-		actions = []Action{ActionCancel}
+		actions = []Action{ActionCancel, ActionReject}
 	case Running:
-		actions = []Action{ActionStop}
+		actions = []Action{ActionStop, ActionReject}
 	case WaitingHuman:
 		actions = []Action{ActionApprove, ActionReject}
 	case Parked:
-		actions = []Action{ActionRetry, ActionAbandon}
+		actions = []Action{ActionRetry, ActionAbandon, ActionReject}
 	case PROpen:
-		actions = []Action{ActionOpenPR, ActionOpenIssue}
+		actions = []Action{ActionOpenPR, ActionOpenIssue, ActionReject}
 	case Merged, Rejected, Dead, Declined:
 		actions = []Action{ActionArchive}
 	}
@@ -126,9 +131,9 @@ func CheckRetry(status string) error {
 // CheckDecline reports whether a task in this status can be declined.
 //
 // The legacy chat command expresses cancel, stop, reject and abandon as one
-// operation. It remains available only where the canonical action table
-// exposes one of those controls; unknown, PR-open and terminal states fail
-// closed instead of permitting an arbitrary transition.
+// operation. Because Reject is now offered in every non-terminal state, that
+// command is available everywhere a task is still live; unknown and terminal
+// states fail closed instead of permitting an arbitrary transition.
 func CheckDecline(status string) error {
 	for _, action := range Actions(status) {
 		switch action {

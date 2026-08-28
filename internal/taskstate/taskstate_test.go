@@ -15,11 +15,11 @@ func TestActionRules(t *testing.T) {
 		terminal                bool
 		actions                 []Action
 	}{
-		{status: Queued, decline: true, actions: []Action{ActionCancel}},
-		{status: Running, decline: true, actions: []Action{ActionStop}},
+		{status: Queued, decline: true, actions: []Action{ActionCancel, ActionReject}},
+		{status: Running, decline: true, actions: []Action{ActionStop, ActionReject}},
 		{status: WaitingHuman, approve: true, decline: true, actions: []Action{ActionApprove, ActionReject}},
-		{status: PROpen, actions: []Action{ActionOpenPR, ActionOpenIssue}},
-		{status: Parked, retry: true, decline: true, actions: []Action{ActionRetry, ActionAbandon}},
+		{status: PROpen, decline: true, actions: []Action{ActionOpenPR, ActionOpenIssue, ActionReject}},
+		{status: Parked, retry: true, decline: true, actions: []Action{ActionRetry, ActionAbandon, ActionReject}},
 		{status: Merged, terminal: true, actions: []Action{ActionArchive}},
 		{status: Rejected, terminal: true, actions: []Action{ActionArchive}},
 		{status: Dead, terminal: true, actions: []Action{ActionArchive}},
