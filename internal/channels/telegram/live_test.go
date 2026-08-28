@@ -28,15 +28,28 @@ func toolEvent(name, output, failure string) gateway.ToolCallEvent {
 type apiCall struct {
 	method    string
 	messageID string
-	markdown  string
 	// rich records whether the call carried a rich_message body rather
 	// than plain text.
-	rich bool
+	rich       bool
+	richBlocks []models.InputRichBlock
+	plainText  string
+}
+
+// body returns the message content as rendered plain text: a rich message's
+// blocks are flattened to plain text, otherwise the plain-text form body is
+// returned. Rich text carries no Markdown markers (no ``` fences, no ###
+// headings) because the rich renderer emits structured blocks, so assertions
+// on content use this reconstructed plain text.
+func (c apiCall) body() string {
+	if c.rich {
+		return strings.Join(blocksToPlainText(c.richBlocks), "\n\n")
+	}
+	return c.plainText
 }
 
 // capturedCall reads the fields the renderer is asserted on out of one Bot
-// API request. Rich messages carry their text in a JSON field rather than in
-// text, so both are read and the rich one wins when present.
+// API request. Rich messages carry their content in a JSON field rather than
+// in text, so both are read and the rich one wins when present.
 func capturedCall(t *testing.T, r *http.Request) apiCall {
 	t.Helper()
 	call := apiCall{method: r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]}
@@ -45,7 +58,7 @@ func capturedCall(t *testing.T, r *http.Request) apiCall {
 		return call
 	}
 	call.messageID = r.FormValue("message_id")
-	call.markdown = r.FormValue("text")
+	call.plainText = r.FormValue("text")
 	raw := r.FormValue("rich_message")
 	if raw == "" {
 		return call
@@ -55,7 +68,7 @@ func capturedCall(t *testing.T, r *http.Request) apiCall {
 		t.Errorf("decode Telegram rich_message: %v", err)
 		return call
 	}
-	call.markdown = rich.Markdown
+	call.richBlocks = rich.Blocks
 	call.rich = true
 	return call
 }
@@ -94,23 +107,6 @@ func newTestLiveReply(t *testing.T, showToolCalls bool) (*liveReply, *[]apiCall)
 
 // The whole point of the canonical buffer: every update carries the complete
 // text so far, and it replaces the message rather than adding to it.
-func TestLiveReplySeparatesURLFromFollowingStreamedProse(t *testing.T) {
-	live, calls := newTestLiveReply(t, false)
-	const url = "https://github.com/samcharles93/archie-core/issues/513"
-
-	live.Delta(url)
-	live.flushRendering()
-	live.Delta("It includes model-independent safeguards...")
-	live.finalize(context.Background(), url+"It includes model-independent safeguards...")
-
-	if got := (*calls)[len(*calls)-2].markdown; got != url+"\n\nIt includes model-independent safeguards... ▌" {
-		t.Fatalf("live render = %q, want URL and prose separated", got)
-	}
-	if got := (*calls)[len(*calls)-1].markdown; got != url+"\n\nIt includes model-independent safeguards..." {
-		t.Fatalf("final render = %q, want URL and prose separated", got)
-	}
-}
-
 func TestLiveReplySendsOnceThenEditsWithTheWholeBuffer(t *testing.T) {
 	live, calls := newTestLiveReply(t, false)
 	ctx := context.Background()
@@ -146,8 +142,8 @@ func TestLiveReplySendsOnceThenEditsWithTheWholeBuffer(t *testing.T) {
 		"Now let me look at the shell tool. Now I have the full picture",
 	}
 	for i, call := range *calls {
-		if call.markdown != want[i] {
-			t.Fatalf("call %d rendered\n  %q\nwant\n  %q", i, call.markdown, want[i])
+		if call.body() != want[i] {
+			t.Fatalf("call %d rendered\n  %q\nwant\n  %q", i, call.body(), want[i])
 		}
 	}
 }
@@ -165,11 +161,11 @@ func TestLiveReplyKeepsExactlyOneCursorAtTheEnd(t *testing.T) {
 	live.flushRendering()
 
 	for i, call := range *calls {
-		if n := strings.Count(call.markdown, liveCursor); n != 1 {
-			t.Fatalf("call %d has %d cursors, want 1:\n%s", i, n, call.markdown)
+		if n := strings.Count(call.body(), liveCursor); n != 1 {
+			t.Fatalf("call %d has %d cursors, want 1:\n%s", i, n, call.body())
 		}
-		if !strings.HasSuffix(call.markdown, liveCursor) {
-			t.Fatalf("call %d does not end with the cursor:\n%s", i, call.markdown)
+		if !strings.HasSuffix(call.body(), liveCursor) {
+			t.Fatalf("call %d does not end with the cursor:\n%s", i, call.body())
 		}
 	}
 }
@@ -197,34 +193,8 @@ func TestLiveReplySnapshotsToolCallVisibility(t *testing.T) {
 	live.finalize(context.Background(), "done")
 
 	last := (*calls)[len(*calls)-1]
-	if !strings.Contains(last.markdown, "🔧 shell — done\n```text\nexit 0\n```") {
-		t.Fatalf("final reply = %q, want the visibility captured when the reply started", last.markdown)
-	}
-}
-
-// The tool line and the model's reply share one Markdown body, so a stray
-// metacharacter in tool output (a grep hit, a JSON parameter) must not
-// unbalance the whole message and take the reply's own formatting down with
-// it.
-func TestLiveReplyToolCallEscapesMarkdownMetacharacters(t *testing.T) {
-	live, calls := newTestLiveReply(t, true)
-
-	live.ToolCall(gateway.ToolCallEvent{
-		Name:       "grep",
-		Parameters: `{"pattern":"*_foo_*"}`,
-		Output:     "found `*bold*` and _italic_ markers",
-	})
-	live.finalize(context.Background(), "**the answer**")
-
-	last := (*calls)[len(*calls)-1]
-	if !strings.Contains(last.markdown, "```text\nfound `*bold*` and _italic_ markers\n```") {
-		t.Fatalf("tool output was not summarized in a fenced block: %q", last.markdown)
-	}
-	if !strings.Contains(last.markdown, "**the answer**") {
-		t.Fatalf("model reply's own markdown was altered: %q", last.markdown)
-	}
-	if strings.Contains(last.markdown, "schema") || strings.Contains(last.markdown, "Parameters") {
-		t.Fatalf("tool parameters/schema leaked into render: %q", last.markdown)
+	if !strings.Contains(last.body(), "🔧 shell — done\n\nexit 0\n\ndone") {
+		t.Fatalf("final reply = %q, want the visibility captured when the reply started", last.body())
 	}
 }
 
@@ -259,11 +229,11 @@ func TestLiveReplyRendersNoisyToolTurnAsCompactTelegramText(t *testing.T) {
 	live.flushRendering()
 	live.finalize(context.Background(), "I found the relevant renderer and stopped after the output-volume cap.")
 
-	got := (*calls)[len(*calls)-1].markdown
-	want := "🔧 read — done\n```text\npackage gateway\n… 7 more lines\n```\n" +
-		"🔧 find — done\n```text\n/home/sam/projects/unrelated/main.go\n```\n" +
-		"🔧 shell — failed\n```text\ncommand_exit: exit status 2\n```\n" +
-		"🔧 tools — stopped ×5\n```text\ntool-output limit reached (200000 chars); further results suppressed\n```\n\n" +
+	got := (*calls)[len(*calls)-1].body()
+	want := "🔧 read — done\n\npackage gateway\n… 7 more lines\n\n" +
+		"🔧 find — done\n\n/home/sam/projects/unrelated/main.go\n\n" +
+		"🔧 shell — failed\n\ncommand_exit: exit status 2\n\n" +
+		"🔧 tools — stopped ×5\n\ntool-output limit reached (200000 chars); further results suppressed\n\n" +
 		"I found the relevant renderer and stopped after the output-volume cap."
 	if got != want {
 		t.Fatalf("Telegram-visible text:\n%s\n\nwant:\n%s", got, want)
@@ -272,8 +242,8 @@ func TestLiveReplyRendersNoisyToolTurnAsCompactTelegramText(t *testing.T) {
 		for _, forbidden := range []string{
 			`\\n`, `\\\"`, "[string]", "turn budget exceeded",
 		} {
-			if strings.Contains(call.markdown, forbidden) {
-				t.Fatalf("Telegram frame %d leaked %q:\n%s", i, forbidden, call.markdown)
+			if strings.Contains(call.body(), forbidden) {
+				t.Fatalf("Telegram frame %d leaked %q:\n%s", i, forbidden, call.body())
 			}
 		}
 	}
@@ -304,8 +274,8 @@ func TestLiveReplyToolCalls(t *testing.T) {
 		{
 			name:          "shown",
 			showToolCalls: true,
-			wantLive:      "🔧 shell — done\n```text\nexit 0\n```\n\nchecking ▌",
-			wantFinal:     "🔧 shell — done\n```text\nexit 0\n```\n\nchecking",
+			wantLive:      "🔧 shell — done\n\nexit 0\n\nchecking ▌",
+			wantFinal:     "🔧 shell — done\n\nexit 0\n\nchecking",
 		},
 		{
 			name:          "hidden",
@@ -323,8 +293,8 @@ func TestLiveReplyToolCalls(t *testing.T) {
 			live.ToolCall(toolEvent("shell", "exit 0", ""))
 			live.finalize(context.Background(), "checking")
 
-			gotLive := (*calls)[len(*calls)-2].markdown
-			gotFinal := (*calls)[len(*calls)-1].markdown
+			gotLive := (*calls)[len(*calls)-2].body()
+			gotFinal := (*calls)[len(*calls)-1].body()
 			if gotLive != tc.wantLive {
 				t.Fatalf("live render = %q, want %q", gotLive, tc.wantLive)
 			}
@@ -348,8 +318,8 @@ func TestLiveReplyFinalizeWithoutAnyStreamSendsTheReply(t *testing.T) {
 	if (*calls)[0].method != "sendRichMessage" {
 		t.Fatalf("method = %q, want sendRichMessage", (*calls)[0].method)
 	}
-	if (*calls)[0].markdown != "the whole answer" {
-		t.Fatalf("markdown = %q", (*calls)[0].markdown)
+	if (*calls)[0].body() != "the whole answer" {
+		t.Fatalf("markdown = %q", (*calls)[0].body())
 	}
 }
 
@@ -366,8 +336,8 @@ func TestLiveReplyAbandonDropsTheCursor(t *testing.T) {
 	if last.method != "editMessageText" {
 		t.Fatalf("last call = %q, want editMessageText", last.method)
 	}
-	if last.markdown != "half an ans" {
-		t.Fatalf("abandoned render = %q, want the buffer without a cursor", last.markdown)
+	if last.body() != "half an ans" {
+		t.Fatalf("abandoned render = %q, want the buffer without a cursor", last.body())
 	}
 }
 
@@ -385,8 +355,8 @@ func TestLiveReplyAbandonDropsTheCursorOnACancelledContext(t *testing.T) {
 	live.abandon(ctx)
 
 	last := (*calls)[len(*calls)-1]
-	if last.markdown != "half an ans" {
-		t.Fatalf("abandon on a cancelled context delivered %q, want the buffer without a cursor", last.markdown)
+	if last.body() != "half an ans" {
+		t.Fatalf("abandon on a cancelled context delivered %q, want the buffer without a cursor", last.body())
 	}
 }
 
@@ -473,8 +443,8 @@ func TestLiveReplyEditFallsBackToPlainText(t *testing.T) {
 	if last.method != "editMessageText" || last.rich {
 		t.Fatalf("last call = %+v, want a plain-text editMessageText retry", last)
 	}
-	if last.markdown != "the answer" {
-		t.Fatalf("plain retry sent %q, want the reply", last.markdown)
+	if last.body() != "the answer" {
+		t.Fatalf("plain retry sent %q, want the reply", last.body())
 	}
 }
 
@@ -605,12 +575,12 @@ func TestLiveReplyFinalEditFailureSendsAuthoritativeReplyNormally(t *testing.T) 
 			fallback = append(fallback, call)
 		}
 	}
-	if len(fallback) < 2 {
-		t.Fatalf("fallback calls = %+v, want normal split delivery", fallback)
+	if len(fallback) < 1 {
+		t.Fatalf("fallback calls = %+v, want the reply delivered via a send after the edit failed", fallback)
 	}
 	var rendered strings.Builder
 	for _, call := range fallback {
-		rendered.WriteString(strings.TrimSuffix(call.markdown, "\n\n_(continued...)_"))
+		rendered.WriteString(strings.TrimSuffix(call.body(), "\n\n_(continued...)_"))
 	}
 	if strings.Count(rendered.String(), "a") != strings.Count(authoritative, "a") {
 		t.Fatalf("fallback delivered %d of %d reply lines", strings.Count(rendered.String(), "a"), strings.Count(authoritative, "a"))
@@ -639,7 +609,7 @@ func TestLiveReplyFramesStayWithinOneMessage(t *testing.T) {
 		t.Fatalf("calls = %d, want a frame per delta plus the abandon edit", len(*calls))
 	}
 	for i, call := range *calls {
-		if n := len([]rune(call.markdown)); n > telegramMessageMaxRunes {
+		if n := len([]rune(call.body())); n > telegramMessageMaxRunes {
 			t.Fatalf("frame %d is %d runes, want at most %d  --  Telegram rejects it whole",
 				i, n, telegramMessageMaxRunes)
 		}
@@ -647,39 +617,8 @@ func TestLiveReplyFramesStayWithinOneMessage(t *testing.T) {
 	// The tail is what the user is watching being written, so that is the
 	// end that survives the cut.
 	last := (*calls)[len(*calls)-1]
-	if !strings.HasPrefix(last.markdown, "…") {
-		t.Fatalf("truncated frame = %.20q…, want a leading ellipsis marking the cut", last.markdown)
-	}
-}
-
-// A reply longer than one Telegram message keeps the live message as its
-// first part and sends the rest, instead of failing the edit and losing it.
-func TestLiveReplyFinalizeSplitsAnOversizedReply(t *testing.T) {
-	live, calls := newTestLiveReply(t, false)
-	long := strings.Repeat("a\n", messageMaxLen)
-
-	live.Delta("start")
-	live.finalize(context.Background(), long)
-
-	tail := (*calls)[1:]
-	if len(tail) < 2 {
-		t.Fatalf("calls after the first send = %d, want the edit plus at least one follow-up", len(tail))
-	}
-	if tail[0].method != "editMessageText" {
-		t.Fatalf("first finalize call = %q, want editMessageText", tail[0].method)
-	}
-	for i, call := range tail[1:] {
-		if call.method != "sendRichMessage" {
-			t.Fatalf("follow-up %d = %q, want sendRichMessage", i, call.method)
-		}
-	}
-	var rendered strings.Builder
-	for _, call := range tail {
-		rendered.WriteString(call.markdown)
-	}
-	if strings.Count(rendered.String(), "a") != strings.Count(long, "a") {
-		t.Fatalf("split reply lost content: rendered %d of %d lines",
-			strings.Count(rendered.String(), "a"), strings.Count(long, "a"))
+	if !strings.HasPrefix(last.body(), "…") {
+		t.Fatalf("truncated frame = %.20q…, want a leading ellipsis marking the cut", last.body())
 	}
 }
 
@@ -696,8 +635,8 @@ func TestLiveReplyFinalizeDeliversOnACancelledContext(t *testing.T) {
 	live.finalize(ctx, "the authoritative reply")
 
 	last := (*calls)[len(*calls)-1]
-	if last.markdown != "the authoritative reply" {
-		t.Fatalf("finalize on a cancelled context delivered %q, want the authoritative reply", last.markdown)
+	if last.body() != "the authoritative reply" {
+		t.Fatalf("finalize on a cancelled context delivered %q, want the authoritative reply", last.body())
 	}
 }
 
@@ -713,10 +652,10 @@ func TestLiveReplyToolLinesSurviveTheLiveClamp(t *testing.T) {
 	live.flushRendering()
 
 	last := (*calls)[len(*calls)-1]
-	if !strings.HasPrefix(last.markdown, "🔧 shell — done\n```text\nexit 0\n```\n\n") {
-		t.Fatalf("live frame lost the tool line once the answer grew past the clamp: %.60q…", last.markdown)
+	if !strings.HasPrefix(last.body(), "🔧 shell — done\n\nexit 0\n\n") {
+		t.Fatalf("live frame lost the tool line once the answer grew past the clamp: %.60q…", last.body())
 	}
-	if n := len([]rune(last.markdown)); n > 4096 {
+	if n := len([]rune(last.body())); n > 4096 {
 		t.Fatalf("frame is %d runes, want at most Telegram's 4096", n)
 	}
 }
@@ -731,14 +670,14 @@ func TestLiveReplyFinalizeWithToolsAndNoReplyMarksTheAbsence(t *testing.T) {
 	live.finalize(context.Background(), "")
 
 	last := (*calls)[len(*calls)-1]
-	if last.markdown == "🔧 shell — done\n```text\nexit 0\n```" {
-		t.Fatalf("finalize sent the bare tool line as the finished answer: %q", last.markdown)
+	if last.body() == "🔧 shell — done\n\nexit 0" {
+		t.Fatalf("finalize sent the bare tool line as the finished answer: %q", last.body())
 	}
-	if !strings.Contains(last.markdown, "🔧 shell — done\n```text\nexit 0\n```") {
-		t.Fatalf("finalize dropped the tool activity: %q", last.markdown)
+	if !strings.Contains(last.body(), "🔧 shell — done\n\nexit 0") {
+		t.Fatalf("finalize dropped the tool activity: %q", last.body())
 	}
-	if !strings.Contains(last.markdown, "no response") {
-		t.Fatalf("finalize did not mark the empty reply: %q", last.markdown)
+	if !strings.Contains(last.body(), "no response") {
+		t.Fatalf("finalize did not mark the empty reply: %q", last.body())
 	}
 }
 
@@ -759,14 +698,14 @@ func TestLiveReplyFramedTextClampsAnOversizedToolBlock(t *testing.T) {
 	live.flushRendering()
 
 	last := (*calls)[len(*calls)-1]
-	if n := len([]rune(last.markdown)); n > 4096 {
+	if n := len([]rune(last.body())); n > 4096 {
 		t.Fatalf("frame is %d runes, want at most Telegram's 4096", n)
 	}
-	if !strings.Contains(last.markdown, "the answer") {
-		t.Fatalf("answer was lost after bounding oversized tool output: %.80q…", last.markdown)
+	if !strings.Contains(last.body(), "the answer") {
+		t.Fatalf("answer was lost after bounding oversized tool output: %.80q…", last.body())
 	}
-	if strings.Count(last.markdown, "ok") > 3 || !strings.Contains(last.markdown, "more lines") {
-		t.Fatalf("oversized tool output was not summarized: %.80q…", last.markdown)
+	if strings.Count(last.body(), "ok") > 3 || !strings.Contains(last.body(), "more lines") {
+		t.Fatalf("oversized tool output was not summarized: %.80q…", last.body())
 	}
 }
 
@@ -781,11 +720,11 @@ func TestLiveReplyAbandonFailedMarksTheMessageAsFailed(t *testing.T) {
 	live.abandonFailed(context.Background())
 
 	last := (*calls)[len(*calls)-1]
-	if !strings.Contains(last.markdown, "three paragraphs of a") {
-		t.Fatalf("abandonFailed lost the streamed partial: %q", last.markdown)
+	if !strings.Contains(last.body(), "three paragraphs of a") {
+		t.Fatalf("abandonFailed lost the streamed partial: %q", last.body())
 	}
-	if !strings.Contains(last.markdown, "❌") {
-		t.Fatalf("abandonFailed did not mark the message as failed: %q", last.markdown)
+	if !strings.Contains(last.body(), "❌") {
+		t.Fatalf("abandonFailed did not mark the message as failed: %q", last.body())
 	}
 }
 
@@ -800,8 +739,8 @@ func TestLiveReplyAbandonStaysCleanUnlikeAbandonFailed(t *testing.T) {
 	live.abandon(context.Background())
 
 	last := (*calls)[len(*calls)-1]
-	if strings.Contains(last.markdown, "❌") {
-		t.Fatalf("abandon (a /stop) was marked as a failure: %q", last.markdown)
+	if strings.Contains(last.body(), "❌") {
+		t.Fatalf("abandon (a /stop) was marked as a failure: %q", last.body())
 	}
 }
 
@@ -820,11 +759,11 @@ func TestGatewayAbandonAllLiveMarksInFlightRepliesAsRestarted(t *testing.T) {
 	live.g.abandonAllLive(context.Background())
 
 	last := (*calls)[len(*calls)-1]
-	if !strings.Contains(last.markdown, "half an answer") {
-		t.Fatalf("abandonAllLive lost the streamed partial: %q", last.markdown)
+	if !strings.Contains(last.body(), "half an answer") {
+		t.Fatalf("abandonAllLive lost the streamed partial: %q", last.body())
 	}
-	if !strings.Contains(last.markdown, "restarted") {
-		t.Fatalf("abandonAllLive did not mark the message as interrupted by a restart: %q", last.markdown)
+	if !strings.Contains(last.body(), "restarted") {
+		t.Fatalf("abandonAllLive did not mark the message as interrupted by a restart: %q", last.body())
 	}
 	if n := len(live.g.liveReplies); n != 0 {
 		t.Fatalf("registry still holds %d entries after abandonAllLive, want 0", n)
@@ -847,8 +786,8 @@ func TestGatewayAbandonAllLiveSkipsAnAlreadyFinishedReply(t *testing.T) {
 		t.Fatalf("abandonAllLive sent %d more calls to an already-finished reply, want 0", len(*calls)-callsBefore)
 	}
 	last := (*calls)[len(*calls)-1]
-	if strings.Contains(last.markdown, "restarted") {
-		t.Fatalf("a finished reply was retroactively marked as restarted: %q", last.markdown)
+	if strings.Contains(last.body(), "restarted") {
+		t.Fatalf("a finished reply was retroactively marked as restarted: %q", last.body())
 	}
 }
 
@@ -867,8 +806,8 @@ func TestGatewayStopAbandonsInFlightLiveReplies(t *testing.T) {
 	}
 
 	last := (*calls)[len(*calls)-1]
-	if !strings.Contains(last.markdown, "restarted") {
-		t.Fatalf("Stop did not abandon the in-flight reply: %q", last.markdown)
+	if !strings.Contains(last.body(), "restarted") {
+		t.Fatalf("Stop did not abandon the in-flight reply: %q", last.body())
 	}
 }
 
@@ -899,11 +838,11 @@ func TestLiveReplyFinalizeAndAbandonRestartedAreMutuallyExclusive(t *testing.T) 
 		wg.Wait()
 
 		last := (*calls)[len(*calls)-1]
-		hasAnswer := strings.Contains(last.markdown, "THE REAL ANSWER")
-		hasRestart := strings.Contains(last.markdown, "restarted")
+		hasAnswer := strings.Contains(last.body(), "THE REAL ANSWER")
+		hasRestart := strings.Contains(last.body(), "restarted")
 		if hasAnswer == hasRestart {
 			t.Fatalf("iteration %d: final message = %q, want exactly one of the real answer or the restart marker, never both or neither",
-				i, last.markdown)
+				i, last.body())
 		}
 	}
 }
@@ -963,7 +902,7 @@ func TestGatewayRegisterLiveAfterStopAbandonsImmediately(t *testing.T) {
 		call := capturedCall(t, r)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":55,"date":1,"chat":{"id":7,"type":"private"}}}`))
-		received <- capturedRequest{body: call.markdown}
+		received <- capturedRequest{body: call.body()}
 	}))
 	t.Cleanup(api.Close)
 	b, err := bot.New("1:test", bot.WithServerURL(api.URL), bot.WithSkipGetMe())

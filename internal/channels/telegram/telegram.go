@@ -10,15 +10,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"regexp"
 	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -743,325 +740,37 @@ func (g *Gateway) isSenderAllowed(userID int64) bool {
 // limit, with room for the continuation marker split adds.
 const messageMaxLen = 4000
 
-// bareGitHubIssueURL identifies the stable part of a GitHub issue or pull
-// request URL. Telegram's URL detector ends a bare link at whitespace, so a
-// streamed URL followed immediately by prose becomes one malformed link. We
-// recognize the numeric issue/PR boundary rather than trying to parse every
-// possible URL, whose path segments can legitimately contain letters.
-var bareGitHubIssueURL = regexp.MustCompile(`(?i)https?://github\.com/[^\s<>()]+/(?:issues|pull)/[0-9]+`)
-
-// normalizeTelegramText preserves a paragraph boundary when a bare GitHub
-// issue or pull-request URL is immediately followed by prose. This is
-// deliberately idempotent because text passes through both the live renderer
-// and the final send/split path.
-func normalizeTelegramText(text string) string {
-	matches := bareGitHubIssueURL.FindAllStringIndex(text, -1)
-	if len(matches) == 0 {
-		return text
-	}
-
-	var b strings.Builder
-	cursor := 0
-	for _, match := range matches {
-		boundaryEnd, ok := telegramURLBoundary(text, match)
-		if !ok {
-			continue
-		}
-		b.WriteString(text[cursor:boundaryEnd])
-		b.WriteString("\n\n")
-		cursor = boundaryEnd
-	}
-	if cursor == 0 {
-		return text
-	}
-	b.WriteString(text[cursor:])
-	return b.String()
-}
-
-// telegramURLBoundary returns the end of the URL or its surrounding Markdown
-// delimiter when prose follows immediately. It refuses to edit a URL in a
-// code span unless the closing delimiter is immediately after it, and avoids
-// treating an alphanumeric URL suffix as prose.
-func telegramURLBoundary(text string, match []int) (int, bool) {
-	start, end := match[0], match[1]
-	boundaryEnd := end
-	if delimiter, inside := markdownCodeDelimiterAt(text, start); inside {
-		if !strings.HasPrefix(text[end:], delimiter) {
-			return 0, false
-		}
-		boundaryEnd += len(delimiter)
-	} else {
-		// A URL inside Markdown link, autolink, or emphasis syntax is
-		// followed by a closing delimiter. Insert after that delimiter,
-		// never inside it, so the rich-message parser keeps the link intact.
-		boundaryEnd = markdownClosingDelimiterEnd(text, start, end)
-	}
-	if boundaryEnd >= len(text) {
-		return 0, false
-	}
-	next, _ := utf8.DecodeRuneInString(text[boundaryEnd:])
-	if unicode.IsSpace(next) {
-		return 0, false
-	}
-	if !unicode.IsLetter(next) {
-		return 0, false
-	}
-	if unicode.IsUpper(next) {
-		return boundaryEnd, true
-	}
-	// Lower-case prose is valid too, but a path suffix such as "123abc"
-	// has no whitespace before it ends. A short look-ahead distinguishes the
-	// two without pretending to parse arbitrary URL grammars.
-	if slices.ContainsFunc([]rune(text[boundaryEnd:]), unicode.IsSpace) {
-		return boundaryEnd, true
-	}
-	return 0, false
-}
-
-func markdownClosingDelimiterEnd(text string, start, end int) int {
-	if boundary, ok := markdownBracketEnd(text, start, end); ok {
-		return boundary
-	}
-	if boundary, ok := markdownEmphasisEnd(text, start, end); ok {
-		return boundary
-	}
-	return end
-}
-
-func markdownBracketEnd(text string, start, end int) (int, bool) {
-	if end >= len(text) || start == 0 {
-		return 0, false
-	}
-	switch text[end] {
-	case ')':
-		if text[start-1] == '(' {
-			return end + 1, true
-		}
-	case '>':
-		if text[start-1] == '<' {
-			return end + 1, true
-		}
-	case ']':
-		if text[start-1] == '[' {
-			return end + 1, true
-		}
-	}
-	return 0, false
-}
-
-func markdownEmphasisEnd(text string, start, end int) (int, bool) {
-	if end >= len(text) {
-		return 0, false
-	}
-	for _, delimiter := range []string{"***", "___", "**", "__", "~~"} {
-		if start >= len(delimiter) &&
-			strings.HasPrefix(text[end:], delimiter) &&
-			text[start-len(delimiter):start] == delimiter {
-			return end + len(delimiter), true
-		}
-	}
-	if start > 0 && ((text[end] == '*' && text[start-1] == '*') ||
-		(text[end] == '_' && text[start-1] == '_')) {
-		return end + 1, true
-	}
-	return 0, false
-}
-
-func markdownCodeDelimiterAt(text string, position int) (string, bool) {
-	var delimiter string
-	for i := 0; i < position; {
-		if text[i] == '\\' {
-			_, size := utf8.DecodeRuneInString(text[i:])
-			i += size
-			if i < position {
-				_, size = utf8.DecodeRuneInString(text[i:])
-				i += size
-			}
-			continue
-		}
-		if text[i] != '`' {
-			_, size := utf8.DecodeRuneInString(text[i:])
-			i += size
-			continue
-		}
-		j := i
-		for j < position && text[j] == '`' {
-			j++
-		}
-		run := text[i:j]
-		switch delimiter {
-		case "":
-			delimiter = run
-		case run:
-			delimiter = ""
-		}
-		i = j
-	}
-	return delimiter, delimiter != ""
-}
-
 // telegramRenderVersion identifies the renderer applied to outgoing Telegram
 // messages. It is included in the per-send log line so an old deployment
 // cannot be mistaken for the current code when diagnosing rendering
 // differences.
 const telegramRenderVersion = "rich-markdown-v2"
 
-var (
-	// atxHeadingLine matches an ATX heading (one to six # then whitespace or EOL).
-	atxHeadingLine = regexp.MustCompile(`^#{1,6}(?:[ 	]|$)`)
-	// listItemLine matches a Markdown unordered or ordered list item.
-	listItemLine = regexp.MustCompile(`^[ 	]*(?:[-*+]|[0-9]+[.)])[ 	]+`)
-	// inlineLink matches [label](url).
-	inlineLink = regexp.MustCompile(`\[([^\]]*)\]\(([^)]+)\)`)
-	// Emphasis/code delimiters stripped by telegramPlainText, longest first.
-	strikeMarkdown     = regexp.MustCompile(`~~(.+?)~~`)
-	boldMarkdown       = regexp.MustCompile(`\*\*(.+?)\*\*`)
-	underlineMarkdown  = regexp.MustCompile(`__(.+?)__`)
-	italicMarkdown     = regexp.MustCompile(`\*(.+?)\*`)
-	italicUnderscore   = regexp.MustCompile(`_(.+?)_`)
-	inlineCodeMarkdown = regexp.MustCompile("`([^`]*)`")
-)
-
-// renderTelegramMarkdown prepares text for Telegram's rich Markdown renderer:
-// it preserves bare-URL paragraph boundaries and inserts blank lines around
-// block-level constructs (headings, lists, fenced code) that Telegram's
-// Markdown semantics would otherwise collapse into the surrounding paragraph.
-func renderTelegramMarkdown(text string) string {
-	return telegramMarkdown(normalizeTelegramText(text))
-}
-
-// renderTelegramPlain prepares readable plain text for the fallback send that
-// runs when a server rejects the rich message: it strips Markdown syntax so the
-// user does not see raw "#", "**", backticks or link brackets.
-func renderTelegramPlain(text string) string {
-	return telegramPlainText(normalizeTelegramText(text))
-}
-
-// telegramMarkdown inserts a blank line before and after block-level Markdown
-// constructs that Telegram's renderer would otherwise collapse into the
-// surrounding paragraph. It is idempotent. Fenced code blocks are deliberately
-// left untouched: the SDK's tool block already emits compact triple-backtick
-// fences on their own lines, and adding blank lines around them would break that
-// layout without fixing any reported collapse.
-func telegramMarkdown(text string) string {
-	if text == "" {
-		return text
-	}
-	lines := strings.Split(text, "\n")
-	out := make([]string, 0, len(lines)*2)
-	var prev string
-	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-		trimmed := strings.TrimSpace(line)
-
-		if atxHeadingLine.MatchString(trimmed) {
-			if prev != "" {
-				out = append(out, "")
-			}
-			out = append(out, line)
-			prev = line
-			if i+1 < len(lines) {
-				next := strings.TrimSpace(lines[i+1])
-				if next != "" && !atxHeadingLine.MatchString(next) && !listItemLine.MatchString(next) {
-					out = append(out, "")
-					prev = ""
-				}
-			}
-			continue
-		}
-		if listItemLine.MatchString(trimmed) {
-			if prev != "" {
-				out = append(out, "")
-			}
-			j := i
-			for j < len(lines) && listItemLine.MatchString(strings.TrimSpace(lines[j])) {
-				out = append(out, lines[j])
-				prev = lines[j]
-				j++
-			}
-			if j < len(lines) && strings.TrimSpace(lines[j]) != "" {
-				out = append(out, "")
-				prev = ""
-			}
-			i = j - 1
-			continue
-		}
-		out = append(out, line)
-		prev = line
-	}
-	return strings.Join(out, "\n")
-}
-
-// telegramPlainText converts Markdown into readable plain text for the
-// unformatted fallback: fenced code blocks keep their content (the fence lines
-// are dropped), ATX heading markers are removed, links become "label (url)",
-// and emphasis/code delimiters are stripped while their text is kept.
-func telegramPlainText(text string) string {
-	if text == "" {
-		return text
-	}
-	lines := strings.Split(text, "\n")
-	out := make([]string, 0, len(lines))
-	inFence := false
-	for _, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), "```") {
-			inFence = !inFence
-			continue
-		}
-		if inFence {
-			out = append(out, line)
-			continue
-		}
-		out = append(out, plainLine(line))
-	}
-	return strings.Join(out, "\n")
-}
-
-// plainLine strips one non-fence line's Markdown syntax.
-func plainLine(line string) string {
-	text := atxHeadingLine.ReplaceAllString(line, "")
-	text = inlineLink.ReplaceAllString(text, "$1 ($2)")
-	text = strikeMarkdown.ReplaceAllString(text, "$1")
-	text = boldMarkdown.ReplaceAllString(text, "$1")
-	text = underlineMarkdown.ReplaceAllString(text, "$1")
-	text = italicMarkdown.ReplaceAllString(text, "$1")
-	text = italicUnderscore.ReplaceAllString(text, "$1")
-	text = inlineCodeMarkdown.ReplaceAllString(text, "$1")
-	return text
-}
-
 func (g *Gateway) sendMessage(ctx context.Context, b *bot.Bot, chatID int64, messageThreadID int, text string) {
-	text = normalizeTelegramText(text)
-	if utf8.RuneCountInString(text) <= messageMaxLen {
-		g.send(ctx, b, chatID, messageThreadID, text, "send message failed")
+	blocks := markdownToBlocks(text)
+	if total := blockTextLen(blocks); total <= messageMaxLen {
+		g.sendBlocks(ctx, b, chatID, messageThreadID, blocks, "send message failed")
 		return
 	}
-	parts := splitLongMessage(text, messageMaxLen)
+	parts := splitBlocks(blocks, messageMaxLen)
 	for i, part := range parts {
-		partText := part
 		if i < len(parts)-1 {
-			partText += "\n\n_(continued...)_"
+			part = append(part, paragraphBlock("_(continued...)_"))
 		}
-		g.send(ctx, b, chatID, messageThreadID, partText, "send message part failed")
+		g.sendBlocks(ctx, b, chatID, messageThreadID, part, "send message part failed")
 	}
 }
 
-// send delivers one message as a rich message, letting Telegram render the
-// Markdown an LLM already emits.
+// sendBlocks delivers one message as a Telegram rich message built from
+// structured blocks.
 //
-// sendRichMessage takes Markdown natively and supports constructs the
-// legacy parse modes cannot express at all  --  notably tables, which LLM
-// replies use freely. That removes the need to translate Markdown into the
-// narrow HTML subset the older API accepted.
-//
-// Rich messages are a recent Bot API addition, so a rejection here is
-// treated as "unsupported" rather than fatal: fall back to a plain send so
-// the user still receives the reply, unformatted, instead of silence.
-func (g *Gateway) send(ctx context.Context, b *bot.Bot, chatID int64, messageThreadID int, text, errMsg string) {
-	normalized := normalizeTelegramText(text)
+// Rich messages are a recent Bot API addition, so a rejection here is treated
+// as "unsupported" rather than fatal: fall back to sending the blocks as plain
+// text so the user still receives the reply, unformatted, instead of silence.
+func (g *Gateway) sendBlocks(ctx context.Context, b *bot.Bot, chatID int64, messageThreadID int, blocks []models.InputRichBlock, errMsg string) {
 	rich := &bot.SendRichMessageParams{
 		ChatID:      chatID,
-		RichMessage: models.InputRichMessage{Markdown: telegramMarkdown(normalized)},
+		RichMessage: models.InputRichMessage{Blocks: blocks},
 	}
 	if messageThreadID != 0 {
 		rich.MessageThreadID = messageThreadID
@@ -1073,7 +782,7 @@ func (g *Gateway) send(ctx context.Context, b *bot.Bot, chatID int64, messageThr
 		g.log.Warn("rich send failed, retrying unformatted", "error", err)
 	}
 
-	plain := &bot.SendMessageParams{ChatID: chatID, Text: telegramPlainText(normalized)}
+	plain := &bot.SendMessageParams{ChatID: chatID, Text: strings.Join(blocksToPlainText(blocks), "\n\n")}
 	if messageThreadID != 0 {
 		plain.MessageThreadID = messageThreadID
 	}
@@ -1084,190 +793,9 @@ func (g *Gateway) send(ctx context.Context, b *bot.Bot, chatID int64, messageThr
 	}
 }
 
-// splitLongMessage divides text into parts of at most maxLen runes each,
-// preferring to cut immediately after a newline. A cut that would leave a
-// Markdown code fence open backs up to the boundary before that fence. Bounds
-// are counted in runes, not bytes, and every rune is retained, including blank
-// lines and a trailing newline. Preserving those boundaries matters for both
-// Markdown paragraphs and bare URLs that were separated from following prose.
-func splitLongMessage(text string, maxLen int) []string {
-	text = normalizeTelegramText(text)
-	if maxLen <= 0 || utf8.RuneCountInString(text) <= maxLen {
-		return []string{text}
-	}
-	if hasUnsplitableFence(text, maxLen) {
-		return splitFenceSyntaxAsPlainText(text, maxLen)
-	}
-
-	runes := []rune(text)
-	parts := make([]string, 0, (len(runes)+maxLen-1)/maxLen)
-	reopen := ""
-	for start := 0; start < len(runes); {
-		part, end, nextReopen := nextMessagePart(runes, start, maxLen, reopen)
-		parts = append(parts, part)
-		start, reopen = end, nextReopen
-	}
-	return parts
-}
-
-func nextMessagePart(runes []rune, start, maxLen int, reopen string) (string, int, string) {
-	prefixLen := utf8.RuneCountInString(reopen)
-	end := preferredMessageSplit(runes, start, maxLen-prefixLen)
-	if end == len(runes) {
-		return reopen + string(runes[start:end]), end, ""
-	}
-
-	candidate := []rune(reopen + string(runes[start:end]))
-	fenceStart, open := openCodeFenceStart(candidate, 0, len(candidate))
-	if !open {
-		return reopen + string(runes[start:end]), end, ""
-	}
-	if reopen == "" && fenceStart > 0 {
-		end = start + fenceStart
-		return string(runes[start:end]), end, ""
-	}
-
-	delimiter := codeFenceDelimiter(candidate, fenceStart)
-	opener := delimiter
-	if reopen != "" {
-		opener = strings.TrimSuffix(reopen, "\n")
-	}
-	suffix := "\n" + delimiter
-	contentBudget := maxLen - prefixLen - utf8.RuneCountInString(suffix)
-	if contentBudget <= 0 {
-		return reopen + string(runes[start:end]), end, ""
-	}
-	end = min(start+contentBudget, len(runes))
-	candidate = []rune(reopen + string(runes[start:end]))
-	if _, stillOpen := openCodeFenceStart(candidate, 0, len(candidate)); !stillOpen {
-		return reopen + string(runes[start:end]), end, ""
-	}
-	return reopen + string(runes[start:end]) + suffix, end, opener + "\n"
-}
-
-func preferredMessageSplit(runes []rune, start, budget int) int {
-	end := min(start+budget, len(runes))
-	if end == len(runes) {
-		return end
-	}
-	for i := end - 1; i > start; i-- {
-		if runes[i] == '\n' {
-			return i
-		}
-	}
-	return end
-}
-
-func codeFenceDelimiter(runes []rune, start int) string {
-	end := start
-	for end < len(runes) && runes[end] != '\n' {
-		end++
-	}
-	line := string(runes[start:end])
-	markerStart := 0
-	for markerStart < len(line) && markerStart < 3 && line[markerStart] == ' ' {
-		markerStart++
-	}
-	markerEnd := markerStart
-	for markerEnd < len(line) && line[markerEnd] == line[markerStart] {
-		markerEnd++
-	}
-	return line[markerStart:markerEnd]
-}
-
-// openCodeFenceStart reports the opening delimiter of a fenced Markdown block
-// that remains open at end. CommonMark permits up to three leading spaces and
-// uses runs of at least three backticks or tildes as fence delimiters.
-func openCodeFenceStart(runes []rune, start, end int) (int, bool) {
-	openAt := -1
-	marker := rune(0)
-	width := 0
-	for lineStart := start; lineStart < end; {
-		lineEnd := lineStart
-		for lineEnd < end && runes[lineEnd] != '\n' {
-			lineEnd++
-		}
-		lineMarker, lineWidth, trailingBlank, fenced := codeFenceRun(runes, lineStart, lineEnd)
-		if fenced && openAt < 0 && validCodeFenceOpening(runes, lineStart, lineEnd, lineMarker, lineWidth) {
-			openAt, marker, width = lineStart, lineMarker, lineWidth
-		} else if fenced && trailingBlank && lineMarker == marker && lineWidth >= width {
-			openAt, marker, width = -1, 0, 0
-		}
-		lineStart = lineEnd + 1
-	}
-	return openAt, openAt >= 0
-}
-
-func validCodeFenceOpening(runes []rune, lineStart, lineEnd int, marker rune, width int) bool {
-	if marker != '`' {
-		return true
-	}
-	markAt := lineStart
-	for markAt < lineEnd && runes[markAt] == ' ' {
-		markAt++
-	}
-	return !slices.Contains(runes[markAt+width:lineEnd], '`')
-}
-
-func codeFenceRun(runes []rune, lineStart, lineEnd int) (rune, int, bool, bool) {
-	markAt := lineStart
-	for markAt < lineEnd && markAt-lineStart < 3 && runes[markAt] == ' ' {
-		markAt++
-	}
-	if markAt == lineEnd || (runes[markAt] != '`' && runes[markAt] != '~') {
-		return 0, 0, false, false
-	}
-	runEnd := markAt
-	for runEnd < lineEnd && runes[runEnd] == runes[markAt] {
-		runEnd++
-	}
-	width := runEnd - markAt
-	trailingBlank := true
-	for i := runEnd; i < lineEnd; i++ {
-		if runes[i] != ' ' && runes[i] != '\t' {
-			trailingBlank = false
-			break
-		}
-	}
-	return runes[markAt], width, trailingBlank, width >= 3
-}
-
-// hasUnsplitableFence reports whether the bound is too small to close and
-// reopen a fence while consuming at least one source rune.
-func hasUnsplitableFence(text string, maxLen int) bool {
-	runes := []rune(text)
-	for lineStart := 0; lineStart < len(runes); {
-		lineEnd := lineStart
-		for lineEnd < len(runes) && runes[lineEnd] != '\n' {
-			lineEnd++
-		}
-		_, width, _, fenced := codeFenceRun(runes, lineStart, lineEnd)
-		if fenced && 2*width+2 >= maxLen {
-			return true
-		}
-		lineStart = lineEnd + 1
-	}
-	return false
-}
-
-// splitFenceSyntaxAsPlainText preserves every source rune when a tiny bound
-// cannot carry valid fenced Markdown. Delimiter runs are divided across parts,
-// so no individual part presents an unterminated fence to the renderer.
-func splitFenceSyntaxAsPlainText(text string, maxLen int) []string {
-	runes := []rune(text)
-	parts := make([]string, 0, (len(runes)+maxLen-1)/maxLen)
-	for start := 0; start < len(runes); {
-		end := min(start+maxLen, len(runes))
-		for i := start; i+2 < end; i++ {
-			if (runes[i] == '`' || runes[i] == '~') && runes[i+1] == runes[i] && runes[i+2] == runes[i] {
-				end = i + 2
-				break
-			}
-		}
-		parts = append(parts, string(runes[start:end]))
-		start = end
-	}
-	return parts
+// blockTextLen is the rune length of a block slice as rendered plain text.
+func blockTextLen(blocks []models.InputRichBlock) int {
+	return len([]rune(strings.Join(blocksToPlainText(blocks), "\n")))
 }
 
 // ── middlewares ──────────────────────────────────────────────

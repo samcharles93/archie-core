@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/go-telegram/bot/models"
@@ -25,7 +26,7 @@ func TestRestartAcknowledgesArchie(t *testing.T) {
 	if err := json.Unmarshal([]byte((*requests)[0].form["rich_message"]), &rich); err != nil {
 		t.Fatal(err)
 	}
-	if rich.Markdown != "🔄 Reloading Archie…" {
+	if got := strings.Join(blocksToPlainText(rich.Blocks), "\n\n"); got != "🔄 Reloading Archie…" {
 		t.Fatalf("restart acknowledgement = %#v, want Archie wording", *requests)
 	}
 }
