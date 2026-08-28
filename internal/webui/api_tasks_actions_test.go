@@ -397,11 +397,11 @@ func TestTaskListExposesLifecycleActions(t *testing.T) {
 	srv := newTestServer(t)
 	ctx := t.Context()
 	want := map[string][]string{
-		store.StatusQueued:       {"cancel"},
-		store.StatusRunning:      {"stop"},
+		store.StatusQueued:       {"cancel", "reject"},
+		store.StatusRunning:      {"stop", "reject"},
 		store.StatusWaitingHuman: {"approve", "reject"},
-		store.StatusParked:       {"retry", "abandon"},
-		store.StatusPROpen:       {"open_pr", "open_issue"},
+		store.StatusParked:       {"retry", "abandon", "reject"},
+		store.StatusPROpen:       {"open_pr", "open_issue", "reject"},
 		store.StatusMerged:       {"archive"},
 		store.StatusRejected:     {"archive"},
 		store.StatusDead:         {"archive"},
@@ -455,6 +455,13 @@ func TestLifecycleSpecificTaskActions(t *testing.T) {
 		{name: "stop running", from: store.StatusRunning, action: "stop", want: store.StatusParked, stopperResult: true},
 		{name: "park stale running row", from: store.StatusRunning, action: "stop", want: store.StatusParked},
 		{name: "abandon parked", from: store.StatusParked, action: "abandon", want: store.StatusClosedWontDo, closesIssue: true},
+		// Reject is available from every non-terminal state and always lands in
+		// the terminal Declined state, closing the forge issue.
+		{name: "reject queued", from: store.StatusQueued, action: "reject", want: store.StatusClosedWontDo, closesIssue: true},
+		{name: "reject running stops execution", from: store.StatusRunning, action: "reject", want: store.StatusClosedWontDo, closesIssue: true, stopperResult: true},
+		{name: "reject waiting_human", from: store.StatusWaitingHuman, action: "reject", want: store.StatusClosedWontDo, closesIssue: true},
+		{name: "reject parked", from: store.StatusParked, action: "reject", want: store.StatusClosedWontDo, closesIssue: true},
+		{name: "reject pr_open", from: store.StatusPROpen, action: "reject", want: store.StatusClosedWontDo, closesIssue: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -478,7 +485,7 @@ func TestLifecycleSpecificTaskActions(t *testing.T) {
 			t.Cleanup(bus.Close)
 			srv.Events = bus
 			sub := bus.Subscribe(1)
-			if tc.action == "stop" {
+			if tc.action == "stop" || (tc.action == "reject" && tc.from == store.StatusRunning) {
 				setTaskStopper(t, srv, &recordingTaskStopper{result: tc.stopperResult})
 			}
 			if w := postAction(t, srv, task.ID, tc.action); w.Code != http.StatusOK {

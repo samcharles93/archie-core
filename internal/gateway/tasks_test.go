@@ -361,9 +361,11 @@ func TestStoreTaskControllerStopRunningWithoutRuntime(t *testing.T) {
 	}
 }
 
+// PROpen is deliberately absent: it is not a terminal state, and reject is
+// now available there so an operator can refuse work still sitting in review.
+// The genuine terminal states must keep refusing cancel.
 func TestStoreTaskControllerCancelRejectsTerminalStates(t *testing.T) {
 	for _, status := range []string{
-		taskstate.PROpen,
 		taskstate.Merged,
 		taskstate.Rejected,
 		taskstate.Dead,

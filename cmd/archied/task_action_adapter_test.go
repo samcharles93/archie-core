@@ -121,8 +121,8 @@ func TestChatTaskActorAdapterRefusesDisallowedStateAction(t *testing.T) {
 			attemptAction: taskstate.ActionApprove,
 		},
 		{
-			name:          "cannot reject queued task",
-			initialStatus: store.StatusQueued,
+			name:          "cannot reject merged task",
+			initialStatus: store.StatusMerged,
 			attemptAction: taskstate.ActionReject,
 		},
 	}
