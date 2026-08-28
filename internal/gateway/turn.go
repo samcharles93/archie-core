@@ -274,7 +274,6 @@ func (r *TurnRunner) Run(ctx context.Context, msg Message, stream TurnStream) (s
 		Model:     modelName,
 		SessionID: sessionID,
 		Now:       time.Now(),
-		Operator:  r.Operator,
 		Page:      msg.Page,
 	})
 	modelDetails := ModelDetails{}
