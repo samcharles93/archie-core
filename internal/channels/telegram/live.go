@@ -458,10 +458,10 @@ func (l *liveReply) render(ctx context.Context) {
 	// code fence); a rejected update is logged and skipped, and the next
 	// tick  --  or finalize  --  corrects it.
 	if messageID == 0 {
-		l.open(ctx, body)
+		l.open(ctx, markdownToBlocks(body))
 		return
 	}
-	if err := l.edit(ctx, messageID, body); err == nil {
+	if err := l.edit(ctx, messageID, markdownToBlocks(body)); err == nil {
 		l.markRendered(body)
 	}
 }
@@ -522,14 +522,18 @@ func (l *liveReply) doFinalize(ctx context.Context, reply string) {
 	// be delivered in either rich or plain form, send the complete reply
 	// through the normal split path rather than losing the authoritative
 	// answer behind a stale live frame.
-	parts := splitLongMessage(content, messageMaxLen)
+	parts := splitBlocks(markdownToBlocks(content), messageMaxLen)
+	if len(parts) == 0 {
+		l.abandonStopped(ctx)
+		return
+	}
 	if err := l.edit(ctx, messageID, parts[0]); err != nil {
 		l.g.sendMessage(ctx, l.b, l.chatID, l.messageThreadID, content)
 		return
 	}
-	l.markRendered(parts[0])
+	l.markRendered(strings.Join(blocksToPlainText(parts[0]), "\n\n"))
 	for _, part := range parts[1:] {
-		l.g.sendMessage(ctx, l.b, l.chatID, l.messageThreadID, part)
+		l.g.sendBlocks(ctx, l.b, l.chatID, l.messageThreadID, part, "send message part failed")
 	}
 }
 
@@ -609,7 +613,7 @@ func (l *liveReply) abandonStopped(ctx context.Context) {
 		l.g.sendMessage(ctx, l.b, l.chatID, l.messageThreadID, text)
 		return
 	}
-	if err := l.edit(ctx, messageID, text); err == nil {
+	if err := l.edit(ctx, messageID, markdownToBlocks(text)); err == nil {
 		l.markRendered(text)
 	}
 }
@@ -635,7 +639,6 @@ func (l *liveReply) body() string {
 // Keeping the block outside the clamp makes the live frame, an abandoned
 // frame, and the finished message agree on shape throughout the turn.
 func (l *liveReply) framedText(answer string) string {
-	answer = normalizeTelegramText(answer)
 	if len(l.toolLines) == 0 {
 		return clampToOneMessage(answer)
 	}
@@ -687,7 +690,7 @@ func clampToRunes(s string, maxRunes int) string {
 // fact. An empty reply with no tool activity either is left to the
 // content == "" path in finalize, which abandons instead of sending.
 func (l *liveReply) finalText(reply string) string {
-	reply = normalizeTelegramText(strings.TrimSpace(reply))
+	reply = strings.TrimSpace(reply)
 	if len(l.toolLines) == 0 {
 		return reply
 	}
@@ -699,10 +702,10 @@ func (l *liveReply) finalText(reply string) string {
 }
 
 // open creates the live message and records its ID for later edits.
-func (l *liveReply) open(ctx context.Context, body string) {
+func (l *liveReply) open(ctx context.Context, blocks []models.InputRichBlock) {
 	params := &bot.SendRichMessageParams{
 		ChatID:      l.chatID,
-		RichMessage: models.InputRichMessage{Markdown: telegramMarkdown(body)},
+		RichMessage: models.InputRichMessage{Blocks: blocks},
 	}
 	if l.messageThreadID != 0 {
 		params.MessageThreadID = l.messageThreadID
@@ -710,7 +713,7 @@ func (l *liveReply) open(ctx context.Context, body string) {
 	msg, err := l.b.SendRichMessage(ctx, params)
 	if err != nil {
 		l.g.log.Debug("live reply rich send failed, retrying unformatted", "error", err)
-		plain := &bot.SendMessageParams{ChatID: l.chatID, Text: telegramPlainText(body)}
+		plain := &bot.SendMessageParams{ChatID: l.chatID, Text: strings.Join(blocksToPlainText(blocks), "\n\n")}
 		if l.messageThreadID != 0 {
 			plain.MessageThreadID = l.messageThreadID
 		}
@@ -722,7 +725,7 @@ func (l *liveReply) open(ctx context.Context, body string) {
 	}
 	l.mu.Lock()
 	l.messageID = msg.ID
-	l.rendered = body
+	l.rendered = strings.Join(blocksToPlainText(blocks), "\n\n")
 	l.last = time.Now()
 	l.mu.Unlock()
 }
@@ -733,11 +736,11 @@ func (l *liveReply) open(ctx context.Context, body string) {
 // an edit that carries one, so a server that rejects the rich body rejects
 // the whole edit. As with send, that is treated as "unsupported" rather than
 // fatal: retry unformatted so the user still gets the reply.
-func (l *liveReply) edit(ctx context.Context, messageID int, body string) error {
+func (l *liveReply) edit(ctx context.Context, messageID int, blocks []models.InputRichBlock) error {
 	_, richErr := l.b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:      l.chatID,
 		MessageID:   messageID,
-		RichMessage: &models.InputRichMessage{Markdown: telegramMarkdown(body)},
+		RichMessage: &models.InputRichMessage{Blocks: blocks},
 	})
 	if richErr == nil {
 		return nil
@@ -747,7 +750,7 @@ func (l *liveReply) edit(ctx context.Context, messageID int, body string) error 
 	if _, plainErr := l.b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    l.chatID,
 		MessageID: messageID,
-		Text:      telegramPlainText(body),
+		Text:      strings.Join(blocksToPlainText(blocks), "\n\n"),
 	}); plainErr != nil {
 		l.g.log.Debug("live reply edit failed", "error", plainErr)
 		return errors.Join(
