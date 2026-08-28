@@ -272,8 +272,8 @@ func (r *Registry) Stop(ctx context.Context) error {
 	r.mu.Unlock()
 
 	var errs []error
-	for i := len(order) - 1; i >= 0; i-- {
-		name := order[i]
+	for _, name := range slices.Backward(order) {
+
 		r.mu.Lock()
 		st, ok := r.status[name]
 		r.mu.Unlock()

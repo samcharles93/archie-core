@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -716,9 +717,7 @@ func (m *Manager) ShutdownContext(ctx context.Context) error {
 
 	// Reverse the order: external (index 1) before builtin (index 0).
 	var firstErr error
-	for i := len(providers) - 1; i >= 0; i-- {
-		p := providers[i]
-
+	for _, p := range slices.Backward(providers) {
 		// Give each provider its own deadline from the parent context.
 		if sp, ok := p.(ShutdownProvider); ok {
 			if err := sp.Shutdown(); err != nil && firstErr == nil {

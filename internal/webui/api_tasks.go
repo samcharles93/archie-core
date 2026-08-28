@@ -185,8 +185,7 @@ func decodeTaskAction(w http.ResponseWriter, r *http.Request) (taskstate.Action,
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&req); err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			http.Error(w, "action body too large", http.StatusRequestEntityTooLarge)
 			return "", false
 		}

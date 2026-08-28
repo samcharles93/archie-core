@@ -342,8 +342,8 @@ func (r *Registry) Stop(ctx context.Context) error {
 
 	var errs []error
 	var failed []runningProvider
-	for i := len(running) - 1; i >= 0; i-- {
-		current := running[i]
+	for _, current := range slices.Backward(running) {
+
 		r.index.Unregister(current.toolNames...)
 		if err := safeStop(ctx, current.registration.engine); err != nil {
 			failed = append(failed, current)
@@ -495,8 +495,8 @@ func rollback(
 ) ([]runningProvider, error) {
 	var errs []error
 	var failed []runningProvider
-	for i := len(started) - 1; i >= 0; i-- {
-		current := started[i]
+	for _, current := range slices.Backward(started) {
+
 		index.Unregister(current.toolNames...)
 		if err := safeStop(ctx, current.registration.engine); err != nil {
 			failed = append(failed, current)

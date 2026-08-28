@@ -152,7 +152,7 @@ type Reply struct {
 // not written by exclude (the bot)  --  the human side of waiting_human.
 func (c *GitHubClient) RepliesAfter(ctx context.Context, owner, repo string, number int, afterID int64, exclude string) ([]Reply, error) {
 	comments, _, err := c.gh.Issues.ListComments(ctx, owner, repo, number,
-		&github.IssueListCommentsOptions{ListOptions: github.ListOptions{PerPage: 50}})
+		&github.IssueListCommentsOptions{PerPage: 50})
 	if err != nil {
 		return nil, err
 	}

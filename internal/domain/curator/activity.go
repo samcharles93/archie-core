@@ -1,6 +1,7 @@
 package curator
 
 import (
+	"slices"
 	"sync"
 	"time"
 )
@@ -51,8 +52,8 @@ func (t *activityTracker) record(name string, at time.Time, actions []Action) {
 	a.LastRunActions = len(actions)
 
 	merged := make([]Action, 0, len(actions)+len(a.Recent))
-	for i := len(actions) - 1; i >= 0; i-- {
-		merged = append(merged, actions[i])
+	for _, action := range slices.Backward(actions) {
+		merged = append(merged, action)
 	}
 	merged = append(merged, a.Recent...)
 	if len(merged) > maxRecentActions {
