@@ -54,6 +54,7 @@ export class ApiError extends Error {
 export const api = {
   summary: () => req("/api/summary"),
   tasks: () => req("/api/tasks"),
+  taskMeta: () => req("/api/task-meta"),
   task: (id) => req(`/api/tasks/${id}`),
   taskAction: async (id, action) => {
     const res = await fetch(`/api/tasks/${id}/action`, {

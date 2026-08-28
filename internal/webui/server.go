@@ -249,6 +249,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/summary", s.handleSummary)
 	mux.HandleFunc("GET /api/setup", s.handleSetup)
 	mux.HandleFunc("GET /api/tasks", s.handleTasks)
+	mux.HandleFunc("GET /api/task-meta", s.handleTaskMeta)
 	mux.HandleFunc("POST /api/tasks/{id}/action", s.handleTaskAction)
 	mux.HandleFunc("GET /api/tasks/{id}", s.handleTask)
 	mux.HandleFunc("GET /api/workflows", s.handleWorkflows)

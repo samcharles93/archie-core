@@ -79,6 +79,73 @@ func TestRejectedAndDeclinedAreDistinct(t *testing.T) {
 	}
 }
 
+// The presentation catalog must cover every status and action the lifecycle
+// exposes, so the frontend can render anything the rules allow without holding
+// its own copy of the vocabulary.
+func TestPresentationCatalog(t *testing.T) {
+	allowedKinds := map[string]bool{"idle": true, "info": true, "ok": true, "warn": true, "danger": true}
+
+	statuses := Statuses()
+	if len(statuses) == 0 {
+		t.Fatal("Statuses() returned no entries")
+	}
+	seen := map[string]bool{}
+	for _, meta := range statuses {
+		if meta.ID == "" || meta.Label == "" || !allowedKinds[meta.Kind] {
+			t.Errorf("status %q: id=%q label=%q kind=%q", meta.ID, meta.ID, meta.Label, meta.Kind)
+		}
+		if seen[meta.ID] {
+			t.Errorf("duplicate status id %q", meta.ID)
+		}
+		seen[meta.ID] = true
+		if meta.NeedsYou && meta.Kind == "idle" {
+			t.Errorf("status %q is marked needs_you but has idle severity", meta.ID)
+		}
+	}
+	// Every lifecycle status must have presentation metadata.
+	for _, status := range []string{Queued, Running, WaitingHuman, PROpen, Merged, Parked, Dead, Rejected, Declined} {
+		if !seen[status] {
+			t.Errorf("status %q missing from Statuses()", status)
+		}
+	}
+
+	actions := ActionCatalog()
+	if len(actions) == 0 {
+		t.Fatal("ActionCatalog() returned no entries")
+	}
+	actionSeen := map[string]bool{}
+	for _, meta := range actions {
+		if meta.ID == "" || meta.Label == "" {
+			t.Errorf("action %q: id=%q label=%q", meta.ID, meta.ID, meta.Label)
+		}
+		if actionSeen[meta.ID] {
+			t.Errorf("duplicate action id %q", meta.ID)
+		}
+		actionSeen[meta.ID] = true
+		// link actions navigate; the rest must carry a button kind.
+		if meta.Kind != "link" && meta.Kind != "primary" && meta.Kind != "quiet" && meta.Kind != "danger" {
+			t.Errorf("action %q has unknown kind %q", meta.ID, meta.Kind)
+		}
+	}
+
+	// Every action the lifecycle table can emit must be describable, otherwise
+	// the frontend has no way to present it.
+	byID := func(status string) map[Action]bool {
+		out := map[Action]bool{}
+		for _, a := range Actions(status) {
+			out[a] = true
+		}
+		return out
+	}
+	for _, status := range []string{Queued, Running, WaitingHuman, PROpen, Parked, Merged, Rejected, Dead, Declined} {
+		for a := range byID(status) {
+			if !actionSeen[string(a)] {
+				t.Errorf("action %q from status %q has no ActionCatalog entry", a, status)
+			}
+		}
+	}
+}
+
 func TestActionsReturnsIndependentSlices(t *testing.T) {
 	first := Actions(WaitingHuman)
 	first[0] = ActionArchive
