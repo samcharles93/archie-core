@@ -1,5 +1,9 @@
 # archied changelog
 
+## [1.19.2] - 2026-08-28
+
+- feat(tasks): allow rejecting a task from any non-terminal state
+
 ## [1.19.1] - 2026-08-27
 
 - fix(telegram): keep Markdown headings/lists as blocks and strip Markdown on plain fallback
