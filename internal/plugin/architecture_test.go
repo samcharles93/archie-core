@@ -8,12 +8,9 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
-
-	"github.com/samcharles93/archie-core/internal/plugin"
 )
 
 const (
