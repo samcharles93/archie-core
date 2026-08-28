@@ -1,5 +1,9 @@
 # archied changelog
 
+## [1.19.4] - 2026-08-28
+
+- refactor(telegram): render replies as structured rich blocks
+
 ## [1.19.3] - 2026-08-28
 
 - feat(tasks): serve the lifecycle presentation catalog from /api/task-meta
