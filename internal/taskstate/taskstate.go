@@ -143,3 +143,54 @@ func CheckDecline(status string) error {
 	}
 	return fmt.Errorf("task cannot be declined while %s", status)
 }
+
+// StatusMeta describes how to present a lifecycle status. It is the single
+// source for the dashboard's label, pill severity and "needs you" grouping, so
+// the frontend never has to keep a hand-synced copy of the vocabulary.
+type StatusMeta struct {
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	Kind     string `json:"kind"`      // pill severity: idle, info, ok, warn, danger
+	NeedsYou bool   `json:"needs_you"` // counts toward the "Needs you" filter
+}
+
+// ActionMeta describes how to present an operator control. Confirmation text
+// uses "{title}" as a placeholder for the task title.
+type ActionMeta struct {
+	ID      string `json:"id"`
+	Label   string `json:"label"`
+	Kind    string `json:"kind"`    // button variant: primary, quiet, danger, link
+	Confirm string `json:"confirm"` // optional confirm prompt, may be ""
+}
+
+// Statuses returns the presentation catalog for every lifecycle status, in
+// display order. Callers receive a fresh slice.
+func Statuses() []StatusMeta {
+	return []StatusMeta{
+		{ID: Queued, Label: "Queued", Kind: "idle"},
+		{ID: Running, Label: "Working", Kind: "info"},
+		{ID: WaitingHuman, Label: "Waiting for you", Kind: "warn", NeedsYou: true},
+		{ID: PROpen, Label: "In review", Kind: "ok"},
+		{ID: Merged, Label: "Merged", Kind: "ok"},
+		{ID: Parked, Label: "Parked", Kind: "warn", NeedsYou: true},
+		{ID: Dead, Label: "Stopped (too many retries)", Kind: "danger"},
+		{ID: Rejected, Label: "Rejected", Kind: "danger"},
+		{ID: Declined, Label: "Won't do", Kind: "idle"},
+	}
+}
+
+// ActionCatalog returns the presentation catalog for every operator control.
+// Callers receive a fresh slice.
+func ActionCatalog() []ActionMeta {
+	return []ActionMeta{
+		{ID: string(ActionCancel), Label: "Cancel", Kind: "quiet", Confirm: `Cancel "{title}"? This closes the forge issue.`},
+		{ID: string(ActionStop), Label: "Stop", Kind: "primary", Confirm: `Stop "{title}"? Recoverable work will remain parked.`},
+		{ID: string(ActionApprove), Label: "Approve", Kind: "primary"},
+		{ID: string(ActionReject), Label: "Reject", Kind: "quiet", Confirm: `Reject "{title}"? This closes the forge issue.`},
+		{ID: string(ActionRetry), Label: "Retry", Kind: "primary"},
+		{ID: string(ActionAbandon), Label: "Abandon", Kind: "quiet", Confirm: `Abandon "{title}"? This closes the forge issue.`},
+		{ID: string(ActionArchive), Label: "Archive", Kind: "quiet", Confirm: `Archive the local record for "{title}"?`},
+		{ID: string(ActionOpenPR), Label: "Open PR", Kind: "link"},
+		{ID: string(ActionOpenIssue), Label: "Open issue", Kind: "link"},
+	}
+}
