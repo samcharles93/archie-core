@@ -1,5 +1,10 @@
 # archied changelog
 
+## [1.19.3] - 2026-08-28
+
+- feat(tasks): serve the lifecycle presentation catalog from /api/task-meta
+- feat(dashboard): render task actions, statuses and filters from the server catalog
+
 ## [1.19.2] - 2026-08-28
 
 - feat(tasks): allow rejecting a task from any non-terminal state
