@@ -81,9 +81,6 @@ files, systems or the network.
 
 <env purpose="runtime_metadata" trust="data">
 Today's date: {{xml .Date}}
-{{- with .Operator}}
-Operator: {{xml .}}
-{{- end}}
 {{- with .Channel}}
 Channel: {{xml .}}
 {{- end}}

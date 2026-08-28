@@ -191,8 +191,8 @@ func TestSSEStreamSendPageSkipsNoiseKindsButAdvancesSince(t *testing.T) {
 	s, rec := newTestSSEStream(0)
 	backlog := []events.Event{
 		{ID: 1, Kind: events.KindTaskQueued},
-		{ID: 2, Kind: events.KindTurnCompleted, Detail: "1312197967"},
-		{ID: 3, Kind: events.KindTurnCompleted, Detail: "1312197967"},
+		{ID: 2, Kind: events.KindTurnCompleted, Detail: "100000000"},
+		{ID: 3, Kind: events.KindTurnCompleted, Detail: "100000000"},
 		{ID: 4, Kind: events.KindParked},
 	}
 
