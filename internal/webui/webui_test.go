@@ -463,7 +463,7 @@ func TestHandleSSEFiltersTurnCompletedFromLiveBroadcast(t *testing.T) {
 	}
 
 	time.Sleep(50 * time.Millisecond)
-	srv.Broadcast(events.Event{ID: id + 1, Kind: events.KindTurnCompleted, Detail: "1312197967"})
+	srv.Broadcast(events.Event{ID: id + 1, Kind: events.KindTurnCompleted, Detail: "100000000"})
 	srv.Broadcast(events.Event{ID: id + 2, Kind: "log", Detail: "after-noise"})
 
 	seen, err := readLinesUntil(reader, "after-noise")

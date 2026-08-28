@@ -217,11 +217,11 @@ func TestReleaseAnnouncementTargetsAuthorizedUsers(t *testing.T) {
 // The allowlist must fail closed: a bot handle is public, so an unset
 // allowlist has to deny rather than admit everyone.
 func TestSenderAllowlistFailsClosed(t *testing.T) {
-	if New("t", "", "", nil, slog.Default()).isSenderAllowed(1312197967) {
+	if New("t", "", "", nil, slog.Default()).isSenderAllowed(100000000) {
 		t.Error("empty allowlist must deny every sender")
 	}
-	g := New("t", "", "", []int64{1312197967}, slog.Default())
-	if !g.isSenderAllowed(1312197967) {
+	g := New("t", "", "", []int64{100000000}, slog.Default())
+	if !g.isSenderAllowed(100000000) {
 		t.Error("listed sender must be allowed")
 	}
 	if g.isSenderAllowed(999) {
