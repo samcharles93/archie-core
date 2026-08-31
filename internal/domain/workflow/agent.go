@@ -66,132 +66,175 @@ func (a AgentStage) Stage() Stage {
 		if tc.Agent == nil {
 			return fmt.Errorf("no LLM runtime configured (missing [providers] in config?)")
 		}
-		modelRef := tc.Cfg.Models[a.Role]
-		if modelRef == "" {
-			modelRef = tc.Cfg.Models["builder"]
-		}
-		if modelRef == "" {
-			return fmt.Errorf("no model configured for role %q (set [models] in config)", a.Role)
-		}
-
-		budget := agentexec.Budget{
-			MaxSteps:  tc.Cfg.Budgets.MaxSteps,
-			WallClock: tc.Cfg.Budgets.WallClock.Std(),
-		}
-		if a.MaxSteps > 0 {
-			budget.MaxSteps = a.MaxSteps
-		}
-
-		var gate agentexec.Gate
-		if a.Gate != nil {
-			gate = a.Gate(tc)
-		}
-		var captureTools []agentexec.CaptureTool
-		if a.CaptureTools != nil {
-			captureTools = a.CaptureTools(tc)
-		}
-
-		protection := agentexec.Protection{Suffixes: append([]string(nil), tc.Repo.Protect...)}
-		if a.ProtectGlobs != nil {
-			protection.Globs = a.ProtectGlobs(tc)
-		}
-		if a.ReadOnly {
-			protection = agentexec.Protection{}
-		}
-
-		var preflight []agentexec.Command
-		for _, argv := range tc.Repo.ResolvedPreflight() {
-			if len(argv) == 0 {
-				continue
-			}
-			preflight = append(preflight, agentexec.Command{Name: argv[0], Argv: argv})
-		}
-
-		// Build ExtraRules: start with the stage's rules, prepend memory
-		// context if the daemon wired a memory manager.
-		extraRules := a.ExtraRules
-		if tc.SystemPrompt != nil {
-			if memCtx := tc.SystemPrompt(); memCtx != "" {
-				if extraRules != "" {
-					extraRules = memCtx + "\n\n" + extraRules
-				} else {
-					extraRules = memCtx
-				}
-			}
-		}
-
-		req := agentexec.Request{
-			Version:       agentexec.ProtocolVersion,
-			TaskID:        tc.Task.ID,
-			Attempt:       tc.Task.Attempt,
-			Stage:         a.Name,
-			Workflow:      tc.Task.Workflow,
-			Model:         modelRef,
-			ContextWindow: modelContextBudget(tc.Cfg, modelRef),
-			Mission:       missionWithSkill(tc, a.Mission(tc)),
-			ExtraRules:    extraRules,
-			ReadOnly:      a.ReadOnly,
-			Budget:        budget,
-			Gate:          gate,
-			Preflight:     preflight,
-			Protection:    protection,
-			Notes:         tc.Task.Notes,
-			CaptureTools:  captureTools,
-			Plugins:       pluginSpecs(tc.SkillPlugins),
-		}
-		res, err := tc.Agent.Run(ctx, tc.Dir, req, tc.toolCallReporter(a.Name))
-
-		// Record guardrail state: on success the guardrail engine checks
-		// no-progress thresholds; on failure it records the error pattern.
-		if tc.Guardrails != nil {
-			if err == nil && res.Status == agentexec.StatusPassed {
-				tc.Guardrails.RecordSuccess("agent:" + a.Name)
-			} else if err != nil {
-				tc.Guardrails.RecordFailure("agent:"+a.Name, err)
-			}
-		}
-
-		if err != nil && res.Version == 0 {
-			return fmt.Errorf("agent run: %w", err)
-		}
-		if validateErr := res.ValidateFor(req); validateErr != nil {
-			return fmt.Errorf("validate agent result: %w", validateErr)
-		}
-		if len(res.AppendedNotes) > 0 {
-			for _, note := range res.AppendedNotes {
-				tc.Task.Notes += "- " + note + "\n"
-			}
-			if saveErr := tc.Store.Update(ctx, tc.Task); saveErr != nil {
-				return fmt.Errorf("persist agent notes: %w", saveErr)
-			}
-		}
-		tc.Task.TokensUsed += res.TokensUsed
-		tc.Task.Iterations += res.Iterations
-		if emitErr := tc.EmitDurable(ctx, events.KindAgentFinish, a.Name, res.Summary, agentFinishData(res, modelRef)); emitErr != nil {
-			return fmt.Errorf("persist agent finish: %w", emitErr)
-		}
+		modelRef, err := a.resolveModel(tc)
 		if err != nil {
-			return fmt.Errorf("agent run: %w", err)
+			return err
 		}
-
-		if res.Status != agentexec.StatusPassed {
-			detail := res.Detail
-			if detail == "" {
-				detail = res.Summary
-			}
-			return fmt.Errorf("agent %s (%s): %s", res.Status, res.StopReason, clip(detail, 2000))
-		}
-		// Gatekeeping: the daemon reviews agent output before human delivery.
-		if a.ReviewResult != nil {
-			if err := a.ReviewResult(tc, res); err != nil {
-				return fmt.Errorf("review: %w", err)
-			}
-		}
-		if a.OnResult != nil {
-			return a.OnResult(tc, res)
-		}
-		return nil
+		req := a.buildRequest(tc, modelRef)
+		res, runErr := tc.Agent.Run(ctx, tc.Dir, req, tc.toolCallReporter(a.Name))
+		return a.handleResult(ctx, tc, req, res, runErr, modelRef)
 	}}
+}
+
+// resolveModel picks the model reference for this stage's Role, falling
+// back to "builder".
+func (a AgentStage) resolveModel(tc *TaskContext) (string, error) {
+	modelRef := tc.Cfg.Models[a.Role]
+	if modelRef == "" {
+		modelRef = tc.Cfg.Models["builder"]
+	}
+	if modelRef == "" {
+		return "", fmt.Errorf("no model configured for role %q (set [models] in config)", a.Role)
+	}
+	return modelRef, nil
+}
+
+// buildRequest assembles the agentexec.Request for this stage's run.
+func (a AgentStage) buildRequest(tc *TaskContext, modelRef string) agentexec.Request {
+	budget := agentexec.Budget{
+		MaxSteps:  tc.Cfg.Budgets.MaxSteps,
+		WallClock: tc.Cfg.Budgets.WallClock.Std(),
+	}
+	if a.MaxSteps > 0 {
+		budget.MaxSteps = a.MaxSteps
+	}
+
+	var gate agentexec.Gate
+	if a.Gate != nil {
+		gate = a.Gate(tc)
+	}
+	var captureTools []agentexec.CaptureTool
+	if a.CaptureTools != nil {
+		captureTools = a.CaptureTools(tc)
+	}
+
+	protection := agentexec.Protection{Suffixes: append([]string(nil), tc.Repo.Protect...)}
+	if a.ProtectGlobs != nil {
+		protection.Globs = a.ProtectGlobs(tc)
+	}
+	if a.ReadOnly {
+		protection = agentexec.Protection{}
+	}
+
+	var preflight []agentexec.Command
+	for _, argv := range tc.Repo.ResolvedPreflight() {
+		if len(argv) == 0 {
+			continue
+		}
+		preflight = append(preflight, agentexec.Command{Name: argv[0], Argv: argv})
+	}
+
+	return agentexec.Request{
+		Version:       agentexec.ProtocolVersion,
+		TaskID:        tc.Task.ID,
+		Attempt:       tc.Task.Attempt,
+		Stage:         a.Name,
+		Workflow:      tc.Task.Workflow,
+		Model:         modelRef,
+		ContextWindow: modelContextBudget(tc.Cfg, modelRef),
+		Mission:       missionWithSkill(tc, a.Mission(tc)),
+		ExtraRules:    a.buildExtraRules(tc),
+		ReadOnly:      a.ReadOnly,
+		Budget:        budget,
+		Gate:          gate,
+		Preflight:     preflight,
+		Protection:    protection,
+		Notes:         tc.Task.Notes,
+		CaptureTools:  captureTools,
+		Plugins:       pluginSpecs(tc.SkillPlugins),
+	}
+}
+
+// buildExtraRules prepends memory context, if the daemon wired a memory
+// manager, ahead of the stage's own rules.
+func (a AgentStage) buildExtraRules(tc *TaskContext) string {
+	if tc.SystemPrompt == nil {
+		return a.ExtraRules
+	}
+	memCtx := tc.SystemPrompt()
+	if memCtx == "" {
+		return a.ExtraRules
+	}
+	if a.ExtraRules == "" {
+		return memCtx
+	}
+	return memCtx + "\n\n" + a.ExtraRules
+}
+
+// handleResult records guardrail state, validates and persists the agent
+// result, then dispatches to ReviewResult/OnResult on success.
+func (a AgentStage) handleResult(
+	ctx context.Context, tc *TaskContext, req agentexec.Request, res agentexec.Result, runErr error, modelRef string,
+) error {
+	a.recordGuardrails(tc, res, runErr)
+
+	if runErr != nil && res.Version == 0 {
+		return fmt.Errorf("agent run: %w", runErr)
+	}
+	if validateErr := res.ValidateFor(req); validateErr != nil {
+		return fmt.Errorf("validate agent result: %w", validateErr)
+	}
+	if err := persistAppendedNotes(ctx, tc, res); err != nil {
+		return err
+	}
+	tc.Task.TokensUsed += res.TokensUsed
+	tc.Task.Iterations += res.Iterations
+	if emitErr := tc.EmitDurable(ctx, events.KindAgentFinish, a.Name, res.Summary, agentFinishData(res, modelRef)); emitErr != nil {
+		return fmt.Errorf("persist agent finish: %w", emitErr)
+	}
+	if runErr != nil {
+		return fmt.Errorf("agent run: %w", runErr)
+	}
+	return a.deliverResult(tc, res)
+}
+
+// recordGuardrails feeds this run's outcome to the guardrail engine: on
+// success it checks no-progress thresholds, on failure it records the
+// error pattern.
+func (a AgentStage) recordGuardrails(tc *TaskContext, res agentexec.Result, runErr error) {
+	if tc.Guardrails == nil {
+		return
+	}
+	if runErr == nil && res.Status == agentexec.StatusPassed {
+		tc.Guardrails.RecordSuccess("agent:" + a.Name)
+	} else if runErr != nil {
+		tc.Guardrails.RecordFailure("agent:"+a.Name, runErr)
+	}
+}
+
+// persistAppendedNotes saves any notes the agent appended during the run.
+func persistAppendedNotes(ctx context.Context, tc *TaskContext, res agentexec.Result) error {
+	if len(res.AppendedNotes) == 0 {
+		return nil
+	}
+	for _, note := range res.AppendedNotes {
+		tc.Task.Notes += "- " + note + "\n"
+	}
+	if saveErr := tc.Store.Update(ctx, tc.Task); saveErr != nil {
+		return fmt.Errorf("persist agent notes: %w", saveErr)
+	}
+	return nil
+}
+
+// deliverResult checks the run passed, then runs ReviewResult and OnResult.
+func (a AgentStage) deliverResult(tc *TaskContext, res agentexec.Result) error {
+	if res.Status != agentexec.StatusPassed {
+		detail := res.Detail
+		if detail == "" {
+			detail = res.Summary
+		}
+		return fmt.Errorf("agent %s (%s): %s", res.Status, res.StopReason, clip(detail, 2000))
+	}
+	// Gatekeeping: the daemon reviews agent output before human delivery.
+	if a.ReviewResult != nil {
+		if err := a.ReviewResult(tc, res); err != nil {
+			return fmt.Errorf("review: %w", err)
+		}
+	}
+	if a.OnResult != nil {
+		return a.OnResult(tc, res)
+	}
+	return nil
 }
 
 func modelContextBudget(cfg config.Config, modelRef string) int {
