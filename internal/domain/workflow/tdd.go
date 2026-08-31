@@ -23,124 +23,136 @@ func TDD() Workflow {
 			StagePrepareWorktree(),
 			StageRepoStages(),
 			StageBaselineGate(),
-
-			AgentStage{
-				Name:     "analyse",
-				Role:     "planner",
-				ReadOnly: true,
-				Mission: func(tc *TaskContext) string {
-					return fmt.Sprintf(
-						"Analyse this %s for the repository %s and determine the problem surface.\n\n"+
-							"%s\n\n"+
-							"Explore the code read-only and call finish with status \"passed\" and a summary "+
-							"containing: the root cause (file and function), the exact conditions that trigger it, "+
-							"the expected vs actual behaviour, and which test cases would prove the bug. "+
-							"Call finish with status \"blocked\" if you cannot locate a plausible cause.",
-						taskKind(tc.Task), tc.Repo.FullName(), taskPromptBlock(tc.Task),
-					)
-				},
-				OnResult: func(tc *TaskContext, res agentexec.Result) error {
-					tc.Task.Plan = res.Summary
-					return nil
-				},
-			}.Stage(),
-
-			AgentStage{
-				Name: "repro-tests",
-				Role: "builder",
-				// The inverted gate: code-quality commands must still
-				// pass, but the test command (last in repo.Gate) MUST
-				// fail  --  proof the repro captures the bug.
-				Gate: func(tc *TaskContext) agentexec.Gate {
-					return tddReproGate(tc.Repo, tc.Cfg.Budgets)
-				},
-				Mission: func(tc *TaskContext) string {
-					cmd := testCommand(tc.Repo)
-					return fmt.Sprintf(
-						"Write tests that REPRODUCE this bug in the repository %s. Do NOT fix the bug yet.\n\n"+
-							"%s\n\n<analysis>\n%s\n</analysis>\n\n"+
-							"Add tests that pass once the bug is fixed but FAIL today because of it. The gate is "+
-							"inverted for this stage: it requires the full gate to pass EXCEPT %s which is required "+
-							"to FAIL. Do not touch non-test files. Call finish with status \"passed\" once the failing "+
-							"repro is in place, summarising which tests capture the bug.",
-						tc.Repo.FullName(), taskPromptBlock(tc.Task), tc.Task.Plan, cmd,
-					)
-				},
-			}.Stage(),
-
-			// Capture the failing test run  --  the proof the repro
-			// reproduces the bug, posted on the PR later.
-			{Name: "capture-proof", Run: func(ctx context.Context, tc *TaskContext) error {
-				argv := testCommandArgv(tc.Repo)
-				if len(argv) == 0 {
-					return fmt.Errorf("tdd: repo %s has no gate configured  --  cannot capture repro proof (add at least one [[repos.gate]] command, with the test runner last)", tc.Repo.FullName())
-				}
-				cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-				cmd.Dir = tc.Dir
-				out, err := cmd.CombinedOutput()
-				if err == nil {
-					return fmt.Errorf("repro tests unexpectedly pass after commit  --  the bug is not captured")
-				}
-				tc.ReproProof = clip(string(out), 4000)
-				return nil
-			}},
-
+			tddAnalyseStage(),
+			tddReproTestsStage(),
+			tddCaptureProofStage(),
 			StageCommit("commit-repro", func(tc *TaskContext) string {
 				return "test: failing repro" + commitIssueReference("Refs", tc.Task)
 			}),
-
-			AgentStage{
-				Name: "fix",
-				Role: "builder",
-				Gate: func(tc *TaskContext) agentexec.Gate {
-					return GateFromRepo(tc.Repo, tc.Cfg.Budgets)
-				},
-				// Environmental, not advisory: the fix stage cannot touch
-				// test files at all  --  the committed repro is the spec.
-				ProtectGlobs: func(tc *TaskContext) []string {
-					glob := tc.Repo.ResolvedTestGlob()
-					if glob == "" {
-						return nil
-					}
-					return []string{glob}
-				},
-				ExtraRules: "The repro tests written in the previous stage are the bug's specification. " +
-					"Test files are write-protected in this stage  --  make them pass by fixing the code they exercise.",
-				Mission: func(tc *TaskContext) string {
-					return fmt.Sprintf(
-						"Fix the bug in the repository %s. Failing repro tests are already committed; make them pass.\n\n"+
-							"%s\n\n<analysis>\n%s\n</analysis>\n\n"+
-							"The full quality gate (including 'go test ./...') must pass. Make the smallest fix "+
-							"that makes the repro tests pass without changing them. Call finish with status "+
-							"\"passed\" and a summary for the PR reviewer: root cause, the fix, and verification.",
-						tc.Repo.FullName(), taskPromptBlock(tc.Task), tc.Task.Plan,
-					)
-				},
-				OnResult: func(tc *TaskContext, res agentexec.Result) error {
-					tc.BuildSummary = res.Summary
-					return nil
-				},
-			}.Stage(),
-
+			tddFixStage(),
 			StageCommitPush(func(tc *TaskContext) string {
 				return fmt.Sprintf("fix: %s (archie)", tc.Task.Title) +
 					commitIssueReference("Fixes", tc.Task)
 			}),
 			StageYaegiGate(),
 			StageDiffCap(),
-
-			// Open the PR, then post the captured failing-test output as
-			// evidence the bug was reproduced before the fix.
-			{Name: "open-pr", Run: func(ctx context.Context, tc *TaskContext) error {
-				body := fmt.Sprintf("%s\n\n---\n*workflow: tdd (failing repro committed first) · %d iterations · %d tokens*",
-					tc.BuildSummary, tc.Task.Iterations, tc.Task.TokensUsed)
-				if err := OpenPR(ctx, tc, body); err != nil {
-					return err
-				}
-				return nil
-			}},
+			tddOpenPRStage(),
 		},
 	}
+}
+
+// tddAnalyseStage explores the bug read-only and records the root cause and
+// reproduction plan on tc.Task.Plan.
+func tddAnalyseStage() Stage {
+	return AgentStage{
+		Name:     "analyse",
+		Role:     "planner",
+		ReadOnly: true,
+		Mission: func(tc *TaskContext) string {
+			return fmt.Sprintf(
+				"Analyse this %s for the repository %s and determine the problem surface.\n\n"+
+					"%s\n\n"+
+					"Explore the code read-only and call finish with status \"passed\" and a summary "+
+					"containing: the root cause (file and function), the exact conditions that trigger it, "+
+					"the expected vs actual behaviour, and which test cases would prove the bug. "+
+					"Call finish with status \"blocked\" if you cannot locate a plausible cause.",
+				taskKind(tc.Task), tc.Repo.FullName(), taskPromptBlock(tc.Task),
+			)
+		},
+		OnResult: func(tc *TaskContext, res agentexec.Result) error {
+			tc.Task.Plan = res.Summary
+			return nil
+		},
+	}.Stage()
+}
+
+// tddReproTestsStage writes tests that reproduce the bug, under the
+// inverted gate: code-quality commands must still pass, but the test
+// command (last in repo.Gate) MUST fail -- proof the repro captures the bug.
+func tddReproTestsStage() Stage {
+	return AgentStage{
+		Name: "repro-tests",
+		Role: "builder",
+		Gate: func(tc *TaskContext) agentexec.Gate {
+			return tddReproGate(tc.Repo, tc.Cfg.Budgets)
+		},
+		Mission: func(tc *TaskContext) string {
+			cmd := testCommand(tc.Repo)
+			return fmt.Sprintf(
+				"Write tests that REPRODUCE this bug in the repository %s. Do NOT fix the bug yet.\n\n"+
+					"%s\n\n<analysis>\n%s\n</analysis>\n\n"+
+					"Add tests that pass once the bug is fixed but FAIL today because of it. The gate is "+
+					"inverted for this stage: it requires the full gate to pass EXCEPT %s which is required "+
+					"to FAIL. Do not touch non-test files. Call finish with status \"passed\" once the failing "+
+					"repro is in place, summarising which tests capture the bug.",
+				tc.Repo.FullName(), taskPromptBlock(tc.Task), tc.Task.Plan, cmd,
+			)
+		},
+	}.Stage()
+}
+
+// tddCaptureProofStage captures the failing test run -- the proof the repro
+// reproduces the bug, posted on the PR later.
+func tddCaptureProofStage() Stage {
+	return Stage{Name: "capture-proof", Run: func(ctx context.Context, tc *TaskContext) error {
+		argv := testCommandArgv(tc.Repo)
+		if len(argv) == 0 {
+			return fmt.Errorf("tdd: repo %s has no gate configured  --  cannot capture repro proof (add at least one [[repos.gate]] command, with the test runner last)", tc.Repo.FullName())
+		}
+		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+		cmd.Dir = tc.Dir
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			return fmt.Errorf("repro tests unexpectedly pass after commit  --  the bug is not captured")
+		}
+		tc.ReproProof = clip(string(out), 4000)
+		return nil
+	}}
+}
+
+// tddFixStage fixes the bug. Test files are write-protected: the committed
+// repro is the spec, and the fix stage cannot touch it.
+func tddFixStage() Stage {
+	return AgentStage{
+		Name: "fix",
+		Role: "builder",
+		Gate: func(tc *TaskContext) agentexec.Gate {
+			return GateFromRepo(tc.Repo, tc.Cfg.Budgets)
+		},
+		ProtectGlobs: func(tc *TaskContext) []string {
+			glob := tc.Repo.ResolvedTestGlob()
+			if glob == "" {
+				return nil
+			}
+			return []string{glob}
+		},
+		ExtraRules: "The repro tests written in the previous stage are the bug's specification. " +
+			"Test files are write-protected in this stage  --  make them pass by fixing the code they exercise.",
+		Mission: func(tc *TaskContext) string {
+			return fmt.Sprintf(
+				"Fix the bug in the repository %s. Failing repro tests are already committed; make them pass.\n\n"+
+					"%s\n\n<analysis>\n%s\n</analysis>\n\n"+
+					"The full quality gate (including 'go test ./...') must pass. Make the smallest fix "+
+					"that makes the repro tests pass without changing them. Call finish with status "+
+					"\"passed\" and a summary for the PR reviewer: root cause, the fix, and verification.",
+				tc.Repo.FullName(), taskPromptBlock(tc.Task), tc.Task.Plan,
+			)
+		},
+		OnResult: func(tc *TaskContext, res agentexec.Result) error {
+			tc.BuildSummary = res.Summary
+			return nil
+		},
+	}.Stage()
+}
+
+// tddOpenPRStage opens the PR, then posts the captured failing-test output
+// as evidence the bug was reproduced before the fix.
+func tddOpenPRStage() Stage {
+	return Stage{Name: "open-pr", Run: func(ctx context.Context, tc *TaskContext) error {
+		body := fmt.Sprintf("%s\n\n---\n*workflow: tdd (failing repro committed first) · %d iterations · %d tokens*",
+			tc.BuildSummary, tc.Task.Iterations, tc.Task.TokensUsed)
+		return OpenPR(ctx, tc, body)
+	}}
 }
 
 // tddReproGate builds the inverted gate for the repro-tests stage:

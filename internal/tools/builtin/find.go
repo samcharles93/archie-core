@@ -6,6 +6,8 @@
 //     internal/tools package holding the registry these are registered into).
 //   - discovery is confined to the active workspace. Module-cache and other
 //     absolute paths are rejected so find cannot list home or pkg/mod trees.
+//   - runFindGoFallback split into compileFindFilter and findWalkVisitor to
+//     satisfy golangci-lint's gocognit limit. No behavioural change.
 //
 // Refresh by diffing against that path at a newer tau commit. Do not
 // edit without recording the change above.
@@ -16,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -146,27 +149,57 @@ func runFindGoFallback(ctx context.Context, cwd, searchPath string, p FindParams
 
 	var matches []string
 
-	var patternRe *regexp.Regexp
-	if p.Pattern != "" {
-		reStr := globToRegex(p.Pattern)
-		var err error
-		patternRe, err = regexp.Compile("^(?:" + reStr + ")$")
-		if err != nil {
-			return Result{Content: fmt.Sprintf("invalid pattern: %v", err), IsError: true}, nil
-		}
+	patternRe, err := compileFindFilter(p.Pattern, true)
+	if err != nil {
+		return Result{Content: fmt.Sprintf("invalid pattern: %v", err), IsError: true}, nil
+	}
+	excludeRe, err := compileFindFilter(p.Exclude, false)
+	if err != nil {
+		return Result{Content: fmt.Sprintf("invalid exclude: %v", err), IsError: true}, nil
 	}
 
-	var excludeRe *regexp.Regexp
-	if p.Exclude != "" {
-		reStr := globToRegex(p.Exclude)
-		var err error
-		excludeRe, err = regexp.Compile("(?:" + reStr + ")")
-		if err != nil {
-			return Result{Content: fmt.Sprintf("invalid exclude: %v", err), IsError: true}, nil
-		}
+	visit := findWalkVisitor(ctx, cwd, searchPath, p, patternRe, excludeRe, &matches)
+	err = filepath.WalkDir(searchPath, visit)
+	if err != nil {
+		return Result{Content: fmt.Sprintf("find error: %v", err), IsError: true}, nil
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return Result{Content: fmt.Sprintf("find error: search did not complete: %v", ctxErr), IsError: true}, nil
 	}
 
-	err = filepath.WalkDir(searchPath, func(walkPath string, d os.DirEntry, err error) error {
+	if len(matches) == 0 {
+		return Result{Content: "no matches found"}, nil
+	}
+
+	sort.Strings(matches)
+	output := strings.Join(matches, "\n")
+	tr := TruncateHead(output, DefaultMaxLines, DefaultMaxBytes)
+	return Result{Content: tr.Content, Truncated: tr.Truncated, ResultBytes: tr.OriginalSize}, nil
+}
+
+// compileFindFilter compiles a glob filter into a regexp. anchored wraps the
+// translated pattern in ^(?:...)$ (whole-name match, used for the include
+// pattern); unanchored leaves it as (?:...) (substring match, used for
+// exclude). Returns a nil regexp and nil error for an empty glob.
+func compileFindFilter(glob string, anchored bool) (*regexp.Regexp, error) {
+	if glob == "" {
+		return nil, nil
+	}
+	reStr := globToRegex(glob)
+	if anchored {
+		return regexp.Compile("^(?:" + reStr + ")$")
+	}
+	return regexp.Compile("(?:" + reStr + ")")
+}
+
+// findWalkVisitor returns the filepath.WalkDir callback for
+// runFindGoFallback: it enforces max depth, skips hidden entries and
+// exclude matches, applies the type and pattern filters, and appends
+// surviving paths (relative to cwd) to matches.
+func findWalkVisitor(
+	ctx context.Context, cwd, searchPath string, p FindParams, patternRe, excludeRe *regexp.Regexp, matches *[]string,
+) fs.WalkDirFunc {
+	return func(walkPath string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil //nolint:nilerr // intentionally skip inaccessible entries
 		}
@@ -236,24 +269,9 @@ func runFindGoFallback(ctx context.Context, cwd, searchPath string, p FindParams
 		if err != nil {
 			outputPath = walkPath
 		}
-		matches = append(matches, filepath.ToSlash(outputPath))
+		*matches = append(*matches, filepath.ToSlash(outputPath))
 		return nil
-	})
-	if err != nil {
-		return Result{Content: fmt.Sprintf("find error: %v", err), IsError: true}, nil
 	}
-	if ctxErr := ctx.Err(); ctxErr != nil {
-		return Result{Content: fmt.Sprintf("find error: search did not complete: %v", ctxErr), IsError: true}, nil
-	}
-
-	if len(matches) == 0 {
-		return Result{Content: "no matches found"}, nil
-	}
-
-	sort.Strings(matches)
-	output := strings.Join(matches, "\n")
-	tr := TruncateHead(output, DefaultMaxLines, DefaultMaxBytes)
-	return Result{Content: tr.Content, Truncated: tr.Truncated, ResultBytes: tr.OriginalSize}, nil
 }
 
 func isFdBinary(binary string) bool {

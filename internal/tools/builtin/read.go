@@ -4,6 +4,9 @@
 // Mutations from upstream:
 //   - package renamed tools -> builtin (archie-core already has an
 //     internal/tools package holding the registry these are registered into).
+//   - serveReadContent split into readOffsetLimitWindow and
+//     readTrailingNotice to satisfy golangci-lint's cyclop limit. No
+//     behavioural change.
 //
 // Refresh by diffing against that path at a newer tau commit. Do not
 // edit without recording the change above.
@@ -339,19 +342,9 @@ func serveReadContent(cwd, path string, p readParams, info os.FileInfo, state *r
 		}
 	}
 
-	// Apply offset (1-based).
-	startLine := 1
-	if p.Offset > 0 {
-		startLine = p.Offset
-	}
+	startLine, endLine := readOffsetLimitWindow(p, totalLines)
 	if startLine > totalLines {
 		return Result{Content: fmt.Sprintf("offset %d exceeds file length (%d lines)", startLine, totalLines), IsError: true}
-	}
-
-	// Apply limit.
-	endLine := totalLines
-	if p.Limit > 0 && startLine+p.Limit-1 < endLine {
-		endLine = startLine + p.Limit - 1
 	}
 
 	// Skip lines this session has already been shown from an unchanged
@@ -382,28 +375,53 @@ func serveReadContent(cwd, path string, p readParams, info os.FileInfo, state *r
 		) + output
 	}
 
+	output += readTrailingNotice(p, tr, lines, startLine, endLine, totalLines)
+
+	return Result{Content: output, Truncated: tr.Truncated || endLine < totalLines, ResultBytes: tr.OriginalSize}
+}
+
+// readOffsetLimitWindow resolves the requested 1-based [startLine, endLine]
+// window from the offset/limit parameters and the file's total line count.
+func readOffsetLimitWindow(p readParams, totalLines int) (startLine, endLine int) {
+	startLine = 1
+	if p.Offset > 0 {
+		startLine = p.Offset
+	}
+
+	endLine = totalLines
+	if p.Limit > 0 && startLine+p.Limit-1 < endLine {
+		endLine = startLine + p.Limit - 1
+	}
+	return startLine, endLine
+}
+
+// readTrailingNotice returns the suffix appended to the served content: a
+// shell-fallback hint when the first requested line alone exceeded the byte
+// limit, a continuation hint when the byte limit truncated mid-range, or a
+// continuation hint when a user-specified limit stopped before EOF. Returns
+// "" when none apply.
+func readTrailingNotice(p readParams, tr TruncationResult, lines []string, startLine, endLine, totalLines int) string {
 	switch {
 	case tr.Truncated && tr.OutputLines == 0:
 		// The first requested line alone exceeds the byte limit. Point the
 		// model at a shell fallback that can slice within the line.
 		lineSize := FormatSize(len(lines[startLine-1]))
-		output = fmt.Sprintf(
+		return fmt.Sprintf(
 			"[line %d is %s, exceeding the %s output limit. Use shell: sed -n '%dp' %s | head -c %d]",
 			startLine, lineSize, FormatSize(DefaultMaxBytes), startLine, p.Path, DefaultMaxBytes,
 		)
 	case tr.Truncated:
 		shownEnd := startLine + tr.OutputLines - 1
-		output += fmt.Sprintf(
+		return fmt.Sprintf(
 			"\n\n[showing lines %d-%d of %d. Use offset=%d to continue.]",
 			startLine, shownEnd, totalLines, shownEnd+1,
 		)
 	case endLine < totalLines:
 		// A user-specified limit stopped early, but the file has more content.
-		output += fmt.Sprintf(
+		return fmt.Sprintf(
 			"\n\n[%d more lines in file. Use offset=%d to continue.]",
 			totalLines-endLine, endLine+1,
 		)
 	}
-
-	return Result{Content: output, Truncated: tr.Truncated || endLine < totalLines, ResultBytes: tr.OriginalSize}
+	return ""
 }
