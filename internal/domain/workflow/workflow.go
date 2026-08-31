@@ -42,6 +42,11 @@ type Trees interface {
 	Diff(ctx context.Context, dir, base string) (string, error)
 	ChangedFiles(ctx context.Context, dir, base string) ([]string, error)
 	ChangedLines(ctx context.Context, dir, base string) (int, error)
+	// Snapshot exports HEAD's tracked files into destDir with no .git
+	// directory -- no commit history, branch name, or reflog. Used to
+	// build the adversarial reviewer's isolated workspace (see
+	// docs/prds/adversarial-self-review.md).
+	Snapshot(ctx context.Context, dir, destDir string) error
 }
 
 // TaskContext carries everything a stage may need. Stages communicate
@@ -55,8 +60,13 @@ type TaskContext struct {
 	Store store.WorkflowStore
 	Trees Trees
 	Agent agentexec.Runner
-	Bus   *events.Bus // nil-safe via Emit
-	Log   *slog.Logger
+	// Reviewer runs the adversarial self-review stage (StageReview). Nil
+	// is only safe when Repo.ReviewEnabled is false; StageReview parks
+	// rather than silently skipping if it is enabled with no Reviewer
+	// wired.
+	Reviewer Reviewer
+	Bus      *events.Bus // nil-safe via Emit
+	Log      *slog.Logger
 	// CustomStages discovers a repo's per-repo custom stages (Yaegi-
 	// interpreted from .archie/stages/*.go in the given worktree
 	// directory), returning them in the order they should run. Application
