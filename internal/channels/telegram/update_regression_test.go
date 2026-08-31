@@ -11,21 +11,20 @@ import (
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
 )
 
+// contextAwareUpdateStub embeds the shared updateStub so the interface's
+// Check/Defer/CanInstall come for free, and overrides only Install to
+// capture the context the gateway hands to the installer. Capturing a
+// context in a test double is the accepted exception to "don't store
+// contexts": the regression test needs to observe which context reached
+// Install.
 type contextAwareUpdateStub struct {
-	started chan struct{}
-	seen    context.Context
+	updateStub
+	started    chan struct{}
+	installCtx context.Context
 }
 
-func (s *contextAwareUpdateStub) Check(context.Context, int64) (releaseupdate.Snapshot, error) {
-	return releaseupdate.Snapshot{}, nil
-}
-
-func (s *contextAwareUpdateStub) Defer(context.Context, int64, releaseupdate.Snapshot) error {
-	return nil
-}
-func (s *contextAwareUpdateStub) CanInstall() bool { return true }
 func (s *contextAwareUpdateStub) Install(ctx context.Context, _ releaseupdate.Snapshot, _ releaseupdate.InstallMeta, _ func(string)) (releaseupdate.Result, error) {
-	s.seen = ctx
+	s.installCtx = ctx
 	close(s.started)
 	return releaseupdate.Result{}, nil
 }
@@ -35,7 +34,12 @@ func TestInstallUpdateDetachesInstallerFromCallbackContext(t *testing.T) {
 	stub := &contextAwareUpdateStub{started: make(chan struct{})}
 	g.Updates = stub
 	b, _ := newTelegramTestBot(t)
-	callbackCtx, cancel := context.WithCancel(context.Background())
+	// t.Context() is the framework-owned parent: it auto-cancels at test
+	// teardown, so a failure before cancel() can't orphan the goroutine's
+	// context. We still derive a cancellable child because the test must
+	// cancel the callback context itself -- mirroring Telegram's handler
+	// lifetime ending -- while the installer is mid-flight.
+	callbackCtx, cancel := context.WithCancel(t.Context())
 	message := &models.Message{Chat: models.Chat{ID: 7}, ID: 100}
 
 	done := make(chan struct{})
@@ -50,7 +54,7 @@ func TestInstallUpdateDetachesInstallerFromCallbackContext(t *testing.T) {
 	cancel()
 
 	select {
-	case <-stub.seen.Done():
+	case <-stub.installCtx.Done():
 		t.Fatal("installer context was cancelled with the callback context")
 	case <-time.After(20 * time.Millisecond):
 	}
