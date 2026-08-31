@@ -123,124 +123,141 @@ func markdownToBlocks(md string) []models.InputRichBlock {
 	if strings.TrimSpace(md) == "" {
 		return nil
 	}
-	lines := strings.Split(md, "\n")
-	var blocks []models.InputRichBlock
-	var paragraph strings.Builder
-	var codeLines []string
-	var codeLang string
-	inCode := false
-	var listItems [][]models.InputRichBlock
-	var quoteLines []string
+	p := &markdownBlockParser{}
+	for _, raw := range strings.Split(md, "\n") {
+		p.handleLine(strings.TrimRight(raw, "\r"))
+	}
+	p.closeCode()
+	p.flush()
+	return p.blocks
+}
 
-	flushParagraph := func() {
-		if paragraph.Len() == 0 {
-			return
+// markdownBlockParser holds the mutable state markdownToBlocks threads
+// through its line-by-line scan: the accumulated blocks, and whichever
+// multi-line construct (paragraph, code fence, list, block quote) is
+// currently open.
+type markdownBlockParser struct {
+	blocks     []models.InputRichBlock
+	paragraph  strings.Builder
+	codeLines  []string
+	codeLang   string
+	inCode     bool
+	listItems  [][]models.InputRichBlock
+	quoteLines []string
+}
+
+// handleLine processes one line of input, dispatching to whichever
+// construct is open or starting a new one.
+func (p *markdownBlockParser) handleLine(line string) {
+	trimmed := strings.TrimSpace(line)
+
+	if p.inCode {
+		if strings.HasPrefix(trimmed, "```") {
+			p.closeCode()
+		} else {
+			p.codeLines = append(p.codeLines, line)
 		}
-		if text := strings.TrimSpace(paragraph.String()); text != "" {
-			blocks = append(blocks, paragraphBlock(stripInlineMarkdown(text)))
-		}
-		paragraph.Reset()
-	}
-	flushList := func() {
-		if len(listItems) == 0 {
-			return
-		}
-		items := make([]models.InputRichBlockListItem, 0, len(listItems))
-		for _, item := range listItems {
-			items = append(items, models.InputRichBlockListItem{Blocks: item})
-		}
-		blocks = append(blocks, models.InputRichBlock{
-			Type: models.RichBlockTypeList,
-			InputRichBlockList: &models.InputRichBlockList{
-				Type:  models.RichBlockTypeList,
-				Items: items,
-			},
-		})
-		listItems = nil
-	}
-	flushQuote := func() {
-		if len(quoteLines) == 0 {
-			return
-		}
-		var inner []models.InputRichBlock
-		for _, line := range quoteLines {
-			body := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), ">"))
-			if body == "" {
-				continue
-			}
-			inner = append(inner, paragraphBlock(stripInlineMarkdown(body)))
-		}
-		if len(inner) > 0 {
-			blocks = append(blocks, models.InputRichBlock{
-				Type: models.RichBlockTypeBlockQuotation,
-				InputRichBlockBlockQuotation: &models.InputRichBlockBlockQuotation{
-					Type:   models.RichBlockTypeBlockQuotation,
-					Blocks: inner,
-				},
-			})
-		}
-		quoteLines = nil
-	}
-	closeCode := func() {
-		if len(codeLines) > 0 || codeLang != "" {
-			blocks = append(blocks, preformattedBlock(stripInlineMarkdown(strings.Join(codeLines, "\n")), codeLang))
-		}
-		codeLines, codeLang, inCode = nil, "", false
-	}
-	flush := func() {
-		flushList()
-		flushQuote()
-		flushParagraph()
+		return
 	}
 
-	for _, raw := range lines {
-		line := strings.TrimRight(raw, "\r")
-		trimmed := strings.TrimSpace(line)
+	switch {
+	case strings.HasPrefix(trimmed, "```"):
+		p.flush()
+		p.codeLang = strings.TrimSpace(strings.TrimPrefix(trimmed, "```"))
+		p.inCode = true
+		p.codeLines = nil
+	case headingDepth(trimmed) > 0:
+		p.flush()
+		p.blocks = append(p.blocks, headingBlock(trimmed))
+	case isListItem(trimmed):
+		p.flushParagraph()
+		p.flushQuote()
+		if len(p.listItems) == 0 {
+			p.flushList()
+		}
+		p.listItems = append(p.listItems, []models.InputRichBlock{paragraphBlock(listItemText(trimmed))})
+	case len(trimmed) > 1 && trimmed[0] == '>':
+		p.flushParagraph()
+		p.flushList()
+		p.quoteLines = append(p.quoteLines, line)
+	case trimmed == "":
+		p.flush()
+	default:
+		// A normal line ends a list or quote block and continues a paragraph.
+		p.flushList()
+		p.flushQuote()
+		if p.paragraph.Len() > 0 {
+			p.paragraph.WriteString("\n")
+		}
+		p.paragraph.WriteString(line)
+	}
+}
 
-		if inCode {
-			if strings.HasPrefix(trimmed, "```") {
-				closeCode()
-			} else {
-				codeLines = append(codeLines, line)
-			}
+// flush closes every open construct, in the order that keeps blocks in
+// source order.
+func (p *markdownBlockParser) flush() {
+	p.flushList()
+	p.flushQuote()
+	p.flushParagraph()
+}
+
+func (p *markdownBlockParser) flushParagraph() {
+	if p.paragraph.Len() == 0 {
+		return
+	}
+	if text := strings.TrimSpace(p.paragraph.String()); text != "" {
+		p.blocks = append(p.blocks, paragraphBlock(stripInlineMarkdown(text)))
+	}
+	p.paragraph.Reset()
+}
+
+func (p *markdownBlockParser) flushList() {
+	if len(p.listItems) == 0 {
+		return
+	}
+	items := make([]models.InputRichBlockListItem, 0, len(p.listItems))
+	for _, item := range p.listItems {
+		items = append(items, models.InputRichBlockListItem{Blocks: item})
+	}
+	p.blocks = append(p.blocks, models.InputRichBlock{
+		Type: models.RichBlockTypeList,
+		InputRichBlockList: &models.InputRichBlockList{
+			Type:  models.RichBlockTypeList,
+			Items: items,
+		},
+	})
+	p.listItems = nil
+}
+
+func (p *markdownBlockParser) flushQuote() {
+	if len(p.quoteLines) == 0 {
+		return
+	}
+	var inner []models.InputRichBlock
+	for _, line := range p.quoteLines {
+		body := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), ">"))
+		if body == "" {
 			continue
 		}
-
-		switch {
-		case strings.HasPrefix(trimmed, "```"):
-			flush()
-			codeLang = strings.TrimSpace(strings.TrimPrefix(trimmed, "```"))
-			inCode = true
-			codeLines = nil
-		case headingDepth(trimmed) > 0:
-			flush()
-			blocks = append(blocks, headingBlock(trimmed))
-		case isListItem(trimmed):
-			flushParagraph()
-			flushQuote()
-			if len(listItems) == 0 {
-				flushList()
-			}
-			listItems = append(listItems, []models.InputRichBlock{paragraphBlock(listItemText(trimmed))})
-		case len(trimmed) > 1 && trimmed[0] == '>':
-			flushParagraph()
-			flushList()
-			quoteLines = append(quoteLines, line)
-		case trimmed == "":
-			flush()
-		default:
-			// A normal line ends a list or quote block and continues a paragraph.
-			flushList()
-			flushQuote()
-			if paragraph.Len() > 0 {
-				paragraph.WriteString("\n")
-			}
-			paragraph.WriteString(line)
-		}
+		inner = append(inner, paragraphBlock(stripInlineMarkdown(body)))
 	}
-	closeCode()
-	flush()
-	return blocks
+	if len(inner) > 0 {
+		p.blocks = append(p.blocks, models.InputRichBlock{
+			Type: models.RichBlockTypeBlockQuotation,
+			InputRichBlockBlockQuotation: &models.InputRichBlockBlockQuotation{
+				Type:   models.RichBlockTypeBlockQuotation,
+				Blocks: inner,
+			},
+		})
+	}
+	p.quoteLines = nil
+}
+
+func (p *markdownBlockParser) closeCode() {
+	if len(p.codeLines) > 0 || p.codeLang != "" {
+		p.blocks = append(p.blocks, preformattedBlock(stripInlineMarkdown(strings.Join(p.codeLines, "\n")), p.codeLang))
+	}
+	p.codeLines, p.codeLang, p.inCode = nil, "", false
 }
 
 // blocksToPlainText flattens blocks into readable plain text for the fallback
@@ -256,38 +273,50 @@ func blocksToPlainText(blocks []models.InputRichBlock) []string {
 				out = append(out, text)
 			}
 		case models.RichBlockTypeList:
-			if block.InputRichBlockList == nil {
-				continue
-			}
-			var items []string
-			for _, item := range block.InputRichBlockList.Items {
-				for _, inner := range item.Blocks {
-					if text := blockPlainText(inner); text != "" {
-						items = append(items, text)
-					}
-				}
-			}
-			if len(items) > 0 {
-				out = append(out, strings.Join(items, "\n"))
+			if text := listBlockPlainText(block); text != "" {
+				out = append(out, text)
 			}
 		case models.RichBlockTypeBlockQuotation:
-			if block.InputRichBlockBlockQuotation == nil {
-				continue
-			}
-			var inner []string
-			for _, b := range block.InputRichBlockBlockQuotation.Blocks {
-				if text := blockPlainText(b); text != "" {
-					inner = append(inner, text)
-				}
-			}
-			if len(inner) > 0 {
-				out = append(out, strings.Join(inner, "\n"))
+			if text := quoteBlockPlainText(block); text != "" {
+				out = append(out, text)
 			}
 		case models.RichBlockTypeDivider:
 			out = append(out, "———")
 		}
 	}
 	return out
+}
+
+// listBlockPlainText renders a list block's items as newline-joined plain
+// text, or "" if it has none.
+func listBlockPlainText(block models.InputRichBlock) string {
+	if block.InputRichBlockList == nil {
+		return ""
+	}
+	var items []string
+	for _, item := range block.InputRichBlockList.Items {
+		for _, inner := range item.Blocks {
+			if text := blockPlainText(inner); text != "" {
+				items = append(items, text)
+			}
+		}
+	}
+	return strings.Join(items, "\n")
+}
+
+// quoteBlockPlainText renders a block quotation's inner blocks as
+// newline-joined plain text, or "" if it has none.
+func quoteBlockPlainText(block models.InputRichBlock) string {
+	if block.InputRichBlockBlockQuotation == nil {
+		return ""
+	}
+	var inner []string
+	for _, b := range block.InputRichBlockBlockQuotation.Blocks {
+		if text := blockPlainText(b); text != "" {
+			inner = append(inner, text)
+		}
+	}
+	return strings.Join(inner, "\n")
 }
 
 func blockPlainText(block models.InputRichBlock) string {
