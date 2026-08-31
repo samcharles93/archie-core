@@ -339,6 +339,7 @@ func TestCrossProcessFlockBlocksParentWhileChildHoldsLock(t *testing.T) {
 	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "jobs.json")
+	ctx := t.Context()
 
 	// Build a tiny helper that opens the same file and holds the
 	// flock. The helper is built once per run; the cost is paid only
@@ -370,12 +371,12 @@ func main() {
 		t.Fatalf("WriteFile helper: %v", err)
 	}
 	helperBin := filepath.Join(dir, "helper")
-	if out, err := exec.Command("go", "build", "-o", helperBin, helperSrc).CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(ctx, "go", "build", "-o", helperBin, helperSrc).CombinedOutput(); err != nil {
 		t.Fatalf("go build helper: %v\n%s", err, out)
 	}
 
 	// Launch the child in the background.
-	child := exec.Command(helperBin, path)
+	child := exec.CommandContext(ctx, helperBin, path)
 	child.Stdout = os.Stdout
 	child.Stderr = os.Stderr
 	if err := child.Start(); err != nil {
