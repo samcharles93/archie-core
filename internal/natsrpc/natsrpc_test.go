@@ -1,125 +1,333 @@
-package natsrpc_test
+package natsrpc
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"log/slog"
 	"testing"
 	"time"
 
-	"github.com/samcharles93/archie-core/internal/natsrpc"
+	"github.com/nats-io/nats-server/v2/server"
+	natssrv "github.com/nats-io/nats-server/v2/test"
+	"github.com/nats-io/nats.go"
 )
 
-func TestEnvelopeRoundTrip(t *testing.T) {
-	if err := natsrpc.NewEnvelope(nil).Err(); err != nil {
-		t.Errorf("NewEnvelope(nil).Err() = %v, want nil", err)
+func startEmbedded(t *testing.T) *server.Server {
+	t.Helper()
+	srv := natssrv.RunRandClientPortServer()
+	t.Cleanup(srv.Shutdown)
+	return srv
+}
+
+func connect(t *testing.T, url string) *nats.Conn {
+	t.Helper()
+	nc, err := nats.Connect(url)
+	if err != nil {
+		t.Fatalf("nats connect: %v", err)
+	}
+	t.Cleanup(nc.Close)
+	return nc
+}
+
+func TestNewEnvelopeAndErr(t *testing.T) {
+	if e := NewEnvelope(nil); e.Error != "" {
+		t.Fatalf("NewEnvelope(nil).Error = %q, want empty", e.Error)
+	}
+	if err := (Envelope{}).Err(); err != nil {
+		t.Fatalf("Envelope{}.Err() = %v, want nil", err)
 	}
 
-	want := "boom"
-	env := natsrpc.NewEnvelope(errBoom{want})
-	if env.Error != want {
-		t.Errorf("Error = %q, want %q", env.Error, want)
+	wantErr := "boom"
+	e := NewEnvelope(errString(wantErr))
+	if e.Error != wantErr {
+		t.Fatalf("NewEnvelope(err).Error = %q, want %q", e.Error, wantErr)
 	}
-	if got := env.Err(); got == nil || got.Error() != want {
-		t.Errorf("Err() = %v, want %q", got, want)
+	if got := e.Err(); got == nil || got.Error() != wantErr {
+		t.Fatalf("Err() = %v, want error %q", got, wantErr)
 	}
 }
 
-type errBoom struct{ msg string }
+type errString string
 
-func (e errBoom) Error() string { return e.msg }
+func (e errString) Error() string { return string(e) }
 
-// ── Regression tests ───────────────────────────────────────────────
+func TestClientRequest(t *testing.T) {
+	srv := startEmbedded(t)
+	nc := connect(t, srv.ClientURL())
 
-func TestNewEnvelopeEdgeCases(t *testing.T) {
-	t.Run("empty error string produces nil Err", func(t *testing.T) {
-		env := natsrpc.NewEnvelope(errors.New(""))
-		if env.Error != "" {
-			t.Errorf("empty error string should produce empty Error field, got %q", env.Error)
-		}
+	sub, err := nc.Subscribe("echo.subject", func(msg *nats.Msg) {
+		_ = msg.Respond(append([]byte("echo:"), msg.Data...))
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := nc.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sub.Unsubscribe() })
 
-	t.Run("zero-value Envelope Err returns nil", func(t *testing.T) {
-		var env natsrpc.Envelope
-		if err := env.Err(); err != nil {
-			t.Errorf("zero Envelope.Err() = %v, want nil", err)
-		}
-	})
+	c := &Client{Conn: nc, Timeout: 2 * time.Second}
+	reply, err := c.Request(context.Background(), "echo.subject", []byte("hi"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(reply) != "echo:hi" {
+		t.Fatalf("reply = %q, want %q", reply, "echo:hi")
+	}
 }
 
-func TestEnvelopeJSONRoundTrip(t *testing.T) {
-	// Simulate a full server→client JSON round trip through the envelope.
-	type Response struct {
-		natsrpc.Envelope
-		Result string `json:"result,omitempty"`
+func TestClientRequestNoResponders(t *testing.T) {
+	srv := startEmbedded(t)
+	nc := connect(t, srv.ClientURL())
+
+	c := &Client{Conn: nc, Timeout: 200 * time.Millisecond}
+	if _, err := c.Request(context.Background(), "nobody.listening", []byte("hi")); err == nil {
+		t.Fatal("Request() error = nil, want error when no responder is subscribed")
+	}
+}
+
+func TestClientRequestUsesContextDeadlineWhenSet(t *testing.T) {
+	srv := startEmbedded(t)
+	nc := connect(t, srv.ClientURL())
+
+	c := &Client{Conn: nc, Timeout: 10 * time.Second} // large default, ctx deadline should win
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := c.Request(ctx, "nobody.listening.either", []byte("hi"))
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("Request() error = nil, want error (no responder)")
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("Request() took %v, want it to respect the short context deadline rather than the 10s client timeout", elapsed)
+	}
+}
+
+type callReq struct {
+	Value string `json:"value"`
+}
+
+type callResp struct {
+	Envelope
+	Echo string `json:"echo"`
+}
+
+func TestCallMarshalsRequestAndUnmarshalsResponse(t *testing.T) {
+	srv := startEmbedded(t)
+	nc := connect(t, srv.ClientURL())
+
+	sub, err := nc.Subscribe("call.subject", func(msg *nats.Msg) {
+		var req callReq
+		if err := json.Unmarshal(msg.Data, &req); err != nil {
+			_ = msg.Respond([]byte(`{"error":"bad request"}`))
+			return
+		}
+		resp := callResp{Echo: req.Value}
+		data, _ := json.Marshal(resp)
+		_ = msg.Respond(data)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := nc.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sub.Unsubscribe() })
+
+	c := &Client{Conn: nc, Timeout: 2 * time.Second}
+	resp, err := Call[callResp](context.Background(), c, "call.subject", callReq{Value: "hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Echo != "hello" {
+		t.Fatalf("resp.Echo = %q, want %q", resp.Echo, "hello")
+	}
+	if err := resp.Err(); err != nil {
+		t.Fatalf("resp.Err() = %v, want nil", err)
+	}
+}
+
+func TestCallPropagatesEnvelopeError(t *testing.T) {
+	srv := startEmbedded(t)
+	nc := connect(t, srv.ClientURL())
+
+	sub, err := nc.Subscribe("call.error", func(msg *nats.Msg) {
+		_ = msg.Respond([]byte(`{"error":"handler failed"}`))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := nc.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sub.Unsubscribe() })
+
+	c := &Client{Conn: nc, Timeout: 2 * time.Second}
+	resp, err := Call[callResp](context.Background(), c, "call.error", callReq{Value: "x"})
+	if err != nil {
+		t.Fatalf("Call() transport error = %v, want nil (envelope errors are not transport errors)", err)
+	}
+	if envErr := resp.Err(); envErr == nil || envErr.Error() != "handler failed" {
+		t.Fatalf("resp.Err() = %v, want \"handler failed\"", envErr)
+	}
+}
+
+func TestCallUnmarshalError(t *testing.T) {
+	srv := startEmbedded(t)
+	nc := connect(t, srv.ClientURL())
+
+	sub, err := nc.Subscribe("call.badjson", func(msg *nats.Msg) {
+		_ = msg.Respond([]byte("not json"))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := nc.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sub.Unsubscribe() })
+
+	c := &Client{Conn: nc, Timeout: 2 * time.Second}
+	if _, err := Call[callResp](context.Background(), c, "call.badjson", callReq{Value: "x"}); err == nil {
+		t.Fatal("Call() error = nil, want decode error for invalid JSON reply")
+	}
+}
+
+func TestCallMarshalError(t *testing.T) {
+	srv := startEmbedded(t)
+	nc := connect(t, srv.ClientURL())
+	c := &Client{Conn: nc, Timeout: 2 * time.Second}
+
+	// A channel cannot be marshalled to JSON, so Call must fail before ever
+	// sending a request.
+	if _, err := Call[callResp](context.Background(), c, "call.never-reached", make(chan int)); err == nil {
+		t.Fatal("Call() error = nil, want encode error for unmarshalable request")
+	}
+}
+
+func TestRegisterAllSubscribesAndFlushes(t *testing.T) {
+	srv := startEmbedded(t)
+	nc := connect(t, srv.ClientURL())
+
+	var calledA, calledB bool
+	regs := []Registration{
+		{Subject: "reg.a", Handler: func(msg *nats.Msg) { calledA = true; _ = msg.Respond(nil) }},
+		{Subject: "reg.b", Handler: func(msg *nats.Msg) { calledB = true; _ = msg.Respond(nil) }},
 	}
 
-	t.Run("success response", func(t *testing.T) {
-		resp := Response{Result: "ok"}
-		data, err := json.Marshal(resp)
-		if err != nil {
-			t.Fatalf("marshal: %v", err)
-		}
-		var decoded Response
-		if err := json.Unmarshal(data, &decoded); err != nil {
-			t.Fatalf("unmarshal: %v", err)
-		}
-		if decoded.Result != "ok" {
-			t.Errorf("Result = %q", decoded.Result)
-		}
-		if decoded.Err() != nil {
-			t.Errorf("expected nil error, got %v", decoded.Err())
-		}
-	})
-
-	t.Run("error response", func(t *testing.T) {
-		resp := Response{Envelope: natsrpc.NewEnvelope(errors.New("request failed"))}
-		data, err := json.Marshal(resp)
-		if err != nil {
-			t.Fatalf("marshal: %v", err)
-		}
-		var decoded Response
-		if err := json.Unmarshal(data, &decoded); err != nil {
-			t.Fatalf("unmarshal: %v", err)
-		}
-		if decoded.Err() == nil || decoded.Err().Error() != "request failed" {
-			t.Errorf("expected error 'request failed', got %v", decoded.Err())
-		}
-		// Error field flattens into parent JSON.
-		if decoded.Error != "request failed" {
-			t.Errorf("Error = %q", decoded.Error)
-		}
-	})
-}
-
-func TestClientRequestTimeoutFallback(t *testing.T) {
-	// Without a real NATS connection, we can test the context deadline
-	// fallback logic by checking what Client.Request does with a nil conn.
-	// It panics on nil, but we can verify the timeout is computed correctly
-	// by testing the context setup logic indirectly.
-
-	// Client with no deadline on ctx and Timeout > 0 should call
-	// context.WithTimeout.
-	c := &natsrpc.Client{Timeout: 100 * time.Millisecond}
-	ctx := context.Background()
-	// Since Conn is nil, this will panic. But the context setup happens
-	// before the panic, so verifying the context has a deadline is what
-	// matters. We can't easily test without a mock NATS, so validate the
-	// Client struct accepts the Timeout.
-	if c.Timeout != 100*time.Millisecond {
-		t.Errorf("Timeout = %v", c.Timeout)
+	unsubscribe, err := RegisterAll(nc, regs)
+	if err != nil {
+		t.Fatal(err)
 	}
-	_ = ctx
+	t.Cleanup(unsubscribe)
+
+	if _, err := nc.Request("reg.a", nil, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := nc.Request("reg.b", nil, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if !calledA || !calledB {
+		t.Fatalf("calledA=%t calledB=%t, want both true", calledA, calledB)
+	}
+
+	unsubscribe()
+	if _, err := nc.Request("reg.a", nil, 200*time.Millisecond); err == nil {
+		t.Fatal("Request() after unsubscribe error = nil, want no-responder error")
+	}
 }
 
-func TestRegisterAllRollbackOnError(t *testing.T) {
-	// RegisterAll should unsubscribe already-registered handlers when a
-	// later registration fails. Without a real NATS connection we verify
-	// the function signature and zero-registrations case.
-	unsub, err := natsrpc.RegisterAll(nil, []natsrpc.Registration{})
-	if unsub == nil && err == nil {
-		// Both nil is fine for empty regs with nil conn.
-	} else {
-		t.Logf("RegisterAll with nil conn and empty regs: err=%v", err)
+func TestRegisterAllRollsBackOnPartialFailure(t *testing.T) {
+	srv := startEmbedded(t)
+	nc := connect(t, srv.ClientURL())
+
+	regs := []Registration{
+		{Subject: "reg.ok", Handler: func(msg *nats.Msg) { _ = msg.Respond(nil) }},
+		// An empty subject is invalid and Subscribe rejects it, forcing the
+		// rollback path.
+		{Subject: "", Handler: func(msg *nats.Msg) {}},
+	}
+
+	if _, err := RegisterAll(nc, regs); err == nil {
+		t.Fatal("RegisterAll() error = nil, want error for invalid subject")
+	}
+
+	// The first, valid subscription must have been rolled back too.
+	if _, err := nc.Request("reg.ok", nil, 200*time.Millisecond); err == nil {
+		t.Fatal("Request(\"reg.ok\") after rollback error = nil, want no-responder error")
+	}
+}
+
+func TestRespondSuccess(t *testing.T) {
+	srv := startEmbedded(t)
+	nc := connect(t, srv.ClientURL())
+
+	sub, err := nc.Subscribe("respond.subject", func(msg *nats.Msg) {
+		Respond(msg, slog.New(slog.DiscardHandler), "test", callResp{Echo: "ok"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := nc.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sub.Unsubscribe() })
+
+	reply, err := nc.Request("respond.subject", nil, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var resp callResp
+	if err := json.Unmarshal(reply.Data, &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Echo != "ok" {
+		t.Fatalf("resp.Echo = %q, want %q", resp.Echo, "ok")
+	}
+}
+
+func TestRespondEncodeFailureDoesNotPanic(t *testing.T) {
+	srv := startEmbedded(t)
+	nc := connect(t, srv.ClientURL())
+
+	sub, err := nc.Subscribe("respond.badvalue", func(msg *nats.Msg) {
+		// A channel cannot be marshalled to JSON; Respond must log and
+		// return rather than respond or panic.
+		Respond(msg, slog.New(slog.DiscardHandler), "test", make(chan int))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := nc.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sub.Unsubscribe() })
+
+	if _, err := nc.Request("respond.badvalue", nil, 200*time.Millisecond); err == nil {
+		t.Fatal("Request() error = nil, want timeout since Respond never replies on encode failure")
+	}
+}
+
+func TestRespondWithNilLoggerDoesNotPanic(t *testing.T) {
+	srv := startEmbedded(t)
+	nc := connect(t, srv.ClientURL())
+
+	sub, err := nc.Subscribe("respond.nillogger", func(msg *nats.Msg) {
+		Respond(msg, nil, "test", make(chan int))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := nc.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sub.Unsubscribe() })
+
+	// Just confirm the subscriber survives a nil logger without panicking;
+	// no reply is expected on encode failure.
+	if _, err := nc.Request("respond.nillogger", nil, 200*time.Millisecond); err == nil {
+		t.Fatal("Request() error = nil, want timeout")
 	}
 }
