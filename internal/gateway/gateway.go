@@ -359,6 +359,15 @@ func (r *Router) dispatchLocal(ctx context.Context, msg Message, text, cmd strin
 	case "/profile":
 		reply, err := r.handleProfile()
 		return reply, true, err
+	}
+	return r.dispatchLocalMisc(ctx, msg, cmd, rest)
+}
+
+// dispatchLocalMisc handles the remaining recognized local commands not
+// covered by dispatchLocal's first switch. Split out to keep cyclomatic
+// complexity down.
+func (r *Router) dispatchLocalMisc(ctx context.Context, msg Message, cmd, rest string) (string, bool, error) {
+	switch cmd {
 	case "/sessions":
 		reply, err := r.handleSessions(ctx, msg)
 		return reply, true, err
