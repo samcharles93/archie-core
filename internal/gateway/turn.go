@@ -142,37 +142,67 @@ func (r *TurnRunner) RespondStream(ctx context.Context, msg Message, stream Turn
 // verify.
 //
 // stream may be nil, which means the caller renders only the returned reply.
-func (r *TurnRunner) Run(ctx context.Context, msg Message, stream TurnStream) (string, error) {
-	if r.Router == nil {
-		return "", fmt.Errorf("chat turn router is not configured")
+// checkConfigured returns an error naming the first unconfigured
+// dependency Run requires.
+func (r *TurnRunner) checkConfigured() error {
+	switch {
+	case r.Router == nil:
+		return fmt.Errorf("chat turn router is not configured")
+	case r.Sessions == nil:
+		return fmt.Errorf("chat turn session store is not configured")
+	case r.Ledger == nil:
+		return fmt.Errorf("chat turn ledger is not configured")
+	case r.Models == nil:
+		return fmt.Errorf("chat turn model manager is not configured")
+	case r.Model == nil:
+		return fmt.Errorf("chat turn model is not configured")
 	}
-	if r.Sessions == nil {
-		return "", fmt.Errorf("chat turn session store is not configured")
-	}
-	if r.Ledger == nil {
-		return "", fmt.Errorf("chat turn ledger is not configured")
-	}
-	if r.Models == nil {
-		return "", fmt.Errorf("chat turn model manager is not configured")
-	}
-	if r.Model == nil {
-		return "", fmt.Errorf("chat turn model is not configured")
-	}
-	if err := r.recoverTurns(ctx); err != nil {
-		return "", fmt.Errorf("recover chat turns: %w", err)
-	}
+	return nil
+}
 
-	sessionID, err := r.Router.ResolveSessionKey(ctx, msg)
-	if err != nil {
-		return "", fmt.Errorf("resolve chat session: %w", err)
+// replayPriorReply returns the reply already recorded for a redelivered
+// message, if any. done is true when Run should return immediately with
+// (text, err); done is false when there is no prior reply to replay and
+// Run should continue generating one.
+func (r *TurnRunner) replayPriorReply(
+	ctx context.Context, turn TurnRecord, sessionID string, msg Message, history []Message, stream TurnStream,
+) (string, bool, error) {
+	prior := PriorReply(history, sessionID, msg.SourceID, r.BotUser)
+	if prior == "" && msg.SourceID != "" {
+		if replayStore, ok := r.Sessions.(TurnReplayStore); ok {
+			var err error
+			prior, err = replayStore.FindPriorReply(ctx, sessionID, msg.SourceID, r.BotUser)
+			if err != nil {
+				return "", true, r.failTurn(ctx, turn, fmt.Errorf("find prior chat reply: %w", err))
+			}
+		}
 	}
-	turnID, err := r.canonicalTurnID(ctx, sessionID, msg.SourceID)
-	if err != nil {
-		return "", fmt.Errorf("resolve canonical turn ID: %w", err)
+	if prior == "" {
+		return "", false, nil
 	}
-	if turnID == "" {
-		turnID = NewTurnID()
+	turn.Status = TurnStatusCompleted
+	turn.ResponseText = prior
+	turn.Error = ""
+	turn.UpdatedAt = time.Now().UTC()
+	if err := r.saveTurn(ctx, turn); err != nil {
+		return "", true, r.failTurn(ctx, turn, fmt.Errorf("save replayed chat turn: %w", err))
 	}
+	if r.Log != nil {
+		r.Log.Info("replaying the reply to a redelivered message",
+			"session", sessionID, "source_id", msg.SourceID)
+	}
+	if stream != nil {
+		stream.Delta(prior)
+	}
+	return prior, true, nil
+}
+
+// claimTurn claims the turn record, replaying a completed duplicate's
+// stream events and rejecting a still-in-progress duplicate. done is true
+// when Run should return turn.ResponseText immediately without generating.
+func (r *TurnRunner) claimTurn(
+	ctx context.Context, turnID, sessionID string, msg Message, stream TurnStream,
+) (TurnRecord, bool, error) {
 	turn, claim, err := r.Ledger.ClaimTurn(ctx, TurnRecord{
 		TurnID:    turnID,
 		SessionID: sessionID,
@@ -181,7 +211,7 @@ func (r *TurnRunner) Run(ctx context.Context, msg Message, stream TurnStream) (s
 		OwnerID:   r.OwnerID,
 	})
 	if err != nil {
-		return "", fmt.Errorf("claim chat turn: %w", err)
+		return TurnRecord{}, false, fmt.Errorf("claim chat turn: %w", err)
 	}
 	switch claim {
 	case TurnClaimCompleted:
@@ -193,51 +223,28 @@ func (r *TurnRunner) Run(ctx context.Context, msg Message, stream TurnStream) (s
 				stream.Delta(turn.ResponseText)
 			}
 		}
-		return turn.ResponseText, nil
+		return turn, true, nil
 	case TurnClaimInProgress:
-		return "", fmt.Errorf("%w: %s", ErrTurnInProgress, turn.TurnID)
+		return TurnRecord{}, false, fmt.Errorf("%w: %s", ErrTurnInProgress, turn.TurnID)
 	}
+	return turn, false, nil
+}
 
-	history, err := r.Sessions.RecentMessages(ctx, sessionID, 100)
-	if err != nil {
-		return "", r.failTurn(ctx, turn, fmt.Errorf("load chat history: %w", err))
-	}
-	prior := PriorReply(history, sessionID, msg.SourceID, r.BotUser)
-	if prior == "" && msg.SourceID != "" {
-		if replayStore, ok := r.Sessions.(TurnReplayStore); ok {
-			prior, err = replayStore.FindPriorReply(ctx, sessionID, msg.SourceID, r.BotUser)
-			if err != nil {
-				return "", r.failTurn(ctx, turn, fmt.Errorf("find prior chat reply: %w", err))
-			}
-		}
-	}
-	if prior != "" {
-		turn.Status = TurnStatusCompleted
-		turn.ResponseText = prior
-		turn.Error = ""
-		turn.UpdatedAt = time.Now().UTC()
-		if err := r.saveTurn(ctx, turn); err != nil {
-			return "", r.failTurn(ctx, turn, fmt.Errorf("save replayed chat turn: %w", err))
-		}
-		if r.Log != nil {
-			r.Log.Info("replaying the reply to a redelivered message",
-				"session", sessionID, "source_id", msg.SourceID)
-		}
-		if stream != nil {
-			stream.Delta(prior)
-		}
-		return prior, nil
-	}
-
+// recordInboundMessage assigns msg its canonical MessageID, persists it as
+// the turn's input on first sight, and folds it into history if it is not
+// already present there.
+func (r *TurnRunner) recordInboundMessage(
+	ctx context.Context, turn *TurnRecord, sessionID string, msg Message, history []Message,
+) (Message, []Message, error) {
 	msg.MessageID = messageIDForTurn(sessionID, msg)
 	if turn.InputMessageID == "" {
 		if err := r.Sessions.SaveMessage(ctx, sessionID, msg); err != nil {
-			return "", r.failTurn(ctx, turn, fmt.Errorf("save inbound chat message: %w", err))
+			return msg, history, fmt.Errorf("save inbound chat message: %w", err)
 		}
 		turn.InputMessageID = msg.MessageID
 		turn.UpdatedAt = time.Now().UTC()
-		if err := r.saveTurn(ctx, turn); err != nil {
-			return "", r.failTurn(ctx, turn, fmt.Errorf("save chat turn input: %w", err))
+		if err := r.saveTurn(ctx, *turn); err != nil {
+			return msg, history, fmt.Errorf("save chat turn input: %w", err)
 		}
 	} else {
 		msg.MessageID = turn.InputMessageID
@@ -245,7 +252,22 @@ func (r *TurnRunner) Run(ctx context.Context, msg Message, stream TurnStream) (s
 	if !messageInHistory(history, msg.SourceID) {
 		history = append(history, msg)
 	}
+	return msg, history, nil
+}
 
+// preparedTurn is the generation-ready state built from a turn's history:
+// the prepared model, its resolved details, and the compressed message
+// view (system prompt already prepended).
+type preparedTurn struct {
+	prepared     PreparedTurnModel
+	modelName    string
+	modelDetails ModelDetails
+	view         CompressedView
+}
+
+// prepareTurn builds the tools, system prompt, and compressed history view
+// for one turn's generation call.
+func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, msg Message, history []Message) (preparedTurn, error) {
 	compressed := compressTurnHistory(history, r.BotUser)
 	extraTools := append(
 		TaskTools(r.TaskLister, r.Tasks, r.TaskLogs, r.TaskActor, r.TaskIdentity),
@@ -257,19 +279,18 @@ func (r *TurnRunner) Run(ctx context.Context, msg Message, stream TurnStream) (s
 	modelName := r.Models.ActiveModel()
 	prepared, err := r.Model.Prepare(ctx, modelName, extraTools)
 	if err != nil {
-		return "", r.failTurn(ctx, turn, fmt.Errorf("build chat model: %w", err))
+		return preparedTurn{}, fmt.Errorf("build chat model: %w", err)
 	}
 	if prepared == nil {
-		return "", r.failTurn(ctx, turn, fmt.Errorf("build chat model: empty preparation"))
+		return preparedTurn{}, fmt.Errorf("build chat model: empty preparation")
 	}
-	toolInfo := prepared.ToolSummaries()
 	persona := ""
 	if r.Personas != nil {
 		persona = r.Personas.GetActive(sessionID)
 	}
 	systemPrompt := BuildSystemPrompt(SystemPromptConfig{
 		Persona:   persona,
-		Tools:     toolInfo,
+		Tools:     prepared.ToolSummaries(),
 		Channel:   r.Channel,
 		Model:     modelName,
 		SessionID: sessionID,
@@ -285,7 +306,7 @@ func (r *TurnRunner) Run(ctx context.Context, msg Message, stream TurnStream) (s
 		EstimateTokens(systemPrompt)+prepared.ToolSchemaTokens(),
 	)
 	if err != nil {
-		return "", r.failTurn(ctx, turn, fmt.Errorf("derive chat context budget: %w", err))
+		return preparedTurn{}, fmt.Errorf("derive chat context budget: %w", err)
 	}
 	if r.Log != nil && modelDetails.ContextWindow <= 0 {
 		r.Log.Warn("chat model has no context metadata; using compatibility compression budget",
@@ -305,10 +326,65 @@ func (r *TurnRunner) Run(ctx context.Context, msg Message, stream TurnStream) (s
 	view.Messages = append(
 		[]CompressedMessage{{Role: "system", Content: systemPrompt}}, view.Messages...,
 	)
+	return preparedTurn{prepared: prepared, modelName: modelName, modelDetails: modelDetails, view: view}, nil
+}
+
+func (r *TurnRunner) Run(ctx context.Context, msg Message, stream TurnStream) (string, error) {
+	if err := r.checkConfigured(); err != nil {
+		return "", err
+	}
+	if err := r.recoverTurns(ctx); err != nil {
+		return "", fmt.Errorf("recover chat turns: %w", err)
+	}
+
+	sessionID, err := r.Router.ResolveSessionKey(ctx, msg)
+	if err != nil {
+		return "", fmt.Errorf("resolve chat session: %w", err)
+	}
+	turnID, err := r.canonicalTurnID(ctx, sessionID, msg.SourceID)
+	if err != nil {
+		return "", fmt.Errorf("resolve canonical turn ID: %w", err)
+	}
+	if turnID == "" {
+		turnID = NewTurnID()
+	}
+	turn, done, err := r.claimTurn(ctx, turnID, sessionID, msg, stream)
+	if err != nil {
+		return "", err
+	}
+	if done {
+		return turn.ResponseText, nil
+	}
+
+	history, err := r.Sessions.RecentMessages(ctx, sessionID, 100)
+	if err != nil {
+		return "", r.failTurn(ctx, turn, fmt.Errorf("load chat history: %w", err))
+	}
+	if replayed, done, err := r.replayPriorReply(ctx, turn, sessionID, msg, history, stream); done {
+		return replayed, err
+	}
+
+	msg, history, err = r.recordInboundMessage(ctx, &turn, sessionID, msg, history)
+	if err != nil {
+		return "", r.failTurn(ctx, turn, err)
+	}
+
+	prep, err := r.prepareTurn(ctx, sessionID, msg, history)
+	if err != nil {
+		return "", r.failTurn(ctx, turn, err)
+	}
+	return r.generateAndComplete(ctx, turn, sessionID, prep, stream)
+}
+
+// generateAndComplete runs the model, persists the assistant message and
+// completed turn, and publishes the turn-completed event.
+func (r *TurnRunner) generateAndComplete(
+	ctx context.Context, turn TurnRecord, sessionID string, prep preparedTurn, stream TurnStream,
+) (string, error) {
 	recorder := &toolCallRecorder{next: stream}
-	text, err := prepared.Generate(ctx, TurnModelRequest{
-		Messages:        view.Messages,
-		MaxOutputTokens: modelDetails.MaxOutputTokens,
+	text, err := prep.prepared.Generate(ctx, TurnModelRequest{
+		Messages:        prep.view.Messages,
+		MaxOutputTokens: prep.modelDetails.MaxOutputTokens,
 	}, recorder)
 	if err != nil {
 		return "", r.failTurn(ctx, turn, err)
