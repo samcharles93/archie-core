@@ -7,7 +7,7 @@
 # task worktree mount, and authenticated NATS environment.
 
 # ── builder ───────────────────────────────────────────────────────────
-FROM golang:1.26-trixie AS builder
+FROM golang:1.27-trixie AS builder
 ARG RUNTIME_VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
