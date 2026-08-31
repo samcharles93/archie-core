@@ -20,7 +20,7 @@ import (
 type contextAwareUpdateStub struct {
 	updateStub
 	started    chan struct{}
-	installCtx context.Context
+	installCtx context.Context //nolint:containedctx // test double must observe which context reached Install
 }
 
 func (s *contextAwareUpdateStub) Install(ctx context.Context, _ releaseupdate.Snapshot, _ releaseupdate.InstallMeta, _ func(string)) (releaseupdate.Result, error) {
