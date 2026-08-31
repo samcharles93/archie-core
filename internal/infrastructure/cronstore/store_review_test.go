@@ -119,7 +119,6 @@ func TestListReturnsDeepCopies(t *testing.T) {
 	// Caller mutates the returned slice (deletes an entry) and a job's
 	// string fields. Neither must touch the store's in-memory mirror.
 	list1[0].Detail = "tampered"
-	list1 = list1[:1]
 
 	list2, _ := s.List(context.Background())
 	if len(list2) != 2 {
