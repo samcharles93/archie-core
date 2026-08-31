@@ -53,7 +53,7 @@ type Provenance struct {
 func (p *Provenance) record(o Origin) { p.Origins = append(p.Origins, o) }
 
 // Paths returns the contributing file paths in precedence order.
-func (p Provenance) Paths() []string {
+func (p *Provenance) Paths() []string {
 	paths := make([]string, 0, len(p.Origins))
 	for _, o := range p.Origins {
 		paths = append(paths, o.Path)
@@ -62,7 +62,7 @@ func (p Provenance) Paths() []string {
 }
 
 // String renders the full chain for diagnostics.
-func (p Provenance) String() string {
+func (p *Provenance) String() string {
 	if len(p.Origins) == 0 {
 		return "(no configuration files)"
 	}
