@@ -124,7 +124,7 @@ func markdownToBlocks(md string) []models.InputRichBlock {
 		return nil
 	}
 	p := &markdownBlockParser{}
-	for _, raw := range strings.Split(md, "\n") {
+	for raw := range strings.SplitSeq(md, "\n") {
 		p.handleLine(strings.TrimRight(raw, "\r"))
 	}
 	p.closeCode()

@@ -210,58 +210,14 @@ func findWalkVisitor(
 		default:
 		}
 
-		// Calculate depth relative to searchPath.
-		if p.MaxDepth > 0 && walkPath != searchPath {
-			relDepth := strings.Count(strings.TrimPrefix(walkPath, searchPath+string(filepath.Separator)), string(filepath.Separator))
-			if relDepth >= p.MaxDepth {
-				if d.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-		}
-
-		base := d.Name()
-		// Skip hidden entries like .git, .env, etc.
-		if strings.HasPrefix(base, ".") && walkPath != searchPath {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// Apply exclude filter to both files and directories.
-		if excludeRe != nil {
-			if excludeRe.MatchString(base) {
-				if d.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-		}
-
-		// Skip root directory itself.
 		if walkPath == searchPath {
+			return nil // skip root directory itself
+		}
+		if skip, skipErr := findSkipEntry(walkPath, d, searchPath, p, excludeRe); skip || skipErr != nil {
+			return skipErr
+		}
+		if !findMatchesFilters(d, p, patternRe) {
 			return nil
-		}
-
-		// Type filter.
-		switch p.Type {
-		case "file":
-			if d.IsDir() {
-				return nil
-			}
-		case "directory":
-			if !d.IsDir() {
-				return nil
-			}
-		}
-
-		// Pattern filter.
-		if patternRe != nil {
-			if !patternRe.MatchString(base) {
-				return nil
-			}
 		}
 
 		// Use path relative to cwd for output consistency.
@@ -272,6 +228,58 @@ func findWalkVisitor(
 		*matches = append(*matches, filepath.ToSlash(outputPath))
 		return nil
 	}
+}
+
+// findSkipEntry reports whether walkPath should be skipped entirely (depth
+// limit, hidden entry, exclude pattern), returning filepath.SkipDir as the
+// error when d is a directory so WalkDir does not descend into it.
+func findSkipEntry(walkPath string, d os.DirEntry, searchPath string, p FindParams, excludeRe *regexp.Regexp) (bool, error) {
+	skipOrDescend := func() error {
+		if d.IsDir() {
+			return filepath.SkipDir
+		}
+		return nil
+	}
+
+	// Calculate depth relative to searchPath.
+	if p.MaxDepth > 0 {
+		relDepth := strings.Count(strings.TrimPrefix(walkPath, searchPath+string(filepath.Separator)), string(filepath.Separator))
+		if relDepth >= p.MaxDepth {
+			return true, skipOrDescend()
+		}
+	}
+
+	base := d.Name()
+	// Skip hidden entries like .git, .env, etc.
+	if strings.HasPrefix(base, ".") {
+		return true, skipOrDescend()
+	}
+
+	// Apply exclude filter to both files and directories.
+	if excludeRe != nil && excludeRe.MatchString(base) {
+		return true, skipOrDescend()
+	}
+
+	return false, nil
+}
+
+// findMatchesFilters reports whether d passes the type and name-pattern
+// filters.
+func findMatchesFilters(d os.DirEntry, p FindParams, patternRe *regexp.Regexp) bool {
+	switch p.Type {
+	case "file":
+		if d.IsDir() {
+			return false
+		}
+	case "directory":
+		if !d.IsDir() {
+			return false
+		}
+	}
+	if patternRe != nil && !patternRe.MatchString(d.Name()) {
+		return false
+	}
+	return true
 }
 
 func isFdBinary(binary string) bool {
