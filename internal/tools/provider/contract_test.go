@@ -32,7 +32,7 @@ func TestToolProviderEngineContractExists(t *testing.T) {
 func TestArchiedWiresTypedProvidersAndExecutableConsumers(t *testing.T) {
 	t.Parallel()
 
-	mainPath := filepath.Join("..", "..", "..", "cmd", "archied", "main.go")
+	mainPath := filepath.Join("..", "..", "..", "internal", "app", "archied", "main.go")
 	source, err := os.ReadFile(mainPath)
 	if err != nil {
 		t.Fatalf("read archied main: %v", err)
@@ -43,7 +43,7 @@ func TestArchiedWiresTypedProvidersAndExecutableConsumers(t *testing.T) {
 	// Also check the chat composition files, which hold the chat-turn wiring
 	// extracted from main.go during the structural refactor.
 	for _, name := range []string{"telegram_setup.go", "chat_turn_model.go", "bootstrap.go"} {
-		path := filepath.Join("..", "..", "..", "cmd", "archied", name)
+		path := filepath.Join("..", "..", "..", "internal", "app", "archied", name)
 		source, readErr := os.ReadFile(path)
 		if readErr == nil {
 			text.WriteString(string(source))
