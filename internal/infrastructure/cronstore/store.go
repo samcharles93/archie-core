@@ -334,44 +334,57 @@ func (s *Store) Update(ctx context.Context, id string, patch Patch) error {
 			if s.buf[i].ID != id {
 				continue
 			}
-			if patch.Pool != nil {
-				s.buf[i].Pool = *patch.Pool
-			}
-			if patch.Detail != nil {
-				s.buf[i].Detail = *patch.Detail
-			}
-			if patch.Schedule != nil {
-				s.buf[i].Schedule = patch.Schedule.resolve()
-				// Schedule change: NextRun is stale. Recompute from
-				// the last run if there is one, else as a first run
-				// from now. Keeping it strictly future-of-now would
-				// re-fire a job the operator just shortened.
-				now := time.Now().UTC()
-				if s.buf[i].LastRun != nil {
-					next, err := s.buf[i].Schedule.nextRun(*s.buf[i].LastRun)
-					if err != nil {
-						return err
-					}
-					s.buf[i].NextRun = next.UTC()
-				} else {
-					next, err := s.buf[i].Schedule.firstRun(now)
-					if err != nil {
-						return err
-					}
-					s.buf[i].NextRun = next.UTC()
-				}
-			}
-			if patch.Target != nil {
-				s.buf[i].Target = *patch.Target
-			}
-			if patch.Payload != nil {
-				s.buf[i].Payload = *patch.Payload
+			if err := applyPatch(&s.buf[i], patch); err != nil {
+				return err
 			}
 			s.buf[i].Updated = time.Now().UTC()
 			return s.writeLocked()
 		}
 		return fmt.Errorf("%w: id %q", ErrJobNotFound, id)
 	})
+}
+
+// applyPatch overwrites record's non-nil Patch fields in place, recomputing
+// NextRun when Schedule changes.
+func applyPatch(record *JobSpec, patch Patch) error {
+	if patch.Pool != nil {
+		record.Pool = *patch.Pool
+	}
+	if patch.Detail != nil {
+		record.Detail = *patch.Detail
+	}
+	if patch.Schedule != nil {
+		if err := applyScheduleChange(record, patch.Schedule); err != nil {
+			return err
+		}
+	}
+	if patch.Target != nil {
+		record.Target = *patch.Target
+	}
+	if patch.Payload != nil {
+		record.Payload = *patch.Payload
+	}
+	return nil
+}
+
+// applyScheduleChange sets record's Schedule and recomputes NextRun, which
+// is stale once Schedule changes. Recomputed from the last run if there is
+// one, else as a first run from now — keeping it strictly future-of-now
+// would re-fire a job the operator just shortened.
+func applyScheduleChange(record *JobSpec, schedule *Schedule) error {
+	record.Schedule = schedule.resolve()
+	var next time.Time
+	var err error
+	if record.LastRun != nil {
+		next, err = record.Schedule.nextRun(*record.LastRun)
+	} else {
+		next, err = record.Schedule.firstRun(time.Now().UTC())
+	}
+	if err != nil {
+		return err
+	}
+	record.NextRun = next.UTC()
+	return nil
 }
 
 // Delete removes the job by id. Idempotent: deleting a missing id
