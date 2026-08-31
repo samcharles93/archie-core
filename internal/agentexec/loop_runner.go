@@ -172,7 +172,6 @@ func pluginToolSet(req Request, workspace string, occupied ...core.ToolSet) (cor
 	if req.ReadOnly || len(req.Protection.Suffixes)+len(req.Protection.Globs) > 0 || len(req.Gate.Commands) > 0 {
 		return nil, nil
 	}
-	const params = `{"type":"object","properties":{"input":{"type":"string"}},"required":["input"]}`
 	builtins := toolkit.NewRegistry()
 	if err := toolkit.RegisterBuiltins(builtins, workspace); err != nil {
 		return nil, fmt.Errorf("register built-in tools for plugin collision check: %w", err)
@@ -192,17 +191,13 @@ func pluginToolSet(req Request, workspace string, occupied ...core.ToolSet) (cor
 			}
 		}
 		plugin := skill.Plugin{Name: spec.Name, Src: spec.Src}
-		set[spec.Name] = core.NewTool(
+		set[spec.Name] = core.NewTypedTool(
 			spec.Name,
 			"Run the project-bundled "+spec.Name+" plugin.",
-			json.RawMessage(params),
-			func(_ context.Context, input string) (string, error) {
-				var args struct {
-					Input string `json:"input"`
-				}
-				if err := json.Unmarshal([]byte(input), &args); err != nil {
-					return spec.Name + " rejected: arguments must be a JSON object with an input field", nil //nolint:nilerr // rejection feedback lets the model retry with valid arguments
-				}
+			func(_ context.Context, args struct {
+				Input string `json:"input"`
+			},
+			) (string, error) {
 				return plugin.Run(args.Input)
 			},
 		)
@@ -321,22 +316,20 @@ func validateCaptureArgs(spec CaptureTool, value json.RawMessage) (string, bool)
 // to scan for secrets") actually executes a .go helper without a Go
 // toolchain in the sandbox.
 func scriptToolSet(workspace string) core.ToolSet {
-	const params = `{"type":"object","properties":{"path":{"type":"string","description":"Path to the .go script, relative to the workspace root."}},"required":["path"]}`
 	return core.ToolSet{
-		"run_go_script": core.NewTool(
+		"run_go_script": core.NewTypedTool(
 			"run_go_script",
 			"Run a Yaegi-interpreted Go script (e.g. a skill's bundled scripts/*.go helper) and return everything it printed.",
-			json.RawMessage(params),
-			func(ctx context.Context, input string) (string, error) {
-				var args struct {
-					Path string `json:"path"`
-				}
-				if err := json.Unmarshal([]byte(input), &args); err != nil || strings.TrimSpace(args.Path) == "" {
-					return "run_go_script rejected: arguments must be a JSON object with a non-empty path field", nil //nolint:nilerr // same: a rejection message lets the model retry with a valid path
+			func(ctx context.Context, args struct {
+				Path string `json:"path" jsonschema:"description=Path to the .go script, relative to the workspace root."`
+			},
+			) (string, error) {
+				if strings.TrimSpace(args.Path) == "" {
+					return "run_go_script rejected: arguments must be a JSON object with a non-empty path field", nil
 				}
 				full := filepath.Join(workspace, args.Path)
 				if rel, err := filepath.Rel(workspace, full); err != nil || strings.HasPrefix(rel, "..") {
-					return "run_go_script rejected: path escapes the workspace", nil //nolint:nilerr // same: a rejection message lets the model retry with a valid path
+					return "run_go_script rejected: path escapes the workspace", nil //nolint:nilerr // rejection feedback lets the model retry with a valid path
 				}
 				out, err := skillscript.RunContext(ctx, full)
 				if err != nil {
