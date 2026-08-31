@@ -18,12 +18,15 @@ tests, persistence, and runtime wiring.
 
 ```text
 internal/domain/
-  identity/
-  agent/
+  identity/    (approved, not yet materialised as a package)
+  agent/       (approved, not yet materialised as a package)
   workflow/
-  messaging/
+  messaging/   (canonical Message/Conversation types only; gateway migration pending, see section 2)
   workintake/
-  plugin/
+  plugin/      (approved, not yet materialised as a package)
+  curator/
+  mapping/
+  scheduling/
 ```
 
 - `identity` owns persistent actors, lifecycle, ownership, attribution, and
@@ -43,6 +46,30 @@ internal/domain/
 - `plugin` owns generic plugin identity, discovery, compatibility, and lifecycle
   mechanics. It remains metadata-only; capability semantics and typed
   registration belong to the owning domain.
+- `curator` owns the curator engine family: long-running agent loops that
+  reason over memory and perform maintenance tasks on a declared shape
+  (check-in interval, tool set, attached memory engine). See epic
+  archie-core-yp9.
+- `mapping` owns the payload field-mapping vocabulary: binding named fields to
+  JSON paths inside a captured webhook payload, and detecting drift. See
+  `docs/prds/payload-field-mapping.md`.
+- `scheduling` owns the ticker engine: deciding when a scheduled job runs and
+  with what concurrency. It declares `JobSource`/`Runner` contracts and owns
+  no storage or delivery. See epic archie-core-1786637496320-249-be6d9a20.
+
+**Reconciliation (2026-08-31):** `curator`, `mapping`, and `scheduling` existed
+in the tree without being added to this list when their epics landed. They are
+confirmed as legitimate, narrowly-scoped domains under the same rules as the
+original six — each owns one capability family, declares typed contracts, and
+has no cross-domain reach. This list was out of date, not the tree.
+
+Conversely, `identity`, `agent`, `messaging`, and `plugin` are approved target
+domains that do not yet exist as packages. Their behaviour currently lives in
+pre-migration packages (see "Complete package destination map" below for the
+full inventory). Do **not** create empty stub packages for them ahead of an
+actual migration PR — an unused stub is dead code and gives no test coverage.
+Each materialises when its corresponding migration decision below is resolved
+and implemented in the same change.
 
 Memory's final package placement remains undecided pending focused review of the
 existing implementation.
@@ -104,6 +131,30 @@ implementation evidence:
 - parent and child transcript isolation;
 - normal scoped-memory behaviour regardless of the originating Conversation;
 - Messaging and Work Intake ownership.
+
+**Decision (2026-08-31), resolving the open questions above:**
+
+`internal/gateway/` is the "parallel gateway session implementation" this
+section names. It is retained as-is for now — a big-bang rewrite of live
+session/compression/approval/branch logic across Telegram, web UI, email, and
+webhook channels in one change is exactly the "convoluted to satisfy edge
+cases" failure mode CLAUDE.md's Revert-on-Flail rule warns about, and would
+risk silent behavioural regressions in the one path every user-facing message
+travels through.
+
+Instead, `internal/domain/messaging/` is materialised now with the pieces
+that are already decided and don't require touching gateway: the canonical
+`Message` and `Conversation` types (composite Conversation identity, immutable
+`MessageID`, typed tool-call/tool-result message variants, branch lineage via
+`ParentConversationID`/`ForkMessageID`). These are pure domain types with no
+gateway dependency — a new package, not a rewrite of an existing one.
+
+Migrating `internal/gateway/`'s session, compression, approval, and branch
+logic onto these types is real, cross-channel-risk work and is **not** done in
+this pass. It is tracked as separate, appropriately-scoped bd issues (see
+`bd list --label messaging-migration`), sequenced channel-by-channel so each
+lands with its own behavioural verification instead of one large diff no one
+can safely review.
 
 ### 3. Identity data migration
 
