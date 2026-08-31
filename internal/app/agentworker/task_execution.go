@@ -83,6 +83,10 @@ func (h *hybridTrees) ChangedFiles(ctx context.Context, dir, base string) ([]str
 	return h.local.ChangedFiles(ctx, dir, base)
 }
 
+func (h *hybridTrees) Snapshot(ctx context.Context, dir, destDir string) error {
+	return h.local.Snapshot(ctx, dir, destDir)
+}
+
 func (h *hybridTrees) ChangedLines(ctx context.Context, dir, base string) (int, error) {
 	return h.local.ChangedLines(ctx, dir, base)
 }
@@ -205,6 +209,7 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 		Store:        dependencies.store,
 		Trees:        trees,
 		Agent:        agent,
+		Reviewer:     newReviewerFor(req),
 		Bus:          bus,
 		Log:          log,
 		CustomStages: wfeval.Discover,

@@ -186,6 +186,7 @@ func Implement() Workflow {
 			}),
 			StageYaegiGate(),
 			StageDiffCap(),
+			StageReview(),
 			StageOpenPR(func(tc *TaskContext) string {
 				return fmt.Sprintf("%s\n\n---\n*workflow: implement · %d iterations · %d tokens*",
 					tc.BuildSummary, tc.Task.Iterations, tc.Task.TokensUsed)

@@ -22,6 +22,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -594,6 +595,74 @@ func (m *Manager) ChangedFiles(ctx context.Context, dir, base string) ([]string,
 		files = append(files, name)
 	}
 	return files, nil
+}
+
+// Snapshot exports HEAD's tracked files into a fresh, empty destDir with no
+// .git directory: file contents only, no commit history, branch name, or
+// reflog. Used to build the adversarial reviewer's isolated workspace
+// (docs/prds/adversarial-self-review.md section 1) -- stripping .git is
+// what makes the implementer's reasoning (commit messages, branch name,
+// history) structurally unreachable rather than merely undisclosed.
+func (m *Manager) Snapshot(ctx context.Context, dir, destDir string) error {
+	r, err := git.PlainOpen(dir)
+	if err != nil {
+		return fmt.Errorf("open worktree: %w", err)
+	}
+	head, err := r.Head()
+	if err != nil {
+		return fmt.Errorf("resolve HEAD: %w", err)
+	}
+	commit, err := r.CommitObject(head.Hash())
+	if err != nil {
+		return fmt.Errorf("load HEAD commit: %w", err)
+	}
+	tree, err := commit.Tree()
+	if err != nil {
+		return fmt.Errorf("load HEAD tree: %w", err)
+	}
+
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return fmt.Errorf("create snapshot directory: %w", err)
+	}
+
+	files := tree.Files()
+	defer files.Close()
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		file, iterErr := files.Next()
+		if errors.Is(iterErr, io.EOF) {
+			break
+		}
+		if iterErr != nil {
+			return fmt.Errorf("walk HEAD tree: %w", iterErr)
+		}
+		if err := writeSnapshotFile(destDir, file); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeSnapshotFile writes one tracked file's blob content to destDir,
+// preserving its relative path and creating parent directories as needed.
+func writeSnapshotFile(destDir string, file *object.File) error {
+	target := filepath.Join(destDir, filepath.FromSlash(file.Name))
+	if rel, relErr := filepath.Rel(destDir, target); relErr != nil || strings.HasPrefix(rel, "..") {
+		return fmt.Errorf("snapshot: tracked path %q escapes destination", file.Name)
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return fmt.Errorf("create snapshot subdirectory for %s: %w", file.Name, err)
+	}
+	contents, err := file.Contents()
+	if err != nil {
+		return fmt.Errorf("read tracked file %s: %w", file.Name, err)
+	}
+	if err := os.WriteFile(target, []byte(contents), 0o644); err != nil {
+		return fmt.Errorf("write snapshot file %s: %w", file.Name, err)
+	}
+	return nil
 }
 
 // Cleanup removes a task's worktree (merged/rejected); parked worktrees

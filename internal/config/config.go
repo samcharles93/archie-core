@@ -96,6 +96,13 @@ type Repo struct {
 	// won't collide (e.g. different base branches or packages per
 	// task). Still bounded by [containers].max_concurrency globally.
 	AllowConcurrent bool `toml:"allow_concurrent" json:"allow_concurrent" yaml:"allow_concurrent"`
+	// ReviewEnabled opts this repo into the adversarial self-review stage
+	// (docs/prds/adversarial-self-review.md): a fresh reviewer agent, with
+	// no path to the implementer's context, runs after gates pass and
+	// before the PR opens. Default false -- an uncalibrated reviewer that
+	// cries wolf is worse than no review, so a repo opts in once it
+	// trusts the stage.
+	ReviewEnabled bool `toml:"review_enabled" json:"review_enabled" yaml:"review_enabled"`
 }
 
 // Protected reports whether path matches a protected suffix.

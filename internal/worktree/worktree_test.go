@@ -494,6 +494,42 @@ func TestOperationsOnNonRepository(t *testing.T) {
 // The diff must be measured from the merge base, not from the remote tip.
 // Otherwise commits landed on the base branch after the task started are
 // attributed to the task and can trip the diff-size cap.
+func TestSnapshotExportsTrackedFilesWithoutGit(t *testing.T) {
+	ctx := context.Background()
+	host := newLocalRemote(t, "acme", "todo")
+	m := newManager(t, host)
+
+	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 9, "feat: snapshot me", "", "feature")
+	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "pkg"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "pkg", "file.go"), []byte("package pkg\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.CommitAll(ctx, dir, "feat: add pkg/file.go"); err != nil {
+		t.Fatalf("CommitAll() error = %v", err)
+	}
+
+	dest := filepath.Join(t.TempDir(), "snapshot")
+	if err := m.Snapshot(ctx, dir, dest); err != nil {
+		t.Fatalf("Snapshot() error = %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(dest, "pkg", "file.go"))
+	if err != nil {
+		t.Fatalf("read snapshotted file: %v", err)
+	}
+	if string(content) != "package pkg\n" {
+		t.Errorf("snapshotted content = %q, want %q", content, "package pkg\n")
+	}
+	if _, err := os.Stat(filepath.Join(dest, ".git")); !os.IsNotExist(err) {
+		t.Errorf("Snapshot() destination contains .git, want it stripped (stat err = %v)", err)
+	}
+}
+
 func TestDiffUsesMergeBaseNotRemoteTip(t *testing.T) {
 	ctx := context.Background()
 	host := newLocalRemote(t, "acme", "todo")

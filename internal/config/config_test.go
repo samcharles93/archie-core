@@ -204,6 +204,7 @@ func TestRepoJSONRoundTrip(t *testing.T) {
 		PersistentStorage: true,
 		MaxRetries:        4,
 		AllowConcurrent:   true,
+		ReviewEnabled:     true,
 	}
 
 	data, err := json.Marshal(repo)
@@ -223,6 +224,7 @@ func TestRepoJSONRoundTrip(t *testing.T) {
 		"persistent_storage",
 		"max_retries",
 		"allow_concurrent",
+		"review_enabled",
 	)
 
 	var got Repo
