@@ -345,18 +345,8 @@ func (r *Router) dispatchLocal(ctx context.Context, msg Message, text, cmd strin
 		reply, err := r.handleApproveCommand(ctx, rest)
 		return reply, true, err
 	case "/deny":
-		if r.Dangerous == nil {
-			return "Dangerous approvals are not configured.", true, nil
-		}
-		fields := strings.Fields(rest)
-		if len(fields) != 1 {
-			return "Usage: /deny <action-id>", true, nil
-		}
-		result, err := r.Dangerous.Decide(ctx, fields[0], "deny")
-		if err != nil {
-			return fmt.Sprintf("Cannot deny action: %v", err), true, nil
-		}
-		return result, true, nil
+		reply, err := r.handleDeny(ctx, rest)
+		return reply, true, err
 	case "/cancel":
 		reply, err := r.handleCancel(ctx, rest)
 		return reply, true, err
@@ -384,29 +374,60 @@ func (r *Router) dispatchLocal(ctx context.Context, msg Message, text, cmd strin
 	case "/help":
 		return r.helpText(), true, nil
 	case "/version":
-		if r.Version == "" {
-			return "Version information is not configured.", true, nil
-		}
-		return r.Version, true, nil
+		return r.handleVersion(), true, nil
 	case "/update":
-		if r.Updates == nil {
-			return "Updates are not configured.", true, nil
-		}
-		snapshot, err := r.Updates.Check(ctx, 0)
-		if err != nil {
-			return fmt.Sprintf("Could not check for updates: %v", err), true, nil
-		}
-		return releaseupdate.FormatSnapshot(snapshot), true, nil
+		return r.handleUpdateCheck(ctx), true, nil
 	case "/restart":
-		if r.Restart == nil {
-			return "Chat adapter restart is not configured.", true, nil
-		}
-		if err := r.Restart(ctx); err != nil {
-			return fmt.Sprintf("Could not restart the chat adapter: %v", err), true, nil
-		}
-		return "Chat adapter reload requested.", true, nil
+		return r.handleRestartAdapter(ctx), true, nil
 	}
 	return r.dispatchSessionCommand(ctx, msg, cmd, rest)
+}
+
+// handleDeny denies a pending dangerous action by ID.
+func (r *Router) handleDeny(ctx context.Context, rest string) (string, error) {
+	if r.Dangerous == nil {
+		return "Dangerous approvals are not configured.", nil
+	}
+	fields := strings.Fields(rest)
+	if len(fields) != 1 {
+		return "Usage: /deny <action-id>", nil
+	}
+	result, err := r.Dangerous.Decide(ctx, fields[0], "deny")
+	if err != nil {
+		return fmt.Sprintf("Cannot deny action: %v", err), nil
+	}
+	return result, nil
+}
+
+// handleVersion reports the configured build version.
+func (r *Router) handleVersion() string {
+	if r.Version == "" {
+		return "Version information is not configured."
+	}
+	return r.Version
+}
+
+// handleUpdateCheck reports the latest available update snapshot.
+func (r *Router) handleUpdateCheck(ctx context.Context) string {
+	if r.Updates == nil {
+		return "Updates are not configured."
+	}
+	snapshot, err := r.Updates.Check(ctx, 0)
+	if err != nil {
+		return fmt.Sprintf("Could not check for updates: %v", err)
+	}
+	return releaseupdate.FormatSnapshot(snapshot)
+}
+
+// handleRestartAdapter reloads the chat adapter.
+func (r *Router) handleRestartAdapter(ctx context.Context) string {
+	if r.Restart == nil {
+		return "Chat adapter restart is not configured."
+	}
+	if err := r.Restart(ctx); err != nil {
+		return fmt.Sprintf("Could not restart the chat adapter: %v", err)
+	}
+	return "Chat adapter reload requested."
 }
 
 // dispatchSessionCommand handles the session-lifecycle command group

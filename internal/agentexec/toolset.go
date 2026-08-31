@@ -244,41 +244,8 @@ func toolExecute(entry tools.ToolEntry, opts ToolSetOptions) func(context.Contex
 			}
 		}
 		if entry.Classification.IsApprovalRequired() {
-			if opts.Approval == nil {
-				return "", fmt.Errorf("tool %s requires approval but no approver is configured", entry.Name)
-			}
-			approveCtx, cancel := context.WithTimeout(ctx, tools.ToolApprovalTimeout)
-			defer cancel()
-			desc := entry.Description
-			if entry.BuildApprovalDescription != nil {
-				desc = entry.BuildApprovalDescription(args)
-			}
-			decision, err := opts.Approval.RequestApproval(approveCtx, entry.Name, desc)
-			if err != nil {
-				// Distinguish a tool-level timeout (our own deadline)
-				// from a turn-level cancellation (/stop). A turn
-				// cancellation must propagate as a context error; a
-				// tool timeout must surface as a plain error so the
-				// model can report it instead of the turn aborting.
-				if (errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)) && ctx.Err() == nil {
-					return "", fmt.Errorf("tool %s: approval timed out after %v", entry.Name, tools.ToolApprovalTimeout)
-				}
-				return "", fmt.Errorf("tool %s: approval: %w", entry.Name, err)
-			}
-			switch decision {
-			case tools.ApprovalApproved, tools.ApprovalPermanentlyApproved:
-				// Fall through to execution. PermanentlyApproved is
-				// handled by the adapter caching the decision; the
-				// dispatch layer treats both the same.
-			case tools.ApprovalDenied:
-				return "", fmt.Errorf("tool %s: %w", entry.Name, tools.ErrApprovalDenied)
-			default:
-				// Fail closed: an unrecognised decision value from
-				// a faulty or future Approver must not execute the
-				// tool. ApprovalDecision is an exported int type,
-				// so a value returned with nil error is a defect
-				// in the approver, not a grant.
-				return "", fmt.Errorf("tool %s: approval returned unexpected decision %v", entry.Name, decision)
+			if err := requireApproval(ctx, entry, opts, args); err != nil {
+				return "", err
 			}
 		}
 		out, err := entry.Handler(ctx, args)
@@ -292,5 +259,45 @@ func toolExecute(entry tools.ToolEntry, opts ToolSetOptions) func(context.Contex
 
 		payload := tools.CapPayload(entry.Name, string(data), limit, opts.SpillDir)
 		return payload, nil
+	}
+}
+
+// requireApproval blocks until entry's approval is granted, returning an
+// error if it is denied, times out, or the approver misbehaves.
+func requireApproval(ctx context.Context, entry tools.ToolEntry, opts ToolSetOptions, args map[string]any) error {
+	if opts.Approval == nil {
+		return fmt.Errorf("tool %s requires approval but no approver is configured", entry.Name)
+	}
+	approveCtx, cancel := context.WithTimeout(ctx, tools.ToolApprovalTimeout)
+	defer cancel()
+	desc := entry.Description
+	if entry.BuildApprovalDescription != nil {
+		desc = entry.BuildApprovalDescription(args)
+	}
+	decision, err := opts.Approval.RequestApproval(approveCtx, entry.Name, desc)
+	if err != nil {
+		// Distinguish a tool-level timeout (our own deadline) from a
+		// turn-level cancellation (/stop). A turn cancellation must
+		// propagate as a context error; a tool timeout must surface as
+		// a plain error so the model can report it instead of the turn
+		// aborting.
+		if (errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)) && ctx.Err() == nil {
+			return fmt.Errorf("tool %s: approval timed out after %v", entry.Name, tools.ToolApprovalTimeout)
+		}
+		return fmt.Errorf("tool %s: approval: %w", entry.Name, err)
+	}
+	switch decision {
+	case tools.ApprovalApproved, tools.ApprovalPermanentlyApproved:
+		// PermanentlyApproved is handled by the adapter caching the
+		// decision; the dispatch layer treats both the same.
+		return nil
+	case tools.ApprovalDenied:
+		return fmt.Errorf("tool %s: %w", entry.Name, tools.ErrApprovalDenied)
+	default:
+		// Fail closed: an unrecognised decision value from a faulty or
+		// future Approver must not execute the tool. ApprovalDecision is
+		// an exported int type, so a value returned with nil error is a
+		// defect in the approver, not a grant.
+		return fmt.Errorf("tool %s: approval returned unexpected decision %v", entry.Name, decision)
 	}
 }
