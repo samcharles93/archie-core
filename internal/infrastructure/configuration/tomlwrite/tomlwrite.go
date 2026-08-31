@@ -89,11 +89,51 @@ func Generate(template []byte, edits []Edit) ([]byte, error) {
 // edit's table, and returns the result. See the package doc for the
 // matching and placement rules, and their limitations.
 func Apply(src []byte, edits []Edit) ([]byte, error) {
+	pending, order, err := collectPending(edits)
+	if err != nil {
+		return nil, err
+	}
+
+	trailingNewline := len(src) == 0 || src[len(src)-1] == '\n'
+	text := strings.TrimSuffix(string(src), "\n")
+	var lines []string
+	if text != "" || len(src) > 0 {
+		lines = strings.Split(text, "\n")
+	}
+
+	a := &applier{
+		lines:       lines,
+		pending:     pending,
+		order:       order,
+		replace:     map[int]string{},
+		insertAfter: map[int][]string{},
+	}
+	a.indexTables()
+
+	tables := make([]string, 0, len(order))
+	for t := range order {
+		tables = append(tables, t)
+	}
+	sort.Strings(tables)
+	for _, t := range tables {
+		a.resolveTable(t)
+	}
+
+	result := a.render()
+	if trailingNewline {
+		result += "\n"
+	}
+	return []byte(result), nil
+}
+
+// collectPending groups edits by table and key, and records each table's
+// keys in the caller's edit order for deterministic appends.
+func collectPending(edits []Edit) (map[string]map[string]string, map[string][]string, error) {
 	pending := map[string]map[string]string{}
-	order := map[string][]string{} // preserves caller's edit order per table for deterministic appends
+	order := map[string][]string{}
 	for _, e := range edits {
 		if e.Key == "" {
-			return nil, fmt.Errorf("tomlwrite: edit has empty key (table %q)", e.Table)
+			return nil, nil, fmt.Errorf("tomlwrite: edit has empty key (table %q)", e.Table)
 		}
 		t := pending[e.Table]
 		if t == nil {
@@ -105,18 +145,30 @@ func Apply(src []byte, edits []Edit) ([]byte, error) {
 		}
 		t[e.Key] = e.Value
 	}
+	return pending, order, nil
+}
 
-	trailingNewline := len(src) == 0 || src[len(src)-1] == '\n'
-	text := strings.TrimSuffix(string(src), "\n")
-	var lines []string
-	if text != "" || len(src) > 0 {
-		lines = strings.Split(text, "\n")
-	}
+// applier holds the line-indexed state Apply threads through resolving
+// each edited table: which table each line belongs to (active or
+// commented-out), and the accumulated replace/insert/append operations.
+type applier struct {
+	lines            []string
+	pending          map[string]map[string]string
+	order            map[string][]string
+	activeTableAt    []string
+	commentedTableAt []string
+	replace          map[int]string
+	insertAfter      map[int][]string
+	appendBlocks     [][]string
+}
 
-	activeTableAt := make([]string, len(lines))
-	commentedTableAt := make([]string, len(lines))
+// indexTables computes, for every line, which active or commented-out
+// table it belongs to.
+func (a *applier) indexTables() {
+	a.activeTableAt = make([]string, len(a.lines))
+	a.commentedTableAt = make([]string, len(a.lines))
 	activeTable, commentedTable := "", ""
-	for i, line := range lines {
+	for i, line := range a.lines {
 		switch {
 		case activeHeaderRe.MatchString(line):
 			activeTable = activeHeaderRe.FindStringSubmatch(line)[1]
@@ -126,139 +178,136 @@ func Apply(src []byte, edits []Edit) ([]byte, error) {
 		case strings.TrimSpace(line) == "":
 			commentedTable = ""
 		}
-		activeTableAt[i] = activeTable
-		commentedTableAt[i] = commentedTable
+		a.activeTableAt[i] = activeTable
+		a.commentedTableAt[i] = commentedTable
+	}
+}
+
+// resolveTable satisfies every pending edit for one table, in priority
+// order: rewrite an active "key = value" line, else uncomment a commented
+// one (and its header), else append a new key.
+func (a *applier) resolveTable(table string) {
+	keys := a.order[table]
+	if len(keys) == 0 {
+		return
+	}
+	remaining := map[string]bool{}
+	for _, k := range keys {
+		remaining[k] = true
 	}
 
-	replace := map[int]string{}
-	insertAfter := map[int][]string{}
-	var appendBlocks [][]string
+	a.matchActiveKeys(table, remaining)
+	if len(remaining) == 0 {
+		return
+	}
+	headerLine := a.uncommentKeys(table, remaining)
+	if len(remaining) == 0 {
+		return
+	}
+	a.appendMissingKeys(table, keys, remaining, headerLine)
+}
 
-	resolveTable := func(table string) {
-		keys := order[table]
-		if len(keys) == 0 {
-			return
+// matchActiveKeys rewrites every remaining key that already has an active
+// "key = value" line in table, removing it from remaining.
+func (a *applier) matchActiveKeys(table string, remaining map[string]bool) {
+	for i, line := range a.lines {
+		if a.activeTableAt[i] != table {
+			continue
 		}
-		remaining := map[string]bool{}
-		for _, k := range keys {
-			remaining[k] = true
+		m := activeKeyRe.FindStringSubmatch(line)
+		if m == nil || !remaining[m[2]] {
+			continue
 		}
+		a.replace[i] = m[1] + m[2] + m[3] + a.pending[table][m[2]] + trailingComment(m[4])
+		delete(remaining, m[2])
+	}
+}
 
-		// 1) active "key = value" lines in this table.
-		for i, line := range lines {
-			if activeTableAt[i] != table {
-				continue
-			}
-			m := activeKeyRe.FindStringSubmatch(line)
-			if m == nil || !remaining[m[2]] {
-				continue
-			}
-			replace[i] = m[1] + m[2] + m[3] + pending[table][m[2]] + trailingComment(m[4])
-			delete(remaining, m[2])
+// uncommentKeys rewrites every remaining key that has a commented-out
+// "# key = value" line in table, uncommenting the table header (once) and
+// the key line, removing matched keys from remaining. Returns the header
+// line index, or -1 if table has no commented header.
+func (a *applier) uncommentKeys(table string, remaining map[string]bool) int {
+	headerLine := -1
+	for i, line := range a.lines {
+		if a.commentedTableAt[i] == table && commentedHeaderRe.MatchString(line) {
+			headerLine = i // last matching header wins; there should only be one
 		}
-		if len(remaining) == 0 {
-			return
+	}
+	for i, line := range a.lines {
+		if a.commentedTableAt[i] != table {
+			continue
 		}
+		if commentedHeaderRe.MatchString(line) {
+			continue
+		}
+		m := commentedKeyRe.FindStringSubmatch(line)
+		if m == nil || !remaining[m[2]] {
+			continue
+		}
+		if headerLine >= 0 {
+			if _, done := a.replace[headerLine]; !done {
+				a.replace[headerLine] = "[" + table + "]"
+			}
+		}
+		a.replace[i] = m[1] + m[2] + m[3] + a.pending[table][m[2]] + trailingComment(m[4])
+		delete(remaining, m[2])
+	}
+	return headerLine
+}
 
-		// 2) commented "# key = value" lines in this table -- uncomment
-		// the header (once) and the key line.
-		headerLine := -1
-		for i, line := range lines {
-			if commentedTableAt[i] == table && commentedHeaderRe.MatchString(line) {
-				headerLine = i // last matching header wins; there should only be one
-			}
+// appendMissingKeys adds every key in remaining that no line in table
+// satisfied: after the table's last active line, after its header if it
+// only exists commented-out, or as a brand-new table block.
+func (a *applier) appendMissingKeys(table string, keys []string, remaining map[string]bool, headerLine int) {
+	var toAdd []string
+	for _, k := range keys {
+		if remaining[k] {
+			toAdd = append(toAdd, k)
 		}
-		lastCommentedLine := -1
-		for i, line := range lines {
-			if commentedTableAt[i] != table {
-				continue
-			}
-			if commentedHeaderRe.MatchString(line) {
-				lastCommentedLine = i
-				continue
-			}
-			m := commentedKeyRe.FindStringSubmatch(line)
-			if m == nil {
-				lastCommentedLine = i
-				continue
-			}
-			lastCommentedLine = i
-			if !remaining[m[2]] {
-				continue
-			}
-			if headerLine >= 0 {
-				if _, done := replace[headerLine]; !done {
-					replace[headerLine] = "[" + table + "]"
-				}
-			}
-			replace[i] = m[1] + m[2] + m[3] + pending[table][m[2]] + trailingComment(m[4])
-			delete(remaining, m[2])
-		}
-		if len(remaining) == 0 {
-			return
-		}
-
-		// 3) key not found anywhere -- add it.
-		var toAdd []string
-		for _, k := range keys {
-			if remaining[k] {
-				toAdd = append(toAdd, k)
-			}
-		}
-		sort.Strings(toAdd)
-		var newLines []string
-		for _, k := range toAdd {
-			newLines = append(newLines, k+" = "+pending[table][k])
-		}
-
-		lastActiveLine := -1
-		for i := range lines {
-			if activeTableAt[i] == table {
-				lastActiveLine = i
-			}
-		}
-		switch {
-		case lastActiveLine >= 0:
-			insertAfter[lastActiveLine] = append(insertAfter[lastActiveLine], newLines...)
-		case headerLine >= 0:
-			if _, done := replace[headerLine]; !done {
-				replace[headerLine] = "[" + table + "]"
-			}
-			insertAfter[headerLine] = append(insertAfter[headerLine], newLines...)
-		default:
-			block := append([]string{"", "[" + table + "]"}, newLines...)
-			appendBlocks = append(appendBlocks, block)
-		}
-		_ = lastCommentedLine
+	}
+	sort.Strings(toAdd)
+	var newLines []string
+	for _, k := range toAdd {
+		newLines = append(newLines, k+" = "+a.pending[table][k])
 	}
 
-	tables := make([]string, 0, len(order))
-	for t := range order {
-		tables = append(tables, t)
+	lastActiveLine := -1
+	for i := range a.lines {
+		if a.activeTableAt[i] == table {
+			lastActiveLine = i
+		}
 	}
-	sort.Strings(tables)
-	for _, t := range tables {
-		resolveTable(t)
+	switch {
+	case lastActiveLine >= 0:
+		a.insertAfter[lastActiveLine] = append(a.insertAfter[lastActiveLine], newLines...)
+	case headerLine >= 0:
+		if _, done := a.replace[headerLine]; !done {
+			a.replace[headerLine] = "[" + table + "]"
+		}
+		a.insertAfter[headerLine] = append(a.insertAfter[headerLine], newLines...)
+	default:
+		block := append([]string{"", "[" + table + "]"}, newLines...)
+		a.appendBlocks = append(a.appendBlocks, block)
 	}
+}
 
-	out := make([]string, 0, len(lines)+8)
-	for i, line := range lines {
-		if r, ok := replace[i]; ok {
+// render assembles the final text from the original lines plus every
+// replace/insert/append operation resolveTable recorded.
+func (a *applier) render() string {
+	out := make([]string, 0, len(a.lines)+8)
+	for i, line := range a.lines {
+		if r, ok := a.replace[i]; ok {
 			out = append(out, r)
 		} else {
 			out = append(out, line)
 		}
-		out = append(out, insertAfter[i]...)
+		out = append(out, a.insertAfter[i]...)
 	}
-	for _, block := range appendBlocks {
+	for _, block := range a.appendBlocks {
 		out = append(out, block...)
 	}
-
-	result := strings.Join(out, "\n")
-	if trailingNewline {
-		result += "\n"
-	}
-	return []byte(result), nil
+	return strings.Join(out, "\n")
 }
 
 // trailingComment returns the " # ..." suffix of rest, if rest carries an
