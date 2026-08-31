@@ -34,6 +34,12 @@ See `docs/architecture/organisation.md` for the target structure and
 | `internal/events/`           | In-process event bus: publish/subscribe for observability                 |
 | `internal/infrastructure/`   | Config loading, eventbus transport, model catalog                        |
 | `internal/webui/`            | SSE dashboard: live event stream, task status                             |
+| `internal/gateway/` (18.7k LOC) | Persistent-connection layer between archie and its users (Telegram, web UI, etc.); shared CommandRouter for dispatch |
+| `internal/tools/` (20.9k LOC)   | Central tool subsystem: built-in tool implementations, approval, execution contract |
+| `internal/memory/` (7k LOC)     | Pluggable memory provider architecture                                    |
+| `internal/secret/`              | Secret reference resolution across named engines (env, vault, etc.)       |
+| `internal/plugin/`              | Core plugin interface: Yaegi-interpreted `.go` plugins loaded from `~/.config/archie/plugins/` and registered with the daemon's extension registry |
+| `internal/skill/`               | Parses and discovers agentskills.io `SKILL.md` files                      |
 | `ai-sdk/runtime`             | External: provider-agnostic LLM runtime                                   |
 | `ai-sdk/agentloop`           | External: gated agent loop with budgets and tool jails                    |
 | `ai-sdk/core`                | External: tool definitions, generate options                              |
