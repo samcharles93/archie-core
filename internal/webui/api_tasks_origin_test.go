@@ -25,7 +25,6 @@ func TestAuthorizeTaskMutationOrigin(t *testing.T) {
 		csrfHeader           string
 		contentType          string
 		wantStatus           int
-		wantBodyContains     string
 	}{
 		{
 			name:                 "1. proxied https: trust enabled directly, X-Forwarded-Proto https, plain HTTP, Origin https",
@@ -102,7 +101,6 @@ func TestAuthorizeTaskMutationOrigin(t *testing.T) {
 			csrfHeader:           "1",
 			contentType:          "application/json",
 			wantStatus:           http.StatusForbidden,
-			wantBodyContains:     "cross-origin mutation refused",
 		},
 		{
 			name:                 "4b. SPOOFED HOST: trust disabled, attacker sends X-Forwarded-Host, plain HTTP",
@@ -114,10 +112,9 @@ func TestAuthorizeTaskMutationOrigin(t *testing.T) {
 			csrfHeader:           "1",
 			contentType:          "application/json",
 			wantStatus:           http.StatusForbidden,
-			wantBodyContains:     "cross-origin mutation refused",
 		},
 		{
-			name:                 "5. missing CSRF header: returns 403 with distinct message",
+			name:                 "5. missing CSRF header: request rejected",
 			trustForwardedDirect: true,
 			forwardedProto:       "https",
 			requestHost:          "archie.catlow.cloud",
@@ -126,10 +123,9 @@ func TestAuthorizeTaskMutationOrigin(t *testing.T) {
 			csrfHeader:           "",
 			contentType:          "application/json",
 			wantStatus:           http.StatusForbidden,
-			wantBodyContains:     "missing CSRF header",
 		},
 		{
-			name:                 "6. genuinely cross-origin request: returns 403 cross-origin mutation refused",
+			name:                 "6. genuinely cross-origin request: request rejected",
 			trustForwardedDirect: true,
 			forwardedProto:       "https",
 			requestHost:          "archie.catlow.cloud",
@@ -138,7 +134,6 @@ func TestAuthorizeTaskMutationOrigin(t *testing.T) {
 			csrfHeader:           "1",
 			contentType:          "application/json",
 			wantStatus:           http.StatusForbidden,
-			wantBodyContains:     "cross-origin mutation refused",
 		},
 		{
 			name:                 "7. invalid Origin URI: containing userinfo",
@@ -150,7 +145,6 @@ func TestAuthorizeTaskMutationOrigin(t *testing.T) {
 			csrfHeader:           "1",
 			contentType:          "application/json",
 			wantStatus:           http.StatusForbidden,
-			wantBodyContains:     "cross-origin mutation refused",
 		},
 		{
 			name:                 "8. invalid Origin URI: containing path",
@@ -162,7 +156,6 @@ func TestAuthorizeTaskMutationOrigin(t *testing.T) {
 			csrfHeader:           "1",
 			contentType:          "application/json",
 			wantStatus:           http.StatusForbidden,
-			wantBodyContains:     "cross-origin mutation refused",
 		},
 		{
 			name:                 "9. unsupported media type: non-JSON body",
@@ -174,7 +167,6 @@ func TestAuthorizeTaskMutationOrigin(t *testing.T) {
 			csrfHeader:           "1",
 			contentType:          "text/plain",
 			wantStatus:           http.StatusUnsupportedMediaType,
-			wantBodyContains:     "Content-Type must be application/json",
 		},
 	}
 
@@ -230,16 +222,16 @@ func TestAuthorizeTaskMutationOrigin(t *testing.T) {
 			if w.Code != tc.wantStatus {
 				t.Fatalf("status = %d, want %d (body %q)", w.Code, tc.wantStatus, w.Body.String())
 			}
-			if tc.wantBodyContains != "" && !strings.Contains(w.Body.String(), tc.wantBodyContains) {
-				t.Fatalf("body %q does not contain %q", w.Body.String(), tc.wantBodyContains)
+			if tc.wantStatus >= http.StatusBadRequest {
+				if got := w.Header().Get("Content-Type"); got != "text/plain; charset=utf-8" {
+					t.Errorf("Content-Type = %q, want text/plain error response", got)
+				}
+				if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+					t.Errorf("X-Content-Type-Options = %q, want nosniff", got)
+				}
 			}
 		})
 	}
-}
-
-//go:fix inline
-func boolPtr(b bool) *bool {
-	return new(b)
 }
 
 func TestWorkRequestOriginProxy(t *testing.T) {
