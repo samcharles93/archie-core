@@ -11,6 +11,9 @@
 //     cancels the turn context, so without this the command it was aimed
 //     at would keep going. tau applies the same treatment to spawned
 //     agents in agent.go; this extends it to the shell tool.
+//   - makeShellExecutor split into buildShellCmd, formatShellOutput, and
+//     shellErrorResult to satisfy golangci-lint's gocognit limit. No
+//     behavioural change.
 //
 // Refresh by diffing against that path at a newer tau commit. Do not
 // edit without recording the change above.
@@ -121,53 +124,10 @@ func makeShellExecutor(cwd string, mq *MutationQueue) Executor {
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 
-		shell, args := shellCommand(p.Command)
-		cmd := exec.CommandContext(ctx, shell, args...)
-		if cwd != "" {
-			cmd.Dir = cwd
-		}
-
-		// Run the command as its own process group and, on cancellation,
-		// signal the group rather than the shell alone.
-		//
-		// exec.CommandContext's default kills only the process it started.
-		// A shell's real work is almost always a child of that shell, so
-		// the default leaves the actual command running: cancelling
-		// `go test ./...` reaps the shell and lets the test binary carry
-		// on, and anything backgrounded with & or nohup is never touched.
-		// /stop cancels this context, so that gap is the difference
-		// between stopping a command and only appearing to.
-		setProcessGroup(cmd)
-		cmd.Cancel = func() error { return signalProcessGroup(cmd, syscall.SIGKILL) }
-		// Stop waiting on inherited pipes shortly after the kill. A
-		// grandchild holding stdout open would otherwise keep Wait
-		// blocked long after the group was signalled.
-		cmd.WaitDelay = shellWaitDelay
-
-		var stdout, stderr bytes.Buffer
-		bw := &bridgeWriter{bridge: bridge}
-		cmd.Stdout = io.MultiWriter(&stdout, bw)
-		cmd.Stderr = io.MultiWriter(&stderr, bw)
-
+		cmd, stdout, stderr := buildShellCmd(ctx, cwd, p.Command, bridge)
 		err := cmd.Run()
 
-		var b strings.Builder
-		if stdout.Len() > 0 {
-			b.WriteString(stdout.String())
-		}
-		if stderr.Len() > 0 {
-			if b.Len() > 0 {
-				b.WriteString("\n")
-			}
-			b.WriteString("[stderr]\n")
-			b.WriteString(stderr.String())
-		}
-
-		output := b.String()
-		if output == "" {
-			output = "(no output)"
-		}
-
+		output := formatShellOutput(stdout, stderr)
 		// Collapse before truncation, so a long passing test run is reduced to
 		// its summaries rather than tail-truncated into a partial log.
 		output, _ = collapseGoTestOutput(p.Command, output, err == nil)
@@ -183,29 +143,81 @@ func makeShellExecutor(cwd string, mq *MutationQueue) Executor {
 		}
 
 		if err != nil {
-			// Check context cancellation first - a process may exit with
-			// a non-zero code after the deadline, and we want to report
-			// timeout rather than a misleading exit code.
-			if ctx.Err() != nil {
-				return Result{
-					Content: fmt.Sprintf("[timeout after: %s]\n%s", timeout, content), IsError: true,
-					ErrorKind: "timeout", Truncated: tr.Truncated, ResultBytes: len(output),
-				}, nil
-			}
-
-			exitErr := &exec.ExitError{}
-			if errors.As(err, &exitErr) {
-				return Result{
-					Content: fmt.Sprintf("[exit code: %d]\n%s", exitErr.ExitCode(), content), IsError: true,
-					ErrorKind: "command_exit", Truncated: tr.Truncated, ResultBytes: len(output),
-				}, nil
-			}
-
-			return Result{Content: fmt.Sprintf("error executing command: %v", err), IsError: true}, nil
+			return shellErrorResult(ctx, err, timeout, content, tr, output), nil
 		}
 
 		return Result{Content: content, Truncated: tr.Truncated, ResultBytes: len(output)}, nil
 	}
+}
+
+// buildShellCmd constructs the shell command to run: its own process group,
+// killed as a group on cancellation (see the package-level comment for why),
+// with stdout/stderr tee'd to both an in-memory buffer and the UI bridge.
+func buildShellCmd(ctx context.Context, cwd, command string, bridge UIBridge) (cmd *exec.Cmd, stdout, stderr *bytes.Buffer) {
+	shell, args := shellCommand(command)
+	cmd = exec.CommandContext(ctx, shell, args...)
+	if cwd != "" {
+		cmd.Dir = cwd
+	}
+
+	setProcessGroup(cmd)
+	cmd.Cancel = func() error { return signalProcessGroup(cmd, syscall.SIGKILL) }
+	// Stop waiting on inherited pipes shortly after the kill. A
+	// grandchild holding stdout open would otherwise keep Wait
+	// blocked long after the group was signalled.
+	cmd.WaitDelay = shellWaitDelay
+
+	stdout, stderr = &bytes.Buffer{}, &bytes.Buffer{}
+	bw := &bridgeWriter{bridge: bridge}
+	cmd.Stdout = io.MultiWriter(stdout, bw)
+	cmd.Stderr = io.MultiWriter(stderr, bw)
+	return cmd, stdout, stderr
+}
+
+// formatShellOutput joins stdout and stderr, labelling stderr when both are
+// present, and substitutes a placeholder when the command produced nothing.
+func formatShellOutput(stdout, stderr *bytes.Buffer) string {
+	var b strings.Builder
+	if stdout.Len() > 0 {
+		b.WriteString(stdout.String())
+	}
+	if stderr.Len() > 0 {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString("[stderr]\n")
+		b.WriteString(stderr.String())
+	}
+
+	output := b.String()
+	if output == "" {
+		output = "(no output)"
+	}
+	return output
+}
+
+// shellErrorResult classifies a command's run error into a timeout, a
+// nonzero exit, or a raw execution failure, and builds the matching Result.
+func shellErrorResult(ctx context.Context, err error, timeout time.Duration, content string, tr TruncationResult, output string) Result {
+	// Check context cancellation first - a process may exit with
+	// a non-zero code after the deadline, and we want to report
+	// timeout rather than a misleading exit code.
+	if ctx.Err() != nil {
+		return Result{
+			Content: fmt.Sprintf("[timeout after: %s]\n%s", timeout, content), IsError: true,
+			ErrorKind: "timeout", Truncated: tr.Truncated, ResultBytes: len(output),
+		}
+	}
+
+	exitErr := &exec.ExitError{}
+	if errors.As(err, &exitErr) {
+		return Result{
+			Content: fmt.Sprintf("[exit code: %d]\n%s", exitErr.ExitCode(), content), IsError: true,
+			ErrorKind: "command_exit", Truncated: tr.Truncated, ResultBytes: len(output),
+		}
+	}
+
+	return Result{Content: fmt.Sprintf("error executing command: %v", err), IsError: true}
 }
 
 // goTestSummaryRe matches cmd/go's per-package result lines: "ok", "FAIL" and

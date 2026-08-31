@@ -418,50 +418,11 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 			},
 		})
 	} else {
-		type turnResult struct {
-			reply string
-			err   error
+		var cancelled bool
+		reply, err, cancelled = s.runQueuedChatTurn(r, chat, sessionID, msg, showToolCalls, writeChatEvent)
+		if cancelled {
+			return
 		}
-		// One channel carries both text and tool events, because the
-		// order between them is the point: a tool line that overtakes
-		// the sentence it interrupted describes a turn that never
-		// happened.
-		events := make(chan chatStreamEvent, 32)
-		result := make(chan turnResult, 1)
-		chat.Turns.Submit(r.Context(), sessionID, func(turnCtx context.Context) {
-			turnReply, turnErr := chat.Router.RouteStream(turnCtx, msg, chatStreamSink{
-				showToolCalls: showToolCalls,
-				write: func(event chatStreamEvent) {
-					select {
-					case events <- event:
-					case <-r.Context().Done():
-					}
-				},
-			})
-			result <- turnResult{reply: turnReply, err: turnErr}
-		})
-		for {
-			select {
-			case event := <-events:
-				writeChatEvent(event, sessionID)
-			case turn := <-result:
-				for {
-					select {
-					case event := <-events:
-						writeChatEvent(event, sessionID)
-					default:
-						goto drained
-					}
-				}
-			drained:
-				reply, err = turn.reply, turn.err
-				goto turnDone
-			case <-r.Context().Done():
-				chat.Turns.Stop(sessionID)
-				return
-			}
-		}
-	turnDone:
 	}
 	if err != nil {
 		writeChatEvent(chatStreamEvent{Type: "error", Text: err.Error()}, sessionID)
@@ -471,6 +432,55 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		sessionID = resolved
 	}
 	writeChatEvent(chatStreamEvent{Type: "done", Text: reply}, sessionID)
+}
+
+// runQueuedChatTurn submits msg to the session's turn queue and streams its
+// text/tool events as they arrive, in order, via writeChatEvent. One channel
+// carries both text and tool events, because the order between them is the
+// point: a tool line that overtakes the sentence it interrupted describes a
+// turn that never happened. Returns cancelled=true when the request context
+// was cancelled before the turn finished, in which case the caller must not
+// write any further response.
+func (s *Server) runQueuedChatTurn(
+	r *http.Request, chat *ChatService, sessionID string, msg gateway.Message, showToolCalls bool,
+	writeChatEvent func(chatStreamEvent, string),
+) (reply string, err error, cancelled bool) {
+	type turnResult struct {
+		reply string
+		err   error
+	}
+	events := make(chan chatStreamEvent, 32)
+	result := make(chan turnResult, 1)
+	chat.Turns.Submit(r.Context(), sessionID, func(turnCtx context.Context) {
+		turnReply, turnErr := chat.Router.RouteStream(turnCtx, msg, chatStreamSink{
+			showToolCalls: showToolCalls,
+			write: func(event chatStreamEvent) {
+				select {
+				case events <- event:
+				case <-r.Context().Done():
+				}
+			},
+		})
+		result <- turnResult{reply: turnReply, err: turnErr}
+	})
+	for {
+		select {
+		case event := <-events:
+			writeChatEvent(event, sessionID)
+		case turn := <-result:
+			for {
+				select {
+				case event := <-events:
+					writeChatEvent(event, sessionID)
+				default:
+					return turn.reply, turn.err, false
+				}
+			}
+		case <-r.Context().Done():
+			chat.Turns.Stop(sessionID)
+			return "", nil, true
+		}
+	}
 }
 
 func (s *Server) handleChatCancel(w http.ResponseWriter, r *http.Request) {

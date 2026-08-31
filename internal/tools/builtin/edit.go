@@ -234,50 +234,78 @@ func applyEdits(content string, edits []EditAction) (string, error) {
 			return "", fmt.Errorf("edit %d: old_text and new_text are identical", i+1)
 		}
 
-		matches := indexAll(content, edit.OldText)
-
-		if edit.ReplaceAll {
-			if len(matches) == 0 {
-				matches = fuzzyIndexAll(content, edit.OldText)
-			}
-			if len(matches) == 0 {
-				return "", editNotFoundError(i, content, edit.OldText)
-			}
-			for _, m := range matches {
-				spans = append(spans, editSpan{start: m[0], end: m[1], repl: edit.NewText, editIdx: i})
-			}
-			continue
+		editSpans, err := resolveEditSpans(content, edit, i)
+		if err != nil {
+			return "", err
 		}
-
-		switch len(matches) {
-		case 1:
-			spans = append(spans, editSpan{start: matches[0][0], end: matches[0][1], repl: edit.NewText, editIdx: i})
-		case 0:
-			fuzzy := fuzzyIndexAll(content, edit.OldText)
-			switch len(fuzzy) {
-			case 1:
-				spans = append(spans, editSpan{start: fuzzy[0][0], end: fuzzy[0][1], repl: edit.NewText, editIdx: i})
-			case 0:
-				return "", editNotFoundError(i, content, edit.OldText)
-			default:
-				return "", editAmbiguousError(i, len(fuzzy))
-			}
-		default:
-			return "", editAmbiguousError(i, len(matches))
-		}
+		spans = append(spans, editSpans...)
 	}
 
+	if err := checkSpansOverlap(spans); err != nil {
+		return "", err
+	}
+
+	return renderSpans(content, spans), nil
+}
+
+// resolveEditSpans resolves one edit against the original content into the
+// span(s) it applies. Matching is exact first; if old_text is not found, a
+// fuzzy pass retries the match with trailing whitespace stripped from every
+// line of both the content and old_text, which recovers the most common
+// exact-match failure.
+func resolveEditSpans(content string, edit EditAction, i int) ([]editSpan, error) {
+	matches := indexAll(content, edit.OldText)
+
+	if edit.ReplaceAll {
+		if len(matches) == 0 {
+			matches = fuzzyIndexAll(content, edit.OldText)
+		}
+		if len(matches) == 0 {
+			return nil, editNotFoundError(i, content, edit.OldText)
+		}
+		spans := make([]editSpan, 0, len(matches))
+		for _, m := range matches {
+			spans = append(spans, editSpan{start: m[0], end: m[1], repl: edit.NewText, editIdx: i})
+		}
+		return spans, nil
+	}
+
+	switch len(matches) {
+	case 1:
+		return []editSpan{{start: matches[0][0], end: matches[0][1], repl: edit.NewText, editIdx: i}}, nil
+	case 0:
+		fuzzy := fuzzyIndexAll(content, edit.OldText)
+		switch len(fuzzy) {
+		case 1:
+			return []editSpan{{start: fuzzy[0][0], end: fuzzy[0][1], repl: edit.NewText, editIdx: i}}, nil
+		case 0:
+			return nil, editNotFoundError(i, content, edit.OldText)
+		default:
+			return nil, editAmbiguousError(i, len(fuzzy))
+		}
+	default:
+		return nil, editAmbiguousError(i, len(matches))
+	}
+}
+
+// checkSpansOverlap sorts spans by start offset and rejects any that overlap.
+func checkSpansOverlap(spans []editSpan) error {
 	sort.Slice(spans, func(a, b int) bool { return spans[a].start < spans[b].start })
 
 	for i := 1; i < len(spans); i++ {
 		if spans[i].start < spans[i-1].end {
-			return "", fmt.Errorf(
+			return fmt.Errorf(
 				"edits %d and %d overlap in the file; merge them into a single edit",
 				spans[i-1].editIdx+1, spans[i].editIdx+1,
 			)
 		}
 	}
+	return nil
+}
 
+// renderSpans applies non-overlapping spans (already sorted by start) to
+// content in one pass.
+func renderSpans(content string, spans []editSpan) string {
 	var b strings.Builder
 	cursor := 0
 	for _, s := range spans {
@@ -286,7 +314,7 @@ func applyEdits(content string, edits []EditAction) (string, error) {
 		cursor = s.end
 	}
 	b.WriteString(content[cursor:])
-	return b.String(), nil
+	return b.String()
 }
 
 func editNotFoundError(idx int, content, oldText string) error {
