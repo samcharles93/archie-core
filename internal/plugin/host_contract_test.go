@@ -85,11 +85,11 @@ func TestCapabilityHostContractHasNoGenericCapabilityHooks(t *testing.T) {
 func TestArchiedWiresCapabilityHostLifecycle(t *testing.T) {
 	t.Parallel()
 
-	// The daemon composition lives in cmd/archied, whose wiring is now
+	// The daemon composition lives in internal/app/archied, whose wiring is
 	// split across main.go (driver) and bootstrap.go (phase methods); the
 	// contract reads the whole package so the enforcement survives that
 	// split.
-	archiedDir := filepath.Join("..", "..", "cmd", "archied")
+	archiedDir := filepath.Join("..", "..", "internal", "app", "archied")
 	var text strings.Builder
 	entries, err := os.ReadDir(archiedDir)
 	if err != nil {
