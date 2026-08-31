@@ -551,7 +551,7 @@ func (s *Store) hydrate() error {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
-		return fmt.Errorf("%w: read %s: %v", ErrCorruptFile, s.path, err)
+		return fmt.Errorf("%w: read %s: %w", ErrCorruptFile, s.path, err)
 	}
 	if len(bytes.TrimSpace(data)) == 0 {
 		return nil
@@ -564,7 +564,7 @@ func (s *Store) hydrate() error {
 	// schemaVersion — see the comment on that constant.
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&env); err != nil {
-		return fmt.Errorf("%w: decode %s: %v", ErrCorruptFile, s.path, err)
+		return fmt.Errorf("%w: decode %s: %w", ErrCorruptFile, s.path, err)
 	}
 	if env.SchemaVersion == 0 {
 		return fmt.Errorf("%w: missing schema_version in %s", ErrCorruptFile, s.path)
