@@ -504,6 +504,3 @@ func itoa(n int) string {
 	}
 	return string(buf[i:])
 }
-
-//go:fix inline
-func stringPtr(s string) *string { return new(s) }

@@ -4,7 +4,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -162,58 +161,6 @@ type engineFamily struct {
 	ownerRegisters  bool
 	ownerManages    bool
 	singleOwner     bool
-}
-
-func inspectEngineFamilies(root string) ([]engineFamily, error) {
-	dirs := make(map[string]struct{})
-	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() {
-			dirs[path] = struct{}{}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	var families []engineFamily
-	for dir := range dirs {
-		packages, err := parsePackageFiles(dir)
-		if err != nil {
-			return nil, err
-		}
-		for _, files := range packages {
-			families = append(families, engineFamiliesInPackage(root, dir, files)...)
-		}
-	}
-	slices.SortFunc(families, func(a, b engineFamily) int {
-		return strings.Compare(a.packagePath+"."+a.engineName, b.packagePath+"."+b.engineName)
-	})
-	return families, nil
-}
-
-func parsePackageFiles(dir string) (map[string][]*ast.File, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
-
-	packages := make(map[string][]*ast.File)
-	fileSet := token.NewFileSet()
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
-			continue
-		}
-		file, err := parser.ParseFile(fileSet, filepath.Join(dir, entry.Name()), nil, 0)
-		if err != nil {
-			return nil, err
-		}
-		packages[file.Name.Name] = append(packages[file.Name.Name], file)
-	}
-	return packages, nil
 }
 
 func engineFamiliesInPackage(root, dir string, files []*ast.File) []engineFamily {
