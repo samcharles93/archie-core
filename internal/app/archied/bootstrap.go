@@ -3,7 +3,7 @@
 // The struct exists because the composition root assembles ~30 pieces of
 // state that every phase touches; passing them as parameters would make
 // each phase function longer than the code it contains.
-package main
+package archied
 
 import (
 	"context"

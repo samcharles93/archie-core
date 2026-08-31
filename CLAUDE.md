@@ -28,7 +28,8 @@ requests for human review.
 See `ARCHITECTURE.md` for the package map, workflow engine design, task
 lifecycle, and key design decisions. Read it before making non-trivial changes.
 Key invariants: env-enforced gates, model never runs git, and agent execution
-functions as a strict data boundary.
+functions as a strict data boundary. Before adding a new plugin engine, satisfy
+`ARCHITECTURE.md#plugin-engine-rule-strict`.
 
 ## Scope Discipline
 

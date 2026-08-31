@@ -1,4 +1,4 @@
-package main
+package archied
 
 import (
 	"context"
@@ -27,16 +27,16 @@ var flagErrorOutput io.Writer = os.Stderr
 // and falls the agent back to unindexed grep.
 const codesearchHelperCommand = "workspace-codesearch"
 
-// isCodesearchHelperArgs reports whether args (os.Args[1:]) selects the
+// IsCodesearchHelperArgs reports whether args (os.Args[1:]) selects the
 // helper rather than the daemon.
-func isCodesearchHelperArgs(args []string) bool {
+func IsCodesearchHelperArgs(args []string) bool {
 	return len(args) > 0 && args[0] == codesearchHelperCommand
 }
 
-// runCodesearchHelper executes one helper subcommand and returns a process
+// RunCodesearchHelper executes one helper subcommand and returns a process
 // exit code. Output is the machine-readable result the parent decodes; all
 // diagnostics go to stderr so they cannot corrupt it.
-func runCodesearchHelper(args []string, out io.Writer) int {
+func RunCodesearchHelper(args []string, out io.Writer) int {
 	if len(args) == 0 {
 		helperErrorf("%s: expected a subcommand (build|candidates)\n", codesearchHelperCommand)
 		return 2

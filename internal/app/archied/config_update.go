@@ -1,4 +1,4 @@
-package main
+package archied
 
 import (
 	"github.com/samcharles93/archie-core/internal/config"
