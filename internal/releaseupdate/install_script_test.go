@@ -123,6 +123,8 @@ func TestUpdateWatchdogRollsBackManagedWorkerImageAndReportsOnlyChangedComponent
 
 func runUpdateInstallScript(t *testing.T, environment map[string]string) (Result, []string) {
 	t.Helper()
+	ctx := t.Context()
+
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
@@ -199,7 +201,7 @@ printf '%s\n' "cp $*" >> "$ARCHIE_TEST_CALLS"
 	if err := os.WriteFile(scriptPath, scriptData, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(scriptPath)
+	cmd := exec.CommandContext(ctx, scriptPath)
 	cmd.Env = append(
 		os.Environ(),
 		"PATH="+fakeDir+":"+os.Getenv("PATH"),
@@ -254,6 +256,8 @@ func writeFakeCommand(t *testing.T, dir, name, body string) {
 
 func runUpdateWatchdogFailure(t *testing.T, components string) (Report, string, []string) {
 	t.Helper()
+	ctx := t.Context()
+
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
@@ -279,7 +283,7 @@ func runUpdateWatchdogFailure(t *testing.T, components string) (Report, string, 
 	writeFakeCommand(t, fakeDir, "docker", `printf '%s\n' "docker $*" >> "$ARCHIE_TEST_CALLS"`)
 	callsPath := filepath.Join(work, "calls")
 
-	cmd := exec.Command(filepath.Join(root, "scripts", "archie-update-watchdog"))
+	cmd := exec.CommandContext(ctx, filepath.Join(root, "scripts", "archie-update-watchdog"))
 	cmd.Env = append(
 		os.Environ(),
 		"PATH="+fakeDir+":"+os.Getenv("PATH"),
