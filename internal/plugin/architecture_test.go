@@ -18,6 +18,20 @@ const (
 	engineRuleLink    = "ARCHITECTURE.md#plugin-engine-rule-strict"
 )
 
+func TestPluginEngineRuleIsCanonicalAndSharedByAgentInstructions(t *testing.T) {
+	t.Parallel()
+
+	architecture := readTestFile(t, filepath.Join("..", "..", "ARCHITECTURE.md"))
+	if !strings.Contains(architecture, engineRuleHeading) {
+		t.Fatalf("ARCHITECTURE.md missing canonical heading %q", engineRuleHeading)
+	}
+
+	claudeMD := readTestFile(t, filepath.Join("..", "..", "CLAUDE.md"))
+	if !strings.Contains(claudeMD, engineRuleLink) {
+		t.Fatalf("CLAUDE.md missing reference to %q", engineRuleLink)
+	}
+}
+
 func TestEngineFamilyInspectionRejectsInvalidShapes(t *testing.T) {
 	t.Parallel()
 
