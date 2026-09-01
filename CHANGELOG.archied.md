@@ -1,5 +1,9 @@
 # archied changelog
 
+## [1.19.10] - 2026-09-02
+
+- feat(curator): session-memory curator reference implementation
+
 ## [1.19.9] - 2026-09-02
 
 - feat(memory): typed memory engine contract, registry, and registrar
