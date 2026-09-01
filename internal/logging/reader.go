@@ -289,7 +289,9 @@ func Tail(path string, q Query) (Result, error) {
 	if limit <= 0 {
 		limit = DefaultTailLines
 	}
-	limit = min(limit, MaxTailLines)
+	if limit > MaxTailLines {
+		limit = MaxTailLines
+	}
 
 	matches := make([]Entry, 0, limit)
 	truncated, _, ok, err := readLines(path, q, 0, func(e Entry, _ int64) bool {
@@ -343,7 +345,9 @@ func Page(path string, q Query, cursor int64) (PageResult, error) {
 	if limit <= 0 {
 		limit = DefaultTailLines
 	}
-	limit = min(limit, MaxTailLines)
+	if limit > MaxTailLines {
+		limit = MaxTailLines
+	}
 
 	type lineAt struct {
 		entry  Entry
