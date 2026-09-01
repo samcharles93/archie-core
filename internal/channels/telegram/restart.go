@@ -28,6 +28,19 @@ func (g *Gateway) restartHandler() bot.HandlerFunc {
 			return
 		}
 
+		// Restarting tears down this process, and the update installer runs
+		// as its child -- a restart mid-install kills the install outright
+		// (signal: terminated) rather than letting it finish or fail
+		// cleanly, leaving the daemon on its old binary with no clear error
+		// surfaced to the operator.
+		g.updateMu.Lock()
+		updating := g.updateInProgress
+		g.updateMu.Unlock()
+		if updating {
+			g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, "⚠️ An update is currently installing -- restarting now would kill it mid-install. Wait for it to finish, then try again.")
+			return
+		}
+
 		// Acknowledge on the current instance: it is about to be torn
 		// down, and the relaunched one confirms completion.
 		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, "🔄 Reloading Archie…")
