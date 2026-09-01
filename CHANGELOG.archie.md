@@ -1,5 +1,9 @@
 # archie-agent changelog
 
+## [1.19.7] - 2026-09-02
+
+- fix(logging): make Tail/Page allocation bound explicit for CodeQL
+
 ## [1.19.5] - 2026-09-01
 
 - feat(tasks): allow rejecting a task from any non-terminal state
