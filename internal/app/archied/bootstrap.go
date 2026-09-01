@@ -43,6 +43,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	infraMemory "github.com/samcharles93/archie-core/internal/infrastructure/memory"
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
+	"github.com/samcharles93/archie-core/internal/infrastructure/skillcurator"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/memory"
 	"github.com/samcharles93/archie-core/internal/plugin"
@@ -827,6 +828,14 @@ func (b *boot) setupMemoryAll() error {
 // never backpressure the daemon or a chat turn.
 func (b *boot) setupCurators(ctx context.Context) {
 	log := b.log
+	// Skills root matches loadWorkflows' own resolution of skillsBase --
+	// the skill curator maintains the same local skills this daemon
+	// already treats as authoritative, not the full multi-root catalog a
+	// chat turn reads. See docs/prds/skill-curator.md.
+	skillsRoot := b.cfg.SkillsDir
+	if skillsRoot == "" {
+		skillsRoot = b.cfg.WorkDir
+	}
 	b.curatorRegistry = curator.NewRegistry(curator.Registrar{
 		Events: curatorEventSink{b.bus},
 		// b.memEngines (*domainmemory.Registry) satisfies
@@ -834,7 +843,14 @@ func (b *boot) setupCurators(ctx context.Context) {
 		// adapter needed. Set by setupMemoryAll, which Run() calls before
 		// setupCurators.
 		MemoryEngines: b.memEngines,
+		// Skills is a shared host service like Events/MemoryEngines --
+		// registry.filter narrows it out of the view for any curator that
+		// doesn't declare Manifest.Skills, per curator not per instance.
+		Skills: skillcurator.NewStore(skillsRoot),
 	})
+	if err := b.curatorRegistry.Register(skillcurator.New(skillcurator.DefaultInterval)); err != nil {
+		log.Error("skill curator registration failed", "err", err)
+	}
 	// The runtime owns the per-curator loops (archie-core-89x): one
 	// goroutine per curator, wake nudges, per-pass budgets, panic
 	// recovery, bounded shutdown. Stop order at shutdown: runtime first
