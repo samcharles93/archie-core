@@ -128,6 +128,9 @@ func (r *Registry) validateDeclared(m Manifest) error {
 	if m.MemoryEngine != "" && r.host.MemoryEngines == nil {
 		return errors.New("curator manifest: declares a memory engine but the registrar has no MemoryEngineSource")
 	}
+	if m.Conversations && r.host.Conversations == nil {
+		return errors.New("curator manifest: declares conversation history but the registrar has no ConversationSource")
+	}
 	return nil
 }
 
@@ -149,11 +152,14 @@ func (r *Registry) filter(m Manifest) Registrar {
 	if m.MemoryEngine == "" {
 		v.MemoryEngines = nil
 	}
+	if !m.Conversations {
+		v.Conversations = nil
+	}
 	return v
 }
 
 func agentic(m Manifest) bool {
-	return len(m.Tools) > 0 || m.Skills || m.MemoryEngine != ""
+	return len(m.Tools) > 0 || m.Skills || m.MemoryEngine != "" || m.Conversations
 }
 
 // bindSafely isolates a panicking Bind: a curator that panics while

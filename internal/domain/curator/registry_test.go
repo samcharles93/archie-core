@@ -74,6 +74,19 @@ func (fakeMemoryEngine) List(context.Context, string) ([]domainmemory.Record, er
 }
 func (fakeMemoryEngine) Forget(context.Context, string) error { return nil }
 
+// testConversations is a fake ConversationSource with one session and no
+// messages -- enough for the presence/absence tests, which never call
+// its methods.
+type testConversations struct{}
+
+func (testConversations) RecentSessions(context.Context, time.Time) ([]SessionSummary, error) {
+	return nil, nil
+}
+
+func (testConversations) Messages(context.Context, string, int) ([]ConversationMessage, error) {
+	return nil, nil
+}
+
 type testSink struct {
 	mu    sync.Mutex
 	kinds []string
@@ -355,6 +368,17 @@ func TestRegistryDeclaredCapabilitiesRequireHostServices(t *testing.T) {
 			manifest: Manifest{Interval: time.Hour, MemoryEngine: "builtin"},
 		},
 		{
+			name:     "conversations declared, no source",
+			host:     Registrar{},
+			manifest: Manifest{Interval: time.Hour, Conversations: true},
+			wantErr:  true,
+		},
+		{
+			name:     "conversations declared, source present",
+			host:     Registrar{Conversations: testConversations{}},
+			manifest: Manifest{Interval: time.Hour, Conversations: true},
+		},
+		{
 			name:     "nothing declared, empty host",
 			host:     Registrar{},
 			manifest: Manifest{Interval: time.Hour},
@@ -382,6 +406,7 @@ func TestRegistryBindFiltersToDeclaredCapabilities(t *testing.T) {
 		Tools:         &testBuilder{},
 		Skills:        testStore{},
 		MemoryEngines: testMemoryEngines{},
+		Conversations: testConversations{},
 		Events:        &testSink{},
 		Clock:         testClock{now: time.Unix(0, 0)},
 	}
@@ -404,6 +429,9 @@ func TestRegistryBindFiltersToDeclaredCapabilities(t *testing.T) {
 	}
 	if plain.view.MemoryEngines != nil {
 		t.Error("view.MemoryEngines = non-nil for a curator declaring no memory engine")
+	}
+	if plain.view.Conversations != nil {
+		t.Error("view.Conversations = non-nil for a curator declaring no conversation history")
 	}
 	if plain.view.Events == nil {
 		t.Error("view.Events = nil; activity must always be attributable")
@@ -445,6 +473,19 @@ func TestRegistryBindFiltersToDeclaredCapabilities(t *testing.T) {
 	}
 	if _, ok := mem.view.MemoryEngines.Get("builtin"); !ok {
 		t.Error("view.MemoryEngines.Get(builtin) = not found, want the fake engine registered under that name")
+	}
+
+	// A curator declaring conversation history receives it, and model
+	// access to reason over it.
+	convo := newFake("convo", Manifest{Interval: time.Hour, Conversations: true})
+	if err := r.Register(convo); err != nil {
+		t.Fatalf("Register(convo) = %v, want nil", err)
+	}
+	if convo.view.LLM == nil {
+		t.Error("view.LLM = nil for a curator declaring conversation history")
+	}
+	if convo.view.Conversations == nil {
+		t.Error("view.Conversations = nil for a curator declaring conversation history")
 	}
 }
 

@@ -43,6 +43,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	infraMemory "github.com/samcharles93/archie-core/internal/infrastructure/memory"
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
+	"github.com/samcharles93/archie-core/internal/infrastructure/sessioncurator"
 	"github.com/samcharles93/archie-core/internal/infrastructure/skillcurator"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/memory"
@@ -847,9 +848,21 @@ func (b *boot) setupCurators(ctx context.Context) {
 		// registry.filter narrows it out of the view for any curator that
 		// doesn't declare Manifest.Skills, per curator not per instance.
 		Skills: skillcurator.NewStore(skillsRoot),
+		// Conversations backs the session-memory curator; b.chatSessionStore
+		// is set by setupLLMAndChat, which Run() calls before setupCurators.
+		Conversations: sessioncurator.NewAdapter(b.chatSessionStore, b.cfg.BotUser),
+		LLM:           curatorLLMRunner{rt: b.llm},
+		// b.chatModels.ActiveModel() is the same source sendChatTurn uses
+		// for a real chat turn (telegram_setup.go) -- not
+		// b.defaultChatIdentity, which names a task-routing identity, not
+		// a model reference.
+		Model: b.chatModels.ActiveModel(),
 	})
 	if err := b.curatorRegistry.Register(skillcurator.New(skillcurator.DefaultInterval)); err != nil {
 		log.Error("skill curator registration failed", "err", err)
+	}
+	if err := b.curatorRegistry.Register(sessioncurator.New(sessioncurator.DefaultInterval, infraMemory.EngineName)); err != nil {
+		log.Error("session-memory curator registration failed", "err", err)
 	}
 	// The runtime owns the per-curator loops (archie-core-89x): one
 	// goroutine per curator, wake nudges, per-pass budgets, panic

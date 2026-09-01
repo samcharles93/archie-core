@@ -37,6 +37,10 @@ type Registrar struct {
 	// trusted to pass its own declared identifier, not handed a
 	// pre-scoped instance.
 	MemoryEngines MemoryEngineSource
+	// Conversations is read-only recent conversation history, for a
+	// curator that declared Manifest.Conversations (session-memory
+	// curator, archie-core-1786637499114). Bound only when declared.
+	Conversations ConversationSource
 	// Events publishes curator activity. Implementations must be
 	// non-blocking and bounded (drop on overflow), so a curator can never
 	// apply backpressure to a chat turn or the daemon. Always bound.
@@ -107,6 +111,32 @@ type Skill struct {
 // from that package's concrete Registry type.
 type MemoryEngineSource interface {
 	Get(name string) (domainmemory.MemoryEngine, bool)
+}
+
+// ConversationSource is read-only conversation history, narrowed to what
+// a curator needs to review recent activity -- never the full session
+// CRUD/branch/search surface a chat gateway exposes. The app layer adapts
+// the real session store to this.
+type ConversationSource interface {
+	// RecentSessions returns every session touched at or after since,
+	// newest first.
+	RecentSessions(ctx context.Context, since time.Time) ([]SessionSummary, error)
+	// Messages returns the most recent n messages of one session, in
+	// chronological order.
+	Messages(ctx context.Context, sessionID string, n int) ([]ConversationMessage, error)
+}
+
+// SessionSummary identifies one session and when it was last active.
+type SessionSummary struct {
+	ID         string
+	LastActive time.Time
+}
+
+// ConversationMessage is one message in a session's history.
+type ConversationMessage struct {
+	Role    string // "user" or "assistant"
+	Content string
+	At      time.Time
 }
 
 // EventSink publishes curator activity (what ran, what changed, why). It is

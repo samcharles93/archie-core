@@ -28,11 +28,13 @@ import (
 	natsio "github.com/nats-io/nats.go"
 	"github.com/samcharles93/ai-sdk/chat"
 	"github.com/samcharles93/ai-sdk/core"
+	"github.com/samcharles93/ai-sdk/runtime"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/daemon"
+	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
@@ -460,6 +462,26 @@ type curatorEventSink struct {
 
 func (s curatorEventSink) Emit(kind, detail string, data map[string]any) {
 	s.b.Publish(events.Event{Kind: kind, Detail: detail, Data: data})
+}
+
+// curatorLLMRunner adapts the shared ai-sdk runtime to the curator
+// family's narrow LLMRunner contract: one model reference, plain
+// messages, no tools, no streaming -- curators that need more than a
+// single completion are a bigger decision than this adapter makes.
+type curatorLLMRunner struct {
+	rt *runtime.Runtime
+}
+
+func (r curatorLLMRunner) Chat(ctx context.Context, req curator.ChatRequest) (curator.ChatResult, error) {
+	msgs := make([]chat.Message, 0, len(req.Messages))
+	for _, m := range req.Messages {
+		msgs = append(msgs, chat.Message{Role: chat.Role(m.Role), Content: m.Content})
+	}
+	res, err := r.rt.Chat(ctx, req.Model, core.GenerateOptions{Messages: msgs, MaxSteps: max(req.MaxSteps, 1)})
+	if err != nil {
+		return curator.ChatResult{}, err
+	}
+	return curator.ChatResult{Text: res.Text}, nil
 }
 
 type chatTaskWriterAdapter struct {
