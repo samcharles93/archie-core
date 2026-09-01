@@ -1,5 +1,23 @@
 # archie-agent changelog
 
+## [1.19.5] - 2026-09-01
+
+- feat(tasks): allow rejecting a task from any non-terminal state
+- feat(tasks): serve the lifecycle presentation catalog from /api/task-meta
+- fix: go.mod bumped to 1.27.0 and stupid tests removed
+- refactor: go modernisation fixes
+- refactor: remove unused Operator param.
+- fix(plugin): add missing CLAUDE.md reference to plugin engine rule
+- fix(app): repoint archied wiring contract test at internal/app/archied
+- refactor(agentexec): use ai-sdk NewTypedTool for pluginToolSet and scriptToolSet
+- refactor(lint): reduce cyclomatic/cognitive complexity in tools, workflow, webui
+- fix(app): repoint capability-host wiring contract test at internal/app/archied
+- refactor(lint): extract more helpers to clear nestif/gocyclo findings
+- refactor(lint): split AgentStage.Stage into resolveModel/buildRequest/handleResult
+- refactor(lint): extract Apply/findWalkVisitor helpers; go fix modernization
+- fix(lint): noctx fixes and dead-code cleanup
+- feat(workflow): adversarial self-review stage before PR open
+
 ## [1.18.0] - 2026-08-28
 
 - feat(logging): cursor pagination and filtering for task_logs

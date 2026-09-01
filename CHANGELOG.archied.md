@@ -1,5 +1,29 @@
 # archied changelog
 
+## [1.19.5] - 2026-09-01
+
+- feat(webui): dashboard-aware chat — Archie sees the page, points you there
+- fix(telegram): drop retry_after bandaid, bump go-telegram/bot to v1.24.0
+- feat(curator): track and expose recent activity per curator
+- fix: go.mod bumped to 1.27.0 and stupid tests removed
+- refactor: remove unnecessary AI-generated scaffolding
+- refactor: go modernisation fixes
+- refactor: remove unused Operator param.
+- fix(gateway): fix broken system prompt template and scrub real telegram ID from tests
+- fix(plugin): add missing CLAUDE.md reference to plugin engine rule
+- fix(app): repoint archied wiring contract test at internal/app/archied
+- refactor(agentexec): use ai-sdk NewTypedTool for pluginToolSet and scriptToolSet
+- fix(config): standardize Provenance to pointer receivers (recvcheck)
+- refactor(lint): reduce cyclomatic/cognitive complexity in tools, workflow, webui
+- fix(app): repoint capability-host wiring contract test at internal/app/archied
+- refactor(lint): extract more helpers to clear nestif/gocyclo findings
+- refactor(lint): split AgentStage.Stage into resolveModel/buildRequest/handleResult
+- refactor(lint): split TurnRunner.Run and dispatchLocal further
+- refactor(lint): extract markdownBlockParser and list/quote helpers in richblocks.go
+- refactor(lint): extract Apply/findWalkVisitor helpers; go fix modernization
+- fix(lint): noctx fixes and dead-code cleanup
+- feat(workflow): adversarial self-review stage before PR open
+
 ## [1.19.4] - 2026-08-28
 
 - refactor(telegram): render replies as structured rich blocks
