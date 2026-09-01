@@ -30,6 +30,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
+	domainmemory "github.com/samcharles93/archie-core/internal/domain/memory"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
@@ -40,6 +41,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/overlay"
 	"github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
+	infraMemory "github.com/samcharles93/archie-core/internal/infrastructure/memory"
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/memory"
@@ -125,6 +127,7 @@ type boot struct {
 	worktreeGrants   *worktreerpc.Grants
 	identityRunners  []*daemon.IdentityRunner
 	memManager       *memory.Manager
+	memEngines       *domainmemory.Registry
 	curatorRegistry  *curator.Registry
 	curatorRuntime   *curator.Runtime
 	guardrails       *tools.GuardrailEngine
@@ -754,6 +757,61 @@ func (b *boot) setupMemory() error {
 	})
 	log.Info("memory manager started", "dir", memDir)
 	return nil
+}
+
+// setupMemoryEngine wires the domain/memory engine family
+// (archie-core-1786637499161-356-e424e40d), separate from and not yet
+// consulted by the legacy memory manager set up in setupMemory above.
+// cfg.Memory.Engine is validated at config load
+// (configuration.validateMemory) against the same set this switch covers,
+// so an unrecognised value cannot reach here -- this only guards against
+// the two lists drifting apart.
+//
+// Rooted at workDir/memory-engine, a directory separate from the legacy
+// provider's workDir/memory, so the two paths can never collide on the
+// same files while both exist.
+func (b *boot) setupMemoryEngine() error {
+	cfg, log := b.cfg, b.log
+	registry := domainmemory.NewRegistry(domainmemory.Registrar{})
+
+	switch cfg.Memory.Engine {
+	case infraMemory.EngineName, "":
+		root := filepath.Join(cfg.WorkDir, "memory-engine")
+		if err := registry.Register(infraMemory.NewBuiltinEngine(root, 0)); err != nil {
+			return fmt.Errorf("register memory engine %q: %w", infraMemory.EngineName, err)
+		}
+	default:
+		return fmt.Errorf("memory.engine %q has no registered implementation", cfg.Memory.Engine)
+	}
+
+	// Not b's own ctx: matches setupMemory's identical choice just above,
+	// and Start here is a synchronous startup step, not a subscription
+	// that needs to live and later be cancelled with the daemon's context
+	// the way setupCurators' WakeOnPrimaryInput does.
+	if err := registry.Start(context.Background()); err != nil {
+		return fmt.Errorf("start memory engine registry: %w", err)
+	}
+	b.memEngines = registry
+	b.addCleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := registry.Stop(shutdownCtx); err != nil {
+			log.Error("memory engine registry shutdown", "err", err)
+		}
+	})
+	log.Info("memory engine started", "engine", cfg.Memory.Engine)
+	return nil
+}
+
+// setupMemoryAll runs both memory setup phases -- the legacy manager and
+// the new engine family -- as one step. Kept as a single call from Run()
+// rather than two: they are always run together and Run() is already at
+// its cyclomatic complexity budget.
+func (b *boot) setupMemoryAll() error {
+	if err := b.setupMemory(); err != nil {
+		return err
+	}
+	return b.setupMemoryEngine()
 }
 
 // setupCurators wires the curator engine family. The registry owns
