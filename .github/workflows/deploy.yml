@@ -14,8 +14,14 @@ on:
 # three deploys racing in parallel for the same runner capacity. Only the
 # last one's images matter (both jobs push :latest), so cancel a
 # superseded run rather than let it fight for resources it can't use.
+#
+# Keyed on the commit, not github.ref: `git push --follow-tags` pushes
+# main plus both archied/v* and archie/v* tags in one go, and all three
+# refs point at the same commit -- on.push matches branches and tags
+# both, so a single release push otherwise fires three redundant builds
+# of identical content that a ref-keyed group can't see as the same work.
 concurrency:
-  group: deploy-${{ github.ref }}
+  group: deploy-${{ github.sha }}
   cancel-in-progress: true
 
 permissions:
