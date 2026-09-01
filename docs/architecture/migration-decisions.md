@@ -222,6 +222,47 @@ and tests must decide:
 Conversation branches do not create another memory scope. A memory action has
 the same scoped effect regardless of which Conversation originated it.
 
+**`internal/domain/memory` ownership — DECIDED (2026-09-02).** The typed
+engine family lives at `internal/domain/memory`
+(archie-core-1786637490069-11-e245c170), mirroring `internal/domain/curator`'s
+contract/registrar/registry split. Not owned within the Agent domain: memory
+is consumed by more than agent turns (curators, per archie-core-1786637499636)
+and the plugin engine rule requires its own family, not a capability bolted
+onto another domain's contract.
+
+**Authoritative record and revision model for the builtin engine — DECIDED
+(2026-09-02),** scoped to unblock archie-core-1786637499480 (ship the
+file-writing store as the default engine). This decides only the builtin
+engine's mapping onto the new `Record{ID}`/`Forget(id)` contract, not the
+memory model in general or a future non-file engine's model:
+
+- `internal/memory/builtin.Store` is unchanged. It has no concept of a
+  stable per-block ID — blocks are addressed by content substring — and nothing
+  in this decision requires changing that; existing `internal/memory` tests
+  keep passing unmodified, per that issue's acceptance criteria.
+- A new infrastructure adapter (`internal/infrastructure/memory`, per
+  `organisation.md`'s "infrastructure implements domain contracts" rule — not
+  under `internal/domain/memory`, which stays contract-only) wraps one
+  `builtin.Store` per identity.
+- **Identity → directory:** `hex(sha256(identity))`, not the identity string
+  itself. Closes the path-traversal question without an allowlist regex, and
+  sidesteps collisions from identities that differ only in characters a
+  filesystem treats as equivalent.
+- **Record ID:** assigned once at `Write`, independent of content, so a later
+  edit elsewhere in the file can never orphan a `Forget`. Realized as a
+  leading marker line (`<!--mem:<ulid>-->`) on the block `builtin.Store.Add`
+  writes; `Query`/`List` strip it back out of `Record.Content` before
+  returning, and `Forget(id)` locates the block by that unique marker via the
+  store's existing substring-based `Remove`. The marker is a pragmatic,
+  reversible choice — plain-text records stay human-readable and
+  human-editable, at the cost of one marker line an operator editing the file
+  by hand should leave alone. Revisit if/when provenance representation
+  (still open, below) settles on something richer.
+- **Kind → section:** `Observation.Kind` (default `"general"` when empty) is
+  the section name, reusing `builtin.ValidateSectionName` — so an
+  invalid `Kind` fails `Write` with the same validation error `memory_edit`
+  already returns for an invalid section today, not a new error shape.
+
 ### 6. Runtime and process boundaries — DECIDED
 
 `archied` is the native resident orchestration and interactive-chat process.
