@@ -61,6 +61,10 @@ type Manifest struct {
 	// use memory; a memory operation without a declared engine is
 	// rejected.
 	MemoryEngine string
+	// Conversations declares the conversation-history capability
+	// (session-memory curator, archie-core-1786637499114). The registrar
+	// must carry a ConversationSource for a curator that declares it.
+	Conversations bool
 	// Model is the model reference ("provider/model") passes use. Empty
 	// uses the registrar's default.
 	Model string
