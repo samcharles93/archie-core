@@ -210,17 +210,14 @@ listen = "127.0.0.1:8484"
 # work_dir) is always on -- nothing here is required to get memory at all.
 # engine selects among the domain/memory engine family; "builtin" (the
 # default, same as leaving it unset) is the only one implemented so far.
-# provider is a separate, older mechanism: an external provider identifier
-# for internal/memory.Manager.RegisterExternal. As of this writing that
-# wiring is not called anywhere in cmd/archied, so setting provider
-# currently has no effect -- left here so the schema is documented, not
-# because it does anything yet.
+# provider is a separate, older mechanism -- an external provider identifier
+# for internal/memory.Manager.RegisterExternal -- but no external provider
+# is implemented anywhere in the repo to construct and register, so
+# setting it is REJECTED at config load rather than silently doing
+# nothing. Leave it unset.
 # [memory]
 # engine = "builtin"        # "builtin" is the only engine implemented so far
-# provider = ""             # external provider identifier; currently unwired
 # session_ttl = "0s"
-# [memory.provider_config]
-# # key = "value"           # provider-specific settings
 
 # Notifications for human-in-the-loop moments
 # (approval requests, gate failures, parked tasks).

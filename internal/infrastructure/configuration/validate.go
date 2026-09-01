@@ -95,11 +95,21 @@ func validate(cfg *config.Config) error {
 // before this runs on the real load path); it is not "unknown" so it does
 // not error here.
 func validateMemory(cfg *config.Config) error {
-	if cfg.Memory.Engine == "" {
-		return nil
-	}
-	if !oneOf(cfg.Memory.Engine, memoryEngines) {
+	if cfg.Memory.Engine != "" && !oneOf(cfg.Memory.Engine, memoryEngines) {
 		return fmt.Errorf("%w: memory.engine %q (want %s)", ErrInvalidInput, cfg.Memory.Engine, list(memoryEngines))
+	}
+	// memory.provider is the legacy external-MemoryProvider identifier for
+	// internal/memory.Manager.RegisterExternal. No external provider is
+	// implemented anywhere in the repo to construct and register (only the
+	// builtin file-backed one exists), so setupMemory has never called
+	// RegisterExternal and setting this field has always silently done
+	// nothing -- an operator who sets it reasonably believes they
+	// configured something. Reject it loudly instead of accepting a value
+	// with no effect; drop this once a real external provider (or the new
+	// domain/memory engine family's Honcho proof,
+	// archie-core-1786637492031) makes the field meaningful again.
+	if cfg.Memory.Provider != "" {
+		return fmt.Errorf("%w: memory.provider %q is set, but no external memory provider is implemented -- remove it (memory.engine selects the new engine family instead)", ErrInvalidInput, cfg.Memory.Provider)
 	}
 	return nil
 }
