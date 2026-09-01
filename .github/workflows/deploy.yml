@@ -8,6 +8,16 @@ on:
     branches: [main]
     tags: ["archied/v*", "archie/v*"]
 
+# Rapid successive pushes to main (a release commit right after its
+# preceding fix, say) previously queued a full gate+build for each one,
+# several minutes apiece, with no caching -- so a burst of pushes left
+# three deploys racing in parallel for the same runner capacity. Only the
+# last one's images matter (both jobs push :latest), so cancel a
+# superseded run rather than let it fight for resources it can't use.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   packages: write
@@ -103,10 +113,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-      - name: Build and push archied
+      - name: Resolve component versions
+        id: versions
         run: |
           GATEWAY_TAG="$(git tag --points-at HEAD --list 'archied/v*' | sort -V | tail -1)"
           RUNTIME_TAG="$(git tag --points-at HEAD --list 'archie/v*' | sort -V | tail -1)"
@@ -114,16 +128,30 @@ jobs:
           RUNTIME_VERSION="${RUNTIME_TAG#archie/}"
           [ -n "$GATEWAY_VERSION" ] || GATEWAY_VERSION=dev
           [ -n "$RUNTIME_VERSION" ] || RUNTIME_VERSION=dev
-          docker build \
-            --build-arg GATEWAY_VERSION="$GATEWAY_VERSION" \
-            --build-arg RUNTIME_VERSION="$RUNTIME_VERSION" \
-            -f Dockerfile.archied -t ghcr.io/samcharles93/archied:latest .
-          docker push ghcr.io/samcharles93/archied:latest
+          echo "gateway=$GATEWAY_VERSION" >> "$GITHUB_OUTPUT"
+          echo "runtime=$RUNTIME_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push archied
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.archied
+          push: true
+          tags: ghcr.io/samcharles93/archied:latest
+          build-args: |
+            GATEWAY_VERSION=${{ steps.versions.outputs.gateway }}
+            RUNTIME_VERSION=${{ steps.versions.outputs.runtime }}
+          cache-from: type=gha,scope=archied
+          cache-to: type=gha,mode=max,scope=archied
 
       - name: Build and push archie-agent
-        run: |
-          RUNTIME_TAG="$(git tag --points-at HEAD --list 'archie/v*' | sort -V | tail -1)"
-          RUNTIME_VERSION="${RUNTIME_TAG#archie/}"
-          [ -n "$RUNTIME_VERSION" ] || RUNTIME_VERSION=dev
-          docker build --build-arg RUNTIME_VERSION="$RUNTIME_VERSION" -f Dockerfile -t ghcr.io/samcharles93/archie-agent:latest .
-          docker push ghcr.io/samcharles93/archie-agent:latest
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ghcr.io/samcharles93/archie-agent:latest
+          build-args: |
+            RUNTIME_VERSION=${{ steps.versions.outputs.runtime }}
+          cache-from: type=gha,scope=archie-agent
+          cache-to: type=gha,mode=max,scope=archie-agent
