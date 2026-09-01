@@ -367,7 +367,7 @@ func Run() int {
 	if err := b.registerNATSRPC(); err != nil {
 		return 1
 	}
-	if err := b.setupMemory(); err != nil {
+	if err := b.setupMemoryAll(); err != nil {
 		return 1
 	}
 	b.setupCurators(ctx)
