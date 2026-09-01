@@ -1093,3 +1093,45 @@ func TestLiveReplyMediaFallbackReportsUndeliveredLocalFile(t *testing.T) {
 		t.Errorf("fallback lines = %q, want them to name the file", lines)
 	}
 }
+
+// TestLiveReplyMediaFallbackAfterFinalizeSendsFollowUp is the regression
+// case for archie-core-atv2: Media is fire-and-forget with a 30s budget,
+// far longer than the turn's text usually takes, so a delivery failing
+// after doFinalize has already run and torn down the renderer is the
+// normal case for a large upload, not an edge one. Appending to toolLines
+// and calling requestRender at that point is a silent no-op -- the
+// renderer goroutine is gone and nothing will ever read it -- so the
+// failure must reach the user as its own message instead.
+func TestLiveReplyMediaFallbackAfterFinalizeSendsFollowUp(t *testing.T) {
+	live, calls := newTestLiveReply(t, false)
+	live.newMediaSender = func(*bot.Bot, int64, int) gateway.MediaSender { return failingSender{} }
+
+	live.Delta("done")
+	live.doFinalize(context.Background(), "done")
+	before := len(*calls)
+
+	live.Media(gateway.MediaEvent{
+		ToolName:   "send_file",
+		Attachment: gateway.MediaAttachment{Type: "document", Path: "/tmp/report.pdf", FileName: "report.pdf"},
+	})
+	live.waitMedia()
+
+	live.mu.Lock()
+	stillBuffered := strings.Join(live.toolLines, "\n")
+	live.mu.Unlock()
+	if stillBuffered != "" {
+		t.Errorf("toolLines = %q, want empty: nothing will ever render this buffer again", stillBuffered)
+	}
+
+	after := *calls
+	if len(after) != before+1 {
+		t.Fatalf("api calls after finalize = %d, want exactly one follow-up (had %d before)", len(after), before)
+	}
+	got := after[len(after)-1]
+	if got.method != "sendRichMessage" {
+		t.Fatalf("follow-up method = %q, want sendRichMessage", got.method)
+	}
+	if !strings.Contains(got.body(), "could not send") || !strings.Contains(got.body(), bot.EscapeMarkdown("report.pdf")) {
+		t.Errorf("follow-up body = %q, want it to report the undelivered file", got.body())
+	}
+}

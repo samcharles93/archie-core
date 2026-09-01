@@ -116,6 +116,15 @@ type liveReply struct {
 	rendered  string
 	messageID int
 	last      time.Time
+	// finalized is set once stopRendering returns, the single point every
+	// finalize/abandon path funnels through to retire the renderer
+	// goroutine. After that point requestRender is a silent no-op (a
+	// non-blocking send into a channel nothing reads any more), so any
+	// caller still trying to append to the live message after this point
+	// -- Media's fire-and-forget delivery has its own 30s budget, far
+	// longer than the turn's text usually takes -- must send its own
+	// follow-up message instead of writing into a buffer nothing renders.
+	finalized bool
 
 	// terminal guards finalize and abandon so exactly one of them actually
 	// runs its body. Without this, a turn finishing naturally (finalize)
@@ -289,6 +298,9 @@ func (l *liveReply) flushRendering() {
 func (l *liveReply) stopRendering() {
 	l.cancelRender()
 	<-l.renderDone
+	l.mu.Lock()
+	l.finalized = true
+	l.mu.Unlock()
 }
 
 // Delta appends the next fragment of assistant text. It satisfies
@@ -431,6 +443,17 @@ func (l *liveReply) appendFallbackLine(att gateway.MediaAttachment) {
 	}
 
 	l.mu.Lock()
+	if l.finalized {
+		// The renderer that would have picked up toolLines is already
+		// gone -- requestRender below would be a silent no-op, and the
+		// live message it would have edited is done being edited. Send
+		// this as its own message instead of dropping it.
+		l.mu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), mediaSendTimeout)
+		defer cancel()
+		l.g.sendMessage(ctx, l.b, l.chatID, l.messageThreadID, line)
+		return
+	}
 	l.toolLines = append(l.toolLines, line)
 	l.mu.Unlock()
 	l.requestRender()
