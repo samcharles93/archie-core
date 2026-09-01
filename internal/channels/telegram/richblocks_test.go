@@ -27,11 +27,14 @@ func blockText(b models.InputRichBlock) string {
 }
 
 func TestMarkdownToBlocksHeadings(t *testing.T) {
+	// A spacer paragraph precedes the heading: Telegram adds no gap between
+	// adjacent blocks on its own, so the parser inserts one explicitly
+	// before every non-heading-following block. See appendBlock.
 	blocks := markdownToBlocks("Intro prose.\n### Danger\nMore prose.")
-	if len(blocks) != 3 {
-		t.Fatalf("blocks = %d, want 3 (%v)", len(blocks), blockTypes(blocks))
+	if len(blocks) != 4 {
+		t.Fatalf("blocks = %d, want 4 (%v)", len(blocks), blockTypes(blocks))
 	}
-	heading := blocks[1]
+	heading := blocks[2]
 	if heading.Type != models.RichBlockTypeSectionHeading {
 		t.Fatalf("second block type = %q, want heading", heading.Type)
 	}
@@ -66,12 +69,14 @@ func TestMarkdownToBlocksHeadingsMapDepthToSize(t *testing.T) {
 }
 
 func TestMarkdownToBlocksFencedCode(t *testing.T) {
+	// Non-heading blocks get an explicit spacer paragraph on both sides; see
+	// appendBlock.
 	in := "before\n```go\nfunc main() {}\n```\nafter"
 	blocks := markdownToBlocks(in)
-	if len(blocks) != 3 {
-		t.Fatalf("blocks = %d, want 3 (%v)", len(blocks), blockTypes(blocks))
+	if len(blocks) != 5 {
+		t.Fatalf("blocks = %d, want 5 (%v)", len(blocks), blockTypes(blocks))
 	}
-	pre := blocks[1]
+	pre := blocks[2]
 	if pre.Type != models.RichBlockTypePreformatted {
 		t.Fatalf("second block type = %q, want pre", pre.Type)
 	}
@@ -84,12 +89,14 @@ func TestMarkdownToBlocksFencedCode(t *testing.T) {
 }
 
 func TestMarkdownToBlocksBulletList(t *testing.T) {
+	// Non-heading blocks get an explicit spacer paragraph on both sides; see
+	// appendBlock.
 	in := "Text before\n- one\n- two\nText after"
 	blocks := markdownToBlocks(in)
-	if len(blocks) != 3 {
-		t.Fatalf("blocks = %d, want 3 (%v)", len(blocks), blockTypes(blocks))
+	if len(blocks) != 5 {
+		t.Fatalf("blocks = %d, want 5 (%v)", len(blocks), blockTypes(blocks))
 	}
-	list := blocks[1]
+	list := blocks[2]
 	if list.Type != models.RichBlockTypeList {
 		t.Fatalf("second block type = %q, want list", list.Type)
 	}
@@ -103,12 +110,14 @@ func TestMarkdownToBlocksBulletList(t *testing.T) {
 }
 
 func TestMarkdownToBlocksBlockQuotation(t *testing.T) {
+	// Non-heading blocks get an explicit spacer paragraph on both sides; see
+	// appendBlock.
 	in := "prose\n> important note\nafter"
 	blocks := markdownToBlocks(in)
-	if len(blocks) != 3 {
-		t.Fatalf("blocks = %d, want 3 (%v)", len(blocks), blockTypes(blocks))
+	if len(blocks) != 5 {
+		t.Fatalf("blocks = %d, want 5 (%v)", len(blocks), blockTypes(blocks))
 	}
-	quote := blocks[1]
+	quote := blocks[2]
 	if quote.Type != models.RichBlockTypeBlockQuotation {
 		t.Fatalf("second block type = %q, want blockquote", quote.Type)
 	}
@@ -138,18 +147,20 @@ func TestMarkdownToBlocksStripsInlineMarkers(t *testing.T) {
 
 func TestMarkdownToBlocksToolBlockBecomesParagraphAndCode(t *testing.T) {
 	// The tool progress block composes a label line then a ```text fence.
+	// Non-heading blocks get an explicit spacer paragraph on both sides; see
+	// appendBlock.
 	in := "🔧 shell — done\n```text\nexit 0\n```\ndone"
 	blocks := markdownToBlocks(in)
-	if len(blocks) != 3 {
-		t.Fatalf("blocks = %d, want 3 (%v)", len(blocks), blockTypes(blocks))
+	if len(blocks) != 5 {
+		t.Fatalf("blocks = %d, want 5 (%v)", len(blocks), blockTypes(blocks))
 	}
 	if got := blockText(blocks[0]); got != "🔧 shell — done" {
 		t.Errorf("label block = %q", got)
 	}
-	if blocks[1].Type != models.RichBlockTypePreformatted {
-		t.Fatalf("second block type = %q, want pre", blocks[1].Type)
+	if blocks[2].Type != models.RichBlockTypePreformatted {
+		t.Fatalf("third block type = %q, want pre", blocks[2].Type)
 	}
-	if got := blockText(blocks[1]); got != "exit 0" {
+	if got := blockText(blocks[2]); got != "exit 0" {
 		t.Errorf("code = %q, want exit 0", got)
 	}
 }
@@ -227,9 +238,13 @@ func TestSplitBlocksPreservesOrderAndContent(t *testing.T) {
 	if len(all) != len(blocks) {
 		t.Fatalf("total blocks %d, want %d", len(all), len(blocks))
 	}
-	texts := make([]string, len(all))
-	for i, b := range all {
-		texts[i] = blockText(b)
+	// Spacer paragraphs (see appendBlock) are empty and intentionally
+	// dropped here, same as blocksToPlainText does for the real send path.
+	var texts []string
+	for _, b := range all {
+		if text := blockText(b); text != "" {
+			texts = append(texts, text)
+		}
 	}
 	got := strings.Join(texts, " ")
 	want := "para one para two para three"

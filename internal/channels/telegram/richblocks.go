@@ -168,7 +168,7 @@ func (p *markdownBlockParser) handleLine(line string) {
 		p.codeLines = nil
 	case headingDepth(trimmed) > 0:
 		p.flush()
-		p.blocks = append(p.blocks, headingBlock(trimmed))
+		p.appendBlock(headingBlock(trimmed))
 	case isListItem(trimmed):
 		p.flushParagraph()
 		p.flushQuote()
@@ -183,11 +183,17 @@ func (p *markdownBlockParser) handleLine(line string) {
 	case trimmed == "":
 		p.flush()
 	default:
-		// A normal line ends a list or quote block and continues a paragraph.
+		// A normal line ends a list or quote block and continues a
+		// paragraph. Joined with a space, not "\n": this is a CommonMark
+		// soft line break, and Telegram's rich-block paragraph text does
+		// not render an embedded "\n" as a break at all -- it renders
+		// nothing, jamming the two lines together with no separator
+		// whatsoever. A space is the correct soft-break rendering anyway
+		// and survives regardless of how the client treats a literal "\n".
 		p.flushList()
 		p.flushQuote()
 		if p.paragraph.Len() > 0 {
-			p.paragraph.WriteString("\n")
+			p.paragraph.WriteString(" ")
 		}
 		p.paragraph.WriteString(line)
 	}
@@ -201,12 +207,27 @@ func (p *markdownBlockParser) flush() {
 	p.flushParagraph()
 }
 
+// appendBlock adds block to the output. Telegram's rich-block renderer adds
+// no vertical gap between adjacent blocks on its own -- only a heading
+// carries its own margin -- so two blocks from source lines with no blank
+// line between them (an intro line immediately followed by a list, two
+// back-to-back paragraphs) render glued together with no visible break at
+// all. An empty paragraph spacer before any non-heading-following block
+// makes that gap explicit instead of relying on client-side spacing that
+// doesn't exist.
+func (p *markdownBlockParser) appendBlock(block models.InputRichBlock) {
+	if len(p.blocks) > 0 && p.blocks[len(p.blocks)-1].Type != models.RichBlockTypeSectionHeading {
+		p.blocks = append(p.blocks, paragraphBlock(""))
+	}
+	p.blocks = append(p.blocks, block)
+}
+
 func (p *markdownBlockParser) flushParagraph() {
 	if p.paragraph.Len() == 0 {
 		return
 	}
 	if text := strings.TrimSpace(p.paragraph.String()); text != "" {
-		p.blocks = append(p.blocks, paragraphBlock(stripInlineMarkdown(text)))
+		p.appendBlock(paragraphBlock(stripInlineMarkdown(text)))
 	}
 	p.paragraph.Reset()
 }
@@ -219,7 +240,7 @@ func (p *markdownBlockParser) flushList() {
 	for _, item := range p.listItems {
 		items = append(items, models.InputRichBlockListItem{Blocks: item})
 	}
-	p.blocks = append(p.blocks, models.InputRichBlock{
+	p.appendBlock(models.InputRichBlock{
 		Type: models.RichBlockTypeList,
 		InputRichBlockList: &models.InputRichBlockList{
 			Type:  models.RichBlockTypeList,
@@ -242,7 +263,7 @@ func (p *markdownBlockParser) flushQuote() {
 		inner = append(inner, paragraphBlock(stripInlineMarkdown(body)))
 	}
 	if len(inner) > 0 {
-		p.blocks = append(p.blocks, models.InputRichBlock{
+		p.appendBlock(models.InputRichBlock{
 			Type: models.RichBlockTypeBlockQuotation,
 			InputRichBlockBlockQuotation: &models.InputRichBlockBlockQuotation{
 				Type:   models.RichBlockTypeBlockQuotation,
@@ -255,7 +276,7 @@ func (p *markdownBlockParser) flushQuote() {
 
 func (p *markdownBlockParser) closeCode() {
 	if len(p.codeLines) > 0 || p.codeLang != "" {
-		p.blocks = append(p.blocks, preformattedBlock(stripInlineMarkdown(strings.Join(p.codeLines, "\n")), p.codeLang))
+		p.appendBlock(preformattedBlock(stripInlineMarkdown(strings.Join(p.codeLines, "\n")), p.codeLang))
 	}
 	p.codeLines, p.codeLang, p.inCode = nil, "", false
 }
