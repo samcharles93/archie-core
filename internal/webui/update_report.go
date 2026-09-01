@@ -109,7 +109,7 @@ func summarizeUpdateReport(report releaseupdate.Report, verification releaseupda
 		return "Update did NOT take effect: " + strings.Join(ids, "; ") + "."
 	}
 	if len(verification.Confirmed) == 0 {
-		return "Update installed and health check passed, but no running version could be verified -- treat this as UNCONFIRMED, not complete."
+		return "Update installed and health check passed, but the running version could not be verified -- please check manually before assuming the update worked."
 	}
 	text := "Update complete. Health check passed -- confirmed running on the new version (" + strings.Join(verification.Confirmed, ", ") + ")."
 	if len(verification.Unverified) > 0 {

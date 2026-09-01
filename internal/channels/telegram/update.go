@@ -327,7 +327,7 @@ func formatHealthyReport(report releaseupdate.Report, verification releaseupdate
 		if changes != "" {
 			text += " (" + changes + ")"
 		}
-		return text + ", health check passed, but I could not confirm which version is actually running. Treat this as UNCONFIRMED, not complete."
+		return text + ", health check passed, but I still can't confirm which version is actually running — please check manually before assuming the update worked."
 	}
 	text := "Update complete"
 	if changes != "" {

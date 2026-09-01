@@ -275,7 +275,7 @@ func TestFormatPendingReportVerifiesAgainstRunningVersions(t *testing.T) {
 			previous:  map[string]string{daemon: previousVer},
 			installed: map[string]string{daemon: installedVer},
 			running:   nil,
-			wantText:  []string{"could not confirm which version"},
+			wantText:  []string{"can't confirm which version"},
 			denyText:  []string{"did not take effect", "healthy on the new version"},
 		},
 		{
@@ -283,7 +283,7 @@ func TestFormatPendingReportVerifiesAgainstRunningVersions(t *testing.T) {
 			previous:  map[string]string{daemon: previousVer},
 			installed: map[string]string{daemon: releaseupdate.VersionUnknown},
 			running:   map[string]string{daemon: installedVer},
-			wantText:  []string{"could not confirm which version"},
+			wantText:  []string{"can't confirm which version"},
 			denyText:  []string{"did not take effect", "healthy on the new version", releaseupdate.VersionUnknown},
 		},
 		{
@@ -291,7 +291,7 @@ func TestFormatPendingReportVerifiesAgainstRunningVersions(t *testing.T) {
 			previous:  map[string]string{daemon: previousVer},
 			installed: map[string]string{daemon: installedVer},
 			running:   map[string]string{daemon: releaseupdate.VersionDev},
-			wantText:  []string{"could not confirm which version"},
+			wantText:  []string{"can't confirm which version"},
 			denyText:  []string{"did not take effect", "healthy on the new version"},
 		},
 	}
