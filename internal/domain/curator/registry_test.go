@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	domainmemory "github.com/samcharles93/archie-core/internal/domain/memory"
 	"github.com/samcharles93/archie-core/internal/tools"
 )
 
@@ -34,6 +35,44 @@ func (testStore) List(context.Context) ([]SkillRef, error)    { return nil, nil 
 func (testStore) Read(context.Context, string) (Skill, error) { return Skill{}, nil }
 func (testStore) Write(context.Context, Skill) error          { return nil }
 func (testStore) Delete(context.Context, string) error        { return nil }
+
+// testMemoryEngines is a fake MemoryEngineSource with one engine, "builtin".
+type testMemoryEngines struct{}
+
+func (testMemoryEngines) Get(name string) (domainmemory.MemoryEngine, bool) {
+	if name != "builtin" {
+		return nil, false
+	}
+	return fakeMemoryEngine{}, true
+}
+
+// fakeMemoryEngine is the minimal domain/memory.MemoryEngine a resolved
+// lookup can return; its own behavior is exercised by
+// internal/domain/memory's and internal/infrastructure/memory's own test
+// suites, not here.
+type fakeMemoryEngine struct{}
+
+func (fakeMemoryEngine) Name() string                    { return "builtin" }
+func (fakeMemoryEngine) Version() string                 { return "test" }
+func (fakeMemoryEngine) Manifest() domainmemory.Manifest { return domainmemory.Manifest{} }
+func (fakeMemoryEngine) Bind(domainmemory.Registrar)     {}
+func (fakeMemoryEngine) Start(context.Context) error     { return nil }
+func (fakeMemoryEngine) Health(context.Context) domainmemory.Health {
+	return domainmemory.Health{Status: domainmemory.HealthHealthy}
+}
+func (fakeMemoryEngine) Stop(context.Context) error { return nil }
+func (fakeMemoryEngine) Write(context.Context, domainmemory.Observation) (domainmemory.Record, error) {
+	return domainmemory.Record{}, nil
+}
+
+func (fakeMemoryEngine) Query(context.Context, domainmemory.Query) ([]domainmemory.Record, error) {
+	return nil, nil
+}
+
+func (fakeMemoryEngine) List(context.Context, string) ([]domainmemory.Record, error) {
+	return nil, nil
+}
+func (fakeMemoryEngine) Forget(context.Context, string) error { return nil }
 
 type testSink struct {
 	mu    sync.Mutex
@@ -305,6 +344,17 @@ func TestRegistryDeclaredCapabilitiesRequireHostServices(t *testing.T) {
 			manifest: Manifest{Interval: time.Hour, Skills: true},
 		},
 		{
+			name:     "memory engine declared, no source",
+			host:     Registrar{},
+			manifest: Manifest{Interval: time.Hour, MemoryEngine: "builtin"},
+			wantErr:  true,
+		},
+		{
+			name:     "memory engine declared, source present",
+			host:     Registrar{MemoryEngines: testMemoryEngines{}},
+			manifest: Manifest{Interval: time.Hour, MemoryEngine: "builtin"},
+		},
+		{
 			name:     "nothing declared, empty host",
 			host:     Registrar{},
 			manifest: Manifest{Interval: time.Hour},
@@ -327,12 +377,13 @@ func TestRegistryBindFiltersToDeclaredCapabilities(t *testing.T) {
 	t.Parallel()
 
 	host := Registrar{
-		Model:  "provider/default",
-		LLM:    &testLLM{},
-		Tools:  &testBuilder{},
-		Skills: testStore{},
-		Events: &testSink{},
-		Clock:  testClock{now: time.Unix(0, 0)},
+		Model:         "provider/default",
+		LLM:           &testLLM{},
+		Tools:         &testBuilder{},
+		Skills:        testStore{},
+		MemoryEngines: testMemoryEngines{},
+		Events:        &testSink{},
+		Clock:         testClock{now: time.Unix(0, 0)},
 	}
 
 	// A curator declaring nothing agentic receives no model access and no
@@ -350,6 +401,9 @@ func TestRegistryBindFiltersToDeclaredCapabilities(t *testing.T) {
 	}
 	if plain.view.Skills != nil {
 		t.Error("view.Skills = non-nil for a curator not declaring skills")
+	}
+	if plain.view.MemoryEngines != nil {
+		t.Error("view.MemoryEngines = non-nil for a curator declaring no memory engine")
 	}
 	if plain.view.Events == nil {
 		t.Error("view.Events = nil; activity must always be attributable")
@@ -385,6 +439,12 @@ func TestRegistryBindFiltersToDeclaredCapabilities(t *testing.T) {
 	}
 	if mem.view.Tools != nil {
 		t.Error("view.Tools = non-nil for a curator declaring no tools")
+	}
+	if mem.view.MemoryEngines == nil {
+		t.Error("view.MemoryEngines = nil for a curator declaring a memory engine")
+	}
+	if _, ok := mem.view.MemoryEngines.Get("builtin"); !ok {
+		t.Error("view.MemoryEngines.Get(builtin) = not found, want the fake engine registered under that name")
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	domainmemory "github.com/samcharles93/archie-core/internal/domain/memory"
 	"github.com/samcharles93/archie-core/internal/tools"
 )
 
@@ -27,6 +28,15 @@ type Registrar struct {
 	// Skills is the skill-maintenance capability (skill curator,
 	// archie-core-i7i). Bound when the curator declares Skills.
 	Skills SkillStore
+	// MemoryEngines resolves a named memory engine, for a curator that
+	// declared Manifest.MemoryEngine (archie-core-1786637499636). Bound
+	// only when declared. Like Tools, resolution is by name at call time,
+	// not a value pre-fetched at Bind: a curator calls
+	// MemoryEngines.Get(its own Manifest().MemoryEngine), the same trust
+	// model ToolBuilder.Build(ctx, declared) already uses -- the caller is
+	// trusted to pass its own declared identifier, not handed a
+	// pre-scoped instance.
+	MemoryEngines MemoryEngineSource
 	// Events publishes curator activity. Implementations must be
 	// non-blocking and bounded (drop on overflow), so a curator can never
 	// apply backpressure to a chat turn or the daemon. Always bound.
@@ -89,6 +99,14 @@ type Skill struct {
 	Name        string
 	Content     string
 	Description string
+}
+
+// MemoryEngineSource resolves a named memory engine. Mirrors
+// domain/memory.Registry.Get's exact signature so the real registry
+// satisfies this without an adapter, while this package stays decoupled
+// from that package's concrete Registry type.
+type MemoryEngineSource interface {
+	Get(name string) (domainmemory.MemoryEngine, bool)
 }
 
 // EventSink publishes curator activity (what ran, what changed, why). It is
