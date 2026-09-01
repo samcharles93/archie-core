@@ -125,6 +125,9 @@ func (r *Registry) validateDeclared(m Manifest) error {
 	if m.Skills && r.host.Skills == nil {
 		return errors.New("curator manifest: declares the skills capability but the registrar has no SkillStore")
 	}
+	if m.MemoryEngine != "" && r.host.MemoryEngines == nil {
+		return errors.New("curator manifest: declares a memory engine but the registrar has no MemoryEngineSource")
+	}
 	return nil
 }
 
@@ -142,6 +145,9 @@ func (r *Registry) filter(m Manifest) Registrar {
 	}
 	if !m.Skills {
 		v.Skills = nil
+	}
+	if m.MemoryEngine == "" {
+		v.MemoryEngines = nil
 	}
 	return v
 }

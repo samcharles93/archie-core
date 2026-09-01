@@ -825,6 +825,11 @@ func (b *boot) setupCurators(ctx context.Context) {
 	log := b.log
 	b.curatorRegistry = curator.NewRegistry(curator.Registrar{
 		Events: curatorEventSink{b.bus},
+		// b.memEngines (*domainmemory.Registry) satisfies
+		// curator.MemoryEngineSource's Get(name) signature directly, no
+		// adapter needed. Set by setupMemoryAll, which Run() calls before
+		// setupCurators.
+		MemoryEngines: b.memEngines,
 	})
 	// The runtime owns the per-curator loops (archie-core-89x): one
 	// goroutine per curator, wake nudges, per-pass budgets, panic
