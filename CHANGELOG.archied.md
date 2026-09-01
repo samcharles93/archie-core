@@ -1,5 +1,9 @@
 # archied changelog
 
+## [1.19.6] - 2026-09-02
+
+- fix(build): stamp gatewayVersion/runtimeVersion in the right package
+
 ## [1.19.5] - 2026-09-01
 
 - feat(webui): dashboard-aware chat — Archie sees the page, points you there
