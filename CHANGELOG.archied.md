@@ -1,5 +1,9 @@
 # archied changelog
 
+## [1.19.7] - 2026-09-02
+
+- fix(logging): make Tail/Page allocation bound explicit for CodeQL
+
 ## [1.19.6] - 2026-09-02
 
 - fix(build): stamp gatewayVersion/runtimeVersion in the right package
