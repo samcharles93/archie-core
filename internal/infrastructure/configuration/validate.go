@@ -23,6 +23,11 @@ const (
 	dispatchTriggerAssignee = "assignee"
 	dispatchTriggerLabel    = "label"
 	dispatchTriggerEither   = "either"
+
+	// memoryEngineBuiltin is the only domain/memory engine implemented so
+	// far (internal/infrastructure/memory.BuiltinEngine). Extend
+	// memoryEngines, not this list of one, as further engines land.
+	memoryEngineBuiltin = "builtin"
 )
 
 var (
@@ -30,6 +35,7 @@ var (
 	dispatchTriggers = []string{dispatchTriggerAssignee, dispatchTriggerLabel, dispatchTriggerEither}
 	natsModes        = []string{config.NATSModeEmbedded, config.NATSModeExternal}
 	forgeIntakes     = []string{config.ForgeIntakePoll, config.ForgeIntakeWebhook, config.ForgeIntakeBoth}
+	memoryEngines    = []string{memoryEngineBuiltin}
 )
 
 // Validate runs the same checks Loader applies before accepting a config,
@@ -78,7 +84,24 @@ func validate(cfg *config.Config) error {
 	if err := validateContainers(cfg); err != nil {
 		return err
 	}
+	if err := validateMemory(cfg); err != nil {
+		return err
+	}
 	return validateCapture(cfg)
+}
+
+// validateMemory rejects an engine name outside memoryEngines. Empty is
+// valid input to Validate (applyDefaults resolves it to memoryEngineBuiltin
+// before this runs on the real load path); it is not "unknown" so it does
+// not error here.
+func validateMemory(cfg *config.Config) error {
+	if cfg.Memory.Engine == "" {
+		return nil
+	}
+	if !oneOf(cfg.Memory.Engine, memoryEngines) {
+		return fmt.Errorf("%w: memory.engine %q (want %s)", ErrInvalidInput, cfg.Memory.Engine, list(memoryEngines))
+	}
+	return nil
 }
 
 // validateCapture rejects negative capture settings. applyDefaults fills

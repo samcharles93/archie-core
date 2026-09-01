@@ -285,9 +285,17 @@ func (d Dispatch) LabelValues() []string {
 
 // MemoryConfig holds memory provider configuration.
 type MemoryConfig struct {
-	Provider       string            `yaml:"provider" json:"provider"`
-	ProviderConfig map[string]string `yaml:"provider_config" json:"provider_config"`
-	SessionTTL     Duration          `yaml:"session_ttl" json:"session_ttl"`
+	// Engine selects among the domain/memory engine family
+	// (internal/domain/memory). Empty resolves to "builtin", the
+	// file-writing store under work_dir -- the same behaviour as an
+	// absent [memory] section entirely.
+	Engine string `toml:"engine" yaml:"engine" json:"engine"`
+	// Provider is the legacy external-provider identifier consumed by
+	// internal/memory.Manager.RegisterExternal, a separate, older
+	// mechanism than Engine. See archie-core-1786637499161-356-e424e40d.1.
+	Provider       string            `toml:"provider" yaml:"provider" json:"provider"`
+	ProviderConfig map[string]string `toml:"provider_config" yaml:"provider_config" json:"provider_config"`
+	SessionTTL     Duration          `toml:"session_ttl" yaml:"session_ttl" json:"session_ttl"`
 }
 
 // MCPServer describes one MCP server connection.
