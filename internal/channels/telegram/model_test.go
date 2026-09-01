@@ -241,13 +241,86 @@ func TestModelCommandDrillsFromProviderIntoFilteredModels(t *testing.T) {
 		t.Fatalf("filtered model rows = %d, want one two-column model row plus navigation", len(modelMarkup.InlineKeyboard))
 	}
 	for _, button := range modelMarkup.InlineKeyboard[0] {
-		if strings.Contains(button.Text, "openrouter") {
-			t.Fatalf("OpenRouter model leaked into OpenAI selection: %q", button.Text)
+		model, ok := g.modelForCallback(button.CallbackData)
+		if !ok {
+			continue
+		}
+		if strings.HasPrefix(model, "openrouter/") {
+			t.Fatalf("OpenRouter model leaked into OpenAI selection: %q", model)
 		}
 	}
 }
 
-func TestModelSelectorPaginatesEightModelsWithBackAndCancel(t *testing.T) {
+// TestModelSelectorKeyboardPageAcrossModelCounts covers the sizes that
+// actually stress pageBounds and the nav-row logic: none, one (no pairing,
+// no nav), exactly one page size (no nav), one over a page (nav appears),
+// and enough to need many pages (nav survives past double digits).
+func TestModelSelectorKeyboardPageAcrossModelCounts(t *testing.T) {
+	tests := []struct {
+		name      string
+		count     int
+		wantPages int
+	}{
+		{"zero models", 0, 1},
+		{"one model", 1, 1},
+		{"exactly one page", modelPageSize, 1},
+		{"one over a page", modelPageSize + 1, 2},
+		{"many pages", 100, (100 + modelPageSize - 1) / modelPageSize},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := &modelManagerStub{}
+			for i := 0; i < tt.count; i++ {
+				manager.models = append(manager.models, fmt.Sprintf("provider/model-%02d", i))
+			}
+			g := New("1:test", "", "", []int64{42}, slog.Default())
+
+			page := g.modelSelectorKeyboardPage(manager, "provider", 0)
+			rows := page.InlineKeyboard
+			if len(rows) == 0 {
+				t.Fatalf("no rows returned for %d models", tt.count)
+			}
+
+			actions := rows[len(rows)-1]
+			if len(actions) != 2 || actions[0].CallbackData != modelBackCallback ||
+				actions[1].CallbackData != modelCancelCallback {
+				t.Fatalf("actions row = %#v, want back+cancel", actions)
+			}
+
+			modelButtons := 0
+			for _, row := range rows[:len(rows)-1] {
+				for _, button := range row {
+					if button.CallbackData == modelNoopCallback {
+						continue
+					}
+					if _, isPageLink := g.modelPageForCallback(button.CallbackData); isPageLink {
+						continue
+					}
+					modelButtons++
+				}
+			}
+			if modelButtons != min(tt.count, modelPageSize) {
+				t.Fatalf("model buttons on first page = %d, want %d", modelButtons, min(tt.count, modelPageSize))
+			}
+
+			hasNav := tt.wantPages > 1
+			navRowPresent := false
+			for _, row := range rows[:len(rows)-1] {
+				for _, button := range row {
+					if button.CallbackData == modelNoopCallback {
+						navRowPresent = true
+					}
+				}
+			}
+			if navRowPresent != hasNav {
+				t.Fatalf("nav row present = %v, want %v for %d models", navRowPresent, hasNav, tt.count)
+			}
+		})
+	}
+}
+
+func TestModelSelectorPageCallbackAdvancesToNextPage(t *testing.T) {
 	manager := &modelManagerStub{active: "provider/model-09"}
 	for i := 1; i <= 9; i++ {
 		manager.models = append(manager.models, fmt.Sprintf("provider/model-%02d", i))
@@ -255,26 +328,15 @@ func TestModelSelectorPaginatesEightModelsWithBackAndCancel(t *testing.T) {
 	g := New("1:test", "", "", []int64{42}, slog.Default())
 
 	first := g.modelSelectorKeyboardPage(manager, "provider", 0)
-	if got := len(first.InlineKeyboard); got != 6 {
-		t.Fatalf("first page rows = %d, want four model rows, pagination, and actions", got)
-	}
 	nav := first.InlineKeyboard[4]
-	if len(nav) != 2 || nav[0].Text != "1/2" || nav[1].Text != "Next ▶" {
-		t.Fatalf("first page navigation = %#v", nav)
-	}
-	actions := first.InlineKeyboard[5]
-	if len(actions) != 2 || actions[0].CallbackData != modelBackCallback ||
-		actions[1].CallbackData != modelCancelCallback {
-		t.Fatalf("actions = %#v", actions)
-	}
-
-	page, ok := g.modelPageForCallback(nav[1].CallbackData)
+	next, ok := g.modelPageForCallback(nav[1].CallbackData)
 	if !ok {
 		t.Fatal("next page callback was not recorded")
 	}
-	second := g.modelSelectorKeyboardPage(manager, page.Provider, page.Page)
-	if got := len(second.InlineKeyboard); got != 3 {
-		t.Fatalf("second page rows = %d, want model, pagination, and actions", got)
+
+	second := g.modelSelectorKeyboardPage(manager, next.Provider, next.Page)
+	if got := len(second.InlineKeyboard[0]); got != 1 {
+		t.Fatalf("second page model row = %d buttons, want 1 (nine models, page size eight)", got)
 	}
 	if got := second.InlineKeyboard[0][0].Text; got != "✓ model-09" {
 		t.Fatalf("second page model = %q", got)
