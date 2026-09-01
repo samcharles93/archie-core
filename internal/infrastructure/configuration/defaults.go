@@ -67,6 +67,17 @@ func (l *Loader) applyDefaults(cfg *config.Config) {
 	applyToolPolicyDefaults(cfg)
 	applyCaptureDefaults(cfg)
 	applyNATSDefaults(cfg)
+	applyMemoryDefaults(cfg)
+}
+
+// applyMemoryDefaults fills an absent engine choice with the builtin
+// engine, so "nothing configured" and "explicitly builtin" are the same
+// resolved state everywhere after this point -- validateMemory and every
+// later reader see one value, not two that happen to mean the same thing.
+func applyMemoryDefaults(cfg *config.Config) {
+	if cfg.Memory.Engine == "" {
+		cfg.Memory.Engine = memoryEngineBuiltin
+	}
 }
 
 // applyCaptureDefaults fills the webhook capture endpoint's settings. See

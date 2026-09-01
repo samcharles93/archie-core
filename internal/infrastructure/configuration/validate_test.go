@@ -3,6 +3,7 @@ package configuration
 import (
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -136,6 +137,21 @@ func TestValidate_RejectsTheSameProblemsAsLoaderLoad(t *testing.T) {
 				}
 			},
 			wantErr: true,
+		},
+		{
+			name:    "unrecognised memory.engine",
+			mutate:  func(cfg *config.Config) { cfg.Memory.Engine = "not-a-real-engine" },
+			wantErr: true,
+		},
+		{
+			name:    "recognised memory.engine",
+			mutate:  func(cfg *config.Config) { cfg.Memory.Engine = "builtin" },
+			wantErr: false,
+		},
+		{
+			name:    "empty memory.engine is not unrecognised",
+			mutate:  func(cfg *config.Config) { cfg.Memory.Engine = "" },
+			wantErr: false,
 		},
 		{
 			name:    "negative capture.retention",
@@ -322,5 +338,21 @@ type = "none"
 
 	if _, err := New(nil).File(path); err != nil {
 		t.Fatalf("Loader.File(equivalent config on disk) = %v, want nil", err)
+	}
+}
+
+// TestValidateMemoryNamesTheValidSet pins the AC this satisfies: an
+// unknown memory.engine is rejected with a clear error naming the valid
+// set, in the same style forge.type already uses.
+func TestValidateMemoryNamesTheValidSet(t *testing.T) {
+	cfg := minimalValidConfig()
+	cfg.Memory.Engine = "not-a-real-engine"
+
+	err := validateMemory(&cfg)
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("validateMemory(unknown engine) = %v, want wrapping ErrInvalidInput", err)
+	}
+	if got, want := err.Error(), `memory.engine "not-a-real-engine" (want builtin)`; !strings.Contains(got, want) {
+		t.Errorf("error text = %q, want it to contain %q", got, want)
 	}
 }

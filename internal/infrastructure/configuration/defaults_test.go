@@ -129,3 +129,21 @@ func TestApplyCaptureDefaultsLeavesExplicitValuesAlone(t *testing.T) {
 		t.Errorf("Capture.RateBurst = %d, want unchanged 9", cfg.Capture.RateBurst)
 	}
 }
+
+func TestApplyMemoryDefaultsFillsAbsentEngineWithBuiltin(t *testing.T) {
+	cfg := &config.Config{}
+	applyMemoryDefaults(cfg)
+
+	if cfg.Memory.Engine != memoryEngineBuiltin {
+		t.Errorf("Memory.Engine = %q, want %q", cfg.Memory.Engine, memoryEngineBuiltin)
+	}
+}
+
+func TestApplyMemoryDefaultsLeavesExplicitEngineAlone(t *testing.T) {
+	cfg := &config.Config{Memory: config.MemoryConfig{Engine: "honcho"}}
+	applyMemoryDefaults(cfg)
+
+	if cfg.Memory.Engine != "honcho" {
+		t.Errorf("Memory.Engine = %q, want unchanged %q", cfg.Memory.Engine, "honcho")
+	}
+}

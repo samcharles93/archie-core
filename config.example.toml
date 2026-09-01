@@ -206,13 +206,17 @@ listen = "127.0.0.1:8484"
 # level       = "info"   # "debug" | "info" | "warn" | "error"
 # quiet       = false    # true suppresses stderr once a file is configured
 
-# The built-in file-backed memory provider (MEMORY.md + USER.md under
+# The built-in file-backed memory engine (MEMORY.md + USER.md under
 # work_dir) is always on -- nothing here is required to get memory at all.
-# [memory] exists to register an EXTERNAL provider alongside it, but as of
-# this writing that wiring (memory.Manager.RegisterExternal) is not called
-# anywhere in cmd/archied, so setting this section currently has no effect.
-# Left here so the schema is documented, not because it does anything yet.
+# engine selects among the domain/memory engine family; "builtin" (the
+# default, same as leaving it unset) is the only one implemented so far.
+# provider is a separate, older mechanism: an external provider identifier
+# for internal/memory.Manager.RegisterExternal. As of this writing that
+# wiring is not called anywhere in cmd/archied, so setting provider
+# currently has no effect -- left here so the schema is documented, not
+# because it does anything yet.
 # [memory]
+# engine = "builtin"        # "builtin" is the only engine implemented so far
 # provider = ""             # external provider identifier; currently unwired
 # session_ttl = "0s"
 # [memory.provider_config]
