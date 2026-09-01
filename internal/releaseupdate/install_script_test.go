@@ -22,7 +22,7 @@ func TestUpdateInstallGatewayOnlySkipsRuntimeWork(t *testing.T) {
 	assertCallAbsent(t, calls, "git pull")
 	assertCallContains(t, calls, "git -C", "rev-parse --verify refs/tags/archied/v1.13.0^{commit}")
 	assertCallContains(t, calls, "checkout --quiet --detach approved-release-commit")
-	assertCallContains(t, calls, "go build", "main.runtimeVersion=1.9.9", "./cmd/archied")
+	assertCallContains(t, calls, "go build", "internal/app/archied.runtimeVersion=1.9.9", "./cmd/archied")
 	assertCallAbsent(t, calls, "./cmd/archie-agent")
 	assertCallAbsent(t, calls, "docker compose build agent")
 	if got := result.Installed[ComponentDaemon]; got != "1.13.0" {

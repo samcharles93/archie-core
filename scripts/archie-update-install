@@ -126,7 +126,7 @@ install -m755 "$source_dir/scripts/archie-update-check" "$BIN_DIR/archie-update-
 
 if [[ ",$components," == *,daemon,* ]]; then
   echo "==> building archied $GW"
-  go build -ldflags "-X main.gatewayVersion=$GW -X main.runtimeVersion=$RT -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" \
+  go build -ldflags "-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion=$GW -X github.com/samcharles93/archie-core/internal/app/archied.runtimeVersion=$RT -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" \
     -o "$tmp/archied" ./cmd/archied
 fi
 if [[ ",$components," == *,daemon,* ]]; then

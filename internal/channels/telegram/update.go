@@ -288,35 +288,7 @@ func formatVersionChanges(result releaseupdate.Result) string {
 // evidence that the install took effect.
 func formatPendingReport(report releaseupdate.Report, running map[string]string) string {
 	if !report.RolledBack && report.HealthCheck == "passed" {
-		verification := report.Verify(running)
-		if len(verification.Drift) > 0 {
-			return formatVersionDrift(verification.Drift)
-		}
-		changes := formatVersionChanges(releaseupdate.Result{Previous: report.Previous, Installed: report.Installed})
-		text := "Update complete"
-		if changes != "" {
-			text += ": " + changes
-		}
-		if len(verification.Confirmed) == 0 {
-			// Nothing self-reported a version we could check the claim
-			// against, so a passed health probe is all we have -- and it
-			// only ever proved that *something* answered. Saying "healthy
-			// on the new version" here would assert the exact thing that
-			// went unverified in the incident this check was added for.
-			return text + ". Health check passed, but I could not confirm which version is actually running."
-		}
-		text += ". Health check passed — archie-core is healthy on the new version."
-		if len(verification.Unverified) > 0 {
-			// Something WAS confirmed, so the headline is earned -- but the
-			// version change printed above covers every component the
-			// installer claimed, including ones nothing checked. Naming them
-			// keeps the confirmed part from silently vouching for the rest.
-			// This is the ordinary case, not an edge one: only the daemon
-			// can self-report today, so the agent lands here on every
-			// successful update.
-			text += " Not independently checked: " + strings.Join(verification.Unverified, ", ") + "."
-		}
-		return text
+		return formatHealthyReport(report, report.Verify(running))
 	}
 
 	ids := make([]string, 0, len(report.Previous))
@@ -334,6 +306,45 @@ func formatPendingReport(report releaseupdate.Report, running map[string]string)
 		return fmt.Sprintf("Update failed health check after restarting and was automatically rolled back to the previous version (%s). archie-core is running normally on the previous release.", previousVersions)
 	}
 	return fmt.Sprintf("Update failed health check after restarting and could NOT be rolled back automatically (no backup was found). archie-core may still be running the broken version, or may not be running at all — manual intervention is required. Previous version was %s.", previousVersions)
+}
+
+// formatHealthyReport words the report once RolledBack is false and the
+// health check passed -- the branch where a passed probe alone is tempting
+// to read as "the update worked," which is exactly the false-confidence
+// this whole verification path exists to prevent.
+func formatHealthyReport(report releaseupdate.Report, verification releaseupdate.Verification) string {
+	if len(verification.Drift) > 0 {
+		return formatVersionDrift(verification.Drift)
+	}
+	changes := formatVersionChanges(releaseupdate.Result{Previous: report.Previous, Installed: report.Installed})
+	if len(verification.Confirmed) == 0 {
+		// Nothing self-reported a version we could check the claim against,
+		// so a passed health probe is all we have -- and it only ever
+		// proved that *something* answered. Calling this "Update complete"
+		// would assert the exact thing that went unverified in the incident
+		// this check was added for.
+		text := "Update install finished"
+		if changes != "" {
+			text += " (" + changes + ")"
+		}
+		return text + ", health check passed, but I could not confirm which version is actually running. Treat this as UNCONFIRMED, not complete."
+	}
+	text := "Update complete"
+	if changes != "" {
+		text += ": " + changes
+	}
+	text += ". Health check passed — archie-core is healthy on the new version."
+	if len(verification.Unverified) > 0 {
+		// Something WAS confirmed, so the headline is earned -- but the
+		// version change printed above covers every component the
+		// installer claimed, including ones nothing checked. Naming them
+		// keeps the confirmed part from silently vouching for the rest.
+		// This is the ordinary case, not an edge one: only the daemon can
+		// self-report today, so the agent lands here on every successful
+		// update.
+		text += " Not independently checked: " + strings.Join(verification.Unverified, ", ") + "."
+	}
+	return text
 }
 
 // formatVersionDrift words the case where the installer reported success and
