@@ -1,5 +1,11 @@
 # archied changelog
 
+## [1.19.8] - 2026-09-02
+
+- fix(update): drop dev-facing wording from the unconfirmed-update message
+- fix(telegram): stop adjacent rich blocks from rendering glued together
+- fix(telegram): send undelivered-media fallback after finalize as its own message
+
 ## [1.19.7] - 2026-09-02
 
 - fix(logging): make Tail/Page allocation bound explicit for CodeQL
