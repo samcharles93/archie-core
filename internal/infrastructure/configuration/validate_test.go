@@ -154,6 +154,11 @@ func TestValidate_RejectsTheSameProblemsAsLoaderLoad(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:    "memory.provider set is rejected: no external provider is implemented",
+			mutate:  func(cfg *config.Config) { cfg.Memory.Provider = "honcho" },
+			wantErr: true,
+		},
+		{
 			name:    "negative capture.retention",
 			mutate:  func(cfg *config.Config) { cfg.Capture.Retention = config.Duration(-time.Hour) },
 			wantErr: true,
@@ -354,5 +359,24 @@ func TestValidateMemoryNamesTheValidSet(t *testing.T) {
 	}
 	if got, want := err.Error(), `memory.engine "not-a-real-engine" (want builtin)`; !strings.Contains(got, want) {
 		t.Errorf("error text = %q, want it to contain %q", got, want)
+	}
+}
+
+// TestValidateMemoryRejectsProviderSetToAnything is the regression case for
+// archie-core-1786637499161-356-e424e40d.1: memory.provider being set has
+// always silently done nothing (no external MemoryProvider exists
+// anywhere in the repo for setupMemory to construct and pass to
+// RegisterExternal). An operator who set it reasonably believed they
+// configured something; this must fail loudly instead.
+func TestValidateMemoryRejectsProviderSetToAnything(t *testing.T) {
+	cfg := minimalValidConfig()
+	cfg.Memory.Provider = "honcho"
+
+	err := validateMemory(&cfg)
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("validateMemory(provider set) = %v, want wrapping ErrInvalidInput", err)
+	}
+	if !strings.Contains(err.Error(), `memory.provider "honcho"`) {
+		t.Errorf("error text = %q, want it to name the field and the value", err.Error())
 	}
 }

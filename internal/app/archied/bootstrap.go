@@ -725,8 +725,12 @@ func (b *boot) registerNATSRPC() error {
 
 // setupMemory starts the memory manager. The built-in file-backed
 // provider (MEMORY.md + USER.md) lives under the daemon work directory.
-// External providers from config are added via RegisterExternal when
-// cfg.Memory.Provider is set.
+// memory.Manager.RegisterExternal exists for an external provider, but
+// nothing calls it here: no external MemoryProvider is implemented
+// anywhere in the repo to construct and register, and
+// configuration.validateMemory now rejects cfg.Memory.Provider being set
+// at all rather than silently accepting a value with no effect
+// (archie-core-1786637499161-356-e424e40d.1).
 func (b *boot) setupMemory() error {
 	cfg, log := b.cfg, b.log
 	memProvider, memDir := memoryProvider(cfg.WorkDir, log)
