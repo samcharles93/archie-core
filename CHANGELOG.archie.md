@@ -1,5 +1,9 @@
 # archie-agent changelog
 
+## [1.19.9] - 2026-09-02
+
+- feat(config): config surface for memory engine selection
+
 ## [1.19.7] - 2026-09-02
 
 - fix(logging): make Tail/Page allocation bound explicit for CodeQL

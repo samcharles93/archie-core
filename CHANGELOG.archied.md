@@ -1,5 +1,15 @@
 # archied changelog
 
+## [1.19.9] - 2026-09-02
+
+- feat(memory): typed memory engine contract, registry, and registrar
+- feat(memory): builtin engine implementing the domain/memory contract
+- feat(config): config surface for memory engine selection
+- feat(daemon): wire the domain/memory engine registry at boot
+- feat(curator): bind curators to memory engines
+- fix(config): reject memory.provider instead of silently ignoring it
+- feat(curator): skill curator reference implementation
+
 ## [1.19.8] - 2026-09-02
 
 - fix(update): drop dev-facing wording from the unconfirmed-update message
