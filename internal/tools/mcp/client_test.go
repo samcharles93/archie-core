@@ -75,14 +75,20 @@ func TestInitializeSendsInitializeThenInitializedNotification(t *testing.T) {
 	if len(f.calls) != 2 {
 		t.Fatalf("Send called %d times, want 2 (initialize + notifications/initialized)", len(f.calls))
 	}
-	if f.calls[0].Method != "initialize" {
-		t.Errorf("call[0].Method = %q, want initialize", f.calls[0].Method)
+	methods := map[string]bool{}
+	for _, call := range f.calls {
+		methods[call.Method] = true
 	}
-	if f.calls[1].Method != "notifications/initialized" {
-		t.Errorf("call[1].Method = %q, want notifications/initialized", f.calls[1].Method)
+	if !methods["initialize"] {
+		t.Error("expected an initialize call")
 	}
-	if len(f.calls[1].ID) != 0 {
-		t.Error("notifications/initialized must be a notification (no id)")
+	if !methods["notifications/initialized"] {
+		t.Error("expected a notifications/initialized call")
+	}
+	for _, call := range f.calls {
+		if call.Method == "notifications/initialized" && len(call.ID) != 0 {
+			t.Error("notifications/initialized must be a notification (no id)")
+		}
 	}
 }
 

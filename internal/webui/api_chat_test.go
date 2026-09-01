@@ -877,8 +877,8 @@ func TestChatStreamReportsUndeliverableLocalFile(t *testing.T) {
 	if !strings.Contains(joined.String(), "session.log") {
 		t.Errorf("delta stream = %q, want it to name the undelivered file", joined.String())
 	}
-	if !strings.Contains(joined.String(), "could not") {
-		t.Errorf("delta stream = %q, want it to report non-delivery", joined.String())
+	if !strings.Contains(joined.String(), "/var/log/archie/session.log") {
+		t.Errorf("delta stream = %q, want it to report the on-host path so the operator can retrieve it manually", joined.String())
 	}
 }
 
