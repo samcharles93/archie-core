@@ -5,6 +5,7 @@ import { statTile } from "../base/statTile.js";
 import { taskRowA11y } from "./task-row.js";
 import { initialTaskFilter, taskMatchesStatus } from "./task-filters.js";
 import { describeTimelineEvent } from "./timeline-event.js";
+import { taskLogPanel } from "./task-logs.js";
 import { actionFor, statusIds, statusKind, statusLabel } from "../base/task-meta.js";
 
 /**
@@ -24,6 +25,8 @@ export function tasksPage(params = new URLSearchParams()) {
   let expandedId = Number.isFinite(requestedTask) && requestedTask > 0 ? requestedTask : null;
   let focusRequestedTask = expandedId !== null;
   const eventCache = new Map();
+  const logCache = new Map();
+  const logsExpanded = new Set();
   // Keyed by task id. A single shared string leaked one row's failure into
   // every other row's action cell.
   const actionErrors = new Map();
@@ -400,8 +403,43 @@ export function tasksPage(params = new URLSearchParams()) {
             : cached.length
               ? el("ul.task-timeline", ...cached.map(timelineEntry))
               : empty("No events yet", "This task has not recorded any transitions."),
+        logsSection(t),
       ),
     );
+  }
+
+  function logsSection(t) {
+    const expanded = logsExpanded.has(t.id);
+    const toggle = () => {
+      if (expanded) {
+        logsExpanded.delete(t.id);
+      } else {
+        logsExpanded.add(t.id);
+        if (!logCache.has(t.id)) loadTaskLogs(t.id);
+      }
+      renderRows();
+    };
+    return el(
+      "div.task-logs-section",
+      el(
+        "div.task-decision-title",
+        "Attempt log",
+        el("button.btn.btn-small", { onclick: toggle }, expanded ? "Hide" : "Show"),
+      ),
+      expanded ? taskLogPanel(logCache.get(t.id), { onRetry: () => loadTaskLogs(t.id) }) : null,
+    );
+  }
+
+  async function loadTaskLogs(id) {
+    logCache.delete(id);
+    renderRows();
+    try {
+      const res = await api.taskLogs(id, { limit: 500 });
+      logCache.set(id, res);
+    } catch {
+      logCache.set(id, null);
+    }
+    renderRows();
   }
 
   function timelineEntry(ev) {
