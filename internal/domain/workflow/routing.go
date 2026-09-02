@@ -3,6 +3,7 @@ package workflow
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -81,6 +82,20 @@ func LoadKindWorkflowsYAML(path string) (KindWorkflows, error) {
 // labels, trying each recognised kind in label order so a "bug,feature" task
 // still reaches feasibility when no tdd workflow is registered.
 func workflowForLabels(reg Registry, labels string) (Workflow, bool) {
+	// Arbitrary-label bindings first: a playbook-declared label is an
+	// explicit, load-time-error-checked signal, so it wins over the kind
+	// defaults (which cover only bug/feature/bootstrap).
+	if lb := activeLabelWorkflows; lb != nil {
+		for _, label := range workintake.SplitLabels(labels) {
+			name, ok := lb[label]
+			if !ok {
+				continue
+			}
+			if wf, ok := reg[name]; ok {
+				return wf, true
+			}
+		}
+	}
 	kw := activeKindWorkflows
 	if kw == nil {
 		kw = defaultKindWorkflows
@@ -95,4 +110,68 @@ func workflowForLabels(reg Registry, labels string) (Workflow, bool) {
 		}
 	}
 	return Workflow{}, false
+}
+
+// LabelWorkflows maps a forge issue label to the registered workflow name
+// it prefers. This is the second slice of docs/prds/eda-playbook-engine.md:
+// the label vocabulary itself -- not just the closed bug/feature/bootstrap
+// kind set -- becomes playbook data. The closed Kind/NATS-subject set
+// (workintake) is deliberately untouched; this map only extends binding
+// authority for labels the kind layer does not own.
+type LabelWorkflows map[string]string
+
+// activeLabelWorkflows is what workflowForLabels consults for arbitrary
+// labels. Set once at daemon startup by SetLabelWorkflows; nil means "no
+// arbitrary-label bindings" (there is no built-in default -- the closed
+// kind set already owns bug/feature/bootstrap, and loading bindings for
+// those is rejected as a collision), mirroring activeKindWorkflows'
+// lifecycle.
+var activeLabelWorkflows LabelWorkflows
+
+// SetLabelWorkflows overrides the label-to-workflow-name bindings Route()
+// consults, e.g. from a file loaded by LoadLabelWorkflowsYAML. Passing nil
+// restores kind-only routing.
+func SetLabelWorkflows(lw LabelWorkflows) {
+	activeLabelWorkflows = lw
+}
+
+// LoadLabelWorkflowsYAML reads a label-to-workflow-name binding file. An
+// empty path returns (nil, nil) -- "no file configured" means "no
+// arbitrary-label bindings", matching the kind layer's convention.
+//
+// A label already owned by the closed kind set (bug/feature/bootstrap) is a
+// definition collision and returns an error: two authorities claiming one
+// label is the caller's fault, reported not arbitrated. Empty labels or
+// empty workflow names are likewise rejected -- the schema defines what is
+// accepted, anything else is dropped-and-reported per the design doc.
+func LoadLabelWorkflowsYAML(path string) (LabelWorkflows, error) {
+	if path == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read label-workflows file %s: %w", path, err)
+	}
+	raw := map[string]string{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("parse label-workflows file %s: %w", path, err)
+	}
+	lw := make(LabelWorkflows, len(raw))
+	for label, name := range raw {
+		trimmed := strings.TrimSpace(label)
+		if trimmed == "" {
+			return nil, fmt.Errorf("label-workflows file %s: empty label is not a valid binding", path)
+		}
+		if name == "" {
+			return nil, fmt.Errorf("label-workflows file %s: label %q has no workflow name", path, trimmed)
+		}
+		if _, ok := defaultKindWorkflows[workintake.Kind(trimmed)]; ok {
+			return nil, fmt.Errorf("label-workflows file %s: label %q is already owned by the kind routing layer", path, trimmed)
+		}
+		if _, exists := lw[trimmed]; exists {
+			return nil, fmt.Errorf("label-workflows file %s: duplicate binding for label %q", path, trimmed)
+		}
+		lw[trimmed] = name
+	}
+	return lw, nil
 }

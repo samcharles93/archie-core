@@ -439,6 +439,14 @@ type Config struct {
 	// built-in bindings (bug->tdd, feature->feasibility,
 	// bootstrap->bootstrap) are used unchanged.
 	WorkflowRoutingFile string `toml:"workflow_routing_file" yaml:"workflow_routing_file"`
+	// WorkflowLabelsFile is an optional path to a YAML file binding forge
+	// issue labels outside the closed bug/feature/bootstrap kind set to
+	// registered workflows (e.g. "security" -> "security-review") -- the
+	// second slice of docs/prds/eda-playbook-engine.md. When empty, only
+	// the kind layer routes by label. A label already owned by the kind
+	// set, or a duplicate binding, is a load failure per the design doc's
+	// collision rule.
+	WorkflowLabelsFile string `toml:"workflow_labels_file" yaml:"workflow_labels_file"`
 	// MaxRetries caps how many times a parked task is retried before
 	// being permanently parked (status "dead"). Defaults to 3.
 	MaxRetries int `toml:"max_retries" yaml:"max_retries"`

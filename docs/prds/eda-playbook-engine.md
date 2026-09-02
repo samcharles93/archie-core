@@ -238,6 +238,30 @@ before Channel/Forge actions or multi-action playbooks ship.
    `internal/config` / `configuration.Document`, and whether it's one
    directory or a list (mirroring `SkillsDir`'s shape) -- follow existing
    config precedent, not invented fresh.
+
+   **Status 2026-09-03: partially resolved.** The label-vocabulary slice
+   landed with a single-file shape (`workflow_labels_file`, mirroring
+   `workflow_routing_file` and `SkillsDir`'s single-path precedent) rather
+   than a directory, because it is the smallest useful case. A directory
+   (multiple playbooks, per-repo scoping) remains open and larger; the
+   single-file shape does not preclude it -- a future `workflow_dir` would
+   compose `workflow_labels_file`'s role into a loader.
+
+   Decisions recorded from the label-vocabulary slice (commit pending):
+   - Arbitrary labels bind to registered workflow names via
+     `LabelWorkflows` + `LoadLabelWorkflowsYAML`/`SetLabelWorkflows`
+     (`internal/domain/workflow/routing.go`).
+   - The closed `Kind`/NATS-subject set is untouched; the label map only
+     extends binding authority for labels the kind layer does not own.
+   - Collision rule (per Sam, 2026-09-03): a label already owned by the
+     kind set (bug/feature/bootstrap), an empty label, an empty workflow
+     name, or a duplicate binding is a reported load failure -- dropped
+     and logged, the error returned to the caller. Nothing is silently
+     arbitrated by schema/version. This is the "schema defines the
+     accepted message; anything else is the caller's fault" rule applied
+     to the label layer.
+   - Precedence in `Route()`: explicit `t.Workflow` → arbitrary-label
+     binding → kind binding → triage → implement → default.
 3. **Trust boundary for Module Yaegi code.** The plugin engine rule's
    invariant 6 draws a line between operator-trusted in-process code and
    repository-supplied code that must run in a container. A user-authored

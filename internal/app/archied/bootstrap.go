@@ -645,6 +645,13 @@ func (b *boot) loadWorkflows(ctx context.Context) error {
 		return err
 	}
 	workflow.SetKindWorkflows(kindWorkflows)
+
+	labelWorkflows, err := workflow.LoadLabelWorkflowsYAML(cfg.WorkflowLabelsFile)
+	if err != nil {
+		log.Error("workflow labels file load failed", "path", cfg.WorkflowLabelsFile, "err", err)
+		return err
+	}
+	workflow.SetLabelWorkflows(labelWorkflows)
 	skillsBase := cfg.SkillsDir
 	if skillsBase == "" {
 		skillsBase = cfg.WorkDir

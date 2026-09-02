@@ -17,6 +17,8 @@
 
 # skills_dir = "~/.local/share/archie/skills"  # SKILL.md search path; defaults under work_dir when unset
 # plugin_dir = "~/.local/share/archie/plugins" # daemon plugin manifests; unset means no plugins are loaded
+# workflow_routing_file = "~/.local/share/archie/workflow-routing.yaml"   # kind->workflow rebinding (bug/feature/bootstrap)
+# workflow_labels_file  = "~/.local/share/archie/workflow-labels.yaml"    # arbitrary forge label -> workflow (EDA playbook slice 2)
 
 poll_interval = "60s"
 label = "archie"
