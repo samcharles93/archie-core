@@ -193,11 +193,11 @@ wired in bootstrap.go with log-and-abort on load failure.
 
 Playbook YAML action dispatch is **deliberately out of this slice**: a
 minimal 'run this one module action, no chaining' dispatch still requires
-naming how `args` values reach the action (parent doc open question 1
--- data-flow/interpolation syntax) and what the result feeds. Both are
-unresolved in the parent doc; claiming them here would half-answer a
-question the design explicitly defers. Dispatch is a follow-up ticket
-that lands once Q1 is answered, and it will consume this registry as-is.
+the parent doc's data-flow mechanism (now resolved: CEL expressions
+over an evaluation context -- see eda-playbook-engine.md's resolved open
+question 1) and what the result feeds. Dispatch is a follow-up ticket
+that lands once the coordinator exists, and it will consume this
+registry as-is.
 
 ## Open questions
 
@@ -213,7 +213,8 @@ that lands once Q1 is answered, and it will consume this registry as-is.
    subtypes) should be confirmed against `organisation.md`'s file-layout
    rule before the first slice starts.
 3. **Result surfacing.** A Module's `Result` needs to reach later actions
-   in the same playbook once data-flow (parent doc's open question 1) is
-   designed -- this doc does not attempt that, but the `map[string]any`
-   result shape above should stay compatible with whatever that
-   mechanism turns out to be.
+   in the same playbook once data-flow is designed -- resolved in the
+   parent doc as CEL expressions over `actions.<id>.result.<field>` (see
+   eda-playbook-engine.md's resolved open question 1); the `map[string]any`
+   result shape above is what the evaluation context exposes, so it stays
+   compatible by construction.
