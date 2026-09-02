@@ -243,7 +243,13 @@ func (b *boot) openStores(ctx context.Context) error {
 	b.secrets = secrets
 	b.forgeClient, b.token = resolveForge(cfg.Forge, secrets, log)
 
-	st, err := openProductionTaskStore(ctx, taskDBPath(cfg.DBPath))
+	bindingCipher, err := bindingCipherFromConfig(cfg, secrets)
+	if err != nil {
+		log.Error("configure bindings cipher", "err", err)
+		return err
+	}
+
+	st, err := openProductionTaskStore(ctx, taskDBPath(cfg.DBPath), store.WithBindingCipher(bindingCipher))
 	if err != nil {
 		log.Error("open store", "err", err)
 		return err

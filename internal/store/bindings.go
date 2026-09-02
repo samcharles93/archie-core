@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
@@ -84,10 +85,14 @@ func (s *Store) InsertBinding(ctx context.Context, b binding.Binding) (int64, er
 	}
 
 	now := time.Now().UTC().Format(bindingTimeLayout)
+	secret, err := s.encryptBindingSecret(b.Secret)
+	if err != nil {
+		return 0, err
+	}
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO bindings (name, source, mapping_id, workflow, version, status, secret, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 1, 'draft', ?, ?, ?)`,
-		b.Name, b.Matcher.Source, b.MappingID, b.Workflow, b.Secret, now, now)
+		b.Name, b.Matcher.Source, b.MappingID, b.Workflow, secret, now, now)
 	if err != nil {
 		return 0, err
 	}
@@ -114,6 +119,9 @@ func (s *Store) GetBinding(ctx context.Context, id int64) (*binding.Binding, err
 	if err != nil {
 		return nil, err
 	}
+	if err := s.decryptBindingSecret(b); err != nil {
+		return nil, err
+	}
 	return b, nil
 }
 
@@ -130,6 +138,9 @@ func (s *Store) ListBindings(ctx context.Context) (out []binding.Binding, retErr
 	for rows.Next() {
 		b, err := scanBindingRow(rows)
 		if err != nil {
+			return nil, err
+		}
+		if err := s.decryptBindingSecret(b); err != nil {
 			return nil, err
 		}
 		out = append(out, *b)
@@ -163,13 +174,17 @@ func (s *Store) UpdateBinding(ctx context.Context, b binding.Binding) error {
 	}
 
 	now := time.Now().UTC().Format(bindingTimeLayout)
+	secret, err := s.encryptBindingSecret(b.Secret)
+	if err != nil {
+		return err
+	}
 	res, err := tx.ExecContext(ctx, `
 		UPDATE bindings SET name=?, source=?, mapping_id=?, workflow=?, secret=COALESCE(NULLIF(?, ''), secret),
 			status = 'pending_approval',
 			version = version + 1,
 			updated_at = ?
 		WHERE id=?`,
-		b.Name, b.Matcher.Source, b.MappingID, b.Workflow, b.Secret, now, b.ID)
+		b.Name, b.Matcher.Source, b.MappingID, b.Workflow, secret, now, b.ID)
 	if err != nil {
 		return err
 	}
@@ -283,9 +298,42 @@ func (s *Store) ArmedBindingsForSource(ctx context.Context, source string) ([]bi
 		if err != nil {
 			return nil, err
 		}
+		if err := s.decryptBindingSecret(b); err != nil {
+			return nil, err
+		}
 		out = append(out, *b)
 	}
 	return out, rows.Err()
+}
+
+// encryptBindingSecret seals a plaintext secret for persistence. With no
+// cipher configured it returns the value unchanged (legacy plaintext).
+func (s *Store) encryptBindingSecret(plaintext string) (string, error) {
+	if s.bindingsCipher == nil {
+		return plaintext, nil
+	}
+	return s.bindingsCipher.Encrypt(plaintext)
+}
+
+// decryptBindingSecret returns a binding's secret as plaintext. With no cipher
+// configured the stored value is returned unchanged. A value that is not an
+// encryption envelope is treated as a legacy plaintext row written before a
+// cipher was configured and left readable as-is -- encryption applies to rows
+// written or edited after the key is installed, not retroactively (see
+// docs/prds/binding-secret-encryption.md).
+func (s *Store) decryptBindingSecret(b *binding.Binding) error {
+	if s.bindingsCipher == nil {
+		return nil
+	}
+	if b.Secret == "" || !strings.HasPrefix(b.Secret, bindingEnvelopeMarker+":") {
+		return nil
+	}
+	decrypted, err := s.bindingsCipher.Decrypt(b.Secret)
+	if err != nil {
+		return err
+	}
+	b.Secret = decrypted
+	return nil
 }
 
 // sqlExecutor is the subset of *sql.DB / *sql.Tx that RecordDispatch needs.

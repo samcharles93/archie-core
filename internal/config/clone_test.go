@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/samcharles93/archie-core/internal/secret"
+)
 
 // TestConfigCloneDeepCopiesReferenceFields pins that Clone returns a
 // value sharing no memory with the original: mutating the clone's maps
@@ -25,6 +29,7 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 		Chat:        ChatConfig{Telegram: TelegramConfig{AllowedUserIDs: []int64{1}}},
 		LegacyAgent: LegacyAgent{Env: []string{"HOME"}},
 		Extra:       map[string]any{"custom": 1},
+		Bindings:    BindingsConfig{PreviousEncryptionKeys: []secret.SecretRef{{Engine: "env", Key: "K0"}}},
 	}
 
 	got := orig.Clone()
@@ -41,6 +46,7 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 	got.Chat.Telegram.AllowedUserIDs[0] = 99
 	got.LegacyAgent.Env[0] = "changed"
 	got.Extra["custom"] = 2
+	got.Bindings.PreviousEncryptionKeys[0] = secret.SecretRef{Engine: "env", Key: "changed"}
 	*got.Tools.WebFetch.Enabled = false
 
 	if orig.Models["builder"] != "m" {
@@ -72,6 +78,9 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 	}
 	if orig.Extra["custom"] != 1 {
 		t.Error("Extra map is shared")
+	}
+	if orig.Bindings.PreviousEncryptionKeys[0].Key != "K0" {
+		t.Error("Bindings.PreviousEncryptionKeys is shared")
 	}
 	if !*orig.Tools.WebFetch.Enabled {
 		t.Error("WebFetch.Enabled pointer is shared")
