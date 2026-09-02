@@ -644,13 +644,34 @@ func (b *boot) loadWorkflows(ctx context.Context) error {
 		log.Error("workflow routing file load failed", "path", cfg.WorkflowRoutingFile, "err", err)
 		return err
 	}
-	workflow.SetKindWorkflows(kindWorkflows)
 
 	labelWorkflows, err := workflow.LoadLabelWorkflowsYAML(cfg.WorkflowLabelsFile)
 	if err != nil {
 		log.Error("workflow labels file load failed", "path", cfg.WorkflowLabelsFile, "err", err)
 		return err
 	}
+
+	dirKindWorkflows, dirLabelWorkflows, err := workflow.LoadPlaybookDirs(cfg.PlaybookDirs)
+	if err != nil {
+		log.Error("playbook dirs load failed", "dirs", cfg.PlaybookDirs, "err", err)
+		return err
+	}
+	// The directory is an additional input to the single-file fields, not a
+	// replacement (t2db.11). A key bound by both a single-file field and the
+	// directory is the same collision the loader enforces inside a directory:
+	// reported, never silently arbitrated by source precedence.
+	kindWorkflows, err = workflow.MergeKindWorkflows(kindWorkflows, dirKindWorkflows)
+	if err != nil {
+		log.Error("workflow binding collision between routing file and playbook dir", "err", err)
+		return err
+	}
+	labelWorkflows, err = workflow.MergeLabelWorkflows(labelWorkflows, dirLabelWorkflows)
+	if err != nil {
+		log.Error("workflow binding collision between labels file and playbook dir", "err", err)
+		return err
+	}
+
+	workflow.SetKindWorkflows(kindWorkflows)
 	workflow.SetLabelWorkflows(labelWorkflows)
 	skillsBase := cfg.SkillsDir
 	if skillsBase == "" {

@@ -247,6 +247,23 @@ before Channel/Forge actions or multi-action playbooks ship.
    single-file shape does not preclude it -- a future `workflow_dir` would
    compose `workflow_labels_file`'s role into a loader.
 
+   **Status 2026-09-03: resolved by t2db.11 (corrected).** The directory
+   shape landed as `playbook_dirs` (a LIST of directories of
+   `*.yaml`/`*.yml` binding files), loaded at startup as an additional
+   input to the two single-file fields, which remain supported unchanged.
+   Sam's correction 2026-09-03: a single `playbook_dir` would contradict
+   supporting multiple independently-maintained playbook sources, which
+   the Dedup section already assumes ('independently-sourced playbook
+   directories collide'), so the field is a list. Cross-source collision
+   (same key in two directories, or in a single-file field and a
+   directory) is reported like an in-directory collision -- nothing is
+   arbitrated by source precedence. This is what finally exercises the
+   design doc's drop-and-report collision rule, since a single file
+   cannot collide with itself. Repo-scoping (tying directories to
+   `Config.Repos` owner/name) is explicitly deferred to a separate,
+   later decision; org/tenant keying is out of scope (no auth/identity
+   model).
+
    Decisions recorded from the label-vocabulary slice (commit pending):
    - Arbitrary labels bind to registered workflow names via
      `LabelWorkflows` + `LoadLabelWorkflowsYAML`/`SetLabelWorkflows`
