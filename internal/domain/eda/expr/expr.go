@@ -17,7 +17,6 @@ package expr
 
 import (
 	"cel.dev/cel-go/cel"
-	"cel.dev/cel-go/common/types/ref"
 )
 
 // DefaultCostLimit bounds evaluation of every playbook expression (J5 in the
@@ -90,8 +89,10 @@ type Program struct {
 
 // Eval evaluates the program against a dispatch-time context. A missing
 // field, a wrong type against a dyn value, or an exceeded cost limit is a
-// returned error -- CEL evaluation is panic-free, so no recover() wrapper is
-// needed (verified in the acceptance tests).
+// returned error. CEL's own evaluation recovers panics internally (verified
+// in cel-go's program.go: Eval wraps evaluation in recover), and its
+// returned values implement ref.Val -- unwrapped here to the native Go value
+// the caller expects.
 func (e *Env) Eval(prg *Program, ctx Context) (any, error) {
 	data := map[string]any{
 		"event":   ctx.Event,
@@ -101,11 +102,5 @@ func (e *Env) Eval(prg *Program, ctx Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	// CEL returns typed wrappers (types.Bool, types.String, ...) that
-	// implement ref.Val. Unwrap to the native Go value the caller expects;
-	// an already-native value passes through unchanged.
-	if rv, ok := v.(ref.Val); ok {
-		return rv.Value(), nil
-	}
-	return v, nil
+	return v.Value(), nil
 }

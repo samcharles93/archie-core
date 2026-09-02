@@ -458,6 +458,14 @@ type Config struct {
 	// playbook directories are loaded. Repo-scoping of playbook dirs is a
 	// separate, later decision and is not attempted here.
 	PlaybookDirs []string `toml:"playbook_dirs" yaml:"playbook_dirs"`
+	// EDAPlaybookDir is an optional path to a directory of rich EDA playbook
+	// documents (*.yaml/*.yml: trigger + ordered actions with CEL `when`
+	// conditions, dispatched by the event coordinator). This is DISTINCT
+	// from PlaybookDirs, which holds FLAT binding files (kind/label ->
+	// workflow name) consumed by the routing loaders. A playbook here is a
+	// document (one trigger, one action in this slice); a binding file there
+	// is a map of keys. When empty, no EDA playbook documents are loaded.
+	EDAPlaybookDir string `toml:"eda_playbook_dir" yaml:"eda_playbook_dir"`
 	// MaxRetries caps how many times a parked task is retried before
 	// being permanently parked (status "dead"). Defaults to 3.
 	MaxRetries int `toml:"max_retries" yaml:"max_retries"`

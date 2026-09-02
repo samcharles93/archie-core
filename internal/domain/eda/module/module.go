@@ -147,27 +147,9 @@ func logInvoker(label, src string, k Kind) (invoker, error) {
 // interface symmetry with future kinds that need cancellation; the log kind
 // is side-effect-free and does not use it.
 func runLog(_ context.Context, label string, run func(log.Args) log.Result, rawArgs map[string]any) (map[string]any, error) {
-	var args log.Args
-	if rawArgs != nil {
-		if msg, ok := rawArgs["message"]; ok {
-			s, ok := msg.(string)
-			if !ok {
-				return nil, fmt.Errorf("module log: args.message is %T, want string", msg)
-			}
-			args.Message = s
-		}
-		if lvl, ok := rawArgs["level"]; ok {
-			s, ok := lvl.(string)
-			if !ok {
-				return nil, fmt.Errorf("module log: args.level is %T, want string", lvl)
-			}
-			args.Level = s
-		}
-		for key := range rawArgs {
-			if key != "message" && key != "level" {
-				return nil, fmt.Errorf("module log: unknown arg %q", key)
-			}
-		}
+	args, err := decodeLogArgs(rawArgs)
+	if err != nil {
+		return nil, err
 	}
 	res, err := yaegiutil.Safe(label, func() (log.Result, error) {
 		return run(args), nil
@@ -179,6 +161,36 @@ func runLog(_ context.Context, label string, run func(log.Args) log.Result, rawA
 		"written": res.Written,
 		"level":   res.Level,
 	}, nil
+}
+
+// decodeLogArgs strictly decodes rawArgs into log.Args: a wrong-typed field
+// or an unknown key is a reported error, never a silent zero-value fill --
+// the "schema defines the accepted message" rule.
+func decodeLogArgs(rawArgs map[string]any) (log.Args, error) {
+	var args log.Args
+	if rawArgs == nil {
+		return args, nil
+	}
+	if msg, ok := rawArgs["message"]; ok {
+		s, ok := msg.(string)
+		if !ok {
+			return args, fmt.Errorf("module log: args.message is %T, want string", msg)
+		}
+		args.Message = s
+	}
+	if lvl, ok := rawArgs["level"]; ok {
+		s, ok := lvl.(string)
+		if !ok {
+			return args, fmt.Errorf("module log: args.level is %T, want string", lvl)
+		}
+		args.Level = s
+	}
+	for key := range rawArgs {
+		if key != "message" && key != "level" {
+			return args, fmt.Errorf("module log: unknown arg %q", key)
+		}
+	}
+	return args, nil
 }
 
 // Invoke calls the registered kind with rawArgs and returns the marshaled

@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"cel.dev/cel-go/cel"
-	"cel.dev/cel-go/common/types/ref"
 )
 
 // TestCompileEvalValidBooleanAgainstEvent is the happy path: a boolean
@@ -156,10 +155,7 @@ func evalUnderLimit(prg *Program, limit uint64) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if rv, ok := v.(ref.Val); ok {
-		return rv.Value(), nil
-	}
-	return v, nil
+	return v.Value(), nil
 }
 
 // TestEvalPanicFreeHostileData: a pathological nested map under evaluation

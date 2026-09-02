@@ -32,6 +32,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/eda/module"
+	"github.com/samcharles93/archie-core/internal/domain/eda/playbook"
 	domainmemory "github.com/samcharles93/archie-core/internal/domain/memory"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
@@ -91,6 +92,8 @@ type boot struct {
 	token       string
 
 	modules *module.ModuleRegistry
+
+	playbooks *playbook.Store
 
 	st               store.TaskStore
 	chatSessionStore gateway.SessionStore
@@ -701,6 +704,19 @@ func (b *boot) loadWorkflows(ctx context.Context) error {
 		}
 		log.Info("module registry built", "dir", cfg.ModuleDir, "kinds", b.modules.Len())
 	}
+
+	// EDA playbook documents (t2db.15): trigger + single workflow-kind action
+	// with CEL when conditions. Loaded at startup with the same reject-at-load
+	// rule -- any malformed playbook, multi-action playbook, non-workflow
+	// position, or when compile failure aborts startup, matching the routing-
+	// file load pattern (not degrade-and-skip). A nonexistent dir is an empty
+	// store.
+	b.playbooks, err = playbook.Load(cfg.EDAPlaybookDir)
+	if err != nil {
+		log.Error("eda playbook load failed", "dir", cfg.EDAPlaybookDir, "err", err)
+		return err
+	}
+	log.Info("eda playbooks loaded", "dir", cfg.EDAPlaybookDir, "playbooks", len(b.playbooks.Playbooks))
 
 	skillsBase := cfg.SkillsDir
 	if skillsBase == "" {

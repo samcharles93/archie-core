@@ -1,0 +1,24 @@
+# Example EDA playbook document (t2db.15 slice).
+#
+# Install: copy this file into the configured eda_playbook_dir (default
+# ~/.config/archie/eda-playbooks) and restart archied. It is loaded at
+# startup with the reject-at-load rule: any malformed playbook, multi-action
+# playbook, non-workflow action position, or `when` compile failure aborts
+# startup with a reported error -- a partially-valid set never runs.
+#
+# This slice supports exactly ONE action per playbook, position: workflow.
+# Multi-action playbooks and Module/Channel/Forge action positions stay
+# blocked on the unresolved execution-time gaps and are rejected at load.
+#
+# Trigger matching reuses the existing workintake label/kind vocabulary
+# (bug/feature/bootstrap, or a label set). The `when` condition is a CEL
+# expression over `event` (the triggering event's fields) -- see
+# docs/prds/eda-playbook-engine.md, resolved open question 1.
+
+trigger:
+  kind: bug
+
+actions:
+  - position: workflow
+    workflow: tdd
+    when: event.priority == 3
