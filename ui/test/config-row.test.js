@@ -92,3 +92,41 @@ test("int edits reject a non-numeric entry before the round trip", () => {
   assert.equal(parseEdit("bool", "false").value, false);
   assert.equal(parseEdit("string", "1h0m0s").value, "1h0m0s");
 });
+
+// archie-core-b6ew.3: a schema-driven field with editable: false (a
+// structured field with no dedicated editor yet, or a field the backend
+// deliberately doesn't allow editing) must not offer an Edit button, even
+// though it has a key -- distinct from a locked row, which does have a key
+// and a reason.
+test("a field marked editable: false renders read-only with no note", () => {
+  const rowEl = row("Model roles", "{...}", { key: "models", type: "structured", editable: false });
+  const parts = cells(rowEl);
+  assert.equal(parts.length, 2, "expected only label and value, no actions or note");
+  assert.ok(!classOf(rowEl).includes("is-locked"));
+});
+
+// A locked reason still takes priority over editable: true -- the runtime
+// state (overlay.DeniedKeys) wins over the schema's static claim.
+test("a locked reason is shown even when the field claims editable: true", () => {
+  const rowEl = row("Work directory", "/work/archie", {
+    key: "work_dir",
+    editable: true,
+    locked: { work_dir: "pins the daemon's working layout; cannot be changed at runtime" },
+  });
+  assert.ok(classOf(rowEl).includes("is-locked"));
+});
+
+// archie-core-b6ew.3: the backend-authored field description rides as a
+// tooltip on the label, so a generic renderer can carry "0 means
+// unlimited." without any field-specific frontend code.
+test("a field's hint becomes the label's title attribute", () => {
+  const rowEl = row("Max steps", 0, { hint: "0 means unlimited." });
+  const label = rowEl.childNodes.find((c) => classOf(c).includes("kv-label"));
+  assert.equal(label.attrs.title, "0 means unlimited.");
+});
+
+test("a field with no hint renders a plain label with no title", () => {
+  const rowEl = row("Max steps", 0, {});
+  const label = rowEl.childNodes.find((c) => classOf(c).includes("kv-label"));
+  assert.equal(label.attrs.title, undefined);
+});

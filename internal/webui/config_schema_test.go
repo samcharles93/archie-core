@@ -19,6 +19,9 @@ func TestConfigFieldDescriptorsAreComplete(t *testing.T) {
 		if section.Label == "" {
 			t.Errorf("section %q has no label", section.ID)
 		}
+		if section.Description == "" {
+			t.Errorf("section %q has no description", section.ID)
+		}
 		if len(section.Fields) == 0 {
 			t.Errorf("section %q has no fields", section.ID)
 		}
