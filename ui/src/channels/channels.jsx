@@ -1,81 +1,104 @@
+import { h } from "preact";
+import { useState, useEffect } from "preact/hooks";
 import "./channels.css";
 import { api } from "../base/api.jsx";
-import { el, empty, mount, pill } from "../base/dom.jsx";
 
-/**
- * How you reach Archie. Backed by GET /api/channels, which derives from
- * [chat] in config.toml -- see internal/webui/api_config.go's
- * handleChannels. Each channel is a card with a connected/not-configured
- * pill and one line explaining what turning it on gets you, because
- * "token_env unset" means nothing to someone who hasn't read config.toml.
- */
-export function channelsPage() {
-  const root = el("div");
-  const cardGrid = el("div.grid.grid-2");
+export function Pill({ text, kind = "idle" }) {
+  return <span className={`pill pill-${kind}`}>{text}</span>;
+}
 
-  render();
-  load();
-
-  function render() {
-    mount(
-      root,
-      el(
-        "div.page-head",
-        el(
-          "div",
-          el("h1.page-title", "Channels"),
-          el("p.page-sub", "The conversational front-ends Archie can be reached through."),
-        ),
-        el("div.page-actions", el("button.btn", { onclick: load }, "Refresh")),
-      ),
-      cardGrid,
-    );
-  }
-
-  async function load() {
-    try {
-      const res = await api.channels();
-      renderCards(res?.channels || []);
-    } catch (err) {
-      mount(cardGrid, empty("Cannot reach archied", String(err.message || err)));
-    }
-  }
-
-  function renderCards(channels) {
-    if (!channels.length) {
-      mount(
-        cardGrid,
-        empty(
-          "No channels configured",
-          "Configure [chat.telegram] or [chat.webhook_addr] in config.toml to talk to Archie outside the dashboard.",
-        ),
-      );
-      return;
-    }
-    mount(cardGrid, ...channels.map(channelCard));
-  }
-
-  function channelCard(channel) {
-    return el(
-      "div.card.channel-card",
-      el(
-        "div.card-head",
-        el("h3.card-title", channel.name),
-        pill(channel.state || (channel.configured ? "configured" : "stopped"), stateTone(channel.state, channel.configured)),
-      ),
-      el("p.channel-desc", channel.description),
-      el("p.channel-detail", channel.detail),
-		channel.reload_supported
-			? el("button.btn", { onclick: async (event) => { event.currentTarget.disabled = true; try { await api.channelReload(channel.id || channel.name.toLowerCase()); await load(); } catch (err) { event.currentTarget.disabled = false; } } }, "Reload")
-			: el("p.channel-detail", "Reload requires a daemon restart for this adapter."),
-    );
-  }
-
-  return root;
+export function Empty({ title, detail }) {
+  return (
+    <div className="empty">
+      <div className="empty-title">{title}</div>
+      {detail && <div>{detail}</div>}
+    </div>
+  );
 }
 
 function stateTone(state, configured) {
   if (state === "running") return "ok";
   if (state === "failed" || state === "degraded") return "warn";
   return configured ? "idle" : "idle";
+}
+
+function ChannelsApp() {
+  const [channels, setChannels] = useState([]);
+  const [error, setError] = useState(null);
+
+  const load = async () => {
+    try {
+      const res = await api.channels();
+      setChannels(res?.channels || []);
+      setError(null);
+    } catch (err) {
+      setError(String(err.message || err));
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  return (
+    <div>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Channels</h1>
+          <p className="page-sub">The conversational front-ends Archie can be reached through.</p>
+        </div>
+        <div className="page-actions">
+          <button className="btn" onClick={load}>Refresh</button>
+        </div>
+      </div>
+      <div className="grid grid-2">
+        {error ? (
+          <Empty title="Cannot reach archied" detail={error} />
+        ) : channels.length === 0 ? (
+          <Empty 
+            title="No channels configured" 
+            detail="Configure [chat.telegram] or [chat.webhook_addr] in config.toml to talk to Archie outside the dashboard." 
+          />
+        ) : (
+          channels.map(channel => (
+            <div className="card channel-card" key={channel.id || channel.name}>
+              <div className="card-head">
+                <h3 className="card-title">{channel.name}</h3>
+                <Pill 
+                  text={channel.state || (channel.configured ? "configured" : "stopped")} 
+                  kind={stateTone(channel.state, channel.configured)} 
+                />
+              </div>
+              <p className="channel-desc">{channel.description}</p>
+              <p className="channel-detail">{channel.detail}</p>
+              {channel.reload_supported ? (
+                <button 
+                  className="btn" 
+                  onClick={async (event) => { 
+                    event.currentTarget.disabled = true; 
+                    try { 
+                      await api.channelReload(channel.id || channel.name.toLowerCase()); 
+                      await load(); 
+                    } catch (err) {
+                      // skip
+                    } finally {
+                      if (event.currentTarget) event.currentTarget.disabled = false;
+                    } 
+                  }}
+                >
+                  Reload
+                </button>
+              ) : (
+                <p className="channel-detail">Reload requires a daemon restart for this adapter.</p>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function channelsPage(query) {
+    return <ChannelsApp query={query} />;
 }
