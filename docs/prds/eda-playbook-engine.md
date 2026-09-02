@@ -160,6 +160,20 @@ a case that should just be visible and fixed by a human. Instead:
 - **Linter**: a CI/dev-time tool, reading the same generated schemas, that
   flags duplicate or conflicting trigger definitions *within* a single
   maintained tree before merge.
+
+  **Status 2026-09-03: lint mode shipped (t2db.12).** A standalone
+  gopls-shaped binary (`cmd/archie-playbooks`, lint subcommand) validates
+  playbook directories against the exact loaders the daemon uses
+  (`LoadPlaybookDirs`/`LoadKindWorkflowsYAML`/`LoadLabelWorkflowsYAML`),
+  exiting non-zero on any collision / malformed file / invalid binding.
+  Findings are file-granular, not line-granular: the loader decodes with
+  `yaml.Unmarshal` into a plain map, which discards line numbers. A
+  compiler-style file:line diagnostic needs a `yaml.Node` decoding
+  upgrade, tracked separately -- the linter agrees with runtime
+  validation by construction, which is the load-bearing property.
+  Discoverable via `task lint:playbooks` or direct `go run
+  ./cmd/archie-playbooks lint -dir ...`. The LSP/serve mode is a later
+  entrypoint of the SAME binary, per the shared-package decision above.
 - **LSP**: same schema source again, feeding author-time hover/completion/
   inline errors while someone edits a playbook YAML in an editor. Kept
   explicitly in scope per Sam (not deferred), because it's the same schema

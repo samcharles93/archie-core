@@ -25,6 +25,20 @@ tasks:
     cmds:
       - golangci-lint run ./...
 
+  lint:playbooks:
+    desc: "Lint playbook binding dirs for collisions (standalone tool, cmd/archie-playbooks)"
+    summary: |
+      Runs the standalone playbook linter (archie-playbooks lint) against
+      ./playbooks by default. It validates playbook YAML binding files
+      against the same loaders the daemon uses at startup, so a pre-merge
+      check can never disagree with runtime validation. Exit non-zero on
+      any collision / malformed file / invalid binding.
+
+      Lint a different set of directories directly:
+        go run ./cmd/archie-playbooks lint -dir ./a -dir ./b
+    cmds:
+      - go run ./cmd/archie-playbooks lint -dir ./playbooks
+
   vuln:
     desc: "Scan for known stdlib/dependency CVEs (govulncheck). Not part of task check: it needs network access to the vuln DB and is not build/test-blocking; run it explicitly or in CI."
     cmds:
