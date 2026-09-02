@@ -51,14 +51,24 @@ func StageCommit(name string, message func(*TaskContext) string) Stage {
 // branch. When the builder completed with no changes (BuildNoChanges is
 // set), the issue is already resolved  --  close it with a comment instead
 // of erroring on an empty tree.
+//
+// When StageBaselineGate already committed a real fix (BaselineFixed) and
+// the build stage made nothing further, the worktree has no *new*
+// uncommitted changes -- CommitAll correctly reports changed=false -- but
+// there is still a real, gate-verified commit sitting on the branch that
+// must reach a PR rather than being discarded with the rest of an
+// abandoned worktree. Push runs regardless of changed in that case.
 func StageCommitPush(message func(*TaskContext) string) Stage {
 	return Stage{Name: "commit-push", Run: func(ctx context.Context, tc *TaskContext) error {
 		if tc.BuildNoChanges {
 			return closeNoChangesIssue(ctx, tc)
 		}
-		commit := StageCommit("commit-push", message)
-		if err := commit.Run(ctx, tc); err != nil {
+		changed, err := tc.Trees.CommitAll(ctx, tc.Dir, message(tc))
+		if err != nil {
 			return err
+		}
+		if !changed && !tc.BaselineFixed {
+			return fmt.Errorf("worktree has no changes to commit")
 		}
 		return tc.Trees.Push(ctx, tc.Dir, tc.Branch)
 	}}

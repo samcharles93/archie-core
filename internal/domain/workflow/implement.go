@@ -108,6 +108,7 @@ func StageBaselineGate() Stage {
 			}
 			if changed {
 				tc.BuildSummary = res.Summary
+				tc.BaselineFixed = true
 			}
 		}
 		return nil
@@ -173,7 +174,7 @@ func Implement() Workflow {
 				},
 				OnResult: func(tc *TaskContext, res agentexec.Result) error {
 					tc.BuildSummary = res.Summary
-					if res.Status == agentexec.StatusPassed && len(res.Changes) == 0 {
+					if res.Status == agentexec.StatusPassed && len(res.Changes) == 0 && !tc.BaselineFixed {
 						tc.BuildNoChanges = true
 					}
 					return nil

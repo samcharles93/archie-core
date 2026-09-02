@@ -48,6 +48,42 @@ func TestStageBaselineGateAccountsForRepairAgentUsage(t *testing.T) {
 	}
 }
 
+// TestStageBaselineGateSetsBaselineFixedWhenItCommits is the companion
+// regression case for archie-core-95dj: when the repair agent's changes
+// are actually committed, tc.BaselineFixed must be set so a later
+// no-op build stage cannot cause StageCommitPush to discard the fix.
+func TestStageBaselineGateSetsBaselineFixedWhenItCommits(t *testing.T) {
+	dir := t.TempDir()
+	runGit(t, dir, "init")
+	// Real clones get commit.gpgsign=false via Manager.setIdentity; a bare
+	// `git init` here does not, so it inherits the host's global config --
+	// see worktree_test.go's disableSigning for the same fixture gap.
+	runGit(t, dir, "config", "commit.gpgsign", "false")
+	script := filepath.Join(dir, "gate.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runner := agentRunnerFunc(func(_ context.Context, runDir string, _ agentexec.Request, _ agentexec.ToolCallReporter) (agentexec.Result, error) {
+		if err := os.WriteFile(filepath.Join(runDir, "fixed.txt"), []byte("fix\n"), 0o644); err != nil {
+			return agentexec.Result{}, err
+		}
+		return agentexec.Result{Version: agentexec.ProtocolVersion, Status: agentexec.StatusPassed}, nil
+	})
+	task := &store.Task{ID: 1, Attempt: 1, Owner: "o", Repo: "r"}
+	tc := &TaskContext{
+		Task: task, Repo: config.Repo{Owner: "o", Name: "r", Gate: [][]string{{"sh", script}}},
+		Cfg:   config.Config{Models: map[string]string{"builder": "provider/model"}},
+		Agent: runner, Trees: &worktree.Manager{BotUser: "archie", BotEmail: "archie@example.com"},
+		Dir: dir, Log: slog.New(slog.DiscardHandler),
+	}
+	if err := StageBaselineGate().Run(t.Context(), tc); err != nil {
+		t.Fatal(err)
+	}
+	if !tc.BaselineFixed {
+		t.Fatal("BaselineFixed = false, want true after a real committed fix")
+	}
+}
+
 func TestStageBaselineGateWarningIncludesFailureTail(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "gate.sh")
@@ -263,6 +299,82 @@ func TestStageCommitPushDoesNotUseSyntheticIssueForChatNoOp(t *testing.T) {
 	}
 	if tc.Outcome.Status != store.StatusMerged {
 		t.Errorf("Outcome.Status = %q, want %q", tc.Outcome.Status, store.StatusMerged)
+	}
+}
+
+// fakeTrees implements Trees, tracking calls without touching a real
+// worktree. commitAllChanged controls what CommitAll reports.
+type fakeTrees struct {
+	commitAllChanged bool
+	pushed           bool
+	pushBranch       string
+}
+
+func (f *fakeTrees) Prepare(context.Context, string, string, string, int, string, string, string) (string, string, error) {
+	return "", "", nil
+}
+
+func (f *fakeTrees) CommitAll(context.Context, string, string) (bool, error) {
+	return f.commitAllChanged, nil
+}
+
+func (f *fakeTrees) Push(_ context.Context, _ string, branch string) error {
+	f.pushed = true
+	f.pushBranch = branch
+	return nil
+}
+func (f *fakeTrees) Diff(context.Context, string, string) (string, error)           { return "", nil }
+func (f *fakeTrees) ChangedFiles(context.Context, string, string) ([]string, error) { return nil, nil }
+func (f *fakeTrees) ChangedLines(context.Context, string, string) (int, error)      { return 0, nil }
+func (f *fakeTrees) Snapshot(context.Context, string, string) error                 { return nil }
+
+// TestStageCommitPushPushesBaselineFixEvenWithNothingNewToCommit is the
+// regression case for archie-core-95dj: StageBaselineGate already
+// committed a real, gate-verified fix for a pre-existing failure, and the
+// build stage found nothing further to do. The worktree has no *new*
+// uncommitted changes (CommitAll correctly reports changed=false), but
+// the baseline-fix commit already sitting on the branch must still reach
+// a PR -- not be silently discarded as "no changes required".
+func TestStageCommitPushPushesBaselineFixEvenWithNothingNewToCommit(t *testing.T) {
+	trees := &fakeTrees{commitAllChanged: false}
+	stage := StageCommitPush(func(*TaskContext) string { return "commit msg" })
+	tc := &TaskContext{
+		Trees:         trees,
+		BaselineFixed: true,
+		Dir:           "/tmp/test",
+		Branch:        "archie/issue-1",
+		Task:          &store.Task{ID: 1, Owner: "o", Repo: "r", IssueNumber: 1},
+	}
+
+	if err := stage.Run(context.Background(), tc); err != nil {
+		t.Fatalf("StageCommitPush.Run() = %v, want nil", err)
+	}
+	if !trees.pushed {
+		t.Fatal("Push was not called; the baseline-fix commit would be discarded")
+	}
+	if trees.pushBranch != "archie/issue-1" {
+		t.Errorf("pushed branch = %q, want %q", trees.pushBranch, "archie/issue-1")
+	}
+}
+
+// TestStageCommitPushStillErrorsOnEmptyTreeWithoutBaselineFix confirms the
+// existing "nothing to commit" guard survives: only a real baseline-fix
+// commit excuses an empty tree, not a plain no-op build.
+func TestStageCommitPushStillErrorsOnEmptyTreeWithoutBaselineFix(t *testing.T) {
+	trees := &fakeTrees{commitAllChanged: false}
+	stage := StageCommitPush(func(*TaskContext) string { return "commit msg" })
+	tc := &TaskContext{
+		Trees:  trees,
+		Dir:    "/tmp/test",
+		Branch: "archie/issue-1",
+		Task:   &store.Task{ID: 1, Owner: "o", Repo: "r", IssueNumber: 1},
+	}
+
+	if err := stage.Run(context.Background(), tc); err == nil {
+		t.Fatal("StageCommitPush.Run() = nil, want an error for an empty tree with no baseline fix")
+	}
+	if trees.pushed {
+		t.Fatal("Push was called despite nothing to commit and no baseline fix")
 	}
 }
 
