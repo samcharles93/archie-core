@@ -224,6 +224,9 @@ func (r *Registry) Start(ctx context.Context) error {
 		r.mu.Lock()
 		if err != nil {
 			r.status[name] = curatorStatus{startErr: err}
+			if r.host.Log != nil {
+				r.host.Log.Error("curator lifecycle failed", "curator", name, "phase", "start", "err", err)
+			}
 			errs = append(errs, fmt.Errorf("curator %s: %w", name, err))
 		} else {
 			r.status[name] = curatorStatus{started: true}
@@ -294,6 +297,9 @@ func (r *Registry) Stop(ctx context.Context) error {
 		}
 		c := r.curators[name]
 		if err := stopSafely(ctx, c); err != nil {
+			if r.host.Log != nil {
+				r.host.Log.Error("curator lifecycle failed", "curator", name, "phase", "stop", "err", err)
+			}
 			errs = append(errs, fmt.Errorf("curator %s: %w", name, err))
 		}
 	}
