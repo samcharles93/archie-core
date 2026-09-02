@@ -1,4 +1,4 @@
-import { el, pill } from "../base/dom.js";
+import { el, pill } from "../base/dom.jsx";
 
 /**
  * Pure rendering + path/type logic for the mapping editor, split out from

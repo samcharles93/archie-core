@@ -1,5 +1,5 @@
-import { el } from "../base/dom.js";
-import { sessionTitle } from "./chat-render.js";
+import { el } from "../base/dom.jsx";
+import { sessionTitle } from "./chat-render.jsx";
 
 export function renderSessions({ sessionList, sessionTools, sessions, currentSession, onSelect }) {
   sessionList.replaceChildren();

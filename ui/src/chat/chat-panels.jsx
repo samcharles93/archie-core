@@ -1,4 +1,4 @@
-import { el } from "../base/dom.js";
+import { el } from "../base/dom.jsx";
 
 export function renderUpdate(panel, data, { onDefer, onInstall }) {
   panel.replaceChildren();

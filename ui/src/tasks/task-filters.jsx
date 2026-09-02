@@ -1,4 +1,4 @@
-import { attentionStatusIds, statusIds } from "../base/task-meta.js";
+import { attentionStatusIds, statusIds } from "../base/task-meta.jsx";
 
 // The vocabulary is the server catalog, not a hand-synced copy: the "needs
 // you" grouping and the set of known statuses come straight from task-meta so

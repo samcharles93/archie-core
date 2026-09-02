@@ -1,4 +1,4 @@
-import { ago, el, pill } from "../base/dom.js";
+import { ago, el, pill } from "../base/dom.jsx";
 
 /**
  * One captured event's summary row, plus its expandable detail row when

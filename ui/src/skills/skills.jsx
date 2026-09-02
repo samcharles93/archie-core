@@ -1,6 +1,6 @@
 import "./skills.css";
-import { api } from "../base/api.js";
-import { el, empty, mount } from "../base/dom.js";
+import { api } from "../base/api.jsx";
+import { el, empty, mount } from "../base/dom.jsx";
 
 /**
  * What Archie can actually do, beyond what is in the source. Backed by

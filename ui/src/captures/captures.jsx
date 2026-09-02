@@ -1,7 +1,7 @@
 import "./captures.css";
-import { api, subscribeEvents } from "../base/api.js";
-import { el, empty, mount, pill } from "../base/dom.js";
-import { captureRow } from "./capture-row.js";
+import { api, subscribeEvents } from "../base/api.jsx";
+import { el, empty, mount, pill } from "../base/dom.jsx";
+import { captureRow } from "./capture-row.jsx";
 
 /**
  * Event inspector (t2db.2): the operator-facing half of capture. Recent
