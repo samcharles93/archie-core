@@ -1,113 +1,101 @@
+import { h, Fragment } from "preact";
+import { useState, useEffect, useMemo } from "preact/hooks";
 import "./skills.css";
 import { api } from "../base/api.jsx";
-import { el, empty, mount } from "../base/dom.jsx";
 
-/**
- * What Archie can actually do, beyond what is in the source. Backed by
- * GET /api/skills, which scans project, shared, and user-global
- * .agents/skills/<name>/SKILL.md files and returns each skill's name,
- * plain-language description, and where it was found.
- *
- * This page exists for someone who has never read the source: a search box
- * over a card grid, and an empty state that explains what a skill is and
- * how to add one rather than a blank box.
- */
-export function skillsPage() {
-  const root = el("div");
-  const cardGrid = el("div.grid.grid-2");
-  const searchInput = el("input.skill-search", {
-    type: "search",
-    placeholder: "Search skills…",
-    oninput: (e) => {
-      search = e.target.value.trim().toLowerCase();
-      renderCards();
-    },
-  });
+function Empty({ title, detail }) {
+  return (
+    <div class="empty">
+      <div class="empty-title">{title}</div>
+      {detail && <div>{detail}</div>}
+    </div>
+  );
+}
 
-  let skills = [];
-  let search = "";
-  let loadError = null;
+function Pill({ text, kind = "idle" }) {
+  return <span class={`pill pill-${kind}`}>{text}</span>;
+}
 
-  render();
-  load();
+export function skillsPage(query) {
+  return <SkillsApp query={query} />;
+}
 
-  function render() {
-    mount(
-      root,
-      el(
-        "div.page-head",
-        el(
-          "div",
-          el("h1.page-title", "Skills"),
-          el("p.page-sub", "What Archie can do, in plain language."),
-        ),
-        el("div.page-actions", el("button.btn", { onclick: load }, "Refresh")),
-      ),
-      el(
-        "div.card",
-        el(
-          "div.card-head",
-          el("div", el("h2.card-title", "Catalogue"), el("p.card-sub", "Project, shared, and user-global skills")),
-          searchInput,
-        ),
-        cardGrid,
-      ),
-    );
-    renderCards();
-  }
+function SkillsApp() {
+  const [skills, setSkills] = useState([]);
+  const [search, setSearch] = useState("");
+  const [loadError, setLoadError] = useState(null);
 
-  async function load() {
+  const load = async () => {
     try {
       const res = await api.skills();
-      skills = res?.skills || [];
-      loadError = null;
+      setSkills(res?.skills || []);
+      setLoadError(null);
     } catch (err) {
-      skills = [];
-      loadError = String(err.message || err);
+      setSkills([]);
+      setLoadError(String(err.message || err));
     }
-    renderCards();
-  }
+  };
 
-  function renderCards() {
-    if (loadError) {
-      return mount(cardGrid, empty("Cannot reach archied", loadError));
-    }
-    if (!skills.length) {
-      return mount(
-        cardGrid,
-        empty(
-          "No skills discovered yet",
-          "Skills live as SKILL.md files under project, shared, or user-global .agents/skills/<name>/ directories. Add one and refresh to make it available.",
-        ),
-      );
-    }
+  useEffect(() => {
+    load();
+  }, []);
 
-    const filtered = skills.filter((s) => matches(s, search));
-    if (!filtered.length) {
-      return mount(cardGrid, empty("No skills match", `Nothing found for "${search}".`));
-    }
-
-    mount(cardGrid, ...filtered.map(skillCard));
-  }
-
-  function matches(skill, term) {
+  const matches = (skill, term) => {
     if (!term) return true;
     const haystack = `${skill.name} ${skill.description}`.toLowerCase();
     return haystack.includes(term);
-  }
+  };
 
-  function skillCard(skill) {
-    return el(
-      "div.card.skill-card",
-      el(
-        "div.card-head",
-        el("h3.card-title", skill.name || "Untitled skill"),
-        skill.workflow && el("span.pill.pill-info", skill.workflow),
-      ),
-      el("p.skill-desc", skill.description || "No description provided."),
-      el("div.skill-source", skill.source || "Unknown source"),
-    );
-  }
+  const filteredSkills = useMemo(() => skills.filter((s) => matches(s, search)), [skills, search]);
 
-  return root;
+  return (
+    <div>
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">Skills</h1>
+          <p class="page-sub">What Archie can do, in plain language.</p>
+        </div>
+        <div class="page-actions">
+          <button class="btn" onClick={load}>Refresh</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h2 class="card-title">Catalogue</h2>
+            <p class="card-sub">Project, shared, and user-global skills</p>
+          </div>
+          <input
+            class="skill-search"
+            type="search"
+            placeholder="Search skills…"
+            onInput={(e) => setSearch(e.target.value.trim().toLowerCase())}
+          />
+        </div>
+        <div class="grid grid-2">
+          {loadError ? (
+            <Empty title="Cannot reach archied" detail={loadError} />
+          ) : !skills.length ? (
+            <Empty
+              title="No skills discovered yet"
+              detail="Skills live as SKILL.md files under project, shared, or user-global .agents/skills/<name>/ directories. Add one and refresh to make it available."
+            />
+          ) : !filteredSkills.length ? (
+            <Empty title="No skills match" detail={`Nothing found for "${search}".`} />
+          ) : (
+            filteredSkills.map((skill) => (
+              <div class="card skill-card" key={skill.name}>
+                <div class="card-head">
+                  <h3 class="card-title">{skill.name || "Untitled skill"}</h3>
+                  {skill.workflow && <Pill text={skill.workflow} kind="info" />}
+                </div>
+                <p class="skill-desc">{skill.description || "No description provided."}</p>
+                <div class="skill-source">{skill.source || "Unknown source"}</div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }

@@ -1,12 +1,8 @@
+import { h, Fragment } from "preact";
+import { useState, useEffect } from "preact/hooks";
 import "./workflows.css";
 import { api } from "../base/api.jsx";
-import { el, empty, mount } from "../base/dom.jsx";
 
-/**
- * Plain-language workflow names. Falls back to a title-cased version of the
- * raw identifier for anything not listed here, so a new workflow never
- * renders blank.
- */
 const WORKFLOW_LABELS = {
   bootstrap: "Bootstrap",
   implement: "Implement",
@@ -25,13 +21,6 @@ function pct(part, whole) {
   return Math.round((part / whole) * 100);
 }
 
-function bar(fraction, kind = "ok") {
-  return el(
-    "div.wf-bar",
-    el(`div.wf-bar-fill.wf-bar-${kind}`, { style: `width:${Math.min(100, Math.max(0, fraction))}%` }),
-  );
-}
-
 function formatMs(ms) {
   if (!ms) return "—";
   if (ms < 1000) return `${ms} ms`;
@@ -40,229 +29,288 @@ function formatMs(ms) {
   return `${(secs / 60).toFixed(1)} min`;
 }
 
-/**
- * How work actually flows: per-workflow outcomes and spend, then per-stage
- * duration and failure counts -- the "where does it get stuck" view. Both
- * come from a single /api/workflows call built on the same store queries
- * that back the dashboard's summary stats.
- */
-export function workflowsPage() {
-  const root = el("div");
-  const workflowSlot = el("div");
-  const stageSlot = el("div");
-	const startSlot = el("div");
+function Empty({ title, detail }) {
+  return (
+    <div class="empty">
+      <div class="empty-title">{title}</div>
+      {detail && <div>{detail}</div>}
+    </div>
+  );
+}
 
-  render();
-  load();
+function Bar({ fraction, kind = "ok" }) {
+  const boundedFraction = Math.min(100, Math.max(0, fraction));
+  return (
+    <div class="wf-bar">
+      <div class={`wf-bar-fill wf-bar-${kind}`} style={{ width: `${boundedFraction}%` }}></div>
+    </div>
+  );
+}
 
-  function render() {
-    mount(
-      root,
-      el(
-        "div.page-head",
-        el(
-          "div",
-          el("h1.page-title", "Workflows"),
-          el("p.page-sub", "Run outcomes and spend per workflow, and where stages get stuck."),
-        ),
-        el("div.page-actions", el("button.btn", { onclick: load }, "Refresh")),
-      ),
-      startSlot,
-      workflowSlot,
-      stageSlot,
-    );
-  }
+export function workflowsPage(query) {
+  return <WorkflowsApp query={query} />;
+}
 
-  async function load() {
+function WorkflowsApp() {
+  const [definitions, setDefinitions] = useState([]);
+  const [workflows, setWorkflows] = useState([]);
+  const [stages, setStages] = useState([]);
+  const [error, setError] = useState(null);
+
+  const load = async () => {
     try {
       const data = await api.workflows();
-      renderStartWork(data?.definitions || []);
-      renderWorkflows(data?.workflows || [], data?.definitions || []);
-      renderStages(data?.stages || []);
+      setDefinitions(data?.definitions || []);
+      setWorkflows(data?.workflows || []);
+      setStages(data?.stages || []);
+      setError(null);
     } catch (err) {
-      mount(workflowSlot, el("div.card", empty("Cannot reach archied", String(err.message || err))));
-      mount(stageSlot);
+      setError(String(err.message || err));
     }
-  }
+  };
 
-  function renderStartWork(definitions) {
-    if (!definitions.length) {
-      mount(startSlot);
-      return;
+  useEffect(() => {
+    load();
+  }, []);
+
+  return (
+    <div>
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">Workflows</h1>
+          <p class="page-sub">Run outcomes and spend per workflow, and where stages get stuck.</p>
+        </div>
+        <div class="page-actions">
+          <button class="btn" onClick={load}>Refresh</button>
+        </div>
+      </div>
+      <StartWork definitions={definitions} />
+      {error ? (
+        <div class="card">
+          <Empty title="Cannot reach archied" detail={error} />
+        </div>
+      ) : (
+        <Fragment>
+          <Workflows workflows={workflows} definitions={definitions} />
+          <Stages stages={stages} />
+        </Fragment>
+      )}
+    </div>
+  );
+}
+
+function StartWork({ definitions }) {
+  if (!definitions.length) return null;
+
+  const defaultWorkflow = definitions.filter((d) => d.enabled)[0]?.id || "";
+  const [identity, setIdentity] = useState("");
+  const [repository, setRepository] = useState("");
+  const [workflow, setWorkflow] = useState(defaultWorkflow);
+  const [title, setTitle] = useState("");
+  const [instructions, setInstructions] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    if (!workflow && defaultWorkflow) {
+      setWorkflow(defaultWorkflow);
     }
-    const identity = el("input", { placeholder: "Identity", required: true });
-    const repository = el("input", { placeholder: "owner/repository", required: true });
-    const workflow = el("select", { required: true }, ...definitions.filter((d) => d.enabled).map((d) => el("option", { value: d.id }, workflowLabel(d.name || d.id))));
-    const title = el("input", { placeholder: "Short task title", required: true });
-    const instructions = el("textarea", { placeholder: "Instructions for the work", required: true, rows: 3 });
-    const notice = el("p.card-sub");
-    const submit = el("button.btn", { type: "submit" }, "Start work");
-    const form = el("form.wf-form", {
-      onsubmit: async (event) => {
-        event.preventDefault();
-        submit.disabled = true;
-        try {
-          const result = await api.workRequest({ identity: identity.value, repository: repository.value, workflow: workflow.value, title: title.value, instructions: instructions.value });
-          notice.textContent = `Queued task #${result.task_id}.`;
-          form.reset();
-        } catch (err) {
-          notice.textContent = String(err.message || err);
-        } finally {
-          submit.disabled = false;
-        }
-      },
-    }, identity, repository, workflow, title, instructions, submit, notice);
-    mount(startSlot, el("div.card", el("div.card-head", el("div", el("h2.card-title", "Start work"), el("p.card-sub", "This enters Archie’s normal admitted task queue."))), form));
-  }
+  }, [defaultWorkflow, workflow]);
 
-  function renderWorkflows(workflows, definitions) {
-    const byID = new Map(workflows.map((workflow) => [workflow.workflow, workflow]));
-    const rows = definitions.map((definition) => ({ ...definition, ...(byID.get(definition.id) || { workflow: definition.id, runs: 0, merged: 0 }) }));
-    if (!rows.length) {
-      mount(
-        workflowSlot,
-        el(
-          "div.card",
-          el("div.card-head", el("div", el("h2.card-title", "Per workflow"))),
-          empty("No workflow runs yet", "Stats appear here once a task has run through a workflow."),
-        ),
-      );
-      return;
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setNotice("");
+    try {
+      const result = await api.workRequest({ identity, repository, workflow, title, instructions });
+      setNotice(`Queued task #${result.task_id}.`);
+      setIdentity("");
+      setRepository("");
+      setWorkflow(defaultWorkflow);
+      setTitle("");
+      setInstructions("");
+    } catch (err) {
+      setNotice(String(err.message || err));
+    } finally {
+      setSubmitting(false);
     }
+  };
 
-    mount(
-      workflowSlot,
-      el(
-        "div.card",
-        el(
-          "div.card-head",
-          el(
-            "div",
-            el("h2.card-title", "Per workflow"),
-            el("p.card-sub", "Success rate is merged tasks over all runs"),
-          ),
-        ),
-        el(
-          "div.table-scroll",
-          el(
-            "table.table",
-            el(
-              "thead",
-              el(
-                "tr",
-                ...["Workflow", "Origin", "Runs", "Success rate", "Avg tokens", "Avg steps"].map((h) => el("th", h)),
-              ),
-            ),
-            el(
-              "tbody",
-              ...rows.map((w) => {
-                const rate = pct(w.merged, w.runs);
-                return el(
-                  "tr",
-                  el("td.strong", workflowLabel(w.workflow)),
-				  el("td.mono", w.origin || "registry"),
-                  el("td", `${w.runs} run${w.runs === 1 ? "" : "s"}`),
-                  el(
-                    "td",
-                    el("div.wf-rate", `${rate}%`, el("span.wf-rate-sub", `${w.merged} of ${w.runs} merged`)),
-                    bar(rate, rate >= 50 ? "ok" : "warn"),
-                  ),
-                  el("td.mono", w.avg_tokens ? w.avg_tokens.toLocaleString() : "—"),
-                  el("td.mono", w.avg_steps ? w.avg_steps.toFixed(1) : "—"),
-                );
-              }),
-            ),
-          ),
-        ),
-      ),
+  return (
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2 class="card-title">Start work</h2>
+          <p class="card-sub">This enters Archie’s normal admitted task queue.</p>
+        </div>
+      </div>
+      <form class="wf-form" onSubmit={onSubmit}>
+        <input placeholder="Identity" required value={identity} onInput={(e) => setIdentity(e.target.value)} />
+        <input placeholder="owner/repository" required value={repository} onInput={(e) => setRepository(e.target.value)} />
+        <select required value={workflow} onInput={(e) => setWorkflow(e.target.value)}>
+          {definitions.filter((d) => d.enabled).map((d) => (
+            <option key={d.id} value={d.id}>{workflowLabel(d.name || d.id)}</option>
+          ))}
+        </select>
+        <input placeholder="Short task title" required value={title} onInput={(e) => setTitle(e.target.value)} />
+        <textarea placeholder="Instructions for the work" required rows={3} value={instructions} onInput={(e) => setInstructions(e.target.value)}></textarea>
+        <button class="btn" type="submit" disabled={submitting}>Start work</button>
+        {notice && <p class="card-sub">{notice}</p>}
+      </form>
+    </div>
+  );
+}
+
+function Workflows({ workflows, definitions }) {
+  const byID = new Map(workflows.map((workflow) => [workflow.workflow, workflow]));
+  const rows = definitions.map((definition) => ({
+    ...definition,
+    ...(byID.get(definition.id) || { workflow: definition.id, runs: 0, merged: 0 }),
+  }));
+
+  if (!rows.length) {
+    return (
+      <div class="card">
+        <div class="card-head">
+          <div><h2 class="card-title">Per workflow</h2></div>
+        </div>
+        <Empty title="No workflow runs yet" detail="Stats appear here once a task has run through a workflow." />
+      </div>
     );
   }
 
-  function renderStages(stages) {
-    if (!stages.length) {
-      mount(
-        stageSlot,
-        el(
-          "div.card.wf-stage-card",
-          el("div.card-head", el("div", el("h2.card-title", "Per stage"))),
-          empty("No stage data yet", "Stage timing and failures appear here once workflows have run."),
-        ),
-      );
-      return;
-    }
+  return (
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2 class="card-title">Per workflow</h2>
+          <p class="card-sub">Success rate is merged tasks over all runs</p>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Workflow</th>
+              <th>Origin</th>
+              <th>Runs</th>
+              <th>Success rate</th>
+              <th>Avg tokens</th>
+              <th>Avg steps</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((w) => {
+              const rate = pct(w.merged, w.runs);
+              return (
+                <tr key={w.workflow}>
+                  <td class="strong">{workflowLabel(w.workflow)}</td>
+                  <td class="mono">{w.origin || "registry"}</td>
+                  <td>{`${w.runs} run${w.runs === 1 ? "" : "s"}`}</td>
+                  <td>
+                    <div class="wf-rate">
+                      {rate}%<span class="wf-rate-sub">{w.merged} of {w.runs} merged</span>
+                    </div>
+                    <Bar fraction={rate} kind={rate >= 50 ? "ok" : "warn"} />
+                  </td>
+                  <td class="mono">{w.avg_tokens ? w.avg_tokens.toLocaleString() : "—"}</td>
+                  <td class="mono">{w.avg_steps ? w.avg_steps.toFixed(1) : "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
-    const maxMs = Math.max(...stages.map((s) => s.avg_ms || 0), 1);
-    const byDuration = [...stages].sort((a, b) => (b.avg_ms || 0) - (a.avg_ms || 0));
-    const byErrors = [...stages].filter((s) => s.errors > 0).sort((a, b) => b.errors - a.errors);
-
-    mount(
-      stageSlot,
-      el(
-        "div.grid.grid-2.wf-stage-card",
-        el(
-          "div.card",
-          el(
-            "div.card-head",
-            el("div", el("h2.card-title", "Slowest stages"), el("p.card-sub", "Average duration, this workflow's stages")),
-          ),
-          el(
-            "div.table-scroll",
-            el(
-              "table.table",
-              el("thead", el("tr", ...["Workflow", "Stage", "Runs", "Avg duration"].map((h) => el("th", h)))),
-              el(
-                "tbody",
-                ...byDuration.map((s) =>
-                  el(
-                    "tr",
-                    el("td", workflowLabel(s.workflow)),
-                    el("td.strong", s.stage),
-                    el("td", `${s.runs}`),
-                    el(
-                      "td",
-                      el("div.wf-rate", formatMs(s.avg_ms)),
-                      bar(pct(s.avg_ms, maxMs), "info"),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-        el(
-          "div.card",
-          el(
-            "div.card-head",
-            el("div", el("h2.card-title", "Most failures"), el("p.card-sub", "Stages that error out, over their runs")),
-          ),
-          byErrors.length
-            ? el(
-                "div.table-scroll",
-                el(
-                  "table.table",
-                  el("thead", el("tr", ...["Workflow", "Stage", "Failures"].map((h) => el("th", h)))),
-                  el(
-                    "tbody",
-                    ...byErrors.map((s) =>
-                      el(
-                        "tr",
-                        el("td", workflowLabel(s.workflow)),
-                        el("td.strong", s.stage),
-                        el(
-                          "td",
-                          el("div.wf-rate", `${s.errors} of ${s.runs}`),
-                          bar(pct(s.errors, s.runs), "danger"),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              )
-            : empty("No failures recorded", "Every stage has completed cleanly so far."),
-        ),
-      ),
+function Stages({ stages }) {
+  if (!stages.length) {
+    return (
+      <div class="card wf-stage-card">
+        <div class="card-head">
+          <div><h2 class="card-title">Per stage</h2></div>
+        </div>
+        <Empty title="No stage data yet" detail="Stage timing and failures appear here once workflows have run." />
+      </div>
     );
   }
 
-  return root;
+  const maxMs = Math.max(...stages.map((s) => s.avg_ms || 0), 1);
+  const byDuration = [...stages].sort((a, b) => (b.avg_ms || 0) - (a.avg_ms || 0));
+  const byErrors = [...stages].filter((s) => s.errors > 0).sort((a, b) => b.errors - a.errors);
+
+  return (
+    <div class="grid grid-2 wf-stage-card">
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h2 class="card-title">Slowest stages</h2>
+            <p class="card-sub">Average duration, this workflow's stages</p>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Workflow</th>
+                <th>Stage</th>
+                <th>Runs</th>
+                <th>Avg duration</th>
+              </tr>
+            </thead>
+            <tbody>
+              {byDuration.map((s, idx) => (
+                <tr key={idx}>
+                  <td>{workflowLabel(s.workflow)}</td>
+                  <td class="strong">{s.stage}</td>
+                  <td>{s.runs}</td>
+                  <td>
+                    <div class="wf-rate">{formatMs(s.avg_ms)}</div>
+                    <Bar fraction={pct(s.avg_ms, maxMs)} kind="info" />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h2 class="card-title">Most failures</h2>
+            <p class="card-sub">Stages that error out, over their runs</p>
+          </div>
+        </div>
+        {byErrors.length ? (
+          <div class="table-scroll">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Workflow</th>
+                  <th>Stage</th>
+                  <th>Failures</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byErrors.map((s, idx) => (
+                  <tr key={idx}>
+                    <td>{workflowLabel(s.workflow)}</td>
+                    <td class="strong">{s.stage}</td>
+                    <td>
+                      <div class="wf-rate">{s.errors} of {s.runs}</div>
+                      <Bar fraction={pct(s.errors, s.runs)} kind="danger" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <Empty title="No failures recorded" detail="Every stage has completed cleanly so far." />
+        )}
+      </div>
+    </div>
+  );
 }
