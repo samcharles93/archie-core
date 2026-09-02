@@ -473,6 +473,7 @@ type Config struct {
 	Containers ContainerConfig `toml:"containers" yaml:"containers"`
 	Chat       ChatConfig      `toml:"chat" yaml:"chat"`
 	Capture    CaptureConfig   `toml:"capture" yaml:"capture"`
+	Bindings   BindingsConfig  `toml:"bindings" yaml:"bindings"`
 
 	// Memory holds memory provider configuration (from config.memory.yaml).
 	Memory MemoryConfig `toml:"memory" yaml:"memory"`
@@ -617,6 +618,7 @@ func (c Config) Clone() Config {
 	c.Chat.Telegram.AllowedUserIDs = append([]int64(nil), c.Chat.Telegram.AllowedUserIDs...)
 	c.Chat.Telegram.UpdateCheckCommand = append([]string(nil), c.Chat.Telegram.UpdateCheckCommand...)
 	c.Chat.Telegram.UpdateInstallCommand = append([]string(nil), c.Chat.Telegram.UpdateInstallCommand...)
+	c.Bindings.PreviousEncryptionKeys = append([]secret.SecretRef(nil), c.Bindings.PreviousEncryptionKeys...)
 	c.Tools.MCPServers = cloneMCPServers(c.Tools.MCPServers)
 	c.Memory.ProviderConfig = maps.Clone(c.Memory.ProviderConfig)
 	if c.Tools.WebFetch.Enabled != nil {
@@ -732,6 +734,22 @@ type CaptureConfig struct {
 	// the defaults (1 req/s, burst 5).
 	RatePerSecond float64 `toml:"rate_per_second" yaml:"rate_per_second"`
 	RateBurst     int     `toml:"rate_burst" yaml:"rate_burst"`
+}
+
+// BindingsConfig configures the playbook-binding store (t2db). When
+// EncryptionKey is unset, binding secrets are persisted as plaintext
+// (legacy behaviour); when set, they are AES-256-GCM encrypted at rest
+// (see docs/prds/binding-secret-encryption.md).
+type BindingsConfig struct {
+	// EncryptionKey is the active key that seals new binding secrets.
+	// Resolved through the secret registry (engine + key) at startup; the
+	// resolved material must be 32 bytes of high-entropy randomness.
+	// A nil/empty ref disables encryption and keeps current behaviour.
+	EncryptionKey secret.SecretRef `toml:"encryption_key" yaml:"encryption_key"`
+	// PreviousEncryptionKeys retains older key material so rows sealed
+	// under a previous rotation still decrypt. Each is resolved the same
+	// way as EncryptionKey; entries are decrypt-only.
+	PreviousEncryptionKeys []secret.SecretRef `toml:"previous_encryption_keys" yaml:"previous_encryption_keys"`
 }
 
 // ContainerConfig configures Docker sandbox execution of archie-agent.

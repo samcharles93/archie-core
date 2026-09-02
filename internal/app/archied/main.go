@@ -277,8 +277,8 @@ func resolveForge(cfg config.Forge, secrets *secret.Registry, log *slog.Logger) 
 	return client, token
 }
 
-func openProductionTaskStore(ctx context.Context, path string) (store.TaskStore, error) {
-	return store.Open(ctx, path)
+func openProductionTaskStore(ctx context.Context, path string, opts ...store.OpenOption) (store.TaskStore, error) {
+	return store.Open(ctx, path, opts...)
 }
 
 func taskDBPath(configuredPath string) string {

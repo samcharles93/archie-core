@@ -101,12 +101,33 @@ func (t Task) IsForgeBacked() bool {
 	return t.Source != SourceChat
 }
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db             *sql.DB
+	bindingsCipher BindingCipher
+}
 
 const taskSchemaVersion = 2
 
+// OpenOption configures the store at open time.
+type OpenOption func(*openOptions)
+
+type openOptions struct {
+	bindingsCipher BindingCipher
+}
+
+// WithBindingCipher installs an at-rest encryption cipher for binding secrets
+// (docs/prds/binding-secret-encryption.md). When omitted, binding secrets are
+// persisted as plaintext -- legacy behaviour, unchanged.
+func WithBindingCipher(c BindingCipher) OpenOption {
+	return func(o *openOptions) { o.bindingsCipher = c }
+}
+
 // Open opens (creating if needed) the SQLite database and its schema.
-func Open(ctx context.Context, path string) (*Store, error) {
+func Open(ctx context.Context, path string, opts ...OpenOption) (*Store, error) {
+	var o openOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
@@ -121,7 +142,7 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	if err := migrateTasks(ctx, db); err != nil {
 		return nil, errors.Join(fmt.Errorf("store: migrate: %w", err), db.Close())
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, bindingsCipher: o.bindingsCipher}, nil
 }
 
 func sqliteDSN(path string) string {
