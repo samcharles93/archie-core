@@ -3,10 +3,8 @@ import assert from "node:assert/strict";
 import { register } from "node:module";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import "./shim.js";
+import { render } from "@testing-library/preact";
 
-// settings.js imports ./settings.css, which Node's ESM loader cannot parse.
-// Same stub as settings-lifecycle.test.js.
 const cssLoad = "data:text/javascript," + encodeURIComponent(`
   export async function load(url, context, nextLoad) {
     if (url.endsWith(".css")) {
@@ -17,16 +15,12 @@ const cssLoad = "data:text/javascript," + encodeURIComponent(`
 `);
 register(cssLoad, import.meta.url);
 
-const { api } = await import("../src/base/api.js");
-const { settingsPage } = await import("../src/settings/settings.js");
+const { api } = await import("../src/base/api.jsx");
+const { settingsPage } = await import("../src/settings/settings.jsx");
 
-const settingsJsPath = fileURLToPath(new URL("../src/settings/settings.js", import.meta.url));
+const settingsJsPath = fileURLToPath(new URL("../src/settings/settings.jsx", import.meta.url));
 const settingsJsSource = readFileSync(settingsJsPath, "utf8");
 
-// A schema fixture with a field settings.js has never heard of. If the
-// renderer needed a field-specific branch to show it correctly, this key
-// would render blank, mislabeled, or not at all -- proving genericity
-// requires a field the source code cannot possibly special-case.
 const FIXTURE_SCHEMA = [
   {
     id: "budgets",
@@ -68,9 +62,10 @@ async function renderSettings(cfg) {
   api.version = async () => ({ components: [] });
   api.taskMeta = async () => ({ statuses: [], actions: [] });
   try {
-    const root = settingsPage();
+    const vnode = settingsPage(new URLSearchParams());
+    const { container } = render(vnode);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    return root;
+    return container;
   } finally {
     api.config = original.config;
     api.version = original.version;
@@ -86,34 +81,15 @@ test("a field the renderer has never seen still renders its label, value, and ed
 });
 
 test("an enum field's options reach the row's opts rather than being dropped", async () => {
-  // The row itself is exercised directly in config-row.test.js; here the
-  // point is that settings.js's schema-walking code passes opts.options
-  // through at all, for a field type settings.js does not special-case.
   const root = await renderSettings({ schema: FIXTURE_SCHEMA });
   assert.ok(root.textContent.includes("How images are refreshed"));
 });
 
 test("a structured field in a schema section renders no card of its own here", async () => {
-  // "repos" is type=structured; the generic renderer must skip it (the
-  // dedicated repositories card, built from cfg.repositories, owns that
-  // display). If the generic path accidentally rendered it too, "[]"
-  // would appear as the field's value text.
   const root = await renderSettings({ schema: FIXTURE_SCHEMA, repositories: [] });
   assert.ok(!root.textContent.includes("Repositories\n[]"), "a structured field should not get a generic value row");
 });
 
-// The real contract: settings.js must not know any individual field key by
-// name for the sections the generic renderer owns (identity, budgets,
-// storage, web). A literal key string in the source is exactly the
-// regression archie-core-b6ew.3 removed -- a hardcoded row(...) call
-// re-appearing for one field while the rest stay generic.
-// archie-core-b6ew.6: repositories gained inline editors for
-// allow_concurrent/max_retries/review_enabled. The shim's addEventListener
-// is a no-op (see ui/test/shim.js), so the save round trip itself is not
-// exercisable here -- this pins the structural half: the right initial
-// control with the right initial value renders per repo, matching the
-// existing config-row.test.js convention of testing structure, not the
-// live event round trip.
 test("repositories render a checkbox and a text input reflecting each repo's current field values", async () => {
   const root = await renderSettings({
     repositories: [
@@ -121,27 +97,19 @@ test("repositories render a checkbox and a text input reflecting each repo's cur
     ],
   });
 
-  const checkboxes = [];
-  const textInputs = [];
-  const walk = (node) => {
-    for (const c of node.childNodes || []) {
-      if (c.tagName === "INPUT" && c.attrs.type === "checkbox") checkboxes.push(c);
-      if (c.tagName === "INPUT" && c.attrs.type === "text") textInputs.push(c);
-      walk(c);
-    }
-  };
-  walk(root);
+  const checkboxes = Array.from(root.querySelectorAll('input[type="checkbox"]'));
+  const textInputs = Array.from(root.querySelectorAll('input[type="text"]'));
 
   assert.equal(checkboxes.length, 2, "allow_concurrent and review_enabled should each render a checkbox");
-  assert.equal(checkboxes[0].attrs.checked, "", "allow_concurrent=true should render checked");
-  assert.equal(checkboxes[1].attrs.checked, undefined, "review_enabled=false should render unchecked");
+  assert.ok(checkboxes[0].checked, "allow_concurrent=true should render checked");
+  assert.equal(checkboxes[1].checked, false, "review_enabled=false should render unchecked");
   assert.ok(
-    textInputs.some((i) => i.attrs.value === "3"),
+    textInputs.some((i) => String(i.value) === "3"),
     "max_retries' current value should populate a text input",
   );
 });
 
-test("settings.js contains no literal field-specific branch for the generically-rendered sections", () => {
+test("settings.jsx contains no literal field-specific branch for the generically-rendered sections", () => {
   const genericFieldKeys = [
     "bot_user", "bot_email", "\"label\"", "forge.type", "forge.host", "diff_cap_lines",
     "budgets.max_steps", "budgets.wall_clock", "budgets.gate_max_failures",
@@ -153,7 +121,7 @@ test("settings.js contains no literal field-specific branch for the generically-
   for (const key of genericFieldKeys) {
     assert.ok(
       !settingsJsSource.includes(key),
-      `settings.js still references ${key} literally -- the generic renderer must not need per-field knowledge`,
+      `settings.jsx still references ${key} literally -- the generic renderer must not need per-field knowledge`,
     );
   }
 });

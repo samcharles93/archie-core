@@ -27,14 +27,21 @@ export async function load(url, context, nextLoad) {
       return { format: "module", source: 'export default "";', shortCircuit: true };
     }
   }
-  if (url.endsWith(".jsx")) {
+  if (url.endsWith(".jsx") || url.endsWith(".test.js")) {
     const result = await nextLoad(url, { ...context, format: "module" });
     let source = result.source;
     if (typeof source !== "string") {
       source = new TextDecoder().decode(source);
     }
     const transformed = babel.transformSync(source, {
-      plugins: [["@babel/plugin-transform-react-jsx", { pragma: "h", pragmaFrag: "Fragment" }]],
+      plugins: [[
+        "@babel/plugin-transform-react-jsx",
+        // The automatic runtime matches @preact/preset-vite, so JSX compiles
+        // to `import { jsx } from "preact/jsx-runtime"` rather than a bare `h`.
+        // This lets source files shadow `h` (e.g. a .map((h, i) => ...) in
+        // mapping-editor.jsx) without breaking, exactly as the Vite build does.
+        { runtime: "automatic", importSource: "preact" },
+      ]],
       filename: fileURLToPath(url),
       configFile: false,
       babelrc: false,

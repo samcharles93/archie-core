@@ -1,14 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import "./shim.js";
-import { row, valueText, parseEdit } from "../src/settings/config-row.js";
+import { h } from "preact";
+import { render, cleanup } from "@testing-library/preact";
+import { Row, valueText, parseEdit } from "../src/settings/config-row.jsx";
 
 // Walks a rendered row and returns the concatenated text of each direct
 // child, so a test can assert on the row's *structure* rather than on a
 // flattened string. The bugs this file guards against were all cases of
 // two fields rendering as one visual run.
 function cells(rowEl) {
-  return rowEl.childNodes.map((child) => text(child));
+  return Array.from(rowEl.childNodes).map((child) => text(child));
 }
 
 function text(node) {
@@ -16,7 +17,18 @@ function text(node) {
 }
 
 function classOf(node) {
-  return node.className || "";
+  return (node && node.className) || "";
+}
+
+function titleOf(node) {
+  return node && node.getAttribute ? node.getAttribute("title") : undefined;
+}
+
+// Render a Row component and return its rendered .kv element.
+function renderRow(label, value, opts = {}) {
+  const { container, unmount } = render(<Row label={label} value={value} opts={opts} />);
+  const el = container.querySelector(".kv");
+  return { el, unmount };
 }
 
 test("a locked row keeps its reason in a separate element from the value", () => {
@@ -25,7 +37,7 @@ test("a locked row keeps its reason in a separate element from the value", () =>
   // working layout". Assert on the cell count and per-cell text, never on
   // the row's flattened text, so a future layout change cannot pass by
   // merging them back into one node.
-  const rowEl = row("Work directory", "/home/sam/.local/share/archie/work", {
+  const { el: rowEl } = renderRow("Work directory", "/home/sam/.local/share/archie/work", {
     key: "work_dir",
     locked: { work_dir: "pins the daemon's working layout; cannot be changed at runtime" },
   });
@@ -39,18 +51,18 @@ test("a locked row keeps its reason in a separate element from the value", () =>
 });
 
 test("a locked row offers no edit control", () => {
-  const rowEl = row("State path prefix", "/home/sam/.local/share/archie/archie.db", {
+  const { el: rowEl } = renderRow("State path prefix", "/home/sam/.local/share/archie/archie.db", {
     key: "db_path",
     locked: { db_path: "required for bootstrap" },
   });
-  assert.equal(rowEl.childNodes.filter((c) => classOf(c).includes("kv-actions")).length, 0);
+  assert.equal(Array.from(rowEl.childNodes).filter((c) => classOf(c).includes("kv-actions")).length, 0);
 });
 
 test("an editable row separates value from its actions", () => {
   // Regression: the value overflowed into the action column, so "400"
   // rendered as "40" with Edit sitting on top of the last digit. Assert
   // the value and the actions are distinct children.
-  const rowEl = row("Max diff size (lines)", 400, { key: "diff_cap_lines", type: "int", raw: 400 });
+  const { el: rowEl } = renderRow("Max diff size (lines)", 400, { key: "diff_cap_lines", type: "int", raw: 400 });
   const parts = cells(rowEl);
   assert.equal(parts.length, 3);
   assert.equal(parts[1], "400", "the value must not be merged with the action label");
@@ -58,21 +70,21 @@ test("an editable row separates value from its actions", () => {
 });
 
 test("an overridden row shows the marker and a reset alongside edit", () => {
-  const rowEl = row("Max steps", 90, {
+  const { el: rowEl } = renderRow("Max steps", 90, {
     key: "budgets.max_steps",
     type: "int",
     raw: 90,
     overridden: ["budgets.max_steps"],
   });
-  const actions = rowEl.childNodes.find((c) => classOf(c).includes("kv-actions"));
-  assert.deepEqual(actions.childNodes.map(text), ["overridden", "Edit", "Reset"]);
+  const actions = Array.from(rowEl.childNodes).find((c) => classOf(c).includes("kv-actions"));
+  assert.deepEqual(Array.from(actions.childNodes).map(text), ["overridden", "Edit", "Reset"]);
 });
 
 test("the full value is recoverable from the title when the column truncates", () => {
   const long = "go vet ./...  →  go build ./...  →  go test ./... -count=1";
-  const rowEl = row("Quality gate", long);
-  const value = rowEl.childNodes.find((c) => classOf(c).includes("kv-value"));
-  assert.equal(value.attrs.title, long);
+  const { el: rowEl } = renderRow("Quality gate", long);
+  const value = Array.from(rowEl.childNodes).find((c) => classOf(c).includes("kv-value"));
+  assert.equal(titleOf(value), long);
 });
 
 test("zero and false are real values, not missing ones", () => {
@@ -99,7 +111,7 @@ test("int edits reject a non-numeric entry before the round trip", () => {
 // though it has a key -- distinct from a locked row, which does have a key
 // and a reason.
 test("a field marked editable: false renders read-only with no note", () => {
-  const rowEl = row("Model roles", "{...}", { key: "models", type: "structured", editable: false });
+  const { el: rowEl } = renderRow("Model roles", "{...}", { key: "models", type: "structured", editable: false });
   const parts = cells(rowEl);
   assert.equal(parts.length, 2, "expected only label and value, no actions or note");
   assert.ok(!classOf(rowEl).includes("is-locked"));
@@ -108,7 +120,7 @@ test("a field marked editable: false renders read-only with no note", () => {
 // A locked reason still takes priority over editable: true -- the runtime
 // state (overlay.DeniedKeys) wins over the schema's static claim.
 test("a locked reason is shown even when the field claims editable: true", () => {
-  const rowEl = row("Work directory", "/work/archie", {
+  const { el: rowEl } = renderRow("Work directory", "/work/archie", {
     key: "work_dir",
     editable: true,
     locked: { work_dir: "pins the daemon's working layout; cannot be changed at runtime" },
@@ -120,13 +132,13 @@ test("a locked reason is shown even when the field claims editable: true", () =>
 // tooltip on the label, so a generic renderer can carry "0 means
 // unlimited." without any field-specific frontend code.
 test("a field's hint becomes the label's title attribute", () => {
-  const rowEl = row("Max steps", 0, { hint: "0 means unlimited." });
-  const label = rowEl.childNodes.find((c) => classOf(c).includes("kv-label"));
-  assert.equal(label.attrs.title, "0 means unlimited.");
+  const { el: rowEl } = renderRow("Max steps", 0, { hint: "0 means unlimited." });
+  const label = Array.from(rowEl.childNodes).find((c) => classOf(c).includes("kv-label"));
+  assert.equal(titleOf(label), "0 means unlimited.");
 });
 
 test("a field with no hint renders a plain label with no title", () => {
-  const rowEl = row("Max steps", 0, {});
-  const label = rowEl.childNodes.find((c) => classOf(c).includes("kv-label"));
-  assert.equal(label.attrs.title, undefined);
+  const { el: rowEl } = renderRow("Max steps", 0, {});
+  const label = Array.from(rowEl.childNodes).find((c) => classOf(c).includes("kv-label"));
+  assert.equal(titleOf(label), null);
 });
