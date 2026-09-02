@@ -116,8 +116,8 @@ go test ./internal/domain/workflow/... -run TestName -v -count=1
   (`worktree.CommitAll` will stage them).
 - **Conventional Commits:** Scope by package: `feat(webui): ...`,
   `fix(build): ...`, `chore(release): ...`.
-- **Commit policy:** Commit finished, gate-clean changes (`task check` passing +
-  clean adversarial review) without asking. Push only when instructed.
+- **Commit policy:** Commit finished, gate-clean changes (`task check`
+  passing) without asking. Push only when instructed.
 
 ## Organisation (Strict Domain-Driven Architecture)
 
@@ -194,10 +194,10 @@ structures found in legacy packages.
 4. **Formatting is LAW:** Adopt all formatting and simplification changes from
    `task fmt` (`gofumpt` + `go fix`) verbatim. Never revert or fight canonical
    linter/formatter diffs.
-5. **Adversarial Verification:** Run a verification pass using an isolated
-   reviewer context assuming all changes are incorrect until verified. Check:
-   dead code, unchecked errors, hardcoded constants, missing error paths, nil
-   pointers, goroutine leaks, and race conditions.
+5. **No standing adversarial-review pass:** Do not spawn a separate
+   fresh-context reviewer pass on every change as a matter of course. Red-green
+   TDD plus `task check` is the gate. Adversarial review is opt-in per
+   request, not a default step in this loop -- ask before running one.
 6. **Linter Guard:**
 
 - When using `errorlint` fixes, ensure boolean predicates (e.g.
