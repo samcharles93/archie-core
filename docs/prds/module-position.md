@@ -183,6 +183,22 @@ side effect. Concretely:
 4. Do **not** implement `notify` or any side-effecting kind in this slice
    -- that is explicitly gated on the execution-time gaps above.
 
+**Status 2026-09-03: first slice shipped (t2db.13).** The schema-gen ->
+go:generate -> Yaegi load -> registry mechanism is proven end to end with
+`internal/domain/eda/module/log` (hand-written schema + `logextract`
+generated symbols) and `ModuleRegistry` (Register/Invoke, strict arg
+decode, panic recovery via yaegiutil -- no new interpreter-construction
+or recovery mechanism). `ModuleDir` config field mirrors `PluginDir`;
+wired in bootstrap.go with log-and-abort on load failure.
+
+Playbook YAML action dispatch is **deliberately out of this slice**: a
+minimal 'run this one module action, no chaining' dispatch still requires
+naming how `args` values reach the action (parent doc open question 1
+-- data-flow/interpolation syntax) and what the result feeds. Both are
+unresolved in the parent doc; claiming them here would half-answer a
+question the design explicitly defers. Dispatch is a follow-up ticket
+that lands once Q1 is answered, and it will consume this registry as-is.
+
 ## Open questions
 
 1. **Discovery convention.** Does a Module kind's implementation file need

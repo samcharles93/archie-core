@@ -8,6 +8,7 @@ package archied
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -30,6 +31,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
+	"github.com/samcharles93/archie-core/internal/domain/eda/module"
 	domainmemory "github.com/samcharles93/archie-core/internal/domain/memory"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
@@ -87,6 +89,8 @@ type boot struct {
 	secrets     *secret.Registry
 	forgeClient forge.Forge
 	token       string
+
+	modules *module.ModuleRegistry
 
 	st               store.TaskStore
 	chatSessionStore gateway.SessionStore
@@ -673,6 +677,31 @@ func (b *boot) loadWorkflows(ctx context.Context) error {
 
 	workflow.SetKindWorkflows(kindWorkflows)
 	workflow.SetLabelWorkflows(labelWorkflows)
+
+	// Module action kinds (EDA playbook Module position, t2db.13): operator-
+	// trusted, in-process, Yaegi-interpreted. A broken module is a startup
+	// failure -- the daemon does not start with a partial module set, matching
+	// the routing-file load pattern (not the degrade-and-skip plugin pattern).
+	// Kinds whose file is not present in the directory are simply not loaded.
+	b.modules = module.New()
+	if cfg.ModuleDir != "" {
+		for _, kind := range module.Kinds() {
+			path := filepath.Join(cfg.ModuleDir, kind+".go")
+			if _, err := os.Stat(path); err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					continue // kind not installed in this module dir
+				}
+				log.Error("module stat failed", "kind", kind, "path", path, "err", err)
+				return err
+			}
+			if err := b.modules.Register(kind, cfg.ModuleDir); err != nil {
+				log.Error("module load failed", "kind", kind, "dir", cfg.ModuleDir, "err", err)
+				return err
+			}
+		}
+		log.Info("module registry built", "dir", cfg.ModuleDir, "kinds", b.modules.Len())
+	}
+
 	skillsBase := cfg.SkillsDir
 	if skillsBase == "" {
 		skillsBase = cfg.WorkDir

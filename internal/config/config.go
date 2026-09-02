@@ -467,6 +467,13 @@ type Config struct {
 	// are skipped  --  the daemon starts with the remaining set. When
 	// empty, no daemon plugins are loaded.
 	PluginDir string `toml:"plugin_dir" yaml:"plugin_dir"`
+	// ModuleDir is an optional path to a directory of Yaegi-interpreted
+	// Module action implementations (*.go files, one per kind: log.go for
+	// the log kind). Each file must export a "Run" function matching the
+	// kind's generated contract. A broken module is a startup failure  --
+	// the daemon does not start with a partial module set. When empty, no
+	// modules are loaded.
+	ModuleDir string `toml:"module_dir" yaml:"module_dir"`
 	// SecretEngineDir contains Yaegi secret-engine plugins. Built-in env and
 	// bws engines remain available when this is empty.
 	SecretEngineDir string   `toml:"secret_engine_dir" yaml:"secret_engine_dir"`
