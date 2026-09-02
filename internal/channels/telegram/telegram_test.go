@@ -234,8 +234,117 @@ func TestStartWithoutToken(t *testing.T) {
 	router := gateway.NewRouter(nil, nil, "telegram")
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	if err := g.Start(ctx, router); err == nil {
+	called := false
+	if err := g.Start(ctx, router, gateway.Lifecycle{Running: func() { called = true }}); err == nil {
 		t.Error("expected error when starting without token")
+	}
+	if called {
+		t.Error("running callback fired after failed startup")
+	}
+}
+
+func TestStartReportsRunningAfterLaunch(t *testing.T) {
+	pollStarted := make(chan struct{})
+	releasePoll := make(chan struct{})
+	var firstPoll sync.Once
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "getUpdates") {
+			firstPoll.Do(func() { close(pollStarted) })
+			select {
+			case <-releasePoll:
+			case <-r.Context().Done():
+				return
+			}
+			_, _ = w.Write([]byte(`{"ok":true,"result":[]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+	}))
+	defer api.Close()
+
+	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+	g.serverURL = api.URL
+	ctx, cancel := context.WithCancel(t.Context())
+	started := make(chan bool, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- g.Start(ctx, gateway.NewRouter(nil, nil, "telegram"), gateway.Lifecycle{
+			Running: func() { started <- g.running },
+		})
+	}()
+
+	select {
+	case <-pollStarted:
+	case <-time.After(time.Second):
+		t.Fatal("Telegram long poll did not start")
+	}
+	select {
+	case <-started:
+		t.Fatal("running callback fired before the first successful long poll")
+	default:
+	}
+	close(releasePoll)
+	select {
+	case running := <-started:
+		if !running {
+			t.Fatal("running callback fired before Telegram delivery started")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("running callback was not fired after Telegram launched")
+	}
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("Start returned an error after cancellation: %v", err)
+	}
+}
+
+func TestStartReportsStartingOnRestart(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "getUpdates") {
+			_, _ = w.Write([]byte(`{"ok":true,"result":[]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+	}))
+	defer api.Close()
+
+	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+	g.serverURL = api.URL
+	ctx, cancel := context.WithCancel(t.Context())
+	events := make(chan string, 4)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- g.Start(ctx, gateway.NewRouter(nil, nil, "telegram"), gateway.Lifecycle{
+			Starting: func() { events <- "starting" },
+			Running:  func() { events <- "running" },
+		})
+	}()
+
+	wantEvent(t, events, "starting")
+	wantEvent(t, events, "running")
+	if err := g.RequestRestart(); err != nil {
+		t.Fatal(err)
+	}
+	wantEvent(t, events, "starting")
+	wantEvent(t, events, "running")
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("Start returned an error after cancellation: %v", err)
+	}
+}
+
+func wantEvent(t *testing.T, events <-chan string, want string) {
+	t.Helper()
+	select {
+	case got := <-events:
+		if got != want {
+			t.Fatalf("lifecycle event = %q, want %q", got, want)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("timed out waiting for lifecycle event %q", want)
 	}
 }
 
@@ -275,7 +384,7 @@ func TestStartAndStopLifecycle(t *testing.T) {
 	// and our test server doesn't return a valid User object.
 	// The point: we exercise the Start/Stop path; accept either
 	// success or failure.
-	_ = g.Start(ctx, router)
+	_ = g.Start(ctx, router, gateway.Lifecycle{})
 	// Best-effort stop  --  don't assert on Start result since we can't
 	// fully mock the Bot API without the library supporting a base URL
 	// override.
@@ -521,7 +630,7 @@ func TestLaunchDropsPendingUpdatesBeforePolling(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if _, err := g.launch(ctx, nil); err != nil {
+	if _, err := g.launch(ctx, nil, gateway.Lifecycle{}); err != nil {
 		t.Fatalf("launch() error = %v", err)
 	}
 	cancel()

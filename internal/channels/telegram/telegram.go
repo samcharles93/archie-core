@@ -207,15 +207,16 @@ func (g *Gateway) RequestRestart() error {
 // Restarts are scoped to this gateway. The daemon keeps running, so
 // in-flight agent tasks are untouched  --  the whole point of the escape
 // hatch is to recover chat without disturbing work in progress.
-func (g *Gateway) Start(ctx context.Context, router *gateway.Router) error {
+func (g *Gateway) Start(ctx context.Context, router *gateway.Router, lifecycle gateway.Lifecycle) error {
 	if g.Token == "" {
 		return fmt.Errorf("telegram bot token is required")
 	}
 	g.log.Info("starting telegram gateway")
 
 	for {
+		lifecycle.ReportStarting()
 		runCtx, cancel := context.WithCancel(ctx)
-		b, err := g.launch(runCtx, router)
+		b, err := g.launch(runCtx, router, lifecycle)
 		if err != nil {
 			cancel()
 			return err
@@ -250,9 +251,10 @@ func (g *Gateway) Start(ctx context.Context, router *gateway.Router) error {
 	}
 }
 
-// launch builds one bot instance, registers handlers and begins receiving.
-// It returns as soon as delivery is running; the caller owns ctx.
-func (g *Gateway) launch(ctx context.Context, router *gateway.Router) (*bot.Bot, error) {
+// launch builds one bot instance, registers handlers and starts its delivery
+// worker. Webhook readiness is synchronous; long-poll readiness is reported by
+// pollReadinessClient after the first successful getUpdates response.
+func (g *Gateway) launch(ctx context.Context, router *gateway.Router, lifecycle gateway.Lifecycle) (*bot.Bot, error) {
 	// Turns are per-launch. Each queued turn carries the update handler's
 	// context, which is this launch's, so a /restart cancels everything
 	// still running under the outgoing bot instance.
@@ -269,6 +271,12 @@ func (g *Gateway) launch(ctx context.Context, router *gateway.Router) (*bot.Bot,
 	}
 	if g.WebhookSecret != "" {
 		opts = append(opts, bot.WithWebhookSecretToken(g.WebhookSecret))
+	}
+	if g.WebhookURL == "" {
+		opts = append(opts, bot.WithHTTPClient(telegramPollTimeout, &pollReadinessClient{
+			client:    &http.Client{Timeout: telegramPollTimeout},
+			onRunning: lifecycle.ReportRunning,
+		}))
 	}
 	if g.serverURL != "" {
 		opts = append(opts, bot.WithServerURL(g.serverURL), bot.WithSkipGetMe())
@@ -334,6 +342,7 @@ func (g *Gateway) launch(ctx context.Context, router *gateway.Router) (*bot.Bot,
 		g.webhookCancel = cancel
 		g.running = true
 		go b.StartWebhook(webhookCtx)
+		lifecycle.ReportRunning()
 	} else {
 		g.dropPendingUpdates(ctx, b)
 		g.running = true

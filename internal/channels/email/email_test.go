@@ -85,7 +85,7 @@ func TestSMTPReceiveAndRoute(t *testing.T) {
 	_ = ln.Close()
 
 	g.ListenAddr = addr
-	go func() { _ = g.Start(ctx, router) }()
+	go func() { _ = g.Start(ctx, router, gateway.Lifecycle{}) }()
 	time.Sleep(20 * time.Millisecond)
 	defer func() { _ = g.Stop(context.Background()) }()
 

@@ -69,12 +69,31 @@ type Message struct {
 	At time.Time
 }
 
+// Lifecycle receives adapter-owned startup facts. Callbacks are optional.
+// Starting is reported before each launch attempt; Running is reported only
+// after the adapter's external delivery boundary is ready.
+type Lifecycle struct {
+	Starting func()
+	Running  func()
+}
+
+func (l Lifecycle) ReportStarting() {
+	if l.Starting != nil {
+		l.Starting()
+	}
+}
+
+func (l Lifecycle) ReportRunning() {
+	if l.Running != nil {
+		l.Running()
+	}
+}
+
 // A Gateway owns a persistent connection to a chat channel. Start blocks;
-// the gateway should remain running until ctx is cancelled or Stop is
-// called.
+// the gateway should remain running until ctx is cancelled or Stop is called.
 type Gateway interface {
 	Name() string
-	Start(ctx context.Context, router *Router) error
+	Start(ctx context.Context, router *Router, lifecycle Lifecycle) error
 	Stop(ctx context.Context) error
 }
 
