@@ -59,6 +59,14 @@ func TestRedactPayloadRedactsSensitiveKeys(t *testing.T) {
 		{"private key", "private_key"},
 		{"cookie", "cookie"},
 		{"credential", "credential"},
+		{"access_token", "access_token"},
+		{"client_secret", "client_secret"},
+		{"signing_key", "signing_key"},
+		{"webhook_secret", "webhook_secret"},
+		{"x-api-key", "x-api-key"},
+		{"x_auth_token", "x_auth_token"},
+		{"otp", "otp"},
+		{"refresh_token", "refresh_token"},
 	}
 
 	for _, test := range tests {
@@ -123,5 +131,67 @@ func TestRedactPayloadHandlesArraysAndScalarsAtTopLevel(t *testing.T) {
 func TestRedactPayloadRejectsInvalidJSON(t *testing.T) {
 	if _, err := webhookguard.RedactPayload([]byte("{not valid json")); err == nil {
 		t.Error("RedactPayload() succeeded on invalid JSON, want error")
+	}
+}
+
+// TestRedactPayloadRedactsSecretValueShapes pins the value-shape heuristic:
+// a compact JWT or a PEM private-key block is redacted even when it sits under
+// a key the name heuristic would never flag -- the exact "sender names a secret
+// field something the heuristic misses" gap docs/prds/webhook-intake-
+// security.md point 5 documents as best-effort.
+func TestRedactPayloadRedactsSecretValueShapes(t *testing.T) {
+	tests := []struct {
+		name  string
+		value any
+	}{
+		{
+			"compact JWT",
+			"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+		},
+		{
+			"PEM private key",
+			"-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA7...\n-----END RSA PRIVATE KEY-----",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// Under an innocuous key, not a secret-named one.
+			input, err := json.Marshal(map[string]any{"payload": test.value})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := webhookguard.RedactPayload(input)
+			if err != nil {
+				t.Fatalf("RedactPayload() error = %v", err)
+			}
+			var decoded map[string]any
+			if err := json.Unmarshal(got, &decoded); err != nil {
+				t.Fatalf("redacted output is not valid JSON: %v", err)
+			}
+			if decoded["payload"] == test.value {
+				t.Errorf("secret-shaped value under 'payload' survived redaction")
+			}
+			if decoded["payload"] != "[redacted]" {
+				t.Errorf("decoded payload = %#v, want %q", decoded["payload"], "[redacted]")
+			}
+		})
+	}
+}
+
+// TestRedactPayloadKeepsOrdinaryStrings verifies the value-shape heuristic
+// does not over-redact ordinary content (the field-mapping use case depends on
+// leaving non-secret values intact).
+func TestRedactPayloadKeepsOrdinaryStrings(t *testing.T) {
+	input := []byte(`{"description":"Fix the build pipeline","buildId":"build-123"}`)
+	got, err := webhookguard.RedactPayload(input)
+	if err != nil {
+		t.Fatalf("RedactPayload() error = %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(got, &decoded); err != nil {
+		t.Fatalf("redacted output is not valid JSON: %v", err)
+	}
+	if decoded["description"] != "Fix the build pipeline" || decoded["buildId"] != "build-123" {
+		t.Errorf("ordinary strings were redacted: %#v", decoded)
 	}
 }

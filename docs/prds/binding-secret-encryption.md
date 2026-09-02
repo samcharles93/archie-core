@@ -75,10 +75,14 @@ old material must be retained.
 
 ## Non-goals / deferred
 
-- **`captured_events.body` redaction upgrade** is deferred (confirmed with
-  maintainer). The body redaction is a separate best-effort key-name heuristic
-  with its own documented limits and its own capture-path surface; it is not
-  bundled into this store-scoped change.
+- **`captured_events.body` redaction hardening** was completed alongside this
+  work (not deferred): `webhookguard.RedactPayload` now redacts an expanded set
+  of secret key markers (compound names like `access_token`, `client_secret`,
+  `signing_key`, `x_api_key`, …) as well as unambiguous value shapes (compact
+  JWTs, PEM private-key blocks) under any key. `gateway.sensitiveParameterKey`
+  was broadened identically to preserve the documented agreement. It remains
+  best-effort per `docs/prds/webhook-intake-security.md` point 5 -- a sender
+  that picks a name the heuristic misses is still captured.
 - **Key re-derivation on config reload** is a startup concern: the store holds
   the cipher for its lifetime, so a reload that changes `[bindings]` keys
   requires a daemon restart to take effect. Documented, accepted.
