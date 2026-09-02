@@ -233,14 +233,21 @@ function repositoriesCard(repos) {
   }
   return section(
     "Repositories",
-    "Each repository Archie polls, and the quality gate a change must pass before it opens a pull request.",
+    "Each repository Archie polls, and the quality gate a change must pass before it opens a pull request. " +
+      "Concurrent tasks, retries, and self-review are set per repository in config.toml -- read-only here " +
+      "until archie-core-b6ew.4's follow-up gives them an inline editor.",
     el(
       "div.table-scroll",
       el(
         "table.table",
         el(
           "thead",
-          el("tr", ...["Repository", "Base branch", "Ecosystem", "Quality gate", "Protected paths"].map((h) => el("th", h))),
+          el(
+            "tr",
+            ...["Repository", "Base branch", "Ecosystem", "Quality gate", "Protected paths", "Concurrent", "Max retries", "Self-review"].map((h) =>
+              el("th", h),
+            ),
+          ),
         ),
         el(
           "tbody",
@@ -252,12 +259,22 @@ function repositoriesCard(repos) {
               el("td", r.ecosystem || "go"),
               el("td.mono", gateSummary(r.gate)),
               el("td.mono", r.protect?.length ? r.protect.join(", ") : "—"),
+              el("td", boolPill(r.allow_concurrent)),
+              el("td.mono", String(r.max_retries ?? 0)),
+              el("td", boolPill(r.review_enabled)),
             ),
           ),
         ),
       ),
     ),
   );
+}
+
+// boolPill renders a config flag as the same pill used elsewhere on this
+// page (e.g. provider credential status), so "on"/"off" reads consistently
+// with the rest of the dashboard rather than as raw true/false text.
+function boolPill(value) {
+  return value ? pill("on", "ok") : pill("off", "idle");
 }
 
 function gateSummary(gate) {
