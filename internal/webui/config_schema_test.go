@@ -82,6 +82,53 @@ func TestConfigFieldDescriptorsAreComplete(t *testing.T) {
 	}
 }
 
+// TestConfigFieldDescriptorsRestartRequiredIsDeliberate pins the exact
+// RestartRequired value per field against the evidence in
+// configFieldDescriptors' own doc comment (internal/app/archied/reload.go's
+// reloadableFields/reloadableSubFields allowlist), so a field added or
+// reclassified without checking reload.go fails loudly instead of quietly
+// defaulting to false ("this takes effect immediately") when it does not.
+func TestConfigFieldDescriptorsRestartRequiredIsDeliberate(t *testing.T) {
+	want := map[string]bool{
+		"bot_user":                   false,
+		"bot_email":                  false,
+		"label":                      false,
+		"forge.type":                 true, // reloadableSubFields["Forge"] allows only Host
+		"forge.host":                 false,
+		"diff_cap_lines":             false,
+		"repos":                      false,
+		"models":                     false,
+		"providers":                  false,
+		"budgets.max_steps":          false,
+		"budgets.wall_clock":         false,
+		"budgets.gate_max_failures":  false,
+		"work_dir":                   false, // locked, not merely restart-required
+		"db_path":                    false, // locked, not merely restart-required
+		"skills_dir":                 true,  // absent from reloadableFields
+		"plugin_dir":                 true,
+		"secret_engine_dir":          true,
+		"containers.image":           true, // absent from reloadableSubFields["Containers"]
+		"containers.max_concurrency": true,
+		"containers.max_uptime":      true,
+		"containers.volume_ttl":      false, // reloadableSubFields["Containers"] allows VolumeTTL
+		"containers.pull_policy":     true,
+		"containers.network":         true,
+		"web.listen":                 true, // Web is absent from both allowlists entirely
+	}
+	for _, section := range configFieldDescriptors() {
+		for _, f := range section.Fields {
+			wantRestart, ok := want[f.Key]
+			if !ok {
+				t.Errorf("field %q has no RestartRequired expectation in this test; add one against internal/app/archied/reload.go before adding the field", f.Key)
+				continue
+			}
+			if f.RestartRequired != wantRestart {
+				t.Errorf("field %q RestartRequired = %v, want %v", f.Key, f.RestartRequired, wantRestart)
+			}
+		}
+	}
+}
+
 // TestConfigFieldDescriptorsStructuredFieldsAreNotEditable pins the design
 // decision that structured fields (repositories, models, providers) stay
 // read-only until archie-core-b6ew.4 gives them a dedicated editor -- the
