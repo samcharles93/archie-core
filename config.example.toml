@@ -21,6 +21,7 @@
 # workflow_routing_file = "~/.local/share/archie/workflow-routing.yaml"   # kind->workflow rebinding (bug/feature/bootstrap)
 # workflow_labels_file  = "~/.local/share/archie/workflow-labels.yaml"    # arbitrary forge label -> workflow (EDA playbook slice 2)
 # playbook_dirs = ["~/.local/share/archie/workflows"]                # list of dirs of *.yaml binding files, merged with the two above (slice 3); a key bound twice across sources is a load failure
+# eda_playbook_dir = "~/.local/share/archie/eda-playbooks"   # rich EDA playbook documents (trigger + CEL gated single workflow action, t2db.15); distinct from playbook_dirs 
 
 poll_interval = "60s"
 label = "archie"

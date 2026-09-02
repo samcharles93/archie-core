@@ -597,6 +597,18 @@ before Channel/Forge actions or multi-action playbooks ship.
    label routing) first, proving the schema-gen -> Yaegi -> playbook path
    end to end on the smallest useful case, before adding Channel/Forge
    action kinds or the linter/LSP.
+
+   **Status 2026-09-03: resolved across t2db.13-15.** The Module position
+   (registry + log kind, t2db.13), the CEL expression environment
+   (t2db.14), and the playbook document + event coordinator with
+   single-action workflow-kind dispatch (t2db.15) are shipped. The
+   coordinator is NOT yet wired into production task intake
+   (daemon.go/pollNATS/publishTask) -- that is a follow-up ticket;
+   production wiring would make a real forge-triggered task flow through
+   this coordinator instead of only workflow.Route(). The trigger shape
+   reuses the existing workintake kind/label vocabulary; multi-action and
+   non-workflow-position playbooks remain rejected at load (hard
+   boundary, blocked on the execution-time gaps).
 5. **Monetization boundary.** Sam has flagged this may be commercialized,
    and explicitly wants it discerned from other OSS event-driven-automation
    tooling. No design decision needed yet, but worth a note if/when
