@@ -1,9 +1,12 @@
 # archie-core Architecture
 
-**archied** is a resident daemon that polls its configured forges — GitHub and
-Gitea — for issues assigned to its bot user, carrying its label, or either
-(`dispatch` mode, per identity), works each one in an isolated worktree through
-a routed workflow, and opens pull requests for human review. A single daemon can
+**archied** is a resident daemon that discovers forge work — GitHub and Gitea
+issues assigned to its bot user, carrying its label, or either (`dispatch`
+mode, per identity) — by polling (the default) or, single-identity
+deployments only, reacting to forge webhook events the instant they arrive
+(`Forge.Intake` = `webhook`/`both`, see `docs/prds/event-sources-and-
+reactions.md`), works each matched issue in an isolated worktree through a
+routed workflow, and opens pull requests for human review. A single daemon can
 serve several identities across several forges, each with its own `bot_user`,
 label, and repository set.
 
@@ -29,6 +32,8 @@ See `docs/architecture/organisation.md` for the target structure and
 | `internal/domain/workintake/`| `TaskEnvelope`, routing `Kind`, label vocabulary, task subjects           |
 | `internal/agentexec/`        | Worker-local stage protocol and ai-sdk loop runner                        |
 | `internal/forge/`            | Forge interface: GitHub and Gitea implementations                         |
+| `internal/forge/webhook/`    | Optional forge webhook receiver: GitHub issue events → `workintake.TaskEnvelope`, same publish path as polling |
+| `internal/webhookguard/`     | Cross-cutting inbound-webhook mechanics: HMAC verification, per-source rate limiting |
 | `internal/worktree/`         | Git operations: clone, branch, commit, push, diff, cleanup               |
 | `internal/store/`            | Task store interface and SQLite implementation; RPC clients proxy it      |
 | `internal/events/`           | In-process event bus: publish/subscribe for observability                 |
@@ -65,9 +70,14 @@ dashboard and `/api/tasks`. Retries are an explicit operator action capped by
 
 **Provenance by origin:** a task's origin determines which enqueue path
 created it, though every origin converges on the same `tasks` table and the
-same `Route`/`Run` lifecycle above once queued. Forge-polled tasks enqueue via
-`workintake.TaskEnvelope` (see `docs/prds/event-sources-and-
-reactions.md`'s decided contract); playbook-binding-dispatched tasks enqueue
+same `Route`/`Run` lifecycle above once queued. Forge-sourced tasks — whether
+discovered by polling or, single-identity only, delivered by the forge
+webhook receiver (`internal/forge/webhook`) — enqueue via the same
+`workintake.TaskEnvelope` and `PublishTask` path (see `docs/prds/event-sources-
+and-reactions.md`'s decided contract); `TaskEnvelope.IdempotencyKey` is keyed
+on `owner/repo/number`, not delivery source, so a webhook-delivered issue and
+a later poll of the same issue dedup for free instead of double-enqueuing.
+Playbook-binding-dispatched tasks enqueue
 via `EnqueueChatTask`/`EnqueueBindingTask` (`internal/store`), the same direct
 path chat-spawned tasks use, stamped with `binding_id`/`binding_version` for
 provenance. See `docs/architecture/bindings.md` for the binding model and its
@@ -198,6 +208,17 @@ removed when transitioning. They report state; they do not drive it. Removing
 a label no longer retries a parked task -- retries are an explicit operator
 action from the dashboard or chat, capped by `max_retries`.
 
+### Webhook intake (alternative to polling)
+
+`internal/forge/webhook` is a separate HTTP receiver, not a `Forge` method: it
+verifies a GitHub webhook's HMAC signature (`internal/webhookguard.VerifyHMAC`),
+decodes an `issues` event, applies the same dispatch predicate the poller
+uses, and calls the same `PublishTask` the poller calls. It is opt-in via
+`Forge.Intake` (`poll` default, `webhook`, `both`) and single-identity only --
+a deployment with `[[identities]]` configured keeps polling per identity
+instead. See `docs/prds/event-sources-and-reactions.md` for why this stayed a
+thin decode-and-reuse layer rather than a second intake mechanism.
+
 ## Worktree Manager
 
 Every task gets a fresh clone -- no persistent state between runs. The model
@@ -214,7 +235,10 @@ appears in `.git/config` or process argv.
 
 Daemon-level TOML (`~/.config/archie/config.toml`):
 
-- `[forge]` -- type (github), host, token secret reference
+- `[forge]` -- type (github/gitea), host, token secret reference; `intake`
+  (`poll` default, `webhook`, or `both`) with `webhook_secret`/`webhook_addr`
+  when reacting to forge events instead of, or alongside, polling
+  (single-identity deployments only)
 - `[dispatch]` -- trigger (assignee/label/either), labels, ack reaction
 - `[[repos]]` -- owner, name, base branch, gate commands, protected paths,
   ecosystem
@@ -371,8 +395,10 @@ nor do they change the four required scopes documented in
 **Implemented:**
 
 - Daemon poll loop, enqueue, claim, process
+- Forge webhook intake as a feature-flagged alternative/backstop pairing to
+  polling (single-identity deployments; see `internal/forge/webhook`)
 - Bootstrap, implement, TDD, feasibility workflows
-- GitHub forge (issues, PRs, labels, comments, reactions)
+- GitHub and Gitea forges (issues, PRs, labels, comments, reactions)
 - Worktree isolation (clone, branch, commit, push, diff, cleanup)
 - SQLite store with transition audit
 - Config with ecosystem support (go, python, node, rust)
@@ -383,7 +409,7 @@ nor do they change the four required scopes documented in
 
 **Planned:**
 
-- Gitea forge implementation
+- Multi-identity webhook intake (currently single-identity only)
 - More ecosystems
 - Notification integrations beyond n8n webhook
 - Skills (SKILL.md support -- see `.archie/skills/`)
