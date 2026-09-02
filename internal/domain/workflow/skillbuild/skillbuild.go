@@ -28,6 +28,7 @@ func builtins() workflow.Registry {
 		"implement":   workflow.Implement(),
 		"tdd":         workflow.TDD(),
 		"feasibility": workflow.Feasibility(),
+		"triage":      workflow.Triage(),
 		"default":     workflow.Implement(),
 	}
 }
