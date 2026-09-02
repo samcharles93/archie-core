@@ -220,7 +220,9 @@ func (b *boot) setupLogging() error {
 		Stderr:    !cfg.Log.Quiet,
 		Feed:      logFeed,
 	})
-	b.log = fileLog
+	// All daemon diagnostics carry an explicit component so the dashboard's
+	// component filter does not have to infer ownership from message text.
+	b.log = fileLog.With("component", "daemon")
 	b.addCleanup(func() { _ = logCloser.Close() })
 	if logErr != nil {
 		b.log.Error("file logging disabled", "err", logErr)
@@ -318,7 +320,7 @@ func (b *boot) setupObservability() {
 			Path: origin.Path, Role: string(origin.Role), Layer: string(origin.Layer), Feature: string(origin.Feature),
 		})
 	}
-	b.web = &webui.Server{Store: b.st, Log: log, LogFeed: b.logFeed, TaskLogs: b.taskLogs, Cfg: config.NewHolder(cfg), Channels: b.channelManager, Events: bus}
+	b.web = &webui.Server{Store: b.st, Log: log.With("component", "webui"), LogFeed: b.logFeed, TaskLogs: b.taskLogs, Cfg: config.NewHolder(cfg), Channels: b.channelManager, Events: bus}
 	b.web.UpdateReportPath = updateReportPath(cfg.WorkDir, "webui")
 	if cfg.Chat.Telegram.TokenEnv != "" && len(cfg.Chat.Telegram.AllowedUserIDs) > 0 {
 		b.web.TelegramUpdateReportPath = updateReportPath(cfg.WorkDir, cfg.BotUser)
@@ -828,7 +830,7 @@ func (b *boot) setupMemoryAll() error {
 // bounded dropping per-subscriber buffers guarantee curator activity can
 // never backpressure the daemon or a chat turn.
 func (b *boot) setupCurators(ctx context.Context) {
-	log := b.log
+	log := b.log.With("component", "curator")
 	// Skills root matches loadWorkflows' own resolution of skillsBase --
 	// the skill curator maintains the same local skills this daemon
 	// already treats as authoritative, not the full multi-root catalog a
@@ -838,6 +840,7 @@ func (b *boot) setupCurators(ctx context.Context) {
 		skillsRoot = b.cfg.WorkDir
 	}
 	b.curatorRegistry = curator.NewRegistry(curator.Registrar{
+		Log:    log.With("component", "curator"),
 		Events: curatorEventSink{b.bus},
 		// b.memEngines (*domainmemory.Registry) satisfies
 		// curator.MemoryEngineSource's Get(name) signature directly, no
