@@ -266,6 +266,14 @@ func Route(t *store.Task, reg Registry) Workflow {
 	if wf, ok := workflowForLabels(reg, t.Labels); ok {
 		return wf
 	}
+	// No explicit workflow, no label match: a labelled task already has a
+	// free, reliable signal and never reaches here. Everything else --
+	// overwhelmingly chat-spawned tasks, which rarely carry labels -- gets
+	// classified by triage instead of defaulting straight to the heaviest
+	// workflow. See docs/prds/dynamic-workflow-triage.md.
+	if wf, ok := reg["triage"]; ok {
+		return wf
+	}
 	if wf, ok := reg["implement"]; ok {
 		return wf
 	}

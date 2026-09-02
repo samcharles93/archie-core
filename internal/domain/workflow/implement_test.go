@@ -439,15 +439,19 @@ func (f *fakeTrees) CommitAll(context.Context, string, string) (bool, error) {
 	return f.commitAllChanged, nil
 }
 
-func (f *fakeTrees) Push(_ context.Context, _ string, branch string) error {
+func (f *fakeTrees) Push(_ context.Context, _, branch string) error {
 	f.pushed = true
 	f.pushBranch = branch
 	return nil
 }
-func (f *fakeTrees) Diff(context.Context, string, string) (string, error)           { return "", nil }
+
+func (f *fakeTrees) Diff(context.Context, string, string) (string, error) { return "", nil }
+
 func (f *fakeTrees) ChangedFiles(context.Context, string, string) ([]string, error) { return nil, nil }
-func (f *fakeTrees) ChangedLines(context.Context, string, string) (int, error)      { return 0, nil }
-func (f *fakeTrees) Snapshot(context.Context, string, string) error                 { return nil }
+
+func (f *fakeTrees) ChangedLines(context.Context, string, string) (int, error) { return 0, nil }
+
+func (f *fakeTrees) Snapshot(context.Context, string, string) error { return nil }
 
 // TestStageCommitPushPushesBaselineFixEvenWithNothingNewToCommit is the
 // regression case for archie-core-95dj: StageBaselineGate already
