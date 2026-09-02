@@ -107,7 +107,12 @@ func (c *Curator) reviewOne(ctx context.Context, name string) ([]curator.Action,
 
 	fm, _, fail := skill.Parse([]byte(sk.Content))
 	if fail != nil {
-		return []curator.Action{{
+		// A parse failure is a per-skill finding to report, not an
+		// execution error to propagate: Pass()'s loop aborts the whole
+		// batch on a non-nil error, which would stop reviewing every
+		// other skill over one bad file (see skillcurator_test.go's
+		// "must not abort review of the others").
+		return []curator.Action{{ //nolint:nilerr
 			Type:   ActionInvalid,
 			Detail: name,
 			Reason: fail.Error(),
