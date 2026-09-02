@@ -93,6 +93,13 @@ type TaskContext struct {
 	// made no file changes  --  the fix already exists or the issue is a
 	// no-op. StageCommitPush closes the issue instead of erroring.
 	BuildNoChanges bool
+	// BaselineFixed is set when StageBaselineGate committed a real fix for
+	// a pre-existing gate failure. It gates whether the build stage is
+	// allowed to set BuildNoChanges: a baseline-fix commit is a real,
+	// gate-verified change sitting in the worktree, so even if the actual
+	// task needed no further work, StageCommitPush must still push and
+	// open a PR rather than discarding it as "no changes required".
+	BaselineFixed bool
 	// ReproProof is the captured failing-test output from a TDD repro
 	// stage, posted on the PR as evidence the bug was reproduced.
 	ReproProof string
