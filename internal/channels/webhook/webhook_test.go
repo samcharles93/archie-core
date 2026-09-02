@@ -132,7 +132,7 @@ func TestWebhookStartStop(t *testing.T) {
 	defer cancel()
 
 	router := gateway.NewRouter(nil, nil, "webhook")
-	go func() { _ = g.Start(ctx, router) }()
+	go func() { _ = g.Start(ctx, router, gateway.Lifecycle{}) }()
 
 	time.Sleep(30 * time.Millisecond)
 	_ = g.Stop(context.Background())

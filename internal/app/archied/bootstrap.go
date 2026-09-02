@@ -557,14 +557,19 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 		emRouter := gateway.NewRouter(b.st, nil, "email")
 		configureTaskCommands(emRouter, b.chatTasks, b.chatController, b.defaultChatIdentity)
 		b.startGateways = append(b.startGateways, func() {
-			b.channelManager.MarkStarting("email")
 			go func() {
-				if err := em.Start(ctx, emRouter); err != nil && ctx.Err() == nil {
+				lifecycle := gateway.Lifecycle{
+					Starting: func() { b.channelManager.MarkStarting("email") },
+					Running: func() {
+						b.channelManager.MarkRunning("email")
+						log.Info("email gateway started", "addr", cfg.Chat.Email.ListenAddr)
+					},
+				}
+				if err := em.Start(ctx, emRouter, lifecycle); err != nil && ctx.Err() == nil {
 					b.channelManager.MarkFailed("email", err.Error())
 					log.Error("email gateway stopped", "err", err)
 				}
 			}()
-			log.Info("email gateway started", "addr", cfg.Chat.Email.ListenAddr)
 		})
 	}
 
@@ -580,14 +585,19 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 		whRouter := gateway.NewRouter(b.st, nil, "webhook")
 		configureTaskCommands(whRouter, b.chatTasks, b.chatController, b.defaultChatIdentity)
 		b.startGateways = append(b.startGateways, func() {
-			b.channelManager.MarkStarting("webhook")
 			go func() {
-				if err := wh.Start(ctx, whRouter); err != nil && ctx.Err() == nil {
+				lifecycle := gateway.Lifecycle{
+					Starting: func() { b.channelManager.MarkStarting("webhook") },
+					Running: func() {
+						b.channelManager.MarkRunning("webhook")
+						log.Info("webhook gateway started", "addr", fmt.Sprintf("%s:%d", host, port))
+					},
+				}
+				if err := wh.Start(ctx, whRouter, lifecycle); err != nil && ctx.Err() == nil {
 					b.channelManager.MarkFailed("webhook", err.Error())
 					log.Error("webhook gateway stopped", "err", err)
 				}
 			}()
-			log.Info("webhook gateway started", "addr", fmt.Sprintf("%s:%d", host, port))
 		})
 	}
 	return true

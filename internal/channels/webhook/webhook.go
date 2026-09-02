@@ -6,9 +6,11 @@ package webhook
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -65,7 +67,8 @@ func (g *Gateway) Name() string { return "webhook" }
 
 // Start begins listening on the configured host:port. Blocks until ctx
 // is cancelled.
-func (g *Gateway) Start(ctx context.Context, router *gateway.Router) error {
+func (g *Gateway) Start(ctx context.Context, router *gateway.Router, lifecycle gateway.Lifecycle) error {
+	lifecycle.ReportStarting()
 	g.mu.Lock()
 	g.router = router
 
@@ -77,18 +80,25 @@ func (g *Gateway) Start(ctx context.Context, router *gateway.Router) error {
 
 	addr := fmt.Sprintf("%s:%d", g.Host, g.Port)
 	g.server = &http.Server{Addr: addr, Handler: mux}
+	server := g.server
 	g.mu.Unlock()
 
+	lc := net.ListenConfig{}
+	ln, err := lc.Listen(ctx, "tcp", addr)
+	if err != nil {
+		return fmt.Errorf("webhook: listen: %w", err)
+	}
 	g.log.Info("webhook gateway listening", "addr", addr)
+	lifecycle.ReportRunning()
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
-		_ = g.server.Shutdown(shutdownCtx)
+		_ = server.Shutdown(shutdownCtx)
 	}()
 
-	err := g.server.ListenAndServe()
-	if err != nil && err != http.ErrServerClosed {
+	err = server.Serve(ln)
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("webhook: listen: %w", err)
 	}
 	return nil

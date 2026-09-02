@@ -57,7 +57,8 @@ func (g *Gateway) Name() string { return "email" }
 
 // Start begins listening for SMTP connections. Blocks until ctx is
 // cancelled.
-func (g *Gateway) Start(ctx context.Context, router *gateway.Router) error {
+func (g *Gateway) Start(ctx context.Context, router *gateway.Router, lifecycle gateway.Lifecycle) error {
+	lifecycle.ReportStarting()
 	g.mu.Lock()
 	g.router = router
 	g.mu.Unlock()
@@ -72,6 +73,7 @@ func (g *Gateway) Start(ctx context.Context, router *gateway.Router) error {
 	g.mu.Unlock()
 
 	g.log.Info("email gateway listening", "addr", g.ListenAddr)
+	lifecycle.ReportRunning()
 
 	go func() {
 		<-ctx.Done()

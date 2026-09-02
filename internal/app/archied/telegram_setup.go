@@ -114,18 +114,27 @@ func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), o
 	}
 	router := buildTelegramRouter(ctx, tg, s, sessionStore)
 	return func() {
-		if s.ChannelManager != nil {
-			s.ChannelManager.MarkStarting("telegram")
-		}
 		go func() {
-			if err := tg.Start(ctx, router); err != nil && ctx.Err() == nil {
+			lifecycle := gateway.Lifecycle{
+				Starting: func() {
+					if s.ChannelManager != nil {
+						s.ChannelManager.MarkStarting("telegram")
+					}
+				},
+				Running: func() {
+					if s.ChannelManager != nil {
+						s.ChannelManager.MarkRunning("telegram")
+					}
+					s.Log.Info("telegram gateway started")
+				},
+			}
+			if err := tg.Start(ctx, router, lifecycle); err != nil && ctx.Err() == nil {
 				if s.ChannelManager != nil {
 					s.ChannelManager.MarkFailed("telegram", err.Error())
 				}
 				s.Log.Error("telegram gateway stopped", "err", err)
 			}
 		}()
-		s.Log.Info("telegram gateway started")
 	}, true
 }
 
