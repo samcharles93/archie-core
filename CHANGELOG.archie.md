@@ -1,5 +1,18 @@
 # archie-agent changelog
 
+## [1.21.0] - 2026-09-03
+
+- feat(workflow): make kind-to-workflow routing YAML-overridable
+- feat(workflow): route arbitrary forge labels to workflows via playbook YAML
+- feat(workflow): load kind/label bindings from multiple playbook directories
+- fix(extract): regenerate stale Yaegi symbol tables; fix wfextract directive
+- feat(eda): Module position first slice -- registry + side-effect-free log kind
+- feat(eda): playbook document + event coordinator, single-action workflow-kind dispatch
+- fix(binding): add Owner/Repo pin, fixing multi-repo dispatch
+- fix(binding): split ValidateForUpdate so edits can preserve the secret
+- refactor(eda): extract helpers to satisfy cyclop/gocognit gates
+- fix(eda): make playbook key collision reporting deterministic
+
 ## [1.20.0] - 2026-09-03
 
 - fix: baseline gate repair (go test ./... -count=1)
