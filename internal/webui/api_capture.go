@@ -2,12 +2,14 @@ package webui
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webhookguard"
@@ -20,12 +22,14 @@ import (
 // "no captures exist" instead of "show the default page."
 const defaultCapturesListLimit = 100
 
-// handleCapture accepts an unbound inbound webhook POST and persists it --
-// no HMAC verification (there is by design no secret registered yet for a
-// source nobody has configured), no workflow binding, just "something
-// arrived." See docs/prds/event-capture-storage.md. Mounted on the bypass
-// mux alongside /healthz: capture must accept unauthenticated senders, so it
-// cannot sit behind requireToken.
+// handleCapture accepts an inbound webhook POST and persists it. If a
+// binding is armed for this source the body must also carry a valid HMAC
+// signature; only correctly-signed events are recorded as authenticated
+// (t2db.5 point 1). An unauthenticated event is still captured, visible in
+// the inspector, and marked unauthenticated -- the dispatch loop's auth
+// check (binding.Matcher.Matches) is the actual gate against false task
+// creation. Mounted on the bypass mux alongside /healthz: capture must
+// accept unauthenticated senders, so it cannot sit behind requireToken.
 func (s *Server) handleCapture(w http.ResponseWriter, r *http.Request) {
 	if s.Captures == nil {
 		http.Error(w, "capture not configured", http.StatusServiceUnavailable)
@@ -46,6 +50,34 @@ func (s *Server) handleCapture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve armed bindings for this source before reading the body. A
+	// lookup error is logged and treated as "no armed binding" -- the
+	// dispatch loop's auth check is the actual gate, so failing closed here
+	// would amplify a transient store hiccup into a capture outage for
+	// every senders-that-haven't-been-bound-yet flow. If a future phase
+	// wants fail-closed semantics, that's a separate decision and should
+	// not silently land here.
+	var armed []binding.Binding
+	if s.BindingDispatcher != nil {
+		var err error
+		armed, err = s.BindingDispatcher.ArmedBindingsForSource(r.Context(), source)
+		if err != nil {
+			s.Log.Warn("armed bindings lookup", "source", source, "err", err)
+			armed = nil
+		}
+	}
+	// Two armed bindings for one source would race over every inbound
+	// webhook for that source: the write-time overlap check should make
+	// this state impossible, but the dispatch loop needs a single binding
+	// per capture so we surface the overlap as 409 at capture time
+	// (belt-and-braces TOCTOU guard -- see bindings.go's ApproveBinding).
+	if len(armed) > 1 {
+		http.Error(w,
+			fmt.Sprintf("multiple armed bindings for source %q -- overlap rejected", source),
+			http.StatusConflict)
+		return
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, captureMaxBodyBytesOrFallback(s.CaptureMaxBodyBytes))
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -53,6 +85,21 @@ func (s *Server) handleCapture(w http.ResponseWriter, r *http.Request) {
 		// read failure also means there is no usable body to capture.
 		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
 		return
+	}
+
+	// HMAC verification -- only when exactly one binding is armed for this
+	// source. Mirrors channels/webhook/webhook.go's header precedence:
+	// GitHub-style X-Hub-Signature-256 first, X-Signature-256 fallback.
+	// Empty header + non-empty secret is never valid (VerifyHMAC's own
+	// guard), so an absent signature with an armed binding lands here as
+	// authenticated=false rather than authenticated=true.
+	authenticated := false
+	if len(armed) == 1 {
+		sig := r.Header.Get("X-Hub-Signature-256")
+		if sig == "" {
+			sig = r.Header.Get("X-Signature-256")
+		}
+		authenticated = webhookguard.VerifyHMAC(body, sig, armed[0].Secret)
 	}
 
 	headers, _ := json.Marshal(r.Header)
@@ -70,12 +117,13 @@ func (s *Server) handleCapture(w http.ResponseWriter, r *http.Request) {
 	}
 
 	c := store.CapturedEvent{
-		ReceivedAt:  time.Now().UTC(),
-		Source:      source,
-		RemoteAddr:  r.RemoteAddr,
-		ContentType: r.Header.Get("Content-Type"),
-		Headers:     string(redactedHeaders),
-		Body:        string(redactedBody),
+		ReceivedAt:    time.Now().UTC(),
+		Source:        source,
+		RemoteAddr:    r.RemoteAddr,
+		ContentType:   r.Header.Get("Content-Type"),
+		Headers:       string(redactedHeaders),
+		Body:          string(redactedBody),
+		Authenticated: authenticated,
 	}
 	id, err := s.Captures.InsertCapture(r.Context(), c, s.CaptureRetention, s.CaptureMaxEvents)
 	if err != nil {

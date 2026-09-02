@@ -357,8 +357,33 @@ func (b *boot) setupObservability() {
 	// doesn't expose it. See docs/prds/payload-field-mapping.md.
 	if ms, ok := b.st.(store.MappingStore); ok {
 		b.web.Mappings = ms
+		b.d.Mappings = ms
 	} else {
 		log.Warn("mapping storage unavailable: task store does not implement MappingStore")
+	}
+	// Binding storage: same narrow-assertion pattern as CaptureStore/MappingStore
+	// above, for the same reason. The daemon arm/dispatch logic is wired in
+	// Phase E; here only the storage handle is shared so /api/bindings has
+	// somewhere to read/write. The BindingStore/BindingDispatcher/
+	// BindingTaskCreator split keeps each interface under the
+	// interfacebloat limit; the concrete *store.Store satisfies all three.
+	// See docs/prds/webhook-intake-security.md.
+	if bs, ok := b.st.(store.BindingStore); ok {
+		b.web.Bindings = bs
+		b.d.Bindings = bs
+	} else {
+		log.Warn("binding storage unavailable: task store does not implement BindingStore")
+	}
+	if bd, ok := b.st.(store.BindingDispatcher); ok {
+		b.web.BindingDispatcher = bd
+		b.d.BindingDispatcher = bd
+	} else {
+		log.Warn("binding dispatcher unavailable: task store does not implement BindingDispatcher")
+	}
+	if btc, ok := b.st.(store.BindingTaskCreator); ok {
+		b.d.BindingTaskCreator = btc
+	} else {
+		log.Warn("binding task creator unavailable: task store does not implement BindingTaskCreator")
 	}
 	sink := bus.Subscribe(256)
 	go persistAndBroadcastEvents(sink, b.st, b.web, log)
