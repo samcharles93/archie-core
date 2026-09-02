@@ -102,6 +102,62 @@ func TestHandleBindingCreateAndGet(t *testing.T) {
 	}
 }
 
+// TestHandleBindingCreateAndUpdateRoundTripsOwnerRepo covers the
+// multi-repo fix at the API layer: a create/update request carrying
+// owner/repo persists them, and they're visible in the response
+// (they're not secret, unlike Secret).
+func TestHandleBindingCreateAndUpdateRoundTripsOwnerRepo(t *testing.T) {
+	srv := bindingTestServer(t)
+	mappingID := seedMapping(t, srv, "m")
+
+	req := validBindingRequest("a", "sentry", mappingID)
+	req["owner"] = "acme"
+	req["repo"] = "widget"
+	w := doJSON(t, srv, http.MethodPost, "/api/bindings", req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d; body = %s", w.Code, http.StatusCreated, w.Body.String())
+	}
+	var created binding.Binding
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal created: %v", err)
+	}
+	if created.Owner != "acme" || created.Repo != "widget" {
+		t.Fatalf("created owner/repo = %q/%q, want acme/widget; body = %s", created.Owner, created.Repo, w.Body.String())
+	}
+
+	updateReq := validBindingRequest("a", "sentry", mappingID)
+	updateReq["owner"] = "other-org"
+	updateReq["repo"] = "other-repo"
+	w = doJSON(t, srv, http.MethodPatch, "/api/bindings/"+strconv.FormatInt(created.ID, 10), updateReq)
+	if w.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	var updated binding.Binding
+	if err := json.Unmarshal(w.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("unmarshal updated: %v", err)
+	}
+	if updated.Owner != "other-org" || updated.Repo != "other-repo" {
+		t.Fatalf("updated owner/repo = %q/%q, want other-org/other-repo; body = %s", updated.Owner, updated.Repo, w.Body.String())
+	}
+}
+
+// TestHandleBindingCreateRejectsPartialOwnerRepo confirms the domain
+// validation (owner and repo must both be set or both empty) is
+// actually reached from the HTTP layer, not just unit-tested in
+// isolation.
+func TestHandleBindingCreateRejectsPartialOwnerRepo(t *testing.T) {
+	srv := bindingTestServer(t)
+	mappingID := seedMapping(t, srv, "m")
+
+	req := validBindingRequest("a", "sentry", mappingID)
+	req["owner"] = "acme"
+	// repo deliberately omitted
+	w := doJSON(t, srv, http.MethodPost, "/api/bindings", req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("create status = %d, want %d (partial owner/repo pin); body = %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+}
+
 func TestHandleBindingsListStripsSecrets(t *testing.T) {
 	srv := bindingTestServer(t)
 	mappingID := seedMapping(t, srv, "m")

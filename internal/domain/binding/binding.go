@@ -43,11 +43,19 @@ type Matcher struct {
 // for an event to be marked authenticated; it is never returned by
 // GET handlers.
 type Binding struct {
-	ID        int64     `json:"id"`
-	Name      string    `json:"name"`
-	Matcher   Matcher   `json:"matcher"`
-	MappingID int64     `json:"mapping_id"`
-	Workflow  string    `json:"workflow"`
+	ID        int64   `json:"id"`
+	Name      string  `json:"name"`
+	Matcher   Matcher `json:"matcher"`
+	MappingID int64   `json:"mapping_id"`
+	Workflow  string  `json:"workflow"`
+	// Owner and Repo pin a binding to a specific configured repo, so a
+	// multi-repo deployment can dispatch correctly. Both empty means "no
+	// pin" -- resolveBindingRepo falls back to the single-configured-repo
+	// behaviour that predates this field. Setting only one is invalid
+	// (Validate rejects it): a pin is a complete owner/repo pair or not a
+	// pin at all, never a half-guess.
+	Owner     string    `json:"owner,omitempty"`
+	Repo      string    `json:"repo,omitempty"`
 	Version   int       `json:"version"`
 	Status    Status    `json:"status"`
 	Secret    string    `json:"secret,omitempty"`
@@ -80,6 +88,9 @@ func (b Binding) Validate() error {
 	}
 	if len(b.Secret) < minSecretLen {
 		return fmt.Errorf("binding: secret must be at least %d bytes", minSecretLen)
+	}
+	if (b.Owner == "") != (b.Repo == "") {
+		return fmt.Errorf("binding: owner and repo must both be set or both be empty")
 	}
 	return nil
 }

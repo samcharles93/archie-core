@@ -575,7 +575,7 @@ func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c st
 		return
 	}
 
-	owner, repo, ok := d.resolveBindingRepo()
+	owner, repo, ok := d.resolveBindingRepo(b)
 	if !ok {
 		return // resolveBindingRepo already logged a warning
 	}
@@ -642,22 +642,24 @@ func renderBindingBody(values map[string]any, c store.CapturedEvent) string {
 }
 
 // resolveBindingRepo picks the owner/repo a binding-spawned task
-// operates against. Today the binding vocabulary doesn't carry
-// owner/repo fields -- every binding applies to whatever repo the
-// daemon happens to be configured for. With exactly one configured
-// repo the choice is unambiguous; with zero or more than one the
-// loop refuses to dispatch (logged below) so a binding cannot
+// operates against. A binding that pins Owner/Repo (binding.Binding's
+// Owner/Repo fields, validated as a complete pair or not set at all)
+// dispatches to that target unconditionally -- multi-repo deployments
+// use this to disambiguate. An unpinned binding falls back to the
+// single-configured-repo behaviour that predates the pin: with exactly
+// one configured repo the choice is unambiguous; with zero or more than
+// one the loop refuses to dispatch (logged below) so a binding cannot
 // silently fire against the wrong target.
-//
-// A binding.Owner/Repo field is the natural follow-up; until then
-// this fallback is what Phase E can ship.
-func (d *Daemon) resolveBindingRepo() (string, string, bool) {
+func (d *Daemon) resolveBindingRepo(b binding.Binding) (string, string, bool) {
+	if b.Owner != "" && b.Repo != "" {
+		return b.Owner, b.Repo, true
+	}
 	repos := d.Cfg.Get().Repos
 	if len(repos) == 1 {
 		return repos[0].Owner, repos[0].Name, true
 	}
 	d.Log.Warn("binding dispatch: cannot resolve target repo",
-		"hint", "configure exactly one [[repos]] entry, or extend the binding schema with owner/repo fields",
+		"hint", "configure exactly one [[repos]] entry, or pin the binding to a specific owner/repo",
 		"configured_repos", len(repos))
 	return "", "", false
 }

@@ -18,7 +18,13 @@ type bindingRequest struct {
 	Matcher   binding.Matcher `json:"matcher"`
 	MappingID int64           `json:"mapping_id"`
 	Workflow  string          `json:"workflow"`
-	Secret    string          `json:"secret"`
+	// Owner and Repo optionally pin the binding to one configured repo,
+	// for multi-repo deployments. Both empty is valid (falls back to the
+	// daemon's single-configured-repo behaviour); binding.Validate
+	// rejects setting only one.
+	Owner  string `json:"owner"`
+	Repo   string `json:"repo"`
+	Secret string `json:"secret"`
 }
 
 func (s *Server) handleBindingsList(w http.ResponseWriter, r *http.Request) {
@@ -55,6 +61,8 @@ func (s *Server) handleBindingCreate(w http.ResponseWriter, r *http.Request) {
 		Matcher:   req.Matcher,
 		MappingID: req.MappingID,
 		Workflow:  req.Workflow,
+		Owner:     req.Owner,
+		Repo:      req.Repo,
 		Secret:    req.Secret,
 		Status:    binding.Normalize(binding.StatusDraft),
 	}
@@ -132,6 +140,8 @@ func (s *Server) handleBindingUpdate(w http.ResponseWriter, r *http.Request) {
 		Matcher:   req.Matcher,
 		MappingID: req.MappingID,
 		Workflow:  req.Workflow,
+		Owner:     req.Owner,
+		Repo:      req.Repo,
 		Secret:    req.Secret,
 	}
 	if err := b.Validate(); err != nil {
