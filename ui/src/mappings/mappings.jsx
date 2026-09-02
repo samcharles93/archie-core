@@ -1,7 +1,17 @@
+import { h, Fragment } from "preact";
+import { useState, useEffect } from "preact/hooks";
 import "./mappings.css";
 import { api } from "../base/api.jsx";
-import { el, empty, mount } from "../base/dom.jsx";
-import { fieldsTable, mappingRow, payloadTree } from "./mapping-editor.jsx";
+import { FieldsTable, MappingRow, PayloadTree } from "./mapping-editor.jsx";
+
+export function Empty({ title, detail }) {
+  return (
+    <div className="empty">
+      <div className="empty-title">{title}</div>
+      {detail && <div>{detail}</div>}
+    </div>
+  );
+}
 
 /**
  * Payload field mapping (t2db.3): bind named fields to JSON paths inside a
@@ -10,36 +20,37 @@ import { fieldsTable, mappingRow, payloadTree } from "./mapping-editor.jsx";
  * a mapping + matcher to a workflow) is a separate, not-yet-built page --
  * this one only produces the mapping entity and its preview.
  */
-export function mappingsPage() {
-  const root = el("div");
+export function mappingsPage(query) {
+  return <MappingsApp query={query} />;
+}
 
-  let mappings = [];
-  let captures = [];
-  let loadError = null;
-  let editor = null;
+function MappingsApp({ query }) {
+  const [mappings, setMappings] = useState([]);
+  const [captures, setCaptures] = useState([]);
+  const [loadError, setLoadError] = useState(null);
+  const [editor, setEditor] = useState(null);
 
-  render();
-  load();
-
-  async function load() {
+  const load = async () => {
     try {
       const [mRes, cRes] = await Promise.all([api.mappings(), api.captures(100)]);
-      mappings = mRes.mappings || [];
-      captures = cRes.captures || [];
-      loadError = null;
+      setMappings(mRes.mappings || []);
+      setCaptures(cRes.captures || []);
+      setLoadError(null);
     } catch (err) {
-      loadError = String(err.message || err);
+      setLoadError(String(err.message || err));
     }
-    render();
-  }
+  };
 
-  function startCreate() {
-    editor = { id: null, name: "", sourceHint: "", fields: [], captureId: null, payload: null, payloadError: null, preview: null, actionError: null };
-    render();
-  }
+  useEffect(() => {
+    load();
+  }, []);
 
-  function startEdit(m) {
-    editor = {
+  const startCreate = () => {
+    setEditor({ id: null, name: "", sourceHint: "", fields: [], captureId: null, payload: null, payloadError: null, preview: null, actionError: null });
+  };
+
+  const startEdit = (m) => {
+    setEditor({
       id: m.id,
       name: m.name,
       sourceHint: m.source_hint || "",
@@ -49,86 +60,84 @@ export function mappingsPage() {
       payloadError: null,
       preview: null,
       actionError: null,
-    };
-    render();
-  }
+    });
+  };
 
-  async function remove(m) {
+  const remove = async (m) => {
     if (!window.confirm(`Delete mapping "${m.name}"?`)) return;
     try {
       await api.mappingDelete(m.id);
       await load();
     } catch (err) {
-      loadError = String(err.message || err);
-      render();
+      setLoadError(String(err.message || err));
     }
-  }
+  };
 
-  function selectCapture(captureId) {
+  const selectCapture = (captureId) => {
     const c = captures.find((c) => String(c.id) === String(captureId));
-    editor.captureId = c ? c.id : null;
-    editor.preview = null;
-    if (!c) {
-      editor.payload = null;
-      editor.payloadError = null;
-    } else {
-      try {
-        editor.payload = JSON.parse(c.body);
-        editor.payloadError = null;
-      } catch {
-        editor.payload = null;
-        editor.payloadError = "This capture's body is not valid JSON, so its fields cannot be mapped by path.";
+    setEditor(prev => {
+      const next = { ...prev, captureId: c ? c.id : null, preview: null };
+      if (!c) {
+        next.payload = null;
+        next.payloadError = null;
+      } else {
+        try {
+          next.payload = JSON.parse(c.body);
+          next.payloadError = null;
+        } catch {
+          next.payload = null;
+          next.payloadError = "This capture's body is not valid JSON, so its fields cannot be mapped by path.";
+        }
       }
-    }
-    render();
-  }
+      return next;
+    });
+  };
 
-  function addField({ path, type, name }) {
-    const existing = new Set(editor.fields.map((f) => f.name));
-    let candidate = name || "field";
-    let n = 1;
-    while (existing.has(candidate)) candidate = `${name || "field"}_${++n}`;
-    editor.fields.push({ name: candidate, path, type, required: true });
-    editor.preview = null;
-    render();
-  }
+  const addField = ({ path, type, name }) => {
+    setEditor(prev => {
+      const existing = new Set(prev.fields.map((f) => f.name));
+      let candidate = name || "field";
+      let n = 1;
+      while (existing.has(candidate)) candidate = `${name || "field"}_${++n}`;
+      const newFields = [...prev.fields, { name: candidate, path, type, required: true }];
+      return { ...prev, fields: newFields, preview: null };
+    });
+  };
 
-  function removeField(i) {
-    editor.fields.splice(i, 1);
-    editor.preview = null;
-    render();
-  }
+  const removeField = (i) => {
+    setEditor(prev => {
+      const newFields = prev.fields.slice();
+      newFields.splice(i, 1);
+      return { ...prev, fields: newFields, preview: null };
+    });
+  };
 
-  // Every field mutation goes through here so a stale preview can never be
-  // shown against fields it wasn't actually resolved against -- see
-  // docs/prds/payload-field-mapping.md's "never show a mapping the operator
-  // has not seen resolve against real data."
-  function mutateField(i, patch) {
-    Object.assign(editor.fields[i], patch);
-    editor.preview = null;
-    render();
-  }
+  const mutateField = (i, patch) => {
+    setEditor(prev => {
+      const newFields = prev.fields.slice();
+      newFields[i] = { ...newFields[i], ...patch };
+      return { ...prev, fields: newFields, preview: null };
+    });
+  };
 
   const renameField = (i, name) => mutateField(i, { name });
   const retypeField = (i, type) => mutateField(i, { type });
   const requireField = (i, required) => mutateField(i, { required });
 
-  async function preview() {
+  const preview = async () => {
     if (!editor.captureId) {
-      editor.actionError = "Pick a captured event to preview against.";
-      render();
+      setEditor(prev => ({ ...prev, actionError: "Pick a captured event to preview against." }));
       return;
     }
     try {
-      editor.preview = await api.mappingPreview(editor.captureId, editor.fields);
-      editor.actionError = null;
+      const previewRes = await api.mappingPreview(editor.captureId, editor.fields);
+      setEditor(prev => ({ ...prev, preview: previewRes, actionError: null }));
     } catch (err) {
-      editor.actionError = String(err.message || err);
+      setEditor(prev => ({ ...prev, actionError: String(err.message || err) }));
     }
-    render();
-  }
+  };
 
-  async function save() {
+  const save = async () => {
     const body = { name: editor.name, source_hint: editor.sourceHint, fields: editor.fields };
     try {
       if (editor.id) {
@@ -136,121 +145,128 @@ export function mappingsPage() {
       } else {
         await api.mappingCreate(body);
       }
-      editor = null;
+      setEditor(null);
       await load();
     } catch (err) {
-      editor.actionError = String(err.message || err);
-      render();
+      setEditor(prev => ({ ...prev, actionError: String(err.message || err) }));
     }
-  }
+  };
 
-  function cancel() {
-    editor = null;
-    render();
-  }
+  const cancel = () => {
+    setEditor(null);
+  };
 
-  function render() {
-    mount(root, editor ? renderEditor() : renderList());
-  }
-
-  function renderList() {
-    return el(
-      "div",
-      el(
-        "div.page-head",
-        el(
-          "div",
-          el("h1.page-title", "Field mappings"),
-          el("p.page-sub", "Bind named fields to JSON paths from a real captured event, ready for a playbook binding."),
-        ),
-        el("div.page-actions", el("button.btn.btn-primary", { type: "button", onclick: startCreate }, "New mapping")),
-      ),
-      loadError
-        ? empty("Cannot reach archied", loadError)
-        : mappings.length
-          ? el(
-              "div.card",
-              el(
-                "div.table-scroll",
-                el(
-                  "table.table",
-                  el("thead", el("tr", ...["Name", "Source hint", "Fields", ""].map((h) => el("th", h)))),
-                  el("tbody", ...mappings.map((m) => mappingRow(m, { onEdit: startEdit, onDelete: remove }))),
-                ),
-              ),
-            )
-          : empty("No mappings yet", "Create one from a captured event to reuse fields in a future playbook binding."),
+  const renderList = () => {
+    return (
+      <div>
+        <div className="page-head">
+          <div>
+            <h1 className="page-title">Field mappings</h1>
+            <p className="page-sub">Bind named fields to JSON paths from a real captured event, ready for a playbook binding.</p>
+          </div>
+          <div className="page-actions">
+            <button className="btn btn-primary" type="button" onClick={startCreate}>New mapping</button>
+          </div>
+        </div>
+        {loadError ? (
+          <Empty title="Cannot reach archied" detail={loadError} />
+        ) : mappings.length ? (
+          <div className="card">
+            <div className="table-scroll">
+              <table className="table">
+                <thead>
+                  <tr>
+                    {["Name", "Source hint", "Fields", ""].map((h, i) => (
+                      <th key={i}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {mappings.map((m) => (
+                    <MappingRow key={m.id} mapping={m} onEdit={() => startEdit(m)} onDelete={() => remove(m)} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          <Empty title="No mappings yet" detail="Create one from a captured event to reuse fields in a future playbook binding." />
+        )}
+      </div>
     );
-  }
+  };
 
-  function renderEditor() {
-    return el(
-      "div",
-      el(
-        "div.page-head",
-        el("div", el("h1.page-title", editor.id ? "Edit mapping" : "New mapping")),
-        el(
-          "div.page-actions",
-          el("button.btn", { type: "button", onclick: cancel }, "Cancel"),
-          el("button.btn.btn-primary", { type: "button", onclick: save }, "Save"),
-        ),
-      ),
-      editor.actionError ? el("div.mapping-error", editor.actionError) : null,
-      el(
-        "div.card.mapping-form",
-        el(
-          "label.mapping-form-row",
-          "Name",
-          el("input.mapping-input", {
-            value: editor.name,
-            oninput: (e) => { editor.name = e.target.value; },
-          }),
-        ),
-        el(
-          "label.mapping-form-row",
-          "Source hint (organisational only)",
-          el("input.mapping-input", {
-            value: editor.sourceHint,
-            oninput: (e) => { editor.sourceHint = e.target.value; },
-          }),
-        ),
-        el(
-          "label.mapping-form-row",
-          "Preview against captured event",
-          el(
-            "select.mapping-select",
-            { onchange: (e) => selectCapture(e.target.value) },
-            el("option", { value: "" }, "— pick a captured event —"),
-            ...captures.map((c) =>
-              el("option", { value: c.id, selected: String(editor.captureId) === String(c.id) },
-                `${c.source || "(unknown)"} — ${c.received_at || ""}`),
-            ),
-          ),
-        ),
-      ),
-      el(
-        "div.card.mapping-fields",
-        el("div.mapping-section-title", "Bound fields"),
-        fieldsTable(editor.fields, {
-          preview: editor.preview,
-          onRemove: removeField,
-          onNameChange: renameField,
-          onTypeChange: retypeField,
-          onRequiredChange: requireField,
-        }),
-        el("button.btn", { type: "button", onclick: preview }, "Preview"),
-      ),
-      el(
-        "div.card.mapping-payload",
-        el("div.mapping-section-title", "Payload — click a value to bind it"),
-        editor.payloadError
-          ? el("div.mapping-error", editor.payloadError)
-          : editor.payload !== null
-            ? payloadTree(editor.payload, { onPick: addField })
-            : el("div.mapping-empty-fields", "Pick a captured event above to see its payload."),
-      ),
+  const renderEditor = () => {
+    return (
+      <div>
+        <div className="page-head">
+          <div>
+            <h1 className="page-title">{editor.id ? "Edit mapping" : "New mapping"}</h1>
+          </div>
+          <div className="page-actions">
+            <button className="btn" type="button" onClick={cancel}>Cancel</button>
+            <button className="btn btn-primary" type="button" onClick={save}>Save</button>
+          </div>
+        </div>
+        {editor.actionError && <div className="mapping-error">{editor.actionError}</div>}
+        <div className="card mapping-form">
+          <label className="mapping-form-row">
+            Name
+            <input 
+              className="mapping-input" 
+              value={editor.name} 
+              onInput={(e) => setEditor(prev => ({ ...prev, name: e.target.value }))} 
+            />
+          </label>
+          <label className="mapping-form-row">
+            Source hint (organisational only)
+            <input 
+              className="mapping-input" 
+              value={editor.sourceHint} 
+              onInput={(e) => setEditor(prev => ({ ...prev, sourceHint: e.target.value }))} 
+            />
+          </label>
+          <label className="mapping-form-row">
+            Preview against captured event
+            <select 
+              className="mapping-select" 
+              value={editor.captureId || ""} 
+              onChange={(e) => selectCapture(e.target.value)}
+            >
+              <option value="">— pick a captured event —</option>
+              {captures.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.source || "(unknown)"} — {c.received_at || ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="card mapping-fields">
+          <div className="mapping-section-title">Bound fields</div>
+          <FieldsTable 
+            fields={editor.fields} 
+            preview={editor.preview} 
+            onRemove={removeField} 
+            onNameChange={renameField} 
+            onTypeChange={retypeField} 
+            onRequiredChange={requireField} 
+          />
+          <button className="btn" type="button" onClick={preview}>Preview</button>
+        </div>
+        <div className="card mapping-payload">
+          <div className="mapping-section-title">Payload — click a value to bind it</div>
+          {editor.payloadError ? (
+            <div className="mapping-error">{editor.payloadError}</div>
+          ) : editor.payload !== null ? (
+            <PayloadTree value={editor.payload} onPick={addField} />
+          ) : (
+            <div className="mapping-empty-fields">Pick a captured event above to see its payload.</div>
+          )}
+        </div>
+      </div>
     );
-  }
+  };
 
-  return root;
+  return editor ? renderEditor() : renderList();
 }

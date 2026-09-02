@@ -1,54 +1,68 @@
-import { ago, el, pill } from "../base/dom.jsx";
+import { h, Fragment } from "preact";
+import { ago } from "../base/dom.jsx";
+
+export function Pill({ text, kind = "idle" }) {
+  return <span className={`pill pill-${kind}`}>{text}</span>;
+}
 
 /**
  * One captured event's summary row, plus its expandable detail row when
  * expanded is true. Split out from captures.js so it can be unit tested
  * without the page's fetch/SSE wiring, mirroring tasks/task-row.js.
  */
-export function captureRow(c, { expanded, onToggle }) {
-  const row = el(
-    "tr.capture-row",
-    {
-      tabindex: "0",
-      "aria-expanded": String(expanded),
-      onclick: onToggle,
-      onkeydown: (e) => {
-        if (e.key !== "Enter" && e.key !== " ") return;
-        e.preventDefault();
-        onToggle(e);
-      },
-    },
-    el("td.mono", c.source || "(unknown)"),
-    el("td", { title: c.received_at || "" }, ago(c.received_at)),
-    // Every captured event is unbound today: no playbook binding data model
-    // exists yet (t2db.4). Once a binding can match an event, this pill
-    // distinguishes bound from unbound instead of always reading "Unbound"
-    // -- see docs/prds/event-capture-storage.md's "what this does not decide".
-    el("td", pill("Unbound", "idle")),
-    el("td.mono", c.content_type || "—"),
-    el("td", el("button.btn.btn-small", { type: "button" }, expanded ? "Hide" : "View")),
-  );
-  return expanded ? [row, captureDetailRow(c)] : [row];
-}
+export function CaptureRow({ capture: c, expanded, onToggle }) {
+  const handleKeyDown = (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    onToggle(e);
+  };
 
-export function captureDetailRow(c) {
-  return el(
-    "tr.capture-detail-row",
-    el(
-      "td",
-      { colspan: 5 },
-      el(
-        "div.capture-detail",
-        el("div.capture-detail-section", el("div.capture-detail-title", "Payload"), payloadView(c.body)),
-        el("div.capture-detail-section", el("div.capture-detail-title", "Headers"), payloadView(c.headers)),
-      ),
-    ),
+  return (
+    <Fragment>
+      <tr 
+        className="capture-row" 
+        tabIndex="0" 
+        aria-expanded={String(expanded)} 
+        onClick={onToggle} 
+        onKeyDown={handleKeyDown}
+      >
+        <td className="mono">{c.source || "(unknown)"}</td>
+        <td title={c.received_at || ""}>{ago(c.received_at)}</td>
+        <td><Pill text="Unbound" kind="idle" /></td>
+        <td className="mono">{c.content_type || "—"}</td>
+        <td>
+          <button className="btn btn-small" type="button">
+            {expanded ? "Hide" : "View"}
+          </button>
+        </td>
+      </tr>
+      {expanded && <CaptureDetailRow capture={c} />}
+    </Fragment>
   );
 }
 
-function payloadView(raw) {
-  if (!raw) return el("div.capture-empty", "(empty)");
-  return el("pre.capture-payload", prettyPrint(raw));
+export function CaptureDetailRow({ capture: c }) {
+  return (
+    <tr className="capture-detail-row">
+      <td colSpan="5">
+        <div className="capture-detail">
+          <div className="capture-detail-section">
+            <div className="capture-detail-title">Payload</div>
+            <PayloadView raw={c.body} />
+          </div>
+          <div className="capture-detail-section">
+            <div className="capture-detail-title">Headers</div>
+            <PayloadView raw={c.headers} />
+          </div>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function PayloadView({ raw }) {
+  if (!raw) return <div className="capture-empty">(empty)</div>;
+  return <pre className="capture-payload">{prettyPrint(raw)}</pre>;
 }
 
 // prettyPrint indents valid JSON for readability; a non-JSON payload (the

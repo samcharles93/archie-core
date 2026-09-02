@@ -1,4 +1,8 @@
-import { el, pill } from "../base/dom.jsx";
+import { h, Fragment } from "preact";
+
+export function Pill({ text, kind = "idle" }) {
+  return <span className={`pill pill-${kind}`}>{text}</span>;
+}
 
 /**
  * Pure rendering + path/type logic for the mapping editor, split out from
@@ -40,30 +44,40 @@ export function pathAppendIndex(path, index) {
  * without the operator ever typing a JSON path by hand -- "click through
  * its payload, bind JSON paths" per docs/prds/payload-field-mapping.md.
  */
-export function payloadTree(value, { path = "", name = "", onPick } = {}) {
+export function PayloadTree({ value, path = "", name = "", onPick }) {
   if (value !== null && typeof value === "object") {
     const entries = Array.isArray(value)
       ? value.map((v, i) => [String(i), v, pathAppendIndex(path, i)])
       : Object.entries(value).map(([k, v]) => [k, v, pathAppendKey(path, k)]);
-    return el(
-      "ul.mapping-tree-list",
-      ...entries.map(([key, child, childPath]) =>
-        el(
-          "li.mapping-tree-item",
-          el(
-            "span.mapping-tree-key",
-            { onclick: (e) => { e.stopPropagation(); onPick?.({ path: childPath, type: fieldTypeFromValue(child), name: key }); } },
-            key,
-          ),
-          payloadTree(child, { path: childPath, name: key, onPick }),
-        ),
-      ),
+    return (
+      <ul className="mapping-tree-list">
+        {entries.map(([key, child, childPath]) => (
+          <li className="mapping-tree-item" key={childPath}>
+            <span 
+              className="mapping-tree-key" 
+              onClick={(e) => { 
+                e.stopPropagation(); 
+                if (onPick) onPick({ path: childPath, type: fieldTypeFromValue(child), name: key }); 
+              }}
+            >
+              {key}
+            </span>
+            <PayloadTree value={child} path={childPath} name={key} onPick={onPick} />
+          </li>
+        ))}
+      </ul>
     );
   }
-  return el(
-    "span.mapping-tree-value",
-    { onclick: (e) => { e.stopPropagation(); onPick?.({ path, type: fieldTypeFromValue(value), name }); } },
-    JSON.stringify(value),
+  return (
+    <span 
+      className="mapping-tree-value" 
+      onClick={(e) => { 
+        e.stopPropagation(); 
+        if (onPick) onPick({ path, type: fieldTypeFromValue(value), name }); 
+      }}
+    >
+      {JSON.stringify(value)}
+    </span>
   );
 }
 
@@ -73,69 +87,83 @@ export function payloadTree(value, { path = "", name = "", onPick } = {}) {
  * rather than a false pass, since an unresolved field is not the same
  * claim as a resolved one.
  */
-export function fieldsTable(fields, { preview, onRemove, onNameChange, onTypeChange, onRequiredChange } = {}) {
+export function FieldsTable({ fields, preview, onRemove, onNameChange, onTypeChange, onRequiredChange }) {
   if (!fields.length) {
-    return el("div.mapping-empty-fields", "Click a value in the payload to bind a field.");
+    return <div className="mapping-empty-fields">Click a value in the payload to bind a field.</div>;
   }
   const failureByField = new Map((preview?.failures || []).map((f) => [f.field_name, f]));
-  return el(
-    "table.table.mapping-fields-table",
-    el(
-      "thead",
-      el("tr", ...["Field name", "Path", "Type", "Required", "Preview", ""].map((h) => el("th", h))),
-    ),
-    el(
-      "tbody",
-      ...fields.map((f, i) =>
-        el(
-          "tr",
-          el("td", el("input.mapping-input", {
-            value: f.name,
-            oninput: (e) => onNameChange?.(i, e.target.value),
-          })),
-          el("td.mono", f.path),
-          el(
-            "td",
-            el(
-              "select.mapping-select",
-              { onchange: (e) => onTypeChange?.(i, e.target.value) },
-              ...FIELD_TYPES.map((t) => el("option", { value: t, selected: t === f.type }, t)),
-            ),
-          ),
-          el("td", el("input", {
-            type: "checkbox",
-            checked: f.required,
-            onchange: (e) => onRequiredChange?.(i, e.target.checked),
-          })),
-          el("td", previewStatus(f, preview, failureByField)),
-          el("td", el("button.btn.btn-small", { type: "button", onclick: () => onRemove?.(i) }, "Remove")),
-        ),
-      ),
-    ),
+  return (
+    <table className="table mapping-fields-table">
+      <thead>
+        <tr>
+          {["Field name", "Path", "Type", "Required", "Preview", ""].map((h, i) => (
+            <th key={i}>{h}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {fields.map((f, i) => (
+          <tr key={i}>
+            <td>
+              <input 
+                className="mapping-input" 
+                value={f.name} 
+                onInput={(e) => onNameChange?.(i, e.target.value)} 
+              />
+            </td>
+            <td className="mono">{f.path}</td>
+            <td>
+              <select 
+                className="mapping-select" 
+                value={f.type} 
+                onChange={(e) => onTypeChange?.(i, e.target.value)}
+              >
+                {FIELD_TYPES.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </td>
+            <td>
+              <input 
+                type="checkbox" 
+                checked={f.required} 
+                onChange={(e) => onRequiredChange?.(i, e.target.checked)} 
+              />
+            </td>
+            <td>
+              <PreviewStatus field={f} preview={preview} failureByField={failureByField} />
+            </td>
+            <td>
+              <button className="btn btn-small" type="button" onClick={() => onRemove?.(i)}>Remove</button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
-function previewStatus(field, preview, failureByField) {
-  if (!preview) return pill("not previewed", "idle");
+function PreviewStatus({ field, preview, failureByField }) {
+  if (!preview) return <Pill text="not previewed" kind="idle" />;
   const failure = failureByField.get(field.name);
-  if (failure) return pill(failure.reason, "danger");
+  if (failure) return <Pill text={failure.reason} kind="danger" />;
   if (Object.prototype.hasOwnProperty.call(preview.values || {}, field.name)) {
-    return pill(JSON.stringify(preview.values[field.name]), "ok");
+    return <Pill text={JSON.stringify(preview.values[field.name])} kind="ok" />;
   }
-  return pill("skipped (optional)", "idle");
+  return <Pill text="skipped (optional)" kind="idle" />;
 }
 
 /** One saved mapping's summary row for the mapping list. */
-export function mappingRow(m, { onEdit, onDelete }) {
-  return el(
-    "tr",
-    el("td", m.name),
-    el("td.mono", m.source_hint || "—"),
-    el("td", String(m.fields?.length ?? 0)),
-    el(
-      "td",
-      el("button.btn.btn-small", { type: "button", onclick: () => onEdit?.(m) }, "Edit"),
-      el("button.btn.btn-small", { type: "button", onclick: () => onDelete?.(m) }, "Delete"),
-    ),
+export function MappingRow({ mapping: m, onEdit, onDelete }) {
+  return (
+    <tr>
+      <td>{m.name}</td>
+      <td className="mono">{m.source_hint || "—"}</td>
+      <td>{String(m.fields?.length ?? 0)}</td>
+      <td>
+        <button className="btn btn-small" type="button" onClick={() => onEdit?.(m)}>Edit</button>
+        <button className="btn btn-small" type="button" onClick={() => onDelete?.(m)}>Delete</button>
+      </td>
+    </tr>
   );
 }
