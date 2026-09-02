@@ -105,12 +105,12 @@ func (c *Curator) reviewOne(ctx context.Context, name string) ([]curator.Action,
 		return nil, err
 	}
 
-	fm, _, parseErr := skill.Parse([]byte(sk.Content))
-	if parseErr != nil {
+	fm, _, fail := skill.Parse([]byte(sk.Content))
+	if fail != nil {
 		return []curator.Action{{
 			Type:   ActionInvalid,
 			Detail: name,
-			Reason: parseErr.Error(),
+			Reason: fail.Error(),
 		}}, nil
 	}
 

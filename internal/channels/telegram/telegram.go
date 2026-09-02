@@ -251,6 +251,64 @@ func (g *Gateway) Start(ctx context.Context, router *gateway.Router, lifecycle g
 	}
 }
 
+func (g *Gateway) registerCommandHandlers(b *bot.Bot, router *gateway.Router) {
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/status", bot.MatchTypeExact, g.statusHandler(router))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/whoami", bot.MatchTypeExact, g.whoamiHandler(router))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/profile", bot.MatchTypeExact, g.profileHandler(router))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/sessions", bot.MatchTypeExact, g.sessionsHandler(router))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/resume", bot.MatchTypeExact, g.resumeHandler(router))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/agents", bot.MatchTypeExact, g.agentsHandler(router))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/version", bot.MatchTypeExact, g.versionHandler())
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/update", bot.MatchTypeExact, g.updateHandler())
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, g.startHandler())
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/help", bot.MatchTypeExact, g.helpHandler())
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/restart", bot.MatchTypeExact, g.restartHandler())
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/rollback", bot.MatchTypePrefix, g.rollbackHandler())
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/stop", bot.MatchTypePrefix, g.stopHandler(router))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/approve", bot.MatchTypeExact, g.approveHandler())
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/deny", bot.MatchTypeExact, g.denyHandler())
+}
+
+func (g *Gateway) startListening(ctx context.Context, b *bot.Bot, lifecycle gateway.Lifecycle) error {
+	if g.WebhookURL != "" {
+		params := &bot.SetWebhookParams{
+			URL:                g.WebhookURL,
+			SecretToken:        g.WebhookSecret,
+			MaxConnections:     40,
+			AllowedUpdates:     []string{"message", "callback_query"},
+			DropPendingUpdates: true,
+		}
+		if _, err := b.SetWebhook(ctx, params); err != nil {
+			return fmt.Errorf("set webhook: %w", err)
+		}
+		g.log.Info("webhook set", "url", g.WebhookURL)
+
+		info, err := b.GetWebhookInfo(ctx)
+		if err != nil {
+			g.log.Warn("failed to get webhook info", "error", err)
+		} else {
+			g.log.Info(
+				"webhook info",
+				"url", info.URL,
+				"pending_update_count", info.PendingUpdateCount,
+				"last_error_message", info.LastErrorMessage,
+				"max_connections", info.MaxConnections,
+			)
+		}
+
+		webhookCtx, cancel := context.WithCancel(ctx)
+		g.webhookCancel = cancel
+		g.running = true
+		go b.StartWebhook(webhookCtx)
+		lifecycle.ReportRunning()
+	} else {
+		g.dropPendingUpdates(ctx, b)
+		g.running = true
+		go b.Start(ctx)
+	}
+	return nil
+}
+
 // launch builds one bot instance, registers handlers and starts its delivery
 // worker. Webhook readiness is synchronous; long-poll readiness is reported by
 // pollReadinessClient after the first successful getUpdates response.
@@ -288,22 +346,7 @@ func (g *Gateway) launch(ctx context.Context, router *gateway.Router, lifecycle 
 	}
 	g.bot = b
 
-	// Gateway-local commands: handled directly, no LLM.
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/status", bot.MatchTypeExact, g.statusHandler(router))
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/whoami", bot.MatchTypeExact, g.whoamiHandler(router))
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/profile", bot.MatchTypeExact, g.profileHandler(router))
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/sessions", bot.MatchTypeExact, g.sessionsHandler(router))
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/resume", bot.MatchTypeExact, g.resumeHandler(router))
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/agents", bot.MatchTypeExact, g.agentsHandler(router))
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/version", bot.MatchTypeExact, g.versionHandler())
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/update", bot.MatchTypeExact, g.updateHandler())
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, g.startHandler())
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/help", bot.MatchTypeExact, g.helpHandler())
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/restart", bot.MatchTypeExact, g.restartHandler())
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/rollback", bot.MatchTypePrefix, g.rollbackHandler())
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/stop", bot.MatchTypePrefix, g.stopHandler(router))
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/approve", bot.MatchTypeExact, g.approveHandler())
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/deny", bot.MatchTypeExact, g.denyHandler())
+	g.registerCommandHandlers(b, router)
 
 	// Publish the command list so Telegram renders a menu. Without this
 	// the commands are undiscoverable and the LLM, having no idea they
@@ -311,42 +354,8 @@ func (g *Gateway) launch(ctx context.Context, router *gateway.Router, lifecycle 
 	g.registerCommands(ctx, b)
 	g.notifyLaunch(ctx, b)
 
-	// Set up webhook or fall back to long polling.
-	if g.WebhookURL != "" {
-		params := &bot.SetWebhookParams{
-			URL:                g.WebhookURL,
-			SecretToken:        g.WebhookSecret,
-			MaxConnections:     40,
-			AllowedUpdates:     []string{"message", "callback_query"},
-			DropPendingUpdates: true,
-		}
-		if _, err := b.SetWebhook(ctx, params); err != nil {
-			return nil, fmt.Errorf("set webhook: %w", err)
-		}
-		g.log.Info("webhook set", "url", g.WebhookURL)
-
-		info, err := b.GetWebhookInfo(ctx)
-		if err != nil {
-			g.log.Warn("failed to get webhook info", "error", err)
-		} else {
-			g.log.Info(
-				"webhook info",
-				"url", info.URL,
-				"pending_update_count", info.PendingUpdateCount,
-				"last_error_message", info.LastErrorMessage,
-				"max_connections", info.MaxConnections,
-			)
-		}
-
-		webhookCtx, cancel := context.WithCancel(ctx)
-		g.webhookCancel = cancel
-		g.running = true
-		go b.StartWebhook(webhookCtx)
-		lifecycle.ReportRunning()
-	} else {
-		g.dropPendingUpdates(ctx, b)
-		g.running = true
-		go b.Start(ctx)
+	if err := g.startListening(ctx, b, lifecycle); err != nil {
+		return nil, err
 	}
 
 	return b, nil

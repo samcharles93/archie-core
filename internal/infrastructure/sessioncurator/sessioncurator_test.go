@@ -312,9 +312,7 @@ func TestManifestShape(t *testing.T) {
 	if len(m.Tools) != 0 {
 		t.Errorf("Manifest().Tools = %v, want none: extraction is a plain completion, not tool-calling", m.Tools)
 	}
-	if !m.Skills {
-		// deliberately NOT checking true -- documents the negative
-	}
+	// deliberately NOT checking true -- documents the negative
 	if m.Skills {
 		t.Error("Manifest().Skills = true, want false")
 	}
