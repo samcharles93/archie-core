@@ -41,6 +41,22 @@ A plugin:
 Plugins may be internally cohesive like small services. They do not become
 network services without a concrete security or operational reason.
 
+## Event sources and reactions
+
+`archie-core-7d5u.1` asked whether extensions should react to events
+in-process through typed capability families (this document's model) or
+out-of-process like a generic `DispatchEvent` dispatcher. Decided 2026-08-22
+in `docs/prds/event-sources-and-reactions.md`: in-process typed families,
+confirming this document's model rather than amending it. The forge webhook
+receiver (`internal/forge/webhook`, see `ARCHITECTURE.md`'s "Webhook intake"
+section) and the EDA playbook engine's Module action position
+(`docs/prds/eda-playbook-engine.md`, `internal/domain/eda/module`) are the
+shipped instances of that decision -- each is a narrow typed contract with an
+owning registry, not a generic event hook. The playbook engine's Channel and
+Forge action positions are designed but not yet implemented (open
+investigation `archie-core-t2db.19`); when they land they follow the same
+model, not a new one.
+
 ## Curator surprisal sampling (deferred)
 
 **Deferred by decision, 2026-08-05** — Archie has no embedding capability, and

@@ -182,6 +182,19 @@ structures found in legacy packages.
 - **MCP Providers:** Daemon registers providers as optional via
   `providerRegistry.RegisterOptional`. Missing or failed providers log warnings
   and degrade health without terminating the process.
+- **`internal/forge/webhook/` (forge webhook receiver):**
+- Verify HMAC (`webhookguard.VerifyHMAC` against `X-Hub-Signature-256`) before
+  parsing the payload, never after -- an unverified body must not reach
+  `github.ParseWebHook`.
+- Do not give the webhook-built `workintake.TaskEnvelope` a delivery-source-
+  specific idempotency key. `IdempotencyKey()` is keyed on `owner/repo/number`
+  only so a webhook-delivered issue and a later poll of the same issue dedup
+  against each other via `PublishUnique`; adding an event ID or timestamp to
+  the key defeats that and reintroduces poll/webhook double-dispatch.
+- Webhook intake refuses to start when `[[identities]]` is configured (one
+  receiver, one dispatch config). Do not silently enable it for multi-identity
+  deployments without first building per-identity routing -- see
+  `ARCHITECTURE.md`'s "Webhook intake" section.
 
 ## Development Protocol
 
