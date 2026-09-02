@@ -171,6 +171,29 @@ checked against each other by either tool. If the linter and LSP do the job
 they're built for, a real collision reaching that startup path should be
 rare in practice, not a routine occurrence the design leans on.
 
+**Shared package, thin consumers -- not a bundled-vs-standalone choice.**
+The validation logic (`LoadKindWorkflowsYAML`, `LoadLabelWorkflowsYAML`, the
+directory-merge from t2db.11) lives in `internal/domain/workflow`, a plain
+Go package with no knowledge of which binary calls it. This makes "should
+the linter/LSP be bundled into archied or a separate tool" a non-question:
+- `archied` already imports the package directly and validates in-process
+  at startup -- no subprocess, no external tool call.
+- An agent that needs to validate a playbook in-process can import the same
+  package directly, for the same reason.
+- The standalone `cmd/` binary (t2db.12, gopls-shaped: one binary, a lint
+  mode now, an LSP/serve mode later) exists only because CI and editors are
+  out-of-process consumers by nature -- a CI step needs an exit code, an
+  editor speaks LSP over a process boundary, neither can `import` a Go
+  package. It is a thin wrapper per `organisation.md`'s `cmd/` rule, not a
+  second implementation.
+
+One shared implementation, two thin consumer shapes (in-process and
+out-of-process). Folding CLI/LSP protocol handling into `archied` itself
+would grow the daemon into unrelated concerns, against the plugin-engine
+rule's spirit of narrow capability families -- so the answer is not
+"bundle or don't," it's "don't duplicate the logic, and pick the thinnest
+consumer for each caller's actual constraint."
+
 ## Execution-time gaps (identified 2026-09-03, unresolved)
 
 Everything above covers *loading* a playbook. Nothing above covers what
