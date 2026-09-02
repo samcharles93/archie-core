@@ -276,6 +276,35 @@ func TestHandleBindingUpdatePreservesOtherFields(t *testing.T) {
 	}
 }
 
+// TestHandleBindingUpdateWithEmptySecretPreservesExisting is the API-layer
+// half of UpdateBinding's own documented contract ("Secret is preserved
+// when the caller passes an empty string ... so a partial update cannot
+// erase the HMAC secret"): an edit that never touches the secret field
+// must not be rejected by Validate's create-time secret-length floor,
+// since nothing about the existing secret is changing.
+func TestHandleBindingUpdateWithEmptySecretPreservesExisting(t *testing.T) {
+	srv := bindingTestServer(t)
+	mappingID := seedMapping(t, srv, "m")
+	w := doJSON(t, srv, http.MethodPost, "/api/bindings", validBindingRequest("a", "sentry", mappingID))
+	var created binding.Binding
+	_ = json.Unmarshal(w.Body.Bytes(), &created)
+
+	update := validBindingRequest("renamed", "sentry", mappingID)
+	update["secret"] = ""
+	w = doJSON(t, srv, http.MethodPatch, "/api/bindings/"+strconv.FormatInt(created.ID, 10), update)
+	if w.Code != http.StatusOK {
+		t.Fatalf("patch status = %d, want %d (empty secret must mean 'keep existing', not fail validation); body = %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	stored, err := srv.Bindings.GetBinding(t.Context(), created.ID)
+	if err != nil || stored == nil {
+		t.Fatalf("GetBinding: %+v, %v", stored, err)
+	}
+	if stored.Secret != "0123456789abcdef0123456789abcdef" {
+		t.Fatalf("stored secret = %q, want the original secret preserved", stored.Secret)
+	}
+}
+
 func TestHandleBindingApproveFromDraftRejected(t *testing.T) {
 	srv := bindingTestServer(t)
 	mappingID := seedMapping(t, srv, "m")
