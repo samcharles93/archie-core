@@ -157,6 +157,9 @@ func TestPassExtractsAndWritesObservations(t *testing.T) {
 	if len(res.Actions) != 1 || res.Actions[0].Type != ActionExtracted {
 		t.Fatalf("Actions = %#v, want one %s", res.Actions, ActionExtracted)
 	}
+	if want := time.Unix(1000, 0); !res.Actions[0].At.Equal(want) {
+		t.Errorf("Actions[0].At = %v, want %v (from the curator's clock, not zero)", res.Actions[0].At, want)
+	}
 	if len(engine.writes) != 1 {
 		t.Fatalf("writes = %#v, want exactly 1", engine.writes)
 	}

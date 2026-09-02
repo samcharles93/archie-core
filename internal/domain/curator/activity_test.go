@@ -70,6 +70,28 @@ func TestActivityTrackerAccumulatesAcrossRuns(t *testing.T) {
 	}
 }
 
+// A curator engine that has no clock of its own (skillcurator) leaves
+// Action.At zero. record must backfill it from the pass's own timestamp so
+// it never reaches the wire as time.Time's zero value, which the dashboard
+// renders as a nonsense "105694 wks ago".
+func TestActivityTrackerBackfillsZeroActionTime(t *testing.T) {
+	tr := newActivityTracker()
+	at := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	tr.record("c", at, []Action{{Type: "skill.normalized", Detail: "d", Reason: "r"}})
+
+	got, ok := tr.snapshot("c")
+	if !ok {
+		t.Fatalf("snapshot(c) ok = false, want true")
+	}
+	if got.Recent[0].At.IsZero() {
+		t.Fatalf("Recent[0].At is zero, want backfilled to %v", at)
+	}
+	if !got.Recent[0].At.Equal(at) {
+		t.Fatalf("Recent[0].At = %v, want %v", got.Recent[0].At, at)
+	}
+}
+
 func TestActivityTrackerCapsRecentActions(t *testing.T) {
 	tr := newActivityTracker()
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
