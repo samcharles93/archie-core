@@ -306,6 +306,22 @@ unreachable at runtime by anyone.
 **Layer 2 — SOUL.** User-authored identity: agent name, register, warmth.
 Editable without a rebuild.
 
+**Enforcing the Layer 1 / Layer 2 boundary.** SOUL is rendered as the
+`Persona` field of `SystemPromptConfig` (`internal/gateway/prompt.go`) into a
+`<soul purpose="identity_and_style" trust="data">` block, XML-escaped through
+the same `xml` template helper used for tool and env metadata, and placed
+*before* `<instruction_precedence>` in `archie.md.tpl`. Escaping means SOUL
+text can never forge a live `<core_rules>`, `<instruction_precedence>`,
+`<tools>` or `<env>` tag -- an attempt renders as inert escaped text
+(`&lt;core_rules&gt;...`), and `<instruction_precedence>` explicitly tells the
+model the `<soul>` block is reference data, not an authority. This is
+guarded by `TestBuildSystemPromptSoulCannotOverrideInvariants` in
+`internal/gateway/prompt_test.go`, which renders a hostile SOUL that attempts
+to countermand `core_rules` and asserts the real invariant tags stay singular
+and their text stays intact. Keep this test in sync if the template's escaping
+or block structure changes -- do not relax it to make a future SOUL feature
+(e.g. curator-proposed edits) fit.
+
 **Layer 3 — representation.** Curator-derived knowledge about the user. It may
 only **propose** changes to SOUL and never apply them. If derived conclusions can
 silently rewrite tone, personality drifts and the user loses the control SOUL
