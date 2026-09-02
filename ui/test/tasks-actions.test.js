@@ -1,11 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { register } from "node:module";
-import "./shim.js";
+import { render, waitFor } from "@testing-library/preact";
 
-// tasks.js imports "./tasks.css", which Node's ESM loader cannot parse. Install
-// a runtime loader hook (inline, via a data: URL so nothing extra is written to
-// disk) that stubs .css imports to an empty module, then load tasks.js.
 const cssLoad = "data:text/javascript," + encodeURIComponent(`
   export async function load(url, context, nextLoad) {
     if (url.endsWith(".css")) {
@@ -16,19 +13,19 @@ const cssLoad = "data:text/javascript," + encodeURIComponent(`
 `);
 register(cssLoad, import.meta.url);
 
-const { api } = await import("../src/base/api.js");
-const { tasksPage } = await import("../src/tasks/tasks.js");
+const { api } = await import("../src/base/api.jsx");
+const { tasksPage } = await import("../src/tasks/tasks.jsx");
 
-// renderTask builds a page with a single task by stubbing api.tasks to a fake
-// task, then returns the rendered root once tasksPage's background load() has
-// settled. api.tasks is restored in a finally so the stub never leaks.
 async function renderTask(task) {
   const original = api.tasks;
   api.tasks = async () => [task];
   try {
-    const root = tasksPage(new URLSearchParams());
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    return root;
+    const vnode = tasksPage(new URLSearchParams());
+    const { container } = render(vnode);
+    await waitFor(() => {
+      assert.ok(container.querySelector(".task-row"), "Wait for task to render");
+    });
+    return container;
   } finally {
     api.tasks = original;
   }
@@ -62,7 +59,6 @@ test("an id NOT in the catalog renders nothing", async () => {
     actions: ["teleport"],
   };
   const root = await renderTask(task);
-  // Unknown id -> no control renders, so no .task-actions container appears.
   assert.equal(root.querySelector(".task-actions"), null, "unknown action renders nothing");
 });
 

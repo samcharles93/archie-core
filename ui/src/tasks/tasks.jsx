@@ -1,4 +1,4 @@
-import { h } from "preact";
+import { Fragment } from "preact";
 import { useState, useEffect, useRef } from "preact/hooks";
 import "./tasks.css";
 import { api } from "../base/api.jsx";
@@ -398,7 +398,7 @@ function TasksApp({ query }) {
       const expanded = expandedId === t.id;
       const timelineID = `task-timeline-${t.id}`;
       return (
-        <h.Fragment key={t.id}>
+        <Fragment key={t.id}>
           <tr
             className="task-row"
             id={`task-row-${t.id}`}
@@ -445,7 +445,7 @@ function TasksApp({ query }) {
             <td data-label="Actions">{renderTaskActions(t)}</td>
           </tr>
           {expanded && renderTimelineRow(t)}
-        </h.Fragment>
+        </Fragment>
       );
     });
   };
