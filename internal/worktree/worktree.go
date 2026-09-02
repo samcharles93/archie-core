@@ -30,6 +30,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-git/v6"
 	gitconfig "github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -469,6 +470,14 @@ func (m *Manager) recordUpstream(r *git.Repository, branch string, ref plumbing.
 	cfg, err := r.Config()
 	if err != nil {
 		return fmt.Errorf("read repo config: %w", err)
+	}
+	// SetConfig may succeed for root even when the file is marked read-only.
+	// Respect the repository's mode bits so callers see the same failure that
+	// an unprivileged process would get.
+	if fsStorer, ok := r.Storer.(interface{ Filesystem() billy.Filesystem }); ok {
+		if info, statErr := fsStorer.Filesystem().Stat("config"); statErr == nil && info.Mode().Perm()&0o222 == 0 {
+			return fmt.Errorf("write repo config: config is read-only")
+		}
 	}
 	if cfg.Branches == nil {
 		cfg.Branches = map[string]*gitconfig.Branch{}
