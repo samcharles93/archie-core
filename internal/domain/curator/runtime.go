@@ -94,6 +94,13 @@ func (rt *Runtime) Start(ctx context.Context) error {
 	rt.mu.Unlock()
 
 	startErr := rt.registry.Start(ctx)
+	if log := rt.registry.Host().Log; log != nil {
+		if startErr != nil {
+			log.Error("curator runtime start completed with failures", "err", startErr)
+		} else {
+			log.Info("curator runtime started", "curators", len(rt.registry.Names()))
+		}
+	}
 	for _, name := range rt.registry.Names() {
 		c, _ := rt.registry.Get(name)
 		rt.wg.Add(1)
@@ -145,9 +152,20 @@ func (rt *Runtime) Stop(ctx context.Context) error {
 	select {
 	case <-done:
 	case <-ctx.Done():
+		if log := rt.registry.Host().Log; log != nil {
+			log.Error("curator runtime shutdown timed out", "err", ctx.Err())
+		}
 		return fmt.Errorf("curator runtime shutdown: %w", ctx.Err())
 	}
-	return rt.registry.Stop(ctx)
+	err := rt.registry.Stop(ctx)
+	if log := rt.registry.Host().Log; log != nil {
+		if err != nil {
+			log.Error("curator runtime stopped with failures", "err", err)
+		} else {
+			log.Info("curator runtime stopped")
+		}
+	}
+	return err
 }
 
 // runLoop is one curator's lifetime: sleep until eligible or nudged, ask
@@ -278,6 +296,9 @@ func (rt *Runtime) safePass(ctx context.Context, c CuratorEngine, in PassInput) 
 // non-blocking by contract (bounded dropping buffers), so even a failing
 // curator cannot backpressure anything.
 func (rt *Runtime) fail(name, phase string, err error) {
+	if log := rt.registry.Host().Log; log != nil {
+		log.Error("curator failed", "curator", name, "phase", phase, "err", err)
+	}
 	if sink := rt.registry.Host().Events; sink != nil {
 		sink.Emit(events.KindCuratorError, name, map[string]any{
 			"curator": name,
@@ -292,7 +313,15 @@ func (rt *Runtime) fail(name, phase string, err error) {
 func (rt *Runtime) emitRun(name string, at time.Time, result PassResult) {
 	rt.registry.RecordActivity(name, at, result.Actions)
 
-	sink := rt.registry.Host().Events
+	host := rt.registry.Host()
+	if log := host.Log; log != nil {
+		log.Info("curator pass completed", "curator", name, "actions", len(result.Actions), "at", at)
+		for _, a := range result.Actions {
+			log.Info("curator action", "curator", name, "type", a.Type, "detail", a.Detail, "reason", a.Reason, "at", a.At)
+		}
+	}
+
+	sink := host.Events
 	if sink == nil {
 		return
 	}
