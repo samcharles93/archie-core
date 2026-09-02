@@ -283,6 +283,40 @@ func (d Dispatch) LabelValues() []string {
 	return out
 }
 
+// ImageConfig configures the image generation capability
+// (internal/domain/image). See docs/prds/image-capability-contract.md.
+type ImageConfig struct {
+	// Default selects which registered provider name /image uses when the
+	// request/session has not already picked one. Empty means /image must
+	// always ask which mechanism to use -- a valid, and the default, state.
+	Default string `toml:"default" yaml:"default" json:"default"`
+	// Hosted configures hosted (paid) providers, keyed by provider name.
+	Hosted map[string]ImageHostedProvider `toml:"hosted" yaml:"hosted" json:"hosted"`
+	// Local configures local GPU recipes, keyed by provider name.
+	Local map[string]ImageLocalProvider `toml:"local" yaml:"local" json:"local"`
+}
+
+// ImageHostedProvider configures one hosted image provider. Mirrors
+// MinimaxConfig's cost guard: Enabled defaults false, since a hosted
+// provider spends real API credits per call and must never activate from
+// the mere presence of a key.
+type ImageHostedProvider struct {
+	Enabled   bool             `toml:"enabled" yaml:"enabled" json:"enabled"`
+	Class     string           `toml:"class" yaml:"class" json:"class"`
+	APIKeyEnv string           `toml:"api_key_env" yaml:"api_key_env" json:"api_key_env"`
+	APIKey    secret.SecretRef `toml:"api_key" yaml:"api_key" json:"-"`
+	BaseURL   string           `toml:"base_url" yaml:"base_url" json:"base_url,omitempty"`
+}
+
+// ImageLocalProvider configures one local GPU image recipe. Enabled
+// defaults false too: a local backend can saturate the host GPU/CPU, its
+// own kind of unwanted cost, so it gets the same explicit gate as a hosted
+// provider rather than an on-by-default treatment.
+type ImageLocalProvider struct {
+	Enabled bool   `toml:"enabled" yaml:"enabled" json:"enabled"`
+	Backend string `toml:"backend" yaml:"backend" json:"backend"`
+}
+
 // MemoryConfig holds memory provider configuration.
 type MemoryConfig struct {
 	// Engine selects among the domain/memory engine family
@@ -442,6 +476,10 @@ type Config struct {
 
 	// Memory holds memory provider configuration (from config.memory.yaml).
 	Memory MemoryConfig `toml:"memory" yaml:"memory"`
+
+	// Image configures the image generation capability. Absent is valid
+	// and registers no provider.
+	Image ImageConfig `toml:"image" yaml:"image" json:"image"`
 
 	// Tools holds MCP server and tool policy configuration (from config.tools.yaml).
 	Tools ToolsConfig `toml:"tools" yaml:"tools"`

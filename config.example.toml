@@ -219,6 +219,23 @@ listen = "127.0.0.1:8484"
 # engine = "builtin"        # "builtin" is the only engine implemented so far
 # session_ttl = "0s"
 
+# Image generation capability (internal/domain/image). No provider is
+# implemented yet -- this section defines the contract/config surface only
+# (archie-core-1786748942147-2-47cd5bd1). Absent is valid and registers no
+# provider. default names the provider /image uses without asking; leaving
+# it unset means /image always asks which mechanism to use. Every provider
+# is off by default -- a hosted provider spends real API credits per call,
+# and a local one can saturate the host GPU, so both require an explicit
+# enabled = true, never an inferred one from the presence of a key alone.
+# [image.hosted.openai]
+# enabled     = false
+# class       = "openai"
+# api_key_env = "OPENAI_API_KEY"
+#
+# [image.local.sdxl]
+# enabled = false
+# backend = "sdxl-turbo"
+
 # Notifications for human-in-the-loop moments
 # (approval requests, gate failures, parked tasks).
 # Archie POSTs a JSON payload to the webhook

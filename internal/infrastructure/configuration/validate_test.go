@@ -380,3 +380,104 @@ func TestValidateMemoryRejectsProviderSetToAnything(t *testing.T) {
 		t.Errorf("error text = %q, want it to name the field and the value", err.Error())
 	}
 }
+
+func TestValidateImageAcceptsAbsentSection(t *testing.T) {
+	cfg := minimalValidConfig()
+	if err := validateImage(&cfg); err != nil {
+		t.Fatalf("validateImage(absent) = %v, want nil", err)
+	}
+}
+
+func TestValidateImageRejectsEnabledHostedWithoutClass(t *testing.T) {
+	cfg := minimalValidConfig()
+	cfg.Image.Hosted = map[string]config.ImageHostedProvider{
+		"openai": {Enabled: true, APIKeyEnv: "OPENAI_API_KEY"},
+	}
+	err := validateImage(&cfg)
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("validateImage(no class) = %v, want wrapping ErrInvalidInput", err)
+	}
+	if !strings.Contains(err.Error(), "image.hosted.openai.class") {
+		t.Errorf("error text = %q, want it to name the field", err.Error())
+	}
+}
+
+func TestValidateImageRejectsEnabledHostedWithoutCredential(t *testing.T) {
+	cfg := minimalValidConfig()
+	cfg.Image.Hosted = map[string]config.ImageHostedProvider{
+		"openai": {Enabled: true, Class: "openai"},
+	}
+	err := validateImage(&cfg)
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("validateImage(no credential) = %v, want wrapping ErrInvalidInput", err)
+	}
+}
+
+func TestValidateImageAcceptsDisabledHostedWithoutCredential(t *testing.T) {
+	cfg := minimalValidConfig()
+	cfg.Image.Hosted = map[string]config.ImageHostedProvider{
+		"openai": {Enabled: false},
+	}
+	if err := validateImage(&cfg); err != nil {
+		t.Fatalf("validateImage(disabled) = %v, want nil", err)
+	}
+}
+
+func TestValidateImageAcceptsEnabledHostedWithCredential(t *testing.T) {
+	cfg := minimalValidConfig()
+	cfg.Image.Hosted = map[string]config.ImageHostedProvider{
+		"openai": {Enabled: true, Class: "openai", APIKeyEnv: "OPENAI_API_KEY"},
+	}
+	if err := validateImage(&cfg); err != nil {
+		t.Fatalf("validateImage(valid hosted) = %v, want nil", err)
+	}
+}
+
+func TestValidateImageRejectsEnabledLocalWithoutBackend(t *testing.T) {
+	cfg := minimalValidConfig()
+	cfg.Image.Local = map[string]config.ImageLocalProvider{
+		"sdxl": {Enabled: true},
+	}
+	err := validateImage(&cfg)
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("validateImage(no backend) = %v, want wrapping ErrInvalidInput", err)
+	}
+	if !strings.Contains(err.Error(), "image.local.sdxl.backend") {
+		t.Errorf("error text = %q, want it to name the field", err.Error())
+	}
+}
+
+func TestValidateImageRejectsDefaultNamingDisabledProvider(t *testing.T) {
+	cfg := minimalValidConfig()
+	cfg.Image.Default = "openai"
+	cfg.Image.Hosted = map[string]config.ImageHostedProvider{
+		"openai": {Enabled: false},
+	}
+	err := validateImage(&cfg)
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("validateImage(default names disabled) = %v, want wrapping ErrInvalidInput", err)
+	}
+	if !strings.Contains(err.Error(), `image.default "openai"`) {
+		t.Errorf("error text = %q, want it to name the field and value", err.Error())
+	}
+}
+
+func TestValidateImageRejectsDefaultNamingUnregisteredProvider(t *testing.T) {
+	cfg := minimalValidConfig()
+	cfg.Image.Default = "missing"
+	err := validateImage(&cfg)
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("validateImage(default names unregistered) = %v, want wrapping ErrInvalidInput", err)
+	}
+}
+
+func TestValidateImageAcceptsDefaultNamingEnabledLocalProvider(t *testing.T) {
+	cfg := minimalValidConfig()
+	cfg.Image.Default = "sdxl"
+	cfg.Image.Local = map[string]config.ImageLocalProvider{
+		"sdxl": {Enabled: true, Backend: "sdxl-turbo"},
+	}
+	if err := validateImage(&cfg); err != nil {
+		t.Fatalf("validateImage(default names enabled local) = %v, want nil", err)
+	}
+}
