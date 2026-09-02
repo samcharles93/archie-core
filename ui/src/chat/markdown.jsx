@@ -2,16 +2,25 @@ import { el } from "../base/dom.jsx";
 
 function inlineMarkdown(text) {
   const fragment = document.createDocumentFragment();
-  const pattern = /(~~[^~]+~~|\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^\s)]+\)|\*[^*]+\*|_[^_]+_)/g;
+  const pattern = /(!\[[^\]]*\]\((?:https?:\/\/[^\s)]+|data:image\/[^\s)]+|\/[^\s)]+)\)|~~[^~]+~~|\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\[[^\]]+\]\((?:https?:\/\/[^\s)]+|\/[^\s)]+)\)|\*[^*]+\*|_[^_]+_)/g;
   let cursor = 0;
   for (const match of text.matchAll(pattern)) {
     if (match.index > cursor) fragment.append(document.createTextNode(text.slice(cursor, match.index)));
     const value = match[0];
-    if (value.startsWith("~~")) fragment.append(el("del", value.slice(2, -2)));
+    if (value.startsWith("![")) {
+      const img = value.match(/^!\[([^\]]*)\]\((.+)\)$/);
+      if (img) {
+        fragment.append(el("img.chat-media-img", {
+          src: img[2],
+          alt: img[1] || "Image",
+          loading: "lazy",
+        }));
+      }
+    } else if (value.startsWith("~~")) fragment.append(el("del", value.slice(2, -2)));
     else if (value.startsWith("**") || value.startsWith("__")) fragment.append(el("strong", value.slice(2, -2)));
     else if (value.startsWith("`")) fragment.append(el("code", value.slice(1, -1)));
     else if (value.startsWith("[")) {
-      const link = value.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/);
+      const link = value.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+|\/[^\s)]+)\)$/);
       fragment.append(el("a", { href: link[2], target: "_blank", rel: "noreferrer" }, link[1]));
     } else fragment.append(el("em", value.slice(1, -1)));
     cursor = match.index + value.length;

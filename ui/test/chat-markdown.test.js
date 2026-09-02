@@ -29,3 +29,11 @@ test("streaming assistant replies keep rich Markdown in the live bubble", () => 
   assert.equal(updated.querySelector("strong").textContent, "bold");
   assert.equal(updated.className, "chat-bubble-text");
 });
+
+test("chat Markdown renders images as img elements with src and alt", () => {
+  const rendered = renderMarkdown("Here is the generated image: ![generated preview](https://example.com/image.png)");
+  const img = rendered.querySelector("img");
+  assert.ok(img, "img element should be present");
+  assert.equal(img.getAttribute("src"), "https://example.com/image.png");
+  assert.equal(img.getAttribute("alt"), "generated preview");
+});
