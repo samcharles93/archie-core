@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS bindings (
 	source        TEXT NOT NULL DEFAULT '',
 	mapping_id    INTEGER NOT NULL DEFAULT 0,
 	workflow      TEXT NOT NULL DEFAULT '',
+	owner         TEXT NOT NULL DEFAULT '',
+	repo          TEXT NOT NULL DEFAULT '',
 	version       INTEGER NOT NULL DEFAULT 1,
 	status        TEXT NOT NULL DEFAULT 'draft',
 	secret        TEXT NOT NULL DEFAULT '',
@@ -90,9 +92,9 @@ func (s *Store) InsertBinding(ctx context.Context, b binding.Binding) (int64, er
 		return 0, err
 	}
 	res, err := tx.ExecContext(ctx, `
-		INSERT INTO bindings (name, source, mapping_id, workflow, version, status, secret, created_at, updated_at)
-		VALUES (?, ?, ?, ?, 1, 'draft', ?, ?, ?)`,
-		b.Name, b.Matcher.Source, b.MappingID, b.Workflow, secret, now, now)
+		INSERT INTO bindings (name, source, mapping_id, workflow, owner, repo, version, status, secret, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, 1, 'draft', ?, ?, ?)`,
+		b.Name, b.Matcher.Source, b.MappingID, b.Workflow, b.Owner, b.Repo, secret, now, now)
 	if err != nil {
 		return 0, err
 	}
@@ -110,7 +112,7 @@ func (s *Store) InsertBinding(ctx context.Context, b binding.Binding) (int64, er
 // exists.
 func (s *Store) GetBinding(ctx context.Context, id int64) (*binding.Binding, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, name, source, mapping_id, workflow, version, status, secret, created_at, updated_at
+		SELECT id, name, source, mapping_id, workflow, owner, repo, version, status, secret, created_at, updated_at
 		FROM bindings WHERE id=?`, id)
 	b, err := scanBindingRow(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -128,7 +130,7 @@ func (s *Store) GetBinding(ctx context.Context, id int64) (*binding.Binding, err
 // ListBindings returns every binding, newest first.
 func (s *Store) ListBindings(ctx context.Context) (out []binding.Binding, retErr error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, source, mapping_id, workflow, version, status, secret, created_at, updated_at
+		SELECT id, name, source, mapping_id, workflow, owner, repo, version, status, secret, created_at, updated_at
 		FROM bindings ORDER BY id DESC`)
 	if err != nil {
 		return nil, err
@@ -179,12 +181,12 @@ func (s *Store) UpdateBinding(ctx context.Context, b binding.Binding) error {
 		return err
 	}
 	res, err := tx.ExecContext(ctx, `
-		UPDATE bindings SET name=?, source=?, mapping_id=?, workflow=?, secret=COALESCE(NULLIF(?, ''), secret),
+		UPDATE bindings SET name=?, source=?, mapping_id=?, workflow=?, owner=?, repo=?, secret=COALESCE(NULLIF(?, ''), secret),
 			status = 'pending_approval',
 			version = version + 1,
 			updated_at = ?
 		WHERE id=?`,
-		b.Name, b.Matcher.Source, b.MappingID, b.Workflow, secret, now, b.ID)
+		b.Name, b.Matcher.Source, b.MappingID, b.Workflow, b.Owner, b.Repo, secret, now, b.ID)
 	if err != nil {
 		return err
 	}
@@ -285,7 +287,7 @@ func (s *Store) ApproveBinding(ctx context.Context, id int64) error {
 // practice, but the store returns the full set rather than collapsing).
 func (s *Store) ArmedBindingsForSource(ctx context.Context, source string) ([]binding.Binding, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, source, mapping_id, workflow, version, status, secret, created_at, updated_at
+		SELECT id, name, source, mapping_id, workflow, owner, repo, version, status, secret, created_at, updated_at
 		FROM bindings WHERE source=? AND status='armed' ORDER BY id`, source)
 	if err != nil {
 		return nil, err
@@ -434,7 +436,7 @@ func scanBindingRow(row bindingScanner) (*binding.Binding, error) {
 	var b binding.Binding
 	var createdAt, updatedAt string
 	if err := row.Scan(&b.ID, &b.Name, &b.Matcher.Source, &b.MappingID, &b.Workflow,
-		&b.Version, &b.Status, &b.Secret, &createdAt, &updatedAt); err != nil {
+		&b.Owner, &b.Repo, &b.Version, &b.Status, &b.Secret, &createdAt, &updatedAt); err != nil {
 		return nil, err
 	}
 	created, err := time.Parse(bindingTimeLayout, createdAt)

@@ -49,6 +49,61 @@ func TestDispatchBindingsCreatesTaskFromArmedCapture(t *testing.T) {
 	assertDispatchRecorded(t, s, bindingID, got.ID)
 }
 
+// TestDispatchBindingsUsesBindingRepoPinWithMultipleConfiguredRepos is the
+// multi-repo fix: a binding that pins Owner/Repo dispatches to that
+// target even when the daemon has zero or several [[repos]] configured,
+// where resolveBindingRepo's old single-repo-only fallback would have
+// refused entirely.
+func TestDispatchBindingsUsesBindingRepoPinWithMultipleConfiguredRepos(t *testing.T) {
+	s := openDispatchTestStore(t)
+	mappingID := seedMapping(t, s, "sentry", mapping.Field{Name: "title", Path: "title", Type: mapping.TypeString, Required: true})
+	bindingID, _ := seedArmedBindingWithRepo(t, s, "sentry", mappingID, "acme", "widget")
+	seedCapture(t, s, "sentry", true, `{"title":"hello"}`)
+
+	d := newDispatchDaemonWithRepos(t, s, []config.Repo{
+		{Owner: "acme", Name: "widget"},
+		{Owner: "other-org", Name: "other-repo"},
+	})
+	d.dispatchBindings(t.Context())
+
+	tasks, err := s.Tasks(t.Context(), 10)
+	if err != nil {
+		t.Fatalf("Tasks: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("Tasks len = %d, want 1 (pinned binding must dispatch despite 2 configured repos)", len(tasks))
+	}
+	if tasks[0].Owner != "acme" || tasks[0].Repo != "widget" {
+		t.Fatalf("task owner/repo = %s/%s, want acme/widget (the binding's own pin, not a guess)", tasks[0].Owner, tasks[0].Repo)
+	}
+	assertDispatchRecorded(t, s, bindingID, tasks[0].ID)
+}
+
+// TestDispatchBindingsRefusesUnpinnedBindingWithMultipleConfiguredRepos
+// pins the existing safety behaviour: a binding with no Owner/Repo pin
+// must still refuse to dispatch when the target repo is ambiguous,
+// exactly as it did before this field existed.
+func TestDispatchBindingsRefusesUnpinnedBindingWithMultipleConfiguredRepos(t *testing.T) {
+	s := openDispatchTestStore(t)
+	mappingID := seedMapping(t, s, "sentry", mapping.Field{Name: "title", Path: "title", Type: mapping.TypeString, Required: true})
+	seedArmedBinding(t, s, "sentry", mappingID) // no owner/repo pin
+	seedCapture(t, s, "sentry", true, `{"title":"hello"}`)
+
+	d := newDispatchDaemonWithRepos(t, s, []config.Repo{
+		{Owner: "acme", Name: "widget"},
+		{Owner: "other-org", Name: "other-repo"},
+	})
+	d.dispatchBindings(t.Context())
+
+	tasks, err := s.Tasks(t.Context(), 10)
+	if err != nil {
+		t.Fatalf("Tasks: %v", err)
+	}
+	if len(tasks) != 0 {
+		t.Fatalf("Tasks len = %d, want 0 (an unpinned binding must still refuse an ambiguous target)", len(tasks))
+	}
+}
+
 // Test 31: the binding_dispatches ledger is the at-most-once
 // guarantee across cycles -- running dispatchBindings twice must
 // yield exactly one task even though the undispatched-captures query
@@ -203,11 +258,21 @@ func seedMapping(t *testing.T, s *store.Store, sourceHint string, fields ...mapp
 // (bindings.go) rather than touching the SQL directly.
 func seedArmedBinding(t *testing.T, s *store.Store, source string, mappingID int64) (int64, int) {
 	t.Helper()
+	return seedArmedBindingWithRepo(t, s, source, mappingID, "", "")
+}
+
+// seedArmedBindingWithRepo is seedArmedBinding with an explicit
+// owner/repo pin (pass "", "" for the unpinned case seedArmedBinding
+// covers).
+func seedArmedBindingWithRepo(t *testing.T, s *store.Store, source string, mappingID int64, owner, repo string) (int64, int) {
+	t.Helper()
 	id, err := s.InsertBinding(t.Context(), binding.Binding{
 		Name:      "test " + source,
 		Matcher:   binding.Matcher{Source: source},
 		MappingID: mappingID,
 		Workflow:  "implement",
+		Owner:     owner,
+		Repo:      repo,
 		Secret:    "0123456789abcdef0123456789abcdef",
 	})
 	if err != nil {
@@ -253,9 +318,15 @@ func seedCapture(t *testing.T, s *store.Store, source string, authenticated bool
 // positive assertions.
 func newDispatchDaemon(t *testing.T, s *store.Store) *Daemon {
 	t.Helper()
-	cfg := config.Config{
-		Repos: []config.Repo{{Owner: "acme", Name: "widget"}},
-	}
+	return newDispatchDaemonWithRepos(t, s, []config.Repo{{Owner: "acme", Name: "widget"}})
+}
+
+// newDispatchDaemonWithRepos is newDispatchDaemon with an explicit repo
+// list, for tests exercising resolveBindingRepo's owner/repo-pin path
+// against zero, one, or several configured repos.
+func newDispatchDaemonWithRepos(t *testing.T, s *store.Store, repos []config.Repo) *Daemon {
+	t.Helper()
+	cfg := config.Config{Repos: repos}
 	return &Daemon{
 		Cfg:                config.NewHolder(cfg),
 		Store:              s,

@@ -62,6 +62,41 @@ func TestInsertBindingRoundTrips(t *testing.T) {
 	}
 }
 
+// TestInsertBindingRoundTripsOwnerRepo covers the multi-repo fix: a
+// binding pinned to a specific owner/repo persists and reads back
+// unchanged, and UpdateBinding can change the pin the same way it
+// changes any other editable field.
+func TestInsertBindingRoundTripsOwnerRepo(t *testing.T) {
+	s := openTest(t)
+	b := testBinding("sentry")
+	b.Owner, b.Repo = "acme", "widget"
+	id, err := s.InsertBinding(t.Context(), b)
+	if err != nil {
+		t.Fatalf("InsertBinding: %v", err)
+	}
+
+	got, err := s.GetBinding(t.Context(), id)
+	if err != nil || got == nil {
+		t.Fatalf("GetBinding: %+v, %v", got, err)
+	}
+	if got.Owner != "acme" || got.Repo != "widget" {
+		t.Fatalf("round-tripped owner/repo = %q/%q, want acme/widget", got.Owner, got.Repo)
+	}
+
+	updated := *got
+	updated.Owner, updated.Repo = "other-org", "other-repo"
+	if err := s.UpdateBinding(t.Context(), updated); err != nil {
+		t.Fatalf("UpdateBinding: %v", err)
+	}
+	got, err = s.GetBinding(t.Context(), id)
+	if err != nil || got == nil {
+		t.Fatalf("GetBinding after update: %+v, %v", got, err)
+	}
+	if got.Owner != "other-org" || got.Repo != "other-repo" {
+		t.Fatalf("updated owner/repo = %q/%q, want other-org/other-repo", got.Owner, got.Repo)
+	}
+}
+
 func TestGetBindingMissingReturnsNilNoError(t *testing.T) {
 	s := openTest(t)
 	got, err := s.GetBinding(t.Context(), 99999)
