@@ -241,3 +241,29 @@ whole point of the contract being provider-neutral.
 - Delivery through channel abstractions.
 - Wiring `Registry` into `bootstrap.go` (nothing to wire until a real
   provider exists to register).
+
+## Note for the hosted-provider bead (archie-core-1786748942169-3-ae7cfaea)
+
+`github.com/samcharles93/ai-sdk` (already a repo dependency) has its own
+provider-agnostic image facility: `image.Provider` (`Name`,
+`GenerateImage(ctx, GenerateImageRequest) (GenerateImageResponse, error)`),
+`image.Client`/`core.GenerateImage`, and `registry.Registry.RegisterImage`/
+`.Image(name)` — the same shape chat model registration already uses. Three
+backends implement it today (azure, togetherai, xai); OpenAI does not yet.
+
+The hosted-provider bead should adapt this instead of writing a raw HTTP
+client, the same way `curatorLLMRunner` (internal/app/archied/main.go)
+adapts `runtime.Runtime` for chat rather than the domain layer talking to
+ai-sdk directly — `internal/infrastructure/image.<name>Provider` wraps an
+`ai-sdk/image.Provider` (or a new `ai-sdk/provider/openai` image
+implementation, upstream, if one is added) behind this package's `Provider`
+interface.
+
+One real gap: ai-sdk's `image.GenerateImageRequest` has no input-image or
+mask fields — text-to-image only. `EditRequest`/`Capability.Edit` in this
+contract has nothing to adapt to yet. The hosted-provider bead needs either
+an upstream ai-sdk change (adding edit support to the `image` package) or a
+direct, non-ai-sdk client for the edit endpoint specifically, with
+generation still going through ai-sdk. Decide and record which at that
+bead's own design-doc step; this doc takes no position since editing was
+out of scope here.
