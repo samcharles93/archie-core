@@ -63,6 +63,16 @@ dashboard and `/api/tasks`. Retries are an explicit operator action capped by
 **PR reconciliation:** the daemon polls open PRs, checks GitHub state
 (`merged`/`closed`), transitions the task, and cleans up worktrees.
 
+**Provenance by origin:** a task's origin determines which enqueue path
+created it, though every origin converges on the same `tasks` table and the
+same `Route`/`Run` lifecycle above once queued. Forge-polled tasks enqueue via
+`workintake.TaskEnvelope` (see `docs/prds/event-sources-and-
+reactions.md`'s decided contract); playbook-binding-dispatched tasks enqueue
+via `EnqueueChatTask`/`EnqueueBindingTask` (`internal/store`), the same direct
+path chat-spawned tasks use, stamped with `binding_id`/`binding_version` for
+provenance. See `docs/architecture/bindings.md` for the binding model and its
+threat model in full.
+
 ## Workflow Engine
 
 ### Core types (`workflow.go`)
@@ -77,12 +87,21 @@ dashboard and `/api/tasks`. Retries are an explicit operator action capped by
 
 ### Routing (`Route`)
 
-Label-driven, no LLM involved. Pre-assigned workflow wins; then labels decide:
+Label-driven, no LLM involved. Pre-assigned workflow wins; then labels decide.
+The built-in bindings are:
 
 - `bug` → `tdd`
 - `feature` → `feasibility`
 - `bootstrap` → `bootstrap` (diagnostics, no LLM spend)
 - Default → `implement`
+
+Both the closed `bug`/`feature`/`bootstrap` set's target workflow and
+arbitrary additional labels are YAML-overridable at daemon startup
+(`internal/domain/workflow/routing.go`'s `LoadKindWorkflowsYAML`/
+`LoadLabelWorkflowsYAML`, `WorkflowRoutingFile`/`WorkflowLabelsFile`/
+`PlaybookDirs` config) -- see `docs/prds/eda-playbook-engine.md`. A label
+already owned by the closed kind set, or a binding declared twice across
+sources, is a reported load failure, not a silent override.
 
 ### Execution (`Run`)
 
