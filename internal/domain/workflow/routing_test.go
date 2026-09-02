@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -119,5 +120,128 @@ func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+// ─── Label vocabulary layer (arbitrary labels → workflow) ───────────────
+
+// TestRouteWithArbitraryLabelDispatch is the core of this slice: a forge
+// label outside the closed bug/feature/bootstrap kind set (e.g. "security")
+// routes to a registered workflow via the loaded LabelWorkflows map --
+// the label vocabulary becomes playbook data, not a Go literal, without
+// touching the closed Kind/NATS-subject set.
+func TestRouteWithArbitraryLabelDispatch(t *testing.T) {
+	SetLabelWorkflows(LabelWorkflows{"security": "security-review"})
+	t.Cleanup(func() { SetLabelWorkflows(nil) })
+
+	task := &store.Task{Labels: "security"}
+	wf := Route(task, Registry{
+		"implement":       Implement(),
+		"security-review": Workflow{Name: "security-review", Stages: []Stage{{Name: "review", Run: func(_ context.Context, _ *TaskContext) error { return nil }}}},
+	})
+	if wf.Name != "security-review" {
+		t.Fatalf("Route() = %q, want %q (label dispatch not applied)", wf.Name, "security-review")
+	}
+}
+
+// TestLoadLabelWorkflowsYAMLReadsBindings ensures a label→workflow file
+// loads into a map Route() honours.
+func TestLoadLabelWorkflowsYAMLReadsBindings(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "labels.yaml")
+	writeFile(t, path, "security: security-review\ndocs: docs-notify\n")
+
+	lw, err := LoadLabelWorkflowsYAML(path)
+	if err != nil {
+		t.Fatalf("LoadLabelWorkflowsYAML() error = %v", err)
+	}
+	if lw["security"] != "security-review" || lw["docs"] != "docs-notify" {
+		t.Fatalf("LoadLabelWorkflowsYAML() = %#v, want both bindings", lw)
+	}
+}
+
+// TestLoadLabelWorkflowsYAMLCollisionIsReported is the collision rule from
+// the design doc: two bindings for the same label, or a label colliding
+// with the closed kind set, is the caller's fault -- reported as an error,
+// nothing silently wins by version or by declaration order.
+func TestLoadLabelWorkflowsYAMLCollisionIsReported(t *testing.T) {
+	dir := t.TempDir()
+
+	// Same label twice inside one file: neither declared with higher
+	// schema/version wins; the load fails.
+	path := filepath.Join(dir, "dup.yaml")
+	writeFile(t, path, "security: workflow-a\nsecurity: workflow-b\n")
+	if _, err := LoadLabelWorkflowsYAML(path); err == nil {
+		t.Fatal("LoadLabelWorkflowsYAML() error = nil, want collision error for duplicate label")
+	}
+
+	// A label that the built-in kind set owns (bug) is itself a collision:
+	// KindForLabels already routes it; shadowing it here would be two
+	// authorities claiming one label.
+	path2 := filepath.Join(dir, "shadow.yaml")
+	writeFile(t, path2, "bug: custom-bug\n")
+	if _, err := LoadLabelWorkflowsYAML(path2); err == nil {
+		t.Fatal("LoadLabelWorkflowsYAML() error = nil, want error for label owned by kind set")
+	}
+}
+
+// TestLoadLabelWorkflowsYAMLRejectsEmpties pins the schema gate: an empty
+// label or empty workflow name is not an accepted message.
+func TestLoadLabelWorkflowsYAMLRejectsEmpties(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "empty.yaml")
+	writeFile(t, path, "\"\": security-review\n")
+	if _, err := LoadLabelWorkflowsYAML(path); err == nil {
+		t.Fatal("LoadLabelWorkflowsYAML() error = nil, want error for empty label")
+	}
+	path2 := filepath.Join(dir, "empty-wf.yaml")
+	writeFile(t, path2, "security: \"\"\n")
+	if _, err := LoadLabelWorkflowsYAML(path2); err == nil {
+		t.Fatal("LoadLabelWorkflowsYAML() error = nil, want error for empty workflow name")
+	}
+}
+
+// TestLoadLabelWorkflowsYAMLMissingFileReturnsNilNoError treats an unset
+// playbook dir as "no label bindings", matching the kind layer's convention.
+func TestLoadLabelWorkflowsYAMLMissingFileReturnsNilNoError(t *testing.T) {
+	lw, err := LoadLabelWorkflowsYAML("")
+	if err != nil {
+		t.Fatalf("LoadLabelWorkflowsYAML(\"\") error = %v, want nil", err)
+	}
+	if lw != nil {
+		t.Fatalf("LoadLabelWorkflowsYAML(\"\") = %#v, want nil", lw)
+	}
+}
+
+// TestSetLabelWorkflowsNilRestoresDefaults pins that clearing the label map
+// restores kind-only routing: an arbitrary label no longer routes.
+func TestSetLabelWorkflowsNilRestoresDefaults(t *testing.T) {
+	SetLabelWorkflows(LabelWorkflows{"security": "security-review"})
+	SetLabelWorkflows(nil)
+
+	task := &store.Task{Labels: "security"}
+	wf := Route(task, Registry{"implement": Implement(), "security-review": Workflow{Name: "security-review", Stages: []Stage{{Name: "review", Run: func(_ context.Context, _ *TaskContext) error { return nil }}}}})
+	if wf.Name != "implement" {
+		t.Fatalf("Route() = %q, want %q (label map not restored to empty)", wf.Name, "implement")
+	}
+}
+
+// TestRoutePrefersArbitraryLabelOverKind pins precedence: for a task
+// carrying both a kind label and an arbitrary label, the arbitrary-label
+// binding (explicitly loaded) wins over the kind default.
+func TestRoutePrefersArbitraryLabelOverKind(t *testing.T) {
+	SetLabelWorkflows(LabelWorkflows{"security": "security-review"})
+	t.Cleanup(func() { SetLabelWorkflows(nil) })
+	SetKindWorkflows(nil) // ensure defaults
+	t.Cleanup(func() { SetKindWorkflows(nil) })
+
+	task := &store.Task{Labels: "bug,security"}
+	wf := Route(task, Registry{
+		"tdd":             TDD(),
+		"implement":       Implement(),
+		"security-review": Workflow{Name: "security-review", Stages: []Stage{{Name: "review", Run: func(_ context.Context, _ *TaskContext) error { return nil }}}},
+	})
+	if wf.Name != "security-review" {
+		t.Fatalf("Route() = %q, want %q (arbitrary label should beat kind default)", wf.Name, "security-review")
 	}
 }
