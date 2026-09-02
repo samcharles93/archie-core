@@ -3,12 +3,9 @@ import { useState, useEffect } from "preact/hooks";
 import "./settings.css";
 import { api } from "../base/api.jsx";
 import { statusKind, statusLabel } from "../base/task-meta.jsx";
+import { Pill } from "../base/pill.jsx";
 import { Row } from "./config-row.jsx";
 import { UpdateStatusCard } from "./update-status.jsx";
-
-function Pill({ text, kind = "idle" }) {
-  return <span className={`pill pill-${kind}`}>{text}</span>;
-}
 
 function Empty({ title, detail }) {
   return (

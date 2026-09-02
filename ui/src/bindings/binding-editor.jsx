@@ -1,14 +1,11 @@
 import { h } from "preact";
+import { Pill } from "../base/pill.jsx";
 
 /**
  * Pure rendering logic for the bindings editor, split out from
  * bindings.jsx so it is unit-testable without the page's fetch wiring,
  * mirroring mappings/mapping-editor.jsx.
  */
-
-function Pill({ text, kind = "idle" }) {
-  return <span className={`pill pill-${kind}`}>{text}</span>;
-}
 
 const STATUS_LABELS = {
   draft: "draft",

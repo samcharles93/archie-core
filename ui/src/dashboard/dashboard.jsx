@@ -6,6 +6,7 @@ import { ago, compact, statusKind } from "../base/dom.jsx";
 import { statTile } from "../base/statTile.jsx";
 import { gauge, segmentBar } from "../base/gauge.jsx";
 import { icon } from "../base/icons.jsx";
+import { Pill } from "../base/pill.jsx";
 import { dismissSetupComplete, setupPanelState } from "./setup-preference.jsx";
 import { dashboardTaskTargets } from "./task-targets.jsx";
 
@@ -43,10 +44,6 @@ function Empty({ title, detail }) {
       {detail && <div>{detail}</div>}
     </div>
   );
-}
-
-function Pill({ text, kind = "idle" }) {
-  return <span className={`pill pill-${kind}`}>{text}</span>;
 }
 
 function taskIDForEvent(event, taskIDsBySource) {

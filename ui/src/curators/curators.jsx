@@ -3,10 +3,7 @@ import { useState, useEffect } from "preact/hooks";
 import "./curators.css";
 import { api } from "../base/api.jsx";
 import { ago } from "../base/dom.jsx";
-
-function Pill({ text, kind = "idle" }) {
-  return <span className={`pill pill-${kind}`}>{text}</span>;
-}
+import { Pill } from "../base/pill.jsx";
 
 function Empty({ title, detail }) {
   return (
