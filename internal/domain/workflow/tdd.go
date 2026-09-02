@@ -149,8 +149,8 @@ func tddFixStage() Stage {
 // as evidence the bug was reproduced before the fix.
 func tddOpenPRStage() Stage {
 	return Stage{Name: "open-pr", Run: func(ctx context.Context, tc *TaskContext) error {
-		body := fmt.Sprintf("%s\n\n---\n*workflow: tdd (failing repro committed first) · %d iterations · %d tokens*",
-			tc.BuildSummary, tc.Task.Iterations, tc.Task.TokensUsed)
+		body := fmt.Sprintf("%s\n\n---\n*workflow: tdd (failing repro committed first) · %d iterations · %s*",
+			tc.BuildSummary, tc.Task.Iterations, formatTokenUsage(tc.Task.TokensUsed, tc.RunUsage))
 		return OpenPR(ctx, tc, body)
 	}}
 }

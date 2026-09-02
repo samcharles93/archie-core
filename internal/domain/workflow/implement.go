@@ -62,7 +62,8 @@ func StageBaselineGate() Stage {
 					"5. Repeat until the gate `%s` passes for all packages\n\n"+
 					"Gate output:\n%s\n\n"+
 					"When the gate passes, call finish with status \"passed\".",
-				strings.Join(argv, " "), tc.Repo.FullName(), strings.Join(argv, " "), clip(string(out), baselineMissionBytes),
+				strings.Join(argv, " "), tc.Repo.FullName(), strings.Join(argv, " "),
+				clip(extractFailingGateOutput(string(out)), baselineMissionBytes),
 			)
 
 			modelRef := tc.Cfg.Models["builder"]
@@ -89,6 +90,7 @@ func StageBaselineGate() Stage {
 			}
 			tc.Task.TokensUsed += res.TokensUsed
 			tc.Task.Iterations += res.Iterations
+			accumulateUsage(&tc.RunUsage, res.Usage)
 			if emitErr := tc.EmitDurable(ctx, events.KindAgentFinish, "baseline-fix", res.Summary, agentFinishData(res, modelRef)); emitErr != nil {
 				return fmt.Errorf("persist baseline-fix agent finish: %w", emitErr)
 			}
@@ -188,10 +190,17 @@ func Implement() Workflow {
 			StageYaegiGate(),
 			StageDiffCap(),
 			StageReview(),
-			StageOpenPR(func(tc *TaskContext) string {
-				return fmt.Sprintf("%s\n\n---\n*workflow: implement · %d iterations · %d tokens*",
-					tc.BuildSummary, tc.Task.Iterations, tc.Task.TokensUsed)
-			}),
+			StageOpenPR(implementPRBody),
 		},
 	}
+}
+
+// implementPRBody is the PR summary footer for the implement workflow. It
+// reports the fresh-vs-cached breakdown of tc.Task.TokensUsed (see
+// formatTokenUsage) so the operator isn't misled by the raw prompt-token sum
+// -- most of it is typically prefix-cache hits billed at a steep discount,
+// not full price.
+func implementPRBody(tc *TaskContext) string {
+	return fmt.Sprintf("%s\n\n---\n*workflow: implement · %d iterations · %s*",
+		tc.BuildSummary, tc.Task.Iterations, formatTokenUsage(tc.Task.TokensUsed, tc.RunUsage))
 }

@@ -57,13 +57,18 @@ export function describeTimelineEvent(ev = {}) {
   if (ev.kind === "agent_finish") {
     const iterations = count(data.iterations);
     const total = count(data.tokens);
-    const prompt = count(data.prompt_tokens);
+    const cachedRaw = Number(data.cached_tokens) || 0;
+    // data.prompt_tokens INCLUDES cache hits -- showing it next to "cached"
+    // reads as two separate charges when it's really one figure containing
+    // the other. Show the fresh (full-price) remainder instead, so a
+    // heavily-cached run doesn't look ~10x more expensive than it was billed.
+    const fresh = count((Number(data.prompt_tokens) || 0) - cachedRaw);
     const completion = count(data.completion_tokens);
     const cached = count(data.cached_tokens);
     const usage = [
       iterations && `${iterations} iterations`,
       total && `${total} tokens`,
-      prompt && `${prompt} prompt`,
+      fresh && `${fresh} fresh prompt`,
       completion && `${completion} completion`,
       cached && `${cached} cached`,
       data.model,

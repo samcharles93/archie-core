@@ -28,7 +28,10 @@ test("retry events explain which failure caused the retry", () => {
   );
 });
 
-test("agent events expose stage efficiency and cache usage", () => {
+test("agent events expose stage efficiency and cache usage as fresh vs cached", () => {
+  // prompt_tokens (280,000) INCLUDES the 240,000 cache hits -- showing it
+  // next to "cached" reads as two separate charges when only 40,000 of it
+  // was billed at full price. The fresh figure is the disclosed remainder.
   assert.deepEqual(
     describeTimelineEvent({
       kind: "agent_finish",
@@ -46,7 +49,7 @@ test("agent events expose stage efficiency and cache usage", () => {
     {
       title: "Agent passed: analyse",
       detail:
-        "7 iterations · 282,066 tokens · 280,000 prompt · 2,066 completion · 240,000 cached · openai/gpt-5.6-luna",
+        "7 iterations · 282,066 tokens · 40,000 fresh prompt · 2,066 completion · 240,000 cached · openai/gpt-5.6-luna",
     },
   );
 });

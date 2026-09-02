@@ -46,6 +46,127 @@ func TestStageBaselineGateAccountsForRepairAgentUsage(t *testing.T) {
 	if task.TokensUsed != 120 || task.Iterations != 3 {
 		t.Fatalf("baseline usage = %d tokens/%d iterations, want 120/3", task.TokensUsed, task.Iterations)
 	}
+	if tc.RunUsage.PromptTokens != 100 || tc.RunUsage.CompletionTokens != 20 || tc.RunUsage.CachedTokens != 80 {
+		t.Fatalf("RunUsage = %+v, want prompt=100 completion=20 cached=80", tc.RunUsage)
+	}
+}
+
+// TestImplementPRBodyShowsFreshVsCachedTokens pins problem 1: a PR body
+// built from a heavily-cached run must surface how much of the reported
+// prompt-token sum was a cache hit, not read as the full-price total.
+func TestImplementPRBodyShowsFreshVsCachedTokens(t *testing.T) {
+	tc := &TaskContext{
+		Task:         &store.Task{Iterations: 14, TokensUsed: 405004},
+		BuildSummary: "did the thing",
+		RunUsage: agentexec.Usage{
+			PromptTokens: 400021, CompletionTokens: 4983, CachedTokens: 360018,
+		},
+	}
+	body := implementPRBody(tc)
+	if !strings.Contains(body, "405004 tokens") {
+		t.Fatalf("PR body missing the raw total: %s", body)
+	}
+	if !strings.Contains(body, "cached") {
+		t.Fatalf("PR body does not disclose cache hits: %s", body)
+	}
+	// fresh = prompt - cached + completion = 400021 - 360018 + 4983 = 44986
+	if !strings.Contains(body, "44986 fresh") {
+		t.Fatalf("PR body missing the fresh/net figure: %s", body)
+	}
+}
+
+// TestImplementPRBodyFallsBackWithoutUsageBreakdown guards the degrade
+// path: a run with no populated Usage (e.g. no agent stage ran) must still
+// produce a sane PR body rather than a "0 fresh + 0 cached" line implying
+// billed usage was known and zero.
+func TestImplementPRBodyFallsBackWithoutUsageBreakdown(t *testing.T) {
+	tc := &TaskContext{
+		Task:         &store.Task{Iterations: 1, TokensUsed: 500},
+		BuildSummary: "did the thing",
+	}
+	body := implementPRBody(tc)
+	if !strings.Contains(body, "500 tokens") {
+		t.Fatalf("PR body missing the total: %s", body)
+	}
+	if strings.Contains(body, "fresh") || strings.Contains(body, "cached") {
+		t.Fatalf("PR body fabricated a breakdown with no usage data: %s", body)
+	}
+}
+
+// TestExtractFailingGateOutputDropsPassingPackages pins problem 2: the
+// baseline-fix mission must not re-inject "ok" lines for packages that
+// already pass -- those dominate a large repo's `go test ./...` output and
+// squeeze the actual failure detail out of clip's size bound on later
+// retries.
+func TestExtractFailingGateOutputDropsPassingPackages(t *testing.T) {
+	out := "ok  \tgithub.com/example/pkg/a\t0.004s\n" +
+		"ok  \tgithub.com/example/pkg/b\t0.012s\n" +
+		"--- FAIL: TestSomething (0.00s)\n" +
+		"    something_test.go:12: expected 1, got 2\n" +
+		"FAIL\tgithub.com/example/pkg/c\t0.010s\n" +
+		"ok  \tgithub.com/example/pkg/d\t0.002s\n"
+
+	got := extractFailingGateOutput(out)
+
+	if strings.Contains(got, "pkg/a") || strings.Contains(got, "pkg/b") || strings.Contains(got, "pkg/d") {
+		t.Fatalf("passing-package lines survived extraction: %s", got)
+	}
+	if !strings.Contains(got, "--- FAIL: TestSomething") || !strings.Contains(got, "pkg/c") {
+		t.Fatalf("failure detail was dropped: %s", got)
+	}
+	if len(got) >= len(out) {
+		t.Fatalf("extraction did not reduce output size: got %d bytes, want < %d", len(got), len(out))
+	}
+}
+
+// TestExtractFailingGateOutputDegradesGracefullyForUnrecognizedFormat
+// guards against silently dropping real failure information for a gate
+// command whose output isn't shaped like `go test` output (a non-Go gate,
+// or an unexpected format) -- the full output must be preserved.
+func TestExtractFailingGateOutputDegradesGracefullyForUnrecognizedFormat(t *testing.T) {
+	out := "lint: 3 problems found\nfile.go:10: unused variable\nfile.go:22: missing return\n"
+	if got := extractFailingGateOutput(out); got != out {
+		t.Fatalf("extraction altered unrecognized output:\ngot:  %q\nwant: %q", got, out)
+	}
+}
+
+// TestStageBaselineGateMissionOmitsPassingPackageOutput is the integration
+// pin: a real StageBaselineGate run with go-test-shaped failure output must
+// build a mission that omits the passing-package noise.
+func TestStageBaselineGateMissionOmitsPassingPackageOutput(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "gate.sh")
+	body := "#!/bin/sh\n" +
+		"echo 'ok  \tgithub.com/example/pkg/quietpassingpkg\t0.004s'\n" +
+		"echo '--- FAIL: TestBroken (0.00s)'\n" +
+		"echo '    broken_test.go:5: boom'\n" +
+		"echo 'FAIL\tgithub.com/example/pkg/broken\t0.010s'\n" +
+		"exit 1\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var gotMission string
+	runner := agentRunnerFunc(func(_ context.Context, _ string, req agentexec.Request, _ agentexec.ToolCallReporter) (agentexec.Result, error) {
+		gotMission = req.Mission
+		return agentexec.Result{Version: agentexec.ProtocolVersion, Status: agentexec.StatusPassed}, nil
+	})
+	tc := &TaskContext{
+		Task:  &store.Task{ID: 1, Owner: "o", Repo: "r"},
+		Repo:  config.Repo{Owner: "o", Name: "r", Gate: [][]string{{"sh", script}}},
+		Cfg:   config.Config{Models: map[string]string{"builder": "provider/model"}},
+		Agent: runner, Trees: &worktree.Manager{BotUser: "archie", BotEmail: "archie@example.com"},
+		Dir: dir, Log: slog.New(slog.DiscardHandler),
+	}
+	if err := StageBaselineGate().Run(t.Context(), tc); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(gotMission, "quietpassingpkg") {
+		t.Fatalf("mission still contains a passing package's output: %s", gotMission)
+	}
+	if !strings.Contains(gotMission, "TestBroken") || !strings.Contains(gotMission, "pkg/broken") {
+		t.Fatalf("mission lost the actual failure detail: %s", gotMission)
+	}
 }
 
 // TestStageBaselineGateSetsBaselineFixedWhenItCommits is the companion
