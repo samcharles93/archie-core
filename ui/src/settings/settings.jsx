@@ -1,372 +1,228 @@
+import { h } from "preact";
+import { useState, useEffect } from "preact/hooks";
 import "./settings.css";
 import { api } from "../base/api.jsx";
-import { el, empty, mount, pill } from "../base/dom.jsx";
 import { statusKind, statusLabel } from "../base/task-meta.jsx";
-import { row } from "./config-row.jsx";
-import { updateStatusCard } from "./update-status.jsx";
+import { Row } from "./config-row.jsx";
+import { UpdateStatusCard } from "./update-status.jsx";
 
-/**
- * A view of the config archied is actually running with, grouped by
- * domain and explained in plain language. Backed by GET /api/config,
- * which is built from an explicit, hand-picked allowlist on the Go side
- * (internal/webui/api_config.go handleConfig) -- secrets never reach
- * this page, so nothing here needs to be hidden or redacted client-side.
- *
- * Scalar rows that are not denylisted are editable inline: Edit swaps
- * the value for an input, Save PATCHes the dotted key to /api/config,
- * which validates the materialised config before persisting to the
- * runtime overlay and republishing. Structured values (repositories,
- * models, providers -- arrays and maps) render read-only; denylisted
- * keys (db_path, work_dir) render disabled with the server's reason.
- */
-export function settingsPage() {
-  // .cfg-page caps and centres the whole view. Constraining the container
-  // rather than the individual lists keeps the cards, key/value lists and
-  // tables on one shared measure; see settings.css.
-  const root = el("div.cfg-page");
-  const body = el("div");
-  const versionSlot = el("div");
-  const lifecycleSlot = el("div");
-
-  render();
-  load();
-  loadVersionStatus();
-  loadLifecycle();
-
-  function render() {
-    mount(
-      root,
-      el(
-        "div.page-head",
-        el(
-          "div",
-          el("h1.page-title", "Configuration"),
-          el("p.page-sub", "What archied is actually running with right now."),
-        ),
-        el("div.page-actions", el("button.btn", { onclick: () => { load(); loadVersionStatus(); loadLifecycle(); } }, "Refresh")),
-      ),
-      versionSlot,
-      lifecycleSlot,
-      body,
-    );
-  }
-
-  async function load() {
-    try {
-      const cfg = await api.config();
-      renderBody(cfg, load);
-    } catch (err) {
-      mount(body, el("div.card", empty("Cannot reach archied", String(err.message || err))));
-    }
-  }
-
-  async function loadVersionStatus() {
-    try {
-      const data = await api.version();
-      mount(versionSlot, updateStatusCard(data?.components || []));
-    } catch (err) {
-      // 501 means updates just aren't configured for this deployment --
-      // that's the ordinary state for most installs, not a failure to
-      // report as loudly as an unreachable daemon.
-      if (err?.status === 501) {
-        mount(versionSlot);
-        return;
-      }
-      mount(versionSlot, el("div.card", empty("Update status unavailable", String(err.message || err))));
-    }
-  }
-
-  async function loadLifecycle() {
-    try {
-      const data = await api.taskMeta();
-      mount(lifecycleSlot, lifecycleCard(data));
-    } catch (err) {
-      // The lifecycle vocabulary is optional metadata; if archied does not
-      // answer, show a quiet placeholder rather than a loud failure.
-      mount(
-        lifecycleSlot,
-        section(
-          "Work lifecycle",
-          "The task statuses and operator actions archied ships.",
-          empty("Lifecycle unavailable", String(err.message || err)),
-        ),
-      );
-    }
-  }
-
-  function renderBody(cfg, reload) {
-    if (!cfg || Object.keys(cfg).length === 0) {
-      mount(
-        body,
-        el(
-          "div.card",
-          empty(
-            "No configuration loaded",
-            "archied is running without a config file wired into the dashboard, so there is nothing to show.",
-          ),
-        ),
-      );
-      return;
-    }
-
-    const ctx = { locked: cfg.locked || {}, overridden: cfg.overridden || [], onSaved: reload };
-    const banners = [
-      cfg.reload?.overlay_unavailable &&
-        el("div.card.cfg-notice", el("p", `The runtime config overlay is not in effect: ${cfg.reload.overlay_unavailable}`)),
-      cfg.reload?.last_error &&
-        el("div.card.cfg-notice", el("p", `The last config reload failed; the running config is unchanged: ${cfg.reload.last_error}`)),
-    ];
-    mount(
-      body,
-      ...banners,
-      ...schemaCards(cfg.schema || []),
-      repositoriesCard(cfg.repositories, reload),
-      modelsAndProvidersCard(cfg.models, cfg.providers),
-      provenanceCard(cfg.provenance),
-    );
-
-    // schemaCards renders one card per backend-defined section, generically,
-    // from cfg.schema (archie-core-b6ew) -- a scalar field's label, type,
-    // description and editability all come from the backend, not from a
-    // hardcoded row(...) call here. A section whose fields are all
-    // type=structured (repositories, models & providers) renders no card
-    // here; those keep the dedicated renderers above, called directly off
-    // the flat cfg fields (archie-core-b6ew.4 gives them their own editors).
-    function schemaCards(sections) {
-      return sections
-        .map((s) => {
-          const rows = s.fields
-            .filter((f) => f.type !== "structured")
-            .map((f) =>
-              row(f.label, f.value, {
-                key: f.key,
-                type: f.type,
-                options: f.options,
-                raw: f.value,
-                hint: f.description,
-                editable: f.editable,
-                ...ctx,
-              }),
-            );
-          if (!rows.length) return null;
-          return section(s.label, s.description, el("div.kv-list", ...rows));
-        })
-        .filter(Boolean);
-    }
-  }
-
-  return root;
+function Pill({ text, kind = "idle" }) {
+  return <span className={`pill pill-${kind}`}>{text}</span>;
 }
 
-function provenanceCard(origins) {
-  if (!origins?.length) return section("Configuration sources", "The files that supplied the running configuration.", empty("Source provenance is unavailable."));
-  return section(
-    "Configuration sources",
-    "Applied from top to bottom; later entries take precedence over earlier ones.",
-    el("div.kv-list", ...origins.map((origin) => row(`${origin.layer} ${origin.role}${origin.feature ? ` (${origin.feature})` : ""}`, origin.path))),
+function Empty({ title, detail }) {
+  return (
+    <div className="empty">
+      <div className="empty-title">{title}</div>
+      {detail && <div>{detail}</div>}
+    </div>
   );
 }
 
-function section(title, sub, ...children) {
-  return el(
-    "div.card.cfg-section",
-    el("div.card-head", el("div", el("h2.card-title", title), el("p.card-sub", sub))),
-    ...children,
+function Section({ title, sub, children }) {
+  return (
+    <div className="card cfg-section">
+      <div className="card-head">
+        <div>
+          <h2 className="card-title">{title}</h2>
+          <p className="card-sub">{sub}</p>
+        </div>
+      </div>
+      {children}
+    </div>
   );
 }
 
-// Work lifecycle: the vocabulary archied ships as a server catalog. Both the
-// statuses (label + pill severity) and the operator actions (label + button
-// variant) are rendered from the /api/task-meta payload, so a status or action
-// added on the backend appears here on the next load with no frontend change.
-// statusLabel/statusKind are used as fallbacks for an entry that arrives
-// without its own label/kind so the card degrades gracefully.
-function lifecycleCard(data) {
-  const statuses = data?.statuses || [];
-  const actions = data?.actions || [];
-
-  const statusList = statuses.length
-    ? el("div.kv-list", ...statuses.map((s) => statusLifecycleRow(s)))
-    : empty("No statuses reported", "The server did not return any lifecycle statuses.");
-
-  const actionList = actions.length
-    ? el("div.kv-list", ...actions.map((a) => actionLifecycleRow(a)))
-    : empty("No actions reported", "The server did not return any operator actions.");
-
-  return section(
-    "Work lifecycle",
-    "The task statuses and operator actions archied ships. Add one on the backend and it appears here without a frontend change.",
-    el("h3.cfg-subhead", "Statuses"),
-    statusList,
-    el("h3.cfg-subhead", "Actions"),
-    actionList,
+function ProvenanceCard({ origins }) {
+  if (!origins?.length) return (
+    <Section title="Configuration sources" sub="The files that supplied the running configuration.">
+      <Empty title="Source provenance is unavailable." />
+    </Section>
+  );
+  return (
+    <Section title="Configuration sources" sub="Applied from top to bottom; later entries take precedence over earlier ones.">
+      <div className="kv-list">
+        {origins.map((origin, i) => (
+          <Row key={i} label={`${origin.layer} ${origin.role}${origin.feature ? ` (${origin.feature})` : ""}`} value={origin.path} />
+        ))}
+      </div>
+    </Section>
   );
 }
 
-function statusLifecycleRow(s) {
-  const label = s.label ?? statusLabel(s.id);
-  const kind = s.kind ?? statusKind(s.id);
-  return el("div.kv", el("span.kv-label", s.id), el("span.kv-value", pill(label, kind)));
-}
-
-function actionLifecycleRow(a) {
-  const label = a.label ?? a.id;
-  const cls = roleButtonClass(a.kind);
-  const spec = cls ? `button.btn.btn-small.${cls}` : "button.btn.btn-small";
-  return el("div.kv", el("span.kv-label", a.id), el("span.kv-value", el(spec, { type: "button", disabled: true }, label)));
-}
-
-// The button variant token for an action kind, matching the tasks board's
-// mapping: quiet/danger get their own tokens, everything else (primary, link)
-// falls back to the default .btn styling. A new kind never needs a new case.
 function roleButtonClass(kind) {
   return kind === "quiet" ? "btn-quiet" : kind === "danger" ? "btn-danger" : "";
 }
 
-function repositoriesCard(repos, onSaved) {
-  if (!repos?.length) {
-    return section(
-      "Repositories",
-      "The repositories Archie polls for work.",
-      empty("No repositories configured", "Add a [[repos]] entry in config.toml so Archie has somewhere to work."),
+function LifecycleCard({ data, error }) {
+  if (error) {
+    return (
+      <Section title="Work lifecycle" sub="The task statuses and operator actions archied ships.">
+        <Empty title="Lifecycle unavailable" detail={error} />
+      </Section>
     );
   }
-  return section(
-    "Repositories",
-    "Each repository Archie polls, and the quality gate a change must pass before it opens a pull request. " +
-      "Concurrent tasks, retries, and self-review are per-repository overrides -- PATCH /api/config/repos/{owner}/{name}, " +
-      "not the file config.toml directly.",
-    el(
-      "div.table-scroll",
-      el(
-        "table.table",
-        el(
-          "thead",
-          el(
-            "tr",
-            ...["Repository", "Base branch", "Ecosystem", "Quality gate", "Protected paths", "Concurrent", "Max retries", "Self-review"].map((h) =>
-              el("th", h),
-            ),
-          ),
-        ),
-        el(
-          "tbody",
-          ...repos.map((r) =>
-            el(
-              "tr",
-              el("td.strong", `${r.owner}/${r.name}`),
-              el("td.mono", r.base),
-              el("td", r.ecosystem || "go"),
-              el("td.mono", gateSummary(r.gate)),
-              el("td.mono", r.protect?.length ? r.protect.join(", ") : "—"),
-              repoBoolCell(r, "allow_concurrent", onSaved),
-              repoIntCell(r, "max_retries", onSaved),
-              repoBoolCell(r, "review_enabled", onSaved),
-            ),
-          ),
-        ),
-      ),
-    ),
+  const statuses = data?.statuses || [];
+  const actions = data?.actions || [];
+
+  return (
+    <Section title="Work lifecycle" sub="The task statuses and operator actions archied ships. Add one on the backend and it appears here without a frontend change.">
+      <h3 className="cfg-subhead">Statuses</h3>
+      {statuses.length ? (
+        <div className="kv-list">
+          {statuses.map(s => {
+            const label = s.label ?? statusLabel(s.id);
+            const kind = s.kind ?? statusKind(s.id);
+            return (
+              <div className="kv" key={s.id}>
+                <span className="kv-label">{s.id}</span>
+                <span className="kv-value"><Pill text={label} kind={kind} /></span>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <Empty title="No statuses reported" detail="The server did not return any lifecycle statuses." />
+      )}
+      
+      <h3 className="cfg-subhead">Actions</h3>
+      {actions.length ? (
+        <div className="kv-list">
+          {actions.map(a => {
+            const label = a.label ?? a.id;
+            const cls = roleButtonClass(a.kind);
+            return (
+              <div className="kv" key={a.id}>
+                <span className="kv-label">{a.id}</span>
+                <span className="kv-value">
+                  <button className={`btn btn-small ${cls}`} type="button" disabled>{label}</button>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <Empty title="No actions reported" detail="The server did not return any operator actions." />
+      )}
+    </Section>
   );
 }
 
-// repoBoolCell renders an immediately-autosaving checkbox, PATCHing
-// api.configRepoUpdate on change and reverting the toggle if the save
-// fails (archie-core-b6ew.6). A table cell doesn't fit config-row.jsx's
-// label/value/actions Edit-then-Save flow, and a checkbox is the more
-// natural control for a boolean in a table anyway.
-function repoBoolCell(r, field, onSaved) {
-  const cb = el("input.repo-field-checkbox", { type: "checkbox", checked: !!r[field] });
-  const note = el("span.kv-note.is-error");
-  cb.addEventListener("change", async () => {
-    const next = cb.checked;
-    cb.disabled = true;
+function RepoBoolCell({ r, field, onSaved }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [checked, setChecked] = useState(!!r[field]);
+
+  const handleChange = async (e) => {
+    const next = e.target.checked;
+    setChecked(next);
+    setLoading(true);
+    setError(null);
     try {
       await api.configRepoUpdate(r.owner, r.name, field, next);
       onSaved?.();
     } catch (err) {
-      cb.checked = !next;
-      note.textContent = String(err.message || err);
-      cb.disabled = false;
+      setChecked(!next);
+      setError(String(err.message || err));
+    } finally {
+      setLoading(false);
     }
-  });
-  return el("td", cb, note);
+  };
+
+  return (
+    <td>
+      <input className="repo-field-checkbox" type="checkbox" checked={checked} onChange={handleChange} disabled={loading} />
+      {error && <span className="kv-note is-error">{error}</span>}
+    </td>
+  );
 }
 
-// repoIntCell renders a plain text input that saves on blur/Enter. Errors
-// (a non-numeric entry, a rejected save) stay on the cell rather than
-// reloading the page out from under the operator mid-edit.
-function repoIntCell(r, field, onSaved) {
-  const input = el("input.kv-input", { type: "text", value: String(r[field] ?? 0) });
-  const note = el("span.kv-note.is-error");
+function RepoIntCell({ r, field, onSaved }) {
+  const [val, setVal] = useState(String(r[field] ?? 0));
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
+
   const commit = async () => {
-    const n = parseInt(input.value, 10);
+    const n = parseInt(val, 10);
     if (Number.isNaN(n)) {
-      note.textContent = "Enter a whole number";
+      setError("Enter a whole number");
       return;
     }
-    input.disabled = true;
+    setLoading(true);
+    setError(null);
     try {
       await api.configRepoUpdate(r.owner, r.name, field, n);
       onSaved?.();
     } catch (err) {
-      note.textContent = String(err.message || err);
-      input.disabled = false;
+      setError(String(err.message || err));
+    } finally {
+      setLoading(false);
     }
   };
-  input.addEventListener("keydown", (e) => {
+
+  const handleKeyDown = (e) => {
     if (e.key === "Enter") {
-      e.preventDefault?.();
-      input.blur();
+      e.preventDefault();
+      e.target.blur();
     }
-  });
-  input.addEventListener("blur", commit);
-  return el("td", input, note);
+  };
+
+  return (
+    <td>
+      <input 
+        className="kv-input" 
+        type="text" 
+        value={val} 
+        onChange={e => setVal(e.target.value)} 
+        onBlur={commit} 
+        onKeyDown={handleKeyDown} 
+        disabled={loading} 
+      />
+      {error && <span className="kv-note is-error">{error}</span>}
+    </td>
+  );
 }
 
-function gateSummary(gate) {
-  if (!gate?.length) return "—";
-  return gate.map((cmd) => cmd.join(" ")).join("  →  ");
-}
+function RepositoriesCard({ repos, onSaved }) {
+  if (!repos?.length) {
+    return (
+      <Section title="Repositories" sub="The repositories Archie polls for work.">
+        <Empty title="No repositories configured" detail="Add a [[repos]] entry in config.toml so Archie has somewhere to work." />
+      </Section>
+    );
+  }
 
-function modelsAndProvidersCard(models, providers) {
-  const modelEntries = Object.entries(models || {});
-  const providerEntries = Object.entries(providers || {});
+  const gateSummary = (gate) => {
+    if (!gate?.length) return "—";
+    return gate.map((cmd) => cmd.join(" ")).join("  →  ");
+  };
 
-  const modelRows = modelEntries.length
-    ? el("div.kv-list", ...modelEntries.map(([role, ref]) => row(roleLabel(role), ref)))
-    : empty("No model roles configured", "Assign a model to at least one role (e.g. \"builder\") in [models].");
-
-  const providerRows = providerEntries.length
-    ? el(
-        "div.table-scroll",
-        el(
-          "table.table",
-          el("thead", el("tr", ...["Provider", "Class", "Base URL", "API key env var", "Status"].map((h) => el("th", h)))),
-          el(
-            "tbody",
-            ...providerEntries.map(([name, p]) =>
-              el(
-                "tr",
-                el("td.strong", name),
-                el("td", p.class),
-                el("td.mono", p.base_url || "default"),
-                el("td.mono", p.api_key_env || "—"),
-                el("td", p.configured ? pill("configured", "ok") : pill("missing credentials", "warn")),
-              ),
-            ),
-          ),
-        ),
-      )
-    : empty("No providers configured", "Add a [providers.<name>] entry so a model role above has something to run on.");
-
-  return section(
-    "Models & providers",
-    "Which model handles each stage of work, and which LLM providers are wired up. Only the environment variable NAME is shown, never its value.",
-    el("h3.cfg-subhead", "Model roles"),
-    modelRows,
-    el("h3.cfg-subhead", "Providers"),
-    providerRows,
+  return (
+    <Section title="Repositories" sub="Each repository Archie polls, and the quality gate a change must pass before it opens a pull request. Concurrent tasks, retries, and self-review are per-repository overrides -- PATCH /api/config/repos/{owner}/{name}, not the file config.toml directly.">
+      <div className="table-scroll">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Repository</th><th>Base branch</th><th>Ecosystem</th><th>Quality gate</th><th>Protected paths</th><th>Concurrent</th><th>Max retries</th><th>Self-review</th>
+            </tr>
+          </thead>
+          <tbody>
+            {repos.map((r, i) => (
+              <tr key={i}>
+                <td className="strong">{r.owner}/{r.name}</td>
+                <td className="mono">{r.base}</td>
+                <td>{r.ecosystem || "go"}</td>
+                <td className="mono">{gateSummary(r.gate)}</td>
+                <td className="mono">{r.protect?.length ? r.protect.join(", ") : "—"}</td>
+                <RepoBoolCell r={r} field="allow_concurrent" onSaved={onSaved} />
+                <RepoIntCell r={r} field="max_retries" onSaved={onSaved} />
+                <RepoBoolCell r={r} field="review_enabled" onSaved={onSaved} />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Section>
   );
 }
 
@@ -375,3 +231,187 @@ function roleLabel(role) {
   return role.charAt(0).toUpperCase() + role.slice(1).replace(/_/g, " ");
 }
 
+function ModelsAndProvidersCard({ models, providers }) {
+  const modelEntries = Object.entries(models || {});
+  const providerEntries = Object.entries(providers || {});
+
+  return (
+    <Section title="Models & providers" sub="Which model handles each stage of work, and which LLM providers are wired up. Only the environment variable NAME is shown, never its value.">
+      <h3 className="cfg-subhead">Model roles</h3>
+      {modelEntries.length ? (
+        <div className="kv-list">
+          {modelEntries.map(([role, ref]) => (
+            <Row key={role} label={roleLabel(role)} value={ref} />
+          ))}
+        </div>
+      ) : (
+        <Empty title="No model roles configured" detail='Assign a model to at least one role (e.g. "builder") in [models].' />
+      )}
+
+      <h3 className="cfg-subhead">Providers</h3>
+      {providerEntries.length ? (
+        <div className="table-scroll">
+          <table className="table">
+            <thead>
+              <tr><th>Provider</th><th>Class</th><th>Base URL</th><th>API key env var</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              {providerEntries.map(([name, p]) => (
+                <tr key={name}>
+                  <td className="strong">{name}</td>
+                  <td>{p.class}</td>
+                  <td className="mono">{p.base_url || "default"}</td>
+                  <td className="mono">{p.api_key_env || "—"}</td>
+                  <td>
+                    {p.configured ? <Pill text="configured" kind="ok" /> : <Pill text="missing credentials" kind="warn" />}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <Empty title="No providers configured" detail="Add a [providers.<name>] entry so a model role above has something to run on." />
+      )}
+    </Section>
+  );
+}
+
+function SettingsApp() {
+  const [cfg, setCfg] = useState(null);
+  const [cfgError, setCfgError] = useState(null);
+
+  const [versionData, setVersionData] = useState(null);
+  const [versionError, setVersionError] = useState(null);
+  const [versionMissing, setVersionMissing] = useState(false);
+
+  const [lifecycleData, setLifecycleData] = useState(null);
+  const [lifecycleError, setLifecycleError] = useState(null);
+
+  const loadAll = () => {
+    loadCfg();
+    loadVersion();
+    loadLifecycle();
+  };
+
+  const loadCfg = async () => {
+    try {
+      const data = await api.config();
+      setCfg(data);
+      setCfgError(null);
+    } catch (err) {
+      setCfgError(String(err.message || err));
+    }
+  };
+
+  const loadVersion = async () => {
+    try {
+      const data = await api.version();
+      setVersionData(data?.components || []);
+      setVersionError(null);
+      setVersionMissing(false);
+    } catch (err) {
+      if (err?.status === 501) {
+        setVersionMissing(true);
+      } else {
+        setVersionError(String(err.message || err));
+      }
+    }
+  };
+
+  const loadLifecycle = async () => {
+    try {
+      const data = await api.taskMeta();
+      setLifecycleData(data);
+      setLifecycleError(null);
+    } catch (err) {
+      setLifecycleError(String(err.message || err));
+    }
+  };
+
+  useEffect(() => {
+    loadAll();
+  }, []);
+
+  return (
+    <div className="cfg-page">
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Configuration</h1>
+          <p className="page-sub">What archied is actually running with right now.</p>
+        </div>
+        <div className="page-actions">
+          <button className="btn" onClick={loadAll}>Refresh</button>
+        </div>
+      </div>
+      
+      <div>
+        {!versionMissing && (
+          versionError ? (
+            <div className="card"><Empty title="Update status unavailable" detail={versionError} /></div>
+          ) : versionData ? (
+            <UpdateStatusCard components={versionData} />
+          ) : null
+        )}
+      </div>
+
+      <div>
+        <LifecycleCard data={lifecycleData} error={lifecycleError} />
+      </div>
+
+      <div>
+        {cfgError ? (
+          <div className="card"><Empty title="Cannot reach archied" detail={cfgError} /></div>
+        ) : !cfg || Object.keys(cfg).length === 0 ? (
+          <div className="card"><Empty title="No configuration loaded" detail="archied is running without a config file wired into the dashboard, so there is nothing to show." /></div>
+        ) : (
+          <>
+            {cfg.reload?.overlay_unavailable && (
+              <div className="card cfg-notice"><p>The runtime config overlay is not in effect: {cfg.reload.overlay_unavailable}</p></div>
+            )}
+            {cfg.reload?.last_error && (
+              <div className="card cfg-notice"><p>The last config reload failed; the running config is unchanged: {cfg.reload.last_error}</p></div>
+            )}
+
+            {(cfg.schema || []).map((s, i) => {
+              const rows = s.fields.filter(f => f.type !== "structured");
+              if (!rows.length) return null;
+              return (
+                <Section title={s.label} sub={s.description} key={i}>
+                  <div className="kv-list">
+                    {rows.map(f => (
+                      <Row 
+                        key={f.key} 
+                        label={f.label} 
+                        value={f.value} 
+                        opts={{
+                          key: f.key,
+                          type: f.type,
+                          options: f.options,
+                          raw: f.value,
+                          hint: f.description,
+                          editable: f.editable,
+                          locked: cfg.locked || {},
+                          overridden: cfg.overridden || [],
+                          onSaved: loadCfg
+                        }} 
+                      />
+                    ))}
+                  </div>
+                </Section>
+              );
+            })}
+
+            <RepositoriesCard repos={cfg.repositories} onSaved={loadCfg} />
+            <ModelsAndProvidersCard models={cfg.models} providers={cfg.providers} />
+            <ProvenanceCard origins={cfg.provenance} />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function settingsPage(query) {
+  return <SettingsApp query={query} />;
+}
