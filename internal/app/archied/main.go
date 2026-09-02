@@ -310,28 +310,47 @@ func manualRequeueTask(ctx context.Context, st store.TaskStore, taskID int64) er
 	}
 }
 
-func Run() int {
+type runArgs struct {
+	cfgPath         string
+	overlayPath     string
+	noConfigOverlay bool
+	once            bool
+	requeue         int64
+}
+
+func parseArgs() (runArgs, bool) {
 	defaultCfg := filepath.Join(configHome(), "archie", "config.toml")
-	cfgPath := flag.String("config", defaultCfg, "path to a TOML/YAML config file or configuration directory")
-	overlayPath := flag.String("config-overlay", "", "path to a TOML/YAML overlay file or configuration directory applied on top of -config")
-	noConfigOverlay := flag.Bool("no-config-overlay", false, "skip the runtime config overlay (recovery hatch for the DB overlay; the -config-overlay file overlay still applies)")
-	once := flag.Bool("once", false, "run a single poll+process cycle and exit (systemd timer / testing)")
-	requeue := flag.Int64("requeue", 0, "requeue a parked/waiting task by id (keeps its workflow), then exit unless -once is also set")
+	var args runArgs
+	flag.StringVar(&args.cfgPath, "config", defaultCfg, "path to a TOML/YAML config file or configuration directory")
+	flag.StringVar(&args.overlayPath, "config-overlay", "", "path to a TOML/YAML overlay file or configuration directory applied on top of -config")
+	flag.BoolVar(&args.noConfigOverlay, "no-config-overlay", false, "skip the runtime config overlay (recovery hatch for the DB overlay; the -config-overlay file overlay still applies)")
+	flag.BoolVar(&args.once, "once", false, "run a single poll+process cycle and exit (systemd timer / testing)")
+	flag.Int64Var(&args.requeue, "requeue", 0, "requeue a parked/waiting task by id (keeps its workflow), then exit unless -once is also set")
 	showVersion := flag.Bool("version", false, "print the gateway and runtime versions and exit")
 	flag.Parse()
+
 	// The versions were only reachable through the chat /version command,
 	// which needs a running daemon and a configured channel. An update-check
 	// adapter has to answer "what is installed?" from a shell, so expose the
 	// same two values here. Machine-readable: one "name version" per line.
 	if *showVersion {
 		fmt.Printf("archied %s\narchie-agent %s\n", gatewayVersion, runtimeVersion)
+		return args, true
+	}
+	return args, false
+}
+
+func Run() int {
+	args, exit := parseArgs()
+	if exit {
 		return 0
 	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	b := newBootstrap()
-	if err := b.loadConfig(ctx, *cfgPath, *overlayPath, *noConfigOverlay); err != nil {
+	if err := b.loadConfig(ctx, args.cfgPath, args.overlayPath, args.noConfigOverlay); err != nil {
 		return 1
 	}
 	defer b.cleanup()
@@ -339,12 +358,12 @@ func Run() int {
 	if err := b.openStores(ctx); err != nil {
 		return 1
 	}
-	if exit, err := b.handleRequeue(ctx, *requeue, *once); err != nil {
+	if exit, err := b.handleRequeue(ctx, args.requeue, args.once); err != nil {
 		return 1
 	} else if exit {
 		return 0
 	}
-	b.loadCatalog(ctx, *cfgPath)
+	b.loadCatalog(ctx, args.cfgPath)
 	b.setupObservability()
 
 	if err := b.setupBackends(ctx); err != nil {
@@ -352,7 +371,7 @@ func Run() int {
 	}
 
 	b.setupLLMAndChat(ctx)
-	if !b.setupGateways(ctx, *cfgPath, *overlayPath) {
+	if !b.setupGateways(ctx, args.cfgPath, args.overlayPath) {
 		return 1
 	}
 
@@ -380,15 +399,15 @@ func Run() int {
 	}
 	b.registerStandaloneTools()
 	b.buildDaemon()
-	b.wireConfigPublishing(ctx, *cfgPath, *overlayPath)
+	b.wireConfigPublishing(ctx, args.cfgPath, args.overlayPath)
 	b.installUpdateConfigHandler()
 	b.installUpdateRepoFieldHandler()
-	b.installConfigHandlers(*cfgPath, *overlayPath)
+	b.installConfigHandlers(args.cfgPath, args.overlayPath)
 
 	if err := b.startServices(ctx); err != nil {
 		return 1
 	}
-	return exitCode(b.runLoop(ctx, *once))
+	return exitCode(b.runLoop(ctx, args.once))
 }
 
 // bootConfigOverlay layers the runtime config overlay over the resolved
