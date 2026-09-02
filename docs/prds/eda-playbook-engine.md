@@ -218,46 +218,177 @@ before implementation, not defer:
 
 ### 1. Mid-playbook action failure
 
+**Status 2026-09-03: proposed resolution below, awaiting Sam's sign-off**
+(same process the CEL resolution went through -- drafted with evidence,
+not committed as decided until explicitly approved). Do not treat this
+section as settled until that status line is updated.
+
 A playbook is an ordered action list with data flowing between steps. If
 action 2 of 4 fails at runtime (an image-gen API times out, a forge call
-403s), the doc currently says nothing about:
+403s), the doc previously said nothing about what happens next. This
+codebase already answers a structurally identical question for its
+existing workflow engine, precisely enough to reuse rather than
+re-derive: `workflow.Run` (`internal/domain/workflow/workflow.go:294`)
+draws a three-way distinction on a stage failure, and a playbook run
+should draw the same one on an action failure.
 
-- whether the playbook run stops, continues to independent later actions,
-  or rolls back;
-- what "rollback" could even mean for an action with a real external side
-  effect already committed (a forge comment already posted is not
-  revocable the way an uncommitted DB write is);
-- whether this interacts with `event-sources-and-reactions.md`'s
-  producer-only constraint -- a playbook that reacts to a failure by
-  triggering compensating actions is arguably still "producing new work,"
-  not vetoing/mutating in-flight work, but this needs to be stated, not
-  assumed.
+**Proposed decision: reuse `Run`'s three-way distinction directly.**
 
-No default is proposed here. Candidates to evaluate before sign-off:
-stop-on-first-failure with the full run outcome (which actions ran, which
-didn't) logged and reported the same way a load collision is (see
-above) is the simplest option and matches this document's existing bias
-against clever automatic recovery -- but it should be a stated decision,
-not a default nobody chose.
+1. **A real action error** (the action's own logic failed -- an API
+   error, a validation failure inside the action) stops the run
+   immediately. No later actions execute. The failure is reported the
+   same way a load collision is reported (drop, log plainly which action
+   and why, return it to the caller) -- **not** silently swallowed into a
+   background log line. This is stop-on-first-failure, matching the
+   document's existing bias against clever automatic recovery, and it is
+   now a stated decision rather than a nobody-chose default.
+2. **Interruption** (the daemon is shutting down mid-dispatch, `ctx.Err()
+   != nil`) is explicitly **not** a failure. `Run` already treats this
+   case specially -- "parking here would publish a false failure and
+   require manual intervention" -- and the same reasoning applies to a
+   playbook run: an in-flight dispatch interrupted by restart must not be
+   recorded as a broken playbook. What "leave it alone for restart" means
+   for a playbook run (there is no `store.Task` row a playbook run
+   inherently owns the way a workflow stage does) is an open
+   implementation detail for whoever builds the coordinator, not decided
+   here -- but the *semantic* (interruption ≠ failure) is decided.
+3. **A run that produces no outcome at all** (every action ran without
+   error, but nothing was assigned to happen) is itself an error
+   condition, matching `Run`'s own "a workflow must end with an explicit
+   outcome; not doing so is a definition bug, which still must not vanish
+   silently." A playbook with actions that all ran but never reached a
+   coherent terminal state is a definition bug in the playbook, reported
+   as such.
+
+**Rollback:** explicitly **not attempted**, for exactly the reason the
+gap's own description named -- a posted forge comment is not revocable.
+This is not a limitation to work around later; it is the correct
+semantic. An operator who needs a corrective action after a failure
+writes a *new* playbook/action for that, they do not get automatic
+undo.
+
+**Producer-only interaction, stated explicitly:** a playbook reacting to
+its own action's failure by running a compensating action (e.g. "if the
+notify action failed, also log an incident") is still **producing new
+work**, not vetoing or mutating the in-flight run that already stopped --
+so it does not conflict with `event-sources-and-reactions.md`'s
+producer-only rule. This document does not design compensating actions
+now (no playbook syntax for "on failure, also run X" exists yet); it only
+confirms that if that syntax is added later, it stays inside the
+producer-only boundary rather than requiring a new exception to it.
+
+**J3 relationship, stated explicitly:** J3 (a CEL `when` condition
+erroring at eval time → treated as false → skip that action → run
+continues) is a **different case from an action failure** and is not
+revisited by this resolution. A condition error means "we couldn't
+determine whether to run this action," which this document already
+resolved as "then don't, and move on." An action failure means "we tried
+to run this action and it broke," which stops the run per point 1 above.
+The two must not be conflated: a coordinator implementation should be
+able to point at one `when`-evaluation code path and one
+action-invocation code path and show they use different outcomes.
 
 ### 2. Idempotency at execution time
+
+**Status 2026-09-03: proposed resolution below, awaiting Sam's sign-off**
+(same process as gap 1 and the CEL resolution -- drafted with evidence,
+not settled until explicitly approved).
 
 `event-sources-and-reactions.md` decided reactions ride
 `internal/eventbus`'s at-least-once delivery specifically so
 `PublishUnique`/idempotency keys absorb redelivery without duplicate side
 effects. This document inherits that for free only for `workflow`-kind
-actions, because `TaskEnvelope` already carries an idempotency key. It says
-nothing for `channel`, `forge`, or `module` actions with real side effects
-(posting a comment, sending a message, generating and billing for an
-image) -- if the triggering event is redelivered, nothing here prevents
-those actions from firing twice.
+actions, because `TaskEnvelope` already carries an idempotency key. It said
+nothing for `channel`, `forge`, or `module` actions with real side effects.
 
-This needs a keying scheme before Module/Channel/Forge actions ship:
-either the playbook run itself is keyed (one idempotency key per
-trigger-event + playbook, so the whole run dedups) or each action
-carries its own key derived from the run key. The former is simpler and
-should be the default unless a specific action needs finer-grained
-dedup than "did this playbook already run for this event."
+**Proposed decision: reuse `internal/store/bindings.go`'s
+`binding_dispatches` ledger shape directly -- do not design a new
+mechanism.** This codebase already has a proven, tested, at-most-once
+guarantee for the structurally identical problem (don't re-fire a
+side-effecting action for an event already handled), surviving daemon
+restarts because it is a durable table, not in-memory state:
+
+```sql
+CREATE TABLE binding_dispatches (
+    binding_id, binding_version, capture_id, task_id, dispatched_at,
+    PRIMARY KEY (binding_id, capture_id)
+);
+```
+
+`RecordDispatch` does `INSERT OR IGNORE`; a duplicate returns the
+sentinel `ErrAlreadyDispatched`, which the caller treats as "another
+cycle already won this race," not an error to surface.
+
+**Concretely, for playbooks:** a new ledger table (e.g.
+`playbook_dispatches`), unique on `(playbook_id, playbook_version,
+event_id)` -- the same three-column shape as `binding_dispatches`
+(`binding_id, binding_version, capture_id`), substituting a playbook's
+identity and an event's identity for a binding's and a capture's. Written
+with the same `INSERT OR IGNORE` + sentinel-error convention, checked
+once per playbook run before any action dispatches.
+
+**This surfaces a concrete prerequisite, checked against the actual
+code, not assumed: `t2db.15`'s shipped `Playbook` struct
+(`internal/domain/eda/playbook/playbook.go`) is currently `{Trigger,
+Actions}` -- no `ID`, no `Version`.** Unlike `Binding`, which gets its
+identity and version from being a database row, a playbook is a loaded
+file with no persisted identity today. This resolution cannot be
+implemented until playbooks have one. Proposed (not yet built): derive
+`playbook_id` from a stable path-relative identifier (e.g. the
+playbook's file path relative to its configured directory root, which is
+already unique per the directory-loader's own collision rule) and
+`playbook_version` from a content hash of the loaded file, recomputed on
+every load -- mirroring `Binding.Version`'s purpose (pin dispatched-run
+provenance to the exact definition that was active when it fired) without
+requiring a database row the way `Binding` has one. This identity scheme
+is a small, separate implementation detail for whoever builds this ledger,
+not a new open question -- but it is *not yet decided in code*, and this
+resolution is not fully buildable until it is.
+
+**Granularity: whole-run, not per-action** -- confirmed as the default
+per the gap's own original bias ("simpler... unless a specific action
+needs finer-grained dedup"). One key per `(playbook, event)` dedups the
+entire run; if a specific future action kind genuinely needs
+finer-grained dedup than "did this playbook already run for this event,"
+that is a documented exception to add when such an action kind is
+designed, not something to generalize for pre-emptively now.
+
+**Key derivation (`event_id`) -- a second concrete prerequisite, checked
+against the actual code, not assumed:** the natural instinct is "reuse
+the capture pipeline's stable identity" (`captured_events.id`), but that
+is **wrong for what `t2db.15` actually shipped**. Verified directly:
+`DispatchInput` (`internal/domain/eda/playbook/playbook.go:187`) is
+`{Labels []string, Kind string, Event map[string]any}` -- a **task-label
+trigger**, the same vocabulary `workflow.Route()` already dispatches on,
+entirely unrelated to the webhook-capture/binding pipeline
+(`docs/architecture/bindings.md`'s system). No capture, and no
+`captured_events` row, is involved in this trigger path at all. `Event`
+here is only a cheap re-exposure of the label/kind fields for CEL, not a
+webhook payload.
+
+`DispatchInput` also carries **no task identity today** -- not even the
+originating task's ID. This document's own earlier claim that
+"workflow-kind actions inherit idempotency for free via `TaskEnvelope`"
+is true of the task itself, but that identity is not currently threaded
+into `DispatchInput` for a playbook run to key on. This is a second,
+separate prerequisite alongside the Playbook-identity one above: before
+this ledger can be built, `DispatchInput` needs to carry the originating
+task's identity (its `store.Task.ID`, or the `TaskEnvelope` idempotency
+key that produced it -- whoever implements this should confirm which is
+actually available at the `Dispatch` call site rather than assuming). If
+and when a capture/binding-originated trigger type is added to the
+playbook engine later (unifying with the webhook pipeline is an explicit
+non-goal of this document today, per `docs/architecture/bindings.md`'s
+own "does not attempt to unify them"), that trigger type would key on
+`captured_events.id` instead -- the derivation is per-trigger-type, not
+one formula for all triggers.
+
+**What "dedup" does on redelivery:** the **whole run** is skipped, not
+just the already-fired action -- consistent with whole-run granularity
+above. A redelivered event that already produced a `playbook_dispatches`
+row for this `(playbook, event)` pair does nothing further, silently
+(logged at debug level, not as a warning -- this is the expected,
+correct behavior of at-least-once delivery, not an anomaly).
 
 Both gaps block open question 4's first-slice recommendation only
 partially: the first slice (Module + loader + workflow-kind dispatch)
