@@ -1,5 +1,17 @@
 # archie-agent changelog
 
+## [1.20.0] - 2026-09-03
+
+- fix: baseline gate repair (go test ./... -count=1)
+- fix(logging): propagate bound slog attrs to wrapped handler in FeedHandler
+- feat(image): define provider-neutral image capability contract and config
+- fix(workflow): stop discarding baseline-fix commits as 'no changes'
+- fix(workflow): net cache hits from token totals, trim gate-retry output
+- feat(workflow): dynamic triage instead of defaulting every task to implement
+- feat(webui): playbook bindings -- matcher + mapping + workflow, HMAC-gated
+- feat(store): encrypt playbook binding secrets at rest
+- fix(store): satisfy makezero when building cipher payload
+
 ## [1.19.9] - 2026-09-02
 
 - feat(config): config surface for memory engine selection

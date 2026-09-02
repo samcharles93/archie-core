@@ -1,5 +1,29 @@
 # archied changelog
 
+## [1.20.0] - 2026-09-03
+
+- fix: baseline gate repair (go test ./... -count=1)
+- fix(logging): propagate bound slog attrs to wrapped handler in FeedHandler
+- feat(image): define provider-neutral image capability contract and config
+- fix(channels): call MarkRunning once a channel is actually up
+- fix(workflow): stop discarding baseline-fix commits as 'no changes'
+- fix(webui): wire the Logs page to per-task attempt-log detail
+- fix(workflow): net cache hits from token totals, trim gate-retry output
+- feat(workflow): dynamic triage instead of defaulting every task to implement
+- fix(gateway): stop SOUL from forging the prompt invariant tags
+- fix(curator): stop curator actions from serializing a zero timestamp
+- feat(webui): hand-author the configuration field descriptor catalog
+- feat(webui): attach the config field schema to GET /api/config
+- feat(webui): render scalar config sections generically from the schema
+- feat(webui): surface allow_concurrent/max_retries/review_enabled on the repositories card
+- feat(webui): inline editing for per-repo allow_concurrent/max_retries/review_enabled
+- feat(webui): playbook bindings -- matcher + mapping + workflow, HMAC-gated
+- fix: resolve golangci-lint funlen, nilerr, and empty branch issues
+- feat(store): encrypt playbook binding secrets at rest
+- feat(webhook): harden captured payload redaction
+- fix(store): satisfy makezero when building cipher payload
+- feat(webui): refactor chat module to Preact component and add unit tests
+
 ## [1.19.10] - 2026-09-02
 
 - feat(curator): session-memory curator reference implementation
