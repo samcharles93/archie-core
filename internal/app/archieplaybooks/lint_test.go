@@ -97,7 +97,11 @@ func TestLintReportsLoadErrorAsFinding(t *testing.T) {
 		t.Fatal("Lint() exit = 0, want non-zero")
 	}
 	joined := strings.Join(result.Findings, "\n")
-	if !strings.Contains(joined, "security") {
+	// Both "bug" and "security" collide across the two files; the loader
+	// sorts a file's keys before checking them (routing.go's
+	// loadPlaybookFile), so "bug" -- alphabetically first -- is always the
+	// one reported, deterministically.
+	if !strings.Contains(joined, "bug") {
 		t.Fatalf("Lint() findings = %q, want the colliding key named", joined)
 	}
 	// Fail-fast like the daemon: one definition failure is reported (the
