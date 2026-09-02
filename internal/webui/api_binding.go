@@ -144,7 +144,7 @@ func (s *Server) handleBindingUpdate(w http.ResponseWriter, r *http.Request) {
 		Repo:      req.Repo,
 		Secret:    req.Secret,
 	}
-	if err := b.Validate(); err != nil {
+	if err := b.ValidateForUpdate(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

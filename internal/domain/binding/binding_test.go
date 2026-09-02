@@ -38,6 +38,42 @@ func TestValidateAcceptsBothOwnerAndRepo(t *testing.T) {
 // (that's both empty) and it isn't a complete pin, so it must be
 // rejected at validation time rather than silently guessing which
 // half was meant.
+// TestValidateForUpdateAcceptsEmptySecret is the fix for a real bug found
+// via browser testing (t2db.8): UpdateBinding's own documented contract
+// treats an empty Secret as "preserve the existing one" (COALESCE against
+// NULLIF), but the API handler validated with the create-time Validate,
+// which rejected any edit that didn't retype the full secret -- making
+// the store's own documented behavior unreachable.
+func TestValidateForUpdateAcceptsEmptySecret(t *testing.T) {
+	b := validBinding()
+	b.Secret = ""
+	if err := b.ValidateForUpdate(); err != nil {
+		t.Fatalf("ValidateForUpdate() = %v, want nil for an empty (preserve-existing) secret", err)
+	}
+}
+
+// TestValidateForUpdateStillEnforcesLengthOnANewSecret confirms the fix
+// isn't a blanket bypass: a genuinely-supplied short secret on update is
+// still rejected, same floor as create.
+func TestValidateForUpdateStillEnforcesLengthOnANewSecret(t *testing.T) {
+	b := validBinding()
+	b.Secret = "short"
+	if err := b.ValidateForUpdate(); err == nil {
+		t.Fatal("ValidateForUpdate() = nil, want error for a too-short (but non-empty) secret")
+	}
+}
+
+// TestValidateRejectsEmptySecretOnCreate pins that the fix is scoped to
+// update only -- Validate (used at create time, where there is no
+// existing secret to fall back to) still requires a real one.
+func TestValidateRejectsEmptySecretOnCreate(t *testing.T) {
+	b := validBinding()
+	b.Secret = ""
+	if err := b.Validate(); err == nil {
+		t.Fatal("Validate() = nil, want error for an empty secret at create time")
+	}
+}
+
 func TestValidateRejectsPartialRepoPin(t *testing.T) {
 	tests := []struct {
 		name        string

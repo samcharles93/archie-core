@@ -68,12 +68,42 @@ type Binding struct {
 // floor is chosen so a one-character typo cannot arm.
 const minSecretLen = 16
 
-// Validate checks a binding is well-formed before it is persisted or
-// evaluated. A non-empty Name, a non-empty Matcher.Source, a positive
-// MappingID, a non-empty Workflow, and a sufficiently long Secret are
-// all required. Workflow existence is checked at the API/store layer
-// because the domain package does not import the workflow registry.
+// Validate checks a binding is well-formed before it is newly persisted.
+// A non-empty Name, a non-empty Matcher.Source, a positive MappingID, a
+// non-empty Workflow, and a sufficiently long Secret are all required.
+// Workflow existence is checked at the API/store layer because the domain
+// package does not import the workflow registry. Use ValidateForUpdate
+// instead when editing an existing binding, where an empty Secret is a
+// meaningful "keep the current one," not a missing value.
 func (b Binding) Validate() error {
+	if err := b.validateCommon(); err != nil {
+		return err
+	}
+	if len(b.Secret) < minSecretLen {
+		return fmt.Errorf("binding: secret must be at least %d bytes", minSecretLen)
+	}
+	return nil
+}
+
+// ValidateForUpdate is Validate for the edit path: every other field is
+// checked identically, but Secret is only length-checked when the caller
+// actually supplied one. UpdateBinding's own store-layer contract already
+// treats an empty Secret as "preserve the existing one" (COALESCE against
+// NULLIF) -- rejecting that here at the validation gate before the store
+// ever sees it would make the store's own documented behavior
+// unreachable. A non-empty Secret (a genuine change) is still held to the
+// same floor Validate enforces.
+func (b Binding) ValidateForUpdate() error {
+	if err := b.validateCommon(); err != nil {
+		return err
+	}
+	if b.Secret != "" && len(b.Secret) < minSecretLen {
+		return fmt.Errorf("binding: secret must be at least %d bytes", minSecretLen)
+	}
+	return nil
+}
+
+func (b Binding) validateCommon() error {
 	if strings.TrimSpace(b.Name) == "" {
 		return fmt.Errorf("binding: name is required")
 	}
@@ -85,9 +115,6 @@ func (b Binding) Validate() error {
 	}
 	if strings.TrimSpace(b.Workflow) == "" {
 		return fmt.Errorf("binding: workflow is required")
-	}
-	if len(b.Secret) < minSecretLen {
-		return fmt.Errorf("binding: secret must be at least %d bytes", minSecretLen)
 	}
 	if (b.Owner == "") != (b.Repo == "") {
 		return fmt.Errorf("binding: owner and repo must both be set or both be empty")
