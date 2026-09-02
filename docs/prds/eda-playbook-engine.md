@@ -83,7 +83,9 @@ access. Concretely:
   Yaegi-evaluated implementation of a generated interface (args in, typed
   result out) for one declared action kind (e.g. `image-gen`, `notify`,
   `open-pr-comment`). This is the position that makes actions "not
-  restricted to code-generation."
+  restricted to code-generation." Full design (schema-per-kind, the
+  registry shape, the trust boundary, the recommended first slice):
+  `docs/prds/module-position.md`.
 - **Channel** -- already exists as `channels.Channel` (telegram, email,
   webhook). A playbook action of kind `channel` sends through a named,
   already-registered channel. No new mechanism; this document just makes it
