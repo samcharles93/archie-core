@@ -107,6 +107,40 @@ test("a structured field in a schema section renders no card of its own here", a
 // storage, web). A literal key string in the source is exactly the
 // regression archie-core-b6ew.3 removed -- a hardcoded row(...) call
 // re-appearing for one field while the rest stay generic.
+// archie-core-b6ew.6: repositories gained inline editors for
+// allow_concurrent/max_retries/review_enabled. The shim's addEventListener
+// is a no-op (see ui/test/shim.js), so the save round trip itself is not
+// exercisable here -- this pins the structural half: the right initial
+// control with the right initial value renders per repo, matching the
+// existing config-row.test.js convention of testing structure, not the
+// live event round trip.
+test("repositories render a checkbox and a text input reflecting each repo's current field values", async () => {
+  const root = await renderSettings({
+    repositories: [
+      { owner: "acme", name: "widget", base: "main", allow_concurrent: true, max_retries: 3, review_enabled: false },
+    ],
+  });
+
+  const checkboxes = [];
+  const textInputs = [];
+  const walk = (node) => {
+    for (const c of node.childNodes || []) {
+      if (c.tagName === "INPUT" && c.attrs.type === "checkbox") checkboxes.push(c);
+      if (c.tagName === "INPUT" && c.attrs.type === "text") textInputs.push(c);
+      walk(c);
+    }
+  };
+  walk(root);
+
+  assert.equal(checkboxes.length, 2, "allow_concurrent and review_enabled should each render a checkbox");
+  assert.equal(checkboxes[0].attrs.checked, "", "allow_concurrent=true should render checked");
+  assert.equal(checkboxes[1].attrs.checked, undefined, "review_enabled=false should render unchecked");
+  assert.ok(
+    textInputs.some((i) => i.attrs.value === "3"),
+    "max_retries' current value should populate a text input",
+  );
+});
+
 test("settings.js contains no literal field-specific branch for the generically-rendered sections", () => {
   const genericFieldKeys = [
     "bot_user", "bot_email", "\"label\"", "forge.type", "forge.host", "diff_cap_lines",

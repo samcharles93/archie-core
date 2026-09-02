@@ -120,7 +120,7 @@ export function settingsPage() {
       body,
       ...banners,
       ...schemaCards(cfg.schema || []),
-      repositoriesCard(cfg.repositories),
+      repositoriesCard(cfg.repositories, reload),
       modelsAndProvidersCard(cfg.models, cfg.providers),
       provenanceCard(cfg.provenance),
     );
@@ -223,7 +223,7 @@ function roleButtonClass(kind) {
   return kind === "quiet" ? "btn-quiet" : kind === "danger" ? "btn-danger" : "";
 }
 
-function repositoriesCard(repos) {
+function repositoriesCard(repos, onSaved) {
   if (!repos?.length) {
     return section(
       "Repositories",
@@ -234,8 +234,8 @@ function repositoriesCard(repos) {
   return section(
     "Repositories",
     "Each repository Archie polls, and the quality gate a change must pass before it opens a pull request. " +
-      "Concurrent tasks, retries, and self-review are set per repository in config.toml -- read-only here " +
-      "until archie-core-b6ew.4's follow-up gives them an inline editor.",
+      "Concurrent tasks, retries, and self-review are per-repository overrides -- PATCH /api/config/repos/{owner}/{name}, " +
+      "not the file config.toml directly.",
     el(
       "div.table-scroll",
       el(
@@ -259,9 +259,9 @@ function repositoriesCard(repos) {
               el("td", r.ecosystem || "go"),
               el("td.mono", gateSummary(r.gate)),
               el("td.mono", r.protect?.length ? r.protect.join(", ") : "—"),
-              el("td", boolPill(r.allow_concurrent)),
-              el("td.mono", String(r.max_retries ?? 0)),
-              el("td", boolPill(r.review_enabled)),
+              repoBoolCell(r, "allow_concurrent", onSaved),
+              repoIntCell(r, "max_retries", onSaved),
+              repoBoolCell(r, "review_enabled", onSaved),
             ),
           ),
         ),
@@ -270,11 +270,58 @@ function repositoriesCard(repos) {
   );
 }
 
-// boolPill renders a config flag as the same pill used elsewhere on this
-// page (e.g. provider credential status), so "on"/"off" reads consistently
-// with the rest of the dashboard rather than as raw true/false text.
-function boolPill(value) {
-  return value ? pill("on", "ok") : pill("off", "idle");
+// repoBoolCell renders an immediately-autosaving checkbox, PATCHing
+// api.configRepoUpdate on change and reverting the toggle if the save
+// fails (archie-core-b6ew.6). A table cell doesn't fit config-row.js's
+// label/value/actions Edit-then-Save flow, and a checkbox is the more
+// natural control for a boolean in a table anyway.
+function repoBoolCell(r, field, onSaved) {
+  const cb = el("input.repo-field-checkbox", { type: "checkbox", checked: !!r[field] });
+  const note = el("span.kv-note.is-error");
+  cb.addEventListener("change", async () => {
+    const next = cb.checked;
+    cb.disabled = true;
+    try {
+      await api.configRepoUpdate(r.owner, r.name, field, next);
+      onSaved?.();
+    } catch (err) {
+      cb.checked = !next;
+      note.textContent = String(err.message || err);
+      cb.disabled = false;
+    }
+  });
+  return el("td", cb, note);
+}
+
+// repoIntCell renders a plain text input that saves on blur/Enter. Errors
+// (a non-numeric entry, a rejected save) stay on the cell rather than
+// reloading the page out from under the operator mid-edit.
+function repoIntCell(r, field, onSaved) {
+  const input = el("input.kv-input", { type: "text", value: String(r[field] ?? 0) });
+  const note = el("span.kv-note.is-error");
+  const commit = async () => {
+    const n = parseInt(input.value, 10);
+    if (Number.isNaN(n)) {
+      note.textContent = "Enter a whole number";
+      return;
+    }
+    input.disabled = true;
+    try {
+      await api.configRepoUpdate(r.owner, r.name, field, n);
+      onSaved?.();
+    } catch (err) {
+      note.textContent = String(err.message || err);
+      input.disabled = false;
+    }
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault?.();
+      input.blur();
+    }
+  });
+  input.addEventListener("blur", commit);
+  return el("td", input, note);
 }
 
 function gateSummary(gate) {

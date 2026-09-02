@@ -28,3 +28,83 @@ func TestApplyDottedOverlayRejectsEmptyKey(t *testing.T) {
 		t.Fatal("empty dotted key accepted")
 	}
 }
+
+func twoRepoFixture() []config.Repo {
+	return []config.Repo{
+		{Owner: "acme", Name: "widget", Base: "main", Preflight: [][]string{{"go", "version"}}},
+		{Owner: "acme", Name: "gadget", Base: "main"},
+	}
+}
+
+// TestApplyRepoFieldUpdateChangesOnlyTheMatchedRepo proves the update
+// targets exactly one element by owner/name and leaves every other repo,
+// and every other field on the matched repo, untouched -- including
+// Preflight, which webui.RepoView never carries on the wire (the whole
+// point of reading b.d.Cfg's live Repos instead of the trimmed view).
+func TestApplyRepoFieldUpdateChangesOnlyTheMatchedRepo(t *testing.T) {
+	repos, err := applyRepoFieldUpdate(twoRepoFixture(), "acme", "widget", "allow_concurrent", true)
+	if err != nil {
+		t.Fatalf("applyRepoFieldUpdate: %v", err)
+	}
+	if !repos[0].AllowConcurrent {
+		t.Error("widget.AllowConcurrent = false, want true")
+	}
+	if len(repos[0].Preflight) != 1 || repos[0].Preflight[0][0] != "go" {
+		t.Errorf("widget.Preflight = %v, want it untouched", repos[0].Preflight)
+	}
+	if repos[1].AllowConcurrent {
+		t.Error("gadget.AllowConcurrent changed, want the non-matched repo left alone")
+	}
+}
+
+func TestApplyRepoFieldUpdateSetsEachEditableField(t *testing.T) {
+	repos, err := applyRepoFieldUpdate(twoRepoFixture(), "acme", "widget", "max_retries", float64(7))
+	if err != nil {
+		t.Fatalf("applyRepoFieldUpdate: %v", err)
+	}
+	if repos[0].MaxRetries != 7 {
+		t.Errorf("MaxRetries = %d, want 7 (JSON numbers decode as float64)", repos[0].MaxRetries)
+	}
+
+	repos, err = applyRepoFieldUpdate(twoRepoFixture(), "acme", "widget", "review_enabled", true)
+	if err != nil {
+		t.Fatalf("applyRepoFieldUpdate: %v", err)
+	}
+	if !repos[0].ReviewEnabled {
+		t.Error("ReviewEnabled = false, want true")
+	}
+}
+
+func TestApplyRepoFieldUpdateRejectsUnknownRepo(t *testing.T) {
+	_, err := applyRepoFieldUpdate(twoRepoFixture(), "acme", "does-not-exist", "allow_concurrent", true)
+	if err == nil {
+		t.Fatal("expected an error for a repo that is not configured")
+	}
+}
+
+func TestApplyRepoFieldUpdateRejectsUneditableField(t *testing.T) {
+	_, err := applyRepoFieldUpdate(twoRepoFixture(), "acme", "widget", "gate", []any{})
+	if err == nil {
+		t.Fatal("expected an error for a field outside RepoEditableFields")
+	}
+}
+
+// TestApplyRepoFieldUpdateRejectsWrongValueType proves a bool field given a
+// number (or vice versa) fails with a clear error instead of a silent
+// zero-value write -- the JSON body is caller-controlled (the dashboard),
+// not type-checked before it reaches this function.
+func TestApplyRepoFieldUpdateRejectsWrongValueType(t *testing.T) {
+	cases := []struct {
+		field string
+		value any
+	}{
+		{"allow_concurrent", "yes"},
+		{"review_enabled", 1.0},
+		{"max_retries", true},
+	}
+	for _, tc := range cases {
+		if _, err := applyRepoFieldUpdate(twoRepoFixture(), "acme", "widget", tc.field, tc.value); err == nil {
+			t.Errorf("field %q accepted wrong-typed value %#v", tc.field, tc.value)
+		}
+	}
+}

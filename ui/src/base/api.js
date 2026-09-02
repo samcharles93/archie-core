@@ -100,6 +100,16 @@ export const api = {
     if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
     return res.json();
   },
+  configRepoUpdate: async (owner, name, field, value) => {
+    const res = await fetch(`/api/config/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+      method: "PATCH",
+      headers: { Accept: "application/json", "Content-Type": "application/json", "X-Archie-CSRF": "1" },
+      body: JSON.stringify({ field, value }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+    return res.json();
+  },
   configReset: async (key) => {
     const res = await fetch("/api/config/reset", {
       method: "POST",
