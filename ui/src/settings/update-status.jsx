@@ -1,8 +1,5 @@
 import { h } from "preact";
-
-function Pill({ text, kind = "idle" }) {
-  return <span className={`pill pill-${kind}`}>{text}</span>;
-}
+import { Pill } from "../base/pill.jsx";
 
 function Empty({ title, detail }) {
   return (

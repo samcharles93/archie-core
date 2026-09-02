@@ -2,6 +2,7 @@ import { h, Fragment } from "preact";
 import { useState, useEffect, useMemo } from "preact/hooks";
 import "./skills.css";
 import { api } from "../base/api.jsx";
+import { Pill } from "../base/pill.jsx";
 
 function Empty({ title, detail }) {
   return (
@@ -10,10 +11,6 @@ function Empty({ title, detail }) {
       {detail && <div>{detail}</div>}
     </div>
   );
-}
-
-function Pill({ text, kind = "idle" }) {
-  return <span class={`pill pill-${kind}`}>{text}</span>;
 }
 
 export function skillsPage(query) {

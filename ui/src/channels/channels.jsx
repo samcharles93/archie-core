@@ -2,10 +2,7 @@ import { h } from "preact";
 import { useState, useEffect } from "preact/hooks";
 import "./channels.css";
 import { api } from "../base/api.jsx";
-
-export function Pill({ text, kind = "idle" }) {
-  return <span className={`pill pill-${kind}`}>{text}</span>;
-}
+import { Pill } from "../base/pill.jsx";
 
 export function Empty({ title, detail }) {
   return (

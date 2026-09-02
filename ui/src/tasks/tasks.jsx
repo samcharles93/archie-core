@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "preact/hooks";
 import "./tasks.css";
 import { api } from "../base/api.jsx";
 import { ago } from "../base/dom.jsx";
+import { Pill } from "../base/pill.jsx";
 import { statTile as renderStatTile } from "../base/statTile.jsx";
 import { taskRowA11y } from "./task-row.jsx";
 import { initialTaskFilter, taskMatchesStatus } from "./task-filters.jsx";
@@ -18,9 +19,6 @@ function StatTileNode(props) {
   return <div ref={ref} style={{ display: 'contents' }} />;
 }
 
-function Pill({ text, kind = "idle" }) {
-  return <span className={`pill pill-${kind}`}>{text}</span>;
-}
 
 function Empty({ title, detail }) {
   return (

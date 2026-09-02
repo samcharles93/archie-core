@@ -2,7 +2,8 @@ import { h, Fragment } from "preact";
 import { useState, useEffect } from "preact/hooks";
 import "./captures.css";
 import { api, subscribeEvents } from "../base/api.jsx";
-import { CaptureRow, Pill } from "./capture-row.jsx";
+import { CaptureRow } from "./capture-row.jsx";
+import { Pill } from "../base/pill.jsx";
 
 export function Empty({ title, detail }) {
   return (

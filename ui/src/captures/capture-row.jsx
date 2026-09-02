@@ -1,9 +1,6 @@
 import { h, Fragment } from "preact";
 import { ago } from "../base/dom.jsx";
-
-export function Pill({ text, kind = "idle" }) {
-  return <span className={`pill pill-${kind}`}>{text}</span>;
-}
+import { Pill } from "../base/pill.jsx";
 
 /**
  * One captured event's summary row, plus its expandable detail row when

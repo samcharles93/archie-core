@@ -1,8 +1,5 @@
 import { h, Fragment } from "preact";
-
-export function Pill({ text, kind = "idle" }) {
-  return <span className={`pill pill-${kind}`}>{text}</span>;
-}
+import { Pill } from "../base/pill.jsx";
 
 /**
  * Pure rendering + path/type logic for the mapping editor, split out from
