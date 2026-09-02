@@ -6,8 +6,9 @@
 // -> Yaegi load -> ModuleRegistry -> dispatch mechanism end to end without
 // needing an idempotency answer.
 //
-// Install: copy this file into the configured module_dir (default
-// ~/.config/archie/modules) and restart archied. The daemon evaluates it
+// Install: copy this file into the configured module_dir (see module_dir
+// in config.example.toml, e.g. ~/.local/share/archie/modules) and restart
+// archied. The daemon evaluates it
 // with Yaegi and registers kind "log". The //go:build ignore tag is a
 // comment to the interpreter, so this file loads normally; the Go toolchain
 // skips it, so it may live inside the module tree.
