@@ -53,6 +53,13 @@ func (t *activityTracker) record(name string, at time.Time, actions []Action) {
 
 	merged := make([]Action, 0, len(actions)+len(a.Recent))
 	for _, action := range slices.Backward(actions) {
+		// A curator engine may not stamp its own actions (no clock
+		// dependency wired in); the pass's own "at" is the authoritative
+		// time for every action it produced, so backfill rather than let
+		// a zero time.Time reach the wire as "105694 wks ago".
+		if action.At.IsZero() {
+			action.At = at
+		}
 		merged = append(merged, action)
 	}
 	merged = append(merged, a.Recent...)

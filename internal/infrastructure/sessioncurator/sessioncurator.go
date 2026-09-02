@@ -171,6 +171,7 @@ func (c *Curator) reviewOne(ctx context.Context, engine domainmemory.MemoryEngin
 	}
 
 	return &curator.Action{
+		At:     c.host.Clock.Now(),
 		Type:   ActionExtracted,
 		Detail: fmt.Sprintf("%s: wrote %d observation(s)", sessionID, len(facts)),
 		Reason: "session active since last pass",
