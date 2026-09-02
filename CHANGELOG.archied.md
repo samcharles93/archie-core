@@ -1,5 +1,24 @@
 # archied changelog
 
+## [1.21.0] - 2026-09-03
+
+- feat(workflow): make kind-to-workflow routing YAML-overridable
+- feat(workflow): route arbitrary forge labels to workflows via playbook YAML
+- feat(workflow): load kind/label bindings from multiple playbook directories
+- fix(extract): regenerate stale Yaegi symbol tables; fix wfextract directive
+- feat(eda): Module position first slice -- registry + side-effect-free log kind
+- feat(eda): CEL expression environment (compile/validate at load, evaluate at dispatch)
+- feat(eda): playbook document + event coordinator, single-action workflow-kind dispatch
+- fix(skillcurator): document and scope the intentional nilerr in reviewOne
+- fix(binding): add Owner/Repo pin, fixing multi-repo dispatch
+- feat(webui): bindings dashboard UI; fix app-wide Preact render regression
+- fix(binding): split ValidateForUpdate so edits can preserve the secret
+- refactor(ui): extract Pill to ui/src/base/, closing archie-core-mlro
+- refactor(eda): extract helpers to satisfy cyclop/gocognit gates
+- fix(webui): stretch HEALTH row cards to equal height
+- fix(eda): make playbook key collision reporting deterministic
+- fix(gateway): split /status (health) and /tasks (work) apart
+
 ## [1.20.0] - 2026-09-03
 
 - fix: baseline gate repair (go test ./... -count=1)
