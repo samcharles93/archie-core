@@ -256,6 +256,99 @@ func TestHandleConfigReportsLockedKeys(t *testing.T) {
 	}
 }
 
+// TestHandleConfigIncludesSchemaWithLiveValues proves the schema (archie-core-b6ew.2)
+// carries the same values as the flat ConfigView fields it is built from,
+// not a stale or empty catalog.
+func TestHandleConfigIncludesSchemaWithLiveValues(t *testing.T) {
+	srv := newTestServer(t)
+	srv.Cfg = configWithFakeSecrets()
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	var got ConfigView
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Schema) == 0 {
+		t.Fatal("Schema is empty, want the field descriptor catalog")
+	}
+
+	fields := map[string]ConfigField{}
+	for _, section := range got.Schema {
+		for _, f := range section.Fields {
+			fields[f.Key] = f
+		}
+	}
+
+	botUser, ok := fields["bot_user"]
+	if !ok {
+		t.Fatal(`Schema has no "bot_user" field`)
+	}
+	if botUser.Value != got.Identity.BotUser {
+		t.Errorf("Schema[bot_user].Value = %v, want %v (ConfigView.Identity.BotUser)", botUser.Value, got.Identity.BotUser)
+	}
+	if !botUser.Editable {
+		t.Error("Schema[bot_user].Editable = false, want true")
+	}
+
+	// A locked field's schema entry carries the reason the flat Locked map
+	// carries, so the generic renderer does not need to cross-reference it.
+	workDir, ok := fields["work_dir"]
+	if !ok {
+		t.Fatal(`Schema has no "work_dir" field`)
+	}
+	if workDir.LockedReason == "" {
+		t.Error("Schema[work_dir].LockedReason is empty, want the overlay-denied reason")
+	}
+	if workDir.LockedReason != got.Locked["work_dir"] {
+		t.Errorf("Schema[work_dir].LockedReason = %q, want %q (ConfigView.Locked[work_dir])", workDir.LockedReason, got.Locked["work_dir"])
+	}
+
+	// Structured fields still carry their value (for the dedicated editors
+	// archie-core-b6ew.4 adds) but are not marked editable by the generic
+	// scalar renderer.
+	repos, ok := fields["repos"]
+	if !ok {
+		t.Fatal(`Schema has no "repos" field`)
+	}
+	if repos.Editable {
+		t.Error("Schema[repos].Editable = true, want false (structured fields need a dedicated editor)")
+	}
+	reposValue, ok := repos.Value.([]any)
+	if !ok || len(reposValue) != 1 {
+		t.Errorf("Schema[repos].Value = %#v, want the one configured repository", repos.Value)
+	}
+}
+
+// TestHandleConfigSchemaNeverLeaksSecrets extends the secret-leak guard to
+// the schema block specifically, so a future field added to
+// configFieldDescriptors without going through ConfigView's allowlist would
+// be caught even if leakCandidates never appears in the flat fields.
+func TestHandleConfigSchemaNeverLeaksSecrets(t *testing.T) {
+	srv := newTestServer(t)
+	srv.Cfg = configWithFakeSecrets()
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	var got ConfigView
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	schemaJSON, err := json.Marshal(got.Schema)
+	if err != nil {
+		t.Fatalf("marshal schema: %v", err)
+	}
+	for _, leak := range leakCandidates() {
+		if strings.Contains(string(schemaJSON), leak) {
+			t.Errorf("schema leaked secret value %q:\n%s", leak, schemaJSON)
+		}
+	}
+}
+
 // TestHandleConfigUpdateAppliesViaSeam proves the PATCH handler passes
 // the decoded updates to the wired UpdateConfig seam and answers ok.
 func TestHandleConfigUpdateAppliesViaSeam(t *testing.T) {

@@ -165,3 +165,64 @@ func configFieldDescriptors() []ConfigSection {
 		},
 	}
 }
+
+// configFieldValues maps each descriptor key to its current value out of a
+// live ConfigView. A plain switch, not reflection, for the same reason
+// configFieldDescriptors is hand-authored: every value here already passed
+// through ConfigView's own secret-safe allowlist, so this only has to
+// answer "which already-safe field does this key mean," never "is this
+// field safe to show."
+func configFieldValues(view ConfigView) map[string]any {
+	return map[string]any{
+		"bot_user":                   view.Identity.BotUser,
+		"bot_email":                  view.Identity.BotEmail,
+		"label":                      view.Identity.Label,
+		"forge.type":                 view.Identity.ForgeType,
+		"forge.host":                 view.Identity.ForgeHost,
+		"diff_cap_lines":             view.Identity.DiffCapLines,
+		"repos":                      view.Repositories,
+		"models":                     view.Models,
+		"providers":                  view.Providers,
+		"budgets.max_steps":          view.Budgets.MaxSteps,
+		"budgets.wall_clock":         view.Budgets.WallClock,
+		"budgets.gate_max_failures":  view.Budgets.GateMaxFailures,
+		"work_dir":                   view.Storage.WorkDir,
+		"db_path":                    view.Storage.DBPath,
+		"skills_dir":                 view.Storage.SkillsDir,
+		"plugin_dir":                 view.Storage.PluginDir,
+		"secret_engine_dir":          view.Storage.SecretEngineDir,
+		"containers.image":           view.Containers.Image,
+		"containers.max_concurrency": view.Containers.MaxConcurrency,
+		"containers.max_uptime":      view.Containers.MaxUptime,
+		"containers.volume_ttl":      view.Containers.VolumeTTL,
+		"containers.pull_policy":     view.Containers.PullPolicy,
+		"containers.network":         view.Containers.Network,
+		"web.listen":                 view.Web.Listen,
+	}
+}
+
+// buildConfigSchema attaches a live ConfigView's values, locked reasons, and
+// overridden markers to the static descriptor catalog, producing the
+// sections handleConfig returns to the dashboard. The catalog
+// (configFieldDescriptors) and the per-request state (configFieldValues,
+// view.Locked, view.Overridden) are kept as two separate functions
+// deliberately: one is data-independent and safe to unit-test as a fixed
+// catalog, the other is "what does this specific running config say."
+func buildConfigSchema(view ConfigView) []ConfigSection {
+	values := configFieldValues(view)
+	overridden := make(map[string]bool, len(view.Overridden))
+	for _, key := range view.Overridden {
+		overridden[key] = true
+	}
+
+	sections := configFieldDescriptors()
+	for i := range sections {
+		for j := range sections[i].Fields {
+			f := &sections[i].Fields[j]
+			f.Value = values[f.Key]
+			f.LockedReason = view.Locked[f.Key]
+			f.Overridden = overridden[f.Key]
+		}
+	}
+	return sections
+}
