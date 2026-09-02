@@ -133,11 +133,12 @@ tasks:
       - go test ./... -count=1
 
   check:
-    desc: "Full quality gate: fmt, go fix, vet, build, test, ui tests (matches [[repos.gate]] in config.toml)"
+    desc: "Full quality gate: fmt, go fix, vet, lint, build, test, ui tests (matches [[repos.gate]] in config.toml)"
     cmds:
       - task: fmt
       - go fix ./...
       - task: vet
+      - task: lint
       - task: build
       - task: test
       # The dashboard's suite runs here too. Left out of the gate it rots
