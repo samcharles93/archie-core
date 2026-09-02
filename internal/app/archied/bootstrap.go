@@ -526,7 +526,7 @@ func (b *boot) setupLLMAndChat(ctx context.Context) {
 	}
 	b.webRouter.Personas = b.personas
 	b.webRouter.InitSessions(b.chatSessionStore)
-	configureTaskCommands(b.webRouter, b.chatTasks, b.chatController, b.defaultChatIdentity)
+	configureTaskCommands(b.webRouter, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.st.Tasks}, b.defaultChatIdentity)
 	webSetup := telegramSetup{
 		Cfg: config.NewHolder(cfg), St: b.st, LLM: b.llm, ChatModels: b.chatModels, ToolReg: b.toolReg,
 		Personas: b.personas, ChatTasks: b.chatTasks, ChatController: b.chatController,
@@ -593,7 +593,7 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 	if cfg.Chat.Email.ListenAddr != "" {
 		em := email.New(cfg.Chat.Email.ListenAddr, cfg.Chat.Email.RelayAddr, log)
 		emRouter := gateway.NewRouter(b.st, nil, "email")
-		configureTaskCommands(emRouter, b.chatTasks, b.chatController, b.defaultChatIdentity)
+		configureTaskCommands(emRouter, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.st.Tasks}, b.defaultChatIdentity)
 		b.startGateways = append(b.startGateways, func() {
 			go func() {
 				lifecycle := gateway.Lifecycle{
@@ -621,7 +621,7 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 			log,
 		)
 		whRouter := gateway.NewRouter(b.st, nil, "webhook")
-		configureTaskCommands(whRouter, b.chatTasks, b.chatController, b.defaultChatIdentity)
+		configureTaskCommands(whRouter, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.st.Tasks}, b.defaultChatIdentity)
 		b.startGateways = append(b.startGateways, func() {
 			go func() {
 				lifecycle := gateway.Lifecycle{

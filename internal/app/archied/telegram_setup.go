@@ -270,7 +270,7 @@ func buildTelegramRouter(ctx context.Context, tg *telegram.Gateway, s telegramSe
 	router.InitSessions(sessionStore)
 	router.Titles = newChatTitleGenerator(s)
 	router.Log = s.Log
-	configureTaskCommands(router, s.ChatTasks, s.ChatController, s.DefaultChatIdentity)
+	configureTaskCommands(router, s.ChatTasks, s.ChatController, s.ChatTaskLister, s.DefaultChatIdentity)
 
 	if s.LLM != nil {
 		turnRunner := newChatTurnRunner(ctx, tg.Name(), s, sessionStore, router)

@@ -7,6 +7,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
 type fakeStore struct {
@@ -22,13 +25,15 @@ func fakeLLM(ctx context.Context, msg Message) (string, error) {
 	return "llm: " + msg.Text, nil
 }
 
-func TestRouteStatusWithTasks(t *testing.T) {
+func TestRouteStatusShowsQueueDepthNotPerTaskCounts(t *testing.T) {
 	r := NewRouter(&fakeStore{counts: map[string]int{"queued": 2, "pr_open": 1}}, nil, "test")
 	reply, err := r.Route(context.Background(), Message{Text: "/status"})
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
-	want := "📊 Archie status\n\nTasks\n⏳ Queued: 2\n🔀 PR open: 1\n\nRuntime\nNot configured"
+	// queued and pr_open are not "in flight" (running/waiting/parked), so
+	// /status reports the daemon idle -- that per-task detail is /tasks' job.
+	want := "📊 Archie status\n\nQueue: idle\n\nRuntime\nNot configured"
 	if reply != want {
 		t.Errorf("reply =\n%q\nwant:\n%q", reply, want)
 	}
@@ -46,7 +51,7 @@ func TestRouteStatusIncludesActiveProviderAndModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "📊 Archie status\n\nTasks\n▶ Running: 1\n\nRuntime\nProvider: OpenAI\nModel: openai/gpt-5.6"
+	want := "📊 Archie status\n\nQueue: 1 in flight (1 running)\n\nRuntime\nProvider: OpenAI\nModel: openai/gpt-5.6"
 	if reply != want {
 		t.Fatalf("reply =\n%q\nwant:\n%q", reply, want)
 	}
@@ -58,8 +63,8 @@ func TestRouteStatusAtMention(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
-	if !strings.Contains(reply, "▶ Running: 3") {
-		t.Errorf("reply missing counts: %q", reply)
+	if !strings.Contains(reply, "3 running") {
+		t.Errorf("reply missing queue depth: %q", reply)
 	}
 }
 
@@ -69,7 +74,7 @@ func TestRouteStatusEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
-	want := "📊 Archie status\n\nTasks\nNo tasks yet\n\nRuntime\nNot configured"
+	want := "📊 Archie status\n\nQueue: idle\n\nRuntime\nNot configured"
 	if reply != want {
 		t.Errorf("reply = %q, want %q", reply, want)
 	}
@@ -94,15 +99,15 @@ func TestFormatStatus(t *testing.T) {
 		want   string
 	}{
 		{
-			name:   "example from specification - single parked task with provider and model",
+			name:   "single parked task with provider and model",
 			counts: map[string]int{"parked": 2},
 			models: &fakeProviderModelManager{
 				activeModel: "openai/gpt-5.6-luna",
 			},
-			want: "📊 Archie status\n\nTasks\n⏸ Parked: 2\n\nRuntime\nProvider: OpenAI\nModel: openai/gpt-5.6-luna",
+			want: "📊 Archie status\n\nQueue: 2 in flight (2 parked)\n\nRuntime\nProvider: OpenAI\nModel: openai/gpt-5.6-luna",
 		},
 		{
-			name: "multiple task states in canonical order",
+			name: "in-flight states reduce to one aggregate line; queued and terminal states are excluded",
 			counts: map[string]int{
 				"queued":         4,
 				"running":        1,
@@ -118,7 +123,7 @@ func TestFormatStatus(t *testing.T) {
 			models: &fakeProviderModelManager{
 				activeModel: "deepseek/deepseek-v4-pro",
 			},
-			want: "📊 Archie status\n\nTasks\n▶ Running: 1\n👤 Waiting: 2\n⏸ Parked: 3\n⏳ Queued: 4\n🔀 PR open: 5\n✅ Merged: 6\n❌ Rejected: 7\n🚫 Declined: 8\n🛑 Dead: 9\n• Custom state: 10\n\nRuntime\nProvider: DeepSeek\nModel: deepseek/deepseek-v4-pro",
+			want: "📊 Archie status\n\nQueue: 6 in flight (1 running, 2 waiting on you, 3 parked)\n\nRuntime\nProvider: DeepSeek\nModel: deepseek/deepseek-v4-pro",
 		},
 		{
 			name:   "empty task counts with active model",
@@ -126,7 +131,7 @@ func TestFormatStatus(t *testing.T) {
 			models: &fakeModelManager{
 				activeModel: "anthropic/claude-3-5-sonnet",
 			},
-			want: "📊 Archie status\n\nTasks\nNo tasks yet\n\nRuntime\nProvider: Anthropic\nModel: anthropic/claude-3-5-sonnet",
+			want: "📊 Archie status\n\nQueue: idle\n\nRuntime\nProvider: Anthropic\nModel: anthropic/claude-3-5-sonnet",
 		},
 		{
 			name:   "nil counts with active model",
@@ -134,19 +139,19 @@ func TestFormatStatus(t *testing.T) {
 			models: &fakeModelManager{
 				activeModel: "google/gemini-2.5-flash",
 			},
-			want: "📊 Archie status\n\nTasks\nNo tasks yet\n\nRuntime\nProvider: Google\nModel: google/gemini-2.5-flash",
+			want: "📊 Archie status\n\nQueue: idle\n\nRuntime\nProvider: Google\nModel: google/gemini-2.5-flash",
 		},
 		{
 			name:   "nil model manager",
 			counts: map[string]int{"running": 2},
 			models: nil,
-			want:   "📊 Archie status\n\nTasks\n▶ Running: 2\n\nRuntime\nNot configured",
+			want:   "📊 Archie status\n\nQueue: 2 in flight (2 running)\n\nRuntime\nNot configured",
 		},
 		{
 			name:   "empty counts and nil model manager",
 			counts: map[string]int{},
 			models: nil,
-			want:   "📊 Archie status\n\nTasks\nNo tasks yet\n\nRuntime\nNot configured",
+			want:   "📊 Archie status\n\nQueue: idle\n\nRuntime\nNot configured",
 		},
 		{
 			name:   "custom display namer interface",
@@ -154,15 +159,15 @@ func TestFormatStatus(t *testing.T) {
 			models: &fakeCustomDisplayNamerManager{
 				activeModel: "openai/gpt-5.6",
 			},
-			want: "📊 Archie status\n\nTasks\n▶ Running: 1\n\nRuntime\nProvider: OpenAI Custom Enterprise\nModel: openai/gpt-5.6",
+			want: "📊 Archie status\n\nQueue: 1 in flight (1 running)\n\nRuntime\nProvider: OpenAI Custom Enterprise\nModel: openai/gpt-5.6",
 		},
 		{
-			name:   "provider set but model empty",
+			name:   "queued-only counts as idle -- queued is not in flight",
 			counts: map[string]int{"queued": 1},
 			models: &fakeProviderModelManager{
 				activeModel: "",
 			},
-			want: "📊 Archie status\n\nTasks\n⏳ Queued: 1\n\nRuntime\nNot configured",
+			want: "📊 Archie status\n\nQueue: idle\n\nRuntime\nNot configured",
 		},
 		{
 			name:   "model without slash and no provider manager",
@@ -170,7 +175,7 @@ func TestFormatStatus(t *testing.T) {
 			models: &fakeModelManager{
 				activeModel: "custom-local-model",
 			},
-			want: "📊 Archie status\n\nTasks\n▶ Running: 1\n\nRuntime\nProvider: Not configured\nModel: custom-local-model",
+			want: "📊 Archie status\n\nQueue: 1 in flight (1 running)\n\nRuntime\nProvider: Not configured\nModel: custom-local-model",
 		},
 	}
 
@@ -188,6 +193,106 @@ func TestRouteStatusError(t *testing.T) {
 	r := NewRouter(&fakeStore{err: errors.New("db down")}, nil, "test")
 	if _, err := r.Route(context.Background(), Message{Text: "/status"}); err == nil {
 		t.Error("expected error from Route when StatusCounts fails")
+	}
+}
+
+// -- /tasks tests --
+
+type fakeChatTaskLister struct {
+	tasks []ChatTaskSummary
+	err   error
+}
+
+func (f *fakeChatTaskLister) ListChatTasks(ctx context.Context, identity string, limit int) ([]ChatTaskSummary, error) {
+	return f.tasks, f.err
+}
+
+func TestRouteTasksNotConfigured(t *testing.T) {
+	r := NewRouter(nil, nil, "test")
+	reply, err := r.Route(context.Background(), Message{Text: "/tasks"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if reply != "task list not configured" {
+		t.Errorf("reply = %q, want the not-configured message", reply)
+	}
+}
+
+func TestRouteTasksEmpty(t *testing.T) {
+	r := NewRouter(nil, nil, "test")
+	r.TaskLister = &fakeChatTaskLister{}
+	reply, err := r.Route(context.Background(), Message{Text: "/tasks"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	want := "🗂 Archie tasks\n\nNo tasks yet"
+	if reply != want {
+		t.Errorf("reply = %q, want %q", reply, want)
+	}
+}
+
+func TestRouteTasksError(t *testing.T) {
+	r := NewRouter(nil, nil, "test")
+	r.TaskLister = &fakeChatTaskLister{err: errors.New("store unavailable")}
+	if _, err := r.Route(context.Background(), Message{Text: "/tasks"}); err == nil {
+		t.Error("expected error from Route when ListChatTasks fails")
+	}
+}
+
+func TestFormatTasks(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name  string
+		tasks []ChatTaskSummary
+		want  string
+	}{
+		{
+			name: "running task shows workflow/stage and age",
+			tasks: []ChatTaskSummary{
+				{ID: 42, Title: "Fix login bug", Status: taskstate.Running, Workflow: "tdd", Stage: "implement", UpdatedAt: now.Add(-3 * time.Minute)},
+			},
+			want: "🗂 Archie tasks\n\n▶ #42 Fix login bug\n  Running · tdd/implement · updated 3m ago",
+		},
+		{
+			name: "parked task shows its reason",
+			tasks: []ChatTaskSummary{
+				{ID: 17, Title: "Add dark mode", Status: taskstate.Parked, Workflow: "feasibility", ParkReason: "gate failed 3x", UpdatedAt: now.Add(-2 * time.Hour)},
+			},
+			want: "🗂 Archie tasks\n\n⏸ #17 Add dark mode\n  Parked · feasibility · updated 2h ago\n  ↳ gate failed 3x",
+		},
+		{
+			name: "attempt is shown only once a retry has happened",
+			tasks: []ChatTaskSummary{
+				{ID: 1, Title: "First try", Status: taskstate.Running, Attempt: 1, UpdatedAt: now},
+				{ID: 2, Title: "Retried", Status: taskstate.Running, Attempt: 2, UpdatedAt: now},
+			},
+			want: "🗂 Archie tasks\n\n▶ #1 First try\n  Running · updated just now\n▶ #2 Retried\n  Running · attempt 2 · updated just now",
+		},
+		{
+			name: "an unrecognized status still renders, generically",
+			tasks: []ChatTaskSummary{
+				{ID: 9, Title: "Mystery", Status: "custom_state", UpdatedAt: now},
+			},
+			want: "🗂 Archie tasks\n\n• #9 Mystery\n  Custom state · updated just now",
+		},
+		{
+			name: "actionable work leads terminal work regardless of recency",
+			tasks: []ChatTaskSummary{
+				{ID: 3, Title: "Just merged", Status: taskstate.Merged, UpdatedAt: now},
+				{ID: 4, Title: "Still running", Status: taskstate.Running, UpdatedAt: now.Add(-time.Hour)},
+			},
+			want: "🗂 Archie tasks\n\n▶ #4 Still running\n  Running · updated 1h ago\n✅ #3 Just merged\n  Merged · updated just now",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := formatTasks(tc.tasks, now)
+			if got != tc.want {
+				t.Errorf("formatTasks() =\n%q\nwant:\n%q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -996,7 +1101,7 @@ func TestRouteAgentsError(t *testing.T) {
 
 func TestLocalCommandsIncludesNewCommands(t *testing.T) {
 	cmds := LocalCommands()
-	for _, want := range []string{"/whoami", "/profile", "/sessions", "/resume", "/agents"} {
+	for _, want := range []string{"/whoami", "/profile", "/sessions", "/resume", "/agents", "/tasks"} {
 		if !slices.Contains(cmds, want) {
 			t.Errorf("LocalCommands() missing %s", want)
 		}
