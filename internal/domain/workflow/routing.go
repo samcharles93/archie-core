@@ -161,8 +161,18 @@ func loadPlaybookFile(path string, kw KindWorkflows, lw LabelWorkflows) error {
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return fmt.Errorf("parse playbook file %s: %w", path, err)
 	}
-	for key, value := range raw {
-		if err := bindPlaybookKey(path, key, value, kw, lw); err != nil {
+	// Sorted, not range order: LoadPlaybookDirs' doc comment promises a
+	// reproducible error when a file declares more than one colliding key,
+	// which a raw map range (Go's iteration order is randomized) cannot
+	// keep -- the same file could report a different "first" collision on
+	// every run otherwise.
+	keys := make([]string, 0, len(raw))
+	for key := range raw {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if err := bindPlaybookKey(path, key, raw[key], kw, lw); err != nil {
 			return err
 		}
 	}
