@@ -29,10 +29,21 @@ real, tested implementations (GitHub, Gitea) selected at daemon startup by
 would duplicate a contract that already exists. A Forge action position
 should be: a small set of named operations (e.g. `close-issue`, `create-pr`,
 `link-branch`), each with a typed `Args`/`Result` struct mirroring the
-matching `Forge` method's parameters/return, dispatched by the coordinator
-directly against the daemon's already-constructed `Forge` client -- the same
-"narrow host access" shape `ModuleDir` has, just pointed at an
-already-wired instance instead of a loaded directory.
+matching method's parameters/return.
+
+**Correction (2026-09-03, caught in review before this landed as settled
+design):** the dispatch target must be `internal/domain/workflow.Forger`
+(`CloseIssue`/`CreatePR`/`LinkBranch` -- already exists, already exactly
+these three operations), **not** `internal/forge.Forge` directly.
+`organisation.md`'s target structure places `forge/` under
+`internal/infrastructure/forge/`; today's `internal/forge` is a flat,
+unmigrated legacy package in the same position `internal/workflow` was in
+before its own migration. A new domain package depending on the flat
+package directly would create a domain-to-infrastructure dependency that
+breaks the moment `forge` migrates. `workflow.Forger` is the narrow,
+already-domain-owned contract that exists for exactly this reason -- the
+daemon's real `forge.Forge` client already satisfies it at the wiring
+layer today. Depend on `Forger`, not on `internal/forge`.
 
 **Operation scope for a first slice:** `close-issue` and `link-branch`
 (single-call, cleanly idempotent by event+issue identity) are the safe
@@ -110,8 +121,10 @@ starts. Until then, `t2db.19` should be treated as **Forge scoping only**
 
 - `internal/domain/eda` (or a new sibling package, e.g.
   `internal/domain/eda/forgeaction`): typed `Args`/`Result` per operation,
-  a small registry keyed by operation name, dispatched against the
-  daemon's existing `forge.Forge` instance.
+  a small registry keyed by operation name, dispatched against a
+  `workflow.Forger`-typed value -- not `internal/forge.Forge` directly (see
+  correction above).
 - `internal/app/archied`: wiring the coordinator's constructor to receive
-  the already-built `Forge` instance, no new lifecycle to manage.
-- No changes to `internal/forge` itself -- it is already the right shape.
+  the daemon's already-built `forge.Forge` client, passed in as the
+  `workflow.Forger` it already satisfies -- no new lifecycle to manage,
+  and no change to `internal/forge` itself.
