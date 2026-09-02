@@ -104,61 +104,13 @@ func LoadPlaybookDirs(dirs []string) (KindWorkflows, LabelWorkflows, error) {
 	kw := make(KindWorkflows)
 	lw := make(LabelWorkflows)
 	for _, dir := range dirs {
-		entries, err := os.ReadDir(dir)
-		if os.IsNotExist(err) {
-			continue
-		}
+		names, err := sortedPlaybookFilenames(dir)
 		if err != nil {
-			return nil, nil, fmt.Errorf("read playbook dir %s: %w", dir, err)
+			return nil, nil, err
 		}
-
-		var names []string
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			if ext := strings.ToLower(filepath.Ext(e.Name())); ext == ".yaml" || ext == ".yml" {
-				names = append(names, e.Name())
-			}
-		}
-		sort.Strings(names)
-
 		for _, name := range names {
-			path := filepath.Join(dir, name)
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return nil, nil, fmt.Errorf("read playbook file %s: %w", path, err)
-			}
-			raw := map[string]string{}
-			if err := yaml.Unmarshal(data, &raw); err != nil {
-				return nil, nil, fmt.Errorf("parse playbook file %s: %w", path, err)
-			}
-			for key, value := range raw {
-				trimmed := strings.TrimSpace(key)
-				if trimmed == "" {
-					return nil, nil, fmt.Errorf("playbook file %s: empty binding key", path)
-				}
-				if value == "" {
-					return nil, nil, fmt.Errorf("playbook file %s: key %q has no workflow name", path, trimmed)
-				}
-				if err := workintake.Kind(trimmed).Validate(); err == nil {
-					// It is a kind binding: the closed Kind vocabulary accepts it.
-					if existing, ok := kw[workintake.Kind(trimmed)]; ok {
-						return nil, nil, fmt.Errorf("playbook dirs: kind %q bound in two sources (%q and %q)", trimmed, existing, value)
-					}
-					kw[workintake.Kind(trimmed)] = value
-					continue
-				}
-				// Otherwise it is an arbitrary-label binding. Reject kind-owned
-				// labels and empty labels with the same rules the single-file
-				// loader applies.
-				if _, ok := defaultKindWorkflows[workintake.Kind(trimmed)]; ok {
-					return nil, nil, fmt.Errorf("playbook file %s: label %q is already owned by the kind routing layer", path, trimmed)
-				}
-				if existing, ok := lw[trimmed]; ok {
-					return nil, nil, fmt.Errorf("playbook dirs: label %q bound in two sources (%q and %q)", trimmed, existing, value)
-				}
-				lw[trimmed] = value
+			if err := loadPlaybookFile(filepath.Join(dir, name), kw, lw); err != nil {
+				return nil, nil, err
 			}
 		}
 	}
@@ -170,6 +122,82 @@ func LoadPlaybookDirs(dirs []string) (KindWorkflows, LabelWorkflows, error) {
 		lw = nil
 	}
 	return kw, lw, nil
+}
+
+// sortedPlaybookFilenames lists the *.yaml / *.yml files directly inside dir,
+// sorted so LoadPlaybookDirs' source order is deterministic. A missing
+// directory is not an error -- it contributes no filenames, matching
+// LoadPlaybookDirs' "no playbook dir configured" convention.
+func sortedPlaybookFilenames(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read playbook dir %s: %w", dir, err)
+	}
+
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if ext := strings.ToLower(filepath.Ext(e.Name())); ext == ".yaml" || ext == ".yml" {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// loadPlaybookFile reads one playbook binding file and merges its keys into
+// kw/lw via bindPlaybookKey, mutating both in place.
+func loadPlaybookFile(path string, kw KindWorkflows, lw LabelWorkflows) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read playbook file %s: %w", path, err)
+	}
+	raw := map[string]string{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("parse playbook file %s: %w", path, err)
+	}
+	for key, value := range raw {
+		if err := bindPlaybookKey(path, key, value, kw, lw); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// bindPlaybookKey classifies one playbook binding key as a closed-vocabulary
+// kind or an arbitrary label, then merges it into kw/lw -- applying the same
+// collision and empty-value rules LoadPlaybookDirs' doc comment describes.
+func bindPlaybookKey(path, key, value string, kw KindWorkflows, lw LabelWorkflows) error {
+	trimmed := strings.TrimSpace(key)
+	if trimmed == "" {
+		return fmt.Errorf("playbook file %s: empty binding key", path)
+	}
+	if value == "" {
+		return fmt.Errorf("playbook file %s: key %q has no workflow name", path, trimmed)
+	}
+	if err := workintake.Kind(trimmed).Validate(); err == nil {
+		// It is a kind binding: the closed Kind vocabulary accepts it.
+		if existing, ok := kw[workintake.Kind(trimmed)]; ok {
+			return fmt.Errorf("playbook dirs: kind %q bound in two sources (%q and %q)", trimmed, existing, value)
+		}
+		kw[workintake.Kind(trimmed)] = value
+		return nil
+	}
+	// Otherwise it is an arbitrary-label binding. Reject kind-owned labels
+	// and empty labels with the same rules the single-file loader applies.
+	if _, ok := defaultKindWorkflows[workintake.Kind(trimmed)]; ok {
+		return fmt.Errorf("playbook file %s: label %q is already owned by the kind routing layer", path, trimmed)
+	}
+	if existing, ok := lw[trimmed]; ok {
+		return fmt.Errorf("playbook dirs: label %q bound in two sources (%q and %q)", trimmed, existing, value)
+	}
+	lw[trimmed] = value
+	return nil
 }
 
 // MergeKindWorkflows merges extra into base, failing on a key bound by
