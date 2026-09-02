@@ -2,6 +2,7 @@ package curator
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	domainmemory "github.com/samcharles93/archie-core/internal/domain/memory"
@@ -14,6 +15,9 @@ import (
 // daemon itself is never part of it. Fields are typed contracts declared
 // here — this package never names who implements them.
 type Registrar struct {
+	// Log is the curator-scoped diagnostic logger. It is optional so domain
+	// tests and embedders can construct a registrar without a logging sink.
+	Log *slog.Logger
 	// Model is the default model reference ("provider/model") for
 	// curators whose manifest leaves Model empty.
 	Model string
