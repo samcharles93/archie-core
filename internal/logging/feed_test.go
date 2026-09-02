@@ -1,7 +1,9 @@
 package logging
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"log/slog"
 	"testing"
 )
@@ -26,6 +28,26 @@ func TestFeedCapturesStructuredSlogEntriesInOrder(t *testing.T) {
 	logger.Error("failed", "component", "worker")
 	if got := <-updates; got.Message != "failed" || got.Level != "ERROR" {
 		t.Fatalf("live entry = %#v", got)
+	}
+}
+
+func TestFeedHandlerWithAttrsPropagatesToWrappedHandler(t *testing.T) {
+	feed := NewFeed(2)
+	var buf bytes.Buffer
+	logger := slog.New(NewFeedHandler(slog.NewJSONHandler(&buf, nil), feed)).With("component", "curator")
+	logger.Info("ran")
+
+	entries := feed.Snapshot()
+	if len(entries) != 1 || entries[0].Fields["component"] != "curator" {
+		t.Fatalf("feed entry = %#v, want component=curator", entries)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+		t.Fatalf("json.Unmarshal(persistent sink output) = %v", err)
+	}
+	if decoded["component"] != "curator" {
+		t.Fatalf("persistent sink output = %#v, want component=curator", decoded)
 	}
 }
 

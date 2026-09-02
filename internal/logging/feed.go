@@ -108,12 +108,14 @@ func (h *FeedHandler) Handle(ctx context.Context, record slog.Record) error {
 func (h *FeedHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	clone := *h
 	clone.attrs = append(append([]slog.Attr(nil), h.attrs...), PrefixAttrs(attrs, h.groups)...)
+	clone.next = h.next.WithAttrs(attrs)
 	return &clone
 }
 
 func (h *FeedHandler) WithGroup(name string) slog.Handler {
 	clone := *h
 	clone.groups = append(append([]string(nil), h.groups...), name)
+	clone.next = h.next.WithGroup(name)
 	return &clone
 }
 
