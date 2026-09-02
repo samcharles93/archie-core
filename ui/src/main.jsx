@@ -1,4 +1,5 @@
 import "./css/_main.css";
+import { render } from "preact";
 import { el, mount } from "./base/dom.jsx";
 import { icon } from "./base/icons.jsx";
 import { dashboardPage } from "./dashboard/dashboard.jsx";
@@ -11,6 +12,7 @@ import { settingsPage } from "./settings/settings.jsx";
 import { logsPage } from "./logs/logs.jsx";
 import { capturesPage } from "./captures/captures.jsx";
 import { mappingsPage } from "./mappings/mappings.jsx";
+import { bindingsPage } from "./bindings/bindings.jsx";
 import { memoryPage } from "./memory/memory.jsx";
 import { chatPage } from "./chat/chat.jsx";
 
@@ -29,6 +31,7 @@ const routes = [
   { path: "/logs", label: "Logs", icon: "logs", view: logsPage },
   { path: "/captures", label: "Event inspector", icon: "captures", view: capturesPage },
   { path: "/mappings", label: "Field mappings", icon: "mappings", view: mappingsPage },
+  { path: "/bindings", label: "Playbook bindings", icon: "bindings", view: bindingsPage },
   { path: "/skills", label: "Skills", icon: "skills", view: skillsPage },
   { path: "/workflows", label: "Workflows", icon: "workflows", view: workflowsPage },
   { path: "/memory", label: "Memory", icon: "memory", view: memoryPage },
@@ -219,7 +222,23 @@ function start() {
       toggleChat(true);
       return;
     }
-    mount(outlet, route.view ? route.view(new URLSearchParams(query)) : comingSoon(route));
+    // Every registered page returns a Preact VNode (all views import `h`
+    // from "preact"), which mount()/append() cannot render -- append()
+    // only knows real DOM Nodes and strings, so a bare VNode object became
+    // the literal text "[object Object]". Preact's own render() diffs and
+    // mounts a VNode correctly, including running the previous page's
+    // effect-cleanup on unmount. comingSoon() (the `!route.view` fallback,
+    // currently unused -- no route declares `soon: true`) still returns a
+    // real DOM Node, so it keeps going through mount() -- render() and
+    // mount()/replaceChildren() should not alternate on the same outlet
+    // across navigations, since Preact tracks its own vdom state on the
+    // container node; if a `soon: true` route is ever added, revisit this.
+    const rendered = route.view ? route.view(new URLSearchParams(query)) : comingSoon(route);
+    if (rendered instanceof Node) {
+      mount(outlet, rendered);
+    } else {
+      render(rendered, outlet);
+    }
     // Navigating to a page dismisses the chat drawer; the operator has moved on.
     toggleChat(false);
   }

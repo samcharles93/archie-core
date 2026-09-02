@@ -1,0 +1,32 @@
+/* Playbook binding editor: tie a matcher, a field mapping, and a
+   workflow together, gated by an explicit approval state machine. */
+
+.binding-form {
+  margin-bottom: var(--sp-4);
+  padding: var(--sp-4);
+}
+
+.binding-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-3);
+  font-size: var(--text-sm);
+  color: var(--fg-subtle);
+}
+
+.binding-input,
+.binding-select {
+  padding: var(--sp-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font: inherit;
+}
+
+.binding-error {
+  color: var(--danger, #e5484d);
+  font-size: var(--text-sm);
+  margin-bottom: var(--sp-3);
+}
