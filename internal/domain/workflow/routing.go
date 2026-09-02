@@ -2,7 +2,10 @@ package workflow
 
 import (
 	"fmt"
+	"maps"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -76,6 +79,135 @@ func LoadKindWorkflowsYAML(path string) (KindWorkflows, error) {
 		kw[kind] = name
 	}
 	return kw, nil
+}
+
+// LoadPlaybookDirs reads every *.yaml / *.yml file across the configured
+// directories, treats each as a binding file (kind keys or arbitrary label
+// keys), and merges them into a single kind map and a single label map.
+// This is the third slice of docs/prds/eda-playbook-engine.md (t2db.11):
+// a list of directories is an additional, independent input to the two
+// single-file fields, which remain supported unchanged -- it is not a
+// replacement.
+//
+// Collision rule (the load-bearing case this slice exists to exercise): a
+// binding key (kind or label) declared by more than one source -- two
+// files in one directory, or two configured directories -- is a reported
+// load failure. Nothing is silently arbitrated by source order or version;
+// the colliding definitions are dropped and the error returned to the
+// caller. Source order is deterministic (configured dir order, then sorted
+// filenames) so a reported error is reproducible.
+//
+// An empty list, or directories that do not exist, returns (nil, nil):
+// "no playbook dir configured" means "no bindings", matching the
+// single-file fields' empty-means-defaults convention.
+func LoadPlaybookDirs(dirs []string) (KindWorkflows, LabelWorkflows, error) {
+	kw := make(KindWorkflows)
+	lw := make(LabelWorkflows)
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return nil, nil, fmt.Errorf("read playbook dir %s: %w", dir, err)
+		}
+
+		var names []string
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			if ext := strings.ToLower(filepath.Ext(e.Name())); ext == ".yaml" || ext == ".yml" {
+				names = append(names, e.Name())
+			}
+		}
+		sort.Strings(names)
+
+		for _, name := range names {
+			path := filepath.Join(dir, name)
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return nil, nil, fmt.Errorf("read playbook file %s: %w", path, err)
+			}
+			raw := map[string]string{}
+			if err := yaml.Unmarshal(data, &raw); err != nil {
+				return nil, nil, fmt.Errorf("parse playbook file %s: %w", path, err)
+			}
+			for key, value := range raw {
+				trimmed := strings.TrimSpace(key)
+				if trimmed == "" {
+					return nil, nil, fmt.Errorf("playbook file %s: empty binding key", path)
+				}
+				if value == "" {
+					return nil, nil, fmt.Errorf("playbook file %s: key %q has no workflow name", path, trimmed)
+				}
+				if err := workintake.Kind(trimmed).Validate(); err == nil {
+					// It is a kind binding: the closed Kind vocabulary accepts it.
+					if existing, ok := kw[workintake.Kind(trimmed)]; ok {
+						return nil, nil, fmt.Errorf("playbook dirs: kind %q bound in two sources (%q and %q)", trimmed, existing, value)
+					}
+					kw[workintake.Kind(trimmed)] = value
+					continue
+				}
+				// Otherwise it is an arbitrary-label binding. Reject kind-owned
+				// labels and empty labels with the same rules the single-file
+				// loader applies.
+				if _, ok := defaultKindWorkflows[workintake.Kind(trimmed)]; ok {
+					return nil, nil, fmt.Errorf("playbook file %s: label %q is already owned by the kind routing layer", path, trimmed)
+				}
+				if existing, ok := lw[trimmed]; ok {
+					return nil, nil, fmt.Errorf("playbook dirs: label %q bound in two sources (%q and %q)", trimmed, existing, value)
+				}
+				lw[trimmed] = value
+			}
+		}
+	}
+
+	if len(kw) == 0 {
+		kw = nil
+	}
+	if len(lw) == 0 {
+		lw = nil
+	}
+	return kw, lw, nil
+}
+
+// MergeKindWorkflows merges extra into base, failing on a key bound by
+// both. The single-file field and the playbook directory are independent
+// sources; a key each claims is a collision, not a precedence question
+// (t2db.11). Nil arguments are treated as empty. A nil nil result is
+// returned only when both inputs are nil/empty, so Set* can keep its
+// nil-means-defaults convention. This is a domain-package naming helper
+// the composition layer calls.
+func MergeKindWorkflows(base, extra KindWorkflows) (KindWorkflows, error) {
+	merged := make(KindWorkflows, len(base)+len(extra))
+	maps.Copy(merged, base)
+	for k, v := range extra {
+		if _, exists := merged[k]; exists {
+			return nil, fmt.Errorf("workflow binding collision: kind %q bound in two sources", k)
+		}
+		merged[k] = v
+	}
+	if len(merged) == 0 {
+		return nil, nil
+	}
+	return merged, nil
+}
+
+// MergeLabelWorkflows is the label counterpart of MergeKindWorkflows.
+func MergeLabelWorkflows(base, extra LabelWorkflows) (LabelWorkflows, error) {
+	merged := make(LabelWorkflows, len(base)+len(extra))
+	maps.Copy(merged, base)
+	for k, v := range extra {
+		if _, exists := merged[k]; exists {
+			return nil, fmt.Errorf("workflow binding collision: label %q bound in two sources", k)
+		}
+		merged[k] = v
+	}
+	if len(merged) == 0 {
+		return nil, nil
+	}
+	return merged, nil
 }
 
 // workflowForLabels returns the registered workflow name for a task's

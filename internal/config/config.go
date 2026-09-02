@@ -447,6 +447,17 @@ type Config struct {
 	// set, or a duplicate binding, is a load failure per the design doc's
 	// collision rule.
 	WorkflowLabelsFile string `toml:"workflow_labels_file" yaml:"workflow_labels_file"`
+	// PlaybookDirs is an optional list of directories of *.yaml/*.yml
+	// binding files loaded at startup (the third slice of
+	// docs/prds/eda-playbook-engine.md). Each file binds kinds and/or
+	// arbitrary labels to workflow names; the directories are an
+	// additional input to WorkflowRoutingFile and WorkflowLabelsFile,
+	// which remain supported unchanged. A binding key declared by more
+	// than one source -- two files, or two directories -- is a reported
+	// load failure (a collision), not a silent pick-one. When empty, no
+	// playbook directories are loaded. Repo-scoping of playbook dirs is a
+	// separate, later decision and is not attempted here.
+	PlaybookDirs []string `toml:"playbook_dirs" yaml:"playbook_dirs"`
 	// MaxRetries caps how many times a parked task is retried before
 	// being permanently parked (status "dead"). Defaults to 3.
 	MaxRetries int `toml:"max_retries" yaml:"max_retries"`
