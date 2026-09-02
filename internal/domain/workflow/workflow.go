@@ -10,7 +10,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"sort"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -117,6 +119,14 @@ type TaskContext struct {
 	// agent stages record tool successes and failures for guardrail
 	// enforcement. Wired by the composition root from the daemon.
 	Guardrails *tools.GuardrailEngine
+
+	// RunUsage accumulates every agent run's token breakdown (prompt,
+	// completion, cached) for this workflow execution. It is presentation
+	// scratch, not persisted -- Task.TokensUsed remains the durable,
+	// authoritative total. It exists so PR bodies can show how much of the
+	// reported prompt-token sum was cache hits (billed at a steep discount)
+	// rather than fresh, full-price tokens; see formatTokenUsage.
+	RunUsage agentexec.Usage
 }
 
 // Emit publishes an observability event stamped with the task's
@@ -365,3 +375,57 @@ func clipTail(s string, n int) string {
 	}
 	return "…(truncated)\n" + s[cut:]
 }
+
+// formatTokenUsage renders a token total for a human, breaking out how much
+// was a cache hit (billed at a steep discount) versus fresh, full-price
+// tokens. Without this, a heavily-cached run's raw prompt-token sum reads as
+// roughly 10x its actual bill.
+//
+// It falls back to the plain total when no usage breakdown is available
+// (usage is the zero value -- e.g. a workflow that never ran an agent stage,
+// or an older code path that hasn't been wired to populate RunUsage), so
+// callers never need to special-case an empty Usage themselves.
+func formatTokenUsage(total int, usage agentexec.Usage) string {
+	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 && usage.CachedTokens == 0 {
+		return fmt.Sprintf("%d tokens", total)
+	}
+	fresh := max(usage.PromptTokens-usage.CachedTokens+usage.CompletionTokens, 0)
+	return fmt.Sprintf("%d tokens (%d fresh + %d cached)", total, fresh, usage.CachedTokens)
+}
+
+// extractFailingGateOutput trims a gate command's combined output down to
+// the lines relevant to diagnosing a failure, dropping "ok" lines for
+// packages that already pass. `go test ./...` output interleaves one
+// "ok  \t<pkg>\t<time>" line per passing package with the failing packages'
+// "--- FAIL:"/"FAIL\t<pkg>" blocks; in a large repo the passing-package
+// lines dominate the byte count and get squeezed out by clip's size bound,
+// pushing the actual failure detail out of the mission prompt on later
+// retries.
+//
+// It only trims when the output actually looks like recognized `go test`
+// failure output (at least one "--- FAIL:" or "FAIL\t" marker survives the
+// filter); otherwise it returns s unchanged, so a non-Go gate command or an
+// unexpected output shape degrades to the previous full-output behaviour
+// instead of silently dropping real failure information.
+func extractFailingGateOutput(s string) string {
+	lines := strings.Split(s, "\n")
+	kept := make([]string, 0, len(lines))
+	sawFailureMarker := false
+	for _, line := range lines {
+		if goTestOKLine.MatchString(line) {
+			continue
+		}
+		kept = append(kept, line)
+		if strings.HasPrefix(line, "--- FAIL:") || strings.HasPrefix(line, "FAIL\t") || strings.HasPrefix(line, "FAIL ") {
+			sawFailureMarker = true
+		}
+	}
+	if !sawFailureMarker {
+		return s
+	}
+	return strings.Join(kept, "\n")
+}
+
+// goTestOKLine matches a `go test` passing-package summary line, e.g.
+// "ok  \tgithub.com/example/pkg\t0.004s".
+var goTestOKLine = regexp.MustCompile(`^ok\s+\S+`)

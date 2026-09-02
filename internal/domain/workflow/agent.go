@@ -179,6 +179,7 @@ func (a AgentStage) handleResult(
 	}
 	tc.Task.TokensUsed += res.TokensUsed
 	tc.Task.Iterations += res.Iterations
+	accumulateUsage(&tc.RunUsage, res.Usage)
 	if emitErr := tc.EmitDurable(ctx, events.KindAgentFinish, a.Name, res.Summary, agentFinishData(res, modelRef)); emitErr != nil {
 		return fmt.Errorf("persist agent finish: %w", emitErr)
 	}
@@ -243,6 +244,17 @@ func modelContextBudget(cfg config.Config, modelRef string) int {
 		return 0
 	}
 	return limits.ContextWindow - limits.MaxOutputTokens
+}
+
+// accumulateUsage adds a single agent run's token breakdown onto a
+// workflow-run running total. Extracted so every accumulation site (agent.go
+// and implement.go's baseline-fix repair loop) stays in sync.
+func accumulateUsage(total *agentexec.Usage, delta agentexec.Usage) {
+	total.PromptTokens += delta.PromptTokens
+	total.CompletionTokens += delta.CompletionTokens
+	total.TotalTokens += delta.TotalTokens
+	total.CachedTokens += delta.CachedTokens
+	total.CacheCreationTokens += delta.CacheCreationTokens
 }
 
 func agentFinishData(res agentexec.Result, modelRef string) map[string]any {
