@@ -3,5 +3,6 @@
   "backend": "dolt",
   "dolt_mode": "embedded",
   "dolt_database": "archie_core",
-  "project_id": "e8a66150-1f5f-42d2-8653-dcf8463cef74"
+  "project_id": "e8a66150-1f5f-42d2-8653-dcf8463cef74",
+  "last_bd_version": "1.2.2"
 }
