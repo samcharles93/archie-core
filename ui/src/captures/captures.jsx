@@ -1,7 +1,17 @@
+import { h, Fragment } from "preact";
+import { useState, useEffect } from "preact/hooks";
 import "./captures.css";
 import { api, subscribeEvents } from "../base/api.jsx";
-import { el, empty, mount, pill } from "../base/dom.jsx";
-import { captureRow } from "./capture-row.jsx";
+import { CaptureRow, Pill } from "./capture-row.jsx";
+
+export function Empty({ title, detail }) {
+  return (
+    <div className="empty">
+      <div className="empty-title">{title}</div>
+      {detail && <div>{detail}</div>}
+    </div>
+  );
+}
 
 /**
  * Event inspector (t2db.2): the operator-facing half of capture. Recent
@@ -17,100 +27,95 @@ import { captureRow } from "./capture-row.jsx";
  * as an invalidation signal, triggering a refetch of the authoritative list
  * rather than being merged into local state directly.
  */
-export function capturesPage() {
-  const root = el("div");
-  const list = el("div.card");
-  const streamState = pill("connecting", "idle");
+export function capturesPage(query) {
+  return <CapturesApp query={query} />;
+}
 
-  let captures = [];
-  let expandedId = null;
-  let loadError = null;
-  let enabled = true;
+function CapturesApp({ query }) {
+  const [captures, setCaptures] = useState([]);
+  const [expandedId, setExpandedId] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  const [enabled, setEnabled] = useState(true);
+  const [streamState, setStreamState] = useState({ text: "connecting", kind: "idle" });
 
-  render();
-  load();
-
-  const unsubscribe = subscribeEvents(
-    (event) => {
-      if (event.kind !== "capture") return;
-      load();
-    },
-    (state) => {
-      streamState.className = `pill pill-${state === "live" ? "ok" : "warn"}`;
-      streamState.textContent = state;
-    },
-  );
-  root.addEventListener("archie:teardown", unsubscribe);
-
-  async function load() {
+  const load = async () => {
     try {
       const res = await api.captures(100);
-      enabled = res.enabled !== false;
-      captures = res.captures || [];
-      loadError = null;
+      setEnabled(res.enabled !== false);
+      setCaptures(res.captures || []);
+      setLoadError(null);
     } catch (err) {
-      loadError = String(err.message || err);
+      setLoadError(String(err.message || err));
     }
-    renderRows();
-  }
+  };
 
-  function render() {
-    mount(
-      root,
-      el(
-        "div.page-head",
-        el(
-          "div",
-          el("h1.page-title", "Event inspector"),
-          el("p.page-sub", "Real inbound payloads archie has captured, most recent first."),
-        ),
-        el("div.page-actions", streamState, el("button.btn", { onclick: load }, "Refresh")),
-      ),
-      list,
+  useEffect(() => {
+    load();
+    const unsubscribe = subscribeEvents(
+      (event) => {
+        if (event.kind !== "capture") return;
+        load();
+      },
+      (state) => {
+        setStreamState({
+          text: state,
+          kind: state === "live" ? "ok" : "warn",
+        });
+      }
     );
-    renderRows();
-  }
+    return () => unsubscribe();
+  }, []);
 
-  function renderRows() {
+  const renderRows = () => {
     if (loadError) {
-      mount(list, empty("Cannot reach archied", loadError));
-      return;
+      return <Empty title="Cannot reach archied" detail={loadError} />;
     }
     if (!enabled) {
-      mount(list, empty("Capture is not configured", "This deployment has no capture storage wired up."));
-      return;
+      return <Empty title="Capture is not configured" detail="This deployment has no capture storage wired up." />;
     }
     if (!captures.length) {
-      mount(
-        list,
-        empty("No captures yet", "Point a webhook at /webhooks/capture/<source> and it will show up here."),
-      );
-      return;
+      return <Empty title="No captures yet" detail="Point a webhook at /webhooks/capture/<source> and it will show up here." />;
     }
-    mount(
-      list,
-      el(
-        "div.table-scroll",
-        el(
-          "table.table",
-          el(
-            "thead",
-            el(
-              "tr",
-              ...["Source", "Received", "Binding", "Content type", ""].map((h) => el("th", h)),
-            ),
-          ),
-          el("tbody", ...captures.flatMap((c) => captureRow(c, {
-            expanded: expandedId === c.id,
-            onToggle: () => {
-              expandedId = expandedId === c.id ? null : c.id;
-              renderRows();
-            },
-          }))),
-        ),
-      ),
+    return (
+      <div className="table-scroll">
+        <table className="table">
+          <thead>
+            <tr>
+              {["Source", "Received", "Binding", "Content type", ""].map((h, i) => (
+                <th key={i}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {captures.map((c) => (
+              <CaptureRow 
+                key={c.id} 
+                capture={c} 
+                expanded={expandedId === c.id} 
+                onToggle={() => setExpandedId(expandedId === c.id ? null : c.id)} 
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
     );
-  }
+  };
 
-  return root;
+  return (
+    <div>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Event inspector</h1>
+          <p className="page-sub">Real inbound payloads archie has captured, most recent first.</p>
+        </div>
+        <div className="page-actions">
+          <Pill text={streamState.text} kind={streamState.kind} />
+          <button className="btn" onClick={load}>Refresh</button>
+        </div>
+      </div>
+      <div className="card">
+        {renderRows()}
+      </div>
+    </div>
+  );
 }
