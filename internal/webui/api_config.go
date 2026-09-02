@@ -224,6 +224,14 @@ type ConfigView struct {
 	// runtime overlay, so the UI can mark those rows (their file value
 	// is shadowed until reset) and offer a per-row reset.
 	Overridden []string `json:"overridden,omitempty"`
+	// Schema is the field-descriptor catalog (archie-core-b6ew) attached to
+	// this view's own values, locked reasons, and overridden markers -- see
+	// config_schema.go. The dashboard's generic renderer (archie-core-b6ew.3)
+	// reads this instead of the flat fields above to decide labels,
+	// sections, types, and editability; the flat fields stay for existing
+	// consumers (structured cards, provenance, reload/lock plumbing) rather
+	// than being removed in the same change that adds their replacement.
+	Schema []ConfigSection `json:"schema"`
 }
 
 // IdentityView is who Archie is on the forge -- never the token that
@@ -372,6 +380,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		rs := s.LastReload()
 		view.Reload = &rs
 	}
+	view.Schema = buildConfigSchema(view)
 
 	writeJSON(w, view)
 }
