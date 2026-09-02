@@ -433,6 +433,12 @@ type Config struct {
 	// (plugin-defined workflows override built-ins). When empty,
 	// only built-in workflows are available.
 	SkillsDir string `toml:"skills_dir" yaml:"skills_dir"`
+	// WorkflowRoutingFile is an optional path to a YAML file rebinding
+	// which registered workflow an intake Kind (bug/feature/bootstrap)
+	// prefers -- see docs/prds/eda-playbook-engine.md. When empty, the
+	// built-in bindings (bug->tdd, feature->feasibility,
+	// bootstrap->bootstrap) are used unchanged.
+	WorkflowRoutingFile string `toml:"workflow_routing_file" yaml:"workflow_routing_file"`
 	// MaxRetries caps how many times a parked task is retried before
 	// being permanently parked (status "dead"). Defaults to 3.
 	MaxRetries int `toml:"max_retries" yaml:"max_retries"`

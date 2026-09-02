@@ -639,6 +639,12 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 // built-ins fill gaps.
 func (b *boot) loadWorkflows(ctx context.Context) error {
 	cfg, log := b.cfg, b.log
+	kindWorkflows, err := workflow.LoadKindWorkflowsYAML(cfg.WorkflowRoutingFile)
+	if err != nil {
+		log.Error("workflow routing file load failed", "path", cfg.WorkflowRoutingFile, "err", err)
+		return err
+	}
+	workflow.SetKindWorkflows(kindWorkflows)
 	skillsBase := cfg.SkillsDir
 	if skillsBase == "" {
 		skillsBase = cfg.WorkDir
