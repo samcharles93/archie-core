@@ -17,7 +17,9 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
+	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
+	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/eventbus"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -70,10 +72,29 @@ type Daemon struct {
 	// production composition and remains useful only to fail closed in tests.
 	ConnectedNATS NATSEndpoint
 	Store         store.TaskStore
-	Forge         forge.Forge
-	Trees         *worktree.Manager
-	Bus           *events.Bus
-	Log           *slog.Logger
+	// Mappings persists payload field mappings (docs/prds/payload-field-mapping.md).
+	// Used by the binding dispatch loop to resolve capture bodies against
+	// the mapping a binding names. Optional: nil disables the binding
+	// dispatch loop (legacy behaviour).
+	Mappings store.MappingStore
+	// Bindings persists playbook bindings (docs/prds/playbook-binding.md).
+	// Optional: nil disables the binding dispatch loop (legacy behaviour).
+	Bindings store.BindingStore
+	// BindingDispatcher is the dispatch-time helper surface for bindings:
+	// list undispatched captures, look up armed bindings by source for the
+	// matcher, and write the at-most-once dedup ledger row. Split from
+	// BindingStore to keep the CRUD interface under the interfacebloat
+	// limit. Optional: nil disables the dispatch loop.
+	BindingDispatcher store.BindingDispatcher
+	// BindingTaskCreator enqueues a task triggered by a binding. Split
+	// off TaskLifecycle so the lifecycle surface stays narrow and the
+	// dispatch loop does not acquire the full task-creation contract.
+	// Optional: nil disables the dispatch loop.
+	BindingTaskCreator store.BindingTaskCreator
+	Forge              forge.Forge
+	Trees              *worktree.Manager
+	Bus                *events.Bus
+	Log                *slog.Logger
 	// Tasks is the optional message bus for task distribution. Nil means no
 	// bus is configured; the existing SQLite ClaimNext flow is used.
 	Tasks          TaskBus
@@ -332,6 +353,7 @@ func (d *Daemon) pollForIdentity(ctx context.Context, id *IdentityRunner) {
 func (d *Daemon) maintainAndDrain(ctx context.Context) {
 	d.cleanupExpiredStorage(ctx)
 	d.reconcilePRs(ctx)
+	d.dispatchBindings(ctx)
 	if d.Tasks != nil {
 		d.drainNATS(ctx)
 	} else {
@@ -401,12 +423,13 @@ func (d *Daemon) pollEitherWithConfig(ctx context.Context, fg forge.Forge, cfg c
 }
 
 // Cycle is one poll-and-drain pass: enqueue newly assigned issues,
-// reconcile open PRs, act on human replies to waiting tasks, then
-// process queued tasks concurrently up to containers.max_concurrency.
+// reconcile open PRs, run the binding dispatch loop, then process
+// queued tasks concurrently up to containers.max_concurrency.
 func (d *Daemon) Cycle(ctx context.Context) {
 	d.cleanupExpiredStorage(ctx)
 	d.poll(ctx)
 	d.reconcilePRs(ctx)
+	d.dispatchBindings(ctx)
 	if d.Tasks != nil {
 		d.drainNATS(ctx)
 	} else {
@@ -445,6 +468,198 @@ func (d *Daemon) drainSQLite(ctx context.Context) {
 		dispatcher.Submit(ctx, task, d.process)
 	}
 	dispatcher.Wait()
+}
+
+// bindingDispatchBatchLimit caps how many undispatched captures a single
+// dispatchBindings pass will fetch from the store. The cap is defensive
+// (the captures table is also pruned by retention/maxEvents) and bounds a
+// single cycle's worst-case latency on a backlog.
+const bindingDispatchBatchLimit = 100
+
+// dispatchBindings walks authenticated captures whose source has at
+// least one armed binding, evaluates each binding's matcher against
+// the capture, resolves fields through the binding's mapping, and
+// enqueues a task per matched (binding, capture) pair.
+//
+// The binding_dispatches ledger is the at-most-once guarantee across
+// cycles and daemon restarts: RecordDispatch returns
+// store.ErrAlreadyDispatched on a duplicate (binding_id, capture_id)
+// pair, and dispatchOneBinding treats that as a normal "another cycle
+// raced us" outcome rather than an error.
+//
+// Nil Bindings disables the loop (legacy behaviour: daemons built
+// before t2db.4 Phase E had no playbook bindings).
+func (d *Daemon) dispatchBindings(ctx context.Context) {
+	if d.Bindings == nil {
+		return
+	}
+
+	// Gather armed sources first so the captures query filters down to
+	// only relevant rows -- the table-level view over captured_events
+	// is otherwise unbounded, and a backlog of unrelated sources
+	// should never be scanned on a cycle.
+	bindings, err := d.Bindings.ListBindings(ctx)
+	if err != nil {
+		d.Log.Warn("list bindings failed", "error", err)
+		return
+	}
+	sources := make([]string, 0, len(bindings))
+	for _, b := range bindings {
+		if b.Status == binding.StatusArmed && b.Matcher.Source != "" {
+			sources = append(sources, b.Matcher.Source)
+		}
+	}
+	if len(sources) == 0 {
+		return
+	}
+
+	captures, err := d.BindingDispatcher.ListUndispatchedCaptures(ctx, sources, bindingDispatchBatchLimit)
+	if err != nil {
+		d.Log.Warn("list undispatched captures failed", "error", err)
+		return
+	}
+	for _, c := range captures {
+		armed, err := d.BindingDispatcher.ArmedBindingsForSource(ctx, c.Source)
+		if err != nil {
+			d.Log.Warn("armed bindings lookup", "source", c.Source, "error", err)
+			continue
+		}
+		for _, b := range armed {
+			if !b.Matcher.Matches(c.Source, c.Authenticated) {
+				continue
+			}
+			d.dispatchOneBinding(ctx, b, c)
+		}
+	}
+}
+
+// dispatchOneBinding handles a single (binding, capture) match: resolve
+// fields through the binding's mapping, enqueue a task, and record the
+// dispatch in the dedup ledger. Each step degrades independently --
+// a mapping lookup failure logs and returns, a required-field
+// resolution failure records a binding_dispatch_failure event and
+// returns without enqueueing, an enqueue failure logs and returns, and
+// a RecordDispatch returning ErrAlreadyDispatched is treated as a
+// benign race winner (another cycle already created the task).
+//
+// Owner/repo resolution currently falls back to the single configured
+// repo (when exactly one is configured); binding.Owner/Repo is a
+// follow-up so multi-repo deployments don't have to live with the
+// ambiguity.
+func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c store.CapturedEvent) {
+	if d.Mappings == nil {
+		d.Log.Warn("binding dispatch: mapping store unavailable", "binding", b.ID)
+		return
+	}
+	m, err := d.Mappings.GetMapping(ctx, b.MappingID)
+	if err != nil {
+		d.Log.Warn("binding dispatch: get mapping", "binding", b.ID, "mapping", b.MappingID, "error", err)
+		return
+	}
+	if m == nil {
+		d.Log.Warn("binding dispatch: mapping missing", "binding", b.ID, "mapping", b.MappingID)
+		return
+	}
+	values, failures := mapping.Resolve(m.Fields, []byte(c.Body))
+	if hasBlockingFailure(m.Fields, failures) {
+		_, _ = d.Store.InsertEvent(ctx, events.Event{
+			Kind:   "binding_dispatch_failure",
+			Detail: fmt.Sprintf("binding %d (capture %d): required field failed", b.ID, c.ID),
+			Data: map[string]any{
+				"binding_id":      b.ID,
+				"binding_version": b.Version,
+				"capture_id":      c.ID,
+				"failures":        failures,
+			},
+		})
+		return
+	}
+
+	owner, repo, ok := d.resolveBindingRepo()
+	if !ok {
+		return // resolveBindingRepo already logged a warning
+	}
+	title := fmt.Sprintf("binding %s/%d from %s", b.Name, b.Version, c.Source)
+	body := renderBindingBody(values, c)
+
+	task, err := d.BindingTaskCreator.EnqueueBindingTask(ctx, owner, repo, title, body, b.Workflow, "", b.ID, b.Version)
+	if err != nil {
+		d.Log.Warn("binding dispatch: enqueue", "binding", b.ID, "capture", c.ID, "error", err)
+		return
+	}
+
+	if err := d.BindingDispatcher.RecordDispatch(ctx, nil, b.ID, int64(b.Version), c.ID, task.ID); err != nil {
+		if errors.Is(err, store.ErrAlreadyDispatched) {
+			// Another cycle or daemon instance raced us and already
+			// recorded the dispatch. The duplicate task remains
+			// queued (delete-on-races is its own can of worms),
+			// but the ledger prevents the same (binding, capture)
+			// pair from ever being dispatched again.
+			return
+		}
+		d.Log.Warn("binding dispatch: record", "binding", b.ID, "capture", c.ID, "error", err)
+		return
+	}
+}
+
+// hasBlockingFailure reports whether any of the failures belongs to a
+// required field. The mapping package reports failures only by field
+// name and reason -- the Field's Required flag is on the Field
+// declaration, so the dispatch loop re-derives it from the full
+// Field list. Failures on optional fields are warnings, not blocks:
+// the workflow still receives a partial value map.
+func hasBlockingFailure(fields []mapping.Field, failures []mapping.Failure) bool {
+	if len(failures) == 0 {
+		return false
+	}
+	required := make(map[string]bool, len(fields))
+	for _, f := range fields {
+		if f.Required {
+			required[f.Name] = true
+		}
+	}
+	for _, fail := range failures {
+		if required[fail.FieldName] {
+			return true
+		}
+	}
+	return false
+}
+
+// renderBindingBody builds the task body from the values a mapping
+// resolved, one "key=value" pair per line. Empty maps still produce
+// a body that records the source capture id so the workflow has
+// provenance to hand back to the operator.
+func renderBindingBody(values map[string]any, c store.CapturedEvent) string {
+	if len(values) == 0 {
+		return fmt.Sprintf("(no fields resolved from capture %d)", c.ID)
+	}
+	parts := make([]string, 0, len(values))
+	for k, v := range values {
+		parts = append(parts, fmt.Sprintf("%s=%v", k, v))
+	}
+	return strings.Join(parts, "\n")
+}
+
+// resolveBindingRepo picks the owner/repo a binding-spawned task
+// operates against. Today the binding vocabulary doesn't carry
+// owner/repo fields -- every binding applies to whatever repo the
+// daemon happens to be configured for. With exactly one configured
+// repo the choice is unambiguous; with zero or more than one the
+// loop refuses to dispatch (logged below) so a binding cannot
+// silently fire against the wrong target.
+//
+// A binding.Owner/Repo field is the natural follow-up; until then
+// this fallback is what Phase E can ship.
+func (d *Daemon) resolveBindingRepo() (string, string, bool) {
+	repos := d.Cfg.Get().Repos
+	if len(repos) == 1 {
+		return repos[0].Owner, repos[0].Name, true
+	}
+	d.Log.Warn("binding dispatch: cannot resolve target repo",
+		"hint", "configure exactly one [[repos]] entry, or extend the binding schema with owner/repo fields",
+		"configured_repos", len(repos))
+	return "", "", false
 }
 
 // drainNATS processes tasks from NATS, falling back to SQLite ClaimNext for

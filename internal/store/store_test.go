@@ -116,7 +116,7 @@ func TestOpenRejectsNewerSchemaVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(t.Context(), `PRAGMA user_version = 2`); err != nil {
+	if _, err := db.ExecContext(t.Context(), `PRAGMA user_version = 3`); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {
@@ -311,6 +311,49 @@ func openTest(t *testing.T) *Store {
 		}
 	})
 	return s
+}
+
+// TestTasksBindingColumnsRoundTrip confirms the binding_id and
+// binding_version columns added in store schema 2 survive an INSERT and a
+// full SELECT round-trip through the Task read paths (scanTask,
+// TaskByIssue, TaskByID, Tasks).
+func TestTasksBindingColumnsRoundTrip(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	task, err := s.EnqueueChatTask(ctx, "acme", "widget", "binding task", "body", "implement", "")
+	if err != nil {
+		t.Fatalf("EnqueueChatTask: %v", err)
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE tasks SET binding_id=?, binding_version=? WHERE id=?`,
+		int64(42), 3, task.ID); err != nil {
+		t.Fatalf("UPDATE binding provenance: %v", err)
+	}
+
+	for name, read := range map[string]func() (*Task, error){
+		"scanTask-via-TaskByIssue": func() (*Task, error) { return s.TaskByIssue(ctx, "acme", "widget", task.IssueNumber) },
+		"TaskByID":                 func() (*Task, error) { return s.TaskByID(ctx, task.ID) },
+	} {
+		got, err := read()
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got == nil {
+			t.Fatalf("%s: nil task", name)
+		}
+		if got.BindingID != 42 || got.BindingVersion != 3 {
+			t.Fatalf("%s: BindingID=%d BindingVersion=%d, want 42/3",
+				name, got.BindingID, got.BindingVersion)
+		}
+	}
+
+	listed, err := s.Tasks(ctx, 10)
+	if err != nil {
+		t.Fatalf("Tasks: %v", err)
+	}
+	if len(listed) == 0 || listed[0].BindingID != 42 || listed[0].BindingVersion != 3 {
+		t.Fatalf("Tasks() round-trip: %+v", listed)
+	}
 }
 
 func TestClip(t *testing.T) {

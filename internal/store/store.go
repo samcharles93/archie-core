@@ -73,6 +73,12 @@ type Task struct {
 	// deployments). Used to scope /approve and /cancel authorization so
 	// one identity cannot control another's chat-spawned tasks.
 	Identity string `json:"identity"`
+	// BindingID and BindingVersion are stamped when a task was created
+	// from a playbook binding dispatch (t2db.4 Phase B). They record
+	// provenance: which binding fired this task and at what version, so
+	// later edits to the binding cannot silently rewrite history.
+	BindingID      int64 `json:"binding_id"`
+	BindingVersion int   `json:"binding_version"`
 	// CreatedAt and UpdatedAt are the SQLite row timestamps, exposed so
 	// callers can show a task's age and last activity. They are written by
 	// column defaults and the UPDATE statements, never by the caller.
@@ -97,7 +103,7 @@ func (t Task) IsForgeBacked() bool {
 
 type Store struct{ db *sql.DB }
 
-const taskSchemaVersion = 1
+const taskSchemaVersion = 2
 
 // Open opens (creating if needed) the SQLite database and its schema.
 func Open(ctx context.Context, path string) (*Store, error) {
@@ -109,7 +115,7 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	if _, err := db.ExecContext(ctx, schema+eventsSchema+capturesSchema+mappingsSchema); err != nil {
+	if _, err := db.ExecContext(ctx, schema+eventsSchema+capturesSchema+mappingsSchema+bindingsSchema); err != nil {
 		return nil, errors.Join(fmt.Errorf("store: init schema: %w", err), db.Close())
 	}
 	if err := migrateTasks(ctx, db); err != nil {
@@ -159,6 +165,8 @@ func migrateTasks(ctx context.Context, db *sql.DB) error {
 		{"retry_count", `ALTER TABLE tasks ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0`},
 		{"source", `ALTER TABLE tasks ADD COLUMN source TEXT NOT NULL DEFAULT 'forge'`},
 		{"identity", `ALTER TABLE tasks ADD COLUMN identity TEXT NOT NULL DEFAULT ''`},
+		{"binding_id", `ALTER TABLE tasks ADD COLUMN binding_id INTEGER NOT NULL DEFAULT 0`},
+		{"binding_version", `ALTER TABLE tasks ADD COLUMN binding_version INTEGER NOT NULL DEFAULT 0`},
 	}
 	for _, migration := range migrations {
 		if columns[migration.column] {
@@ -168,7 +176,7 @@ func migrateTasks(ctx context.Context, db *sql.DB) error {
 			return err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `PRAGMA user_version = 1`); err != nil {
+	if _, err := tx.ExecContext(ctx, `PRAGMA user_version = 2`); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -217,6 +225,8 @@ CREATE TABLE IF NOT EXISTS tasks (
 	retry_count   INTEGER NOT NULL DEFAULT 0,
 	source        TEXT NOT NULL DEFAULT 'forge',
 	identity      TEXT NOT NULL DEFAULT '',
+	binding_id    INTEGER NOT NULL DEFAULT 0,
+	binding_version INTEGER NOT NULL DEFAULT 0,
 	created_at    TEXT NOT NULL DEFAULT (datetime('now')),
 	updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
 	UNIQUE(owner, repo, issue_number)
@@ -232,6 +242,13 @@ CREATE TABLE IF NOT EXISTS transitions (
 `
 
 func (s *Store) Close() error { return s.db.Close() }
+
+// DB exposes the underlying *sql.DB so tests outside the store
+// package can drive fixtures that the public surface does not (yet)
+// cover -- e.g. advancing a binding draft -> pending_approval without
+// going through the operator edit flow. Production callers must NOT
+// use this; the structured methods above are the contract.
+func (s *Store) DB() *sql.DB { return s.db }
 
 // OpenTest opens an in-memory SQLite store suitable for tests.
 func OpenTest(t interface {
@@ -291,9 +308,36 @@ func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, w
 		RETURNING id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
-			source, identity, created_at, updated_at`,
+			source, identity, binding_id, binding_version, created_at, updated_at`,
 		owner, repo, owner, repo, syntheticIssueNumberBase-1, title, body, workflow, identity)
 	return scanTask(row)
+}
+
+// EnqueueBindingTask enqueues a task triggered by a playbook binding
+// dispatch (t2db.4 Phase B). It builds the row through EnqueueChatTask
+// (so the synthetic issue-number allocator stays the single source of
+// truth for chat-sourced tasks) and then stamps binding_id and
+// binding_version on the new row in a second statement.
+//
+// A crash between the two writes leaves the task without provenance
+// (binding_id == 0); the binding_dispatches ledger row written by the
+// dispatch loop still records the (binding, capture, task) triple, so
+// a future repair pass could backfill. This is the same
+// best-effort-provenance pattern the rest of the task lifecycle uses
+// for fields added after the row's primary insert.
+func (s *Store) EnqueueBindingTask(ctx context.Context, owner, repo, title, body, workflow, identity string, bindingID int64, bindingVersion int) (*Task, error) {
+	t, err := s.EnqueueChatTask(ctx, owner, repo, title, body, workflow, identity)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE tasks SET binding_id=?, binding_version=? WHERE id=?`,
+		bindingID, bindingVersion, t.ID); err != nil {
+		return nil, fmt.Errorf("store: stamp binding provenance: %w", err)
+	}
+	t.BindingID = bindingID
+	t.BindingVersion = bindingVersion
+	return t, nil
 }
 
 // ClaimNext atomically moves the oldest queued task to running and
@@ -305,7 +349,7 @@ func (s *Store) ClaimNext(ctx context.Context) (*Task, error) {
 		RETURNING id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
-			source, identity, created_at, updated_at`)
+			source, identity, binding_id, binding_version, created_at, updated_at`)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -319,6 +363,7 @@ func scanTask(row *sql.Row) (*Task, error) {
 		&t.Labels, &t.Status, &t.Workflow, &t.Stage, &t.Branch, &t.Plan, &t.Notes,
 		&t.PRNumber, &t.TokensUsed, &t.Iterations, &t.Attempt, &t.ParkReason,
 		&t.WatchCommentID, &t.RetryCount, &t.Source, &t.Identity,
+		&t.BindingID, &t.BindingVersion,
 		sqliteTime{&t.CreatedAt}, sqliteTime{&t.UpdatedAt})
 	if err != nil {
 		return nil, err
@@ -337,7 +382,7 @@ func (s *Store) ClaimByIssue(ctx context.Context, owner, repo string, number int
 		RETURNING id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
-			source, identity, created_at, updated_at`, owner, repo, number)
+			source, identity, binding_id, binding_version, created_at, updated_at`, owner, repo, number)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -409,7 +454,7 @@ func (s *Store) TaskByIssue(ctx context.Context, owner, repo string, number int)
 		SELECT id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
-			source, identity, created_at, updated_at
+			source, identity, binding_id, binding_version, created_at, updated_at
 		FROM tasks WHERE owner=? AND repo=? AND issue_number=?`, owner, repo, number)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -426,7 +471,7 @@ func (s *Store) TaskByID(ctx context.Context, taskID int64) (*Task, error) {
 		SELECT id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
-			source, identity, created_at, updated_at
+			source, identity, binding_id, binding_version, created_at, updated_at
 		FROM tasks WHERE id=?`, taskID)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {

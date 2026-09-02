@@ -169,6 +169,21 @@ type Server struct {
 	// the dashboard failing to start.
 	Mappings store.MappingStore
 
+	// Bindings persists playbook bindings: matcher + mapping + workflow
+	// triples that turn a captured webhook into an archie task
+	// (docs/prds/webhook-intake-security.md). Optional: nil makes every
+	// /api/bindings route answer 503 rather than the dashboard failing to start.
+	Bindings store.BindingStore
+
+	// BindingDispatcher is the dispatch-time helper surface for bindings:
+	// the capture endpoint calls ArmedBindingsForSource here to look up
+	// the HMAC secret for an incoming webhook. Split from BindingStore so
+	// the CRUD interface stays narrow (six methods, under the
+	// interfacebloat limit). Optional: nil disables per-source HMAC
+	// verification at handleCapture and every event records as
+	// authenticated=false.
+	BindingDispatcher store.BindingDispatcher
+
 	// TelegramUpdateReportPath and TelegramUpdateChatID let a dashboard-
 	// initiated update use the same post-restart notification route as a
 	// Telegram-initiated update. The web UI has no durable chat identity, so
@@ -259,36 +274,53 @@ func (s *Server) Broadcast(e events.Event) {
 	}
 }
 
-func (s *Server) Handler() http.Handler {
-	mux := http.NewServeMux()
+func (s *Server) registerCoreRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/summary", s.handleSummary)
 	mux.HandleFunc("GET /api/setup", s.handleSetup)
-	mux.HandleFunc("GET /api/tasks", s.handleTasks)
-	mux.HandleFunc("GET /api/task-meta", s.handleTaskMeta)
-	mux.HandleFunc("POST /api/tasks/{id}/action", s.handleTaskAction)
-	mux.HandleFunc("GET /api/tasks/{id}", s.handleTask)
 	mux.HandleFunc("GET /api/workflows", s.handleWorkflows)
 	mux.HandleFunc("POST /api/work-requests", s.handleWorkRequest)
 	mux.HandleFunc("GET /api/skills", s.handleSkills)
 	mux.HandleFunc("GET /api/curators", s.handleCurators)
 	mux.HandleFunc("GET /api/captures", s.handleCaptures)
+	mux.HandleFunc("GET /api/channels", s.handleChannels)
+	mux.HandleFunc("POST /api/channels/{id}/reload", s.handleChannelReload)
+	mux.HandleFunc("GET /api/version", s.handleVersion)
+	mux.HandleFunc("GET /api/memory", s.handleMemory)
+}
+
+func (s *Server) registerTaskRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/tasks", s.handleTasks)
+	mux.HandleFunc("GET /api/task-meta", s.handleTaskMeta)
+	mux.HandleFunc("POST /api/tasks/{id}/action", s.handleTaskAction)
+	mux.HandleFunc("GET /api/tasks/{id}", s.handleTask)
+	mux.HandleFunc("GET /api/tasks/{id}/logs", s.handleTaskLogs)
+}
+
+func (s *Server) registerMappingAndBindingRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/mappings", s.handleMappingsList)
 	mux.HandleFunc("POST /api/mappings", s.handleMappingCreate)
 	mux.HandleFunc("GET /api/mappings/{id}", s.handleMappingGet)
 	mux.HandleFunc("PATCH /api/mappings/{id}", s.handleMappingUpdate)
 	mux.HandleFunc("DELETE /api/mappings/{id}", s.handleMappingDelete)
 	mux.HandleFunc("POST /api/mappings/preview", s.handleMappingPreview)
-	mux.HandleFunc("GET /api/channels", s.handleChannels)
-	mux.HandleFunc("POST /api/channels/{id}/reload", s.handleChannelReload)
+	mux.HandleFunc("GET /api/bindings", s.handleBindingsList)
+	mux.HandleFunc("POST /api/bindings", s.handleBindingCreate)
+	mux.HandleFunc("GET /api/bindings/{id}", s.handleBindingGet)
+	mux.HandleFunc("PATCH /api/bindings/{id}", s.handleBindingUpdate)
+	mux.HandleFunc("DELETE /api/bindings/{id}", s.handleBindingDelete)
+	mux.HandleFunc("POST /api/bindings/{id}/approve", s.handleBindingApprove)
+}
+
+func (s *Server) registerConfigAndLogRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/config", s.handleConfig)
-	mux.HandleFunc("GET /api/version", s.handleVersion)
 	mux.HandleFunc("PATCH /api/config", s.handleConfigUpdate)
 	mux.HandleFunc("POST /api/config/reset", s.handleConfigReset)
 	mux.HandleFunc("PATCH /api/config/repos/{owner}/{name}", s.handleConfigRepoUpdate)
 	mux.HandleFunc("GET /api/logs", s.handleLogs)
-	mux.HandleFunc("GET /api/tasks/{id}/logs", s.handleTaskLogs)
 	mux.HandleFunc("GET /api/logs/stream", s.handleLogStream)
-	mux.HandleFunc("GET /api/memory", s.handleMemory)
+}
+
+func (s *Server) registerChatRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/chat/sessions", s.handleChatSessions)
 	mux.HandleFunc("GET /api/chat/sessions/{id}/messages", s.handleChatMessages)
 	mux.HandleFunc("GET /api/chat/sessions/{id}/turns", s.handleChatTurns)
@@ -302,6 +334,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/chat/dangerous", s.handleChatDangerousState)
 	mux.HandleFunc("POST /api/chat/dangerous/{kind}", s.handleChatDangerousRequest)
 	mux.HandleFunc("POST /api/chat/dangerous/{id}/decision", s.handleChatDangerousDecision)
+}
+
+func (s *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+
+	s.registerCoreRoutes(mux)
+	s.registerTaskRoutes(mux)
+	s.registerMappingAndBindingRoutes(mux)
+	s.registerConfigAndLogRoutes(mux)
+	s.registerChatRoutes(mux)
+
 	mux.HandleFunc("GET /events", s.handleSSE)
 	mux.Handle("GET /", s.assets())
 
