@@ -1281,6 +1281,31 @@ func (b *boot) installUpdateConfigHandler() {
 	}
 }
 
+// installUpdateRepoFieldHandler installs the dashboard's PATCH
+// /api/config/repos/{owner}/{name} handler (archie-core-b6ew.6). A
+// repository is one element of a []config.Repo, not a flat dotted key, so
+// this cannot go through UpdateConfig's dotted-key path directly (overlay's
+// Nest/ApplyOverlayValues have no notion of "element N of this slice").
+// Instead it reads the daemon's own live, untrimmed Repos (never
+// webui.RepoView, which omits fields like Preflight/TestGlob and would
+// silently drop them on a naive round-trip), changes the one field on the
+// matching repo, and republishes the *entire* repository list through
+// UpdateConfig -- reusing its validate-persist-publish path unchanged, so
+// this handler owns only "which repo, which field," never how an update is
+// applied. An edit here therefore overrides the whole repos list in the
+// runtime overlay, same granularity every other overlay key already has;
+// [[repos]] file edits stay visible for every field this handler never
+// touches until an operator resets the "repos" override.
+func (b *boot) installUpdateRepoFieldHandler() {
+	b.web.UpdateRepoField = func(ctx context.Context, owner, name, field string, value any) error {
+		repos, err := applyRepoFieldUpdate(b.d.Cfg.Get().Clone().Repos, owner, name, field, value)
+		if err != nil {
+			return err
+		}
+		return b.web.UpdateConfig(ctx, map[string]any{"repos": repos})
+	}
+}
+
 // installConfigHandlers installs the dashboard's config override
 // listing and per-row reset handlers, both going through the same
 // publish path as reload.

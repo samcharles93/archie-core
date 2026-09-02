@@ -111,6 +111,13 @@ function note(rowEl, message) {
 
 function startEdit(rowEl, label, opts, restore) {
   const { key, type, raw, options, onSaved } = opts;
+  // save lets a caller redirect where an edit is persisted -- the
+  // repositories table's per-repo fields PATCH /api/config/repos/{owner}/
+  // {name} instead of the generic dotted-key /api/config path, since a
+  // repository is one element of a slice, not a flat key (see
+  // api.configRepoUpdate, archie-core-b6ew.6). Defaults to the ordinary
+  // dotted-key update every other row already used.
+  const save = opts.save || ((value) => api.configUpdate({ [key]: value }));
   const input = type === "bool"
     ? el(
         "select.kv-input",
@@ -123,11 +130,11 @@ function startEdit(rowEl, label, opts, restore) {
           ...(options || []).map((o) => el("option", { value: o, selected: raw === o }, o)),
         )
       : el("input.kv-input", { type: "text", value: String(raw ?? "") });
-  const save = el("button.kv-save", { type: "button" }, "Save");
+  const saveBtn = el("button.kv-save", { type: "button" }, "Save");
   const cancel = el("button.kv-cancel", { type: "button" }, "Cancel");
   const error = el("span.kv-note.is-error");
 
-  mount(rowEl, el("span.kv-label", label), input, el("div.kv-actions", save, cancel), error);
+  mount(rowEl, el("span.kv-label", label), input, el("div.kv-actions", saveBtn, cancel), error);
   input.focus?.();
   input.select?.();
 
@@ -136,26 +143,26 @@ function startEdit(rowEl, label, opts, restore) {
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault?.();
-      save.click();
+      saveBtn.click();
     }
     if (e.key === "Escape") done();
   });
 
-  save.addEventListener("click", async () => {
+  saveBtn.addEventListener("click", async () => {
     const parsed = parseEdit(type, input.value);
     if (parsed.error) {
       error.textContent = parsed.error;
       return;
     }
-    save.disabled = true;
+    saveBtn.disabled = true;
     try {
-      await api.configUpdate({ [key]: parsed.value });
+      await save(parsed.value);
       onSaved?.();
     } catch (err) {
       // The server's reason (validation failure, denylisted key) is the
       // part the operator can act on; show it instead of the status.
       error.textContent = String(err.message || err);
-      save.disabled = false;
+      saveBtn.disabled = false;
     }
   });
 }

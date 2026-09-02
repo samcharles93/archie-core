@@ -92,6 +92,14 @@ type Server struct {
 	// directly.
 	ResetConfig func(context.Context, string) error
 
+	// UpdateRepoField changes one editable field (RepoEditableFields) on
+	// the repository identified by owner/name, republishing the full
+	// repository list through the same path as UpdateConfig. Optional:
+	// when nil, PATCH /api/config/repos/{owner}/{name} answers 503. See
+	// handleConfigRepoUpdate for why this needs its own seam rather than
+	// going through UpdateConfig's dotted-key path directly.
+	UpdateRepoField func(ctx context.Context, owner, name, field string, value any) error
+
 	// Channels reports actual adapter lifecycle, independently of configuration
 	// presence. Nil preserves the configuration-only fallback for tests and
 	// minimal embedding.
@@ -276,6 +284,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/version", s.handleVersion)
 	mux.HandleFunc("PATCH /api/config", s.handleConfigUpdate)
 	mux.HandleFunc("POST /api/config/reset", s.handleConfigReset)
+	mux.HandleFunc("PATCH /api/config/repos/{owner}/{name}", s.handleConfigRepoUpdate)
 	mux.HandleFunc("GET /api/logs", s.handleLogs)
 	mux.HandleFunc("GET /api/tasks/{id}/logs", s.handleTaskLogs)
 	mux.HandleFunc("GET /api/logs/stream", s.handleLogStream)

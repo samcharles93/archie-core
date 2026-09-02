@@ -382,6 +382,7 @@ func Run() int {
 	b.buildDaemon()
 	b.wireConfigPublishing(ctx, *cfgPath, *overlayPath)
 	b.installUpdateConfigHandler()
+	b.installUpdateRepoFieldHandler()
 	b.installConfigHandlers(*cfgPath, *overlayPath)
 
 	if err := b.startServices(ctx); err != nil {
