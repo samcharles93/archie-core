@@ -42,7 +42,11 @@ export function valueText(value) {
 // widening the row back into the action column.
 export function row(label, value, opts) {
   const text = valueText(value);
-  const labelEl = el("span.kv-label", label);
+  // opts.hint (a field's backend-authored description, e.g. "0 means
+  // unlimited.") rides as a tooltip on the label rather than its own DOM
+  // node, so a generic schema-driven field can carry an explanation
+  // without every hardcoded caller having to pass one.
+  const labelEl = el("span.kv-label", opts?.hint ? { title: opts.hint } : {}, label);
   const valueEl = el(`span.kv-value.mono${text === "—" ? ".is-empty" : ""}`, { title: text }, text);
 
   if (!opts?.key) return el("div.kv", labelEl, valueEl);
@@ -53,6 +57,11 @@ export function row(label, value, opts) {
     // value, which is what produced the run-together string above.
     return el("div.kv.is-locked", labelEl, valueEl, el("span.kv-note", lockedReason));
   }
+
+  // opts.editable distinguishes a field the schema marks not-yet-editable
+  // (e.g. a structured field with no dedicated editor) from a locked one:
+  // no reason to show, just no edit affordance.
+  if (opts.editable === false) return el("div.kv", labelEl, valueEl);
 
   const overridden = opts.overridden?.includes(opts.key);
   const editBtn = el("button.kv-btn", { type: "button", title: `Edit ${label}` }, "Edit");
@@ -101,14 +110,19 @@ function note(rowEl, message) {
 }
 
 function startEdit(rowEl, label, opts, restore) {
-  const { key, type, raw, onSaved } = opts;
+  const { key, type, raw, options, onSaved } = opts;
   const input = type === "bool"
     ? el(
         "select.kv-input",
         el("option", { value: "true", selected: raw === true }, "true"),
         el("option", { value: "false", selected: raw === false }, "false"),
       )
-    : el("input.kv-input", { type: "text", value: String(raw ?? "") });
+    : type === "enum"
+      ? el(
+          "select.kv-input",
+          ...(options || []).map((o) => el("option", { value: o, selected: raw === o }, o)),
+        )
+      : el("input.kv-input", { type: "text", value: String(raw ?? "") });
   const save = el("button.kv-save", { type: "button" }, "Save");
   const cancel = el("button.kv-cancel", { type: "button" }, "Cancel");
   const error = el("span.kv-note.is-error");

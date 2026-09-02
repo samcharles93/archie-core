@@ -119,14 +119,40 @@ export function settingsPage() {
     mount(
       body,
       ...banners,
-      identityCard(cfg.identity, ctx),
+      ...schemaCards(cfg.schema || []),
       repositoriesCard(cfg.repositories),
       modelsAndProvidersCard(cfg.models, cfg.providers),
-      budgetsCard(cfg.budgets, ctx),
-      storageCard(cfg.storage, cfg.containers, ctx),
-      webCard(cfg.web, ctx),
       provenanceCard(cfg.provenance),
     );
+
+    // schemaCards renders one card per backend-defined section, generically,
+    // from cfg.schema (archie-core-b6ew) -- a scalar field's label, type,
+    // description and editability all come from the backend, not from a
+    // hardcoded row(...) call here. A section whose fields are all
+    // type=structured (repositories, models & providers) renders no card
+    // here; those keep the dedicated renderers above, called directly off
+    // the flat cfg fields (archie-core-b6ew.4 gives them their own editors).
+    function schemaCards(sections) {
+      return sections
+        .map((s) => {
+          const rows = s.fields
+            .filter((f) => f.type !== "structured")
+            .map((f) =>
+              row(f.label, f.value, {
+                key: f.key,
+                type: f.type,
+                options: f.options,
+                raw: f.value,
+                hint: f.description,
+                editable: f.editable,
+                ...ctx,
+              }),
+            );
+          if (!rows.length) return null;
+          return section(s.label, s.description, el("div.kv-list", ...rows));
+        })
+        .filter(Boolean);
+    }
   }
 
   return root;
@@ -195,23 +221,6 @@ function actionLifecycleRow(a) {
 // falls back to the default .btn styling. A new kind never needs a new case.
 function roleButtonClass(kind) {
   return kind === "quiet" ? "btn-quiet" : kind === "danger" ? "btn-danger" : "";
-}
-
-function identityCard(identity, ctx) {
-  if (!identity) return section("Identity", "Who Archie is on the forge.", empty("Not available"));
-  return section(
-    "Identity",
-    "Who Archie is on the forge, and how it addresses commits and comments.",
-    el(
-      "div.kv-list",
-      row("Bot account", identity.bot_user, { key: "bot_user", type: "string", raw: identity.bot_user, ...ctx }),
-      row("Commit author email", identity.bot_email, { key: "bot_email", type: "string", raw: identity.bot_email, ...ctx }),
-      row("Pickup label", identity.label, { key: "label", type: "string", raw: identity.label, ...ctx }),
-      row("Forge type", identity.forge_type, { key: "forge.type", type: "string", raw: identity.forge_type, ...ctx }),
-      row("Forge host", identity.forge_host, { key: "forge.host", type: "string", raw: identity.forge_host, ...ctx }),
-      row("Max diff size (lines)", identity.diff_cap_lines || "Unlimited", { key: "diff_cap_lines", type: "int", raw: identity.diff_cap_lines, ...ctx }),
-    ),
-  );
 }
 
 function repositoriesCard(repos) {
@@ -302,63 +311,3 @@ function roleLabel(role) {
   return role.charAt(0).toUpperCase() + role.slice(1).replace(/_/g, " ");
 }
 
-function budgetsCard(budgets, ctx) {
-  if (!budgets) return section("Budgets", "Limits on every agent stage.", empty("Not available"));
-  return section(
-    "Budgets",
-    "The limits every autonomous stage runs under, so a stuck task cannot run forever.",
-    el(
-      "div.kv-list",
-      row("Max steps", budgets.max_steps || "Unlimited", { key: "budgets.max_steps", type: "int", raw: budgets.max_steps, ...ctx }),
-      row("Wall clock", budgets.wall_clock, { key: "budgets.wall_clock", type: "string", raw: budgets.wall_clock, ...ctx }),
-      row("Max gate failures before parking", budgets.gate_max_failures || "Unlimited", { key: "budgets.gate_max_failures", type: "int", raw: budgets.gate_max_failures, ...ctx }),
-    ),
-  );
-}
-
-function storageCard(storage, containers, ctx) {
-  const children = [];
-  if (storage) {
-    children.push(
-      el("h3.cfg-subhead", "Paths"),
-      el(
-        "div.kv-list",
-        row("Work directory", storage.work_dir, { key: "work_dir", type: "string", ...ctx }),
-        row("State path prefix", storage.db_path, { key: "db_path", type: "string", ...ctx }),
-        row("Shared skills directory", storage.skills_dir || "None (uses the work directory)", { key: "skills_dir", type: "string", raw: storage.skills_dir, ...ctx }),
-        row("Daemon plugin directory", storage.plugin_dir || "None", { key: "plugin_dir", type: "string", raw: storage.plugin_dir, ...ctx }),
-        row("Secret engine plugin directory", storage.secret_engine_dir || "None (built-in engines only)", { key: "secret_engine_dir", type: "string", raw: storage.secret_engine_dir, ...ctx }),
-      ),
-    );
-  }
-  if (containers) {
-    children.push(
-      el("h3.cfg-subhead", "Sandboxed containers"),
-      el(
-        "div.kv-list",
-        row("Agent image", containers.image || "Not set", { key: "containers.image", type: "string", raw: containers.image, ...ctx }),
-        row("Max concurrent tasks", containers.max_concurrency || "Unlimited", { key: "containers.max_concurrency", type: "int", raw: containers.max_concurrency, ...ctx }),
-        row("Container max lifetime", containers.max_uptime, { key: "containers.max_uptime", type: "string", raw: containers.max_uptime, ...ctx }),
-        row("Persistent volume retention", containers.volume_ttl, { key: "containers.volume_ttl", type: "string", raw: containers.volume_ttl, ...ctx }),
-        row("How images are refreshed", pullPolicyLabel(containers.pull_policy), { key: "containers.pull_policy", type: "string", raw: containers.pull_policy, ...ctx }),
-        row("Docker network", containers.network || "Auto-detected", { key: "containers.network", type: "string", raw: containers.network, ...ctx }),
-      ),
-    );
-  }
-  if (!children.length) children.push(empty("Not available"));
-  return section("Storage & sandboxing", "Where archied keeps its state, and how it isolates task execution.", ...children);
-}
-
-function pullPolicyLabel(policy) {
-  if (policy === "always") return "Always pull the latest image before running";
-  return "Only pull when the image is missing locally";
-}
-
-function webCard(web, ctx) {
-  if (!web) return section("Dashboard", "This dashboard's own listen address.", empty("Not available"));
-  return section(
-    "Dashboard",
-    "This dashboard's own listen address.",
-    el("div.kv-list", row("Listen address", web.listen === "off" ? "Disabled" : web.listen, { key: "web.listen", type: "string", raw: web.listen === "off" ? "" : web.listen, ...ctx })),
-  );
-}

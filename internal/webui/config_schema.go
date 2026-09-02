@@ -69,9 +69,10 @@ type ConfigField struct {
 // ConfigSection groups fields the same way the settings page's cards
 // already do -- no new sections, this is metadata on existing rows.
 type ConfigSection struct {
-	ID     string        `json:"id"`
-	Label  string        `json:"label"`
-	Fields []ConfigField `json:"fields"`
+	ID          string        `json:"id"`
+	Label       string        `json:"label"`
+	Description string        `json:"description,omitempty"`
+	Fields      []ConfigField `json:"fields"`
 }
 
 // configFieldDescriptors is the hand-authored catalog: one entry per field
@@ -98,8 +99,9 @@ type ConfigSection struct {
 func configFieldDescriptors() []ConfigSection {
 	return []ConfigSection{
 		{
-			ID:    "identity",
-			Label: "Identity",
+			ID:          "identity",
+			Label:       "Identity",
+			Description: "Who Archie is on the forge, and how it addresses commits and comments.",
 			Fields: []ConfigField{
 				{Key: "bot_user", Label: "Bot account", Type: FieldString, Editable: true},
 				{Key: "bot_email", Label: "Commit author email", Type: FieldString, Editable: true},
@@ -110,8 +112,9 @@ func configFieldDescriptors() []ConfigSection {
 			},
 		},
 		{
-			ID:    "repositories",
-			Label: "Repositories",
+			ID:          "repositories",
+			Label:       "Repositories",
+			Description: "Each repository Archie polls, and the quality gate a change must pass before it opens a pull request.",
 			Fields: []ConfigField{
 				{
 					Key:         "repos",
@@ -123,16 +126,18 @@ func configFieldDescriptors() []ConfigSection {
 			},
 		},
 		{
-			ID:    "models",
-			Label: "Models & providers",
+			ID:          "models",
+			Label:       "Models & providers",
+			Description: "Which model handles each stage of work, and which LLM providers are wired up. Only the environment variable NAME is shown, never its value.",
 			Fields: []ConfigField{
 				{Key: "models", Label: "Model roles", Type: FieldStructured, Editable: false},
 				{Key: "providers", Label: "Providers", Type: FieldStructured, Editable: false},
 			},
 		},
 		{
-			ID:    "budgets",
-			Label: "Budgets",
+			ID:          "budgets",
+			Label:       "Budgets",
+			Description: "The limits every autonomous stage runs under, so a stuck task cannot run forever.",
 			Fields: []ConfigField{
 				{Key: "budgets.max_steps", Label: "Max steps", Description: "0 means unlimited.", Type: FieldInt, Editable: true},
 				{Key: "budgets.wall_clock", Label: "Wall clock", Type: FieldDuration, Editable: true},
@@ -140,27 +145,29 @@ func configFieldDescriptors() []ConfigSection {
 			},
 		},
 		{
-			ID:    "storage",
-			Label: "Storage & sandboxing",
+			ID:          "storage",
+			Label:       "Storage & sandboxing",
+			Description: "Where archied keeps its state, and how it isolates task execution.",
 			Fields: []ConfigField{
 				{Key: "work_dir", Label: "Work directory", Type: FieldString, Editable: false},
 				{Key: "db_path", Label: "State path prefix", Type: FieldString, Editable: false},
-				{Key: "skills_dir", Label: "Shared skills directory", Type: FieldString, Editable: true, RestartRequired: true},
-				{Key: "plugin_dir", Label: "Daemon plugin directory", Type: FieldString, Editable: true, RestartRequired: true},
-				{Key: "secret_engine_dir", Label: "Secret engine plugin directory", Type: FieldString, Editable: true, RestartRequired: true},
+				{Key: "skills_dir", Label: "Shared skills directory", Description: "Empty uses the work directory.", Type: FieldString, Editable: true, RestartRequired: true},
+				{Key: "plugin_dir", Label: "Daemon plugin directory", Description: "Empty means no daemon plugins.", Type: FieldString, Editable: true, RestartRequired: true},
+				{Key: "secret_engine_dir", Label: "Secret engine plugin directory", Description: "Empty means built-in secret engines only.", Type: FieldString, Editable: true, RestartRequired: true},
 				{Key: "containers.image", Label: "Agent image", Type: FieldString, Editable: true, RestartRequired: true},
 				{Key: "containers.max_concurrency", Label: "Max concurrent tasks", Description: "0 means unlimited.", Type: FieldInt, Editable: true, RestartRequired: true},
 				{Key: "containers.max_uptime", Label: "Container max lifetime", Type: FieldDuration, Editable: true, RestartRequired: true},
 				{Key: "containers.volume_ttl", Label: "Persistent volume retention", Type: FieldDuration, Editable: true},
-				{Key: "containers.pull_policy", Label: "How images are refreshed", Type: FieldEnum, Options: []string{"missing", "always"}, Editable: true, RestartRequired: true},
-				{Key: "containers.network", Label: "Docker network", Type: FieldString, Editable: true, RestartRequired: true},
+				{Key: "containers.pull_policy", Label: "How images are refreshed", Description: `"missing" pulls only when the image isn't present locally; "always" pulls before every run.`, Type: FieldEnum, Options: []string{"missing", "always"}, Editable: true, RestartRequired: true},
+				{Key: "containers.network", Label: "Docker network", Description: "Empty auto-detects the Docker network.", Type: FieldString, Editable: true, RestartRequired: true},
 			},
 		},
 		{
-			ID:    "web",
-			Label: "Dashboard",
+			ID:          "web",
+			Label:       "Dashboard",
+			Description: "This dashboard's own listen address.",
 			Fields: []ConfigField{
-				{Key: "web.listen", Label: "Listen address", Type: FieldString, Editable: true, RestartRequired: true},
+				{Key: "web.listen", Label: "Listen address", Description: `"off" disables the dashboard.`, Type: FieldString, Editable: true, RestartRequired: true},
 			},
 		},
 	}
