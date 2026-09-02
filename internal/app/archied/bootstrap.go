@@ -646,6 +646,45 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 // built-ins fill gaps.
 func (b *boot) loadWorkflows(ctx context.Context) error {
 	cfg, log := b.cfg, b.log
+	if err := b.loadWorkflowRouting(cfg, log); err != nil {
+		return err
+	}
+	if err := b.loadModules(cfg, log); err != nil {
+		return err
+	}
+	if err := b.loadEDAPlaybooks(cfg, log); err != nil {
+		return err
+	}
+
+	skillsBase := cfg.SkillsDir
+	if skillsBase == "" {
+		skillsBase = cfg.WorkDir
+	}
+	workflowCatalog, err := skillbuild.BuildCatalog(skillsBase)
+	if err != nil {
+		log.Error("skill registry build failed", "err", err)
+		return err
+	}
+	log.Info("workflow registry built", "workflows", len(workflowCatalog.Registry))
+	b.web.Workflows = workflow.DefinitionsWithOrigins(workflowCatalog.Registry, workflowCatalog.Origins)
+	if l := cfg.Web.Listen; l != "" && l != "off" {
+		b.web.Token = webTokenFor(l, cfg.DBPath, log)
+		go func() {
+			if err := b.web.Run(ctx, l); err != nil {
+				log.Error("web ui failed", "err", err)
+			}
+		}()
+	}
+	return nil
+}
+
+// loadWorkflowRouting loads the kind/label -> workflow-name bindings from
+// the single-file fields and the playbook directories, merges them, and
+// installs the result via workflow.SetKindWorkflows/SetLabelWorkflows.
+// Split out of loadWorkflows (t2db.16) to keep the top-level function's
+// complexity within the lint gate -- pure extraction, same log messages
+// and error-return order as before.
+func (b *boot) loadWorkflowRouting(cfg config.Config, log *slog.Logger) error {
 	kindWorkflows, err := workflow.LoadKindWorkflowsYAML(cfg.WorkflowRoutingFile)
 	if err != nil {
 		log.Error("workflow routing file load failed", "path", cfg.WorkflowRoutingFile, "err", err)
@@ -680,63 +719,54 @@ func (b *boot) loadWorkflows(ctx context.Context) error {
 
 	workflow.SetKindWorkflows(kindWorkflows)
 	workflow.SetLabelWorkflows(labelWorkflows)
+	return nil
+}
 
-	// Module action kinds (EDA playbook Module position, t2db.13): operator-
-	// trusted, in-process, Yaegi-interpreted. A broken module is a startup
-	// failure -- the daemon does not start with a partial module set, matching
-	// the routing-file load pattern (not the degrade-and-skip plugin pattern).
-	// Kinds whose file is not present in the directory are simply not loaded.
+// loadModules builds the daemon's Module registry (EDA playbook Module
+// position, t2db.13): operator-trusted, in-process, Yaegi-interpreted. A
+// broken module is a startup failure -- the daemon does not start with a
+// partial module set, matching the routing-file load pattern (not the
+// degrade-and-skip plugin pattern). Kinds whose file is not present in the
+// directory are simply not loaded. Split out of loadWorkflows (t2db.16);
+// pure extraction, same log messages and error-return order as before.
+func (b *boot) loadModules(cfg config.Config, log *slog.Logger) error {
 	b.modules = module.New()
-	if cfg.ModuleDir != "" {
-		for _, kind := range module.Kinds() {
-			path := filepath.Join(cfg.ModuleDir, kind+".go")
-			if _, err := os.Stat(path); err != nil {
-				if errors.Is(err, os.ErrNotExist) {
-					continue // kind not installed in this module dir
-				}
-				log.Error("module stat failed", "kind", kind, "path", path, "err", err)
-				return err
-			}
-			if err := b.modules.Register(kind, cfg.ModuleDir); err != nil {
-				log.Error("module load failed", "kind", kind, "dir", cfg.ModuleDir, "err", err)
-				return err
-			}
-		}
-		log.Info("module registry built", "dir", cfg.ModuleDir, "kinds", b.modules.Len())
+	if cfg.ModuleDir == "" {
+		return nil
 	}
+	for _, kind := range module.Kinds() {
+		path := filepath.Join(cfg.ModuleDir, kind+".go")
+		if _, err := os.Stat(path); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue // kind not installed in this module dir
+			}
+			log.Error("module stat failed", "kind", kind, "path", path, "err", err)
+			return err
+		}
+		if err := b.modules.Register(kind, cfg.ModuleDir); err != nil {
+			log.Error("module load failed", "kind", kind, "dir", cfg.ModuleDir, "err", err)
+			return err
+		}
+	}
+	log.Info("module registry built", "dir", cfg.ModuleDir, "kinds", b.modules.Len())
+	return nil
+}
 
-	// EDA playbook documents (t2db.15): trigger + single workflow-kind action
-	// with CEL when conditions. Loaded at startup with the same reject-at-load
-	// rule -- any malformed playbook, multi-action playbook, non-workflow
-	// position, or when compile failure aborts startup, matching the routing-
-	// file load pattern (not degrade-and-skip). A nonexistent dir is an empty
-	// store.
+// loadEDAPlaybooks loads the EDA playbook documents (t2db.15): trigger +
+// single workflow-kind action with CEL when conditions. Loaded at startup
+// with the same reject-at-load rule -- any malformed playbook,
+// multi-action playbook, non-workflow position, or when compile failure
+// aborts startup, matching the routing-file load pattern (not
+// degrade-and-skip). A nonexistent dir is an empty store. Split out of
+// loadWorkflows (t2db.16); pure extraction, same log messages as before.
+func (b *boot) loadEDAPlaybooks(cfg config.Config, log *slog.Logger) error {
+	var err error
 	b.playbooks, err = playbook.Load(cfg.EDAPlaybookDir)
 	if err != nil {
 		log.Error("eda playbook load failed", "dir", cfg.EDAPlaybookDir, "err", err)
 		return err
 	}
 	log.Info("eda playbooks loaded", "dir", cfg.EDAPlaybookDir, "playbooks", len(b.playbooks.Playbooks))
-
-	skillsBase := cfg.SkillsDir
-	if skillsBase == "" {
-		skillsBase = cfg.WorkDir
-	}
-	workflowCatalog, err := skillbuild.BuildCatalog(skillsBase)
-	if err != nil {
-		log.Error("skill registry build failed", "err", err)
-		return err
-	}
-	log.Info("workflow registry built", "workflows", len(workflowCatalog.Registry))
-	b.web.Workflows = workflow.DefinitionsWithOrigins(workflowCatalog.Registry, workflowCatalog.Origins)
-	if l := cfg.Web.Listen; l != "" && l != "off" {
-		b.web.Token = webTokenFor(l, cfg.DBPath, log)
-		go func() {
-			if err := b.web.Run(ctx, l); err != nil {
-				log.Error("web ui failed", "err", err)
-			}
-		}()
-	}
 	return nil
 }
 
