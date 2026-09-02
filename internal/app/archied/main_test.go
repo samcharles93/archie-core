@@ -522,6 +522,14 @@ func TestChatTaskListerAdapterReadsSQLiteIdentity(t *testing.T) {
 	if len(got) != 1 || got[0].ID != want.ID || got[0].Title != want.Title {
 		t.Fatalf("ListChatTasks = %+v, want task %d", got, want.ID)
 	}
+	// /tasks (gateway.formatTasks) needs these to show "what needs the
+	// operator": workflow/stage, age, and (for a parked task) why.
+	if got[0].Workflow != want.Workflow {
+		t.Errorf("ListChatTasks()[0].Workflow = %q, want %q", got[0].Workflow, want.Workflow)
+	}
+	if got[0].UpdatedAt.IsZero() {
+		t.Error("ListChatTasks()[0].UpdatedAt is zero, want the task's row timestamp")
+	}
 }
 
 func TestChatTaskWriterAdapter(t *testing.T) {
@@ -777,7 +785,7 @@ func TestChatTaskCommandsEndToEnd(t *testing.T) {
 		transition: st.Transition,
 	})
 	router := gateway.NewRouter(st, nil, "test")
-	configureTaskCommands(router, creator, controller, defaultIdentity)
+	configureTaskCommands(router, creator, controller, chatTaskListerAdapter{tasks: st.Tasks}, defaultIdentity)
 
 	reply, err := router.Route(ctx, gateway.Message{
 		Text: "/spawn identity=reviewer workflow=feasibility Design native tasks",

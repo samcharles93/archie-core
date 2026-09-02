@@ -159,12 +159,16 @@ func (a chatTaskListerAdapter) ListChatTasks(ctx context.Context, identity strin
 			break
 		}
 		out = append(out, gateway.ChatTaskSummary{
-			ID:       task.ID,
-			Repo:     task.Owner + "/" + task.Repo,
-			Title:    task.Title,
-			Status:   task.Status,
-			Workflow: task.Workflow,
-			PRNumber: task.PRNumber,
+			ID:         task.ID,
+			Repo:       task.Owner + "/" + task.Repo,
+			Title:      task.Title,
+			Status:     task.Status,
+			Workflow:   task.Workflow,
+			Stage:      task.Stage,
+			PRNumber:   task.PRNumber,
+			Attempt:    task.Attempt,
+			ParkReason: task.ParkReason,
+			UpdatedAt:  task.UpdatedAt,
 		})
 	}
 	return out, nil
@@ -743,10 +747,12 @@ func configureTaskCommands(
 	router *gateway.Router,
 	tasks gateway.TaskCreator,
 	controller gateway.TaskController,
+	lister gateway.ChatTaskLister,
 	identity string,
 ) {
 	router.Tasks = tasks
 	router.Controller = controller
+	router.TaskLister = lister
 	router.Identity = identity
 }
 

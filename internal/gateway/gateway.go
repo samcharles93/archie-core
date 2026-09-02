@@ -257,7 +257,10 @@ type Router struct {
 	Personas   *PersonaRegistry
 	Tasks      TaskCreator    // nil = /spawn not configured
 	Controller TaskController // nil = /approve and /cancel not configured
-	LLM        LLMResponder   // nil = LLM not wired yet
+	// TaskLister backs /tasks: the live work view (id, title, status,
+	// workflow/stage, age). nil = /tasks not configured.
+	TaskLister ChatTaskLister
+	LLM        LLMResponder // nil = LLM not wired yet
 	// LLMStream is the optional streaming responder. When set, adapters
 	// that can render partial output (see RouteStream) show the reply as
 	// it generates; when nil, everything falls back to LLM.
@@ -352,6 +355,9 @@ func (r *Router) dispatchLocal(ctx context.Context, msg Message, text, cmd strin
 	switch cmd {
 	case "/status":
 		reply, err := r.handleStatus(ctx)
+		return reply, true, err
+	case "/tasks":
+		reply, err := r.handleTasks(ctx)
 		return reply, true, err
 	case "/model":
 		_, arg := parseCmd(text, "")
@@ -519,7 +525,7 @@ func (r *Router) RouteStream(ctx context.Context, msg Message, stream TurnStream
 }
 
 var localCommands = []string{
-	"/status", "/model", "/spawn", "/approve", "/cancel",
+	"/status", "/tasks", "/model", "/spawn", "/approve", "/cancel",
 	"/start",
 	"/new", "/reset", "/topic", "/retry", "/undo",
 	"/title", "/branch", "/fork", "/compress", "/compact",
@@ -537,7 +543,8 @@ type CommandSpec struct {
 }
 
 var localCommandSpecs = []CommandSpec{
-	{Command: "/status", Description: "Show task counts by state", Usage: "/status"},
+	{Command: "/status", Description: "Show daemon health", Usage: "/status"},
+	{Command: "/tasks", Description: "Show running and parked work", Usage: "/tasks"},
 	{Command: "/model", Description: "Choose a provider and model", Usage: "/model [provider/model]"},
 	{Command: "/spawn", Description: "Create a tracked task", Usage: "/spawn <title>"},
 	{Command: "/approve", Description: "Approve a waiting task", Usage: "/approve <task-id>"},
@@ -774,6 +781,73 @@ func (r *Router) handleStatus(ctx context.Context) (string, error) {
 	return formatStatus(counts, r.Models), nil
 }
 
+// handleTasks answers /tasks: the live view of this identity's work, with
+// enough identity and state to act on it. This is the division of labour
+// /status used to blur -- /status now reports health, /tasks reports work.
+func (r *Router) handleTasks(ctx context.Context) (string, error) {
+	if r.TaskLister == nil {
+		return "task list not configured", nil
+	}
+	tasks, err := r.TaskLister.ListChatTasks(ctx, r.Identity, defaultTaskListLimit)
+	if err != nil {
+		return "", fmt.Errorf("tasks: %w", err)
+	}
+	return formatTasks(tasks, time.Now()), nil
+}
+
+// formatTasks renders each task with enough identity and state to act on
+// it: id, title, status, workflow/stage, and age since its last
+// transition -- so a task that is running but stuck (old UpdatedAt) reads
+// differently from one making progress (recent UpdatedAt), which a bare
+// status count could never distinguish.
+func formatTasks(tasks []ChatTaskSummary, now time.Time) string {
+	var b strings.Builder
+	b.WriteString("🗂 Archie tasks\n\n")
+	if len(tasks) == 0 {
+		b.WriteString("No tasks yet\n")
+		return strings.TrimSpace(b.String())
+	}
+	sortTasksByPriority(tasks)
+	for _, t := range tasks {
+		icon, label := "•", formatCustomStatus(t.Status)
+		if d, ok := taskStateDisplays[t.Status]; ok {
+			icon, label = d.icon, d.label
+		}
+		fmt.Fprintf(&b, "%s #%d %s\n", icon, t.ID, t.Title)
+		fmt.Fprintf(&b, "  %s", label)
+		if stage := workflowStage(t.Workflow, t.Stage); stage != "" {
+			fmt.Fprintf(&b, " · %s", stage)
+		}
+		if t.Attempt > 1 {
+			fmt.Fprintf(&b, " · attempt %d", t.Attempt)
+		}
+		if age := relativeAge(t.UpdatedAt, now); age != "" {
+			fmt.Fprintf(&b, " · updated %s", age)
+		}
+		b.WriteString("\n")
+		if t.Status == taskstate.Parked && t.ParkReason != "" {
+			fmt.Fprintf(&b, "  ↳ %s\n", t.ParkReason)
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// workflowStage joins a task's workflow and stage for display, degrading
+// gracefully when either is unknown (e.g. a task that hasn't started its
+// first stage yet).
+func workflowStage(workflow, stage string) string {
+	switch {
+	case workflow == "" && stage == "":
+		return ""
+	case stage == "":
+		return workflow
+	case workflow == "":
+		return stage
+	default:
+		return workflow + "/" + stage
+	}
+}
+
 type taskStateDisplay struct {
 	icon  string
 	label string
@@ -805,20 +879,19 @@ var statusOrder = []string{
 	taskstate.Dead,
 }
 
-func sortStatuses(counts map[string]int) []string {
-	statuses := make([]string, 0, len(counts))
-	for s := range counts {
-		statuses = append(statuses, s)
-	}
-
+// sortTasksByPriority orders tasks so the ones an operator would look for
+// first -- running, then waiting on them, then parked -- lead the list,
+// with terminal states (merged, rejected, dead, ...) trailing. It is
+// stable, so within one status group the lister's own recency order
+// survives.
+func sortTasksByPriority(tasks []ChatTaskSummary) {
 	orderMap := make(map[string]int, len(statusOrder))
 	for i, s := range statusOrder {
 		orderMap[s] = i
 	}
-
-	slices.SortFunc(statuses, func(a, b string) int {
-		idxA, okA := orderMap[a]
-		idxB, okB := orderMap[b]
+	slices.SortStableFunc(tasks, func(a, b ChatTaskSummary) int {
+		idxA, okA := orderMap[a.Status]
+		idxB, okB := orderMap[b.Status]
 		if okA && okB {
 			return cmp.Compare(idxA, idxB)
 		}
@@ -828,10 +901,8 @@ func sortStatuses(counts map[string]int) []string {
 		if okB {
 			return 1
 		}
-		return strings.Compare(a, b)
+		return strings.Compare(a.Status, b.Status)
 	})
-
-	return statuses
 }
 
 func formatCustomStatus(s string) string {
@@ -911,31 +982,44 @@ func formatRuntimeSection(b *strings.Builder, provider, model string) {
 	fmt.Fprintf(b, "Provider: %s\nModel: %s\n", provider, model)
 }
 
-// formatStatus formats the task counts and active runtime details into
-// a clean, mobile-friendly summary.
+// formatStatus formats daemon health into a clean, mobile-friendly summary.
+// It deliberately does not itemize tasks -- that is /tasks' job -- so it
+// reduces the task counts to one aggregate health signal (is work backing
+// up) rather than duplicating /tasks' per-task list.
 func formatStatus(counts map[string]int, models ModelManager) string {
 	var b strings.Builder
-	b.WriteString("📊 Archie status\n\nTasks\n")
-
-	statuses := sortStatuses(counts)
-	if len(statuses) == 0 {
-		b.WriteString("No tasks yet\n")
-	} else {
-		for _, s := range statuses {
-			count := counts[s]
-			d, ok := taskStateDisplays[s]
-			if ok {
-				fmt.Fprintf(&b, "%s %s: %d\n", d.icon, d.label, count)
-			} else {
-				fmt.Fprintf(&b, "• %s: %d\n", formatCustomStatus(s), count)
-			}
-		}
-	}
+	b.WriteString("📊 Archie status\n\n")
+	b.WriteString(formatQueueDepth(counts))
 
 	provider, model := extractRuntimeInfo(models)
 	formatRuntimeSection(&b, provider, model)
 
 	return strings.TrimSpace(b.String())
+}
+
+// formatQueueDepth summarizes in-flight work as one line: how many tasks
+// are running, waiting on a human reply, or parked. Queued and terminal
+// states are excluded -- neither is a health concern an operator needs
+// /status to surface.
+func formatQueueDepth(counts map[string]int) string {
+	running := counts[taskstate.Running]
+	waiting := counts[taskstate.WaitingHuman]
+	parked := counts[taskstate.Parked]
+	inFlight := running + waiting + parked
+	if inFlight == 0 {
+		return "Queue: idle\n"
+	}
+	var parts []string
+	if running > 0 {
+		parts = append(parts, fmt.Sprintf("%d running", running))
+	}
+	if waiting > 0 {
+		parts = append(parts, fmt.Sprintf("%d waiting on you", waiting))
+	}
+	if parked > 0 {
+		parts = append(parts, fmt.Sprintf("%d parked", parked))
+	}
+	return fmt.Sprintf("Queue: %d in flight (%s)\n", inFlight, strings.Join(parts, ", "))
 }
 
 func (r *Router) handleWhoami() (string, error) {

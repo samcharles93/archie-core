@@ -34,7 +34,19 @@ type ChatTaskSummary struct {
 	Title    string `json:"title"`
 	Status   string `json:"status"`
 	Workflow string `json:"workflow,omitempty"`
+	Stage    string `json:"stage,omitempty"`
 	PRNumber int    `json:"pr_number,omitempty"`
+	// Attempt is the task's current retry attempt. 0 or 1 means it has never
+	// been retried; the /tasks command only surfaces this once it is
+	// actionable information (attempt > 1).
+	Attempt int `json:"attempt,omitempty"`
+	// ParkReason explains why a parked task is parked. Empty for any other
+	// status.
+	ParkReason string `json:"park_reason,omitempty"`
+	// UpdatedAt is the task's last transition time, so a caller can tell a
+	// task that is running but stuck (old UpdatedAt) from one making
+	// progress (recent UpdatedAt).
+	UpdatedAt time.Time `json:"updated_at,omitzero"`
 }
 
 // ChatTaskLister is the read surface the task tools need. It mirrors the
