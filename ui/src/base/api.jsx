@@ -162,6 +162,44 @@ export const api = {
     if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
     return res.json();
   },
+  bindings: () => req("/api/bindings"),
+  bindingCreate: async (binding) => {
+    const res = await fetch("/api/bindings", {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json", "X-Archie-CSRF": "1" },
+      body: JSON.stringify(binding),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+    return res.json();
+  },
+  bindingUpdate: async (id, binding) => {
+    const res = await fetch(`/api/bindings/${id}`, {
+      method: "PATCH",
+      headers: { Accept: "application/json", "Content-Type": "application/json", "X-Archie-CSRF": "1" },
+      body: JSON.stringify(binding),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+    return res.json();
+  },
+  bindingDelete: async (id) => {
+    const res = await fetch(`/api/bindings/${id}`, {
+      method: "DELETE",
+      headers: { Accept: "application/json", "X-Archie-CSRF": "1" },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+  },
+  bindingApprove: async (id) => {
+    const res = await fetch(`/api/bindings/${id}/approve`, {
+      method: "POST",
+      headers: { Accept: "application/json", "X-Archie-CSRF": "1" },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+    return res.json();
+  },
   memory: () => req("/api/memory"),
   chatSessions: () => req("/api/chat/sessions"),
   chatMessages: (id) => req(`/api/chat/sessions/${encodeURIComponent(id)}/messages`),
