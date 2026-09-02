@@ -1,6 +1,6 @@
 // Single place that knows how to talk to archied. Every feature folder goes
 // through this, so auth handling and error shape live in one file.
-import { randomUUID } from "./uuid.js";
+import { randomUUID } from "./uuid.jsx";
 
 async function req(path) {
   // A daemon that accepts the connection but never answers would otherwise

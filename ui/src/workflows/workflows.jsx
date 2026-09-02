@@ -1,6 +1,6 @@
 import "./workflows.css";
-import { api } from "../base/api.js";
-import { el, empty, mount } from "../base/dom.js";
+import { api } from "../base/api.jsx";
+import { el, empty, mount } from "../base/dom.jsx";
 
 /**
  * Plain-language workflow names. Falls back to a title-cased version of the

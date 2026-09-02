@@ -1,6 +1,6 @@
 import "./channels.css";
-import { api } from "../base/api.js";
-import { el, empty, mount, pill } from "../base/dom.js";
+import { api } from "../base/api.jsx";
+import { el, empty, mount, pill } from "../base/dom.jsx";
 
 /**
  * How you reach Archie. Backed by GET /api/channels, which derives from

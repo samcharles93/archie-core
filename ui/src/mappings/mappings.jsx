@@ -1,7 +1,7 @@
 import "./mappings.css";
-import { api } from "../base/api.js";
-import { el, empty, mount } from "../base/dom.js";
-import { fieldsTable, mappingRow, payloadTree } from "./mapping-editor.js";
+import { api } from "../base/api.jsx";
+import { el, empty, mount } from "../base/dom.jsx";
+import { fieldsTable, mappingRow, payloadTree } from "./mapping-editor.jsx";
 
 /**
  * Payload field mapping (t2db.3): bind named fields to JSON paths inside a

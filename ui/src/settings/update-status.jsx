@@ -1,4 +1,4 @@
-import { el, empty, pill } from "../base/dom.js";
+import { el, empty, pill } from "../base/dom.jsx";
 
 const STATUS_LABELS = {
   ok: "OK",

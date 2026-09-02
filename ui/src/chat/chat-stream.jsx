@@ -1,4 +1,4 @@
-import { renderMarkdown } from "./markdown.js";
+import { renderMarkdown } from "./markdown.jsx";
 
 export function updateStreamingReply(current, text) {
   const next = renderMarkdown(text);

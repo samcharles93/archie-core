@@ -1,4 +1,4 @@
-import { randomUUID } from "../base/uuid.js";
+import { randomUUID } from "../base/uuid.jsx";
 
 export function newChatTurn(text) {
   return { text, sourceID: randomUUID() };

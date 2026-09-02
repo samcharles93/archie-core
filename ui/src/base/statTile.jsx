@@ -1,5 +1,5 @@
-import { el } from "./dom.js";
-import { icon } from "./icons.js";
+import { el } from "./dom.jsx";
+import { icon } from "./icons.jsx";
 
 /**
  * A KPI tile: label, big value, trend against a stated comparison window, and

@@ -1,4 +1,4 @@
-import { el } from "./dom.js";
+import { el } from "./dom.jsx";
 
 /**
  * Arc gauge for a single headline percentage.

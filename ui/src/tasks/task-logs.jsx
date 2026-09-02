@@ -1,5 +1,5 @@
-import { el, empty } from "../base/dom.js";
-import { logRow } from "../base/log-row.js";
+import { el, empty } from "../base/dom.jsx";
+import { logRow } from "../base/log-row.jsx";
 
 /**
  * Renders one task's persisted attempt log (GET /api/tasks/:id/logs) --

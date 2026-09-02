@@ -1,4 +1,4 @@
-import { el } from "./dom.js";
+import { el } from "./dom.jsx";
 
 /**
  * Shared log-entry rendering. Both the daemon-wide log page

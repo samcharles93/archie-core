@@ -1,7 +1,7 @@
 import "./memory.css";
-import { api } from "../base/api.js";
-import { el, empty, mount, pill } from "../base/dom.js";
-import { icon } from "../base/icons.js";
+import { api } from "../base/api.jsx";
+import { el, empty, mount, pill } from "../base/dom.jsx";
+import { icon } from "../base/icons.jsx";
 
 /**
  * Memory: what Archie can recall, and with what.

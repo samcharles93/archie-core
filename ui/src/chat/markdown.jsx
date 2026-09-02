@@ -1,4 +1,4 @@
-import { el } from "../base/dom.js";
+import { el } from "../base/dom.jsx";
 
 function inlineMarkdown(text) {
   const fragment = document.createDocumentFragment();

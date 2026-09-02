@@ -1,9 +1,9 @@
 import "./settings.css";
-import { api } from "../base/api.js";
-import { el, empty, mount, pill } from "../base/dom.js";
-import { statusKind, statusLabel } from "../base/task-meta.js";
-import { row } from "./config-row.js";
-import { updateStatusCard } from "./update-status.js";
+import { api } from "../base/api.jsx";
+import { el, empty, mount, pill } from "../base/dom.jsx";
+import { statusKind, statusLabel } from "../base/task-meta.jsx";
+import { row } from "./config-row.jsx";
+import { updateStatusCard } from "./update-status.jsx";
 
 /**
  * A view of the config archied is actually running with, grouped by
@@ -272,7 +272,7 @@ function repositoriesCard(repos, onSaved) {
 
 // repoBoolCell renders an immediately-autosaving checkbox, PATCHing
 // api.configRepoUpdate on change and reverting the toggle if the save
-// fails (archie-core-b6ew.6). A table cell doesn't fit config-row.js's
+// fails (archie-core-b6ew.6). A table cell doesn't fit config-row.jsx's
 // label/value/actions Edit-then-Save flow, and a checkbox is the more
 // natural control for a boolean in a table anyway.
 function repoBoolCell(r, field, onSaved) {

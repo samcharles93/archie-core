@@ -1,5 +1,5 @@
-import { el } from "../base/dom.js";
-import { renderMarkdown } from "./markdown.js";
+import { el } from "../base/dom.jsx";
+import { renderMarkdown } from "./markdown.jsx";
 
 export function sessionTitle(session) {
   return session.title || session.branch_name || `Conversation ${session.session_id.slice(0, 8)}`;

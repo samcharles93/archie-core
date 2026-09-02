@@ -1,4 +1,4 @@
-import { randomUUID } from "../base/uuid.js";
+import { randomUUID } from "../base/uuid.jsx";
 
 const CHANNEL_KEY = "archie.web.chat.channel";
 

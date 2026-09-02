@@ -1,4 +1,4 @@
-import { el } from "../base/dom.js";
+import { el } from "../base/dom.jsx";
 
 // Tool activity is rendered into its own list inside the assistant bubble
 // rather than folded into the reply text: the text node is replaced wholesale

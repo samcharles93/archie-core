@@ -209,31 +209,19 @@ function start() {
     // Let a page release its subscriptions before it is replaced, so the SSE
     // stream does not leak a connection per navigation.
     outlet.firstElementChild?.dispatchEvent(new CustomEvent("archie:teardown"));
-    
-    // Unmount Preact cleanly if a Preact component was mounted here
-    import("preact").then(({ render, isValidElement }) => {
-      render(null, outlet);
-
-      const [path, query = ""] = rawPath.split("?", 2);
-      const route = routes.find((r) => r.path === path) || routes[0];
-      bar.highlight(route.path);
-      // The chat is a drawer, not a page: /chat opens it rather than mounting a
-      // second chatPage() (which would duplicate session state and the stream).
-      if (route.path === "/chat") {
-        mount(outlet);
-        toggleChat(true);
-        return;
-      }
-      
-      const viewContent = route.view ? route.view(new URLSearchParams(query)) : comingSoon(route);
-      if (isValidElement(viewContent)) {
-        render(viewContent, outlet);
-      } else {
-        mount(outlet, viewContent);
-      }
-      // Navigating to a page dismisses the chat drawer; the operator has moved on.
-      toggleChat(false);
-    });
+    const [path, query = ""] = rawPath.split("?", 2);
+    const route = routes.find((r) => r.path === path) || routes[0];
+    bar.highlight(route.path);
+    // The chat is a drawer, not a page: /chat opens it rather than mounting a
+    // second chatPage() (which would duplicate session state and the stream).
+    if (route.path === "/chat") {
+      mount(outlet);
+      toggleChat(true);
+      return;
+    }
+    mount(outlet, route.view ? route.view(new URLSearchParams(query)) : comingSoon(route));
+    // Navigating to a page dismisses the chat drawer; the operator has moved on.
+    toggleChat(false);
   }
 
   window.addEventListener("hashchange", () => show(location.hash.slice(1) || "/"));

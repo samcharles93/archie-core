@@ -1,6 +1,6 @@
 import "./curators.css";
-import { api } from "../base/api.js";
-import { el, empty, mount, pill, ago } from "../base/dom.js";
+import { api } from "../base/api.jsx";
+import { el, empty, mount, pill, ago } from "../base/dom.jsx";
 
 /**
  * Curator observability (archie-core-1786637489932-6). Backed by GET

@@ -1,12 +1,12 @@
 import "./tasks.css";
-import { api } from "../base/api.js";
-import { ago, el, empty, mount, pill } from "../base/dom.js";
-import { statTile } from "../base/statTile.js";
-import { taskRowA11y } from "./task-row.js";
-import { initialTaskFilter, taskMatchesStatus } from "./task-filters.js";
-import { describeTimelineEvent } from "./timeline-event.js";
-import { taskLogPanel } from "./task-logs.js";
-import { actionFor, statusIds, statusKind, statusLabel } from "../base/task-meta.js";
+import { api } from "../base/api.jsx";
+import { ago, el, empty, mount, pill } from "../base/dom.jsx";
+import { statTile } from "../base/statTile.jsx";
+import { taskRowA11y } from "./task-row.jsx";
+import { initialTaskFilter, taskMatchesStatus } from "./task-filters.jsx";
+import { describeTimelineEvent } from "./timeline-event.jsx";
+import { taskLogPanel } from "./task-logs.jsx";
+import { actionFor, statusIds, statusKind, statusLabel } from "../base/task-meta.jsx";
 
 /**
  * The work board: every task archied knows about, filterable by status and

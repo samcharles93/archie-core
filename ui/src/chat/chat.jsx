@@ -1,14 +1,14 @@
-import { el } from "../base/dom.js";
-import { api } from "../base/api.js";
-import { createChatView } from "./chat-view.js";
-import { assistantBubble, chatBubble } from "./chat-render.js";
-import { updateStreamingReply } from "./chat-stream.js";
-import { appendToolCall, appendNavigateChip } from "./chat-tools.js";
-import { channelID } from "./chat-state.js";
-import { retryChatTurn, resolveTurn } from "./chat-retry.js";
-import { renderCommands, renderModels, renderSelectors, renderSessions } from "./chat-catalog.js";
-import { renderDangerous, renderUpdate } from "./chat-panels.js";
-import { updateUnavailableMessage } from "./chat-update-status.js";
+import { el } from "../base/dom.jsx";
+import { api } from "../base/api.jsx";
+import { createChatView } from "./chat-view.jsx";
+import { assistantBubble, chatBubble } from "./chat-render.jsx";
+import { updateStreamingReply } from "./chat-stream.jsx";
+import { appendToolCall, appendNavigateChip } from "./chat-tools.jsx";
+import { channelID } from "./chat-state.jsx";
+import { retryChatTurn, resolveTurn } from "./chat-retry.jsx";
+import { renderCommands, renderModels, renderSelectors, renderSessions } from "./chat-catalog.jsx";
+import { renderDangerous, renderUpdate } from "./chat-panels.jsx";
+import { updateUnavailableMessage } from "./chat-update-status.jsx";
 
 import "./chat.css";
 

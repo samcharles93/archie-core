@@ -1,5 +1,5 @@
-import { api } from "../base/api.js";
-import { el, mount } from "../base/dom.js";
+import { api } from "../base/api.jsx";
+import { el, mount } from "../base/dom.jsx";
 
 /**
  * One key/value row on the Configuration page, and its inline edit flow.

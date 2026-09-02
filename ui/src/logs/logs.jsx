@@ -1,7 +1,7 @@
 import "./logs.css";
-import { api, subscribeLogs } from "../base/api.js";
-import { el, empty, mount, pill } from "../base/dom.js";
-import { logRow } from "../base/log-row.js";
+import { api, subscribeLogs } from "../base/api.jsx";
+import { el, empty, mount, pill } from "../base/dom.jsx";
+import { logRow } from "../base/log-row.jsx";
 
 /**
  * The log view: history from the file on disk, then live lines appended from

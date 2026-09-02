@@ -8,7 +8,7 @@
 // keep working when archied is unreachable; loadTaskMeta() replaces them with
 // the live catalog as soon as it arrives. They must match the backend catalog
 // so drawing the page never flashes a stale label.
-import { api } from "./api.js";
+import { api } from "./api.jsx";
 
 const DEFAULT_STATUSES = [
   { id: "queued", label: "Queued", kind: "idle" },
