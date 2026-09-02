@@ -98,9 +98,11 @@ func (c *bindingCipher) Encrypt(plaintext string) (string, error) {
 		return "", fmt.Errorf("store: binding cipher: nonce: %w", err)
 	}
 	sealed := gcm.Seal(nil, nonce, []byte(plaintext), bindingSecretAAD)
-	payload := base64.RawURLEncoding.EncodeToString(append(nonce, sealed...))
+	payload := make([]byte, 0, bindingNonceLen+len(sealed))
+	payload = append(payload, nonce...)
+	payload = append(payload, sealed...)
 	return fmt.Sprintf("%s:%s:%s:%s", bindingEnvelopeMarker, bindingEnvelopeVersion,
-		c.activeFingerprint, payload), nil
+		c.activeFingerprint, base64.RawURLEncoding.EncodeToString(payload)), nil
 }
 
 // Decrypt parses the envelope, looks up the key by its embedded fingerprint,
