@@ -130,6 +130,31 @@
   white-space: pre-wrap;
 }
 
+.task-logs-section {
+  margin-top: var(--sp-4);
+}
+
+.task-logs-section .task-decision-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.task-log-list {
+  max-height: 40vh;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  border-top: 1px solid var(--border);
+  margin-top: var(--sp-2);
+}
+
+.task-log-loading,
+.task-log-error {
+  padding: var(--sp-3) 0;
+  color: var(--fg-muted);
+}
+
 /* On phones the filter controls take their own row and full width instead of
    crowding the card title. */
 @media (max-width: 700px) {

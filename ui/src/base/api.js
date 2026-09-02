@@ -111,6 +111,7 @@ export const api = {
     return res.json();
   },
   logs: (params) => req("/api/logs" + qs(params)),
+  taskLogs: (id, params) => req(`/api/tasks/${id}/logs` + qs(params)),
   captures: (limit) => req("/api/captures" + qs({ limit })),
   mappings: () => req("/api/mappings"),
   mappingCreate: async (mapping) => {

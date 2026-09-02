@@ -1,6 +1,7 @@
 import "./logs.css";
 import { api, subscribeLogs } from "../base/api.js";
 import { el, empty, mount, pill } from "../base/dom.js";
+import { logRow } from "../base/log-row.js";
 
 /**
  * The log view: history from the file on disk, then live lines appended from
@@ -19,19 +20,6 @@ const LEVELS = [
   { value: "INFO,WARN,ERROR", label: "Info and above" },
   { value: "DEBUG", label: "Debug only" },
 ];
-
-function levelKind(level) {
-  switch ((level || "").toUpperCase()) {
-    case "ERROR":
-      return "danger";
-    case "WARN":
-      return "warn";
-    case "DEBUG":
-      return "idle";
-    default:
-      return "info";
-  }
-}
 
 export function logsPage() {
   const root = el("div");
@@ -162,7 +150,7 @@ export function logsPage() {
 			mount(list, empty(durableUnavailable ? "Durable history unavailable" : "Nothing matches", durableUnavailable ? "Live daemon logs will appear here while this page is open." : "Try a wider level or clear the search."));
 			return;
 		}
-		mount(list, ...entries.map(row));
+		mount(list, ...entries.map(logRow));
 		list.scrollTop = list.scrollHeight;
 	}
 
@@ -184,33 +172,6 @@ export function logsPage() {
 
 function entryKey(entry) {
 	return `${entry.time || ""}|${entry.level || ""}|${entry.message || entry.msg || ""}|${JSON.stringify(entry.fields || {})}`;
-}
-
-function row(entry) {
-  const fields = entry.fields || {};
-  return el(
-    `div.log-row.log-${levelKind(entry.level)}`,
-    el("span.log-time.mono", shortTime(entry.time)),
-    el("span.log-level", (entry.level || "info").toUpperCase()),
-    el(
-      "span.log-body",
-      el("span.log-msg", entry.message || entry.msg || ""),
-      ...Object.entries(fields).map(([k, v]) =>
-        el("span.log-field", el("span.log-field-key", k), String(fmtValue(v))),
-      ),
-    ),
-  );
-}
-
-function fmtValue(v) {
-  if (v == null) return "";
-  return typeof v === "object" ? JSON.stringify(v) : v;
-}
-
-function shortTime(value) {
-  const d = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(d.getTime())) return "--:--:--";
-  return d.toTimeString().slice(0, 8);
 }
 
 function sameList(a, b) {
