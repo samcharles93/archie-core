@@ -258,6 +258,7 @@ type RepoView struct {
 	PersistentStorage bool       `json:"persistent_storage"`
 	AllowConcurrent   bool       `json:"allow_concurrent"`
 	MaxRetries        int        `json:"max_retries"`
+	ReviewEnabled     bool       `json:"review_enabled"`
 }
 
 // ProviderView is an LLM provider's shape, never its key. APIKeyEnv is the
@@ -475,6 +476,7 @@ func reposView(repos []config.Repo) []RepoView {
 			PersistentStorage: r.PersistentStorage,
 			AllowConcurrent:   r.AllowConcurrent,
 			MaxRetries:        r.MaxRetries,
+			ReviewEnabled:     r.ReviewEnabled,
 		})
 	}
 	return out

@@ -316,6 +316,9 @@ gate_max_failures = 5
 #                            # [containers].max_concurrency globally.
 # # persistent_storage = true  # reuse a per-repo Docker volume and Git object cache until volume_ttl
 # # max_retries = 5             # per-repo override of the global max_retries above
+# # review_enabled = true       # run a fresh adversarial reviewer (no path to the implementer's
+#                                # context) after gates pass and before the PR opens. Default false --
+#                                # an uncalibrated reviewer that cries wolf is worse than no review.
 
 # ── Tools ───────────────────────────────────────────────────────────────────
 # Limits on what a tool may return. These bound how much of the context window

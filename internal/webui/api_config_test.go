@@ -256,6 +256,40 @@ func TestHandleConfigReportsLockedKeys(t *testing.T) {
 	}
 }
 
+// TestHandleConfigRepoViewIncludesReviewEnabled proves Repo.ReviewEnabled
+// reaches the dashboard alongside AllowConcurrent and MaxRetries --
+// previously it was absent from RepoView entirely, not merely unrendered
+// (archie-core-b6ew.4).
+func TestHandleConfigRepoViewIncludesReviewEnabled(t *testing.T) {
+	srv := newTestServer(t)
+	srv.Cfg = config.NewHolder(config.Config{
+		Repos: []config.Repo{
+			{Owner: "acme", Name: "widget", Base: "main", AllowConcurrent: true, MaxRetries: 3, ReviewEnabled: true},
+			{Owner: "acme", Name: "gadget", Base: "main"},
+		},
+	})
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	var got ConfigView
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Repositories) != 2 {
+		t.Fatalf("Repositories = %+v, want 2", got.Repositories)
+	}
+	widget := got.Repositories[0]
+	if !widget.AllowConcurrent || widget.MaxRetries != 3 || !widget.ReviewEnabled {
+		t.Errorf("widget = %+v, want AllowConcurrent=true MaxRetries=3 ReviewEnabled=true", widget)
+	}
+	gadget := got.Repositories[1]
+	if gadget.AllowConcurrent || gadget.MaxRetries != 0 || gadget.ReviewEnabled {
+		t.Errorf("gadget = %+v, want all repo-tuning fields at their zero value", gadget)
+	}
+}
+
 // TestHandleConfigIncludesSchemaWithLiveValues proves the schema (archie-core-b6ew.2)
 // carries the same values as the flat ConfigView fields it is built from,
 // not a stale or empty catalog.
