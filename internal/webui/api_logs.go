@@ -32,7 +32,22 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query()
-	limit, _ := strconv.Atoi(q.Get("limit"))
+	limit := logging.DefaultTailLines
+	if raw := strings.TrimSpace(q.Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			http.Error(w, "bad limit", http.StatusBadRequest)
+			return
+		}
+		switch {
+		case parsed <= 0:
+			limit = logging.DefaultTailLines
+		case parsed > logging.MaxTailLines:
+			limit = logging.MaxTailLines
+		default:
+			limit = parsed
+		}
+	}
 	result, err := logging.Tail(path, logging.Query{
 		Levels:    splitCSV(q.Get("level")),
 		Component: strings.TrimSpace(q.Get("component")),
