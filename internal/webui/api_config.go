@@ -11,6 +11,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/overlay"
+	"github.com/samcharles93/archie-core/internal/secret"
 )
 
 // Sentinel errors for handleConfigUpdate status classification. The
@@ -136,7 +137,7 @@ func channelStateDetail(state channels.State, configured bool) string {
 }
 
 func telegramChannelView(t config.TelegramConfig) ChannelView {
-	configured := strings.TrimSpace(t.TokenEnv) != ""
+	configured := t.Token != (secret.SecretRef{}) || strings.TrimSpace(t.TokenEnv) != ""
 	detail := "Not configured."
 	if configured {
 		n := len(t.AllowedUserIDs)

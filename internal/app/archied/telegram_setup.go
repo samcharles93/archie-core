@@ -23,6 +23,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/installtype"
 	"github.com/samcharles93/archie-core/internal/releaseannounce"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
+	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/tools"
 )
@@ -62,6 +63,17 @@ type telegramSetup struct {
 	// recently observed archie-agent version (see daemon.AgentStatus).
 	// Nil disables the agent component of RunningVersions.
 	AgentStatus *daemon.AgentStatus
+	Secrets     *secret.Registry
+}
+
+func resolveTelegramToken(cfg config.TelegramConfig, registry *secret.Registry) (string, error) {
+	if cfg.Token != (secret.SecretRef{}) {
+		return cfg.Token.Resolve(registry)
+	}
+	if cfg.TokenEnv == "" {
+		return "", nil
+	}
+	return os.Getenv(cfg.TokenEnv), nil
 }
 
 // setupTelegramGateway initialises the Telegram chat gateway when a
@@ -69,12 +81,16 @@ type telegramSetup struct {
 // is configured) and ok=false to signal the caller must exit early.
 func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), ok bool) {
 	cfg := s.Cfg.Get()
-	if cfg.Chat.Telegram.TokenEnv == "" {
+	if cfg.Chat.Telegram.Token == (secret.SecretRef{}) && cfg.Chat.Telegram.TokenEnv == "" {
 		return nil, true
 	}
-	tgToken := os.Getenv(cfg.Chat.Telegram.TokenEnv)
+	tgToken, err := resolveTelegramToken(cfg.Chat.Telegram, s.Secrets)
+	if err != nil {
+		s.Log.Error("chat.telegram token resolution failed", "err", err)
+		return nil, false
+	}
 	if tgToken == "" {
-		s.Log.Error("chat.telegram configured but token env var is empty", "env", cfg.Chat.Telegram.TokenEnv)
+		s.Log.Error("chat.telegram configured but token is empty")
 		return nil, false
 	}
 	if len(cfg.Chat.Telegram.AllowedUserIDs) == 0 {
@@ -231,13 +247,12 @@ func makeTelegramReload(s telegramSetup) func(*telegram.Gateway) error {
 			return fmt.Errorf("reload config: %w", err)
 		}
 		newCfg := doc.Config
-		tokenEnv := newCfg.Chat.Telegram.TokenEnv
-		if tokenEnv == "" {
-			return fmt.Errorf("reload config: chat.telegram.token_env is unset")
+		token, err := resolveTelegramToken(newCfg.Chat.Telegram, s.Secrets)
+		if err != nil {
+			return fmt.Errorf("reload config: resolve telegram token: %w", err)
 		}
-		token := os.Getenv(tokenEnv)
 		if token == "" {
-			return fmt.Errorf("reload config: %s is empty", tokenEnv)
+			return fmt.Errorf("reload config: chat.telegram token is empty")
 		}
 		g.Token = token
 		g.AllowedUserIDs = newCfg.Chat.Telegram.AllowedUserIDs

@@ -213,6 +213,29 @@ func TestLoadForgeTokenTakesPrecedenceOverTokenEnv(t *testing.T) {
 	}
 }
 
+func TestLoadTelegramTokenSecretRefAndLegacyFallback(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	contents := "bot_user = \"widget\"\n" +
+		"[chat.telegram]\ntoken = { engine = \"bws\", key = \"TELEGRAM_BOT_TOKEN\" }\n" +
+		"token_env = \"TELEGRAM_LEGACY_TOKEN\"\n" +
+		"[[repos]]\nowner = \"acme\"\nname = \"app\"\n"
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := secret.SecretRef{Engine: "bws", Key: "TELEGRAM_BOT_TOKEN"}
+	if cfg.Chat.Telegram.Token != want {
+		t.Errorf("Telegram.Token = %#v, want %#v", cfg.Chat.Telegram.Token, want)
+	}
+	if cfg.Chat.Telegram.TokenEnv != "TELEGRAM_LEGACY_TOKEN" {
+		t.Errorf("Telegram.TokenEnv = %q, want TELEGRAM_LEGACY_TOKEN", cfg.Chat.Telegram.TokenEnv)
+	}
+}
+
 func TestLoadRejectsInvalidConfigEnumsAndGlobs(t *testing.T) {
 	tests := []struct {
 		name  string
