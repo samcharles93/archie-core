@@ -116,7 +116,7 @@ func TestOpenRejectsNewerSchemaVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(t.Context(), `PRAGMA user_version = 3`); err != nil {
+	if _, err := db.ExecContext(t.Context(), `PRAGMA user_version = 4`); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {
