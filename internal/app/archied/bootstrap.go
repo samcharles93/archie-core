@@ -319,11 +319,11 @@ func (b *boot) setupObservability() {
 	b.bus = bus
 	b.addCleanup(func() { bus.Close() })
 	telegramDetail := ""
-	if cfg.Chat.Telegram.TokenEnv != "" && len(cfg.Chat.Telegram.AllowedUserIDs) == 0 {
+	if (cfg.Chat.Telegram.Token != (secret.SecretRef{}) || cfg.Chat.Telegram.TokenEnv != "") && len(cfg.Chat.Telegram.AllowedUserIDs) == 0 {
 		telegramDetail = "Token set, but the allowlist is empty -- the bot answers nobody."
 	}
 	b.channelManager = channelruntime.NewManager([]channelruntime.Descriptor{
-		{ID: "telegram", Name: "Telegram", Configured: cfg.Chat.Telegram.TokenEnv != "", ReloadSupported: cfg.Chat.Telegram.TokenEnv != "", Detail: telegramDetail},
+		{ID: "telegram", Name: "Telegram", Configured: cfg.Chat.Telegram.Token != (secret.SecretRef{}) || cfg.Chat.Telegram.TokenEnv != "", ReloadSupported: cfg.Chat.Telegram.Token != (secret.SecretRef{}) || cfg.Chat.Telegram.TokenEnv != "", Detail: telegramDetail},
 		{ID: "email", Name: "Email", Configured: cfg.Chat.Email.ListenAddr != ""},
 		{ID: "webhook", Name: "Webhook gateway", Configured: cfg.Chat.WebhookAddr != ""},
 	})
@@ -335,7 +335,7 @@ func (b *boot) setupObservability() {
 	}
 	b.web = &webui.Server{Store: b.st, Log: log.With("component", "webui"), LogFeed: b.logFeed, TaskLogs: b.taskLogs, Cfg: config.NewHolder(cfg), Channels: b.channelManager, Events: bus}
 	b.web.UpdateReportPath = updateReportPath(cfg.WorkDir, "webui")
-	if cfg.Chat.Telegram.TokenEnv != "" && len(cfg.Chat.Telegram.AllowedUserIDs) > 0 {
+	if (cfg.Chat.Telegram.Token != (secret.SecretRef{}) || cfg.Chat.Telegram.TokenEnv != "") && len(cfg.Chat.Telegram.AllowedUserIDs) > 0 {
 		b.web.TelegramUpdateReportPath = updateReportPath(cfg.WorkDir, cfg.BotUser)
 		b.web.TelegramUpdateChatID = cfg.Chat.Telegram.AllowedUserIDs[0]
 	}
@@ -512,7 +512,7 @@ func (b *boot) setupLLMAndChat(ctx context.Context) {
 	// responder with Telegram while using a stable browser channel id.
 	b.webRouter = gateway.NewRouter(b.st, nil, "web")
 	b.webRouter.Version = fmt.Sprintf("Archie\nGateway: %s\nRuntime: %s", gatewayVersion, runtimeVersion)
-	if cfg.Chat.Telegram.TokenEnv != "" {
+	if cfg.Chat.Telegram.Token != (secret.SecretRef{}) || cfg.Chat.Telegram.TokenEnv != "" {
 		b.webRouter.Restart = func(context.Context) error {
 			if b.restartTelegram == nil {
 				return fmt.Errorf("telegram gateway is not ready")
@@ -541,7 +541,7 @@ func (b *boot) setupLLMAndChat(ctx context.Context) {
 			token:   func() string { return b.web.Token },
 		},
 		DefaultChatIdentity: b.defaultChatIdentity, SessionStore: b.chatSessionStore,
-		Bus: b.bus, Log: log,
+		Bus: b.bus, Log: log, Secrets: b.secrets,
 	}
 	b.webRouter.LLM, b.webRouter.LLMStream = makeChatLLMResponder(ctx, "web", webSetup, b.chatSessionStore, b.webRouter)
 	b.webRouter.Titles = newChatTitleGenerator(webSetup)
@@ -578,6 +578,7 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 			token:   func() string { return b.web.Token },
 		},
 		DefaultChatIdentity: b.defaultChatIdentity, SessionStore: b.chatSessionStore, Updates: b.updateService,
+		Secrets:         b.secrets,
 		Bus:             b.bus,
 		RegisterRestart: func(request func() error) { b.restartTelegram = request }, Log: log,
 		ChannelManager: b.channelManager, AgentStatus: b.agentStatus,

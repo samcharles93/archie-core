@@ -923,6 +923,9 @@ type TelegramConfig struct {
 	// bot to a group does not grant that group's members access. Empty
 	// denies everyone.
 	AllowedUserIDs []int64 `toml:"allowed_user_ids" yaml:"allowed_user_ids"`
+	// Token references the bot token through the configured secret engine.
+	// It takes precedence over TokenEnv when both are set.
+	Token secret.SecretRef `toml:"token" yaml:"token"`
 	// TokenEnv names the env var holding the bot token from @BotFather.
 	// Empty disables the Telegram channel.
 	TokenEnv string `toml:"token_env" yaml:"token_env"`
