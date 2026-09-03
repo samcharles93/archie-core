@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"path/filepath"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
@@ -94,6 +96,70 @@ func TestInsertBindingRoundTripsOwnerRepo(t *testing.T) {
 	}
 	if got.Owner != "other-org" || got.Repo != "other-repo" {
 		t.Fatalf("updated owner/repo = %q/%q, want other-org/other-repo", got.Owner, got.Repo)
+	}
+}
+
+func TestOpenMigratesLegacyBindingsOwnerRepoColumns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = raw.ExecContext(t.Context(), `
+		CREATE TABLE bindings (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL DEFAULT '',
+			source TEXT NOT NULL DEFAULT '',
+			mapping_id INTEGER NOT NULL DEFAULT 0,
+			workflow TEXT NOT NULL DEFAULT '',
+			version INTEGER NOT NULL DEFAULT 1,
+			status TEXT NOT NULL DEFAULT 'draft',
+			secret TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+		INSERT INTO bindings (name, source, workflow, secret, created_at, updated_at)
+		VALUES ('legacy', 'sentry', 'implement', 'legacy-secret', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+		PRAGMA user_version = 2`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	got, err := s.ListBindings(t.Context())
+	if err != nil {
+		t.Fatalf("ListBindings after legacy migration: %v", err)
+	}
+	if len(got) != 1 || got[0].Name != "legacy" || got[0].Owner != "" || got[0].Repo != "" {
+		t.Fatalf("legacy bindings = %+v, want preserved row with empty owner/repo", got)
+	}
+
+	created := testBinding("github")
+	created.Owner, created.Repo = "acme", "widget"
+	id, err := s.InsertBinding(t.Context(), created)
+	if err != nil {
+		t.Fatalf("InsertBinding after legacy migration: %v", err)
+	}
+	created.ID = id
+	created.Secret = ""
+	created.Owner, created.Repo = "other", "repo"
+	if err := s.UpdateBinding(t.Context(), created); err != nil {
+		t.Fatalf("UpdateBinding after legacy migration: %v", err)
+	}
+	updated, err := s.GetBinding(t.Context(), id)
+	if err != nil || updated == nil {
+		t.Fatalf("GetBinding after legacy migration update: %+v, %v", updated, err)
+	}
+	if updated.Owner != "other" || updated.Repo != "repo" {
+		t.Fatalf("updated owner/repo = %q/%q, want other/repo", updated.Owner, updated.Repo)
 	}
 }
 

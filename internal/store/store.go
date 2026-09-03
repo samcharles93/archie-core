@@ -106,7 +106,7 @@ type Store struct {
 	bindingsCipher BindingCipher
 }
 
-const taskSchemaVersion = 2
+const taskSchemaVersion = 3
 
 // OpenOption configures the store at open time.
 type OpenOption func(*openOptions)
@@ -169,42 +169,53 @@ func migrateTasks(ctx context.Context, db *sql.DB) error {
 	if version > taskSchemaVersion {
 		return fmt.Errorf("database schema version %d is newer than supported version %d", version, taskSchemaVersion)
 	}
-	if version == taskSchemaVersion {
-		return tx.Commit()
-	}
-
 	columns, err := taskColumns(ctx, tx)
+	if err != nil {
+		return err
+	}
+	bindingColumns, err := tableColumns(ctx, tx, "bindings")
 	if err != nil {
 		return err
 	}
 
 	migrations := []struct {
+		table  string
 		column string
 		sql    string
 	}{
-		{"watch_comment_id", `ALTER TABLE tasks ADD COLUMN watch_comment_id INTEGER NOT NULL DEFAULT 0`},
-		{"retry_count", `ALTER TABLE tasks ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0`},
-		{"source", `ALTER TABLE tasks ADD COLUMN source TEXT NOT NULL DEFAULT 'forge'`},
-		{"identity", `ALTER TABLE tasks ADD COLUMN identity TEXT NOT NULL DEFAULT ''`},
-		{"binding_id", `ALTER TABLE tasks ADD COLUMN binding_id INTEGER NOT NULL DEFAULT 0`},
-		{"binding_version", `ALTER TABLE tasks ADD COLUMN binding_version INTEGER NOT NULL DEFAULT 0`},
+		{"tasks", "watch_comment_id", `ALTER TABLE tasks ADD COLUMN watch_comment_id INTEGER NOT NULL DEFAULT 0`},
+		{"tasks", "retry_count", `ALTER TABLE tasks ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0`},
+		{"tasks", "source", `ALTER TABLE tasks ADD COLUMN source TEXT NOT NULL DEFAULT 'forge'`},
+		{"tasks", "identity", `ALTER TABLE tasks ADD COLUMN identity TEXT NOT NULL DEFAULT ''`},
+		{"tasks", "binding_id", `ALTER TABLE tasks ADD COLUMN binding_id INTEGER NOT NULL DEFAULT 0`},
+		{"tasks", "binding_version", `ALTER TABLE tasks ADD COLUMN binding_version INTEGER NOT NULL DEFAULT 0`},
+		{"bindings", "owner", `ALTER TABLE bindings ADD COLUMN owner TEXT NOT NULL DEFAULT ''`},
+		{"bindings", "repo", `ALTER TABLE bindings ADD COLUMN repo TEXT NOT NULL DEFAULT ''`},
 	}
 	for _, migration := range migrations {
-		if columns[migration.column] {
+		present := columns
+		if migration.table == "bindings" {
+			present = bindingColumns
+		}
+		if present[migration.column] {
 			continue
 		}
 		if _, err := tx.ExecContext(ctx, migration.sql); err != nil {
 			return err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `PRAGMA user_version = 2`); err != nil {
+	if _, err := tx.ExecContext(ctx, `PRAGMA user_version = 3`); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
 func taskColumns(ctx context.Context, tx *sql.Tx) (_ map[string]bool, retErr error) {
-	rows, err := tx.QueryContext(ctx, `PRAGMA table_info(tasks)`)
+	return tableColumns(ctx, tx, "tasks")
+}
+
+func tableColumns(ctx context.Context, tx *sql.Tx, table string) (_ map[string]bool, retErr error) {
+	rows, err := tx.QueryContext(ctx, fmt.Sprintf(`PRAGMA table_info(%s)`, table))
 	if err != nil {
 		return nil, err
 	}
