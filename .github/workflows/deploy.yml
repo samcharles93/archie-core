@@ -134,6 +134,10 @@ jobs:
           RUNTIME_VERSION="${RUNTIME_TAG#archie/}"
           [ -n "$GATEWAY_VERSION" ] || GATEWAY_VERSION=dev
           [ -n "$RUNTIME_VERSION" ] || RUNTIME_VERSION=dev
+          # Keep the raw tag presence separate from the version fallback:
+          # gateway-only releases must not rebuild the runtime image as dev.
+          echo "gateway_tag=$GATEWAY_TAG" >> "$GITHUB_OUTPUT"
+          echo "runtime_tag=$RUNTIME_TAG" >> "$GITHUB_OUTPUT"
           echo "gateway=$GATEWAY_VERSION" >> "$GITHUB_OUTPUT"
           echo "runtime=$RUNTIME_VERSION" >> "$GITHUB_OUTPUT"
 
@@ -151,6 +155,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=archied
 
       - name: Build and push archie-agent
+        if: steps.versions.outputs.runtime_tag != ''
         uses: docker/build-push-action@v6
         with:
           context: .
