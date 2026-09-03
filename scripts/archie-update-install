@@ -43,9 +43,24 @@ configured_agent_image() {
   printf '%s' "$image"
 }
 
+configured_task_db_path() {
+  awk '
+    /^[[:space:]]*db_path[[:space:]]*=/ {
+      value = $0
+      sub(/^[[:space:]]*db_path[[:space:]]*=[[:space:]]*/, "", value)
+      sub(/[[:space:]]*(#.*)?$/, "", value)
+      if (value ~ /^".*"$/) { sub(/^"/, "", value); sub(/"$/, "", value); print value }
+      else if (length(value) >= 2 && substr(value, 1, 1) == sprintf("%c", 39) && substr(value, length(value), 1) == sprintf("%c", 39)) print substr(value, 2, length(value) - 2)
+      exit
+    }
+  ' "$CONFIG_PATH" 2>/dev/null || true
+}
+
 AGENT_IMAGE="${ARCHIE_AGENT_IMAGE:-$(configured_agent_image)}"
 AGENT_IMAGE="${AGENT_IMAGE:-ghcr.io/samcharles93/archie-agent:latest}"
 AGENT_IMAGE_BACKUP="$BIN_DIR/archie-agent-image.prev.tar"
+TASK_DB_PATH="${ARCHIE_TASK_DB_PATH:-$(configured_task_db_path)}"
+TASK_DB_BACKUP="${ARCHIE_TASK_DB_BACKUP:-$BIN_DIR/archie-task-db.prev.sqlite}"
 
 PREV_GW="${ARCHIE_UPDATE_DAEMON_PREVIOUS:-}"
 PREV_RT="${ARCHIE_UPDATE_AGENT_PREVIOUS:-}"
@@ -124,6 +139,12 @@ install -m755 "$source_dir/scripts/archie-update-install" "$BIN_DIR/archie-updat
 install -m755 "$source_dir/scripts/archie-update-watchdog" "$BIN_DIR/archie-update-watchdog"
 install -m755 "$source_dir/scripts/archie-update-check" "$BIN_DIR/archie-update-check"
 
+if [[ ",$components," == *,daemon,* ]] && [ -n "$TASK_DB_PATH" ] && [ -f "$TASK_DB_PATH" ]; then
+  echo "==> backing up task database for schema-safe rollback"
+  mkdir -p "$(dirname "$TASK_DB_BACKUP")"
+  sqlite3 "$TASK_DB_PATH" ".backup '$TASK_DB_BACKUP'"
+fi
+
 if [[ ",$components," == *,daemon,* ]]; then
   echo "==> building archied $GW"
   go build -ldflags "-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion=$GW -X github.com/samcharles93/archie-core/internal/app/archied.runtimeVersion=$RT -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" \
@@ -157,6 +178,8 @@ systemd-run --user --unit=archied-update-restart --collect --quiet \
   --setenv=ARCHIE_UPDATE_INSTALLED_RUNTIME="$RT" \
   --setenv=ARCHIE_AGENT_IMAGE="$AGENT_IMAGE" \
   --setenv=ARCHIE_AGENT_IMAGE_BACKUP="$AGENT_IMAGE_BACKUP" \
+  --setenv=ARCHIE_TASK_DB_PATH="$TASK_DB_PATH" \
+  --setenv=ARCHIE_TASK_DB_BACKUP="$TASK_DB_BACKUP" \
   "$BIN_DIR/archie-update-watchdog"
 
 case "$components" in

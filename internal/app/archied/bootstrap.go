@@ -370,7 +370,6 @@ func (b *boot) setupObservability() {
 	// doesn't expose it. See docs/prds/payload-field-mapping.md.
 	if ms, ok := b.st.(store.MappingStore); ok {
 		b.web.Mappings = ms
-		b.d.Mappings = ms
 	} else {
 		log.Warn("mapping storage unavailable: task store does not implement MappingStore")
 	}
@@ -383,20 +382,13 @@ func (b *boot) setupObservability() {
 	// See docs/prds/webhook-intake-security.md.
 	if bs, ok := b.st.(store.BindingStore); ok {
 		b.web.Bindings = bs
-		b.d.Bindings = bs
 	} else {
 		log.Warn("binding storage unavailable: task store does not implement BindingStore")
 	}
 	if bd, ok := b.st.(store.BindingDispatcher); ok {
 		b.web.BindingDispatcher = bd
-		b.d.BindingDispatcher = bd
 	} else {
 		log.Warn("binding dispatcher unavailable: task store does not implement BindingDispatcher")
-	}
-	if btc, ok := b.st.(store.BindingTaskCreator); ok {
-		b.d.BindingTaskCreator = btc
-	} else {
-		log.Warn("binding task creator unavailable: task store does not implement BindingTaskCreator")
 	}
 	sink := bus.Subscribe(256)
 	go persistAndBroadcastEvents(sink, b.st, b.web, log)
@@ -411,6 +403,9 @@ func (b *boot) connectNATS(ctx context.Context) error {
 	url := cfg.NATS.URL
 	var natsToken string
 	if cfg.NATS.Mode == config.NATSModeExternal {
+		if url == "" {
+			return fmt.Errorf("nats.url is required when nats.mode is external")
+		}
 		var err error
 		natsToken, err = configuredNATSToken(cfg.NATS, os.Getenv)
 		if err != nil {
@@ -1241,6 +1236,18 @@ func (b *boot) buildDaemon() {
 	// this point /api/config and the daemon can never disagree about the
 	// published config.
 	b.web.Cfg = b.d.Cfg
+	if ms, ok := b.st.(store.MappingStore); ok {
+		b.d.Mappings = ms
+	}
+	if bs, ok := b.st.(store.BindingStore); ok {
+		b.d.Bindings = bs
+	}
+	if bd, ok := b.st.(store.BindingDispatcher); ok {
+		b.d.BindingDispatcher = bd
+	}
+	if btc, ok := b.st.(store.BindingTaskCreator); ok {
+		b.d.BindingTaskCreator = btc
+	}
 	b.setupForgeWebhook()
 }
 
