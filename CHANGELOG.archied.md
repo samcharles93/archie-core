@@ -1,5 +1,13 @@
 # archied changelog
 
+## [1.22.0] - 2026-09-03
+
+- feat(telegram): support secret refs for bot tokens (#705)
+- fix(update): make daemon rollback schema-safe (#704)
+- fix(archied): preserve ephemeral gateway ports (#707)
+- fix(webui): bound log limit parsing and add endpoint regression coverage (#706)
+- fix(deps): upgrade x/crypto to v0.56.0 for security fixes (#708)
+
 ## [1.21.0] - 2026-09-03
 
 - feat(workflow): make kind-to-workflow routing YAML-overridable
