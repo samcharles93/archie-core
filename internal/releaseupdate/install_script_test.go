@@ -3,6 +3,7 @@ package releaseupdate
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -118,6 +119,73 @@ func TestUpdateWatchdogRollsBackManagedWorkerImageAndReportsOnlyChangedComponent
 				t.Fatalf("agent report membership = %v for components %q", found, tt.components)
 			}
 		})
+	}
+}
+
+func TestUpdateWatchdogRestoresTaskDatabaseOnDaemonRollback(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	work := t.TempDir()
+	binDir, fakeDir := filepath.Join(work, "bin"), filepath.Join(work, "fake-bin")
+	reportPath := filepath.Join(work, "report.json")
+	dbPath, backupPath := filepath.Join(work, "tasks.sqlite"), filepath.Join(work, "tasks.prev.sqlite")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string]string{"archied": "new", "archied.prev": "old"} {
+		if err := os.WriteFile(filepath.Join(binDir, name), []byte(content), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for path, version := range map[string]int{dbPath: 2, backupPath: 1} {
+		if output, err := exec.Command("sqlite3", path, fmt.Sprintf("PRAGMA user_version=%d; CREATE TABLE tasks (id INTEGER);", version)).CombinedOutput(); err != nil {
+			t.Fatalf("create database %s: %v: %s", path, err, output)
+		}
+	}
+	callsPath := filepath.Join(work, "calls")
+	writeFakeCommand(t, fakeDir, "systemctl", `printf '%s\n' "systemctl $*" >> "$ARCHIE_TEST_CALLS"`)
+	writeFakeCommand(t, fakeDir, "cp", `printf '%s\n' "cp $*" >> "$ARCHIE_TEST_CALLS"; /usr/bin/cp "$@"`)
+	writeFakeCommand(t, fakeDir, "curl", `exit 1`)
+	cmd := exec.CommandContext(t.Context(), filepath.Join(root, "scripts", "archie-update-watchdog"))
+	cmd.Env = append(os.Environ(), "PATH="+fakeDir+":"+os.Getenv("PATH"), "ARCHIE_BIN_DIR="+binDir,
+		"ARCHIE_TEST_CALLS="+callsPath,
+		"ARCHIE_UPDATE_REPORT_PATH="+reportPath, "ARCHIE_UPDATE_HEALTH_TIMEOUT=0", "ARCHIE_UPDATE_COMPONENTS=daemon",
+		"ARCHIE_UPDATE_PREVIOUS_GATEWAY=1.19.10", "ARCHIE_UPDATE_INSTALLED_GATEWAY=1.20.0",
+		"ARCHIE_TASK_DB_PATH="+dbPath, "ARCHIE_TASK_DB_BACKUP="+backupPath)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("watchdog failed: %v\n%s", err, output)
+	}
+	output, err := exec.Command("sqlite3", dbPath, "PRAGMA user_version;").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(output)) != "1" {
+		t.Fatalf("restored schema version = %q, want 1", output)
+	}
+	calls, err := os.ReadFile(callsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	callLines := strings.Split(strings.TrimSpace(string(calls)), "\n")
+	stopIndex, copyIndex, startIndex := -1, -1, -1
+	for i, line := range callLines {
+		switch line {
+		case "systemctl --user stop archied.service":
+			stopIndex = i
+		case "systemctl --user restart archied.service":
+			startIndex = i
+		}
+		if strings.HasPrefix(line, "cp ") && strings.Contains(line, "tasks.prev.sqlite") {
+			copyIndex = i
+		}
+	}
+	if stopIndex < 0 || copyIndex < 0 || stopIndex > copyIndex {
+		t.Fatalf("rollback must stop service before restoring database; calls = %q", calls)
+	}
+	if startIndex < 0 || startIndex <= copyIndex {
+		t.Fatalf("rollback must restart service after restoring database; calls = %q", calls)
 	}
 }
 
