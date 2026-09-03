@@ -140,6 +140,9 @@ class = "ollama"
 # shell snippets). The check command must write a releaseupdate.Snapshot JSON
 # document to stdout; configure the installer as well to show Approve/Defer.
 # [chat.telegram]
+# Preferred: resolve the bot token through a configured secret engine.
+# token = { engine = "bws", key = "TELEGRAM_BOT_TOKEN" }
+# Legacy compatibility: read the token from this environment variable.
 # token_env = "TELEGRAM_BOT_TOKEN"      # env var holding the bot token from @BotFather
 # update_check_command = ["/usr/local/bin/archie-update-check"]
 # update_install_command = ["/usr/local/bin/archie-update-install"]
