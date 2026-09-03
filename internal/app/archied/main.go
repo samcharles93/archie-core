@@ -767,7 +767,7 @@ func parseListenAddr(addr, defaultHost string, defaultPort int) (string, int) {
 		return defaultHost, defaultPort
 	}
 	port, err := strconv.Atoi(portStr)
-	if err != nil || port <= 0 {
+	if err != nil || port < 0 {
 		return host, defaultPort
 	}
 	return host, port
