@@ -150,3 +150,40 @@ func writeDockerResponse(t *testing.T, w http.ResponseWriter, value any) {
 		t.Errorf("encode Docker response: %v", err)
 	}
 }
+
+func TestConnectExternalNATSEmptyURLReturnsConfigurationError(t *testing.T) {
+	b := newBootstrap()
+	b.cfg.NATS = config.NATSConfig{Mode: config.NATSModeExternal}
+
+	err := b.connectNATS(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "nats.url is required") {
+		t.Fatalf("connectNATS() error = %v, want useful missing-url error", err)
+	}
+}
+
+func TestSetupObservabilityDoesNotTouchDaemonBeforeBuild(t *testing.T) {
+	fileset := token.NewFileSet()
+	file, err := parser.ParseFile(fileset, "bootstrap.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setup := methodBody(t, file, "setupObservability")
+	var daemonAssignments int
+	ast.Inspect(setup, func(node ast.Node) bool {
+		assign, ok := node.(*ast.AssignStmt)
+		if !ok {
+			return true
+		}
+		for _, lhs := range assign.Lhs {
+			if selector, ok := lhs.(*ast.SelectorExpr); ok {
+				if receiver, ok := selector.X.(*ast.SelectorExpr); ok && receiver.Sel.Name == "d" {
+					daemonAssignments++
+				}
+			}
+		}
+		return true
+	})
+	if daemonAssignments != 0 {
+		t.Fatalf("setupObservability assigns daemon fields %d times; daemon is built later", daemonAssignments)
+	}
+}

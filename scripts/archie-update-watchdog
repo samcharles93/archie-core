@@ -10,6 +10,8 @@ set -uo pipefail
 BIN_DIR="${ARCHIE_BIN_DIR:-$HOME/.local/bin}"
 AGENT_IMAGE="${ARCHIE_AGENT_IMAGE:-ghcr.io/samcharles93/archie-agent:latest}"
 AGENT_IMAGE_BACKUP="${ARCHIE_AGENT_IMAGE_BACKUP:-$BIN_DIR/archie-agent-image.prev.tar}"
+TASK_DB_PATH="${ARCHIE_TASK_DB_PATH:-}"
+TASK_DB_BACKUP="${ARCHIE_TASK_DB_BACKUP:-$BIN_DIR/archie-task-db.prev.sqlite}"
 HEALTH_URL="${ARCHIE_HEALTH_URL:-http://127.0.0.1:8420}"
 REPORT_PATH="${ARCHIE_UPDATE_REPORT_PATH:-}"
 HEALTH_TIMEOUT_SECONDS="${ARCHIE_UPDATE_HEALTH_TIMEOUT:-60}"
@@ -82,6 +84,20 @@ rollback_agent_image() {
   docker image load --input "$AGENT_IMAGE_BACKUP"
 }
 
+rollback_task_db() {
+  if [ -z "$TASK_DB_PATH" ]; then
+    echo "==> no task database path; cannot restore schema-compatible state" >&2
+    return 1
+  fi
+  if [ ! -f "$TASK_DB_BACKUP" ]; then
+    echo "==> no task database backup; cannot restore schema-compatible state" >&2
+    return 1
+  fi
+  sqlite3 "$TASK_DB_BACKUP" "PRAGMA wal_checkpoint(TRUNCATE);" >/dev/null 2>&1 || true
+  cp -f "$TASK_DB_BACKUP" "$TASK_DB_PATH"
+  rm -f "$TASK_DB_PATH-wal" "$TASK_DB_PATH-shm"
+}
+
 echo "==> restarting archied.service"
 systemctl --user restart archied.service
 
@@ -93,36 +109,46 @@ fi
 
 echo "==> health check failed after ${HEALTH_TIMEOUT_SECONDS}s; rolling back changed components"
 rolled_back=false
-case "$COMPONENTS" in
-  daemon)
-    if [ -f "$BIN_DIR/archied.prev" ]; then
-      rollback_component archied && rolled_back=true
-    else
-      echo "==> no backup for archied; cannot roll it back automatically" >&2
-    fi
-    ;;
-  agent)
-    if [ -f "$AGENT_IMAGE_BACKUP" ]; then
-      rollback_agent_image && rolled_back=true
-    else
-      echo "==> no backup for managed worker image $AGENT_IMAGE; cannot roll it back automatically" >&2
-    fi
-    ;;
-  daemon,agent)
-    # Preserve the old all-or-nothing rollback guarantee: never restore one
-    # component and leave the other on the failed release.
-    if [ -f "$BIN_DIR/archied.prev" ] && [ -f "$AGENT_IMAGE_BACKUP" ]; then
-      if rollback_agent_image && rollback_component archied; then
-        rolled_back=true
+# Stop before touching either the executable or its database.  The service
+# uses Restart=on-failure in the supported unit, so copying rollback state
+# while a crash-loop child is alive can race with SQLite and execute the new
+# binary after its files have been replaced.
+if systemctl --user stop archied.service; then
+  case "$COMPONENTS" in
+    daemon)
+      if [ -f "$BIN_DIR/archied.prev" ] && { [ -z "$TASK_DB_PATH" ] || [ -f "$TASK_DB_BACKUP" ]; }; then
+        if { [ -z "$TASK_DB_PATH" ] || rollback_task_db; } && rollback_component archied; then
+          rolled_back=true
+        fi
+      else
+        echo "==> no backup for archied; cannot roll it back automatically" >&2
       fi
-    else
-      echo "==> not all changed-component backups exist; cannot roll back automatically" >&2
-    fi
-    ;;
-  *)
-    echo "invalid ARCHIE_UPDATE_COMPONENTS: $COMPONENTS" >&2
-    ;;
-esac
+      ;;
+    agent)
+      if [ -f "$AGENT_IMAGE_BACKUP" ]; then
+        rollback_agent_image && rolled_back=true
+      else
+        echo "==> no backup for managed worker image $AGENT_IMAGE; cannot roll it back automatically" >&2
+      fi
+      ;;
+    daemon,agent)
+      # Preserve the old all-or-nothing rollback guarantee: never restore one
+      # component and leave the other on the failed release.
+      if [ -f "$BIN_DIR/archied.prev" ] && [ -f "$AGENT_IMAGE_BACKUP" ] && { [ -z "$TASK_DB_PATH" ] || [ -f "$TASK_DB_BACKUP" ]; }; then
+        if rollback_agent_image && { [ -z "$TASK_DB_PATH" ] || rollback_task_db; } && rollback_component archied; then
+          rolled_back=true
+        fi
+      else
+        echo "==> not all changed-component backups exist; cannot roll back automatically" >&2
+      fi
+      ;;
+    *)
+      echo "invalid ARCHIE_UPDATE_COMPONENTS: $COMPONENTS" >&2
+      ;;
+  esac
+else
+  echo "==> could not stop archied.service; refusing rollback while it may be running" >&2
+fi
 if [ "$rolled_back" = true ]; then
   systemctl --user restart archied.service
 fi
