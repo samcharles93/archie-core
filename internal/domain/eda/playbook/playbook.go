@@ -14,6 +14,7 @@
 package playbook
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,6 +36,19 @@ type Store struct {
 
 // Playbook is one trigger+actions document.
 type Playbook struct {
+	// ID is the playbook's stable identity for execution-time idempotency:
+	// its file path relative to the configured directory root. It is unique
+	// within a single Load because the EDA loader walks one directory's
+	// entries and filenames there are inherently unique -- the doc's claim
+	// about "the directory-loader's collision rule" belongs to the ROUTING
+	// loader (workflow.LoadPlaybookDirs), a different loader.
+	ID string
+	// Version is a content hash of the loaded file, recomputed on every
+	// load. It pins dispatched-run provenance to the exact definition active
+	// when the run fired, mirroring Binding.Version's purpose, without a
+	// database row.
+	Version string
+
 	Trigger Trigger
 	Actions []Action
 }
@@ -109,7 +123,7 @@ func Load(dir string) (*Store, error) {
 	store := &Store{exprEnv: expr.NewEnv()}
 	for _, name := range names {
 		path := filepath.Join(dir, name)
-		pb, err := loadOne(path, store.exprEnv)
+		pb, err := loadOne(dir, path, store.exprEnv)
 		if err != nil {
 			return nil, err
 		}
@@ -118,18 +132,27 @@ func Load(dir string) (*Store, error) {
 	return store, nil
 }
 
-// loadOne loads and validates a single playbook file.
-func loadOne(path string, env *expr.Env) (*Playbook, error) {
+// loadOne loads and validates a single playbook file, deriving its stable ID
+// (path relative to the configured root) and a content-hash Version.
+func loadOne(dir, path string, env *expr.Env) (*Playbook, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read playbook %s: %w", path, err)
 	}
+
+	id := path
+	if rel, relErr := filepath.Rel(dir, path); relErr == nil {
+		id = rel
+	}
+
 	var raw rawPlaybook
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("parse playbook %s: %w", path, err)
 	}
 
 	pb := &Playbook{
+		ID:      filepath.ToSlash(id),
+		Version: fmt.Sprintf("%x", sha256.Sum256(data)),
 		Trigger: Trigger{
 			Kind:   workintake.Kind(strings.TrimSpace(raw.Trigger.Kind)),
 			Labels: raw.Trigger.Labels,
@@ -189,6 +212,14 @@ type DispatchInput struct {
 	Labels []string
 	// Kind is the routing kind the labels produced (workintake.KindForLabels).
 	Kind string
+	// TaskID is the originating task's identity, used to derive the event_id
+	// half of the playbook_dispatches idempotency ledger key. It carries the
+	// TaskEnvelope.IdempotencyKey() value ("archie:owner/repo/number"), the
+	// stable identity available at the discovery/dispatch point (pollNATS and
+	// the webhook receiver both compute kind/labels from a TaskEnvelope before
+	// any store.Task row exists). It is NOT a store.Task.ID int64, which does
+	// not exist until the task is persisted.
+	TaskID string
 	// Event is the event payload exposed as `event` in CEL expressions. For
 	// a workflow-kind dispatch this carries the label/kind fields cheaply
 	// available at this point.
