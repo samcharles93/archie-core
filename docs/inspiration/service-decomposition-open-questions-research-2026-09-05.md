@@ -1,13 +1,12 @@
-# Service decomposition open questions: research for #1, #4, #5
+# Service decomposition open questions: research for #1–#5
 
-Status: research pass that resolves three of the five blocking open
-questions in [[service-decomposition]] (the Proposed-status PRD). It
-extends — it does not replace — that PRD and
-[[service-discovery-research-2026-09-05]]. Questions #2 (contract
-definition mechanism) and #3 (in-process vs out-of-process during
-migration) are deliberately left to the resolver working those tracks;
-where a phase below depends on #2's mechanism it is flagged as a
-dependency, not answered here.
+Status: research pass that resolves all five blocking open questions in
+[[service-decomposition]] (the Proposed-status PRD). It extends — it does
+not replace — that PRD and [[service-discovery-research-2026-09-05]].
+Questions #2 (contract definition mechanism) and #3 (in-process vs
+out-of-process during migration) were resolved in a later pass; Q1's
+Phase 0 dependency on #2's contract-definition mechanism (buf + grpc-go,
+committed generated code) is now satisfied.
 
 Produced by an agent research pass against primary sources: a
 supervisor-run set of `deep_search_exa` queries plus direct fetches of
@@ -34,11 +33,13 @@ reason why.
 
 ---
 
-## Summary of the three recommendations
+## Summary of the five recommendations
 
 | # | Question | Recommendation (one line) |
 |---|---|---|
 | 1 | Extraction order | **Gateway Service first**, then State Store, then UI, then Messaging, then Execution/Runner/Scheduler, then Curator (optional) — preceded by an in-process "contract seams" phase (modular monolith) that is #2's real prerequisite. |
+| 2 | Contract definition mechanism | **buf v2 + protoc-gen-go + protoc-gen-go-grpc** (grpc-go, not connect-go), one committed `proto/<service>/v1/` tree generating into `internal/contracts/<service>/v1/`, directory-versioned, `buf breaking` gated in `task check` and mirrored into CI. |
+| 3 | In-process vs. out-of-process during migration | **Multiplexed in-process is the migration default**: one wire-safe Go contract interface per service, a local adapter and a generated gRPC client adapter, composition (not `ServiceRegistry`) picks which one, and the flip to a real process is a same-commit deletion of the in-process path — no dual-live window. |
 | 4 | State Store's contract shape | **One State Store service owns a single SQLite file behind narrow typed contracts** (the existing `internal/store` split already does the ownership; the gap is enforcement). No physical database-per-service at this scale, and no distributed-transaction problem, because there is still one store. Gateway keeps its own already-separate session SQLite. |
 | 5 | Helm chart / Operator scoping | **Three charts** (a `library` chart of the shared contract templates, one `archie` chart for the 7 core services, one `archie-curator` chart + a Curator Operator) — and the smallest first milestone is a **single Curator CR that the Operator reconciles into a Deployment + Service, with Gateway resolving `curator` via the `ServiceRegistry`**. |
 
@@ -234,6 +235,251 @@ built on the Q1 timeline once the base chart exists.)
   but only as the operator/optionality exercise; keeping it last avoids
   spending the "warm-up learning budget" on an optional component when the
   base services are not yet on the contract.
+
+---
+
+<a id="2"></a>
+## Question #2 — Contract definition mechanism
+
+### The question
+
+Protobuf/gRPC service definitions need a home: a toolchain, a directory
+layout, a versioning scheme, a committed-vs-build-time-generation call, and
+codegen wiring into `Taskfile.yml` and CI.
+
+### Toolchain: buf v2 + protoc-gen-go + protoc-gen-go-grpc (grpc-go)
+
+**Decision: buf v2, driving `protoc-gen-go` and `protoc-gen-go-grpc`,
+targeting grpc-go.** Raw `protoc` is rejected — it has no lint, no
+breaking-change detection, and no managed mode for `go_package` paths, all
+of which buf provides directly. **connect-go is rejected too**, despite
+being a popular modern choice: its generated client is `net/http`-based,
+and its own README states it adds "no new name resolution or load
+balancing APIs." That is a direct conflict with the service-discovery
+research's design, which relies on grpc-go's resolver plumbing (a custom
+resolver for K8s DNS and a custom resolver reading the NATS JetStream KV
+registry — see `docs/inspiration/service-discovery-research-2026-09-05.md`
+and the `ServiceRegistry` interface at
+`internal/servicediscovery/servicediscovery.go:72`). connect-go would push
+K8s discovery onto `bufbuild/httplb` plus headless-Service DNS instead of
+grpc-go's resolver, which is a second discovery mechanism this repo does
+not want. `google.golang.org/grpc` becomes a direct dependency; today
+`go.mod:59` carries only `google.golang.org/protobuf v1.36.10 // indirect`.
+
+### Layout: one committed `proto/<service>/v1/` tree, generated code committed to `internal/contracts/`
+
+**Decision: a single top-level `proto/` tree**, one buf module, laid out as
+`proto/<service>/v1/*.proto` — per-service buf modules were considered and
+rejected as unnecessary ceremony at this scale (~7 services, one repo, one
+maintainer). The directory name is the canonical service name and must
+match the registry/DNS/chart name used elsewhere (`ServiceRegistry`,
+Helm chart service names). Generated Go is **committed** at
+`internal/contracts/<service>/v1/`, produced via buf's managed mode
+(`go_package_prefix`) plus `paths=source_relative`. This satisfies
+`docs/architecture/dependencies-and-contracts.md:55`'s "Wire contracts and
+generation" rule — wire contracts are partitioned per owning domain, never
+centralized in a generic schema package.
+
+### Versioning: directory versioning, enforced by `buf breaking`
+
+**Decision: directory versioning** (`v1`, Go package `<service>.v1`). A
+breaking change gets a new `vN` directory; a published version is never
+edited in place. Enforcement is `buf breaking --against
+'.git#branch=main,subdir=proto'` wired into the gate. This was verified
+against a real git ref in a scratch toolchain run (see Evidence below): it
+correctly flagged a deleted RPC, a renamed field, and a field deletion,
+exiting 100.
+
+### Committed vs. build-time generation: committed
+
+**Decision: commit the generated Go**, with a regenerate-and-diff-fail
+freshness check in CI, following the existing "generated assets are LAW"
+precedent (`ui/dist`, `task ui`, per `AGENTS.md`) and the committed Yaegi
+`*extract` tables (`internal/domain/workflow/wfextract/wfextract.go`).
+This keeps `task build` / `task test` hermetic — neither ever invokes
+`buf` — while still catching drift between `.proto` sources and checked-in
+Go via a `git diff --exit-code` step.
+
+### Taskfile / CI wiring
+
+New `task proto:generate`, `task proto:lint`, and `task proto:check`
+(regenerate, then `git diff --exit-code -- internal/contracts`) tasks,
+inserted into `task check` after `go fix ./...` and before `vet`/`lint`/
+`build`. This **must also be mirrored into
+`.github/workflows/deploy.yml`'s "Quality gate" step** — CI does not
+invoke `task check` today; it runs `gofumpt`, `go fix`, `vet`, `build`, and
+`test` directly, so the proto gate needs the same direct treatment or it
+will silently never run in CI. A shallow checkout (the default `actions/
+checkout` behaviour) breaks `buf breaking --against` because there is no
+local `main` ref to diff against; CI needs `fetch-depth: 0` or an explicit
+`git fetch origin main` step.
+
+### What this doesn't settle
+
+- **Per-plugin/toolchain version pinning for CI.** The repo currently does
+  `go install ...@latest` for `gofumpt`; whether `buf` and the protoc
+  plugins get the same treatment or pinned versions is an implementation
+  detail for whoever wires the Taskfile/CI entries, not a design decision.
+- **Whether a headless/SRV Service variant changes anything about the
+  generated Go.** It doesn't — the wire contract is transport-agnostic;
+  discovery is a separate concern owned by `ServiceRegistry`.
+
+---
+
+<a id="3"></a>
+## Question #3 — In-process vs. out-of-process during migration
+
+### The question
+
+Whether services can run multiplexed inside one binary behind the same
+contract during a transition period (so extraction is incremental and
+testable), or whether each service must be a separate binary from day one.
+
+### Decision: multiplexed in-process is the migration default — this is the architecture's stated default, not a lean
+
+`docs/architecture/organisation.md:70-77` ("Process boundaries") already
+states this as policy, verbatim: "Archie begins as a modular monolith even
+when capabilities run in separate processes. A domain becomes a separately
+deployed service only for a concrete need such as security isolation,
+independent scaling, failure containment, or independent operation.
+Possible future extraction does not justify premature network protocols or
+duplicated service scaffolding." Question #3 asks whether to follow that
+rule for this migration; the answer is yes, and it was already decided
+architecture-wide.
+
+### Mechanism (six parts)
+
+1. **Wire-safe Go contract interfaces.** Each per-service contract is a
+   plain Go interface whose method signatures could cross the wire as-is:
+   values and streams only. No callbacks (e.g. Gateway's
+   `LLMStreamResponder`), no `*sql.Tx`, no object identity leaking through
+   the interface. If a type can't become a proto message, it can't appear
+   in the contract signature.
+2. **Two adapters per contract.** A **local adapter** (in-process, calls
+   straight through, zero serialization — not a test fake, a real
+   production adapter) and a **generated gRPC client adapter**. Both
+   satisfy the same interface, verified with a compile-time assertion in
+   the existing repo idiom: `var _ store.WorkflowStore = (*Client)(nil)`
+   (`internal/storerpc/storerpc.go:136`). The one-contract-two-transports
+   shape is already in production today for the agent container over NATS
+   (`internal/storerpc`, `internal/forgerpc`, `internal/worktreerpc`, wired
+   at `internal/infrastructure/agenttransport/nats/transport.go:101,111`).
+3. **Composition chooses; `ServiceRegistry` stays network-only.**
+   `ServiceRegistry.Resolve` never returns an in-process shim — a linked,
+   in-process service is not in the registry at all. The registry models
+   the network view only; `internal/app` composition wiring is the local
+   view. Reasons: registry implementations should only ever observe real
+   endpoints; `ErrNotInstalled` is an installability semantic
+   (`internal/servicediscovery/servicediscovery.go:8-14`) that cannot
+   arise for a module that's simply linked into the binary; and having one
+   authoritative selection path (composition, not a registry call)
+   eliminates a class of mixed-mode races. Concretely: a per-service
+   `mode = "inproc" | "remote"` config value, defaulting to `inproc`.
+4. **Per-contract conformance suite.** Reuse the existing conformance-test
+   idiom — `runSessionStoreSuite(t, newStore func(t *testing.T)
+   SessionStore)` at `internal/gateway/sessionstore_conformance_test.go:65`
+   — and run it against both the local adapter and a real gRPC server over
+   `bufconn`. This is the "always test the wire shape" discipline, kept for
+   tests only; production traffic in `inproc` mode never touches gRPC.
+5. **The flip trigger is the service's own extraction phase**, not a
+   separate migration step: a new `cmd/archie-<service>` binary plus a
+   same-commit deletion of the in-process serving path, with consumers
+   flipped to `mode = "remote"` in that same commit. One commit, one
+   authoritative implementation, no dual-live window. A Fowler-style
+   dual-live cutover (old and new both serving, gradually shifted traffic)
+   was considered and rejected at this scale: with two consumers in one
+   repo and one release cadence, a dual-live window buys nothing but drift
+   risk, concentrated exactly where the PRD's verified couplings already
+   are. Rollback is a release-level revert — an accepted, honest trade for
+   a solo maintainer, not a gap.
+6. **Failure semantics.** In `inproc` mode there is nothing new to reason
+   about — a direct call either succeeds or panics like any other in-
+   process call. In `remote` mode, a dial failure fails fast; per
+   `ServiceRegistry`'s existing doc comment,
+   `ErrNotInstalled` means "disabled," never "broken," for optional
+   services (mirrors `internal/installtype/installtype.go`'s existing
+   precedent that deployment-shape facts are baked/stated, not
+   runtime-probed).
+
+### Consequence for the resolved extraction order (Gateway first)
+
+This directly satisfies Q1's Phase 0 dependency (see "What this doesn't
+settle" under Question #1, above): Phase 0 — introducing the `ChatContract`
+seam, its local adapter, the `.proto` definition, and the bufconn
+conformance suite — ships as an in-process module first, with nothing
+listening on a TCP port; the network protocol stays out of the production
+path until Phase 1. Phase 1 (extracting the Gateway) then becomes a wiring
+change only: add `cmd/archie-gateway`, delete the in-process serving path,
+flip `mode` to `remote` for its consumers. No amendment to Q1's phase list
+was needed — Q1 already anticipated exactly this shape.
+
+### What this doesn't settle
+
+- **Whether `mode` is a per-service config value or a build tag.** Decided
+  here as runtime config (`mode = "inproc" | "remote"`), consistent with
+  `internal/installtype`'s precedent of stating deployment shape rather
+  than probing for it; a compile-time split was not considered necessary.
+- **The exact bufconn test harness plumbing.** Follows the existing
+  `runSessionStoreSuite` idiom; the concrete harness is an implementation
+  detail for whoever lands the first contract (Gateway's `ChatContract`).
+
+### Sources used for Q2 and Q3
+
+- `google.golang.org/protobuf v1.36.10 // indirect` — `go.mod:59` (today's
+  only proto-adjacent dependency; confirms grpc-go is not yet a direct
+  dependency).
+- `docs/architecture/organisation.md:70-77` — "Process boundaries" (the
+  architecture's standing, Approved answer for #3).
+- `docs/architecture/dependencies-and-contracts.md:55` — "Wire contracts
+  and generation" (per-domain ownership of wire contracts; no generic
+  schema package).
+- `internal/servicediscovery/servicediscovery.go:8-14,71-81` —
+  `ErrNotInstalled` semantics and the `ServiceRegistry` interface.
+- `internal/storerpc/storerpc.go:136` — `var _ store.WorkflowStore =
+  (*Client)(nil)`, the compile-time contract-conformance idiom reused for
+  the local/remote adapter pair; `internal/forgerpc`, `internal/worktreerpc`,
+  and `internal/infrastructure/agenttransport/nats/transport.go:101,111`
+  as the existing one-contract-two-transports precedent in production.
+- `internal/gateway/sessionstore_conformance_test.go:65` —
+  `runSessionStoreSuite`, the conformance-test idiom reused for
+  local-vs-remote adapter testing.
+- `internal/webui/api_chat.go:22-26` — `ChatService`'s struct fields
+  (`Router *gateway.Router`, `Sessions gateway.SessionStore`, `Turns
+  *gateway.Turns`, `Models gateway.ModelManager`, `Personas
+  *gateway.PersonaRegistry`) — the concrete seam Q2/Q3's `ChatContract`
+  needs to cross.
+- `internal/installtype/installtype.go` — precedent that deployment-shape
+  facts are stated config, never runtime-probed.
+- AGENTS.md "Generated assets are LAW" (`ui/dist`, `task ui`); Yaegi
+  `*extract` tables with post-generation guard tests
+  (`internal/domain/workflow/wfextract/wfextract.go`) — precedent for
+  committing generated code.
+- `Taskfile.yml` `check:` target vs. `.github/workflows/deploy.yml`
+  "Quality gate" step — confirms CI does not invoke `task check` and so
+  needs the proto gate mirrored in directly.
+- buf/grpc-go vs. connect-go comparison: connect-go's own README states it
+  adds "no new name resolution or load balancing APIs" — the deciding fact
+  against it, given the discovery research's reliance on grpc-go resolver
+  plumbing.
+- Scratch toolchain verification (run inside a disposable worktree,
+  discarded at teardown; not committed): `buf --version` → 1.71.0;
+  `protoc --version` → libprotoc 34.0. `buf lint` on a sample
+  `proto/gateway/v1/chat.proto` (package `gateway.v1`, service
+  `ChatService`) passed once request/response types followed the
+  `XRequest`/`XResponse` naming buf's STANDARD lint enforces. `buf
+  generate` (v2, managed `go_package_prefix`, `paths=source_relative`)
+  produced `chat.pb.go` (206 lines) and `chat_grpc.pb.go` (121 lines),
+  which compiled cleanly against `google.golang.org/grpc v1.83.2` in a
+  scratch module. `buf breaking --against
+  '.git#branch=main,subdir=.'` after deleting an RPC and renaming a field
+  correctly reported "Previously present RPC Send deleted," "field 2 user
+  deleted," "field 3 changed name," exit 100 — confirming the mechanism
+  works against a real git ref. A parallel connect-go run (installing
+  `protoc-gen-connect-go` v1.19.1; note the `github.com/connectrpc/
+  connect-go` module path is dead, use `connectrpc.com/connect`) generated
+  a sibling `net/http`-based package, confirming the resolver-plumbing gap
+  cited above. `gofumpt -l` on the freshly generated output was clean, so
+  `task fmt`'s `gofumpt -w .` won't fight regenerated code.
 
 ---
 
