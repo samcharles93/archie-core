@@ -154,7 +154,7 @@ func (c *Client) Resolve(ctx context.Context, service string) ([]servicediscover
 	if err != nil {
 		return nil, fmt.Errorf("resolve %s: %w", service, err)
 	}
-	defer lister.Stop()
+	defer func() { _ = lister.Stop() }()
 
 	// A lister may report duplicate keys; dedupe by ID and sort for a stable
 	// order so callers get a deterministic roster.
@@ -226,7 +226,7 @@ func (c *Client) Watch(ctx context.Context, service string) (<-chan servicedisco
 // liveness pings.
 func (c *Client) fanWatch(ctx context.Context, service string, watcher jetstream.KeyWatcher, out chan<- servicediscovery.Event) {
 	defer close(out)
-	defer watcher.Stop()
+	defer func() { _ = watcher.Stop() }()
 
 	known := map[string]struct{}{}
 	for {
