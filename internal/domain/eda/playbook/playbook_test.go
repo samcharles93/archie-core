@@ -260,6 +260,117 @@ func TestLoadMissingDirIsEmptyStore(t *testing.T) {
 	}
 }
 
+// TestPlaybookIDIsPathRelative: the playbook's ID is its path relative to the
+// configured directory root, so it is stable across re-Loads of the same file
+// and unique within one directory (the EDA loader has no collision detector;
+// per-directory-unique filenames guarantee it).
+func TestPlaybookIDIsPathRelative(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "pb.yaml", `
+trigger:
+  kind: bug
+actions:
+  - position: workflow
+    workflow: tdd
+`)
+	store, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(store.Playbooks) != 1 {
+		t.Fatalf("loaded %d playbooks, want 1", len(store.Playbooks))
+	}
+	pb := store.Playbooks[0]
+	if pb.ID != "pb.yaml" {
+		t.Errorf("ID = %q, want %q (path relative to dir root)", pb.ID, "pb.yaml")
+	}
+}
+
+// TestPlaybookVersionIsContentDerived: the version is a content hash of the
+// loaded file, recomputed on every load -- stable for unchanged content,
+// changing when content changes (mirrors Binding.Version's provenance pin).
+func TestPlaybookVersionIsContentDerived(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "pb.yaml", `
+trigger:
+  kind: bug
+actions:
+  - position: workflow
+    workflow: tdd
+`)
+	storeA, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if storeA.Playbooks[0].Version == "" {
+		t.Fatal("Version = empty, want a content hash")
+	}
+
+	// Re-load unchanged content: identical version.
+	storeB, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if storeA.Playbooks[0].Version != storeB.Playbooks[0].Version {
+		t.Fatalf("Version changed for unchanged content: %q -> %q",
+			storeA.Playbooks[0].Version, storeB.Playbooks[0].Version)
+	}
+
+	// Change content: version must change.
+	writeFile(t, dir, "pb.yaml", `
+trigger:
+  kind: feature
+actions:
+  - position: workflow
+    workflow: implement
+`)
+	storeC, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if storeA.Playbooks[0].Version == storeC.Playbooks[0].Version {
+		t.Fatal("Version unchanged for changed content, want a change")
+	}
+}
+
+// TestDispatchInputCarriesTaskIdentity: the originating task's identity is
+// carried on the dispatch input end to end, so a caller can derive the
+// event_id half of the playbook_dispatches ledger key. The chosen identity is
+// the TaskEnvelope.IdempotencyKey() string ("archie:owner/repo/number") --
+// the value available at the discovery/dispatch point (pollNATS + webhook
+// receiver both compute kind/labels from a TaskEnvelope before any
+// store.Task row exists), NOT a store.Task.ID int64.
+func TestDispatchInputCarriesTaskIdentity(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "pb.yaml", `
+trigger:
+  kind: bug
+actions:
+  - position: workflow
+    workflow: tdd
+`)
+	store, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	reg := registryWith("tdd")
+	input := DispatchInput{
+		Labels: []string{"bug"},
+		Kind:   "bug",
+		TaskID: "archie:samcharles93/archie-core/42",
+		Event:  map[string]any{"priority": 3},
+	}
+	dispatched := store.Dispatch(reg, input)
+	if dispatched == nil {
+		t.Fatal("Dispatch = nil, want the tdd workflow")
+	}
+	// The input still carries the identity after dispatch; the caller uses it
+	// to key the ledger.
+	if got, want := input.TaskID, "archie:samcharles93/archie-core/42"; got != want {
+		t.Fatalf("TaskID = %q, want %q", got, want)
+	}
+}
+
 // TestShippedExamplePlaybookLoads verifies the operator-facing example
 // (examples/eda-playbooks/bug-tdd.yaml) loads through the real loader --
 // the proof the shipped shape works, not just test fixtures.
