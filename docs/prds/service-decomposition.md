@@ -120,6 +120,16 @@ Verified couplings that this decomposition must eliminate:
    first? The webui entanglement findings above suggest Gateway Service's
    `ChatContract` should exist before UI Service is extracted, since UI is
    the most entangled consumer today. Not yet sequenced.
+
+   **RESOLVED (2026-09-05).** Gateway Service first, then State Store,
+   then UI, then Messaging, then Execution/Runner/Scheduler, then Curator
+   (optional) — preceded by an in-process "contract seams" (modular
+   monolith) phase. Confirms the hypothesis and strengthens it: the
+   Gateway is already store-decoupled (it uses narrow contract adapters,
+   not `internal/store`) and already owns an isolated session SQLite, so it
+   is both the stickiest capability *and* the one with a ready seam and
+   isolated data — extractable alone, first. Full phase list and reasoning:
+   `docs/inspiration/service-decomposition-open-questions-research-2026-09-05.md#1`.
 2. **Contract definition mechanism.** Protobuf/gRPC service definitions
    need a home (a new `proto/` or `contracts/` tree, versioning scheme,
    codegen wiring into `Taskfile.yml`). Not yet designed.
@@ -133,10 +143,35 @@ Verified couplings that this decomposition must eliminate:
    storage (true microservice isolation) or several services share the
    State Store service's contract (less isolation, less migration risk).
    Not yet decided.
+
+   **RESOLVED (2026-09-05).** One State Store service owns the existing
+   single SQLite file behind narrow typed contracts (`TaskStore`,
+   `CaptureStore`, `MappingStore`, `BindingStore`, `WorkflowStore`) over
+   gRPC. No physical database-per-service: the solo-maintainer / team-
+   topology rule of thumb plus the low value of per-service autonomy for
+   one person rule it out, and one store means no distributed-transactions
+   problem. The Gateway keeps its own already-separate session SQLite.
+   Concrete migration path (generalise `storerpc`, swap consumers one
+   contract at a time, stand up the store service, split the file only on
+   evidence):
+   `docs/inspiration/service-decomposition-open-questions-research-2026-09-05.md#4`.
 5. **Helm chart / Operator ownership.** Net-new work with no existing
    analog in this repository (`deployments/` currently holds TOML profiles
    and a `docker-compose.yml`, not Kubernetes manifests). Scoping not yet
    started.
+
+   **RESOLVED (2026-09-05).** Three charts: an `archie-library` chart
+   (shared Deployment/Service templates, named ports), an `archie` chart
+   for the 7 core services, and an `archie-curator` chart + Curator
+   Operator (CRD, controller, RBAC). The Curator reconciler is a
+   level-triggered loop that fetches the CR, builds Deployment + Service,
+   sets owner refs, applies idempotently (`CreateOrUpdate`), watches via
+   `Owns()`, and reports a `Ready` status condition. Smallest real
+   milestone (M1): install a Curator CR → Operator creates Deployment +
+   Service → CoreDNS serves `curator` → Gateway's resolver flips it from
+   `NotInstalled` to Installed with no redeploy; uninstall flips it back.
+   Full scoping and first bead-issue list:
+   `docs/inspiration/service-decomposition-open-questions-research-2026-09-05.md#5`.
 
 ## Completion criteria
 
