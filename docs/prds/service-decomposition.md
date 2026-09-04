@@ -133,12 +133,41 @@ Verified couplings that this decomposition must eliminate:
 2. **Contract definition mechanism.** Protobuf/gRPC service definitions
    need a home (a new `proto/` or `contracts/` tree, versioning scheme,
    codegen wiring into `Taskfile.yml`). Not yet designed.
+
+   **RESOLVED (2026-09-05).** buf v2 driving `protoc-gen-go` +
+   `protoc-gen-go-grpc` (grpc-go, not connect-go — connect-go's net/http
+   client breaks the discovery research's gRPC resolver plumbing for K8s
+   DNS and NATS-KV). One committed `proto/<service>/v1/` tree, generated
+   Go committed to `internal/contracts/<service>/v1/`, directory
+   versioning (breaking change -> new `vN`, enforced by `buf breaking` in
+   the gate), and `task proto:generate`/`proto:lint`/`proto:check` wired
+   into `task check` and mirrored into `.github/workflows/deploy.yml`
+   (CI does not run `task check`). Full toolchain comparison, layout
+   rationale, and scratch-verified `buf`/`buf breaking`/`connect-go`
+   results:
+   `docs/inspiration/service-decomposition-open-questions-research-2026-09-05.md#2`.
 3. **In-process vs. out-of-process during migration.** Whether services
    can run multiplexed inside one binary behind the same `ServiceRegistry`
    interface during a transition period (so extraction is incremental and
    testable) or whether each service must be a separate binary from day
    one. Strongly recommend the former for a solo maintainer, but not
    decided here.
+
+   **RESOLVED (2026-09-05).** Multiplexed in-process is the migration
+   default -- this is `docs/architecture/organisation.md`'s standing
+   "Process boundaries" rule, not a new lean. Mechanism: one wire-safe Go
+   contract interface per service; a local adapter and a generated gRPC
+   client adapter, both satisfying the interface via a compile-time
+   assertion in the existing `var _ store.WorkflowStore = (*Client)(nil)`
+   idiom; composition (not `ServiceRegistry`, which stays network-only)
+   picks `mode = "inproc" | "remote"`, default `inproc`; a per-contract
+   conformance suite runs against both adapters over `bufconn`; the flip
+   to a real process is a same-commit deletion of the in-process path, no
+   dual-live window. Consequence: Gateway's Phase 0 (`ChatContract` seam)
+   ships in-process first, with the network protocol staying out of the
+   production path until Phase 1 -- no amendment to Q1's phase list
+   needed. Full mechanism and evidence:
+   `docs/inspiration/service-decomposition-open-questions-research-2026-09-05.md#3`.
 4. **State Store's contract shape.** Whether every service gets its own
    storage (true microservice isolation) or several services share the
    State Store service's contract (less isolation, less migration risk).
