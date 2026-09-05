@@ -210,7 +210,7 @@ rule's spirit of narrow capability families -- so the answer is not
 "bundle or don't," it's "don't duplicate the logic, and pick the thinnest
 consumer for each caller's actual constraint."
 
-## Execution-time gaps (identified 2026-09-03; gap 1 resolved 2026-09-05, gap 2 unresolved)
+## Execution-time gaps (identified 2026-09-03; both resolved 2026-09-05)
 
 Everything above covers *loading* a playbook. Nothing above covers what
 happens while one *runs*. Two gaps, both load-bearing enough to resolve
@@ -220,7 +220,7 @@ before implementation, not defer:
 
 **Status 2026-09-05: resolved by archie-core-t2db.18.** The default below
 is a committed decision, not a candidate list; changing it later would
-require its own decision. Gap 2 below remains open.
+require its own decision. Gap 2 below is resolved by `archie-core-t2db.17`.
 
 A playbook is an ordered action list with data flowing between steps. If
 action 2 of 4 fails at runtime (an image-gen API times out, a forge call
@@ -321,113 +321,268 @@ action-invocation code path and show they use different outcomes.
 
 ### 2. Idempotency at execution time
 
-**Status 2026-09-03: proposed resolution below, awaiting Sam's sign-off**
-(same process as gap 1 and the CEL resolution -- drafted with evidence,
-not settled until explicitly approved).
+**Status 2026-09-05: resolved** (per bead `archie-core-t2db.17`, a
+design-investigation ticket: resolve, do not implement). The decision
+below is the answer; the keying scheme itself is separate follow-up work
+and is intentionally not built here. It **extends**
+`event-sources-and-reactions.md`'s existing contract -- it does not
+contradict it (relationship argued at the end).
 
-`event-sources-and-reactions.md` decided reactions ride
-`internal/eventbus`'s at-least-once delivery specifically so
-`PublishUnique`/idempotency keys absorb redelivery without duplicate side
-effects. This document inherits that for free only for `workflow`-kind
-actions, because `TaskEnvelope` already carries an idempotency key. It said
-nothing for `channel`, `forge`, or `module` actions with real side effects.
+**Problem (unchanged):** `event-sources-and-reactions.md` decided
+reactions ride `internal/eventbus`'s at-least-once delivery specifically
+so `PublishUnique`/idempotency keys absorb redelivery without duplicate
+side effects. This document inherits that for free only for
+`workflow`-kind actions, because `TaskEnvelope` already carries an
+idempotency key. It said nothing for `channel`, `forge`, or `module`
+actions with real side effects -- a posted comment, a sent message, a
+billed image generation.
 
-**Proposed decision: reuse `internal/store/bindings.go`'s
-`binding_dispatches` ledger shape directly -- do not design a new
-mechanism.** This codebase already has a proven, tested, at-most-once
-guarantee for the structurally identical problem (don't re-fire a
-side-effecting action for an event already handled), surviving daemon
-restarts because it is a durable table, not in-memory state:
+One correction to the problem statement, checked against the code rather
+than assumed, because it changes what the answer must be:
+**`PublishUnique`'s dedup is not a consumer-redelivery guard at all.**
+`PublishUnique` only sets the JetStream `Nats-Msg-Id` header on the
+outgoing message (`internal/infrastructure/eventbus/nats/publisher.go:18-23`;
+key constant `message.go:11-13`); JetStream suppresses *republished*
+messages carrying a repeated key inside `Config.DedupWindow`
+(`client.go:67`, `Duplicates: cfg.DedupWindow`), default 2 minutes
+(`config.go:15`, `DefaultDedupWindow = 2 * time.Minute`). A consumer
+redelivery is the same *stored* message re-delivered on Nak or
+acknowledge-timeout (`internal/eventbus/eventbus.go:64-65`: "a handler
+returning an error causes redelivery") -- not a republish; its
+`Nats-Msg-Id` is never re-firewalled, and even if it were, two minutes is
+not an at-most-once guarantee for a side effect that must never repeat.
+**Conclusion: side-effecting action kinds need a consumer-side, durable
+dedup record; the bus cannot supply it.** That is precisely the situation
+`binding_dispatches` was built for -- so the decision below reuses its
+mechanism rather than designing a new one.
+
+#### Decision
+
+**Granularity: per-action-per-event -- one dedup record per
+(action, event) pair, not per playbook run.** This supersedes the
+earlier draft's whole-run default. Whole-run keying has two crash
+windows: the run row is written when the run starts, so a crash mid-run
+leaves the run "started" and a redelivery skips *every remaining
+action* (work silently lost); a crash before the row write re-runs
+*every already-fired action* (duplicate side effects -- the exact harm
+this gap exists to prevent). Per-action keys collapse both into one
+window and one behavior: an action's record is written immediately
+before that action's side effect is invoked, so an action fires iff its
+own record is absent, no fired action ever re-fires, and a redelivered
+event resumes at the first unrecorded action. For today's shipped
+single-action playbooks the two granularities are equivalent in effect;
+the difference starts with multi-action runs -- where whole-run keying
+would already be wrong.
+
+**Storage/lookup: a new durable ledger table `playbook_dispatches` in
+`internal/store`, copying `binding_dispatches`'s conventions exactly**
+(durable table, `INSERT OR IGNORE`, sentinel error, rows freed with
+their parent, survives daemon restarts -- `internal/store/bindings.go:31-37`,
+`355-382`):
 
 ```sql
-CREATE TABLE binding_dispatches (
-    binding_id, binding_version, capture_id, task_id, dispatched_at,
-    PRIMARY KEY (binding_id, capture_id)
+CREATE TABLE playbook_dispatches (
+    playbook_id      TEXT NOT NULL,
+    playbook_version TEXT NOT NULL,
+    event_id         TEXT NOT NULL,
+    action_id        TEXT NOT NULL,
+    dispatched_at    TEXT NOT NULL,
+    PRIMARY KEY (playbook_id, playbook_version, event_id, action_id)
 );
 ```
 
-`RecordDispatch` does `INSERT OR IGNORE`; a duplicate returns the
-sentinel `ErrAlreadyDispatched`, which the caller treats as "another
-cycle already won this race," not an error to surface.
+Written with the same `INSERT OR IGNORE` + sentinel-error convention
+(`ErrAlreadyDispatched`, `bindings.go:59-63`), so a duplicate is a no-op
+write rather than a constraint error, and the caller matches it with
+`errors.Is` the way the binding dispatch loop already does
+(`internal/daemon/daemon.go:591-597` -- "another cycle already won this
+race," not an error to surface). The record is consumed by the playbook
+coordinator at dispatch time through a domain-side interface implemented
+by `internal/store` -- the same shape as `BindingDispatcher`
+(`internal/store/interface.go:123-139`) -- and the table lands in the
+store's schema application (`internal/store/store.go:137-139`). No change
+to `internal/eventbus`; no per-message dedup state on the client.
 
-**Concretely, for playbooks:** a new ledger table (e.g.
-`playbook_dispatches`), unique on `(playbook_id, playbook_version,
-event_id)` -- the same three-column shape as `binding_dispatches`
-(`binding_id, binding_version, capture_id`), substituting a playbook's
-identity and an event's identity for a binding's and a capture's. Written
-with the same `INSERT OR IGNORE` + sentinel-error convention, checked
-once per playbook run before any action dispatches.
+**Lifetime: no time-based expiry.** Rows live as long as their playbook
+exists; when a playbook is removed from the configured directories, the
+coordinator deletes its rows -- mirroring binding-dispatches-rows-deleted-
+with-binding (`bindings.go:204-214`, same transaction as the delete). The
+at-most-once guarantee must not silently decay, which is exactly the
+property that disqualifies `DedupWindow` above; table growth is bounded
+by distinct (playbook, event, action) pairs over the playbook's lifetime
+and is accepted, the same tradeoff `binding_dispatches` already makes.
 
-**This surfaces a concrete prerequisite, checked against the actual
-code, not assumed: `t2db.15`'s shipped `Playbook` struct
-(`internal/domain/eda/playbook/playbook.go`) is currently `{Trigger,
-Actions}` -- no `ID`, no `Version`.** Unlike `Binding`, which gets its
-identity and version from being a database row, a playbook is a loaded
-file with no persisted identity today. This resolution cannot be
-implemented until playbooks have one. Proposed (not yet built): derive
-`playbook_id` from a stable path-relative identifier (e.g. the
-playbook's file path relative to its configured directory root, which is
-already unique per the directory-loader's own collision rule) and
-`playbook_version` from a content hash of the loaded file, recomputed on
-every load -- mirroring `Binding.Version`'s purpose (pin dispatched-run
-provenance to the exact definition that was active when it fired) without
-requiring a database row the way `Binding` has one. This identity scheme
-is a small, separate implementation detail for whoever builds this ledger,
-not a new open question -- but it is *not yet decided in code*, and this
-resolution is not fully buildable until it is.
+**Redelivery behavior: skip the recorded action and continue the run.**
+A detected duplicate is not re-invoked, is not reported to the caller as
+an error, and is logged at debug level rather than as a warning -- this
+is the expected, correct behavior of at-least-once delivery, not an
+anomaly (same treatment as `ErrAlreadyDispatched` at
+`daemon.go:592-597`).
+The run continues with the next action (or ends, for a single-action
+playbook whose one action is recorded), which is what makes a redelivery
+a resume rather than a dead restart.
 
-**Granularity: whole-run, not per-action** -- confirmed as the default
-per the gap's own original bias ("simpler... unless a specific action
-needs finer-grained dedup"). One key per `(playbook, event)` dedups the
-entire run; if a specific future action kind genuinely needs
-finer-grained dedup than "did this playbook already run for this event,"
-that is a documented exception to add when such an action kind is
-designed, not something to generalize for pre-emptively now.
+**Key derivation: a fixed composition of four structural identities,
+computed by the coordinator -- not a CEL expression.** The key is the
+`(playbook_id, playbook_version, event_id, action_id)` tuple above, where:
 
-**Key derivation (`event_id`) -- a second concrete prerequisite, checked
-against the actual code, not assumed:** the natural instinct is "reuse
-the capture pipeline's stable identity" (`captured_events.id`), but that
-is **wrong for what `t2db.15` actually shipped**. Verified directly:
-`DispatchInput` (`internal/domain/eda/playbook/playbook.go:187`) is
-`{Labels []string, Kind string, Event map[string]any}` -- a **task-label
-trigger**, the same vocabulary `workflow.Route()` already dispatches on,
-entirely unrelated to the webhook-capture/binding pipeline
-(`docs/architecture/bindings.md`'s system). No capture, and no
-`captured_events` row, is involved in this trigger path at all. `Event`
-here is only a cheap re-exposure of the label/kind fields for CEL, not a
-webhook payload.
+- `playbook_id` is `Playbook.ID` -- the playbook file's path relative to
+  its configured directory root, slash-normalized, unique within the load
+  composition by construction (`internal/domain/eda/playbook/playbook.go:39-45`,
+  `149-155`). Note this prerequisite already landed in code: the earlier
+  draft's "not yet decided in code" paragraphs are stale --
+  `edd689e` (`feat(eda): thread Playbook ID/Version and DispatchInput task
+  identity (gap-2 prereqs)`) shipped `Playbook.ID`/`Version` and
+  `DispatchInput.TaskID`.
+- `playbook_version` is `Playbook.Version` -- a SHA-256 of the loaded
+  file, recomputed on every load (`playbook.go:46-49`, `154-155`),
+  mirroring `Binding.Version`'s provenance-pinning purpose: the dispatch
+  is pinned to the exact definition that was active when it fired. A
+  changed playbook definition is a different key and may fire again for
+  the same event -- deliberate, not a bug.
+- `event_id` is `DispatchInput.TaskID` (`playbook.go:214-222`), which
+  carries the `TaskEnvelope.IdempotencyKey()` value
+  (`"archie:" + owner/repo/number`,
+  `internal/domain/workintake/envelope.go:105-107`). It is chosen over
+  `store.Task.ID` because the trigger vocabulary is issue-level
+  workintake label/kind, dispatched at discovery time (pollNATS, forge
+  webhook receiver), where no task row exists yet (`playbook.go:214-222`
+  comment; `playbook_test.go:338-345`: "the value available at the
+  discovery/dispatch point... NOT a store.Task.ID int64"). Keying on the
+  issue identity rather than the delivery source is the load-bearing
+  property the existing contract already established for `TaskEnvelope`
+  (`event-sources-and-reactions.md` question 4: a webhook-sourced
+  envelope for the same issue produces the *same* idempotency key as a
+  poll-discovered one; `internal/forge/webhook/receiver.go:14-20` --
+  "Idempotency is not this package's job"); this resolution inherits that
+  property rather than re-deciding it. Consequence, stated explicitly:
+  same-issue re-discoveries (a re-label that re-triggers the same kind)
+  are the *same event* by design -- the workintake trigger vocabulary is
+  issue-granular, exactly as `TaskEnvelope`'s own key is. A future
+  capture/binding-originated trigger type keys on `captured_events.id`
+  instead; derivation is per-trigger-type, not one formula for all
+  triggers (rule carried over unchanged from the draft).
+- `action_id` is the action's declared `id` -- J1's named ids, "a
+  required field on every action that later actions reference", unique
+  and stable-identifier-shaped, validated at load (the CEL resolution's
+  J1 and its context table above in this document). For an action declaring no `id`
+  (permitted by J1 while unreferenced), the key uses the action's 1-based
+  position in the playbook: deterministic and stable for today's
+  single-action playbooks, and a later reorder is a file edit whose
+  content hash changes `playbook_version` with it, so a positional
+  fallback cannot silently collide with a prior definition.
 
-`DispatchInput` also carries **no task identity today** -- not even the
-originating task's ID. This document's own earlier claim that
-"workflow-kind actions inherit idempotency for free via `TaskEnvelope`"
-is true of the task itself, but that identity is not currently threaded
-into `DispatchInput` for a playbook run to key on. This is a second,
-separate prerequisite alongside the Playbook-identity one above: before
-this ledger can be built, `DispatchInput` needs to carry the originating
-task's identity (its `store.Task.ID`, or the `TaskEnvelope` idempotency
-key that produced it -- whoever implements this should confirm which is
-actually available at the `Dispatch` call site rather than assuming). If
-and when a capture/binding-originated trigger type is added to the
-playbook engine later (unifying with the webhook pipeline is an explicit
-non-goal of this document today, per `docs/architecture/bindings.md`'s
-own "does not attempt to unify them"), that trigger type would key on
-`captured_events.id` instead -- the derivation is per-trigger-type, not
-one formula for all triggers.
+**No CEL in the key -- stated explicitly because the CEL resolution
+flagged this as gap 2's "first real exercise"** ("CEL's read-only result
+access makes gap 2's keying derivation readable" -- the CEL resolution's
+closing note). Readability
+is not the binding constraint; **determinism under redelivery is**, and
+CEL key expressions lose three ways. First, they are not load-checkable:
+`event` stays `dyn` by the resolved J4 (schema-by-example), so
+a key expression over event fields cannot be type-checked at load,
+violating the document's reject-at-load philosophy. Second, they can
+fail at dispatch (a missing field is a CEL error), and a key that cannot
+be computed is an unfireable state -- neither "skip" nor "fire" is safe
+without losing or duplicating work. Third, the contract needs one
+derivation, and two authors writing different key expressions would
+fragment the ledger. The key is therefore structural by construction:
+every component above is an immutable identity of the run's inputs, so
+two deliveries of the same event derive the same key with no evaluation.
+The exercise's actual outcome is the derivation rule above; CEL remains
+a *condition* surface (`when`), never a key surface. { Call: if a future
+action kind genuinely needs finer granularity than (action, event) --
+e.g. "per comment, not per issue" -- that is the documented exception
+path, and it arrives with its own trigger type and its own event
+identity, per the per-trigger-type rule. }
 
-**What "dedup" does on redelivery:** the **whole run** is skipped, not
-just the already-fired action -- consistent with whole-run granularity
-above. A redelivered event that already produced a `playbook_dispatches`
-row for this `(playbook, event)` pair does nothing further, silently
-(logged at debug level, not as a warning -- this is the expected,
-correct behavior of at-least-once delivery, not an anomaly).
+**Record-before-invoke -- one deliberate divergence from
+`binding_dispatches`, justified by the harm profile.** The binding
+dispatch loop enqueues the task first and records the ledger row after
+(`daemon.go:585-599`), accepting that racing cycles may both enqueue
+("the duplicate task remains queued... delete-on-races is its own can of
+worms"); the selection query excludes already-dispatched captures
+(`bindings.go:395-399`), but the race window remains. That ordering is
+correct there because the duplicate artifact is an internal task row --
+recoverable, low-harm. The playbook ledger's ordering is reversed on
+purpose: **the row is written and committed before the action's side
+effect is invoked** -- the `INSERT OR IGNORE` is the atomic gate, and
+the lost-write loser skips without invoking. The cost is stated, not
+hidden: a crash between the row commit and the invoke loses that one
+action's side effect, repairable by hand -- the reverse direction of the
+same window that would otherwise duplicate a posted comment or
+re-bill an image generation. For side effects whose duplication is
+externally visible and not revocable, at-most-once is the required
+direction; the binding system's at-least-once-tolerant ordering is not
+the precedent for this ledger.
 
-Gap 2 blocks open question 4's first-slice recommendation only
-partially: the first slice (Module + loader + workflow-kind dispatch)
-already has idempotency for free via `TaskEnvelope`, so it can proceed
-without resolving gap 2. Gap 1 (failure mid-run) is real even for a
-single-action first slice's *future* multi-action runs, but is not
-required to build the first slice today. Gap 2 must be resolved
-before Channel/Forge actions or multi-action playbooks ship.
+**Gap-1 interplay, stated to keep the two mechanisms separate:** the
+ledger answers one question per action -- has this action already fired
+for this event? It does not answer whether the run continues, stops, or
+is re-attempted; that is gap 1's coordinator concern (a run-outcome
+record; gap 1 explicitly leaves "what leave it alone for restart means
+for a playbook run" to whoever builds the coordinator). One consequence
+of record-before: an action that FAILED (gap 1's real-action-error case)
+has a ledger row, so a later redelivery of the same event skips it --
+consistent with gap 1's "no automatic retry" resolve (a corrective
+action is a *new* playbook/action, per gap 1's rollback paragraph). A
+failed action is never re-attempted by the bus; if a run must be
+recovered, an operator edits the playbook -- new version, new key --
+rather than fighting ledger state.
+
+**Relationship to `event-sources-and-reactions.md` -- extension, not
+contradiction, argued explicitly.** Three points, keyed to that
+document's sections:
+
+1. Its decision 2 commits reactions to at-least-once delivery via
+   `PublishUnique`'s "without duplicate enqueue" guarantee -- which, with
+   the code facts above, is accurate for the *publish* path only:
+   `PublishUnique` absorbs duplicate publishes of the same event (poll
+   vs. webhook), which is what that decision was actually about. This
+   document's own problem statement, taken literally, overstates it
+   ("keys absorb redelivery without duplicate side effects") -- that
+   overstatement is exactly what this gap exists to correct. The
+   existing contract never claimed consumer redeliveries of
+   side-effecting reactions were absorbed, so nothing it says contradicts
+   a consumer-side ledger; this resolution pins down the boundary the
+   sentence left implicit (publish-path dedup vs. consumer-path dedup)
+   rather than changing either.
+2. Its decision 3 (producer-only, no veto/mutation of in-flight work)
+   is untouched: the ledger is the running reaction's own bookkeeping
+   about its own actions -- it suppresses re-firing an action the
+   coordinator already ran for the same event; it blocks, mutates, or
+   reorders nothing else, and no other producer's work is touched.
+3. Its decision 4 (no generic `Source` interface; `TaskEnvelope` is the
+   typed contract, keyed on issue identity, not delivery source): the
+   event half of the playbook key IS that same identity
+   (`TaskEnvelope.IdempotencyKey()`), and the per-trigger-type rule
+   means any future trigger type brings its own identity rather than a
+   new generic one -- the playbook ledger introduces no second identity
+   vocabulary and no untyped payload. The only new type in this
+   resolution is the ledger's own value object, consumed through a
+   narrow interface like `BindingDispatcher` -- the same shape the
+   document's "typed families" rule (decision 1, plugin engine rule)
+   already blesses.
+
+**Scope: this is the `channel`/`forge`/`module` decision, not a
+`workflow`-position change.** Workflow-kind actions keep their existing
+keying claim unchanged -- the `TaskEnvelope` path that this document
+already inherits for free (`daemon.go:858-869`, `PublishTask` publishes
+with `task.IdempotencyKey()`), with its cross-poll/webhook property
+untouched. The ledger gate applies to the side-effecting positions
+(channel, forge, module), which is why the closing statement below
+still holds: the first slice (Module + loader + workflow-kind dispatch)
+was buildable without this resolution, and channel/forge/multi-action
+playbooks were not. A coordinator MAY implement one position-uniform
+gate as a simplification; what this resolution requires is only that
+the side-effecting positions are gated.
+
+Both execution-time gaps are now resolved (gap 1 by
+`archie-core-t2db.18` above, gap 2 by `archie-core-t2db.17` above). For
+the record, the first slice (Module + loader + workflow-kind dispatch)
+never needed gap 2: workflow-kind actions had idempotency for free via
+`TaskEnvelope`, and the ledger is only required once side-effecting
+positions dispatch. Channel/Forge actions and multi-action playbooks
+are unblocked on the execution-time questions.
 
 ## Open questions (for sign-off before implementation)
 
@@ -680,13 +835,17 @@ before Channel/Forge actions or multi-action playbooks ship.
 
    ### Interaction with the execution-time gaps
 
-   This resolution does not resolve the execution-time gaps (gap 1 is
-   resolved separately by archie-core-t2db.18; gap 2 remains open).
-   Conditions make gap 1
+   This resolution does not resolve the execution-time gaps (both are
+   resolved separately: gap 1 by `archie-core-t2db.18`, gap 2 by the
+   gap-2 decision below). Conditions make gap 1
    concrete (condition-failure vs. action-failure semantics, J3) and
    CEL's read-only result access makes gap 2's keying derivation
    readable (an idempotency key expression can read event fields) -- both
-   flagged as the gaps' first real exercise, not solved here.
+   flagged as the gaps' first real exercise. Gap 2's exercise is
+   subsequently solved by the gap-2 decision above (2026-09-05): the
+   answer is a fixed structural derivation, and idempotency keys are
+   deliberately NOT CEL expressions (see the "No CEL in the key"
+   passage).
 
    ### Implementation placement (for the follow-up slice)
 
