@@ -2,102 +2,111 @@ package archied
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"net"
 	"os"
-	"os/signal"
-	"syscall"
+	"time"
 
+	natsio "github.com/nats-io/nats.go"
 	"google.golang.org/grpc"
 
+	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
+	"github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
+	"github.com/samcharles93/archie-core/internal/plugin"
 )
 
-// RunGateway starts the standalone Gateway Service. The service owns the
-// conversation store and the Gateway composition; the daemon reaches it only
-// through the generated ChatContract RPC.
-func RunGateway() int {
-	args := gatewayArgs()
-	if args.version {
-		fmt.Printf("archie-gateway %s\n", gatewayVersion)
-		return 0
-	}
+// GatewayOptions contains process inputs for the standalone Gateway.
+type GatewayOptions struct {
+	Config  string
+	Overlay string
+	Listen  string
+}
 
-	root, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	ctx, stop := signal.NotifyContext(root, os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
+// RunGateway owns conversation persistence, model runtime and tool-provider
+// lifecycles. Task-store adapters continue to access the existing task database
+// until the State Store Service extraction; no task data is relocated.
+func RunGateway(ctx context.Context, options GatewayOptions) error {
 	b := newBootstrap()
-	if err := b.loadConfig(ctx, args.config, args.overlay, false); err != nil {
-		return 1
-	}
 	defer b.cleanup()
+	if err := b.loadConfig(ctx, options.Config, options.Overlay, false); err != nil {
+		return err
+	}
+	b.log = b.log.With("component", "gateway")
 	if err := b.openStores(ctx); err != nil {
-		return 1
+		return err
 	}
-	b.loadCatalog(ctx, args.config)
-	// setupLLMAndChat also wires the task adapters used by Gateway tools. It
-	// normally publishes a dashboard contract, but the standalone service
-	// publishes that same local adapter over gRPC below.
-	b.setupObservability()
-	b.cfg.Services.Gateway.Mode = "inproc"
-	b.cfg.Services.Gateway.Target = ""
-	b.setupLLMAndChat(ctx)
-	if b.web == nil || b.web.Chat == nil || b.web.Chat.Contract == nil {
-		b.log.Error("gateway contract was not composed")
-		return 1
+	b.loadCatalog(ctx, options.Config)
+	if b.cfg.NATS.URL == "" {
+		return fmt.Errorf("archie-gateway requires nats.url pointing to the daemon's shared NATS server")
 	}
-
-	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", args.listen)
+	token, err := configuredNATSToken(b.cfg.NATS, os.Getenv)
 	if err != nil {
-		b.log.Error("listen for gateway", "addr", args.listen, "err", err)
-		return 1
+		return err
+	}
+	nc, err := natsio.Connect(b.cfg.NATS.URL, natsio.Token(token))
+	if err != nil {
+		return fmt.Errorf("connect gateway task actions: %w", err)
+	}
+	b.addCleanup(nc.Close)
+	contract, err := b.startGatewayRuntime(ctx, taskactions.Client{Conn: nc, Timeout: 30 * time.Second})
+	if err != nil {
+		return err
+	}
+	host, _, err := net.SplitHostPort(options.Listen)
+	if err != nil || !net.ParseIP(host).IsLoopback() {
+		return fmt.Errorf("gateway listen address must use a loopback IP; use a secured tunnel for remote access")
+	}
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", options.Listen)
+	if err != nil {
+		return fmt.Errorf("listen for gateway: %w", err)
 	}
 	defer listener.Close()
+	b.log.Info("archie-gateway running", "addr", listener.Addr().String())
+	return serveGateway(ctx, listener, contract)
+}
+
+func (b *boot) startGatewayRuntime(ctx context.Context, actor gateway.ChatTaskActor) (gateway.ChatContract, error) {
+	b.bus = events.NewBus()
+	b.addCleanup(b.bus.Close)
+	b.capabilityHost = plugin.NewHost()
+	contract := b.setupGatewayChat(ctx, actor)
+	// Memory is opened with its own long-lived context inside (matching the
+	// daemon path via setupMemoryAll): shutdown of the file-backed provider
+	// outlives the boot context by design, so the legacy manager wires itself
+	// with a background context rather than the gateway's boot ctx.
+	if err := b.setupMemory(); err != nil { //nolint:contextcheck // setupMemory owns its lifecycle contexts, matching the daemon's setupMemoryAll
+		return nil, err
+	}
+	if err := b.registerTools(); err != nil {
+		return nil, err
+	}
+	b.registerStandaloneTools()
+	b.addCleanup(shutdownCapabilityHost(b.capabilityHost, b.log))
+	if err := b.capabilityHost.Start(ctx); err != nil {
+		return nil, fmt.Errorf("start gateway tool providers: %w", err)
+	}
+	for _, skipped := range b.providerRegistry.Skipped() {
+		b.log.Warn("gateway tool provider unavailable", "provider", skipped.ID, "err", skipped.Err)
+	}
+	return contract, nil
+}
+
+func serveGateway(ctx context.Context, listener net.Listener, contract gateway.ChatContract) error {
 	server := grpc.NewServer()
-	gatewayrpc.RegisterServer(server, b.web.Chat.Contract)
+	gatewayrpc.RegisterServer(server, contract)
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- server.Serve(listener) }()
-	b.log.Info("archie-gateway running", "addr", listener.Addr().String())
-
 	select {
 	case <-ctx.Done():
+		// A client can keep a streaming RPC open indefinitely. Allow draining,
+		// then force cancellation before closing the session store and tools.
+		timer := time.AfterFunc(10*time.Second, server.Stop)
 		server.GracefulStop()
-		return 0
+		timer.Stop()
+		return nil
 	case err := <-serveErr:
-		if err != nil {
-			b.log.Error("gateway server stopped", "err", err)
-			return 1
-		}
-		return 0
+		return err
 	}
-}
-
-type gatewayRunArgs struct {
-	config  string
-	overlay string
-	listen  string
-	version bool
-}
-
-func gatewayArgs() gatewayRunArgs {
-	args := gatewayRunArgs{config: filepathConfigHome()}
-	flag.StringVar(&args.config, "config", args.config, "path to a TOML/YAML config file or configuration directory")
-	flag.StringVar(&args.overlay, "config-overlay", "", "path to a TOML/YAML overlay file or configuration directory")
-	flag.StringVar(&args.listen, "listen", "127.0.0.1:8585", "gateway gRPC listen address")
-	flag.BoolVar(&args.version, "version", false, "print the Gateway Service version and exit")
-	flag.Parse()
-	return args
-}
-
-func filepathConfigHome() string {
-	base := os.Getenv("XDG_CONFIG_HOME")
-	if base == "" {
-		if home, err := os.UserHomeDir(); err == nil {
-			base = home + "/.config"
-		}
-	}
-	return base + "/archie/config.toml"
 }

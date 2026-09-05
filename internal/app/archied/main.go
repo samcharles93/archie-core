@@ -5,7 +5,6 @@
 package archied
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -13,8 +12,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -353,7 +350,7 @@ func parseArgs() (runArgs, bool) {
 	return args, false
 }
 
-func Run() int {
+func Run() int { //nolint:cyclop // the composition root's setup sequence is deliberately flat and sequential
 	args, exit := parseArgs()
 	if exit {
 		return 0
@@ -392,7 +389,9 @@ func Run() int {
 		return 1
 	}
 
-	b.setupLLMAndChat(ctx)
+	if err := b.setupLLMAndChat(ctx); err != nil {
+		return 1
+	}
 	if !b.setupGateways(ctx, args.cfgPath, args.overlayPath) {
 		return 1
 	}
@@ -660,118 +659,18 @@ func (a chatTaskLogReaderAdapter) ReadChatTaskLogs(
 	}, nil
 }
 
-// chatTaskActorAdapter executes operator actions on a task via the same
-// action path the dashboard uses, ensuring chat and webui cannot diverge.
-// It enforces identity scoping so an identity cannot mutate another
-// identity's tasks.
+// chatTaskActorAdapter sends messaging actions through the Gateway boundary.
 type chatTaskActorAdapter struct {
-	tasks    func(context.Context, int64) (*store.Task, error)
-	apply    func(context.Context, string, int64, taskstate.Action) (gateway.TaskActionResult, error)
 	contract gateway.ChatContract
-	handler  http.Handler
-	token    func() string
-}
-
-func applyGatewayTaskAction(st store.TaskStore) func(context.Context, string, int64, taskstate.Action) (gateway.TaskActionResult, error) {
-	return func(ctx context.Context, identity string, taskID int64, action taskstate.Action) (gateway.TaskActionResult, error) {
-		task, err := st.TaskByID(ctx, taskID)
-		if err != nil {
-			return gateway.TaskActionResult{}, err
-		}
-		if task == nil {
-			return gateway.TaskActionResult{}, fmt.Errorf("task %d not found", taskID)
-		}
-		if task.Identity != identity {
-			return gateway.TaskActionResult{}, fmt.Errorf("task %d belongs to %q, not %q", taskID, task.Identity, identity)
-		}
-		if err := taskstate.CheckAction(task.Status, action); err != nil {
-			return gateway.TaskActionResult{}, err
-		}
-		switch action {
-		case taskstate.ActionApprove:
-			err = st.Requeue(ctx, taskID, store.StatusWaitingHuman, "implement")
-		case taskstate.ActionRetry:
-			err = st.RetryTask(ctx, taskID, store.StatusParked, task.Workflow)
-		case taskstate.ActionCancel, taskstate.ActionReject:
-			err = st.Transition(ctx, taskID, task.Status, store.StatusClosedWontDo, "declined by "+identity)
-		case taskstate.ActionAbandon:
-			err = st.Transition(ctx, taskID, store.StatusParked, store.StatusClosedWontDo, "abandoned by "+identity)
-		case taskstate.ActionStop:
-			return gateway.TaskActionResult{}, fmt.Errorf("stopping running tasks is unavailable in the Gateway Service")
-		case taskstate.ActionArchive:
-			_, err = st.ArchiveTask(ctx, taskID, task.Status, events.Event{Kind: events.KindTaskArchiveRequested, TaskID: taskID})
-		default:
-			return gateway.TaskActionResult{}, fmt.Errorf("unsupported task action %q", action)
-		}
-		if err != nil {
-			return gateway.TaskActionResult{}, err
-		}
-		return gateway.TaskActionResult{TaskID: taskID, Action: string(action), Message: fmt.Sprintf("Applied %s to task %d.", action, taskID)}, nil
-	}
 }
 
 func (a chatTaskActorAdapter) ApplyChatTaskAction(
 	ctx context.Context, identity string, taskID int64, action taskstate.Action,
 ) (gateway.TaskActionResult, error) {
-	if a.contract != nil {
-		return a.contract.ApplyTaskAction(ctx, identity, taskID, action)
+	if a.contract == nil {
+		return gateway.TaskActionResult{}, gateway.ErrChatCapabilityUnavailable
 	}
-	if a.apply != nil {
-		return a.apply(ctx, identity, taskID, action)
-	}
-	if a.tasks == nil || a.handler == nil {
-		return gateway.TaskActionResult{}, fmt.Errorf("task actions are not configured")
-	}
-	task, err := a.tasks(ctx, taskID)
-	if err != nil {
-		return gateway.TaskActionResult{}, err
-	}
-	if task == nil {
-		return gateway.TaskActionResult{}, fmt.Errorf("task %d not found", taskID)
-	}
-	// Match the filter chatTaskListerAdapter and chatTaskLogReaderAdapter apply:
-	// a model bound to one identity must not mutate another identity's tasks,
-	// and tasks with no identity (forge-sourced) are not actionable through a
-	// chat tool at all — they belong to the daemon, not a particular identity.
-	if task.Identity != identity {
-		return gateway.TaskActionResult{}, fmt.Errorf("task %d belongs to %q, not %q", taskID, task.Identity, identity)
-	}
-	if err := taskstate.CheckAction(task.Status, action); err != nil {
-		return gateway.TaskActionResult{}, err
-	}
-
-	body, err := json.Marshal(map[string]any{"action": string(action)})
-	if err != nil {
-		return gateway.TaskActionResult{}, fmt.Errorf("marshal action request: %w", err)
-	}
-	req := httptest.NewRequestWithContext(
-		ctx, http.MethodPost,
-		fmt.Sprintf("/api/tasks/%d/action", taskID),
-		bytes.NewReader(body),
-	)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Archie-CSRF", "1")
-	if a.token != nil {
-		if tok := a.token(); tok != "" {
-			req.Header.Set("Authorization", "Bearer "+tok)
-		}
-	}
-	rec := httptest.NewRecorder()
-	a.handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		errMsg := strings.TrimSpace(rec.Body.String())
-		if errMsg == "" {
-			errMsg = fmt.Sprintf("HTTP %d", rec.Code)
-		}
-		return gateway.TaskActionResult{}, fmt.Errorf("action %s on task %d failed: %s", action, taskID, errMsg)
-	}
-
-	return gateway.TaskActionResult{
-		TaskID:  taskID,
-		Action:  string(action),
-		Message: fmt.Sprintf("Applied %s to task %d.", action, taskID),
-	}, nil
+	return a.contract.ApplyTaskAction(ctx, identity, taskID, action)
 }
 
 func chatTaskProfiles(cfg config.Config) ([]gateway.TaskProfile, string) {

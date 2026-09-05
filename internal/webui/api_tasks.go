@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -13,7 +12,9 @@ import (
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/events"
+	taskactionstore "github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
@@ -146,36 +147,20 @@ func (s *Server) handleTaskAction(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	task, err := s.Store.TaskByID(r.Context(), id)
-	if err != nil {
-		s.logf("task action lookup failed", "task", id, "err", err)
-		http.Error(w, "task action failed", http.StatusInternalServerError)
+	if err := s.TaskActionService().Apply(r.Context(), nil, id, action); err != nil {
+		switch {
+		case errors.Is(err, taskactions.ErrNotFound):
+			http.Error(w, "task not found", http.StatusNotFound)
+		case errors.Is(err, taskactions.ErrConflict), errors.Is(err, store.ErrStaleTransition):
+			http.Error(w, err.Error(), http.StatusConflict)
+		case errors.Is(err, taskactions.ErrUnavailable):
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		default:
+			s.logf("task action failed", "task", id, "err", err)
+			http.Error(w, "task action failed", http.StatusInternalServerError)
+		}
 		return
 	}
-	if task == nil {
-		http.Error(w, "task not found", http.StatusNotFound)
-		return
-	}
-	if err := taskstate.CheckAction(task.Status, action); err != nil {
-		http.Error(w, err.Error(), http.StatusConflict)
-		return
-	}
-
-	// Each action reports the event to record, or writes its own error
-	// response and returns nothing. Keeping the dispatch flat here and the
-	// rules in one function each is what stops this growing back into a
-	// single branch nobody can read.
-	outcome := s.applyTaskAction(r.Context(), w, task, action)
-	if outcome == nil {
-		return
-	}
-
-	s.emit(r.Context(), events.Event{
-		ID:   outcome.eventID,
-		Kind: outcome.kind, TaskID: task.ID,
-		Repo: task.Owner + "/" + task.Repo, Issue: task.IssueNumber,
-		Detail: outcome.detail, Data: outcome.data,
-	})
 	writeJSON(w, map[string]any{"ok": true, "action": action, "task_id": id})
 }
 
@@ -202,32 +187,6 @@ func decodeTaskAction(w http.ResponseWriter, r *http.Request) (taskstate.Action,
 		return "", false
 	}
 	return action, true
-}
-
-func (s *Server) applyTaskAction(
-	ctx context.Context,
-	w http.ResponseWriter,
-	task *store.Task,
-	action taskstate.Action,
-) *actionOutcome {
-	switch action {
-	case taskstate.ActionCancel:
-		return s.declineTask(ctx, w, task, store.StatusQueued, events.KindTaskCancelled, "cancelled")
-	case taskstate.ActionStop:
-		return s.stopTask(ctx, w, task)
-	case taskstate.ActionApprove:
-		return s.approveTask(ctx, w, task)
-	case taskstate.ActionRetry:
-		return s.retryTask(ctx, w, task)
-	case taskstate.ActionReject:
-		return s.rejectTask(ctx, w, task)
-	case taskstate.ActionAbandon:
-		return s.declineTask(ctx, w, task, store.StatusParked, events.KindTaskAbandoned, "abandoned")
-	case taskstate.ActionArchive:
-		return s.archiveTask(ctx, w, task)
-	default:
-		return nil
-	}
 }
 
 func taskMutation(action taskstate.Action) bool {
@@ -315,205 +274,46 @@ func validOrigin(u *url.URL, wantScheme, wantHost string) bool {
 	return strings.EqualFold(u.Scheme, wantScheme) && strings.EqualFold(u.Host, wantHost)
 }
 
-// actionOutcome is what a completed operator action should record.
-type actionOutcome struct {
-	kind    string
-	detail  string
-	data    map[string]any
-	eventID int64
+// TaskActionService supplies the same operator action implementation used by
+// the daemon's task-control endpoint.
+func (s *Server) TaskActionService() taskactions.Service {
+	return taskactionstore.NewService(
+		taskactionstore.Store{TaskStore: s.Store},
+		taskactionstore.MaxRetries(s.Cfg),
+		s.taskStopper(),
+		s.issueCloser(),
+		s.logRemover(),
+		s.eventPublisher(),
+		s.logf,
+	)
 }
 
-// storeFailed writes the response for a failed store write and reports
-// whether it did. A store write that fails is not the caller's fault;
-// answering 409 made the UI say "conflict" for a broken database.
-func (s *Server) storeFailed(w http.ResponseWriter, err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, store.ErrStaleTransition) {
-		http.Error(w, "task changed state; refresh and try again", http.StatusConflict)
-		return true
-	}
-	s.logf("task action store write failed", "err", err)
-	http.Error(w, "task action failed", http.StatusInternalServerError)
-	return true
-}
-
-func (s *Server) declineTask(
-	ctx context.Context,
-	w http.ResponseWriter,
-	task *store.Task,
-	from, kind, verb string,
-) *actionOutcome {
-	detail := verb + " via the dashboard"
-	if s.storeFailed(w, s.Store.Transition(ctx, task.ID, from, store.StatusClosedWontDo, detail)) {
-		return nil
-	}
-	s.closeDeclinedIssue(ctx, task, verb)
-	return &actionOutcome{kind: kind, detail: detail}
-}
-
-func (s *Server) stopTask(ctx context.Context, w http.ResponseWriter, task *store.Task) *actionOutcome {
+func (s *Server) taskStopper() func(int64) bool {
 	if s.TaskStopper == nil {
-		http.Error(w, "runtime task control is unavailable", http.StatusServiceUnavailable)
 		return nil
 	}
-	cancelled := s.TaskStopper.CancelTask(task.ID)
-	detail := "stopped via the dashboard; recoverable work remains parked"
-	if !cancelled {
-		// A running row without a runtime entry is stale work from a crashed or
-		// migrated process. Nothing is executing, but parking the guarded row
-		// still gives the operator the promised recoverable state.
-		detail = "no active execution was found; recoverable work was parked via the dashboard"
-	}
-	if s.storeFailed(w, s.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, detail)) {
-		return nil
-	}
-	return &actionOutcome{kind: events.KindTaskStopped, detail: detail}
+	return s.TaskStopper.CancelTask
 }
 
-func (s *Server) archiveTask(ctx context.Context, w http.ResponseWriter, task *store.Task) *actionOutcome {
-	detail := "archive requested via the dashboard"
-	eventID, err := s.Store.ArchiveTask(ctx, task.ID, task.Status, events.Event{
-		Kind: events.KindTaskArchiveRequested, TaskID: task.ID,
-		Repo: task.Owner + "/" + task.Repo, Issue: task.IssueNumber,
-		Detail: detail,
-	})
-	if s.storeFailed(w, err) {
-		return nil
-	}
-	// Best-effort: an archived task's log files not getting cleaned up is
-	// far less costly than the archive action itself failing over it, so
-	// this never blocks the response the way s.storeFailed above does.
-	//
-	// Known, accepted gap: a task reaches a terminal status (satisfying
-	// ArchiveTask's precondition) partway through Daemon.process, but its
-	// TaskLogs sink isn't closed until process() itself returns -- which can
-	// be later, if teardown after the terminal transition takes any time at
-	// all. A system-log message landing in that window races this Remove
-	// with an open Write to the same directory. Not corrupting (the write
-	// lands on a soon-to-be-unlinked inode and is discarded) and not worth
-	// closing here: doing so would mean tying TaskLogs.Close to the store
-	// transition instead of to process()'s return, a larger change than
-	// this call site should make unilaterally.
-	if err := s.TaskLogs.Remove(task.ID); err != nil {
-		s.Log.Warn("task log cleanup failed", "task", task.ID, "err", err)
-	}
-	return &actionOutcome{kind: events.KindTaskArchiveRequested, detail: detail, eventID: eventID}
-}
-
-func (s *Server) approveTask(ctx context.Context, w http.ResponseWriter, task *store.Task) *actionOutcome {
-	if err := taskstate.CheckApprove(task.Status); err != nil {
-		http.Error(w, err.Error(), http.StatusConflict)
-		return nil
-	}
-	if s.storeFailed(w, s.Store.Requeue(ctx, task.ID, store.StatusWaitingHuman, "implement")) {
-		return nil
-	}
-	return &actionOutcome{kind: events.KindHumanApproved, detail: "approved via the dashboard"}
-}
-
-// retryTask requeues a parked task, or retires it once max_retries is spent.
-//
-// max_retries was configured, defaulted and reported by /api/config while
-// nothing enforced it: retry_count climbed forever, so a task that fails
-// every time could be retried without limit. At the cap the task belongs in
-// dead, which is what the setting exists to say.
-func (s *Server) retryTask(ctx context.Context, w http.ResponseWriter, task *store.Task) *actionOutcome {
-	if err := taskstate.CheckRetry(task.Status); err != nil {
-		http.Error(w, err.Error(), http.StatusConflict)
-		return nil
-	}
-	if limit := s.maxRetriesFor(task); limit > 0 && task.RetryCount >= limit {
-		s.retireTask(ctx, task, fmt.Sprintf("max retries reached (%d/%d)", task.RetryCount, limit))
-		http.Error(w, fmt.Sprintf("max retries reached (%d/%d)", task.RetryCount, limit), http.StatusConflict)
-		return nil
-	}
-	if s.storeFailed(w, s.Store.RetryTask(ctx, task.ID, store.StatusParked, "")) {
-		return nil
-	}
-	return &actionOutcome{
-		kind:   events.KindTaskRetried,
-		detail: "retried via the dashboard",
-		data: map[string]any{
-			"retry_count":     task.RetryCount + 1,
-			"previous_stage":  task.Stage,
-			"previous_reason": task.ParkReason,
-		},
-	}
-}
-
-// retireTask moves a spent task to dead. Failure is logged, not returned:
-// the caller is already answering with the reason it refused the retry.
-func (s *Server) retireTask(ctx context.Context, task *store.Task, reason string) {
-	if err := s.Store.Transition(ctx, task.ID, store.StatusParked, store.StatusDead, reason); err != nil {
-		s.logf("transition to dead failed", "task", task.ID, "err", err)
-		return
-	}
-	s.emit(ctx, events.Event{
-		Kind: events.KindTaskDead, TaskID: task.ID,
-		Repo: task.Owner + "/" + task.Repo, Issue: task.IssueNumber, Detail: reason,
-	})
-}
-
-func (s *Server) rejectTask(ctx context.Context, w http.ResponseWriter, task *store.Task) *actionOutcome {
-	// Reject is available from any non-terminal lifecycle state: work the
-	// operator refuses belongs in the terminal Declined state regardless of
-	// where it currently sits. Running work is interrupted first so nothing
-	// keeps executing against a task that is being closed out.
-	if task.Status == store.StatusRunning && s.TaskStopper != nil {
-		s.TaskStopper.CancelTask(task.ID)
-	}
-	err := s.Store.Transition(ctx, task.ID, task.Status, store.StatusClosedWontDo, "declined from the dashboard")
-	if s.storeFailed(w, err) {
-		return nil
-	}
-	s.closeDeclinedIssue(ctx, task, "rejected")
-	return &actionOutcome{kind: events.KindHumanRejected, detail: "rejected via the dashboard"}
-}
-
-// maxRetriesFor resolves the retry cap for a task, honouring a per-repo
-// override. Zero means unlimited.
-func (s *Server) maxRetriesFor(task *store.Task) int {
-	if s.Cfg == nil {
-		return 0
-	}
-	cfg := s.Cfg.Get()
-	for _, repo := range cfg.Repos {
-		if repo.Owner == task.Owner && repo.Name == task.Repo {
-			return repo.EffectiveMaxRetries(cfg.MaxRetries)
-		}
-	}
-	return cfg.MaxRetries
-}
-
-// closeRejectedIssue closes the forge issue behind a task the operator has
-// declined.
-//
-// Without this the issue stays open, labelled and assigned, so the next poll
-// re-enqueues it -- and once the operator uses Clear, which deletes the task
-// row, that is a second implementation and a second PR for work already
-// refused. Approve and retry deliberately leave the issue open: the task is
-// going back to work.
-//
-// Failure is logged, not returned. The operator's decision is already
-// recorded, and reporting an error would invite them to click again.
-func (s *Server) closeDeclinedIssue(ctx context.Context, task *store.Task, verb string) {
+func (s *Server) issueCloser() func(context.Context, string, string, int, string) error {
 	if s.Issues == nil {
-		s.logf("task rejected but no forge is wired; the issue stays open and will be re-polled",
-			"task", task.ID, "issue", task.IssueNumber)
-		return
+		return nil
 	}
-	// A chat task's issue number is synthetic and matches no forge issue.
-	if !task.IsForgeBacked() {
-		return
+	return s.Issues.CloseIssue
+}
+
+func (s *Server) logRemover() func(int64) error {
+	if s.TaskLogs == nil {
+		return nil
 	}
-	comment := fmt.Sprintf("Closing: this task was %s from the archie dashboard. "+
-		"Reopen the issue to have archie pick it up again.", verb)
-	if err := s.Issues.CloseIssue(ctx, task.Owner, task.Repo, task.IssueNumber, comment); err != nil {
-		s.logf("closing rejected issue failed; it stays open and will be re-polled",
-			"task", task.ID, "issue", task.IssueNumber, "err", err)
+	return s.TaskLogs.Remove
+}
+
+func (s *Server) eventPublisher() func(events.Event) {
+	if s.Events == nil {
+		return nil
 	}
+	return s.Events.Publish
 }
 
 // emit publishes an operator action so it reaches the task timeline and the

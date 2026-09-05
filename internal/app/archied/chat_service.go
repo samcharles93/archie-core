@@ -39,12 +39,3 @@ func composeChatContract(settings config.ServiceConnection, local gateway.ChatCo
 		return nil, nil, fmt.Errorf("unknown gateway service mode %q", settings.Mode)
 	}
 }
-
-func (b *boot) chatContract(settings config.ServiceConnection, local gateway.ChatContract) (gateway.ChatContract, func()) {
-	contract, cleanup, err := composeChatContract(settings, local)
-	if err != nil {
-		b.log.Error("configure gateway contract", "error", err)
-		return nil, func() {}
-	}
-	return contract, cleanup
-}
