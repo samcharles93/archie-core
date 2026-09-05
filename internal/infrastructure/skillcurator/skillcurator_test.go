@@ -60,6 +60,9 @@ func TestPassFlagsAParseFailureWithoutWriting(t *testing.T) {
 	if res.Actions[0].Detail != "broken" {
 		t.Errorf("Detail = %q, want the skill name", res.Actions[0].Detail)
 	}
+	if res.Actions[0].Reason == "" {
+		t.Error("Reason is empty, want the parse failure")
+	}
 
 	// The broken skill must be untouched: this curator never rewrites
 	// content it could not parse.
