@@ -105,7 +105,7 @@ func TestChatSessionAndMessageEndpoints(t *testing.T) {
 	t.Cleanup(func() { _ = sessions.Close() })
 	router := gateway.NewRouter(chatStatusStub{}, nil, "web")
 	router.InitSessions(sessions)
-	server := &Server{Chat: &ChatService{Router: router, Sessions: sessions}}
+	server := &Server{Chat: testChatService(router, sessions, nil, nil, nil, nil, nil)}
 	session := gateway.SessionContext{
 		SessionID: "session-1",
 		Source:    gateway.SessionSource{Platform: "web", ChannelID: "browser-1"},
@@ -179,12 +179,7 @@ func TestChatSessionsExposeActiveSelectorState(t *testing.T) {
 	router.InitSessions(sessions)
 	models := &chatProviderModelStub{active: "openrouter/sonnet"}
 	router.Models = models
-	server := &Server{Chat: &ChatService{
-		Router:   router,
-		Models:   models,
-		Sessions: sessions,
-		Personas: gateway.NewPersonaRegistry(gateway.DefaultPersonas()),
-	}}
+	server := &Server{Chat: testChatService(router, sessions, nil, models, gateway.NewPersonaRegistry(gateway.DefaultPersonas()), nil, nil)}
 	session := gateway.SessionContext{
 		SessionID: "selector-session",
 		Source:    gateway.SessionSource{Platform: "web", ChannelID: "selector-browser"},
@@ -192,7 +187,7 @@ func TestChatSessionsExposeActiveSelectorState(t *testing.T) {
 	if err := sessions.Save(context.Background(), session); err != nil {
 		t.Fatal(err)
 	}
-	if !server.Chat.Personas.SetActive(session.SessionID, "concise") {
+	if !testLocalChat(server.Chat).Personas.SetActive(session.SessionID, "concise") {
 		t.Fatal("set active persona failed")
 	}
 
@@ -227,7 +222,7 @@ func TestChatUpdateEndpoints(t *testing.T) {
 	sessions := gateway.NewSessionStoreMemory()
 	t.Cleanup(func() { _ = sessions.Close() })
 	router := gateway.NewRouter(chatStatusStub{}, nil, "web")
-	server := &Server{Chat: &ChatService{Router: router, Sessions: sessions, Updates: updates}}
+	server := &Server{Chat: testChatService(router, sessions, nil, nil, nil, updates, nil)}
 
 	get := httptest.NewRecorder()
 	server.Handler().ServeHTTP(get, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/chat/update", nil))
@@ -265,7 +260,7 @@ func TestChatUpdateEndpointRejectsTypedNilService(t *testing.T) {
 	sessions := gateway.NewSessionStoreMemory()
 	t.Cleanup(func() { _ = sessions.Close() })
 	router := gateway.NewRouter(chatStatusStub{}, nil, "web")
-	server := &Server{Chat: &ChatService{Router: router, Sessions: sessions, Updates: updates}}
+	server := &Server{Chat: testChatService(router, sessions, nil, nil, nil, updates, nil)}
 
 	res := httptest.NewRecorder()
 	server.Handler().ServeHTTP(res, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/chat/update", nil))
@@ -279,7 +274,7 @@ func TestChatDangerousApprovalEndpoints(t *testing.T) {
 	t.Cleanup(func() { _ = sessions.Close() })
 	authority := &webDangerousStub{}
 	router := gateway.NewRouter(chatStatusStub{}, nil, "web")
-	server := &Server{Chat: &ChatService{Router: router, Sessions: sessions, Dangerous: NewDangerousService(authority)}}
+	server := &Server{Chat: testChatService(router, sessions, nil, nil, nil, nil, NewDangerousService(authority))}
 
 	state := httptest.NewRecorder()
 	server.Handler().ServeHTTP(state, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/chat/dangerous", nil))
@@ -311,10 +306,7 @@ func TestChatCommandCatalogIncludesEnabledCapabilities(t *testing.T) {
 	sessions := gateway.NewSessionStoreMemory()
 	t.Cleanup(func() { _ = sessions.Close() })
 	router := gateway.NewRouter(chatStatusStub{}, nil, "web")
-	server := &Server{Chat: &ChatService{
-		Router: router, Sessions: sessions,
-		Updates: &chatUpdateStub{}, Dangerous: NewDangerousService(&webDangerousStub{}),
-	}}
+	server := &Server{Chat: testChatService(router, sessions, nil, nil, nil, &chatUpdateStub{}, NewDangerousService(&webDangerousStub{}))}
 	res := httptest.NewRecorder()
 	server.Handler().ServeHTTP(res, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/chat/sessions", nil))
 	if res.Code != http.StatusOK {
@@ -343,7 +335,7 @@ func TestChatCancelEndpointStopsSessionTurn(t *testing.T) {
 	router := gateway.NewRouter(chatStatusStub{}, nil, "web")
 	router.InitSessions(sessions)
 	turns := gateway.NewTurns(slog.Default())
-	server := &Server{Chat: &ChatService{Router: router, Sessions: sessions, Turns: turns}}
+	server := &Server{Chat: testChatService(router, sessions, turns, nil, nil, nil, nil)}
 	if err := sessions.Save(context.Background(), gateway.SessionContext{
 		SessionID: "session-1", Source: gateway.SessionSource{Platform: "web", ChannelID: "browser-1"},
 	}); err != nil {
@@ -389,7 +381,7 @@ func chatTestServer(t *testing.T) (*Server, gateway.SessionStore) {
 	t.Cleanup(func() { _ = sessions.Close() })
 	router := gateway.NewRouter(chatStatusStub{}, nil, "web")
 	router.InitSessions(sessions)
-	return &Server{Chat: &ChatService{Router: router, Sessions: sessions}}, sessions
+	return &Server{Chat: testChatService(router, sessions, nil, nil, nil, nil, nil)}, sessions
 }
 
 func saveWebSession(t *testing.T, sessions gateway.SessionStore, id string) {
@@ -580,7 +572,7 @@ func TestChatStreamEndsWithDone(t *testing.T) {
 func TestChatStreamDeltas(t *testing.T) {
 	server, sessions := chatTestServer(t)
 	var gotDeltas []string
-	server.Chat.Router.LLMStream = func(_ context.Context, _ gateway.Message, stream gateway.TurnStream) (string, error) {
+	testLocalChat(server.Chat).Router.LLMStream = func(_ context.Context, _ gateway.Message, stream gateway.TurnStream) (string, error) {
 		stream.Delta("part one")
 		stream.Delta("part two")
 		return "full reply", nil
@@ -636,13 +628,13 @@ func TestChatStreamReportsToolCalls(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			server, sessions := chatTestServer(t)
-			server.Chat.Router.LLMStream = stream
+			testLocalChat(server.Chat).Router.LLMStream = stream
 			// Enabled explicitly: this test exercises the tool-narration
 			// path itself, which is off by default (see
 			// TestChatStreamHidesToolCallsWhenShowToolCallsIsOff).
 			server.Cfg = config.NewHolder(config.Config{Chat: config.ChatConfig{ShowToolCalls: true}})
 			if tc.queued {
-				server.Chat.Turns = gateway.NewTurns(slog.Default())
+				testLocalChat(server.Chat).Turns = gateway.NewTurns(slog.Default())
 			}
 			saveWebSession(t, sessions, "web-1")
 
@@ -698,7 +690,7 @@ func TestChatStreamRendersMediaAsALinkFallback(t *testing.T) {
 	}
 
 	server, sessions := chatTestServer(t)
-	server.Chat.Router.LLMStream = stream
+	testLocalChat(server.Chat).Router.LLMStream = stream
 	saveWebSession(t, sessions, "web-1")
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/chat/stream",
@@ -730,7 +722,7 @@ func TestChatStreamSkipsMediaWithNoURL(t *testing.T) {
 	}
 
 	server, sessions := chatTestServer(t)
-	server.Chat.Router.LLMStream = stream
+	testLocalChat(server.Chat).Router.LLMStream = stream
 	saveWebSession(t, sessions, "web-1")
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/chat/stream",
@@ -774,7 +766,7 @@ func TestChatStreamHidesToolCallsWhenShowToolCallsIsOff(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			server, sessions := chatTestServer(t)
-			server.Chat.Router.LLMStream = stream
+			testLocalChat(server.Chat).Router.LLMStream = stream
 			server.Cfg = tc.cfg
 			saveWebSession(t, sessions, "web-1")
 
@@ -801,7 +793,7 @@ func TestChatStreamHidesToolCallsWhenShowToolCallsIsOff(t *testing.T) {
 // and an unconfigured registry degrades to 501.
 func TestChatPersonaEndpoint(t *testing.T) {
 	server, sessions := chatTestServer(t)
-	server.Chat.Personas = gateway.NewPersonaRegistry(gateway.DefaultPersonas())
+	testLocalChat(server.Chat).Personas = gateway.NewPersonaRegistry(gateway.DefaultPersonas())
 	saveWebSession(t, sessions, "web-1")
 
 	post := func(body string) *httptest.ResponseRecorder {
@@ -856,7 +848,7 @@ func TestChatStreamReportsUndeliverableLocalFile(t *testing.T) {
 	}
 
 	server, sessions := chatTestServer(t)
-	server.Chat.Router.LLMStream = stream
+	testLocalChat(server.Chat).Router.LLMStream = stream
 	saveWebSession(t, sessions, "web-1")
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/chat/stream",
@@ -888,7 +880,7 @@ func TestChatStreamReportsUndeliverableLocalFile(t *testing.T) {
 func TestChatStreamCarriesCurrentPage(t *testing.T) {
 	server, sessions := chatTestServer(t)
 	var got gateway.Message
-	server.Chat.Router.LLMStream = func(_ context.Context, msg gateway.Message, stream gateway.TurnStream) (string, error) {
+	testLocalChat(server.Chat).Router.LLMStream = func(_ context.Context, msg gateway.Message, stream gateway.TurnStream) (string, error) {
 		got = msg
 		stream.Delta("on it")
 		return "on it", nil
@@ -930,7 +922,7 @@ func TestChatStreamEmitsNavigateChip(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			server, sessions := chatTestServer(t)
-			server.Chat.Router.LLMStream = stream
+			testLocalChat(server.Chat).Router.LLMStream = stream
 			server.Cfg = tc.cfg
 			saveWebSession(t, sessions, "web-1")
 

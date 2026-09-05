@@ -85,7 +85,7 @@ func TestHandleVersionComposesCheckAndRunningVersions(t *testing.T) {
 		{ID: "agent", Label: "Runtime", Installed: "1.0.0", InstallType: "container", Reference: "img@sha256:abc"},
 	}}}
 	server := &Server{
-		Chat:            &ChatService{Router: gateway.NewRouter(chatStatusStub{}, nil, "web"), Sessions: sessions, Updates: updates},
+		Chat:            testChatService(gateway.NewRouter(chatStatusStub{}, nil, "web"), sessions, nil, nil, nil, updates, nil),
 		RunningVersions: func() map[string]string { return map[string]string{"daemon": "1.0.0"} },
 	}
 
@@ -130,7 +130,7 @@ func TestHandleVersionTreatsPresentButEmptyRunningVersionAsUnobserved(t *testing
 		{ID: "agent", Label: "Runtime", Installed: "1.0.0"},
 	}}}
 	server := &Server{
-		Chat:            &ChatService{Router: gateway.NewRouter(chatStatusStub{}, nil, "web"), Sessions: sessions, Updates: updates},
+		Chat:            testChatService(gateway.NewRouter(chatStatusStub{}, nil, "web"), sessions, nil, nil, nil, updates, nil),
 		RunningVersions: func() map[string]string { return map[string]string{"agent": ""} },
 	}
 

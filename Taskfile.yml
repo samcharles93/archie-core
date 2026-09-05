@@ -15,6 +15,26 @@ tasks:
       - gofumpt -w .
       - go fix ./...
 
+  proto:install:
+    desc: Install the pinned Buf and protobuf Go generators
+    cmds:
+      - bash tools/proto.sh install
+
+  proto:generate:
+    desc: Generate and format committed grpc-go service contracts
+    cmds:
+      - bash tools/proto.sh generate
+
+  proto:lint:
+    desc: Lint protobuf contracts and check compatibility with main
+    cmds:
+      - bash tools/proto.sh lint
+
+  proto:check:
+    desc: Regenerate contracts and reject uncommitted generated differences
+    cmds:
+      - bash tools/proto.sh check
+
   vet:
     desc: Run go vet
     cmds:
@@ -144,10 +164,12 @@ tasks:
       - go test ./... -count=1
 
   check:
-    desc: "Full quality gate: fmt, go fix, vet, lint, build, test, ui tests (matches [[repos.gate]] in config.toml)"
+    desc: "Full quality gate: fmt, go fix, proto, vet, lint, build, test, ui tests"
     cmds:
       - task: fmt
       - go fix ./...
+      - task: proto:lint
+      - task: proto:check
       - task: vet
       - task: lint
       - task: build

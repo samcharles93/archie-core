@@ -120,8 +120,8 @@ type Server struct {
 	// an empty curator list rather than failing the dashboard.
 	Curators *curator.Registry
 
-	// Chat exposes the same gateway router used by the conversational
-	// channels. Optional: the dashboard simply omits chat when it is nil.
+	// Chat exposes the Gateway's wire-safe conversational contract. Optional:
+	// the dashboard simply omits chat when it is nil.
 	Chat *ChatService
 
 	// Health runs the operator readiness probes served by /health/detailed.

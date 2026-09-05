@@ -555,11 +555,14 @@ func (b *boot) setupLLMAndChat(ctx context.Context) {
 	b.webRouter.LLM, b.webRouter.LLMStream = makeChatLLMResponder(ctx, "web", webSetup, b.chatSessionStore, b.webRouter)
 	b.webRouter.Titles = newChatTitleGenerator(webSetup)
 	b.webRouter.Log = log
-	b.web.Chat = &webui.ChatService{
+	localChat := &gateway.LocalChatAdapter{
 		Router: b.webRouter, Sessions: b.chatSessionStore,
 		Turns:  gateway.NewTurns(log),
 		Models: b.chatModels, Personas: b.personas,
 	}
+	contract, closeContract := b.chatContract(cfg.Services.Gateway, localChat)
+	b.addCleanup(closeContract)
+	b.web.Chat = &webui.ChatService{Contract: contract}
 	if b.updateService != nil {
 		b.web.Chat.Updates = b.updateService
 	}
