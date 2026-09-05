@@ -26,6 +26,9 @@ func minimalValidConfig() config.Config {
 		Containers: config.ContainerConfig{
 			Image: "ghcr.io/samcharles93/archie-agent:latest",
 		},
+		Services: config.Services{
+			Gateway: config.ServiceConnection{Target: "127.0.0.1:8585"},
+		},
 	}
 }
 

@@ -15,6 +15,26 @@ tasks:
       - gofumpt -w .
       - go fix ./...
 
+  proto:install:
+    desc: Install the pinned Buf and protobuf Go generators
+    cmds:
+      - bash tools/proto.sh install
+
+  proto:generate:
+    desc: Generate and format committed grpc-go service contracts
+    cmds:
+      - bash tools/proto.sh generate
+
+  proto:lint:
+    desc: Lint protobuf contracts and check compatibility with main
+    cmds:
+      - bash tools/proto.sh lint
+
+  proto:check:
+    desc: Regenerate contracts and reject uncommitted generated differences
+    cmds:
+      - bash tools/proto.sh check
+
   vet:
     desc: Run go vet
     cmds:
@@ -69,24 +89,31 @@ tasks:
       - npm test
 
   dev:
-    desc: "Develop: archied live-reload + Vite HMR together. Open http://localhost:5173"
+    desc: "Develop: archied live-reload + archie-gateway + Vite HMR together. Open http://localhost:5173"
     summary: |
-      Runs both halves of the dev loop in one terminal:
+      Runs the dev loop in one terminal:
 
-        * air        rebuilds and restarts archied on Go changes
-        * vite       serves the dashboard with hot reload on :5173,
-                     proxying /api and /events through to archied on :8484
+        * air             rebuilds and restarts archied on Go changes
+        * archie-gateway  serves ChatContract on 127.0.0.1:8585 (archied
+                          dials it for chat; it does not embed a gateway)
+        * vite            serves the dashboard with hot reload on :5173,
+                          proxying /api and /events through to archied on :8484
 
       Open http://localhost:5173 -- not :8484. The Vite server is the one with
       hot reload; :8484 serves the last built dist/ and will look stale.
 
-      Ctrl-C stops both.
-    deps: [dev:daemon, dev:ui]
+      Ctrl-C stops all three.
+    deps: [dev:daemon, dev:gateway, dev:ui]
 
   dev:daemon:
     desc: archied only, live-reloading via air (prefer `task dev`)
     cmds:
       - air
+
+  dev:gateway:
+    desc: archie-gateway only, no live-reload (prefer `task dev`)
+    cmds:
+      - go run ./cmd/archie-gateway
 
   dev:ui:
     desc: Vite dev server only, expects archied already running (prefer `task dev`)
@@ -115,7 +142,7 @@ tasks:
       - go run ./cmd/archied -config-overlay ~/.config/archie/mobile.toml
 
   build:
-    desc: Build archied and archie-agent binaries
+    desc: Build archie services and agent binaries
     # Version stamping used to live only in Dockerfile.archied, so any build
     # from source  --  including a host deployment  --  reported "dev" for
     # both components and /version was useless there. Derive the same
@@ -133,9 +160,11 @@ tasks:
       - go.sum
     generates:
       - "{{.BIN_DIR}}/archied"
+      - "{{.BIN_DIR}}/archie-gateway"
       - "{{.BIN_DIR}}/archie-agent"
     cmds:
       - go build -ldflags "-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion={{.GATEWAY_VERSION}} -X github.com/samcharles93/archie-core/internal/app/archied.runtimeVersion={{.RUNTIME_VERSION}} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" -o {{.BIN_DIR}}/archied ./cmd/archied
+      - go build -ldflags "-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion={{.GATEWAY_VERSION}} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" -o {{.BIN_DIR}}/archie-gateway ./cmd/archie-gateway
       - go build -ldflags "-X github.com/samcharles93/archie-core/internal/app/agentworker.version={{.RUNTIME_VERSION}} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" -o {{.BIN_DIR}}/archie-agent ./cmd/archie-agent
 
   test:
@@ -144,10 +173,12 @@ tasks:
       - go test ./... -count=1
 
   check:
-    desc: "Full quality gate: fmt, go fix, vet, lint, build, test, ui tests (matches [[repos.gate]] in config.toml)"
+    desc: "Full quality gate: fmt, go fix, proto, vet, lint, build, test, ui tests"
     cmds:
       - task: fmt
       - go fix ./...
+      - task: proto:lint
+      - task: proto:check
       - task: vet
       - task: lint
       - task: build

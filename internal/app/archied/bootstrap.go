@@ -23,7 +23,6 @@ import (
 
 	"github.com/samcharles93/ai-sdk/runtime"
 
-	"github.com/samcharles93/archie-core/internal/agentexec"
 	channelruntime "github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/channels/email"
 	"github.com/samcharles93/archie-core/internal/channels/webhook"
@@ -48,6 +47,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
 	"github.com/samcharles93/archie-core/internal/infrastructure/sessioncurator"
 	"github.com/samcharles93/archie-core/internal/infrastructure/skillcurator"
+	"github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/memory"
 	"github.com/samcharles93/archie-core/internal/plugin"
@@ -128,7 +128,6 @@ type boot struct {
 	chatController      *gateway.StoreTaskController
 	defaultChatIdentity string
 	updateService       *releaseupdate.Service
-	webRouter           *gateway.Router
 
 	startGateways    []func()
 	capabilityHost   *plugin.Host
@@ -273,6 +272,12 @@ func (b *boot) openStores(ctx context.Context) error {
 			log.Error("close store", "err", err)
 		}
 	})
+	// The conversation store is Gateway-owned data, but Phase 1 keeps the
+	// daemon's own Telegram/email routers and the session-memory curator
+	// reading the same SQLite file directly (Messaging extraction is
+	// Phase 4). Both processes opening the same file is the accepted
+	// Phase 1 shape; remote consumers of the conversation store arrive
+	// when a process that cannot open the file needs it.
 	chatSessionStore, err := makeTelegramSessionStore(cfg) //nolint:contextcheck // the session store opener takes no context by design; its schema init must complete at boot regardless of cancellation
 	if err != nil {
 		log.Error("open conversation store", "path", conversationDBPath(cfg.DBPath), "err", err)
@@ -481,92 +486,23 @@ func (b *boot) setupContainers(ctx context.Context) func() {
 
 // setupLLMAndChat wires the runtime, tool registry, model management,
 // personas and the dashboard's chat service.
-func (b *boot) setupLLMAndChat(ctx context.Context) {
-	cfg, log := b.cfg, b.log
+func (b *boot) setupLLMAndChat() error {
+	cfg := b.cfg
 
-	// ── LLM runtime ──────────────────────────────────────────────────
-	// Created before gateways so the LLMResponder can be wired into the
-	// Telegram router for non-command message processing.
-	providers := executionProviders(cfg)
-	b.llm = agentexec.NewRuntime(providers)
-	b.toolReg = tools.NewRegistry()
-	chatModels := newChatModelManager(cfg.Models, cfg.Chat.Models, b.catalogModels)
-	chatModels.ApplyModelCatalog(b.catalog)
-	b.chatModels = chatModels
+	// Telegram/email keep their own in-process routers rather than going
+	// through ChatContract: their streaming responder is a callback, and
+	// ChatContract's wire-safe interface can't carry one.
+	b.setupChatRuntime(cfg)
 
-	// ── Persona registry ─────────────────────────────────────────────
-	b.personas = gateway.NewPersonaRegistry(gateway.DefaultPersonas())
-
-	profiles, defaultChatIdentity := chatTaskProfiles(cfg)
-	var chatTasks gateway.TaskCreator
-	if len(profiles) > 0 {
-		chatTasks = gateway.NewStoreTaskCreatorForProfiles(
-			chatTaskWriterAdapter{enqueue: b.st.EnqueueChatTask},
-			profiles,
-		)
+	contract, cleanup, err := composeChatContract(cfg.Services.Gateway)
+	if err != nil {
+		return err
 	}
-	b.chatTasks = chatTasks
-	b.defaultChatIdentity = defaultChatIdentity
-	chatController := gateway.NewStoreTaskController(chatTaskControllerAdapter{
-		taskByID:   b.st.TaskByID,
-		requeue:    b.st.Requeue,
-		transition: b.st.Transition,
-	})
-	b.chatController = chatController
-	b.updateService = makeUpdateService(telegramSetup{Cfg: config.NewHolder(cfg)})
+	b.addCleanup(cleanup)
+	b.web.Chat = &webui.ChatService{Contract: contract, Updates: b.updateService}
 	b.web.WorkRequests = b.chatTasks
-
-	// The dashboard is another gateway, not a second chat implementation. It
-	// shares the router, session history, model selection, personas and LLM
-	// responder with Telegram while using a stable browser channel id.
-	b.webRouter = gateway.NewRouter(b.st, nil, "web")
-	b.webRouter.Version = fmt.Sprintf("Archie\nGateway: %s\nRuntime: %s", gatewayVersion, runtimeVersion)
-	if cfg.Chat.Telegram.Token != (secret.SecretRef{}) || cfg.Chat.Telegram.TokenEnv != "" {
-		b.webRouter.Restart = func(context.Context) error {
-			if b.restartTelegram == nil {
-				return fmt.Errorf("telegram gateway is not ready")
-			}
-			return b.restartTelegram()
-		}
-	}
-	b.webRouter.Models = b.chatModels
-	if b.updateService != nil {
-		b.webRouter.Updates = b.updateService
-	}
-	b.webRouter.Personas = b.personas
-	b.webRouter.InitSessions(b.chatSessionStore)
-	configureTaskCommands(b.webRouter, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.st.Tasks}, b.defaultChatIdentity)
-	webSetup := telegramSetup{
-		Cfg: config.NewHolder(cfg), St: b.st, LLM: b.llm, ChatModels: b.chatModels, ToolReg: b.toolReg,
-		Personas: b.personas, ChatTasks: b.chatTasks, ChatController: b.chatController,
-		ChatTaskLister: chatTaskListerAdapter{tasks: b.st.Tasks},
-		ChatTaskLogs: chatTaskLogReaderAdapter{
-			tasks:    b.st.TaskByID,
-			taskLogs: b.taskLogs,
-		},
-		ChatTaskActor: chatTaskActorAdapter{
-			tasks:   b.st.TaskByID,
-			handler: b.web.Handler(),
-			token:   func() string { return b.web.Token },
-		},
-		DefaultChatIdentity: b.defaultChatIdentity, SessionStore: b.chatSessionStore,
-		Bus: b.bus, Log: log, Secrets: b.secrets,
-	}
-	b.webRouter.LLM, b.webRouter.LLMStream = makeChatLLMResponder(ctx, "web", webSetup, b.chatSessionStore, b.webRouter)
-	b.webRouter.Titles = newChatTitleGenerator(webSetup)
-	b.webRouter.Log = log
-	b.web.Chat = &webui.ChatService{
-		Router: b.webRouter, Sessions: b.chatSessionStore,
-		Turns:  gateway.NewTurns(log),
-		Models: b.chatModels, Personas: b.personas,
-	}
-	if b.updateService != nil {
-		b.web.Chat.Updates = b.updateService
-	}
-
-	// Operator readiness probes: wired once the chat surface exists so the
-	// gateway probe can read the real session store and model manager.
 	b.setupReadinessProbes()
+	return nil
 }
 
 // setupGateways assembles the Telegram, email and webhook gateways. It
@@ -586,9 +522,12 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 			taskLogs: b.taskLogs,
 		},
 		ChatTaskActor: chatTaskActorAdapter{
-			tasks:   b.st.TaskByID,
-			handler: b.web.Handler(),
-			token:   func() string { return b.web.Token },
+			contract: func() gateway.ChatContract {
+				if b.web != nil && b.web.Chat != nil {
+					return b.web.Chat.Contract
+				}
+				return nil
+			}(),
 		},
 		DefaultChatIdentity: b.defaultChatIdentity, SessionStore: b.chatSessionStore, Updates: b.updateService,
 		Secrets:         b.secrets,
@@ -888,6 +827,17 @@ func (b *boot) registerNATSRPC() error {
 		return err
 	}
 	b.addCleanup(unsubscribeAgentEvents)
+
+	// The standalone Gateway forwards operator task actions to the daemon
+	// over NATS. The daemon owns execution cancellation, retry policy,
+	// forge closure and event persistence; the responder applies the same
+	// taskactions.Service the dashboard uses.
+	unsubscribeTaskActions, err := taskactions.Register(coreConn, b.taskActions(), log)
+	if err != nil {
+		log.Error("gateway task action register failed", "err", err)
+		return err
+	}
+	b.addCleanup(unsubscribeTaskActions)
 	return nil
 }
 
@@ -914,7 +864,9 @@ func (b *boot) setupMemory() error {
 	b.memManager = memManager
 	// The dashboard is built before memory exists, so it is wired in here
 	// rather than at construction.
-	b.web.Memory = memManager
+	if b.web != nil {
+		b.web.Memory = memManager
+	}
 
 	if err := memManager.Initialize("daemon"); err != nil {
 		log.Warn("memory manager initialize", "err", err)

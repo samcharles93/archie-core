@@ -2,15 +2,46 @@ package archied
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskstate"
-	"github.com/samcharles93/archie-core/internal/webui"
 )
+
+// testTaskActor formats taskactions.Service's result the same way the real
+// NATS actor (infrastructure/taskactions.Client) does, so this test exercises
+// the shared service through the same chatTaskActorAdapter → LocalChatAdapter
+// → ChatTaskActor chain production traffic uses.
+type testTaskActor struct{ b *boot }
+
+func (a testTaskActor) ApplyChatTaskAction(
+	ctx context.Context, identity string, taskID int64, action taskstate.Action,
+) (gateway.TaskActionResult, error) {
+	if err := a.b.taskActions().Apply(ctx, &identity, taskID, action); err != nil {
+		return gateway.TaskActionResult{}, err
+	}
+	return gateway.TaskActionResult{
+		TaskID:  taskID,
+		Action:  string(action),
+		Message: fmt.Sprintf("Applied %s to task %d.", action, taskID),
+	}, nil
+}
+
+func newChatTaskActorForTest(t *testing.T, st store.TaskStore, cfg config.Config) chatTaskActorAdapter {
+	t.Helper()
+	b := &boot{
+		st:  st,
+		cfg: cfg,
+		log: slog.Default(),
+	}
+	return chatTaskActorAdapter{contract: &gateway.LocalChatAdapter{TaskActor: testTaskActor{b}}}
+}
 
 func TestChatTaskActorAdapterCrossIdentityRefused(t *testing.T) {
 	ctx := context.Background()
@@ -28,12 +59,7 @@ func TestChatTaskActorAdapterCrossIdentityRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	srv := &webui.Server{Store: st, Cfg: config.NewHolder(config.Config{})}
-	adapter := chatTaskActorAdapter{
-		tasks:   st.TaskByID,
-		handler: srv.Handler(),
-		token:   func() string { return srv.Token },
-	}
+	adapter := newChatTaskActorForTest(t, st, config.Config{})
 
 	tests := []struct {
 		name          string
@@ -88,12 +114,7 @@ func TestChatTaskActorAdapterRefusesDisallowedStateAction(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 
-	srv := &webui.Server{Store: st, Cfg: config.NewHolder(config.Config{})}
-	adapter := chatTaskActorAdapter{
-		tasks:   st.TaskByID,
-		handler: srv.Handler(),
-		token:   func() string { return srv.Token },
-	}
+	adapter := newChatTaskActorForTest(t, st, config.Config{})
 
 	tests := []struct {
 		name          string
@@ -170,12 +191,7 @@ func TestChatTaskActorAdapterTaskNotFound(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 
-	srv := &webui.Server{Store: st, Cfg: config.NewHolder(config.Config{})}
-	adapter := chatTaskActorAdapter{
-		tasks:   st.TaskByID,
-		handler: srv.Handler(),
-		token:   func() string { return srv.Token },
-	}
+	adapter := newChatTaskActorForTest(t, st, config.Config{})
 
 	_, err = adapter.ApplyChatTaskAction(ctx, "archie", 999999, taskstate.ActionAbandon)
 	if err == nil {
@@ -247,12 +263,7 @@ func TestChatTaskActorAdapterAppliesActionsToStore(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = st.Close() })
 
-			srv := &webui.Server{Store: st, Cfg: config.NewHolder(config.Config{MaxRetries: 3})}
-			adapter := chatTaskActorAdapter{
-				tasks:   st.TaskByID,
-				handler: srv.Handler(),
-				token:   func() string { return srv.Token },
-			}
+			adapter := newChatTaskActorForTest(t, st, config.Config{MaxRetries: 3})
 
 			task, err := st.EnqueueChatTask(ctx, "acme", "widget", "actionable task", "", "", "archie")
 			if err != nil {
@@ -295,46 +306,12 @@ func TestChatTaskActorAdapterAppliesActionsToStore(t *testing.T) {
 	}
 }
 
-func TestChatTaskActorAdapterWithTokenAuth(t *testing.T) {
+func TestChatTaskActorAdapterNilContract(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "tasks.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
+	adapter := chatTaskActorAdapter{contract: nil}
 
-	srv := &webui.Server{
-		Store: st,
-		Cfg:   config.NewHolder(config.Config{MaxRetries: 3}),
-		Token: "secret-token-12345",
-	}
-	adapter := chatTaskActorAdapter{
-		tasks:   st.TaskByID,
-		handler: srv.Handler(),
-		token:   func() string { return srv.Token },
-	}
-
-	task, err := st.EnqueueChatTask(ctx, "acme", "widget", "auth task", "", "", "archie")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := st.Transition(ctx, task.ID, store.StatusQueued, store.StatusParked, "park"); err != nil {
-		t.Fatal(err)
-	}
-
-	result, err := adapter.ApplyChatTaskAction(ctx, "archie", task.ID, taskstate.ActionAbandon)
-	if err != nil {
-		t.Fatalf("ApplyChatTaskAction with token auth failed: %v", err)
-	}
-	if result.TaskID != task.ID {
-		t.Errorf("result.TaskID = %d, want %d", result.TaskID, task.ID)
-	}
-
-	current, err := st.TaskByID(ctx, task.ID)
-	if err != nil || current == nil {
-		t.Fatalf("TaskByID = (%+v, %v)", current, err)
-	}
-	if current.Status != store.StatusClosedWontDo {
-		t.Errorf("status = %q, want %q", current.Status, store.StatusClosedWontDo)
+	_, err := adapter.ApplyChatTaskAction(ctx, "archie", 1, taskstate.ActionAbandon)
+	if err == nil {
+		t.Fatal("expected error for nil contract, got nil")
 	}
 }
