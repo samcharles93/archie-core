@@ -112,11 +112,7 @@ func (c *Curator) reviewOne(ctx context.Context, name string) ([]curator.Action,
 		// batch on a non-nil error, which would stop reviewing every
 		// other skill over one bad file (see skillcurator_test.go's
 		// "must not abort review of the others").
-		return []curator.Action{{ //nolint:nilerr
-			Type:   ActionInvalid,
-			Detail: name,
-			Reason: fail.Error(),
-		}}, nil
+		return invalidFinding(name, fail)
 	}
 
 	if missing := missingField(fm); missing != "" {
@@ -138,6 +134,16 @@ func (c *Curator) reviewOne(ctx context.Context, name string) ([]curator.Action,
 		Type:   ActionNormalized,
 		Detail: name,
 		Reason: "trailing whitespace or missing final newline",
+	}}, nil
+}
+
+// invalidFinding converts a parse error into a per-skill action. Parse
+// failures are expected findings, so they must not abort the rest of Pass.
+func invalidFinding(name string, parseErr error) ([]curator.Action, error) {
+	return []curator.Action{{
+		Type:   ActionInvalid,
+		Detail: name,
+		Reason: parseErr.Error(),
 	}}, nil
 }
 
