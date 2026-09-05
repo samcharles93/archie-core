@@ -481,7 +481,7 @@ func (b *boot) setupContainers(ctx context.Context) func() {
 
 // setupLLMAndChat wires the runtime, tool registry, model management,
 // personas and the dashboard's chat service.
-func (b *boot) setupLLMAndChat(ctx context.Context) {
+func (b *boot) setupLLMAndChat(ctx context.Context) { //nolint:funlen // composition root keeps the Gateway wiring in one lifecycle phase
 	cfg, log := b.cfg, b.log
 
 	// ── LLM runtime ──────────────────────────────────────────────────
@@ -515,6 +515,19 @@ func (b *boot) setupLLMAndChat(ctx context.Context) {
 	b.chatController = chatController
 	b.updateService = makeUpdateService(telegramSetup{Cfg: config.NewHolder(cfg)})
 	b.web.WorkRequests = b.chatTasks
+	if cfg.Services.Gateway.Mode == "remote" {
+		// The daemon is a Gateway consumer in this mode. The Gateway Service
+		// owns Router, session SQLite, model selection and persona state; keep
+		// those implementation objects out of the daemon's web composition.
+		contract, closeContract := b.chatContract(cfg.Services.Gateway, nil)
+		b.addCleanup(closeContract)
+		b.web.Chat = &webui.ChatService{Contract: contract}
+		if b.updateService != nil {
+			b.web.Chat.Updates = b.updateService
+		}
+		b.setupReadinessProbes()
+		return
+	}
 
 	// The dashboard is another gateway, not a second chat implementation. It
 	// shares the router, session history, model selection, personas and LLM
@@ -545,9 +558,14 @@ func (b *boot) setupLLMAndChat(ctx context.Context) {
 			taskLogs: b.taskLogs,
 		},
 		ChatTaskActor: chatTaskActorAdapter{
-			tasks:   b.st.TaskByID,
-			handler: b.web.Handler(),
-			token:   func() string { return b.web.Token },
+			tasks: b.st.TaskByID,
+			contract: func() gateway.ChatContract {
+				if b.cfg.Services.Gateway.Mode == "remote" && b.web != nil && b.web.Chat != nil {
+					return b.web.Chat.Contract
+				}
+				return nil
+			}(),
+			token: func() string { return b.web.Token },
 		},
 		DefaultChatIdentity: b.defaultChatIdentity, SessionStore: b.chatSessionStore,
 		Bus: b.bus, Log: log, Secrets: b.secrets,
@@ -559,6 +577,7 @@ func (b *boot) setupLLMAndChat(ctx context.Context) {
 		Router: b.webRouter, Sessions: b.chatSessionStore,
 		Turns:  gateway.NewTurns(log),
 		Models: b.chatModels, Personas: b.personas,
+		TaskActor: chatTaskActorAdapter{tasks: b.st.TaskByID, apply: applyGatewayTaskAction(b.st)},
 	}
 	contract, closeContract := b.chatContract(cfg.Services.Gateway, localChat)
 	b.addCleanup(closeContract)
@@ -589,9 +608,14 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 			taskLogs: b.taskLogs,
 		},
 		ChatTaskActor: chatTaskActorAdapter{
-			tasks:   b.st.TaskByID,
-			handler: b.web.Handler(),
-			token:   func() string { return b.web.Token },
+			tasks: b.st.TaskByID,
+			contract: func() gateway.ChatContract {
+				if b.cfg.Services.Gateway.Mode == "remote" && b.web != nil && b.web.Chat != nil {
+					return b.web.Chat.Contract
+				}
+				return nil
+			}(),
+			token: func() string { return b.web.Token },
 		},
 		DefaultChatIdentity: b.defaultChatIdentity, SessionStore: b.chatSessionStore, Updates: b.updateService,
 		Secrets:         b.secrets,

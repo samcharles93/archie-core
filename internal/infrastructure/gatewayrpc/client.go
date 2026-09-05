@@ -10,6 +10,7 @@ import (
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/gateway/v1"
 	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
 var _ gateway.ChatContract = (*Client)(nil)
@@ -74,6 +75,14 @@ func (c *Client) SetPersona(ctx context.Context, id, name string) (bool, error) 
 		return false, err
 	}
 	return v.Found, nil
+}
+
+func (c *Client) ApplyTaskAction(ctx context.Context, identity string, taskID int64, action taskstate.Action) (gateway.TaskActionResult, error) {
+	v, err := c.client.ApplyTaskAction(ctx, &pb.ApplyTaskActionRequest{Identity: identity, TaskId: taskID, Action: string(action)})
+	if err != nil {
+		return gateway.TaskActionResult{}, err
+	}
+	return gateway.TaskActionResult{TaskID: v.TaskId, Action: v.Action, Message: v.Message}, nil
 }
 
 func (c *Client) Stream(ctx context.Context, msg gateway.Message) (<-chan gateway.ChatEvent, error) {

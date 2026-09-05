@@ -4,7 +4,7 @@ This runbook describes how to manage `archied` as a background user service on L
 
 ---
 
-## 1. Unit File (`~/.config/systemd/user/archied.service`)
+## 1. Unit Files (`~/.config/systemd/user/archied.service` and `archie-gateway.service`)
 
 Create the systemd user service file at `~/.config/systemd/user/archied.service`:
 
@@ -18,6 +18,24 @@ Type=simple
 ExecStart=%h/.local/bin/archied -config %h/.config/archie/config.toml
 EnvironmentFile=-%h/.config/archie/env
 ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target
+```
+
+Create the Gateway Service unit beside it:
+
+```ini
+[Unit]
+Description=Archie Gateway Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/archie-gateway -config %h/.config/archie/config.toml -listen 127.0.0.1:8585
+EnvironmentFile=-%h/.config/archie/env
 Restart=on-failure
 RestartSec=5s
 
@@ -52,7 +70,7 @@ systemctl --user daemon-reload
 
 Enable and start the service immediately:
 ```bash
-systemctl --user enable --now archied
+systemctl --user enable --now archie-gateway archied
 ```
 
 Check service status:
