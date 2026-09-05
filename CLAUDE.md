@@ -236,15 +236,22 @@ bd remember            # Persist cross-session architectural facts
 - Run `bd prime` to inspect full engine context.
 - Use `bd remember` for knowledge retention. Do not write to root `MEMORY.md`
   files.
-- Issues live in a local Dolt DB; `.beads/issues.jsonl` is an export.
+- Issues live in a local Dolt DB, synced to its own `git+` remote via
+  `bd dolt push`/`bd dolt pull`. `.beads/issues.jsonl` and
+  `.beads/interactions.jsonl` are local-only export/audit files
+  (`.gitignore`d, `export.auto: false`) -- never `git add` them and never
+  create a commit whose only content is beads bookkeeping. Bead state moves
+  through Dolt, not through git commits on this repo.
 
 ## Session Completion Protocol
 
 1. **Log remaining work:** File new items via `bd` for identified debt or
    follow-up tasks.
 2. **Run gate:** Verify `task check` passes completely clean.
-3. **Update tracker:** Close finished issues via `bd close <id>`.
-4. **Commit:**
+3. **Update tracker:** Close finished issues via `bd close <id>`. This alone
+   is not commit-worthy -- do not stage or commit `.beads/` for it.
+4. **Commit:** Only for actual code/doc changes, scoped to the files that
+   changed.
 
    ```bash
    git add <scoped-files>
