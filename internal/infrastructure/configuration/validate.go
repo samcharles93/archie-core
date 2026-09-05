@@ -59,6 +59,9 @@ func Validate(cfg *config.Config) error {
 // validate reports the first problem that would stop the daemon running.
 // It does not modify cfg -- run applyDefaults first.
 func validate(cfg *config.Config) error {
+	if err := validateGatewayService(cfg.Services.Gateway); err != nil {
+		return err
+	}
 	if err := validateDispatch(cfg); err != nil {
 		return err
 	}
@@ -91,6 +94,22 @@ func validate(cfg *config.Config) error {
 		return err
 	}
 	return validateCapture(cfg)
+}
+
+func validateGatewayService(service config.ServiceConnection) error {
+	switch service.Mode {
+	case "", "inproc":
+		if service.Target != "" {
+			return fmt.Errorf("%w: services.gateway.target requires remote mode", ErrInvalidInput)
+		}
+	case "remote":
+		if strings.TrimSpace(service.Target) == "" {
+			return fmt.Errorf("%w: services.gateway.target is required in remote mode", ErrInvalidInput)
+		}
+	default:
+		return fmt.Errorf("%w: services.gateway.mode must be inproc or remote", ErrInvalidInput)
+	}
+	return nil
 }
 
 // validateImage rejects an enabled hosted provider with no class or no

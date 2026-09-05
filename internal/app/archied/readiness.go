@@ -61,14 +61,14 @@ func channelStates(m *channelruntime.Manager) []readiness.ChannelState {
 // sessionCount returns the number of gateway sessions. An unwired chat
 // surface returns 0 rather than reporting a false failure.
 func sessionCount(ctx context.Context, chat *webui.ChatService) int {
-	if chat == nil || chat.Sessions == nil {
+	if chat == nil || chat.Contract == nil {
 		return 0
 	}
-	sessions, err := chat.Sessions.List(ctx)
+	snapshot, err := chat.Contract.Snapshot(ctx)
 	if err != nil {
 		return 0
 	}
-	return len(sessions)
+	return len(snapshot.Sessions)
 }
 
 // diskProbePath resolves the filesystem the readiness disk probe inspects:

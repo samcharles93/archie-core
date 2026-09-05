@@ -97,8 +97,11 @@ func TestSetupReadinessProbes_WiresEverySubsystem(t *testing.T) {
 			Cfg:      config.NewHolder(cfg),
 			Channels: channelruntime.NewManager([]channelruntime.Descriptor{{ID: "telegram", Name: "Telegram", Configured: true}}),
 			Chat: &webui.ChatService{
-				Sessions: gateway.NewSessionStoreMemory(),
-				Models:   newChatModelManager(map[string]string{"chat": "openai/gpt-4o"}, nil),
+				Contract: &gateway.LocalChatAdapter{
+					Router:   &gateway.Router{},
+					Sessions: gateway.NewSessionStoreMemory(),
+					Models:   newChatModelManager(map[string]string{"chat": "openai/gpt-4o"}, nil),
+				},
 			},
 		},
 		chatModels: newChatModelManager(map[string]string{"chat": "openai/gpt-4o"}, nil),

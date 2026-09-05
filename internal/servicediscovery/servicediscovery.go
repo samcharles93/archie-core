@@ -69,6 +69,8 @@ type Event struct {
 }
 
 // ServiceRegistry resolves and watches the live endpoints of a named service.
+// It models network endpoints only. In-process services do not register here;
+// application composition selects local adapters independently of discovery.
 type ServiceRegistry interface {
 	// Resolve returns the current healthy endpoints for service. It returns
 	// [ErrNotInstalled] if service has never been installed. If service is
