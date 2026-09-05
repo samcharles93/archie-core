@@ -39,10 +39,9 @@ func newChatTurnModel(
 
 func (m *chatTurnModel) Prepare(
 	ctx context.Context,
-	model string,
-	extra []tools.ToolEntry,
+	req gateway.TurnPrepareContext,
 ) (gateway.PreparedTurnModel, error) {
-	options, err := chatGenerateOptions(ctx, nil, m.registry, m.maxSteps, m.limits, extra)
+	options, err := chatGenerateOptions(ctx, nil, m.registry, m.maxSteps, m.limits, req.Extra, req.ContextWindow)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +51,7 @@ func (m *chatTurnModel) Prepare(
 	}
 	return &preparedChatTurnModel{
 		llm:        m.llm,
-		model:      model,
+		model:      req.Model,
 		options:    options,
 		toolInfo:   toolSummaries(options.Tools),
 		toolTokens: gateway.EstimateTokens(string(toolSchema)),

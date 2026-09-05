@@ -228,6 +228,33 @@ func BridgeTools(reg *Registry) []ToolEntry {
 	}
 }
 
+// ComposeForTurn builds a per-turn Registry that combines the base registry's
+// tools, the per-turn extra tools, and the three bridge tools. The returned
+// registry is detached from the process-wide registry: extra tools are
+// per-gateway identity-bound (see agentexec.BuildToolSetFrom) and must never be
+// registered globally, so composing them into a turn-local registry is the only
+// way the bridge handlers (which enumerate reg.All) can discover and invoke
+// them.
+func ComposeForTurn(reg *Registry, extra []ToolEntry) (*Registry, error) {
+	composed := NewRegistry()
+	if reg != nil {
+		for _, e := range reg.All() {
+			if err := composed.Register(e); err != nil {
+				return nil, err
+			}
+		}
+	}
+	for _, e := range extra {
+		if err := composed.Register(e); err != nil {
+			return nil, err
+		}
+	}
+	if err := composed.RegisterBatch(BridgeTools(composed)); err != nil {
+		return nil, err
+	}
+	return composed, nil
+}
+
 // ---------------------------------------------------------------------------
 // 17.15  --  Context-pressure threshold gating
 // ---------------------------------------------------------------------------
@@ -333,7 +360,17 @@ func (g *ContextPressureGate) FilterTools(reg *Registry) []ToolEntry {
 	all := reg.All()
 
 	if mode == DisclosureFull {
-		return all
+		// Full disclosure serves the real arsenal directly. Bridge tools are
+		// the on-demand fallback -- they are only exposed under context
+		// pressure (bridge mode). Leaking them into full mode would inflate
+		// the toolset the model must carry for no benefit.
+		out := make([]ToolEntry, 0, len(all))
+		for _, e := range all {
+			if !IsBridgeTool(e.Name) {
+				out = append(out, e)
+			}
+		}
+		return out
 	}
 
 	// Bridge mode: only bridge tools + always-visible tools.

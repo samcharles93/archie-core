@@ -299,6 +299,58 @@ func TestBridgeToolsRegistration(t *testing.T) {
 	}
 }
 
+func TestComposeForTurnMergesBaseExtrasAndBridge(t *testing.T) {
+	base := NewRegistry()
+	_ = base.Register(ToolEntry{Name: "memory_search", Toolset: "memory", Handler: noopHandler, Description: "Search memory"})
+	extra := []ToolEntry{
+		{Name: "session_resume", Toolset: "session", Handler: noopHandler, Description: "Resume a session"},
+	}
+
+	composed, err := ComposeForTurn(base, extra)
+	if err != nil {
+		t.Fatalf("ComposeForTurn: %v", err)
+	}
+
+	names := make(map[string]bool)
+	for _, e := range composed.All() {
+		names[e.Name] = true
+	}
+
+	if !names["memory_search"] {
+		t.Error("composed registry missing base tool memory_search")
+	}
+	if !names["session_resume"] {
+		t.Error("composed registry missing extra tool session_resume")
+	}
+	for _, bridge := range []string{BridgeToolSearch, BridgeToolDescribe, BridgeToolCall} {
+		if !names[bridge] {
+			t.Errorf("composed registry missing bridge tool %q", bridge)
+		}
+	}
+
+	// The bridge handlers must be wired to the composed registry so they can
+	// discover both base and extra tools.
+	if _, ok := composed.Get(BridgeToolSearch); !ok {
+		t.Errorf("bridge tool %q not present in composed registry", BridgeToolSearch)
+	}
+}
+
+func TestComposeForTurnDoesNotMutateBaseRegistry(t *testing.T) {
+	base := NewRegistry()
+	_ = base.Register(ToolEntry{Name: "memory_search", Handler: noopHandler, Description: "Search memory"})
+
+	if _, err := ComposeForTurn(base, nil); err != nil {
+		t.Fatalf("ComposeForTurn: %v", err)
+	}
+
+	if _, ok := base.Get(BridgeToolSearch); ok {
+		t.Error("ComposeForTurn must not register bridge tools into the base registry")
+	}
+	if got := len(base.All()); got != 1 {
+		t.Errorf("base registry mutated: got %d tools, want 1", got)
+	}
+}
+
 func TestNewContextPressureGate(t *testing.T) {
 	g := NewContextPressureGate(100_000)
 

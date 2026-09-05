@@ -12,11 +12,20 @@ import (
 	"github.com/samcharles93/archie-core/internal/tools"
 )
 
+// TurnPrepareContext carries the per-turn inputs the model seam needs to build
+// a generation plan: the active model, the per-turn extra (identity-bound)
+// tools, and the model's context window used for progressive tool disclosure.
+type TurnPrepareContext struct {
+	Model         string
+	Extra         []tools.ToolEntry
+	ContextWindow int
+}
+
 // TurnModel prepares provider-specific tools and executes one completed chat
 // generation. The gateway owns the conversation lifecycle; the composition
 // root implements this seam over the selected model runtime.
 type TurnModel interface {
-	Prepare(ctx context.Context, model string, extra []tools.ToolEntry) (PreparedTurnModel, error)
+	Prepare(ctx context.Context, req TurnPrepareContext) (PreparedTurnModel, error)
 }
 
 // PreparedTurnModel is a provider-specific generation plan. Preparation is
@@ -277,7 +286,15 @@ func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, msg Mess
 	// UI only: a non-web channel has no dashboard to point at.
 	extraTools = append(extraTools, PageIndexTools(r.Channel)...)
 	modelName := r.Models.ActiveModel()
-	prepared, err := r.Model.Prepare(ctx, modelName, extraTools)
+	modelDetails := ModelDetails{}
+	if detailed, ok := r.Models.(DetailedModelManager); ok {
+		modelDetails, _ = detailed.ModelDetails(modelName)
+	}
+	prepared, err := r.Model.Prepare(ctx, TurnPrepareContext{
+		Model:         modelName,
+		Extra:         extraTools,
+		ContextWindow: modelDetails.ContextWindow,
+	})
 	if err != nil {
 		return preparedTurn{}, fmt.Errorf("build chat model: %w", err)
 	}
@@ -297,10 +314,6 @@ func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, msg Mess
 		Now:       time.Now(),
 		Page:      msg.Page,
 	})
-	modelDetails := ModelDetails{}
-	if detailed, ok := r.Models.(DetailedModelManager); ok {
-		modelDetails, _ = detailed.ModelDetails(modelName)
-	}
 	compression, err := CompressionConfigForModel(
 		modelDetails,
 		EstimateTokens(systemPrompt)+prepared.ToolSchemaTokens(),

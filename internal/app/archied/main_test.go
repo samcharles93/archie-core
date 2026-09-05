@@ -264,7 +264,7 @@ func TestChatGenerateOptionsIncludesToolsAndMultipleSteps(t *testing.T) {
 	}
 	messages := []chat.Message{{Role: chat.RoleUser, Content: "remember this"}}
 
-	options, err := chatGenerateOptions(context.Background(), messages, registry, 0, agentexec.ToolLimits{}, nil)
+	options, err := chatGenerateOptions(context.Background(), messages, registry, 0, agentexec.ToolLimits{}, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +290,7 @@ func TestChatGenerateOptionsReportsInvalidToolSchemas(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := chatGenerateOptions(context.Background(), nil, registry, 0, agentexec.ToolLimits{}, nil); err == nil {
+	if _, err := chatGenerateOptions(context.Background(), nil, registry, 0, agentexec.ToolLimits{}, nil, 0); err == nil {
 		t.Fatal("chatGenerateOptions(context.Background(),) error = nil, want invalid tool schema error")
 	}
 }
@@ -298,8 +298,47 @@ func TestChatGenerateOptionsReportsInvalidToolSchemas(t *testing.T) {
 // TestChatGenerateOptionsHonoursConfiguredMaxSteps keeps the step budget
 // deployment-controlled. A cap that cannot be raised without a rebuild is
 // the situation this replaced.
+func TestChatGenerateOptionsProgressiveDisclosure(t *testing.T) {
+	registry := tools.NewRegistry()
+	if err := registry.Register(tools.ToolEntry{
+		Name:        "big-tool",
+		Description: strings.Repeat("x", 800),
+		Handler:     func(context.Context, map[string]any) (any, error) { return "ok", nil },
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// A tiny context window drives the gate into bridge mode: only the three
+	// bridge tools are disclosed, and the full-schema tool is hidden.
+	options, err := chatGenerateOptions(context.Background(), nil, registry, 0, agentexec.ToolLimits{}, nil, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(options.Tools) != 3 {
+		t.Fatalf("bridge mode Tools = %#v, want the 3 bridge tools", options.Tools)
+	}
+	if _, ok := options.Tools["big-tool"]; ok {
+		t.Error("bridge mode should not disclose the full-schema big-tool")
+	}
+	if _, ok := options.Tools["tool_search"]; !ok {
+		t.Error("bridge mode should disclose tool_search")
+	}
+
+	// A large context window keeps full disclosure: the real tool is present.
+	options, err = chatGenerateOptions(context.Background(), nil, registry, 0, agentexec.ToolLimits{}, nil, 100_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := options.Tools["big-tool"]; !ok {
+		t.Error("full mode should disclose the real tool")
+	}
+	if len(options.Tools) != 1 {
+		t.Errorf("full mode Tools length = %d, want 1 (bridge tools must not leak)", len(options.Tools))
+	}
+}
+
 func TestChatGenerateOptionsHonoursConfiguredMaxSteps(t *testing.T) {
-	options, err := chatGenerateOptions(context.Background(), nil, tools.NewRegistry(), 250, agentexec.ToolLimits{}, nil)
+	options, err := chatGenerateOptions(context.Background(), nil, tools.NewRegistry(), 250, agentexec.ToolLimits{}, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
