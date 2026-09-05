@@ -549,6 +549,10 @@ func (b *boot) setupLLMAndChat(ctx context.Context) {
 	if b.updateService != nil {
 		b.web.Chat.Updates = b.updateService
 	}
+
+	// Operator readiness probes: wired once the chat surface exists so the
+	// gateway probe can read the real session store and model manager.
+	b.setupReadinessProbes()
 }
 
 // setupGateways assembles the Telegram, email and webhook gateways. It
