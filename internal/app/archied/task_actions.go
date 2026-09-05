@@ -7,32 +7,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/gateway"
 	taskactionstore "github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
-	"github.com/samcharles93/archie-core/internal/taskstate"
 )
-
-// taskActionsActor applies operator actions in-process for the daemon's own
-// local gateway. It is the identity-scoping implementation behind the
-// ChatContract's ApplyTaskAction when the daemon is the Gateway (default
-// mode). The standalone Gateway instead forwards over NATS with
-// taskactions.Client; both paths converge on the one taskactions.Service.
-type taskActionsActor struct {
-	b *boot
-}
-
-func (a taskActionsActor) ApplyChatTaskAction(
-	ctx context.Context, identity string, taskID int64, action taskstate.Action,
-) (gateway.TaskActionResult, error) {
-	if err := a.b.taskActions().Apply(ctx, &identity, taskID, action); err != nil {
-		return gateway.TaskActionResult{}, err
-	}
-	return gateway.TaskActionResult{
-		TaskID:  taskID,
-		Action:  string(action),
-		Message: fmt.Sprintf("Applied %s to task %d.", action, taskID),
-	}, nil
-}
 
 // taskActions assembles the daemon-owned operator action service. The daemon
 // retains execution cancellation, retry policy, forge closure and event

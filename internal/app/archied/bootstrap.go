@@ -486,29 +486,15 @@ func (b *boot) setupContainers(ctx context.Context) func() {
 
 // setupLLMAndChat wires the runtime, tool registry, model management,
 // personas and the dashboard's chat service.
-func (b *boot) setupLLMAndChat(ctx context.Context) error {
+func (b *boot) setupLLMAndChat() error {
 	cfg := b.cfg
 
-	// The daemon owns the local gateway in default mode: the modular
-	// monolith keeps serving the ChatContract in-process, with the
-	// standalone archie-gateway binary prepared as a remote alternative
-	// (mode = "remote"). The local and remote adapters both satisfy
-	// gateway.ChatContract; composition picks the transport.
-	var local gateway.ChatContract
-	if cfg.Services.Gateway.Mode != "remote" {
-		// Full local contract: router, sessions, models, personas, task
-		// commands and the LLM responder. The in-process task-actions
-		// actor applies mutations directly to the store the daemon owns
-		// -- no HTTP detour through webui, no NATS hop.
-		local = b.setupGatewayChat(ctx, taskActionsActor{b})
-	} else {
-		// The daemon still runs its own Telegram/email routers in Phase 1,
-		// so the runtime objects survive even though the webui chat goes
-		// over gRPC to the standalone Gateway.
-		b.setupChatRuntime(cfg)
-	}
+	// Telegram/email keep their own in-process routers rather than going
+	// through ChatContract: their streaming responder is a callback, and
+	// ChatContract's wire-safe interface can't carry one.
+	b.setupChatRuntime(cfg)
 
-	contract, cleanup, err := composeChatContract(cfg.Services.Gateway, local)
+	contract, cleanup, err := composeChatContract(cfg.Services.Gateway)
 	if err != nil {
 		return err
 	}

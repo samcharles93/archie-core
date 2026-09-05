@@ -60,7 +60,8 @@ const (
 // inspected, and reasoned about independently of whether the result is valid.
 func (l *Loader) applyDefaults(cfg *config.Config) {
 	if cfg.Services.Gateway.Mode == "" {
-		cfg.Services.Gateway.Mode = "inproc"
+		cfg.Services.Gateway.Mode = "remote"
+		cfg.Services.Gateway.Target = "127.0.0.1:8585"
 	}
 	l.applyGeneralDefaults(cfg)
 	applyForgeDefaults(cfg)

@@ -2,6 +2,7 @@ package archied
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -13,9 +14,25 @@ import (
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
-// newChatTaskActorForTest wires the same production chain the daemon uses in
-// default (in-process) mode: chatTaskActorAdapter → LocalChatAdapter →
-// taskActionsActor → taskactions.Service over the given store.
+// testTaskActor formats taskactions.Service's result the same way the real
+// NATS actor (infrastructure/taskactions.Client) does, so this test exercises
+// the shared service through the same chatTaskActorAdapter → LocalChatAdapter
+// → ChatTaskActor chain production traffic uses.
+type testTaskActor struct{ b *boot }
+
+func (a testTaskActor) ApplyChatTaskAction(
+	ctx context.Context, identity string, taskID int64, action taskstate.Action,
+) (gateway.TaskActionResult, error) {
+	if err := a.b.taskActions().Apply(ctx, &identity, taskID, action); err != nil {
+		return gateway.TaskActionResult{}, err
+	}
+	return gateway.TaskActionResult{
+		TaskID:  taskID,
+		Action:  string(action),
+		Message: fmt.Sprintf("Applied %s to task %d.", action, taskID),
+	}, nil
+}
+
 func newChatTaskActorForTest(t *testing.T, st store.TaskStore, cfg config.Config) chatTaskActorAdapter {
 	t.Helper()
 	b := &boot{
@@ -23,7 +40,7 @@ func newChatTaskActorForTest(t *testing.T, st store.TaskStore, cfg config.Config
 		cfg: cfg,
 		log: slog.Default(),
 	}
-	return chatTaskActorAdapter{contract: &gateway.LocalChatAdapter{TaskActor: taskActionsActor{b}}}
+	return chatTaskActorAdapter{contract: &gateway.LocalChatAdapter{TaskActor: testTaskActor{b}}}
 }
 
 func TestChatTaskActorAdapterCrossIdentityRefused(t *testing.T) {

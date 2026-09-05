@@ -98,16 +98,12 @@ func validate(cfg *config.Config) error {
 
 func validateGatewayService(service config.ServiceConnection) error {
 	switch service.Mode {
-	case "", "inproc":
-		if service.Target != "" {
-			return fmt.Errorf("%w: services.gateway.target requires remote mode", ErrInvalidInput)
-		}
 	case "remote":
 		if strings.TrimSpace(service.Target) == "" {
 			return fmt.Errorf("%w: services.gateway.target is required in remote mode", ErrInvalidInput)
 		}
 	default:
-		return fmt.Errorf("%w: services.gateway.mode must be inproc or remote", ErrInvalidInput)
+		return fmt.Errorf("%w: services.gateway.mode must be remote", ErrInvalidInput)
 	}
 	return nil
 }
