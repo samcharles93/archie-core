@@ -210,7 +210,7 @@ rule's spirit of narrow capability families -- so the answer is not
 "bundle or don't," it's "don't duplicate the logic, and pick the thinnest
 consumer for each caller's actual constraint."
 
-## Execution-time gaps (identified 2026-09-03, unresolved)
+## Execution-time gaps (identified 2026-09-03; gap 1 resolved 2026-09-05, gap 2 unresolved)
 
 Everything above covers *loading* a playbook. Nothing above covers what
 happens while one *runs*. Two gaps, both load-bearing enough to resolve
@@ -218,10 +218,9 @@ before implementation, not defer:
 
 ### 1. Mid-playbook action failure
 
-**Status 2026-09-03: proposed resolution below, awaiting Sam's sign-off**
-(same process the CEL resolution went through -- drafted with evidence,
-not committed as decided until explicitly approved). Do not treat this
-section as settled until that status line is updated.
+**Status 2026-09-05: resolved by archie-core-t2db.18.** The default below
+is a committed decision, not a candidate list; changing it later would
+require its own decision. Gap 2 below remains open.
 
 A playbook is an ordered action list with data flowing between steps. If
 action 2 of 4 fails at runtime (an image-gen API times out, a forge call
@@ -230,35 +229,44 @@ codebase already answers a structurally identical question for its
 existing workflow engine, precisely enough to reuse rather than
 re-derive: `workflow.Run` (`internal/domain/workflow/workflow.go:294`)
 draws a three-way distinction on a stage failure, and a playbook run
-should draw the same one on an action failure.
+draws the same one on an action failure.
 
-**Proposed decision: reuse `Run`'s three-way distinction directly.**
+**Decision: reuse `Run`'s three-way distinction directly.** The stated
+default is **stop-on-first-failure**: a real action error halts the
+playbook run immediately and is reported, with no continue-to-next-action
+and no automatic retry or compensating follow-up. The three points below
+are the complete decision; reasoning and evidence follow each.
 
 1. **A real action error** (the action's own logic failed -- an API
    error, a validation failure inside the action) stops the run
    immediately. No later actions execute. The failure is reported the
-   same way a load collision is reported (drop, log plainly which action
-   and why, return it to the caller) -- **not** silently swallowed into a
-   background log line. This is stop-on-first-failure, matching the
-   document's existing bias against clever automatic recovery, and it is
-   now a stated decision rather than a nobody-chose default.
+   same way a load collision is reported -- dropped, logged plainly
+   (which action and why), and returned to the caller, never swallowed
+   as a background log line only (this document's Dedup section, lines
+   155-159, the t2db.9-12 drop-and-report rule). `Run` is the mechanical
+   precedent for the stop itself: a stage error sets the park reason and
+   returns without running further stages (`workflow.go:324-326`). This
+   is stop-on-first-failure, matching the document's existing bias
+   against clever automatic recovery, and it is now a stated decision
+   rather than a nobody-chose default.
 2. **Interruption** (the daemon is shutting down mid-dispatch, `ctx.Err()
    != nil`) is explicitly **not** a failure. `Run` already treats this
-   case specially -- "parking here would publish a false failure and
-   require manual intervention" -- and the same reasoning applies to a
-   playbook run: an in-flight dispatch interrupted by restart must not be
-   recorded as a broken playbook. What "leave it alone for restart" means
-   for a playbook run (there is no `store.Task` row a playbook run
-   inherently owns the way a workflow stage does) is an open
-   implementation detail for whoever builds the coordinator, not decided
-   here -- but the *semantic* (interruption ≠ failure) is decided.
+   case specially -- "Daemon shutdown is not a workflow failure. Leave
+   the task running ...; parking here would publish a false failure and
+   require manual intervention" (`workflow.go:317-323`) -- and the same
+   reasoning applies to a playbook run: an in-flight dispatch interrupted
+   by restart must not be recorded as a broken playbook. What "leave it
+   alone for restart" means for a playbook run (there is no `store.Task`
+   row a playbook run inherently owns the way a workflow stage does) is
+   an open implementation detail for whoever builds the coordinator, not
+   decided here -- but the *semantic* (interruption ≠ failure) is decided.
 3. **A run that produces no outcome at all** (every action ran without
    error, but nothing was assigned to happen) is itself an error
    condition, matching `Run`'s own "a workflow must end with an explicit
    outcome; not doing so is a definition bug, which still must not vanish
-   silently." A playbook with actions that all ran but never reached a
-   coherent terminal state is a definition bug in the playbook, reported
-   as such.
+   silently" (`workflow.go:336`). A playbook with actions that all ran
+   but never reached a coherent terminal state is a definition bug in the
+   playbook, reported as such.
 
 **Rollback:** explicitly **not attempted**, for exactly the reason the
 gap's own description named -- a posted forge comment is not revocable.
@@ -267,15 +275,38 @@ semantic. An operator who needs a corrective action after a failure
 writes a *new* playbook/action for that, they do not get automatic
 undo.
 
-**Producer-only interaction, stated explicitly:** a playbook reacting to
-its own action's failure by running a compensating action (e.g. "if the
-notify action failed, also log an incident") is still **producing new
-work**, not vetoing or mutating the in-flight run that already stopped --
-so it does not conflict with `event-sources-and-reactions.md`'s
-producer-only rule. This document does not design compensating actions
-now (no playbook syntax for "on failure, also run X" exists yet); it only
-confirms that if that syntax is added later, it stays inside the
-producer-only boundary rather than requiring a new exception to it.
+**Producer-only interaction, stated explicitly -- why this decision does
+not violate the rule.** `event-sources-and-reactions.md`'s producer-only
+rule is "no veto, no mutation of in-flight work"
+(`event-sources-and-reactions.md:61-63`), and it explicitly routes any
+reaction that "can veto or mutate an *in-flight* task (block a PR from
+opening, alter a running stage)" away from this epic to the
+adversarial-self-review one (`event-sources-and-reactions.md:78-81`).
+This decision touches neither half of that boundary:
+
+- **The rule constrains what an event source may do to *someone else's*
+  in-flight work.** Stop-on-first-failure is the playbook run deciding
+  its *own* terminal state from its own action's error. It vetoes
+  nothing: no task, stage, or PR that was already in flight is blocked
+  or altered, and the run only declines to start actions that had not
+  started yet. A run deciding its own continuation is not veto or
+  mutation of another producer's work; it is simply how the run ends.
+- **Everything after the stop is still producer-only.** The failed run is
+  reported to its caller per the collision precedent, the same way `Run`
+  records the failure on its own unit -- park reason set and the task
+  transitioned to `StatusParked` (`workflow.go:324-326`, `park` at
+  `workflow.go:351-357`) -- never on someone else's in-flight work. A
+  future compensating action (e.g. "if the notify action failed, also
+  log an incident") would be **producing new work** -- new events, new
+  dispatches -- which is exactly the already-permitted shape
+  (`event-sources-and-reactions.md:73-76`). No playbook syntax for "on
+  failure, also run X" is designed here; this resolution only confirms
+  that if that syntax is added later, it stays inside the producer-only
+  boundary rather than requiring a new exception.
+
+The boundary therefore holds on both sides: the failure default never
+hands an event source veto or mutation power over a playbook run, and
+anything a run does after stopping is itself still just producing work.
 
 **J3 relationship, stated explicitly:** J3 (a CEL `when` condition
 erroring at eval time → treated as false → skip that action → run
@@ -390,12 +421,12 @@ row for this `(playbook, event)` pair does nothing further, silently
 (logged at debug level, not as a warning -- this is the expected,
 correct behavior of at-least-once delivery, not an anomaly).
 
-Both gaps block open question 4's first-slice recommendation only
+Gap 2 blocks open question 4's first-slice recommendation only
 partially: the first slice (Module + loader + workflow-kind dispatch)
 already has idempotency for free via `TaskEnvelope`, so it can proceed
 without resolving gap 2. Gap 1 (failure mid-run) is real even for a
 single-action first slice's *future* multi-action runs, but is not
-required to build the first slice today. Both gaps must be resolved
+required to build the first slice today. Gap 2 must be resolved
 before Channel/Forge actions or multi-action playbooks ship.
 
 ## Open questions (for sign-off before implementation)
@@ -633,7 +664,9 @@ before Channel/Forge actions or multi-action playbooks ship.
      runtime (missing/wrong-typed field) evaluates to **false**: the
      action is skipped, logged, run continues. This is the simplest
      candidate consistent with gap 1's bias against clever recovery;
-     revisit if gap 1 wants per-action control. { Call: CEL separates
+     gap 1 (resolved by archie-core-t2db.18) commits
+     stop-on-first-failure, so per-action control is not coming and J3
+     stands. { Call: CEL separates
      false from error; we treat evaluation error as false + log. }
    - **J4 -- `event` stays `dyn` (schema-by-example).** Load-time we
      cannot know event field types; declaring them typed would reject
@@ -645,9 +678,11 @@ before Channel/Forge actions or multi-action playbooks ship.
      the same value so they agree. { Call: exact number is a constant to
      tune at first use. }
 
-   ### Interaction with the unresolved execution-time gaps
+   ### Interaction with the execution-time gaps
 
-   This resolution does not resolve gaps 1-2. Conditions make gap 1
+   This resolution does not resolve the execution-time gaps (gap 1 is
+   resolved separately by archie-core-t2db.18; gap 2 remains open).
+   Conditions make gap 1
    concrete (condition-failure vs. action-failure semantics, J3) and
    CEL's read-only result access makes gap 2's keying derivation
    readable (an idempotency key expression can read event fields) -- both
@@ -739,7 +774,7 @@ before Channel/Forge actions or multi-action playbooks ship.
    this coordinator instead of only workflow.Route(). The trigger shape
    reuses the existing workintake kind/label vocabulary; multi-action and
    non-workflow-position playbooks remain rejected at load (hard
-   boundary, blocked on the execution-time gaps).
+   boundary, blocked on gap 2, idempotency).
 5. **Monetization boundary.** Sam has flagged this may be commercialized,
    and explicitly wants it discerned from other OSS event-driven-automation
    tooling. No design decision needed yet, but worth a note if/when
