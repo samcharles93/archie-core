@@ -10,13 +10,13 @@ func TestLoadGatewayServiceMode(t *testing.T) {
 	for _, tt := range []struct {
 		name, section string
 		wantError     bool
+		wantTarget    string
 	}{
-		{name: "default"},
-		{name: "local", section: "[services.gateway]\nmode = 'inproc'"},
-		{name: "remote", section: "[services.gateway]\nmode = 'remote'\ntarget = 'dns:///gateway:8443'"},
+		{name: "default", wantTarget: "127.0.0.1:8585"},
+		{name: "remote", section: "[services.gateway]\nmode = 'remote'\ntarget = 'dns:///gateway:8443'", wantTarget: "dns:///gateway:8443"},
 		{name: "invalid mode", section: "[services.gateway]\nmode = 'typo'", wantError: true},
+		{name: "inproc removed", section: "[services.gateway]\nmode = 'inproc'", wantError: true},
 		{name: "remote without target", section: "[services.gateway]\nmode = 'remote'", wantError: true},
-		{name: "local with ignored target", section: "[services.gateway]\nmode = 'inproc'\ntarget = 'gateway:8443'", wantError: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.toml")
@@ -28,15 +28,11 @@ func TestLoadGatewayServiceMode(t *testing.T) {
 				t.Fatalf("load error = %v, want error %v", err, tt.wantError)
 			}
 			if err == nil {
-				want := "inproc"
-				if tt.name == "remote" {
-					want = "remote"
-					if cfg.Services.Gateway.Target != "dns:///gateway:8443" {
-						t.Fatalf("target = %q", cfg.Services.Gateway.Target)
-					}
+				if cfg.Services.Gateway.Mode != "remote" {
+					t.Fatalf("mode = %q, want %q", cfg.Services.Gateway.Mode, "remote")
 				}
-				if cfg.Services.Gateway.Mode != want {
-					t.Fatalf("mode = %q, want %q", cfg.Services.Gateway.Mode, want)
+				if cfg.Services.Gateway.Target != tt.wantTarget {
+					t.Fatalf("target = %q, want %q", cfg.Services.Gateway.Target, tt.wantTarget)
 				}
 			}
 		})

@@ -17,38 +17,19 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
 )
 
-func TestComposeChatContractLocal(t *testing.T) {
-	for _, mode := range []string{"", "inproc"} {
-		t.Run("mode="+mode, func(t *testing.T) {
-			local := &gateway.LocalChatAdapter{}
-			chat, cleanup, err := composeChatContract(config.ServiceConnection{Mode: mode}, local)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if cleanup == nil {
-				t.Fatal("local composition returned no cleanup")
-			}
-			t.Cleanup(cleanup)
-			if chat != local {
-				t.Fatalf("local composition returned %T instead of the supplied adapter", chat)
-			}
-		})
-	}
-}
-
 func TestComposeChatContractRejectsInvalidSettings(t *testing.T) {
 	for _, tt := range []struct {
 		name     string
 		settings config.ServiceConnection
 	}{
 		{name: "unknown mode", settings: config.ServiceConnection{Mode: "automatic"}},
-		{name: "default with target", settings: config.ServiceConnection{Target: "localhost:1234"}},
-		{name: "inproc with target", settings: config.ServiceConnection{Mode: "inproc", Target: "localhost:1234"}},
+		{name: "default mode", settings: config.ServiceConnection{Target: "localhost:1234"}},
+		{name: "inproc removed", settings: config.ServiceConnection{Mode: "inproc", Target: "localhost:1234"}},
 		{name: "remote missing target", settings: config.ServiceConnection{Mode: "remote"}},
 		{name: "remote blank target", settings: config.ServiceConnection{Mode: "remote", Target: " \t\n"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			chat, cleanup, err := composeChatContract(tt.settings, &gateway.LocalChatAdapter{})
+			chat, cleanup, err := composeChatContract(tt.settings)
 			if cleanup != nil {
 				t.Cleanup(cleanup)
 			}
@@ -76,9 +57,8 @@ func TestComposeChatContractRemoteAndCleanup(t *testing.T) {
 		}
 	})
 
-	local := compositionChat{snapshot: gateway.ChatSnapshot{ActiveModel: "local-model"}}
 	chat, cleanup, err := composeChatContract(
-		config.ServiceConnection{Mode: "remote", Target: "passthrough:///chat"}, local,
+		config.ServiceConnection{Mode: "remote", Target: "passthrough:///chat"},
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 			return listener.DialContext(ctx)
 		}),

@@ -389,7 +389,7 @@ func Run() int { //nolint:cyclop // the composition root's setup sequence is del
 		return 1
 	}
 
-	if err := b.setupLLMAndChat(ctx); err != nil {
+	if err := b.setupLLMAndChat(); err != nil {
 		return 1
 	}
 	if !b.setupGateways(ctx, args.cfgPath, args.overlayPath) {
