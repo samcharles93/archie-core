@@ -426,7 +426,8 @@ type ToolsConfig struct {
 
 // Config is the daemon configuration.
 type Config struct {
-	WorkDir string `toml:"work_dir" yaml:"work_dir"`
+	Services Services `toml:"services" yaml:"services"`
+	WorkDir  string   `toml:"work_dir" yaml:"work_dir"`
 	// SkillsDir is an optional path to a shared skills directory
 	// containing .agents/skills/*/SKILL.md files. When set, the
 	// daemon builds its workflow registry from the skill catalog

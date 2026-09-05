@@ -144,7 +144,7 @@ func TestHandleChatUpdateInstallSetsReportPath(t *testing.T) {
 	sessions := gateway.NewSessionStoreMemory()
 	t.Cleanup(func() { _ = sessions.Close() })
 	router := gateway.NewRouter(chatStatusStub{}, nil, "web")
-	server := &Server{Chat: &ChatService{Router: router, Sessions: sessions, Updates: updates}, UpdateReportPath: reportPath}
+	server := &Server{Chat: testChatService(router, sessions, nil, nil, nil, updates, nil), UpdateReportPath: reportPath}
 
 	body, err := json.Marshal(chatUpdateRequest{Snapshot: updates.snapshot})
 	if err != nil {
@@ -169,7 +169,7 @@ func TestHandleChatUpdateInstallRoutesRestartReportToTelegram(t *testing.T) {
 	t.Cleanup(func() { _ = sessions.Close() })
 	router := gateway.NewRouter(chatStatusStub{}, nil, "web")
 	server := &Server{
-		Chat:                     &ChatService{Router: router, Sessions: sessions, Updates: updates},
+		Chat:                     testChatService(router, sessions, nil, nil, nil, updates, nil),
 		UpdateReportPath:         filepath.Join(t.TempDir(), "webui-update-report.json"),
 		TelegramUpdateReportPath: reportPath,
 		TelegramUpdateChatID:     42,

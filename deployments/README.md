@@ -33,7 +33,12 @@ cp deployments/single-forge-github.toml ~/.config/archie/config.toml
 Edit API keys in `~/.config/archie/env` or directly in `config.toml`, then launch Archie Core:
 
 ```bash
-archied
+archie-gateway -config ~/.config/archie/config.toml -listen 127.0.0.1:8585 &
+archied -config ~/.config/archie/config.toml
 # or via systemd:
 systemctl --user start archied
 ```
+
+The templates use the extracted Gateway Service by default. Start
+`archie-gateway` before `archied`; it owns the conversation SQLite file and
+serves the `ChatContract` gRPC API on the configured target.

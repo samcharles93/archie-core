@@ -16,14 +16,10 @@ import (
 )
 
 // ChatService is the shared conversational surface exposed to the dashboard.
-// It deliberately contains the gateway Router rather than duplicating command
-// dispatch in the HTTP layer.
+// Handlers depend on the Gateway-owned contract and never retain Gateway
+// implementation objects.
 type ChatService struct {
-	Router           *gateway.Router
-	Sessions         gateway.SessionStore
-	Turns            *gateway.Turns
-	Models           gateway.ModelManager
-	Personas         *gateway.PersonaRegistry
+	Contract         gateway.ChatContract
 	Updates          ChatUpdateService
 	Dangerous        *DangerousService
 	updateMu         sync.Mutex
@@ -87,15 +83,9 @@ type dangerousDecisionRequest struct {
 }
 
 func (s *Server) chatReady(w http.ResponseWriter) (*ChatService, bool) {
-	if s.Chat == nil || s.Chat.Router == nil || s.Chat.Sessions == nil {
+	if s.Chat == nil || s.Chat.Contract == nil {
 		http.Error(w, "chat is not configured", http.StatusNotImplemented)
 		return nil, false
-	}
-	if !chatUpdateServiceConfigured(s.Chat.Router.Updates) && chatUpdateServiceConfigured(s.Chat.Updates) {
-		s.Chat.Router.Updates = s.Chat.Updates
-	}
-	if s.Chat.Router.Dangerous == nil && s.Chat.Dangerous != nil {
-		s.Chat.Router.Dangerous = s.Chat.Dangerous
 	}
 	return s.Chat, true
 }
@@ -118,28 +108,32 @@ func (s *Server) handleChatSessions(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	sessions, err := chat.Sessions.List(r.Context())
+	snapshot, err := chat.Contract.Snapshot(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	out := make([]gateway.SessionContext, 0, len(sessions))
-	for _, session := range sessions {
+	out := make([]gateway.SessionContext, 0, len(snapshot.Sessions))
+	active := make(map[string]string)
+	for _, session := range snapshot.Sessions {
 		if session.Source.Platform == "web" {
 			out = append(out, session)
+			if name, ok := snapshot.ActivePersonas[session.SessionID]; ok {
+				active[session.SessionID] = name
+			}
 		}
 	}
 	writeJSON(w, map[string]any{
 		"sessions":            out,
-		"models":              modelNames(chat.Models),
-		"models_by_provider":  modelsByProvider(chat.Models),
-		"providers":           modelProviders(chat.Models),
-		"active_model":        activeModel(chat.Models),
-		"active_provider":     activeProvider(chat.Models),
-		"personas":            personaNames(chat.Personas),
-		"active_personas":     activePersonas(chat.Personas, out),
+		"models":              snapshot.Models,
+		"models_by_provider":  snapshot.ModelsByProvider,
+		"providers":           snapshot.Providers,
+		"active_model":        snapshot.ActiveModel,
+		"active_provider":     snapshot.ActiveProvider,
+		"personas":            snapshot.Personas,
+		"active_personas":     active,
 		"commands":            chatCommandSpecs(chat),
-		"restart_available":   chat.Router.Restart != nil,
+		"restart_available":   snapshot.RestartAvailable,
 		"dangerous_available": chat.Dangerous != nil,
 	})
 }
@@ -163,16 +157,16 @@ func (s *Server) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sessionID := r.PathValue("id")
-	session, err := chat.Sessions.Get(r.Context(), sessionID)
+	session, found, err := chat.Contract.GetSession(r.Context(), sessionID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if session == nil || session.Source.Platform != "web" {
+	if !found || session.Source.Platform != "web" {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
-	messages, err := chat.Sessions.RecentMessages(r.Context(), sessionID, 200)
+	messages, err := chat.Contract.RecentMessages(r.Context(), sessionID, 200)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -186,21 +180,16 @@ func (s *Server) handleChatTurns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sessionID := r.PathValue("id")
-	session, err := chat.Sessions.Get(r.Context(), sessionID)
+	session, found, err := chat.Contract.GetSession(r.Context(), sessionID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if session == nil || session.Source.Platform != "web" {
+	if !found || session.Source.Platform != "web" {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
-	history, ok := chat.Sessions.(gateway.TurnHistory)
-	if !ok {
-		writeJSON(w, []gateway.TurnRecord{})
-		return
-	}
-	turns, err := history.RecentTurns(r.Context(), sessionID, 200)
+	turns, err := chat.Contract.RecentTurns(r.Context(), sessionID, 200)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -253,17 +242,12 @@ func (s *Server) handleChatMessage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	reply, err := chat.Router.Route(r.Context(), msg)
+	reply, err := chat.Contract.Route(r.Context(), msg)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	sessionID, err := chat.Router.ResolveSessionKey(r.Context(), msg)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, map[string]string{"reply": reply, "session_id": sessionID})
+	writeJSON(w, map[string]string{"reply": reply.Text, "session_id": reply.SessionID})
 }
 
 // chatStreamEvent is one `data: {...}` frame of the chat stream. A tool frame
@@ -402,83 +386,21 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
 		flusher.Flush()
 	}
-	sessionID, err := chat.Router.ResolveSessionKey(r.Context(), msg)
+	events, err := chat.Contract.Stream(r.Context(), msg)
 	if err != nil {
 		writeChatEvent(chatStreamEvent{Type: "error", Text: err.Error()}, "")
 		return
 	}
-	writeChatEvent(chatStreamEvent{Type: "started"}, sessionID)
-	showToolCalls := s.chatShowToolCalls()
-	var reply string
-	if chat.Turns == nil {
-		reply, err = chat.Router.RouteStream(r.Context(), msg, chatStreamSink{
-			showToolCalls: showToolCalls,
-			write: func(event chatStreamEvent) {
-				writeChatEvent(event, sessionID)
-			},
-		})
-	} else {
-		var cancelled bool
-		reply, err, cancelled = s.runQueuedChatTurn(r, chat, sessionID, msg, showToolCalls, writeChatEvent)
-		if cancelled {
-			return
-		}
-	}
-	if err != nil {
-		writeChatEvent(chatStreamEvent{Type: "error", Text: err.Error()}, sessionID)
-		return
-	}
-	if resolved, resolveErr := chat.Router.ResolveSessionKey(r.Context(), msg); resolveErr == nil {
-		sessionID = resolved
-	}
-	writeChatEvent(chatStreamEvent{Type: "done", Text: reply}, sessionID)
-}
-
-// runQueuedChatTurn submits msg to the session's turn queue and streams its
-// text/tool events as they arrive, in order, via writeChatEvent. One channel
-// carries both text and tool events, because the order between them is the
-// point: a tool line that overtakes the sentence it interrupted describes a
-// turn that never happened. Returns cancelled=true when the request context
-// was cancelled before the turn finished, in which case the caller must not
-// write any further response.
-func (s *Server) runQueuedChatTurn(
-	r *http.Request, chat *ChatService, sessionID string, msg gateway.Message, showToolCalls bool,
-	writeChatEvent func(chatStreamEvent, string),
-) (reply string, err error, cancelled bool) {
-	type turnResult struct {
-		reply string
-		err   error
-	}
-	events := make(chan chatStreamEvent, 32)
-	result := make(chan turnResult, 1)
-	chat.Turns.Submit(r.Context(), sessionID, func(turnCtx context.Context) {
-		turnReply, turnErr := chat.Router.RouteStream(turnCtx, msg, chatStreamSink{
-			showToolCalls: showToolCalls,
-			write: func(event chatStreamEvent) {
-				select {
-				case events <- event:
-				case <-r.Context().Done():
-				}
-			},
-		})
-		result <- turnResult{reply: turnReply, err: turnErr}
-	})
-	for {
-		select {
-		case event := <-events:
-			writeChatEvent(event, sessionID)
-		case turn := <-result:
-			for {
-				select {
-				case event := <-events:
-					writeChatEvent(event, sessionID)
-				default:
-					return turn.reply, turn.err, false
-				}
-			}
-		case <-r.Context().Done():
-			chat.Turns.Stop(sessionID)
-			return "", nil, true
+	sink := chatStreamSink{showToolCalls: s.chatShowToolCalls()}
+	for event := range events {
+		sink.write = func(frame chatStreamEvent) { writeChatEvent(frame, event.SessionID) }
+		switch event.Kind {
+		case "tool":
+			sink.ToolCall(event.Tool)
+		case "media":
+			sink.Media(event.Media)
+		default:
+			writeChatEvent(chatStreamEvent{Type: event.Kind, Text: event.Text}, event.SessionID)
 		}
 	}
 }
@@ -488,7 +410,12 @@ func (s *Server) handleChatCancel(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if chat.Turns == nil {
+	snapshot, err := chat.Contract.Snapshot(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !snapshot.CancellationAvailable {
 		http.Error(w, "chat cancellation is not configured", http.StatusNotImplemented)
 		return
 	}
@@ -497,17 +424,21 @@ func (s *Server) handleChatCancel(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session_id is required", http.StatusBadRequest)
 		return
 	}
-	session, err := chat.Sessions.Get(r.Context(), req.SessionID)
+	session, found, err := chat.Contract.GetSession(r.Context(), req.SessionID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if session == nil || session.Source.Platform != "web" {
+	if !found || session.Source.Platform != "web" {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
-	cancelled, dropped := chat.Turns.Stop(req.SessionID)
-	writeJSON(w, map[string]any{"cancelled": cancelled, "dropped": dropped})
+	result, err := chat.Contract.Cancel(r.Context(), req.SessionID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{"cancelled": result.Cancelled, "dropped": result.Dropped})
 }
 
 func (s *Server) handleChatPersona(w http.ResponseWriter, r *http.Request) {
@@ -515,7 +446,12 @@ func (s *Server) handleChatPersona(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if chat.Personas == nil {
+	snapshot, err := chat.Contract.Snapshot(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !snapshot.PersonasAvailable {
 		http.Error(w, "personality switching is not configured", http.StatusNotImplemented)
 		return
 	}
@@ -524,14 +460,19 @@ func (s *Server) handleChatPersona(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session_id and name are required", http.StatusBadRequest)
 		return
 	}
-	if session, err := chat.Sessions.Get(r.Context(), req.SessionID); err != nil {
+	if session, found, err := chat.Contract.GetSession(r.Context(), req.SessionID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	} else if session == nil || session.Source.Platform != "web" {
+	} else if !found || session.Source.Platform != "web" {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
-	if !chat.Personas.SetActive(req.SessionID, strings.ToLower(req.Name)) {
+	changed, err := chat.Contract.SetPersona(r.Context(), req.SessionID, strings.ToLower(req.Name))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !changed {
 		http.Error(w, fmt.Sprintf("unknown personality %q", req.Name), http.StatusBadRequest)
 		return
 	}
@@ -691,76 +632,6 @@ func (s *Server) handleChatDangerousDecision(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, map[string]any{"ok": true, "result": result})
-}
-
-func modelNames(models gateway.ModelManager) []string {
-	if models == nil {
-		return []string{}
-	}
-	return models.Models()
-}
-
-func activeModel(models gateway.ModelManager) string {
-	if models == nil {
-		return ""
-	}
-	return models.ActiveModel()
-}
-
-func activeProvider(models gateway.ModelManager) string {
-	manager, ok := models.(gateway.ProviderModelManager)
-	if !ok {
-		return ""
-	}
-	return manager.ActiveProvider()
-}
-
-func modelProviders(models gateway.ModelManager) []string {
-	manager, ok := models.(gateway.ProviderModelManager)
-	if !ok {
-		return []string{}
-	}
-	return manager.Providers()
-}
-
-func modelsByProvider(models gateway.ModelManager) map[string][]string {
-	if models == nil {
-		return map[string][]string{}
-	}
-	if manager, ok := models.(gateway.ProviderModelManager); ok {
-		groups := make(map[string][]string, len(manager.Providers()))
-		for _, provider := range manager.Providers() {
-			groups[provider] = manager.ModelsForProvider(provider)
-		}
-		return groups
-	}
-	groups := make(map[string][]string)
-	for _, model := range models.Models() {
-		provider, _, ok := strings.Cut(model, "/")
-		if !ok {
-			provider = ""
-		}
-		groups[provider] = append(groups[provider], model)
-	}
-	return groups
-}
-
-func activePersonas(personas *gateway.PersonaRegistry, sessions []gateway.SessionContext) map[string]string {
-	active := make(map[string]string, len(sessions))
-	if personas == nil {
-		return active
-	}
-	for _, session := range sessions {
-		active[session.SessionID] = personas.ActiveName(session.SessionID)
-	}
-	return active
-}
-
-func personaNames(personas *gateway.PersonaRegistry) []string {
-	if personas == nil {
-		return []string{}
-	}
-	return personas.List()
 }
 
 func newChatSourceID() string {
