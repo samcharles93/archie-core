@@ -350,7 +350,8 @@ func Run() int {
 		return 0
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	root, cancelRoot := context.WithCancel(context.Background())
+	ctx, stop := signal.NotifyContext(root, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	b := newBootstrap()
@@ -359,6 +360,9 @@ func Run() int {
 	// as a backstop if graceful shutdown hangs past the drain-plus-grace
 	// leash, and stands down once every subsystem has shut down cleanly.
 	b.startShutdownWatchdog(ctx)
+	// The drain monitor cancels this root to trigger a graceful shutdown, which
+	// propagates through ctx exactly as an operator SIGTERM does.
+	b.shutdown = cancelRoot
 	if err := b.loadConfig(ctx, args.cfgPath, args.overlayPath, args.noConfigOverlay); err != nil {
 		return 1
 	}

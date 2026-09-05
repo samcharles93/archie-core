@@ -151,6 +151,12 @@ type boot struct {
 	// Observe/Snapshot calls once tasks start completing.
 	agentStatus *daemon.AgentStatus
 
+	// shutdown cancels the daemon's root context, the exact path a SIGTERM
+	// takes to graceful shutdown. The drain monitor invokes it when it honours
+	// an external drain request, so a marker-driven drain reuses the operator
+	// signal path rather than inventing a new one.
+	shutdown context.CancelFunc
+
 	cleanups []func()
 }
 
@@ -1629,6 +1635,10 @@ func (b *boot) runLoop(ctx context.Context, once bool) error {
 		return nil
 	}
 	b.log.Info("archied running", "repos", len(b.cfg.Repos), "poll", b.cfg.PollInterval.Std().String(), "label", b.cfg.Label)
+	// Drain monitoring only matters while the daemon stays up to be drained;
+	// a --once cycle exits immediately, so a drain that arrives mid-cycle is
+	// out of scope and the monitor is not started.
+	b.startDrainMonitor(ctx)
 	if err := b.d.Run(ctx); err != nil && ctx.Err() == nil {
 		b.log.Error("daemon exited", "err", err)
 		return err
