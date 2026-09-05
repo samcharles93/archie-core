@@ -44,16 +44,27 @@ tasks:
     cmds:
       - govulncheck ./...
 
-  ui:
-    desc: Build the dashboard into ui/dist (committed; the Go build embeds it)
+  ui:deps:
+    desc: Install the dashboard's node dependencies (ui/node_modules is gitignored)
+    internal: true
     dir: ui
     cmds:
       - npm install --no-audit --no-fund
+
+  ui:
+    desc: Build the dashboard into ui/dist (committed; the Go build embeds it)
+    dir: ui
+    deps: [ui:deps]
+    cmds:
       - npm run build
 
   test:ui:
     desc: Run the dashboard's node tests (DOM-building primitives)
     dir: ui
+    # Without this, a fresh clone fails the gate on a missing jsdom rather
+    # than a real test failure: ui/node_modules is gitignored and nothing
+    # else in `task check` installs it.
+    deps: [ui:deps]
     cmds:
       - npm test
 

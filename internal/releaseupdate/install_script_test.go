@@ -140,7 +140,7 @@ func TestUpdateWatchdogRestoresTaskDatabaseOnDaemonRollback(t *testing.T) {
 		}
 	}
 	for path, version := range map[string]int{dbPath: 2, backupPath: 1} {
-		if output, err := exec.Command("sqlite3", path, fmt.Sprintf("PRAGMA user_version=%d; CREATE TABLE tasks (id INTEGER);", version)).CombinedOutput(); err != nil {
+		if output, err := exec.CommandContext(t.Context(), "sqlite3", path, fmt.Sprintf("PRAGMA user_version=%d; CREATE TABLE tasks (id INTEGER);", version)).CombinedOutput(); err != nil {
 			t.Fatalf("create database %s: %v: %s", path, err, output)
 		}
 	}
@@ -157,7 +157,7 @@ func TestUpdateWatchdogRestoresTaskDatabaseOnDaemonRollback(t *testing.T) {
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("watchdog failed: %v\n%s", err, output)
 	}
-	output, err := exec.Command("sqlite3", dbPath, "PRAGMA user_version;").Output()
+	output, err := exec.CommandContext(t.Context(), "sqlite3", dbPath, "PRAGMA user_version;").Output()
 	if err != nil {
 		t.Fatal(err)
 	}

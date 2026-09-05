@@ -352,10 +352,22 @@ func (b *boot) setupObservability() {
 	// issue is re-polled and the work is done again. It gets only that one
 	// method, not the forge client.
 	b.web.Issues = b.forgeClient
-	// Capture storage: openProductionTaskStore's declared return type is the
-	// narrow store.TaskStore, so the CaptureStore surface (implemented by
-	// the same *store.Store) needs its own assertion here rather than a
-	// direct field reuse. See docs/prds/event-capture-storage.md.
+	b.wireWebStoreSurfaces()
+	sink := bus.Subscribe(256)
+	go persistAndBroadcastEvents(sink, b.st, b.web, log)
+}
+
+// wireWebStoreSurfaces attaches the dashboard's optional storage surfaces.
+// openProductionTaskStore's declared return type is the narrow
+// store.TaskStore, so each wider surface (all implemented by the same
+// *store.Store) needs its own assertion here rather than a direct field
+// reuse. A store that does not implement one degrades that dashboard feature
+// with a warning instead of aborting bootstrap. The BindingStore/
+// BindingDispatcher/BindingTaskCreator split keeps each interface under the
+// interfacebloat limit. See docs/prds/event-capture-storage.md,
+// docs/prds/payload-field-mapping.md and docs/prds/webhook-intake-security.md.
+func (b *boot) wireWebStoreSurfaces() {
+	cfg, log := b.cfg, b.log
 	if cs, ok := b.st.(store.CaptureStore); ok {
 		b.web.Captures = cs
 	} else {
@@ -365,21 +377,11 @@ func (b *boot) setupObservability() {
 	b.web.CaptureMaxEvents = cfg.Capture.MaxEvents
 	b.web.CaptureMaxBodyBytes = int64(cfg.Capture.MaxBodyBytes)
 	b.web.CaptureLimiter = webhookguard.NewRateLimiter(cfg.Capture.RatePerSecond, cfg.Capture.RateBurst, time.Now)
-	// Mapping storage: same narrow-assertion pattern as CaptureStore above,
-	// for the same reason -- openProductionTaskStore's declared return type
-	// doesn't expose it. See docs/prds/payload-field-mapping.md.
 	if ms, ok := b.st.(store.MappingStore); ok {
 		b.web.Mappings = ms
 	} else {
 		log.Warn("mapping storage unavailable: task store does not implement MappingStore")
 	}
-	// Binding storage: same narrow-assertion pattern as CaptureStore/MappingStore
-	// above, for the same reason. The daemon arm/dispatch logic is wired in
-	// Phase E; here only the storage handle is shared so /api/bindings has
-	// somewhere to read/write. The BindingStore/BindingDispatcher/
-	// BindingTaskCreator split keeps each interface under the
-	// interfacebloat limit; the concrete *store.Store satisfies all three.
-	// See docs/prds/webhook-intake-security.md.
 	if bs, ok := b.st.(store.BindingStore); ok {
 		b.web.Bindings = bs
 	} else {
@@ -390,8 +392,6 @@ func (b *boot) setupObservability() {
 	} else {
 		log.Warn("binding dispatcher unavailable: task store does not implement BindingDispatcher")
 	}
-	sink := bus.Subscribe(256)
-	go persistAndBroadcastEvents(sink, b.st, b.web, log)
 }
 
 // connectNATS opens the NATS client. External mode dials cfg.NATS.URL;
@@ -413,25 +413,11 @@ func (b *boot) connectNATS(ctx context.Context) error {
 			return err
 		}
 	} else {
-		// Embedded. Start the in-process server before dialing, and register
-		// its shutdown BEFORE the client close below so the client closes
-		// first (cleanups run LIFO).
-		host := ""
-		if b.containerPool != nil {
-			host = b.containerPool.HostGateway()
-		}
-		srv, err := nats.StartEmbedded(ctx, nats.EmbeddedOptions{
-			Host:     host,
-			StoreDir: filepath.Join(filepath.Dir(cfg.DBPath), "nats"),
-		}, log)
+		var err error
+		url, natsToken, err = b.startEmbeddedNATS(ctx)
 		if err != nil {
-			log.Error("embedded nats start failed", "err", err)
 			return err
 		}
-		b.addCleanup(func() { srv.Shutdown() })
-		url = srv.ClientURL()
-		natsToken = srv.Token()
-		log.Info("embedded nats started", "url", url)
 	}
 
 	// Composition owns the subject list: the bus must not know which
@@ -452,6 +438,28 @@ func (b *boot) connectNATS(ctx context.Context) error {
 	b.addCleanup(func() { natsClient.Close() })
 	log.Info("nats connected", "url", url)
 	return nil
+}
+
+// startEmbeddedNATS starts the in-process nats-server and returns the client
+// URL and token to dial it with. Its shutdown is registered BEFORE the caller
+// registers the client close, so the client closes first (cleanups run LIFO).
+func (b *boot) startEmbeddedNATS(ctx context.Context) (string, string, error) {
+	cfg, log := b.cfg, b.log
+	host := ""
+	if b.containerPool != nil {
+		host = b.containerPool.HostGateway()
+	}
+	srv, err := nats.StartEmbedded(ctx, nats.EmbeddedOptions{
+		Host:     host,
+		StoreDir: filepath.Join(filepath.Dir(cfg.DBPath), "nats"),
+	}, log)
+	if err != nil {
+		log.Error("embedded nats start failed", "err", err)
+		return "", "", err
+	}
+	b.addCleanup(func() { srv.Shutdown() })
+	log.Info("embedded nats started", "url", srv.ClientURL())
+	return srv.ClientURL(), srv.Token(), nil
 }
 
 // setupContainers builds the managed autonomous-worker pool. Failure degrades

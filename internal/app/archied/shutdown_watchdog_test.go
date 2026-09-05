@@ -1,7 +1,6 @@
 package archied
 
 import (
-	"context"
 	"log/slog"
 	"testing"
 	"time"
@@ -73,8 +72,7 @@ func TestShutdownWatchdogCompletingWithinLeashDoesNotExit(t *testing.T) {
 // needed.
 func TestBootStartShutdownWatchdogDisarmRunsLast(t *testing.T) {
 	b := newBootstrap()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	b.startShutdownWatchdog(ctx)
 
 	if len(b.cleanups) != 1 {

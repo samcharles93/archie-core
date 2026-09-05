@@ -1,7 +1,6 @@
 package archied
 
 import (
-	"os"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
@@ -61,8 +60,7 @@ func TestResolveTelegramTokenDoesNotUseTokenEnvWhenSecretRefIsSet(t *testing.T) 
 		Token:    secret.SecretRef{Engine: "bws", Key: "telegram-token"},
 		TokenEnv: "TELEGRAM_LEGACY_TOKEN",
 	}
-	os.Setenv("TELEGRAM_LEGACY_TOKEN", "token-from-env")
-	t.Cleanup(func() { os.Unsetenv("TELEGRAM_LEGACY_TOKEN") })
+	t.Setenv("TELEGRAM_LEGACY_TOKEN", "token-from-env")
 
 	got, err := resolveTelegramToken(cfg, registry)
 	if err != nil {
