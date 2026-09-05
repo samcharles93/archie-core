@@ -20,6 +20,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
+	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
@@ -122,6 +123,11 @@ type Server struct {
 	// Chat exposes the same gateway router used by the conversational
 	// channels. Optional: the dashboard simply omits chat when it is nil.
 	Chat *ChatService
+
+	// Health runs the operator readiness probes served by /health/detailed.
+	// Optional: nil answers 503 rather than fabricating a report, so a
+	// deployment that has not wired probes never looks healthy by accident.
+	Health *health.Registry
 
 	// Token gates access. Empty means no check, which is how loopback binds
 	// stay frictionless -- see IsLoopback.
@@ -345,11 +351,13 @@ func (s *Server) Handler() http.Handler {
 	s.registerConfigAndLogRoutes(mux)
 	s.registerChatRoutes(mux)
 
+	mux.HandleFunc("GET /health/detailed", s.handleHealthDetailed)
 	mux.HandleFunc("GET /events", s.handleSSE)
 	mux.Handle("GET /", s.assets())
 
 	top := http.NewServeMux()
 	top.HandleFunc("GET /healthz", s.handleHealthz)
+	top.HandleFunc("GET /health", s.handleHealth)
 	top.HandleFunc("POST /webhooks/capture/{source}", s.handleCapture)
 	top.Handle("/", s.requireToken(mux))
 	return top
