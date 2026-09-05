@@ -90,7 +90,13 @@ type TurnRunnerConfig struct {
 	BotUser            string
 	Channel            string
 	Operator           string
-	Log                *slog.Logger
+	// Workspace is the directory the chat agent's file and shell tools are
+	// rooted at (chat.workspace). Passed into the prompt's <env> block.
+	Workspace string
+	// Repos lists the repositories under management with their forge host and
+	// default branch, rendered into the prompt's <env> block.
+	Repos []RepoEnv
+	Log   *slog.Logger
 }
 
 // TurnRunner owns one chat turn from session resolution through model
@@ -313,6 +319,9 @@ func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, msg Mess
 		SessionID: sessionID,
 		Now:       time.Now(),
 		Page:      msg.Page,
+		Workspace: r.Workspace,
+		Repos:     r.Repos,
+		Operator:  r.Operator,
 	})
 	compression, err := CompressionConfigForModel(
 		modelDetails,

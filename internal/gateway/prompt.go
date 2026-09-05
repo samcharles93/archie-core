@@ -17,6 +17,22 @@ type ToolSummary struct {
 	Description string
 }
 
+// RepoEnv is the runtime-metadata summary of one repository under
+// management, rendered into the chat prompt's <env> block so the agent knows
+// which checkouts it is responsible for without probing the filesystem. It is
+// built only from live configuration; it never names a repository the daemon
+// cannot confirm.
+type RepoEnv struct {
+	// FullName is the configured owner/name.
+	FullName string
+	// Forge is the forge host the repository lives on (forge.host). Empty
+	// means no forge is configured for the active identity.
+	Forge string
+	// DefaultBranch is the branch PRs target (repos[].base, "main" when
+	// unset) -- the branch the daemon actually uses, not a guess.
+	DefaultBranch string
+}
+
 // SystemPromptConfig holds the inputs for one rendered system prompt.
 type SystemPromptConfig struct {
 	// Persona is the active persona prompt.
@@ -35,6 +51,19 @@ type SystemPromptConfig struct {
 	Page string
 	// Now stamps the prompt's date.
 	Now time.Time
+	// Workspace is the directory the chat agent's file and shell tools are
+	// rooted at (chat.workspace). Empty means the agent has no rooted
+	// workspace: a real fact the prompt must say explicitly ("unknown") so the
+	// agent does not guess a path the daemon never granted it.
+	Workspace string
+	// Repos lists the repositories under management with their forge host and
+	// default branch. Rendered from live configuration (repos entries) so the
+	// agent knows its scope without probing the filesystem.
+	Repos []RepoEnv
+	// Operator is the display name of the person this deployment assists
+	// (chat.operator). Rendered so the agent knows the identity context it
+	// serves under; empty means unconfigured and must be said explicitly.
+	Operator string
 }
 
 // promptData is the template execution context. It exists so the template
@@ -73,6 +102,9 @@ func BuildSystemPrompt(cfg SystemPromptConfig) string {
 		Page:      cfg.Page,
 		Now:       cfg.Now,
 		Date:      cfg.Now.Format("2006-01-02"),
+		Workspace: cfg.Workspace,
+		Repos:     cfg.Repos,
+		Operator:  cfg.Operator,
 	}
 	var buf strings.Builder
 	if err := archiePromptTemplate.Execute(&buf, data); err != nil {
