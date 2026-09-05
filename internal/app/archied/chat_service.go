@@ -15,11 +15,8 @@ import (
 // composeChatContract dials the standalone archie-gateway, the sole owner of
 // ChatContract.
 func composeChatContract(settings config.ServiceConnection, options ...grpc.DialOption) (gateway.ChatContract, func(), error) {
-	if settings.Mode != "remote" {
-		return nil, nil, fmt.Errorf("unsupported gateway service mode %q; archie-gateway is required, see deployments/README.md", settings.Mode)
-	}
 	if strings.TrimSpace(settings.Target) == "" {
-		return nil, nil, fmt.Errorf("remote gateway requires a target")
+		return nil, nil, fmt.Errorf("services.gateway.target is required")
 	}
 	// Deployments that put the Gateway on a separate trust boundary supply
 	// their own transport credentials through options; the default must be
