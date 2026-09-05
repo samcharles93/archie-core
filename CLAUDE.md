@@ -195,6 +195,19 @@ structures found in legacy packages.
   receiver, one dispatch config). Do not silently enable it for multi-identity
   deployments without first building per-identity routing -- see
   `ARCHITECTURE.md`'s "Webhook intake" section.
+- **`internal/domain/embedding/` + `internal/infrastructure/embedding/`:**
+  Embedding client contract + implementation. Config-driven exactly like chat
+  model roles: `models.embedding = "provider/model"` plus a `[providers.*]`
+  entry. `infrastructure/embedding.New` degrades to `(nil, false)` -- never an
+  error -- for a missing role, unknown provider, unsupported class, or
+  unresolved credential; wired as an optional capability in
+  `bootstrap.go`'s `setupEmbeddings`. Only provider classes matching
+  `config.Provider`'s shape are supported (openai, gemini, ollama, cohere,
+  mistral) -- azure needs a `Deployment` field this config type doesn't have.
+- **`internal/domain/sampling/`:** The curator `Sampler` interface (see
+  `docs/prds/curator-sampler-wave1.md`) plus four pure, deterministic
+  strategies (recency, staleness, random, all). No curator consumes a
+  `Sampler` yet -- `curator.Registrar` is untouched by this package.
 
 ## Development Protocol
 
