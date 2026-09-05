@@ -22,11 +22,8 @@ func TestComposeChatContractRejectsInvalidSettings(t *testing.T) {
 		name     string
 		settings config.ServiceConnection
 	}{
-		{name: "unknown mode", settings: config.ServiceConnection{Mode: "automatic"}},
-		{name: "default mode", settings: config.ServiceConnection{Target: "localhost:1234"}},
-		{name: "inproc removed", settings: config.ServiceConnection{Mode: "inproc", Target: "localhost:1234"}},
-		{name: "remote missing target", settings: config.ServiceConnection{Mode: "remote"}},
-		{name: "remote blank target", settings: config.ServiceConnection{Mode: "remote", Target: " \t\n"}},
+		{name: "missing target", settings: config.ServiceConnection{}},
+		{name: "blank target", settings: config.ServiceConnection{Target: " \t\n"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			chat, cleanup, err := composeChatContract(tt.settings)
@@ -58,7 +55,7 @@ func TestComposeChatContractRemoteAndCleanup(t *testing.T) {
 	})
 
 	chat, cleanup, err := composeChatContract(
-		config.ServiceConnection{Mode: "remote", Target: "passthrough:///chat"},
+		config.ServiceConnection{Target: "passthrough:///chat"},
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 			return listener.DialContext(ctx)
 		}),

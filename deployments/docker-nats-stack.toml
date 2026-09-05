@@ -18,7 +18,6 @@ work_dir = "~/.local/share/archie/work"
 db_path = "~/.local/share/archie/archie.db"
 
 [services.gateway]
-mode = "remote"
 target = "127.0.0.1:8585"
 
 [forge]
