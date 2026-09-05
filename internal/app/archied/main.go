@@ -354,6 +354,11 @@ func Run() int {
 	defer stop()
 
 	b := newBootstrap()
+	// Arm the shutdown watchdog before any cleanup is registered so its
+	// disarm runs last in the LIFO cleanup chain: it force-exits the process
+	// as a backstop if graceful shutdown hangs past the drain-plus-grace
+	// leash, and stands down once every subsystem has shut down cleanly.
+	b.startShutdownWatchdog(ctx)
 	if err := b.loadConfig(ctx, args.cfgPath, args.overlayPath, args.noConfigOverlay); err != nil {
 		return 1
 	}
