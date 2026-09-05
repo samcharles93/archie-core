@@ -19,14 +19,15 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ChatService_Snapshot_FullMethodName       = "/gateway.v1.ChatService/Snapshot"
-	ChatService_GetSession_FullMethodName     = "/gateway.v1.ChatService/GetSession"
-	ChatService_RecentMessages_FullMethodName = "/gateway.v1.ChatService/RecentMessages"
-	ChatService_RecentTurns_FullMethodName    = "/gateway.v1.ChatService/RecentTurns"
-	ChatService_Route_FullMethodName          = "/gateway.v1.ChatService/Route"
-	ChatService_Stream_FullMethodName         = "/gateway.v1.ChatService/Stream"
-	ChatService_Cancel_FullMethodName         = "/gateway.v1.ChatService/Cancel"
-	ChatService_SetPersona_FullMethodName     = "/gateway.v1.ChatService/SetPersona"
+	ChatService_Snapshot_FullMethodName        = "/gateway.v1.ChatService/Snapshot"
+	ChatService_GetSession_FullMethodName      = "/gateway.v1.ChatService/GetSession"
+	ChatService_RecentMessages_FullMethodName  = "/gateway.v1.ChatService/RecentMessages"
+	ChatService_RecentTurns_FullMethodName     = "/gateway.v1.ChatService/RecentTurns"
+	ChatService_Route_FullMethodName           = "/gateway.v1.ChatService/Route"
+	ChatService_Stream_FullMethodName          = "/gateway.v1.ChatService/Stream"
+	ChatService_Cancel_FullMethodName          = "/gateway.v1.ChatService/Cancel"
+	ChatService_SetPersona_FullMethodName      = "/gateway.v1.ChatService/SetPersona"
+	ChatService_ApplyTaskAction_FullMethodName = "/gateway.v1.ChatService/ApplyTaskAction"
 )
 
 // ChatServiceClient is the client API for ChatService service.
@@ -41,6 +42,7 @@ type ChatServiceClient interface {
 	Stream(ctx context.Context, in *StreamRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamResponse], error)
 	Cancel(ctx context.Context, in *CancelRequest, opts ...grpc.CallOption) (*CancelResponse, error)
 	SetPersona(ctx context.Context, in *SetPersonaRequest, opts ...grpc.CallOption) (*SetPersonaResponse, error)
+	ApplyTaskAction(ctx context.Context, in *ApplyTaskActionRequest, opts ...grpc.CallOption) (*ApplyTaskActionResponse, error)
 }
 
 type chatServiceClient struct {
@@ -140,6 +142,16 @@ func (c *chatServiceClient) SetPersona(ctx context.Context, in *SetPersonaReques
 	return out, nil
 }
 
+func (c *chatServiceClient) ApplyTaskAction(ctx context.Context, in *ApplyTaskActionRequest, opts ...grpc.CallOption) (*ApplyTaskActionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ApplyTaskActionResponse)
+	err := c.cc.Invoke(ctx, ChatService_ApplyTaskAction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ChatServiceServer is the server API for ChatService service.
 // All implementations must embed UnimplementedChatServiceServer
 // for forward compatibility.
@@ -152,6 +164,7 @@ type ChatServiceServer interface {
 	Stream(*StreamRequest, grpc.ServerStreamingServer[StreamResponse]) error
 	Cancel(context.Context, *CancelRequest) (*CancelResponse, error)
 	SetPersona(context.Context, *SetPersonaRequest) (*SetPersonaResponse, error)
+	ApplyTaskAction(context.Context, *ApplyTaskActionRequest) (*ApplyTaskActionResponse, error)
 	mustEmbedUnimplementedChatServiceServer()
 }
 
@@ -185,6 +198,9 @@ func (UnimplementedChatServiceServer) Cancel(context.Context, *CancelRequest) (*
 }
 func (UnimplementedChatServiceServer) SetPersona(context.Context, *SetPersonaRequest) (*SetPersonaResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetPersona not implemented")
+}
+func (UnimplementedChatServiceServer) ApplyTaskAction(context.Context, *ApplyTaskActionRequest) (*ApplyTaskActionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ApplyTaskAction not implemented")
 }
 func (UnimplementedChatServiceServer) mustEmbedUnimplementedChatServiceServer() {}
 func (UnimplementedChatServiceServer) testEmbeddedByValue()                     {}
@@ -344,6 +360,24 @@ func _ChatService_SetPersona_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ChatService_ApplyTaskAction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ApplyTaskActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).ApplyTaskAction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_ApplyTaskAction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).ApplyTaskAction(ctx, req.(*ApplyTaskActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ChatService_ServiceDesc is the grpc.ServiceDesc for ChatService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -378,6 +412,10 @@ var ChatService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetPersona",
 			Handler:    _ChatService_SetPersona_Handler,
+		},
+		{
+			MethodName: "ApplyTaskAction",
+			Handler:    _ChatService_ApplyTaskAction_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

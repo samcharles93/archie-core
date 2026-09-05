@@ -5,17 +5,20 @@ import (
 	"errors"
 	"slices"
 	"strings"
+
+	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
 // LocalChatAdapter connects the chat boundary to the existing gateway owners.
 // Composition configures the Router, including updates and dangerous actions,
 // before publishing this adapter to consumers.
 type LocalChatAdapter struct {
-	Router   *Router
-	Sessions SessionStore
-	Turns    *Turns
-	Models   ModelManager
-	Personas *PersonaRegistry
+	Router    *Router
+	Sessions  SessionStore
+	Turns     *Turns
+	Models    ModelManager
+	Personas  *PersonaRegistry
+	TaskActor ChatTaskActor
 }
 
 var _ ChatContract = (*LocalChatAdapter)(nil)
@@ -103,6 +106,13 @@ func (a *LocalChatAdapter) SetPersona(ctx context.Context, id, name string) (boo
 		return false, ErrChatCapabilityUnavailable
 	}
 	return a.Personas.SetActive(id, strings.ToLower(name)), nil
+}
+
+func (a *LocalChatAdapter) ApplyTaskAction(ctx context.Context, identity string, taskID int64, action taskstate.Action) (TaskActionResult, error) {
+	if a.TaskActor == nil {
+		return TaskActionResult{}, ErrChatCapabilityUnavailable
+	}
+	return a.TaskActor.ApplyChatTaskAction(ctx, identity, taskID, action)
 }
 
 func (a *LocalChatAdapter) Stream(ctx context.Context, msg Message) (<-chan ChatEvent, error) {

@@ -1,10 +1,14 @@
 package gateway
 
-import "context"
+import (
+	"context"
+
+	"github.com/samcharles93/archie-core/internal/taskstate"
+)
 
 // ChatContract is the conversational boundary consumed by channel frontends.
 // Results are snapshots: callers must not rely on shared object identity.
-type ChatContract interface {
+type ChatContract interface { //nolint:interfacebloat // wire contract intentionally covers the complete Gateway facade
 	Snapshot(context.Context) (ChatSnapshot, error)
 	GetSession(context.Context, string) (SessionContext, bool, error)
 	RecentMessages(context.Context, string, int) ([]Message, error)
@@ -15,6 +19,13 @@ type ChatContract interface {
 	Stream(context.Context, Message) (<-chan ChatEvent, error)
 	Cancel(context.Context, string) (ChatCancellation, error)
 	SetPersona(context.Context, string, string) (bool, error)
+	ChatTaskActionContract
+}
+
+// ChatTaskActionContract is the operator task mutation capability exposed by
+// the Gateway. It is separate so read/turn consumers do not need to model it.
+type ChatTaskActionContract interface {
+	ApplyTaskAction(context.Context, string, int64, taskstate.Action) (TaskActionResult, error)
 }
 
 type ChatSnapshot struct {

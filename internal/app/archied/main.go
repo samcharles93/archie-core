@@ -665,14 +665,60 @@ func (a chatTaskLogReaderAdapter) ReadChatTaskLogs(
 // It enforces identity scoping so an identity cannot mutate another
 // identity's tasks.
 type chatTaskActorAdapter struct {
-	tasks   func(context.Context, int64) (*store.Task, error)
-	handler http.Handler
-	token   func() string
+	tasks    func(context.Context, int64) (*store.Task, error)
+	apply    func(context.Context, string, int64, taskstate.Action) (gateway.TaskActionResult, error)
+	contract gateway.ChatContract
+	handler  http.Handler
+	token    func() string
+}
+
+func applyGatewayTaskAction(st store.TaskStore) func(context.Context, string, int64, taskstate.Action) (gateway.TaskActionResult, error) {
+	return func(ctx context.Context, identity string, taskID int64, action taskstate.Action) (gateway.TaskActionResult, error) {
+		task, err := st.TaskByID(ctx, taskID)
+		if err != nil {
+			return gateway.TaskActionResult{}, err
+		}
+		if task == nil {
+			return gateway.TaskActionResult{}, fmt.Errorf("task %d not found", taskID)
+		}
+		if task.Identity != identity {
+			return gateway.TaskActionResult{}, fmt.Errorf("task %d belongs to %q, not %q", taskID, task.Identity, identity)
+		}
+		if err := taskstate.CheckAction(task.Status, action); err != nil {
+			return gateway.TaskActionResult{}, err
+		}
+		switch action {
+		case taskstate.ActionApprove:
+			err = st.Requeue(ctx, taskID, store.StatusWaitingHuman, "implement")
+		case taskstate.ActionRetry:
+			err = st.RetryTask(ctx, taskID, store.StatusParked, task.Workflow)
+		case taskstate.ActionCancel, taskstate.ActionReject:
+			err = st.Transition(ctx, taskID, task.Status, store.StatusClosedWontDo, "declined by "+identity)
+		case taskstate.ActionAbandon:
+			err = st.Transition(ctx, taskID, store.StatusParked, store.StatusClosedWontDo, "abandoned by "+identity)
+		case taskstate.ActionStop:
+			return gateway.TaskActionResult{}, fmt.Errorf("stopping running tasks is unavailable in the Gateway Service")
+		case taskstate.ActionArchive:
+			_, err = st.ArchiveTask(ctx, taskID, task.Status, events.Event{Kind: events.KindTaskArchiveRequested, TaskID: taskID})
+		default:
+			return gateway.TaskActionResult{}, fmt.Errorf("unsupported task action %q", action)
+		}
+		if err != nil {
+			return gateway.TaskActionResult{}, err
+		}
+		return gateway.TaskActionResult{TaskID: taskID, Action: string(action), Message: fmt.Sprintf("Applied %s to task %d.", action, taskID)}, nil
+	}
 }
 
 func (a chatTaskActorAdapter) ApplyChatTaskAction(
 	ctx context.Context, identity string, taskID int64, action taskstate.Action,
 ) (gateway.TaskActionResult, error) {
+	if a.contract != nil {
+		return a.contract.ApplyTaskAction(ctx, identity, taskID, action)
+	}
+	if a.apply != nil {
+		return a.apply(ctx, identity, taskID, action)
+	}
 	if a.tasks == nil || a.handler == nil {
 		return gateway.TaskActionResult{}, fmt.Errorf("task actions are not configured")
 	}

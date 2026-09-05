@@ -1,12 +1,11 @@
 package archied
 
 import (
-	"crypto/tls"
 	"fmt"
 	"strings"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/gateway"
@@ -26,7 +25,11 @@ func composeChatContract(settings config.ServiceConnection, local gateway.ChatCo
 		if strings.TrimSpace(settings.Target) == "" {
 			return nil, nil, fmt.Errorf("remote gateway requires a target")
 		}
-		opts := append([]grpc.DialOption{grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12}))}, options...)
+		// The first extraction uses a loopback gRPC hop. Deployments that put
+		// the Gateway on a separate trust boundary supply their own transport
+		// credentials through options; the local process split must be usable
+		// without manufacturing a certificate in the config loader.
+		opts := append([]grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}, options...)
 		conn, err := grpc.NewClient(settings.Target, opts...)
 		if err != nil {
 			return nil, nil, fmt.Errorf("create gateway client: %w", err)

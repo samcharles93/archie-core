@@ -9,5 +9,9 @@ func testChatService(router *gateway.Router, sessions gateway.SessionStore, turn
 }
 
 func testLocalChat(service *ChatService) *gateway.LocalChatAdapter {
-	return service.Contract.(*gateway.LocalChatAdapter)
+	local, ok := service.Contract.(*gateway.LocalChatAdapter)
+	if !ok {
+		panic("test chat contract is not local")
+	}
+	return local
 }

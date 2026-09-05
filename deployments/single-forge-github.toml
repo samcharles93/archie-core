@@ -13,6 +13,12 @@ bot_user = "archie-bot"
 bot_email = "archie-bot@users.noreply.github.com"
 diff_cap_lines = 400
 
+# The Gateway Service owns conversational state and serves ChatContract over
+# gRPC. Run archie-gateway alongside archied with this address.
+[services.gateway]
+mode = "remote"
+target = "127.0.0.1:8585"
+
 [forge]
 type = "github"
 host = "https://github.com"

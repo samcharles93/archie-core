@@ -7,6 +7,7 @@ import (
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/gateway/v1"
 	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
 type server struct {
@@ -72,6 +73,14 @@ func (s *server) SetPersona(ctx context.Context, r *pb.SetPersonaRequest) (*pb.S
 		return nil, err
 	}
 	return &pb.SetPersonaResponse{Found: v}, nil
+}
+
+func (s *server) ApplyTaskAction(ctx context.Context, r *pb.ApplyTaskActionRequest) (*pb.ApplyTaskActionResponse, error) {
+	v, err := s.chat.ApplyTaskAction(ctx, r.Identity, r.TaskId, taskstate.Action(r.Action))
+	if err != nil {
+		return nil, err
+	}
+	return &pb.ApplyTaskActionResponse{TaskId: v.TaskID, Action: v.Action, Message: v.Message}, nil
 }
 
 func (s *server) Stream(r *pb.StreamRequest, out grpc.ServerStreamingServer[pb.StreamResponse]) error {
