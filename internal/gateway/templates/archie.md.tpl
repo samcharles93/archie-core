@@ -61,4 +61,22 @@ Model: {{xml .}}
 {{- with .SessionID}}
 Session: {{xml .}}
 {{- end}}
+{{- with .Workspace}}
+Workspace: {{xml .}}
+{{- else}}
+Workspace: unknown
+{{- end}}
+{{- if .Repos}}
+Managed repositories:
+{{- range .Repos}}
+- {{xml .FullName}} ({{if .Forge}}{{xml .Forge}}{{else}}forge unknown{{end}}, default branch {{xml .DefaultBranch}})
+{{- end}}
+{{- else}}
+Managed repositories: none configured
+{{- end}}
+{{- with .Operator}}
+Operator: {{xml .}}
+{{- else}}
+Operator: unknown
+{{- end}}
 </env>

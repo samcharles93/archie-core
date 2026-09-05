@@ -120,6 +120,55 @@ func TestBuildSystemPromptSections(t *testing.T) {
 				"Current page:",
 			},
 		},
+		{
+			name: "env block carries workspace, managed repositories and operator",
+			cfg: SystemPromptConfig{
+				Now:       fixedTime(t),
+				Channel:   "telegram",
+				Workspace: "/work/apps/archie-core",
+				Operator:  "Sam",
+				Repos: []RepoEnv{
+					{FullName: "samcharles93/archie-core", Forge: "https://github.com", DefaultBranch: "main"},
+					{FullName: "my-org/frontend-app", Forge: "https://github.com", DefaultBranch: "develop"},
+				},
+			},
+			contains: []string{
+				"<env",
+				"Workspace: /work/apps/archie-core",
+				"Managed repositories:",
+				"- samcharles93/archie-core (https://github.com, default branch main)",
+				"- my-org/frontend-app (https://github.com, default branch develop)",
+				"Operator: Sam",
+			},
+		},
+		{
+			name: "unset workspace, repositories and operator are explicit, not defaulted",
+			cfg:  SystemPromptConfig{Now: fixedTime(t)},
+			contains: []string{
+				"Workspace: unknown",
+				"Managed repositories: none configured",
+				"Operator: unknown",
+			},
+			// The prompt must never invent a workspace path or repository the
+			// daemon did not grant it.
+			absent: []string{
+				"Workspace: /",
+				"Managed repositories: -",
+				"Operator: Sam",
+			},
+		},
+		{
+			name: "a managed repository with no forge reports it as unknown",
+			cfg: SystemPromptConfig{
+				Now: fixedTime(t),
+				Repos: []RepoEnv{
+					{FullName: "acme/widgets", DefaultBranch: "main"},
+				},
+			},
+			contains: []string{
+				"- acme/widgets (forge unknown, default branch main)",
+			},
+		},
 	}
 
 	for _, tc := range tests {

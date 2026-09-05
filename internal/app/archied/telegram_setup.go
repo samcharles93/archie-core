@@ -332,12 +332,46 @@ func newChatTurnRunner(
 		BotUser:      cfg.BotUser,
 		Channel:      channel,
 		Operator:     cfg.Chat.Operator,
+		Workspace:    cfg.Chat.Workspace,
+		Repos:        chatRepoEnv(cfg, s.DefaultChatIdentity),
 		Log:          s.Log,
 	})
 	if err := runner.Recover(ctx); err != nil && s.Log != nil {
 		s.Log.Error("recover chat turns", "channel", channel, "err", err)
 	}
 	return runner
+}
+
+// chatRepoEnv renders the repositories the chat agent manages, with their
+// forge host and default branch, into the prompt's <env> block so the agent
+// knows its scope without probing the filesystem. It follows the same
+// identity resolution as chatTaskProfiles: when identities are configured,
+// the one matching the active chat identity wins (falling back to the first
+// identity with repositories, which is what chatTaskProfiles selects as the
+// default); otherwise the single-identity repositories are used.
+func chatRepoEnv(cfg config.Config, identity string) []gateway.RepoEnv {
+	repos, forge := cfg.Repos, cfg.Forge
+	if len(cfg.Identities) > 0 {
+		repos, forge = nil, config.Forge{}
+		for _, id := range cfg.Identities {
+			if id.Name == identity {
+				repos, forge = id.Repos, id.Forge
+				break
+			}
+			if len(repos) == 0 && len(id.Repos) > 0 {
+				repos, forge = id.Repos, id.Forge
+			}
+		}
+	}
+	env := make([]gateway.RepoEnv, 0, len(repos))
+	for _, repo := range repos {
+		env = append(env, gateway.RepoEnv{
+			FullName:      repo.FullName(),
+			Forge:         forge.Host,
+			DefaultBranch: repo.BaseBranch(),
+		})
+	}
+	return env
 }
 
 func sendChatTurn(ctx context.Context, llm *runtime.Runtime, chatModel string, options core.GenerateOptions, turn gateway.TurnStream) (string, error) {
