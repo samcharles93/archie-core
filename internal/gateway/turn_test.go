@@ -18,8 +18,8 @@ type turnTestModel struct {
 	gotExtra   []tools.ToolEntry
 }
 
-func (m *turnTestModel) Prepare(_ context.Context, _ string, extra []tools.ToolEntry) (PreparedTurnModel, error) {
-	m.gotExtra = append([]tools.ToolEntry(nil), extra...)
+func (m *turnTestModel) Prepare(_ context.Context, req TurnPrepareContext) (PreparedTurnModel, error) {
+	m.gotExtra = append([]tools.ToolEntry(nil), req.Extra...)
 	if m.prepareErr != nil {
 		return nil, m.prepareErr
 	}

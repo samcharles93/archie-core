@@ -12,7 +12,6 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
-	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -82,20 +81,30 @@ func chatGenerateOptions(
 	maxSteps int,
 	limits agentexec.ToolLimits,
 	extra []tools.ToolEntry,
+	contextWindow int,
 ) (core.GenerateOptions, error) {
 	toolOpts := limits.Options()
 	if approval := gateway.ApprovalFromContext(ctx); approval != nil {
 		toolOpts.Approval = approval
 	}
-	toolSet, err := agentexec.BuildToolSet(registry, toolOpts)
+
+	// Progressive tool disclosure: compose the base registry with the per-turn
+	// extras into a turn-local registry (extras are identity-bound and cannot
+	// live in the process-wide registry), then let the ContextPressureGate
+	// decide whether to serve the full arsenal directly or fall back to the
+	// bridge tools. The bridge tools are never registered process-wide, so they
+	// stay inside this composed, per-turn registry.
+	composed, err := tools.ComposeForTurn(registry, extra)
 	if err != nil {
 		return core.GenerateOptions{}, err
 	}
-	extraSet, err := agentexec.BuildToolSetFrom(extra, toolOpts)
+	gate := tools.NewContextPressureGate(contextWindow)
+	gate.Evaluate(composed.All())
+	toolSet, err := agentexec.BuildToolSetFrom(gate.FilterTools(composed), toolOpts)
 	if err != nil {
 		return core.GenerateOptions{}, err
 	}
-	maps.Copy(toolSet, extraSet)
+
 	if maxSteps <= 0 {
 		maxSteps = defaultChatMaxSteps
 	}
