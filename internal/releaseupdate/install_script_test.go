@@ -164,7 +164,7 @@ func TestUpdateWatchdogRestoresTaskDatabaseOnDaemonRollback(t *testing.T) {
 	}
 	defer db.Close()
 	var version int
-	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+	if err := db.QueryRowContext(t.Context(), "PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatal(err)
 	}
 	if version != 1 {
@@ -202,10 +202,10 @@ func createSQLiteDatabase(t *testing.T, path string, version int) {
 		t.Fatalf("open database %s: %v", path, err)
 	}
 	defer db.Close()
-	if _, err := db.Exec("PRAGMA user_version = " + strconv.Itoa(version)); err != nil {
+	if _, err := db.ExecContext(t.Context(), "PRAGMA user_version = "+strconv.Itoa(version)); err != nil {
 		t.Fatalf("set database version for %s: %v", path, err)
 	}
-	if _, err := db.Exec("CREATE TABLE tasks (id INTEGER)"); err != nil {
+	if _, err := db.ExecContext(t.Context(), "CREATE TABLE tasks (id INTEGER)"); err != nil {
 		t.Fatalf("create tasks table in %s: %v", path, err)
 	}
 }
