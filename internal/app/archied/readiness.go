@@ -23,9 +23,7 @@ import (
 // setupReadinessProbes assembles the readiness probes and publishes the
 // registry to the dashboard. It must be called after setupObservability (so
 // b.web.Cfg and b.web.Channels are set) and after the chat wiring (so
-// b.web.Chat exposes the model manager and session store). See
-// docs/prds/status-health-surface.md and the Operations: readiness probes
-// epic.
+// b.web.Chat exposes the model manager and session store).
 func (b *boot) setupReadinessProbes() {
 	cfg := b.cfg
 	probes := []health.Probe{
