@@ -33,6 +33,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/eda/module"
 	"github.com/samcharles93/archie-core/internal/domain/eda/playbook"
+	domainembedding "github.com/samcharles93/archie-core/internal/domain/embedding"
 	domainmemory "github.com/samcharles93/archie-core/internal/domain/memory"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
@@ -43,6 +44,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/overlay"
+	infraembedding "github.com/samcharles93/archie-core/internal/infrastructure/embedding"
 	"github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	infraMemory "github.com/samcharles93/archie-core/internal/infrastructure/memory"
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
@@ -120,6 +122,13 @@ type boot struct {
 	storeBackend  storage.Backend
 
 	llm *runtime.Runtime
+
+	// embeddings is nil unless models["embedding"] and a working provider
+	// credential are both configured -- see setupLLMAndChat's "Embeddings
+	// capability" section. Consumers must treat a nil embeddings the same
+	// as domainembedding.ErrUnavailable: skip, never fail startup or an
+	// unrelated call.
+	embeddings domainembedding.Client
 
 	toolReg             *tools.Registry
 	chatModels          gateway.ModelManager
@@ -479,6 +488,23 @@ func (b *boot) setupContainers(ctx context.Context) func() {
 	return closeDocker
 }
 
+// setupEmbeddings builds the optional embedding capability. A client is
+// wired only when models["embedding"] names a provider/model and that
+// provider's credential resolves -- the same credential-missing-degrades-
+// not-fatal rule registerMinimaxTool follows for generate_video. No
+// warning when the role was simply never configured; a warning when it was
+// configured but couldn't be made to work, so a broken setup doesn't go
+// unnoticed the way AGENTS.md already warns an unnoticed optional-provider
+// degradation can.
+func (b *boot) setupEmbeddings(cfg config.Config, log *slog.Logger) {
+	if client, ok := infraembedding.New(cfg, infraembedding.Options{}); ok {
+		b.embeddings = client
+		log.Info("embedding capability enabled", "role", infraembedding.Role)
+	} else if cfg.Models[infraembedding.Role] != "" {
+		log.Warn("embedding capability configured but unavailable; capability disabled", "role", infraembedding.Role)
+	}
+}
+
 // setupLLMAndChat wires the runtime, tool registry, model management,
 // personas and the dashboard's chat service.
 func (b *boot) setupLLMAndChat(ctx context.Context) {
@@ -493,6 +519,8 @@ func (b *boot) setupLLMAndChat(ctx context.Context) {
 	chatModels := newChatModelManager(cfg.Models, cfg.Chat.Models, b.catalogModels)
 	chatModels.ApplyModelCatalog(b.catalog)
 	b.chatModels = chatModels
+
+	b.setupEmbeddings(cfg, log)
 
 	// ── Persona registry ─────────────────────────────────────────────
 	b.personas = gateway.NewPersonaRegistry(gateway.DefaultPersonas())
