@@ -2,7 +2,7 @@
 
 **Status:** Proposed -- not yet approved for implementation
 **Date:** 2026-09-05
-**Beads epic:** not yet filed; file one before any implementation work starts
+**Beads epic:** archie-core-8cda
 **Prior art:** `docs/inspiration/2026-09-05-awx-service-decomposition-and-ansible-task-model.md`,
 `docs/inspiration/module-reference-awx-decomposition-vs-archie.md`,
 `docs/inspiration/service-discovery-research-2026-09-05.md`,
