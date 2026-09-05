@@ -23,7 +23,10 @@ api_key_env = "OPENAI_API_KEY"
 mode = "embedded"
 
 [containers]
-image = "ghcr.io/samcharles93/archie-agent:latest"
+# Pinned to a verified digest -- archie-agent has no published semver tag
+# yet (CI only pushes :latest). See
+# deployments/systemd-user-service.md#pinning-the-archie-agent-image.
+image = "ghcr.io/samcharles93/archie-agent@sha256:870f1b1357979cfea23fccacb24166ebeb9ab321708ef2c2b218a763ed99b090"
 pull_policy = "missing"
 
 [budgets]

@@ -48,7 +48,11 @@ url = "nats://172.19.0.1:4222"
 
 [containers]
 network = "archie-core_default"
-image = "git.example.com/you/archie-agent:latest"
+# Pin your own registry's tag/digest -- never deploy against a bare
+# ":latest" reference, which can change under a running deployment with no
+# warning. See deployments/systemd-user-service.md#pinning-the-archie-agent-image
+# for the pinning convention this repo follows for its own GHCR image.
+image = "git.example.com/you/archie-agent:v1.21.0"  # or "@sha256:..." for a production digest pin
 max_concurrency = 4
 max_uptime = "60m"
 # "missing": pull only when the image is absent locally. "always" against a
