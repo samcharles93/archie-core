@@ -2,13 +2,16 @@ package releaseupdate
 
 import (
 	"bufio"
+	"database/sql"
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+
+	_ "modernc.org/sqlite"
 )
 
 func TestUpdateInstallGatewayOnlySkipsRuntimeWork(t *testing.T) {
@@ -140,9 +143,7 @@ func TestUpdateWatchdogRestoresTaskDatabaseOnDaemonRollback(t *testing.T) {
 		}
 	}
 	for path, version := range map[string]int{dbPath: 2, backupPath: 1} {
-		if output, err := exec.CommandContext(t.Context(), "sqlite3", path, fmt.Sprintf("PRAGMA user_version=%d; CREATE TABLE tasks (id INTEGER);", version)).CombinedOutput(); err != nil {
-			t.Fatalf("create database %s: %v: %s", path, err, output)
-		}
+		createSQLiteDatabase(t, path, version)
 	}
 	callsPath := filepath.Join(work, "calls")
 	writeFakeCommand(t, fakeDir, "systemctl", `printf '%s\n' "systemctl $*" >> "$ARCHIE_TEST_CALLS"`)
@@ -157,12 +158,17 @@ func TestUpdateWatchdogRestoresTaskDatabaseOnDaemonRollback(t *testing.T) {
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("watchdog failed: %v\n%s", err, output)
 	}
-	output, err := exec.CommandContext(t.Context(), "sqlite3", dbPath, "PRAGMA user_version;").Output()
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(string(output)) != "1" {
-		t.Fatalf("restored schema version = %q, want 1", output)
+	defer db.Close()
+	var version int
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != 1 {
+		t.Fatalf("restored schema version = %d, want 1", version)
 	}
 	calls, err := os.ReadFile(callsPath)
 	if err != nil {
@@ -186,6 +192,21 @@ func TestUpdateWatchdogRestoresTaskDatabaseOnDaemonRollback(t *testing.T) {
 	}
 	if startIndex < 0 || startIndex <= copyIndex {
 		t.Fatalf("rollback must restart service after restoring database; calls = %q", calls)
+	}
+}
+
+func createSQLiteDatabase(t *testing.T, path string, version int) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open database %s: %v", path, err)
+	}
+	defer db.Close()
+	if _, err := db.Exec("PRAGMA user_version = " + strconv.Itoa(version)); err != nil {
+		t.Fatalf("set database version for %s: %v", path, err)
+	}
+	if _, err := db.Exec("CREATE TABLE tasks (id INTEGER)"); err != nil {
+		t.Fatalf("create tasks table in %s: %v", path, err)
 	}
 }
 
