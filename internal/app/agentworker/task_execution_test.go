@@ -327,7 +327,7 @@ func connectTaskRPC(t *testing.T, url string) *natsio.Conn {
 // Store server rather than the deleted NATS storerpc path.
 func startStateStoreGRPC(t *testing.T, local *store.Store) string {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}

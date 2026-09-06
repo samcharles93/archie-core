@@ -301,11 +301,9 @@ func TestRPCFactoriesPreserveIdentityAndTimeout(t *testing.T) {
 	if !ok || forgeClient.Identity != "identity-a" || forgeClient.Timeout != timeout {
 		t.Fatalf("forge client = %#v", forgeClient)
 	}
-	store := transport.Store(timeout)
-	if store == nil {
+	if store := transport.Store(timeout); store == nil {
 		t.Fatal("store client = nil, want a non-nil workflow.Store")
 	}
-	var _ workflow.Store = store
 	treeClient, ok := transport.Trees("identity-a", "grant-a", timeout).(*worktreerpc.Client)
 	if !ok || treeClient.Identity != "identity-a" || treeClient.Grant != "grant-a" || treeClient.Timeout != timeout {
 		t.Fatalf("tree client = %#v", treeClient)
