@@ -176,7 +176,11 @@ Verified couplings that this decomposition must eliminate:
    **RESOLVED (2026-09-05).** One State Store service owns the existing
    single SQLite file behind narrow typed contracts (`TaskStore`,
    `CaptureStore`, `MappingStore`, `BindingStore`, `WorkflowStore`) over
-   gRPC. No physical database-per-service: the solo-maintainer / team-
+   gRPC. *(Ratified 2026-09-06: the workflow contract is now the
+   domain-owned `workflow.Store`, which supersedes
+   `internal/store`'s `WorkflowStore`. See note below and
+   `docs/prds/state-store-contract.md`.)*
+   No physical database-per-service: the solo-maintainer / team-
    topology rule of thumb plus the low value of per-service autonomy for
    one person rule it out, and one store means no distributed-transactions
    problem. The Gateway keeps its own already-separate session SQLite.
