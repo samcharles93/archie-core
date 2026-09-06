@@ -16,7 +16,7 @@ import (
 // through the same constructor so the surfaces cannot diverge.
 func (b *boot) taskActions() taskactions.Service {
 	return taskactionstore.NewService(
-		taskactionstore.Store{TaskStore: b.st},
+		taskactionstore.Store{TaskStore: b.stateStore},
 		taskactionstore.MaxRetries(config.NewHolder(b.cfg)),
 		b.cancelTask,
 		b.closeIssue,

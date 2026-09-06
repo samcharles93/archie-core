@@ -378,11 +378,13 @@ func Run() int { //nolint:cyclop // the composition root's setup sequence is del
 	if err := b.openStores(ctx); err != nil {
 		return 1
 	}
-	// Resolve the State Store contract adapter the daemon's own
-	// capture/mapping/binding consumers use. This is daemon-only (the gateway
-	// does not consume those surfaces), so it runs after openStores has opened
-	// b.st and resolved b.secrets and before setupObservability wires the
-	// dashboard's storage surfaces (docs/prds/state-store-contract.md §10).
+	// Upgrade the State Store contract adapter to a remote *staterpc.Client
+	// when [services.state].target is set; openStores already seeded it from
+	// b.st (the local default), so an empty target is a no-op. This is
+	// daemon-only (the gateway never dials a remote store), so it runs after
+	// openStores has opened b.st and resolved b.secrets and before
+	// setupObservability wires the dashboard's storage surfaces
+	// (docs/prds/state-store-contract.md §10).
 	if err := b.openStateStoreAdapter(); err != nil {
 		return 1
 	}

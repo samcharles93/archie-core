@@ -37,9 +37,10 @@ func (a testTaskActor) ApplyChatTaskAction(
 func newChatTaskActorForTest(t *testing.T, st store.TaskStore, cfg config.Config) chatTaskActorAdapter {
 	t.Helper()
 	b := &boot{
-		st:  st,
-		cfg: cfg,
-		log: slog.Default(),
+		st:         st,
+		stateStore: st,
+		cfg:        cfg,
+		log:        slog.Default(),
 	}
 	return chatTaskActorAdapter{contract: &gateway.LocalChatAdapter{TaskActor: testTaskActor{b}}}
 }

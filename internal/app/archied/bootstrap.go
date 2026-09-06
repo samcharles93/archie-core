@@ -103,13 +103,18 @@ type boot struct {
 
 	st store.TaskStore
 	// stateStore is the State Store contract adapter the daemon's own
-	// capture/mapping/binding consumers use. It is the in-process
-	// *store.Store (the same one b.st holds) unless [services.state].target
-	// is set, in which case it is a remote *staterpc.Client dialed to the
-	// standalone archie-state-store gRPC service. Task lifecycle (b.st)
-	// stays in-process until .4.5/.4.6; only capture/mapping/binding
-	// resolve through this field, so a consumer mixes in-process and remote
-	// contracts per contract-code while the daemon's own store stays local
+	// store consumers depend on. It is the in-process *store.Store (the
+	// same one b.st holds) unless [services.state].target is set, in which
+	// case it is a remote *staterpc.Client dialed to the standalone
+	// archie-state-store gRPC service. openStores seeds it from b.st so it
+	// is never nil in any composition (daemon or gateway); the daemon's
+	// openStateStoreAdapter upgrades it to the remote client when the seam
+	// is set (the gateway never calls openStateStoreAdapter, so it stays on
+	// the local adapter). During .4.5 the workflow/intake/task-lifecycle
+	// consumers (the TaskStore composite) resolve through this field, so a
+	// consumer mixes in-process and remote contracts per contract-code while
+	// the daemon's own local store stays in-process; the in-process State
+	// Store gRPC server keeps fronting b.st for the agent until .4.6
 	// (docs/prds/state-store-contract.md §12 step 6).
 	stateStore       store.TaskStore
 	chatSessionStore gateway.SessionStore
@@ -290,6 +295,13 @@ func (b *boot) openStores(ctx context.Context) error {
 		return err
 	}
 	b.st = st
+	// Seed the State Store contract adapter from the just-opened in-process
+	// store so it is never nil in any composition (Run and RunGateway both
+	// open b.st here). The daemon's openStateStoreAdapter upgrades it to a
+	// remote *staterpc.Client when [services.state].target is set; the
+	// gateway never calls openStateStoreAdapter, so it stays on this local
+	// adapter and never dials remote (docs/prds/state-store-contract.md §10).
+	b.stateStore = st
 	b.addCleanup(func() {
 		if err := st.Close(); err != nil {
 			log.Error("close store", "err", err)
@@ -298,17 +310,17 @@ func (b *boot) openStores(ctx context.Context) error {
 	return b.openChatSessions(ctx)
 }
 
-// openStateStoreAdapter selects the State Store contract adapter the daemon's
-// own capture/mapping/binding consumers will use. The base path is the local
-// *store.Store opened by openStores; when [services.state].target is set the
-// daemon instead dials the standalone archie-state-store gRPC service and
-// uses *staterpc.Client. Empty target keeps the in-process adapter (the
-// default -- the State Store service is not yet extracted into its own
-// process), so this is additive and behaviour-neutral until an operator flips
-// the seam (docs/prds/state-store-contract.md §10). Task lifecycle (b.st) is
-// untouched here -- only the capture/mapping/binding contracts route through
-// the adapter during .4.4. Called only from the daemon's composition (the
-// gateway does not consume these surfaces), so it runs after openStores has
+// openStateStoreAdapter upgrades the State Store contract adapter to the
+// remote *staterpc.Client when [services.state].target is set; otherwise it
+// leaves the in-process adapter seeded by openStores (the default -- the
+// State Store service is not yet extracted into its own process), so this is
+// additive and behaviour-neutral until an operator flips the seam
+// (docs/prds/state-store-contract.md §10). openStores already seeds
+// b.stateStore = b.st, so the empty-target branch is an idempotent no-op that
+// keeps the default explicit. Called only from the daemon's composition (the
+// gateway does not consume these surfaces via a remote adapter), so a gateway
+// config that happens to carry [services.state].target can never dial (or fail
+// closed against) a state store it does not use. It runs after openStores has
 // opened b.st and resolved b.secrets.
 func (b *boot) openStateStoreAdapter() error {
 	if strings.TrimSpace(b.cfg.Services.State.Target) == "" {
@@ -345,7 +357,7 @@ func (b *boot) handleRequeue(ctx context.Context, requeue int64, once bool) (boo
 	if requeue <= 0 {
 		return false, nil
 	}
-	if err := manualRequeueTask(ctx, b.st, requeue); err != nil {
+	if err := manualRequeueTask(ctx, b.stateStore, requeue); err != nil {
 		b.log.Error("requeue failed", "task", requeue, "err", err)
 		return false, err
 	}
@@ -391,7 +403,7 @@ func (b *boot) setupObservability() {
 			Path: origin.Path, Role: string(origin.Role), Layer: string(origin.Layer), Feature: string(origin.Feature),
 		})
 	}
-	b.web = &webui.Server{Store: b.st, Log: log.With("component", "webui"), LogFeed: b.logFeed, TaskLogs: b.taskLogs, Cfg: config.NewHolder(cfg), Channels: b.channelManager, Events: bus}
+	b.web = &webui.Server{Store: b.stateStore, Log: log.With("component", "webui"), LogFeed: b.logFeed, TaskLogs: b.taskLogs, Cfg: config.NewHolder(cfg), Channels: b.channelManager, Events: bus}
 	b.web.UpdateReportPath = updateReportPath(cfg.WorkDir, "webui")
 	if (cfg.Chat.Telegram.Token != (secret.SecretRef{}) || cfg.Chat.Telegram.TokenEnv != "") && len(cfg.Chat.Telegram.AllowedUserIDs) > 0 {
 		b.web.TelegramUpdateReportPath = updateReportPath(cfg.WorkDir, cfg.BotUser)
@@ -412,7 +424,7 @@ func (b *boot) setupObservability() {
 	b.web.Issues = b.forgeClient
 	b.wireWebStoreSurfaces()
 	sink := bus.Subscribe(256)
-	go persistAndBroadcastEvents(sink, b.st, b.web, log)
+	go persistAndBroadcastEvents(sink, b.stateStore, b.web, log)
 }
 
 // wireWebStoreSurfaces attaches the dashboard's optional storage surfaces.
@@ -608,11 +620,11 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 	cfg, log := b.cfg, b.log
 	start, ok := setupTelegramGateway(ctx, telegramSetup{
 		Cfg: config.NewHolder(cfg), CfgPath: cfgPath, OverlayPath: overlayPath,
-		St: b.st, LLM: b.llm, ChatModels: b.chatModels, ToolReg: b.toolReg,
+		St: b.stateStore, LLM: b.llm, ChatModels: b.chatModels, ToolReg: b.toolReg,
 		Personas: b.personas, ChatTasks: b.chatTasks, ChatController: b.chatController,
-		ChatTaskLister: chatTaskListerAdapter{tasks: b.st.Tasks},
+		ChatTaskLister: chatTaskListerAdapter{tasks: b.stateStore.Tasks},
 		ChatTaskLogs: chatTaskLogReaderAdapter{
-			tasks:    b.st.TaskByID,
+			tasks:    b.stateStore.TaskByID,
 			taskLogs: b.taskLogs,
 		},
 		ChatTaskActor: chatTaskActorAdapter{
@@ -639,8 +651,8 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 	// ── Email gateway (optional) ───────────────────────────────────
 	if cfg.Chat.Email.ListenAddr != "" {
 		em := email.New(cfg.Chat.Email.ListenAddr, cfg.Chat.Email.RelayAddr, log)
-		emRouter := gateway.NewRouter(b.st, nil, "email")
-		configureTaskCommands(emRouter, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.st.Tasks}, b.defaultChatIdentity)
+		emRouter := gateway.NewRouter(b.stateStore, nil, "email")
+		configureTaskCommands(emRouter, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.stateStore.Tasks}, b.defaultChatIdentity)
 		b.startGateways = append(b.startGateways, func() {
 			go func() {
 				lifecycle := gateway.Lifecycle{
@@ -667,8 +679,8 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 			[]webhook.RouteConfig{{Path: "/webhook"}},
 			log,
 		)
-		whRouter := gateway.NewRouter(b.st, nil, "webhook")
-		configureTaskCommands(whRouter, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.st.Tasks}, b.defaultChatIdentity)
+		whRouter := gateway.NewRouter(b.stateStore, nil, "webhook")
+		configureTaskCommands(whRouter, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.stateStore.Tasks}, b.defaultChatIdentity)
 		b.startGateways = append(b.startGateways, func() {
 			go func() {
 				lifecycle := gateway.Lifecycle{
@@ -1273,7 +1285,7 @@ func (b *boot) buildDaemon() {
 	b.d = &daemon.Daemon{
 		Cfg:            config.NewHolder(cfg),
 		ConnectedNATS:  daemon.NATSEndpoint{URL: b.natsURL, Token: b.natsToken},
-		Store:          b.st,
+		Store:          b.stateStore,
 		Bus:            b.bus,
 		Forge:          b.forgeClient,
 		Trees:          b.trees,

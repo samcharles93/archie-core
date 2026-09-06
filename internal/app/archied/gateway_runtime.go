@@ -33,16 +33,16 @@ func (b *boot) setupChatRuntime(cfg config.Config) {
 	var chatTasks gateway.TaskCreator
 	if len(profiles) > 0 {
 		chatTasks = gateway.NewStoreTaskCreatorForProfiles(
-			chatTaskWriterAdapter{enqueue: b.st.EnqueueChatTask},
+			chatTaskWriterAdapter{enqueue: b.stateStore.EnqueueChatTask},
 			profiles,
 		)
 	}
 	b.chatTasks = chatTasks
 	b.defaultChatIdentity = defaultChatIdentity
 	b.chatController = gateway.NewStoreTaskController(chatTaskControllerAdapter{
-		taskByID:   b.st.TaskByID,
-		requeue:    b.st.Requeue,
-		transition: b.st.Transition,
+		taskByID:   b.stateStore.TaskByID,
+		requeue:    b.stateStore.Requeue,
+		transition: b.stateStore.Transition,
 	})
 	b.updateService = makeUpdateService(telegramSetup{Cfg: config.NewHolder(cfg)})
 }
@@ -52,18 +52,18 @@ func (b *boot) setupChatRuntime(cfg config.Config) {
 func (b *boot) setupGatewayChat(ctx context.Context, actor gateway.ChatTaskActor) gateway.ChatContract {
 	b.setupChatRuntime(b.cfg)
 	cfg := b.cfg
-	router := gateway.NewRouter(b.st, nil, "web")
+	router := gateway.NewRouter(b.stateStore, nil, "web")
 	router.Version = fmt.Sprintf("Archie\nGateway: %s\nRuntime: %s", gatewayVersion, runtimeVersion)
 	router.Models = b.chatModels
 	router.Personas = b.personas
 	router.Updates = b.updateService
 	router.InitSessions(b.chatSessionStore)
-	configureTaskCommands(router, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.st.Tasks}, b.defaultChatIdentity)
+	configureTaskCommands(router, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.stateStore.Tasks}, b.defaultChatIdentity)
 	setup := telegramSetup{
-		Cfg: config.NewHolder(cfg), St: b.st, LLM: b.llm, ChatModels: b.chatModels, ToolReg: b.toolReg,
+		Cfg: config.NewHolder(cfg), St: b.stateStore, LLM: b.llm, ChatModels: b.chatModels, ToolReg: b.toolReg,
 		Personas: b.personas, ChatTasks: b.chatTasks, ChatController: b.chatController,
-		ChatTaskLister: chatTaskListerAdapter{tasks: b.st.Tasks},
-		ChatTaskLogs:   chatTaskLogReaderAdapter{tasks: b.st.TaskByID, taskLogs: b.taskLogs},
+		ChatTaskLister: chatTaskListerAdapter{tasks: b.stateStore.Tasks},
+		ChatTaskLogs:   chatTaskLogReaderAdapter{tasks: b.stateStore.TaskByID, taskLogs: b.taskLogs},
 		ChatTaskActor:  actor, DefaultChatIdentity: b.defaultChatIdentity, SessionStore: b.chatSessionStore,
 		Bus: b.bus, Log: b.log, Secrets: b.secrets,
 	}

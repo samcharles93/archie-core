@@ -274,12 +274,12 @@ gate_max_failures = 5
 #                                       # without a token fails closed (docs/prds/state-store-contract.md §9).
 #                                     # The standalone archie-state-store binary (.4.3) consumes
 #                                     # this surface; the daemon reads [services.state].target to
-#                                     # route its own capture/mapping/binding consumers to the
-#                                     # remote store (docs/prds/state-store-contract.md §10/§12 step 6).
-#                                     # Task lifecycle stays in-process and the daemon still serves
-#                                     # the State Store gRPC service in-process until that path is
-#                                     # deleted (.4.6); flipping this during .4.4 routes only the
-#                                     # capture/mapping/binding contracts remotely.
+#                                     # route its own capture/mapping/binding AND task-lifecycle /
+#                                     # workflow / intake consumers to the remote store
+#                                     # (docs/prds/state-store-contract.md §10/§12 step 6). The
+#                                     # daemon still serves the State Store gRPC service in-process
+#                                     # until that path is deleted (.4.6); staying empty (the
+#                                     # default) keeps every consumer on the in-process local store.
 
 # NATS is the sole autonomous workflow handoff. mode changes only where the
 # broker runs; every workflow still runs in a managed task container:
