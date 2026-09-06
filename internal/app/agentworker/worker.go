@@ -32,6 +32,14 @@ type Settings struct {
 	NATSURL   string
 	NATSToken string
 	WorkDir   string
+
+	// StateStoreTarget and StateStoreToken are the daemon-injected State
+	// Store gRPC endpoint and per-task bearer token (docs/prds/
+	// state-store-contract.md §6: STATE_STORE_URL/STATE_STORE_TOKEN,
+	// mirroring the NATS_URL/NATS_TOKEN handoff). Empty keeps the legacy
+	// NATS storerpc path for workflow.Store.
+	StateStoreTarget string
+	StateStoreToken  string
 }
 
 type workerTransport interface {
@@ -83,8 +91,10 @@ func run(ctx context.Context, settings Settings, log *slog.Logger, dependencies 
 	dependencies.markSafe(ctx, workDir, log)
 
 	transport, err := dependencies.connect(ctx, agentnats.Config{
-		URL:   settings.NATSURL,
-		Token: settings.NATSToken,
+		URL:             settings.NATSURL,
+		Token:           settings.NATSToken,
+		StateStoreURL:   settings.StateStoreTarget,
+		StateStoreToken: settings.StateStoreToken,
 	}, log)
 	if err != nil {
 		operation := "nats connect failed"

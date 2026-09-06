@@ -338,33 +338,21 @@ func (s *Store) decryptBindingSecret(b *binding.Binding) error {
 	return nil
 }
 
-// sqlExecutor is the subset of *sql.DB / *sql.Tx that RecordDispatch needs.
-// Both satisfy it; nil falls back to the store's own *sql.DB so callers
-// that don't open an explicit transaction get best-effort semantics.
-type sqlExecutor interface {
-	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-}
-
-// RecordDispatch writes a (binding, capture) dedup row. The caller may
-// pass a *sql.Tx to make the dispatch row commit atomically with the
-// surrounding task insert; pass nil to use the store's own connection
-// (best-effort, not atomic with the task row). INSERT OR IGNORE +
+// RecordDispatch writes a (binding, capture) dedup row using the store's
+// own connection (best-effort, not atomic with the task row -- the
+// at-most-once guarantee is the INSERT OR IGNORE dedup row itself, which
+// is already transactionless in production). INSERT OR IGNORE +
 // RowsAffected is the dedup test: a duplicate (binding_id, capture_id)
 // is a no-op write and returns ErrAlreadyDispatched rather than a
 // constraint error.
 func (s *Store) RecordDispatch(
 	ctx context.Context,
-	tx *sql.Tx,
 	bindingID int64,
 	bindingVersion int64,
 	captureID int64,
 	taskID int64,
 ) error {
-	exec := sqlExecutor(s.db)
-	if tx != nil {
-		exec = tx
-	}
-	res, err := exec.ExecContext(ctx, `
+	res, err := s.db.ExecContext(ctx, `
 		INSERT OR IGNORE INTO binding_dispatches (binding_id, binding_version, capture_id, task_id, dispatched_at)
 		VALUES (?, ?, ?, ?, ?)`,
 		bindingID, bindingVersion, captureID, taskID,

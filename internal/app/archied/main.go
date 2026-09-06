@@ -421,6 +421,7 @@ func Run() int { //nolint:cyclop // the composition root's setup sequence is del
 	}
 	b.registerStandaloneTools()
 	b.buildDaemon()
+	b.startStateStoreServer(ctx)
 	b.wireConfigPublishing(ctx, args.cfgPath, args.overlayPath)
 	b.installUpdateConfigHandler()
 	b.installUpdateRepoFieldHandler()
@@ -1058,13 +1059,18 @@ func startContainers(
 	}
 
 	pool, err := container.NewPool(ctx, container.Config{
-		Image:              cfg.Containers.Image,
-		MaxConcurrency:     cfg.Containers.MaxConcurrency,
-		MaxUptime:          cfg.Containers.MaxUptime.Std(),
-		PullPolicy:         cfg.Containers.PullPolicy,
-		Network:            cfg.Containers.Network,
-		DockerClient:       dockerCli,
-		RequireHostGateway: cfg.NATS.Mode == config.NATSModeEmbedded,
+		Image:          cfg.Containers.Image,
+		MaxConcurrency: cfg.Containers.MaxConcurrency,
+		MaxUptime:      cfg.Containers.MaxUptime.Std(),
+		PullPolicy:     cfg.Containers.PullPolicy,
+		Network:        cfg.Containers.Network,
+		DockerClient:   dockerCli,
+		// Always resolve the bridge gateway: agent containers need it to
+		// reach embedded NATS (when configured) and, as of Phase 2, the
+		// daemon's in-process State Store gRPC server (docs/prds/
+		// state-store-contract.md §9's single listener-topology rule) --
+		// a container can never reach the host's 127.0.0.1.
+		RequireHostGateway: true,
 	}, log)
 	if err != nil {
 		// A missing image is recoverable by hand. The daemon sends no registry

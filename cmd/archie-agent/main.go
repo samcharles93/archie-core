@@ -29,6 +29,8 @@ func runCommand(args []string, getenv func(string) string, stderr io.Writer, run
 	flags := flag.NewFlagSet("archie-agent", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	natsURLFlag := flags.String("nats-url", "", "NATS server URL (defaults to NATS_URL)")
+	stateStoreURLFlag := flags.String("state-store-url", "", "State Store gRPC target (defaults to STATE_STORE_URL; empty uses the legacy NATS storerpc path)")
+	stateStoreTokenFlag := flags.String("state-store-token", "", "State Store bearer token (defaults to STATE_STORE_TOKEN)")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -47,9 +49,20 @@ func runCommand(args []string, getenv func(string) string, stderr io.Writer, run
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	stateStoreURL := *stateStoreURLFlag
+	if stateStoreURL == "" {
+		stateStoreURL = getenv("STATE_STORE_URL")
+	}
+	stateStoreToken := *stateStoreTokenFlag
+	if stateStoreToken == "" {
+		stateStoreToken = getenv("STATE_STORE_TOKEN")
+	}
+
 	if err := runWorker(ctx, agentworker.Settings{
-		NATSURL:   natsURL,
-		NATSToken: natsToken,
+		NATSURL:          natsURL,
+		NATSToken:        natsToken,
+		StateStoreTarget: stateStoreURL,
+		StateStoreToken:  stateStoreToken,
 	}, log); err != nil {
 		return 1
 	}
