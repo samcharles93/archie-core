@@ -1,6 +1,7 @@
 package staterpc
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -275,8 +276,17 @@ func mapError(err error) error {
 
 // unmapError rehydrates a gRPC status error back to the store sentinel it
 // came from, so a caller's errors.Is(err, store.ErrX) keeps working across
-// the wire. A non-status error (e.g. a transport failure, a cancelled or
-// deadline-exceeded context) is returned unchanged.
+// the wire. A non-status error (e.g. a transport failure) is returned
+// unchanged.
+//
+// The deadline/cancel identity must survive too (§6): the agent's
+// deadlineStore bounds each Store call with context.WithTimeout, and the
+// workflow consumer checks errors.Is(err, context.DeadlineExceeded) to
+// decide whether a stage was interrupted by shutdown rather than failed
+// (workflow.go). gRPC-Go surfaces an expired or cancelled context as a
+// *status.Error whose code is DeadlineExceeded or Canceled, so we rehydrate
+// those back to the standard context sentinels -- otherwise the consumer
+// would (wrongly) park a task that was merely interrupted.
 func unmapError(err error) error {
 	if err == nil {
 		return nil
@@ -286,6 +296,10 @@ func unmapError(err error) error {
 		return err
 	}
 	switch st.Code() {
+	case codes.Canceled:
+		return context.Canceled
+	case codes.DeadlineExceeded:
+		return context.DeadlineExceeded
 	case codes.FailedPrecondition:
 		switch st.Message() {
 		case msgStaleTransition:
