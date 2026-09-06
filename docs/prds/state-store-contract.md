@@ -1,13 +1,15 @@
 # State Store — contract boundary & transport (ratification)
 
-**Status:** Ratified (rev. 2). Rev. 1 was marked *conditionally ratified*; the three
-reviewer conditions it raised are resolved here:
-**(1)** the domain-dependency contradiction (producer-owned contract vs. the Phase 2
-acceptance criterion that `internal/domain/workflow` no longer imports `internal/store`),
-**(2)** agent State Store gRPC endpoint propagation, and **(3)** the transport-security
-boundary plus error-detail sanitisation. This is the pre-implementation design document that
-Phase 2 subtasks `.4.2` (generalize `storerpc` as the State Store gRPC contract) and `.4.3`
-(stand up `archie-state-store`) implement against.
+**Status:** Ratified (rev. 2c). Rev. 1 was marked *conditionally ratified*; the three
+reviewer conditions it raised are resolved (rev. 2), and the two third-pass findings are
+resolved here: (a) the stale Q3 migration wording in `service-decomposition.md`
+(`store.WorkflowStore`, `mode = "inproc" | "remote"`) now matches the ratified ownership split
+and presence-based `[services.<name>].target`; (b) the State Store listener topology is a
+single explicit rule (bridge address + token when agent containers consume it, loopback-only
+for a daemon-local-only consumer) instead of the contradictory loopback-vs-bridge wording.
+This is the pre-implementation design document that Phase 2 subtasks `.4.2` (generalize
+`storerpc` as the State Store gRPC contract) and `.4.3` (stand up `archie-state-store`)
+implement against.
 **Date:** 2026-09-06 (rev. 2)
 **Beads milestone:** archie-core-8cda.4.1
 **Parent:** `docs/prds/service-decomposition.md` (open-question Q4 **RESOLVED**)
@@ -333,9 +335,10 @@ across a single agent process, which is either NATS-backed or gRPC-backed, never
   `ctx.Done()`.
 - **Address selection (Docker-bridge reachable):** reuse the host-gateway resolution already used
   for embedded NATS (`internal/container/network.go` `RequireHostGateway` /
-  `resolveHostGateway`). The in-process listener binds either loopback (for the daemon's own
-  client) or the host-gateway bridge IP (for agent containers). The chosen address is stored on
-  the daemon as `d.ConnectedStateStore.URL` (analogous to `d.ConnectedNATS.URL`).
+  `resolveHostGateway`). Per §9's single listener-topology rule, the listener binds the
+  **host-gateway bridge address** when agent containers consume it (the Phase 2 default), or
+  loopback-only when the daemon is the sole consumer. The chosen address is stored on the daemon
+  as `d.ConnectedStateStore.URL` (analogous to `d.ConnectedNATS.URL`).
 - **Per-task injection:** `containerEnv(task)` (`internal/daemon/daemon.go`) appends
   `STATE_STORE_URL=<d.ConnectedStateStore.URL>` and `STATE_STORE_TOKEN=<token>` alongside the
   existing `NATS_URL`/`NATS_TOKEN`. The agent reads them via env (`-state-store-url` /
@@ -430,15 +433,23 @@ stated explicitly rather than left implicit.
 
 **The State Store's equivalent boundary (rev. 2):**
 
-- **Default listener:** loopback-only, `--listen 127.0.0.1` (mirrors the gateway). On the
-  loopback path it uses **`insecure`** gRPC, consistent with the discovery decision (grpc-go
-  insecure dial for loopback) and the gateway.
+- **Listener topology — single rule (rev. 2c).** One in-process listener; its bind address is
+  chosen by the consumer set, never both at once:
+  - *Agent containers consume it* (the Phase 2 driver during multiplexed serving) → bind to the
+    **host-gateway bridge address** so containers can reach it, and **token auth is mandatory**
+    (a bridge host is reachable by any process on that bridge). A container **cannot reach the
+    host's `127.0.0.1`**, so loopback-only is NOT usable for the agent-consumed path.
+  - *Only the daemon consumes it* (no agent) → bind **loopback-only** (`--listen 127.0.0.1`),
+    `insecure` is fine because it is not network-reachable; no token required.
+  - There is **no dual-listener** design. The practical default during `.4.2` (the reason
+    in-process serving exists is to give the agent a gRPC target) is the **bridge address +
+    token**. `127.0.0.1` is reserved for the daemon-local-only case.
 - **Agent access → the container bridge.** The agent runs in a task-scoped container on the
-  host and reaches the State Store over the Docker bridge gateway, exactly as it reaches the
-  daemon's NATS today. To close the "any host process could reach the store" gap, the agent
-  **authenticates with a per-task bearer token** carried in gRPC metadata by a client interceptor
-  (`StateStoreToken`, §6). Network reachability + the token is the trust boundary for the
-  default loopback/bridge topology.
+  host and reaches the State Store over the Docker bridge gateway (the bind address from the
+  topology rule above), exactly as it reaches the daemon's NATS today. To close the "any host
+  process could reach the store" gap, the agent **authenticates with a per-task bearer token**
+  carried in gRPC metadata by a client interceptor (`StateStoreToken`, §6). Network
+  reachability + the token is the trust boundary for the default bridge topology.
 - **The daemon** uses the local adapter (`*store.Store`) in-process by default, so no network
   boundary exists until `[services.state].target` is set; when it is set, the daemon client
   authenticates with a token supplied alongside the target.
@@ -576,8 +587,10 @@ an explicit operator decision.
   `internal/infrastructure/store`), not the final infrastructure boundary. The producer-owned
   daemon/webui store surfaces live there now but may relocate with the implementation.
 - **In-process listener + token lifecycle:** the daemon binds the in-process State Store
-  listener, selects the Docker-bridge host-gateway address (reusing the embedded-NATS
-  host-gateway resolution), and injects `STATE_STORE_URL`/`STATE_STORE_TOKEN` per task via
+  listener to the **host-gateway bridge address** when agent containers consume it (the Phase 2
+  default) or loopback-only when the daemon is the sole consumer — one listener, one address
+  rule, never both (rev. 2c). It selects the bridge address by reusing the embedded-NATS
+  host-gateway resolution and injects `STATE_STORE_URL`/`STATE_STORE_TOKEN` per task via
   `containerEnv`. Token is per-incumbence (task + container grace period) and validated by a
   gRPC interceptor → `codes.Unauthenticated` on missing/unknown/expired. Non-loopback targets
   fail closed without TLS or a token.
@@ -603,8 +616,10 @@ an explicit operator decision.
 - **Agent handoff:** `agentworker.Settings` gains `StateStoreTarget`/`StateStoreToken`/
   `StoreTimeout`, injected as `STATE_STORE_URL`/`STATE_STORE_TOKEN` env (mirrors the NATS
   handoff); `Transport.Store` returns a long-lived gRPC `workflow.Store` client.
-- **Transport security:** loopback-only + `insecure` by default; agent authenticates over the
-  container bridge with a per-task bearer token; TLS/mTLS is an operator choice for any
+- **Transport security + listener topology (rev. 2c):** one in-process listener, bound to the
+  host-gateway bridge address when agent containers consume it (the Phase 2 default) or
+  loopback-only for a daemon-local-only consumer. `insecure` only on loopback; mandatory
+  per-task bearer-token auth on the bridge; TLS/mTLS is an operator choice for any
   non-loopback/k8s topology.
 - **Mode = presence-based `[services.state].target`**, default **local** (not yet extracted);
   add `[services.state]` to `config.example.toml`.
