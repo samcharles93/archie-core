@@ -15,6 +15,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,6 +26,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -105,6 +107,27 @@ name = "widget"
 	return cfg
 }
 
+// syncBuffer is a concurrency-safe buffer for a subprocess's stdout/stderr:
+// the os/exec goroutine writes while the test goroutine reads (to parse the
+// log and to report it on failure). A plain strings.Builder races under
+// -race, so both paths take the mutex.
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
 // stateStoreProcess wraps a running archie-state-store subprocess plus the
 // addresses it bound. addr is the gRPC listen address; readyAddr is the
 // readiness HTTP surface. It is stopped gracefully on cleanup by SIGTERM, the
@@ -114,7 +137,7 @@ type stateStoreProcess struct {
 	cmd       *exec.Cmd
 	addr      string
 	readyAddr string
-	log       *strings.Builder
+	log       *syncBuffer
 }
 
 // startStateStoreProcess starts bin with config, waiting for the gRPC listener
@@ -126,7 +149,7 @@ func startStateStoreProcess(t *testing.T, bin, cfg string) *stateStoreProcess {
 	t.Helper()
 	cmd := exec.Command(bin, "-config", cfg, "-listen", "127.0.0.1:0", "-ready-addr", "127.0.0.1:0")
 	cmd.Env = append(os.Environ(), "ARCHIE_GITHUB_TOKEN=test-token")
-	var log strings.Builder
+	var log syncBuffer
 	cmd.Stderr = &log
 	cmd.Stdout = &log
 	if err := cmd.Start(); err != nil {
