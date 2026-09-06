@@ -1,0 +1,398 @@
+syntax = "proto3";
+
+package state.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// StateStore is the single gRPC service fronting archie.db (one store, one
+// file). See docs/prds/state-store-contract.md for the ownership split: the
+// workflow-domain Store view (Update/Transition/InsertEvent) is consumer-owned
+// in internal/domain/workflow, while the rest of this surface stays
+// producer-owned in internal/store. Both are served by the same service and
+// the same *store.Store implementation; the proto bypasses the Go
+// interfacebloat cap (max 8), like gateway.v1.ChatService does.
+service StateStoreService {
+  // Lifecycle
+  rpc EnqueueIssue(EnqueueIssueRequest) returns (EnqueueIssueResponse);
+  rpc EnqueueChatTask(EnqueueChatTaskRequest) returns (EnqueueChatTaskResponse);
+  rpc ClaimNext(ClaimNextRequest) returns (ClaimNextResponse);
+  rpc ClaimByIssue(ClaimByIssueRequest) returns (ClaimByIssueResponse);
+  rpc Transition(TransitionRequest) returns (TransitionResponse);
+  rpc Update(UpdateRequest) returns (UpdateResponse);
+  rpc Requeue(RequeueRequest) returns (RequeueResponse);
+  rpc RecoverStale(RecoverStaleRequest) returns (RecoverStaleResponse);
+
+  // Archive / Retry
+  rpc ArchiveTask(ArchiveTaskRequest) returns (ArchiveTaskResponse);
+  rpc RetryTask(RetryTaskRequest) returns (RetryTaskResponse);
+
+  // Queries
+  rpc TaskByIssue(TaskByIssueRequest) returns (TaskByIssueResponse);
+  rpc TaskByID(TaskByIDRequest) returns (TaskByIDResponse);
+  rpc OpenPRs(OpenPRsRequest) returns (OpenPRsResponse);
+  rpc ClearTerminalTasks(ClearTerminalTasksRequest) returns (ClearTerminalTasksResponse);
+  rpc Tasks(TasksRequest) returns (TasksResponse);
+  rpc StatusCounts(StatusCountsRequest) returns (StatusCountsResponse);
+  rpc IncrementRetryCount(IncrementRetryCountRequest) returns (IncrementRetryCountResponse);
+
+  // Events
+  rpc InsertEvent(InsertEventRequest) returns (InsertEventResponse);
+  rpc EventsSince(EventsSinceRequest) returns (EventsSinceResponse);
+  rpc TaskEvents(TaskEventsRequest) returns (TaskEventsResponse);
+  rpc WorkflowStats(WorkflowStatsRequest) returns (WorkflowStatsResponse);
+  rpc StageStats(StageStatsRequest) returns (StageStatsResponse);
+  rpc TokensByDay(TokensByDayRequest) returns (TokensByDayResponse);
+
+  // Capture
+  rpc InsertCapture(InsertCaptureRequest) returns (InsertCaptureResponse);
+  rpc ListCaptures(ListCapturesRequest) returns (ListCapturesResponse);
+
+  // Mapping
+  rpc InsertMapping(InsertMappingRequest) returns (InsertMappingResponse);
+  rpc GetMapping(GetMappingRequest) returns (GetMappingResponse);
+  rpc ListMappings(ListMappingsRequest) returns (ListMappingsResponse);
+  rpc UpdateMapping(UpdateMappingRequest) returns (UpdateMappingResponse);
+  rpc DeleteMapping(DeleteMappingRequest) returns (DeleteMappingResponse);
+
+  // Binding
+  rpc InsertBinding(InsertBindingRequest) returns (InsertBindingResponse);
+  rpc GetBinding(GetBindingRequest) returns (GetBindingResponse);
+  rpc ListBindings(ListBindingsRequest) returns (ListBindingsResponse);
+  rpc UpdateBinding(UpdateBindingRequest) returns (UpdateBindingResponse);
+  rpc DeleteBinding(DeleteBindingRequest) returns (DeleteBindingResponse);
+  rpc ApproveBinding(ApproveBindingRequest) returns (ApproveBindingResponse);
+
+  // Dispatch
+  rpc ArmedBindingsForSource(ArmedBindingsForSourceRequest) returns (ArmedBindingsForSourceResponse);
+  rpc RecordDispatch(RecordDispatchRequest) returns (RecordDispatchResponse);
+  rpc ListUndispatchedCaptures(ListUndispatchedCapturesRequest) returns (ListUndispatchedCapturesResponse);
+
+  // BindingTaskCreator
+  rpc EnqueueBindingTask(EnqueueBindingTaskRequest) returns (EnqueueBindingTaskResponse);
+}
+
+// Task mirrors internal/domain/workflow.Task.
+message Task {
+  int64 id = 1;
+  string owner = 2;
+  string repo = 3;
+  int64 issue_number = 4;
+  string title = 5;
+  string body = 6;
+  string labels = 7;
+  string status = 8;
+  string workflow = 9;
+  string stage = 10;
+  string branch = 11;
+  string plan = 12;
+  string notes = 13;
+  int64 pr_number = 14;
+  int64 tokens_used = 15;
+  int64 iterations = 16;
+  int64 attempt = 17;
+  string park_reason = 18;
+  int64 retry_count = 19;
+  int64 watch_comment_id = 20;
+  string source = 21;
+  string identity = 22;
+  int64 binding_id = 23;
+  int64 binding_version = 24;
+  google.protobuf.Timestamp created_at = 25;
+  google.protobuf.Timestamp updated_at = 26;
+}
+
+// Event mirrors internal/events.Event. Data is carried as a JSON object
+// string (matching the store's own on-disk representation) rather than
+// google.protobuf.Struct, to stay a direct mirror of the existing column.
+message Event {
+  int64 id = 1;
+  google.protobuf.Timestamp at = 2;
+  string kind = 3;
+  int64 task_id = 4;
+  string repo = 5;
+  int64 issue = 6;
+  string workflow = 7;
+  string stage = 8;
+  string detail = 9;
+  string data_json = 10;
+}
+
+// CapturedEvent mirrors internal/store.CapturedEvent.
+message CapturedEvent {
+  int64 id = 1;
+  google.protobuf.Timestamp received_at = 2;
+  string source = 3;
+  string remote_addr = 4;
+  string content_type = 5;
+  string headers = 6;
+  string body = 7;
+  bool authenticated = 8;
+}
+
+// MappingField mirrors internal/domain/mapping.Field.
+message MappingField {
+  string name = 1;
+  string path = 2;
+  string type = 3;
+  bool required = 4;
+}
+
+// Mapping mirrors internal/domain/mapping.Mapping.
+message Mapping {
+  int64 id = 1;
+  string name = 2;
+  string source_hint = 3;
+  repeated MappingField fields = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+// BindingMatcher mirrors internal/domain/binding.Matcher.
+message BindingMatcher {
+  string source = 1;
+}
+
+// Binding mirrors internal/domain/binding.Binding.
+message Binding {
+  int64 id = 1;
+  string name = 2;
+  BindingMatcher matcher = 3;
+  int64 mapping_id = 4;
+  string workflow = 5;
+  string owner = 6;
+  string repo = 7;
+  int64 version = 8;
+  string status = 9;
+  string secret = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+}
+
+// WorkflowStat mirrors internal/store.WorkflowStat.
+message WorkflowStat {
+  string workflow = 1;
+  int64 runs = 2;
+  int64 merged = 3;
+  int64 pr_open = 4;
+  int64 parked = 5;
+  int64 avg_tokens = 6;
+  double avg_steps = 7;
+  int64 total_tokens = 8;
+}
+
+// StageStat mirrors internal/store.StageStat.
+message StageStat {
+  string workflow = 1;
+  string stage = 2;
+  int64 runs = 3;
+  int64 avg_ms = 4;
+  int64 errors = 5;
+}
+
+// DayTokens mirrors internal/store.DayTokens.
+message DayTokens {
+  string day = 1;
+  int64 tokens = 2;
+}
+
+message EnqueueIssueRequest {
+  string owner = 1;
+  string repo = 2;
+  int64 number = 3;
+  string title = 4;
+  string body = 5;
+  string labels = 6;
+  string identity = 7;
+}
+message EnqueueIssueResponse { bool inserted = 1; }
+
+message EnqueueChatTaskRequest {
+  string owner = 1;
+  string repo = 2;
+  string title = 3;
+  string body = 4;
+  string workflow = 5;
+  string identity = 6;
+}
+message EnqueueChatTaskResponse { Task task = 1; }
+
+message ClaimNextRequest {}
+message ClaimNextResponse {
+  Task task = 1;
+  bool found = 2;
+}
+
+message ClaimByIssueRequest {
+  string owner = 1;
+  string repo = 2;
+  int64 number = 3;
+}
+message ClaimByIssueResponse {
+  Task task = 1;
+  bool found = 2;
+}
+
+message TransitionRequest {
+  int64 task_id = 1;
+  string from = 2;
+  string to = 3;
+  string detail = 4;
+}
+message TransitionResponse {}
+
+message UpdateRequest { Task task = 1; }
+message UpdateResponse {}
+
+message RequeueRequest {
+  int64 task_id = 1;
+  string from_status = 2;
+  string workflow = 3;
+}
+message RequeueResponse {}
+
+message RecoverStaleRequest {}
+message RecoverStaleResponse { int64 count = 1; }
+
+message ArchiveTaskRequest {
+  int64 task_id = 1;
+  string from_status = 2;
+  Event audit = 3;
+}
+message ArchiveTaskResponse { int64 event_id = 1; }
+
+message RetryTaskRequest {
+  int64 task_id = 1;
+  string from_status = 2;
+  string workflow = 3;
+}
+message RetryTaskResponse {}
+
+message TaskByIssueRequest {
+  string owner = 1;
+  string repo = 2;
+  int64 number = 3;
+}
+message TaskByIssueResponse {
+  Task task = 1;
+  bool found = 2;
+}
+
+message TaskByIDRequest { int64 task_id = 1; }
+message TaskByIDResponse {
+  Task task = 1;
+  bool found = 2;
+}
+
+message OpenPRsRequest {}
+message OpenPRsResponse { repeated Task tasks = 1; }
+
+message ClearTerminalTasksRequest {}
+message ClearTerminalTasksResponse { int64 count = 1; }
+
+message TasksRequest { int64 limit = 1; }
+message TasksResponse { repeated Task tasks = 1; }
+
+message StatusCountsRequest {}
+message StatusCountsResponse { map<string, int64> counts = 1; }
+
+message IncrementRetryCountRequest { int64 task_id = 1; }
+message IncrementRetryCountResponse {}
+
+message InsertEventRequest { Event event = 1; }
+message InsertEventResponse { int64 id = 1; }
+
+message EventsSinceRequest {
+  int64 since_id = 1;
+  int64 limit = 2;
+}
+message EventsSinceResponse { repeated Event events = 1; }
+
+message TaskEventsRequest { int64 task_id = 1; }
+message TaskEventsResponse { repeated Event events = 1; }
+
+message WorkflowStatsRequest {}
+message WorkflowStatsResponse { repeated WorkflowStat stats = 1; }
+
+message StageStatsRequest {}
+message StageStatsResponse { repeated StageStat stats = 1; }
+
+message TokensByDayRequest { int64 days = 1; }
+message TokensByDayResponse { repeated DayTokens tokens = 1; }
+
+message InsertCaptureRequest {
+  CapturedEvent capture = 1;
+  int64 retention_seconds = 2;
+  int64 max_events = 3;
+}
+message InsertCaptureResponse { int64 id = 1; }
+
+message ListCapturesRequest { int64 limit = 1; }
+message ListCapturesResponse { repeated CapturedEvent captures = 1; }
+
+message InsertMappingRequest { Mapping mapping = 1; }
+message InsertMappingResponse { int64 id = 1; }
+
+message GetMappingRequest { int64 id = 1; }
+message GetMappingResponse {
+  Mapping mapping = 1;
+  bool found = 2;
+}
+
+message ListMappingsRequest {}
+message ListMappingsResponse { repeated Mapping mappings = 1; }
+
+message UpdateMappingRequest { Mapping mapping = 1; }
+message UpdateMappingResponse {}
+
+message DeleteMappingRequest { int64 id = 1; }
+message DeleteMappingResponse {}
+
+message InsertBindingRequest { Binding binding = 1; }
+message InsertBindingResponse { int64 id = 1; }
+
+message GetBindingRequest { int64 id = 1; }
+message GetBindingResponse {
+  Binding binding = 1;
+  bool found = 2;
+}
+
+message ListBindingsRequest {}
+message ListBindingsResponse { repeated Binding bindings = 1; }
+
+message UpdateBindingRequest { Binding binding = 1; }
+message UpdateBindingResponse {}
+
+message DeleteBindingRequest { int64 id = 1; }
+message DeleteBindingResponse {}
+
+message ApproveBindingRequest { int64 id = 1; }
+message ApproveBindingResponse {}
+
+message ArmedBindingsForSourceRequest { string source = 1; }
+message ArmedBindingsForSourceResponse { repeated Binding bindings = 1; }
+
+message RecordDispatchRequest {
+  int64 binding_id = 1;
+  int64 binding_version = 2;
+  int64 capture_id = 3;
+  int64 task_id = 4;
+}
+message RecordDispatchResponse {}
+
+message ListUndispatchedCapturesRequest {
+  repeated string sources = 1;
+  int64 limit = 2;
+}
+message ListUndispatchedCapturesResponse { repeated CapturedEvent captures = 1; }
+
+message EnqueueBindingTaskRequest {
+  string owner = 1;
+  string repo = 2;
+  string title = 3;
+  string body = 4;
+  string workflow = 5;
+  string identity = 6;
+  int64 binding_id = 7;
+  int64 binding_version = 8;
+}
+message EnqueueBindingTaskResponse { Task task = 1; }

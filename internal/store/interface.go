@@ -5,7 +5,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
@@ -122,7 +121,6 @@ type BindingDispatcher interface {
 	ArmedBindingsForSource(ctx context.Context, source string) ([]binding.Binding, error)
 	RecordDispatch(
 		ctx context.Context,
-		tx *sql.Tx,
 		bindingID int64,
 		bindingVersion int64,
 		captureID int64,

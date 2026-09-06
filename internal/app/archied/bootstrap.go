@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -22,6 +23,7 @@ import (
 	"time"
 
 	"github.com/samcharles93/ai-sdk/runtime"
+	"google.golang.org/grpc"
 
 	channelruntime "github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/channels/email"
@@ -49,6 +51,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
 	"github.com/samcharles93/archie-core/internal/infrastructure/sessioncurator"
 	"github.com/samcharles93/archie-core/internal/infrastructure/skillcurator"
+	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/memory"
@@ -1266,6 +1269,55 @@ func (b *boot) buildDaemon() {
 		b.d.BindingTaskCreator = btc
 	}
 	b.setupForgeWebhook()
+}
+
+// startStateStoreServer serves the State Store gRPC service in-process
+// (multiplexed inside archied), so archie-agent has a gRPC target before the
+// standalone archie-state-store binary exists (docs/prds/
+// state-store-contract.md §12 step 3). Listener topology follows §9's single
+// rule: bind the host-gateway bridge address with mandatory per-task bearer
+// tokens when agent containers can reach this daemon, or loopback-only with
+// no token when there is no container pool to serve. Failure degrades
+// (archie-agent falls back to the legacy NATS storerpc path) rather than
+// aborting boot -- the State Store's in-process server is additive during
+// .4.2, not yet load-bearing.
+func (b *boot) startStateStoreServer(ctx context.Context) {
+	log := b.log
+	deps := staterpc.Deps{
+		Tasks: b.st, Mappings: b.d.Mappings, Bindings: b.d.Bindings,
+		BindingDispatcher: b.d.BindingDispatcher, BindingTaskCreator: b.d.BindingTaskCreator,
+		Log: log,
+	}
+	if cs, ok := b.st.(store.CaptureStore); ok {
+		deps.Captures = cs
+	}
+
+	host := "127.0.0.1"
+	var opts []grpc.ServerOption
+	if b.containerPool != nil {
+		if bridge := b.containerPool.HostGateway(); bridge != "" {
+			host = bridge
+			tokens := daemon.NewStateStoreTokens()
+			b.d.StateStoreTokens = tokens
+			opts = append(opts, grpc.ChainUnaryInterceptor(staterpc.UnaryTokenInterceptor(tokens.Validate)))
+		}
+	}
+
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", net.JoinHostPort(host, "0"))
+	if err != nil {
+		log.Error("state store gRPC listen failed; archie-agent will use the legacy NATS storerpc path", "err", err)
+		return
+	}
+	server := grpc.NewServer(opts...)
+	staterpc.RegisterServer(server, deps)
+	go func() {
+		if err := server.Serve(listener); err != nil {
+			log.Error("state store gRPC server stopped", "err", err)
+		}
+	}()
+	b.addCleanup(server.GracefulStop)
+	b.d.ConnectedStateStore = daemon.StateStoreEndpoint{URL: listener.Addr().String()}
+	log.Info("state store gRPC server running", "addr", listener.Addr().String(), "token_required", host != "127.0.0.1")
 }
 
 // setupForgeWebhook starts the forge webhook receiver when intake is "webhook"

@@ -7,24 +7,37 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"strconv"
 	"strings"
 	"time"
 
 	natsio "github.com/nats-io/nats.go"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
+	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/storerpc"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
 )
 
-// Config contains the broker endpoint and credential for the worker transport.
+// Config contains the broker endpoint and credential for the worker
+// transport, plus the optional State Store gRPC target (docs/prds/
+// state-store-contract.md §6). An empty StateStoreURL keeps the legacy NATS
+// storerpc path for workflow.Store; a non-empty one dials the gRPC
+// StateStoreService instead -- a single agent process is either NATS-backed
+// or gRPC-backed for its store calls, never both.
 type Config struct {
 	URL   string
 	Token string
+
+	StateStoreURL   string
+	StateStoreToken string
 }
 
 const (
@@ -40,12 +53,21 @@ type sdkSubscription interface {
 // worker has no JetStream consumer.
 type Transport struct {
 	conn *natsio.Conn
+	// stateConn is the long-lived gRPC connection to the State Store,
+	// non-nil only when Config.StateStoreURL was set. Store() dials no
+	// per-call connection; it wraps this one connection with the
+	// per-call timeout each caller supplies.
+	stateConn *grpc.ClientConn
 
 	subscribe func(string, natsio.MsgHandler) (sdkSubscription, error)
 	flush     func(time.Duration) error
 }
 
-// Connect establishes the worker's core-NATS connection.
+// Connect establishes the worker's core-NATS connection and, when
+// Config.StateStoreURL is set, a long-lived gRPC connection to the State
+// Store (docs/prds/state-store-contract.md §6, §9). A non-loopback
+// StateStoreURL with no token fails closed rather than dialing an
+// unauthenticated remote store.
 func Connect(ctx context.Context, config Config, log *slog.Logger) (*Transport, error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
@@ -66,8 +88,20 @@ func Connect(ctx context.Context, config Config, log *slog.Logger) (*Transport, 
 		return nil, err
 	}
 	log.Info("worker transport connected", "url", conn.ConnectedUrl())
+
+	var stateConn *grpc.ClientConn
+	if config.StateStoreURL != "" {
+		stateConn, err = dialStateStore(config.StateStoreURL, config.StateStoreToken)
+		if err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("connect state store: %w", err)
+		}
+		log.Info("worker state store transport connected", "url", config.StateStoreURL)
+	}
+
 	return &Transport{
-		conn: conn,
+		conn:      conn,
+		stateConn: stateConn,
 		subscribe: func(subject string, handler natsio.MsgHandler) (sdkSubscription, error) {
 			return conn.Subscribe(subject, handler)
 		},
@@ -75,8 +109,32 @@ func Connect(ctx context.Context, config Config, log *slog.Logger) (*Transport, 
 	}, nil
 }
 
+// dialStateStore dials target, failing closed (rather than connecting
+// insecurely) when target is not a loopback address and no token was
+// configured -- §9's "fail-closed on non-loopback" rule.
+func dialStateStore(target, token string) (*grpc.ClientConn, error) {
+	host, _, err := net.SplitHostPort(target)
+	if err != nil {
+		host = target
+	}
+	loopback := net.ParseIP(host).IsLoopback()
+	if !loopback && token == "" {
+		return nil, fmt.Errorf("state store target %q is not loopback and no token is configured; refusing an unauthenticated remote connection", target)
+	}
+	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+	if token != "" {
+		opts = append(opts, grpc.WithUnaryInterceptor(staterpc.UnaryClientTokenInterceptor(token)))
+	}
+	return grpc.NewClient(target, opts...)
+}
+
 // Close releases all broker resources.
-func (t *Transport) Close() { t.conn.Close() }
+func (t *Transport) Close() {
+	t.conn.Close()
+	if t.stateConn != nil {
+		_ = t.stateConn.Close()
+	}
+}
 
 // LogPublisher returns the narrow fire-and-forget capability used by system logs.
 func (t *Transport) LogPublisher() agentexec.LogPublisher { return t.conn }
@@ -100,9 +158,49 @@ func (t *Transport) Forger(identity string, timeout time.Duration) workflow.Forg
 	return &forgerpc.Client{Conn: t.conn, Timeout: timeout, Identity: identity}
 }
 
-// Store constructs the workflow store RPC client.
+// Store constructs the workflow store RPC client: a long-lived gRPC
+// staterpc.Client over the State Store connection when one was configured,
+// or the legacy NATS storerpc.Client otherwise (docs/prds/
+// state-store-contract.md §6). Either way each call is bounded by timeout
+// when the caller's context carries no deadline of its own.
 func (t *Transport) Store(timeout time.Duration) workflow.Store {
+	if t.stateConn != nil {
+		return deadlineStore{Store: staterpc.NewClient(t.stateConn), timeout: timeout}
+	}
 	return &storerpc.Client{Conn: t.conn, Timeout: timeout}
+}
+
+// deadlineStore applies a default per-call timeout to workflow.Store calls
+// whose context carries no deadline of its own, matching storerpc.Client's
+// Timeout field semantics for the gRPC path.
+type deadlineStore struct {
+	workflow.Store
+	timeout time.Duration
+}
+
+func (d deadlineStore) withDeadline(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok || d.timeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, d.timeout)
+}
+
+func (d deadlineStore) Update(ctx context.Context, t *workflow.Task) error {
+	ctx, cancel := d.withDeadline(ctx)
+	defer cancel()
+	return d.Store.Update(ctx, t)
+}
+
+func (d deadlineStore) Transition(ctx context.Context, taskID int64, from, to, detail string) error {
+	ctx, cancel := d.withDeadline(ctx)
+	defer cancel()
+	return d.Store.Transition(ctx, taskID, from, to, detail)
+}
+
+func (d deadlineStore) InsertEvent(ctx context.Context, e events.Event) (int64, error) {
+	ctx, cancel := d.withDeadline(ctx)
+	defer cancel()
+	return d.Store.InsertEvent(ctx, e)
 }
 
 // Trees constructs the identity-scoped worktree RPC client.

@@ -182,6 +182,40 @@ structures found in legacy packages.
 - **MCP Providers:** Daemon registers providers as optional via
   `providerRegistry.RegisterOptional`. Missing or failed providers log warnings
   and degrade health without terminating the process.
+- **`internal/infrastructure/staterpc/` (State Store gRPC contract):**
+  Authority is `docs/prds/state-store-contract.md` (rev. 2c) -- read it before
+  changing this package or its callers.
+- The proto (`proto/state/v1/state.proto`, service `StateStoreService`,
+  package `statev1` in `internal/contracts/state/v1/`) is one gRPC service
+  fronting every ratified store contract (40 RPCs); the Go consumer facades
+  stay narrow (`workflow.Store`, `store.TaskStore`, etc., all ≤8 methods
+  except the `TaskStore` composite) via `staterpc.Client`'s multiple `var _`
+  assertions -- never add a Go interface method without a matching RPC.
+- Error sentinels (`store.ErrStaleTransition`, `ErrBindingNotFound`, ...)
+  cross the wire via `mapError`/`unmapError` in `values.go`, matched on
+  `(code, exact canonical message)`. Changing a canonical message string
+  breaks `errors.Is` on the client without changing behavior visibly --
+  treat those message constants as part of the wire contract.
+- The daemon serves this service in-process (multiplexed), bound to the
+  Docker bridge gateway address with mandatory per-task bearer-token auth
+  when a container pool exists, or loopback-only with no token when it does
+  not (`boot.startStateStoreServer` in `internal/app/archied/bootstrap.go`).
+  Never add a second listener for the same service.
+- `daemon.StateStoreTokens` is a per-task, per-incumbence token registry:
+  `containerEnv` calls `Generate` on every container acquisition (so a new
+  container's token supersedes the task's old one) and `process()` calls
+  `Revoke` on release. The gRPC interceptor (`staterpc.UnaryTokenInterceptor`)
+  is the only thing that checks it.
+- `archie-agent` picks its `workflow.Store` implementation once at boot
+  (`agenttransport/nats.Transport.Store`): gRPC via `staterpc.Client` when
+  `STATE_STORE_URL` was injected, otherwise the legacy NATS `storerpc.Client`.
+  A single agent process is never both; `internal/storerpc` (NATS transport)
+  is deleted only after every agent path is on gRPC (PRD §12 step 4) -- do
+  not delete it while `STATE_STORE_URL` injection is still optional.
+- `store.BindingDispatcher.RecordDispatch` takes no `*sql.Tx` (dropped in
+  `.4.2` -- it cannot cross a gRPC boundary; production always passed `nil`).
+  Do not reintroduce a transaction parameter on a producer-owned store
+  interface that a remote adapter must also implement.
 - **`internal/forge/webhook/` (forge webhook receiver):**
 - Verify HMAC (`webhookguard.VerifyHMAC` against `X-Hub-Signature-256`) before
   parsing the payload, never after -- an unverified body must not reach
@@ -275,3 +309,10 @@ bd remember            # Persist cross-session architectural facts
    unless explicitly instructed.
 6. **Handoff:** Report changed files, gate verification results, and active
    issue states.
+
+## Maintaining this file
+
+Keep this file for knowledge useful to almost every future agent session in this project.
+Do not repeat what the codebase already shows; point to the authoritative file or command instead.
+Prefer rewriting or pruning existing entries over appending new ones.
+When updating this file, preserve this bar for all agents and keep entries concise.

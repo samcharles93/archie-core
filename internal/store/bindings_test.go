@@ -381,15 +381,8 @@ func TestDeleteBindingRemovesRowAndLedgerEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InsertBinding: %v", err)
 	}
-	tx, err := s.db.BeginTx(t.Context(), nil)
-	if err != nil {
-		t.Fatalf("BeginTx: %v", err)
-	}
-	if err := s.RecordDispatch(t.Context(), tx, id, 1, 42, 7); err != nil {
+	if err := s.RecordDispatch(t.Context(), id, 1, 42, 7); err != nil {
 		t.Fatalf("RecordDispatch: %v", err)
-	}
-	if err := tx.Commit(); err != nil {
-		t.Fatalf("Commit: %v", err)
 	}
 	if err := s.DeleteBinding(t.Context(), id); err != nil {
 		t.Fatalf("DeleteBinding: %v", err)
@@ -417,27 +410,13 @@ func TestRecordDispatchIsIdempotent(t *testing.T) {
 		t.Fatalf("InsertBinding: %v", err)
 	}
 	ctx := t.Context()
-	tx1, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatalf("BeginTx 1: %v", err)
-	}
-	if err := s.RecordDispatch(ctx, tx1, id, 1, 42, 7); err != nil {
+	if err := s.RecordDispatch(ctx, id, 1, 42, 7); err != nil {
 		t.Fatalf("first RecordDispatch: %v", err)
 	}
-	if err := tx1.Commit(); err != nil {
-		t.Fatalf("Commit 1: %v", err)
-	}
 
-	tx2, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatalf("BeginTx 2: %v", err)
-	}
-	err = s.RecordDispatch(ctx, tx2, id, 1, 42, 99)
+	err = s.RecordDispatch(ctx, id, 1, 42, 99)
 	if !errors.Is(err, ErrAlreadyDispatched) {
 		t.Fatalf("second RecordDispatch (same binding/capture) = %v, want ErrAlreadyDispatched", err)
-	}
-	if err := tx2.Rollback(); err != nil {
-		t.Fatalf("Rollback 2: %v", err)
 	}
 }
 
@@ -474,15 +453,8 @@ func TestListUndispatchedCapturesExcludesDispatched(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatalf("BeginTx: %v", err)
-	}
-	if err := s.RecordDispatch(ctx, tx, id, 1, cap1, 100); err != nil {
+	if err := s.RecordDispatch(ctx, id, 1, cap1, 100); err != nil {
 		t.Fatalf("RecordDispatch: %v", err)
-	}
-	if err := tx.Commit(); err != nil {
-		t.Fatalf("Commit: %v", err)
 	}
 
 	got, err := s.ListUndispatchedCaptures(ctx, []string{"sentry"}, 10)

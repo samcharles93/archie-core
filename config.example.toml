@@ -261,6 +261,18 @@ max_steps = 60
 wall_clock = "30m"
 gate_max_failures = 5
 
+# Services selects contract adapters at composition time. Leave the section
+# absent to use every adapter's default (see docs/prds/state-store-contract.md).
+# [services.gateway]
+# target = "127.0.0.1:8585"          # archie-gateway's gRPC address (always remote once set)
+
+# [services.state]
+# target = ""                        # empty (default) = local *store.Store adapter.
+#                                     # This surface is consumed by the upcoming
+#                                     # standalone archie-state-store binary (.4.3); the
+#                                     # daemon does not read it yet -- it still serves the
+#                                     # State Store gRPC service in-process today.
+
 # NATS is the sole autonomous workflow handoff. mode changes only where the
 # broker runs; every workflow still runs in a managed task container:
 #   "embedded"  – in-process nats-server (the default; no external server)
