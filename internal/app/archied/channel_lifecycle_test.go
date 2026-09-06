@@ -49,6 +49,7 @@ func TestConfiguredNetworkGatewaysBecomeRunning(t *testing.T) {
 				cfg:            test.cfg,
 				log:            slog.New(slog.DiscardHandler),
 				st:             st,
+				stateStore:     st,
 				channelManager: manager,
 				web:            &webui.Server{},
 			}
