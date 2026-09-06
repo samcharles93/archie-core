@@ -247,6 +247,9 @@ func capture(source, body string) store.CapturedEvent {
 // convention, and single-owner SQLite (the binary owns the one archie.db file
 // and the consumer dials gRPC without opening any store file).
 func TestStateStoreRealProcessSmoke(t *testing.T) {
+	if testing.Short() {
+		t.Skip("real-process smoke test builds and execs the binary; skip under -short")
+	}
 	dir := t.TempDir()
 	bin := buildBinary(t, dir)
 	cfg := writeMinimalConfig(t, dir)
@@ -327,6 +330,9 @@ func TestStateStoreRealProcessSmoke(t *testing.T) {
 // is cancelled before the call completes must surface a deadline/cancel error
 // rather than hang or silently succeed.
 func TestStateStoreRealProcessDeadline(t *testing.T) {
+	if testing.Short() {
+		t.Skip("real-process smoke test builds and execs the binary; skip under -short")
+	}
 	dir := t.TempDir()
 	bin := buildBinary(t, dir)
 	cfg := writeMinimalConfig(t, dir)
@@ -350,6 +356,9 @@ func TestStateStoreRealProcessDeadline(t *testing.T) {
 // restart/recovery path the runbook relies on when archie-state-store is
 // restarted as a service.
 func TestStateStoreRealProcessRestartRecovery(t *testing.T) {
+	if testing.Short() {
+		t.Skip("real-process smoke test builds and execs the binary; skip under -short")
+	}
 	dir := t.TempDir()
 	bin := buildBinary(t, dir)
 	cfg := writeMinimalConfig(t, dir)
@@ -388,6 +397,9 @@ func TestStateStoreRealProcessRestartRecovery(t *testing.T) {
 // swapped to the adapter in .4.4/.4.5), proving one process serves the full
 // combined contract a consumer mixes.
 func TestStateStoreRealProcessRemoteSurfaces(t *testing.T) {
+	if testing.Short() {
+		t.Skip("real-process smoke test builds and execs the binary; skip under -short")
+	}
 	dir := t.TempDir()
 	bin := buildBinary(t, dir)
 	cfg := writeMinimalConfig(t, dir)
