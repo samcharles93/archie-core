@@ -26,8 +26,11 @@ type GatewayOptions struct {
 }
 
 // RunGateway owns conversation persistence, model runtime and tool-provider
-// lifecycles. Task-store adapters continue to access the existing task database
-// until the State Store Service extraction; no task data is relocated.
+// lifecycles. Task-store adapters access the State Store contract (remote
+// *staterpc.Client via [services.state].target), not archie.db directly: the
+// single SQLite file is owned by archie-state-store, and the Gateway keeps its
+// own already-separate session SQLite (docs/prds/state-store-contract.md §12
+// step 8), which is out of state-store scope.
 func RunGateway(ctx context.Context, options GatewayOptions) error {
 	b := newBootstrap()
 	defer b.cleanup()
@@ -36,6 +39,13 @@ func RunGateway(ctx context.Context, options GatewayOptions) error {
 	}
 	b.log = b.log.With("component", "gateway")
 	if err := b.openStores(ctx); err != nil {
+		return err
+	}
+	// The Gateway also no longer opens archie.db directly: it consumes the
+	// same remote State Store contract the daemon does via
+	// [services.state].target (docs/prds/state-store-contract.md §12 step 7).
+	// Its own session SQLite is untouched and stays Gateway-owned.
+	if err := b.openStateStoreAdapter(); err != nil {
 		return err
 	}
 	b.loadCatalog(ctx, options.Config)

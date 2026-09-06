@@ -22,15 +22,25 @@ import (
 // secret/env. The returned cleanup closes the connection; Close() on the
 // adapter itself is a no-op, because the store service owns its own DB
 // lifecycle (§11).
+// stateStoreResolvedToken returns the bearer token a State Store client
+// presents, matching composeStateStoreClient's resolution order: the explicit
+// [services.state].target_token key, then the STATE_STORE_TOKEN secret/env. The
+// daemon injects the same token into agent containers as STATE_STORE_TOKEN so
+// the agent authenticates to the same remote store the daemon dials.
+func stateStoreResolvedToken(settings config.ServiceConnection, secrets *secret.Registry) string {
+	token := settings.TargetToken
+	if token == "" {
+		token = secrets.Getenv("STATE_STORE_TOKEN")
+	}
+	return token
+}
+
 func composeStateStoreClient(settings config.ServiceConnection, secrets *secret.Registry) (store.TaskStore, func(), error) {
 	target := strings.TrimSpace(settings.Target)
 	if target == "" {
 		return nil, nil, fmt.Errorf("services.state.target is required")
 	}
-	token := settings.TargetToken
-	if token == "" {
-		token = secrets.Getenv("STATE_STORE_TOKEN")
-	}
+	token := stateStoreResolvedToken(settings, secrets)
 	loopback, err := stateStoreListenIsLoopback(target)
 	if err != nil {
 		return nil, nil, fmt.Errorf("services.state.target must be host:port: %w", err)

@@ -34,10 +34,10 @@ type Settings struct {
 	WorkDir   string
 
 	// StateStoreTarget and StateStoreToken are the daemon-injected State
-	// Store gRPC endpoint and per-task bearer token (docs/prds/
-	// state-store-contract.md §6: STATE_STORE_URL/STATE_STORE_TOKEN,
-	// mirroring the NATS_URL/NATS_TOKEN handoff). Empty keeps the legacy
-	// NATS storerpc path for workflow.Store.
+	// Store gRPC endpoint and bearer token (docs/prds/state-store-contract.md
+	// §6: STATE_STORE_URL/STATE_STORE_TOKEN, mirroring the NATS_URL/NATS_TOKEN
+	// handoff). StateStoreTarget is required: the legacy NATS storerpc path
+	// is deleted (docs/prds/state-store-contract.md §12 step 4).
 	StateStoreTarget string
 	StateStoreToken  string
 }

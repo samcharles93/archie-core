@@ -44,9 +44,20 @@ The templates use the extracted Gateway Service by default. Start
 `archie-gateway` before `archied`; it owns the conversation SQLite file and
 serves the `ChatContract` gRPC API on the configured target.
 
-The State Store service (`archie-state-store`) is `.4.3`: it owns the single
-`archie.db` task SQLite file and serves the `StateStore` gRPC contract. It is
-not yet consumed by the daemon (which still serves the store in-process), so
-running it now is only needed once the daemon points at it — the loopback
-bind above is the safe default, and a non-loopback bind requires a bearer
-token (`--token` / `STATE_STORE_TOKEN` / `[services.state].target_token`).
+The State Store service (`archie-state-store`) owns the single `archie.db` task
+SQLite file and serves the `StateStore` gRPC contract. After the in-process
+store path was deleted, BOTH `archied` and `archie-gateway` dial it via
+`[services.state].target` and never open `archie.db` themselves
+(`docs/prds/state-store-contract.md` §12 step 7). The templates set
+`[services.state]` accordingly: a host-only agent reaches a loopback bind
+(`127.0.0.1:9090`) with no token, while a container-mode agent needs the
+Docker bridge gateway address plus a matching bearer token (`target_token` /
+`--token` / `STATE_STORE_TOKEN`), because a container cannot reach the host's
+loopback.
+
+```bash
+# loopback (host-only agent)
+archie-state-store -config ~/.config/archie/config.toml -listen 127.0.0.1:9090
+# or container-mode: bind the bridge gateway with a token
+archie-state-store -config ~/.config/archie/config.toml -listen 172.17.0.1:9090 -token <token>
+```

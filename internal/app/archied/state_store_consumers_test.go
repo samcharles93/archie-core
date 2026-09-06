@@ -31,11 +31,10 @@ func openSecondStore(t *testing.T) *store.Store {
 
 // TestBuildDaemonRoutesTaskStoreThroughStateStore proves the daemon's task
 // lifecycle consumer resolves its store surfaces from b.stateStore (the State
-// Store contract adapter) -- local by default, remote *staterpc.Client when
-// [services.state].target is set -- and not from b.st directly. This is the
-// .4.5 TaskStore-composite swap (docs/prds/state-store-contract.md §12 step
-// 6): the daemon's Store field and its mapping/binding dispatch surfaces all
-// come from the adapter.
+// Store contract adapter -- always the remote *staterpc.Client after .4.6)
+// and not from b.st directly. This is the .4.5 TaskStore-composite swap
+// (docs/prds/state-store-contract.md §12 step 6): the daemon's Store field and
+// its mapping/binding dispatch surfaces all come from the adapter.
 func TestBuildDaemonRoutesTaskStoreThroughStateStore(t *testing.T) {
 	storeA, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "store-a.db"))
 	if err != nil {
@@ -71,8 +70,9 @@ func TestBuildDaemonRoutesTaskStoreThroughStateStore(t *testing.T) {
 }
 
 // TestSetupObservabilityRoutesTaskStoreThroughStateStore proves the dashboard's
-// task store (web.Store) is wired from b.stateStore, not b.st, so the webui
-// reaches the same contract adapter the daemon uses.
+// task store (web.Store) is wired from b.stateStore (the State Store contract
+// adapter), not b.st, so the webui reaches the same contract adapter the
+// daemon uses.
 func TestSetupObservabilityRoutesTaskStoreThroughStateStore(t *testing.T) {
 	storeA, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "store-a.db"))
 	if err != nil {
@@ -110,7 +110,7 @@ func TestSetupObservabilityRoutesTaskStoreThroughStateStore(t *testing.T) {
 // TestTaskActionsRoutesThroughStateStore proves the daemon's operator task
 // action service wraps b.stateStore (the contract adapter), so an operator
 // approve/cancel/archive action mutates the same store the daemon lifecycle
-// uses -- local by default, remote when [services.state].target is set.
+// uses.
 func TestTaskActionsRoutesThroughStateStore(t *testing.T) {
 	storeB := openSecondStore(t)
 

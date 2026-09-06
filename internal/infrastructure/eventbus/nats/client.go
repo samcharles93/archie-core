@@ -123,8 +123,8 @@ func (c *Client) Close() {
 }
 
 // CoreConn exposes the raw connection for the NATS-specific RPC layers
-// (forgerpc, storerpc, worktreerpc, natsrpc) that register their own core-NATS
-// subscriptions.
+// (forgerpc, worktreerpc, natsrpc) that register their own core-NATS
+// subscriptions. The State Store is a gRPC contract, not a core-NATS RPC.
 //
 // This is the single sanctioned escape hatch and exists only because those
 // packages are themselves NATS infrastructure, not domain code. Domain and

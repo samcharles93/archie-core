@@ -29,7 +29,7 @@ func runCommand(args []string, getenv func(string) string, stderr io.Writer, run
 	flags := flag.NewFlagSet("archie-agent", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	natsURLFlag := flags.String("nats-url", "", "NATS server URL (defaults to NATS_URL)")
-	stateStoreURLFlag := flags.String("state-store-url", "", "State Store gRPC target (defaults to STATE_STORE_URL; empty uses the legacy NATS storerpc path)")
+	stateStoreURLFlag := flags.String("state-store-url", "", "State Store gRPC target (defaults to STATE_STORE_URL; required -- the legacy NATS storerpc path is deleted)")
 	stateStoreTokenFlag := flags.String("state-store-token", "", "State Store bearer token (defaults to STATE_STORE_TOKEN)")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -52,6 +52,11 @@ func runCommand(args []string, getenv func(string) string, stderr io.Writer, run
 	stateStoreURL := *stateStoreURLFlag
 	if stateStoreURL == "" {
 		stateStoreURL = getenv("STATE_STORE_URL")
+	}
+	if stateStoreURL == "" {
+		fmt.Fprintln(stderr, "error: -state-store-url or STATE_STORE_URL is required (the legacy NATS storerpc path is deleted)")
+		flags.Usage()
+		return 1
 	}
 	stateStoreToken := *stateStoreTokenFlag
 	if stateStoreToken == "" {

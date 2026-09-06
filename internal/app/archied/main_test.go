@@ -30,7 +30,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/store"
-	"github.com/samcharles93/archie-core/internal/storerpc"
 	"github.com/samcharles93/archie-core/internal/tools"
 	"github.com/samcharles93/archie-core/internal/worktree"
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
@@ -942,11 +941,10 @@ func TestRegisterTaskRPCServersReachableFromClient(t *testing.T) {
 	}
 	t.Cleanup(serverConn.Close)
 
-	st := store.OpenTest(t)
 	trees := &worktree.Manager{WorkDir: t.TempDir()}
 	log := slog.New(slog.DiscardHandler)
 
-	unsubscribe, err := registerTaskRPCServers(serverConn, st, stubForge{}, trees, nil, worktreerpc.NewGrants(), log)
+	unsubscribe, err := registerTaskRPCServers(serverConn, stubForge{}, trees, nil, worktreerpc.NewGrants(), log)
 	if err != nil {
 		t.Fatalf("registerTaskRPCServers: %v", err)
 	}
@@ -959,18 +957,6 @@ func TestRegisterTaskRPCServersReachableFromClient(t *testing.T) {
 	t.Cleanup(clientConn.Close)
 
 	ctx := context.Background()
-
-	storeClient := &storerpc.Client{Conn: clientConn, Timeout: 2 * time.Second}
-	if _, err := st.EnqueueIssue(ctx, "acme", "widget", 1, "t", "b", "", ""); err != nil {
-		t.Fatalf("enqueue: %v", err)
-	}
-	task, err := st.ClaimNext(ctx)
-	if err != nil || task == nil {
-		t.Fatalf("claim: (%v, %v)", task, err)
-	}
-	if err := storeClient.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusPROpen, "opened"); err != nil {
-		t.Fatalf("storerpc Transition unreachable: %v", err)
-	}
 
 	forgeClient := &forgerpc.Client{Conn: clientConn, Timeout: 2 * time.Second}
 	if _, err := forgeClient.Comment(ctx, "acme", "widget", 1, "hi"); err != nil {
@@ -1045,7 +1031,6 @@ func TestRegisterTaskRPCServersRoutesIdentityScopedCalls(t *testing.T) {
 	}
 	t.Cleanup(serverConn.Close)
 
-	st := store.OpenTest(t)
 	rootForge := &identityForge{}
 	archieForge := &identityForge{}
 	rootTrees := &worktree.Manager{WorkDir: t.TempDir()}
@@ -1054,7 +1039,7 @@ func TestRegisterTaskRPCServersRoutesIdentityScopedCalls(t *testing.T) {
 	identities := []*daemon.IdentityRunner{
 		{Name: "archie", Forge: archieForge, Trees: archieTrees},
 	}
-	unsubscribe, err := registerTaskRPCServers(serverConn, st, rootForge, rootTrees, identities, worktreerpc.NewGrants(), slog.New(slog.DiscardHandler))
+	unsubscribe, err := registerTaskRPCServers(serverConn, rootForge, rootTrees, identities, worktreerpc.NewGrants(), slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("registerTaskRPCServers: %v", err)
 	}

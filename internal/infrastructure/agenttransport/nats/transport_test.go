@@ -17,7 +17,6 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
-	"github.com/samcharles93/archie-core/internal/storerpc"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
 )
@@ -83,12 +82,14 @@ func TestTaskRunSubjectOwnsCanonicalNATSTopology(t *testing.T) {
 
 // Full-task handoff and all worker RPC use core NATS. The worker must connect
 // to a broker with JetStream disabled; requiring a durable consumer would mean
-// the deleted per-stage transport still owns startup.
+// the deleted per-stage transport still owns startup. The State Store target
+// is a separate gRPC connection, not a NATS feature, so it is supplied here
+// too (it does not need to be reachable -- grpc.NewClient is lazy).
 func TestConnectRequiresOnlyCoreNATS(t *testing.T) {
 	srv := natstest.RunServer(&server.Options{Port: -1, Authorization: "worker-secret"})
 	t.Cleanup(srv.Shutdown)
 
-	transport, err := Connect(t.Context(), Config{URL: srv.ClientURL(), Token: "worker-secret"}, slog.New(slog.DiscardHandler))
+	transport, err := Connect(t.Context(), Config{URL: srv.ClientURL(), Token: "worker-secret", StateStoreURL: "127.0.0.1:9999"}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("Connect to core-only NATS: %v", err)
 	}
@@ -300,9 +301,8 @@ func TestRPCFactoriesPreserveIdentityAndTimeout(t *testing.T) {
 	if !ok || forgeClient.Identity != "identity-a" || forgeClient.Timeout != timeout {
 		t.Fatalf("forge client = %#v", forgeClient)
 	}
-	storeClient, ok := transport.Store(timeout).(*storerpc.Client)
-	if !ok || storeClient.Timeout != timeout {
-		t.Fatalf("store client = %#v", storeClient)
+	if store := transport.Store(timeout); store == nil {
+		t.Fatal("store client = nil, want a non-nil workflow.Store")
 	}
 	treeClient, ok := transport.Trees("identity-a", "grant-a", timeout).(*worktreerpc.Client)
 	if !ok || treeClient.Identity != "identity-a" || treeClient.Grant != "grant-a" || treeClient.Timeout != timeout {

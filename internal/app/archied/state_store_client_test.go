@@ -1,13 +1,11 @@
 package archied
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/secret"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 func TestComposeStateStoreClientRequiresTarget(t *testing.T) {
@@ -63,23 +61,14 @@ func TestComposeStateStoreClientTokenFromTargetToken(t *testing.T) {
 	}
 }
 
-func TestOpenStateStoreAdapterLocalUsesOpenedStore(t *testing.T) {
-	dir := t.TempDir()
-	st, err := store.Open(t.Context(), filepath.Join(dir, "tasks.sqlite"))
-	if err != nil {
-		t.Fatalf("open temp store: %v", err)
-	}
-	defer st.Close()
-
+func TestOpenStateStoreAdapterRequiresTarget(t *testing.T) {
 	b := newBootstrap()
-	b.st = st
 	b.secrets = &secret.Registry{}
-	// Empty [services.state].target → the base path: the local *store.Store.
-	if err := b.openStateStoreAdapter(); err != nil {
-		t.Fatalf("openStateStoreAdapter(local): %v", err)
-	}
-	if b.stateStore != st {
-		t.Fatal("local adapter should be the opened *store.Store")
+	// After .4.6 the daemon and gateway no longer own archie.db in-process, so
+	// an empty [services.state].target is a composition error, not the old
+	// local *store.Store default (docs/prds/state-store-contract.md §12 step 7).
+	if err := b.openStateStoreAdapter(); err == nil {
+		t.Fatal("empty services.state.target should error: the in-process store path is deleted")
 	}
 }
 

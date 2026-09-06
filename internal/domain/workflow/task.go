@@ -94,8 +94,8 @@ func (t Task) IsForgeBacked() bool {
 
 // Store is the narrow, consumer-owned subset of the State Store contract
 // that workflow stages call mid-run. *store.Store and staterpc.Client
-// satisfy it; this is the interface archie-agent uses via the storerpc
-// proxy. It supersedes store.WorkflowStore.
+// satisfy it; this is the interface archie-agent uses over the gRPC State
+// Store contract. It supersedes store.WorkflowStore.
 type Store interface {
 	Update(ctx context.Context, t *Task) error
 	Transition(ctx context.Context, taskID int64, from, to, detail string) error
