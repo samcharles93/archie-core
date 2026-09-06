@@ -186,13 +186,20 @@ Verified couplings that this decomposition must eliminate:
    `docs/inspiration/service-decomposition-open-questions-research-2026-09-05.md#4`.
 
    **RATIFIED (2026-09-06, beads archie-core-8cda.4.1).** The authoritative
-   contract boundary & transport design for this is now fixed in
-   `docs/prds/state-store-contract.md` (one `StateStore` gRPC service, 40
-   RPCs, producer-owned contracts, `RecordDispatch` drops `*sql.Tx`, `Close`
-   off-wire, structured gRPC error codes, presence-based
-   `[services.state].target` defaulting local, migration order
-   `WorkflowStore -> archie-state-store -> Capture -> Mapping -> Binding ->
-   TaskStore`). `.4.2` and `.4.3` implement against that doc.
+   contract boundary & transport design for this is fixed in
+   `docs/prds/state-store-contract.md` (rev. 2): one `StateStore` gRPC service,
+   40 RPCs; **ownership split** — consumer-owned `workflow.Store` +
+   `workflow.Task`/`Status`/`Source` in the workflow domain (dependency rules
+   #2/#7), producer-owned daemon/webui store surfaces in `internal/store`;
+   the `Task`/`Status`/`Source` + interface relocation is a Phase 2
+   prerequisite pulled from migration-decisions §4 (`store.Task →
+   WorkflowExecution`); `RecordDispatch` drops `*sql.Tx`; `Close` off-wire;
+   structured gRPC error codes with sanitised details; explicit agent State
+   Store gRPC handoff (`STATE_STORE_URL`/`STATE_STORE_TOKEN`); loopback+bearer
+   transport-security boundary; presence-based `[services.state].target`
+   defaulting local; migration order `workflow.Store -> archie-state-store ->
+   Capture -> Mapping -> Binding -> TaskStore`. `.4.2` and `.4.3` implement
+   against that doc.
 5. **Helm chart / Operator ownership.** Net-new work with no existing
    analog in this repository (`deployments/` currently holds TOML profiles
    and a `docker-compose.yml`, not Kubernetes manifests). Scoping not yet
