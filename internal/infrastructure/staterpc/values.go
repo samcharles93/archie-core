@@ -252,9 +252,23 @@ const (
 // (which may contain SQL, provider detail, or secrets). Infra errors map to
 // codes.Internal with a sanitised message; the caller is expected to log the
 // full error server-side before calling mapError.
+//
+// A context cancellation/deadline raised by the store (or by a caller ctx that
+// expires mid-call, §6) must retain its identity, not be folded into
+// codes.Internal: gRPC-Go surfaces context.Canceled/DeadlineExceeded to the
+// client only for those exact codes, and the agent's workflow consumer
+// depends on errors.Is(err, context.DeadlineExceeded) to distinguish an
+// interrupted stage from a failed one. So a context error maps to its own
+// gRPC code (and unmapError rehydrates it back to the sentinel).
 func mapError(err error) error {
 	if err == nil {
 		return nil
+	}
+	if errors.Is(err, context.Canceled) {
+		return status.Error(codes.Canceled, context.Canceled.Error())
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error())
 	}
 	switch {
 	case errors.Is(err, store.ErrStaleTransition):

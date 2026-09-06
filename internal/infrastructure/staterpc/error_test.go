@@ -41,6 +41,31 @@ func TestUnmapErrorPreservesContextIdentity(t *testing.T) {
 	}
 }
 
+// TestMapErrorPreservesContextIdentity pins the server side of the same §6
+// contract: if the store (or a server handler) returns a context error because
+// the caller's ctx expired mid-call, mapError must map it to the matching
+// gRPC code rather than sanitising it into codes.Internal. Otherwise the
+// client never sees the deadline identity and an interrupted stage is wrongly
+// treated as a failure.
+func TestMapErrorPreservesContextIdentity(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want error
+	}{
+		{name: "cancelled", err: context.Canceled, want: context.Canceled},
+		{name: "deadline exceeded", err: context.DeadlineExceeded, want: context.DeadlineExceeded},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mapped := mapError(tt.err)
+			if got := unmapError(mapped); !errors.Is(got, tt.want) {
+				t.Fatalf("mapError/unmapError round-trip for %q = %v, want errors.Is(err, %v)", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestUnmapErrorSentinelFidelity pins the §7 sentinel rehydration round-trip
 // for each store error code, so a consumer's errors.Is(err, store.ErrX) keeps
 // working across the wire.
