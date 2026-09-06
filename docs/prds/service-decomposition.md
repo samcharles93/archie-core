@@ -157,17 +157,26 @@ Verified couplings that this decomposition must eliminate:
    default -- this is `docs/architecture/organisation.md`'s standing
    "Process boundaries" rule, not a new lean. Mechanism: one wire-safe Go
    contract interface per service; a local adapter and a generated gRPC
-   client adapter, both satisfying the interface via a compile-time
-   assertion in the existing `var _ store.WorkflowStore = (*Client)(nil)`
-   idiom; composition (not `ServiceRegistry`, which stays network-only)
-   picks `mode = "inproc" | "remote"`, default `inproc`; a per-contract
-   conformance suite runs against both adapters over `bufconn`; the flip
-   to a real process is a same-commit deletion of the in-process path, no
-   dual-live window. Consequence: Gateway's Phase 0 (`ChatContract` seam)
-   ships in-process first, with the network protocol staying out of the
-   production path until Phase 1 -- no amendment to Q1's phase list
-   needed. Full mechanism and evidence:
-   `docs/inspiration/service-decomposition-open-questions-research-2026-09-05.md#3`.
+   client adapter, both satisfying the same interface via a compile-time
+   assertion (the `var _ workflow.Store = (*Client)(nil)` idiom;
+   `store.WorkflowStore` is superseded by the consumer-owned
+   `workflow.Store`); composition (not `ServiceRegistry`, which stays
+   network-only) picks the adapter by the presence of a
+   `[services.<name>].target` address -- empty = local (in-process) adapter,
+   set = dial the remote gRPC client. This replaced the earlier
+   `mode = "inproc" | "remote"` enum, which was dropped (see the gateway's
+   `services.gateway.target`). Defaults differ per service: the State Store
+   defaults **local** (not yet extracted); the gateway defaults
+   **remote-on-localhost** because it is already a separate process. A
+   per-contract conformance suite runs against both adapters over
+   `bufconn`; the flip to a real process is a same-commit deletion of the
+   in-process path, no dual-live window. Consequence: Gateway's Phase 0
+   (`ChatContract` seam) ships in-process first, with the network protocol
+   staying out of the production path until Phase 1 -- no amendment to Q1's
+   phase list needed. Full mechanism and evidence:
+   `docs/inspiration/service-decomposition-open-questions-research-2026-09-05.md#3`
+   (the State Store's concrete ratified config shape is
+   `docs/prds/state-store-contract.md` §10).
 4. **State Store's contract shape.** Whether every service gets its own
    storage (true microservice isolation) or several services share the
    State Store service's contract (less isolation, less migration risk).
