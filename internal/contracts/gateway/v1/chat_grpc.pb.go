@@ -19,15 +19,26 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ChatService_Snapshot_FullMethodName        = "/gateway.v1.ChatService/Snapshot"
-	ChatService_GetSession_FullMethodName      = "/gateway.v1.ChatService/GetSession"
-	ChatService_RecentMessages_FullMethodName  = "/gateway.v1.ChatService/RecentMessages"
-	ChatService_RecentTurns_FullMethodName     = "/gateway.v1.ChatService/RecentTurns"
-	ChatService_Route_FullMethodName           = "/gateway.v1.ChatService/Route"
-	ChatService_Stream_FullMethodName          = "/gateway.v1.ChatService/Stream"
-	ChatService_Cancel_FullMethodName          = "/gateway.v1.ChatService/Cancel"
-	ChatService_SetPersona_FullMethodName      = "/gateway.v1.ChatService/SetPersona"
-	ChatService_ApplyTaskAction_FullMethodName = "/gateway.v1.ChatService/ApplyTaskAction"
+	ChatService_Snapshot_FullMethodName             = "/gateway.v1.ChatService/Snapshot"
+	ChatService_GetSession_FullMethodName           = "/gateway.v1.ChatService/GetSession"
+	ChatService_RecentMessages_FullMethodName       = "/gateway.v1.ChatService/RecentMessages"
+	ChatService_RecentTurns_FullMethodName          = "/gateway.v1.ChatService/RecentTurns"
+	ChatService_Route_FullMethodName                = "/gateway.v1.ChatService/Route"
+	ChatService_Stream_FullMethodName               = "/gateway.v1.ChatService/Stream"
+	ChatService_Cancel_FullMethodName               = "/gateway.v1.ChatService/Cancel"
+	ChatService_SetPersona_FullMethodName           = "/gateway.v1.ChatService/SetPersona"
+	ChatService_ApplyTaskAction_FullMethodName      = "/gateway.v1.ChatService/ApplyTaskAction"
+	ChatService_SaveSession_FullMethodName          = "/gateway.v1.ChatService/SaveSession"
+	ChatService_GetSessionsByChannel_FullMethodName = "/gateway.v1.ChatService/GetSessionsByChannel"
+	ChatService_DeleteSession_FullMethodName        = "/gateway.v1.ChatService/DeleteSession"
+	ChatService_TouchSession_FullMethodName         = "/gateway.v1.ChatService/TouchSession"
+	ChatService_ListSessions_FullMethodName         = "/gateway.v1.ChatService/ListSessions"
+	ChatService_SaveMessage_FullMethodName          = "/gateway.v1.ChatService/SaveMessage"
+	ChatService_DeleteRecentMessages_FullMethodName = "/gateway.v1.ChatService/DeleteRecentMessages"
+	ChatService_MessageCount_FullMethodName         = "/gateway.v1.ChatService/MessageCount"
+	ChatService_SaveMessages_FullMethodName         = "/gateway.v1.ChatService/SaveMessages"
+	ChatService_ReplaceMessages_FullMethodName      = "/gateway.v1.ChatService/ReplaceMessages"
+	ChatService_SearchMessages_FullMethodName       = "/gateway.v1.ChatService/SearchMessages"
 )
 
 // ChatServiceClient is the client API for ChatService service.
@@ -43,6 +54,17 @@ type ChatServiceClient interface {
 	Cancel(ctx context.Context, in *CancelRequest, opts ...grpc.CallOption) (*CancelResponse, error)
 	SetPersona(ctx context.Context, in *SetPersonaRequest, opts ...grpc.CallOption) (*SetPersonaResponse, error)
 	ApplyTaskAction(ctx context.Context, in *ApplyTaskActionRequest, opts ...grpc.CallOption) (*ApplyTaskActionResponse, error)
+	SaveSession(ctx context.Context, in *SaveSessionRequest, opts ...grpc.CallOption) (*SaveSessionResponse, error)
+	GetSessionsByChannel(ctx context.Context, in *GetSessionsByChannelRequest, opts ...grpc.CallOption) (*GetSessionsByChannelResponse, error)
+	DeleteSession(ctx context.Context, in *DeleteSessionRequest, opts ...grpc.CallOption) (*DeleteSessionResponse, error)
+	TouchSession(ctx context.Context, in *TouchSessionRequest, opts ...grpc.CallOption) (*TouchSessionResponse, error)
+	ListSessions(ctx context.Context, in *ListSessionsRequest, opts ...grpc.CallOption) (*ListSessionsResponse, error)
+	SaveMessage(ctx context.Context, in *SaveMessageRequest, opts ...grpc.CallOption) (*SaveMessageResponse, error)
+	DeleteRecentMessages(ctx context.Context, in *DeleteRecentMessagesRequest, opts ...grpc.CallOption) (*DeleteRecentMessagesResponse, error)
+	MessageCount(ctx context.Context, in *MessageCountRequest, opts ...grpc.CallOption) (*MessageCountResponse, error)
+	SaveMessages(ctx context.Context, in *SaveMessagesRequest, opts ...grpc.CallOption) (*SaveMessagesResponse, error)
+	ReplaceMessages(ctx context.Context, in *ReplaceMessagesRequest, opts ...grpc.CallOption) (*ReplaceMessagesResponse, error)
+	SearchMessages(ctx context.Context, in *SearchMessagesRequest, opts ...grpc.CallOption) (*SearchMessagesResponse, error)
 }
 
 type chatServiceClient struct {
@@ -152,6 +174,116 @@ func (c *chatServiceClient) ApplyTaskAction(ctx context.Context, in *ApplyTaskAc
 	return out, nil
 }
 
+func (c *chatServiceClient) SaveSession(ctx context.Context, in *SaveSessionRequest, opts ...grpc.CallOption) (*SaveSessionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SaveSessionResponse)
+	err := c.cc.Invoke(ctx, ChatService_SaveSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chatServiceClient) GetSessionsByChannel(ctx context.Context, in *GetSessionsByChannelRequest, opts ...grpc.CallOption) (*GetSessionsByChannelResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSessionsByChannelResponse)
+	err := c.cc.Invoke(ctx, ChatService_GetSessionsByChannel_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chatServiceClient) DeleteSession(ctx context.Context, in *DeleteSessionRequest, opts ...grpc.CallOption) (*DeleteSessionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteSessionResponse)
+	err := c.cc.Invoke(ctx, ChatService_DeleteSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chatServiceClient) TouchSession(ctx context.Context, in *TouchSessionRequest, opts ...grpc.CallOption) (*TouchSessionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TouchSessionResponse)
+	err := c.cc.Invoke(ctx, ChatService_TouchSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chatServiceClient) ListSessions(ctx context.Context, in *ListSessionsRequest, opts ...grpc.CallOption) (*ListSessionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSessionsResponse)
+	err := c.cc.Invoke(ctx, ChatService_ListSessions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chatServiceClient) SaveMessage(ctx context.Context, in *SaveMessageRequest, opts ...grpc.CallOption) (*SaveMessageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SaveMessageResponse)
+	err := c.cc.Invoke(ctx, ChatService_SaveMessage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chatServiceClient) DeleteRecentMessages(ctx context.Context, in *DeleteRecentMessagesRequest, opts ...grpc.CallOption) (*DeleteRecentMessagesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteRecentMessagesResponse)
+	err := c.cc.Invoke(ctx, ChatService_DeleteRecentMessages_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chatServiceClient) MessageCount(ctx context.Context, in *MessageCountRequest, opts ...grpc.CallOption) (*MessageCountResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MessageCountResponse)
+	err := c.cc.Invoke(ctx, ChatService_MessageCount_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chatServiceClient) SaveMessages(ctx context.Context, in *SaveMessagesRequest, opts ...grpc.CallOption) (*SaveMessagesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SaveMessagesResponse)
+	err := c.cc.Invoke(ctx, ChatService_SaveMessages_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chatServiceClient) ReplaceMessages(ctx context.Context, in *ReplaceMessagesRequest, opts ...grpc.CallOption) (*ReplaceMessagesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReplaceMessagesResponse)
+	err := c.cc.Invoke(ctx, ChatService_ReplaceMessages_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chatServiceClient) SearchMessages(ctx context.Context, in *SearchMessagesRequest, opts ...grpc.CallOption) (*SearchMessagesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SearchMessagesResponse)
+	err := c.cc.Invoke(ctx, ChatService_SearchMessages_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ChatServiceServer is the server API for ChatService service.
 // All implementations must embed UnimplementedChatServiceServer
 // for forward compatibility.
@@ -165,6 +297,17 @@ type ChatServiceServer interface {
 	Cancel(context.Context, *CancelRequest) (*CancelResponse, error)
 	SetPersona(context.Context, *SetPersonaRequest) (*SetPersonaResponse, error)
 	ApplyTaskAction(context.Context, *ApplyTaskActionRequest) (*ApplyTaskActionResponse, error)
+	SaveSession(context.Context, *SaveSessionRequest) (*SaveSessionResponse, error)
+	GetSessionsByChannel(context.Context, *GetSessionsByChannelRequest) (*GetSessionsByChannelResponse, error)
+	DeleteSession(context.Context, *DeleteSessionRequest) (*DeleteSessionResponse, error)
+	TouchSession(context.Context, *TouchSessionRequest) (*TouchSessionResponse, error)
+	ListSessions(context.Context, *ListSessionsRequest) (*ListSessionsResponse, error)
+	SaveMessage(context.Context, *SaveMessageRequest) (*SaveMessageResponse, error)
+	DeleteRecentMessages(context.Context, *DeleteRecentMessagesRequest) (*DeleteRecentMessagesResponse, error)
+	MessageCount(context.Context, *MessageCountRequest) (*MessageCountResponse, error)
+	SaveMessages(context.Context, *SaveMessagesRequest) (*SaveMessagesResponse, error)
+	ReplaceMessages(context.Context, *ReplaceMessagesRequest) (*ReplaceMessagesResponse, error)
+	SearchMessages(context.Context, *SearchMessagesRequest) (*SearchMessagesResponse, error)
 	mustEmbedUnimplementedChatServiceServer()
 }
 
@@ -201,6 +344,39 @@ func (UnimplementedChatServiceServer) SetPersona(context.Context, *SetPersonaReq
 }
 func (UnimplementedChatServiceServer) ApplyTaskAction(context.Context, *ApplyTaskActionRequest) (*ApplyTaskActionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ApplyTaskAction not implemented")
+}
+func (UnimplementedChatServiceServer) SaveSession(context.Context, *SaveSessionRequest) (*SaveSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SaveSession not implemented")
+}
+func (UnimplementedChatServiceServer) GetSessionsByChannel(context.Context, *GetSessionsByChannelRequest) (*GetSessionsByChannelResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetSessionsByChannel not implemented")
+}
+func (UnimplementedChatServiceServer) DeleteSession(context.Context, *DeleteSessionRequest) (*DeleteSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteSession not implemented")
+}
+func (UnimplementedChatServiceServer) TouchSession(context.Context, *TouchSessionRequest) (*TouchSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method TouchSession not implemented")
+}
+func (UnimplementedChatServiceServer) ListSessions(context.Context, *ListSessionsRequest) (*ListSessionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSessions not implemented")
+}
+func (UnimplementedChatServiceServer) SaveMessage(context.Context, *SaveMessageRequest) (*SaveMessageResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SaveMessage not implemented")
+}
+func (UnimplementedChatServiceServer) DeleteRecentMessages(context.Context, *DeleteRecentMessagesRequest) (*DeleteRecentMessagesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteRecentMessages not implemented")
+}
+func (UnimplementedChatServiceServer) MessageCount(context.Context, *MessageCountRequest) (*MessageCountResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method MessageCount not implemented")
+}
+func (UnimplementedChatServiceServer) SaveMessages(context.Context, *SaveMessagesRequest) (*SaveMessagesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SaveMessages not implemented")
+}
+func (UnimplementedChatServiceServer) ReplaceMessages(context.Context, *ReplaceMessagesRequest) (*ReplaceMessagesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReplaceMessages not implemented")
+}
+func (UnimplementedChatServiceServer) SearchMessages(context.Context, *SearchMessagesRequest) (*SearchMessagesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SearchMessages not implemented")
 }
 func (UnimplementedChatServiceServer) mustEmbedUnimplementedChatServiceServer() {}
 func (UnimplementedChatServiceServer) testEmbeddedByValue()                     {}
@@ -378,6 +554,204 @@ func _ChatService_ApplyTaskAction_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ChatService_SaveSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).SaveSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_SaveSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).SaveSession(ctx, req.(*SaveSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChatService_GetSessionsByChannel_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSessionsByChannelRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).GetSessionsByChannel(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_GetSessionsByChannel_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).GetSessionsByChannel(ctx, req.(*GetSessionsByChannelRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChatService_DeleteSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).DeleteSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_DeleteSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).DeleteSession(ctx, req.(*DeleteSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChatService_TouchSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TouchSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).TouchSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_TouchSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).TouchSession(ctx, req.(*TouchSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChatService_ListSessions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSessionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).ListSessions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_ListSessions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).ListSessions(ctx, req.(*ListSessionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChatService_SaveMessage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveMessageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).SaveMessage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_SaveMessage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).SaveMessage(ctx, req.(*SaveMessageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChatService_DeleteRecentMessages_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteRecentMessagesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).DeleteRecentMessages(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_DeleteRecentMessages_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).DeleteRecentMessages(ctx, req.(*DeleteRecentMessagesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChatService_MessageCount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MessageCountRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).MessageCount(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_MessageCount_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).MessageCount(ctx, req.(*MessageCountRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChatService_SaveMessages_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveMessagesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).SaveMessages(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_SaveMessages_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).SaveMessages(ctx, req.(*SaveMessagesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChatService_ReplaceMessages_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReplaceMessagesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).ReplaceMessages(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_ReplaceMessages_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).ReplaceMessages(ctx, req.(*ReplaceMessagesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChatService_SearchMessages_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SearchMessagesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).SearchMessages(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_SearchMessages_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).SearchMessages(ctx, req.(*SearchMessagesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ChatService_ServiceDesc is the grpc.ServiceDesc for ChatService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -416,6 +790,50 @@ var ChatService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ApplyTaskAction",
 			Handler:    _ChatService_ApplyTaskAction_Handler,
+		},
+		{
+			MethodName: "SaveSession",
+			Handler:    _ChatService_SaveSession_Handler,
+		},
+		{
+			MethodName: "GetSessionsByChannel",
+			Handler:    _ChatService_GetSessionsByChannel_Handler,
+		},
+		{
+			MethodName: "DeleteSession",
+			Handler:    _ChatService_DeleteSession_Handler,
+		},
+		{
+			MethodName: "TouchSession",
+			Handler:    _ChatService_TouchSession_Handler,
+		},
+		{
+			MethodName: "ListSessions",
+			Handler:    _ChatService_ListSessions_Handler,
+		},
+		{
+			MethodName: "SaveMessage",
+			Handler:    _ChatService_SaveMessage_Handler,
+		},
+		{
+			MethodName: "DeleteRecentMessages",
+			Handler:    _ChatService_DeleteRecentMessages_Handler,
+		},
+		{
+			MethodName: "MessageCount",
+			Handler:    _ChatService_MessageCount_Handler,
+		},
+		{
+			MethodName: "SaveMessages",
+			Handler:    _ChatService_SaveMessages_Handler,
+		},
+		{
+			MethodName: "ReplaceMessages",
+			Handler:    _ChatService_ReplaceMessages_Handler,
+		},
+		{
+			MethodName: "SearchMessages",
+			Handler:    _ChatService_SearchMessages_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
