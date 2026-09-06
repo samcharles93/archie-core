@@ -20,6 +20,16 @@ db_path = "~/.local/share/archie/archie.db"
 [services.gateway]
 target = "127.0.0.1:8585"
 
+# The State Store gRPC service owns the single archie.db SQLite file; archied
+# and archie-gateway dial it and never open archie.db themselves (§12 step 7).
+# This deployment runs the agent in containers, so target is the Docker bridge
+# gateway (172.17.0.1) the container can reach, with a matching target_token
+# that archie-state-store validates. Host-only agent: use 127.0.0.1:9090 with
+# no token.
+[services.state]
+target = "172.17.0.1:9090"
+target_token = "change-me-state-store-token"
+
 [forge]
 type = "gitea"
 host = "https://git.example.com"
