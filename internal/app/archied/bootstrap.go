@@ -43,6 +43,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/overlay"
 	"github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
+	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
 	infraMemory "github.com/samcharles93/archie-core/internal/infrastructure/memory"
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
 	"github.com/samcharles93/archie-core/internal/infrastructure/sessioncurator"
@@ -272,21 +273,18 @@ func (b *boot) openStores(ctx context.Context) error {
 			log.Error("close store", "err", err)
 		}
 	})
-	// The conversation store is Gateway-owned data, but Phase 1 keeps the
-	// daemon's own Telegram/email routers and the session-memory curator
-	// reading the same SQLite file directly (Messaging extraction is
-	// Phase 4). Both processes opening the same file is the accepted
-	// Phase 1 shape; remote consumers of the conversation store arrive
-	// when a process that cannot open the file needs it.
-	chatSessionStore, err := makeTelegramSessionStore(cfg) //nolint:contextcheck // the session store opener takes no context by design; its schema init must complete at boot regardless of cancellation
+	return nil
+}
+
+func (b *boot) openChatSessions(_ context.Context) error { //nolint:unparam // context keeps the composition phase contract aligned with other openers
+	chatSessionStore, err := makeTelegramSessionStore(b.cfg) //nolint:contextcheck // SQLite schema initialization is synchronous and has no context-aware API
 	if err != nil {
-		log.Error("open conversation store", "path", conversationDBPath(cfg.DBPath), "err", err)
-		return err
+		return fmt.Errorf("open conversation store: %w", err)
 	}
 	b.chatSessionStore = chatSessionStore
 	b.addCleanup(func() {
 		if err := chatSessionStore.Close(); err != nil {
-			log.Error("close conversation store", "err", err)
+			b.log.Error("close conversation store", "err", err)
 		}
 	})
 	return nil
@@ -409,11 +407,11 @@ func (b *boot) wireWebStoreSurfaces() {
 // embedded mode starts an in-process nats-server and dials it, so single-
 // process deployments get task distribution and reaction delivery without a
 // separate server. Broker deployment never changes the worker executor.
-func (b *boot) connectNATS(ctx context.Context) error {
+func (b *boot) connectNATS(ctx context.Context) error { //nolint:nestif // embedded broker discovery and startup require explicit fallback branches
 	cfg, log := b.cfg, b.log
 	url := cfg.NATS.URL
 	var natsToken string
-	if cfg.NATS.Mode == config.NATSModeExternal {
+	if cfg.NATS.Mode == config.NATSModeExternal { //nolint:nestif // embedded broker discovery and startup require explicit fallback branches
 		if url == "" {
 			return fmt.Errorf("nats.url is required when nats.mode is external")
 		}
@@ -424,10 +422,26 @@ func (b *boot) connectNATS(ctx context.Context) error {
 			return err
 		}
 	} else {
-		var err error
-		url, natsToken, err = b.startEmbeddedNATS(ctx)
-		if err != nil {
-			return err
+		endpoint, readErr := readEmbeddedNATSEndpoint(cfg.DBPath)
+		if readErr == nil {
+			url, natsToken = endpoint.URL, endpoint.Token
+			if probe, err := nats.Connect(ctx, nats.Config{URL: url, Token: natsToken, Subjects: []string{workintake.SubjectTaskWildcard}, FilterSubject: workintake.SubjectTaskWildcard}, log); err == nil {
+				probe.Close()
+				// The endpoint is live; the connection is recreated below with the
+				// same subject configuration and becomes the daemon's owner.
+				url, natsToken = endpoint.URL, endpoint.Token
+			} else {
+				url, natsToken, err = b.startEmbeddedNATS(ctx)
+				if err != nil {
+					return err
+				}
+			}
+		} else {
+			var err error
+			url, natsToken, err = b.startEmbeddedNATS(ctx)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -470,6 +484,10 @@ func (b *boot) startEmbeddedNATS(ctx context.Context) (string, string, error) {
 	}
 	b.addCleanup(func() { srv.Shutdown() })
 	log.Info("embedded nats started", "url", srv.ClientURL())
+	if err := writeEmbeddedNATSEndpoint(cfg.DBPath, srv.ClientURL(), srv.Token()); err != nil {
+		srv.Shutdown()
+		return "", "", err
+	}
 	return srv.ClientURL(), srv.Token(), nil
 }
 
@@ -499,6 +517,9 @@ func (b *boot) setupLLMAndChat() error {
 		return err
 	}
 	b.addCleanup(cleanup)
+	if remote, ok := contract.(*gatewayrpc.Client); ok {
+		b.chatSessionStore = remote
+	}
 	b.web.Chat = &webui.ChatService{Contract: contract, Updates: b.updateService}
 	b.web.WorkRequests = b.chatTasks
 	b.setupReadinessProbes()

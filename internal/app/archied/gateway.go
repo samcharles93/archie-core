@@ -10,6 +10,7 @@ import (
 	natsio "github.com/nats-io/nats.go"
 	"google.golang.org/grpc"
 
+	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
@@ -37,15 +38,34 @@ func RunGateway(ctx context.Context, options GatewayOptions) error {
 	if err := b.openStores(ctx); err != nil {
 		return err
 	}
-	b.loadCatalog(ctx, options.Config)
-	if b.cfg.NATS.URL == "" {
-		return fmt.Errorf("archie-gateway requires nats.url pointing to the daemon's shared NATS server")
-	}
-	token, err := configuredNATSToken(b.cfg.NATS, os.Getenv)
-	if err != nil {
+	if err := b.openChatSessions(ctx); err != nil {
 		return err
 	}
-	nc, err := natsio.Connect(b.cfg.NATS.URL, natsio.Token(token))
+	b.loadCatalog(ctx, options.Config)
+	url, token := b.cfg.NATS.URL, ""
+	var nc *natsio.Conn
+	var err error
+	if b.cfg.NATS.Mode == config.NATSModeExternal { //nolint:nestif // external and embedded transports have distinct credential and discovery flows
+		token, err = configuredNATSToken(b.cfg.NATS, os.Getenv)
+		if err != nil {
+			return err
+		}
+		nc, err = natsio.Connect(url, natsio.Token(token))
+	} else {
+		var endpoint embeddedNATSEndpoint
+		endpoint, err = readEmbeddedNATSEndpoint(b.cfg.DBPath)
+		if err == nil {
+			url, token = endpoint.URL, endpoint.Token
+			nc, err = natsio.Connect(url, natsio.Token(token))
+		}
+		if nc == nil || err != nil {
+			url, token, err = b.startEmbeddedNATS(ctx)
+			if err != nil {
+				return err
+			}
+			nc, err = natsio.Connect(url, natsio.Token(token))
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("connect gateway task actions: %w", err)
 	}
@@ -64,7 +84,7 @@ func RunGateway(ctx context.Context, options GatewayOptions) error {
 	}
 	defer listener.Close()
 	b.log.Info("archie-gateway running", "addr", listener.Addr().String())
-	return serveGateway(ctx, listener, contract)
+	return serveGateway(ctx, listener, contract, b.chatSessionStore)
 }
 
 func (b *boot) startGatewayRuntime(ctx context.Context, actor gateway.ChatTaskActor) (gateway.ChatContract, error) {
@@ -93,9 +113,9 @@ func (b *boot) startGatewayRuntime(ctx context.Context, actor gateway.ChatTaskAc
 	return contract, nil
 }
 
-func serveGateway(ctx context.Context, listener net.Listener, contract gateway.ChatContract) error {
+func serveGateway(ctx context.Context, listener net.Listener, contract gateway.ChatContract, sessions gateway.SessionStore) error {
 	server := grpc.NewServer()
-	gatewayrpc.RegisterServer(server, contract)
+	gatewayrpc.RegisterServer(server, contract, sessions)
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- server.Serve(listener) }()
 	select {

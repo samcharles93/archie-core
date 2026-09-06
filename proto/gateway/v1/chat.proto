@@ -14,6 +14,17 @@ service ChatService {
   rpc Cancel(CancelRequest) returns (CancelResponse);
   rpc SetPersona(SetPersonaRequest) returns (SetPersonaResponse);
   rpc ApplyTaskAction(ApplyTaskActionRequest) returns (ApplyTaskActionResponse);
+  rpc SaveSession(SaveSessionRequest) returns (SaveSessionResponse);
+  rpc GetSessionsByChannel(GetSessionsByChannelRequest) returns (GetSessionsByChannelResponse);
+  rpc DeleteSession(DeleteSessionRequest) returns (DeleteSessionResponse);
+  rpc TouchSession(TouchSessionRequest) returns (TouchSessionResponse);
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  rpc SaveMessage(SaveMessageRequest) returns (SaveMessageResponse);
+  rpc DeleteRecentMessages(DeleteRecentMessagesRequest) returns (DeleteRecentMessagesResponse);
+  rpc MessageCount(MessageCountRequest) returns (MessageCountResponse);
+  rpc SaveMessages(SaveMessagesRequest) returns (SaveMessagesResponse);
+  rpc ReplaceMessages(ReplaceMessagesRequest) returns (ReplaceMessagesResponse);
+  rpc SearchMessages(SearchMessagesRequest) returns (SearchMessagesResponse);
 }
 
 message Session {
@@ -111,3 +122,25 @@ message SetPersonaRequest { string session_id = 1; string name = 2; }
 message SetPersonaResponse { bool found = 1; }
 message ApplyTaskActionRequest { string identity = 1; int64 task_id = 2; string action = 3; }
 message ApplyTaskActionResponse { int64 task_id = 1; string action = 2; string message = 3; }
+message SaveSessionResponse {}
+message SaveSessionRequest { Session session = 1; }
+message GetSessionsByChannelRequest { string platform = 1; string channel_id = 2; }
+message GetSessionsByChannelResponse { repeated Session sessions = 1; }
+message ListSessionsResponse { repeated Session sessions = 1; }
+message DeleteSessionResponse {}
+message TouchSessionResponse {}
+message SaveMessageResponse {}
+message SaveMessagesResponse {}
+message ReplaceMessagesResponse {}
+message DeleteSessionRequest { string session_id = 1; }
+message TouchSessionRequest { string session_id = 1; }
+message ListSessionsRequest {}
+message SaveMessageRequest { string session_id = 1; Message message = 2; }
+message DeleteRecentMessagesRequest { string session_id = 1; int64 limit = 2; }
+message DeleteRecentMessagesResponse { int64 deleted = 1; }
+message MessageCountRequest { string session_id = 1; }
+message MessageCountResponse { int64 count = 1; }
+message SaveMessagesRequest { string session_id = 1; repeated Message messages = 2; }
+message ReplaceMessagesRequest { string session_id = 1; repeated Message messages = 2; repeated string superseded = 3; }
+message SearchMessagesRequest { string session_id = 1; string query = 2; int64 limit = 3; int64 offset = 4; }
+message SearchMessagesResponse { repeated Message messages = 1; int64 next_offset = 2; bool has_more = 3; bool truncated = 4; }

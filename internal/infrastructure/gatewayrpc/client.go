@@ -13,9 +13,85 @@ import (
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
-var _ gateway.ChatContract = (*Client)(nil)
+var (
+	_ gateway.ChatContract = (*Client)(nil)
+	_ gateway.SessionStore = (*Client)(nil)
+)
 
 type Client struct{ client pb.ChatServiceClient }
+
+func (c *Client) Get(ctx context.Context, id string) (*gateway.SessionContext, error) {
+	s, found, err := c.GetSession(ctx, id)
+	if err != nil || !found {
+		return nil, err
+	}
+	return &s, nil
+}
+
+func (c *Client) Save(ctx context.Context, s gateway.SessionContext) error {
+	_, e := c.client.SaveSession(ctx, &pb.SaveSessionRequest{Session: sessionProto(s)})
+	return e
+}
+
+func (c *Client) GetByChannel(ctx context.Context, p, ch string) ([]gateway.SessionContext, error) {
+	v, e := c.client.GetSessionsByChannel(ctx, &pb.GetSessionsByChannelRequest{Platform: p, ChannelId: ch})
+	if e != nil {
+		return nil, e
+	}
+	return mapValues(v.Sessions, sessionValue), nil
+}
+
+func (c *Client) Delete(ctx context.Context, id string) error {
+	_, e := c.client.DeleteSession(ctx, &pb.DeleteSessionRequest{SessionId: id})
+	return e
+}
+
+func (c *Client) Touch(ctx context.Context, id string) error {
+	_, e := c.client.TouchSession(ctx, &pb.TouchSessionRequest{SessionId: id})
+	return e
+}
+
+func (c *Client) List(ctx context.Context) ([]gateway.SessionContext, error) {
+	v, e := c.client.ListSessions(ctx, &pb.ListSessionsRequest{})
+	if e != nil {
+		return nil, e
+	}
+	return mapValues(v.Sessions, sessionValue), nil
+}
+
+func (c *Client) SaveMessage(ctx context.Context, id string, m gateway.Message) error {
+	_, e := c.client.SaveMessage(ctx, &pb.SaveMessageRequest{SessionId: id, Message: messageProto(m)})
+	return e
+}
+
+func (c *Client) DeleteRecentMessages(ctx context.Context, id string, n int) (int, error) {
+	v, e := c.client.DeleteRecentMessages(ctx, &pb.DeleteRecentMessagesRequest{SessionId: id, Limit: int64(n)})
+	return int(v.Deleted), e
+}
+
+func (c *Client) MessageCount(ctx context.Context, id string) (int, error) {
+	v, e := c.client.MessageCount(ctx, &pb.MessageCountRequest{SessionId: id})
+	return int(v.Count), e
+}
+
+func (c *Client) SaveMessages(ctx context.Context, id string, m []gateway.Message) error {
+	_, e := c.client.SaveMessages(ctx, &pb.SaveMessagesRequest{SessionId: id, Messages: mapValues(m, messageProto)})
+	return e
+}
+
+func (c *Client) ReplaceMessages(ctx context.Context, id string, m []gateway.Message, s []string) error {
+	_, e := c.client.ReplaceMessages(ctx, &pb.ReplaceMessagesRequest{SessionId: id, Messages: mapValues(m, messageProto), Superseded: s})
+	return e
+}
+
+func (c *Client) SearchMessages(ctx context.Context, id string, q gateway.MessageQuery) (gateway.MessagePage, error) {
+	v, e := c.client.SearchMessages(ctx, &pb.SearchMessagesRequest{SessionId: id, Query: q.Query, Limit: int64(q.Limit), Offset: int64(q.Offset)})
+	if e != nil {
+		return gateway.MessagePage{}, e
+	}
+	return gateway.MessagePage{Messages: mapValues(v.Messages, messageValue), NextOffset: int(v.NextOffset), HasMore: v.HasMore, Truncated: v.Truncated}, nil
+}
+func (c *Client) Close() error { return nil }
 
 func NewClient(conn grpc.ClientConnInterface) *Client {
 	return &Client{client: pb.NewChatServiceClient(conn)}
