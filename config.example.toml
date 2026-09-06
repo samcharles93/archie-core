@@ -268,8 +268,12 @@ gate_max_failures = 5
 
 # [services.state]
 # target = ""                        # empty (default) = local *store.Store adapter.
-#                                     # This surface is consumed by the upcoming
-#                                     # standalone archie-state-store binary (.4.3); the
+# target_token = "..."               # bearer token for a NON-loopback listener. The standalone
+#                                       # archie-state-store server validates this; a loopback
+#                                       # bind (127.0.0.1/::1/localhost) needs no token. Non-loopback
+#                                       # without a token fails closed (docs/prds/state-store-contract.md §9).
+#                                     # This surface is consumed by the standalone
+#                                     # archie-state-store binary (.4.3); the
 #                                     # daemon does not read it yet -- it still serves the
 #                                     # State Store gRPC service in-process today.
 
