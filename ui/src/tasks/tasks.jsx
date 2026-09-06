@@ -1,7 +1,7 @@
 import { Fragment } from "preact";
 import { useState, useEffect, useRef } from "preact/hooks";
 import "./tasks.css";
-import { api } from "../base/api.jsx";
+import { api, classifyActionError } from "../base/api.jsx";
 import { ago } from "../base/dom.jsx";
 import { Pill } from "../base/pill.jsx";
 import { statTile as renderStatTile } from "../base/statTile.jsx";
@@ -19,6 +19,27 @@ function StatTileNode(props) {
   return <div ref={ref} style={{ display: 'contents' }} />;
 }
 
+
+// renderActionError distinguishes a refused action ("you cannot do that" --
+// bad input, a conflicting task state) from a broken one (5xx, network drop,
+// timeout -- "try again or check the daemon"), and special-cases an expired
+// session with a prompt to reload rather than either framing.
+function renderActionError({ kind, message }) {
+  if (kind === "session-expired") {
+    return (
+      <span className="task-action-error task-action-error-session">
+        Your session has expired.{" "}
+        <button className="button btn btn-small" type="button" onClick={() => window.location.reload()}>
+          Reload to sign in
+        </button>
+      </span>
+    );
+  }
+  if (kind === "refused") {
+    return <span className="task-action-error task-action-error-refused">{message} — you can't do that.</span>;
+  }
+  return <span className="task-action-error task-action-error-broken">{message} — try again, or check the daemon.</span>;
+}
 
 function Empty({ title, detail }) {
   return (
@@ -113,7 +134,7 @@ function TasksApp({ query }) {
         next.delete(id);
         return next;
       });
-      setActionErrors(prev => new Map(prev).set(id, err.message || "Action failed"));
+      setActionErrors(prev => new Map(prev).set(id, classifyActionError(err)));
     }
   };
 
@@ -190,8 +211,8 @@ function TasksApp({ query }) {
   };
 
   const renderTaskActions = (t) => {
-    const message = actionErrors.get(t.id);
-    const errorMsg = message ? <span className="task-action-error">{message}</span> : null;
+    const actionError = actionErrors.get(t.id);
+    const errorMsg = actionError ? renderActionError(actionError) : null;
     const busy = actionsInFlight.has(t.id);
 
     const variantToken = (kind) =>

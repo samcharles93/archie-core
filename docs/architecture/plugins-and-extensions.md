@@ -57,26 +57,26 @@ Forge action positions are designed but not yet implemented (open
 investigation `archie-core-t2db.19`); when they land they follow the same
 model, not a new one.
 
-## Curator surprisal sampling (deferred)
+## Curator surprisal sampling
 
-**Deferred by decision, 2026-08-05** — Archie has no embedding capability, and
-wave 1 ships the strategy seam without one. Pick the deferred work up in order:
-[#436](https://github.com/samcharles93/archie-core/issues/436) first, then
-[#437](https://github.com/samcharles93/archie-core/issues/437) which depends on it
-and on [#407](https://github.com/samcharles93/archie-core/issues/407).
+**Decided 2026-08-05, wave 1 landed 2026-09-05** — the curator engine family
+(epic [#435](https://github.com/samcharles93/archie-core/issues/435)) selects which memories deserve agentic attention via
+surprisal-based sampling: score memories by how surprising they are and
+spend the sampled reasoner's agentic budget on the most surprising items.
 
-The curator engine family (epic [#435](https://github.com/samcharles93/archie-core/issues/435)) selects which memories
-deserve agentic attention via surprisal-based sampling: score memories by how
-surprising they are and spend the sampled reasoner's agentic budget on the
-most surprising items. Wave 1 of the epic ships the `Sampler` strategy seam in
-`internal/curator` with cheap, embedding-free strategies (recency, random,
-all, and a staleness proxy). The embedding-backed strategy is a documented
-extension point and is gated behind an embedding capability Archie does not
-yet have — **any surprisal-style sampling is gated behind adding one**.
+The prerequisites are built: the embeddings capability
+([#436](https://github.com/samcharles93/archie-core/issues/436), `internal/domain/embedding` contract +
+`internal/infrastructure/embedding` implementation, config-driven via
+`models.embedding`) and the wave-1 `Sampler` strategy seam
+(`internal/domain/sampling` -- not `internal/curator`, see
+`docs/prds/curator-sampler-wave1.md` for the settled design and tracking)
+with four
+cheap, embedding-free strategies (recency, random, all, staleness proxy).
+No curator consumes a `Sampler` yet.
 
-Requirements for the deferred work, so it can be picked up without
-re-deriving the design (tracked as [#436](https://github.com/samcharles93/archie-core/issues/436) embeddings capability,
-then [#437](https://github.com/samcharles93/archie-core/issues/437) surprisal strategies):
+Still deferred: [#437](https://github.com/samcharles93/archie-core/issues/437), the embedding-backed surprisal strategy, which
+depends on the above and on [#407](https://github.com/samcharles93/archie-core/issues/407). Requirements for that deferred work,
+so it can be picked up without re-deriving the design:
 
 - A `Sampler` implementation behind the same interface as the cheap
   strategies; selection deterministic given fixed inputs.
@@ -89,7 +89,3 @@ then [#437](https://github.com/samcharles93/archie-core/issues/437) surprisal st
   must never fail or crash a curator pass.
 - Cost bound: the graph build is quadratic in the candidate cap; the cap must
   be a named constant with a documented bound.
-- The embedding capability itself: a narrow typed client usable by in-process
-  components, config-driven provider/model, credential-missing degrades to
-  "capability unavailable" (daemon still starts), timeouts on network calls,
-  tests via httptest only.

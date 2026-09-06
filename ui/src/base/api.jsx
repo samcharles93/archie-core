@@ -51,6 +51,22 @@ export class ApiError extends Error {
   }
 }
 
+// classifyActionError turns a failed operator action into a rendering
+// decision. archied's own handlers already return distinguishable status
+// codes for a refused mutation (400/403/409 -- bad input, missing CSRF,
+// cross-origin, conflicting state) versus a broken one (5xx, or no status at
+// all when fetch itself failed -- network drop, timeout); 401 additionally
+// means the session -- archied's own token cookie, or an upstream
+// forward-auth proxy sitting in front of it -- has expired rather than that
+// the action was rejected or the daemon is unwell.
+export function classifyActionError(err) {
+  const status = err instanceof ApiError ? err.status : undefined;
+  const message = err?.message || "Action failed";
+  if (status === 401) return { kind: "session-expired", message };
+  if (status >= 400 && status < 500) return { kind: "refused", message };
+  return { kind: "broken", message };
+}
+
 export const api = {
   summary: () => req("/api/summary"),
   tasks: () => req("/api/tasks"),
