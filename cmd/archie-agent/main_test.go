@@ -23,9 +23,10 @@ func TestRunCommandPreservesCLIExitSemantics(t *testing.T) {
 		{name: "flag parse error", args: []string{"-unknown"}, wantCode: 2},
 		{name: "removed consumer flag", args: []string{"-consumer", "legacy"}, wantCode: 2},
 		{name: "missing NATS URL", wantCode: 1},
+		{name: "missing state store URL", args: []string{"-nats-url", "nats://test"}, wantCode: 1},
 		{
 			name: "worker failure",
-			args: []string{"-nats-url", "nats://test"},
+			args: []string{"-nats-url", "nats://test", "-state-store-url", "127.0.0.1:9090"},
 			worker: func(context.Context, agentworker.Settings, *slog.Logger) error {
 				return errors.New("worker failed")
 			},
@@ -33,7 +34,7 @@ func TestRunCommandPreservesCLIExitSemantics(t *testing.T) {
 		},
 		{
 			name: "success",
-			args: []string{"-nats-url", "nats://test"},
+			args: []string{"-nats-url", "nats://test", "-state-store-url", "127.0.0.1:9090"},
 			worker: func(context.Context, agentworker.Settings, *slog.Logger) error {
 				return nil
 			},

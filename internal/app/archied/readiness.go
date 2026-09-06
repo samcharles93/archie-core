@@ -27,7 +27,7 @@ import (
 func (b *boot) setupReadinessProbes() {
 	cfg := b.cfg
 	probes := []health.Probe{
-		readiness.NewStoreProbe(b.st),
+		readiness.NewStoreProbe(b.stateStore),
 		readiness.NewConfigProbe(func() config.Config { return b.web.Cfg.Get() }, configuration.Validate),
 		readiness.NewDiskProbe(diskProbePath(cfg)),
 		readiness.NewModelProbe(b.chatModels.ActiveModel, b.chatModels.Models, modelReachProbe(cfg, b.chatModels.ActiveModel)),

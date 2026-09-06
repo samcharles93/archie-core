@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -24,7 +23,6 @@ import (
 	"time"
 
 	"github.com/samcharles93/ai-sdk/runtime"
-	"google.golang.org/grpc"
 
 	channelruntime "github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/channels/email"
@@ -52,7 +50,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
 	"github.com/samcharles93/archie-core/internal/infrastructure/sessioncurator"
 	"github.com/samcharles93/archie-core/internal/infrastructure/skillcurator"
-	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/memory"
@@ -102,21 +99,16 @@ type boot struct {
 	playbooks *playbook.Store
 
 	st store.TaskStore
-	// stateStore is the State Store contract adapter the daemon's own
-	// store consumers depend on. It is the in-process *store.Store (the
-	// same one b.st holds) unless [services.state].target is set, in which
-	// case it is a remote *staterpc.Client dialed to the standalone
-	// archie-state-store gRPC service. openStores seeds it from b.st so it
-	// is never nil in any composition (daemon or gateway); the daemon's
-	// openStateStoreAdapter upgrades it to the remote client when the seam
-	// is set (the gateway never calls openStateStoreAdapter, so it stays on
-	// the local adapter). During .4.5 the workflow/intake/task-lifecycle
-	// consumers (the TaskStore composite) resolve through this field, so a
-	// consumer mixes in-process and remote contracts per contract-code while
-	// the daemon's own local store stays in-process; the in-process State
-	// Store gRPC server keeps fronting b.st for the agent until .4.6
-	// (docs/prds/state-store-contract.md §12 step 6).
+	// stateStore is the State Store contract adapter every daemon and gateway
+	// store consumer depends on. It is ALWAYS the remote *staterpc.Client
+	// dialed to the standalone archie-state-store gRPC service at
+	// [services.state].target (the daemon and gateway no longer own archie.db
+	// in-process, per docs/prds/state-store-contract.md §12 step 7). It is set
+	// by openStateStoreAdapter, which requires [services.state].target to be
+	// set. The b.st field remains solely for the standalone archie-state-store
+	// binary, which owns the single SQLite file.
 	stateStore       store.TaskStore
+	stateStoreToken  string
 	chatSessionStore gateway.SessionStore
 
 	catalog       modelcatalog.Snapshot
@@ -283,49 +275,30 @@ func (b *boot) openStores(ctx context.Context) error {
 	b.secrets = secrets
 	b.forgeClient, b.token = resolveForge(cfg.Forge, secrets, log)
 
-	bindingCipher, err := bindingCipherFromConfig(cfg, secrets)
-	if err != nil {
-		log.Error("configure bindings cipher", "err", err)
-		return err
-	}
-
-	st, err := openProductionTaskStore(ctx, taskDBPath(cfg.DBPath), store.WithBindingCipher(bindingCipher))
-	if err != nil {
-		log.Error("open store", "err", err)
-		return err
-	}
-	b.st = st
-	// Seed the State Store contract adapter from the just-opened in-process
-	// store so it is never nil in any composition (Run and RunGateway both
-	// open b.st here). The daemon's openStateStoreAdapter upgrades it to a
-	// remote *staterpc.Client when [services.state].target is set; the
-	// gateway never calls openStateStoreAdapter, so it stays on this local
-	// adapter and never dials remote (docs/prds/state-store-contract.md §10).
-	b.stateStore = st
-	b.addCleanup(func() {
-		if err := st.Close(); err != nil {
-			log.Error("close store", "err", err)
-		}
-	})
+	// The daemon and gateway no longer open archie.db directly: the single
+	// SQLite file is owned by the standalone archie-state-store process, and
+	// both consumers dial its gRPC State Store contract. openStateStoreAdapter
+	// (called by Run and RunGateway after openStores) resolves b.stateStore as
+	// the remote *staterpc.Client. There is no local store to open here
+	// (docs/prds/state-store-contract.md §12 step 7, no dual-store ownership).
 	return b.openChatSessions(ctx)
 }
 
-// openStateStoreAdapter upgrades the State Store contract adapter to the
-// remote *staterpc.Client when [services.state].target is set; otherwise it
-// leaves the in-process adapter seeded by openStores (the default -- the
-// State Store service is not yet extracted into its own process), so this is
-// additive and behaviour-neutral until an operator flips the seam
-// (docs/prds/state-store-contract.md §10). openStores already seeds
-// b.stateStore = b.st, so the empty-target branch is an idempotent no-op that
-// keeps the default explicit. Called only from the daemon's composition (the
-// gateway does not consume these surfaces via a remote adapter), so a gateway
-// config that happens to carry [services.state].target can never dial (or fail
-// closed against) a state store it does not use. It runs after openStores has
-// opened b.st and resolved b.secrets.
+// openStateStoreAdapter resolves the State Store contract adapter as the
+// remote *staterpc.Client dialed to [services.state].target, so every daemon
+// and gateway store consumer uses one endpoint -- the standalone
+// archie-state-store service. It requires [services.state].target to be set:
+// after .4.6 the daemon and gateway no longer own archie.db in-process, so the
+// local default of earlier phases is removed (no dual-store ownership;
+// docs/prds/state-store-contract.md §12 step 7). The token the daemon also
+// injects into agent containers (STATE_STORE_TOKEN) is the same one this
+// client authenticates with, resolved from [services.state].target_token or
+// the STATE_STORE_TOKEN secret (§10). It runs after openStores has resolved
+// b.secrets, and before setupObservability / buildDaemon wire consumers.
 func (b *boot) openStateStoreAdapter() error {
-	if strings.TrimSpace(b.cfg.Services.State.Target) == "" {
-		b.stateStore = b.st
-		return nil
+	target := strings.TrimSpace(b.cfg.Services.State.Target)
+	if target == "" {
+		return fmt.Errorf("services.state.target is required: archied/archie-gateway no longer own archie.db; the standalone archie-state-store process owns it (docs/prds/state-store-contract.md §12 step 7)")
 	}
 	client, cleanup, err := composeStateStoreClient(b.cfg.Services.State, b.secrets)
 	if err != nil {
@@ -333,6 +306,7 @@ func (b *boot) openStateStoreAdapter() error {
 		return err
 	}
 	b.stateStore = client
+	b.stateStoreToken = stateStoreResolvedToken(b.cfg.Services.State, b.secrets)
 	b.addCleanup(cleanup)
 	return nil
 }
@@ -1283,10 +1257,11 @@ func (b *boot) registerMinimaxTool(cfg config.Config, log *slog.Logger) {
 func (b *boot) buildDaemon() {
 	cfg, log := b.cfg, b.log
 	b.d = &daemon.Daemon{
-		Cfg:            config.NewHolder(cfg),
-		ConnectedNATS:  daemon.NATSEndpoint{URL: b.natsURL, Token: b.natsToken},
-		Store:          b.stateStore,
-		Bus:            b.bus,
+		Cfg:             config.NewHolder(cfg),
+		ConnectedNATS:   daemon.NATSEndpoint{URL: b.natsURL, Token: b.natsToken},
+		ConnectedStateStore: daemon.StateStoreEndpoint{URL: strings.TrimSpace(b.cfg.Services.State.Target), Token: b.stateStoreToken},
+		Store:           b.stateStore,
+		Bus:             b.bus,
 		Forge:          b.forgeClient,
 		Trees:          b.trees,
 		CapabilityHost: b.capabilityHost,
@@ -1329,55 +1304,6 @@ func (b *boot) buildDaemon() {
 		b.d.BindingTaskCreator = btc
 	}
 	b.setupForgeWebhook()
-}
-
-// startStateStoreServer serves the State Store gRPC service in-process
-// (multiplexed inside archied), so archie-agent has a gRPC target before the
-// standalone archie-state-store binary exists (docs/prds/
-// state-store-contract.md §12 step 3). Listener topology follows §9's single
-// rule: bind the host-gateway bridge address with mandatory per-task bearer
-// tokens when agent containers can reach this daemon, or loopback-only with
-// no token when there is no container pool to serve. Failure degrades
-// (archie-agent falls back to the legacy NATS storerpc path) rather than
-// aborting boot -- the State Store's in-process server is additive during
-// .4.2, not yet load-bearing.
-func (b *boot) startStateStoreServer(ctx context.Context) {
-	log := b.log
-	// The in-process server fronts the daemon's LOCAL store surfaces, not the
-	// consumer-facing b.d.* adapters: during .4.4 the daemon may route its own
-	// capture/mapping/binding consumers to a remote *staterpc.Client via
-	// [services.state].target, but the daemon still OWNS archie.db in-process
-	// and the agent's gRPC target must keep answering from that same local
-	// file (no dual-store ownership, docs/prds/state-store-contract.md §9/§12
-	// step 6). Deletion of the in-process serving path is .4.6.
-	deps := b.stateStoreDeps()
-
-	host := "127.0.0.1"
-	var opts []grpc.ServerOption
-	if b.containerPool != nil {
-		if bridge := b.containerPool.HostGateway(); bridge != "" {
-			host = bridge
-			tokens := daemon.NewStateStoreTokens()
-			b.d.StateStoreTokens = tokens
-			opts = append(opts, grpc.ChainUnaryInterceptor(staterpc.UnaryTokenInterceptor(tokens.Validate)))
-		}
-	}
-
-	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", net.JoinHostPort(host, "0"))
-	if err != nil {
-		log.Error("state store gRPC listen failed; archie-agent will use the legacy NATS storerpc path", "err", err)
-		return
-	}
-	server := grpc.NewServer(opts...)
-	staterpc.RegisterServer(server, deps)
-	go func() {
-		if err := server.Serve(listener); err != nil {
-			log.Error("state store gRPC server stopped", "err", err)
-		}
-	}()
-	b.addCleanup(server.GracefulStop)
-	b.d.ConnectedStateStore = daemon.StateStoreEndpoint{URL: listener.Addr().String()}
-	log.Info("state store gRPC server running", "addr", listener.Addr().String(), "token_required", host != "127.0.0.1")
 }
 
 // setupForgeWebhook starts the forge webhook receiver when intake is "webhook"

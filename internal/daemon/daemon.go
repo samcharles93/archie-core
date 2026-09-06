@@ -5,9 +5,6 @@ package daemon
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -65,76 +62,17 @@ type NATSEndpoint struct {
 	Token string
 }
 
-// StateStoreEndpoint is the address the daemon's in-process State Store gRPC
-// server is bound to (docs/prds/state-store-contract.md §6, §12 step 3). The
-// zero value (empty URL) means the server is not serving -- containerEnv
-// omits STATE_STORE_URL/STATE_STORE_TOKEN and archie-agent falls back to the
-// legacy NATS storerpc path.
+// StateStoreEndpoint is the State Store gRPC target (and the bearer token the
+// daemon presents, when one is configured) that containerEnv injects as
+// STATE_STORE_URL / STATE_STORE_TOKEN so archie-agent authenticates to the
+// same remote archie-state-store service the daemon dials
+// (docs/prds/state-store-contract.md §6, §9, §10). After the in-process
+// serving path is deleted (docs/prds/state-store-contract.md §12 step 7) this
+// is always the configured [services.state].target, never a daemon-owned
+// listener.
 type StateStoreEndpoint struct {
-	URL string
-}
-
-// StateStoreTokens issues and validates the per-task bearer tokens the State
-// Store's bridge-address (agent-consumed) listener topology requires (§9's
-// token lifecycle). A token is per-incumbence: Generate overwrites any
-// earlier token for the same task, so a new container acquisition
-// invalidates the previous one, and Revoke drops a released task's token
-// entirely. The zero value is ready to use.
-type StateStoreTokens struct {
-	mu     sync.Mutex
-	byTask map[int64]string
-}
-
-// NewStateStoreTokens returns a ready-to-use token registry.
-func NewStateStoreTokens() *StateStoreTokens {
-	return &StateStoreTokens{byTask: make(map[int64]string)}
-}
-
-// Generate issues a fresh bearer token for taskID, replacing (and thereby
-// invalidating) any token previously issued for that task.
-func (t *StateStoreTokens) Generate(taskID int64) string {
-	token := randomToken()
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.byTask[taskID] = token
-	return token
-}
-
-// Revoke invalidates taskID's current token, if any. Called when the
-// container holding it is released, so a stale token cannot outlive its
-// container.
-func (t *StateStoreTokens) Revoke(taskID int64) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	delete(t.byTask, taskID)
-}
-
-// Validate reports whether token is any task's currently issued token.
-// The comparison is constant-time (crypto/subtle) so a timing side channel
-// cannot tell how many token bytes matched.
-func (t *StateStoreTokens) Validate(token string) bool {
-	if token == "" {
-		return false
-	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	for _, v := range t.byTask {
-		if subtle.ConstantTimeCompare([]byte(v), []byte(token)) == 1 {
-			return true
-		}
-	}
-	return false
-}
-
-func randomToken() string {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		// crypto/rand.Read on the standard reader does not fail in practice;
-		// a zero-value token would fail every Validate call, which is a safe
-		// (fail-closed) degradation rather than a panic.
-		return ""
-	}
-	return hex.EncodeToString(b)
+	URL   string
+	Token string
 }
 
 type Daemon struct {
@@ -147,16 +85,13 @@ type Daemon struct {
 	// broker the daemon is not publishing on. The zero value is invalid in
 	// production composition and remains useful only to fail closed in tests.
 	ConnectedNATS NATSEndpoint
-	// ConnectedStateStore is the address the daemon's in-process State
-	// Store gRPC server bound to at startup, if any. Empty means the
-	// server is not serving (StateStoreTokens is then unused) and
-	// containerEnv omits STATE_STORE_URL/STATE_STORE_TOKEN.
+	// ConnectedStateStore is the State Store gRPC target (and token) the
+	// daemon's own client dialed at startup. containerEnv injects these as
+	// STATE_STORE_URL / STATE_STORE_TOKEN so archie-agent reaches the same
+	// remote archie-state-store service; it is always the configured
+	// [services.state].target after the in-process serving path is deleted.
 	ConnectedStateStore StateStoreEndpoint
-	// StateStoreTokens issues and validates the per-task bearer tokens the
-	// State Store's gRPC interceptor checks. Nil when ConnectedStateStore
-	// is empty.
-	StateStoreTokens *StateStoreTokens
-	Store            store.TaskStore
+	Store               store.TaskStore
 	// Mappings persists payload field mappings (docs/prds/payload-field-mapping.md).
 	// Used by the binding dispatch loop to resolve capture bodies against
 	// the mapping a binding names. Optional: nil disables the binding
@@ -1171,9 +1106,6 @@ func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
 		return
 	}
 	defer d.ContainerPool.Release(ctx, ctr)
-	if d.StateStoreTokens != nil {
-		defer d.StateStoreTokens.Revoke(task.ID)
-	}
 
 	// Hand the whole task to archie-agent in one NATS round trip. archie-agent
 	// proxies Store/Forge/worktree-push calls back to archied over storerpc/
@@ -1472,12 +1404,15 @@ func (d *Daemon) containerEnv(task *workflow.Task) []string {
 		env = append(env, "NATS_TOKEN="+token)
 	}
 	// The State Store gRPC target follows the same seam as NATS_URL/
-	// NATS_TOKEN above (docs/prds/state-store-contract.md §6). Omitted
-	// when the daemon is not serving the State Store in-process, so
-	// archie-agent falls back to the legacy NATS storerpc path.
-	if d.ConnectedStateStore.URL != "" && d.StateStoreTokens != nil {
+	// NATS_TOKEN above (docs/prds/state-store-contract.md §6). It is always
+	// the configured [services.state].target after the in-process serving
+	// path is deleted; the token is the same one the daemon client presents,
+	// so archie-agent authenticates to the same archie-state-store service.
+	if d.ConnectedStateStore.URL != "" {
 		env = append(env, "STATE_STORE_URL="+d.ConnectedStateStore.URL)
-		env = append(env, "STATE_STORE_TOKEN="+d.StateStoreTokens.Generate(task.ID))
+		if d.ConnectedStateStore.Token != "" {
+			env = append(env, "STATE_STORE_TOKEN="+d.ConnectedStateStore.Token)
+		}
 	}
 	// The agent process runs as root inside the container (no USER in the
 	// Dockerfile, no userns-remap), so a commit it writes to the bind-mounted

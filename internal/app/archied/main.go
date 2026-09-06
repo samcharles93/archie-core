@@ -377,13 +377,12 @@ func Run() int { //nolint:cyclop // the composition root's setup sequence is del
 	if err := b.openStores(ctx); err != nil {
 		return 1
 	}
-	// Upgrade the State Store contract adapter to a remote *staterpc.Client
-	// when [services.state].target is set; openStores already seeded it from
-	// b.st (the local default), so an empty target is a no-op. This is
-	// daemon-only (the gateway never dials a remote store), so it runs after
-	// openStores has opened b.st and resolved b.secrets and before
-	// setupObservability wires the dashboard's storage surfaces
-	// (docs/prds/state-store-contract.md §10).
+	// Resolve the State Store contract adapter as the remote *staterpc.Client
+	// dialed to [services.state].target; the daemon no longer owns archie.db
+	// in-process, so an empty target is a composition error
+	// (docs/prds/state-store-contract.md §12 step 7). This runs after
+	// openStores has resolved b.secrets and before setupObservability wires the
+	// dashboard's storage surfaces (§10).
 	if err := b.openStateStoreAdapter(); err != nil {
 		return 1
 	}
@@ -430,7 +429,6 @@ func Run() int { //nolint:cyclop // the composition root's setup sequence is del
 	}
 	b.registerStandaloneTools()
 	b.buildDaemon()
-	b.startStateStoreServer(ctx)
 	b.wireConfigPublishing(ctx, args.cfgPath, args.overlayPath)
 	b.installUpdateConfigHandler()
 	b.installUpdateRepoFieldHandler()
