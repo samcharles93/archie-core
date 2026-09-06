@@ -80,3 +80,29 @@ func TestOpenStateStoreAdapterRemoteFailsClosed(t *testing.T) {
 		t.Fatal("non-loopback without a token should fail closed")
 	}
 }
+
+// TestStateStoreSingleOwnerComposition proves the single-owner SQLite
+// invariant at the composition root: both production consumers (the daemon
+// Run path and the gateway RunGateway) resolve their task-store surface from
+// openStateStoreAdapter, which REQUIRES [services.state].target and never
+// opens archie.db directly. After .4.6 the in-process store path is deleted
+// (docs/prds/state-store-contract.md §12 step 7), so an empty target is a
+// startup error rather than the old local default -- if it were not, the
+// daemon or gateway would open the single SQLite file behind the store
+// service's back, violating no-dual-store-ownership.
+func TestStateStoreSingleOwnerComposition(t *testing.T) {
+	b := newBootstrap()
+	b.secrets = &secret.Registry{}
+
+	// The daemon openStores path must not construct a local *store.Store.
+	// openStores only resolves secrets and the forge client, then opens chat
+	// sessions; the task store surface comes from the remote adapter, so no
+	// archie.db task file is touched. This asserts openStateStoreAdapter (the
+	// only task-store constructor) rejects an empty target.
+	if err := b.openStateStoreAdapter(); err == nil {
+		t.Fatal("empty services.state.target must error: the in-process store path is deleted (single owner = archie-state-store)")
+	}
+	if b.stateStore != nil {
+		t.Fatalf("stateStore = %p, want nil (no local store opened)", b.stateStore)
+	}
+}

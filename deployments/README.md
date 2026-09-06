@@ -61,3 +61,22 @@ archie-state-store -config ~/.config/archie/config.toml -listen 127.0.0.1:9090
 # or container-mode: bind the bridge gateway with a token
 archie-state-store -config ~/.config/archie/config.toml -listen 172.17.0.1:9090 -token <token>
 ```
+
+## Verifying the State Store
+
+`archie-state-store` exposes an optional HTTP readiness surface when launched
+with `-ready-addr` (the systemd unit uses `127.0.0.1:9091`). Use it to confirm
+the process is up and the store is healthy before starting `archied`:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9091/healthz        # 200 = process up
+curl -s http://127.0.0.1:9091/health/detailed                                # state_db component -> 200, or 503 when degraded
+```
+
+A running State Store owns exactly one task SQLite file (`<db_path>-tasks.sqlite`);
+`archied` and `archie-gateway` never open `archie.db` directly, so a second
+store process on the same `db_path`, or a consumer that opens the task file,
+indicates dual-store ownership (`docs/prds/state-store-contract.md` §12 step 7/8).
+The readiness probe is the single-writer check the runbook has against a
+degraded store: a `503` from `/health/detailed` means `archied` should be
+started only after the store is healthy.
