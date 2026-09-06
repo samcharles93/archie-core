@@ -6,6 +6,7 @@ package daemon
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -109,6 +110,8 @@ func (t *StateStoreTokens) Revoke(taskID int64) {
 }
 
 // Validate reports whether token is any task's currently issued token.
+// The comparison is constant-time (crypto/subtle) so a timing side channel
+// cannot tell how many token bytes matched.
 func (t *StateStoreTokens) Validate(token string) bool {
 	if token == "" {
 		return false
@@ -116,7 +119,7 @@ func (t *StateStoreTokens) Validate(token string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	for _, v := range t.byTask {
-		if v == token {
+		if subtle.ConstantTimeCompare([]byte(v), []byte(token)) == 1 {
 			return true
 		}
 	}

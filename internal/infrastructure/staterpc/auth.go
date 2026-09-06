@@ -33,18 +33,6 @@ func UnaryTokenInterceptor(validate TokenValidator) grpc.UnaryServerInterceptor 
 	}
 }
 
-// StreamTokenInterceptor is UnaryTokenInterceptor's streaming-call
-// counterpart. The StateStore service has no streaming RPCs today, but the
-// interceptor is provided for symmetry and future-proofing.
-func StreamTokenInterceptor(validate TokenValidator) grpc.StreamServerInterceptor {
-	return func(srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if err := checkToken(ss.Context(), validate); err != nil {
-			return err
-		}
-		return handler(srv, ss)
-	}
-}
-
 func checkToken(ctx context.Context, validate TokenValidator) error {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
