@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -104,7 +103,6 @@ func (s *stubBindingStore) ApproveBinding(_ context.Context, _ int64) error {
 
 func (s *stubBindingStore) RecordDispatch(
 	_ context.Context,
-	_ *sql.Tx,
 	_ int64,
 	_ int64,
 	_ int64,
