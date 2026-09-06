@@ -21,17 +21,15 @@ import (
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
-	"github.com/samcharles93/archie-core/internal/storerpc"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
 )
 
 // Config contains the broker endpoint and credential for the worker
-// transport, plus the optional State Store gRPC target (docs/prds/
-// state-store-contract.md §6). An empty StateStoreURL keeps the legacy NATS
-// storerpc path for workflow.Store; a non-empty one dials the gRPC
-// StateStoreService instead -- a single agent process is either NATS-backed
-// or gRPC-backed for its store calls, never both.
+// transport, plus the State Store gRPC target (docs/prds/
+// state-store-contract.md §6). StateStoreURL is required: the agent is fully
+// on gRPC for its store calls, and the legacy NATS storerpc path is deleted
+// (docs/prds/state-store-contract.md §12 step 4).
 type Config struct {
 	URL   string
 	Token string
@@ -53,10 +51,11 @@ type sdkSubscription interface {
 // worker has no JetStream consumer.
 type Transport struct {
 	conn *natsio.Conn
-	// stateConn is the long-lived gRPC connection to the State Store,
-	// non-nil only when Config.StateStoreURL was set. Store() dials no
-	// per-call connection; it wraps this one connection with the
-	// per-call timeout each caller supplies.
+	// stateConn is the long-lived gRPC connection to the State Store. Store()
+	// dials no per-call connection; it wraps this one connection with the
+	// per-call timeout each caller supplies. Connect refuses to construct a
+	// Transport without one (the legacy NATS storerpc path is deleted), so it
+	// is never nil in a real worker.
 	stateConn *grpc.ClientConn
 
 	subscribe func(string, natsio.MsgHandler) (sdkSubscription, error)
@@ -89,15 +88,20 @@ func Connect(ctx context.Context, config Config, log *slog.Logger) (*Transport, 
 	}
 	log.Info("worker transport connected", "url", conn.ConnectedUrl())
 
-	var stateConn *grpc.ClientConn
-	if config.StateStoreURL != "" {
-		stateConn, err = dialStateStore(config.StateStoreURL, config.StateStoreToken)
-		if err != nil {
-			conn.Close()
-			return nil, fmt.Errorf("connect state store: %w", err)
-		}
-		log.Info("worker state store transport connected", "url", config.StateStoreURL)
+	// The agent is fully on gRPC for its store calls; the legacy NATS
+	// storerpc path is deleted (docs/prds/state-store-contract.md §12 step
+	// 4). A missing StateStoreURL fails fast rather than letting Store()
+	// hand back a client over a nil connection.
+	if config.StateStoreURL == "" {
+		conn.Close()
+		return nil, fmt.Errorf("state store target is required: archie-agent no longer supports the legacy NATS storerpc path (docs/prds/state-store-contract.md §12 step 4)")
 	}
+	stateConn, err := dialStateStore(config.StateStoreURL, config.StateStoreToken)
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("connect state store: %w", err)
+	}
+	log.Info("worker state store transport connected", "url", config.StateStoreURL)
 
 	return &Transport{
 		conn:      conn,
@@ -149,25 +153,25 @@ type RemoteTrees interface {
 	Push(ctx context.Context) error
 }
 
-// The top-level forgerpc, storerpc, and worktreerpc packages remain legacy
-// infrastructure with an open final destination. This adapter is their single
-// worker composition point until that broader migration is approved.
+// The top-level forgerpc and worktreerpc packages remain legacy infrastructure
+// with an open final destination. This adapter is their single worker
+// composition point until that broader migration is approved. The State Store
+// is the exception: it is a gRPC contract (staterpc), and this adapter's
+// Store() returns that client directly.
 
 // Forger constructs the identity-scoped forge RPC client.
 func (t *Transport) Forger(identity string, timeout time.Duration) workflow.Forger {
 	return &forgerpc.Client{Conn: t.conn, Timeout: timeout, Identity: identity}
 }
 
-// Store constructs the workflow store RPC client: a long-lived gRPC
-// staterpc.Client over the State Store connection when one was configured,
-// or the legacy NATS storerpc.Client otherwise (docs/prds/
-// state-store-contract.md §6). Either way each call is bounded by timeout
-// when the caller's context carries no deadline of its own.
+// Store constructs the workflow store RPC client over the long-lived gRPC
+// State Store connection (docs/prds/state-store-contract.md §6). Each call
+// is bounded by timeout when the caller's context carries no deadline of its
+// own. The legacy NATS storerpc path is deleted (§12 step 4); a transport
+// without a stateConn cannot reach Store() because Connect refused to build
+// one.
 func (t *Transport) Store(timeout time.Duration) workflow.Store {
-	if t.stateConn != nil {
-		return deadlineStore{Store: staterpc.NewClient(t.stateConn), timeout: timeout}
-	}
-	return &storerpc.Client{Conn: t.conn, Timeout: timeout}
+	return deadlineStore{Store: staterpc.NewClient(t.stateConn), timeout: timeout}
 }
 
 // deadlineStore applies a default per-call timeout to workflow.Store calls

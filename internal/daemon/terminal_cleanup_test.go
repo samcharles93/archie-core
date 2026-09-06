@@ -319,7 +319,7 @@ func TestProcessCleansWorktreeOnTerminalNoChange(t *testing.T) {
 			workDir := targetTrees.Dir(task.Owner, task.Repo, task.IssueNumber)
 
 			sub, err := mustCoreConn(t, busClient).Subscribe(agentnats.SubjectForTask(task.ID), func(msg *natsio.Msg) {
-				// Transition task in store as archie-agent would do over storerpc
+				// Transition task in store as archie-agent would do over the gRPC State Store
 				_ = s.Transition(ctx, task.ID, workflow.StatusRunning, tt.workerStatus, "worker completion")
 				resp, _ := json.Marshal(taskrun.Response{
 					Status: tt.workerStatus,

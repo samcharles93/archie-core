@@ -18,6 +18,19 @@ diff_cap_lines = 400
 [services.gateway]
 target = "127.0.0.1:8585"
 
+# The State Store gRPC service owns the single archie.db SQLite file. archied
+# and archie-gateway dial it here and never open archie.db themselves
+# (docs/prds/state-store-contract.md §12 step 7). This deployment runs the
+# agent in containers, so the target must be the Docker bridge gateway address
+# (172.17.0.1) that the container can reach, and a non-loopback target requires
+# a matching target_token that archie-state-store validates -- start it with the
+# same token (e.g. `archie-state-store ... -listen 172.17.0.1:9090 -token
+# change-me-state-store-token`). For a host-only agent (no [containers]) use the
+# loopback target 127.0.0.1:9090 with no token.
+[services.state]
+target = "172.17.0.1:9090"
+target_token = "change-me-state-store-token"
+
 [forge]
 type = "github"
 host = "https://github.com"

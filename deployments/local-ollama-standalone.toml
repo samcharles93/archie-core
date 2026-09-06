@@ -12,6 +12,14 @@ db_path  = "~/.local/share/archie/archie.db"
 target = "127.0.0.1:8585"
 poll_interval = "60s"
 
+# The State Store gRPC service owns the single archie.db SQLite file; archied
+# and archie-gateway dial it and never open archie.db themselves (§12 step 7).
+# Host-only deployment: the agent runs on the host, so the loopback target
+# 127.0.0.1:9090 needs no token. Start archie-state-store with the matching
+# `-listen 127.0.0.1:9090`.
+[services.state]
+target = "127.0.0.1:9090"
+
 # Standalone execution: Forge polling is disabled
 [forge]
 type = "none"

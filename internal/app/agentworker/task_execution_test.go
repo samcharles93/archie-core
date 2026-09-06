@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"github.com/nats-io/nats-server/v2/server"
 	natssrv "github.com/nats-io/nats-server/v2/test"
 	natsio "github.com/nats-io/nats.go"
+	"google.golang.org/grpc"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
@@ -24,9 +26,9 @@ import (
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
+	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/installtype"
 	"github.com/samcharles93/archie-core/internal/store"
-	"github.com/samcharles93/archie-core/internal/storerpc"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/worktree"
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
@@ -318,6 +320,27 @@ func connectTaskRPC(t *testing.T, url string) *natsio.Conn {
 	return connection
 }
 
+// startStateStoreGRPC serves the State Store gRPC contract over a loopback
+// TCP listener fronting local, returning the dial address. The agent is fully
+// on gRPC for its store calls (docs/prds/state-store-contract.md §12 step 4),
+// so an agentworker test that drives executeTaskRequest needs a real State
+// Store server rather than the deleted NATS storerpc path.
+func startStateStoreGRPC(t *testing.T, local *store.Store) string {
+	t.Helper()
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer()
+	staterpc.RegisterServer(server, staterpc.Deps{
+		Tasks: local, Captures: local, Mappings: local, Bindings: local,
+		BindingDispatcher: local, BindingTaskCreator: local,
+	})
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
+	return listener.Addr().String()
+}
+
 func TestRunTaskExecutesBootstrapWorkflowEndToEnd(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
@@ -418,11 +441,6 @@ func TestExecuteTaskRequestUsesInfrastructureRPCDependencies(t *testing.T) {
 
 	srv := startEmbeddedTaskRPCServer(t)
 	serverConn := connectTaskRPC(t, srv.ClientURL())
-	unsubStore, err := (&storerpc.Server{Store: st, Log: slog.New(slog.DiscardHandler)}).Register(serverConn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(unsubStore)
 	unsubForge, err := (&forgerpc.Server{Forge: forge, Log: slog.New(slog.DiscardHandler)}).Register(serverConn)
 	if err != nil {
 		t.Fatal(err)
@@ -434,7 +452,7 @@ func TestExecuteTaskRequestUsesInfrastructureRPCDependencies(t *testing.T) {
 	}
 	t.Cleanup(unsubTrees)
 
-	transport, err := agentnats.Connect(ctx, agentnats.Config{URL: srv.ClientURL()}, slog.New(slog.DiscardHandler))
+	transport, err := agentnats.Connect(ctx, agentnats.Config{URL: srv.ClientURL(), StateStoreURL: startStateStoreGRPC(t, st)}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -515,11 +533,6 @@ func TestExecuteTaskRequestForwardsWorkflowEventsOverNATS(t *testing.T) {
 
 	srv := startEmbeddedTaskRPCServer(t)
 	serverConn := connectTaskRPC(t, srv.ClientURL())
-	unsubStore, err := (&storerpc.Server{Store: st, Log: slog.New(slog.DiscardHandler)}).Register(serverConn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(unsubStore)
 	unsubForge, err := (&forgerpc.Server{Forge: forge, Log: slog.New(slog.DiscardHandler)}).Register(serverConn)
 	if err != nil {
 		t.Fatal(err)
@@ -557,7 +570,7 @@ func TestExecuteTaskRequestForwardsWorkflowEventsOverNATS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	transport, err := agentnats.Connect(ctx, agentnats.Config{URL: srv.ClientURL()}, slog.New(slog.DiscardHandler))
+	transport, err := agentnats.Connect(ctx, agentnats.Config{URL: srv.ClientURL(), StateStoreURL: startStateStoreGRPC(t, st)}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}

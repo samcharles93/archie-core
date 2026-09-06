@@ -2,7 +2,8 @@
 // from archied to archie-agent in one NATS round trip.
 // archie-agent runs workflow.Route and workflow.Run itself; archied's role
 // shrinks to worktree prepare, container acquire/release, and answering
-// the storerpc/forgerpc/worktreerpc calls archie-agent proxies back.
+// the forgerpc/worktreerpc calls archie-agent proxies back. Agent store
+// calls go over gRPC to the State Store, not through this NATS handoff.
 package taskrun
 
 import (
@@ -51,8 +52,8 @@ func (r Request) Validate() error {
 
 // Response reports the task's final state after archie-agent runs its
 // workflow. Task carries the last-known field values for logging; the
-// authoritative state already landed in archied's store via storerpc
-// calls made during the run.
+// authoritative state already landed in the State Store via the agent's
+// gRPC store calls made during the run.
 type Response struct {
 	Task   *workflow.Task `json:"task"`
 	Status string         `json:"status"`

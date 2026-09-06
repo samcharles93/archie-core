@@ -248,8 +248,8 @@ func stateStoreListenIsLoopback(listen string) (bool, error) {
 
 // constantTimeTokenValidator returns a staterpc.TokenValidator that accepts
 // exactly the configured token, compared in constant time so a timing side
-// channel cannot leak how many bytes matched (mirrors the daemon's
-// StateStoreTokens.Validate).
+// channel cannot leak how many bytes matched (the standalone server's
+// equivalent of the earlier in-process interceptor's token check).
 func constantTimeTokenValidator(token string) staterpc.TokenValidator {
 	return func(candidate string) bool {
 		return subtle.ConstantTimeCompare([]byte(token), []byte(candidate)) == 1

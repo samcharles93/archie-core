@@ -44,11 +44,14 @@ WantedBy=default.target
 ```
 
 Create the State Store unit beside it. It owns the single `archie.db` SQLite
-file and serves the `StateStore` gRPC contract. It is not yet consumed by the
-daemon during the `.4.2`/`.4.3` split (the daemon still serves in-process), so
-the loopback bind with no token is the correct default; a non-loopback bind
-requires a bearer token via `--token`/`STATE_STORE_TOKEN` or
-`[services.state].target_token` and fails closed without one:
+file and serves the `StateStore` gRPC contract. After the in-process store path
+was deleted, BOTH `archied` and `archie-gateway` dial it via
+`[services.state].target` (see the `archied` config below) and never open
+`archie.db` themselves (`docs/prds/state-store-contract.md` §12 step 7). A
+host-only agent uses the loopback bind with no token below; a container-mode
+agent needs the Docker bridge gateway address plus a bearer token via
+`--token`/`STATE_STORE_TOKEN` or `[services.state].target_token`, and a
+non-loopback bind fails closed without one:
 
 ```ini
 [Unit]
@@ -141,6 +144,13 @@ At startup Archie resolves the Docker bridge used by its task containers,
 binds the authenticated embedded broker only to that bridge's host gateway,
 and passes the resulting endpoint to each worker. There is no port to publish
 and no broker URL to maintain.
+
+The State Store is a separate process and, with a container-mode agent, must
+be reachable from the container, so bind it to the same bridge gateway with a
+token and point `[services.state].target` at it (start
+`archie-state-store` with `-listen <bridge>:9090 -token <token>`); without a
+token a non-loopback bind fails closed. For a host-only agent, `127.0.0.1:9090`
+with no token is correct.
 
 If Docker or the image is unavailable, `archied` still serves chat and the
 dashboard. Autonomous tasks park with an explicit capability error; they never
