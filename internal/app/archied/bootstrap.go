@@ -295,30 +295,29 @@ func (b *boot) openStores(ctx context.Context) error {
 			log.Error("close store", "err", err)
 		}
 	})
-	if err := b.openStateStoreAdapter(ctx); err != nil {
-		return err
-	}
 	return b.openChatSessions(ctx)
 }
 
 // openStateStoreAdapter selects the State Store contract adapter the daemon's
 // own capture/mapping/binding consumers will use. The base path is the local
-// *store.Store just opened by openProductionTaskStore; when
-// [services.state].target is set the daemon instead dials the standalone
-// archie-state-store gRPC service and uses *staterpc.Client. Empty target
-// keeps the in-process adapter (the default -- the State Store service is not
-// yet extracted into its own process), so this is additive and
-// behaviour-neutral until an operator flips the seam
-// (docs/prds/state-store-contract.md §10). Task lifecycle (b.st) is untouched
-// here -- only the capture/mapping/binding contracts route through the
-// adapter during .4.4.
-func (b *boot) openStateStoreAdapter(ctx context.Context) error {
+// *store.Store opened by openStores; when [services.state].target is set the
+// daemon instead dials the standalone archie-state-store gRPC service and
+// uses *staterpc.Client. Empty target keeps the in-process adapter (the
+// default -- the State Store service is not yet extracted into its own
+// process), so this is additive and behaviour-neutral until an operator flips
+// the seam (docs/prds/state-store-contract.md §10). Task lifecycle (b.st) is
+// untouched here -- only the capture/mapping/binding contracts route through
+// the adapter during .4.4. Called only from the daemon's composition (the
+// gateway does not consume these surfaces), so it runs after openStores has
+// opened b.st and resolved b.secrets.
+func (b *boot) openStateStoreAdapter() error {
 	if strings.TrimSpace(b.cfg.Services.State.Target) == "" {
 		b.stateStore = b.st
 		return nil
 	}
 	client, cleanup, err := composeStateStoreClient(b.cfg.Services.State, b.secrets)
 	if err != nil {
+		b.log.Error("state store adapter", "err", err)
 		return err
 	}
 	b.stateStore = client

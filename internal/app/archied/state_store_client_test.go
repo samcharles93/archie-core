@@ -75,7 +75,7 @@ func TestOpenStateStoreAdapterLocalUsesOpenedStore(t *testing.T) {
 	b.st = st
 	b.secrets = &secret.Registry{}
 	// Empty [services.state].target → the base path: the local *store.Store.
-	if err := b.openStateStoreAdapter(t.Context()); err != nil {
+	if err := b.openStateStoreAdapter(); err != nil {
 		t.Fatalf("openStateStoreAdapter(local): %v", err)
 	}
 	if b.stateStore != st {
@@ -87,7 +87,7 @@ func TestOpenStateStoreAdapterRemoteFailsClosed(t *testing.T) {
 	b := newBootstrap()
 	b.secrets = &secret.Registry{}
 	b.cfg.Services.State = config.ServiceConnection{Target: "0.0.0.0:9090"}
-	if err := b.openStateStoreAdapter(t.Context()); err == nil {
+	if err := b.openStateStoreAdapter(); err == nil {
 		t.Fatal("non-loopback without a token should fail closed")
 	}
 }
