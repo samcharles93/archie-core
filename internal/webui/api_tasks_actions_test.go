@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -39,7 +40,7 @@ func (r *recordingCloser) CloseIssue(_ context.Context, owner, repo string, numb
 
 // actionServer builds a dashboard server with a task in the given state, plus
 // the collaborators the action path needs.
-func actionServer(t *testing.T, status, parkReason string) (*Server, *store.Task, *recordingCloser, *events.Bus, *events.Sub) {
+func actionServer(t *testing.T, status, parkReason string) (*Server, *workflow.Task, *recordingCloser, *events.Bus, *events.Sub) {
 	t.Helper()
 	srv := newTestServer(t)
 	ctx := t.Context()
@@ -51,7 +52,7 @@ func actionServer(t *testing.T, status, parkReason string) (*Server, *store.Task
 	if err != nil || task == nil {
 		t.Fatalf("ClaimNext = (%+v, %v)", task, err)
 	}
-	if err := srv.Store.Transition(ctx, task.ID, store.StatusRunning, status, parkReason); err != nil {
+	if err := srv.Store.Transition(ctx, task.ID, workflow.StatusRunning, status, parkReason); err != nil {
 		t.Fatal(err)
 	}
 
@@ -119,15 +120,15 @@ func TestRetryEnforcesMaxRetries(t *testing.T) {
 		wantStatus int
 		wantTask   string
 	}{
-		{name: "under the cap", priorCount: 0, maxRetries: 3, wantStatus: http.StatusOK, wantTask: store.StatusQueued},
-		{name: "one below the cap", priorCount: 2, maxRetries: 3, wantStatus: http.StatusOK, wantTask: store.StatusQueued},
-		{name: "at the cap", priorCount: 3, maxRetries: 3, wantStatus: http.StatusConflict, wantTask: store.StatusDead},
-		{name: "past the cap", priorCount: 5, maxRetries: 3, wantStatus: http.StatusConflict, wantTask: store.StatusDead},
+		{name: "under the cap", priorCount: 0, maxRetries: 3, wantStatus: http.StatusOK, wantTask: workflow.StatusQueued},
+		{name: "one below the cap", priorCount: 2, maxRetries: 3, wantStatus: http.StatusOK, wantTask: workflow.StatusQueued},
+		{name: "at the cap", priorCount: 3, maxRetries: 3, wantStatus: http.StatusConflict, wantTask: workflow.StatusDead},
+		{name: "past the cap", priorCount: 5, maxRetries: 3, wantStatus: http.StatusConflict, wantTask: workflow.StatusDead},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			srv, task, _, _, _ := actionServer(t, store.StatusParked, "it broke")
+			srv, task, _, _, _ := actionServer(t, workflow.StatusParked, "it broke")
 			srv.Cfg = config.NewHolder(config.Config{MaxRetries: tc.maxRetries})
 			ctx := t.Context()
 			for range tc.priorCount {
@@ -157,7 +158,7 @@ func TestRetryEnforcesMaxRetries(t *testing.T) {
 // the operator has used the dashboard's Clear, which deletes the row, that is
 // a second implementation and a second PR for work already declined.
 func TestRejectClosesTheForgeIssue(t *testing.T) {
-	srv, task, closer, _, _ := actionServer(t, store.StatusWaitingHuman, "review")
+	srv, task, closer, _, _ := actionServer(t, workflow.StatusWaitingHuman, "review")
 
 	if w := postAction(t, srv, task.ID, "reject"); w.Code != http.StatusOK {
 		t.Fatalf("reject status = %d, body %s", w.Code, w.Body)
@@ -180,8 +181,8 @@ func TestRejectClosesTheForgeIssue(t *testing.T) {
 // Approve and retry put the task back to work, so the issue must stay open.
 func TestApproveAndRetryDoNotCloseTheIssue(t *testing.T) {
 	for _, tc := range []struct{ action, status, reason string }{
-		{"approve", store.StatusWaitingHuman, "review"},
-		{"retry", store.StatusParked, "it broke"},
+		{"approve", workflow.StatusWaitingHuman, "review"},
+		{"retry", workflow.StatusParked, "it broke"},
 	} {
 		t.Run(tc.action, func(t *testing.T) {
 			srv, task, closer, _, _ := actionServer(t, tc.status, tc.reason)
@@ -212,7 +213,7 @@ func TestRejectDoesNotCloseAChatTaskIssue(t *testing.T) {
 	if _, err := srv.Store.ClaimNext(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := srv.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusWaitingHuman, "review"); err != nil {
+	if err := srv.Store.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusWaitingHuman, "review"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -229,7 +230,7 @@ func TestRejectDoesNotCloseAChatTaskIssue(t *testing.T) {
 // decision is already recorded in the store, and reporting failure would
 // invite them to click again.
 func TestRejectSurvivesAForgeFailure(t *testing.T) {
-	srv, task, closer, _, _ := actionServer(t, store.StatusWaitingHuman, "review")
+	srv, task, closer, _, _ := actionServer(t, workflow.StatusWaitingHuman, "review")
 	closer.err = errors.New("forge unreachable")
 
 	if w := postAction(t, srv, task.ID, "reject"); w.Code != http.StatusOK {
@@ -239,8 +240,8 @@ func TestRejectSurvivesAForgeFailure(t *testing.T) {
 	if err != nil || got == nil {
 		t.Fatalf("TaskByID = (%+v, %v)", got, err)
 	}
-	if got.Status != store.StatusClosedWontDo {
-		t.Errorf("status = %q, want %q", got.Status, store.StatusClosedWontDo)
+	if got.Status != workflow.StatusClosedWontDo {
+		t.Errorf("status = %q, want %q", got.Status, workflow.StatusClosedWontDo)
 	}
 }
 
@@ -255,9 +256,9 @@ func TestActionsEmitEvents(t *testing.T) {
 		reason  string
 		wantMsg string
 	}{
-		{name: "approve", action: "approve", status: store.StatusWaitingHuman, reason: "review", wantMsg: "approve"},
-		{name: "retry", action: "retry", status: store.StatusParked, reason: "it broke", wantMsg: "retry"},
-		{name: "reject", action: "reject", status: store.StatusWaitingHuman, reason: "review", wantMsg: "reject"},
+		{name: "approve", action: "approve", status: workflow.StatusWaitingHuman, reason: "review", wantMsg: "approve"},
+		{name: "retry", action: "retry", status: workflow.StatusParked, reason: "it broke", wantMsg: "retry"},
+		{name: "reject", action: "reject", status: workflow.StatusWaitingHuman, reason: "review", wantMsg: "reject"},
 	}
 
 	for _, tc := range tests {
@@ -341,7 +342,7 @@ func TestTaskActionErrorMapping(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			srv, task, _, _, _ := actionServer(t, store.StatusWaitingHuman, "review")
+			srv, task, _, _, _ := actionServer(t, workflow.StatusWaitingHuman, "review")
 			if tc.setup != nil {
 				tc.setup(t, srv, task.ID)
 			}
@@ -378,7 +379,7 @@ func TestTaskActionStoreFailureIs500(t *testing.T) {
 	if err != nil || task == nil {
 		t.Fatalf("ClaimNext = (%+v, %v)", task, err)
 	}
-	if err := base.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusWaitingHuman, "review"); err != nil {
+	if err := base.Store.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusWaitingHuman, "review"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -397,15 +398,15 @@ func TestTaskListExposesLifecycleActions(t *testing.T) {
 	srv := newTestServer(t)
 	ctx := t.Context()
 	want := map[string][]string{
-		store.StatusQueued:       {"cancel", "reject"},
-		store.StatusRunning:      {"stop", "reject"},
-		store.StatusWaitingHuman: {"approve", "reject"},
-		store.StatusParked:       {"retry", "abandon", "reject"},
-		store.StatusPROpen:       {"open_pr", "open_issue", "reject"},
-		store.StatusMerged:       {"archive"},
-		store.StatusRejected:     {"archive"},
-		store.StatusDead:         {"archive"},
-		store.StatusClosedWontDo: {"archive"},
+		workflow.StatusQueued:       {"cancel", "reject"},
+		workflow.StatusRunning:      {"stop", "reject"},
+		workflow.StatusWaitingHuman: {"approve", "reject"},
+		workflow.StatusParked:       {"retry", "abandon", "reject"},
+		workflow.StatusPROpen:       {"open_pr", "open_issue", "reject"},
+		workflow.StatusMerged:       {"archive"},
+		workflow.StatusRejected:     {"archive"},
+		workflow.StatusDead:         {"archive"},
+		workflow.StatusClosedWontDo: {"archive"},
 	}
 
 	number := 1
@@ -417,8 +418,8 @@ func TestTaskListExposesLifecycleActions(t *testing.T) {
 		if err != nil || task == nil {
 			t.Fatalf("TaskByIssue(%s) = (%+v, %v)", status, task, err)
 		}
-		if status != store.StatusQueued {
-			if err := srv.Store.Transition(ctx, task.ID, store.StatusQueued, status, "test"); err != nil {
+		if status != workflow.StatusQueued {
+			if err := srv.Store.Transition(ctx, task.ID, workflow.StatusQueued, status, "test"); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -451,17 +452,17 @@ func TestLifecycleSpecificTaskActions(t *testing.T) {
 		stopperResult            bool
 		closesIssue              bool
 	}{
-		{name: "cancel queued", from: store.StatusQueued, action: "cancel", want: store.StatusClosedWontDo, closesIssue: true},
-		{name: "stop running", from: store.StatusRunning, action: "stop", want: store.StatusParked, stopperResult: true},
-		{name: "park stale running row", from: store.StatusRunning, action: "stop", want: store.StatusParked},
-		{name: "abandon parked", from: store.StatusParked, action: "abandon", want: store.StatusClosedWontDo, closesIssue: true},
+		{name: "cancel queued", from: workflow.StatusQueued, action: "cancel", want: workflow.StatusClosedWontDo, closesIssue: true},
+		{name: "stop running", from: workflow.StatusRunning, action: "stop", want: workflow.StatusParked, stopperResult: true},
+		{name: "park stale running row", from: workflow.StatusRunning, action: "stop", want: workflow.StatusParked},
+		{name: "abandon parked", from: workflow.StatusParked, action: "abandon", want: workflow.StatusClosedWontDo, closesIssue: true},
 		// Reject is available from every non-terminal state and always lands in
 		// the terminal Declined state, closing the forge issue.
-		{name: "reject queued", from: store.StatusQueued, action: "reject", want: store.StatusClosedWontDo, closesIssue: true},
-		{name: "reject running stops execution", from: store.StatusRunning, action: "reject", want: store.StatusClosedWontDo, closesIssue: true, stopperResult: true},
-		{name: "reject waiting_human", from: store.StatusWaitingHuman, action: "reject", want: store.StatusClosedWontDo, closesIssue: true},
-		{name: "reject parked", from: store.StatusParked, action: "reject", want: store.StatusClosedWontDo, closesIssue: true},
-		{name: "reject pr_open", from: store.StatusPROpen, action: "reject", want: store.StatusClosedWontDo, closesIssue: true},
+		{name: "reject queued", from: workflow.StatusQueued, action: "reject", want: workflow.StatusClosedWontDo, closesIssue: true},
+		{name: "reject running stops execution", from: workflow.StatusRunning, action: "reject", want: workflow.StatusClosedWontDo, closesIssue: true, stopperResult: true},
+		{name: "reject waiting_human", from: workflow.StatusWaitingHuman, action: "reject", want: workflow.StatusClosedWontDo, closesIssue: true},
+		{name: "reject parked", from: workflow.StatusParked, action: "reject", want: workflow.StatusClosedWontDo, closesIssue: true},
+		{name: "reject pr_open", from: workflow.StatusPROpen, action: "reject", want: workflow.StatusClosedWontDo, closesIssue: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -474,8 +475,8 @@ func TestLifecycleSpecificTaskActions(t *testing.T) {
 			if err != nil || task == nil {
 				t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
 			}
-			if tc.from != store.StatusQueued {
-				if err := srv.Store.Transition(ctx, task.ID, store.StatusQueued, tc.from, "test"); err != nil {
+			if tc.from != workflow.StatusQueued {
+				if err := srv.Store.Transition(ctx, task.ID, workflow.StatusQueued, tc.from, "test"); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -485,7 +486,7 @@ func TestLifecycleSpecificTaskActions(t *testing.T) {
 			t.Cleanup(bus.Close)
 			srv.Events = bus
 			sub := bus.Subscribe(1)
-			if tc.action == "stop" || (tc.action == "reject" && tc.from == store.StatusRunning) {
+			if tc.action == "stop" || (tc.action == "reject" && tc.from == workflow.StatusRunning) {
 				setTaskStopper(t, srv, &recordingTaskStopper{result: tc.stopperResult})
 			}
 			if w := postAction(t, srv, task.ID, tc.action); w.Code != http.StatusOK {
@@ -521,7 +522,7 @@ func TestArchiveRemovesOnlyOneTerminalTask(t *testing.T) {
 		if err != nil || task == nil {
 			t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
 		}
-		if err := srv.Store.Transition(ctx, task.ID, store.StatusQueued, store.StatusMerged, "done"); err != nil {
+		if err := srv.Store.Transition(ctx, task.ID, workflow.StatusQueued, workflow.StatusMerged, "done"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -570,7 +571,7 @@ func TestArchiveRemovesTheTaskLogDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	task, _ := srv.Store.TaskByIssue(ctx, "acme", "widget", 1)
-	if err := srv.Store.Transition(ctx, task.ID, store.StatusQueued, store.StatusMerged, "done"); err != nil {
+	if err := srv.Store.Transition(ctx, task.ID, workflow.StatusQueued, workflow.StatusMerged, "done"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -601,7 +602,7 @@ func TestArchiveAuditFailurePreservesTaskAndFailsRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	task, _ := srv.Store.TaskByIssue(ctx, "acme", "widget", 1)
-	if err := srv.Store.Transition(ctx, task.ID, store.StatusQueued, store.StatusMerged, "done"); err != nil {
+	if err := srv.Store.Transition(ctx, task.ID, workflow.StatusQueued, workflow.StatusMerged, "done"); err != nil {
 		t.Fatal(err)
 	}
 	base := srv.Store

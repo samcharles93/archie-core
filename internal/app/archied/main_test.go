@@ -22,6 +22,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/daemon"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
@@ -496,7 +497,7 @@ func TestNpmCacheServerEnvPersistsCacheAcrossRestarts(t *testing.T) {
 }
 
 func TestManualRequeueTaskUsesPersistedStatus(t *testing.T) {
-	tests := []string{store.StatusParked, store.StatusWaitingHuman}
+	tests := []string{workflow.StatusParked, workflow.StatusWaitingHuman}
 	for index, status := range tests {
 		t.Run(status, func(t *testing.T) {
 			st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "tasks.db"))
@@ -511,14 +512,14 @@ func TestManualRequeueTaskUsesPersistedStatus(t *testing.T) {
 			if err != nil || task == nil {
 				t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
 			}
-			if err := st.Transition(t.Context(), task.ID, store.StatusQueued, status, ""); err != nil {
+			if err := st.Transition(t.Context(), task.ID, workflow.StatusQueued, status, ""); err != nil {
 				t.Fatal(err)
 			}
 			if err := manualRequeueTask(t.Context(), st, task.ID); err != nil {
 				t.Fatal(err)
 			}
 			got, err := st.TaskByID(t.Context(), task.ID)
-			if err != nil || got == nil || got.Status != store.StatusQueued {
+			if err != nil || got == nil || got.Status != workflow.StatusQueued {
 				t.Fatalf("TaskByID after requeue = (%+v, %v), want queued", got, err)
 			}
 		})
@@ -577,12 +578,12 @@ func TestChatTaskWriterAdapter(t *testing.T) {
 	sentinel := errors.New("enqueue failed")
 	tests := []struct {
 		name    string
-		result  *store.Task
+		result  *workflow.Task
 		err     error
 		wantID  int64
 		wantErr bool
 	}{
-		{name: "returns task id", result: &store.Task{ID: 42}, wantID: 42},
+		{name: "returns task id", result: &workflow.Task{ID: 42}, wantID: 42},
 		{name: "propagates error", err: sentinel, wantErr: true},
 		{name: "rejects nil task", wantErr: true},
 	}
@@ -592,7 +593,7 @@ func TestChatTaskWriterAdapter(t *testing.T) {
 				enqueue: func(
 					context.Context,
 					string, string, string, string, string, string,
-				) (*store.Task, error) {
+				) (*workflow.Task, error) {
 					return tt.result, tt.err
 				},
 			}
@@ -638,8 +639,8 @@ func TestChatTaskProfilesUsesIdentityRepositories(t *testing.T) {
 
 func TestChatTaskControllerAdapterRejectsForgeTask(t *testing.T) {
 	adapter := chatTaskControllerAdapter{
-		taskByID: func(context.Context, int64) (*store.Task, error) {
-			return &store.Task{ID: 42, Source: store.SourceForge}, nil
+		taskByID: func(context.Context, int64) (*workflow.Task, error) {
+			return &workflow.Task{ID: 42, Source: workflow.SourceForge}, nil
 		},
 	}
 
@@ -650,10 +651,10 @@ func TestChatTaskControllerAdapterRejectsForgeTask(t *testing.T) {
 }
 
 func TestChatTaskControllerAdapterTransitions(t *testing.T) {
-	task := &store.Task{ID: 42, Source: store.SourceChat, Status: store.StatusWaitingHuman}
+	task := &workflow.Task{ID: 42, Source: workflow.SourceChat, Status: workflow.StatusWaitingHuman}
 	var requeueFrom, requeueWorkflow, transitionFrom, transitionTo, transitionDetail string
 	adapter := chatTaskControllerAdapter{
-		taskByID: func(context.Context, int64) (*store.Task, error) { return task, nil },
+		taskByID: func(context.Context, int64) (*workflow.Task, error) { return task, nil },
 		requeue: func(_ context.Context, _ int64, from, workflow string) error {
 			requeueFrom, requeueWorkflow = from, workflow
 			return nil
@@ -667,7 +668,7 @@ func TestChatTaskControllerAdapterTransitions(t *testing.T) {
 	if err := adapter.ApproveChatTask(context.Background(), task.ID); err != nil {
 		t.Fatalf("ApproveChatTask(): %v", err)
 	}
-	if requeueFrom != store.StatusWaitingHuman || requeueWorkflow != "implement" {
+	if requeueFrom != workflow.StatusWaitingHuman || requeueWorkflow != "implement" {
 		t.Errorf("requeue = %q/%q, want waiting_human/implement", requeueFrom, requeueWorkflow)
 	}
 	if err := adapter.CancelChatTask(context.Background(), task.ID, "cancelled by test"); err != nil {
@@ -677,7 +678,7 @@ func TestChatTaskControllerAdapterTransitions(t *testing.T) {
 	// dashboard. It used to record StatusRejected, which the PR reconciler
 	// also uses for "the pull request was closed without merging", so the
 	// state could not tell an operator's decision from a forge outcome.
-	if transitionFrom != store.StatusWaitingHuman || transitionTo != store.StatusClosedWontDo ||
+	if transitionFrom != workflow.StatusWaitingHuman || transitionTo != workflow.StatusClosedWontDo ||
 		transitionDetail != "cancelled by test" {
 		t.Errorf("transition = %q/%q/%q", transitionFrom, transitionTo, transitionDetail)
 	}
@@ -689,25 +690,25 @@ func TestChatTaskLogReaderAdapterIdentityEnforcement(t *testing.T) {
 	tests := []struct {
 		name     string
 		identity string
-		task     *store.Task
+		task     *workflow.Task
 		wantErr  bool
 	}{
 		{
 			name:     "own chat task allowed",
 			identity: "archie",
-			task:     &store.Task{ID: 42, Identity: "archie", Attempt: 1, Source: store.SourceChat},
+			task:     &workflow.Task{ID: 42, Identity: "archie", Attempt: 1, Source: workflow.SourceChat},
 			wantErr:  false,
 		},
 		{
 			name:     "other identity chat task denied",
 			identity: "archie",
-			task:     &store.Task{ID: 42, Identity: "other-bot", Attempt: 1, Source: store.SourceChat},
+			task:     &workflow.Task{ID: 42, Identity: "other-bot", Attempt: 1, Source: workflow.SourceChat},
 			wantErr:  true,
 		},
 		{
 			name:     "forge task (empty identity) denied",
 			identity: "archie",
-			task:     &store.Task{ID: 42, Identity: "", Attempt: 1, Source: store.SourceForge},
+			task:     &workflow.Task{ID: 42, Identity: "", Attempt: 1, Source: workflow.SourceForge},
 			wantErr:  true,
 		},
 	}
@@ -715,7 +716,7 @@ func TestChatTaskLogReaderAdapterIdentityEnforcement(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			adapter := chatTaskLogReaderAdapter{
-				tasks: func(_ context.Context, _ int64) (*store.Task, error) { return tt.task, nil },
+				tasks: func(_ context.Context, _ int64) (*workflow.Task, error) { return tt.task, nil },
 			}
 			_, err := adapter.ReadChatTaskLogs(context.Background(), tt.identity, tt.task.ID, 0, gateway.ChatTaskLogQuery{})
 			if tt.wantErr && err == nil {
@@ -729,9 +730,9 @@ func TestChatTaskLogReaderAdapterIdentityEnforcement(t *testing.T) {
 }
 
 func TestChatTaskLogReaderAdapterDefaultAttempt(t *testing.T) {
-	task := &store.Task{ID: 42, Identity: "archie", Attempt: 3, Source: store.SourceChat}
+	task := &workflow.Task{ID: 42, Identity: "archie", Attempt: 3, Source: workflow.SourceChat}
 	adapter := chatTaskLogReaderAdapter{
-		tasks: func(_ context.Context, _ int64) (*store.Task, error) { return task, nil },
+		tasks: func(_ context.Context, _ int64) (*workflow.Task, error) { return task, nil },
 	}
 
 	result, err := adapter.ReadChatTaskLogs(context.Background(), "archie", task.ID, 0, gateway.ChatTaskLogQuery{})
@@ -744,9 +745,9 @@ func TestChatTaskLogReaderAdapterDefaultAttempt(t *testing.T) {
 }
 
 func TestChatTaskLogReaderAdapterEmptyResultWhenNoRegistry(t *testing.T) {
-	task := &store.Task{ID: 42, Identity: "archie", Attempt: 1, Source: store.SourceChat}
+	task := &workflow.Task{ID: 42, Identity: "archie", Attempt: 1, Source: workflow.SourceChat}
 	adapter := chatTaskLogReaderAdapter{
-		tasks:    func(_ context.Context, _ int64) (*store.Task, error) { return task, nil },
+		tasks:    func(_ context.Context, _ int64) (*workflow.Task, error) { return task, nil },
 		taskLogs: nil,
 	}
 
@@ -767,9 +768,9 @@ func TestChatTaskLogReaderAdapterRoundTrip(t *testing.T) {
 	taskLogs := logging.NewTaskRegistry(baseDir, logging.NewFeed(10), logging.TaskSinkOptions{})
 	t.Cleanup(func() { _ = taskLogs.Remove(42) })
 
-	task := &store.Task{ID: 42, Identity: "archie", Attempt: 1, Source: store.SourceChat}
+	task := &workflow.Task{ID: 42, Identity: "archie", Attempt: 1, Source: workflow.SourceChat}
 	adapter := chatTaskLogReaderAdapter{
-		tasks:    func(_ context.Context, _ int64) (*store.Task, error) { return task, nil },
+		tasks:    func(_ context.Context, _ int64) (*workflow.Task, error) { return task, nil },
 		taskLogs: taskLogs,
 	}
 
@@ -840,17 +841,17 @@ func TestChatTaskCommandsEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if task == nil || task.Source != store.SourceChat || task.Identity != "reviewer" ||
+	if task == nil || task.Source != workflow.SourceChat || task.Identity != "reviewer" ||
 		task.Owner != "acme" || task.Repo != "archie-core" ||
 		task.Workflow != "feasibility" {
 		t.Fatalf("spawned task = %+v", task)
 	}
 
-	if err := st.Transition(ctx, taskID, store.StatusQueued, store.StatusWaitingHuman, "await approval"); err != nil {
+	if err := st.Transition(ctx, taskID, workflow.StatusQueued, workflow.StatusWaitingHuman, "await approval"); err != nil {
 		t.Fatal(err)
 	}
 	task, err = st.TaskByID(ctx, taskID)
-	if err != nil || task == nil || task.Status != store.StatusWaitingHuman {
+	if err != nil || task == nil || task.Status != workflow.StatusWaitingHuman {
 		t.Fatalf("waiting task = (%+v, %v)", task, err)
 	}
 	reply, err = router.Route(ctx, gateway.Message{Text: fmt.Sprintf("/approve identity=reviewer %d", taskID)})
@@ -858,7 +859,7 @@ func TestChatTaskCommandsEndToEnd(t *testing.T) {
 		t.Fatalf("approve = (%q, %v)", reply, err)
 	}
 	task, err = st.TaskByID(ctx, taskID)
-	if err != nil || task == nil || task.Status != store.StatusQueued || task.Workflow != "implement" {
+	if err != nil || task == nil || task.Status != workflow.StatusQueued || task.Workflow != "implement" {
 		t.Fatalf("approved task = (%+v, %v)", task, err)
 	}
 
@@ -880,7 +881,7 @@ func TestChatTaskCommandsEndToEnd(t *testing.T) {
 	}
 	// Same terminal state as the dashboard's Reject: one decision, one state.
 	cancelled, err := st.TaskByID(ctx, cancelID)
-	if err != nil || cancelled == nil || cancelled.Status != store.StatusClosedWontDo {
+	if err != nil || cancelled == nil || cancelled.Status != workflow.StatusClosedWontDo {
 		t.Fatalf("cancelled task = (%+v, %v)", cancelled, err)
 	}
 }
@@ -967,7 +968,7 @@ func TestRegisterTaskRPCServersReachableFromClient(t *testing.T) {
 	if err != nil || task == nil {
 		t.Fatalf("claim: (%v, %v)", task, err)
 	}
-	if err := storeClient.Transition(ctx, task.ID, store.StatusRunning, store.StatusPROpen, "opened"); err != nil {
+	if err := storeClient.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusPROpen, "opened"); err != nil {
 		t.Fatalf("storerpc Transition unreachable: %v", err)
 	}
 

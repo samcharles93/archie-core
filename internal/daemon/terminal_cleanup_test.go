@@ -22,6 +22,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	archiecontainer "github.com/samcharles93/archie-core/internal/container"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -110,35 +111,35 @@ func TestCleanupTerminalTaskWorktreeLifecycle(t *testing.T) {
 		{
 			name:           "root no-change merged task cleans worktree",
 			taskIdentity:   "",
-			setupStatus:    store.StatusMerged,
+			setupStatus:    workflow.StatusMerged,
 			prNumber:       0,
 			wantTreeExists: false,
 		},
 		{
 			name:           "multi-identity no-change merged task cleans identity worktree",
 			taskIdentity:   "winter",
-			setupStatus:    store.StatusMerged,
+			setupStatus:    workflow.StatusMerged,
 			prNumber:       0,
 			wantTreeExists: false,
 		},
 		{
 			name:           "parked task preserves worktree for post-mortem",
 			taskIdentity:   "",
-			setupStatus:    store.StatusParked,
+			setupStatus:    workflow.StatusParked,
 			prNumber:       0,
 			wantTreeExists: true,
 		},
 		{
 			name:           "open PR task preserves worktree for PR reconciliation",
 			taskIdentity:   "",
-			setupStatus:    store.StatusPROpen,
+			setupStatus:    workflow.StatusPROpen,
 			prNumber:       42,
 			wantTreeExists: true,
 		},
 		{
 			name:           "waiting human task preserves worktree",
 			taskIdentity:   "",
-			setupStatus:    store.StatusWaitingHuman,
+			setupStatus:    workflow.StatusWaitingHuman,
 			prNumber:       0,
 			wantTreeExists: true,
 		},
@@ -180,8 +181,8 @@ func TestCleanupTerminalTaskWorktreeLifecycle(t *testing.T) {
 				t.Fatalf("ClaimNext: (%v, %v)", claimed, err)
 			}
 
-			if tt.setupStatus != store.StatusRunning {
-				if err := st.Transition(ctx, claimed.ID, store.StatusRunning, tt.setupStatus, "status update"); err != nil {
+			if tt.setupStatus != workflow.StatusRunning {
+				if err := st.Transition(ctx, claimed.ID, workflow.StatusRunning, tt.setupStatus, "status update"); err != nil {
 					t.Fatalf("Transition to %s: %v", tt.setupStatus, err)
 				}
 			}
@@ -219,19 +220,19 @@ func TestProcessCleansWorktreeOnTerminalNoChange(t *testing.T) {
 	}{
 		{
 			name:           "process removes worktree when worker reports merged without PR",
-			workerStatus:   store.StatusMerged,
+			workerStatus:   workflow.StatusMerged,
 			taskIdentity:   "",
 			wantTreeExists: false,
 		},
 		{
 			name:           "process removes identity worktree when worker reports merged without PR",
-			workerStatus:   store.StatusMerged,
+			workerStatus:   workflow.StatusMerged,
 			taskIdentity:   "winter",
 			wantTreeExists: false,
 		},
 		{
 			name:           "process keeps worktree when worker parks task",
-			workerStatus:   store.StatusParked,
+			workerStatus:   workflow.StatusParked,
 			taskIdentity:   "",
 			wantTreeExists: true,
 		},
@@ -319,7 +320,7 @@ func TestProcessCleansWorktreeOnTerminalNoChange(t *testing.T) {
 
 			sub, err := mustCoreConn(t, busClient).Subscribe(agentnats.SubjectForTask(task.ID), func(msg *natsio.Msg) {
 				// Transition task in store as archie-agent would do over storerpc
-				_ = s.Transition(ctx, task.ID, store.StatusRunning, tt.workerStatus, "worker completion")
+				_ = s.Transition(ctx, task.ID, workflow.StatusRunning, tt.workerStatus, "worker completion")
 				resp, _ := json.Marshal(taskrun.Response{
 					Status: tt.workerStatus,
 				})

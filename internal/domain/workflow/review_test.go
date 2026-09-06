@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
@@ -52,7 +51,7 @@ func reviewTaskContext(t *testing.T, enabled bool) (*TaskContext, string) {
 	runGit(t, dir, "commit", "-m", "feat: add feature.go")
 
 	tc := &TaskContext{
-		Task:  &store.Task{ID: 1, Owner: "acme", Repo: "todo", IssueNumber: 42, Title: "Add feature", Body: "Please add it."},
+		Task:  &Task{ID: 1, Owner: "acme", Repo: "todo", IssueNumber: 42, Title: "Add feature", Body: "Please add it."},
 		Repo:  config.Repo{Owner: "acme", Name: "todo", Base: "main", ReviewEnabled: enabled},
 		Cfg:   config.Config{},
 		Trees: &worktree.Manager{WorkDir: t.TempDir()},
@@ -85,8 +84,8 @@ func TestStageReviewParksWhenEnabledWithNoReviewerWired(t *testing.T) {
 	if err := StageReview().Run(t.Context(), tc); err != nil {
 		t.Fatalf("StageReview().Run() error = %v", err)
 	}
-	if tc.Outcome.Status != store.StatusParked {
-		t.Errorf("Outcome.Status = %q, want %q", tc.Outcome.Status, store.StatusParked)
+	if tc.Outcome.Status != StatusParked {
+		t.Errorf("Outcome.Status = %q, want %q", tc.Outcome.Status, StatusParked)
 	}
 }
 
@@ -101,8 +100,8 @@ func TestStageReviewParksFailClosedWhenReviewDidNotRun(t *testing.T) {
 	if !reviewer.called {
 		t.Fatal("reviewer was not called")
 	}
-	if tc.Outcome.Status != store.StatusParked {
-		t.Errorf("Outcome.Status = %q, want %q", tc.Outcome.Status, store.StatusParked)
+	if tc.Outcome.Status != StatusParked {
+		t.Errorf("Outcome.Status = %q, want %q", tc.Outcome.Status, StatusParked)
 	}
 	if got := tc.Outcome.Detail; !containsAll(got, "did not run", "provider outage") {
 		t.Errorf("Outcome.Detail = %q, want it to say the review did not run and why", got)
@@ -122,8 +121,8 @@ func TestStageReviewParksOnConfirmedErrorFinding(t *testing.T) {
 	if err := StageReview().Run(t.Context(), tc); err != nil {
 		t.Fatalf("StageReview().Run() error = %v", err)
 	}
-	if tc.Outcome.Status != store.StatusParked {
-		t.Errorf("Outcome.Status = %q, want %q", tc.Outcome.Status, store.StatusParked)
+	if tc.Outcome.Status != StatusParked {
+		t.Errorf("Outcome.Status = %q, want %q", tc.Outcome.Status, StatusParked)
 	}
 	if got := tc.Outcome.Detail; !containsAll(got, "feature.go", "nil deref") {
 		t.Errorf("Outcome.Detail = %q, want the blocking finding rendered", got)

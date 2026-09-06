@@ -10,6 +10,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 )
 
@@ -330,9 +331,9 @@ func TestTasksBindingColumnsRoundTrip(t *testing.T) {
 		t.Fatalf("UPDATE binding provenance: %v", err)
 	}
 
-	for name, read := range map[string]func() (*Task, error){
-		"scanTask-via-TaskByIssue": func() (*Task, error) { return s.TaskByIssue(ctx, "acme", "widget", task.IssueNumber) },
-		"TaskByID":                 func() (*Task, error) { return s.TaskByID(ctx, task.ID) },
+	for name, read := range map[string]func() (*workflow.Task, error){
+		"scanTask-via-TaskByIssue": func() (*workflow.Task, error) { return s.TaskByIssue(ctx, "acme", "widget", task.IssueNumber) },
+		"TaskByID":                 func() (*workflow.Task, error) { return s.TaskByID(ctx, task.ID) },
 	} {
 		got, err := read()
 		if err != nil {
@@ -398,7 +399,7 @@ func TestClearTerminalTasks(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	statuses := []string{StatusMerged, StatusParked, StatusRejected, StatusClosedWontDo, StatusQueued}
+	statuses := []string{workflow.StatusMerged, workflow.StatusParked, workflow.StatusRejected, workflow.StatusClosedWontDo, workflow.StatusQueued}
 	for i, status := range statuses {
 		if _, err := s.EnqueueIssue(ctx, "acme", "widget", i+1, "t", "b", "", ""); err != nil {
 			t.Fatal(err)
@@ -407,8 +408,8 @@ func TestClearTerminalTasks(t *testing.T) {
 		if err != nil || task == nil {
 			t.Fatalf("TaskByIssue(%d) = (%+v, %v)", i+1, task, err)
 		}
-		if status != StatusQueued {
-			if err := s.Transition(ctx, task.ID, StatusQueued, status, ""); err != nil {
+		if status != workflow.StatusQueued {
+			if err := s.Transition(ctx, task.ID, workflow.StatusQueued, status, ""); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -423,13 +424,13 @@ func TestClearTerminalTasks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if counts[StatusQueued] != 1 {
-		t.Fatalf("expected 1 queued, got %d", counts[StatusQueued])
+	if counts[workflow.StatusQueued] != 1 {
+		t.Fatalf("expected 1 queued, got %d", counts[workflow.StatusQueued])
 	}
-	if counts[StatusParked] != 1 {
-		t.Fatalf("recoverable parked task was cleared: count = %d", counts[StatusParked])
+	if counts[workflow.StatusParked] != 1 {
+		t.Fatalf("recoverable parked task was cleared: count = %d", counts[workflow.StatusParked])
 	}
-	for _, status := range []string{StatusMerged, StatusRejected, StatusClosedWontDo} {
+	for _, status := range []string{workflow.StatusMerged, workflow.StatusRejected, workflow.StatusClosedWontDo} {
 		if counts[status] != 0 {
 			t.Fatalf("expected 0 for %s, got %d", status, counts[status])
 		}
@@ -454,18 +455,18 @@ func TestArchiveTaskIsGuardedAndScoped(t *testing.T) {
 	if err != nil || task == nil {
 		t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
 	}
-	if err := s.Transition(ctx, task.ID, StatusQueued, StatusMerged, "done"); err != nil {
+	if err := s.Transition(ctx, task.ID, workflow.StatusQueued, workflow.StatusMerged, "done"); err != nil {
 		t.Fatal(err)
 	}
 
 	audit := events.Event{Kind: events.KindTaskArchiveRequested, TaskID: task.ID}
-	if _, err := s.ArchiveTask(ctx, task.ID, StatusQueued, audit); !errors.Is(err, ErrStaleTransition) {
+	if _, err := s.ArchiveTask(ctx, task.ID, workflow.StatusQueued, audit); !errors.Is(err, ErrStaleTransition) {
 		t.Fatalf("ArchiveTask stale guard = %v, want ErrStaleTransition", err)
 	}
 	if got, err := s.TaskByID(ctx, task.ID); err != nil || got == nil {
 		t.Fatalf("stale archive removed task: (%+v, %v)", got, err)
 	}
-	eventID, err := s.ArchiveTask(ctx, task.ID, StatusMerged, audit)
+	eventID, err := s.ArchiveTask(ctx, task.ID, workflow.StatusMerged, audit)
 	if err != nil {
 		t.Fatalf("ArchiveTask = %v", err)
 	}
@@ -487,7 +488,7 @@ func TestArchiveAuditFailurePreservesTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	task, _ := s.TaskByIssue(ctx, "acme", "widget", 1)
-	if err := s.Transition(ctx, task.ID, StatusQueued, StatusMerged, "done"); err != nil {
+	if err := s.Transition(ctx, task.ID, workflow.StatusQueued, workflow.StatusMerged, "done"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.db.ExecContext(ctx, `
@@ -497,7 +498,7 @@ func TestArchiveAuditFailurePreservesTask(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := s.ArchiveTask(ctx, task.ID, StatusMerged, events.Event{
+	if _, err := s.ArchiveTask(ctx, task.ID, workflow.StatusMerged, events.Event{
 		Kind: events.KindTaskArchiveRequested, TaskID: task.ID,
 	}); err == nil {
 		t.Fatal("ArchiveTask succeeded despite forced audit failure")
@@ -571,11 +572,11 @@ func TestTransitionRejectsStaleFrom(t *testing.T) {
 	if err != nil || task == nil {
 		t.Fatalf("claim = (%v, %v)", task, err)
 	}
-	// Task is now StatusRunning. Transition with from=StatusQueued
+	// Task is now workflow.StatusRunning. Transition with from=workflow.StatusQueued
 	// must fail because the task is not queued.
-	err = s.Transition(ctx, task.ID, StatusQueued, StatusPROpen, "stale from")
+	err = s.Transition(ctx, task.ID, workflow.StatusQueued, workflow.StatusPROpen, "stale from")
 	if err == nil {
-		t.Fatal("Transition with stale 'from' (StatusQueued) on a running task must return an error, but got nil")
+		t.Fatal("Transition with stale 'from' (workflow.StatusQueued) on a running task must return an error, but got nil")
 	}
 
 	// Verify the task was NOT changed.
@@ -583,8 +584,8 @@ func TestTransitionRejectsStaleFrom(t *testing.T) {
 	if err != nil || got == nil {
 		t.Fatalf("TaskByID = (%+v, %v)", got, err)
 	}
-	if got.Status != StatusRunning {
-		t.Fatalf("task status changed to %q despite stale from guard; want %q", got.Status, StatusRunning)
+	if got.Status != workflow.StatusRunning {
+		t.Fatalf("task status changed to %q despite stale from guard; want %q", got.Status, workflow.StatusRunning)
 	}
 }
 
@@ -605,15 +606,15 @@ func TestTransitionPreventsDoubleTransition(t *testing.T) {
 	}
 
 	// First transition: running → pr_open should succeed.
-	if err := s.Transition(ctx, task.ID, StatusRunning, StatusPROpen, "first"); err != nil {
+	if err := s.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusPROpen, "first"); err != nil {
 		t.Fatalf("first transition = %v", err)
 	}
 
-	// Second transition: the task is now StatusPROpen, so
-	// from=StatusRunning must fail.
-	err = s.Transition(ctx, task.ID, StatusRunning, StatusMerged, "second")
+	// Second transition: the task is now workflow.StatusPROpen, so
+	// from=workflow.StatusRunning must fail.
+	err = s.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusMerged, "second")
 	if err == nil {
-		t.Fatal("second Transition with stale 'from' (StatusRunning) on a pr_open task must return an error, but got nil")
+		t.Fatal("second Transition with stale 'from' (workflow.StatusRunning) on a pr_open task must return an error, but got nil")
 	}
 
 	// Verify the task kept the first transition's status.
@@ -621,8 +622,8 @@ func TestTransitionPreventsDoubleTransition(t *testing.T) {
 	if err != nil || got == nil {
 		t.Fatalf("TaskByID = (%+v, %v)", got, err)
 	}
-	if got.Status != StatusPROpen {
-		t.Fatalf("task status = %q, want %q (second transition must not overwrite)", got.Status, StatusPROpen)
+	if got.Status != workflow.StatusPROpen {
+		t.Fatalf("task status = %q, want %q (second transition must not overwrite)", got.Status, workflow.StatusPROpen)
 	}
 }
 
@@ -638,7 +639,7 @@ func TestTransitionToParkedPersistsReasonOnTask(t *testing.T) {
 		t.Fatalf("ClaimNext = (%+v, %v)", task, err)
 	}
 	const reason = "managed worker unavailable"
-	if err := s.Transition(ctx, task.ID, StatusRunning, StatusParked, reason); err != nil {
+	if err := s.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusParked, reason); err != nil {
 		t.Fatal(err)
 	}
 
@@ -664,11 +665,11 @@ func TestRequeueRejectsStaleFrom(t *testing.T) {
 	if err != nil || task == nil {
 		t.Fatalf("claim = (%v, %v)", task, err)
 	}
-	// Task is StatusRunning. Requeue with fromStatus=StatusParked must
+	// Task is workflow.StatusRunning. Requeue with fromStatus=workflow.StatusParked must
 	// fail because the task is not parked.
-	err = s.Requeue(ctx, task.ID, StatusParked, "implement")
+	err = s.Requeue(ctx, task.ID, workflow.StatusParked, "implement")
 	if err == nil {
-		t.Fatal("Requeue with stale fromStatus (StatusParked) on a running task must return an error, but got nil")
+		t.Fatal("Requeue with stale fromStatus (workflow.StatusParked) on a running task must return an error, but got nil")
 	}
 
 	// Verify the task was NOT changed.
@@ -676,8 +677,8 @@ func TestRequeueRejectsStaleFrom(t *testing.T) {
 	if err != nil || got == nil {
 		t.Fatalf("TaskByID = (%+v, %v)", got, err)
 	}
-	if got.Status != StatusRunning {
-		t.Fatalf("task status changed to %q despite stale fromStatus guard; want %q", got.Status, StatusRunning)
+	if got.Status != workflow.StatusRunning {
+		t.Fatalf("task status changed to %q despite stale fromStatus guard; want %q", got.Status, workflow.StatusRunning)
 	}
 }
 
@@ -724,21 +725,21 @@ func TestRetryTaskAtomicallyRequeuesAndIncrements(t *testing.T) {
 	if err != nil || task == nil {
 		t.Fatalf("ClaimNext = (%+v, %v)", task, err)
 	}
-	if err := s.Transition(ctx, task.ID, StatusRunning, StatusParked, "failed"); err != nil {
+	if err := s.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusParked, "failed"); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := s.RetryTask(ctx, task.ID, StatusParked, ""); err != nil {
+	if err := s.RetryTask(ctx, task.ID, workflow.StatusParked, ""); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.TaskByID(ctx, task.ID)
 	if err != nil || got == nil {
 		t.Fatalf("TaskByID = (%+v, %v)", got, err)
 	}
-	if got.Status != StatusQueued || got.RetryCount != 1 {
+	if got.Status != workflow.StatusQueued || got.RetryCount != 1 {
 		t.Fatalf("task = status %q retry_count %d, want queued/1", got.Status, got.RetryCount)
 	}
-	if err := s.RetryTask(ctx, task.ID, StatusParked, ""); !errors.Is(err, ErrStaleTransition) {
+	if err := s.RetryTask(ctx, task.ID, workflow.StatusParked, ""); !errors.Is(err, ErrStaleTransition) {
 		t.Fatalf("stale RetryTask error = %v, want ErrStaleTransition", err)
 	}
 }
@@ -750,7 +751,7 @@ func TestRetryTaskWriteFailureLeavesParkedCountUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	task, _ := s.ClaimNext(ctx)
-	if err := s.Transition(ctx, task.ID, StatusRunning, StatusParked, "failed"); err != nil {
+	if err := s.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusParked, "failed"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.db.ExecContext(ctx, `
@@ -759,14 +760,14 @@ func TestRetryTaskWriteFailureLeavesParkedCountUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := s.RetryTask(ctx, task.ID, StatusParked, ""); err == nil {
+	if err := s.RetryTask(ctx, task.ID, workflow.StatusParked, ""); err == nil {
 		t.Fatal("RetryTask succeeded despite forced write failure")
 	}
 	got, err := s.TaskByID(ctx, task.ID)
 	if err != nil || got == nil {
 		t.Fatalf("TaskByID = (%+v, %v)", got, err)
 	}
-	if got.Status != StatusParked || got.RetryCount != 0 {
+	if got.Status != workflow.StatusParked || got.RetryCount != 0 {
 		t.Fatalf("partial retry write: status %q retry_count %d", got.Status, got.RetryCount)
 	}
 }
@@ -801,7 +802,7 @@ func TestClaimTransitionAndRecovery(t *testing.T) {
 	if err != nil || task == nil {
 		t.Fatalf("claim = (%v, %v)", task, err)
 	}
-	if task.Status != StatusRunning || task.Attempt != 1 || task.Labels != "archie,bug" {
+	if task.Status != workflow.StatusRunning || task.Attempt != 1 || task.Labels != "archie,bug" {
 		t.Fatalf("claimed task = %+v", task)
 	}
 	if next, _ := s.ClaimNext(ctx); next != nil {
@@ -818,7 +819,7 @@ func TestClaimTransitionAndRecovery(t *testing.T) {
 		t.Fatalf("re-claim after recovery = (%+v, %v)", task, err)
 	}
 
-	if err := s.Transition(ctx, task.ID, StatusRunning, StatusPROpen, "PR #3"); err != nil {
+	if err := s.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusPROpen, "PR #3"); err != nil {
 		t.Fatal(err)
 	}
 	task.PRNumber = 3
@@ -853,7 +854,7 @@ func TestRecoverStalePreservesChatTaskRouting(t *testing.T) {
 	if recovered == nil {
 		t.Fatal("TaskByID() returned nil after recovery")
 	}
-	if recovered.Status != StatusQueued || recovered.Source != SourceChat ||
+	if recovered.Status != workflow.StatusQueued || recovered.Source != workflow.SourceChat ||
 		recovered.Identity != "reviewer" || recovered.Workflow != "tdd" {
 		t.Errorf("recovered task = %+v, want queued chat task routed to reviewer/tdd", recovered)
 	}
@@ -867,7 +868,7 @@ func TestLifecycleQueriesPreserveChatTaskRouting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Transition(ctx, waiting.ID, StatusQueued, StatusWaitingHuman, "await approval"); err != nil {
+	if err := s.Transition(ctx, waiting.ID, workflow.StatusQueued, workflow.StatusWaitingHuman, "await approval"); err != nil {
 		t.Fatal(err)
 	}
 	// Routing metadata must survive a status transition: a chat task that
@@ -876,7 +877,7 @@ func TestLifecycleQueriesPreserveChatTaskRouting(t *testing.T) {
 	if err != nil || waitingTask == nil {
 		t.Fatalf("TaskByID = (%+v, %v)", waitingTask, err)
 	}
-	if waitingTask.Status != StatusWaitingHuman || waitingTask.Source != SourceChat ||
+	if waitingTask.Status != workflow.StatusWaitingHuman || waitingTask.Source != workflow.SourceChat ||
 		waitingTask.Identity != "reviewer" {
 		t.Fatalf("waiting task = %+v, want waiting_human chat/reviewer routing", waitingTask)
 	}
@@ -889,14 +890,14 @@ func TestLifecycleQueriesPreserveChatTaskRouting(t *testing.T) {
 	if err := s.Update(ctx, pr); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Transition(ctx, pr.ID, StatusQueued, StatusPROpen, "PR #7"); err != nil {
+	if err := s.Transition(ctx, pr.ID, workflow.StatusQueued, workflow.StatusPROpen, "PR #7"); err != nil {
 		t.Fatal(err)
 	}
 	openPRs, err := s.OpenPRs(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(openPRs) != 1 || openPRs[0].Source != SourceChat ||
+	if len(openPRs) != 1 || openPRs[0].Source != workflow.SourceChat ||
 		openPRs[0].Identity != "builder" {
 		t.Fatalf("OpenPRs() = %+v, want chat/builder routing", openPRs)
 	}

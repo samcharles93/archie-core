@@ -22,8 +22,8 @@ import (
 
 	"github.com/nats-io/nats.go"
 
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/natsrpc"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
@@ -69,7 +69,7 @@ type Grants struct {
 func NewGrants() *Grants { return &Grants{grants: make(map[string]grant)} }
 
 // Issue creates a per-dispatch grant and a revocation function.
-func (g *Grants) Issue(task *store.Task) (string, func(), error) {
+func (g *Grants) Issue(task *workflow.Task) (string, func(), error) {
 	if task == nil || task.ID <= 0 || task.Branch == "" ||
 		!worktree.ValidCoordinates(task.Owner, task.Repo, task.IssueNumber) {
 		return "", nil, errors.New("task is not ready for worktree publication")
