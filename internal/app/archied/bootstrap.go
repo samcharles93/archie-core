@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -100,7 +101,17 @@ type boot struct {
 
 	playbooks *playbook.Store
 
-	st               store.TaskStore
+	st store.TaskStore
+	// stateStore is the State Store contract adapter the daemon's own
+	// capture/mapping/binding consumers use. It is the in-process
+	// *store.Store (the same one b.st holds) unless [services.state].target
+	// is set, in which case it is a remote *staterpc.Client dialed to the
+	// standalone archie-state-store gRPC service. Task lifecycle (b.st)
+	// stays in-process until .4.5/.4.6; only capture/mapping/binding
+	// resolve through this field, so a consumer mixes in-process and remote
+	// contracts per contract-code while the daemon's own store stays local
+	// (docs/prds/state-store-contract.md §12 step 6).
+	stateStore       store.TaskStore
 	chatSessionStore gateway.SessionStore
 
 	catalog       modelcatalog.Snapshot
@@ -287,6 +298,33 @@ func (b *boot) openStores(ctx context.Context) error {
 	return b.openChatSessions(ctx)
 }
 
+// openStateStoreAdapter selects the State Store contract adapter the daemon's
+// own capture/mapping/binding consumers will use. The base path is the local
+// *store.Store opened by openStores; when [services.state].target is set the
+// daemon instead dials the standalone archie-state-store gRPC service and
+// uses *staterpc.Client. Empty target keeps the in-process adapter (the
+// default -- the State Store service is not yet extracted into its own
+// process), so this is additive and behaviour-neutral until an operator flips
+// the seam (docs/prds/state-store-contract.md §10). Task lifecycle (b.st) is
+// untouched here -- only the capture/mapping/binding contracts route through
+// the adapter during .4.4. Called only from the daemon's composition (the
+// gateway does not consume these surfaces), so it runs after openStores has
+// opened b.st and resolved b.secrets.
+func (b *boot) openStateStoreAdapter() error {
+	if strings.TrimSpace(b.cfg.Services.State.Target) == "" {
+		b.stateStore = b.st
+		return nil
+	}
+	client, cleanup, err := composeStateStoreClient(b.cfg.Services.State, b.secrets)
+	if err != nil {
+		b.log.Error("state store adapter", "err", err)
+		return err
+	}
+	b.stateStore = client
+	b.addCleanup(cleanup)
+	return nil
+}
+
 func (b *boot) openChatSessions(_ context.Context) error { //nolint:unparam // context keeps the composition phase contract aligned with other openers
 	chatSessionStore, err := makeTelegramSessionStore(b.cfg) //nolint:contextcheck // SQLite schema initialization is synchronous and has no context-aware API
 	if err != nil {
@@ -378,39 +416,46 @@ func (b *boot) setupObservability() {
 }
 
 // wireWebStoreSurfaces attaches the dashboard's optional storage surfaces.
-// openProductionTaskStore's declared return type is the narrow
-// store.TaskStore, so each wider surface (all implemented by the same
-// *store.Store) needs its own assertion here rather than a direct field
-// reuse. A store that does not implement one degrades that dashboard feature
-// with a warning instead of aborting bootstrap. The BindingStore/
-// BindingDispatcher/BindingTaskCreator split keeps each interface under the
-// interfacebloat limit. See docs/prds/event-capture-storage.md,
-// docs/prds/payload-field-mapping.md and docs/prds/webhook-intake-security.md.
+// b.stateStore is declared as the narrow store.TaskStore, so each wider
+// capture/mapping/binding surface needs its own assertion here rather than a
+// direct field reuse. b.stateStore is the local *store.Store by default and a
+// remote *staterpc.Client when [services.state].target is set, so the same
+// assertion resolves either adapter. A store that does not implement one
+// degrades that dashboard feature with a warning instead of aborting
+// bootstrap. The BindingStore/BindingDispatcher/BindingTaskCreator split
+// keeps each interface under the interfacebloat limit. See
+// docs/prds/event-capture-storage.md,
+// docs/prds/payload-field-mapping.md and docs/prds/webhook-intake-security.md, and
+// docs/prds/state-store-contract.md §10 for the adapter selection.
 func (b *boot) wireWebStoreSurfaces() {
 	cfg, log := b.cfg, b.log
-	if cs, ok := b.st.(store.CaptureStore); ok {
+	// Capture/mapping/binding surfaces resolve from b.stateStore (the State
+	// Store contract adapter): local by default, remote *staterpc.Client when
+	// [services.state].target is set. See wireWebStoreSurfaces' doc and
+	// docs/prds/state-store-contract.md §10.
+	if cs, ok := b.stateStore.(store.CaptureStore); ok {
 		b.web.Captures = cs
 	} else {
-		log.Warn("capture storage unavailable: task store does not implement CaptureStore")
+		log.Warn("capture storage unavailable: state store does not implement CaptureStore")
 	}
 	b.web.CaptureRetention = cfg.Capture.Retention.Std()
 	b.web.CaptureMaxEvents = cfg.Capture.MaxEvents
 	b.web.CaptureMaxBodyBytes = int64(cfg.Capture.MaxBodyBytes)
 	b.web.CaptureLimiter = webhookguard.NewRateLimiter(cfg.Capture.RatePerSecond, cfg.Capture.RateBurst, time.Now)
-	if ms, ok := b.st.(store.MappingStore); ok {
+	if ms, ok := b.stateStore.(store.MappingStore); ok {
 		b.web.Mappings = ms
 	} else {
-		log.Warn("mapping storage unavailable: task store does not implement MappingStore")
+		log.Warn("mapping storage unavailable: state store does not implement MappingStore")
 	}
-	if bs, ok := b.st.(store.BindingStore); ok {
+	if bs, ok := b.stateStore.(store.BindingStore); ok {
 		b.web.Bindings = bs
 	} else {
-		log.Warn("binding storage unavailable: task store does not implement BindingStore")
+		log.Warn("binding storage unavailable: state store does not implement BindingStore")
 	}
-	if bd, ok := b.st.(store.BindingDispatcher); ok {
+	if bd, ok := b.stateStore.(store.BindingDispatcher); ok {
 		b.web.BindingDispatcher = bd
 	} else {
-		log.Warn("binding dispatcher unavailable: task store does not implement BindingDispatcher")
+		log.Warn("binding dispatcher unavailable: state store does not implement BindingDispatcher")
 	}
 }
 
@@ -1256,16 +1301,19 @@ func (b *boot) buildDaemon() {
 	// this point /api/config and the daemon can never disagree about the
 	// published config.
 	b.web.Cfg = b.d.Cfg
-	if ms, ok := b.st.(store.MappingStore); ok {
+	// Consumer mapping/binding surfaces resolve from b.stateStore (the State
+	// Store contract adapter): local by default, remote *staterpc.Client when
+	// [services.state].target is set. See docs/prds/state-store-contract.md §10.
+	if ms, ok := b.stateStore.(store.MappingStore); ok {
 		b.d.Mappings = ms
 	}
-	if bs, ok := b.st.(store.BindingStore); ok {
+	if bs, ok := b.stateStore.(store.BindingStore); ok {
 		b.d.Bindings = bs
 	}
-	if bd, ok := b.st.(store.BindingDispatcher); ok {
+	if bd, ok := b.stateStore.(store.BindingDispatcher); ok {
 		b.d.BindingDispatcher = bd
 	}
-	if btc, ok := b.st.(store.BindingTaskCreator); ok {
+	if btc, ok := b.stateStore.(store.BindingTaskCreator); ok {
 		b.d.BindingTaskCreator = btc
 	}
 	b.setupForgeWebhook()
@@ -1283,14 +1331,14 @@ func (b *boot) buildDaemon() {
 // .4.2, not yet load-bearing.
 func (b *boot) startStateStoreServer(ctx context.Context) {
 	log := b.log
-	deps := staterpc.Deps{
-		Tasks: b.st, Mappings: b.d.Mappings, Bindings: b.d.Bindings,
-		BindingDispatcher: b.d.BindingDispatcher, BindingTaskCreator: b.d.BindingTaskCreator,
-		Log: log,
-	}
-	if cs, ok := b.st.(store.CaptureStore); ok {
-		deps.Captures = cs
-	}
+	// The in-process server fronts the daemon's LOCAL store surfaces, not the
+	// consumer-facing b.d.* adapters: during .4.4 the daemon may route its own
+	// capture/mapping/binding consumers to a remote *staterpc.Client via
+	// [services.state].target, but the daemon still OWNS archie.db in-process
+	// and the agent's gRPC target must keep answering from that same local
+	// file (no dual-store ownership, docs/prds/state-store-contract.md §9/§12
+	// step 6). Deletion of the in-process serving path is .4.6.
+	deps := b.stateStoreDeps()
 
 	host := "127.0.0.1"
 	var opts []grpc.ServerOption
