@@ -281,7 +281,7 @@ func (b *boot) openStores(ctx context.Context) error {
 			log.Error("close store", "err", err)
 		}
 	})
-	return nil
+	return b.openChatSessions(ctx)
 }
 
 func (b *boot) openChatSessions(_ context.Context) error { //nolint:unparam // context keeps the composition phase contract aligned with other openers
