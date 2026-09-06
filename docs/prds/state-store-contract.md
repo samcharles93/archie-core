@@ -18,6 +18,23 @@ split `archie.db`. It records method ownership, DTO/wire representation, error s
 limits, mode/config shape, local-adapter compatibility, and cutover/deletion rules so that
 `.4.2` and `.4.3` have exactly one authoritative surface to build against.
 
+> **Current state (before implementation) — read before `.4.2` starts.** The acceptance
+> criterion ("`internal/domain/workflow` … no longer import `internal/store`") is **not yet
+> met** and is **not implied to be met by this document**. Today, production workflow files
+> and tests import `internal/store` (`internal/domain/workflow/{workflow,steps,triage,review,
+> feasibility,implement}.go`), `store.WorkflowStore` remains in `TaskContext`, and the NATS
+> `storerpc` path is still wired. Those are the **current, pre-implementation outliers** that §12
+> step 2 (relocation) and `.4.2` remove. Nothing in this document describes code that already
+> exists; it describes what `.4.2`/`.4.3` build and what the prerequisite changes are.
+
+> **Relationship to migration-decisions §4 — not replaced.** `docs/architecture/
+> migration-decisions.md` §4 (`store.Task → WorkflowExecution`, `mutable Stage →
+> StepExecution history`, `RetryCount/Attempt → Attempt records`, versioned Workflow defs)
+> **remains the authoritative, open document for the long-term Workflow migration.** This PRD
+> does **not** replace it. It only pulls the minimal `Task`/`Status`/`Source` type + interface
+> relocation forward as a Phase 2 prerequisite (because the acceptance criterion requires it);
+> the rest of §4 stays its own migration and stays open.
+
 ---
 
 ## 1. Decision (the invariant everything follows)
@@ -61,6 +78,16 @@ contract is consumer-owned (in the domain), while the daemon/webui store surface
 `Source` types it persists (persistence → domain, the correct direction), and its `Store`
 implementation satisfies `workflow.Store`. This is the single decision that makes the whole
 Phase 2 acceptance criterion and the architecture's rules simultaneously satisfiable.
+
+> **`internal/store` is a TRANSITIONAL compatibility location (rev. 2).** The repository's target
+> architecture (`docs/architecture/dependencies-and-contracts.md`, `organisation.md`) places
+> persistence implementations under `internal/infrastructure/<capability>`. `internal/store`
+> holding the task/capture/mapping/binding implementation and ALSO being the home of the
+> producer-owned daemon/webui interfaces is acceptable **only as a transitional location**. The
+> long-term home for the store implementation is `internal/infrastructure/store`; the
+> producer-owned interfaces may move to the same infrastructure package (or an approved
+> contract location) when the store implementation relocates. Agents must not treat
+> `internal/store` as the final infrastructure boundary.
 
 ---
 
@@ -159,7 +186,9 @@ The Phase 2 acceptance criterion ("`internal/domain/workflow` … no longer impo
   criterion is satisfied. It consumes `store.Task`'s replacement as `workflow.Task`, uses
   `workflow.Status*`/`workflow.Source*`, and depends on its own `workflow.Store` interface.
 - `internal/store` imports `internal/domain/workflow` for the `Task`/`Status`/`Source` types it
-  reads and writes (infrastructure → domain).
+  reads and writes (infrastructure → domain). **NOTE: `internal/store` is a transitional
+  compatibility location only** — its long-term home is `internal/infrastructure/store` (see
+  the callout in §1). Do not treat `internal/store` as the final infrastructure boundary.
 - `TestRecordDispatchViaExplicitTx` and every store test that constructs `store.Task{…}` are
   updated to the relocated type as part of this prerequisite. This is a mechanical rename
   across ~6 workflow production files (`workflow.go`, `steps.go`, `triage.go`, `review.go`,
@@ -296,6 +325,24 @@ moved to gRPC and the container env carries `STATE_STORE_URL`. Until then both p
 (agent flips when the daemon starts injecting `STATE_STORE_URL`); there is no dual-live window
 across a single agent process, which is either NATS-backed or gRPC-backed, never both.
 
+### Operational specifics (in-process listener → address → per-task injection)
+
+- **Who binds the in-process State Store listener:** the daemon (`archied`), at bootstrap, when
+  the State Store is served in-process/multiplexed (mirroring `serveGateway` in
+  `internal/app/archied/gateway.go`): a `grpc.NewServer()` + `RegisterServer` + graceful stop on
+  `ctx.Done()`.
+- **Address selection (Docker-bridge reachable):** reuse the host-gateway resolution already used
+  for embedded NATS (`internal/container/network.go` `RequireHostGateway` /
+  `resolveHostGateway`). The in-process listener binds either loopback (for the daemon's own
+  client) or the host-gateway bridge IP (for agent containers). The chosen address is stored on
+  the daemon as `d.ConnectedStateStore.URL` (analogous to `d.ConnectedNATS.URL`).
+- **Per-task injection:** `containerEnv(task)` (`internal/daemon/daemon.go`) appends
+  `STATE_STORE_URL=<d.ConnectedStateStore.URL>` and `STATE_STORE_TOKEN=<token>` alongside the
+  existing `NATS_URL`/`NATS_TOKEN`. The agent reads them via env (`-state-store-url` /
+  `STATE_STORE_URL`, `-state-store-token` / `STATE_STORE_TOKEN`), the same seam as `NATS_URL`. A
+  reloaded `[services.state]` must not point new containers at a store the daemon is not serving
+  — the same immutability rule as NATS.
+
 ---
 
 ## 7. Error semantics
@@ -401,6 +448,26 @@ stated explicitly rather than left implicit.
   confirmation caveat. The NATS-KV discovery fallback supplies endpoints but does not add
   transport security; that stays the operator's responsibility.
 
+### Token lifecycle (rev. 2)
+
+- **Generation:** the daemon generates a per-task bearer token when it acquires the container
+  (or per incumbence) and injects it via `containerEnv` as `STATE_STORE_TOKEN`. A single token
+  may cover a task's container lifetime.
+- **Lifetime:** tied to the task + container grace period; rotated on a new container acquisition
+  for the same task; a token for a released container is invalidated.
+- **Validation:** a gRPC interceptor on the State Store server validates the token against the
+  daemon's issued-token set; missing/unknown/expired → `codes.Unauthenticated`. The token is
+  carried in gRPC metadata, never in a URL.
+
+### Fail-closed on non-loopback (rev. 2)
+
+If `[services.state].target` points to a non-loopback address and **neither** TLS **nor** a token
+is configured, the State Store client (daemon or agent) **fails closed** — it refuses to
+start/dial rather than fall back to a plaintext, unauthenticated remote connection. This mirrors
+the gateway's `--listen`/`--enable-cors-header` confinement caveat and prevents a silent
+unauthenticated remote store. The loopback + token default is the only path that starts without
+an explicit operator decision.
+
 ---
 
 ## 10. Mode / config shape
@@ -478,7 +545,9 @@ stated explicitly rather than left implicit.
    (`Update`/`Transition`/`InsertEvent`) from NATS JSON `storerpc` to `staterpc.Client` over
    gRPC, using the §6 handoff. The daemon serves the gRPC `StateStore` server **in-process
    (multiplexed)** first so the agent has a gRPC target before the standalone binary exists
-   (PRD §3 "multiplexed in-process is the migration default"). Flip the agent's
+   (PRD §3 "multiplexed in-process is the migration default"). Bind the in-process listener and
+   inject `STATE_STORE_URL`/`STATE_STORE_TOKEN` per task (see §6 "Operational specifics"). Also
+   land the `RecordDispatch` `*sql.Tx` drop (see §5) in the same span. Flip the agent's
    `Transport.Store` to a gRPC client once `STATE_STORE_URL` is injected.
 4. **Delete NATS `storerpc` only after the agent is fully on gRPC** — delete `internal/storerpc`
    (Server, Client, subjects `archie.store.update|transition|insert_event`), the
@@ -503,6 +572,19 @@ stated explicitly rather than left implicit.
 
 ## 13. Decisions recorded (for the review trail)
 
+- **`internal/store` is a transitional compatibility location** (target
+  `internal/infrastructure/store`), not the final infrastructure boundary. The producer-owned
+  daemon/webui store surfaces live there now but may relocate with the implementation.
+- **In-process listener + token lifecycle:** the daemon binds the in-process State Store
+  listener, selects the Docker-bridge host-gateway address (reusing the embedded-NATS
+  host-gateway resolution), and injects `STATE_STORE_URL`/`STATE_STORE_TOKEN` per task via
+  `containerEnv`. Token is per-incumbence (task + container grace period) and validated by a
+  gRPC interceptor → `codes.Unauthenticated` on missing/unknown/expired. Non-loopback targets
+  fail closed without TLS or a token.
+- **Acceptance criterion is NOT yet met.** `internal/domain/workflow` still imports
+  `internal/store` (workflow files + tests), `store.WorkflowStore` is still in `TaskContext`,
+  and the NATS `storerpc` path is still wired. §12 step 2 and `.4.2` remove these; this
+  document does not imply the criterion is already satisfied.
 - **Ownership split:** domain-facing workflow contract is **consumer-owned** in the domain
   (`workflow.Store` + `workflow.Task`/`Status`/`Source`, per dependency rules #2 and #7);
   daemon/webui store surfaces stay **producer-owned** in `internal/store`. `store.WorkflowStore`
