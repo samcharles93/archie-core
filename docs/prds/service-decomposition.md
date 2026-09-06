@@ -184,6 +184,15 @@ Verified couplings that this decomposition must eliminate:
    contract at a time, stand up the store service, split the file only on
    evidence):
    `docs/inspiration/service-decomposition-open-questions-research-2026-09-05.md#4`.
+
+   **RATIFIED (2026-09-06, beads archie-core-8cda.4.1).** The authoritative
+   contract boundary & transport design for this is now fixed in
+   `docs/prds/state-store-contract.md` (one `StateStore` gRPC service, 40
+   RPCs, producer-owned contracts, `RecordDispatch` drops `*sql.Tx`, `Close`
+   off-wire, structured gRPC error codes, presence-based
+   `[services.state].target` defaulting local, migration order
+   `WorkflowStore -> archie-state-store -> Capture -> Mapping -> Binding ->
+   TaskStore`). `.4.2` and `.4.3` implement against that doc.
 5. **Helm chart / Operator ownership.** Net-new work with no existing
    analog in this repository (`deployments/` currently holds TOML profiles
    and a `docker-compose.yml`, not Kubernetes manifests). Scoping not yet
