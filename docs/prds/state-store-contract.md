@@ -10,7 +10,7 @@ for a daemon-local-only consumer) instead of the contradictory loopback-vs-bridg
 This is the pre-implementation design document that Phase 2 subtasks `.4.2` (generalize
 `storerpc` as the State Store gRPC contract) and `.4.3` (stand up `archie-state-store`)
 implement against.
-**Date:** 2026-09-06 (rev. 2)
+**Date:** 2026-09-06 (rev. 2c)
 **Beads milestone:** archie-core-8cda.4.1
 **Parent:** `docs/prds/service-decomposition.md` (open-question Q4 **RESOLVED**)
 
@@ -57,7 +57,7 @@ serves. Composition picks local vs. remote by the presence of `[services.state].
 extracted), which is the PRD §3 posture; it differs from the gateway's remote-default only
 because the gateway is already a separate deployment and the State Store is not.
 
-> **Contract-ownership fork, decided (rev. 2 — resolves the domain contradiction).**
+> **Contract-ownership fork, decided (rev. 2c — resolves the domain contradiction).**
 > Ownership splits by the consumer's *layer*, per the dependency contract's rule #2
 > ("a domain defines the smallest interfaces required to perform its work") and rule #7
 > ("database rows … MUST NOT leak into domain models"):
@@ -81,7 +81,7 @@ contract is consumer-owned (in the domain), while the daemon/webui store surface
 implementation satisfies `workflow.Store`. This is the single decision that makes the whole
 Phase 2 acceptance criterion and the architecture's rules simultaneously satisfiable.
 
-> **`internal/store` is a TRANSITIONAL compatibility location (rev. 2).** The repository's target
+> **`internal/store` is a TRANSITIONAL compatibility location (rev. 2c).** The repository's target
 > architecture (`docs/architecture/dependencies-and-contracts.md`, `organisation.md`) places
 > persistence implementations under `internal/infrastructure/<capability>`. `internal/store`
 > holding the task/capture/mapping/binding implementation and ALSO being the home of the
@@ -385,7 +385,7 @@ conventions (a `GoogleRPCStatus` with `NotFound` is an *error*, which would wron
 callers that expect `(nil, nil)`). Implement `found` as an explicit boolean field on read
 responses, and map `(nil,nil)` ⇄ `found=false` + `OK`.
 
-### Error-detail sanitisation (rev. 2)
+### Error-detail sanitisation (rev. 2c)
 
 Full internal error messages must **not** be placed in gRPC `details` for remote callers. SQL
 paths, provider/forge details, secrets, and stack traces are sensitive internals. The rule:
@@ -431,7 +431,7 @@ The gateway precedent is loopback-only, unauthenticated gRPC. The State Store ho
 crown-jewel `archie.db` (task/event/capture/mapping/binding data), so its boundary must be
 stated explicitly rather than left implicit.
 
-**The State Store's equivalent boundary (rev. 2):**
+**The State Store's equivalent boundary (rev. 2c):**
 
 - **Listener topology — single rule (rev. 2c).** One in-process listener; its bind address is
   chosen by the consumer set, never both at once:
@@ -459,7 +459,7 @@ stated explicitly rather than left implicit.
   confirmation caveat. The NATS-KV discovery fallback supplies endpoints but does not add
   transport security; that stays the operator's responsibility.
 
-### Token lifecycle (rev. 2)
+### Token lifecycle (rev. 2c)
 
 - **Generation:** the daemon generates a per-task bearer token when it acquires the container
   (or per incumbence) and injects it via `containerEnv` as `STATE_STORE_TOKEN`. A single token
@@ -470,7 +470,7 @@ stated explicitly rather than left implicit.
   daemon's issued-token set; missing/unknown/expired → `codes.Unauthenticated`. The token is
   carried in gRPC metadata, never in a URL.
 
-### Fail-closed on non-loopback (rev. 2)
+### Fail-closed on non-loopback (rev. 2c)
 
 If `[services.state].target` points to a non-loopback address and **neither** TLS **nor** a token
 is configured, the State Store client (daemon or agent) **fails closed** — it refuses to

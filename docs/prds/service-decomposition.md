@@ -200,7 +200,7 @@ Verified couplings that this decomposition must eliminate:
 
    **RATIFIED (2026-09-06, beads archie-core-8cda.4.1).** The authoritative
    contract boundary & transport design for this is fixed in
-   `docs/prds/state-store-contract.md` (rev. 2): one `StateStore` gRPC service,
+   `docs/prds/state-store-contract.md` (rev. 2c): one `StateStore` gRPC service,
    40 RPCs; **ownership split** — consumer-owned `workflow.Store` +
    `workflow.Task`/`Status`/`Source` in the workflow domain (dependency rules
    #2/#7), producer-owned daemon/webui store surfaces in `internal/store`;
