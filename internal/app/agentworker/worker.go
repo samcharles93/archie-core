@@ -12,7 +12,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/agentgit"
 	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
 	"github.com/samcharles93/archie-core/internal/storage"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 )
 
@@ -41,7 +40,7 @@ type workerTransport interface {
 	EventPublisher() agentexec.EventPublisher
 	SubscribeTasks(context.Context, int64, agentnats.TaskHandler, *slog.Logger) (agentnats.Subscription, error)
 	Forger(string, time.Duration) workflow.Forger
-	Store(time.Duration) store.WorkflowStore
+	Store(time.Duration) workflow.Store
 	Trees(string, string, time.Duration) agentnats.RemoteTrees
 }
 
@@ -122,7 +121,7 @@ func run(ctx context.Context, settings Settings, log *slog.Logger, dependencies 
 
 type taskServiceTransport interface {
 	Forger(string, time.Duration) workflow.Forger
-	Store(time.Duration) store.WorkflowStore
+	Store(time.Duration) workflow.Store
 	Trees(string, string, time.Duration) agentnats.RemoteTrees
 	EventPublisher() agentexec.EventPublisher
 }

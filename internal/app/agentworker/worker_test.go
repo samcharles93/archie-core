@@ -12,7 +12,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 type workerPublisher struct{ messages *[][]byte }
@@ -74,7 +73,7 @@ func (t *workerTransportStub) SubscribeTasks(_ context.Context, taskID int64, _ 
 
 func (*workerTransportStub) Forger(string, time.Duration) workflow.Forger { return nil }
 
-func (*workerTransportStub) Store(time.Duration) store.WorkflowStore { return nil }
+func (*workerTransportStub) Store(time.Duration) workflow.Store { return nil }
 
 func (*workerTransportStub) Trees(string, string, time.Duration) agentnats.RemoteTrees { return nil }
 

@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // Reviewer runs an adversarial review of a code snapshot in its own
@@ -45,7 +43,7 @@ const reviewDetailBytes = 4000
 
 // StageReview runs the adversarial self-review stage. It is a no-op unless
 // Repo.ReviewEnabled is true. A surviving confirmed error-level finding, or
-// a review that failed to run at all, parks the task (store.StatusParked)
+// a review that failed to run at all, parks the task (StatusParked)
 // with the findings in Detail and stops the workflow before StageOpenPR;
 // a clean pass, or only warn/plausible findings, leaves Outcome unset so
 // the workflow proceeds.
@@ -56,7 +54,7 @@ func StageReview() Stage {
 		}
 		if tc.Reviewer == nil {
 			tc.Outcome = Outcome{
-				Status: store.StatusParked,
+				Status: StatusParked,
 				Detail: "adversarial review is enabled (review_enabled) but no reviewer is configured",
 			}
 			return nil
@@ -67,7 +65,7 @@ func StageReview() Stage {
 			return fmt.Errorf("review: %w", err)
 		}
 		if !report.Passed() {
-			tc.Outcome = Outcome{Status: store.StatusParked, Detail: renderReviewDetail(report)}
+			tc.Outcome = Outcome{Status: StatusParked, Detail: renderReviewDetail(report)}
 		}
 		return nil
 	}}

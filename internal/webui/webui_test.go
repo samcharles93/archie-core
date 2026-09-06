@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/store"
 )
@@ -54,7 +55,7 @@ type stubStore struct {
 	requeueErr       error
 }
 
-func (s *stubStore) TaskByID(ctx context.Context, id int64) (*store.Task, error) {
+func (s *stubStore) TaskByID(ctx context.Context, id int64) (*workflow.Task, error) {
 	if s.taskByIDErr != nil {
 		return nil, s.taskByIDErr
 	}
@@ -210,7 +211,7 @@ func TestHandleTasks(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body)
 	}
-	var got []store.Task
+	var got []workflow.Task
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}

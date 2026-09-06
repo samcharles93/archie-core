@@ -18,6 +18,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
@@ -76,7 +77,7 @@ func TestCleanupExpiredStorageUsesConfiguredTTL(t *testing.T) {
 func TestOpenTaskLogOpensAndClosesTheRightSink(t *testing.T) {
 	reg := logging.NewTaskRegistry(t.TempDir(), logging.NewFeed(10), logging.TaskSinkOptions{})
 	d := &Daemon{TaskLogs: reg, Log: slog.New(slog.DiscardHandler)}
-	task := &store.Task{ID: 5, Attempt: 2}
+	task := &workflow.Task{ID: 5, Attempt: 2}
 
 	closeFn := d.openTaskLog(task)
 	if ok := reg.Write(5, logging.Entry{Message: "x"}); !ok {
@@ -134,7 +135,7 @@ func TestProcessParksWhenManagedWorkerCapabilityIsUnavailable(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.Status != store.StatusParked {
+			if got.Status != workflow.StatusParked {
 				t.Fatalf("task status = %q, want parked", got.Status)
 			}
 			if got.ParkReason != tt.wantReason {
@@ -184,8 +185,8 @@ func TestTaskDispatcherEnforcesMaxConcurrency(t *testing.T) {
 	var peak atomic.Int32
 
 	for i := 1; i <= 3; i++ {
-		task := &store.Task{Owner: "acme", Repo: "repo-" + string(rune('0'+i))}
-		dispatcher.Submit(context.Background(), task, func(context.Context, *store.Task) {
+		task := &workflow.Task{Owner: "acme", Repo: "repo-" + string(rune('0'+i))}
+		dispatcher.Submit(context.Background(), task, func(context.Context, *workflow.Task) {
 			n := active.Add(1)
 			for {
 				old := peak.Load()
@@ -234,14 +235,14 @@ func TestTaskDispatcherSerializesTasksForSameRepo(t *testing.T) {
 	secondStarted := make(chan struct{})
 	otherRepoStarted := make(chan struct{})
 
-	dispatcher.Submit(context.Background(), &store.Task{Owner: "acme", Repo: "widget"}, func(context.Context, *store.Task) {
+	dispatcher.Submit(context.Background(), &workflow.Task{Owner: "acme", Repo: "widget"}, func(context.Context, *workflow.Task) {
 		close(firstStarted)
 		<-releaseFirst
 	})
-	dispatcher.Submit(context.Background(), &store.Task{Owner: "acme", Repo: "widget"}, func(context.Context, *store.Task) {
+	dispatcher.Submit(context.Background(), &workflow.Task{Owner: "acme", Repo: "widget"}, func(context.Context, *workflow.Task) {
 		close(secondStarted)
 	})
-	dispatcher.Submit(context.Background(), &store.Task{Owner: "acme", Repo: "gizmo"}, func(context.Context, *store.Task) {
+	dispatcher.Submit(context.Background(), &workflow.Task{Owner: "acme", Repo: "gizmo"}, func(context.Context, *workflow.Task) {
 		close(otherRepoStarted)
 	})
 
@@ -274,18 +275,18 @@ func TestTaskDispatcherSerializesTasksForSameRepo(t *testing.T) {
 func TestTaskDispatcherRunsConcurrentReposInParallel(t *testing.T) {
 	t.Parallel()
 
-	dispatcher := newTaskDispatcher(3, func(task *store.Task) bool {
+	dispatcher := newTaskDispatcher(3, func(task *workflow.Task) bool {
 		return task.Owner == "acme" && task.Repo == "widget"
 	})
 	releaseFirst := make(chan struct{})
 	firstStarted := make(chan struct{})
 	secondStarted := make(chan struct{})
 
-	dispatcher.Submit(context.Background(), &store.Task{Owner: "acme", Repo: "widget"}, func(context.Context, *store.Task) {
+	dispatcher.Submit(context.Background(), &workflow.Task{Owner: "acme", Repo: "widget"}, func(context.Context, *workflow.Task) {
 		close(firstStarted)
 		<-releaseFirst
 	})
-	dispatcher.Submit(context.Background(), &store.Task{Owner: "acme", Repo: "widget"}, func(context.Context, *store.Task) {
+	dispatcher.Submit(context.Background(), &workflow.Task{Owner: "acme", Repo: "widget"}, func(context.Context, *workflow.Task) {
 		close(secondStarted)
 	})
 
@@ -309,7 +310,7 @@ func TestTaskDispatcherWaitsForRunningTasks(t *testing.T) {
 
 	dispatcher := newTaskDispatcher(1, nil)
 	release := make(chan struct{})
-	dispatcher.Submit(context.Background(), &store.Task{Owner: "acme", Repo: "widget"}, func(context.Context, *store.Task) {
+	dispatcher.Submit(context.Background(), &workflow.Task{Owner: "acme", Repo: "widget"}, func(context.Context, *workflow.Task) {
 		<-release
 	})
 
@@ -342,13 +343,13 @@ func TestDaemonAllowConcurrentForReadsRepoConfig(t *testing.T) {
 		}),
 	}
 
-	if !d.allowConcurrentForTask(&store.Task{Owner: "acme", Repo: "widget"}) {
+	if !d.allowConcurrentForTask(&workflow.Task{Owner: "acme", Repo: "widget"}) {
 		t.Fatal("expected allow_concurrent=true repo to report concurrent-allowed")
 	}
-	if d.allowConcurrentForTask(&store.Task{Owner: "acme", Repo: "todo"}) {
+	if d.allowConcurrentForTask(&workflow.Task{Owner: "acme", Repo: "todo"}) {
 		t.Fatal("expected repo without allow_concurrent to report false")
 	}
-	if d.allowConcurrentForTask(&store.Task{Owner: "acme", Repo: "unknown"}) {
+	if d.allowConcurrentForTask(&workflow.Task{Owner: "acme", Repo: "unknown"}) {
 		t.Fatal("expected unknown repo to report false")
 	}
 }
@@ -374,12 +375,12 @@ func TestAllowConcurrentForTaskPrefersOwningIdentityRepo(t *testing.T) {
 		},
 	}
 
-	if !d.allowConcurrentForTask(&store.Task{Owner: "acme", Repo: "shared", Identity: "archie"}) {
+	if !d.allowConcurrentForTask(&workflow.Task{Owner: "acme", Repo: "shared", Identity: "archie"}) {
 		t.Fatal("identity-owned task must use the identity's repo allow_concurrent")
 	}
 	// A root-owned (identity-less) task must NOT inherit the identity's
 	// opt-in: it resolves through the root repo list.
-	if d.allowConcurrentForTask(&store.Task{Owner: "acme", Repo: "shared"}) {
+	if d.allowConcurrentForTask(&workflow.Task{Owner: "acme", Repo: "shared"}) {
 		t.Fatal("identity-less task leaked the identity's allow_concurrent")
 	}
 }
@@ -447,7 +448,7 @@ func TestContainerEnvUsesOnlyOwningIdentityProviderCredential(t *testing.T) {
 		}},
 	}
 
-	got := d.containerEnv(&store.Task{Identity: "worker"})
+	got := d.containerEnv(&workflow.Task{Identity: "worker"})
 	if !slices.Contains(got, "WORKER_PROVIDER_KEY=worker-secret") {
 		t.Fatalf("identity credential missing from container env: %q", got)
 	}
@@ -495,7 +496,7 @@ func daemonWithNATS(t *testing.T) (*Daemon, *store.Store, *arnats.Client) {
 
 type fixedGrantIssuer struct{ token string }
 
-func (g fixedGrantIssuer) Issue(*store.Task) (string, func(), error) {
+func (g fixedGrantIssuer) Issue(*workflow.Task) (string, func(), error) {
 	return g.token, func() {}, nil
 }
 
@@ -541,8 +542,8 @@ func TestRunViaAgentParksOnRequestFailure(t *testing.T) {
 	if err != nil || got == nil {
 		t.Fatalf("TaskByIssue: (%+v, %v)", got, err)
 	}
-	if got.Status != store.StatusParked {
-		t.Fatalf("status = %q, want %q", got.Status, store.StatusParked)
+	if got.Status != workflow.StatusParked {
+		t.Fatalf("status = %q, want %q", got.Status, workflow.StatusParked)
 	}
 	if !strings.Contains(got.ParkReason, "taskrun request failed") {
 		t.Errorf("ParkReason = %q, want taskrun request failure", got.ParkReason)
@@ -585,7 +586,7 @@ func TestRunViaAgentRetriesUntilResponderAppears(t *testing.T) {
 			return
 		}
 		sub, err := coreConn.Subscribe(agentnats.SubjectForTask(task.ID), func(msg *natsio.Msg) {
-			data, _ := json.Marshal(taskrun.Response{Status: store.StatusPROpen})
+			data, _ := json.Marshal(taskrun.Response{Status: workflow.StatusPROpen})
 			_ = msg.Respond(data)
 		})
 		if err != nil {
@@ -601,7 +602,7 @@ func TestRunViaAgentRetriesUntilResponderAppears(t *testing.T) {
 	if err != nil || got == nil {
 		t.Fatalf("TaskByIssue: (%+v, %v)", got, err)
 	}
-	if got.Status == store.StatusParked {
+	if got.Status == workflow.StatusParked {
 		t.Fatal("runViaAgent parked a task whose responder appeared within the retry window")
 	}
 }
@@ -660,8 +661,8 @@ func TestRunViaAgentParksOnRunError(t *testing.T) {
 	if err != nil || got == nil {
 		t.Fatalf("TaskByIssue: (%+v, %v)", got, err)
 	}
-	if got.Status != store.StatusParked {
-		t.Fatalf("status = %q, want %q", got.Status, store.StatusParked)
+	if got.Status != workflow.StatusParked {
+		t.Fatalf("status = %q, want %q", got.Status, workflow.StatusParked)
 	}
 	if got.ParkReason != "taskrun run failed: registry build failed" {
 		t.Errorf("ParkReason = %q, want worker run failure", got.ParkReason)
@@ -690,7 +691,7 @@ func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
 		var req taskrun.Request
 		_ = json.Unmarshal(msg.Data, &req)
 		received <- req
-		data, _ := json.Marshal(taskrun.Response{Status: store.StatusPROpen})
+		data, _ := json.Marshal(taskrun.Response{Status: workflow.StatusPROpen})
 		_ = msg.Respond(data)
 	})
 	if err != nil {
@@ -728,7 +729,7 @@ func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
 	if err != nil || got == nil {
 		t.Fatalf("TaskByIssue: (%+v, %v)", got, err)
 	}
-	if got.Status == store.StatusParked {
+	if got.Status == workflow.StatusParked {
 		t.Fatal("runViaAgent parked a task that succeeded")
 	}
 }
@@ -755,7 +756,7 @@ func TestRunViaAgentObservesReportedAgentVersion(t *testing.T) {
 
 	sub, err := mustCoreConn(t, busClient).Subscribe(agentnats.SubjectForTask(task.ID), func(msg *natsio.Msg) {
 		data, _ := json.Marshal(taskrun.Response{
-			Status: store.StatusPROpen, AgentVersion: "1.9.11", AgentInstallType: "container",
+			Status: workflow.StatusPROpen, AgentVersion: "1.9.11", AgentInstallType: "container",
 		})
 		_ = msg.Respond(data)
 	})
@@ -791,7 +792,7 @@ func TestRunViaAgentIgnoresEmptyAgentVersion(t *testing.T) {
 	}
 
 	sub, err := mustCoreConn(t, busClient).Subscribe(agentnats.SubjectForTask(task.ID), func(msg *natsio.Msg) {
-		data, _ := json.Marshal(taskrun.Response{Status: store.StatusPROpen})
+		data, _ := json.Marshal(taskrun.Response{Status: workflow.StatusPROpen})
 		_ = msg.Respond(data)
 	})
 	if err != nil {
@@ -1035,7 +1036,7 @@ func TestConfigForUsesIdentityConfigAndProvider(t *testing.T) {
 		}},
 	}
 
-	cfg := d.configFor(&store.Task{Identity: "worker"})
+	cfg := d.configFor(&workflow.Task{Identity: "worker"})
 	if cfg.Models["builder"] != "worker/model" {
 		t.Fatalf("builder model = %q", cfg.Models["builder"])
 	}
@@ -1100,16 +1101,16 @@ func twoIdentityDaemon(t *testing.T) (d *Daemon, s *store.Store, rootFg, archieF
 func TestIdentityForResolvesOwningRunner(t *testing.T) {
 	d, _, _, _, _ := twoIdentityDaemon(t)
 
-	if id := d.identityFor(&store.Task{Identity: "archie"}); id == nil || id.Name != "archie" {
+	if id := d.identityFor(&workflow.Task{Identity: "archie"}); id == nil || id.Name != "archie" {
 		t.Fatalf("identityFor(archie) = %v, want archie runner", id)
 	}
-	if id := d.identityFor(&store.Task{Identity: "winter"}); id == nil || id.Name != "winter" {
+	if id := d.identityFor(&workflow.Task{Identity: "winter"}); id == nil || id.Name != "winter" {
 		t.Fatalf("identityFor(winter) = %v, want winter runner", id)
 	}
-	if id := d.identityFor(&store.Task{Identity: ""}); id != nil {
+	if id := d.identityFor(&workflow.Task{Identity: ""}); id != nil {
 		t.Fatalf("identityFor(\"\") = %v, want nil (legacy single-identity path)", id)
 	}
-	if id := d.identityFor(&store.Task{Identity: "nonexistent"}); id != nil {
+	if id := d.identityFor(&workflow.Task{Identity: "nonexistent"}); id != nil {
 		t.Fatalf("identityFor(nonexistent) = %v, want nil", id)
 	}
 }
@@ -1137,7 +1138,7 @@ func TestRepoForPrefersOwningIdentityRepoList(t *testing.T) {
 	identityOnlyRepo := config.Repo{Owner: "acme", Name: "identity-only"}
 	d.Identities[0].Repos = append(d.Identities[0].Repos, identityOnlyRepo)
 
-	got, ok := d.repoFor(&store.Task{Owner: "acme", Repo: "identity-only", Identity: "archie"})
+	got, ok := d.repoFor(&workflow.Task{Owner: "acme", Repo: "identity-only", Identity: "archie"})
 	if !ok {
 		t.Fatal("repoFor did not find an identity-only repo via the owning identity's repo list")
 	}
@@ -1146,7 +1147,7 @@ func TestRepoForPrefersOwningIdentityRepoList(t *testing.T) {
 	}
 
 	// The same repo name must NOT resolve for an unrelated identity.
-	if _, ok := d.repoFor(&store.Task{Owner: "acme", Repo: "identity-only", Identity: "winter"}); ok {
+	if _, ok := d.repoFor(&workflow.Task{Owner: "acme", Repo: "identity-only", Identity: "winter"}); ok {
 		t.Fatal("repoFor leaked archie's identity-only repo to winter")
 	}
 }
@@ -1183,7 +1184,7 @@ func TestMaintainAndDrainReconcilesPRsInMultiIdentityMode(t *testing.T) {
 	if err := s.Update(ctx, task); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Transition(ctx, task.ID, store.StatusRunning, store.StatusPROpen, ""); err != nil {
+	if err := s.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusPROpen, ""); err != nil {
 		t.Fatal(err)
 	}
 	archieFg.prStates = map[int]string{42: "merged"}
@@ -1194,8 +1195,8 @@ func TestMaintainAndDrainReconcilesPRsInMultiIdentityMode(t *testing.T) {
 	if err != nil || got == nil {
 		t.Fatalf("TaskByID = (%+v, %v)", got, err)
 	}
-	if got.Status != store.StatusMerged {
-		t.Fatalf("status = %q, want %q (multi-identity reconcile never ran)", got.Status, store.StatusMerged)
+	if got.Status != workflow.StatusMerged {
+		t.Fatalf("status = %q, want %q (multi-identity reconcile never ran)", got.Status, workflow.StatusMerged)
 	}
 	if len(archieFg.closedIssues) != 1 {
 		t.Fatalf("CloseIssue calls = %d, want 1 (issue must be closed on merge)", len(archieFg.closedIssues))
@@ -1372,7 +1373,7 @@ func TestReconcilePRsClosesTheIssueOnMerge(t *testing.T) {
 			if err := s.Update(ctx, task); err != nil {
 				t.Fatal(err)
 			}
-			if err := s.Transition(ctx, task.ID, store.StatusRunning, store.StatusPROpen, ""); err != nil {
+			if err := s.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusPROpen, ""); err != nil {
 				t.Fatal(err)
 			}
 			fg.prStates = map[int]string{7: tc.prState}
@@ -1418,7 +1419,7 @@ func TestReconcilePRsSkipsChatTasks(t *testing.T) {
 	if err := s.Update(ctx, task); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Transition(ctx, task.ID, store.StatusRunning, store.StatusPROpen, ""); err != nil {
+	if err := s.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusPROpen, ""); err != nil {
 		t.Fatal(err)
 	}
 	fg.prStates = map[int]string{8: "merged"}

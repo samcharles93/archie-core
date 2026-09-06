@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
@@ -48,7 +47,7 @@ func gitRepoWithOriginRef(t *testing.T, base string) string {
 func newYaegiGateTaskContext(t *testing.T, dir string) *TaskContext {
 	t.Helper()
 	return &TaskContext{
-		Task:  &store.Task{ID: 1, Owner: "acme", Repo: "todo", IssueNumber: 42},
+		Task:  &Task{ID: 1, Owner: "acme", Repo: "todo", IssueNumber: 42},
 		Repo:  config.Repo{Owner: "acme", Name: "todo", Base: "main"},
 		Trees: &worktree.Manager{WorkDir: t.TempDir()},
 		Dir:   dir,

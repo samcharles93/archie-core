@@ -7,11 +7,10 @@ import (
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 func TestRouteDoesNotSilentlyReplaceAnAdmittedWorkflow(t *testing.T) {
-	task := &store.Task{Workflow: "skill-review"}
+	task := &Task{Workflow: "skill-review"}
 	wf := Route(task, Registry{"implement": Implement()})
 	if wf.Name != "none" || len(wf.Stages) != 1 || wf.Stages[0].Name != "fail" {
 		t.Fatalf("Route() = %#v, want explicit failure workflow", wf)
@@ -23,7 +22,7 @@ func TestRouteDoesNotSilentlyReplaceAnAdmittedWorkflow(t *testing.T) {
 // chat-spawned task) with no explicit workflow must reach triage, not the
 // heaviest workflow, when triage is registered.
 func TestRoutePrefersTriageOverImplementWhenNoLabelMatches(t *testing.T) {
-	task := &store.Task{}
+	task := &Task{}
 	wf := Route(task, Registry{"implement": Implement(), "triage": Triage()})
 	if wf.Name != "triage" {
 		t.Fatalf("Route() = %q, want %q", wf.Name, "triage")
@@ -34,7 +33,7 @@ func TestRoutePrefersTriageOverImplementWhenNoLabelMatches(t *testing.T) {
 // compatibility: a registry without a "triage" entry must behave exactly
 // as it did before triage existed.
 func TestRouteFallsBackToImplementWhenTriageIsNotRegistered(t *testing.T) {
-	task := &store.Task{}
+	task := &Task{}
 	wf := Route(task, Registry{"implement": Implement()})
 	if wf.Name != "implement" {
 		t.Fatalf("Route() = %q, want %q", wf.Name, "implement")
@@ -45,7 +44,7 @@ func TestRouteFallsBackToImplementWhenTriageIsNotRegistered(t *testing.T) {
 // preferred, free signal: a labeled task never pays for a triage
 // classification call even when triage is registered.
 func TestRouteLabelMatchStillWinsOverTriage(t *testing.T) {
-	task := &store.Task{Labels: "bug"}
+	task := &Task{Labels: "bug"}
 	wf := Route(task, Registry{"tdd": TDD(), "triage": Triage(), "implement": Implement()})
 	if wf.Name != "tdd" {
 		t.Fatalf("Route() = %q, want %q", wf.Name, "tdd")
@@ -68,7 +67,7 @@ func TestLoadKindWorkflowsYAMLOverridesDefaultBinding(t *testing.T) {
 	SetKindWorkflows(kw)
 	t.Cleanup(func() { SetKindWorkflows(nil) })
 
-	task := &store.Task{Labels: "bug"}
+	task := &Task{Labels: "bug"}
 	wf := Route(task, Registry{"tdd": TDD(), "feasibility": Feasibility()})
 	if wf.Name != "feasibility" {
 		t.Fatalf("Route() = %q, want %q (YAML override not applied)", wf.Name, "feasibility")
@@ -82,7 +81,7 @@ func TestSetKindWorkflowsNilRestoresDefaults(t *testing.T) {
 	SetKindWorkflows(KindWorkflows{workintake.KindBug: "feasibility"})
 	SetKindWorkflows(nil)
 
-	task := &store.Task{Labels: "bug"}
+	task := &Task{Labels: "bug"}
 	wf := Route(task, Registry{"tdd": TDD(), "feasibility": Feasibility()})
 	if wf.Name != "tdd" {
 		t.Fatalf("Route() = %q, want %q (default binding not restored)", wf.Name, "tdd")
@@ -134,7 +133,7 @@ func TestRouteWithArbitraryLabelDispatch(t *testing.T) {
 	SetLabelWorkflows(LabelWorkflows{"security": "security-review"})
 	t.Cleanup(func() { SetLabelWorkflows(nil) })
 
-	task := &store.Task{Labels: "security"}
+	task := &Task{Labels: "security"}
 	wf := Route(task, Registry{
 		"implement":       Implement(),
 		"security-review": Workflow{Name: "security-review", Stages: []Stage{{Name: "review", Run: func(_ context.Context, _ *TaskContext) error { return nil }}}},
@@ -219,7 +218,7 @@ func TestSetLabelWorkflowsNilRestoresDefaults(t *testing.T) {
 	SetLabelWorkflows(LabelWorkflows{"security": "security-review"})
 	SetLabelWorkflows(nil)
 
-	task := &store.Task{Labels: "security"}
+	task := &Task{Labels: "security"}
 	wf := Route(task, Registry{"implement": Implement(), "security-review": Workflow{Name: "security-review", Stages: []Stage{{Name: "review", Run: func(_ context.Context, _ *TaskContext) error { return nil }}}}})
 	if wf.Name != "implement" {
 		t.Fatalf("Route() = %q, want %q (label map not restored to empty)", wf.Name, "implement")
@@ -235,7 +234,7 @@ func TestRoutePrefersArbitraryLabelOverKind(t *testing.T) {
 	SetKindWorkflows(nil) // ensure defaults
 	t.Cleanup(func() { SetKindWorkflows(nil) })
 
-	task := &store.Task{Labels: "bug,security"}
+	task := &Task{Labels: "bug,security"}
 	wf := Route(task, Registry{
 		"tdd":             TDD(),
 		"implement":       Implement(),
@@ -271,7 +270,7 @@ func TestLoadPlaybookDirsMergesCleanBindings(t *testing.T) {
 		t.Fatalf("label binding not merged: %#v", lw)
 	}
 
-	task := &store.Task{Labels: "security"}
+	task := &Task{Labels: "security"}
 	wf := Route(task, Registry{
 		"implement":       Implement(),
 		"security-review": Workflow{Name: "security-review", Stages: []Stage{{Name: "review", Run: func(_ context.Context, _ *TaskContext) error { return nil }}}},

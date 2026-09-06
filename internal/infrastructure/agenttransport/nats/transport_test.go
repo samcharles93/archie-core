@@ -15,8 +15,8 @@ import (
 	natstest "github.com/nats-io/nats-server/v2/test"
 	natsio "github.com/nats-io/nats.go"
 
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/storerpc"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
@@ -110,7 +110,7 @@ func TestSubscribeTasksServesOnlyBootTaskSubject(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = subscription.Close() })
 
-	payload, err := json.Marshal(taskrun.Request{Task: &store.Task{ID: 42}, WorktreeGrant: "grant"})
+	payload, err := json.Marshal(taskrun.Request{Task: &workflow.Task{ID: 42}, WorktreeGrant: "grant"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +212,7 @@ func TestHandleTaskRejectsSubjectCorrelationErrors(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			payload, err := json.Marshal(taskrun.Request{Task: &store.Task{ID: test.requestID}, WorktreeGrant: "grant"})
+			payload, err := json.Marshal(taskrun.Request{Task: &workflow.Task{ID: test.requestID}, WorktreeGrant: "grant"})
 			if err != nil {
 				t.Fatal(err)
 			}

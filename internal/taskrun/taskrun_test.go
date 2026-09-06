@@ -6,18 +6,18 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 func TestRequestJSONRoundTrip(t *testing.T) {
 	req := Request{
-		Task: &store.Task{
+		Task: &workflow.Task{
 			ID:          1,
 			Owner:       "acme",
 			Repo:        "widget",
 			IssueNumber: 42,
 			Title:       "feat: thing",
-			Status:      store.StatusRunning,
+			Status:      workflow.StatusRunning,
 		},
 		Repo: config.Repo{Owner: "acme", Name: "widget", Base: "main"},
 		Cfg:  config.Config{DiffCapLines: 500}.ForTask(),
@@ -61,10 +61,10 @@ func TestRequestValidateRequiresPositiveTaskID(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "missing task", wantErr: true},
-		{name: "zero ID", request: Request{Task: &store.Task{}}, wantErr: true},
-		{name: "negative ID", request: Request{Task: &store.Task{ID: -1}}, wantErr: true},
-		{name: "missing worktree grant", request: Request{Task: &store.Task{ID: 1}}, wantErr: true},
-		{name: "valid request", request: Request{Task: &store.Task{ID: 1}, WorktreeGrant: "grant"}},
+		{name: "zero ID", request: Request{Task: &workflow.Task{}}, wantErr: true},
+		{name: "negative ID", request: Request{Task: &workflow.Task{ID: -1}}, wantErr: true},
+		{name: "missing worktree grant", request: Request{Task: &workflow.Task{ID: 1}}, wantErr: true},
+		{name: "valid request", request: Request{Task: &workflow.Task{ID: 1}, WorktreeGrant: "grant"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			err := test.request.Validate()
@@ -77,7 +77,7 @@ func TestRequestValidateRequiresPositiveTaskID(t *testing.T) {
 
 func TestResponseJSONRoundTrip(t *testing.T) {
 	resp := Response{
-		Task:   &store.Task{ID: 1, Status: store.StatusPROpen},
+		Task:   &workflow.Task{ID: 1, Status: workflow.StatusPROpen},
 		Status: "passed",
 	}
 	data, err := json.Marshal(resp)
@@ -88,7 +88,7 @@ func TestResponseJSONRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if got.Task == nil || got.Task.Status != store.StatusPROpen || got.Status != "passed" {
+	if got.Task == nil || got.Task.Status != workflow.StatusPROpen || got.Status != "passed" {
 		t.Fatalf("Response did not round-trip: %+v", got)
 	}
 }

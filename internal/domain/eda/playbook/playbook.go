@@ -217,8 +217,8 @@ type DispatchInput struct {
 	// TaskEnvelope.IdempotencyKey() value ("archie:owner/repo/number"), the
 	// stable identity available at the discovery/dispatch point (pollNATS and
 	// the webhook receiver both compute kind/labels from a TaskEnvelope before
-	// any store.Task row exists). It is NOT a store.Task.ID int64, which does
-	// not exist until the task is persisted.
+	// any workflow.Task row exists). It is NOT a workflow.Task.ID int64, which
+	// does not exist until the task is persisted.
 	TaskID string
 	// Event is the event payload exposed as `event` in CEL expressions. For
 	// a workflow-kind dispatch this carries the label/kind fields cheaply

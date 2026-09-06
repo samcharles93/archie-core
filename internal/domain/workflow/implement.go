@@ -23,7 +23,7 @@ import (
 //     be zero: the returned error carried only a status string, so a park
 //     reason like "go build ./... fails ... (status: failed)" gave no way to
 //     see the actual compiler error. It stays comfortably under the store's
-//     own park-reason cap (see internal/store's Task.ParkReason clip).
+//     own park-reason cap (see this package's Task.ParkReason clip).
 const (
 	baselineWarnLogBytes    = 2048
 	baselineMissionBytes    = 3000

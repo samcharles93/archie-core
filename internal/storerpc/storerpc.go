@@ -12,6 +12,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/natsrpc"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -26,7 +27,7 @@ const (
 
 // UpdateRequest mirrors store.TaskStore.Update's argument.
 type UpdateRequest struct {
-	Task *store.Task `json:"task"`
+	Task *workflow.Task `json:"task"`
 }
 
 // TransitionRequest mirrors store.TaskStore.Transition's arguments.
@@ -96,7 +97,7 @@ func (s *Server) reply(msg *nats.Msg, err error) {
 }
 
 // Client calls the storerpc Server from archie-agent's process.
-// It implements store.WorkflowStore (the narrow interface workflow stages
+// It implements workflow.Store (the narrow interface workflow stages
 // need  --  just Update + Transition), not the full store.TaskStore.
 type Client struct {
 	Conn    *nats.Conn
@@ -106,7 +107,7 @@ type Client struct {
 func (c *Client) rpc() *natsrpc.Client { return &natsrpc.Client{Conn: c.Conn, Timeout: c.Timeout} }
 
 // Update calls store.TaskStore.Update on the daemon over NATS request/reply.
-func (c *Client) Update(ctx context.Context, task *store.Task) error {
+func (c *Client) Update(ctx context.Context, task *workflow.Task) error {
 	resp, err := natsrpc.Call[Response](ctx, c.rpc(), SubjectUpdate, UpdateRequest{Task: task})
 	if err != nil {
 		return err
@@ -132,5 +133,5 @@ func (c *Client) InsertEvent(ctx context.Context, event events.Event) (int64, er
 	return resp.ID, resp.Err()
 }
 
-// Compile-time check: Client satisfies WorkflowStore.
-var _ store.WorkflowStore = (*Client)(nil)
+// Compile-time check: Client satisfies workflow.Store.
+var _ workflow.Store = (*Client)(nil)

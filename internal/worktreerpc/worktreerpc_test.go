@@ -16,7 +16,7 @@ import (
 	natssrv "github.com/nats-io/nats-server/v2/test"
 	"github.com/nats-io/nats.go"
 
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
@@ -196,7 +196,7 @@ func TestClientPushPublishesViaServer(t *testing.T) {
 	url := srv.ClientURL()
 
 	grants := NewGrants()
-	token, revoke, err := grants.Issue(&store.Task{ID: 1, Owner: "acme", Repo: "widget", IssueNumber: 1, Branch: branch})
+	token, revoke, err := grants.Issue(&workflow.Task{ID: 1, Owner: "acme", Repo: "widget", IssueNumber: 1, Branch: branch})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +261,7 @@ func TestSubjectFor(t *testing.T) {
 
 func TestGrantIsScopedAndRevocable(t *testing.T) {
 	grants := NewGrants()
-	token, revoke, err := grants.Issue(&store.Task{
+	token, revoke, err := grants.Issue(&workflow.Task{
 		ID: 1, Identity: "winter", Owner: "acme", Repo: "widget",
 		IssueNumber: 7, Branch: "feat/7-widget",
 	})
@@ -282,7 +282,7 @@ func TestGrantIsScopedAndRevocable(t *testing.T) {
 
 func TestGrantRejectsIncompleteTask(t *testing.T) {
 	grants := NewGrants()
-	for _, task := range []*store.Task{
+	for _, task := range []*workflow.Task{
 		nil,
 		{ID: 1, Owner: "../escape", Repo: "widget", IssueNumber: 7, Branch: "feat/7-widget"},
 		{ID: 1, Owner: "acme", Repo: "widget", IssueNumber: 7},
