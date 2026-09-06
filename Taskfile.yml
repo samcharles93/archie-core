@@ -108,7 +108,7 @@ tasks:
   dev:daemon:
     desc: archied only, live-reloading via air (prefer `task dev`)
     cmds:
-      - air
+      - air -build.args_bin="-config-overlay,deployments/dev.toml"
 
   dev:gateway:
     desc: archie-gateway only, no live-reload (prefer `task dev`)

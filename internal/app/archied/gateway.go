@@ -38,9 +38,6 @@ func RunGateway(ctx context.Context, options GatewayOptions) error {
 	if err := b.openStores(ctx); err != nil {
 		return err
 	}
-	if err := b.openChatSessions(ctx); err != nil {
-		return err
-	}
 	b.loadCatalog(ctx, options.Config)
 	url, token := b.cfg.NATS.URL, ""
 	var nc *natsio.Conn

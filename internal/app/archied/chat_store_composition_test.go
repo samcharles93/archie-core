@@ -7,22 +7,19 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/gateway"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
 
 func TestRemoteChatCompositionPreservesChannelTurnLedger(t *testing.T) {
 	cfg := config.Config{DBPath: filepath.Join(t.TempDir(), "tasks.db")}
 	cfg.Services.Gateway.Target = "127.0.0.1:1"
-	st, err := store.Open(t.Context(), cfg.DBPath)
-	if err != nil {
+	b := &boot{cfg: cfg, log: slog.Default(), web: &webui.Server{Cfg: config.NewHolder(cfg)}}
+	t.Cleanup(b.cleanup)
+	if err := b.openStores(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = st.Close() })
-	b := &boot{cfg: cfg, st: st, log: slog.Default(), web: &webui.Server{Cfg: config.NewHolder(cfg)}}
-	t.Cleanup(b.cleanup)
-	if err := b.openChatSessions(t.Context()); err != nil {
-		t.Fatal(err)
+	if b.chatSessionStore == nil {
+		t.Fatal("startup did not open the channel conversation store")
 	}
 	sessions := b.chatSessionStore
 	if err := b.setupLLMAndChat(); err != nil {
