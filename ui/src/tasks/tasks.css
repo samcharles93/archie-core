@@ -96,10 +96,25 @@
 }
 
 .task-action-error {
-  max-width: 180px;
-  color: var(--danger);
+  max-width: 220px;
   font-size: var(--text-xs);
   white-space: normal;
+}
+
+.task-action-error-refused {
+  color: var(--warn);
+}
+
+.task-action-error-broken {
+  color: var(--danger);
+}
+
+.task-action-error-session {
+  color: var(--warn);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex-wrap: wrap;
 }
 
 .task-decision {
