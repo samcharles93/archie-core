@@ -45,7 +45,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/overlay"
 	infraembedding "github.com/samcharles93/archie-core/internal/infrastructure/embedding"
 	"github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
-	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
 	infraMemory "github.com/samcharles93/archie-core/internal/infrastructure/memory"
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
 	"github.com/samcharles93/archie-core/internal/infrastructure/sessioncurator"
@@ -544,9 +543,8 @@ func (b *boot) setupLLMAndChat() error {
 		return err
 	}
 	b.addCleanup(cleanup)
-	if remote, ok := contract.(*gatewayrpc.Client); ok {
-		b.chatSessionStore = remote
-	}
+	// Channel routers execute turns locally and need the SQLite TurnLedger.
+	// The remote contract serves web chat; it must not replace their store.
 	b.web.Chat = &webui.ChatService{Contract: contract, Updates: b.updateService}
 	b.web.WorkRequests = b.chatTasks
 	b.setupReadinessProbes()
@@ -1016,7 +1014,7 @@ func (b *boot) setupCurators(ctx context.Context) {
 		// doesn't declare Manifest.Skills, per curator not per instance.
 		Skills: skillcurator.NewStore(skillsRoot),
 		// Conversations backs the session-memory curator; b.chatSessionStore
-		// is set by setupLLMAndChat, which Run() calls before setupCurators.
+		// is opened by openChatSessions before setupCurators.
 		Conversations: sessioncurator.NewAdapter(b.chatSessionStore, b.cfg.BotUser),
 		LLM:           curatorLLMRunner{rt: b.llm},
 		// b.chatModels.ActiveModel() is the same source sendChatTurn uses
