@@ -440,10 +440,10 @@ func (b *boot) wireWebStoreSurfaces() {
 	b.web.CaptureMaxEvents = cfg.Capture.MaxEvents
 	b.web.CaptureMaxBodyBytes = int64(cfg.Capture.MaxBodyBytes)
 	b.web.CaptureLimiter = webhookguard.NewRateLimiter(cfg.Capture.RatePerSecond, cfg.Capture.RateBurst, time.Now)
-	if ms, ok := b.st.(store.MappingStore); ok {
+	if ms, ok := b.stateStore.(store.MappingStore); ok {
 		b.web.Mappings = ms
 	} else {
-		log.Warn("mapping storage unavailable: task store does not implement MappingStore")
+		log.Warn("mapping storage unavailable: state store does not implement MappingStore")
 	}
 	if bs, ok := b.st.(store.BindingStore); ok {
 		b.web.Bindings = bs
@@ -1299,7 +1299,10 @@ func (b *boot) buildDaemon() {
 	// this point /api/config and the daemon can never disagree about the
 	// published config.
 	b.web.Cfg = b.d.Cfg
-	if ms, ok := b.st.(store.MappingStore); ok {
+	// Consumer mapping/binding surfaces resolve from b.stateStore (the State
+	// Store contract adapter): local by default, remote *staterpc.Client when
+	// [services.state].target is set. See docs/prds/state-store-contract.md §10.
+	if ms, ok := b.stateStore.(store.MappingStore); ok {
 		b.d.Mappings = ms
 	}
 	if bs, ok := b.st.(store.BindingStore); ok {
