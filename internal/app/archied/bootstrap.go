@@ -417,14 +417,17 @@ func (b *boot) setupObservability() {
 }
 
 // wireWebStoreSurfaces attaches the dashboard's optional storage surfaces.
-// openProductionTaskStore's declared return type is the narrow
-// store.TaskStore, so each wider surface (all implemented by the same
-// *store.Store) needs its own assertion here rather than a direct field
-// reuse. A store that does not implement one degrades that dashboard feature
-// with a warning instead of aborting bootstrap. The BindingStore/
-// BindingDispatcher/BindingTaskCreator split keeps each interface under the
-// interfacebloat limit. See docs/prds/event-capture-storage.md,
-// docs/prds/payload-field-mapping.md and docs/prds/webhook-intake-security.md.
+// b.stateStore is declared as the narrow store.TaskStore, so each wider
+// capture/mapping/binding surface needs its own assertion here rather than a
+// direct field reuse. b.stateStore is the local *store.Store by default and a
+// remote *staterpc.Client when [services.state].target is set, so the same
+// assertion resolves either adapter. A store that does not implement one
+// degrades that dashboard feature with a warning instead of aborting
+// bootstrap. The BindingStore/BindingDispatcher/BindingTaskCreator split
+// keeps each interface under the interfacebloat limit. See
+// docs/prds/event-capture-storage.md,
+// docs/prds/payload-field-mapping.md and docs/prds/webhook-intake-security.md, and
+// docs/prds/state-store-contract.md §10 for the adapter selection.
 func (b *boot) wireWebStoreSurfaces() {
 	cfg, log := b.cfg, b.log
 	// Capture/mapping/binding surfaces resolve from b.stateStore (the State
@@ -445,15 +448,15 @@ func (b *boot) wireWebStoreSurfaces() {
 	} else {
 		log.Warn("mapping storage unavailable: state store does not implement MappingStore")
 	}
-	if bs, ok := b.st.(store.BindingStore); ok {
+	if bs, ok := b.stateStore.(store.BindingStore); ok {
 		b.web.Bindings = bs
 	} else {
-		log.Warn("binding storage unavailable: task store does not implement BindingStore")
+		log.Warn("binding storage unavailable: state store does not implement BindingStore")
 	}
-	if bd, ok := b.st.(store.BindingDispatcher); ok {
+	if bd, ok := b.stateStore.(store.BindingDispatcher); ok {
 		b.web.BindingDispatcher = bd
 	} else {
-		log.Warn("binding dispatcher unavailable: task store does not implement BindingDispatcher")
+		log.Warn("binding dispatcher unavailable: state store does not implement BindingDispatcher")
 	}
 }
 
@@ -1305,13 +1308,13 @@ func (b *boot) buildDaemon() {
 	if ms, ok := b.stateStore.(store.MappingStore); ok {
 		b.d.Mappings = ms
 	}
-	if bs, ok := b.st.(store.BindingStore); ok {
+	if bs, ok := b.stateStore.(store.BindingStore); ok {
 		b.d.Bindings = bs
 	}
-	if bd, ok := b.st.(store.BindingDispatcher); ok {
+	if bd, ok := b.stateStore.(store.BindingDispatcher); ok {
 		b.d.BindingDispatcher = bd
 	}
-	if btc, ok := b.st.(store.BindingTaskCreator); ok {
+	if btc, ok := b.stateStore.(store.BindingTaskCreator); ok {
 		b.d.BindingTaskCreator = btc
 	}
 	b.setupForgeWebhook()
