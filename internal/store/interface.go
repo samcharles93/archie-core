@@ -10,6 +10,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 )
 
@@ -29,11 +30,11 @@ type TaskStore interface {
 // poll, chat spawn, drain loop) do not acquire a binding-specific shape.
 type TaskLifecycle interface {
 	EnqueueIssue(ctx context.Context, owner, repo string, number int, title, body, labels, identity string) (bool, error)
-	EnqueueChatTask(ctx context.Context, owner, repo, title, body, workflow, identity string) (*Task, error)
-	ClaimNext(ctx context.Context) (*Task, error)
-	ClaimByIssue(ctx context.Context, owner, repo string, number int) (*Task, error)
+	EnqueueChatTask(ctx context.Context, owner, repo, title, body, wf, identity string) (*workflow.Task, error)
+	ClaimNext(ctx context.Context) (*workflow.Task, error)
+	ClaimByIssue(ctx context.Context, owner, repo string, number int) (*workflow.Task, error)
 	Transition(ctx context.Context, taskID int64, from, to, detail string) error
-	Update(ctx context.Context, t *Task) error
+	Update(ctx context.Context, t *workflow.Task) error
 	Requeue(ctx context.Context, taskID int64, fromStatus, workflow string) error
 	RecoverStale(ctx context.Context) (int64, error)
 }
@@ -53,11 +54,11 @@ type TaskRetryer interface {
 
 // TaskQueries groups read-only task accessors.
 type TaskQueries interface {
-	TaskByIssue(ctx context.Context, owner, repo string, number int) (*Task, error)
-	TaskByID(ctx context.Context, taskID int64) (*Task, error)
-	OpenPRs(ctx context.Context) ([]Task, error)
+	TaskByIssue(ctx context.Context, owner, repo string, number int) (*workflow.Task, error)
+	TaskByID(ctx context.Context, taskID int64) (*workflow.Task, error)
+	OpenPRs(ctx context.Context) ([]workflow.Task, error)
 	ClearTerminalTasks(ctx context.Context) (int64, error)
-	Tasks(ctx context.Context, limit int) ([]Task, error)
+	Tasks(ctx context.Context, limit int) ([]workflow.Task, error)
 	StatusCounts(ctx context.Context) (map[string]int, error)
 	IncrementRetryCount(ctx context.Context, taskID int64) error
 }
@@ -71,15 +72,6 @@ type TaskEvents interface {
 	StageStats(ctx context.Context) ([]StageStat, error)
 	TokensByDay(ctx context.Context, days int) ([]DayTokens, error)
 	Close() error
-}
-
-// WorkflowStore is the narrow subset of TaskStore that workflow stages call
-// mid-run. *Store and storerpc.Client satisfy it.
-// This is the interface archie-agent uses via storerpc NATS proxy.
-type WorkflowStore interface {
-	Update(ctx context.Context, t *Task) error
-	Transition(ctx context.Context, taskID int64, from, to, detail string) error
-	InsertEvent(ctx context.Context, e events.Event) (int64, error)
 }
 
 // CaptureStore persists unbound inbound webhook captures -- events with no
@@ -144,14 +136,14 @@ type BindingDispatcher interface {
 // keeps the lifecycle surface narrow (8 methods, the interfacebloat limit)
 // and keeps the binding-specific shape on the binding interfaces.
 type BindingTaskCreator interface {
-	EnqueueBindingTask(ctx context.Context, owner, repo, title, body, workflow, identity string, bindingID int64, bindingVersion int) (*Task, error)
+	EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity string, bindingID int64, bindingVersion int) (*workflow.Task, error)
 }
 
 // Compile-time check: *Store satisfies TaskStore.
 var _ TaskStore = (*Store)(nil)
 
-// Compile-time check: *Store satisfies WorkflowStore.
-var _ WorkflowStore = (*Store)(nil)
+// Compile-time check: *Store satisfies workflow.Store.
+var _ workflow.Store = (*Store)(nil)
 
 // Compile-time check: *Store satisfies CaptureStore.
 var _ CaptureStore = (*Store)(nil)

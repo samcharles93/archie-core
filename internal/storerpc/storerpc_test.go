@@ -10,6 +10,7 @@ import (
 	natssrv "github.com/nats-io/nats-server/v2/test"
 	"github.com/nats-io/nats.go"
 
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/store"
 )
@@ -51,7 +52,7 @@ func newTestServer(t *testing.T) (*store.Store, *nats.Conn, *Client) {
 	return s, serverConn, client
 }
 
-func enqueueTask(t *testing.T, s *store.Store) *store.Task {
+func enqueueTask(t *testing.T, s *store.Store) *workflow.Task {
 	t.Helper()
 	ctx := context.Background()
 	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 1, "title", "body", "", ""); err != nil {
@@ -96,7 +97,7 @@ func TestClientTransitionPersistsViaServer(t *testing.T) {
 	s, _, client := newTestServer(t)
 	task := enqueueTask(t, s)
 
-	if err := client.Transition(context.Background(), task.ID, store.StatusRunning, store.StatusPROpen, "opened PR"); err != nil {
+	if err := client.Transition(context.Background(), task.ID, workflow.StatusRunning, workflow.StatusPROpen, "opened PR"); err != nil {
 		t.Fatalf("Transition: %v", err)
 	}
 
@@ -104,8 +105,8 @@ func TestClientTransitionPersistsViaServer(t *testing.T) {
 	if err != nil || got == nil {
 		t.Fatalf("TaskByIssue: (%+v, %v)", got, err)
 	}
-	if got.Status != store.StatusPROpen {
-		t.Fatalf("expected status %s, got %s", store.StatusPROpen, got.Status)
+	if got.Status != workflow.StatusPROpen {
+		t.Fatalf("expected status %s, got %s", workflow.StatusPROpen, got.Status)
 	}
 }
 
@@ -145,7 +146,7 @@ func TestClientUpdateTimesOutWithNoResponder(t *testing.T) {
 	clientConn := connect(t, srv.ClientURL())
 	client := &Client{Conn: clientConn, Timeout: 100 * time.Millisecond}
 
-	err := client.Update(context.Background(), &store.Task{ID: 1})
+	err := client.Update(context.Background(), &workflow.Task{ID: 1})
 	if err == nil {
 		t.Fatal("expected Update to time out with no server registered")
 	}

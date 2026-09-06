@@ -19,6 +19,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
@@ -348,11 +349,11 @@ func TestRunTaskExecutesBootstrapWorkflowEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runTask: %v", err)
 	}
-	if response.Status != store.StatusPROpen || len(fg.prs) != 1 {
-		t.Fatalf("response status/PRs = (%q, %d), want (%q, 1)", response.Status, len(fg.prs), store.StatusPROpen)
+	if response.Status != workflow.StatusPROpen || len(fg.prs) != 1 {
+		t.Fatalf("response status/PRs = (%q, %d), want (%q, 1)", response.Status, len(fg.prs), workflow.StatusPROpen)
 	}
 	stored, err := st.TaskByIssue(ctx, "acme", "widget", 1)
-	if err != nil || stored == nil || stored.Status != store.StatusPROpen || stored.PRNumber != 5 {
+	if err != nil || stored == nil || stored.Status != workflow.StatusPROpen || stored.PRNumber != 5 {
 		t.Fatalf("stored task = (%+v, %v), want PR-open task #5", stored, err)
 	}
 	if _, err := os.Stat(filepath.Join(hostDir, ".archie", "bootstrap.md")); err != nil {
@@ -449,8 +450,8 @@ func TestExecuteTaskRequestUsesInfrastructureRPCDependencies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response.Status != store.StatusPROpen || len(forge.prs) != 1 {
-		t.Fatalf("response status/PRs = (%q, %d), want (%q, 1)", response.Status, len(forge.prs), store.StatusPROpen)
+	if response.Status != workflow.StatusPROpen || len(forge.prs) != 1 {
+		t.Fatalf("response status/PRs = (%q, %d), want (%q, 1)", response.Status, len(forge.prs), workflow.StatusPROpen)
 	}
 	// archie-core-1786751948782-3-837a8fd0 point 4: every response reports
 	// what this worker actually is, since it's the only channel the daemon
@@ -462,7 +463,7 @@ func TestExecuteTaskRequestUsesInfrastructureRPCDependencies(t *testing.T) {
 		t.Errorf("response.AgentInstallType = %q, want installtype.Type() = %q", response.AgentInstallType, installtype.Type())
 	}
 	stored, err := st.TaskByIssue(ctx, "acme", "rpc-widget", 2)
-	if err != nil || stored == nil || stored.Status != store.StatusPROpen || stored.PRNumber != 5 {
+	if err != nil || stored == nil || stored.Status != workflow.StatusPROpen || stored.PRNumber != 5 {
 		t.Fatalf("stored task = (%+v, %v), want RPC-persisted PR-open task #5", stored, err)
 	}
 	if _, err := os.Stat(filepath.Join(hostDir, ".archie", "bootstrap.md")); err != nil {
@@ -572,8 +573,8 @@ func TestExecuteTaskRequestForwardsWorkflowEventsOverNATS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response.Status != store.StatusPROpen {
-		t.Fatalf("response status = %q, want %q", response.Status, store.StatusPROpen)
+	if response.Status != workflow.StatusPROpen {
+		t.Fatalf("response status = %q, want %q", response.Status, workflow.StatusPROpen)
 	}
 
 	deadline := time.After(2 * time.Second)

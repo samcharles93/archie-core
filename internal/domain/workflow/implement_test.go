@@ -15,7 +15,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
@@ -33,7 +32,7 @@ func TestStageBaselineGateAccountsForRepairAgentUsage(t *testing.T) {
 			Usage: agentexec.Usage{PromptTokens: 100, CompletionTokens: 20, TotalTokens: 120, CachedTokens: 80},
 		}, nil
 	})
-	task := &store.Task{ID: 1, Attempt: 1, Owner: "o", Repo: "r"}
+	task := &Task{ID: 1, Attempt: 1, Owner: "o", Repo: "r"}
 	tc := &TaskContext{
 		Task: task, Repo: config.Repo{Owner: "o", Name: "r", Gate: [][]string{{"sh", script}}},
 		Cfg:   config.Config{Models: map[string]string{"builder": "provider/model"}},
@@ -56,7 +55,7 @@ func TestStageBaselineGateAccountsForRepairAgentUsage(t *testing.T) {
 // prompt-token sum was a cache hit, not read as the full-price total.
 func TestImplementPRBodyShowsFreshVsCachedTokens(t *testing.T) {
 	tc := &TaskContext{
-		Task:         &store.Task{Iterations: 14, TokensUsed: 405004},
+		Task:         &Task{Iterations: 14, TokensUsed: 405004},
 		BuildSummary: "did the thing",
 		RunUsage: agentexec.Usage{
 			PromptTokens: 400021, CompletionTokens: 4983, CachedTokens: 360018,
@@ -81,7 +80,7 @@ func TestImplementPRBodyShowsFreshVsCachedTokens(t *testing.T) {
 // billed usage was known and zero.
 func TestImplementPRBodyFallsBackWithoutUsageBreakdown(t *testing.T) {
 	tc := &TaskContext{
-		Task:         &store.Task{Iterations: 1, TokensUsed: 500},
+		Task:         &Task{Iterations: 1, TokensUsed: 500},
 		BuildSummary: "did the thing",
 	}
 	body := implementPRBody(tc)
@@ -152,7 +151,7 @@ func TestStageBaselineGateMissionOmitsPassingPackageOutput(t *testing.T) {
 		return agentexec.Result{Version: agentexec.ProtocolVersion, Status: agentexec.StatusPassed}, nil
 	})
 	tc := &TaskContext{
-		Task:  &store.Task{ID: 1, Owner: "o", Repo: "r"},
+		Task:  &Task{ID: 1, Owner: "o", Repo: "r"},
 		Repo:  config.Repo{Owner: "o", Name: "r", Gate: [][]string{{"sh", script}}},
 		Cfg:   config.Config{Models: map[string]string{"builder": "provider/model"}},
 		Agent: runner, Trees: &worktree.Manager{BotUser: "archie", BotEmail: "archie@example.com"},
@@ -190,7 +189,7 @@ func TestStageBaselineGateSetsBaselineFixedWhenItCommits(t *testing.T) {
 		}
 		return agentexec.Result{Version: agentexec.ProtocolVersion, Status: agentexec.StatusPassed}, nil
 	})
-	task := &store.Task{ID: 1, Attempt: 1, Owner: "o", Repo: "r"}
+	task := &Task{ID: 1, Attempt: 1, Owner: "o", Repo: "r"}
 	tc := &TaskContext{
 		Task: task, Repo: config.Repo{Owner: "o", Name: "r", Gate: [][]string{{"sh", script}}},
 		Cfg:   config.Config{Models: map[string]string{"builder": "provider/model"}},
@@ -218,7 +217,7 @@ func TestStageBaselineGateWarningIncludesFailureTail(t *testing.T) {
 	}
 	var logs bytes.Buffer
 	tc := &TaskContext{
-		Task:  &store.Task{ID: 1, Owner: "o", Repo: "r"},
+		Task:  &Task{ID: 1, Owner: "o", Repo: "r"},
 		Repo:  config.Repo{Gate: [][]string{{"sh", script}}},
 		Agent: alwaysFailingRunner,
 		Dir:   dir,
@@ -253,7 +252,7 @@ func TestStageBaselineGateAgentRunErrorSkipsAgentFinish(t *testing.T) {
 	runner := agentRunnerFunc(func(context.Context, string, agentexec.Request, agentexec.ToolCallReporter) (agentexec.Result, error) {
 		return agentexec.Result{}, errors.New("simulated transport failure")
 	})
-	task := &store.Task{ID: 1, Owner: "o", Repo: "r"}
+	task := &Task{ID: 1, Owner: "o", Repo: "r"}
 	tc := &TaskContext{
 		Task:  task,
 		Repo:  config.Repo{Owner: "o", Name: "r", Gate: [][]string{{"sh", script}}},
@@ -356,7 +355,7 @@ func TestStageCommitPushClosesIssueWhenBuildNoChanges(t *testing.T) {
 		BuildNoChanges: true,
 		Dir:            "/tmp/test",
 		Branch:         "archie/issue-1",
-		Task:           &store.Task{ID: 1, Owner: "o", Repo: "r", IssueNumber: 1},
+		Task:           &Task{ID: 1, Owner: "o", Repo: "r", IssueNumber: 1},
 	}
 
 	err := stage.Run(context.Background(), tc)
@@ -369,7 +368,7 @@ func TestStageCommitPushClosesIssueWhenBuildNoChanges(t *testing.T) {
 	} else {
 		t.Log("CloseIssue called (no changes needed)")
 	}
-	if tc.Outcome.Status != store.StatusMerged {
+	if tc.Outcome.Status != StatusMerged {
 		t.Errorf("expected Outcome=Merged, got %s", tc.Outcome.Status)
 	} else {
 		t.Log("Outcome set to Merged (workflow stops)")
@@ -384,7 +383,7 @@ func TestOpenPRLinksSourceBranchBeforeCreatingPR(t *testing.T) {
 	f := &fakeForge{}
 	tc := &TaskContext{
 		Forge:  f,
-		Task:   &store.Task{ID: 1, Owner: "acme", Repo: "widget", IssueNumber: 42, Title: "Fix bug"},
+		Task:   &Task{ID: 1, Owner: "acme", Repo: "widget", IssueNumber: 42, Title: "Fix bug"},
 		Repo:   config.Repo{Owner: "acme", Name: "widget", Base: "main"},
 		Branch: "fix/42-bug",
 	}
@@ -403,12 +402,12 @@ func TestStageCommitPushDoesNotUseSyntheticIssueForChatNoOp(t *testing.T) {
 		Forge:          f,
 		BuildSummary:   "already fixed",
 		BuildNoChanges: true,
-		Task: &store.Task{
+		Task: &Task{
 			ID:          1,
 			Owner:       "o",
 			Repo:        "r",
 			IssueNumber: 999_001,
-			Source:      store.SourceChat,
+			Source:      SourceChat,
 		},
 	}
 
@@ -418,8 +417,8 @@ func TestStageCommitPushDoesNotUseSyntheticIssueForChatNoOp(t *testing.T) {
 	if f.closed != 0 || len(f.commented) != 0 {
 		t.Fatalf("chat no-op used synthetic issue: close=%d comments=%d", f.closed, len(f.commented))
 	}
-	if tc.Outcome.Status != store.StatusMerged {
-		t.Errorf("Outcome.Status = %q, want %q", tc.Outcome.Status, store.StatusMerged)
+	if tc.Outcome.Status != StatusMerged {
+		t.Errorf("Outcome.Status = %q, want %q", tc.Outcome.Status, StatusMerged)
 	}
 }
 
@@ -468,7 +467,7 @@ func TestStageCommitPushPushesBaselineFixEvenWithNothingNewToCommit(t *testing.T
 		BaselineFixed: true,
 		Dir:           "/tmp/test",
 		Branch:        "archie/issue-1",
-		Task:          &store.Task{ID: 1, Owner: "o", Repo: "r", IssueNumber: 1},
+		Task:          &Task{ID: 1, Owner: "o", Repo: "r", IssueNumber: 1},
 	}
 
 	if err := stage.Run(context.Background(), tc); err != nil {
@@ -492,7 +491,7 @@ func TestStageCommitPushStillErrorsOnEmptyTreeWithoutBaselineFix(t *testing.T) {
 		Trees:  trees,
 		Dir:    "/tmp/test",
 		Branch: "archie/issue-1",
-		Task:   &store.Task{ID: 1, Owner: "o", Repo: "r", IssueNumber: 1},
+		Task:   &Task{ID: 1, Owner: "o", Repo: "r", IssueNumber: 1},
 	}
 
 	if err := stage.Run(context.Background(), tc); err == nil {
@@ -552,7 +551,7 @@ func TestStageBaselineGateParkErrorCarriesGateOutput(t *testing.T) {
 			}
 
 			tc := &TaskContext{
-				Task:  &store.Task{ID: 1, Owner: "o", Repo: "r"},
+				Task:  &Task{ID: 1, Owner: "o", Repo: "r"},
 				Repo:  config.Repo{Gate: [][]string{{"sh", script}}},
 				Cfg:   config.Config{},
 				Agent: alwaysFailingRunner,
@@ -597,7 +596,7 @@ func TestOpenPRSurvivesALinkBranchFailure(t *testing.T) {
 			f := &fakeForge{linkErr: tc.linkErr}
 			taskCtx := &TaskContext{
 				Forge:  f,
-				Task:   &store.Task{ID: 1, Owner: "acme", Repo: "widget", IssueNumber: 42, Title: "Fix bug"},
+				Task:   &Task{ID: 1, Owner: "acme", Repo: "widget", IssueNumber: 42, Title: "Fix bug"},
 				Repo:   config.Repo{Owner: "acme", Name: "widget", Base: "main"},
 				Branch: "fix/42-bug",
 			}
@@ -606,8 +605,8 @@ func TestOpenPRSurvivesALinkBranchFailure(t *testing.T) {
 				t.Fatalf("OpenPR: %v\nthe PR is the load-bearing step; cosmetic "+
 					"linkage must not stop it", err)
 			}
-			if taskCtx.Outcome.Status != store.StatusPROpen {
-				t.Errorf("Outcome.Status = %q, want %q", taskCtx.Outcome.Status, store.StatusPROpen)
+			if taskCtx.Outcome.Status != StatusPROpen {
+				t.Errorf("Outcome.Status = %q, want %q", taskCtx.Outcome.Status, StatusPROpen)
 			}
 			if taskCtx.Task.PRNumber == 0 {
 				t.Error("PRNumber is 0: the pull request was never opened")

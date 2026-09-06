@@ -20,6 +20,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	archiecontainer "github.com/samcharles93/archie-core/internal/container"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	agentnats "github.com/samcharles93/archie-core/internal/infrastructure/agenttransport/nats"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -46,7 +47,7 @@ func (l *logBuffer) String() string {
 
 type errGrantIssuer struct{}
 
-func (errGrantIssuer) Issue(*store.Task) (string, func(), error) {
+func (errGrantIssuer) Issue(*workflow.Task) (string, func(), error) {
 	return "", nil, errors.New("simulated grant issue error")
 }
 
@@ -84,37 +85,37 @@ func TestCancelledTaskTransitionsToParked(t *testing.T) {
 		{
 			name:           "task cancelled during requestTaskRun",
 			cancelDuring:   true,
-			wantStatus:     store.StatusParked,
+			wantStatus:     workflow.StatusParked,
 			wantParkSubstr: "context canceled",
 		},
 		{
 			name:           "task cancelled before runViaAgent",
 			cancelBefore:   true,
-			wantStatus:     store.StatusParked,
+			wantStatus:     workflow.StatusParked,
 			wantParkSubstr: "context canceled",
 		},
 		{
 			name:           "worktree grants unavailable",
 			nilGrants:      true,
-			wantStatus:     store.StatusParked,
+			wantStatus:     workflow.StatusParked,
 			wantParkSubstr: "worktree publication grants are unavailable",
 		},
 		{
 			name:           "worktree grant issue failed",
 			errGrants:      true,
-			wantStatus:     store.StatusParked,
+			wantStatus:     workflow.StatusParked,
 			wantParkSubstr: "worktree publication grant failed",
 		},
 		{
 			name:           "taskrun decode response failed",
 			decodeErr:      true,
-			wantStatus:     store.StatusParked,
+			wantStatus:     workflow.StatusParked,
 			wantParkSubstr: "taskrun decode response failed",
 		},
 		{
 			name:           "taskrun agent returned error",
 			agentErr:       "simulated agent execution failure",
-			wantStatus:     store.StatusParked,
+			wantStatus:     workflow.StatusParked,
 			wantParkSubstr: "taskrun run failed: simulated agent execution failure",
 		},
 	}
@@ -203,31 +204,31 @@ func TestCleanupTerminalTaskWorktreeWithCancelledContext(t *testing.T) {
 	}{
 		{
 			name:           "merged task with cancelled context cleans worktree",
-			taskStatus:     store.StatusMerged,
+			taskStatus:     workflow.StatusMerged,
 			prNumber:       0,
 			wantTreeExists: false,
 		},
 		{
 			name:           "rejected task with cancelled context cleans worktree",
-			taskStatus:     store.StatusRejected,
+			taskStatus:     workflow.StatusRejected,
 			prNumber:       0,
 			wantTreeExists: false,
 		},
 		{
 			name:           "closed wont do task with cancelled context cleans worktree",
-			taskStatus:     store.StatusClosedWontDo,
+			taskStatus:     workflow.StatusClosedWontDo,
 			prNumber:       0,
 			wantTreeExists: false,
 		},
 		{
 			name:           "parked task with cancelled context preserves worktree",
-			taskStatus:     store.StatusParked,
+			taskStatus:     workflow.StatusParked,
 			prNumber:       0,
 			wantTreeExists: true,
 		},
 		{
 			name:           "open PR task with cancelled context preserves worktree",
-			taskStatus:     store.StatusPROpen,
+			taskStatus:     workflow.StatusPROpen,
 			prNumber:       12,
 			wantTreeExists: true,
 		},
@@ -257,7 +258,7 @@ func TestCleanupTerminalTaskWorktreeWithCancelledContext(t *testing.T) {
 				t.Fatalf("ClaimNext: (%v, %v)", task, err)
 			}
 
-			if err := st.Transition(context.Background(), task.ID, store.StatusRunning, tt.taskStatus, "setup"); err != nil {
+			if err := st.Transition(context.Background(), task.ID, workflow.StatusRunning, tt.taskStatus, "setup"); err != nil {
 				t.Fatalf("Transition: %v", err)
 			}
 			if tt.prNumber > 0 {
@@ -362,8 +363,8 @@ func TestProcessStopRunningTransitionsToParked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TaskByID: %v", err)
 	}
-	if got.Status != store.StatusParked {
-		t.Fatalf("stopped task status = %q, want %q", got.Status, store.StatusParked)
+	if got.Status != workflow.StatusParked {
+		t.Fatalf("stopped task status = %q, want %q", got.Status, workflow.StatusParked)
 	}
 	if !strings.Contains(got.ParkReason, "context canceled") {
 		t.Errorf("park reason = %q, want substring 'context canceled'", got.ParkReason)
@@ -383,22 +384,22 @@ func TestParkRunningTaskGuardedAndLogging(t *testing.T) {
 	}{
 		{
 			name:          "successful park on cancelled context transitions row to parked without warning",
-			initialStatus: store.StatusRunning,
+			initialStatus: workflow.StatusRunning,
 			cancelContext: true,
-			wantStatus:    store.StatusParked,
+			wantStatus:    workflow.StatusParked,
 			wantWarning:   false,
 		},
 		{
 			name:          "stale transition preserves worker status and logs no warning",
-			initialStatus: store.StatusRunning,
-			workerStatus:  store.StatusMerged,
+			initialStatus: workflow.StatusRunning,
+			workerStatus:  workflow.StatusMerged,
 			cancelContext: true,
-			wantStatus:    store.StatusMerged,
+			wantStatus:    workflow.StatusMerged,
 			wantWarning:   false,
 		},
 		{
 			name:          "store write failure logs warning",
-			initialStatus: store.StatusRunning,
+			initialStatus: workflow.StatusRunning,
 			closeStore:    true,
 			wantWarning:   true,
 			wantLogSubstr: "terminal park transition failed",
@@ -428,7 +429,7 @@ func TestParkRunningTaskGuardedAndLogging(t *testing.T) {
 			}
 
 			if tt.workerStatus != "" {
-				if err := s.Transition(ctx, task.ID, store.StatusRunning, tt.workerStatus, "worker completion"); err != nil {
+				if err := s.Transition(ctx, task.ID, workflow.StatusRunning, tt.workerStatus, "worker completion"); err != nil {
 					t.Fatalf("Transition to workerStatus: %v", err)
 				}
 			}
@@ -526,8 +527,8 @@ func TestAcquireTaskContainerFailureParksTaskOnCancelledContext(t *testing.T) {
 			if err != nil {
 				t.Fatalf("TaskByID: %v", err)
 			}
-			if got.Status != store.StatusParked {
-				t.Fatalf("task status = %q, want %q", got.Status, store.StatusParked)
+			if got.Status != workflow.StatusParked {
+				t.Fatalf("task status = %q, want %q", got.Status, workflow.StatusParked)
 			}
 			if !strings.Contains(got.ParkReason, tt.wantParkSubstr) {
 				t.Errorf("park reason = %q, want substring %q", got.ParkReason, tt.wantParkSubstr)

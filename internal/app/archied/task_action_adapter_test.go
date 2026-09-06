@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskstate"
@@ -55,7 +56,7 @@ func TestChatTaskActorAdapterCrossIdentityRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Transition(ctx, task.ID, store.StatusQueued, store.StatusParked, "needs help"); err != nil {
+	if err := st.Transition(ctx, task.ID, workflow.StatusQueued, workflow.StatusParked, "needs help"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -99,7 +100,7 @@ func TestChatTaskActorAdapterCrossIdentityRefused(t *testing.T) {
 			if err != nil || current == nil {
 				t.Fatalf("TaskByID = (%+v, %v)", current, err)
 			}
-			if current.Status != store.StatusParked {
+			if current.Status != workflow.StatusParked {
 				t.Errorf("task status mutated to %q despite cross-identity refusal", current.Status)
 			}
 		})
@@ -123,27 +124,27 @@ func TestChatTaskActorAdapterRefusesDisallowedStateAction(t *testing.T) {
 	}{
 		{
 			name:          "cannot abandon running task",
-			initialStatus: store.StatusRunning,
+			initialStatus: workflow.StatusRunning,
 			attemptAction: taskstate.ActionAbandon,
 		},
 		{
 			name:          "cannot archive parked task",
-			initialStatus: store.StatusParked,
+			initialStatus: workflow.StatusParked,
 			attemptAction: taskstate.ActionArchive,
 		},
 		{
 			name:          "cannot retry queued task",
-			initialStatus: store.StatusQueued,
+			initialStatus: workflow.StatusQueued,
 			attemptAction: taskstate.ActionRetry,
 		},
 		{
 			name:          "cannot approve running task",
-			initialStatus: store.StatusRunning,
+			initialStatus: workflow.StatusRunning,
 			attemptAction: taskstate.ActionApprove,
 		},
 		{
 			name:          "cannot reject merged task",
-			initialStatus: store.StatusMerged,
+			initialStatus: workflow.StatusMerged,
 			attemptAction: taskstate.ActionReject,
 		},
 	}
@@ -154,8 +155,8 @@ func TestChatTaskActorAdapterRefusesDisallowedStateAction(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if tc.initialStatus != store.StatusQueued {
-				if err := st.Transition(ctx, task.ID, store.StatusQueued, tc.initialStatus, "setup"); err != nil {
+			if tc.initialStatus != workflow.StatusQueued {
+				if err := st.Transition(ctx, task.ID, workflow.StatusQueued, tc.initialStatus, "setup"); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -212,43 +213,43 @@ func TestChatTaskActorAdapterAppliesActionsToStore(t *testing.T) {
 	}{
 		{
 			name:          "abandon parked task closes it won't do",
-			initialStatus: store.StatusParked,
+			initialStatus: workflow.StatusParked,
 			action:        taskstate.ActionAbandon,
-			wantStatus:    store.StatusClosedWontDo,
+			wantStatus:    workflow.StatusClosedWontDo,
 		},
 		{
 			name:          "retry parked task requeues it",
-			initialStatus: store.StatusParked,
+			initialStatus: workflow.StatusParked,
 			action:        taskstate.ActionRetry,
-			wantStatus:    store.StatusQueued,
+			wantStatus:    workflow.StatusQueued,
 		},
 		{
 			name:          "cancel queued task closes it",
-			initialStatus: store.StatusQueued,
+			initialStatus: workflow.StatusQueued,
 			action:        taskstate.ActionCancel,
-			wantStatus:    store.StatusClosedWontDo,
+			wantStatus:    workflow.StatusClosedWontDo,
 		},
 		{
 			name:          "approve waiting_human task queues it",
-			initialStatus: store.StatusWaitingHuman,
+			initialStatus: workflow.StatusWaitingHuman,
 			action:        taskstate.ActionApprove,
-			wantStatus:    store.StatusQueued,
+			wantStatus:    workflow.StatusQueued,
 		},
 		{
 			name:          "reject waiting_human task closes it",
-			initialStatus: store.StatusWaitingHuman,
+			initialStatus: workflow.StatusWaitingHuman,
 			action:        taskstate.ActionReject,
-			wantStatus:    store.StatusClosedWontDo,
+			wantStatus:    workflow.StatusClosedWontDo,
 		},
 		{
 			name:          "archive dead task removes it from store",
-			initialStatus: store.StatusDead,
+			initialStatus: workflow.StatusDead,
 			action:        taskstate.ActionArchive,
 			wantArchived:  true,
 		},
 		{
 			name:          "archive closed_wont_do task removes it from store",
-			initialStatus: store.StatusClosedWontDo,
+			initialStatus: workflow.StatusClosedWontDo,
 			action:        taskstate.ActionArchive,
 			wantArchived:  true,
 		},
@@ -269,8 +270,8 @@ func TestChatTaskActorAdapterAppliesActionsToStore(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if tc.initialStatus != store.StatusQueued {
-				if err := st.Transition(ctx, task.ID, store.StatusQueued, tc.initialStatus, "setup"); err != nil {
+			if tc.initialStatus != workflow.StatusQueued {
+				if err := st.Transition(ctx, task.ID, workflow.StatusQueued, tc.initialStatus, "setup"); err != nil {
 					t.Fatal(err)
 				}
 			}

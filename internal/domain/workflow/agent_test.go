@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -14,7 +13,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 type fakeAgentRunner struct {
@@ -64,7 +62,7 @@ func TestAgentStageBuildsExecutionRequestAndAppliesResult(t *testing.T) {
 			return nil
 		},
 	}.Stage()
-	task := &store.Task{ID: 9, Attempt: 2}
+	task := &Task{ID: 9, Attempt: 2}
 	tc := &TaskContext{
 		Task: task, Agent: runner, Dir: "/tmp/workspace", Log: slog.New(slog.DiscardHandler),
 		Cfg: config.Config{
@@ -113,7 +111,7 @@ func TestAgentStageReportsToolCallsOnTheTaskBus(t *testing.T) {
 	sub := bus.Subscribe(8)
 	t.Cleanup(sub.Close)
 
-	task := &store.Task{ID: 9, Owner: "acme", Repo: "widget", Attempt: 1}
+	task := &Task{ID: 9, Owner: "acme", Repo: "widget", Attempt: 1}
 	tc := &TaskContext{
 		Task: task, Agent: runner, Dir: "/tmp/workspace", Bus: bus, Log: slog.New(slog.DiscardHandler),
 		Cfg: config.Config{Models: map[string]string{"builder": "provider/model"}},
@@ -148,45 +146,8 @@ func TestAgentStageReportsToolCallsOnTheTaskBus(t *testing.T) {
 	}
 }
 
-func TestAgentStagePersistsReturnedNotes(t *testing.T) {
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "archie.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := st.Close(); err != nil {
-			t.Errorf("close store: %v", err)
-		}
-	})
-	ctx := context.Background()
-	if _, err := st.EnqueueIssue(ctx, "owner", "repo", 1, "title", "body", "", ""); err != nil {
-		t.Fatal(err)
-	}
-	task, err := st.ClaimNext(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	runner := &fakeAgentRunner{result: agentexec.Result{
-		Version: agentexec.ProtocolVersion, Status: agentexec.StatusPassed,
-		AppendedNotes: []string{"checked with go test"},
-	}}
-	stage := AgentStage{
-		Name: "build", Role: "builder", Mission: func(*TaskContext) string { return "build" },
-	}.Stage()
-	tc := &TaskContext{
-		Task: task, Store: st, Agent: runner, Log: slog.New(slog.DiscardHandler),
-		Cfg: config.Config{Models: map[string]string{"builder": "provider/model"}},
-	}
-	if err := stage.Run(ctx, tc); err != nil {
-		t.Fatal(err)
-	}
-	if task.Notes != "- checked with go test\n" {
-		t.Fatalf("task notes = %q", task.Notes)
-	}
-}
-
 func TestAgentStageDiscardsUnstampedErrorResult(t *testing.T) {
-	task := &store.Task{ID: 1, Attempt: 1, Notes: "existing\n"}
+	task := &Task{ID: 1, Attempt: 1, Notes: "existing\n"}
 	runner := agentRunnerFunc(func(context.Context, string, agentexec.Request, agentexec.ToolCallReporter) (agentexec.Result, error) {
 		return agentexec.Result{AppendedNotes: []string{"untrusted"}}, errors.New("worker exited")
 	})
@@ -211,7 +172,7 @@ func TestFeasibilityDecisionCrossesAsCapturedData(t *testing.T) {
 		Captures: map[string][]json.RawMessage{"decide": {json.RawMessage(`{"fit":true,"reasons":"aligned"}`)}},
 	}}
 	tc := &TaskContext{
-		Task: &store.Task{ID: 1}, Agent: runner, Log: slog.New(slog.DiscardHandler),
+		Task: &Task{ID: 1}, Agent: runner, Log: slog.New(slog.DiscardHandler),
 		Cfg:  config.Config{Models: map[string]string{"planner": "provider/model"}},
 		Repo: config.Repo{Owner: "owner", Name: "repo"},
 	}
@@ -229,8 +190,8 @@ func TestImplementPlanTreatsChatSourceAsNativeTask(t *testing.T) {
 	}}
 	forgeClient := &fakeForge{}
 	tc := &TaskContext{
-		Task: &store.Task{
-			ID: 1, IssueNumber: 999_001, Title: "Fix chat task", Source: store.SourceChat,
+		Task: &Task{
+			ID: 1, IssueNumber: 999_001, Title: "Fix chat task", Source: SourceChat,
 		},
 		Agent: runner,
 		Forge: forgeClient,
@@ -261,8 +222,8 @@ func TestFeasibilityChatTaskAvoidsIssueOperations(t *testing.T) {
 		}}
 		forgeClient := &fakeForge{}
 		tc := &TaskContext{
-			Task: &store.Task{
-				ID: 1, IssueNumber: 999_001, Title: "Feature", Source: store.SourceChat,
+			Task: &Task{
+				ID: 1, IssueNumber: 999_001, Title: "Feature", Source: SourceChat,
 			},
 			Agent: runner,
 			Forge: forgeClient,
@@ -274,7 +235,7 @@ func TestFeasibilityChatTaskAvoidsIssueOperations(t *testing.T) {
 		if err := Feasibility().Stages[1].Run(context.Background(), tc); err != nil {
 			t.Fatal(err)
 		}
-		if forgeClient.closed != 0 || tc.Outcome.Status != store.StatusClosedWontDo {
+		if forgeClient.closed != 0 || tc.Outcome.Status != StatusClosedWontDo {
 			t.Fatalf("close calls/outcome = %d/%q", forgeClient.closed, tc.Outcome.Status)
 		}
 	})
@@ -282,8 +243,8 @@ func TestFeasibilityChatTaskAvoidsIssueOperations(t *testing.T) {
 	t.Run("await approval", func(t *testing.T) {
 		forgeClient := &fakeForge{}
 		tc := &TaskContext{
-			Task: &store.Task{
-				ID: 1, IssueNumber: 999_001, Plan: "PRD", Source: store.SourceChat,
+			Task: &Task{
+				ID: 1, IssueNumber: 999_001, Plan: "PRD", Source: SourceChat,
 			},
 			Forge: forgeClient,
 			Log:   slog.New(slog.DiscardHandler),
@@ -293,7 +254,7 @@ func TestFeasibilityChatTaskAvoidsIssueOperations(t *testing.T) {
 			t.Fatal(err)
 		}
 		if len(forgeClient.commented) != 0 || tc.Task.WatchCommentID != 0 ||
-			tc.Outcome.Status != store.StatusWaitingHuman {
+			tc.Outcome.Status != StatusWaitingHuman {
 			t.Fatalf("comments/watch/outcome = %d/%d/%q",
 				len(forgeClient.commented), tc.Task.WatchCommentID, tc.Outcome.Status)
 		}
@@ -306,7 +267,7 @@ func TestFeasibilityRejectsNullFitValue(t *testing.T) {
 		Captures: map[string][]json.RawMessage{"decide": {json.RawMessage(`{"fit":null,"reasons":"not valid"}`)}},
 	}}
 	tc := &TaskContext{
-		Task: &store.Task{ID: 1}, Agent: runner, Log: slog.New(slog.DiscardHandler),
+		Task: &Task{ID: 1}, Agent: runner, Log: slog.New(slog.DiscardHandler),
 		Cfg:  config.Config{Models: map[string]string{"planner": "provider/model"}},
 		Repo: config.Repo{Owner: "owner", Name: "repo"},
 	}
@@ -347,7 +308,7 @@ func TestReviewResultBlocksOnResultWhenRejected(t *testing.T) {
 		},
 	}.Stage()
 	tc := &TaskContext{
-		Task:  &store.Task{ID: 1, Attempt: 1},
+		Task:  &Task{ID: 1, Attempt: 1},
 		Agent: runner, Log: slog.New(slog.DiscardHandler),
 		Cfg: config.Config{Models: map[string]string{"planner": "provider/model"}},
 	}
@@ -381,39 +342,5 @@ func TestReviewResultBlocksOnResultWhenRejected(t *testing.T) {
 	if !onResultCalled {
 		t.Error("Gap 5: ReviewResult approved the output but OnResult was not called. " +
 			"Approved output must flow through to human channels.")
-	}
-}
-
-func TestRunLeavesInterruptedTaskForCrashRecovery(t *testing.T) {
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "archie.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := st.Close(); err != nil {
-			t.Errorf("close store: %v", err)
-		}
-	})
-	if _, err := st.EnqueueIssue(context.Background(), "owner", "repo", 2, "title", "body", "", ""); err != nil {
-		t.Fatal(err)
-	}
-	task, err := st.ClaimNext(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	Run(ctx, Workflow{Name: "test", Stages: []Stage{{
-		Name: "agent", Run: func(ctx context.Context, _ *TaskContext) error { return ctx.Err() },
-	}}}, &TaskContext{
-		Task: task, Store: st, Repo: config.Repo{Owner: "owner", Name: "repo"},
-		Log: slog.New(slog.DiscardHandler),
-	})
-	got, err := st.TaskByIssue(context.Background(), "owner", "repo", 2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Status != store.StatusRunning || got.ParkReason != "" {
-		t.Fatalf("interrupted task status=%q park_reason=%q, want running with no park reason", got.Status, got.ParkReason)
 	}
 }

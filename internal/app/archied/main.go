@@ -31,6 +31,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
@@ -145,7 +146,7 @@ const taskListOverRead = 5
 // gateway deliberately does not import internal/store, so the projection
 // happens here, as it does for the writer and controller adapters below.
 type chatTaskListerAdapter struct {
-	tasks func(context.Context, int) ([]store.Task, error)
+	tasks func(context.Context, int) ([]workflow.Task, error)
 }
 
 func (a chatTaskListerAdapter) ListChatTasks(ctx context.Context, identity string, limit int) ([]gateway.ChatTaskSummary, error) {
@@ -313,7 +314,7 @@ func manualRequeueTask(ctx context.Context, st store.TaskStore, taskID int64) er
 		return fmt.Errorf("task %d not found", taskID)
 	}
 	switch task.Status {
-	case store.StatusParked, store.StatusWaitingHuman:
+	case workflow.StatusParked, workflow.StatusWaitingHuman:
 		return st.Requeue(ctx, taskID, task.Status, "")
 	default:
 		return fmt.Errorf("task %d has status %q; only parked or waiting_human tasks can be requeued", taskID, task.Status)
@@ -529,7 +530,7 @@ type chatTaskWriterAdapter struct {
 	enqueue func(
 		ctx context.Context,
 		owner, repo, title, body, workflow, identity string,
-	) (*store.Task, error)
+	) (*workflow.Task, error)
 }
 
 func (a chatTaskWriterAdapter) EnqueueChatTask(
@@ -547,7 +548,7 @@ func (a chatTaskWriterAdapter) EnqueueChatTask(
 }
 
 type chatTaskControllerAdapter struct {
-	taskByID   func(context.Context, int64) (*store.Task, error)
+	taskByID   func(context.Context, int64) (*workflow.Task, error)
 	requeue    func(context.Context, int64, string, string) error
 	transition func(context.Context, int64, string, string, string) error
 }
@@ -567,7 +568,7 @@ func (a chatTaskControllerAdapter) ChatTaskStatus(ctx context.Context, taskID in
 }
 
 func (a chatTaskControllerAdapter) ApproveChatTask(ctx context.Context, taskID int64) error {
-	return a.requeue(ctx, taskID, store.StatusWaitingHuman, "implement")
+	return a.requeue(ctx, taskID, workflow.StatusWaitingHuman, "implement")
 }
 
 func (a chatTaskControllerAdapter) CancelChatTask(ctx context.Context, taskID int64, reason string) error {
@@ -587,7 +588,7 @@ func (a chatTaskControllerAdapter) CancelChatTask(ctx context.Context, taskID in
 	// different states -- and StatusRejected, which the PR reconciler uses
 	// for "the pull request was closed without merging", stopped meaning one
 	// thing.
-	return a.transition(ctx, taskID, task.Status, store.StatusClosedWontDo, reason)
+	return a.transition(ctx, taskID, task.Status, workflow.StatusClosedWontDo, reason)
 }
 
 // chatTaskLogReaderAdapter gives the gateway a read view of a task's
@@ -597,7 +598,7 @@ func (a chatTaskControllerAdapter) CancelChatTask(ctx context.Context, taskID in
 // model cannot read another identity's task logs by passing a different
 // identity through the tool input.
 type chatTaskLogReaderAdapter struct {
-	tasks    func(context.Context, int64) (*store.Task, error)
+	tasks    func(context.Context, int64) (*workflow.Task, error)
 	taskLogs *logging.TaskRegistry
 }
 

@@ -339,7 +339,7 @@ actions:
 // the TaskEnvelope.IdempotencyKey() string ("archie:owner/repo/number") --
 // the value available at the discovery/dispatch point (pollNATS + webhook
 // receiver both compute kind/labels from a TaskEnvelope before any
-// store.Task row exists), NOT a store.Task.ID int64.
+// workflow.Task row exists), NOT a workflow.Task.ID int64.
 func TestDispatchInputCarriesTaskIdentity(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "pb.yaml", `

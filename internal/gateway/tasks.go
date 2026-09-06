@@ -40,10 +40,10 @@ type taskProfile struct {
 }
 
 // chatTaskWriter is the write surface StoreTaskCreator needs. It
-// returns the created task's real database ID, not a *store.Task  --
-// gateway deliberately has no dependency on internal/store; the daemon
-// supplies an adapter closure over the store.TaskStore method of the
-// same name.
+// returns the created task's real database ID, not a *workflow.Task  --
+// gateway deliberately has no dependency on internal/store or
+// internal/domain/workflow; the daemon supplies an adapter closure over
+// the store.TaskStore method of the same name.
 type chatTaskWriter interface {
 	EnqueueChatTask(ctx context.Context, owner, repo, title, body, workflow, identity string) (taskID int64, err error)
 }

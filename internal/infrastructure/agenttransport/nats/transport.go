@@ -16,7 +16,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/storerpc"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
@@ -102,7 +101,7 @@ func (t *Transport) Forger(identity string, timeout time.Duration) workflow.Forg
 }
 
 // Store constructs the workflow store RPC client.
-func (t *Transport) Store(timeout time.Duration) store.WorkflowStore {
+func (t *Transport) Store(timeout time.Duration) workflow.Store {
 	return &storerpc.Client{Conn: t.conn, Timeout: timeout}
 }
 

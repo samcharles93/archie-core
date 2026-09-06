@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"testing"
+
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 // Tasks() is what the dashboard's task list is built from, and the UI reads
@@ -47,7 +49,7 @@ func TestTasksSelectsFieldsTheUIReads(t *testing.T) {
 		t.Fatalf("Tasks: %v", err)
 	}
 
-	byID := make(map[int64]Task, len(tasks))
+	byID := make(map[int64]workflow.Task, len(tasks))
 	for _, task := range tasks {
 		byID[task.ID] = task
 	}
@@ -60,18 +62,18 @@ func TestTasksSelectsFieldsTheUIReads(t *testing.T) {
 		t.Errorf("Plan = %q, want %q: the approval panel is gated on this and "+
 			"can never render while it is empty", forgeTask.Plan, plan)
 	}
-	if forgeTask.Source != SourceForge {
-		t.Errorf("Source = %q, want %q", forgeTask.Source, SourceForge)
+	if forgeTask.Source != workflow.SourceForge {
+		t.Errorf("Source = %q, want %q", forgeTask.Source, workflow.SourceForge)
 	}
 
 	chatTask, ok := byID[chatID]
 	if !ok {
 		t.Fatalf("chat task %d missing from Tasks()", chatID)
 	}
-	if chatTask.Source != SourceChat {
+	if chatTask.Source != workflow.SourceChat {
 		t.Errorf("Source = %q, want %q: without it the UI links a synthetic "+
 			"issue number to a forge issue that does not exist",
-			chatTask.Source, SourceChat)
+			chatTask.Source, workflow.SourceChat)
 	}
 	if chatTask.IsForgeBacked() {
 		t.Error("IsForgeBacked() is true for a chat task read through Tasks()")

@@ -20,7 +20,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/skill"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/tools"
 )
 
@@ -55,11 +54,11 @@ type Trees interface {
 // forward by mutating Task (persisted after every stage) and the
 // scratch fields below.
 type TaskContext struct {
-	Task  *store.Task
+	Task  *Task
 	Repo  config.Repo
 	Cfg   config.Config
 	Forge Forger
-	Store store.WorkflowStore
+	Store Store
 	Trees Trees
 	Agent agentexec.Runner
 	// Reviewer runs the adversarial self-review stage (StageReview). Nil
@@ -187,7 +186,7 @@ func (tc *TaskContext) toolCallReporter(stage string) agentexec.ToolCallReporter
 // Outcome is a stage's terminal decision for the whole workflow. Stages
 // that don't end the workflow leave it zero.
 type Outcome struct {
-	Status string // store.Status* value; empty = continue to next stage
+	Status string // Status* value; empty = continue to next stage
 	Detail string // park reason / close rationale / PR body context
 }
 
@@ -251,7 +250,7 @@ func DefinitionsWithOrigins(reg Registry, origins map[string]string) []Definitio
 // Route picks the workflow for a task. A pre-assigned workflow wins
 // (the waiting_human → approved handoff requeues under "implement");
 // otherwise labels decide, then the default.
-func Route(t *store.Task, reg Registry) Workflow {
+func Route(t *Task, reg Registry) Workflow {
 	if t.Workflow != "" {
 		if wf, ok := reg[t.Workflow]; ok {
 			return wf
@@ -338,12 +337,12 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 
 func finish(ctx context.Context, tc *TaskContext, log *slog.Logger) {
 	t := tc.Task
-	if tc.Outcome.Status == store.StatusParked {
+	if tc.Outcome.Status == StatusParked {
 		park(ctx, tc, tc.Outcome.Detail)
 		return
 	}
 	_ = tc.Store.Update(ctx, t)
-	_ = tc.Store.Transition(ctx, t.ID, store.StatusRunning, tc.Outcome.Status, tc.Outcome.Detail)
+	_ = tc.Store.Transition(ctx, t.ID, StatusRunning, tc.Outcome.Status, tc.Outcome.Detail)
 	tc.Emit(events.KindOutcome, t.Stage, tc.Outcome.Detail, map[string]any{"status": tc.Outcome.Status})
 	log.Info("workflow finished", "status", tc.Outcome.Status)
 }
@@ -352,7 +351,7 @@ func park(ctx context.Context, tc *TaskContext, reason string) {
 	t := tc.Task
 	t.ParkReason = reason
 	_ = tc.Store.Update(ctx, t)
-	_ = tc.Store.Transition(ctx, t.ID, store.StatusRunning, store.StatusParked, reason)
+	_ = tc.Store.Transition(ctx, t.ID, StatusRunning, StatusParked, reason)
 	tc.Emit(events.KindParked, t.Stage, reason, nil)
 }
 

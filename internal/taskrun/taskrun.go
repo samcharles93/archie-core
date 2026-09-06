@@ -11,7 +11,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
-	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
 // Request carries everything archie-agent needs to run a task's entire
@@ -20,7 +20,7 @@ import (
 // config (API keys are injected into the container's environment
 // separately  --  Providers only carries class/env-var-name/base-URL).
 type Request struct {
-	Task      *store.Task                   `json:"task"`
+	Task      *workflow.Task                `json:"task"`
 	Repo      config.Repo                   `json:"repo"`
 	Cfg       config.TaskConfig             `json:"cfg"`
 	Providers map[string]agentexec.Provider `json:"providers"`
@@ -54,9 +54,9 @@ func (r Request) Validate() error {
 // authoritative state already landed in archied's store via storerpc
 // calls made during the run.
 type Response struct {
-	Task   *store.Task `json:"task"`
-	Status string      `json:"status"`
-	Error  string      `json:"error,omitempty"`
+	Task   *workflow.Task `json:"task"`
+	Status string         `json:"status"`
+	Error  string         `json:"error,omitempty"`
 	// AgentVersion and AgentInstallType report the build of archie-agent
 	// that actually ran this task -- self-reported by the worker, not the
 	// version archied's release pipeline expected to be running. Every

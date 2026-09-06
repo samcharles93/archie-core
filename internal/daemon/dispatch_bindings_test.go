@@ -10,6 +10,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
@@ -39,11 +40,11 @@ func TestDispatchBindingsCreatesTaskFromArmedCapture(t *testing.T) {
 	if got.BindingVersion != bindingVersion {
 		t.Errorf("task.BindingVersion = %d, want %d", got.BindingVersion, bindingVersion)
 	}
-	if got.Source != store.SourceChat {
-		t.Errorf("task.Source = %q, want %q", got.Source, store.SourceChat)
+	if got.Source != workflow.SourceChat {
+		t.Errorf("task.Source = %q, want %q", got.Source, workflow.SourceChat)
 	}
-	if got.Status != store.StatusQueued {
-		t.Errorf("task.Status = %q, want %q", got.Status, store.StatusQueued)
+	if got.Status != workflow.StatusQueued {
+		t.Errorf("task.Status = %q, want %q", got.Status, workflow.StatusQueued)
 	}
 
 	assertDispatchRecorded(t, s, bindingID, got.ID)

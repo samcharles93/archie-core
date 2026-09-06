@@ -8,7 +8,6 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 func triageDecision(t *testing.T, needsCodeChange bool, workflow, reasons string) []json.RawMessage {
@@ -50,7 +49,7 @@ func TestTriageClosesWithoutCodeChange(t *testing.T) {
 		}, nil
 	})
 	tc := &TaskContext{
-		Task:  &store.Task{ID: 1, Attempt: 1, Owner: "o", Repo: "r", IssueNumber: 1},
+		Task:  &Task{ID: 1, Attempt: 1, Owner: "o", Repo: "r", IssueNumber: 1},
 		Repo:  config.Repo{Owner: "o", Name: "r"},
 		Cfg:   config.Config{Models: map[string]string{"planner": "provider/model"}},
 		Agent: runner,
@@ -64,8 +63,8 @@ func TestTriageClosesWithoutCodeChange(t *testing.T) {
 	if f.closed != 1 {
 		t.Fatalf("CloseIssue calls = %d, want 1", f.closed)
 	}
-	if tc.Outcome.Status != store.StatusMerged {
-		t.Fatalf("Outcome.Status = %q, want %q", tc.Outcome.Status, store.StatusMerged)
+	if tc.Outcome.Status != StatusMerged {
+		t.Fatalf("Outcome.Status = %q, want %q", tc.Outcome.Status, StatusMerged)
 	}
 	if tc.Task.Workflow != "" {
 		t.Fatalf("Task.Workflow = %q, want unset (no requeue on the close path)", tc.Task.Workflow)
@@ -89,7 +88,7 @@ func TestTriageClosesChatTaskWithoutForgeCall(t *testing.T) {
 		}, nil
 	})
 	tc := &TaskContext{
-		Task:  &store.Task{ID: 1, Attempt: 1, Owner: "o", Repo: "r", IssueNumber: 1_000_000_000_000_001, Source: store.SourceChat},
+		Task:  &Task{ID: 1, Attempt: 1, Owner: "o", Repo: "r", IssueNumber: 1_000_000_000_000_001, Source: SourceChat},
 		Repo:  config.Repo{Owner: "o", Name: "r"},
 		Cfg:   config.Config{Models: map[string]string{"planner": "provider/model"}},
 		Agent: runner,
@@ -103,8 +102,8 @@ func TestTriageClosesChatTaskWithoutForgeCall(t *testing.T) {
 	if f.closed != 0 {
 		t.Fatalf("CloseIssue calls = %d, want 0 for a chat-spawned (non-forge-backed) task", f.closed)
 	}
-	if tc.Outcome.Status != store.StatusMerged {
-		t.Fatalf("Outcome.Status = %q, want %q", tc.Outcome.Status, store.StatusMerged)
+	if tc.Outcome.Status != StatusMerged {
+		t.Fatalf("Outcome.Status = %q, want %q", tc.Outcome.Status, StatusMerged)
 	}
 }
 
@@ -123,7 +122,7 @@ func TestTriageRequeuesUnderChosenWorkflow(t *testing.T) {
 		}, nil
 	})
 	tc := &TaskContext{
-		Task:  &store.Task{ID: 1, Attempt: 1, Owner: "o", Repo: "r", IssueNumber: 1},
+		Task:  &Task{ID: 1, Attempt: 1, Owner: "o", Repo: "r", IssueNumber: 1},
 		Repo:  config.Repo{Owner: "o", Name: "r"},
 		Cfg:   config.Config{Models: map[string]string{"planner": "provider/model"}},
 		Agent: runner,
@@ -136,8 +135,8 @@ func TestTriageRequeuesUnderChosenWorkflow(t *testing.T) {
 	if tc.Task.Workflow != "tdd" {
 		t.Fatalf("Task.Workflow = %q, want %q", tc.Task.Workflow, "tdd")
 	}
-	if tc.Outcome.Status != store.StatusQueued {
-		t.Fatalf("Outcome.Status = %q, want %q", tc.Outcome.Status, store.StatusQueued)
+	if tc.Outcome.Status != StatusQueued {
+		t.Fatalf("Outcome.Status = %q, want %q", tc.Outcome.Status, StatusQueued)
 	}
 }
 
@@ -156,7 +155,7 @@ func TestTriageDefaultsToImplementForUnrecognizedWorkflow(t *testing.T) {
 		}, nil
 	})
 	tc := &TaskContext{
-		Task:  &store.Task{ID: 1, Attempt: 1, Owner: "o", Repo: "r", IssueNumber: 1},
+		Task:  &Task{ID: 1, Attempt: 1, Owner: "o", Repo: "r", IssueNumber: 1},
 		Repo:  config.Repo{Owner: "o", Name: "r"},
 		Cfg:   config.Config{Models: map[string]string{"planner": "provider/model"}},
 		Agent: runner,
@@ -178,7 +177,7 @@ func TestTriageRejectsMissingDecideCall(t *testing.T) {
 		return agentexec.Result{Version: agentexec.ProtocolVersion, TaskID: req.TaskID, Attempt: req.Attempt, Stage: req.Stage, Status: agentexec.StatusPassed}, nil
 	})
 	tc := &TaskContext{
-		Task:  &store.Task{ID: 1, Attempt: 1, Owner: "o", Repo: "r", IssueNumber: 1},
+		Task:  &Task{ID: 1, Attempt: 1, Owner: "o", Repo: "r", IssueNumber: 1},
 		Repo:  config.Repo{Owner: "o", Name: "r"},
 		Cfg:   config.Config{Models: map[string]string{"planner": "provider/model"}},
 		Agent: runner,

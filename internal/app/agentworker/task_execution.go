@@ -17,7 +17,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/installtype"
 	"github.com/samcharles93/archie-core/internal/storage"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
@@ -128,7 +127,7 @@ func worktreeOwnerID(env string) int {
 
 type taskDependencies struct {
 	forge  workflow.Forger
-	store  store.WorkflowStore
+	store  workflow.Store
 	trees  remoteTrees
 	events agentexec.EventPublisher
 }

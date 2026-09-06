@@ -8,7 +8,6 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // ── regression: Gap 7  --  plugins discovered but not executed ─────────
@@ -79,7 +78,7 @@ func Run(input string) string {
 	}}
 
 	tc := &TaskContext{
-		Task:  &store.Task{ID: 1, Attempt: 1, Workflow: "tdd"},
+		Task:  &Task{ID: 1, Attempt: 1, Workflow: "tdd"},
 		Dir:   dir,
 		Agent: runner,
 		Log:   slog.New(slog.DiscardHandler),

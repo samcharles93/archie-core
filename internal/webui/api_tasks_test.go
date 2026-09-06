@@ -16,8 +16,8 @@ import (
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 func TestTaskURLsUseOwningForgeRoutes(t *testing.T) {
@@ -28,7 +28,7 @@ func TestTaskURLsUseOwningForgeRoutes(t *testing.T) {
 			Repos: []config.Repo{{Owner: "acme", Name: "widget"}},
 		}},
 	})}
-	task := store.Task{Owner: "acme", Repo: "widget", IssueNumber: 12, PRNumber: 34, Identity: "gitea"}
+	task := workflow.Task{Owner: "acme", Repo: "widget", IssueNumber: 12, PRNumber: 34, Identity: "gitea"}
 
 	repoURL, issueURL, prURL := srv.taskURLs(task)
 	if repoURL != "https://gitea.example/acme/widget" || issueURL != repoURL+"/issues/12" || prURL != repoURL+"/pulls/34" {
@@ -55,7 +55,7 @@ func TestHandleTaskActionApproveUsesRecordedState(t *testing.T) {
 	if err != nil || task == nil {
 		t.Fatalf("claim = (%+v, %v)", task, err)
 	}
-	if err := srv.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusWaitingHuman, "review"); err != nil {
+	if err := srv.Store.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusWaitingHuman, "review"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -71,7 +71,7 @@ func TestHandleTaskActionApproveUsesRecordedState(t *testing.T) {
 	if err != nil || got == nil {
 		t.Fatalf("TaskByID = (%+v, %v)", got, err)
 	}
-	if got.Status != store.StatusQueued || got.Workflow != "implement" {
+	if got.Status != workflow.StatusQueued || got.Workflow != "implement" {
 		t.Fatalf("approved task = %+v, want queued/implement", got)
 	}
 }
@@ -86,7 +86,7 @@ func TestHandleTaskActionRetriesParkedTask(t *testing.T) {
 	if err != nil || task == nil {
 		t.Fatalf("claim = (%+v, %v)", task, err)
 	}
-	if err := srv.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, "failed"); err != nil {
+	if err := srv.Store.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusParked, "failed"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -102,7 +102,7 @@ func TestHandleTaskActionRetriesParkedTask(t *testing.T) {
 	if err != nil || got == nil {
 		t.Fatalf("TaskByID = (%+v, %v)", got, err)
 	}
-	if got.Status != store.StatusQueued || got.RetryCount != 1 {
+	if got.Status != workflow.StatusQueued || got.RetryCount != 1 {
 		t.Fatalf("retried task = %+v, want queued/retry_count=1", got)
 	}
 }

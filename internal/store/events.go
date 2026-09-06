@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 )
 
@@ -98,7 +99,7 @@ func (s *Store) TaskEvents(ctx context.Context, taskID int64) ([]events.Event, e
 }
 
 // Tasks returns all tasks, newest first (dashboard listing).
-func (s *Store) Tasks(ctx context.Context, limit int) (tasks []Task, retErr error) {
+func (s *Store) Tasks(ctx context.Context, limit int) (tasks []workflow.Task, retErr error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, owner, repo, issue_number, title, status, workflow, stage,
 			pr_number, tokens_used, iterations, attempt, park_reason, retry_count,
@@ -111,7 +112,7 @@ func (s *Store) Tasks(ctx context.Context, limit int) (tasks []Task, retErr erro
 		retErr = errors.Join(retErr, rows.Close())
 	}()
 	for rows.Next() {
-		var t Task
+		var t workflow.Task
 		// Plan and Source are read by the dashboard: Plan gates the
 		// "Decision required" panel on a waiting_human task, and Source
 		// decides whether an issue link is rendered at all -- a chat task's

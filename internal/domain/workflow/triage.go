@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // triageWorkflowNames is the set of workflows triage may hand a task to.
@@ -83,7 +82,7 @@ func Triage() Workflow {
 								return err
 							}
 						}
-						tc.Outcome = Outcome{Status: store.StatusMerged, Detail: "triaged: no code change needed  --  " + captured.Reasons}
+						tc.Outcome = Outcome{Status: StatusMerged, Detail: "triaged: no code change needed  --  " + captured.Reasons}
 						return nil
 					}
 					target := captured.Workflow
@@ -92,7 +91,7 @@ func Triage() Workflow {
 					}
 					tc.Task.Workflow = target
 					tc.Outcome = Outcome{
-						Status: store.StatusQueued,
+						Status: StatusQueued,
 						Detail: fmt.Sprintf("triaged to %s: %s", target, captured.Reasons),
 					}
 					return nil

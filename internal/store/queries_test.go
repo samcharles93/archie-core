@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 )
 
@@ -45,20 +46,20 @@ func TestRequeueFromWaitingHuman(t *testing.T) {
 		t.Fatalf("claim = (%v, %v)", task, err)
 	}
 
-	if err := s.Transition(ctx, task.ID, StatusRunning, StatusWaitingHuman, "needs input"); err != nil {
+	if err := s.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusWaitingHuman, "needs input"); err != nil {
 		t.Fatal(err)
 	}
 	waiting, err := s.TaskByID(ctx, task.ID)
-	if err != nil || waiting == nil || waiting.Status != StatusWaitingHuman {
+	if err != nil || waiting == nil || waiting.Status != workflow.StatusWaitingHuman {
 		t.Fatalf("after transition = (%+v, %v), want waiting_human", waiting, err)
 	}
 
 	// Requeue with a workflow forces it (waiting_human -> approved -> implement).
-	if err := s.Requeue(ctx, task.ID, StatusWaitingHuman, "implement"); err != nil {
+	if err := s.Requeue(ctx, task.ID, workflow.StatusWaitingHuman, "implement"); err != nil {
 		t.Fatal(err)
 	}
 	requeued, err := s.TaskByIssue(ctx, "acme", "widget", 1)
-	if err != nil || requeued == nil || requeued.Status != StatusQueued || requeued.Workflow != "implement" {
+	if err != nil || requeued == nil || requeued.Status != workflow.StatusQueued || requeued.Workflow != "implement" {
 		t.Fatalf("after forced requeue = %+v, %v", requeued, err)
 	}
 
@@ -72,14 +73,14 @@ func TestRequeueFromWaitingHuman(t *testing.T) {
 	if err := s.Update(ctx, task2); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Transition(ctx, task2.ID, StatusRunning, StatusParked, "parked"); err != nil {
+	if err := s.Transition(ctx, task2.ID, workflow.StatusRunning, workflow.StatusParked, "parked"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Requeue(ctx, task2.ID, StatusParked, ""); err != nil {
+	if err := s.Requeue(ctx, task2.ID, workflow.StatusParked, ""); err != nil {
 		t.Fatal(err)
 	}
 	retried, err := s.TaskByIssue(ctx, "acme", "widget", 1)
-	if err != nil || retried == nil || retried.Status != StatusQueued || retried.Workflow != "feasibility" {
+	if err != nil || retried == nil || retried.Status != workflow.StatusQueued || retried.Workflow != "feasibility" {
 		t.Fatalf("after empty-workflow requeue = %+v, %v", retried, err)
 	}
 	if retried.ParkReason != "" {
@@ -94,10 +95,10 @@ func TestRequeueFromWaitingHuman(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Park again and requeue.
-	if err := s.Transition(ctx, task2.ID, StatusQueued, StatusParked, "parked again"); err != nil {
+	if err := s.Transition(ctx, task2.ID, workflow.StatusQueued, workflow.StatusParked, "parked again"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Requeue(ctx, task2.ID, StatusParked, ""); err != nil {
+	if err := s.Requeue(ctx, task2.ID, workflow.StatusParked, ""); err != nil {
 		t.Fatal(err)
 	}
 	afterRequeue, err := s.TaskByIssue(ctx, "acme", "widget", 1)
@@ -113,7 +114,7 @@ func TestTasksListingAndStatusCounts(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	for i, status := range []string{StatusQueued, StatusRunning, StatusPROpen} {
+	for i, status := range []string{workflow.StatusQueued, workflow.StatusRunning, workflow.StatusPROpen} {
 		if _, err := s.EnqueueIssue(ctx, "acme", "widget", i+1, "t", "b", "", ""); err != nil {
 			t.Fatal(err)
 		}
@@ -121,8 +122,8 @@ func TestTasksListingAndStatusCounts(t *testing.T) {
 		if err != nil || task == nil {
 			t.Fatalf("TaskByIssue(%d) = (%+v, %v)", i+1, task, err)
 		}
-		if status != StatusQueued {
-			if err := s.Transition(ctx, task.ID, StatusQueued, status, ""); err != nil {
+		if status != workflow.StatusQueued {
+			if err := s.Transition(ctx, task.ID, workflow.StatusQueued, status, ""); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -142,7 +143,7 @@ func TestTasksListingAndStatusCounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]int{StatusQueued: 1, StatusRunning: 1, StatusPROpen: 1}
+	want := map[string]int{workflow.StatusQueued: 1, workflow.StatusRunning: 1, workflow.StatusPROpen: 1}
 	for status, n := range want {
 		if counts[status] != n {
 			t.Fatalf("StatusCounts[%s] = %d, want %d (all: %+v)", status, counts[status], n, counts)
@@ -167,7 +168,7 @@ func TestWorkflowStats(t *testing.T) {
 	if err := s.Update(ctx, task); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Transition(ctx, task.ID, StatusRunning, StatusMerged, "merged"); err != nil {
+	if err := s.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusMerged, "merged"); err != nil {
 		t.Fatal(err)
 	}
 

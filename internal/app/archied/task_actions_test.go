@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webui"
@@ -33,10 +34,10 @@ func TestDashboardAndChatAgreeOnTerminalStates(t *testing.T) {
 		action  string
 		want    string
 	}{
-		{name: "dashboard reject", action: "reject", want: store.StatusClosedWontDo},
-		{name: "chat cancel", viaChat: true, action: "cancel", want: store.StatusClosedWontDo},
-		{name: "dashboard approve", action: "approve", want: store.StatusQueued},
-		{name: "chat approve", viaChat: true, action: "approve", want: store.StatusQueued},
+		{name: "dashboard reject", action: "reject", want: workflow.StatusClosedWontDo},
+		{name: "chat cancel", viaChat: true, action: "cancel", want: workflow.StatusClosedWontDo},
+		{name: "dashboard approve", action: "approve", want: workflow.StatusQueued},
+		{name: "chat approve", viaChat: true, action: "approve", want: workflow.StatusQueued},
 	}
 
 	for _, tc := range tests {
@@ -52,7 +53,7 @@ func TestDashboardAndChatAgreeOnTerminalStates(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := st.Transition(ctx, task.ID, store.StatusQueued, store.StatusWaitingHuman, "await"); err != nil {
+			if err := st.Transition(ctx, task.ID, workflow.StatusQueued, workflow.StatusWaitingHuman, "await"); err != nil {
 				t.Fatal(err)
 			}
 

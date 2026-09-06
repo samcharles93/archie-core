@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // Feasibility is the feature-request workflow: assess the request
@@ -66,7 +65,7 @@ func Feasibility() Workflow {
 								return err
 							}
 						}
-						tc.Outcome = Outcome{Status: store.StatusClosedWontDo, Detail: tc.decision.Reasons}
+						tc.Outcome = Outcome{Status: StatusClosedWontDo, Detail: tc.decision.Reasons}
 					}
 					return nil
 				},
@@ -97,7 +96,7 @@ func Feasibility() Workflow {
 			// the decision surfaces; the forge issue is not a chat log.
 			{Name: "deliver", Run: func(ctx context.Context, tc *TaskContext) error {
 				notify(ctx, tc, "feasibility_prd")
-				tc.Outcome = Outcome{Status: store.StatusWaitingHuman, Detail: "PRD delivered, awaiting go/no-go"}
+				tc.Outcome = Outcome{Status: StatusWaitingHuman, Detail: "PRD delivered, awaiting go/no-go"}
 				return nil
 			}},
 		},

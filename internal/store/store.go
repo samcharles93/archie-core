@@ -15,91 +15,9 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/taskstate"
 )
-
-// Task lifecycle statuses. Workflows move tasks between them; the
-// daemon owns queued→running claims and crash recovery.
-const (
-	// Defined in internal/taskstate so the dashboard, chat and the store
-	// share one vocabulary. These names are kept as the store's public
-	// spelling; the values live in one place.
-	StatusQueued       = taskstate.Queued
-	StatusRunning      = taskstate.Running
-	StatusWaitingHuman = taskstate.WaitingHuman
-	StatusPROpen       = taskstate.PROpen
-	StatusMerged       = taskstate.Merged
-	StatusParked       = taskstate.Parked
-	StatusDead         = taskstate.Dead
-	StatusRejected     = taskstate.Rejected
-	StatusClosedWontDo = taskstate.Declined
-)
-
-type Task struct {
-	ID          int64  `json:"id"`
-	Owner       string `json:"owner"`
-	Repo        string `json:"repo"`
-	IssueNumber int    `json:"issue_number"`
-	Title       string `json:"title"`
-	Body        string `json:"body"`
-	Labels      string `json:"labels"` // comma-separated, as seen at enqueue time
-	Status      string `json:"status"`
-	Workflow    string `json:"workflow"`
-	Stage       string `json:"stage"`
-	Branch      string `json:"branch"`
-	Plan        string `json:"plan"`
-	Notes       string `json:"notes"`
-	PRNumber    int    `json:"pr_number"`
-	TokensUsed  int    `json:"tokens_used"`
-	Iterations  int    `json:"iterations"`
-	Attempt     int    `json:"attempt"`
-	ParkReason  string `json:"park_reason"`
-	// RetryCount tracks how many times a parked task has been retried
-	// (parking-to-queued transitions). When it reaches the configured
-	// max_retries the daemon moves the task to StatusDead.
-	RetryCount int `json:"retry_count"`
-	// WatchCommentID: replies to the issue after this comment are the
-	// human input a waiting_human task is blocked on.
-	WatchCommentID int64 `json:"watch_comment_id"`
-	// Source is "forge" (default; a real forge issue backs this task) or
-	// "chat" (created via /spawn with no forge issue). Workflow stages
-	// and daemon reconciliation must skip forge-only operations (issue
-	// labels, comments, replies) for chat-sourced tasks; IssueNumber on
-	// a chat task is a synthetic value, not a real forge issue.
-	Source string `json:"source"`
-	// Identity is the archie identity that owns this task (chat-spawned
-	// tasks only; empty for forge-sourced tasks and single-identity
-	// deployments). Used to scope /approve and /cancel authorization so
-	// one identity cannot control another's chat-spawned tasks.
-	Identity string `json:"identity"`
-	// BindingID and BindingVersion are stamped when a task was created
-	// from a playbook binding dispatch (t2db.4 Phase B). They record
-	// provenance: which binding fired this task and at what version, so
-	// later edits to the binding cannot silently rewrite history.
-	BindingID      int64 `json:"binding_id"`
-	BindingVersion int   `json:"binding_version"`
-	// CreatedAt and UpdatedAt are the SQLite row timestamps, exposed so
-	// callers can show a task's age and last activity. They are written by
-	// column defaults and the UPDATE statements, never by the caller.
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-// SourceForge and SourceChat are the valid values for Task.Source.
-// Legacy rows and forge-polled tasks have Source == SourceForge (the
-// zero value defaults there via the SQLite column default).
-const (
-	SourceForge = "forge"
-	SourceChat  = "chat"
-)
-
-// IsForgeBacked reports whether t corresponds to a real forge issue.
-// Chat-spawned tasks (Source == SourceChat) have a synthetic
-// IssueNumber and must not be used in forge label/comment/reply calls.
-func (t Task) IsForgeBacked() bool {
-	return t.Source != SourceChat
-}
 
 type Store struct {
 	db             *sql.DB
@@ -327,9 +245,9 @@ func (s *Store) EnqueueIssue(ctx context.Context, owner, repo string, number int
 // backing forge issue, returning the full created row (with its real
 // database ID). The store allocates the synthetic issue number durably so
 // multiple processes sharing the database cannot generate the same value.
-// Workflow stages and daemon reconciliation must check Task.IsForgeBacked()
+// Workflow stages and daemon reconciliation must check workflow.Task.IsForgeBacked()
 // before treating it as a real forge issue number.
-func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, workflow, identity string) (*Task, error) {
+func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, wf, identity string) (*workflow.Task, error) {
 	const syntheticIssueNumberBase = 1_000_000_000_000_000
 	row := s.db.QueryRowContext(ctx, `
 		INSERT INTO tasks (owner, repo, issue_number, title, body, labels, workflow, source, identity)
@@ -341,7 +259,7 @@ func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, w
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
 			source, identity, binding_id, binding_version, created_at, updated_at`,
-		owner, repo, owner, repo, syntheticIssueNumberBase-1, title, body, workflow, identity)
+		owner, repo, owner, repo, syntheticIssueNumberBase-1, title, body, wf, identity)
 	return scanTask(row)
 }
 
@@ -357,8 +275,8 @@ func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, w
 // a future repair pass could backfill. This is the same
 // best-effort-provenance pattern the rest of the task lifecycle uses
 // for fields added after the row's primary insert.
-func (s *Store) EnqueueBindingTask(ctx context.Context, owner, repo, title, body, workflow, identity string, bindingID int64, bindingVersion int) (*Task, error) {
-	t, err := s.EnqueueChatTask(ctx, owner, repo, title, body, workflow, identity)
+func (s *Store) EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity string, bindingID int64, bindingVersion int) (*workflow.Task, error) {
+	t, err := s.EnqueueChatTask(ctx, owner, repo, title, body, wf, identity)
 	if err != nil {
 		return nil, err
 	}
@@ -374,7 +292,7 @@ func (s *Store) EnqueueBindingTask(ctx context.Context, owner, repo, title, body
 
 // ClaimNext atomically moves the oldest queued task to running and
 // returns it; nil when the queue is empty.
-func (s *Store) ClaimNext(ctx context.Context) (*Task, error) {
+func (s *Store) ClaimNext(ctx context.Context) (*workflow.Task, error) {
 	row := s.db.QueryRowContext(ctx, `
 		UPDATE tasks SET status='running', attempt=attempt+1, updated_at=datetime('now')
 		WHERE id = (SELECT id FROM tasks WHERE status='queued' ORDER BY id LIMIT 1)
@@ -389,8 +307,8 @@ func (s *Store) ClaimNext(ctx context.Context) (*Task, error) {
 	return t, err
 }
 
-func scanTask(row *sql.Row) (*Task, error) {
-	var t Task
+func scanTask(row *sql.Row) (*workflow.Task, error) {
+	var t workflow.Task
 	err := row.Scan(&t.ID, &t.Owner, &t.Repo, &t.IssueNumber, &t.Title, &t.Body,
 		&t.Labels, &t.Status, &t.Workflow, &t.Stage, &t.Branch, &t.Plan, &t.Notes,
 		&t.PRNumber, &t.TokensUsed, &t.Iterations, &t.Attempt, &t.ParkReason,
@@ -407,7 +325,7 @@ func scanTask(row *sql.Row) (*Task, error) {
 // Returns nil if the task is not in queued state (already claimed, parked,
 // or terminal). Used by the NATS consumer path where the task was just
 // inserted via EnqueueIssue and needs an immediate targeted claim.
-func (s *Store) ClaimByIssue(ctx context.Context, owner, repo string, number int) (*Task, error) {
+func (s *Store) ClaimByIssue(ctx context.Context, owner, repo string, number int) (*workflow.Task, error) {
 	row := s.db.QueryRowContext(ctx, `
 		UPDATE tasks SET status='running', attempt=attempt+1, updated_at=datetime('now')
 		WHERE owner=? AND repo=? AND issue_number=? AND status='queued'
@@ -445,7 +363,7 @@ func (s *Store) Transition(ctx context.Context, taskID int64, from, to, detail s
 			park_reason=CASE WHEN ?=? THEN ? ELSE park_reason END,
 			updated_at=datetime('now')
 		WHERE id=? AND status=?`,
-		to, to, StatusParked, clip(detail, 4000), taskID, from)
+		to, to, workflow.StatusParked, clip(detail, 4000), taskID, from)
 	if err != nil {
 		return err
 	}
@@ -468,7 +386,7 @@ func (s *Store) Transition(ctx context.Context, taskID int64, from, to, detail s
 }
 
 // Update persists mutable task fields written by workflows.
-func (s *Store) Update(ctx context.Context, t *Task) error {
+func (s *Store) Update(ctx context.Context, t *workflow.Task) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE tasks SET workflow=?, stage=?, branch=?, plan=?, notes=?,
 			pr_number=?, tokens_used=?, iterations=?, park_reason=?,
@@ -481,7 +399,7 @@ func (s *Store) Update(ctx context.Context, t *Task) error {
 }
 
 // TaskByIssue returns the task tracking an issue, or nil.
-func (s *Store) TaskByIssue(ctx context.Context, owner, repo string, number int) (*Task, error) {
+func (s *Store) TaskByIssue(ctx context.Context, owner, repo string, number int) (*workflow.Task, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
@@ -498,7 +416,7 @@ func (s *Store) TaskByIssue(ctx context.Context, owner, repo string, number int)
 // TaskByID returns the task with the given database ID, or nil. Used by
 // chat controls (/approve, /cancel) that reference a task by its real
 // ID rather than a forge issue number.
-func (s *Store) TaskByID(ctx context.Context, taskID int64) (*Task, error) {
+func (s *Store) TaskByID(ctx context.Context, taskID int64) (*workflow.Task, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
@@ -633,7 +551,7 @@ func (s *Store) RecoverStale(ctx context.Context) (int64, error) {
 }
 
 // OpenPRs returns tasks whose PR state should be reconciled with GitHub.
-func (s *Store) OpenPRs(ctx context.Context) (tasks []Task, retErr error) {
+func (s *Store) OpenPRs(ctx context.Context) (tasks []workflow.Task, retErr error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, owner, repo, issue_number, pr_number, status, source, identity
 		FROM tasks WHERE status='pr_open'`)
@@ -644,7 +562,7 @@ func (s *Store) OpenPRs(ctx context.Context) (tasks []Task, retErr error) {
 		retErr = errors.Join(retErr, rows.Close())
 	}()
 	for rows.Next() {
-		var t Task
+		var t workflow.Task
 		if err := rows.Scan(&t.ID, &t.Owner, &t.Repo, &t.IssueNumber, &t.PRNumber,
 			&t.Status, &t.Source, &t.Identity); err != nil {
 			return nil, err

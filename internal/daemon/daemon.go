@@ -20,6 +20,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/eventbus"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -50,7 +51,7 @@ type TaskBus interface {
 // publish its already-prepared branch. The daemon owns grant lifetime; the
 // transport implementation owns token mechanics.
 type WorktreeGrantIssuer interface {
-	Issue(task *store.Task) (token string, revoke func(), err error)
+	Issue(task *workflow.Task) (token string, revoke func(), err error)
 }
 
 // NATSEndpoint is the broker address and credential archied connected with at
@@ -707,8 +708,8 @@ func (d *Daemon) submitNATSTask(ctx context.Context, dispatcher *taskDispatcher,
 		_ = msg.Ack()
 		return
 	}
-	task := &store.Task{Owner: envelope.Owner, Repo: envelope.Repo, Identity: envelope.Identity}
-	dispatcher.Submit(ctx, task, func(ctx context.Context, _ *store.Task) {
+	task := &workflow.Task{Owner: envelope.Owner, Repo: envelope.Repo, Identity: envelope.Identity}
+	dispatcher.Submit(ctx, task, func(ctx context.Context, _ *workflow.Task) {
 		d.processNATSTask(ctx, msg)
 	})
 }
@@ -720,20 +721,20 @@ func (d *Daemon) submitNATSTask(ctx context.Context, dispatcher *taskDispatcher,
 // entirely  --  the global slot limit is the only bound on their concurrency.
 type taskDispatcher struct {
 	slots           chan struct{}
-	allowConcurrent func(task *store.Task) bool
+	allowConcurrent func(task *workflow.Task) bool
 
 	mu       sync.Mutex
 	repoTail map[string]chan struct{}
 	wg       sync.WaitGroup
 }
 
-func newTaskDispatcher(maxConcurrency int, allowConcurrent func(task *store.Task) bool) *taskDispatcher {
+func newTaskDispatcher(maxConcurrency int, allowConcurrent func(task *workflow.Task) bool) *taskDispatcher {
 	var slots chan struct{}
 	if maxConcurrency > 0 {
 		slots = make(chan struct{}, maxConcurrency)
 	}
 	if allowConcurrent == nil {
-		allowConcurrent = func(*store.Task) bool { return false }
+		allowConcurrent = func(*workflow.Task) bool { return false }
 	}
 	return &taskDispatcher{
 		slots:           slots,
@@ -744,8 +745,8 @@ func newTaskDispatcher(maxConcurrency int, allowConcurrent func(task *store.Task
 
 func (d *taskDispatcher) Submit(
 	ctx context.Context,
-	task *store.Task,
-	process func(context.Context, *store.Task),
+	task *workflow.Task,
+	process func(context.Context, *workflow.Task),
 ) {
 	repo := task.Owner + "/" + task.Repo
 
@@ -950,7 +951,7 @@ func (d *Daemon) pollIssues(ctx context.Context, repo config.Repo) []forge.Issue
 // is skipped. Failure is logged rather than returned: the task's own state is
 // already correct, and the next reconcile pass will not retry, so a warning
 // is the honest outcome -- the issue simply stays open.
-func (d *Daemon) closeResolvedIssue(ctx context.Context, fg forge.Forge, task *store.Task, comment string) {
+func (d *Daemon) closeResolvedIssue(ctx context.Context, fg forge.Forge, task *workflow.Task, comment string) {
 	if !task.IsForgeBacked() {
 		return
 	}
@@ -982,7 +983,7 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 		}
 		switch state {
 		case "merged":
-			_ = d.Store.Transition(ctx, t.ID, store.StatusPROpen, store.StatusMerged, "")
+			_ = d.Store.Transition(ctx, t.ID, workflow.StatusPROpen, workflow.StatusMerged, "")
 			_ = trees.Cleanup(t.Owner, t.Repo, t.IssueNumber)
 			// Close the issue ourselves rather than relying on the forge
 			// noticing a "Closes #N" in the PR body. Nothing else closes it:
@@ -1001,7 +1002,7 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 				Data: map[string]any{"pr": t.PRNumber},
 			})
 		case "closed":
-			_ = d.Store.Transition(ctx, t.ID, store.StatusPROpen, store.StatusRejected, "PR closed without merge")
+			_ = d.Store.Transition(ctx, t.ID, workflow.StatusPROpen, workflow.StatusRejected, "PR closed without merge")
 			_ = trees.Cleanup(t.Owner, t.Repo, t.IssueNumber)
 			d.Log.Info("PR rejected", "repo", t.Owner+"/"+t.Repo, "pr", t.PRNumber)
 			d.emit(events.Event{
@@ -1013,7 +1014,7 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 	}
 }
 
-func (d *Daemon) process(ctx context.Context, task *store.Task) {
+func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
 	// Register before any work starts so the task is stoppable for its
 	// whole life, including the slow setup -- clone, worktree prepare,
 	// image pull -- which is exactly when someone realises they asked for
@@ -1033,7 +1034,7 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 		const reason = "managed agent container pool is unavailable; refusing to run this task on the host"
 		d.Log.Error("task parked: managed worker unavailable", "task", task.ID,
 			"hint", "enable containers and make the archie-agent image available, then retry the task")
-		if err := d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, reason); err != nil {
+		if err := d.Store.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusParked, reason); err != nil {
 			d.Log.Warn("managed worker park transition failed", "task", task.ID, "err", err)
 			return
 		}
@@ -1046,7 +1047,7 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	if d.Tasks == nil {
 		const reason = "agent task transport is unavailable; refusing to run this task on the host"
 		d.Log.Error("task parked: agent task transport unavailable", "task", task.ID)
-		if err := d.Store.Transition(ctx, task.ID, store.StatusRunning, store.StatusParked, reason); err != nil {
+		if err := d.Store.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusParked, reason); err != nil {
 			d.Log.Warn("agent task transport park transition failed", "task", task.ID, "err", err)
 			return
 		}
@@ -1112,7 +1113,7 @@ func (d *Daemon) process(ctx context.Context, task *store.Task) {
 	d.cleanupTerminalTaskWorktree(ctx, task, trees)
 }
 
-func (d *Daemon) cleanupTerminalTaskWorktree(ctx context.Context, task *store.Task, trees *worktree.Manager) {
+func (d *Daemon) cleanupTerminalTaskWorktree(ctx context.Context, task *workflow.Task, trees *worktree.Manager) {
 	if d.Store == nil || trees == nil || task == nil {
 		return
 	}
@@ -1128,7 +1129,7 @@ func (d *Daemon) cleanupTerminalTaskWorktree(ctx context.Context, task *store.Ta
 		return
 	}
 	switch latest.Status {
-	case store.StatusMerged, store.StatusRejected, store.StatusClosedWontDo:
+	case workflow.StatusMerged, workflow.StatusRejected, workflow.StatusClosedWontDo:
 		if latest.PRNumber == 0 {
 			if err := trees.Cleanup(task.Owner, task.Repo, task.IssueNumber); err != nil {
 				d.Log.Warn("terminal worktree cleanup failed", "task", task.ID, "err", err)
@@ -1144,7 +1145,7 @@ func (d *Daemon) cleanupTerminalTaskWorktree(ctx context.Context, task *store.Ta
 // attempt's own output won't be recoverable if something goes wrong, which
 // is worse than the pre-existing state, not equal to it, so the run
 // proceeds rather than parking over a logging problem.
-func (d *Daemon) openTaskLog(task *store.Task) func() {
+func (d *Daemon) openTaskLog(task *workflow.Task) func() {
 	if err := d.TaskLogs.Open(task.ID, task.Attempt); err != nil {
 		d.Log.Warn("task log sink unavailable", "task", task.ID, "attempt", task.Attempt, "err", err)
 	}
@@ -1160,7 +1161,7 @@ func (d *Daemon) openTaskLog(task *store.Task) func() {
 // task and logged why. The caller releases the container it returns.
 func (d *Daemon) acquireTaskContainer(
 	ctx context.Context,
-	task *store.Task,
+	task *workflow.Task,
 	repo config.Repo,
 	workDir string,
 ) (*container.Container, bool) {
@@ -1241,7 +1242,7 @@ func (d *Daemon) parkRunningTask(ctx context.Context, taskID int64, reason strin
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 
-	if err := d.Store.Transition(writeCtx, taskID, store.StatusRunning, store.StatusParked, reason); err != nil {
+	if err := d.Store.Transition(writeCtx, taskID, workflow.StatusRunning, workflow.StatusParked, reason); err != nil {
 		if !errors.Is(err, store.ErrStaleTransition) {
 			d.Log.Warn("terminal park transition failed", "task", taskID, "reason", reason, "err", err)
 		}
@@ -1258,7 +1259,7 @@ func (d *Daemon) parkRunningTask(ctx context.Context, taskID int64, reason strin
 // itself when nothing else could have: the request never reached (or was
 // never answered by) an archie-agent, or archie-agent failed before its
 // own workflow.Run got a chance to record an outcome.
-func (d *Daemon) runViaAgent(ctx context.Context, task *store.Task, repo config.Repo) {
+func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo config.Repo) {
 	if d.WorktreeGrants == nil {
 		const reason = "worktree publication grants are unavailable"
 		d.Log.Error(reason, "task", task.ID)
@@ -1374,7 +1375,7 @@ func (d *Daemon) requestTaskRun(ctx context.Context, taskID int64, data []byte) 
 	}
 }
 
-func (d *Daemon) containerEnv(task *store.Task) []string {
+func (d *Daemon) containerEnv(task *workflow.Task) []string {
 	var env []string
 	// The endpoint the daemon's own client connected with at startup, not
 	// the live config: a reloaded [nats] section must not point new
@@ -1402,7 +1403,7 @@ func (d *Daemon) containerEnv(task *store.Task) []string {
 	return env
 }
 
-func (d *Daemon) configFor(task *store.Task) config.Config {
+func (d *Daemon) configFor(task *workflow.Task) config.Config {
 	if id := d.identityFor(task); id != nil {
 		return configForIdentity(d.Cfg.Get(), id.Cfg)
 	}
@@ -1427,7 +1428,7 @@ func configForIdentity(root config.Config, identity config.IdentityConfig) confi
 // single-identity deployments and forge-sourced tasks recorded
 // before multi-identity routing existed (task.Identity == ""). Callers
 // must fall back to the root d.Forge/d.Trees/d.Cfg when this returns nil.
-func (d *Daemon) identityFor(task *store.Task) *IdentityRunner {
+func (d *Daemon) identityFor(task *workflow.Task) *IdentityRunner {
 	if task == nil || task.Identity == "" {
 		return nil
 	}
@@ -1443,7 +1444,7 @@ func (d *Daemon) identityFor(task *store.Task) *IdentityRunner {
 // client when task.Identity names a configured identity, else the root
 // d.Forge. This is the safety boundary that keeps one identity's forge
 // token from being used against another identity's repos.
-func (d *Daemon) forgeFor(task *store.Task) forge.Forge {
+func (d *Daemon) forgeFor(task *workflow.Task) forge.Forge {
 	if id := d.identityFor(task); id != nil {
 		return id.Forge
 	}
@@ -1451,7 +1452,7 @@ func (d *Daemon) forgeFor(task *store.Task) forge.Forge {
 }
 
 // treesFor returns the worktree manager that owns task, mirroring forgeFor.
-func (d *Daemon) treesFor(task *store.Task) *worktree.Manager {
+func (d *Daemon) treesFor(task *workflow.Task) *worktree.Manager {
 	if id := d.identityFor(task); id != nil {
 		return id.Trees
 	}
@@ -1460,7 +1461,7 @@ func (d *Daemon) treesFor(task *store.Task) *worktree.Manager {
 
 // repoFor resolves task's repo config from the owning identity's repo
 // list when task.Identity is set, else the root Cfg.Repos.
-func (d *Daemon) repoFor(t *store.Task) (config.Repo, bool) {
+func (d *Daemon) repoFor(t *workflow.Task) (config.Repo, bool) {
 	repos := d.Cfg.Get().Repos
 	if id := d.identityFor(t); id != nil {
 		repos = id.Repos
@@ -1479,7 +1480,7 @@ func (d *Daemon) repoFor(t *store.Task) (config.Repo, bool) {
 // task.Identity names a configured identity -- so multi-identity concurrency
 // policy comes from the identity's own config, not the root daemon's.
 // Unknown repos default to the safe, serialized behavior.
-func (d *Daemon) allowConcurrentForTask(task *store.Task) bool {
+func (d *Daemon) allowConcurrentForTask(task *workflow.Task) bool {
 	repo, ok := d.repoFor(task)
 	return ok && repo.AllowConcurrent
 }

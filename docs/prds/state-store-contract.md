@@ -20,14 +20,12 @@ split `archie.db`. It records method ownership, DTO/wire representation, error s
 limits, mode/config shape, local-adapter compatibility, and cutover/deletion rules so that
 `.4.2` and `.4.3` have exactly one authoritative surface to build against.
 
-> **Current state (before implementation) — read before `.4.2` starts.** The acceptance
-> criterion ("`internal/domain/workflow` … no longer import `internal/store`") is **not yet
-> met** and is **not implied to be met by this document**. Today, production workflow files
-> and tests import `internal/store` (`internal/domain/workflow/{workflow,steps,triage,review,
-> feasibility,implement}.go`), `store.WorkflowStore` remains in `TaskContext`, and the NATS
-> `storerpc` path is still wired. Those are the **current, pre-implementation outliers** that §12
-> step 2 (relocation) and `.4.2` remove. Nothing in this document describes code that already
-> exists; it describes what `.4.2`/`.4.3` build and what the prerequisite changes are.
+> **Current state — read before `.4.2` starts.** The §12 step 2 relocation (`archie-core-8cda.
+> 4.8`) has landed: `Task`/`Status*`/`Source*` and the 3-method `workflow.Store` now live in
+> `internal/domain/workflow`, the six production workflow files import no `internal/store`
+> symbol, and `storerpc`/the NATS transport assert against `workflow.Store` instead of
+> `store.WorkflowStore`. The broader Phase 2 acceptance criterion (State Store as its own
+> service behind gRPC) is still open — that is what `.4.2`/`.4.3` build next.
 
 > **Relationship to migration-decisions §4 — not replaced.** `docs/architecture/
 > migration-decisions.md` §4 (`store.Task → WorkflowExecution`, `mutable Stage →
@@ -191,10 +189,12 @@ The Phase 2 acceptance criterion ("`internal/domain/workflow` … no longer impo
   reads and writes (infrastructure → domain). **NOTE: `internal/store` is a transitional
   compatibility location only** — its long-term home is `internal/infrastructure/store` (see
   the callout in §1). Do not treat `internal/store` as the final infrastructure boundary.
-- `TestRecordDispatchViaExplicitTx` and every store test that constructs `store.Task{…}` are
-  updated to the relocated type as part of this prerequisite. This is a mechanical rename
-  across ~6 workflow production files (`workflow.go`, `steps.go`, `triage.go`, `review.go`,
-  `feasibility.go`, `implement.go`) and their tests plus the store tests.
+- Every store test that constructs `store.Task{…}` is updated to the relocated type as part of
+  this prerequisite. This is a mechanical rename across ~6 workflow production files
+  (`workflow.go`, `steps.go`, `triage.go`, `review.go`, `feasibility.go`, `implement.go`) and
+  their tests plus the store tests. `TestRecordDispatchViaExplicitTx` is removed rather than
+  updated — its non-nil `*sql.Tx` path has no production consumer (see §5's `RecordDispatch`
+  blocker).
 
 **What this does NOT do:** it does not implement the full §4 Workflow migration
 (`mutable Stage → StepExecution history`, `RetryCount/Attempt → Attempt records`,
@@ -594,10 +594,10 @@ an explicit operator decision.
   `containerEnv`. Token is per-incumbence (task + container grace period) and validated by a
   gRPC interceptor → `codes.Unauthenticated` on missing/unknown/expired. Non-loopback targets
   fail closed without TLS or a token.
-- **Acceptance criterion is NOT yet met.** `internal/domain/workflow` still imports
-  `internal/store` (workflow files + tests), `store.WorkflowStore` is still in `TaskContext`,
-  and the NATS `storerpc` path is still wired. §12 step 2 and `.4.2` remove these; this
-  document does not imply the criterion is already satisfied.
+- **§12 step 2 (domain type + interface relocation) is done** — `internal/domain/workflow`
+  imports no `internal/store` symbol and `store.WorkflowStore` is gone from `TaskContext`. The
+  broader Phase 2 acceptance criterion (State Store as its own gRPC service) is still open;
+  `.4.2` picks up from here.
 - **Ownership split:** domain-facing workflow contract is **consumer-owned** in the domain
   (`workflow.Store` + `workflow.Task`/`Status`/`Source`, per dependency rules #2 and #7);
   daemon/webui store surfaces stay **producer-owned** in `internal/store`. `store.WorkflowStore`

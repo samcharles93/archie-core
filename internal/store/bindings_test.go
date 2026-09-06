@@ -1,7 +1,6 @@
 package store
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"path/filepath"
@@ -507,29 +506,5 @@ func TestListUndispatchedCapturesEmptySourcesReturnsNil(t *testing.T) {
 	}
 	if got != nil {
 		t.Fatalf("ListUndispatchedCaptures(nil sources) = %+v, want nil", got)
-	}
-}
-
-// TestRecordDispatchViaExplicitTx confirms RecordDispatch accepts an
-// external *sql.Tx (its primary contract: caller-owned transaction).
-// Without this signature the dispatch ledger and the tasks row created
-// from a binding could not commit atomically.
-func TestRecordDispatchViaExplicitTx(t *testing.T) {
-	s := openTest(t)
-	id, err := s.InsertBinding(t.Context(), testBinding("sentry"))
-	if err != nil {
-		t.Fatalf("InsertBinding: %v", err)
-	}
-
-	ctx := context.Background()
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatalf("BeginTx: %v", err)
-	}
-	if err := s.RecordDispatch(ctx, tx, id, 1, 1, 1); err != nil {
-		t.Fatalf("RecordDispatch via *sql.Tx: %v", err)
-	}
-	if err := tx.Commit(); err != nil {
-		t.Fatalf("Commit: %v", err)
 	}
 }

@@ -10,7 +10,6 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/gate"
 	"github.com/samcharles93/archie-core/internal/gate/gateeval"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // Shared step library. Every workflow composes these; workflow-specific
@@ -76,13 +75,13 @@ func StageCommitPush(message func(*TaskContext) string) Stage {
 
 func closeNoChangesIssue(ctx context.Context, tc *TaskContext) error {
 	if !tc.Task.IsForgeBacked() {
-		tc.Outcome = Outcome{Status: store.StatusMerged, Detail: "completed  --  no changes required"}
+		tc.Outcome = Outcome{Status: StatusMerged, Detail: "completed  --  no changes required"}
 		return nil
 	}
 	if err := tc.Forge.CloseIssue(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.IssueNumber, ""); err != nil {
 		return err
 	}
-	tc.Outcome = Outcome{Status: store.StatusMerged, Detail: "completed  --  no changes required"}
+	tc.Outcome = Outcome{Status: StatusMerged, Detail: "completed  --  no changes required"}
 	return nil
 }
 
@@ -99,7 +98,7 @@ func StageDiffCap() Stage {
 		}
 		if lines > tc.Cfg.DiffCapLines {
 			tc.Outcome = Outcome{
-				Status: store.StatusParked,
+				Status: StatusParked,
 				Detail: fmt.Sprintf("diff is %d changed lines (cap %d)  --  split the issue or approve manually", lines, tc.Cfg.DiffCapLines),
 			}
 		}
@@ -208,7 +207,7 @@ func OpenPR(ctx context.Context, tc *TaskContext, body string) error {
 		return err
 	}
 	t.PRNumber = num
-	tc.Outcome = Outcome{Status: store.StatusPROpen, Detail: fmt.Sprintf("PR #%d", num)}
+	tc.Outcome = Outcome{Status: StatusPROpen, Detail: fmt.Sprintf("PR #%d", num)}
 	return nil
 }
 
@@ -219,7 +218,7 @@ func StageOpenPR(body func(*TaskContext) string) Stage {
 	}}
 }
 
-func taskPromptBlock(task *store.Task) string {
+func taskPromptBlock(task *Task) string {
 	if task.IsForgeBacked() {
 		return fmt.Sprintf("<issue number=%d>\n# %s\n\n%s\n</issue>",
 			task.IssueNumber, task.Title, task.Body)
@@ -227,14 +226,14 @@ func taskPromptBlock(task *store.Task) string {
 	return fmt.Sprintf("<task source=\"chat\">\n# %s\n\n%s\n</task>", task.Title, task.Body)
 }
 
-func taskKind(task *store.Task) string {
+func taskKind(task *Task) string {
 	if task.IsForgeBacked() {
 		return "GitHub issue"
 	}
 	return "chat-originated task"
 }
 
-func commitIssueReference(verb string, task *store.Task) string {
+func commitIssueReference(verb string, task *Task) string {
 	if !task.IsForgeBacked() {
 		return ""
 	}
