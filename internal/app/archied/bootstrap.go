@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -100,7 +101,17 @@ type boot struct {
 
 	playbooks *playbook.Store
 
-	st               store.TaskStore
+	st store.TaskStore
+	// stateStore is the State Store contract adapter the daemon's own
+	// capture/mapping/binding consumers use. It is the in-process
+	// *store.Store (the same one b.st holds) unless [services.state].target
+	// is set, in which case it is a remote *staterpc.Client dialed to the
+	// standalone archie-state-store gRPC service. Task lifecycle (b.st)
+	// stays in-process until .4.5/.4.6; only capture/mapping/binding
+	// resolve through this field, so a consumer mixes in-process and remote
+	// contracts per contract-code while the daemon's own store stays local
+	// (docs/prds/state-store-contract.md §12 step 6).
+	stateStore       store.TaskStore
 	chatSessionStore gateway.SessionStore
 
 	catalog       modelcatalog.Snapshot
@@ -284,7 +295,35 @@ func (b *boot) openStores(ctx context.Context) error {
 			log.Error("close store", "err", err)
 		}
 	})
+	if err := b.openStateStoreAdapter(ctx); err != nil {
+		return err
+	}
 	return b.openChatSessions(ctx)
+}
+
+// openStateStoreAdapter selects the State Store contract adapter the daemon's
+// own capture/mapping/binding consumers will use. The base path is the local
+// *store.Store just opened by openProductionTaskStore; when
+// [services.state].target is set the daemon instead dials the standalone
+// archie-state-store gRPC service and uses *staterpc.Client. Empty target
+// keeps the in-process adapter (the default -- the State Store service is not
+// yet extracted into its own process), so this is additive and
+// behaviour-neutral until an operator flips the seam
+// (docs/prds/state-store-contract.md §10). Task lifecycle (b.st) is untouched
+// here -- only the capture/mapping/binding contracts route through the
+// adapter during .4.4.
+func (b *boot) openStateStoreAdapter(ctx context.Context) error {
+	if strings.TrimSpace(b.cfg.Services.State.Target) == "" {
+		b.stateStore = b.st
+		return nil
+	}
+	client, cleanup, err := composeStateStoreClient(b.cfg.Services.State, b.secrets)
+	if err != nil {
+		return err
+	}
+	b.stateStore = client
+	b.addCleanup(cleanup)
+	return nil
 }
 
 func (b *boot) openChatSessions(_ context.Context) error { //nolint:unparam // context keeps the composition phase contract aligned with other openers
@@ -388,10 +427,14 @@ func (b *boot) setupObservability() {
 // docs/prds/payload-field-mapping.md and docs/prds/webhook-intake-security.md.
 func (b *boot) wireWebStoreSurfaces() {
 	cfg, log := b.cfg, b.log
-	if cs, ok := b.st.(store.CaptureStore); ok {
+	// Capture/mapping/binding surfaces resolve from b.stateStore (the State
+	// Store contract adapter): local by default, remote *staterpc.Client when
+	// [services.state].target is set. See wireWebStoreSurfaces' doc and
+	// docs/prds/state-store-contract.md §10.
+	if cs, ok := b.stateStore.(store.CaptureStore); ok {
 		b.web.Captures = cs
 	} else {
-		log.Warn("capture storage unavailable: task store does not implement CaptureStore")
+		log.Warn("capture storage unavailable: state store does not implement CaptureStore")
 	}
 	b.web.CaptureRetention = cfg.Capture.Retention.Std()
 	b.web.CaptureMaxEvents = cfg.Capture.MaxEvents
@@ -1283,14 +1326,14 @@ func (b *boot) buildDaemon() {
 // .4.2, not yet load-bearing.
 func (b *boot) startStateStoreServer(ctx context.Context) {
 	log := b.log
-	deps := staterpc.Deps{
-		Tasks: b.st, Mappings: b.d.Mappings, Bindings: b.d.Bindings,
-		BindingDispatcher: b.d.BindingDispatcher, BindingTaskCreator: b.d.BindingTaskCreator,
-		Log: log,
-	}
-	if cs, ok := b.st.(store.CaptureStore); ok {
-		deps.Captures = cs
-	}
+	// The in-process server fronts the daemon's LOCAL store surfaces, not the
+	// consumer-facing b.d.* adapters: during .4.4 the daemon may route its own
+	// capture/mapping/binding consumers to a remote *staterpc.Client via
+	// [services.state].target, but the daemon still OWNS archie.db in-process
+	// and the agent's gRPC target must keep answering from that same local
+	// file (no dual-store ownership, docs/prds/state-store-contract.md §9/§12
+	// step 6). Deletion of the in-process serving path is .4.6.
+	deps := b.stateStoreDeps()
 
 	host := "127.0.0.1"
 	var opts []grpc.ServerOption
