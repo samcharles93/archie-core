@@ -89,9 +89,14 @@ func TestUnmapErrorDoesNotLeakInternalDetail(t *testing.T) {
 		t.Fatalf("unmapError leaked raw internal detail: %q", got.Error())
 	}
 
-	// A raw (non-status) error is returned unchanged.
+	// A raw (non-status) error is returned unchanged (not wrapped into a
+	// status or a store sentinel).
 	raw := errors.New("transport failure")
-	if got := unmapError(raw); got != raw {
-		t.Fatalf("unmapError(raw) = %v, want unchanged", got)
+	got = unmapError(raw)
+	if errors.Is(got, store.ErrStaleTransition) {
+		t.Fatalf("unmapError(raw) = %v, must not map to a store sentinel", got)
+	}
+	if !errors.Is(got, raw) {
+		t.Fatalf("unmapError(raw) = %v, want an error chain including the original", got)
 	}
 }

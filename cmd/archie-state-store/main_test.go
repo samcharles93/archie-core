@@ -70,7 +70,7 @@ func repoRoot(t *testing.T) string {
 func buildBinary(t *testing.T, dir string) string {
 	t.Helper()
 	bin := filepath.Join(dir, "archie-state-store")
-	cmd := exec.Command("go", "build", "-o", bin, "./cmd/archie-state-store")
+	cmd := exec.CommandContext(t.Context(), "go", "build", "-o", bin, "./cmd/archie-state-store")
 	cmd.Dir = repoRoot(t)
 	cmd.Env = os.Environ()
 	out, err := cmd.CombinedOutput()
@@ -147,7 +147,7 @@ type stateStoreProcess struct {
 // configured one) is what a consumer must dial.
 func startStateStoreProcess(t *testing.T, bin, cfg string) *stateStoreProcess {
 	t.Helper()
-	cmd := exec.Command(bin, "-config", cfg, "-listen", "127.0.0.1:0", "-ready-addr", "127.0.0.1:0")
+	cmd := exec.CommandContext(t.Context(), bin, "-config", cfg, "-listen", "127.0.0.1:0", "-ready-addr", "127.0.0.1:0")
 	cmd.Env = append(os.Environ(), "ARCHIE_GITHUB_TOKEN=test-token")
 	var log syncBuffer
 	cmd.Stderr = &log
@@ -176,8 +176,12 @@ func startStateStoreProcess(t *testing.T, bin, cfg string) *stateStoreProcess {
 	// The readiness surface is the liveness signal the runbook uses; poll it
 	// until it answers (the gRPC listener may come up a tick ahead of it).
 	deadline = time.Now().Add(15 * time.Second)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+p.readyAddr+"/healthz", nil)
+	if err != nil {
+		t.Fatalf("build readiness request: %v", err)
+	}
 	for time.Now().Before(deadline) {
-		if resp, err := http.Get("http://" + p.readyAddr + "/healthz"); err == nil {
+		if resp, err := http.DefaultClient.Do(req); err == nil {
 			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
 				return p
