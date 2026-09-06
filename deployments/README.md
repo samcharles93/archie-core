@@ -34,6 +34,7 @@ Edit API keys in `~/.config/archie/env` or directly in `config.toml`, then launc
 
 ```bash
 archie-gateway -config ~/.config/archie/config.toml -listen 127.0.0.1:8585 &
+archie-state-store -config ~/.config/archie/config.toml -listen 127.0.0.1:9090 &
 archied -config ~/.config/archie/config.toml
 # or via systemd:
 systemctl --user start archied
@@ -42,3 +43,10 @@ systemctl --user start archied
 The templates use the extracted Gateway Service by default. Start
 `archie-gateway` before `archied`; it owns the conversation SQLite file and
 serves the `ChatContract` gRPC API on the configured target.
+
+The State Store service (`archie-state-store`) is `.4.3`: it owns the single
+`archie.db` task SQLite file and serves the `StateStore` gRPC contract. It is
+not yet consumed by the daemon (which still serves the store in-process), so
+running it now is only needed once the daemon points at it — the loopback
+bind above is the safe default, and a non-loopback bind requires a bearer
+token (`--token` / `STATE_STORE_TOKEN` / `[services.state].target_token`).

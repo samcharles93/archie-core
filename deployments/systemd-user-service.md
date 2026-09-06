@@ -43,6 +43,29 @@ RestartSec=5s
 WantedBy=default.target
 ```
 
+Create the State Store unit beside it. It owns the single `archie.db` SQLite
+file and serves the `StateStore` gRPC contract. It is not yet consumed by the
+daemon during the `.4.2`/`.4.3` split (the daemon still serves in-process), so
+the loopback bind with no token is the correct default; a non-loopback bind
+requires a bearer token via `--token`/`STATE_STORE_TOKEN` or
+`[services.state].target_token` and fails closed without one:
+
+```ini
+[Unit]
+Description=Archie State Store Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/archie-state-store -config %h/.config/archie/config.toml -listen 127.0.0.1:9090 -ready-addr 127.0.0.1:9091
+EnvironmentFile=-%h/.config/archie/env
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target
+```
+
 ---
 
 ## 2. Enabling User Linger (`loginctl`)
