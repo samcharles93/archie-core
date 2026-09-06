@@ -913,7 +913,7 @@ func (b *boot) registerNATSRPC() error {
 		return err
 	}
 	b.worktreeGrants = worktreerpc.NewGrants()
-	unsubscribe, err := registerTaskRPCServers(coreConn, b.st, b.forgeClient, b.trees, b.identityRunners, b.worktreeGrants, log)
+	unsubscribe, err := registerTaskRPCServers(coreConn, b.forgeClient, b.trees, b.identityRunners, b.worktreeGrants, log)
 	if err != nil {
 		log.Error("task RPC server registration failed", "err", err)
 		return err

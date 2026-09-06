@@ -44,7 +44,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/store"
-	"github.com/samcharles93/archie-core/internal/storerpc"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 	"github.com/samcharles93/archie-core/internal/tools"
 	"github.com/samcharles93/archie-core/internal/tools/mcp"
@@ -826,32 +825,25 @@ func subscribeAgentEvents(nc *natsio.Conn, bus *events.Bus, log *slog.Logger) (u
 	}, nil
 }
 
-// registerTaskRPCServers subscribes the storerpc/forgerpc/worktreerpc
-// handlers on nc so an archie-agent container (which holds no DB
-// connection, forge token, or push credential) can proxy those operations
-// back to archied. The returned func unsubscribes all of them.
+// registerTaskRPCServers subscribes the forgerpc/worktreerpc handlers on nc
+// so an archie-agent container (which holds no forge token, or push
+// credential) can proxy those operations back to archied. The returned func
+// unsubscribes all of them. The agent's store calls are NOT proxied here: they
+// go over gRPC to the State Store (docs/prds/state-store-contract.md §12 step
+// 4), so the legacy NATS storerpc registration is deleted.
 //
-// The store is shared across identities, so storerpc registers once on its
-// root subjects. Forge and worktree are identity-scoped: the root servers
-// answer the root (identity-less) subjects for single-identity deployments
-// and root-owned tasks, and one server pair per identity answers that
-// identity's scoped subjects so a container-mode task owned by a non-root
-// identity has its RPC calls served by its own forge client and worktree
-// manager.
-func registerTaskRPCServers(nc *natsio.Conn, st store.TaskStore, forgeClient forge.Forge, trees *worktree.Manager, identities []*daemon.IdentityRunner, grants *worktreerpc.Grants, log *slog.Logger) (unsubscribe func(), err error) {
-	unsubs := make([]func(), 0, 3+2*len(identities))
+// Forge and worktree are identity-scoped: the root servers answer the root
+// (identity-less) subjects for single-identity deployments and root-owned
+// tasks, and one server pair per identity answers that identity's scoped
+// subjects so a container-mode task owned by a non-root identity has its RPC
+// calls served by its own forge client and worktree manager.
+func registerTaskRPCServers(nc *natsio.Conn, forgeClient forge.Forge, trees *worktree.Manager, identities []*daemon.IdentityRunner, grants *worktreerpc.Grants, log *slog.Logger) (unsubscribe func(), err error) {
+	unsubs := make([]func(), 0, 2+2*len(identities))
 	unsubAll := func() {
 		for _, u := range unsubs {
 			u()
 		}
 	}
-
-	storeServer := &storerpc.Server{Store: st, Log: log}
-	u, err := storeServer.Register(nc)
-	if err != nil {
-		return nil, fmt.Errorf("register storerpc: %w", err)
-	}
-	unsubs = append(unsubs, u)
 
 	registerForge := func(fg forge.Forge, identity string) error {
 		srv := &forgerpc.Server{Forge: fg, Log: log.With("rpc_identity", identity)}

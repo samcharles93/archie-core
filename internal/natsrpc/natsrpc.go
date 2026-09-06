@@ -1,6 +1,6 @@
 // Package natsrpc holds the request/reply plumbing shared by
-// archie-core's three core-NATS RPC surfaces (storerpc, worktreerpc,
-// forgerpc): a timeout-bounded client call, multi-subject server
+// archie-core's core-NATS RPC surfaces (worktreerpc, forgerpc,
+// taskactions): a timeout-bounded client call, multi-subject server
 // registration with rollback on partial failure, and a JSON error
 // envelope so handlers don't each reimplement "marshal error, log
 // encode/respond failures."
@@ -126,7 +126,7 @@ func RegisterAll(nc *nats.Conn, regs []Registration) (unsubscribe func(), err er
 // Respond marshals v and replies to msg, logging (rather than
 // returning) any encode or transport failure  --  a handler has no
 // meaningful way to retry or propagate a respond failure to its caller.
-// pkg prefixes the log message (e.g. "storerpc") to identify the
+// pkg prefixes the log message (e.g. "forgerpc") to identify the
 // surface a failure came from.
 func Respond(msg *nats.Msg, log *slog.Logger, pkg string, v any) {
 	data, err := json.Marshal(v)
