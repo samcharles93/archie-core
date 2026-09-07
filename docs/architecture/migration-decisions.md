@@ -106,6 +106,26 @@ The destination matrix MUST name the behaviour owner, target path, dependencies
 to remove, state and contracts to preserve, migration prerequisites, and
 deletion criteria.
 
+**`internal/webui` / UI Service — RATIFIED Phase 3 disposition (2026-09-07).**
+The current owner is the in-process HTTP/SSE dashboard: SPA hosting, operator
+authentication, UI response projection, configuration reads and mutations,
+task/control APIs, and direct adapters to State Store, channel, event/log,
+memory, curator, workflow, forge, and Gateway runtime values. The target owner
+is a standalone UI application process; `internal/webui` remains its HTTP
+transport adapter, while Gateway, State Store, configuration, Work Intake,
+Messaging, and other capability owners expose the contracts behind those
+routes. The migration preserves retained route schemas, auth/CSRF behavior,
+task/capture/mapping/binding/session continuity, SSE replay semantics, and
+committed generated SPA assets. Prerequisites are the ratified UI boundary,
+route-owner inventory, narrow remote adapters, configuration/auth/readiness
+contracts, and process/conformance tests. Remove the shared live
+`config.Holder`, direct event/log bus, daemon stopper, forge client, channel
+manager, capability registries, composite store access, and in-process UI
+listener only after the focused criteria in
+[`docs/prds/ui-service-boundary.md`](../prds/ui-service-boundary.md) pass in
+production composition. The old construction and listener are deleted in the
+same cutover change; no second UI authority remains.
+
 ### 2. Session and Messaging migration
 
 The existing session implementation is the migration baseline. The migration must
@@ -275,6 +295,18 @@ Forge, store, and worktree authority remains in `archied` and is exposed to the
 task container through scoped RPC services. The worker runs the workflow and
 its worker-local ai-sdk loop; it does not receive forge credentials or direct
 store access. See `docs/prds/embedded-nats.md`.
+
+**UI Service boundary — RATIFIED (2026-09-07).** Phase 3 has a focused
+authority record in [`docs/prds/ui-service-boundary.md`](../prds/ui-service-boundary.md).
+The UI Service owns HTTP/SPA delivery, UI DTOs, browser authentication, and
+its own endpoint/credential/readiness settings. It consumes Gateway and State
+Store contracts and does not receive `config.Holder`, daemon pointers, SQL or
+store implementations, workflow registries, forge/channel/model runtimes, or
+resolved secrets. The current `internal/webui` implementation remains inside
+`archied` until the ratified migration gates prove route parity, adapter
+selection, failure/readiness behavior, and deletion of the shared-holder and
+direct-access paths. The extraction cutover removes the in-process UI
+listener in the same change; there is no dual-live UI authority.
 
 ### 7. Shared mechanics
 
