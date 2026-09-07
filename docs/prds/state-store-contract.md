@@ -409,7 +409,12 @@ is why it is decomposed; proto services bypass the cap (like `ChatContract`).
 
 **Payload caps:**
 - Capture body: `defaultCaptureMaxBodyBytes = 256 KiB` (may reduce further; the wire message
-  must not exceed gRPC's default 4 MiB receive limit for a single capture).
+  must not exceed gRPC's default 4 MiB receive limit for a single capture). A single capture
+  fits, but a *batch* of them did not: the caller-side cap of up to 100 captures at 256 KiB each
+  could exceed 4 MiB in one unary `ListCaptures`/`ListUndispatchedCaptures` response. `.4.7` adds
+  `StreamCaptures`/`StreamUndispatchedCaptures` (server-streaming, one capture per message) as
+  the path both `staterpc.Client` methods actually call; the original unary RPCs stay defined,
+  unmodified and deprecated, only so `buf breaking` protects an in-flight rolling deploy.
 - Task `detail`/`park_reason`/event `Detail`: 4000-char hard cap (`clip(s, 4000)`).
 
 **Retention (stays server-side in the store; the wire does not carry pruning decisions):**
@@ -459,16 +464,28 @@ stated explicitly rather than left implicit.
   confirmation caveat. The NATS-KV discovery fallback supplies endpoints but does not add
   transport security; that stays the operator's responsibility.
 
-### Token lifecycle (rev. 2c)
+### Token lifecycle (rev. 2c; scoping added in `.4.7`)
 
 - **Generation:** the daemon generates a per-task bearer token when it acquires the container
   (or per incumbence) and injects it via `containerEnv` as `STATE_STORE_TOKEN`. A single token
   may cover a task's container lifetime.
+- **Registration (`.4.7`, post-standalone-cutover):** the State Store is now its own process
+  (`.4.3`/`.4.6`), so the daemon can no longer just hold an in-process issued-token set for the
+  server to check — it registers the token at the remote authority via the
+  `RegisterTaskGrant`/`RevokeTaskGrant` RPCs (`staterpc.GrantIssuer`, `daemon.StateStoreGrantIssuer`),
+  admin-token-authenticated calls a task-scoped token itself can never make.
 - **Lifetime:** tied to the task + container grace period; rotated on a new container acquisition
-  for the same task; a token for a released container is invalidated.
-- **Validation:** a gRPC interceptor on the State Store server validates the token against the
-  daemon's issued-token set; missing/unknown/expired → `codes.Unauthenticated`. The token is
-  carried in gRPC metadata, never in a URL.
+  for the same task; a token for a released container is invalidated (`RevokeTaskGrant`, deferred
+  alongside `ContainerPool.Release`). An unrevoked grant still expires server-side (bounded by
+  `RegisterTaskGrantRequest.lifetime_seconds`, capped at 7 days) so a daemon crash before revoke
+  cannot leave a grant valid indefinitely.
+- **Validation and scope (`.4.7`):** a gRPC interceptor (`staterpc.TaskGrants.UnaryInterceptor`)
+  validates the token against the State Store's own issued-grant set; missing/unknown/expired →
+  `codes.Unauthenticated`. Unlike the daemon's own administrative token (full access to all ~40
+  RPCs), a task-scoped grant additionally authorizes only `Update`/`Transition`/`InsertEvent` on
+  its own task ID — every other RPC, including the streaming capture surface and
+  `RegisterTaskGrant`/`RevokeTaskGrant` themselves, is `codes.PermissionDenied` for a task-scoped
+  caller. The token is carried in gRPC metadata, never in a URL.
 
 ### Fail-closed on non-loopback (rev. 2c)
 
