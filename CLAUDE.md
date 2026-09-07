@@ -196,22 +196,30 @@ structures found in legacy packages.
   `(code, exact canonical message)`. Changing a canonical message string
   breaks `errors.Is` on the client without changing behavior visibly --
   treat those message constants as part of the wire contract.
-- The daemon serves this service in-process (multiplexed), bound to the
-  Docker bridge gateway address with mandatory per-task bearer-token auth
-  when a container pool exists, or loopback-only with no token when it does
-  not (`boot.startStateStoreServer` in `internal/app/archied/bootstrap.go`).
-  Never add a second listener for the same service.
-- `daemon.StateStoreTokens` is a per-task, per-incumbence token registry:
-  `containerEnv` calls `Generate` on every container acquisition (so a new
-  container's token supersedes the task's old one) and `process()` calls
-  `Revoke` on release. The gRPC interceptor (`staterpc.UnaryTokenInterceptor`)
-  is the only thing that checks it.
-- `archie-agent` picks its `workflow.Store` implementation once at boot
-  (`agenttransport/nats.Transport.Store`): gRPC via `staterpc.Client` when
-  `STATE_STORE_URL` was injected, otherwise the legacy NATS `storerpc.Client`.
-  A single agent process is never both; `internal/storerpc` (NATS transport)
-  is deleted only after every agent path is on gRPC (PRD §12 step 4) -- do
-  not delete it while `STATE_STORE_URL` injection is still optional.
+- The State Store is a standalone process (`cmd/archie-state-store`, run via
+  `archied.RunStateStore`) -- the daemon and Gateway never own `archie.db` or
+  serve this service in-process; `boot.openStateStore` in
+  `internal/app/archied/state_store.go` is the only caller of
+  `openProductionTaskStore`. Never add a second listener for the same
+  service, and never reintroduce an in-process serving path in the
+  daemon/Gateway (`TestOpenStoresNeverOwnsTaskDB` guards this).
+- Per-task credentials are scoped, not just authenticated: `daemon.
+  StateStoreGrantIssuer` (`staterpc.GrantIssuer`) registers a fresh
+  task-scoped grant at the remote State Store via `RegisterTaskGrant` before
+  `ContainerPool.Acquire` and revokes it via `RevokeTaskGrant` on `Release`
+  (`acquireTaskContainer`/`process` in `internal/daemon/daemon.go`). Fails
+  closed (parks the task) if a State Store is configured but no issuer is
+  wired -- it must never fall back to forwarding the daemon's own
+  administrative token. Server-side, `staterpc.TaskGrants.UnaryInterceptor`
+  authorizes a task-scoped token for only `Update`/`Transition`/`InsertEvent`
+  on its own task ID; every other RPC (including `RegisterTaskGrant`/
+  `RevokeTaskGrant` themselves and the streaming capture RPCs) requires the
+  administrative token.
+- `archie-agent` has exactly one `workflow.Store` path: gRPC via
+  `staterpc.Client` (`agenttransport/nats.Transport.Store`), using the
+  `STATE_STORE_URL`/`STATE_STORE_TOKEN` env the daemon injects. The legacy
+  NATS `storerpc` transport is deleted (`internal/storerpc` no longer
+  exists); do not reintroduce a dual-path selection.
 - `store.BindingDispatcher.RecordDispatch` takes no `*sql.Tx` (dropped in
   `.4.2` -- it cannot cross a gRPC boundary; production always passed `nil`).
   Do not reintroduce a transaction parameter on a producer-owned store
