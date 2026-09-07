@@ -9,6 +9,11 @@
 `/work/artefacts/archie-core-current-state-archify.html`,
 `/work/artefacts/archie-core-ideal-state-archify.html`
 
+The Phase 3 UI boundary and configuration decision is ratified in
+[`ui-service-boundary.md`](ui-service-boundary.md). That focused document is
+the implementation authority for `archie-core-8cda.5.2`; this parent remains
+the broader service-distribution proposal.
+
 ## Decision
 
 archie-core moves from one Go binary (`archied`) hosting every domain
@@ -30,7 +35,7 @@ boundaries.
 
 | Service | Contract it owns | Existing code it replaces/wraps |
 |---|---|---|
-| UI Service | thin client only; talks to Gateway's contract | `internal/webui` (SPA hosting stays; API surface becomes a Gateway client, not a peer with direct access) |
+| UI Service | thin client only; talks to Gateway and State Store contracts | `internal/webui` (SPA hosting stays; API surface becomes typed contract clients, not a peer with direct access) |
 | Gateway Service | routing / turn / session contract | `internal/gateway` |
 | Messaging Service | channel-plugin contract (Telegram, email, Discord, Teams, ...) | `internal/channels` |
 | Curator Service | curator contract; **optional**, installs as a Gateway plugin | `internal/domain/curator` |
@@ -80,23 +85,18 @@ either shape.
 established that Archie's existing domain split already does what AWX's
 service-decomposition post argues for -- boundaries exist. What doesn't
 exist is deployability: `internal/webui` is not a passive frontend today.
-Verified couplings that this decomposition must eliminate:
+The original webui coupling inventory has been re-baselined against the current
+checkout. Two earlier couplings are already removed; the remaining UI work is
+recorded in [`ui-service-boundary.md`](ui-service-boundary.md).
 
-- Telegram's task-action execution (pause/resume) currently routes through
-  `internal/webui`'s own HTTP handler in-process
-  (`chatTaskActorAdapter.ApplyChatTaskAction`,
-  `internal/app/archied/main.go:224-242`, dispatching into
-  `internal/webui/server.go:231`'s `handleTaskAction`). Under this PRD,
-  Messaging Service calls Gateway Service's contract directly -- no HTTP
-  detour through a UI process.
-- `internal/webui/api_chat.go` calls `gateway.SessionStore`, `Router`, and
-  `TurnHistory` directly (lines 97, 142, 198, 256, 261) instead of through
-  a narrow interface. Under this PRD, UI Service only ever sees Gateway
-  Service's `ChatContract`.
-- `bootstrap.go:1239` shares the daemon's live `config.Holder` with webui
-  rather than passing config. Under this PRD, each service owns its own
-  configuration surface; nothing shares a live in-process struct across a
-  service boundary because there is no longer a shared process.
+- Telegram task actions now call Gateway's `ChatContract` directly through
+  `chatTaskActorAdapter`; the old Telegram-to-webui HTTP detour is historical.
+- `internal/webui/api_chat.go` now holds `gateway.ChatContract`; direct
+  `SessionStore`, `Router`, and `TurnHistory` access is historical.
+- The live `config.Holder` alias remains: `buildDaemon` assigns
+  `b.web.Cfg = b.d.Cfg`. UI extraction must remove that alias and also assign
+  owners/contracts for the State Store, channel manager, event/log feeds,
+  configuration mutations, webhook capture, and other current webui routes.
 
 ## Non-goals
 
