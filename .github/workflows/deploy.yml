@@ -177,3 +177,64 @@ jobs:
             RUNTIME_VERSION=${{ steps.versions.outputs.runtime }}
           cache-from: type=gha,scope=archie-agent
           cache-to: type=gha,mode=max,scope=archie-agent
+
+  # Packages the host-run binaries (archied, archie-gateway,
+  # archie-state-store, archie-playbooks) as a linux/amd64 zip for a
+  # non-Docker install. Independent of build-and-push: it never touches the
+  # archied/archie-agent image jobs, and a gateway-only release (no
+  # archie/v* tag) still produces this zip -- it's keyed to the archied tag
+  # alone. archie-agent is deliberately excluded: it only ever runs inside
+  # the Docker image build-and-push already publishes, never as a host
+  # binary (archie-core-8cda.4.7.1).
+  dist-zip:
+    needs: gate
+    if: startsWith(github.ref, 'refs/tags/archied/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Resolve archied version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/archied/v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build linux/amd64 binaries
+        env:
+          GOOS: linux
+          GOARCH: amd64
+          CGO_ENABLED: "0"
+        run: |
+          set -e
+          ldflags_archied="-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion=${{ steps.version.outputs.version }} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary"
+          ldflags_gateway="-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion=${{ steps.version.outputs.version }} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary"
+          mkdir -p dist
+          go build -ldflags "$ldflags_archied" -o dist/archied ./cmd/archied
+          go build -ldflags "$ldflags_gateway" -o dist/archie-gateway ./cmd/archie-gateway
+          go build -o dist/archie-state-store ./cmd/archie-state-store
+          go build -o dist/archie-playbooks ./cmd/archie-playbooks
+
+      - name: Assemble distribution zip
+        id: zip
+        run: |
+          set -e
+          name="archie-core-archied-v${{ steps.version.outputs.version }}-linux-amd64"
+          mkdir -p "$name"
+          cp dist/archied dist/archie-gateway dist/archie-state-store dist/archie-playbooks "$name/"
+          cp deployments/INSTRUCTIONS.md CHANGELOG.md CHANGELOG.archied.md CHANGELOG.archie.md "$name/"
+          # README.md doesn't exist yet in this repo; include it once it does
+          # rather than fail the release on its absence.
+          [ -f README.md ] && cp README.md "$name/"
+          zip -r "$name.zip" "$name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Upload distribution zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.zip.outputs.name }}
+          path: ${{ steps.zip.outputs.name }}.zip
+          retention-days: 90
