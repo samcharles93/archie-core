@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/samcharles93/archie-core/internal/config"
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -142,5 +143,61 @@ func TestServeStateStoreServesContract(t *testing.T) {
 		}
 	case <-t.Context().Done():
 		t.Fatal("serveStateStore did not return after cancel")
+	}
+}
+
+// TestStateStoreDataSurvivesRestart is the .4.7 restart/recovery check: a
+// task written by one archie-state-store process must still be there for a
+// fresh process opening the same archie.db path, proving b.openStateStore
+// (RunStateStore's own opener, not a test-only shortcut) round-trips through
+// the file rather than an in-memory or per-process store.
+func TestStateStoreDataSurvivesRestart(t *testing.T) {
+	cfg := config.Config{DBPath: filepath.Join(t.TempDir(), "archie")}
+
+	first := newBootstrap()
+	first.cfg = cfg
+	if err := first.openStateStore(t.Context()); err != nil {
+		t.Fatalf("first openStateStore: %v", err)
+	}
+	task, err := first.st.EnqueueChatTask(t.Context(), "acme", "widget", "restart check", "body", "implement", "")
+	if err != nil {
+		t.Fatalf("EnqueueChatTask: %v", err)
+	}
+	first.cleanup() // closes the SQLite handle, simulating process exit
+
+	second := newBootstrap()
+	second.cfg = cfg
+	if err := second.openStateStore(t.Context()); err != nil {
+		t.Fatalf("second openStateStore: %v", err)
+	}
+	defer second.cleanup()
+
+	got, err := second.st.TaskByID(t.Context(), task.ID)
+	if err != nil {
+		t.Fatalf("TaskByID after restart: %v", err)
+	}
+	if got == nil {
+		t.Fatal("task did not survive a restart against the same db path")
+	}
+	if got.Title != task.Title {
+		t.Fatalf("restarted task title = %q, want %q", got.Title, task.Title)
+	}
+}
+
+// TestOpenStoresNeverOwnsTaskDB is the .4.7 single-owner-SQLite assertion:
+// the daemon/gateway composition path (openStores, run by Run/RunGateway)
+// must never populate b.st -- that field is reserved for the standalone
+// archie-state-store binary's openStateStore (state_store.go). Regressing
+// this would mean archie.db is opened by two processes at once.
+func TestOpenStoresNeverOwnsTaskDB(t *testing.T) {
+	b := newBootstrap()
+	b.cfg = config.Config{DBPath: filepath.Join(t.TempDir(), "archie")}
+	if err := b.openStores(t.Context()); err != nil {
+		t.Fatalf("openStores: %v", err)
+	}
+	defer b.cleanup()
+
+	if b.st != nil {
+		t.Fatal("openStores populated b.st -- the daemon/gateway path must not own archie.db directly (docs/prds/state-store-contract.md §12 step 7)")
 	}
 }
