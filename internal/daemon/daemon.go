@@ -54,6 +54,15 @@ type WorktreeGrantIssuer interface {
 	Issue(task *workflow.Task) (token string, revoke func(), err error)
 }
 
+// StateStoreGrantIssuer gives one container dispatch a State Store credential
+// scoped to that task's own workflow.Store RPCs (Update, Transition,
+// InsertEvent) -- never the daemon's own administrative credential. The
+// daemon owns grant lifetime (issue before Acquire, revoke on Release); the
+// transport implementation (staterpc.GrantIssuer) owns token mechanics.
+type StateStoreGrantIssuer interface {
+	Issue(task *workflow.Task) (token string, revoke func(), err error)
+}
+
 // NATSEndpoint is the broker address and credential archied connected with at
 // startup. It is runtime state rather than configuration: embedded mode
 // generates both values, and external secret references are resolved once.
@@ -119,6 +128,11 @@ type Daemon struct {
 	// bus is configured; the existing SQLite ClaimNext flow is used.
 	Tasks          TaskBus
 	WorktreeGrants WorktreeGrantIssuer
+	// StateStoreGrants issues per-task State Store credentials for container
+	// env (see containerEnv). Required whenever ConnectedStateStore.URL is
+	// set -- acquireTaskContainer parks the task rather than fall back to
+	// forwarding the daemon's own administrative token.
+	StateStoreGrants StateStoreGrantIssuer
 	// TaskRunReadyTimeout bounds how long runViaAgent retries an initial
 	// taskrun request that fails with nats.ErrNoResponders, giving a
 	// freshly spawned archie-agent container time to connect to NATS, set
@@ -1101,11 +1115,12 @@ func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
 		d.Log.Warn("task branch not persisted", "task", task.ID, "err", err)
 	}
 
-	ctr, ok := d.acquireTaskContainer(ctx, task, repo, workDir)
+	ctr, revokeStateStoreGrant, ok := d.acquireTaskContainer(ctx, task, repo, workDir)
 	if !ok {
 		return
 	}
 	defer d.ContainerPool.Release(ctx, ctr)
+	defer revokeStateStoreGrant()
 
 	// Hand the whole task to archie-agent in one NATS round trip. archie-agent
 	// proxies Store/Forge/worktree-push calls back to archied over storerpc/
@@ -1183,7 +1198,7 @@ func (d *Daemon) acquireTaskContainer(
 	task *workflow.Task,
 	repo config.Repo,
 	workDir string,
-) (*container.Container, bool) {
+) (*container.Container, func(), bool) {
 	park := func(reason string, err error) {
 		d.Log.Error(reason, "err", err)
 		d.parkRunningTask(ctx, task.ID, reason+": "+err.Error())
@@ -1197,7 +1212,7 @@ func (d *Daemon) acquireTaskContainer(
 		Workflow: task.Workflow, Branch: task.Branch, Plan: task.Plan,
 	}); err != nil {
 		park("task.json write failed", err)
-		return nil, false
+		return nil, nil, false
 	}
 
 	// Guard: Storage may be nil if the daemon was wired incorrectly. In
@@ -1205,7 +1220,7 @@ func (d *Daemon) acquireTaskContainer(
 	if d.Storage == nil {
 		d.Log.Error("storage backend is nil  --  cannot acquire container")
 		d.parkRunningTask(ctx, task.ID, "storage backend not configured")
-		return nil, false
+		return nil, nil, false
 	}
 
 	mounts, err := d.Storage.Setup(ctx, storage.TaskRef{
@@ -1217,11 +1232,27 @@ func (d *Daemon) acquireTaskContainer(
 	})
 	if err != nil {
 		park("storage setup failed", err)
-		return nil, false
+		return nil, nil, false
 	}
 
-	ctr, err := d.ContainerPool.Acquire(ctx, mounts, d.containerEnv(task))
+	stateStoreToken, revokeStateStoreGrant, err := d.stateStoreGrantToken(task)
 	if err != nil {
+		if terr := d.Storage.Teardown(ctx, storage.TaskRef{
+			WorktreeDir:       workDir,
+			Ecosystem:         repo.Ecosystem,
+			PersistentStorage: repo.PersistentStorage,
+			Owner:             task.Owner,
+			Repo:              task.Repo,
+		}); terr != nil {
+			d.Log.Warn("storage teardown after state store grant failure failed", "err", terr)
+		}
+		park("state store grant failed", err)
+		return nil, nil, false
+	}
+
+	ctr, err := d.ContainerPool.Acquire(ctx, mounts, d.containerEnv(task, stateStoreToken))
+	if err != nil {
+		revokeStateStoreGrant()
 		// Roll back the storage we just set up: the mounts were created
 		// for this task but no container will use them. Leaking them until
 		// a later TTL sweep is not acceptable on a backend that allocates
@@ -1236,9 +1267,9 @@ func (d *Daemon) acquireTaskContainer(
 			d.Log.Warn("storage teardown after acquire failure failed", "err", terr)
 		}
 		park("container acquire failed", err)
-		return nil, false
+		return nil, nil, false
 	}
-	return ctr, true
+	return ctr, revokeStateStoreGrant, true
 }
 
 // parkRunningTask transitions a task from running to parked using a context
@@ -1394,7 +1425,7 @@ func (d *Daemon) requestTaskRun(ctx context.Context, taskID int64, data []byte) 
 	}
 }
 
-func (d *Daemon) containerEnv(task *workflow.Task) []string {
+func (d *Daemon) containerEnv(task *workflow.Task, stateStoreToken string) []string {
 	var env []string
 	// The endpoint the daemon's own client connected with at startup, not
 	// the live config: a reloaded [nats] section must not point new
@@ -1406,12 +1437,14 @@ func (d *Daemon) containerEnv(task *workflow.Task) []string {
 	// The State Store gRPC target follows the same seam as NATS_URL/
 	// NATS_TOKEN above (docs/prds/state-store-contract.md §6). It is always
 	// the configured [services.state].target after the in-process serving
-	// path is deleted; the token is the same one the daemon client presents,
-	// so archie-agent authenticates to the same archie-state-store service.
+	// path is deleted. stateStoreToken is this task's own scoped credential
+	// (see stateStoreGrantToken) -- never d.ConnectedStateStore.Token, which
+	// is the daemon's administrative credential and must never reach a
+	// container.
 	if d.ConnectedStateStore.URL != "" {
 		env = append(env, "STATE_STORE_URL="+d.ConnectedStateStore.URL)
-		if d.ConnectedStateStore.Token != "" {
-			env = append(env, "STATE_STORE_TOKEN="+d.ConnectedStateStore.Token)
+		if stateStoreToken != "" {
+			env = append(env, "STATE_STORE_TOKEN="+stateStoreToken)
 		}
 	}
 	// The agent process runs as root inside the container (no USER in the
@@ -1431,6 +1464,21 @@ func (d *Daemon) containerEnv(task *workflow.Task) []string {
 		}
 	}
 	return env
+}
+
+// stateStoreGrantToken issues this task's scoped State Store credential, or
+// ("", no-op revoke, nil) when no State Store is configured. It fails closed
+// -- rather than falling back to the daemon's administrative token -- when a
+// State Store is configured but no StateStoreGrantIssuer is wired, which is
+// a composition bug, not a runtime condition to paper over.
+func (d *Daemon) stateStoreGrantToken(task *workflow.Task) (string, func(), error) {
+	if d.ConnectedStateStore.URL == "" {
+		return "", func() {}, nil
+	}
+	if d.StateStoreGrants == nil {
+		return "", nil, fmt.Errorf("state store is configured but no task-scoped grant issuer is wired")
+	}
+	return d.StateStoreGrants.Issue(task)
 }
 
 func (d *Daemon) configFor(task *workflow.Task) config.Config {

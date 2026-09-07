@@ -81,7 +81,7 @@ func TestConnectedNATSEndpointReachesManagedContainerCreate(t *testing.T) {
 			Token: token,
 		},
 	}
-	if _, err := pool.Acquire(t.Context(), nil, d.containerEnv(nil)); err != nil {
+	if _, err := pool.Acquire(t.Context(), nil, d.containerEnv(nil, "")); err != nil {
 		t.Fatalf("Pool.Acquire = %v", err)
 	}
 

@@ -38,6 +38,7 @@ func timeSeconds(s int64) time.Duration { return time.Duration(s) * time.Second 
 // codes.Unavailable) exactly as their daemon-side consumers already treat a
 // nil Mappings/Bindings/BindingDispatcher/BindingTaskCreator as "disabled".
 type Deps struct {
+	Grants             *TaskGrants
 	Tasks              store.TaskStore
 	Captures           store.CaptureStore
 	Mappings           store.MappingStore
@@ -112,6 +113,9 @@ func (s *server) Transition(ctx context.Context, r *pb.TransitionRequest) (*pb.T
 }
 
 func (s *server) Update(ctx context.Context, r *pb.UpdateRequest) (*pb.UpdateResponse, error) {
+	if r.Task == nil {
+		return nil, status.Error(codes.InvalidArgument, "task is required")
+	}
 	if err := s.deps.Tasks.Update(ctx, taskValue(r.Task)); err != nil {
 		return nil, s.logErr("Update", err)
 	}
@@ -302,6 +306,27 @@ func (s *server) ListCaptures(ctx context.Context, r *pb.ListCapturesRequest) (*
 	return &pb.ListCapturesResponse{Captures: mapValues(captures, capturedEventProto)}, nil
 }
 
+// StreamCaptures supersedes ListCaptures: a batch of large capture bodies in
+// one unary response can exceed gRPC's 4MiB message cap
+// (docs/prds/state-store-contract.md). ListCaptures stays implemented,
+// unmodified, so an old client/server pairing mid-rollout keeps working.
+func (s *server) StreamCaptures(r *pb.StreamCapturesRequest, stream pb.StateStoreService_StreamCapturesServer) error {
+	cs, err := s.capture()
+	if err != nil {
+		return err
+	}
+	captures, err := cs.ListCaptures(stream.Context(), int(r.Limit))
+	if err != nil {
+		return s.logErr("StreamCaptures", err)
+	}
+	for _, c := range captures {
+		if err := stream.Send(&pb.StreamCapturesResponse{Capture: capturedEventProto(c)}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Mapping
 
 func (s *server) mapping() (store.MappingStore, error) {
@@ -479,6 +504,24 @@ func (s *server) ListUndispatchedCaptures(ctx context.Context, r *pb.ListUndispa
 		return nil, s.logErr("ListUndispatchedCaptures", err)
 	}
 	return &pb.ListUndispatchedCapturesResponse{Captures: mapValues(captures, capturedEventProto)}, nil
+}
+
+// StreamUndispatchedCaptures supersedes ListUndispatchedCaptures; see
+// StreamCaptures above.
+func (s *server) StreamUndispatchedCaptures(r *pb.StreamUndispatchedCapturesRequest, stream pb.StateStoreService_StreamUndispatchedCapturesServer) error {
+	if s.deps.BindingDispatcher == nil {
+		return errBindingDispatchUnavailable
+	}
+	captures, err := s.deps.BindingDispatcher.ListUndispatchedCaptures(stream.Context(), r.Sources, int(r.Limit))
+	if err != nil {
+		return s.logErr("StreamUndispatchedCaptures", err)
+	}
+	for _, c := range captures {
+		if err := stream.Send(&pb.StreamUndispatchedCapturesResponse{Capture: capturedEventProto(c)}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // BindingTaskCreator
