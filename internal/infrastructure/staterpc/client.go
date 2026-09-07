@@ -2,6 +2,8 @@ package staterpc
 
 import (
 	"context"
+	"errors"
+	"io"
 	"time"
 
 	"google.golang.org/grpc"
@@ -244,12 +246,25 @@ func (c *Client) InsertCapture(ctx context.Context, ce store.CapturedEvent, rete
 	return r.Id, nil
 }
 
+// ListCaptures calls StreamCaptures, not the deprecated unary ListCaptures
+// RPC: a batch of large capture bodies in one unary response can exceed
+// gRPC's 4MiB message cap (docs/prds/state-store-contract.md).
 func (c *Client) ListCaptures(ctx context.Context, limit int) ([]store.CapturedEvent, error) {
-	r, err := c.client.ListCaptures(ctx, &pb.ListCapturesRequest{Limit: int64(limit)})
+	stream, err := c.client.StreamCaptures(ctx, &pb.StreamCapturesRequest{Limit: int64(limit)})
 	if err != nil {
 		return nil, unmapError(err)
 	}
-	return mapValues(r.Captures, capturedEventValue), nil
+	var captures []store.CapturedEvent
+	for {
+		r, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			return captures, nil
+		}
+		if err != nil {
+			return nil, unmapError(err)
+		}
+		captures = append(captures, capturedEventValue(r.Capture))
+	}
 }
 
 // Mapping
@@ -352,12 +367,24 @@ func (c *Client) RecordDispatch(ctx context.Context, bindingID, bindingVersion, 
 	return unmapError(err)
 }
 
+// ListUndispatchedCaptures calls StreamUndispatchedCaptures; see ListCaptures
+// above.
 func (c *Client) ListUndispatchedCaptures(ctx context.Context, sources []string, limit int) ([]store.CapturedEvent, error) {
-	r, err := c.client.ListUndispatchedCaptures(ctx, &pb.ListUndispatchedCapturesRequest{Sources: sources, Limit: int64(limit)})
+	stream, err := c.client.StreamUndispatchedCaptures(ctx, &pb.StreamUndispatchedCapturesRequest{Sources: sources, Limit: int64(limit)})
 	if err != nil {
 		return nil, unmapError(err)
 	}
-	return mapValues(r.Captures, capturedEventValue), nil
+	var captures []store.CapturedEvent
+	for {
+		r, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			return captures, nil
+		}
+		if err != nil {
+			return nil, unmapError(err)
+		}
+		captures = append(captures, capturedEventValue(r.Capture))
+	}
 }
 
 // BindingTaskCreator

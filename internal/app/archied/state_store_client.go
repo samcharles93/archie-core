@@ -10,7 +10,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/secret"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // composeStateStoreClient dials the State Store gRPC service the daemon's own
@@ -35,7 +34,7 @@ func stateStoreResolvedToken(settings config.ServiceConnection, secrets *secret.
 	return token
 }
 
-func composeStateStoreClient(settings config.ServiceConnection, secrets *secret.Registry) (store.TaskStore, func(), error) {
+func composeStateStoreClient(settings config.ServiceConnection, secrets *secret.Registry) (*staterpc.Client, func(), error) {
 	target := strings.TrimSpace(settings.Target)
 	if target == "" {
 		return nil, nil, fmt.Errorf("services.state.target is required")

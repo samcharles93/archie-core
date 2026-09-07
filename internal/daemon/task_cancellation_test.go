@@ -518,9 +518,9 @@ func TestAcquireTaskContainerFailureParksTaskOnCancelledContext(t *testing.T) {
 				d.Storage = &errStorage{setupErr: tt.setupErr}
 			}
 
-			ctr, ok := d.acquireTaskContainer(ctx, task, config.Repo{Owner: "acme", Name: "widget"}, workDir)
-			if ok || ctr != nil {
-				t.Fatalf("acquireTaskContainer ok = %v, ctr = %v; want false, nil", ok, ctr)
+			ctr, revoke, ok := d.acquireTaskContainer(ctx, task, config.Repo{Owner: "acme", Name: "widget"}, workDir)
+			if ok || ctr != nil || revoke != nil {
+				t.Fatalf("acquireTaskContainer ok = %v, ctr = %v, revoke==nil:%v; want false, nil, true", ok, ctr, revoke == nil)
 			}
 
 			got, err := s.TaskByID(context.Background(), task.ID)

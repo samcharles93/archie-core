@@ -50,6 +50,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/modelcatalog"
 	"github.com/samcharles93/archie-core/internal/infrastructure/sessioncurator"
 	"github.com/samcharles93/archie-core/internal/infrastructure/skillcurator"
+	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/memory"
@@ -107,7 +108,13 @@ type boot struct {
 	// by openStateStoreAdapter, which requires [services.state].target to be
 	// set. The b.st field remains solely for the standalone archie-state-store
 	// binary, which owns the single SQLite file.
-	stateStore       store.TaskStore
+	stateStore store.TaskStore
+	// stateStoreGrants issues per-task, scoped State Store credentials for
+	// agent containers (daemon.StateStoreGrantIssuer), wrapping the same
+	// *staterpc.Client as stateStore. Nil when the State Store adapter isn't
+	// the remote gRPC client (never true in production; state_store.go's
+	// standalone-only compose leaves no other case).
+	stateStoreGrants *staterpc.GrantIssuer
 	stateStoreToken  string
 	chatSessionStore gateway.SessionStore
 
@@ -306,6 +313,7 @@ func (b *boot) openStateStoreAdapter() error {
 		return err
 	}
 	b.stateStore = client
+	b.stateStoreGrants = &staterpc.GrantIssuer{Client: client}
 	b.stateStoreToken = stateStoreResolvedToken(b.cfg.Services.State, b.secrets)
 	b.addCleanup(cleanup)
 	return nil
@@ -1269,6 +1277,7 @@ func (b *boot) buildDaemon() {
 		Log:                 log,
 		Tasks:               b.natsClient,
 		WorktreeGrants:      b.worktreeGrants,
+		StateStoreGrants:    b.stateStoreGrants,
 		ContainerPool:       b.containerPool,
 		Guardrails:          b.guardrails,
 		ToolRegistry:        b.toolReg,

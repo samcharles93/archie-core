@@ -12,6 +12,9 @@ import "google/protobuf/timestamp.proto";
 // the same *store.Store implementation; the proto bypasses the Go
 // interfacebloat cap (max 8), like gateway.v1.ChatService does.
 service StateStoreService {
+  // Administrative task credential lifecycle. Worker credentials cannot call these.
+  rpc RegisterTaskGrant(RegisterTaskGrantRequest) returns (RegisterTaskGrantResponse);
+  rpc RevokeTaskGrant(RevokeTaskGrantRequest) returns (RevokeTaskGrantResponse);
   // Lifecycle
   rpc EnqueueIssue(EnqueueIssueRequest) returns (EnqueueIssueResponse);
   rpc EnqueueChatTask(EnqueueChatTaskRequest) returns (EnqueueChatTaskResponse);
@@ -45,7 +48,17 @@ service StateStoreService {
 
   // Capture
   rpc InsertCapture(InsertCaptureRequest) returns (InsertCaptureResponse);
-  rpc ListCaptures(ListCapturesRequest) returns (ListCapturesResponse);
+  // ListCaptures is superseded by StreamCaptures (kept, unmodified, so an
+  // in-flight rolling deploy's old client/server pairing keeps working --
+  // buf breaking forbids removing or reshaping an existing RPC). Every
+  // in-repo caller uses StreamCaptures.
+  rpc ListCaptures(ListCapturesRequest) returns (ListCapturesResponse) {
+    option deprecated = true;
+  }
+  // StreamCaptures returns one capture per message: a batch of large capture
+  // bodies can exceed gRPC's 4MiB unary message cap
+  // (docs/prds/state-store-contract.md).
+  rpc StreamCaptures(StreamCapturesRequest) returns (stream StreamCapturesResponse);
 
   // Mapping
   rpc InsertMapping(InsertMappingRequest) returns (InsertMappingResponse);
@@ -65,11 +78,28 @@ service StateStoreService {
   // Dispatch
   rpc ArmedBindingsForSource(ArmedBindingsForSourceRequest) returns (ArmedBindingsForSourceResponse);
   rpc RecordDispatch(RecordDispatchRequest) returns (RecordDispatchResponse);
-  rpc ListUndispatchedCaptures(ListUndispatchedCapturesRequest) returns (ListUndispatchedCapturesResponse);
+  // ListUndispatchedCaptures is superseded by StreamUndispatchedCaptures; see
+  // ListCaptures above.
+  rpc ListUndispatchedCaptures(ListUndispatchedCapturesRequest) returns (ListUndispatchedCapturesResponse) {
+    option deprecated = true;
+  }
+  rpc StreamUndispatchedCaptures(StreamUndispatchedCapturesRequest) returns (stream StreamUndispatchedCapturesResponse);
 
   // BindingTaskCreator
   rpc EnqueueBindingTask(EnqueueBindingTaskRequest) returns (EnqueueBindingTaskResponse);
 }
+
+// Task mirrors internal/domain/workflow.Task.
+message RegisterTaskGrantRequest {
+  int64 task_id = 1;
+  string token = 2;
+  int64 lifetime_seconds = 3;
+}
+message RegisterTaskGrantResponse {}
+message RevokeTaskGrantRequest {
+  string token = 1;
+}
+message RevokeTaskGrantResponse {}
 
 // Task mirrors internal/domain/workflow.Task.
 message Task {
@@ -328,6 +358,9 @@ message InsertCaptureResponse { int64 id = 1; }
 
 message ListCapturesRequest { int64 limit = 1; }
 message ListCapturesResponse { repeated CapturedEvent captures = 1; }
+message StreamCapturesRequest { int64 limit = 1; }
+// Streamed one capture per message; see StreamCaptures above.
+message StreamCapturesResponse { CapturedEvent capture = 1; }
 
 message InsertMappingRequest { Mapping mapping = 1; }
 message InsertMappingResponse { int64 id = 1; }
@@ -384,6 +417,12 @@ message ListUndispatchedCapturesRequest {
   int64 limit = 2;
 }
 message ListUndispatchedCapturesResponse { repeated CapturedEvent captures = 1; }
+message StreamUndispatchedCapturesRequest {
+  repeated string sources = 1;
+  int64 limit = 2;
+}
+// Streamed one capture per message; see StreamUndispatchedCaptures above.
+message StreamUndispatchedCapturesResponse { CapturedEvent capture = 1; }
 
 message EnqueueBindingTaskRequest {
   string owner = 1;

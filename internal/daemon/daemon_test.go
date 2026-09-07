@@ -398,7 +398,7 @@ func TestContainerEnvIncludesConfiguredNATSCredentials(t *testing.T) {
 	// with a credential the broker never adopted.
 	t.Setenv("ARCHIE_NATS_SECRET", "changed-after-startup")
 
-	got := d.containerEnv(nil)
+	got := d.containerEnv(nil, "")
 	for _, want := range []string{
 		"NATS_URL=nats://nats.example:4222",
 		"NATS_TOKEN=test-nats-token",
@@ -422,7 +422,7 @@ func TestContainerEnvIncludesWorktreeOwnership(t *testing.T) {
 		Cfg: config.NewHolder(config.Config{}),
 	}
 
-	got := d.containerEnv(nil)
+	got := d.containerEnv(nil, "")
 	for _, want := range []string{
 		fmt.Sprintf("WORKTREE_UID=%d", os.Getuid()),
 		fmt.Sprintf("WORKTREE_GID=%d", os.Getgid()),
@@ -448,7 +448,7 @@ func TestContainerEnvUsesOnlyOwningIdentityProviderCredential(t *testing.T) {
 		}},
 	}
 
-	got := d.containerEnv(&workflow.Task{Identity: "worker"})
+	got := d.containerEnv(&workflow.Task{Identity: "worker"}, "")
 	if !slices.Contains(got, "WORKER_PROVIDER_KEY=worker-secret") {
 		t.Fatalf("identity credential missing from container env: %q", got)
 	}

@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
+	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
@@ -49,7 +50,7 @@ func TestStateStoreListenIsLoopback(t *testing.T) {
 }
 
 func TestStateStoreServerOptsLoopbackIsInsecure(t *testing.T) {
-	opts, loopback, err := stateStoreServerOpts("127.0.0.1:9090", "")
+	opts, loopback, err := stateStoreServerOpts("127.0.0.1:9090", "", &staterpc.TaskGrants{})
 	if err != nil {
 		t.Fatalf("stateStoreServerOpts(loopback, no token) error: %v", err)
 	}
@@ -62,23 +63,23 @@ func TestStateStoreServerOptsLoopbackIsInsecure(t *testing.T) {
 }
 
 func TestStateStoreServerOptsNonLoopbackRequiresToken(t *testing.T) {
-	if _, _, err := stateStoreServerOpts("0.0.0.0:9090", ""); err == nil {
+	if _, _, err := stateStoreServerOpts("0.0.0.0:9090", "", &staterpc.TaskGrants{}); err == nil {
 		t.Fatal("non-loopback listener without a token should fail closed")
 	}
-	opts, loopback, err := stateStoreServerOpts("0.0.0.0:9090", "secret")
+	opts, loopback, err := stateStoreServerOpts("0.0.0.0:9090", "secret", &staterpc.TaskGrants{})
 	if err != nil {
 		t.Fatalf("non-loopback listener with a token error: %v", err)
 	}
 	if loopback {
 		t.Fatal("non-loopback listener should not report loopback")
 	}
-	if len(opts) != 1 {
-		t.Fatalf("non-loopback listener should install one server option (the token interceptor), got %d", len(opts))
+	if len(opts) != 2 {
+		t.Fatalf("non-loopback listener should install two server options (the unary and stream task-grant interceptors), got %d", len(opts))
 	}
 }
 
 func TestStateStoreServerOptsMalformedListen(t *testing.T) {
-	if _, _, err := stateStoreServerOpts("not-an-address", ""); err == nil {
+	if _, _, err := stateStoreServerOpts("not-an-address", "", &staterpc.TaskGrants{}); err == nil {
 		t.Fatal("malformed listen address should error")
 	}
 }
@@ -120,7 +121,7 @@ func TestServeStateStoreServesContract(t *testing.T) {
 	defer listener.Close()
 
 	serveCh := make(chan error, 1)
-	go func() { serveCh <- serveStateStore(ctx, listener, b.stateStoreDeps(), nil) }()
+	go func() { serveCh <- serveStateStore(ctx, listener, b.stateStoreDeps(&staterpc.TaskGrants{}), nil) }()
 
 	conn, err := grpc.NewClient("passthrough:///"+listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {

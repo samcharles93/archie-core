@@ -19,46 +19,50 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	StateStoreService_EnqueueIssue_FullMethodName             = "/state.v1.StateStoreService/EnqueueIssue"
-	StateStoreService_EnqueueChatTask_FullMethodName          = "/state.v1.StateStoreService/EnqueueChatTask"
-	StateStoreService_ClaimNext_FullMethodName                = "/state.v1.StateStoreService/ClaimNext"
-	StateStoreService_ClaimByIssue_FullMethodName             = "/state.v1.StateStoreService/ClaimByIssue"
-	StateStoreService_Transition_FullMethodName               = "/state.v1.StateStoreService/Transition"
-	StateStoreService_Update_FullMethodName                   = "/state.v1.StateStoreService/Update"
-	StateStoreService_Requeue_FullMethodName                  = "/state.v1.StateStoreService/Requeue"
-	StateStoreService_RecoverStale_FullMethodName             = "/state.v1.StateStoreService/RecoverStale"
-	StateStoreService_ArchiveTask_FullMethodName              = "/state.v1.StateStoreService/ArchiveTask"
-	StateStoreService_RetryTask_FullMethodName                = "/state.v1.StateStoreService/RetryTask"
-	StateStoreService_TaskByIssue_FullMethodName              = "/state.v1.StateStoreService/TaskByIssue"
-	StateStoreService_TaskByID_FullMethodName                 = "/state.v1.StateStoreService/TaskByID"
-	StateStoreService_OpenPRs_FullMethodName                  = "/state.v1.StateStoreService/OpenPRs"
-	StateStoreService_ClearTerminalTasks_FullMethodName       = "/state.v1.StateStoreService/ClearTerminalTasks"
-	StateStoreService_Tasks_FullMethodName                    = "/state.v1.StateStoreService/Tasks"
-	StateStoreService_StatusCounts_FullMethodName             = "/state.v1.StateStoreService/StatusCounts"
-	StateStoreService_IncrementRetryCount_FullMethodName      = "/state.v1.StateStoreService/IncrementRetryCount"
-	StateStoreService_InsertEvent_FullMethodName              = "/state.v1.StateStoreService/InsertEvent"
-	StateStoreService_EventsSince_FullMethodName              = "/state.v1.StateStoreService/EventsSince"
-	StateStoreService_TaskEvents_FullMethodName               = "/state.v1.StateStoreService/TaskEvents"
-	StateStoreService_WorkflowStats_FullMethodName            = "/state.v1.StateStoreService/WorkflowStats"
-	StateStoreService_StageStats_FullMethodName               = "/state.v1.StateStoreService/StageStats"
-	StateStoreService_TokensByDay_FullMethodName              = "/state.v1.StateStoreService/TokensByDay"
-	StateStoreService_InsertCapture_FullMethodName            = "/state.v1.StateStoreService/InsertCapture"
-	StateStoreService_ListCaptures_FullMethodName             = "/state.v1.StateStoreService/ListCaptures"
-	StateStoreService_InsertMapping_FullMethodName            = "/state.v1.StateStoreService/InsertMapping"
-	StateStoreService_GetMapping_FullMethodName               = "/state.v1.StateStoreService/GetMapping"
-	StateStoreService_ListMappings_FullMethodName             = "/state.v1.StateStoreService/ListMappings"
-	StateStoreService_UpdateMapping_FullMethodName            = "/state.v1.StateStoreService/UpdateMapping"
-	StateStoreService_DeleteMapping_FullMethodName            = "/state.v1.StateStoreService/DeleteMapping"
-	StateStoreService_InsertBinding_FullMethodName            = "/state.v1.StateStoreService/InsertBinding"
-	StateStoreService_GetBinding_FullMethodName               = "/state.v1.StateStoreService/GetBinding"
-	StateStoreService_ListBindings_FullMethodName             = "/state.v1.StateStoreService/ListBindings"
-	StateStoreService_UpdateBinding_FullMethodName            = "/state.v1.StateStoreService/UpdateBinding"
-	StateStoreService_DeleteBinding_FullMethodName            = "/state.v1.StateStoreService/DeleteBinding"
-	StateStoreService_ApproveBinding_FullMethodName           = "/state.v1.StateStoreService/ApproveBinding"
-	StateStoreService_ArmedBindingsForSource_FullMethodName   = "/state.v1.StateStoreService/ArmedBindingsForSource"
-	StateStoreService_RecordDispatch_FullMethodName           = "/state.v1.StateStoreService/RecordDispatch"
-	StateStoreService_ListUndispatchedCaptures_FullMethodName = "/state.v1.StateStoreService/ListUndispatchedCaptures"
-	StateStoreService_EnqueueBindingTask_FullMethodName       = "/state.v1.StateStoreService/EnqueueBindingTask"
+	StateStoreService_RegisterTaskGrant_FullMethodName          = "/state.v1.StateStoreService/RegisterTaskGrant"
+	StateStoreService_RevokeTaskGrant_FullMethodName            = "/state.v1.StateStoreService/RevokeTaskGrant"
+	StateStoreService_EnqueueIssue_FullMethodName               = "/state.v1.StateStoreService/EnqueueIssue"
+	StateStoreService_EnqueueChatTask_FullMethodName            = "/state.v1.StateStoreService/EnqueueChatTask"
+	StateStoreService_ClaimNext_FullMethodName                  = "/state.v1.StateStoreService/ClaimNext"
+	StateStoreService_ClaimByIssue_FullMethodName               = "/state.v1.StateStoreService/ClaimByIssue"
+	StateStoreService_Transition_FullMethodName                 = "/state.v1.StateStoreService/Transition"
+	StateStoreService_Update_FullMethodName                     = "/state.v1.StateStoreService/Update"
+	StateStoreService_Requeue_FullMethodName                    = "/state.v1.StateStoreService/Requeue"
+	StateStoreService_RecoverStale_FullMethodName               = "/state.v1.StateStoreService/RecoverStale"
+	StateStoreService_ArchiveTask_FullMethodName                = "/state.v1.StateStoreService/ArchiveTask"
+	StateStoreService_RetryTask_FullMethodName                  = "/state.v1.StateStoreService/RetryTask"
+	StateStoreService_TaskByIssue_FullMethodName                = "/state.v1.StateStoreService/TaskByIssue"
+	StateStoreService_TaskByID_FullMethodName                   = "/state.v1.StateStoreService/TaskByID"
+	StateStoreService_OpenPRs_FullMethodName                    = "/state.v1.StateStoreService/OpenPRs"
+	StateStoreService_ClearTerminalTasks_FullMethodName         = "/state.v1.StateStoreService/ClearTerminalTasks"
+	StateStoreService_Tasks_FullMethodName                      = "/state.v1.StateStoreService/Tasks"
+	StateStoreService_StatusCounts_FullMethodName               = "/state.v1.StateStoreService/StatusCounts"
+	StateStoreService_IncrementRetryCount_FullMethodName        = "/state.v1.StateStoreService/IncrementRetryCount"
+	StateStoreService_InsertEvent_FullMethodName                = "/state.v1.StateStoreService/InsertEvent"
+	StateStoreService_EventsSince_FullMethodName                = "/state.v1.StateStoreService/EventsSince"
+	StateStoreService_TaskEvents_FullMethodName                 = "/state.v1.StateStoreService/TaskEvents"
+	StateStoreService_WorkflowStats_FullMethodName              = "/state.v1.StateStoreService/WorkflowStats"
+	StateStoreService_StageStats_FullMethodName                 = "/state.v1.StateStoreService/StageStats"
+	StateStoreService_TokensByDay_FullMethodName                = "/state.v1.StateStoreService/TokensByDay"
+	StateStoreService_InsertCapture_FullMethodName              = "/state.v1.StateStoreService/InsertCapture"
+	StateStoreService_ListCaptures_FullMethodName               = "/state.v1.StateStoreService/ListCaptures"
+	StateStoreService_StreamCaptures_FullMethodName             = "/state.v1.StateStoreService/StreamCaptures"
+	StateStoreService_InsertMapping_FullMethodName              = "/state.v1.StateStoreService/InsertMapping"
+	StateStoreService_GetMapping_FullMethodName                 = "/state.v1.StateStoreService/GetMapping"
+	StateStoreService_ListMappings_FullMethodName               = "/state.v1.StateStoreService/ListMappings"
+	StateStoreService_UpdateMapping_FullMethodName              = "/state.v1.StateStoreService/UpdateMapping"
+	StateStoreService_DeleteMapping_FullMethodName              = "/state.v1.StateStoreService/DeleteMapping"
+	StateStoreService_InsertBinding_FullMethodName              = "/state.v1.StateStoreService/InsertBinding"
+	StateStoreService_GetBinding_FullMethodName                 = "/state.v1.StateStoreService/GetBinding"
+	StateStoreService_ListBindings_FullMethodName               = "/state.v1.StateStoreService/ListBindings"
+	StateStoreService_UpdateBinding_FullMethodName              = "/state.v1.StateStoreService/UpdateBinding"
+	StateStoreService_DeleteBinding_FullMethodName              = "/state.v1.StateStoreService/DeleteBinding"
+	StateStoreService_ApproveBinding_FullMethodName             = "/state.v1.StateStoreService/ApproveBinding"
+	StateStoreService_ArmedBindingsForSource_FullMethodName     = "/state.v1.StateStoreService/ArmedBindingsForSource"
+	StateStoreService_RecordDispatch_FullMethodName             = "/state.v1.StateStoreService/RecordDispatch"
+	StateStoreService_ListUndispatchedCaptures_FullMethodName   = "/state.v1.StateStoreService/ListUndispatchedCaptures"
+	StateStoreService_StreamUndispatchedCaptures_FullMethodName = "/state.v1.StateStoreService/StreamUndispatchedCaptures"
+	StateStoreService_EnqueueBindingTask_FullMethodName         = "/state.v1.StateStoreService/EnqueueBindingTask"
 )
 
 // StateStoreServiceClient is the client API for StateStoreService service.
@@ -73,6 +77,9 @@ const (
 // the same *store.Store implementation; the proto bypasses the Go
 // interfacebloat cap (max 8), like gateway.v1.ChatService does.
 type StateStoreServiceClient interface {
+	// Administrative task credential lifecycle. Worker credentials cannot call these.
+	RegisterTaskGrant(ctx context.Context, in *RegisterTaskGrantRequest, opts ...grpc.CallOption) (*RegisterTaskGrantResponse, error)
+	RevokeTaskGrant(ctx context.Context, in *RevokeTaskGrantRequest, opts ...grpc.CallOption) (*RevokeTaskGrantResponse, error)
 	// Lifecycle
 	EnqueueIssue(ctx context.Context, in *EnqueueIssueRequest, opts ...grpc.CallOption) (*EnqueueIssueResponse, error)
 	EnqueueChatTask(ctx context.Context, in *EnqueueChatTaskRequest, opts ...grpc.CallOption) (*EnqueueChatTaskResponse, error)
@@ -102,7 +109,16 @@ type StateStoreServiceClient interface {
 	TokensByDay(ctx context.Context, in *TokensByDayRequest, opts ...grpc.CallOption) (*TokensByDayResponse, error)
 	// Capture
 	InsertCapture(ctx context.Context, in *InsertCaptureRequest, opts ...grpc.CallOption) (*InsertCaptureResponse, error)
+	// Deprecated: Do not use.
+	// ListCaptures is superseded by StreamCaptures (kept, unmodified, so an
+	// in-flight rolling deploy's old client/server pairing keeps working --
+	// buf breaking forbids removing or reshaping an existing RPC). Every
+	// in-repo caller uses StreamCaptures.
 	ListCaptures(ctx context.Context, in *ListCapturesRequest, opts ...grpc.CallOption) (*ListCapturesResponse, error)
+	// StreamCaptures returns one capture per message: a batch of large capture
+	// bodies can exceed gRPC's 4MiB unary message cap
+	// (docs/prds/state-store-contract.md).
+	StreamCaptures(ctx context.Context, in *StreamCapturesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamCapturesResponse], error)
 	// Mapping
 	InsertMapping(ctx context.Context, in *InsertMappingRequest, opts ...grpc.CallOption) (*InsertMappingResponse, error)
 	GetMapping(ctx context.Context, in *GetMappingRequest, opts ...grpc.CallOption) (*GetMappingResponse, error)
@@ -119,7 +135,11 @@ type StateStoreServiceClient interface {
 	// Dispatch
 	ArmedBindingsForSource(ctx context.Context, in *ArmedBindingsForSourceRequest, opts ...grpc.CallOption) (*ArmedBindingsForSourceResponse, error)
 	RecordDispatch(ctx context.Context, in *RecordDispatchRequest, opts ...grpc.CallOption) (*RecordDispatchResponse, error)
+	// Deprecated: Do not use.
+	// ListUndispatchedCaptures is superseded by StreamUndispatchedCaptures; see
+	// ListCaptures above.
 	ListUndispatchedCaptures(ctx context.Context, in *ListUndispatchedCapturesRequest, opts ...grpc.CallOption) (*ListUndispatchedCapturesResponse, error)
+	StreamUndispatchedCaptures(ctx context.Context, in *StreamUndispatchedCapturesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamUndispatchedCapturesResponse], error)
 	// BindingTaskCreator
 	EnqueueBindingTask(ctx context.Context, in *EnqueueBindingTaskRequest, opts ...grpc.CallOption) (*EnqueueBindingTaskResponse, error)
 }
@@ -130,6 +150,26 @@ type stateStoreServiceClient struct {
 
 func NewStateStoreServiceClient(cc grpc.ClientConnInterface) StateStoreServiceClient {
 	return &stateStoreServiceClient{cc}
+}
+
+func (c *stateStoreServiceClient) RegisterTaskGrant(ctx context.Context, in *RegisterTaskGrantRequest, opts ...grpc.CallOption) (*RegisterTaskGrantResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RegisterTaskGrantResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_RegisterTaskGrant_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) RevokeTaskGrant(ctx context.Context, in *RevokeTaskGrantRequest, opts ...grpc.CallOption) (*RevokeTaskGrantResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RevokeTaskGrantResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_RevokeTaskGrant_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *stateStoreServiceClient) EnqueueIssue(ctx context.Context, in *EnqueueIssueRequest, opts ...grpc.CallOption) (*EnqueueIssueResponse, error) {
@@ -372,6 +412,7 @@ func (c *stateStoreServiceClient) InsertCapture(ctx context.Context, in *InsertC
 	return out, nil
 }
 
+// Deprecated: Do not use.
 func (c *stateStoreServiceClient) ListCaptures(ctx context.Context, in *ListCapturesRequest, opts ...grpc.CallOption) (*ListCapturesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListCapturesResponse)
@@ -381,6 +422,25 @@ func (c *stateStoreServiceClient) ListCaptures(ctx context.Context, in *ListCapt
 	}
 	return out, nil
 }
+
+func (c *stateStoreServiceClient) StreamCaptures(ctx context.Context, in *StreamCapturesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamCapturesResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &StateStoreService_ServiceDesc.Streams[0], StateStoreService_StreamCaptures_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[StreamCapturesRequest, StreamCapturesResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type StateStoreService_StreamCapturesClient = grpc.ServerStreamingClient[StreamCapturesResponse]
 
 func (c *stateStoreServiceClient) InsertMapping(ctx context.Context, in *InsertMappingRequest, opts ...grpc.CallOption) (*InsertMappingResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -512,6 +572,7 @@ func (c *stateStoreServiceClient) RecordDispatch(ctx context.Context, in *Record
 	return out, nil
 }
 
+// Deprecated: Do not use.
 func (c *stateStoreServiceClient) ListUndispatchedCaptures(ctx context.Context, in *ListUndispatchedCapturesRequest, opts ...grpc.CallOption) (*ListUndispatchedCapturesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListUndispatchedCapturesResponse)
@@ -521,6 +582,25 @@ func (c *stateStoreServiceClient) ListUndispatchedCaptures(ctx context.Context, 
 	}
 	return out, nil
 }
+
+func (c *stateStoreServiceClient) StreamUndispatchedCaptures(ctx context.Context, in *StreamUndispatchedCapturesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamUndispatchedCapturesResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &StateStoreService_ServiceDesc.Streams[1], StateStoreService_StreamUndispatchedCaptures_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[StreamUndispatchedCapturesRequest, StreamUndispatchedCapturesResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type StateStoreService_StreamUndispatchedCapturesClient = grpc.ServerStreamingClient[StreamUndispatchedCapturesResponse]
 
 func (c *stateStoreServiceClient) EnqueueBindingTask(ctx context.Context, in *EnqueueBindingTaskRequest, opts ...grpc.CallOption) (*EnqueueBindingTaskResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -544,6 +624,9 @@ func (c *stateStoreServiceClient) EnqueueBindingTask(ctx context.Context, in *En
 // the same *store.Store implementation; the proto bypasses the Go
 // interfacebloat cap (max 8), like gateway.v1.ChatService does.
 type StateStoreServiceServer interface {
+	// Administrative task credential lifecycle. Worker credentials cannot call these.
+	RegisterTaskGrant(context.Context, *RegisterTaskGrantRequest) (*RegisterTaskGrantResponse, error)
+	RevokeTaskGrant(context.Context, *RevokeTaskGrantRequest) (*RevokeTaskGrantResponse, error)
 	// Lifecycle
 	EnqueueIssue(context.Context, *EnqueueIssueRequest) (*EnqueueIssueResponse, error)
 	EnqueueChatTask(context.Context, *EnqueueChatTaskRequest) (*EnqueueChatTaskResponse, error)
@@ -573,7 +656,16 @@ type StateStoreServiceServer interface {
 	TokensByDay(context.Context, *TokensByDayRequest) (*TokensByDayResponse, error)
 	// Capture
 	InsertCapture(context.Context, *InsertCaptureRequest) (*InsertCaptureResponse, error)
+	// Deprecated: Do not use.
+	// ListCaptures is superseded by StreamCaptures (kept, unmodified, so an
+	// in-flight rolling deploy's old client/server pairing keeps working --
+	// buf breaking forbids removing or reshaping an existing RPC). Every
+	// in-repo caller uses StreamCaptures.
 	ListCaptures(context.Context, *ListCapturesRequest) (*ListCapturesResponse, error)
+	// StreamCaptures returns one capture per message: a batch of large capture
+	// bodies can exceed gRPC's 4MiB unary message cap
+	// (docs/prds/state-store-contract.md).
+	StreamCaptures(*StreamCapturesRequest, grpc.ServerStreamingServer[StreamCapturesResponse]) error
 	// Mapping
 	InsertMapping(context.Context, *InsertMappingRequest) (*InsertMappingResponse, error)
 	GetMapping(context.Context, *GetMappingRequest) (*GetMappingResponse, error)
@@ -590,7 +682,11 @@ type StateStoreServiceServer interface {
 	// Dispatch
 	ArmedBindingsForSource(context.Context, *ArmedBindingsForSourceRequest) (*ArmedBindingsForSourceResponse, error)
 	RecordDispatch(context.Context, *RecordDispatchRequest) (*RecordDispatchResponse, error)
+	// Deprecated: Do not use.
+	// ListUndispatchedCaptures is superseded by StreamUndispatchedCaptures; see
+	// ListCaptures above.
 	ListUndispatchedCaptures(context.Context, *ListUndispatchedCapturesRequest) (*ListUndispatchedCapturesResponse, error)
+	StreamUndispatchedCaptures(*StreamUndispatchedCapturesRequest, grpc.ServerStreamingServer[StreamUndispatchedCapturesResponse]) error
 	// BindingTaskCreator
 	EnqueueBindingTask(context.Context, *EnqueueBindingTaskRequest) (*EnqueueBindingTaskResponse, error)
 	mustEmbedUnimplementedStateStoreServiceServer()
@@ -603,6 +699,12 @@ type StateStoreServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedStateStoreServiceServer struct{}
 
+func (UnimplementedStateStoreServiceServer) RegisterTaskGrant(context.Context, *RegisterTaskGrantRequest) (*RegisterTaskGrantResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RegisterTaskGrant not implemented")
+}
+func (UnimplementedStateStoreServiceServer) RevokeTaskGrant(context.Context, *RevokeTaskGrantRequest) (*RevokeTaskGrantResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokeTaskGrant not implemented")
+}
 func (UnimplementedStateStoreServiceServer) EnqueueIssue(context.Context, *EnqueueIssueRequest) (*EnqueueIssueResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method EnqueueIssue not implemented")
 }
@@ -678,6 +780,9 @@ func (UnimplementedStateStoreServiceServer) InsertCapture(context.Context, *Inse
 func (UnimplementedStateStoreServiceServer) ListCaptures(context.Context, *ListCapturesRequest) (*ListCapturesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListCaptures not implemented")
 }
+func (UnimplementedStateStoreServiceServer) StreamCaptures(*StreamCapturesRequest, grpc.ServerStreamingServer[StreamCapturesResponse]) error {
+	return status.Error(codes.Unimplemented, "method StreamCaptures not implemented")
+}
 func (UnimplementedStateStoreServiceServer) InsertMapping(context.Context, *InsertMappingRequest) (*InsertMappingResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method InsertMapping not implemented")
 }
@@ -720,6 +825,9 @@ func (UnimplementedStateStoreServiceServer) RecordDispatch(context.Context, *Rec
 func (UnimplementedStateStoreServiceServer) ListUndispatchedCaptures(context.Context, *ListUndispatchedCapturesRequest) (*ListUndispatchedCapturesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListUndispatchedCaptures not implemented")
 }
+func (UnimplementedStateStoreServiceServer) StreamUndispatchedCaptures(*StreamUndispatchedCapturesRequest, grpc.ServerStreamingServer[StreamUndispatchedCapturesResponse]) error {
+	return status.Error(codes.Unimplemented, "method StreamUndispatchedCaptures not implemented")
+}
 func (UnimplementedStateStoreServiceServer) EnqueueBindingTask(context.Context, *EnqueueBindingTaskRequest) (*EnqueueBindingTaskResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method EnqueueBindingTask not implemented")
 }
@@ -742,6 +850,42 @@ func RegisterStateStoreServiceServer(s grpc.ServiceRegistrar, srv StateStoreServ
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&StateStoreService_ServiceDesc, srv)
+}
+
+func _StateStoreService_RegisterTaskGrant_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RegisterTaskGrantRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).RegisterTaskGrant(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_RegisterTaskGrant_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).RegisterTaskGrant(ctx, req.(*RegisterTaskGrantRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_RevokeTaskGrant_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeTaskGrantRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).RevokeTaskGrant(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_RevokeTaskGrant_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).RevokeTaskGrant(ctx, req.(*RevokeTaskGrantRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _StateStoreService_EnqueueIssue_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -1194,6 +1338,17 @@ func _StateStoreService_ListCaptures_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StateStoreService_StreamCaptures_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(StreamCapturesRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(StateStoreServiceServer).StreamCaptures(m, &grpc.GenericServerStream[StreamCapturesRequest, StreamCapturesResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type StateStoreService_StreamCapturesServer = grpc.ServerStreamingServer[StreamCapturesResponse]
+
 func _StateStoreService_InsertMapping_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(InsertMappingRequest)
 	if err := dec(in); err != nil {
@@ -1446,6 +1601,17 @@ func _StateStoreService_ListUndispatchedCaptures_Handler(srv interface{}, ctx co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StateStoreService_StreamUndispatchedCaptures_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(StreamUndispatchedCapturesRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(StateStoreServiceServer).StreamUndispatchedCaptures(m, &grpc.GenericServerStream[StreamUndispatchedCapturesRequest, StreamUndispatchedCapturesResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type StateStoreService_StreamUndispatchedCapturesServer = grpc.ServerStreamingServer[StreamUndispatchedCapturesResponse]
+
 func _StateStoreService_EnqueueBindingTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(EnqueueBindingTaskRequest)
 	if err := dec(in); err != nil {
@@ -1471,6 +1637,14 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "state.v1.StateStoreService",
 	HandlerType: (*StateStoreServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "RegisterTaskGrant",
+			Handler:    _StateStoreService_RegisterTaskGrant_Handler,
+		},
+		{
+			MethodName: "RevokeTaskGrant",
+			Handler:    _StateStoreService_RevokeTaskGrant_Handler,
+		},
 		{
 			MethodName: "EnqueueIssue",
 			Handler:    _StateStoreService_EnqueueIssue_Handler,
@@ -1632,6 +1806,17 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _StateStoreService_EnqueueBindingTask_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "StreamCaptures",
+			Handler:       _StateStoreService_StreamCaptures_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "StreamUndispatchedCaptures",
+			Handler:       _StateStoreService_StreamUndispatchedCaptures_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "state/v1/state.proto",
 }

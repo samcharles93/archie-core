@@ -1065,13 +1065,9 @@ func startContainers(
 		PullPolicy:     cfg.Containers.PullPolicy,
 		Network:        cfg.Containers.Network,
 		DockerClient:   dockerCli,
-		// Always resolve the bridge gateway: agent containers need it to
-		// reach embedded NATS (when configured) and the State Store gRPC
-		// service, whose [services.state].target must be the bridge gateway
-		// for a container-mode agent (docs/prds/state-store-contract.md §9's
-		// single listener-topology rule) -- a container can never reach the
-		// host's 127.0.0.1.
-		RequireHostGateway: true,
+		// Only the embedded broker binds a discovered host gateway. The
+		// standalone State Store uses its configured, container-reachable target.
+		RequireHostGateway: cfg.NATS.Mode == config.NATSModeEmbedded,
 	}, log)
 	if err != nil {
 		// A missing image is recoverable by hand. The daemon sends no registry

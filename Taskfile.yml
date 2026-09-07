@@ -89,26 +89,36 @@ tasks:
       - npm test
 
   dev:
-    desc: "Develop: archied live-reload + archie-gateway + Vite HMR together. Open http://localhost:5173"
+    desc: "Develop: archied live-reload + archie-gateway + archie-state-store + Vite HMR together. Open http://localhost:5173"
     summary: |
       Runs the dev loop in one terminal:
 
-        * air             rebuilds and restarts archied on Go changes
-        * archie-gateway  serves ChatContract on 127.0.0.1:8585 (archied
-                          dials it for chat; it does not embed a gateway)
-        * vite            serves the dashboard with hot reload on :5173,
-                          proxying /api and /events through to archied on :8484
+        * air              rebuilds and restarts archied on Go changes
+        * archie-gateway   serves ChatContract on 127.0.0.1:8585 (archied
+                           dials it for chat; it does not embed a gateway)
+        * archie-state-store  owns archie.db on 127.0.0.1:9090, loopback,
+                           no token (deployments/dev.toml); both archied and
+                           archie-gateway dial it -- neither owns the DB
+                           in-process (docs/prds/state-store-contract.md §12
+                           step 7)
+        * vite             serves the dashboard with hot reload on :5173,
+                           proxying /api and /events through to archied on :8484
 
       Open http://localhost:5173 -- not :8484. The Vite server is the one with
       hot reload; :8484 serves the last built dist/ and will look stale.
 
-      Ctrl-C stops all three.
-    deps: [dev:daemon, dev:gateway, dev:ui]
+      Ctrl-C stops all four.
+    deps: [dev:daemon, dev:gateway, dev:state-store, dev:ui]
 
   dev:daemon:
     desc: archied only, live-reloading via air (prefer `task dev`)
     cmds:
       - air -build.args_bin="-config-overlay,deployments/dev.toml"
+
+  dev:state-store:
+    desc: archie-state-store only, no live-reload (prefer `task dev`)
+    cmds:
+      - go run ./cmd/archie-state-store -config-overlay deployments/dev.toml
 
   dev:gateway:
     desc: archie-gateway only, no live-reload (prefer `task dev`)

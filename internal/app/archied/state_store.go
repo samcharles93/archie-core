@@ -64,9 +64,11 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 
 	token := options.Token
 	if token == "" {
-		token = b.cfg.Services.State.TargetToken
+		token = stateStoreResolvedToken(b.cfg.Services.State, b.secrets)
 	}
-	opts, loopback, err := stateStoreServerOpts(options.Listen, token)
+	grants := &staterpc.TaskGrants{}
+	//nolint:contextcheck // grpc.StreamServerInterceptor has no context.Context parameter; TaskGrants.StreamInterceptor derives its context from stream.Context() instead
+	opts, loopback, err := stateStoreServerOpts(options.Listen, token, grants)
 	if err != nil {
 		return err
 	}
@@ -83,7 +85,7 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 		}
 	}
 
-	return serveStateStore(ctx, listener, b.stateStoreDeps(), opts)
+	return serveStateStore(ctx, listener, b.stateStoreDeps(grants), opts)
 }
 
 // openStateStore opens the single task-store SQLite file exactly once for
@@ -122,8 +124,8 @@ func (b *boot) openStateStore(ctx context.Context) error {
 // the capture/mapping/binding surfaces, so each is asserted here (the same
 // pattern the daemon's wireWebStoreSurfaces uses) and a store that lacks one
 // degrades that group rather than aborting boot.
-func (b *boot) stateStoreDeps() staterpc.Deps {
-	deps := staterpc.Deps{Tasks: b.st, Log: b.log}
+func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
+	deps := staterpc.Deps{Tasks: b.st, Log: b.log, Grants: grants}
 	if cs, ok := b.st.(store.CaptureStore); ok {
 		deps.Captures = cs
 	}
@@ -210,7 +212,7 @@ func (b *boot) startStateStoreReadiness(ctx context.Context, readyAddr string) e
 // enforce TLS/mTLS (an operator decision), so it narrows the non-loopback
 // path to token auth -- the same confinement philosophy as the gateway's
 // loopback-only --listen rule.
-func stateStoreServerOpts(listen, token string) (opts []grpc.ServerOption, loopback bool, err error) {
+func stateStoreServerOpts(listen, token string, grants *staterpc.TaskGrants) (opts []grpc.ServerOption, loopback bool, err error) {
 	loopback, err = stateStoreListenIsLoopback(listen)
 	if err != nil {
 		return nil, false, err
@@ -224,7 +226,14 @@ func stateStoreServerOpts(listen, token string) (opts []grpc.ServerOption, loopb
 			listen,
 		)
 	}
-	return []grpc.ServerOption{grpc.ChainUnaryInterceptor(staterpc.UnaryTokenInterceptor(constantTimeTokenValidator(token)))}, false, nil
+	// grants.UnaryInterceptor/StreamInterceptor separate the daemon's own
+	// administrative token (full access) from a container's task-scoped
+	// grant (Update/Transition/InsertEvent on its own task ID only), rather
+	// than the single all-or-nothing token check this replaced.
+	return []grpc.ServerOption{
+		grpc.ChainUnaryInterceptor(grants.UnaryInterceptor(token)),
+		grpc.ChainStreamInterceptor(grants.StreamInterceptor(token)),
+	}, false, nil
 }
 
 // stateStoreListenIsLoopback reports whether listen's host is a loopback
