@@ -126,13 +126,11 @@ func TestPriorReply(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			history := make([]messaging.Message, 0, len(tc.history))
 			for i, h := range tc.history {
-				m := ToStoredMessage(Message{
-					MessageID: newMessageIDFor(sessionID, h.sourceID, i),
-					SourceID:  h.sourceID,
-					From:      h.from,
-					Text:      h.text,
-					At:        time.Now().Add(time.Duration(i) * time.Second),
-				}, identity)
+				role := messaging.RoleUser
+				if h.from == identity {
+					role = messaging.RoleAssistant
+				}
+				m := messaging.Message{ID: messaging.MessageID(newMessageIDFor(sessionID, h.sourceID, i)), SourceID: h.sourceID, Sender: h.from, Role: role, Text: h.text, At: time.Now().Add(time.Duration(i) * time.Second)}
 				history = append(history, m)
 			}
 

@@ -21,13 +21,13 @@ func (f *fakeStore) StatusCounts(ctx context.Context) (map[string]int, error) {
 	return f.counts, f.err
 }
 
-func fakeLLM(ctx context.Context, msg Message) (string, error) {
-	return "llm: " + msg.Text, nil
+func fakeLLM(ctx context.Context, in Inbound) (string, error) {
+	return "llm: " + in.Message.Text, nil
 }
 
 func TestRouteStatusShowsQueueDepthNotPerTaskCounts(t *testing.T) {
 	r := NewRouter(&fakeStore{counts: map[string]int{"queued": 2, "pr_open": 1}}, nil, "test")
-	reply, err := r.Route(context.Background(), Message{Text: "/status"})
+	reply, err := r.Route(context.Background(), inbound("", "/status"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestRouteStatusIncludesActiveProviderAndModel(t *testing.T) {
 	r := NewRouter(&fakeStore{counts: map[string]int{"running": 1}}, nil, "test")
 	r.Models = manager
 
-	reply, err := r.Route(context.Background(), Message{Text: "/status"})
+	reply, err := r.Route(context.Background(), inbound("", "/status"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestRouteStatusIncludesActiveProviderAndModel(t *testing.T) {
 
 func TestRouteStatusAtMention(t *testing.T) {
 	r := NewRouter(&fakeStore{counts: map[string]int{"running": 3}}, nil, "archie")
-	reply, err := r.Route(context.Background(), Message{Text: "/status@archie"})
+	reply, err := r.Route(context.Background(), inbound("", "/status@archie"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestRouteStatusAtMention(t *testing.T) {
 
 func TestRouteStatusEmpty(t *testing.T) {
 	r := NewRouter(&fakeStore{counts: map[string]int{}}, nil, "test")
-	reply, err := r.Route(context.Background(), Message{Text: "/status"})
+	reply, err := r.Route(context.Background(), inbound("", "/status"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestFormatStatus(t *testing.T) {
 
 func TestRouteStatusError(t *testing.T) {
 	r := NewRouter(&fakeStore{err: errors.New("db down")}, nil, "test")
-	if _, err := r.Route(context.Background(), Message{Text: "/status"}); err == nil {
+	if _, err := r.Route(context.Background(), inbound("", "/status")); err == nil {
 		t.Error("expected error from Route when StatusCounts fails")
 	}
 }
@@ -209,7 +209,7 @@ func (f *fakeChatTaskLister) ListChatTasks(ctx context.Context, identity string,
 
 func TestRouteTasksNotConfigured(t *testing.T) {
 	r := NewRouter(nil, nil, "test")
-	reply, err := r.Route(context.Background(), Message{Text: "/tasks"})
+	reply, err := r.Route(context.Background(), inbound("", "/tasks"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestRouteTasksNotConfigured(t *testing.T) {
 func TestRouteTasksEmpty(t *testing.T) {
 	r := NewRouter(nil, nil, "test")
 	r.TaskLister = &fakeChatTaskLister{}
-	reply, err := r.Route(context.Background(), Message{Text: "/tasks"})
+	reply, err := r.Route(context.Background(), inbound("", "/tasks"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestRouteTasksEmpty(t *testing.T) {
 func TestRouteTasksError(t *testing.T) {
 	r := NewRouter(nil, nil, "test")
 	r.TaskLister = &fakeChatTaskLister{err: errors.New("store unavailable")}
-	if _, err := r.Route(context.Background(), Message{Text: "/tasks"}); err == nil {
+	if _, err := r.Route(context.Background(), inbound("", "/tasks")); err == nil {
 		t.Error("expected error from Route when ListChatTasks fails")
 	}
 }
@@ -298,7 +298,7 @@ func TestFormatTasks(t *testing.T) {
 
 func TestRouteNonCommandWithLLM(t *testing.T) {
 	r := NewRouter(nil, fakeLLM, "test")
-	reply, err := r.Route(context.Background(), Message{Text: "hello"})
+	reply, err := r.Route(context.Background(), inbound("", "hello"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestRouteNonCommandWithLLM(t *testing.T) {
 
 func TestRouteNonCommandWithoutLLM(t *testing.T) {
 	r := NewRouter(nil, nil, "test")
-	reply, err := r.Route(context.Background(), Message{Text: "hello"})
+	reply, err := r.Route(context.Background(), inbound("", "hello"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -327,16 +327,16 @@ func TestRouterRejectsUnknownCommand(t *testing.T) {
 	for _, text := range tests {
 		t.Run(text, func(t *testing.T) {
 			llmCalls := 0
-			r := NewRouter(nil, func(context.Context, Message) (string, error) {
+			r := NewRouter(nil, func(context.Context, Inbound) (string, error) {
 				llmCalls++
 				return "fabricated command behavior", nil
 			}, "test")
-			r.LLMStream = func(context.Context, Message, TurnStream) (string, error) {
+			r.LLMStream = func(context.Context, Inbound, TurnStream) (string, error) {
 				llmCalls++
 				return "fabricated streaming behavior", nil
 			}
 
-			reply, err := r.RouteStream(context.Background(), Message{Text: text}, DeltaFunc(func(string) {}))
+			reply, err := r.RouteStream(context.Background(), inbound("", text), DeltaFunc(func(string) {}))
 			if err != nil {
 				t.Fatalf("RouteStream: %v", err)
 			}
@@ -413,7 +413,7 @@ func (f *fakeModelManager) SetActiveModel(_ context.Context, ref string) error {
 
 func TestRouteModelsIsNoLongerACommand(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	reply, err := r.Route(context.Background(), Message{Text: "/models"})
+	reply, err := r.Route(context.Background(), inbound("", "/models"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -428,7 +428,7 @@ func TestRouteModelSwitch(t *testing.T) {
 	}
 	r := NewRouter(nil, nil, "test-gw")
 	r.Models = mgr
-	reply, err := r.Route(context.Background(), Message{Text: "/model a/b"})
+	reply, err := r.Route(context.Background(), inbound("", "/model a/b"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -446,7 +446,7 @@ func TestRouteModelAtMention(t *testing.T) {
 	}
 	r := NewRouter(nil, nil, "test-gw")
 	r.Models = mgr
-	reply, err := r.Route(context.Background(), Message{Text: "/model@test-gw a/b"})
+	reply, err := r.Route(context.Background(), inbound("", "/model@test-gw a/b"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -461,7 +461,7 @@ func TestRouteModelUnknown(t *testing.T) {
 	}
 	r := NewRouter(nil, nil, "test-gw")
 	r.Models = mgr
-	reply, err := r.Route(context.Background(), Message{Text: "/model unknown/unknown"})
+	reply, err := r.Route(context.Background(), inbound("", "/model unknown/unknown"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -476,7 +476,7 @@ func TestRouteModelNoArg(t *testing.T) {
 	}
 	r := NewRouter(nil, nil, "test-gw")
 	r.Models = mgr
-	reply, err := r.Route(context.Background(), Message{Text: "/model"})
+	reply, err := r.Route(context.Background(), inbound("", "/model"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -487,7 +487,7 @@ func TestRouteModelNoArg(t *testing.T) {
 
 func TestRouteModelNoManager(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	reply, err := r.Route(context.Background(), Message{Text: "/model a/b"})
+	reply, err := r.Route(context.Background(), inbound("", "/model a/b"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -517,7 +517,7 @@ func TestRouteSpawnCreatesTask(t *testing.T) {
 	tc := &fakeTaskCreator{}
 	r := NewRouter(nil, nil, "test-gw")
 	r.Tasks = tc
-	reply, err := r.Route(context.Background(), Message{Text: "/spawn Fix the login bug"})
+	reply, err := r.Route(context.Background(), inbound("", "/spawn Fix the login bug"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -533,7 +533,7 @@ func TestRouteSpawnAtMention(t *testing.T) {
 	tc := &fakeTaskCreator{}
 	r := NewRouter(nil, nil, "archie-bot")
 	r.Tasks = tc
-	reply, err := r.Route(context.Background(), Message{Text: "/spawn@archie-bot Deploy the release"})
+	reply, err := r.Route(context.Background(), inbound("", "/spawn@archie-bot Deploy the release"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -546,7 +546,7 @@ func TestRouteSpawnNoTitle(t *testing.T) {
 	tc := &fakeTaskCreator{}
 	r := NewRouter(nil, nil, "test-gw")
 	r.Tasks = tc
-	reply, err := r.Route(context.Background(), Message{Text: "/spawn"})
+	reply, err := r.Route(context.Background(), inbound("", "/spawn"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -560,7 +560,7 @@ func TestRouteSpawnNoTitle(t *testing.T) {
 
 func TestRouteSpawnNoManager(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	reply, err := r.Route(context.Background(), Message{Text: "/spawn something"})
+	reply, err := r.Route(context.Background(), inbound("", "/spawn something"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -577,7 +577,7 @@ func TestRouteSpawnHandlesCreationError(t *testing.T) {
 	}
 	r := NewRouter(nil, nil, "test-gw")
 	r.Tasks = tc
-	reply, err := r.Route(context.Background(), Message{Text: "/spawn Break things"})
+	reply, err := r.Route(context.Background(), inbound("", "/spawn Break things"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -591,7 +591,7 @@ func TestRouteSpawnParsesRepoAndWorkflow(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
 	r.Tasks = tc
 	r.Identity = "archie"
-	reply, err := r.Route(context.Background(), Message{Text: "/spawn repo=acme/example-service workflow=tdd Fix the flaky test"})
+	reply, err := r.Route(context.Background(), inbound("", "/spawn repo=acme/example-service workflow=tdd Fix the flaky test"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -613,9 +613,7 @@ func TestRouteSpawnParsesIdentity(t *testing.T) {
 	r.Tasks = tc
 	r.Identity = "default"
 
-	reply, err := r.Route(context.Background(), Message{
-		Text: "/spawn identity=reviewer repo=acme/example-service workflow=tdd Fix the flaky test",
-	})
+	reply, err := r.Route(context.Background(), inbound("", "/spawn identity=reviewer repo=acme/example-service workflow=tdd Fix the flaky test"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -632,7 +630,7 @@ func TestRouteSpawnWithoutRepoOrWorkflowUsesDefaults(t *testing.T) {
 	tc := &fakeTaskCreator{}
 	r := NewRouter(nil, nil, "test-gw")
 	r.Tasks = tc
-	reply, err := r.Route(context.Background(), Message{Text: "/spawn Fix the login bug"})
+	reply, err := r.Route(context.Background(), inbound("", "/spawn Fix the login bug"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -651,7 +649,7 @@ func TestRouteSpawnTitleLooksLikeKeyValueIsPreserved(t *testing.T) {
 	tc := &fakeTaskCreator{}
 	r := NewRouter(nil, nil, "test-gw")
 	r.Tasks = tc
-	if _, err := r.Route(context.Background(), Message{Text: "/spawn repo=acme/example-service Fix x=y in config"}); err != nil {
+	if _, err := r.Route(context.Background(), inbound("", "/spawn repo=acme/example-service Fix x=y in config")); err != nil {
 		t.Fatalf("Route: %v", err)
 	}
 	got := tc.requests[0]
@@ -703,7 +701,7 @@ func TestRouteApproveParsesIdentity(t *testing.T) {
 	r.Controller = fc
 	r.Identity = "default"
 
-	reply, err := r.Route(context.Background(), Message{Text: "/approve identity=reviewer 42"})
+	reply, err := r.Route(context.Background(), inbound("", "/approve identity=reviewer 42"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -719,7 +717,7 @@ func TestRouteApproveSuccess(t *testing.T) {
 	fc := &fakeTaskController{}
 	r := NewRouter(nil, nil, "test-gw")
 	r.Controller = fc
-	reply, err := r.Route(context.Background(), Message{Text: "/approve 42"})
+	reply, err := r.Route(context.Background(), inbound("", "/approve 42"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -733,7 +731,7 @@ func TestRouteApproveSuccess(t *testing.T) {
 
 func TestRouteApproveNotConfigured(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	reply, err := r.Route(context.Background(), Message{Text: "/approve 1"})
+	reply, err := r.Route(context.Background(), inbound("", "/approve 1"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -746,7 +744,7 @@ func TestRouteApproveBadID(t *testing.T) {
 	fc := &fakeTaskController{}
 	r := NewRouter(nil, nil, "test-gw")
 	r.Controller = fc
-	reply, err := r.Route(context.Background(), Message{Text: "/approve notanumber"})
+	reply, err := r.Route(context.Background(), inbound("", "/approve notanumber"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -766,7 +764,7 @@ func TestRouteApproveWrongStateSurfacesError(t *testing.T) {
 	}
 	r := NewRouter(nil, nil, "test-gw")
 	r.Controller = fc
-	reply, err := r.Route(context.Background(), Message{Text: "/approve 7"})
+	reply, err := r.Route(context.Background(), inbound("", "/approve 7"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -779,7 +777,7 @@ func TestRouteCancelSuccess(t *testing.T) {
 	fc := &fakeTaskController{}
 	r := NewRouter(nil, nil, "test-gw")
 	r.Controller = fc
-	reply, err := r.Route(context.Background(), Message{Text: "/cancel 5"})
+	reply, err := r.Route(context.Background(), inbound("", "/cancel 5"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -797,7 +795,7 @@ func TestRouteCancelParsesIdentity(t *testing.T) {
 	r.Controller = fc
 	r.Identity = "default"
 
-	reply, err := r.Route(context.Background(), Message{Text: "/cancel identity=reviewer 5"})
+	reply, err := r.Route(context.Background(), inbound("", "/cancel identity=reviewer 5"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -821,7 +819,7 @@ func TestRouteCancelCrossIdentityRejected(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
 	r.Controller = fc
 	r.Identity = "winter"
-	reply, err := r.Route(context.Background(), Message{Text: "/cancel 9"})
+	reply, err := r.Route(context.Background(), inbound("", "/cancel 9"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -832,7 +830,7 @@ func TestRouteCancelCrossIdentityRejected(t *testing.T) {
 
 func TestRouteCancelNotConfigured(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	reply, err := r.Route(context.Background(), Message{Text: "/cancel 1"})
+	reply, err := r.Route(context.Background(), inbound("", "/cancel 1"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -846,7 +844,7 @@ func TestRouteCancelNotConfigured(t *testing.T) {
 func TestRouteWhoami(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
 	r.Identity = "archie"
-	reply, err := r.Route(context.Background(), Message{Text: "/whoami"})
+	reply, err := r.Route(context.Background(), inbound("", "/whoami"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -857,7 +855,7 @@ func TestRouteWhoami(t *testing.T) {
 
 func TestRouteWhoamiNoIdentity(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	reply, err := r.Route(context.Background(), Message{Text: "/whoami"})
+	reply, err := r.Route(context.Background(), inbound("", "/whoami"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -873,7 +871,7 @@ func TestRouteWhoamiWithModel(t *testing.T) {
 		models:      []string{"a/b", "c/d"},
 		activeModel: "a/b",
 	}
-	reply, err := r.Route(context.Background(), Message{Text: "/whoami"})
+	reply, err := r.Route(context.Background(), inbound("", "/whoami"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -891,7 +889,7 @@ func TestRouteProfile(t *testing.T) {
 		models:      []string{"a/b", "c/d"},
 		activeModel: "a/b",
 	}
-	reply, err := r.Route(context.Background(), Message{Text: "/profile"})
+	reply, err := r.Route(context.Background(), inbound("", "/profile"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -902,7 +900,7 @@ func TestRouteProfile(t *testing.T) {
 
 func TestRouteProfileNoIdentity(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	reply, err := r.Route(context.Background(), Message{Text: "/profile"})
+	reply, err := r.Route(context.Background(), inbound("", "/profile"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -926,7 +924,7 @@ func (f *fakeSessionLister) List(ctx context.Context) ([]SessionContext, error) 
 func TestRouteSessionsEmpty(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
 	r.Sessions = &fakeSessionLister{fakeSessionStore: newFakeSessionStore()}
-	reply, err := r.Route(context.Background(), Message{Text: "/sessions"})
+	reply, err := r.Route(context.Background(), inbound("", "/sessions"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -937,7 +935,7 @@ func TestRouteSessionsEmpty(t *testing.T) {
 
 func TestRouteSessionsNotConfigured(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	reply, err := r.Route(context.Background(), Message{Text: "/sessions"})
+	reply, err := r.Route(context.Background(), inbound("", "/sessions"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -949,7 +947,7 @@ func TestRouteSessionsNotConfigured(t *testing.T) {
 func TestRouteSessionsError(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
 	r.Sessions = &fakeSessionLister{fakeSessionStore: newFakeSessionStore(), err: fmt.Errorf("store unavailable")}
-	_, err := r.Route(context.Background(), Message{Text: "/sessions"})
+	_, err := r.Route(context.Background(), inbound("", "/sessions"))
 	if err == nil {
 		t.Error("expected error from Route when List fails")
 	}
@@ -960,7 +958,7 @@ func TestRouteSessionsError(t *testing.T) {
 func TestRouteResumeNoArg(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
 	r.Sessions = &fakeSessionLister{fakeSessionStore: newFakeSessionStore()}
-	reply, err := r.Route(context.Background(), Message{Text: "/resume"})
+	reply, err := r.Route(context.Background(), inbound("", "/resume"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -971,7 +969,7 @@ func TestRouteResumeNoArg(t *testing.T) {
 
 func TestRouteResumeNotConfigured(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	reply, err := r.Route(context.Background(), Message{Text: "/resume abc"})
+	reply, err := r.Route(context.Background(), inbound("", "/resume abc"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -988,7 +986,7 @@ func TestRouteResumeNoMatch(t *testing.T) {
 			{SessionID: "session-1"},
 		},
 	}
-	reply, err := r.Route(context.Background(), Message{Text: "/resume xyz"})
+	reply, err := r.Route(context.Background(), inbound("", "/resume xyz"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -1006,7 +1004,7 @@ func TestRouteResumeAmbiguous(t *testing.T) {
 			{SessionID: "abc-456"},
 		},
 	}
-	reply, err := r.Route(context.Background(), Message{Text: "/resume abc"})
+	reply, err := r.Route(context.Background(), inbound("", "/resume abc"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -1024,7 +1022,7 @@ func TestRouteResumeExactMatch(t *testing.T) {
 			{SessionID: "abc-456"},
 		},
 	}
-	reply, err := r.Route(context.Background(), Message{Text: "/resume abc-123"})
+	reply, err := r.Route(context.Background(), inbound("", "/resume abc-123"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -1050,7 +1048,7 @@ func (f *fakeAgentReader) AgentList(ctx context.Context) ([]AgentInfo, error) {
 func TestRouteAgentsEmpty(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
 	r.Agents = &fakeAgentReader{}
-	reply, err := r.Route(context.Background(), Message{Text: "/agents"})
+	reply, err := r.Route(context.Background(), inbound("", "/agents"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -1061,7 +1059,7 @@ func TestRouteAgentsEmpty(t *testing.T) {
 
 func TestRouteAgentsNotConfigured(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	reply, err := r.Route(context.Background(), Message{Text: "/agents"})
+	reply, err := r.Route(context.Background(), inbound("", "/agents"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -1078,7 +1076,7 @@ func TestRouteAgentsWithTasks(t *testing.T) {
 			{ID: 2, Title: "Add tests", Status: "waiting_human", Identity: "archie"},
 		},
 	}
-	reply, err := r.Route(context.Background(), Message{Text: "/agents"})
+	reply, err := r.Route(context.Background(), inbound("", "/agents"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -1093,7 +1091,7 @@ func TestRouteAgentsWithTasks(t *testing.T) {
 func TestRouteAgentsError(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
 	r.Agents = &fakeAgentReader{err: fmt.Errorf("store unavailable")}
-	_, err := r.Route(context.Background(), Message{Text: "/agents"})
+	_, err := r.Route(context.Background(), inbound("", "/agents"))
 	if err == nil {
 		t.Error("expected error from Route when AgentList fails")
 	}

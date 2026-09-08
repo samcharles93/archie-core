@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 // stubTitleGenerator records calls and answers from a per-session table.
@@ -59,7 +61,7 @@ func (s *stubTitleGenerator) lastText() string {
 
 // llmResponder is a deterministic LLMResponder for turn-path tests.
 func llmResponder(reply string) LLMResponder {
-	return func(context.Context, Message) (string, error) { return reply, nil }
+	return func(context.Context, Inbound) (string, error) { return reply, nil }
 }
 
 // waitForTitle polls the store until sessionID carries the wanted title.
@@ -184,7 +186,7 @@ func TestRouteSessionsRenderedList(t *testing.T) {
 		}
 	}
 	r.InitSessions(store)
-	reply, err := r.Route(ctx, Message{Text: "/sessions"})
+	reply, err := r.Route(ctx, inbound("", "/sessions"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -208,12 +210,12 @@ func TestRouteAutoTitlesUntitledSession(t *testing.T) {
 	gen := &stubTitleGenerator{titles: map[string]string{}}
 	r.Titles = gen
 	ctx := context.Background()
-	sessionID, err := r.ResolveSessionKey(ctx, Message{ChannelID: "ch", From: "u", Text: "Deploy the NATS worker"})
+	sessionID, err := r.ResolveSessionKey(ctx, inboundFrom("ch", "u", "Deploy the NATS worker"))
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
 	gen.titles[sessionID] = "Deploy NATS worker"
-	if _, err := r.Route(ctx, Message{ChannelID: "ch", From: "u", Text: "Deploy the NATS worker"}); err != nil {
+	if _, err := r.Route(ctx, inboundFrom("ch", "u", "Deploy the NATS worker")); err != nil {
 		t.Fatalf("Route: %v", err)
 	}
 	waitForTitle(t, store, sessionID, "Deploy NATS worker")
@@ -256,7 +258,7 @@ func TestRouteDoesNotRetitleTitledSession(t *testing.T) {
 	gen.block = make(chan struct{})
 	r.Titles = gen
 	ctx := context.Background()
-	sessionID, err := r.ResolveSessionKey(ctx, Message{ChannelID: "ch", From: "u", Text: "hello"})
+	sessionID, err := r.ResolveSessionKey(ctx, inboundFrom("ch", "u", "hello"))
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -268,7 +270,7 @@ func TestRouteDoesNotRetitleTitledSession(t *testing.T) {
 	if err := store.Save(ctx, *sc); err != nil {
 		t.Fatalf("save session: %v", err)
 	}
-	if _, err := r.Route(ctx, Message{ChannelID: "ch", From: "u", Text: "more text"}); err != nil {
+	if _, err := r.Route(ctx, inboundFrom("ch", "u", "more text")); err != nil {
 		t.Fatalf("Route: %v", err)
 	}
 	waitForTitleIdle(t, r)
@@ -288,11 +290,11 @@ func TestRouteAutoTitleErrorKeepsUntitled(t *testing.T) {
 	gen := &stubTitleGenerator{err: errors.New("model down"), titles: map[string]string{}}
 	r.Titles = gen
 	ctx := context.Background()
-	sessionID, err := r.ResolveSessionKey(ctx, Message{ChannelID: "ch", From: "u", Text: "deploy"})
+	sessionID, err := r.ResolveSessionKey(ctx, inboundFrom("ch", "u", "deploy"))
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if _, err := r.Route(ctx, Message{ChannelID: "ch", From: "u", Text: "deploy"}); err != nil {
+	if _, err := r.Route(ctx, inboundFrom("ch", "u", "deploy")); err != nil {
 		t.Fatalf("Route: %v", err)
 	}
 	// The proposal is spawned (the session is untitled) and must drain
@@ -312,7 +314,7 @@ func TestRouteAutoTitleInFlightGuard(t *testing.T) {
 	gen.block = make(chan struct{})
 	r.Titles = gen
 	ctx := context.Background()
-	sessionID, err := r.ResolveSessionKey(ctx, Message{ChannelID: "ch", From: "u", Text: "deploy"})
+	sessionID, err := r.ResolveSessionKey(ctx, inboundFrom("ch", "u", "deploy"))
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -320,7 +322,7 @@ func TestRouteAutoTitleInFlightGuard(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		if _, err := r.Route(ctx, Message{ChannelID: "ch", From: "u", Text: "deploy"}); err != nil {
+		if _, err := r.Route(ctx, inboundFrom("ch", "u", "deploy")); err != nil {
 			t.Errorf("Route 1: %v", err)
 		}
 	}()
@@ -332,7 +334,7 @@ func TestRouteAutoTitleInFlightGuard(t *testing.T) {
 	<-done
 	// A second turn while the first proposal is still blocked must not
 	// spawn a second call: the guard lets one proposal win the session.
-	if _, err := r.Route(ctx, Message{ChannelID: "ch", From: "u", Text: "deploy again"}); err != nil {
+	if _, err := r.Route(ctx, inboundFrom("ch", "u", "deploy again")); err != nil {
 		t.Fatalf("Route 2: %v", err)
 	}
 	time.Sleep(100 * time.Millisecond)
@@ -349,17 +351,17 @@ func TestRouteStreamAutoTitlesUntitledSession(t *testing.T) {
 	r.InitSessions(store)
 	gen := &stubTitleGenerator{titles: map[string]string{}}
 	r.Titles = gen
-	r.LLMStream = func(_ context.Context, _ Message, stream TurnStream) (string, error) {
+	r.LLMStream = func(_ context.Context, _ Inbound, stream TurnStream) (string, error) {
 		stream.Delta("r")
 		return "reply ok", nil
 	}
 	ctx := context.Background()
-	sessionID, err := r.ResolveSessionKey(ctx, Message{ChannelID: "ch", From: "u", Text: "stream me"})
+	sessionID, err := r.ResolveSessionKey(ctx, inboundFrom("ch", "u", "stream me"))
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
 	gen.titles[sessionID] = "Stream topic"
-	if _, err := r.RouteStream(ctx, Message{ChannelID: "ch", From: "u", Text: "stream me"}, DeltaFunc(func(string) {})); err != nil {
+	if _, err := r.RouteStream(ctx, inboundFrom("ch", "u", "stream me"), DeltaFunc(func(string) {})); err != nil {
 		t.Fatalf("RouteStream: %v", err)
 	}
 	waitForTitle(t, store, sessionID, "Stream topic")
@@ -372,11 +374,11 @@ func TestRouteAutoTitlePanicIsContained(t *testing.T) {
 	gen := &stubTitleGenerator{titles: map[string]string{}, panicMsg: "boom"}
 	r.Titles = gen
 	ctx := context.Background()
-	sessionID, err := r.ResolveSessionKey(ctx, Message{ChannelID: "ch", From: "u", Text: "deploy"})
+	sessionID, err := r.ResolveSessionKey(ctx, inboundFrom("ch", "u", "deploy"))
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if _, err := r.Route(ctx, Message{ChannelID: "ch", From: "u", Text: "deploy"}); err != nil {
+	if _, err := r.Route(ctx, inboundFrom("ch", "u", "deploy")); err != nil {
 		t.Fatalf("Route: %v", err)
 	}
 	// If the recover is ever removed, the panic in the background
@@ -395,18 +397,18 @@ func TestRetryAutoTitlesUntitledSession(t *testing.T) {
 	gen := &stubTitleGenerator{titles: map[string]string{}}
 	r.Titles = gen
 	ctx := context.Background()
-	sessionID, err := r.ResolveSessionKey(ctx, Message{ChannelID: "ch", From: "u", Text: "deploy the worker"})
+	sessionID, err := r.ResolveSessionKey(ctx, inboundFrom("ch", "u", "deploy the worker"))
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
 	gen.titles[sessionID] = "Deploy worker"
-	if err := store.SaveMessage(ctx, sessionID, ToStoredMessage(Message{From: "u", Text: "deploy the worker"}, "archie")); err != nil {
+	if err := store.SaveMessage(ctx, sessionID, messaging.Message{Sender: "u", Role: messaging.RoleUser, Text: "deploy the worker"}); err != nil {
 		t.Fatalf("save user message: %v", err)
 	}
-	if err := store.SaveMessage(ctx, sessionID, ToStoredMessage(Message{From: "bot", Text: "sure"}, "archie")); err != nil {
+	if err := store.SaveMessage(ctx, sessionID, messaging.Message{Sender: "bot", Role: messaging.RoleUser, Text: "sure"}); err != nil {
 		t.Fatalf("save reply: %v", err)
 	}
-	if _, err := r.Route(ctx, Message{ChannelID: "ch", From: "u", Text: "/retry"}); err != nil {
+	if _, err := r.Route(ctx, inboundFrom("ch", "u", "/retry")); err != nil {
 		t.Fatalf("Route /retry: %v", err)
 	}
 	waitForTitle(t, store, sessionID, "Deploy worker")

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 // Persona is a named communication style that modifies the system prompt.
@@ -121,7 +123,7 @@ func (r *PersonaRegistry) Get(name string) (Persona, bool) {
 	return p, ok
 }
 
-func (r *Router) handlePersonality(ctx context.Context, msg Message, rest string) (string, error) {
+func (r *Router) handlePersonality(ctx context.Context, msg messaging.Message, rest string) (string, error) {
 	if r.Personas == nil {
 		return "Personality switching is not configured.", nil
 	}
@@ -135,13 +137,13 @@ func (r *Router) handlePersonality(ctx context.Context, msg Message, rest string
 	return fmt.Sprintf("Personality set to %q.", name), nil
 }
 
-func (r *Router) sessionKey(ctx context.Context, msg Message) string {
+func (r *Router) sessionKey(ctx context.Context, msg messaging.Message) string {
 	if r.sessionTracker == nil {
-		return msg.ChannelID
+		return msg.ConversationID.ChannelID
 	}
-	key, err := r.ResolveSessionKey(ctx, msg)
+	key, err := r.ResolveSessionKey(ctx, Inbound{Message: msg})
 	if err != nil {
-		return msg.ChannelID
+		return msg.ConversationID.ChannelID
 	}
 	return key
 }

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
 )
@@ -114,7 +115,7 @@ func TestChatSessionAndMessageEndpoints(t *testing.T) {
 	if err := sessions.Save(context.Background(), session); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessions.SaveMessage(context.Background(), session.SessionID, gateway.ToStoredMessage(gateway.Message{From: "web", Text: "hello"}, "")); err != nil {
+	if err := sessions.SaveMessage(context.Background(), session.SessionID, messaging.Message{Sender: "web", Role: messaging.RoleUser, Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -143,11 +144,14 @@ func TestChatSessionAndMessageEndpoints(t *testing.T) {
 		if res.Code != http.StatusOK {
 			t.Fatalf("status = %d, body = %s", res.Code, res.Body)
 		}
-		var got []gateway.Message
+		var got []struct {
+			MessageID string `json:"MessageID"`
+			Text      string `json:"Text"`
+		}
 		if err := json.Unmarshal(res.Body.Bytes(), &got); err != nil {
 			t.Fatal(err)
 		}
-		if len(got) != 1 || got[0].Text != "hello" {
+		if len(got) != 1 || got[0].Text != "hello" || got[0].MessageID == "" {
 			t.Fatalf("messages = %#v", got)
 		}
 	})
@@ -572,7 +576,7 @@ func TestChatStreamEndsWithDone(t *testing.T) {
 func TestChatStreamDeltas(t *testing.T) {
 	server, sessions := chatTestServer(t)
 	var gotDeltas []string
-	testLocalChat(server.Chat).Router.LLMStream = func(_ context.Context, _ gateway.Message, stream gateway.TurnStream) (string, error) {
+	testLocalChat(server.Chat).Router.LLMStream = func(_ context.Context, _ gateway.Inbound, stream gateway.TurnStream) (string, error) {
 		stream.Delta("part one")
 		stream.Delta("part two")
 		return "full reply", nil
@@ -605,7 +609,7 @@ func TestChatStreamDeltas(t *testing.T) {
 // writes straight to the SSE writer, with one it hands events across a
 // goroutine, and an ordering that survives only the first is not a fix.
 func TestChatStreamReportsToolCalls(t *testing.T) {
-	stream := func(_ context.Context, _ gateway.Message, turn gateway.TurnStream) (string, error) {
+	stream := func(_ context.Context, _ gateway.Inbound, turn gateway.TurnStream) (string, error) {
 		turn.Delta("checking")
 		turn.ToolCall(gateway.ToolCallEvent{ID: "call-1", Name: "shell", Parameters: `{"cmd":"true"}`, Output: "exit 0\nignored trailing line"})
 		turn.ToolCall(gateway.ToolCallEvent{Name: "read", Err: "no such file"})
@@ -680,7 +684,7 @@ func TestChatStreamReportsToolCalls(t *testing.T) {
 // a link in the text stream rather than being silently dropped -- the same
 // fallback Telegram's liveReply uses when SendMedia itself fails.
 func TestChatStreamRendersMediaAsALinkFallback(t *testing.T) {
-	stream := func(_ context.Context, _ gateway.Message, turn gateway.TurnStream) (string, error) {
+	stream := func(_ context.Context, _ gateway.Inbound, turn gateway.TurnStream) (string, error) {
 		turn.Delta("here you go")
 		turn.Media(gateway.MediaEvent{
 			ToolName:   "video_gen",
@@ -716,7 +720,7 @@ func TestChatStreamRendersMediaAsALinkFallback(t *testing.T) {
 // An event with no URL has nothing to link to, so it must not add an
 // empty or broken-looking line to the transcript.
 func TestChatStreamSkipsMediaWithNoURL(t *testing.T) {
-	stream := func(_ context.Context, _ gateway.Message, turn gateway.TurnStream) (string, error) {
+	stream := func(_ context.Context, _ gateway.Inbound, turn gateway.TurnStream) (string, error) {
 		turn.Media(gateway.MediaEvent{ToolName: "video_gen", Attachment: gateway.MediaAttachment{Type: "video"}})
 		return "", nil
 	}
@@ -747,7 +751,7 @@ func TestChatStreamSkipsMediaWithNoURL(t *testing.T) {
 // web stream narrated every tool call unconditionally, because nothing here
 // read this setting at all.
 func TestChatStreamHidesToolCallsWhenShowToolCallsIsOff(t *testing.T) {
-	stream := func(_ context.Context, _ gateway.Message, turn gateway.TurnStream) (string, error) {
+	stream := func(_ context.Context, _ gateway.Inbound, turn gateway.TurnStream) (string, error) {
 		turn.Delta("checking")
 		turn.ToolCall(gateway.ToolCallEvent{Name: "shell", Output: "exit 0"})
 		turn.Delta(" and answering")
@@ -835,7 +839,7 @@ func postTo(server *Server, body string) *httptest.ResponseRecorder {
 // send_file was built to end: the model reports a file as sent and
 // nothing arrives, with no signal either way.
 func TestChatStreamReportsUndeliverableLocalFile(t *testing.T) {
-	stream := func(_ context.Context, _ gateway.Message, turn gateway.TurnStream) (string, error) {
+	stream := func(_ context.Context, _ gateway.Inbound, turn gateway.TurnStream) (string, error) {
 		turn.Media(gateway.MediaEvent{
 			ToolName: "send_file",
 			Attachment: gateway.MediaAttachment{
@@ -879,8 +883,8 @@ func TestChatStreamReportsUndeliverableLocalFile(t *testing.T) {
 // Message.Page, so the system prompt can state where the operator is.
 func TestChatStreamCarriesCurrentPage(t *testing.T) {
 	server, sessions := chatTestServer(t)
-	var got gateway.Message
-	testLocalChat(server.Chat).Router.LLMStream = func(_ context.Context, msg gateway.Message, stream gateway.TurnStream) (string, error) {
+	var got gateway.Inbound
+	testLocalChat(server.Chat).Router.LLMStream = func(_ context.Context, msg gateway.Inbound, stream gateway.TurnStream) (string, error) {
 		got = msg
 		stream.Delta("on it")
 		return "on it", nil
@@ -896,7 +900,7 @@ func TestChatStreamCarriesCurrentPage(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", res.Code, res.Body)
 	}
 	if got.Page != "/tasks" {
-		t.Fatalf("Message.Page = %q, want /tasks", got.Page)
+		t.Fatalf("Inbound.Page = %q, want /tasks", got.Page)
 	}
 }
 
@@ -905,7 +909,7 @@ func TestChatStreamCarriesCurrentPage(t *testing.T) {
 // ShowToolCalls is off, so the browser can render a clickable chip to route
 // the operator to the page.
 func TestChatStreamEmitsNavigateChip(t *testing.T) {
-	stream := func(_ context.Context, _ gateway.Message, turn gateway.TurnStream) (string, error) {
+	stream := func(_ context.Context, _ gateway.Inbound, turn gateway.TurnStream) (string, error) {
 		out, _ := json.Marshal(gateway.DashboardNavigateResult{Path: "/tasks", Label: "Tasks"})
 		turn.ToolCall(gateway.ToolCallEvent{ID: "nav-1", Name: "dashboard_navigate", Output: string(out)})
 		return "That is on the Tasks page.", nil

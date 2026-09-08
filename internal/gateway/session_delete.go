@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 // minDeleteRefLen is the shortest prefix /delete will act on.
@@ -21,7 +23,7 @@ const minDeleteRefLen = 4
 // It is the only way to retire a conversation from chat: /new starts a
 // fresh one and leaves the old session listed by /sessions forever, so
 // without this the list only ever grows.
-func (r *Router) handleDelete(ctx context.Context, msg Message, rest string) (string, error) {
+func (r *Router) handleDelete(ctx context.Context, msg messaging.Message, rest string) (string, error) {
 	ref := strings.TrimSpace(rest)
 	if ref == "" {
 		// No bare form. Deleting "the current conversation" on an
@@ -55,7 +57,7 @@ func (r *Router) handleDelete(ctx context.Context, msg Message, rest string) (st
 	// whether the operator just ended the conversation they are in.
 	active := ""
 	if r.sessionTracker != nil {
-		active = r.sessionTracker.getActive(msg.ChannelID, msg.ThreadID)
+		active = r.sessionTracker.getActive(msg.ConversationID.ChannelID, msg.ConversationID.ThreadID)
 	}
 
 	if err := r.Sessions.Delete(ctx, target.SessionID); err != nil {

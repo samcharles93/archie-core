@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/tools"
 )
 
@@ -79,11 +80,11 @@ type SessionDeleteResult struct {
 // A nil store omits every tool rather than registering ones that always fail,
 // so a daemon without session support advertises nothing. A nil tracker omits
 // the two tools that need it (session_resume and session_delete).
-func SessionTools(store SessionStore, tracker *sessionTracker, platform string, msg Message) []tools.ToolEntry {
+func SessionTools(store SessionStore, tracker *sessionTracker, platform string, msg messaging.Message) []tools.ToolEntry {
 	if store == nil {
 		return nil
 	}
-	channelID := msg.ChannelID
+	channelID := msg.ConversationID.ChannelID
 	var entries []tools.ToolEntry
 	entries = append(entries, sessionListTool(store, platform, channelID))
 	if tracker != nil {
@@ -143,7 +144,7 @@ func sessionListTool(store SessionStore, platform, channelID string) tools.ToolE
 	}
 }
 
-func sessionResumeTool(store SessionStore, tracker *sessionTracker, platform, channelID string, msg Message) tools.ToolEntry {
+func sessionResumeTool(store SessionStore, tracker *sessionTracker, platform, channelID string, msg messaging.Message) tools.ToolEntry {
 	return tools.ToolEntry{
 		Name:    "session_resume",
 		Toolset: "session",
@@ -182,7 +183,7 @@ func sessionResumeTool(store SessionStore, tracker *sessionTracker, platform, ch
 			// The channel+thread are the ones this tool was built for, never
 			// input. Tracker presence is guaranteed: SessionTools omits the
 			// tool when no tracker is wired.
-			tracker.setActive(msg.ChannelID, msg.ThreadID, match.SessionID)
+			tracker.setActive(msg.ConversationID.ChannelID, msg.ConversationID.ThreadID, match.SessionID)
 			return SessionResumeResult{
 				SessionID: match.SessionID,
 				Title:     sessionDisplayTitle(*match),

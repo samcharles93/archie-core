@@ -44,7 +44,7 @@ func TestTopicOffDoesNotPoisonTheCache(t *testing.T) {
 				want = id
 			}
 
-			if _, err := r.Route(ctx, Message{Text: "/topic off", ChannelID: "chat-x"}); err != nil {
+			if _, err := r.Route(ctx, inbound("chat-x", "/topic off")); err != nil {
 				t.Fatalf("Route(/topic off): %v", err)
 			}
 
@@ -116,7 +116,7 @@ func TestBranchWithNoActiveSessionDoesNotPanic(t *testing.T) {
 	r.InitSessions(store)
 	r.Identity = "archie"
 
-	reply, err := r.Route(context.Background(), Message{Text: "/branch", ChannelID: "inbox-1"})
+	reply, err := r.Route(context.Background(), inbound("inbox-1", "/branch"))
 	if err != nil {
 		t.Fatalf("Route(/branch): %v", err)
 	}

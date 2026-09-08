@@ -49,13 +49,13 @@ func TestAdapterMessagesReadsRoleFromRecords(t *testing.T) {
 	if err := store.Save(ctx, sess); err != nil {
 		t.Fatalf("Save() = %v", err)
 	}
-	// Roles are derived from the sender at the store boundary; the adapter
-	// reads them from the records, needing no bot identity of its own.
-	for _, m := range []gateway.Message{
-		{From: "user123", Text: "hello", At: time.Unix(1, 0)},
-		{From: "archie", Text: "hi there", At: time.Unix(2, 0)},
+	// Roles are set by whoever produced the message; the adapter reads them
+	// from the records, needing no bot identity of its own.
+	for _, m := range []messaging.Message{
+		{Sender: "user123", Role: messaging.RoleUser, Text: "hello", At: time.Unix(1, 0)},
+		{Sender: "archie", Role: messaging.RoleAssistant, Text: "hi there", At: time.Unix(2, 0)},
 	} {
-		if err := store.SaveMessage(ctx, "s1", gateway.ToStoredMessage(m, "archie")); err != nil {
+		if err := store.SaveMessage(ctx, "s1", m); err != nil {
 			t.Fatalf("SaveMessage(%v) = %v", m, err)
 		}
 	}

@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
@@ -67,19 +68,16 @@ func (a *LocalChatAdapter) GetSession(ctx context.Context, id string) (SessionCo
 	return *session, true, nil
 }
 
-func (a *LocalChatAdapter) RecentMessages(ctx context.Context, id string, n int) ([]Message, error) {
-	// The ChatContract still speaks the channel-facing Message (dashboard
-	// JSON, channel frontends); migrating those consumers is follow-up
-	// work (bd label messaging-migration). Convert at this boundary.
+func (a *LocalChatAdapter) RecentMessages(ctx context.Context, id string, n int) ([]messaging.Message, error) {
 	stored, err := a.Sessions.RecentMessages(ctx, id, n)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]Message, 0, len(stored))
-	for _, m := range stored {
-		out = append(out, FromStoredMessage(m))
-	}
-	return out, nil
+	// A snapshot, and non-nil even when the session is empty: the contract
+	// promises callers a slice they own, and an empty history renders as []
+	// rather than null.
+	out := make([]messaging.Message, 0, len(stored))
+	return append(out, stored...), nil
 }
 
 func (a *LocalChatAdapter) RecentTurns(ctx context.Context, id string, n int) ([]TurnRecord, error) {
@@ -89,12 +87,12 @@ func (a *LocalChatAdapter) RecentTurns(ctx context.Context, id string, n int) ([
 	return []TurnRecord{}, nil
 }
 
-func (a *LocalChatAdapter) Route(ctx context.Context, msg Message) (ChatReply, error) {
-	reply, err := a.Router.Route(ctx, msg)
+func (a *LocalChatAdapter) Route(ctx context.Context, in Inbound) (ChatReply, error) {
+	reply, err := a.Router.Route(ctx, in)
 	if err != nil {
 		return ChatReply{}, err
 	}
-	id, err := a.Router.ResolveSessionKey(ctx, msg)
+	id, err := a.Router.ResolveSessionKey(ctx, in)
 	return ChatReply{Text: reply, SessionID: id}, err
 }
 
@@ -126,31 +124,31 @@ func (a *LocalChatAdapter) ApplyTaskAction(ctx context.Context, identity string,
 	return a.TaskActor.ApplyChatTaskAction(ctx, identity, taskID, action)
 }
 
-func (a *LocalChatAdapter) Stream(ctx context.Context, msg Message) (<-chan ChatEvent, error) {
+func (a *LocalChatAdapter) Stream(ctx context.Context, in Inbound) (<-chan ChatEvent, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	id, err := a.Router.ResolveSessionKey(ctx, msg)
+	id, err := a.Router.ResolveSessionKey(ctx, in)
 	if err != nil {
 		return nil, err
 	}
 	events := make(chan ChatEvent, 32)
 	events <- ChatEvent{Kind: "started", SessionID: id}
-	go a.stream(ctx, msg, id, events)
+	go a.stream(ctx, in, id, events)
 	return events, nil
 }
 
-func (a *LocalChatAdapter) stream(ctx context.Context, msg Message, id string, events chan ChatEvent) {
+func (a *LocalChatAdapter) stream(ctx context.Context, in Inbound, id string, events chan ChatEvent) {
 	defer close(events)
 	pending := make(chan ChatEvent, 32)
 	stream := localChatStream{done: ctx.Done(), events: pending, sessionID: id}
 	run := func(turnCtx context.Context) ChatEvent {
-		reply, err := a.Router.RouteStream(turnCtx, msg, stream)
+		reply, err := a.Router.RouteStream(turnCtx, in, stream)
 		if err != nil {
 			return ChatEvent{Kind: "error", Text: err.Error(), SessionID: id}
 		}
 		resolvedID := id
-		if resolved, err := a.Router.ResolveSessionKey(ctx, msg); err == nil {
+		if resolved, err := a.Router.ResolveSessionKey(ctx, in); err == nil {
 			resolvedID = resolved
 		}
 		return ChatEvent{Kind: "done", Text: reply, SessionID: resolvedID}
