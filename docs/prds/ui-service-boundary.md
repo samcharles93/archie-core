@@ -67,7 +67,8 @@ cutover.
 | `/events` | State Store `EventsSince`, polled by one UI-process pump feeding `Server.Broadcast` | RESOLVED (`archie-core-za9f`): see migration-decisions, "Dashboard live event delivery". No new RPC; replay cursor and drop-recovery are the existing `since` watermark in `sse.go` |
 | `/api/logs`, `/api/logs/stream` | daemon diagnostic feed, host-local | unresolved: `logging.Feed` is in-process on the daemon host and has no contract |
 | `/api/captures`, `/api/mappings`, `/api/bindings` | State Store contracts, with webhook verification owned by Work Intake/Messaging | local adapter exists; remote UI surface remains to define |
-| `/api/config` | daemon/config owner through a versioned admin contract | current app callbacks; shared holder must be removed |
+| `/api/config` (read) | daemon-published `ConfigView` snapshot, read over the State Store contract | RESOLVED (`archie-core-ymut`): see migration-decisions, "Dashboard configuration page" |
+| `/api/config` (write), `/api/config/reset`, `/api/config/repos/*` | none; descoped for Phase 3 | RESOLVED (`archie-core-ymut`): 503 in the UI process, SPA hides the controls, editing is config.toml plus reload |
 | `/api/channels`, reload, curators, memory, skills, version/update | owning capability contract or an explicitly removed route | owner and failure semantics remain to define |
 | `/`, `/healthz`, `/health`, `/health/detailed` | UI HTTP process; readiness consumes per-service health contracts | current HTTP behavior is the compatibility baseline |
 
@@ -105,10 +106,16 @@ For Phase 3, configuration ownership is split deliberately. The UI process
 owns its listener, browser-auth, asset, dependency-target, and readiness
 settings. The daemon/application configuration owner remains authoritative for
 the dashboard's `/api/config` read, validation, persistence, overlay, reload,
-and audit behavior; the UI calls that owner through a narrow admin contract.
-The UI does not become the writer merely because it renders the configuration
-page. A future dedicated Configuration Service may replace that owner through
-the same contract without changing the UI boundary.
+and audit behavior. The UI does not become the writer merely because it
+renders the configuration page.
+
+Amended 2026-09-09 by `archie-core-ymut`: this section previously assumed one
+narrow admin contract carrying both the read and the write. It does not. The
+read crosses as a daemon-published `ConfigView` snapshot over the State Store
+contract, and the write is descoped for Phase 3 rather than contracted, on the
+reasoning recorded in migration-decisions under "Dashboard configuration
+page". A future dedicated Configuration Service is the natural owner of a
+write contract, and designing one is that feature's work, not this migration's.
 
 ## Listen, authentication, and readiness
 
