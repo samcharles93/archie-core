@@ -13,6 +13,8 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 // ── SQLite implementation ───────────────────────────────────────────────────
@@ -68,6 +70,7 @@ CREATE TABLE IF NOT EXISTS messages (
 	session_id TEXT NOT NULL,
 	source_id  TEXT NOT NULL DEFAULT '',
 	sender     TEXT NOT NULL DEFAULT '',
+	role       TEXT NOT NULL DEFAULT '',
 	text       TEXT NOT NULL DEFAULT '',
 	ts         INTEGER NOT NULL,
 	UNIQUE(session_id, message_id)
@@ -161,6 +164,24 @@ func openSQLiteSessionStore(dsn string) (SessionStore, error) {
 	if _, err := db.ExecContext(ctx, `ALTER TABLE turns ADD COLUMN tool_calls TEXT NOT NULL DEFAULT '[]'`); err != nil &&
 		!strings.Contains(err.Error(), "duplicate column name") {
 		return nil, errors.Join(fmt.Errorf("sessionstore: migrate turns table: %w", err), db.Close())
+	}
+	// A database created before the messaging migration has a messages
+	// table without the role column; CREATE TABLE IF NOT EXISTS above
+	// leaves an existing table alone, so the column is added here, with
+	// the same duplicate-column detection as the turns migration.
+	if _, err := db.ExecContext(ctx, `ALTER TABLE messages ADD COLUMN role TEXT NOT NULL DEFAULT ''`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column name") {
+		return nil, errors.Join(fmt.Errorf("sessionstore: migrate messages table: %w", err), db.Close())
+	}
+	// Backfill the role for rows written before it was persisted, using
+	// the same sender-equality the store boundary applies to new writes:
+	// a message sent by its session's bot identity is the assistant's.
+	if _, err := db.ExecContext(ctx, `
+		UPDATE messages SET role = CASE
+			WHEN sender = (SELECT bot_user FROM sessions WHERE sessions.session_id = messages.session_id)
+			THEN 'assistant' ELSE 'user'
+		END WHERE role = ''`); err != nil {
+		return nil, errors.Join(fmt.Errorf("sessionstore: backfill message roles: %w", err), db.Close())
 	}
 	if err := repairFutureMessageTimestamps(ctx, db, time.Now().UTC()); err != nil {
 		return nil, errors.Join(err, db.Close())
@@ -704,7 +725,7 @@ type execer interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-func (s *sqliteSessionStore) SaveMessage(ctx context.Context, sessionID string, msg Message) error {
+func (s *sqliteSessionStore) SaveMessage(ctx context.Context, sessionID string, msg messaging.Message) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, err := saveMessage(ctx, s.db, sessionID, msg)
@@ -718,15 +739,15 @@ func (s *sqliteSessionStore) SaveMessage(ctx context.Context, sessionID string, 
 // must not mint a new identity. An existing record with that ID is left
 // untouched: stored messages are immutable, so a redelivered edit is a
 // no-op rather than an overwrite.
-func saveMessage(ctx context.Context, ex execer, sessionID string, msg Message) (string, error) {
+func saveMessage(ctx context.Context, ex execer, sessionID string, msg messaging.Message) (string, error) {
 	return saveMessageAt(ctx, ex, sessionID, msg, true)
 }
 
 // saveMessageAt writes a message, optionally without the monotonic clamp.
 // The clamp belongs to the append path, not to a caller rewriting history and
 // placing records deliberately.
-func saveMessageAt(ctx context.Context, ex execer, sessionID string, msg Message, clamp bool) (string, error) {
-	id := msg.MessageID
+func saveMessageAt(ctx context.Context, ex execer, sessionID string, msg messaging.Message, clamp bool) (string, error) {
+	id := string(msg.ID)
 	legacyID := ""
 	if msg.SourceID == "" {
 		if id == "" {
@@ -744,6 +765,13 @@ func saveMessageAt(ctx context.Context, ex execer, sessionID string, msg Message
 			legacyID = compatibleLegacyID
 		}
 	}
+	// An empty Role means "user": the boundary derives assistant explicitly
+	// (see ToStoredMessage), and pre-migration rows are backfilled at open,
+	// so only a hand-built record arrives without one.
+	role := string(msg.Role)
+	if role == "" {
+		role = string(messaging.RoleUser)
+	}
 	if legacyID != "" {
 		var existingID string
 		err := ex.QueryRowContext(ctx,
@@ -759,8 +787,8 @@ func saveMessageAt(ctx context.Context, ex execer, sessionID string, msg Message
 	at := stamp(msg)
 	if clamp {
 		_, err := ex.ExecContext(ctx, `
-			INSERT INTO messages (message_id, session_id, source_id, sender, text, ts)
-			VALUES (?, ?, ?, ?, ?, (
+			INSERT INTO messages (message_id, session_id, source_id, sender, role, text, ts)
+			VALUES (?, ?, ?, ?, ?, ?, (
 				SELECT CASE
 					WHEN MAX(ts) IS NOT NULL AND MAX(ts) >= ? THEN MAX(ts) + 1
 					ELSE ?
@@ -768,7 +796,7 @@ func saveMessageAt(ctx context.Context, ex execer, sessionID string, msg Message
 				FROM messages WHERE session_id = ?
 			))
 			ON CONFLICT(session_id, message_id) DO NOTHING`,
-			id, sessionID, msg.SourceID, msg.From, msg.Text,
+			id, sessionID, msg.SourceID, msg.Sender, role, msg.Text,
 			at.UnixMilli(), at.UnixMilli(), sessionID)
 		if err != nil {
 			return "", fmt.Errorf("sessionstore: save message: %w", err)
@@ -787,16 +815,16 @@ func saveMessageAt(ctx context.Context, ex execer, sessionID string, msg Message
 	}
 
 	_, err = ex.ExecContext(ctx, `
-		INSERT INTO messages (message_id, session_id, source_id, sender, text, ts)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		id, sessionID, msg.SourceID, msg.From, msg.Text, at.UnixMilli())
+		INSERT INTO messages (message_id, session_id, source_id, sender, role, text, ts)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		id, sessionID, msg.SourceID, msg.Sender, role, msg.Text, at.UnixMilli())
 	if err != nil {
 		return "", fmt.Errorf("sessionstore: save message: %w", err)
 	}
 	return id, nil
 }
 
-func (s *sqliteSessionStore) SaveMessages(ctx context.Context, sessionID string, msgs []Message) error {
+func (s *sqliteSessionStore) SaveMessages(ctx context.Context, sessionID string, msgs []messaging.Message) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -833,7 +861,7 @@ func (s *sqliteSessionStore) SaveMessages(ctx context.Context, sessionID string,
 func (s *sqliteSessionStore) ReplaceMessages(
 	ctx context.Context,
 	sessionID string,
-	msgs []Message,
+	msgs []messaging.Message,
 	superseded []string,
 ) error {
 	s.mu.Lock()
@@ -914,15 +942,21 @@ func (s *sqliteSessionStore) FindPriorReply(ctx context.Context, sessionID, sour
 	return text, nil
 }
 
-func (s *sqliteSessionStore) RecentMessages(ctx context.Context, sessionID string, n int) ([]Message, error) {
+func (s *sqliteSessionStore) RecentMessages(ctx context.Context, sessionID string, n int) ([]messaging.Message, error) {
 	if n <= 0 {
 		return nil, nil
 	}
+	// The conversation address is resolved from the owning session, not
+	// stored per message: a LEFT JOIN keeps orphaned rows readable exactly
+	// as before, with an empty address.
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT message_id, source_id, sender, text, ts FROM (
-			SELECT message_id, source_id, sender, text, ts FROM messages
+		SELECT m.message_id, m.source_id, m.sender, m.role, m.text, m.ts,
+			COALESCE(s.channel_id, ''), COALESCE(s.thread_id, '')
+		FROM (
+			SELECT message_id, source_id, sender, role, text, ts, session_id FROM messages
 			WHERE session_id = ? ORDER BY ts DESC LIMIT ?
-		) ORDER BY ts ASC`, sessionID, n)
+		) m LEFT JOIN sessions s ON s.session_id = m.session_id
+		ORDER BY m.ts ASC`, sessionID, n)
 	if err != nil {
 		return nil, fmt.Errorf("sessionstore: recent messages: %w", err)
 	}
@@ -960,17 +994,22 @@ func (s *sqliteSessionStore) MessageCount(ctx context.Context, sessionID string)
 	return n, nil
 }
 
-func scanMessages(rows *sql.Rows) ([]Message, error) {
+func scanMessages(rows *sql.Rows) ([]messaging.Message, error) {
 	defer func() { _ = rows.Close() }()
-	var out []Message
+	var out []messaging.Message
 	for rows.Next() {
 		var (
-			msg Message
-			ts  int64
+			msg  messaging.Message
+			id   string
+			role string
+			ts   int64
 		)
-		if err := rows.Scan(&msg.MessageID, &msg.SourceID, &msg.From, &msg.Text, &ts); err != nil {
+		if err := rows.Scan(&id, &msg.SourceID, &msg.Sender, &role, &msg.Text, &ts,
+			&msg.ConversationID.ChannelID, &msg.ConversationID.ThreadID); err != nil {
 			return nil, fmt.Errorf("sessionstore: scan message: %w", err)
 		}
+		msg.ID = messaging.MessageID(id)
+		msg.Role = messaging.Role(role)
 		msg.At = time.UnixMilli(ts).UTC()
 		out = append(out, msg)
 	}
@@ -1021,9 +1060,11 @@ func (s *sqliteSessionStore) SearchMessages(ctx context.Context, sessionID strin
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT m.message_id, m.source_id, m.sender, m.text, m.ts
+		SELECT m.message_id, m.source_id, m.sender, m.role, m.text, m.ts,
+			COALESCE(s.channel_id, ''), COALESCE(s.thread_id, '')
 		FROM messages_fts
 		JOIN messages m ON m.id = messages_fts.rowid
+		LEFT JOIN sessions s ON s.session_id = m.session_id
 		WHERE messages_fts MATCH ? AND m.session_id = ?
 		ORDER BY bm25(messages_fts) ASC
 		LIMIT ? OFFSET ?`, match, sessionID, limit, offset)
@@ -1044,21 +1085,25 @@ func (s *sqliteSessionStore) SearchMessages(ctx context.Context, sessionID strin
 	}, nil
 }
 
-// scanSearchMessages scans rows shaped (message_id, source_id, sender, text,
-// ts) -- the same column order SearchMessages selects, distinct from
-// scanMessages' column order because the FTS join names "sender" rather
-// than the "from" convention the rest of the file uses.
-func scanSearchMessages(rows *sql.Rows) ([]Message, error) {
+// scanSearchMessages scans rows shaped (message_id, source_id, sender,
+// role, text, ts, channel_id, thread_id) -- the same column order
+// SearchMessages selects.
+func scanSearchMessages(rows *sql.Rows) ([]messaging.Message, error) {
 	defer func() { _ = rows.Close() }()
-	var out []Message
+	var out []messaging.Message
 	for rows.Next() {
 		var (
-			msg Message
-			ts  int64
+			msg  messaging.Message
+			id   string
+			role string
+			ts   int64
 		)
-		if err := rows.Scan(&msg.MessageID, &msg.SourceID, &msg.From, &msg.Text, &ts); err != nil {
+		if err := rows.Scan(&id, &msg.SourceID, &msg.Sender, &role, &msg.Text, &ts,
+			&msg.ConversationID.ChannelID, &msg.ConversationID.ThreadID); err != nil {
 			return nil, fmt.Errorf("sessionstore: scan search result: %w", err)
 		}
+		msg.ID = messaging.MessageID(id)
+		msg.Role = messaging.Role(role)
 		msg.At = time.UnixMilli(ts).UTC()
 		out = append(out, msg)
 	}

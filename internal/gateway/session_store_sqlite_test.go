@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 func newTestSQLiteStore(t *testing.T) SessionStore {
@@ -247,9 +249,9 @@ func TestSQLiteSessionStoreRecognisesLegacyCanonicalIDOnRedelivery(t *testing.T)
 		t.Fatalf("seed legacy message: %v", err)
 	}
 
-	if err := store.SaveMessage(ctx, sessionID, Message{
-		MessageID: CanonicalMessageID(sessionID, sourceID),
-		SourceID:  sourceID, From: "alice", Text: "redelivered",
+	if err := store.SaveMessage(ctx, sessionID, messaging.Message{
+		ID:       messaging.MessageID(CanonicalMessageID(sessionID, sourceID)),
+		SourceID: sourceID, Sender: "alice", Role: messaging.RoleUser, Text: "redelivered",
 	}); err != nil {
 		t.Fatalf("SaveMessage(redelivery): %v", err)
 	}
@@ -260,7 +262,7 @@ func TestSQLiteSessionStoreRecognisesLegacyCanonicalIDOnRedelivery(t *testing.T)
 	if len(messages) != 1 {
 		t.Fatalf("redelivery produced %d messages, want 1", len(messages))
 	}
-	if messages[0].MessageID != legacyID || messages[0].Text != "original" {
+	if string(messages[0].ID) != legacyID || messages[0].Text != "original" {
 		t.Fatalf("legacy message changed on redelivery: %#v", messages[0])
 	}
 }
@@ -315,13 +317,13 @@ func TestSQLiteSessionStoreCapsFutureMessageTimestamp(t *testing.T) {
 	store := newTestSQLiteStore(t)
 	ctx := t.Context()
 	now := time.Now().UTC()
-	if err := store.SaveMessage(ctx, "sess", Message{
-		From: "alice", Text: "future", At: now.Add(24 * time.Hour),
+	if err := store.SaveMessage(ctx, "sess", messaging.Message{
+		Sender: "alice", Role: messaging.RoleUser, Text: "future", At: now.Add(24 * time.Hour),
 	}); err != nil {
 		t.Fatalf("SaveMessage(future): %v", err)
 	}
-	if err := store.SaveMessage(ctx, "sess", Message{
-		From: "alice", Text: "current", At: now,
+	if err := store.SaveMessage(ctx, "sess", messaging.Message{
+		Sender: "alice", Role: messaging.RoleUser, Text: "current", At: now,
 	}); err != nil {
 		t.Fatalf("SaveMessage(current): %v", err)
 	}
@@ -377,8 +379,8 @@ func TestSQLiteSessionStoreRepairsPersistedFutureTimestampsOnReopen(t *testing.T
 		t.Fatalf("reopen store: %v", err)
 	}
 	t.Cleanup(func() { _ = reopened.Close() })
-	if err := reopened.SaveMessage(ctx, "sess", Message{
-		From: "alice", Text: "current", At: time.Now().UTC(),
+	if err := reopened.SaveMessage(ctx, "sess", messaging.Message{
+		Sender: "alice", Role: messaging.RoleUser, Text: "current", At: time.Now().UTC(),
 	}); err != nil {
 		t.Fatalf("SaveMessage(current): %v", err)
 	}
@@ -406,7 +408,7 @@ func TestSQLiteSessionStoreRepairsPersistedFutureTimestampsOnReopen(t *testing.T
 func TestSQLiteMessageTimestampRoundTrips(t *testing.T) {
 	st := newTestSQLiteStore(t)
 	want := sqliteBase().Add(90*time.Minute + 123*time.Millisecond)
-	if err := st.SaveMessage(t.Context(), "sess", Message{From: "user", Text: "hello", At: want}); err != nil {
+	if err := st.SaveMessage(t.Context(), "sess", messaging.Message{Sender: "user", Role: messaging.RoleUser, Text: "hello", At: want}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := st.RecentMessages(t.Context(), "sess", 1)
@@ -436,11 +438,11 @@ func TestSQLiteMessageTimestampsIncreaseAcrossStoreHandles(t *testing.T) {
 	for storeIndex, st := range stores {
 		for messageIndex := range perStore {
 			wg.Go(func() {
-				err := st.SaveMessage(t.Context(), "sess", Message{
-					MessageID: fmt.Sprintf("%d-%d", storeIndex, messageIndex),
-					From:      "user",
-					Text:      "concurrent",
-					At:        wantTime,
+				err := st.SaveMessage(t.Context(), "sess", messaging.Message{
+					ID:     messaging.MessageID(fmt.Sprintf("%d-%d", storeIndex, messageIndex)),
+					Sender: "user", Role: messaging.RoleUser,
+					Text: "concurrent",
+					At:   wantTime,
 				})
 				if err != nil {
 					t.Errorf("SaveMessage: %v", err)
@@ -477,7 +479,7 @@ func TestSQLiteSessionStore_DeleteIsAtomic(t *testing.T) {
 	if err := st.Save(ctx, sc); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
-	if err := st.SaveMessage(ctx, "sess-del", Message{From: "u", Text: "hi", At: sqliteBase()}); err != nil {
+	if err := st.SaveMessage(ctx, "sess-del", messaging.Message{Sender: "u", Role: messaging.RoleUser, Text: "hi", At: sqliteBase()}); err != nil {
 		t.Fatalf("SaveMessage: %v", err)
 	}
 
@@ -515,7 +517,7 @@ func TestSQLiteSessionStore_SearchPagingAndTruncated(t *testing.T) {
 
 	const total = 30
 	for i := range total {
-		m := Message{From: "u", Text: "needle common", At: sqliteBase().Add(time.Duration(i) * time.Second)}
+		m := messaging.Message{Sender: "u", Role: messaging.RoleUser, Text: "needle common", At: sqliteBase().Add(time.Duration(i) * time.Second)}
 		if err := st.SaveMessage(ctx, "sess", m); err != nil {
 			t.Fatalf("SaveMessage %d: %v", i, err)
 		}
@@ -533,10 +535,10 @@ func TestSQLiteSessionStore_SearchPagingAndTruncated(t *testing.T) {
 			t.Errorf("expected Truncated=false for SQLite backend")
 		}
 		for _, m := range page.Messages {
-			if seen[m.MessageID] {
-				t.Errorf("duplicate message across pages: %s", m.MessageID)
+			if seen[string(m.ID)] {
+				t.Errorf("duplicate message across pages: %s", string(m.ID))
 			}
-			seen[m.MessageID] = true
+			seen[string(m.ID)] = true
 		}
 		pages++
 		if !page.HasMore {
@@ -570,7 +572,7 @@ func TestSQLiteSessionStore_ErrorPaths(t *testing.T) {
 		}
 	})
 	t.Run("SaveMessage after close", func(t *testing.T) {
-		if err := st.SaveMessage(ctx, "sess", Message{From: "u", Text: "hi"}); err == nil {
+		if err := st.SaveMessage(ctx, "sess", messaging.Message{Sender: "u", Role: messaging.RoleUser, Text: "hi"}); err == nil {
 			t.Error("expected error saving message to a closed store")
 		}
 	})
@@ -629,6 +631,65 @@ func TestOpenSQLiteSessionStore_CreatesFile(t *testing.T) {
 // tests. The store pins its pool to one connection and serializes writes
 // with its own mutex, so a test touching this handle between operations is
 // safe and deterministic.
+// TestSQLiteSessionStore_MigratesPreRoleDatabase pins the upgrade path for
+// databases written before the messaging migration added the role column:
+// opening backfills roles from the sender-vs-bot identity the boundary
+// applies to new writes, so old histories keep their assistant/user
+// distinction and sender search keeps working.
+func TestSQLiteSessionStore_MigratesPreRoleDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+	db, err := sql.Open("sqlite", sqliteSessionDSN(path))
+	if err != nil {
+		t.Fatalf("open raw db: %v", err)
+	}
+	oldMessages := strings.Replace(sqliteSessionSchema,
+		"\tsender     TEXT NOT NULL DEFAULT '',\n\trole       TEXT NOT NULL DEFAULT '',\n",
+		"\tsender     TEXT NOT NULL DEFAULT '',\n", 1)
+	if _, err := db.Exec(oldMessages); err != nil {
+		t.Fatalf("create old schema: %v", err)
+	}
+	millis := sqliteBase().UnixMilli()
+	if _, err := db.Exec(`INSERT INTO sessions (session_id, platform, bot_user, channel_id, created_at, last_active_at)
+		VALUES ('sess-old', 'telegram', 'archie', 'chat-1', ?, ?)`, millis, millis); err != nil {
+		t.Fatalf("seed old session: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO messages (message_id, session_id, source_id, sender, text, ts) VALUES
+		('m-user', 'sess-old', 'tg-1', 'alice', 'hello', ?),
+		('m-assistant', 'sess-old', '', 'archie', 'hi', ?)`, millis, millis+1); err != nil {
+		t.Fatalf("seed old messages: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close raw db: %v", err)
+	}
+
+	st, err := OpenSQLiteSessionStore(path)
+	if err != nil {
+		t.Fatalf("reopen old database: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	hist, err := st.RecentMessages(context.Background(), "sess-old", 10)
+	if err != nil {
+		t.Fatalf("RecentMessages: %v", err)
+	}
+	if len(hist) != 2 {
+		t.Fatalf("history = %d messages, want 2", len(hist))
+	}
+	if hist[0].Role != messaging.RoleUser || hist[0].Sender != "alice" {
+		t.Errorf("user message = %+v, want role user from alice", hist[0])
+	}
+	if hist[1].Role != messaging.RoleAssistant || hist[1].Sender != "archie" {
+		t.Errorf("assistant message = %+v, want role assistant from archie", hist[1])
+	}
+	page, err := st.SearchMessages(context.Background(), "sess-old", MessageQuery{Query: "alice", Limit: 10})
+	if err != nil {
+		t.Fatalf("SearchMessages: %v", err)
+	}
+	if len(page.Messages) != 1 {
+		t.Errorf("sender search = %d matches, want 1", len(page.Messages))
+	}
+}
+
 func sqliteStoreDB(t *testing.T, st SessionStore) *sql.DB {
 	t.Helper()
 	s, ok := st.(*sqliteSessionStore)
@@ -683,13 +744,13 @@ func TestSQLiteSessionStore_CloseReopenDurability(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	wantMsgs := []Message{
-		{MessageID: "canonical-1", SourceID: "tg-1001", From: "alice", Text: "first durable message", At: sqliteBase().Add(time.Second)},
-		{MessageID: "canonical-2", SourceID: "tg-1002", From: "bob", Text: "second durable message", At: sqliteBase().Add(2 * time.Second)},
+	wantMsgs := []messaging.Message{
+		{ID: "canonical-1", SourceID: "tg-1001", Sender: "alice", Role: messaging.RoleUser, Text: "first durable message", At: sqliteBase().Add(time.Second)},
+		{ID: "canonical-2", SourceID: "tg-1002", Sender: "bob", Role: messaging.RoleUser, Text: "second durable message", At: sqliteBase().Add(2 * time.Second)},
 	}
 	for _, m := range wantMsgs {
 		if err := st.SaveMessage(ctx, "sess-durable", m); err != nil {
-			t.Fatalf("SaveMessage %q: %v", m.MessageID, err)
+			t.Fatalf("SaveMessage %q: %v", string(m.ID), err)
 		}
 	}
 	if err := st.Close(); err != nil {
@@ -722,8 +783,8 @@ func TestSQLiteSessionStore_CloseReopenDurability(t *testing.T) {
 	}
 	for i, m := range hist {
 		want := wantMsgs[i]
-		if m.MessageID != want.MessageID || m.SourceID != want.SourceID ||
-			m.From != want.From || m.Text != want.Text || !m.At.Equal(want.At) {
+		if m.ID != want.ID || m.SourceID != want.SourceID ||
+			m.Sender != want.Sender || m.Role != want.Role || m.Text != want.Text || !m.At.Equal(want.At) {
 			t.Errorf("message %d after reopen:\n got %+v\nwant %+v", i, m, want)
 		}
 	}
@@ -764,10 +825,10 @@ func TestSQLiteSessionStore_DeleteAbortRollsBack(t *testing.T) {
 	if err := st.Save(ctx, sc); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
-	seed := []Message{
-		{From: "alice", Text: "alpha", At: sqliteBase()},
-		{From: "bob", Text: "beta", At: sqliteBase().Add(time.Second)},
-		{From: "carol", Text: "gamma", At: sqliteBase().Add(2 * time.Second)},
+	seed := []messaging.Message{
+		{Sender: "alice", Role: messaging.RoleUser, Text: "alpha", At: sqliteBase()},
+		{Sender: "bob", Role: messaging.RoleUser, Text: "beta", At: sqliteBase().Add(time.Second)},
+		{Sender: "carol", Role: messaging.RoleUser, Text: "gamma", At: sqliteBase().Add(2 * time.Second)},
 	}
 	for _, m := range seed {
 		if err := st.SaveMessage(ctx, "sess-del-abort", m); err != nil {
@@ -797,8 +858,8 @@ func TestSQLiteSessionStore_DeleteAbortRollsBack(t *testing.T) {
 		t.Fatalf("history after failed Delete: got %d messages, want %d", len(hist), len(seed))
 	}
 	for i, m := range hist {
-		if m.Text != seed[i].Text || m.From != seed[i].From {
-			t.Errorf("message %d after failed Delete: got %+v, want text %q from %q", i, m, seed[i].Text, seed[i].From)
+		if m.Text != seed[i].Text || m.Sender != seed[i].Sender {
+			t.Errorf("message %d after failed Delete: got %+v, want text %q from %q", i, m, seed[i].Text, seed[i].Sender)
 		}
 	}
 
@@ -829,10 +890,10 @@ func TestSQLiteSessionStore_ReplaceMessagesAbortRollsBack(t *testing.T) {
 	ctx := context.Background()
 	st := newTestSQLiteStore(t)
 
-	seed := []Message{
-		{MessageID: "m-0", SourceID: "s-0", From: "alice", Text: "alpha", At: sqliteBase()},
-		{MessageID: "m-1", SourceID: "s-1", From: "bob", Text: "beta", At: sqliteBase().Add(time.Second)},
-		{MessageID: "m-2", SourceID: "s-2", From: "carol", Text: "gamma", At: sqliteBase().Add(2 * time.Second)},
+	seed := []messaging.Message{
+		{ID: "m-0", SourceID: "s-0", Sender: "alice", Role: messaging.RoleUser, Text: "alpha", At: sqliteBase()},
+		{ID: "m-1", SourceID: "s-1", Sender: "bob", Role: messaging.RoleUser, Text: "beta", At: sqliteBase().Add(time.Second)},
+		{ID: "m-2", SourceID: "s-2", Sender: "carol", Role: messaging.RoleUser, Text: "gamma", At: sqliteBase().Add(2 * time.Second)},
 	}
 	if err := st.SaveMessages(ctx, "sess-replace-abort", seed); err != nil {
 		t.Fatalf("SaveMessages: %v", err)
@@ -842,7 +903,7 @@ func TestSQLiteSessionStore_ReplaceMessagesAbortRollsBack(t *testing.T) {
 	// inserts have landed inside the transaction.
 	installAbortTrigger(t, st, `BEFORE DELETE ON messages WHEN old.message_id = 'm-1'`)
 
-	replacement := []Message{{From: "summarizer", Text: "merged summary", At: sqliteBase().Add(time.Hour)}}
+	replacement := []messaging.Message{{Sender: "summarizer", Role: messaging.RoleUser, Text: "merged summary", At: sqliteBase().Add(time.Hour)}}
 	if err := st.ReplaceMessages(ctx, "sess-replace-abort", replacement, supersededIDs(ctx, t, st, "sess-replace-abort")); err == nil {
 		t.Fatal("expected ReplaceMessages to fail from the forced abort trigger")
 	}
@@ -855,7 +916,7 @@ func TestSQLiteSessionStore_ReplaceMessagesAbortRollsBack(t *testing.T) {
 		t.Fatalf("history after failed ReplaceMessages: got %d messages, want %d", len(hist), len(seed))
 	}
 	for i, m := range hist {
-		if m.MessageID != seed[i].MessageID || m.Text != seed[i].Text || m.From != seed[i].From {
+		if string(m.ID) != string(seed[i].ID) || m.Text != seed[i].Text || m.Sender != seed[i].Sender {
 			t.Errorf("message %d after failed ReplaceMessages: got %+v, want %+v", i, m, seed[i])
 		}
 	}
@@ -968,8 +1029,8 @@ func TestSQLiteSessionStore_FTSStaysCorrectThroughMutations(t *testing.T) {
 		{
 			name: "ReplaceMessages swaps the document set",
 			mutate: func(ctx context.Context, t *testing.T, st SessionStore) error {
-				return st.ReplaceMessages(ctx, "a", []Message{{
-					From: "summarizer", Text: "merged needle summary", At: sqliteBase().Add(time.Hour),
+				return st.ReplaceMessages(ctx, "a", []messaging.Message{{
+					Sender: "summarizer", Role: messaging.RoleUser, Text: "merged needle summary", At: sqliteBase().Add(time.Hour),
 				}}, supersededIDs(ctx, t, st, "a"))
 			},
 			wantA:       []string{"merged needle summary"},
@@ -1001,12 +1062,12 @@ func TestSQLiteSessionStore_FTSStaysCorrectThroughMutations(t *testing.T) {
 			st := newTestSQLiteStore(t)
 
 			for i, text := range seedA {
-				if err := st.SaveMessage(ctx, "a", Message{From: "u", Text: text, At: sqliteBase().Add(time.Duration(i) * time.Second)}); err != nil {
+				if err := st.SaveMessage(ctx, "a", messaging.Message{Sender: "u", Role: messaging.RoleUser, Text: text, At: sqliteBase().Add(time.Duration(i) * time.Second)}); err != nil {
 					t.Fatalf("SaveMessage a %q: %v", text, err)
 				}
 			}
 			for i, text := range seedB {
-				if err := st.SaveMessage(ctx, "b", Message{From: "u", Text: text, At: sqliteBase().Add(time.Duration(i) * time.Second)}); err != nil {
+				if err := st.SaveMessage(ctx, "b", messaging.Message{Sender: "u", Role: messaging.RoleUser, Text: text, At: sqliteBase().Add(time.Duration(i) * time.Second)}); err != nil {
 					t.Fatalf("SaveMessage b %q: %v", text, err)
 				}
 			}
@@ -1086,7 +1147,7 @@ func TestSQLiteSessionStore_FTSIntegrityCheckDetectsOrphanedIndex(t *testing.T) 
 		st := newTestSQLiteStore(t)
 
 		for i, text := range []string{"needle one", "needle two"} {
-			if err := st.SaveMessage(ctx, "sess", Message{From: "u", Text: text, At: sqliteBase().Add(time.Duration(i) * time.Second)}); err != nil {
+			if err := st.SaveMessage(ctx, "sess", messaging.Message{Sender: "u", Role: messaging.RoleUser, Text: text, At: sqliteBase().Add(time.Duration(i) * time.Second)}); err != nil {
 				t.Fatalf("SaveMessage: %v", err)
 			}
 		}
@@ -1110,7 +1171,7 @@ func TestSQLiteSessionStore_FTSIntegrityCheckDetectsOrphanedIndex(t *testing.T) 
 		st := newTestSQLiteStore(t)
 
 		for i, text := range []string{"needle one", "needle two"} {
-			if err := st.SaveMessage(ctx, "sess", Message{From: "u", Text: text, At: sqliteBase().Add(time.Duration(i) * time.Second)}); err != nil {
+			if err := st.SaveMessage(ctx, "sess", messaging.Message{Sender: "u", Role: messaging.RoleUser, Text: text, At: sqliteBase().Add(time.Duration(i) * time.Second)}); err != nil {
 				t.Fatalf("SaveMessage: %v", err)
 			}
 		}
@@ -1149,7 +1210,7 @@ func TestSQLiteSessionStore_HostileQueriesAreLiteral(t *testing.T) {
 		"beta alone",
 	}
 	for i, text := range seed {
-		if err := st.SaveMessage(ctx, "sess", Message{From: "u", Text: text, At: sqliteBase().Add(time.Duration(i) * time.Second)}); err != nil {
+		if err := st.SaveMessage(ctx, "sess", messaging.Message{Sender: "u", Role: messaging.RoleUser, Text: text, At: sqliteBase().Add(time.Duration(i) * time.Second)}); err != nil {
 			t.Fatalf("SaveMessage %q: %v", text, err)
 		}
 	}

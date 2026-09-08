@@ -7,10 +7,22 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 // SessionStore persists gateway session metadata and conversation history.
 // Each session tracks one platform, bot, and channel combination.
+//
+// Message history is stored and loaded as canonical messaging.Message
+// records (archie-core-d9dv). Session lifecycle records stay SessionContext:
+// a session's UUID key, platform/bot/title/branch metadata, and the fact
+// that several sessions share one channel/thread have no lossless home in
+// messaging.Conversation, whose composite identity is only
+// {ChannelID, ThreadID} and whose canonical Agent/user/binding ownership is
+// still open (see docs/architecture/migration-decisions.md section 2).
+// Conversation-keying the sessions is tracked as follow-up work once that
+// ownership settles.
 type SessionStore interface {
 	SessionLifecycle
 	MessageHistory
@@ -32,21 +44,23 @@ type SessionLifecycle interface {
 	List(ctx context.Context) ([]SessionContext, error)
 }
 
-// MessageHistory manages conversation messages within a session.
+// MessageHistory manages conversation messages within a session. Messages
+// are canonical messaging.Message records; gateway callers convert at the
+// boundary with ToStoredMessage/FromStoredMessage.
 type MessageHistory interface {
 	// SaveMessage appends one message with a strictly increasing timestamp.
-	SaveMessage(ctx context.Context, sessionID string, msg Message) error
+	SaveMessage(ctx context.Context, sessionID string, msg messaging.Message) error
 	// RecentMessages returns the most recent messages in chronological order.
-	RecentMessages(ctx context.Context, sessionID string, n int) ([]Message, error)
+	RecentMessages(ctx context.Context, sessionID string, n int) ([]messaging.Message, error)
 	// DeleteRecentMessages removes up to n messages and returns the count.
 	DeleteRecentMessages(ctx context.Context, sessionID string, n int) (deleted int, err error)
 	// MessageCount returns the number of stored messages in a session.
 	MessageCount(ctx context.Context, sessionID string) (int, error)
 	// SaveMessages appends messages used to inherit branch history.
-	SaveMessages(ctx context.Context, sessionID string, msgs []Message) error
+	SaveMessages(ctx context.Context, sessionID string, msgs []messaging.Message) error
 	// ReplaceMessages writes replacements before deleting superseded messages.
 	// Records absent from both inputs remain untouched.
-	ReplaceMessages(ctx context.Context, sessionID string, msgs []Message, superseded []string) error
+	ReplaceMessages(ctx context.Context, sessionID string, msgs []messaging.Message, superseded []string) error
 	// SearchMessages searches the session's full history.
 	SearchMessages(ctx context.Context, sessionID string, q MessageQuery) (MessagePage, error)
 	// Close releases the database.
@@ -65,7 +79,7 @@ type MessageQuery struct {
 // MessagePage is one page of search results.
 type MessagePage struct {
 	// Messages are ordered by relevance.
-	Messages []Message
+	Messages []messaging.Message
 	// NextOffset is meaningful only when HasMore is true.
 	NextOffset int
 	HasMore    bool
@@ -131,7 +145,7 @@ func encodeCanonicalPair(first, second string) []byte {
 	return encoded
 }
 
-func stamp(msg Message) time.Time {
+func stamp(msg messaging.Message) time.Time {
 	now := time.Now().UTC()
 	if msg.At.IsZero() || msg.At.After(now) {
 		// At orders the canonical conversation; it is not an authoritative
@@ -151,16 +165,19 @@ func CanonicalMessageID(sessionID, sourceID string) string {
 }
 
 // PriorReply returns the reply already produced for an upstream message.
-func PriorReply(history []Message, sessionID, sourceID, identity string) string {
+// The assistant check reads the record's Role: the stored Role is derived
+// from the sender at the store boundary (see ToStoredMessage), so this
+// needs no bot identity.
+func PriorReply(history []messaging.Message, sessionID, sourceID string) string {
 	if sourceID == "" {
 		return ""
 	}
 	id, legacyID := canonicalMessageIDs(sessionID, sourceID)
 	for i, message := range history {
-		if message.MessageID != id && message.MessageID != legacyID {
+		if string(message.ID) != id && string(message.ID) != legacyID {
 			continue
 		}
-		if i+1 < len(history) && history[i+1].From == identity &&
+		if i+1 < len(history) && history[i+1].Role == messaging.RoleAssistant &&
 			!isCompressionSummary(history[i+1].Text) {
 			return history[i+1].Text
 		}

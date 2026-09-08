@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/curator"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/gateway"
 )
 
@@ -18,17 +19,13 @@ import (
 // curator needs -- never the full session CRUD/branch/search surface a
 // chat gateway exposes. See docs/prds/session-memory-curator.md.
 type Adapter struct {
-	store   gateway.SessionStore
-	botUser string
+	store gateway.SessionStore
 }
 
-// NewAdapter builds an Adapter. botUser is compared against
-// gateway.Message.From to derive role ("assistant" when it matches, else
-// "user"), the same derivation gateway.compressTurnHistory already uses
-// -- copied logic, not shared code, since curator must not import
-// gateway.Message.
-func NewAdapter(store gateway.SessionStore, botUser string) *Adapter {
-	return &Adapter{store: store, botUser: botUser}
+// NewAdapter builds an Adapter. Roles come from the canonical records the
+// store returns, so no bot identity is needed to derive them.
+func NewAdapter(store gateway.SessionStore) *Adapter {
+	return &Adapter{store: store}
 }
 
 func (a *Adapter) RecentSessions(ctx context.Context, since time.Time) ([]curator.SessionSummary, error) {
@@ -54,7 +51,7 @@ func (a *Adapter) Messages(ctx context.Context, sessionID string, n int) ([]cura
 	out := make([]curator.ConversationMessage, 0, len(msgs))
 	for _, m := range msgs {
 		role := "user"
-		if m.From == a.botUser {
+		if m.Role == messaging.RoleAssistant {
 			role = "assistant"
 		}
 		out = append(out, curator.ConversationMessage{Role: role, Content: m.Text, At: m.At})

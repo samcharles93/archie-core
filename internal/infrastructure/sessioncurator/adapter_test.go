@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/gateway"
 )
 
@@ -29,7 +30,7 @@ func TestAdapterRecentSessionsFiltersByActivity(t *testing.T) {
 		t.Fatalf("Save(recent) = %v", err)
 	}
 
-	a := NewAdapter(store, "archie")
+	a := NewAdapter(store)
 	got, err := a.RecentSessions(ctx, time.Unix(1000, 0))
 	if err != nil {
 		t.Fatalf("RecentSessions() = %v, want nil", err)
@@ -39,7 +40,7 @@ func TestAdapterRecentSessionsFiltersByActivity(t *testing.T) {
 	}
 }
 
-func TestAdapterMessagesDerivesRoleFromBotUser(t *testing.T) {
+func TestAdapterMessagesReadsRoleFromRecords(t *testing.T) {
 	t.Parallel()
 	store := newTestStore(t)
 	ctx := context.Background()
@@ -48,25 +49,36 @@ func TestAdapterMessagesDerivesRoleFromBotUser(t *testing.T) {
 	if err := store.Save(ctx, sess); err != nil {
 		t.Fatalf("Save() = %v", err)
 	}
-	if err := store.SaveMessage(ctx, "s1", gateway.Message{From: "user123", Text: "hello", At: time.Unix(1, 0)}); err != nil {
-		t.Fatalf("SaveMessage(user) = %v", err)
+	// Roles are derived from the sender at the store boundary; the adapter
+	// reads them from the records, needing no bot identity of its own.
+	for _, m := range []gateway.Message{
+		{From: "user123", Text: "hello", At: time.Unix(1, 0)},
+		{From: "archie", Text: "hi there", At: time.Unix(2, 0)},
+	} {
+		if err := store.SaveMessage(ctx, "s1", gateway.ToStoredMessage(m, "archie")); err != nil {
+			t.Fatalf("SaveMessage(%v) = %v", m, err)
+		}
 	}
-	if err := store.SaveMessage(ctx, "s1", gateway.Message{From: "archie", Text: "hi there", At: time.Unix(2, 0)}); err != nil {
-		t.Fatalf("SaveMessage(bot) = %v", err)
+	// A hand-built record without a role reads as a user message.
+	if err := store.SaveMessage(ctx, "s1", messaging.Message{Text: "bare", At: time.Unix(3, 0)}); err != nil {
+		t.Fatalf("SaveMessage(bare) = %v", err)
 	}
 
-	a := NewAdapter(store, "archie")
+	a := NewAdapter(store)
 	got, err := a.Messages(ctx, "s1", 10)
 	if err != nil {
 		t.Fatalf("Messages() = %v, want nil", err)
 	}
-	if len(got) != 2 {
-		t.Fatalf("Messages() = %v, want 2", got)
+	if len(got) != 3 {
+		t.Fatalf("Messages() = %v, want 3", got)
 	}
 	if got[0].Role != "user" || got[0].Content != "hello" {
 		t.Errorf("Messages()[0] = %+v, want user/hello", got[0])
 	}
 	if got[1].Role != "assistant" || got[1].Content != "hi there" {
 		t.Errorf("Messages()[1] = %+v, want assistant/hi there", got[1])
+	}
+	if got[2].Role != "user" || got[2].Content != "bare" {
+		t.Errorf("Messages()[2] = %+v, want user/bare", got[2])
 	}
 }

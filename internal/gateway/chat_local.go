@@ -68,7 +68,18 @@ func (a *LocalChatAdapter) GetSession(ctx context.Context, id string) (SessionCo
 }
 
 func (a *LocalChatAdapter) RecentMessages(ctx context.Context, id string, n int) ([]Message, error) {
-	return a.Sessions.RecentMessages(ctx, id, n)
+	// The ChatContract still speaks the channel-facing Message (dashboard
+	// JSON, channel frontends); migrating those consumers is follow-up
+	// work (bd label messaging-migration). Convert at this boundary.
+	stored, err := a.Sessions.RecentMessages(ctx, id, n)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Message, 0, len(stored))
+	for _, m := range stored {
+		out = append(out, FromStoredMessage(m))
+	}
+	return out, nil
 }
 
 func (a *LocalChatAdapter) RecentTurns(ctx context.Context, id string, n int) ([]TurnRecord, error) {

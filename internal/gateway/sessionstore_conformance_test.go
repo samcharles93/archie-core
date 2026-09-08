@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 // base is a fixed instant so message timestamps are deterministic; tests
@@ -16,11 +18,11 @@ func at(offset time.Duration) time.Time { return base.Add(offset) }
 // dur spaces the nth message one second apart from the first.
 func dur(n int) time.Duration { return time.Duration(n) * time.Second }
 
-func msg(text string, offset time.Duration) Message {
-	return Message{From: "user", Text: text, At: at(offset)}
+func msg(text string, offset time.Duration) messaging.Message {
+	return messaging.Message{Sender: "user", Role: messaging.RoleUser, Text: text, At: at(offset)}
 }
 
-func texts(msgs []Message) []string {
+func texts(msgs []messaging.Message) []string {
 	out := make([]string, 0, len(msgs))
 	for _, m := range msgs {
 		out = append(out, m.Text)
@@ -57,7 +59,7 @@ func supersededIDs(ctx context.Context, t *testing.T, s SessionStore, sessionID 
 	}
 	ids := make([]string, 0, len(msgs))
 	for _, m := range msgs {
-		ids = append(ids, m.MessageID)
+		ids = append(ids, string(m.ID))
 	}
 	return ids
 }
@@ -352,7 +354,7 @@ func testSaveMessagesAppends(t *testing.T, newStore func(t *testing.T) SessionSt
 				offset += time.Second
 			}
 
-			bulk := make([]Message, 0, len(tc.bulk))
+			bulk := make([]messaging.Message, 0, len(tc.bulk))
 			for _, text := range tc.bulk {
 				bulk = append(bulk, msg(text, offset))
 				offset += time.Second
@@ -479,11 +481,11 @@ func testReplyCannotPrecedeItsPrompt(t *testing.T, newStore func(t *testing.T) S
 	s := newStore(t)
 	t.Cleanup(func() { _ = s.Close() })
 
-	reply := Message{From: "bot", Text: "reply", At: base.Add(10*time.Second + 400*time.Millisecond)}
+	reply := messaging.Message{Sender: "bot", Role: messaging.RoleAssistant, Text: "reply", At: base.Add(10*time.Second + 400*time.Millisecond)}
 	if err := s.SaveMessage(ctx, "sess", reply); err != nil {
 		t.Fatalf("SaveMessage reply: %v", err)
 	}
-	next := Message{SourceID: "tg-1", From: "user", Text: "next", At: base.Add(10 * time.Second)}
+	next := messaging.Message{SourceID: "tg-1", Sender: "user", Role: messaging.RoleUser, Text: "next", At: base.Add(10 * time.Second)}
 	if err := s.SaveMessage(ctx, "sess", next); err != nil {
 		t.Fatalf("SaveMessage next: %v", err)
 	}
@@ -504,7 +506,7 @@ func testUpstreamRedeliveryKeepsOriginalTime(t *testing.T, newStore func(t *test
 	s := newStore(t)
 	t.Cleanup(func() { _ = s.Close() })
 
-	first := Message{SourceID: "tg-1", From: "u", Text: "first", At: base}
+	first := messaging.Message{SourceID: "tg-1", Sender: "u", Role: messaging.RoleUser, Text: "first", At: base}
 	if err := s.SaveMessage(ctx, "sess", first); err != nil {
 		t.Fatalf("SaveMessage: %v", err)
 	}
@@ -543,7 +545,7 @@ func testSaveMessageStampsMissingTimestamp(t *testing.T, newStore func(t *testin
 	t.Cleanup(func() { _ = s.Close() })
 
 	before := time.Now().UTC().Add(-time.Second)
-	if err := s.SaveMessage(ctx, "sess", Message{From: "u", Text: "no timestamp"}); err != nil {
+	if err := s.SaveMessage(ctx, "sess", messaging.Message{Sender: "u", Role: messaging.RoleUser, Text: "no timestamp"}); err != nil {
 		t.Fatalf("SaveMessage: %v", err)
 	}
 	after := time.Now().UTC().Add(time.Second)
@@ -569,7 +571,7 @@ func testCanonicalMessageIDIsStable(t *testing.T, newStore func(t *testing.T) Se
 	t.Cleanup(func() { _ = s.Close() })
 
 	const sourceID = "tg-42"
-	if err := s.SaveMessage(ctx, "sess", Message{SourceID: sourceID, From: "u", Text: "hi", At: base}); err != nil {
+	if err := s.SaveMessage(ctx, "sess", messaging.Message{SourceID: sourceID, Sender: "u", Role: messaging.RoleUser, Text: "hi", At: base}); err != nil {
 		t.Fatalf("SaveMessage: %v", err)
 	}
 	first, err := s.RecentMessages(ctx, "sess", 1)
@@ -579,14 +581,14 @@ func testCanonicalMessageIDIsStable(t *testing.T, newStore func(t *testing.T) Se
 	if len(first) != 1 {
 		t.Fatalf("got %d messages, want 1", len(first))
 	}
-	if first[0].MessageID == "" {
+	if string(first[0].ID) == "" {
 		t.Fatal("MessageID is empty; reads must carry a canonical ID")
 	}
-	if first[0].MessageID == sourceID {
+	if string(first[0].ID) == sourceID {
 		t.Errorf("MessageID = %q, which is the platform identifier; it must be application-generated", sourceID)
 	}
 
-	if err := s.SaveMessage(ctx, "sess", Message{SourceID: sourceID, From: "u", Text: "hi", At: base}); err != nil {
+	if err := s.SaveMessage(ctx, "sess", messaging.Message{SourceID: sourceID, Sender: "u", Role: messaging.RoleUser, Text: "hi", At: base}); err != nil {
 		t.Fatalf("redeliver: %v", err)
 	}
 	again, err := s.RecentMessages(ctx, "sess", 10)
@@ -596,8 +598,8 @@ func testCanonicalMessageIDIsStable(t *testing.T, newStore func(t *testing.T) Se
 	if len(again) != 1 {
 		t.Fatalf("redelivery produced %d messages, want 1", len(again))
 	}
-	if again[0].MessageID != first[0].MessageID {
-		t.Errorf("MessageID changed from %q to %q across redelivery", first[0].MessageID, again[0].MessageID)
+	if string(again[0].ID) != string(first[0].ID) {
+		t.Errorf("MessageID changed from %q to %q across redelivery", string(first[0].ID), string(again[0].ID))
 	}
 }
 
@@ -613,7 +615,7 @@ func testSourceIDRoundTrips(t *testing.T, newStore func(t *testing.T) SessionSto
 	t.Cleanup(func() { _ = s.Close() })
 
 	const sourceID = "tg-777"
-	if err := s.SaveMessage(ctx, "sess", Message{SourceID: sourceID, From: "u", Text: "hi", At: base}); err != nil {
+	if err := s.SaveMessage(ctx, "sess", messaging.Message{SourceID: sourceID, Sender: "u", Role: messaging.RoleUser, Text: "hi", At: base}); err != nil {
 		t.Fatalf("SaveMessage: %v", err)
 	}
 
@@ -627,16 +629,16 @@ func testSourceIDRoundTrips(t *testing.T, newStore func(t *testing.T) SessionSto
 	if first[0].SourceID != sourceID {
 		t.Errorf("SourceID = %q after save, want %q", first[0].SourceID, sourceID)
 	}
-	if first[0].MessageID == "" {
+	if string(first[0].ID) == "" {
 		t.Fatal("MessageID is empty; reads must carry a canonical ID")
 	}
-	if first[0].MessageID == sourceID {
-		t.Errorf("MessageID = %q equals SourceID; the canonical ID must be application-generated", first[0].MessageID)
+	if string(first[0].ID) == sourceID {
+		t.Errorf("MessageID = %q equals SourceID; the canonical ID must be application-generated", string(first[0].ID))
 	}
 
 	// Redelivery of the same upstream message must keep its SourceID and
 	// canonical identity and must not append a second turn.
-	if err := s.SaveMessage(ctx, "sess", Message{SourceID: sourceID, From: "u", Text: "hi", At: base}); err != nil {
+	if err := s.SaveMessage(ctx, "sess", messaging.Message{SourceID: sourceID, Sender: "u", Role: messaging.RoleUser, Text: "hi", At: base}); err != nil {
 		t.Fatalf("redeliver: %v", err)
 	}
 	again, err := s.RecentMessages(ctx, "sess", 10)
@@ -649,14 +651,14 @@ func testSourceIDRoundTrips(t *testing.T, newStore func(t *testing.T) SessionSto
 	if again[0].SourceID != sourceID {
 		t.Errorf("SourceID = %q after redelivery, want %q", again[0].SourceID, sourceID)
 	}
-	if again[0].MessageID != first[0].MessageID {
-		t.Errorf("MessageID changed from %q to %q across redelivery", first[0].MessageID, again[0].MessageID)
+	if string(again[0].ID) != string(first[0].ID) {
+		t.Errorf("MessageID changed from %q to %q across redelivery", string(first[0].ID), string(again[0].ID))
 	}
 
 	// A message with no upstream identity -- the shape of a document written
 	// before source_id was persisted -- must read back with an empty
 	// SourceID, not a zero-value artifact or an error.
-	if err := s.SaveMessage(ctx, "sess", Message{From: "u", Text: "local", At: at(time.Second)}); err != nil {
+	if err := s.SaveMessage(ctx, "sess", messaging.Message{Sender: "u", Role: messaging.RoleUser, Text: "local", At: at(time.Second)}); err != nil {
 		t.Fatalf("SaveMessage without SourceID: %v", err)
 	}
 	got, err := s.RecentMessages(ctx, "sess", 10)
@@ -690,7 +692,7 @@ func testSourceIDIsNotSearchable(t *testing.T, newStore func(t *testing.T) Sessi
 			s := newStore(t)
 			t.Cleanup(func() { _ = s.Close() })
 
-			m := Message{SourceID: tc.sourceID, From: "u", Text: "hello world", At: base}
+			m := messaging.Message{SourceID: tc.sourceID, Sender: "u", Role: messaging.RoleUser, Text: "hello world", At: base}
 			if err := s.SaveMessage(ctx, "sess", m); err != nil {
 				t.Fatalf("SaveMessage: %v", err)
 			}
@@ -727,38 +729,38 @@ func testSourceIDIsNotSearchable(t *testing.T, newStore func(t *testing.T) Sessi
 func testMessageDeduplication(t *testing.T, newStore func(t *testing.T) SessionStore) {
 	tests := []struct {
 		name  string
-		saves []Message
+		saves []messaging.Message
 		want  []string
 	}{
 		{
 			name: "same upstream ID saved twice",
-			saves: []Message{
-				{SourceID: "tg-100", From: "u", Text: "hello", At: at(0)},
-				{SourceID: "tg-100", From: "u", Text: "hello", At: at(0)},
+			saves: []messaging.Message{
+				{SourceID: "tg-100", Sender: "u", Role: messaging.RoleUser, Text: "hello", At: at(0)},
+				{SourceID: "tg-100", Sender: "u", Role: messaging.RoleUser, Text: "hello", At: at(0)},
 			},
 			want: []string{"hello"},
 		},
 		{
 			name: "distinct upstream IDs both persist",
-			saves: []Message{
-				{SourceID: "tg-100", From: "u", Text: "first", At: at(0)},
-				{SourceID: "tg-101", From: "u", Text: "second", At: at(dur(1))},
+			saves: []messaging.Message{
+				{SourceID: "tg-100", Sender: "u", Role: messaging.RoleUser, Text: "first", At: at(0)},
+				{SourceID: "tg-101", Sender: "u", Role: messaging.RoleUser, Text: "second", At: at(dur(1))},
 			},
 			want: []string{"first", "second"},
 		},
 		{
 			name: "redelivery with edited text leaves the record intact",
-			saves: []Message{
-				{SourceID: "tg-100", From: "u", Text: "original", At: at(0)},
-				{SourceID: "tg-100", From: "u", Text: "edited", At: at(0)},
+			saves: []messaging.Message{
+				{SourceID: "tg-100", Sender: "u", Role: messaging.RoleUser, Text: "original", At: at(0)},
+				{SourceID: "tg-100", Sender: "u", Role: messaging.RoleUser, Text: "edited", At: at(0)},
 			},
 			want: []string{"original"},
 		},
 		{
 			name: "messages without an upstream ID are never deduplicated",
-			saves: []Message{
-				{From: "u", Text: "same", At: at(0)},
-				{From: "u", Text: "same", At: at(0)},
+			saves: []messaging.Message{
+				{Sender: "u", Role: messaging.RoleUser, Text: "same", At: at(0)},
+				{Sender: "u", Role: messaging.RoleUser, Text: "same", At: at(0)},
 			},
 			want: []string{"same", "same"},
 		},
@@ -813,7 +815,7 @@ func testReplaceMessagesIsFailureSafe(t *testing.T, newStore func(t *testing.T) 
 				}
 			}
 
-			replacement := make([]Message, 0, len(tc.replacement))
+			replacement := make([]messaging.Message, 0, len(tc.replacement))
 			for i, text := range tc.replacement {
 				replacement = append(replacement, msg(text, dur(len(tc.existing)+i)))
 			}
@@ -852,7 +854,7 @@ func testReplaceMessagesBeyondScanPageLimit(t *testing.T, newStore func(t *testi
 			t.Fatalf("SaveMessage: %v", err)
 		}
 	}
-	if err := s.ReplaceMessages(ctx, "sess", []Message{msg("summary", dur(total))}, supersededIDs(ctx, t, s, "sess")); err != nil {
+	if err := s.ReplaceMessages(ctx, "sess", []messaging.Message{msg("summary", dur(total))}, supersededIDs(ctx, t, s, "sess")); err != nil {
 		t.Fatalf("ReplaceMessages: %v", err)
 	}
 	got, err := s.RecentMessages(ctx, "sess", 100)
@@ -873,7 +875,7 @@ func testReplaceMessagesKeepsSurvivors(t *testing.T, newStore func(t *testing.T)
 	t.Cleanup(func() { _ = s.Close() })
 
 	for i, text := range []string{"keep-a", "keep-b", "drop"} {
-		m := Message{SourceID: "tg-" + text, From: "u", Text: text, At: at(dur(i))}
+		m := messaging.Message{SourceID: "tg-" + text, Sender: "u", Role: messaging.RoleUser, Text: text, At: at(dur(i))}
 		if err := s.SaveMessage(ctx, "sess", m); err != nil {
 			t.Fatalf("SaveMessage: %v", err)
 		}
@@ -1148,13 +1150,20 @@ func testSearchMatchesTextNotMetadata(t *testing.T, newStore func(t *testing.T) 
 			s := newStore(t)
 			t.Cleanup(func() { _ = s.Close() })
 
-			if err := s.SaveMessage(ctx, "sess", Message{
-				From: "alice", Text: "hello world", ChannelID: "chan-xyz", ThreadID: "thread-xyz", At: base,
+			// The conversation address rides the record but is resolved
+			// from the owning session on read, never indexed: queries for
+			// channel fragments must not match.
+			if err := s.SaveMessage(ctx, "sess", messaging.Message{
+				Sender: "alice", Role: messaging.RoleUser, Text: "hello world",
+				ConversationID: messaging.ConversationID{ChannelID: "chan-xyz", ThreadID: "thread-xyz"},
+				At:             base,
 			}); err != nil {
 				t.Fatalf("SaveMessage: %v", err)
 			}
-			if err := s.SaveMessage(ctx, "sess", Message{
-				From: "bob", Text: "goodbye", ChannelID: "chan-xyz", ThreadID: "thread-xyz", At: at(time.Second),
+			if err := s.SaveMessage(ctx, "sess", messaging.Message{
+				Sender: "bob", Role: messaging.RoleUser, Text: "goodbye",
+				ConversationID: messaging.ConversationID{ChannelID: "chan-xyz", ThreadID: "thread-xyz"},
+				At:             at(time.Second),
 			}); err != nil {
 				t.Fatalf("SaveMessage: %v", err)
 			}

@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/gateway/v1"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
@@ -139,12 +140,34 @@ func (s *server) ListSessions(ctx context.Context, _ *pb.ListSessionsRequest) (*
 	return &pb.ListSessionsResponse{Sessions: mapValues(v, sessionProto)}, e
 }
 
+// storedMessages converts wire messages to canonical records, deriving
+// roles from the owning session's bot identity -- the same derivation the
+// in-process boundary applies (see gateway.ToStoredMessage). The wire
+// carries no role; both sides derive from the same session, so they agree.
+func (s *server) storedMessages(ctx context.Context, ss gateway.SessionStore, sessionID string, msgs []gateway.Message) ([]messaging.Message, error) {
+	var botUser string
+	if sc, err := ss.Get(ctx, sessionID); err != nil {
+		return nil, err
+	} else if sc != nil {
+		botUser = sc.Source.BotUser
+	}
+	out := make([]messaging.Message, 0, len(msgs))
+	for _, m := range msgs {
+		out = append(out, gateway.ToStoredMessage(m, botUser))
+	}
+	return out, nil
+}
+
 func (s *server) SaveMessage(ctx context.Context, r *pb.SaveMessageRequest) (*pb.SaveMessageResponse, error) {
 	ss, e := s.sessionStore()
 	if e != nil {
 		return nil, e
 	}
-	return &pb.SaveMessageResponse{}, ss.SaveMessage(ctx, r.SessionId, messageValue(r.Message))
+	msgs, e := s.storedMessages(ctx, ss, r.SessionId, []gateway.Message{messageValue(r.Message)})
+	if e != nil {
+		return nil, e
+	}
+	return &pb.SaveMessageResponse{}, ss.SaveMessage(ctx, r.SessionId, msgs[0])
 }
 
 func (s *server) DeleteRecentMessages(ctx context.Context, r *pb.DeleteRecentMessagesRequest) (*pb.DeleteRecentMessagesResponse, error) {
@@ -170,7 +193,11 @@ func (s *server) SaveMessages(ctx context.Context, r *pb.SaveMessagesRequest) (*
 	if e != nil {
 		return nil, e
 	}
-	return &pb.SaveMessagesResponse{}, ss.SaveMessages(ctx, r.SessionId, mapValues(r.Messages, messageValue))
+	msgs, e := s.storedMessages(ctx, ss, r.SessionId, mapValues(r.Messages, messageValue))
+	if e != nil {
+		return nil, e
+	}
+	return &pb.SaveMessagesResponse{}, ss.SaveMessages(ctx, r.SessionId, msgs)
 }
 
 func (s *server) ReplaceMessages(ctx context.Context, r *pb.ReplaceMessagesRequest) (*pb.ReplaceMessagesResponse, error) {
@@ -178,7 +205,11 @@ func (s *server) ReplaceMessages(ctx context.Context, r *pb.ReplaceMessagesReque
 	if e != nil {
 		return nil, e
 	}
-	return &pb.ReplaceMessagesResponse{}, ss.ReplaceMessages(ctx, r.SessionId, mapValues(r.Messages, messageValue), r.Superseded)
+	msgs, e := s.storedMessages(ctx, ss, r.SessionId, mapValues(r.Messages, messageValue))
+	if e != nil {
+		return nil, e
+	}
+	return &pb.ReplaceMessagesResponse{}, ss.ReplaceMessages(ctx, r.SessionId, msgs, r.Superseded)
 }
 
 func (s *server) SearchMessages(ctx context.Context, r *pb.SearchMessagesRequest) (*pb.SearchMessagesResponse, error) {
@@ -187,7 +218,7 @@ func (s *server) SearchMessages(ctx context.Context, r *pb.SearchMessagesRequest
 		return nil, e
 	}
 	v, e := ss.SearchMessages(ctx, r.SessionId, gateway.MessageQuery{Query: r.Query, Limit: int(r.Limit), Offset: int(r.Offset)})
-	return &pb.SearchMessagesResponse{Messages: mapValues(v.Messages, messageProto), NextOffset: int64(v.NextOffset), HasMore: v.HasMore, Truncated: v.Truncated}, e
+	return &pb.SearchMessagesResponse{Messages: mapValues(v.Messages, storedProto), NextOffset: int64(v.NextOffset), HasMore: v.HasMore, Truncated: v.Truncated}, e
 }
 
 func (s *server) Stream(r *pb.StreamRequest, out grpc.ServerStreamingServer[pb.StreamResponse]) error {

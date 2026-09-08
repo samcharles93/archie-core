@@ -73,6 +73,13 @@ type Message struct {
 	// upstream identity.
 	SourceID string
 
+	// Sender is the channel-native display attribution (e.g. a Telegram
+	// username) recorded when the message was written. Like SourceID it
+	// is external correlation metadata, never the canonical identity:
+	// role discrimination uses Role, never this field. It is preserved
+	// so history search and transcript rendering keep working.
+	Sender string
+
 	Role Role
 	Text string
 

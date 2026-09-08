@@ -400,10 +400,10 @@ func TestRetryAutoTitlesUntitledSession(t *testing.T) {
 		t.Fatalf("resolve: %v", err)
 	}
 	gen.titles[sessionID] = "Deploy worker"
-	if err := store.SaveMessage(ctx, sessionID, Message{From: "u", Text: "deploy the worker"}); err != nil {
+	if err := store.SaveMessage(ctx, sessionID, ToStoredMessage(Message{From: "u", Text: "deploy the worker"}, "archie")); err != nil {
 		t.Fatalf("save user message: %v", err)
 	}
-	if err := store.SaveMessage(ctx, sessionID, Message{From: "bot", Text: "sure"}); err != nil {
+	if err := store.SaveMessage(ctx, sessionID, ToStoredMessage(Message{From: "bot", Text: "sure"}, "archie")); err != nil {
 		t.Fatalf("save reply: %v", err)
 	}
 	if _, err := r.Route(ctx, Message{ChannelID: "ch", From: "u", Text: "/retry"}); err != nil {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 // /compress dispatch. Every case here is a command an operator can type, and
@@ -140,8 +142,8 @@ func TestCompressPreviewReadsTheWholeHistory(t *testing.T) {
 	// bulk of the tokens outside that window.
 	seedForCompress(t, store, sessionID, 40)
 	for i := range 250 {
-		if err := store.SaveMessage(ctx, sessionID, Message{
-			From: "alice", Text: "tiny", SourceID: pad(i), At: at(dur(1000 + i)),
+		if err := store.SaveMessage(ctx, sessionID, messaging.Message{
+			Sender: "alice", Role: messaging.RoleUser, Text: "tiny", SourceID: pad(i), At: at(dur(1000 + i)),
 		}); err != nil {
 			t.Fatalf("SaveMessage: %v", err)
 		}

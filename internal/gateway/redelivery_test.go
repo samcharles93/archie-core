@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 func TestPriorReplyRecognisesLegacyCanonicalMessageID(t *testing.T) {
@@ -16,11 +18,11 @@ func TestPriorReplyRecognisesLegacyCanonicalMessageID(t *testing.T) {
 		identity  = "archie"
 	)
 	legacyID := uuid.NewSHA1(messageIDNamespace, []byte(sessionID+"\x00"+sourceID)).String()
-	history := []Message{
-		{MessageID: legacyID, SourceID: sourceID, From: "alice", Text: "question"},
-		{From: identity, Text: "answer"},
+	history := []messaging.Message{
+		{ID: messaging.MessageID(legacyID), SourceID: sourceID, Sender: "alice", Role: messaging.RoleUser, Text: "question"},
+		{Sender: identity, Role: messaging.RoleAssistant, Text: "answer"},
 	}
-	if got := PriorReply(history, sessionID, sourceID, identity); got != "answer" {
+	if got := PriorReply(history, sessionID, sourceID); got != "answer" {
 		t.Fatalf("PriorReply = %q, want legacy reply", got)
 	}
 }
@@ -122,18 +124,19 @@ func TestPriorReply(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			history := make([]Message, 0, len(tc.history))
+			history := make([]messaging.Message, 0, len(tc.history))
 			for i, h := range tc.history {
-				history = append(history, Message{
+				m := ToStoredMessage(Message{
 					MessageID: newMessageIDFor(sessionID, h.sourceID, i),
 					SourceID:  h.sourceID,
 					From:      h.from,
 					Text:      h.text,
 					At:        time.Now().Add(time.Duration(i) * time.Second),
-				})
+				}, identity)
+				history = append(history, m)
 			}
 
-			got := PriorReply(history, sessionID, tc.sourceID, identity)
+			got := PriorReply(history, sessionID, tc.sourceID)
 			if got != tc.want {
 				t.Errorf("PriorReply = %q, want %q", got, tc.want)
 			}

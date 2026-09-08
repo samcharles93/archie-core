@@ -114,7 +114,7 @@ func TestChatSessionAndMessageEndpoints(t *testing.T) {
 	if err := sessions.Save(context.Background(), session); err != nil {
 		t.Fatal(err)
 	}
-	if err := sessions.SaveMessage(context.Background(), session.SessionID, gateway.Message{From: "web", Text: "hello"}); err != nil {
+	if err := sessions.SaveMessage(context.Background(), session.SessionID, gateway.ToStoredMessage(gateway.Message{From: "web", Text: "hello"}, "")); err != nil {
 		t.Fatal(err)
 	}
 

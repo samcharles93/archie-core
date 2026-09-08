@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 // fakeSessionStore implements SessionStore for tests. Messages are
@@ -16,13 +18,13 @@ import (
 type fakeSessionStore struct {
 	mu       sync.Mutex
 	sessions map[string]SessionContext
-	messages map[string][]Message // sessionID → messages
+	messages map[string][]messaging.Message // sessionID → messages
 }
 
 func newFakeSessionStore() *fakeSessionStore {
 	return &fakeSessionStore{
 		sessions: make(map[string]SessionContext),
-		messages: make(map[string][]Message),
+		messages: make(map[string][]messaging.Message),
 	}
 }
 
@@ -87,14 +89,14 @@ func (f *fakeSessionStore) List(_ context.Context) ([]SessionContext, error) {
 
 func (f *fakeSessionStore) Close() error { return nil }
 
-func (f *fakeSessionStore) SaveMessage(_ context.Context, sessionID string, msg Message) error {
+func (f *fakeSessionStore) SaveMessage(_ context.Context, sessionID string, msg messaging.Message) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.messages[sessionID] = append(f.messages[sessionID], msg)
 	return nil
 }
 
-func (f *fakeSessionStore) RecentMessages(_ context.Context, sessionID string, n int) ([]Message, error) {
+func (f *fakeSessionStore) RecentMessages(_ context.Context, sessionID string, n int) ([]messaging.Message, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	msgs := f.messages[sessionID]
@@ -102,7 +104,7 @@ func (f *fakeSessionStore) RecentMessages(_ context.Context, sessionID string, n
 		return nil, nil
 	}
 	start := max(len(msgs)-n, 0)
-	out := make([]Message, len(msgs)-start)
+	out := make([]messaging.Message, len(msgs)-start)
 	copy(out, msgs[start:])
 	return out, nil
 }
@@ -125,11 +127,11 @@ func (f *fakeSessionStore) MessageCount(_ context.Context, sessionID string) (in
 	return len(f.messages[sessionID]), nil
 }
 
-func (f *fakeSessionStore) SaveMessages(_ context.Context, sessionID string, msgs []Message) error {
+func (f *fakeSessionStore) SaveMessages(_ context.Context, sessionID string, msgs []messaging.Message) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	existing := f.messages[sessionID]
-	out := make([]Message, len(existing)+len(msgs))
+	out := make([]messaging.Message, len(existing)+len(msgs))
 	copy(out, existing)
 	copy(out[len(existing):], msgs)
 	f.messages[sessionID] = out
@@ -142,7 +144,7 @@ func (f *fakeSessionStore) SaveMessages(_ context.Context, sessionID string, msg
 func (f *fakeSessionStore) ReplaceMessages(
 	_ context.Context,
 	sessionID string,
-	msgs []Message,
+	msgs []messaging.Message,
 	superseded []string,
 ) error {
 	f.mu.Lock()
@@ -153,16 +155,16 @@ func (f *fakeSessionStore) ReplaceMessages(
 		doomed[id] = struct{}{}
 	}
 
-	kept := make([]Message, 0, len(f.messages[sessionID])+len(msgs))
+	kept := make([]messaging.Message, 0, len(f.messages[sessionID])+len(msgs))
 	for _, m := range f.messages[sessionID] {
-		if _, gone := doomed[m.MessageID]; gone {
+		if _, gone := doomed[string(m.ID)]; gone {
 			continue
 		}
 		kept = append(kept, m)
 	}
 	for _, m := range msgs {
-		if m.MessageID == "" {
-			m.MessageID = uuid.NewString()
+		if m.ID == "" {
+			m.ID = messaging.MessageID(uuid.NewString())
 		}
 		kept = append(kept, m)
 	}
@@ -394,8 +396,8 @@ func TestRouteRetryRemovesLastMessage(t *testing.T) {
 		CreatedAt: time.Now(), LastActiveAt: time.Now(),
 	}
 	_ = r.sessionTracker.sessions.Save(context.Background(), sc)
-	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, Message{From: "alice", Text: "hello"})
-	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, Message{From: "archie", Text: "hi there"})
+	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, ToStoredMessage(Message{From: "alice", Text: "hello"}, "archie"))
+	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, ToStoredMessage(Message{From: "archie", Text: "hi there"}, "archie"))
 	r.sessionTracker.setActive("chat-9", "", sessionID)
 
 	// Verify initial count.
@@ -433,9 +435,9 @@ func TestRouteUndoRemovesOne(t *testing.T) {
 		CreatedAt: time.Now(), LastActiveAt: time.Now(),
 	}
 	_ = r.sessionTracker.sessions.Save(context.Background(), sc)
-	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, Message{From: "alice", Text: "msg1"})
-	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, Message{From: "archie", Text: "reply1"})
-	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, Message{From: "alice", Text: "msg2"})
+	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, ToStoredMessage(Message{From: "alice", Text: "msg1"}, "archie"))
+	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, ToStoredMessage(Message{From: "archie", Text: "reply1"}, "archie"))
+	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, ToStoredMessage(Message{From: "alice", Text: "msg2"}, "archie"))
 	r.sessionTracker.setActive("chat-10", "", sessionID)
 
 	reply, err := r.Route(context.Background(), Message{Text: "/undo", ChannelID: "chat-10"})
@@ -463,7 +465,7 @@ func TestRouteUndoRemovesMultiple(t *testing.T) {
 	}
 	_ = r.sessionTracker.sessions.Save(context.Background(), sc)
 	for i := range 5 {
-		_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, Message{From: "alice", Text: fmt.Sprintf("msg%d", i)})
+		_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, ToStoredMessage(Message{From: "alice", Text: fmt.Sprintf("msg%d", i)}, "archie"))
 	}
 	r.sessionTracker.setActive("chat-11", "", sessionID)
 
@@ -494,9 +496,9 @@ func TestRouteUndoReportsActualPartialRemoval(t *testing.T) {
 		t.Fatalf("Save session: %v", err)
 	}
 	for i := range 6 {
-		if err := r.sessionTracker.sessions.SaveMessage(ctx, sessionID, Message{
+		if err := r.sessionTracker.sessions.SaveMessage(ctx, sessionID, ToStoredMessage(Message{
 			From: "alice", Text: fmt.Sprintf("msg%d", i),
-		}); err != nil {
+		}, "archie")); err != nil {
 			t.Fatalf("SaveMessage(%d): %v", i, err)
 		}
 	}
@@ -613,8 +615,8 @@ func TestRouteBranchCreatesChildSession(t *testing.T) {
 	parentID := r.sessionTracker.getActive("chat-17", "")
 
 	// Add messages to parent.
-	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), parentID, Message{From: "alice", Text: "hello"})
-	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), parentID, Message{From: "archie", Text: "hi"})
+	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), parentID, ToStoredMessage(Message{From: "alice", Text: "hello"}, "archie"))
+	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), parentID, ToStoredMessage(Message{From: "archie", Text: "hi"}, "archie"))
 
 	// Branch.
 	reply, err := r.Route(context.Background(), Message{Text: "/branch experiment", ChannelID: "chat-17"})
@@ -653,7 +655,7 @@ func TestRouteForkAlias(t *testing.T) {
 
 	_, _ = r.Route(context.Background(), Message{Text: "/new parent", ChannelID: "chat-18"})
 	parentID := r.sessionTracker.getActive("chat-18", "")
-	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), parentID, Message{From: "alice", Text: "msg"})
+	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), parentID, ToStoredMessage(Message{From: "alice", Text: "msg"}, "archie"))
 
 	reply, err := r.Route(context.Background(), Message{Text: "/fork", ChannelID: "chat-18"})
 	if err != nil {
@@ -674,7 +676,7 @@ func TestRouteCompressPreview(t *testing.T) {
 
 	// Add a bunch of messages (not enough to trigger compression by default).
 	for i := range 10 {
-		_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, Message{From: "alice", Text: fmt.Sprintf("message number %d", i)})
+		_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, ToStoredMessage(Message{From: "alice", Text: fmt.Sprintf("message number %d", i)}, "archie"))
 	}
 
 	reply, err := r.Route(context.Background(), Message{Text: "/compress --preview", ChannelID: "chat-19"})
@@ -693,7 +695,7 @@ func TestRouteCompactAlias(t *testing.T) {
 	sessionID := r.sessionTracker.getActive("chat-20", "")
 
 	for i := range 5 {
-		_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, Message{From: "alice", Text: fmt.Sprintf("msg %d with some content to make it longer than a few chars", i)})
+		_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, ToStoredMessage(Message{From: "alice", Text: fmt.Sprintf("msg %d with some content to make it longer than a few chars", i)}, "archie"))
 	}
 
 	reply, err := r.Route(context.Background(), Message{Text: "/compact --dry-run", ChannelID: "chat-20"})
