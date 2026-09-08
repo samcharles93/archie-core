@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 // The summary stands in for the messages it replaced, so it belongs where
@@ -71,21 +73,23 @@ func TestPriorReplyIgnoresACompressionSummary(t *testing.T) {
 	)
 	marker := DefaultCompressionConfig().SummaryMarker
 
-	history := []Message{
+	history := []messaging.Message{
 		{
-			MessageID: CanonicalMessageID(sessionID, "tg-unanswered"),
-			SourceID:  "tg-unanswered",
-			From:      "alice",
-			Text:      "what is 2+2?",
+			ID:       messaging.MessageID(CanonicalMessageID(sessionID, "tg-unanswered")),
+			SourceID: "tg-unanswered",
+			Sender:   "alice",
+			Role:     messaging.RoleUser,
+			Text:     "what is 2+2?",
 		},
 		{
-			MessageID: "summary-record",
-			From:      identity,
-			Text:      marker + "\n\n[36 messages removed (~9000 tokens)]",
+			ID:     "summary-record",
+			Sender: identity,
+			Role:   messaging.RoleAssistant,
+			Text:   marker + "\n\n[36 messages removed (~9000 tokens)]",
 		},
 	}
 
-	if got := PriorReply(history, sessionID, "tg-unanswered", identity); got != "" {
+	if got := PriorReply(history, sessionID, "tg-unanswered"); got != "" {
 		t.Errorf("PriorReply = %q, want \"\": the question was never answered, "+
 			"so redelivering it must re-run the model rather than replay a "+
 			"compression banner as the answer", got)
@@ -99,16 +103,17 @@ func TestPriorReplyStillMatchesARealReply(t *testing.T) {
 		sessionID = "chat-1"
 		identity  = "archie"
 	)
-	history := []Message{
+	history := []messaging.Message{
 		{
-			MessageID: CanonicalMessageID(sessionID, "tg-1"),
-			SourceID:  "tg-1",
-			From:      "alice",
-			Text:      "ping",
+			ID:       messaging.MessageID(CanonicalMessageID(sessionID, "tg-1")),
+			SourceID: "tg-1",
+			Sender:   "alice",
+			Role:     messaging.RoleUser,
+			Text:     "ping",
 		},
-		{MessageID: "reply", From: identity, Text: "pong"},
+		{ID: "reply", Sender: identity, Role: messaging.RoleAssistant, Text: "pong"},
 	}
-	if got := PriorReply(history, sessionID, "tg-1", identity); got != "pong" {
+	if got := PriorReply(history, sessionID, "tg-1"); got != "pong" {
 		t.Errorf("PriorReply = %q, want %q", got, "pong")
 	}
 }

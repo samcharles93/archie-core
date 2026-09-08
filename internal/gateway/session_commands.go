@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 // sessionTracker maps (channelID, threadID) pairs to the currently active
@@ -423,10 +425,11 @@ func (r *Router) handleRetry(ctx context.Context, msg Message) (string, error) {
 		return "LLM is not configured. The last response has been removed; send another message to continue.", nil
 	}
 	// Replay the stored text, but route it with the live message's
-	// addressing. Stored history carries no channel or thread -- a session
-	// already is one -- so replaying the stored value verbatim would
-	// resolve to an empty session key and strand the reply.
-	lastUserMsg := msgs[0]
+	// addressing. The gateway view of stored history carries no channel
+	// or thread -- a session already is one -- so replaying the stored
+	// value verbatim would resolve to an empty session key and strand
+	// the reply.
+	lastUserMsg := FromStoredMessage(msgs[0])
 	lastUserMsg.ChannelID = msg.ChannelID
 	lastUserMsg.ThreadID = msg.ThreadID
 	reply, err := r.LLM(ctx, lastUserMsg)
@@ -577,9 +580,9 @@ func (r *Router) handleBranch(ctx context.Context, msg Message, rest string) (st
 		// branch-point correlation ambiguous. It also broke dedup in the
 		// child: an inherited message carried an ID derived from the
 		// parent's session, so redelivering it appended.
-		inherited := make([]Message, 0, len(msgs))
+		inherited := make([]messaging.Message, 0, len(msgs))
 		for _, m := range msgs {
-			m.MessageID = ""
+			m.ID = ""
 			inherited = append(inherited, m)
 		}
 		if err := r.sessionTracker.sessions.SaveMessages(ctx, id, inherited); err != nil {
@@ -697,11 +700,11 @@ func (r *Router) compressPreview(ctx context.Context, sessionID string) (string,
 // replays its queue. Only the summary is a new record.
 //
 // The summary is attributed to the bot. CompressHistory emits it with role
-// "system", which has no representation in the store -- consumers recover the
-// role by comparing From against the bot identity -- and attributing a
-// description of the conversation to the user makes the model replay it as
-// something the human said.
-func compressedHistory(original []Message, view CompressedView, identity string) []Message {
+// "system", which has no representation in the store -- the summary is
+// recorded as an assistant message instead -- and attributing a description
+// of the conversation to the user makes the model replay it as something
+// the human said.
+func compressedHistory(original []messaging.Message, view CompressedView, identity string) []messaging.Message {
 	summaryAt := view.SummaryIndex()
 	if summaryAt < 0 {
 		return original
@@ -724,12 +727,13 @@ func compressedHistory(original []Message, view CompressedView, identity string)
 		// reconstructed; leaving history untouched is the safe answer.
 		return original
 	}
-	out := make([]Message, 0, head+1+tail)
+	out := make([]messaging.Message, 0, head+1+tail)
 	out = append(out, original[:head]...)
-	out = append(out, Message{
-		From: identity,
-		Text: view.Messages[summaryAt].Content,
-		At:   summaryInstant(original, head, tail),
+	out = append(out, messaging.Message{
+		Sender: identity,
+		Role:   messaging.RoleAssistant,
+		Text:   view.Messages[summaryAt].Content,
+		At:     summaryInstant(original, head, tail),
 	})
 	out = append(out, original[len(original)-tail:]...)
 	return out
@@ -737,7 +741,7 @@ func compressedHistory(original []Message, view CompressedView, identity string)
 
 // summaryInstant returns a time inside the gap the summary fills: after the
 // last retained head message and before the first retained tail message.
-func summaryInstant(original []Message, head, tail int) time.Time {
+func summaryInstant(original []messaging.Message, head, tail int) time.Time {
 	// The first message the summary replaces is the natural anchor -- the
 	// summary begins where the summarised span began.
 	if head < len(original)-tail {
@@ -751,11 +755,11 @@ func summaryInstant(original []Message, head, tail int) time.Time {
 	return time.Time{}
 }
 
-func (r *Router) messagesToCompressed(msgs []Message) []CompressedMessage {
+func (r *Router) messagesToCompressed(msgs []messaging.Message) []CompressedMessage {
 	compressed := make([]CompressedMessage, 0, len(msgs))
 	for _, h := range msgs {
 		role := "user"
-		if h.From == r.Identity {
+		if h.Role == messaging.RoleAssistant {
 			role = "assistant"
 		}
 		compressed = append(compressed, CompressedMessage{
@@ -793,8 +797,8 @@ func (r *Router) applyCompress(ctx context.Context, sessionID string, cfg Compre
 	// were -- that was unrecoverable loss of a message nobody had seen.
 	superseded := make([]string, 0, len(msgs))
 	for _, m := range msgs {
-		if m.MessageID != "" {
-			superseded = append(superseded, m.MessageID)
+		if m.ID != "" {
+			superseded = append(superseded, string(m.ID))
 		}
 	}
 

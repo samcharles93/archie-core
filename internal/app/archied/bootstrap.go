@@ -1057,7 +1057,7 @@ func (b *boot) setupCurators(ctx context.Context) {
 		Skills: skillcurator.NewStore(skillsRoot),
 		// Conversations backs the session-memory curator; b.chatSessionStore
 		// is opened by openChatSessions before setupCurators.
-		Conversations: sessioncurator.NewAdapter(b.chatSessionStore, b.cfg.BotUser),
+		Conversations: sessioncurator.NewAdapter(b.chatSessionStore),
 		LLM:           curatorLLMRunner{rt: b.llm},
 		// b.chatModels.ActiveModel() is the same source sendChatTurn uses
 		// for a real chat turn (telegram_setup.go) -- not

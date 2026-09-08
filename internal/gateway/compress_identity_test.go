@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 // compressBackends provides the persistent store used by compression tests.
@@ -38,7 +40,7 @@ func routerOn(t *testing.T, store SessionStore, channelID string) (*Router, stri
 
 // seedForCompress fills a session with enough large messages to trip the
 // default threshold, each carrying an upstream SourceID as Telegram does.
-func seedForCompress(t *testing.T, store SessionStore, sessionID string, n int) []Message {
+func seedForCompress(t *testing.T, store SessionStore, sessionID string, n int) []messaging.Message {
 	t.Helper()
 	// Large enough that n messages exceed 50% of a 128k context window
 	// (tokenEstimate is len/4, so n*bodyLen/4 must clear 64k).
@@ -48,8 +50,9 @@ func seedForCompress(t *testing.T, store SessionStore, sessionID string, n int) 
 	}
 
 	for i := range n {
-		m := Message{
-			From:     "alice",
+		m := messaging.Message{
+			Sender:   "alice",
+			Role:     messaging.RoleUser,
 			Text:     fmt.Sprintf("m%d %s", i, body),
 			SourceID: fmt.Sprintf("tg-%d", i),
 			At:       at(dur(i)),
@@ -84,7 +87,7 @@ func TestCompressPreservesRetainedMessageIdentity(t *testing.T) {
 			r, sessionID := routerOn(t, store, "chat-1")
 
 			before := seedForCompress(t, store, sessionID, 40)
-			byText := make(map[string]Message, len(before))
+			byText := make(map[string]messaging.Message, len(before))
 			for _, m := range before {
 				byText[m.Text] = m
 			}
@@ -105,9 +108,9 @@ func TestCompressPreservesRetainedMessageIdentity(t *testing.T) {
 					continue // the summary, which is legitimately new
 				}
 				retained++
-				if m.MessageID != orig.MessageID {
+				if m.ID != orig.ID {
 					t.Errorf("retained %q: MessageID = %q, want the original %q",
-						shortText(m.Text), m.MessageID, orig.MessageID)
+						shortText(m.Text), m.ID, orig.ID)
 				}
 				if m.SourceID != orig.SourceID {
 					t.Errorf("retained %q: SourceID = %q, want the original %q",
@@ -140,8 +143,8 @@ func TestCompressKeepsRedeliveryIdempotent(t *testing.T) {
 			last := before[len(before)-1]
 
 			// Redelivery is a no-op before compression.
-			if err := store.SaveMessage(ctx, sessionID, Message{
-				From: last.From, Text: last.Text, SourceID: last.SourceID, At: last.At,
+			if err := store.SaveMessage(ctx, sessionID, messaging.Message{
+				Sender: last.Sender, Role: last.Role, Text: last.Text, SourceID: last.SourceID, At: last.At,
 			}); err != nil {
 				t.Fatalf("redeliver before compress: %v", err)
 			}
@@ -162,8 +165,8 @@ func TestCompressKeepsRedeliveryIdempotent(t *testing.T) {
 			}
 
 			// The same redelivery must still be a no-op afterwards.
-			if err := store.SaveMessage(ctx, sessionID, Message{
-				From: last.From, Text: last.Text, SourceID: last.SourceID, At: last.At,
+			if err := store.SaveMessage(ctx, sessionID, messaging.Message{
+				Sender: last.Sender, Role: last.Role, Text: last.Text, SourceID: last.SourceID, At: last.At,
 			}); err != nil {
 				t.Fatalf("redeliver after compress: %v", err)
 			}
@@ -207,10 +210,13 @@ func TestCompressSummaryIsNotAttributedToTheUser(t *testing.T) {
 					continue
 				}
 				found = true
-				if m.From != r.Identity {
-					t.Errorf("summary From = %q, want the bot identity %q: consumers "+
-						"reconstruct the role by comparing From against the identity, so "+
-						"any other value replays the summary as a user turn", m.From, r.Identity)
+				if m.Sender != r.Identity {
+					t.Errorf("summary Sender = %q, want the bot identity %q", m.Sender, r.Identity)
+				}
+				if m.Role != messaging.RoleAssistant {
+					t.Errorf("summary Role = %q, want assistant: consumers read the "+
+						"record's role, so any other value replays the summary as a "+
+						"user turn", m.Role)
 				}
 			}
 			if !found {

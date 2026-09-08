@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 // A branch copies the parent's history into a new session. Those copies used
@@ -33,8 +35,8 @@ func TestBranchGivesInheritedMessagesTheirOwnIdentity(t *testing.T) {
 			}
 
 			for i, text := range []string{"one", "two", "three"} {
-				if err := store.SaveMessage(ctx, parentID, Message{
-					From: "alice", Text: text, SourceID: "tg-" + text, At: at(dur(i)),
+				if err := store.SaveMessage(ctx, parentID, messaging.Message{
+					Sender: "alice", Role: messaging.RoleUser, Text: text, SourceID: "tg-" + text, At: at(dur(i)),
 				}); err != nil {
 					t.Fatalf("SaveMessage: %v", err)
 				}
@@ -66,25 +68,25 @@ func TestBranchGivesInheritedMessagesTheirOwnIdentity(t *testing.T) {
 
 			parentIDs := make(map[string]struct{}, len(parentMsgs))
 			for _, m := range parentMsgs {
-				parentIDs[m.MessageID] = struct{}{}
+				parentIDs[string(m.ID)] = struct{}{}
 			}
 			for _, m := range childMsgs {
-				if _, shared := parentIDs[m.MessageID]; shared {
+				if _, shared := parentIDs[string(m.ID)]; shared {
 					t.Errorf("inherited %q kept the parent's MessageID %q: two sessions "+
-						"now claim one canonical identity", m.Text, m.MessageID)
+						"now claim one canonical identity", m.Text, m.ID)
 				}
 				if m.SourceID == "" {
 					t.Errorf("inherited %q lost its SourceID; upstream correlation is gone", m.Text)
 				}
-				if want := CanonicalMessageID(childID, m.SourceID); m.MessageID != want {
+				if want := CanonicalMessageID(childID, m.SourceID); string(m.ID) != want {
 					t.Errorf("inherited %q: MessageID = %q, want the child-scoped %q",
-						m.Text, m.MessageID, want)
+						m.Text, m.ID, want)
 				}
 			}
 
 			// Dedup must work in the child on its own terms.
-			if err := store.SaveMessage(ctx, childID, Message{
-				From: "alice", Text: "two", SourceID: "tg-two", At: at(dur(1)),
+			if err := store.SaveMessage(ctx, childID, messaging.Message{
+				Sender: "alice", Role: messaging.RoleUser, Text: "two", SourceID: "tg-two", At: at(dur(1)),
 			}); err != nil {
 				t.Fatalf("redeliver into child: %v", err)
 			}

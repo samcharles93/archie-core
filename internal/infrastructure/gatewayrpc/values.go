@@ -6,6 +6,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/gateway/v1"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/gateway"
 )
 
@@ -33,6 +34,13 @@ func messageProto(v gateway.Message) *pb.Message {
 		Text:      v.Text,
 		Page:      v.Page, At: timestamp(v.At),
 	}
+}
+
+// storedProto renders a canonical record in its wire shape. The role stays
+// store-side: each side derives it from the owning session (see
+// gateway.ToStoredMessage), so the wire carries no role.
+func storedProto(m messaging.Message) *pb.Message {
+	return messageProto(gateway.FromStoredMessage(m))
 }
 
 func messageValue(v *pb.Message) gateway.Message {

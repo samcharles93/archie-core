@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/tools"
 )
@@ -180,9 +181,9 @@ func (r *TurnRunner) checkConfigured() error {
 // (text, err); done is false when there is no prior reply to replay and
 // Run should continue generating one.
 func (r *TurnRunner) replayPriorReply(
-	ctx context.Context, turn TurnRecord, sessionID string, msg Message, history []Message, stream TurnStream,
+	ctx context.Context, turn TurnRecord, sessionID string, msg Message, history []messaging.Message, stream TurnStream,
 ) (string, bool, error) {
-	prior := PriorReply(history, sessionID, msg.SourceID, r.BotUser)
+	prior := PriorReply(history, sessionID, msg.SourceID)
 	if prior == "" && msg.SourceID != "" {
 		if replayStore, ok := r.Sessions.(TurnReplayStore); ok {
 			var err error
@@ -249,11 +250,12 @@ func (r *TurnRunner) claimTurn(
 // the turn's input on first sight, and folds it into history if it is not
 // already present there.
 func (r *TurnRunner) recordInboundMessage(
-	ctx context.Context, turn *TurnRecord, sessionID string, msg Message, history []Message,
-) (Message, []Message, error) {
+	ctx context.Context, turn *TurnRecord, sessionID string, msg Message, history []messaging.Message,
+) (Message, []messaging.Message, error) {
 	msg.MessageID = messageIDForTurn(sessionID, msg)
+	stored := ToStoredMessage(msg, r.BotUser)
 	if turn.InputMessageID == "" {
-		if err := r.Sessions.SaveMessage(ctx, sessionID, msg); err != nil {
+		if err := r.Sessions.SaveMessage(ctx, sessionID, stored); err != nil {
 			return msg, history, fmt.Errorf("save inbound chat message: %w", err)
 		}
 		turn.InputMessageID = msg.MessageID
@@ -263,9 +265,10 @@ func (r *TurnRunner) recordInboundMessage(
 		}
 	} else {
 		msg.MessageID = turn.InputMessageID
+		stored.ID = messaging.MessageID(turn.InputMessageID)
 	}
 	if !messageInHistory(history, msg.SourceID) {
-		history = append(history, msg)
+		history = append(history, stored)
 	}
 	return msg, history, nil
 }
@@ -282,8 +285,8 @@ type preparedTurn struct {
 
 // prepareTurn builds the tools, system prompt, and compressed history view
 // for one turn's generation call.
-func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, msg Message, history []Message) (preparedTurn, error) {
-	compressed := compressTurnHistory(history, r.BotUser)
+func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, msg Message, history []messaging.Message) (preparedTurn, error) {
+	compressed := compressTurnHistory(history)
 	extraTools := append(
 		TaskTools(r.TaskLister, r.Tasks, r.TaskLogs, r.TaskActor, r.TaskIdentity),
 		SessionTools(r.Sessions, r.Router.SessionTracker(), r.Channel, msg)...,
@@ -412,7 +415,7 @@ func (r *TurnRunner) generateAndComplete(
 		return "", r.failTurn(ctx, turn, err)
 	}
 	assistant := Message{MessageID: assistantMessageIDForTurn(turn.TurnID), From: r.BotUser, Text: text}
-	if err := r.Sessions.SaveMessage(ctx, sessionID, assistant); err != nil {
+	if err := r.Sessions.SaveMessage(ctx, sessionID, ToStoredMessage(assistant, r.BotUser)); err != nil {
 		return "", r.failTurn(ctx, turn, fmt.Errorf("save outbound chat message: %w", err))
 	}
 	turn.Status = TurnStatusCompleted
@@ -499,7 +502,7 @@ func messageIDForTurn(sessionID string, msg Message) string {
 	return NewTurnID()
 }
 
-func messageInHistory(history []Message, sourceID string) bool {
+func messageInHistory(history []messaging.Message, sourceID string) bool {
 	if sourceID == "" {
 		return false
 	}
@@ -511,11 +514,14 @@ func messageInHistory(history []Message, sourceID string) bool {
 	return false
 }
 
-func compressTurnHistory(history []Message, botUser string) []CompressedMessage {
+// compressTurnHistory renders stored history as role/content pairs. The
+// role comes from the record, which the store boundary derives from the
+// sender when the message is written (see ToStoredMessage).
+func compressTurnHistory(history []messaging.Message) []CompressedMessage {
 	compressed := make([]CompressedMessage, 0, len(history))
 	for _, message := range history {
 		role := "user"
-		if message.From == botUser {
+		if message.Role == messaging.RoleAssistant {
 			role = "assistant"
 		}
 		compressed = append(compressed, CompressedMessage{Role: role, Content: message.Text})

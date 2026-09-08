@@ -171,7 +171,7 @@ func TestRouteDeleteRemovesSessionAndItsHistory(t *testing.T) {
 	r, store := newDeleteRouter(t)
 	id := seedSession(t, r, store, "abcd-123", "chan-1", "Work")
 	for _, text := range []string{"first", "second"} {
-		if err := store.SaveMessage(context.Background(), id, Message{From: "sam", Text: text}); err != nil {
+		if err := store.SaveMessage(context.Background(), id, ToStoredMessage(Message{From: "sam", Text: text}, "archie")); err != nil {
 			t.Fatalf("seed message: %v", err)
 		}
 	}

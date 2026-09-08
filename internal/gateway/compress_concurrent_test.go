@@ -3,6 +3,8 @@ package gateway
 import (
 	"context"
 	"testing"
+
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 // A chat turn that lands while a compression is being computed is not part of
@@ -35,8 +37,9 @@ func TestCompressKeepsAMessageThatArrivesMidway(t *testing.T) {
 			// history and before it writes the replacement.
 			const lateText = "sent while the summary was being computed"
 			store.afterRecent = func() {
-				if err := inner.SaveMessage(ctx, sessionID, Message{
-					From:     "alice",
+				if err := inner.SaveMessage(ctx, sessionID, messaging.Message{
+					Sender:   "alice",
+					Role:     messaging.RoleUser,
 					Text:     lateText,
 					SourceID: "tg-late",
 					At:       at(dur(9000)),
@@ -72,7 +75,7 @@ type midCompressStore struct {
 	afterRecent func()
 }
 
-func (m *midCompressStore) RecentMessages(ctx context.Context, sessionID string, n int) ([]Message, error) {
+func (m *midCompressStore) RecentMessages(ctx context.Context, sessionID string, n int) ([]messaging.Message, error) {
 	out, err := m.SessionStore.RecentMessages(ctx, sessionID, n)
 	if m.afterRecent != nil {
 		fn := m.afterRecent

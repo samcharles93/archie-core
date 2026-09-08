@@ -312,9 +312,9 @@ func TestTurnRunnerReplaysCompletedDuplicateOutsideRecentWindow(t *testing.T) {
 		t.Fatalf("first Run() error = %v", err)
 	}
 	for i := range 110 {
-		if err := store.SaveMessage(context.Background(), "chat-1", Message{
+		if err := store.SaveMessage(context.Background(), "chat-1", ToStoredMessage(Message{
 			From: "user", SourceID: fmt.Sprintf("later-%d", i), Text: "later",
-		}); err != nil {
+		}, "archie")); err != nil {
 			t.Fatalf("SaveMessage(%d) error = %v", i, err)
 		}
 	}
