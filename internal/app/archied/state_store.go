@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -213,7 +212,7 @@ func (b *boot) startStateStoreReadiness(ctx context.Context, readyAddr string) e
 // path to token auth -- the same confinement philosophy as the gateway's
 // loopback-only --listen rule.
 func stateStoreServerOpts(listen, token string, grants *staterpc.TaskGrants) (opts []grpc.ServerOption, loopback bool, err error) {
-	loopback, err = stateStoreListenIsLoopback(listen)
+	loopback, err = staterpc.TargetIsLoopback(listen)
 	if err != nil {
 		return nil, false, err
 	}
@@ -234,25 +233,6 @@ func stateStoreServerOpts(listen, token string, grants *staterpc.TaskGrants) (op
 		grpc.ChainUnaryInterceptor(grants.UnaryInterceptor(token)),
 		grpc.ChainStreamInterceptor(grants.StreamInterceptor(token)),
 	}, false, nil
-}
-
-// stateStoreListenIsLoopback reports whether listen's host is a loopback
-// address. Both literal loopback IPs (127.0.0.1, ::1) and the "localhost"
-// hostname count; everything else (including the wildcard 0.0.0.0 and DNS
-// names) is treated as network-reachable and therefore non-loopback.
-func stateStoreListenIsLoopback(listen string) (bool, error) {
-	host, _, err := net.SplitHostPort(listen)
-	if err != nil {
-		return false, fmt.Errorf("state store listen address must be host:port: %w", err)
-	}
-	if strings.EqualFold(host, "localhost") {
-		return true, nil
-	}
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return false, nil
-	}
-	return ip.IsLoopback(), nil
 }
 
 // constantTimeTokenValidator returns a staterpc.TokenValidator that accepts
