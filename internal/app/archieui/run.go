@@ -38,7 +38,7 @@ func Run(ctx context.Context, options Options) error {
 		return err
 	}
 	cleanups = append(cleanups, closeState)
-	chat, closeGateway, err := gatewayrpc.Dial(opts.Gateway.Target)
+	chat, closeGateway, err := gatewayrpc.Dial(opts.Gateway.Target, opts.Gateway.Token)
 	if err != nil {
 		return err
 	}

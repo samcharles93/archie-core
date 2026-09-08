@@ -114,7 +114,7 @@ func TestUIServesDashboardAgainstRemoteContracts(t *testing.T) {
 		t.Fatalf("dial state store: %v", err)
 	}
 	defer closeState()
-	chatClient, closeGateway, err := gatewayrpc.Dial(gatewayTarget)
+	chatClient, closeGateway, err := gatewayrpc.Dial(gatewayTarget, "")
 	if err != nil {
 		t.Fatalf("dial gateway: %v", err)
 	}

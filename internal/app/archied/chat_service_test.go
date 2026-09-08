@@ -8,13 +8,12 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
-	"google.golang.org/grpc/test/bufconn"
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
+	"github.com/samcharles93/archie-core/internal/secret"
 )
 
 func TestComposeChatContractRejectsInvalidSettings(t *testing.T) {
@@ -26,7 +25,7 @@ func TestComposeChatContractRejectsInvalidSettings(t *testing.T) {
 		{name: "blank target", settings: config.ServiceConnection{Target: " \t\n"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			chat, cleanup, err := composeChatContract(tt.settings)
+			chat, cleanup, err := composeChatContract(tt.settings, &secret.Registry{})
 			if cleanup != nil {
 				t.Cleanup(cleanup)
 			}
@@ -40,8 +39,21 @@ func TestComposeChatContractRejectsInvalidSettings(t *testing.T) {
 	}
 }
 
+func TestComposeChatContractNonLoopbackFailsClosed(t *testing.T) {
+	_, _, err := composeChatContract(
+		config.ServiceConnection{Target: "gateway.example.com:8585"},
+		&secret.Registry{},
+	)
+	if err == nil {
+		t.Fatal("non-loopback target without a token should fail closed")
+	}
+}
+
 func TestComposeChatContractRemoteAndCleanup(t *testing.T) {
-	listener := bufconn.Listen(1024 * 1024)
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
 	server := grpc.NewServer()
 	gatewayrpc.RegisterServer(server, compositionChat{snapshot: gateway.ChatSnapshot{ActiveModel: "remote-model"}})
 	serveDone := make(chan error, 1)
@@ -55,11 +67,8 @@ func TestComposeChatContractRemoteAndCleanup(t *testing.T) {
 	})
 
 	chat, cleanup, err := composeChatContract(
-		config.ServiceConnection{Target: "passthrough:///chat"},
-		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
-			return listener.DialContext(ctx)
-		}),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		config.ServiceConnection{Target: listener.Addr().String()},
+		&secret.Registry{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -83,6 +92,22 @@ func TestComposeChatContractRemoteAndCleanup(t *testing.T) {
 	cleanup()
 	if _, err := chat.Snapshot(ctx); status.Code(err) != codes.Canceled {
 		t.Fatalf("Snapshot after cleanup: code = %v, want Canceled; error = %v", status.Code(err), err)
+	}
+}
+
+func TestGatewayResolvedToken(t *testing.T) {
+	if got := gatewayResolvedToken(config.ServiceConnection{TargetToken: "file-token"}, &secret.Registry{}); got != "file-token" {
+		t.Fatalf("resolved token = %q, want file-token", got)
+	}
+	t.Setenv("GATEWAY_TOKEN", "environment-token")
+	if got := gatewayResolvedToken(config.ServiceConnection{}, &secret.Registry{}); got != "environment-token" {
+		t.Fatalf("resolved token = %q, want environment-token", got)
+	}
+	if got := gatewayResolvedToken(
+		config.ServiceConnection{TargetToken: "file-token"},
+		&secret.Registry{},
+	); got != "file-token" {
+		t.Fatalf("explicit target_token should win over the environment, got %q", got)
 	}
 }
 

@@ -9,20 +9,37 @@ import (
 )
 
 // Dial returns a chat contract client for target, the standalone
-// archie-gateway process. Deployments that put the Gateway on a separate
-// trust boundary supply their own transport credentials through options; the
-// default must be usable without manufacturing a certificate in the config
-// loader. The returned cleanup closes the connection.
+// archie-gateway process, applying the transport security boundary: a
+// loopback target dials insecure with no credential, while a non-loopback
+// target requires a Bearer [REDACTED] and fails closed without one. The returned
+// cleanup closes the connection.
 //
-// The Gateway listener is loopback-only (internal/app/archied.RunGateway), so
-// a caller is colocated with it until a Gateway transport-security amendment
-// says otherwise.
-func Dial(target string, options ...grpc.DialOption) (*Client, func(), error) {
-	if strings.TrimSpace(target) == "" {
+// The rule lives here rather than in a composition root so the server side
+// (which decides whether to install the token interceptors) and every client
+// that dials it share one implementation. It mirrors staterpc.Dial.
+func Dial(target, token string, options ...grpc.DialOption) (*Client, func(), error) {
+	target = strings.TrimSpace(target)
+	if target == "" {
 		return nil, nil, fmt.Errorf("gateway target is required")
 	}
-	opts := append([]grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}, options...)
-	conn, err := grpc.NewClient(target, opts...)
+	loopback, err := TargetIsLoopback(target)
+	if err != nil {
+		return nil, nil, fmt.Errorf("gateway target must be host:port: %w", err)
+	}
+	if !loopback && token == "" {
+		return nil, nil, fmt.Errorf(
+			"gateway target %q is non-loopback; non-loopback exposure requires a Bearer [REDACTED] ([services.gateway].target_token / GATEWAY_TOKEN) or TLS",
+			target,
+		)
+	}
+	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+	if token != "" {
+		opts = append(opts,
+			grpc.WithUnaryInterceptor(UnaryClientTokenInterceptor(token)),
+			grpc.WithStreamInterceptor(StreamClientTokenInterceptor(token)),
+		)
+	}
+	conn, err := grpc.NewClient(target, append(opts, options...)...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create gateway client: %w", err)
 	}

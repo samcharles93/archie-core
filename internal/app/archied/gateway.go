@@ -23,6 +23,10 @@ type GatewayOptions struct {
 	Config  string
 	Overlay string
 	Listen  string
+	// Token is the Bearer [REDACTED] the Gateway server validates for a
+	// non-loopback listener. Empty falls back to
+	// [services.gateway].target_token.
+	Token string
 }
 
 // RunGateway owns conversation persistence, model runtime and tool-provider
@@ -81,17 +85,22 @@ func RunGateway(ctx context.Context, options GatewayOptions) error {
 	if err != nil {
 		return err
 	}
-	host, _, err := net.SplitHostPort(options.Listen)
-	if err != nil || !net.ParseIP(host).IsLoopback() {
-		return fmt.Errorf("gateway listen address must use a loopback IP; use a secured tunnel for remote access")
+	gatewayToken := options.Token
+	if gatewayToken == "" {
+		gatewayToken = gatewayResolvedToken(b.cfg.Services.Gateway, b.secrets)
+	}
+	//nolint:contextcheck // grpc.StreamServerInterceptor has no context.Context parameter; gatewayrpc.StreamServerInterceptor derives its context from stream.Context() instead
+	opts, loopback, err := gatewayServerOpts(options.Listen, gatewayToken)
+	if err != nil {
+		return err
 	}
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", options.Listen)
 	if err != nil {
 		return fmt.Errorf("listen for gateway: %w", err)
 	}
 	defer listener.Close()
-	b.log.Info("archie-gateway running", "addr", listener.Addr().String())
-	return serveGateway(ctx, listener, contract, b.chatSessionStore)
+	b.log.Info("archie-gateway running", "addr", listener.Addr().String(), "token_required", !loopback)
+	return serveGateway(ctx, listener, contract, b.chatSessionStore, opts)
 }
 
 func (b *boot) startGatewayRuntime(ctx context.Context, actor gateway.ChatTaskActor) (gateway.ChatContract, error) {
@@ -120,8 +129,33 @@ func (b *boot) startGatewayRuntime(ctx context.Context, actor gateway.ChatTaskAc
 	return contract, nil
 }
 
-func serveGateway(ctx context.Context, listener net.Listener, contract gateway.ChatContract, sessions gateway.SessionStore) error {
-	server := grpc.NewServer()
+// gatewayServerOpts applies the transport security boundary: a loopback
+// listener is served insecure with no token; any non-loopback address
+// requires a Bearer [REDACTED], else the process fails closed. It mirrors
+// stateStoreServerOpts, minus the State Store's task-scoped grants: the
+// Gateway has one administrative token for all callers.
+func gatewayServerOpts(listen, token string) (opts []grpc.ServerOption, loopback bool, err error) {
+	loopback, err = gatewayrpc.TargetIsLoopback(listen)
+	if err != nil {
+		return nil, false, err
+	}
+	if loopback {
+		return nil, true, nil
+	}
+	if token == "" {
+		return nil, false, fmt.Errorf(
+			"gateway listen address %q is non-loopback; non-loopback exposure requires a Bearer [REDACTED] (--token / [services.gateway].target_token) or TLS",
+			listen,
+		)
+	}
+	return []grpc.ServerOption{
+		grpc.ChainUnaryInterceptor(gatewayrpc.UnaryServerInterceptor(token)),
+		grpc.ChainStreamInterceptor(gatewayrpc.StreamServerInterceptor(token)),
+	}, false, nil
+}
+
+func serveGateway(ctx context.Context, listener net.Listener, contract gateway.ChatContract, sessions gateway.SessionStore, opts []grpc.ServerOption) error {
+	server := grpc.NewServer(opts...)
 	gatewayrpc.RegisterServer(server, contract, sessions)
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- server.Serve(listener) }()
