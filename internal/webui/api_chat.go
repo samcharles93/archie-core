@@ -8,9 +8,11 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
 )
@@ -43,6 +45,18 @@ type chatMessageRequest struct {
 	// set by the web chat so the agent's system prompt can state where the
 	// operator is looking and point them somewhere relevant.
 	Page string `json:"page,omitempty"`
+}
+
+// chatMessageView is one entry of a session's history as the dashboard
+// reads it. The persisted record is messaging.Message; this is the shape
+// the browser has always been served, kept here so the HTTP response owns
+// its own field names rather than exposing a domain struct's.
+type chatMessageView struct {
+	MessageID string
+	SourceID  string
+	From      string
+	Text      string
+	At        time.Time
 }
 
 type chatPersonaRequest struct {
@@ -171,7 +185,14 @@ func (s *Server) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, messages)
+	views := make([]chatMessageView, 0, len(messages))
+	for _, message := range messages {
+		views = append(views, chatMessageView{
+			MessageID: string(message.ID), SourceID: message.SourceID,
+			From: message.Sender, Text: message.Text, At: message.At,
+		})
+	}
+	writeJSON(w, views)
 }
 
 func (s *Server) handleChatTurns(w http.ResponseWriter, r *http.Request) {
@@ -212,23 +233,31 @@ func (s *Server) handleChatTurns(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, views)
 }
 
-func (s *Server) decodeChatMessage(w http.ResponseWriter, r *http.Request) (gateway.Message, bool) {
+func (s *Server) decodeChatMessage(w http.ResponseWriter, r *http.Request) (gateway.Inbound, bool) {
 	var req chatMessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid chat message", http.StatusBadRequest)
-		return gateway.Message{}, false
+		return gateway.Inbound{}, false
 	}
 	req.Text = strings.TrimSpace(req.Text)
 	if req.Text == "" || req.ChannelID == "" {
 		http.Error(w, "text and channel_id are required", http.StatusBadRequest)
-		return gateway.Message{}, false
+		return gateway.Inbound{}, false
 	}
 	if req.SourceID == "" {
 		req.SourceID = newChatSourceID()
 	}
-	return gateway.Message{
-		SourceID: req.SourceID, ChannelID: req.ChannelID,
-		ThreadID: "", From: "web", Text: req.Text,
+	// The browser has no threading, so the conversation is the channel
+	// alone. Page is the route the operator is looking at, and stays out
+	// of the record.
+	return gateway.Inbound{
+		Message: messaging.Message{
+			SourceID:       req.SourceID,
+			ConversationID: messaging.ConversationID{ChannelID: req.ChannelID},
+			Sender:         "web",
+			Role:           messaging.RoleUser,
+			Text:           req.Text,
+		},
 		Page: req.Page,
 	}, true
 }

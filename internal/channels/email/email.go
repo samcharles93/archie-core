@@ -19,6 +19,7 @@ import (
 	"sync"
 
 	"github.com/samcharles93/archie-core/internal/channels"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/gateway"
 )
 
@@ -201,11 +202,12 @@ func (g *Gateway) processMessage(ctx context.Context, from, to, raw string) {
 	// following Content-Type or headers.
 	text := extractBody(raw)
 
-	msg := gateway.Message{
-		ChannelID: to,
-		From:      from,
-		Text:      text,
-	}
+	msg := gateway.Inbound{Message: messaging.Message{
+		ConversationID: messaging.ConversationID{ChannelID: to},
+		Sender:         from,
+		Role:           messaging.RoleUser,
+		Text:           text,
+	}}
 	reply, err := router.Route(ctx, msg)
 	if err != nil {
 		g.log.Error("email route", "err", err, "from", from)

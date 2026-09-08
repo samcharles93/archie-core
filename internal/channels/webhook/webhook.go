@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/channels"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/webhookguard"
 )
@@ -169,11 +170,12 @@ func (g *Gateway) handleWebhook(route *RouteConfig) http.HandlerFunc {
 			return
 		}
 
-		msg := gateway.Message{
-			ChannelID: route.Path,
-			From:      "webhook",
-			Text:      text,
-		}
+		msg := gateway.Inbound{Message: messaging.Message{
+			ConversationID: messaging.ConversationID{ChannelID: route.Path},
+			Sender:         "webhook",
+			Role:           messaging.RoleUser,
+			Text:           text,
+		}}
 		reply, err := router.Route(r.Context(), msg)
 		if err != nil {
 			g.log.Error("webhook route", "err", err, "path", route.Path)

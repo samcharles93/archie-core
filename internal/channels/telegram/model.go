@@ -9,6 +9,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/gateway"
 )
 
@@ -211,7 +212,9 @@ func (g *Gateway) sendModelSelector(
 	router *gateway.Router,
 ) {
 	if router.Models == nil || len(router.Models.Models()) == 0 {
-		reply, err := router.Route(ctx, gateway.Message{Text: "/model"})
+		reply, err := router.Route(ctx, gateway.Inbound{
+			Message: messaging.Message{Role: messaging.RoleUser, Text: "/model"},
+		})
 		if err != nil {
 			g.log.Error("model selector fallback failed", "error", err)
 			return

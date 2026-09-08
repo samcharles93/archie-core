@@ -48,8 +48,9 @@ type MediaAttachment struct {
 }
 
 // MessageEvent is the rich message model for all gateway channels. It
-// extends the 3-field Message struct for new adapters while
-// remaining backward-compatible via the Text() and FromID() helpers.
+// carries the platform detail an adapter needs beyond the persisted
+// record, and keeps the Text() and FromID() helpers for callers that only
+// want a sender and a body.
 //
 // Every field except Type is optional. A minimal text message needs
 // only Type=MsgText, Text, ChannelID, Platform, and SenderID.
@@ -133,6 +134,6 @@ type MessageEvent struct {
 	Raw map[string]any `json:"raw,omitempty"`
 }
 
-// FromID returns the sender identifier. Backward-compatible alias for
-// code that uses Message.From.
+// FromID returns the sender identifier, under the name callers that only
+// need a sender use.
 func (e MessageEvent) FromID() string { return e.SenderID }

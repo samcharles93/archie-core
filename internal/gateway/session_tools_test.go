@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/tools"
 )
 
@@ -44,7 +45,7 @@ func sessionTool(t *testing.T, entries []tools.ToolEntry, name string) tools.Too
 func TestSessionToolListReturnsSessions(t *testing.T) {
 	store := newFakeSessionStore()
 	tr := newSessionTracker(store)
-	entry := sessionTool(t, SessionTools(store, tr, "test-gw", Message{ChannelID: "chat-1"}), "session_list")
+	entry := sessionTool(t, SessionTools(store, tr, "test-gw", inbound("chat-1", "").Message), "session_list")
 
 	now := time.Now()
 	seedSessionAt(store, "sess-1", "one", now.Add(-3*time.Hour))
@@ -80,7 +81,7 @@ func TestSessionToolListReturnsSessions(t *testing.T) {
 func TestSessionToolListRespectsLimit(t *testing.T) {
 	store := newFakeSessionStore()
 	tr := newSessionTracker(store)
-	entry := sessionTool(t, SessionTools(store, tr, "test-gw", Message{ChannelID: "chat-1"}), "session_list")
+	entry := sessionTool(t, SessionTools(store, tr, "test-gw", inbound("chat-1", "").Message), "session_list")
 
 	now := time.Now()
 	for i := range 5 {
@@ -110,8 +111,8 @@ func TestSessionToolListRespectsLimit(t *testing.T) {
 func TestSessionToolResumeSwitchesActive(t *testing.T) {
 	store := newFakeSessionStore()
 	tr := newSessionTracker(store)
-	msg := Message{ChannelID: "chat-1", ThreadID: "thread-9"}
-	entry := sessionTool(t, SessionTools(store, tr, "test-gw", msg), "session_resume")
+	msg := Inbound{Message: messaging.Message{ConversationID: messaging.ConversationID{ChannelID: "chat-1", ThreadID: "thread-9"}, Role: messaging.RoleUser}}
+	entry := sessionTool(t, SessionTools(store, tr, "test-gw", msg.Message), "session_resume")
 
 	target := "resume-target"
 	seedSessionAt(store, target, "target session", time.Now())
@@ -138,7 +139,7 @@ func TestSessionToolResumeSwitchesActive(t *testing.T) {
 func TestSessionToolResumeRejectsUnknown(t *testing.T) {
 	store := newFakeSessionStore()
 	tr := newSessionTracker(store)
-	entry := sessionTool(t, SessionTools(store, tr, "test-gw", Message{ChannelID: "chat-1"}), "session_resume")
+	entry := sessionTool(t, SessionTools(store, tr, "test-gw", inbound("chat-1", "").Message), "session_resume")
 
 	_, err := entry.Handler(context.Background(), map[string]any{"session_id": "does-not-exist"})
 	if err == nil {
@@ -152,7 +153,7 @@ func TestSessionToolResumeRejectsUnknown(t *testing.T) {
 func TestSessionToolTitleSetsTitle(t *testing.T) {
 	store := newFakeSessionStore()
 	tr := newSessionTracker(store)
-	entry := sessionTool(t, SessionTools(store, tr, "test-gw", Message{ChannelID: "chat-1"}), "session_title")
+	entry := sessionTool(t, SessionTools(store, tr, "test-gw", inbound("chat-1", "").Message), "session_title")
 
 	target := "title-target"
 	seedSessionAt(store, target, "old title", time.Now())
@@ -179,7 +180,7 @@ func TestSessionToolTitleSetsTitle(t *testing.T) {
 func TestSessionToolTitleReportsPrevious(t *testing.T) {
 	store := newFakeSessionStore()
 	tr := newSessionTracker(store)
-	entry := sessionTool(t, SessionTools(store, tr, "test-gw", Message{ChannelID: "chat-1"}), "session_title")
+	entry := sessionTool(t, SessionTools(store, tr, "test-gw", inbound("chat-1", "").Message), "session_title")
 
 	target := "title-prev"
 	seedSessionAt(store, target, "before", time.Now())
@@ -206,7 +207,7 @@ func TestSessionToolTitleReportsPrevious(t *testing.T) {
 func TestSessionToolDeleteRemovesSession(t *testing.T) {
 	store := newFakeSessionStore()
 	tr := newSessionTracker(store)
-	entry := sessionTool(t, SessionTools(store, tr, "test-gw", Message{ChannelID: "chat-1"}), "session_delete")
+	entry := sessionTool(t, SessionTools(store, tr, "test-gw", inbound("chat-1", "").Message), "session_delete")
 
 	target := "delete-target"
 	seedSessionAt(store, target, "doomed", time.Now())
@@ -235,7 +236,7 @@ func TestSessionToolDeleteRemovesSession(t *testing.T) {
 func TestSessionToolDeleteClearsTracker(t *testing.T) {
 	store := newFakeSessionStore()
 	tr := newSessionTracker(store)
-	entry := sessionTool(t, SessionTools(store, tr, "test-gw", Message{ChannelID: "chat-1"}), "session_delete")
+	entry := sessionTool(t, SessionTools(store, tr, "test-gw", inbound("chat-1", "").Message), "session_delete")
 
 	target := "delete-active"
 	seedSessionAt(store, target, "active", time.Now())
@@ -257,7 +258,7 @@ func TestSessionToolDeleteClearsTracker(t *testing.T) {
 func TestSessionToolClassifications(t *testing.T) {
 	store := newFakeSessionStore()
 	tr := newSessionTracker(store)
-	entries := SessionTools(store, tr, "test-gw", Message{ChannelID: "chat-1"})
+	entries := SessionTools(store, tr, "test-gw", inbound("chat-1", "").Message)
 	if len(entries) != 4 {
 		t.Fatalf("got %d tools, want 4", len(entries))
 	}
@@ -293,7 +294,7 @@ func TestSessionToolClassifications(t *testing.T) {
 }
 
 func TestSessionToolNilStoreOmitsTools(t *testing.T) {
-	if entries := SessionTools(nil, nil, "test-gw", Message{ChannelID: "chat-1"}); len(entries) != 0 {
+	if entries := SessionTools(nil, nil, "test-gw", inbound("chat-1", "").Message); len(entries) != 0 {
 		t.Errorf("SessionTools(nil, ...) = %d entries, want 0", len(entries))
 	}
 }
@@ -304,7 +305,7 @@ func TestSessionToolNilStoreOmitsTools(t *testing.T) {
 // fails.
 func TestSessionToolNilTrackerOmitsTrackerTools(t *testing.T) {
 	store := newFakeSessionStore()
-	entries := SessionTools(store, nil, "test-gw", Message{ChannelID: "chat-1"})
+	entries := SessionTools(store, nil, "test-gw", inbound("chat-1", "").Message)
 	var names []string
 	for _, e := range entries {
 		names = append(names, e.Name)

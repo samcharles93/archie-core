@@ -9,16 +9,17 @@ import (
 	"google.golang.org/grpc"
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/gateway/v1"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
 var _ gateway.ChatContract = (*Client)(nil)
 
-// Client implements gateway.ChatContract over the chat service. Session
-// history crosses in its channel-facing shape (the proto is unchanged by
-// the messaging migration); StoreClient serves the SessionStore view over
-// the same RPCs.
+// Client implements gateway.ChatContract over the chat service. The proto
+// is unchanged by the messaging migration, so history crosses without its
+// role and is re-addressed from the owning session on arrival; StoreClient
+// serves the SessionStore view over the same RPCs.
 type Client struct{ client pb.ChatServiceClient }
 
 func NewClient(conn grpc.ClientConnInterface) *Client {
@@ -41,12 +42,12 @@ func (c *Client) GetSession(ctx context.Context, id string) (gateway.SessionCont
 	return sessionValue(v.Session), v.Found, nil
 }
 
-func (c *Client) RecentMessages(ctx context.Context, id string, n int) ([]gateway.Message, error) {
+func (c *Client) RecentMessages(ctx context.Context, id string, n int) ([]messaging.Message, error) {
 	v, err := c.client.RecentMessages(ctx, &pb.RecentMessagesRequest{SessionId: id, Limit: int64(n)})
 	if err != nil {
 		return nil, err
 	}
-	return mapValues(v.Messages, messageValue), nil
+	return addressRecords(ctx, c.client, id, v.Messages)
 }
 
 func (c *Client) RecentTurns(ctx context.Context, id string, n int) ([]gateway.TurnRecord, error) {
@@ -57,8 +58,8 @@ func (c *Client) RecentTurns(ctx context.Context, id string, n int) ([]gateway.T
 	return mapValues(v.Turns, turnValue), nil
 }
 
-func (c *Client) Route(ctx context.Context, msg gateway.Message) (gateway.ChatReply, error) {
-	v, err := c.client.Route(ctx, &pb.RouteRequest{Message: messageProto(msg)})
+func (c *Client) Route(ctx context.Context, in gateway.Inbound) (gateway.ChatReply, error) {
+	v, err := c.client.Route(ctx, &pb.RouteRequest{Message: inboundProto(in)})
 	if err != nil {
 		return gateway.ChatReply{}, err
 	}
@@ -89,8 +90,8 @@ func (c *Client) ApplyTaskAction(ctx context.Context, identity string, taskID in
 	return gateway.TaskActionResult{TaskID: v.TaskId, Action: v.Action, Message: v.Message}, nil
 }
 
-func (c *Client) Stream(ctx context.Context, msg gateway.Message) (<-chan gateway.ChatEvent, error) {
-	stream, err := c.client.Stream(ctx, &pb.StreamRequest{Message: messageProto(msg)})
+func (c *Client) Stream(ctx context.Context, in gateway.Inbound) (<-chan gateway.ChatEvent, error) {
+	stream, err := c.client.Stream(ctx, &pb.StreamRequest{Message: inboundProto(in)})
 	if err != nil {
 		return nil, err
 	}

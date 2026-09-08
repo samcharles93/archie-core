@@ -267,19 +267,12 @@ func sessionTrackerKey(channelID, threadID string) string {
 // ResolveSessionKey resolves or creates a session for a message and
 // returns the session ID. This is the entry point the LLM responder
 // in main.go should call instead of its inline sessionKey helper.
-func (r *Router) ResolveSessionKey(ctx context.Context, msg Message) (string, error) {
+func (r *Router) ResolveSessionKey(ctx context.Context, in Inbound) (string, error) {
+	conv := in.Message.ConversationID
 	if r.sessionTracker == nil {
-		return sessionKeyFromMsg(msg), nil
+		return sessionKeyFromFields(conv.ChannelID, conv.ThreadID), nil
 	}
-	return r.sessionTracker.resolve(ctx, r.gatewayName, r.Identity, msg.ChannelID, msg.ThreadID)
-}
-
-// sessionKeyFromMsg is the fallback when no session tracker is configured.
-func sessionKeyFromMsg(msg Message) string {
-	if msg.ThreadID != "" {
-		return msg.ChannelID + ":" + msg.ThreadID
-	}
-	return msg.ChannelID
+	return r.sessionTracker.resolve(ctx, r.gatewayName, r.Identity, conv.ChannelID, conv.ThreadID)
 }
 
 // ── Router session command handlers ────────────────────────────────────────
@@ -291,7 +284,7 @@ func (r *Router) handleStart() (string, error) {
 
 // handleNew creates a fresh session for the current channel+thread,
 // optionally setting a title.
-func (r *Router) handleNew(ctx context.Context, msg Message, rest string) (string, error) {
+func (r *Router) handleNew(ctx context.Context, msg messaging.Message, rest string) (string, error) {
 	if r.sessionTracker == nil {
 		return "Session management is not configured.", nil
 	}
@@ -305,8 +298,8 @@ func (r *Router) handleNew(ctx context.Context, msg Message, rest string) (strin
 		Source: SessionSource{
 			Platform:  r.gatewayName,
 			BotUser:   r.Identity,
-			ChannelID: msg.ChannelID,
-			ThreadID:  msg.ThreadID,
+			ChannelID: msg.ConversationID.ChannelID,
+			ThreadID:  msg.ConversationID.ThreadID,
 		},
 		Title:        title,
 		CreatedAt:    now,
@@ -315,7 +308,7 @@ func (r *Router) handleNew(ctx context.Context, msg Message, rest string) (strin
 	if err := r.sessionTracker.sessions.Save(ctx, sc); err != nil {
 		return "", fmt.Errorf("create session: %w", err)
 	}
-	r.sessionTracker.setActive(msg.ChannelID, msg.ThreadID, id)
+	r.sessionTracker.setActive(msg.ConversationID.ChannelID, msg.ConversationID.ThreadID, id)
 
 	if title != "" {
 		return fmt.Sprintf("New session created: %s (%s)", title, shortSessionID(id)), nil
@@ -326,14 +319,14 @@ func (r *Router) handleNew(ctx context.Context, msg Message, rest string) (strin
 // handleTopic manages topic/session switching for threaded conversations.
 // "off" disables topic routing (reverts to flat), "help" shows info,
 // and a session-id switches to that session.
-func (r *Router) handleTopic(ctx context.Context, msg Message, rest string) (string, error) {
+func (r *Router) handleTopic(ctx context.Context, msg messaging.Message, rest string) (string, error) {
 	if r.sessionTracker == nil {
 		return "Session management is not configured.", nil
 	}
 
 	switch rest {
 	case "off":
-		r.sessionTracker.flattenTopic(msg.ChannelID, msg.ThreadID)
+		r.sessionTracker.flattenTopic(msg.ConversationID.ChannelID, msg.ConversationID.ThreadID)
 		return "Topic routing disabled. Messages will use the General topic.", nil
 	case "help":
 		return topicHelpText(), nil
@@ -351,9 +344,9 @@ func topicHelpText() string {
 		"  <session-id> — switch to a session by the ID shown in /topic"
 }
 
-func (r *Router) topicListSessions(ctx context.Context, msg Message) (string, error) {
-	active := r.sessionTracker.getActive(msg.ChannelID, msg.ThreadID)
-	sessions, err := r.sessionTracker.sessions.GetByChannel(ctx, r.gatewayName, msg.ChannelID)
+func (r *Router) topicListSessions(ctx context.Context, msg messaging.Message) (string, error) {
+	active := r.sessionTracker.getActive(msg.ConversationID.ChannelID, msg.ConversationID.ThreadID)
+	sessions, err := r.sessionTracker.sessions.GetByChannel(ctx, r.gatewayName, msg.ConversationID.ChannelID)
 	if err != nil {
 		return "", fmt.Errorf("list sessions: %w", err)
 	}
@@ -374,8 +367,8 @@ func (r *Router) topicListSessions(ctx context.Context, msg Message) (string, er
 	return b.String(), nil
 }
 
-func (r *Router) topicSwitchSession(ctx context.Context, msg Message, rest string) (string, error) {
-	sessions, err := r.sessionTracker.sessions.GetByChannel(ctx, r.gatewayName, msg.ChannelID)
+func (r *Router) topicSwitchSession(ctx context.Context, msg messaging.Message, rest string) (string, error) {
+	sessions, err := r.sessionTracker.sessions.GetByChannel(ctx, r.gatewayName, msg.ConversationID.ChannelID)
 	if err != nil {
 		return "", fmt.Errorf("list sessions: %w", err)
 	}
@@ -384,7 +377,7 @@ func (r *Router) topicSwitchSession(ctx context.Context, msg Message, rest strin
 		return fmt.Sprintf("Multiple sessions match %q. Use more of the session ID.", rest), nil
 	}
 	if match != nil {
-		r.sessionTracker.setActive(msg.ChannelID, msg.ThreadID, match.SessionID)
+		r.sessionTracker.setActive(msg.ConversationID.ChannelID, msg.ConversationID.ThreadID, match.SessionID)
 		return fmt.Sprintf("Switched to session %s: %s",
 			shortSessionID(match.SessionID), sessionDisplayTitle(*match)), nil
 	}
@@ -393,12 +386,12 @@ func (r *Router) topicSwitchSession(ctx context.Context, msg Message, rest strin
 
 // handleRetry removes the last assistant message from history and replays
 // the last user message through the LLM.
-func (r *Router) handleRetry(ctx context.Context, msg Message) (string, error) {
+func (r *Router) handleRetry(ctx context.Context, msg messaging.Message) (string, error) {
 	if r.sessionTracker == nil {
 		return "Session management is not configured.", nil
 	}
 
-	sessionID := r.sessionTracker.getActive(msg.ChannelID, msg.ThreadID)
+	sessionID := r.sessionTracker.getActive(msg.ConversationID.ChannelID, msg.ConversationID.ThreadID)
 	if sessionID == "" {
 		return "No active session. Send a message first.", nil
 	}
@@ -424,29 +417,29 @@ func (r *Router) handleRetry(ctx context.Context, msg Message) (string, error) {
 	if r.LLM == nil {
 		return "LLM is not configured. The last response has been removed; send another message to continue.", nil
 	}
-	// Replay the stored text, but route it with the live message's
-	// addressing. The gateway view of stored history carries no channel
-	// or thread -- a session already is one -- so replaying the stored
-	// value verbatim would resolve to an empty session key and strand
-	// the reply.
-	lastUserMsg := FromStoredMessage(msgs[0])
-	lastUserMsg.ChannelID = msg.ChannelID
-	lastUserMsg.ThreadID = msg.ThreadID
-	reply, err := r.LLM(ctx, lastUserMsg)
+	// Replay the stored record, but route it with the live message's
+	// addressing. Stored history is read back with the conversation
+	// address of the session that holds it, which for a replay must be
+	// the chat the /retry was typed in. A replay carries no page: the
+	// operator's route is transport context of the message they sent,
+	// and this message is not one they just sent.
+	replay := msgs[0]
+	replay.ConversationID = msg.ConversationID
+	reply, err := r.LLM(ctx, Inbound{Message: replay})
 	if err == nil {
-		r.maybeAutoTitle(ctx, lastUserMsg)
+		r.maybeAutoTitle(ctx, replay)
 	}
 	return reply, err
 }
 
 // handleUndo removes the last N messages (default 1) from the session
 // history.
-func (r *Router) handleUndo(ctx context.Context, msg Message, rest string) (string, error) {
+func (r *Router) handleUndo(ctx context.Context, msg messaging.Message, rest string) (string, error) {
 	if r.sessionTracker == nil {
 		return "Session management is not configured.", nil
 	}
 
-	sessionID := r.sessionTracker.getActive(msg.ChannelID, msg.ThreadID)
+	sessionID := r.sessionTracker.getActive(msg.ConversationID.ChannelID, msg.ConversationID.ThreadID)
 	if sessionID == "" {
 		return "No active session. Send a message first.", nil
 	}
@@ -475,12 +468,12 @@ func (r *Router) handleUndo(ctx context.Context, msg Message, rest string) (stri
 }
 
 // handleTitle sets a display title on the current session.
-func (r *Router) handleTitle(ctx context.Context, msg Message, rest string) (string, error) {
+func (r *Router) handleTitle(ctx context.Context, msg messaging.Message, rest string) (string, error) {
 	if r.sessionTracker == nil {
 		return "Session management is not configured.", nil
 	}
 
-	sessionID := r.sessionTracker.getActive(msg.ChannelID, msg.ThreadID)
+	sessionID := r.sessionTracker.getActive(msg.ConversationID.ChannelID, msg.ConversationID.ThreadID)
 	if sessionID == "" {
 		return "No active session. Send a message first.", nil
 	}
@@ -514,13 +507,13 @@ func (r *Router) handleTitle(ctx context.Context, msg Message, rest string) (str
 
 // handleBranch creates a new child session that inherits the current
 // session's history. The new session becomes the active session.
-func (r *Router) handleBranch(ctx context.Context, msg Message, rest string) (string, error) {
+func (r *Router) handleBranch(ctx context.Context, msg messaging.Message, rest string) (string, error) {
 	if r.sessionTracker == nil {
 		return "Session management is not configured.", nil
 	}
 
-	channelID := msg.ChannelID
-	threadID := msg.ThreadID
+	channelID := msg.ConversationID.ChannelID
+	threadID := msg.ConversationID.ThreadID
 	parentID := r.sessionTracker.getActive(channelID, threadID)
 	if parentID == "" {
 		// Nothing to branch from. Telegram never reaches this -- submitTurn
@@ -600,12 +593,12 @@ func (r *Router) handleBranch(ctx context.Context, msg Message, rest string) (st
 
 // handleCompress applies context compression to the current session's
 // history. Sub-commands: here [N], focus <topic>, --preview, --dry-run.
-func (r *Router) handleCompress(ctx context.Context, msg Message, rest string) (string, error) {
+func (r *Router) handleCompress(ctx context.Context, msg messaging.Message, rest string) (string, error) {
 	if r.sessionTracker == nil {
 		return "Session management is not configured.", nil
 	}
 
-	sessionID := r.sessionTracker.getActive(msg.ChannelID, msg.ThreadID)
+	sessionID := r.sessionTracker.getActive(msg.ConversationID.ChannelID, msg.ConversationID.ThreadID)
 	if sessionID == "" {
 		return "No active session. Send a message first.", nil
 	}

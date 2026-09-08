@@ -13,6 +13,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/gateway"
 )
 
@@ -425,12 +426,12 @@ func (g *Gateway) stopCurrentTurn(ctx context.Context, b *bot.Bot, msg *models.M
 	// turns is only built by launch, so a gateway that has never started
 	// simply has nothing to stop. Report that rather than failing.
 	if g.turns != nil && router != nil {
-		session, err := router.ResolveSessionKey(ctx, gateway.Message{
-			ChannelID: fmt.Sprintf("%d", msg.Chat.ID),
-			ThreadID:  threadIDString(msg.MessageThreadID),
-			From:      msg.From.Username,
-			Text:      msg.Text,
-		})
+		session, err := router.ResolveSessionKey(ctx, gateway.Inbound{Message: messaging.Message{
+			ConversationID: conversationID(msg),
+			Sender:         msg.From.Username,
+			Role:           messaging.RoleUser,
+			Text:           msg.Text,
+		}})
 		if err != nil {
 			g.log.Error("resolve session for stop", "error", err)
 			g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, "❌ Could not resolve this conversation's session.")

@@ -20,53 +20,28 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
-// Message is an inbound message from a gateway connection.
-type Message struct {
-	// MessageID is the canonical, application-generated identifier for
-	// this message. It is assigned by the message store, stable, and the
-	// handle branch points and related records correlate on.
-	//
-	// Populated on read, and HONOURED on write: saving a message that
-	// already carries one keeps that identity, which is what lets a
-	// read-modify-write of a history preserve identities rather than
-	// minting new ones. A caller copying messages into a different session
-	// must therefore clear it, or two sessions end up claiming one
-	// identity -- see handleBranch.
-	//
-	// Leave it empty for a newly received message: the store derives one,
-	// from SourceID when there is one.
-	MessageID string
-	// SourceID is the channel-native identifier (e.g. a Telegram
-	// message_id). It is external correlation metadata, never the
-	// canonical identity: the store derives a stable MessageID from it so
-	// redelivering an update is idempotent rather than duplicating. Empty
-	// for messages with no upstream identity, which are always appended.
-	SourceID string
-	// ChannelID identifies the conversation within the channel (e.g. a
-	// Telegram chat ID). Replies are sent back to this ID.
-	ChannelID string
-	// ThreadID identifies the topic thread within the conversation, for
-	// platforms that support threading (Telegram supergroup topics,
-	// Slack threads, Discord forum posts). Empty for flat chats.
-	ThreadID string
-	// From identifies the sender (channel-specific: username, user ID).
-	From string
-	// Text is the raw message text, including any leading slash command.
-	Text string
-	// Page is the dashboard route the operator is on when they sent this
-	// message (e.g. "/tasks", "/logs"). It is per-message, not per-session:
-	// the operator navigates freely while a conversation stays open, so the
-	// agent is told where they are right now. Empty for non-web channels,
-	// which have no page context.
+// Inbound is a message arriving from a channel together with the
+// transport context that is not part of the canonical record.
+//
+// Message is the record itself, exactly as it will be persisted. Channels
+// construct it directly: ConversationID addresses the chat (a Telegram
+// chat ID and topic thread, an email recipient, a webhook path), Sender is
+// the channel-native attribution, and Role is always messaging.RoleUser --
+// a channel only ever carries what a person said. ID is left empty for a
+// newly received message so the store derives one from SourceID, and
+// honoured when set, which is what lets a read-modify-write of a history
+// keep its identities rather than minting new ones.
+type Inbound struct {
+	Message messaging.Message
+	// Page is the dashboard route the operator is on when they sent
+	// this message. Transport-only: it reaches the system prompt and
+	// is never persisted. Empty for non-web channels.
 	Page string
-	// At is when the message happened in application time and is the sole
-	// ordering key for conversation history. A zero value is stamped with the
-	// current time at save.
-	At time.Time
 }
 
 // Lifecycle receives adapter-owned startup facts. Callbacks are optional.
@@ -108,7 +83,7 @@ type StatusReader interface {
 // nil (not yet wired  --  see abg.13), non-command messages get a static
 // "LLM not configured" response. Gateways call this for any message the
 // router did not handle directly.
-type LLMResponder func(ctx context.Context, msg Message) (string, error)
+type LLMResponder func(ctx context.Context, in Inbound) (string, error)
 
 // LLMStreamResponder is the streaming counterpart of LLMResponder. It
 // reports the turn's progress  --  text fragments and completed tool calls
@@ -120,7 +95,7 @@ type LLMResponder func(ctx context.Context, msg Message) (string, error)
 // Router falls back to the blocking LLMResponder. stream is called from the
 // generating goroutine and must not block for long  --  adapters should
 // throttle their own network writes rather than stall the stream.
-type LLMStreamResponder func(ctx context.Context, msg Message, stream TurnStream) (string, error)
+type LLMStreamResponder func(ctx context.Context, in Inbound, stream TurnStream) (string, error)
 
 // ModelManager provides access to available models and allows switching the
 // active LLM model. The daemon supplies an implementation backed by its
@@ -326,11 +301,11 @@ func (r *Router) SessionTracker() *sessionTracker {
 
 // Route dispatches msg and returns the reply. Gateway-local commands
 // are handled directly; everything else goes to the LLM responder.
-func (r *Router) Route(ctx context.Context, msg Message) (string, error) {
-	text := strings.TrimSpace(msg.Text)
+func (r *Router) Route(ctx context.Context, in Inbound) (string, error) {
+	text := strings.TrimSpace(in.Message.Text)
 	cmd, _ := parseCmd(text, r.gatewayName)
 
-	if reply, handled, err := r.dispatchLocal(ctx, msg, text, cmd); handled {
+	if reply, handled, err := r.dispatchLocal(ctx, in.Message, text, cmd); handled {
 		return reply, err
 	}
 
@@ -340,16 +315,16 @@ func (r *Router) Route(ctx context.Context, msg Message) (string, error) {
 	if r.LLM == nil {
 		return "I'm running but LLM processing isn't wired yet. Try /status.", nil
 	}
-	reply, err := r.LLM(ctx, msg)
+	reply, err := r.LLM(ctx, in)
 	if err == nil {
-		r.maybeAutoTitle(ctx, msg)
+		r.maybeAutoTitle(ctx, in.Message)
 	}
 	return reply, err
 }
 
 // dispatchLocal handles recognized local commands. Returns (reply,
 // true) when the command was recognized and handled.
-func (r *Router) dispatchLocal(ctx context.Context, msg Message, text, cmd string) (string, bool, error) {
+func (r *Router) dispatchLocal(ctx context.Context, msg messaging.Message, text, cmd string) (string, bool, error) {
 	rest := restAfter(text, cmd, r.gatewayName)
 
 	switch cmd {
@@ -391,7 +366,7 @@ func (r *Router) dispatchLocal(ctx context.Context, msg Message, text, cmd strin
 // dispatchLocalMisc handles the remaining recognized local commands not
 // covered by dispatchLocal's first switch. Split out to keep cyclomatic
 // complexity down.
-func (r *Router) dispatchLocalMisc(ctx context.Context, msg Message, cmd, rest string) (string, bool, error) {
+func (r *Router) dispatchLocalMisc(ctx context.Context, msg messaging.Message, cmd, rest string) (string, bool, error) {
 	switch cmd {
 	case "/sessions":
 		reply, err := r.handleSessions(ctx, msg)
@@ -468,7 +443,7 @@ func (r *Router) handleRestartAdapter(ctx context.Context) string {
 // (/new, /topic, /retry, /undo, /title, /branch, /compress and their
 // aliases). Split out from dispatchLocal to keep cyclomatic complexity
 // down.
-func (r *Router) dispatchSessionCommand(ctx context.Context, msg Message, cmd, rest string) (string, bool, error) {
+func (r *Router) dispatchSessionCommand(ctx context.Context, msg messaging.Message, cmd, rest string) (string, bool, error) {
 	switch cmd {
 	case "/new", "/reset":
 		reply, err := r.handleNew(ctx, msg, rest)
@@ -509,17 +484,17 @@ func (r *Router) dispatchSessionCommand(ctx context.Context, msg Message, cmd, r
 // configured, RouteStream is exactly Route  --  callers get the whole reply
 // at the end and simply never see a delta, so an adapter can always call
 // RouteStream without checking first.
-func (r *Router) RouteStream(ctx context.Context, msg Message, stream TurnStream) (string, error) {
+func (r *Router) RouteStream(ctx context.Context, in Inbound, stream TurnStream) (string, error) {
 	if r.LLMStream == nil || stream == nil {
-		return r.Route(ctx, msg)
+		return r.Route(ctx, in)
 	}
-	cmd, _ := parseCmd(strings.TrimSpace(msg.Text), r.gatewayName)
+	cmd, _ := parseCmd(strings.TrimSpace(in.Message.Text), r.gatewayName)
 	if isLocalCommand(cmd) || strings.HasPrefix(cmd, "/") {
-		return r.Route(ctx, msg)
+		return r.Route(ctx, in)
 	}
-	reply, err := r.LLMStream(ctx, msg, stream)
+	reply, err := r.LLMStream(ctx, in, stream)
 	if err == nil {
-		r.maybeAutoTitle(ctx, msg)
+		r.maybeAutoTitle(ctx, in.Message)
 	}
 	return reply, err
 }
@@ -1048,7 +1023,7 @@ func (r *Router) handleProfile() (string, error) {
 	return strings.TrimSpace(b.String()), nil
 }
 
-func (r *Router) handleSessions(ctx context.Context, msg Message) (string, error) {
+func (r *Router) handleSessions(ctx context.Context, msg messaging.Message) (string, error) {
 	if r.Sessions == nil {
 		return "Session management is not configured.", nil
 	}
@@ -1058,7 +1033,7 @@ func (r *Router) handleSessions(ctx context.Context, msg Message) (string, error
 	}
 	active := ""
 	if r.sessionTracker != nil {
-		active = r.sessionTracker.getActive(msg.ChannelID, msg.ThreadID)
+		active = r.sessionTracker.getActive(msg.ConversationID.ChannelID, msg.ConversationID.ThreadID)
 	}
 	return renderSessionList(sessions, active, time.Now()), nil
 }
@@ -1172,7 +1147,7 @@ func relativeAge(t, now time.Time) string {
 
 // handleResume switches the active session for the current channel+thread
 // to the session whose ID matches or is uniquely prefixed by arg.
-func (r *Router) handleResume(ctx context.Context, msg Message, arg string) (string, error) {
+func (r *Router) handleResume(ctx context.Context, msg messaging.Message, arg string) (string, error) {
 	arg = strings.TrimSpace(arg)
 	if arg == "" {
 		return "Usage: /resume <session-id>", nil
@@ -1194,9 +1169,9 @@ func (r *Router) handleResume(ctx context.Context, msg Message, arg string) (str
 	return r.resumeSession(msg, *match), nil
 }
 
-func (r *Router) resumeSession(msg Message, s SessionContext) string {
+func (r *Router) resumeSession(msg messaging.Message, s SessionContext) string {
 	if r.sessionTracker != nil {
-		r.sessionTracker.setActive(msg.ChannelID, msg.ThreadID, s.SessionID)
+		r.sessionTracker.setActive(msg.ConversationID.ChannelID, msg.ConversationID.ThreadID, s.SessionID)
 	}
 	return fmt.Sprintf("Resumed session %s.", s.SessionID)
 }
