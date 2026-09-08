@@ -24,38 +24,57 @@ func timeValue(t *timestamppb.Timestamp) time.Time {
 	return t.AsTime()
 }
 
-func messageProto(v gateway.Message) *pb.Message {
-	return &pb.Message{
-		MessageId: v.MessageID,
-		SourceId:  v.SourceID,
-		ChannelId: v.ChannelID,
-		ThreadId:  v.ThreadID,
-		From:      v.From,
-		Text:      v.Text,
-		Page:      v.Page, At: timestamp(v.At),
-	}
-}
-
 // storedProto renders a canonical record in its wire shape. The role stays
-// store-side: each side derives it from the owning session (see
-// gateway.ToStoredMessage), so the wire carries no role.
+// off the wire: each side derives it from the owning session's bot identity
+// (see gateway.RoleForSender), so pb.Message needs no role field.
 func storedProto(m messaging.Message) *pb.Message {
-	return messageProto(gateway.FromStoredMessage(m))
+	return &pb.Message{
+		MessageId: string(m.ID),
+		SourceId:  m.SourceID,
+		ChannelId: m.ConversationID.ChannelID,
+		ThreadId:  m.ConversationID.ThreadID,
+		From:      m.Sender,
+		Text:      m.Text,
+		At:        timestamp(m.At),
+	}
 }
 
-func messageValue(v *pb.Message) gateway.Message {
+// storedValue is storedProto's inverse. Role is left unset: only a caller
+// that knows the owning session can derive it (see addressRecords).
+func storedValue(v *pb.Message) messaging.Message {
 	if v == nil {
-		return gateway.Message{}
+		return messaging.Message{}
 	}
-	return gateway.Message{
-		MessageID: v.MessageId,
-		SourceID:  v.SourceId,
-		ChannelID: v.ChannelId,
-		ThreadID:  v.ThreadId,
-		From:      v.From,
-		Text:      v.Text,
-		Page:      v.Page, At: timeValue(v.At),
+	return messaging.Message{
+		ID:             messaging.MessageID(v.MessageId),
+		SourceID:       v.SourceId,
+		ConversationID: messaging.ConversationID{ChannelID: v.ChannelId, ThreadID: v.ThreadId},
+		Sender:         v.From,
+		Text:           v.Text,
+		At:             timeValue(v.At),
 	}
+}
+
+// inboundProto renders a channel message and its transport context in wire
+// shape. Page rides along; the record's role does not, for the reason
+// storedProto gives.
+func inboundProto(v gateway.Inbound) *pb.Message {
+	m := storedProto(v.Message)
+	m.Page = v.Page
+	return m
+}
+
+// inboundValue reconstructs a channel message from the wire. Role is
+// RoleUser without consulting the session: this is a message a channel
+// frontend is delivering on a person's behalf, which is the only kind of
+// message Route and Stream accept.
+func inboundValue(v *pb.Message) gateway.Inbound {
+	if v == nil {
+		return gateway.Inbound{}
+	}
+	msg := storedValue(v)
+	msg.Role = messaging.RoleUser
+	return gateway.Inbound{Message: msg, Page: v.Page}
 }
 
 func toolProto(v gateway.ToolCallEvent) *pb.ToolCall {

@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/samcharles93/archie-core/internal/domain/health"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
@@ -39,7 +40,7 @@ func (f *fakeChat) GetSession(context.Context, string) (gateway.SessionContext, 
 	return gateway.SessionContext{}, false, nil
 }
 
-func (f *fakeChat) RecentMessages(context.Context, string, int) ([]gateway.Message, error) {
+func (f *fakeChat) RecentMessages(context.Context, string, int) ([]messaging.Message, error) {
 	return nil, nil
 }
 
@@ -47,11 +48,11 @@ func (f *fakeChat) RecentTurns(context.Context, string, int) ([]gateway.TurnReco
 	return nil, nil
 }
 
-func (f *fakeChat) Route(context.Context, gateway.Message) (gateway.ChatReply, error) {
+func (f *fakeChat) Route(context.Context, gateway.Inbound) (gateway.ChatReply, error) {
 	return gateway.ChatReply{}, nil
 }
 
-func (f *fakeChat) Stream(context.Context, gateway.Message) (<-chan gateway.ChatEvent, error) {
+func (f *fakeChat) Stream(context.Context, gateway.Inbound) (<-chan gateway.ChatEvent, error) {
 	ch := make(chan gateway.ChatEvent)
 	close(ch)
 	return ch, nil

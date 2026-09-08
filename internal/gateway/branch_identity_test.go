@@ -46,7 +46,7 @@ func TestBranchGivesInheritedMessagesTheirOwnIdentity(t *testing.T) {
 				t.Fatalf("RecentMessages(parent): %v", err)
 			}
 
-			reply, err := r.Route(ctx, Message{Text: "/branch side-quest", ChannelID: "chat-1"})
+			reply, err := r.Route(ctx, inbound("chat-1", "/branch side-quest"))
 			if err != nil {
 				t.Fatalf("Route(/branch): %v", err)
 			}

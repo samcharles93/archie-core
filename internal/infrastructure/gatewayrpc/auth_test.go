@@ -24,7 +24,7 @@ func (f *authChat) Snapshot(context.Context) (gateway.ChatSnapshot, error) {
 	return f.snapshot, nil
 }
 
-func (f *authChat) Stream(context.Context, gateway.Message) (<-chan gateway.ChatEvent, error) {
+func (f *authChat) Stream(context.Context, gateway.Inbound) (<-chan gateway.ChatEvent, error) {
 	ch := make(chan gateway.ChatEvent)
 	close(ch)
 	return ch, nil
@@ -63,7 +63,7 @@ func TestGatewayTokenRoundTrip(t *testing.T) {
 	if _, err := client.Snapshot(t.Context()); err != nil {
 		t.Fatalf("Snapshot with the correct token: %v", err)
 	}
-	events, err := client.Stream(t.Context(), gateway.Message{})
+	events, err := client.Stream(t.Context(), gateway.Inbound{})
 	if err != nil {
 		t.Fatalf("Stream with the correct token: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestGatewayStreamWithoutTokenIsRejected(t *testing.T) {
 		t.Fatalf("Dial to a loopback target without a token: %v", err)
 	}
 	defer cleanup()
-	events, err := client.Stream(t.Context(), gateway.Message{})
+	events, err := client.Stream(t.Context(), gateway.Inbound{})
 	if err != nil {
 		t.Fatalf("Stream without a token: %v", err)
 	}

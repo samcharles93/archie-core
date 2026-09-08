@@ -22,6 +22,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/daemon"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
@@ -826,8 +827,8 @@ func TestChatTaskCommandsEndToEnd(t *testing.T) {
 	router := gateway.NewRouter(st, nil, "test")
 	configureTaskCommands(router, creator, controller, chatTaskListerAdapter{tasks: st.Tasks}, defaultIdentity)
 
-	reply, err := router.Route(ctx, gateway.Message{
-		Text: "/spawn identity=reviewer workflow=feasibility Design native tasks",
+	reply, err := router.Route(ctx, gateway.Inbound{
+		Message: messaging.Message{Role: messaging.RoleUser, Text: "/spawn identity=reviewer workflow=feasibility Design native tasks"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -853,7 +854,7 @@ func TestChatTaskCommandsEndToEnd(t *testing.T) {
 	if err != nil || task == nil || task.Status != workflow.StatusWaitingHuman {
 		t.Fatalf("waiting task = (%+v, %v)", task, err)
 	}
-	reply, err = router.Route(ctx, gateway.Message{Text: fmt.Sprintf("/approve identity=reviewer %d", taskID)})
+	reply, err = router.Route(ctx, gateway.Inbound{Message: messaging.Message{Role: messaging.RoleUser, Text: fmt.Sprintf("/approve identity=reviewer %d", taskID)}})
 	if err != nil || !strings.Contains(reply, "approved") {
 		t.Fatalf("approve = (%q, %v)", reply, err)
 	}
@@ -862,7 +863,7 @@ func TestChatTaskCommandsEndToEnd(t *testing.T) {
 		t.Fatalf("approved task = (%+v, %v)", task, err)
 	}
 
-	reply, err = router.Route(ctx, gateway.Message{Text: "/spawn identity=reviewer Cancel me"})
+	reply, err = router.Route(ctx, gateway.Inbound{Message: messaging.Message{Role: messaging.RoleUser, Text: "/spawn identity=reviewer Cancel me"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -870,11 +871,11 @@ func TestChatTaskCommandsEndToEnd(t *testing.T) {
 	if _, err := fmt.Sscanf(reply, "Created task %d:", &cancelID); err != nil {
 		t.Fatalf("cancel spawn reply = %q, parse error = %v", reply, err)
 	}
-	reply, err = router.Route(ctx, gateway.Message{Text: fmt.Sprintf("/cancel identity=builder %d", cancelID)})
+	reply, err = router.Route(ctx, gateway.Inbound{Message: messaging.Message{Role: messaging.RoleUser, Text: fmt.Sprintf("/cancel identity=builder %d", cancelID)}})
 	if err != nil || !strings.Contains(reply, "different identity") {
 		t.Fatalf("cross-identity cancel = (%q, %v)", reply, err)
 	}
-	reply, err = router.Route(ctx, gateway.Message{Text: fmt.Sprintf("/cancel identity=reviewer %d", cancelID)})
+	reply, err = router.Route(ctx, gateway.Inbound{Message: messaging.Message{Role: messaging.RoleUser, Text: fmt.Sprintf("/cancel identity=reviewer %d", cancelID)}})
 	if err != nil || !strings.Contains(reply, "cancelled") {
 		t.Fatalf("cancel = (%q, %v)", reply, err)
 	}

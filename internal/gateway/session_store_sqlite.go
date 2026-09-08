@@ -765,9 +765,9 @@ func saveMessageAt(ctx context.Context, ex execer, sessionID string, msg messagi
 			legacyID = compatibleLegacyID
 		}
 	}
-	// An empty Role means "user": the boundary derives assistant explicitly
-	// (see ToStoredMessage), and pre-migration rows are backfilled at open,
-	// so only a hand-built record arrives without one.
+	// An empty Role means "user": producers set RoleAssistant explicitly
+	// (see TurnRunner.generateAndComplete), and pre-migration rows are
+	// backfilled at open, so only a hand-built record arrives without one.
 	role := string(msg.Role)
 	if role == "" {
 		role = string(messaging.RoleUser)

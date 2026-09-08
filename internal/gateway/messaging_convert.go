@@ -4,56 +4,30 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
-// This file is the single boundary between the gateway's channel-facing
-// Message and the canonical messaging.Message persisted by the session
-// store.
+// This file holds the one piece of the old channel-facing Message that
+// outlived it: the role derivation.
 //
-// CURRENT: gateway.Message is built by channel adapters (Telegram, email,
-// webhook, web UI) and carries transport-only routing context (ChannelID,
-// ThreadID, Page) alongside the persisted fields. SessionStore persists the
-// stored subset; see scanMessages, which leaves the transport fields empty
-// on read.
+// messaging.Message is the canonical persisted record and is now also the
+// currency at the channel-facing boundary. Channel adapters build it
+// directly and set Role themselves (always messaging.RoleUser -- a channel
+// carries only what a person said), and the gateway sets
+// messaging.RoleAssistant on the reply it generates, so nothing converts
+// between two shapes of a message in process any more.
 //
-// TARGET (migration-decisions.md section 2): messaging.Message is the
-// canonical persisted record. The store speaks it; channel adapters are
-// migrated onto it one by one (bd label messaging-migration), after which
-// gateway.Message is deleted. Until then, every conversion goes through
-// these two functions -- no caller maps the fields by hand.
-//
-// Role derivation matches the comparisons this package already performs
-// (compressTurnHistory, messagesToCompressed, PriorReply, and the
-// sessioncurator adapter): a message sent by the session's bot identity is
-// the assistant's, anything else is the user's.
+// The wire is the exception. pb.Message carries no role, so both sides of
+// the gRPC contract derive it from the owning session's bot identity
+// instead of adding a field to the proto -- see
+// internal/infrastructure/gatewayrpc. Because both derive from the same
+// session, they agree.
 
-// ToStoredMessage converts a channel-facing message into its canonical
-// stored form. botUser is the session's bot identity. The message's
-// channel/thread address its conversation; Page is transport-only and does
-// not enter the record.
-func ToStoredMessage(msg Message, botUser string) messaging.Message {
-	role := messaging.RoleUser
-	if msg.From == botUser {
-		role = messaging.RoleAssistant
+// RoleForSender reports the role of a message written by sender in a
+// session whose bot identity is botUser. It is the comparison this package
+// already makes elsewhere (compressTurnHistory, messagesToCompressed,
+// PriorReply, and the sessioncurator adapter): a message sent by the
+// session's bot is the assistant's, anything else is the user's.
+func RoleForSender(sender, botUser string) messaging.Role {
+	if sender == botUser {
+		return messaging.RoleAssistant
 	}
-	return messaging.Message{
-		ID:             messaging.MessageID(msg.MessageID),
-		ConversationID: messaging.ConversationID{ChannelID: msg.ChannelID, ThreadID: msg.ThreadID},
-		SourceID:       msg.SourceID,
-		Sender:         msg.From,
-		Role:           role,
-		Text:           msg.Text,
-		At:             msg.At,
-	}
-}
-
-// FromStoredMessage converts a canonical stored record back to the gateway
-// view. The result carries exactly the fields the store persists today:
-// transport-only fields stay empty, as scanMessages leaves them.
-func FromStoredMessage(stored messaging.Message) Message {
-	return Message{
-		MessageID: string(stored.ID),
-		SourceID:  stored.SourceID,
-		From:      stored.Sender,
-		Text:      stored.Text,
-		At:        stored.At,
-	}
+	return messaging.RoleUser
 }

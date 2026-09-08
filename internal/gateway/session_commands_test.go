@@ -189,7 +189,7 @@ func newTestRouter(gatewayName string) *Router {
 
 func TestRouteStart(t *testing.T) {
 	r := newTestRouter("telegram")
-	reply, err := r.Route(context.Background(), Message{Text: "/start"})
+	reply, err := r.Route(context.Background(), inbound("", "/start"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -202,9 +202,9 @@ func TestRouteStart(t *testing.T) {
 
 func TestRouteNewCreatesSession(t *testing.T) {
 	r := newTestRouter("telegram")
-	msg := Message{ChannelID: "chat-1", ThreadID: "", From: "alice"}
+	msg := Inbound{Message: messaging.Message{ConversationID: messaging.ConversationID{ChannelID: "chat-1", ThreadID: ""}, Sender: "alice", Role: messaging.RoleUser}}
 
-	reply, err := r.Route(context.Background(), Message{Text: "/new", ChannelID: "chat-1"})
+	reply, err := r.Route(context.Background(), inbound("chat-1", "/new"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -230,7 +230,7 @@ func TestRouteNewCreatesSession(t *testing.T) {
 func TestRouteNewWithTitle(t *testing.T) {
 	r := newTestRouter("telegram")
 
-	reply, err := r.Route(context.Background(), Message{Text: "/new debugging session", ChannelID: "chat-2"})
+	reply, err := r.Route(context.Background(), inbound("chat-2", "/new debugging session"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -252,14 +252,14 @@ func TestRouteResetAlias(t *testing.T) {
 	r := newTestRouter("telegram")
 
 	// /new creates initial session.
-	_, _ = r.Route(context.Background(), Message{Text: "/new", ChannelID: "chat-3"})
+	_, _ = r.Route(context.Background(), inbound("chat-3", "/new"))
 	oldSession := r.sessionTracker.getActive("chat-3", "")
 	if oldSession == "" {
 		t.Fatal("expected initial session")
 	}
 
 	// /reset creates a new session.
-	reply, err := r.Route(context.Background(), Message{Text: "/reset", ChannelID: "chat-3"})
+	reply, err := r.Route(context.Background(), inbound("chat-3", "/reset"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -275,7 +275,7 @@ func TestRouteResetAlias(t *testing.T) {
 
 func TestRouteNewNotConfigured(t *testing.T) {
 	r := NewRouter(nil, nil, "telegram")
-	reply, err := r.Route(context.Background(), Message{Text: "/new"})
+	reply, err := r.Route(context.Background(), inbound("", "/new"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestRouteNewNotConfigured(t *testing.T) {
 
 func TestRouteTopicHelp(t *testing.T) {
 	r := newTestRouter("telegram")
-	reply, err := r.Route(context.Background(), Message{Text: "/topic help", ChannelID: "chat-4"})
+	reply, err := r.Route(context.Background(), inbound("chat-4", "/topic help"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -301,10 +301,10 @@ func TestRouteTopicListSessions(t *testing.T) {
 	r := newTestRouter("telegram")
 
 	// Create an initial session via /new.
-	_, _ = r.Route(context.Background(), Message{Text: "/new alpha", ChannelID: "chat-5"})
-	_, _ = r.Route(context.Background(), Message{Text: "/new beta", ChannelID: "chat-5", ThreadID: "1"})
+	_, _ = r.Route(context.Background(), inbound("chat-5", "/new alpha"))
+	_, _ = r.Route(context.Background(), Inbound{Message: messaging.Message{ConversationID: messaging.ConversationID{ChannelID: "chat-5", ThreadID: "1"}, Role: messaging.RoleUser, Text: "/new beta"}})
 
-	reply, err := r.Route(context.Background(), Message{Text: "/topic", ChannelID: "chat-5"})
+	reply, err := r.Route(context.Background(), inbound("chat-5", "/topic"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -320,15 +320,15 @@ func TestRouteTopicSwitch(t *testing.T) {
 	r := newTestRouter("telegram")
 
 	// Create two sessions.
-	_, _ = r.Route(context.Background(), Message{Text: "/new first", ChannelID: "chat-6"})
+	_, _ = r.Route(context.Background(), inbound("chat-6", "/new first"))
 	firstID := r.sessionTracker.getActive("chat-6", "")
 
-	_, _ = r.Route(context.Background(), Message{Text: "/new second", ChannelID: "chat-6"})
+	_, _ = r.Route(context.Background(), inbound("chat-6", "/new second"))
 	secondID := r.sessionTracker.getActive("chat-6", "")
 
 	// Switch back to first using prefix.
 	prefix := shortSessionID(firstID)
-	reply, err := r.Route(context.Background(), Message{Text: "/topic " + prefix, ChannelID: "chat-6"})
+	reply, err := r.Route(context.Background(), inbound("chat-6", "/topic "+prefix))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -344,12 +344,12 @@ func TestRouteTopicSwitch(t *testing.T) {
 
 func TestRouteTopicRejectsAmbiguousPrefix(t *testing.T) {
 	r := newTestRouter("telegram")
-	_, _ = r.Route(context.Background(), Message{Text: "/new first", ChannelID: "chat-ambiguous"})
+	_, _ = r.Route(context.Background(), inbound("chat-ambiguous", "/new first"))
 	firstID := r.sessionTracker.getActive("chat-ambiguous", "")
-	_, _ = r.Route(context.Background(), Message{Text: "/new second", ChannelID: "chat-ambiguous"})
+	_, _ = r.Route(context.Background(), inbound("chat-ambiguous", "/new second"))
 	secondID := r.sessionTracker.getActive("chat-ambiguous", "")
 
-	reply, err := r.Route(context.Background(), Message{Text: "/topic " + firstID[:8], ChannelID: "chat-ambiguous"})
+	reply, err := r.Route(context.Background(), inbound("chat-ambiguous", "/topic "+firstID[:8]))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -363,7 +363,7 @@ func TestRouteTopicRejectsAmbiguousPrefix(t *testing.T) {
 
 func TestRouteTopicUnknown(t *testing.T) {
 	r := newTestRouter("telegram")
-	reply, err := r.Route(context.Background(), Message{Text: "/topic nonexist", ChannelID: "chat-7"})
+	reply, err := r.Route(context.Background(), inbound("chat-7", "/topic nonexist"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -376,7 +376,7 @@ func TestRouteTopicUnknown(t *testing.T) {
 
 func TestRouteRetryNoSession(t *testing.T) {
 	r := newTestRouter("telegram")
-	reply, err := r.Route(context.Background(), Message{Text: "/retry", ChannelID: "chat-8"})
+	reply, err := r.Route(context.Background(), inbound("chat-8", "/retry"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -396,8 +396,8 @@ func TestRouteRetryRemovesLastMessage(t *testing.T) {
 		CreatedAt: time.Now(), LastActiveAt: time.Now(),
 	}
 	_ = r.sessionTracker.sessions.Save(context.Background(), sc)
-	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, ToStoredMessage(Message{From: "alice", Text: "hello"}, "archie"))
-	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, ToStoredMessage(Message{From: "archie", Text: "hi there"}, "archie"))
+	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, messaging.Message{Sender: "alice", Role: messaging.RoleUser, Text: "hello"})
+	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, messaging.Message{Sender: "archie", Role: messaging.RoleAssistant, Text: "hi there"})
 	r.sessionTracker.setActive("chat-9", "", sessionID)
 
 	// Verify initial count.
@@ -407,7 +407,7 @@ func TestRouteRetryRemovesLastMessage(t *testing.T) {
 	}
 
 	// Retry.
-	reply, err := r.Route(context.Background(), Message{Text: "/retry", ChannelID: "chat-9"})
+	reply, err := r.Route(context.Background(), inbound("chat-9", "/retry"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -435,12 +435,12 @@ func TestRouteUndoRemovesOne(t *testing.T) {
 		CreatedAt: time.Now(), LastActiveAt: time.Now(),
 	}
 	_ = r.sessionTracker.sessions.Save(context.Background(), sc)
-	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, ToStoredMessage(Message{From: "alice", Text: "msg1"}, "archie"))
-	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, ToStoredMessage(Message{From: "archie", Text: "reply1"}, "archie"))
-	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, ToStoredMessage(Message{From: "alice", Text: "msg2"}, "archie"))
+	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, messaging.Message{Sender: "alice", Role: messaging.RoleUser, Text: "msg1"})
+	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, messaging.Message{Sender: "archie", Role: messaging.RoleAssistant, Text: "reply1"})
+	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, messaging.Message{Sender: "alice", Role: messaging.RoleUser, Text: "msg2"})
 	r.sessionTracker.setActive("chat-10", "", sessionID)
 
-	reply, err := r.Route(context.Background(), Message{Text: "/undo", ChannelID: "chat-10"})
+	reply, err := r.Route(context.Background(), inbound("chat-10", "/undo"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -465,11 +465,11 @@ func TestRouteUndoRemovesMultiple(t *testing.T) {
 	}
 	_ = r.sessionTracker.sessions.Save(context.Background(), sc)
 	for i := range 5 {
-		_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, ToStoredMessage(Message{From: "alice", Text: fmt.Sprintf("msg%d", i)}, "archie"))
+		_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, messaging.Message{Sender: "alice", Role: messaging.RoleUser, Text: fmt.Sprintf("msg%d", i)})
 	}
 	r.sessionTracker.setActive("chat-11", "", sessionID)
 
-	reply, err := r.Route(context.Background(), Message{Text: "/undo 3", ChannelID: "chat-11"})
+	reply, err := r.Route(context.Background(), inbound("chat-11", "/undo 3"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -496,15 +496,13 @@ func TestRouteUndoReportsActualPartialRemoval(t *testing.T) {
 		t.Fatalf("Save session: %v", err)
 	}
 	for i := range 6 {
-		if err := r.sessionTracker.sessions.SaveMessage(ctx, sessionID, ToStoredMessage(Message{
-			From: "alice", Text: fmt.Sprintf("msg%d", i),
-		}, "archie")); err != nil {
+		if err := r.sessionTracker.sessions.SaveMessage(ctx, sessionID, messaging.Message{Sender: "alice", Role: messaging.RoleUser, Text: fmt.Sprintf("msg%d", i)}); err != nil {
 			t.Fatalf("SaveMessage(%d): %v", i, err)
 		}
 	}
 	r.sessionTracker.setActive("chat-partial", "", sessionID)
 
-	reply, err := r.Route(ctx, Message{Text: "/undo 10", ChannelID: "chat-partial"})
+	reply, err := r.Route(ctx, inbound("chat-partial", "/undo 10"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -525,7 +523,7 @@ func TestRouteUndoNoMessages(t *testing.T) {
 	_ = r.sessionTracker.sessions.Save(context.Background(), sc)
 	r.sessionTracker.setActive("chat-12", "", sessionID)
 
-	reply, err := r.Route(context.Background(), Message{Text: "/undo", ChannelID: "chat-12"})
+	reply, err := r.Route(context.Background(), inbound("chat-12", "/undo"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -546,7 +544,7 @@ func TestRouteUndoInvalidN(t *testing.T) {
 	_ = r.sessionTracker.sessions.Save(context.Background(), sc)
 	r.sessionTracker.setActive("chat-13", "", sessionID)
 
-	reply, err := r.Route(context.Background(), Message{Text: "/undo notanumber", ChannelID: "chat-13"})
+	reply, err := r.Route(context.Background(), inbound("chat-13", "/undo notanumber"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -560,10 +558,10 @@ func TestRouteUndoInvalidN(t *testing.T) {
 func TestRouteTitleSet(t *testing.T) {
 	r := newTestRouter("telegram")
 
-	_, _ = r.Route(context.Background(), Message{Text: "/new", ChannelID: "chat-14"})
+	_, _ = r.Route(context.Background(), inbound("chat-14", "/new"))
 	sessionID := r.sessionTracker.getActive("chat-14", "")
 
-	reply, err := r.Route(context.Background(), Message{Text: "/title debugging the crash", ChannelID: "chat-14"})
+	reply, err := r.Route(context.Background(), inbound("chat-14", "/title debugging the crash"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -580,9 +578,9 @@ func TestRouteTitleSet(t *testing.T) {
 func TestRouteTitleShow(t *testing.T) {
 	r := newTestRouter("telegram")
 
-	_, _ = r.Route(context.Background(), Message{Text: "/new my topic", ChannelID: "chat-15"})
+	_, _ = r.Route(context.Background(), inbound("chat-15", "/new my topic"))
 
-	reply, err := r.Route(context.Background(), Message{Text: "/title", ChannelID: "chat-15"})
+	reply, err := r.Route(context.Background(), inbound("chat-15", "/title"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -594,9 +592,9 @@ func TestRouteTitleShow(t *testing.T) {
 func TestRouteTitleNoTitle(t *testing.T) {
 	r := newTestRouter("telegram")
 
-	_, _ = r.Route(context.Background(), Message{Text: "/new", ChannelID: "chat-16"})
+	_, _ = r.Route(context.Background(), inbound("chat-16", "/new"))
 
-	reply, err := r.Route(context.Background(), Message{Text: "/title", ChannelID: "chat-16"})
+	reply, err := r.Route(context.Background(), inbound("chat-16", "/title"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -611,15 +609,15 @@ func TestRouteBranchCreatesChildSession(t *testing.T) {
 	r := newTestRouter("telegram")
 
 	// Create parent with history.
-	_, _ = r.Route(context.Background(), Message{Text: "/new parent session", ChannelID: "chat-17"})
+	_, _ = r.Route(context.Background(), inbound("chat-17", "/new parent session"))
 	parentID := r.sessionTracker.getActive("chat-17", "")
 
 	// Add messages to parent.
-	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), parentID, ToStoredMessage(Message{From: "alice", Text: "hello"}, "archie"))
-	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), parentID, ToStoredMessage(Message{From: "archie", Text: "hi"}, "archie"))
+	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), parentID, messaging.Message{Sender: "alice", Role: messaging.RoleUser, Text: "hello"})
+	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), parentID, messaging.Message{Sender: "archie", Role: messaging.RoleAssistant, Text: "hi"})
 
 	// Branch.
-	reply, err := r.Route(context.Background(), Message{Text: "/branch experiment", ChannelID: "chat-17"})
+	reply, err := r.Route(context.Background(), inbound("chat-17", "/branch experiment"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -653,11 +651,11 @@ func TestRouteBranchCreatesChildSession(t *testing.T) {
 func TestRouteForkAlias(t *testing.T) {
 	r := newTestRouter("telegram")
 
-	_, _ = r.Route(context.Background(), Message{Text: "/new parent", ChannelID: "chat-18"})
+	_, _ = r.Route(context.Background(), inbound("chat-18", "/new parent"))
 	parentID := r.sessionTracker.getActive("chat-18", "")
-	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), parentID, ToStoredMessage(Message{From: "alice", Text: "msg"}, "archie"))
+	_ = r.sessionTracker.sessions.SaveMessage(context.Background(), parentID, messaging.Message{Sender: "alice", Role: messaging.RoleUser, Text: "msg"})
 
-	reply, err := r.Route(context.Background(), Message{Text: "/fork", ChannelID: "chat-18"})
+	reply, err := r.Route(context.Background(), inbound("chat-18", "/fork"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -671,15 +669,15 @@ func TestRouteForkAlias(t *testing.T) {
 func TestRouteCompressPreview(t *testing.T) {
 	r := newTestRouter("telegram")
 
-	_, _ = r.Route(context.Background(), Message{Text: "/new", ChannelID: "chat-19"})
+	_, _ = r.Route(context.Background(), inbound("chat-19", "/new"))
 	sessionID := r.sessionTracker.getActive("chat-19", "")
 
 	// Add a bunch of messages (not enough to trigger compression by default).
 	for i := range 10 {
-		_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, ToStoredMessage(Message{From: "alice", Text: fmt.Sprintf("message number %d", i)}, "archie"))
+		_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, messaging.Message{Sender: "alice", Role: messaging.RoleUser, Text: fmt.Sprintf("message number %d", i)})
 	}
 
-	reply, err := r.Route(context.Background(), Message{Text: "/compress --preview", ChannelID: "chat-19"})
+	reply, err := r.Route(context.Background(), inbound("chat-19", "/compress --preview"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -691,14 +689,14 @@ func TestRouteCompressPreview(t *testing.T) {
 func TestRouteCompactAlias(t *testing.T) {
 	r := newTestRouter("telegram")
 
-	_, _ = r.Route(context.Background(), Message{Text: "/new", ChannelID: "chat-20"})
+	_, _ = r.Route(context.Background(), inbound("chat-20", "/new"))
 	sessionID := r.sessionTracker.getActive("chat-20", "")
 
 	for i := range 5 {
-		_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, ToStoredMessage(Message{From: "alice", Text: fmt.Sprintf("msg %d with some content to make it longer than a few chars", i)}, "archie"))
+		_ = r.sessionTracker.sessions.SaveMessage(context.Background(), sessionID, messaging.Message{Sender: "alice", Role: messaging.RoleUser, Text: fmt.Sprintf("msg %d with some content to make it longer than a few chars", i)})
 	}
 
-	reply, err := r.Route(context.Background(), Message{Text: "/compact --dry-run", ChannelID: "chat-20"})
+	reply, err := r.Route(context.Background(), inbound("chat-20", "/compact --dry-run"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -709,7 +707,7 @@ func TestRouteCompactAlias(t *testing.T) {
 
 func TestRouteCompressNotConfigured(t *testing.T) {
 	r := NewRouter(nil, nil, "telegram")
-	reply, err := r.Route(context.Background(), Message{Text: "/compress"})
+	reply, err := r.Route(context.Background(), inbound("", "/compress"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -758,8 +756,8 @@ func TestSessionTrackerResolveCreatesAndReuses(t *testing.T) {
 func TestRouteResetAndNewAreSame(t *testing.T) {
 	r := newTestRouter("telegram")
 
-	r1, _ := r.Route(context.Background(), Message{Text: "/new test", ChannelID: "chat-a"})
-	r2, _ := r.Route(context.Background(), Message{Text: "/reset test2", ChannelID: "chat-a"})
+	r1, _ := r.Route(context.Background(), inbound("chat-a", "/new test"))
+	r2, _ := r.Route(context.Background(), inbound("chat-a", "/reset test2"))
 
 	// Both should create a new session clearing previous.
 	if !strings.Contains(r1, "test") {
@@ -773,10 +771,10 @@ func TestRouteResetAndNewAreSame(t *testing.T) {
 func TestRouteBranchAndForkAreSame(t *testing.T) {
 	r := newTestRouter("telegram")
 
-	_, _ = r.Route(context.Background(), Message{Text: "/new", ChannelID: "chat-b"})
+	_, _ = r.Route(context.Background(), inbound("chat-b", "/new"))
 
-	r1, _ := r.Route(context.Background(), Message{Text: "/branch", ChannelID: "chat-b"})
-	r2, _ := r.Route(context.Background(), Message{Text: "/fork", ChannelID: "chat-b"})
+	r1, _ := r.Route(context.Background(), inbound("chat-b", "/branch"))
+	r2, _ := r.Route(context.Background(), inbound("chat-b", "/fork"))
 
 	if !strings.Contains(r1, "Branched session") {
 		t.Errorf("/branch reply: %q", r1)
@@ -789,10 +787,10 @@ func TestRouteBranchAndForkAreSame(t *testing.T) {
 func TestRouteCompressAndCompactAreSame(t *testing.T) {
 	r := newTestRouter("telegram")
 
-	_, _ = r.Route(context.Background(), Message{Text: "/new", ChannelID: "chat-c"})
+	_, _ = r.Route(context.Background(), inbound("chat-c", "/new"))
 
-	r1, _ := r.Route(context.Background(), Message{Text: "/compress --dry-run", ChannelID: "chat-c"})
-	r2, _ := r.Route(context.Background(), Message{Text: "/compact --dry-run", ChannelID: "chat-c"})
+	r1, _ := r.Route(context.Background(), inbound("chat-c", "/compress --dry-run"))
+	r2, _ := r.Route(context.Background(), inbound("chat-c", "/compact --dry-run"))
 
 	// Both should show compression info.
 	if !strings.Contains(r1, "Compression") {

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/tools"
 )
@@ -100,12 +101,7 @@ func TestTurnRunnerPersistsOneTurnAndPublishesCompletion(t *testing.T) {
 	})
 
 	var streamed string
-	reply, err := runner.Run(context.Background(), Message{
-		From:      "user",
-		ChannelID: "chat-1",
-		SourceID:  "source-1",
-		Text:      "hello",
-	}, DeltaFunc(func(delta string) { streamed += delta }))
+	reply, err := runner.Run(context.Background(), Inbound{Message: messaging.Message{SourceID: "source-1", ConversationID: messaging.ConversationID{ChannelID: "chat-1"}, Sender: "user", Role: messaging.RoleUser, Text: "hello"}}, DeltaFunc(func(delta string) { streamed += delta }))
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -162,9 +158,7 @@ func TestTurnRunnerGenerationFailureLeavesInboundWithoutReply(t *testing.T) {
 		Channel:  "telegram",
 	})
 
-	_, err := runner.Run(context.Background(), Message{
-		From: "user", ChannelID: "chat-1", SourceID: "source-1", Text: "hello",
-	}, nil)
+	_, err := runner.Run(context.Background(), Inbound{Message: messaging.Message{SourceID: "source-1", ConversationID: messaging.ConversationID{ChannelID: "chat-1"}, Sender: "user", Role: messaging.RoleUser, Text: "hello"}}, nil)
 	if err == nil || !strings.Contains(err.Error(), "provider unavailable") {
 		t.Fatalf("Run() error = %v, want provider error", err)
 	}
@@ -205,9 +199,7 @@ func TestTurnRunnerCancellationPersistsCancelledState(t *testing.T) {
 		Channel:  "telegram",
 	})
 
-	_, err := runner.Run(runCtx, Message{
-		From: "user", ChannelID: "chat-cancel", SourceID: "source-cancel", Text: "hello",
-	}, nil)
+	_, err := runner.Run(runCtx, Inbound{Message: messaging.Message{SourceID: "source-cancel", ConversationID: messaging.ConversationID{ChannelID: "chat-cancel"}, Sender: "user", Role: messaging.RoleUser, Text: "hello"}}, nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run() error = %v, want context.Canceled", err)
 	}
@@ -244,9 +236,7 @@ func TestTurnRunnerRecoversTurnOwnedByPreviousProcess(t *testing.T) {
 		Channel:  "telegram",
 	})
 
-	got, err := runner.Run(context.Background(), Message{
-		From: "user", ChannelID: "chat-recover", SourceID: "source-recover", Text: "resume me",
-	}, nil)
+	got, err := runner.Run(context.Background(), Inbound{Message: messaging.Message{SourceID: "source-recover", ConversationID: messaging.ConversationID{ChannelID: "chat-recover"}, Sender: "user", Role: messaging.RoleUser, Text: "resume me"}}, nil)
 	if err != nil || got != "recovered" {
 		t.Fatalf("Run() = %q, %v; want recovered response", got, err)
 	}
@@ -271,9 +261,7 @@ func TestTurnRunnerPreparationFailureLeavesInboundWithoutReply(t *testing.T) {
 		Channel:  "telegram",
 	})
 
-	_, err := runner.Run(context.Background(), Message{
-		From: "user", ChannelID: "chat-1", SourceID: "source-1", Text: "hello",
-	}, nil)
+	_, err := runner.Run(context.Background(), Inbound{Message: messaging.Message{SourceID: "source-1", ConversationID: messaging.ConversationID{ChannelID: "chat-1"}, Sender: "user", Role: messaging.RoleUser, Text: "hello"}}, nil)
 	if err == nil || !strings.Contains(err.Error(), "tool setup failed") {
 		t.Fatalf("Run() error = %v, want tool setup error", err)
 	}
@@ -306,15 +294,13 @@ func TestTurnRunnerReplaysCompletedDuplicateOutsideRecentWindow(t *testing.T) {
 		BotUser:  "archie",
 		Channel:  "telegram",
 	})
-	msg := Message{From: "user", ChannelID: "chat-1", SourceID: "source-1", Text: "hello"}
+	msg := Inbound{Message: messaging.Message{SourceID: "source-1", ConversationID: messaging.ConversationID{ChannelID: "chat-1"}, Sender: "user", Role: messaging.RoleUser, Text: "hello"}}
 
 	if _, err := runner.Run(context.Background(), msg, nil); err != nil {
 		t.Fatalf("first Run() error = %v", err)
 	}
 	for i := range 110 {
-		if err := store.SaveMessage(context.Background(), "chat-1", ToStoredMessage(Message{
-			From: "user", SourceID: fmt.Sprintf("later-%d", i), Text: "later",
-		}, "archie")); err != nil {
+		if err := store.SaveMessage(context.Background(), "chat-1", messaging.Message{SourceID: fmt.Sprintf("later-%d", i), Sender: "user", Role: messaging.RoleUser, Text: "later"}); err != nil {
 			t.Fatalf("SaveMessage(%d) error = %v", i, err)
 		}
 	}
@@ -346,7 +332,7 @@ func TestTurnRunnerReplaysCompletedDuplicateWithoutGenerating(t *testing.T) {
 		BotUser:  "archie",
 		Channel:  "telegram",
 	})
-	msg := Message{From: "user", ChannelID: "chat-1", SourceID: "source-1", Text: "hello"}
+	msg := Inbound{Message: messaging.Message{SourceID: "source-1", ConversationID: messaging.ConversationID{ChannelID: "chat-1"}, Sender: "user", Role: messaging.RoleUser, Text: "hello"}}
 
 	if _, err := runner.Run(context.Background(), msg, nil); err != nil {
 		t.Fatalf("first Run() error = %v", err)

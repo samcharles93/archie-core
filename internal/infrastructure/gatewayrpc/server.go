@@ -55,7 +55,7 @@ func (s *server) RecentMessages(ctx context.Context, r *pb.RecentMessagesRequest
 	if err != nil {
 		return nil, err
 	}
-	return &pb.RecentMessagesResponse{Messages: mapValues(v, messageProto)}, nil
+	return &pb.RecentMessagesResponse{Messages: mapValues(v, storedProto)}, nil
 }
 
 func (s *server) RecentTurns(ctx context.Context, r *pb.RecentTurnsRequest) (*pb.RecentTurnsResponse, error) {
@@ -67,7 +67,7 @@ func (s *server) RecentTurns(ctx context.Context, r *pb.RecentTurnsRequest) (*pb
 }
 
 func (s *server) Route(ctx context.Context, r *pb.RouteRequest) (*pb.RouteResponse, error) {
-	v, err := s.chat.Route(ctx, messageValue(r.Message))
+	v, err := s.chat.Route(ctx, inboundValue(r.Message))
 	if err != nil {
 		return nil, err
 	}
@@ -141,10 +141,10 @@ func (s *server) ListSessions(ctx context.Context, _ *pb.ListSessionsRequest) (*
 }
 
 // storedMessages converts wire messages to canonical records, deriving
-// roles from the owning session's bot identity -- the same derivation the
-// in-process boundary applies (see gateway.ToStoredMessage). The wire
-// carries no role; both sides derive from the same session, so they agree.
-func (s *server) storedMessages(ctx context.Context, ss gateway.SessionStore, sessionID string, msgs []gateway.Message) ([]messaging.Message, error) {
+// roles from the owning session's bot identity (see
+// gateway.RoleForSender). The wire carries no role; both sides derive from
+// the same session, so they agree.
+func (s *server) storedMessages(ctx context.Context, ss gateway.SessionStore, sessionID string, msgs []*pb.Message) ([]messaging.Message, error) {
 	var botUser string
 	if sc, err := ss.Get(ctx, sessionID); err != nil {
 		return nil, err
@@ -153,7 +153,9 @@ func (s *server) storedMessages(ctx context.Context, ss gateway.SessionStore, se
 	}
 	out := make([]messaging.Message, 0, len(msgs))
 	for _, m := range msgs {
-		out = append(out, gateway.ToStoredMessage(m, botUser))
+		stored := storedValue(m)
+		stored.Role = gateway.RoleForSender(stored.Sender, botUser)
+		out = append(out, stored)
 	}
 	return out, nil
 }
@@ -163,7 +165,7 @@ func (s *server) SaveMessage(ctx context.Context, r *pb.SaveMessageRequest) (*pb
 	if e != nil {
 		return nil, e
 	}
-	msgs, e := s.storedMessages(ctx, ss, r.SessionId, []gateway.Message{messageValue(r.Message)})
+	msgs, e := s.storedMessages(ctx, ss, r.SessionId, []*pb.Message{r.Message})
 	if e != nil {
 		return nil, e
 	}
@@ -193,7 +195,7 @@ func (s *server) SaveMessages(ctx context.Context, r *pb.SaveMessagesRequest) (*
 	if e != nil {
 		return nil, e
 	}
-	msgs, e := s.storedMessages(ctx, ss, r.SessionId, mapValues(r.Messages, messageValue))
+	msgs, e := s.storedMessages(ctx, ss, r.SessionId, r.Messages)
 	if e != nil {
 		return nil, e
 	}
@@ -205,7 +207,7 @@ func (s *server) ReplaceMessages(ctx context.Context, r *pb.ReplaceMessagesReque
 	if e != nil {
 		return nil, e
 	}
-	msgs, e := s.storedMessages(ctx, ss, r.SessionId, mapValues(r.Messages, messageValue))
+	msgs, e := s.storedMessages(ctx, ss, r.SessionId, r.Messages)
 	if e != nil {
 		return nil, e
 	}
@@ -222,7 +224,7 @@ func (s *server) SearchMessages(ctx context.Context, r *pb.SearchMessagesRequest
 }
 
 func (s *server) Stream(r *pb.StreamRequest, out grpc.ServerStreamingServer[pb.StreamResponse]) error {
-	events, err := s.chat.Stream(out.Context(), messageValue(r.Message))
+	events, err := s.chat.Stream(out.Context(), inboundValue(r.Message))
 	if err != nil {
 		return err
 	}

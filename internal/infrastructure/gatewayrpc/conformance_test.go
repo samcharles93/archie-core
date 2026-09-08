@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/gateway"
 )
 
@@ -45,7 +46,10 @@ func TestChatContractConformance(t *testing.T) {
 			if _, found, err := chat.GetSession(ctx, "missing"); err != nil || found {
 				t.Fatalf("missing session: %v %v", found, err)
 			}
-			msg := gateway.Message{ChannelID: "browser", From: "web", Text: "/help", Page: "/tasks"}
+			msg := gateway.Inbound{
+				Message: messaging.Message{ConversationID: messaging.ConversationID{ChannelID: "browser"}, Sender: "web", Role: messaging.RoleUser, Text: "/help"},
+				Page:    "/tasks",
+			}
 			reply, err := chat.Route(ctx, msg)
 			if err != nil || reply.Text == "" || reply.SessionID == "" {
 				t.Fatalf("route: %+v %v", reply, err)
@@ -100,7 +104,7 @@ func TestWireValuesPreserveHistoryAndMedia(t *testing.T) {
 	if got := eventValue(eventProto(event)); !reflect.DeepEqual(got, event) {
 		t.Fatalf("event round trip: %+v", got)
 	}
-	if got := messageValue(messageProto(gateway.Message{})); !got.At.IsZero() {
-		t.Fatalf("zero time became %v", got.At)
+	if got := inboundValue(inboundProto(gateway.Inbound{})); !got.Message.At.IsZero() {
+		t.Fatalf("zero time became %v", got.Message.At)
 	}
 }

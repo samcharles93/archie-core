@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
@@ -11,12 +12,12 @@ import (
 type ChatContract interface { //nolint:interfacebloat // wire contract intentionally covers the complete Gateway facade
 	Snapshot(context.Context) (ChatSnapshot, error)
 	GetSession(context.Context, string) (SessionContext, bool, error)
-	RecentMessages(context.Context, string, int) ([]Message, error)
+	RecentMessages(context.Context, string, int) ([]messaging.Message, error)
 	RecentTurns(context.Context, string, int) ([]TurnRecord, error)
-	Route(context.Context, Message) (ChatReply, error)
+	Route(context.Context, Inbound) (ChatReply, error)
 	// Stream emits started, delta/tool/media, then done or error, in order.
 	// Callers must drain the stream or cancel the context. Cancellation closes it.
-	Stream(context.Context, Message) (<-chan ChatEvent, error)
+	Stream(context.Context, Inbound) (<-chan ChatEvent, error)
 	Cancel(context.Context, string) (ChatCancellation, error)
 	SetPersona(context.Context, string, string) (bool, error)
 	ChatTaskActionContract

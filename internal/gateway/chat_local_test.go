@@ -19,7 +19,7 @@ func TestLocalChatSnapshotAndStream(t *testing.T) {
 	if _, found, err := chat.GetSession(ctx, "absent"); err != nil || found {
 		t.Fatalf("missing session = %v, %v", found, err)
 	}
-	events, err := chat.Stream(ctx, Message{ChannelID: "browser", From: "web", Text: "/help"})
+	events, err := chat.Stream(ctx, inboundFrom("browser", "web", "/help"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +32,7 @@ func TestLocalChatSnapshotAndStream(t *testing.T) {
 	}
 	cancelCtx, cancel := context.WithCancel(ctx)
 	cancel()
-	if _, err := chat.Stream(cancelCtx, Message{}); err == nil {
+	if _, err := chat.Stream(cancelCtx, inbound("", "")); err == nil {
 		t.Fatal("cancelled context accepted")
 	}
 }
