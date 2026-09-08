@@ -308,6 +308,54 @@ selection, failure/readiness behavior, and deletion of the shared-holder and
 direct-access paths. The extraction cutover removes the in-process UI
 listener in the same change; there is no dual-live UI authority.
 
+**Dashboard live event delivery — DECIDED (2026-09-09, `archie-core-za9f`).**
+The extracted UI receives live activity by polling the State Store's existing
+`EventsSince` cursor, not by a new push-subscription RPC. No proto change, no
+contract amendment beyond this record.
+
+The UI process runs one event pump. It primes its watermark by paging
+`EventsSince` to the end at startup without delivering, then polls
+`EventsSince(watermark, limit)` on an interval and hands each new event to
+`webui.Server.Broadcast`, exactly where `internal/app/archied/main.go`'s
+`persistAndBroadcastEvents` hands events to it today. One pump serves every
+connected browser, so cost is one indexed query per interval regardless of
+viewer count, and `Broadcast` is a no-op when nobody is watching.
+
+Three properties make the cursor sufficient, and a push hub unnecessary:
+
+- **The cursor cannot skip.** `internal/store/store.go` opens the database with
+  `SetMaxOpenConns(1)`, so writes serialise and a row's `id` is assigned in
+  commit order. There is no window in which a lower id becomes visible after a
+  higher one, which is the failure mode that normally rules out polling an
+  autoincrement cursor. SSE catch-up already depends on this same property.
+- **A broadcast is a wakeup, not the payload.** `sseStream.drain` treats each
+  broadcast event as a signal to fill the persisted gap ahead of it via
+  `catchUp`, then delivers the event only if catch-up did not already cover
+  it, deduplicating on the `since` watermark. Substituting a poller for the
+  in-process bus therefore changes no SSE semantics, and needs no change to
+  `internal/webui/sse.go`. It also means a broadcast dropped to a stalled
+  client self-heals on the next one.
+- **The table is the only complete fan-out point.** Events reach the store
+  through several paths that never touch the daemon's bus, including the
+  audit event `store.ArchiveTask` writes inside its transaction
+  (`internal/store/store.go`) and the binding-dispatch failure
+  `internal/daemon/daemon.go` inserts directly. A push hub would have to be
+  hooked at every write site and at post-commit, and would silently miss any
+  site added later that forgets to notify. Reading the table misses nothing.
+
+The cost is one poll interval of latency on the activity feed, default 1s and
+operator-tunable. That is accepted: the feed reports task lifecycle history,
+and an operator action already gets its own synchronous HTTP response.
+
+This resolves the `/events` row of the route-owner inventory in
+[`ui-service-boundary.md`](../prds/ui-service-boundary.md). `/api/logs` and
+`/api/logs/stream` are not resolved by it, they read the daemon's in-process
+diagnostic feed and remain host-local (see `archie-core-8cda.5.4`).
+
+Revisit only if sub-second feed latency becomes a requirement, or if a second
+consumer needs the same stream, at which point the fan-out belongs in the State
+Store process behind a `SubscribeEvents` RPC and this record is superseded.
+
 ### 7. Shared mechanics
 
 The following cross-domain mechanics require exact contracts before dependent

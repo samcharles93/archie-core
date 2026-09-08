@@ -52,6 +52,17 @@ func Run(ctx context.Context, options Options) error {
 		Health:  newReadinessRegistry(opts, tasks, chat),
 	})
 
+	// Live activity has no in-process bus in this process: the pump reads
+	// events back out of the State Store over the same cursor SSE catch-up
+	// uses. Backgrounded so priming past a large events table cannot delay
+	// the listener (docs/architecture/migration-decisions.md, "Dashboard
+	// live event delivery").
+	go func() {
+		if err := srv.PumpEvents(ctx, opts.EventPollInterval); err != nil {
+			log.Error("event pump stopped; the activity feed will only show history", "err", err)
+		}
+	}()
+
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", opts.Listen)
 	if err != nil {
 		return fmt.Errorf("listen for ui: %w", err)

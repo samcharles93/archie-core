@@ -5,6 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/samcharles93/archie-core/internal/webui"
 )
 
 // uiConfigFile writes a config.toml carrying both the six fields the UI
@@ -188,5 +191,33 @@ target = "127.0.0.1:9090"
 	}
 	if resolved2.Gateway.Token != "keyed-gateway" {
 		t.Errorf("Gateway.Token = %q, want the explicit target_token over env", resolved2.Gateway.Token)
+	}
+}
+
+// The activity feed is a poll in this process, so its interval is a
+// process-local setting with a default, like the readiness timeout. Zero
+// means "operator did not say", not "never poll".
+func TestResolveDefaultsTheEventPollInterval(t *testing.T) {
+	resolved, err := Resolve(Options{
+		Gateway: ServiceTarget{Target: "127.0.0.1:8585"},
+		State:   ServiceTarget{Target: "127.0.0.1:9090"},
+	}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if resolved.EventPollInterval != webui.DefaultEventPollInterval {
+		t.Fatalf("EventPollInterval = %s, want the default %s", resolved.EventPollInterval, webui.DefaultEventPollInterval)
+	}
+
+	explicit, err := Resolve(Options{
+		Gateway:           ServiceTarget{Target: "127.0.0.1:8585"},
+		State:             ServiceTarget{Target: "127.0.0.1:9090"},
+		EventPollInterval: 250 * time.Millisecond,
+	}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("Resolve with an explicit interval: %v", err)
+	}
+	if explicit.EventPollInterval != 250*time.Millisecond {
+		t.Fatalf("EventPollInterval = %s, want the operator's 250ms", explicit.EventPollInterval)
 	}
 }

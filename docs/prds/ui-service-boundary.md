@@ -64,7 +64,8 @@ cutover.
 |---|---|---|
 | `/api/chat/*` | Gateway `ChatContract` and its versioned client | contract seam exists; DTO and stream parity remain |
 | `/api/tasks/*`, `/api/workflows`, `/api/setup` | State Store read/action contracts plus an explicit execution/admin action contract | State Store adapter exists; UI-facing narrow surface remains |
-| `/api/logs`, `/events` | State/event and log contracts with replay cursor and backpressure rules | local bus/feed only today; contract remains to define |
+| `/events` | State Store `EventsSince`, polled by one UI-process pump feeding `Server.Broadcast` | RESOLVED (`archie-core-za9f`): see migration-decisions, "Dashboard live event delivery". No new RPC; replay cursor and drop-recovery are the existing `since` watermark in `sse.go` |
+| `/api/logs`, `/api/logs/stream` | daemon diagnostic feed, host-local | unresolved: `logging.Feed` is in-process on the daemon host and has no contract |
 | `/api/captures`, `/api/mappings`, `/api/bindings` | State Store contracts, with webhook verification owned by Work Intake/Messaging | local adapter exists; remote UI surface remains to define |
 | `/api/config` | daemon/config owner through a versioned admin contract | current app callbacks; shared holder must be removed |
 | `/api/channels`, reload, curators, memory, skills, version/update | owning capability contract or an explicitly removed route | owner and failure semantics remain to define |

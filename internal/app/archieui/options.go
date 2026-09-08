@@ -66,6 +66,12 @@ type Options struct {
 
 	// DependencyTimeout bounds each readiness probe's call to a dependency.
 	DependencyTimeout time.Duration
+	// EventPollInterval bounds how stale the dashboard's activity feed can
+	// be. This process owns no event bus, so live activity is a poll of the
+	// State Store's event cursor; see webui.DefaultEventPollInterval and
+	// docs/architecture/migration-decisions.md, "Dashboard live event
+	// delivery".
+	EventPollInterval time.Duration
 	// ReadHeaderTimeout and ShutdownTimeout bound the HTTP lifecycle.
 	ReadHeaderTimeout time.Duration
 	ShutdownTimeout   time.Duration
