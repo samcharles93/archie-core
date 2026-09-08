@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"testing"
+
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 // recordingStream captures everything a turn reports, in arrival order, so a
@@ -55,9 +57,7 @@ func TestTurnRunnerForwardsToolCallsInOrderWithText(t *testing.T) {
 	runner := newStreamTestRunner(t, prepared)
 
 	sink := &recordingStream{}
-	reply, err := runner.Run(context.Background(), Message{
-		From: "user", ChannelID: "chat-1", SourceID: "source-1", Text: "hello",
-	}, sink)
+	reply, err := runner.Run(context.Background(), Inbound{Message: messaging.Message{SourceID: "source-1", ConversationID: messaging.ConversationID{ChannelID: "chat-1"}, Sender: "user", Role: messaging.RoleUser, Text: "hello"}}, sink)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -81,7 +81,7 @@ func TestTurnRunnerForwardsToolCallsInOrderWithText(t *testing.T) {
 func TestTurnRunnerReplayStreamsStoredReplyOnce(t *testing.T) {
 	prepared := &turnTestPreparedModel{reply: "the answer"}
 	runner := newStreamTestRunner(t, prepared)
-	msg := Message{From: "user", ChannelID: "chat-1", SourceID: "source-1", Text: "hello"}
+	msg := Inbound{Message: messaging.Message{SourceID: "source-1", ConversationID: messaging.ConversationID{ChannelID: "chat-1"}, Sender: "user", Role: messaging.RoleUser, Text: "hello"}}
 
 	if _, err := runner.Run(context.Background(), msg, DeltaFunc(nil)); err != nil {
 		t.Fatalf("first Run() error = %v", err)
@@ -115,7 +115,7 @@ func TestTurnRunnerReplayCompletedDuplicateReplaysToolCalls(t *testing.T) {
 		return "done", nil
 	}
 	runner := newStreamTestRunner(t, prepared)
-	msg := Message{From: "user", ChannelID: "chat-1", SourceID: "source-1", Text: "hello"}
+	msg := Inbound{Message: messaging.Message{SourceID: "source-1", ConversationID: messaging.ConversationID{ChannelID: "chat-1"}, Sender: "user", Role: messaging.RoleUser, Text: "hello"}}
 
 	if _, err := runner.Run(context.Background(), msg, &recordingStream{}); err != nil {
 		t.Fatalf("first Run() error = %v", err)
@@ -161,7 +161,7 @@ func TestTurnRunnerRecordsToolCallsEvenWithoutOriginalStream(t *testing.T) {
 		return "done", nil
 	}
 	runner := newStreamTestRunner(t, prepared)
-	msg := Message{From: "user", ChannelID: "chat-1", SourceID: "source-1", Text: "hello"}
+	msg := Inbound{Message: messaging.Message{SourceID: "source-1", ConversationID: messaging.ConversationID{ChannelID: "chat-1"}, Sender: "user", Role: messaging.RoleUser, Text: "hello"}}
 
 	if _, err := runner.Run(context.Background(), msg, nil); err != nil {
 		t.Fatalf("first Run() error = %v", err)
@@ -187,9 +187,7 @@ func TestTurnRunnerAcceptsNoStream(t *testing.T) {
 	prepared := &turnTestPreparedModel{reply: "quiet answer"}
 	runner := newStreamTestRunner(t, prepared)
 
-	reply, err := runner.Run(context.Background(), Message{
-		From: "user", ChannelID: "chat-1", SourceID: "source-1", Text: "hello",
-	}, nil)
+	reply, err := runner.Run(context.Background(), Inbound{Message: messaging.Message{SourceID: "source-1", ConversationID: messaging.ConversationID{ChannelID: "chat-1"}, Sender: "user", Role: messaging.RoleUser, Text: "hello"}}, nil)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}

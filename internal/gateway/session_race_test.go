@@ -43,7 +43,7 @@ func TestResolveDoesNotOrphanASessionItLoses(t *testing.T) {
 	// creates a session and makes it active.
 	var newSessionID string
 	store.afterGetByChannel = func() {
-		if _, err := r.Route(ctx, Message{Text: "/new", ChannelID: "chat-y"}); err != nil {
+		if _, err := r.Route(ctx, inbound("chat-y", "/new")); err != nil {
 			t.Errorf("Route(/new): %v", err)
 			return
 		}

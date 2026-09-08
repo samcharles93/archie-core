@@ -65,9 +65,9 @@ func TestSMTPReceiveAndRoute(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	g := New(":0", "", log)
 
-	router := gateway.NewRouter(nil, func(ctx context.Context, msg gateway.Message) (string, error) {
-		if msg.From != "sender@test.com" {
-			return "", fmt.Errorf("unexpected sender: %s", msg.From)
+	router := gateway.NewRouter(nil, func(ctx context.Context, in gateway.Inbound) (string, error) {
+		if in.Message.Sender != "sender@test.com" {
+			return "", fmt.Errorf("unexpected sender: %s", in.Message.Sender)
 		}
 		return "got it", nil
 	}, "email")

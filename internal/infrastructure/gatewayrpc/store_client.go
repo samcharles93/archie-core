@@ -14,14 +14,12 @@ var _ gateway.SessionStore = (*StoreClient)(nil)
 
 // StoreClient implements gateway.SessionStore over the chat service's
 // session-store RPCs. It is separate from Client (the ChatContract view)
-// because the two contracts shape history differently: the wire keeps the
-// channel-facing message (the proto is unchanged by the messaging
-// migration) while the store speaks canonical records.
+// because the two contracts serve different reads over the same messages.
 //
-// Role and conversation address do not cross the wire. Both sides derive
-// them from the owning session instead -- the server on write, this client
-// on read -- so they agree without a proto change. A missing session
-// yields zero values, matching the store's LEFT JOIN for orphaned rows.
+// Role does not cross the wire (the proto is unchanged by the messaging
+// migration). Both sides derive it from the owning session instead -- the
+// server on write, this client on read -- so they agree without a proto
+// change.
 type StoreClient struct{ client pb.ChatServiceClient }
 
 func NewStoreClient(conn grpc.ClientConnInterface) *StoreClient {
@@ -72,7 +70,7 @@ func (c *StoreClient) List(ctx context.Context) ([]gateway.SessionContext, error
 }
 
 func (c *StoreClient) SaveMessage(ctx context.Context, id string, m messaging.Message) error {
-	_, e := c.client.SaveMessage(ctx, &pb.SaveMessageRequest{SessionId: id, Message: messageProto(gateway.FromStoredMessage(m))})
+	_, e := c.client.SaveMessage(ctx, &pb.SaveMessageRequest{SessionId: id, Message: storedProto(m)})
 	return e
 }
 
@@ -98,13 +96,13 @@ func (c *StoreClient) ReplaceMessages(ctx context.Context, id string, m []messag
 
 func (c *StoreClient) RecentMessages(ctx context.Context, id string, n int) ([]messaging.Message, error) {
 	// No store-RecentMessages RPC exists; the chat contract serves the same
-	// gateway view LocalChatAdapter serves in-process. Re-address it into
-	// canonical records (see addressRecords).
+	// history in-process and over the wire. Re-address it (see
+	// addressRecords).
 	v, err := c.client.RecentMessages(ctx, &pb.RecentMessagesRequest{SessionId: id, Limit: int64(n)})
 	if err != nil {
 		return nil, err
 	}
-	return c.addressRecords(ctx, id, mapValues(v.Messages, messageValue))
+	return addressRecords(ctx, c.client, id, v.Messages)
 }
 
 func (c *StoreClient) SearchMessages(ctx context.Context, id string, q gateway.MessageQuery) (gateway.MessagePage, error) {
@@ -112,7 +110,7 @@ func (c *StoreClient) SearchMessages(ctx context.Context, id string, q gateway.M
 	if e != nil {
 		return gateway.MessagePage{}, e
 	}
-	msgs, err := c.addressRecords(ctx, id, mapValues(v.Messages, messageValue))
+	msgs, err := addressRecords(ctx, c.client, id, v.Messages)
 	if err != nil {
 		return gateway.MessagePage{}, err
 	}
@@ -121,21 +119,27 @@ func (c *StoreClient) SearchMessages(ctx context.Context, id string, q gateway.M
 
 func (c *StoreClient) Close() error { return nil }
 
-// addressRecords restores the canonical fields the wire drops (role,
-// conversation address) from the owning session.
-func (c *StoreClient) addressRecords(ctx context.Context, id string, msgs []gateway.Message) ([]messaging.Message, error) {
+// addressRecords restores the canonical fields the wire drops -- role and
+// conversation address -- from the owning session, which is where the
+// server derived them from on the way out. A missing session yields zero
+// values, matching the store's LEFT JOIN for orphaned rows.
+func addressRecords(ctx context.Context, client pb.ChatServiceClient, id string, msgs []*pb.Message) ([]messaging.Message, error) {
 	var botUser string
 	var conv messaging.ConversationID
-	if sc, err := c.Get(ctx, id); err != nil {
+	v, err := client.GetSession(ctx, &pb.GetSessionRequest{SessionId: id})
+	if err != nil {
 		return nil, err
-	} else if sc != nil {
+	}
+	if v.Found {
+		sc := sessionValue(v.Session)
 		botUser = sc.Source.BotUser
 		conv = messaging.ConversationID{ChannelID: sc.Source.ChannelID, ThreadID: sc.Source.ThreadID}
 	}
 	out := make([]messaging.Message, 0, len(msgs))
 	for _, m := range msgs {
-		stored := gateway.ToStoredMessage(m, botUser)
+		stored := storedValue(m)
 		stored.ConversationID = conv
+		stored.Role = gateway.RoleForSender(stored.Sender, botUser)
 		out = append(out, stored)
 	}
 	return out, nil

@@ -45,8 +45,8 @@ type SessionLifecycle interface {
 }
 
 // MessageHistory manages conversation messages within a session. Messages
-// are canonical messaging.Message records; gateway callers convert at the
-// boundary with ToStoredMessage/FromStoredMessage.
+// are canonical messaging.Message records, the same type channel adapters
+// hand the Router, so nothing converts on the way in or out.
 type MessageHistory interface {
 	// SaveMessage appends one message with a strictly increasing timestamp.
 	SaveMessage(ctx context.Context, sessionID string, msg messaging.Message) error
@@ -165,9 +165,8 @@ func CanonicalMessageID(sessionID, sourceID string) string {
 }
 
 // PriorReply returns the reply already produced for an upstream message.
-// The assistant check reads the record's Role: the stored Role is derived
-// from the sender at the store boundary (see ToStoredMessage), so this
-// needs no bot identity.
+// The assistant check reads the record's Role, which its producer set when
+// the message was written, so this needs no bot identity.
 func PriorReply(history []messaging.Message, sessionID, sourceID string) string {
 	if sourceID == "" {
 		return ""

@@ -21,6 +21,7 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	"github.com/samcharles93/archie-core/internal/channels"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
 )
@@ -469,12 +470,12 @@ func (g *Gateway) resumeHandler(router *gateway.Router) bot.HandlerFunc {
 		if !ok {
 			return
 		}
-		reply, err := router.Route(ctx, gateway.Message{
-			ChannelID: fmt.Sprintf("%d", msg.Chat.ID),
-			ThreadID:  threadIDString(msg.MessageThreadID),
-			From:      msg.From.Username,
-			Text:      msg.Text,
-		})
+		reply, err := router.Route(ctx, gateway.Inbound{Message: messaging.Message{
+			ConversationID: conversationID(msg),
+			Sender:         msg.From.Username,
+			Role:           messaging.RoleUser,
+			Text:           msg.Text,
+		}})
 		if err != nil {
 			g.log.Error("resume handler failed", "error", err)
 			return
@@ -491,12 +492,12 @@ func (g *Gateway) routeCmdHandler(router *gateway.Router, cmd string) bot.Handle
 		if !ok {
 			return
 		}
-		reply, err := router.Route(ctx, gateway.Message{
-			ChannelID: fmt.Sprintf("%d", msg.Chat.ID),
-			ThreadID:  threadIDString(msg.MessageThreadID),
-			From:      msg.From.Username,
-			Text:      cmd,
-		})
+		reply, err := router.Route(ctx, gateway.Inbound{Message: messaging.Message{
+			ConversationID: conversationID(msg),
+			Sender:         msg.From.Username,
+			Role:           messaging.RoleUser,
+			Text:           cmd,
+		}})
 		if err != nil {
 			g.log.Error("command handler failed", "command", cmd, "error", err)
 			return
@@ -606,19 +607,19 @@ func (g *Gateway) handleCallback(ctx context.Context, b *bot.Bot, update *models
 // /stop meant to cancel it, which would sit unread until the turn it was
 // aimed at had already finished.
 func (g *Gateway) submitTurn(ctx context.Context, b *bot.Bot, msg *models.Message, router *gateway.Router) {
-	gm := gateway.Message{
+	gm := gateway.Inbound{Message: messaging.Message{
 		// Telegram's message ID makes persistence idempotent: the store
 		// derives a canonical ID from it, so a redelivered update is a
 		// no-op rather than appending a duplicate or overwriting the
 		// stored record, which must stay immutable. Date is the sender's
 		// clock reading and is what history should be ordered by.
-		SourceID:  fmt.Sprintf("%d", msg.ID),
-		ChannelID: fmt.Sprintf("%d", msg.Chat.ID),
-		ThreadID:  threadIDString(msg.MessageThreadID),
-		From:      msg.From.Username,
-		Text:      msg.Text,
-		At:        time.Unix(int64(msg.Date), 0).UTC(),
-	}
+		SourceID:       fmt.Sprintf("%d", msg.ID),
+		ConversationID: conversationID(msg),
+		Sender:         msg.From.Username,
+		Role:           messaging.RoleUser,
+		Text:           msg.Text,
+		At:             time.Unix(int64(msg.Date), 0).UTC(),
+	}}
 
 	// The lane key must be the session, so that /stop -- which resolves
 	// the same key -- reaches the turn the sender is actually watching.
@@ -678,9 +679,18 @@ func (g *Gateway) submitTurn(ctx context.Context, b *bot.Bot, msg *models.Messag
 
 // ── helpers ──────────────────────────────────────────────────
 
+// conversationID addresses the chat a Telegram message arrived in: the
+// chat ID, and the topic thread within it for supergroups.
+func conversationID(msg *models.Message) messaging.ConversationID {
+	return messaging.ConversationID{
+		ChannelID: fmt.Sprintf("%d", msg.Chat.ID),
+		ThreadID:  threadIDString(msg.MessageThreadID),
+	}
+}
+
 // threadIDString converts a Telegram message_thread_id to a string suitable
-// for gateway.Message.ThreadID and SessionSource.ThreadID. A zero value
-// (no topic thread, or the General topic) maps to empty string so that
+// for messaging.ConversationID.ThreadID and SessionSource.ThreadID. A zero
+// value (no topic thread, or the General topic) maps to empty string so that
 // flat-chat routing continues to work without changes.
 func threadIDString(id int) string {
 	if id == 0 {

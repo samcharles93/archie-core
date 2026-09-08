@@ -131,13 +131,13 @@ func (r *TurnRunner) Recover(ctx context.Context) error {
 }
 
 // Respond adapts the runner to Router.LLM.
-func (r *TurnRunner) Respond(ctx context.Context, msg Message) (string, error) {
-	return r.Run(ctx, msg, nil)
+func (r *TurnRunner) Respond(ctx context.Context, in Inbound) (string, error) {
+	return r.Run(ctx, in, nil)
 }
 
 // RespondStream adapts the runner to Router.LLMStream.
-func (r *TurnRunner) RespondStream(ctx context.Context, msg Message, stream TurnStream) (string, error) {
-	return r.Run(ctx, msg, stream)
+func (r *TurnRunner) RespondStream(ctx context.Context, in Inbound, stream TurnStream) (string, error) {
+	return r.Run(ctx, in, stream)
 }
 
 // Run executes one turn, reporting progress to stream. A completed duplicate
@@ -181,7 +181,7 @@ func (r *TurnRunner) checkConfigured() error {
 // (text, err); done is false when there is no prior reply to replay and
 // Run should continue generating one.
 func (r *TurnRunner) replayPriorReply(
-	ctx context.Context, turn TurnRecord, sessionID string, msg Message, history []messaging.Message, stream TurnStream,
+	ctx context.Context, turn TurnRecord, sessionID string, msg messaging.Message, history []messaging.Message, stream TurnStream,
 ) (string, bool, error) {
 	prior := PriorReply(history, sessionID, msg.SourceID)
 	if prior == "" && msg.SourceID != "" {
@@ -217,7 +217,7 @@ func (r *TurnRunner) replayPriorReply(
 // stream events and rejecting a still-in-progress duplicate. done is true
 // when Run should return turn.ResponseText immediately without generating.
 func (r *TurnRunner) claimTurn(
-	ctx context.Context, turnID, sessionID string, msg Message, stream TurnStream,
+	ctx context.Context, turnID, sessionID string, msg messaging.Message, stream TurnStream,
 ) (TurnRecord, bool, error) {
 	turn, claim, err := r.Ledger.ClaimTurn(ctx, TurnRecord{
 		TurnID:    turnID,
@@ -246,29 +246,27 @@ func (r *TurnRunner) claimTurn(
 	return turn, false, nil
 }
 
-// recordInboundMessage assigns msg its canonical MessageID, persists it as
-// the turn's input on first sight, and folds it into history if it is not
+// recordInboundMessage assigns msg its canonical ID, persists it as the
+// turn's input on first sight, and folds it into history if it is not
 // already present there.
 func (r *TurnRunner) recordInboundMessage(
-	ctx context.Context, turn *TurnRecord, sessionID string, msg Message, history []messaging.Message,
-) (Message, []messaging.Message, error) {
-	msg.MessageID = messageIDForTurn(sessionID, msg)
-	stored := ToStoredMessage(msg, r.BotUser)
+	ctx context.Context, turn *TurnRecord, sessionID string, msg messaging.Message, history []messaging.Message,
+) (messaging.Message, []messaging.Message, error) {
+	msg.ID = messaging.MessageID(messageIDForTurn(sessionID, msg))
 	if turn.InputMessageID == "" {
-		if err := r.Sessions.SaveMessage(ctx, sessionID, stored); err != nil {
+		if err := r.Sessions.SaveMessage(ctx, sessionID, msg); err != nil {
 			return msg, history, fmt.Errorf("save inbound chat message: %w", err)
 		}
-		turn.InputMessageID = msg.MessageID
+		turn.InputMessageID = string(msg.ID)
 		turn.UpdatedAt = time.Now().UTC()
 		if err := r.saveTurn(ctx, *turn); err != nil {
 			return msg, history, fmt.Errorf("save chat turn input: %w", err)
 		}
 	} else {
-		msg.MessageID = turn.InputMessageID
-		stored.ID = messaging.MessageID(turn.InputMessageID)
+		msg.ID = messaging.MessageID(turn.InputMessageID)
 	}
 	if !messageInHistory(history, msg.SourceID) {
-		history = append(history, stored)
+		history = append(history, msg)
 	}
 	return msg, history, nil
 }
@@ -285,11 +283,11 @@ type preparedTurn struct {
 
 // prepareTurn builds the tools, system prompt, and compressed history view
 // for one turn's generation call.
-func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, msg Message, history []messaging.Message) (preparedTurn, error) {
+func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, in Inbound, history []messaging.Message) (preparedTurn, error) {
 	compressed := compressTurnHistory(history)
 	extraTools := append(
 		TaskTools(r.TaskLister, r.Tasks, r.TaskLogs, r.TaskActor, r.TaskIdentity),
-		SessionTools(r.Sessions, r.Router.SessionTracker(), r.Channel, msg)...,
+		SessionTools(r.Sessions, r.Router.SessionTracker(), r.Channel, in.Message)...,
 	)
 	// The dashboard tools (page_index, dashboard_navigate) belong to the web
 	// UI only: a non-web channel has no dashboard to point at.
@@ -321,7 +319,7 @@ func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, msg Mess
 		Model:     modelName,
 		SessionID: sessionID,
 		Now:       time.Now(),
-		Page:      msg.Page,
+		Page:      in.Page,
 		Workspace: r.Workspace,
 		Repos:     r.Repos,
 		Operator:  r.Operator,
@@ -341,8 +339,8 @@ func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, msg Mess
 	if r.Log != nil {
 		r.Log.Info("chat turn",
 			"session", sessionID,
-			"channel", msg.ChannelID,
-			"thread", msg.ThreadID,
+			"channel", in.Message.ConversationID.ChannelID,
+			"thread", in.Message.ConversationID.ThreadID,
 			"history_messages", len(history),
 			"model", modelName,
 			"context_window", modelDetails.ContextWindow,
@@ -354,7 +352,7 @@ func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, msg Mess
 	return preparedTurn{prepared: prepared, modelName: modelName, modelDetails: modelDetails, view: view}, nil
 }
 
-func (r *TurnRunner) Run(ctx context.Context, msg Message, stream TurnStream) (string, error) {
+func (r *TurnRunner) Run(ctx context.Context, in Inbound, stream TurnStream) (string, error) {
 	if err := r.checkConfigured(); err != nil {
 		return "", err
 	}
@@ -362,18 +360,18 @@ func (r *TurnRunner) Run(ctx context.Context, msg Message, stream TurnStream) (s
 		return "", fmt.Errorf("recover chat turns: %w", err)
 	}
 
-	sessionID, err := r.Router.ResolveSessionKey(ctx, msg)
+	sessionID, err := r.Router.ResolveSessionKey(ctx, in)
 	if err != nil {
 		return "", fmt.Errorf("resolve chat session: %w", err)
 	}
-	turnID, err := r.canonicalTurnID(ctx, sessionID, msg.SourceID)
+	turnID, err := r.canonicalTurnID(ctx, sessionID, in.Message.SourceID)
 	if err != nil {
 		return "", fmt.Errorf("resolve canonical turn ID: %w", err)
 	}
 	if turnID == "" {
 		turnID = NewTurnID()
 	}
-	turn, done, err := r.claimTurn(ctx, turnID, sessionID, msg, stream)
+	turn, done, err := r.claimTurn(ctx, turnID, sessionID, in.Message, stream)
 	if err != nil {
 		return "", err
 	}
@@ -385,16 +383,16 @@ func (r *TurnRunner) Run(ctx context.Context, msg Message, stream TurnStream) (s
 	if err != nil {
 		return "", r.failTurn(ctx, turn, fmt.Errorf("load chat history: %w", err))
 	}
-	if replayed, done, err := r.replayPriorReply(ctx, turn, sessionID, msg, history, stream); done {
+	if replayed, done, err := r.replayPriorReply(ctx, turn, sessionID, in.Message, history, stream); done {
 		return replayed, err
 	}
 
-	msg, history, err = r.recordInboundMessage(ctx, &turn, sessionID, msg, history)
+	in.Message, history, err = r.recordInboundMessage(ctx, &turn, sessionID, in.Message, history)
 	if err != nil {
 		return "", r.failTurn(ctx, turn, err)
 	}
 
-	prep, err := r.prepareTurn(ctx, sessionID, msg, history)
+	prep, err := r.prepareTurn(ctx, sessionID, in, history)
 	if err != nil {
 		return "", r.failTurn(ctx, turn, err)
 	}
@@ -414,12 +412,17 @@ func (r *TurnRunner) generateAndComplete(
 	if err != nil {
 		return "", r.failTurn(ctx, turn, err)
 	}
-	assistant := Message{MessageID: assistantMessageIDForTurn(turn.TurnID), From: r.BotUser, Text: text}
-	if err := r.Sessions.SaveMessage(ctx, sessionID, ToStoredMessage(assistant, r.BotUser)); err != nil {
+	assistant := messaging.Message{
+		ID:     messaging.MessageID(assistantMessageIDForTurn(turn.TurnID)),
+		Sender: r.BotUser,
+		Role:   messaging.RoleAssistant,
+		Text:   text,
+	}
+	if err := r.Sessions.SaveMessage(ctx, sessionID, assistant); err != nil {
 		return "", r.failTurn(ctx, turn, fmt.Errorf("save outbound chat message: %w", err))
 	}
 	turn.Status = TurnStatusCompleted
-	turn.AssistantMessageID = assistant.MessageID
+	turn.AssistantMessageID = string(assistant.ID)
 	turn.ResponseText = text
 	turn.ToolCalls = recorder.events
 	turn.Error = ""
@@ -492,9 +495,9 @@ func (r *TurnRunner) saveTurn(ctx context.Context, turn TurnRecord) error {
 	return r.Ledger.SaveTurn(persistCtx, turn)
 }
 
-func messageIDForTurn(sessionID string, msg Message) string {
-	if msg.MessageID != "" {
-		return msg.MessageID
+func messageIDForTurn(sessionID string, msg messaging.Message) string {
+	if msg.ID != "" {
+		return string(msg.ID)
 	}
 	if id := CanonicalMessageID(sessionID, msg.SourceID); id != "" {
 		return id
@@ -515,8 +518,8 @@ func messageInHistory(history []messaging.Message, sourceID string) bool {
 }
 
 // compressTurnHistory renders stored history as role/content pairs. The
-// role comes from the record, which the store boundary derives from the
-// sender when the message is written (see ToStoredMessage).
+// role comes from the record, which its producer sets when the message is
+// written -- RoleUser at the channel, RoleAssistant at generateAndComplete.
 func compressTurnHistory(history []messaging.Message) []CompressedMessage {
 	compressed := make([]CompressedMessage, 0, len(history))
 	for _, message := range history {

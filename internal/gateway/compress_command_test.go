@@ -92,7 +92,7 @@ func TestCompressCommandDispatch(t *testing.T) {
 			const seeded = 40
 			seedForCompress(t, store, sessionID, seeded)
 
-			reply, err := r.handleCompress(ctx, Message{ChannelID: "chat-1"}, tc.rest)
+			reply, err := r.handleCompress(ctx, inbound("chat-1", "").Message, tc.rest)
 			if err != nil {
 				t.Fatalf("handleCompress(%q): %v", tc.rest, err)
 			}

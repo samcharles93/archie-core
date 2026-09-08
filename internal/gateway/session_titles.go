@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 // TitleGenerator proposes a display title for an untitled session.
@@ -50,11 +52,11 @@ const titleGenerationTimeout = 30 * time.Second
 // title. For a fresh session that is its first message; for an older
 // session that predates automatic titles, it is the first message
 // observed after this code is deployed, i.e. the current topic.
-func (r *Router) maybeAutoTitle(ctx context.Context, msg Message) {
+func (r *Router) maybeAutoTitle(ctx context.Context, msg messaging.Message) {
 	if r.Titles == nil || r.sessionTracker == nil {
 		return
 	}
-	sessionID := r.sessionTracker.getActive(msg.ChannelID, msg.ThreadID)
+	sessionID := r.sessionTracker.getActive(msg.ConversationID.ChannelID, msg.ConversationID.ThreadID)
 	if sessionID == "" || !r.claimTitleInFlight(sessionID) {
 		return
 	}

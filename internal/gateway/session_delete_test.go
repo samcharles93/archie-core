@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 // deleteFailingStore is a session store whose Delete always fails, used to
@@ -46,7 +48,7 @@ func seedSession(t *testing.T, r *Router, store *fakeSessionStore, id, channelID
 
 func TestRouteDeleteNotConfigured(t *testing.T) {
 	r := NewRouter(nil, nil, "test-gw")
-	reply, err := r.Route(context.Background(), Message{Text: "/delete abc-123"})
+	reply, err := r.Route(context.Background(), inbound("", "/delete abc-123"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -59,7 +61,7 @@ func TestRouteDeleteNoArgExplainsUsageAndDeletesNothing(t *testing.T) {
 	r, store := newDeleteRouter(t)
 	seedSession(t, r, store, "abc-123", "chan-1", "Work")
 
-	reply, err := r.Route(context.Background(), Message{ChannelID: "chan-1", Text: "/delete"})
+	reply, err := r.Route(context.Background(), inbound("chan-1", "/delete"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -75,7 +77,7 @@ func TestRouteDeleteRejectsUnknownReference(t *testing.T) {
 	r, store := newDeleteRouter(t)
 	seedSession(t, r, store, "abc-123", "chan-1", "Work")
 
-	reply, err := r.Route(context.Background(), Message{ChannelID: "chan-1", Text: "/delete zzzz"})
+	reply, err := r.Route(context.Background(), inbound("chan-1", "/delete zzzz"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -92,7 +94,7 @@ func TestRouteDeleteRejectsAmbiguousReference(t *testing.T) {
 	seedSession(t, r, store, "abcd-123", "chan-1", "One")
 	seedSession(t, r, store, "abcd-456", "chan-1", "Two")
 
-	reply, err := r.Route(context.Background(), Message{ChannelID: "chan-1", Text: "/delete abcd"})
+	reply, err := r.Route(context.Background(), inbound("chan-1", "/delete abcd"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -114,7 +116,7 @@ func TestRouteDeleteRejectsShortPrefixEvenWhenUnique(t *testing.T) {
 	seedSession(t, r, store, "abc-123", "chan-1", "Work")
 
 	for _, ref := range []string{"a", "ab", "abc"} {
-		reply, err := r.Route(context.Background(), Message{ChannelID: "chan-1", Text: "/delete " + ref})
+		reply, err := r.Route(context.Background(), inbound("chan-1", "/delete "+ref))
 		if err != nil {
 			t.Fatalf("Route %q: %v", ref, err)
 		}
@@ -133,7 +135,7 @@ func TestRouteDeleteAcceptsShortExactID(t *testing.T) {
 	r, store := newDeleteRouter(t)
 	seedSession(t, r, store, "abc", "chan-1", "Work")
 
-	reply, err := r.Route(context.Background(), Message{ChannelID: "chan-1", Text: "/delete abc"})
+	reply, err := r.Route(context.Background(), inbound("chan-1", "/delete abc"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -152,7 +154,7 @@ func TestRouteDeleteExactIDBeatsAmbiguousPrefix(t *testing.T) {
 	seedSession(t, r, store, "abcd-123", "chan-1", "One")
 	seedSession(t, r, store, "abcd-123-extra", "chan-1", "Two")
 
-	reply, err := r.Route(context.Background(), Message{ChannelID: "chan-1", Text: "/delete abcd-123"})
+	reply, err := r.Route(context.Background(), inbound("chan-1", "/delete abcd-123"))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -171,12 +173,12 @@ func TestRouteDeleteRemovesSessionAndItsHistory(t *testing.T) {
 	r, store := newDeleteRouter(t)
 	id := seedSession(t, r, store, "abcd-123", "chan-1", "Work")
 	for _, text := range []string{"first", "second"} {
-		if err := store.SaveMessage(context.Background(), id, ToStoredMessage(Message{From: "sam", Text: text}, "archie")); err != nil {
+		if err := store.SaveMessage(context.Background(), id, messaging.Message{Sender: "sam", Role: messaging.RoleUser, Text: text}); err != nil {
 			t.Fatalf("seed message: %v", err)
 		}
 	}
 
-	reply, err := r.Route(context.Background(), Message{ChannelID: "chan-1", Text: "/delete " + id})
+	reply, err := r.Route(context.Background(), inbound("chan-1", "/delete "+id))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -200,23 +202,23 @@ func TestRouteDeleteRemovesSessionAndItsHistory(t *testing.T) {
 // message under an ID the store no longer knows.
 func TestRouteDeleteActiveSessionClearsTracker(t *testing.T) {
 	r, store := newDeleteRouter(t)
-	msg := Message{ChannelID: "chan-1"}
-	if _, err := r.Route(context.Background(), Message{ChannelID: "chan-1", Text: "/new Work"}); err != nil {
+	msg := inbound("chan-1", "")
+	if _, err := r.Route(context.Background(), inbound("chan-1", "/new Work")); err != nil {
 		t.Fatalf("/new: %v", err)
 	}
-	id := r.sessionTracker.getActive(msg.ChannelID, msg.ThreadID)
+	id := r.sessionTracker.getActive(msg.Message.ConversationID.ChannelID, msg.Message.ConversationID.ThreadID)
 	if id == "" {
 		t.Fatal("/new did not set an active session")
 	}
 
-	reply, err := r.Route(context.Background(), Message{ChannelID: "chan-1", Text: "/delete " + id})
+	reply, err := r.Route(context.Background(), inbound("chan-1", "/delete "+id))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
 	if !strings.Contains(reply, "new conversation") {
 		t.Errorf("reply = %q, want a note that the next message starts fresh", reply)
 	}
-	if active := r.sessionTracker.getActive(msg.ChannelID, msg.ThreadID); active != "" {
+	if active := r.sessionTracker.getActive(msg.Message.ConversationID.ChannelID, msg.Message.ConversationID.ThreadID); active != "" {
 		t.Errorf("tracker still points at %q after deleting it", active)
 	}
 
@@ -237,12 +239,12 @@ func TestRouteDeleteActiveSessionClearsTracker(t *testing.T) {
 func TestRouteDeleteOtherSessionKeepsActive(t *testing.T) {
 	r, store := newDeleteRouter(t)
 	other := seedSession(t, r, store, "abcd-999", "chan-1", "Old")
-	if _, err := r.Route(context.Background(), Message{ChannelID: "chan-1", Text: "/new Current"}); err != nil {
+	if _, err := r.Route(context.Background(), inbound("chan-1", "/new Current")); err != nil {
 		t.Fatalf("/new: %v", err)
 	}
 	active := r.sessionTracker.getActive("chan-1", "")
 
-	reply, err := r.Route(context.Background(), Message{ChannelID: "chan-1", Text: "/delete " + other})
+	reply, err := r.Route(context.Background(), inbound("chan-1", "/delete "+other))
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
@@ -261,7 +263,7 @@ func TestRouteDeleteReportsStoreFailure(t *testing.T) {
 	seedSession(t, r, store, "abcd-123", "chan-1", "Work")
 	r.Sessions = &deleteFailingStore{fakeSessionStore: store, err: errors.New("store unavailable")}
 
-	_, err := r.Route(context.Background(), Message{ChannelID: "chan-1", Text: "/delete abcd-123"})
+	_, err := r.Route(context.Background(), inbound("chan-1", "/delete abcd-123"))
 	if err == nil {
 		t.Fatal("expected an error when the store cannot delete")
 	}
@@ -274,7 +276,7 @@ func TestRouteDeleteReportsListFailure(t *testing.T) {
 		err:              errors.New("store unavailable"),
 	}
 
-	_, err := r.Route(context.Background(), Message{ChannelID: "chan-1", Text: "/delete abcd-123"})
+	_, err := r.Route(context.Background(), inbound("chan-1", "/delete abcd-123"))
 	if err == nil {
 		t.Fatal("expected an error when the store cannot list sessions")
 	}
