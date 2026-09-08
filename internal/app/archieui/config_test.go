@@ -130,3 +130,63 @@ func TestResolveRequiresBothServiceTargets(t *testing.T) {
 		})
 	}
 }
+
+// TestResolveTokenFallsBackToEnv pins D1: the UI process reads the same
+// [services.*].target_token keys the daemon does, but the config loader does
+// not expand environment variables. A deployment that presents the gateway
+// and state tokens by environment (config.example.toml documents this for
+// remote consumers) must still authenticate, so an empty target_token falls
+// back to GATEWAY_TOKEN / STATE_STORE_TOKEN exactly as the daemon's
+// stateStoreResolvedToken and gatewayResolvedToken do.
+func TestResolveTokenFallsBackToEnv(t *testing.T) {
+	path := t.TempDir() + "/ui.toml"
+	contents := `bot_user = "widget"
+
+[web]
+listen = "127.0.0.1:9999"
+
+[services.gateway]
+target = "127.0.0.1:8585"
+
+[services.state]
+target = "127.0.0.1:9090"
+`
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("GATEWAY_TOKEN", "env-gateway")
+	t.Setenv("STATE_STORE_TOKEN", "env-state")
+
+	resolved, err := Resolve(Options{Config: path}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if resolved.Gateway.Token != "env-gateway" {
+		t.Errorf("Gateway.Token = %q, want env GATEWAY_TOKEN", resolved.Gateway.Token)
+	}
+	if resolved.State.Token != "env-state" {
+		t.Errorf("State.Token = %q, want env STATE_STORE_TOKEN", resolved.State.Token)
+	}
+
+	// The explicit key still wins over the environment.
+	keyed := `bot_user = "widget"
+
+[services.gateway]
+target = "127.0.0.1:8585"
+target_token = "keyed-gateway"
+[services.state]
+target = "127.0.0.1:9090"
+`
+	path2 := t.TempDir() + "/keyed.toml"
+	if err := os.WriteFile(path2, []byte(keyed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	resolved2, err := Resolve(Options{Config: path2}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("Resolve (keyed): %v", err)
+	}
+	if resolved2.Gateway.Token != "keyed-gateway" {
+		t.Errorf("Gateway.Token = %q, want the explicit target_token over env", resolved2.Gateway.Token)
+	}
+}

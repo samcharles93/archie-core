@@ -71,11 +71,26 @@ type projection struct {
 }
 
 func project(cfg config.Config) projection {
+	// Token resolution mirrors the daemon's (stateStoreResolvedToken /
+	// gatewayResolvedToken): the explicit [services.*].target_token key,
+	// then the secret/env var. The config loader does not expand env, so a
+	// deployment that presents the gateway/state tokens by environment —
+	// which config.example.toml documents for remote consumers — would
+	// otherwise leave the UI with an empty token and staterpc.Dial would
+	// refuse a non-loopback start.
+	gatewayToken := cfg.Services.Gateway.TargetToken
+	if gatewayToken == "" {
+		gatewayToken = os.Getenv("GATEWAY_TOKEN")
+	}
+	stateToken := cfg.Services.State.TargetToken
+	if stateToken == "" {
+		stateToken = os.Getenv("STATE_STORE_TOKEN")
+	}
 	return projection{
 		listen:                cfg.Web.Listen,
 		trustForwardedHeaders: cfg.Web.TrustForwardedHeaders,
-		gateway:               ServiceTarget{Target: cfg.Services.Gateway.Target, Token: cfg.Services.Gateway.TargetToken},
-		state:                 ServiceTarget{Target: cfg.Services.State.Target, Token: cfg.Services.State.TargetToken},
+		gateway:               ServiceTarget{Target: cfg.Services.Gateway.Target, Token: gatewayToken},
+		state:                 ServiceTarget{Target: cfg.Services.State.Target, Token: stateToken},
 	}
 }
 
@@ -104,6 +119,14 @@ func merge(o Options, p projection) Options {
 }
 
 func withDefaults(o Options) Options {
+	// This is the one config key the UI and the daemon read with opposite
+	// meanings: in the daemon, Web.Listen = "off" disables the dashboard
+	// (config.Config "off" is a sentinel, not an address). In a dedicated UI
+	// process there is no sense disabling the only thing it does, so "off"
+	// falls through to the default listener. None of the other projected
+	// values is overloaded this way; if "off" ever means something else here
+	// it must be pinned with a test, because it is exactly where an operator
+	// preparing the split would set it.
 	if o.Listen == "" || o.Listen == "off" {
 		o.Listen = defaultListen
 	}

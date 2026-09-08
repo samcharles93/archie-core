@@ -3,13 +3,13 @@ package config
 // Services selects contract adapters at application composition time.
 type Services struct {
 	Gateway ServiceConnection `toml:"gateway" yaml:"gateway"`
-	// State selects the State Store contract adapter. Unlike Gateway, an
-	// empty Target means local (the *store.Store in-process adapter): the
-	// State Store service is not yet extracted into its own process. The
-	// standalone archie-state-store binary (.4.3) is the consumer of
-	// [services.state].target_token; the daemon does not read it yet, so
-	// it remains dead configuration until the daemon points at the
-	// extracted store. Setting Target would dial the gRPC StateStoreService.
+	// State selects the State Store contract adapter. The State Store is its
+	// own process (cmd/archie-state-store) and owns archie.db; an empty Target
+	// is a startup error in archied/archie-gateway, which no longer serve a
+	// local store (docs/prds/state-store-contract.md §12 step 7). The daemon
+	// and agent dial the remote StateStoreService and present target_token
+	// when the target is non-loopback. Token resolution mirrors the daemon's:
+	// the explicit key, then the STATE_STORE_TOKEN secret/env var.
 	State ServiceConnection `toml:"state" yaml:"state"`
 }
 
