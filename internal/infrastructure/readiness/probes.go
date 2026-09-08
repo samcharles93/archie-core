@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"syscall"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/health"
@@ -48,6 +49,43 @@ func (p *StoreProbe) Check(ctx context.Context) health.Result {
 	}
 	if _, err := p.Store.StatusCounts(ctx); err != nil {
 		return health.Result{Status: health.StatusDegraded, Detail: "read failed: " + err.Error()}
+	}
+	return health.Result{Status: health.StatusOK}
+}
+
+// --- remote contract ---
+
+// ContractProbe reports whether a service this process consumes over the wire
+// answers a cheap call within a bounded timeout. It is the readiness signal
+// available to a process that depends on a service it does not own: the probe
+// consumes the dependency's own result and never inspects its manager,
+// registry or database (docs/prds/ui-service-boundary.md, "Listen,
+// authentication, and readiness").
+type ContractProbe struct {
+	ProbeName string
+	Timeout   time.Duration
+	Ping      func(context.Context) error
+}
+
+// NewContractProbe returns a probe named name that calls ping. A zero or
+// negative timeout leaves the caller's context deadline in force.
+func NewContractProbe(name string, timeout time.Duration, ping func(context.Context) error) *ContractProbe {
+	return &ContractProbe{ProbeName: name, Timeout: timeout, Ping: ping}
+}
+
+func (p *ContractProbe) Name() string { return p.ProbeName }
+
+func (p *ContractProbe) Check(ctx context.Context) health.Result {
+	if p.Ping == nil {
+		return health.Result{Status: health.StatusDegraded, Detail: "contract not wired"}
+	}
+	if p.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, p.Timeout)
+		defer cancel()
+	}
+	if err := p.Ping(ctx); err != nil {
+		return health.Result{Status: health.StatusDegraded, Detail: "unreachable: " + err.Error()}
 	}
 	return health.Result{Status: health.StatusOK}
 }
