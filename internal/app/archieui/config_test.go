@@ -139,8 +139,9 @@ func TestResolveRequiresBothServiceTargets(t *testing.T) {
 // not expand environment variables. A deployment that presents the gateway
 // and state tokens by environment (config.example.toml documents this for
 // remote consumers) must still authenticate, so an empty target_token falls
-// back to GATEWAY_TOKEN / STATE_STORE_TOKEN exactly as the daemon's
-// stateStoreResolvedToken and gatewayResolvedToken do.
+// back to GATEWAY_TOKEN / STATE_STORE_TOKEN. The daemon resolves the same two
+// names through a secret.Registry, which also consults bws; this process reads
+// the environment only, deliberately (see withEnvTokens).
 func TestResolveTokenFallsBackToEnv(t *testing.T) {
 	path := t.TempDir() + "/ui.toml"
 	contents := `bot_user = "widget"
@@ -219,5 +220,67 @@ func TestResolveDefaultsTheEventPollInterval(t *testing.T) {
 	}
 	if explicit.EventPollInterval != 250*time.Millisecond {
 		t.Fatalf("EventPollInterval = %s, want the operator's 250ms", explicit.EventPollInterval)
+	}
+}
+
+// The flags-only deployment is the one the env fallback exists for: a
+// container or unit that passes both targets on the command line and presents
+// the tokens by environment, with no config.toml on disk. readProjection
+// returns early for an absent file, so a fallback that lives inside the
+// file's projection never runs there.
+func TestResolveTokenFallsBackToEnvWithoutAConfigFile(t *testing.T) {
+	t.Setenv("GATEWAY_TOKEN", "env-gateway")
+	t.Setenv("STATE_STORE_TOKEN", "env-state")
+
+	resolved, err := Resolve(Options{
+		Config:  filepath.Join(t.TempDir(), "absent.toml"),
+		Listen:  "127.0.0.1:8484",
+		Gateway: ServiceTarget{Target: "10.0.0.1:8585"},
+		State:   ServiceTarget{Target: "10.0.0.1:9090"},
+	}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if resolved.Gateway.Token != "env-gateway" {
+		t.Errorf("Gateway.Token = %q, want env GATEWAY_TOKEN: staterpc.Dial refuses a non-loopback target without one", resolved.Gateway.Token)
+	}
+	if resolved.State.Token != "env-state" {
+		t.Errorf("State.Token = %q, want env STATE_STORE_TOKEN", resolved.State.Token)
+	}
+}
+
+// An explicit flag still beats the environment, so an operator can override a
+// unit-wide token for one process without unsetting it.
+func TestResolveFlagTokenBeatsEnv(t *testing.T) {
+	t.Setenv("GATEWAY_TOKEN", "env-gateway")
+	t.Setenv("STATE_STORE_TOKEN", "env-state")
+
+	resolved, err := Resolve(Options{
+		Config:  filepath.Join(t.TempDir(), "absent.toml"),
+		Gateway: ServiceTarget{Target: "10.0.0.1:8585", Token: "flag-gateway"},
+		State:   ServiceTarget{Target: "10.0.0.1:9090", Token: "flag-state"},
+	}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if resolved.Gateway.Token != "flag-gateway" || resolved.State.Token != "flag-state" {
+		t.Errorf("tokens = %q/%q, want the flag values to beat the environment", resolved.Gateway.Token, resolved.State.Token)
+	}
+}
+
+// withDefaults' "off" coercion is the one key the UI and daemon read with
+// opposite meanings, and its own comment asks for this pin.
+func TestResolveCoercesListenOffToTheDefault(t *testing.T) {
+	resolved, err := Resolve(Options{
+		Config:  filepath.Join(t.TempDir(), "absent.toml"),
+		Listen:  "off",
+		Gateway: ServiceTarget{Target: "127.0.0.1:8585"},
+		State:   ServiceTarget{Target: "127.0.0.1:9090"},
+	}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if resolved.Listen != defaultListen {
+		t.Fatalf("Listen = %q, want %q: a dedicated UI process has nothing to disable", resolved.Listen, defaultListen)
 	}
 }

@@ -36,6 +36,7 @@ func Resolve(o Options, log *slog.Logger) (Options, error) {
 		}
 	}
 	o = withDefaults(o)
+	o = withEnvTokens(o)
 	token, err := resolveToken(o)
 	if err != nil {
 		return Options{}, err
@@ -71,27 +72,40 @@ type projection struct {
 }
 
 func project(cfg config.Config) projection {
-	// Token resolution mirrors the daemon's (stateStoreResolvedToken /
-	// gatewayResolvedToken): the explicit [services.*].target_token key,
-	// then the secret/env var. The config loader does not expand env, so a
-	// deployment that presents the gateway/state tokens by environment —
-	// which config.example.toml documents for remote consumers — would
-	// otherwise leave the UI with an empty token and staterpc.Dial would
-	// refuse a non-loopback start.
-	gatewayToken := cfg.Services.Gateway.TargetToken
-	if gatewayToken == "" {
-		gatewayToken = os.Getenv("GATEWAY_TOKEN")
-	}
-	stateToken := cfg.Services.State.TargetToken
-	if stateToken == "" {
-		stateToken = os.Getenv("STATE_STORE_TOKEN")
-	}
 	return projection{
 		listen:                cfg.Web.Listen,
 		trustForwardedHeaders: cfg.Web.TrustForwardedHeaders,
-		gateway:               ServiceTarget{Target: cfg.Services.Gateway.Target, Token: gatewayToken},
-		state:                 ServiceTarget{Target: cfg.Services.State.Target, Token: stateToken},
+		gateway:               ServiceTarget{Target: cfg.Services.Gateway.Target, Token: cfg.Services.Gateway.TargetToken},
+		state:                 ServiceTarget{Target: cfg.Services.State.Target, Token: cfg.Services.State.TargetToken},
 	}
+}
+
+// withEnvTokens fills a service token the operator gave neither on the command
+// line nor in [services.*].target_token. The config loader does not expand
+// environment variables, and config.example.toml documents the environment as
+// how a remote consumer presents these tokens, so without this a deployment
+// that supplies them by env dials with an empty bearer and staterpc.Dial
+// refuses a non-loopback start.
+//
+// It runs here rather than inside project() because the process is fully
+// drivable by flags: readProjection returns early when there is no config
+// file, so a fallback living in the file's projection would miss exactly the
+// flags-only deployment that needs it.
+//
+// This reads the process environment only. The daemon resolves the same names
+// through a secret.Registry, which also consults bws and any Yaegi-loaded
+// engine; the UI process deliberately does not compose that runtime, because
+// ui-service-boundary.md's deletion gate forbids a secret runtime package
+// here. A token held in a secret manager must therefore be exported into
+// archie-ui's environment by whatever starts it.
+func withEnvTokens(o Options) Options {
+	if o.Gateway.Token == "" {
+		o.Gateway.Token = os.Getenv("GATEWAY_TOKEN")
+	}
+	if o.State.Token == "" {
+		o.State.Token = os.Getenv("STATE_STORE_TOKEN")
+	}
+	return o
 }
 
 // merge fills only the fields the flags left empty.
