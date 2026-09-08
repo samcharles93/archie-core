@@ -133,6 +133,9 @@ func withDefaults(o Options) Options {
 	if o.DependencyTimeout <= 0 {
 		o.DependencyTimeout = defaultDependencyTimeout
 	}
+	if o.EventPollInterval <= 0 {
+		o.EventPollInterval = webui.DefaultEventPollInterval
+	}
 	if o.ReadHeaderTimeout <= 0 {
 		o.ReadHeaderTimeout = defaultReadHeaderTimeout
 	}

@@ -39,6 +39,7 @@ func run() int {
 	flag.StringVar(&options.State.Target, "state-target", "", "archie-state-store gRPC address (defaults to [services.state].target)")
 	flag.StringVar(&options.State.Token, "state-token", "", "bearer token presented to archie-state-store")
 	flag.DurationVar(&options.DependencyTimeout, "dependency-timeout", 0, "per-dependency readiness probe timeout (default 5s)")
+	flag.DurationVar(&options.EventPollInterval, "event-poll-interval", 0, "how often the activity feed polls the State Store for new events (default 1s)")
 	// BoolFunc rather than BoolVar so an unset flag stays distinguishable
 	// from an explicit -trust-forwarded-headers=false, which must be able to
 	// override a configuration file that enables it.
