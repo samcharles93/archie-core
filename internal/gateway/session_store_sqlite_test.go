@@ -645,15 +645,15 @@ func TestSQLiteSessionStore_MigratesPreRoleDatabase(t *testing.T) {
 	oldMessages := strings.Replace(sqliteSessionSchema,
 		"\tsender     TEXT NOT NULL DEFAULT '',\n\trole       TEXT NOT NULL DEFAULT '',\n",
 		"\tsender     TEXT NOT NULL DEFAULT '',\n", 1)
-	if _, err := db.Exec(oldMessages); err != nil {
+	if _, err := db.ExecContext(t.Context(), oldMessages); err != nil {
 		t.Fatalf("create old schema: %v", err)
 	}
 	millis := sqliteBase().UnixMilli()
-	if _, err := db.Exec(`INSERT INTO sessions (session_id, platform, bot_user, channel_id, created_at, last_active_at)
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO sessions (session_id, platform, bot_user, channel_id, created_at, last_active_at)
 		VALUES ('sess-old', 'telegram', 'archie', 'chat-1', ?, ?)`, millis, millis); err != nil {
 		t.Fatalf("seed old session: %v", err)
 	}
-	if _, err := db.Exec(`INSERT INTO messages (message_id, session_id, source_id, sender, text, ts) VALUES
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO messages (message_id, session_id, source_id, sender, text, ts) VALUES
 		('m-user', 'sess-old', 'tg-1', 'alice', 'hello', ?),
 		('m-assistant', 'sess-old', '', 'archie', 'hi', ?)`, millis, millis+1); err != nil {
 		t.Fatalf("seed old messages: %v", err)
