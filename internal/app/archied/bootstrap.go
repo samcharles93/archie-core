@@ -580,7 +580,7 @@ func (b *boot) setupLLMAndChat() error {
 	b.setupChatRuntime(cfg)
 
 	b.setupEmbeddings(cfg, log)
-	contract, cleanup, err := composeChatContract(cfg.Services.Gateway)
+	contract, cleanup, err := composeChatContract(cfg.Services.Gateway, b.secrets)
 	if err != nil {
 		return err
 	}

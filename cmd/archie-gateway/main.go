@@ -25,6 +25,7 @@ func run() int {
 	flag.StringVar(&options.Config, "config", filepath.Join(base, "archie", "config.toml"), "configuration file or directory")
 	flag.StringVar(&options.Overlay, "config-overlay", "", "configuration overlay file or directory")
 	flag.StringVar(&options.Listen, "listen", "127.0.0.1:8585", "gateway gRPC listen address")
+	flag.StringVar(&options.Token, "token", "", "Bearer [REDACTED] required for a non-loopback listener (defaults to [services.gateway].target_token)")
 	flag.Parse()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
