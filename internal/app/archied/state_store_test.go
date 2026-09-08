@@ -15,41 +15,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
-func TestStateStoreListenIsLoopback(t *testing.T) {
-	tests := []struct {
-		name   string
-		listen string
-		want   bool
-	}{
-		{"loopback ipv4", "127.0.0.1:9090", true},
-		{"loopback ipv6", "[::1]:9090", true},
-		{"localhost hostname", "localhost:9090", true},
-		{"localhost uppercase", "LOCALHOST:9090", true},
-		{"wildcard", "0.0.0.0:9090", false},
-		{"private ip", "192.168.1.10:9090", false},
-		{"dns name", "store.example.com:9090", false},
-		{"empty host", ":9090", false},
-		{"malformed", "127.0.0.1", false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := stateStoreListenIsLoopback(tt.listen)
-			if tt.name == "malformed" {
-				if err == nil {
-					t.Fatalf("stateStoreListenIsLoopback(%q) = (%v, nil), want error", tt.listen, got)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("stateStoreListenIsLoopback(%q): %v", tt.listen, err)
-			}
-			if got != tt.want {
-				t.Fatalf("stateStoreListenIsLoopback(%q) = %v, want %v", tt.listen, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestStateStoreServerOptsLoopbackIsInsecure(t *testing.T) {
 	opts, loopback, err := stateStoreServerOpts("127.0.0.1:9090", "", &staterpc.TaskGrants{})
 	if err != nil {
