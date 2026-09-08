@@ -994,6 +994,9 @@ func (s *sqliteSessionStore) MessageCount(ctx context.Context, sessionID string)
 	return n, nil
 }
 
+// scanMessages scans rows shaped (message_id, source_id, sender, role, text,
+// ts, channel_id, thread_id). Both the history reads and SearchMessages select
+// that column order, so they share one scanner.
 func scanMessages(rows *sql.Rows) ([]messaging.Message, error) {
 	defer func() { _ = rows.Close() }()
 	var out []messaging.Message
@@ -1071,7 +1074,7 @@ func (s *sqliteSessionStore) SearchMessages(ctx context.Context, sessionID strin
 	if err != nil {
 		return MessagePage{}, fmt.Errorf("sessionstore: search messages: %w", err)
 	}
-	msgs, err := scanSearchMessages(rows)
+	msgs, err := scanMessages(rows)
 	if err != nil {
 		return MessagePage{}, err
 	}
@@ -1083,34 +1086,6 @@ func (s *sqliteSessionStore) SearchMessages(ctx context.Context, sessionID strin
 		HasMore:    next < total,
 		Truncated:  false,
 	}, nil
-}
-
-// scanSearchMessages scans rows shaped (message_id, source_id, sender,
-// role, text, ts, channel_id, thread_id) -- the same column order
-// SearchMessages selects.
-func scanSearchMessages(rows *sql.Rows) ([]messaging.Message, error) {
-	defer func() { _ = rows.Close() }()
-	var out []messaging.Message
-	for rows.Next() {
-		var (
-			msg  messaging.Message
-			id   string
-			role string
-			ts   int64
-		)
-		if err := rows.Scan(&id, &msg.SourceID, &msg.Sender, &role, &msg.Text, &ts,
-			&msg.ConversationID.ChannelID, &msg.ConversationID.ThreadID); err != nil {
-			return nil, fmt.Errorf("sessionstore: scan search result: %w", err)
-		}
-		msg.ID = messaging.MessageID(id)
-		msg.Role = messaging.Role(role)
-		msg.At = time.UnixMilli(ts).UTC()
-		out = append(out, msg)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("sessionstore: scan search results: %w", err)
-	}
-	return out, nil
 }
 
 // ftsMatchQuery turns free text into an FTS5 MATCH expression requiring
