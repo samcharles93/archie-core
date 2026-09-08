@@ -356,6 +356,57 @@ Revisit only if sub-second feed latency becomes a requirement, or if a second
 consumer needs the same stream, at which point the fan-out belongs in the State
 Store process behind a `SubscribeEvents` RPC and this record is superseded.
 
+**Dashboard configuration page — DECIDED (2026-09-09, `archie-core-ymut`).**
+The configuration page becomes read-only in the UI process for Phase 3. Reads
+cross the boundary as a published snapshot; writes are descoped, not
+contracted. This amends the ratified boundary, which assumed a single admin
+contract carrying both.
+
+**Reads.** `webui.ConfigView` is already the whole answer. It is a UI-owned,
+secret-free value projection built in `handleConfig`: `ProviderView` carries
+the API key's environment variable name and a `Configured` boolean, never a
+value, and `RepoView` is repository metadata only. It is already the exact
+shape the browser receives. So the daemon publishes that projection, plus
+provenance, reload status and the overridden-key list, as a snapshot the UI
+reads; nothing new has to be designed, only moved. Two State Store RPCs carry
+it, a `PutConfigSnapshot` restricted to the administrative token and a
+`GetConfigSnapshot` the UI calls. The daemon republishes on boot and after
+each successful reload, which is precisely when the projection changes.
+
+The State Store is the right holder because a published configuration snapshot
+is shared state, it is already dialled by the UI, and it costs no new listener,
+port, token or interceptor. The alternative, a config admin service on
+`archied`, would make the daemon a gRPC server for the first time. Today it is
+purely a client of Gateway and State Store; `grpc.NewServer` appears only in
+`RunGateway` and `RunStateStore`, which are the standalone binaries' entry
+points, not the daemon's.
+
+**Writes.** `PATCH /api/config`, `POST /api/config/reset` and
+`PATCH /api/config/repos/{owner}/{name}` answer 503 in the UI process, and the
+SPA hides those controls rather than offering a button that fails. Editing is
+`config.toml` plus reload, which is already the only path for every setting
+outside the runtime-tunable allowlist.
+
+This is a deliberate feature reduction and worth naming as one. The write path
+is not hard because of the transport; it is hard because the policy is
+daemon-local and stays that way: `installUpdateConfigHandler` denies
+non-runtime-tunable keys, applies a dotted overlay to a clone of the published
+config, validates the materialised result, writes overlay rows, and rebuilds
+provenance. Contracting that means either moving the policy, which the
+boundary forbids, or exposing it verbatim as remote procedure calls, which
+builds a Configuration Service inside a migration bead. Neither is work this
+phase should be doing to keep one page's buttons alive.
+
+Revisit when dashboard configuration editing is picked up as a feature in its
+own right (`archie-core-1786637498420-327`, still open). At that point it gets
+an admin contract designed as a feature, and the Configuration Service this
+document already anticipates is its natural owner. Until then the UI renders
+configuration and does not write it, which is what the boundary always said
+about ownership even when it assumed a wider contract.
+
+Implementation belongs to `archie-core-8cda.5.4`, the cutover that removes the
+daemon's own dashboard. Nothing here is built yet.
+
 ### 7. Shared mechanics
 
 The following cross-domain mechanics require exact contracts before dependent
