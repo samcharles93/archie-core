@@ -79,6 +79,21 @@ the Gateway and State Store targets already in it, and binds `[web].listen`.
 A non-loopback bind requires a dashboard token (`-token`, or `-token-file` to
 mint and persist one);
 
+**Auth note (deliberate design, `archie-core-8cda.5.5`):** unlike `archied`,
+`archie-ui` has no secret registry — it resolves `GATEWAY_TOKEN` and
+`STATE_STORE_TOKEN` from its **process environment only** (or from the
+`target_token` values in `config.toml`). Whatever starts `archie-ui` is
+therefore responsible for exporting those tokens into its environment: keep
+them in `~/.config/archie/env` (loaded by the `EnvironmentFile` line below),
+not only in a secret manager. A deployment that authenticates `archied`
+through bws/Vault but exports nothing for `archie-ui` leaves the dashboard
+unable to dial its dependencies.
+
+For supervision, `GET /healthz` on `[web].listen` is the process's liveness
+probe (token-free by design); the authenticated readiness surface lives at
+the dashboard's health endpoint behind the token. A watchdog can curl
+`/healthz` without credentials.
+
 ```ini
 [Unit]
 Description=Archie UI Service
@@ -93,6 +108,21 @@ RestartSec=5s
 
 [Install]
 WantedBy=default.target
+```
+
+Concretely, for a deployment whose dependency tokens live outside
+`config.toml`, `~/.config/archie/env` carries the two names and the unit
+loads it; the dashboard token itself comes from `-token-file` (there is no
+environment variable for it):
+
+```bash
+# ~/.config/archie/env
+GATEWAY_TOKEN=...      # presented to archie-gateway
+STATE_STORE_TOKEN=...  # presented to archie-state-store
+```
+
+```ini
+ExecStart=%h/.local/bin/archie-ui -config %h/.config/archie/config.toml -token-file %h/.local/share/archie/web-token
 ```
 
 ---

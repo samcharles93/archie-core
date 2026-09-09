@@ -1,10 +1,26 @@
+# Development overlay for `task dev` and `task dev:dashboard`.
+#
 # Match Vite's API/event proxy without changing the installed configuration.
+# After the UI cutover (archie-core-8cda.5.4) the dashboard on :8484 is the
+# archie-ui process's listener, not archied's; this overlay is what both
+# `go run ./cmd/archied -config-overlay deployments/dev.toml` and
+# `go run ./cmd/archie-ui -config-overlay deployments/dev.toml` read. Only
+# [web], [services.*] and [capture] land in archie-ui; the daemon ignores
+# [web] entirely.
+
 [web]
 listen = "127.0.0.1:8484"
 
 # `task dev` also runs archie-state-store on its -listen default
-# (127.0.0.1:9090, loopback, no token) via dev:state-store -- point archied
-# and archie-gateway at it so a fresh dev checkout works without hand-editing
-# the installed config.toml (docs/prds/state-store-contract.md §12 step 7).
+# (127.0.0.1:9090, loopback, no token) via dev:state-store -- point archied,
+# archie-gateway and archie-ui at it so a fresh dev checkout works without
+# hand-editing the installed config.toml
+# (docs/prds/state-store-contract.md §12 step 7).
 [services.state]
 target = "127.0.0.1:9090"
+
+# `task dev` runs archie-gateway on its -listen default (127.0.0.1:8585,
+# loopback, no token). Stated explicitly so the value archie-ui dials is
+# visible next to the State Store one.
+[services.gateway]
+target = "127.0.0.1:8585"

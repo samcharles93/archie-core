@@ -89,31 +89,41 @@ tasks:
       - npm test
 
   dev:
-    desc: "Develop: archied live-reload + archie-gateway + archie-state-store + Vite HMR together. Open http://localhost:5173"
+    desc: "Develop: archied live-reload + archie-gateway + archie-state-store + archie-ui + Vite HMR together. Open http://localhost:5173"
     summary: |
       Runs the dev loop in one terminal:
 
         * air              rebuilds and restarts archied on Go changes
         * archie-gateway   serves ChatContract on 127.0.0.1:8585 (archied
-                           dials it for chat; it does not embed a gateway)
+                           and archie-ui dial it; neither embeds a gateway)
         * archie-state-store  owns archie.db on 127.0.0.1:9090, loopback,
-                           no token (deployments/dev.toml); both archied and
-                           archie-gateway dial it -- neither owns the DB
-                           in-process (docs/prds/state-store-contract.md §12
-                           step 7)
+                           no token (deployments/dev.toml); archied,
+                           archie-gateway and archie-ui dial it -- none owns
+                           the DB in-process
+                           (docs/prds/state-store-contract.md §12 step 7)
+        * archie-ui        serves the dashboard on 127.0.0.1:8484 from the
+                           embedded dist (deployments/dev.toml). After the
+                           UI cutover (archie-core-8cda.5.4) archied runs no
+                           dashboard listener: this is what :8484 is.
         * vite             serves the dashboard with hot reload on :5173,
-                           proxying /api and /events through to archied on :8484
+                           proxying /api and /events through to archie-ui
+                           on :8484
 
       Open http://localhost:5173 -- not :8484. The Vite server is the one with
       hot reload; :8484 serves the last built dist/ and will look stale.
 
-      Ctrl-C stops all four.
-    deps: [dev:daemon, dev:gateway, dev:state-store, dev:ui]
+      Ctrl-C stops all five.
+    deps: [dev:daemon, dev:gateway, dev:state-store, dev:dashboard, dev:ui]
 
   dev:daemon:
     desc: archied only, live-reloading via air (prefer `task dev`)
     cmds:
       - air -build.args_bin="-config-overlay,deployments/dev.toml"
+
+  dev:dashboard:
+    desc: archie-ui only, no live-reload (prefer `task dev`)
+    cmds:
+      - go run ./cmd/archie-ui -config-overlay deployments/dev.toml
 
   dev:state-store:
     desc: archie-state-store only, no live-reload (prefer `task dev`)
@@ -126,7 +136,7 @@ tasks:
       - go run ./cmd/archie-gateway
 
   dev:ui:
-    desc: Vite dev server only, expects archied already running (prefer `task dev`)
+    desc: Vite dev server only, expects archie-ui already running (prefer `task dev`)
     dir: ui
     cmds:
       - npm install --no-audit --no-fund
@@ -135,21 +145,31 @@ tasks:
   dev:mobile:
     desc: Serve the dashboard on your LAN (token-protected) for phone viewing
     summary: |
-      Starts archied with the [web] bind on 0.0.0.0 so the dashboard is
-      reachable from your phone, printing the URL (LAN IP + token) and a QR
-      code to scan. Stop `task dev` first: both use port 8484, and two daemons
-      sharing the bot identity would double-poll the forge. Frontend served is
-      the embedded dist, so run `task ui` if you changed the frontend.
+      Starts archie-ui with a LAN-reachable [web] bind and a minted dashboard
+      token, printing the URL (LAN IP + token) and a QR code to scan. After
+      the UI cutover the dashboard is archie-ui's process: this task starts
+      archie-ui only. Run the daemon separately (task dev, or archied) for
+      actual archie operation -- two daemons sharing the bot identity would
+      double-poll the forge.
+
+      The frontend served is the embedded dist, so run `task ui` if you
+      changed the frontend. The token file is the path archied used to mint
+      before the cutover, so an existing phone setup keeps its token.
     deps:
       - ui
     cmds:
       - cmd: |
           IP=$(hostname -I | awk '{print $1}')
-          TOKEN=$(cat "${XDG_DATA_HOME:-$HOME/.local/share}/archie/web-token" 2>/dev/null)
+          TOKEN_FILE="${XDG_DATA_HOME:-$HOME/.local/share}/archie/web-token"
+          go run ./cmd/archie-ui -listen 0.0.0.0:8484 -token-file "$TOKEN_FILE" &
+          UI_PID=$!
+          sleep 2
+          TOKEN=$(cat "$TOKEN_FILE" 2>/dev/null)
           URL="http://$IP:8484/?t=$TOKEN"
           echo "Phone URL: $URL"
           echo "$URL" | qrencode -t ANSIUTF8
-      - go run ./cmd/archied -config-overlay ~/.config/archie/mobile.toml
+          trap "kill $UI_PID 2>/dev/null" EXIT
+          wait $UI_PID
 
   build:
     desc: Build archie services and agent binaries

@@ -74,6 +74,9 @@ max_uptime = "60m"
 pull_policy = "missing"
 
 [web]
+# Bound by the archie-ui process (the host-run dashboard after the UI
+# cutover, archie-core-8cda.5.4); it dials the [services.*] targets above --
+# the bridge-gateway State Store address works from the host too.
 listen = "127.0.0.1:8484"
 # Trust X-Forwarded-Proto when fronted by a reverse proxy (e.g. Traefik)
 # terminating TLS so dashboard mutations succeed with external HTTPS Origin.

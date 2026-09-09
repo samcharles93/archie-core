@@ -5,6 +5,14 @@ Two components, independently versioned: `archied` (gateway/daemon) and
 `CHANGELOG.md` / `CHANGELOG.archied.md` / `CHANGELOG.archie.md` document the
 split — see those for what each component actually is.
 
+The UI Service (`archie-ui`) is not a third component: it ships inside the
+`archied` release, versioned by the same `archied/vX.Y.Z` tag. It shares
+`internal/webui` (dashboard HTTP layer, embedded SPA) with the daemon, so the
+two move together; `tools/release.sh` extends archied's `go list -deps`
+closure with `cmd/archie-ui` and `internal/app/archieui` for exactly this
+reason — without them a commit touching only the UI process would land in
+neither changelog.
+
 ## The standing rule
 
 **Only version a component that actually has unreleased commits touching its
@@ -18,12 +26,13 @@ just because the other one moved, and do not bundle a large unrelated backlog
 into a release "because it's due" — that's a separate release, on its own
 review pass, not a rider on this one.
 
-In practice: most sessions touch `archied` (webui, gateway, daemon, chat) and
-leave `archie-agent` (the per-task sandboxed runtime) untouched, so most
-releases are gateway-only with `RUNTIME=skip`. Don't ask whether to skip an
-untouched component — skip it, and say so in the handoff. Only ask when the
-runtime genuinely has unreleased changes and there's a real judgment call
-about whether to bundle a large pre-existing backlog in or cut it separately.
+In practice: most sessions touch `archied` (webui, gateway, daemon, chat,
+archieui) and leave `archie-agent` (the per-task sandboxed runtime)
+untouched, so most releases are gateway-only with `RUNTIME=skip`. Don't ask
+whether to skip an untouched component — skip it, and say so in the handoff.
+Only ask when the runtime genuinely has unreleased changes and there's a
+real judgment call about whether to bundle a large pre-existing backlog in
+or cut it separately.
 
 Note that a runtime code change (e.g. something in `internal/app/agentworker`)
 being *merged to `main`* is not the same as it being *in production* — the
