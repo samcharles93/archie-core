@@ -79,6 +79,28 @@ type PullRequestForge interface {
 	PRState(ctx context.Context, owner, repo string, number int) (string, error)
 }
 
+// PullRequest is a forge-neutral summary of an existing pull request,
+// carrying the inputs the operator-triggered reviewer needs: its identity,
+// head/base refs and SHAs, and the title/body that serve as the review's
+// issue text.
+type PullRequest struct {
+	Number  int
+	Title   string
+	Body    string
+	HeadRef string
+	BaseRef string
+	HeadSHA string
+	BaseSHA string
+	State   string // "open", "merged", or "closed"
+}
+
+// PullRequestReader fetches an existing pull request's metadata. Forge
+// implementations that cannot read PRs (the noop forge) do not implement it;
+// callers type-assert and refuse review when the capability is absent.
+type PullRequestReader interface {
+	GetPullRequest(ctx context.Context, owner, repo string, number int) (PullRequest, error)
+}
+
 // RepoForge is repository-level operations.
 type RepoForge interface {
 	// AcceptInvitations auto-accepts pending repository invitations.

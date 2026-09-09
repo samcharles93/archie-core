@@ -24,18 +24,38 @@ func newReviewerFor(req taskrun.Request) workflow.Reviewer {
 	if !req.Repo.ReviewEnabled {
 		return nil
 	}
-	modelRef := req.Cfg.Models["reviewer"]
-	if modelRef == "" {
-		modelRef = req.Cfg.Models["builder"]
-	}
+	return NewOperatorReviewer(req.Cfg.Models, req.Providers)
+}
+
+// NewOperatorReviewer builds the workflow.Reviewer for an operator-triggered
+// review, resolved from daemon-level models and providers rather than a task
+// run. It shares newReviewerFor's role->"builder" model fallback but drops
+// the Repo.ReviewEnabled gate: the operator asked for the review explicitly,
+// so "not opted in" is not a reason to refuse. It returns nil when no model
+// resolves (no reviewer/builder model configured) or no provider runtime
+// builds, so the caller can report a clear "review not configured" result.
+func NewOperatorReviewer(models map[string]string, providers map[string]agentexec.Provider) workflow.Reviewer {
+	modelRef := ReviewerModel(models)
 	if modelRef == "" {
 		return nil
 	}
-	rt := agentexec.NewRuntime(req.Providers)
+	rt := agentexec.NewRuntime(providers)
 	if rt == nil {
 		return nil
 	}
 	return newSubagentReviewer(rt, modelRef)
+}
+
+// ReviewerModel resolves the reviewer role's model with the builder fallback.
+// It is the single source of truth for the role->"builder" rule, shared by
+// the workflow stage (via NewOperatorReviewer/newReviewerFor) and the
+// operator-triggered review's result reporting so the reported model and the
+// model actually run cannot diverge.
+func ReviewerModel(models map[string]string) string {
+	if models["reviewer"] != "" {
+		return models["reviewer"]
+	}
+	return models["builder"]
 }
 
 // defaultReviewMaxSteps bounds the reviewer's tool loop when neither
