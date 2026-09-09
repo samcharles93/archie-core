@@ -1,5 +1,7 @@
 import "./css/_main.css";
 import { render } from "preact";
+import { api } from "./base/api.jsx";
+import { hiddenRoutes } from "./capabilities.jsx";
 import { el, mount } from "./base/dom.jsx";
 import { icon } from "./base/icons.jsx";
 import { dashboardPage } from "./dashboard/dashboard.jsx";
@@ -24,20 +26,26 @@ import { chatPage } from "./chat/chat.jsx";
  * greyed, labelled entry tells you the capability exists and is coming, which
  * is more honest than hiding it and more useful than a 404.
  */
+// section names the capability a route needs, as reported by
+// GET /api/capabilities. A route with no section is served in every
+// composition. The dashboard is rendered by two different processes -- the
+// daemon and the extracted UI service -- and a section the serving process
+// cannot back would otherwise render as permanently empty rather than as
+// absent (archie-core-8cda.5.4).
 const routes = [
   { path: "/", label: "Dashboard", icon: "dashboard", view: dashboardPage },
-  { path: "/chat", label: "Chat", icon: "chat", view: chatPage },
+  { path: "/chat", label: "Chat", icon: "chat", view: chatPage, section: "chat" },
   { path: "/tasks", label: "Tasks", icon: "tasks", view: tasksPage },
-  { path: "/logs", label: "Logs", icon: "logs", view: logsPage },
-  { path: "/captures", label: "Event inspector", icon: "captures", view: capturesPage },
-  { path: "/mappings", label: "Field mappings", icon: "mappings", view: mappingsPage },
-  { path: "/bindings", label: "Playbook bindings", icon: "bindings", view: bindingsPage },
-  { path: "/skills", label: "Skills", icon: "skills", view: skillsPage },
-  { path: "/workflows", label: "Workflows", icon: "workflows", view: workflowsPage },
-  { path: "/memory", label: "Memory", icon: "memory", view: memoryPage },
-  { path: "/curators", label: "Curators", icon: "curators", view: curatorsPage },
-  { path: "/channels", label: "Channels", icon: "channels", view: channelsPage },
-  { path: "/settings", label: "Configuration", icon: "settings", view: settingsPage },
+  { path: "/logs", label: "Logs", icon: "logs", view: logsPage, section: "logs" },
+  { path: "/captures", label: "Event inspector", icon: "captures", view: capturesPage, section: "captures" },
+  { path: "/mappings", label: "Field mappings", icon: "mappings", view: mappingsPage, section: "mappings" },
+  { path: "/bindings", label: "Playbook bindings", icon: "bindings", view: bindingsPage, section: "bindings" },
+  { path: "/skills", label: "Skills", icon: "skills", view: skillsPage, section: "skills" },
+  { path: "/workflows", label: "Workflows", icon: "workflows", view: workflowsPage, section: "workflows" },
+  { path: "/memory", label: "Memory", icon: "memory", view: memoryPage, section: "memory" },
+  { path: "/curators", label: "Curators", icon: "curators", view: curatorsPage, section: "curators" },
+  { path: "/channels", label: "Channels", icon: "channels", view: channelsPage, section: "channels" },
+  { path: "/settings", label: "Configuration", icon: "settings", view: settingsPage, section: "settings" },
 ];
 
 const THEME_KEY = "archie.theme";
@@ -168,6 +176,9 @@ function commandBar(onNavigate, onToggleChat) {
         else node.removeAttribute("aria-current");
       }
     },
+    hide(paths) {
+      for (const path of paths) items.get(path)?.remove();
+    },
   };
 }
 
@@ -191,6 +202,12 @@ function start() {
   chatDrawer.append(el("div.chat-drawer-panel", drawerHead, chatPage()),
     el("div.chat-scrim", { onclick: () => toggleChat(false) }));
   const bar = commandBar(navigate, () => toggleChat());
+  // Asked for once, after the shell is up: the nav renders immediately and
+  // loses the entries this process cannot back a moment later, rather than
+  // holding the whole page behind one request.
+  api.capabilities()
+    .then((caps) => bar.hide(hiddenRoutes(caps?.sections, routes)))
+    .catch(() => {});
   const shell = el("div.shell", bar.node, outlet, chatDrawer);
   mount(document.getElementById("app"), shell);
 

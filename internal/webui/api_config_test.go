@@ -11,6 +11,9 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/config"
+	"github.com/samcharles93/archie-core/internal/domain/curator"
+	"github.com/samcharles93/archie-core/internal/logging"
+	"github.com/samcharles93/archie-core/internal/memory"
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/store"
 )
@@ -684,4 +687,54 @@ func (s stubSnapshots) PutConfigSnapshot(context.Context, store.ConfigSnapshot) 
 
 func (s stubSnapshots) ConfigSnapshot(context.Context) (store.ConfigSnapshot, bool, error) {
 	return s.snapshot, s.found, s.err
+}
+
+// TestCapabilitiesReportWhatThisProcessCanServe: the same dashboard is served
+// by the daemon, which holds every runtime handle, and by the UI process,
+// which holds two remote contracts. A section with nothing behind it answers
+// empty rather than failing, which the browser cannot tell from a quiet
+// deployment -- so the server says which sections it can back.
+func TestCapabilitiesReportWhatThisProcessCanServe(t *testing.T) {
+	get := func(srv *Server) map[string]bool {
+		t.Helper()
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/capabilities", nil)
+		res := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(res, req)
+		if res.Code != http.StatusOK {
+			t.Fatalf("GET /api/capabilities = %d, want 200", res.Code)
+		}
+		var body struct {
+			Sections map[string]bool `json:"sections"`
+		}
+		if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode capabilities: %v", err)
+		}
+		return body.Sections
+	}
+
+	bare := get(newTestServer(t))
+	for _, section := range []string{"logs", "memory", "curators", "channels", "mappings", "bindings", "skills"} {
+		if bare[section] {
+			t.Errorf("section %q reported available with nothing wired behind it", section)
+		}
+	}
+	// The task board and configuration page work from the store and the
+	// configured source, so they are never hidden.
+	for _, section := range []string{"workflows", "settings"} {
+		if !bare[section] {
+			t.Errorf("section %q reported unavailable; it is served in every composition", section)
+		}
+	}
+
+	wired := newTestServer(t)
+	wired.Cfg = config.NewHolder(config.Config{})
+	wired.LogFeed = logging.NewFeed(10)
+	wired.Memory = &memory.Manager{}
+	wired.Curators = &curator.Registry{}
+	got := get(wired)
+	for _, section := range []string{"logs", "memory", "curators", "skills", "channels"} {
+		if !got[section] {
+			t.Errorf("section %q reported unavailable despite being wired", section)
+		}
+	}
 }

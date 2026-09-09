@@ -276,6 +276,7 @@ func (s *Server) registerCoreRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/channels/{id}/reload", s.handleChannelReload)
 	mux.HandleFunc("GET /api/version", s.handleVersion)
 	mux.HandleFunc("GET /api/memory", s.handleMemory)
+	mux.HandleFunc("GET /api/capabilities", s.handleCapabilities)
 }
 
 func (s *Server) registerTaskRoutes(mux *http.ServeMux) {

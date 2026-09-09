@@ -55,6 +55,16 @@ func compose(d deps) *webui.Server {
 	if snapshots, ok := d.Store.(store.ConfigSnapshotStore); ok {
 		srv.ConfigSource = webui.RemoteConfigView(snapshots)
 	}
+	// Mappings and bindings are ratified State Store contracts, and the same
+	// client already carries them: withholding them would degrade two pages
+	// that have an owner, which is a different thing from the intake surfaces
+	// below.
+	if mappings, ok := d.Store.(store.MappingStore); ok {
+		srv.Mappings = mappings
+	}
+	if bindings, ok := d.Store.(store.BindingStore); ok {
+		srv.Bindings = bindings
+	}
 	if d.Chat != nil {
 		srv.Chat = &webui.ChatService{Contract: d.Chat}
 	}

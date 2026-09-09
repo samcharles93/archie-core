@@ -83,6 +83,7 @@ export const api = {
     return res.json();
   },
   setup: () => req("/api/setup"),
+  capabilities: () => req("/api/capabilities"),
   workflows: () => req("/api/workflows"),
 	workRequest: async (request) => {
 		const res = await fetch("/api/work-requests", {

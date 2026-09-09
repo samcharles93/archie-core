@@ -91,8 +91,6 @@ func TestComposeUIServerHoldsNoDaemonState(t *testing.T) {
 		"LogFeed":           srv.LogFeed,
 		"TaskLogs":          srv.TaskLogs,
 		"WorkRequests":      srv.WorkRequests,
-		"Mappings":          srv.Mappings,
-		"Bindings":          srv.Bindings,
 		"Captures":          srv.Captures,
 		"BindingDispatcher": srv.BindingDispatcher,
 		"CaptureLimiter":    srv.CaptureLimiter,
@@ -104,6 +102,12 @@ func TestComposeUIServerHoldsNoDaemonState(t *testing.T) {
 	}
 	if srv.Workflows != nil {
 		t.Error("Workflows is wired; the definition catalog is a filesystem scan on the daemon host")
+	}
+	// Mappings and bindings are the other way round: ratified State Store
+	// contracts, carried by the client this process already holds, so
+	// leaving them nil would degrade two pages that have an owner.
+	if srv.Mappings == nil || srv.Bindings == nil {
+		t.Error("Mappings/Bindings are unwired; both are State Store contracts the composed client implements")
 	}
 	if srv.UpdateReportPath != "" {
 		t.Error("UpdateReportPath is set; host-local update relay stays with the daemon")
