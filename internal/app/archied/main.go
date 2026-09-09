@@ -399,7 +399,7 @@ func Run() int { //nolint:cyclop // the composition root's setup sequence is del
 		return 0
 	}
 	b.loadCatalog(ctx, args.cfgPath)
-	b.setupObservability()
+	b.setupObservability(ctx)
 
 	if err := b.setupBackends(ctx); err != nil {
 		return 1
@@ -509,10 +509,17 @@ func recordBootOverlayError(p *atomic.Pointer[string], log *slog.Logger, err err
 	log.Error(msg, args...)
 }
 
-func persistAndBroadcastEvents(sink *events.Sub, st store.TaskStore, web *webui.Server, log *slog.Logger) {
+// persistAndBroadcastEvents drains the bus until it closes, giving each
+// event an ID from the store before fanning it out.
+//
+// The insert deliberately outlives ctx: this loop ends when the bus closes,
+// which is part of shutdown, and the last events of a run are exactly the
+// ones an operator wants to read afterwards.
+func persistAndBroadcastEvents(ctx context.Context, sink *events.Sub, st store.TaskStore, web *webui.Server, log *slog.Logger) {
+	ctx = context.WithoutCancel(ctx)
 	for e := range sink.C {
 		if e.ID == 0 {
-			id, err := st.InsertEvent(context.Background(), e)
+			id, err := st.InsertEvent(ctx, e)
 			if err != nil {
 				log.Error("event sink insert failed", "err", err)
 				continue

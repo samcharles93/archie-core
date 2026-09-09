@@ -366,7 +366,7 @@ func (b *boot) loadCatalog(ctx context.Context, cfgPath string) {
 // setupObservability builds the event bus, channel manager and dashboard
 // server. Every event is logged to SQLite (stamped with its row id) and
 // then fanned out to live dashboard connections.
-func (b *boot) setupObservability() {
+func (b *boot) setupObservability(ctx context.Context) {
 	cfg, log := b.cfg, b.log
 	bus := events.NewBus()
 	b.bus = bus
@@ -388,6 +388,10 @@ func (b *boot) setupObservability() {
 	}
 	b.web = &webui.Server{Store: b.stateStore, Log: log.With("component", "webui"), LogFeed: b.logFeed, TaskLogs: b.taskLogs, Cfg: config.NewHolder(cfg), Channels: b.channelManager, Events: bus}
 	b.web.UpdateReportPath = updateReportPath(cfg.WorkDir, "webui")
+	// The watchdog leaves its verdict in a file on this host, so the daemon
+	// reads it and publishes the outcome as an event; the dashboard renders
+	// what it receives, wherever it runs (archie-core-8cda.5.4).
+	b.startUpdateRelay(ctx, b.web.UpdateReportPath)
 	if (cfg.Chat.Telegram.Token != (secret.SecretRef{}) || cfg.Chat.Telegram.TokenEnv != "") && len(cfg.Chat.Telegram.AllowedUserIDs) > 0 {
 		b.web.TelegramUpdateReportPath = updateReportPath(cfg.WorkDir, cfg.BotUser)
 		b.web.TelegramUpdateChatID = cfg.Chat.Telegram.AllowedUserIDs[0]
@@ -403,7 +407,7 @@ func (b *boot) setupObservability() {
 	}
 	b.wireWebStoreSurfaces()
 	sink := bus.Subscribe(256)
-	go persistAndBroadcastEvents(sink, b.stateStore, b.web, log)
+	go persistAndBroadcastEvents(ctx, sink, b.stateStore, b.web, log)
 }
 
 // wireWebStoreSurfaces attaches the dashboard's optional storage surfaces.
