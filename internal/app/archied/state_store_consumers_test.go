@@ -93,7 +93,7 @@ func TestSetupObservabilityRoutesTaskStoreThroughStateStore(t *testing.T) {
 		taskLogs:    logging.NewTaskRegistry(filepath.Join(t.TempDir(), "logs"), logFeed, logging.TaskSinkOptions{}),
 	}
 	t.Cleanup(b.cleanup)
-	b.setupObservability()
+	b.setupObservability(t.Context())
 
 	if b.web.Store != storeB {
 		t.Fatalf("webui Store = %p, want b.stateStore (%p); dashboard task store did not route through the State Store adapter", b.web.Store, storeB)
