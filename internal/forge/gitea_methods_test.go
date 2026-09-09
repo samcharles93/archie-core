@@ -177,6 +177,21 @@ func TestGiteaGetPullRequest(t *testing.T) {
 	}
 }
 
+func TestGiteaGetPullRequestMissingHeadDoesNotPanic(t *testing.T) {
+	c, mux := newTestGiteaClient(t)
+	// Gitea returns head: null when a PR's head branch was deleted.
+	mux.HandleFunc("GET /api/v1/repos/o/r/pulls/7", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, map[string]any{
+			"number": 7, "title": "Add widget", "state": "closed", "merged": true,
+			"head": nil, "base": nil,
+		})
+	})
+
+	if _, err := c.GetPullRequest(t.Context(), "o", "r", 7); err == nil {
+		t.Fatal("GetPullRequest error = nil, want a missing-head/base error rather than a panic")
+	}
+}
+
 func TestGiteaCloseIssueWithComment(t *testing.T) {
 	c, mux := newTestGiteaClient(t)
 	var commented, closed bool

@@ -148,11 +148,15 @@ type boot struct {
 	// unrelated call.
 	embeddings domainembedding.Client
 
-	toolReg             *tools.Registry
-	chatModels          gateway.ModelManager
-	personas            *gateway.PersonaRegistry
-	chatTasks           gateway.TaskCreator
-	chatController      *gateway.StoreTaskController
+	toolReg        *tools.Registry
+	chatModels     gateway.ModelManager
+	personas       *gateway.PersonaRegistry
+	chatTasks      gateway.TaskCreator
+	chatController *gateway.StoreTaskController
+	// chatPRReviewer is the operator-triggered PR review capability, built
+	// once and shared by every channel so a review in flight on one channel
+	// is deduplicated against the same request on another (single-flight).
+	chatPRReviewer      gateway.ChatPRReviewer
 	defaultChatIdentity string
 	updateService       *releaseupdate.Service
 

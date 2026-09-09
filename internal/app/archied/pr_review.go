@@ -231,12 +231,19 @@ func buildReviewAllowlist(cfg config.Config) map[string]map[string]bool {
 // the forge cannot read PRs (the noop forge, or a forge with no PR read
 // support). A review tool that can never run must not be advertised, matching
 // the TaskTools nil-backend rule.
+//
+// The instance is built once and memoized on the boot struct so every channel
+// shares one in-flight set: a review of the same PR requested concurrently
+// from the Web UI and Telegram deduplicates instead of running twice.
 func (b *boot) prReviewer() gateway.ChatPRReviewer {
+	if b.chatPRReviewer != nil {
+		return b.chatPRReviewer
+	}
 	forgeReader, _ := b.forgeClient.(forge.PullRequestReader)
 	if forgeReader == nil {
 		return nil
 	}
-	return &prReviewer{
+	b.chatPRReviewer = &prReviewer{
 		forge:     forgeReader,
 		trees:     b.trees,
 		models:    b.cfg.Models,
@@ -245,4 +252,5 @@ func (b *boot) prReviewer() gateway.ChatPRReviewer {
 		allowed:   buildReviewAllowlist(b.cfg),
 		log:       b.log,
 	}
+	return b.chatPRReviewer
 }
