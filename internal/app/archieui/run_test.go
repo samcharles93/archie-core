@@ -20,6 +20,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskstate"
+	"github.com/samcharles93/archie-core/internal/webui"
 )
 
 // fakeChat is a minimal gateway.ChatContract standing in for the standalone
@@ -101,9 +102,23 @@ func TestUIServesDashboardAgainstRemoteContracts(t *testing.T) {
 	if _, err := st.EnqueueChatTask(t.Context(), "acme", "widget", "remote summary", "body", "implement", ""); err != nil {
 		t.Fatalf("seed task: %v", err)
 	}
+	// The daemon publishes the configuration page's projection; this process
+	// only renders it (archie-core-ymut).
+	published, err := json.Marshal(webui.ConfigView{
+		Identity: webui.IdentityView{BotUser: "archie", ForgeType: "github"},
+		Editable: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutConfigSnapshot(t.Context(), store.ConfigSnapshot{
+		Schema: webui.ConfigViewSchema, Document: published,
+	}); err != nil {
+		t.Fatalf("publish config snapshot: %v", err)
+	}
 
 	stateTarget, stopState := serveGRPC(t, func(r grpc.ServiceRegistrar) {
-		staterpc.RegisterServer(r, staterpc.Deps{Tasks: st, Log: slog.New(slog.DiscardHandler)})
+		staterpc.RegisterServer(r, staterpc.Deps{Tasks: st, ConfigSnapshots: st, Log: slog.New(slog.DiscardHandler)})
 	})
 	defer stopState()
 	chat := &fakeChat{sessions: []gateway.SessionContext{
@@ -195,9 +210,21 @@ func TestUIServesDashboardAgainstRemoteContracts(t *testing.T) {
 		t.Fatalf("chat sessions = %s, want the single web session from the remote contract", body)
 	}
 
-	// No shared config.Holder: the read is empty and there is no second writer.
-	if code, body := get("/api/config"); code != http.StatusOK || string(body) != "{}\n" {
-		t.Errorf("GET /api/config = %d %q, want 200 {}", code, body)
+	// No shared config.Holder: the page renders the snapshot the daemon
+	// published, and this process is not a second writer.
+	code, body = get("/api/config")
+	if code != http.StatusOK {
+		t.Fatalf("GET /api/config = %d (%s), want 200", code, body)
+	}
+	var rendered webui.ConfigView
+	if err := json.Unmarshal(body, &rendered); err != nil {
+		t.Fatalf("decode config view: %v", err)
+	}
+	if rendered.Identity.BotUser != "archie" {
+		t.Fatalf("config view = %s, want the published projection", body)
+	}
+	if rendered.Editable {
+		t.Error("the UI process rendered configuration as editable; it has no write path")
 	}
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodPatch, ts.URL+"/api/config", http.NoBody)
 	if err != nil {

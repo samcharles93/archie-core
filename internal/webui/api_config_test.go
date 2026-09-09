@@ -12,6 +12,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/secret"
+	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // fakeSecrets are recognisable strings that must never appear anywhere in
@@ -609,4 +610,78 @@ func TestHandleChannelsUsesRuntimeManager(t *testing.T) {
 	if len(got.Channels) != 1 || got.Channels[0].State != "failed" || !got.Channels[0].ReloadSupported {
 		t.Fatalf("channels = %#v", got.Channels)
 	}
+}
+
+// TestRemoteConfigViewRendersThePublishedSnapshot: the UI process has no
+// configuration of its own, so the page it serves is whatever the owner
+// published -- and it must never claim to be editable, because this process
+// has no write path and its PATCH routes answer 503.
+func TestRemoteConfigViewRendersThePublishedSnapshot(t *testing.T) {
+	published := ConfigView{
+		Identity:   IdentityView{BotUser: "archie", ForgeType: "github"},
+		Models:     map[string]string{"chat": "anthropic/claude"},
+		Providers:  map[string]ProviderView{"anthropic": {APIKeyEnv: "ANTHROPIC_API_KEY", Configured: true}},
+		Editable:   true, // the daemon's own view; publishing must not carry it
+		Provenance: []ConfigOrigin{{Path: "/etc/archie/config.toml", Role: "main"}},
+	}
+	document, err := json.Marshal(published)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := RemoteConfigView(stubSnapshots{snapshot: store.ConfigSnapshot{
+		Schema:   ConfigViewSchema,
+		Document: document,
+	}, found: true})
+
+	view, found, err := source(t.Context())
+	if err != nil || !found {
+		t.Fatalf("RemoteConfigView = (found %v, %v), want the published snapshot", found, err)
+	}
+	if view.Identity.BotUser != "archie" || view.Providers["anthropic"].APIKeyEnv != "ANTHROPIC_API_KEY" {
+		t.Fatalf("view = %+v, want the published values", view)
+	}
+	if view.Editable {
+		t.Error("a rendered snapshot claims to be editable; this process has no write path")
+	}
+}
+
+// TestRemoteConfigViewRefusesAnUnknownSchema: a document whose shape this
+// build does not know is not something to render half of.
+func TestRemoteConfigViewRefusesAnUnknownSchema(t *testing.T) {
+	source := RemoteConfigView(stubSnapshots{snapshot: store.ConfigSnapshot{
+		Schema:   "webui.ConfigView/99",
+		Document: []byte(`{}`),
+	}, found: true})
+
+	if _, found, err := source(t.Context()); err == nil || found {
+		t.Fatalf("unknown schema = (found %v, %v), want an error", found, err)
+	}
+}
+
+// TestConfigWithNoPublishedSnapshotIsEmpty: before the owner has published
+// anything the page has nothing to show, which is the documented degraded
+// response, not a failure.
+func TestConfigWithNoPublishedSnapshotIsEmpty(t *testing.T) {
+	srv := newTestServer(t)
+	srv.ConfigSource = RemoteConfigView(stubSnapshots{})
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK || strings.TrimSpace(res.Body.String()) != "{}" {
+		t.Fatalf("GET /api/config = %d %q, want 200 {}", res.Code, res.Body)
+	}
+}
+
+type stubSnapshots struct {
+	snapshot store.ConfigSnapshot
+	found    bool
+	err      error
+}
+
+func (s stubSnapshots) PutConfigSnapshot(context.Context, store.ConfigSnapshot) error { return s.err }
+
+func (s stubSnapshots) ConfigSnapshot(context.Context) (store.ConfigSnapshot, bool, error) {
+	return s.snapshot, s.found, s.err
 }

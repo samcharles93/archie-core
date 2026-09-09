@@ -1,8 +1,10 @@
 package webui
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"net/http"
 	"strconv"
@@ -12,6 +14,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/overlay"
 	"github.com/samcharles93/archie-core/internal/secret"
+	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // Sentinel errors for handleConfigUpdate status classification. The
@@ -225,6 +228,11 @@ type ConfigView struct {
 	// runtime overlay, so the UI can mark those rows (their file value
 	// is shadowed until reset) and offer a per-row reset.
 	Overridden []string `json:"overridden,omitempty"`
+	// Editable reports whether this process can apply configuration
+	// changes. False makes the page render values without edit controls,
+	// which is what a process that only displays a published snapshot can
+	// honestly offer -- its write routes answer 503.
+	Editable bool `json:"editable"`
 	// Schema is the field-descriptor catalog (archie-core-b6ew) attached to
 	// this view's own values, locked reasons, and overridden markers -- see
 	// config_schema.go. The dashboard's generic renderer (archie-core-b6ew.3)
@@ -316,15 +324,50 @@ type WebView struct {
 // keeps working as fields are added to Config in the future. An allowlist
 // fails safe -- a new secret field added upstream is simply absent here
 // until someone deliberately adds it.
+// ConfigViewSchema names the projection's shape. It travels with a published
+// snapshot so a reader can refuse a document it does not understand, and it
+// changes when ConfigView's JSON shape changes incompatibly.
+const ConfigViewSchema = "webui.ConfigView/1"
+
+// ConfigViewSource supplies the configuration projection the page renders.
+// The process that owns configuration builds it; a process that only displays
+// configuration reads the published snapshot instead. found is false when no
+// configuration is available to render, which the handler answers with an
+// empty object rather than an error.
+type ConfigViewSource func(ctx context.Context) (ConfigView, bool, error)
+
+func (s *Server) configSource() ConfigViewSource {
+	if s.ConfigSource != nil {
+		return s.ConfigSource
+	}
+	return s.LocalConfigView
+}
+
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
-	if s.Cfg == nil {
+	view, found, err := s.configSource()(r.Context())
+	if err != nil {
+		s.logf("config view unavailable", "err", err)
+		http.Error(w, "configuration is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if !found {
 		writeJSON(w, map[string]any{})
 		return
 	}
-	// cfg := s.Cfg was a shared-pointer copy that aliased the live
-	// config. Under the Holder it becomes a value snapshot, which is
-	// what the read-only view always wanted -- every ConfigView field
-	// is read from this local.
+	writeJSON(w, view)
+}
+
+// LocalConfigView builds the projection from the configuration this process
+// holds. It is what the daemon serves and, byte for byte, what it publishes
+// for the UI process to render (see store.ConfigSnapshot).
+//
+// Every value here is read from one config snapshot taken up front: under the
+// Holder a reload swaps the whole value, which is what a read-only view
+// always wanted.
+func (s *Server) LocalConfigView(ctx context.Context) (ConfigView, bool, error) {
+	if s.Cfg == nil {
+		return ConfigView{}, false, nil
+	}
 	cfg := s.Cfg.Get()
 
 	var provenance []ConfigOrigin
@@ -370,9 +413,14 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		},
 		Provenance: provenance,
 		Locked:     lockedConfigKeys(),
+		// Editable is a property of this process, not of the
+		// configuration, so it is set by the source rather than carried
+		// in a published document: the writer is whoever holds the
+		// update path.
+		Editable: s.UpdateConfig != nil,
 	}
 	if s.ConfigOverrides != nil {
-		if overridden, err := s.ConfigOverrides(r.Context()); err == nil {
+		if overridden, err := s.ConfigOverrides(ctx); err == nil {
 			view.Overridden = overridden
 		}
 		// A failed read omits the list rather than failing the whole
@@ -383,8 +431,28 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		view.Reload = &rs
 	}
 	view.Schema = buildConfigSchema(view)
+	return view, true, nil
+}
 
-	writeJSON(w, view)
+// RemoteConfigView reads the projection the configuration owner published.
+// The reading process cannot edit it: it has no update path, and the page is
+// told so rather than offering a control that would 503.
+func RemoteConfigView(snapshots store.ConfigSnapshotStore) ConfigViewSource {
+	return func(ctx context.Context) (ConfigView, bool, error) {
+		snapshot, found, err := snapshots.ConfigSnapshot(ctx)
+		if err != nil || !found {
+			return ConfigView{}, false, err
+		}
+		if snapshot.Schema != ConfigViewSchema {
+			return ConfigView{}, false, fmt.Errorf("webui: published config snapshot has schema %q, want %q", snapshot.Schema, ConfigViewSchema)
+		}
+		var view ConfigView
+		if err := json.Unmarshal(snapshot.Document, &view); err != nil {
+			return ConfigView{}, false, fmt.Errorf("webui: decode published config snapshot: %w", err)
+		}
+		view.Editable = false
+		return view, true, nil
+	}
 }
 
 // handleConfigReset deletes one runtime-overlay row via ResetConfig,

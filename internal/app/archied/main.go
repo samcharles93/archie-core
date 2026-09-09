@@ -455,6 +455,10 @@ func (b *boot) wireConfigSurfaces(ctx context.Context, cfgPath, overlayPath stri
 	b.installUpdateConfigHandler()
 	b.installUpdateRepoFieldHandler()
 	b.installConfigHandlers(cfgPath, overlayPath)
+	// Publish once at boot. Every later change goes through publishConfig,
+	// which republishes; without this the UI process would render nothing
+	// until the first reload or dashboard edit.
+	b.publishConfigSnapshot(ctx)
 }
 
 // bootConfigOverlay layers the runtime config overlay over the resolved

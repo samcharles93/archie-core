@@ -1374,7 +1374,7 @@ func (b *boot) setupForgeWebhook() {
 // PATCH path both go through it, so the two can never diverge.
 // currentProvenance (an atomic) is the last published provenance chain;
 // the PATCH path appends the runtime-overlay origin to it.
-func (b *boot) publishConfig(cfg config.Config, provenance configuration.Provenance) {
+func (b *boot) publishConfig(ctx context.Context, cfg config.Config, provenance configuration.Provenance) {
 	b.d.Cfg.Set(cfg)
 	origins := make([]webui.ConfigOrigin, 0, len(provenance.Origins))
 	for _, origin := range provenance.Origins {
@@ -1383,6 +1383,48 @@ func (b *boot) publishConfig(cfg config.Config, provenance configuration.Provena
 		})
 	}
 	b.web.SetProvenance(origins)
+	b.publishConfigSnapshot(ctx)
+}
+
+// publishConfigSnapshot sends the dashboard's projection to the State Store,
+// where a UI process reads it. This is the only crossing: the configuration
+// owner publishes what it already renders, and no other process holds the
+// daemon's config.Holder (archie-core-ymut).
+//
+// A failed publish degrades to a stale configuration page and is logged, not
+// propagated: it must never fail the reload or dashboard write that produced
+// the new configuration, both of which have already taken effect.
+func (b *boot) publishConfigSnapshot(ctx context.Context) {
+	snapshots, ok := b.stateStore.(store.ConfigSnapshotStore)
+	if !ok || b.web == nil {
+		return
+	}
+	// Detached from the caller: a dashboard edit's request context is
+	// cancelled the moment the browser has its answer, and the write it
+	// describes has already taken effect either way.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+
+	view, found, err := b.web.LocalConfigView(ctx)
+	if err != nil || !found {
+		if err != nil {
+			b.log.Warn("config snapshot not published", "err", err)
+		}
+		return
+	}
+	document, err := json.Marshal(view)
+	if err != nil {
+		b.log.Warn("config snapshot not published", "err", err)
+		return
+	}
+	err = snapshots.PutConfigSnapshot(ctx, store.ConfigSnapshot{
+		Schema:      webui.ConfigViewSchema,
+		Document:    document,
+		PublishedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		b.log.Warn("config snapshot not published", "err", err)
+	}
 }
 
 // wireConfigPublishing installs SIGHUP reload and the reload status
@@ -1401,7 +1443,7 @@ func (b *boot) wireConfigPublishing(ctx context.Context, cfgPath, overlayPath st
 		applyModelCatalog(&doc.Config, b.catalog)
 		old := b.d.Cfg.Get()
 		b.currentProvenance.Store(&doc.Provenance)
-		b.publishConfig(doc.Config, doc.Provenance)
+		b.publishConfig(ctx, doc.Config, doc.Provenance)
 		if fields := changedNonReloadableFields(old, doc.Config); len(fields) > 0 {
 			log.Warn("config reloaded; some changes require a restart",
 				"fields", fields, "paths", doc.Provenance.Paths())
@@ -1481,7 +1523,7 @@ func (b *boot) installUpdateConfigHandler() {
 		prov := configuration.Provenance{Origins: append(kept,
 			configuration.Origin{Path: "config_overlay (runtime)", Role: configuration.RoleMain, Layer: configuration.LayerOverlay})}
 		b.currentProvenance.Store(&prov)
-		b.publishConfig(next, prov)
+		b.publishConfig(ctx, next, prov)
 		b.bootOverlayErr.Store(nil) // a successful write proves the overlay works again
 		log.Info("config updated from dashboard", "keys", len(updates))
 		return nil
@@ -1566,7 +1608,7 @@ func (b *boot) installConfigHandlers(cfgPath, overlayPath string) {
 		}
 		applyModelCatalog(&doc.Config, b.catalog)
 		b.currentProvenance.Store(&doc.Provenance)
-		b.publishConfig(doc.Config, doc.Provenance)
+		b.publishConfig(ctx, doc.Config, doc.Provenance)
 		b.bootOverlayErr.Store(nil)
 		log.Info("config key reset to file value", "key", key)
 		return nil

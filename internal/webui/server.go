@@ -47,6 +47,12 @@ type Server struct {
 	// materialised config, persist, then Set.
 	Cfg *config.Holder
 
+	// ConfigSource supplies the configuration projection GET /api/config
+	// renders. Composition sets it to RemoteConfigView in a process that
+	// only displays configuration; unset means this process builds the view
+	// from the configuration it holds (LocalConfigView).
+	ConfigSource ConfigViewSource
+
 	// Workflows is the executable registry snapshot supplied by composition.
 	Workflows []workflow.Definition
 	// WorkRequests admits dashboard requests through the same task-creation

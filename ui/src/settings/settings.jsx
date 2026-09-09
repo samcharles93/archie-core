@@ -105,7 +105,7 @@ function LifecycleCard({ data, error }) {
   );
 }
 
-function RepoBoolCell({ r, field, onSaved }) {
+function RepoBoolCell({ r, field, onSaved, editable = true }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [checked, setChecked] = useState(!!r[field]);
@@ -126,6 +126,10 @@ function RepoBoolCell({ r, field, onSaved }) {
     }
   };
 
+  if (!editable) {
+    return <td>{checked ? "yes" : "no"}</td>;
+  }
+
   return (
     <td>
       <input className="repo-field-checkbox" type="checkbox" checked={checked} onChange={handleChange} disabled={loading} />
@@ -134,7 +138,7 @@ function RepoBoolCell({ r, field, onSaved }) {
   );
 }
 
-function RepoIntCell({ r, field, onSaved }) {
+function RepoIntCell({ r, field, onSaved, editable = true }) {
   const [val, setVal] = useState(String(r[field] ?? 0));
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -164,6 +168,10 @@ function RepoIntCell({ r, field, onSaved }) {
     }
   };
 
+  if (!editable) {
+    return <td className="mono">{val}</td>;
+  }
+
   return (
     <td>
       <input 
@@ -180,7 +188,10 @@ function RepoIntCell({ r, field, onSaved }) {
   );
 }
 
-function RepositoriesCard({ repos, onSaved }) {
+// editable is false in a process that only renders a published
+// configuration snapshot: its PATCH routes answer 503, so the cells are
+// values rather than controls (archie-core-ymut).
+export function RepositoriesCard({ repos, onSaved, editable = true }) {
   if (!repos?.length) {
     return (
       <Section title="Repositories" sub="The repositories Archie polls for work.">
@@ -211,9 +222,9 @@ function RepositoriesCard({ repos, onSaved }) {
                 <td>{r.ecosystem || "go"}</td>
                 <td className="mono">{gateSummary(r.gate)}</td>
                 <td className="mono">{r.protect?.length ? r.protect.join(", ") : "—"}</td>
-                <RepoBoolCell r={r} field="allow_concurrent" onSaved={onSaved} />
-                <RepoIntCell r={r} field="max_retries" onSaved={onSaved} />
-                <RepoBoolCell r={r} field="review_enabled" onSaved={onSaved} />
+                <RepoBoolCell r={r} field="allow_concurrent" onSaved={onSaved} editable={editable} />
+                <RepoIntCell r={r} field="max_retries" onSaved={onSaved} editable={editable} />
+                <RepoBoolCell r={r} field="review_enabled" onSaved={onSaved} editable={editable} />
               </tr>
             ))}
           </tbody>
@@ -387,7 +398,7 @@ function SettingsApp() {
                           options: f.options,
                           raw: f.value,
                           hint: f.description,
-                          editable: f.editable,
+                          editable: f.editable && cfg.editable !== false,
                           locked: cfg.locked || {},
                           overridden: cfg.overridden || [],
                           onSaved: loadCfg
@@ -399,7 +410,7 @@ function SettingsApp() {
               );
             })}
 
-            <RepositoriesCard repos={cfg.repositories} onSaved={loadCfg} />
+            <RepositoriesCard repos={cfg.repositories} onSaved={loadCfg} editable={cfg.editable !== false} />
             <ModelsAndProvidersCard models={cfg.models} providers={cfg.providers} />
             <ProvenanceCard origins={cfg.provenance} />
           </>

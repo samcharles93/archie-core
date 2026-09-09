@@ -30,9 +30,9 @@ type deps struct {
 // What is deliberately absent, and which bead fills it:
 //
 //   - Cfg, LastReload, UpdateConfig, ConfigOverrides, ResetConfig,
-//     UpdateRepoField: the configuration owner stays the daemon, reached
-//     through a narrow admin contract. The shared holder is removed from the
-//     daemon's own wiring by archie-core-8cda.5.4.
+//     UpdateRepoField: the configuration owner stays the daemon. The read
+//     crosses as the snapshot ConfigSource renders; the write routes answer
+//     503 and the page hides their controls (archie-core-ymut).
 //   - LogFeed, TaskLogs, Events, Channels, ReloadChannel, Curators, Memory,
 //     Workflows, WorkRequests, RunningVersions, Chat.Updates,
 //     UpdateReportPath: no contract exists for these yet.
@@ -51,6 +51,9 @@ func compose(d deps) *webui.Server {
 		Token:                 d.Options.Token,
 		TrustForwardedHeaders: d.Options.trustForwardedHeaders(),
 		Health:                d.Health,
+	}
+	if snapshots, ok := d.Store.(store.ConfigSnapshotStore); ok {
+		srv.ConfigSource = webui.RemoteConfigView(snapshots)
 	}
 	if d.Chat != nil {
 		srv.Chat = &webui.ChatService{Contract: d.Chat}
