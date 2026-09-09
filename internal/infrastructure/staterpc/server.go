@@ -25,6 +25,7 @@ import (
 // rather than a nil-pointer panic.
 var (
 	errCaptureUnavailable            = status.Error(codes.Unavailable, "capture store unavailable")
+	errConfigSnapshotsUnavailable    = status.Error(codes.Unavailable, "config snapshot store unavailable")
 	errMappingUnavailable            = status.Error(codes.Unavailable, "mapping store unavailable")
 	errBindingUnavailable            = status.Error(codes.Unavailable, "binding store unavailable")
 	errBindingDispatchUnavailable    = status.Error(codes.Unavailable, "binding dispatcher unavailable")
@@ -41,6 +42,7 @@ type Deps struct {
 	Grants             *TaskGrants
 	Tasks              store.TaskStore
 	Captures           store.CaptureStore
+	ConfigSnapshots    store.ConfigSnapshotStore
 	Mappings           store.MappingStore
 	Bindings           store.BindingStore
 	BindingDispatcher  store.BindingDispatcher
@@ -280,6 +282,39 @@ func (s *server) capture() (store.CaptureStore, error) {
 		return nil, errCaptureUnavailable
 	}
 	return s.deps.Captures, nil
+}
+
+func (s *server) configSnapshots() (store.ConfigSnapshotStore, error) {
+	if s.deps.ConfigSnapshots == nil {
+		return nil, errConfigSnapshotsUnavailable
+	}
+	return s.deps.ConfigSnapshots, nil
+}
+
+func (s *server) PutConfigSnapshot(ctx context.Context, r *pb.PutConfigSnapshotRequest) (*pb.PutConfigSnapshotResponse, error) {
+	cs, err := s.configSnapshots()
+	if err != nil {
+		return nil, err
+	}
+	if err := cs.PutConfigSnapshot(ctx, configSnapshotValue(r.Snapshot)); err != nil {
+		return nil, s.logErr("PutConfigSnapshot", err)
+	}
+	return &pb.PutConfigSnapshotResponse{}, nil
+}
+
+func (s *server) GetConfigSnapshot(ctx context.Context, _ *pb.GetConfigSnapshotRequest) (*pb.GetConfigSnapshotResponse, error) {
+	cs, err := s.configSnapshots()
+	if err != nil {
+		return nil, err
+	}
+	snapshot, found, err := cs.ConfigSnapshot(ctx)
+	if err != nil {
+		return nil, s.logErr("GetConfigSnapshot", err)
+	}
+	if !found {
+		return &pb.GetConfigSnapshotResponse{}, nil
+	}
+	return &pb.GetConfigSnapshotResponse{Snapshot: configSnapshotProto(snapshot), Found: true}, nil
 }
 
 func (s *server) InsertCapture(ctx context.Context, r *pb.InsertCaptureRequest) (*pb.InsertCaptureResponse, error) {

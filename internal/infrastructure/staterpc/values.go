@@ -337,3 +337,25 @@ func unmapError(err error) error {
 	}
 	return fmt.Errorf("state store: %s: %w", st.Message(), err)
 }
+
+// configSnapshotProto and configSnapshotValue carry the dashboard's
+// configuration projection. document crosses as bytes, unread by either side
+// of this hop: the store holds it and the page renders it.
+func configSnapshotProto(snapshot store.ConfigSnapshot) *pb.ConfigSnapshot {
+	return &pb.ConfigSnapshot{
+		Schema:      snapshot.Schema,
+		Document:    snapshot.Document,
+		PublishedAt: timestamp(snapshot.PublishedAt),
+	}
+}
+
+func configSnapshotValue(snapshot *pb.ConfigSnapshot) store.ConfigSnapshot {
+	if snapshot == nil {
+		return store.ConfigSnapshot{}
+	}
+	return store.ConfigSnapshot{
+		Schema:      snapshot.Schema,
+		Document:    snapshot.Document,
+		PublishedAt: timeValue(snapshot.PublishedAt),
+	}
+}

@@ -140,6 +140,9 @@ func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	if btc, ok := b.st.(store.BindingTaskCreator); ok {
 		deps.BindingTaskCreator = btc
 	}
+	if css, ok := b.st.(store.ConfigSnapshotStore); ok {
+		deps.ConfigSnapshots = css
+	}
 	return deps
 }
 

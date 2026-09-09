@@ -187,7 +187,7 @@ structures found in legacy packages.
   changing this package or its callers.
 - The proto (`proto/state/v1/state.proto`, service `StateStoreService`,
   package `statev1` in `internal/contracts/state/v1/`) is one gRPC service
-  fronting every ratified store contract (40 RPCs); the Go consumer facades
+  fronting every ratified store contract (42 RPCs); the Go consumer facades
   stay narrow (`workflow.Store`, `store.TaskStore`, etc., all ≤8 methods
   except the `TaskStore` composite) via `staterpc.Client`'s multiple `var _`
   assertions -- never add a Go interface method without a matching RPC.

@@ -34,13 +34,14 @@ func NewClient(conn grpc.ClientConnInterface) *Client {
 func (c *Client) Close() error { return nil }
 
 var (
-	_ workflow.Store           = (*Client)(nil)
-	_ store.TaskStore          = (*Client)(nil)
-	_ store.CaptureStore       = (*Client)(nil)
-	_ store.MappingStore       = (*Client)(nil)
-	_ store.BindingStore       = (*Client)(nil)
-	_ store.BindingDispatcher  = (*Client)(nil)
-	_ store.BindingTaskCreator = (*Client)(nil)
+	_ workflow.Store            = (*Client)(nil)
+	_ store.TaskStore           = (*Client)(nil)
+	_ store.CaptureStore        = (*Client)(nil)
+	_ store.MappingStore        = (*Client)(nil)
+	_ store.BindingStore        = (*Client)(nil)
+	_ store.BindingDispatcher   = (*Client)(nil)
+	_ store.BindingTaskCreator  = (*Client)(nil)
+	_ store.ConfigSnapshotStore = (*Client)(nil)
 )
 
 // Lifecycle
@@ -249,6 +250,30 @@ func (c *Client) InsertCapture(ctx context.Context, ce store.CapturedEvent, rete
 // ListCaptures calls StreamCaptures, not the deprecated unary ListCaptures
 // RPC: a batch of large capture bodies in one unary response can exceed
 // gRPC's 4MiB message cap (docs/prds/state-store-contract.md).
+// PutConfigSnapshot publishes the dashboard's configuration projection. The
+// server admits it on the administrative token only; a task-scoped grant
+// cannot reach it (see TaskGrants).
+func (c *Client) PutConfigSnapshot(ctx context.Context, snapshot store.ConfigSnapshot) error {
+	_, err := c.client.PutConfigSnapshot(ctx, &pb.PutConfigSnapshotRequest{Snapshot: configSnapshotProto(snapshot)})
+	if err != nil {
+		return unmapError(err)
+	}
+	return nil
+}
+
+// ConfigSnapshot reads the published projection. found is false, with a nil
+// error, before a daemon has published one.
+func (c *Client) ConfigSnapshot(ctx context.Context) (store.ConfigSnapshot, bool, error) {
+	reply, err := c.client.GetConfigSnapshot(ctx, &pb.GetConfigSnapshotRequest{})
+	if err != nil {
+		return store.ConfigSnapshot{}, false, unmapError(err)
+	}
+	if !reply.Found {
+		return store.ConfigSnapshot{}, false, nil
+	}
+	return configSnapshotValue(reply.Snapshot), true, nil
+}
+
 func (c *Client) ListCaptures(ctx context.Context, limit int) ([]store.CapturedEvent, error) {
 	stream, err := c.client.StreamCaptures(ctx, &pb.StreamCapturesRequest{Limit: int64(limit)})
 	if err != nil {

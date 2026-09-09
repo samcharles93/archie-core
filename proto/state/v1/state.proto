@@ -46,6 +46,14 @@ service StateStoreService {
   rpc StageStats(StageStatsRequest) returns (StageStatsResponse);
   rpc TokensByDay(TokensByDayRequest) returns (TokensByDayResponse);
 
+  // Configuration snapshot: the running configuration as the dashboard
+  // renders it, published by the owner of configuration for the process that
+  // displays it. PutConfigSnapshot is administrative; GetConfigSnapshot is
+  // the UI's read (docs/architecture/migration-decisions.md, "Dashboard
+  // configuration page").
+  rpc PutConfigSnapshot(PutConfigSnapshotRequest) returns (PutConfigSnapshotResponse);
+  rpc GetConfigSnapshot(GetConfigSnapshotRequest) returns (GetConfigSnapshotResponse);
+
   // Capture
   rpc InsertCapture(InsertCaptureRequest) returns (InsertCaptureResponse);
   // ListCaptures is superseded by StreamCaptures (kept, unmodified, so an
@@ -348,6 +356,25 @@ message StageStatsResponse { repeated StageStat stats = 1; }
 
 message TokensByDayRequest { int64 days = 1; }
 message TokensByDayResponse { repeated DayTokens tokens = 1; }
+
+// ConfigSnapshot carries the dashboard's configuration projection. document
+// is opaque to the store: its shape belongs to the producer and the page that
+// reads it, and schema names that shape so a reader can refuse one it does
+// not understand. It is secret-free at the producer -- the projection carries
+// an API key's environment variable name and whether it resolved, never a
+// value.
+message ConfigSnapshot {
+  string schema = 1;
+  bytes document = 2;
+  google.protobuf.Timestamp published_at = 3;
+}
+message PutConfigSnapshotRequest { ConfigSnapshot snapshot = 1; }
+message PutConfigSnapshotResponse {}
+message GetConfigSnapshotRequest {}
+message GetConfigSnapshotResponse {
+  ConfigSnapshot snapshot = 1;
+  bool found = 2;
+}
 
 message InsertCaptureRequest {
   CapturedEvent capture = 1;
