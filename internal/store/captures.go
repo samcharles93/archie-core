@@ -21,22 +21,6 @@ CREATE TABLE IF NOT EXISTS captured_events (
 CREATE INDEX IF NOT EXISTS idx_captured_events_source ON captured_events(source, id);
 `
 
-// CapturedEvent is one unbound inbound webhook capture: no workflow binding,
-// no forge/task association -- just what arrived, from where, and when.
-// See docs/prds/event-capture-storage.md.
-type CapturedEvent struct {
-	ID          int64     `json:"id"`
-	ReceivedAt  time.Time `json:"received_at"`
-	Source      string    `json:"source"`
-	RemoteAddr  string    `json:"remote_addr"`
-	ContentType string    `json:"content_type"`
-	// Headers and Body are redacted (webhookguard.RedactPayload) before
-	// they ever reach InsertCapture; the store persists what it is given.
-	Headers       string `json:"headers"`
-	Body          string `json:"body"`
-	Authenticated bool   `json:"authenticated"`
-}
-
 // captureTimeLayout is fixed-width (unlike time.RFC3339Nano, whose
 // fractional-seconds field is trimmed of trailing zeros and omitted
 // entirely when zero). A variable-width fractional part breaks lexicographic

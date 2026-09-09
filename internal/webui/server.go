@@ -18,6 +18,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/config"
+	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
@@ -25,12 +26,11 @@ import (
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/memory"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/ui"
 )
 
 type Server struct {
-	Store store.TaskStore
+	Store storev1.TaskStore
 	Log   *slog.Logger
 
 	// Cfg backs the setup checklist and configuration views. Optional: the
@@ -146,7 +146,7 @@ type Server struct {
 	// GET /api/captures list and the mapping preview's by-ID scan
 	// (docs/prds/event-capture-storage.md). Optional: nil makes the list
 	// answer {"enabled": false} rather than the dashboard failing to start.
-	Captures store.CaptureStore
+	Captures storev1.CaptureStore
 	// CaptureMaxEvents is the operator's configured [capture] max_events,
 	// used to bound captureByID's scan window (api_mapping.go).
 	// CaptureIntake is the write half's mount.
@@ -167,13 +167,13 @@ type Server struct {
 	// Mappings persists payload field mappings (docs/prds/payload-field-mapping.md).
 	// Optional: nil makes every /api/mappings route answer 503 rather than
 	// the dashboard failing to start.
-	Mappings store.MappingStore
+	Mappings storev1.MappingStore
 
 	// Bindings persists playbook bindings: matcher + mapping + workflow
 	// triples that turn a captured webhook into an archie task
 	// (docs/prds/webhook-intake-security.md). Optional: nil makes every
 	// /api/bindings route answer 503 rather than the dashboard failing to start.
-	Bindings store.BindingStore
+	Bindings storev1.BindingStore
 
 	// TelegramUpdateReportPath and TelegramUpdateChatID let a dashboard-
 	// initiated update use the same post-restart notification route as a

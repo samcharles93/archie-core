@@ -16,6 +16,7 @@ import (
 	channelruntime "github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/channels/telegram"
 	"github.com/samcharles93/archie-core/internal/config"
+	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
@@ -24,7 +25,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/releaseannounce"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
 	"github.com/samcharles93/archie-core/internal/secret"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/tools"
 )
 
@@ -38,7 +38,7 @@ type telegramSetup struct {
 	Cfg                 *config.Holder
 	CfgPath             string
 	OverlayPath         string
-	St                  store.TaskStore
+	St                  storev1.TaskStore
 	LLM                 *runtime.Runtime
 	ChatModels          gateway.ModelManager
 	ToolReg             *tools.Registry

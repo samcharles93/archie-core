@@ -26,7 +26,6 @@ CREATE TABLE IF NOT EXISTS field_mappings (
 // row matches the given ID. GetMapping uses (nil, nil) instead, matching
 // TaskByID's convention -- "not found" is the normal answer to "does a
 // mapping with this ID currently exist," not an error.
-var ErrMappingNotFound = errors.New("store: mapping not found")
 
 // mappingTimeLayout follows captureTimeLayout's reasoning: fixed-width so
 // string and chronological order agree, even though nothing here prunes on

@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strconv"
 
+	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // mappingRequest is the wire shape POST /api/mappings and
@@ -109,7 +109,7 @@ func (s *Server) handleMappingUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Mappings.UpdateMapping(r.Context(), m); err != nil {
-		if errors.Is(err, store.ErrMappingNotFound) {
+		if errors.Is(err, storev1.ErrMappingNotFound) {
 			http.Error(w, "mapping not found", http.StatusNotFound)
 			return
 		}
@@ -137,7 +137,7 @@ func (s *Server) handleMappingDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Mappings.DeleteMapping(r.Context(), id); err != nil {
-		if errors.Is(err, store.ErrMappingNotFound) {
+		if errors.Is(err, storev1.ErrMappingNotFound) {
 			http.Error(w, "mapping not found", http.StatusNotFound)
 			return
 		}
@@ -192,7 +192,7 @@ func (s *Server) handleMappingPreview(w http.ResponseWriter, r *http.Request) {
 // exactly one reader, the dashboard list view, so a by-ID lookup was never
 // needed until preview), so this scans the newest window rather than
 // adding a new store method for a single low-volume caller.
-func (s *Server) captureByID(ctx context.Context, id int64) (*store.CapturedEvent, error) {
+func (s *Server) captureByID(ctx context.Context, id int64) (*storev1.CapturedEvent, error) {
 	captures, err := s.Captures.ListCaptures(ctx, mappingCaptureScanWindow(s.CaptureMaxEvents))
 	if err != nil {
 		return nil, err

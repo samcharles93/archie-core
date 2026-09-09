@@ -1,0 +1,242 @@
+// Package storev1 is the ratified State Store contract as its consumers
+// reference it: the producer-owned daemon/webui/intake store surfaces
+// (docs/prds/state-store-contract.md §1, §2). It carries no persistence --
+// *store.Store (SQLite, transitional location) and *staterpc.Client (the
+// remote adapter) both satisfy these interfaces -- so a process that only
+// holds the contracts, such as the archie-ui dashboard process, can reference
+// them without linking the SQL implementation.
+//
+// The package is hand-written, unlike its proto-generated siblings under
+// internal/contracts/{gateway,state}/v1: the gRPC fronting service
+// (statev1.StateStoreService) is generated, but these Go consumer facades
+// predate it and stay narrow (<= 8 methods except the TaskStore composite)
+// per the same document. Relocated from internal/store by the UI Service
+// deletion gate (archie-core-8cda.5.6); internal/store keeps type aliases so
+// daemon-side callers are unaffected.
+package storev1
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/samcharles93/archie-core/internal/domain/binding"
+	"github.com/samcharles93/archie-core/internal/domain/mapping"
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/events"
+)
+
+// TaskStore is the full store surface the daemon needs.
+// Consumers depend on TaskStore, never on a concrete type.
+type TaskStore interface {
+	TaskLifecycle
+	TaskEvents
+	TaskQueries
+	TaskArchiver
+	TaskRetryer
+}
+
+// TaskLifecycle manages the core task state machine and enqueuing.
+// Binding-triggered task creation lives on BindingTaskCreator, not here,
+// so the lifecycle surface stays narrow and non-binding consumers (forge
+// poll, chat spawn, drain loop) do not acquire a binding-specific shape.
+type TaskLifecycle interface {
+	EnqueueIssue(ctx context.Context, owner, repo string, number int, title, body, labels, identity string) (bool, error)
+	EnqueueChatTask(ctx context.Context, owner, repo, title, body, wf, identity string) (*workflow.Task, error)
+	ClaimNext(ctx context.Context) (*workflow.Task, error)
+	ClaimByIssue(ctx context.Context, owner, repo string, number int) (*workflow.Task, error)
+	Transition(ctx context.Context, taskID int64, from, to, detail string) error
+	Update(ctx context.Context, t *workflow.Task) error
+	Requeue(ctx context.Context, taskID int64, fromStatus, workflow string) error
+	RecoverStale(ctx context.Context) (int64, error)
+}
+
+// TaskArchiver removes one terminal task's local record with an optimistic
+// status guard. It is separate from the already broad lifecycle contract so
+// consumers that only run tasks do not acquire an operator-only capability.
+type TaskArchiver interface {
+	ArchiveTask(ctx context.Context, taskID int64, fromStatus string, audit events.Event) (eventID int64, err error)
+}
+
+// TaskRetryer atomically requeues recoverable work and accounts for the new
+// attempt so a partial write cannot evade the retry cap.
+type TaskRetryer interface {
+	RetryTask(ctx context.Context, taskID int64, fromStatus, workflow string) error
+}
+
+// TaskQueries groups read-only task accessors.
+type TaskQueries interface {
+	TaskByIssue(ctx context.Context, owner, repo string, number int) (*workflow.Task, error)
+	TaskByID(ctx context.Context, taskID int64) (*workflow.Task, error)
+	OpenPRs(ctx context.Context) ([]workflow.Task, error)
+	ClearTerminalTasks(ctx context.Context) (int64, error)
+	Tasks(ctx context.Context, limit int) ([]workflow.Task, error)
+	StatusCounts(ctx context.Context) (map[string]int, error)
+	IncrementRetryCount(ctx context.Context, taskID int64) error
+}
+
+// TaskEvents groups observability and lifecycle methods.
+type TaskEvents interface {
+	InsertEvent(ctx context.Context, e events.Event) (int64, error)
+	EventsSince(ctx context.Context, sinceID int64, limit int) ([]events.Event, error)
+	TaskEvents(ctx context.Context, taskID int64) ([]events.Event, error)
+	WorkflowStats(ctx context.Context) ([]WorkflowStat, error)
+	StageStats(ctx context.Context) ([]StageStat, error)
+	TokensByDay(ctx context.Context, days int) ([]DayTokens, error)
+	Close() error
+}
+
+// CaptureStore persists unbound inbound webhook captures -- events with no
+// workflow binding and no task association. Deliberately separate from
+// TaskStore: a consumer that only needs capture (the intake HTTP handler)
+// should not acquire the full task-lifecycle surface, mirroring why
+// TaskArchiver is split out above. See docs/prds/event-capture-storage.md.
+type CaptureStore interface {
+	InsertCapture(ctx context.Context, c CapturedEvent, retention time.Duration, maxEvents int) (int64, error)
+	ListCaptures(ctx context.Context, limit int) ([]CapturedEvent, error)
+}
+
+// ConfigSnapshotStore holds the running configuration as the dashboard
+// renders it: the owner of configuration publishes, the process that displays
+// it reads. Separate from every other store surface because it is the only
+// one whose writer is the daemon and whose reader is the UI, and because a
+// task-scoped credential must never reach the writer.
+// See docs/architecture/migration-decisions.md, "Dashboard configuration page".
+type ConfigSnapshotStore interface {
+	PutConfigSnapshot(ctx context.Context, snapshot ConfigSnapshot) error
+	ConfigSnapshot(ctx context.Context) (ConfigSnapshot, bool, error)
+}
+
+// MappingStore persists payload field mappings (t2db.3). Deliberately
+// separate from TaskStore and CaptureStore for the same reason those are
+// split: the dashboard's mapping editor should only acquire the mapping
+// surface, not the full task or capture APIs. See
+// docs/prds/payload-field-mapping.md.
+type MappingStore interface {
+	InsertMapping(ctx context.Context, m mapping.Mapping) (int64, error)
+	GetMapping(ctx context.Context, id int64) (*mapping.Mapping, error)
+	ListMappings(ctx context.Context) ([]mapping.Mapping, error)
+	UpdateMapping(ctx context.Context, m mapping.Mapping) error
+	DeleteMapping(ctx context.Context, id int64) error
+}
+
+// BindingStore persists playbook bindings (t2db.4 Phase B): CRUD and the
+// draft -> pending_approval -> armed state machine. Split off from
+// TaskStore and MappingStore so the webui binding editor does not acquire
+// the full task or mapping surfaces. Dispatch-time helpers live in
+// BindingDispatcher; the daemon depends on both. See
+// docs/prds/playbook-binding.md.
+type BindingStore interface {
+	InsertBinding(ctx context.Context, b binding.Binding) (int64, error)
+	GetBinding(ctx context.Context, id int64) (*binding.Binding, error)
+	ListBindings(ctx context.Context) ([]binding.Binding, error)
+	UpdateBinding(ctx context.Context, b binding.Binding) error
+	DeleteBinding(ctx context.Context, id int64) error
+	ApproveBinding(ctx context.Context, id int64) error
+}
+
+// BindingDispatcher is the dispatch-loop surface over the bindings store:
+// look up armed bindings for HMAC verification, list captures that still
+// need dispatching, and record the at-most-once ledger row. The
+// dispatcher's task-creation call (EnqueueBindingTask) lives on a separate
+// BindingTaskCreator interface so the dispatcher does not depend on the
+// full TaskStore just to spawn one task.
+type BindingDispatcher interface {
+	ArmedBindingsForSource(ctx context.Context, source string) ([]binding.Binding, error)
+	RecordDispatch(
+		ctx context.Context,
+		bindingID int64,
+		bindingVersion int64,
+		captureID int64,
+		taskID int64,
+	) error
+	ListUndispatchedCaptures(ctx context.Context, sources []string, limit int) ([]CapturedEvent, error)
+}
+
+// BindingTaskCreator is the single-method consumer-facing surface for
+// enqueueing a task triggered by a binding. Splitting it off TaskLifecycle
+// keeps the lifecycle surface narrow (8 methods, the interfacebloat limit)
+// and keeps the binding-specific shape on the binding interfaces.
+type BindingTaskCreator interface {
+	EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity string, bindingID int64, bindingVersion int) (*workflow.Task, error)
+}
+
+// CapturedEvent is one unbound inbound webhook capture: no workflow binding,
+// no forge/task association -- just what arrived, from where, and when.
+// See docs/prds/event-capture-storage.md.
+type CapturedEvent struct {
+	ID          int64     `json:"id"`
+	ReceivedAt  time.Time `json:"received_at"`
+	Source      string    `json:"source"`
+	RemoteAddr  string    `json:"remote_addr"`
+	ContentType string    `json:"content_type"`
+	// Headers and Body are redacted (webhookguard.RedactPayload) before
+	// they ever reach InsertCapture; the store persists what it is given.
+	Headers       string `json:"headers"`
+	Body          string `json:"body"`
+	Authenticated bool   `json:"authenticated"`
+}
+
+// ConfigSnapshot is the running configuration as the dashboard renders it,
+// published by whoever owns configuration for whoever displays it.
+//
+// Document is opaque here on purpose: its shape belongs to the producer and
+// the page that reads it, not to storage, and Schema names that shape so a
+// reader can refuse a document it does not understand. It is secret-free by
+// construction at the producer (the projection carries an API key's
+// environment variable name and whether it resolved, never a value).
+type ConfigSnapshot struct {
+	Schema      string
+	Document    []byte
+	PublishedAt time.Time
+}
+
+// WorkflowStat is one row of the per-workflow metrics table.
+type WorkflowStat struct {
+	Workflow   string  `json:"workflow"`
+	Runs       int     `json:"runs"`
+	Merged     int     `json:"merged"`
+	PROpen     int     `json:"pr_open"`
+	Parked     int     `json:"parked"`
+	AvgTokens  int     `json:"avg_tokens"`
+	AvgSteps   float64 `json:"avg_steps"`
+	TotalToken int     `json:"total_tokens"`
+}
+
+// StageStat is average stage duration and failure counts per stage.
+type StageStat struct {
+	Workflow string `json:"workflow"`
+	Stage    string `json:"stage"`
+	Runs     int    `json:"runs"`
+	AvgMs    int    `json:"avg_ms"`
+	Errors   int    `json:"errors"`
+}
+
+// DayTokens is token spend per UTC day.
+type DayTokens struct {
+	Day    string `json:"day"`
+	Tokens int    `json:"tokens"`
+}
+
+// Sentinel errors, part of the wire contract: staterpc's
+// mapError/unmapError match these by (code, canonical message) across the
+// gRPC boundary, so their message strings are load-bearing and must never
+// change (docs/prds/state-store-contract.md §4).
+var (
+	// ErrStaleTransition is returned when a task transition's expected
+	// from status does not match the task's current status.
+	ErrStaleTransition = errors.New("store: stale transition: task status does not match expected from status")
+	// ErrBindingNotFound is returned when a binding ID does not exist.
+	ErrBindingNotFound = errors.New("store: binding not found")
+	// ErrBindingOverlap is returned when a binding's matcher overlaps an
+	// existing binding for the same source.
+	ErrBindingOverlap = errors.New("store: binding overlaps existing binding for source")
+	// ErrBindingTransition is returned when a binding state transition is
+	// rejected by the draft -> pending_approval -> armed machine.
+	ErrBindingTransition = errors.New("store: binding state transition rejected")
+	// ErrAlreadyDispatched is returned when a capture already has a
+	// dispatch ledger row (at-most-once dispatch).
+	ErrAlreadyDispatched = errors.New("store: binding already dispatched for capture")
+	// ErrMappingNotFound is returned when a mapping ID does not exist.
+	ErrMappingNotFound = errors.New("store: mapping not found")
+)

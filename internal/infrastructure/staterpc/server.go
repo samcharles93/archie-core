@@ -14,9 +14,9 @@ import (
 	"google.golang.org/grpc/status"
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
+	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // Unavailable-capability errors, mirroring gatewayrpc's missing-session-store
@@ -40,13 +40,13 @@ func timeSeconds(s int64) time.Duration { return time.Duration(s) * time.Second 
 // nil Mappings/Bindings/BindingDispatcher/BindingTaskCreator as "disabled".
 type Deps struct {
 	Grants             *TaskGrants
-	Tasks              store.TaskStore
-	Captures           store.CaptureStore
-	ConfigSnapshots    store.ConfigSnapshotStore
-	Mappings           store.MappingStore
-	Bindings           store.BindingStore
-	BindingDispatcher  store.BindingDispatcher
-	BindingTaskCreator store.BindingTaskCreator
+	Tasks              storev1.TaskStore
+	Captures           storev1.CaptureStore
+	ConfigSnapshots    storev1.ConfigSnapshotStore
+	Mappings           storev1.MappingStore
+	Bindings           storev1.BindingStore
+	BindingDispatcher  storev1.BindingDispatcher
+	BindingTaskCreator storev1.BindingTaskCreator
 	Log                *slog.Logger
 }
 
@@ -277,14 +277,14 @@ func (s *server) TokensByDay(ctx context.Context, r *pb.TokensByDayRequest) (*pb
 
 // Capture
 
-func (s *server) capture() (store.CaptureStore, error) {
+func (s *server) capture() (storev1.CaptureStore, error) {
 	if s.deps.Captures == nil {
 		return nil, errCaptureUnavailable
 	}
 	return s.deps.Captures, nil
 }
 
-func (s *server) configSnapshots() (store.ConfigSnapshotStore, error) {
+func (s *server) configSnapshots() (storev1.ConfigSnapshotStore, error) {
 	if s.deps.ConfigSnapshots == nil {
 		return nil, errConfigSnapshotsUnavailable
 	}
@@ -364,7 +364,7 @@ func (s *server) StreamCaptures(r *pb.StreamCapturesRequest, stream pb.StateStor
 
 // Mapping
 
-func (s *server) mapping() (store.MappingStore, error) {
+func (s *server) mapping() (storev1.MappingStore, error) {
 	if s.deps.Mappings == nil {
 		return nil, errMappingUnavailable
 	}
@@ -431,7 +431,7 @@ func (s *server) DeleteMapping(ctx context.Context, r *pb.DeleteMappingRequest) 
 
 // Binding
 
-func (s *server) binding() (store.BindingStore, error) {
+func (s *server) binding() (storev1.BindingStore, error) {
 	if s.deps.Bindings == nil {
 		return nil, errBindingUnavailable
 	}
