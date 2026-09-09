@@ -126,6 +126,11 @@ type TaskContext struct {
 	// reported prompt-token sum was cache hits (billed at a steep discount)
 	// rather than fresh, full-price tokens; see formatTokenUsage.
 	RunUsage agentexec.Usage
+	// ReviewReport is the adversarial self-review stage's result, stashed
+	// by StageReview so StageOpenPR can render a findings section on the PR
+	// body (h019.6). Zero value means the review did not run (disabled or
+	// skipped); ReviewReport.Ran() is the test for "render the section".
+	ReviewReport ReviewReport
 }
 
 // Emit publishes an observability event stamped with the task's
