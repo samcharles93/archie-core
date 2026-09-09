@@ -17,8 +17,11 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/gateway"
+	taskactionstore "github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
 // recordingCloser captures the forge issue-closure calls an action makes.
@@ -36,6 +39,93 @@ type closeCall struct {
 func (r *recordingCloser) CloseIssue(_ context.Context, owner, repo string, number int, comment string) error {
 	r.calls = append(r.calls, closeCall{owner, repo, number, comment})
 	return r.err
+}
+
+// daemonActions stands in for the daemon behind the Gateway contract. The
+// dashboard no longer composes a task-action service of its own: it asks
+// whoever owns task execution, reaching the same taskactions.Service over
+// gRPC and NATS in production (internal/infrastructure/taskactions). Running
+// that service directly here keeps these tests on real behaviour -- retry
+// limits, forge closure, timeline events, archiving -- rather than on a stub
+// that would agree with any handler.
+//
+// The service is rebuilt per call because tests attach collaborators after
+// the server exists, exactly as the daemon rebuilds it per request.
+type daemonActions struct {
+	srv     *Server
+	issues  *recordingCloser
+	stopper *recordingTaskStopper
+	// scopes records the identity each action arrived with, one per call.
+	scopes []*string
+}
+
+func (d *daemonActions) ApplyChatTaskAction(
+	ctx context.Context, identity *string, id int64, action taskstate.Action,
+) (gateway.TaskActionResult, error) {
+	d.scopes = append(d.scopes, identity)
+	service := taskactionstore.NewService(
+		taskactionstore.Store{TaskStore: d.srv.Store},
+		taskactionstore.MaxRetries(d.srv.Cfg),
+		d.cancelTask(),
+		d.closeIssue(),
+		d.removeLogs(),
+		d.publish(),
+		d.srv.logf,
+	)
+	if err := service.Apply(ctx, identity, id, action); err != nil {
+		return gateway.TaskActionResult{}, err
+	}
+	return gateway.TaskActionResult{TaskID: id, Action: string(action)}, nil
+}
+
+func (d *daemonActions) cancelTask() func(int64) bool {
+	if d.stopper == nil {
+		return nil
+	}
+	return d.stopper.CancelTask
+}
+
+func (d *daemonActions) closeIssue() func(context.Context, string, string, int, string) error {
+	if d.issues == nil {
+		return nil
+	}
+	return d.issues.CloseIssue
+}
+
+func (d *daemonActions) removeLogs() func(int64) error {
+	if d.srv.TaskLogs == nil {
+		return nil
+	}
+	return d.srv.TaskLogs.Remove
+}
+
+func (d *daemonActions) publish() func(events.Event) {
+	if d.srv.Events == nil {
+		return nil
+	}
+	return d.srv.Events.Publish
+}
+
+// wireOperatorActions gives srv a task-action owner, the way composition
+// gives the dashboard a Gateway contract.
+func wireOperatorActions(srv *Server) *daemonActions {
+	actions := &daemonActions{srv: srv}
+	srv.Chat = &ChatService{Contract: &gateway.LocalChatAdapter{TaskActor: actions}}
+	return actions
+}
+
+// operatorActions returns the stand-in daemon behind srv's contract.
+func operatorActions(t *testing.T, srv *Server) *daemonActions {
+	t.Helper()
+	local, ok := srv.Chat.Contract.(*gateway.LocalChatAdapter)
+	if !ok {
+		t.Fatalf("chat contract is %T, want the local adapter these tests wire", srv.Chat.Contract)
+	}
+	actions, ok := local.TaskActor.(*daemonActions)
+	if !ok {
+		t.Fatalf("task actor is %T, want the stand-in daemon", local.TaskActor)
+	}
+	return actions
 }
 
 // actionServer builds a dashboard server with a task in the given state, plus
@@ -61,7 +151,7 @@ func actionServer(t *testing.T, status, parkReason string) (*Server, *workflow.T
 	t.Cleanup(bus.Close)
 	sub := bus.Subscribe(16)
 
-	srv.Issues = closer
+	operatorActions(t, srv).issues = closer
 	srv.Events = bus
 	srv.Cfg = config.NewHolder(config.Config{MaxRetries: 3})
 	return srv, task, closer, bus, sub
@@ -105,7 +195,7 @@ func (s *recordingTaskStopper) CancelTask(id int64) bool {
 
 func setTaskStopper(t *testing.T, srv *Server, stopper *recordingTaskStopper) {
 	t.Helper()
-	srv.TaskStopper = stopper
+	operatorActions(t, srv).stopper = stopper
 }
 
 // max_retries is configured, defaulted and shown in /api/config, but nothing
@@ -203,7 +293,7 @@ func TestRejectDoesNotCloseAChatTaskIssue(t *testing.T) {
 	srv := newTestServer(t)
 	ctx := t.Context()
 	closer := &recordingCloser{}
-	srv.Issues = closer
+	operatorActions(t, srv).issues = closer
 	srv.Cfg = config.NewHolder(config.Config{MaxRetries: 3})
 
 	task, err := srv.Store.EnqueueChatTask(ctx, "acme", "widget", "chat task", "", "", "")
@@ -368,6 +458,46 @@ func TestTaskActionErrorMapping(t *testing.T) {
 	}
 }
 
+// TestTaskActionIsUnscopedAndRemote covers what routing through the Gateway
+// contract has to preserve: the dashboard operator is authenticated and acts
+// across identities, so the action must arrive unscoped rather than claiming
+// some identity of the UI process's own invention.
+func TestTaskActionIsUnscopedAndRemote(t *testing.T) {
+	srv, task, _, _, _ := actionServer(t, workflow.StatusWaitingHuman, "review")
+
+	if w := postAction(t, srv, task.ID, "approve"); w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", w.Code, w.Body)
+	}
+
+	actions := operatorActions(t, srv)
+	if len(actions.scopes) != 1 {
+		t.Fatalf("task-action owner saw %d calls, want the handler to have made exactly 1", len(actions.scopes))
+	}
+	if actions.scopes[0] != nil {
+		t.Fatalf("dashboard action arrived scoped to %q, want an unscoped operator", *actions.scopes[0])
+	}
+}
+
+// TestTaskActionWithoutAContractIsUnavailable: the dashboard has no local
+// task-action implementation to fall back on, and must say so rather than
+// half-applying an action over the task store it can reach.
+func TestTaskActionWithoutAContractIsUnavailable(t *testing.T) {
+	srv, task, _, _, _ := actionServer(t, workflow.StatusWaitingHuman, "review")
+	srv.Chat = nil
+
+	w := postAction(t, srv, task.ID, "approve")
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503 with no gateway contract wired", w.Code)
+	}
+	got, err := srv.Store.TaskByID(t.Context(), task.ID)
+	if err != nil || got == nil {
+		t.Fatalf("TaskByID = (%+v, %v)", got, err)
+	}
+	if got.Status != workflow.StatusWaitingHuman {
+		t.Fatalf("task status = %q, want it untouched at %q", got.Status, workflow.StatusWaitingHuman)
+	}
+}
+
 // A store write failure is a 500, not a 409.
 func TestTaskActionStoreFailureIs500(t *testing.T) {
 	base := newTestServer(t)
@@ -388,6 +518,7 @@ func TestTaskActionStoreFailureIs500(t *testing.T) {
 		Log:   base.Log,
 		Cfg:   config.NewHolder(config.Config{MaxRetries: 3}),
 	}
+	wireOperatorActions(srv)
 	w := postAction(t, srv, task.ID, "approve")
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500: a store failure is not a conflict", w.Code)
@@ -481,7 +612,7 @@ func TestLifecycleSpecificTaskActions(t *testing.T) {
 				}
 			}
 			closer := &recordingCloser{}
-			srv.Issues = closer
+			operatorActions(t, srv).issues = closer
 			bus := events.NewBus()
 			t.Cleanup(bus.Close)
 			srv.Events = bus

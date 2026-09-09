@@ -85,7 +85,7 @@ func (c *Client) SetPersona(ctx context.Context, id, name string) (bool, error) 
 func (c *Client) ApplyTaskAction(ctx context.Context, identity string, taskID int64, action taskstate.Action) (gateway.TaskActionResult, error) {
 	v, err := c.client.ApplyTaskAction(ctx, &pb.ApplyTaskActionRequest{Identity: identity, TaskId: taskID, Action: string(action)})
 	if err != nil {
-		return gateway.TaskActionResult{}, err
+		return gateway.TaskActionResult{}, taskActionError(err)
 	}
 	return gateway.TaskActionResult{TaskID: v.TaskId, Action: v.Action, Message: v.Message}, nil
 }
@@ -93,7 +93,7 @@ func (c *Client) ApplyTaskAction(ctx context.Context, identity string, taskID in
 func (c *Client) ApplyOperatorTaskAction(ctx context.Context, taskID int64, action taskstate.Action) (gateway.TaskActionResult, error) {
 	v, err := c.client.ApplyOperatorTaskAction(ctx, &pb.ApplyOperatorTaskActionRequest{TaskId: taskID, Action: string(action)})
 	if err != nil {
-		return gateway.TaskActionResult{}, err
+		return gateway.TaskActionResult{}, taskActionError(err)
 	}
 	return gateway.TaskActionResult{TaskID: v.TaskId, Action: v.Action, Message: v.Message}, nil
 }

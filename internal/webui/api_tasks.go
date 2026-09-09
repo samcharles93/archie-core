@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -15,7 +16,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
-	taskactionstore "github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
@@ -148,7 +148,7 @@ func (s *Server) handleTaskAction(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.TaskActionService().Apply(r.Context(), nil, id, action); err != nil {
+	if err := s.applyOperatorTaskAction(r.Context(), id, action); err != nil {
 		switch {
 		case errors.Is(err, taskactions.ErrNotFound):
 			http.Error(w, "task not found", http.StatusNotFound)
@@ -275,46 +275,21 @@ func validOrigin(u *url.URL, wantScheme, wantHost string) bool {
 	return strings.EqualFold(u.Scheme, wantScheme) && strings.EqualFold(u.Host, wantHost)
 }
 
-// TaskActionService supplies the same operator action implementation used by
-// the daemon's task-control endpoint.
-func (s *Server) TaskActionService() taskactions.Service {
-	return taskactionstore.NewService(
-		taskactionstore.Store{TaskStore: s.Store},
-		taskactionstore.MaxRetries(s.Cfg),
-		s.taskStopper(),
-		s.issueCloser(),
-		s.logRemover(),
-		s.eventPublisher(),
-		s.logf,
-	)
-}
-
-func (s *Server) taskStopper() func(int64) bool {
-	if s.TaskStopper == nil {
-		return nil
+// applyOperatorTaskAction sends the action to whoever owns task execution.
+// The dashboard operator is authenticated and acts across identities, which
+// the Gateway contract carries as its own method (archie-core-8cda.5.4).
+//
+// The UI process cannot run this itself: retry limits come from the daemon's
+// configuration, closing the forge issue needs its forge client, the
+// timeline needs its event bus, and stopping running work needs the
+// goroutine or container that is executing it. Composing a local service
+// over the task store alone would silently drop all four.
+func (s *Server) applyOperatorTaskAction(ctx context.Context, id int64, action taskstate.Action) error {
+	if s.Chat == nil || s.Chat.Contract == nil {
+		return fmt.Errorf("%w: no gateway contract is wired", taskactions.ErrUnavailable)
 	}
-	return s.TaskStopper.CancelTask
-}
-
-func (s *Server) issueCloser() func(context.Context, string, string, int, string) error {
-	if s.Issues == nil {
-		return nil
-	}
-	return s.Issues.CloseIssue
-}
-
-func (s *Server) logRemover() func(int64) error {
-	if s.TaskLogs == nil {
-		return nil
-	}
-	return s.TaskLogs.Remove
-}
-
-func (s *Server) eventPublisher() func(events.Event) {
-	if s.Events == nil {
-		return nil
-	}
-	return s.Events.Publish
+	_, err := s.Chat.Contract.ApplyOperatorTaskAction(ctx, id, action)
+	return err
 }
 
 // emit publishes an operator action so it reaches the task timeline and the

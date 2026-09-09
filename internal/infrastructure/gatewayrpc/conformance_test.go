@@ -2,8 +2,11 @@ package gatewayrpc
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,7 +15,9 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
@@ -162,6 +167,48 @@ func TestTaskActionScopeSurvivesTheWire(t *testing.T) {
 			}
 			if actor.identity == nil || *actor.identity != "scout" {
 				t.Fatalf("chat action lost its identity scope: %v", actor.identity)
+			}
+		})
+	}
+}
+
+// failingTaskActor reports one error, whatever the action.
+type failingTaskActor struct{ err error }
+
+func (a failingTaskActor) ApplyChatTaskAction(
+	context.Context, *string, int64, taskstate.Action,
+) (gateway.TaskActionResult, error) {
+	return gateway.TaskActionResult{}, a.err
+}
+
+// TestTaskActionErrorsKeepTheirSentinelOverGRPC: the dashboard answers 404,
+// 409 or 503 by matching these sentinels, and gRPC carries a code and a
+// string, not a Go error. Losing the class here turns "that task already
+// moved on" into "the daemon is broken".
+func TestTaskActionErrorsKeepTheirSentinelOverGRPC(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{name: "not found", err: fmt.Errorf("task 7: %w", taskactions.ErrNotFound)},
+		{name: "conflict", err: fmt.Errorf("%w: action \"approve\" is not available while task is parked", taskactions.ErrConflict)},
+		{name: "stale transition", err: fmt.Errorf("stop task 7: %w", store.ErrStaleTransition)},
+		{name: "unavailable", err: taskactions.ErrUnavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			local := &gateway.LocalChatAdapter{TaskActor: failingTaskActor{err: tc.err}}
+			chat := remoteChat(t, local)
+
+			_, err := chat.ApplyOperatorTaskAction(ctx, 7, taskstate.ActionApprove)
+			if err == nil {
+				t.Fatalf("ApplyOperatorTaskAction error = nil, want %v", tc.err)
+			}
+			if !errors.Is(err, errors.Unwrap(tc.err)) && !errors.Is(err, tc.err) {
+				t.Fatalf("error %v is not the daemon's sentinel %v", err, tc.err)
+			}
+			if !strings.Contains(err.Error(), tc.err.Error()) {
+				t.Fatalf("error message = %q, want it to carry the daemon's %q", err.Error(), tc.err.Error())
 			}
 		})
 	}

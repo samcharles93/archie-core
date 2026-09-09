@@ -93,7 +93,7 @@ func (s *server) SetPersona(ctx context.Context, r *pb.SetPersonaRequest) (*pb.S
 func (s *server) ApplyTaskAction(ctx context.Context, r *pb.ApplyTaskActionRequest) (*pb.ApplyTaskActionResponse, error) {
 	v, err := s.chat.ApplyTaskAction(ctx, r.Identity, r.TaskId, taskstate.Action(r.Action))
 	if err != nil {
-		return nil, err
+		return nil, taskActionStatus(err)
 	}
 	return &pb.ApplyTaskActionResponse{TaskId: v.TaskID, Action: v.Action, Message: v.Message}, nil
 }
@@ -101,7 +101,7 @@ func (s *server) ApplyTaskAction(ctx context.Context, r *pb.ApplyTaskActionReque
 func (s *server) ApplyOperatorTaskAction(ctx context.Context, r *pb.ApplyOperatorTaskActionRequest) (*pb.ApplyOperatorTaskActionResponse, error) {
 	v, err := s.chat.ApplyOperatorTaskAction(ctx, r.TaskId, taskstate.Action(r.Action))
 	if err != nil {
-		return nil, err
+		return nil, taskActionStatus(err)
 	}
 	return &pb.ApplyOperatorTaskActionResponse{TaskId: v.TaskID, Action: v.Action, Message: v.Message}, nil
 }
