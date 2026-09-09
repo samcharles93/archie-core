@@ -113,6 +113,13 @@ dashboard in a given deployment; no new port/host config surface is added,
 and no new claim about public reachability is made beyond what already
 exists for the dashboard.
 
+Amended 2026-09-10 by the UI cutover (`archie-core-8cda.5.4`): the one
+process serving the dashboard is now the standalone archie-ui service, so
+the receiver mounts there, composed from the UI process's own State Store
+client. The binding-dispatch loop that turns captures into tasks stays in
+the daemon, consuming the same store, so the HTTP front door moved without
+moving work intake.
+
 `GET` listing/inspection endpoints (`t2db.2`) stay behind `requireToken` like
 every other `/api/*` route -- captured payloads are visible only to an
 authenticated operator, per the security decision's point 5 visibility rule.

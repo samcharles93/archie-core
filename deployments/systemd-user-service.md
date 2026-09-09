@@ -71,7 +71,33 @@ WantedBy=default.target
 
 ---
 
-## 2. Enabling User Linger (`loginctl`)
+## 2. UI Service Unit (`~/.config/systemd/user/archie-ui.service`)
+
+The dashboard is served by the standalone UI Service, not by `archied`
+(UI cutover, `archie-core-8cda.5.4`). It reads the same `config.toml`, dials
+the Gateway and State Store targets already in it, and binds `[web].listen`.
+A non-loopback bind requires a dashboard token (`-token`, or `-token-file` to
+mint and persist one);
+
+```ini
+[Unit]
+Description=Archie UI Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/archie-ui -config %h/.config/archie/config.toml
+EnvironmentFile=-%h/.config/archie/env
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target
+```
+
+---
+
+## 3. Enabling User Linger (`loginctl`)
 
 By default, systemd terminates user services when you log out of SSH. Enabling **linger** allows your `archied` service to run continuously 24/7 across reboots and logouts:
 
@@ -87,7 +113,7 @@ loginctl show-user "$USER" | grep Linger
 
 ---
 
-## 3. Service Commands
+## 4. Service Commands
 
 Reload systemd daemon files:
 ```bash
@@ -96,7 +122,7 @@ systemctl --user daemon-reload
 
 Enable and start the service immediately:
 ```bash
-systemctl --user enable --now archie-gateway archied
+systemctl --user enable --now archie-gateway archie-ui archied
 ```
 
 Check service status:
@@ -117,7 +143,7 @@ systemctl --user stop archied
 
 ---
 
-## 4. Default: Native Daemon, Embedded NATS, Managed Containers
+## 5. Default: Native Daemon, Embedded NATS, Managed Containers
 
 Embedded NATS is the default. The systemd service runs `archied` natively, so
 interactive chat keeps the host access the operator configured, while every
@@ -158,7 +184,7 @@ fall back to a host model loop.
 
 ---
 
-## 5. Pinning the archie-agent Image
+## 6. Pinning the archie-agent Image
 
 `ghcr.io/samcharles93/archie-agent:latest` is a moving target: every push to
 `main` that touches the runtime's package closure re-publishes it (see
@@ -197,7 +223,7 @@ check. A custom image reference is therefore supported directly in
 `config.toml`; `ARCHIE_AGENT_IMAGE` is only an override for deployments that
 cannot make that configuration file available to the update command.
 
-## 5. Optional: External Compose NATS
+## 7. Optional: External Compose NATS
 
 External NATS changes only broker deployment. It does not change the worker
 executor. Start the optional service and configure the pinned Compose gateway:

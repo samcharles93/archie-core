@@ -196,10 +196,14 @@ class = "ollama"
 listen = "127.0.0.1:8485"
 
 # Web dashboard and API: task board, activity stream, chat, config,
-# logs, memory, SSE events. Served as an embedded SPA with a full REST
+# memory, SSE events. Served as an embedded SPA with a full REST
 # and streaming API. Auth is token-based for non-loopback addresses;
 # loopback binds (127.0.0.1, ::1, localhost) skip auth automatically.
-# Set to "off" (or leave empty) to disable.
+#
+# From the UI cutover (archie-core-8cda.5.4) the dashboard is served by the
+# standalone archie-ui process, not by archied: this listen address is what
+# archie-ui binds, and archied runs no dashboard listener at all. Run
+# `archie-ui -config <same config.toml>` alongside the other services.
 [web]
 listen = "127.0.0.1:8484"
 # Trust X-Forwarded-Proto and X-Forwarded-Host headers when validating Origin
@@ -313,6 +317,12 @@ gate_max_failures = 5
 # fan-out/replay machinery, and SQLite is available in every deployment
 # shape unconditionally. All fields default when the section is absent;
 # capture is on by default.
+#
+# From the UI cutover (archie-core-8cda.5.4) the receiver is mounted by the
+# archie-ui process, which projects these same values from this file; the
+# daemon's binding-dispatch loop consumes captures from the shared State
+# Store. Leave this section here even if you do not edit it: both processes
+# read it.
 # [capture]
 # retention      = "168h"  # 7 days; prune-on-write deletes anything older
 # max_events     = 5000    # row cap, pruned on every insert regardless of age

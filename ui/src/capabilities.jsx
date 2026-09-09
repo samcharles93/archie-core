@@ -1,11 +1,12 @@
 // Which dashboard sections the serving process can actually back.
 //
-// The dashboard is served by two compositions: the daemon, which holds every
-// runtime handle, and the extracted UI service, which holds two remote
-// contracts. A section with nothing behind it still answers -- an empty list,
-// a "disabled" marker, a 501 -- and the browser cannot tell that from a quiet
-// deployment. GET /api/capabilities says which sections are backed here, and
-// the nav drops the rest (archie-core-8cda.5.4).
+// From the UI cutover the dashboard is served by one composition: the
+// extracted UI service, which holds two remote contracts (Gateway ChatContract
+// and the State Store) and no daemon runtime handles. A section with nothing
+// behind it still answers -- an empty list, a "disabled" marker, a 501 -- and
+// the browser cannot tell that from a quiet deployment. GET /api/capabilities
+// says which sections are backed here, and the nav drops the rest
+// (archie-core-8cda.5.4).
 
 // hiddenRoutes returns the paths whose section the server reported it cannot
 // serve. An unreported section stays visible: a page that says "unavailable"

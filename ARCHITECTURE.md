@@ -38,7 +38,7 @@ See `docs/architecture/organisation.md` for the target structure and
 | `internal/store/`            | Task store interface and SQLite implementation; RPC clients proxy it      |
 | `internal/events/`           | In-process event bus: publish/subscribe for observability                 |
 | `internal/infrastructure/`   | Config loading, eventbus transport, model catalog                        |
-| `internal/webui/`            | SSE dashboard: live event stream, task status                             |
+| `internal/webui/`            | Shared dashboard HTTP layer served by the archie-ui process |
 | `internal/gateway/` (18.7k LOC) | Persistent-connection layer between archie and its users (Telegram, web UI, etc.); shared CommandRouter for dispatch |
 | `internal/tools/` (20.9k LOC)   | Central tool subsystem: built-in tool implementations, approval, execution contract |
 | `internal/memory/` (7k LOC)     | Pluggable memory provider architecture                                    |
@@ -247,7 +247,8 @@ Daemon-level TOML (`~/.config/archie/config.toml`):
 - `[nats]` -- embedded or external broker deployment
 - `[containers]` -- managed `archie-agent` image, limits, storage, and network
 - `[budgets]` -- max steps, max tokens, wall clock, gate max failures
-- `[web]` -- dashboard listen address
+- `[web]` -- dashboard listen address, bound by the standalone archie-ui
+  process (the daemon runs no dashboard listener after the UI cutover)
 - `[notify]` -- webhook URL for notifications
 
 Secrets (forge token, provider API keys, channel tokens) are not embedded in
