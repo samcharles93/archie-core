@@ -259,8 +259,8 @@ func TestSessionToolClassifications(t *testing.T) {
 	store := newFakeSessionStore()
 	tr := newSessionTracker(store)
 	entries := SessionTools(store, tr, "test-gw", inbound("chat-1", "").Message)
-	if len(entries) != 4 {
-		t.Fatalf("got %d tools, want 4", len(entries))
+	if len(entries) != 5 {
+		t.Fatalf("got %d tools, want 5", len(entries))
 	}
 
 	tests := []struct {
@@ -270,6 +270,7 @@ func TestSessionToolClassifications(t *testing.T) {
 		approval   bool
 	}{
 		{name: "session_list", idempotent: true},
+		{name: "session_transcript", idempotent: true},
 		{name: "session_resume", mutating: true},
 		{name: "session_title", mutating: true},
 		{name: "session_delete", mutating: true, approval: true},
@@ -310,13 +311,58 @@ func TestSessionToolNilTrackerOmitsTrackerTools(t *testing.T) {
 	for _, e := range entries {
 		names = append(names, e.Name)
 	}
-	if len(entries) != 2 {
-		t.Fatalf("got %d tools (%v), want the 2 store-only tools", len(entries), names)
+	if len(entries) != 3 {
+		t.Fatalf("got %d tools (%v), want the 3 store-only tools", len(entries), names)
 	}
 	for _, name := range names {
 		switch name {
 		case "session_resume", "session_delete":
 			t.Errorf("%q needs the tracker and must not be advertised without one", name)
 		}
+	}
+}
+
+func TestSessionToolTranscriptExportsSession(t *testing.T) {
+	store := newFakeSessionStore()
+	tr := newSessionTracker(store)
+	entry := sessionTool(t, SessionTools(store, tr, "test-gw", inbound("chat-1", "").Message), "session_transcript")
+
+	seedSessionAt(store, "transcript-target", "target session", time.Now())
+
+	// Add some messages
+	now := time.Now()
+	for i := range 5 {
+		msg := messaging.Message{
+			ID:             messaging.MessageID(fmt.Sprintf("msg-%d", i)),
+			ConversationID: messaging.ConversationID{ChannelID: "chat-1", ThreadID: "thread-1"},
+			SourceID:       fmt.Sprintf("src-%d", i),
+			Role:           messaging.RoleUser,
+			Text:           fmt.Sprintf("User message %d", i),
+			At:             now.Add(time.Duration(i) * time.Minute),
+		}
+		if err := store.SaveMessage(context.Background(), "transcript-target", msg); err != nil {
+			t.Fatalf("SaveMessage: %v", err)
+		}
+	}
+
+	out, err := entry.Handler(context.Background(), map[string]any{"session_id": "transcript-target"})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	result, ok := out.(sessionTranscriptResult)
+	if !ok {
+		t.Fatalf("handler returned %T, want sessionTranscriptResult", out)
+	}
+	if result.SessionID != "transcript-target" {
+		t.Errorf("session_id = %q, want transcript-target", result.SessionID)
+	}
+	if result.MessageCount != 5 {
+		t.Errorf("message_count = %d, want 5", result.MessageCount)
+	}
+	if result.SizeBytes <= 0 {
+		t.Errorf("size_bytes = %d, want > 0", result.SizeBytes)
+	}
+	if result.FilePath == "" {
+		t.Error("file_path is empty")
 	}
 }
