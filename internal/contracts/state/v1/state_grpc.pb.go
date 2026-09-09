@@ -44,6 +44,8 @@ const (
 	StateStoreService_WorkflowStats_FullMethodName              = "/state.v1.StateStoreService/WorkflowStats"
 	StateStoreService_StageStats_FullMethodName                 = "/state.v1.StateStoreService/StageStats"
 	StateStoreService_TokensByDay_FullMethodName                = "/state.v1.StateStoreService/TokensByDay"
+	StateStoreService_PutConfigSnapshot_FullMethodName          = "/state.v1.StateStoreService/PutConfigSnapshot"
+	StateStoreService_GetConfigSnapshot_FullMethodName          = "/state.v1.StateStoreService/GetConfigSnapshot"
 	StateStoreService_InsertCapture_FullMethodName              = "/state.v1.StateStoreService/InsertCapture"
 	StateStoreService_ListCaptures_FullMethodName               = "/state.v1.StateStoreService/ListCaptures"
 	StateStoreService_StreamCaptures_FullMethodName             = "/state.v1.StateStoreService/StreamCaptures"
@@ -107,6 +109,13 @@ type StateStoreServiceClient interface {
 	WorkflowStats(ctx context.Context, in *WorkflowStatsRequest, opts ...grpc.CallOption) (*WorkflowStatsResponse, error)
 	StageStats(ctx context.Context, in *StageStatsRequest, opts ...grpc.CallOption) (*StageStatsResponse, error)
 	TokensByDay(ctx context.Context, in *TokensByDayRequest, opts ...grpc.CallOption) (*TokensByDayResponse, error)
+	// Configuration snapshot: the running configuration as the dashboard
+	// renders it, published by the owner of configuration for the process that
+	// displays it. PutConfigSnapshot is administrative; GetConfigSnapshot is
+	// the UI's read (docs/architecture/migration-decisions.md, "Dashboard
+	// configuration page").
+	PutConfigSnapshot(ctx context.Context, in *PutConfigSnapshotRequest, opts ...grpc.CallOption) (*PutConfigSnapshotResponse, error)
+	GetConfigSnapshot(ctx context.Context, in *GetConfigSnapshotRequest, opts ...grpc.CallOption) (*GetConfigSnapshotResponse, error)
 	// Capture
 	InsertCapture(ctx context.Context, in *InsertCaptureRequest, opts ...grpc.CallOption) (*InsertCaptureResponse, error)
 	// Deprecated: Do not use.
@@ -402,6 +411,26 @@ func (c *stateStoreServiceClient) TokensByDay(ctx context.Context, in *TokensByD
 	return out, nil
 }
 
+func (c *stateStoreServiceClient) PutConfigSnapshot(ctx context.Context, in *PutConfigSnapshotRequest, opts ...grpc.CallOption) (*PutConfigSnapshotResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PutConfigSnapshotResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_PutConfigSnapshot_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) GetConfigSnapshot(ctx context.Context, in *GetConfigSnapshotRequest, opts ...grpc.CallOption) (*GetConfigSnapshotResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetConfigSnapshotResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_GetConfigSnapshot_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *stateStoreServiceClient) InsertCapture(ctx context.Context, in *InsertCaptureRequest, opts ...grpc.CallOption) (*InsertCaptureResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(InsertCaptureResponse)
@@ -654,6 +683,13 @@ type StateStoreServiceServer interface {
 	WorkflowStats(context.Context, *WorkflowStatsRequest) (*WorkflowStatsResponse, error)
 	StageStats(context.Context, *StageStatsRequest) (*StageStatsResponse, error)
 	TokensByDay(context.Context, *TokensByDayRequest) (*TokensByDayResponse, error)
+	// Configuration snapshot: the running configuration as the dashboard
+	// renders it, published by the owner of configuration for the process that
+	// displays it. PutConfigSnapshot is administrative; GetConfigSnapshot is
+	// the UI's read (docs/architecture/migration-decisions.md, "Dashboard
+	// configuration page").
+	PutConfigSnapshot(context.Context, *PutConfigSnapshotRequest) (*PutConfigSnapshotResponse, error)
+	GetConfigSnapshot(context.Context, *GetConfigSnapshotRequest) (*GetConfigSnapshotResponse, error)
 	// Capture
 	InsertCapture(context.Context, *InsertCaptureRequest) (*InsertCaptureResponse, error)
 	// Deprecated: Do not use.
@@ -773,6 +809,12 @@ func (UnimplementedStateStoreServiceServer) StageStats(context.Context, *StageSt
 }
 func (UnimplementedStateStoreServiceServer) TokensByDay(context.Context, *TokensByDayRequest) (*TokensByDayResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method TokensByDay not implemented")
+}
+func (UnimplementedStateStoreServiceServer) PutConfigSnapshot(context.Context, *PutConfigSnapshotRequest) (*PutConfigSnapshotResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PutConfigSnapshot not implemented")
+}
+func (UnimplementedStateStoreServiceServer) GetConfigSnapshot(context.Context, *GetConfigSnapshotRequest) (*GetConfigSnapshotResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetConfigSnapshot not implemented")
 }
 func (UnimplementedStateStoreServiceServer) InsertCapture(context.Context, *InsertCaptureRequest) (*InsertCaptureResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method InsertCapture not implemented")
@@ -1302,6 +1344,42 @@ func _StateStoreService_TokensByDay_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StateStoreService_PutConfigSnapshot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PutConfigSnapshotRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).PutConfigSnapshot(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_PutConfigSnapshot_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).PutConfigSnapshot(ctx, req.(*PutConfigSnapshotRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_GetConfigSnapshot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetConfigSnapshotRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).GetConfigSnapshot(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_GetConfigSnapshot_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).GetConfigSnapshot(ctx, req.(*GetConfigSnapshotRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _StateStoreService_InsertCapture_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(InsertCaptureRequest)
 	if err := dec(in); err != nil {
@@ -1736,6 +1814,14 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TokensByDay",
 			Handler:    _StateStoreService_TokensByDay_Handler,
+		},
+		{
+			MethodName: "PutConfigSnapshot",
+			Handler:    _StateStoreService_PutConfigSnapshot_Handler,
+		},
+		{
+			MethodName: "GetConfigSnapshot",
+			Handler:    _StateStoreService_GetConfigSnapshot_Handler,
 		},
 		{
 			MethodName: "InsertCapture",

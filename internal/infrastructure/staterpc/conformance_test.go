@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -27,6 +28,7 @@ type contract interface {
 	store.BindingStore
 	store.BindingDispatcher
 	store.BindingTaskCreator
+	store.ConfigSnapshotStore
 }
 
 func remoteContract(t *testing.T, local *store.Store) contract {
@@ -35,7 +37,7 @@ func remoteContract(t *testing.T, local *store.Store) contract {
 	server := grpc.NewServer()
 	RegisterServer(server, Deps{
 		Tasks: local, Captures: local, Mappings: local, Bindings: local,
-		BindingDispatcher: local, BindingTaskCreator: local,
+		BindingDispatcher: local, BindingTaskCreator: local, ConfigSnapshots: local,
 	})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
@@ -302,5 +304,50 @@ func TestTokenInterceptorRejectsMissingOrInvalidToken(t *testing.T) {
 	}
 	if _, err := dial(t, validToken).StatusCounts(ctx); err != nil {
 		t.Fatalf("valid token rejected: %v", err)
+	}
+}
+
+// TestConfigSnapshotContract drives the published configuration projection
+// through both the local store and the gRPC client. The document is opaque to
+// this hop, so the test's whole claim is that it arrives unchanged: the UI
+// process renders exactly what the daemon published, and an absent snapshot
+// reads as "not published yet" rather than an error.
+func TestConfigSnapshotContract(t *testing.T) {
+	for _, mode := range []string{"local", "grpc"} {
+		t.Run(mode, func(t *testing.T) {
+			local := store.OpenTest(t)
+			var st contract = local
+			if mode == "grpc" {
+				st = remoteContract(t, local)
+			}
+			ctx := t.Context()
+
+			if _, found, err := st.ConfigSnapshot(ctx); err != nil || found {
+				t.Fatalf("unpublished snapshot = (found %v, %v), want (false, nil)", found, err)
+			}
+
+			published := store.ConfigSnapshot{
+				Schema:      "webui.ConfigView/1",
+				Document:    []byte(`{"identity":{"bot_user":"archie"},"providers":{"openai":{"api_key_env":"OPENAI_API_KEY","configured":true}}}`),
+				PublishedAt: time.Date(2026, 9, 9, 12, 30, 0, 0, time.UTC),
+			}
+			if err := st.PutConfigSnapshot(ctx, published); err != nil {
+				t.Fatalf("PutConfigSnapshot: %v", err)
+			}
+
+			got, found, err := st.ConfigSnapshot(ctx)
+			if err != nil || !found {
+				t.Fatalf("ConfigSnapshot = (found %v, %v), want the published snapshot", found, err)
+			}
+			if got.Schema != published.Schema {
+				t.Errorf("schema = %q, want %q", got.Schema, published.Schema)
+			}
+			if string(got.Document) != string(published.Document) {
+				t.Errorf("document = %s, want %s", got.Document, published.Document)
+			}
+			if !got.PublishedAt.Equal(published.PublishedAt) {
+				t.Errorf("published at = %v, want %v", got.PublishedAt, published.PublishedAt)
+			}
+		})
 	}
 }

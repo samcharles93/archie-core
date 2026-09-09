@@ -28,7 +28,7 @@ func grantsServer(t *testing.T, adminToken string) (grants *TaskGrants, dial fun
 		grpc.ChainUnaryInterceptor(grants.UnaryInterceptor(adminToken)),
 		grpc.ChainStreamInterceptor(grants.StreamInterceptor(adminToken)),
 	)
-	RegisterServer(server, Deps{Tasks: local, Grants: grants})
+	RegisterServer(server, Deps{Tasks: local, Grants: grants, ConfigSnapshots: local})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
 
@@ -106,6 +106,41 @@ func TestTaskGrantScopesWorkerToItsOwnThreeRPCs(t *testing.T) {
 	}
 	if err := workerA.Transition(ctx, taskA.ID, "running", "waiting", "revoked check"); err == nil {
 		t.Fatal("a revoked task grant must be rejected")
+	}
+}
+
+// TestOnlyAdminPublishesTheConfigSnapshot: the published projection is the
+// dashboard's whole view of the running configuration, so a container's
+// task-scoped credential must not be able to rewrite what an operator reads,
+// nor to read a projection describing the deployment it runs inside.
+func TestOnlyAdminPublishesTheConfigSnapshot(t *testing.T) {
+	const adminToken = "daemon-admin-token"
+	_, dial := grantsServer(t, adminToken)
+	admin := dial(t, adminToken)
+	ctx := t.Context()
+
+	task, err := admin.EnqueueChatTask(ctx, "acme", "widget", "a", "body", "implement", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workerToken, err := admin.RegisterTaskGrant(ctx, task.ID, time.Hour)
+	if err != nil {
+		t.Fatalf("RegisterTaskGrant: %v", err)
+	}
+	worker := dial(t, workerToken)
+
+	snapshot := store.ConfigSnapshot{Schema: "webui.ConfigView/1", Document: []byte(`{}`)}
+	if err := admin.PutConfigSnapshot(ctx, snapshot); err != nil {
+		t.Fatalf("admin PutConfigSnapshot: %v", err)
+	}
+	if err := worker.PutConfigSnapshot(ctx, snapshot); err == nil {
+		t.Fatal("a task grant must not authorize publishing the configuration snapshot")
+	}
+	if _, _, err := worker.ConfigSnapshot(ctx); err == nil {
+		t.Fatal("a task grant must not authorize reading the configuration snapshot")
+	}
+	if _, found, err := admin.ConfigSnapshot(ctx); err != nil || !found {
+		t.Fatalf("admin ConfigSnapshot = (found %v, %v), want the published snapshot", found, err)
 	}
 }
 

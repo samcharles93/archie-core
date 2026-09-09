@@ -83,6 +83,17 @@ type CaptureStore interface {
 	ListCaptures(ctx context.Context, limit int) ([]CapturedEvent, error)
 }
 
+// ConfigSnapshotStore holds the running configuration as the dashboard
+// renders it: the owner of configuration publishes, the process that displays
+// it reads. Separate from every other store surface because it is the only
+// one whose writer is the daemon and whose reader is the UI, and because a
+// task-scoped credential must never reach the writer.
+// See docs/architecture/migration-decisions.md, "Dashboard configuration page".
+type ConfigSnapshotStore interface {
+	PutConfigSnapshot(ctx context.Context, snapshot ConfigSnapshot) error
+	ConfigSnapshot(ctx context.Context) (ConfigSnapshot, bool, error)
+}
+
 // MappingStore persists payload field mappings (t2db.3). Deliberately
 // separate from TaskStore and CaptureStore for the same reason those are
 // split: the dashboard's mapping editor should only acquire the mapping
