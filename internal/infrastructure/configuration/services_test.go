@@ -28,3 +28,31 @@ func TestLoadGatewayServiceTarget(t *testing.T) {
 		})
 	}
 }
+
+// TestLoadHealthListen: the daemon's liveness surface is not optional. The
+// update watchdog restarts archied and asks whether it came back, and only
+// archied can answer that -- the dashboard's /healthz belongs to the
+// dashboard, which can be switched off and moves to its own process
+// (archie-core-1r4g, archie-core-exbz).
+func TestLoadHealthListen(t *testing.T) {
+	for _, tt := range []struct {
+		name, section, wantListen string
+	}{
+		{name: "default", wantListen: "127.0.0.1:8485"},
+		{name: "explicit listen", section: "[health]\nlisten = '127.0.0.1:9500'", wantListen: "127.0.0.1:9500"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			if err := os.WriteFile(path, []byte("bot_user = 'widget'\n"+tt.section), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := loadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Health.Listen != tt.wantListen {
+				t.Fatalf("health listen = %q, want %q", cfg.Health.Listen, tt.wantListen)
+			}
+		})
+	}
+}

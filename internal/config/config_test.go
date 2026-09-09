@@ -467,3 +467,23 @@ func TestWebConfigTOML(t *testing.T) {
 		})
 	}
 }
+
+// TestHealthURL renders the address out-of-process tooling probes. A wrong
+// address here reads as an unhealthy release and rolls back one that came up
+// fine (archie-core-1r4g).
+func TestHealthURL(t *testing.T) {
+	for _, tc := range []struct{ listen, want string }{
+		{"127.0.0.1:8485", "http://127.0.0.1:8485"},
+		{"localhost:8485", "http://localhost:8485"},
+		{"0.0.0.0:8485", "http://localhost:8485"},
+		{":8485", "http://localhost:8485"},
+		{"[::]:8485", "http://localhost:8485"},
+		{"100.64.1.2:9000", "http://100.64.1.2:9000"},
+		{"  127.0.0.1:8485  ", "http://127.0.0.1:8485"},
+		{"", ""},
+	} {
+		if got := (Health{Listen: tc.listen}).URL(); got != tc.want {
+			t.Errorf("Health{Listen: %q}.URL() = %q, want %q", tc.listen, got, tc.want)
+		}
+	}
+}

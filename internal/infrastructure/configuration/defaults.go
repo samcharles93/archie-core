@@ -47,6 +47,10 @@ const (
 	defaultCaptureMaxBodyBytes  = 256 * 1024
 	defaultCaptureRatePerSecond = 1.0
 	defaultCaptureRateBurst     = 5
+
+	// defaultHealthListen is the daemon's own liveness address. The update
+	// watchdog's fallback in scripts/archie-update-watchdog must match it.
+	defaultHealthListen = "127.0.0.1:8485"
 )
 
 // applyDefaults fills in every absent value. It never reports an error and
@@ -61,6 +65,9 @@ const (
 func (l *Loader) applyDefaults(cfg *config.Config) {
 	if cfg.Services.Gateway.Target == "" {
 		cfg.Services.Gateway.Target = "127.0.0.1:8585"
+	}
+	if cfg.Health.Listen == "" {
+		cfg.Health.Listen = defaultHealthListen
 	}
 	l.applyGeneralDefaults(cfg)
 	applyForgeDefaults(cfg)

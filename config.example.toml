@@ -185,6 +185,16 @@ class = "ollama"
 # Per-index lifecycle metadata DB (default: <work_dir>/workspace-indexes.db).
 # db_path   = "/var/lib/archie/workspace-indexes.db"
 
+# archied's own liveness surface, always on. GET /healthz and /health answer
+# 200 once the daemon is serving (503 while it is still booting), and
+# /health/detailed reports the readiness probes. This is what the update
+# watchdog polls after restarting archied to decide whether the release came
+# up or has to be rolled back, so it stays separate from the dashboard's
+# /healthz: the dashboard can be switched off, and it runs as its own process
+# in the extracted UI topology.
+[health]
+listen = "127.0.0.1:8485"
+
 # Web dashboard and API: task board, activity stream, chat, config,
 # logs, memory, SSE events. Served as an embedded SPA with a full REST
 # and streaming API. Auth is token-based for non-loopback addresses;

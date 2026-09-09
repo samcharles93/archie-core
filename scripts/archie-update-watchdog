@@ -12,10 +12,11 @@ AGENT_IMAGE="${ARCHIE_AGENT_IMAGE:-ghcr.io/samcharles93/archie-agent:latest}"
 AGENT_IMAGE_BACKUP="${ARCHIE_AGENT_IMAGE_BACKUP:-$BIN_DIR/archie-agent-image.prev.tar}"
 TASK_DB_PATH="${ARCHIE_TASK_DB_PATH:-}"
 TASK_DB_BACKUP="${ARCHIE_TASK_DB_BACKUP:-$BIN_DIR/archie-task-db.prev.sqlite}"
-# The daemon exports its own dashboard address (releaseupdate.CommandInstaller);
+# The daemon exports its own health address (releaseupdate.CommandInstaller);
 # this default only covers a hand-driven run, and must stay the address archied
-# serves /healthz on -- config.example.toml's [web] listen.
-HEALTH_URL="${ARCHIE_HEALTH_URL:-http://127.0.0.1:8484}"
+# itself serves /healthz on -- [health] listen, defaulted in
+# internal/infrastructure/configuration/defaults.go.
+HEALTH_URL="${ARCHIE_HEALTH_URL:-http://127.0.0.1:8485}"
 HEALTH_URL="${HEALTH_URL%/}"
 REPORT_PATH="${ARCHIE_UPDATE_REPORT_PATH:-}"
 HEALTH_TIMEOUT_SECONDS="${ARCHIE_UPDATE_HEALTH_TIMEOUT:-60}"

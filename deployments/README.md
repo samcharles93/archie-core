@@ -62,6 +62,23 @@ archie-state-store -config ~/.config/archie/config.toml -listen 127.0.0.1:9090
 archie-state-store -config ~/.config/archie/config.toml -listen 172.17.0.1:9090 -token <token>
 ```
 
+## Verifying the daemon
+
+`archied` always serves its own liveness surface on `[health].listen`
+(`127.0.0.1:8485` by default). It answers 503 for the whole of boot and 200
+once the daemon is running, which is what makes it a usable restart check:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8485/healthz      # 200 = daemon running, 503 = still booting
+curl -s http://127.0.0.1:8485/health/detailed                               # readiness probes, 503 when degraded
+```
+
+The update watchdog polls this address after restarting the daemon and rolls
+the release back when it never answers, so a deployment that moves it must
+change `[health].listen` rather than relying on the script's fallback. The
+dashboard's `/healthz` is a separate surface on `[web].listen` and reports the
+dashboard's process, not the daemon's.
+
 ## Verifying the State Store
 
 `archie-state-store` exposes an optional HTTP readiness surface when launched
