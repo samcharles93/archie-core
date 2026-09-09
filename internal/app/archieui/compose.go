@@ -34,8 +34,8 @@ type deps struct {
 //     through a narrow admin contract. The shared holder is removed from the
 //     daemon's own wiring by archie-core-8cda.5.4.
 //   - LogFeed, TaskLogs, Events, Channels, ReloadChannel, Curators, Memory,
-//     Issues, TaskStopper, Workflows, WorkRequests, RunningVersions,
-//     Chat.Updates, UpdateReportPath: no contract exists for these yet.
+//     Workflows, WorkRequests, RunningVersions, Chat.Updates,
+//     UpdateReportPath: no contract exists for these yet.
 //     Defining one amends the owning service's contract first
 //     (docs/prds/ui-service-boundary.md:205-207); the route migration is
 //     archie-core-8cda.5.3.

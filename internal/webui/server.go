@@ -133,22 +133,10 @@ type Server struct {
 	// stay frictionless -- see IsLoopback.
 	Token string
 
-	// Issues closes the forge issue behind a rejected task. Optional: the
-	// action still records the operator's decision without it, and says so
-	// in the log. Deliberately the narrowest interface that does the job
-	// rather than the whole forge client -- the dashboard has no business
-	// commenting, labelling or opening PRs.
-	Issues IssueCloser
-
 	// Events publishes operator actions so they reach the task timeline and
 	// the live activity stream. Optional: nil means the action is recorded
 	// in the store but invisible to anyone watching.
 	Events EventPublisher
-
-	// TaskStopper reaches work that is actually executing. A store row cannot
-	// stop a goroutine or container; the daemon supplies this narrow runtime
-	// seam so the Stop action cancels work before parking its task record.
-	TaskStopper TaskStopper
 
 	// Captures persists unbound webhook captures (docs/prds/event-capture-storage.md).
 	// Optional: nil makes POST /webhooks/capture/{source} answer 503 rather
@@ -251,20 +239,10 @@ func (s *Server) SetProvenance(origins []ConfigOrigin) {
 	s.ConfigProvenance.Store(&origins)
 }
 
-// IssueCloser closes the forge issue behind a task.
-type IssueCloser interface {
-	CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error
-}
-
 // EventPublisher accepts events for the store and the live stream. The bus
 // in cmd/archied satisfies it.
 type EventPublisher interface {
 	Publish(events.Event)
-}
-
-// TaskStopper interrupts one task currently executing in the daemon.
-type TaskStopper interface {
-	CancelTask(taskID int64) bool
 }
 
 // Broadcast fans an (ID-stamped) event out to every connected SSE

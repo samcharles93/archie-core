@@ -38,7 +38,12 @@ func newTestServer(t *testing.T) *Server {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
-	return &Server{Store: s, Log: slog.New(slog.DiscardHandler)}
+	srv := &Server{Store: s, Log: slog.New(slog.DiscardHandler)}
+	// Composition always gives the dashboard a Gateway contract; task
+	// actions travel through it now, so a test server without one could
+	// only ever answer 503.
+	wireOperatorActions(srv)
+	return srv
 }
 
 // stubStore wraps a real TaskStore and overrides selected methods to

@@ -400,10 +400,6 @@ func (b *boot) setupObservability() {
 		}
 		return b.restartTelegram()
 	}
-	// The dashboard closes the forge issue behind a rejected task, or the
-	// issue is re-polled and the work is done again. It gets only that one
-	// method, not the forge client.
-	b.web.Issues = b.forgeClient
 	b.wireWebStoreSurfaces()
 	sink := bus.Subscribe(256)
 	go persistAndBroadcastEvents(sink, b.stateStore, b.web, log)
@@ -1286,7 +1282,6 @@ func (b *boot) buildDaemon() {
 		TaskLogs:            b.taskLogs,
 		AgentStatus:         b.agentStatus,
 	}
-	b.web.TaskStopper = b.d
 	// Curator observability (archie-core-1786637489932-6): GET
 	// /api/curators reads registered names, health and recent activity
 	// straight off the live registry the daemon already holds.

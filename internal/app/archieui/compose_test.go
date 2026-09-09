@@ -84,8 +84,6 @@ func TestComposeUIServerHoldsNoDaemonState(t *testing.T) {
 		"LastReload":        srv.LastReload,
 		"ReloadChannel":     srv.ReloadChannel,
 		"RunningVersions":   srv.RunningVersions,
-		"TaskStopper":       srv.TaskStopper,
-		"Issues":            srv.Issues,
 		"Events":            srv.Events,
 		"Curators":          srv.Curators,
 		"Memory":            srv.Memory,
