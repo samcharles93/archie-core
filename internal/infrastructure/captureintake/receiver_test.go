@@ -27,7 +27,7 @@ type recordingPublisher struct {
 	published []events.Event
 }
 
-func (r *recordingPublisher) Publish(e events.Event) {
+func (r *recordingPublisher) Publish(_ context.Context, e events.Event) {
 	r.published = append(r.published, e)
 }
 

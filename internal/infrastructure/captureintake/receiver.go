@@ -13,6 +13,7 @@
 package captureintake
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -52,9 +53,11 @@ type Receiver struct {
 	// MaxBodyBytes rejects (413) a body larger than this before redaction
 	// or storage sees it.
 	MaxBodyBytes int64
-	// Publish puts the capture's arrival on the activity stream. Nil records
-	// the capture without announcing it.
-	Publish func(events.Event)
+	// Publish puts the capture's arrival on the activity stream, with the
+	// request's context: the announce happens synchronously inside the
+	// handler, before the 202 is written, so the request's lifetime bounds
+	// it. Nil records the capture without announcing it.
+	Publish func(ctx context.Context, e events.Event)
 	Log     *slog.Logger
 }
 
@@ -156,7 +159,7 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// The captures view treats this purely as an invalidation signal and
 	// refetches the list for the actual row data.
 	if rc.Publish != nil {
-		rc.Publish(events.Event{
+		rc.Publish(r.Context(), events.Event{
 			Kind:   "capture",
 			Detail: "capture from " + source,
 			Data:   map[string]any{"id": id, "source": source},

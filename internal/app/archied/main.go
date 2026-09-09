@@ -49,7 +49,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/tools/mcp"
 	toolprovider "github.com/samcharles93/archie-core/internal/tools/provider"
 	mcptoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/mcp"
-	"github.com/samcharles93/archie-core/internal/webui"
 	"github.com/samcharles93/archie-core/internal/worktree"
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
 )
@@ -444,17 +443,16 @@ func Run() int { //nolint:cyclop // the composition root's setup sequence is del
 	return exitCode(b.runLoop(ctx, args.once))
 }
 
-// wireConfigSurfaces attaches the dashboard's configuration read and write
-// paths: the published snapshot plus the three validate-persist-publish
-// handlers behind PATCH /api/config, POST /api/config/reset and the
-// per-repository field update. They are wired together because they are one
-// capability -- the daemon owning configuration on the dashboard's behalf --
-// and archie-core-8cda.5.4 replaces the set of them at once.
+// wireConfigSurfaces attaches the dashboard's configuration read path and
+// the reload plumbing behind it. The write handlers (PATCH /api/config, the
+// per-repository field update, per-row reset) are descoped for the UI
+// process (archie-core-ymut): the daemon still owns the validate-persist-
+// publish policy, but no HTTP route reaches it -- editing is config.toml
+// plus reload -- so only the snapshot publication and the override list the
+// renderer needs stay wired.
 func (b *boot) wireConfigSurfaces(ctx context.Context, cfgPath, overlayPath string) {
 	b.wireConfigPublishing(ctx, cfgPath, overlayPath)
-	b.installUpdateConfigHandler()
-	b.installUpdateRepoFieldHandler()
-	b.installConfigHandlers(cfgPath, overlayPath)
+	b.installConfigHandlers()
 	// Publish once at boot. Every later change goes through publishConfig,
 	// which republishes; without this the UI process would render nothing
 	// until the first reload or dashboard edit.
@@ -509,24 +507,24 @@ func recordBootOverlayError(p *atomic.Pointer[string], log *slog.Logger, err err
 	log.Error(msg, args...)
 }
 
-// persistAndBroadcastEvents drains the bus until it closes, giving each
-// event an ID from the store before fanning it out.
+// persistEvents drains the bus until it closes, giving each event an ID
+// from the store. The store is the only fan-out point (docs/architecture/
+// migration-decisions.md, "Dashboard live event delivery"): the UI process
+// reads the same table through its event pump, so the daemon's job is
+// persistence, not delivery.
 //
 // The insert deliberately outlives ctx: this loop ends when the bus closes,
 // which is part of shutdown, and the last events of a run are exactly the
 // ones an operator wants to read afterwards.
-func persistAndBroadcastEvents(ctx context.Context, sink *events.Sub, st store.TaskStore, web *webui.Server, log *slog.Logger) {
+func persistEvents(ctx context.Context, sink *events.Sub, st store.TaskStore, log *slog.Logger) {
 	ctx = context.WithoutCancel(ctx)
 	for e := range sink.C {
-		if e.ID == 0 {
-			id, err := st.InsertEvent(ctx, e)
-			if err != nil {
-				log.Error("event sink insert failed", "err", err)
-				continue
-			}
-			e.ID = id
+		if e.ID != 0 {
+			continue
 		}
-		web.Broadcast(e)
+		if _, err := st.InsertEvent(ctx, e); err != nil {
+			log.Error("event sink insert failed", "err", err)
+		}
 	}
 }
 
@@ -977,27 +975,6 @@ func safePluginInfo(p plugin.Plugin) (name, version string) {
 		}
 	}()
 	return p.Name(), p.Version()
-}
-
-// webTokenFor returns the dashboard token for a listen address, or "" when
-// none is needed.
-//
-// A loopback bind needs no token: local access already implies the agent's own
-// authority, since its shell and edit tools run as this user. A reachable bind
-// mints one and logs a URL to click, so an instance cannot be left exposed
-// merely by omitting configuration.
-func webTokenFor(listen, dbPath string, log *slog.Logger) string {
-	if webui.IsLoopback(listen) {
-		return ""
-	}
-	path := filepath.Join(filepath.Dir(dbPath), "web-token")
-	tok, err := webui.LoadOrCreateToken(path)
-	if err != nil {
-		log.Error("web ui token", "err", err)
-		return ""
-	}
-	log.Info("web ui token", "open", webui.DashboardURL(listen, tok), "stored", path)
-	return tok
 }
 
 // memoryProvider builds the built-in memory provider, falling back to the

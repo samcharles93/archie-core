@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/config"
@@ -385,22 +384,6 @@ func trimLeadingSlash(p string) string {
 		return "."
 	}
 	return p
-}
-
-// Run serves until ctx ends.
-func (s *Server) Run(ctx context.Context, listen string) error {
-	srv := &http.Server{Addr: listen, Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second}
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(shutdownCtx)
-	}()
-	s.Log.Info("web ui listening", "addr", "http://"+listen)
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		return err
-	}
-	return nil
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
