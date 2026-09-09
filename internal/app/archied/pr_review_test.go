@@ -1,6 +1,8 @@
 package archied
 
 import (
+	"context"
+	"log/slog"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
@@ -159,5 +161,30 @@ func TestBuildReviewAllowlist(t *testing.T) {
 	}
 	if _, ok := allowed["nobody"]; ok {
 		t.Errorf("allowlist contains unknown identity nobody: %+v", allowed)
+	}
+}
+
+// reviewCapableForge satisfies both forge.Forge (via embedding) and
+// forge.PullRequestReader, so boot.prReviewer can be exercised in isolation.
+type reviewCapableForge struct {
+	forge.Forge
+}
+
+func (reviewCapableForge) GetPullRequest(context.Context, string, string, int) (forge.PullRequest, error) {
+	return forge.PullRequest{}, nil
+}
+
+// TestPrReviewerIsMemoized pins the cross-channel single-flight fix: every
+// gateway must share one prReviewer so a review of the same PR requested from
+// two channels at once deduplicates instead of running twice.
+func TestPrReviewerIsMemoized(t *testing.T) {
+	b := &boot{forgeClient: reviewCapableForge{Forge: forge.NewNoop(slog.New(slog.DiscardHandler))}}
+
+	first := b.prReviewer()
+	if first == nil {
+		t.Fatal("prReviewer() = nil, want a reviewer")
+	}
+	if second := b.prReviewer(); first != second {
+		t.Fatal("prReviewer() returned distinct instances; channels would not share the in-flight set")
 	}
 }

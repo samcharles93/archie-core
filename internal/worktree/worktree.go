@@ -703,6 +703,11 @@ func remoteBase(base string) string {
 // repository (archie's own PRs always are); a cross-repo or deleted head is
 // refused rather than half-reviewed. The returned cleanup removes the clone.
 func (m *Manager) CheckoutPR(ctx context.Context, owner, repo, headRef, baseRef string) (dir string, cleanup func(), err error) {
+	if m.WorkDir != "" {
+		if err := os.MkdirAll(m.WorkDir, 0o755); err != nil {
+			return "", nil, fmt.Errorf("create worktree root directory: %w", err)
+		}
+	}
 	dir, err = os.MkdirTemp(m.WorkDir, "pr-review-*")
 	if err != nil {
 		return "", nil, fmt.Errorf("create PR review directory: %w", err)

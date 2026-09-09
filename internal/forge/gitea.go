@@ -169,6 +169,11 @@ func (c *GiteaClient) GetPullRequest(ctx context.Context, owner, repo string, nu
 	if err != nil {
 		return PullRequest{}, fmt.Errorf("get pull request %s/%s#%d: %w", owner, repo, number, err)
 	}
+	// A merged/closed PR whose head branch was deleted returns nil head/base
+	// from Gitea; dereferencing it would panic.
+	if pr.Head == nil || pr.Base == nil {
+		return PullRequest{}, fmt.Errorf("pull request %s/%s#%d has a missing head or base ref", owner, repo, number)
+	}
 	state := string(pr.State)
 	if pr.HasMerged {
 		state = "merged"
