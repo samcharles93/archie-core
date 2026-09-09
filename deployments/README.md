@@ -35,6 +35,7 @@ Edit API keys in `~/.config/archie/env` or directly in `config.toml`, then launc
 ```bash
 archie-gateway -config ~/.config/archie/config.toml -listen 127.0.0.1:8585 &
 archie-state-store -config ~/.config/archie/config.toml -listen 127.0.0.1:9090 &
+archie-ui -config ~/.config/archie/config.toml &
 archied -config ~/.config/archie/config.toml
 # or via systemd:
 systemctl --user start archied
@@ -54,6 +55,25 @@ store path was deleted, BOTH `archied` and `archie-gateway` dial it via
 Docker bridge gateway address plus a matching bearer token (`target_token` /
 `--token` / `STATE_STORE_TOKEN`), because a container cannot reach the host's
 loopback.
+
+## Running the dashboard
+
+The dashboard is served by the standalone UI Service (`archie-ui`), not by
+`archied` (UI cutover, `archie-core-8cda.5.4`; `docs/prds/ui-service-boundary.md`).
+It reads the same `config.toml`, dials the Gateway and State Store targets
+already configured there, and binds `[web].listen` (`127.0.0.1:8484` by
+default). Start it after the Gateway and the State Store:
+
+```bash
+archie-ui -config ~/.config/archie/config.toml
+```
+
+A non-loopback `[web].listen` requires a dashboard token (`-token`, or
+`-token-file` to mint and persist one); a loopback bind needs none.
+`archied` runs no dashboard listener at all, so webhook capture
+(`POST /webhooks/capture/{source}`) is received by archie-ui and the
+binding-dispatch loop in `archied` consumes what arrives from the shared
+State Store.
 
 ```bash
 # loopback (host-only agent)
