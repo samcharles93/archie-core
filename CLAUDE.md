@@ -262,10 +262,14 @@ structures found in legacy packages.
 4. **Formatting is LAW:** Adopt all formatting and simplification changes from
    `task fmt` (`gofumpt` + `go fix`) verbatim. Never revert or fight canonical
    linter/formatter diffs.
-5. **No standing adversarial-review pass:** Do not spawn a separate
-   fresh-context reviewer pass on every change as a matter of course. Red-green
-   TDD plus `task check` is the gate. Adversarial review is opt-in per
-   request, not a default step in this loop -- ask before running one.
+5. **No standing adversarial-review pass (for contributors):** Do not spawn a
+   separate fresh-context reviewer pass on every change as a matter of course.
+   Red-green TDD plus `task check` is the gate; a manual adversarial pass is
+   opt-in per request — ask before running one. This is the rule for a human or
+   agent *contributor*. Separately, archied runs the same adversarial review
+   automatically on the PRs it opens (gated per repo by `repo.review_enabled`)
+   — see `docs/architecture/adversarial-review.md`. The two paths are distinct:
+   you run one when asked; archied runs one before it opens a PR.
 6. **Linter Guard:**
 
 - When using `errorlint` fixes, ensure boolean predicates (e.g.
