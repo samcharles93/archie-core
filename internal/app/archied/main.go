@@ -674,12 +674,15 @@ type chatTaskActorAdapter struct {
 }
 
 func (a chatTaskActorAdapter) ApplyChatTaskAction(
-	ctx context.Context, identity string, taskID int64, action taskstate.Action,
+	ctx context.Context, identity *string, taskID int64, action taskstate.Action,
 ) (gateway.TaskActionResult, error) {
 	if a.contract == nil {
 		return gateway.TaskActionResult{}, gateway.ErrChatCapabilityUnavailable
 	}
-	return a.contract.ApplyTaskAction(ctx, identity, taskID, action)
+	if identity == nil {
+		return a.contract.ApplyOperatorTaskAction(ctx, taskID, action)
+	}
+	return a.contract.ApplyTaskAction(ctx, *identity, taskID, action)
 }
 
 func chatTaskProfiles(cfg config.Config) ([]gateway.TaskProfile, string) {

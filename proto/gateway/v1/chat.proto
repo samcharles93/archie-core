@@ -14,6 +14,7 @@ service ChatService {
   rpc Cancel(CancelRequest) returns (CancelResponse);
   rpc SetPersona(SetPersonaRequest) returns (SetPersonaResponse);
   rpc ApplyTaskAction(ApplyTaskActionRequest) returns (ApplyTaskActionResponse);
+  rpc ApplyOperatorTaskAction(ApplyOperatorTaskActionRequest) returns (ApplyOperatorTaskActionResponse);
   rpc SaveSession(SaveSessionRequest) returns (SaveSessionResponse);
   rpc GetSessionsByChannel(GetSessionsByChannelRequest) returns (GetSessionsByChannelResponse);
   rpc DeleteSession(DeleteSessionRequest) returns (DeleteSessionResponse);
@@ -122,6 +123,11 @@ message SetPersonaRequest { string session_id = 1; string name = 2; }
 message SetPersonaResponse { bool found = 1; }
 message ApplyTaskActionRequest { string identity = 1; int64 task_id = 2; string action = 3; }
 message ApplyTaskActionResponse { int64 task_id = 1; string action = 2; string message = 3; }
+// An authenticated dashboard operator acts across identities, so this request
+// carries no identity to scope against -- the distinction the daemon's task
+// action service draws with a nil identity (internal/domain/taskactions).
+message ApplyOperatorTaskActionRequest { int64 task_id = 1; string action = 2; }
+message ApplyOperatorTaskActionResponse { int64 task_id = 1; string action = 2; string message = 3; }
 message SaveSessionResponse {}
 message SaveSessionRequest { Session session = 1; }
 message GetSessionsByChannelRequest { string platform = 1; string channel_id = 2; }

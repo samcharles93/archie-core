@@ -20,8 +20,11 @@ import (
 // execution; the standalone Gateway never mutates the task store directly.
 const actionSubject = "archie.gateway.task-action"
 
+// Identity is a pointer because its absence is meaningful: nil is an
+// authenticated dashboard operator acting across identities, which the
+// daemon's service distinguishes from any named identity, empty included.
 type actionRequest struct {
-	Identity string           `json:"identity"`
+	Identity *string          `json:"identity"`
 	TaskID   int64            `json:"task_id"`
 	Action   taskstate.Action `json:"action"`
 }
@@ -45,7 +48,7 @@ func Register(nc *nats.Conn, service taskactions.Service, log *slog.Logger) (fun
 				natsrpc.Respond(msg, log, "taskactions", actionResponse{Envelope: natsrpc.NewEnvelope(err)})
 				return
 			}
-			err := service.Apply(context.Background(), &req.Identity, req.TaskID, req.Action)
+			err := service.Apply(context.Background(), req.Identity, req.TaskID, req.Action)
 			natsrpc.Respond(msg, log, "taskactions", actionResponse{Envelope: natsrpc.NewEnvelope(err)})
 		},
 	}})
@@ -62,7 +65,7 @@ func (c Client) rpc() *natsrpc.Client {
 }
 
 // ApplyChatTaskAction sends an operator action to the daemon's responder.
-func (c Client) ApplyChatTaskAction(ctx context.Context, identity string, id int64, action taskstate.Action) (gateway.TaskActionResult, error) {
+func (c Client) ApplyChatTaskAction(ctx context.Context, identity *string, id int64, action taskstate.Action) (gateway.TaskActionResult, error) {
 	if c.Conn == nil {
 		return gateway.TaskActionResult{}, fmt.Errorf("task action connection is unavailable")
 	}

@@ -22,9 +22,9 @@ import (
 type testTaskActor struct{ b *boot }
 
 func (a testTaskActor) ApplyChatTaskAction(
-	ctx context.Context, identity string, taskID int64, action taskstate.Action,
+	ctx context.Context, identity *string, taskID int64, action taskstate.Action,
 ) (gateway.TaskActionResult, error) {
-	if err := a.b.taskActions().Apply(ctx, &identity, taskID, action); err != nil {
+	if err := a.b.taskActions().Apply(ctx, identity, taskID, action); err != nil {
 		return gateway.TaskActionResult{}, err
 	}
 	return gateway.TaskActionResult{
@@ -87,7 +87,7 @@ func TestChatTaskActorAdapterCrossIdentityRefused(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := adapter.ApplyChatTaskAction(ctx, tc.actorIdentity, task.ID, tc.action)
+			_, err := adapter.ApplyChatTaskAction(ctx, &tc.actorIdentity, task.ID, tc.action)
 			if err == nil {
 				t.Fatalf("ApplyChatTaskAction() allowed cross-identity action %s by %q on task owned by %q",
 					tc.action, tc.actorIdentity, task.Identity)
@@ -162,7 +162,7 @@ func TestChatTaskActorAdapterRefusesDisallowedStateAction(t *testing.T) {
 				}
 			}
 
-			_, err = adapter.ApplyChatTaskAction(ctx, "archie", task.ID, tc.attemptAction)
+			_, err = adapter.ApplyChatTaskAction(ctx, new("archie"), task.ID, tc.attemptAction)
 			if err == nil {
 				t.Fatalf("expected error attempting %s on %s task, got nil", tc.attemptAction, tc.initialStatus)
 			}
@@ -195,7 +195,7 @@ func TestChatTaskActorAdapterTaskNotFound(t *testing.T) {
 
 	adapter := newChatTaskActorForTest(t, st, config.Config{})
 
-	_, err = adapter.ApplyChatTaskAction(ctx, "archie", 999999, taskstate.ActionAbandon)
+	_, err = adapter.ApplyChatTaskAction(ctx, new("archie"), 999999, taskstate.ActionAbandon)
 	if err == nil {
 		t.Fatal("expected error for non-existent task, got nil")
 	}
@@ -277,7 +277,7 @@ func TestChatTaskActorAdapterAppliesActionsToStore(t *testing.T) {
 				}
 			}
 
-			result, err := adapter.ApplyChatTaskAction(ctx, "archie", task.ID, tc.action)
+			result, err := adapter.ApplyChatTaskAction(ctx, new("archie"), task.ID, tc.action)
 			if err != nil {
 				t.Fatalf("ApplyChatTaskAction(%s) error = %v", tc.action, err)
 			}
@@ -312,7 +312,7 @@ func TestChatTaskActorAdapterNilContract(t *testing.T) {
 	ctx := context.Background()
 	adapter := chatTaskActorAdapter{contract: nil}
 
-	_, err := adapter.ApplyChatTaskAction(ctx, "archie", 1, taskstate.ActionAbandon)
+	_, err := adapter.ApplyChatTaskAction(ctx, new("archie"), 1, taskstate.ActionAbandon)
 	if err == nil {
 		t.Fatal("expected error for nil contract, got nil")
 	}

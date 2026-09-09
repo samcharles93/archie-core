@@ -13,6 +13,7 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
 func remoteChat(t *testing.T, local gateway.ChatContract) gateway.ChatContract {
@@ -106,5 +107,62 @@ func TestWireValuesPreserveHistoryAndMedia(t *testing.T) {
 	}
 	if got := inboundValue(inboundProto(gateway.Inbound{})); !got.Message.At.IsZero() {
 		t.Fatalf("zero time became %v", got.Message.At)
+	}
+}
+
+// recordingTaskActor captures the identity scope an action reached the daemon
+// with. A pointer, because nil is a distinct authorization, not a blank name.
+type recordingTaskActor struct {
+	identity *string
+	taskID   int64
+	action   taskstate.Action
+}
+
+func (a *recordingTaskActor) ApplyChatTaskAction(
+	_ context.Context, identity *string, taskID int64, action taskstate.Action,
+) (gateway.TaskActionResult, error) {
+	a.identity, a.taskID, a.action = identity, taskID, action
+	return gateway.TaskActionResult{TaskID: taskID, Action: string(action), Message: "applied"}, nil
+}
+
+// TestTaskActionScopeSurvivesTheWire pins the distinction the daemon's action
+// service draws (internal/domain/taskactions.Service.Apply): a nil identity is
+// an authenticated dashboard operator acting across identities, a non-nil one
+// is a chat user acting on their own task. ApplyTaskAction cannot express the
+// operator case -- "" is a real identity in a single-identity deployment (see
+// chatTaskProfiles) -- so it has its own contract method, and the difference
+// has to survive both the local adapter and the gRPC hop.
+func TestTaskActionScopeSurvivesTheWire(t *testing.T) {
+	for _, mode := range []string{"local", "grpc"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx := t.Context()
+			actor := &recordingTaskActor{}
+			local := &gateway.LocalChatAdapter{TaskActor: actor}
+			var chat gateway.ChatContract = local
+			if mode == "grpc" {
+				chat = remoteChat(t, local)
+			}
+
+			result, err := chat.ApplyOperatorTaskAction(ctx, 42, taskstate.ActionApprove)
+			if err != nil {
+				t.Fatalf("operator action: %v", err)
+			}
+			if actor.identity != nil {
+				t.Fatalf("operator action arrived scoped to %q, want an unscoped nil identity", *actor.identity)
+			}
+			if actor.taskID != 42 || actor.action != taskstate.ActionApprove {
+				t.Fatalf("operator action = (%d, %q), want (42, %q)", actor.taskID, actor.action, taskstate.ActionApprove)
+			}
+			if result.TaskID != 42 || result.Action != string(taskstate.ActionApprove) || result.Message != "applied" {
+				t.Fatalf("operator result = %+v, want the daemon's result", result)
+			}
+
+			if _, err := chat.ApplyTaskAction(ctx, "scout", 7, taskstate.ActionRetry); err != nil {
+				t.Fatalf("chat action: %v", err)
+			}
+			if actor.identity == nil || *actor.identity != "scout" {
+				t.Fatalf("chat action lost its identity scope: %v", actor.identity)
+			}
+		})
 	}
 }

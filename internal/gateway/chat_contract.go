@@ -26,7 +26,14 @@ type ChatContract interface { //nolint:interfacebloat // wire contract intention
 // ChatTaskActionContract is the operator task mutation capability exposed by
 // the Gateway. It is separate so read/turn consumers do not need to model it.
 type ChatTaskActionContract interface {
+	// ApplyTaskAction applies an action on behalf of a chat identity, which
+	// may only act on its own tasks.
 	ApplyTaskAction(context.Context, string, int64, taskstate.Action) (TaskActionResult, error)
+	// ApplyOperatorTaskAction applies an action on behalf of an authenticated
+	// dashboard operator, who acts across identities. It is a separate method
+	// rather than an empty identity because "" is a real identity in a
+	// single-identity deployment (see chatTaskProfiles in the daemon).
+	ApplyOperatorTaskAction(context.Context, int64, taskstate.Action) (TaskActionResult, error)
 }
 
 type ChatSnapshot struct {
