@@ -166,7 +166,7 @@ fi
 echo "==> handing off to the update watchdog for restart and health verification"
 systemd-run --user --unit=archied-update-restart --collect --quiet \
   --setenv=ARCHIE_BIN_DIR="$BIN_DIR" \
-  --setenv=ARCHIE_HEALTH_URL="${ARCHIE_HEALTH_URL:-http://127.0.0.1:8420}" \
+  --setenv=ARCHIE_HEALTH_URL="${ARCHIE_HEALTH_URL:-}" \
   --setenv=ARCHIE_UPDATE_REPORT_PATH="${ARCHIE_UPDATE_REPORT_PATH:-}" \
   --setenv=ARCHIE_UPDATE_CHANNEL="${ARCHIE_UPDATE_CHANNEL:-}" \
   --setenv=ARCHIE_UPDATE_CHAT_ID="${ARCHIE_UPDATE_CHAT_ID:-0}" \

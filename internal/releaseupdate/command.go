@@ -36,7 +36,15 @@ func (c CommandCatalog) Check(ctx context.Context) (Snapshot, error) {
 	return snapshot, nil
 }
 
-type CommandInstaller struct{ Command []string }
+// CommandInstaller runs the deployment's own install command. HealthURL is
+// the base URL its restart tooling must poll for /healthz -- only this
+// process knows which address it actually serves, so a script left to guess
+// one rolls back releases that came up healthy (archie-core-1r4g). Empty
+// leaves ARCHIE_HEALTH_URL as the environment already has it.
+type CommandInstaller struct {
+	Command   []string
+	HealthURL string
+}
 
 // Install runs the configured command and streams its stdout to progress
 // line by line as the command emits it -- the earlier CombinedOutput-based
@@ -60,6 +68,9 @@ func (i CommandInstaller) Install(ctx context.Context, snapshot Snapshot, meta I
 		"ARCHIE_UPDATE_AGENT_PREVIOUS="+versions[ComponentAgent].Installed,
 		"ARCHIE_UPDATE_AGENT_VERSION="+versions[ComponentAgent].Available,
 	)
+	if i.HealthURL != "" {
+		cmd.Env = append(cmd.Env, "ARCHIE_HEALTH_URL="+i.HealthURL)
+	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

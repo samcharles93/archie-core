@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"database/sql"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -90,6 +92,21 @@ func TestUpdateInstallNoopDoesNotFetchBuildInstallOrRestart(t *testing.T) {
 	}
 }
 
+// TestUpdateInstallForwardsHealthURLToTheWatchdogUnit closes the link between
+// the two: systemd-run starts the watchdog with a clean environment, so a
+// health address the daemon derived reaches the probe only if the install
+// script hands it over explicitly (archie-core-1r4g).
+func TestUpdateInstallForwardsHealthURLToTheWatchdogUnit(t *testing.T) {
+	_, calls := runUpdateInstallScript(t, map[string]string{
+		"ARCHIE_UPDATE_DAEMON_PREVIOUS": "1.12.0",
+		"ARCHIE_UPDATE_DAEMON_VERSION":  "1.13.0",
+		"ARCHIE_UPDATE_AGENT_PREVIOUS":  "1.9.9",
+		"ARCHIE_HEALTH_URL":             "http://127.0.0.1:9000",
+	})
+
+	assertCallContains(t, calls, "systemd-run ", "--setenv=ARCHIE_HEALTH_URL=http://127.0.0.1:9000")
+}
+
 func TestUpdateWatchdogRollsBackManagedWorkerImageAndReportsOnlyChangedComponents(t *testing.T) {
 	tests := []struct {
 		name              string
@@ -122,6 +139,51 @@ func TestUpdateWatchdogRollsBackManagedWorkerImageAndReportsOnlyChangedComponent
 				t.Fatalf("agent report membership = %v for components %q", found, tt.components)
 			}
 		})
+	}
+}
+
+// TestUpdateWatchdogPassesHealthCheckAgainstRealListener exercises the branch
+// no other test reaches: a daemon that comes back up. Every other watchdog
+// test fakes curl as an immediate failure, so before this one the probe URL
+// the script actually builds was never dialled and its default could point
+// anywhere (archie-core-1r4g).
+func TestUpdateWatchdogPassesHealthCheckAgainstRealListener(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	daemon := httptest.NewServer(mux)
+	defer daemon.Close()
+
+	report, installed, calls := runUpdateWatchdog(t, watchdogRun{
+		components: "daemon",
+		env: map[string]string{
+			"ARCHIE_HEALTH_URL":            daemon.URL,
+			"ARCHIE_UPDATE_HEALTH_TIMEOUT": "10",
+		},
+	})
+
+	if report.HealthCheck != "passed" || report.RolledBack {
+		t.Fatalf("report = %#v, want a passed health check with no rollback", report)
+	}
+	if installed != "new daemon" {
+		t.Fatalf("installed daemon = %q, want the new binary left in place", installed)
+	}
+	assertCallAbsent(t, calls, "docker image load")
+}
+
+// TestUpdateWatchdogDefaultHealthURLTargetsTheDashboardListener pins the
+// fallback the script uses when nothing exports one. It has to be the
+// address archied serves /healthz on (config.example.toml's [web] listen);
+// anything else times out and rolls back a healthy release.
+func TestUpdateWatchdogDefaultHealthURLTargetsTheDashboardListener(t *testing.T) {
+	report, _, calls := runUpdateWatchdog(t, watchdogRun{
+		components: "daemon",
+		curl:       `printf '%s\n' "curl $*" >> "$ARCHIE_TEST_CALLS"; exit 0`,
+		env:        map[string]string{"ARCHIE_UPDATE_HEALTH_TIMEOUT": "10"},
+	})
+
+	assertCallContains(t, calls, "curl ", "http://127.0.0.1:8484/healthz")
+	if report.HealthCheck != "passed" || report.RolledBack {
+		t.Fatalf("report = %#v, want a passed health check with no rollback", report)
 	}
 }
 
@@ -343,7 +405,26 @@ func writeFakeCommand(t *testing.T, dir, name, body string) {
 	}
 }
 
+// watchdogRun configures one end-to-end run of the watchdog script. curl is
+// the fake curl placed on PATH; leaving it empty keeps the real curl there,
+// which is what turns a health probe into a genuine test of the URL the
+// watchdog builds rather than of a stub that ignores it.
+type watchdogRun struct {
+	components string
+	curl       string
+	env        map[string]string
+}
+
 func runUpdateWatchdogFailure(t *testing.T, components string) (Report, string, []string) {
+	t.Helper()
+	return runUpdateWatchdog(t, watchdogRun{
+		components: components,
+		curl:       `exit 1`,
+		env:        map[string]string{"ARCHIE_UPDATE_HEALTH_TIMEOUT": "0"},
+	})
+}
+
+func runUpdateWatchdog(t *testing.T, run watchdogRun) (Report, string, []string) {
 	t.Helper()
 	ctx := t.Context()
 
@@ -368,7 +449,9 @@ func runUpdateWatchdogFailure(t *testing.T, components string) (Report, string, 
 		}
 	}
 	writeFakeCommand(t, fakeDir, "systemctl", `exit 0`)
-	writeFakeCommand(t, fakeDir, "curl", `exit 1`)
+	if run.curl != "" {
+		writeFakeCommand(t, fakeDir, "curl", run.curl)
+	}
 	writeFakeCommand(t, fakeDir, "docker", `printf '%s\n' "docker $*" >> "$ARCHIE_TEST_CALLS"`)
 	callsPath := filepath.Join(work, "calls")
 
@@ -380,13 +463,15 @@ func runUpdateWatchdogFailure(t *testing.T, components string) (Report, string, 
 		"ARCHIE_TEST_CALLS="+callsPath,
 		"ARCHIE_AGENT_IMAGE=registry.example/archie-agent:stable",
 		"ARCHIE_UPDATE_REPORT_PATH="+reportPath,
-		"ARCHIE_UPDATE_HEALTH_TIMEOUT=0",
-		"ARCHIE_UPDATE_COMPONENTS="+components,
+		"ARCHIE_UPDATE_COMPONENTS="+run.components,
 		"ARCHIE_UPDATE_PREVIOUS_GATEWAY=1.12.0",
 		"ARCHIE_UPDATE_INSTALLED_GATEWAY=1.13.0",
 		"ARCHIE_UPDATE_PREVIOUS_RUNTIME=1.9.9",
 		"ARCHIE_UPDATE_INSTALLED_RUNTIME=1.10.0",
 	)
+	for key, value := range run.env {
+		cmd.Env = append(cmd.Env, key+"="+value)
+	}
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("watchdog failed: %v\n%s", err, output)
 	}
