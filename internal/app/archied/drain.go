@@ -81,7 +81,8 @@ func (b *boot) startDrainMonitor(ctx context.Context) {
 	}
 	reader := drainio.New(DefaultDrainRequestPath(), nil)
 	go func() {
-		err := monitorDrainRequests(ctx,
+		err := monitorDrainRequests(
+			ctx,
 			func() (drain.Decision, error) { return reader.Check() },
 			func() { b.shutdown() },
 			b.log,
