@@ -9,8 +9,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/captureintake"
-	"github.com/samcharles93/archie-core/internal/webhookguard"
 	"github.com/samcharles93/archie-core/internal/store"
+	"github.com/samcharles93/archie-core/internal/webhookguard"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
 
@@ -119,12 +119,12 @@ func wireCaptureSurfaces(d deps, srv *webui.Server) {
 // store records captures without announcing them (compose's test-only
 // shape); an insert failure is logged, not surfaced -- the capture row is
 // already durable, and the inspector refetches on its next view.
-func captureArrivalPublisher(d deps) func(events.Event) {
+func captureArrivalPublisher(d deps) func(context.Context, events.Event) {
 	if d.Store == nil {
 		return nil
 	}
-	return func(e events.Event) {
-		ctx, cancel := context.WithTimeout(context.Background(), captureEventTimeout)
+	return func(ctx context.Context, e events.Event) {
+		ctx, cancel := context.WithTimeout(ctx, captureEventTimeout)
 		defer cancel()
 		if _, err := d.Store.InsertEvent(ctx, e); err != nil {
 			d.Log.Warn("capture arrival event not published", "err", err)

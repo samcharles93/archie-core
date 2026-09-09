@@ -9,7 +9,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	taskactionstore "github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
-	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
@@ -69,11 +68,14 @@ func TestBuildDaemonRoutesTaskStoreThroughStateStore(t *testing.T) {
 	}
 }
 
-// TestSetupObservabilityRoutesTaskStoreThroughStateStore proves the dashboard's
-// task store (web.Store) is wired from b.stateStore (the State Store contract
-// adapter), not b.st, so the webui reaches the same contract adapter the
-// daemon uses.
-func TestSetupObservabilityRoutesTaskStoreThroughStateStore(t *testing.T) {
+// TestSetupObservabilityKeepsStoreSurfacesOutOfTheDaemonWebui proves the
+// cutover's composition rule: the daemon's webui is the configuration
+// snapshot's renderer, so it carries the config Holder and provenance and
+// no store surfaces -- the dashboard's store-backed reads resolve in the
+// UI process from its own State Store client (pinned by archieui's
+// compose tests), and a store handle here would be an unused second
+// authority.
+func TestSetupObservabilityKeepsStoreSurfacesOutOfTheDaemonWebui(t *testing.T) {
 	storeA, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "store-a.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +83,6 @@ func TestSetupObservabilityRoutesTaskStoreThroughStateStore(t *testing.T) {
 	t.Cleanup(func() { _ = storeA.Close() })
 	storeB := openSecondStore(t)
 
-	logFeed := logging.NewFeed(16)
 	b := &boot{
 		cfg:         config.Config{},
 		log:         slog.New(slog.DiscardHandler),
@@ -89,21 +90,23 @@ func TestSetupObservabilityRoutesTaskStoreThroughStateStore(t *testing.T) {
 		stateStore:  storeB,
 		doc:         &configuration.Document{},
 		agentStatus: &daemon.AgentStatus{},
-		logFeed:     logFeed,
-		taskLogs:    logging.NewTaskRegistry(filepath.Join(t.TempDir(), "logs"), logFeed, logging.TaskSinkOptions{}),
 	}
 	t.Cleanup(b.cleanup)
 	b.setupObservability(t.Context())
 
-	if b.web.Store != storeB {
-		t.Fatalf("webui Store = %p, want b.stateStore (%p); dashboard task store did not route through the State Store adapter", b.web.Store, storeB)
+	if b.web.Cfg == nil {
+		t.Fatal("webui Cfg is nil; the daemon renders the configuration snapshot it publishes (archie-core-ymut)")
 	}
-	// Capture/mapping/binding surfaces resolve from the same adapter.
-	if b.web.Captures != storeB {
-		t.Fatalf("webui Captures = %p, want b.stateStore (%p)", b.web.Captures, storeB)
-	}
-	if b.web.Mappings != storeB {
-		t.Fatalf("webui Mappings = %p, want b.stateStore (%p)", b.web.Mappings, storeB)
+	for name, surface := range map[string]any{
+		"Store":         b.web.Store,
+		"Captures":      b.web.Captures,
+		"Mappings":      b.web.Mappings,
+		"Bindings":      b.web.Bindings,
+		"CaptureIntake": b.web.CaptureIntake,
+	} {
+		if surface != nil {
+			t.Errorf("webui %s is wired; the daemon serves no dashboard after the cutover", name)
+		}
 	}
 }
 

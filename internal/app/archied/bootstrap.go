@@ -42,7 +42,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/forge"
 	forgewebhook "github.com/samcharles93/archie-core/internal/forge/webhook"
 	"github.com/samcharles93/archie-core/internal/gateway"
-	"github.com/samcharles93/archie-core/internal/infrastructure/captureintake"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/overlay"
 	infraembedding "github.com/samcharles93/archie-core/internal/infrastructure/embedding"
@@ -69,7 +68,6 @@ import (
 	memorytoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/memory"
 	"github.com/samcharles93/archie-core/internal/tools/sendfile"
 	"github.com/samcharles93/archie-core/internal/tools/webfetch"
-	"github.com/samcharles93/archie-core/internal/webhookguard"
 	"github.com/samcharles93/archie-core/internal/webui"
 	"github.com/samcharles93/archie-core/internal/worktree"
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
@@ -387,87 +385,14 @@ func (b *boot) setupObservability(ctx context.Context) {
 			Path: origin.Path, Role: string(origin.Role), Layer: string(origin.Layer), Feature: string(origin.Feature),
 		})
 	}
-	b.web = &webui.Server{Store: b.stateStore, Log: log.With("component", "webui"), LogFeed: b.logFeed, TaskLogs: b.taskLogs, Cfg: config.NewHolder(cfg), Channels: b.channelManager, Events: bus}
-	b.web.UpdateReportPath = updateReportPath(cfg.WorkDir, "webui")
+	b.web = &webui.Server{Log: log.With("component", "webui"), Cfg: config.NewHolder(cfg), Channels: b.channelManager}
 	// The watchdog leaves its verdict in a file on this host, so the daemon
 	// reads it and publishes the outcome as an event; the dashboard renders
 	// what it receives, wherever it runs (archie-core-8cda.5.4).
-	b.startUpdateRelay(ctx, b.web.UpdateReportPath)
-	if (cfg.Chat.Telegram.Token != (secret.SecretRef{}) || cfg.Chat.Telegram.TokenEnv != "") && len(cfg.Chat.Telegram.AllowedUserIDs) > 0 {
-		b.web.TelegramUpdateReportPath = updateReportPath(cfg.WorkDir, cfg.BotUser)
-		b.web.TelegramUpdateChatID = cfg.Chat.Telegram.AllowedUserIDs[0]
-	}
-	agentStatus := b.agentStatus
-	b.web.RunningVersions = func() map[string]string { return daemonRunningVersions(agentStatus) }
+	b.startUpdateRelay(ctx, updateReportPath(cfg.WorkDir, "webui"))
 	b.web.SetProvenance(configProvenance)
-	b.web.ReloadChannel = func(ctx context.Context, id string) error {
-		if id != "telegram" || b.restartTelegram == nil {
-			return fmt.Errorf("channel reload unavailable")
-		}
-		return b.restartTelegram()
-	}
-	b.wireWebStoreSurfaces()
 	sink := bus.Subscribe(256)
-	go persistAndBroadcastEvents(ctx, sink, b.stateStore, b.web, log)
-}
-
-// wireWebStoreSurfaces attaches the dashboard's optional storage surfaces.
-// b.stateStore is declared as the narrow store.TaskStore, so each wider
-// capture/mapping/binding surface needs its own assertion here rather than a
-// direct field reuse. b.stateStore is the local *store.Store by default and a
-// remote *staterpc.Client when [services.state].target is set, so the same
-// assertion resolves either adapter. A store that does not implement one
-// degrades that dashboard feature with a warning instead of aborting
-// bootstrap. The BindingStore/BindingDispatcher/BindingTaskCreator split
-// keeps each interface under the interfacebloat limit. See
-// docs/prds/event-capture-storage.md,
-// docs/prds/payload-field-mapping.md and docs/prds/webhook-intake-security.md, and
-// docs/prds/state-store-contract.md §10 for the adapter selection.
-func (b *boot) wireWebStoreSurfaces() {
-	cfg, log := b.cfg, b.log
-	// Capture/mapping/binding surfaces resolve from b.stateStore (the State
-	// Store contract adapter): local by default, remote *staterpc.Client when
-	// [services.state].target is set. See wireWebStoreSurfaces' doc and
-	// docs/prds/state-store-contract.md §10.
-	var captures store.CaptureStore
-	if cs, ok := b.stateStore.(store.CaptureStore); ok {
-		captures = cs
-	} else {
-		log.Warn("capture storage unavailable: state store does not implement CaptureStore")
-	}
-	b.web.Captures = captures
-	b.web.CaptureMaxEvents = cfg.Capture.MaxEvents
-	var bindings store.BindingDispatcher
-	if bd, ok := b.stateStore.(store.BindingDispatcher); ok {
-		bindings = bd
-	} else {
-		log.Warn("binding dispatcher unavailable: state store does not implement BindingDispatcher")
-	}
-	// The intake write belongs to the process that owns work intake; the
-	// dashboard keeps only the read and mounts the route
-	// (archie-core-8cda.5.4). Publish rides the daemon's event bus: the
-	// sink drain persists each event with a row id before fanning it out,
-	// so a capture still reaches the operator as a persisted event.
-	b.web.CaptureIntake = &captureintake.Receiver{
-		Captures:     captures,
-		Limiter:      webhookguard.NewRateLimiter(cfg.Capture.RatePerSecond, cfg.Capture.RateBurst, time.Now),
-		Bindings:     bindings,
-		Retention:    cfg.Capture.Retention.Std(),
-		MaxEvents:    cfg.Capture.MaxEvents,
-		MaxBodyBytes: int64(cfg.Capture.MaxBodyBytes),
-		Publish:      b.publishEvent,
-		Log:          log,
-	}
-	if ms, ok := b.stateStore.(store.MappingStore); ok {
-		b.web.Mappings = ms
-	} else {
-		log.Warn("mapping storage unavailable: state store does not implement MappingStore")
-	}
-	if bs, ok := b.stateStore.(store.BindingStore); ok {
-		b.web.Bindings = bs
-	} else {
-		log.Warn("binding storage unavailable: state store does not implement BindingStore")
-	}
+	go persistEvents(ctx, sink, b.stateStore, log)
 }
 
 // connectNATS opens the NATS client. External mode dials cfg.NATS.URL;
@@ -724,15 +649,10 @@ func (b *boot) loadWorkflows(ctx context.Context) error {
 		return err
 	}
 	log.Info("workflow registry built", "workflows", len(workflowCatalog.Registry))
-	b.web.Workflows = workflow.DefinitionsWithOrigins(workflowCatalog.Registry, workflowCatalog.Origins)
-	if l := cfg.Web.Listen; l != "" && l != "off" {
-		b.web.Token = webTokenFor(l, cfg.DBPath, log)
-		go func() {
-			if err := b.web.Run(ctx, l); err != nil {
-				log.Error("web ui failed", "err", err)
-			}
-		}()
-	}
+	// The dashboard is served by the archie-ui process from the cutover
+	// change (archie-core-8cda.5.4, PRD gate 7): the daemon runs no webui
+	// listener, and [web].listen is the archie-ui process's bind address.
+	// b.web stays only as the configuration snapshot's renderer.
 	return nil
 }
 
@@ -1497,89 +1417,13 @@ func (b *boot) wireConfigPublishing(ctx context.Context, cfgPath, overlayPath st
 	b.chatController.WithRuntime(b.d)
 }
 
-// installUpdateConfigHandler installs the dashboard's PATCH /api/config
-// handler. It applies updates to a deep copy of the published config,
-// validates the materialised result, persists to the overlay, then
-// publishes through the same path as reload. It must never call Set
-// directly from the handler -- web.Cfg is the daemon's own Holder -- and
-// it decodes into a Clone so a failed validation cannot mutate the
-// published snapshot's shared maps.
-func (b *boot) installUpdateConfigHandler() {
-	log := b.log
-	b.web.UpdateConfig = func(ctx context.Context, updates map[string]any) error {
-		if b.overlayStore == nil {
-			return fmt.Errorf("%w: config overlay is disabled (--no-config-overlay or ARCHIE_SKIP_CONFIG_OVERLAY=1)", webui.ErrConfigUpdateUnavailable)
-		}
-		for key := range updates {
-			if reason, denied := overlay.DeniedKeys[key]; denied {
-				return fmt.Errorf("%w: config key %s is not runtime-tunable: %s", webui.ErrConfigUpdateInvalid, key, reason)
-			}
-		}
-		next := b.d.Cfg.Get().Clone()
-		if err := applyDottedOverlay(&next, updates); err != nil {
-			return fmt.Errorf("%w: %w", webui.ErrConfigUpdateInvalid, err)
-		}
-		if err := configuration.Validate(&next); err != nil {
-			return fmt.Errorf("%w: %w", webui.ErrConfigUpdateInvalid, err)
-		}
-		for key, value := range updates {
-			data, err := json.Marshal(value)
-			if err != nil {
-				return fmt.Errorf("%w: %w", webui.ErrConfigUpdateInvalid, err)
-			}
-			if err := b.overlayStore.Set(ctx, key, string(data), "dashboard"); err != nil {
-				return err
-			}
-		}
-		// Provenance gets the runtime-overlay origin, replacing any prior
-		// one so the chain does not grow unboundedly across edits.
-		var kept []configuration.Origin
-		for _, origin := range b.currentProvenance.Load().Origins {
-			if origin.Path == "config_overlay (runtime)" {
-				continue
-			}
-			kept = append(kept, origin)
-		}
-		prov := configuration.Provenance{Origins: append(kept,
-			configuration.Origin{Path: "config_overlay (runtime)", Role: configuration.RoleMain, Layer: configuration.LayerOverlay})}
-		b.currentProvenance.Store(&prov)
-		b.publishConfig(ctx, next, prov)
-		b.bootOverlayErr.Store(nil) // a successful write proves the overlay works again
-		log.Info("config updated from dashboard", "keys", len(updates))
-		return nil
-	}
-}
-
-// installUpdateRepoFieldHandler installs the dashboard's PATCH
-// /api/config/repos/{owner}/{name} handler (archie-core-b6ew.6). A
-// repository is one element of a []config.Repo, not a flat dotted key, so
-// this cannot go through UpdateConfig's dotted-key path directly (overlay's
-// Nest/ApplyOverlayValues have no notion of "element N of this slice").
-// Instead it reads the daemon's own live, untrimmed Repos (never
-// webui.RepoView, which omits fields like Preflight/TestGlob and would
-// silently drop them on a naive round-trip), changes the one field on the
-// matching repo, and republishes the *entire* repository list through
-// UpdateConfig -- reusing its validate-persist-publish path unchanged, so
-// this handler owns only "which repo, which field," never how an update is
-// applied. An edit here therefore overrides the whole repos list in the
-// runtime overlay, same granularity every other overlay key already has;
-// [[repos]] file edits stay visible for every field this handler never
-// touches until an operator resets the "repos" override.
-func (b *boot) installUpdateRepoFieldHandler() {
-	b.web.UpdateRepoField = func(ctx context.Context, owner, name, field string, value any) error {
-		repos, err := applyRepoFieldUpdate(b.d.Cfg.Get().Clone().Repos, owner, name, field, value)
-		if err != nil {
-			return err
-		}
-		return b.web.UpdateConfig(ctx, map[string]any{"repos": repos})
-	}
-}
-
-// installConfigHandlers installs the dashboard's config override
-// listing and per-row reset handlers, both going through the same
-// publish path as reload.
-func (b *boot) installConfigHandlers(cfgPath, overlayPath string) {
-	log := b.log
+// installConfigHandlers installs the configuration renderer's override
+// listing. The write handlers behind PATCH /api/config, POST
+// /api/config/reset and the per-repository field update are gone with the
+// cutover (archie-core-8cda.5.4, archie-core-ymut): editing is config.toml
+// plus reload, the UI process answers 503 for the write routes, and the
+// renderer only needs to know which keys an overlay currently overrides.
+func (b *boot) installConfigHandlers() {
 	// ConfigOverrides lists the dotted keys currently overridden by the
 	// runtime overlay, so the dashboard can mark those rows and offer a
 	// reset. A disabled store reports no overrides.
@@ -1597,41 +1441,6 @@ func (b *boot) installConfigHandlers(cfgPath, overlayPath string) {
 		}
 		sort.Strings(keys)
 		return keys, nil
-	}
-
-	// ResetConfig deletes one overlay row and republishes file + remaining
-	// overlay, so a dashboard-created override can be removed without
-	// editing SQL -- and so an operator whose file edit is shadowed by an
-	// override can recover it with one click. The file is resolved and
-	// the target state validated BEFORE the row is deleted, so a broken
-	// file cannot leave the store and the running config disagreeing.
-	b.web.ResetConfig = func(ctx context.Context, key string) error {
-		if b.overlayStore == nil {
-			return fmt.Errorf("%w: config overlay is disabled", webui.ErrConfigUpdateUnavailable)
-		}
-		overrides, err := b.overlayStore.Snapshot(ctx)
-		if err != nil {
-			return err
-		}
-		delete(overrides, key) // the target overlay state after the reset
-		doc, err := b.loader.Resolve(cfgPath, overlayPath)
-		if err != nil {
-			return fmt.Errorf("%w: %w", webui.ErrConfigUpdateInvalid, err)
-		}
-		if len(overrides) > 0 {
-			if doc, err = b.loader.ApplyOverlay(doc, overrides); err != nil {
-				return fmt.Errorf("%w: %w", webui.ErrConfigUpdateInvalid, err)
-			}
-		}
-		if err := b.overlayStore.Delete(ctx, key); err != nil {
-			return err
-		}
-		applyModelCatalog(&doc.Config, b.catalog)
-		b.currentProvenance.Store(&doc.Provenance)
-		b.publishConfig(ctx, doc.Config, doc.Provenance)
-		b.bootOverlayErr.Store(nil)
-		log.Info("config key reset to file value", "key", key)
-		return nil
 	}
 }
 
