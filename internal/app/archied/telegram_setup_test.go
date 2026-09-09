@@ -201,20 +201,22 @@ func TestDaemonRunningVersionsIncludesObservedAgent(t *testing.T) {
 	}
 }
 
-// TestMakeUpdateServiceDerivesHealthURLFromWebListen: the watchdog's health
-// probe has to reach the dashboard listener this instance actually binds.
-// Left to the script's own default it polls a port nothing serves, waits out
-// the timeout and rolls back a release that came up fine (archie-core-1r4g).
-func TestMakeUpdateServiceDerivesHealthURLFromWebListen(t *testing.T) {
+// TestMakeUpdateServiceProbesTheDaemonsOwnHealthAddress: the watchdog is
+// verifying archied's restart, so it has to probe archied. The dashboard's
+// listener is the wrong answer twice over -- it can be switched off, and in
+// Phase 3 it belongs to another process, which would report health for
+// something the watchdog never restarted (archie-core-1r4g).
+func TestMakeUpdateServiceProbesTheDaemonsOwnHealthAddress(t *testing.T) {
 	for _, tc := range []struct{ name, listen, want string }{
-		{name: "loopback dashboard", listen: "127.0.0.1:9000", want: "http://127.0.0.1:9000"},
-		{name: "wildcard bind", listen: "0.0.0.0:8484", want: "http://localhost:8484"},
-		{name: "dashboard off", listen: "off", want: ""},
-		{name: "dashboard unset", listen: "", want: ""},
+		{name: "default loopback", listen: "127.0.0.1:8485", want: "http://127.0.0.1:8485"},
+		{name: "wildcard bind", listen: "0.0.0.0:8485", want: "http://localhost:8485"},
+		{name: "operator-chosen port", listen: "127.0.0.1:9500", want: "http://127.0.0.1:9500"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := config.Config{}
-			cfg.Web.Listen = tc.listen
+			cfg.Health.Listen = tc.listen
+			// The dashboard's own address must not leak into the probe.
+			cfg.Web.Listen = "127.0.0.1:8484"
 			cfg.Chat.Telegram.UpdateCheckCommand = []string{"archie-update-check"}
 			cfg.Chat.Telegram.UpdateInstallCommand = []string{"archie-update-install"}
 

@@ -60,24 +60,6 @@ func DashboardURL(listen, token string) string {
 	return url
 }
 
-// HealthURL renders the base URL of this process's /healthz endpoint for
-// out-of-process tooling: the update watchdog polls it after restarting
-// archied to decide whether the release it just installed came up.
-//
-// It is empty when the dashboard is disabled, because /healthz is served by
-// the dashboard listener and there is no other surface to probe.
-//
-// The address must remain the one archied itself binds. The watchdog is
-// verifying archied's own restart, so probing an address served by a
-// different process would report health for something it never restarted.
-func HealthURL(listen string) string {
-	listen = strings.TrimSpace(listen)
-	if listen == "" || listen == "off" {
-		return ""
-	}
-	return strings.TrimSuffix(DashboardURL(listen, ""), "/")
-}
-
 // LoadOrCreateToken returns the dashboard token, generating and persisting one
 // on first use. The token is created rather than configured so a non-loopback
 // bind cannot be brought up unprotected by omission: there is no setup step to

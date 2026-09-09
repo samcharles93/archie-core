@@ -88,6 +88,7 @@ type boot struct {
 	bootOverlayErr    atomic.Pointer[string]
 	currentProvenance atomic.Pointer[configuration.Provenance]
 
+	health   *healthSurface
 	logFeed  *logging.Feed
 	taskLogs *logging.TaskRegistry
 
@@ -1670,6 +1671,9 @@ func exitCode(err error) int {
 }
 
 func (b *boot) runLoop(ctx context.Context, once bool) error {
+	// Boot is done: the liveness surface stops answering 503, which is what
+	// the update watchdog is waiting to see after a restart.
+	b.health.markServing()
 	if once {
 		b.d.Cycle(ctx)
 		return nil

@@ -170,18 +170,18 @@ func TestUpdateWatchdogPassesHealthCheckAgainstRealListener(t *testing.T) {
 	assertCallAbsent(t, calls, "docker image load")
 }
 
-// TestUpdateWatchdogDefaultHealthURLTargetsTheDashboardListener pins the
-// fallback the script uses when nothing exports one. It has to be the
-// address archied serves /healthz on (config.example.toml's [web] listen);
-// anything else times out and rolls back a healthy release.
-func TestUpdateWatchdogDefaultHealthURLTargetsTheDashboardListener(t *testing.T) {
+// TestUpdateWatchdogDefaultHealthURLTargetsTheDaemon pins the fallback the
+// script uses when nothing exports one. It has to be the address archied
+// itself serves /healthz on ([health] listen); anything else times out and
+// rolls back a healthy release.
+func TestUpdateWatchdogDefaultHealthURLTargetsTheDaemon(t *testing.T) {
 	report, _, calls := runUpdateWatchdog(t, watchdogRun{
 		components: "daemon",
 		curl:       `printf '%s\n' "curl $*" >> "$ARCHIE_TEST_CALLS"; exit 0`,
 		env:        map[string]string{"ARCHIE_UPDATE_HEALTH_TIMEOUT": "10"},
 	})
 
-	assertCallContains(t, calls, "curl ", "http://127.0.0.1:8484/healthz")
+	assertCallContains(t, calls, "curl ", "http://127.0.0.1:8485/healthz")
 	if report.HealthCheck != "passed" || report.RolledBack {
 		t.Fatalf("report = %#v, want a passed health check with no rollback", report)
 	}

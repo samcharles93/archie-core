@@ -186,23 +186,7 @@ func (b *boot) startStateStoreReadiness(ctx context.Context, readyAddr string) e
 		}
 		_ = json.NewEncoder(w).Encode(report)
 	})
-	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", readyAddr)
-	if err != nil {
-		return fmt.Errorf("listen for state store readiness: %w", err)
-	}
-	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
-	go func() {
-		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
-			b.log.Error("state store readiness server stopped", "err", err)
-		}
-	}()
-	b.addCleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(shutdownCtx)
-	})
-	b.log.Info("state store readiness listening", "addr", "http://"+listener.Addr().String())
-	return nil
+	return b.serveHealth(ctx, readyAddr, mux, "state store readiness")
 }
 
 // stateStoreServerOpts applies the transport security boundary (§9): a

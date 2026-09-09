@@ -374,6 +374,13 @@ func Run() int { //nolint:cyclop // the composition root's setup sequence is del
 	}
 	defer b.cleanup()
 
+	// Before any subsystem: the port answers 503 for the whole of boot, so a
+	// watchdog polling a restarted daemon sees "not yet" rather than a
+	// refused connection it cannot tell from a crash.
+	if err := b.startHealth(ctx); err != nil {
+		return 1
+	}
+
 	if err := b.openStores(ctx); err != nil {
 		return 1
 	}
@@ -429,15 +436,25 @@ func Run() int { //nolint:cyclop // the composition root's setup sequence is del
 	}
 	b.registerStandaloneTools()
 	b.buildDaemon()
-	b.wireConfigPublishing(ctx, args.cfgPath, args.overlayPath)
-	b.installUpdateConfigHandler()
-	b.installUpdateRepoFieldHandler()
-	b.installConfigHandlers(args.cfgPath, args.overlayPath)
+	b.wireConfigSurfaces(ctx, args.cfgPath, args.overlayPath)
 
 	if err := b.startServices(ctx); err != nil {
 		return 1
 	}
 	return exitCode(b.runLoop(ctx, args.once))
+}
+
+// wireConfigSurfaces attaches the dashboard's configuration read and write
+// paths: the published snapshot plus the three validate-persist-publish
+// handlers behind PATCH /api/config, POST /api/config/reset and the
+// per-repository field update. They are wired together because they are one
+// capability -- the daemon owning configuration on the dashboard's behalf --
+// and archie-core-8cda.5.4 replaces the set of them at once.
+func (b *boot) wireConfigSurfaces(ctx context.Context, cfgPath, overlayPath string) {
+	b.wireConfigPublishing(ctx, cfgPath, overlayPath)
+	b.installUpdateConfigHandler()
+	b.installUpdateRepoFieldHandler()
+	b.installConfigHandlers(cfgPath, overlayPath)
 }
 
 // bootConfigOverlay layers the runtime config overlay over the resolved

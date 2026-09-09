@@ -26,7 +26,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/tools"
-	"github.com/samcharles93/archie-core/internal/webui"
 )
 
 // telegramSetup contains the inputs needed to initialise the Telegram
@@ -238,7 +237,7 @@ func makeUpdateService(s telegramSetup) *releaseupdate.Service {
 	if len(cfg.Chat.Telegram.UpdateInstallCommand) != 0 {
 		updates.Installer = releaseupdate.CommandInstaller{
 			Command:   cfg.Chat.Telegram.UpdateInstallCommand,
-			HealthURL: webui.HealthURL(cfg.Web.Listen),
+			HealthURL: cfg.Health.URL(),
 		}
 	}
 	return updates

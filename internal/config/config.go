@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"net"
 	"strings"
 	"time"
 
@@ -508,6 +509,7 @@ type Config struct {
 
 	Budgets    Budgets         `toml:"budgets" yaml:"budgets"`
 	Web        Web             `toml:"web" yaml:"web"`
+	Health     Health          `toml:"health" yaml:"health"`
 	Log        Log             `toml:"log" yaml:"log"`
 	Notify     Notify          `toml:"notify" yaml:"notify"`
 	NATS       NATSConfig      `toml:"nats" yaml:"nats"`
@@ -954,6 +956,37 @@ type Notify struct {
 }
 
 // Web configures the observability dashboard.
+// Health is archied's own liveness surface, always on. It is separate from
+// the dashboard's /healthz because the process whose restart is being
+// verified has to be the one answering: the dashboard can be switched off,
+// and it becomes its own process in Phase 3, at which point probing it would
+// report health for something the update watchdog never restarted.
+type Health struct {
+	// Listen is the address the daemon serves /healthz, /health and
+	// /health/detailed on. Defaulted, never empty in a loaded config.
+	Listen string `toml:"listen" yaml:"listen"`
+}
+
+// URL renders Listen as an address a local caller can dial, which is what
+// the daemon hands its update tooling (see releaseupdate.CommandInstaller).
+// A wildcard bind is a valid thing to listen on but not to dial, so it
+// resolves to localhost, the same substitution the dashboard link makes.
+func (h Health) URL() string {
+	listen := strings.TrimSpace(h.Listen)
+	if listen == "" {
+		return ""
+	}
+	host, port, err := net.SplitHostPort(listen)
+	if err != nil {
+		host, port = "", strings.TrimPrefix(listen, ":")
+	}
+	switch host {
+	case "", "0.0.0.0", "::", "[::]":
+		host = "localhost"
+	}
+	return "http://" + net.JoinHostPort(host, port)
+}
+
 type Web struct {
 	// Listen is the dashboard address; "off" disables the web UI.
 	// Bind localhost (or a LAN/tailnet address)  --  there is no auth.
