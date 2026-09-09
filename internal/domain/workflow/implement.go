@@ -199,8 +199,13 @@ func Implement() Workflow {
 // reports the fresh-vs-cached breakdown of tc.Task.TokensUsed (see
 // formatTokenUsage) so the operator isn't misled by the raw prompt-token sum
 // -- most of it is typically prefix-cache hits billed at a steep discount,
-// not full price.
+// not full price. When the adversarial review ran, its findings section is
+// appended so the PR states what the reviewer checked and found (h019.6).
 func implementPRBody(tc *TaskContext) string {
+	summary := tc.BuildSummary
+	if section := renderPRReviewSection(tc.ReviewReport); section != "" {
+		summary += "\n\n" + section
+	}
 	return fmt.Sprintf("%s\n\n---\n*workflow: implement · %d iterations · %s*",
-		tc.BuildSummary, tc.Task.Iterations, formatTokenUsage(tc.Task.TokensUsed, tc.RunUsage))
+		summary, tc.Task.Iterations, formatTokenUsage(tc.Task.TokensUsed, tc.RunUsage))
 }
