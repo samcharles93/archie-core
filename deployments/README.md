@@ -75,6 +75,12 @@ A non-loopback `[web].listen` requires a dashboard token (`-token`, or
 binding-dispatch loop in `archied` consumes what arrives from the shared
 State Store.
 
+Auth note: unlike `archied`, archie-ui has no secret registry --
+`GATEWAY_TOKEN`/`STATE_STORE_TOKEN` resolve from its process environment
+only (or from `[services.*].target_token` in `config.toml`), so whatever
+starts archie-ui must export those tokens into its environment. See the UI
+Service unit in `systemd-user-service.md` for the worked example.
+
 ```bash
 # loopback (host-only agent)
 archie-state-store -config ~/.config/archie/config.toml -listen 127.0.0.1:9090

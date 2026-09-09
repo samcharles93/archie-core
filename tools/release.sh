@@ -145,7 +145,17 @@ release_component() {
 }
 
 release_component "archied" "$GATEWAY_VERSION" "archied" \
-	"CHANGELOG.archied.md" "./cmd/archied" "cmd/archied" "Dockerfile.archied"
+	"CHANGELOG.archied.md" "./cmd/archied" "cmd/archied" "Dockerfile.archied" \
+	"cmd/archie-ui" "internal/app/archieui"
+
+# The UI Service ships with the archied release on purpose: archie-ui shares
+# internal/webui (the dashboard HTTP layer and the embedded SPA assets) with
+# archied, so the two are versioned together -- an archied/vX.Y.Z tag carries
+# the dashboard and the daemon that publishes its configuration snapshot.
+# The two lines above extend archied's component closure with archie-ui's
+# own packages, so a commit touching only archieui cannot fall between
+# changelogs; it would otherwise land in neither (go list -deps from
+# ./cmd/archied does not include internal/app/archieui).
 
 release_component "archie-agent" "$RUNTIME_VERSION" "archie" \
 	"CHANGELOG.archie.md" "./cmd/archie-agent" "cmd/archie-agent" "Dockerfile"
