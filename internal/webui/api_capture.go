@@ -17,10 +17,10 @@ const defaultCapturesListLimit = 100
 // /api/* route -- captured payloads are visible only to an authenticated
 // operator, per docs/prds/webhook-intake-security.md point 5.
 //
-// This is the read half of event capture. The write belongs to the process
-// that owns work intake (internal/infrastructure/captureintake), which the
-// host mounts on the bypass mux via CaptureIntake -- the dashboard displays
-// captures and mounts the route; it no longer stores them (archie-core-8cda.5.4).
+// This is the read half of event capture. The write half is the receiver in
+// internal/infrastructure/captureintake, mounted on the bypass mux via
+// CaptureIntake; the dashboard displays captures and mounts the route; it
+// no longer stores them (archie-core-8cda.5.4).
 func (s *Server) handleCaptures(w http.ResponseWriter, r *http.Request) {
 	if s.Captures == nil {
 		writeJSON(w, map[string]any{"captures": []any{}, "enabled": false})

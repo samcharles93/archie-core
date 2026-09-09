@@ -149,20 +149,20 @@ type Server struct {
 	// answer {"enabled": false} rather than the dashboard failing to start.
 	Captures store.CaptureStore
 	// CaptureMaxEvents is the operator's configured [capture] max_events,
-	// used to bound captureByID's scan window (api_mapping.go). The write
-	// half of capture -- the receiver, its rate limiter, body cap and HMAC
-	// verification -- belongs to the process that does work intake and is
-	// mounted here through CaptureIntake.
+	// used to bound captureByID's scan window (api_mapping.go).
+	// CaptureIntake is the write half's mount.
 	CaptureMaxEvents int
 	// CaptureIntake serves POST /webhooks/capture/{source} on the bypass
 	// mux, alongside /healthz: capture must accept unauthenticated
 	// senders, so it cannot sit behind requireToken. The handler is owned
-	// by the host process that does work intake
-	// (internal/infrastructure/captureintake.Receiver); this package only
-	// mounts the route and reads the rows back. Nil removes the route,
-	// which is how the UI process stays off intake -- two listeners with
-	// the same intake authority is what the boundary forbids
-	// (docs/prds/ui-service-boundary.md:30-33).
+	// by internal/infrastructure/captureintake.Receiver; this package only
+	// mounts the route and reads the rows back. The UI process composes
+	// it from the cutover change (archie-core-8cda.5.4) -- it is the only
+	// dashboard listener left, and a capture POST answered by the
+	// token-gated mux would leave intake with no owner. Nil removes the
+	// route, which is what a store without the capture contract gets:
+	// two listeners with the same intake authority is what the boundary
+	// forbids (docs/prds/ui-service-boundary.md:30-33).
 	CaptureIntake http.Handler
 
 	// Mappings persists payload field mappings (docs/prds/payload-field-mapping.md).

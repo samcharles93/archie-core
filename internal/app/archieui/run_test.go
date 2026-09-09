@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -118,7 +119,7 @@ func TestUIServesDashboardAgainstRemoteContracts(t *testing.T) {
 	}
 
 	stateTarget, stopState := serveGRPC(t, func(r grpc.ServiceRegistrar) {
-		staterpc.RegisterServer(r, staterpc.Deps{Tasks: st, ConfigSnapshots: st, Log: slog.New(slog.DiscardHandler)})
+		staterpc.RegisterServer(r, staterpc.Deps{Tasks: st, Captures: st, BindingDispatcher: st, ConfigSnapshots: st, Log: slog.New(slog.DiscardHandler)})
 	})
 	defer stopState()
 	chat := &fakeChat{sessions: []gateway.SessionContext{
@@ -257,7 +258,11 @@ func TestUIServesDashboardAgainstRemoteContracts(t *testing.T) {
 		t.Errorf("GET /api/version = %d, want 501", code)
 	}
 
-	// Capture intake stays with the daemon until bead archie-core-8cda.5.4.
+	// The capture POST is served by this process from the cutover change:
+	// the receiver persists through the State Store contract, and the
+	// daemon's binding-dispatch loop consumes what arrives from the same
+	// store (archie-core-8cda.5.4). It bypasses the dashboard token like
+	// /healthz -- capture accepts unauthenticated senders by design.
 	capReq, err := http.NewRequestWithContext(t.Context(), http.MethodPost, ts.URL+"/webhooks/capture/demo", http.NoBody)
 	if err != nil {
 		t.Fatalf("capture request: %v", err)
@@ -266,13 +271,13 @@ func TestUIServesDashboardAgainstRemoteContracts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /webhooks/capture/demo: %v", err)
 	}
-	// Capture intake stays with the daemon until bead archie-core-8cda.5.4:
-	// the UI process mounts no intake route at all (compose leaves
-	// CaptureIntake unset), so the POST falls through to the token-gated
-	// dashboard rather than answering as a capture endpoint.
 	capResp.Body.Close()
-	if capResp.StatusCode == http.StatusAccepted {
-		t.Errorf("POST /webhooks/capture/demo = %d, want anything but an accepted capture: two processes must not share webhook intake authority", capResp.StatusCode)
+	if capResp.StatusCode != http.StatusAccepted {
+		t.Errorf("POST /webhooks/capture/demo = %d, want an accepted capture: this process is the only listener serving intake after the cutover", capResp.StatusCode)
+	}
+	code, body = get("/api/captures")
+	if code != http.StatusOK || !strings.Contains(string(body), `"enabled":true`) {
+		t.Errorf("GET /api/captures = %d (%s), want an enabled capture list over the State Store", code, body)
 	}
 
 	// Readiness aggregates the two remote dependencies, and drops when one dies.

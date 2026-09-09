@@ -90,23 +90,39 @@ func applyMemoryDefaults(cfg *config.Config) {
 	}
 }
 
+// DefaultCapture returns the webhook capture endpoint's default settings
+// (docs/prds/event-capture-storage.md). applyCaptureDefaults fills a decoded
+// config with them; the UI process composes the same capture receiver and
+// must produce the same effective values when it is driven by flags alone
+// and no configuration file projected [capture] to it.
+func DefaultCapture() config.CaptureConfig {
+	return config.CaptureConfig{
+		Retention:     config.Duration(defaultCaptureRetention),
+		MaxEvents:     defaultCaptureMaxEvents,
+		MaxBodyBytes:  defaultCaptureMaxBodyBytes,
+		RatePerSecond: defaultCaptureRatePerSecond,
+		RateBurst:     defaultCaptureRateBurst,
+	}
+}
+
 // applyCaptureDefaults fills the webhook capture endpoint's settings. See
 // [config.CaptureConfig].
 func applyCaptureDefaults(cfg *config.Config) {
+	c := DefaultCapture()
 	if cfg.Capture.Retention == 0 {
-		cfg.Capture.Retention = config.Duration(defaultCaptureRetention)
+		cfg.Capture.Retention = c.Retention
 	}
 	if cfg.Capture.MaxEvents == 0 {
-		cfg.Capture.MaxEvents = defaultCaptureMaxEvents
+		cfg.Capture.MaxEvents = c.MaxEvents
 	}
 	if cfg.Capture.MaxBodyBytes == 0 {
-		cfg.Capture.MaxBodyBytes = defaultCaptureMaxBodyBytes
+		cfg.Capture.MaxBodyBytes = c.MaxBodyBytes
 	}
 	if cfg.Capture.RatePerSecond == 0 {
-		cfg.Capture.RatePerSecond = defaultCaptureRatePerSecond
+		cfg.Capture.RatePerSecond = c.RatePerSecond
 	}
 	if cfg.Capture.RateBurst == 0 {
-		cfg.Capture.RateBurst = defaultCaptureRateBurst
+		cfg.Capture.RateBurst = c.RateBurst
 	}
 }
 

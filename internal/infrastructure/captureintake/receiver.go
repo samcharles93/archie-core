@@ -5,7 +5,11 @@
 // It belongs to the process that owns work intake, not to the dashboard that
 // displays captures. It served from the dashboard's listener while the two
 // shared a process; the split gives the read to the dashboard, over the State
-// Store, and keeps the write here (archie-core-8cda.5.4).
+// Store, and keeps the write here (archie-core-8cda.5.4). From the cutover
+// change in the same bead it is a persistence shim over the State Store
+// contract mounted by the UI process -- the only dashboard listener left --
+// while the daemon's binding-dispatch loop consumes captures from the same
+// store: the HTTP front door moved without moving work intake.
 package captureintake
 
 import (
