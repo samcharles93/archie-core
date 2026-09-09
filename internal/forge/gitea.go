@@ -163,6 +163,28 @@ func (c *GiteaClient) PRState(ctx context.Context, owner, repo string, number in
 	return string(pr.State), nil
 }
 
+// GetPullRequest returns the forge-neutral metadata for an existing PR.
+func (c *GiteaClient) GetPullRequest(ctx context.Context, owner, repo string, number int) (PullRequest, error) {
+	pr, _, err := c.cli.GetPullRequest(owner, repo, int64(number))
+	if err != nil {
+		return PullRequest{}, fmt.Errorf("get pull request %s/%s#%d: %w", owner, repo, number, err)
+	}
+	state := string(pr.State)
+	if pr.HasMerged {
+		state = "merged"
+	}
+	return PullRequest{
+		Number:  int(pr.Index),
+		Title:   pr.Title,
+		Body:    pr.Body,
+		HeadRef: pr.Head.Ref,
+		BaseRef: pr.Base.Ref,
+		HeadSHA: pr.Head.Sha,
+		BaseSHA: pr.Base.Sha,
+		State:   state,
+	}, nil
+}
+
 // CloseIssue closes an issue with an optional final comment.
 func (c *GiteaClient) CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error {
 	if comment != "" {
