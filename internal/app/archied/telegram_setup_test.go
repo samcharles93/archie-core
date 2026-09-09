@@ -200,3 +200,36 @@ func TestDaemonRunningVersionsIncludesObservedAgent(t *testing.T) {
 		t.Errorf("running[%q] = %q, want the observed version %q", releaseupdate.ComponentAgent, got, "1.9.11")
 	}
 }
+
+// TestMakeUpdateServiceDerivesHealthURLFromWebListen: the watchdog's health
+// probe has to reach the dashboard listener this instance actually binds.
+// Left to the script's own default it polls a port nothing serves, waits out
+// the timeout and rolls back a release that came up fine (archie-core-1r4g).
+func TestMakeUpdateServiceDerivesHealthURLFromWebListen(t *testing.T) {
+	for _, tc := range []struct{ name, listen, want string }{
+		{name: "loopback dashboard", listen: "127.0.0.1:9000", want: "http://127.0.0.1:9000"},
+		{name: "wildcard bind", listen: "0.0.0.0:8484", want: "http://localhost:8484"},
+		{name: "dashboard off", listen: "off", want: ""},
+		{name: "dashboard unset", listen: "", want: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := config.Config{}
+			cfg.Web.Listen = tc.listen
+			cfg.Chat.Telegram.UpdateCheckCommand = []string{"archie-update-check"}
+			cfg.Chat.Telegram.UpdateInstallCommand = []string{"archie-update-install"}
+
+			service := makeUpdateService(telegramSetup{Cfg: config.NewHolder(cfg)})
+
+			if service == nil {
+				t.Fatal("makeUpdateService returned nil despite a configured check command")
+			}
+			installer, ok := service.Installer.(releaseupdate.CommandInstaller)
+			if !ok {
+				t.Fatalf("Service.Installer = %T, want releaseupdate.CommandInstaller", service.Installer)
+			}
+			if installer.HealthURL != tc.want {
+				t.Errorf("Installer.HealthURL = %q, want %q", installer.HealthURL, tc.want)
+			}
+		})
+	}
+}

@@ -151,3 +151,32 @@ func TestCommandInstallerEmptyCommandReturnsError(t *testing.T) {
 		t.Fatal("Install() error = nil, want empty-command error")
 	}
 }
+
+// TestCommandInstallerForwardsHealthURL: only the daemon knows which address
+// it serves /healthz on, so it, not the install script, decides what the
+// post-restart probe polls (archie-core-1r4g).
+func TestCommandInstallerForwardsHealthURL(t *testing.T) {
+	script := writeFixtureScript(t, `
+echo "health=${ARCHIE_HEALTH_URL:-unset}"
+`)
+	t.Setenv("ARCHIE_HEALTH_URL", "http://operator.example:9999")
+
+	for _, tc := range []struct{ name, healthURL, want string }{
+		{name: "configured", healthURL: "http://127.0.0.1:9000", want: "health=http://127.0.0.1:9000"},
+		// An unset field must not clobber an operator's own export: a
+		// deployment with the dashboard off has no address to derive and
+		// the exported value is the only one there is.
+		{name: "unset leaves the environment alone", want: "health=http://operator.example:9999"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			installer := CommandInstaller{Command: []string{script}, HealthURL: tc.healthURL}
+			var progress []string
+			if _, err := installer.Install(context.Background(), Snapshot{}, InstallMeta{}, func(line string) { progress = append(progress, line) }); err != nil {
+				t.Fatalf("Install() error = %v", err)
+			}
+			if len(progress) != 1 || progress[0] != tc.want {
+				t.Fatalf("progress = %#v, want [%q]", progress, tc.want)
+			}
+		})
+	}
+}
