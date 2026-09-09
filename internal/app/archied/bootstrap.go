@@ -42,6 +42,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/forge"
 	forgewebhook "github.com/samcharles93/archie-core/internal/forge/webhook"
 	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/infrastructure/captureintake"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/overlay"
 	infraembedding "github.com/samcharles93/archie-core/internal/infrastructure/embedding"
@@ -428,15 +429,35 @@ func (b *boot) wireWebStoreSurfaces() {
 	// Store contract adapter): local by default, remote *staterpc.Client when
 	// [services.state].target is set. See wireWebStoreSurfaces' doc and
 	// docs/prds/state-store-contract.md §10.
+	var captures store.CaptureStore
 	if cs, ok := b.stateStore.(store.CaptureStore); ok {
-		b.web.Captures = cs
+		captures = cs
 	} else {
 		log.Warn("capture storage unavailable: state store does not implement CaptureStore")
 	}
-	b.web.CaptureRetention = cfg.Capture.Retention.Std()
+	b.web.Captures = captures
 	b.web.CaptureMaxEvents = cfg.Capture.MaxEvents
-	b.web.CaptureMaxBodyBytes = int64(cfg.Capture.MaxBodyBytes)
-	b.web.CaptureLimiter = webhookguard.NewRateLimiter(cfg.Capture.RatePerSecond, cfg.Capture.RateBurst, time.Now)
+	var bindings store.BindingDispatcher
+	if bd, ok := b.stateStore.(store.BindingDispatcher); ok {
+		bindings = bd
+	} else {
+		log.Warn("binding dispatcher unavailable: state store does not implement BindingDispatcher")
+	}
+	// The intake write belongs to the process that owns work intake; the
+	// dashboard keeps only the read and mounts the route
+	// (archie-core-8cda.5.4). Publish rides the daemon's event bus: the
+	// sink drain persists each event with a row id before fanning it out,
+	// so a capture still reaches the operator as a persisted event.
+	b.web.CaptureIntake = &captureintake.Receiver{
+		Captures:     captures,
+		Limiter:      webhookguard.NewRateLimiter(cfg.Capture.RatePerSecond, cfg.Capture.RateBurst, time.Now),
+		Bindings:     bindings,
+		Retention:    cfg.Capture.Retention.Std(),
+		MaxEvents:    cfg.Capture.MaxEvents,
+		MaxBodyBytes: int64(cfg.Capture.MaxBodyBytes),
+		Publish:      b.publishEvent,
+		Log:          log,
+	}
 	if ms, ok := b.stateStore.(store.MappingStore); ok {
 		b.web.Mappings = ms
 	} else {
@@ -446,11 +467,6 @@ func (b *boot) wireWebStoreSurfaces() {
 		b.web.Bindings = bs
 	} else {
 		log.Warn("binding storage unavailable: state store does not implement BindingStore")
-	}
-	if bd, ok := b.stateStore.(store.BindingDispatcher); ok {
-		b.web.BindingDispatcher = bd
-	} else {
-		log.Warn("binding dispatcher unavailable: state store does not implement BindingDispatcher")
 	}
 }
 

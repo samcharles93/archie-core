@@ -77,23 +77,22 @@ func TestComposeUIServerHoldsNoDaemonState(t *testing.T) {
 	}
 
 	unwired := map[string]any{
-		"UpdateConfig":      srv.UpdateConfig,
-		"ResetConfig":       srv.ResetConfig,
-		"ConfigOverrides":   srv.ConfigOverrides,
-		"UpdateRepoField":   srv.UpdateRepoField,
-		"LastReload":        srv.LastReload,
-		"ReloadChannel":     srv.ReloadChannel,
-		"RunningVersions":   srv.RunningVersions,
-		"Events":            srv.Events,
-		"Curators":          srv.Curators,
-		"Memory":            srv.Memory,
-		"Channels":          srv.Channels,
-		"LogFeed":           srv.LogFeed,
-		"TaskLogs":          srv.TaskLogs,
-		"WorkRequests":      srv.WorkRequests,
-		"Captures":          srv.Captures,
-		"BindingDispatcher": srv.BindingDispatcher,
-		"CaptureLimiter":    srv.CaptureLimiter,
+		"UpdateConfig":    srv.UpdateConfig,
+		"ResetConfig":     srv.ResetConfig,
+		"ConfigOverrides": srv.ConfigOverrides,
+		"UpdateRepoField": srv.UpdateRepoField,
+		"LastReload":      srv.LastReload,
+		"ReloadChannel":   srv.ReloadChannel,
+		"RunningVersions": srv.RunningVersions,
+		"Events":          srv.Events,
+		"Curators":        srv.Curators,
+		"Memory":          srv.Memory,
+		"Channels":        srv.Channels,
+		"LogFeed":         srv.LogFeed,
+		"TaskLogs":        srv.TaskLogs,
+		"WorkRequests":    srv.WorkRequests,
+		"Captures":        srv.Captures,
+		"CaptureIntake":   srv.CaptureIntake,
 	}
 	for name, handle := range unwired {
 		if !isNil(handle) {
@@ -114,15 +113,15 @@ func TestComposeUIServerHoldsNoDaemonState(t *testing.T) {
 	}
 }
 
-// TestComposeLeavesCaptureIntakeUnset pins the seam rule: while the daemon's
-// in-process dashboard is still running (its removal is bead
-// archie-core-8cda.5.4), a second process wiring Captures/BindingDispatcher
-// would give two listeners the same webhook intake authority, which
-// docs/prds/ui-service-boundary.md:30-33 forbids. The route answers 503
-// instead.
+// TestComposeLeavesCaptureIntakeUnset pins the seam rule: while the daemon
+// still serves intake (its receiver is internal/infrastructure/captureintake;
+// the dashboard's own removal is bead archie-core-8cda.5.4), a second
+// process wiring Captures/CaptureIntake would give two listeners the same
+// webhook intake authority, which docs/prds/ui-service-boundary.md:30-33
+// forbids. The capture list answers {"enabled": false} instead.
 func TestComposeLeavesCaptureIntakeUnset(t *testing.T) {
 	srv := compose(deps{Options: Options{}, Log: slog.New(slog.DiscardHandler)})
-	if srv.Captures != nil || srv.BindingDispatcher != nil || srv.CaptureLimiter != nil {
-		t.Fatal("capture intake is wired in the UI process; it must stay unset until the daemon's dashboard is removed (bead archie-core-8cda.5.4)")
+	if srv.Captures != nil || srv.CaptureIntake != nil {
+		t.Fatal("capture intake is wired in the UI process; it must stay unset until the daemon's listener is gone (bead archie-core-8cda.5.4)")
 	}
 }

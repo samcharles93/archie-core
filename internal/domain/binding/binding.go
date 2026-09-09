@@ -127,9 +127,10 @@ func (b Binding) validateCommon() error {
 // an unauthenticated event can never trigger a binding, no matter how
 // well it would otherwise match.
 //
-// Note: the caller is expected to be the dispatch loop or handleCapture,
-// both of which receive a CapturedEvent with the Authenticated flag
-// already set by HMAC verification. Matches is pure and has no I/O.
+// Note: the caller is expected to be the dispatch loop or the capture
+// intake receiver, both of which receive a CapturedEvent with the
+// Authenticated flag already set by HMAC verification. Matches is pure
+// and has no I/O.
 func (m Matcher) Matches(source string, authenticated bool) bool {
 	if !authenticated {
 		return false

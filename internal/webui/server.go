@@ -27,7 +27,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/memory"
 	"github.com/samcharles93/archie-core/internal/store"
-	"github.com/samcharles93/archie-core/internal/webhookguard"
 	"github.com/samcharles93/archie-core/ui"
 )
 
@@ -144,25 +143,27 @@ type Server struct {
 	// in the store but invisible to anyone watching.
 	Events EventPublisher
 
-	// Captures persists unbound webhook captures (docs/prds/event-capture-storage.md).
-	// Optional: nil makes POST /webhooks/capture/{source} answer 503 rather
-	// than the dashboard failing to start -- capture is a precondition for
-	// the no-code playbook epic, not a hard dependency of the dashboard.
+	// Captures backs the dashboard's read of captured events: the
+	// GET /api/captures list and the mapping preview's by-ID scan
+	// (docs/prds/event-capture-storage.md). Optional: nil makes the list
+	// answer {"enabled": false} rather than the dashboard failing to start.
 	Captures store.CaptureStore
-	// CaptureLimiter is the per-remote-address token bucket applied before a
-	// capture request's body is read (keyed by remote address, not the
-	// unregistered/attacker-chosen source path segment -- see
-	// handleCapture). Optional: nil disables rate limiting (every request is
-	// allowed), which composition never actually does in production -- it
-	// is nil only in tests that don't exercise this path.
-	CaptureLimiter *webhookguard.RateLimiter
-	// CaptureRetention and CaptureMaxEvents are passed straight through to
-	// InsertCapture's prune-on-write bounds. See config.CaptureConfig.
-	CaptureRetention time.Duration
+	// CaptureMaxEvents is the operator's configured [capture] max_events,
+	// used to bound captureByID's scan window (api_mapping.go). The write
+	// half of capture -- the receiver, its rate limiter, body cap and HMAC
+	// verification -- belongs to the process that does work intake and is
+	// mounted here through CaptureIntake.
 	CaptureMaxEvents int
-	// CaptureMaxBodyBytes rejects (413) a capture POST body larger than
-	// this via http.MaxBytesReader, before redaction or storage sees it.
-	CaptureMaxBodyBytes int64
+	// CaptureIntake serves POST /webhooks/capture/{source} on the bypass
+	// mux, alongside /healthz: capture must accept unauthenticated
+	// senders, so it cannot sit behind requireToken. The handler is owned
+	// by the host process that does work intake
+	// (internal/infrastructure/captureintake.Receiver); this package only
+	// mounts the route and reads the rows back. Nil removes the route,
+	// which is how the UI process stays off intake -- two listeners with
+	// the same intake authority is what the boundary forbids
+	// (docs/prds/ui-service-boundary.md:30-33).
+	CaptureIntake http.Handler
 
 	// Mappings persists payload field mappings (docs/prds/payload-field-mapping.md).
 	// Optional: nil makes every /api/mappings route answer 503 rather than
@@ -174,15 +175,6 @@ type Server struct {
 	// (docs/prds/webhook-intake-security.md). Optional: nil makes every
 	// /api/bindings route answer 503 rather than the dashboard failing to start.
 	Bindings store.BindingStore
-
-	// BindingDispatcher is the dispatch-time helper surface for bindings:
-	// the capture endpoint calls ArmedBindingsForSource here to look up
-	// the HMAC secret for an incoming webhook. Split from BindingStore so
-	// the CRUD interface stays narrow (six methods, under the
-	// interfacebloat limit). Optional: nil disables per-source HMAC
-	// verification at handleCapture and every event records as
-	// authenticated=false.
-	BindingDispatcher store.BindingDispatcher
 
 	// TelegramUpdateReportPath and TelegramUpdateChatID let a dashboard-
 	// initiated update use the same post-restart notification route as a
@@ -342,10 +334,18 @@ func (s *Server) Handler() http.Handler {
 	top := http.NewServeMux()
 	top.HandleFunc("GET /healthz", s.handleHealthz)
 	top.HandleFunc("GET /health", s.handleHealth)
-	top.HandleFunc("POST /webhooks/capture/{source}", s.handleCapture)
+	if s.CaptureIntake != nil {
+		top.Handle(captureIntakeRoute, s.CaptureIntake)
+	}
 	top.Handle("/", s.requireToken(mux))
 	return top
 }
+
+// captureIntakeRoute is the bypass-mux route the host process's capture
+// receiver mounts on. captureintake.Path is the authority for the route's
+// semantics; this literal exists so webui can mount an http.Handler without
+// depending on the receiver's concrete package.
+const captureIntakeRoute = "POST /webhooks/capture/{source}"
 
 // handleHealthz is a liveness probe for local, unauthenticated callers --
 // most notably the update watchdog script, which polls it after restarting

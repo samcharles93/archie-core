@@ -66,15 +66,13 @@ func newRemoteTestServer(t *testing.T) *Server {
 	t.Cleanup(closeConn)
 
 	return &Server{
-		Cfg:               config.NewHolder(config.Config{}),
-		Store:             client,
-		Captures:          client,
-		Mappings:          client,
-		Bindings:          client,
-		BindingDispatcher: client,
-		Log:               slog.New(slog.DiscardHandler),
-		CaptureMaxEvents:  10,
-		CaptureRetention:  1000,
+		Cfg:              config.NewHolder(config.Config{}),
+		Store:            client,
+		Captures:         client,
+		Mappings:         client,
+		Bindings:         client,
+		Log:              slog.New(slog.DiscardHandler),
+		CaptureMaxEvents: 10,
 	}
 }
 

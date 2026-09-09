@@ -266,9 +266,13 @@ func TestUIServesDashboardAgainstRemoteContracts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /webhooks/capture/demo: %v", err)
 	}
+	// Capture intake stays with the daemon until bead archie-core-8cda.5.4:
+	// the UI process mounts no intake route at all (compose leaves
+	// CaptureIntake unset), so the POST falls through to the token-gated
+	// dashboard rather than answering as a capture endpoint.
 	capResp.Body.Close()
-	if capResp.StatusCode != http.StatusServiceUnavailable {
-		t.Errorf("POST /webhooks/capture/demo = %d, want 503: two processes must not share webhook intake authority", capResp.StatusCode)
+	if capResp.StatusCode == http.StatusAccepted {
+		t.Errorf("POST /webhooks/capture/demo = %d, want anything but an accepted capture: two processes must not share webhook intake authority", capResp.StatusCode)
 	}
 
 	// Readiness aggregates the two remote dependencies, and drops when one dies.

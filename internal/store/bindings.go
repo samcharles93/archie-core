@@ -282,8 +282,8 @@ func (s *Store) ApproveBinding(ctx context.Context, id int64) error {
 }
 
 // ArmedBindingsForSource returns every armed binding for the given source,
-// ordered by id so handleCapture picks a stable winner if multiple rows
-// are ever present (the overlap guard should make this impossible in
+// ordered by id so captureintake's receiver picks a stable winner if multiple
+// rows are ever present (the overlap guard should make this impossible in
 // practice, but the store returns the full set rather than collapsing).
 func (s *Store) ArmedBindingsForSource(ctx context.Context, source string) ([]binding.Binding, error) {
 	rows, err := s.db.QueryContext(ctx, `
