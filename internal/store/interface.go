@@ -11,40 +11,40 @@
 package store
 
 import (
-	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
-// Aliases: the daemon/webui/intake store surfaces moved to storev1. The
+// Aliases: the daemon/webui/intake store surfaces moved to storecontract. The
 // message strings of the sentinel errors are the wire contract (see
 // storev1's var block); the aliases change nothing observable.
 type (
-	TaskStore           = storev1.TaskStore
-	TaskLifecycle       = storev1.TaskLifecycle
-	TaskArchiver        = storev1.TaskArchiver
-	TaskRetryer         = storev1.TaskRetryer
-	TaskQueries         = storev1.TaskQueries
-	TaskEvents          = storev1.TaskEvents
-	CaptureStore        = storev1.CaptureStore
-	ConfigSnapshotStore = storev1.ConfigSnapshotStore
-	MappingStore        = storev1.MappingStore
-	BindingStore        = storev1.BindingStore
-	BindingDispatcher   = storev1.BindingDispatcher
-	BindingTaskCreator  = storev1.BindingTaskCreator
-	CapturedEvent       = storev1.CapturedEvent
-	ConfigSnapshot      = storev1.ConfigSnapshot
-	WorkflowStat        = storev1.WorkflowStat
-	StageStat           = storev1.StageStat
-	DayTokens           = storev1.DayTokens
+	TaskStore           = storecontract.TaskStore
+	TaskLifecycle       = storecontract.TaskLifecycle
+	TaskArchiver        = storecontract.TaskArchiver
+	TaskRetryer         = storecontract.TaskRetryer
+	TaskQueries         = storecontract.TaskQueries
+	TaskEvents          = storecontract.TaskEvents
+	CaptureStore        = storecontract.CaptureStore
+	ConfigSnapshotStore = storecontract.ConfigSnapshotStore
+	MappingStore        = storecontract.MappingStore
+	BindingStore        = storecontract.BindingStore
+	BindingDispatcher   = storecontract.BindingDispatcher
+	BindingTaskCreator  = storecontract.BindingTaskCreator
+	CapturedEvent       = storecontract.CapturedEvent
+	ConfigSnapshot      = storecontract.ConfigSnapshot
+	WorkflowStat        = storecontract.WorkflowStat
+	StageStat           = storecontract.StageStat
+	DayTokens           = storecontract.DayTokens
 )
 
 var (
-	ErrStaleTransition   = storev1.ErrStaleTransition
-	ErrBindingNotFound   = storev1.ErrBindingNotFound
-	ErrBindingOverlap    = storev1.ErrBindingOverlap
-	ErrBindingTransition = storev1.ErrBindingTransition
-	ErrAlreadyDispatched = storev1.ErrAlreadyDispatched
-	ErrMappingNotFound   = storev1.ErrMappingNotFound
+	ErrStaleTransition   = storecontract.ErrStaleTransition
+	ErrBindingNotFound   = storecontract.ErrBindingNotFound
+	ErrBindingOverlap    = storecontract.ErrBindingOverlap
+	ErrBindingTransition = storecontract.ErrBindingTransition
+	ErrAlreadyDispatched = storecontract.ErrAlreadyDispatched
+	ErrMappingNotFound   = storecontract.ErrMappingNotFound
 )
 
 // Compile-time check: *Store satisfies TaskStore.

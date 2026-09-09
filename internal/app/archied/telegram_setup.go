@@ -13,11 +13,11 @@ import (
 	"github.com/samcharles93/ai-sdk/core"
 	"github.com/samcharles93/ai-sdk/runtime"
 
-	channelruntime "github.com/samcharles93/archie-core/internal/channels"
+	"github.com/samcharles93/archie-core/internal/channels/status"
 	"github.com/samcharles93/archie-core/internal/channels/telegram"
 	"github.com/samcharles93/archie-core/internal/config"
-	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
 	"github.com/samcharles93/archie-core/internal/daemon"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
@@ -38,7 +38,7 @@ type telegramSetup struct {
 	Cfg                 *config.Holder
 	CfgPath             string
 	OverlayPath         string
-	St                  storev1.TaskStore
+	St                  storecontract.TaskStore
 	LLM                 *runtime.Runtime
 	ChatModels          gateway.ModelManager
 	ToolReg             *tools.Registry
@@ -59,7 +59,7 @@ type telegramSetup struct {
 	// disables turn events (tests, minimal setups).
 	Bus            *events.Bus
 	Log            *slog.Logger
-	ChannelManager *channelruntime.Manager
+	ChannelManager *status.Manager
 	// AgentStatus is the composition root's shared tracker for the most
 	// recently observed archie-agent version (see daemon.AgentStatus).
 	// Nil disables the agent component of RunningVersions.
@@ -69,7 +69,7 @@ type telegramSetup struct {
 
 func resolveTelegramToken(cfg config.TelegramConfig, registry *secret.Registry) (string, error) {
 	if cfg.Token != (secret.SecretRef{}) {
-		return cfg.Token.Resolve(registry)
+		return registry.Resolve(cfg.Token)
 	}
 	if cfg.TokenEnv == "" {
 		return "", nil

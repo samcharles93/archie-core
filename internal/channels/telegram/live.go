@@ -338,8 +338,8 @@ func (l *liveReply) ToolCall(event gateway.ToolCallEvent) {
 	// Render the completed result as a compact fenced block. Do not append the
 	// raw/JSON-shaped parameters: they are noisy, can expose secrets, and were
 	// the source of unreadable schema placeholders in Telegram.
-	line := event.RenderToolCall()
-	key := event.FailureKey()
+	line := gateway.RenderToolCall(event)
+	key := gateway.FailureKey(event)
 
 	l.mu.Lock()
 	if index, ok := l.failureLines[key]; key != "" && ok {

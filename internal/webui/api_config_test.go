@@ -9,11 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/samcharles93/archie-core/internal/channels"
+	"github.com/samcharles93/archie-core/internal/channels/status"
 	"github.com/samcharles93/archie-core/internal/config"
-	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/logging"
-	"github.com/samcharles93/archie-core/internal/memory"
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/store"
 )
@@ -595,7 +593,7 @@ func TestHandleChannelsNilConfig(t *testing.T) {
 func TestHandleChannelsUsesRuntimeManager(t *testing.T) {
 	srv := newTestServer(t)
 	srv.Cfg = configWithFakeSecrets()
-	srv.Channels = channels.NewManager([]channels.Descriptor{{
+	srv.Channels = status.NewManager([]status.Descriptor{{
 		ID: "telegram", Name: "Telegram", Configured: true, ReloadSupported: true,
 	}})
 	srv.Channels.MarkFailed("telegram", "token rejected")
@@ -729,8 +727,9 @@ func TestCapabilitiesReportWhatThisProcessCanServe(t *testing.T) {
 	wired := newTestServer(t)
 	wired.Cfg = config.NewHolder(config.Config{})
 	wired.LogFeed = logging.NewFeed(10)
-	wired.Memory = &memory.Manager{}
-	wired.Curators = &curator.Registry{}
+	wired.Memory = stubMemory{}
+	wired.Curators = stubCurators{}
+	wired.Skills = stubSkillCatalog{}
 	got := get(wired)
 	for _, section := range []string{"logs", "memory", "curators", "skills", "channels"} {
 		if !got[section] {
@@ -738,3 +737,31 @@ func TestCapabilitiesReportWhatThisProcessCanServe(t *testing.T) {
 		}
 	}
 }
+
+// stubMemory satisfies the webui-owned MemoryStatus view for tests.
+type stubMemory struct{}
+
+func (stubMemory) Builtin() MemoryProviderHandle  { return stubMemoryProvider{} }
+func (stubMemory) External() MemoryProviderHandle { return nil }
+
+type stubMemoryProvider struct{}
+
+func (stubMemoryProvider) Name() string      { return "builtin" }
+func (stubMemoryProvider) IsAvailable() bool { return true }
+func (stubMemoryProvider) ToolViews() []MemoryToolView {
+	return []MemoryToolView{{Name: "remember", Description: "store a fact"}}
+}
+
+// stubCurators satisfies the webui-owned CuratorStatus view for tests.
+type stubCurators struct{}
+
+func (stubCurators) Names() []string { return []string{"wired"} }
+func (stubCurators) Health(_ context.Context) map[string]CuratorHealthView {
+	return map[string]CuratorHealthView{"wired": {Status: "healthy"}}
+}
+func (stubCurators) Activity(string) (CuratorActivity, bool) { return CuratorActivity{}, false }
+
+// stubSkillCatalog satisfies the webui-owned SkillCatalog view for tests.
+type stubSkillCatalog struct{}
+
+func (stubSkillCatalog) Skills() []SkillView { return []SkillView{{Name: "demo"}} }

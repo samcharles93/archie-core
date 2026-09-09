@@ -16,43 +16,15 @@ const (
 	redactedParameterValue = "[redacted]"
 )
 
-// ToolCallEvent reports one completed tool invocation within a turn. It
-// carries the raw outcome rather than rendered text: presentation (emoji,
-// layout, whether to show it at all) belongs to the channel adapter.
-type ToolCallEvent struct {
-	// ID correlates the completed result with the model's invocation.
-	ID string
-	// Name is the tool the model invoked.
-	Name string
-	// Parameters is a bounded, redacted JSON summary of the invocation input.
-	// It is safe for channel adapters to render directly.
-	Parameters string
-	// Output is what the tool returned, verbatim.
-	Output string
-	// Err is non-empty when the tool failed, in which case Output is
-	// unreliable and usually empty.
-	Err string
-}
-
-// Summary reduces the outcome to a single short line suitable for an inline
-// status entry. It never returns an empty string: a tool that returned
-// nothing still ran, and a blank summary would read as a rendering fault.
-func (e ToolCallEvent) Summary() string {
-	if line := firstNonEmptyLine(e.Err); line != "" {
-		return "failed: " + truncateRunes(line, toolSummaryMaxRunes)
-	}
-	if line := firstNonEmptyLine(e.Output); line != "" {
-		return truncateRunes(line, toolSummaryMaxRunes)
-	}
-	return "done"
-}
-
 // RenderToolCall returns the channel-neutral compact representation used by
 // chat surfaces. Parameters are intentionally omitted: JSON/schema-shaped
 // inputs are noisy, often contain secrets, and are not useful progress text.
 // Results are reduced semantically instead of clipped blindly: file contents,
 // listings and structured envelopes are described, never echoed.
-func (e ToolCallEvent) RenderToolCall() string {
+// RenderToolCall returns the channel-neutral compact representation used by
+// chat surfaces. (A function rather than a method because ToolCallEvent is a
+// messaging alias: see chat_contract_aliases.go.)
+func RenderToolCall(e ToolCallEvent) string {
 	if limit, ok := legacyTurnBudgetLimit(e.Err); ok {
 		return toolProgressBlock("tools", "stopped", fmt.Sprintf("tool-output limit reached (%s chars); further results suppressed", limit))
 	}
@@ -66,7 +38,10 @@ func (e ToolCallEvent) RenderToolCall() string {
 // retries. Legacy aggregate-output-limit errors deliberately share one key
 // across tool names: they are one obsolete turn-level condition, not five
 // independently useful failures.
-func (e ToolCallEvent) FailureKey() string {
+// FailureKey identifies equivalent failures for channel adapters that
+// collapse retries. (A function rather than a method because ToolCallEvent
+// is a messaging alias: see chat_contract_aliases.go.)
+func FailureKey(e ToolCallEvent) string {
 	if _, ok := legacyTurnBudgetLimit(e.Err); ok {
 		return "legacy-turn-output-limit"
 	}
@@ -238,37 +213,6 @@ func truncateRunesWithinLimit(s string, limit int) string {
 		return "…"
 	}
 	return string(runes[:limit-1]) + "…"
-}
-
-// MediaEvent reports one media attachment produced during a turn, so a
-// channel can deliver it (e.g. through gateway.MediaSender) in the same
-// ordered pass as the text and tool activity that surrounded it.
-type MediaEvent struct {
-	// ToolName is the tool call that produced the attachment.
-	ToolName string
-	// Attachment is the media to deliver.
-	Attachment MediaAttachment
-}
-
-// TurnStream receives a turn's output as it is produced.
-//
-// It replaces the plain delta callback so a channel can render tool activity
-// in the same ordered pass as the text: both arrive on the generating
-// goroutine, in the order the model produced them. Implementations must not
-// block  --  a slow renderer stalls generation  --  and must be safe to call
-// from that goroutine only.
-//
-// Callers that render text alone use DeltaFunc rather than implementing this.
-type TurnStream interface {
-	// Delta appends the next fragment of assistant text.
-	Delta(text string)
-	// ToolCall reports a tool invocation that has finished executing.
-	ToolCall(event ToolCallEvent)
-	// Media reports a media attachment a tool call produced during the
-	// turn. A channel that cannot deliver it inline (see
-	// gateway.CapabilitiesOf) is expected to fall back to rendering the
-	// attachment's URL as text instead of dropping it silently.
-	Media(event MediaEvent)
 }
 
 // DeltaFunc adapts a plain text-delta callback to TurnStream for callers that

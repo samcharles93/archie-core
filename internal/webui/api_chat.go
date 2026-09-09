@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
-	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
 )
 
@@ -21,7 +20,7 @@ import (
 // Handlers depend on the Gateway-owned contract and never retain Gateway
 // implementation objects.
 type ChatService struct {
-	Contract         gateway.ChatContract
+	Contract         messaging.ChatContract
 	Updates          ChatUpdateService
 	Dangerous        *DangerousService
 	updateMu         sync.Mutex
@@ -73,11 +72,11 @@ type chatUpdateRequest struct {
 }
 
 type chatTurnView struct {
-	TurnID             string             `json:"turn_id"`
-	AssistantMessageID string             `json:"assistant_message_id,omitempty"`
-	Status             gateway.TurnStatus `json:"status"`
-	Error              string             `json:"error,omitempty"`
-	ToolCalls          []chatToolView     `json:"tool_calls,omitempty"`
+	TurnID             string               `json:"turn_id"`
+	AssistantMessageID string               `json:"assistant_message_id,omitempty"`
+	Status             messaging.TurnStatus `json:"status"`
+	Error              string               `json:"error,omitempty"`
+	ToolCalls          []chatToolView       `json:"tool_calls,omitempty"`
 }
 
 type chatToolView struct {
@@ -127,7 +126,7 @@ func (s *Server) handleChatSessions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	out := make([]gateway.SessionContext, 0, len(snapshot.Sessions))
+	out := make([]messaging.SessionContext, 0, len(snapshot.Sessions))
 	active := make(map[string]string)
 	for _, session := range snapshot.Sessions {
 		if session.Source.Platform == "web" {
@@ -152,14 +151,14 @@ func (s *Server) handleChatSessions(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func chatCommandSpecs(chat *ChatService) []gateway.CommandSpec {
-	specs := gateway.LocalCommandSpecs()
+func chatCommandSpecs(chat *ChatService) []messaging.CommandSpec {
+	specs := messaging.LocalCommandSpecs()
 	if chat.Dangerous != nil {
 		specs = append(
 			specs,
-			gateway.CommandSpec{Command: "/rollback", Description: "Request approval to restore a filesystem checkpoint", Usage: "/rollback [number]"},
-			gateway.CommandSpec{Command: "/stop", Description: "Request approval to terminate a background process", Usage: "/stop <process-name>"},
-			gateway.CommandSpec{Command: "/deny", Description: "Deny a pending dangerous action", Usage: "/deny <action-id>"},
+			messaging.CommandSpec{Command: "/rollback", Description: "Request approval to restore a filesystem checkpoint", Usage: "/rollback [number]"},
+			messaging.CommandSpec{Command: "/stop", Description: "Request approval to terminate a background process", Usage: "/stop <process-name>"},
+			messaging.CommandSpec{Command: "/deny", Description: "Deny a pending dangerous action", Usage: "/deny <action-id>"},
 		)
 	}
 	return specs
@@ -233,16 +232,16 @@ func (s *Server) handleChatTurns(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, views)
 }
 
-func (s *Server) decodeChatMessage(w http.ResponseWriter, r *http.Request) (gateway.Inbound, bool) {
+func (s *Server) decodeChatMessage(w http.ResponseWriter, r *http.Request) (messaging.Inbound, bool) {
 	var req chatMessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid chat message", http.StatusBadRequest)
-		return gateway.Inbound{}, false
+		return messaging.Inbound{}, false
 	}
 	req.Text = strings.TrimSpace(req.Text)
 	if req.Text == "" || req.ChannelID == "" {
 		http.Error(w, "text and channel_id are required", http.StatusBadRequest)
-		return gateway.Inbound{}, false
+		return messaging.Inbound{}, false
 	}
 	if req.SourceID == "" {
 		req.SourceID = newChatSourceID()
@@ -250,7 +249,7 @@ func (s *Server) decodeChatMessage(w http.ResponseWriter, r *http.Request) (gate
 	// The browser has no threading, so the conversation is the channel
 	// alone. Page is the route the operator is looking at, and stays out
 	// of the record.
-	return gateway.Inbound{
+	return messaging.Inbound{
 		Message: messaging.Message{
 			SourceID:       req.SourceID,
 			ConversationID: messaging.ConversationID{ChannelID: req.ChannelID},
@@ -303,7 +302,7 @@ type chatStreamEvent struct {
 	Label string `json:"label,omitempty"`
 }
 
-// chatStreamSink adapts the stream writer to gateway.TurnStream so text and
+// chatStreamSink adapts the stream writer to messaging.TurnStream so text and
 // tool activity reach the browser through one ordered path.
 //
 // showToolCalls gates ToolCall the same way Telegram's liveReply gates its
@@ -322,13 +321,13 @@ func (s chatStreamSink) Delta(text string) {
 	s.write(chatStreamEvent{Type: "delta", Text: text})
 }
 
-func (s chatStreamSink) ToolCall(event gateway.ToolCallEvent) {
+func (s chatStreamSink) ToolCall(event messaging.ToolCallEvent) {
 	// A dashboard_navigate call is an explicit point-the-operator-there
 	// result, not tool narration, so it renders a clickable chip even when
 	// ShowToolCalls is off. Parse the resolved path/label from the tool's
 	// JSON result and emit a dedicated navigate frame.
 	if event.Name == "dashboard_navigate" && event.Err == "" {
-		var result gateway.DashboardNavigateResult
+		var result messaging.DashboardNavigateResult
 		if err := json.Unmarshal([]byte(event.Output), &result); err == nil && result.Path != "" {
 			s.write(chatStreamEvent{
 				Type:       "navigate",
@@ -364,7 +363,7 @@ func (s chatStreamSink) ToolCall(event gateway.ToolCallEvent) {
 // path, silence here meant the model announced a file it had sent and
 // nothing arrived -- the precise defect send_file was built to end,
 // reappearing on the channel that cannot deliver.
-func (s chatStreamSink) Media(event gateway.MediaEvent) {
+func (s chatStreamSink) Media(event messaging.MediaEvent) {
 	att := event.Attachment
 	switch {
 	case att.URL != "":

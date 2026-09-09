@@ -1,0 +1,24 @@
+package config
+
+// SecretRef references a secret stored in a named engine. Legacy environment
+// variable fields remain supported where required for backwards compatibility.
+//
+// Format in TOML/YAML:
+//
+//	[forge]
+//	token = {engine = "env", key = "GITEA_TOKEN"}
+//
+//	[providers.deepseek]
+//	api_key = {engine = "bws", key = "DEEPSEEK_API_KEY"}
+//
+// The zero value (empty engine, empty key) resolves to "" with no error,
+// for config fields where the secret is optional (e.g. an unconfigured
+// channel token).
+//
+// It lives here rather than in internal/secret so the archie-ui process can
+// render config projections without linking the secret runtime
+// (archie-core-8cda.5.6).
+type SecretRef struct {
+	Engine string `toml:"engine" yaml:"engine" json:"engine"`
+	Key    string `toml:"key" yaml:"key" json:"key"`
+}

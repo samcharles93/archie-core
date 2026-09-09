@@ -1,10 +1,26 @@
 package webui
 
-import (
-	"net/http"
+import "net/http"
 
-	"github.com/samcharles93/archie-core/internal/memory"
-)
+// MemoryProviderHandle is the webui-owned view source for one memory
+// provider: the memory page renders a name, a readiness flag, and the
+// provider's tool vocabulary by name. It is deliberately narrower than
+// memory.MemoryProvider -- whose GetToolSchemas returns runtime tool
+// entries -- so the UI process holds the view without linking the memory
+// runtime (and, transitively, the agent toolchain). Whoever owns the
+// memory runtime supplies adapters at bootstrap (archie-core-8cda.5.6).
+type MemoryProviderHandle interface {
+	Name() string
+	IsAvailable() bool
+	ToolViews() []MemoryToolView
+}
+
+// MemoryStatus is the webui-owned surface over the running memory runtime:
+// the two providers the memory page renders, by role.
+type MemoryStatus interface {
+	Builtin() MemoryProviderHandle
+	External() MemoryProviderHandle
+}
 
 // MemoryProviderView describes one memory provider for the dashboard.
 type MemoryProviderView struct {
@@ -48,18 +64,13 @@ func (s *Server) handleMemory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"providers": views, "enabled": true})
 }
 
-func providerView(p memory.MemoryProvider, role string) MemoryProviderView {
+func providerView(p MemoryProviderHandle, role string) MemoryProviderView {
 	view := MemoryProviderView{
 		Name:      p.Name(),
 		Role:      role,
 		Available: p.IsAvailable(),
 		Tools:     []MemoryToolView{},
 	}
-	for _, t := range p.GetToolSchemas() {
-		view.Tools = append(view.Tools, MemoryToolView{
-			Name:        t.Name,
-			Description: t.Description,
-		})
-	}
+	view.Tools = append(view.Tools, p.ToolViews()...)
 	return view
 }

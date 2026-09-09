@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/config"
-	"github.com/samcharles93/archie-core/internal/secret"
 )
 
 // Defaults applied to absent input. Named so a reader can find the value
@@ -221,7 +220,7 @@ func applyForgeDefaults(cfg *config.Config) {
 		cfg.Forge.Host = defaultForgeHost
 	}
 	if cfg.Forge.Token.Engine == "" && cfg.Forge.Token.Key == "" && cfg.Forge.TokenEnv != "" {
-		cfg.Forge.Token = secret.SecretRef{Engine: "env", Key: cfg.Forge.TokenEnv}
+		cfg.Forge.Token = config.SecretRef{Engine: "env", Key: cfg.Forge.TokenEnv}
 	}
 	if cfg.Forge.Intake == "" {
 		cfg.Forge.Intake = config.ForgeIntakePoll

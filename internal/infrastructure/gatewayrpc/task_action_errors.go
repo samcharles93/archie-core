@@ -6,7 +6,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 )
 
@@ -22,7 +22,7 @@ var taskActionCodes = []struct {
 }{
 	{code: codes.NotFound, err: taskactions.ErrNotFound},
 	{code: codes.FailedPrecondition, err: taskactions.ErrConflict},
-	{code: codes.Aborted, err: storev1.ErrStaleTransition},
+	{code: codes.Aborted, err: storecontract.ErrStaleTransition},
 	{code: codes.Unavailable, err: taskactions.ErrUnavailable},
 }
 

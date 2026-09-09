@@ -8,8 +8,6 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-
-	"github.com/samcharles93/archie-core/internal/secret"
 )
 
 func TestTaskConfigToConfigRoundTrip(t *testing.T) {
@@ -21,7 +19,7 @@ func TestTaskConfigToConfigRoundTrip(t *testing.T) {
 		Budgets:      Budgets{MaxSteps: 12, WallClock: Duration(45 * time.Minute), GateMaxFailures: 3},
 		Dispatch:     Dispatch{Trigger: "label", AckReaction: "eyes", Labels: map[string]string{"working": "bot:working"}},
 		Notify:       Notify{Webhook: "https://notify.example.test/hook"},
-		Forge:        Forge{Type: "github", Host: "https://forge.example.test", Token: secret.SecretRef{Engine: "env", Key: "TOP_SECRET"}},
+		Forge:        Forge{Type: "github", Host: "https://forge.example.test", Token: SecretRef{Engine: "env", Key: "TOP_SECRET"}},
 	}
 
 	got := cfg.ForTask().ToConfig()
@@ -43,7 +41,7 @@ func TestTaskConfigToConfigRoundTrip(t *testing.T) {
 	if got.Forge.Host != cfg.Forge.Host {
 		t.Fatalf("Forge.Host = %q, want %q", got.Forge.Host, cfg.Forge.Host)
 	}
-	if got.Forge.Token != (secret.SecretRef{}) {
+	if got.Forge.Token != (SecretRef{}) {
 		t.Fatalf("Forge.Token = %#v, want zero value (never carried by TaskConfig)", got.Forge.Token)
 	}
 }
@@ -107,7 +105,7 @@ func TestConfigForTaskJSONRoundTrip(t *testing.T) {
 		Forge: Forge{
 			Type:  "github",
 			Host:  "https://forge.example.test",
-			Token: secret.SecretRef{Engine: "env", Key: "TOP_SECRET_FORGE_TOKEN"},
+			Token: SecretRef{Engine: "env", Key: "TOP_SECRET_FORGE_TOKEN"},
 		},
 		Providers: map[string]Provider{
 			"secret": {APIKeyEnv: "TOP_SECRET_PROVIDER_TOKEN"},

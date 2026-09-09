@@ -211,16 +211,6 @@ type Workflow struct {
 // Registry maps workflow names to definitions.
 type Registry map[string]Workflow
 
-// Definition is the operator-safe snapshot of an executable workflow. It
-// contains only identity and stage order, never executable function values.
-type Definition struct {
-	ID      string   `json:"id"`
-	Name    string   `json:"name"`
-	Origin  string   `json:"origin"`
-	Enabled bool     `json:"enabled"`
-	Stages  []string `json:"stages"`
-}
-
 // Definitions snapshots a registry deterministically so installed workflows
 // remain visible even when they have not produced persisted run statistics.
 func Definitions(reg Registry) []Definition {

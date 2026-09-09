@@ -1,4 +1,10 @@
-package channels
+// Package status is the operator-facing channel lifecycle ledger: the
+// State/Descriptor/Status vocabulary and the Manager that owns runtime
+// facts for the dashboard and readiness surfaces. It lives beside the
+// channels package rather than inside it so UI-process code can hold the
+// types without linking the plugin contract there -- which references the
+// gateway runtime (archie-core-8cda.5.6).
+package status
 
 import "sync"
 

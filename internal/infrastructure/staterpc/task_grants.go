@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
-	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 )
 
 // TaskGrants lives in the State Store process. Restart invalidates all worker
@@ -91,7 +91,7 @@ func (g *TaskGrants) taskFor(token string) int64 {
 }
 
 // authorizesTaskScopedCall reports whether req -- a call to one of the three
-// workflow.Store RPCs a task grant may ever authorize -- targets taskID.
+// task.Store RPCs a task grant may ever authorize -- targets taskID.
 // Every other RPC (including RegisterTaskGrant/RevokeTaskGrant themselves)
 // falls through to false: a task grant can only ever narrow, never expand.
 func authorizesTaskScopedCall(fullMethod string, req any, taskID int64) bool {
@@ -202,7 +202,7 @@ type GrantIssuer struct {
 	Client *Client
 }
 
-func (g *GrantIssuer) Issue(task *workflow.Task) (string, func(), error) {
+func (g *GrantIssuer) Issue(task *task.Task) (string, func(), error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	token, err := g.Client.RegisterTaskGrant(ctx, task.ID, defaultGrantLifetime)

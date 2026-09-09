@@ -53,7 +53,7 @@ func resolveProviderMap(scope string, providers map[string]config.Provider, regi
 		if provider.APIKey == (secret.SecretRef{}) {
 			continue
 		}
-		value, err := provider.APIKey.Resolve(registry)
+		value, err := registry.Resolve(provider.APIKey)
 		if err != nil {
 			return fmt.Errorf("provider %q: %w", id, err)
 		}

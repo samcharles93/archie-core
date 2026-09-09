@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	channelruntime "github.com/samcharles93/archie-core/internal/channels"
+	"github.com/samcharles93/archie-core/internal/channels/status"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -33,7 +33,7 @@ func TestDiskProbePath_FallsBackToCwd(t *testing.T) {
 }
 
 func TestChannelStates_ProjectsSnapshot(t *testing.T) {
-	m := channelruntime.NewManager([]channelruntime.Descriptor{
+	m := status.NewManager([]status.Descriptor{
 		{ID: "telegram", Name: "Telegram", Configured: true},
 		{ID: "email", Name: "Email", Configured: false},
 	})
@@ -95,7 +95,7 @@ func TestSetupReadinessProbes_WiresEverySubsystem(t *testing.T) {
 		st: st,
 		web: &webui.Server{
 			Cfg:      config.NewHolder(cfg),
-			Channels: channelruntime.NewManager([]channelruntime.Descriptor{{ID: "telegram", Name: "Telegram", Configured: true}}),
+			Channels: status.NewManager([]status.Descriptor{{ID: "telegram", Name: "Telegram", Configured: true}}),
 			Chat: &webui.ChatService{
 				Contract: &gateway.LocalChatAdapter{
 					Router:   &gateway.Router{},

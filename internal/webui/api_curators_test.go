@@ -66,7 +66,7 @@ func TestHandleCuratorsReportsNamesHealthAndActivity(t *testing.T) {
 	})
 
 	srv := newTestServer(t)
-	srv.Curators = registry
+	srv.Curators = curatorStatusAdapter{registry}
 
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/curators", nil))
@@ -113,7 +113,7 @@ func TestHandleCuratorsReportsRegisteredCuratorWithNoActivityYet(t *testing.T) {
 	}
 
 	srv := newTestServer(t)
-	srv.Curators = registry
+	srv.Curators = curatorStatusAdapter{registry}
 
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/curators", nil))
@@ -141,4 +141,37 @@ func TestHandleCuratorsReportsRegisteredCuratorWithNoActivityYet(t *testing.T) {
 	if body := w.Body.String(); strings.Contains(body, "0001-01-01") {
 		t.Fatalf("response leaks zero-value time.Time: %s", body)
 	}
+}
+
+// curatorStatusAdapter adapts the real registry to the webui-owned
+// CuratorStatus view, mirroring the daemon's bootstrap adapter.
+type curatorStatusAdapter struct{ r *curator.Registry }
+
+func (a curatorStatusAdapter) Names() []string { return a.r.Names() }
+
+func (a curatorStatusAdapter) Health(ctx context.Context) map[string]CuratorHealthView {
+	health := a.r.Health(ctx)
+	views := make(map[string]CuratorHealthView, len(health))
+	for name, h := range health {
+		views[name] = CuratorHealthView{Status: string(h.Status), Message: h.Message}
+	}
+	return views
+}
+
+func (a curatorStatusAdapter) Activity(name string) (CuratorActivity, bool) {
+	activity, ok := a.r.Activity(name)
+	if !ok {
+		return CuratorActivity{}, false
+	}
+	view := CuratorActivity{
+		LastRunAt:      activity.LastRunAt,
+		LastRunActions: activity.LastRunActions,
+		Recent:         make([]CuratorActionView, 0, len(activity.Recent)),
+	}
+	for _, a2 := range activity.Recent {
+		view.Recent = append(view.Recent, CuratorActionView{
+			At: a2.At, Type: a2.Type, Detail: a2.Detail, Reason: a2.Reason,
+		})
+	}
+	return view, true
 }

@@ -9,17 +9,17 @@ import (
 	"google.golang.org/grpc"
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
-	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
-	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 )
 
 // Client is the single remote adapter wrapping one StateStoreServiceClient,
 // asserted against whichever narrow Go interfaces its caller needs -- exactly
-// as gatewayrpc.Client asserts both gateway.ChatContract and
-// gateway.SessionStore. See docs/prds/state-store-contract.md §2.
+// as gatewayrpc.Client asserts both messaging.ChatContract and
+// messaging.SessionStore. See docs/prds/state-store-contract.md §2.
 type Client struct {
 	client pb.StateStoreServiceClient
 }
@@ -34,14 +34,14 @@ func NewClient(conn grpc.ClientConnInterface) *Client {
 func (c *Client) Close() error { return nil }
 
 var (
-	_ workflow.Store              = (*Client)(nil)
-	_ storev1.TaskStore           = (*Client)(nil)
-	_ storev1.CaptureStore        = (*Client)(nil)
-	_ storev1.MappingStore        = (*Client)(nil)
-	_ storev1.BindingStore        = (*Client)(nil)
-	_ storev1.BindingDispatcher   = (*Client)(nil)
-	_ storev1.BindingTaskCreator  = (*Client)(nil)
-	_ storev1.ConfigSnapshotStore = (*Client)(nil)
+	_ task.Store                        = (*Client)(nil)
+	_ storecontract.TaskStore           = (*Client)(nil)
+	_ storecontract.CaptureStore        = (*Client)(nil)
+	_ storecontract.MappingStore        = (*Client)(nil)
+	_ storecontract.BindingStore        = (*Client)(nil)
+	_ storecontract.BindingDispatcher   = (*Client)(nil)
+	_ storecontract.BindingTaskCreator  = (*Client)(nil)
+	_ storecontract.ConfigSnapshotStore = (*Client)(nil)
 )
 
 // Lifecycle
@@ -54,7 +54,7 @@ func (c *Client) EnqueueIssue(ctx context.Context, owner, repo string, number in
 	return r.Inserted, nil
 }
 
-func (c *Client) EnqueueChatTask(ctx context.Context, owner, repo, title, body, wf, identity string) (*workflow.Task, error) {
+func (c *Client) EnqueueChatTask(ctx context.Context, owner, repo, title, body, wf, identity string) (*task.Task, error) {
 	r, err := c.client.EnqueueChatTask(ctx, &pb.EnqueueChatTaskRequest{Owner: owner, Repo: repo, Title: title, Body: body, Workflow: wf, Identity: identity})
 	if err != nil {
 		return nil, unmapError(err)
@@ -62,7 +62,7 @@ func (c *Client) EnqueueChatTask(ctx context.Context, owner, repo, title, body, 
 	return taskValue(r.Task), nil
 }
 
-func (c *Client) ClaimNext(ctx context.Context) (*workflow.Task, error) {
+func (c *Client) ClaimNext(ctx context.Context) (*task.Task, error) {
 	r, err := c.client.ClaimNext(ctx, &pb.ClaimNextRequest{})
 	if err != nil {
 		return nil, unmapError(err)
@@ -73,7 +73,7 @@ func (c *Client) ClaimNext(ctx context.Context) (*workflow.Task, error) {
 	return taskValue(r.Task), nil
 }
 
-func (c *Client) ClaimByIssue(ctx context.Context, owner, repo string, number int) (*workflow.Task, error) {
+func (c *Client) ClaimByIssue(ctx context.Context, owner, repo string, number int) (*task.Task, error) {
 	r, err := c.client.ClaimByIssue(ctx, &pb.ClaimByIssueRequest{Owner: owner, Repo: repo, Number: int64(number)})
 	if err != nil {
 		return nil, unmapError(err)
@@ -89,7 +89,7 @@ func (c *Client) Transition(ctx context.Context, taskID int64, from, to, detail 
 	return unmapError(err)
 }
 
-func (c *Client) Update(ctx context.Context, t *workflow.Task) error {
+func (c *Client) Update(ctx context.Context, t *task.Task) error {
 	_, err := c.client.Update(ctx, &pb.UpdateRequest{Task: taskProto(t)})
 	return unmapError(err)
 }
@@ -124,7 +124,7 @@ func (c *Client) RetryTask(ctx context.Context, taskID int64, fromStatus, wf str
 
 // Queries
 
-func (c *Client) TaskByIssue(ctx context.Context, owner, repo string, number int) (*workflow.Task, error) {
+func (c *Client) TaskByIssue(ctx context.Context, owner, repo string, number int) (*task.Task, error) {
 	r, err := c.client.TaskByIssue(ctx, &pb.TaskByIssueRequest{Owner: owner, Repo: repo, Number: int64(number)})
 	if err != nil {
 		return nil, unmapError(err)
@@ -135,7 +135,7 @@ func (c *Client) TaskByIssue(ctx context.Context, owner, repo string, number int
 	return taskValue(r.Task), nil
 }
 
-func (c *Client) TaskByID(ctx context.Context, taskID int64) (*workflow.Task, error) {
+func (c *Client) TaskByID(ctx context.Context, taskID int64) (*task.Task, error) {
 	r, err := c.client.TaskByID(ctx, &pb.TaskByIDRequest{TaskId: taskID})
 	if err != nil {
 		return nil, unmapError(err)
@@ -146,7 +146,7 @@ func (c *Client) TaskByID(ctx context.Context, taskID int64) (*workflow.Task, er
 	return taskValue(r.Task), nil
 }
 
-func (c *Client) OpenPRs(ctx context.Context) ([]workflow.Task, error) {
+func (c *Client) OpenPRs(ctx context.Context) ([]task.Task, error) {
 	r, err := c.client.OpenPRs(ctx, &pb.OpenPRsRequest{})
 	if err != nil {
 		return nil, unmapError(err)
@@ -162,7 +162,7 @@ func (c *Client) ClearTerminalTasks(ctx context.Context) (int64, error) {
 	return r.Count, nil
 }
 
-func (c *Client) Tasks(ctx context.Context, limit int) ([]workflow.Task, error) {
+func (c *Client) Tasks(ctx context.Context, limit int) ([]task.Task, error) {
 	r, err := c.client.Tasks(ctx, &pb.TasksRequest{Limit: int64(limit)})
 	if err != nil {
 		return nil, unmapError(err)
@@ -213,7 +213,7 @@ func (c *Client) TaskEvents(ctx context.Context, taskID int64) ([]events.Event, 
 	return mapValues(r.Events, eventValue), nil
 }
 
-func (c *Client) WorkflowStats(ctx context.Context) ([]storev1.WorkflowStat, error) {
+func (c *Client) WorkflowStats(ctx context.Context) ([]storecontract.WorkflowStat, error) {
 	r, err := c.client.WorkflowStats(ctx, &pb.WorkflowStatsRequest{})
 	if err != nil {
 		return nil, unmapError(err)
@@ -221,7 +221,7 @@ func (c *Client) WorkflowStats(ctx context.Context) ([]storev1.WorkflowStat, err
 	return mapValues(r.Stats, workflowStatValue), nil
 }
 
-func (c *Client) StageStats(ctx context.Context) ([]storev1.StageStat, error) {
+func (c *Client) StageStats(ctx context.Context) ([]storecontract.StageStat, error) {
 	r, err := c.client.StageStats(ctx, &pb.StageStatsRequest{})
 	if err != nil {
 		return nil, unmapError(err)
@@ -229,7 +229,7 @@ func (c *Client) StageStats(ctx context.Context) ([]storev1.StageStat, error) {
 	return mapValues(r.Stats, stageStatValue), nil
 }
 
-func (c *Client) TokensByDay(ctx context.Context, days int) ([]storev1.DayTokens, error) {
+func (c *Client) TokensByDay(ctx context.Context, days int) ([]storecontract.DayTokens, error) {
 	r, err := c.client.TokensByDay(ctx, &pb.TokensByDayRequest{Days: int64(days)})
 	if err != nil {
 		return nil, unmapError(err)
@@ -239,7 +239,7 @@ func (c *Client) TokensByDay(ctx context.Context, days int) ([]storev1.DayTokens
 
 // Capture
 
-func (c *Client) InsertCapture(ctx context.Context, ce storev1.CapturedEvent, retention time.Duration, maxEvents int) (int64, error) {
+func (c *Client) InsertCapture(ctx context.Context, ce storecontract.CapturedEvent, retention time.Duration, maxEvents int) (int64, error) {
 	r, err := c.client.InsertCapture(ctx, &pb.InsertCaptureRequest{Capture: capturedEventProto(ce), RetentionSeconds: int64(retention.Seconds()), MaxEvents: int64(maxEvents)})
 	if err != nil {
 		return 0, unmapError(err)
@@ -253,7 +253,7 @@ func (c *Client) InsertCapture(ctx context.Context, ce storev1.CapturedEvent, re
 // PutConfigSnapshot publishes the dashboard's configuration projection. The
 // server admits it on the administrative token only; a task-scoped grant
 // cannot reach it (see TaskGrants).
-func (c *Client) PutConfigSnapshot(ctx context.Context, snapshot storev1.ConfigSnapshot) error {
+func (c *Client) PutConfigSnapshot(ctx context.Context, snapshot storecontract.ConfigSnapshot) error {
 	_, err := c.client.PutConfigSnapshot(ctx, &pb.PutConfigSnapshotRequest{Snapshot: configSnapshotProto(snapshot)})
 	if err != nil {
 		return unmapError(err)
@@ -263,23 +263,23 @@ func (c *Client) PutConfigSnapshot(ctx context.Context, snapshot storev1.ConfigS
 
 // ConfigSnapshot reads the published projection. found is false, with a nil
 // error, before a daemon has published one.
-func (c *Client) ConfigSnapshot(ctx context.Context) (storev1.ConfigSnapshot, bool, error) {
+func (c *Client) ConfigSnapshot(ctx context.Context) (storecontract.ConfigSnapshot, bool, error) {
 	reply, err := c.client.GetConfigSnapshot(ctx, &pb.GetConfigSnapshotRequest{})
 	if err != nil {
-		return storev1.ConfigSnapshot{}, false, unmapError(err)
+		return storecontract.ConfigSnapshot{}, false, unmapError(err)
 	}
 	if !reply.Found {
-		return storev1.ConfigSnapshot{}, false, nil
+		return storecontract.ConfigSnapshot{}, false, nil
 	}
 	return configSnapshotValue(reply.Snapshot), true, nil
 }
 
-func (c *Client) ListCaptures(ctx context.Context, limit int) ([]storev1.CapturedEvent, error) {
+func (c *Client) ListCaptures(ctx context.Context, limit int) ([]storecontract.CapturedEvent, error) {
 	stream, err := c.client.StreamCaptures(ctx, &pb.StreamCapturesRequest{Limit: int64(limit)})
 	if err != nil {
 		return nil, unmapError(err)
 	}
-	var captures []storev1.CapturedEvent
+	var captures []storecontract.CapturedEvent
 	for {
 		r, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
@@ -394,12 +394,12 @@ func (c *Client) RecordDispatch(ctx context.Context, bindingID, bindingVersion, 
 
 // ListUndispatchedCaptures calls StreamUndispatchedCaptures; see ListCaptures
 // above.
-func (c *Client) ListUndispatchedCaptures(ctx context.Context, sources []string, limit int) ([]storev1.CapturedEvent, error) {
+func (c *Client) ListUndispatchedCaptures(ctx context.Context, sources []string, limit int) ([]storecontract.CapturedEvent, error) {
 	stream, err := c.client.StreamUndispatchedCaptures(ctx, &pb.StreamUndispatchedCapturesRequest{Sources: sources, Limit: int64(limit)})
 	if err != nil {
 		return nil, unmapError(err)
 	}
-	var captures []storev1.CapturedEvent
+	var captures []storecontract.CapturedEvent
 	for {
 		r, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
@@ -414,7 +414,7 @@ func (c *Client) ListUndispatchedCaptures(ctx context.Context, sources []string,
 
 // BindingTaskCreator
 
-func (c *Client) EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity string, bindingID int64, bindingVersion int) (*workflow.Task, error) {
+func (c *Client) EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity string, bindingID int64, bindingVersion int) (*task.Task, error) {
 	r, err := c.client.EnqueueBindingTask(ctx, &pb.EnqueueBindingTaskRequest{Owner: owner, Repo: repo, Title: title, Body: body, Workflow: wf, Identity: identity, BindingId: bindingID, BindingVersion: int64(bindingVersion)})
 	if err != nil {
 		return nil, unmapError(err)
@@ -422,11 +422,11 @@ func (c *Client) EnqueueBindingTask(ctx context.Context, owner, repo, title, bod
 	return taskValue(r.Task), nil
 }
 
-func derefTasks(in []*pb.Task) []workflow.Task {
+func derefTasks(in []*pb.Task) []task.Task {
 	if in == nil {
 		return nil
 	}
-	out := make([]workflow.Task, len(in))
+	out := make([]task.Task, len(in))
 	for i, t := range in {
 		out[i] = *taskValue(t)
 	}

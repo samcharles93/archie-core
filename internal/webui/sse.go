@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
-	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
 )
 
@@ -89,7 +89,7 @@ func (s *Server) registerSSEConn() (chan events.Event, func()) {
 // running "since" watermark that deduplicates the backlog against live
 // broadcasts covering the same event.
 type sseStream struct {
-	store storev1.TaskStore
+	store storecontract.TaskStore
 	log   *slog.Logger
 	w     http.ResponseWriter
 	fl    http.Flusher
@@ -98,7 +98,7 @@ type sseStream struct {
 
 // newSSEStream builds a stream over w, reporting false if w cannot be
 // flushed incrementally  --  SSE does not work without that.
-func newSSEStream(st storev1.TaskStore, log *slog.Logger, w http.ResponseWriter, since int64) (*sseStream, bool) {
+func newSSEStream(st storecontract.TaskStore, log *slog.Logger, w http.ResponseWriter, since int64) (*sseStream, bool) {
 	fl, ok := w.(http.Flusher)
 	if !ok {
 		return nil, false

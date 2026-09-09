@@ -68,13 +68,6 @@ type TaskSpawnResult struct {
 	Message string `json:"message"`
 }
 
-// TaskActionResult is what task_action returns.
-type TaskActionResult struct {
-	TaskID  int64  `json:"task_id"`
-	Action  string `json:"action"`
-	Message string `json:"message"`
-}
-
 // ChatTaskActor is the mutation surface task_action needs. It mirrors the
 // ChatTaskLister pattern: gateway states what it needs and the daemon
 // supplies an adapter over the store and runtime, so this package keeps its

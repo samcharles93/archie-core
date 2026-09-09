@@ -13,9 +13,9 @@ import (
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/config"
-	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
-	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
@@ -63,14 +63,14 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 type taskView struct {
-	workflow.Task
+	task.Task
 	Actions  []taskstate.Action `json:"actions"`
 	RepoURL  string             `json:"repo_url,omitempty"`
 	IssueURL string             `json:"issue_url,omitempty"`
 	PRURL    string             `json:"pr_url,omitempty"`
 }
 
-func (s *Server) taskURLs(task workflow.Task) (repoURL, issueURL, prURL string) {
+func (s *Server) taskURLs(task task.Task) (repoURL, issueURL, prURL string) {
 	if s.Cfg == nil {
 		return "", "", ""
 	}
@@ -92,7 +92,7 @@ func (s *Server) taskURLs(task workflow.Task) (repoURL, issueURL, prURL string) 
 	return repoURL, issueURL, prURL
 }
 
-func forgeConfigForTask(cfg config.Config, task workflow.Task) config.Forge {
+func forgeConfigForTask(cfg config.Config, task task.Task) config.Forge {
 	for _, identity := range cfg.Identities {
 		if task.Identity != "" && identity.Name == task.Identity {
 			return identity.Forge
@@ -152,7 +152,7 @@ func (s *Server) handleTaskAction(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, taskactions.ErrNotFound):
 			http.Error(w, "task not found", http.StatusNotFound)
-		case errors.Is(err, taskactions.ErrConflict), errors.Is(err, storev1.ErrStaleTransition):
+		case errors.Is(err, taskactions.ErrConflict), errors.Is(err, storecontract.ErrStaleTransition):
 			http.Error(w, err.Error(), http.StatusConflict)
 		case errors.Is(err, taskactions.ErrUnavailable):
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)

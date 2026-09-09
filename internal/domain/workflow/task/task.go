@@ -1,4 +1,11 @@
-package workflow
+// Package task is the task-execution vocabulary of the workflow domain:
+// the Task record, its lifecycle statuses, and the narrow Store contract
+// workflow stages call mid-run. It split out of package workflow
+// (archie-core-8cda.5.6) so the UI process can hold the vocabulary without
+// linking the pipeline engine there -- which drags in agentexec, skill and
+// tools. package workflow keeps aliases, so daemon-side callers are
+// unaffected.
+package task
 
 import (
 	"context"
@@ -100,4 +107,17 @@ type Store interface {
 	Update(ctx context.Context, t *Task) error
 	Transition(ctx context.Context, taskID int64, from, to, detail string) error
 	InsertEvent(ctx context.Context, e events.Event) (int64, error)
+}
+
+// Definition is the operator-safe snapshot of an executable workflow. It
+// contains only identity and stage order, never executable function values.
+// It lives with the task vocabulary (not with the engine in package
+// workflow) for the same reason this package exists: dashboards render
+// Definitions without linking the engine.
+type Definition struct {
+	ID      string   `json:"id"`
+	Name    string   `json:"name"`
+	Origin  string   `json:"origin"`
+	Enabled bool     `json:"enabled"`
+	Stages  []string `json:"stages"`
 }

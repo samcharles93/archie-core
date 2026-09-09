@@ -1,4 +1,4 @@
-package channels
+package status
 
 import "testing"
 

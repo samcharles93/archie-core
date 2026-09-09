@@ -29,13 +29,17 @@ See `docs/architecture/organisation.md` for the target structure and
 | `internal/config/`           | Config types only — loading lives in `infrastructure/configuration`       |
 | `internal/daemon/`           | Resident loop: poll, enqueue, claim, route, process, reconcile            |
 | `internal/domain/workflow/`  | Engine: stage lists, routing, shared steps, workflow definitions          |
+| `internal/domain/workflow/task/` | Task-execution vocabulary (`Task`, statuses, mid-run `Store`, `Definition`) importable without the engine |
+| `internal/domain/messaging/` | Canonical messages plus the chat wire contracts (`ChatContract`, sessions, turns, streaming) shared by gateway, channels, webui, and archie-ui |
+| `internal/channels/status/`  | Operator-facing channel lifecycle ledger (`State`/`Descriptor`/`Status`/`Manager`); the plugin contract stays in `internal/channels` |
 | `internal/domain/workintake/`| `TaskEnvelope`, routing `Kind`, label vocabulary, task subjects           |
 | `internal/agentexec/`        | Worker-local stage protocol and ai-sdk loop runner                        |
 | `internal/forge/`            | Forge interface: GitHub and Gitea implementations                         |
 | `internal/forge/webhook/`    | Optional forge webhook receiver: GitHub issue events → `workintake.TaskEnvelope`, same publish path as polling |
 | `internal/webhookguard/`     | Cross-cutting inbound-webhook mechanics: HMAC verification, per-source rate limiting |
 | `internal/worktree/`         | Git operations: clone, branch, commit, push, diff, cleanup               |
-| `internal/store/`            | Task store interface and SQLite implementation; RPC clients proxy it      |
+| `internal/store/`            | Task/capture/mapping/binding SQLite implementation; producer-owned contract interfaces live in `internal/domain/storecontract` (aliases kept here) |
+| `internal/domain/storecontract/` | Producer-owned State Store read contracts consumed by webui, intake, and the gRPC adapters (state-store-contract rev. 2d) |
 | `internal/events/`           | In-process event bus: publish/subscribe for observability                 |
 | `internal/infrastructure/`   | Config loading, eventbus transport, model catalog                        |
 | `internal/webui/`            | Shared dashboard HTTP layer served by the archie-ui process |
