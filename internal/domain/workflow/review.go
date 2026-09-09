@@ -64,6 +64,10 @@ func StageReview() Stage {
 		if err != nil {
 			return fmt.Errorf("review: %w", err)
 		}
+		// Stash the report regardless of outcome: the PR-body findings
+		// section (h019.6) needs it when the review passes, and the parked
+		// task's park reason already carries it when it does not.
+		tc.ReviewReport = report
 		if !report.Passed() {
 			tc.Outcome = Outcome{Status: StatusParked, Detail: renderReviewDetail(report)}
 		}
@@ -120,4 +124,37 @@ func renderReviewDetail(report ReviewReport) string {
 		fmt.Fprintf(&b, "- %s:%d %s (%s)\n", f.File, f.Line, f.Defect, f.FailureScenario)
 	}
 	return clip(b.String(), reviewDetailBytes)
+}
+
+// renderPRReviewSection renders the PR-body findings section (h019.6). It
+// returns "" when the review did not run, so a review that was disabled or
+// never wired does not claim one ran -- silence would be indistinguishable
+// from the review running and finding nothing. When it did run, the section
+// states the outcome explicitly, including the zero-findings case.
+func renderPRReviewSection(report ReviewReport) string {
+	if !report.Ran() {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("## Adversarial review\n\n")
+	if len(report.Findings) == 0 {
+		b.WriteString("Adversarial self-review ran on the committed diff and found no defects.\n")
+	} else {
+		b.WriteString("Adversarial self-review ran and found no blocking defects. Non-blocking notes:\n\n")
+		for _, f := range report.Findings {
+			loc := f.File
+			if f.Line > 0 {
+				loc = fmt.Sprintf("%s:%d", f.File, f.Line)
+			}
+			fmt.Fprintf(&b, "- `%s` (%s, %s): %s", loc, f.Verdict, f.Level, f.Defect)
+			if f.FailureScenario != "" {
+				fmt.Fprintf(&b, " — %s", f.FailureScenario)
+			}
+			b.WriteString("\n")
+		}
+	}
+	if report.Summary != "" {
+		fmt.Fprintf(&b, "\nSummary: %s\n", report.Summary)
+	}
+	return b.String()
 }
