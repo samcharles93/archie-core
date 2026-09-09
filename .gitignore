@@ -47,3 +47,4 @@ node_modules/
 .serena/
 .beads/issues.jsonl
 .beads/interactions.jsonl
+.mcp.json
