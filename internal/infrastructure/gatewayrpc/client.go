@@ -90,6 +90,14 @@ func (c *Client) ApplyTaskAction(ctx context.Context, identity string, taskID in
 	return gateway.TaskActionResult{TaskID: v.TaskId, Action: v.Action, Message: v.Message}, nil
 }
 
+func (c *Client) ApplyOperatorTaskAction(ctx context.Context, taskID int64, action taskstate.Action) (gateway.TaskActionResult, error) {
+	v, err := c.client.ApplyOperatorTaskAction(ctx, &pb.ApplyOperatorTaskActionRequest{TaskId: taskID, Action: string(action)})
+	if err != nil {
+		return gateway.TaskActionResult{}, err
+	}
+	return gateway.TaskActionResult{TaskID: v.TaskId, Action: v.Action, Message: v.Message}, nil
+}
+
 func (c *Client) Stream(ctx context.Context, in gateway.Inbound) (<-chan gateway.ChatEvent, error) {
 	stream, err := c.client.Stream(ctx, &pb.StreamRequest{Message: inboundProto(in)})
 	if err != nil {

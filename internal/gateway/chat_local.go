@@ -121,7 +121,14 @@ func (a *LocalChatAdapter) ApplyTaskAction(ctx context.Context, identity string,
 	if a.TaskActor == nil {
 		return TaskActionResult{}, ErrChatCapabilityUnavailable
 	}
-	return a.TaskActor.ApplyChatTaskAction(ctx, identity, taskID, action)
+	return a.TaskActor.ApplyChatTaskAction(ctx, &identity, taskID, action)
+}
+
+func (a *LocalChatAdapter) ApplyOperatorTaskAction(ctx context.Context, taskID int64, action taskstate.Action) (TaskActionResult, error) {
+	if a.TaskActor == nil {
+		return TaskActionResult{}, ErrChatCapabilityUnavailable
+	}
+	return a.TaskActor.ApplyChatTaskAction(ctx, nil, taskID, action)
 }
 
 func (a *LocalChatAdapter) Stream(ctx context.Context, in Inbound) (<-chan ChatEvent, error) {

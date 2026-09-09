@@ -80,8 +80,12 @@ type TaskActionResult struct {
 // supplies an adapter over the store and runtime, so this package keeps its
 // independence from internal/store.
 type ChatTaskActor interface {
-	// ApplyChatTaskAction executes action on taskID, scoped to identity's own tasks.
-	ApplyChatTaskAction(ctx context.Context, identity string, taskID int64, action taskstate.Action) (TaskActionResult, error)
+	// ApplyChatTaskAction executes action on taskID, scoped to identity's own
+	// tasks. A nil identity is an authenticated dashboard operator, who acts
+	// across identities -- the distinction internal/domain/taskactions draws,
+	// and not the same as an empty name, which is a real identity in a
+	// single-identity deployment.
+	ApplyChatTaskAction(ctx context.Context, identity *string, taskID int64, action taskstate.Action) (TaskActionResult, error)
 }
 
 // ChatTaskLogEntry is one log line as task_logs returns it. It mirrors
@@ -315,8 +319,9 @@ func taskActionTool(actor ChatTaskActor, identity string) tools.ToolEntry {
 				return nil, fmt.Errorf("task_action: action is required")
 			}
 
-			// The bound identity, never input["identity"].
-			result, err := actor.ApplyChatTaskAction(ctx, identity, taskID, taskstate.Action(actionStr))
+			// The bound identity, never input["identity"]. Passed by
+			// address: chat is always scoped, never an operator.
+			result, err := actor.ApplyChatTaskAction(ctx, &identity, taskID, taskstate.Action(actionStr))
 			if err != nil {
 				return nil, fmt.Errorf("task_action: %w", err)
 			}

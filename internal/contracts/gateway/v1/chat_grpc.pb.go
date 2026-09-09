@@ -19,26 +19,27 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ChatService_Snapshot_FullMethodName             = "/gateway.v1.ChatService/Snapshot"
-	ChatService_GetSession_FullMethodName           = "/gateway.v1.ChatService/GetSession"
-	ChatService_RecentMessages_FullMethodName       = "/gateway.v1.ChatService/RecentMessages"
-	ChatService_RecentTurns_FullMethodName          = "/gateway.v1.ChatService/RecentTurns"
-	ChatService_Route_FullMethodName                = "/gateway.v1.ChatService/Route"
-	ChatService_Stream_FullMethodName               = "/gateway.v1.ChatService/Stream"
-	ChatService_Cancel_FullMethodName               = "/gateway.v1.ChatService/Cancel"
-	ChatService_SetPersona_FullMethodName           = "/gateway.v1.ChatService/SetPersona"
-	ChatService_ApplyTaskAction_FullMethodName      = "/gateway.v1.ChatService/ApplyTaskAction"
-	ChatService_SaveSession_FullMethodName          = "/gateway.v1.ChatService/SaveSession"
-	ChatService_GetSessionsByChannel_FullMethodName = "/gateway.v1.ChatService/GetSessionsByChannel"
-	ChatService_DeleteSession_FullMethodName        = "/gateway.v1.ChatService/DeleteSession"
-	ChatService_TouchSession_FullMethodName         = "/gateway.v1.ChatService/TouchSession"
-	ChatService_ListSessions_FullMethodName         = "/gateway.v1.ChatService/ListSessions"
-	ChatService_SaveMessage_FullMethodName          = "/gateway.v1.ChatService/SaveMessage"
-	ChatService_DeleteRecentMessages_FullMethodName = "/gateway.v1.ChatService/DeleteRecentMessages"
-	ChatService_MessageCount_FullMethodName         = "/gateway.v1.ChatService/MessageCount"
-	ChatService_SaveMessages_FullMethodName         = "/gateway.v1.ChatService/SaveMessages"
-	ChatService_ReplaceMessages_FullMethodName      = "/gateway.v1.ChatService/ReplaceMessages"
-	ChatService_SearchMessages_FullMethodName       = "/gateway.v1.ChatService/SearchMessages"
+	ChatService_Snapshot_FullMethodName                = "/gateway.v1.ChatService/Snapshot"
+	ChatService_GetSession_FullMethodName              = "/gateway.v1.ChatService/GetSession"
+	ChatService_RecentMessages_FullMethodName          = "/gateway.v1.ChatService/RecentMessages"
+	ChatService_RecentTurns_FullMethodName             = "/gateway.v1.ChatService/RecentTurns"
+	ChatService_Route_FullMethodName                   = "/gateway.v1.ChatService/Route"
+	ChatService_Stream_FullMethodName                  = "/gateway.v1.ChatService/Stream"
+	ChatService_Cancel_FullMethodName                  = "/gateway.v1.ChatService/Cancel"
+	ChatService_SetPersona_FullMethodName              = "/gateway.v1.ChatService/SetPersona"
+	ChatService_ApplyTaskAction_FullMethodName         = "/gateway.v1.ChatService/ApplyTaskAction"
+	ChatService_ApplyOperatorTaskAction_FullMethodName = "/gateway.v1.ChatService/ApplyOperatorTaskAction"
+	ChatService_SaveSession_FullMethodName             = "/gateway.v1.ChatService/SaveSession"
+	ChatService_GetSessionsByChannel_FullMethodName    = "/gateway.v1.ChatService/GetSessionsByChannel"
+	ChatService_DeleteSession_FullMethodName           = "/gateway.v1.ChatService/DeleteSession"
+	ChatService_TouchSession_FullMethodName            = "/gateway.v1.ChatService/TouchSession"
+	ChatService_ListSessions_FullMethodName            = "/gateway.v1.ChatService/ListSessions"
+	ChatService_SaveMessage_FullMethodName             = "/gateway.v1.ChatService/SaveMessage"
+	ChatService_DeleteRecentMessages_FullMethodName    = "/gateway.v1.ChatService/DeleteRecentMessages"
+	ChatService_MessageCount_FullMethodName            = "/gateway.v1.ChatService/MessageCount"
+	ChatService_SaveMessages_FullMethodName            = "/gateway.v1.ChatService/SaveMessages"
+	ChatService_ReplaceMessages_FullMethodName         = "/gateway.v1.ChatService/ReplaceMessages"
+	ChatService_SearchMessages_FullMethodName          = "/gateway.v1.ChatService/SearchMessages"
 )
 
 // ChatServiceClient is the client API for ChatService service.
@@ -54,6 +55,7 @@ type ChatServiceClient interface {
 	Cancel(ctx context.Context, in *CancelRequest, opts ...grpc.CallOption) (*CancelResponse, error)
 	SetPersona(ctx context.Context, in *SetPersonaRequest, opts ...grpc.CallOption) (*SetPersonaResponse, error)
 	ApplyTaskAction(ctx context.Context, in *ApplyTaskActionRequest, opts ...grpc.CallOption) (*ApplyTaskActionResponse, error)
+	ApplyOperatorTaskAction(ctx context.Context, in *ApplyOperatorTaskActionRequest, opts ...grpc.CallOption) (*ApplyOperatorTaskActionResponse, error)
 	SaveSession(ctx context.Context, in *SaveSessionRequest, opts ...grpc.CallOption) (*SaveSessionResponse, error)
 	GetSessionsByChannel(ctx context.Context, in *GetSessionsByChannelRequest, opts ...grpc.CallOption) (*GetSessionsByChannelResponse, error)
 	DeleteSession(ctx context.Context, in *DeleteSessionRequest, opts ...grpc.CallOption) (*DeleteSessionResponse, error)
@@ -168,6 +170,16 @@ func (c *chatServiceClient) ApplyTaskAction(ctx context.Context, in *ApplyTaskAc
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ApplyTaskActionResponse)
 	err := c.cc.Invoke(ctx, ChatService_ApplyTaskAction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chatServiceClient) ApplyOperatorTaskAction(ctx context.Context, in *ApplyOperatorTaskActionRequest, opts ...grpc.CallOption) (*ApplyOperatorTaskActionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ApplyOperatorTaskActionResponse)
+	err := c.cc.Invoke(ctx, ChatService_ApplyOperatorTaskAction_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -297,6 +309,7 @@ type ChatServiceServer interface {
 	Cancel(context.Context, *CancelRequest) (*CancelResponse, error)
 	SetPersona(context.Context, *SetPersonaRequest) (*SetPersonaResponse, error)
 	ApplyTaskAction(context.Context, *ApplyTaskActionRequest) (*ApplyTaskActionResponse, error)
+	ApplyOperatorTaskAction(context.Context, *ApplyOperatorTaskActionRequest) (*ApplyOperatorTaskActionResponse, error)
 	SaveSession(context.Context, *SaveSessionRequest) (*SaveSessionResponse, error)
 	GetSessionsByChannel(context.Context, *GetSessionsByChannelRequest) (*GetSessionsByChannelResponse, error)
 	DeleteSession(context.Context, *DeleteSessionRequest) (*DeleteSessionResponse, error)
@@ -344,6 +357,9 @@ func (UnimplementedChatServiceServer) SetPersona(context.Context, *SetPersonaReq
 }
 func (UnimplementedChatServiceServer) ApplyTaskAction(context.Context, *ApplyTaskActionRequest) (*ApplyTaskActionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ApplyTaskAction not implemented")
+}
+func (UnimplementedChatServiceServer) ApplyOperatorTaskAction(context.Context, *ApplyOperatorTaskActionRequest) (*ApplyOperatorTaskActionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ApplyOperatorTaskAction not implemented")
 }
 func (UnimplementedChatServiceServer) SaveSession(context.Context, *SaveSessionRequest) (*SaveSessionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SaveSession not implemented")
@@ -550,6 +566,24 @@ func _ChatService_ApplyTaskAction_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ChatServiceServer).ApplyTaskAction(ctx, req.(*ApplyTaskActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChatService_ApplyOperatorTaskAction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ApplyOperatorTaskActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).ApplyOperatorTaskAction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_ApplyOperatorTaskAction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).ApplyOperatorTaskAction(ctx, req.(*ApplyOperatorTaskActionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -790,6 +824,10 @@ var ChatService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ApplyTaskAction",
 			Handler:    _ChatService_ApplyTaskAction_Handler,
+		},
+		{
+			MethodName: "ApplyOperatorTaskAction",
+			Handler:    _ChatService_ApplyOperatorTaskAction_Handler,
 		},
 		{
 			MethodName: "SaveSession",

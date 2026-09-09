@@ -16,12 +16,16 @@ type fakeActor struct {
 	err    error
 
 	gotIdentity string
+	gotScoped   bool
 	gotTaskID   int64
 	gotAction   taskstate.Action
 }
 
-func (f *fakeActor) ApplyChatTaskAction(_ context.Context, identity string, taskID int64, action taskstate.Action) (TaskActionResult, error) {
-	f.gotIdentity = identity
+func (f *fakeActor) ApplyChatTaskAction(_ context.Context, identity *string, taskID int64, action taskstate.Action) (TaskActionResult, error) {
+	if identity != nil {
+		f.gotIdentity = *identity
+	}
+	f.gotScoped = identity != nil
 	f.gotTaskID = taskID
 	f.gotAction = action
 	return f.result, f.err
@@ -77,6 +81,11 @@ func TestTaskActionUsesBoundIdentity(t *testing.T) {
 	}
 	if actor.gotIdentity != "archie" {
 		t.Errorf("identity = %q, want bound %q", actor.gotIdentity, "archie")
+	}
+	// Scoped, always: an unscoped action is the dashboard operator's
+	// authorization, and a chat tool must never reach for it.
+	if !actor.gotScoped {
+		t.Error("chat tool action arrived unscoped, which authorizes it across every identity")
 	}
 }
 

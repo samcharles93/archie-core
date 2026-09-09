@@ -68,6 +68,10 @@ func (f *fakeChat) ApplyTaskAction(context.Context, string, int64, taskstate.Act
 	return gateway.TaskActionResult{}, nil
 }
 
+func (f *fakeChat) ApplyOperatorTaskAction(context.Context, int64, taskstate.Action) (gateway.TaskActionResult, error) {
+	return gateway.TaskActionResult{}, nil
+}
+
 // serveGRPC runs register against a fresh loopback listener and returns the
 // dial target plus a stop func. Mirrors the harness in
 // internal/app/archied/state_store_test.go's TestServeStateStoreServesContract.

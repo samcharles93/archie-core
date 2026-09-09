@@ -98,6 +98,14 @@ func (s *server) ApplyTaskAction(ctx context.Context, r *pb.ApplyTaskActionReque
 	return &pb.ApplyTaskActionResponse{TaskId: v.TaskID, Action: v.Action, Message: v.Message}, nil
 }
 
+func (s *server) ApplyOperatorTaskAction(ctx context.Context, r *pb.ApplyOperatorTaskActionRequest) (*pb.ApplyOperatorTaskActionResponse, error) {
+	v, err := s.chat.ApplyOperatorTaskAction(ctx, r.TaskId, taskstate.Action(r.Action))
+	if err != nil {
+		return nil, err
+	}
+	return &pb.ApplyOperatorTaskActionResponse{TaskId: v.TaskID, Action: v.Action, Message: v.Message}, nil
+}
+
 func (s *server) SaveSession(ctx context.Context, r *pb.SaveSessionRequest) (*pb.SaveSessionResponse, error) {
 	ss, e := s.sessionStore()
 	if e != nil {
