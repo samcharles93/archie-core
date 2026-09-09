@@ -68,7 +68,8 @@ func Run(ctx context.Context, options Options) error {
 		return fmt.Errorf("listen for ui: %w", err)
 	}
 	cleanups = append(cleanups, func() { _ = listener.Close() })
-	log.Info("archie-ui running",
+	log.Info(
+		"archie-ui running",
 		"addr", listener.Addr().String(),
 		"open", webui.DashboardURL(listener.Addr().String(), opts.Token),
 		"gateway", opts.Gateway.Target,

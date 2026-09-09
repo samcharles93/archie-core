@@ -34,7 +34,8 @@ func Dial(target, token string, options ...grpc.DialOption) (*Client, func(), er
 	}
 	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
 	if token != "" {
-		opts = append(opts,
+		opts = append(
+			opts,
 			grpc.WithUnaryInterceptor(UnaryClientTokenInterceptor(token)),
 			grpc.WithStreamInterceptor(StreamClientTokenInterceptor(token)),
 		)

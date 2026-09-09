@@ -348,7 +348,8 @@ func newDispatchDaemonWithRepos(t *testing.T, s *store.Store, repos []config.Rep
 func assertDispatchRecorded(t *testing.T, s *store.Store, bindingID, taskID int64) {
 	t.Helper()
 	var gotBindingID, gotTaskID int64
-	if err := s.DB().QueryRowContext(t.Context(),
+	if err := s.DB().QueryRowContext(
+		t.Context(),
 		`SELECT binding_id, task_id FROM binding_dispatches WHERE binding_id=?`, bindingID,
 	).Scan(&gotBindingID, &gotTaskID); err != nil {
 		t.Fatalf("binding_dispatches row missing: %v", err)
