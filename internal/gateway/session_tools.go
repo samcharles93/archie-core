@@ -2,7 +2,9 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -24,6 +26,9 @@ const (
 	// rendered in command replies and the dashboard; an unbounded one would let
 	// a model bloat every surface that shows it.
 	maxSessionTitleLen = 80
+
+	// maxSessionTranscriptLimit bounds the number of messages in a transcript export.
+	maxSessionTranscriptLimit = 10000
 )
 
 // ChatSessionSummary is the per-session view the session tools return. It is
@@ -87,6 +92,7 @@ func SessionTools(store SessionStore, tracker *sessionTracker, platform string, 
 	channelID := msg.ConversationID.ChannelID
 	var entries []tools.ToolEntry
 	entries = append(entries, sessionListTool(store, platform, channelID))
+	entries = append(entries, sessionTranscriptTool(store, platform, channelID))
 	if tracker != nil {
 		entries = append(entries, sessionResumeTool(store, tracker, platform, channelID, msg))
 		entries = append(entries, sessionDeleteTool(store, tracker, platform, channelID))
@@ -319,4 +325,90 @@ func sessionDeleteTool(store SessionStore, tracker *sessionTracker, platform, ch
 // different provider path can arrive as int, so both are accepted.
 func sessionListLimit(input map[string]any) int {
 	return tools.ListLimit(input, defaultSessionListLimit, maxSessionListLimit)
+}
+
+// sessionTranscriptResult is what session_transcript returns.
+type sessionTranscriptResult struct {
+	FilePath     string `json:"file_path"`
+	SizeBytes    int64  `json:"size_bytes"`
+	MessageCount int    `json:"message_count"`
+	SessionID    string `json:"session_id"`
+	Message      string `json:"message"`
+}
+
+func sessionTranscriptTool(store SessionStore, platform, channelID string) tools.ToolEntry {
+	return tools.ToolEntry{
+		Name:    "session_transcript",
+		Toolset: "session",
+		Description: "Export a complete session transcript as a JSON file. " +
+			"Use this when an operator wants to review, archive, or share a full conversation " +
+			"including all messages, tool calls with their arguments, and tool results. " +
+			"The export is written to a file on the local filesystem and delivered via " +
+			"send_file. All data is included verbatim with no truncation.",
+		Classification: tools.ClassIdempotent,
+		Schema: tools.JSONSchema{
+			"type": "object",
+			"properties": map[string]any{
+				"session_id": map[string]any{
+					"type":        "string",
+					"description": "The session ID or a unique prefix, same as session_list.",
+				},
+			},
+			"required": []any{"session_id"},
+		},
+		Handler: func(ctx context.Context, input map[string]any) (any, error) {
+			ref := strings.TrimSpace(asString(input["session_id"]))
+			if ref == "" {
+				return nil, fmt.Errorf("session_transcript: session_id is required")
+			}
+
+			sessions, err := store.GetByChannel(ctx, platform, channelID)
+			if err != nil {
+				return nil, fmt.Errorf("session_transcript: %w", err)
+			}
+			target, ambiguous := resolveSessionRef(sessions, ref)
+			switch {
+			case ambiguous:
+				return nil, fmt.Errorf("session_transcript: multiple sessions match %q; be more specific", ref)
+			case target == nil:
+				return nil, fmt.Errorf("session_transcript: no session matching %q", ref)
+			}
+
+			messages, err := store.RecentMessages(ctx, target.SessionID, maxSessionTranscriptLimit)
+			if err != nil {
+				return nil, fmt.Errorf("session_transcript: %w", err)
+			}
+
+			// Serialize to JSON
+			data, err := json.MarshalIndent(messages, "", "  ")
+			if err != nil {
+				return nil, fmt.Errorf("session_transcript: %w", err)
+			}
+
+			// Write to temp file
+			f, err := os.CreateTemp("", "transcript-*.json")
+			if err != nil {
+				return nil, fmt.Errorf("session_transcript: %w", err)
+			}
+			defer f.Close()
+
+			if _, err := f.Write(data); err != nil {
+				return nil, fmt.Errorf("session_transcript: %w", err)
+			}
+
+			stat, err := f.Stat()
+			if err != nil {
+				return nil, fmt.Errorf("session_transcript: %w", err)
+			}
+
+			return sessionTranscriptResult{
+				FilePath:     f.Name(),
+				SizeBytes:    stat.Size(),
+				MessageCount: len(messages),
+				SessionID:    target.SessionID,
+				Message: fmt.Sprintf("Transcript export written to %s (%d bytes, %d messages). Use send_file to deliver it.",
+					f.Name(), stat.Size(), len(messages)),
+			}, nil
+		},
+	}
 }
