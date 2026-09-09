@@ -46,10 +46,10 @@ type ConfigField struct {
 	// cannot change yet (structured fields without an editor). It is
 	// distinct from LockedReason: Editable is a schema-time property of
 	// the field itself; LockedReason is a runtime property of the running
-	// config (overlay.DeniedKeys).
+	// config (configuration.DeniedKeys).
 	Editable bool `json:"editable"`
 	// LockedReason is set per instance from the running config's denied
-	// keys (overlay.DeniedKeys), not hand-authored here.
+	// keys (configuration.DeniedKeys), not hand-authored here.
 	LockedReason string `json:"locked_reason,omitempty"`
 	// Overridden is set per instance from the running config's overlay
 	// state, not hand-authored here.
@@ -94,7 +94,7 @@ type ConfigSection struct {
 //     restart even though the dashboard already renders it as editable.
 //   - Web, SkillsDir, PluginDir, SecretEngineDir are absent from both
 //     allowlists entirely, so they require a restart.
-//   - WorkDir and DBPath are locked (overlay.DeniedKeys), not merely
+//   - WorkDir and DBPath are locked (configuration.DeniedKeys), not merely
 //     restart-required -- the dashboard cannot change them at all.
 func configFieldDescriptors() []ConfigSection {
 	return []ConfigSection{

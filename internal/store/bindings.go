@@ -42,25 +42,21 @@ CREATE TABLE IF NOT EXISTS binding_dispatches (
 // row matches the given ID. GetBinding uses (nil, nil) instead, matching
 // TaskByID's convention -- "not found" is the normal answer to "does a
 // binding with this ID currently exist," not an error.
-var ErrBindingNotFound = errors.New("store: binding not found")
 
 // ErrBindingOverlap is returned by InsertBinding and UpdateBinding when a
 // different binding already covers the same source. Two bindings for one
 // source would race over the same inbound webhook; the store refuses rather
 // than picking an arbitrary winner.
-var ErrBindingOverlap = errors.New("store: binding overlaps existing binding for source")
 
 // ErrBindingTransition is returned by ApproveBinding when the from-status
 // is anything other than pending_approval. Approve is the only sanctioned
 // transition into armed, and the guard is the SQL WHERE clause, not a
 // separate read.
-var ErrBindingTransition = errors.New("store: binding state transition rejected")
 
 // ErrAlreadyDispatched is returned by RecordDispatch when the (binding_id,
 // capture_id) pair already exists in binding_dispatches. The dedup ledger is
 // the at-most-once guarantee per capture; the caller is expected to surface
 // this to the dispatch loop rather than retry.
-var ErrAlreadyDispatched = errors.New("store: binding already dispatched for capture")
 
 // bindingTimeLayout follows captureTimeLayout's reasoning: fixed-width
 // RFC3339 so string and chronological order agree.

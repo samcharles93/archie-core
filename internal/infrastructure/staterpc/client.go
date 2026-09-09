@@ -9,11 +9,11 @@ import (
 	"google.golang.org/grpc"
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
+	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // Client is the single remote adapter wrapping one StateStoreServiceClient,
@@ -34,14 +34,14 @@ func NewClient(conn grpc.ClientConnInterface) *Client {
 func (c *Client) Close() error { return nil }
 
 var (
-	_ workflow.Store            = (*Client)(nil)
-	_ store.TaskStore           = (*Client)(nil)
-	_ store.CaptureStore        = (*Client)(nil)
-	_ store.MappingStore        = (*Client)(nil)
-	_ store.BindingStore        = (*Client)(nil)
-	_ store.BindingDispatcher   = (*Client)(nil)
-	_ store.BindingTaskCreator  = (*Client)(nil)
-	_ store.ConfigSnapshotStore = (*Client)(nil)
+	_ workflow.Store              = (*Client)(nil)
+	_ storev1.TaskStore           = (*Client)(nil)
+	_ storev1.CaptureStore        = (*Client)(nil)
+	_ storev1.MappingStore        = (*Client)(nil)
+	_ storev1.BindingStore        = (*Client)(nil)
+	_ storev1.BindingDispatcher   = (*Client)(nil)
+	_ storev1.BindingTaskCreator  = (*Client)(nil)
+	_ storev1.ConfigSnapshotStore = (*Client)(nil)
 )
 
 // Lifecycle
@@ -213,7 +213,7 @@ func (c *Client) TaskEvents(ctx context.Context, taskID int64) ([]events.Event, 
 	return mapValues(r.Events, eventValue), nil
 }
 
-func (c *Client) WorkflowStats(ctx context.Context) ([]store.WorkflowStat, error) {
+func (c *Client) WorkflowStats(ctx context.Context) ([]storev1.WorkflowStat, error) {
 	r, err := c.client.WorkflowStats(ctx, &pb.WorkflowStatsRequest{})
 	if err != nil {
 		return nil, unmapError(err)
@@ -221,7 +221,7 @@ func (c *Client) WorkflowStats(ctx context.Context) ([]store.WorkflowStat, error
 	return mapValues(r.Stats, workflowStatValue), nil
 }
 
-func (c *Client) StageStats(ctx context.Context) ([]store.StageStat, error) {
+func (c *Client) StageStats(ctx context.Context) ([]storev1.StageStat, error) {
 	r, err := c.client.StageStats(ctx, &pb.StageStatsRequest{})
 	if err != nil {
 		return nil, unmapError(err)
@@ -229,7 +229,7 @@ func (c *Client) StageStats(ctx context.Context) ([]store.StageStat, error) {
 	return mapValues(r.Stats, stageStatValue), nil
 }
 
-func (c *Client) TokensByDay(ctx context.Context, days int) ([]store.DayTokens, error) {
+func (c *Client) TokensByDay(ctx context.Context, days int) ([]storev1.DayTokens, error) {
 	r, err := c.client.TokensByDay(ctx, &pb.TokensByDayRequest{Days: int64(days)})
 	if err != nil {
 		return nil, unmapError(err)
@@ -239,7 +239,7 @@ func (c *Client) TokensByDay(ctx context.Context, days int) ([]store.DayTokens, 
 
 // Capture
 
-func (c *Client) InsertCapture(ctx context.Context, ce store.CapturedEvent, retention time.Duration, maxEvents int) (int64, error) {
+func (c *Client) InsertCapture(ctx context.Context, ce storev1.CapturedEvent, retention time.Duration, maxEvents int) (int64, error) {
 	r, err := c.client.InsertCapture(ctx, &pb.InsertCaptureRequest{Capture: capturedEventProto(ce), RetentionSeconds: int64(retention.Seconds()), MaxEvents: int64(maxEvents)})
 	if err != nil {
 		return 0, unmapError(err)
@@ -253,7 +253,7 @@ func (c *Client) InsertCapture(ctx context.Context, ce store.CapturedEvent, rete
 // PutConfigSnapshot publishes the dashboard's configuration projection. The
 // server admits it on the administrative token only; a task-scoped grant
 // cannot reach it (see TaskGrants).
-func (c *Client) PutConfigSnapshot(ctx context.Context, snapshot store.ConfigSnapshot) error {
+func (c *Client) PutConfigSnapshot(ctx context.Context, snapshot storev1.ConfigSnapshot) error {
 	_, err := c.client.PutConfigSnapshot(ctx, &pb.PutConfigSnapshotRequest{Snapshot: configSnapshotProto(snapshot)})
 	if err != nil {
 		return unmapError(err)
@@ -263,23 +263,23 @@ func (c *Client) PutConfigSnapshot(ctx context.Context, snapshot store.ConfigSna
 
 // ConfigSnapshot reads the published projection. found is false, with a nil
 // error, before a daemon has published one.
-func (c *Client) ConfigSnapshot(ctx context.Context) (store.ConfigSnapshot, bool, error) {
+func (c *Client) ConfigSnapshot(ctx context.Context) (storev1.ConfigSnapshot, bool, error) {
 	reply, err := c.client.GetConfigSnapshot(ctx, &pb.GetConfigSnapshotRequest{})
 	if err != nil {
-		return store.ConfigSnapshot{}, false, unmapError(err)
+		return storev1.ConfigSnapshot{}, false, unmapError(err)
 	}
 	if !reply.Found {
-		return store.ConfigSnapshot{}, false, nil
+		return storev1.ConfigSnapshot{}, false, nil
 	}
 	return configSnapshotValue(reply.Snapshot), true, nil
 }
 
-func (c *Client) ListCaptures(ctx context.Context, limit int) ([]store.CapturedEvent, error) {
+func (c *Client) ListCaptures(ctx context.Context, limit int) ([]storev1.CapturedEvent, error) {
 	stream, err := c.client.StreamCaptures(ctx, &pb.StreamCapturesRequest{Limit: int64(limit)})
 	if err != nil {
 		return nil, unmapError(err)
 	}
-	var captures []store.CapturedEvent
+	var captures []storev1.CapturedEvent
 	for {
 		r, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
@@ -394,12 +394,12 @@ func (c *Client) RecordDispatch(ctx context.Context, bindingID, bindingVersion, 
 
 // ListUndispatchedCaptures calls StreamUndispatchedCaptures; see ListCaptures
 // above.
-func (c *Client) ListUndispatchedCaptures(ctx context.Context, sources []string, limit int) ([]store.CapturedEvent, error) {
+func (c *Client) ListUndispatchedCaptures(ctx context.Context, sources []string, limit int) ([]storev1.CapturedEvent, error) {
 	stream, err := c.client.StreamUndispatchedCaptures(ctx, &pb.StreamUndispatchedCapturesRequest{Sources: sources, Limit: int64(limit)})
 	if err != nil {
 		return nil, unmapError(err)
 	}
-	var captures []store.CapturedEvent
+	var captures []storev1.CapturedEvent
 	for {
 		r, err := stream.Recv()
 		if errors.Is(err, io.EOF) {

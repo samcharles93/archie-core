@@ -5,11 +5,11 @@ import (
 	"log/slog"
 	"time"
 
+	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/captureintake"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webhookguard"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
@@ -20,7 +20,7 @@ import (
 type deps struct {
 	Options Options
 	Log     *slog.Logger
-	Store   store.TaskStore
+	Store   storev1.TaskStore
 	Chat    gateway.ChatContract
 	Health  *health.Registry
 }
@@ -61,17 +61,17 @@ func compose(d deps) *webui.Server {
 		TrustForwardedHeaders: d.Options.trustForwardedHeaders(),
 		Health:                d.Health,
 	}
-	if snapshots, ok := d.Store.(store.ConfigSnapshotStore); ok {
+	if snapshots, ok := d.Store.(storev1.ConfigSnapshotStore); ok {
 		srv.ConfigSource = webui.RemoteConfigView(snapshots)
 	}
 	// Mappings and bindings are ratified State Store contracts, and the same
 	// client already carries them: withholding them would degrade two pages
 	// that have an owner, which is a different thing from the intake surfaces
 	// below.
-	if mappings, ok := d.Store.(store.MappingStore); ok {
+	if mappings, ok := d.Store.(storev1.MappingStore); ok {
 		srv.Mappings = mappings
 	}
-	if bindings, ok := d.Store.(store.BindingStore); ok {
+	if bindings, ok := d.Store.(storev1.BindingStore); ok {
 		srv.Bindings = bindings
 	}
 	if d.Chat != nil {
@@ -88,8 +88,8 @@ func compose(d deps) *webui.Server {
 // implement one degrades that half with a warning rather than aborting the
 // process, mirroring the daemon's own adapter selection.
 func wireCaptureSurfaces(d deps, srv *webui.Server) {
-	captures, hasCaptures := d.Store.(store.CaptureStore)
-	bindings, hasBindings := d.Store.(store.BindingDispatcher)
+	captures, hasCaptures := d.Store.(storev1.CaptureStore)
+	bindings, hasBindings := d.Store.(storev1.BindingDispatcher)
 	if !hasCaptures {
 		d.Log.Warn("capture storage unavailable: state store does not implement CaptureStore")
 		return

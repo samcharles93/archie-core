@@ -10,10 +10,10 @@ import (
 
 	"github.com/nats-io/nats.go"
 
+	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/natsrpc"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
@@ -49,7 +49,7 @@ var actionErrorKinds = []struct {
 }{
 	{kind: "not_found", err: taskactions.ErrNotFound},
 	{kind: "conflict", err: taskactions.ErrConflict},
-	{kind: "stale_transition", err: store.ErrStaleTransition},
+	{kind: "stale_transition", err: storev1.ErrStaleTransition},
 	{kind: "unavailable", err: taskactions.ErrUnavailable},
 }
 

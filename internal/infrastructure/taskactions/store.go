@@ -5,11 +5,11 @@ import (
 	"context"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
-type Store struct{ store.TaskStore }
+type Store struct{ storev1.TaskStore }
 
 func (s Store) TaskByID(ctx context.Context, id int64) (*taskactions.Task, error) {
 	t, err := s.TaskStore.TaskByID(ctx, id)

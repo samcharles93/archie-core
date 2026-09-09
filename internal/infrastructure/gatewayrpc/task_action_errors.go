@@ -6,8 +6,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // taskActionCodes pairs each sentinel the daemon's action service reports
@@ -22,7 +22,7 @@ var taskActionCodes = []struct {
 }{
 	{code: codes.NotFound, err: taskactions.ErrNotFound},
 	{code: codes.FailedPrecondition, err: taskactions.ErrConflict},
-	{code: codes.Aborted, err: store.ErrStaleTransition},
+	{code: codes.Aborted, err: storev1.ErrStaleTransition},
 	{code: codes.Unavailable, err: taskactions.ErrUnavailable},
 }
 

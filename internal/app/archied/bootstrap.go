@@ -29,6 +29,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/channels/webhook"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
+	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/eda/module"
@@ -60,7 +61,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/skill"
 	"github.com/samcharles93/archie-core/internal/storage"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/tools"
 	"github.com/samcharles93/archie-core/internal/tools/minimax"
 	toolprovider "github.com/samcharles93/archie-core/internal/tools/provider"
@@ -99,7 +99,7 @@ type boot struct {
 
 	playbooks *playbook.Store
 
-	st store.TaskStore
+	st storev1.TaskStore
 	// stateStore is the State Store contract adapter every daemon and gateway
 	// store consumer depends on. It is ALWAYS the remote *staterpc.Client
 	// dialed to the standalone archie-state-store gRPC service at
@@ -108,7 +108,7 @@ type boot struct {
 	// by openStateStoreAdapter, which requires [services.state].target to be
 	// set. The b.st field remains solely for the standalone archie-state-store
 	// binary, which owns the single SQLite file.
-	stateStore store.TaskStore
+	stateStore storev1.TaskStore
 	// stateStoreGrants issues per-task, scoped State Store credentials for
 	// agent containers (daemon.StateStoreGrantIssuer), wrapping the same
 	// *staterpc.Client as stateStore. Nil when the State Store adapter isn't
@@ -1241,16 +1241,16 @@ func (b *boot) buildDaemon() {
 	// Consumer mapping/binding surfaces resolve from b.stateStore (the State
 	// Store contract adapter): local by default, remote *staterpc.Client when
 	// [services.state].target is set. See docs/prds/state-store-contract.md §10.
-	if ms, ok := b.stateStore.(store.MappingStore); ok {
+	if ms, ok := b.stateStore.(storev1.MappingStore); ok {
 		b.d.Mappings = ms
 	}
-	if bs, ok := b.stateStore.(store.BindingStore); ok {
+	if bs, ok := b.stateStore.(storev1.BindingStore); ok {
 		b.d.Bindings = bs
 	}
-	if bd, ok := b.stateStore.(store.BindingDispatcher); ok {
+	if bd, ok := b.stateStore.(storev1.BindingDispatcher); ok {
 		b.d.BindingDispatcher = bd
 	}
-	if btc, ok := b.stateStore.(store.BindingTaskCreator); ok {
+	if btc, ok := b.stateStore.(storev1.BindingTaskCreator); ok {
 		b.d.BindingTaskCreator = btc
 	}
 	b.setupForgeWebhook()
@@ -1340,7 +1340,7 @@ func (b *boot) publishConfig(ctx context.Context, cfg config.Config, provenance 
 // propagated: it must never fail the reload or dashboard write that produced
 // the new configuration, both of which have already taken effect.
 func (b *boot) publishConfigSnapshot(ctx context.Context) {
-	snapshots, ok := b.stateStore.(store.ConfigSnapshotStore)
+	snapshots, ok := b.stateStore.(storev1.ConfigSnapshotStore)
 	if !ok || b.web == nil {
 		return
 	}
@@ -1362,7 +1362,7 @@ func (b *boot) publishConfigSnapshot(ctx context.Context) {
 		b.log.Warn("config snapshot not published", "err", err)
 		return
 	}
-	err = snapshots.PutConfigSnapshot(ctx, store.ConfigSnapshot{
+	err = snapshots.PutConfigSnapshot(ctx, storev1.ConfigSnapshot{
 		Schema:      webui.ConfigViewSchema,
 		Document:    document,
 		PublishedAt: time.Now().UTC(),

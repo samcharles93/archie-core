@@ -12,9 +12,9 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/config"
-	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/overlay"
+	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
+	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/secret"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 // Sentinel errors for handleConfigUpdate status classification. The
@@ -359,7 +359,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 
 // LocalConfigView builds the projection from the configuration this process
 // holds. It is what the daemon serves and, byte for byte, what it publishes
-// for the UI process to render (see store.ConfigSnapshot).
+// for the UI process to render (see storev1.ConfigSnapshot).
 //
 // Every value here is read from one config snapshot taken up front: under the
 // Holder a reload swaps the whole value, which is what a read-only view
@@ -437,7 +437,7 @@ func (s *Server) LocalConfigView(ctx context.Context) (ConfigView, bool, error) 
 // RemoteConfigView reads the projection the configuration owner published.
 // The reading process cannot edit it: it has no update path, and the page is
 // told so rather than offering a control that would 503.
-func RemoteConfigView(snapshots store.ConfigSnapshotStore) ConfigViewSource {
+func RemoteConfigView(snapshots storev1.ConfigSnapshotStore) ConfigViewSource {
 	return func(ctx context.Context) (ConfigView, bool, error) {
 		snapshot, found, err := snapshots.ConfigSnapshot(ctx)
 		if err != nil || !found {
@@ -493,8 +493,8 @@ func (s *Server) handleConfigReset(w http.ResponseWriter, r *http.Request) {
 // bootstrap inputs; changing them from the dashboard could break the
 // next boot.
 func lockedConfigKeys() map[string]string {
-	out := make(map[string]string, len(overlay.DeniedKeys))
-	maps.Copy(out, overlay.DeniedKeys)
+	out := make(map[string]string, len(configuration.DeniedKeys))
+	maps.Copy(out, configuration.DeniedKeys)
 	return out
 }
 

@@ -29,6 +29,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
+	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
@@ -286,7 +287,7 @@ func resolveForge(cfg config.Forge, secrets *secret.Registry, log *slog.Logger) 
 	return client, token
 }
 
-func openProductionTaskStore(ctx context.Context, path string, opts ...store.OpenOption) (store.TaskStore, error) {
+func openProductionTaskStore(ctx context.Context, path string, opts ...store.OpenOption) (storev1.TaskStore, error) {
 	return store.Open(ctx, path, opts...)
 }
 
@@ -303,7 +304,7 @@ func configDBPath(configuredPath string) string {
 	return configuredPath + "-config.sqlite"
 }
 
-func manualRequeueTask(ctx context.Context, st store.TaskStore, taskID int64) error {
+func manualRequeueTask(ctx context.Context, st storev1.TaskStore, taskID int64) error {
 	task, err := st.TaskByID(ctx, taskID)
 	if err != nil {
 		return err
@@ -516,7 +517,7 @@ func recordBootOverlayError(p *atomic.Pointer[string], log *slog.Logger, err err
 // The insert deliberately outlives ctx: this loop ends when the bus closes,
 // which is part of shutdown, and the last events of a run are exactly the
 // ones an operator wants to read afterwards.
-func persistEvents(ctx context.Context, sink *events.Sub, st store.TaskStore, log *slog.Logger) {
+func persistEvents(ctx context.Context, sink *events.Sub, st storev1.TaskStore, log *slog.Logger) {
 	ctx = context.WithoutCancel(ctx)
 	for e := range sink.C {
 		if e.ID != 0 {

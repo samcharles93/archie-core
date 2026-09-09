@@ -17,20 +17,6 @@ CREATE TABLE IF NOT EXISTS config_snapshot (
 );
 `
 
-// ConfigSnapshot is the running configuration as the dashboard renders it,
-// published by whoever owns configuration for whoever displays it.
-//
-// Document is opaque here on purpose: its shape belongs to the producer and
-// the page that reads it, not to storage, and Schema names that shape so a
-// reader can refuse a document it does not understand. It is secret-free by
-// construction at the producer (the projection carries an API key's
-// environment variable name and whether it resolved, never a value).
-type ConfigSnapshot struct {
-	Schema      string
-	Document    []byte
-	PublishedAt time.Time
-}
-
 // configSnapshotTimeLayout follows the rest of the store's timestamp columns:
 // fixed-width, so string and chronological order agree.
 const configSnapshotTimeLayout = time.RFC3339

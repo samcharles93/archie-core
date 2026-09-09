@@ -13,10 +13,10 @@ import (
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/config"
+	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
@@ -152,7 +152,7 @@ func (s *Server) handleTaskAction(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, taskactions.ErrNotFound):
 			http.Error(w, "task not found", http.StatusNotFound)
-		case errors.Is(err, taskactions.ErrConflict), errors.Is(err, store.ErrStaleTransition):
+		case errors.Is(err, taskactions.ErrConflict), errors.Is(err, storev1.ErrStaleTransition):
 			http.Error(w, err.Error(), http.StatusConflict)
 		case errors.Is(err, taskactions.ErrUnavailable):
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)

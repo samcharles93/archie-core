@@ -150,18 +150,6 @@ func (s *Store) StatusCounts(ctx context.Context) (counts map[string]int, retErr
 	return counts, rows.Err()
 }
 
-// WorkflowStat is one row of the per-workflow metrics table.
-type WorkflowStat struct {
-	Workflow   string  `json:"workflow"`
-	Runs       int     `json:"runs"`
-	Merged     int     `json:"merged"`
-	PROpen     int     `json:"pr_open"`
-	Parked     int     `json:"parked"`
-	AvgTokens  int     `json:"avg_tokens"`
-	AvgSteps   float64 `json:"avg_steps"`
-	TotalToken int     `json:"total_tokens"`
-}
-
 // WorkflowStats aggregates outcomes and spend per workflow  --  the
 // core "is archie getting better per dollar" table.
 func (s *Store) WorkflowStats(ctx context.Context) (stats []WorkflowStat, retErr error) {
@@ -185,15 +173,6 @@ func (s *Store) WorkflowStats(ctx context.Context) (stats []WorkflowStat, retErr
 		stats = append(stats, w)
 	}
 	return stats, rows.Err()
-}
-
-// StageStat is average stage duration and failure counts per stage.
-type StageStat struct {
-	Workflow string `json:"workflow"`
-	Stage    string `json:"stage"`
-	Runs     int    `json:"runs"`
-	AvgMs    int    `json:"avg_ms"`
-	Errors   int    `json:"errors"`
 }
 
 // StageStats aggregates stage_finish events  --  where does time go, and
@@ -221,12 +200,6 @@ func (s *Store) StageStats(ctx context.Context) (stats []StageStat, retErr error
 		stats = append(stats, st)
 	}
 	return stats, rows.Err()
-}
-
-// DayTokens is token spend per UTC day.
-type DayTokens struct {
-	Day    string `json:"day"`
-	Tokens int    `json:"tokens"`
 }
 
 // TokensByDay sums task token spend per UTC day. Agent-finish events are

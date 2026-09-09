@@ -342,7 +342,6 @@ func (s *Store) ClaimByIssue(ctx context.Context, owner, repo string, number int
 
 // ErrStaleTransition is returned when a guarded transition fails because
 // the task's current status does not match the expected from status.
-var ErrStaleTransition = errors.New("store: stale transition: task status does not match expected from status")
 
 // Transition moves a task to a new status and records the audit detail. The
 // from status guards the update; a mismatch returns ErrStaleTransition without

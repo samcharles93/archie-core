@@ -12,11 +12,11 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
+	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/store"
 )
 
 func timestamp(t time.Time) *timestamppb.Timestamp {
@@ -119,7 +119,7 @@ func eventValue(e *pb.Event) events.Event {
 	}
 }
 
-func capturedEventProto(c store.CapturedEvent) *pb.CapturedEvent {
+func capturedEventProto(c storev1.CapturedEvent) *pb.CapturedEvent {
 	return &pb.CapturedEvent{
 		Id: c.ID, ReceivedAt: timestamp(c.ReceivedAt), Source: c.Source,
 		RemoteAddr: c.RemoteAddr, ContentType: c.ContentType, Headers: c.Headers,
@@ -127,11 +127,11 @@ func capturedEventProto(c store.CapturedEvent) *pb.CapturedEvent {
 	}
 }
 
-func capturedEventValue(c *pb.CapturedEvent) store.CapturedEvent {
+func capturedEventValue(c *pb.CapturedEvent) storev1.CapturedEvent {
 	if c == nil {
-		return store.CapturedEvent{}
+		return storev1.CapturedEvent{}
 	}
-	return store.CapturedEvent{
+	return storev1.CapturedEvent{
 		ID: c.Id, ReceivedAt: timeValue(c.ReceivedAt), Source: c.Source,
 		RemoteAddr: c.RemoteAddr, ContentType: c.ContentType, Headers: c.Headers,
 		Body: c.Body, Authenticated: c.Authenticated,
@@ -193,7 +193,7 @@ func bindingValue(b *pb.Binding) binding.Binding {
 	}
 }
 
-func workflowStatProto(w store.WorkflowStat) *pb.WorkflowStat {
+func workflowStatProto(w storev1.WorkflowStat) *pb.WorkflowStat {
 	return &pb.WorkflowStat{
 		Workflow: w.Workflow, Runs: int64(w.Runs), Merged: int64(w.Merged),
 		PrOpen: int64(w.PROpen), Parked: int64(w.Parked), AvgTokens: int64(w.AvgTokens),
@@ -201,37 +201,37 @@ func workflowStatProto(w store.WorkflowStat) *pb.WorkflowStat {
 	}
 }
 
-func workflowStatValue(w *pb.WorkflowStat) store.WorkflowStat {
+func workflowStatValue(w *pb.WorkflowStat) storev1.WorkflowStat {
 	if w == nil {
-		return store.WorkflowStat{}
+		return storev1.WorkflowStat{}
 	}
-	return store.WorkflowStat{
+	return storev1.WorkflowStat{
 		Workflow: w.Workflow, Runs: int(w.Runs), Merged: int(w.Merged),
 		PROpen: int(w.PrOpen), Parked: int(w.Parked), AvgTokens: int(w.AvgTokens),
 		AvgSteps: w.AvgSteps, TotalToken: int(w.TotalTokens),
 	}
 }
 
-func stageStatProto(s store.StageStat) *pb.StageStat {
+func stageStatProto(s storev1.StageStat) *pb.StageStat {
 	return &pb.StageStat{Workflow: s.Workflow, Stage: s.Stage, Runs: int64(s.Runs), AvgMs: int64(s.AvgMs), Errors: int64(s.Errors)}
 }
 
-func stageStatValue(s *pb.StageStat) store.StageStat {
+func stageStatValue(s *pb.StageStat) storev1.StageStat {
 	if s == nil {
-		return store.StageStat{}
+		return storev1.StageStat{}
 	}
-	return store.StageStat{Workflow: s.Workflow, Stage: s.Stage, Runs: int(s.Runs), AvgMs: int(s.AvgMs), Errors: int(s.Errors)}
+	return storev1.StageStat{Workflow: s.Workflow, Stage: s.Stage, Runs: int(s.Runs), AvgMs: int(s.AvgMs), Errors: int(s.Errors)}
 }
 
-func dayTokensProto(d store.DayTokens) *pb.DayTokens {
+func dayTokensProto(d storev1.DayTokens) *pb.DayTokens {
 	return &pb.DayTokens{Day: d.Day, Tokens: int64(d.Tokens)}
 }
 
-func dayTokensValue(d *pb.DayTokens) store.DayTokens {
+func dayTokensValue(d *pb.DayTokens) storev1.DayTokens {
 	if d == nil {
-		return store.DayTokens{}
+		return storev1.DayTokens{}
 	}
-	return store.DayTokens{Day: d.Day, Tokens: int(d.Tokens)}
+	return storev1.DayTokens{Day: d.Day, Tokens: int(d.Tokens)}
 }
 
 // Canonical public phrases for sentinel errors (rev. 2c §7). These strings
@@ -271,17 +271,17 @@ func mapError(err error) error {
 		return status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error())
 	}
 	switch {
-	case errors.Is(err, store.ErrStaleTransition):
+	case errors.Is(err, storev1.ErrStaleTransition):
 		return status.Error(codes.FailedPrecondition, msgStaleTransition)
-	case errors.Is(err, store.ErrBindingNotFound):
+	case errors.Is(err, storev1.ErrBindingNotFound):
 		return status.Error(codes.NotFound, msgBindingNotFound)
-	case errors.Is(err, store.ErrMappingNotFound):
+	case errors.Is(err, storev1.ErrMappingNotFound):
 		return status.Error(codes.NotFound, msgMappingNotFound)
-	case errors.Is(err, store.ErrBindingOverlap):
+	case errors.Is(err, storev1.ErrBindingOverlap):
 		return status.Error(codes.FailedPrecondition, msgBindingOverlap)
-	case errors.Is(err, store.ErrBindingTransition):
+	case errors.Is(err, storev1.ErrBindingTransition):
 		return status.Error(codes.FailedPrecondition, msgBindingTransition)
-	case errors.Is(err, store.ErrAlreadyDispatched):
+	case errors.Is(err, storev1.ErrAlreadyDispatched):
 		return status.Error(codes.AlreadyExists, msgAlreadyDispatched)
 	default:
 		return status.Error(codes.Internal, msgInternal)
@@ -289,7 +289,7 @@ func mapError(err error) error {
 }
 
 // unmapError rehydrates a gRPC status error back to the store sentinel it
-// came from, so a caller's errors.Is(err, store.ErrX) keeps working across
+// came from, so a caller's errors.Is(err, storev1.ErrX) keeps working across
 // the wire. A non-status error (e.g. a transport failure) is returned
 // unchanged.
 //
@@ -317,22 +317,22 @@ func unmapError(err error) error {
 	case codes.FailedPrecondition:
 		switch st.Message() {
 		case msgStaleTransition:
-			return store.ErrStaleTransition
+			return storev1.ErrStaleTransition
 		case msgBindingOverlap:
-			return store.ErrBindingOverlap
+			return storev1.ErrBindingOverlap
 		case msgBindingTransition:
-			return store.ErrBindingTransition
+			return storev1.ErrBindingTransition
 		}
 	case codes.NotFound:
 		switch st.Message() {
 		case msgBindingNotFound:
-			return store.ErrBindingNotFound
+			return storev1.ErrBindingNotFound
 		case msgMappingNotFound:
-			return store.ErrMappingNotFound
+			return storev1.ErrMappingNotFound
 		}
 	case codes.AlreadyExists:
 		if st.Message() == msgAlreadyDispatched {
-			return store.ErrAlreadyDispatched
+			return storev1.ErrAlreadyDispatched
 		}
 	}
 	return fmt.Errorf("state store: %s: %w", st.Message(), err)
@@ -341,7 +341,7 @@ func unmapError(err error) error {
 // configSnapshotProto and configSnapshotValue carry the dashboard's
 // configuration projection. document crosses as bytes, unread by either side
 // of this hop: the store holds it and the page renders it.
-func configSnapshotProto(snapshot store.ConfigSnapshot) *pb.ConfigSnapshot {
+func configSnapshotProto(snapshot storev1.ConfigSnapshot) *pb.ConfigSnapshot {
 	return &pb.ConfigSnapshot{
 		Schema:      snapshot.Schema,
 		Document:    snapshot.Document,
@@ -349,11 +349,11 @@ func configSnapshotProto(snapshot store.ConfigSnapshot) *pb.ConfigSnapshot {
 	}
 }
 
-func configSnapshotValue(snapshot *pb.ConfigSnapshot) store.ConfigSnapshot {
+func configSnapshotValue(snapshot *pb.ConfigSnapshot) storev1.ConfigSnapshot {
 	if snapshot == nil {
-		return store.ConfigSnapshot{}
+		return storev1.ConfigSnapshot{}
 	}
-	return store.ConfigSnapshot{
+	return storev1.ConfigSnapshot{
 		Schema:      snapshot.Schema,
 		Document:    snapshot.Document,
 		PublishedAt: timeValue(snapshot.PublishedAt),

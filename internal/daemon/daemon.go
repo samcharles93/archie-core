@@ -17,6 +17,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
+	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
@@ -29,7 +30,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/storage"
-	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/taskrun"
 	"github.com/samcharles93/archie-core/internal/tools"
 	"github.com/samcharles93/archie-core/internal/worktree"
@@ -100,26 +100,26 @@ type Daemon struct {
 	// remote archie-state-store service; it is always the configured
 	// [services.state].target after the in-process serving path is deleted.
 	ConnectedStateStore StateStoreEndpoint
-	Store               store.TaskStore
+	Store               storev1.TaskStore
 	// Mappings persists payload field mappings (docs/prds/payload-field-mapping.md).
 	// Used by the binding dispatch loop to resolve capture bodies against
 	// the mapping a binding names. Optional: nil disables the binding
 	// dispatch loop (legacy behaviour).
-	Mappings store.MappingStore
+	Mappings storev1.MappingStore
 	// Bindings persists playbook bindings (docs/prds/playbook-binding.md).
 	// Optional: nil disables the binding dispatch loop (legacy behaviour).
-	Bindings store.BindingStore
+	Bindings storev1.BindingStore
 	// BindingDispatcher is the dispatch-time helper surface for bindings:
 	// list undispatched captures, look up armed bindings by source for the
 	// matcher, and write the at-most-once dedup ledger row. Split from
 	// BindingStore to keep the CRUD interface under the interfacebloat
 	// limit. Optional: nil disables the dispatch loop.
-	BindingDispatcher store.BindingDispatcher
+	BindingDispatcher storev1.BindingDispatcher
 	// BindingTaskCreator enqueues a task triggered by a binding. Split
 	// off TaskLifecycle so the lifecycle surface stays narrow and the
 	// dispatch loop does not acquire the full task-creation contract.
 	// Optional: nil disables the dispatch loop.
-	BindingTaskCreator store.BindingTaskCreator
+	BindingTaskCreator storev1.BindingTaskCreator
 	Forge              forge.Forge
 	Trees              *worktree.Manager
 	Bus                *events.Bus
@@ -517,7 +517,7 @@ const bindingDispatchBatchLimit = 100
 //
 // The binding_dispatches ledger is the at-most-once guarantee across
 // cycles and daemon restarts: RecordDispatch returns
-// store.ErrAlreadyDispatched on a duplicate (binding_id, capture_id)
+// storev1.ErrAlreadyDispatched on a duplicate (binding_id, capture_id)
 // pair, and dispatchOneBinding treats that as a normal "another cycle
 // raced us" outcome rather than an error.
 //
@@ -580,7 +580,7 @@ func (d *Daemon) dispatchBindings(ctx context.Context) {
 // repo (when exactly one is configured); binding.Owner/Repo is a
 // follow-up so multi-repo deployments don't have to live with the
 // ambiguity.
-func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c store.CapturedEvent) {
+func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c storev1.CapturedEvent) {
 	if d.Mappings == nil {
 		d.Log.Warn("binding dispatch: mapping store unavailable", "binding", b.ID)
 		return
@@ -623,7 +623,7 @@ func (d *Daemon) dispatchOneBinding(ctx context.Context, b binding.Binding, c st
 	}
 
 	if err := d.BindingDispatcher.RecordDispatch(ctx, b.ID, int64(b.Version), c.ID, task.ID); err != nil {
-		if errors.Is(err, store.ErrAlreadyDispatched) {
+		if errors.Is(err, storev1.ErrAlreadyDispatched) {
 			// Another cycle or daemon instance raced us and already
 			// recorded the dispatch. The duplicate task remains
 			// queued (delete-on-races is its own can of worms),
@@ -664,7 +664,7 @@ func hasBlockingFailure(fields []mapping.Field, failures []mapping.Failure) bool
 // resolved, one "key=value" pair per line. Empty maps still produce
 // a body that records the source capture id so the workflow has
 // provenance to hand back to the operator.
-func renderBindingBody(values map[string]any, c store.CapturedEvent) string {
+func renderBindingBody(values map[string]any, c storev1.CapturedEvent) string {
 	if len(values) == 0 {
 		return fmt.Sprintf("(no fields resolved from capture %d)", c.ID)
 	}
@@ -1283,7 +1283,7 @@ func (d *Daemon) acquireTaskContainer(
 // that survives cancellation while preserving values.
 //
 // The transition remains guarded from StatusRunning: if the worker already
-// recorded a terminal state over storerpc, store.ErrStaleTransition is returned
+// recorded a terminal state over storerpc, storev1.ErrStaleTransition is returned
 // and ignored. Unexpected store errors are logged as warnings.
 func (d *Daemon) parkRunningTask(ctx context.Context, taskID int64, reason string) {
 	if d.Store == nil {
@@ -1293,7 +1293,7 @@ func (d *Daemon) parkRunningTask(ctx context.Context, taskID int64, reason strin
 	defer cancel()
 
 	if err := d.Store.Transition(writeCtx, taskID, workflow.StatusRunning, workflow.StatusParked, reason); err != nil {
-		if !errors.Is(err, store.ErrStaleTransition) {
+		if !errors.Is(err, storev1.ErrStaleTransition) {
 			d.Log.Warn("terminal park transition failed", "task", taskID, "reason", reason, "err", err)
 		}
 	}

@@ -20,6 +20,7 @@ import (
 
 	"google.golang.org/grpc"
 
+	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/infrastructure/readiness"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
@@ -119,28 +120,28 @@ func (b *boot) openStateStore(ctx context.Context) error {
 }
 
 // stateStoreDeps assembles the store surfaces the StateStore service fronts.
-// b.st is the narrow store.TaskStore; the wide *store.Store also implements
+// b.st is the narrow storev1.TaskStore; the wide *store.Store also implements
 // the capture/mapping/binding surfaces, so each is asserted here (the same
 // pattern the daemon's wireWebStoreSurfaces uses) and a store that lacks one
 // degrades that group rather than aborting boot.
 func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	deps := staterpc.Deps{Tasks: b.st, Log: b.log, Grants: grants}
-	if cs, ok := b.st.(store.CaptureStore); ok {
+	if cs, ok := b.st.(storev1.CaptureStore); ok {
 		deps.Captures = cs
 	}
-	if ms, ok := b.st.(store.MappingStore); ok {
+	if ms, ok := b.st.(storev1.MappingStore); ok {
 		deps.Mappings = ms
 	}
-	if bs, ok := b.st.(store.BindingStore); ok {
+	if bs, ok := b.st.(storev1.BindingStore); ok {
 		deps.Bindings = bs
 	}
-	if bd, ok := b.st.(store.BindingDispatcher); ok {
+	if bd, ok := b.st.(storev1.BindingDispatcher); ok {
 		deps.BindingDispatcher = bd
 	}
-	if btc, ok := b.st.(store.BindingTaskCreator); ok {
+	if btc, ok := b.st.(storev1.BindingTaskCreator); ok {
 		deps.BindingTaskCreator = btc
 	}
-	if css, ok := b.st.(store.ConfigSnapshotStore); ok {
+	if css, ok := b.st.(storev1.ConfigSnapshotStore); ok {
 		deps.ConfigSnapshots = css
 	}
 	return deps

@@ -22,18 +22,14 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 )
 
-// DeniedKeys are the config keys the overlay may never set, mapped to
-// the reason shown to the operator. db_path is the daemon's own
-// bootstrap path -- the daemon must read it before it can open this
-// store -- and work_dir pins the whole working layout. Enforced at
-// write time (the API returns 4xx) and again in Set, not silently
-// dropped at read time.
-var DeniedKeys = map[string]string{
-	"db_path":  "required for bootstrap; cannot be changed at runtime",
-	"work_dir": "pins the daemon's working layout; cannot be changed at runtime",
-}
+// DeniedKeys moved to internal/infrastructure/configuration ( DeniedKeys):
+// webui references the constant and must not link this package's SQLite
+// store (archie-core-8cda.5.6).
+var DeniedKeys = configuration.DeniedKeys
 
 // Store is the config overlay database.
 type Store struct{ db *sql.DB }

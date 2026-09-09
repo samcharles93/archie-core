@@ -1,152 +1,51 @@
-// Package store defines the storage abstractions for archied's task and
-// event data. TaskStore is the full surface the daemon needs and *Store is its
-// SQLite implementation.
+// Package store defines the task and event persistence for archied's data.
+// TaskStore is the full surface the daemon needs and *Store is its SQLite
+// implementation.
+//
+// REVISED (archie-core-8cda.5.6): the producer-owned contract surfaces this
+// package used to define live in internal/contracts/store/v1 (package
+// storev1) -- the approved contract location -- so the archie-ui process can
+// reference the contract without linking this SQLite implementation. The
+// definitions below are type aliases for compatibility with the daemon-side
+// callers; new UI-process-facing code imports storev1 directly.
 package store
 
 import (
-	"context"
-	"time"
-
-	"github.com/samcharles93/archie-core/internal/domain/binding"
-	"github.com/samcharles93/archie-core/internal/domain/mapping"
+	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
-	"github.com/samcharles93/archie-core/internal/events"
 )
 
-// TaskStore is the full store surface the daemon needs.
-// Consumers depend on TaskStore, never on a concrete type.
-type TaskStore interface {
-	TaskLifecycle
-	TaskEvents
-	TaskQueries
-	TaskArchiver
-	TaskRetryer
-}
+// Aliases: the daemon/webui/intake store surfaces moved to storev1. The
+// message strings of the sentinel errors are the wire contract (see
+// storev1's var block); the aliases change nothing observable.
+type (
+	TaskStore           = storev1.TaskStore
+	TaskLifecycle       = storev1.TaskLifecycle
+	TaskArchiver        = storev1.TaskArchiver
+	TaskRetryer         = storev1.TaskRetryer
+	TaskQueries         = storev1.TaskQueries
+	TaskEvents          = storev1.TaskEvents
+	CaptureStore        = storev1.CaptureStore
+	ConfigSnapshotStore = storev1.ConfigSnapshotStore
+	MappingStore        = storev1.MappingStore
+	BindingStore        = storev1.BindingStore
+	BindingDispatcher   = storev1.BindingDispatcher
+	BindingTaskCreator  = storev1.BindingTaskCreator
+	CapturedEvent       = storev1.CapturedEvent
+	ConfigSnapshot      = storev1.ConfigSnapshot
+	WorkflowStat        = storev1.WorkflowStat
+	StageStat           = storev1.StageStat
+	DayTokens           = storev1.DayTokens
+)
 
-// TaskLifecycle manages the core task state machine and enqueuing.
-// Binding-triggered task creation lives on BindingTaskCreator, not here,
-// so the lifecycle surface stays narrow and non-binding consumers (forge
-// poll, chat spawn, drain loop) do not acquire a binding-specific shape.
-type TaskLifecycle interface {
-	EnqueueIssue(ctx context.Context, owner, repo string, number int, title, body, labels, identity string) (bool, error)
-	EnqueueChatTask(ctx context.Context, owner, repo, title, body, wf, identity string) (*workflow.Task, error)
-	ClaimNext(ctx context.Context) (*workflow.Task, error)
-	ClaimByIssue(ctx context.Context, owner, repo string, number int) (*workflow.Task, error)
-	Transition(ctx context.Context, taskID int64, from, to, detail string) error
-	Update(ctx context.Context, t *workflow.Task) error
-	Requeue(ctx context.Context, taskID int64, fromStatus, workflow string) error
-	RecoverStale(ctx context.Context) (int64, error)
-}
-
-// TaskArchiver removes one terminal task's local record with an optimistic
-// status guard. It is separate from the already broad lifecycle contract so
-// consumers that only run tasks do not acquire an operator-only capability.
-type TaskArchiver interface {
-	ArchiveTask(ctx context.Context, taskID int64, fromStatus string, audit events.Event) (eventID int64, err error)
-}
-
-// TaskRetryer atomically requeues recoverable work and accounts for the new
-// attempt so a partial write cannot evade the retry cap.
-type TaskRetryer interface {
-	RetryTask(ctx context.Context, taskID int64, fromStatus, workflow string) error
-}
-
-// TaskQueries groups read-only task accessors.
-type TaskQueries interface {
-	TaskByIssue(ctx context.Context, owner, repo string, number int) (*workflow.Task, error)
-	TaskByID(ctx context.Context, taskID int64) (*workflow.Task, error)
-	OpenPRs(ctx context.Context) ([]workflow.Task, error)
-	ClearTerminalTasks(ctx context.Context) (int64, error)
-	Tasks(ctx context.Context, limit int) ([]workflow.Task, error)
-	StatusCounts(ctx context.Context) (map[string]int, error)
-	IncrementRetryCount(ctx context.Context, taskID int64) error
-}
-
-// TaskEvents groups observability and lifecycle methods.
-type TaskEvents interface {
-	InsertEvent(ctx context.Context, e events.Event) (int64, error)
-	EventsSince(ctx context.Context, sinceID int64, limit int) ([]events.Event, error)
-	TaskEvents(ctx context.Context, taskID int64) ([]events.Event, error)
-	WorkflowStats(ctx context.Context) ([]WorkflowStat, error)
-	StageStats(ctx context.Context) ([]StageStat, error)
-	TokensByDay(ctx context.Context, days int) ([]DayTokens, error)
-	Close() error
-}
-
-// CaptureStore persists unbound inbound webhook captures -- events with no
-// workflow binding and no task association. Deliberately separate from
-// TaskStore: a consumer that only needs capture (the intake HTTP handler)
-// should not acquire the full task-lifecycle surface, mirroring why
-// TaskArchiver is split out above. See docs/prds/event-capture-storage.md.
-type CaptureStore interface {
-	InsertCapture(ctx context.Context, c CapturedEvent, retention time.Duration, maxEvents int) (int64, error)
-	ListCaptures(ctx context.Context, limit int) ([]CapturedEvent, error)
-}
-
-// ConfigSnapshotStore holds the running configuration as the dashboard
-// renders it: the owner of configuration publishes, the process that displays
-// it reads. Separate from every other store surface because it is the only
-// one whose writer is the daemon and whose reader is the UI, and because a
-// task-scoped credential must never reach the writer.
-// See docs/architecture/migration-decisions.md, "Dashboard configuration page".
-type ConfigSnapshotStore interface {
-	PutConfigSnapshot(ctx context.Context, snapshot ConfigSnapshot) error
-	ConfigSnapshot(ctx context.Context) (ConfigSnapshot, bool, error)
-}
-
-// MappingStore persists payload field mappings (t2db.3). Deliberately
-// separate from TaskStore and CaptureStore for the same reason those are
-// split: the dashboard's mapping editor should only acquire the mapping
-// surface, not the full task or capture APIs. See
-// docs/prds/payload-field-mapping.md.
-type MappingStore interface {
-	InsertMapping(ctx context.Context, m mapping.Mapping) (int64, error)
-	GetMapping(ctx context.Context, id int64) (*mapping.Mapping, error)
-	ListMappings(ctx context.Context) ([]mapping.Mapping, error)
-	UpdateMapping(ctx context.Context, m mapping.Mapping) error
-	DeleteMapping(ctx context.Context, id int64) error
-}
-
-// BindingStore persists playbook bindings (t2db.4 Phase B): CRUD and the
-// draft -> pending_approval -> armed state machine. Split off from
-// TaskStore and MappingStore so the webui binding editor does not acquire
-// the full task or mapping surfaces. Dispatch-time helpers live in
-// BindingDispatcher; the daemon depends on both. See
-// docs/prds/playbook-binding.md.
-type BindingStore interface {
-	InsertBinding(ctx context.Context, b binding.Binding) (int64, error)
-	GetBinding(ctx context.Context, id int64) (*binding.Binding, error)
-	ListBindings(ctx context.Context) ([]binding.Binding, error)
-	UpdateBinding(ctx context.Context, b binding.Binding) error
-	DeleteBinding(ctx context.Context, id int64) error
-	ApproveBinding(ctx context.Context, id int64) error
-}
-
-// BindingDispatcher is the dispatch-loop surface over the bindings store:
-// look up armed bindings for HMAC verification, list captures that still
-// need dispatching, and record the at-most-once ledger row. The
-// dispatcher's task-creation call (EnqueueBindingTask) lives on a separate
-// BindingTaskCreator interface so the dispatcher does not depend on the
-// full TaskStore just to spawn one task.
-type BindingDispatcher interface {
-	ArmedBindingsForSource(ctx context.Context, source string) ([]binding.Binding, error)
-	RecordDispatch(
-		ctx context.Context,
-		bindingID int64,
-		bindingVersion int64,
-		captureID int64,
-		taskID int64,
-	) error
-	ListUndispatchedCaptures(ctx context.Context, sources []string, limit int) ([]CapturedEvent, error)
-}
-
-// BindingTaskCreator is the single-method consumer-facing surface for
-// enqueueing a task triggered by a binding. Splitting it off TaskLifecycle
-// keeps the lifecycle surface narrow (8 methods, the interfacebloat limit)
-// and keeps the binding-specific shape on the binding interfaces.
-type BindingTaskCreator interface {
-	EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity string, bindingID int64, bindingVersion int) (*workflow.Task, error)
-}
+var (
+	ErrStaleTransition   = storev1.ErrStaleTransition
+	ErrBindingNotFound   = storev1.ErrBindingNotFound
+	ErrBindingOverlap    = storev1.ErrBindingOverlap
+	ErrBindingTransition = storev1.ErrBindingTransition
+	ErrAlreadyDispatched = storev1.ErrAlreadyDispatched
+	ErrMappingNotFound   = storev1.ErrMappingNotFound
+)
 
 // Compile-time check: *Store satisfies TaskStore.
 var _ TaskStore = (*Store)(nil)
