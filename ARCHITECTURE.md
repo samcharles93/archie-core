@@ -65,6 +65,13 @@ recorded on the task as `park_reason` (cleared on requeue) and surfaced by the
 dashboard and `/api/tasks`. Retries are an explicit operator action capped by
 `max_retries`, not a label a human removes.
 
+**Adversarial review:** the implement workflow runs a fresh adversarial review
+after the deterministic gates and before `pr_open` (see
+`docs/architecture/adversarial-review.md`). A surviving blocking finding — or a
+review that failed to run — parks the task with the findings as its
+`park_reason`; otherwise the PR opens with a findings section on its body.
+Opt-in per repo via `repo.review_enabled`.
+
 **PR reconciliation:** the daemon polls open PRs, checks GitHub state
 (`merged`/`closed`), transitions the task, and cleans up worktrees.
 
