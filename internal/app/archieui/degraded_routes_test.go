@@ -98,6 +98,14 @@ func TestRoutesWithoutAContractDegradeExplicitly(t *testing.T) {
 			want: http.StatusServiceUnavailable,
 		},
 		{
+			// The capture surfaces are wired in this process from the cutover
+			// (archie-core-8cda.5.4): the read resolves from the State Store,
+			// not from a daemon handle, so the inspector answers enabled with
+			// an empty list rather than the degraded shape.
+			name: "capture inspector", method: http.MethodGet, path: "/api/captures",
+			want: http.StatusOK, emptyJSON: `"enabled":true`,
+		},
+		{
 			// The browser reads this to decide which sections to show at
 			// all, so it is the one route that must answer here.
 			name: "capabilities", method: http.MethodGet, path: "/api/capabilities",
@@ -152,7 +160,7 @@ func composeUIProcess(t *testing.T) (*webui.Server, int64) {
 	t.Cleanup(func() { _ = st.Close() })
 
 	target, stop := serveGRPC(t, func(r grpc.ServiceRegistrar) {
-		staterpc.RegisterServer(r, staterpc.Deps{Tasks: st, ConfigSnapshots: st, Log: slog.New(slog.DiscardHandler)})
+		staterpc.RegisterServer(r, staterpc.Deps{Tasks: st, Captures: st, BindingDispatcher: st, ConfigSnapshots: st, Log: slog.New(slog.DiscardHandler)})
 	})
 	t.Cleanup(stop)
 	client, closeClient, err := staterpc.Dial(target, "")

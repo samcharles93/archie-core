@@ -15,7 +15,11 @@
 // that the PRD's deletion gate forbids the UI process from linking.
 package archieui
 
-import "time"
+import (
+	"time"
+
+	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
+)
 
 // Process defaults. Listen matches the dashboard's historical bind
 // (internal/infrastructure/configuration/defaults.go) so an operator moving
@@ -60,6 +64,17 @@ type Options struct {
 	// operator did not say, and the file (else false) decides.
 	TrustForwardedHeaders *bool
 
+	// Capture configures the unbound webhook capture receiver this process
+	// mounts on its bypass mux (docs/prds/event-capture-storage.md). At the
+	// cutover (archie-core-8cda.5.4) this process is the only listener
+	// serving POST /webhooks/capture/{source}: the receiver persists what
+	// arrives through the State Store contract, and the daemon's
+	// binding-dispatch loop consumes captures from the same store, so the
+	// HTTP front door moves without moving the owner of work intake. Zero
+	// fields fall back to configuration.DefaultCapture, the same defaults a
+	// decoded config would carry.
+	Capture CaptureOptions
+
 	// Gateway and State are the two remote contracts the dashboard consumes.
 	Gateway ServiceTarget
 	State   ServiceTarget
@@ -75,6 +90,50 @@ type Options struct {
 	// ReadHeaderTimeout and ShutdownTimeout bound the HTTP lifecycle.
 	ReadHeaderTimeout time.Duration
 	ShutdownTimeout   time.Duration
+}
+
+// CaptureOptions carries the [capture] settings the capture receiver needs.
+// Every field is an endpoint-adjacent process setting: the receiver runs in
+// this process, so the operator's capture tuning must reach it directly
+// rather than through the daemon's configuration.
+type CaptureOptions struct {
+	// Retention is how long a captured event is kept before prune-on-write
+	// deletes it. Zero means configuration.DefaultCapture's value.
+	Retention time.Duration
+	// MaxEvents caps the capture table at this many newest rows. Zero means
+	// the default.
+	MaxEvents int
+	// MaxBodyBytes rejects (413) a body larger than this before it is read.
+	// Zero means the default.
+	MaxBodyBytes int
+	// RatePerSecond and RateBurst configure the per-remote-address token
+	// bucket applied before a request body is read. Zero means the defaults.
+	RatePerSecond float64
+	RateBurst     int
+}
+
+// withDefaults resolves zero fields to configuration.DefaultCapture, the
+// same "zero means default" semantics config.CaptureConfig documents. A
+// resolved config never carries zeros (its decoder applies the defaults),
+// so this only fires for a flags-only deployment or a direct compose call.
+func (c CaptureOptions) withDefaults() CaptureOptions {
+	d := configuration.DefaultCapture()
+	if c.Retention <= 0 {
+		c.Retention = d.Retention.Std()
+	}
+	if c.MaxEvents <= 0 {
+		c.MaxEvents = d.MaxEvents
+	}
+	if c.MaxBodyBytes <= 0 {
+		c.MaxBodyBytes = d.MaxBodyBytes
+	}
+	if c.RatePerSecond <= 0 {
+		c.RatePerSecond = d.RatePerSecond
+	}
+	if c.RateBurst <= 0 {
+		c.RateBurst = d.RateBurst
+	}
+	return c
 }
 
 // trustForwardedHeaders reports the resolved value, treating "not specified"

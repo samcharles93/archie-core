@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -91,8 +92,6 @@ func TestComposeUIServerHoldsNoDaemonState(t *testing.T) {
 		"LogFeed":         srv.LogFeed,
 		"TaskLogs":        srv.TaskLogs,
 		"WorkRequests":    srv.WorkRequests,
-		"Captures":        srv.Captures,
-		"CaptureIntake":   srv.CaptureIntake,
 	}
 	for name, handle := range unwired {
 		if !isNil(handle) {
@@ -113,15 +112,38 @@ func TestComposeUIServerHoldsNoDaemonState(t *testing.T) {
 	}
 }
 
-// TestComposeLeavesCaptureIntakeUnset pins the seam rule: while the daemon
-// still serves intake (its receiver is internal/infrastructure/captureintake;
-// the dashboard's own removal is bead archie-core-8cda.5.4), a second
-// process wiring Captures/CaptureIntake would give two listeners the same
-// webhook intake authority, which docs/prds/ui-service-boundary.md:30-33
-// forbids. The capture list answers {"enabled": false} instead.
-func TestComposeLeavesCaptureIntakeUnset(t *testing.T) {
-	srv := compose(deps{Options: Options{}, Log: slog.New(slog.DiscardHandler)})
-	if srv.Captures != nil || srv.CaptureIntake != nil {
-		t.Fatal("capture intake is wired in the UI process; it must stay unset until the daemon's listener is gone (bead archie-core-8cda.5.4)")
+// TestComposeWiresCaptureIntake pins the cutover rule: once the daemon's
+// dashboard listener is gone (archie-core-8cda.5.4), this process is the
+// only listener serving POST /webhooks/capture/{source}, so compose must
+// mount the receiver when the store contract carries it -- a capture POST
+// answered by a token-gated 404 would leave intake with no owner. Zero
+// Options.Capture falls back to configuration.DefaultCapture, the same
+// defaults a decoded config would project.
+func TestComposeWiresCaptureIntake(t *testing.T) {
+	stateConn, err := grpc.NewClient("passthrough:///127.0.0.1:1", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("state client: %v", err)
+	}
+	defer stateConn.Close()
+
+	srv := compose(deps{
+		Options: Options{},
+		Log:     slog.New(slog.DiscardHandler),
+		Store:   staterpc.NewClient(stateConn),
+	})
+	if srv.Captures == nil || srv.CaptureIntake == nil {
+		t.Fatal("capture intake is unset; the UI process is the only listener serving POST /webhooks/capture/{source} after the cutover (bead archie-core-8cda.5.4)")
+	}
+	defaults := configuration.DefaultCapture()
+	if srv.CaptureMaxEvents != defaults.MaxEvents {
+		t.Errorf("CaptureMaxEvents = %d, want the default %d", srv.CaptureMaxEvents, defaults.MaxEvents)
+	}
+
+	// A store without the capture contract keeps both surfaces unset and
+	// degrades the read instead of mounting an intake route that cannot
+	// persist what arrives.
+	empty := compose(deps{Options: Options{}, Log: slog.New(slog.DiscardHandler)})
+	if empty.Captures != nil || empty.CaptureIntake != nil || empty.CaptureMaxEvents != 0 {
+		t.Error("capture surfaces wired without a CaptureStore behind them")
 	}
 }

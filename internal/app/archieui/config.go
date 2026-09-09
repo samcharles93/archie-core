@@ -17,9 +17,10 @@ import (
 // to a process default. It ends with validate, so a caller that gets no error
 // holds a startable configuration.
 //
-// The projection is an allowlist of exactly six values --
+// The projection is an allowlist of the values this process needs --
 // [services.gateway].{target,target_token}, [services.state].{target,
-// target_token} and [web].{listen,trust_forwarded_headers}. The UI reads the
+// target_token}, [web].{listen,trust_forwarded_headers} and [capture] (the
+// receiver this process mounts; archie-core-8cda.5.4). The UI reads the
 // same file the daemon does because operators already keep the service
 // endpoints there, but Options has no field for anything else in it: the
 // daemon's forge credentials, model catalog, workflow routing, NATS settings,
@@ -69,6 +70,7 @@ type projection struct {
 	trustForwardedHeaders bool
 	gateway               ServiceTarget
 	state                 ServiceTarget
+	capture               CaptureOptions
 }
 
 func project(cfg config.Config) projection {
@@ -77,6 +79,13 @@ func project(cfg config.Config) projection {
 		trustForwardedHeaders: cfg.Web.TrustForwardedHeaders,
 		gateway:               ServiceTarget{Target: cfg.Services.Gateway.Target, Token: cfg.Services.Gateway.TargetToken},
 		state:                 ServiceTarget{Target: cfg.Services.State.Target, Token: cfg.Services.State.TargetToken},
+		capture: CaptureOptions{
+			Retention:     cfg.Capture.Retention.Std(),
+			MaxEvents:     cfg.Capture.MaxEvents,
+			MaxBodyBytes:  cfg.Capture.MaxBodyBytes,
+			RatePerSecond: cfg.Capture.RatePerSecond,
+			RateBurst:     cfg.Capture.RateBurst,
+		},
 	}
 }
 
@@ -128,6 +137,21 @@ func merge(o Options, p projection) Options {
 	}
 	if o.State.Token == "" {
 		o.State.Token = p.state.Token
+	}
+	if o.Capture.Retention <= 0 {
+		o.Capture.Retention = p.capture.Retention
+	}
+	if o.Capture.MaxEvents <= 0 {
+		o.Capture.MaxEvents = p.capture.MaxEvents
+	}
+	if o.Capture.MaxBodyBytes <= 0 {
+		o.Capture.MaxBodyBytes = p.capture.MaxBodyBytes
+	}
+	if o.Capture.RatePerSecond <= 0 {
+		o.Capture.RatePerSecond = p.capture.RatePerSecond
+	}
+	if o.Capture.RateBurst <= 0 {
+		o.Capture.RateBurst = p.capture.RateBurst
 	}
 	return o
 }
