@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strconv"
 
-	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 )
 
 // bindingRequest is the wire shape POST /api/bindings and
@@ -72,7 +72,7 @@ func (s *Server) handleBindingCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := s.Bindings.InsertBinding(r.Context(), b)
 	if err != nil {
-		if errors.Is(err, storev1.ErrBindingOverlap) {
+		if errors.Is(err, storecontract.ErrBindingOverlap) {
 			http.Error(w, "binding source overlaps an existing binding", http.StatusConflict)
 			return
 		}
@@ -150,9 +150,9 @@ func (s *Server) handleBindingUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.Bindings.UpdateBinding(r.Context(), b); err != nil {
 		switch {
-		case errors.Is(err, storev1.ErrBindingNotFound):
+		case errors.Is(err, storecontract.ErrBindingNotFound):
 			http.Error(w, "binding not found", http.StatusNotFound)
-		case errors.Is(err, storev1.ErrBindingOverlap):
+		case errors.Is(err, storecontract.ErrBindingOverlap):
 			http.Error(w, "binding source overlaps an existing binding", http.StatusConflict)
 		default:
 			s.Log.Error("update binding", "err", err, "id", id)
@@ -181,7 +181,7 @@ func (s *Server) handleBindingDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Bindings.DeleteBinding(r.Context(), id); err != nil {
-		if errors.Is(err, storev1.ErrBindingNotFound) {
+		if errors.Is(err, storecontract.ErrBindingNotFound) {
 			http.Error(w, "binding not found", http.StatusNotFound)
 			return
 		}
@@ -204,11 +204,11 @@ func (s *Server) handleBindingApprove(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.Bindings.ApproveBinding(r.Context(), id); err != nil {
 		switch {
-		case errors.Is(err, storev1.ErrBindingNotFound):
+		case errors.Is(err, storecontract.ErrBindingNotFound):
 			http.Error(w, "binding not found", http.StatusNotFound)
-		case errors.Is(err, storev1.ErrBindingTransition):
+		case errors.Is(err, storecontract.ErrBindingTransition):
 			http.Error(w, "binding cannot be approved from its current state", http.StatusConflict)
-		case errors.Is(err, storev1.ErrBindingOverlap):
+		case errors.Is(err, storecontract.ErrBindingOverlap):
 			http.Error(w, "binding source overlaps an existing binding", http.StatusConflict)
 		default:
 			s.Log.Error("approve binding", "err", err, "id", id)

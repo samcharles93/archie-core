@@ -24,18 +24,18 @@ import (
 
 	"github.com/samcharles93/ai-sdk/runtime"
 
-	channelruntime "github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/channels/email"
+	"github.com/samcharles93/archie-core/internal/channels/status"
 	"github.com/samcharles93/archie-core/internal/channels/webhook"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
-	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/eda/module"
 	"github.com/samcharles93/archie-core/internal/domain/eda/playbook"
 	domainembedding "github.com/samcharles93/archie-core/internal/domain/embedding"
 	domainmemory "github.com/samcharles93/archie-core/internal/domain/memory"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
@@ -99,7 +99,7 @@ type boot struct {
 
 	playbooks *playbook.Store
 
-	st storev1.TaskStore
+	st storecontract.TaskStore
 	// stateStore is the State Store contract adapter every daemon and gateway
 	// store consumer depends on. It is ALWAYS the remote *staterpc.Client
 	// dialed to the standalone archie-state-store gRPC service at
@@ -108,7 +108,7 @@ type boot struct {
 	// by openStateStoreAdapter, which requires [services.state].target to be
 	// set. The b.st field remains solely for the standalone archie-state-store
 	// binary, which owns the single SQLite file.
-	stateStore storev1.TaskStore
+	stateStore storecontract.TaskStore
 	// stateStoreGrants issues per-task, scoped State Store credentials for
 	// agent containers (daemon.StateStoreGrantIssuer), wrapping the same
 	// *staterpc.Client as stateStore. Nil when the State Store adapter isn't
@@ -123,7 +123,7 @@ type boot struct {
 
 	bus             *events.Bus
 	restartTelegram func() error
-	channelManager  *channelruntime.Manager
+	channelManager  *status.Manager
 	web             *webui.Server
 
 	natsClient *nats.Client
@@ -378,7 +378,7 @@ func (b *boot) setupObservability(ctx context.Context) {
 	if (cfg.Chat.Telegram.Token != (secret.SecretRef{}) || cfg.Chat.Telegram.TokenEnv != "") && len(cfg.Chat.Telegram.AllowedUserIDs) == 0 {
 		telegramDetail = "Token set, but the allowlist is empty -- the bot answers nobody."
 	}
-	b.channelManager = channelruntime.NewManager([]channelruntime.Descriptor{
+	b.channelManager = status.NewManager([]status.Descriptor{
 		{ID: "telegram", Name: "Telegram", Configured: cfg.Chat.Telegram.Token != (secret.SecretRef{}) || cfg.Chat.Telegram.TokenEnv != "", ReloadSupported: cfg.Chat.Telegram.Token != (secret.SecretRef{}) || cfg.Chat.Telegram.TokenEnv != "", Detail: telegramDetail},
 		{ID: "email", Name: "Email", Configured: cfg.Chat.Email.ListenAddr != ""},
 		{ID: "webhook", Name: "Webhook gateway", Configured: cfg.Chat.WebhookAddr != ""},
@@ -389,7 +389,7 @@ func (b *boot) setupObservability(ctx context.Context) {
 			Path: origin.Path, Role: string(origin.Role), Layer: string(origin.Layer), Feature: string(origin.Feature),
 		})
 	}
-	b.web = &webui.Server{Log: log.With("component", "webui"), Cfg: config.NewHolder(cfg), Channels: b.channelManager}
+	b.web = &webui.Server{Log: log.With("component", "webui"), Cfg: config.NewHolder(cfg), Channels: b.channelManager, Skills: skillCatalogAdapter{config.NewHolder(cfg)}}
 	// The watchdog leaves its verdict in a file on this host, so the daemon
 	// reads it and publishes the outcome as an event; the dashboard renders
 	// what it receives, wherever it runs (archie-core-8cda.5.4).
@@ -895,7 +895,7 @@ func (b *boot) setupMemory() error {
 	// The dashboard is built before memory exists, so it is wired in here
 	// rather than at construction.
 	if b.web != nil {
-		b.web.Memory = memManager
+		b.web.Memory = memoryUIAdapter{memManager}
 	}
 
 	if err := memManager.Initialize("daemon"); err != nil {
@@ -1181,7 +1181,7 @@ func (b *boot) registerMinimaxTool(cfg config.Config, log *slog.Logger) {
 		return
 	}
 
-	apiKey, err := cfg.Tools.Minimax.APIKey.Resolve(b.secrets)
+	apiKey, err := b.secrets.Resolve(cfg.Tools.Minimax.APIKey)
 	if err != nil {
 		log.Warn("minimax video generation enabled but the API key failed to resolve; tool not registered", "err", err)
 		return
@@ -1223,15 +1223,15 @@ func (b *boot) buildDaemon() {
 		ContainerPool:       b.containerPool,
 		Guardrails:          b.guardrails,
 		ToolRegistry:        b.toolReg,
-		Curators:            b.curatorRegistry,
 		Identities:          b.identityRunners,
 		TaskLogs:            b.taskLogs,
 		AgentStatus:         b.agentStatus,
 	}
 	// Curator observability (archie-core-1786637489932-6): GET
 	// /api/curators reads registered names, health and recent activity
-	// straight off the live registry the daemon already holds.
-	b.web.Curators = b.curatorRegistry
+	// off the live registry the daemon already holds, narrowed to the
+	// webui's own view type.
+	b.web.Curators = curatorsUIAdapter{b.curatorRegistry}
 	// web and the daemon must share ONE Holder: a reload swaps d.Cfg and
 	// the dashboard reads the running config from the same snapshot. The
 	// webui Holder seeded in the literal above is replaced here; after
@@ -1241,16 +1241,16 @@ func (b *boot) buildDaemon() {
 	// Consumer mapping/binding surfaces resolve from b.stateStore (the State
 	// Store contract adapter): local by default, remote *staterpc.Client when
 	// [services.state].target is set. See docs/prds/state-store-contract.md §10.
-	if ms, ok := b.stateStore.(storev1.MappingStore); ok {
+	if ms, ok := b.stateStore.(storecontract.MappingStore); ok {
 		b.d.Mappings = ms
 	}
-	if bs, ok := b.stateStore.(storev1.BindingStore); ok {
+	if bs, ok := b.stateStore.(storecontract.BindingStore); ok {
 		b.d.Bindings = bs
 	}
-	if bd, ok := b.stateStore.(storev1.BindingDispatcher); ok {
+	if bd, ok := b.stateStore.(storecontract.BindingDispatcher); ok {
 		b.d.BindingDispatcher = bd
 	}
-	if btc, ok := b.stateStore.(storev1.BindingTaskCreator); ok {
+	if btc, ok := b.stateStore.(storecontract.BindingTaskCreator); ok {
 		b.d.BindingTaskCreator = btc
 	}
 	b.setupForgeWebhook()
@@ -1288,7 +1288,7 @@ func (b *boot) setupForgeWebhook() {
 		log.Error("forge webhook disabled: multi-identity deployments are not supported yet (each identity's own poll loop is unaffected)")
 		return
 	}
-	secretValue, err := cfg.Forge.WebhookSecret.Resolve(b.secrets)
+	secretValue, err := b.secrets.Resolve(cfg.Forge.WebhookSecret)
 	if err != nil || secretValue == "" {
 		log.Error("forge webhook disabled: secret unavailable",
 			"engine", cfg.Forge.WebhookSecret.Engine, "key", cfg.Forge.WebhookSecret.Key, "err", err)
@@ -1340,7 +1340,7 @@ func (b *boot) publishConfig(ctx context.Context, cfg config.Config, provenance 
 // propagated: it must never fail the reload or dashboard write that produced
 // the new configuration, both of which have already taken effect.
 func (b *boot) publishConfigSnapshot(ctx context.Context) {
-	snapshots, ok := b.stateStore.(storev1.ConfigSnapshotStore)
+	snapshots, ok := b.stateStore.(storecontract.ConfigSnapshotStore)
 	if !ok || b.web == nil {
 		return
 	}
@@ -1362,7 +1362,7 @@ func (b *boot) publishConfigSnapshot(ctx context.Context) {
 		b.log.Warn("config snapshot not published", "err", err)
 		return
 	}
-	err = snapshots.PutConfigSnapshot(ctx, storev1.ConfigSnapshot{
+	err = snapshots.PutConfigSnapshot(ctx, storecontract.ConfigSnapshot{
 		Schema:      webui.ConfigViewSchema,
 		Document:    document,
 		PublishedAt: time.Now().UTC(),

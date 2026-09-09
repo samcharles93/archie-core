@@ -7,12 +7,11 @@ import (
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/gateway/v1"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
-	"github.com/samcharles93/archie-core/internal/gateway"
 )
 
-var _ gateway.SessionStore = (*StoreClient)(nil)
+var _ messaging.SessionStore = (*StoreClient)(nil)
 
-// StoreClient implements gateway.SessionStore over the chat service's
+// StoreClient implements messaging.SessionStore over the chat service's
 // session-store RPCs. It is separate from Client (the ChatContract view)
 // because the two contracts serve different reads over the same messages.
 //
@@ -26,7 +25,7 @@ func NewStoreClient(conn grpc.ClientConnInterface) *StoreClient {
 	return &StoreClient{client: pb.NewChatServiceClient(conn)}
 }
 
-func (c *StoreClient) Get(ctx context.Context, id string) (*gateway.SessionContext, error) {
+func (c *StoreClient) Get(ctx context.Context, id string) (*messaging.SessionContext, error) {
 	v, err := c.client.GetSession(ctx, &pb.GetSessionRequest{SessionId: id})
 	if err != nil {
 		return nil, err
@@ -38,12 +37,12 @@ func (c *StoreClient) Get(ctx context.Context, id string) (*gateway.SessionConte
 	return &s, nil
 }
 
-func (c *StoreClient) Save(ctx context.Context, s gateway.SessionContext) error {
+func (c *StoreClient) Save(ctx context.Context, s messaging.SessionContext) error {
 	_, e := c.client.SaveSession(ctx, &pb.SaveSessionRequest{Session: sessionProto(s)})
 	return e
 }
 
-func (c *StoreClient) GetByChannel(ctx context.Context, p, ch string) ([]gateway.SessionContext, error) {
+func (c *StoreClient) GetByChannel(ctx context.Context, p, ch string) ([]messaging.SessionContext, error) {
 	v, e := c.client.GetSessionsByChannel(ctx, &pb.GetSessionsByChannelRequest{Platform: p, ChannelId: ch})
 	if e != nil {
 		return nil, e
@@ -61,7 +60,7 @@ func (c *StoreClient) Touch(ctx context.Context, id string) error {
 	return e
 }
 
-func (c *StoreClient) List(ctx context.Context) ([]gateway.SessionContext, error) {
+func (c *StoreClient) List(ctx context.Context) ([]messaging.SessionContext, error) {
 	v, e := c.client.ListSessions(ctx, &pb.ListSessionsRequest{})
 	if e != nil {
 		return nil, e
@@ -105,16 +104,16 @@ func (c *StoreClient) RecentMessages(ctx context.Context, id string, n int) ([]m
 	return addressRecords(ctx, c.client, id, v.Messages)
 }
 
-func (c *StoreClient) SearchMessages(ctx context.Context, id string, q gateway.MessageQuery) (gateway.MessagePage, error) {
+func (c *StoreClient) SearchMessages(ctx context.Context, id string, q messaging.MessageQuery) (messaging.MessagePage, error) {
 	v, e := c.client.SearchMessages(ctx, &pb.SearchMessagesRequest{SessionId: id, Query: q.Query, Limit: int64(q.Limit), Offset: int64(q.Offset)})
 	if e != nil {
-		return gateway.MessagePage{}, e
+		return messaging.MessagePage{}, e
 	}
 	msgs, err := addressRecords(ctx, c.client, id, v.Messages)
 	if err != nil {
-		return gateway.MessagePage{}, err
+		return messaging.MessagePage{}, err
 	}
-	return gateway.MessagePage{Messages: msgs, NextOffset: int(v.NextOffset), HasMore: v.HasMore, Truncated: v.Truncated}, nil
+	return messaging.MessagePage{Messages: msgs, NextOffset: int(v.NextOffset), HasMore: v.HasMore, Truncated: v.Truncated}, nil
 }
 
 func (c *StoreClient) Close() error { return nil }
@@ -139,7 +138,7 @@ func addressRecords(ctx context.Context, client pb.ChatServiceClient, id string,
 	for _, m := range msgs {
 		stored := storedValue(m)
 		stored.ConversationID = conv
-		stored.Role = gateway.RoleForSender(stored.Sender, botUser)
+		stored.Role = messaging.RoleForSender(stored.Sender, botUser)
 		out = append(out, stored)
 	}
 	return out, nil

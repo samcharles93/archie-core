@@ -88,6 +88,16 @@ Phase 2 acceptance criterion and the architecture's rules simultaneously satisfi
 > producer-owned interfaces may move to the same infrastructure package (or an approved
 > contract location) when the store implementation relocates. Agents must not treat
 > `internal/store` as the final infrastructure boundary.
+>
+> **REV. 2d (archie-core-8cda.5.6): the producer-owned interfaces HAVE moved to an approved
+> contract location** — `internal/domain/storecontract` (package `storecontract`), ahead of the
+> store implementation's own relocation. The UI Service deletion gate required the archie-ui
+> process to hold the contracts without linking `internal/store`'s SQL implementation, and
+> `internal/contracts/` itself is ruled out: that tree is the `buf generate` output and
+> `tools/proto.sh check` deletes hand-written files there. `internal/store` keeps type aliases
+> (`type TaskStore = storecontract.TaskStore`, the sentinel `var`s, the value types) so
+> daemon-side callers are unaffected; the sentinel message strings are unchanged and remain
+> the wire contract (§4).
 
 ---
 

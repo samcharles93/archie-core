@@ -17,7 +17,7 @@ func bindingCipherFromConfig(cfg config.Config, secrets *secret.Registry) (store
 	if cfg.Bindings.EncryptionKey == (secret.SecretRef{}) {
 		return nil, nil
 	}
-	active, err := cfg.Bindings.EncryptionKey.Resolve(secrets)
+	active, err := secrets.Resolve(cfg.Bindings.EncryptionKey)
 	if err != nil {
 		return nil, fmt.Errorf("resolve bindings encryption_key: %w", err)
 	}
@@ -28,7 +28,7 @@ func bindingCipherFromConfig(cfg config.Config, secrets *secret.Registry) (store
 
 	previous := make([]string, 0, len(cfg.Bindings.PreviousEncryptionKeys))
 	for _, ref := range cfg.Bindings.PreviousEncryptionKeys {
-		v, err := ref.Resolve(secrets)
+		v, err := secrets.Resolve(ref)
 		if err != nil {
 			return nil, fmt.Errorf("resolve bindings previous_encryption_key: %w", err)
 		}

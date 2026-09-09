@@ -25,25 +25,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
-// Inbound is a message arriving from a channel together with the
-// transport context that is not part of the canonical record.
-//
-// Message is the record itself, exactly as it will be persisted. Channels
-// construct it directly: ConversationID addresses the chat (a Telegram
-// chat ID and topic thread, an email recipient, a webhook path), Sender is
-// the channel-native attribution, and Role is always messaging.RoleUser --
-// a channel only ever carries what a person said. ID is left empty for a
-// newly received message so the store derives one from SourceID, and
-// honoured when set, which is what lets a read-modify-write of a history
-// keep its identities rather than minting new ones.
-type Inbound struct {
-	Message messaging.Message
-	// Page is the dashboard route the operator is on when they sent
-	// this message. Transport-only: it reaches the system prompt and
-	// is never persisted. Empty for non-web channels.
-	Page string
-}
-
 // Lifecycle receives adapter-owned startup facts. Callbacks are optional.
 // Starting is reported before each launch attempt; Running is reported only
 // after the adapter's external delivery boundary is ready.
@@ -161,26 +142,6 @@ type UpdateService interface {
 // IDs are routed here when this capability is present.
 type DangerousApprover interface {
 	Decide(context.Context, string, string) (string, error)
-}
-
-// SpawnRequest is a chat-originated task creation request. Repo and
-// Workflow are optional  --  empty means "the daemon's configured
-// default for this identity".
-type SpawnRequest struct {
-	Title    string
-	Body     string // operator instructions carried into the admitted task
-	Repo     string // "owner/name"; empty = identity's default repo
-	Workflow string // empty = daemon's default workflow routing
-	Identity string // the identity spawning this task; propagated from Router.Identity
-}
-
-// TaskCreator creates a native (non-forge-backed) task from a chat
-// command. The daemon supplies an implementation backed by the store.
-// When nil on a Router, /spawn returns "not configured". CreateTask
-// must return the task's real, durable database ID  --  never a
-// synthetic or fabricated value.
-type TaskCreator interface {
-	CreateTask(ctx context.Context, req SpawnRequest) (taskID int64, err error)
 }
 
 // TaskController approves or cancels a chat-originated task. Both
@@ -499,72 +460,10 @@ func (r *Router) RouteStream(ctx context.Context, in Inbound, stream TurnStream)
 	return reply, err
 }
 
-var localCommands = []string{
-	"/status", "/tasks", "/model", "/spawn", "/approve", "/cancel",
-	"/start",
-	"/new", "/reset", "/topic", "/retry", "/undo",
-	"/title", "/branch", "/fork", "/compress", "/compact",
-	"/whoami", "/profile", "/sessions", "/resume", "/delete", "/agents",
-	"/personality", "/help", "/version", "/update", "/restart",
-}
-
-// CommandSpec describes a local command for adapter-provided discovery.
-// Keeping this beside the executable command list prevents help surfaces from
-// drifting when a command is added or removed.
-type CommandSpec struct {
-	Command     string `json:"command"`
-	Description string `json:"description"`
-	Usage       string `json:"usage"`
-}
-
-var localCommandSpecs = []CommandSpec{
-	{Command: "/status", Description: "Show daemon health", Usage: "/status"},
-	{Command: "/tasks", Description: "Show running and parked work", Usage: "/tasks"},
-	{Command: "/model", Description: "Choose a provider and model", Usage: "/model [provider/model]"},
-	{Command: "/spawn", Description: "Create a tracked task", Usage: "/spawn <title>"},
-	{Command: "/approve", Description: "Approve a waiting task", Usage: "/approve <task-id>"},
-	{Command: "/cancel", Description: "Cancel a queued or waiting task", Usage: "/cancel <task-id>"},
-	{Command: "/start", Description: "Confirm that Archie is running", Usage: "/start"},
-	{Command: "/new", Description: "Start a fresh conversation", Usage: "/new [title]"},
-	{Command: "/reset", Description: "Alias for /new", Usage: "/reset [title]"},
-	{Command: "/topic", Description: "List or switch conversation topics", Usage: "/topic [session-id]"},
-	{Command: "/retry", Description: "Replay the last message", Usage: "/retry"},
-	{Command: "/undo", Description: "Remove recent messages", Usage: "/undo [N]"},
-	{Command: "/title", Description: "Show or set the conversation title", Usage: "/title [name]"},
-	{Command: "/branch", Description: "Create a child conversation", Usage: "/branch [name]"},
-	{Command: "/fork", Description: "Alias for /branch", Usage: "/fork [name]"},
-	{Command: "/compress", Description: "Compress conversation context", Usage: "/compress [options]"},
-	{Command: "/compact", Description: "Alias for /compress", Usage: "/compact [options]"},
-	{Command: "/whoami", Description: "Show the active identity and model", Usage: "/whoami"},
-	{Command: "/profile", Description: "Show the active identity profile", Usage: "/profile"},
-	{Command: "/sessions", Description: "List this channel's conversations", Usage: "/sessions"},
-	{Command: "/resume", Description: "Switch to a conversation", Usage: "/resume <session-id>"},
-	{Command: "/delete", Description: "Delete a conversation and its history", Usage: "/delete <session-id>"},
-	{Command: "/agents", Description: "List tasks currently being worked", Usage: "/agents"},
-	{Command: "/personality", Description: "Choose a communication style", Usage: "/personality [name]"},
-	{Command: "/help", Description: "See what Archie can do", Usage: "/help"},
-	{Command: "/version", Description: "Show installed Archie versions", Usage: "/version"},
-	{Command: "/update", Description: "Check for Archie updates", Usage: "/update"},
-	{Command: "/restart", Description: "Reload the chat adapter", Usage: "/restart"},
-}
-
-// LocalCommands returns the command names Route answers from local state.
-// Gateways use this to verify that their published command surfaces match
-// the executable router surface.
-func LocalCommands() []string {
-	return slices.Clone(localCommands)
-}
-
-// LocalCommandSpecs returns a copy safe for adapters to enrich with their
-// optional capabilities.
-func LocalCommandSpecs() []CommandSpec {
-	return slices.Clone(localCommandSpecs)
-}
-
 // isLocalCommand reports whether cmd is answered from local state by
 // Route rather than handed to the LLM.
 func isLocalCommand(cmd string) bool {
-	return slices.Contains(localCommands, cmd)
+	return slices.Contains(messaging.LocalCommands(), cmd)
 }
 
 // parseCmd extracts the command name from text, stripping an optional

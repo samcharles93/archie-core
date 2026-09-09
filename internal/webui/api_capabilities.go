@@ -22,7 +22,7 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, _ *http.Request) {
 		"sections": map[string]bool{
 			"chat":     s.Chat != nil && s.Chat.Contract != nil,
 			"logs":     s.LogFeed != nil,
-			"skills":   s.Cfg != nil,
+			"skills":   s.Skills != nil,
 			"memory":   s.Memory != nil,
 			"curators": s.Curators != nil,
 			"channels": s.Channels != nil || s.Cfg != nil,

@@ -21,8 +21,6 @@ import (
 	"net"
 	"strings"
 	"time"
-
-	"github.com/samcharles93/archie-core/internal/secret"
 )
 
 // Duration is a time.Duration that unmarshals from TOML strings ("60s").
@@ -178,10 +176,10 @@ type Budgets struct {
 
 // Provider configures one LLM provider for the runtime catalog.
 type Provider struct {
-	Class     string           `toml:"class" yaml:"class" json:"class"`
-	APIKeyEnv string           `toml:"api_key_env" yaml:"api_key_env" json:"api_key_env"`
-	APIKey    secret.SecretRef `toml:"api_key" yaml:"api_key" json:"-"`
-	BaseURL   string           `toml:"base_url" yaml:"base_url" json:"base_url"`
+	Class     string    `toml:"class" yaml:"class" json:"class"`
+	APIKeyEnv string    `toml:"api_key_env" yaml:"api_key_env" json:"api_key_env"`
+	APIKey    SecretRef `toml:"api_key" yaml:"api_key" json:"-"`
+	BaseURL   string    `toml:"base_url" yaml:"base_url" json:"base_url"`
 }
 
 // LegacyAgent decodes the removed [agent] section so existing operator files
@@ -204,10 +202,10 @@ const (
 
 // Forge configures the code forge integration.
 type Forge struct {
-	Type     string           `toml:"type" yaml:"type"`
-	Host     string           `toml:"host" yaml:"host"`
-	Token    secret.SecretRef `toml:"token" yaml:"token"`
-	TokenEnv string           `toml:"token_env" yaml:"token_env"`
+	Type     string    `toml:"type" yaml:"type"`
+	Host     string    `toml:"host" yaml:"host"`
+	Token    SecretRef `toml:"token" yaml:"token"`
+	TokenEnv string    `toml:"token_env" yaml:"token_env"`
 	// Intake selects how forge issues become work: "poll" (default),
 	// "webhook", or "both". Webhook intake reacts to forge events the moment
 	// they arrive instead of up to poll_interval later.
@@ -215,7 +213,7 @@ type Forge struct {
 	// WebhookSecret is the shared secret used to verify GitHub webhook
 	// signatures (X-Hub-Signature-256). Required when Intake is "webhook" or
 	// "both".
-	WebhookSecret secret.SecretRef `toml:"webhook_secret" yaml:"webhook_secret"`
+	WebhookSecret SecretRef `toml:"webhook_secret" yaml:"webhook_secret"`
 	// WebhookAddr is the host:port the webhook receiver listens on. Required
 	// when Intake is "webhook" or "both".
 	WebhookAddr string `toml:"webhook_addr" yaml:"webhook_addr"`
@@ -302,11 +300,11 @@ type ImageConfig struct {
 // provider spends real API credits per call and must never activate from
 // the mere presence of a key.
 type ImageHostedProvider struct {
-	Enabled   bool             `toml:"enabled" yaml:"enabled" json:"enabled"`
-	Class     string           `toml:"class" yaml:"class" json:"class"`
-	APIKeyEnv string           `toml:"api_key_env" yaml:"api_key_env" json:"api_key_env"`
-	APIKey    secret.SecretRef `toml:"api_key" yaml:"api_key" json:"-"`
-	BaseURL   string           `toml:"base_url" yaml:"base_url" json:"base_url,omitempty"`
+	Enabled   bool      `toml:"enabled" yaml:"enabled" json:"enabled"`
+	Class     string    `toml:"class" yaml:"class" json:"class"`
+	APIKeyEnv string    `toml:"api_key_env" yaml:"api_key_env" json:"api_key_env"`
+	APIKey    SecretRef `toml:"api_key" yaml:"api_key" json:"-"`
+	BaseURL   string    `toml:"base_url" yaml:"base_url" json:"base_url,omitempty"`
 }
 
 // ImageLocalProvider configures one local GPU image recipe. Enabled
@@ -405,7 +403,7 @@ type MinimaxConfig struct {
 	Enabled bool `toml:"enabled" yaml:"enabled" json:"enabled"`
 
 	// APIKey authenticates against the MiniMax API.
-	APIKey secret.SecretRef `toml:"api_key" yaml:"api_key" json:"-"`
+	APIKey SecretRef `toml:"api_key" yaml:"api_key" json:"-"`
 
 	// BaseURL overrides the API host. Empty uses the client's built-in
 	// default. Exists for a proxy or a self-hosted-compatible endpoint,
@@ -661,7 +659,7 @@ func (c Config) Clone() Config {
 	c.Chat.Telegram.AllowedUserIDs = append([]int64(nil), c.Chat.Telegram.AllowedUserIDs...)
 	c.Chat.Telegram.UpdateCheckCommand = append([]string(nil), c.Chat.Telegram.UpdateCheckCommand...)
 	c.Chat.Telegram.UpdateInstallCommand = append([]string(nil), c.Chat.Telegram.UpdateInstallCommand...)
-	c.Bindings.PreviousEncryptionKeys = append([]secret.SecretRef(nil), c.Bindings.PreviousEncryptionKeys...)
+	c.Bindings.PreviousEncryptionKeys = append([]SecretRef(nil), c.Bindings.PreviousEncryptionKeys...)
 	c.Tools.MCPServers = cloneMCPServers(c.Tools.MCPServers)
 	c.Memory.ProviderConfig = maps.Clone(c.Memory.ProviderConfig)
 	if c.Tools.WebFetch.Enabled != nil {
@@ -788,11 +786,11 @@ type BindingsConfig struct {
 	// Resolved through the secret registry (engine + key) at startup; the
 	// resolved material must be 32 bytes of high-entropy randomness.
 	// A nil/empty ref disables encryption and keeps current behaviour.
-	EncryptionKey secret.SecretRef `toml:"encryption_key" yaml:"encryption_key"`
+	EncryptionKey SecretRef `toml:"encryption_key" yaml:"encryption_key"`
 	// PreviousEncryptionKeys retains older key material so rows sealed
 	// under a previous rotation still decrypt. Each is resolved the same
 	// way as EncryptionKey; entries are decrypt-only.
-	PreviousEncryptionKeys []secret.SecretRef `toml:"previous_encryption_keys" yaml:"previous_encryption_keys"`
+	PreviousEncryptionKeys []SecretRef `toml:"previous_encryption_keys" yaml:"previous_encryption_keys"`
 }
 
 // ContainerConfig configures Docker sandbox execution of archie-agent.
@@ -928,7 +926,7 @@ type TelegramConfig struct {
 	AllowedUserIDs []int64 `toml:"allowed_user_ids" yaml:"allowed_user_ids"`
 	// Token references the bot token through the configured secret engine.
 	// It takes precedence over TokenEnv when both are set.
-	Token secret.SecretRef `toml:"token" yaml:"token"`
+	Token SecretRef `toml:"token" yaml:"token"`
 	// TokenEnv names the env var holding the bot token from @BotFather.
 	// Empty disables the Telegram channel.
 	TokenEnv string `toml:"token_env" yaml:"token_env"`

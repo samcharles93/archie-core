@@ -9,25 +9,24 @@ import (
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/gateway/v1"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
-	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
 type server struct {
 	pb.UnimplementedChatServiceServer
-	chat     gateway.ChatContract
-	sessions gateway.SessionStore
+	chat     messaging.ChatContract
+	sessions messaging.SessionStore
 }
 
-func RegisterServer(registrar grpc.ServiceRegistrar, chat gateway.ChatContract, sessions ...gateway.SessionStore) {
-	var ss gateway.SessionStore
+func RegisterServer(registrar grpc.ServiceRegistrar, chat messaging.ChatContract, sessions ...messaging.SessionStore) {
+	var ss messaging.SessionStore
 	if len(sessions) > 0 {
 		ss = sessions[0]
 	}
 	pb.RegisterChatServiceServer(registrar, &server{chat: chat, sessions: ss})
 }
 
-func (s *server) sessionStore() (gateway.SessionStore, error) {
+func (s *server) sessionStore() (messaging.SessionStore, error) {
 	if s.sessions == nil {
 		return nil, status.Error(codes.Unavailable, "session store unavailable")
 	}
@@ -150,9 +149,9 @@ func (s *server) ListSessions(ctx context.Context, _ *pb.ListSessionsRequest) (*
 
 // storedMessages converts wire messages to canonical records, deriving
 // roles from the owning session's bot identity (see
-// gateway.RoleForSender). The wire carries no role; both sides derive from
+// messaging.RoleForSender). The wire carries no role; both sides derive from
 // the same session, so they agree.
-func (s *server) storedMessages(ctx context.Context, ss gateway.SessionStore, sessionID string, msgs []*pb.Message) ([]messaging.Message, error) {
+func (s *server) storedMessages(ctx context.Context, ss messaging.SessionStore, sessionID string, msgs []*pb.Message) ([]messaging.Message, error) {
 	var botUser string
 	if sc, err := ss.Get(ctx, sessionID); err != nil {
 		return nil, err
@@ -162,7 +161,7 @@ func (s *server) storedMessages(ctx context.Context, ss gateway.SessionStore, se
 	out := make([]messaging.Message, 0, len(msgs))
 	for _, m := range msgs {
 		stored := storedValue(m)
-		stored.Role = gateway.RoleForSender(stored.Sender, botUser)
+		stored.Role = messaging.RoleForSender(stored.Sender, botUser)
 		out = append(out, stored)
 	}
 	return out, nil
@@ -227,7 +226,7 @@ func (s *server) SearchMessages(ctx context.Context, r *pb.SearchMessagesRequest
 	if e != nil {
 		return nil, e
 	}
-	v, e := ss.SearchMessages(ctx, r.SessionId, gateway.MessageQuery{Query: r.Query, Limit: int(r.Limit), Offset: int(r.Offset)})
+	v, e := ss.SearchMessages(ctx, r.SessionId, messaging.MessageQuery{Query: r.Query, Limit: int(r.Limit), Offset: int(r.Offset)})
 	return &pb.SearchMessagesResponse{Messages: mapValues(v.Messages, storedProto), NextOffset: int64(v.NextOffset), HasMore: v.HasMore, Truncated: v.Truncated}, e
 }
 

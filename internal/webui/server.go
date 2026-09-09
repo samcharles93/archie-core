@@ -16,21 +16,19 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/samcharles93/archie-core/internal/channels"
+	"github.com/samcharles93/archie-core/internal/channels/status"
 	"github.com/samcharles93/archie-core/internal/config"
-	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
-	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/health"
-	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/logging"
-	"github.com/samcharles93/archie-core/internal/memory"
 	"github.com/samcharles93/archie-core/ui"
 )
 
 type Server struct {
-	Store storev1.TaskStore
+	Store storecontract.TaskStore
 	Log   *slog.Logger
 
 	// Cfg backs the setup checklist and configuration views. Optional: the
@@ -52,10 +50,10 @@ type Server struct {
 	ConfigSource ConfigViewSource
 
 	// Workflows is the executable registry snapshot supplied by composition.
-	Workflows []workflow.Definition
+	Workflows []task.Definition
 	// WorkRequests admits dashboard requests through the same task-creation
 	// boundary used by chat; it never invokes a workflow runner directly.
-	WorkRequests gateway.TaskCreator
+	WorkRequests messaging.TaskCreator
 	// LogFeed is the daemon diagnostic stream. It is separate from Events,
 	// which contains persisted task lifecycle activity only.
 	LogFeed *logging.Feed
@@ -108,7 +106,7 @@ type Server struct {
 	// Channels reports actual adapter lifecycle, independently of configuration
 	// presence. Nil preserves the configuration-only fallback for tests and
 	// minimal embedding.
-	Channels *channels.Manager
+	Channels *status.Manager
 
 	// ReloadChannel invokes a channel-specific reload seam. Only adapters that
 	// explicitly support reload are wired here; nil means reload is unavailable.
@@ -116,13 +114,16 @@ type Server struct {
 
 	// Memory backs the memory view. Optional: the section reports memory as
 	// unavailable rather than failing when it is nil.
-	Memory *memory.Manager
+	Memory MemoryStatus
+	// Skills is the webui-owned skill catalogue view; nil degrades
+	// /api/skills to an empty page.
+	Skills SkillCatalog
 
 	// Curators is the daemon's live curator registry (epic archie-core-yp9).
 	// Backs GET /api/curators: registered names, per-curator health, and
 	// recent activity (archie-core-1786637489932-6). Optional: nil reports
 	// an empty curator list rather than failing the dashboard.
-	Curators *curator.Registry
+	Curators CuratorStatus
 
 	// Chat exposes the Gateway's wire-safe conversational contract. Optional:
 	// the dashboard simply omits chat when it is nil.
@@ -146,7 +147,7 @@ type Server struct {
 	// GET /api/captures list and the mapping preview's by-ID scan
 	// (docs/prds/event-capture-storage.md). Optional: nil makes the list
 	// answer {"enabled": false} rather than the dashboard failing to start.
-	Captures storev1.CaptureStore
+	Captures storecontract.CaptureStore
 	// CaptureMaxEvents is the operator's configured [capture] max_events,
 	// used to bound captureByID's scan window (api_mapping.go).
 	// CaptureIntake is the write half's mount.
@@ -167,13 +168,13 @@ type Server struct {
 	// Mappings persists payload field mappings (docs/prds/payload-field-mapping.md).
 	// Optional: nil makes every /api/mappings route answer 503 rather than
 	// the dashboard failing to start.
-	Mappings storev1.MappingStore
+	Mappings storecontract.MappingStore
 
 	// Bindings persists playbook bindings: matcher + mapping + workflow
 	// triples that turn a captured webhook into an archie task
 	// (docs/prds/webhook-intake-security.md). Optional: nil makes every
 	// /api/bindings route answer 503 rather than the dashboard failing to start.
-	Bindings storev1.BindingStore
+	Bindings storecontract.BindingStore
 
 	// TelegramUpdateReportPath and TelegramUpdateChatID let a dashboard-
 	// initiated update use the same post-restart notification route as a

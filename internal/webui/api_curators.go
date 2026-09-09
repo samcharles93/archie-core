@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"context"
 	"net/http"
 	"time"
 )
@@ -14,8 +15,29 @@ type CuratorActionView struct {
 	Reason string    `json:"reason"`
 }
 
+// CuratorStatus is the webui-owned surface over the running curator
+// registry: the names, point-in-time health, and recent activity the
+// dashboard's curator view renders. It is deliberately narrower than the
+// registry itself -- whose engine contract drags in the agent toolchain --
+// so the UI process holds the view without linking it
+// (archie-core-8cda.5.6). Whoever owns the registry supplies an adapter at
+// bootstrap.
+type CuratorStatus interface {
+	Names() []string
+	Health(ctx context.Context) map[string]CuratorHealthView
+	Activity(name string) (CuratorActivity, bool)
+}
+
+// CuratorActivity is one curator's recent run history, as the webui
+// renders it.
+type CuratorActivity struct {
+	LastRunAt      time.Time
+	LastRunActions int
+	Recent         []CuratorActionView
+}
+
 // CuratorView is one registered curator's observable state: identity,
-// health, and recent activity. Backed by curator.Registry -- see
+// health, and recent activity. Backed by CuratorStatus -- see
 // handleCurators.
 type CuratorView struct {
 	Name   string            `json:"name"`
@@ -55,7 +77,7 @@ func (s *Server) handleCurators(w http.ResponseWriter, r *http.Request) {
 		view := CuratorView{
 			Name: name,
 			Health: CuratorHealthView{
-				Status:  string(h.Status),
+				Status:  h.Status,
 				Message: h.Message,
 			},
 			RecentActions: []CuratorActionView{},

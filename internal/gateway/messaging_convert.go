@@ -1,9 +1,5 @@
 package gateway
 
-import (
-	"github.com/samcharles93/archie-core/internal/domain/messaging"
-)
-
 // This file holds the one piece of the old channel-facing Message that
 // outlived it: the role derivation.
 //
@@ -19,15 +15,3 @@ import (
 // instead of adding a field to the proto -- see
 // internal/infrastructure/gatewayrpc. Because both derive from the same
 // session, they agree.
-
-// RoleForSender reports the role of a message written by sender in a
-// session whose bot identity is botUser. It is the comparison this package
-// already makes elsewhere (compressTurnHistory, messagesToCompressed,
-// PriorReply, and the sessioncurator adapter): a message sent by the
-// session's bot is the assistant's, anything else is the user's.
-func RoleForSender(sender, botUser string) messaging.Role {
-	if sender == botUser {
-		return messaging.RoleAssistant
-	}
-	return messaging.RoleUser
-}

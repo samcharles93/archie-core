@@ -205,6 +205,35 @@ yet satisfy this boundary. This document is the ratified target; the
 implementation child must prove each migration gate before claiming Phase 3
 complete.
 
+### Deletion gate: SATISFIED (archie-core-8cda.5.6, rev. 2)
+
+The objective gate now holds. `go list -deps ./cmd/archie-ui` links **zero**
+banned packages: no `modernc.org/sqlite`, no `internal/store`, `internal/gateway`,
+`internal/channels`, `internal/memory`, `internal/secret`, `internal/agentexec`,
+`internal/tools`, `internal/skill`, `internal/yaegiutil`, `internal/domain/curator`,
+or the workflow engine (`internal/domain/workflow`). How the runtime handles were
+severed, each at the producer:
+
+- **Store contracts** moved to `internal/domain/storecontract` (producer-owned
+  read contracts, state-store-contract rev. 2d); `internal/store` keeps aliases.
+- **Chat contracts** moved to `internal/domain/messaging`; `internal/gateway`
+  keeps aliases. The UI process holds `ChatContract`, `SessionStore`, turn and
+  stream types without linking the gateway runtime or its SQLite session store.
+- **Webui-owned views** replaced concrete runtime handles on `webui.Server`:
+  channel lifecycle via `internal/channels/status`, memory via a `MemoryStatus`
+  interface, curators via a `CuratorStatus` interface, and the skill catalogue
+  via a `SkillCatalog` interface — each supplied by a daemon-side adapter at
+  bootstrap, each degrading to an empty page when unwired.
+- **`config.SecretRef`** moved into `internal/config` (it is config vocabulary);
+  `internal/secret` keeps an alias and resolves through `Registry.Resolve`.
+- **Task vocabulary** (`Task`, `Store`, `Definition`, status constants) split
+  into `internal/domain/workflow/task`; the pipeline engine stays in package
+  `workflow`, which keeps aliases. The UI process links the vocabulary only.
+
+Remaining for Phase 3 closure: the architecture tests asserting the absence of
+`config.Holder`, concrete store/gateway runtime types, and direct SQLite imports
+in the UI service, plus the end-to-end smoke suite over real processes.
+
 ## Non-goals and open work
 
 This ratification does not define a new domain model, move the dashboard's

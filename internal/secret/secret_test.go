@@ -38,7 +38,7 @@ func TestEnvEngineResolveMissing(t *testing.T) {
 func TestSecretRefZeroValue(t *testing.T) {
 	r := NewRegistry()
 	var s SecretRef
-	v, err := s.Resolve(r)
+	v, err := r.Resolve(s)
 	if err != nil {
 		t.Error(err)
 	}

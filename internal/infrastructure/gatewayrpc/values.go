@@ -7,7 +7,6 @@ import (
 
 	pb "github.com/samcharles93/archie-core/internal/contracts/gateway/v1"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
-	"github.com/samcharles93/archie-core/internal/gateway"
 )
 
 func timestamp(t time.Time) *timestamppb.Timestamp {
@@ -26,7 +25,7 @@ func timeValue(t *timestamppb.Timestamp) time.Time {
 
 // storedProto renders a canonical record in its wire shape. The role stays
 // off the wire: each side derives it from the owning session's bot identity
-// (see gateway.RoleForSender), so pb.Message needs no role field.
+// (see messaging.RoleForSender), so pb.Message needs no role field.
 func storedProto(m messaging.Message) *pb.Message {
 	return &pb.Message{
 		MessageId: string(m.ID),
@@ -58,7 +57,7 @@ func storedValue(v *pb.Message) messaging.Message {
 // inboundProto renders a channel message and its transport context in wire
 // shape. Page rides along; the record's role does not, for the reason
 // storedProto gives.
-func inboundProto(v gateway.Inbound) *pb.Message {
+func inboundProto(v messaging.Inbound) *pb.Message {
 	m := storedProto(v.Message)
 	m.Page = v.Page
 	return m
@@ -68,16 +67,16 @@ func inboundProto(v gateway.Inbound) *pb.Message {
 // RoleUser without consulting the session: this is a message a channel
 // frontend is delivering on a person's behalf, which is the only kind of
 // message Route and Stream accept.
-func inboundValue(v *pb.Message) gateway.Inbound {
+func inboundValue(v *pb.Message) messaging.Inbound {
 	if v == nil {
-		return gateway.Inbound{}
+		return messaging.Inbound{}
 	}
 	msg := storedValue(v)
 	msg.Role = messaging.RoleUser
-	return gateway.Inbound{Message: msg, Page: v.Page}
+	return messaging.Inbound{Message: msg, Page: v.Page}
 }
 
-func toolProto(v gateway.ToolCallEvent) *pb.ToolCall {
+func toolProto(v messaging.ToolCallEvent) *pb.ToolCall {
 	return &pb.ToolCall{
 		Id:         v.ID,
 		Name:       v.Name,
@@ -87,11 +86,11 @@ func toolProto(v gateway.ToolCallEvent) *pb.ToolCall {
 	}
 }
 
-func toolValue(v *pb.ToolCall) gateway.ToolCallEvent {
+func toolValue(v *pb.ToolCall) messaging.ToolCallEvent {
 	if v == nil {
-		return gateway.ToolCallEvent{}
+		return messaging.ToolCallEvent{}
 	}
-	return gateway.ToolCallEvent{
+	return messaging.ToolCallEvent{
 		ID:         v.Id,
 		Name:       v.Name,
 		Parameters: v.Parameters,
@@ -100,7 +99,7 @@ func toolValue(v *pb.ToolCall) gateway.ToolCallEvent {
 	}
 }
 
-func turnProto(v gateway.TurnRecord) *pb.Turn {
+func turnProto(v messaging.TurnRecord) *pb.Turn {
 	return &pb.Turn{
 		TurnId:             v.TurnID,
 		SessionId:          v.SessionID,
@@ -115,11 +114,11 @@ func turnProto(v gateway.TurnRecord) *pb.Turn {
 	}
 }
 
-func turnValue(v *pb.Turn) gateway.TurnRecord {
+func turnValue(v *pb.Turn) messaging.TurnRecord {
 	if v == nil {
-		return gateway.TurnRecord{}
+		return messaging.TurnRecord{}
 	}
-	return gateway.TurnRecord{
+	return messaging.TurnRecord{
 		TurnID:             v.TurnId,
 		SessionID:          v.SessionId,
 		SourceID:           v.SourceId,
@@ -129,7 +128,7 @@ func turnValue(v *pb.Turn) gateway.TurnRecord {
 		PartialText:        v.PartialText,
 		ResponseText:       v.ResponseText,
 		Error:              v.Error, CreatedAt: timeValue(v.CreatedAt),
-		UpdatedAt: timeValue(v.UpdatedAt), Status: gateway.TurnStatus(v.Status), Attempt: int(v.Attempt), ToolCalls: mapValues(v.ToolCalls, toolValue),
+		UpdatedAt: timeValue(v.UpdatedAt), Status: messaging.TurnStatus(v.Status), Attempt: int(v.Attempt), ToolCalls: mapValues(v.ToolCalls, toolValue),
 	}
 }
 
@@ -144,15 +143,15 @@ func mapValues[A, B any](in []A, f func(A) B) []B {
 	return out
 }
 
-func sessionProto(v gateway.SessionContext) *pb.Session {
+func sessionProto(v messaging.SessionContext) *pb.Session {
 	return &pb.Session{SessionId: v.SessionID, Platform: v.Source.Platform, BotUser: v.Source.BotUser, ChannelId: v.Source.ChannelID, ThreadId: v.Source.ThreadID, Title: v.Title, ParentSessionId: v.ParentSessionID, BranchName: v.BranchName, CreatedAt: timestamp(v.CreatedAt), LastActiveAt: timestamp(v.LastActiveAt)}
 }
 
-func sessionValue(v *pb.Session) gateway.SessionContext {
+func sessionValue(v *pb.Session) messaging.SessionContext {
 	if v == nil {
-		return gateway.SessionContext{}
+		return messaging.SessionContext{}
 	}
-	return gateway.SessionContext{SessionID: v.SessionId, Source: gateway.SessionSource{Platform: v.Platform, BotUser: v.BotUser, ChannelID: v.ChannelId, ThreadID: v.ThreadId}, Title: v.Title, ParentSessionID: v.ParentSessionId, BranchName: v.BranchName, CreatedAt: timeValue(v.CreatedAt), LastActiveAt: timeValue(v.LastActiveAt)}
+	return messaging.SessionContext{SessionID: v.SessionId, Source: messaging.SessionSource{Platform: v.Platform, BotUser: v.BotUser, ChannelID: v.ChannelId, ThreadID: v.ThreadId}, Title: v.Title, ParentSessionID: v.ParentSessionId, BranchName: v.BranchName, CreatedAt: timeValue(v.CreatedAt), LastActiveAt: timeValue(v.LastActiveAt)}
 }
 
 func int64Pointer(v *int) *int64 {
@@ -171,27 +170,27 @@ func intPointer(v *int64) *int {
 	return &n
 }
 
-func mediaProto(v gateway.MediaEvent) *pb.Media {
+func mediaProto(v messaging.MediaEvent) *pb.Media {
 	a := v.Attachment
 	return &pb.Media{ToolName: v.ToolName, Type: a.Type, FileId: a.FileID, Url: a.URL, Path: a.Path, MimeType: a.MIMEType, FileName: a.FileName, FileSize: a.FileSize, Width: int64Pointer(a.Width), Height: int64Pointer(a.Height), Duration: int64Pointer(a.Duration)}
 }
 
-func mediaValue(v *pb.Media) gateway.MediaEvent {
+func mediaValue(v *pb.Media) messaging.MediaEvent {
 	if v == nil {
-		return gateway.MediaEvent{}
+		return messaging.MediaEvent{}
 	}
-	return gateway.MediaEvent{ToolName: v.ToolName, Attachment: gateway.MediaAttachment{Type: v.Type, FileID: v.FileId, URL: v.Url, Path: v.Path, MIMEType: v.MimeType, FileName: v.FileName, FileSize: v.FileSize, Width: intPointer(v.Width), Height: intPointer(v.Height), Duration: intPointer(v.Duration)}}
+	return messaging.MediaEvent{ToolName: v.ToolName, Attachment: messaging.MediaAttachment{Type: v.Type, FileID: v.FileId, URL: v.Url, Path: v.Path, MIMEType: v.MimeType, FileName: v.FileName, FileSize: v.FileSize, Width: intPointer(v.Width), Height: intPointer(v.Height), Duration: intPointer(v.Duration)}}
 }
 
-func eventProto(v gateway.ChatEvent) *pb.StreamResponse {
+func eventProto(v messaging.ChatEvent) *pb.StreamResponse {
 	return &pb.StreamResponse{Kind: v.Kind, Text: v.Text, SessionId: v.SessionID, Tool: toolProto(v.Tool), Media: mediaProto(v.Media)}
 }
 
-func eventValue(v *pb.StreamResponse) gateway.ChatEvent {
-	return gateway.ChatEvent{Kind: v.Kind, Text: v.Text, SessionID: v.SessionId, Tool: toolValue(v.Tool), Media: mediaValue(v.Media)}
+func eventValue(v *pb.StreamResponse) messaging.ChatEvent {
+	return messaging.ChatEvent{Kind: v.Kind, Text: v.Text, SessionID: v.SessionId, Tool: toolValue(v.Tool), Media: mediaValue(v.Media)}
 }
 
-func snapshotProto(v gateway.ChatSnapshot) *pb.SnapshotResponse {
+func snapshotProto(v messaging.ChatSnapshot) *pb.SnapshotResponse {
 	groups := make(map[string]*pb.StringList, len(v.ModelsByProvider))
 	for k, list := range v.ModelsByProvider {
 		groups[k] = &pb.StringList{Values: list}
@@ -199,10 +198,10 @@ func snapshotProto(v gateway.ChatSnapshot) *pb.SnapshotResponse {
 	return &pb.SnapshotResponse{Sessions: mapValues(v.Sessions, sessionProto), Models: v.Models, ModelsByProvider: groups, Providers: v.Providers, ActiveModel: v.ActiveModel, ActiveProvider: v.ActiveProvider, Personas: v.Personas, ActivePersonas: v.ActivePersonas, RestartAvailable: v.RestartAvailable, CancellationAvailable: v.CancellationAvailable, PersonasAvailable: v.PersonasAvailable}
 }
 
-func snapshotValue(v *pb.SnapshotResponse) gateway.ChatSnapshot {
+func snapshotValue(v *pb.SnapshotResponse) messaging.ChatSnapshot {
 	groups := make(map[string][]string, len(v.ModelsByProvider))
 	for k, list := range v.ModelsByProvider {
 		groups[k] = list.GetValues()
 	}
-	return gateway.ChatSnapshot{Sessions: mapValues(v.Sessions, sessionValue), Models: v.Models, ModelsByProvider: groups, Providers: v.Providers, ActiveModel: v.ActiveModel, ActiveProvider: v.ActiveProvider, Personas: v.Personas, ActivePersonas: v.ActivePersonas, RestartAvailable: v.RestartAvailable, CancellationAvailable: v.CancellationAvailable, PersonasAvailable: v.PersonasAvailable}
+	return messaging.ChatSnapshot{Sessions: mapValues(v.Sessions, sessionValue), Models: v.Models, ModelsByProvider: groups, Providers: v.Providers, ActiveModel: v.ActiveModel, ActiveProvider: v.ActiveProvider, Personas: v.Personas, ActivePersonas: v.ActivePersonas, RestartAvailable: v.RestartAvailable, CancellationAvailable: v.CancellationAvailable, PersonasAvailable: v.PersonasAvailable}
 }

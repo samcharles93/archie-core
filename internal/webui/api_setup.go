@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/samcharles93/archie-core/internal/secret"
+	"github.com/samcharles93/archie-core/internal/config"
 )
 
 // SetupStep is one item in the dashboard's getting-started checklist.
@@ -79,6 +79,6 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 // one is the honest signal here.
 func (s *Server) hasChannel() bool {
 	cfg := s.Cfg.Get()
-	return cfg.Chat.Telegram.Token != (secret.SecretRef{}) || strings.TrimSpace(cfg.Chat.Telegram.TokenEnv) != "" ||
+	return cfg.Chat.Telegram.Token != (config.SecretRef{}) || strings.TrimSpace(cfg.Chat.Telegram.TokenEnv) != "" ||
 		strings.TrimSpace(cfg.Chat.WebhookAddr) != ""
 }

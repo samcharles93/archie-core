@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 const (
@@ -22,7 +22,7 @@ const (
 // interactive approval workflow. It intentionally has no host process or
 // filesystem access of its own.
 type DangerousService struct {
-	Authority gateway.DangerousCommandAuthority
+	Authority messaging.DangerousCommandAuthority
 
 	mu        sync.Mutex
 	actions   map[string]dangerousAction
@@ -44,7 +44,7 @@ type DangerousActionView struct {
 	ExpiresAt   time.Time `json:"expires_at"`
 }
 
-func NewDangerousService(authority gateway.DangerousCommandAuthority) *DangerousService {
+func NewDangerousService(authority messaging.DangerousCommandAuthority) *DangerousService {
 	return &DangerousService{
 		Authority: authority,
 		actions:   make(map[string]dangerousAction),
@@ -59,7 +59,7 @@ func (s *DangerousService) enabled() error {
 	return nil
 }
 
-func (s *DangerousService) Checkpoints(ctx context.Context) ([]gateway.CheckpointInfo, error) {
+func (s *DangerousService) Checkpoints(ctx context.Context) ([]messaging.CheckpointInfo, error) {
 	if err := s.enabled(); err != nil {
 		return nil, err
 	}

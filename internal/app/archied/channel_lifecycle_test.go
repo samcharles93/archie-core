@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	channelruntime "github.com/samcharles93/archie-core/internal/channels"
+	"github.com/samcharles93/archie-core/internal/channels/status"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webui"
@@ -42,7 +42,7 @@ func TestConfiguredNetworkGatewaysBecomeRunning(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = st.Close() })
-			manager := channelruntime.NewManager([]channelruntime.Descriptor{{
+			manager := status.NewManager([]status.Descriptor{{
 				ID: test.id, Name: test.name, Configured: true,
 			}})
 			b := &boot{
@@ -66,13 +66,13 @@ func TestConfiguredNetworkGatewaysBecomeRunning(t *testing.T) {
 
 			deadline := time.Now().Add(250 * time.Millisecond)
 			for time.Now().Before(deadline) {
-				if got := manager.Snapshot()[0].State; got == channelruntime.StateRunning {
+				if got := manager.Snapshot()[0].State; got == status.StateRunning {
 					return
 				}
 				time.Sleep(time.Millisecond)
 			}
 			t.Fatalf("channel state = %q, want %q after successful startup",
-				manager.Snapshot()[0].State, channelruntime.StateRunning)
+				manager.Snapshot()[0].State, status.StateRunning)
 		})
 	}
 }

@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/config"
-	"github.com/samcharles93/archie-core/internal/secret"
 )
 
 // Recognised enum values, named so validation and its error message cannot
@@ -108,7 +107,7 @@ func validateImage(cfg *config.Config) error {
 		if p.Class == "" {
 			return fmt.Errorf("%w: image.hosted.%s.class is required when enabled", ErrInvalidInput, name)
 		}
-		if p.APIKeyEnv == "" && p.APIKey == (secret.SecretRef{}) {
+		if p.APIKeyEnv == "" && p.APIKey == (config.SecretRef{}) {
 			return fmt.Errorf("%w: image.hosted.%s requires api_key_env or api_key when enabled", ErrInvalidInput, name)
 		}
 	}
@@ -222,7 +221,7 @@ func validateForgeIntake(cfg *config.Config) error {
 		return fmt.Errorf("%w: forge.intake %q (want %s)", ErrInvalidInput, cfg.Forge.Intake, list(forgeIntakes))
 	}
 	if intake == config.ForgeIntakeWebhook || intake == config.ForgeIntakeBoth {
-		if cfg.Forge.WebhookSecret == (secret.SecretRef{}) {
+		if cfg.Forge.WebhookSecret == (config.SecretRef{}) {
 			return fmt.Errorf("%w: forge.webhook_secret is required when forge.intake is %q", ErrInvalidInput, intake)
 		}
 		if cfg.Forge.WebhookAddr == "" {
@@ -265,7 +264,7 @@ func validateIdentities(identities []config.IdentityConfig) error {
 		if !oneOf(id.Forge.Type, forgeTypes) {
 			return fmt.Errorf("%w: identities[%d].forge.type %q (want %s)", ErrInvalidInput, i, id.Forge.Type, list(forgeTypes))
 		}
-		if !ForgeDisabled(id.Forge.Type) && id.Forge.Token == (secret.SecretRef{}) {
+		if !ForgeDisabled(id.Forge.Type) && id.Forge.Token == (config.SecretRef{}) {
 			return fmt.Errorf("%w: identities[%d].forge.token is required (each identity needs its own secret reference; unlike the top-level [forge], there is no default)", ErrInvalidInput, i)
 		}
 		if err := validateRepos(id.Repos); err != nil {

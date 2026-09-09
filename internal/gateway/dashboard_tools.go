@@ -69,13 +69,6 @@ func pageIndexTool() (tools.ToolEntry, bool) {
 	return entry, true
 }
 
-// DashboardNavigateResult is what dashboard_navigate returns. The web UI
-// renders it as a clickable chip that routes the operator to the page.
-type DashboardNavigateResult struct {
-	Path  string `json:"path"`
-	Label string `json:"label"`
-}
-
 // dashboardNavigateTool resolves a page path and returns the navigation the UI
 // can follow. It validates against the registry and refuses an unknown route
 // rather than guessing, so a chip is only ever produced for a real page.

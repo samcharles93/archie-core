@@ -10,11 +10,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/samcharles93/archie-core/internal/channels"
+	"github.com/samcharles93/archie-core/internal/channels/status"
 	"github.com/samcharles93/archie-core/internal/config"
-	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
-	"github.com/samcharles93/archie-core/internal/secret"
 )
 
 // Sentinel errors for handleConfigUpdate status classification. The
@@ -82,7 +81,7 @@ func (s *Server) handleChannelReload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "channel reload unavailable", http.StatusNotImplemented)
 		return
 	}
-	var status *channels.Status
+	var status *status.Status
 	for _, candidate := range s.Channels.Snapshot() {
 		if candidate.ID == id {
 			status = &candidate
@@ -100,7 +99,7 @@ func (s *Server) handleChannelReload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "channel": id})
 }
 
-func channelViewFromStatus(status channels.Status) ChannelView {
+func channelViewFromStatus(status status.Status) ChannelView {
 	view := ChannelView{
 		ID: status.ID, Name: status.Name, Configured: status.Configured, Detail: status.Detail,
 		State: string(status.State), ReloadSupported: status.ReloadSupported,
@@ -119,20 +118,20 @@ func channelViewFromStatus(status channels.Status) ChannelView {
 	return view
 }
 
-func channelStateDetail(state channels.State, configured bool) string {
+func channelStateDetail(state status.State, configured bool) string {
 	if !configured {
 		return "Not configured."
 	}
 	switch state {
-	case channels.StateConfigured:
+	case status.StateConfigured:
 		return "Configured; waiting for the daemon to start it."
-	case channels.StateStarting:
+	case status.StateStarting:
 		return "Starting."
-	case channels.StateRunning:
+	case status.StateRunning:
 		return "Running."
-	case channels.StateDegraded:
+	case status.StateDegraded:
 		return "Running with a degraded capability."
-	case channels.StateFailed:
+	case status.StateFailed:
 		return "Failed to start."
 	default:
 		return "Stopped."
@@ -140,7 +139,7 @@ func channelStateDetail(state channels.State, configured bool) string {
 }
 
 func telegramChannelView(t config.TelegramConfig) ChannelView {
-	configured := t.Token != (secret.SecretRef{}) || strings.TrimSpace(t.TokenEnv) != ""
+	configured := t.Token != (config.SecretRef{}) || strings.TrimSpace(t.TokenEnv) != ""
 	detail := "Not configured."
 	if configured {
 		n := len(t.AllowedUserIDs)
@@ -159,7 +158,7 @@ func telegramChannelView(t config.TelegramConfig) ChannelView {
 		Configured:      configured,
 		Detail:          detail,
 		Description:     "Talk to Archie and approve its work from your phone.",
-		State:           string(channels.StateConfigured),
+		State:           string(status.StateConfigured),
 		ReloadSupported: true,
 	}
 }
@@ -198,9 +197,9 @@ func emailChannelView(e config.EmailConfig) ChannelView {
 
 func staticChannelState(configured bool) string {
 	if configured {
-		return string(channels.StateConfigured)
+		return string(status.StateConfigured)
 	}
-	return string(channels.StateStopped)
+	return string(status.StateStopped)
 }
 
 // ConfigView is the read-only, secret-free projection of config.Config
@@ -319,7 +318,7 @@ type WebView struct {
 //
 // This handler builds ConfigView field by field from an explicit allowlist
 // rather than marshalling config.Config and stripping fields afterward:
-// config.Config carries secret.SecretRef values (forge tokens, provider API
+// config.Config carries config.SecretRef values (forge tokens, provider API
 // keys) and there is no way to guarantee a strip-after-marshal approach
 // keeps working as fields are added to Config in the future. An allowlist
 // fails safe -- a new secret field added upstream is simply absent here
@@ -359,7 +358,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 
 // LocalConfigView builds the projection from the configuration this process
 // holds. It is what the daemon serves and, byte for byte, what it publishes
-// for the UI process to render (see storev1.ConfigSnapshot).
+// for the UI process to render (see storecontract.ConfigSnapshot).
 //
 // Every value here is read from one config snapshot taken up front: under the
 // Holder a reload swaps the whole value, which is what a read-only view
@@ -437,7 +436,7 @@ func (s *Server) LocalConfigView(ctx context.Context) (ConfigView, bool, error) 
 // RemoteConfigView reads the projection the configuration owner published.
 // The reading process cannot edit it: it has no update path, and the page is
 // told so rather than offering a control that would 503.
-func RemoteConfigView(snapshots storev1.ConfigSnapshotStore) ConfigViewSource {
+func RemoteConfigView(snapshots storecontract.ConfigSnapshotStore) ConfigViewSource {
 	return func(ctx context.Context) (ConfigView, bool, error) {
 		snapshot, found, err := snapshots.ConfigSnapshot(ctx)
 		if err != nil || !found {

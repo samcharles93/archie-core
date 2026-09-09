@@ -22,8 +22,8 @@ import (
 	"net/http"
 	"time"
 
-	storev1 "github.com/samcharles93/archie-core/internal/contracts/store/v1"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/webhookguard"
 )
@@ -37,7 +37,7 @@ type Receiver struct {
 	// Captures persists what arrives. Nil answers 503 rather than failing
 	// the process it is mounted in: capture is a precondition for the
 	// no-code playbook epic, not a hard dependency of the daemon.
-	Captures storev1.CaptureStore
+	Captures storecontract.CaptureStore
 	// Limiter is the per-remote-address token bucket applied before a body
 	// is read. Nil disables rate limiting, which composition never does in
 	// production.
@@ -45,7 +45,7 @@ type Receiver struct {
 	// Bindings resolves the armed binding whose secret authenticates a
 	// source. Nil disables per-source HMAC verification and every event
 	// records as authenticated=false.
-	Bindings storev1.BindingDispatcher
+	Bindings storecontract.BindingDispatcher
 	// Retention and MaxEvents are passed straight to InsertCapture's
 	// prune-on-write bounds. See config.CaptureConfig.
 	Retention time.Duration
@@ -135,7 +135,7 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		redactedBody = body
 	}
 
-	c := storev1.CapturedEvent{
+	c := storecontract.CapturedEvent{
 		ReceivedAt:    time.Now().UTC(),
 		Source:        source,
 		RemoteAddr:    r.RemoteAddr,

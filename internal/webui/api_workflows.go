@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/gateway"
 )
 
 // handleWorkflows returns per-workflow and per-stage statistics: run counts,
@@ -78,7 +78,7 @@ func (s *Server) handleWorkRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "workflow is not enabled", http.StatusConflict)
 		return
 	}
-	taskID, err := s.WorkRequests.CreateTask(r.Context(), gateway.SpawnRequest{
+	taskID, err := s.WorkRequests.CreateTask(r.Context(), messaging.SpawnRequest{
 		Identity: request.Identity, Repo: request.Repository, Workflow: request.Workflow,
 		Title: request.Title, Body: request.Instructions,
 	})

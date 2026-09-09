@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	channelruntime "github.com/samcharles93/archie-core/internal/channels"
+	"github.com/samcharles93/archie-core/internal/channels/status"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
@@ -42,7 +42,7 @@ func (b *boot) setupReadinessProbes() {
 // channelStates projects a channel lifecycle snapshot into the readiness
 // probe's view, so the probe does not depend on the channels package's
 // concrete type.
-func channelStates(m *channelruntime.Manager) []readiness.ChannelState {
+func channelStates(m *status.Manager) []readiness.ChannelState {
 	if m == nil {
 		return nil
 	}

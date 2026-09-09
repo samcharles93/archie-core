@@ -100,8 +100,13 @@ func (r *Registry) Getenv(key string) string {
 	return ""
 }
 
-// Resolve resolves a SecretRef through the registered engine.
+// Resolve resolves a SecretRef through the registered engine. The zero
+// value (engine and key both empty) resolves to "" with no error -- the
+// zero value means "not configured".
 func (r *Registry) Resolve(ref SecretRef) (string, error) {
+	if ref.Engine == "" && ref.Key == "" {
+		return "", nil
+	}
 	e, ok := r.Get(ref.Engine)
 	if !ok {
 		return "", fmt.Errorf("secret engine %q not registered", ref.Engine)
