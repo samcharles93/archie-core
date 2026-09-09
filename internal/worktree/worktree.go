@@ -278,6 +278,45 @@ func (m *Manager) refresh(ctx context.Context, dir, base, branch string) error {
 	return nil
 }
 
+// Resume re-syncs an already-prepared worktree onto its branch's remote tip
+// without resetting to base, so the remediate workflow can continue work on
+// the PR branch the implement run already pushed. It is refresh's complement:
+// refresh resets to origin/<base> for a fresh run; Resume resets to
+// origin/<branch> so the committed PR work survives.
+func (m *Manager) Resume(ctx context.Context, dir, branch string) error {
+	r, err := git.PlainOpen(dir)
+	if err != nil {
+		return fmt.Errorf("open prepared worktree: %w", err)
+	}
+	if err := r.FetchContext(ctx, &git.FetchOptions{
+		RemoteName:    git.DefaultRemoteName,
+		ClientOptions: m.auth(),
+	}); err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
+		return fmt.Errorf("fetch origin: %w", err)
+	}
+
+	wt, err := r.Worktree()
+	if err != nil {
+		return fmt.Errorf("open worktree: %w", err)
+	}
+	ref := plumbing.NewBranchReferenceName(branch)
+	if err := wt.Checkout(&git.CheckoutOptions{Branch: ref, Force: true}); err != nil {
+		return fmt.Errorf("checkout branch %s: %w", branch, err)
+	}
+
+	tip, err := r.ResolveRevision(plumbing.Revision(remoteBase(branch)))
+	if err != nil {
+		return fmt.Errorf("resolve remote tip of %s: %w", branch, err)
+	}
+	if err := wt.Reset(&git.ResetOptions{Commit: *tip, Mode: git.HardReset}); err != nil {
+		return fmt.Errorf("reset to %s: %w", remoteBase(branch), err)
+	}
+	if err := cleanUntracked(r, dir); err != nil {
+		return fmt.Errorf("clean abandoned worktree files: %w", err)
+	}
+	return nil
+}
+
 func cleanUntracked(r *git.Repository, dir string) error {
 	head, err := r.Head()
 	if err != nil {
