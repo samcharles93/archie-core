@@ -559,6 +559,7 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 				return nil
 			}(),
 		},
+		ChatPRReviewer:      b.prReviewer(),
 		DefaultChatIdentity: b.defaultChatIdentity, SessionStore: b.chatSessionStore, Updates: b.updateService,
 		Secrets:         b.secrets,
 		Bus:             b.bus,

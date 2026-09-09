@@ -156,6 +156,27 @@ func TestGiteaPRState(t *testing.T) {
 	}
 }
 
+func TestGiteaGetPullRequest(t *testing.T) {
+	c, mux := newTestGiteaClient(t)
+	mux.HandleFunc("GET /api/v1/repos/o/r/pulls/7", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, map[string]any{
+			"number": 7, "title": "Add widget", "body": "Why",
+			"state": "open", "merged": false,
+			"head": map[string]any{"ref": "feature/widget", "sha": "headsha"},
+			"base": map[string]any{"ref": "main", "sha": "basesha"},
+		})
+	})
+
+	pr, err := c.GetPullRequest(t.Context(), "o", "r", 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := PullRequest{Number: 7, Title: "Add widget", Body: "Why", HeadRef: "feature/widget", BaseRef: "main", HeadSHA: "headsha", BaseSHA: "basesha", State: "open"}
+	if pr != want {
+		t.Fatalf("GetPullRequest = %+v, want %+v", pr, want)
+	}
+}
+
 func TestGiteaCloseIssueWithComment(t *testing.T) {
 	c, mux := newTestGiteaClient(t)
 	var commented, closed bool

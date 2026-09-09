@@ -697,6 +697,50 @@ func remoteBase(base string) string {
 	return "refs/remotes/" + git.DefaultRemoteName + "/" + base
 }
 
+// CheckoutPR materialises an existing pull request's head commit in a fresh
+// full clone so the caller can Diff it against its base and Snapshot it for
+// operator-triggered review. The head must already be pushed to the same
+// repository (archie's own PRs always are); a cross-repo or deleted head is
+// refused rather than half-reviewed. The returned cleanup removes the clone.
+func (m *Manager) CheckoutPR(ctx context.Context, owner, repo, headRef, baseRef string) (dir string, cleanup func(), err error) {
+	dir, err = os.MkdirTemp(m.WorkDir, "pr-review-*")
+	if err != nil {
+		return "", nil, fmt.Errorf("create PR review directory: %w", err)
+	}
+	cleanup = func() { _ = os.RemoveAll(dir) }
+
+	r, err := git.PlainCloneContext(ctx, dir, &git.CloneOptions{
+		URL:           m.cloneURL(owner, repo),
+		ClientOptions: m.auth(),
+	})
+	if err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("clone %s/%s for review: %w", owner, repo, err)
+	}
+
+	headHash, err := r.ResolveRevision(plumbing.Revision(remoteBase(headRef)))
+	if err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("resolve head branch %q: %w (the PR head must already be pushed to this repository)", headRef, err)
+	}
+	wt, err := r.Worktree()
+	if err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("open review worktree: %w", err)
+	}
+	if err := wt.Checkout(&git.CheckoutOptions{Hash: *headHash}); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("checkout head %q: %w", headRef, err)
+	}
+	// Diff resolves origin/<baseRef>; a full clone fetches every branch, so
+	// it exists. Fail closed now rather than mid-diff with a confusing error.
+	if _, err := resolveBase(r, baseRef); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("resolve base branch %q: %w", baseRef, err)
+	}
+	return dir, cleanup, nil
+}
+
 // resolveBase finds the commit the task branch is compared against.
 //
 // The fully-qualified remote-tracking ref is tried first because that is

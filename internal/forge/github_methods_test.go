@@ -129,6 +129,50 @@ func TestPRState(t *testing.T) {
 	}
 }
 
+func TestGetPullRequest(t *testing.T) {
+	tests := []struct {
+		name string
+		json map[string]any
+		want PullRequest
+	}{
+		{
+			name: "open",
+			json: map[string]any{
+				"number": 7, "title": "Add widget", "body": "Why this matters",
+				"state": "open", "merged": false,
+				"head": map[string]any{"ref": "feature/widget", "sha": "headsha"},
+				"base": map[string]any{"ref": "main", "sha": "basesha"},
+			},
+			want: PullRequest{Number: 7, Title: "Add widget", Body: "Why this matters", HeadRef: "feature/widget", BaseRef: "main", HeadSHA: "headsha", BaseSHA: "basesha", State: "open"},
+		},
+		{
+			name: "merged",
+			json: map[string]any{
+				"number": 7, "title": "Add widget", "body": "",
+				"state": "closed", "merged": true,
+				"head": map[string]any{"ref": "feature/widget", "sha": "headsha"},
+				"base": map[string]any{"ref": "main", "sha": "basesha"},
+			},
+			want: PullRequest{Number: 7, Title: "Add widget", HeadRef: "feature/widget", BaseRef: "main", HeadSHA: "headsha", BaseSHA: "basesha", State: "merged"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, mux := newTestClient(t)
+			mux.HandleFunc("GET /repos/o/r/pulls/7", func(w http.ResponseWriter, r *http.Request) {
+				writeJSON(t, w, tt.json)
+			})
+			got, err := c.GetPullRequest(t.Context(), "o", "r", 7)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Fatalf("GetPullRequest = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCloseIssueWithComment(t *testing.T) {
 	c, mux := newTestClient(t)
 	var commented, edited bool
