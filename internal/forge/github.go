@@ -192,6 +192,28 @@ func (c *GitHubClient) PRState(ctx context.Context, owner, repo string, number i
 	return pr.GetState(), nil
 }
 
+// GetPullRequest returns the forge-neutral metadata for an existing PR.
+func (c *GitHubClient) GetPullRequest(ctx context.Context, owner, repo string, number int) (PullRequest, error) {
+	pr, _, err := c.gh.PullRequests.Get(ctx, owner, repo, number)
+	if err != nil {
+		return PullRequest{}, fmt.Errorf("get pull request %s/%s#%d: %w", owner, repo, number, err)
+	}
+	state := pr.GetState()
+	if pr.GetMerged() {
+		state = "merged"
+	}
+	return PullRequest{
+		Number:  pr.GetNumber(),
+		Title:   pr.GetTitle(),
+		Body:    pr.GetBody(),
+		HeadRef: pr.GetHead().GetRef(),
+		BaseRef: pr.GetBase().GetRef(),
+		HeadSHA: pr.GetHead().GetSHA(),
+		BaseSHA: pr.GetBase().GetSHA(),
+		State:   state,
+	}, nil
+}
+
 // CloseIssue closes an issue with a final comment (feasibility "won't do").
 func (c *GitHubClient) CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error {
 	if comment != "" {

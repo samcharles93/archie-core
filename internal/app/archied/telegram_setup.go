@@ -48,6 +48,7 @@ type telegramSetup struct {
 	ChatTaskLister      gateway.ChatTaskLister
 	ChatTaskLogs        gateway.ChatTaskLogReader
 	ChatTaskActor       gateway.ChatTaskActor
+	ChatPRReviewer      gateway.ChatPRReviewer
 	DefaultChatIdentity string
 	SessionStore        gateway.SessionStore
 	Updates             telegram.UpdateService
@@ -331,6 +332,7 @@ func newChatTurnRunner(
 		TaskLogs:     s.ChatTaskLogs,
 		TaskActor:    s.ChatTaskActor,
 		TaskIdentity: s.DefaultChatIdentity,
+		PRReviewer:   s.ChatPRReviewer,
 		Bus:          s.Bus,
 		BotUser:      cfg.BotUser,
 		Channel:      channel,

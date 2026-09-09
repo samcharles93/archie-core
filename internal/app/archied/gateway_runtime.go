@@ -64,7 +64,8 @@ func (b *boot) setupGatewayChat(ctx context.Context, actor gateway.ChatTaskActor
 		Personas: b.personas, ChatTasks: b.chatTasks, ChatController: b.chatController,
 		ChatTaskLister: chatTaskListerAdapter{tasks: b.stateStore.Tasks},
 		ChatTaskLogs:   chatTaskLogReaderAdapter{tasks: b.stateStore.TaskByID, taskLogs: b.taskLogs},
-		ChatTaskActor:  actor, DefaultChatIdentity: b.defaultChatIdentity, SessionStore: b.chatSessionStore,
+		ChatTaskActor:  actor, ChatPRReviewer: b.prReviewer(),
+		DefaultChatIdentity: b.defaultChatIdentity, SessionStore: b.chatSessionStore,
 		Bus: b.bus, Log: b.log, Secrets: b.secrets,
 	}
 	router.LLM, router.LLMStream = makeChatLLMResponder(ctx, "web", setup, b.chatSessionStore, router)
