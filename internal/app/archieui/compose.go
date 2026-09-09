@@ -39,11 +39,12 @@ type deps struct {
 //     Defining one amends the owning service's contract first
 //     (docs/prds/ui-service-boundary.md:205-207); the route migration is
 //     archie-core-8cda.5.3.
-//   - Captures, CaptureLimiter, BindingDispatcher: withheld for the duration
-//     of the seam. The daemon's in-process dashboard still serves
-//     POST /webhooks/capture/{source}; wiring it here too would give two
-//     listeners the same intake authority, which the PRD forbids
-//     (lines 30-33). Turned on at cutover, once the daemon's listener is gone.
+//   - Captures, CaptureIntake: withheld for the duration of the seam. The
+//     daemon's receiver (internal/infrastructure/captureintake) serves
+//     POST /webhooks/capture/{source} from the daemon's listener; wiring it
+//     here too would give two listeners the same intake authority, which
+//     the PRD forbids (lines 30-33). Turned on at cutover, once the
+//     daemon's listener is gone.
 func compose(d deps) *webui.Server {
 	srv := &webui.Server{
 		Store:                 d.Store,
