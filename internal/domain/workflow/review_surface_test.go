@@ -85,3 +85,22 @@ func TestImplementPRBodyCarriesZeroFindingSection(t *testing.T) {
 		t.Fatalf("PR body lost the build summary:\n%s", body)
 	}
 }
+
+// TestStageReviewStashesReportForPRBody pins the integration between
+// StageReview and implementPRBody: a passing review must land on
+// tc.ReviewReport, or the PR body silently omits the findings section
+// (renderPRReviewSection returns "" for a zero-value report).
+func TestStageReviewStashesReportForPRBody(t *testing.T) {
+	tc, _ := reviewTaskContext(t, true)
+	tc.Reviewer = &fakeReviewer{report: NewCompletedReviewReport(nil, "clean")}
+
+	if err := StageReview().Run(t.Context(), tc); err != nil {
+		t.Fatalf("StageReview().Run() error = %v", err)
+	}
+	if !tc.ReviewReport.Ran() {
+		t.Fatal("ReviewReport not stashed after a passing review; the PR body would omit the findings section")
+	}
+	if tc.ReviewReport.Status != ReviewStatusCompleted {
+		t.Errorf("ReviewReport.Status = %q, want %q", tc.ReviewReport.Status, ReviewStatusCompleted)
+	}
+}

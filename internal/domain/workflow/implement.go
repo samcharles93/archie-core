@@ -202,10 +202,10 @@ func Implement() Workflow {
 // not full price. When the adversarial review ran, its findings section is
 // appended so the PR states what the reviewer checked and found (h019.6).
 func implementPRBody(tc *TaskContext) string {
-	body := fmt.Sprintf("%s\n\n---\n*workflow: implement · %d iterations · %s*",
-		tc.BuildSummary, tc.Task.Iterations, formatTokenUsage(tc.Task.TokensUsed, tc.RunUsage))
+	summary := tc.BuildSummary
 	if section := renderPRReviewSection(tc.ReviewReport); section != "" {
-		body += "\n\n" + section
+		summary += "\n\n" + section
 	}
-	return body
+	return fmt.Sprintf("%s\n\n---\n*workflow: implement · %d iterations · %s*",
+		summary, tc.Task.Iterations, formatTokenUsage(tc.Task.TokensUsed, tc.RunUsage))
 }
