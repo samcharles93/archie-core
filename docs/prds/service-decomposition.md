@@ -1,6 +1,9 @@
 # Service decomposition -- decision
 
 **Status:** Proposed -- not yet approved for implementation
+**Progress:** Phases 1 (Gateway), 2 (State Store) and 3 (UI) shipped; Phase 4
+(Messaging) is ready, Phase 5 (Execution/Runner/Scheduler) and Phase 6
+(Curator, optional) remain chained behind it.
 **Date:** 2026-09-05
 **Beads epic:** archie-core-8cda
 **Prior art:** `docs/inspiration/2026-09-05-awx-service-decomposition-and-ansible-task-model.md`,
@@ -83,20 +86,24 @@ either shape.
 
 `docs/inspiration/module-reference-awx-decomposition-vs-archie.md`
 established that Archie's existing domain split already does what AWX's
-service-decomposition post argues for -- boundaries exist. What doesn't
-exist is deployability: `internal/webui` is not a passive frontend today.
-The original webui coupling inventory has been re-baselined against the current
-checkout. Two earlier couplings are already removed; the remaining UI work is
-recorded in [`ui-service-boundary.md`](ui-service-boundary.md).
+service-decomposition post argues for -- boundaries exist. What didn't
+exist was deployability: `internal/webui` was not a passive frontend. That is
+now resolved; the re-baselined coupling inventory is below, and the ratified
+boundary is [`ui-service-boundary.md`](ui-service-boundary.md).
 
 - Telegram task actions now call Gateway's `ChatContract` directly through
   `chatTaskActorAdapter`; the old Telegram-to-webui HTTP detour is historical.
 - `internal/webui/api_chat.go` now holds `gateway.ChatContract`; direct
   `SessionStore`, `Router`, and `TurnHistory` access is historical.
-- The live `config.Holder` alias remains: `buildDaemon` assigns
-  `b.web.Cfg = b.d.Cfg`. UI extraction must remove that alias and also assign
-  owners/contracts for the State Store, channel manager, event/log feeds,
-  configuration mutations, webhook capture, and other current webui routes.
+- The third coupling is closed. UI extraction shipped (`archie-core-8cda.5`,
+  closed 2026-09-11): `cmd/archie-ui` serves the dashboard against remote
+  Gateway and State Store contracts, holds no `config.Holder`, and relinks no
+  daemon runtime (`cmd/archie-ui/architecture_test.go` enforces that on every
+  `task check`). The `b.web.Cfg = b.d.Cfg` alias left in `buildDaemon` is now
+  inside the daemon's own process -- it renders the published `ConfigView`
+  snapshot and holds the readiness probes -- so it no longer crosses a service
+  boundary. That cleanup is `archie-core-ml30` (P2); the UI boundary is
+  ratified in [`ui-service-boundary.md`](ui-service-boundary.md).
 
 ## Non-goals
 
@@ -114,7 +121,11 @@ recorded in [`ui-service-boundary.md`](ui-service-boundary.md).
   but it is a separate decision (agent execution as a strict data
   boundary, `ARCHITECTURE.md`) and does not gate or get gated by this PRD.
 
-## Open questions (blocking before implementation starts)
+## Open questions
+
+All ten are resolved; each carries its resolution inline. Three phases have
+since shipped against them (Gateway, State Store, UI), so the framing here is
+historical record rather than an outstanding gate.
 
 1. **Extraction order.** Which service gets pulled out of the monolith
    first? The webui entanglement findings above suggest Gateway Service's
@@ -165,9 +176,10 @@ recorded in [`ui-service-boundary.md`](ui-service-boundary.md).
    `[services.<name>].target` address -- empty = local (in-process) adapter,
    set = dial the remote gRPC client. This replaced the earlier
    `mode = "inproc" | "remote"` enum, which was dropped (see the gateway's
-   `services.gateway.target`). Defaults differ per service: the State Store
-   defaults **local** (not yet extracted); the gateway defaults
-   **remote-on-localhost** because it is already a separate process. A
+   `services.gateway.target`). The adapter is chosen by presence of the
+   target; Phase 2 then deleted every local fallback, so remote is now the
+   only mode and an empty `[services.state].target` is a startup error
+   (docs/prds/state-store-contract.md §12 step 7). A
    per-contract conformance suite runs against both adapters over
    `bufconn`; the flip to a real process is a same-commit deletion of the
    in-process path, no dual-live window. Consequence: Gateway's Phase 0
