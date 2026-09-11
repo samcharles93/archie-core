@@ -28,6 +28,25 @@ func TestRenderPRReviewSection(t *testing.T) {
 			want:   []string{"Adversarial self-review ran", "found no defects"},
 		},
 		{
+			name: "checked properties back a zero-finding review",
+			report: ReviewReport{
+				Status:  ReviewStatusCompleted,
+				Checked: []ReviewCheck{{Property: "nil-safety of Foo callers", Evidence: "read all 4 callers"}},
+			},
+			want: []string{"found no defects", "Checked and cleared", "nil-safety of Foo callers", "read all 4 callers"},
+		},
+		{
+			name: "checked properties also render alongside findings",
+			report: ReviewReport{
+				Status: ReviewStatusCompleted,
+				Findings: []ReviewFinding{
+					{File: "a.go", Line: 1, Defect: "warn", FailureScenario: "x", Verdict: ReviewVerdictPlausible, Level: ReviewLevelWarn, Category: ReviewCategoryOther},
+				},
+				Checked: []ReviewCheck{{Property: "error paths", Evidence: "traced two"}},
+			},
+			want: []string{"Non-blocking notes", "Checked and cleared", "error paths"},
+		},
+		{
 			name: "non-blocking findings listed",
 			report: NewCompletedReviewReport([]ReviewFinding{
 				{File: "a.go", Line: 12, Defect: "style nit", FailureScenario: "x", Verdict: ReviewVerdictPlausible, Level: ReviewLevelWarn, Category: ReviewCategoryOther},
