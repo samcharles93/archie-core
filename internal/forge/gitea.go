@@ -257,6 +257,29 @@ func (c *GiteaClient) ReplyToReview(ctx context.Context, owner, repo string, num
 	return nil
 }
 
+// CreateReviewComments posts the line-anchored comments as one COMMENT-state
+// review. Gitea has no standalone inline-comment call -- inline comments are
+// carried by a submitted review, so a single review is both the native shape
+// and the fewest round trips. Lines are anchored to the NEW side of the diff.
+func (c *GiteaClient) CreateReviewComments(ctx context.Context, owner, repo string, number int, commitID string, comments []InlineReviewComment) error {
+	reviewComments := make([]gitea.CreatePullReviewComment, 0, len(comments))
+	for _, cm := range comments {
+		reviewComments = append(reviewComments, gitea.CreatePullReviewComment{
+			Path:       cm.Path,
+			Body:       cm.Body,
+			NewLineNum: int64(cm.Line),
+		})
+	}
+	if _, _, err := c.cli.CreatePullReview(owner, repo, int64(number), gitea.CreatePullReviewOptions{
+		State:    gitea.ReviewStateComment,
+		CommitID: commitID,
+		Comments: reviewComments,
+	}); err != nil {
+		return fmt.Errorf("create review comments on %s/%s#%d: %w", owner, repo, number, err)
+	}
+	return nil
+}
+
 // giteaReviewAuthor returns a review/comment author's login, or "" when the
 // author is absent (a team review, or a deleted user).
 func giteaReviewAuthor(u *gitea.User) string {
