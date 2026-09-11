@@ -227,6 +227,12 @@ type ConfigView struct {
 	// runtime overlay, so the UI can mark those rows (their file value
 	// is shadowed until reset) and offer a per-row reset.
 	Overridden []string `json:"overridden,omitempty"`
+	// MultiIdentity reports that the deployment configures [[identities]],
+	// which this projection does not carry: Identity and Repositories
+	// describe the default identity alone. A consumer that would otherwise
+	// attribute every task to the published forge uses this to withhold
+	// rather than guess.
+	MultiIdentity bool `json:"multi_identity,omitempty"`
 	// Editable reports whether this process can apply configuration
 	// changes. False makes the page render values without edit controls,
 	// which is what a process that only displays a published snapshot can
@@ -383,9 +389,10 @@ func (s *Server) LocalConfigView(ctx context.Context) (ConfigView, bool, error) 
 			ForgeHost:    cfg.Forge.Host,
 			DiffCapLines: cfg.DiffCapLines,
 		},
-		Repositories: reposView(cfg.Repos),
-		Models:       cfg.Models,
-		Providers:    providersView(cfg.Providers),
+		Repositories:  reposView(cfg.Repos),
+		MultiIdentity: len(cfg.Identities) > 0,
+		Models:        cfg.Models,
+		Providers:     providersView(cfg.Providers),
 		Budgets: BudgetsView{
 			MaxSteps:        cfg.Budgets.MaxSteps,
 			WallClock:       cfg.Budgets.WallClock.Std().String(),

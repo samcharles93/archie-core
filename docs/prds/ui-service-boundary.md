@@ -247,7 +247,22 @@ a holder, and the composition test fails if it ever does, but removing the
 field outright means moving that renderer and the readiness probes off
 `webui.Server` onto the daemon's own configuration owner.
 
-Remaining for Phase 3 closure: the end-to-end smoke suite over real processes.
+### Real-process evidence (archie-core-8cda.5.6)
+
+`cmd/archie-ui/main_test.go` builds the binary and runs it against a State
+Store and a Gateway on loopback gRPC, then drives it over HTTP: liveness
+without a token, 401 for an API request without one, the `?t=` exchange into
+an HttpOnly cookie, task rows with their forge links, the embedded SPA and its
+assets, a chat stream relayed frame by frame from the Gateway, an operator
+task action crossing to the Gateway (and refused without the CSRF header),
+capture intake accepted unauthenticated, the ratified degradations, readiness
+dropping when the State Store dies while liveness holds, and a clean SIGTERM.
+
+Two dashboard values still degrade because the published projection does not
+carry them, both daemon configuration the UI cannot see: `chat.show_tool_calls`
+(the chat page never expands tool calls) and the `/api/setup` checklist (the
+panel is omitted rather than rendered from what the snapshot knows). Neither is
+a boundary violation; both are fields the projection could publish.
 
 ## Non-goals and open work
 
