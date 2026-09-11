@@ -274,6 +274,15 @@ func createSQLiteDatabase(t *testing.T, path string, version int) {
 
 func runUpdateInstallScript(t *testing.T, environment map[string]string) (Result, []string) {
 	t.Helper()
+	result, calls, _ := runUpdateInstall(t, environment, false)
+	return result, calls
+}
+
+// runUpdateInstall runs the adapter, optionally expecting it to refuse. It
+// returns the parsed result (empty when the run was expected to fail), the
+// recorded calls, and the combined output.
+func runUpdateInstall(t *testing.T, environment map[string]string, wantErr bool) (Result, []string, string) {
+	t.Helper()
 	ctx := t.Context()
 
 	root, err := filepath.Abs(filepath.Join("..", ".."))
@@ -303,6 +312,9 @@ case "$*" in
     source_dir="${@: -1}"
     mkdir -p "$source_dir"
     /usr/bin/cp -R "$ARCHIE_TEST_SOURCE_DIR/scripts" "$source_dir/scripts"
+    for c in archied archie-gateway archie-state-store archie-ui archie-playbooks archie-agent; do
+      mkdir -p "$source_dir/cmd/$c"
+    done
     : > "$source_dir/docker-compose.yml"
     ;;
   *"rev-parse --verify refs/tags/"*) echo approved-release-commit ;;
@@ -331,6 +343,15 @@ if [ "$1" = image ] && [ "$2" = save ]; then
 fi
 `)
 	writeFakeCommand(t, fakeDir, "systemd-run", `printf '%s\n' "systemd-run $*" >> "$ARCHIE_TEST_CALLS"`)
+	writeFakeCommand(t, fakeDir, "systemctl", `
+printf '%s\n' "systemctl $*" >> "$ARCHIE_TEST_CALLS"
+if [ "$2" = list-unit-files ]; then
+  case " ${ARCHIE_TEST_ABSENT_UNITS:-} " in
+    *" $3 "*) exit 0 ;;
+  esac
+  printf '%s enabled enabled\n' "$3"
+fi
+`)
 	writeFakeCommand(t, fakeDir, "install", `
 printf '%s\n' "install $*" >> "$ARCHIE_TEST_CALLS"
 /usr/bin/install "$@"
@@ -366,8 +387,22 @@ printf '%s\n' "cp $*" >> "$ARCHIE_TEST_CALLS"
 		cmd.Env = append(cmd.Env, key+"="+value)
 	}
 	output, err := cmd.CombinedOutput()
-	if err != nil {
+	switch {
+	case wantErr && err == nil:
+		t.Fatalf("archie-update-install succeeded, want refusal:\n%s", output)
+	case !wantErr && err != nil:
 		t.Fatalf("archie-update-install failed: %v\n%s", err, output)
+	}
+	callsData, err := os.ReadFile(callsPath)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	var calls []string
+	if len(callsData) > 0 {
+		calls = strings.Split(strings.TrimSpace(string(callsData)), "\n")
+	}
+	if wantErr {
+		return Result{}, calls, string(output)
 	}
 	var result Result
 	scanner := bufio.NewScanner(strings.NewReader(string(output)))
@@ -383,15 +418,7 @@ printf '%s\n' "cp $*" >> "$ARCHIE_TEST_CALLS"
 	if !found {
 		t.Fatalf("installer output has no result sentinel:\n%s", output)
 	}
-	callsData, err := os.ReadFile(callsPath)
-	if err != nil && !os.IsNotExist(err) {
-		t.Fatal(err)
-	}
-	var calls []string
-	if len(callsData) > 0 {
-		calls = strings.Split(strings.TrimSpace(string(callsData)), "\n")
-	}
-	return result, calls
+	return result, calls, string(output)
 }
 
 func writeFakeCommand(t *testing.T, dir, name, body string) {
@@ -517,6 +544,121 @@ func assertCallAbsent(t *testing.T, calls []string, fragment string) {
 	for _, call := range calls {
 		if strings.Contains(call, fragment) {
 			t.Fatalf("calls unexpectedly contain %q: %#v", fragment, calls)
+		}
+	}
+}
+
+// An archied release is five processes. Installing the daemon binary alone
+// left the State Store, Gateway and UI on the previous release, so archied
+// came up against a State Store nothing had started, failed its health check
+// and rolled back (archie-core-hbqk).
+func TestUpdateInstallBuildsEveryReleaseBinary(t *testing.T) {
+	_, calls := runUpdateInstallScript(t, map[string]string{
+		"ARCHIE_UPDATE_DAEMON_PREVIOUS": "1.22.0",
+		"ARCHIE_UPDATE_DAEMON_VERSION":  "1.23.0",
+		"ARCHIE_UPDATE_AGENT_PREVIOUS":  "1.21.0",
+	})
+
+	for _, cmd := range []string{"archied", "archie-gateway", "archie-state-store", "archie-ui", "archie-playbooks"} {
+		assertCallContains(t, calls, "go build", "internal/app/archied.gatewayVersion=1.23.0", "./cmd/"+cmd)
+		assertCallContains(t, calls, "install -m755", "/"+cmd)
+	}
+	assertCallAbsent(t, calls, "./cmd/archie-agent")
+	// The watchdog cannot restart what it is not told about.
+	assertCallContains(t, calls, "systemd-run",
+		"--setenv=ARCHIE_UPDATE_UNITS=archie-state-store archie-gateway archied archie-ui")
+	assertCallContains(t, calls, "systemd-run",
+		"--setenv=ARCHIE_UPDATE_BINARIES=archie-state-store archie-gateway archied archie-ui archie-playbooks")
+}
+
+// Installing binaries for processes the host has no unit for produces exactly
+// the failure this bug was: archied dials a State Store nothing starts. Refuse
+// before touching the host instead, and say what is missing.
+func TestUpdateInstallRefusesWhenAServiceUnitIsMissing(t *testing.T) {
+	_, calls, output := runUpdateInstall(t, map[string]string{
+		"ARCHIE_UPDATE_DAEMON_PREVIOUS": "1.22.0",
+		"ARCHIE_UPDATE_DAEMON_VERSION":  "1.23.0",
+		"ARCHIE_UPDATE_AGENT_PREVIOUS":  "1.21.0",
+		"ARCHIE_TEST_ABSENT_UNITS":      "archie-state-store.service",
+	}, true)
+
+	if !strings.Contains(output, "archie-state-store.service") {
+		t.Errorf("refusal must name the missing unit; output = %q", output)
+	}
+	// Nothing may be replaced on a host it would leave broken.
+	assertCallAbsent(t, calls, "go build")
+	assertCallAbsent(t, calls, "install -m755")
+}
+
+// The deployment is several processes, so the watchdog must cycle all of them,
+// and in dependency order: the State Store owns archie.db and everything dials
+// it, so it starts first and stops last (archie-core-hbqk).
+func TestUpdateWatchdogCyclesEveryUnitInDependencyOrder(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	work := t.TempDir()
+	binDir, fakeDir := filepath.Join(work, "bin"), filepath.Join(work, "fake-bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// archie-ui is new in this release: it has no .prev, so rolling back must
+	// remove it rather than leave a binary from a release that was withdrawn.
+	for name, content := range map[string]string{
+		"archied": "new", "archied.prev": "old",
+		"archie-state-store": "new", "archie-state-store.prev": "old",
+		"archie-ui": "new",
+	} {
+		if err := os.WriteFile(filepath.Join(binDir, name), []byte(content), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	callsPath := filepath.Join(work, "calls")
+	writeFakeCommand(t, fakeDir, "systemctl", `printf '%s\n' "systemctl $*" >> "$ARCHIE_TEST_CALLS"`)
+	writeFakeCommand(t, fakeDir, "curl", `exit 1`)
+	cmd := exec.CommandContext(t.Context(), filepath.Join(root, "scripts", "archie-update-watchdog"))
+	cmd.Env = append(os.Environ(), "PATH="+fakeDir+":"+os.Getenv("PATH"), "ARCHIE_BIN_DIR="+binDir,
+		"ARCHIE_TEST_CALLS="+callsPath, "ARCHIE_UPDATE_HEALTH_TIMEOUT=0",
+		"ARCHIE_UPDATE_COMPONENTS=daemon",
+		"ARCHIE_UPDATE_UNITS=archie-state-store archied archie-ui",
+		"ARCHIE_UPDATE_BINARIES=archie-state-store archied archie-ui",
+		"ARCHIE_UPDATE_PREVIOUS_GATEWAY=1.22.0", "ARCHIE_UPDATE_INSTALLED_GATEWAY=1.23.0")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("watchdog failed: %v\n%s", err, output)
+	}
+	calls, err := os.ReadFile(callsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexOf := func(want string) int {
+		for i, line := range strings.Split(strings.TrimSpace(string(calls)), "\n") {
+			if line == want {
+				return i
+			}
+		}
+		return -1
+	}
+	startStore := indexOf("systemctl --user restart archie-state-store.service")
+	startDaemon := indexOf("systemctl --user restart archied.service")
+	stopUI := indexOf("systemctl --user stop archie-ui.service")
+	stopStore := indexOf("systemctl --user stop archie-state-store.service")
+	if startStore < 0 || startDaemon < 0 || startStore > startDaemon {
+		t.Errorf("State Store must start before archied; calls =\n%s", calls)
+	}
+	if stopUI < 0 || stopStore < 0 || stopUI > stopStore {
+		t.Errorf("UI must stop before the State Store; calls =\n%s", calls)
+	}
+	if _, err := os.Stat(filepath.Join(binDir, "archie-ui")); !os.IsNotExist(err) {
+		t.Errorf("archie-ui had no .prev and must be removed on rollback, stat err = %v", err)
+	}
+	for _, name := range []string{"archied", "archie-state-store"} {
+		got, err := os.ReadFile(filepath.Join(binDir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != "old" {
+			t.Errorf("%s = %q after rollback, want the previous binary", name, got)
 		}
 	}
 }

@@ -162,7 +162,7 @@ fi
 # 4. Build and install the native daemon. archie-agent is deployed only as
 # the managed task image; installing a host binary would imply an unsupported
 # host execution path.
-echo "==> Building native archied..."
+echo "==> Building native archie binaries..."
 (
   cd "${SRC_DIR}"
   # installtype.buildType must be stamped here: an unstamped archied
@@ -171,10 +171,19 @@ echo "==> Building native archied..."
   # even the right kind of update for a script-built native binary.
   GATEWAY_VERSION="$(git describe --tags --match 'archied/v*' 2>/dev/null | sed 's|^archied/v||' || echo dev)"
   RUNTIME_VERSION="$(git describe --tags --match 'archie/v*' 2>/dev/null | sed 's|^archie/v||' || echo dev)"
-  go build -ldflags "-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion=${GATEWAY_VERSION} -X github.com/samcharles93/archie-core/internal/app/archied.runtimeVersion=${RUNTIME_VERSION} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" -o "${ARCHIE_BIN_DIR}/archied" ./cmd/archied
+  LDFLAGS="-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion=${GATEWAY_VERSION}"
+  LDFLAGS="${LDFLAGS} -X github.com/samcharles93/archie-core/internal/app/archied.runtimeVersion=${RUNTIME_VERSION}"
+  LDFLAGS="${LDFLAGS} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary"
+  # archied does not run alone: the State Store owns archie.db, the Gateway
+  # serves the chat contract, and the dashboard is its own process. Building
+  # only archied leaves it unable to boot. Keep this list and the one in
+  # scripts/archie-update-install together.
+  for cmd in archied archie-gateway archie-state-store archie-ui archie-playbooks; do
+    go build -ldflags "${LDFLAGS}" -o "${ARCHIE_BIN_DIR}/${cmd}" "./cmd/${cmd}"
+  done
   install -m755 "${SRC_DIR}/scripts/archie-update-install" "${ARCHIE_BIN_DIR}/archie-update-install"
 )
-echo "  Installed archied and updater to ${ARCHIE_BIN_DIR}/"
+echo "  Installed archied, archie-gateway, archie-state-store, archie-ui, archie-playbooks and updater to ${ARCHIE_BIN_DIR}/"
 
 # 5. Interactive Configuration: Forge & LLM Provider Setup
 if [ ! -f "${ENV_FILE}" ]; then
