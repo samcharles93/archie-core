@@ -7,7 +7,9 @@ package webui
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -30,16 +32,68 @@ func TestTaskURLsUseOwningForgeRoutes(t *testing.T) {
 	})}
 	task := workflow.Task{Owner: "acme", Repo: "widget", IssueNumber: 12, PRNumber: 34, Identity: "gitea"}
 
-	repoURL, issueURL, prURL := srv.taskURLs(task)
+	forge := srv.resolveForge(t.Context())
+	repoURL, issueURL, prURL := taskURLs(task, forge(task))
 	if repoURL != "https://gitea.example/acme/widget" || issueURL != repoURL+"/issues/12" || prURL != repoURL+"/pulls/34" {
 		t.Fatalf("URLs = %q, %q, %q; want canonical Gitea routes", repoURL, issueURL, prURL)
 	}
 
 	task.Identity = ""
 	task.Owner, task.Repo = "other", "repo"
-	_, _, prURL = srv.taskURLs(task)
+	_, _, prURL = taskURLs(task, forge(task))
 	if prURL != "https://github.example/other/repo/pull/34" {
 		t.Fatalf("GitHub PR URL = %q", prURL)
+	}
+}
+
+// A process with no configuration of its own still has to render the links,
+// or the extracted dashboard loses every click-through to the issue and the
+// pull request it opened. The daemon's published projection is where they
+// come from once the holder is gone.
+func TestTaskURLsFallBackToThePublishedProjection(t *testing.T) {
+	tests := []struct {
+		name    string
+		view    ConfigView
+		ok      bool
+		err     error
+		wantPR  string
+		wantURL string
+	}{
+		{
+			name:    "published projection",
+			view:    ConfigView{Identity: IdentityView{ForgeType: "github", ForgeHost: "https://github.example"}},
+			ok:      true,
+			wantURL: "https://github.example/acme/widget",
+			wantPR:  "https://github.example/acme/widget/pull/34",
+		},
+		{
+			name: "multi-identity publishes only the default forge, so links are withheld",
+			view: ConfigView{
+				Identity:      IdentityView{ForgeType: "github", ForgeHost: "https://github.example"},
+				MultiIdentity: true,
+			},
+			ok: true,
+		},
+		{
+			name: "no snapshot published yet",
+		},
+		{
+			name: "snapshot read failed",
+			err:  errors.New("state store down"),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := &Server{ConfigSource: func(context.Context) (ConfigView, bool, error) {
+				return tc.view, tc.ok, tc.err
+			}}
+			task := workflow.Task{Owner: "acme", Repo: "widget", IssueNumber: 12, PRNumber: 34}
+			forge := srv.resolveForge(t.Context())
+			repoURL, _, prURL := taskURLs(task, forge(task))
+			if repoURL != tc.wantURL || prURL != tc.wantPR {
+				t.Fatalf("repo/PR URLs = %q, %q; want %q, %q", repoURL, prURL, tc.wantURL, tc.wantPR)
+			}
+		})
 	}
 }
 

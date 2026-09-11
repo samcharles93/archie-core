@@ -54,9 +54,10 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	forge := s.resolveForge(r.Context())
 	views := make([]taskView, len(tasks))
 	for i := range tasks {
-		repoURL, issueURL, prURL := s.taskURLs(tasks[i])
+		repoURL, issueURL, prURL := taskURLs(tasks[i], forge(tasks[i]))
 		views[i] = taskView{Task: tasks[i], Actions: taskstate.Actions(tasks[i].Status), RepoURL: repoURL, IssueURL: issueURL, PRURL: prURL}
 	}
 	writeJSON(w, views)
@@ -70,21 +71,51 @@ type taskView struct {
 	PRURL    string             `json:"pr_url,omitempty"`
 }
 
-func (s *Server) taskURLs(task task.Task) (repoURL, issueURL, prURL string) {
-	if s.Cfg == nil {
+// forgeCoordinates locate a repository on its forge: the base URL, and the
+// forge type that decides the pull-request path segment.
+type forgeCoordinates struct {
+	host      string
+	forgeType string
+}
+
+// resolveForge reads the forge layout once for a request and returns each
+// task's coordinates from it.
+//
+// The daemon holds the configuration and resolves per task, so a deployment
+// with several identities links each task to its own forge. The UI process
+// holds none and reads the projection the daemon published instead, which
+// carries the default identity alone -- so where that is not the whole
+// picture it withholds the links rather than pointing them at the wrong
+// forge. Publishing per-identity forges is what a multi-identity dashboard
+// needs, and it is a projection change, not a rendering one.
+func (s *Server) resolveForge(ctx context.Context) func(task.Task) forgeCoordinates {
+	if s.Cfg != nil {
+		cfg := s.Cfg.Get()
+		return func(t task.Task) forgeCoordinates {
+			forge := forgeConfigForTask(cfg, t)
+			return forgeCoordinates{host: forge.Host, forgeType: forge.Type}
+		}
+	}
+	unlinked := func(task.Task) forgeCoordinates { return forgeCoordinates{} }
+	view, ok, err := s.configSource()(ctx)
+	if err != nil || !ok || view.MultiIdentity {
+		return unlinked
+	}
+	published := forgeCoordinates{host: view.Identity.ForgeHost, forgeType: view.Identity.ForgeType}
+	return func(task.Task) forgeCoordinates { return published }
+}
+
+func taskURLs(task task.Task, forge forgeCoordinates) (repoURL, issueURL, prURL string) {
+	if forge.host == "" || task.Owner == "" || task.Repo == "" {
 		return "", "", ""
 	}
-	forgeCfg := forgeConfigForTask(s.Cfg.Get(), task)
-	if forgeCfg.Host == "" || task.Owner == "" || task.Repo == "" {
-		return "", "", ""
-	}
-	repoURL = strings.TrimRight(forgeCfg.Host, "/") + "/" + url.PathEscape(task.Owner) + "/" + url.PathEscape(task.Repo)
+	repoURL = strings.TrimRight(forge.host, "/") + "/" + url.PathEscape(task.Owner) + "/" + url.PathEscape(task.Repo)
 	if task.IsForgeBacked() && task.IssueNumber > 0 {
 		issueURL = repoURL + "/issues/" + strconv.Itoa(task.IssueNumber)
 	}
 	if task.PRNumber > 0 {
 		segment := "pull"
-		if forgeCfg.Type == "gitea" {
+		if forge.forgeType == "gitea" {
 			segment = "pulls"
 		}
 		prURL = repoURL + "/" + segment + "/" + strconv.Itoa(task.PRNumber)
