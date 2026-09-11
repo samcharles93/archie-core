@@ -31,11 +31,28 @@ permissions:
 jobs:
   gate:
     runs-on: ubuntu-latest
+    outputs:
+      archied_version: ${{ steps.release_tag.outputs.archied_version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # Read the release from the commit, not from github.ref. One release
+      # push carries main and both tags at the same SHA, and only one of
+      # those refs survives the concurrency group, so a ref-derived version
+      # is whatever won the race. The tag at HEAD is the same either way.
+      - name: Resolve archied tag at HEAD
+        id: release_tag
+        run: |
+          version="$(git tag --points-at HEAD --list 'archied/v*' | sed 's|^archied/v||' | sort -V | tail -1)"
+          echo "archied_version=$version" >> "$GITHUB_OUTPUT"
+          if [ -n "$version" ]; then
+            echo "archied release at HEAD: $version"
+          else
+            echo "no archied tag at HEAD; distribution zip will be skipped"
+          fi
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -188,7 +205,14 @@ jobs:
   # binary (archie-core-8cda.4.7.1).
   dist-zip:
     needs: gate
-    if: startsWith(github.ref, 'refs/tags/archied/v')
+    # Not gated on github.ref. A release is pushed as main plus both tags at
+    # one SHA, the concurrency group below collapses those into a single run,
+    # and the survivor is whichever ref happened to start last -- for
+    # v1.23.0 that was refs/heads/main, so this job was skipped and no zip
+    # was ever produced. Resolve the tag from the commit instead of trusting
+    # the ref that won the race, and skip only when there is genuinely no
+    # archied tag at HEAD.
+    if: needs.gate.outputs.archied_version != ''
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -201,7 +225,7 @@ jobs:
 
       - name: Resolve archied version
         id: version
-        run: echo "version=${GITHUB_REF#refs/tags/archied/v}" >> "$GITHUB_OUTPUT"
+        run: echo "version=${{ needs.gate.outputs.archied_version }}" >> "$GITHUB_OUTPUT"
 
       - name: Build linux/amd64 binaries
         env:
@@ -210,13 +234,15 @@ jobs:
           CGO_ENABLED: "0"
         run: |
           set -e
-          ldflags_archied="-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion=${{ steps.version.outputs.version }} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary"
-          ldflags_gateway="-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion=${{ steps.version.outputs.version }} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary"
+          # Every process in the documented deployment ships in the zip, and
+          # every one of them carries the archied version it was cut from:
+          # they are one release, and an operator matching binaries by eye
+          # needs each to say so.
+          ldflags="-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion=${{ steps.version.outputs.version }} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary"
           mkdir -p dist
-          go build -ldflags "$ldflags_archied" -o dist/archied ./cmd/archied
-          go build -ldflags "$ldflags_gateway" -o dist/archie-gateway ./cmd/archie-gateway
-          go build -o dist/archie-state-store ./cmd/archie-state-store
-          go build -o dist/archie-playbooks ./cmd/archie-playbooks
+          for cmd in archied archie-gateway archie-state-store archie-ui archie-playbooks; do
+            go build -ldflags "$ldflags" -o "dist/$cmd" "./cmd/$cmd"
+          done
 
       - name: Assemble distribution zip
         id: zip
@@ -224,7 +250,7 @@ jobs:
           set -e
           name="archie-core-archied-v${{ steps.version.outputs.version }}-linux-amd64"
           mkdir -p "$name"
-          cp dist/archied dist/archie-gateway dist/archie-state-store dist/archie-playbooks "$name/"
+          cp dist/archied dist/archie-gateway dist/archie-state-store dist/archie-ui dist/archie-playbooks "$name/"
           cp deployments/INSTRUCTIONS.md CHANGELOG.md CHANGELOG.archied.md CHANGELOG.archie.md "$name/"
           # README.md doesn't exist yet in this repo; include it once it does
           # rather than fail the release on its absence.
