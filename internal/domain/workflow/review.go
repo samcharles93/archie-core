@@ -153,6 +153,15 @@ func renderPRReviewSection(report ReviewReport) string {
 			b.WriteString("\n")
 		}
 	}
+	// The cleared properties are what back "ran and found nothing": without
+	// them a zero-finding review reads the same as one that never looked
+	// (h019.5 calibration).
+	if len(report.Checked) > 0 {
+		b.WriteString("\nChecked and cleared:\n\n")
+		for _, c := range report.Checked {
+			fmt.Fprintf(&b, "- **%s** — %s\n", c.Property, c.Evidence)
+		}
+	}
 	if report.Summary != "" {
 		fmt.Fprintf(&b, "\nSummary: %s\n", report.Summary)
 	}

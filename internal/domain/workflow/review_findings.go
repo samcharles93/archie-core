@@ -75,6 +75,10 @@ const (
 
 // ReviewFinding represents one defect found during adversarial review.
 // It is serialisable across the agent-execution JSON data boundary.
+//
+// A finding describes wrong behaviour or a crash. Style, formatting, naming,
+// and preference nits are out of contract -- they are the padding that trains
+// an operator to skim past a findings list.
 type ReviewFinding struct {
 	// File is the repo-relative file path where the defect is located.
 	File string `json:"file"`
@@ -94,6 +98,18 @@ type ReviewFinding struct {
 	Category ReviewCategory `json:"category"`
 }
 
+// ReviewCheck records a property the reviewer verified clean. It is the
+// symmetric counterpart of ReviewFinding: where a finding carries a failure
+// scenario as its evidence, a check carries how the property was verified. A
+// zero-finding review is credible only when it lists what it checked, so a
+// check without evidence is an assertion, not a verification.
+type ReviewCheck struct {
+	// Property is what was verified clean, e.g. "nil-safety of Foo callers".
+	Property string `json:"property"`
+	// Evidence is how it was verified, e.g. "read all 4 callers; each nil-checks".
+	Evidence string `json:"evidence"`
+}
+
 // ReviewReport represents the aggregate result of an adversarial review.
 // It explicitly distinguishes "reviewer looked and found nothing" (Status == ReviewStatusCompleted, Findings empty)
 // from "reviewer never ran" (Status == ReviewStatusNotRun or uninitialised).
@@ -102,6 +118,10 @@ type ReviewReport struct {
 	Status ReviewStatus `json:"status"`
 	// Findings contains all findings produced by the review.
 	Findings []ReviewFinding `json:"findings,omitempty"`
+	// Checked records the properties the reviewer verified clean. A
+	// zero-finding review is credible only when it says what it checked;
+	// this is what separates "I checked and it is fine" from "I did not look".
+	Checked []ReviewCheck `json:"checked,omitempty"`
 	// Summary is a human-readable high-level overview of the review.
 	Summary string `json:"summary,omitempty"`
 	// SkipReason explains why the review was not run or was skipped.
@@ -194,6 +214,18 @@ func (f ReviewFinding) Validate() error {
 	return nil
 }
 
+// Validate checks that the check satisfies contract invariants. Evidence is
+// required: a check without evidence is an assertion, not a verification.
+func (c ReviewCheck) Validate() error {
+	if c.Property == "" {
+		return errors.New("review check property is required")
+	}
+	if c.Evidence == "" {
+		return errors.New("review check evidence is required")
+	}
+	return nil
+}
+
 // Validate checks that the report satisfies contract invariants.
 func (r ReviewReport) Validate() error {
 	switch r.Status {
@@ -204,6 +236,11 @@ func (r ReviewReport) Validate() error {
 	for i, f := range r.Findings {
 		if err := f.Validate(); err != nil {
 			return fmt.Errorf("findings[%d]: %w", i, err)
+		}
+	}
+	for i, c := range r.Checked {
+		if err := c.Validate(); err != nil {
+			return fmt.Errorf("checked[%d]: %w", i, err)
 		}
 	}
 	return nil
