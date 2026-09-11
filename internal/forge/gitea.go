@@ -190,6 +190,98 @@ func (c *GiteaClient) GetPullRequest(ctx context.Context, owner, repo string, nu
 	}, nil
 }
 
+// ListReviews returns the reviews on a PR with ID > sinceID.
+func (c *GiteaClient) ListReviews(ctx context.Context, owner, repo string, number int, sinceID int64) ([]Review, error) {
+	var out []Review
+	opts := gitea.ListPullReviewsOptions{}
+	for {
+		reviews, resp, err := c.cli.ListPullReviews(owner, repo, int64(number), opts)
+		if err != nil {
+			return nil, fmt.Errorf("list reviews %s/%s#%d: %w", owner, repo, number, err)
+		}
+		for _, r := range reviews {
+			if r.ID <= sinceID {
+				continue
+			}
+			out = append(out, Review{
+				ID:          r.ID,
+				Author:      giteaReviewAuthor(r.Reviewer),
+				State:       normalizeGiteaReviewState(r.State),
+				SubmittedAt: r.Submitted,
+			})
+		}
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+	return out, nil
+}
+
+// ListReviewComments returns the inline review comments on a PR with
+// ID > sinceID. Gitea nests comments under reviews, so this lists each
+// review's comments.
+func (c *GiteaClient) ListReviewComments(ctx context.Context, owner, repo string, number int, sinceID int64) ([]ReviewComment, error) {
+	reviews, err := c.ListReviews(ctx, owner, repo, number, 0)
+	if err != nil {
+		return nil, err
+	}
+	var out []ReviewComment
+	for _, rv := range reviews {
+		comments, _, err := c.cli.ListPullReviewComments(owner, repo, int64(number), rv.ID)
+		if err != nil {
+			return nil, fmt.Errorf("list review comments %s/%s#%d review %d: %w", owner, repo, number, rv.ID, err)
+		}
+		for _, cm := range comments {
+			if cm.ID <= sinceID {
+				continue
+			}
+			out = append(out, ReviewComment{
+				ID:        cm.ID,
+				Author:    giteaReviewAuthor(cm.Reviewer),
+				Body:      cm.Body,
+				Path:      cm.Path,
+				Line:      int(cm.LineNum),
+				CreatedAt: cm.Created,
+			})
+		}
+	}
+	return out, nil
+}
+
+// ReplyToReview posts a reply to an existing review comment.
+func (c *GiteaClient) ReplyToReview(ctx context.Context, owner, repo string, number int, commentID int64, body string) error {
+	if _, _, err := c.cli.CreatePullReviewCommentReply(owner, repo, int64(number), commentID, gitea.CreatePullReviewCommentReplyOptions{Body: body}); err != nil {
+		return fmt.Errorf("reply to review comment %d on %s/%s#%d: %w", commentID, owner, repo, number, err)
+	}
+	return nil
+}
+
+// giteaReviewAuthor returns a review/comment author's login, or "" when the
+// author is absent (a team review, or a deleted user).
+func giteaReviewAuthor(u *gitea.User) string {
+	if u == nil {
+		return ""
+	}
+	return u.UserName
+}
+
+// normalizeGiteaReviewState maps a Gitea review state onto the neutral
+// ReviewState* constants. Pending and request-review reviews are not a
+// decision and pass through lowercased so the caller can ignore them.
+func normalizeGiteaReviewState(s gitea.ReviewStateType) string {
+	switch s {
+	case gitea.ReviewStateApproved:
+		return ReviewStateApproved
+	case gitea.ReviewStateRequestChanges:
+		return ReviewStateRequestedChanges
+	case gitea.ReviewStateComment:
+		return ReviewStateCommented
+	default:
+		return strings.ToLower(string(s))
+	}
+}
+
 // CloseIssue closes an issue with an optional final comment.
 func (c *GiteaClient) CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error {
 	if comment != "" {

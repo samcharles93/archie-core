@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
+	"time"
 )
 
 // New creates a Forge implementation for the given type.
@@ -112,4 +114,68 @@ type RepoForge interface {
 	// LinkBranch associates a branch with an issue so Gitea shows the
 	// development link in the issue sidebar.
 	LinkBranch(ctx context.Context, owner, repo string, issueNumber int, branch string) error
+}
+
+// ReviewState values for Review.State, normalised across forges.
+const (
+	ReviewStateApproved         = "approved"
+	ReviewStateRequestedChanges = "requested_changes"
+	ReviewStateCommented        = "commented"
+	ReviewStateDismissed        = "dismissed"
+)
+
+// Review is a forge-neutral review of an existing PR: an approval, a
+// request-changes, a plain comment, or a dismissal.
+type Review struct {
+	ID          int64
+	Author      string
+	State       string // one of the ReviewState* constants
+	SubmittedAt time.Time
+}
+
+// ReviewComment is a forge-neutral review comment on an existing PR.
+// Line is a location hint, not authoritative: the remediation agent reads
+// the whole file. InReplyTo is the parent comment ID on GitHub; Gitea's
+// inline comments are flat under a review, so it is 0 there.
+type ReviewComment struct {
+	ID        int64
+	Author    string
+	Body      string
+	Path      string
+	Line      int
+	InReplyTo int64
+	CreatedAt time.Time
+}
+
+// PullRequestReviewReader reads review activity on an existing PR. Forge
+// implementations that cannot read reviews (the noop forge) do not implement
+// it; callers type-assert and refuse when the capability is absent.
+//
+// sinceID is the dedup cursor: only entries with ID > sinceID are returned,
+// so a poller and a webhook delivery of the same comment collapse on the same
+// ID (the TaskEnvelope.IdempotencyKey pattern applied to reviews).
+type PullRequestReviewReader interface {
+	ListReviews(ctx context.Context, owner, repo string, number int, sinceID int64) ([]Review, error)
+	ListReviewComments(ctx context.Context, owner, repo string, number int, sinceID int64) ([]ReviewComment, error)
+	// ReplyToReview posts a reply to an existing review comment (commentID).
+	// A summary for a whole review (e.g. "requested changes" addressed) is a
+	// plain PR comment via Forge.Comment, not this method.
+	ReplyToReview(ctx context.Context, owner, repo string, number int, commentID int64, body string) error
+}
+
+// normalizeReviewState maps a GitHub review state string onto the neutral
+// ReviewState* constants. Unknown states pass through lowercased.
+func normalizeReviewState(s string) string {
+	switch s {
+	case "APPROVED":
+		return ReviewStateApproved
+	case "CHANGES_REQUESTED":
+		return ReviewStateRequestedChanges
+	case "COMMENTED":
+		return ReviewStateCommented
+	case "DISMISSED":
+		return ReviewStateDismissed
+	default:
+		return strings.ToLower(s)
+	}
 }
