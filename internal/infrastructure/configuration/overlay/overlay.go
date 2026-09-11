@@ -125,6 +125,29 @@ func (s *Store) Delete(ctx context.Context, key string) error {
 	return err
 }
 
+// Keys lists the dotted keys the overlay sets, in sorted order. Snapshot
+// nests them into a config-shaped map for decoding, which loses the paths --
+// "budgets.max_steps" becomes out["budgets"]["max_steps"] and ranging over
+// that map yields "budgets". The dashboard marks overridden rows and offers a
+// per-row reset by dotted key, so it needs the keys as stored.
+func (s *Store) Keys(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT key FROM config_overlay ORDER BY key`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var keys []string
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		keys = append(keys, key)
+	}
+	return keys, rows.Err()
+}
+
 // Snapshot returns every stored override as a nested map of typed
 // values ready to decode into config.Config. Dotted keys are nested:
 // "budgets.max_steps" becomes map["budgets"]["max_steps"]. Values are

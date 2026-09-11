@@ -453,7 +453,6 @@ func Run() int { //nolint:cyclop // the composition root's setup sequence is del
 // renderer needs stay wired.
 func (b *boot) wireConfigSurfaces(ctx context.Context, cfgPath, overlayPath string) {
 	b.wireConfigPublishing(ctx, cfgPath, overlayPath)
-	b.installConfigHandlers()
 	// Publish once at boot. Every later change goes through publishConfig,
 	// which republishes; without this the UI process would render nothing
 	// until the first reload or dashboard edit.

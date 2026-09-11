@@ -105,10 +105,14 @@ func runDashboardAction(t *testing.T, ctx context.Context, st store.TaskStore, a
 	// in production carries them back to this daemon's own service. Wiring
 	// that service behind a local adapter keeps both surfaces in this test
 	// driving the one implementation, which is the whole point of it.
-	actor := testTaskActor{&boot{st: st, stateStore: st, cfg: config.Config{MaxRetries: 3}, log: slog.New(slog.DiscardHandler)}}
+	actor := testTaskActor{&boot{
+		st: st, stateStore: st,
+		cfg:       config.Config{MaxRetries: 3},
+		cfgHolder: config.NewHolder(config.Config{MaxRetries: 3}),
+		log:       slog.New(slog.DiscardHandler),
+	}}
 	srv := &webui.Server{
 		Store: st,
-		Cfg:   config.NewHolder(config.Config{MaxRetries: 3}),
 		Chat:  &webui.ChatService{Contract: &gateway.LocalChatAdapter{TaskActor: actor}},
 	}
 	req := httptest.NewRequestWithContext(ctx, http.MethodPost,

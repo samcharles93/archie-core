@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
@@ -81,21 +80,11 @@ type forgeCoordinates struct {
 // resolveForge reads the forge layout once for a request and returns each
 // task's coordinates from it.
 //
-// The daemon holds the configuration and resolves per task, so a deployment
-// with several identities links each task to its own forge. The UI process
-// holds none and reads the projection the daemon published instead, which
-// carries the default identity alone -- so where that is not the whole
-// picture it withholds the links rather than pointing them at the wrong
+// The projection carries the default identity alone, so where that is not
+// the whole picture the links are withheld rather than pointed at the wrong
 // forge. Publishing per-identity forges is what a multi-identity dashboard
 // needs, and it is a projection change, not a rendering one.
 func (s *Server) resolveForge(ctx context.Context) func(task.Task) forgeCoordinates {
-	if s.Cfg != nil {
-		cfg := s.Cfg.Get()
-		return func(t task.Task) forgeCoordinates {
-			forge := forgeConfigForTask(cfg, t)
-			return forgeCoordinates{host: forge.Host, forgeType: forge.Type}
-		}
-	}
 	unlinked := func(task.Task) forgeCoordinates { return forgeCoordinates{} }
 	view, ok, err := s.configSource()(ctx)
 	if err != nil || !ok || view.MultiIdentity {
@@ -121,31 +110,6 @@ func taskURLs(task task.Task, forge forgeCoordinates) (repoURL, issueURL, prURL 
 		prURL = repoURL + "/" + segment + "/" + strconv.Itoa(task.PRNumber)
 	}
 	return repoURL, issueURL, prURL
-}
-
-func forgeConfigForTask(cfg config.Config, task task.Task) config.Forge {
-	for _, identity := range cfg.Identities {
-		if task.Identity != "" && identity.Name == task.Identity {
-			return identity.Forge
-		}
-	}
-	var matched *config.Forge
-	for i := range cfg.Identities {
-		identity := &cfg.Identities[i]
-		for _, repo := range identity.Repos {
-			if repo.Owner == task.Owner && repo.Name == task.Repo {
-				if matched != nil {
-					return cfg.Forge
-				}
-				forgeCopy := identity.Forge
-				matched = &forgeCopy
-			}
-		}
-	}
-	if matched != nil {
-		return *matched
-	}
-	return cfg.Forge
 }
 
 func (s *Server) handleTask(w http.ResponseWriter, r *http.Request) {

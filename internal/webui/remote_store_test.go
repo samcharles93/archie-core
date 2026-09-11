@@ -20,7 +20,6 @@ import (
 
 	"google.golang.org/grpc"
 
-	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -66,7 +65,6 @@ func newRemoteTestServer(t *testing.T) *Server {
 	t.Cleanup(closeConn)
 
 	return &Server{
-		Cfg:              config.NewHolder(config.Config{}),
 		Store:            client,
 		Captures:         client,
 		Mappings:         client,

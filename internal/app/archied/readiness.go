@@ -20,23 +20,27 @@ import (
 	"github.com/samcharles93/archie-core/internal/webui"
 )
 
-// setupReadinessProbes assembles the readiness probes and publishes the
-// registry to the dashboard. It must be called after setupObservability (so
-// b.web.Cfg and b.web.Channels are set) and after the chat wiring (so
-// b.web.Chat exposes the model manager and session store).
+// setupReadinessProbes assembles the readiness probes over the daemon's own
+// subsystems. It must be called after setupObservability (so the config
+// Holder and channel manager exist) and after the chat wiring (so b.chat
+// exposes the contract).
+//
+// The probes read the daemon's state directly rather than through a
+// webui.Server: the daemon serves /health/detailed on its own listener and
+// has served no dashboard since the UI process cutover (archie-core-ml30).
 func (b *boot) setupReadinessProbes() {
 	cfg := b.cfg
 	probes := []health.Probe{
 		readiness.NewStoreProbe(b.stateStore),
-		readiness.NewConfigProbe(func() config.Config { return b.web.Cfg.Get() }, configuration.Validate),
+		readiness.NewConfigProbe(b.cfgHolder.Get, configuration.Validate),
 		readiness.NewDiskProbe(diskProbePath(cfg)),
 		readiness.NewModelProbe(b.chatModels.ActiveModel, b.chatModels.Models, modelReachProbe(cfg, b.chatModels.ActiveModel)),
 		readiness.NewGatewayProbe(
-			func() []readiness.ChannelState { return channelStates(b.web.Channels) },
-			func(ctx context.Context) int { return sessionCount(ctx, b.web.Chat) },
+			func() []readiness.ChannelState { return channelStates(b.channelManager) },
+			func(ctx context.Context) int { return sessionCount(ctx, b.chat) },
 		),
 	}
-	b.web.Health = health.NewRegistry(probes...)
+	b.healthRegistry = health.NewRegistry(probes...)
 }
 
 // channelStates projects a channel lifecycle snapshot into the readiness

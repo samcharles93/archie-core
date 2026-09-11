@@ -68,7 +68,7 @@ cutover.
 | `/api/logs`, `/api/logs/stream` | daemon diagnostic feed, host-local | unresolved: `logging.Feed` is in-process on the daemon host and has no contract |
 | `/api/captures`, `/api/mappings`, `/api/bindings` | State Store contracts, with webhook verification owned by Work Intake/Messaging | RESOLVED (cutover, `archie-core-8cda.5.4`): the UI process composes CaptureStore/MappingStore/BindingStore and mounts the `captureintake.Receiver` from its own State Store client; the daemon's binding-dispatch loop keeps consuming captures from the same store |
 | `/api/config` (read) | daemon-published `ConfigView` snapshot, read over the State Store contract | RESOLVED (`archie-core-ymut`): see migration-decisions, "Dashboard configuration page" |
-| `/api/config` (write), `/api/config/reset`, `/api/config/repos/*` | none; descoped for Phase 3 | RESOLVED (`archie-core-ymut`): 503 in the UI process, SPA hides the controls, editing is config.toml plus reload |
+| `/api/config` (write), `/api/config/reset`, `/api/config/repos/*` | a configuration write contract; the daemon stays the policy owner | DESCOPED for Phase 3 (`archie-core-ymut`), NOT abandoned: 503 in the UI process, SPA hides the controls, editing is config.toml plus reload. Dashboard editing is a tracked feature (`archie-core-1786637498420-327`) and its transport is `archie-core-j28m`; the handlers and their func-field seams on `webui.Server` are kept for it |
 | `/api/channels`, reload, curators, memory, skills, version/update | owning capability contract or an explicitly removed route | owner and failure semantics remain to define |
 | `/`, `/healthz`, `/health`, `/health/detailed` | UI HTTP process; readiness consumes per-service health contracts | current HTTP behavior is the compatibility baseline |
 
@@ -97,10 +97,9 @@ continue to perform validate-persist-publish for those updates through a
 narrow application contract. The UI process must never implement that policy
 by holding or mutating a shared `config.Holder`.
 
-The current daemon's `config.Holder` sharing is migration residue: `buildDaemon`
-currently assigns `b.web.Cfg = b.d.Cfg`. It is removed only when the UI has a
-configuration read/update contract and tests prove that the daemon and UI no
-longer share a mutable holder.
+The daemon's `config.Holder` sharing was migration residue: `buildDaemon`
+assigned `b.web.Cfg = b.d.Cfg`. Removed by `archie-core-ml30` -- the field no
+longer exists, and boot owns the single Holder the daemon reads through.
 
 For Phase 3, configuration ownership is split deliberately. The UI process
 owns its listener, browser-auth, asset, dependency-target, and readiness
@@ -108,6 +107,11 @@ settings. The daemon/application configuration owner remains authoritative for
 the dashboard's `/api/config` read, validation, persistence, overlay, reload,
 and audit behavior. The UI does not become the writer merely because it
 renders the configuration page.
+
+Amended 2026-09-11 by `archie-core-ml30`: the daemon's `config.Holder` sharing
+is gone. `webui.Server` has no holder field, so the sharing this paragraph
+describes cannot be reintroduced by wiring; the daemon owns one Holder and
+publishes a rendered projection.
 
 Amended 2026-09-09 by `archie-core-ymut`: this section previously assumed one
 narrow admin contract carrying both the read and the write. It does not. The
@@ -212,15 +216,15 @@ Phase 3 is closed. Every gate below is proven by test, not by inspection:
 | Gate | Evidence |
 | --- | --- |
 | Deletion | `cmd/archie-ui/architecture_test.go` re-runs `go list -deps` on every `task check` and fails on any banned package, checked in both directions against its two exceptions |
-| Composition | `internal/app/archieui/TestComposeUIServerHoldsNoDaemonState` fails on a non-nil `config.Holder`, a concrete `*store.Store`, or a Gateway that is not the gRPC client |
+| Composition | `internal/app/archieui/TestComposeUIServerHoldsNoDaemonState` fails on a concrete `*store.Store` or a Gateway that is not the gRPC client. The holder clause it also carried is now enforced by the type: `webui.Server` has no `config.Holder` field (`archie-core-ml30`) |
 | End-to-end | `cmd/archie-ui/main_test.go` builds the binary and drives it over HTTP against a live Gateway and State Store |
 | No dual authority | The dashboard HTTP listener is `internal/app/archieui/run.go` only; the daemon's two `http.Server`s are its own health endpoint and the forge webhook receiver |
 
-Acceptance criterion 1 is amended to name the UI process rather than the
-`internal/webui` package: the UI process receives no holder, while the daemon
-still holds one *inside its own process* to render the published `ConfigView`
-snapshot (the residue below, tracked by `archie-core-ml30`). No live struct
-crosses the service boundary, which is what the criterion protects.
+Acceptance criterion 1 was amended at the close of Phase 3 to name the UI
+process rather than the `internal/webui` package, because the daemon still held
+a holder inside its own process to render the published `ConfigView` snapshot.
+`archie-core-ml30` removed that residue, so the criterion holds in its original
+form again: `internal/webui` receives no holder in any process.
 
 ### Deletion gate: SATISFIED (archie-core-8cda.5.6, rev. 2)
 
@@ -257,13 +261,21 @@ prefix. `internal/app/archieui`'s `TestComposeUIServerHoldsNoDaemonState`
 covers the composition clauses, failing on a non-nil `config.Holder`, a
 concrete `*store.Store`, or a Gateway that is not the gRPC client.
 
-One piece of residue remains visible: `webui.Server` still declares
-`Cfg *config.Holder`, because the daemon keeps a `webui.Server` as the renderer
-that builds the published `ConfigView` snapshot. The UI process never receives
-a holder, and the composition test fails if it ever does, but removing the
-field outright means moving that renderer and the readiness probes off
-`webui.Server` onto the daemon's own configuration owner. That cleanup is
-`archie-core-ml30` (P2); it is daemon-internal and does not gate Phase 3.
+One piece of residue remained visible at the close of Phase 3: `webui.Server`
+still declared `Cfg *config.Holder`, because the daemon kept a `webui.Server`
+as the renderer that built the published `ConfigView` snapshot. That cleanup
+landed as `archie-core-ml30`. `webui.Server` no longer has a configuration
+holder, provenance store, reload-status callback or override-listing callback:
+the projection is built by `webui.BuildConfigView`, a pure function the
+configuration owner calls, and the daemon assembles its input from its own
+state (`boot.configViewInput`). Readiness reads the daemon's own Holder,
+channel manager and chat contract, and the health registry it produces is a
+daemon field rather than a field on a server the daemon never serves.
+
+`ConfigView.Editable` moved with it. It describes the rendering process's own
+write path, so `handleConfig` sets it from `Server.UpdateConfig` rather than
+any process baking it into the document. A future configuration write contract
+(`archie-core-j28m`) makes the page editable by wiring that one field.
 
 ### Real-process evidence (archie-core-8cda.5.6)
 
@@ -276,11 +288,14 @@ task action crossing to the Gateway (and refused without the CSRF header),
 capture intake accepted unauthenticated, the ratified degradations, readiness
 dropping when the State Store dies while liveness holds, and a clean SIGTERM.
 
-Two dashboard values still degrade because the published projection does not
-carry them, both daemon configuration the UI cannot see: `chat.show_tool_calls`
-(the chat page never expands tool calls) and the `/api/setup` checklist (the
-panel is omitted rather than rendered from what the snapshot knows). Neither is
-a boundary violation; both are fields the projection could publish.
+Two dashboard values degraded here because the published projection did not
+carry them: `chat.show_tool_calls` (the chat page never expanded tool calls)
+and the `/api/setup` checklist (the panel was omitted rather than rendered).
+Both are closed by `archie-core-ml30`: `ConfigView` gained a `chat` section
+carrying `show_tool_calls`, the operator name, and whether any chat channel is
+configured, and both surfaces now read the projection rather than a live
+holder. The end-to-end suite asserts the checklist renders from the published
+snapshot.
 
 ## Non-goals and open work
 

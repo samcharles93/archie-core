@@ -17,34 +17,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 )
-
-func TestTaskURLsUseOwningForgeRoutes(t *testing.T) {
-	srv := &Server{Cfg: config.NewHolder(config.Config{
-		Forge: config.Forge{Type: "github", Host: "https://github.example"},
-		Identities: []config.IdentityConfig{{
-			Name: "gitea", Forge: config.Forge{Type: "gitea", Host: "https://gitea.example"},
-			Repos: []config.Repo{{Owner: "acme", Name: "widget"}},
-		}},
-	})}
-	task := workflow.Task{Owner: "acme", Repo: "widget", IssueNumber: 12, PRNumber: 34, Identity: "gitea"}
-
-	forge := srv.resolveForge(t.Context())
-	repoURL, issueURL, prURL := taskURLs(task, forge(task))
-	if repoURL != "https://gitea.example/acme/widget" || issueURL != repoURL+"/issues/12" || prURL != repoURL+"/pulls/34" {
-		t.Fatalf("URLs = %q, %q, %q; want canonical Gitea routes", repoURL, issueURL, prURL)
-	}
-
-	task.Identity = ""
-	task.Owner, task.Repo = "other", "repo"
-	_, _, prURL = taskURLs(task, forge(task))
-	if prURL != "https://github.example/other/repo/pull/34" {
-		t.Fatalf("GitHub PR URL = %q", prURL)
-	}
-}
 
 // A process with no configuration of its own still has to render the links,
 // or the extracted dashboard loses every click-through to the issue and the

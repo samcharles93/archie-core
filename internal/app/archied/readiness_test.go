@@ -92,16 +92,14 @@ func TestSetupReadinessProbes_WiresEverySubsystem(t *testing.T) {
 	}
 
 	b := &boot{
-		st: st,
-		web: &webui.Server{
-			Cfg:      config.NewHolder(cfg),
-			Channels: status.NewManager([]status.Descriptor{{ID: "telegram", Name: "Telegram", Configured: true}}),
-			Chat: &webui.ChatService{
-				Contract: &gateway.LocalChatAdapter{
-					Router:   &gateway.Router{},
-					Sessions: gateway.NewSessionStoreMemory(),
-					Models:   newChatModelManager(map[string]string{"chat": "openai/gpt-4o"}, nil),
-				},
+		st:             st,
+		cfgHolder:      config.NewHolder(cfg),
+		channelManager: status.NewManager([]status.Descriptor{{ID: "telegram", Name: "Telegram", Configured: true}}),
+		chat: &webui.ChatService{
+			Contract: &gateway.LocalChatAdapter{
+				Router:   &gateway.Router{},
+				Sessions: gateway.NewSessionStoreMemory(),
+				Models:   newChatModelManager(map[string]string{"chat": "openai/gpt-4o"}, nil),
 			},
 		},
 		chatModels: newChatModelManager(map[string]string{"chat": "openai/gpt-4o"}, nil),
@@ -109,11 +107,11 @@ func TestSetupReadinessProbes_WiresEverySubsystem(t *testing.T) {
 	}
 
 	b.setupReadinessProbes()
-	if b.web.Health == nil {
-		t.Fatal("b.web.Health is nil after setupReadinessProbes")
+	if b.healthRegistry == nil {
+		t.Fatal("b.healthRegistry is nil after setupReadinessProbes")
 	}
 
-	report := b.web.Health.Run(context.Background())
+	report := b.healthRegistry.Run(context.Background())
 	if len(report.Components) != 5 {
 		t.Fatalf("components = %d, want 5: %+v", len(report.Components), report.Components)
 	}

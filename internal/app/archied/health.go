@@ -83,12 +83,7 @@ func (h *healthSurface) handleDetailed(w http.ResponseWriter, r *http.Request) {
 // updates verified, and the watchdog would roll back every release it
 // installs.
 func (b *boot) startHealth(ctx context.Context) error {
-	b.health = &healthSurface{registry: func() *health.Registry {
-		if b.web == nil {
-			return nil
-		}
-		return b.web.Health
-	}}
+	b.health = &healthSurface{registry: func() *health.Registry { return b.healthRegistry }}
 	addr := b.cfg.Health.Listen
 	if err := b.serveHealth(ctx, addr, b.health.handler(), "daemon health"); err != nil {
 		b.log.Error("health listener failed", "addr", addr, "err", err)

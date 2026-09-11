@@ -16,7 +16,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -34,6 +33,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/eda/module"
 	"github.com/samcharles93/archie-core/internal/domain/eda/playbook"
 	domainembedding "github.com/samcharles93/archie-core/internal/domain/embedding"
+	"github.com/samcharles93/archie-core/internal/domain/health"
 	domainmemory "github.com/samcharles93/archie-core/internal/domain/memory"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
@@ -124,7 +124,25 @@ type boot struct {
 	bus             *events.Bus
 	restartTelegram func() error
 	channelManager  *status.Manager
-	web             *webui.Server
+	// cfgHolder is the daemon's one configuration Holder. Boot owns it and
+	// the daemon reads through it, so a reload swaps one snapshot and every
+	// reader sees it: there is no second holder to keep in step.
+	cfgHolder *config.Holder
+	// chat is the dashboard-shaped chat surface. It survives the UI
+	// extraction because the readiness gateway probe and the Telegram task
+	// actor both read the same contract.
+	chat *webui.ChatService
+	// healthRegistry backs /health/detailed on the daemon's own listener.
+	healthRegistry *health.Registry
+	// lastReload reports the most recent reload outcome for the published
+	// configuration projection. Nil until reload wiring installs it.
+	lastReload func() config.ReloadStatus
+	// web holds the dashboard adapters the daemon still produces for
+	// surfaces that have no contract to cross on yet (skills, memory,
+	// curators, channels, dashboard work requests). The daemon serves no
+	// HTTP for them -- it never calls web.Handler() -- so this is the
+	// producer half waiting on a route contract, not a live listener.
+	web *webui.Server
 
 	natsClient *nats.Client
 	// natsURL is the endpoint the daemon's own client connected with at
@@ -383,18 +401,12 @@ func (b *boot) setupObservability(ctx context.Context) {
 		{ID: "email", Name: "Email", Configured: cfg.Chat.Email.ListenAddr != ""},
 		{ID: "webhook", Name: "Webhook gateway", Configured: cfg.Chat.WebhookAddr != ""},
 	})
-	configProvenance := make([]webui.ConfigOrigin, 0, len(b.doc.Provenance.Origins))
-	for _, origin := range b.doc.Provenance.Origins {
-		configProvenance = append(configProvenance, webui.ConfigOrigin{
-			Path: origin.Path, Role: string(origin.Role), Layer: string(origin.Layer), Feature: string(origin.Feature),
-		})
-	}
-	b.web = &webui.Server{Log: log.With("component", "webui"), Cfg: config.NewHolder(cfg), Channels: b.channelManager, Skills: skillCatalogAdapter{config.NewHolder(cfg)}}
+	b.cfgHolder = config.NewHolder(cfg)
+	b.web = &webui.Server{Log: log.With("component", "webui"), Channels: b.channelManager, Skills: skillCatalogAdapter{b.cfgHolder}}
 	// The watchdog leaves its verdict in a file on this host, so the daemon
 	// reads it and publishes the outcome as an event; the dashboard renders
 	// what it receives, wherever it runs (archie-core-8cda.5.4).
 	b.startUpdateRelay(ctx, updateReportPath(cfg.WorkDir, "webui"))
-	b.web.SetProvenance(configProvenance)
 	sink := bus.Subscribe(256)
 	go persistEvents(ctx, sink, b.stateStore, log)
 }
@@ -533,7 +545,7 @@ func (b *boot) setupLLMAndChat() error {
 	b.addCleanup(cleanup)
 	// Channel routers execute turns locally and need the SQLite TurnLedger.
 	// The remote contract serves web chat; it must not replace their store.
-	b.web.Chat = &webui.ChatService{Contract: contract, Updates: b.updateService}
+	b.chat = &webui.ChatService{Contract: contract, Updates: b.updateService}
 	b.web.WorkRequests = b.chatTasks
 	b.setupReadinessProbes()
 	return nil
@@ -557,8 +569,8 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 		},
 		ChatTaskActor: chatTaskActorAdapter{
 			contract: func() gateway.ChatContract {
-				if b.web != nil && b.web.Chat != nil {
-					return b.web.Chat.Contract
+				if b.chat != nil {
+					return b.chat.Contract
 				}
 				return nil
 			}(),
@@ -1205,9 +1217,9 @@ func (b *boot) registerMinimaxTool(cfg config.Config, log *slog.Logger) {
 // buildDaemon constructs the daemon and hands the dashboard the handles
 // it shares with it.
 func (b *boot) buildDaemon() {
-	cfg, log := b.cfg, b.log
+	log := b.log
 	b.d = &daemon.Daemon{
-		Cfg:                 config.NewHolder(cfg),
+		Cfg:                 b.cfgHolder,
 		ConnectedNATS:       daemon.NATSEndpoint{URL: b.natsURL, Token: b.natsToken},
 		ConnectedStateStore: daemon.StateStoreEndpoint{URL: strings.TrimSpace(b.cfg.Services.State.Target), Token: b.stateStoreToken},
 		Store:               b.stateStore,
@@ -1232,12 +1244,6 @@ func (b *boot) buildDaemon() {
 	// off the live registry the daemon already holds, narrowed to the
 	// webui's own view type.
 	b.web.Curators = curatorsUIAdapter{b.curatorRegistry}
-	// web and the daemon must share ONE Holder: a reload swaps d.Cfg and
-	// the dashboard reads the running config from the same snapshot. The
-	// webui Holder seeded in the literal above is replaced here; after
-	// this point /api/config and the daemon can never disagree about the
-	// published config.
-	b.web.Cfg = b.d.Cfg
 	// Consumer mapping/binding surfaces resolve from b.stateStore (the State
 	// Store contract adapter): local by default, remote *staterpc.Client when
 	// [services.state].target is set. See docs/prds/state-store-contract.md §10.
@@ -1314,21 +1320,62 @@ func (b *boot) setupForgeWebhook() {
 	})
 }
 
-// publishConfig publishes a config snapshot and its provenance to both
-// the daemon and the dashboard (they share one Holder). Reload and the
-// PATCH path both go through it, so the two can never diverge.
-// currentProvenance (an atomic) is the last published provenance chain;
-// the PATCH path appends the runtime-overlay origin to it.
-func (b *boot) publishConfig(ctx context.Context, cfg config.Config, provenance configuration.Provenance) {
-	b.d.Cfg.Set(cfg)
+// publishConfig makes a new configuration the running one and republishes
+// the dashboard's projection from it. Every path that changes configuration
+// goes through here, so the running config and the published page can never
+// diverge. The provenance chain it renders is b.currentProvenance, which the
+// caller stores before publishing.
+func (b *boot) publishConfig(ctx context.Context, cfg config.Config) {
+	b.cfgHolder.Set(cfg)
+	b.publishConfigSnapshot(ctx)
+}
+
+// configOrigins projects the current provenance chain into the dashboard's
+// view type.
+func (b *boot) configOrigins() []webui.ConfigOrigin {
+	provenance := b.currentProvenance.Load()
+	if provenance == nil {
+		return nil
+	}
 	origins := make([]webui.ConfigOrigin, 0, len(provenance.Origins))
 	for _, origin := range provenance.Origins {
 		origins = append(origins, webui.ConfigOrigin{
 			Path: origin.Path, Role: string(origin.Role), Layer: string(origin.Layer), Feature: string(origin.Feature),
 		})
 	}
-	b.web.SetProvenance(origins)
-	b.publishConfigSnapshot(ctx)
+	return origins
+}
+
+// configOverrides lists the dotted keys the runtime overlay currently sets,
+// so the dashboard can mark those rows: their file value is shadowed until
+// reset. A disabled overlay store reports no overrides.
+func (b *boot) configOverrides(ctx context.Context) []string {
+	if b.overlayStore == nil {
+		return nil
+	}
+	keys, err := b.overlayStore.Keys(ctx)
+	if err != nil {
+		// A failed read omits the list rather than failing the whole
+		// view; the reload status carries the overlay degrade reason.
+		return nil
+	}
+	return keys
+}
+
+// configViewInput assembles the dashboard's configuration projection from
+// the daemon's own configuration state. The daemon is the configuration
+// owner, so it is the process that renders this view (archie-core-ml30).
+func (b *boot) configViewInput(ctx context.Context) webui.ConfigViewInput {
+	in := webui.ConfigViewInput{
+		Config:     b.cfgHolder.Get(),
+		Provenance: b.configOrigins(),
+		Overridden: b.configOverrides(ctx),
+	}
+	if b.lastReload != nil {
+		status := b.lastReload()
+		in.Reload = &status
+	}
+	return in
 }
 
 // publishConfigSnapshot sends the dashboard's projection to the State Store,
@@ -1341,7 +1388,7 @@ func (b *boot) publishConfig(ctx context.Context, cfg config.Config, provenance 
 // the new configuration, both of which have already taken effect.
 func (b *boot) publishConfigSnapshot(ctx context.Context) {
 	snapshots, ok := b.stateStore.(storecontract.ConfigSnapshotStore)
-	if !ok || b.web == nil {
+	if !ok || b.cfgHolder == nil {
 		return
 	}
 	// Detached from the caller: a dashboard edit's request context is
@@ -1350,14 +1397,7 @@ func (b *boot) publishConfigSnapshot(ctx context.Context) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 
-	view, found, err := b.web.LocalConfigView(ctx)
-	if err != nil || !found {
-		if err != nil {
-			b.log.Warn("config snapshot not published", "err", err)
-		}
-		return
-	}
-	document, err := json.Marshal(view)
+	document, err := json.Marshal(webui.BuildConfigView(b.configViewInput(ctx)))
 	if err != nil {
 		b.log.Warn("config snapshot not published", "err", err)
 		return
@@ -1388,7 +1428,7 @@ func (b *boot) wireConfigPublishing(ctx context.Context, cfgPath, overlayPath st
 		applyModelCatalog(&doc.Config, b.catalog)
 		old := b.d.Cfg.Get()
 		b.currentProvenance.Store(&doc.Provenance)
-		b.publishConfig(ctx, doc.Config, doc.Provenance)
+		b.publishConfig(ctx, doc.Config)
 		if fields := changedNonReloadableFields(old, doc.Config); len(fields) > 0 {
 			log.Warn("config reloaded; some changes require a restart",
 				"fields", fields, "paths", doc.Provenance.Paths())
@@ -1399,10 +1439,10 @@ func (b *boot) wireConfigPublishing(ctx context.Context, cfgPath, overlayPath st
 	if b.overlayStore != nil {
 		reloadController.WithOverlay(func() (map[string]any, error) { return b.overlayStore.Snapshot(ctx) })
 	}
-	// LastReload merges the reload controller's outcome with the boot-time
+	// lastReload merges the reload controller's outcome with the boot-time
 	// overlay degrade, so /api/config carries both the last reload result
 	// and whether the runtime overlay is in effect at all.
-	b.web.LastReload = func() config.ReloadStatus {
+	b.lastReload = func() config.ReloadStatus {
 		st := reloadController.Status()
 		if p := b.bootOverlayErr.Load(); p != nil {
 			st.OverlayUnavailable = *p
@@ -1420,33 +1460,6 @@ func (b *boot) wireConfigPublishing(ctx context.Context, cfgPath, overlayPath st
 	// attached here; gateways start further down, after d.Startup, so no
 	// command can arrive before this is wired.
 	b.chatController.WithRuntime(b.d)
-}
-
-// installConfigHandlers installs the configuration renderer's override
-// listing. The write handlers behind PATCH /api/config, POST
-// /api/config/reset and the per-repository field update are gone with the
-// cutover (archie-core-8cda.5.4, archie-core-ymut): editing is config.toml
-// plus reload, the UI process answers 503 for the write routes, and the
-// renderer only needs to know which keys an overlay currently overrides.
-func (b *boot) installConfigHandlers() {
-	// ConfigOverrides lists the dotted keys currently overridden by the
-	// runtime overlay, so the dashboard can mark those rows and offer a
-	// reset. A disabled store reports no overrides.
-	b.web.ConfigOverrides = func(ctx context.Context) ([]string, error) {
-		if b.overlayStore == nil {
-			return nil, nil
-		}
-		rows, err := b.overlayStore.Snapshot(ctx)
-		if err != nil {
-			return nil, err
-		}
-		keys := make([]string, 0, len(rows))
-		for k := range rows {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		return keys, nil
-	}
 }
 
 // shutdownCapabilityHost returns a cleanup that stops the capability

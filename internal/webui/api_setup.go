@@ -3,8 +3,6 @@ package webui
 import (
 	"net/http"
 	"strings"
-
-	"github.com/samcharles93/archie-core/internal/config"
 )
 
 // SetupStep is one item in the dashboard's getting-started checklist.
@@ -27,9 +25,13 @@ type SetupStep struct {
 func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	steps := []SetupStep{}
 
-	if s.Cfg == nil {
-		// No config wired in: report nothing rather than guessing, so the
-		// dashboard simply omits the panel.
+	// Every step is read from the configuration projection this process
+	// renders, so the checklist works the same whether configuration is
+	// held here or published by its owner.
+	view, found, err := s.configSource()(r.Context())
+	if err != nil || !found {
+		// No configuration available: report nothing rather than
+		// guessing, so the dashboard simply omits the panel.
 		writeJSON(w, map[string]any{"steps": steps})
 		return
 	}
@@ -37,25 +39,24 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	// The operator's name is deployment data, configured once in [chat]. The
 	// dashboard greets with it rather than hardcoding a name, which would be
 	// wrong on every deployment but one.
-	cfg := s.Cfg.Get()
-	operator := strings.TrimSpace(cfg.Chat.Operator)
+	operator := view.Chat.Operator
 
 	steps = append(steps, SetupStep{
 		Title:  "Give Archie an identity",
 		Detail: "The account it commits and comments as.",
-		Done:   strings.TrimSpace(cfg.BotUser) != "",
+		Done:   strings.TrimSpace(view.Identity.BotUser) != "",
 	})
 
 	steps = append(steps, SetupStep{
 		Title:  "Connect a repository",
 		Detail: "Archie polls these for issues assigned to it.",
-		Done:   len(cfg.Repos) > 0,
+		Done:   len(view.Repositories) > 0,
 	})
 
 	steps = append(steps, SetupStep{
 		Title:  "Connect a chat channel",
 		Detail: "Talk to Archie and approve its work from your phone.",
-		Done:   s.hasChannel(),
+		Done:   view.Chat.ChannelConfigured,
 	})
 
 	// Only meaningful once there is somewhere to run work.
@@ -72,13 +73,4 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, map[string]any{"steps": steps, "operator": operator})
-}
-
-// hasChannel reports whether any conversational front-end is configured.
-// Chat is disabled entirely when no channel token is set, so the presence of
-// one is the honest signal here.
-func (s *Server) hasChannel() bool {
-	cfg := s.Cfg.Get()
-	return cfg.Chat.Telegram.Token != (config.SecretRef{}) || strings.TrimSpace(cfg.Chat.Telegram.TokenEnv) != "" ||
-		strings.TrimSpace(cfg.Chat.WebhookAddr) != ""
 }
