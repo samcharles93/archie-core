@@ -58,3 +58,16 @@ func UnaryClientTokenInterceptor(token string) grpc.UnaryClientInterceptor {
 		return invoker(metadata.AppendToOutgoingContext(ctx, tokenMetadataKey, token), method, req, reply, cc, opts...)
 	}
 }
+
+// StreamClientTokenInterceptor attaches token to the outgoing stream's
+// context, covering the server-streaming read RPCs (StreamCaptures,
+// StreamUndispatchedCaptures) the unary interceptor cannot see. Without it
+// those calls reach a token-protected listener with no credential and the
+// server's stream interceptor refuses them, leaving the capture batch reads
+// -- the ones moved onto streams precisely so a large batch crosses -- with
+// no working path.
+func StreamClientTokenInterceptor(token string) grpc.StreamClientInterceptor {
+	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+		return streamer(metadata.AppendToOutgoingContext(ctx, tokenMetadataKey, token), desc, cc, method, opts...)
+	}
+}

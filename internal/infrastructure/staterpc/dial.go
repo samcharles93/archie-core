@@ -36,7 +36,13 @@ func Dial(target, token string, options ...grpc.DialOption) (*Client, func(), er
 	}
 	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
 	if token != "" {
-		opts = append(opts, grpc.WithUnaryInterceptor(UnaryClientTokenInterceptor(token)))
+		// Both call shapes need the credential: the server's interceptors
+		// guard unary RPCs and the streaming capture reads separately, so a
+		// unary-only interceptor leaves the streams unauthenticated.
+		opts = append(opts,
+			grpc.WithUnaryInterceptor(UnaryClientTokenInterceptor(token)),
+			grpc.WithStreamInterceptor(StreamClientTokenInterceptor(token)),
+		)
 	}
 	conn, err := grpc.NewClient(target, append(opts, options...)...)
 	if err != nil {

@@ -3,13 +3,16 @@ package staterpc
 import (
 	"context"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
+	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -28,27 +31,104 @@ func grantsServer(t *testing.T, adminToken string) (grants *TaskGrants, dial fun
 		grpc.ChainUnaryInterceptor(grants.UnaryInterceptor(adminToken)),
 		grpc.ChainStreamInterceptor(grants.StreamInterceptor(adminToken)),
 	)
-	RegisterServer(server, Deps{Tasks: local, Grants: grants, ConfigSnapshots: local})
+	RegisterServer(server, Deps{Tasks: local, Captures: local, Bindings: local, BindingDispatcher: local, Grants: grants, ConfigSnapshots: local})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
 
 	dial = func(t *testing.T, token string) *Client {
 		t.Helper()
-		opts := []grpc.DialOption{
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return listener.DialContext(ctx) }),
-		}
-		if token != "" {
-			opts = append(opts, grpc.WithUnaryInterceptor(UnaryClientTokenInterceptor(token)))
-		}
-		conn, err := grpc.NewClient("passthrough:///state", opts...)
+		// Dial is the production client-side wiring (and the only dial path
+		// the daemon and the dashboard use), so a credential attached to one
+		// call shape but not another cannot hide here. The target is the
+		// non-loopback bridge address every container-mode deployment
+		// profile uses; the dialer redirects it to the bufconn listener.
+		client, cleanup, err := Dial("172.17.0.1:9090", token, grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return listener.DialContext(ctx) }))
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = conn.Close() })
-		return NewClient(conn)
+		t.Cleanup(cleanup)
+		return client
 	}
 	return grants, dial
+}
+
+// TestCaptureStreamsCarryTheAdminToken is the capture-batching regression:
+// the batch reads moved onto server-streaming RPCs (StreamCaptures /
+// StreamUndispatchedCaptures) to get past gRPC's 4 MiB unary cap, but the
+// client interceptor suite attached the bearer token to unary calls only --
+// so on the token-protected topology every deployment profile uses, the
+// daemon's dispatch loop and the dashboard's inspector got PermissionDenied
+// from the stream interceptor, with no unary fallback left to take. 20 x
+// 256 KiB is 5 MiB, past that cap, so the batch also proves the streaming
+// path still carries it.
+func TestCaptureStreamsCarryTheAdminToken(t *testing.T) {
+	const adminToken = "daemon-admin-token"
+	_, dial := grantsServer(t, adminToken)
+	admin := dial(t, adminToken)
+	ctx := t.Context()
+
+	body := strings.Repeat("x", 256<<10)
+	for range 20 {
+		if _, err := admin.InsertCapture(ctx, store.CapturedEvent{Source: "large", Body: body, Authenticated: true}, 0, 0); err != nil {
+			t.Fatalf("InsertCapture: %v", err)
+		}
+	}
+	// ListUndispatchedCaptures only returns sources with an armed binding
+	// (internal/store/bindings.go), so "large" needs one taken through the
+	// public draft -> pending_approval -> armed lifecycle.
+	id, err := admin.InsertBinding(ctx, binding.Binding{
+		Name: "large binding", Matcher: binding.Matcher{Source: "large"},
+		MappingID: 1, Workflow: "implement", Secret: "0123456789abcdef0123456789abcdef",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.UpdateBinding(ctx, binding.Binding{
+		ID: id, Name: "large binding", Matcher: binding.Matcher{Source: "large"},
+		MappingID: 1, Workflow: "implement", Secret: "0123456789abcdef0123456789abcdef",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.ApproveBinding(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		list func(context.Context) ([]store.CapturedEvent, error)
+	}{
+		{"ListCaptures", func(ctx context.Context) ([]store.CapturedEvent, error) { return admin.ListCaptures(ctx, 20) }},
+		{"ListUndispatchedCaptures", func(ctx context.Context) ([]store.CapturedEvent, error) {
+			return admin.ListUndispatchedCaptures(ctx, []string{"large"}, 20)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			captures, err := tc.list(t.Context())
+			if err != nil {
+				t.Fatalf("%s over a token-protected listener: %v", tc.name, err)
+			}
+			if len(captures) != 20 {
+				t.Fatalf("got %d captures, want 20", len(captures))
+			}
+			for _, capture := range captures {
+				if capture.Body != body {
+					t.Fatal("capture body truncated")
+				}
+			}
+		})
+	}
+}
+
+// TestUpdateRejectsNilTask is the Update-validation regression: a request
+// carrying no Task must be refused at the RPC boundary as InvalidArgument,
+// not dereferenced inside the store layer.
+func TestUpdateRejectsNilTask(t *testing.T) {
+	const adminToken = "daemon-admin-token"
+	_, dial := grantsServer(t, adminToken)
+	err := dial(t, adminToken).Update(t.Context(), nil)
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("Update(nil) = %v, want InvalidArgument", err)
+	}
 }
 
 // TestTaskGrantScopesWorkerToItsOwnThreeRPCs is the finding #1 regression:
