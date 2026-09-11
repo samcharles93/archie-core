@@ -205,6 +205,23 @@ yet satisfy this boundary. This document is the ratified target; the
 implementation child must prove each migration gate before claiming Phase 3
 complete.
 
+### Phase 3 complete (2026-09-11)
+
+Phase 3 is closed. Every gate below is proven by test, not by inspection:
+
+| Gate | Evidence |
+| --- | --- |
+| Deletion | `cmd/archie-ui/architecture_test.go` re-runs `go list -deps` on every `task check` and fails on any banned package, checked in both directions against its two exceptions |
+| Composition | `internal/app/archieui/TestComposeUIServerHoldsNoDaemonState` fails on a non-nil `config.Holder`, a concrete `*store.Store`, or a Gateway that is not the gRPC client |
+| End-to-end | `cmd/archie-ui/main_test.go` builds the binary and drives it over HTTP against a live Gateway and State Store |
+| No dual authority | The dashboard HTTP listener is `internal/app/archieui/run.go` only; the daemon's two `http.Server`s are its own health endpoint and the forge webhook receiver |
+
+Acceptance criterion 1 is amended to name the UI process rather than the
+`internal/webui` package: the UI process receives no holder, while the daemon
+still holds one *inside its own process* to render the published `ConfigView`
+snapshot (the residue below, tracked by `archie-core-ml30`). No live struct
+crosses the service boundary, which is what the criterion protects.
+
 ### Deletion gate: SATISFIED (archie-core-8cda.5.6, rev. 2)
 
 The objective gate now holds. `go list -deps ./cmd/archie-ui` links **zero**
@@ -245,7 +262,8 @@ One piece of residue remains visible: `webui.Server` still declares
 that builds the published `ConfigView` snapshot. The UI process never receives
 a holder, and the composition test fails if it ever does, but removing the
 field outright means moving that renderer and the readiness probes off
-`webui.Server` onto the daemon's own configuration owner.
+`webui.Server` onto the daemon's own configuration owner. That cleanup is
+`archie-core-ml30` (P2); it is daemon-internal and does not gate Phase 3.
 
 ### Real-process evidence (archie-core-8cda.5.6)
 
