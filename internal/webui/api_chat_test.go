@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
@@ -636,7 +636,9 @@ func TestChatStreamReportsToolCalls(t *testing.T) {
 			// Enabled explicitly: this test exercises the tool-narration
 			// path itself, which is off by default (see
 			// TestChatStreamHidesToolCallsWhenShowToolCallsIsOff).
-			server.Cfg = config.NewHolder(config.Config{Chat: config.ChatConfig{ShowToolCalls: true}})
+			server.ConfigSource = func(context.Context) (ConfigView, bool, error) {
+				return ConfigView{Chat: ChatView{ShowToolCalls: true}}, true, nil
+			}
 			if tc.queued {
 				testLocalChat(server.Chat).Turns = gateway.NewTurns(slog.Default())
 			}
@@ -759,19 +761,35 @@ func TestChatStreamHidesToolCallsWhenShowToolCallsIsOff(t *testing.T) {
 	}
 
 	tests := []struct {
-		name string
-		cfg  *config.Holder
+		name   string
+		source ConfigViewSource
 	}{
-		{name: "no Cfg wired at all", cfg: nil},
-		{name: "Cfg present but show_tool_calls unset", cfg: config.NewHolder(config.Config{})},
-		{name: "show_tool_calls explicitly false", cfg: config.NewHolder(config.Config{Chat: config.ChatConfig{ShowToolCalls: false}})},
+		{name: "no configuration source wired at all"},
+		{
+			name: "projection available but show_tool_calls unset",
+			source: func(context.Context) (ConfigView, bool, error) {
+				return ConfigView{}, true, nil
+			},
+		},
+		{
+			name: "show_tool_calls explicitly false",
+			source: func(context.Context) (ConfigView, bool, error) {
+				return ConfigView{Chat: ChatView{ShowToolCalls: false}}, true, nil
+			},
+		},
+		{
+			name: "projection unavailable",
+			source: func(context.Context) (ConfigView, bool, error) {
+				return ConfigView{}, false, errors.New("state store unreachable")
+			},
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			server, sessions := chatTestServer(t)
 			testLocalChat(server.Chat).Router.LLMStream = stream
-			server.Cfg = tc.cfg
+			server.ConfigSource = tc.source
 			saveWebSession(t, sessions, "web-1")
 
 			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/chat/stream",
@@ -916,18 +934,23 @@ func TestChatStreamEmitsNavigateChip(t *testing.T) {
 	}
 
 	tests := []struct {
-		name string
-		cfg  *config.Holder
+		name   string
+		source ConfigViewSource
 	}{
-		{name: "show_tool_calls off (navigate is unconditional)", cfg: config.NewHolder(config.Config{Chat: config.ChatConfig{ShowToolCalls: false}})},
-		{name: "no Cfg wired at all", cfg: nil},
+		{
+			name: "show_tool_calls off (navigate is unconditional)",
+			source: func(context.Context) (ConfigView, bool, error) {
+				return ConfigView{Chat: ChatView{ShowToolCalls: false}}, true, nil
+			},
+		},
+		{name: "no configuration source wired at all"},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			server, sessions := chatTestServer(t)
 			testLocalChat(server.Chat).Router.LLMStream = stream
-			server.Cfg = tc.cfg
+			server.ConfigSource = tc.source
 			saveWebSession(t, sessions, "web-1")
 
 			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/chat/stream",

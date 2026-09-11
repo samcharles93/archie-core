@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/taskactions"
 	"github.com/samcharles93/archie-core/internal/events"
 	taskactionstore "github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
@@ -17,7 +16,7 @@ import (
 func (b *boot) taskActions() taskactions.Service {
 	return taskactionstore.NewService(
 		taskactionstore.Store{TaskStore: b.stateStore},
-		taskactionstore.MaxRetries(config.NewHolder(b.cfg)),
+		taskactionstore.MaxRetries(b.cfgHolder),
 		b.cancelTask,
 		b.closeIssue,
 		b.removeTaskLogs,

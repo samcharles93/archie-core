@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 )
 
@@ -16,7 +15,6 @@ func TestAuthorizeTaskMutationOrigin(t *testing.T) {
 	tests := []struct {
 		name                 string
 		trustForwardedDirect bool
-		trustForwardedCfg    *bool
 		forwardedProto       string
 		forwardedHost        string
 		requestHost          string
@@ -36,17 +34,6 @@ func TestAuthorizeTaskMutationOrigin(t *testing.T) {
 			csrfHeader:           "1",
 			contentType:          "application/json",
 			wantStatus:           http.StatusOK,
-		},
-		{
-			name:              "1b. proxied https: trust enabled via Cfg holder, X-Forwarded-Proto https, plain HTTP, Origin https",
-			trustForwardedCfg: new(true),
-			forwardedProto:    "https",
-			requestHost:       "archie.catlow.cloud",
-			tls:               false,
-			origin:            "https://archie.catlow.cloud",
-			csrfHeader:        "1",
-			contentType:       "application/json",
-			wantStatus:        http.StatusOK,
 		},
 		{
 			name:                 "1c. proxied https: comma-separated X-Forwarded-Proto list",
@@ -183,13 +170,6 @@ func TestAuthorizeTaskMutationOrigin(t *testing.T) {
 			}
 
 			srv.TrustForwardedHeaders = tc.trustForwardedDirect
-			if tc.trustForwardedCfg != nil {
-				srv.Cfg = config.NewHolder(config.Config{
-					Web: config.Web{
-						TrustForwardedHeaders: *tc.trustForwardedCfg,
-					},
-				})
-			}
 
 			path := "/api/tasks/" + strconv.FormatInt(task.ID, 10) + "/action"
 			req := httptest.NewRequestWithContext(ctx, http.MethodPost, path, strings.NewReader(`{"action":"cancel"}`))

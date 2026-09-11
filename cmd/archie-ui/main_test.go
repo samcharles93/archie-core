@@ -432,6 +432,12 @@ func seedStore(t *testing.T, dir string) *store.Store {
 			ForgeType: "github",
 			ForgeHost: "https://github.example.com",
 		},
+		Repositories: []webui.RepoView{{Owner: "acme", Name: "widget", Base: "main"}},
+		Chat: webui.ChatView{
+			ShowToolCalls:     true,
+			Operator:          "Sam",
+			ChannelConfigured: true,
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -654,6 +660,35 @@ func TestUIProcessServesTheDashboardAgainstLiveDependencies(t *testing.T) {
 		}
 		if got := d.do(d.request(http.MethodPatch, "/api/config", `{}`, true)); got.status != http.StatusServiceUnavailable {
 			t.Errorf("PATCH /api/config = %d, want 503", got.status)
+		}
+
+		// The setup checklist reads the same projection. It reported
+		// nothing here while it needed a live config.Holder this process
+		// never receives (archie-core-ml30).
+		setup := d.get("/api/setup")
+		if setup.status != http.StatusOK {
+			t.Fatalf("GET /api/setup = %d (%s), want 200", setup.status, setup.body)
+		}
+		var checklist struct {
+			Steps []struct {
+				Title string `json:"title"`
+				Done  bool   `json:"done"`
+			} `json:"steps"`
+			Operator string `json:"operator"`
+		}
+		if err := json.Unmarshal(setup.body, &checklist); err != nil {
+			t.Fatalf("decode setup checklist: %v (%s)", err, setup.body)
+		}
+		if len(checklist.Steps) == 0 {
+			t.Errorf("setup checklist is empty; the published projection carries what it reads (%s)", setup.body)
+		}
+		if checklist.Operator != "Sam" {
+			t.Errorf("setup operator = %q, want the published name", checklist.Operator)
+		}
+		for _, step := range checklist.Steps {
+			if step.Title == "Connect a repository" && !step.Done {
+				t.Errorf("checklist says no repository is connected; the projection publishes one (%s)", setup.body)
+			}
 		}
 	})
 

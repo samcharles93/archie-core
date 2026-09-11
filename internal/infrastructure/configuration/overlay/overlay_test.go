@@ -139,3 +139,47 @@ func TestOpenIdempotentAndVersioned(t *testing.T) {
 	}
 	_ = s2.Close()
 }
+
+// TestKeysReportsDottedPaths: Snapshot nests keys for decoding, so it cannot
+// answer "which keys are overridden" -- ranging over its result yields the
+// top-level section ("budgets"), not the stored key ("budgets.max_steps").
+// The dashboard marks rows and resets them by stored key, so Keys reports
+// those.
+func TestKeysReportsDottedPaths(t *testing.T) {
+	store, ctx := openTest(t)
+	for key, value := range map[string]string{
+		"budgets.max_steps":  "40",
+		"budgets.wall_clock": `"30m"`,
+		"label":              `"archie"`,
+	} {
+		if err := store.Set(ctx, key, value, "test"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	keys, err := store.Keys(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"budgets.max_steps", "budgets.wall_clock", "label"}
+	if len(keys) != len(want) {
+		t.Fatalf("Keys = %v, want %v", keys, want)
+	}
+	for i, key := range want {
+		if keys[i] != key {
+			t.Errorf("Keys[%d] = %q, want %q (sorted, dotted)", i, keys[i], key)
+		}
+	}
+}
+
+// TestKeysOnAnEmptyOverlay: nothing overridden is an empty list, not an error.
+func TestKeysOnAnEmptyOverlay(t *testing.T) {
+	store, ctx := openTest(t)
+	keys, err := store.Keys(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 0 {
+		t.Fatalf("Keys = %v, want none", keys)
+	}
+}

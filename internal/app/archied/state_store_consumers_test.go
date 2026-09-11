@@ -94,8 +94,8 @@ func TestSetupObservabilityKeepsStoreSurfacesOutOfTheDaemonWebui(t *testing.T) {
 	t.Cleanup(b.cleanup)
 	b.setupObservability(t.Context())
 
-	if b.web.Cfg == nil {
-		t.Fatal("webui Cfg is nil; the daemon renders the configuration snapshot it publishes (archie-core-ymut)")
+	if b.cfgHolder == nil {
+		t.Fatal("cfgHolder is nil; the daemon renders the configuration snapshot it publishes (archie-core-ymut)")
 	}
 	for name, surface := range map[string]any{
 		"Store":         b.web.Store,

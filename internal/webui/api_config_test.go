@@ -73,6 +73,26 @@ func leakCandidates() []string {
 	return []string{fakeForgeToken, fakeProviderKey, fakeBWSKeyName, fakeNATSToken}
 }
 
+// localView installs the projection a configuration owner publishes, built by
+// the same function the daemon calls. Tests that used to hand the server a
+// live config.Holder now hand it that holder's projection, which is what every
+// process renders from since the server stopped holding configuration
+// (archie-core-ml30).
+func localView(srv *Server, in ConfigViewInput) {
+	srv.ConfigSource = func(context.Context) (ConfigView, bool, error) {
+		return BuildConfigView(in), true, nil
+	}
+}
+
+// localConfig is localView for the common case: a config snapshot and nothing
+// else.
+func localConfig(srv *Server, cfg *config.Holder) {
+	if cfg == nil {
+		return
+	}
+	localView(srv, ConfigViewInput{Config: cfg.Get()})
+}
+
 func TestHandleConfigNeverLeaksSecrets(t *testing.T) {
 	cases := []struct {
 		name string
@@ -86,7 +106,7 @@ func TestHandleConfigNeverLeaksSecrets(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := newTestServer(t)
-			srv.Cfg = tc.cfg
+			localConfig(srv, tc.cfg)
 
 			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
 			w := httptest.NewRecorder()
@@ -116,7 +136,7 @@ func TestHandleConfigNeverLeaksSecrets(t *testing.T) {
 // secrets could pass trivially by returning {}.
 func TestHandleConfigSafeFieldsPresent(t *testing.T) {
 	srv := newTestServer(t)
-	srv.Cfg = configWithFakeSecrets()
+	localConfig(srv, configWithFakeSecrets())
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
 	w := httptest.NewRecorder()
@@ -164,13 +184,13 @@ func TestHandleConfigSafeFieldsPresent(t *testing.T) {
 // without reading logs.
 func TestHandleConfigIncludesReloadStatus(t *testing.T) {
 	srv := newTestServer(t)
-	srv.Cfg = configWithFakeSecrets()
-	srv.LastReload = func() config.ReloadStatus {
-		return config.ReloadStatus{
+	localView(srv, ConfigViewInput{
+		Config: configWithFakeSecrets().Get(),
+		Reload: &config.ReloadStatus{
 			LastError:   "poll_interval must be positive",
 			LastErrorAt: "2026-08-09T12:00:00Z",
-		}
-	}
+		},
+	})
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
 	w := httptest.NewRecorder()
@@ -195,7 +215,7 @@ func TestHandleConfigIncludesReloadStatus(t *testing.T) {
 // field is absent (not empty) when the server has no reload seam wired.
 func TestHandleConfigOmitsReloadStatusWhenUnavailable(t *testing.T) {
 	srv := newTestServer(t)
-	srv.Cfg = configWithFakeSecrets()
+	localConfig(srv, configWithFakeSecrets())
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
 	w := httptest.NewRecorder()
@@ -210,14 +230,16 @@ func TestHandleConfigOmitsReloadStatusWhenUnavailable(t *testing.T) {
 	}
 }
 
-// TestSetProvenancePublishesForConfigView proves a reloaded provenance
-// list reaches /api/config.
-func TestSetProvenancePublishesForConfigView(t *testing.T) {
+// TestConfigViewCarriesProvenance proves the provenance list the
+// configuration owner supplies reaches /api/config.
+func TestConfigViewCarriesProvenance(t *testing.T) {
 	srv := newTestServer(t)
-	srv.Cfg = configWithFakeSecrets()
-	srv.SetProvenance([]ConfigOrigin{
-		{Path: "/etc/archie/config.toml", Role: "main", Layer: "base"},
-		{Path: "/etc/archie/conf.d/docker.yaml", Role: "extra", Layer: "overlay", Feature: "docker"},
+	localView(srv, ConfigViewInput{
+		Config: configWithFakeSecrets().Get(),
+		Provenance: []ConfigOrigin{
+			{Path: "/etc/archie/config.toml", Role: "main", Layer: "base"},
+			{Path: "/etc/archie/conf.d/docker.yaml", Role: "extra", Layer: "overlay", Feature: "docker"},
+		},
 	})
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
@@ -241,7 +263,7 @@ func TestSetProvenancePublishesForConfigView(t *testing.T) {
 // instead of silently omitting the edit affordance.
 func TestHandleConfigReportsLockedKeys(t *testing.T) {
 	srv := newTestServer(t)
-	srv.Cfg = configWithFakeSecrets()
+	localConfig(srv, configWithFakeSecrets())
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
 	w := httptest.NewRecorder()
@@ -264,12 +286,12 @@ func TestHandleConfigReportsLockedKeys(t *testing.T) {
 // (archie-core-b6ew.4).
 func TestHandleConfigRepoViewIncludesReviewEnabled(t *testing.T) {
 	srv := newTestServer(t)
-	srv.Cfg = config.NewHolder(config.Config{
+	localView(srv, ConfigViewInput{Config: config.Config{
 		Repos: []config.Repo{
 			{Owner: "acme", Name: "widget", Base: "main", AllowConcurrent: true, MaxRetries: 3, ReviewEnabled: true},
 			{Owner: "acme", Name: "gadget", Base: "main"},
 		},
-	})
+	}})
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
 	w := httptest.NewRecorder()
@@ -297,7 +319,7 @@ func TestHandleConfigRepoViewIncludesReviewEnabled(t *testing.T) {
 // not a stale or empty catalog.
 func TestHandleConfigIncludesSchemaWithLiveValues(t *testing.T) {
 	srv := newTestServer(t)
-	srv.Cfg = configWithFakeSecrets()
+	localConfig(srv, configWithFakeSecrets())
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
 	w := httptest.NewRecorder()
@@ -364,7 +386,7 @@ func TestHandleConfigIncludesSchemaWithLiveValues(t *testing.T) {
 // be caught even if leakCandidates never appears in the flat fields.
 func TestHandleConfigSchemaNeverLeaksSecrets(t *testing.T) {
 	srv := newTestServer(t)
-	srv.Cfg = configWithFakeSecrets()
+	localConfig(srv, configWithFakeSecrets())
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
 	w := httptest.NewRecorder()
@@ -462,10 +484,10 @@ func TestHandleConfigUpdateWithoutSeamMapsTo503(t *testing.T) {
 // reach the view so the UI can mark rows shadowed by the runtime overlay.
 func TestHandleConfigIncludesOverridden(t *testing.T) {
 	srv := newTestServer(t)
-	srv.Cfg = configWithFakeSecrets()
-	srv.ConfigOverrides = func(context.Context) ([]string, error) {
-		return []string{"budgets.max_steps", "label"}, nil
-	}
+	localView(srv, ConfigViewInput{
+		Config:     configWithFakeSecrets().Get(),
+		Overridden: []string{"budgets.max_steps", "label"},
+	})
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
 	w := httptest.NewRecorder()
@@ -528,9 +550,13 @@ func TestHandleConfigResetRejectsEmptyKey(t *testing.T) {
 	}
 }
 
-func TestHandleChannelsReportsConfiguredState(t *testing.T) {
+// TestHandleChannelsWithoutManagerIsEmpty: channel lifecycle is the status
+// manager's to report. A process without one answers an empty list rather
+// than deriving channels from configuration, which could only ever describe
+// what was configured, never what is running.
+func TestHandleChannelsWithoutManagerIsEmpty(t *testing.T) {
 	srv := newTestServer(t)
-	srv.Cfg = configWithFakeSecrets()
+	localConfig(srv, configWithFakeSecrets())
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/channels", nil)
 	w := httptest.NewRecorder()
@@ -539,45 +565,11 @@ func TestHandleChannelsReportsConfiguredState(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body)
 	}
-
 	body := w.Body.String()
 	for _, leak := range leakCandidates() {
 		if strings.Contains(body, leak) {
 			t.Errorf("channels response leaked secret value %q:\n%s", leak, body)
 		}
-	}
-
-	var got struct {
-		Channels []ChannelView `json:"channels"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-
-	var telegram *ChannelView
-	for i := range got.Channels {
-		if got.Channels[i].Name == "Telegram" {
-			telegram = &got.Channels[i]
-		}
-	}
-	if telegram == nil {
-		t.Fatal("no Telegram channel in response")
-	}
-	if !telegram.Configured {
-		t.Errorf("Telegram.Configured = false, want true (TokenEnv is set)")
-	}
-}
-
-func TestHandleChannelsNilConfig(t *testing.T) {
-	srv := newTestServer(t)
-	srv.Cfg = nil
-
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/channels", nil)
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", w.Code, w.Body)
 	}
 	var got struct {
 		Channels []ChannelView `json:"channels"`
@@ -586,13 +578,12 @@ func TestHandleChannelsNilConfig(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	if len(got.Channels) != 0 {
-		t.Errorf("Channels = %+v, want empty when Cfg is nil", got.Channels)
+		t.Errorf("Channels = %+v, want empty without a status manager", got.Channels)
 	}
 }
 
 func TestHandleChannelsUsesRuntimeManager(t *testing.T) {
 	srv := newTestServer(t)
-	srv.Cfg = configWithFakeSecrets()
 	srv.Channels = status.NewManager([]status.Descriptor{{
 		ID: "telegram", Name: "Telegram", Configured: true, ReloadSupported: true,
 	}})
@@ -615,14 +606,14 @@ func TestHandleChannelsUsesRuntimeManager(t *testing.T) {
 
 // TestRemoteConfigViewRendersThePublishedSnapshot: the UI process has no
 // configuration of its own, so the page it serves is whatever the owner
-// published -- and it must never claim to be editable, because this process
-// has no write path and its PATCH routes answer 503.
+// published. Whether that page is editable is decided by the process that
+// renders it, not by the document -- see
+// TestConfigViewEditableFollowsThisProcessWritePath.
 func TestRemoteConfigViewRendersThePublishedSnapshot(t *testing.T) {
 	published := ConfigView{
 		Identity:   IdentityView{BotUser: "archie", ForgeType: "github"},
 		Models:     map[string]string{"chat": "anthropic/claude"},
 		Providers:  map[string]ProviderView{"anthropic": {APIKeyEnv: "ANTHROPIC_API_KEY", Configured: true}},
-		Editable:   true, // the daemon's own view; publishing must not carry it
 		Provenance: []ConfigOrigin{{Path: "/etc/archie/config.toml", Role: "main"}},
 	}
 	document, err := json.Marshal(published)
@@ -641,8 +632,44 @@ func TestRemoteConfigViewRendersThePublishedSnapshot(t *testing.T) {
 	if view.Identity.BotUser != "archie" || view.Providers["anthropic"].APIKeyEnv != "ANTHROPIC_API_KEY" {
 		t.Fatalf("view = %+v, want the published values", view)
 	}
-	if view.Editable {
-		t.Error("a rendered snapshot claims to be editable; this process has no write path")
+	if len(view.Provenance) != 1 || view.Provenance[0].Path != "/etc/archie/config.toml" {
+		t.Errorf("Provenance = %+v, want the published chain", view.Provenance)
+	}
+}
+
+// TestConfigViewEditableFollowsThisProcessWritePath: Editable describes the
+// rendering process, not the document. A published snapshot cannot make a
+// reader editable, and a process that holds the update path says so even
+// when the document it renders says otherwise.
+func TestConfigViewEditableFollowsThisProcessWritePath(t *testing.T) {
+	render := func(t *testing.T, wireUpdate bool) ConfigView {
+		t.Helper()
+		srv := newTestServer(t)
+		srv.ConfigSource = func(context.Context) (ConfigView, bool, error) {
+			// The document claims editable; only the process decides.
+			return ConfigView{Editable: true}, true, nil
+		}
+		if wireUpdate {
+			srv.UpdateConfig = func(context.Context, map[string]any) error { return nil }
+		}
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("GET /api/config = %d, want 200", w.Code)
+		}
+		var got ConfigView
+		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return got
+	}
+
+	if render(t, false).Editable {
+		t.Error("Editable = true without an update path; the write routes answer 503")
+	}
+	if !render(t, true).Editable {
+		t.Error("Editable = false with UpdateConfig wired; the page would hide controls that work")
 	}
 }
 
@@ -725,7 +752,7 @@ func TestCapabilitiesReportWhatThisProcessCanServe(t *testing.T) {
 	}
 
 	wired := newTestServer(t)
-	wired.Cfg = config.NewHolder(config.Config{})
+	wired.Channels = status.NewManager([]status.Descriptor{{ID: "telegram", Name: "Telegram"}})
 	wired.LogFeed = logging.NewFeed(10)
 	wired.Memory = stubMemory{}
 	wired.Curators = stubCurators{}

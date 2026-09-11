@@ -52,7 +52,11 @@ func (r *recordingCloser) CloseIssue(_ context.Context, owner, repo string, numb
 // The service is rebuilt per call because tests attach collaborators after
 // the server exists, exactly as the daemon rebuilds it per request.
 type daemonActions struct {
-	srv     *Server
+	srv *Server
+	// cfg is the daemon's configuration, held by the stand-in daemon
+	// rather than by the dashboard: retry caps are the task owner's
+	// policy and the dashboard does not hold configuration.
+	cfg     *config.Holder
 	issues  *recordingCloser
 	stopper *recordingTaskStopper
 	// scopes records the identity each action arrived with, one per call.
@@ -65,7 +69,7 @@ func (d *daemonActions) ApplyChatTaskAction(
 	d.scopes = append(d.scopes, identity)
 	service := taskactionstore.NewService(
 		taskactionstore.Store{TaskStore: d.srv.Store},
-		taskactionstore.MaxRetries(d.srv.Cfg),
+		taskactionstore.MaxRetries(d.cfg),
 		d.cancelTask(),
 		d.closeIssue(),
 		d.removeLogs(),
@@ -109,7 +113,7 @@ func (d *daemonActions) publish() func(events.Event) {
 // wireOperatorActions gives srv a task-action owner, the way composition
 // gives the dashboard a Gateway contract.
 func wireOperatorActions(srv *Server) *daemonActions {
-	actions := &daemonActions{srv: srv}
+	actions := &daemonActions{srv: srv, cfg: config.NewHolder(config.Config{})}
 	srv.Chat = &ChatService{Contract: &gateway.LocalChatAdapter{TaskActor: actions}}
 	return actions
 }
@@ -153,7 +157,7 @@ func actionServer(t *testing.T, status, parkReason string) (*Server, *workflow.T
 
 	operatorActions(t, srv).issues = closer
 	srv.Events = bus
-	srv.Cfg = config.NewHolder(config.Config{MaxRetries: 3})
+	operatorActions(t, srv).cfg = config.NewHolder(config.Config{MaxRetries: 3})
 	return srv, task, closer, bus, sub
 }
 
@@ -219,7 +223,7 @@ func TestRetryEnforcesMaxRetries(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, task, _, _, _ := actionServer(t, workflow.StatusParked, "it broke")
-			srv.Cfg = config.NewHolder(config.Config{MaxRetries: tc.maxRetries})
+			operatorActions(t, srv).cfg = config.NewHolder(config.Config{MaxRetries: tc.maxRetries})
 			ctx := t.Context()
 			for range tc.priorCount {
 				if err := srv.Store.IncrementRetryCount(ctx, task.ID); err != nil {
@@ -294,7 +298,7 @@ func TestRejectDoesNotCloseAChatTaskIssue(t *testing.T) {
 	ctx := t.Context()
 	closer := &recordingCloser{}
 	operatorActions(t, srv).issues = closer
-	srv.Cfg = config.NewHolder(config.Config{MaxRetries: 3})
+	operatorActions(t, srv).cfg = config.NewHolder(config.Config{MaxRetries: 3})
 
 	task, err := srv.Store.EnqueueChatTask(ctx, "acme", "widget", "chat task", "", "", "")
 	if err != nil {
@@ -516,9 +520,8 @@ func TestTaskActionStoreFailureIs500(t *testing.T) {
 	srv := &Server{
 		Store: &stubStore{TaskStore: base.Store, requeueErr: errors.New("db locked")},
 		Log:   base.Log,
-		Cfg:   config.NewHolder(config.Config{MaxRetries: 3}),
 	}
-	wireOperatorActions(srv)
+	wireOperatorActions(srv).cfg = config.NewHolder(config.Config{MaxRetries: 3})
 	w := postAction(t, srv, task.ID, "approve")
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500: a store failure is not a conflict", w.Code)

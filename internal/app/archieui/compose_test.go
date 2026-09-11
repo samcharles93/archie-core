@@ -32,10 +32,13 @@ func isNil(v any) bool {
 
 // TestComposeUIServerHoldsNoDaemonState is the acceptance criterion the parent
 // bead names first: the UI process's dashboard "no longer receives the
-// daemon's live config.Holder". It pins the whole composition: the two
-// contract-backed fields hold remote clients, and every daemon-local runtime
-// handle stays nil so the process cannot hold in-process daemon state by
-// accident (docs/prds/ui-service-boundary.md, "Boundary and ownership").
+// daemon's live config.Holder". webui.Server no longer has a holder field to
+// receive (archie-core-ml30), so that clause is now enforced by the type
+// rather than asserted here. What remains to pin is the rest of the
+// composition: the two contract-backed fields hold remote clients, and every
+// daemon-local runtime handle stays nil so the process cannot hold in-process
+// daemon state by accident (docs/prds/ui-service-boundary.md, "Boundary and
+// ownership").
 func TestComposeUIServerHoldsNoDaemonState(t *testing.T) {
 	stateConn, err := grpc.NewClient("passthrough:///127.0.0.1:1", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -55,9 +58,6 @@ func TestComposeUIServerHoldsNoDaemonState(t *testing.T) {
 		Chat:    gatewayrpc.NewClient(gatewayConn),
 	})
 
-	if srv.Cfg != nil {
-		t.Fatal("UI server holds a config.Holder; the UI process must not share the daemon's live configuration (docs/prds/ui-service-boundary.md:95-96)")
-	}
 	if _, ok := srv.Store.(*staterpc.Client); !ok {
 		t.Fatalf("Store = %T, want *staterpc.Client", srv.Store)
 	}
@@ -80,9 +80,7 @@ func TestComposeUIServerHoldsNoDaemonState(t *testing.T) {
 	unwired := map[string]any{
 		"UpdateConfig":    srv.UpdateConfig,
 		"ResetConfig":     srv.ResetConfig,
-		"ConfigOverrides": srv.ConfigOverrides,
 		"UpdateRepoField": srv.UpdateRepoField,
-		"LastReload":      srv.LastReload,
 		"ReloadChannel":   srv.ReloadChannel,
 		"RunningVersions": srv.RunningVersions,
 		"Events":          srv.Events,

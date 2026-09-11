@@ -19,7 +19,7 @@ func TestRemoteChatCompositionPreservesChannelTurnLedger(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	b := &boot{cfg: cfg, log: slog.Default(), web: &webui.Server{Cfg: config.NewHolder(cfg)}, stateStore: st}
+	b := &boot{cfg: cfg, log: slog.Default(), web: &webui.Server{}, cfgHolder: config.NewHolder(cfg), stateStore: st}
 	t.Cleanup(b.cleanup)
 	if err := b.openStores(t.Context()); err != nil {
 		t.Fatal(err)

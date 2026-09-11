@@ -126,12 +126,13 @@ func mergeComponents(history []string, live []logging.Entry) []string {
 	return components
 }
 
-// logFile reports the configured log path, or "" when file logging is off.
+// logFile reports the log path this process can read, or "" when it has
+// none. It is deliberately this process's own setting rather than the
+// daemon's [log].file: the history lives on the daemon's disk, so a
+// dashboard running elsewhere cannot read it by learning its path. Serving
+// remote log history needs a contract, which /api/logs does not yet have.
 func (s *Server) logFile() string {
-	if s.Cfg == nil {
-		return ""
-	}
-	return strings.TrimSpace(s.Cfg.Get().Log.File)
+	return strings.TrimSpace(s.LogFile)
 }
 
 func splitCSV(v string) []string {

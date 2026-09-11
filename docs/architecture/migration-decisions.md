@@ -404,6 +404,18 @@ document already anticipates is its natural owner. Until then the UI renders
 configuration and does not write it, which is what the boundary always said
 about ownership even when it assumed a wider contract.
 
+Amended 2026-09-11. This descope is a deferral, not a decision that the
+dashboard should be read-only. Name it that way in review: the daemon-side
+policy was built and tested, then deleted by the cutover (`e037b95` removed
+`internal/app/archied/config_update.go` and its tests), so reviving it is
+recoverable work, not a rewrite. `archie-core-j28m` carries the remaining
+question -- which process serves the policy and what transport carries the
+write -- and blocks the feature bead. The handlers, their error sentinels and
+the `UpdateConfig`/`ResetConfig`/`UpdateRepoField` seams on `webui.Server` are
+kept deliberately for it; `ConfigView.Editable` follows whichever process holds
+`UpdateConfig`, so wiring that one field makes the page editable
+(`archie-core-ml30`).
+
 Implementation belongs to `archie-core-8cda.5.4`, the cutover that removes the
 daemon's own dashboard. Nothing here is built yet.
 

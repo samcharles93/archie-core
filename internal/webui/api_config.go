@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/channels/status"
@@ -57,19 +56,7 @@ func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"channels": views})
 		return
 	}
-	if s.Cfg == nil {
-		writeJSON(w, map[string]any{"channels": []ChannelView{}})
-		return
-	}
-
-	chat := s.Cfg.Get().Chat
-	views := []ChannelView{
-		telegramChannelView(chat.Telegram),
-		webhookChannelView(chat.WebhookAddr),
-		emailChannelView(chat.Email),
-	}
-
-	writeJSON(w, map[string]any{"channels": views})
+	writeJSON(w, map[string]any{"channels": []ChannelView{}})
 }
 
 func (s *Server) handleChannelReload(w http.ResponseWriter, r *http.Request) {
@@ -138,70 +125,6 @@ func channelStateDetail(state status.State, configured bool) string {
 	}
 }
 
-func telegramChannelView(t config.TelegramConfig) ChannelView {
-	configured := t.Token != (config.SecretRef{}) || strings.TrimSpace(t.TokenEnv) != ""
-	detail := "Not configured."
-	if configured {
-		n := len(t.AllowedUserIDs)
-		switch n {
-		case 0:
-			detail = "Token set, but the allowlist is empty -- the bot answers nobody."
-		case 1:
-			detail = "1 user allowed."
-		default:
-			detail = strconv.Itoa(n) + " users allowed."
-		}
-	}
-	return ChannelView{
-		ID:              "telegram",
-		Name:            "Telegram",
-		Configured:      configured,
-		Detail:          detail,
-		Description:     "Talk to Archie and approve its work from your phone.",
-		State:           string(status.StateConfigured),
-		ReloadSupported: true,
-	}
-}
-
-func webhookChannelView(addr string) ChannelView {
-	configured := strings.TrimSpace(addr) != ""
-	detail := "Not configured."
-	if configured {
-		detail = "Listening for inbound chat requests."
-	}
-	return ChannelView{
-		ID:          "webhook",
-		Name:        "Webhook gateway",
-		Configured:  configured,
-		Detail:      detail,
-		Description: "Lets another service (e.g. a Telegram webhook, a custom front-end) push messages to Archie over HTTP instead of long-polling.",
-		State:       staticChannelState(configured),
-	}
-}
-
-func emailChannelView(e config.EmailConfig) ChannelView {
-	configured := strings.TrimSpace(e.ListenAddr) != ""
-	detail := "Not configured."
-	if configured {
-		detail = "Archie accepts inbound mail and can reply through the configured relay."
-	}
-	return ChannelView{
-		ID:          "email",
-		Name:        "Email",
-		Configured:  configured,
-		Detail:      detail,
-		Description: "Email Archie a task and it replies from its own inbound SMTP listener.",
-		State:       staticChannelState(configured),
-	}
-}
-
-func staticChannelState(configured bool) string {
-	if configured {
-		return string(status.StateConfigured)
-	}
-	return string(status.StateStopped)
-}
-
 // ConfigView is the read-only, secret-free projection of config.Config
 // shown on the dashboard's Configuration page. Every field here is an
 // explicit, hand-picked allowlist -- see handleConfig for why this is
@@ -215,7 +138,11 @@ type ConfigView struct {
 	Storage      StorageView             `json:"storage"`
 	Containers   ContainersView          `json:"containers"`
 	Web          WebView                 `json:"web"`
-	Provenance   []ConfigOrigin          `json:"provenance"`
+	// Chat carries the dashboard's own chat-page settings. They are
+	// daemon configuration the page cannot otherwise see: a process that
+	// renders a published snapshot has no [chat] section to read.
+	Chat       ChatView       `json:"chat"`
+	Provenance []ConfigOrigin `json:"provenance"`
 	// Reload reports the most recent config reload outcome. Omitted when
 	// the reload status is unavailable.
 	Reload *config.ReloadStatus `json:"reload,omitempty"`
@@ -314,6 +241,20 @@ type ContainersView struct {
 }
 
 // WebView is the dashboard's own listen address and proxy header trust settings.
+// ChatView carries the chat page's own settings and the facts the setup
+// checklist needs. Secret-free by construction: whether a channel has
+// credentials, never the credentials.
+type ChatView struct {
+	ShowToolCalls bool `json:"show_tool_calls"`
+	// Operator is the name the dashboard greets, configured once in
+	// [chat]. Empty when unset, which the page renders as no greeting
+	// rather than a hardcoded name.
+	Operator string `json:"operator,omitempty"`
+	// ChannelConfigured reports that at least one conversational
+	// front-end has credentials.
+	ChannelConfigured bool `json:"channel_configured"`
+}
+
 type WebView struct {
 	Listen                string `json:"listen"`
 	TrustForwardedHeaders bool   `json:"trust_forwarded_headers"`
@@ -341,11 +282,14 @@ const ConfigViewSchema = "webui.ConfigView/1"
 // empty object rather than an error.
 type ConfigViewSource func(ctx context.Context) (ConfigView, bool, error)
 
+// configSource returns the projection source, or an empty one when
+// composition wired none: this process then renders no configuration rather
+// than inventing any.
 func (s *Server) configSource() ConfigViewSource {
 	if s.ConfigSource != nil {
 		return s.ConfigSource
 	}
-	return s.LocalConfigView
+	return func(context.Context) (ConfigView, bool, error) { return ConfigView{}, false, nil }
 }
 
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
@@ -359,26 +303,42 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{})
 		return
 	}
+	// Editable belongs to the process that would perform the write, not to
+	// the document: whoever holds the update path is the writer.
+	view.Editable = s.UpdateConfig != nil
 	writeJSON(w, view)
 }
 
-// LocalConfigView builds the projection from the configuration this process
-// holds. It is what the daemon serves and, byte for byte, what it publishes
-// for the UI process to render (see storecontract.ConfigSnapshot).
-//
-// Every value here is read from one config snapshot taken up front: under the
-// Holder a reload swaps the whole value, which is what a read-only view
-// always wanted.
-func (s *Server) LocalConfigView(ctx context.Context) (ConfigView, bool, error) {
-	if s.Cfg == nil {
-		return ConfigView{}, false, nil
-	}
-	cfg := s.Cfg.Get()
+// ConfigViewInput is everything BuildConfigView needs. The configuration
+// owner assembles it: the config snapshot plus the display data it holds
+// alongside, already resolved, so building the view is pure and cannot fail.
+type ConfigViewInput struct {
+	// Config is one snapshot, read once. Under a Holder a reload swaps the
+	// whole value, which is what a read-only view always wanted.
+	Config config.Config
+	// Provenance is the file chain that produced Config, in precedence
+	// order.
+	Provenance []ConfigOrigin
+	// Overridden lists the dotted keys the runtime overlay currently sets.
+	Overridden []string
+	// Reload is the most recent reload outcome, or nil when unavailable.
+	Reload *config.ReloadStatus
+}
 
-	var provenance []ConfigOrigin
-	if p := s.ConfigProvenance.Load(); p != nil {
-		provenance = append([]ConfigOrigin(nil), (*p)...)
-	}
+// BuildConfigView renders the dashboard's secret-free configuration
+// projection. The configuration owner calls it -- the daemon publishes the
+// result as a snapshot (storecontract.ConfigSnapshot) and a process that only
+// displays configuration reads that snapshot back through RemoteConfigView.
+//
+// It is deliberately a function, not a method: rendering the view is not a
+// property of an HTTP server, and the process that owns configuration is not
+// the process that serves this page (archie-core-ml30).
+//
+// Editable is not set here. It describes the rendering process's own write
+// path, so handleConfig decides it -- see ConfigView.Editable.
+func BuildConfigView(in ConfigViewInput) ConfigView {
+	cfg := in.Config
+	provenance := append([]ConfigOrigin(nil), in.Provenance...)
 
 	view := ConfigView{
 		Identity: IdentityView{
@@ -417,27 +377,27 @@ func (s *Server) LocalConfigView(ctx context.Context) (ConfigView, bool, error) 
 			Listen:                cfg.Web.Listen,
 			TrustForwardedHeaders: cfg.Web.TrustForwardedHeaders,
 		},
+		Chat: ChatView{
+			ShowToolCalls:     cfg.Chat.ShowToolCalls,
+			Operator:          strings.TrimSpace(cfg.Chat.Operator),
+			ChannelConfigured: chatChannelConfigured(cfg.Chat),
+		},
 		Provenance: provenance,
+		Overridden: in.Overridden,
+		Reload:     in.Reload,
 		Locked:     lockedConfigKeys(),
-		// Editable is a property of this process, not of the
-		// configuration, so it is set by the source rather than carried
-		// in a published document: the writer is whoever holds the
-		// update path.
-		Editable: s.UpdateConfig != nil,
-	}
-	if s.ConfigOverrides != nil {
-		if overridden, err := s.ConfigOverrides(ctx); err == nil {
-			view.Overridden = overridden
-		}
-		// A failed read omits the list rather than failing the whole
-		// view; the reload status carries the overlay degrade reason.
-	}
-	if s.LastReload != nil {
-		rs := s.LastReload()
-		view.Reload = &rs
 	}
 	view.Schema = buildConfigSchema(view)
-	return view, true, nil
+	return view
+}
+
+// chatChannelConfigured reports whether any conversational front-end has
+// credentials. The setup checklist needs the answer, not the tokens, so the
+// projection carries the boolean.
+func chatChannelConfigured(chat config.ChatConfig) bool {
+	return chat.Telegram.Token != (config.SecretRef{}) ||
+		strings.TrimSpace(chat.Telegram.TokenEnv) != "" ||
+		strings.TrimSpace(chat.WebhookAddr) != ""
 }
 
 // RemoteConfigView reads the projection the configuration owner published.
@@ -456,7 +416,6 @@ func RemoteConfigView(snapshots storecontract.ConfigSnapshotStore) ConfigViewSou
 		if err := json.Unmarshal(snapshot.Document, &view); err != nil {
 			return ConfigView{}, false, fmt.Errorf("webui: decode published config snapshot: %w", err)
 		}
-		view.Editable = false
 		return view, true, nil
 	}
 }

@@ -381,14 +381,19 @@ func (s chatStreamSink) Media(event messaging.MediaEvent) {
 }
 
 // chatShowToolCalls reports config.ChatConfig.ShowToolCalls, the one setting
-// shared by every chat channel. Off (the default) when Cfg is nil, matching
-// the field's own off-by-default doc comment: a dashboard embedded without
-// live config must not narrate tool activity nobody opted into.
-func (s *Server) chatShowToolCalls() bool {
-	if s.Cfg == nil {
+// shared by every chat channel. It reads the configuration projection this
+// process renders, so a dashboard that displays a published snapshot honours
+// the operator's setting instead of assuming it off.
+//
+// Off (the default) when no projection is available, matching the field's own
+// off-by-default doc comment: a dashboard without config must not narrate tool
+// activity nobody opted into.
+func (s *Server) chatShowToolCalls(ctx context.Context) bool {
+	view, found, err := s.configSource()(ctx)
+	if err != nil || !found {
 		return false
 	}
-	return s.Cfg.Get().Chat.ShowToolCalls
+	return view.Chat.ShowToolCalls
 }
 
 func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
@@ -419,7 +424,7 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		writeChatEvent(chatStreamEvent{Type: "error", Text: err.Error()}, "")
 		return
 	}
-	sink := chatStreamSink{showToolCalls: s.chatShowToolCalls()}
+	sink := chatStreamSink{showToolCalls: s.chatShowToolCalls(r.Context())}
 	for event := range events {
 		sink.write = func(frame chatStreamEvent) { writeChatEvent(frame, event.SessionID) }
 		switch event.Kind {

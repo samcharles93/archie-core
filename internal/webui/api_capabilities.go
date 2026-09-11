@@ -25,7 +25,7 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, _ *http.Request) {
 			"skills":   s.Skills != nil,
 			"memory":   s.Memory != nil,
 			"curators": s.Curators != nil,
-			"channels": s.Channels != nil || s.Cfg != nil,
+			"channels": s.Channels != nil,
 			"captures": s.Captures != nil,
 			"mappings": s.Mappings != nil,
 			"bindings": s.Bindings != nil,

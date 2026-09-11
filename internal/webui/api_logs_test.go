@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/logging"
 )
 
@@ -26,7 +25,7 @@ func TestLogEndpointsValidateAndBoundLimit(t *testing.T) {
 	if err := closer.Close(); err != nil {
 		t.Fatal(err)
 	}
-	srv.Cfg = config.NewHolder(config.Config{Log: config.Log{File: daemonLogPath}})
+	srv.LogFile = daemonLogPath
 
 	taskLogDir := t.TempDir()
 	srv.TaskLogs = logging.NewTaskRegistry(taskLogDir, nil, logging.TaskSinkOptions{})

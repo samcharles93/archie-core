@@ -14,10 +14,8 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
-	"sync/atomic"
 
 	"github.com/samcharles93/archie-core/internal/channels/status"
-	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
@@ -30,18 +28,6 @@ import (
 type Server struct {
 	Store storecontract.TaskStore
 	Log   *slog.Logger
-
-	// Cfg backs the setup checklist and configuration views. Optional: the
-	// dashboard degrades to task data alone when it is nil. Held through a
-	// Holder so a reload swaps the snapshot atomically across handler
-	// goroutines that would otherwise race on the raw shared pointer.
-	//
-	// In production this is the daemon's OWN Holder (main.go wires
-	// web.Cfg = d.Cfg), so Set here publishes to the running daemon. A
-	// config-mutating handler must never call Set directly: it goes
-	// through the same path as reload -- apply to a copy, validate the
-	// materialised config, persist, then Set.
-	Cfg *config.Holder
 
 	// ConfigSource supplies the configuration projection GET /api/config
 	// renders. Composition sets it to RemoteConfigView in a process that
@@ -62,32 +48,12 @@ type Server struct {
 	// logging not configured) makes that a no-op.
 	TaskLogs *logging.TaskRegistry
 
-	// ConfigProvenance lists the files that produced the running config,
-	// in precedence order. Held through atomic.Pointer so a reload can
-	// swap it independently of Cfg. A reader may therefore observe the
-	// new config alongside the old provenance (or vice versa); this is
-	// display-only, and the skew is accepted rather than serialised.
-	ConfigProvenance atomic.Pointer[[]ConfigOrigin]
-
-	// LastReload reports the most recent config reload outcome, so the
-	// dashboard can tell the operator when the running config is stale
-	// (a reload failed validation and the daemon kept the previous
-	// config). Optional: when nil, the /api/config response omits the
-	// reload status.
-	LastReload func() config.ReloadStatus
-
 	// UpdateConfig applies a set of dotted-path config updates through
 	// the same validate-persist-publish path as reload (wired by the
 	// composition root). Optional: when nil, PATCH /api/config answers
 	// 503. The handler never touches the Cfg Holder directly -- see the
 	// Cfg field doc.
 	UpdateConfig func(context.Context, map[string]any) error
-
-	// ConfigOverrides lists the dotted config keys currently overridden
-	// by the runtime overlay, so the dashboard can mark those rows and
-	// offer a reset. Optional: when nil, the /api/config response omits
-	// the overridden list.
-	ConfigOverrides func(context.Context) ([]string, error)
 
 	// ResetConfig deletes one runtime-overlay row and republishes file +
 	// remaining overlay. Optional: when nil, POST /api/config/reset
@@ -199,6 +165,11 @@ type Server struct {
 	// than Confirmed.
 	RunningVersions func() map[string]string
 
+	// LogFile is the log file this process can read history from, for
+	// GET /api/logs. Process-local: the file is on the daemon's disk, so
+	// only a dashboard sharing that host can set it.
+	LogFile string
+
 	// TrustForwardedHeaders controls whether X-Forwarded-Proto and
 	// X-Forwarded-Host are trusted when validating Origin on mutating
 	// requests. When false, Origin scheme must match the direct connection (r.TLS).
@@ -213,13 +184,7 @@ func (s *Server) trustForwardedHeaders() bool {
 	if s == nil {
 		return false
 	}
-	if s.TrustForwardedHeaders {
-		return true
-	}
-	if s.Cfg == nil {
-		return false
-	}
-	return s.Cfg.Get().Web.TrustForwardedHeaders
+	return s.TrustForwardedHeaders
 }
 
 // ConfigOrigin explains one source file contributing to the effective
@@ -232,9 +197,6 @@ type ConfigOrigin struct {
 }
 
 // SetProvenance publishes a fresh provenance list after a config reload.
-func (s *Server) SetProvenance(origins []ConfigOrigin) {
-	s.ConfigProvenance.Store(&origins)
-}
 
 // EventPublisher accepts events for the store and the live stream. The bus
 // in cmd/archied satisfies it.
