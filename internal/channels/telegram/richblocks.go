@@ -3,6 +3,8 @@ package telegram
 import (
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/go-telegram/bot/models"
 )
@@ -14,14 +16,13 @@ import (
 // Markdown marker can survive into the rendered message.
 
 var (
-	inlineLinkHTML     = regexp.MustCompile(`\[([^\]]*)\]\(([^)]+)\)`)
-	strikeBlockMark    = regexp.MustCompile(`~~(.+?)~~`)
-	boldBlockMark      = regexp.MustCompile(`\*\*(.+?)\*\*`)
-	underlineBlockMark = regexp.MustCompile(`__(.+?)__`)
-	italicBlockMark    = regexp.MustCompile(`\*(.+?)\*`)
-	italicBlockUndersc = regexp.MustCompile(`_(.+?)_`)
-	codeBlockMark      = regexp.MustCompile("`([^`]*)`")
+	inlineLinkHTML = regexp.MustCompile(`\[([^\]]*)\]\(([^)]+)\)`)
+	codeBlockMark  = regexp.MustCompile("`([^`]*)`")
 )
+
+// emphasisMarkers are the delimiters stripEmphasis pairs, longest first so
+// "**" is consumed before the "*" pass can see it as two single markers.
+var emphasisMarkers = []string{"~~", "**", "__", "*", "_"}
 
 // richText builds a plain Text; an empty RichText.Type serializes as a JSON
 // string, which is exactly what a plain-text rich block wants.
@@ -107,13 +108,102 @@ func listItemText(line string) string {
 // text, dropping the markers so none of them can leak into the rendered block.
 func stripInlineMarkdown(s string) string {
 	s = inlineLinkHTML.ReplaceAllString(s, "$1 ($2)")
-	s = strikeBlockMark.ReplaceAllString(s, "$1")
-	s = boldBlockMark.ReplaceAllString(s, "$1")
-	s = underlineBlockMark.ReplaceAllString(s, "$1")
-	s = italicBlockMark.ReplaceAllString(s, "$1")
-	s = italicBlockUndersc.ReplaceAllString(s, "$1")
-	s = codeBlockMark.ReplaceAllString(s, "$1")
-	return s
+	for _, marker := range emphasisMarkers {
+		s = stripEmphasis(s, marker)
+	}
+	return codeBlockMark.ReplaceAllString(s, "$1")
+}
+
+// stripEmphasis removes paired emphasis delimiters and keeps their content.
+// Pairing follows CommonMark's flanking rules, so a delimiter that cannot
+// open or close is ordinary text and stays put. That is what keeps this
+// project's own vocabulary intact over the wire: snake_case config keys,
+// dotted paths like config_schema_test.go, and Go pointer types such as
+// *sql.Tx all used to lose characters to a non-greedy `_(.+?)_` that paired
+// any two markers on a line (archie-core-8x1r).
+func stripEmphasis(s, marker string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		if !strings.HasPrefix(s[i:], marker) {
+			b.WriteByte(s[i])
+			i++
+			continue
+		}
+		end := i + len(marker)
+		if canOpen, _ := flanking(s, i, end, marker); canOpen {
+			if closer := findCloser(s, end, marker); closer >= 0 {
+				b.WriteString(s[end:closer])
+				i = closer + len(marker)
+				continue
+			}
+		}
+		b.WriteString(marker)
+		i = end
+	}
+	return b.String()
+}
+
+// findCloser returns the offset of the first delimiter at or after from that
+// may close emphasis, or -1 when the run is unpaired.
+func findCloser(s string, from int, marker string) int {
+	for i := from; i+len(marker) <= len(s); i++ {
+		if !strings.HasPrefix(s[i:], marker) {
+			continue
+		}
+		if _, canClose := flanking(s, i, i+len(marker), marker); canClose {
+			return i
+		}
+	}
+	return -1
+}
+
+// delimiterFlanks carries CommonMark's flanking facts about one delimiter
+// run: whether it is left- and/or right-flanking, and whether the characters
+// either side are punctuation, which the underscore rules also need.
+type delimiterFlanks struct {
+	left, right          bool
+	prevPunct, nextPunct bool
+}
+
+// flanksOf computes the flanking facts for the delimiter run s[i:j].
+func flanksOf(s string, i, j int) delimiterFlanks {
+	prev := ' '
+	if i > 0 {
+		prev, _ = utf8.DecodeLastRuneInString(s[:i])
+	}
+	next := ' '
+	if j < len(s) {
+		next, _ = utf8.DecodeRuneInString(s[j:])
+	}
+	prevSpace, nextSpace := unicode.IsSpace(prev), unicode.IsSpace(next)
+	f := delimiterFlanks{prevPunct: isPunct(prev), nextPunct: isPunct(next)}
+	f.left = !nextSpace && (!f.nextPunct || prevSpace || f.prevPunct)
+	f.right = !prevSpace && (!f.prevPunct || nextSpace || f.nextPunct)
+	return f
+}
+
+// flanking reports whether the delimiter run s[i:j] may open or close
+// emphasis. The rules are CommonMark's, including the one that an underscore
+// may do neither inside a word.
+//
+// Single "*" carries one deliberate deviation: it may not open on
+// punctuation. CommonMark reads "*.go files in cmd/*" as emphasis, which in a
+// relay carrying shell globs and pointer types corrupts far more text than a
+// stray marker would. Emphasis opening on a word still works.
+func flanking(s string, i, j int, marker string) (canOpen, canClose bool) {
+	f := flanksOf(s, i, j)
+	switch marker {
+	case "_", "__":
+		return f.left && (!f.right || f.prevPunct), f.right && (!f.left || f.nextPunct)
+	case "*":
+		return f.left && !f.nextPunct, f.right
+	default:
+		return f.left, f.right
+	}
+}
+
+func isPunct(r rune) bool {
+	return unicode.IsPunct(r) || unicode.IsSymbol(r)
 }
 
 // markdownToBlocks converts a Markdown document into Telegram rich-message
@@ -142,6 +232,7 @@ type markdownBlockParser struct {
 	codeLines  []string
 	codeLang   string
 	inCode     bool
+	indented   bool
 	listItems  [][]models.InputRichBlock
 	quoteLines []string
 }
@@ -151,12 +242,7 @@ type markdownBlockParser struct {
 func (p *markdownBlockParser) handleLine(line string) {
 	trimmed := strings.TrimSpace(line)
 
-	if p.inCode {
-		if strings.HasPrefix(trimmed, "```") {
-			p.closeCode()
-		} else {
-			p.codeLines = append(p.codeLines, line)
-		}
+	if p.inCode && p.consumeCodeLine(line, trimmed) {
 		return
 	}
 
@@ -176,6 +262,13 @@ func (p *markdownBlockParser) handleLine(line string) {
 			p.flushList()
 		}
 		p.listItems = append(p.listItems, []models.InputRichBlock{paragraphBlock(listItemText(trimmed))})
+	case p.startsIndentedCode(line):
+		// CommonMark's other code form. Models emit it constantly, and
+		// without this it fell to the paragraph case below, which
+		// space-joins its lines into one run-on line (archie-core-cvu6).
+		p.flush()
+		p.inCode, p.indented, p.codeLang = true, true, ""
+		p.codeLines = []string{stripCodeIndent(line)}
 	case len(trimmed) > 1 && trimmed[0] == '>':
 		p.flushParagraph()
 		p.flushList()
@@ -195,8 +288,37 @@ func (p *markdownBlockParser) handleLine(line string) {
 		if p.paragraph.Len() > 0 {
 			p.paragraph.WriteString(" ")
 		}
-		p.paragraph.WriteString(line)
+		p.paragraph.WriteString(trimmed)
 	}
+}
+
+// consumeCodeLine handles one line while a code block is open, reporting
+// whether that block claimed it. A fenced block ends at its closing fence; an
+// indented block ends at the first non-indented, non-blank line, which is not
+// a terminator and must still be parsed normally.
+func (p *markdownBlockParser) consumeCodeLine(line, trimmed string) bool {
+	if !p.indented {
+		if strings.HasPrefix(trimmed, "```") {
+			p.closeCode()
+		} else {
+			p.codeLines = append(p.codeLines, line)
+		}
+		return true
+	}
+	if trimmed == "" || indentedCodeLine(line) {
+		p.codeLines = append(p.codeLines, stripCodeIndent(line))
+		return true
+	}
+	p.closeCode()
+	return false
+}
+
+// startsIndentedCode reports whether line opens an indented code block. It may
+// not interrupt an open paragraph, list or quote, so a wrapped prose line that
+// happens to be indented stays prose.
+func (p *markdownBlockParser) startsIndentedCode(line string) bool {
+	return indentedCodeLine(line) && p.paragraph.Len() == 0 &&
+		len(p.listItems) == 0 && len(p.quoteLines) == 0
 }
 
 // flush closes every open construct, in the order that keeps blocks in
@@ -274,11 +396,38 @@ func (p *markdownBlockParser) flushQuote() {
 	p.quoteLines = nil
 }
 
+// closeCode emits the open code block. The text is passed through verbatim:
+// code is not prose, and running the emphasis stripper over it turned
+// *sql.Tx into sql.Tx and ate same-line snake_case pairs (archie-core-8x1r).
 func (p *markdownBlockParser) closeCode() {
-	if len(p.codeLines) > 0 || p.codeLang != "" {
-		p.appendBlock(preformattedBlock(stripInlineMarkdown(strings.Join(p.codeLines, "\n")), p.codeLang))
+	lines := p.codeLines
+	if p.indented {
+		for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+			lines = lines[:len(lines)-1]
+		}
 	}
-	p.codeLines, p.codeLang, p.inCode = nil, "", false
+	if len(lines) > 0 || p.codeLang != "" {
+		p.appendBlock(preformattedBlock(strings.Join(lines, "\n"), p.codeLang))
+	}
+	p.codeLines, p.codeLang, p.inCode, p.indented = nil, "", false, false
+}
+
+// indentedCodeLine reports whether line opens or continues an indented code
+// block: four spaces or a tab, and something other than whitespace after.
+func indentedCodeLine(line string) bool {
+	if strings.TrimSpace(line) == "" {
+		return false
+	}
+	return strings.HasPrefix(line, "    ") || strings.HasPrefix(line, "\t")
+}
+
+// stripCodeIndent removes the one level of indentation that marks the block,
+// so the code reads at its own natural margin.
+func stripCodeIndent(line string) string {
+	if strings.HasPrefix(line, "\t") {
+		return line[1:]
+	}
+	return strings.TrimPrefix(line, "    ")
 }
 
 // blocksToPlainText flattens blocks into readable plain text for the fallback

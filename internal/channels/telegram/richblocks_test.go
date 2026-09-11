@@ -264,3 +264,121 @@ func TestSplitBlocksEmptyAndOversizedBlock(t *testing.T) {
 		t.Fatalf("oversized single block produced %d chunks, want 1", len(chunks))
 	}
 }
+
+// Identifiers carrying Markdown's emphasis characters are ordinary prose in
+// this project: snake_case config keys, dotted file paths and Go pointer
+// types all reach Telegram inside agent reports. Emphasis stripping must
+// leave them byte-for-byte intact, or the relay hands operators citations to
+// files that do not exist (archie-core-8x1r).
+func TestStripInlineMarkdownKeepsIdentifiers(t *testing.T) {
+	for _, tc := range []struct{ name, in, want string }{
+		{
+			name: "two snake_case keys on one line",
+			in:   `"allow_concurrent": true, "max_retries": true`,
+			want: `"allow_concurrent": true, "max_retries": true`,
+		},
+		{
+			name: "snake_case file path",
+			in:   "the internal/webui/config_schema_test.go file",
+			want: "the internal/webui/config_schema_test.go file",
+		},
+		{
+			name: "two Go pointer types on one line",
+			in:   "RecordDispatch takes no *sql.Tx and returns *Result",
+			want: "RecordDispatch takes no *sql.Tx and returns *Result",
+		},
+		{
+			name: "leading-underscore identifiers",
+			in:   "reply on _INBOX.foo then _INBOX.bar",
+			want: "reply on _INBOX.foo then _INBOX.bar",
+		},
+		{
+			name: "glob patterns",
+			in:   "glob the *.go files under cmd/*",
+			want: "glob the *.go files under cmd/*",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := stripInlineMarkdown(tc.in); got != tc.want {
+				t.Errorf("stripInlineMarkdown(%q)\n = %q\nwant %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// The flanking rules must not cost us actual emphasis stripping: a marker
+// that really does delimit emphasis still has to be reduced to plain text,
+// because Telegram's renderer would otherwise show the raw marker.
+func TestStripInlineMarkdownStillStripsRealEmphasis(t *testing.T) {
+	for _, tc := range []struct{ name, in, want string }{
+		{"italic underscore", "an _emphasised_ word", "an emphasised word"},
+		{"italic asterisk", "an *emphasised* word", "an emphasised word"},
+		{"bold", "a **strong** word", "a strong word"},
+		{"underline", "an __underlined__ word", "an underlined word"},
+		{"strikethrough", "a ~~struck~~ word", "a struck word"},
+		{"inline code", "call `doThing()` now", "call doThing() now"},
+		{"link", "see [docs](http://x/y) here", "see docs (http://x/y) here"},
+		{"bold around identifier", "the **max_retries** field", "the max_retries field"},
+		{"emphasis next to punctuation", "(_emphasised_)", "(emphasised)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := stripInlineMarkdown(tc.in); got != tc.want {
+				t.Errorf("stripInlineMarkdown(%q)\n = %q\nwant %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// An indented code block is CommonMark's other code form, and models emit it
+// constantly. Without support it falls through to the paragraph path, which
+// space-joins its lines into one run-on line (archie-core-cvu6).
+func TestMarkdownToBlocksIndentedCode(t *testing.T) {
+	blocks := markdownToBlocks("Report:\n\n    type D struct {\n        Key string\n        Label string\n    }\n")
+	var pre *models.InputRichBlock
+	for i := range blocks {
+		if blocks[i].Type == models.RichBlockTypePreformatted {
+			pre = &blocks[i]
+		}
+	}
+	if pre == nil {
+		t.Fatalf("no preformatted block; got %v", blockTypes(blocks))
+	}
+	want := "type D struct {\n    Key string\n    Label string\n}"
+	if got := blockText(*pre); got != want {
+		t.Errorf("indented code text =\n%q\nwant\n%q", got, want)
+	}
+}
+
+// An indented line cannot interrupt an open paragraph: CommonMark says so,
+// and treating a wrapped prose line as code would be a worse failure than
+// the one being fixed.
+func TestMarkdownToBlocksIndentedLineDoesNotInterruptParagraph(t *testing.T) {
+	blocks := markdownToBlocks("Some prose that wraps\n    onto an indented line.\n")
+	for _, b := range blocks {
+		if b.Type == models.RichBlockTypePreformatted {
+			t.Fatalf("indented continuation became code; blocks = %v", blockTypes(blocks))
+		}
+	}
+	if got := blockText(blocks[0]); got != "Some prose that wraps onto an indented line." {
+		t.Errorf("paragraph = %q", got)
+	}
+}
+
+// Code is verbatim by definition. Running the emphasis stripper over a fenced
+// block corrupted pointer types and same-line snake_case pairs alike.
+func TestMarkdownToBlocksFencedCodeIsVerbatim(t *testing.T) {
+	body := "m := map[string]bool{\"allow_concurrent\": true, \"max_retries\": true}\nfunc f(tx *sql.Tx) *Result"
+	blocks := markdownToBlocks("```go\n" + body + "\n```\n")
+	var pre *models.InputRichBlock
+	for i := range blocks {
+		if blocks[i].Type == models.RichBlockTypePreformatted {
+			pre = &blocks[i]
+		}
+	}
+	if pre == nil {
+		t.Fatalf("no preformatted block; got %v", blockTypes(blocks))
+	}
+	if got := blockText(*pre); got != body {
+		t.Errorf("fenced code was altered:\n got %q\nwant %q", got, body)
+	}
+}
