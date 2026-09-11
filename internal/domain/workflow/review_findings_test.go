@@ -590,6 +590,18 @@ func TestReviewReportJSONRoundTrip(t *testing.T) {
 			},
 		},
 		{
+			name: "zero findings with checked properties",
+			report: ReviewReport{
+				Status:   ReviewStatusCompleted,
+				Findings: []ReviewFinding{},
+				Checked: []ReviewCheck{
+					{Property: "nil-safety of Foo callers", Evidence: "read all 4 callers; each nil-checks"},
+					{Property: "error propagation in Bar", Evidence: "traced Bar through to the caller's error return"},
+				},
+				Summary: "Checked and cleared",
+			},
+		},
+		{
 			name: "not run report",
 			report: ReviewReport{
 				Status:     ReviewStatusNotRun,
@@ -871,6 +883,30 @@ func TestReviewReportValidation(t *testing.T) {
 			name: "invalid report status",
 			report: ReviewReport{
 				Status: "in_progress",
+			},
+			wantError: true,
+		},
+		{
+			name: "valid completed report with checked properties",
+			report: ReviewReport{
+				Status:  ReviewStatusCompleted,
+				Checked: []ReviewCheck{{Property: "nil-safety of Foo callers", Evidence: "read all 4 callers"}},
+			},
+			wantError: false,
+		},
+		{
+			name: "checked entry without evidence is rejected",
+			report: ReviewReport{
+				Status:  ReviewStatusCompleted,
+				Checked: []ReviewCheck{{Property: "looks fine"}},
+			},
+			wantError: true,
+		},
+		{
+			name: "checked entry without property is rejected",
+			report: ReviewReport{
+				Status:  ReviewStatusCompleted,
+				Checked: []ReviewCheck{{Evidence: "read the file"}},
 			},
 			wantError: true,
 		},
