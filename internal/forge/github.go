@@ -214,6 +214,77 @@ func (c *GitHubClient) GetPullRequest(ctx context.Context, owner, repo string, n
 	}, nil
 }
 
+// ListReviews returns the reviews on a PR with ID > sinceID.
+func (c *GitHubClient) ListReviews(ctx context.Context, owner, repo string, number int, sinceID int64) ([]Review, error) {
+	var out []Review
+	opts := &github.ListOptions{PerPage: 100}
+	for {
+		reviews, resp, err := c.gh.PullRequests.ListReviews(ctx, owner, repo, number, opts)
+		if err != nil {
+			return nil, fmt.Errorf("list reviews %s/%s#%d: %w", owner, repo, number, err)
+		}
+		for _, r := range reviews {
+			if r.GetID() <= sinceID {
+				continue
+			}
+			out = append(out, Review{
+				ID:          r.GetID(),
+				Author:      r.GetUser().GetLogin(),
+				State:       normalizeReviewState(r.GetState()),
+				SubmittedAt: r.GetSubmittedAt().Time,
+			})
+		}
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+	return out, nil
+}
+
+// ListReviewComments returns the review comments on a PR with ID > sinceID.
+func (c *GitHubClient) ListReviewComments(ctx context.Context, owner, repo string, number int, sinceID int64) ([]ReviewComment, error) {
+	var out []ReviewComment
+	opts := &github.PullRequestListCommentsOptions{PerPage: 100}
+	for {
+		comments, resp, err := c.gh.PullRequests.ListComments(ctx, owner, repo, number, opts)
+		if err != nil {
+			return nil, fmt.Errorf("list review comments %s/%s#%d: %w", owner, repo, number, err)
+		}
+		for _, cm := range comments {
+			if cm.GetID() <= sinceID {
+				continue
+			}
+			line := cm.GetOriginalLine()
+			if line == 0 {
+				line = cm.GetLine()
+			}
+			out = append(out, ReviewComment{
+				ID:        cm.GetID(),
+				Author:    cm.GetUser().GetLogin(),
+				Body:      cm.GetBody(),
+				Path:      cm.GetPath(),
+				Line:      line,
+				InReplyTo: cm.GetInReplyTo(),
+				CreatedAt: cm.GetCreatedAt().Time,
+			})
+		}
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+	return out, nil
+}
+
+// ReplyToReview posts a reply to an existing review comment.
+func (c *GitHubClient) ReplyToReview(ctx context.Context, owner, repo string, number int, commentID int64, body string) error {
+	if _, _, err := c.gh.PullRequests.CreateCommentInReplyTo(ctx, owner, repo, number, body, commentID); err != nil {
+		return fmt.Errorf("reply to review comment %d on %s/%s#%d: %w", commentID, owner, repo, number, err)
+	}
+	return nil
+}
+
 // CloseIssue closes an issue with a final comment (feasibility "won't do").
 func (c *GitHubClient) CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error {
 	if comment != "" {
