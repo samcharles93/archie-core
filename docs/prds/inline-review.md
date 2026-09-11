@@ -1,4 +1,4 @@
-# Review findings as inline comments -- decision
+# Inline review -- decision
 
 **Status:** Proposed
 **Beads issue:** `archie-core-q9au`
