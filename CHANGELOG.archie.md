@@ -1,5 +1,39 @@
 # archie-agent changelog
 
+## [1.23.0] - 2026-09-12
+
+The agent runtime now reaches task state through the State Store gRPC contract
+(`STATE_STORE_URL`/`STATE_STORE_TOKEN`, injected by the daemon) instead of the
+NATS `storerpc` transport, which is deleted. Credentials handed to a task
+container are scoped to that task rather than being the daemon's own token.
+Running a 1.23.0 daemon against an older agent image will not work; rebuild or
+pull the `archie-agent` image with this release.
+
+- feat(state-store): generalize storerpc as the State Store gRPC contract (#770)
+- feat(state-store): stand up archie-state-store binary and own archie.db (#771)
+- refactor(state-store): cut daemon/Gateway over to the remote State Store (#774)
+- fix(state-store): task-scope container credentials, stream large capture lists, validate Update
+- fix(staterpc): attach the bearer token to State Store streams
+- feat(staterpc): carry the dashboard's configuration snapshot
+- refactor(workflow): relocate Task/Status/Source and define workflow.Store (#754)
+- refactor(store): move the producer-owned contracts to internal/contracts/store/v1
+- feat(contracts): add gateway service seams and protobuf toolchain
+- fix(gateway): drop services.gateway.mode, remote is the only transport
+- feat(forge): pull request review read surface (ListReviews/ListReviewComments/ReplyToReview)
+- feat(gateway): operator-triggered PR review with selectable reviewer model
+- feat(workflow): surface adversarial review findings on the PR body
+- feat(workflow): review calibration, checked properties and style nits out of contract
+- fix(workflow): order findings before footer; test the report stash
+- fix(archied): share one PR reviewer across channels; harden forge and worktree
+- feat(worktree): Resume re-syncs a worktree onto its branch tip
+- feat(telegram): support secret refs for bot tokens (#705)
+- feat(gateway): wire progressive tool disclosure (bridge tools)
+- feat(archied): serve the daemon's own health endpoint
+- feat(archieui): standalone UI process over remote Gateway and State Store
+- refactor(archied): move webhook capture intake to the process that owns work intake
+- refactor(ui): sever the archie-ui binary from every daemon runtime package
+- fix(archieui): resolve service tokens from env, without requiring a config file
+
 ## [1.21.0] - 2026-09-03
 
 - feat(workflow): make kind-to-workflow routing YAML-overridable

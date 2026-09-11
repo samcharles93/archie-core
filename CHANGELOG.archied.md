@@ -1,5 +1,78 @@
 # archied changelog
 
+## [1.23.0] - 2026-09-12
+
+Archied is no longer a single process. The State Store (`archie-state-store`)
+now owns `archie.db` outright, the Gateway serves its contract over
+authenticated gRPC, and the dashboard ships as a standalone UI Service
+(`archie-ui`). Upgrading is not a binary swap: these processes must be running
+and addressable before `archied` will start clean. See `deployments/` for the
+supported profiles.
+
+### Service decomposition
+
+- feat(contracts): add gateway service seams and protobuf toolchain
+- feat(gateway): extract ChatContract service
+- feat(gateway): delete in-process ChatContract path, make remote the only mode
+- feat(gateway): authenticate the gRPC contract and allow off-loopback listeners
+- fix(gateway): drop services.gateway.mode, remote is the only transport
+- feat(state-store): generalize storerpc as the State Store gRPC contract (#770)
+- feat(state-store): stand up archie-state-store binary and own archie.db (#771)
+- refactor(state-store): migrate capture/mapping/binding consumers to State Store (#772)
+- refactor(state-store): migrate workflow/intake/task lifecycle consumers to State Store (#773)
+- refactor(state-store): cut daemon/Gateway over to the remote State Store (#774)
+- fix(state-store): task-scope container credentials, stream large capture lists, validate Update
+- feat(archieui): standalone UI process over remote Gateway and State Store
+- refactor(archied): cut the dashboard over to the archie-ui process
+- refactor(ui): sever the archie-ui binary from every daemon runtime package
+- refactor(archied): move the update relay to the process that owns updates
+- refactor(archied): move webhook capture intake to the process that owns work intake
+- feat(archieui): mount the capture intake receiver over the State Store
+- refactor(workflow): relocate Task/Status/Source and define workflow.Store (#754)
+- refactor(store): move the producer-owned contracts to internal/contracts/store/v1
+- feat(messaging): migrate gateway session persistence onto domain types
+- feat(gateway): flip channel boundary onto messaging.Message
+
+### Pull request review
+
+- feat(gateway): operator-triggered PR review with selectable reviewer model
+- feat(forge): pull request review read surface (ListReviews/ListReviewComments/ReplyToReview)
+- feat(workflow): surface adversarial review findings on the PR body
+- feat(workflow): review calibration, checked properties and style nits out of contract
+- fix(archied): share one PR reviewer across channels; harden forge and worktree
+- fix(workflow): order findings before footer; test the report stash
+
+### Dashboard
+
+- feat(webui): render configuration from a published snapshot
+- feat(staterpc): carry the dashboard's configuration snapshot
+- refactor(webui): take configuration off the dashboard server
+- feat(webui): report which dashboard sections a process can serve
+- feat(webui): deliver live dashboard events by polling the State Store cursor
+- feat(webui): route dashboard task actions through the Gateway contract
+- feat(gateway): give the dashboard operator its own task-action contract
+- feat(webui): add /health and /health/detailed readiness endpoints (#717)
+- fix(webui): distinguish refused vs broken task actions, handle 401 (#753)
+
+### Daemon, gateway and workflow
+
+- feat(archied): add shutdown watchdog that force-exits a hung graceful shutdown (#716)
+- feat(archied): serve the daemon's own health endpoint
+- feat(drain): honour external drain marker with instantiation epoch (#718)
+- feat(gateway): wire progressive tool disclosure (bridge tools)
+- feat(gateway): render workspace, managed repos and operator into chat env
+- feat(gateway): add session_transcript tool for full JSON export
+- feat(gateway): consolidate task actions and repair daemon default path
+- feat(eda): thread Playbook ID/Version and DispatchInput task identity
+- feat(worktree): Resume re-syncs a worktree onto its branch tip
+- fix(staterpc): attach the bearer token to State Store streams
+- fix(archieui): resolve service tokens from env, without requiring a config file
+- fix(archied): initialize conversation persistence on daemon startup
+- fix(archied): preserve channel turn ledger with remote gateway
+- fix(gateway): share NATS and session ownership
+- fix(update): probe the dashboard's real address after a self-update
+- fix(store): migrate binding owner and repo columns
+
 ## [1.22.0] - 2026-09-03
 
 - feat(telegram): support secret refs for bot tokens (#705)
