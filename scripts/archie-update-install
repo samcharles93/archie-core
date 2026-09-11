@@ -62,6 +62,17 @@ AGENT_IMAGE_BACKUP="$BIN_DIR/archie-agent-image.prev.tar"
 TASK_DB_PATH="${ARCHIE_TASK_DB_PATH:-$(configured_task_db_path)}"
 TASK_DB_BACKUP="${ARCHIE_TASK_DB_BACKUP:-$BIN_DIR/archie-task-db.prev.sqlite}"
 
+# The archied release is a set of processes, not one binary. Listed in start
+# order: the State Store owns archie.db and every other process dials it, and
+# the Gateway serves the chat contract archied and the UI dial, so each comes
+# up before its consumers. archie-playbooks is a CLI, so it is installed but
+# never restarted. deployments/systemd-user-service.md is the reference
+# deployment; installing archied alone leaves the rest on the previous
+# release, which is why a 1.23.0 update failed its health check
+# (archie-core-hbqk).
+GATEWAY_SERVICES="archie-state-store archie-gateway archied archie-ui"
+GATEWAY_BINARIES="$GATEWAY_SERVICES archie-playbooks"
+
 PREV_GW="${ARCHIE_UPDATE_DAEMON_PREVIOUS:-}"
 PREV_RT="${ARCHIE_UPDATE_AGENT_PREVIOUS:-}"
 GW_TARGET="${ARCHIE_UPDATE_DAEMON_VERSION:-}"
@@ -133,6 +144,25 @@ esac
 git -C "$source_dir" checkout --quiet --detach "$build_commit"
 cd "$source_dir"
 
+# Refuse before touching anything if the release runs processes this host has
+# no unit for. Installing the binaries anyway would leave archied dialling a
+# State Store that nothing starts: it fails its health check and rolls back,
+# which reads as a broken release rather than an incomplete deployment.
+if [[ ",$components," == *,daemon,* ]]; then
+  missing_units=""
+  for svc in $GATEWAY_SERVICES; do
+    [ -d "$source_dir/cmd/$svc" ] || continue
+    if ! systemctl --user list-unit-files "$svc.service" --no-legend 2>/dev/null | grep -q .; then
+      missing_units="${missing_units:+$missing_units }$svc.service"
+    fi
+  done
+  if [ -n "$missing_units" ]; then
+    echo "refusing to install archied $GW: it runs as separate processes and this host has no unit for: $missing_units" >&2
+    echo "create them from deployments/systemd-user-service.md, then retry the update" >&2
+    exit 1
+  fi
+fi
+
 # Refresh adapters from the approved release source. The running shell
 # continues with this copy; subsequent updates use the current contract.
 install -m755 "$source_dir/scripts/archie-update-install" "$BIN_DIR/archie-update-install"
@@ -145,16 +175,34 @@ if [[ ",$components," == *,daemon,* ]] && [ -n "$TASK_DB_PATH" ] && [ -f "$TASK_
   sqlite3 "$TASK_DB_PATH" ".backup '$TASK_DB_BACKUP'"
 fi
 
+# built accumulates only the binaries this release actually ships, so an
+# update to a release predating one of these processes stays buildable.
+built=""
 if [[ ",$components," == *,daemon,* ]]; then
-  echo "==> building archied $GW"
-  go build -ldflags "-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion=$GW -X github.com/samcharles93/archie-core/internal/app/archied.runtimeVersion=$RT -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" \
-    -o "$tmp/archied" ./cmd/archied
-fi
-if [[ ",$components," == *,daemon,* ]]; then
-  echo "==> backing up current archied binary"
-  [ -f "$BIN_DIR/archied" ] && cp -f "$BIN_DIR/archied" "$BIN_DIR/archied.prev"
-  echo "==> installing archied"
-  install -m755 "$tmp/archied" "$BIN_DIR/archied"
+  ldflags="-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion=$GW"
+  ldflags="$ldflags -X github.com/samcharles93/archie-core/internal/app/archied.runtimeVersion=$RT"
+  ldflags="$ldflags -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary"
+  for cmd in $GATEWAY_BINARIES; do
+    [ -d "./cmd/$cmd" ] || continue
+    echo "==> building $cmd $GW"
+    go build -ldflags "$ldflags" -o "$tmp/$cmd" "./cmd/$cmd"
+    built="${built:+$built }$cmd"
+  done
+
+  echo "==> backing up current binaries"
+  for cmd in $built; do
+    if [ -f "$BIN_DIR/$cmd" ]; then
+      cp -f "$BIN_DIR/$cmd" "$BIN_DIR/$cmd.prev"
+    else
+      # New in this release: record that there was nothing here, so a
+      # rollback removes it instead of leaving a stray binary behind.
+      rm -f "$BIN_DIR/$cmd.prev"
+    fi
+  done
+  echo "==> installing $built"
+  for cmd in $built; do
+    install -m755 "$tmp/$cmd" "$BIN_DIR/$cmd"
+  done
 fi
 if [[ ",$components," == *,agent,* ]]; then
   echo "==> saving managed worker image $AGENT_IMAGE for rollback"
@@ -172,6 +220,8 @@ systemd-run --user --unit=archied-update-restart --collect --quiet \
   --setenv=ARCHIE_UPDATE_CHAT_ID="${ARCHIE_UPDATE_CHAT_ID:-0}" \
   --setenv=ARCHIE_UPDATE_THREAD_ID="${ARCHIE_UPDATE_THREAD_ID:-0}" \
   --setenv=ARCHIE_UPDATE_COMPONENTS="$components" \
+  --setenv=ARCHIE_UPDATE_UNITS="$GATEWAY_SERVICES" \
+  --setenv=ARCHIE_UPDATE_BINARIES="$built" \
   --setenv=ARCHIE_UPDATE_PREVIOUS_GATEWAY="$PREV_GW" \
   --setenv=ARCHIE_UPDATE_PREVIOUS_RUNTIME="$PREV_RT" \
   --setenv=ARCHIE_UPDATE_INSTALLED_GATEWAY="$GW" \

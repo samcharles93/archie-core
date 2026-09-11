@@ -22,6 +22,11 @@ REPORT_PATH="${ARCHIE_UPDATE_REPORT_PATH:-}"
 HEALTH_TIMEOUT_SECONDS="${ARCHIE_UPDATE_HEALTH_TIMEOUT:-60}"
 POLL_INTERVAL_SECONDS=3
 COMPONENTS="${ARCHIE_UPDATE_COMPONENTS:-daemon,agent}"
+# Set by archie-update-install: the units to restart, in start order, and the
+# binaries it replaced. The defaults keep a hand-driven run on a pre-
+# decomposition host working.
+UNITS="${ARCHIE_UPDATE_UNITS:-archied}"
+BINARIES="${ARCHIE_UPDATE_BINARIES:-archied}"
 
 json_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
@@ -72,13 +77,58 @@ wait_healthy() {
   return 1
 }
 
-rollback_component() {
-  local name="$1"
-  if [ ! -f "$BIN_DIR/$name.prev" ]; then
-    echo "==> no backup for $name; cannot roll it back automatically" >&2
-    return 1
+# manage_unit runs one systemctl action. archied is required: this whole
+# mechanism exists to restart it, and a failed stop must abort the rollback
+# rather than let it race a live process over the binary and the database.
+# The sibling processes are best-effort, because archie-update-install has
+# already refused the update if a unit for one of them was missing, and a
+# probe that guesses wrong must not silently skip the required stop.
+manage_unit() {
+  local action="$1" unit="$2"
+  if [ "$unit" = archied ]; then
+    systemctl --user "$action" "$unit.service"
+    return
   fi
-  cp -f "$BIN_DIR/$name.prev" "$BIN_DIR/$name"
+  systemctl --user "$action" "$unit.service" || true
+}
+
+# start_units brings the deployment up in dependency order: the State Store
+# before anything that dials it, the Gateway before archied and the UI.
+start_units() {
+  local unit rc=0
+  for unit in $UNITS; do
+    echo "==> restarting $unit.service"
+    manage_unit restart "$unit" || rc=1
+  done
+  return $rc
+}
+
+# stop_units tears down in reverse, so consumers are gone before the services
+# they depend on.
+stop_units() {
+  local unit ordered="" rc=0
+  for unit in $UNITS; do
+    ordered="$unit${ordered:+ $ordered}"
+  done
+  for unit in $ordered; do
+    manage_unit stop "$unit" || rc=1
+  done
+  return $rc
+}
+
+# rollback_gateway restores every binary the install replaced. A binary with
+# no .prev was introduced by the failed release, so it is removed rather than
+# left behind pointing at processes the restored release does not run.
+rollback_gateway() {
+  local cmd rc=0
+  for cmd in $BINARIES; do
+    if [ -f "$BIN_DIR/$cmd.prev" ]; then
+      cp -f "$BIN_DIR/$cmd.prev" "$BIN_DIR/$cmd" || rc=1
+    else
+      rm -f "$BIN_DIR/$cmd" || rc=1
+    fi
+  done
+  return $rc
 }
 
 rollback_agent_image() {
@@ -103,8 +153,7 @@ rollback_task_db() {
   rm -f "$TASK_DB_PATH-wal" "$TASK_DB_PATH-shm"
 }
 
-echo "==> restarting archied.service"
-systemctl --user restart archied.service
+start_units
 
 if wait_healthy; then
   echo "==> new version is healthy"
@@ -118,11 +167,11 @@ rolled_back=false
 # uses Restart=on-failure in the supported unit, so copying rollback state
 # while a crash-loop child is alive can race with SQLite and execute the new
 # binary after its files have been replaced.
-if systemctl --user stop archied.service; then
+if stop_units; then
   case "$COMPONENTS" in
     daemon)
       if [ -f "$BIN_DIR/archied.prev" ] && { [ -z "$TASK_DB_PATH" ] || [ -f "$TASK_DB_BACKUP" ]; }; then
-        if { [ -z "$TASK_DB_PATH" ] || rollback_task_db; } && rollback_component archied; then
+        if { [ -z "$TASK_DB_PATH" ] || rollback_task_db; } && rollback_gateway; then
           rolled_back=true
         fi
       else
@@ -140,7 +189,7 @@ if systemctl --user stop archied.service; then
       # Preserve the old all-or-nothing rollback guarantee: never restore one
       # component and leave the other on the failed release.
       if [ -f "$BIN_DIR/archied.prev" ] && [ -f "$AGENT_IMAGE_BACKUP" ] && { [ -z "$TASK_DB_PATH" ] || [ -f "$TASK_DB_BACKUP" ]; }; then
-        if rollback_agent_image && { [ -z "$TASK_DB_PATH" ] || rollback_task_db; } && rollback_component archied; then
+        if rollback_agent_image && { [ -z "$TASK_DB_PATH" ] || rollback_task_db; } && rollback_gateway; then
           rolled_back=true
         fi
       else
@@ -152,10 +201,10 @@ if systemctl --user stop archied.service; then
       ;;
   esac
 else
-  echo "==> could not stop archied.service; refusing rollback while it may be running" >&2
+  echo "==> could not stop every unit; refusing rollback while one may be running" >&2
 fi
 if [ "$rolled_back" = true ]; then
-  systemctl --user restart archied.service
+  start_units
 fi
 
 write_report "failed" "$rolled_back"
