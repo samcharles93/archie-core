@@ -230,9 +230,24 @@ severed, each at the producer:
   into `internal/domain/workflow/task`; the pipeline engine stays in package
   `workflow`, which keeps aliases. The UI process links the vocabulary only.
 
-Remaining for Phase 3 closure: the architecture tests asserting the absence of
-`config.Holder`, concrete store/gateway runtime types, and direct SQLite imports
-in the UI service, plus the end-to-end smoke suite over real processes.
+The gate is enforced, not just measured. `cmd/archie-ui/architecture_test.go`
+re-runs `go list -deps` on every `task check` and fails on any package in a
+banned category, so a single reference to a type sitting beside a runtime
+cannot quietly relink it. Its exception list (`internal/channels/status`,
+`internal/domain/workflow/task`) is checked in both directions: an exception
+the UI stops needing is reported, so the allowlist cannot decay into an open
+prefix. `internal/app/archieui`'s `TestComposeUIServerHoldsNoDaemonState`
+covers the composition clauses, failing on a non-nil `config.Holder`, a
+concrete `*store.Store`, or a Gateway that is not the gRPC client.
+
+One piece of residue remains visible: `webui.Server` still declares
+`Cfg *config.Holder`, because the daemon keeps a `webui.Server` as the renderer
+that builds the published `ConfigView` snapshot. The UI process never receives
+a holder, and the composition test fails if it ever does, but removing the
+field outright means moving that renderer and the readiness probes off
+`webui.Server` onto the daemon's own configuration owner.
+
+Remaining for Phase 3 closure: the end-to-end smoke suite over real processes.
 
 ## Non-goals and open work
 
