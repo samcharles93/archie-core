@@ -101,7 +101,8 @@ func (s *subagentReviewer) Review(ctx context.Context, req workflow.ReviewReques
 	}
 
 	var findings []workflow.ReviewFinding
-	tools := reviewerToolSet(req.SnapshotDir, &findings)
+	var checks []workflow.ReviewCheck
+	tools := reviewerToolSet(req.SnapshotDir, &findings, &checks)
 
 	maxSteps := req.MaxSteps
 	if maxSteps <= 0 {
@@ -128,9 +129,17 @@ func (s *subagentReviewer) Review(ctx context.Context, req workflow.ReviewReques
 		if len(findings) == 0 {
 			return workflow.NewNotRunReviewReport(runErr.Error())
 		}
-		return workflow.NewCompletedReviewReport(findings, "")
+		return completedReview(findings, checks, "")
 	}
-	return workflow.NewCompletedReviewReport(findings, summary)
+	return completedReview(findings, checks, summary)
+}
+
+// completedReview builds a completed report carrying the captured findings
+// and the properties the reviewer verified clean.
+func completedReview(findings []workflow.ReviewFinding, checks []workflow.ReviewCheck, summary string) workflow.ReviewReport {
+	report := workflow.NewCompletedReviewReport(findings, summary)
+	report.Checked = checks
+	return report
 }
 
 // reviewerSystemPrompt instructs the reviewer per CLAUDE.md's own
@@ -144,6 +153,10 @@ Assume every line is wrong until you have verified it is correct. Read whole fil
 Check for: dead code, unchecked errors, hardcoded values that should be parameters, interface-satisfaction defects, nil-pointer risk, goroutine leaks, races and unsynchronized shared state.
 
 For every defect you find, call record_finding with: the file and line, a one-sentence defect statement, a concrete failure scenario (specific inputs or state that produce the wrong output or a crash -- not a hypothetical), a verdict, a level, and a category.
+
+A finding must describe wrong behaviour or a crash. Style, formatting, naming, and preference nits are out of contract -- do not report them; they are exactly the padding that teaches an operator to skim past a findings list.
+
+As you clear each checklist property, call record_checked with the property and how you verified it (which files or call sites you read). Record every property you actually checked and found correct, even when you also found defects; a review that reports no findings must still record what it checked, because "I checked and it is fine" and "I did not look" must not read the same.
 
 Verdict is "confirmed" only when you have traced the actual failure -- read the code paths involved and can state exactly how it goes wrong. Verdict is "plausible" for a real worry you have not fully traced. Only a "confirmed" finding at level "error" blocks the pull request; do not inflate a plausible worry to confirmed/error to make it count -- an unjustified block is worse than a missed one, because it teaches the operator to stop trusting your reports.
 
@@ -168,11 +181,11 @@ func reviewerPrompt(req workflow.ReviewRequest) string {
 }
 
 // reviewerToolSet builds the reviewer's read-only toolset, rooted at
-// snapshotDir, plus the structured findings-capture tool that appends
-// directly to findings. This is a distinct toolset built fresh for each
+// snapshotDir, plus the structured capture tools that append directly to
+// findings and checks. This is a distinct toolset built fresh for each
 // review -- never the worker's own registry, which holds write/edit/shell
 // tools and the worktreerpc publication grant.
-func reviewerToolSet(snapshotDir string, findings *[]workflow.ReviewFinding) core.ToolSet {
+func reviewerToolSet(snapshotDir string, findings *[]workflow.ReviewFinding, checks *[]workflow.ReviewCheck) core.ToolSet {
 	reg := toolkit.NewRegistry()
 	readOnly := []toolkit.Tool{
 		toolkit.NewReadTool(snapshotDir, toolkit.NewReadTracker()),
@@ -184,7 +197,33 @@ func reviewerToolSet(snapshotDir string, findings *[]workflow.ReviewFinding) cor
 	}
 	set := reg.CoreToolSet(toolkit.NonInteractiveBridge{})
 	set["record_finding"] = recordFindingTool(findings)
+	set["record_checked"] = recordCheckedTool(checks)
 	return set
+}
+
+// checkInput is the reviewer-facing shape of workflow.ReviewCheck.
+type checkInput struct {
+	Property string `json:"property" jsonschema:"description=The property or code path you verified clean, e.g. 'nil-safety of Foo callers'."`
+	Evidence string `json:"evidence" jsonschema:"description=How you verified it, e.g. 'read all 4 callers; each nil-checks before use'."`
+}
+
+// recordCheckedTool builds the typed capture tool the reviewer calls once per
+// property it verified clean. Without it a zero-finding review reads the same
+// as a review that never looked; with it, "ran and found nothing" arrives
+// backed by what was actually checked.
+func recordCheckedTool(checks *[]workflow.ReviewCheck) *core.Tool {
+	return core.NewTypedTool(
+		"record_checked",
+		"Record one property or code path you verified clean. Call this once per property you actually checked and found correct -- a review that reports no findings must still record what it checked.",
+		func(_ context.Context, in checkInput) (string, error) {
+			check := workflow.ReviewCheck{Property: in.Property, Evidence: in.Evidence}
+			if err := check.Validate(); err != nil {
+				return "record_checked rejected: " + err.Error(), nil //nolint:nilerr // rejection feedback lets the model retry with a valid check
+			}
+			*checks = append(*checks, check)
+			return "check recorded", nil
+		},
+	)
 }
 
 // findingInput is the reviewer-facing shape of workflow.ReviewFinding: the

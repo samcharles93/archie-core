@@ -22,7 +22,8 @@ import (
 // findings-capture tool are the entire surface.
 func TestReviewerToolSetIsReadOnlyAndHasNoMutationPath(t *testing.T) {
 	var findings []workflow.ReviewFinding
-	set := reviewerToolSet(t.TempDir(), &findings)
+	var checks []workflow.ReviewCheck
+	set := reviewerToolSet(t.TempDir(), &findings, &checks)
 
 	names := make([]string, 0, len(set))
 	for name := range set {
@@ -30,7 +31,7 @@ func TestReviewerToolSetIsReadOnlyAndHasNoMutationPath(t *testing.T) {
 	}
 	slices.Sort(names)
 
-	want := []string{"find", "grep", "read", "record_finding"}
+	want := []string{"find", "grep", "read", "record_checked", "record_finding"}
 	slices.Sort(want)
 	if !slices.Equal(names, want) {
 		t.Fatalf("reviewer toolset = %v, want exactly %v (no write/edit/shell)", names, want)
@@ -51,7 +52,8 @@ func TestReviewerToolSetIsRootedAtTheGivenSnapshot(t *testing.T) {
 	}
 
 	var findings []workflow.ReviewFinding
-	set := reviewerToolSet(snapshot, &findings)
+	var checks []workflow.ReviewCheck
+	set := reviewerToolSet(snapshot, &findings, &checks)
 	readTool := set["read"]
 	if readTool == nil {
 		t.Fatal("reviewer toolset has no read tool")
@@ -119,6 +121,54 @@ func TestRecordFindingToolRejectsInvalidVerdictWithoutError(t *testing.T) {
 	}
 }
 
+// TestRecordCheckedToolAppendsToCapturedSlice asserts the calibration capture
+// contract: a cleared property is recorded through the closure, so a
+// zero-finding review can report what it actually checked.
+func TestRecordCheckedToolAppendsToCapturedSlice(t *testing.T) {
+	var checks []workflow.ReviewCheck
+	tool := recordCheckedTool(&checks)
+
+	input := `{"property":"nil-safety of Foo callers","evidence":"read all 4 callers; each nil-checks"}`
+	if _, err := tool.Execute(t.Context(), input); err != nil {
+		t.Fatalf("record_checked: %v", err)
+	}
+	if len(checks) != 1 || checks[0].Property != "nil-safety of Foo callers" {
+		t.Fatalf("captured checks = %+v, want one check for the recorded property", checks)
+	}
+}
+
+// TestRecordCheckedToolRejectsMissingEvidence asserts a check without evidence
+// is rejected in-band and not captured, so "verified clean" cannot be recorded
+// as a bare assertion.
+func TestRecordCheckedToolRejectsMissingEvidence(t *testing.T) {
+	var checks []workflow.ReviewCheck
+	tool := recordCheckedTool(&checks)
+
+	out, err := tool.Execute(t.Context(), `{"property":"looks fine","evidence":""}`)
+	if err != nil {
+		t.Fatalf("record_checked returned a Go error for invalid input: %v", err)
+	}
+	if !containsSubstr(out, "rejected") {
+		t.Errorf("record_checked output = %q, want a rejection message", out)
+	}
+	if len(checks) != 0 {
+		t.Errorf("captured %d checks, want 0 for a check with no evidence", len(checks))
+	}
+}
+
+// TestCompletedReviewCarriesChecks asserts the report the reviewer returns
+// carries the captured checks, not just the findings.
+func TestCompletedReviewCarriesChecks(t *testing.T) {
+	checks := []workflow.ReviewCheck{{Property: "p", Evidence: "e"}}
+	report := completedReview(nil, checks, "summary")
+	if !report.Ran() {
+		t.Fatal("completedReview report did not run")
+	}
+	if len(report.Checked) != 1 || report.Checked[0].Property != "p" {
+		t.Fatalf("report.Checked = %+v, want the captured check", report.Checked)
+	}
+}
+
 // TestReviewSubagentConstructionNeverSendsConversationHistory asserts, at
 // the exact agent.Subagent construction Review performs, that only a
 // prompt string reaches the model. This exercises the same Subagent{}
@@ -131,6 +181,7 @@ func TestRecordFindingToolRejectsInvalidVerdictWithoutError(t *testing.T) {
 func TestReviewSubagentConstructionNeverSendsConversationHistory(t *testing.T) {
 	captured := &capturingChatProvider{}
 	var findings []workflow.ReviewFinding
+	var checks []workflow.ReviewCheck
 	req := workflow.ReviewRequest{
 		SnapshotDir: t.TempDir(),
 		Diff:        "diff --git a/x.go b/x.go\n",
@@ -141,7 +192,7 @@ func TestReviewSubagentConstructionNeverSendsConversationHistory(t *testing.T) {
 		Provider: captured,
 		Model:    "fake-model",
 		System:   reviewerSystemPrompt,
-		Tools:    reviewerToolSet(req.SnapshotDir, &findings),
+		Tools:    reviewerToolSet(req.SnapshotDir, &findings, &checks),
 		MaxSteps: defaultReviewMaxSteps,
 	}
 	prompt := reviewerPrompt(req)
