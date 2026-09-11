@@ -1,6 +1,6 @@
 ---
 name: archie-docs-and-writing
-description: Maintain Archie's documentation of record and write durable architecture decisions, migration plans, parity matrices, incident and dead-end records, feature ownership and deprecation records, operational runbooks, and documentation reviews. Use when deciding where an Archie fact belongs; reconciling code with ARCHITECTURE.md, CLAUDE.md, docs/prds, docs/archive, generated contracts, or the docs VitePress site; changing tools/docsgen; documenting a feature so future maintainers can find its owners, consumers, invariants, superseded paths, deletion gates, evidence, and rollback; or checking documentation authority, drift, links, copied content, and source-artifact hygiene.
+description: Maintain Archie's documentation of record and write durable architecture decisions, migration plans, parity matrices, incident and dead-end records, feature ownership and deprecation records, operational runbooks, and documentation reviews. Use when deciding where an Archie fact belongs; reconciling code with ARCHITECTURE.md, CLAUDE.md, docs/prds, docs/archive, or generated contracts; changing tools/docsgen; documenting a feature so future maintainers can find its owners, consumers, invariants, superseded paths, deletion gates, evidence, and rollback; or checking documentation authority, drift, links, copied content, and source-artifact hygiene.
 ---
 
 # Maintain Archie documentation
@@ -48,11 +48,9 @@ Verified on 2026-07-28:
 | `CHANGELOG.md`, `CHANGELOG.archied.md`, `CHANGELOG.archie.md` | Component release-note index and packaged runtime inputs | Keep gateway and agent-runtime entries separate; `internal/releaseannounce` parses version headings |
 | `tools/docsgen` | Current, partial generator in nested `tools` Go module | Treat its flags and tests—not planned PRD commands—as executable truth |
 | `docs/data/generated/contracts.json` | Current working-tree `GENERATED` output | Regenerate; never edit by hand |
-| `docs/` | Staging VitePress site | Do not treat rendered summary as architecture record |
-| `.github/workflows/docs.yml` | Current Pages build/deploy workflow | Builds the site; does not run Go setup, generator tests, or drift checking |
+| `docs/` | Repository documentation only | Nothing builds, renders, or publishes it; Markdown is the artifact |
 
 The repository root has no `README.md` or `CONTRIBUTING.md` as of 2026-07-28.
-`docs/README.md` is excluded by VitePress and contains copied Tau material.
 
 ## Choose one destination
 
@@ -71,7 +69,7 @@ The repository root has no `README.md` or `CONTRIBUTING.md` as of 2026-07-28.
 | Unresolved migration question | `docs/architecture/migration-decisions.md` |
 | Contributor protocol that must load before work | `CLAUDE.md` |
 | Runtime/API/config reference derivable from code | Domain-owned registry/type, then `tools/docsgen` output |
-| User-facing staging site prose | `docs/`, linking back to authority |
+| Repository documentation prose | `docs/`, linking back to authority with repository-relative paths |
 | Shipped release behavior | Matching component changelog; keep `CHANGELOG.md` as two-component index |
 | Superseded design retained for context | `docs/archive/`, with historical status |
 | Incident or rejected approach | `archie-failure-archaeology`'s chronology |
@@ -158,32 +156,44 @@ cmp "$docs_tmp" docs/data/generated/contracts.json
 Treat the PRD's `docsgen all`, `docsgen check`, and `task docs:*` commands as
 `APPROVED TARGET`.
 
-## Maintain the VitePress staging site
+## Store documentation as repository Markdown
+
+`docs/` is Markdown read directly in the repository, an editor, or the forge's
+file view. Nothing builds, renders, or publishes it. The VitePress site, its
+package manifest and lockfile, its landing page, and
+`.github/workflows/docs.yml` were removed on 2026-09-12 as an unnecessary build
+step; the publishing surface is an open decision
+(`docs/architecture/generated-documentation.md`, "Rendering and publishing").
 
 | Surface | Current state |
 |---|---|
-| Package | `docs/package.json`; VitePress `^1.6.4`; pnpm lockfile resolves 1.6.4 |
-| Site config | Archie title, local search, clean URLs, last-updated metadata, output at `.vitepress/dist` |
-| Copied content | `docs/README.md` describes Tau and is excluded by `srcExclude` |
-| Workflow | Frozen-lockfile install, `pnpm build`, Pages artifact upload/deploy |
-| Missing gates | No Go setup, docsgen test, generator drift check, or root `task check` integration |
+| Content | Markdown under `docs/`, including `docs/data/generated/contracts.json` |
+| Links | Repository-relative (`../architecture/organisation.md`); no root-absolute links |
+| Build | None. There is no site, no dev server, no link checker, no Pages deploy |
+| Nav | `docs/prds/01-project-management.md` |
+
+Because no build validates links, check them yourself or with a one-off script —
+nothing catches a dead link for you:
 
 ```bash
-pnpm --dir docs install --frozen-lockfile
-pnpm --dir docs build
+# every relative markdown link target that does not resolve
+grep -rhoE '\]\([^)#]+' docs --include=*.md | sed -E 's/^\]\(//' | sort -u
 ```
 
 ### Enforce source-artifact hygiene
 
-As of 2026-07-28, Git tracks 237 `docs/node_modules` symlink entries. Neither
-`docs/node_modules` nor `docs/.vitepress/dist` is ignored by root `.gitignore`.
+Git tracks no `node_modules` entries (verified 2026-09-12; the 237 `docs/`
+symlinks recorded on 2026-07-28 are gone) and no VitePress output. A future
+renderer must not reintroduce committed installs or build output.
 
 ```bash
-git ls-files -s 'docs/node_modules/**' | awk '$1 == 120000 { count++ } END { print count + 0 }'
-git ls-files 'docs/.vitepress/dist/**'
-git check-ignore -v docs/node_modules docs/.vitepress/dist || true
-rg -n -i 'tau|template|placeholder' docs --glob '!node_modules/**'
+git ls-files | grep -c node_modules                  # expect 0
+ls docs/package.json docs/pnpm-lock.yaml 2>&1        # expect: No such file
+ls .github/workflows/                                # expect deploy.yml only
 ```
 
-Never stage dependency installs, VitePress output, generator scratch files,
+Historical mentions of VitePress in `docs/architecture/` are deliberate — they
+record what was removed. A grep for the word alone is not a failure signal.
+
+Never stage dependency installs, renderer output, generator scratch files,
 credentials, absolute paths, wall-clock data, or machine-specific values.

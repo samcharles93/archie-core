@@ -1,6 +1,6 @@
 ---
 name: archie-build-and-env
-description: Recreate, inspect, and troubleshoot Archie Core's development, build, test, documentation, and container toolchains. Use when onboarding a checkout; diagnosing Go, Task, golangci-lint, gofumpt, pnpm, VitePress, Docker/Compose, NATS, GPG, cache, temporary-directory, listener, or network failures; comparing local work with repository automation; or proving which build surfaces a command actually covers. Load this before running task check in an unfamiliar or restricted environment because that gate rewrites files and omits several independent surfaces.
+description: Recreate, inspect, and troubleshoot Archie Core's development, build, test, documentation, and container toolchains. Use when onboarding a checkout; diagnosing Go, Task, golangci-lint, gofumpt, Docker/Compose, NATS, GPG, cache, temporary-directory, listener, or network failures; comparing local work with repository automation; or proving which build surfaces a command actually covers. Load this before running task check in an unfamiliar or restricted environment because that gate rewrites files and omits several independent surfaces.
 ---
 
 # Build and verify the Archie environment
@@ -18,7 +18,7 @@ All volatile observations are snapshots from **2026-07-28**.
 | Repository root | Directory containing `go.mod`, `Taskfile.yml`, and `CLAUDE.md`. |
 | Runtime module | Root Go module `github.com/samcharles93/archie-core`. |
 | Tools module | Independent nested Go module under `tools/`. |
-| Docs site | pnpm/VitePress project under `docs/`. |
+| Docs | Markdown under `docs/`, read directly; no build, no renderer. |
 | Cold cache | Dependency cache not yet containing required modules/packages. |
 | Restricted sandbox | May allow file reads but deny loopback listeners, container engine, or writes to default caches. |
 
@@ -36,14 +36,14 @@ task --list
 go version
 go env GOTOOLCHAIN GOVERSION GOOS GOARCH CGO_ENABLED GOTMPDIR GOCACHE GOMODCACHE
 task --version; gofumpt -version; golangci-lint version
-node --version; pnpm --version; npm --version
+node --version; npm --version   # UI only; docs need no Node toolchain
 docker --version; docker compose version
 git --version; gpg --version
 ```
 
 Classify a missing command as an environment prerequisite. Bootstrap (verified
 2026-07-28): Go ≥ 1.26.3, Task ≥ 3.x, gofumpt (unpinned), golangci-lint v2
-(unpinned), Node 24.x + pnpm ≥ 10.
+(unpinned), Node 24.x for the `ui/` frontend.
 
 | Surface | Repository declaration | Installed snapshot | Interpretation |
 |---|---|---|---|
@@ -52,9 +52,7 @@ Classify a missing command as an environment prerequisite. Bootstrap (verified
 | Task | Taskfile schema `version: "3"` | Task 3.48.0 | Installed version is environment fact. |
 | gofumpt | Used by `task fmt`; `@latest` install | v0.7.0 | Unpinned. |
 | golangci-lint | v2 config in `.golangci.yml`; `@latest` install | 2.12.2 | Use v2 CLI; exact release unpinned. |
-| Node | Docs CI `node-version: latest` | 24.18.0 | No `engines`/`packageManager` field. |
-| pnpm | Docs CI major 10 | 11.15.1 | Prefer CI's major 10. |
-| VitePress | `^1.6.4`, locked to 1.6.4 | Resolved by `pnpm-lock.yaml` | Install with frozen lockfile. |
+| Node | `ui/` frontend build | 24.18.0 | No `engines`/`packageManager` field. Docs need no Node. |
 | Containers | Compose commands in `Taskfile.yml` | Podman-backed, unusable in this sandbox | Verify CLI, Compose plugin, daemon/socket separately. |
 
 ## Prepare writable caches in a restricted sandbox
@@ -115,9 +113,9 @@ golangci-lint run ./...
 | `task clean` | Recursively removes `bin/`; destructive. |
 | `task docker-build` | `docker compose build agent` only. |
 
-`task check` is the definitive gate but omits `task lint`, race tests, `tools/`
-module, docs generation drift, and VitePress build. Run only in authorized
-writable worktree. For read-only preview: `gofumpt -l .`.
+`task check` is the definitive gate but omits `task lint`, race tests, and the
+`tools/` module. It has no docs step: there is no documentation build to omit.
+Run only in authorized writable worktree. For read-only preview: `gofumpt -l .`.
 
 ## Verify the tools module separately
 
@@ -142,18 +140,17 @@ cmp --silent docs/data/generated/contracts.json /tmp/archie-core-contracts.json
 2026-07-28 run wrote 10 schemas; comparison passed. Planned `docsgen all` and
 `docsgen check` do **not** exist yet.
 
-## Recreate and build the docs site
+## Documentation needs no build
 
-```bash
-pnpm --dir docs install --frozen-lockfile
-pnpm --dir docs build
-```
+`docs/` is Markdown read directly in the repository, an editor, or the forge's
+file view. Nothing builds, renders, or publishes it.
 
-Git tracks 237 `docs/node_modules` symlink entries (commit `308c199`):
+The VitePress site (`docs/.vitepress/`, `docs/package.json`, the pnpm lockfile),
+its landing page, and `.github/workflows/docs.yml` were removed on 2026-09-12 as
+an unnecessary build step. Git no longer tracks any `docs/node_modules` entries.
 
-```bash
-git ls-files -s 'docs/node_modules/**' | awk '$1 == "120000" {count++} END {print count+0}'
-```
+Do not `pnpm install` under `docs/`; it has no package manifest. See
+`docs/architecture/generated-documentation.md`, "Rendering and publishing".
 
 Commit `4cb0577` cleaned up accidentally committed `.gotmp`; `.gotmp/` now ignored.
 
@@ -205,6 +202,5 @@ env GIT_CONFIG_GLOBAL=/dev/null go test ./internal/worktree/... ./internal/workt
 | Build | `go build -o /tmp/... ./cmd/archied` and `cmd/archie-agent` | Both passed on 2026-07-28. |
 | Tools tests | `go -C tools test ./... -count=1` | Passed on 2026-07-28. |
 | Generated contract parity | Temp docsgen output + `cmp --silent` | Passed for 10 schemas. |
-| Docs install/build | `pnpm --dir docs install --frozen-lockfile` then `pnpm build` | Blocked by restricted network. |
 | Container build | `task docker-build` | Not verified in restricted environment. |
 | Repository gate | `task check` | Non-green; skillscript failure in root suite. |

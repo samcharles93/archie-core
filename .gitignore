@@ -11,11 +11,6 @@ task.json
 config.production.toml
 .gotmp/
 
-# Docs site build artefacts
-node_modules/
-.vitepress/cache/
-.vitepress/dist/
-
 # Scratch
 /tmp/
 .crew/

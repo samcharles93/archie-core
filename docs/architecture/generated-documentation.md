@@ -1,7 +1,7 @@
-# Generated Documentation and Documentation Site
+# Generated Documentation
 
-**Status:** Initial generator and site scaffold in progress  
-**Date:** 2026-07-28  
+**Status:** Generator scaffold in place; renderer and publishing removed
+**Date:** 2026-07-28 (revised 2026-09-12)
 **Tracking issue:** [#73](https://github.com/samcharles93/archie-core/issues/73)
 
 ## Purpose
@@ -12,53 +12,53 @@ Archie's documentation-generation approach is:
   source of truth for published contracts;
 - a repository-local Go generator extracts and normalizes documentation data;
 - the generator writes deterministic JSON/data files and protocol schemas;
-- VitePress data loaders, components, and templates render the generated data
-  into reference pages;
-- GitHub Actions builds and publishes the static site.
+- the rendering and publishing surface is an **open decision** — the VitePress
+  site and its Pages deployment were removed on 2026-09-12 as an unnecessary
+  build step (see "Rendering and publishing" below).
 
 Hugo is not part of the target architecture.
 
 The documentation system is rooted at:
 
 ```text
-.github/workflows/docs.yml
 tools/
   go.mod
   go.sum
   docsgen/
     main.go
 docs/
-  .vitepress/
-  public/
-  package.json
-  pnpm-lock.yaml
-  pnpm-workspace.yaml
+  data/generated/
+  public/schemas/
   *.md
 ```
 
-### VitePress site
+### Rendering and publishing — OPEN
 
-The `docs` site provides:
+Superseded 2026-09-12. The repository previously carried a VitePress site
+(`docs/.vitepress/config.mts`, `docs/package.json`, a 1620-line
+`docs/pnpm-lock.yaml`, `docs/pnpm-workspace.yaml`) built and deployed to GitHub
+Pages by `.github/workflows/docs.yml`. It was removed as an unnecessary build
+step: the published site was never stood up, and the Pages target is not
+configured.
 
-- VitePress 1.6.x with pnpm;
-- Markdown content at the site root;
-- repository-owned navigation and sidebar configuration;
-- local full-text search;
-- clean URLs and last-updated metadata;
-- build output under `.vitepress/dist`;
-- GitHub Pages-compatible static output;
+`docs/` is now repository documentation only — markdown read in the repository,
+an editor, or a forge's file view. Nothing in the repository builds, renders, or
+publishes it.
 
-### GitHub Pages workflow
+The renderer for the generated `data/generated/*.json` is therefore **undecided**.
+Consequences that follow, and their current state:
 
-The workflow provides:
+| Concern | State after removal |
+| --- | --- |
+| Reference-page rendering | Undecided; `data/generated/contracts.json` is committed but unrendered |
+| Internal link validation | Not enforced by any build; links are repository-relative (`../architecture/...`) and resolve on the filesystem |
+| Generated-data drift detection | Unchanged — `docsgen check` compares committed output, independent of any renderer |
+| Navigation/sidebar | The authoritative index is `docs/prds/01-project-management.md` |
+| Local authoring server | None; read markdown directly |
 
-- full-history checkout for VitePress `lastUpdated`;
-- pinned pnpm major version;
-- Node setup and pnpm caching;
-- VitePress cache reuse;
-- frozen-lockfile installation;
-- static build, artifact upload, and Pages deployment;
-- serialized deployments without cancelling an in-progress publish.
+A future renderer MUST NOT reintroduce a dead-link-blind build: VitePress
+previously validated internal links during its production build, and no
+replacement currently does.
 
 ## Single source of truth
 
@@ -121,7 +121,7 @@ docsgen all
 docsgen check
 ```
 
-- `data` writes the normalized JSON consumed by VitePress.
+- `data` writes the normalized JSON reference data.
 - `asyncapi` writes protocol schemas and envelopes.
 - `all` generates every committed artifact.
 - `check` generates into a temporary directory and fails on drift.
@@ -152,12 +152,6 @@ docs/
     schemas/
       asyncapi-header.yaml
       archie.yaml
-  .vitepress/
-    config.mts
-    data/
-      reference.data.ts
-    theme/
-      components/
   .tmp/
 ```
 
@@ -173,10 +167,11 @@ manually. `.tmp/` is generator-owned, ignored, and never committed.
 - source-to-data drift diagnostics;
 - future external consumers.
 
-VitePress loads these files at build time through a typed `.data.ts` loader.
-Pages and components import the loader's `data` export and render reference
-views. Archie uses a custom loader because the authoritative inputs are JSON;
-VitePress `createContentLoader` is reserved for Markdown content collections.
+These files are consumed at render time by whichever renderer is chosen (see
+"Rendering and publishing"); the generator's contract is the committed JSON, not
+any particular loader. A renderer reads `data/generated/*.json` directly — Archie
+does not use `createContentLoader`-style Markdown collection scanning, because
+the authoritative inputs are JSON.
 
 The final move from `docs/` to `docs/` occurs only after Archie content
 contains intentional Archie pages and the current architecture documents have an
@@ -287,15 +282,15 @@ The first vertical slice proves the normalized model and deterministic JSON
 serialization. Later categories reuse it rather than introducing
 category-specific ad hoc output formats.
 
-### Step 5: render data with VitePress
+### Step 5: render data (pending renderer decision)
 
-Create typed data loaders, components, and page templates for the normalized
-data. The loaders watch `data/generated/*.json`, parse and validate the files,
-and return serializable data at build time.
+Blocks on "Rendering and publishing" above. Once a renderer is chosen, it reads
+`data/generated/*.json`, validates it, and renders reference views.
 
-Handwritten top-level navigation remains explicit. Reference navigation and
-routes derive from `catalog.json`; they are not emitted as generated TypeScript
-or duplicated manually in `.vitepress/config.mts`.
+Navigation and routes derive from `catalog.json`; they MUST NOT be duplicated by
+hand in renderer configuration.
+
+No renderer is chosen, so this step is unstarted.
 
 ### Step 6: implement deterministic drift checking
 
@@ -318,124 +313,72 @@ Generation MUST exclude:
 
 Two consecutive `docsgen all` runs MUST be byte-identical.
 
-### Step 7: adapt the VitePress site
+### Step 7: renderer adaptation — blocked
 
-Maintain Archie-specific configuration and content:
+Was "adapt the VitePress site". No renderer is chosen; this step is unstarted.
 
-- site title and description;
-- repository, edit, and source links;
-- navigation and sidebars;
-- favicon, CNAME, and deployment base path;
-- landing page and guides;
-- protocol links;
-- footer;
-- embedded documentation expectations.
+When a renderer is selected it MUST:
 
-Retain:
+- read `data/generated/*.json` rather than re-deriving from source;
+- validate internal links, with dead-link failures enabled (no blanket
+  ignore list);
+- state its own local preview and build commands;
+- keep `node_modules/` and any build output out of source control.
 
-- local search;
-- clean URLs;
-- last-updated metadata;
-- repository-owned VitePress configuration;
-- pnpm frozen-lockfile builds.
+### Step 8: developer commands
 
-VitePress validates Markdown and internal links during its production build.
-Dead-link failures MUST remain enabled; blanket `ignoreDeadLinks` is prohibited.
+No `docs:*` task exists. `Taskfile.yml` does not reference the generator, and
+`task check` does not run `docs:check`, so generated drift is currently ungated.
 
-### Step 8: adapt developer commands
-
-`Taskfile.yml` will expose:
-
-```text
-task docs:generate  # go -C tools run ./docsgen all
-task docs:check     # go -C tools run ./docsgen check, then build VitePress
-task docs:serve     # generate, install if needed, then start VitePress dev
-task docs:build     # generate/check and create the production static site
-```
-
-Commands use explicit paths:
+The generator is run directly:
 
 ```sh
 go -C tools run ./docsgen all --repo-root ..
 go -C tools run ./docsgen check --repo-root ..
-pnpm --dir docs install --frozen-lockfile
-pnpm --dir docs dev
-pnpm --dir docs build
 ```
 
-The final command syntax must match the implemented CLI, but these task names
-and responsibilities are fixed.
+Wiring `docs:check` into `task check` is worth doing and does not depend on the
+renderer decision.
 
-`task check` runs `docs:check`. Generated drift, invalid Markdown, dead links,
-or a failed VitePress build block completion.
+### Step 9: CI
 
-### Step 9: adapt CI and Pages deployment
+The documentation workflow was deleted on 2026-09-12. No workflow builds, checks,
+or publishes documentation. `deploy.yml` does not reference `docs/**`.
 
-The workflow watches:
+Reintroducing CI for documentation requires the renderer decision first. Any
+such workflow MUST check generated output and MUST NOT regenerate and silently
+publish uncommitted differences.
 
-```text
-.github/workflows/docs.yml
-docs/**
-tools/go.mod
-tools/go.sum
-tools/docsgen/**
-authoritative domain registry and type paths
-```
+### Step 10: cutover — done, in reverse
 
-The build job:
+The site cutover is moot: the site was removed rather than published. The
+generator's outputs (`docs/data/generated/`, `docs/public/schemas/`) remain
+committed and are the durable artifacts.
 
-1. checks out full history;
-2. installs the repository's Go version;
-3. runs `docsgen check`;
-4. installs the pinned pnpm version;
-5. installs the configured Node version;
-6. restores pnpm and VitePress caches;
-7. installs dependencies with the frozen lockfile;
-8. builds VitePress;
-9. uploads `docs/.vitepress/dist`.
+Still standing from the original cutover list:
 
-The deploy job uses the required Pages permissions, environment, concurrency,
-and artifact deployment flow.
-
-CI MUST check generated output; it MUST NOT regenerate and silently publish
-uncommitted differences.
-
-### Step 10: remove non-source artifacts and cut over
-
-Before treating the site as Archie documentation:
-
-- keep `node_modules/` out of source control;
-- keep `.vitepress/dist/` out of source control;
-- ensure both paths are ignored;
-- remove Markdown, examples, specs, generated schemas, and assets that do
-  not describe Archie;
+- remove Markdown, examples, specs, generated schemas, and assets that do not
+  describe Archie;
 - adapt retained content and prove it against Archie code;
 - update `docs.go` and its tests to embed only intentional runtime
   documentation;
 - decide which current `docs/prds` remain published architecture pages and which
-  remain repository-only planning documents;
-- rename `docs` to its final location;
-- update workflow, Taskfile, links, and embed paths atomically.
+  remain repository-only planning documents — all of them are repository-only
+  now, so the distinction is retired.
 
-Documents MUST describe Archie before they are published.
+Documents MUST describe Archie. Publishing is a separate, undecided concern.
 
 ## Hook and CI policy
 
 Generated documentation is committed.
 
-The pre-commit hook:
+No pre-commit hook is installed in this repository, and no CI step runs the
+generator. The policy below is the intended contract, currently unenforced:
 
 1. detects authoritative definition or generator changes;
-2. runs `task docs:generate`;
-3. runs `task docs:check`;
+2. runs the generator;
+3. runs `docsgen check`;
 4. refuses the commit when generated changes are unstaged or validation fails.
-
-CI:
-
-1. runs `task docs:check` without modifying committed output;
-2. builds the static site;
-3. publishes only from the approved branch or release;
-4. never treats generated data as handwritten source.
 
 A commit MUST NOT be created while generated documentation is stale.
 
@@ -454,15 +397,14 @@ Generator tests cover:
 - byte-identical repeated generation;
 - check-mode diagnostics.
 
-Site validation covers:
+Repository-documentation validation covers:
 
-- frozen dependency installation;
-- VitePress production build;
-- dead internal links;
-- generated-data loader imports;
-- expected output routes;
+- internal links resolve on the filesystem (repository-relative paths);
 - absence of unrelated product names and URLs;
-- absence of committed build artifacts.
+- absence of committed build artifacts and installed dependencies.
+
+Renderer validation (frozen dependency installation, production build, expected
+output routes) is added with the renderer decision and is currently unenforced.
 
 The root module remains free of generator-only dependencies.
 
@@ -475,20 +417,18 @@ The documentation migration is complete when:
 - AsyncAPI output describes Archie;
 - required reference categories are generated as committed deterministic data;
 - `catalog.json` matches the generated definitions and rendered routes;
-- VitePress components and templates render the generated data;
 - two consecutive generations are byte-identical;
 - `docsgen check` detects changed, missing, and obsolete artifacts;
-- VitePress contains only intentional Archie content;
 - build artifacts and installed dependencies are absent from source control;
-- `task docs:serve` supports local authoring;
-- `task docs:build` produces the deployable site;
-- `task check` blocks stale or broken documentation;
-- GitHub Pages publishes the verified VitePress artifact.
+- `task docs:generate` and `task docs:check` work from a clean checkout;
+- every document describes Archie and every internal link resolves.
+
+Renderer-dependent criteria (rendered reference pages, local authoring server,
+deployable build, published site) are removed pending the renderer decision.
 
 ## Implementation references
 
-- [VitePress getting started](https://vitepress.dev/guide/getting-started)
-- [VitePress site configuration](https://vitepress.dev/reference/site-config)
-- [VitePress local search](https://vitepress.dev/reference/default-theme-search)
-- [VitePress deployment](https://vitepress.dev/guide/deploy)
-- [VitePress CLI](https://vitepress.dev/reference/cli)
+- [GitHub-flavoured Markdown specification](https://github.github.com/gfm/) —
+  the dialect repository documentation is written in
+- [pnpm](https://pnpm.io/) — required only if a future renderer chooses a
+  Node-based toolchain
