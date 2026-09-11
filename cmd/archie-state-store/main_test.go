@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -147,7 +148,24 @@ type stateStoreProcess struct {
 // configured one) is what a consumer must dial.
 func startStateStoreProcess(t *testing.T, bin, cfg string) *stateStoreProcess {
 	t.Helper()
-	cmd := exec.CommandContext(t.Context(), bin, "-config", cfg, "-listen", "127.0.0.1:0", "-ready-addr", "127.0.0.1:0")
+	return startStateStore(t, bin, cfg, "127.0.0.1:0", "")
+}
+
+// startStateStore is startStateStoreProcess with the listener topology and
+// bearer token exposed: the token-protected, non-loopback listener is the
+// topology every container-mode deployment profile uses
+// (docs/prds/state-store-contract.md §9), where the server installs the
+// credential interceptors on both the unary and the streaming surface.
+func startStateStore(t *testing.T, bin, cfg, listen, token string) *stateStoreProcess {
+	t.Helper()
+	args := []string{"-config", cfg, "-listen", listen, "-ready-addr", "127.0.0.1:0"}
+	if token != "" {
+		// An explicit -token wins over [services.state].target_token and the
+		// STATE_STORE_TOKEN secret, so the process authenticates callers with
+		// exactly this value.
+		args = append(args, "-token", token)
+	}
+	cmd := exec.CommandContext(t.Context(), bin, args...)
 	cmd.Env = append(os.Environ(), "ARCHIE_GITHUB_TOKEN=test-token")
 	var log syncBuffer
 	cmd.Stderr = &log
@@ -416,6 +434,58 @@ func TestStateStoreRealProcessRestartRecovery(t *testing.T) {
 	// RecoverStale, which must return without error on the restarted store.
 	if _, err := s2.RecoverStale(t.Context()); err != nil {
 		t.Fatalf("RecoverStale after restart: %v", err)
+	}
+}
+
+// TestStateStoreRealProcessTokenProtectedCaptureStream is the capture-batch
+// regression against the real binary: the token-protected, non-loopback
+// listener topology a container-mode deployment uses, read through the
+// production client wiring (staterpc.Dial) the daemon and the dashboard both
+// use. The reads the batch needs are server-streaming RPCs, whose metadata
+// the unary-only client interceptor never saw -- so before the fix this
+// failed with PermissionDenied, and no unary fallback existed to take. 20 x
+// 256 KiB is 5 MiB, past gRPC's 4 MiB unary cap, so the batch also proves the
+// streams still carry it.
+func TestStateStoreRealProcessTokenProtectedCaptureStream(t *testing.T) {
+	if testing.Short() {
+		t.Skip("real-process smoke test builds and execs the binary; skip under -short")
+	}
+	const token = "operator-secret-token"
+	dir := t.TempDir()
+	bin := buildBinary(t, dir)
+	cfg := writeMinimalConfig(t, dir)
+	st := startStateStore(t, bin, cfg, "0.0.0.0:0", token)
+
+	// The listener advertises the wildcard address it bound; a consumer dials
+	// the host address it can reach, which is this host's loopback.
+	_, port, err := net.SplitHostPort(st.addr)
+	if err != nil {
+		t.Fatalf("parse bound address %q: %v", st.addr, err)
+	}
+	cl, cleanup, err := staterpc.Dial("127.0.0.1:"+port, token)
+	if err != nil {
+		t.Fatalf("dial token-protected state store: %v", err)
+	}
+	t.Cleanup(cleanup)
+
+	ctx := t.Context()
+	body := strings.Repeat("x", 256<<10)
+	for range 20 {
+		if _, err := cl.InsertCapture(ctx, capture("large", body), 0, 0); err != nil {
+			t.Fatalf("InsertCapture: %v", err)
+		}
+	}
+	captures, err := cl.ListCaptures(ctx, 20)
+	if err != nil {
+		t.Fatalf("ListCaptures over a token-protected listener: %v", err)
+	}
+	if len(captures) != 20 {
+		t.Fatalf("got %d captures, want 20", len(captures))
+	}
+	for _, c := range captures {
+		if c.Body != body {
+			t.Fatal("capture body truncated")
+		}
 	}
 }
 
