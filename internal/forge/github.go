@@ -285,6 +285,24 @@ func (c *GitHubClient) ReplyToReview(ctx context.Context, owner, repo string, nu
 	return nil
 }
 
+// CreateReviewComments posts line-anchored review comments, one GitHub call
+// per comment, pinned to commitID and anchored to the RIGHT (new) side.
+func (c *GitHubClient) CreateReviewComments(ctx context.Context, owner, repo string, number int, commitID string, comments []InlineReviewComment) error {
+	for _, cm := range comments {
+		comment := &github.PullRequestComment{
+			Body:     new(cm.Body),
+			Path:     new(cm.Path),
+			Line:     new(cm.Line),
+			Side:     new("RIGHT"),
+			CommitID: new(commitID),
+		}
+		if _, _, err := c.gh.PullRequests.CreateComment(ctx, owner, repo, number, comment); err != nil {
+			return fmt.Errorf("create review comment %s:%d on %s/%s#%d: %w", cm.Path, cm.Line, owner, repo, number, err)
+		}
+	}
+	return nil
+}
+
 // CloseIssue closes an issue with a final comment (feasibility "won't do").
 func (c *GitHubClient) CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error {
 	if comment != "" {
