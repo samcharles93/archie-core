@@ -247,13 +247,12 @@ func main() {
 	}
 }
 
-func excludedDirectory(relative, name string) bool {
+func excludedDirectory(_, name string) bool {
 	switch name {
 	case ".git", ".claude", ".references", "node_modules", "vendor", ".gotmp":
 		return true
 	}
-	return strings.HasPrefix(relative, "docs/.vitepress/cache") ||
-		strings.HasPrefix(relative, "docs/.vitepress/dist")
+	return false
 }
 
 func moduleFor(relative string) string {

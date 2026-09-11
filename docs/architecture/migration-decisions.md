@@ -434,12 +434,14 @@ packages migrate:
 These shared mechanisms do not acquire ownership of domain meaning. Domains
 continue to own their commands, events, policies, settings, and consequences.
 
-The copied Go `specgen` and VitePress documentation pipeline, output placement,
-developer commands, drift checking, hook sequence, and CI sequence are defined
-in `generated-documentation.md`. Adapting the copied files, implementing
-Archie's normalized documentation model and page renderers, and cutting `docs`
-over to its final location remain migration work rather than open product
-architecture.
+The Go documentation generator, its output placement, and drift checking are
+defined in `generated-documentation.md`. The VitePress site and its Pages
+deployment were removed on 2026-09-12 as an unnecessary build step; `docs/` is
+repository documentation only. The rendering and publishing surface is an open
+decision, and so are the renderer's page templates and any developer commands
+or CI sequence that would accompany one. Adapting the generator and implementing
+Archie's normalized documentation model remain migration work rather than open
+product architecture.
 
 ### 8. Cutover sequence
 
