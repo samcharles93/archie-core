@@ -1,5 +1,27 @@
 # archied changelog
 
+## [1.24.0] - 2026-09-12
+
+Makes 1.23.0 deployable. That release split archied into separate processes,
+but the self-updater still installed only the `archied` binary and restarted
+only `archied.service`, so updating to it left the State Store, Gateway and UI
+on the previous release. archied cannot boot without a reachable State Store,
+so the update failed its health check and rolled back. Update to this release
+rather than to 1.23.0.
+
+If your host does not yet run the four units in
+`deployments/systemd-user-service.md`, create them first: the updater now
+refuses, naming what is missing, instead of installing binaries onto a host it
+would leave broken.
+
+- fix(update): install and cycle every process in the release
+- fix(telegram): stop the relay corrupting identifiers and code
+
+Also in this release, though outside the version-stamped package closure:
+
+- ci(deploy): produce a complete distribution zip on every release. No zip was
+  built for v1.23.0 at all, and the zip omitted `archie-ui`.
+
 ## [1.23.0] - 2026-09-12
 
 Archied is no longer a single process. The State Store (`archie-state-store`)
