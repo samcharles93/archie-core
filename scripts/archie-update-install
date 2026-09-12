@@ -43,9 +43,22 @@ configured_agent_image() {
   printf '%s' "$image"
 }
 
+# The task store is `<db_path>-tasks.sqlite`, not db_path itself: the daemon
+# derives it with taskDBPath() in internal/app/archied/main.go, and the
+# configured path may be a zero-byte placeholder while the real store sits
+# beside it. Backing up the literal value would produce an empty backup, and a
+# rollback would then restore that empty file over the database and delete its
+# -wal/-shm -- destroying the task store it exists to protect.
+#
+# Only the top-level key counts. db_path also appears in other sections
+# ([indexing] owns its own database), and the first match in the file can
+# easily be one of those.
 configured_task_db_path() {
-  awk '
-    /^[[:space:]]*db_path[[:space:]]*=/ {
+  local base
+  base="$(awk '
+    BEGIN { top = 1 }
+    /^[[:space:]]*\[/ { top = 0 }
+    top && /^[[:space:]]*db_path[[:space:]]*=/ {
       value = $0
       sub(/^[[:space:]]*db_path[[:space:]]*=[[:space:]]*/, "", value)
       sub(/[[:space:]]*(#.*)?$/, "", value)
@@ -53,7 +66,9 @@ configured_task_db_path() {
       else if (length(value) >= 2 && substr(value, 1, 1) == sprintf("%c", 39) && substr(value, length(value), 1) == sprintf("%c", 39)) print substr(value, 2, length(value) - 2)
       exit
     }
-  ' "$CONFIG_PATH" 2>/dev/null || true
+  ' "$CONFIG_PATH" 2>/dev/null || true)"
+  [ -n "$base" ] || return 0
+  printf '%s' "$base-tasks.sqlite"
 }
 
 AGENT_IMAGE="${ARCHIE_AGENT_IMAGE:-$(configured_agent_image)}"
@@ -163,17 +178,25 @@ if [[ ",$components," == *,daemon,* ]]; then
   fi
 fi
 
+# Pre-flight, before any write to the host. The task database backup is the
+# watchdog's only route back from a forward schema migration, so an update
+# that cannot take one must not start: once binaries are replaced, a failure
+# leaves the previous release unable to read the store it just migrated. This
+# runs ahead of the adapter refresh below so a refusal changes nothing at all.
+if [[ ",$components," == *,daemon,* ]] && [ -n "$TASK_DB_PATH" ] && [ -f "$TASK_DB_PATH" ]; then
+  echo "==> backing up task database for schema-safe rollback"
+  mkdir -p "$(dirname "$TASK_DB_BACKUP")"
+  if ! sqlite3 "$TASK_DB_PATH" ".backup '$TASK_DB_BACKUP'"; then
+    echo "refusing to install $GW: could not back up the task database at $TASK_DB_PATH, so a failed update could not be rolled back" >&2
+    exit 1
+  fi
+fi
+
 # Refresh adapters from the approved release source. The running shell
 # continues with this copy; subsequent updates use the current contract.
 install -m755 "$source_dir/scripts/archie-update-install" "$BIN_DIR/archie-update-install"
 install -m755 "$source_dir/scripts/archie-update-watchdog" "$BIN_DIR/archie-update-watchdog"
 install -m755 "$source_dir/scripts/archie-update-check" "$BIN_DIR/archie-update-check"
-
-if [[ ",$components," == *,daemon,* ]] && [ -n "$TASK_DB_PATH" ] && [ -f "$TASK_DB_PATH" ]; then
-  echo "==> backing up task database for schema-safe rollback"
-  mkdir -p "$(dirname "$TASK_DB_BACKUP")"
-  sqlite3 "$TASK_DB_PATH" ".backup '$TASK_DB_BACKUP'"
-fi
 
 # built accumulates only the binaries this release actually ships, so an
 # update to a release predating one of these processes stays buildable.
