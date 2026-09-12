@@ -2,6 +2,7 @@ package releaseupdate
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -62,7 +63,8 @@ func runUpdateCheckScript(t *testing.T, run checkRun) (Snapshot, []string, strin
 	)
 	output, err := cmd.Output()
 	var stderr string
-	if exitErr, ok := err.(*exec.ExitError); ok {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
 		stderr = string(exitErr.Stderr)
 	}
 	var calls []string
