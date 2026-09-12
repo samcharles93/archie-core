@@ -283,6 +283,15 @@ func runUpdateInstallScript(t *testing.T, environment map[string]string) (Result
 // recorded calls, and the combined output.
 func runUpdateInstall(t *testing.T, environment map[string]string, wantErr bool) (Result, []string, string) {
 	t.Helper()
+	return runUpdateInstallWithConfig(t, environment, "[containers]\nimage = 'registry.example/archie-agent:stable'\n", wantErr)
+}
+
+// runUpdateInstallWithConfig is runUpdateInstall with the operator's config
+// file under the caller's control. Config-derived behaviour -- which database
+// the updater backs up, which image it rebuilds -- is otherwise untestable,
+// which is how the task-database backup path came to be wrong.
+func runUpdateInstallWithConfig(t *testing.T, environment map[string]string, configBody string, wantErr bool) (Result, []string, string) {
+	t.Helper()
 	ctx := t.Context()
 
 	root, err := filepath.Abs(filepath.Join("..", ".."))
@@ -297,7 +306,7 @@ func runUpdateInstall(t *testing.T, environment map[string]string, wantErr bool)
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(configPath, []byte("[containers]\nimage = 'registry.example/archie-agent:stable'\n"), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(configBody), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"archied", "archie-agent"} {
@@ -359,6 +368,21 @@ printf '%s\n' "install $*" >> "$ARCHIE_TEST_CALLS"
 	writeFakeCommand(t, fakeDir, "cp", `
 printf '%s\n' "cp $*" >> "$ARCHIE_TEST_CALLS"
 /usr/bin/cp "$@"
+`)
+	writeFakeCommand(t, fakeDir, "sqlite3", `
+printf '%s\n' "sqlite3 $*" >> "$ARCHIE_TEST_CALLS"
+[ "${ARCHIE_TEST_SQLITE3_FAILS:-}" = "1" ] && exit 1
+# Reproduce ".backup '<path>'" by writing a plausible backup beside the
+# source, so the watchdog's existence check behaves as it would in production.
+for arg in "$@"; do
+  case "$arg" in
+    .backup*) target="$(printf '%s' "$arg" | sed "s/^\.backup[[:space:]]*//; s/^'//; s/'$//")" ;;
+  esac
+done
+if [ -n "${target:-}" ]; then
+  mkdir -p "$(dirname "$target")"
+  printf 'backup\n' > "$target"
+fi
 `)
 
 	// The production adapter prepends /usr/local/go/bin. Run an otherwise
@@ -661,4 +685,97 @@ func TestUpdateWatchdogCyclesEveryUnitInDependencyOrder(t *testing.T) {
 			t.Errorf("%s = %q after rollback, want the previous binary", name, got)
 		}
 	}
+}
+
+// The updater must back up the database the daemon actually uses, which is
+// `<db_path>-tasks.sqlite` (taskDBPath in internal/app/archied/main.go), not
+// the configured path itself. The configured path may be a zero-byte
+// placeholder while the real store sits beside it -- so backing the literal
+// value up produces an empty backup, and a rollback then restores that empty
+// file over the database and deletes its -wal/-shm. A rollback that destroys
+// the task store is worse than no rollback.
+func TestUpdateInstallBacksUpTheSiblingTaskDatabase(t *testing.T) {
+	work := t.TempDir()
+	configured := filepath.Join(work, "archie.db")
+	realStore := configured + "-tasks.sqlite"
+	if err := os.WriteFile(configured, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(realStore, []byte("real task data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	backup := filepath.Join(work, "backup.sqlite")
+
+	_, calls, _ := runUpdateInstallWithConfig(t, map[string]string{
+		"ARCHIE_UPDATE_DAEMON_PREVIOUS": "1.22.0",
+		"ARCHIE_UPDATE_DAEMON_VERSION":  "1.23.0",
+		"ARCHIE_UPDATE_AGENT_PREVIOUS":  "1.21.0",
+		"ARCHIE_TASK_DB_BACKUP":         backup,
+	}, "db_path = \""+configured+"\"\n\n[containers]\nimage = 'registry.example/archie-agent:stable'\n", false)
+
+	assertCallContains(t, calls, "sqlite3", realStore, ".backup")
+	assertCallContains(t, calls, "systemd-run", "--setenv=ARCHIE_TASK_DB_PATH="+realStore)
+	// The zero-byte placeholder is not the store, and must never be the thing
+	// handed to the watchdog as ARCHIE_TASK_DB_PATH.
+	assertCallAbsent(t, calls, "--setenv=ARCHIE_TASK_DB_PATH="+configured+" ")
+}
+
+// db_path also appears in other sections -- [indexing] owns its own database.
+// Reading the first match in the file can select an unrelated database, so the
+// value must come from the daemon's own top-level key.
+func TestUpdateInstallIgnoresDbPathFromOtherSections(t *testing.T) {
+	work := t.TempDir()
+	configured := filepath.Join(work, "archie.db")
+	realStore := configured + "-tasks.sqlite"
+	indexStore := filepath.Join(work, "workspace-indexes.db")
+	for path, content := range map[string]string{realStore: "real task data", indexStore: "index data"} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	backup := filepath.Join(work, "backup.sqlite")
+
+	_, calls, _ := runUpdateInstallWithConfig(t, map[string]string{
+		"ARCHIE_UPDATE_DAEMON_PREVIOUS": "1.22.0",
+		"ARCHIE_UPDATE_DAEMON_VERSION":  "1.23.0",
+		"ARCHIE_UPDATE_AGENT_PREVIOUS":  "1.21.0",
+		"ARCHIE_TASK_DB_BACKUP":         backup,
+	}, "db_path = \""+configured+"\"\n\n[indexing]\ndb_path = \""+indexStore+"\"\n\n[containers]\nimage = 'registry.example/archie-agent:stable'\n", false)
+
+	assertCallContains(t, calls, "sqlite3", realStore)
+	for _, call := range calls {
+		if strings.Contains(call, "sqlite3") && strings.Contains(call, indexStore) {
+			t.Errorf("backed up the indexing database %s: %q", indexStore, call)
+		}
+	}
+	assertCallAbsent(t, calls, "--setenv=ARCHIE_TASK_DB_PATH="+indexStore)
+}
+
+// A store that cannot be backed up must fail the update before anything is
+// replaced. Installing with no usable rollback is how a failed update becomes
+// a destroyed task store.
+func TestUpdateInstallRefusesWhenTaskDatabaseCannotBeBackedUp(t *testing.T) {
+	work := t.TempDir()
+	configured := filepath.Join(work, "archie.db")
+	if err := os.WriteFile(configured+"-tasks.sqlite", []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, calls, output := runUpdateInstallWithConfig(t, map[string]string{
+		"ARCHIE_UPDATE_DAEMON_PREVIOUS": "1.22.0",
+		"ARCHIE_UPDATE_DAEMON_VERSION":  "1.23.0",
+		"ARCHIE_UPDATE_AGENT_PREVIOUS":  "1.21.0",
+		"ARCHIE_TEST_SQLITE3_FAILS":     "1",
+	}, "db_path = \""+configured+"\"\n\n[containers]\nimage = 'registry.example/archie-agent:stable'\n", true)
+
+	if !strings.Contains(output, "task database") {
+		t.Errorf("refusal must name the task database; output = %q", output)
+	}
+	// Nothing of the release may be placed on the host, and no backup of the
+	// failure path may be attempted either.
+	for _, call := range calls {
+		if strings.Contains(call, "install -m755") && !strings.Contains(call, "/scripts/") {
+			t.Errorf("refused update still installed %q", call)
+		}
+	}
+	assertCallAbsent(t, calls, "arhied.prev")
 }
