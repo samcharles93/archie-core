@@ -5,53 +5,148 @@
 # via CommandCatalog (internal/releaseupdate/command.go), which never invokes
 # a shell, so this file must be directly executable.
 #
-# "Installed" is the release the running binary was ACTUALLY built from,
-# read via `archied -version` rather than trusted from git or filesystem
-# state -- if a prior build/install step silently failed partway, the
-# checkout can disagree with what's really running, and -version is the one
-# source that cannot be wrong about that. The build stamp carries a
-# git-describe suffix when HEAD has moved past the tag (1.7.0-4-g0736708);
-# that suffix is stripped for the comparison, because unreleased commits are
-# not an available update and would otherwise report one forever.
+# "Installed" is the release the running binary was ACTUALLY built from, read
+# via `archied -version` rather than trusted from git or filesystem state --
+# if a prior build/install step silently failed partway, the checkout can
+# disagree with what's really running, and -version is the one source that
+# cannot be wrong about that. The build stamp carries a git-describe suffix
+# when HEAD has moved past the tag (1.7.0-4-g0736708); that suffix is
+# stripped for the comparison, because unreleased commits are not an
+# available update and would otherwise report one forever.
 #
-# "Available" is the newest release tag on the origin remote, via
-# ls-remote -- no local fetch or working-tree state required, so this
-# script has no side effects and no dependency on the checkout being
-# buildable.
+# "Available" is the newest release TAG, resolved without any dependency on a
+# local checkout. Two independent sources, in order:
 #
-# Component IDs are "daemon" and "agent" -- the same convention
-# releaseupdate.ComponentDaemon/ComponentAgent, archie-update-watchdog's
-# report, and Service.Enrich (installtype.Type(), an observed archie-agent
-# version) all expect. A check command using different IDs still works for
-# the raw Installed/Available display, just without that enrichment or
-# Report.Verify recognising it after an install.
-set -euo pipefail
+#   1. the forge API (tags + releases), which also reports whether the tag has
+#      a PUBLISHED artifact -- the thing an artifact install path downloads;
+#   2. `git ls-remote` against the source remote, which needs no API and no
+#      working tree.
+#
+# The tag is the authority for "an update exists"; the artifact is reported
+# separately in Reference, so a tagged-but-unpublished release is still
+# announced (it is installable via the source-build fallback) instead of being
+# silently hidden.
+#
+# A tag source that fails to resolve is a FAILURE TO CHECK, not an absence.
+# An empty Available means "this component is at the newest release we could
+# resolve", so it must never be the result of a probe that failed. When no
+# authoritative source answers at all, this script exits non-zero and the
+# /update command says it could not check -- rather than rendering a failed
+# lookup as "Archie is up to date".
+set -uo pipefail
 
-REPO="${ARCHIE_REPO_DIR:-$HOME/projects/archie-core}"
-BIN="${ARCHIE_BIN:-$HOME/.local/bin/archied}"
+readonly REPO_SLUG="${ARCHIE_SOURCE_SLUG:-samcharles93/archie-core}"
+readonly API_BASE="${ARCHIE_FORGE_API:-https://api.github.com}"
+readonly SOURCE_URL="${ARCHIE_SOURCE_URL:-https://github.com/${REPO_SLUG}.git}"
+readonly BIN="${ARCHIE_BIN:-$HOME/.local/bin/archied}"
+readonly CURL_TIMEOUT="${ARCHIE_FORGE_TIMEOUT:-20}"
+readonly TOKEN="${ARCHIE_FORGE_TOKEN:-}"
 
 # base 1.7.0-4-g0736708 -> 1.7.0
 base() { printf '%s\n' "${1%%-*}"; }
 
+# installed_for reads the version this binary reports for a named component.
+# archied stamps both its own version and the runtime version the release was
+# cut with, and -version prints one line per component -- so the installed
+# runtime is what THIS RELEASE says it was built against, not a stray binary
+# on the host. releaseupdate/service.go documents why a host-side archie-agent
+# binary cannot answer this: every archie-agent process is task-scoped and
+# ephemeral, observed only through a completed taskrun.Response.
 installed_for() {
   "$BIN" -version 2>/dev/null | awk -v n="$1" '$1 == n { print $2; exit }'
 }
 
-latest_tag() {
-  git -C "$REPO" ls-remote --tags --refs origin "$1/v*" 2>/dev/null |
-    sed 's|.*refs/tags/||' | sed "s|^$1/v||" |
-    sort -V | tail -1
+curl_api() {
+  if [ -n "$TOKEN" ]; then
+    curl -fsS --max-time "$CURL_TIMEOUT" \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Accept: application/vnd.github+json" \
+      "$1" 2>/dev/null
+  else
+    curl -fsS --max-time "$CURL_TIMEOUT" \
+      -H "Accept: application/vnd.github+json" \
+      "$1" 2>/dev/null
+  fi
 }
+
+# newest_tag_git resolves the newest tag for a component prefix from the git
+# remote. No local checkout, no working-tree state, no fetch -- `ls-remote`
+# queries the remote directly, so this works on a host that has never cloned
+# anything.
+newest_tag_git() {
+  local component="$1" tags
+  command -v git >/dev/null 2>&1 || return 1
+  tags="$(git ls-remote --tags --refs "$SOURCE_URL" "$component/v*" 2>/dev/null)" || return 1
+  [ -n "$tags" ] || return 1
+  printf '%s\n' "$tags" | sed 's|.*refs/tags/||' | sed "s|^$component/v||" | sort -V | tail -1
+}
+
+# newest_tag_api is the API equivalent, used when git is unavailable.
+newest_tag_api() {
+  local component="$1" page payload found total
+  for page in 1 2 3; do
+    payload="$(curl_api "${API_BASE}/repos/${REPO_SLUG}/tags?per_page=100&page=${page}")" || return 1
+    [ -n "$payload" ] || return 1
+    found="$(printf '%s\n' "$payload" \
+      | grep -o "\"name\":[[:space:]]*\"${component}/v[^\"]*\"" \
+      | sed 's|.*"'"${component}"'/v||; s|"$||' | sort -V | tail -1)"
+    if [ -n "$found" ]; then
+      printf '%s\n' "$found"
+      return 0
+    fi
+    total="$(printf '%s\n' "$payload" | grep -c '"name"')"
+    [ "${total:-0}" -lt 100 ] && break
+  done
+  return 1
+}
+
+# artifact_state reports whether a tagged release is PUBLISHED with assets,
+# which decides whether an artifact install can use it or the source-build
+# fallback has to. Purely descriptive: a failure here never fabricates a
+# state, it reports "unknown-artifact".
+artifact_state() {
+  local tag="$1" payload count
+  command -v jq >/dev/null 2>&1 || { printf 'unknown-artifact'; return 0; }
+  payload="$(curl_api "${API_BASE}/repos/${REPO_SLUG}/releases/tags/${tag}")" || { printf 'no-release'; return 0; }
+  [ -n "$payload" ] || { printf 'no-release'; return 0; }
+  count="$(printf '%s\n' "$payload" | jq -r '[.assets[] | select(.name != "")] | length' 2>/dev/null)"
+  case "${count:-}" in
+    '' | *[!0-9]*) printf 'unknown-artifact' ;;
+    0) printf 'no-artifact' ;;
+    *) printf '%s-assets' "$count" ;;
+  esac
+}
+
+esc() { printf '%s' "${1:-}" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 
 daemon_installed="$(base "$(installed_for archied || true)")"
 agent_installed="$(base "$(installed_for archie-agent || true)")"
-daemon_available="$(latest_tag archied || true)"
-agent_available="$(latest_tag archie || true)"
 
-# An unreachable remote must not look like "up to date": leaving Available
-# empty makes Snapshot.Available() skip the component rather than claim
-# parity it never verified.
-esc() { printf '%s' "${1:-}" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+daemon_available="$(newest_tag_git archied || true)"
+agent_available="$(newest_tag_git archie || true)"
+tag_source="git-tags"
+if [ -z "$daemon_available" ] && [ -z "$agent_available" ]; then
+  daemon_available="$(newest_tag_api archied || true)"
+  agent_available="$(newest_tag_api archie || true)"
+  tag_source="forge-api-tags"
+fi
+if [ -z "$daemon_available" ] && [ -z "$agent_available" ]; then
+  # Neither source answered. Report the failure; do not exit 0 with two empty
+  # components, which the caller renders as "up to date".
+  echo "archie-update-check: could not resolve any release tag from ${SOURCE_URL} or ${API_BASE}/repos/${REPO_SLUG}/tags" >&2
+  exit 1
+fi
+
+daemon_artifacts=""
+[ -n "$daemon_available" ] && daemon_artifacts="$(artifact_state "archied/v${daemon_available}")"
+agent_artifacts=""
+[ -n "$agent_available" ] && agent_artifacts="$(artifact_state "archie/v${agent_available}")"
+
+reference_for() {
+  local component="$1" version="$2" artifacts="$3"
+  [ -z "$version" ] && { printf ''; return 0; }
+  printf '%s artifact=%s (%s)' "$tag_source" "$artifacts" "$component"
+}
 
 cat <<EOF
 {
@@ -61,14 +156,16 @@ cat <<EOF
       "Label": "Gateway",
       "Installed": "$(esc "$daemon_installed")",
       "Available": "$(esc "$daemon_available")",
-      "Changelog": "https://github.com/samcharles93/archie-core/blob/main/CHANGELOG.archied.md"
+      "Reference": "$(esc "$(reference_for archie-core "$daemon_available" "$daemon_artifacts")")",
+      "Changelog": "https://github.com/${REPO_SLUG}/blob/main/CHANGELOG.archied.md"
     },
     {
       "ID": "agent",
       "Label": "Runtime",
       "Installed": "$(esc "$agent_installed")",
       "Available": "$(esc "$agent_available")",
-      "Changelog": "https://github.com/samcharles93/archie-core/blob/main/CHANGELOG.archie.md"
+      "Reference": "$(esc "$(reference_for archie-runtime "$agent_available" "$agent_artifacts")")",
+      "Changelog": "https://github.com/${REPO_SLUG}/blob/main/CHANGELOG.archie.md"
     }
   ],
   "Deferred": false
