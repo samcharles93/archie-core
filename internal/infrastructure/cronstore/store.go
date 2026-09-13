@@ -23,7 +23,7 @@ import (
 // that adds a new field to JobSpec must also bump schemaVersion so
 // older builds keep rejecting the file rather than silently dropping
 // the new field.
-const schemaVersion = 1
+const schemaVersion = 2
 
 // filePerm is the mode applied to the jobs.json file on write. Payloads
 // and chat ids can carry operator-identifying information, so 0o600 is
@@ -45,6 +45,14 @@ type JobSpec struct {
 
 	// Detail is a human-readable label rendered on events.
 	Detail string `json:"detail,omitempty"`
+
+	// Kind selects which delivery runner handles this job. Empty means
+	// KindChat, so a job written before this field existed (schema
+	// version 1) keeps delivering as a chat message. The store does not
+	// interpret the value: an unrecognised kind is persisted verbatim and
+	// refused by the delivery router, which is the one place the mapping
+	// from kind to runner lives.
+	Kind string `json:"kind,omitempty"`
 
 	// Schedule decides when this job is due. See schedule.go for the
 	// supported kinds and their arithmetic.
