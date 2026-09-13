@@ -1,6 +1,6 @@
 module github.com/samcharles93/archie-core/tools
 
-go 1.26.5
+go 1.27.0
 
 require (
 	github.com/invopop/jsonschema v0.14.0
@@ -17,15 +17,15 @@ require (
 	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/samcharles93/ai-sdk v0.1.25 // indirect
+	github.com/samcharles93/ai-sdk v0.1.32 // indirect
 	github.com/traefik/yaegi v0.16.1 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.2 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	modernc.org/libc v1.74.4 // indirect
+	modernc.org/libc v1.75.7 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
-	modernc.org/memory v1.11.0 // indirect
-	modernc.org/sqlite v1.56.0 // indirect
+	modernc.org/memory v1.12.1 // indirect
+	modernc.org/sqlite v1.58.0 // indirect
 )
 
 replace github.com/samcharles93/archie-core => ../
