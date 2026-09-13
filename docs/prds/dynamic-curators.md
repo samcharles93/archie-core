@@ -28,6 +28,7 @@ Every claim in this document is mapped to what exists in the tree today.
 | No live-path defaults for interval/cooldown/tools/model/memory engine | **Partial** | `skillcurator.DefaultInterval` / `sessioncurator.DefaultInterval` are Go consts read at registration; `curator.NewRuntime(..., RuntimeConfig{})` uses code defaults for pass timeout and concurrency |
 | Idle curators are observable in logs | **Partial** | `runtime.go:202-211` logs nothing when `Check` reports not-due; the session-memory curator's hourly pass is the only curator activity ever logged |
 | Sampler family | **Implemented** | `internal/domain/sampling`, shipped; no curator consumes a `Sampler` yet |
+| Forge/issue reach from chat | **Implemented** (via `shell`) | No dedicated issue tool exists, but the chat agent's `shell` is unconfined (`chat.unrestricted_filesystem = true`), so `gh issue edit|comment|create|close` works today. Dedicated tools (#161) are convenience, not a blocker |
 
 > **Target state, not current state.** Everything below marked aspirational is
 > design, not a description of the daemon as it runs today.
@@ -183,8 +184,9 @@ stop being read at registration (the value becomes seed data), and
   the same authority as bindings -- not exposed on the chat tool surface.
 - **No dashboard SPA editor page.** The REST surface is the WebUI definition
   source; the dashboard can adopt it separately.
-- **No forge issue tools here.** The orchestrator curator's motivating tools
-  (list/create/comment issues for a repo) belong to the existing tools registry
-  work (#161/#140); this design only ensures a curator can declare them.
+- **No forge issue tools here.** This design only ensures a curator *can declare*
+  tools. Dedicated issue tools (#161) are a convenience, not a prerequisite: the
+  chat agent already reaches issues through the unconfined `shell` tool
+  (`gh issue edit|comment|create|close`). See the correction on #789.
 - **No second authority.** No file-per-curator definition store, no parallel
   config reader.
