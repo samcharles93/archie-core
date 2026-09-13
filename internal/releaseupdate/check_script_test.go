@@ -63,8 +63,7 @@ func runUpdateCheckScript(t *testing.T, run checkRun) (Snapshot, []string, strin
 	)
 	output, err := cmd.Output()
 	var stderr string
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		stderr = string(exitErr.Stderr)
 	}
 	var calls []string
