@@ -109,12 +109,13 @@ golangci-lint run ./...
 | `task lint` | `golangci-lint run ./...`. |
 | `task build` | Builds both commands into `bin/`. |
 | `task test` | `go test ./... -count=1` in the runtime module. |
-| `task check` | `fmt` + `go fix ./...` again + `vet` + `build` + `test`. |
+| `task check` | `fmt` + `go fix ./...` again + `proto:lint` + `proto:check` + `vet` + `lint` + `build` + `test` + `test:tools` + `test:ui`. |
 | `task clean` | Recursively removes `bin/`; destructive. |
 | `task docker-build` | `docker compose build agent` only. |
 
-`task check` is the definitive gate but omits `task lint`, race tests, and the
-`tools/` module. It has no docs step: there is no documentation build to omit.
+`task check` is the definitive gate but omits race tests, `task vuln`, and
+`task docker-build`. It has no docs step: there is no documentation build to
+omit.
 Run only in authorized writable worktree. For read-only preview: `gofumpt -l .`.
 
 ## Verify the tools module separately
@@ -127,13 +128,22 @@ replace github.com/samcharles93/archie-core => ../
 ```
 
 ```bash
-go -C tools test ./... -count=1
+go -C tools test -mod=readonly ./... -count=1
 ```
+
+`-mod=readonly` is mandatory on every `go -C tools` command. The `replace`
+forces the tools build list to satisfy the root module's requirements, so a
+root dependency bump leaves tools stale, and a writable command repairs
+`tools/go.mod` and `tools/go.sum` in place, dirtying the tree with an
+unrelated diff. Pass the flag explicitly: a global `GOFLAGS=-mod=mod` in
+`go env` beats the toolchain default. A failure here means run
+`go -C tools mod tidy` and commit that on its own. `task check` runs this via
+`task test:tools`.
 
 Generate documentation to temp file:
 
 ```bash
-go -C tools run ./docsgen --repo-root .. --out /tmp/archie-core-contracts.json
+go -C tools run -mod=readonly ./docsgen --repo-root .. --out /tmp/archie-core-contracts.json
 cmp --silent docs/data/generated/contracts.json /tmp/archie-core-contracts.json
 ```
 
@@ -200,7 +210,7 @@ env GIT_CONFIG_GLOBAL=/dev/null go test ./internal/worktree/... ./internal/workt
 | Vet | `go vet ./...` | Passed on 2026-07-28. |
 | Lint | `golangci-lint run ./...` | Failed with 54 findings on 2026-07-28. |
 | Build | `go build -o /tmp/... ./cmd/archied` and `cmd/archie-agent` | Both passed on 2026-07-28. |
-| Tools tests | `go -C tools test ./... -count=1` | Passed on 2026-07-28. |
+| Tools tests | `go -C tools test -mod=readonly ./... -count=1` | Passed on 2026-07-28. |
 | Generated contract parity | Temp docsgen output + `cmp --silent` | Passed for 10 schemas. |
 | Container build | `task docker-build` | Not verified in restricted environment. |
 | Repository gate | `task check` | Non-green; skillscript failure in root suite. |

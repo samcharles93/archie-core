@@ -147,9 +147,9 @@ Current behavior, verified 2026-07-28:
 - Default output is `docs/data/generated/contracts.json`.
 
 ```bash
-GOTMPDIR=/tmp GOCACHE=/tmp/archie-docsgen-gocache go -C tools test ./docsgen -count=1
+GOTMPDIR=/tmp GOCACHE=/tmp/archie-docsgen-gocache go -C tools test -mod=readonly ./docsgen -count=1
 docs_tmp="$(mktemp /tmp/archie-contracts.XXXXXX.json)"
-GOTMPDIR=/tmp GOCACHE=/tmp/archie-docsgen-gocache go -C tools run ./docsgen --repo-root .. --out "$docs_tmp"
+GOTMPDIR=/tmp GOCACHE=/tmp/archie-docsgen-gocache go -C tools run -mod=readonly ./docsgen --repo-root .. --out "$docs_tmp"
 cmp "$docs_tmp" docs/data/generated/contracts.json
 ```
 

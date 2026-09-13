@@ -206,8 +206,22 @@ tasks:
     cmds:
       - go test ./... -count=1
 
+  test:tools:
+    desc: Run the nested tools module suite, refusing to rewrite its go.mod
+    summary: |
+      tools/go.mod replaces the root module, so its build list must satisfy
+      the root module's requirements. When the root moves on, the tools module
+      goes stale and any plain go command there rewrites tools/go.mod and
+      tools/go.sum to catch up, leaving an unrelated dirty diff.
+
+      -mod=readonly is explicit because a developer's global GOFLAGS=-mod=mod
+      overrides the toolchain default and re-enables the silent rewrite.
+      Fix a failure here with: go -C tools mod tidy
+    cmds:
+      - go -C tools test -mod=readonly ./... -count=1
+
   check:
-    desc: "Full quality gate: fmt, go fix, proto, vet, lint, build, test, ui tests"
+    desc: "Full quality gate: fmt, go fix, proto, vet, lint, build, test, tools tests, ui tests"
     cmds:
       - task: fmt
       - go fix ./...
@@ -217,6 +231,10 @@ tasks:
       - task: lint
       - task: build
       - task: test
+      # The tools module is not covered by ./... from the root; without this
+      # its dependency drift is only ever discovered by a command that
+      # silently repairs it.
+      - task: test:tools
       # The dashboard's suite runs here too. Left out of the gate it rots
       # silently: nothing else executes it, so a broken DOM primitive ships.
       - task: test:ui

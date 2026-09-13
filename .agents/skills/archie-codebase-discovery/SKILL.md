@@ -38,7 +38,7 @@ Module boundaries (root and `tools/` are separate):
 ```sh
 find . -name go.mod -not -path './.git/*' -not -path './node_modules/*'
 go list -m -f '{{.Path}} {{.GoVersion}}'
-go -C tools list -m -f '{{.Path}} {{.GoVersion}}'
+go -C tools list -mod=readonly -m -f '{{.Path}} {{.GoVersion}}'
 ```
 
 ## Build the behavior trace
