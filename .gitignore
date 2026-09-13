@@ -43,3 +43,8 @@ config.production.toml
 .beads/issues.jsonl
 .beads/interactions.jsonl
 .mcp.json
+
+# gh CLI state (~/.local/state/gh) mistakenly created inside the tree
+.local/
+__pycache__/
+*.pyc
