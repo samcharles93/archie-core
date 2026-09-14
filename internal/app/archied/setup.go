@@ -56,11 +56,8 @@ type setupFlags struct {
 	operator        string
 	forgeType       string
 	forgeHost       string
-	forgeToken      string
 	provider        string
 	model           string
-	providerAPIKey  string
-	telegramToken   string
 	telegramUserIDs string
 }
 
@@ -72,11 +69,8 @@ func bindSetupFlags(fs *flag.FlagSet) *setupFlags {
 	fs.StringVar(&f.operator, "operator", "", "operator display name (optional)")
 	fs.StringVar(&f.forgeType, "forge-type", "", "forge type: github | gitea | none")
 	fs.StringVar(&f.forgeHost, "forge-host", "", "forge base URL")
-	fs.StringVar(&f.forgeToken, "forge-token", "", "forge API token, stored in the env file beside the config")
 	fs.StringVar(&f.provider, "provider", "", "LLM provider class: openai | anthropic | openrouter | gemini | groq | deepseek | mistral | ollama")
 	fs.StringVar(&f.model, "model", "", "bare model name; the provider class prefix is added automatically")
-	fs.StringVar(&f.providerAPIKey, "provider-api-key", "", "cloud LLM provider API key, stored in the env file beside the config")
-	fs.StringVar(&f.telegramToken, "telegram-token", "", "Telegram bot token, stored in the env file beside the config")
 	fs.StringVar(&f.telegramUserIDs, "telegram-user-ids", "", "comma-separated allowed Telegram user IDs; configuring Telegram requires at least one")
 	return f
 }
@@ -101,20 +95,11 @@ func (f *setupFlags) params() (setup.Params, error) {
 	if f.forgeHost != "" {
 		params.ForgeHost = f.forgeHost
 	}
-	if f.forgeToken != "" {
-		params.ForgeToken = f.forgeToken
-	}
 	if f.provider != "" {
 		params.Provider = f.provider
 	}
 	if f.model != "" {
 		params.Model = f.model
-	}
-	if f.providerAPIKey != "" {
-		params.ProviderAPIKey = f.providerAPIKey
-	}
-	if f.telegramToken != "" {
-		params.TelegramToken = f.telegramToken
 	}
 	if f.telegramUserIDs != "" {
 		ids, err := setup.ParseTelegramUserIDs(f.telegramUserIDs)

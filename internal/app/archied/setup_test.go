@@ -61,35 +61,34 @@ func TestRunSetup_DefaultsWritesLoadableConfig(t *testing.T) {
 	}
 }
 
-func TestRunSetup_DefaultsWithForgeTokenWritesEnv(t *testing.T) {
-	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "config.toml")
+// TestRunSetupRejectsSecretValueFlags pins that no secret value can be passed
+// on the command line. Secrets are set in a secret engine; this flow only ever
+// writes a reference to one. A flag that carried a value would be a second,
+// silent way to set a secret -- and would put it in shell history and in every
+// process listing, which is why install.sh prompts with read_secret instead.
+func TestRunSetupRejectsSecretValueFlags(t *testing.T) {
+	for _, flagName := range []string{"-forge-token", "-provider-api-key", "-telegram-token"} {
+		t.Run(flagName, func(t *testing.T) {
+			dir := t.TempDir()
+			cfgPath := filepath.Join(dir, "config.toml")
+			devNull, err := os.Open(os.DevNull)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = devNull.Close() }()
 
-	stdin, err := os.Open(os.DevNull)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer stdin.Close()
-
-	var stdout, stderr strings.Builder
-	code := RunSetup([]string{"--defaults", "-config", cfgPath, "-forge-token", "ghp-secret"}, stdin, &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("RunSetup exit = %d, stderr:\n%s", code, stderr.String())
-	}
-
-	doc, err := configuration.New(nil).File(cfgPath)
-	if err != nil {
-		t.Fatalf("generated config does not load: %v", err)
-	}
-	if doc.Config.Forge.Token.Key != "ARCHIE_GITHUB_TOKEN" {
-		t.Errorf("forge.token.key = %q, want ARCHIE_GITHUB_TOKEN", doc.Config.Forge.Token.Key)
-	}
-	b, err := os.ReadFile(filepath.Join(dir, "env"))
-	if err != nil {
-		t.Fatalf("env file not written: %v", err)
-	}
-	if got, want := string(b), "ARCHIE_GITHUB_TOKEN='ghp-secret'\n"; got != want {
-		t.Errorf("env file = %q, want %q", got, want)
+			var stdout, stderr strings.Builder
+			code := RunSetup([]string{"--defaults", "-config", cfgPath, flagName, "leaked-value"}, devNull, &stdout, &stderr)
+			if code != 2 {
+				t.Fatalf("RunSetup with %s = exit %d, want 2 (unknown flag); stderr: %s", flagName, code, stderr.String())
+			}
+			if _, err := os.Stat(cfgPath); !os.IsNotExist(err) {
+				t.Errorf("config written despite a rejected flag: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "env")); !os.IsNotExist(err) {
+				t.Errorf("env file written despite a rejected flag: %v", err)
+			}
+		})
 	}
 }
 

@@ -28,13 +28,10 @@ func stepChat(ctx context.Context, p Prompter, secrets SecretSink, params Params
 		return nil, nil
 	}
 
-	token := params.TelegramToken
-	if token == "" {
-		var err error
-		token, err = p.ReadSecret(ctx, "Telegram bot token (from @BotFather): ")
-		if err != nil {
-			return nil, fmt.Errorf("setup: telegram token: %w", err)
-		}
+	// Always prompted, never parameterised; see stepForgeWithToken.
+	token, err := p.ReadSecret(ctx, "Telegram bot token (from @BotFather): ")
+	if err != nil {
+		return nil, fmt.Errorf("setup: telegram token: %w", err)
 	}
 	if strings.TrimSpace(token) == "" {
 		return nil, nil

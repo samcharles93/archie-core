@@ -72,7 +72,7 @@ func stepProvider(ctx context.Context, p Prompter, discovery ModelDiscovery, sec
 	if choice == len(cloudProviders) {
 		edits, model, err = stepSelfHostedModel(ctx, p, discovery, params.Model)
 	} else {
-		edits, model, err = stepCloudProvider(ctx, p, secrets, cloudProviders[choice], params.ProviderAPIKey, params.Model)
+		edits, model, err = stepCloudProvider(ctx, p, secrets, cloudProviders[choice], params.Model)
 	}
 	if err != nil {
 		return nil, "", err
@@ -125,17 +125,15 @@ func stepSelfHostedModel(ctx context.Context, p Prompter, discovery ModelDiscove
 	return edits, "ollama/" + model, nil
 }
 
-func stepCloudProvider(ctx context.Context, p Prompter, secrets SecretSink, cp cloudProvider, keyParam, modelParam string) (tableEdits, string, error) {
+func stepCloudProvider(ctx context.Context, p Prompter, secrets SecretSink, cp cloudProvider, modelParam string) (tableEdits, string, error) {
 	// A key supplied as a parameter must not prompt. Without this the only
 	// provider an unattended install could configure was the keyless
 	// self-hosted one, so every cloud setup needed a terminal.
-	var err error
-	key := keyParam
-	if strings.TrimSpace(key) == "" {
-		key, err = p.ReadSecret(ctx, fmt.Sprintf("%s API key: ", cp.name))
-		if err != nil {
-			return nil, "", fmt.Errorf("setup: %s api key: %w", cp.name, err)
-		}
+	// Always prompted, never parameterised: a secret supplied as a value would
+	// come from a command line and bypass the secret engine entirely.
+	key, err := p.ReadSecret(ctx, fmt.Sprintf("%s API key: ", cp.name))
+	if err != nil {
+		return nil, "", fmt.Errorf("setup: %s api key: %w", cp.name, err)
 	}
 	table := "providers." + cp.class
 	edits := tableEdits{table: {"class": tomlwrite.String(cp.class)}}

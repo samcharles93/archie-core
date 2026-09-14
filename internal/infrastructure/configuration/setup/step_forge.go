@@ -40,7 +40,7 @@ func stepForge(ctx context.Context, p Prompter, secrets SecretSink, existingHost
 		if strings.TrimSpace(host) == "" {
 			host = "https://github.com"
 		}
-		return stepForgeWithToken(ctx, p, secrets, "github", host, "GitHub token (leave blank to configure later): ", params.ForgeToken)
+		return stepForgeWithToken(ctx, p, secrets, "github", host, "GitHub token (leave blank to configure later): ")
 	case 1:
 		defaultHost := existingHost
 		if defaultHost == "" {
@@ -54,7 +54,7 @@ func stepForge(ctx context.Context, p Prompter, secrets SecretSink, existingHost
 				return nil, fmt.Errorf("setup: gitea host: %w", err)
 			}
 		}
-		return stepForgeWithToken(ctx, p, secrets, "gitea", host, "Gitea token (leave blank to configure later): ", params.ForgeToken)
+		return stepForgeWithToken(ctx, p, secrets, "gitea", host, "Gitea token (leave blank to configure later): ")
 	default:
 		// The template's default [forge] block is active (type = "github"
 		// with a host and token already set). Selecting "none" must
@@ -86,18 +86,22 @@ func forgeChoice(name string) (int, error) {
 	}
 }
 
-func stepForgeWithToken(ctx context.Context, p Prompter, secrets SecretSink, forgeType, host, tokenPrompt, tokenParam string) (tableEdits, error) {
+// stepForgeWithToken records the forge type and host and, when the operator
+// supplies one, stores the token in the secret engine and writes only the
+// reference to TOML.
+//
+// The token is always read from the prompt surface. A secret must never travel
+// as a parameter: a value passed in would arrive from a command line, where it
+// lands in shell history and every process listing, and it would be a second
+// way for a secret to be set that no secret engine knows about.
+func stepForgeWithToken(ctx context.Context, p Prompter, secrets SecretSink, forgeType, host, tokenPrompt string) (tableEdits, error) {
 	edits := tableEdits{"forge": {
 		"type": tomlwrite.String(forgeType),
 		"host": tomlwrite.String(host),
 	}}
-	token := tokenParam
-	if token == "" {
-		var err error
-		token, err = p.ReadSecret(ctx, tokenPrompt)
-		if err != nil {
-			return nil, fmt.Errorf("setup: %s token: %w", forgeType, err)
-		}
+	token, err := p.ReadSecret(ctx, tokenPrompt)
+	if err != nil {
+		return nil, fmt.Errorf("setup: %s token: %w", forgeType, err)
 	}
 	if strings.TrimSpace(token) == "" {
 		return edits, nil

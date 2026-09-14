@@ -66,20 +66,23 @@ type tableEdits = map[string]map[string]string
 // an empty allowlist, so an empty slice means "ask" (or "skip" when the
 // prompter's default is no).
 type Params struct {
-	BotUser    string
-	Operator   string
-	ForgeType  string // github | gitea | none
-	ForgeHost  string
-	ForgeToken string
-	Provider   string // openai | anthropic | openrouter | gemini | groq | deepseek | mistral | ollama
-	Model      string // bare model name; the step adds the "class/" prefix
-	// ProviderAPIKey is a cloud provider key. It is written to the env file and
-	// referenced from TOML, never stored in the config itself. Supplying it is
-	// what makes a cloud provider configurable without a terminal: the keyless
-	// self-hosted provider was previously the only unattended option.
-	ProviderAPIKey  string
-	TelegramToken   string
-	TelegramUserIDs []int64 // non-empty means "configure Telegram"
+	BotUser   string
+	Operator  string
+	ForgeType string // github | gitea | none
+	ForgeHost string
+	Provider  string // openai | anthropic | openrouter | gemini | groq | deepseek | mistral | ollama
+	Model     string // bare model name; the step adds the "class/" prefix
+
+	// TelegramUserIDs is an access policy, not a credential: IDs are not secret.
+	// Non-empty means "configure Telegram".
+	TelegramUserIDs []int64
+
+	// There is deliberately no secret-valued field here, for forge tokens,
+	// provider API keys or bot tokens alike. Secrets are set in a secret engine
+	// and this flow only ever writes a reference to one; a value in Params would
+	// arrive from a command line, landing in shell history and process listings,
+	// and would be a second way to set a secret that no engine knows about.
+	// Values reach an engine through SecretSink, from a prompt.
 }
 
 // Run drives the interactive setup flow and returns the TOML edits to

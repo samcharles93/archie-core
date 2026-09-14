@@ -7,122 +7,111 @@ import (
 
 // rejectingPrompter fails the test if any question is asked, proving that a
 // fully-populated Params never touches the prompt surface.
-type rejectingPrompter struct {
-	t *testing.T
+// scriptedSecretPrompter answers only the secret reads. Any other prompt means
+// Params failed to supply a non-secret answer; an exhausted script means a
+// secret was read that the test did not expect.
+type scriptedSecretPrompter struct {
+	t       *testing.T
+	secrets []string
+	next    int
 }
 
-func (r rejectingPrompter) Select(context.Context, string, []string) (int, error) {
-	r.t.Fatal("unexpected Select call: Params should have supplied this answer")
+func (s *scriptedSecretPrompter) take(prompt string) string {
+	if s.next >= len(s.secrets) {
+		s.t.Fatalf("unexpected secret read %q: Params supplied every non-secret answer and no more were scripted", prompt)
+	}
+	v := s.secrets[s.next]
+	s.next++
+	return v
+}
+
+func (s *scriptedSecretPrompter) Select(context.Context, string, []string) (int, error) {
+	s.t.Fatal("unexpected Select: Params should have supplied this answer")
 	return 0, nil
 }
 
-func (r rejectingPrompter) ReadLine(context.Context, string, string) (string, error) {
-	r.t.Fatal("unexpected ReadLine call: Params should have supplied this answer")
+func (s *scriptedSecretPrompter) ReadLine(context.Context, string, string) (string, error) {
+	s.t.Fatal("unexpected ReadLine: Params should have supplied this answer")
 	return "", nil
 }
 
-func (r rejectingPrompter) ReadSecret(context.Context, string) (string, error) {
-	r.t.Fatal("unexpected ReadSecret call: Params should have supplied this answer")
-	return "", nil
+func (s *scriptedSecretPrompter) ReadSecret(_ context.Context, prompt string) (string, error) {
+	return s.take(prompt), nil
 }
 
-func (r rejectingPrompter) Confirm(context.Context, string, bool) (bool, error) {
-	r.t.Fatal("unexpected Confirm call: Params should have supplied this answer")
+func (s *scriptedSecretPrompter) Confirm(context.Context, string, bool) (bool, error) {
+	s.t.Fatal("unexpected Confirm: Params should have supplied this answer")
 	return false, nil
 }
 
-func TestRunParams_ProviderAPIKeyNeverPrompts(t *testing.T) {
-	params := Params{
-		BotUser:        "archie-bot",
-		Operator:       "Ada", // Run asks for the operator unconditionally; see the note below
-		ForgeType:      "none",
-		Provider:       "openai",
-		Model:          "gpt-5.4",
-		ProviderAPIKey: "sk-parameterised",
-		// Telegram enablement is a yes/no question with no parameter to
-		// pre-answer it, so a genuinely prompt-free run supplies the channel
-		// outright. Everything else here is supplied, which is the point: the
-		// provider key must come from Params rather than ReadSecret.
-		TelegramToken:   "tg-token",
-		TelegramUserIDs: []int64{111},
-	}
-	secrets := newFakeSecrets()
-	// rejectingPrompter fails the test on any prompt. Before ProviderAPIKey
-	// existed this run had to ask for the key, which is why an unattended
-	// install could only ever choose the keyless self-hosted provider.
-	edits, err := RunParams(context.Background(), rejectingPrompter{t: t}, nil, secrets, ExistingValues{}, params)
-	if err != nil {
-		t.Fatalf("RunParams: %v", err)
-	}
-	if err := secrets.Commit(); err != nil {
-		t.Fatalf("Commit: %v", err)
-	}
-	if got := secrets.committed["env:OPENAI_API_KEY"]; got != "sk-parameterised" {
-		t.Errorf("committed env:OPENAI_API_KEY = %q, want sk-parameterised", got)
-	}
-
-	cfg := generateAndLoad(t, edits)
-	if got := cfg.Providers["openai"].Class; got != "openai" {
-		t.Errorf("providers.openai.class = %q, want openai", got)
-	}
-	if cfg.Providers["openai"].APIKey.Engine != "env" {
-		t.Errorf("providers.openai.api_key engine = %q, want env: the key belongs in the env file, not the config", cfg.Providers["openai"].APIKey.Engine)
-	}
-	if got := cfg.Models["builder"]; got != "openai/gpt-5.4" {
-		t.Errorf("models.builder = %q, want openai/gpt-5.4", got)
-	}
-}
-
-func TestRunParams_FullParamsNeverPrompt(t *testing.T) {
+// TestRunParams_SecretsComeOnlyFromThePrompter pins the rule that a secret is
+// never a parameter. Params supplies every non-secret answer, so the only
+// prompts reached are the secret reads, and the values they return are the only
+// values that reach the secret sink. TOML gets a reference, never the value.
+func TestRunParams_SecretsComeOnlyFromThePrompter(t *testing.T) {
 	params := Params{
 		BotUser:         "archie-bot",
 		Operator:        "Ada",
 		ForgeType:       "github",
 		ForgeHost:       "https://github.acme.internal",
-		ForgeToken:      "ghp-token",
-		Provider:        "ollama",
+		Provider:        "ollama", // keyless, so no provider secret is read
 		Model:           "llama3",
-		TelegramToken:   "tg-token",
 		TelegramUserIDs: []int64{111, 222},
 	}
+	p := &scriptedSecretPrompter{t: t, secrets: []string{"ghp-token", "tg-token"}}
 	secrets := newFakeSecrets()
-	edits, err := RunParams(context.Background(), rejectingPrompter{t: t}, nil, secrets, ExistingValues{}, params)
+	edits, err := RunParams(context.Background(), p, nil, secrets, ExistingValues{}, params)
 	if err != nil {
 		t.Fatalf("RunParams: %v", err)
 	}
 	if err := secrets.Commit(); err != nil {
 		t.Fatalf("Commit: %v", err)
+	}
+	if p.next != len(p.secrets) {
+		t.Errorf("read %d secrets, want %d: every secret must come from a prompt", p.next, len(p.secrets))
+	}
+	if got := secrets.committed["env:ARCHIE_GITHUB_TOKEN"]; got != "ghp-token" {
+		t.Errorf("committed env:ARCHIE_GITHUB_TOKEN = %q, want ghp-token", got)
+	}
+	if got := secrets.committed["env:ARCHIE_TELEGRAM_TOKEN"]; got != "tg-token" {
+		t.Errorf("committed env:ARCHIE_TELEGRAM_TOKEN = %q, want tg-token", got)
 	}
 
 	cfg := generateAndLoad(t, edits)
 	if cfg.BotUser != "archie-bot" {
 		t.Errorf("bot_user = %q, want archie-bot", cfg.BotUser)
 	}
-	if cfg.Chat.Operator != "Ada" {
-		t.Errorf("chat.operator = %q, want Ada", cfg.Chat.Operator)
+	if cfg.Forge.Token.Engine != "env" || cfg.Forge.Token.Key != "ARCHIE_GITHUB_TOKEN" {
+		t.Errorf("forge.token = %+v, want a reference to env/ARCHIE_GITHUB_TOKEN", cfg.Forge.Token)
 	}
-	if cfg.Forge.Type != "github" {
-		t.Errorf("forge.type = %q, want github", cfg.Forge.Type)
+}
+
+// TestRunParams_NonSecretParamsNeverPrompt is the non-secret half: every
+// answer Params can carry is supplied, so nothing is asked for except the
+// secrets, which Params deliberately cannot supply.
+func TestRunParams_NonSecretParamsNeverPrompt(t *testing.T) {
+	params := Params{
+		BotUser:         "archie-bot",
+		Operator:        "Ada",
+		ForgeType:       "none",
+		Provider:        "ollama",
+		Model:           "llama3",
+		TelegramUserIDs: []int64{111, 222},
 	}
-	if cfg.Forge.Host != "https://github.acme.internal" {
-		t.Errorf("forge.host = %q, want https://github.acme.internal", cfg.Forge.Host)
+	// Ollama is keyless and forge "none" stores no token, so this run asks for
+	// exactly one secret: the Telegram bot token.
+	p := &scriptedSecretPrompter{t: t, secrets: []string{"tg-token"}}
+	secrets := newFakeSecrets()
+	edits, err := RunParams(context.Background(), p, nil, secrets, ExistingValues{}, params)
+	if err != nil {
+		t.Fatalf("RunParams: %v", err)
 	}
-	if cfg.Forge.Token.Key != "ARCHIE_GITHUB_TOKEN" {
-		t.Errorf("forge.token.key = %q, want ARCHIE_GITHUB_TOKEN", cfg.Forge.Token.Key)
+	cfg := generateAndLoad(t, edits)
+	if cfg.BotUser != "archie-bot" {
+		t.Errorf("bot_user = %q, want archie-bot", cfg.BotUser)
 	}
-	for _, role := range []string{"triage", "planner", "builder"} {
-		if cfg.Models[role] != "ollama/llama3" {
-			t.Errorf("models[%s] = %q, want ollama/llama3", role, cfg.Models[role])
-		}
-	}
-	if got := secrets.committed["env:ARCHIE_GITHUB_TOKEN"]; got != "ghp-token" {
-		t.Errorf("committed github token = %q, want ghp-token", got)
-	}
-	if got := secrets.committed["env:ARCHIE_TELEGRAM_TOKEN"]; got != "tg-token" {
-		t.Errorf("committed telegram token = %q, want tg-token", got)
-	}
-	if len(cfg.Chat.Telegram.AllowedUserIDs) != 2 || cfg.Chat.Telegram.AllowedUserIDs[0] != 111 || cfg.Chat.Telegram.AllowedUserIDs[1] != 222 {
-		t.Errorf("chat.telegram.allowed_user_ids = %v, want [111 222]", cfg.Chat.Telegram.AllowedUserIDs)
+	if cfg.Forge.Type != "none" {
+		t.Errorf("forge.type = %q, want none", cfg.Forge.Type)
 	}
 }
 
