@@ -25,9 +25,14 @@
 // including additive ones, since DisallowUnknownFields rejects them):
 //
 //	{
-//	  "schema_version": 1,
+//	  "schema_version": 2,
 //	  "jobs": [ JobSpec, ... ]
 //	}
+//
+// Version 2 added JobSpec.Kind, the delivery discriminator. A version-1
+// file still loads — Kind reads back empty, which the delivery router
+// resolves to the chat default — so jobs created before the field existed
+// keep firing the way they always did.
 //
 // JobSpec carries the engine-facing fields it always needed (ID, Pool,
 // Detail) plus everything the store computes for it (NextRun, LastRun,

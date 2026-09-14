@@ -13,6 +13,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -104,8 +105,13 @@ func TestPersistedFileHasVersionStamp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	if !strings.Contains(string(data), `"schema_version":1`) {
-		t.Errorf("file does not contain schema_version:1 stamp: %s", data)
+	// Asserted against the constant, not a literal: the stamp must track
+	// schemaVersion through every bump (Kind was the first), and a
+	// hardcoded value here would fail on the bump as a false alarm
+	// instead of guarding the property it names.
+	want := `"schema_version":` + strconv.Itoa(schemaVersion)
+	if !strings.Contains(string(data), want) {
+		t.Errorf("file does not contain %s stamp: %s", want, data)
 	}
 }
 
