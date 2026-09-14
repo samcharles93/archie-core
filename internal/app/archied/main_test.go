@@ -1240,13 +1240,70 @@ func TestSubscribeAgentEventsDropsUnparseableMessages(t *testing.T) {
 	}
 }
 
+// TestSubscribeAgentEventsFlushesBeforeReturning exercises the behaviour
+// the flush exists for: a task-events subscription registered on one
+// connection must already be live server-side by the time
+// subscribeAgentEvents returns, so a message published on a different
+// connection immediately afterward -- no artificial delay -- is not lost
+// to the SUB/PUB ordering race Flush closes. It repeats the
+// subscribe/publish/receive cycle so a single lucky run cannot mask a
+// regression: with the flush removed this is flaky (loses events on some
+// iterations); with it, every iteration lands.
 func TestSubscribeAgentEventsFlushesBeforeReturning(t *testing.T) {
-	source, err := os.ReadFile("main.go")
+	srv := startEmbeddedNATS(t)
+	url := srv.ClientURL()
+	log := slog.New(slog.DiscardHandler)
+
+	// Both connections are established once, up front, and reused for
+	// every iteration -- amortising connection-handshake latency (which
+	// would otherwise give the server ample real wall-clock time to
+	// process the SUB frame regardless of the flush) tightens the race
+	// window down to what subscribeAgentEvents itself controls.
+	subConn, err := natsio.Connect(url)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("nats connect (sub): %v", err)
 	}
-	if !strings.Contains(string(source), "flush task event subscription") {
-		t.Fatal("subscribeAgentEvents does not flush its NATS subscription before returning")
+	t.Cleanup(subConn.Close)
+
+	pubConn, err := natsio.Connect(url)
+	if err != nil {
+		t.Fatalf("nats connect (pub): %v", err)
+	}
+	t.Cleanup(pubConn.Close)
+
+	const iterations = 200
+	for i := range iterations {
+		bus := events.NewBus()
+		sub := bus.Subscribe(1)
+
+		unsubscribe, err := subscribeAgentEvents(subConn, bus, log)
+		if err != nil {
+			t.Fatalf("iteration %d: subscribeAgentEvents: %v", i, err)
+		}
+
+		taskID := int64(1000 + i)
+		payload, err := json.Marshal(events.Event{TaskID: taskID, Kind: "stage_started"})
+		if err != nil {
+			t.Fatalf("marshal event: %v", err)
+		}
+		// No sleep here on purpose: the whole point of the flush inside
+		// subscribeAgentEvents is that this publish, issued the instant
+		// it returns, must still be seen.
+		if err := pubConn.Publish(agentexec.SubjectForEvents(taskID), payload); err != nil {
+			t.Fatalf("iteration %d: publish: %v", i, err)
+		}
+
+		select {
+		case got := <-sub.C:
+			if got.TaskID != taskID {
+				t.Fatalf("iteration %d: got event for task %d, want %d", i, got.TaskID, taskID)
+			}
+		case <-time.After(500 * time.Millisecond):
+			t.Fatalf("iteration %d: event never reached the bus -- subscribeAgentEvents returned before the subscription was live", i)
+		}
+
+		unsubscribe()
+		sub.Close()
 	}
 }
 
