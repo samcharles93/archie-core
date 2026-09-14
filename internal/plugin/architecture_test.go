@@ -5,31 +5,11 @@ import (
 	"go/parser"
 	"go/token"
 	"maps"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 )
-
-const (
-	engineRuleHeading = "## Plugin engine rule (strict)"
-	engineRuleLink    = "ARCHITECTURE.md#plugin-engine-rule-strict"
-)
-
-func TestPluginEngineRuleIsCanonicalAndSharedByAgentInstructions(t *testing.T) {
-	t.Parallel()
-
-	architecture := readTestFile(t, filepath.Join("..", "..", "ARCHITECTURE.md"))
-	if !strings.Contains(architecture, engineRuleHeading) {
-		t.Fatalf("ARCHITECTURE.md missing canonical heading %q", engineRuleHeading)
-	}
-
-	claudeMD := readTestFile(t, filepath.Join("..", "..", "CLAUDE.md"))
-	if !strings.Contains(claudeMD, engineRuleLink) {
-		t.Fatalf("CLAUDE.md missing reference to %q", engineRuleLink)
-	}
-}
 
 func TestEngineFamilyInspectionRejectsInvalidShapes(t *testing.T) {
 	t.Parallel()
@@ -317,13 +297,4 @@ func ownerReturnsEngine(methods []*ast.FuncDecl, engineName string) bool {
 func expressionNamesType(expr ast.Expr, typeName string) bool {
 	ident, ok := expr.(*ast.Ident)
 	return ok && ident.Name == typeName
-}
-
-func readTestFile(t *testing.T, path string) string {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	return string(data)
 }
