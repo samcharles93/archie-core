@@ -662,6 +662,8 @@ func (c Config) Clone() Config {
 	c.Bindings.PreviousEncryptionKeys = append([]SecretRef(nil), c.Bindings.PreviousEncryptionKeys...)
 	c.Tools.MCPServers = cloneMCPServers(c.Tools.MCPServers)
 	c.Memory.ProviderConfig = maps.Clone(c.Memory.ProviderConfig)
+	c.Image.Hosted = maps.Clone(c.Image.Hosted)
+	c.Image.Local = maps.Clone(c.Image.Local)
 	if c.Tools.WebFetch.Enabled != nil {
 		v := *c.Tools.WebFetch.Enabled
 		c.Tools.WebFetch.Enabled = &v

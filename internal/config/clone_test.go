@@ -28,6 +28,10 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 		LegacyAgent: LegacyAgent{Env: []string{"HOME"}},
 		Extra:       map[string]any{"custom": 1},
 		Bindings:    BindingsConfig{PreviousEncryptionKeys: []SecretRef{{Engine: "env", Key: "K0"}}},
+		Image: ImageConfig{
+			Hosted: map[string]ImageHostedProvider{"openai": {Enabled: true}},
+			Local:  map[string]ImageLocalProvider{"sdxl": {Enabled: true}},
+		},
 	}
 
 	got := orig.Clone()
@@ -46,6 +50,8 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 	got.Extra["custom"] = 2
 	got.Bindings.PreviousEncryptionKeys[0] = SecretRef{Engine: "env", Key: "changed"}
 	*got.Tools.WebFetch.Enabled = false
+	got.Image.Hosted["openai"] = ImageHostedProvider{Enabled: false}
+	got.Image.Local["sdxl"] = ImageLocalProvider{Enabled: false}
 
 	if orig.Models["builder"] != "m" {
 		t.Error("Models map is shared")
@@ -82,5 +88,11 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 	}
 	if !*orig.Tools.WebFetch.Enabled {
 		t.Error("WebFetch.Enabled pointer is shared")
+	}
+	if !orig.Image.Hosted["openai"].Enabled {
+		t.Error("Image.Hosted map is shared")
+	}
+	if !orig.Image.Local["sdxl"].Enabled {
+		t.Error("Image.Local map is shared")
 	}
 }
