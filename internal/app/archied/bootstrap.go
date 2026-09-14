@@ -384,6 +384,35 @@ func (b *boot) loadCatalog(ctx context.Context, cfgPath string) {
 	b.log.Info("model catalog loaded", "providers", len(catalog.Providers), "models", len(b.catalogModels))
 }
 
+// channelDescriptors projects the configured chat front-ends into the
+// dashboard's channel-status descriptors.
+//
+// Configured comes from config.ChatConfig.FrontEnds so this list and the
+// configuration projection published for the extracted UI process cannot
+// disagree about whether a front-end is set up (GitHub #821). ReloadSupported
+// and Detail stay here because they are channel-lifecycle facts about the bot
+// the daemon runs, not configuration: only Telegram can be reloaded in place
+// today, and its allowlist caveat is about who the running bot answers.
+func channelDescriptors(chat config.ChatConfig) []status.Descriptor {
+	frontEnds := chat.FrontEnds()
+	descriptors := make([]status.Descriptor, 0, len(frontEnds))
+	for _, frontEnd := range frontEnds {
+		descriptor := status.Descriptor{
+			ID:         frontEnd.ID,
+			Name:       frontEnd.Name,
+			Configured: frontEnd.Configured,
+		}
+		if frontEnd.ID == "telegram" {
+			descriptor.ReloadSupported = frontEnd.Configured
+			if frontEnd.Configured && len(chat.Telegram.AllowedUserIDs) == 0 {
+				descriptor.Detail = "Token set, but the allowlist is empty -- the bot answers nobody."
+			}
+		}
+		descriptors = append(descriptors, descriptor)
+	}
+	return descriptors
+}
+
 // setupObservability builds the event bus, channel manager and dashboard
 // server. Every event is logged to SQLite (stamped with its row id) and
 // then fanned out to live dashboard connections.
@@ -392,15 +421,7 @@ func (b *boot) setupObservability(ctx context.Context) {
 	bus := events.NewBus()
 	b.bus = bus
 	b.addCleanup(func() { bus.Close() })
-	telegramDetail := ""
-	if (cfg.Chat.Telegram.Token != (secret.SecretRef{}) || cfg.Chat.Telegram.TokenEnv != "") && len(cfg.Chat.Telegram.AllowedUserIDs) == 0 {
-		telegramDetail = "Token set, but the allowlist is empty -- the bot answers nobody."
-	}
-	b.channelManager = status.NewManager([]status.Descriptor{
-		{ID: "telegram", Name: "Telegram", Configured: cfg.Chat.Telegram.Token != (secret.SecretRef{}) || cfg.Chat.Telegram.TokenEnv != "", ReloadSupported: cfg.Chat.Telegram.Token != (secret.SecretRef{}) || cfg.Chat.Telegram.TokenEnv != "", Detail: telegramDetail},
-		{ID: "email", Name: "Email", Configured: cfg.Chat.Email.ListenAddr != ""},
-		{ID: "webhook", Name: "Webhook gateway", Configured: cfg.Chat.WebhookAddr != ""},
-	})
+	b.channelManager = status.NewManager(channelDescriptors(cfg.Chat))
 	b.cfgHolder = config.NewHolder(cfg)
 	b.web = &webui.Server{Log: log.With("component", "webui"), Channels: b.channelManager, Skills: skillCatalogAdapter{b.cfgHolder}}
 	// The watchdog leaves its verdict in a file on this host, so the daemon
