@@ -80,18 +80,79 @@ type forgeCoordinates struct {
 // resolveForge reads the forge layout once for a request and returns each
 // task's coordinates from it.
 //
-// The projection carries the default identity alone, so where that is not
-// the whole picture the links are withheld rather than pointed at the wrong
-// forge. Publishing per-identity forges is what a multi-identity dashboard
-// needs, and it is a projection change, not a rendering one.
+// The projection publishes per-identity forges (ConfigView.Identities), so a
+// multi-identity deployment links each task to the forge that owns it. The
+// matching rules are the ones recovered from the pre-cutover resolver
+// (forgeConfigForTask, 57d9be5): an exact identity name first, then repository
+// ownership, and an ambiguous repository -- two identities claiming the same
+// owner/name -- falling back to the default forge rather than pointing at
+// either. Without this, every row in such a deployment renders unlinked.
 func (s *Server) resolveForge(ctx context.Context) func(task.Task) forgeCoordinates {
 	unlinked := func(task.Task) forgeCoordinates { return forgeCoordinates{} }
 	view, ok, err := s.configSource()(ctx)
-	if err != nil || !ok || view.MultiIdentity {
+	if err != nil || !ok {
 		return unlinked
 	}
-	published := forgeCoordinates{host: view.Identity.ForgeHost, forgeType: view.Identity.ForgeType}
-	return func(task.Task) forgeCoordinates { return published }
+	if len(view.Identities) == 0 {
+		// Nothing per-identity was published. A single-identity deployment's
+		// one forge is the whole answer. A document that reports identities
+		// but carries none is one an older daemon published, and there is
+		// nothing to attribute a task to -- so the links are withheld rather
+		// than pointed at the wrong forge.
+		if view.MultiIdentity {
+			return unlinked
+		}
+		published := forgeCoordinates{host: view.Identity.ForgeHost, forgeType: view.Identity.ForgeType}
+		return func(task.Task) forgeCoordinates { return published }
+	}
+	return forgeLocator(view)
+}
+
+// ownedRepo identifies a repository within an identity's repo list.
+type ownedRepo struct{ owner, name string }
+
+// forgeLocator indexes a published projection's per-identity forges once per
+// request and resolves each task against them: exact identity name, then repo
+// ownership, with an ambiguous repo falling back to the default forge.
+func forgeLocator(view ConfigView) func(task.Task) forgeCoordinates {
+	fallback := forgeCoordinates{host: view.Identity.ForgeHost, forgeType: view.Identity.ForgeType}
+	byName := make(map[string]forgeCoordinates, len(view.Identities))
+	byRepo := make(map[ownedRepo]forgeCoordinates)
+	// ambiguous records a repo two identities both claim, which ownership
+	// cannot decide -- it is answered by the default forge instead.
+	ambiguous := make(map[ownedRepo]bool)
+	for _, identity := range view.Identities {
+		coords := forgeCoordinates{host: identity.ForgeHost, forgeType: identity.ForgeType}
+		// First definition of a name wins, as the recovered resolver's
+		// forward scan did (and as daemon.identityFor still does), so the two
+		// agree even if a config ever names one identity twice.
+		if _, seen := byName[identity.Name]; !seen {
+			byName[identity.Name] = coords
+		}
+		for _, repo := range identity.Repos {
+			key := ownedRepo{owner: repo.Owner, name: repo.Name}
+			if _, seen := byRepo[key]; seen {
+				ambiguous[key] = true
+				continue
+			}
+			byRepo[key] = coords
+		}
+	}
+	return func(t task.Task) forgeCoordinates {
+		if t.Identity != "" {
+			if coords, ok := byName[t.Identity]; ok {
+				return coords
+			}
+		}
+		key := ownedRepo{owner: t.Owner, name: t.Repo}
+		if ambiguous[key] {
+			return fallback
+		}
+		if coords, ok := byRepo[key]; ok {
+			return coords
+		}
+		return fallback
+	}
 }
 
 func taskURLs(task task.Task, forge forgeCoordinates) (repoURL, issueURL, prURL string) {

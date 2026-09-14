@@ -93,6 +93,79 @@ func localConfig(srv *Server, cfg *config.Holder) {
 	localView(srv, ConfigViewInput{Config: cfg.Get()})
 }
 
+// TestBuildConfigViewPublishesPerIdentityForges: in a multi-identity
+// deployment Identity and Repositories describe the default identity alone,
+// which is not enough to attribute a task to the forge that owns it. The
+// projection publishes each identity's forge coordinates and its repository
+// list so a process rendering task rows can resolve per task
+// (archie-core-pv6t) -- and, like every other field here, without a token.
+func TestBuildConfigViewPublishesPerIdentityForges(t *testing.T) {
+	cfg := config.Config{
+		Forge: config.Forge{Type: "github", Host: "https://github.example"},
+		Repos: []config.Repo{{Owner: "acme", Name: "widget"}},
+		Identities: []config.IdentityConfig{
+			{
+				Name:  "gitea-bot",
+				Forge: config.Forge{Type: "gitea", Host: "https://gitea.example", Token: secret.SecretRef{Engine: "env", Key: fakeForgeToken}},
+				Repos: []config.Repo{{Owner: "acme", Name: "gadget"}, {Owner: "beta", Name: "svc"}},
+			},
+			{
+				Name:  "github-bot",
+				Forge: config.Forge{Type: "github", Host: "https://github.example", TokenEnv: fakeForgeToken},
+				Repos: []config.Repo{{Owner: "beta", Name: "app"}},
+			},
+		},
+	}
+
+	view := BuildConfigView(ConfigViewInput{Config: cfg})
+
+	if !view.MultiIdentity {
+		t.Error("MultiIdentity = false with two configured identities; a reader would attribute every task to the default forge")
+	}
+	if len(view.Identities) != 2 {
+		t.Fatalf("Identities = %+v, want both configured identities", view.Identities)
+	}
+	gitea := view.Identities[0]
+	if gitea.Name != "gitea-bot" || gitea.ForgeType != "gitea" || gitea.ForgeHost != "https://gitea.example" {
+		t.Errorf("Identities[0] = %+v, want the gitea-bot forge coordinates", gitea)
+	}
+	if len(gitea.Repos) != 2 || gitea.Repos[0].Owner != "acme" || gitea.Repos[0].Name != "gadget" || gitea.Repos[1].Name != "svc" {
+		t.Errorf("Identities[0].Repos = %+v, want the repositories it owns (owner and name are what attributing a task needs)", gitea.Repos)
+	}
+	if view.Identities[1].Name != "github-bot" || view.Identities[1].ForgeHost != "https://github.example" {
+		t.Errorf("Identities[1] = %+v, want the github-bot forge coordinates", view.Identities[1])
+	}
+
+	// The projection is the browser's copy, so the per-identity forges are a
+	// new surface for a token to escape through.
+	body, err := json.Marshal(view)
+	if err != nil {
+		t.Fatalf("marshal view: %v", err)
+	}
+	for _, leak := range leakCandidates() {
+		if strings.Contains(string(body), leak) {
+			t.Errorf("published projection leaked %q; per-identity forges must publish coordinates only, never credentials", leak)
+		}
+	}
+}
+
+// TestConfigViewWithoutIdentitiesCarriesNone: a single-identity deployment
+// publishes no identity list, and the default identity's forge in Identity
+// stays the whole answer. This is the shape every deployment produces today.
+func TestConfigViewWithoutIdentitiesCarriesNone(t *testing.T) {
+	view := BuildConfigView(ConfigViewInput{Config: configWithFakeSecrets().Get()})
+
+	if view.MultiIdentity {
+		t.Error("MultiIdentity = true without [[identities]]; the projection would claim a per-identity layout it does not have")
+	}
+	if len(view.Identities) != 0 {
+		t.Errorf("Identities = %+v, want none for a single-identity deployment", view.Identities)
+	}
+	if view.Identity.ForgeHost != "gitea.example.com" {
+		t.Errorf("Identity.ForgeHost = %q, want the deployment's own forge", view.Identity.ForgeHost)
+	}
+}
+
 func TestHandleConfigNeverLeaksSecrets(t *testing.T) {
 	cases := []struct {
 		name string

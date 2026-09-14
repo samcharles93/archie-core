@@ -155,11 +155,18 @@ type ConfigView struct {
 	// is shadowed until reset) and offer a per-row reset.
 	Overridden []string `json:"overridden,omitempty"`
 	// MultiIdentity reports that the deployment configures [[identities]],
-	// which this projection does not carry: Identity and Repositories
-	// describe the default identity alone. A consumer that would otherwise
-	// attribute every task to the published forge uses this to withhold
-	// rather than guess.
+	// so Identity and Repositories describe the default identity alone.
+	// Identities below carries the rest; a consumer attributing a task to
+	// its forge reads that, and a document that sets this flag without
+	// carrying them (one published by an older daemon) must withhold the
+	// links rather than guess.
 	MultiIdentity bool `json:"multi_identity,omitempty"`
+	// Identities publishes each configured identity's forge and the
+	// repositories it owns, which is everything a process rendering task
+	// rows needs to answer "which forge owns this task" -- see
+	// Server.resolveForge (api_tasks.go). Empty for a single-identity
+	// deployment, whose forge is Identity above.
+	Identities []ForgeIdentityView `json:"identities,omitempty"`
 	// Editable reports whether this process can apply configuration
 	// changes. False makes the page render values without edit controls,
 	// which is what a process that only displays a published snapshot can
@@ -184,6 +191,26 @@ type IdentityView struct {
 	ForgeType    string `json:"forge_type"`
 	ForgeHost    string `json:"forge_host"`
 	DiffCapLines int    `json:"diff_cap_lines"`
+}
+
+// ForgeRepoView names one repository an identity owns. Owner and name are
+// all a reader needs to attribute a task to the identity that polls it, so
+// that is all this carries.
+type ForgeRepoView struct {
+	Owner string `json:"owner"`
+	Name  string `json:"name"`
+}
+
+// ForgeIdentityView is one configured identity's forge coordinates plus the
+// repositories it owns. It is deliberately narrower than IdentityView and
+// RepoView: the task board needs to locate a repository, not to render the
+// configuration page, and an identity's token -- or any of its other
+// settings -- must not travel to the browser for either purpose.
+type ForgeIdentityView struct {
+	Name      string          `json:"name"`
+	ForgeType string          `json:"forge_type"`
+	ForgeHost string          `json:"forge_host"`
+	Repos     []ForgeRepoView `json:"repos,omitempty"`
 }
 
 // RepoView is one managed repository and the quality gate it must pass.
@@ -351,6 +378,7 @@ func BuildConfigView(in ConfigViewInput) ConfigView {
 		},
 		Repositories:  reposView(cfg.Repos),
 		MultiIdentity: len(cfg.Identities) > 0,
+		Identities:    identityForgesView(cfg.Identities),
 		Models:        cfg.Models,
 		Providers:     providersView(cfg.Providers),
 		Budgets: BudgetsView{
@@ -511,6 +539,30 @@ func reposView(repos []config.Repo) []RepoView {
 			AllowConcurrent:   r.AllowConcurrent,
 			MaxRetries:        r.MaxRetries,
 			ReviewEnabled:     r.ReviewEnabled,
+		})
+	}
+	return out
+}
+
+// identityForgesView renders each configured identity's forge coordinates and
+// the repositories it owns. This is the half of a multi-identity deployment's
+// configuration the task board needs: a process that holds no configuration
+// answers "which forge owns this task" from here (api_tasks.go's
+// resolveForge). Only the coordinates and the repository names cross -- an
+// identity's token is a secret reference and must not, and nothing else on
+// IdentityConfig is needed to locate a repository.
+func identityForgesView(identities []config.IdentityConfig) []ForgeIdentityView {
+	out := make([]ForgeIdentityView, 0, len(identities))
+	for _, id := range identities {
+		repos := make([]ForgeRepoView, 0, len(id.Repos))
+		for _, r := range id.Repos {
+			repos = append(repos, ForgeRepoView{Owner: r.Owner, Name: r.Name})
+		}
+		out = append(out, ForgeIdentityView{
+			Name:      id.Name,
+			ForgeType: id.Forge.Type,
+			ForgeHost: id.Forge.Host,
+			Repos:     repos,
 		})
 	}
 	return out
