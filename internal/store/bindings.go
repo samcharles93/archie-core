@@ -306,9 +306,20 @@ func (s *Store) ArmedBindingsForSource(ctx context.Context, source string) ([]bi
 
 // encryptBindingSecret seals a plaintext secret for persistence. With no
 // cipher configured it returns the value unchanged (legacy plaintext).
+//
+// An empty secret is the store's sentinel for "no secret" and is returned
+// unchanged even when a cipher is installed. Sealing it would yield a
+// non-empty envelope, and callers rely on emptiness surviving to the SQL
+// layer: UpdateBinding preserves an existing secret through
+// COALESCE(NULLIF(?, ”), secret), which cannot fire once encryption has
+// turned an empty caller secret into a non-empty value. A partial edit would
+// then overwrite the binding's HMAC secret with an encrypted empty string.
 func (s *Store) encryptBindingSecret(plaintext string) (string, error) {
 	if s.bindingsCipher == nil {
 		return plaintext, nil
+	}
+	if plaintext == "" {
+		return "", nil
 	}
 	return s.bindingsCipher.Encrypt(plaintext)
 }

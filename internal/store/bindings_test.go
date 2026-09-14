@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
@@ -274,6 +275,67 @@ func TestUpdateBindingPreservesSecretWhenEmpty(t *testing.T) {
 	}
 	if got.Secret != b.Secret {
 		t.Fatalf("secret = %q, want preserved %q", got.Secret, b.Secret)
+	}
+}
+
+// TestUpdateBindingSecretWithCipher covers the same empty-secret-means-preserve
+// contract as TestUpdateBindingPreservesSecretWhenEmpty, but with an at-rest
+// cipher installed -- the configuration every deployment with
+// [bindings].encryption_key actually runs.
+//
+// The sibling test opens the store without a cipher, where
+// COALESCE(NULLIF(?, ”), secret) sees a literal empty string and holds. With a
+// cipher the secret is encrypted BEFORE that guard runs, so an empty caller
+// secret was sealed into a non-empty envelope, NULLIF stopped firing, and a
+// name-only edit overwrote the binding's HMAC secret with an encrypted empty
+// value -- after which the binding can never authenticate an inbound webhook.
+//
+// The second case is the other half of the contract: a genuinely supplied
+// secret must still replace the stored one, so the fix cannot degrade into
+// "updates never change the secret".
+func TestUpdateBindingSecretWithCipher(t *testing.T) {
+	t.Parallel()
+
+	const original = "0123456789abcdef0123456789abcdef"
+	replacement := strings.Repeat("f", len(original))
+
+	cases := []struct {
+		name      string
+		newSecret string
+		want      string
+	}{
+		{"empty caller secret preserves the stored secret", "", original},
+		{"a supplied secret replaces the stored secret", replacement, replacement},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			s := openTestWithBindingCipher(t)
+			b := testBinding("sentry")
+			b.Secret = original
+			id, err := s.InsertBinding(t.Context(), b)
+			if err != nil {
+				t.Fatalf("InsertBinding: %v", err)
+			}
+
+			updated := testBinding("sentry")
+			updated.ID = id
+			updated.Name = "renamed binding" // an ordinary edit that does not touch the secret
+			updated.Secret = tc.newSecret
+			if err := s.UpdateBinding(t.Context(), updated); err != nil {
+				t.Fatalf("UpdateBinding: %v", err)
+			}
+
+			got, err := s.GetBinding(t.Context(), id)
+			if err != nil || got == nil {
+				t.Fatalf("GetBinding after update: %+v, %v", got, err)
+			}
+			if got.Secret != tc.want {
+				t.Fatalf("secret = %q, want %q", got.Secret, tc.want)
+			}
+		})
 	}
 }
 
