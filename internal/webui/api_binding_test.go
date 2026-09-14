@@ -414,3 +414,37 @@ func TestHandleBindingsUnavailableWhenNotConfigured(t *testing.T) {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
 	}
 }
+
+// TestHandleBindingMutationsRequireCSRFHeader pins the same browser
+// mutation contract handleTaskAction enforces (docs/prds/dynamic-curators.md:
+// "All mutations behind authorizeTaskMutation, same as bindings and
+// mappings") onto every binding write handler. A request with no
+// X-Archie-CSRF header must be refused, not silently mutate the store.
+func TestHandleBindingMutationsRequireCSRFHeader(t *testing.T) {
+	srv := bindingTestServer(t)
+	mappingID := seedMapping(t, srv, "m")
+	w := doJSON(t, srv, http.MethodPost, "/api/bindings", validBindingRequest("a", "sentry", mappingID))
+	var created binding.Binding
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal created binding: %v; body = %s", err, w.Body.String())
+	}
+	id := strconv.FormatInt(created.ID, 10)
+
+	tests := []struct {
+		name, method, path string
+		body               any
+	}{
+		{"create", http.MethodPost, "/api/bindings", validBindingRequest("b", "other", mappingID)},
+		{"update", http.MethodPatch, "/api/bindings/" + id, validBindingRequest("a", "sentry", mappingID)},
+		{"approve", http.MethodPost, "/api/bindings/" + id + "/approve", nil},
+		{"delete", http.MethodDelete, "/api/bindings/" + id, nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			w := doJSONNoCSRF(t, srv, tc.method, tc.path, tc.body)
+			if w.Code != http.StatusForbidden {
+				t.Fatalf("status = %d, want %d without a CSRF header; body = %s", w.Code, http.StatusForbidden, w.Body.String())
+			}
+		})
+	}
+}

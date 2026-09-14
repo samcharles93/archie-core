@@ -35,6 +35,9 @@ func (s *Server) handleMappingsList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMappingCreate(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeTaskMutation(w, r) {
+		return
+	}
 	if s.Mappings == nil {
 		http.Error(w, "mappings not configured", http.StatusServiceUnavailable)
 		return
@@ -89,6 +92,9 @@ func (s *Server) handleMappingGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMappingUpdate(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeTaskMutation(w, r) {
+		return
+	}
 	if s.Mappings == nil {
 		http.Error(w, "mappings not configured", http.StatusServiceUnavailable)
 		return
@@ -127,6 +133,9 @@ func (s *Server) handleMappingUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMappingDelete(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeTaskMutation(w, r) {
+		return
+	}
 	if s.Mappings == nil {
 		http.Error(w, "mappings not configured", http.StatusServiceUnavailable)
 		return

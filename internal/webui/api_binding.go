@@ -43,6 +43,9 @@ func (s *Server) handleBindingsList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBindingCreate(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeTaskMutation(w, r) {
+		return
+	}
 	if s.Bindings == nil {
 		http.Error(w, "bindings not configured", http.StatusServiceUnavailable)
 		return
@@ -116,6 +119,9 @@ func (s *Server) handleBindingGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBindingUpdate(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeTaskMutation(w, r) {
+		return
+	}
 	if s.Bindings == nil {
 		http.Error(w, "bindings not configured", http.StatusServiceUnavailable)
 		return
@@ -171,6 +177,9 @@ func (s *Server) handleBindingUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBindingDelete(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeTaskMutation(w, r) {
+		return
+	}
 	if s.Bindings == nil {
 		http.Error(w, "bindings not configured", http.StatusServiceUnavailable)
 		return
@@ -193,6 +202,9 @@ func (s *Server) handleBindingDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBindingApprove(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeTaskMutation(w, r) {
+		return
+	}
 	if s.Bindings == nil {
 		http.Error(w, "bindings not configured", http.StatusServiceUnavailable)
 		return

@@ -32,7 +32,24 @@ func mappingTestServer(t *testing.T) *Server {
 	}
 }
 
+// doJSON issues a request carrying the browser mutation headers
+// (Content-Type, X-Archie-CSRF) every write handler requires via
+// authorizeTaskMutation, so GET/POST/PATCH/DELETE calls in this package's
+// tests exercise the handler logic rather than the CSRF gate. Use
+// doJSONNoCSRF to test the gate itself.
 func doJSON(t *testing.T, srv *Server, method, path string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	return doJSONWithHeaders(t, srv, method, path, body, true)
+}
+
+// doJSONNoCSRF is doJSON without the X-Archie-CSRF header, for asserting
+// that a mutation handler refuses an unmarked cross-origin-shaped request.
+func doJSONNoCSRF(t *testing.T, srv *Server, method, path string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	return doJSONWithHeaders(t, srv, method, path, body, false)
+}
+
+func doJSONWithHeaders(t *testing.T, srv *Server, method, path string, body any, csrf bool) *httptest.ResponseRecorder {
 	t.Helper()
 	var r *http.Request
 	if body != nil {
@@ -43,6 +60,10 @@ func doJSON(t *testing.T, srv *Server, method, path string, body any) *httptest.
 		r = httptest.NewRequestWithContext(t.Context(), method, path, bytes.NewReader(b))
 	} else {
 		r = httptest.NewRequestWithContext(t.Context(), method, path, nil)
+	}
+	r.Header.Set("Content-Type", "application/json")
+	if csrf {
+		r.Header.Set("X-Archie-CSRF", "1")
 	}
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, r)
@@ -242,5 +263,43 @@ func TestHandleMappingsUnavailableWhenNotConfigured(t *testing.T) {
 	w := doJSON(t, srv, http.MethodGet, "/api/mappings", nil)
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
+	}
+}
+
+// TestHandleMappingMutationsRequireCSRFHeader mirrors
+// TestHandleBindingMutationsRequireCSRFHeader: every mapping write handler
+// must enforce the same browser mutation contract as handleTaskAction
+// (docs/prds/dynamic-curators.md), not just bindings.
+func TestHandleMappingMutationsRequireCSRFHeader(t *testing.T) {
+	srv := mappingTestServer(t)
+	newMapping := map[string]any{
+		"name":        "sentry issue opened",
+		"source_hint": "sentry",
+		"fields": []mapping.Field{
+			{Name: "title", Path: "issue.title", Type: mapping.TypeString, Required: true},
+		},
+	}
+	w := doJSON(t, srv, http.MethodPost, "/api/mappings", newMapping)
+	var created mapping.Mapping
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal created mapping: %v; body = %s", err, w.Body.String())
+	}
+	id := strconv.FormatInt(created.ID, 10)
+
+	tests := []struct {
+		name, method, path string
+		body               any
+	}{
+		{"create", http.MethodPost, "/api/mappings", newMapping},
+		{"update", http.MethodPatch, "/api/mappings/" + id, newMapping},
+		{"delete", http.MethodDelete, "/api/mappings/" + id, nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			w := doJSONNoCSRF(t, srv, tc.method, tc.path, tc.body)
+			if w.Code != http.StatusForbidden {
+				t.Fatalf("status = %d, want %d without a CSRF header; body = %s", w.Code, http.StatusForbidden, w.Body.String())
+			}
+		})
 	}
 }
