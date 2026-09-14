@@ -22,6 +22,15 @@ func TestHardlineBlocks(t *testing.T) {
 		{"root delete dot", "rm -rf /.", "recursive-root-delete"},
 		{"root delete long flag", "rm --recursive --force /", "recursive-root-delete"},
 		{"root delete bundled reverse", "rm -fr /", "recursive-root-delete"},
+		// An absolute path must be judged the same as a bare name: every sibling
+		// rule already normalises through baseName, and baseName's own doc says
+		// /sbin/reboot and reboot are meant to be judged alike. Comparing the raw
+		// segment name here let /bin/rm -rf / through while blocking rm -rf /.
+		{"absolute path root delete", "/bin/rm -rf /", "recursive-root-delete"},
+		{"absolute path root delete reverse", "/usr/bin/rm -fr /", "recursive-root-delete"},
+		{"absolute path root delete long flag", "/usr/bin/rm --recursive --force /", "recursive-root-delete"},
+		{"absolute path etc delete", "/bin/rm -rf /etc", "recursive-root-delete"},
+		{"absolute path sudo delete", "sudo /bin/rm -rf /", "recursive-root-delete"},
 		{"home delete", "rm -rf ~", "recursive-root-delete"},
 		{"home var delete", "rm -rf $HOME", "recursive-root-delete"},
 		{"home brace delete", "rm -rf ${HOME}/", "recursive-root-delete"},
@@ -129,6 +138,9 @@ func TestHardlineAllows(t *testing.T) {
 		{"recursive delete in workspace", "rm -rf /workspace/tmp"},
 		{"recursive delete of subdir", "rm -rf /var/lib/archie/work/tmp"},
 		{"non-recursive root file", "rm /tmp/x"},
+		// Normalising through baseName must not turn an ordinary recursive delete
+		// that happens to use an absolute path into a refusal.
+		{"absolute path recursive delete in workspace", "/bin/rm -rf /workspace/tmp"},
 
 		{"dd to a file", "dd if=/dev/zero of=disk.img bs=1M count=10"},
 		{"redirect to null", "echo x > /dev/null"},

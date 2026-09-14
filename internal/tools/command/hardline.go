@@ -205,8 +205,12 @@ var criticalPaths = map[string]bool{
 
 // checkRecursiveDelete refuses a recursive rm whose target is a critical
 // path. A recursive delete elsewhere is ordinary work and is allowed.
+//
+// The command is resolved through baseName so that /bin/rm and rm are judged
+// alike, matching every sibling rule: comparing the raw segment name let
+// /bin/rm -rf / through while blocking rm -rf /.
 func checkRecursiveDelete(seg Segment) (string, bool) {
-	if seg.Name != "rm" {
+	if baseName(seg.Name) != "rm" {
 		return "", false
 	}
 	if !hasRecursiveFlag(seg.Args) {
