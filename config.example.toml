@@ -333,6 +333,42 @@ gate_max_failures = 5
 # rate_per_second = 1.0    # per-remote-address token bucket
 # rate_burst      = 5
 
+# The cron/scheduling ticker engine: how often scheduled jobs are checked,
+# how many may run at once, and how long one may run. The engine polls a job
+# store for what is due and dispatches each due job to the delivery it names
+# -- so nothing here schedules anything by itself, it only tunes the timing.
+# Absent is valid: every field defaults independently, and a section naming
+# only one of them still gets the defaults for the other two.
+#
+# Zero (or absent) takes the default named below. A NEGATIVE value is a
+# startup error, not a clamp: running something other than what was written
+# is how a misconfiguration stays invisible. Zero cannot mean "off" here for
+# the same reason it cannot in [tools.tool_policy] -- it is indistinguishable
+# from an unset key.
+# [scheduling]
+# interval     = "60s"   # tick cadence: how often due jobs are checked.
+#                        # Absent/zero means 1m. The finest granularity a
+#                        # cron-style schedule needs, and polling a local
+#                        # job store that often costs nothing.
+# max_parallel = 4       # caps simultaneous parallel-pool runs, so a store
+#                        # reporting many jobs due at once (the first tick
+#                        # after long downtime, typically) cannot launch an
+#                        # unbounded fan-out. Absent/zero means 4. It does
+#                        # not bound the sequential pool, which is one by
+#                        # definition.
+# job_timeout  = "1h"    # bounds one run. Absent/zero means 1h. A job that
+#                        # has not finished in an hour is stuck, and leaving
+#                        # it in flight would suppress every later run of the
+#                        # same job forever.
+# events_sink  = "none"  # "bus" publishes each run and failure on the event
+#                        # stream, which is what the dashboard timeline reads;
+#                        # "none" (the default, same as leaving it unset)
+#                        # leaves the engine unobservable -- a scheduled run
+#                        # has no task or chat turn behind it, so with no
+#                        # sink nothing anywhere records that it fired.
+#                        # Any other value is a startup error, so a typo
+#                        # cannot silently turn observability off.
+
 # Playbook-binding at-rest encryption: [bindings].encryption_key resolves a
 # 32-byte high-entropy key through the secret registry (engine + key) and seals
 # each binding's HMAC secret in the SQLite bindings.secret column with AES-256-
