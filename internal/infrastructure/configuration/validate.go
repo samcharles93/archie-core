@@ -35,10 +35,6 @@ var (
 	natsModes        = []string{config.NATSModeEmbedded, config.NATSModeExternal}
 	forgeIntakes     = []string{config.ForgeIntakePoll, config.ForgeIntakeWebhook, config.ForgeIntakeBoth}
 	memoryEngines    = []string{memoryEngineBuiltin}
-	// eventsSinkModes are the explicit [scheduling].events_sink spellings.
-	// The empty string also means "no sink" but is resolved by
-	// applySchedulingDefaults before validation, so it is not listed here.
-	eventsSinkModes = []string{config.EventsSinkBus, config.EventsSinkNone}
 )
 
 // Validate runs the same checks Loader applies before accepting a config,
@@ -91,9 +87,6 @@ func validate(cfg *config.Config) error {
 		return err
 	}
 	if err := validateImage(cfg); err != nil {
-		return err
-	}
-	if err := validateScheduling(cfg); err != nil {
 		return err
 	}
 	return validateCapture(cfg)

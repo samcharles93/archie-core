@@ -332,14 +332,14 @@ func TestNewEngineAppliesDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
-	if got := e.Interval(); got != DefaultInterval {
-		t.Errorf("interval = %v, want %v", got, DefaultInterval)
+	if got := e.Interval(); got != time.Minute {
+		t.Errorf("interval = %v, want 1m", got)
 	}
-	if got := e.MaxParallel(); got != DefaultMaxParallel {
-		t.Errorf("max parallel = %d, want %d", got, DefaultMaxParallel)
+	if got := e.MaxParallel(); got != 4 {
+		t.Errorf("max parallel = %d, want 4", got)
 	}
-	if got := e.JobTimeout(); got != DefaultJobTimeout {
-		t.Errorf("job timeout = %v, want %v", got, DefaultJobTimeout)
+	if got := e.JobTimeout(); got != time.Hour {
+		t.Errorf("job timeout = %v, want 1h", got)
 	}
 }
 

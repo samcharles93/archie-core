@@ -19,6 +19,9 @@ type Document struct {
 	// It stays for now so this package can own loading without every
 	// consumer changing at once. Delete when internal/config is dissolved.
 	Config config.Config
+	// Scheduling is the decoded [scheduling] input. Application composition
+	// translates it into domain-owned scheduling.EngineConfig.
+	Scheduling SchedulingInput
 
 	// Provenance lists the files that produced Config, in precedence order.
 	Provenance Provenance
@@ -138,6 +141,9 @@ func (l *Loader) ApplyOverlay(doc *Document, overrides map[string]any) (*Documen
 	if err := ApplyOverlayValues(&next.Config, overrides); err != nil {
 		return nil, err
 	}
+	if err := applySchedulingOverlay(&next.Scheduling, overrides); err != nil {
+		return nil, err
+	}
 	next.Provenance.record(Origin{Path: "config_overlay (runtime)", Role: RoleMain, Layer: LayerOverlay})
 	return l.finalize(&next)
 }
@@ -148,10 +154,16 @@ func (l *Loader) overlayFile(basePath, overlayPath string) (*Document, error) {
 	if err := decodeConfigFile(basePath, &doc.Config); err != nil {
 		return nil, err
 	}
+	if err := decodeSchedulingFile(basePath, &doc.Scheduling); err != nil {
+		return nil, err
+	}
 	doc.Provenance.record(Origin{Path: basePath, Role: RoleMain, Layer: LayerBase})
 
 	if overlayPath != "" {
 		if err := decodeConfigFile(overlayPath, &doc.Config); err != nil {
+			return nil, err
+		}
+		if err := decodeSchedulingFile(overlayPath, &doc.Scheduling); err != nil {
 			return nil, err
 		}
 		doc.Provenance.record(Origin{Path: overlayPath, Role: RoleMain, Layer: LayerOverlay})
@@ -202,7 +214,7 @@ func (l *Loader) loadDir(doc *Document, dir string, layer Layer) error {
 
 	switch path, isYAMLFile, ok := files.main(); {
 	case ok:
-		if err := l.decodeMain(&doc.Config, path, isYAMLFile); err != nil {
+		if err := l.decodeMain(doc, path, isYAMLFile); err != nil {
 			return err
 		}
 		doc.Provenance.record(Origin{Path: path, Role: RoleMain, Layer: layer})
@@ -230,11 +242,17 @@ func (l *Loader) loadDir(doc *Document, dir string, layer Layer) error {
 }
 
 // decodeMain decodes the daemon-level file in whichever format it uses.
-func (l *Loader) decodeMain(cfg *config.Config, path string, isYAMLFile bool) error {
+func (l *Loader) decodeMain(doc *Document, path string, isYAMLFile bool) error {
 	if isYAMLFile {
-		return decodeYAML(path, cfg)
+		if err := decodeYAML(path, &doc.Config); err != nil {
+			return err
+		}
+		return decodeSchedulingFile(path, &doc.Scheduling)
 	}
-	return decodeTOML(path, cfg)
+	if err := decodeTOML(path, &doc.Config); err != nil {
+		return err
+	}
+	return decodeSchedulingFile(path, &doc.Scheduling)
 }
 
 // finalize applies defaults, then validates. The order matters: validation

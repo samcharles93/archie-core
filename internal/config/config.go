@@ -516,12 +516,6 @@ type Config struct {
 	Capture    CaptureConfig   `toml:"capture" yaml:"capture"`
 	Bindings   BindingsConfig  `toml:"bindings" yaml:"bindings"`
 
-	// Scheduling configures the cron/scheduling ticker engine
-	// (internal/domain/scheduling). Absent is valid: every field
-	// defaults independently, so an empty section and no section at
-	// all produce the same resolved engine configuration.
-	Scheduling SchedulingConfig `toml:"scheduling" yaml:"scheduling"`
-
 	// Memory holds memory provider configuration (from config.memory.yaml).
 	Memory MemoryConfig `toml:"memory" yaml:"memory"`
 
@@ -782,57 +776,6 @@ type CaptureConfig struct {
 	RatePerSecond float64 `toml:"rate_per_second" yaml:"rate_per_second"`
 	RateBurst     int     `toml:"rate_burst" yaml:"rate_burst"`
 }
-
-// SchedulingConfig configures the cron/scheduling ticker engine
-// (internal/domain/scheduling, epic
-// archie-core-1786637496320-249-be6d9a20). Every field is optional and
-// defaults independently, so an absent [scheduling] section is valid and
-// resolves to the engine's own documented defaults.
-//
-// Zero and negative are therefore NOT the same thing here, the same
-// distinction config.ToolPolicy and config.CaptureConfig make: zero is
-// "unset, give me the default", which leaves negative as the only way an
-// operator can name an unusable value deliberately. A negative value is a
-// startup error -- a negative interval cannot be a tick cadence, and the
-// values are rejected rather than clamped because silently running
-// something other than what was written is how a misconfiguration stays
-// invisible.
-type SchedulingConfig struct {
-	// Interval is the tick cadence: how often the engine asks its job
-	// source what is due. Zero or absent means the engine's own
-	// scheduling.DefaultInterval (one minute); a configured value is
-	// used as-is. Negative is a startup error.
-	Interval Duration `toml:"interval" yaml:"interval"`
-	// MaxParallel caps simultaneous parallel-pool runs. Zero or absent
-	// means scheduling.DefaultMaxParallel. It does not bound the
-	// sequential pool, which is one by definition. Negative is a
-	// startup error.
-	MaxParallel int `toml:"max_parallel" yaml:"max_parallel"`
-	// JobTimeout bounds one run via context deadline. Zero or absent
-	// means scheduling.DefaultJobTimeout. Negative is a startup error.
-	JobTimeout Duration `toml:"job_timeout" yaml:"job_timeout"`
-	// EventsSink selects whether the engine's run and error events are
-	// published on the daemon's event stream. "bus" publishes them;
-	// absent resolves to "none", which leaves the engine's Events nil --
-	// a configuration the engine documents as valid: it still runs, it
-	// is just unobservable. Any other value is a startup error, so a
-	// typo cannot silently disable observability.
-	EventsSink string `toml:"events_sink" yaml:"events_sink"`
-}
-
-// EventsSink mode values for SchedulingConfig.EventsSink. The zero value
-// (empty) resolves to EventsSinkNone; these are the explicit spellings,
-// shared with validation so the two cannot drift.
-const (
-	// EventsSinkBus publishes the engine's run and error events on the
-	// daemon's in-process event bus, which is what the dashboard's
-	// timeline reads.
-	EventsSinkBus = "bus"
-	// EventsSinkNone disables emission. It is the documented way to say
-	// that without relying on an absent key, and it leaves the engine's
-	// Events nil -- valid, and unobservable.
-	EventsSinkNone = "none"
-)
 
 // BindingsConfig configures the playbook-binding store (t2db). When
 // EncryptionKey is unset, binding secrets are persisted as plaintext
