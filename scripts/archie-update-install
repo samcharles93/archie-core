@@ -136,26 +136,23 @@ echo "==> fetching approved component releases"
 git clone --quiet --filter=blob:none --no-checkout "$SOURCE_URL" "$source_dir"
 git -C "$source_dir" fetch --quiet --tags origin
 
-# Build from the exact approved release commit, not the moving branch tip. A
-# temporary worktree keeps the operator's main checkout on its branch.
+# Build from the exact approved release commit, not the moving branch tip.
+# Resolve each changed component's tag commit independently: components are
+# independently versioned (RELEASING.md), so the daemon and agent tags usually
+# sit on different commits -- most releases are gateway-only. The first
+# checkout is the daemon release when one is being installed, because the
+# adapter refresh below reads the scripts of the release being installed; the
+# agent image is rebuilt from its own tag's commit further down.
+gw_commit=""
+rt_commit=""
 if [[ ",$components," == *,daemon,* ]]; then
   gw_commit="$(git -C "$source_dir" rev-parse --verify "refs/tags/archied/v$GW^{commit}")"
 fi
 if [[ ",$components," == *,agent,* ]]; then
   rt_commit="$(git -C "$source_dir" rev-parse --verify "refs/tags/archie/v$RT^{commit}")"
 fi
-case "$components" in
-  daemon) build_commit="$gw_commit" ;;
-  agent) build_commit="$rt_commit" ;;
-  daemon,agent)
-    if [ "$gw_commit" != "$rt_commit" ]; then
-      echo "approved component tags do not identify the same source commit" >&2
-      exit 1
-    fi
-    build_commit="$gw_commit"
-    ;;
-esac
-
+build_commit="$gw_commit"
+[ -n "$build_commit" ] || build_commit="$rt_commit"
 git -C "$source_dir" checkout --quiet --detach "$build_commit"
 cd "$source_dir"
 
@@ -228,6 +225,10 @@ if [[ ",$components," == *,daemon,* ]]; then
   done
 fi
 if [[ ",$components," == *,agent,* ]]; then
+  # Independent versioning: the agent tag usually points at a different
+  # commit than the daemon's, so switch back to it for the image build (a
+  # no-op checkout for an agent-only update, which never left this commit).
+  git checkout --quiet --detach "$rt_commit"
   echo "==> saving managed worker image $AGENT_IMAGE for rollback"
   docker image save --output "$AGENT_IMAGE_BACKUP" "$AGENT_IMAGE"
   echo "==> rebuilding managed worker image $AGENT_IMAGE for runtime $RT"
