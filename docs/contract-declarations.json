@@ -1,0 +1,38 @@
+{
+  "$comment": [
+    "Contract-conformance declarations. Every entry here is a declared-unconsumed",
+    "surface: a capability that exists, that no client reaches, and that is",
+    "deliberately left that way. It must match reality exactly -- a missing entry",
+    "is an undeclared finding and an entry that is no longer true is a stale one,",
+    "and both fail a -strict run. See docs/prds/contract-conformance-audit.md.",
+    "",
+    "Managed by tools/contractaudit. Reasons state the consequence, not 'TODO':",
+    "this file is the only place the debt is legible."
+  ],
+  "surfaces": {
+    "proto/state/v1/state.proto": {
+      "StateStoreService/ListCaptures": {
+        "reason": "Superseded by StreamCaptures. The remote adapter's ListCaptures method (staterpc/client.go) calls StreamCaptures, not this unary RPC, so no production client reaches it. The server keeps it implemented as a compatibility surface for callers of the raw proto.",
+        "tracker": "archie-core-8cda.4"
+      },
+      "StateStoreService/ListUndispatchedCaptures": {
+        "reason": "Superseded by StreamUndispatchedCaptures, on the same terms as ListCaptures: the remote adapter's ListUndispatchedCaptures calls the streaming variant, leaving this unary RPC reachable only through the raw proto.",
+        "tracker": "archie-core-8cda.4"
+      }
+    }
+  },
+  "blindSpots": [
+    {
+      "surface": "internal/webui",
+      "reason": "Consumer extraction is textual over ui/src. A path assembled by string concatenation rather than written as a literal is invisible; scanFile fails loudly when a call shape it cannot parse appears, but it cannot see a path that is never a literal. Routes whose consumer is outside the dashboard (the asset mount, the health probes, the capture-intake webhook) are excluded from this surface by design: they have different consumers and are not part of the dashboard API contract."
+    },
+    {
+      "surface": "proto/state/v1/state.proto",
+      "reason": "Consumption is derived by scanning adapter bodies for calls through the generated client. An RPC reached only through runtime-loaded code (Yaegi) or reflection would read as unconsumed. No such path exists today."
+    },
+    {
+      "surface": "proto/gateway/v1/chat.proto",
+      "reason": "As above. Note that gatewayrpc is served by archie-gateway and consumed by archied and archie-ui; a consumer living outside this repository would be invisible here."
+    }
+  ]
+}
