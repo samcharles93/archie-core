@@ -451,6 +451,117 @@ func seedStore(t *testing.T, dir string) *store.Store {
 	return st
 }
 
+// TestUIProcessLinksMultiIdentityTaskRowsToTheirOwningForge drives the real
+// binary against a State Store holding a multi-identity deployment's
+// projection. Task rows in such a deployment used to render no link at all:
+// the projection carried the default identity's forge alone, so the renderer
+// withheld rather than pointing every row at the wrong forge
+// (archie-core-pv6t). With per-identity forges published, each row is
+// attributed to the identity that owns it, by identity name first and repo
+// ownership second.
+//
+// Its own store and process: it publishes a different projection than the
+// single-identity smoke test, and republishing over a shared one would rewire
+// that test's page underneath it.
+func TestUIProcessLinksMultiIdentityTaskRowsToTheirOwningForge(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(t.Context(), filepath.Join(dir, "tasks.sqlite"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	// One task carrying its identity (name resolves it), one without an
+	// identity but on a repo only the Gitea identity owns (ownership
+	// resolves it), and one on a repo both identities claim (ambiguous, so
+	// it falls back to the default forge).
+	for _, seed := range []struct {
+		owner, repo, identity string
+		number                int
+	}{
+		{owner: "acme", repo: "widget", identity: "gitea-bot", number: 7},
+		{owner: "beta", repo: "svc", number: 8},
+		{owner: "acme", repo: "shared", number: 9},
+	} {
+		if _, err := st.EnqueueIssue(t.Context(), seed.owner, seed.repo, seed.number, "seeded", "body", "", seed.identity); err != nil {
+			t.Fatalf("seed %s/%s: %v", seed.owner, seed.repo, err)
+		}
+	}
+
+	published, err := json.Marshal(webui.ConfigView{
+		Identity:      webui.IdentityView{BotUser: "archie-bot", ForgeType: "github", ForgeHost: "https://github.example.com"},
+		MultiIdentity: true,
+		Identities: []webui.ForgeIdentityView{
+			{
+				Name: "gitea-bot", ForgeType: "gitea", ForgeHost: "https://gitea.example.com",
+				Repos: []webui.ForgeRepoView{{Owner: "acme", Name: "widget"}, {Owner: "acme", Name: "shared"}},
+			},
+			{
+				Name: "github-bot", ForgeType: "github", ForgeHost: "https://github.example.com",
+				Repos: []webui.ForgeRepoView{{Owner: "beta", Name: "svc"}, {Owner: "acme", Name: "shared"}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutConfigSnapshot(t.Context(), store.ConfigSnapshot{
+		Schema: webui.ConfigViewSchema, Document: published,
+	}); err != nil {
+		t.Fatalf("publish config snapshot: %v", err)
+	}
+
+	stateTarget, stopState := serveGRPC(t, func(r grpc.ServiceRegistrar) {
+		staterpc.RegisterServer(r, staterpc.Deps{
+			Tasks: st, Captures: st, BindingDispatcher: st, ConfigSnapshots: st,
+			Log: slog.New(slog.DiscardHandler),
+		})
+	})
+	defer stopState()
+	gatewayTarget, stopGateway := serveGRPC(t, func(r grpc.ServiceRegistrar) {
+		gatewayrpc.RegisterServer(r, &fakeGateway{})
+	})
+	defer stopGateway()
+
+	ui := startUIProcess(t, buildUIBinary(t, dir), writeUIConfig(t, dir, stateTarget, gatewayTarget))
+	d := dashboard{t: t, base: "http://" + ui.addr}
+
+	got := d.get("/api/tasks")
+	if got.status != http.StatusOK {
+		t.Fatalf("GET /api/tasks = %d (%s), want 200", got.status, got.body)
+	}
+	var rows []struct {
+		Owner       string `json:"owner"`
+		Repo        string `json:"repo"`
+		IssueNumber int    `json:"issue_number"`
+		RepoURL     string `json:"repo_url"`
+		IssueURL    string `json:"issue_url"`
+	}
+	if err := json.Unmarshal(got.body, &rows); err != nil {
+		t.Fatalf("decode task rows: %v (%s)", err, got.body)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("task rows = %d, want the 3 seeded behind the State Store (%s)", len(rows), got.body)
+	}
+
+	want := map[string]string{
+		"acme/widget#7": "https://gitea.example.com/acme/widget/issues/7",
+		"beta/svc#8":    "https://github.example.com/beta/svc/issues/8",
+		"acme/shared#9": "https://github.example.com/acme/shared/issues/9",
+	}
+	for _, row := range rows {
+		key := fmt.Sprintf("%s/%s#%d", row.Owner, row.Repo, row.IssueNumber)
+		expected, ok := want[key]
+		if !ok {
+			t.Errorf("unexpected row %q (%s)", key, got.body)
+			continue
+		}
+		if row.RepoURL == "" || row.IssueURL != expected {
+			t.Errorf("row %s links = %q, %q; want %q", key, row.RepoURL, row.IssueURL, expected)
+		}
+	}
+}
+
 func TestUIProcessServesTheDashboardAgainstLiveDependencies(t *testing.T) {
 	dir := t.TempDir()
 	st := seedStore(t, dir)
