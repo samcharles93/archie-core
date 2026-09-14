@@ -15,18 +15,26 @@ import (
 // {engine,key} inline table.
 const telegramTokenEnv = "ARCHIE_TELEGRAM_TOKEN"
 
-func stepChat(ctx context.Context, p Prompter, secrets SecretSink) (tableEdits, error) {
-	wantTelegram, err := p.Confirm(ctx, "Configure a Telegram chat channel?", false)
-	if err != nil {
-		return nil, fmt.Errorf("setup: telegram: %w", err)
+func stepChat(ctx context.Context, p Prompter, secrets SecretSink, params Params) (tableEdits, error) {
+	wantTelegram := len(params.TelegramUserIDs) > 0
+	if !wantTelegram {
+		var err error
+		wantTelegram, err = p.Confirm(ctx, "Configure a Telegram chat channel?", false)
+		if err != nil {
+			return nil, fmt.Errorf("setup: telegram: %w", err)
+		}
 	}
 	if !wantTelegram {
 		return nil, nil
 	}
 
-	token, err := p.ReadSecret(ctx, "Telegram bot token (from @BotFather): ")
-	if err != nil {
-		return nil, fmt.Errorf("setup: telegram token: %w", err)
+	token := params.TelegramToken
+	if token == "" {
+		var err error
+		token, err = p.ReadSecret(ctx, "Telegram bot token (from @BotFather): ")
+		if err != nil {
+			return nil, fmt.Errorf("setup: telegram token: %w", err)
+		}
 	}
 	if strings.TrimSpace(token) == "" {
 		return nil, nil
@@ -36,16 +44,19 @@ func stepChat(ctx context.Context, p Prompter, secrets SecretSink) (tableEdits, 
 	// allowlist answers nobody, which reads as broken rather than as the
 	// safe default it actually is. Require at least one ID rather than
 	// shipping a channel that silently does nothing.
-	idsLine, err := p.ReadLine(ctx, "Allowed Telegram user IDs (comma-separated; required -- the bot answers nobody without this): ", "")
-	if err != nil {
-		return nil, fmt.Errorf("setup: telegram allowed user ids: %w", err)
-	}
-	ids, err := parseUserIDs(idsLine)
-	if err != nil {
-		return nil, fmt.Errorf("setup: telegram allowed user ids: %w", err)
-	}
+	ids := params.TelegramUserIDs
 	if len(ids) == 0 {
-		return nil, fmt.Errorf("setup: at least one allowed Telegram user ID is required, or the bot will answer nobody")
+		idsLine, err := p.ReadLine(ctx, "Allowed Telegram user IDs (comma-separated; required -- the bot answers nobody without this): ", "")
+		if err != nil {
+			return nil, fmt.Errorf("setup: telegram allowed user ids: %w", err)
+		}
+		ids, err = ParseTelegramUserIDs(idsLine)
+		if err != nil {
+			return nil, fmt.Errorf("setup: telegram allowed user ids: %w", err)
+		}
+		if len(ids) == 0 {
+			return nil, fmt.Errorf("setup: at least one allowed Telegram user ID is required, or the bot will answer nobody")
+		}
 	}
 
 	if err := secrets.Put("env", telegramTokenEnv, token); err != nil {
@@ -60,7 +71,11 @@ func stepChat(ctx context.Context, p Prompter, secrets SecretSink) (tableEdits, 
 	}, nil
 }
 
-func parseUserIDs(line string) ([]int64, error) {
+// ParseTelegramUserIDs parses a comma-separated Telegram allowlist into
+// int64 IDs, skipping empty parts. It is exported so cmd/archied setup can
+// parse -telegram-user-ids with exactly the same rules the interactive
+// prompt uses, rather than a second copy that could drift.
+func ParseTelegramUserIDs(line string) ([]int64, error) {
 	var ids []int64
 	for part := range strings.SplitSeq(line, ",") {
 		part = strings.TrimSpace(part)

@@ -44,24 +44,35 @@ var cloudProviders = []cloudProvider{
 // landmine nothing in setup's own output would explain.
 const templateDefaultActiveProvider = "openai"
 
-func stepProvider(ctx context.Context, p Prompter, discovery ModelDiscovery, secrets SecretSink) (tableEdits, string, error) {
+func stepProvider(ctx context.Context, p Prompter, discovery ModelDiscovery, secrets SecretSink, params Params) (tableEdits, string, error) {
 	options := make([]string, 0, len(cloudProviders)+1)
 	for _, cp := range cloudProviders {
 		options = append(options, cp.name)
 	}
 	options = append(options, "Self-hosted (Ollama)")
 
-	choice, err := p.Select(ctx, "LLM provider:", options)
-	if err != nil {
-		return nil, "", fmt.Errorf("setup: provider: %w", err)
+	var choice int
+	if strings.TrimSpace(params.Provider) != "" {
+		var err error
+		choice, err = providerChoice(params.Provider)
+		if err != nil {
+			return nil, "", fmt.Errorf("setup: provider: %w", err)
+		}
+	} else {
+		var err error
+		choice, err = p.Select(ctx, "LLM provider:", options)
+		if err != nil {
+			return nil, "", fmt.Errorf("setup: provider: %w", err)
+		}
 	}
 
 	var edits tableEdits
 	var model string
+	var err error
 	if choice == len(cloudProviders) {
-		edits, model, err = stepSelfHostedModel(ctx, p, discovery)
+		edits, model, err = stepSelfHostedModel(ctx, p, discovery, params.Model)
 	} else {
-		edits, model, err = stepCloudProvider(ctx, p, secrets, cloudProviders[choice])
+		edits, model, err = stepCloudProvider(ctx, p, secrets, cloudProviders[choice], params.ProviderAPIKey, params.Model)
 	}
 	if err != nil {
 		return nil, "", err
@@ -74,9 +85,27 @@ func stepProvider(ctx context.Context, p Prompter, discovery ModelDiscovery, sec
 	return edits, model, nil
 }
 
-func stepSelfHostedModel(ctx context.Context, p Prompter, discovery ModelDiscovery) (tableEdits, string, error) {
+// providerChoice maps a typed Params.Provider class to the same select index
+// the interactive prompt uses, so a supplied provider and a prompted one land
+// in exactly the same step logic.
+func providerChoice(name string) (int, error) {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "ollama" {
+		return len(cloudProviders), nil
+	}
+	for i, cp := range cloudProviders {
+		if cp.class == name {
+			return i, nil
+		}
+	}
+	return -1, fmt.Errorf("unknown provider %q", name)
+}
+
+func stepSelfHostedModel(ctx context.Context, p Prompter, discovery ModelDiscovery, modelParam string) (tableEdits, string, error) {
 	var model string
-	if discovery != nil {
+	if strings.TrimSpace(modelParam) != "" {
+		model = modelParam
+	} else if discovery != nil {
 		if models, err := discovery.ListOllamaModels(ctx); err == nil && len(models) > 0 {
 			idx, err := p.Select(ctx, "Ollama model:", models)
 			if err != nil {
@@ -96,10 +125,17 @@ func stepSelfHostedModel(ctx context.Context, p Prompter, discovery ModelDiscove
 	return edits, "ollama/" + model, nil
 }
 
-func stepCloudProvider(ctx context.Context, p Prompter, secrets SecretSink, cp cloudProvider) (tableEdits, string, error) {
-	key, err := p.ReadSecret(ctx, fmt.Sprintf("%s API key: ", cp.name))
-	if err != nil {
-		return nil, "", fmt.Errorf("setup: %s api key: %w", cp.name, err)
+func stepCloudProvider(ctx context.Context, p Prompter, secrets SecretSink, cp cloudProvider, keyParam, modelParam string) (tableEdits, string, error) {
+	// A key supplied as a parameter must not prompt. Without this the only
+	// provider an unattended install could configure was the keyless
+	// self-hosted one, so every cloud setup needed a terminal.
+	var err error
+	key := keyParam
+	if strings.TrimSpace(key) == "" {
+		key, err = p.ReadSecret(ctx, fmt.Sprintf("%s API key: ", cp.name))
+		if err != nil {
+			return nil, "", fmt.Errorf("setup: %s api key: %w", cp.name, err)
+		}
 	}
 	table := "providers." + cp.class
 	edits := tableEdits{table: {"class": tomlwrite.String(cp.class)}}
@@ -116,9 +152,12 @@ func stepCloudProvider(ctx context.Context, p Prompter, secrets SecretSink, cp c
 		edits[table]["api_key"] = tomlwrite.Ref("", "")
 	}
 
-	model, err := p.ReadLine(ctx, fmt.Sprintf("Model for %s (e.g. gpt-5.4): ", cp.name), "")
-	if err != nil {
-		return nil, "", fmt.Errorf("setup: model name: %w", err)
+	model := modelParam
+	if strings.TrimSpace(model) == "" {
+		model, err = p.ReadLine(ctx, fmt.Sprintf("Model for %s (e.g. gpt-5.4): ", cp.name), "")
+		if err != nil {
+			return nil, "", fmt.Errorf("setup: model name: %w", err)
+		}
 	}
 	if strings.TrimSpace(model) == "" {
 		return nil, "", fmt.Errorf("setup: a model name is required for %s", cp.name)

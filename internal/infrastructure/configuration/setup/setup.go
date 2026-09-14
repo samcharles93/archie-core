@@ -15,13 +15,14 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/tomlwrite"
 )
 
-// SecretSink is where setup sends the secret values a step collects. It is
-// declared here, not implemented: setup edits config.toml keys, it does not
-// write the env file itself. Put is expected to buffer rather than write
-// immediately -- the caller commits only once the config text setup
-// produced has been proven loadable, so a validation failure after some
-// secrets were already prompted for never leaves a secret written without
-// the config that references it, or vice versa.
+// SecretSink is where setup sends the secret values a step collects. setup
+// edits config.toml keys; it does not write the env file itself. Put is
+// expected to buffer rather than write immediately -- the caller commits only
+// once the config text setup produced has been proven loadable, so a
+// validation failure after some secrets were already prompted for never
+// leaves a secret written without the config that references it, or vice
+// versa. [EnvFileSink] is the concrete implementation for the env file that
+// sits beside config.toml; the caller owns the path and constructs it.
 type SecretSink interface {
 	// Put records that key (as looked up through engine) must resolve to
 	// value once Commit is called.
@@ -51,6 +52,36 @@ type ExistingValues struct {
 // value and let Run decide the flattening order.
 type tableEdits = map[string]map[string]string
 
+// Params supplies pre-answered values for the setup flow's question sites.
+// Each step consults Params first and only asks the Prompter when the
+// corresponding field is unset, so an unattended install can state what it
+// wants without a terminal and without matching against prompt text -- the
+// brittleness class removed in 9a4f11c (prompt text is not a stable key for
+// a flag-to-answer mapping).
+//
+// Provider is a config class ("openai", "anthropic", "openrouter", "gemini",
+// "groq", "deepseek", "mistral", or "ollama" for the self-hosted path). Model
+// is the bare model name; the step adds the "class/" prefix. TelegramUserIDs
+// non-empty is the signal to configure Telegram -- the step already refuses
+// an empty allowlist, so an empty slice means "ask" (or "skip" when the
+// prompter's default is no).
+type Params struct {
+	BotUser    string
+	Operator   string
+	ForgeType  string // github | gitea | none
+	ForgeHost  string
+	ForgeToken string
+	Provider   string // openai | anthropic | openrouter | gemini | groq | deepseek | mistral | ollama
+	Model      string // bare model name; the step adds the "class/" prefix
+	// ProviderAPIKey is a cloud provider key. It is written to the env file and
+	// referenced from TOML, never stored in the config itself. Supplying it is
+	// what makes a cloud provider configurable without a terminal: the keyless
+	// self-hosted provider was previously the only unattended option.
+	ProviderAPIKey  string
+	TelegramToken   string
+	TelegramUserIDs []int64 // non-empty means "configure Telegram"
+}
+
 // Run drives the interactive setup flow and returns the TOML edits to
 // apply. It does not read or write any file itself: the caller renders the
 // edits (tomlwrite.Generate against a fresh template, or tomlwrite.Apply
@@ -58,6 +89,12 @@ type tableEdits = map[string]map[string]string
 // result loads through a real configuration.Loader before installing it or
 // calling secrets.Commit.
 func Run(ctx context.Context, p Prompter, discovery ModelDiscovery, secrets SecretSink, existing ExistingValues) ([]tomlwrite.Edit, error) {
+	return RunParams(ctx, p, discovery, secrets, existing, Params{})
+}
+
+// RunParams is Run with the question sites pre-answered from params. A zero
+// Params behaves exactly like Run.
+func RunParams(ctx context.Context, p Prompter, discovery ModelDiscovery, secrets SecretSink, existing ExistingValues, params Params) ([]tomlwrite.Edit, error) {
 	var edits []tomlwrite.Edit
 	add := func(all tableEdits) {
 		for table, kv := range all {
@@ -67,24 +104,32 @@ func Run(ctx context.Context, p Prompter, discovery ModelDiscovery, secrets Secr
 		}
 	}
 
-	botUser, err := p.ReadLine(ctx, "Bot user (forge username for archied's commits and API calls): ", existing.BotUser)
-	if err != nil {
-		return nil, fmt.Errorf("setup: bot user: %w", err)
+	botUser := params.BotUser
+	if strings.TrimSpace(botUser) == "" {
+		var err error
+		botUser, err = p.ReadLine(ctx, "Bot user (forge username for archied's commits and API calls): ", existing.BotUser)
+		if err != nil {
+			return nil, fmt.Errorf("setup: bot user: %w", err)
+		}
 	}
 	if strings.TrimSpace(botUser) == "" {
 		return nil, fmt.Errorf("setup: bot user is required")
 	}
 	add(tableEdits{"": {"bot_user": tomlwrite.String(botUser)}})
 
-	operator, err := p.ReadLine(ctx, "Operator display name (shown to the chat agent; blank to skip): ", existing.Operator)
-	if err != nil {
-		return nil, fmt.Errorf("setup: operator: %w", err)
+	operator := params.Operator
+	if strings.TrimSpace(operator) == "" {
+		var err error
+		operator, err = p.ReadLine(ctx, "Operator display name (shown to the chat agent; blank to skip): ", existing.Operator)
+		if err != nil {
+			return nil, fmt.Errorf("setup: operator: %w", err)
+		}
 	}
 	if strings.TrimSpace(operator) != "" {
 		add(tableEdits{"chat": {"operator": tomlwrite.String(operator)}})
 	}
 
-	providerEdits, model, err := stepProvider(ctx, p, discovery, secrets)
+	providerEdits, model, err := stepProvider(ctx, p, discovery, secrets, params)
 	if err != nil {
 		return nil, err
 	}
@@ -93,13 +138,13 @@ func Run(ctx context.Context, p Prompter, discovery ModelDiscovery, secrets Secr
 		add(tableEdits{"models": {role: tomlwrite.String(model)}})
 	}
 
-	forgeEdits, err := stepForge(ctx, p, secrets, existing.ForgeHost)
+	forgeEdits, err := stepForge(ctx, p, secrets, existing.ForgeHost, params)
 	if err != nil {
 		return nil, err
 	}
 	add(forgeEdits)
 
-	chatEdits, err := stepChat(ctx, p, secrets)
+	chatEdits, err := stepChat(ctx, p, secrets, params)
 	if err != nil {
 		return nil, err
 	}
