@@ -80,7 +80,11 @@ func TestWebhookHandlerNotStarted(t *testing.T) {
 func TestWebhookHandlerRoute(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	g := New("", 0, []RouteConfig{{Path: "/hook"}}, log)
-	g.router = gateway.NewRouter(nil, nil, "webhook")
+	var gotSenderID string
+	g.router = gateway.NewRouter(nil, func(ctx context.Context, in gateway.Inbound) (string, error) {
+		gotSenderID = in.Message.SenderID
+		return "ok", nil
+	}, "webhook")
 
 	handler := g.WebhookHandler()
 	payload := `{"text":"hello from webhook"}`
@@ -88,6 +92,11 @@ func TestWebhookHandlerRoute(t *testing.T) {
 	handler.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/hook", strings.NewReader(payload)))
 	if rec.Code != http.StatusAccepted {
 		t.Errorf("status = %d, want 202", rec.Code)
+	}
+	// Webhook has no native per-caller identity, so the configured route
+	// path is used to key rate limiting instead (see internal/ratelimit).
+	if gotSenderID != "/hook" {
+		t.Errorf("SenderID = %q, want the route path", gotSenderID)
 	}
 }
 

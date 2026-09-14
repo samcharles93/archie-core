@@ -205,6 +205,7 @@ func (g *Gateway) processMessage(ctx context.Context, from, to, raw string) {
 	msg := gateway.Inbound{Message: messaging.Message{
 		ConversationID: messaging.ConversationID{ChannelID: to},
 		Sender:         from,
+		SenderID:       from,
 		Role:           messaging.RoleUser,
 		Text:           text,
 	}}

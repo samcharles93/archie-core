@@ -22,6 +22,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/installtype"
+	"github.com/samcharles93/archie-core/internal/ratelimit"
 	"github.com/samcharles93/archie-core/internal/releaseannounce"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
 	"github.com/samcharles93/archie-core/internal/secret"
@@ -65,6 +66,9 @@ type telegramSetup struct {
 	// Nil disables the agent component of RunningVersions.
 	AgentStatus *daemon.AgentStatus
 	Secrets     *secret.Registry
+	// RateLimiter budgets inbound messages per sender when set. Nil
+	// leaves rate limiting off.
+	RateLimiter *ratelimit.Limiter
 }
 
 func resolveTelegramToken(cfg config.TelegramConfig, registry *secret.Registry) (string, error) {
@@ -283,6 +287,7 @@ func buildTelegramRouter(ctx context.Context, tg *telegram.Gateway, s telegramSe
 	// a closure -- but this way the dependency is visible rather than
 	// captured by reference.
 	router := gateway.NewRouter(s.St, nil, "telegram")
+	router.Limiter = s.RateLimiter
 	router.Models = s.ChatModels
 	router.Updates = s.Updates
 	router.Personas = s.Personas

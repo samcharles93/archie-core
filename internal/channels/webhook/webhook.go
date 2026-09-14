@@ -173,8 +173,12 @@ func (g *Gateway) handleWebhook(route *RouteConfig) http.HandlerFunc {
 		msg := gateway.Inbound{Message: messaging.Message{
 			ConversationID: messaging.ConversationID{ChannelID: route.Path},
 			Sender:         "webhook",
-			Role:           messaging.RoleUser,
-			Text:           text,
+			// Webhooks have no per-caller identity; the configured route
+			// is the closest thing to one, since it corresponds to a
+			// single external source.
+			SenderID: route.Path,
+			Role:     messaging.RoleUser,
+			Text:     text,
 		}}
 		reply, err := router.Route(r.Context(), msg)
 		if err != nil {

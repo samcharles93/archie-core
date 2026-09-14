@@ -166,6 +166,14 @@ class = "ollama"
 # inbound HTTP concerns that happen to share the word "webhook".
 # webhook_addr = "0.0.0.0:8646"   # under [chat], not [chat.telegram]
 
+# Per-(channel, sender) inbound rate limiting, shared by every chat channel:
+# Telegram keys by numeric user ID, email by SMTP from address, webhook by
+# its configured route path. Off by default -- both fields must be set to a
+# positive value.
+# [chat.rate_limit]
+# window = "1m"
+# max_requests = 20
+
 # External MCP tools are launched and managed by Archie's MCP client. A
 # command of "npx" gets a persistent package cache under work_dir
 # (top of this file) automatically, so a daemon restart reuses it instead

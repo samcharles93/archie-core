@@ -57,6 +57,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/memory"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
+	"github.com/samcharles93/archie-core/internal/ratelimit"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/skill"
@@ -124,6 +125,10 @@ type boot struct {
 	bus             *events.Bus
 	restartTelegram func() error
 	channelManager  *status.Manager
+	// rateLimiter is the shared per-(channel, sender) inbound budget every
+	// chat Router is given. Nil when [chat.rate_limit] is not configured,
+	// which leaves rate limiting off.
+	rateLimiter *ratelimit.Limiter
 	// cfgHolder is the daemon's one configuration Holder. Boot owns it and
 	// the daemon reads through it, so a reload swaps one snapshot and every
 	// reader sees it: there is no second holder to keep in step.
@@ -572,6 +577,34 @@ func (b *boot) setupLLMAndChat() error {
 	return nil
 }
 
+// rateLimiterEvictInterval is how often an active Limiter sweeps entries
+// whose hits have all aged out of the window, per internal/ratelimit's own
+// documented ticker contract.
+const rateLimiterEvictInterval = time.Minute
+
+// startRateLimiter constructs b.rateLimiter from cfg when configured, and
+// drives its documented EvictStale ticker for the life of ctx. Leaves
+// b.rateLimiter nil (rate limiting off) when cfg is not enabled.
+func (b *boot) startRateLimiter(ctx context.Context, cfg config.RateLimitConfig) {
+	if !cfg.Enabled() {
+		return
+	}
+	b.rateLimiter = ratelimit.New(cfg.Window, cfg.MaxRequests)
+	limiter := b.rateLimiter
+	go func() {
+		ticker := time.NewTicker(rateLimiterEvictInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				limiter.EvictStale()
+			}
+		}
+	}()
+}
+
 // setupGateways assembles the Telegram, email and webhook gateways. It
 // returns false when the Telegram gateway could not start, which the
 // caller treats as a fatal boot error.
@@ -579,6 +612,7 @@ func (b *boot) setupLLMAndChat() error {
 // Multi-agent collaboration PRD phase C (docs/prds/multi-agent-collaboration.md).
 func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) bool {
 	cfg, log := b.cfg, b.log
+	b.startRateLimiter(ctx, cfg.Chat.RateLimit)
 	start, ok := setupTelegramGateway(ctx, telegramSetup{
 		Cfg: config.NewHolder(cfg), CfgPath: cfgPath, OverlayPath: overlayPath,
 		St: b.stateStore, LLM: b.llm, ChatModels: b.chatModels, ToolReg: b.toolReg,
@@ -602,6 +636,7 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 		Bus:             b.bus,
 		RegisterRestart: func(request func() error) { b.restartTelegram = request }, Log: log,
 		ChannelManager: b.channelManager, AgentStatus: b.agentStatus,
+		RateLimiter: b.rateLimiter,
 	})
 	if !ok {
 		return false
@@ -610,56 +645,68 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 		b.startGateways = append(b.startGateways, start)
 	}
 
-	// ── Email gateway (optional) ───────────────────────────────────
-	if cfg.Chat.Email.ListenAddr != "" {
-		em := email.New(cfg.Chat.Email.ListenAddr, cfg.Chat.Email.RelayAddr, log)
-		emRouter := gateway.NewRouter(b.stateStore, nil, "email")
-		configureTaskCommands(emRouter, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.stateStore.Tasks}, b.defaultChatIdentity)
-		b.startGateways = append(b.startGateways, func() {
-			go func() {
-				lifecycle := gateway.Lifecycle{
-					Starting: func() { b.channelManager.MarkStarting("email") },
-					Running: func() {
-						b.channelManager.MarkRunning("email")
-						log.Info("email gateway started", "addr", cfg.Chat.Email.ListenAddr)
-					},
-				}
-				if err := em.Start(ctx, emRouter, lifecycle); err != nil && ctx.Err() == nil {
-					b.channelManager.MarkFailed("email", err.Error())
-					log.Error("email gateway stopped", "err", err)
-				}
-			}()
-		})
-	}
-
-	// ── Webhook gateway (optional) ─────────────────────────────────
-	// Enabled when chat.webhook is set to a host:port listen address.
-	if cfg.Chat.WebhookAddr != "" {
-		host, port := parseListenAddr(cfg.Chat.WebhookAddr, "0.0.0.0", 8644)
-		wh := webhook.New(
-			host, port,
-			[]webhook.RouteConfig{{Path: "/webhook"}},
-			log,
-		)
-		whRouter := gateway.NewRouter(b.stateStore, nil, "webhook")
-		configureTaskCommands(whRouter, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.stateStore.Tasks}, b.defaultChatIdentity)
-		b.startGateways = append(b.startGateways, func() {
-			go func() {
-				lifecycle := gateway.Lifecycle{
-					Starting: func() { b.channelManager.MarkStarting("webhook") },
-					Running: func() {
-						b.channelManager.MarkRunning("webhook")
-						log.Info("webhook gateway started", "addr", fmt.Sprintf("%s:%d", host, port))
-					},
-				}
-				if err := wh.Start(ctx, whRouter, lifecycle); err != nil && ctx.Err() == nil {
-					b.channelManager.MarkFailed("webhook", err.Error())
-					log.Error("webhook gateway stopped", "err", err)
-				}
-			}()
-		})
-	}
+	b.setupEmailGateway(ctx, cfg, log)
+	b.setupWebhookGateway(ctx, cfg, log)
 	return true
+}
+
+// setupEmailGateway registers the optional inbound email gateway when
+// chat.email.listen_addr is configured.
+func (b *boot) setupEmailGateway(ctx context.Context, cfg config.Config, log *slog.Logger) {
+	if cfg.Chat.Email.ListenAddr == "" {
+		return
+	}
+	em := email.New(cfg.Chat.Email.ListenAddr, cfg.Chat.Email.RelayAddr, log)
+	emRouter := gateway.NewRouter(b.stateStore, nil, "email")
+	emRouter.Limiter = b.rateLimiter
+	configureTaskCommands(emRouter, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.stateStore.Tasks}, b.defaultChatIdentity)
+	b.startGateways = append(b.startGateways, func() {
+		go func() {
+			lifecycle := gateway.Lifecycle{
+				Starting: func() { b.channelManager.MarkStarting("email") },
+				Running: func() {
+					b.channelManager.MarkRunning("email")
+					log.Info("email gateway started", "addr", cfg.Chat.Email.ListenAddr)
+				},
+			}
+			if err := em.Start(ctx, emRouter, lifecycle); err != nil && ctx.Err() == nil {
+				b.channelManager.MarkFailed("email", err.Error())
+				log.Error("email gateway stopped", "err", err)
+			}
+		}()
+	})
+}
+
+// setupWebhookGateway registers the optional inbound webhook gateway when
+// chat.webhook_addr is configured.
+func (b *boot) setupWebhookGateway(ctx context.Context, cfg config.Config, log *slog.Logger) {
+	if cfg.Chat.WebhookAddr == "" {
+		return
+	}
+	host, port := parseListenAddr(cfg.Chat.WebhookAddr, "0.0.0.0", 8644)
+	wh := webhook.New(
+		host, port,
+		[]webhook.RouteConfig{{Path: "/webhook"}},
+		log,
+	)
+	whRouter := gateway.NewRouter(b.stateStore, nil, "webhook")
+	whRouter.Limiter = b.rateLimiter
+	configureTaskCommands(whRouter, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.stateStore.Tasks}, b.defaultChatIdentity)
+	b.startGateways = append(b.startGateways, func() {
+		go func() {
+			lifecycle := gateway.Lifecycle{
+				Starting: func() { b.channelManager.MarkStarting("webhook") },
+				Running: func() {
+					b.channelManager.MarkRunning("webhook")
+					log.Info("webhook gateway started", "addr", fmt.Sprintf("%s:%d", host, port))
+				},
+			}
+			if err := wh.Start(ctx, whRouter, lifecycle); err != nil && ctx.Err() == nil {
+				b.channelManager.MarkFailed("webhook", err.Error())
+				log.Error("webhook gateway stopped", "err", err)
+			}
+		}()
+	})
 }
 
 // loadWorkflows builds the workflow registry from the skill catalog.

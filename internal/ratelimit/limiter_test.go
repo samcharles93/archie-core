@@ -379,3 +379,50 @@ func TestEvictStaleConcurrentWithAllow(t *testing.T) {
 		t.Errorf("hits map has %d entries, want 1 (only the fresh key); stale entries were not evicted", len(l.hits))
 	}
 }
+
+// TestEvictStaleDrivenByTicker exercises the ticker-driven usage the
+// package doc mandates ("a long-lived limiter should have EvictStale
+// driven on a ticker") end to end with a real time.Ticker, rather than
+// every other test's direct call against a frozen fake clock. It is the
+// only test in the suite that actually starts a ticker goroutine.
+func TestEvictStaleDrivenByTicker(t *testing.T) {
+	const window = 15 * time.Millisecond
+	l := New(window, 1)
+
+	l.Allow("telegram", "u1")
+	if len(l.hits) != 1 {
+		t.Fatalf("hits map has %d entries after Allow, want 1", len(l.hits))
+	}
+
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(5 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				l.EvictStale()
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		close(stop)
+		<-done
+	})
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		l.mu.Lock()
+		n := len(l.hits)
+		l.mu.Unlock()
+		if n == 0 {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("ticker-driven EvictStale never emptied the hits map for a stale entry")
+}

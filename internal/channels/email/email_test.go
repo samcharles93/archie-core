@@ -69,6 +69,9 @@ func TestSMTPReceiveAndRoute(t *testing.T) {
 		if in.Message.Sender != "sender@test.com" {
 			return "", fmt.Errorf("unexpected sender: %s", in.Message.Sender)
 		}
+		if in.Message.SenderID != "sender@test.com" {
+			return "", fmt.Errorf("unexpected SenderID: %s", in.Message.SenderID)
+		}
 		return "got it", nil
 	}, "email")
 

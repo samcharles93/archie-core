@@ -80,6 +80,14 @@ type Message struct {
 	// so history search and transcript rendering keep working.
 	Sender string
 
+	// SenderID is the channel-native stable identifier for the party that
+	// sent this message (e.g. a Telegram numeric user ID, an SMTP from
+	// address, or a webhook route path), distinct from Sender's
+	// human-readable display form. Empty when the channel has no stable
+	// per-sender identity to offer. Used to key per-identity inbound
+	// controls such as rate limiting.
+	SenderID string
+
 	Role Role
 	Text string
 

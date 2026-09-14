@@ -616,6 +616,7 @@ func (g *Gateway) submitTurn(ctx context.Context, b *bot.Bot, msg *models.Messag
 		SourceID:       fmt.Sprintf("%d", msg.ID),
 		ConversationID: conversationID(msg),
 		Sender:         msg.From.Username,
+		SenderID:       fmt.Sprintf("%d", msg.From.ID),
 		Role:           messaging.RoleUser,
 		Text:           msg.Text,
 		At:             time.Unix(int64(msg.Date), 0).UTC(),

@@ -910,6 +910,30 @@ type ChatConfig struct {
 	// Empty disables the webhook gateway.
 	WebhookAddr string         `toml:"webhook_addr" yaml:"webhook_addr"`
 	Telegram    TelegramConfig `toml:"telegram" yaml:"telegram"`
+	// RateLimit budgets inbound messages per (channel, sender) across
+	// every chat channel. Zero MaxRequests (the default) leaves rate
+	// limiting off entirely -- it is an opt-in control, not a default
+	// throttle that could surprise an existing deployment.
+	RateLimit RateLimitConfig `toml:"rate_limit" yaml:"rate_limit"`
+}
+
+// RateLimitConfig configures the sliding-window inbound rate limiter
+// (internal/ratelimit) shared by every chat channel. A sender is
+// identified per channel: Telegram by numeric user ID, email by the SMTP
+// from address, webhook by the configured route path. Disabled unless
+// both fields are set to a positive value.
+type RateLimitConfig struct {
+	// Window is the rolling interval MaxRequests is budgeted over.
+	Window time.Duration `toml:"window" yaml:"window"`
+	// MaxRequests is the most inbound messages one sender may send in
+	// Window. Zero (the default) disables rate limiting.
+	MaxRequests int `toml:"max_requests" yaml:"max_requests"`
+}
+
+// Enabled reports whether RateLimit is configured to actually limit
+// anything.
+func (c RateLimitConfig) Enabled() bool {
+	return c.Window > 0 && c.MaxRequests > 0
 }
 
 // TelegramConfig configures the Telegram Bot API channel.

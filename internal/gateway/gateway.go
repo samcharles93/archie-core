@@ -21,6 +21,7 @@ import (
 	"unicode"
 
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/ratelimit"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
@@ -231,7 +232,12 @@ type Router struct {
 	// Log is the optional logger for the best-effort background title
 	// path. Nil drops those diagnostics silently; nothing on this path is
 	// important enough to fail the turn over.
-	Log            *slog.Logger
+	Log *slog.Logger
+	// Limiter enforces a per-(gateway, sender) inbound budget when set.
+	// Nil disables rate limiting entirely. Messages with no SenderID
+	// (channels that cannot supply a stable per-sender identity) are
+	// never limited, since there is no key to charge them against.
+	Limiter        *ratelimit.Limiter
 	sessionTracker *sessionTracker
 	gatewayName    string
 	// titlingMu guards titling, the set of sessions with a title proposal
@@ -260,9 +266,34 @@ func (r *Router) SessionTracker() *sessionTracker {
 	return r.sessionTracker
 }
 
+// rateLimitReply is returned to a sender who has exceeded their inbound
+// budget, in place of normal dispatch.
+const rateLimitReply = "You're sending messages too quickly. Please wait a moment and try again."
+
+// checkRateLimit reports whether msg is over its sender's inbound budget.
+// A nil Limiter (rate limiting not configured) or an empty SenderID
+// (the channel has no stable per-sender identity to charge) always
+// allows.
+func (r *Router) checkRateLimit(msg messaging.Message) (blocked bool) {
+	if r.Limiter == nil || msg.SenderID == "" {
+		return false
+	}
+	return !r.Limiter.Allow(r.gatewayName, msg.SenderID)
+}
+
 // Route dispatches msg and returns the reply. Gateway-local commands
 // are handled directly; everything else goes to the LLM responder.
 func (r *Router) Route(ctx context.Context, in Inbound) (string, error) {
+	if r.checkRateLimit(in.Message) {
+		return rateLimitReply, nil
+	}
+	return r.route(ctx, in)
+}
+
+// route is Route's continuation once the caller has already cleared the
+// rate-limit check (or is deliberately skipping it, as RouteStream's
+// local-command fallthrough does to avoid charging one message twice).
+func (r *Router) route(ctx context.Context, in Inbound) (string, error) {
 	text := strings.TrimSpace(in.Message.Text)
 	cmd, _ := parseCmd(text, r.gatewayName)
 
@@ -449,9 +480,12 @@ func (r *Router) RouteStream(ctx context.Context, in Inbound, stream TurnStream)
 	if r.LLMStream == nil || stream == nil {
 		return r.Route(ctx, in)
 	}
+	if r.checkRateLimit(in.Message) {
+		return rateLimitReply, nil
+	}
 	cmd, _ := parseCmd(strings.TrimSpace(in.Message.Text), r.gatewayName)
 	if isLocalCommand(cmd) || strings.HasPrefix(cmd, "/") {
-		return r.Route(ctx, in)
+		return r.route(ctx, in)
 	}
 	reply, err := r.LLMStream(ctx, in, stream)
 	if err == nil {
