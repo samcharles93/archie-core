@@ -244,11 +244,6 @@ func extractBody(raw string) string {
 	}
 
 	// Non-multipart: strip trailing SMTP dots.
-	body = strings.TrimSpace(body)
-	// Remove any quoted-printable or base64 content headers.
-	if parts := strings.SplitN(body, "\r\n\r\n", 2); len(parts) == 2 {
-		body = parts[1]
-	}
 	return strings.TrimSpace(body)
 }
 

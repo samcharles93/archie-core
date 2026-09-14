@@ -45,6 +45,23 @@ func TestExtractBodyPlain(t *testing.T) {
 	}
 }
 
+// TestExtractBodyMultiParagraph pins that a non-multipart plain-text body
+// keeps every paragraph. extractBody used to re-split the body on the
+// first "\r\n\r\n" it found -- intended to strip a stray content-header
+// block some MTAs emit -- but that heuristic can't tell a header block
+// from an ordinary blank line between paragraphs, so it silently dropped
+// the first paragraph of any multi-paragraph email.
+func TestExtractBodyMultiParagraph(t *testing.T) {
+	raw := "From: test@example.com\r\nSubject: Hello\r\n\r\nFirst paragraph.\r\n\r\nSecond paragraph."
+	got := extractBody(raw)
+	if !strings.Contains(got, "First paragraph.") {
+		t.Errorf("extractBody = %q, want it to contain %q", got, "First paragraph.")
+	}
+	if !strings.Contains(got, "Second paragraph.") {
+		t.Errorf("extractBody = %q, want it to contain %q", got, "Second paragraph.")
+	}
+}
+
 func TestExtractBodyMultipart(t *testing.T) {
 	raw := "From: test@example.com\r\nContent-Type: multipart/alternative; boundary=abc123\r\n\r\n--abc123\r\nContent-Type: text/plain\r\n\r\nplain text here\r\n--abc123\r\nContent-Type: text/html\r\n\r\n<html></html>\r\n--abc123--"
 	if got := extractBody(raw); got != "plain text here" {
