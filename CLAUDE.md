@@ -83,7 +83,7 @@ automatically and note it in the handoff.
 
 ## Build & Test
 
-Commands are defined in `Taskfile.yml` (requires Go 1.26.5,
+Commands are defined in `Taskfile.yml` (requires Go 1.27.0,
 [Task](https://taskfile.dev), `gofumpt`, `golangci-lint`, and Node/npm).
 
 ```bash
