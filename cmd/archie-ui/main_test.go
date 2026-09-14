@@ -235,7 +235,8 @@ func startUIProcess(t *testing.T, bin, cfg string) *uiProcess {
 	// ignored SIGTERM.
 	ctx, cancel := context.WithCancel(context.WithoutCancel(t.Context()))
 	t.Cleanup(cancel)
-	cmd := exec.CommandContext(ctx, bin,
+	cmd := exec.CommandContext(
+		ctx, bin,
 		"-config", cfg,
 		"-listen", "127.0.0.1:0",
 		"-token", dashboardToken,

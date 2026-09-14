@@ -2,6 +2,7 @@ package archied
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -14,6 +15,15 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 )
+
+// startupGrace is how long RunStateStore is given to either refuse the config
+// or settle into serving before the test cancels it. It bounds "did startup
+// reject us" (fast, deterministic) rather than "is the machine fast enough"
+// (I/O-bound, which is what made the previous 200ms budget a coin flip).
+const startupGrace = 2 * time.Second
+
+// shutdownGrace bounds how long a cancelled RunStateStore may take to return.
+const shutdownGrace = 5 * time.Second
 
 func TestExternalServicesDoNotRequireBridgeNetwork(t *testing.T) {
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -50,9 +60,31 @@ func TestRunStateStoreAcceptsEnvironmentToken(t *testing.T) {
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	// Cancellation is the assertion: RunStateStore must start (the env token
+	// satisfies the non-loopback listener) and then return promptly when the
+	// context ends. It must NOT be raced against a wall-clock budget -- SQLite
+	// schema init is I/O, so a test that gives startup a few hundred
+	// milliseconds is a coin flip, not a check. Cancel first, then assert.
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	if err := RunStateStore(ctx, StateStoreOptions{Config: path, Listen: "0.0.0.0:0"}); err != nil {
-		t.Fatalf("environment token should permit startup: %v", err)
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- RunStateStore(ctx, StateStoreOptions{Config: path, Listen: "0.0.0.0:0"}) }()
+
+	select {
+	case err := <-errCh:
+		// Returning before cancellation means startup refused the config, which
+		// is the failure this test exists to catch.
+		t.Fatalf("RunStateStore returned before cancellation, want it to serve: %v", err)
+	case <-time.After(startupGrace):
+	}
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatalf("RunStateStore returned %v, want nil or context.Canceled", err)
+		}
+	case <-time.After(shutdownGrace):
+		t.Fatal("RunStateStore did not return within the shutdown grace after cancellation")
 	}
 }
