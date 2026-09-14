@@ -9,6 +9,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/tools"
 	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
@@ -218,12 +219,25 @@ func TestReviewPRToolRegisteredOnlyWithWorkingReviewer(t *testing.T) {
 		log:         logger,
 	}
 
-	if entries := gateway.ReviewTools(b.prReviewer(), "archie"); len(entries) != 0 {
-		t.Fatalf("ReviewTools with no worktree manager = %d entries, want 0", len(entries))
+	if hasReviewPRTool(gateway.ReviewTools(b.prReviewer(), "archie")) {
+		t.Fatal("review_pr advertised with no worktree manager: a tool that cannot run must not be offered")
 	}
 
 	b.trees = &worktree.Manager{}
-	if entries := gateway.ReviewTools(b.prReviewer(), "archie"); len(entries) != 1 {
-		t.Fatalf("ReviewTools with a worktree manager = %d entries, want 1", len(entries))
+	if !hasReviewPRTool(gateway.ReviewTools(b.prReviewer(), "archie")) {
+		t.Fatal("review_pr not advertised with a worktree manager")
 	}
+}
+
+// hasReviewPRTool reports whether review_pr is offered. Presence is asserted by
+// name rather than by entry count: the contract is that this one capability is
+// offered only when it can run, so adding a sibling review tool must not turn
+// this red.
+func hasReviewPRTool(entries []tools.ToolEntry) bool {
+	for _, e := range entries {
+		if e.Name == "review_pr" {
+			return true
+		}
+	}
+	return false
 }

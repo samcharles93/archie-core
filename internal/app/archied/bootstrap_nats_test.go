@@ -42,11 +42,14 @@ func TestSetupBackendsRegistersContainerCleanupAfterNATS(t *testing.T) {
 	}
 }
 
+// methodBody returns the body of the func or method named name. It matches on
+// name alone, so a package-level function (such as Run in main.go) resolves as
+// well as a method; names are unique per package.
 func methodBody(t *testing.T, file *ast.File, name string) *ast.BlockStmt {
 	t.Helper()
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
-		if ok && fn.Recv != nil && fn.Name.Name == name {
+		if ok && fn.Name.Name == name {
 			return fn.Body
 		}
 	}

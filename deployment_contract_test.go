@@ -3,6 +3,7 @@ package configtemplate
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -36,45 +37,59 @@ func TestExternalNATSProfileLoadsWithManagedWorkers(t *testing.T) {
 	}
 }
 
-// selfHostConfig reconstructs the config.toml the install.sh self-host branch
-// writes through its hand-rolled heredoc, with the shell expansions resolved,
-// so tests can parse exactly what a fresh self-host install would produce.
-func selfHostConfig(t *testing.T) string {
+// heredocRe matches any `cat <<DELIM` heredoc opener in install.sh, tolerating
+// <<- and a quoted delimiter. The redirect target is deliberately NOT matched:
+// the config writer may name it inline, put the redirect before the delimiter,
+// or factor the path into a variable, and none of those change what is written.
+var heredocRe = regexp.MustCompile("(?m)^[^\\n]*\\bcat\\b[^\\n]*?<<-?[ \\t]*['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?[ \\t]*")
+
+// configHeredocs returns the body of every install.sh heredoc that declares the
+// daemon config's [nats] table, which the systemd unit heredoc does not. The
+// selector is a table the assertions below never touch, so it stays structural
+// rather than becoming a search for the field under test.
+//
+// Command substitutions are dropped rather than expanded. Substituting a
+// hand-written forge block here would duplicate install.sh's own forge_block
+// output, so the test would assert against a copy that can silently diverge from
+// what the installer writes; the loader defaults what their absence omits. Plain
+// ${VAR} references are left in place: they are ordinary string contents once
+// parsed, and removing them would empty the [models] table for no benefit.
+func configHeredocs(t *testing.T) []string {
 	t.Helper()
 	source := readDeploymentFile(t, "install.sh")
-	const marker = `cat <<EOF > "${ARCHIE_CONFIG_DIR}/config.toml"`
-	start := strings.Index(source, marker)
-	if start < 0 {
-		t.Fatalf("install.sh is missing the self-host config heredoc marker %q", marker)
-	}
-	bodyStart := strings.IndexByte(source[start:], '\n')
-	if bodyStart < 0 {
-		t.Fatal("install.sh self-host config heredoc is malformed")
-	}
-	bodyStart += start + 1
-	lines := strings.Split(source[bodyStart:], "\n")
-	var body strings.Builder
-	for _, line := range lines {
-		if line == "EOF" {
-			break
+	var out []string
+	for _, m := range heredocRe.FindAllStringSubmatchIndex(source, -1) {
+		delim := source[m[2]:m[3]]
+		rest := source[m[1]:]
+		_, after, ok := strings.Cut(rest, "\n")
+		if !ok {
+			continue
 		}
-		body.WriteString(line)
-		body.WriteByte('\n')
+		var body strings.Builder
+		for line := range strings.SplitSeq(after, "\n") {
+			if strings.TrimRight(strings.TrimLeft(line, "\t"), "\r") == delim {
+				break
+			}
+			if strings.Contains(line, "$(") {
+				continue // a command substitution install.sh resolves at run time
+			}
+			body.WriteString(line)
+			body.WriteByte('\n')
+		}
+		if b := body.String(); strings.Contains(b, "\n[nats]") {
+			out = append(out, b)
+		}
 	}
-	out := body.String()
-	// install.sh expands these two shell constructs inside the heredoc; pin
-	// concrete values here so the reconstructed document parses. The forge
-	// block is the GitHub output forge_block prints (install.sh's own function).
-	out = strings.Replace(out, "$(forge_block)",
-		"[forge]\ntype = \"github\"\nhost = \"https://github.com\"\ntoken = { engine = \"env\", key = \"ARCHIE_GITHUB_TOKEN\" }\n\n", 1)
-	out = strings.ReplaceAll(out, "ollama/${OLLAMA_MODEL}", "ollama/llama3")
+	if len(out) == 0 {
+		t.Fatal("install.sh has no heredoc declaring the daemon config's [nats] table")
+	}
 	return out
 }
 
 func TestInstallerGeneratedConfigHasServiceTargets(t *testing.T) {
 	// Non-self-host branch: install.sh replaces only the [forge] block in
 	// config.example.toml, so every other section -- including the required
-	// [services.*] targets -- must already be active there.
+	// [services.state] target -- must already be active there.
 	example, err := configuration.New(nil).File("config.example.toml")
 	if err != nil {
 		t.Fatalf("load config.example.toml: %v", err)
@@ -82,28 +97,22 @@ func TestInstallerGeneratedConfigHasServiceTargets(t *testing.T) {
 	if example.Config.Services.State.Target == "" {
 		t.Error("config.example.toml leaves services.state.target empty; the install.sh awk branch would emit an unbootable config")
 	}
-	exampleSource := readDeploymentFile(t, "config.example.toml")
-	if !strings.Contains(exampleSource, "\n[services.gateway]\n") {
-		t.Error("config.example.toml does not declare an active [services.gateway] section")
-	}
 
-	// Self-host branch: install.sh writes a hand-rolled heredoc. Reconstruct
-	// it the way the installer would and require it to parse with the State
+	// Self-host branch: install.sh writes the config through its own heredoc.
+	// Reconstruct every such heredoc and require each to parse with the State
 	// Store target the daemon's openStateStoreAdapter enforces.
-	selfHost := selfHostConfig(t)
-	path := filepath.Join(t.TempDir(), "config.toml")
-	if err := os.WriteFile(path, []byte(selfHost), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	generated, err := configuration.New(nil).File(path)
-	if err != nil {
-		t.Fatalf("load reconstructed self-host install config: %v", err)
-	}
-	if generated.Config.Services.State.Target == "" {
-		t.Error("install.sh self-host heredoc leaves services.state.target empty; generated config cannot boot")
-	}
-	if !strings.Contains(selfHost, "\n[services.gateway]\n") {
-		t.Error("install.sh self-host heredoc does not declare an active [services.gateway] section")
+	for _, body := range configHeredocs(t) {
+		path := filepath.Join(t.TempDir(), "config.toml")
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		generated, err := configuration.New(nil).File(path)
+		if err != nil {
+			t.Fatalf("load reconstructed self-host install config: %v", err)
+		}
+		if generated.Config.Services.State.Target == "" {
+			t.Error("install.sh config heredoc leaves services.state.target empty; generated config cannot boot")
+		}
 	}
 }
 

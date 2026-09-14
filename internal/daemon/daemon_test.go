@@ -753,11 +753,18 @@ func TestRunViaAgentSendsRoutingBindings(t *testing.T) {
 		t.Fatalf("claim: (%v, %v)", task, err)
 	}
 
-	received := make(chan taskrun.Request, 1)
+	// The published request is checked for its routing bindings, so a decode
+	// failure is carried out rather than discarded: otherwise a payload-shape
+	// break would surface as an empty binding and read as a routing bug.
+	type published struct {
+		req taskrun.Request
+		err error
+	}
+	received := make(chan published, 1)
 	sub, err := mustCoreConn(t, busClient).Subscribe(agentnats.SubjectForTask(task.ID), func(msg *natsio.Msg) {
-		var req taskrun.Request
-		_ = json.Unmarshal(msg.Data, &req)
-		received <- req
+		var p published
+		p.err = json.Unmarshal(msg.Data, &p.req)
+		received <- p
 		data, _ := json.Marshal(taskrun.Response{Status: workflow.StatusPROpen})
 		_ = msg.Respond(data)
 	})
@@ -769,11 +776,14 @@ func TestRunViaAgentSendsRoutingBindings(t *testing.T) {
 	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"})
 
 	select {
-	case req := <-received:
-		if got := req.KindWorkflows[workintake.KindBug]; got != "custom-bug" {
+	case p := <-received:
+		if p.err != nil {
+			t.Fatalf("decode published taskrun request: %v", p.err)
+		}
+		if got := p.req.KindWorkflows[workintake.KindBug]; got != "custom-bug" {
 			t.Errorf("request KindWorkflows[bug] = %q, want %q", got, "custom-bug")
 		}
-		if got := req.LabelWorkflows["security"]; got != "security-review" {
+		if got := p.req.LabelWorkflows["security"]; got != "security-review" {
 			t.Errorf("request LabelWorkflows[security] = %q, want %q", got, "security-review")
 		}
 	case <-time.After(time.Second):
