@@ -22,6 +22,17 @@ import (
 	"github.com/samcharles93/archie-core/internal/yaegiutil"
 )
 
+// safeResolve calls e.Resolve(key) with panic recovery. An interpreted
+// (Yaegi-loaded) engine is untrusted relative to the daemon's own
+// logic: a defect in the engine itself must degrade the credential it
+// was resolving, not crash the process that's resolving it -- e.g. at
+// boot, in internal/app/archied/provider_secrets.go.
+func safeResolve(e Engine, key string) (string, error) {
+	return yaegiutil.Safe(e.Name(), func() (string, error) {
+		return e.Resolve(key)
+	})
+}
+
 // Engine resolves secret references into their plaintext values.
 // Implementations must be safe for concurrent use.
 type Engine interface {
@@ -87,7 +98,7 @@ func (r *Registry) Getenv(key string) string {
 	}
 	r.mu.RUnlock()
 	for _, engine := range engines {
-		value, err := engine.Resolve(key)
+		value, err := safeResolve(engine, key)
 		value = strings.TrimSpace(value)
 		if err != nil || value == "" {
 			continue
@@ -111,7 +122,7 @@ func (r *Registry) Resolve(ref SecretRef) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("secret engine %q not registered", ref.Engine)
 	}
-	return e.Resolve(ref.Key)
+	return safeResolve(e, ref.Key)
 }
 
 // LoadDir discovers and evaluates .go files in dir. Each file must export

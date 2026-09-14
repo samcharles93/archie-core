@@ -167,3 +167,44 @@ func TestNewRegistryHasEnv(t *testing.T) {
 		t.Error("NewRegistry must pre-register env engine")
 	}
 }
+
+// panickyEngine simulates a loaded interpreted engine (see
+// TestLoadDirEngineWithPanicInResolve) whose Resolve panics on every
+// call -- a defect in the engine itself, not something the daemon
+// can validate ahead of time.
+type panickyEngine struct{ name string }
+
+func (e panickyEngine) Name() string    { return e.name }
+func (e panickyEngine) Version() string { return "1.0.0" }
+func (e panickyEngine) Resolve(key string) (string, error) {
+	panic("boom")
+}
+
+// TestRegistryResolveRecoversPanickingEngine pins the degrade-not-crash
+// contract at the one production caller that matters: a provider
+// credential resolved through a panicking secret engine (e.g. a broken
+// interpreted sops/Vault plugin) must surface as an error, not take the
+// whole daemon down during boot (internal/app/archied/provider_secrets.go
+// calls Registry.Resolve directly with no recovery of its own).
+func TestRegistryResolveRecoversPanickingEngine(t *testing.T) {
+	r := NewRegistry()
+	r.Register(panickyEngine{name: "panicky"})
+
+	_, err := r.Resolve(SecretRef{Engine: "panicky", Key: "k"})
+	if err == nil {
+		t.Fatal("Resolve() with a panicking engine returned no error; want a recovered error")
+	}
+}
+
+// TestRegistryGetenvRecoversPanickingEngine is the Getenv-path sibling:
+// a panicking non-env engine consulted as a Getenv fallback must not
+// crash the caller either.
+func TestRegistryGetenvRecoversPanickingEngine(t *testing.T) {
+	t.Setenv("ARCHIE_TEST_PANICKY_KEY", "")
+	r := NewRegistry()
+	r.Register(panickyEngine{name: "panicky"})
+
+	if got := r.Getenv("ARCHIE_TEST_PANICKY_KEY"); got != "" {
+		t.Fatalf("Getenv() = %q, want empty string when the only fallback engine panics", got)
+	}
+}
