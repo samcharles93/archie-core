@@ -184,7 +184,7 @@ func TestServiceInstallRefusesAnUnknownInstallType(t *testing.T) {
 // rollback ever attempted, which is exactly the failure mode this feature
 // exists to prevent.
 func TestServiceInstallSurvivesCallerContextCancellation(t *testing.T) {
-	installer := &blockingInstallerStub{unblock: make(chan struct{}), started: make(chan struct{})}
+	installer := newBlockingInstallerStub()
 	service := Service{Installer: installer, InstallType: "binary"}
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -197,15 +197,27 @@ func TestServiceInstallSurvivesCallerContextCancellation(t *testing.T) {
 	<-installer.started
 	cancel() // simulate the triggering request/handler being torn down mid-install
 
+	// The installer must not observe cancellation. Assert it synchronously:
+	// the stub records cancellation by closing a channel, and a channel that
+	// nothing has closed is not ready. No sleep -- a 50ms guess is both a
+	// flake and a weaker check than asking the channel directly.
 	select {
 	case <-installer.gotCancelled:
 		t.Fatal("installer observed its context as cancelled after only the caller's context was cancelled")
-	case <-time.After(50 * time.Millisecond):
+	default:
 	}
 	close(installer.unblock)
 
 	if err := <-done; err != nil {
 		t.Fatalf("Install() error = %v, want nil", err)
+	}
+	// After Install returns, the detached context is released, so the
+	// cancellation observer must have fired. This is the positive half: the
+	// check above is only meaningful if the channel can close at all.
+	select {
+	case <-installer.gotCancelled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("installer never observed cancellation after Install returned")
 	}
 }
 
@@ -215,7 +227,7 @@ func TestServiceInstallSurvivesCallerContextCancellation(t *testing.T) {
 // The authoritative guard against two installs racing the same binaries
 // and .prev backups has to live here, not duplicated per caller.
 func TestServiceInstallRefusesConcurrentInstalls(t *testing.T) {
-	installer := &blockingInstallerStub{unblock: make(chan struct{}), started: make(chan struct{})}
+	installer := newBlockingInstallerStub()
 	service := Service{Installer: installer, InstallType: "binary"}
 
 	done := make(chan error, 1)
@@ -285,7 +297,9 @@ func (s *catalogStub) Check(context.Context) (Snapshot, error) { return s.snapsh
 
 // blockingInstallerStub lets a test hold Install() open until it chooses to
 // release it, and records whether the context it was given ever reported
-// cancellation.
+// cancellation. gotCancelled is built by the constructor, never lazily inside
+// Install: Install runs on the caller's goroutine while the test reads the
+// field, so assigning it there is a data race (found by -race).
 type blockingInstallerStub struct {
 	unblock      chan struct{}
 	started      chan struct{}
@@ -293,12 +307,17 @@ type blockingInstallerStub struct {
 	calls        int
 }
 
+func newBlockingInstallerStub() *blockingInstallerStub {
+	return &blockingInstallerStub{
+		unblock:      make(chan struct{}),
+		started:      make(chan struct{}),
+		gotCancelled: make(chan struct{}),
+	}
+}
+
 func (s *blockingInstallerStub) Install(ctx context.Context, _ Snapshot, _ InstallMeta, _ func(string)) (Result, error) {
 	s.calls++
 	close(s.started)
-	if s.gotCancelled == nil {
-		s.gotCancelled = make(chan struct{})
-	}
 	go func() {
 		<-ctx.Done()
 		close(s.gotCancelled)
