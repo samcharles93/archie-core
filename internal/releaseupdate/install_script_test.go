@@ -27,7 +27,7 @@ func TestUpdateInstallGatewayOnlySkipsRuntimeWork(t *testing.T) {
 	assertCallContains(t, calls, "fetch --quiet --tags origin")
 	assertCallAbsent(t, calls, "git pull")
 	assertCallContains(t, calls, "git -C", "rev-parse --verify refs/tags/archied/v1.13.0^{commit}")
-	assertCallContains(t, calls, "checkout --quiet --detach approved-release-commit")
+	assertCallContains(t, calls, "checkout --quiet --detach archied-v1.13.0")
 	assertCallContains(t, calls, "go build", "internal/app/archied.runtimeVersion=1.9.9", "./cmd/archied")
 	assertCallAbsent(t, calls, "./cmd/archie-agent")
 	assertCallAbsent(t, calls, "docker compose build agent")
@@ -76,6 +76,54 @@ func TestUpdateInstallBothComponentsBuildsDaemonAndManagedWorkerImage(t *testing
 	if result.Installed[ComponentDaemon] != "1.13.0" || result.Installed[ComponentAgent] != "1.10.0" {
 		t.Fatalf("installed = %#v, want both release versions", result.Installed)
 	}
+}
+
+// Components are independently versioned (RELEASING.md), so the newest
+// archied/v* and archie/v* tags usually sit on different commits -- gateway-only
+// releases are the norm. Each changed component must be built from its own
+// approved tag; forcing both tags onto one commit refuses every update once
+// the two components' newest releases diverge.
+func TestUpdateInstallBuildsEachComponentFromItsOwnTag(t *testing.T) {
+	result, calls := runUpdateInstallScript(t, map[string]string{
+		"ARCHIE_UPDATE_DAEMON_PREVIOUS": "1.12.0",
+		"ARCHIE_UPDATE_DAEMON_VERSION":  "1.13.0",
+		"ARCHIE_UPDATE_AGENT_PREVIOUS":  "1.9.9",
+		"ARCHIE_UPDATE_AGENT_VERSION":   "1.10.0",
+	})
+
+	if result.Installed[ComponentDaemon] != "1.13.0" || result.Installed[ComponentAgent] != "1.10.0" {
+		t.Fatalf("installed = %#v, want both release versions", result.Installed)
+	}
+	// The derived fake commits differ per tag, so these assertions fail if
+	// either component is built from the other's release.
+	daemonCheckout := indexOfCallContaining(t, calls, "checkout --quiet --detach archied-v1.13.0")
+	agentCheckout := indexOfCallContaining(t, calls, "checkout --quiet --detach archie-v1.10.0")
+	daemonBuild := indexOfCallContaining(t, calls, "go build", "./cmd/archied")
+	agentImageBuild := indexOfCallContaining(t, calls, "docker build")
+	if daemonCheckout < 0 || agentCheckout < 0 || daemonBuild < 0 || agentImageBuild < 0 {
+		t.Fatalf("missing expected step: daemon checkout %d, daemon build %d, agent checkout %d, agent image build %d",
+			daemonCheckout, daemonBuild, agentCheckout, agentImageBuild)
+	}
+	if daemonCheckout > daemonBuild {
+		t.Errorf("daemon binaries must be built from the daemon tag's commit; calls = %#v", calls)
+	}
+	if agentCheckout > agentImageBuild {
+		t.Errorf("the managed worker image must be built from the agent tag's commit; calls = %#v", calls)
+	}
+}
+
+func indexOfCallContaining(t *testing.T, calls []string, fragments ...string) int {
+	t.Helper()
+	for i, call := range calls {
+		matched := true
+		for _, fragment := range fragments {
+			matched = matched && strings.Contains(call, fragment)
+		}
+		if matched {
+			return i
+		}
+	}
+	return -1
 }
 
 func TestUpdateInstallNoopDoesNotFetchBuildInstallOrRestart(t *testing.T) {
@@ -326,7 +374,10 @@ case "$*" in
     done
     : > "$source_dir/docker-compose.yml"
     ;;
-  *"rev-parse --verify refs/tags/"*) echo approved-release-commit ;;
+  *"rev-parse --verify refs/tags/"*)
+    tag="$(printf '%s' "$*" | sed 's/.*refs\/tags\///; s/\^.*//')"
+    echo "${tag//\//-}"
+    ;;
 esac
 `)
 	writeFakeCommand(t, fakeDir, "go", `
