@@ -529,10 +529,12 @@ const bindingDispatchBatchLimit = 100
 // pair, and dispatchOneBinding treats that as a normal "another cycle
 // raced us" outcome rather than an error.
 //
-// Nil Bindings disables the loop (legacy behaviour: daemons built
-// before t2db.4 Phase E had no playbook bindings).
+// Nil Bindings, BindingDispatcher or BindingTaskCreator disables the
+// loop (legacy behaviour: daemons built before t2db.4 Phase E had no
+// playbook bindings, and each field's own doc comment promises this
+// degrade-not-panic contract independently).
 func (d *Daemon) dispatchBindings(ctx context.Context) {
-	if d.Bindings == nil {
+	if d.Bindings == nil || d.BindingDispatcher == nil || d.BindingTaskCreator == nil {
 		return
 	}
 

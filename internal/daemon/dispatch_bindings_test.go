@@ -216,6 +216,30 @@ func TestDispatchBindingsNilBindingsIsNoOp(t *testing.T) {
 	d.dispatchBindings(t.Context())
 }
 
+// TestDispatchBindingsNilDispatcherIsNoOp exercises the composition
+// gap the daemon field comments claim is safe: Bindings is set (so an
+// armed binding + a matching capture exist) but BindingDispatcher is
+// nil. Both fields are documented "optional: nil disables the
+// dispatch loop", so this must degrade silently rather than panic on
+// the nil-interface call to ListUndispatchedCaptures.
+func TestDispatchBindingsNilDispatcherIsNoOp(t *testing.T) {
+	s := openDispatchTestStore(t)
+	mappingID := seedMapping(t, s, "sentry", mapping.Field{Name: "title", Path: "title", Type: mapping.TypeString})
+	seedArmedBinding(t, s, "sentry", mappingID)
+	seedCapture(t, s, "sentry", true, `{"title":"hello"}`)
+
+	d := &Daemon{
+		Cfg:      config.NewHolder(config.Config{Repos: []config.Repo{{Owner: "acme", Name: "widget"}}}),
+		Store:    s,
+		Mappings: s,
+		Bindings: s,
+		// BindingDispatcher and BindingTaskCreator intentionally nil.
+		Log: slog.New(slog.NewTextHandler(os.Stderr, nil)),
+	}
+	// Should not panic.
+	d.dispatchBindings(t.Context())
+}
+
 // ── helpers ──────────────────────────────────────────────────────
 
 // openDispatchTestStore creates a fresh in-memory SQLite store for
