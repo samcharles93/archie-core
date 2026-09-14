@@ -35,14 +35,13 @@ var cloudProviders = []cloudProvider{
 // templateDefaultActiveProvider is the one provider table config.example.
 // toml ships active by default: [providers.openai], with
 // api_key = {engine="bws", key="OPENAI_API_KEY"}. bws is compiled in but
-// requires the bws CLI on PATH; on a machine without it (the common case),
-// resolving that key errors, and cmd/archied/provider_secrets.go's
-// resolveProviderSecrets walks every entry in cfg.Providers -- not just
-// the ones [models] actually references -- and refuses to start the
-// daemon at all if any of them fails to resolve. Choosing any provider
-// other than OpenAI, or choosing OpenAI but leaving its key blank, must
-// neutralise this table rather than leave it as a silent boot-time
-// landmine nothing in setup's own output would explain.
+// requires the bws CLI on PATH; on a machine without it (the common case)
+// resolving that key fails, and resolveProviderSecrets disables the provider
+// with a warning rather than stopping the daemon. Neutralising the table is
+// still setup's business: a provider the operator never chose should not be
+// left advertised and unusable, with a warning they did not cause. Choosing any
+// provider other than OpenAI, or choosing OpenAI but leaving its key blank,
+// therefore replaces this table.
 const templateDefaultActiveProvider = "openai"
 
 func stepProvider(ctx context.Context, p Prompter, discovery ModelDiscovery, secrets SecretSink, params Params) (tableEdits, string, error) {

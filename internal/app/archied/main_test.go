@@ -181,7 +181,7 @@ func TestResolveProviderSecretSetsPrivateRuntimeEnvironment(t *testing.T) {
 		},
 	}}
 
-	if err := resolveProviderSecrets(&cfg, registry); err != nil {
+	if err := resolveProviderSecrets(&cfg, registry, slog.New(slog.DiscardHandler)); err != nil {
 		t.Fatal(err)
 	}
 	provider := cfg.Providers["openai"]
@@ -216,7 +216,7 @@ func TestResolveProviderSecretsIsolatesIdentityCredentials(t *testing.T) {
 		},
 	}
 
-	if err := resolveProviderSecrets(&cfg, registry); err != nil {
+	if err := resolveProviderSecrets(&cfg, registry, slog.New(slog.DiscardHandler)); err != nil {
 		t.Fatal(err)
 	}
 	names := []string{
@@ -1248,4 +1248,100 @@ func TestSubscribeAgentEventsFlushesBeforeReturning(t *testing.T) {
 	if !strings.Contains(string(source), "flush task event subscription") {
 		t.Fatal("subscribeAgentEvents does not flush its NATS subscription before returning")
 	}
+}
+
+// TestResolveProviderSecretsDegradesInsteadOfFailing pins the startup policy for
+// LLM credentials. configuration.md's "missing credential degrades, invalid
+// config is fatal" names LLM keys as the case that must behave this way, and
+// holds up the forge path as the precedent: a token that cannot resolve disables
+// the capability and the daemon still starts. This is its provider counterpart.
+//
+// A provider whose key cannot be resolved is disabled rather than optional:
+// webui's ProviderView reports Configured from the reference, so leaving an
+// unresolvable one in place would advertise a provider nothing can use.
+func TestResolveProviderSecretsDegradesInsteadOfFailing(t *testing.T) {
+	tests := []struct {
+		name     string
+		ref      secret.SecretRef
+		registry *secret.Registry // nil means a default registry
+		wantLog  string
+	}{
+		{
+			name:    "the engine is not registered",
+			ref:     secret.SecretRef{Engine: "not-an-engine", Key: "OPENAI_API_KEY"},
+			wantLog: "api_key unavailable",
+		},
+		{
+			name:    "the key is unset in the env engine",
+			ref:     secret.SecretRef{Engine: "env", Key: "ARCHIE_TEST_PROVIDER_KEY_DEFINITELY_UNSET"},
+			wantLog: "api_key unavailable",
+		},
+		{
+			// A registered engine that answers nothing, which is how a
+			// Yaegi-loaded engine whose exported value omits Resolve behaves
+			// (see secret.Engine's doc): present, registered, empty.
+			name:     "the engine resolves every key to empty",
+			ref:      secret.SecretRef{Engine: "empty", Key: "OPENAI_API_KEY"},
+			registry: registryWithEmptyEngine(),
+			wantLog:  "api_key resolved empty",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := config.Config{Providers: map[string]config.Provider{
+				"acme": {Class: "openai", APIKey: tc.ref},
+			}}
+			registry := tc.registry
+			if registry == nil {
+				registry = secret.NewRegistry()
+			}
+			rec := &recordingHandler{}
+			if err := resolveProviderSecrets(&cfg, registry, slog.New(rec)); err != nil {
+				t.Fatalf("resolveProviderSecrets = %v, want nil: a missing credential must disable the provider, not stop the daemon", err)
+			}
+			got := cfg.Providers["acme"]
+			if got.APIKey != (secret.SecretRef{}) {
+				t.Errorf("provider api_key = %+v, want the unresolvable reference cleared", got.APIKey)
+			}
+			if got.APIKeyEnv != "" {
+				t.Errorf("provider api_key_env = %q, want empty: nothing was exported", got.APIKeyEnv)
+			}
+			warns := rec.Warnings()
+			if len(warns) != 1 || !strings.Contains(warns[0], tc.wantLog) {
+				t.Errorf("warnings = %v, want exactly one containing %q", warns, tc.wantLog)
+			}
+		})
+	}
+}
+
+// TestResolveProviderSecretsRejectsAHalfNamedRef pins the other half of the
+// policy: a reference naming only one of engine and key is a config error rather
+// than a missing credential, and an invalid config still stops the daemon.
+func TestResolveProviderSecretsRejectsAHalfNamedRef(t *testing.T) {
+	for _, ref := range []secret.SecretRef{
+		{Engine: "env"},
+		{Key: "OPENAI_API_KEY"},
+	} {
+		cfg := config.Config{Providers: map[string]config.Provider{
+			"acme": {Class: "openai", APIKey: ref},
+		}}
+		if err := resolveProviderSecrets(&cfg, secret.NewRegistry(), slog.New(slog.DiscardHandler)); err == nil {
+			t.Errorf("resolveProviderSecrets with api_key %+v = nil, want an error", ref)
+		}
+	}
+}
+
+// emptyEngine resolves every key to an empty value with no error, standing in for
+// a Yaegi-loaded engine whose exported value omits Resolve (see secret.Engine's
+// doc): registered, present, and answering nothing.
+type emptyEngine struct{}
+
+func (emptyEngine) Name() string                   { return "empty" }
+func (emptyEngine) Version() string                { return "0.0.0" }
+func (emptyEngine) Resolve(string) (string, error) { return "", nil }
+
+func registryWithEmptyEngine() *secret.Registry {
+	r := secret.NewRegistry()
+	r.Register(emptyEngine{})
+	return r
 }

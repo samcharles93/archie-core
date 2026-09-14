@@ -30,46 +30,82 @@ func configuredSecretRegistry(cfg *config.Config, log *slog.Logger) (*secret.Reg
 		}
 		log.Info("secret engines loaded", "count", loaded)
 	}
-	if err := resolveProviderSecrets(cfg, registry); err != nil {
+	if err := resolveProviderSecrets(cfg, registry, log); err != nil {
 		return nil, fmt.Errorf("resolve provider secrets: %w", err)
 	}
 	return registry, nil
 }
 
-func resolveProviderSecrets(cfg *config.Config, registry *secret.Registry) error {
-	if err := resolveProviderMap("root", cfg.Providers, registry); err != nil {
+func resolveProviderSecrets(cfg *config.Config, registry *secret.Registry, log *slog.Logger) error {
+	if err := resolveProviderMap("root", cfg.Providers, registry, log); err != nil {
 		return err
 	}
 	for i := range cfg.Identities {
-		if err := resolveProviderMap(cfg.Identities[i].Name, cfg.Identities[i].Providers, registry); err != nil {
+		if err := resolveProviderMap(cfg.Identities[i].Name, cfg.Identities[i].Providers, registry, log); err != nil {
 			return fmt.Errorf("identity %q: %w", cfg.Identities[i].Name, err)
 		}
 	}
 	return nil
 }
 
-func resolveProviderMap(scope string, providers map[string]config.Provider, registry *secret.Registry) error {
+// resolveProviderMap exports each provider's resolved api_key into a private
+// environment variable and rewrites the provider to reference that variable, so
+// a key never travels as config data.
+//
+// A credential that cannot be resolved disables that provider and is reported,
+// rather than failing the boot. configuration.md's startup policy is that a
+// missing credential disables a capability and only an invalid config stops the
+// daemon, and it names LLM keys as the case that must behave that way; the forge
+// path was fixed to degrade for the same reason (resolveForge).
+//
+// A reference naming only one of engine and key is a config error rather than a
+// missing credential, so that stays fatal. applyForgeDefaults only ever builds a
+// ref with both halves, so a half-named one can only come from a hand-edited
+// config.
+func resolveProviderMap(scope string, providers map[string]config.Provider, registry *secret.Registry, log *slog.Logger) error {
 	for id, provider := range providers {
-		if provider.APIKey == (secret.SecretRef{}) {
+		switch {
+		case provider.APIKey == (secret.SecretRef{}):
 			continue
+		case provider.APIKey.Engine == "" || provider.APIKey.Key == "":
+			return fmt.Errorf("provider %q: api_key must name both an engine and a key, got {engine: %q, key: %q}",
+				id, provider.APIKey.Engine, provider.APIKey.Key)
 		}
+
 		value, err := registry.Resolve(provider.APIKey)
 		if err != nil {
-			return fmt.Errorf("provider %q: %w", id, err)
+			disableProvider(providers, id, provider, log, "api_key unavailable", err)
+			continue
 		}
-		value = strings.TrimSpace(value)
-		if value == "" {
-			return fmt.Errorf("provider %q: resolved api_key is empty", id)
+		if value = strings.TrimSpace(value); value == "" {
+			disableProvider(providers, id, provider, log, "api_key resolved empty", nil)
+			continue
 		}
 		envName := providerSecretEnvName(scope, id)
 		if err := os.Setenv(envName, value); err != nil {
-			return fmt.Errorf("provider %q: export resolved api_key: %w", id, err)
+			disableProvider(providers, id, provider, log, "api_key could not be exported", err)
+			continue
 		}
 		provider.APIKey = secret.SecretRef{}
 		provider.APIKeyEnv = envName
 		providers[id] = provider
 	}
 	return nil
+}
+
+// disableProvider clears a provider's credential so every consumer sees it as
+// unconfigured, and says why. The reference is cleared rather than left in
+// place: webui's ProviderView derives Configured from it, so keeping an
+// unresolvable reference would advertise a provider that cannot be used.
+func disableProvider(providers map[string]config.Provider, id string, provider config.Provider, log *slog.Logger, reason string, cause error) {
+	provider.APIKey = secret.SecretRef{}
+	provider.APIKeyEnv = ""
+	providers[id] = provider
+	if cause != nil {
+		log.Warn("provider disabled: "+reason, "provider", id, "err", cause)
+		return
+	}
+	log.Warn("provider disabled: "+reason, "provider", id)
 }
 
 func providerSecretEnvName(scope, providerID string) string {
