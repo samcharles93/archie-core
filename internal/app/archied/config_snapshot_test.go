@@ -137,6 +137,60 @@ func TestPublishedSnapshotCarriesOverlayOverrides(t *testing.T) {
 	}
 }
 
+// TestPublishedSnapshotCarriesPerIdentityForges: in a multi-identity
+// deployment the task board attributes each task to the forge that owns it,
+// and the only process that holds that configuration is the daemon. So the
+// published projection has to name every configured identity's forge and the
+// repositories it owns (archie-core-pv6t); with the default identity alone,
+// every row in such a deployment renders unlinked.
+func TestPublishedSnapshotCarriesPerIdentityForges(t *testing.T) {
+	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	b := &boot{
+		log:        slog.New(slog.DiscardHandler),
+		stateStore: st,
+		cfgHolder: config.NewHolder(config.Config{
+			BotUser: "archie-bot",
+			Forge:   config.Forge{Type: "github", Host: "https://github.example"},
+			Repos:   []config.Repo{{Owner: "acme", Name: "widget", Base: "main"}},
+			Identities: []config.IdentityConfig{
+				{
+					Name: "gitea-bot", BotUser: "archie-gitea",
+					Forge: config.Forge{Type: "gitea", Host: "https://gitea.example"},
+					Repos: []config.Repo{{Owner: "beta", Name: "svc", Base: "main"}},
+				},
+			},
+		}),
+	}
+	b.publishConfigSnapshot(t.Context())
+
+	snapshot, found, err := st.ConfigSnapshot(context.Background())
+	if err != nil || !found {
+		t.Fatalf("ConfigSnapshot = (found %v, %v), want the published document", found, err)
+	}
+	var view webui.ConfigView
+	if err := json.Unmarshal(snapshot.Document, &view); err != nil {
+		t.Fatalf("decode published document: %v", err)
+	}
+	if !view.MultiIdentity {
+		t.Error("MultiIdentity = false with a configured identity")
+	}
+	if len(view.Identities) != 1 {
+		t.Fatalf("Identities = %+v, want the configured identity", view.Identities)
+	}
+	got := view.Identities[0]
+	if got.Name != "gitea-bot" || got.ForgeType != "gitea" || got.ForgeHost != "https://gitea.example" {
+		t.Errorf("Identities[0] = %+v, want the gitea-bot forge coordinates", got)
+	}
+	if len(got.Repos) != 1 || got.Repos[0].Owner != "beta" || got.Repos[0].Name != "svc" {
+		t.Errorf("Identities[0].Repos = %+v, want the repositories it owns", got.Repos)
+	}
+}
+
 // TestPublishConfigSnapshotWithoutConfiguration: called before the daemon has
 // a configuration Holder, publishing is a no-op rather than a panic.
 func TestPublishConfigSnapshotWithoutConfiguration(t *testing.T) {

@@ -297,6 +297,16 @@ configured, and both surfaces now read the projection rather than a live
 holder. The end-to-end suite asserts the checklist renders from the published
 snapshot.
 
+A third value degraded for the same reason and is closed by
+`archie-core-pv6t`: in a deployment configuring `[[identities]]` the projection
+carried the default identity's forge alone, so task rows withheld their links
+rather than pointing every row at the wrong forge. `ConfigView` now also
+publishes each identity's forge coordinates and the repositories it owns
+(`identities`), which is what resolving a task to its owning forge needs —
+coordinates and repository names only, never a token. The end-to-end suite
+drives the real binary against a multi-identity projection and asserts each
+row's issue link is built from the forge that owns it.
+
 ## Non-goals and open work
 
 This ratification does not define a new domain model, move the dashboard's
