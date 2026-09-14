@@ -251,6 +251,14 @@ func (b *boot) loadConfig(ctx context.Context, cfgPath, overlayPath string, noCo
 		return err
 	}
 	b.doc = doc
+	// A stray/misspelled key parses and validates cleanly (unknown TOML
+	// keys are otherwise silently discarded), so it must be visible
+	// somewhere rather than just quietly doing nothing -- see
+	// docs/architecture/configuration.md's startup policy: an invalid
+	// config is fatal, but a typo like this is not that, only a warning.
+	if len(doc.UnknownKeys) > 0 {
+		b.log.Warn("config file has unrecognised keys; check for typos", "keys", doc.UnknownKeys)
+	}
 	// Runtime config overlay: dashboard-edited overrides layered over the
 	// file config from their own SQLite file (own user_version and
 	// migrator, no contention with the task store). Skipped under
