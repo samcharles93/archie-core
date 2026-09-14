@@ -153,12 +153,21 @@ func TestInstallValidatedConfig_ConfigWriteFailureLeavesNoSecret(t *testing.T) {
 	}
 
 	rendered := []byte("bot_user = \"widget\"\nwork_dir = \"/tmp/archie-setup-work\"\n")
-	err := installValidatedConfig(configuration.New(nil), cfgPath, sink, rendered)
-	if err == nil {
-		t.Fatal("installValidatedConfig = nil error, want a write failure")
+
+	// Prove the fixture is loadable BEFORE relying on the write failing.
+	// Asserted by loading it rather than by matching the error text below: a
+	// reworded error must not silently disarm this guard and let the test pass
+	// for the wrong reason.
+	fixture := filepath.Join(dir, "fixture.toml")
+	if err := os.WriteFile(fixture, rendered, 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if strings.Contains(err.Error(), "does not load") {
-		t.Fatalf("fixture failed validation rather than the write, so this test never exercised the write path: %v", err)
+	if _, err := configuration.New(nil).File(fixture); err != nil {
+		t.Fatalf("fixture config does not load, so this test would not exercise the write path: %v", err)
+	}
+
+	if err := installValidatedConfig(configuration.New(nil), cfgPath, sink, rendered); err == nil {
+		t.Fatal("installValidatedConfig = nil error, want a write failure")
 	}
 	if _, statErr := os.Stat(envPath); !os.IsNotExist(statErr) {
 		t.Errorf("secret committed even though the config was never written: %v", statErr)
@@ -235,5 +244,41 @@ func TestRunSetup_RejectsReferencesNothingWouldUse(t *testing.T) {
 				t.Errorf("config written despite the refusal: %v", err)
 			}
 		})
+	}
+}
+
+// TestRunSetup_GeneratedConfigSatisfiesDaemonRequirements pins the properties
+// archied needs of whatever setup emits, asserted on the GENERATED config.
+//
+// It replaces a test that read config.example.toml and reconstructed install.sh's
+// shell heredoc. Testing hand-written files is testing an artifact a human or an
+// agent may legitimately rewrite at any time -- and that test in fact broke the
+// moment install.sh stopped generating config, because the heredoc it parsed no
+// longer existed. The generated output is the contract; the template is an input.
+func TestRunSetup_GeneratedConfigSatisfiesDaemonRequirements(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	devNull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = devNull.Close() }()
+
+	var stdout, stderr strings.Builder
+	if code := RunSetup([]string{"--defaults", "-config", cfgPath}, devNull, &stdout, &stderr); code != 0 {
+		t.Fatalf("RunSetup exit = %d, stderr: %s", code, stderr.String())
+	}
+
+	doc, err := configuration.New(nil).File(cfgPath)
+	if err != nil {
+		t.Fatalf("generated config does not load: %v", err)
+	}
+	// openStateStoreAdapter refuses an empty target, so this is the difference
+	// between a config that boots and one that does not.
+	if doc.Config.Services.State.Target == "" {
+		t.Error("generated config leaves services.state.target empty; the daemon would not boot")
+	}
+	if doc.Config.BotUser == "" {
+		t.Error("generated config leaves bot_user empty")
 	}
 }
