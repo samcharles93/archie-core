@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/tomlwrite"
 )
 
@@ -70,9 +71,12 @@ func stepProvider(ctx context.Context, p Prompter, discovery ModelDiscovery, sec
 	var model string
 	var err error
 	if choice == len(cloudProviders) {
+		if params.ProviderAPIKeyRef != (config.SecretRef{}) {
+			return nil, "", fmt.Errorf("setup: a provider key reference was given, but the self-hosted provider is keyless, so nothing would use it")
+		}
 		edits, model, err = stepSelfHostedModel(ctx, p, discovery, params.Model)
 	} else {
-		edits, model, err = stepCloudProvider(ctx, p, secrets, cloudProviders[choice], params.Model)
+		edits, model, err = stepCloudProvider(ctx, p, secrets, cloudProviders[choice], params.Model, params.ProviderAPIKeyRef)
 	}
 	if err != nil {
 		return nil, "", err
@@ -125,40 +129,72 @@ func stepSelfHostedModel(ctx context.Context, p Prompter, discovery ModelDiscove
 	return edits, "ollama/" + model, nil
 }
 
-func stepCloudProvider(ctx context.Context, p Prompter, secrets SecretSink, cp cloudProvider, modelParam string) (tableEdits, string, error) {
-	// A key supplied as a parameter must not prompt. Without this the only
-	// provider an unattended install could configure was the keyless
-	// self-hosted one, so every cloud setup needed a terminal.
-	// Always prompted, never parameterised: a secret supplied as a value would
-	// come from a command line and bypass the secret engine entirely.
-	key, err := p.ReadSecret(ctx, fmt.Sprintf("%s API key: ", cp.name))
-	if err != nil {
-		return nil, "", fmt.Errorf("setup: %s api key: %w", cp.name, err)
-	}
+func stepCloudProvider(ctx context.Context, p Prompter, secrets SecretSink, cp cloudProvider, modelParam string, keyRef config.SecretRef) (tableEdits, string, error) {
 	table := "providers." + cp.class
 	edits := tableEdits{table: {"class": tomlwrite.String(cp.class)}}
-	if strings.TrimSpace(key) != "" {
-		if err := secrets.Put("env", cp.apiKeyEnv, key); err != nil {
-			return nil, "", fmt.Errorf("setup: store %s api key: %w", cp.name, err)
+
+	if keyRef != (config.SecretRef{}) {
+		// A reference means the value already lives in a secret engine: write
+		// the reference and ask nothing. Setup neither reads nor stores it,
+		// because it does not own it.
+		edits[table]["api_key"] = tomlwrite.Ref(keyRef.Engine, keyRef.Key)
+	} else {
+		keyEdit, err := cloudKeyEdit(ctx, p, secrets, cp)
+		if err != nil {
+			return nil, "", err
 		}
-		edits[table]["api_key"] = tomlwrite.Ref("env", cp.apiKeyEnv)
-	} else if cp.class == templateDefaultActiveProvider {
-		// Skipping the key normally means "configure later" and leaves
-		// api_key untouched -- but for openai specifically that would
-		// leave the template's own unresolvable bws default active. See
-		// templateDefaultActiveProvider.
-		edits[table]["api_key"] = tomlwrite.Ref("", "")
+		if keyEdit != "" {
+			edits[table]["api_key"] = keyEdit
+		}
 	}
 
+	model, err := cloudModel(ctx, p, cp, modelParam)
+	if err != nil {
+		return nil, "", err
+	}
+	return edits, cp.class + "/" + model, nil
+}
+
+// cloudKeyEdit obtains the api_key edit by prompting. An empty return means
+// "write no api_key and leave whatever the template has", which is the
+// configure-later case.
+//
+// There is no key parameter. A value supplied as one would arrive from a
+// command line and bypass the secret engine entirely; see Params.
+func cloudKeyEdit(ctx context.Context, p Prompter, secrets SecretSink, cp cloudProvider) (string, error) {
+	key, err := p.ReadSecret(ctx, fmt.Sprintf("%s API key: ", cp.name))
+	if err != nil {
+		return "", fmt.Errorf("setup: %s api key: %w", cp.name, err)
+	}
+	if strings.TrimSpace(key) == "" {
+		if cp.class == templateDefaultActiveProvider {
+			// Skipping the key normally means "configure later" and leaves
+			// api_key untouched -- but for openai specifically that would leave
+			// the template's own unresolvable bws default active. See
+			// templateDefaultActiveProvider.
+			return tomlwrite.Ref("", ""), nil
+		}
+		return "", nil
+	}
+	if err := secrets.Put("env", cp.apiKeyEnv, key); err != nil {
+		return "", fmt.Errorf("setup: store %s api key: %w", cp.name, err)
+	}
+	return tomlwrite.Ref("env", cp.apiKeyEnv), nil
+}
+
+// cloudModel resolves the model name: the parameter when given, otherwise a
+// prompt, and an error when neither yields one.
+func cloudModel(ctx context.Context, p Prompter, cp cloudProvider, modelParam string) (string, error) {
 	model := modelParam
 	if strings.TrimSpace(model) == "" {
+		var err error
 		model, err = p.ReadLine(ctx, fmt.Sprintf("Model for %s (e.g. gpt-5.4): ", cp.name), "")
 		if err != nil {
-			return nil, "", fmt.Errorf("setup: model name: %w", err)
+			return "", fmt.Errorf("setup: model name: %w", err)
 		}
 	}
 	if strings.TrimSpace(model) == "" {
-		return nil, "", fmt.Errorf("setup: a model name is required for %s", cp.name)
+		return "", fmt.Errorf("setup: a model name is required for %s", cp.name)
 	}
-	return edits, cp.class + "/" + model, nil
+	return model, nil
 }

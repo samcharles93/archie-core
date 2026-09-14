@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/tomlwrite"
 )
 
@@ -40,7 +41,7 @@ func stepForge(ctx context.Context, p Prompter, secrets SecretSink, existingHost
 		if strings.TrimSpace(host) == "" {
 			host = "https://github.com"
 		}
-		return stepForgeWithToken(ctx, p, secrets, "github", host, "GitHub token (leave blank to configure later): ")
+		return stepForgeWithToken(ctx, p, secrets, "github", host, "GitHub token (leave blank to configure later): ", params.ForgeTokenRef)
 	case 1:
 		defaultHost := existingHost
 		if defaultHost == "" {
@@ -54,12 +55,15 @@ func stepForge(ctx context.Context, p Prompter, secrets SecretSink, existingHost
 				return nil, fmt.Errorf("setup: gitea host: %w", err)
 			}
 		}
-		return stepForgeWithToken(ctx, p, secrets, "gitea", host, "Gitea token (leave blank to configure later): ")
+		return stepForgeWithToken(ctx, p, secrets, "gitea", host, "Gitea token (leave blank to configure later): ", params.ForgeTokenRef)
 	default:
 		// The template's default [forge] block is active (type = "github"
 		// with a host and token already set). Selecting "none" must
 		// overwrite host and token too, not just type -- otherwise a
 		// disabled forge still shows a token reference nobody configured
+		if params.ForgeTokenRef != (config.SecretRef{}) {
+			return nil, fmt.Errorf("setup: a forge token reference was given, but the forge is disabled (none), so nothing would use it")
+		}
 		// and that resolveForge never reads, which is exactly the kind of
 		// stale/misleading value this feature exists to stop shipping.
 		return tableEdits{"forge": {
@@ -94,11 +98,23 @@ func forgeChoice(name string) (int, error) {
 // as a parameter: a value passed in would arrive from a command line, where it
 // lands in shell history and every process listing, and it would be a second
 // way for a secret to be set that no secret engine knows about.
-func stepForgeWithToken(ctx context.Context, p Prompter, secrets SecretSink, forgeType, host, tokenPrompt string) (tableEdits, error) {
+// stepForgeWithToken records the forge type and host and writes a reference to
+// the token when one is configured.
+//
+// A tokenRef means the value already lives in a secret engine, so setup writes
+// the reference and asks nothing. Otherwise the token comes from a prompt, and
+// only from a prompt: a value supplied as a parameter would arrive from a
+// command line, where it lands in shell history and every process listing, and
+// would be a second way to set a secret that no engine knows about.
+func stepForgeWithToken(ctx context.Context, p Prompter, secrets SecretSink, forgeType, host, tokenPrompt string, tokenRef config.SecretRef) (tableEdits, error) {
 	edits := tableEdits{"forge": {
 		"type": tomlwrite.String(forgeType),
 		"host": tomlwrite.String(host),
 	}}
+	if tokenRef != (config.SecretRef{}) {
+		edits["forge"]["token"] = tomlwrite.Ref(tokenRef.Engine, tokenRef.Key)
+		return edits, nil
+	}
 	token, err := p.ReadSecret(ctx, tokenPrompt)
 	if err != nil {
 		return nil, fmt.Errorf("setup: %s token: %w", forgeType, err)

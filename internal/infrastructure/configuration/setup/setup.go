@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/tomlwrite"
 )
 
@@ -75,6 +76,16 @@ type Params struct {
 
 	// TelegramUserIDs is an access policy, not a credential: IDs are not secret.
 	// Non-empty means "configure Telegram".
+	// The three reference fields below name where an already-stored secret
+	// lives, as engine:key. A reference is not a secret -- an engine name and a
+	// key name are not sensitive -- which is why a reference may be
+	// parameterised while a value may not. When one is set the step writes the
+	// reference to TOML and asks nothing, because the value is already in the
+	// engine and setup does not own it.
+	ForgeTokenRef     config.SecretRef
+	ProviderAPIKeyRef config.SecretRef
+	TelegramTokenRef  config.SecretRef
+
 	TelegramUserIDs []int64
 
 	// There is deliberately no secret-valued field here, for forge tokens,

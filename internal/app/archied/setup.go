@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	configtemplate "github.com/samcharles93/archie-core"
+	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/setup"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/tomlwrite"
@@ -50,15 +51,18 @@ func IsSetupArgs(args []string) bool {
 // parameters and prompts are the only two ways an answer arrives, and no
 // environment variable is consulted.
 type setupFlags struct {
-	cfgPath         string
-	defaults        bool
-	botUser         string
-	operator        string
-	forgeType       string
-	forgeHost       string
-	provider        string
-	model           string
-	telegramUserIDs string
+	cfgPath           string
+	defaults          bool
+	botUser           string
+	operator          string
+	forgeType         string
+	forgeHost         string
+	provider          string
+	model             string
+	telegramUserIDs   string
+	forgeSecretRef    string
+	providerSecretRef string
+	telegramSecretRef string
 }
 
 func bindSetupFlags(fs *flag.FlagSet) *setupFlags {
@@ -72,6 +76,11 @@ func bindSetupFlags(fs *flag.FlagSet) *setupFlags {
 	fs.StringVar(&f.provider, "provider", "", "LLM provider class: openai | anthropic | openrouter | gemini | groq | deepseek | mistral | ollama")
 	fs.StringVar(&f.model, "model", "", "bare model name; the provider class prefix is added automatically")
 	fs.StringVar(&f.telegramUserIDs, "telegram-user-ids", "", "comma-separated allowed Telegram user IDs; configuring Telegram requires at least one")
+	// References, not values: engine:key names where a secret already lives, and
+	// neither part is sensitive. A value has no flag, deliberately -- see Params.
+	fs.StringVar(&f.forgeSecretRef, "forge-secret-ref", "", "engine:key naming where the forge token is stored (e.g. bws:ARCHIE_GITHUB_TOKEN); that engine must be configured")
+	fs.StringVar(&f.providerSecretRef, "provider-secret-ref", "", "engine:key naming where the provider API key is stored (e.g. bws:OPENAI_API_KEY); that engine must be configured")
+	fs.StringVar(&f.telegramSecretRef, "telegram-secret-ref", "", "engine:key naming where the Telegram bot token is stored (e.g. bws:TELEGRAM_BOT_TOKEN); that engine must be configured")
 	return f
 }
 
@@ -101,6 +110,27 @@ func (f *setupFlags) params() (setup.Params, error) {
 	if f.model != "" {
 		params.Model = f.model
 	}
+	// Parsed at the boundary, so a malformed reference fails before anything is
+	// rendered or written.
+	for _, ref := range []struct {
+		flag  string
+		value string
+		dst   *config.SecretRef
+	}{
+		{"-forge-secret-ref", f.forgeSecretRef, &params.ForgeTokenRef},
+		{"-provider-secret-ref", f.providerSecretRef, &params.ProviderAPIKeyRef},
+		{"-telegram-secret-ref", f.telegramSecretRef, &params.TelegramTokenRef},
+	} {
+		if ref.value == "" {
+			continue
+		}
+		parsed, err := setup.ParseSecretRef(ref.value)
+		if err != nil {
+			return setup.Params{}, fmt.Errorf("%s: %w", ref.flag, err)
+		}
+		*ref.dst = parsed
+	}
+
 	if f.telegramUserIDs != "" {
 		ids, err := setup.ParseTelegramUserIDs(f.telegramUserIDs)
 		if err != nil {

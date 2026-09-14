@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/setup"
 )
@@ -161,5 +162,78 @@ func TestInstallValidatedConfig_ConfigWriteFailureLeavesNoSecret(t *testing.T) {
 	}
 	if _, statErr := os.Stat(envPath); !os.IsNotExist(statErr) {
 		t.Errorf("secret committed even though the config was never written: %v", statErr)
+	}
+}
+
+// TestRunSetup_SecretRefFlagsWriteReferencesWithoutEnvFile pins the reference
+// form end to end: naming where a secret is stored writes the reference, and
+// setup stores nothing, so no env file appears. The engine here (bws) is one
+// setup has no writer for -- which is the point, the value is not setup's.
+func TestRunSetup_SecretRefFlagsWriteReferencesWithoutEnvFile(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	devNull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = devNull.Close() }()
+
+	var stdout, stderr strings.Builder
+	code := RunSetup([]string{
+		"--defaults", "-config", cfgPath,
+		"-provider", "openai", "-model", "gpt-5.4",
+		"-provider-secret-ref", "bws:OPENAI_API_KEY",
+		"-forge-secret-ref", "bws:ARCHIE_GITHUB_TOKEN",
+	}, devNull, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("RunSetup exit = %d, stderr: %s", code, stderr.String())
+	}
+
+	doc, err := configuration.New(nil).File(cfgPath)
+	if err != nil {
+		t.Fatalf("generated config does not load: %v", err)
+	}
+	if got, want := doc.Config.Providers["openai"].APIKey, (config.SecretRef{Engine: "bws", Key: "OPENAI_API_KEY"}); got != want {
+		t.Errorf("providers.openai.api_key = %+v, want %+v", got, want)
+	}
+	if got, want := doc.Config.Forge.Token, (config.SecretRef{Engine: "bws", Key: "ARCHIE_GITHUB_TOKEN"}); got != want {
+		t.Errorf("forge.token = %+v, want %+v", got, want)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "env")); !os.IsNotExist(err) {
+		t.Errorf("env file written: a reference means setup stores no value (stat err: %v)", err)
+	}
+}
+
+// TestRunSetup_RejectsReferencesNothingWouldUse pins the no-silent-no-op rule.
+// A reference for a keyless provider, or for a disabled forge, would sit in the
+// config looking configured while nothing read it -- the failure shape this
+// whole flow exists to remove -- so it is refused instead.
+func TestRunSetup_RejectsReferencesNothingWouldUse(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "provider ref with the keyless self-hosted provider", args: []string{"-provider-secret-ref", "bws:OPENAI_API_KEY"}},
+		{name: "forge ref with the forge disabled", args: []string{"-forge-type", "none", "-forge-secret-ref", "bws:ARCHIE_GITHUB_TOKEN"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			cfgPath := filepath.Join(dir, "config.toml")
+			devNull, err := os.Open(os.DevNull)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = devNull.Close() }()
+
+			args := append([]string{"--defaults", "-config", cfgPath}, tc.args...)
+			var stdout, stderr strings.Builder
+			if code := RunSetup(args, devNull, &stdout, &stderr); code == 0 {
+				t.Fatalf("RunSetup = exit 0, want a refusal; stderr: %s", stderr.String())
+			}
+			if _, err := os.Stat(cfgPath); !os.IsNotExist(err) {
+				t.Errorf("config written despite the refusal: %v", err)
+			}
+		})
 	}
 }

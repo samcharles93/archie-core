@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/tomlwrite"
 )
 
@@ -28,13 +29,26 @@ func stepChat(ctx context.Context, p Prompter, secrets SecretSink, params Params
 		return nil, nil
 	}
 
-	// Always prompted, never parameterised; see stepForgeWithToken.
-	token, err := p.ReadSecret(ctx, "Telegram bot token (from @BotFather): ")
-	if err != nil {
-		return nil, fmt.Errorf("setup: telegram token: %w", err)
-	}
-	if strings.TrimSpace(token) == "" {
-		return nil, nil
+	// A reference means the value already lives in a secret engine: write the
+	// reference and ask nothing. A supplied reference may name any engine, which
+	// the legacy token_env form cannot express, so it writes the preferred
+	// secret-reference form instead. Otherwise the token comes from a prompt, and
+	// only from a prompt; see stepForgeWithToken.
+	tokenForm := "token_env"
+	tokenValue := tomlwrite.String(telegramTokenEnv)
+	if ref := params.TelegramTokenRef; ref != (config.SecretRef{}) {
+		tokenForm, tokenValue = "token", tomlwrite.Ref(ref.Engine, ref.Key)
+	} else {
+		token, err := p.ReadSecret(ctx, "Telegram bot token (from @BotFather): ")
+		if err != nil {
+			return nil, fmt.Errorf("setup: telegram token: %w", err)
+		}
+		if strings.TrimSpace(token) == "" {
+			return nil, nil
+		}
+		if err := secrets.Put("env", telegramTokenEnv, token); err != nil {
+			return nil, fmt.Errorf("setup: store telegram token: %w", err)
+		}
 	}
 
 	// TelegramConfig.AllowedUserIDs is deny-by-default: a bot token with no
@@ -56,13 +70,9 @@ func stepChat(ctx context.Context, p Prompter, secrets SecretSink, params Params
 		}
 	}
 
-	if err := secrets.Put("env", telegramTokenEnv, token); err != nil {
-		return nil, fmt.Errorf("setup: store telegram token: %w", err)
-	}
-
 	return tableEdits{
 		"chat.telegram": {
-			"token_env":        tomlwrite.String(telegramTokenEnv),
+			tokenForm:          tokenValue,
 			"allowed_user_ids": intArrayLiteral(ids),
 		},
 	}, nil

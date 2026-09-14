@@ -3,6 +3,8 @@ package setup
 import (
 	"context"
 	"testing"
+
+	"github.com/samcharles93/archie-core/internal/config"
 )
 
 // rejectingPrompter fails the test if any question is asked, proving that a
@@ -202,5 +204,47 @@ func TestRun_DefaultsBaselineLoads(t *testing.T) {
 	}
 	if len(secrets.committed) != 0 {
 		t.Errorf("committed secrets = %v, want none: the defaults baseline is keyless", secrets.committed)
+	}
+}
+
+// TestRunParams_SecretRefsWriteReferencesWithoutStoring pins what a reference
+// means: the value already lives in a secret engine, so setup writes the
+// reference, reads nothing from the prompt surface, and stores nothing of its
+// own. `vault/openbao` is deliberate -- an arbitrary engine name must survive
+// to TOML, which the legacy token_env form could not express.
+func TestRunParams_SecretRefsWriteReferencesWithoutStoring(t *testing.T) {
+	params := Params{
+		BotUser:           "archie-bot",
+		Operator:          "Ada",
+		ForgeType:         "github",
+		ForgeHost:         "https://github.com",
+		ForgeTokenRef:     config.SecretRef{Engine: "bws", Key: "ARCHIE_GITHUB_TOKEN"},
+		Provider:          "openai",
+		Model:             "gpt-5.4",
+		ProviderAPIKeyRef: config.SecretRef{Engine: "vault", Key: "OPENAI_API_KEY"},
+		TelegramTokenRef:  config.SecretRef{Engine: "bws", Key: "TELEGRAM_BOT_TOKEN"},
+		TelegramUserIDs:   []int64{111},
+	}
+	// No secrets are scripted: any ReadSecret call fails the test, because a
+	// reference means nothing may be prompted for.
+	p := &scriptedSecretPrompter{t: t}
+	secrets := newFakeSecrets()
+	edits, err := RunParams(context.Background(), p, nil, secrets, ExistingValues{}, params)
+	if err != nil {
+		t.Fatalf("RunParams: %v", err)
+	}
+	if len(secrets.pending) != 0 {
+		t.Errorf("pending secrets = %v, want none: setup does not own a referenced value", secrets.pending)
+	}
+
+	cfg := generateAndLoad(t, edits)
+	if got := cfg.Forge.Token; got != params.ForgeTokenRef {
+		t.Errorf("forge.token = %+v, want %+v", got, params.ForgeTokenRef)
+	}
+	if got := cfg.Providers["openai"].APIKey; got != params.ProviderAPIKeyRef {
+		t.Errorf("providers.openai.api_key = %+v, want %+v", got, params.ProviderAPIKeyRef)
+	}
+	if got := cfg.Chat.Telegram.Token; got != params.TelegramTokenRef {
+		t.Errorf("chat.telegram.token = %+v, want %+v", got, params.TelegramTokenRef)
 	}
 }
