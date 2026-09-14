@@ -389,6 +389,16 @@ class = "ollama"
 [nats]
 mode = "embedded"
 
+# The daemon and gateway dial the standalone archie-state-store process and
+# the standalone archie-gateway (the dashboard and chat front-ends dial it
+# too). Loopback targets with no token are the no-setup default; see
+# deployments/README.md for starting archie-state-store and archie-gateway.
+[services.gateway]
+target = "127.0.0.1:8585"
+
+[services.state]
+target = "127.0.0.1:9090"
+
 [containers]
 image = "ghcr.io/samcharles93/archie-agent:latest"
 pull_policy = "missing"

@@ -288,16 +288,16 @@ gate_max_failures = 5
 
 # Services selects contract adapters at composition time (see
 # docs/prds/state-store-contract.md).
-# [services.gateway]
-# target = "127.0.0.1:8585"          # archie-gateway's gRPC address (always remote once set)
+[services.gateway]
+target = "127.0.0.1:8585"          # archie-gateway's gRPC address (always remote once set)
 # target_token = "..."               # Bearer [REDACTED] for a NON-loopback listener. A loopback listener
 #                                       # (127.0.0.1/::1/localhost) needs no token. A non-loopback
 #                                       # listener without a token fails closed, as does a
 #                                       # non-loopback dial without one. The same token is
 #                                       # presented as GATEWAY_TOKEN by remote consumers.
 
-# [services.state]
-# target = "127.0.0.1:9090"          # REQUIRED. The State Store gRPC address archied and
+[services.state]
+target = "127.0.0.1:9090"          # REQUIRED. The State Store gRPC address archied and
 #                                       # archie-gateway dial. They no longer own archie.db
 #                                       # in-process: the standalone archie-state-store process
 #                                       # owns the single SQLite file (docs/prds/state-store-contract.md
