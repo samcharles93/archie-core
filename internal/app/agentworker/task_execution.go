@@ -138,6 +138,16 @@ func newTaskRunner(providers map[string]agentexec.Provider, log *slog.Logger) ag
 	return agentexec.NewLoopRunner(agentexec.NewRuntime(providers), log)
 }
 
+// routeTask applies the request-carried routing bindings and selects the
+// workflow for a task. The daemon's package-level SetKindWorkflows state
+// never crosses the process boundary, so runTask installs the resolved
+// bindings here -- this worker process is where workflow.Route actually runs.
+func routeTask(req taskrun.Request, registry workflow.Registry) workflow.Workflow {
+	workflow.SetKindWorkflows(req.KindWorkflows)
+	workflow.SetLabelWorkflows(req.LabelWorkflows)
+	return workflow.Route(req.Task, registry)
+}
+
 // runTask builds a workflow.Registry from the container's mounted worktree,
 // routes and runs the entire workflow, and reports its terminal outcome.
 // Store remains archied's authority; Response.Task is a logging snapshot.
@@ -147,7 +157,7 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 		return nil, fmt.Errorf("build registry: %w", err)
 	}
 
-	wf := workflow.Route(req.Task, registry)
+	wf := routeTask(req, registry)
 
 	trees := &hybridTrees{
 		push: dependencies.trees,

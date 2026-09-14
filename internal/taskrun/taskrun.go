@@ -29,6 +29,14 @@ type Request struct {
 	// transports, discover tools, and register them locally. Absent/empty
 	// means no MCP servers (backward compatible).
 	MCPServers []config.MCPServer `json:"mcp_servers,omitempty"`
+	// KindWorkflows and LabelWorkflows carry the resolved kind/label ->
+	// workflow-name bindings the daemon loaded from WorkflowRoutingFile,
+	// WorkflowLabelsFile and PlaybookDirs. workflow.Route runs in the
+	// archie-agent process, not the daemon, so these resolved values must
+	// cross the process boundary here; nil means use the built-in defaults
+	// (backward compatible).
+	KindWorkflows  workflow.KindWorkflows  `json:"kind_workflows,omitempty"`
+	LabelWorkflows workflow.LabelWorkflows `json:"label_workflows,omitempty"`
 	// WorktreeGrant is an opaque, per-dispatch capability authorizing the
 	// daemon to publish this task's already-prepared branch. Repository
 	// coordinates never cross back from the sandbox as authority.

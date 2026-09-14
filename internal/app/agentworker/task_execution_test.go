@@ -22,6 +22,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/forgerpc"
@@ -624,5 +625,56 @@ func TestExecuteTaskRequestForwardsWorkflowEventsOverNATS(t *testing.T) {
 	}
 	if !sawOutcome {
 		t.Errorf("received %d events %+v, want at least one %q", len(received), received, events.KindOutcome)
+	}
+}
+
+// TestRouteTaskUsesRequestKindOverride is the regression for
+// workflow-engine-1: a kind -> workflow override loaded by the daemon is
+// carried in the taskrun request and applied by the worker process, so
+// workflow.Route honours it instead of silently falling back to the
+// built-in default (bug -> tdd).
+func TestRouteTaskUsesRequestKindOverride(t *testing.T) {
+	t.Cleanup(func() {
+		workflow.SetKindWorkflows(nil)
+		workflow.SetLabelWorkflows(nil)
+	})
+
+	registry := workflow.Registry{
+		"tdd":       workflow.Workflow{Name: "tdd"},
+		"bootstrap": workflow.Workflow{Name: "bootstrap"},
+		"implement": workflow.Workflow{Name: "implement"},
+	}
+	req := taskrun.Request{
+		Task:          &workflow.Task{Labels: "bug"},
+		KindWorkflows: workflow.KindWorkflows{workintake.KindBug: "bootstrap"},
+	}
+
+	wf := routeTask(req, registry)
+	if wf.Name != "bootstrap" {
+		t.Fatalf("routeTask() = %q, want %q (request kind override not applied)", wf.Name, "bootstrap")
+	}
+}
+
+// TestRouteTaskUsesRequestLabelOverride is the label counterpart: an
+// arbitrary-label binding carried in the request also reaches the worker's
+// routing decision.
+func TestRouteTaskUsesRequestLabelOverride(t *testing.T) {
+	t.Cleanup(func() {
+		workflow.SetKindWorkflows(nil)
+		workflow.SetLabelWorkflows(nil)
+	})
+
+	registry := workflow.Registry{
+		"implement":       workflow.Workflow{Name: "implement"},
+		"security-review": workflow.Workflow{Name: "security-review"},
+	}
+	req := taskrun.Request{
+		Task:           &workflow.Task{Labels: "security"},
+		LabelWorkflows: workflow.LabelWorkflows{"security": "security-review"},
+	}
+
+	wf := routeTask(req, registry)
+	if wf.Name != "security-review" {
+		t.Fatalf("routeTask() = %q, want %q (request label override not applied)", wf.Name, "security-review")
 	}
 }

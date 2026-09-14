@@ -734,6 +734,53 @@ func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
 	}
 }
 
+// TestRunViaAgentSendsRoutingBindings is the daemon half of
+// workflow-engine-1: the kind/label -> workflow bindings the daemon loaded
+// must be carried in the taskrun request, because workflow.Route runs in the
+// separate archie-agent process. A request missing them would silently route
+// with the built-in defaults.
+func TestRunViaAgentSendsRoutingBindings(t *testing.T) {
+	d, s, busClient := daemonWithNATS(t)
+	d.KindWorkflows = workflow.KindWorkflows{workintake.KindBug: "custom-bug"}
+	d.LabelWorkflows = workflow.LabelWorkflows{"security": "security-review"}
+	ctx := context.Background()
+
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 9, "t", "b", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("claim: (%v, %v)", task, err)
+	}
+
+	received := make(chan taskrun.Request, 1)
+	sub, err := mustCoreConn(t, busClient).Subscribe(agentnats.SubjectForTask(task.ID), func(msg *natsio.Msg) {
+		var req taskrun.Request
+		_ = json.Unmarshal(msg.Data, &req)
+		received <- req
+		data, _ := json.Marshal(taskrun.Response{Status: workflow.StatusPROpen})
+		_ = msg.Respond(data)
+	})
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	t.Cleanup(func() { _ = sub.Unsubscribe() })
+
+	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"})
+
+	select {
+	case req := <-received:
+		if got := req.KindWorkflows[workintake.KindBug]; got != "custom-bug" {
+			t.Errorf("request KindWorkflows[bug] = %q, want %q", got, "custom-bug")
+		}
+		if got := req.LabelWorkflows["security"]; got != "security-review" {
+			t.Errorf("request LabelWorkflows[security] = %q, want %q", got, "security-review")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("archied did not publish a taskrun request")
+	}
+}
+
 // TestRunViaAgentObservesReportedAgentVersion is the regression proof for
 // daemon.AgentStatus actually being fed: every archie-agent process is
 // task-scoped and ephemeral, so a completed taskrun.Response is the only

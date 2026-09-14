@@ -196,6 +196,14 @@ type boot struct {
 	providerRegistry *toolprovider.Registry
 	d                *daemon.Daemon
 
+	// kindWorkflows/labelWorkflows are the resolved kind/label -> workflow
+	// routing bindings loaded by loadWorkflowRouting. They are handed to the
+	// daemon so runViaAgent can carry them in taskrun.Request: workflow.Route
+	// runs in the archie-agent process, which never sees the daemon's
+	// package-level workflow state.
+	kindWorkflows  workflow.KindWorkflows
+	labelWorkflows workflow.LabelWorkflows
+
 	// agentStatus records the most recent version/install-type an
 	// archie-agent worker reported about itself. Allocated up front, before
 	// any gateway goroutine (Telegram, webui) that might read it via
@@ -782,6 +790,8 @@ func (b *boot) loadWorkflowRouting(cfg config.Config, log *slog.Logger) error {
 
 	workflow.SetKindWorkflows(kindWorkflows)
 	workflow.SetLabelWorkflows(labelWorkflows)
+	b.kindWorkflows = kindWorkflows
+	b.labelWorkflows = labelWorkflows
 	return nil
 }
 
@@ -1306,6 +1316,8 @@ func (b *boot) buildDaemon() {
 		Identities:          b.identityRunners,
 		TaskLogs:            b.taskLogs,
 		AgentStatus:         b.agentStatus,
+		KindWorkflows:       b.kindWorkflows,
+		LabelWorkflows:      b.labelWorkflows,
 	}
 	// Curator observability (archie-core-1786637489932-6): GET
 	// /api/curators reads registered names, health and recent activity

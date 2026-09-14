@@ -180,6 +180,14 @@ type Daemon struct {
 	// means guardrails are disabled (backward compatible).
 	Guardrails *tools.GuardrailEngine
 
+	// KindWorkflows and LabelWorkflows are the resolved kind/label ->
+	// workflow-name routing bindings loaded at startup (WorkflowRoutingFile,
+	// WorkflowLabelsFile, PlaybookDirs). They travel in taskrun.Request so
+	// the archie-agent process that calls workflow.Route applies the same
+	// bindings the daemon loaded; nil means built-in defaults.
+	KindWorkflows  workflow.KindWorkflows
+	LabelWorkflows workflow.LabelWorkflows
+
 	// ToolRegistry is the central tool registry, wired by the composition
 	// root. MCP-discovered tools and built-in tools are registered here
 	// and passed as CaptureTools in agent requests. Nil means no dynamic
@@ -1324,11 +1332,13 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo conf
 	}
 	defer revoke()
 	req := taskrun.Request{
-		Task:          task,
-		Repo:          repo,
-		Cfg:           d.configFor(task).ForTask(),
-		Providers:     agentexec.ProvidersFromConfig(d.configFor(task).Providers),
-		WorktreeGrant: grant,
+		Task:           task,
+		Repo:           repo,
+		Cfg:            d.configFor(task).ForTask(),
+		Providers:      agentexec.ProvidersFromConfig(d.configFor(task).Providers),
+		WorktreeGrant:  grant,
+		KindWorkflows:  d.KindWorkflows,
+		LabelWorkflows: d.LabelWorkflows,
 	}
 	data, err := json.Marshal(req)
 	if err != nil {
