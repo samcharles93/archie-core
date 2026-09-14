@@ -156,6 +156,80 @@ func TestRotation(t *testing.T) {
 	}
 }
 
+// TestRotationSurvivesFailedReopen pins that a failed rotation reopen (a
+// full filesystem, a permission change hit exactly when archied tries to
+// recreate the live file) does not take down the file sink permanently.
+// The write that triggered rotation must not be silently swallowed, and
+// -- unlike losing a single line -- every write after the failure must
+// not be lost either.
+func TestRotationSurvivesFailedReopen(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "archied.log")
+
+	w, err := newRotatingFile(path, 1, 2)
+	if err != nil {
+		t.Fatalf("newRotatingFile: %v", err)
+	}
+
+	// Push size right up to the cap without writing megabytes of
+	// fixture data -- white-box, same package -- so the marker write
+	// below is guaranteed to be the one that crosses maxSize and
+	// triggers rotate.
+	marker := []byte("MARKER-LINE\n")
+	w.size = w.maxSize - 1
+
+	// Simulate the reopen failing (disk full, permission change) while
+	// the rename that frees the old name still succeeds -- the scenario
+	// a chmod on the directory can't isolate, since that would also
+	// block the rename.
+	prevOpenFile := openFile
+	openFile = func(name string, flag int, perm os.FileMode) (*os.File, error) {
+		return nil, fmt.Errorf("simulated reopen failure")
+	}
+	t.Cleanup(func() { openFile = prevOpenFile })
+
+	if _, err := w.Write(marker); err != nil {
+		t.Fatalf("Write after a failed reopen returned an error (line lost): %v", err)
+	}
+
+	// A second write after the same failure must also land -- this is
+	// what distinguishes "lost one line during rotation" from "the sink
+	// is now permanently broken".
+	marker2 := []byte("MARKER-LINE-2\n")
+	if _, err := w.Write(marker2); err != nil {
+		t.Fatalf("second write after a failed reopen returned an error: %v", err)
+	}
+
+	openFile = prevOpenFile
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// The live file was never successfully recreated (reopen kept
+	// failing on every write), so each write's rotate attempt renamed
+	// the same still-open descriptor further down the generation chain
+	// -- the exact filename it lands under is incidental. What matters
+	// is that neither marker is gone: scan the whole directory.
+	var all strings.Builder
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		b, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		all.Write(b)
+	}
+	if !strings.Contains(all.String(), "MARKER-LINE\n") {
+		t.Error("MARKER-LINE missing after a failed reopen")
+	}
+	if !strings.Contains(all.String(), "MARKER-LINE-2\n") {
+		t.Error("MARKER-LINE-2 missing -- the sink stayed broken after the transient failure")
+	}
+}
+
 func TestRotationDefaults(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "archied.log")
 	w, err := newRotatingFile(path, 0, 0)

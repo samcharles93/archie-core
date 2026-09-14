@@ -125,8 +125,13 @@ func newRotatingFile(path string, maxSizeMB, keep int) (*rotatingFile, error) {
 	return r, nil
 }
 
+// openFile is os.OpenFile by default; tests override it to inject a
+// deterministic reopen failure without needing filesystem-permission
+// tricks that a failed rename would also trip.
+var openFile = os.OpenFile
+
 func (r *rotatingFile) open() error {
-	f, err := os.OpenFile(r.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
+	f, err := openFile(r.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
 	if err != nil {
 		return err
 	}
@@ -153,18 +158,29 @@ func (r *rotatingFile) Write(p []byte) (int, error) {
 }
 
 // rotate renames the live file to .1, shifting existing generations down and
-// discarding anything past keep.
+// discarding anything past keep, then opens a fresh file at path.
+//
+// The live descriptor is kept open across the renames -- POSIX rename only
+// changes a directory entry, not what an open file descriptor points at --
+// so if the rename or the reopen below fails, r.f still refers to a
+// perfectly writable file (the original, or the just-rotated one) and the
+// caller's write is never lost. Closing the old descriptor only happens
+// once the new one is confirmed open.
 func (r *rotatingFile) rotate() error {
-	if err := r.f.Close(); err != nil {
-		return err
-	}
 	// Oldest first, so each rename lands on a free slot.
 	_ = os.Remove(fmt.Sprintf("%s.%d", r.path, r.keep))
 	for i := r.keep - 1; i >= 1; i-- {
 		_ = os.Rename(fmt.Sprintf("%s.%d", r.path, i), fmt.Sprintf("%s.%d", r.path, i+1))
 	}
-	_ = os.Rename(r.path, r.path+".1")
-	return r.open()
+	if err := os.Rename(r.path, r.path+".1"); err != nil {
+		return err
+	}
+	old := r.f
+	if err := r.open(); err != nil {
+		r.f = old
+		return err
+	}
+	return old.Close()
 }
 
 func (r *rotatingFile) Close() error {
