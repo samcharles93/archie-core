@@ -8,6 +8,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/forge"
+	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/worktree"
 )
 
 func TestSplitOwnerRepo(t *testing.T) {
@@ -176,9 +178,14 @@ func (reviewCapableForge) GetPullRequest(context.Context, string, string, int) (
 
 // TestPrReviewerIsMemoized pins the cross-channel single-flight fix: every
 // gateway must share one prReviewer so a review of the same PR requested from
-// two channels at once deduplicates instead of running twice.
+// two channels at once deduplicates instead of running twice. The boot must
+// own a worktree manager: a reviewer without one can never run and must not be
+// produced (see TestPrReviewerNilWithoutTrees).
 func TestPrReviewerIsMemoized(t *testing.T) {
-	b := &boot{forgeClient: reviewCapableForge{Forge: forge.NewNoop(slog.New(slog.DiscardHandler))}}
+	b := &boot{
+		forgeClient: reviewCapableForge{Forge: forge.NewNoop(slog.New(slog.DiscardHandler))},
+		trees:       &worktree.Manager{},
+	}
 
 	first := b.prReviewer()
 	if first == nil {
@@ -186,5 +193,37 @@ func TestPrReviewerIsMemoized(t *testing.T) {
 	}
 	if second := b.prReviewer(); first != second {
 		t.Fatal("prReviewer() returned distinct instances; channels would not share the in-flight set")
+	}
+}
+
+// TestPrReviewerNilWithoutTrees pins the producer-side invariant: a PR-capable
+// forge without a worktree manager must yield no reviewer. The standalone
+// Gateway never builds trees, and the daemon used to capture b.trees before it
+// was assigned, so both advertised a review_pr tool that always failed.
+func TestPrReviewerNilWithoutTrees(t *testing.T) {
+	b := &boot{forgeClient: reviewCapableForge{Forge: forge.NewNoop(slog.New(slog.DiscardHandler))}}
+
+	if got := b.prReviewer(); got != nil {
+		t.Fatalf("prReviewer() with no worktree manager = %T, want nil", got)
+	}
+}
+
+// TestReviewPRToolRegisteredOnlyWithWorkingReviewer composes the real boot
+// wiring (boot.prReviewer -> gateway.ReviewTools) and asserts review_pr is
+// advertised only when the reviewer can actually run.
+func TestReviewPRToolRegisteredOnlyWithWorkingReviewer(t *testing.T) {
+	logger := slog.New(slog.DiscardHandler)
+	b := &boot{
+		forgeClient: reviewCapableForge{Forge: forge.NewNoop(logger)},
+		log:         logger,
+	}
+
+	if entries := gateway.ReviewTools(b.prReviewer(), "archie"); len(entries) != 0 {
+		t.Fatalf("ReviewTools with no worktree manager = %d entries, want 0", len(entries))
+	}
+
+	b.trees = &worktree.Manager{}
+	if entries := gateway.ReviewTools(b.prReviewer(), "archie"); len(entries) != 1 {
+		t.Fatalf("ReviewTools with a worktree manager = %d entries, want 1", len(entries))
 	}
 }

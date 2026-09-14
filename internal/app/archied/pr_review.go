@@ -239,6 +239,9 @@ func (b *boot) prReviewer() gateway.ChatPRReviewer {
 	if b.chatPRReviewer != nil {
 		return b.chatPRReviewer
 	}
+	if b.trees == nil {
+		return nil
+	}
 	forgeReader, _ := b.forgeClient.(forge.PullRequestReader)
 	if forgeReader == nil {
 		return nil

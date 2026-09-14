@@ -408,6 +408,9 @@ func Run() int { //nolint:cyclop // the composition root's setup sequence is del
 	if err := b.setupLLMAndChat(); err != nil {
 		return 1
 	}
+	if err := b.buildTreesAndIdentities(ctx); err != nil {
+		return 1
+	}
 	if !b.setupGateways(ctx, args.cfgPath, args.overlayPath) {
 		return 1
 	}
@@ -416,9 +419,6 @@ func Run() int { //nolint:cyclop // the composition root's setup sequence is del
 		return 1
 	}
 	if err := b.loadPlugins(); err != nil {
-		return 1
-	}
-	if err := b.buildTreesAndIdentities(ctx); err != nil {
 		return 1
 	}
 
