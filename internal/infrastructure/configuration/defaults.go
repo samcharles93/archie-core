@@ -75,6 +75,7 @@ func (l *Loader) applyDefaults(cfg *config.Config) {
 	applyContainerDefaults(cfg)
 	applyToolPolicyDefaults(cfg)
 	applyCaptureDefaults(cfg)
+	applySchedulingDefaults(cfg)
 	applyNATSDefaults(cfg)
 	applyMemoryDefaults(cfg)
 }
