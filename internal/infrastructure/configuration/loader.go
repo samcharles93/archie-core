@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/samcharles93/archie-core/internal/config"
 )
@@ -25,6 +26,15 @@ type Document struct {
 
 	// Provenance lists the files that produced Config, in precedence order.
 	Provenance Provenance
+
+	// UnknownKeys lists dotted TOML key paths present in a loaded file that
+	// no decode target consumed (e.g. "containers.max_concurrancy" for a
+	// misspelled max_concurrency) -- present so a typo'd key is visible
+	// instead of silently parsing, validating and doing nothing. Sorted
+	// and de-duplicated. A missing key that a YAML config source carries
+	// is not yet detected here (plan-config-drift.md step 1 note); this
+	// is TOML-only for now.
+	UnknownKeys []string
 }
 
 // Loader reads configuration from files. The zero value is not usable; call
@@ -151,25 +161,72 @@ func (l *Loader) ApplyOverlay(doc *Document, overrides map[string]any) (*Documen
 func (l *Loader) overlayFile(basePath, overlayPath string) (*Document, error) {
 	doc := &Document{}
 
-	if err := decodeConfigFile(basePath, &doc.Config); err != nil {
+	cfgKeys, err := decodeConfigFileKeys(basePath, &doc.Config)
+	if err != nil {
 		return nil, err
 	}
-	if err := decodeSchedulingFile(basePath, &doc.Scheduling); err != nil {
+	schedKeys, err := decodeSchedulingFileKeys(basePath, &doc.Scheduling)
+	if err != nil {
 		return nil, err
 	}
+	doc.UnknownKeys = append(doc.UnknownKeys, unknownKeys(cfgKeys, schedKeys)...)
 	doc.Provenance.record(Origin{Path: basePath, Role: RoleMain, Layer: LayerBase})
 
 	if overlayPath != "" {
-		if err := decodeConfigFile(overlayPath, &doc.Config); err != nil {
+		cfgKeys, err = decodeConfigFileKeys(overlayPath, &doc.Config)
+		if err != nil {
 			return nil, err
 		}
-		if err := decodeSchedulingFile(overlayPath, &doc.Scheduling); err != nil {
+		schedKeys, err = decodeSchedulingFileKeys(overlayPath, &doc.Scheduling)
+		if err != nil {
 			return nil, err
 		}
+		doc.UnknownKeys = append(doc.UnknownKeys, unknownKeys(cfgKeys, schedKeys)...)
 		doc.Provenance.record(Origin{Path: overlayPath, Role: RoleMain, Layer: LayerOverlay})
 	}
 
 	return l.finalize(doc)
+}
+
+// unknownKeys returns the keys present in both a and b: one config file
+// feeds more than one decode target (&doc.Config and &doc.Scheduling), so
+// a key legitimately owned by one target decodes cleanly there and only
+// shows up in the other target's undecoded set. Only a key neither target
+// consumed is a real unknown key (Hazard 1, plan-config-drift.md).
+func unknownKeys(a, b []string) []string {
+	if len(a) == 0 || len(b) == 0 {
+		return nil
+	}
+	inB := make(map[string]bool, len(b))
+	for _, k := range b {
+		inB[k] = true
+	}
+	var out []string
+	for _, k := range a {
+		if inB[k] {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// sortedUnique returns keys sorted and de-duplicated, so Document.UnknownKeys
+// is deterministic across a base+overlay load that happens to name the same
+// stray key in both files.
+func sortedUnique(keys []string) []string {
+	if len(keys) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(keys))
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		if !seen[k] {
+			seen[k] = true
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Dir loads configuration from a directory tree:
@@ -249,16 +306,23 @@ func (l *Loader) decodeMain(doc *Document, path string, isYAMLFile bool) error {
 		}
 		return decodeSchedulingFile(path, &doc.Scheduling)
 	}
-	if err := decodeTOML(path, &doc.Config); err != nil {
+	cfgKeys, err := decodeTOMLKeys(path, &doc.Config)
+	if err != nil {
 		return err
 	}
-	return decodeSchedulingFile(path, &doc.Scheduling)
+	schedKeys, err := decodeSchedulingFileKeys(path, &doc.Scheduling)
+	if err != nil {
+		return err
+	}
+	doc.UnknownKeys = append(doc.UnknownKeys, unknownKeys(cfgKeys, schedKeys)...)
+	return nil
 }
 
 // finalize applies defaults, then validates. The order matters: validation
 // judges the effective configuration, including values the operator never
 // wrote.
 func (l *Loader) finalize(doc *Document) (*Document, error) {
+	doc.UnknownKeys = sortedUnique(doc.UnknownKeys)
 	l.applyDefaults(&doc.Config)
 	if err := Validate(&doc.Config); err != nil {
 		return nil, err

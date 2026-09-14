@@ -11,23 +11,43 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 )
 
-func decodeConfigFile(path string, target any) error {
+// decodeConfigFileKeys decodes path into target, dispatching on extension,
+// additionally returning target's undecoded top-level keys for a TOML
+// source (see decodeTOMLKeys). A YAML source has no equivalent hook yet
+// (plan-config-drift.md step 1 note) and always reports none -- unchanged
+// behaviour, not a claim of completeness.
+func decodeConfigFileKeys(path string, target any) ([]string, error) {
 	switch filepath.Ext(path) {
 	case ".yaml", ".yml":
-		return decodeYAML(path, target)
+		return nil, decodeYAML(path, target)
 	case ".toml":
-		return decodeTOML(path, target)
+		return decodeTOMLKeys(path, target)
 	default:
-		return fmt.Errorf("%w: config file %s must end in .toml, .yaml, or .yml", ErrUnreadable, path)
+		return nil, fmt.Errorf("%w: config file %s must end in .toml, .yaml, or .yml", ErrUnreadable, path)
 	}
 }
 
-// decodeTOML decodes a TOML file into target.
-func decodeTOML(path string, target any) error {
-	if _, err := toml.DecodeFile(path, target); err != nil {
-		return fmt.Errorf("%w: parsing %s: %w", ErrUnreadable, path, err)
+// decodeTOMLKeys decodes a TOML file into target, additionally
+// returning the top-level dotted key paths present in the file that
+// target did not consume (toml.MetaData.Undecoded()). A single decode
+// target's undecoded set is not by itself "unknown" -- see Hazard 1 in
+// .local/issue-tracker/plan-config-drift.md, one file can legitimately
+// feed more than one target -- callers combine this with the other
+// target's undecoded set before treating anything as a real unknown key.
+func decodeTOMLKeys(path string, target any) ([]string, error) {
+	meta, err := toml.DecodeFile(path, target)
+	if err != nil {
+		return nil, fmt.Errorf("%w: parsing %s: %w", ErrUnreadable, path, err)
 	}
-	return nil
+	undecoded := meta.Undecoded()
+	if len(undecoded) == 0 {
+		return nil, nil
+	}
+	keys := make([]string, len(undecoded))
+	for i, k := range undecoded {
+		keys[i] = k.String()
+	}
+	return keys, nil
 }
 
 // decodeYAML decodes a YAML file into target.

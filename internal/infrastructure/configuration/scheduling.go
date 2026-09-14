@@ -41,12 +41,20 @@ type schedulingDocument struct {
 }
 
 func decodeSchedulingFile(path string, target *SchedulingInput) error {
+	_, err := decodeSchedulingFileKeys(path, target)
+	return err
+}
+
+// decodeSchedulingFileKeys is decodeSchedulingFile plus the file's
+// undecoded top-level keys under this target (see decodeConfigFileKeys).
+func decodeSchedulingFileKeys(path string, target *SchedulingInput) ([]string, error) {
 	doc := schedulingDocument{Scheduling: *target}
-	if err := decodeConfigFile(path, &doc); err != nil {
-		return err
+	keys, err := decodeConfigFileKeys(path, &doc)
+	if err != nil {
+		return nil, err
 	}
 	*target = doc.Scheduling
-	return nil
+	return keys, nil
 }
 
 func applySchedulingOverlay(target *SchedulingInput, overrides map[string]any) error {
