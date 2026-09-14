@@ -294,8 +294,27 @@ and the `/api/setup` checklist (the panel was omitted rather than rendered).
 Both are closed by `archie-core-ml30`: `ConfigView` gained a `chat` section
 carrying `show_tool_calls`, the operator name, and whether any chat channel is
 configured, and both surfaces now read the projection rather than a live
-holder. The end-to-end suite asserts the checklist renders from the published
-snapshot.
+holder. The end-to-end suite drives the real binary and streams a turn, so the
+`show_tool_calls` assertion is made on the frames a browser receives.
+
+The checklist stays. The question raised when it was republished -- is a
+read-only setup report wanted in a process that cannot apply the setup it
+reports? -- resolves in favour of keeping it, because the panel never promised
+to apply anything. It renders each step as a title, a detail and a done mark
+with no control behind it, so it answers "what is this deployment missing?"
+rather than "fix it here", and the page that CAN act on it (the Configuration
+page) is where an operator goes next, in the daemon's own words. Removing it
+would delete the one surface that distinguishes a fresh deployment from a
+finished one for no gain, since the values it reads already cross the boundary
+in `ConfigView` and the read path costs the daemon nothing. The write path
+remains descoped (see `/api/config` (write) in the route table): the checklist
+reports configuration, it does not change it.
+
+`archie-core-ml30` published the channel flag from two of the three chat
+front-ends, so an email-only deployment read as configured on `/api/channels`
+and unconfigured on the checklist at the same time (GitHub #821). Both now
+derive from `config.ChatConfig.FrontEnds`, the single definition of a configured
+front-end, and a test pins the two surfaces to the same answer.
 
 A third value degraded for the same reason and is closed by
 `archie-core-pv6t`: in a deployment configuring `[[identities]]` the projection

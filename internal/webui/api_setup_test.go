@@ -95,6 +95,101 @@ func TestSetupChecklistRendersFromTheProjection(t *testing.T) {
 	}
 }
 
+// TestSetupChecklistChatChannelStepCountsEveryFrontEnd: the checklist's
+// "Connect a chat channel" step asks whether ANY conversational front-end is
+// configured, so the projection it reads has to answer that question for every
+// front-end the daemon serves. The daemon's own channel inventory lists three
+// (telegram, the webhook gateway and the inbound mail gateway -- see
+// bootstrap.go's status.NewManager), and an email-only deployment is a
+// configured deployment: the mail gateway feeds the same gateway.Router as the
+// other two. Deriving the answer from two of the three told an email operator
+// to connect a channel they already had.
+func TestSetupChecklistChatChannelStepCountsEveryFrontEnd(t *testing.T) {
+	const stepTitle = "Connect a chat channel"
+
+	tests := []struct {
+		name string
+		cfg  config.Config
+		want bool
+	}{
+		{
+			name: "nothing configured",
+			cfg:  config.Config{},
+			want: false,
+		},
+		{
+			name: "telegram token env",
+			cfg: config.Config{Chat: config.ChatConfig{
+				Telegram: config.TelegramConfig{TokenEnv: "TELEGRAM_TOKEN"},
+			}},
+			want: true,
+		},
+		{
+			name: "telegram token through the secret engine",
+			cfg: config.Config{Chat: config.ChatConfig{
+				Telegram: config.TelegramConfig{Token: config.SecretRef{Engine: "builtin", Key: "telegram"}},
+			}},
+			want: true,
+		},
+		{
+			name: "webhook gateway",
+			cfg: config.Config{Chat: config.ChatConfig{
+				WebhookAddr: "127.0.0.1:9099",
+			}},
+			want: true,
+		},
+		{
+			name: "inbound mail gateway",
+			cfg: config.Config{Chat: config.ChatConfig{
+				Email: config.EmailConfig{ListenAddr: "127.0.0.1:2525"},
+			}},
+			want: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newTestServer(t)
+			srv.ConfigSource = publishedSource(t, tc.cfg)
+
+			got := getSetup(t, srv)
+			found := false
+			for _, step := range got.Steps {
+				if step.Title != stepTitle {
+					continue
+				}
+				found = true
+				if step.Done != tc.want {
+					t.Errorf("step %q done = %v, want %v (config: %+v)", stepTitle, step.Done, tc.want, tc.cfg.Chat)
+				}
+			}
+			if !found {
+				t.Fatalf("no %q step in %+v", stepTitle, got.Steps)
+			}
+		})
+	}
+}
+
+// publishedSource renders cfg the way the daemon does -- through
+// webui.BuildConfigView -- and hands the server the marshalled document, which
+// is how the reading process actually receives it. Rendering here rather than
+// hand-writing a ConfigView keeps these tests honest about the producer: a
+// field BuildConfigView forgets is one the dashboard cannot see.
+func publishedSource(t *testing.T, cfg config.Config) ConfigViewSource {
+	t.Helper()
+	document, err := json.Marshal(BuildConfigView(ConfigViewInput{Config: cfg}))
+	if err != nil {
+		t.Fatalf("render the published projection: %v", err)
+	}
+	return func(context.Context) (ConfigView, bool, error) {
+		var view ConfigView
+		if err := json.Unmarshal(document, &view); err != nil {
+			return ConfigView{}, false, err
+		}
+		return view, true, nil
+	}
+}
+
 // TestSetupChecklistOmittedWithoutAProjection: no configuration to read means
 // the panel is omitted, not guessed at from zeroes.
 func TestSetupChecklistOmittedWithoutAProjection(t *testing.T) {

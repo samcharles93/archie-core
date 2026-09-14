@@ -419,13 +419,15 @@ func BuildConfigView(in ConfigViewInput) ConfigView {
 	return view
 }
 
-// chatChannelConfigured reports whether any conversational front-end has
-// credentials. The setup checklist needs the answer, not the tokens, so the
+// chatChannelConfigured reports whether any conversational front-end is
+// configured. The setup checklist needs the answer, not the tokens, so the
 // projection carries the boolean.
+//
+// The definition lives in config.ChatConfig.FrontEnds, not here: the daemon's
+// channel status manager answers the same question on /api/channels, and
+// deciding it twice is how the two answers drifted apart (GitHub #821).
 func chatChannelConfigured(chat config.ChatConfig) bool {
-	return chat.Telegram.Token != (config.SecretRef{}) ||
-		strings.TrimSpace(chat.Telegram.TokenEnv) != "" ||
-		strings.TrimSpace(chat.WebhookAddr) != ""
+	return chat.AnyFrontEndConfigured()
 }
 
 // RemoteConfigView reads the projection the configuration owner published.

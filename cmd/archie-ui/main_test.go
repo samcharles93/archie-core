@@ -33,6 +33,7 @@ import (
 
 	"google.golang.org/grpc"
 
+	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
@@ -82,15 +83,32 @@ func (f *fakeGateway) Route(context.Context, messaging.Inbound) (messaging.ChatR
 }
 
 // Stream emits the contract's documented order: started, a delta, then done.
+//
+// A turn that used a tool emits its tool event between the delta and the done,
+// which is where the Gateway's own stream reports completed tool activity.
+// Whether the dashboard renders it is the operator's setting, carried to this
+// process only by the published configuration projection (GitHub #821).
 func (f *fakeGateway) Stream(ctx context.Context, in messaging.Inbound) (<-chan messaging.ChatEvent, error) {
-	events := make(chan messaging.ChatEvent, 3)
+	events := make(chan messaging.ChatEvent, 4)
 	go func() {
 		defer close(events)
-		for _, event := range []messaging.ChatEvent{
+		turn := []messaging.ChatEvent{
 			{Kind: "started", SessionID: "s1"},
 			{Kind: "delta", Text: "hello " + in.Message.Text, SessionID: "s1"},
 			{Kind: "done", SessionID: "s1"},
-		} {
+		}
+		if in.Message.Text == toolCallPrompt {
+			turn = []messaging.ChatEvent{
+				{Kind: "started", SessionID: "s1"},
+				{Kind: "tool", SessionID: "s1", Tool: messaging.ToolCallEvent{
+					ID: "call-1", Name: "read_file", Parameters: `{"path":"main.go"}`,
+					Output: "package main",
+				}},
+				{Kind: "delta", Text: "read it", SessionID: "s1"},
+				{Kind: "done", SessionID: "s1"},
+			}
+		}
+		for _, event := range turn {
 			select {
 			case events <- event:
 			case <-ctx.Done():
@@ -100,6 +118,10 @@ func (f *fakeGateway) Stream(ctx context.Context, in messaging.Inbound) (<-chan 
 	}()
 	return events, nil
 }
+
+// toolCallPrompt is the message this suite sends when it wants the fake
+// Gateway to report a completed tool call in the turn.
+const toolCallPrompt = "read main.go"
 
 func (f *fakeGateway) Cancel(context.Context, string) (messaging.ChatCancellation, error) {
 	return messaging.ChatCancellation{Cancelled: true}, nil
@@ -403,9 +425,63 @@ func (d dashboard) get(path string) reply {
 	return d.do(d.request(http.MethodGet, path, "", true))
 }
 
+// chatFrame is one `data: {...}` frame of the chat stream, decoded into the
+// fields this suite reads. The UI process only ever receives these over HTTP,
+// so asserting on them is asserting on what the browser is handed.
+type chatFrame struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+	Tool string `json:"tool"`
+}
+
+// streamChat runs one chat turn over the real HTTP stream and returns every
+// frame up to and including the terminating done.
+func streamChat(t *testing.T, d dashboard, prompt string) []chatFrame {
+	t.Helper()
+	body, err := json.Marshal(map[string]string{"text": prompt, "channel_id": "dash"})
+	if err != nil {
+		t.Fatalf("encode the chat turn: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(d.request(http.MethodPost, "/api/chat/stream", string(body), true))
+	if err != nil {
+		t.Fatalf("POST /api/chat/stream: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /api/chat/stream = %d, want 200", resp.StatusCode)
+	}
+	var frames []chatFrame
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		payload, ok := strings.CutPrefix(scanner.Text(), "data: ")
+		if !ok {
+			continue
+		}
+		var frame chatFrame
+		if err := json.Unmarshal([]byte(payload), &frame); err != nil {
+			t.Fatalf("decode stream frame %q: %v", payload, err)
+		}
+		frames = append(frames, frame)
+		if frame.Type == "done" {
+			break
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("read the chat stream: %v", err)
+	}
+	return frames
+}
+
 // seedStore fills a real task database and publishes the configuration
 // projection, so everything the dashboard renders arrives over the wire from
 // a store this process never opens.
+//
+// The document is rendered by webui.BuildConfigView -- the same function the
+// daemon calls -- from a config.Config rather than hand-written as a
+// ConfigView. A suite that hand-writes the document cannot catch a producer
+// that forgets to publish a field, which is the failure mode this covers:
+// chat.show_tool_calls, the operator name and the channel flag all reach the
+// extracted process through this projection and nowhere else (GitHub #821).
 func seedStore(t *testing.T, dir string) *store.Store {
 	t.Helper()
 	st, err := store.Open(t.Context(), filepath.Join(dir, "tasks.sqlite"))
@@ -427,28 +503,40 @@ func seedStore(t *testing.T, dir string) *store.Store {
 		t.Fatalf("record PR number: %v", err)
 	}
 
-	published, err := json.Marshal(webui.ConfigView{
-		Identity: webui.IdentityView{
-			BotUser:   "archie-bot",
-			ForgeType: "github",
-			ForgeHost: "https://github.example.com",
+	publishConfig(t, st, daemonConfig(true))
+	return st
+}
+
+// daemonConfig is the configuration the daemon would hold for this smoke run.
+// showToolCalls is the setting the chat page's expansion is gated on.
+func daemonConfig(showToolCalls bool) config.Config {
+	return config.Config{
+		BotUser: "archie-bot",
+		Forge:   config.Forge{Type: "github", Host: "https://github.example.com"},
+		Repos:   []config.Repo{{Owner: "acme", Name: "widget", Base: "main"}},
+		Chat: config.ChatConfig{
+			ShowToolCalls: showToolCalls,
+			Operator:      "Sam",
+			WebhookAddr:   "127.0.0.1:9099",
 		},
-		Repositories: []webui.RepoView{{Owner: "acme", Name: "widget", Base: "main"}},
-		Chat: webui.ChatView{
-			ShowToolCalls:     true,
-			Operator:          "Sam",
-			ChannelConfigured: true,
-		},
-	})
+	}
+}
+
+// publishConfig renders cfg the way the daemon's configuration owner does and
+// writes the result to the store the UI process reads it back from. The UI
+// process holds no configuration, so this is the only path by which a setting
+// reaches its pages.
+func publishConfig(t *testing.T, st *store.Store, cfg config.Config) {
+	t.Helper()
+	document, err := json.Marshal(webui.BuildConfigView(webui.ConfigViewInput{Config: cfg}))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("render the configuration projection: %v", err)
 	}
 	if err := st.PutConfigSnapshot(t.Context(), store.ConfigSnapshot{
-		Schema: webui.ConfigViewSchema, Document: published,
+		Schema: webui.ConfigViewSchema, Document: document,
 	}); err != nil {
 		t.Fatalf("publish config snapshot: %v", err)
 	}
-	return st
 }
 
 // TestUIProcessLinksMultiIdentityTaskRowsToTheirOwningForge drives the real
@@ -704,6 +792,48 @@ func TestUIProcessServesTheDashboardAgainstLiveDependencies(t *testing.T) {
 		if text != "hello there" {
 			t.Errorf("streamed text = %q, want the Gateway's reply relayed verbatim", text)
 		}
+	})
+
+	t.Run("the daemon's show_tool_calls setting decides whether tool calls reach the chat page", func(t *testing.T) {
+		// The chat page expands a completed tool call only when the frame
+		// arrives, and this process has no [chat] section of its own: the
+		// setting reaches it through the published projection alone. A turn
+		// streamed with the setting off must carry no tool frame, and one
+		// streamed with it on must carry the tool the Gateway reported
+		// (GitHub #821).
+		//
+		// Each case republishes before streaming, the way a config reload
+		// does; the default is restored afterwards so a later subtest does
+		// not inherit whichever case ran last.
+		tests := []struct {
+			name      string
+			showTools bool
+			wantFrame bool
+		}{
+			{name: "off", showTools: false, wantFrame: false},
+			{name: "on", showTools: true, wantFrame: true},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				publishConfig(t, st, daemonConfig(tc.showTools))
+
+				frames := streamChat(t, d, toolCallPrompt)
+				var sawTool bool
+				for _, frame := range frames {
+					if frame.Tool == "read_file" {
+						sawTool = true
+					}
+					if frame.Type == "done" {
+						break
+					}
+				}
+				if sawTool != tc.wantFrame {
+					t.Errorf("show_tool_calls=%v produced tool frame = %v, want %v; frames = %+v",
+						tc.showTools, sawTool, tc.wantFrame, frames)
+				}
+			})
+		}
+		publishConfig(t, st, daemonConfig(true))
 	})
 
 	t.Run("an operator task action crosses to the Gateway", func(t *testing.T) {
