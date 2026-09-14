@@ -10,20 +10,10 @@ import (
 	"github.com/samcharles93/archie-core/internal/events"
 )
 
-// Defaults for the tunables an operator may leave unset.
 const (
-	// DefaultInterval is the tick cadence when none is configured. A minute
-	// is the finest granularity a cron-style schedule needs, and polling a
-	// local job store that often costs nothing.
-	DefaultInterval = time.Minute
-	// DefaultMaxParallel caps concurrent parallel-pool runs. It exists so a
-	// store that reports many jobs due at once (the first tick after a long
-	// downtime, typically) cannot launch an unbounded fan-out.
-	DefaultMaxParallel = 4
-	// DefaultJobTimeout bounds one run. A scheduled job that has not
-	// finished in an hour is stuck, and leaving it in flight would suppress
-	// every later run of the same job forever.
-	DefaultJobTimeout = time.Hour
+	defaultInterval    = time.Minute
+	defaultMaxParallel = 4
+	defaultJobTimeout  = time.Hour
 )
 
 // Event kinds emitted by the engine, re-exported so callers of this package
@@ -49,14 +39,15 @@ const sequentialQueueDepth = 256
 // take the documented defaults.
 type EngineConfig struct {
 	// Interval is the tick cadence: how often the engine asks its source
-	// what is due. Zero uses DefaultInterval; negative is an error.
+	// what is due. Zero uses the value from DefaultEngineConfig; negative
+	// is an error.
 	Interval time.Duration
 	// MaxParallel caps simultaneous parallel-pool runs. Zero uses
-	// DefaultMaxParallel. It does not bound the sequential pool, which is
-	// one by definition.
+	// the value from DefaultEngineConfig. It does not bound the sequential
+	// pool, which is one by definition.
 	MaxParallel int
 	// JobTimeout bounds a single run via context deadline. Zero uses
-	// DefaultJobTimeout.
+	// the value from DefaultEngineConfig.
 	JobTimeout time.Duration
 	// Clock is injectable time. Nil uses the system clock.
 	Clock Clock
@@ -65,7 +56,18 @@ type EngineConfig struct {
 	Events Sink
 }
 
-func (c EngineConfig) validate() error {
+// DefaultEngineConfig returns the domain-owned defaults for the engine's
+// operator-selectable runtime settings.
+func DefaultEngineConfig() EngineConfig {
+	return EngineConfig{
+		Interval:    defaultInterval,
+		MaxParallel: defaultMaxParallel,
+		JobTimeout:  defaultJobTimeout,
+	}
+}
+
+// Validate rejects unusable engine settings.
+func (c EngineConfig) Validate() error {
 	switch {
 	case c.Interval < 0:
 		return fmt.Errorf("scheduling: interval must not be negative, got %v", c.Interval)
@@ -79,14 +81,15 @@ func (c EngineConfig) validate() error {
 
 // withDefaults returns the config with zero values replaced.
 func (c EngineConfig) withDefaults() EngineConfig {
+	d := DefaultEngineConfig()
 	if c.Interval == 0 {
-		c.Interval = DefaultInterval
+		c.Interval = d.Interval
 	}
 	if c.MaxParallel == 0 {
-		c.MaxParallel = DefaultMaxParallel
+		c.MaxParallel = d.MaxParallel
 	}
 	if c.JobTimeout == 0 {
-		c.JobTimeout = DefaultJobTimeout
+		c.JobTimeout = d.JobTimeout
 	}
 	if c.Clock == nil {
 		c.Clock = systemClock{}
@@ -134,7 +137,7 @@ func NewEngine(source JobSource, runner Runner, cfg EngineConfig) (*Engine, erro
 	if runner == nil {
 		return nil, errors.New("scheduling: runner must not be nil")
 	}
-	if err := cfg.validate(); err != nil {
+	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 	cfg = cfg.withDefaults()

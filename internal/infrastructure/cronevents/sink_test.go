@@ -3,7 +3,6 @@ package cronevents
 import (
 	"testing"
 
-	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/scheduling"
 	"github.com/samcharles93/archie-core/internal/events"
 )
@@ -18,12 +17,9 @@ func TestSinkPublishesEmitAsJobEvent(t *testing.T) {
 	t.Cleanup(bus.Close)
 	sub := bus.Subscribe(4)
 
-	sink, err := Sink(config.EventsSinkBus, bus)
-	if err != nil {
-		t.Fatalf("Sink(%q, bus) = %v, want nil", config.EventsSinkBus, err)
-	}
+	sink := New(bus)
 	if sink == nil {
-		t.Fatalf("Sink(%q, bus) = nil, want a sink over the bus", config.EventsSinkBus)
+		t.Fatal("New(bus) = nil, want a sink over the bus")
 	}
 
 	// The shape the engine builds for a completed run
@@ -60,43 +56,11 @@ func TestSinkPublishesEmitAsJobEvent(t *testing.T) {
 	}
 }
 
-// TestSinkIsNilWhenEmissionIsOff: an absent or explicitly disabled sink must
-// come back nil, which is the engine's documented "still runs, just
-// unobservable" configuration.
-func TestSinkIsNilWhenEmissionIsOff(t *testing.T) {
-	bus := events.NewBus()
-	t.Cleanup(bus.Close)
-
-	for _, mode := range []string{"", config.EventsSinkNone} {
-		sink, err := Sink(mode, bus)
-		if err != nil {
-			t.Errorf("Sink(%q, bus) = %v, want nil", mode, err)
-			continue
-		}
-		if sink != nil {
-			t.Errorf("Sink(%q, bus) = %#v, want a nil sink", mode, sink)
-		}
-	}
-}
-
-// TestSinkIsNilWithoutABus: a deployment that turned emission on still has
-// nothing to publish to when the daemon has no bus, so the sink degrades to
-// the engine's nil-sink tolerance rather than panicking on first emit.
+// A missing bus cannot produce an adapter; composition decides whether that
+// is acceptable for the selected event mode.
 func TestSinkIsNilWithoutABus(t *testing.T) {
-	sink, err := Sink(config.EventsSinkBus, nil)
-	if err != nil {
-		t.Fatalf("Sink(%q, nil bus) = %v, want nil", config.EventsSinkBus, err)
-	}
+	sink := New(nil)
 	if sink != nil {
-		t.Errorf("Sink(%q, nil bus) = %#v, want a nil sink", config.EventsSinkBus, sink)
-	}
-}
-
-// TestSinkRejectsUnknownMode: unreachable through the loader, which rejects
-// the value first -- but a hand-built config must not silently disable
-// observability either.
-func TestSinkRejectsUnknownMode(t *testing.T) {
-	if _, err := Sink("kafka", events.NewBus()); err == nil {
-		t.Fatal("Sink(\"kafka\") = nil error, want an unknown-mode failure")
+		t.Errorf("New(nil) = %#v, want a nil sink", sink)
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/scheduling"
 	"github.com/samcharles93/archie-core/internal/events"
 )
@@ -39,10 +38,7 @@ func TestEngineSinkPublishesRealRunOnTheBus(t *testing.T) {
 	t.Cleanup(bus.Close)
 	sub := bus.Subscribe(4)
 
-	sink, err := Sink(config.EventsSinkBus, bus)
-	if err != nil {
-		t.Fatalf("Sink(%q, bus) = %v, want nil", config.EventsSinkBus, err)
-	}
+	sink := New(bus)
 	clock := chanClock{ch: make(chan time.Time, 1)}
 	engine, err := scheduling.NewEngine(
 		staticSource{{ID: "daily", Pool: scheduling.PoolParallel, Detail: "daily status summary"}},
