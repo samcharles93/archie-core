@@ -10,7 +10,6 @@ db_path  = "~/.local/share/archie/archie.db"
 
 [services.gateway]
 target = "127.0.0.1:8585"
-poll_interval = "60s"
 
 # The State Store gRPC service owns the single archie.db SQLite file; archied
 # and archie-gateway dial it and never open archie.db themselves (§12 step 7).
