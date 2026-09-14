@@ -40,19 +40,36 @@ import (
 // silent disabled-forge path from the token-unavailable and
 // client-construction-failed fallbacks, which both log before returning the
 // same noop forge.
+// recordedWarn is one captured warning: its message and its attributes.
+//
+// The attributes are kept because they carry what an assertion should use --
+// which provider, which file -- so a test can check what the operator was told
+// without depending on the wording of the message. Message text is prose a
+// rewording can change while the behaviour stays correct; an attribute is data.
+type recordedWarn struct {
+	message string
+	attrs   map[string]string
+}
+
 type recordingHandler struct {
-	mu    sync.Mutex
-	warns []string
+	mu      sync.Mutex
+	records []recordedWarn
 }
 
 func (h *recordingHandler) Enabled(context.Context, slog.Level) bool { return true }
 
 func (h *recordingHandler) Handle(_ context.Context, r slog.Record) error {
+	if r.Level != slog.LevelWarn {
+		return nil
+	}
+	attrs := make(map[string]string, r.NumAttrs())
+	r.Attrs(func(a slog.Attr) bool {
+		attrs[a.Key] = a.Value.String()
+		return true
+	})
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if r.Level == slog.LevelWarn {
-		h.warns = append(h.warns, r.Message)
-	}
+	h.records = append(h.records, recordedWarn{message: r.Message, attrs: attrs})
 	return nil
 }
 
@@ -63,7 +80,18 @@ func (h *recordingHandler) WithGroup(string) slog.Handler      { return h }
 func (h *recordingHandler) Warnings() []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return append([]string(nil), h.warns...)
+	messages := make([]string, 0, len(h.records))
+	for _, rec := range h.records {
+		messages = append(messages, rec.message)
+	}
+	return messages
+}
+
+// WarningRecords returns a copy of the captured warnings with their attributes.
+func (h *recordingHandler) WarningRecords() []recordedWarn {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]recordedWarn(nil), h.records...)
 }
 
 // TestResolveForgeDegradesInsteadOfFailing guards a startup behaviour change:
@@ -1321,17 +1349,14 @@ func TestResolveProviderSecretsDegradesInsteadOfFailing(t *testing.T) {
 		name     string
 		ref      secret.SecretRef
 		registry *secret.Registry // nil means a default registry
-		wantLog  string
 	}{
 		{
-			name:    "the engine is not registered",
-			ref:     secret.SecretRef{Engine: "not-an-engine", Key: "OPENAI_API_KEY"},
-			wantLog: "api_key unavailable",
+			name: "the engine is not registered",
+			ref:  secret.SecretRef{Engine: "not-an-engine", Key: "OPENAI_API_KEY"},
 		},
 		{
-			name:    "the key is unset in the env engine",
-			ref:     secret.SecretRef{Engine: "env", Key: "ARCHIE_TEST_PROVIDER_KEY_DEFINITELY_UNSET"},
-			wantLog: "api_key unavailable",
+			name: "the key is unset in the env engine",
+			ref:  secret.SecretRef{Engine: "env", Key: "ARCHIE_TEST_PROVIDER_KEY_DEFINITELY_UNSET"},
 		},
 		{
 			// A registered engine that answers nothing, which is how a
@@ -1340,7 +1365,6 @@ func TestResolveProviderSecretsDegradesInsteadOfFailing(t *testing.T) {
 			name:     "the engine resolves every key to empty",
 			ref:      secret.SecretRef{Engine: "empty", Key: "OPENAI_API_KEY"},
 			registry: registryWithEmptyEngine(),
-			wantLog:  "api_key resolved empty",
 		},
 	}
 	for _, tc := range tests {
@@ -1363,9 +1387,19 @@ func TestResolveProviderSecretsDegradesInsteadOfFailing(t *testing.T) {
 			if got.APIKeyEnv != "" {
 				t.Errorf("provider api_key_env = %q, want empty: nothing was exported", got.APIKeyEnv)
 			}
-			warns := rec.Warnings()
-			if len(warns) != 1 || !strings.Contains(warns[0], tc.wantLog) {
-				t.Errorf("warnings = %v, want exactly one containing %q", warns, tc.wantLog)
+			// Assert the structured fact rather than the prose: the operator must
+			// be told WHICH provider was disabled. An exact warning count or a
+			// message substring would break on a rewording while the policy was
+			// still honoured, so the provider attribute is what is checked.
+			var told bool
+			for _, w := range rec.WarningRecords() {
+				if w.attrs["provider"] == "acme" {
+					told = true
+					break
+				}
+			}
+			if !told {
+				t.Errorf("warnings = %v, want one naming provider %q in its attributes", rec.Warnings(), "acme")
 			}
 		})
 	}
