@@ -1,5 +1,10 @@
 # archie-agent changelog
 
+## [1.25.0] - 2026-09-15
+
+- chore: no user-facing changes; versioned so the 1.25.0 release tags both
+  components at the same commit
+
 ## [1.23.0] - 2026-09-12
 
 The agent runtime now reaches task state through the State Store gRPC contract
