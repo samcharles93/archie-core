@@ -453,3 +453,38 @@ func TestRuntimePassInputRecordsReasonAndLastPass(t *testing.T) {
 		t.Error("second pass LastPass is zero; want the previous pass time")
 	}
 }
+
+func TestRuntimePassInputSetsSinceToPriorPass(t *testing.T) {
+	t.Parallel()
+
+	clock := newFakeClock(time.Unix(0, 0))
+	c := newFake("c", Manifest{Interval: testInterval, OnInput: true})
+	c.checkResult = true
+	_, rt, _ := newRuntimeTestEnv(t, clock, RuntimeConfig{}, c)
+
+	if err := rt.Start(context.Background()); err != nil {
+		t.Fatalf("Start() = %v, want nil", err)
+	}
+	t.Cleanup(func() { _ = rt.Stop(context.Background()) })
+
+	waitFor(t, 2*time.Second, "first pass", func() bool { return c.passCalls.Load() == 1 })
+
+	rt.Nudge("c")
+	waitFor(t, 2*time.Second, "nudged pass", func() bool { return c.passCalls.Load() == 2 })
+
+	c.inputMu.Lock()
+	inputs := slices.Clone(c.inputs)
+	c.inputMu.Unlock()
+	if len(inputs) != 2 {
+		t.Fatalf("pass inputs = %d, want 2", len(inputs))
+	}
+	if !inputs[0].Since.IsZero() {
+		t.Errorf("first pass Since = %v, want zero so the curator applies its own first-pass lookback", inputs[0].Since)
+	}
+	if inputs[1].Since.IsZero() {
+		t.Error("second pass Since is zero; want the previous pass time so a pass reads only activity since the last pass")
+	}
+	if !inputs[1].Since.Equal(inputs[1].LastPass) {
+		t.Errorf("second pass Since = %v, want %v (the previous pass time also carried in LastPass)", inputs[1].Since, inputs[1].LastPass)
+	}
+}

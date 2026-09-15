@@ -214,7 +214,7 @@ func (rt *Runtime) runLoop(ctx context.Context, name string, c CuratorEngine) {
 			return // shutting down while waiting for a pass slot
 		}
 		passCtx, cancel := context.WithTimeout(ctx, rt.cfg.PassTimeout)
-		result, perr := rt.safePass(passCtx, c, PassInput{Reason: reason, LastPass: lastPass})
+		result, perr := rt.safePass(passCtx, c, PassInput{Reason: reason, Since: lastPass, LastPass: lastPass})
 		cancel()
 		rt.release()
 
