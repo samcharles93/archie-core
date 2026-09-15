@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -123,6 +124,78 @@ func TestProviderPreservesResourceTextAndMultimodalResults(t *testing.T) {
 	}
 	if !result.IsMultimodal || result.Summary != "captured resource context" {
 		t.Fatalf("multimodal result = %+v", result)
+	}
+}
+
+func TestProviderWritesBinaryContentToDeliverableMediaRefs(t *testing.T) {
+	transport := newFakeTransport()
+	transport.listed = []protocol.ToolSchema{{Name: "media"}}
+	transport.callResult = protocol.CallToolResult{Content: []protocol.ContentBlock{
+		{Type: "text", Text: "summary "},
+		{Type: "image", Data: "aW1hZ2U=", MimeType: "image/png"},
+		{Type: "audio", Data: "YXVkaW8=", MimeType: "audio/wav"},
+		{Type: "resource", Resource: &protocol.ResourceContent{MimeType: "application/pdf", Blob: "cGRm"}},
+	}}
+	provider := New("media", transport)
+	if err := provider.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Stop(context.Background()) })
+
+	entries, err := provider.Discover(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("Discover() count = %d, want 1", len(entries))
+	}
+
+	output, err := entries[0].Handler(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, ok := output.(tools.MultimodalResult)
+	if !ok {
+		t.Fatalf("handler result type = %T, want tools.MultimodalResult", output)
+	}
+	if !result.IsMultimodal {
+		t.Error("IsMultimodal = false, want true")
+	}
+	if result.Summary != "summary " {
+		t.Errorf("Summary = %q, want %q", result.Summary, "summary ")
+	}
+	if result.SubdirHint == "" {
+		t.Fatal("SubdirHint is empty, want the written media directory")
+	}
+	if len(result.Files) != 3 {
+		t.Fatalf("Files = %v, want 3 written files", result.Files)
+	}
+	if len(result.URLs) != 3 {
+		t.Fatalf("URLs = %v, want 3 deliverable media refs", result.URLs)
+	}
+
+	want := []struct {
+		bytes []byte
+		typ   string
+	}{
+		{[]byte("image"), "image"},
+		{[]byte("audio"), "audio"},
+		{[]byte("pdf"), "document"},
+	}
+	for i, ref := range result.URLs {
+		if ref.Path == "" {
+			t.Fatalf("URLs[%d].Path is empty, want a local file for delivery", i)
+		}
+		if ref.Type != want[i].typ {
+			t.Errorf("URLs[%d].Type = %q, want %q", i, ref.Type, want[i].typ)
+		}
+		got, err := os.ReadFile(ref.Path)
+		if err != nil {
+			t.Fatalf("URLs[%d].Path not readable: %v", i, err)
+		}
+		if string(got) != string(want[i].bytes) {
+			t.Errorf("URLs[%d] bytes = %q, want %q", i, got, want[i].bytes)
+		}
 	}
 }
 
