@@ -120,11 +120,30 @@ presented as dead":
 
 - **Runtime-loaded code** (Yaegi, reflection) — a route or RPC reached only
   through dynamic dispatch reads as unconsumed. Labelled with the package list.
-- **JSX call-site extraction is textual.** It matches path literals in
-  `ui/src/**`, so a path built by string concatenation is invisible. The
-  extractor must **fail loudly on an unexpected call shape** rather than
-  under-report — under-reporting is the failure mode that makes a gate worse than
-  no gate.
+- **Dashboard call-site extraction is textual, and deliberately narrow.** A path
+  counts as a consumer only when it is the *first argument of a call* in code:
+  the function need not be named (so renaming `req(` to `request(` is fine), but
+  a bare constant, a dead array, an object property, or a commented-out call
+  must not count. Both halves are load-bearing, and they pull in opposite
+  directions.
+
+  Naming the call broke on rename: matching `req|fetch` reported 16 live routes
+  as unconsumed the moment the dashboard's helper was renamed. Dropping the
+  call requirement was **worse**, and is recorded here because it is the more
+  tempting mistake: crediting any quoted `/api/...` literal meant a comment, a
+  retired-route array, or a display label proved a route was reachable, so
+  deleting every real request still read as healthy. The two directions are not
+  symmetric — a false "unconsumed" is a loud, fixable failure, while a false
+  "consumed" is a silent hole, which is worse than having no gate.
+
+  Remaining limits: a path passed as any argument other than the first is not
+  seen (accepting a comma would start crediting array elements and restore the
+  vacuity above); a request written inside a template-literal interpolation is
+  not seen; and a path built from a bare `/api` fragment is reported as
+  unparsable rather than silently contributing nothing.
+- **Routes are credited per path, not per verb.** A literal does not say which
+  HTTP verb carries it, so a route is credited to every verb and a route whose
+  specific verb has no caller reads as consumed.
 - **An `EventSource` subscription is a consumer.** `/events` and
   `/api/logs/stream` are consumed via `EventSource`, not `fetch`; an extractor
   that only looks for `fetch` reports them unconsumed and is simply wrong.

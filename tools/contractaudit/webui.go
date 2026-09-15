@@ -36,39 +36,43 @@ var routePattern = regexp.MustCompile(`(?:HandleFunc|Handle)\(\s*"([A-Z]+)\s+(/[
 // read as an unconsumed route when it is in fact a mounted one.
 var routeLiteralPattern = regexp.MustCompile(`(?m)^\s*(?:const\s+)?([A-Za-z0-9_]+)\s*=\s*"([A-Z]+)\s+(/[^"]*)"`)
 
-// Consumer call shapes. Go's regexp has no backreferences, so each quoting
-// style gets its own alternative rather than a backreference pair.
+// Consumer call shapes.
 //
-// EventSource counts as a consumer: /events and /api/logs/stream are
-// subscribed to, not fetched, and an extractor that only looks for fetch
-// reports them unconsumed and is simply wrong.
+// Extraction is deliberately name-agnostic: it matches the path *literal*
+// rather than the call that carries it. An earlier version matched `req|fetch`
+// by function name, and rewriting the client's helper from `req(` to
+// `request(` silently reported 16 live routes as unconsumed. The contract this
+// surface audits is "the dashboard calls this path", and a literal is how the
+// dashboard expresses that regardless of what the surrounding call is called.
 var (
-	fetchPathPatterns = []*regexp.Regexp{
-		regexp.MustCompile(`(?:req|fetch)\(\s*"([^"]+)"`),
-		regexp.MustCompile("(?:req|fetch)\\(\\s*`([^`]+)`"),
-	}
-	eventPathPatterns = []*regexp.Regexp{
-		regexp.MustCompile(`new\s+EventSource\(\s*"([^"]+)"`),
-		regexp.MustCompile("new\\s+EventSource\\(\\s*`([^`]+)`"),
-	}
-	// A bare path literal, so a call routed through a helper this extractor
-	// does not know about is still credited.
-	pathLiteralPattern = regexp.MustCompile(`"(/[a-zA-Z0-9_./{}:-]*)"`)
+	// pathLiteralPattern matches a path literal that is the first argument of a
+	// call, in either quoting style. Both are needed: a fixed path is written
+	// with double quotes and an interpolated one with backticks.
+	//
+	// Two properties are load-bearing, and they pull in opposite directions.
+	//
+	// It does not name the function, because naming it broke on rename: matching
+	// `req|fetch` reported 16 live routes as unconsumed the moment the
+	// dashboard's helper became `request(`.
+	//
+	// It requires a call, because dropping *that* requirement made the check
+	// vacuous: crediting any quoted `/api/...` literal meant a comment, a dead
+	// array, or a display label counted as proof that the route was consumed, so
+	// deleting every real request still read as healthy. The two directions are
+	// not symmetric -- a false "unconsumed" is a loud, fixable failure, while a
+	// false "consumed" is a silent hole in the gate, which is worse than having
+	// no gate at all.
+	//
+	// Known limit: the path must be the *first* argument. Accepting a comma
+	// before the literal would start crediting array elements, restoring the
+	// vacuity this pattern exists to prevent.
+	pathLiteralPattern = regexp.MustCompile("\\b[A-Za-z_$][A-Za-z0-9_$]*\\s*\\(\\s*[\"`](/(?:api/|events)[^\"`\\s]*)")
 
-	// Every fetch/req/EventSource call's opening, captured with its first
-	// argument, so the extractor can require that argument to be a literal
-	// rather than hoping a shape it does not recognise never appears.
-	callOpenPattern = regexp.MustCompile(`\b(?:req|fetch|new\s+EventSource)\s*\(\s*([^\s)\n]{0,80})`)
-	// A declaration, not a call: `async function req(path) {`.
-	declPattern = regexp.MustCompile(`\bfunction\s+(?:req|fetch)\s*\(`)
-	// The wrapper delegating on a variable: `fetch(path, {`. This carries no
-	// path by construction, so it is not an under-report.
-	delegatePattern = regexp.MustCompile(`\b(?:req|fetch)\s*\(\s*[a-z][A-Za-z0-9_]*\s*[,)]`)
-	// The first argument opening with a quote, which is what makes it a
-	// literal path this extractor must have extracted.
-	literalArgOnly = regexp.MustCompile("^[\"`]")
-	// An EventSource subscription built from a variable is skipped for the
-	// same reason as the wrapper delegation above.
+	// fragmentPattern matches a literal that begins an API path but does not
+	// hold the whole route, e.g. `"/api" + "/tasks"`. Such a route cannot be
+	// credited, so the file is reported rather than silently contributing
+	// nothing -- under-reporting is how a gate stops checking unnoticed.
+	fragmentPattern = regexp.MustCompile("[\"`](/api)[\"`]")
 
 	tmpPattern       = regexp.MustCompile(`\$\{[^}]*\}`)
 	routeParamPat    = regexp.MustCompile(`\{[^}]+\}`)
@@ -177,50 +181,84 @@ func (s *webUISurface) consumerPaths() (map[string]string, error) {
 	return consumed, nil
 }
 
-// scanFile returns every API path literal in one dashboard source file.
+// scanFile returns every request path in one dashboard source file.
 //
-// It fails loudly on a call it cannot parse. Under-reporting is how a gate
-// silently stops checking, so a `fetch`/`req`/`EventSource` whose first
-// argument is neither a literal nor one of the two shapes that legitimately
-// carries no path -- a declaration, or the wrapper delegating on a variable --
-// is an error naming the file rather than a quietly smaller consumer set.
+// Two things must be true of a mention before it counts as a consumer: it must
+// be the first argument of a call, and it must be code rather than prose. The
+// first excludes bare constants, dead arrays, and object properties; the second
+// excludes a commented-out call, which otherwise leaves a call-shaped path in
+// the file and reads as live.
+//
+// The only failure it reports is a path it cannot see whole. That is a narrow
+// guard rather than a heuristic: it fires when a file concatenates a bare /api
+// fragment into a route, because no literal then holds the path and the
+// extractor would otherwise contribute nothing for that route without saying so.
 func scanFile(rel, body string) ([]string, error) {
-	var literals []string
-	for _, pattern := range append(append([]*regexp.Regexp{}, fetchPathPatterns...), eventPathPatterns...) {
-		for _, match := range pattern.FindAllStringSubmatch(body, -1) {
-			literals = append(literals, match[1])
-		}
-	}
-	for _, match := range pathLiteralPattern.FindAllStringSubmatch(body, -1) {
-		literals = append(literals, match[1])
-	}
-
-	// Every call whose first argument is not a literal, minus the declarations
-	// and variable delegations that legitimately produce no path.
-	//
-	// The guard is deliberately one-directional. There is no matching "found no
-	// calls" condition: a file may legitimately carry a path literal with no
-	// call of its own (a router table, a link), and the aggregate check in
-	// consumerPaths already fails when the whole surface yields nothing.
-	declarations := len(declPattern.FindAllString(body, -1))
-	delegations := len(delegatePattern.FindAllString(body, -1))
-	for _, match := range callOpenPattern.FindAllStringSubmatch(body, -1) {
-		first := match[1]
-		if first == "" || literalArgOnly.MatchString(first) {
-			continue
-		}
-		// A non-literal first argument. Accounted for by a declaration or a
-		// delegation, or an under-report.
-		if declarations+delegations > 0 {
-			declarations--
-			continue
-		}
+	code := stripJSComments(body)
+	if fragmentPattern.MatchString(code) {
 		return nil, fmt.Errorf(
-			"%s: fetch/req/EventSource call with non-literal first argument %q; the extractor cannot see the path it builds and would under-report",
-			rel, first,
+			"%s: builds an API path from a bare /api fragment; the extractor cannot see the whole route and would under-report",
+			rel,
 		)
 	}
+	var literals []string
+	for _, match := range pathLiteralPattern.FindAllStringSubmatch(code, -1) {
+		literals = append(literals, match[1])
+	}
 	return literals, nil
+}
+
+// stripJSComments removes // and /* */ comments while leaving string, template,
+// and regex literals intact, so the extractor measures code rather than prose
+// about code. Without it, commenting out a call still reads as a live consumer
+// -- the same silent hole as crediting a bare literal.
+//
+// Known limit: template-literal interpolations are treated as string content, so
+// a request written inside `${...}` is not seen. No such call exists in ui/src.
+func stripJSComments(src string) string {
+	var b strings.Builder
+	b.Grow(len(src))
+	var quote byte
+	for i := 0; i < len(src); {
+		c := src[i]
+		var next byte
+		if i+1 < len(src) {
+			next = src[i+1]
+		}
+		if quote != 0 {
+			b.WriteByte(c)
+			if c == '\\' && i+1 < len(src) {
+				b.WriteByte(next)
+				i += 2
+				continue
+			}
+			if c == quote {
+				quote = 0
+			}
+			i++
+			continue
+		}
+		switch {
+		case c == '"' || c == '\'' || c == '`':
+			quote = c
+			b.WriteByte(c)
+			i++
+		case c == '/' && next == '/':
+			for i < len(src) && src[i] != '\n' {
+				i++
+			}
+		case c == '/' && next == '*':
+			i += 2
+			for i < len(src) && !(src[i] == '*' && i+1 < len(src) && src[i+1] == '/') {
+				i++
+			}
+			i += 2
+		default:
+			b.WriteByte(c)
+			i++
+		}
+	}
+	return b.String()
 }
 
 // normalizeRoute strips query strings and replaces both `${...}` template

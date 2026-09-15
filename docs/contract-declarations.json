@@ -24,7 +24,7 @@
   "blindSpots": [
     {
       "surface": "internal/webui",
-      "reason": "Consumer extraction is textual over ui/src. A path assembled by string concatenation rather than written as a literal is invisible; scanFile fails loudly when a call shape it cannot parse appears, but it cannot see a path that is never a literal. Routes whose consumer is outside the dashboard (the asset mount, the health probes, the capture-intake webhook) are excluded from this surface by design: they have different consumers and are not part of the dashboard API contract."
+      "reason": "A path counts as a consumer only when it is the first argument of a call in code. The function need not be named -- naming it broke on rename, when matching `req|fetch` reported 16 live routes as unconsumed after the dashboard's helper became `request(` -- but a bare constant, a dead array, an object property, or a commented-out call must not count, because crediting any quoted literal makes the surface pass on a file that issues no requests at all. Limits: a path passed as any argument other than the first is not seen (accepting a comma would start crediting array elements); a request inside a template-literal interpolation is not seen; a path built from a bare /api fragment is reported as unparsable; and a route is credited to every HTTP verb, so a route whose specific verb has no caller reads as consumed. Routes whose consumer is outside the dashboard (the asset mount, the health probes, the capture-intake webhook) are excluded from this surface by design: they have different consumers and are not part of the dashboard API contract."
     },
     {
       "surface": "proto/state/v1/state.proto",
