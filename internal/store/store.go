@@ -213,15 +213,6 @@ func OpenTest(t interface {
 	return s
 }
 
-// IncrementRetryCount atomically bumps retry_count by 1. Called when an
-// operator retries a parked task; the caller enforces max_retries against
-// the resulting count.
-func (s *Store) IncrementRetryCount(ctx context.Context, taskID int64) error {
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE tasks SET retry_count = retry_count + 1, updated_at = datetime('now') WHERE id = ?`, taskID)
-	return err
-}
-
 // EnqueueIssue inserts a new queued task for the issue; returns false if
 // the issue is already tracked (the idempotency key is owner/repo/number).
 // The task's Source defaults to "forge" (the SQLite column default).

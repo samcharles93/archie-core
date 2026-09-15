@@ -87,11 +87,13 @@ func TestRequeueFromWaitingHuman(t *testing.T) {
 		t.Fatalf("Requeue must clear park_reason, got %q", retried.ParkReason)
 	}
 
-	// Verify retry_count is NOT reset by Requeue (it persists).
-	if err := s.IncrementRetryCount(ctx, task2.ID); err != nil {
+	// Verify retry_count is NOT reset by Requeue (it persists). Bumped
+	// directly rather than through RetryTask, which also transitions
+	// status -- this fixture only needs the counter moved.
+	if _, err := s.db.ExecContext(ctx, `UPDATE tasks SET retry_count = retry_count + 1 WHERE id = ?`, task2.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.IncrementRetryCount(ctx, task2.ID); err != nil {
+	if _, err := s.db.ExecContext(ctx, `UPDATE tasks SET retry_count = retry_count + 1 WHERE id = ?`, task2.ID); err != nil {
 		t.Fatal(err)
 	}
 	// Park again and requeue.

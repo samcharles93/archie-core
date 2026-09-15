@@ -36,7 +36,6 @@ service StateStoreService {
   rpc ClearTerminalTasks(ClearTerminalTasksRequest) returns (ClearTerminalTasksResponse);
   rpc Tasks(TasksRequest) returns (TasksResponse);
   rpc StatusCounts(StatusCountsRequest) returns (StatusCountsResponse);
-  rpc IncrementRetryCount(IncrementRetryCountRequest) returns (IncrementRetryCountResponse);
 
   // Events
   rpc InsertEvent(InsertEventRequest) returns (InsertEventResponse);
@@ -332,9 +331,6 @@ message TasksResponse { repeated Task tasks = 1; }
 
 message StatusCountsRequest {}
 message StatusCountsResponse { map<string, int64> counts = 1; }
-
-message IncrementRetryCountRequest { int64 task_id = 1; }
-message IncrementRetryCountResponse {}
 
 message InsertEventRequest { Event event = 1; }
 message InsertEventResponse { int64 id = 1; }

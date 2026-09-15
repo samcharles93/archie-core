@@ -182,11 +182,6 @@ func (c *Client) StatusCounts(ctx context.Context) (map[string]int, error) {
 	return out, nil
 }
 
-func (c *Client) IncrementRetryCount(ctx context.Context, taskID int64) error {
-	_, err := c.client.IncrementRetryCount(ctx, &pb.IncrementRetryCountRequest{TaskId: taskID})
-	return unmapError(err)
-}
-
 // Events
 
 func (c *Client) InsertEvent(ctx context.Context, e events.Event) (int64, error) {

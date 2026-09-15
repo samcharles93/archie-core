@@ -682,39 +682,6 @@ func TestRequeueRejectsStaleFrom(t *testing.T) {
 	}
 }
 
-func TestIncrementRetryCount(t *testing.T) {
-	s := openTest(t)
-	ctx := context.Background()
-
-	if _, err := s.EnqueueIssue(ctx, "acme", "todo", 1, "t", "", "", ""); err != nil {
-		t.Fatal(err)
-	}
-	task, err := s.ClaimNext(ctx)
-	if err != nil || task == nil {
-		t.Fatalf("claim = (%v, %v)", task, err)
-	}
-
-	if task.RetryCount != 0 {
-		t.Fatalf("expected retry_count=0, got %d", task.RetryCount)
-	}
-
-	// Increment twice and verify.
-	if err := s.IncrementRetryCount(ctx, task.ID); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.IncrementRetryCount(ctx, task.ID); err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := s.TaskByIssue(ctx, "acme", "todo", 1)
-	if err != nil || got == nil {
-		t.Fatalf("TaskByIssue = (%+v, %v)", got, err)
-	}
-	if got.RetryCount != 2 {
-		t.Fatalf("expected retry_count=2, got %d", got.RetryCount)
-	}
-}
-
 func TestRetryTaskAtomicallyRequeuesAndIncrements(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()

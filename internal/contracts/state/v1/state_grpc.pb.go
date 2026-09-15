@@ -37,7 +37,6 @@ const (
 	StateStoreService_ClearTerminalTasks_FullMethodName         = "/state.v1.StateStoreService/ClearTerminalTasks"
 	StateStoreService_Tasks_FullMethodName                      = "/state.v1.StateStoreService/Tasks"
 	StateStoreService_StatusCounts_FullMethodName               = "/state.v1.StateStoreService/StatusCounts"
-	StateStoreService_IncrementRetryCount_FullMethodName        = "/state.v1.StateStoreService/IncrementRetryCount"
 	StateStoreService_InsertEvent_FullMethodName                = "/state.v1.StateStoreService/InsertEvent"
 	StateStoreService_EventsSince_FullMethodName                = "/state.v1.StateStoreService/EventsSince"
 	StateStoreService_TaskEvents_FullMethodName                 = "/state.v1.StateStoreService/TaskEvents"
@@ -101,7 +100,6 @@ type StateStoreServiceClient interface {
 	ClearTerminalTasks(ctx context.Context, in *ClearTerminalTasksRequest, opts ...grpc.CallOption) (*ClearTerminalTasksResponse, error)
 	Tasks(ctx context.Context, in *TasksRequest, opts ...grpc.CallOption) (*TasksResponse, error)
 	StatusCounts(ctx context.Context, in *StatusCountsRequest, opts ...grpc.CallOption) (*StatusCountsResponse, error)
-	IncrementRetryCount(ctx context.Context, in *IncrementRetryCountRequest, opts ...grpc.CallOption) (*IncrementRetryCountResponse, error)
 	// Events
 	InsertEvent(ctx context.Context, in *InsertEventRequest, opts ...grpc.CallOption) (*InsertEventResponse, error)
 	EventsSince(ctx context.Context, in *EventsSinceRequest, opts ...grpc.CallOption) (*EventsSinceResponse, error)
@@ -335,16 +333,6 @@ func (c *stateStoreServiceClient) StatusCounts(ctx context.Context, in *StatusCo
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(StatusCountsResponse)
 	err := c.cc.Invoke(ctx, StateStoreService_StatusCounts_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *stateStoreServiceClient) IncrementRetryCount(ctx context.Context, in *IncrementRetryCountRequest, opts ...grpc.CallOption) (*IncrementRetryCountResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(IncrementRetryCountResponse)
-	err := c.cc.Invoke(ctx, StateStoreService_IncrementRetryCount_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -675,7 +663,6 @@ type StateStoreServiceServer interface {
 	ClearTerminalTasks(context.Context, *ClearTerminalTasksRequest) (*ClearTerminalTasksResponse, error)
 	Tasks(context.Context, *TasksRequest) (*TasksResponse, error)
 	StatusCounts(context.Context, *StatusCountsRequest) (*StatusCountsResponse, error)
-	IncrementRetryCount(context.Context, *IncrementRetryCountRequest) (*IncrementRetryCountResponse, error)
 	// Events
 	InsertEvent(context.Context, *InsertEventRequest) (*InsertEventResponse, error)
 	EventsSince(context.Context, *EventsSinceRequest) (*EventsSinceResponse, error)
@@ -788,9 +775,6 @@ func (UnimplementedStateStoreServiceServer) Tasks(context.Context, *TasksRequest
 }
 func (UnimplementedStateStoreServiceServer) StatusCounts(context.Context, *StatusCountsRequest) (*StatusCountsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method StatusCounts not implemented")
-}
-func (UnimplementedStateStoreServiceServer) IncrementRetryCount(context.Context, *IncrementRetryCountRequest) (*IncrementRetryCountResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method IncrementRetryCount not implemented")
 }
 func (UnimplementedStateStoreServiceServer) InsertEvent(context.Context, *InsertEventRequest) (*InsertEventResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method InsertEvent not implemented")
@@ -1214,24 +1198,6 @@ func _StateStoreService_StatusCounts_Handler(srv interface{}, ctx context.Contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StateStoreServiceServer).StatusCounts(ctx, req.(*StatusCountsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _StateStoreService_IncrementRetryCount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(IncrementRetryCountRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(StateStoreServiceServer).IncrementRetryCount(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: StateStoreService_IncrementRetryCount_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(StateStoreServiceServer).IncrementRetryCount(ctx, req.(*IncrementRetryCountRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1786,10 +1752,6 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StatusCounts",
 			Handler:    _StateStoreService_StatusCounts_Handler,
-		},
-		{
-			MethodName: "IncrementRetryCount",
-			Handler:    _StateStoreService_IncrementRetryCount_Handler,
 		},
 		{
 			MethodName: "InsertEvent",

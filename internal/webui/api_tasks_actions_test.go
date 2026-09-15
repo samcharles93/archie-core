@@ -225,8 +225,14 @@ func TestRetryEnforcesMaxRetries(t *testing.T) {
 			srv, task, _, _, _ := actionServer(t, workflow.StatusParked, "it broke")
 			operatorActions(t, srv).cfg = config.NewHolder(config.Config{MaxRetries: tc.maxRetries})
 			ctx := t.Context()
+			// Drive retry_count up through the real atomic retry path
+			// (RetryTask) rather than a raw counter bump, re-parking
+			// between retries so each call sees the fromStatus it needs.
 			for range tc.priorCount {
-				if err := srv.Store.IncrementRetryCount(ctx, task.ID); err != nil {
+				if err := srv.Store.RetryTask(ctx, task.ID, workflow.StatusParked, ""); err != nil {
+					t.Fatal(err)
+				}
+				if err := srv.Store.Transition(ctx, task.ID, workflow.StatusQueued, workflow.StatusParked, "re-parked for test fixture"); err != nil {
 					t.Fatal(err)
 				}
 			}

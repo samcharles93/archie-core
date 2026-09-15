@@ -72,7 +72,6 @@ type TaskQueries interface {
 	ClearTerminalTasks(ctx context.Context) (int64, error)
 	Tasks(ctx context.Context, limit int) ([]task.Task, error)
 	StatusCounts(ctx context.Context) (map[string]int, error)
-	IncrementRetryCount(ctx context.Context, taskID int64) error
 }
 
 // TaskEvents groups observability and lifecycle methods.

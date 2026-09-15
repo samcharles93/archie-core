@@ -111,9 +111,6 @@ func TestStateStoreConformance(t *testing.T) {
 			if _, err := c.OpenPRs(ctx); err != nil {
 				t.Fatalf("OpenPRs: %v", err)
 			}
-			if err := c.IncrementRetryCount(ctx, task.ID); err != nil {
-				t.Fatalf("IncrementRetryCount: %v", err)
-			}
 
 			// TaskEvents / EventsSince / stats.
 			if evs, err := c.TaskEvents(ctx, task.ID); err != nil || len(evs) != 1 || evs[0].Data["duration_ms"] != 12.0 {

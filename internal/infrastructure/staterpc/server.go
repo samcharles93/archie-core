@@ -218,13 +218,6 @@ func (s *server) StatusCounts(ctx context.Context, _ *pb.StatusCountsRequest) (*
 	return &pb.StatusCountsResponse{Counts: out}, nil
 }
 
-func (s *server) IncrementRetryCount(ctx context.Context, r *pb.IncrementRetryCountRequest) (*pb.IncrementRetryCountResponse, error) {
-	if err := s.deps.Tasks.IncrementRetryCount(ctx, r.TaskId); err != nil {
-		return nil, s.logErr("IncrementRetryCount", err)
-	}
-	return &pb.IncrementRetryCountResponse{}, nil
-}
-
 // Events
 
 func (s *server) InsertEvent(ctx context.Context, r *pb.InsertEventRequest) (*pb.InsertEventResponse, error) {
