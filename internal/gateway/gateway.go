@@ -138,13 +138,6 @@ type UpdateService interface {
 	CanInstall() bool
 }
 
-// DangerousApprover is the adapter-neutral decision surface for pending
-// sandbox actions. Numeric /approve arguments remain task approvals; action
-// IDs are routed here when this capability is present.
-type DangerousApprover interface {
-	Decide(context.Context, string, string) (string, error)
-}
-
 // TaskController approves or cancels a chat-originated task. Both
 // methods must enforce authorization (identity must own the task) and
 // valid state transitions; see gateway.tasks.go's StoreTaskController
@@ -213,8 +206,6 @@ type Router struct {
 	Version string
 	// Updates handles the shared /update command. Nil means unavailable.
 	Updates UpdateService
-	// Dangerous handles typed approval decisions for sandbox actions.
-	Dangerous DangerousApprover
 	// Restart requests a scoped chat-adapter reload. It deliberately does not
 	// restart the daemon; Telegram's /restart has this same boundary.
 	Restart func(context.Context) error
@@ -334,10 +325,7 @@ func (r *Router) dispatchLocal(ctx context.Context, msg messaging.Message, text,
 		reply, err := r.handleSpawn(ctx, rest)
 		return reply, true, err
 	case "/approve":
-		reply, err := r.handleApproveCommand(ctx, rest)
-		return reply, true, err
-	case "/deny":
-		reply, err := r.handleDeny(ctx, rest)
+		reply, err := r.handleApprove(ctx, rest)
 		return reply, true, err
 	case "/cancel":
 		reply, err := r.handleCancel(ctx, rest)
@@ -382,22 +370,6 @@ func (r *Router) dispatchLocalMisc(ctx context.Context, msg messaging.Message, c
 		return r.handleRestartAdapter(ctx), true, nil
 	}
 	return r.dispatchSessionCommand(ctx, msg, cmd, rest)
-}
-
-// handleDeny denies a pending dangerous action by ID.
-func (r *Router) handleDeny(ctx context.Context, rest string) (string, error) {
-	if r.Dangerous == nil {
-		return "Dangerous approvals are not configured.", nil
-	}
-	fields := strings.Fields(rest)
-	if len(fields) != 1 {
-		return "Usage: /deny <action-id>", nil
-	}
-	result, err := r.Dangerous.Decide(ctx, fields[0], "deny")
-	if err != nil {
-		return fmt.Sprintf("Cannot deny action: %v", err), nil
-	}
-	return result, nil
 }
 
 // handleVersion reports the configured build version.
@@ -609,30 +581,6 @@ func parseTaskID(arg string) (int64, error) {
 		return 0, fmt.Errorf("%q is not a valid task ID", arg)
 	}
 	return id, nil
-}
-
-func (r *Router) handleApproveCommand(ctx context.Context, rest string) (string, error) {
-	fields := strings.Fields(rest)
-	if r.Dangerous != nil && len(fields) == 1 && !isTaskID(fields[0]) {
-		result, err := r.Dangerous.Decide(ctx, fields[0], "approve")
-		if err != nil {
-			return fmt.Sprintf("Cannot approve action: %v", err), nil
-		}
-		return result, nil
-	}
-	if r.Dangerous != nil && len(fields) == 2 && strings.EqualFold(fields[0], "permanent") {
-		result, err := r.Dangerous.Decide(ctx, fields[1], "permanent")
-		if err != nil {
-			return fmt.Sprintf("Cannot approve action: %v", err), nil
-		}
-		return result, nil
-	}
-	return r.handleApprove(ctx, rest)
-}
-
-func isTaskID(value string) bool {
-	_, err := strconv.ParseInt(value, 10, 64)
-	return err == nil
 }
 
 func (r *Router) handleApprove(ctx context.Context, rest string) (string, error) {
