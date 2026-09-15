@@ -72,7 +72,12 @@ The prerequisites are built: the embeddings capability
 `docs/prds/curator-sampler-wave1.md` for the settled design and tracking)
 with four
 cheap, embedding-free strategies (recency, random, all, staleness proxy).
-No curator consumes a `Sampler` yet.
+No curator consumes a `Sampler` yet, and the embeddings client is likewise
+deliberately inert: `setupEmbeddings` constructs it at boot and holds it on
+`b.embeddings`, but no production code reads that field yet, so a resolved
+`models.embedding` role currently produces a client whose only observable
+effect is a boot log line. Both are prerequisites waiting on #437, not
+unwired defects.
 
 Still deferred: [#437](https://github.com/samcharles93/archie-core/issues/437), the embedding-backed surprisal strategy, which
 depends on the above and on [#407](https://github.com/samcharles93/archie-core/issues/407). Requirements for that deferred work,
