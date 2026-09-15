@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -74,26 +73,6 @@ func BuildCatalog(worktree string) (Catalog, error) {
 type SkillWorkflow struct {
 	Workflow string // from metadata.archie.workflow
 	Dir      string // skill directory name
-}
-
-// AugmentRegistry scans a worktree directory for skills that declare
-// workflows, builds each from its stage plugins, and returns a new
-// registry with worktree workflows merged over the base. The base
-// registry is not mutated.
-//
-// This is the per-task complement to BuildRegistry: BuildRegistry
-// runs once at startup against a shared skills directory (or the
-// workdir root); AugmentRegistry runs at process time against a
-// specific cloned worktree so that per-repo skills are discovered
-// without restarting the daemon.
-func AugmentRegistry(worktree string, base workflow.Registry) (workflow.Registry, error) {
-	// Copy base  --  never mutate the caller's registry.
-	reg := make(workflow.Registry, len(base))
-	maps.Copy(reg, base)
-	if err := mergeSkillWorkflows(worktree, reg, nil); err != nil {
-		return nil, err
-	}
-	return reg, nil
 }
 
 // mergeSkillWorkflows scans worktree for skill catalog entries that
