@@ -148,7 +148,7 @@ func TestPassLeavesACleanSkillUntouchedWithNoAction(t *testing.T) {
 func TestPassReviewsEverySkillIndependently(t *testing.T) {
 	// A parse failure in one skill must not abort review of the others --
 	// the whole reason this curator has its own store instead of
-	// delegating List/Read to internal/skill.Discover.
+	// delegating List/Read to a single bulk discovery call.
 	t.Parallel()
 	root := t.TempDir()
 	writeSkill(t, root, "broken", "---\nname: [unterminated\n---\n")

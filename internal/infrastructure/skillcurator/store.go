@@ -23,12 +23,10 @@ const skillsDir = ".agents/skills"
 const skillFile = "SKILL.md"
 
 // Store implements curator.SkillStore over one root directory's
-// .agents/skills/*/SKILL.md files. Unlike internal/skill.Discover, which
-// parses every skill up front and fails the whole call if any one of
-// them doesn't parse, Store's List and Read never parse frontmatter
-// themselves beyond a best-effort Description -- a per-skill parse
-// failure is the curator's problem to report as an Action, not this
-// store's problem to abort on. See docs/prds/skill-curator.md.
+// .agents/skills/*/SKILL.md files. List and Read never parse frontmatter
+// themselves beyond a best-effort Description: a per-skill parse failure is
+// the curator's problem to report as an Action, not this store's problem to
+// abort on. See docs/prds/skill-curator.md.
 type Store struct {
 	root string
 }
@@ -47,8 +45,9 @@ func (s *Store) skillPath(name string) string {
 }
 
 // List returns every skill directory under root, in directory order. A
-// directory with no SKILL.md is skipped -- consistent with
-// internal/skill.Discover's own treatment of that case -- and a missing
+// directory with no SKILL.md is skipped -- consistent with internal/skill's
+// Catalog, which treats an unreadable or absent SKILL.md as "no skill here"
+// rather than an error -- and a missing
 // skills directory returns an empty list, not an error, matching
 // internal/skill's discovery convention (missing directory is not an
 // error).

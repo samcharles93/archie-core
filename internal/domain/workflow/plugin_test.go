@@ -13,10 +13,10 @@ import (
 // ── regression: Gap 7  --  plugins discovered but not executed ─────────
 
 func TestSkillPluginsAvailableDuringStageExecution(t *testing.T) {
-	// Gap 7: skill.Discover() populates Skill.Plugins but nothing calls
-	// plugin.Run() during stage execution. Plugins must be loaded from
-	// the skill directory alongside the SKILL.md body and made available
-	// to the agent as tools during stage runs.
+	// Regression: plugins shipped alongside a skill were loaded from the
+	// skill directory but never executed during a stage. Plugins must be
+	// loaded from the skill directory alongside the SKILL.md body and made
+	// available to the agent as tools during stage runs.
 	//
 	// This test creates a worktree with a skill that has a bundled plugin.
 	// It runs an AgentStage and verifies the plugin was loaded and is
