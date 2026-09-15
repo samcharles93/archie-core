@@ -132,8 +132,13 @@ tasks:
 
   dev:gateway:
     desc: archie-gateway only, no live-reload (prefer `task dev`)
+    # The overlay carries [services.state].target, which archie-gateway
+    # requires (openStateStoreAdapter fails closed on an empty target).
+    # Without it `task dev` leaves the gateway dialling whatever the
+    # developer's installed config names, or unable to start at all, while
+    # archied, archie-ui and the state store all dial 127.0.0.1:9090.
     cmds:
-      - go run ./cmd/archie-gateway
+      - go run ./cmd/archie-gateway -config-overlay deployments/dev.toml
 
   dev:ui:
     desc: Vite dev server only, expects archie-ui already running (prefer `task dev`)
