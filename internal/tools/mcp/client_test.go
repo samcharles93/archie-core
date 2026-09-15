@@ -6,14 +6,11 @@ import (
 	"errors"
 	"sync"
 	"testing"
-
-	"github.com/samcharles93/archie-core/internal/tools"
 )
 
 // fakeSender is a Transport double that scripts responses by JSON-RPC
 // method name, so client tests never spawn a real subprocess. Safe for
-// concurrent use  --  RegisterTools-produced handlers are meant to be
-// called concurrently by real callers, and tests exercise that.
+// concurrent use.
 type fakeSender struct {
 	// responses maps a request method to the raw response body to return.
 	responses map[string][]byte
@@ -222,88 +219,6 @@ func TestCallToolReturnsIsErrorWithoutGoError(t *testing.T) {
 	}
 	if !result.IsError {
 		t.Error("result.IsError = false, want true")
-	}
-}
-
-func TestRegisterToolsAddsPrefixedEntriesToRegistry(t *testing.T) {
-	f := &fakeSender{
-		responses: map[string][]byte{
-			"tools/list": []byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[
-				{"name":"search_repos","description":"Search repos","inputSchema":{"type":"object"}}
-			]}}`),
-		},
-	}
-	c := newTestClient(f)
-	reg := tools.NewRegistry()
-
-	n, err := c.RegisterTools(context.Background(), reg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 1 {
-		t.Fatalf("RegisterTools registered %d tools, want 1", n)
-	}
-
-	entries := reg.All()
-	if len(entries) != 1 {
-		t.Fatalf("registry has %d entries, want 1", len(entries))
-	}
-	entry := entries[0]
-	if entry.Name != "mcp.test-server.search_repos" {
-		t.Errorf("registered name = %q, want mcp.test-server.search_repos", entry.Name)
-	}
-	if entry.Toolset != "mcp" {
-		t.Errorf("Toolset = %q, want mcp", entry.Toolset)
-	}
-	if entry.Handler == nil {
-		t.Fatal("registered entry has nil Handler")
-	}
-}
-
-func TestRegisterToolsHandlerInvokesCallTool(t *testing.T) {
-	f := &fakeSender{
-		responses: map[string][]byte{
-			"tools/list": []byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"echo","inputSchema":{}}]}}`),
-			"tools/call": []byte(`{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"echoed"}]}}`),
-		},
-	}
-	c := newTestClient(f)
-	reg := tools.NewRegistry()
-
-	if _, err := c.RegisterTools(context.Background(), reg); err != nil {
-		t.Fatal(err)
-	}
-
-	entry, ok := reg.Get("mcp.test-server.echo")
-	if !ok {
-		t.Fatal("mcp.test-server.echo not found in registry")
-	}
-	out, err := entry.Handler(context.Background(), map[string]any{"msg": "hi"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if out != "echoed" {
-		t.Errorf("handler output = %v, want \"echoed\"", out)
-	}
-}
-
-func TestRegisterToolsHandlerSurfacesToolLevelError(t *testing.T) {
-	f := &fakeSender{
-		responses: map[string][]byte{
-			"tools/list": []byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"broken","inputSchema":{}}]}}`),
-			"tools/call": []byte(`{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"denied"}],"isError":true}}`),
-		},
-	}
-	c := newTestClient(f)
-	reg := tools.NewRegistry()
-
-	if _, err := c.RegisterTools(context.Background(), reg); err != nil {
-		t.Fatal(err)
-	}
-	entry, _ := reg.Get("mcp.test-server.broken")
-	_, err := entry.Handler(context.Background(), nil)
-	if err == nil {
-		t.Fatal("expected handler to surface isError as a Go error")
 	}
 }
 

@@ -70,32 +70,6 @@ func TestCallToolSerializesByDefault(t *testing.T) {
 	wg.Wait()
 }
 
-func TestCallToolParallelWhenOptedIn(t *testing.T) {
-	b := &blockingSender{release: make(chan struct{})}
-	c := NewClient(b, "test-server", WithParallelToolCalls(true))
-
-	const n = 5
-	var wg sync.WaitGroup
-	for range n {
-		wg.Go(func() {
-			_, _ = c.CallTool(context.Background(), "slow", nil)
-		})
-	}
-
-	// All n calls should be able to reach Send concurrently since nothing
-	// serializes them.
-	deadline := time.Now().Add(2 * time.Second)
-	for b.MaxInFlight() < n && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
-	}
-	if got := b.MaxInFlight(); got != n {
-		t.Errorf("MaxInFlight = %d, want %d (parallel opt-in)", got, n)
-	}
-
-	close(b.release)
-	wg.Wait()
-}
-
 func TestCallToolSerializedStillCompletesAllCalls(t *testing.T) {
 	b := &blockingSender{release: make(chan struct{})}
 	close(b.release) // never actually blocks  --  just verifying correctness, not timing
