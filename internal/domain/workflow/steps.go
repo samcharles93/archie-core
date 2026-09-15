@@ -163,12 +163,15 @@ func StageYaegiGate() Stage {
 
 		var blocking []string
 		for _, f := range findings {
+			if err := f.Validate(); err != nil {
+				return fmt.Errorf("custom gate: %w", err)
+			}
 			loc := f.File
 			if f.Line > 0 {
 				loc = fmt.Sprintf("%s:%d", f.File, f.Line)
 			}
 			msg := strings.TrimSpace(loc + ": " + f.Message)
-			if f.Level == "error" {
+			if f.Blocking() {
 				blocking = append(blocking, msg)
 			}
 			tc.Log.Info("custom gate finding", "level", f.Level, "file", f.File, "line", f.Line, "message", f.Message)

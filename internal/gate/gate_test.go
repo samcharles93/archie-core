@@ -99,6 +99,40 @@ func TestBlocking(t *testing.T) {
 	})
 }
 
+func TestFindingValidate(t *testing.T) {
+	t.Run("error is valid", func(t *testing.T) {
+		if err := (Finding{Level: LevelError}).Validate(); err != nil {
+			t.Errorf("Validate() = %v, want nil", err)
+		}
+	})
+
+	t.Run("warn is valid", func(t *testing.T) {
+		if err := (Finding{Level: LevelWarn}).Validate(); err != nil {
+			t.Errorf("Validate() = %v, want nil", err)
+		}
+	})
+
+	t.Run("unrecognized level fails closed", func(t *testing.T) {
+		for _, level := range []Level{"fatal", "ERROR", "Error", ""} {
+			if err := (Finding{Level: level}).Validate(); err == nil {
+				t.Errorf("Validate() = nil for level %q, want an error", level)
+			}
+		}
+	})
+}
+
+func TestFindingBlocking(t *testing.T) {
+	if !(Finding{Level: LevelError}).Blocking() {
+		t.Error("Finding{Level: LevelError}.Blocking() = false, want true")
+	}
+	if (Finding{Level: LevelWarn}).Blocking() {
+		t.Error("Finding{Level: LevelWarn}.Blocking() = true, want false")
+	}
+	if (Finding{Level: ""}).Blocking() {
+		t.Error("Finding{Level: \"\"}.Blocking() = true, want false")
+	}
+}
+
 func TestGateContextZeroValue(t *testing.T) {
 	// Zero-value GateContext should not panic when accessed.
 	var gctx GateContext

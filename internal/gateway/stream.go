@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/samcharles93/archie-core/internal/webhookguard"
 )
 
 // toolSummaryMaxRunes bounds a rendered tool summary. Tool output is
@@ -190,13 +192,7 @@ func redactToolParameters(value any, sensitive bool) any {
 
 func sensitiveParameterKey(key string) bool {
 	normalized := strings.NewReplacer("-", "_", " ", "_").Replace(strings.ToLower(key))
-	for _, marker := range []string{
-		"token", "secret", "password", "passwd", "pwd", "passphrase",
-		"api_key", "apikey", "api_secret", "client_secret", "private_key", "secret_key",
-		"signing_key", "authorization", "bearer", "credential", "cookie", "session",
-		"access_token", "refresh_token", "id_token", "bot_token", "webhook_secret",
-		"x_api_key", "x_auth_token", "jwt", "oauth", "csrf", "otp", "signature",
-	} {
+	for _, marker := range webhookguard.SensitiveKeyMarkers {
 		if strings.Contains(normalized, marker) {
 			return true
 		}
