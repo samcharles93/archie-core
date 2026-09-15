@@ -45,10 +45,10 @@ type Client struct {
 // On any failure the partially-built connection is closed before returning, so
 // a failed Connect leaks nothing.
 func Connect(ctx context.Context, cfg Config, log *slog.Logger) (*Client, error) {
+	cfg = cfg.withDefaults()
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	cfg = cfg.withDefaults()
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}

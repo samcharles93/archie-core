@@ -23,6 +23,17 @@ func testConfig() Config {
 	return Config{TTL: time.Second, Heartbeat: 200 * time.Millisecond}
 }
 
+// TestConnectRejectsTTLBelowDefaultHeartbeat pins the Connect ordering: a
+// caller that sets TTL below DefaultHeartbeat and leaves Heartbeat unset must
+// be refused as ErrInvalidConfig, not silently given a registry whose live
+// entries expire between refreshes (DefaultHeartbeat >= TTL).
+func TestConnectRejectsTTLBelowDefaultHeartbeat(t *testing.T) {
+	_, err := Connect(context.Background(), Config{URL: "nats://127.0.0.1:1", TTL: 2 * time.Second}, discardLogger())
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("Connect() = %v, want ErrInvalidConfig", err)
+	}
+}
+
 // newServer starts a real in-process NATS server with JetStream enabled. This
 // is the established test technique for the NATS infrastructure (see the
 // sibling eventbus/nats retention test): a real server, not a mocked client.
