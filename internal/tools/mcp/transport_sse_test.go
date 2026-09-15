@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -273,5 +274,59 @@ func TestSSETransportConcurrentSendsGetCorrectResponses(t *testing.T) {
 	close(results)
 	for e := range results {
 		t.Error(e)
+	}
+}
+
+// TestSSETransportStopCancelsInFlightReconnect pins the Stop contract: when
+// the SSE stream drops and reconnect is blocked on an unreachable endpoint,
+// Stop must cancel that in-flight HTTP request instead of waiting for the
+// OS-level connect/read to time out.
+func TestSSETransportStopCancelsInFlightReconnect(t *testing.T) {
+	var requests atomic.Int32
+	reconnectStarted := make(chan struct{})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch requests.Add(1) {
+		case 1:
+			// Initial connect: deliver the endpoint event, then return so the
+			// client reader sees EOF and drops into reconnect.
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprintf(w, "event: endpoint\ndata: http://127.0.0.1:1/messages\n\n")
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+		default:
+			// Reconnect: block until the client cancels the request (via Stop).
+			close(reconnectStarted)
+			<-r.Context().Done()
+		}
+	}))
+	defer srv.Close()
+
+	tr := NewSSETransport(SSETransportConfig{
+		SSEEndpoint:         srv.URL + "/sse",
+		ReconnectBackoff:    time.Millisecond,
+		MaxReconnectBackoff: time.Millisecond,
+	})
+	if err := tr.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	select {
+	case <-reconnectStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("reconnect request never started")
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- tr.Stop(context.Background()) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Stop: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stop did not cancel the in-flight reconnect request")
 	}
 }
