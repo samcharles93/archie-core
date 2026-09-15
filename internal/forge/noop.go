@@ -30,10 +30,6 @@ func (n *NoopForge) Comment(ctx context.Context, owner, repo string, number int,
 	return 0, nil
 }
 
-func (n *NoopForge) RepliesAfter(ctx context.Context, owner, repo string, number int, afterID int64, exclude string) ([]Reply, error) {
-	return nil, nil
-}
-
 func (n *NoopForge) CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error {
 	return nil
 }

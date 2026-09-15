@@ -31,11 +31,6 @@ func TestNoopForgeIsAllZeroValue(t *testing.T) {
 		t.Errorf("Comment() = (%d, %v), want (0, nil)", id, err)
 	}
 
-	replies, err := f.RepliesAfter(ctx, "o", "r", 1, 0, "")
-	if replies != nil || err != nil {
-		t.Errorf("RepliesAfter() = (%v, %v), want (nil, nil)", replies, err)
-	}
-
 	if err := f.CloseIssue(ctx, "o", "r", 1, "comment"); err != nil {
 		t.Errorf("CloseIssue() = %v, want nil", err)
 	}

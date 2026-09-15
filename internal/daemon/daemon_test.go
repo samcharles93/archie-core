@@ -1004,10 +1004,6 @@ func (f *testForge) IssuesWithLabel(context.Context, string, string, string) ([]
 	panic("unexpected call")
 }
 
-func (f *testForge) RepliesAfter(context.Context, string, string, int, int64, string) ([]forge.Reply, error) {
-	panic("unexpected call")
-}
-
 func (f *testForge) CreatePR(context.Context, string, string, string, string, string, string) (int, error) {
 	panic("unexpected call")
 }
@@ -1411,10 +1407,6 @@ func (f *recordingForge) SetStateLabel(context.Context, string, string, int, str
 	panic("unexpected call")
 }
 func (f *recordingForge) AcceptInvitations(context.Context) error { panic("unexpected call") }
-func (f *recordingForge) RepliesAfter(context.Context, string, string, int, int64, string) ([]forge.Reply, error) {
-	panic("unexpected call")
-}
-
 func (f *recordingForge) CreatePR(context.Context, string, string, string, string, string, string) (int, error) {
 	panic("unexpected call")
 }

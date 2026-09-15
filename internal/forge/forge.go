@@ -53,10 +53,6 @@ type IssueForge interface {
 	// Comment posts an issue (or PR) comment and returns its id.
 	Comment(ctx context.Context, owner, repo string, number int, body string) (int64, error)
 
-	// RepliesAfter returns comments on the issue with id > afterID that
-	// were not written by exclude.
-	RepliesAfter(ctx context.Context, owner, repo string, number int, afterID int64, exclude string) ([]Reply, error)
-
 	// CloseIssue closes an issue with an optional final comment.
 	CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error
 

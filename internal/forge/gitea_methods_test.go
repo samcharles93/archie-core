@@ -72,25 +72,6 @@ func TestGiteaComment(t *testing.T) {
 	}
 }
 
-func TestGiteaRepliesAfterExcludesOldAndSelf(t *testing.T) {
-	c, mux := newTestGiteaClient(t)
-	mux.HandleFunc("GET /api/v1/repos/o/r/issues/5/comments", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(t, w, []map[string]any{
-			{"id": 1, "body": "old", "user": map[string]any{"login": "someone"}},
-			{"id": 3, "body": "mine", "user": map[string]any{"login": "archie-bot"}},
-			{"id": 4, "body": "new reply", "user": map[string]any{"login": "someone"}},
-		})
-	})
-
-	replies, err := c.RepliesAfter(t.Context(), "o", "r", 5, 2, "archie-bot")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(replies) != 1 || replies[0].ID != 4 || replies[0].Body != "new reply" {
-		t.Fatalf("replies = %+v", replies)
-	}
-}
-
 func TestGiteaCreatePR(t *testing.T) {
 	c, mux := newTestGiteaClient(t)
 	mux.HandleFunc("POST /api/v1/repos/o/r/pulls", func(w http.ResponseWriter, r *http.Request) {

@@ -109,10 +109,6 @@ func (f *fakeForge) IssuesWithLabel(context.Context, string, string, string) ([]
 	panic("unexpected call")
 }
 
-func (f *fakeForge) RepliesAfter(context.Context, string, string, int, int64, string) ([]forge.Reply, error) {
-	panic("unexpected call")
-}
-
 func (f *fakeForge) PRState(context.Context, string, string, int) (string, error) {
 	panic("unexpected call")
 }

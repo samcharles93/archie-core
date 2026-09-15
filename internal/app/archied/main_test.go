@@ -937,10 +937,6 @@ func (stubForge) IssuesWithLabel(context.Context, string, string, string) ([]for
 	panic("unexpected call")
 }
 
-func (stubForge) RepliesAfter(context.Context, string, string, int, int64, string) ([]forge.Reply, error) {
-	panic("unexpected call")
-}
-
 func (stubForge) PRState(context.Context, string, string, int) (string, error) {
 	panic("unexpected call")
 }
@@ -1028,10 +1024,6 @@ func (*identityForge) AssignedIssues(context.Context, string, string, string) ([
 }
 
 func (*identityForge) IssuesWithLabel(context.Context, string, string, string) ([]forge.Issue, error) {
-	panic("unexpected")
-}
-
-func (*identityForge) RepliesAfter(context.Context, string, string, int, int64, string) ([]forge.Reply, error) {
 	panic("unexpected")
 }
 

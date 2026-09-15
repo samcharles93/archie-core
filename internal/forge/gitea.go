@@ -113,25 +113,6 @@ func (c *GiteaClient) Comment(ctx context.Context, owner, repo string, number in
 	return cm.ID, nil
 }
 
-// RepliesAfter returns comments on the issue with id > afterID not written
-// by exclude.
-func (c *GiteaClient) RepliesAfter(ctx context.Context, owner, repo string, number int, afterID int64, exclude string) ([]Reply, error) {
-	comments, _, err := c.cli.ListIssueComments(owner, repo, int64(number), gitea.ListIssueCommentOptions{
-		PageSize: 50,
-	})
-	if err != nil {
-		return nil, err
-	}
-	var out []Reply
-	for _, cm := range comments {
-		if cm.ID <= afterID || cm.Poster.UserName == exclude {
-			continue
-		}
-		out = append(out, Reply{ID: cm.ID, User: cm.Poster.UserName, Body: cm.Body})
-	}
-	return out, nil
-}
-
 // CreatePR opens a pull request and returns its number.
 func (c *GiteaClient) CreatePR(ctx context.Context, owner, repo, title, head, base, body string) (int, error) {
 	pr, _, err := c.cli.CreatePullRequest(owner, repo, gitea.CreatePullRequestOption{

@@ -74,25 +74,6 @@ func TestComment(t *testing.T) {
 	}
 }
 
-func TestRepliesAfterExcludesBotAndOldComments(t *testing.T) {
-	c, mux := newTestClient(t)
-	mux.HandleFunc("GET /repos/o/r/issues/5/comments", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(t, w, []map[string]any{
-			{"id": 1, "user": map[string]any{"login": "human"}, "body": "old, ignored"},
-			{"id": 2, "user": map[string]any{"login": "archie-bot"}, "body": "bot comment, excluded"},
-			{"id": 3, "user": map[string]any{"login": "human"}, "body": "the reply"},
-		})
-	})
-
-	replies, err := c.RepliesAfter(t.Context(), "o", "r", 5, 1, "archie-bot")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(replies) != 1 || replies[0].ID != 3 || replies[0].Body != "the reply" || replies[0].User != "human" {
-		t.Fatalf("replies = %+v", replies)
-	}
-}
-
 func TestCreatePR(t *testing.T) {
 	c, mux := newTestClient(t)
 	mux.HandleFunc("POST /repos/o/r/pulls", func(w http.ResponseWriter, r *http.Request) {

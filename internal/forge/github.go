@@ -141,31 +141,6 @@ func (c *GitHubClient) Comment(ctx context.Context, owner, repo string, number i
 	return cm.GetID(), nil
 }
 
-// Reply is a human comment on a watched issue.
-type Reply struct {
-	ID   int64
-	User string
-	Body string
-}
-
-// RepliesAfter returns comments on the issue with id > afterID that were
-// not written by exclude (the bot)  --  the human side of waiting_human.
-func (c *GitHubClient) RepliesAfter(ctx context.Context, owner, repo string, number int, afterID int64, exclude string) ([]Reply, error) {
-	comments, _, err := c.gh.Issues.ListComments(ctx, owner, repo, number,
-		&github.IssueListCommentsOptions{PerPage: 50})
-	if err != nil {
-		return nil, err
-	}
-	var out []Reply
-	for _, cm := range comments {
-		if cm.GetID() <= afterID || cm.GetUser().GetLogin() == exclude {
-			continue
-		}
-		out = append(out, Reply{ID: cm.GetID(), User: cm.GetUser().GetLogin(), Body: cm.GetBody()})
-	}
-	return out, nil
-}
-
 // CreatePR opens a pull request and returns its number.
 func (c *GitHubClient) CreatePR(ctx context.Context, owner, repo, title, head, base, body string) (int, error) {
 	pr, _, err := c.gh.PullRequests.Create(ctx, owner, repo, &github.NewPullRequest{

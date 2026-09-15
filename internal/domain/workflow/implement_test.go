@@ -326,10 +326,6 @@ func (f *fakeForge) React(ctx context.Context, owner, repo string, number int, r
 	return nil
 }
 
-func (f *fakeForge) RepliesAfter(ctx context.Context, owner, repo string, number int, afterID int64, exclude string) ([]forge.Reply, error) {
-	return nil, nil
-}
-
 func (f *fakeForge) SetStateLabel(ctx context.Context, owner, repo string, number int, label string, known []string) {
 }
 
