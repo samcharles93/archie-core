@@ -1,9 +1,34 @@
 package gateway
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/samcharles93/archie-core/internal/webhookguard"
 )
+
+func TestRedactionConsumersShareMarkerSet(t *testing.T) {
+	if len(webhookguard.SensitiveKeyMarkers) == 0 {
+		t.Fatal("webhookguard.SensitiveKeyMarkers is empty, want a non-empty shared set")
+	}
+	for _, marker := range webhookguard.SensitiveKeyMarkers {
+		if !sensitiveParameterKey(marker) {
+			t.Errorf("sensitiveParameterKey(%q) = false, want true (shared marker set)", marker)
+		}
+		payload, err := json.Marshal(map[string]string{marker: "secret"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := webhookguard.RedactPayload(payload)
+		if err != nil {
+			t.Fatalf("RedactPayload(%q): %v", marker, err)
+		}
+		if string(got) == string(payload) {
+			t.Errorf("webhookguard did not redact shared marker key %q", marker)
+		}
+	}
+}
 
 func TestSummarizeToolParameters(t *testing.T) {
 	tests := []struct {

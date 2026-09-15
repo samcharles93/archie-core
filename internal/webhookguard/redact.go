@@ -10,14 +10,15 @@ import (
 // redactedValue replaces a value whose key (or shape) looks sensitive.
 const redactedValue = "[redacted]"
 
-// sensitiveKeyMarkers is the key-name heuristic, matching
-// internal/gateway/stream.go's sensitiveParameterKey exactly so the two
-// redaction paths agree on what counts as sensitive. It is intentionally
+// SensitiveKeyMarkers is the key-name heuristic shared by both redaction
+// paths  --  webhook-capture redaction here and chat-transcript
+// summarization in internal/gateway/stream.go's sensitiveParameterKey  --
+// so they agree on what counts as sensitive. It is intentionally
 // conservative: a value whose key matches is redacted wholesale, so a marker
 // that is too broad (e.g. bare "key" or "auth", which would match "Key: 42"
 // or "author") would destroy the schema-by-example mapping use case the
 // captured payload exists to serve.
-var sensitiveKeyMarkers = []string{
+var SensitiveKeyMarkers = []string{
 	"token", "secret", "password", "passwd", "pwd", "passphrase",
 	"api_key", "apikey", "api_secret", "client_secret", "private_key", "secret_key",
 	"signing_key", "authorization", "bearer", "credential", "cookie", "session",
@@ -107,7 +108,7 @@ func sensitiveValueShape(s string) bool {
 
 func sensitiveKey(key string) bool {
 	normalized := strings.NewReplacer("-", "_", " ", "_").Replace(strings.ToLower(key))
-	for _, marker := range sensitiveKeyMarkers {
+	for _, marker := range SensitiveKeyMarkers {
 		if strings.Contains(normalized, marker) {
 			return true
 		}
