@@ -16,6 +16,7 @@ import (
 	"github.com/go-telegram/bot"
 
 	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/tools/sendfile"
 )
 
 // mediaAPI stands in for the Bot API, recording which sendX method was
@@ -447,6 +448,22 @@ func TestSendMedia_LocalPathFailures(t *testing.T) {
 				t.Errorf("called the API (%q) despite an undeliverable file", method)
 			}
 		})
+	}
+}
+
+// TestMediaUploadCeilingsAgreeWithSendFile pins the contract documented in
+// sendfile/tool.go: the send_file early check and this sender's Bot API
+// ceilings must be the same number, or an oversized file is reported "sent"
+// by the tool and then silently rejected here -- the exact silent
+// non-delivery send_file exists to end.
+func TestMediaUploadCeilingsAgreeWithSendFile(t *testing.T) {
+	if sendfile.MaxImageUploadBytes != maxPhotoUploadBytes {
+		t.Errorf("send_file image ceiling = %d bytes, telegram photo ceiling = %d bytes; they must agree",
+			sendfile.MaxImageUploadBytes, maxPhotoUploadBytes)
+	}
+	if sendfile.MaxUploadBytes != maxFileUploadBytes {
+		t.Errorf("send_file upload ceiling = %d bytes, telegram file ceiling = %d bytes; they must agree",
+			sendfile.MaxUploadBytes, maxFileUploadBytes)
 	}
 }
 

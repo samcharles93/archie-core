@@ -147,7 +147,7 @@ func (s *Service) Check(ctx context.Context, recipient int64) (Snapshot, error) 
 	deferred := state[strconv.FormatInt(recipient, 10)]
 	for index := range snapshot.Components {
 		component := &snapshot.Components[index]
-		if deferred[component.ID] == component.Available {
+		if component.Available != "" && deferred[component.ID] == component.Available {
 			component.Available = ""
 			snapshot.Deferred = true
 		}
