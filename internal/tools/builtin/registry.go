@@ -16,7 +16,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 )
@@ -68,10 +67,9 @@ type Tool struct {
 
 // Registry holds all registered tools and provides thread-safe access.
 type Registry struct {
-	mu                 sync.RWMutex
-	tools              map[string]Tool
-	order              []string // insertion order for deterministic iteration
-	pluginToolExecutor PluginToolExecutor
+	mu    sync.RWMutex
+	tools map[string]Tool
+	order []string // insertion order for deterministic iteration
 }
 
 // NewRegistry creates an empty tool registry.
@@ -190,110 +188,4 @@ func (r *Registry) Count() int {
 	defer r.mu.RUnlock()
 
 	return len(r.tools)
-}
-
-// PluginToolDef describes a tool provided by a plugin.
-type PluginToolDef struct {
-	Name        string
-	Description string
-	InputSchema string // JSON Schema as string
-}
-
-// PluginToolExecutor is called by the registry when a plugin tool is executed.
-type PluginToolExecutor func(ctx context.Context, pluginName, toolName string, args json.RawMessage) (Result, error)
-
-// SetPluginToolExecutor sets the executor for plugin tools. The executor is
-// called whenever a plugin-registered tool is invoked by the agent.
-func (r *Registry) SetPluginToolExecutor(executor PluginToolExecutor) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.pluginToolExecutor = executor
-}
-
-// pluginToolSep joins a plugin name and its tool name into the registry's
-// public tool identifier. It must satisfy the function-name pattern that
-// OpenAI-compatible providers enforce (^[a-zA-Z0-9_-]+$), so it cannot be ".".
-const pluginToolSep = "__"
-
-// sanitizePluginToolName maps an arbitrary name to the ^[a-zA-Z0-9_-]+$
-// character set that OpenAI-compatible providers require for function names,
-// replacing any other character with '_'. This is applied centrally to every
-// plugin tool so plugin authors can return natural names (the MCP spec, for
-// one, places no character constraints on tool names) without each plugin
-// re-implementing provider name rules.
-func sanitizePluginToolName(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
-			b.WriteRune(r)
-		default:
-			b.WriteByte('_')
-		}
-	}
-	if b.Len() == 0 {
-		return "tool"
-	}
-	return b.String()
-}
-
-// RegisterPluginTool registers a tool from a plugin in the registry.
-//
-// The public, LLM-facing name is the plugin name and tool name, sanitised to the
-// provider-safe character set and joined with pluginToolSep. Sanitising here -
-// once, for every plugin - means plugin authors can return whatever names their
-// upstream uses. Execution routes back to the plugin with its ORIGINAL, unmodified
-// tool name (captured in the closure below), so the plugin never sees the
-// sanitised form and needs no name translation of its own.
-//
-// Returns an error if the resulting name is already registered.
-func (r *Registry) RegisterPluginTool(pluginName string, def PluginToolDef) error {
-	toolName := sanitizePluginToolName(pluginName) + pluginToolSep + sanitizePluginToolName(def.Name)
-	reg := r // capture for closure
-	tool := Tool{
-		Schema: Schema{
-			Name:        toolName,
-			Description: "[" + pluginName + "] " + def.Description,
-		},
-		Execute: func(ctx context.Context, params json.RawMessage, ui UIBridge) (Result, error) {
-			reg.mu.RLock()
-			exec := reg.pluginToolExecutor
-			reg.mu.RUnlock()
-			if exec == nil {
-				return Result{IsError: true, Content: "plugin executor not available"}, nil
-			}
-			return exec(ctx, pluginName, def.Name, params)
-		},
-		Source: "plugin:" + pluginName,
-	}
-	if def.InputSchema != "" {
-		tool.Schema.Parameters = json.RawMessage(def.InputSchema)
-	}
-	return r.Replace(tool)
-}
-
-// UnregisterPluginTools removes all tools belonging to a plugin.
-// Plugin tools are identified by the sanitised "pluginName__" prefix in their
-// names (see RegisterPluginTool).
-func (r *Registry) UnregisterPluginTools(pluginName string) {
-	prefix := sanitizePluginToolName(pluginName) + pluginToolSep
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	for name := range r.tools {
-		if strings.HasPrefix(name, prefix) {
-			delete(r.tools, name)
-			r.order = removeFromOrder(r.order, name)
-		}
-	}
-}
-
-func removeFromOrder(order []string, name string) []string {
-	for i, n := range order {
-		if n == name {
-			return append(order[:i], order[i+1:]...)
-		}
-	}
-	return order
 }
