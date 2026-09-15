@@ -131,9 +131,6 @@ func makeEditExecutor(cwd string, mq *MutationQueue, rt *ReadTracker) Executor {
 			return Result{Content: "at least one edit is required", IsError: true}, nil
 		}
 
-		_, cancel := context.WithTimeout(ctx, DefaultToolTimeout)
-		defer cancel()
-
 		path := resolvePath(cwd, p.Path)
 
 		if !isConfined(cwd, path) {
@@ -147,63 +144,85 @@ func makeEditExecutor(cwd string, mq *MutationQueue, rt *ReadTracker) Executor {
 			}
 		}
 
-		// Check file size before reading to avoid OOM on large files.
-		info, err := os.Stat(path)
+		editCtx, cancel := context.WithTimeout(ctx, DefaultToolTimeout)
+		defer cancel()
+
+		var result Result
+		err = runWithContext(editCtx, func() error {
+			result = performEdit(path, p, mq)
+			return nil
+		})
 		if err != nil {
-			return Result{Content: fmt.Sprintf("error stating file: %v", err), IsError: true}, nil
-		}
-		if info.Size() > maxReadBytes {
-			return Result{Content: fmt.Sprintf("file too large to edit (%s > %s)", FormatSize(int(info.Size())), FormatSize(maxReadBytes)), IsError: true}, nil
-		}
-
-		release := mq.Acquire(path)
-		defer release()
-
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return Result{Content: fmt.Sprintf("error reading file: %v", err), IsError: true}, nil
-		}
-
-		// Strip a UTF-8 BOM and normalise CRLF to LF before matching - the
-		// model never includes an invisible BOM or carriage returns in
-		// old_text. Both are restored on write.
-		raw := string(data)
-		bom := ""
-		if strings.HasPrefix(raw, utf8BOM) {
-			bom = utf8BOM
-			raw = strings.TrimPrefix(raw, utf8BOM)
-		}
-		hadCRLF := strings.Contains(raw, "\r\n")
-		content := strings.ReplaceAll(raw, "\r\n", "\n")
-
-		newContent, err := applyEdits(content, p.Edits)
-		if err != nil {
-			errorKind := "invalid_arguments"
-			if strings.Contains(err.Error(), "old_text not found") {
-				errorKind = "stale_edit"
+			if errors.Is(err, context.DeadlineExceeded) {
+				return Result{Content: fmt.Sprintf("edit timed out after %v", DefaultToolTimeout), IsError: true}, nil
 			}
-			return Result{
-				Content:   err.Error() + "; no edits were written; reread the smallest affected range before retrying",
-				IsError:   true,
-				ErrorKind: errorKind,
-			}, nil
-		}
-		if newContent == content {
-			return Result{Content: fmt.Sprintf("no changes made to %s: the edits produced identical content", path), IsError: true}, nil
+			return Result{Content: fmt.Sprintf("edit failed: %v", err), IsError: true}, nil
 		}
 
-		if hadCRLF {
-			newContent = strings.ReplaceAll(newContent, "\n", "\r\n")
-		}
+		return result, nil
+	}
+}
 
-		if err := writeFileAtomic(path, []byte(bom+newContent), 0o644); err != nil {
-			return Result{Content: fmt.Sprintf("error writing file: %v", err), IsError: true}, nil
-		}
+// performEdit loads, mutates, and writes path according to the edits in p.
+// Every failure is returned as a Result with IsError set, never a non-nil
+// error, so the executor keeps a single error envelope.
+func performEdit(path string, p EditParams, mq *MutationQueue) Result {
+	// Check file size before reading to avoid OOM on large files.
+	info, err := os.Stat(path)
+	if err != nil {
+		return Result{Content: fmt.Sprintf("error stating file: %v", err), IsError: true}
+	}
+	if info.Size() > maxReadBytes {
+		return Result{Content: fmt.Sprintf("file too large to edit (%s > %s)", FormatSize(int(info.Size())), FormatSize(maxReadBytes)), IsError: true}
+	}
 
+	release := mq.Acquire(path)
+	defer release()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Result{Content: fmt.Sprintf("error reading file: %v", err), IsError: true}
+	}
+
+	// Strip a UTF-8 BOM and normalise CRLF to LF before matching - the
+	// model never includes an invisible BOM or carriage returns in
+	// old_text. Both are restored on write.
+	raw := string(data)
+	bom := ""
+	if strings.HasPrefix(raw, utf8BOM) {
+		bom = utf8BOM
+		raw = strings.TrimPrefix(raw, utf8BOM)
+	}
+	hadCRLF := strings.Contains(raw, "\r\n")
+	content := strings.ReplaceAll(raw, "\r\n", "\n")
+
+	newContent, err := applyEdits(content, p.Edits)
+	if err != nil {
+		errorKind := "invalid_arguments"
+		if strings.Contains(err.Error(), "old_text not found") {
+			errorKind = "stale_edit"
+		}
 		return Result{
-			Content: fmt.Sprintf("applied %d edit(s) to %s", len(p.Edits), path),
-			Details: DiffDetails{Path: path, OldContent: content, NewContent: newContent},
-		}, nil
+			Content:   err.Error() + "; no edits were written; reread the smallest affected range before retrying",
+			IsError:   true,
+			ErrorKind: errorKind,
+		}
+	}
+	if newContent == content {
+		return Result{Content: fmt.Sprintf("no changes made to %s: the edits produced identical content", path), IsError: true}
+	}
+
+	if hadCRLF {
+		newContent = strings.ReplaceAll(newContent, "\n", "\r\n")
+	}
+
+	if err := writeFileAtomic(path, []byte(bom+newContent), 0o644); err != nil {
+		return Result{Content: fmt.Sprintf("error writing file: %v", err), IsError: true}
+	}
+
+	return Result{
+		Content: fmt.Sprintf("applied %d edit(s) to %s", len(p.Edits), path),
+		Details: DiffDetails{Path: path, OldContent: content, NewContent: newContent},
 	}
 }
 

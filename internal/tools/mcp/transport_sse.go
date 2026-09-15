@@ -75,6 +75,12 @@ type SSETransport struct {
 	// stopCh is closed by Stop(). Background goroutines select on this.
 	stopCh chan struct{}
 
+	// lifecycleCancel cancels the lifecycle context handed to the background
+	// reader and reconnect goroutines. Stop calls it so an in-flight reconnect
+	// HTTP request can be interrupted immediately instead of blocking Stop
+	// until the OS-level connect/read gives up.
+	lifecycleCancel context.CancelFunc
+
 	// The SSE reader goroutine.
 	readerWg sync.WaitGroup
 	// Track HTTP response body so Stop can close it.
@@ -101,10 +107,12 @@ func (t *SSETransport) Start(ctx context.Context) error {
 	}
 	t.state = StateStarting
 	t.stopCh = make(chan struct{})
+	lifecycleCtx, cancel := context.WithCancel(ctx)
+	t.lifecycleCancel = cancel
 	t.messageEndpoint = t.config.MessageEndpoint // fallback; endpoint event overrides
 	t.mu.Unlock()
 
-	return t.connect(ctx)
+	return t.connect(lifecycleCtx)
 }
 
 // Stop closes the SSE connection, fails pending requests, and transitions
@@ -122,6 +130,9 @@ func (t *SSETransport) Stop(_ context.Context) error {
 		default:
 			close(t.stopCh)
 		}
+	}
+	if t.lifecycleCancel != nil {
+		t.lifecycleCancel()
 	}
 	if t.respBody != nil {
 		_ = t.respBody.Close()
@@ -335,14 +346,24 @@ func (t *SSETransport) reconnect(ctx context.Context) {
 			backoff = nextBackoff(backoff, t.config.effectiveMaxReconnectBackoff())
 			continue
 		}
+
+		// Guarded commit: Stop may have won while the reconnect GET was in
+		// flight. Do not install a reader (or a response body Stop has already
+		// missed) once Stop has closed stopCh.
 		t.mu.Lock()
+		if t.isStopped() || t.state != StateRunning {
+			t.state = StateStopped
+			t.mu.Unlock()
+			_ = resp.Body.Close()
+			return
+		}
 		if msgURL != "" {
 			t.messageEndpoint = msgURL
 		}
 		t.respBody = resp.Body
+		t.readerWg.Add(1)
 		t.mu.Unlock()
 
-		t.readerWg.Add(1)
 		go t.runReader(ctx, resp.Body, reader)
 		return
 	}

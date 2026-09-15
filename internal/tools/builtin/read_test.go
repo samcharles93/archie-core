@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func execRead(t *testing.T, cwd, params string) Result {
@@ -208,5 +209,25 @@ func TestReadTool_NotFoundListsExistingParentDir(t *testing.T) {
 	}
 	if !strings.Contains(res.Content, "colors.go") {
 		t.Fatalf("expected the existing directory to be listed, got:\n%s", res.Content)
+	}
+}
+
+// TestReadToolHonoursDeadlineOnExpiredContext pins the DefaultToolTimeout
+// contract: when the caller's context is already expired, read must not
+// ignore that deadline and read the file anyway.
+func TestReadToolHonoursDeadlineOnExpiredContext(t *testing.T) {
+	tmp := t.TempDir()
+	writeReadTestFile(t, tmp, "f.txt", "alpha\nbeta\n")
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+
+	tool := NewReadTool(tmp, nil)
+	res, err := tool.Execute(ctx, json.RawMessage(`{"path":"f.txt"}`), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("read on an expired context must not succeed; got content %q", res.Content)
 	}
 }

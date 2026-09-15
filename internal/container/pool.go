@@ -174,8 +174,9 @@ func NewPool(ctx context.Context, cfg Config, log *slog.Logger) (*Pool, error) {
 
 // Acquire creates and starts a container with the given mounts and
 // environment variables. Mounts are provided by the caller (typically
-// from a storage.Backend). If MaxUptime is set, the container is
-// created with a deadline  --  Docker kills it when the time elapses.
+// from a storage.Backend). If MaxUptime is set, the pool schedules a hard
+// stop and remove of the container once that lifetime cap elapses,
+// regardless of task state.
 func (p *Pool) Acquire(ctx context.Context, mounts []storage.Mount, env []string) (*Container, error) {
 	p.mu.Lock()
 	if p.cfg.MaxConcurrency > 0 && p.active >= p.cfg.MaxConcurrency {
@@ -184,13 +185,6 @@ func (p *Pool) Acquire(ctx context.Context, mounts []storage.Mount, env []string
 	}
 	p.active++
 	p.mu.Unlock()
-
-	// Enforce MaxUptime via container-level timeout.
-	if p.cfg.MaxUptime > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, p.cfg.MaxUptime)
-		defer cancel()
-	}
 
 	name := fmt.Sprintf("archie-agent-%d", time.Now().UnixNano())
 
@@ -235,8 +229,31 @@ func (p *Pool) Acquire(ctx context.Context, mounts []storage.Mount, env []string
 		return nil, fmt.Errorf("container start: %w", err)
 	}
 
+	if p.cfg.MaxUptime > 0 {
+		p.armMaxUptime(ctx, resp.ID)
+	}
+
 	p.log.Info("container started", "id", resp.ID[:12], "name", name)
 	return &Container{ID: resp.ID}, nil
+}
+
+// armMaxUptime schedules a hard stop and remove for a container once its
+// lifetime cap elapses. The timer is keyed to the container ID and never
+// touches p.active: Release (or Close) remains the only owner of the active
+// slot. Docker stop and remove are idempotent, so a timer that fires after
+// Release has already removed the container only logs a warning.
+func (p *Pool) armMaxUptime(ctx context.Context, id string) {
+	time.AfterFunc(p.cfg.MaxUptime, func() {
+		zero := 0
+		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		if _, err := p.cli.ContainerStop(stopCtx, id, client.ContainerStopOptions{Timeout: &zero}); err != nil {
+			p.log.Warn("max uptime stop failed", "id", id[:12], "err", err)
+		}
+		if _, err := p.cli.ContainerRemove(context.WithoutCancel(ctx), id, client.ContainerRemoveOptions{Force: true}); err != nil {
+			p.log.Warn("max uptime remove failed", "id", id[:12], "err", err)
+		}
+	})
 }
 
 // releaseDecision reports how Release should tear a container down: whether
