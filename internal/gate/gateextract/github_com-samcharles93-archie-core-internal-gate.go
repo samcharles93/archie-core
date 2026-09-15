@@ -10,10 +10,13 @@ import (
 func init() {
 	Symbols["github.com/samcharles93/archie-core/internal/gate/gate"] = map[string]reflect.Value{
 		// function, constant and variable definitions
-		"Blocking": reflect.ValueOf(gate.Blocking),
+		"Blocking":   reflect.ValueOf(gate.Blocking),
+		"LevelError": reflect.ValueOf(gate.LevelError),
+		"LevelWarn":  reflect.ValueOf(gate.LevelWarn),
 
 		// type definitions
 		"Finding":     reflect.ValueOf((*gate.Finding)(nil)),
 		"GateContext": reflect.ValueOf((*gate.GateContext)(nil)),
+		"Level":       reflect.ValueOf((*gate.Level)(nil)),
 	}
 }

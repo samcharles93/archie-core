@@ -139,6 +139,31 @@ func Check(ctx gate.GateContext) []gate.Finding {
 	}
 }
 
+func TestStageYaegiGateRejectsUnknownLevel(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	dir := gitRepoWithOriginRef(t, "main")
+	writeGateGo(t, dir, `package gate
+
+import "github.com/samcharles93/archie-core/internal/gate"
+
+func Check(ctx gate.GateContext) []gate.Finding {
+	return []gate.Finding{{Level: "fatal", Message: "mis-typed level"}}
+}
+`)
+	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("hi\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "add", "-A")
+	runGit(t, dir, "commit", "-m", "add notes")
+
+	tc := newYaegiGateTaskContext(t, dir)
+	if err := StageYaegiGate().Run(context.Background(), tc); err == nil {
+		t.Fatal("StageYaegiGate() = nil, want an error for an unrecognized finding level (fail closed)")
+	}
+}
+
 func TestStageRepoStagesNilLoaderIsNoop(t *testing.T) {
 	tc := &TaskContext{Log: slog.New(slog.DiscardHandler)}
 	if err := StageRepoStages().Run(context.Background(), tc); err != nil {
