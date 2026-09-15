@@ -1295,6 +1295,7 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo conf
 		Repo:           repo,
 		Cfg:            d.configFor(task).ForTask(),
 		Providers:      agentexec.ProvidersFromConfig(d.configFor(task).Providers),
+		MCPServers:     d.configFor(task).Tools.MCPServers,
 		WorktreeGrant:  grant,
 		KindWorkflows:  d.KindWorkflows,
 		LabelWorkflows: d.LabelWorkflows,

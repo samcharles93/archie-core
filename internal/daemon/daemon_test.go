@@ -734,6 +734,53 @@ func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
 	}
 }
 
+// TestRunViaAgentSendsMCPServers is the daemon half of persistence-2: the
+// configured daemon-wide MCP servers must be carried in the taskrun request
+// so the archie-agent worker can construct transports and register their
+// tools (task_execution.go startMCPProviders). A request missing them leaves
+// the whole agent-side MCP tool path dead.
+func TestRunViaAgentSendsMCPServers(t *testing.T) {
+	d, s, busClient := daemonWithNATS(t)
+	cfg := d.Cfg.Get()
+	cfg.Tools.MCPServers = []config.MCPServer{
+		{Name: "mcp-npm", Transport: "stdio", Command: "npx", Args: []string{"-y", "@modelcontextprotocol/server-filesystem"}},
+	}
+	d.Cfg.Set(cfg)
+	ctx := context.Background()
+
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 10, "t", "b", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("claim: (%v, %v)", task, err)
+	}
+
+	received := make(chan taskrun.Request, 1)
+	sub, err := mustCoreConn(t, busClient).Subscribe(agentnats.SubjectForTask(task.ID), func(msg *natsio.Msg) {
+		var req taskrun.Request
+		_ = json.Unmarshal(msg.Data, &req)
+		received <- req
+		data, _ := json.Marshal(taskrun.Response{Status: workflow.StatusPROpen})
+		_ = msg.Respond(data)
+	})
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	t.Cleanup(func() { _ = sub.Unsubscribe() })
+
+	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"})
+
+	select {
+	case req := <-received:
+		if len(req.MCPServers) != 1 || req.MCPServers[0].Name != "mcp-npm" {
+			t.Fatalf("request MCPServers = %+v, want the configured mcp-npm server", req.MCPServers)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("archied did not publish a taskrun request")
+	}
+}
+
 // TestRunViaAgentSendsRoutingBindings is the daemon half of
 // workflow-engine-1: the kind/label -> workflow bindings the daemon loaded
 // must be carried in the taskrun request, because workflow.Route runs in the
