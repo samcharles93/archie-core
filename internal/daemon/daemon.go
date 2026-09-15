@@ -124,8 +124,11 @@ type Daemon struct {
 	Trees              *worktree.Manager
 	Bus                *events.Bus
 	Log                *slog.Logger
-	// Tasks is the optional message bus for task distribution. Nil means no
-	// bus is configured; the existing SQLite ClaimNext flow is used.
+	// Tasks is the NATS task distribution bus: the poller publishes
+	// discovered work over it and runViaAgent requests execution through it.
+	// NATS startup is mandatory (there is no broker-off execution mode), so
+	// production composition always sets it. Nil appears only in tests and
+	// is handled fail-closed at the publish/run sites.
 	Tasks          TaskBus
 	WorktreeGrants WorktreeGrantIssuer
 	// StateStoreGrants issues per-task State Store credentials for container
@@ -381,8 +384,6 @@ func (d *Daemon) pollForIdentity(ctx context.Context, id *IdentityRunner) {
 			labels := strings.Join(is.Labels, ",")
 			if d.Tasks != nil {
 				d.pollNATS(ctx, id.Forge, cfg, repo, is, labels, id.Name)
-			} else {
-				d.pollSQLite(ctx, id.Forge, cfg, repo, is, labels, id.Name)
 			}
 		}
 	}
@@ -398,8 +399,6 @@ func (d *Daemon) maintainAndDrain(ctx context.Context) {
 	d.dispatchBindings(ctx)
 	if d.Tasks != nil {
 		d.drainNATS(ctx)
-	} else {
-		d.drainSQLite(ctx)
 	}
 }
 
@@ -474,8 +473,6 @@ func (d *Daemon) Cycle(ctx context.Context) {
 	d.dispatchBindings(ctx)
 	if d.Tasks != nil {
 		d.drainNATS(ctx)
-	} else {
-		d.drainSQLite(ctx)
 	}
 }
 
@@ -493,23 +490,6 @@ func (d *Daemon) cleanupExpiredStorage(ctx context.Context) {
 			d.Log.Info("expired persistent volumes removed", "count", n)
 		}
 	}
-}
-
-// drainSQLite claims queued tasks from SQLite and dispatches them concurrently.
-func (d *Daemon) drainSQLite(ctx context.Context) {
-	dispatcher := newTaskDispatcher(d.Cfg.Get().Containers.MaxConcurrency, d.allowConcurrentForTask)
-	for ctx.Err() == nil {
-		task, err := d.Store.ClaimNext(ctx)
-		if err != nil {
-			d.Log.Error("claim failed", "err", err)
-			break
-		}
-		if task == nil {
-			break
-		}
-		dispatcher.Submit(ctx, task, d.process)
-	}
-	dispatcher.Wait()
 }
 
 // bindingDispatchBatchLimit caps how many undispatched captures a single
@@ -835,32 +815,9 @@ func (d *Daemon) poll(ctx context.Context) {
 			labels := strings.Join(is.Labels, ",")
 			if d.Tasks != nil {
 				d.pollNATS(ctx, d.Forge, d.Cfg.Get(), repo, is, labels, "")
-			} else {
-				d.pollSQLite(ctx, d.Forge, d.Cfg.Get(), repo, is, labels, "")
 			}
 		}
 	}
-}
-
-// pollSQLite enqueues discovered issues directly into SQLite (existing flow).
-// fg is the forge client that discovered is  --  d.Forge for the
-// single-identity path, or an identity's own client from pollForIdentity.
-// cfg is the dispatch config that owns this poll (root or identity-scoped).
-// identity records which identity owns the resulting task; empty for
-// single-identity deployments.
-func (d *Daemon) pollSQLite(ctx context.Context, fg forge.Forge, cfg config.Config, repo config.Repo, is forge.Issue, labels, identity string) {
-	inserted, err := d.Store.EnqueueIssue(ctx,
-		repo.Owner, repo.Name, is.Number, is.Title, is.Body, labels, identity)
-	if err != nil {
-		d.Log.Error("enqueue failed", "repo", repo.FullName(), "issue", is.Number, "err", err)
-		return
-	}
-	if inserted {
-		d.acknowledge(ctx, fg, cfg, repo, is)
-		return
-	}
-	// Existing tasks are left untouched. Retry and approval are explicit
-	// operator actions in messaging or the Web UI, not forge-side label edits.
 }
 
 // pollNATS publishes discovered issues to NATS (new flow).
