@@ -1036,6 +1036,13 @@ func (b *boot) setupMemory() error {
 		log.Error("memory manager init failed", "err", err)
 		return err
 	}
+	// Install the scanner the HandleToolCall gate reads. Without this the gate
+	// returns ThreatNone on every write (manager.ScanContent short-circuits when
+	// scanner is nil), so configuration.md's "Memory safety scanner" row would
+	// describe a control that never runs. The consequences stay at the
+	// documented defaults: scanReject is false, so a prompt-injection match is
+	// downgraded to a warn and logged rather than refusing the operator's write.
+	memManager.SetScanner(&memory.DefaultScanner{})
 	b.memManager = memManager
 
 	if err := memManager.Initialize("daemon"); err != nil {
