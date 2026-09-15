@@ -84,7 +84,7 @@ func eventDataJSON(data map[string]any) string {
 	}
 	b, err := json.Marshal(data)
 	if err != nil {
-		return ""
+		return fmt.Sprintf(`{"marshal_error":%q}`, err.Error())
 	}
 	return string(b)
 }
