@@ -430,6 +430,10 @@ func Run() int { //nolint:cyclop // the composition root's setup sequence is del
 	}
 	b.setupCurators(ctx)
 
+	if err := b.setupScheduling(); err != nil {
+		return 1
+	}
+
 	b.setupGuardrails()
 	if err := b.registerTools(); err != nil {
 		return 1

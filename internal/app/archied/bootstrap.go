@@ -35,6 +35,7 @@ import (
 	domainembedding "github.com/samcharles93/archie-core/internal/domain/embedding"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	domainmemory "github.com/samcharles93/archie-core/internal/domain/memory"
+	"github.com/samcharles93/archie-core/internal/domain/scheduling"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
@@ -195,6 +196,10 @@ type boot struct {
 	guardrails       *tools.GuardrailEngine
 	providerRegistry *toolprovider.Registry
 	d                *daemon.Daemon
+	// schedulingEngine is the cron/scheduling ticker engine (setupScheduling).
+	// Nil when no chat task creator is configured, in which case startServices
+	// leaves it unstarted rather than running with no reachable job kind.
+	schedulingEngine *scheduling.Engine
 
 	// kindWorkflows/labelWorkflows are the resolved kind/label -> workflow
 	// routing bindings loaded by loadWorkflowRouting. They are handed to the
@@ -1589,6 +1594,11 @@ func (b *boot) startServices(ctx context.Context) error {
 	}
 	if err := b.curatorRuntime.Start(ctx); err != nil {
 		log.Error("curator runtime startup", "err", err)
+	}
+	if b.schedulingEngine != nil {
+		if err := b.schedulingEngine.Start(ctx); err != nil {
+			log.Error("scheduling engine startup", "err", err)
+		}
 	}
 	for _, startGateway := range b.startGateways {
 		startGateway()
