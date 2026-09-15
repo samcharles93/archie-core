@@ -6,11 +6,8 @@ import (
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
-	"github.com/samcharles93/archie-core/internal/daemon"
-	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	taskactionstore "github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
 	"github.com/samcharles93/archie-core/internal/store"
-	"github.com/samcharles93/archie-core/internal/webui"
 )
 
 // openSecondStore opens a second, independent *store.Store on a fresh temp
@@ -47,7 +44,6 @@ func TestBuildDaemonRoutesTaskStoreThroughStateStore(t *testing.T) {
 		log:        slog.New(slog.DiscardHandler),
 		st:         storeA,
 		stateStore: storeB,
-		web:        &webui.Server{},
 	}
 	b.buildDaemon()
 
@@ -65,48 +61,6 @@ func TestBuildDaemonRoutesTaskStoreThroughStateStore(t *testing.T) {
 	}
 	if b.d.BindingTaskCreator != storeB {
 		t.Fatalf("daemon BindingTaskCreator = %p, want b.stateStore (%p)", b.d.BindingTaskCreator, storeB)
-	}
-}
-
-// TestSetupObservabilityKeepsStoreSurfacesOutOfTheDaemonWebui proves the
-// cutover's composition rule: the daemon's webui is the configuration
-// snapshot's renderer, so it carries the config Holder and provenance and
-// no store surfaces -- the dashboard's store-backed reads resolve in the
-// UI process from its own State Store client (pinned by archieui's
-// compose tests), and a store handle here would be an unused second
-// authority.
-func TestSetupObservabilityKeepsStoreSurfacesOutOfTheDaemonWebui(t *testing.T) {
-	storeA, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "store-a.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = storeA.Close() })
-	storeB := openSecondStore(t)
-
-	b := &boot{
-		cfg:         config.Config{},
-		log:         slog.New(slog.DiscardHandler),
-		st:          storeA,
-		stateStore:  storeB,
-		doc:         &configuration.Document{},
-		agentStatus: &daemon.AgentStatus{},
-	}
-	t.Cleanup(b.cleanup)
-	b.setupObservability(t.Context())
-
-	if b.cfgHolder == nil {
-		t.Fatal("cfgHolder is nil; the daemon renders the configuration snapshot it publishes (archie-core-ymut)")
-	}
-	for name, surface := range map[string]any{
-		"Store":         b.web.Store,
-		"Captures":      b.web.Captures,
-		"Mappings":      b.web.Mappings,
-		"Bindings":      b.web.Bindings,
-		"CaptureIntake": b.web.CaptureIntake,
-	} {
-		if surface != nil {
-			t.Errorf("webui %s is wired; the daemon serves no dashboard after the cutover", name)
-		}
 	}
 }
 

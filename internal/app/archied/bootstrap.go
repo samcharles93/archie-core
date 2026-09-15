@@ -143,12 +143,6 @@ type boot struct {
 	// lastReload reports the most recent reload outcome for the published
 	// configuration projection. Nil until reload wiring installs it.
 	lastReload func() config.ReloadStatus
-	// web holds the dashboard adapters the daemon still produces for
-	// surfaces that have no contract to cross on yet (skills, memory,
-	// curators, channels, dashboard work requests). The daemon serves no
-	// HTTP for them -- it never calls web.Handler() -- so this is the
-	// producer half waiting on a route contract, not a live listener.
-	web *webui.Server
 
 	natsClient *nats.Client
 	// natsURL is the endpoint the daemon's own client connected with at
@@ -449,7 +443,6 @@ func (b *boot) setupObservability(ctx context.Context) {
 	b.addCleanup(func() { bus.Close() })
 	b.channelManager = status.NewManager(channelDescriptors(cfg.Chat))
 	b.cfgHolder = config.NewHolder(cfg)
-	b.web = &webui.Server{Log: log.With("component", "webui"), Channels: b.channelManager, Skills: skillCatalogAdapter{b.cfgHolder}}
 	// The watchdog leaves its verdict in a file on this host, so the daemon
 	// reads it and publishes the outcome as an event; the dashboard renders
 	// what it receives, wherever it runs (archie-core-8cda.5.4).
@@ -593,7 +586,6 @@ func (b *boot) setupLLMAndChat() error {
 	// Channel routers execute turns locally and need the SQLite TurnLedger.
 	// The remote contract serves web chat; it must not replace their store.
 	b.chat = &webui.ChatService{Contract: contract, Updates: b.updateService}
-	b.web.WorkRequests = b.chatTasks
 	b.setupReadinessProbes()
 	return nil
 }
@@ -758,7 +750,8 @@ func (b *boot) loadWorkflows(ctx context.Context) error {
 	// The dashboard is served by the archie-ui process from the cutover
 	// change (archie-core-8cda.5.4, PRD gate 7): the daemon runs no webui
 	// listener, and [web].listen is the archie-ui process's bind address.
-	// b.web stays only as the configuration snapshot's renderer.
+	// The daemon still renders the configuration snapshot via the
+	// standalone webui.BuildConfigView, not through a Server.
 	return nil
 }
 
@@ -995,11 +988,6 @@ func (b *boot) setupMemory() error {
 		return err
 	}
 	b.memManager = memManager
-	// The dashboard is built before memory exists, so it is wired in here
-	// rather than at construction.
-	if b.web != nil {
-		b.web.Memory = memoryUIAdapter{memManager}
-	}
 
 	if err := memManager.Initialize("daemon"); err != nil {
 		log.Warn("memory manager initialize", "err", err)
@@ -1332,11 +1320,6 @@ func (b *boot) buildDaemon() {
 		KindWorkflows:       b.kindWorkflows,
 		LabelWorkflows:      b.labelWorkflows,
 	}
-	// Curator observability (archie-core-1786637489932-6): GET
-	// /api/curators reads registered names, health and recent activity
-	// off the live registry the daemon already holds, narrowed to the
-	// webui's own view type.
-	b.web.Curators = curatorsUIAdapter{b.curatorRegistry}
 	// Consumer mapping/binding surfaces resolve from b.stateStore (the State
 	// Store contract adapter): local by default, remote *staterpc.Client when
 	// [services.state].target is set. See docs/prds/state-store-contract.md §10.

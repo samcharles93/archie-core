@@ -10,7 +10,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/channels/status"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/store"
-	"github.com/samcharles93/archie-core/internal/webui"
 )
 
 func TestConfiguredNetworkGatewaysBecomeRunning(t *testing.T) {
@@ -51,7 +50,6 @@ func TestConfiguredNetworkGatewaysBecomeRunning(t *testing.T) {
 				st:             st,
 				stateStore:     st,
 				channelManager: manager,
-				web:            &webui.Server{},
 			}
 			ctx, cancel := context.WithCancel(t.Context())
 			t.Cleanup(cancel)

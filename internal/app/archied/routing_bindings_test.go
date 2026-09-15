@@ -9,7 +9,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/store"
-	"github.com/samcharles93/archie-core/internal/webui"
 )
 
 // TestBuildDaemonCarriesWorkflowRoutingBindings pins the composition hop in the
@@ -34,7 +33,6 @@ func TestBuildDaemonCarriesWorkflowRoutingBindings(t *testing.T) {
 		log:            slog.New(slog.DiscardHandler),
 		st:             storeA,
 		stateStore:     storeB,
-		web:            &webui.Server{},
 		kindWorkflows:  workflow.KindWorkflows{workintake.KindBug: "custom-bug"},
 		labelWorkflows: workflow.LabelWorkflows{"security": "security-review"},
 	}

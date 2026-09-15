@@ -8,7 +8,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/store"
-	"github.com/samcharles93/archie-core/internal/webui"
 )
 
 func TestRemoteChatCompositionPreservesChannelTurnLedger(t *testing.T) {
@@ -19,7 +18,7 @@ func TestRemoteChatCompositionPreservesChannelTurnLedger(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	b := &boot{cfg: cfg, log: slog.Default(), web: &webui.Server{}, cfgHolder: config.NewHolder(cfg), stateStore: st}
+	b := &boot{cfg: cfg, log: slog.Default(), cfgHolder: config.NewHolder(cfg), stateStore: st}
 	t.Cleanup(b.cleanup)
 	if err := b.openStores(t.Context()); err != nil {
 		t.Fatal(err)
