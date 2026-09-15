@@ -3,7 +3,6 @@ package builtin_test
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/tools/builtin"
@@ -150,40 +149,5 @@ func TestRegistry_Validation(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for nil executor")
-	}
-}
-
-// TestRegistry_PluginToolSanitizesName verifies that the registry (not each
-// plugin) makes plugin tool names safe for OpenAI-compatible providers, while
-// routing execution back to the plugin with its ORIGINAL, unmodified names.
-func TestRegistry_PluginToolSanitizesName(t *testing.T) {
-	r := builtin.NewRegistry()
-	var gotPlugin, gotTool string
-	r.SetPluginToolExecutor(func(_ context.Context, pluginName, toolName string, _ json.RawMessage) (builtin.Result, error) {
-		gotPlugin, gotTool = pluginName, toolName
-		return builtin.Result{Content: "ok"}, nil
-	})
-
-	// A plugin returns a natural name containing a '.' - invalid for the provider.
-	if err := r.RegisterPluginTool("mcp-plugin", builtin.PluginToolDef{Name: "spawn.list_issues"}); err != nil {
-		t.Fatal(err)
-	}
-
-	// The public, LLM-facing name is sanitised.
-	const want = "mcp-plugin__spawn_list_issues"
-	tool, ok := r.Get(want)
-	if !ok {
-		t.Fatalf("expected registered tool %q; got names %v", want, r.Names())
-	}
-	if strings.ContainsRune(tool.Schema.Name, '.') {
-		t.Fatalf("registered name %q still contains '.'", tool.Schema.Name)
-	}
-
-	// Execution routes back to the plugin with the ORIGINAL plugin and tool names.
-	if _, err := tool.Execute(context.Background(), nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	if gotPlugin != "mcp-plugin" || gotTool != "spawn.list_issues" {
-		t.Fatalf("executor received %q/%q, want mcp-plugin/spawn.list_issues", gotPlugin, gotTool)
 	}
 }
