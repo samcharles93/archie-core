@@ -697,9 +697,14 @@ func (b *boot) setupWebhookGateway(ctx context.Context, cfg config.Config, log *
 		return
 	}
 	host, port := parseListenAddr(cfg.Chat.WebhookAddr, "0.0.0.0", 8644)
+	secretValue, err := b.secrets.Resolve(cfg.Chat.Webhook.Secret)
+	if err != nil {
+		log.Error("webhook gateway secret unresolvable; starting with signature validation disabled",
+			"engine", cfg.Chat.Webhook.Secret.Engine, "key", cfg.Chat.Webhook.Secret.Key, "err", err)
+	}
 	wh := webhook.New(
 		host, port,
-		[]webhook.RouteConfig{{Path: "/webhook"}},
+		webhookRoutes(cfg.Chat.Webhook, secretValue),
 		log,
 	)
 	whRouter := gateway.NewRouter(b.stateStore, nil, "webhook")
@@ -720,6 +725,24 @@ func (b *boot) setupWebhookGateway(ctx context.Context, cfg config.Config, log *
 			}
 		}()
 	})
+}
+
+// webhookRoutes translates the configured [chat.webhook] route into the
+// gateway's RouteConfig. It is the composition site config.WebhookRoute
+// exists for: the HMAC/template/deliver-to fields have been implemented and
+// tested in internal/channels/webhook since it was written, reachable only
+// through this translation.
+func webhookRoutes(route config.WebhookRoute, secretValue string) []webhook.RouteConfig {
+	path := route.Path
+	if path == "" {
+		path = "/webhook"
+	}
+	return []webhook.RouteConfig{{
+		Path:      path,
+		Secret:    secretValue,
+		Template:  route.Template,
+		DeliverTo: route.DeliverTo,
+	}}
 }
 
 // loadWorkflows builds the workflow registry from the skill catalog.

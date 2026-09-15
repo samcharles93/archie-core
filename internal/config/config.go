@@ -910,8 +910,14 @@ type ChatConfig struct {
 	Email EmailConfig `toml:"email" yaml:"email"`
 	// WebhookAddr is the host:port for the inbound webhook gateway.
 	// Empty disables the webhook gateway.
-	WebhookAddr string         `toml:"webhook_addr" yaml:"webhook_addr"`
-	Telegram    TelegramConfig `toml:"telegram" yaml:"telegram"`
+	WebhookAddr string `toml:"webhook_addr" yaml:"webhook_addr"`
+	// Webhook configures the single route the inbound webhook gateway
+	// serves: its path, HMAC validation, payload text extraction, and
+	// reply delivery. The gateway implementation (internal/channels/webhook)
+	// has carried these fields since it was written; this is what lets a
+	// config value reach them.
+	Webhook  WebhookRoute   `toml:"webhook" yaml:"webhook"`
+	Telegram TelegramConfig `toml:"telegram" yaml:"telegram"`
 	// RateLimit budgets inbound messages per (channel, sender) across
 	// every chat channel. Zero MaxRequests (the default) leaves rate
 	// limiting off entirely -- it is an opt-in control, not a default
@@ -970,6 +976,26 @@ type EmailConfig struct {
 	ListenAddr string `toml:"listen_addr" yaml:"listen_addr"`
 	// RelayAddr is the SMTP relay for outbound replies.
 	RelayAddr string `toml:"relay_addr" yaml:"relay_addr"`
+}
+
+// WebhookRoute configures the inbound webhook gateway's single route.
+// Every field is optional: an absent [chat.webhook] section runs the
+// gateway exactly as before this existed -- default path, no signature
+// validation, raw body as message text, no reply.
+type WebhookRoute struct {
+	// Path is the URL path the gateway listens on. Empty means "/webhook".
+	Path string `toml:"path" yaml:"path"`
+	// Secret is the HMAC-SHA256 secret validating inbound payloads. Empty
+	// (the zero SecretRef) disables signature validation, so any unsigned
+	// POST is accepted -- set this to make the gateway actually verify
+	// what it claims to.
+	Secret SecretRef `toml:"secret" yaml:"secret"`
+	// Template extracts the message text from the JSON payload via
+	// dot-notation (e.g. "issue.title"). Empty uses the raw body.
+	Template string `toml:"template" yaml:"template"`
+	// DeliverTo routes replies: "origin" sends the reply back as the HTTP
+	// response; empty sends no reply.
+	DeliverTo string `toml:"deliver_to" yaml:"deliver_to"`
 }
 
 // Notify configures outbound notifications (n8n webhook → email etc.).

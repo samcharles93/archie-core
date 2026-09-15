@@ -160,11 +160,26 @@ class = "ollama"
 # relay_addr  = "smtp.example.com:587"  # outbound relay for replies
 
 # Generic inbound webhook gateway: external services push messages into
-# chat for LLM processing (deliver-only, no outbound reply channel). This
-# is a distinct surface from [forge].webhook_addr (forge issue events) and
-# [capture] (unbound event storage for later binding) -- three different
-# inbound HTTP concerns that happen to share the word "webhook".
+# chat for LLM processing. This is a distinct surface from
+# [forge].webhook_addr (forge issue events) and [capture] (unbound event
+# storage for later binding) -- three different inbound HTTP concerns that
+# happen to share the word "webhook".
 # webhook_addr = "0.0.0.0:8646"   # under [chat], not [chat.telegram]
+#
+# [chat.webhook] configures the single route the gateway serves. Every
+# field is optional; an absent section runs with the pre-existing
+# behaviour: path "/webhook", no signature validation, raw body as message
+# text, no reply.
+# [chat.webhook]
+# path = "/webhook"
+# secret = { engine = "bws", key = "CHAT_WEBHOOK_SECRET" }  # verifies
+#   # X-Hub-Signature-256 on inbound payloads. Empty (the default) accepts
+#   # any unsigned POST -- set this to make the gateway actually verify
+#   # what it claims to.
+# template = "issue.title"  # dot-notation extraction of the message text
+#   # from the JSON payload. Empty uses the raw body.
+# deliver_to = "origin"     # "origin" writes the reply as the HTTP
+#   # response; empty (the default) sends no reply.
 
 # Per-(channel, sender) inbound rate limiting, shared by every chat channel:
 # Telegram keys by numeric user ID, email by SMTP from address, webhook by
