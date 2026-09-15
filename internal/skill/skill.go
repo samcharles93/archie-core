@@ -160,15 +160,6 @@ func SkillForWorkflow(catalog []CatalogEntry, workflow string) *CatalogEntry {
 	return nil
 }
 
-// Skill is a parsed SKILL.md file with its frontmatter, body, and any
-// bundled Yaegi plugins found in the skill's plugins/ directory.
-type Skill struct {
-	Frontmatter Frontmatter
-	Body        string
-	Dir         string   // skill directory name (e.g. "tdd-bugfix")
-	Plugins     []Plugin // bundled Yaegi plugins from plugins/*.go
-}
-
 const skillsDir = ".agents/skills"
 
 // Parse extracts YAML frontmatter and body from SKILL.md content.
@@ -195,53 +186,6 @@ func Parse(src []byte) (*Frontmatter, string, error) {
 
 	body := strings.TrimSpace(text[end+5:]) // skip "\n---\n"
 	return &fm, body, nil
-}
-
-// Discover scans dir/.agents/skills/*/SKILL.md and returns a map of skill
-// directory name to parsed Skill. Missing directory returns an empty map.
-func Discover(dir string) (map[string]Skill, error) {
-	skillsPath := filepath.Join(dir, skillsDir)
-	entries, err := os.ReadDir(skillsPath)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read skills dir %s: %w", skillsPath, err)
-	}
-
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if e.IsDir() {
-			names = append(names, e.Name())
-		}
-	}
-	sort.Strings(names)
-
-	out := make(map[string]Skill, len(names))
-	for _, name := range names {
-		skillPath := filepath.Join(skillsPath, name, "SKILL.md")
-		data, err := os.ReadFile(skillPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue // directory exists but no SKILL.md
-			}
-			return nil, fmt.Errorf("read %s: %w", skillPath, err)
-		}
-		fm, body, err := Parse(data)
-		if err != nil {
-			return nil, fmt.Errorf("parse %s: %w", skillPath, err)
-		}
-		var pluginNames []string
-		if fm.Metadata.Archie != nil {
-			pluginNames = fm.Metadata.Archie.Plugins
-		}
-		plugins, err := LoadPlugins(dir, name, pluginNames)
-		if err != nil {
-			return nil, fmt.Errorf("plugins %s: %w", name, err)
-		}
-		out[name] = Skill{Frontmatter: *fm, Body: body, Dir: name, Plugins: plugins}
-	}
-	return out, nil
 }
 
 // LoadBody loads the raw SKILL.md body for a specific skill directory name.

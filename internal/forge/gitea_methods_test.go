@@ -230,21 +230,6 @@ func TestGiteaCloseIssueWithoutComment(t *testing.T) {
 	}
 }
 
-func TestGiteaCreateIssue(t *testing.T) {
-	c, mux := newTestGiteaClient(t)
-	mux.HandleFunc("POST /api/v1/repos/o/r/issues", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(t, w, map[string]any{"number": 11})
-	})
-
-	num, err := c.CreateIssue(t.Context(), "o", "r", "title", "body", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if num != 11 {
-		t.Fatalf("num = %d, want 11", num)
-	}
-}
-
 func TestGiteaReact(t *testing.T) {
 	c, mux := newTestGiteaClient(t)
 	var got string

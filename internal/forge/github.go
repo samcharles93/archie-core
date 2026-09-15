@@ -302,20 +302,6 @@ func (c *GitHubClient) LinkBranch(ctx context.Context, owner, repo string, issue
 	return nil
 }
 
-// CreateIssue opens a new issue and returns its number.
-func (c *GitHubClient) CreateIssue(ctx context.Context, owner, repo, title, body string, labels []string) (int, error) {
-	req := &github.IssueRequest{
-		Title:  &title,
-		Body:   &body,
-		Labels: &labels,
-	}
-	iss, _, err := c.gh.Issues.Create(ctx, owner, repo, req)
-	if err != nil {
-		return 0, fmt.Errorf("create issue %s/%s: %w", owner, repo, err)
-	}
-	return iss.GetNumber(), nil
-}
-
 // State labels mirror the task lifecycle onto the forge so archie's
 // status is visible at a glance. SQLite remains the source of truth;
 // labels are the human-facing projection  --  and removing the parked
