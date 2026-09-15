@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestApplyEdits(t *testing.T) {
@@ -327,5 +328,38 @@ func TestEdit_NotFoundWithNoPlausibleMatchStaysGeneric(t *testing.T) {
 	}
 	if !strings.Contains(res.Content, "old_text not found") {
 		t.Fatalf("expected the generic error, got:\n%s", res.Content)
+	}
+}
+
+// TestEditToolHonoursDeadlineOnExpiredContext pins the DefaultToolTimeout
+// contract: when the caller's context is already expired, edit must not
+// ignore that deadline and mutate the file anyway.
+func TestEditToolHonoursDeadlineOnExpiredContext(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "f.txt")
+	if err := os.WriteFile(path, []byte("hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+
+	tool := NewEditTool(tmp, NewMutationQueue(), nil)
+	res, err := tool.Execute(ctx, json.RawMessage(
+		`{"path":"f.txt","edits":[{"old_text":"hello","new_text":"hi"}]}`,
+	), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("edit on an expired context must not succeed; got content %q", res.Content)
+	}
+
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != "hello\n" {
+		t.Fatalf("file was mutated despite the expired context: %q", after)
 	}
 }

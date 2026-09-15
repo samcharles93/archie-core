@@ -15,6 +15,7 @@ package builtin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -222,28 +223,42 @@ func makeReadExecutor(cwd string, rt *ReadTracker) Executor {
 			return *terminal, nil
 		}
 
-		_, cancel := context.WithTimeout(ctx, DefaultToolTimeout)
-		defer cancel()
-
 		path := resolvePath(cwd, p.Path)
 		if !isReadConfined(cwd, path) {
 			return Result{Content: "path escapes working directory", IsError: true, ErrorKind: "sandbox_escape"}, nil
 		}
 
-		info, err := os.Stat(path)
-		if err != nil {
-			msg := fmt.Sprintf("error stating file: %v", err)
-			if hint := suggestPaths(cwd, path); hint != "" {
-				msg += "\n" + hint
+		readCtx, cancel := context.WithTimeout(ctx, DefaultToolTimeout)
+		defer cancel()
+
+		var result Result
+		err = runWithContext(readCtx, func() error {
+			info, statErr := os.Stat(path)
+			if statErr != nil {
+				msg := fmt.Sprintf("error stating file: %v", statErr)
+				if hint := suggestPaths(cwd, path); hint != "" {
+					msg += "\n" + hint
+				}
+				result = Result{Content: msg, IsError: true, ErrorKind: "not_found"}
+				return nil
 			}
-			return Result{Content: msg, IsError: true, ErrorKind: "not_found"}, nil
+
+			state, terminal := readFileContent(cwd, path, p, info, rt)
+			if terminal != nil {
+				result = *terminal
+				return nil
+			}
+			result = serveReadContent(cwd, path, p, info, state, rt)
+			return nil
+		})
+		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				return Result{Content: fmt.Sprintf("read timed out after %v", DefaultToolTimeout), IsError: true}, nil
+			}
+			return Result{Content: fmt.Sprintf("read failed: %v", err), IsError: true}, nil
 		}
 
-		state, terminal := readFileContent(cwd, path, p, info, rt)
-		if terminal != nil {
-			return *terminal, nil
-		}
-		return serveReadContent(cwd, path, p, info, state, rt), nil
+		return result, nil
 	}
 }
 
