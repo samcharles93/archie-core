@@ -144,8 +144,7 @@ func (p *Provider) Err() error { return p.dirErr }
 
 // SystemPromptBlock implements memory.SystemPromptProvider. It returns a
 // markdown-formatted block containing the frozen snapshot of MEMORY.md and
-// USER.md content, wrapped in <memory>…</memory> fences so the scrubber can
-// strip it from streaming output.
+// USER.md content, wrapped in <memory>…</memory> fences.
 //
 // When the frozen snapshot is enabled (the default), the block is built from
 // the snapshot captured at Initialize() time and does not change for the
