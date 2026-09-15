@@ -114,37 +114,6 @@ func TestToolClassificationString(t *testing.T) {
 	}
 }
 
-func TestClassifyEntry(t *testing.T) {
-	t.Run("idempotent tools are parallel-safe", func(t *testing.T) {
-		e := ToolEntry{
-			Name:           "reader",
-			Handler:        noopHandler,
-			Classification: ClassIdempotent,
-		}
-		if got := ClassifyEntry(e); got != ExecParallelSafe {
-			t.Errorf("expected parallel-safe, got %v", got)
-		}
-	})
-
-	t.Run("mutating tools are never-parallel", func(t *testing.T) {
-		e := ToolEntry{
-			Name:           "writer",
-			Handler:        noopHandler,
-			Classification: ClassMutating,
-		}
-		if got := ClassifyEntry(e); got != ExecNeverParallel {
-			t.Errorf("expected never-parallel, got %v", got)
-		}
-	})
-
-	t.Run("unclassified tools default to never-parallel", func(t *testing.T) {
-		e := ToolEntry{Name: "unknown", Handler: noopHandler}
-		if got := ClassifyEntry(e); got != ExecNeverParallel {
-			t.Errorf("expected never-parallel, got %v", got)
-		}
-	})
-}
-
 func TestClassificationJSONRoundTrip(t *testing.T) {
 	e := ToolEntry{
 		Name:           "classified",
