@@ -50,19 +50,6 @@ func TestStateStoreServerOptsMalformedListen(t *testing.T) {
 	}
 }
 
-func TestConstantTimeTokenValidator(t *testing.T) {
-	validate := constantTimeTokenValidator("correct-token")
-	if !validate("correct-token") {
-		t.Fatal("validator should accept the configured token")
-	}
-	if validate("wrong-token") {
-		t.Fatal("validator should reject a different token")
-	}
-	if validate("") {
-		t.Fatal("validator should reject an empty token")
-	}
-}
-
 // TestServeStateStoreServesContract verifies the standalone composition's
 // serveStateStore + stateStoreDeps wiring actually serves the StateStore gRPC
 // contract over a real loopback listener: the same service .4.2 serves

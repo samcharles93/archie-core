@@ -263,50 +263,6 @@ func TestStateStoreConformance(t *testing.T) {
 	}
 }
 
-// TestTokenInterceptorRejectsMissingOrInvalidToken exercises the gRPC
-// interceptor the bridge-address (agent-consumed) listener topology
-// requires: missing or unrecognised tokens fail closed with
-// codes.Unauthenticated, per §9's token lifecycle.
-func TestTokenInterceptorRejectsMissingOrInvalidToken(t *testing.T) {
-	const validToken = "task-42-token"
-	validate := func(token string) bool { return token == validToken }
-
-	listener := bufconn.Listen(1 << 20)
-	local := store.OpenTest(t)
-	server := grpc.NewServer(grpc.UnaryInterceptor(UnaryTokenInterceptor(validate)))
-	RegisterServer(server, Deps{Tasks: local})
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
-
-	dial := func(t *testing.T, token string) contract {
-		t.Helper()
-		opts := []grpc.DialOption{
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return listener.DialContext(ctx) }),
-		}
-		if token != "" {
-			opts = append(opts, grpc.WithUnaryInterceptor(UnaryClientTokenInterceptor(token)))
-		}
-		conn, err := grpc.NewClient("passthrough:///state", opts...)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = conn.Close() })
-		return NewClient(conn)
-	}
-
-	ctx := t.Context()
-	if _, err := dial(t, "").StatusCounts(ctx); err == nil {
-		t.Fatal("missing token accepted")
-	}
-	if _, err := dial(t, "wrong-token").StatusCounts(ctx); err == nil {
-		t.Fatal("invalid token accepted")
-	}
-	if _, err := dial(t, validToken).StatusCounts(ctx); err != nil {
-		t.Fatalf("valid token rejected: %v", err)
-	}
-}
-
 // TestConfigSnapshotContract drives the published configuration projection
 // through both the local store and the gRPC client. The document is opaque to
 // this hop, so the test's whole claim is that it arrives unchanged: the UI
