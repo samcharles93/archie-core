@@ -173,6 +173,10 @@ var reloadableFields = map[string]bool{
 	// [agent] is a decode-only compatibility shim; changes have no runtime
 	// consumer and therefore require neither reload nor restart.
 	"LegacyAgent": true,
+	// Tools.Policy (MaxResultChars/SpillDir) is carried into TaskConfig by
+	// ForTask (config.go) and applied fresh per dispatch via
+	// agentworker.applyToolLimits. See reloadableSubFields["Tools"].
+	"ToolPolicy": true,
 }
 
 // reloadableSubFields are sub-fields of structs that are otherwise
@@ -188,6 +192,9 @@ var reloadableFields = map[string]bool{
 var reloadableSubFields = map[string]map[string]bool{
 	"Containers": {"LegacyEnabled": true, "VolumeTTL": true},
 	"Forge":      {"Host": true},
+	// Policy is carried into TaskConfig by ForTask (config.go); MCPServers,
+	// WebFetch and Minimax are not and stay requires-restart.
+	"Tools": {"Policy": true},
 }
 
 // changedNonReloadableFields compares old and new and returns the

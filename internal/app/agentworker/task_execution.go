@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
+	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/wfeval"
@@ -138,6 +139,22 @@ func newTaskRunner(providers map[string]agentexec.Provider, log *slog.Logger) ag
 	return agentexec.NewLoopRunner(agentexec.NewRuntime(providers), log)
 }
 
+// applyToolLimits wires the task's carried tool policy into a *LoopRunner's
+// result cap/spill, so a worker-executed stage enforces the same limits the
+// daemon's own chat path applies (config.Config.Tools.Policy, carried
+// non-secret via TaskConfig.ToolPolicy). A runner that isn't a *LoopRunner
+// (e.g. a test fake) is left untouched.
+func applyToolLimits(agent agentexec.Runner, policy config.ToolPolicy) {
+	runner, ok := agent.(*agentexec.LoopRunner)
+	if !ok {
+		return
+	}
+	runner.Limits = agentexec.ToolLimits{
+		MaxResultChars: policy.MaxResultChars,
+		SpillDir:       policy.SpillDir,
+	}
+}
+
 // routeTask applies the request-carried routing bindings and selects the
 // workflow for a task. The daemon's package-level SetKindWorkflows state
 // never crosses the process boundary, so runTask installs the resolved
@@ -191,6 +208,7 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 	if agent == nil {
 		return nil, fmt.Errorf("no agent runner configured for task %d", req.Task.ID)
 	}
+	applyToolLimits(agent, req.Cfg.ToolPolicy)
 	agent = persistentRunner{Runner: agent, enabled: req.Repo.PersistentStorage}
 
 	// A workflow run in this process publishes to an in-process *events.Bus

@@ -590,6 +590,7 @@ type TaskConfig struct {
 	DiffCapLines int                    `json:"diff_cap_lines"`
 	Notify       Notify                 `json:"notify"`
 	Forge        TaskForge              `json:"forge"`
+	ToolPolicy   ToolPolicy             `json:"tool_policy"`
 }
 
 // TaskForge is the non-secret forge configuration needed by workflow stages.
@@ -610,6 +611,7 @@ func (c Config) ForTask() TaskConfig {
 		DiffCapLines: c.DiffCapLines,
 		Notify:       c.Notify,
 		Forge:        TaskForge{Host: c.Forge.Host},
+		ToolPolicy:   c.Tools.Policy,
 	}
 }
 
@@ -628,6 +630,7 @@ func (tc TaskConfig) ToConfig() Config {
 		DiffCapLines: tc.DiffCapLines,
 		Notify:       tc.Notify,
 		Forge:        Forge{Host: tc.Forge.Host},
+		Tools:        ToolsConfig{Policy: tc.ToolPolicy},
 	}
 }
 

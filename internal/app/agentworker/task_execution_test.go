@@ -195,6 +195,29 @@ func TestHybridTreesPushSurfacesOwnershipReconciliationFailure(t *testing.T) {
 	}
 }
 
+// TestApplyToolLimitsWiresConfiguredPolicyIntoLoopRunner guards against
+// regressing archie-core's tool-result cap and spill dir back to inert
+// zero values on the worker path (agentexec-1 / tools-core-11): a
+// *LoopRunner built for a task must carry the daemon's configured
+// ToolPolicy, not the zero value NewLoopRunner leaves it at.
+func TestApplyToolLimitsWiresConfiguredPolicyIntoLoopRunner(t *testing.T) {
+	runner := agentexec.NewLoopRunner(agentexec.NewRuntime(nil), slog.New(slog.DiscardHandler))
+	policy := config.ToolPolicy{MaxResultChars: 12345, SpillDir: "/var/tmp/archie-spill"}
+
+	applyToolLimits(runner, policy)
+
+	want := agentexec.ToolLimits{MaxResultChars: 12345, SpillDir: "/var/tmp/archie-spill"}
+	if runner.Limits != want {
+		t.Fatalf("runner.Limits = %+v, want %+v", runner.Limits, want)
+	}
+}
+
+// TestApplyToolLimitsIgnoresNonLoopRunner confirms a test-fake runner (which
+// is not a *agentexec.LoopRunner) is left untouched rather than panicking.
+func TestApplyToolLimitsIgnoresNonLoopRunner(t *testing.T) {
+	applyToolLimits(panicRunner{t}, config.ToolPolicy{MaxResultChars: 1})
+}
+
 type panicRunner struct{ t *testing.T }
 
 func (r panicRunner) Run(context.Context, string, agentexec.Request, agentexec.ToolCallReporter) (agentexec.Result, error) {
