@@ -38,10 +38,6 @@ func (n *NoopForge) CloseIssue(ctx context.Context, owner, repo string, number i
 	return nil
 }
 
-func (n *NoopForge) CreateIssue(ctx context.Context, owner, repo, title, body string, labels []string) (int, error) {
-	return 0, nil
-}
-
 func (n *NoopForge) React(ctx context.Context, owner, repo string, number int, reaction string) error {
 	return nil
 }

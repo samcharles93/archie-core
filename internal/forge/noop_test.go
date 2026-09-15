@@ -40,11 +40,6 @@ func TestNoopForgeIsAllZeroValue(t *testing.T) {
 		t.Errorf("CloseIssue() = %v, want nil", err)
 	}
 
-	num, err := f.CreateIssue(ctx, "o", "r", "title", "body", nil)
-	if num != 0 || err != nil {
-		t.Errorf("CreateIssue() = (%d, %v), want (0, nil)", num, err)
-	}
-
 	if err := f.React(ctx, "o", "r", 1, "+1"); err != nil {
 		t.Errorf("React() = %v, want nil", err)
 	}
