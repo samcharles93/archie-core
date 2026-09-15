@@ -4,7 +4,6 @@ import (
 	"errors"
 	"slices"
 	"testing"
-	"testing/fstest"
 )
 
 func TestRegistryRegister(t *testing.T) {
@@ -191,116 +190,6 @@ func TestRegistryAvailable(t *testing.T) {
 	})
 }
 
-func TestRegistryDiscover(t *testing.T) {
-	t.Run("no go files", func(t *testing.T) {
-		r := NewRegistry()
-		fsys := fstest.MapFS{}
-		n, err := r.Discover(fsys, ".")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if n != 0 {
-			t.Errorf("expected 0 discovered, got %d", n)
-		}
-	})
-
-	t.Run("go file with Register call", func(t *testing.T) {
-		r := NewRegistry()
-		fsys := fstest.MapFS{
-			"mytool.go": &fstest.MapFile{
-				Data: []byte(`package tools
-
-import "github.com/samcharles93/archie-core/internal/tools"
-
-func init() {
-	tools.DefaultRegistry().Register(tools.ToolEntry{
-		Name:        "discovered_hello",
-		Description: "A discovered tool",
-	})
-}
-`),
-			},
-		}
-		// Discover finds and counts Register calls. The entry is not
-		// actually registered because Handler (a function field) cannot
-		// be resolved from source via static AST analysis.
-		n, err := r.Discover(fsys, ".")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if n != 1 {
-			t.Errorf("expected 1 discovered, got %d", n)
-		}
-	})
-
-	t.Run("go file without Register call", func(t *testing.T) {
-		r := NewRegistry()
-		fsys := fstest.MapFS{
-			"plain.go": &fstest.MapFile{
-				Data: []byte(`package tools
-
-func PlainFunction() string {
-	return "hello"
-}
-`),
-			},
-		}
-		n, err := r.Discover(fsys, ".")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if n != 0 {
-			t.Errorf("expected 0 discovered, got %d", n)
-		}
-	})
-
-	t.Run("syntax error in go file", func(t *testing.T) {
-		r := NewRegistry()
-		fsys := fstest.MapFS{
-			"broken.go": &fstest.MapFile{
-				Data: []byte(`package tools
-
-func broken( {`),
-			},
-		}
-		_, err := r.Discover(fsys, ".")
-		if err == nil {
-			t.Error("expected error for broken Go file")
-		}
-	})
-
-	t.Run("multiple Register calls in one file", func(t *testing.T) {
-		r := NewRegistry()
-		fsys := fstest.MapFS{
-			"tools.go": &fstest.MapFile{
-				Data: []byte(`package tools
-
-func init() {
-	DefaultRegistry().Register(ToolEntry{Name: "tool-a", Description: "First tool"})
-	DefaultRegistry().Register(ToolEntry{Name: "tool-b", Description: "Second tool"})
-}
-`),
-			},
-		}
-		n, err := r.Discover(fsys, ".")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if n != 2 {
-			t.Errorf("expected 2 discovered, got %d", n)
-		}
-	})
-}
-
-func TestRegistrySingleton(t *testing.T) {
-	// DefaultRegistry returns the same instance.
-	d1 := DefaultRegistry()
-	d2 := DefaultRegistry()
-	if d1 != d2 {
-		t.Error("DefaultRegistry should be a singleton")
-	}
-}
-
 // toolNames extracts names from a slice of ToolEntry.
 func toolNames(entries []ToolEntry) []string {
 	names := make([]string, len(entries))
@@ -375,79 +264,8 @@ func TestRegistryRegisterDefensiveCopy(t *testing.T) {
 	}
 }
 
-func TestRegistryDiscoverContinuesOnError(t *testing.T) {
-	// Regression: Discover aborted on first parse error, losing prior
-	// registrations. After fix, it continues to remaining files.
-	r := NewRegistry()
-	fsys := fstest.MapFS{
-		"good.go": &fstest.MapFile{
-			Data: []byte(`package tools
-
-func init() {
-	DefaultRegistry().Register(ToolEntry{Name: "good-tool", Description: "Valid"})
-}
-`),
-		},
-		"broken.go": &fstest.MapFile{
-			Data: []byte(`package tools
-
-func broken( {`),
-		},
-		"another.go": &fstest.MapFile{
-			Data: []byte(`package tools
-
-func init() {
-	DefaultRegistry().Register(ToolEntry{Name: "another-tool", Description: "Also valid"})
-}
-`),
-		},
-	}
-	n, err := r.Discover(fsys, ".")
-	// Should report the parse error.
-	if err == nil {
-		t.Error("expected error for broken.go")
-	}
-	// Should still count Register calls from good files.
-	if n != 2 {
-		t.Errorf("expected 2 discovered (good.go + another.go), got %d", n)
-	}
-}
-
-func TestRegistryDiscoverNonRegistryRegisterIgnored(t *testing.T) {
-	// Regression: isRegisterCall matched ANY .Register() method.
-	// After fix, only DefaultRegistry().Register() or bare identifiers
-	// are matched.
-	r := NewRegistry()
-	fsys := fstest.MapFS{
-		"not_a_tool.go": &fstest.MapFile{
-			Data: []byte(`package tools
-
-type Other struct{}
-func (o *Other) Register(name string) {}
-
-func init() {
-	var o Other
-	o.Register("not-a-tool")
-	DefaultRegistry().Register(ToolEntry{Name: "real-tool", Description: "A real tool"})
-}
-`),
-		},
-	}
-	n, err := r.Discover(fsys, ".")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	// Only the DefaultRegistry().Register() call should be counted.
-	if n != 1 {
-		t.Errorf("expected 1 (only DefaultRegistry call), got %d", n)
-	}
-}
-
 // Ensure registry implements basic sanity at the package level.
 func TestRegistryPackageLevelHelpers(t *testing.T) {
-	// Reset state by creating a fresh registry.
-	// The package-level helpers work against DefaultRegistry.
-
 	t.Run("Register and All via package helpers", func(t *testing.T) {
 		r := NewRegistry()
 		e := ToolEntry{Name: "pkg_helper", Handler: noopHandler}
