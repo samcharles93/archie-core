@@ -1,177 +1,174 @@
 # Contract conformance audit — decision
 
-**Status:** Decided, implementing
+**Status:** Implemented as an **advisory** report. Deliberately **not** part of
+`task check`.
 **Date:** 2026-09-15
 **Authority:** sibling to `archie-core-06ag` (standing reachability audit) and
-`docs/architecture/dependencies-and-contracts.md`. Does not replace either.
-**Extends:** `docs/architecture/generated-documentation.md` (the `docsgen check`
-gap it admits at line 331), `docs/prds/config-example-drift.md` (step 3).
+`docs/architecture/dependencies-and-contracts.md`. Replaces neither.
+**Open:** withdraw it, or rebuild it structurally. See "Open decision" — not to
+be resolved by hardening the regexes.
 
 ## Question
 
-Archie has strong contract enforcement at exactly one boundary and none at the
-rest. `proto/*.proto` is generated, linted against `main`, and regenerated in
-`task check`; `proto:check` fails on any drift. The **application** boundary —
-where the dashboard, the generated documentation, and the shipped asset bundle
-meet their consumers — has no equivalent, and three separate documents already
-admit drift there in writing.
+Does every declared contract surface have a consumer, or an explicit declaration
+that it has none?
 
-Should contract conformance be a standing, runnable audit like `reachaudit`?
+Reachability (`tools/reachaudit`) asks the complementary question — *is this code
+in a shipped binary?* — and cannot see a capability that is **reachable and
+unconsumed**. `ratelimit` was in the binary closure and called by nothing
+(`archie-core-6wxb`); reachability would not have found that.
 
 ## Decision
 
-**Yes, and it is a sibling of reachability, not a replacement.** Reachability asks
-*"is this code in a shipped binary?"*. Conformance asks the complementary
-question: *"does every declared contract surface have a consumer, or an explicit
-declaration that it has none?"* A capability can be reachable and unconsumed —
-`ratelimit` was in the binary closure and called by nothing
-(`archie-core-6wxb`). Reachability would not have found that; this would.
+Yes, as an advisory survey. `tools/contractaudit` classifies each subject of each
+surface:
 
-The audit reports three classifications, and **the third is the only finding**:
-
-| Classification | Meaning | Action |
+| Classification | Meaning | Fails `--strict`? |
 | --- | --- | --- |
-| `CONSUMED` | a non-test client call site exercises it | none |
-| `DECLARED-UNCONSUMED` | named in the declaration file with a reason and a tracker id | none — it is tracked work |
-| `UNDECLARED-UNCONSUMED` | nobody reaches it and nobody declared it | **the finding** |
+| `CONSUMED` | a call site exercises it | no |
+| `DECLARED-UNCONSUMED` | allowlisted in `docs/contract-declarations.json`, with a reason and a tracker | no |
+| `UNDECLARED-UNCONSUMED` | nobody reaches it, nobody declared it | **yes** |
+| `STALE-DECLARATION` | an allowlist entry that is no longer true | **yes** |
 
-`DECLARED-UNCONSUMED` is a status, not a defect — the same posture `reachaudit`
-takes with `unreachable-tracked`. The declaration file is an allowlist that
-**must match reality exactly**: an entry naming a surface that is now consumed is
-itself a failure (stale declaration), because a stale allowlist is how a gate
-quietly stops checking anything.
+There are **four** classes and **two** of them fail. The allowlist must match
+reality exactly, and it fails in both directions: a missing entry is a finding,
+and an entry that outlived its subject is a finding, because a stale allowlist is
+how a check quietly stops checking anything.
 
-### Surfaces, and what proves each is consumed
+**Not gated.** `task contract` is advisory and `task check` does not run it,
+matching `tools/reachaudit`. The surfaces are discovered by scanning source text,
+so a rename or a reformat elsewhere in the tree can change the output with nothing
+actually wrong. It has already produced 16 false "unconsumed" readings once, when
+the dashboard's request helper was renamed. A check that can fail for reasons
+unrelated to what it measures must not be able to break a build.
 
-| Surface | Contract of record | Consumed means |
+## Surfaces actually built — three, not five
+
+| Surface | Subjects | "Consumed" means |
 | --- | --- | --- |
-| `proto/state/v1` `StateStoreService` (43 RPCs) | the `.proto` | an exported method on `staterpc.Client` whose body calls that RPC |
-| `proto/gateway/v1` `ChatService` (12 RPCs) | the `.proto` | an exported method on `gatewayrpc.Client` calling that RPC |
-| `internal/webui` HTTP routes (52) | the `registerX` call sites | a path literal in `ui/src/base/api.jsx` or an `EventSource` subscriber |
-| `docs/data/generated/contracts.json` | `tools/docsgen` | a committed-artifact comparison (`docsgen check`) |
-| `ui/dist` | `ui/src` | a rebuild that produces no diff |
+| `proto/state/v1` `StateStoreService` | **45 RPCs** | an adapter body calls `client.<Rpc>(...)` |
+| `proto/gateway/v1` `ChatService` | **21 RPCs** | same |
+| `internal/webui` dashboard routes | **49 routes** | a path literal appears as a call argument under `ui/src` |
 
-RPC coverage is derived by **reflection over the exported client type**, not by
-parsing call sites. If a method exists, the generated `grpc` interface already
-forced it to make a real RPC call, so presence of the method *is* the proof of
-consumption. This keeps the check exact without a call-graph.
+Consumption for the gRPC surfaces is established by **scanning adapter source
+text** for calls through the generated client, not by reflection. See the errata
+below: the first revision of this document claimed reflection, and the first
+implementation did use it, but the shipped mechanism is a regex and the document
+was not updated to match.
 
-## The two gaps this closes immediately
+## What this audit has actually found
 
-Both are already admitted in writing; neither is implemented.
+**Nothing actionable.** On the current tree it reports 0 undeclared and 0 stale.
+Its only allowlisted entries are two RPCs superseded by their streaming variants
+(`ListCaptures`, `ListUndispatchedCaptures`), which were already known from the
+source comment on `staterpc.Client.ListCaptures`.
 
-**1. `docsgen check` is documented and does not exist.**
-`generated-documentation.md:118-121` advertises `docsgen data|asyncapi|all|check`
-and line 336 gives the invocation `go -C tools run ./docsgen check --repo-root ..`.
-`tools/docsgen/main.go` defines exactly two flags, `--repo-root` and `--out`, and
-`run()` unconditionally writes. Line 331 admits "`task check` does not run
-`docs:check`, so generated drift is currently ungated" — and it cannot, because
-there is no `check` mode and no `docs:*` task to run.
+Every real defect found in the session that produced this tool was found by other
+means:
 
-**2. The dashboard's client is not centralised, and its own comments say it is.**
-`ui/src/base/api.jsx` opens with "Single place that knows how to talk to archied.
-Every feature folder goes through this, so auth handling and error shape live in
-one file." **22 of its 39 calls use a raw `fetch()` that bypasses its own `req()`
-wrapper**, and `ui/src/chat/chat.jsx:406` calls `fetch("/api/chat/stream")` from
-outside `api.jsx` entirely. The consequence is concrete, not stylistic: `req()`
-is the only place that maps `401` to `ApiError("unauthorised", 401)`, which
-`classifyActionError` turns into `session-expired`. Every raw-`fetch` path
-therefore reports an expired session as a generic `refused`/`broken` failure —
-which is the exact defect `archie-core-1786637490536-29-f1dab2c4` ("Make dashboard
-authentication and connectivity failures actionable") exists to fix.
+- the three 415 refusals, by reading `authorizeTaskMutation` and reproducing the
+  browser's exact headers against the real handler;
+- the dashboard client's duplicated request plumbing, by reading the module.
 
-This is the check the audit's own harness must survive: it asserts the
-centralisation claim, and today it fails.
+Recorded plainly because a survey that has never found anything is evidence about
+the survey, not about the tree.
 
-## Shape
+## Errata — claims in the first revision of this document that were false
 
-```text
-tools/contractaudit/
-  main.go         # flag parsing, report rendering (advisory by default)
-  surface.go      # Surface interface: Name() + Findings() []Finding
-  proto.go        # RPC coverage by reflection over the exported client types
-  webui.go        # route registration vs ui/src call sites
-  generated.go    # docsgen check-mode comparison
-  declarations.go # the allowlist, with exact-match staleness
-  testdata/       # negative-test fixtures
-docs/contract-declarations.json   # DECLARED-UNCONSUMED allowlist
-```
+- **"RPC coverage is derived by reflection over the exported client type."**
+  It is not. `proto.go` regex-scans adapter bodies for `client.Method(` calls.
+  The reflection version was replaced and the document was not updated. The unused
+  `google.golang.org/grpc` family in `tools/go.mod` was residue from that
+  iteration; `go mod tidy` removed it on 2026-09-15.
+- **Surface sizes of "43 / 12 / 52".** The real counts are 45 / 21 / 49.
+- **"Three classifications, and the third is the only finding."** Four classes,
+  two of which fail.
+- **"Raw `fetch()` calls caused 401s to render as `refused`/`broken`."** Wrong.
+  Every raw call site passed `res.status` to `ApiError`, so `classifyActionError`
+  already mapped 401 to `session-expired`; the chat stream never classified at
+  all. The real defect in that area was different (below).
+- **A five-surface "Shape" naming `surface.go`, `generated.go`,
+  `declarations.go`, and `testdata/`.** None were written. The real files are
+  `main.go`, `audit.go`, `proto.go`, `webui.go`.
 
-Finding shape, stable because tests and the report both consume it:
+## The two gaps this was aimed at
 
-```go
-type Finding struct {
-    Surface    string // "proto/state/v1"
-    Subject    string // "StateStoreService/TokensByDay"
-    Class      string // CONSUMED | DECLARED-UNCONSUMED | UNDECLARED-UNCONSUMED
-    Evidence   string // file:line, or the reason string
-    Tracker    string // bead id for DECLARED entries, empty otherwise
-}
-```
+**1. `docsgen check` is documented and does not exist.** Still open, filed as
+`archie-core-5gzx`. `generated-documentation.md:118-121` advertises
+`docsgen data|asyncapi|all|check`; `tools/docsgen/main.go` has exactly two flags
+and always writes, so the documented check mode cannot run and line 331's
+"generated drift is currently ungated" stands.
 
-Advisory is the default: findings print, exit status is 0. `--strict` (and
-`task contract` in the gate, once the initial findings are triaged) fails on any
-`UNDECLARED-UNCONSUMED` or stale declaration.
+**2. The dashboard's client was not centralised while its own docstring claimed
+it was.** Now closed by `18e8f8f`. The docstring said "Single place that knows how
+to talk to archied… so auth handling and error shape live in one file" while 22
+call sites built their own `fetch`, headers, timeout and error handling, and
+`chat.jsx` built a 23rd. The defect actually present there was that three
+bodyless mutations — `bindingApprove`, `mappingDelete`, `bindingDelete` — omitted
+`Content-Type` and were refused **415** on every use, because
+`authorizeTaskMutation` requires a JSON media type even when there is no body.
+The Go tests missed it because their helper set `Content-Type` unconditionally,
+including for a nil body.
 
-## Blind spots, labelled rather than omitted
+## Testing rule — applies to this tool and to anything like it
 
-Following `reachaudit`'s rule that Yaegi/reflection packages are "labelled, never
-presented as dead":
+**Do not assert on the wording, formatting, or content of generated or
+hand-authored text and config files.** A test that pins a source snippet, injects
+text into a fixture, or counts an identifier in a file is testing that file's
+formatting rather than the behaviour under test: an extra space, a newline, a
+rename, or a comment that merely mentions the token breaks it, and the
+maintenance burden is permanent. A test that cannot tell "the code is wrong" from
+"the file is formatted differently" is testing the wrong thing.
 
-- **Runtime-loaded code** (Yaegi, reflection) — a route or RPC reached only
-  through dynamic dispatch reads as unconsumed. Labelled with the package list.
-- **Dashboard call-site extraction is textual, and deliberately narrow.** A path
-  counts as a consumer only when it is the *first argument of a call* in code:
-  the function need not be named (so renaming `req(` to `request(` is fine), but
-  a bare constant, a dead array, an object property, or a commented-out call
-  must not count. Both halves are load-bearing, and they pull in opposite
-  directions.
+Assert behaviour on the observable effect — the request a client makes, the value
+a function returns — and keep parsing out of the assertion. Where a parser must
+exist, test it through its own interface with in-memory input, not through a file
+on disk.
 
-  Naming the call broke on rename: matching `req|fetch` reported 16 live routes
-  as unconsumed the moment the dashboard's helper was renamed. Dropping the
-  call requirement was **worse**, and is recorded here because it is the more
-  tempting mistake: crediting any quoted `/api/...` literal meant a comment, a
-  retired-route array, or a display label proved a route was reachable, so
-  deleting every real request still read as healthy. The two directions are not
-  symmetric — a false "unconsumed" is a loud, fixable failure, while a false
-  "consumed" is a silent hole, which is worse than having no gate.
+The first revision of this tool violated this in six tests (four that injected
+text into fixtures, two that asserted on a source file's contents). All six were
+deleted on 2026-09-15. The dashboard suite's "api.jsx holds exactly one fetch
+call" check was deleted for the same reason: it broke on a reformat and on a
+comment that mentioned `fetch`, and it was patched with a comment-stripper instead
+of being removed. Every `api.*` method is now covered behaviourally instead, by
+asserting the headers and body each one sends.
 
-  Remaining limits: a path passed as any argument other than the first is not
-  seen (accepting a comma would start crediting array elements and restore the
-  vacuity above); a request written inside a template-literal interpolation is
-  not seen; and a path built from a bare `/api` fragment is reported as
-  unparsable rather than silently contributing nothing.
-- **Routes are credited per path, not per verb.** A literal does not say which
-  HTTP verb carries it, so a route is credited to every verb and a route whose
-  specific verb has no caller reads as consumed.
-- **An `EventSource` subscription is a consumer.** `/events` and
-  `/api/logs/stream` are consumed via `EventSource`, not `fetch`; an extractor
-  that only looks for `fetch` reports them unconsumed and is simply wrong.
+## Open decision
+
+1. **Withdraw.** Delete the tool, the allowlist, this document, and the `contract`
+   task. It has found nothing, its mechanism is unsound, and the same question is
+   better asked by a behavioural test per method.
+2. **Rebuild structurally.** Take the contract from the compiler instead of from
+   text: the generated `StateStoreServiceClient` / `ChatServiceClient` interfaces
+   give the exact RPC set, and `go/ast` over the adapter bodies and
+   `internal/webui/server.go` is formatting-insensitive where a regex is not.
+   Cost: the dashboard-consumer half has no Go-native JS parser, so it is either
+   dropped or replaced by a behavioural test per route — which is what would have
+   caught the 415s.
+
+Neither is "make the regexes cleverer". Recorded here rather than acted on
+unilaterally because withdrawing a capability and rebuilding one are both larger
+decisions than adding a report.
 
 ## Acceptance
 
-1. `go -C tools run ./contractaudit` runs on demand and prints a report; exit 0.
-2. Every unconsumed surface appears with a classification and, where declared, a
-   reason and tracker id.
-3. The declaration file fails on a **new** undeclared entry *and* on a **stale**
-   entry that is no longer true.
-4. Blind spots are labelled in the report, never silently counted as findings.
-5. Findings are advisory; nothing is deleted or rewritten by this tool.
-6. `docsgen check` exists and `task check` runs it, so committed generated data
-   cannot drift.
-7. **Each check is negative-tested**: a violation is injected, the check is
-   confirmed to fail for the right reason, and the injection is reverted. A check
-   that has never failed is not a check.
+1. `task contract` prints a report and exits 0.
+2. Every unconsumed subject appears with a classification, and where declared with
+   a reason and a tracker id.
+3. `--strict` fails on an undeclared entry **and** on a stale one. Verified by
+   construction against a copy of the tree, not by asserting on the tree's text.
+4. The tool neither deletes nor rewrites anything.
+5. No test in this tool asserts on the content or formatting of another file.
 
 ## Non-goals
 
 - No runtime schema validation of HTTP responses. The webui handlers already
   return non-nil slices on every empty path (`[]SkillView{}`, `[]CuratorView{}`,
-  `make([]taskView, len(tasks))`), so the nil-slice class does not currently
-  apply; adding a live-stack validator before it has a defect to find is
-  scaffolding, not a gate. Recorded as deferred, not rejected.
-- No re-parse of the proto as a second source of truth. The generated Go types
-  are the contract; `buf lint`/`buf breaking` already own the `.proto`.
+  `make([]taskView, len(tasks))`), so the nil-slice class does not apply; adding a
+  live-stack validator before it has a defect to find is scaffolding. Deferred,
+  and filed as `archie-core-nddv`.
+- No re-parse of the `.proto` as a second source of truth; `buf lint` and
+  `buf breaking` already own it.
 - No generation of `config.example.toml` or `deployments/*.toml` — settled
   against in `config-example-drift.md`.
 - No change to `tools/reachaudit`'s scope or report shape.

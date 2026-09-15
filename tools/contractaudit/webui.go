@@ -10,15 +10,14 @@ import (
 )
 
 // webUISurface reports HTTP route coverage for the dashboard API. The contract
-// of record is the `registerXRoutes` call sites in internal/webui, and the
-// consumers are the path literals the dashboard's client actually calls.
+// of record is the route registrations in internal/webui, and the consumers are
+// the path literals written under ui/src.
 //
-// This is the one surface with no schema at all: 52 routes and their response
-// shapes are hand-matched against ui/src, so it is also the one that needs the
-// check the most. The extractor fails loudly rather than under-reporting -- see
-// scanFile -- because a call shape it cannot parse would otherwise make every
-// route it feeds look unconsumed, and a false finding in a gate is worse than
-// no gate.
+// This surface has no schema at all, so the two lists are hand-matched and the
+// matching is textual. It is advisory for that reason: a rename or a reformat
+// elsewhere can change the result with nothing wrong, and it has already
+// reported a batch of false "unconsumed" routes once when the dashboard's
+// request helper was renamed. Do not gate a build on this.
 type webUISurface struct {
 	root string
 }

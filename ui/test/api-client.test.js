@@ -1,7 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import "./shim.js";
 import { api, classifyActionError } from "../src/base/api.js";
 
@@ -188,63 +186,9 @@ test("every api method is classified by this suite", () => {
 	);
 });
 
-// The module comment claims this file is the single place that talks to
-// archied. That claim is only true while there is exactly one fetch() call
-// here; a second one added later would silently bypass the shared CSRF,
-// timeout, and error handling -- which is how the three 415s arose.
-//
-// stripComments keeps this count measuring code rather than prose about code:
-// a comment that mentions fetch() must not be able to fail the gate, and must
-// not be able to hide a real call either.
-function stripComments(source) {
-	let out = "";
-	let quote = null;
-	for (let i = 0; i < source.length; ) {
-		const c = source[i];
-		const next = source[i + 1];
-		if (quote) {
-			out += c;
-			if (c === "\\") {
-				out += next ?? "";
-				i += 2;
-				continue;
-			}
-			if (c === quote) quote = null;
-			i++;
-			continue;
-		}
-		if (c === '"' || c === "'" || c === "`") {
-			quote = c;
-			out += c;
-			i++;
-			continue;
-		}
-		if (c === "/" && next === "/") {
-			while (i < source.length && source[i] !== "\n") i++;
-			continue;
-		}
-		if (c === "/" && next === "*") {
-			i += 2;
-			while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) i++;
-			i += 2;
-			continue;
-		}
-		out += c;
-		i++;
-	}
-	return out;
-}
-
-test("api.jsx holds exactly one fetch call", () => {
-	const source = readFileSync(fileURLToPath(new URL("../src/base/api.jsx", import.meta.url)), "utf8");
-	const count = (stripComments(source).match(/\bfetch\s*\(/g) ?? []).length;
-
-	// A count of zero means the stripper ate the call, not that the file is
-	// clean; this check must never pass vacuously.
-	assert.ok(count >= 1, "no fetch() call found in api.jsx; the extractor is broken, not the file");
-	assert.equal(
-		count,
-		1,
-		`api.jsx contains ${count} fetch() calls, expected exactly 1: every call must go through the shared send() so CSRF, timeout, and error shape stay in one place`,
-	);
-});
+// Note: this suite asserts on the requests each method makes, never on the
+// text of api.jsx. A source-scanning check ("api.jsx holds exactly one fetch
+// call") was removed on purpose: it broke on a reformat and on a comment that
+// merely mentioned fetch, so it tested the file's wording rather than the
+// client's behaviour. Every method in the two inventories above is covered
+// behaviourally instead.

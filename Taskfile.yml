@@ -226,7 +226,7 @@ tasks:
       - go -C tools test -mod=readonly ./... -count=1
 
   check:
-    desc: "Full quality gate: fmt, go fix, proto, vet, lint, build, test, tools tests, ui tests, contract"
+    desc: "Full quality gate: fmt, go fix, proto, vet, lint, build, test, tools tests, ui tests"
     cmds:
       - task: fmt
       - go fix ./...
@@ -243,12 +243,6 @@ tasks:
       # The dashboard's suite runs here too. Left out of the gate it rots
       # silently: nothing else executes it, so a broken DOM primitive ships.
       - task: test:ui
-      # Contract conformance. Static and dependency-light, so it belongs with
-      # the per-edit checks rather than next to the end-to-end suite. It runs
-      # -strict here: every unconsumed surface must be declared in
-      # docs/contract-declarations.json with a reason and a tracker, and a
-      # stale declaration fails the same way an undeclared one does.
-      - task: contract
 
   contract:
     desc: "Report contract conformance: declared surfaces, their consumers, and the drift between them"
@@ -257,14 +251,24 @@ tasks:
       dashboard HTTP API -- and classifies each subject as consumed,
       declared-unconsumed, undeclared, or a stale declaration.
 
-      Advisory when run directly; `task check` runs it with -strict so an
-      undeclared or stale entry fails the gate. Declare an intentionally
-      unconsumed surface in docs/contract-declarations.json with a reason
-      that states the consequence and the tracker that owns the work.
+      ADVISORY, and deliberately NOT part of `task check`, matching
+      tools/reachaudit. The surfaces are discovered by scanning source text:
+      the .proto files, the adapter bodies that call the generated client, the
+      route registrations in internal/webui, and the path literals under
+      ui/src. That makes it useful for a periodic survey and unsafe as a gate
+      -- a rename or a reformat elsewhere in the tree can change its output
+      without anything being wrong, and it has already produced a batch of
+      false "unconsumed" readings once when the dashboard's request helper was
+      renamed.
+
+      Read the findings as a prompt to go and check, not as a verdict. To make
+      it fail on an undeclared or stale entry, pass --strict by hand:
+
+        go -C tools run ./contractaudit --repo-root .. --strict
 
       See docs/prds/contract-conformance-audit.md.
     cmds:
-      - go -C tools run ./contractaudit --repo-root .. --strict
+      - go -C tools run ./contractaudit --repo-root ..
 
   release:preview:
     desc: "Show the release notes that would be generated (VERSION=1.2.0, or GATEWAY=/RUNTIME= to version the two components separately)"

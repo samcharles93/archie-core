@@ -127,25 +127,32 @@ func New(root, declPath string) (*Audit, error) {
 	}, nil
 }
 
+// parseDeclarations decodes the allowlist from r. Decoding is separate from
+// reading the file so its rules can be exercised without authoring a file.
+func parseDeclarations(r io.Reader) (Declarations, error) {
+	var declarations Declarations
+	if err := json.NewDecoder(r).Decode(&declarations); err != nil {
+		return Declarations{}, fmt.Errorf("parse declarations: %w", err)
+	}
+	if declarations.Surfaces == nil {
+		declarations.Surfaces = map[string]map[string]Declaration{}
+	}
+	return declarations, nil
+}
+
 // loadDeclarations reads the allowlist. A missing file is not an error: an
 // empty allowlist is the correct starting state and makes every unconsumed
 // subject an undeclared finding, which is the honest first report.
 func loadDeclarations(path string) (Declarations, error) {
-	raw, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if os.IsNotExist(err) {
 		return Declarations{Surfaces: map[string]map[string]Declaration{}}, nil
 	}
 	if err != nil {
 		return Declarations{}, fmt.Errorf("read declarations: %w", err)
 	}
-	var declarations Declarations
-	if err := json.Unmarshal(raw, &declarations); err != nil {
-		return Declarations{}, fmt.Errorf("parse %s: %w", path, err)
-	}
-	if declarations.Surfaces == nil {
-		declarations.Surfaces = map[string]map[string]Declaration{}
-	}
-	return declarations, nil
+	defer f.Close()
+	return parseDeclarations(f)
 }
 
 // Run walks every surface and returns findings sorted by surface then subject.

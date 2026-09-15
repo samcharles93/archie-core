@@ -1,8 +1,8 @@
 package main
 
 import (
-	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -84,7 +84,8 @@ func TestUndeclaredCountCountsOnlyFindings(t *testing.T) {
 
 // TestLoadDeclarationsMissingFileIsEmpty asserts an absent allowlist is the
 // correct starting state: every unconsumed subject becomes undeclared, which
-// is the honest first report rather than a silent pass.
+// is the honest first report rather than a silent pass. The path is never
+// created, so no file content is involved.
 func TestLoadDeclarationsMissingFileIsEmpty(t *testing.T) {
 	declarations, err := loadDeclarations(filepath.Join(t.TempDir(), "absent.json"))
 	if err != nil {
@@ -95,15 +96,38 @@ func TestLoadDeclarationsMissingFileIsEmpty(t *testing.T) {
 	}
 }
 
-// TestLoadDeclarationsRejectsMalformed asserts a broken allowlist fails loudly
-// rather than degrading to "no declarations", which would silently turn every
-// declared entry into a finding nobody could clear.
-func TestLoadDeclarationsRejectsMalformed(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "bad.json")
-	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := loadDeclarations(path); err == nil {
-		t.Error("loadDeclarations(malformed) error = nil, want a parse failure")
-	}
+// TestParseDeclarations covers the decoding rules in memory, so no file is
+// authored and no formatting of an external file can affect the outcome.
+func TestParseDeclarations(t *testing.T) {
+	t.Run("an empty object is usable", func(t *testing.T) {
+		declarations, err := parseDeclarations(strings.NewReader("{}"))
+		if err != nil {
+			t.Fatalf("error = %v, want nil", err)
+		}
+		if declarations.Surfaces == nil {
+			t.Error("surfaces = nil, want a non-nil empty map so a lookup cannot panic")
+		}
+	})
+
+	t.Run("entries are decoded", func(t *testing.T) {
+		declarations, err := parseDeclarations(strings.NewReader(
+			`{"surfaces":{"s":{"Svc/Method":{"reason":"because","tracker":"abc.1"}}}}`,
+		))
+		if err != nil {
+			t.Fatalf("error = %v, want nil", err)
+		}
+		entry := declarations.Surfaces["s"]["Svc/Method"]
+		if entry.Reason != "because" || entry.Tracker != "abc.1" {
+			t.Errorf("entry = %+v, want the reason and tracker preserved", entry)
+		}
+	})
+
+	t.Run("malformed input is rejected", func(t *testing.T) {
+		// A broken allowlist must fail loudly rather than degrading to "no
+		// declarations", which would turn every declared entry into a finding
+		// nobody could clear.
+		if _, err := parseDeclarations(strings.NewReader("{not json")); err == nil {
+			t.Error("error = nil, want a parse failure")
+		}
+	})
 }
