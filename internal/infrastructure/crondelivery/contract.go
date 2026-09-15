@@ -26,6 +26,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/scheduling"
 	"github.com/samcharles93/archie-core/internal/infrastructure/cronstore"
@@ -41,6 +42,32 @@ type SpecLookup interface {
 	// Get returns the job and whether it was found; the error is reserved
 	// for I/O failures, matching cronstore.Store.Get.
 	Get(ctx context.Context, id string) (cronstore.JobSpec, bool, error)
+}
+
+// RunRecorder advances a job's schedule once a run has completed. It is
+// declared here (consumer-owned) for the same reason SpecLookup is, and
+// *cronstore.Store satisfies it as written.
+//
+// MarkRun is the only step that moves a job's NextRun, so a store whose Due
+// keeps reporting an already-completed job keeps handing it back on every
+// tick: an interval job fires once per tick instead of once per interval. The
+// record is written only for a successful run, matching the store's own
+// contract that an interval or cron schedule fires "after the last successful
+// run" -- a failed run retries at the tick rate rather than silently skipping
+// its slot.
+type RunRecorder interface {
+	// MarkRun records that id ran at runAt and advances NextRun to the
+	// schedule's next firing.
+	MarkRun(ctx context.Context, id string, runAt time.Time) error
+}
+
+// RouterStore is what the Router needs from persistence: resolve a job id to
+// its spec, and record the run once it succeeds. The per-kind runners still
+// take the narrower SpecLookup -- they dispatch one already-hydrated job and
+// have no business moving its schedule.
+type RouterStore interface {
+	SpecLookup
+	RunRecorder
 }
 
 // Courier sends one chat message. It is the whole outbound surface this
@@ -83,4 +110,8 @@ func hydrate(ctx context.Context, specs SpecLookup, job scheduling.Job) (cronsto
 }
 
 // compile-time check: the store is the lookup a deployment hands in unchanged.
-var _ SpecLookup = (*cronstore.Store)(nil)
+var (
+	_ SpecLookup  = (*cronstore.Store)(nil)
+	_ RunRecorder = (*cronstore.Store)(nil)
+	_ RouterStore = (*cronstore.Store)(nil)
+)

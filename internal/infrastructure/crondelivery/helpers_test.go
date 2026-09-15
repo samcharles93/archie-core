@@ -103,6 +103,12 @@ func (f *fakeLookup) Get(_ context.Context, id string) (cronstore.JobSpec, bool,
 	return spec, ok, nil
 }
 
+// MarkRun satisfies RouterStore. It deliberately does nothing: these tests
+// exercise the runner's and the router's own dispatch guards, and the record
+// step is covered against the real store in
+// TestRouterAdvancesTheScheduleAfterASuccessfulRun.
+func (f *fakeLookup) MarkRun(_ context.Context, _ string, _ time.Time) error { return nil }
+
 // fakeCourier records what was sent and can be made to fail or to block until
 // cancelled.
 type fakeCourier struct {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/scheduling"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -21,7 +22,9 @@ const phaseDispatch = "dispatch"
 
 // Router is the single Runner the engine is given. It resolves a due job's
 // kind from its persisted spec and hands the job to that kind's runner,
-// keeping the engine unaware that more than one delivery exists.
+// keeping the engine unaware that more than one delivery exists. Once a run
+// has succeeded it also records the run, which is what moves a recurring job's
+// NextRun.
 //
 // An unknown kind is refused, not failed. It is reported on the event stream
 // as KindJobError with phase "dispatch" — naming the gate, so an operator can
@@ -30,7 +33,7 @@ const phaseDispatch = "dispatch"
 // (phase "run"), conflating the two, and would leave the job looking like it
 // tried and broke on every tick.
 type Router struct {
-	specs   SpecLookup
+	specs   RouterStore
 	runners map[string]scheduling.Runner
 	sink    scheduling.Sink
 }
@@ -42,7 +45,7 @@ type Router struct {
 //
 // An empty kind resolves to cronstore.KindChat, so a deployment only needs a
 // mapping for the kinds it actually uses.
-func NewRouter(specs SpecLookup, runners map[string]scheduling.Runner, sink scheduling.Sink) (*Router, error) {
+func NewRouter(specs RouterStore, runners map[string]scheduling.Runner, sink scheduling.Sink) (*Router, error) {
 	if specs == nil {
 		return nil, errors.New("crondelivery: spec lookup must not be nil")
 	}
@@ -71,7 +74,27 @@ func (r *Router) Run(ctx context.Context, job scheduling.Job) error {
 		r.refuse(job, kind)
 		return nil
 	}
-	return runner.Run(ctx, job)
+	if err := runner.Run(ctx, job); err != nil {
+		return err
+	}
+	return r.recordRun(ctx, job)
+}
+
+// recordRun advances the job's schedule after a successful run. Without it the
+// store has no record that the job ran, so its NextRun stays in the past and
+// Due reports the job again on every tick: a job scheduled hourly fires once
+// per tick instead.
+//
+// A schedule kind with no recurring next run -- a one-shot -- reports
+// cronstore.ErrScheduleUnsupported, which is the job's definition rather than a
+// run failure, so it is swallowed. Anything else is returned: the run happened
+// but the bookkeeping did not, and hiding that would leave the job silently
+// re-firing.
+func (r *Router) recordRun(ctx context.Context, job scheduling.Job) error {
+	if err := r.specs.MarkRun(ctx, job.ID, time.Now()); err != nil && !errors.Is(err, cronstore.ErrScheduleUnsupported) {
+		return fmt.Errorf("crondelivery: record run of job %q: %w", job.ID, err)
+	}
+	return nil
 }
 
 // refuse reports a job whose kind has no runner. The data map matches the

@@ -361,3 +361,71 @@ func TestImplementsSchedulingRunner(t *testing.T) {
 		_ scheduling.Runner = (*Router)(nil)
 	)
 }
+
+// TestRouterAdvancesTheScheduleAfterASuccessfulRun is the acceptance criterion
+// for a recurring job's timing: cronstore.Store.MarkRun is the only step that
+// moves a job's NextRun, and the Router is the single Runner the engine hands
+// every job. With no caller the store keeps reporting the job due on every
+// tick, so a job scheduled every hour fires once per tick instead.
+func TestRouterAdvancesTheScheduleAfterASuccessfulRun(t *testing.T) {
+	s := newStore(t)
+	job := createJob(t, s, chatSpec("advance", "chat-1", "hello"))
+
+	before, ok, err := s.Get(t.Context(), job.ID)
+	if err != nil || !ok {
+		t.Fatalf("Get before = (%+v, %v, %v)", before, ok, err)
+	}
+	if !before.NextRun.Before(time.Now()) {
+		t.Fatalf("fixture is not due: NextRun = %v", before.NextRun)
+	}
+
+	r, err := NewRouter(s, map[string]scheduling.Runner{
+		cronstore.KindChat: &countingRunner{},
+	}, &recordingSink{})
+	if err != nil {
+		t.Fatalf("NewRouter: %v", err)
+	}
+	if err := r.Run(t.Context(), job); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	after, ok, err := s.Get(t.Context(), job.ID)
+	if err != nil || !ok {
+		t.Fatalf("Get after = (%+v, %v, %v)", after, ok, err)
+	}
+	if after.LastRun == nil {
+		t.Error("LastRun is nil after a successful run: the run was never recorded")
+	}
+	if !after.NextRun.After(time.Now()) {
+		t.Fatalf("NextRun = %v (was %v): a completed interval job is still due, so it re-fires on every tick",
+			after.NextRun, before.NextRun)
+	}
+}
+
+// TestRouterToleratesAOnceScheduleWithoutANextRun pins the other half: a
+// one-shot job has no recurring next run by definition, so MarkRun reports
+// cronstore.ErrScheduleUnsupported. That is not a run failure -- the job ran --
+// and returning it would make the engine emit KindJobError for a job that
+// succeeded.
+func TestRouterToleratesAOnceScheduleWithoutANextRun(t *testing.T) {
+	s := newStore(t)
+	at := time.Now().Add(-time.Hour)
+	job := createJob(t, s, cronstore.JobSpec{
+		ID:       "one-shot",
+		Detail:   "one-shot job",
+		Kind:     cronstore.KindChat,
+		Schedule: cronstore.Schedule{Kind: cronstore.ScheduleOnce, At: &at},
+		Target:   cronstore.Target{ChatID: "chat-1"},
+		Payload:  cronstore.Payload{Text: "once"},
+	})
+
+	r, err := NewRouter(s, map[string]scheduling.Runner{
+		cronstore.KindChat: &countingRunner{},
+	}, &recordingSink{})
+	if err != nil {
+		t.Fatalf("NewRouter: %v", err)
+	}
+	if err := r.Run(t.Context(), job); err != nil {
+		t.Fatalf("Run on a once schedule = %v, want nil (no recurring next run is not a failure)", err)
+	}
+}
