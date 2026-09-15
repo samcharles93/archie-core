@@ -176,6 +176,18 @@ this pass. It is tracked as separate, appropriately-scoped bd issues (see
 lands with its own behavioural verification instead of one large diff no one
 can safely review.
 
+**Amended 2026-09-15.** `internal/infrastructure/gatewayrpc.StoreClient` is the
+adapter this migration will need: it implements `messaging.SessionStore` over
+the chat service's session-store RPCs and is proven by
+`TestStoreClientPreservesCanonicalRecords`. It is deliberately unwired.
+Production `archied` dials the standalone gateway for `ChatContract` only
+(`composeChatContract` → `gatewayrpc.Dial` returns a `*Client`, not a
+`*StoreClient`), and the daemon's session store is in-process SQLite via
+`makeTelegramSessionStore`. The test comment that says it mirrors production
+describes the target, not today's tree. Kept rather than deleted because the
+migration it serves is deferred by this very section, and re-deriving a tested
+wire adapter once that lands is pure cost.
+
 ### 3. Identity data migration
 
 The migration must define:
@@ -442,6 +454,16 @@ decision, and so are the renderer's page templates and any developer commands
 or CI sequence that would accompany one. Adapting the generator and implementing
 Archie's normalized documentation model remain migration work rather than open
 product architecture.
+
+**Amended 2026-09-15.** `internal/infrastructure/servicediscovery/nats`
+implements the `servicediscovery.ServiceRegistry` contract (Connect, Register,
+Resolve, Watch) over NATS KV and is fully tested, but no production code
+constructs it and no config surface exposes it. This is a deliberate deferral,
+not an oversight: service-to-service addressing belongs to the runtime and
+process boundary work in section 6, which currently pins container addressing
+by injecting the daemon's startup NATS URL rather than resolving through a
+registry. The scaffold is kept for that work; re-derive it only if the
+addressing model changes.
 
 ### 8. Cutover sequence
 
