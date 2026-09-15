@@ -403,21 +403,15 @@ export function ChatApp() {
         controller.abort();
       }, 120000);
 
-      const response = await fetch("/api/chat/stream", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-        body: JSON.stringify({
+      const response = await api.chatStream(
+        {
           channel_id: channelID(),
           source_id: turn.sourceID,
           text: turn.text,
           page: currentPage(),
-        }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error((await response.text()) || `${response.status} ${response.statusText}`);
-      }
+        },
+        { signal: controller.signal },
+      );
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();

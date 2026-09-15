@@ -1,23 +1,15 @@
 // Single place that knows how to talk to archied. Every feature folder goes
-// through this, so auth handling and error shape live in one file.
+// through api.* below, and every api.* method goes through send(), so the CSRF
+// header, the Content-Type, the request timeout, and the error shape live in
+// this one file. ui/test/api-client.test.js asserts that: it fails if a second
+// fetch() call appears here, and it fails if any method omits a header the
+// server requires.
 import { randomUUID } from "./uuid.jsx";
 
-async function req(path) {
-  // A daemon that accepts the connection but never answers would otherwise
-  // leave the UI stuck in a loading state with no way back; the retry
-  // affordances rely on fetch settling, so bound it.
-  const res = await fetch(path, {
-    headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(15000),
-  });
-  if (res.status === 401) {
-    throw new ApiError("unauthorised", 401);
-  }
-  if (!res.ok) {
-    throw new ApiError(`${res.status} ${res.statusText}`, res.status);
-  }
-  return res.json();
-}
+// DEFAULT_TIMEOUT_MS bounds a request so a daemon that accepts the connection
+// but never answers cannot leave the UI in a loading state with no way back.
+// The retry affordances rely on fetch settling, so bound it.
+const DEFAULT_TIMEOUT_MS = 15000;
 
 // qs builds a query string, omitting empty values so the server sees an
 // absent filter rather than an empty one.
@@ -32,8 +24,9 @@ function qs(params) {
 
 // errorMessage prefers what the server actually said. archied answers these
 // with http.Error, i.e. a plain-text reason -- "task is not awaiting
-// approval", "max retries reached (3/3)" -- and discarding it in favour of
-// "409 Conflict" throws away the only part an operator can act on.
+// approval", "max retries reached (3/3)", "Content-Type must be
+// application/json" -- and discarding it in favour of "409 Conflict" throws
+// away the only part an operator can act on.
 async function errorMessage(res) {
   try {
     const body = (await res.text()).trim();
@@ -53,12 +46,12 @@ export class ApiError extends Error {
 
 // classifyActionError turns a failed operator action into a rendering
 // decision. archied's own handlers already return distinguishable status
-// codes for a refused mutation (400/403/409 -- bad input, missing CSRF,
-// cross-origin, conflicting state) versus a broken one (5xx, or no status at
-// all when fetch itself failed -- network drop, timeout); 401 additionally
-// means the session -- archied's own token cookie, or an upstream
-// forward-auth proxy sitting in front of it -- has expired rather than that
-// the action was rejected or the daemon is unwell.
+// codes for a refused mutation (400/403/409/415 -- bad input, missing CSRF,
+// cross-origin, conflicting state, a body that is not JSON) versus a broken
+// one (5xx, or no status at all when fetch itself failed -- network drop,
+// timeout); 401 additionally means the session -- archied's own token cookie,
+// or an upstream forward-auth proxy sitting in front of it -- has expired
+// rather than that the action was rejected or the daemon is unwell.
 export function classifyActionError(err) {
   const status = err instanceof ApiError ? err.status : undefined;
   const message = err?.message || "Action failed";
@@ -67,219 +60,101 @@ export function classifyActionError(err) {
   return { kind: "broken", message };
 }
 
+// send is the only fetch() in the dashboard. It converts a non-ok response
+// into an ApiError carrying the server's own explanation and a usable status,
+// and hands the raw Response back so the streaming caller can read the body
+// itself.
+async function send(path, init) {
+  const res = await fetch(path, init);
+  if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+  return res;
+}
+
+// request performs a JSON request. Every mutating method must declare a JSON
+// body: archied's handlers run authorizeTaskMutation first, and it answers 415
+// unless Content-Type is application/json -- including for a mutation that has
+// no body to send, because that requirement is what makes a simple cross-origin
+// form post inexpressible. Sending the header on every mutation, rather than
+// only where a payload happens to exist, is what keeps a bodyless DELETE or
+// approve from being refused.
+async function request(path, { method = "GET", body, timeoutMs = DEFAULT_TIMEOUT_MS, parse = true } = {}) {
+  const headers = { Accept: "application/json" };
+  const init = { method, headers, signal: AbortSignal.timeout(timeoutMs) };
+  if (method !== "GET") {
+    headers["Content-Type"] = "application/json";
+    headers["X-Archie-CSRF"] = "1";
+  }
+  if (body !== undefined) init.body = JSON.stringify(body);
+
+  const res = await send(path, init);
+  return parse ? res.json() : undefined;
+}
+
 export const api = {
-  summary: () => req("/api/summary"),
-  tasks: () => req("/api/tasks"),
-  taskMeta: () => req("/api/task-meta"),
-  task: (id) => req(`/api/tasks/${id}`),
-  taskAction: async (id, action) => {
-    const res = await fetch(`/api/tasks/${id}/action`, {
+  summary: () => request("/api/summary"),
+  tasks: () => request("/api/tasks"),
+  taskMeta: () => request("/api/task-meta"),
+  task: (id) => request(`/api/tasks/${id}`),
+  taskAction: (id, action) => request(`/api/tasks/${id}/action`, { method: "POST", body: { action } }),
+  setup: () => request("/api/setup"),
+  capabilities: () => request("/api/capabilities"),
+  workflows: () => request("/api/workflows"),
+  workRequest: (workRequest) => request("/api/work-requests", { method: "POST", body: workRequest }),
+  skills: () => request("/api/skills"),
+  channels: () => request("/api/channels"),
+  curators: () => request("/api/curators"),
+  channelReload: (id) => request(`/api/channels/${encodeURIComponent(id)}/reload`, { method: "POST", body: {} }),
+  config: () => request("/api/config"),
+  version: () => request("/api/version"),
+  configUpdate: (updates) => request("/api/config", { method: "PATCH", body: { updates } }),
+  configRepoUpdate: (owner, name, field, value) =>
+    request(`/api/config/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, { method: "PATCH", body: { field, value } }),
+  configReset: (key) => request("/api/config/reset", { method: "POST", body: { key } }),
+  logs: (params) => request("/api/logs" + qs(params)),
+  taskLogs: (id, params) => request(`/api/tasks/${id}/logs` + qs(params)),
+  captures: (limit) => request("/api/captures" + qs({ limit })),
+  mappings: () => request("/api/mappings"),
+  mappingCreate: (mapping) => request("/api/mappings", { method: "POST", body: mapping }),
+  mappingUpdate: (id, mapping) => request(`/api/mappings/${id}`, { method: "PATCH", body: mapping }),
+  // A delete answers 204, so there is no body to parse.
+  mappingDelete: (id) => request(`/api/mappings/${id}`, { method: "DELETE", parse: false }),
+  mappingPreview: (captureId, fields) => request("/api/mappings/preview", { method: "POST", body: { capture_id: captureId, fields } }),
+  bindings: () => request("/api/bindings"),
+  bindingCreate: (binding) => request("/api/bindings", { method: "POST", body: binding }),
+  bindingUpdate: (id, binding) => request(`/api/bindings/${id}`, { method: "PATCH", body: binding }),
+  bindingDelete: (id) => request(`/api/bindings/${id}`, { method: "DELETE", parse: false }),
+  bindingApprove: (id) => request(`/api/bindings/${id}/approve`, { method: "POST" }),
+  memory: () => request("/api/memory"),
+  chatSessions: () => request("/api/chat/sessions"),
+  chatMessages: (id) => request(`/api/chat/sessions/${encodeURIComponent(id)}/messages`),
+  chatTurns: (id) => request(`/api/chat/sessions/${encodeURIComponent(id)}/turns`),
+  chatCancel: (sessionID) => request("/api/chat/cancel", { method: "POST", body: { session_id: sessionID } }),
+  chatMessage: (channelID, text) =>
+    request("/api/chat/message", {
       method: "POST",
-      headers: { Accept: "application/json", "Content-Type": "application/json", "X-Archie-CSRF": "1" },
-      body: JSON.stringify({ action }),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
-    return res.json();
-  },
-  setup: () => req("/api/setup"),
-  capabilities: () => req("/api/capabilities"),
-  workflows: () => req("/api/workflows"),
-	workRequest: async (request) => {
-		const res = await fetch("/api/work-requests", {
-			method: "POST",
-			headers: { Accept: "application/json", "Content-Type": "application/json", "X-Archie-CSRF": "1" },
-			body: JSON.stringify(request), signal: AbortSignal.timeout(15000),
-		});
-		if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
-		return res.json();
-	},
-  skills: () => req("/api/skills"),
-  channels: () => req("/api/channels"),
-  curators: () => req("/api/curators"),
-	channelReload: async (id) => {
-		const res = await fetch(`/api/channels/${encodeURIComponent(id)}/reload`, {
-			method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json", "X-Archie-CSRF": "1" },
-			body: "{}", signal: AbortSignal.timeout(15000),
-		});
-		if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
-		return res.json();
-	},
-  config: () => req("/api/config"),
-  version: () => req("/api/version"),
-  configUpdate: async (updates) => {
-    const res = await fetch("/api/config", {
-      method: "PATCH",
-      headers: { Accept: "application/json", "Content-Type": "application/json", "X-Archie-CSRF": "1" },
-      body: JSON.stringify({ updates }),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
-    return res.json();
-  },
-  configRepoUpdate: async (owner, name, field, value) => {
-    const res = await fetch(`/api/config/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
-      method: "PATCH",
-      headers: { Accept: "application/json", "Content-Type": "application/json", "X-Archie-CSRF": "1" },
-      body: JSON.stringify({ field, value }),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
-    return res.json();
-  },
-  configReset: async (key) => {
-    const res = await fetch("/api/config/reset", {
+      body: { channel_id: channelID, source_id: randomUUID(), text, page: location.hash.slice(1) || "/" },
+    }),
+  chatPersona: (sessionID, name) => request("/api/chat/persona", { method: "POST", body: { session_id: sessionID, name } }),
+  chatUpdate: () => request("/api/chat/update"),
+  chatUpdateDefer: (snapshot) => request("/api/chat/update/defer", { method: "POST", body: { snapshot } }),
+  // Installing restarts archied, so it is allowed far longer than a normal
+  // request before the UI gives up.
+  chatUpdateInstall: (snapshot) => request("/api/chat/update/install", { method: "POST", body: { snapshot }, timeoutMs: 120000 }),
+  chatDangerous: () => request("/api/chat/dangerous"),
+  chatDangerousRequest: (kind, spec) =>
+    request(`/api/chat/dangerous/${encodeURIComponent(kind)}`, { method: "POST", body: { spec } }),
+  chatDangerousDecision: (id, decision) =>
+    request(`/api/chat/dangerous/${encodeURIComponent(id)}/decision`, { method: "POST", body: { decision } }),
+  // A server-sent event stream cannot be parsed as JSON and outlives a normal
+  // request, so the caller owns the abort controller and the timeout, and
+  // reads the body itself. Only the URL, headers, and failure shape are shared.
+  chatStream: (payload, { signal } = {}) =>
+    send("/api/chat/stream", {
       method: "POST",
-      headers: { Accept: "application/json", "Content-Type": "application/json", "X-Archie-CSRF": "1" },
-      body: JSON.stringify({ key }),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
-    return res.json();
-  },
-  logs: (params) => req("/api/logs" + qs(params)),
-  taskLogs: (id, params) => req(`/api/tasks/${id}/logs` + qs(params)),
-  captures: (limit) => req("/api/captures" + qs({ limit })),
-  mappings: () => req("/api/mappings"),
-  mappingCreate: async (mapping) => {
-    const res = await fetch("/api/mappings", {
-      method: "POST",
-      headers: { Accept: "application/json", "Content-Type": "application/json", "X-Archie-CSRF": "1" },
-      body: JSON.stringify(mapping),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
-    return res.json();
-  },
-  mappingUpdate: async (id, mapping) => {
-    const res = await fetch(`/api/mappings/${id}`, {
-      method: "PATCH",
-      headers: { Accept: "application/json", "Content-Type": "application/json", "X-Archie-CSRF": "1" },
-      body: JSON.stringify(mapping),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
-    return res.json();
-  },
-  mappingDelete: async (id) => {
-    const res = await fetch(`/api/mappings/${id}`, {
-      method: "DELETE",
-      headers: { Accept: "application/json", "X-Archie-CSRF": "1" },
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
-  },
-  mappingPreview: async (captureId, fields) => {
-    const res = await fetch("/api/mappings/preview", {
-      method: "POST",
-      headers: { Accept: "application/json", "Content-Type": "application/json", "X-Archie-CSRF": "1" },
-      body: JSON.stringify({ capture_id: captureId, fields }),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
-    return res.json();
-  },
-  bindings: () => req("/api/bindings"),
-  bindingCreate: async (binding) => {
-    const res = await fetch("/api/bindings", {
-      method: "POST",
-      headers: { Accept: "application/json", "Content-Type": "application/json", "X-Archie-CSRF": "1" },
-      body: JSON.stringify(binding),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
-    return res.json();
-  },
-  bindingUpdate: async (id, binding) => {
-    const res = await fetch(`/api/bindings/${id}`, {
-      method: "PATCH",
-      headers: { Accept: "application/json", "Content-Type": "application/json", "X-Archie-CSRF": "1" },
-      body: JSON.stringify(binding),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
-    return res.json();
-  },
-  bindingDelete: async (id) => {
-    const res = await fetch(`/api/bindings/${id}`, {
-      method: "DELETE",
-      headers: { Accept: "application/json", "X-Archie-CSRF": "1" },
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
-  },
-  bindingApprove: async (id) => {
-    const res = await fetch(`/api/bindings/${id}/approve`, {
-      method: "POST",
-      headers: { Accept: "application/json", "X-Archie-CSRF": "1" },
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
-    return res.json();
-  },
-  memory: () => req("/api/memory"),
-  chatSessions: () => req("/api/chat/sessions"),
-  chatMessages: (id) => req(`/api/chat/sessions/${encodeURIComponent(id)}/messages`),
-  chatTurns: (id) => req(`/api/chat/sessions/${encodeURIComponent(id)}/turns`),
-  chatCancel: async (sessionID) => {
-    const res = await fetch("/api/chat/cancel", {
-      method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionID }), signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
-    return res.json();
-  },
-  chatMessage: async (channelID, text) => {
-    const res = await fetch("/api/chat/message", {
-      method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ channel_id: channelID, source_id: randomUUID(), text, page: location.hash.slice(1) || "/" }),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
-    return res.json();
-  },
-  chatPersona: async (sessionID, name) => {
-    const res = await fetch("/api/chat/persona", {
-      method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionID, name }), signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
-    return res.json();
-  },
-  chatUpdate: () => req("/api/chat/update"),
-  chatUpdateDefer: async (snapshot) => {
-    const res = await fetch("/api/chat/update/defer", {
-      method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ snapshot }), signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
-    return res.json();
-  },
-  chatUpdateInstall: async (snapshot) => {
-    const res = await fetch("/api/chat/update/install", {
-      method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ snapshot }), signal: AbortSignal.timeout(120000),
-    });
-    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
-    return res.json();
-  },
-  chatDangerous: () => req("/api/chat/dangerous"),
-  chatDangerousRequest: async (kind, spec) => {
-    const res = await fetch(`/api/chat/dangerous/${encodeURIComponent(kind)}`, {
-      method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ spec }), signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
-    return res.json();
-  },
-  chatDangerousDecision: async (id, decision) => {
-    const res = await fetch(`/api/chat/dangerous/${encodeURIComponent(id)}/decision`, {
-      method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ decision }), signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
-    return res.json();
-  },
+      headers: { Accept: "text/event-stream", "Content-Type": "application/json", "X-Archie-CSRF": "1" },
+      body: JSON.stringify(payload),
+      signal,
+    }),
 };
 
 /**
