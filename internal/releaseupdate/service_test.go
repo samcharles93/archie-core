@@ -50,6 +50,30 @@ func TestServiceDefersOnlyTheVersionsShownToThatRecipient(t *testing.T) {
 	}
 }
 
+// TestServiceCheckNeverDeferredEmptyAvailable pins the empty-Available
+// combination: for a recipient who has never deferred a component (or a
+// component absent from the deferral map), deferred[component.ID] is the
+// empty string, and a component with no available update also has an empty
+// Available. "" == "" must not read as a deferral -- that tells an
+// up-to-date recipient their update is "deferred".
+func TestServiceCheckNeverDeferredEmptyAvailable(t *testing.T) {
+	catalog := &catalogStub{snapshot: Snapshot{Components: []Component{
+		{ID: ComponentDaemon, Label: "Gateway", Installed: "1.0.0", Available: ""},
+	}}}
+	service := Service{Catalog: catalog, StatePath: filepath.Join(t.TempDir(), "deferrals.json")}
+
+	snapshot, err := service.Check(context.Background(), 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Deferred {
+		t.Error("Deferred = true for a never-deferred recipient with no available update")
+	}
+	if got := snapshot.Components[0].Available; got != "" {
+		t.Errorf("Available = %q, want empty", got)
+	}
+}
+
 // TestServiceCheckEnrichesInstallTypeAndReference is the regression proof
 // for archie-core-1786751948782-3-837a8fd0 point 4: the external check
 // command reports what version exists, not how this instance was actually
