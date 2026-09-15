@@ -3,10 +3,16 @@ package container
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/moby/moby/client"
 )
 
 // ── regression: Gap 2  --  post-completion grace period ────────────────
@@ -288,5 +294,76 @@ func TestWriteTaskJSONMinimalPayload(t *testing.T) {
 
 	if decoded.ID != 1 {
 		t.Error("minimal payload ID mismatch")
+	}
+}
+
+// TestAcquireEnforcesMaxUptime pins the MaxUptime lifetime cap: a container
+// acquired with MaxUptime > 0 must be stopped and removed once that cap
+// elapses, independent of any later Release call.
+func TestAcquireEnforcesMaxUptime(t *testing.T) {
+	const containerID = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+	var stopCalls, removeCalls atomic.Int32
+	stopped := make(chan struct{}, 1)
+	removed := make(chan struct{}, 1)
+
+	dockerAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/create"):
+			writeDockerJSON(t, w, map[string]any{"Id": containerID, "Warnings": []string{}})
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID+"/start"):
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID+"/stop"):
+			stopCalls.Add(1)
+			select {
+			case stopped <- struct{}{}:
+			default:
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID):
+			removeCalls.Add(1)
+			select {
+			case removed <- struct{}{}:
+			default:
+			}
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "unexpected Docker API path "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(dockerAPI.Close)
+
+	dockerClient, err := client.New(client.WithHost(dockerAPI.URL), client.WithAPIVersion("1.55"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = dockerClient.Close() })
+
+	pool := &Pool{
+		cli: dockerClient,
+		cfg: Config{Image: "test/image", MaxUptime: 50 * time.Millisecond},
+		log: discardLogger(),
+	}
+
+	c, err := pool.Acquire(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	if c.ID != containerID {
+		t.Fatalf("Acquire returned container ID %q, want %q", c.ID, containerID)
+	}
+
+	select {
+	case <-stopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("max uptime timer did not stop the container")
+	}
+	select {
+	case <-removed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("max uptime timer did not remove the container")
+	}
+	if stopCalls.Load() == 0 || removeCalls.Load() == 0 {
+		t.Fatalf("expected at least one stop and remove, got stop=%d remove=%d", stopCalls.Load(), removeCalls.Load())
 	}
 }
