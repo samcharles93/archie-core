@@ -28,9 +28,7 @@ import (
 
 // Gateway is a Telegram gateway.Gateway backed by go-telegram/bot.
 type Gateway struct {
-	Token         string
-	WebhookURL    string
-	WebhookSecret string
+	Token string
 	// AllowedUserIDs lists the Telegram user IDs allowed to use the bot,
 	// matched against the sender rather than the chat so the bot cannot be
 	// reached by adding it to a group. Empty denies everyone: a bot handle
@@ -132,10 +130,9 @@ type Gateway struct {
 	// false at the start of the next launch.
 	liveStopped bool
 
-	log           *slog.Logger
-	bot           *bot.Bot
-	webhookCancel context.CancelFunc
-	running       bool
+	log     *slog.Logger
+	bot     *bot.Bot
+	running bool
 
 	// serverURL redirects the Bot API at a test server. Empty in production,
 	// where the library's default endpoint is used. It exists so launch's
@@ -158,13 +155,10 @@ type ReleaseAnnouncer interface {
 	) error
 }
 
-// New returns an unstarted Gateway. Call Start to begin webhook
-// processing.
-func New(token, webhookURL, webhookSecret string, allowedUserIDs []int64, log *slog.Logger) *Gateway {
+// New returns an unstarted Gateway. Call Start to begin long-polling.
+func New(token string, allowedUserIDs []int64, log *slog.Logger) *Gateway {
 	return &Gateway{
 		Token:              token,
-		WebhookURL:         webhookURL,
-		WebhookSecret:      webhookSecret,
 		AllowedUserIDs:     allowedUserIDs,
 		restartCh:          make(chan restartRequest, 1),
 		modelCallbacks:     make(map[string]string),
@@ -270,49 +264,16 @@ func (g *Gateway) registerCommandHandlers(b *bot.Bot, router *gateway.Router) {
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/deny", bot.MatchTypeExact, g.denyHandler())
 }
 
-func (g *Gateway) startListening(ctx context.Context, b *bot.Bot, lifecycle gateway.Lifecycle) error {
-	if g.WebhookURL != "" {
-		params := &bot.SetWebhookParams{
-			URL:                g.WebhookURL,
-			SecretToken:        g.WebhookSecret,
-			MaxConnections:     40,
-			AllowedUpdates:     []string{"message", "callback_query"},
-			DropPendingUpdates: true,
-		}
-		if _, err := b.SetWebhook(ctx, params); err != nil {
-			return fmt.Errorf("set webhook: %w", err)
-		}
-		g.log.Info("webhook set", "url", g.WebhookURL)
-
-		info, err := b.GetWebhookInfo(ctx)
-		if err != nil {
-			g.log.Warn("failed to get webhook info", "error", err)
-		} else {
-			g.log.Info(
-				"webhook info",
-				"url", info.URL,
-				"pending_update_count", info.PendingUpdateCount,
-				"last_error_message", info.LastErrorMessage,
-				"max_connections", info.MaxConnections,
-			)
-		}
-
-		webhookCtx, cancel := context.WithCancel(ctx)
-		g.webhookCancel = cancel
-		g.running = true
-		go b.StartWebhook(webhookCtx)
-		lifecycle.ReportRunning()
-	} else {
-		g.dropPendingUpdates(ctx, b)
-		g.running = true
-		go b.Start(ctx)
-	}
+func (g *Gateway) startListening(ctx context.Context, b *bot.Bot, _ gateway.Lifecycle) error {
+	g.dropPendingUpdates(ctx, b)
+	g.running = true
+	go b.Start(ctx)
 	return nil
 }
 
-// launch builds one bot instance, registers handlers and starts its delivery
-// worker. Webhook readiness is synchronous; long-poll readiness is reported by
-// pollReadinessClient after the first successful getUpdates response.
+// launch builds one bot instance, registers handlers and starts its
+// long-poll delivery worker. Readiness is reported by pollReadinessClient
+// after the first successful getUpdates response.
 func (g *Gateway) launch(ctx context.Context, router *gateway.Router, lifecycle gateway.Lifecycle) (*bot.Bot, error) {
 	// Turns are per-launch. Each queued turn carries the update handler's
 	// context, which is this launch's, so a /restart cancels everything
@@ -327,15 +288,10 @@ func (g *Gateway) launch(ctx context.Context, router *gateway.Router, lifecycle 
 		}),
 		bot.WithDefaultHandler(g.defaultHandler(router)),
 		bot.WithMiddlewares(g.panicRecoveryMiddleware(), g.updateLoggingMiddleware()),
-	}
-	if g.WebhookSecret != "" {
-		opts = append(opts, bot.WithWebhookSecretToken(g.WebhookSecret))
-	}
-	if g.WebhookURL == "" {
-		opts = append(opts, bot.WithHTTPClient(telegramPollTimeout, &pollReadinessClient{
+		bot.WithHTTPClient(telegramPollTimeout, &pollReadinessClient{
 			client:    &http.Client{Timeout: telegramPollTimeout},
 			onRunning: lifecycle.ReportRunning,
-		}))
+		}),
 	}
 	if g.serverURL != "" {
 		opts = append(opts, bot.WithServerURL(g.serverURL), bot.WithSkipGetMe())
@@ -410,7 +366,7 @@ func (g *Gateway) announceRelease(ctx context.Context, b *bot.Bot) {
 	}
 }
 
-// Stop gracefully shuts down the bot and deletes the webhook.
+// Stop gracefully shuts down the bot.
 func (g *Gateway) Stop(ctx context.Context) error {
 	if !g.running {
 		return nil
@@ -420,26 +376,7 @@ func (g *Gateway) Stop(ctx context.Context) error {
 
 	g.abandonAllLive(ctx)
 
-	if g.webhookCancel != nil {
-		g.webhookCancel()
-		g.webhookCancel = nil
-	}
-	if g.WebhookURL != "" && g.bot != nil {
-		if _, err := g.bot.DeleteWebhook(ctx, &bot.DeleteWebhookParams{DropPendingUpdates: true}); err != nil {
-			g.log.Warn("error deleting webhook", "error", err)
-		}
-	}
 	return nil
-}
-
-// WebhookHandler returns the HTTP handler for Telegram webhooks.
-func (g *Gateway) WebhookHandler() http.Handler {
-	if g.bot == nil {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, "bot not initialized", http.StatusServiceUnavailable)
-		})
-	}
-	return g.bot.WebhookHandler()
 }
 
 // ── command handlers (gateway-local  --  no LLM) ────────────────
@@ -903,14 +840,6 @@ func (g *Gateway) ConfigSchema() json.RawMessage {
     "token_env": {
       "type": "string",
       "description": "Environment variable holding the Telegram bot token from @BotFather"
-    },
-    "webhook_url": {
-      "type": "string",
-      "description": "Public HTTPS URL for Telegram webhook delivery"
-    },
-    "webhook_secret": {
-      "type": "string",
-      "description": "Secret token for webhook validation"
     },
     "allowed_chat_ids": {
       "type": "array",

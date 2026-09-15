@@ -139,7 +139,7 @@ func TestModelCommandShowsInlineSelector(t *testing.T) {
 	}
 	router := gateway.NewRouter(nil, nil, "telegram")
 	router.Models = manager
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	b, requests := newTelegramTestBot(t)
 
 	g.defaultHandler(router)(context.Background(), b, &models.Update{
@@ -194,7 +194,7 @@ func TestModelCommandDrillsFromProviderIntoFilteredModels(t *testing.T) {
 	}
 	router := gateway.NewRouter(nil, nil, "telegram")
 	router.Models = manager
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	b, requests := newTelegramTestBot(t)
 
 	g.defaultHandler(router)(context.Background(), b, &models.Update{
@@ -274,7 +274,7 @@ func TestModelSelectorKeyboardPageAcrossModelCounts(t *testing.T) {
 			for i := 0; i < tt.count; i++ {
 				manager.models = append(manager.models, fmt.Sprintf("provider/model-%02d", i))
 			}
-			g := New("1:test", "", "", []int64{42}, slog.Default())
+			g := New("1:test", []int64{42}, slog.Default())
 
 			page := g.modelSelectorKeyboardPage(manager, "provider", 0)
 			rows := page.InlineKeyboard
@@ -325,7 +325,7 @@ func TestModelSelectorPageCallbackAdvancesToNextPage(t *testing.T) {
 	for i := 1; i <= 9; i++ {
 		manager.models = append(manager.models, fmt.Sprintf("provider/model-%02d", i))
 	}
-	g := New("1:test", "", "", []int64{42}, slog.Default())
+	g := New("1:test", []int64{42}, slog.Default())
 
 	first := g.modelSelectorKeyboardPage(manager, "provider", 0)
 	nav := first.InlineKeyboard[4]
@@ -379,7 +379,7 @@ func TestProviderCallbackHonoursTheProviderRenderedInTheSelector(t *testing.T) {
 	}
 	router := gateway.NewRouter(nil, nil, "telegram")
 	router.Models = manager
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	b, _ := newTelegramTestBot(t)
 
 	markup := g.providerSelectorKeyboard(manager)
@@ -405,7 +405,7 @@ func TestModelCallbackSwitchesAndUpdatesSelector(t *testing.T) {
 	}
 	router := gateway.NewRouter(nil, nil, "telegram")
 	router.Models = manager
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	b, requests := newTelegramTestBot(t)
 
 	g.defaultHandler(router)(context.Background(), b, &models.Update{
@@ -451,7 +451,7 @@ func TestDirectModelSelectionWithProviderIsAtomicOnFailure(t *testing.T) {
 	}
 	router := gateway.NewRouter(nil, nil, "telegram")
 	router.Models = manager
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	b, _ := newTelegramTestBot(t)
 
 	g.handleModelCommand(context.Background(), b, &models.Message{
@@ -467,7 +467,7 @@ func TestDirectModelSelectionWithProviderIsAtomicOnFailure(t *testing.T) {
 
 func TestModelPageIndicatorCallbackIsAnswered(t *testing.T) {
 	const allowedUserID = int64(42)
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	b, requests := newTelegramTestBot(t)
 
 	g.defaultHandler(gateway.NewRouter(nil, nil, "telegram"))(context.Background(), b, &models.Update{
@@ -489,7 +489,7 @@ func TestModelCallbackHonoursTheModelRenderedInTheSelector(t *testing.T) {
 	}
 	router := gateway.NewRouter(nil, nil, "telegram")
 	router.Models = manager
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	b, _ := newTelegramTestBot(t)
 
 	markup := g.modelSelectorKeyboard(manager)
@@ -528,7 +528,7 @@ func TestModelCallbackRejectsUnauthorizedAndMalformedSelections(t *testing.T) {
 			}
 			router := gateway.NewRouter(nil, nil, "telegram")
 			router.Models = manager
-			g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+			g := New("1:test", []int64{allowedUserID}, slog.Default())
 			b, requests := newTelegramTestBot(t)
 
 			g.defaultHandler(router)(context.Background(), b, &models.Update{
@@ -574,7 +574,7 @@ func TestProviderCallbackRejectsUnauthorizedAndMalformedSelections(t *testing.T)
 			}
 			router := gateway.NewRouter(nil, nil, "telegram")
 			router.Models = manager
-			g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+			g := New("1:test", []int64{allowedUserID}, slog.Default())
 			b, requests := newTelegramTestBot(t)
 
 			g.defaultHandler(router)(context.Background(), b, &models.Update{

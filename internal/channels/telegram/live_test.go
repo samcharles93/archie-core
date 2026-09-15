@@ -97,7 +97,7 @@ func fakeAPI(t *testing.T) (*bot.Bot, *[]apiCall) {
 func newTestLiveReply(t *testing.T, showToolCalls bool) (*liveReply, *[]apiCall) {
 	t.Helper()
 	b, calls := fakeAPI(t)
-	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+	g := New("1:test", []int64{42}, slog.New(slog.DiscardHandler))
 	g.SetShowToolCalls(showToolCalls)
 	live := g.newLiveReply(context.Background(), b, 7, 0, g.ShowToolCalls())
 	t.Cleanup(live.stopRendering)
@@ -393,7 +393,7 @@ func TestLiveReplyOpenFallsBackToPlainText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new test bot: %v", err)
 	}
-	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+	g := New("1:test", []int64{42}, slog.New(slog.DiscardHandler))
 	live := g.newLiveReply(context.Background(), b, 7, 0, false)
 	t.Cleanup(live.stopRendering)
 	live.interval = 0
@@ -431,7 +431,7 @@ func TestLiveReplyEditFallsBackToPlainText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new test bot: %v", err)
 	}
-	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+	g := New("1:test", []int64{42}, slog.New(slog.DiscardHandler))
 	live := g.newLiveReply(context.Background(), b, 7, 0, g.ShowToolCalls())
 	t.Cleanup(live.stopRendering)
 	live.interval = 0
@@ -472,7 +472,7 @@ func TestLiveReplyCallbacksDoNotWaitForTelegram(t *testing.T) {
 			if err != nil {
 				t.Fatalf("new test bot: %v", err)
 			}
-			g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+			g := New("1:test", []int64{42}, slog.New(slog.DiscardHandler))
 			g.SetShowToolCalls(true)
 			live := g.newLiveReply(context.Background(), b, 7, 0, g.ShowToolCalls())
 			t.Cleanup(live.stopRendering)
@@ -514,7 +514,7 @@ func TestLiveReplyStopCancelsInFlightRendering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new test bot: %v", err)
 	}
-	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+	g := New("1:test", []int64{42}, slog.New(slog.DiscardHandler))
 	ctx, cancel := context.WithCancel(context.Background())
 	live := g.newLiveReply(ctx, b, 7, 0, false)
 	t.Cleanup(live.stopRendering)
@@ -555,7 +555,7 @@ func TestLiveReplyFinalEditFailureSendsAuthoritativeReplyNormally(t *testing.T) 
 	if err != nil {
 		t.Fatalf("new test bot: %v", err)
 	}
-	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+	g := New("1:test", []int64{42}, slog.New(slog.DiscardHandler))
 	live := g.newLiveReply(context.Background(), b, 7, 0, g.ShowToolCalls())
 	t.Cleanup(live.stopRendering)
 	live.interval = 0
@@ -865,7 +865,7 @@ func TestGatewayAbandonAllLiveDoesNotBlockOnAHungReply(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new test bot: %v", err)
 	}
-	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+	g := New("1:test", []int64{42}, slog.New(slog.DiscardHandler))
 	g.liveDrainTimeout = 50 * time.Millisecond
 
 	live := g.newLiveReply(context.Background(), b, 7, 0, false)
@@ -910,7 +910,7 @@ func TestGatewayRegisterLiveAfterStopAbandonsImmediately(t *testing.T) {
 		t.Fatalf("new test bot: %v", err)
 	}
 
-	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+	g := New("1:test", []int64{42}, slog.New(slog.DiscardHandler))
 	g.liveMu.Lock()
 	g.liveStopped = true
 	g.liveMu.Unlock()
@@ -980,7 +980,7 @@ func TestLiveReplyMediaFallsBackToALinkOnFailure(t *testing.T) {
 		t.Fatalf("new test bot: %v", err)
 	}
 
-	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+	g := New("1:test", []int64{42}, slog.New(slog.DiscardHandler))
 	live := g.newLiveReply(context.Background(), b, 7, 0, false)
 	t.Cleanup(live.stopRendering)
 	live.interval = 0

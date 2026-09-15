@@ -77,7 +77,7 @@ func TestRollbackListsCheckpoints(t *testing.T) {
 			{Number: 1, Timestamp: now.Add(-2 * time.Hour), Label: "Initial checkout", Size: "8 MB"},
 		},
 	}
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	g.Dangerous = stub
 	b, requests := newTelegramTestBot(t)
 
@@ -103,7 +103,7 @@ func TestRollbackListsCheckpoints(t *testing.T) {
 func TestRollbackEmptyCheckpoints(t *testing.T) {
 	const allowedUserID = int64(42)
 	stub := &dangerousStub{} // no checkpoints
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	g.Dangerous = stub
 	b, requests := newTelegramTestBot(t)
 
@@ -124,7 +124,7 @@ func TestRollbackEmptyCheckpoints(t *testing.T) {
 func TestRollbackCheckpointError(t *testing.T) {
 	const allowedUserID = int64(42)
 	stub := &dangerousStub{checkpointsErr: fmt.Errorf("storage offline")}
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	g.Dangerous = stub
 	b, requests := newTelegramTestBot(t)
 
@@ -147,7 +147,7 @@ func TestRollbackWithNumberRequiresApproval(t *testing.T) {
 	stub := &dangerousStub{
 		rollbackResult: "Restored to checkpoint 2: 15 files changed, 3 removed.",
 	}
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	g.Dangerous = stub
 	b, requests := newTelegramTestBot(t)
 
@@ -213,7 +213,7 @@ func TestRollbackApprovalExecutes(t *testing.T) {
 	stub := &dangerousStub{
 		rollbackResult: "Restored to checkpoint 2: 15 files changed.",
 	}
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	g.Dangerous = stub
 	b, requests := newTelegramTestBot(t)
 
@@ -277,7 +277,7 @@ func TestRollbackApprovalExecutes(t *testing.T) {
 func TestRollbackWithBadNumber(t *testing.T) {
 	const allowedUserID = int64(42)
 	stub := &dangerousStub{}
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	g.Dangerous = stub
 	b, requests := newTelegramTestBot(t)
 
@@ -301,7 +301,7 @@ func TestRollbackWithBadNumber(t *testing.T) {
 func TestStopRequiresApproval(t *testing.T) {
 	const allowedUserID = int64(42)
 	stub := &dangerousStub{}
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	g.Dangerous = stub
 	b, requests := newTelegramTestBot(t)
 
@@ -330,7 +330,7 @@ func TestStopRequiresApproval(t *testing.T) {
 func TestStopApprovalExecutes(t *testing.T) {
 	const allowedUserID = int64(42)
 	stub := &dangerousStub{}
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	g.Dangerous = stub
 	b, requests := newTelegramTestBot(t)
 
@@ -376,7 +376,7 @@ func TestStopApprovalExecutes(t *testing.T) {
 func TestStopWithNoArgumentDoesNotRequireApproval(t *testing.T) {
 	const allowedUserID = int64(42)
 	stub := &dangerousStub{}
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	g.Dangerous = stub
 	b, requests := newTelegramTestBot(t)
 
@@ -404,7 +404,7 @@ func TestStopWithNoArgumentDoesNotRequireApproval(t *testing.T) {
 // a turn in flight is cancelled, and the queue behind it is discarded.
 func TestStopCancelsRunningChatTurn(t *testing.T) {
 	const allowedUserID = int64(42)
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 
 	ctx := t.Context()
 	g.turns = gateway.NewTurns(slog.Default())
@@ -441,7 +441,7 @@ func TestDangerousCallbackRejectsUnauthorizedSender(t *testing.T) {
 	stub := &dangerousStub{
 		rollbackResult: "ok",
 	}
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	g.Dangerous = stub
 	b, requests := newTelegramTestBot(t)
 
@@ -483,7 +483,7 @@ func TestDangerousCallbackRejectsUnauthorizedSender(t *testing.T) {
 func TestDangerousCallbackExpiredToken(t *testing.T) {
 	const allowedUserID = int64(42)
 	stub := &dangerousStub{rollbackResult: "ok"}
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	g.Dangerous = stub
 	b, requests := newTelegramTestBot(t)
 
@@ -521,7 +521,7 @@ func TestDangerousCallbackExpiredToken(t *testing.T) {
 func TestDangerousCallbackSingleUse(t *testing.T) {
 	const allowedUserID = int64(42)
 	stub := &dangerousStub{rollbackResult: "ok"}
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	g.Dangerous = stub
 	b, requests := newTelegramTestBot(t)
 
@@ -572,7 +572,7 @@ func TestDangerousCallbackSingleUse(t *testing.T) {
 func TestDangerousCallbackDeny(t *testing.T) {
 	const allowedUserID = int64(42)
 	stub := &dangerousStub{rollbackResult: "ok"}
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	g.Dangerous = stub
 	b, requests := newTelegramTestBot(t)
 
@@ -610,7 +610,7 @@ func TestDangerousCallbackDeny(t *testing.T) {
 func TestDangerousCallbackExecutionFailure(t *testing.T) {
 	const allowedUserID = int64(42)
 	stub := &dangerousStub{rollbackErr: fmt.Errorf("checkpoint corrupted")}
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	g.Dangerous = stub
 	b, requests := newTelegramTestBot(t)
 
@@ -649,7 +649,7 @@ func TestPermanentApprovalSkipsInlineKeyboard(t *testing.T) {
 	stub := &dangerousStub{
 		rollbackResult: "Restored (permanent approval).",
 	}
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	g.Dangerous = stub
 
 	// Grant permanent approval for rollback.
@@ -690,7 +690,7 @@ func TestPermanentApprovalSkipsInlineKeyboard(t *testing.T) {
 func TestPermanentApprovalExpired(t *testing.T) {
 	const allowedUserID = int64(42)
 	stub := &dangerousStub{rollbackResult: "ok"}
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	g.Dangerous = stub
 
 	// Grant expired permanent approval.
@@ -729,7 +729,7 @@ func TestPermanentApprovalButtonGrantsApproval(t *testing.T) {
 	stub := &dangerousStub{
 		rollbackResult: "Restored after permanent approval grant.",
 	}
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	g.Dangerous = stub
 	b, requests := newTelegramTestBot(t)
 
@@ -790,7 +790,7 @@ func TestPermanentApprovalScopedToRecipient(t *testing.T) {
 	const allowedUserID = int64(42)
 	const otherUserID = int64(99)
 	stub := &dangerousStub{rollbackResult: "ok"}
-	g := New("1:test", "", "", []int64{allowedUserID, otherUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID, otherUserID}, slog.Default())
 	g.Dangerous = stub
 
 	// Grant permanent approval for user 42.
@@ -824,7 +824,7 @@ func TestPermanentApprovalScopedToRecipient(t *testing.T) {
 func TestApproveHandlerShowsPendingCommands(t *testing.T) {
 	const allowedUserID = int64(42)
 	stub := &dangerousStub{}
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	g.Dangerous = stub
 
 	// Register a pending command.
@@ -854,7 +854,7 @@ func TestApproveHandlerShowsPendingCommands(t *testing.T) {
 func TestApproveHandlerNoPendingCommands(t *testing.T) {
 	const allowedUserID = int64(42)
 	stub := &dangerousStub{}
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	g.Dangerous = stub
 
 	b, requests := newTelegramTestBot(t)
@@ -875,7 +875,7 @@ func TestApproveHandlerNoPendingCommands(t *testing.T) {
 
 func TestRollbackNotConfigured(t *testing.T) {
 	const allowedUserID = int64(42)
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	// Dangerous is nil.
 	b, requests := newTelegramTestBot(t)
 
@@ -895,7 +895,7 @@ func TestRollbackNotConfigured(t *testing.T) {
 
 func TestStopNotConfigured(t *testing.T) {
 	const allowedUserID = int64(42)
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	// Dangerous is nil.
 	b, requests := newTelegramTestBot(t)
 
@@ -917,7 +917,7 @@ func TestDangerousCommandHelpContainsNewCommands(t *testing.T) {
 	const allowedUserID = int64(42)
 
 	var sentText string
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	b, requests := newTelegramTestBot(t)
 
 	g.helpHandler()(context.Background(), b, &models.Update{
@@ -994,7 +994,7 @@ func TestDangerousCallbackRejectsWrongRecipient(t *testing.T) {
 	const allowedUserID = int64(42)
 	const otherUserID = int64(43)
 	stub := &dangerousStub{rollbackResult: "ok"}
-	g := New("1:test", "", "", []int64{allowedUserID, otherUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID, otherUserID}, slog.Default())
 	g.Dangerous = stub
 	b, _ := newTelegramTestBot(t)
 
@@ -1019,7 +1019,7 @@ func TestDangerousCallbackRejectsWrongRecipient(t *testing.T) {
 func TestMalformedDangerousCallback(t *testing.T) {
 	const allowedUserID = int64(42)
 	stub := &dangerousStub{}
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	g.Dangerous = stub
 	b, requests := newTelegramTestBot(t)
 

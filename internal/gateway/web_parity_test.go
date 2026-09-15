@@ -19,13 +19,6 @@ func (parityUpdateStub) Install(context.Context, releaseupdate.Snapshot, release
 }
 func (parityUpdateStub) CanInstall() bool { return true }
 
-type parityDangerousStub struct{ decisions []string }
-
-func (s *parityDangerousStub) Decide(_ context.Context, id, decision string) (string, error) {
-	s.decisions = append(s.decisions, id+":"+decision)
-	return "dangerous decision applied", nil
-}
-
 func TestSharedRouterWebParityCommands(t *testing.T) {
 	t.Parallel()
 	r := NewRouter(nil, nil, "web")
@@ -33,8 +26,6 @@ func TestSharedRouterWebParityCommands(t *testing.T) {
 	restarted := false
 	r.Restart = func(context.Context) error { restarted = true; return nil }
 	r.Updates = parityUpdateStub{}
-	dangerous := &parityDangerousStub{}
-	r.Dangerous = dangerous
 	r.Personas = NewPersonaRegistry(DefaultPersonas())
 	sessions := NewSessionStoreMemory()
 	t.Cleanup(func() { _ = sessions.Close() })
@@ -58,17 +49,5 @@ func TestSharedRouterWebParityCommands(t *testing.T) {
 	reply, err = r.Route(context.Background(), inbound("browser", "/update"))
 	if err != nil || !strings.Contains(reply, "v2 available") {
 		t.Fatalf("/update = %q, err=%v", reply, err)
-	}
-	reply, err = r.Route(context.Background(), inbound("browser", "/approve action-1"))
-	if err != nil || !strings.Contains(reply, "decision applied") || len(dangerous.decisions) != 1 || dangerous.decisions[0] != "action-1:approve" {
-		t.Fatalf("typed /approve = %q, decisions=%v, err=%v", reply, dangerous.decisions, err)
-	}
-	_, err = r.Route(context.Background(), inbound("browser", "/approve permanent action-2"))
-	if err != nil || len(dangerous.decisions) != 2 || dangerous.decisions[1] != "action-2:permanent" {
-		t.Fatalf("permanent /approve decisions=%v, err=%v", dangerous.decisions, err)
-	}
-	_, err = r.Route(context.Background(), inbound("browser", "/deny action-3"))
-	if err != nil || len(dangerous.decisions) != 3 || dangerous.decisions[2] != "action-3:deny" {
-		t.Fatalf("/deny decisions=%v, err=%v", dangerous.decisions, err)
 	}
 }

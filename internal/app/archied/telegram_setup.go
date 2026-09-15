@@ -102,7 +102,7 @@ func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), o
 		s.Log.Warn("chat.telegram has no allowed_user_ids: every sender will be rejected. " +
 			"Add your Telegram user id to chat.telegram.allowed_user_ids to enable the bot.")
 	}
-	tg := telegram.New(tgToken, "", "", cfg.Chat.Telegram.AllowedUserIDs, s.Log)
+	tg := telegram.New(tgToken, cfg.Chat.Telegram.AllowedUserIDs, s.Log)
 	if s.RegisterRestart != nil {
 		s.RegisterRestart(tg.RequestRestart)
 	}
