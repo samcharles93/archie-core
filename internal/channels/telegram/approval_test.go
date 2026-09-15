@@ -21,7 +21,7 @@ const (
 
 func newApprovalTestGateway(t *testing.T) (*Gateway, *bot.Bot, *[]telegramRequest) {
 	t.Helper()
-	g := New("1:test", "", "", []int64{approvalTestRecipient}, slog.Default())
+	g := New("1:test", []int64{approvalTestRecipient}, slog.Default())
 	b, requests := newTelegramTestBot(t)
 	return g, b, requests
 }
@@ -266,7 +266,7 @@ func TestApprovalCallbackExpiredTokenRejected(t *testing.T) {
 
 func TestApprovalCallbackWrongRecipientRejected(t *testing.T) {
 	const otherUserID = int64(43)
-	g := New("1:test", "", "", []int64{approvalTestRecipient, otherUserID}, slog.Default())
+	g := New("1:test", []int64{approvalTestRecipient, otherUserID}, slog.Default())
 	b, requests := newTelegramTestBot(t)
 
 	token := makeDangerousToken()
@@ -369,7 +369,7 @@ func TestApprovalPromptText(t *testing.T) {
 }
 
 func TestApprovalKeyboardUsesApprovalPrefix(t *testing.T) {
-	g := New("1:test", "", "", []int64{approvalTestRecipient}, slog.Default())
+	g := New("1:test", []int64{approvalTestRecipient}, slog.Default())
 	markup := g.approvalKeyboard("token123")
 
 	if len(markup.InlineKeyboard) != 3 {

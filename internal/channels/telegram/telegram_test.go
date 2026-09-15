@@ -19,19 +19,16 @@ import (
 )
 
 func TestName(t *testing.T) {
-	g := New("token", "", "", nil, slog.Default())
+	g := New("token", nil, slog.Default())
 	if got := g.Name(); got != "telegram" {
 		t.Errorf("Name() = %q, want telegram", got)
 	}
 }
 
 func TestNewStoresFields(t *testing.T) {
-	g := New("abc123", "https://example.com/webhook", "secret", []int64{42}, slog.Default())
+	g := New("abc123", []int64{42}, slog.Default())
 	if g.Token != "abc123" {
 		t.Errorf("Token = %q", g.Token)
-	}
-	if g.WebhookURL != "https://example.com/webhook" {
-		t.Errorf("WebhookURL = %q", g.WebhookURL)
 	}
 	if len(g.AllowedUserIDs) != 1 || g.AllowedUserIDs[0] != 42 {
 		t.Errorf("AllowedUserIDs = %v", g.AllowedUserIDs)
@@ -67,7 +64,7 @@ func TestHelpDescribesPublishedCommandsAndChat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new test bot: %v", err)
 	}
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	g.helpHandler()(context.Background(), b, &models.Update{
 		Message: &models.Message{
 			From: &models.User{ID: allowedUserID},
@@ -133,7 +130,7 @@ func TestCommandSurfaceUsesOneModelSelectorAndUsefulHelpCopy(t *testing.T) {
 
 func TestStartHasDeterministicGatewayResponse(t *testing.T) {
 	const allowedUserID = int64(42)
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	b, requests := newTelegramTestBot(t)
 
 	g.startHandler()(context.Background(), b, &models.Update{
@@ -158,7 +155,7 @@ func TestStartHasDeterministicGatewayResponse(t *testing.T) {
 
 func TestVersionReportsBothComponents(t *testing.T) {
 	const allowedUserID = int64(42)
-	g := New("1:test", "", "", []int64{allowedUserID}, slog.Default())
+	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	g.Version = func() string { return "Archie\nGateway: v1.2.3\nRuntime: v4.5.6" }
 	b, requests := newTelegramTestBot(t)
 
@@ -194,7 +191,7 @@ func (s *releaseAnnouncerStub) Announce(
 func TestReleaseAnnouncementTargetsAuthorizedUsers(t *testing.T) {
 	const message = "Archie has just been updated to v0.2.0"
 	announcer := &releaseAnnouncerStub{message: message}
-	g := New("1:test", "", "", []int64{7, 8}, slog.Default())
+	g := New("1:test", []int64{7, 8}, slog.Default())
 	g.ReleaseAnnouncements = announcer
 	b, requests := newTelegramTestBot(t)
 
@@ -217,10 +214,10 @@ func TestReleaseAnnouncementTargetsAuthorizedUsers(t *testing.T) {
 // The allowlist must fail closed: a bot handle is public, so an unset
 // allowlist has to deny rather than admit everyone.
 func TestSenderAllowlistFailsClosed(t *testing.T) {
-	if New("t", "", "", nil, slog.Default()).isSenderAllowed(100000000) {
+	if New("t", nil, slog.Default()).isSenderAllowed(100000000) {
 		t.Error("empty allowlist must deny every sender")
 	}
-	g := New("t", "", "", []int64{100000000}, slog.Default())
+	g := New("t", []int64{100000000}, slog.Default())
 	if !g.isSenderAllowed(100000000) {
 		t.Error("listed sender must be allowed")
 	}
@@ -230,7 +227,7 @@ func TestSenderAllowlistFailsClosed(t *testing.T) {
 }
 
 func TestStartWithoutToken(t *testing.T) {
-	g := New("", "", "", nil, slog.Default())
+	g := New("", nil, slog.Default())
 	router := gateway.NewRouter(nil, nil, "telegram")
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
@@ -263,7 +260,7 @@ func TestStartReportsRunningAfterLaunch(t *testing.T) {
 	}))
 	defer api.Close()
 
-	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+	g := New("1:test", []int64{42}, slog.New(slog.DiscardHandler))
 	g.serverURL = api.URL
 	ctx, cancel := context.WithCancel(t.Context())
 	started := make(chan bool, 1)
@@ -310,7 +307,7 @@ func TestStartReportsStartingOnRestart(t *testing.T) {
 	}))
 	defer api.Close()
 
-	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+	g := New("1:test", []int64{42}, slog.New(slog.DiscardHandler))
 	g.serverURL = api.URL
 	ctx, cancel := context.WithCancel(t.Context())
 	events := make(chan string, 4)
@@ -348,15 +345,6 @@ func wantEvent(t *testing.T, events <-chan string, want string) {
 	}
 }
 
-func TestWebhookHandlerReturns503WhenNotStarted(t *testing.T) {
-	g := New("token", "", "", nil, slog.Default())
-	rec := httptest.NewRecorder()
-	g.WebhookHandler().ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/", nil))
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want 503", rec.Code)
-	}
-}
-
 func TestStartAndStopLifecycle(t *testing.T) {
 	// Use a noop webhook server so the bot can initialize without hitting
 	// the real Telegram API.
@@ -367,7 +355,7 @@ func TestStartAndStopLifecycle(t *testing.T) {
 	defer api.Close()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	g := New("test-token", "", "", nil, log)
+	g := New("test-token", nil, log)
 
 	// Override the API base URL  --  the go-telegram/bot library uses
 	// https://api.telegram.org by default. We want it to hit our test
@@ -405,10 +393,10 @@ var (
 // ── Regression tests for previously untested paths ────────────────────
 
 func TestIsSenderAllowed(t *testing.T) {
-	g := New("tok", "", "", []int64{100, 200, 300}, slog.Default())
+	g := New("tok", []int64{100, 200, 300}, slog.Default())
 
 	t.Run("empty allowlist denies all", func(t *testing.T) {
-		g2 := New("tok", "", "", nil, slog.Default())
+		g2 := New("tok", nil, slog.Default())
 		if g2.isSenderAllowed(999999) {
 			t.Error("empty allowlist must deny every sender, not admit them")
 		}
@@ -429,7 +417,7 @@ func TestIsSenderAllowed(t *testing.T) {
 	})
 
 	t.Run("zero and negative ids", func(t *testing.T) {
-		g3 := New("tok", "", "", []int64{-1, 0, 1}, slog.Default())
+		g3 := New("tok", []int64{-1, 0, 1}, slog.Default())
 		if !g3.isSenderAllowed(-1) || !g3.isSenderAllowed(0) {
 			t.Error("explicitly listed -1 and 0 should be allowed")
 		}
@@ -486,7 +474,7 @@ func TestUpdateMetadata(t *testing.T) {
 }
 
 func TestPanicRecoveryMiddlewareDoesNotCrash(t *testing.T) {
-	g := New("tok", "", "", nil, slog.Default())
+	g := New("tok", nil, slog.Default())
 	mw := g.panicRecoveryMiddleware()
 	handler := mw(func(ctx context.Context, b *bot.Bot, update *models.Update) {
 		panic("test panic")
@@ -499,7 +487,7 @@ func TestPanicRecoveryMiddlewareDoesNotCrash(t *testing.T) {
 }
 
 func TestUpdateLoggingMiddlewareCallsInner(t *testing.T) {
-	g := New("tok", "", "", nil, slog.Default())
+	g := New("tok", nil, slog.Default())
 	mw := g.updateLoggingMiddleware()
 	called := false
 	handler := mw(func(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -515,7 +503,7 @@ func TestUpdateLoggingMiddlewareCallsInner(t *testing.T) {
 }
 
 func TestAuthorizedMessageNilMessage(t *testing.T) {
-	g := New("tok", "", "", []int64{42}, slog.Default())
+	g := New("tok", []int64{42}, slog.Default())
 	msg, ok := g.authorizedMessage(context.Background(), nil, &models.Update{ID: 1})
 	if ok || msg != nil {
 		t.Error("nil message should return false, nil")
@@ -523,7 +511,7 @@ func TestAuthorizedMessageNilMessage(t *testing.T) {
 }
 
 func TestGatewayStopWhenNotRunning(t *testing.T) {
-	g := New("tok", "", "", nil, slog.Default())
+	g := New("tok", nil, slog.Default())
 	if err := g.Stop(context.Background()); err != nil {
 		t.Errorf("unexpected error stopping unstarted gateway: %v", err)
 	}
@@ -573,7 +561,7 @@ func TestDropPendingUpdatesClearsTheBacklog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new test bot: %v", err)
 	}
-	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+	g := New("1:test", []int64{42}, slog.New(slog.DiscardHandler))
 	g.dropPendingUpdates(context.Background(), b)
 
 	if !strings.Contains(gotPath, "deleteWebhook") {
@@ -599,7 +587,7 @@ func TestDropPendingUpdatesSurvivesAPIFailure(t *testing.T) {
 		t.Fatalf("new test bot: %v", err)
 	}
 	var logged strings.Builder
-	g := New("1:test", "", "", []int64{42}, slog.New(slog.NewTextHandler(&logged, nil)))
+	g := New("1:test", []int64{42}, slog.New(slog.NewTextHandler(&logged, nil)))
 	g.dropPendingUpdates(context.Background(), b) // must not panic or block
 
 	if !strings.Contains(logged.String(), "could not drop pending telegram updates") {
@@ -625,7 +613,7 @@ func TestLaunchDropsPendingUpdatesBeforePolling(t *testing.T) {
 	}))
 	defer api.Close()
 
-	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+	g := New("1:test", []int64{42}, slog.New(slog.DiscardHandler))
 	g.serverURL = api.URL
 
 	ctx, cancel := context.WithCancel(context.Background())

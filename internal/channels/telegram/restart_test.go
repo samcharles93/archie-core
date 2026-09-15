@@ -11,7 +11,7 @@ import (
 )
 
 func TestRestartAcknowledgesArchie(t *testing.T) {
-	g := New("1:test", "", "", []int64{42}, slog.Default())
+	g := New("1:test", []int64{42}, slog.Default())
 	b, requests := newTelegramTestBot(t)
 
 	g.restartHandler()(context.Background(), b, &models.Update{Message: &models.Message{
@@ -35,7 +35,7 @@ func TestRestartAcknowledgesArchie(t *testing.T) {
 // blocking: the handler runs on the very bot the supervisor is about to
 // stop, so blocking there would deadlock the restart it just asked for.
 func TestRestartRequestNeverBlocksHandler(t *testing.T) {
-	g := New("tok", "", "", []int64{1}, slog.Default())
+	g := New("tok", []int64{1}, slog.Default())
 
 	done := make(chan struct{})
 	go func() {
@@ -61,7 +61,7 @@ func TestRestartRequestNeverBlocksHandler(t *testing.T) {
 }
 
 func TestRequestRestartQueuesScopedReload(t *testing.T) {
-	g := New("tok", "", "", []int64{1}, slog.Default())
+	g := New("tok", []int64{1}, slog.Default())
 	if err := g.RequestRestart(); err != nil {
 		t.Fatalf("RequestRestart: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestRequestRestartQueuesScopedReload(t *testing.T) {
 // A failing Reload must not be fatal: a bad config edit should leave the
 // gateway running on its previous settings, not take chat down for good.
 func TestReloadFailureKeepsPreviousSettings(t *testing.T) {
-	g := New("original-token", "", "", []int64{1}, slog.Default())
+	g := New("original-token", []int64{1}, slog.Default())
 	g.Reload = func(*Gateway) error { return errReloadTest }
 
 	if err := g.Reload(g); err == nil {

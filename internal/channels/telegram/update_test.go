@@ -17,7 +17,7 @@ import (
 var errFixtureInstall = errors.New("build failed: exit status 1")
 
 func TestUpdateShowsComponentSectionsAndActions(t *testing.T) {
-	g := New("1:test", "", "", []int64{42}, slog.Default())
+	g := New("1:test", []int64{42}, slog.Default())
 	g.Updates = &updateStub{snapshot: releaseupdate.Snapshot{Components: []releaseupdate.Component{
 		{ID: "gateway", Label: "THE GATEWAY", Installed: "v0.1.0", Available: "v0.1.1", Changelog: "- Clearer help"},
 		{ID: "runtime", Label: "THE RUNTIME", Installed: "v0.1.0"},
@@ -47,7 +47,7 @@ func TestUpdateShowsComponentSectionsAndActions(t *testing.T) {
 // restarted yet when this message is sent, so it can only promise that the
 // build/install step succeeded and a restart is queued.
 func TestInstallUpdateStreamsProgressAndReportsSuccess(t *testing.T) {
-	g := New("1:test", "", "", []int64{42}, slog.Default())
+	g := New("1:test", []int64{42}, slog.Default())
 	stub := &updateStub{
 		progressText: []string{"==> fetching", "==> building"},
 		result: releaseupdate.Result{
@@ -88,7 +88,7 @@ func TestInstallUpdateStreamsProgressAndReportsSuccess(t *testing.T) {
 // because the reference script never reaches the restart step on a
 // non-zero exit.
 func TestInstallUpdateReportsBuildFailureWithoutClaimingRestart(t *testing.T) {
-	g := New("1:test", "", "", []int64{42}, slog.Default())
+	g := New("1:test", []int64{42}, slog.Default())
 	stub := &updateStub{installErr: errFixtureInstall}
 	g.Updates = stub
 	b, requests := newTelegramTestBot(t)
@@ -123,7 +123,7 @@ func TestReportPendingUpdateSendsAndClearsReport(t *testing.T) {
 	if err := releaseupdate.WritePendingReport(path, report); err != nil {
 		t.Fatal(err)
 	}
-	g := New("1:test", "", "", []int64{42}, slog.Default())
+	g := New("1:test", []int64{42}, slog.Default())
 	g.UpdateReportPath = path
 	b, requests := newTelegramTestBot(t)
 
@@ -150,7 +150,7 @@ func TestReportPendingUpdateClearsUnreadableReport(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{not valid json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	g := New("1:test", "", "", []int64{42}, slog.Default())
+	g := New("1:test", []int64{42}, slog.Default())
 	g.UpdateReportPath = path
 	b, _ := newTelegramTestBot(t)
 
@@ -162,7 +162,7 @@ func TestReportPendingUpdateClearsUnreadableReport(t *testing.T) {
 }
 
 func TestReportPendingUpdateNoFileIsNoop(t *testing.T) {
-	g := New("1:test", "", "", []int64{42}, slog.Default())
+	g := New("1:test", []int64{42}, slog.Default())
 	g.UpdateReportPath = filepath.Join(t.TempDir(), "does-not-exist.json")
 	b, requests := newTelegramTestBot(t)
 
@@ -174,7 +174,7 @@ func TestReportPendingUpdateNoFileIsNoop(t *testing.T) {
 }
 
 func TestReportPendingUpdateDisabledWhenPathEmpty(t *testing.T) {
-	g := New("1:test", "", "", []int64{42}, slog.Default())
+	g := New("1:test", []int64{42}, slog.Default())
 	b, requests := newTelegramTestBot(t)
 
 	g.reportPendingUpdate(context.Background(), b)
@@ -375,7 +375,7 @@ func TestFormatPendingReportDistinguishesUnrolledBackFailure(t *testing.T) {
 }
 
 func TestUpdateCallbackRejectsUnauthorizedSender(t *testing.T) {
-	g := New("1:test", "", "", []int64{42}, slog.Default())
+	g := New("1:test", []int64{42}, slog.Default())
 	g.Updates = &updateStub{}
 	b, requests := newTelegramTestBot(t)
 

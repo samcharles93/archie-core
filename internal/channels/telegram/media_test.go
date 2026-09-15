@@ -102,7 +102,7 @@ func newTestMediaSender(t *testing.T, serverURL string, chatID int64, threadID i
 	if err != nil {
 		t.Fatalf("new test bot: %v", err)
 	}
-	g := New("1:test", "", "", []int64{42}, slog.New(slog.DiscardHandler))
+	g := New("1:test", []int64{42}, slog.New(slog.DiscardHandler))
 	return g.NewMediaSender(b, chatID, threadID)
 }
 
