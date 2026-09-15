@@ -138,18 +138,6 @@ func (m Matcher) Matches(source string, authenticated bool) bool {
 	return m.Source == source
 }
 
-// Overlaps reports whether two matchers cover any plausible event
-// together. With a single-string matcher this collapses to: both have
-// a non-empty Source equal to each other. Two empty matchers would
-// overlap trivially; Validate rejects empty Sources upstream so this
-// case cannot arise in practice.
-func (m Matcher) Overlaps(other Matcher) bool {
-	if m.Source == "" || other.Source == "" {
-		return false
-	}
-	return m.Source == other.Source
-}
-
 // Normalize clamps an arbitrary string into a recognised Status, falling
 // back to StatusDraft for any unknown value. The DB CHECK constraint
 // already rejects bad strings at write time; Normalize is the API-edge
