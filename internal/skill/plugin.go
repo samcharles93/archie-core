@@ -37,14 +37,6 @@ func (p *Plugin) Run(input string) (string, error) {
 	return fn(input), nil
 }
 
-// DiscoverPlugins scans dir/.agents/skills/<skillName>/plugins/*.go and
-// returns the discovered plugins sorted by filename. Returns nil if the
-// skill directory does not exist. Returns an empty slice if the skill
-// exists but has no plugins/ directory.
-func DiscoverPlugins(dir, skillName string) ([]Plugin, error) {
-	return LoadPlugins(dir, skillName, nil)
-}
-
 // LoadPlugins loads plugins from dir/.agents/skills/<skillName>/plugins/.
 //
 // When allowed is non-empty, only the listed filenames are loaded in
