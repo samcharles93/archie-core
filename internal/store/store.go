@@ -160,7 +160,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 	title         TEXT NOT NULL DEFAULT '',
 	body          TEXT NOT NULL DEFAULT '',
 	labels        TEXT NOT NULL DEFAULT '',
-	status        TEXT NOT NULL DEFAULT 'queued',
+	status        TEXT NOT NULL DEFAULT '` + workflow.StatusQueued + `',
 	workflow      TEXT NOT NULL DEFAULT '',
 	stage         TEXT NOT NULL DEFAULT '',
 	branch        TEXT NOT NULL DEFAULT '',
@@ -285,12 +285,13 @@ func (s *Store) EnqueueBindingTask(ctx context.Context, owner, repo, title, body
 // returns it; nil when the queue is empty.
 func (s *Store) ClaimNext(ctx context.Context) (*workflow.Task, error) {
 	row := s.db.QueryRowContext(ctx, `
-		UPDATE tasks SET status='running', attempt=attempt+1, updated_at=datetime('now')
-		WHERE id = (SELECT id FROM tasks WHERE status='queued' ORDER BY id LIMIT 1)
+		UPDATE tasks SET status=?, attempt=attempt+1, updated_at=datetime('now')
+		WHERE id = (SELECT id FROM tasks WHERE status=? ORDER BY id LIMIT 1)
 		RETURNING id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
-			source, identity, binding_id, binding_version, created_at, updated_at`)
+			source, identity, binding_id, binding_version, created_at, updated_at`,
+		workflow.StatusRunning, workflow.StatusQueued)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -318,12 +319,13 @@ func scanTask(row *sql.Row) (*workflow.Task, error) {
 // inserted via EnqueueIssue and needs an immediate targeted claim.
 func (s *Store) ClaimByIssue(ctx context.Context, owner, repo string, number int) (*workflow.Task, error) {
 	row := s.db.QueryRowContext(ctx, `
-		UPDATE tasks SET status='running', attempt=attempt+1, updated_at=datetime('now')
-		WHERE owner=? AND repo=? AND issue_number=? AND status='queued'
+		UPDATE tasks SET status=?, attempt=attempt+1, updated_at=datetime('now')
+		WHERE owner=? AND repo=? AND issue_number=? AND status=?
 		RETURNING id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
-			source, identity, binding_id, binding_version, created_at, updated_at`, owner, repo, number)
+			source, identity, binding_id, binding_version, created_at, updated_at`,
+		workflow.StatusRunning, owner, repo, number, workflow.StatusQueued)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -427,7 +429,7 @@ func (s *Store) TaskByID(ctx context.Context, taskID int64) (*workflow.Task, err
 // current status matches fromStatus. If no row matches, ErrStaleTransition
 // is returned and no audit row is written. Both statements execute in a
 // single transaction.
-func (s *Store) Requeue(ctx context.Context, taskID int64, fromStatus, workflow string) error {
+func (s *Store) Requeue(ctx context.Context, taskID int64, fromStatus, wf string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -435,10 +437,10 @@ func (s *Store) Requeue(ctx context.Context, taskID int64, fromStatus, workflow 
 	defer func() { _ = tx.Rollback() }()
 
 	res, err := tx.ExecContext(ctx, `
-		UPDATE tasks SET status='queued',
+		UPDATE tasks SET status=?,
 			workflow=CASE WHEN ?='' THEN workflow ELSE ? END,
 			stage='', park_reason='', updated_at=datetime('now')
-		WHERE id=? AND status=?`, workflow, workflow, taskID, fromStatus)
+		WHERE id=? AND status=?`, workflow.StatusQueued, wf, wf, taskID, fromStatus)
 	if err != nil {
 		return err
 	}
@@ -451,8 +453,8 @@ func (s *Store) Requeue(ctx context.Context, taskID int64, fromStatus, workflow 
 	}
 
 	_, err = tx.ExecContext(ctx,
-		`INSERT INTO transitions (task_id, from_status, to_status, detail) VALUES (?, ?, 'queued', ?)`,
-		taskID, fromStatus, "requeued "+workflow)
+		`INSERT INTO transitions (task_id, from_status, to_status, detail) VALUES (?, ?, ?, ?)`,
+		taskID, fromStatus, workflow.StatusQueued, "requeued "+wf)
 	if err != nil {
 		return err
 	}
@@ -463,7 +465,7 @@ func (s *Store) Requeue(ctx context.Context, taskID int64, fromStatus, workflow 
 // RetryTask requeues a task and increments retry_count in the same guarded
 // transaction. A queued task with an uncounted retry would make max_retries a
 // suggestion rather than a cap.
-func (s *Store) RetryTask(ctx context.Context, taskID int64, fromStatus, workflow string) error {
+func (s *Store) RetryTask(ctx context.Context, taskID int64, fromStatus, wf string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -471,10 +473,10 @@ func (s *Store) RetryTask(ctx context.Context, taskID int64, fromStatus, workflo
 	defer func() { _ = tx.Rollback() }()
 
 	res, err := tx.ExecContext(ctx, `
-		UPDATE tasks SET status='queued', retry_count=retry_count+1,
+		UPDATE tasks SET status=?, retry_count=retry_count+1,
 			workflow=CASE WHEN ?='' THEN workflow ELSE ? END,
 			stage='', park_reason='', updated_at=datetime('now')
-		WHERE id=? AND status=?`, workflow, workflow, taskID, fromStatus)
+		WHERE id=? AND status=?`, workflow.StatusQueued, wf, wf, taskID, fromStatus)
 	if err != nil {
 		return err
 	}
@@ -486,8 +488,8 @@ func (s *Store) RetryTask(ctx context.Context, taskID int64, fromStatus, workflo
 		return ErrStaleTransition
 	}
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO transitions (task_id, from_status, to_status, detail) VALUES (?, ?, 'queued', ?)`,
-		taskID, fromStatus, "retried "+workflow); err != nil {
+		`INSERT INTO transitions (task_id, from_status, to_status, detail) VALUES (?, ?, ?, ?)`,
+		taskID, fromStatus, workflow.StatusQueued, "retried "+wf); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -533,7 +535,8 @@ func (s *Store) ArchiveTask(
 // RecoverStale re-queues tasks left running by a crashed daemon.
 func (s *Store) RecoverStale(ctx context.Context) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE tasks SET status='queued', updated_at=datetime('now') WHERE status='running'`)
+		`UPDATE tasks SET status=?, updated_at=datetime('now') WHERE status=?`,
+		workflow.StatusQueued, workflow.StatusRunning)
 	if err != nil {
 		return 0, err
 	}
@@ -544,7 +547,7 @@ func (s *Store) RecoverStale(ctx context.Context) (int64, error) {
 func (s *Store) OpenPRs(ctx context.Context) (tasks []workflow.Task, retErr error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, owner, repo, issue_number, pr_number, status, source, identity
-		FROM tasks WHERE status='pr_open'`)
+		FROM tasks WHERE status=?`, workflow.StatusPROpen)
 	if err != nil {
 		return nil, err
 	}
@@ -566,7 +569,8 @@ func (s *Store) OpenPRs(ctx context.Context) (tasks []workflow.Task, retErr erro
 // deliberately excluded because it is recoverable.
 func (s *Store) ClearTerminalTasks(ctx context.Context) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
-		`DELETE FROM tasks WHERE status IN ('merged','rejected','dead','closed_wont_do')`)
+		`DELETE FROM tasks WHERE status IN (?, ?, ?, ?)`,
+		workflow.StatusMerged, workflow.StatusRejected, workflow.StatusDead, workflow.StatusClosedWontDo)
 	if err != nil {
 		return 0, err
 	}
