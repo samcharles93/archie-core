@@ -832,32 +832,51 @@ func updateThreadID(update *models.Update) int {
 }
 
 // ConfigSchema returns the JSON Schema for the Telegram channel config.
+// The bot token may be supplied either directly as token_env (an
+// environment variable name) or as token (a secret reference object with
+// engine/key); token takes precedence when both are set, matching
+// resolveTelegramToken's own precedence.
 func (g *Gateway) ConfigSchema() json.RawMessage {
 	return json.RawMessage(`{
   "type": "object",
-  "required": ["token_env"],
+  "anyOf": [
+    { "required": ["token_env"] },
+    { "required": ["token"] }
+  ],
   "properties": {
     "token_env": {
       "type": "string",
       "description": "Environment variable holding the Telegram bot token from @BotFather"
     },
-    "allowed_chat_ids": {
+    "token": {
+      "type": "object",
+      "description": "Secret reference for the bot token, resolved through the configured secret engine. Takes precedence over token_env.",
+      "properties": {
+        "engine": { "type": "string" },
+        "key": { "type": "string" }
+      }
+    },
+    "allowed_user_ids": {
       "type": "array",
       "items": { "type": "integer" },
-      "description": "Restrict bot access to specific chat IDs"
+      "description": "Restrict bot access to specific Telegram user ids"
     }
   }
 }`)
 }
 
-// ValidateConfig checks the Telegram channel configuration.
+// ValidateConfig checks the Telegram channel configuration. A token is
+// required, supplied either as token (a secret reference) or token_env
+// (an environment variable name) -- either credential source is valid,
+// matching resolveTelegramToken's precedence in the daemon's boot path.
 func (g *Gateway) ValidateConfig(cfg map[string]any) error {
 	if cfg == nil {
 		return fmt.Errorf("telegram config is required")
 	}
 	tokenEnv, _ := cfg["token_env"].(string)
-	if tokenEnv == "" {
-		return fmt.Errorf("telegram.token_env is required")
+	_, hasTokenRef := cfg["token"]
+	if tokenEnv == "" && !hasTokenRef {
+		return fmt.Errorf("telegram.token or telegram.token_env is required")
 	}
 	return nil
 }

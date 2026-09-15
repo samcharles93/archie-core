@@ -71,6 +71,17 @@ type telegramSetup struct {
 	RateLimiter *ratelimit.Limiter
 }
 
+// telegramValidateConfigMap builds the map Gateway.ValidateConfig expects
+// from the typed config, carrying whichever credential source is set
+// (token takes precedence, matching resolveTelegramToken).
+func telegramValidateConfigMap(cfg config.TelegramConfig) map[string]any {
+	m := map[string]any{"token_env": cfg.TokenEnv}
+	if cfg.Token != (secret.SecretRef{}) {
+		m["token"] = map[string]any{"engine": cfg.Token.Engine, "key": cfg.Token.Key}
+	}
+	return m
+}
+
 func resolveTelegramToken(cfg config.TelegramConfig, registry *secret.Registry) (string, error) {
 	if cfg.Token != (secret.SecretRef{}) {
 		return registry.Resolve(cfg.Token)
@@ -103,6 +114,10 @@ func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), o
 			"Add your Telegram user id to chat.telegram.allowed_user_ids to enable the bot.")
 	}
 	tg := telegram.New(tgToken, cfg.Chat.Telegram.AllowedUserIDs, s.Log)
+	if err := tg.ValidateConfig(telegramValidateConfigMap(cfg.Chat.Telegram)); err != nil {
+		s.Log.Error("chat.telegram config invalid", "err", err)
+		return nil, false
+	}
 	if s.RegisterRestart != nil {
 		s.RegisterRestart(tg.RequestRestart)
 	}

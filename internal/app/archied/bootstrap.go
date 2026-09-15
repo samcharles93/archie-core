@@ -658,18 +658,32 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 		b.startGateways = append(b.startGateways, start)
 	}
 
-	b.setupEmailGateway(ctx, cfg, log)
-	b.setupWebhookGateway(ctx, cfg, log)
+	if !b.setupEmailGateway(ctx, cfg, log) {
+		return false
+	}
+	if !b.setupWebhookGateway(ctx, cfg, log) {
+		return false
+	}
 	return true
 }
 
 // setupEmailGateway registers the optional inbound email gateway when
-// chat.email.listen_addr is configured.
-func (b *boot) setupEmailGateway(ctx context.Context, cfg config.Config, log *slog.Logger) {
+// chat.email.listen_addr is configured. It returns false when the
+// configured gateway fails its own ConfigSchema validation, which the
+// caller treats as a fatal boot error -- the same convention
+// setupTelegramGateway already uses.
+func (b *boot) setupEmailGateway(ctx context.Context, cfg config.Config, log *slog.Logger) bool {
 	if cfg.Chat.Email.ListenAddr == "" {
-		return
+		return true
 	}
 	em := email.New(cfg.Chat.Email.ListenAddr, cfg.Chat.Email.RelayAddr, log)
+	if err := em.ValidateConfig(map[string]any{
+		"listen_addr": cfg.Chat.Email.ListenAddr,
+		"relay_addr":  cfg.Chat.Email.RelayAddr,
+	}); err != nil {
+		log.Error("chat.email config invalid", "err", err)
+		return false
+	}
 	emRouter := gateway.NewRouter(b.stateStore, nil, "email")
 	emRouter.Limiter = b.rateLimiter
 	configureTaskCommands(emRouter, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.stateStore.Tasks}, b.defaultChatIdentity)
@@ -688,13 +702,17 @@ func (b *boot) setupEmailGateway(ctx context.Context, cfg config.Config, log *sl
 			}
 		}()
 	})
+	return true
 }
 
 // setupWebhookGateway registers the optional inbound webhook gateway when
-// chat.webhook_addr is configured.
-func (b *boot) setupWebhookGateway(ctx context.Context, cfg config.Config, log *slog.Logger) {
+// chat.webhook_addr is configured. It returns false when the configured
+// gateway fails its own ConfigSchema validation, which the caller treats
+// as a fatal boot error -- the same convention setupTelegramGateway
+// already uses.
+func (b *boot) setupWebhookGateway(ctx context.Context, cfg config.Config, log *slog.Logger) bool {
 	if cfg.Chat.WebhookAddr == "" {
-		return
+		return true
 	}
 	host, port := parseListenAddr(cfg.Chat.WebhookAddr, "0.0.0.0", 8644)
 	secretValue, err := b.secrets.Resolve(cfg.Chat.Webhook.Secret)
@@ -707,6 +725,13 @@ func (b *boot) setupWebhookGateway(ctx context.Context, cfg config.Config, log *
 		webhookRoutes(cfg.Chat.Webhook, secretValue),
 		log,
 	)
+	if err := wh.ValidateConfig(map[string]any{
+		"host": host,
+		"port": port,
+	}); err != nil {
+		log.Error("chat.webhook config invalid", "err", err)
+		return false
+	}
 	whRouter := gateway.NewRouter(b.stateStore, nil, "webhook")
 	whRouter.Limiter = b.rateLimiter
 	configureTaskCommands(whRouter, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.stateStore.Tasks}, b.defaultChatIdentity)
@@ -725,6 +750,7 @@ func (b *boot) setupWebhookGateway(ctx context.Context, cfg config.Config, log *
 			}
 		}()
 	})
+	return true
 }
 
 // webhookRoutes translates the configured [chat.webhook] route into the
