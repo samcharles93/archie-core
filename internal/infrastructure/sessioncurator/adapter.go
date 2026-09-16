@@ -28,6 +28,9 @@ func NewAdapter(store gateway.SessionStore) *Adapter {
 	return &Adapter{store: store}
 }
 
+// RecentSessions returns sessions active at or after since, newest first.
+// AgentID is the session's bot identity, the closest thing to an Agent the
+// tree records today (see docs/architecture/identity.md).
 func (a *Adapter) RecentSessions(ctx context.Context, since time.Time) ([]curator.SessionSummary, error) {
 	sessions, err := a.store.List(ctx)
 	if err != nil {
@@ -38,11 +41,15 @@ func (a *Adapter) RecentSessions(ctx context.Context, since time.Time) ([]curato
 		if s.LastActiveAt.Before(since) {
 			continue
 		}
-		out = append(out, curator.SessionSummary{ID: s.SessionID, LastActive: s.LastActiveAt})
+		out = append(out, curator.SessionSummary{ID: s.SessionID, AgentID: s.Source.BotUser, LastActive: s.LastActiveAt})
 	}
 	return out, nil
 }
 
+// Messages returns the most recent n messages of one session, chronological.
+// SenderID rides through unchanged from the stored record; deciding whose
+// participant that is -- failing closed on zero or several distinct senders
+// -- belongs to the curator, not this adapter.
 func (a *Adapter) Messages(ctx context.Context, sessionID string, n int) ([]curator.ConversationMessage, error) {
 	msgs, err := a.store.RecentMessages(ctx, sessionID, n)
 	if err != nil {
@@ -54,7 +61,7 @@ func (a *Adapter) Messages(ctx context.Context, sessionID string, n int) ([]cura
 		if m.Role == messaging.RoleAssistant {
 			role = "assistant"
 		}
-		out = append(out, curator.ConversationMessage{Role: role, Content: m.Text, At: m.At})
+		out = append(out, curator.ConversationMessage{Role: role, Content: m.Text, SenderID: m.SenderID, At: m.At})
 	}
 	return out, nil
 }

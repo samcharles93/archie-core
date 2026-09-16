@@ -82,3 +82,64 @@ func TestAdapterMessagesReadsRoleFromRecords(t *testing.T) {
 		t.Errorf("Messages()[2] = %+v, want user/bare", got[2])
 	}
 }
+
+// TestAdapterRecentSessionsCarriesAgentID pins that a session's agent reaches
+// the curator contract, so an agent-user scope can be addressed without
+// recovering the agent from the session id.
+func TestAdapterRecentSessionsCarriesAgentID(t *testing.T) {
+	t.Parallel()
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	sess := gateway.SessionContext{
+		SessionID:    "s1",
+		Source:       messaging.SessionSource{Platform: "telegram", BotUser: "winter", ChannelID: "chat-1"},
+		LastActiveAt: time.Unix(2000, 0),
+	}
+	if err := store.Save(ctx, sess); err != nil {
+		t.Fatalf("Save() = %v", err)
+	}
+
+	got, err := NewAdapter(store).RecentSessions(ctx, time.Unix(1000, 0))
+	if err != nil {
+		t.Fatalf("RecentSessions() = %v, want nil", err)
+	}
+	if len(got) != 1 || got[0].AgentID != "winter" {
+		t.Fatalf("RecentSessions() = %+v, want one session with AgentID winter", got)
+	}
+}
+
+// TestAdapterMessagesCarriesSenderID pins that the channel-native participant
+// identifier survives the store-to-curator hop, and stays empty for a message
+// whose channel offers none.
+func TestAdapterMessagesCarriesSenderID(t *testing.T) {
+	t.Parallel()
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.Save(ctx, gateway.SessionContext{SessionID: "s1", LastActiveAt: time.Unix(1000, 0)}); err != nil {
+		t.Fatalf("Save() = %v", err)
+	}
+	for _, m := range []messaging.Message{
+		{Sender: "alice", SenderID: "u-42", Role: messaging.RoleUser, Text: "hello", At: time.Unix(1, 0)},
+		{Sender: "archie", Role: messaging.RoleAssistant, Text: "hi", At: time.Unix(2, 0)},
+	} {
+		if err := store.SaveMessage(ctx, "s1", m); err != nil {
+			t.Fatalf("SaveMessage(%v) = %v", m, err)
+		}
+	}
+
+	got, err := NewAdapter(store).Messages(ctx, "s1", 10)
+	if err != nil {
+		t.Fatalf("Messages() = %v, want nil", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("Messages() = %+v, want 2", got)
+	}
+	if got[0].SenderID != "u-42" {
+		t.Errorf("Messages()[0].SenderID = %q, want %q", got[0].SenderID, "u-42")
+	}
+	if got[1].SenderID != "" {
+		t.Errorf("Messages()[1].SenderID = %q, want empty", got[1].SenderID)
+	}
+}

@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS messages (
 	session_id TEXT NOT NULL,
 	source_id  TEXT NOT NULL DEFAULT '',
 	sender     TEXT NOT NULL DEFAULT '',
+	sender_id  TEXT NOT NULL DEFAULT '',
 	role       TEXT NOT NULL DEFAULT '',
 	text       TEXT NOT NULL DEFAULT '',
 	ts         INTEGER NOT NULL,
@@ -172,6 +173,12 @@ func openSQLiteSessionStore(dsn string) (SessionStore, error) {
 	if _, err := db.ExecContext(ctx, `ALTER TABLE messages ADD COLUMN role TEXT NOT NULL DEFAULT ''`); err != nil &&
 		!strings.Contains(err.Error(), "duplicate column name") {
 		return nil, errors.Join(fmt.Errorf("sessionstore: migrate messages table: %w", err), db.Close())
+	}
+	// A database created before sender ids were persisted has a messages
+	// table without the sender_id column; same duplicate-column detection.
+	if _, err := db.ExecContext(ctx, `ALTER TABLE messages ADD COLUMN sender_id TEXT NOT NULL DEFAULT ''`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column name") {
+		return nil, errors.Join(fmt.Errorf("sessionstore: migrate messages sender_id: %w", err), db.Close())
 	}
 	// Backfill the role for rows written before it was persisted, using
 	// the same sender-equality the store boundary applies to new writes:
@@ -787,8 +794,8 @@ func saveMessageAt(ctx context.Context, ex execer, sessionID string, msg messagi
 	at := stamp(msg)
 	if clamp {
 		_, err := ex.ExecContext(ctx, `
-			INSERT INTO messages (message_id, session_id, source_id, sender, role, text, ts)
-			VALUES (?, ?, ?, ?, ?, ?, (
+			INSERT INTO messages (message_id, session_id, source_id, sender, sender_id, role, text, ts)
+			VALUES (?, ?, ?, ?, ?, ?, ?, (
 				SELECT CASE
 					WHEN MAX(ts) IS NOT NULL AND MAX(ts) >= ? THEN MAX(ts) + 1
 					ELSE ?
@@ -796,7 +803,7 @@ func saveMessageAt(ctx context.Context, ex execer, sessionID string, msg messagi
 				FROM messages WHERE session_id = ?
 			))
 			ON CONFLICT(session_id, message_id) DO NOTHING`,
-			id, sessionID, msg.SourceID, msg.Sender, role, msg.Text,
+			id, sessionID, msg.SourceID, msg.Sender, msg.SenderID, role, msg.Text,
 			at.UnixMilli(), at.UnixMilli(), sessionID)
 		if err != nil {
 			return "", fmt.Errorf("sessionstore: save message: %w", err)
@@ -815,9 +822,9 @@ func saveMessageAt(ctx context.Context, ex execer, sessionID string, msg messagi
 	}
 
 	_, err = ex.ExecContext(ctx, `
-		INSERT INTO messages (message_id, session_id, source_id, sender, role, text, ts)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		id, sessionID, msg.SourceID, msg.Sender, role, msg.Text, at.UnixMilli())
+		INSERT INTO messages (message_id, session_id, source_id, sender, sender_id, role, text, ts)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, sessionID, msg.SourceID, msg.Sender, msg.SenderID, role, msg.Text, at.UnixMilli())
 	if err != nil {
 		return "", fmt.Errorf("sessionstore: save message: %w", err)
 	}
@@ -950,10 +957,10 @@ func (s *sqliteSessionStore) RecentMessages(ctx context.Context, sessionID strin
 	// stored per message: a LEFT JOIN keeps orphaned rows readable exactly
 	// as before, with an empty address.
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT m.message_id, m.source_id, m.sender, m.role, m.text, m.ts,
+		SELECT m.message_id, m.source_id, m.sender, m.sender_id, m.role, m.text, m.ts,
 			COALESCE(s.channel_id, ''), COALESCE(s.thread_id, '')
 		FROM (
-			SELECT message_id, source_id, sender, role, text, ts, session_id FROM messages
+			SELECT message_id, source_id, sender, sender_id, role, text, ts, session_id FROM messages
 			WHERE session_id = ? ORDER BY ts DESC LIMIT ?
 		) m LEFT JOIN sessions s ON s.session_id = m.session_id
 		ORDER BY m.ts ASC`, sessionID, n)
@@ -994,9 +1001,9 @@ func (s *sqliteSessionStore) MessageCount(ctx context.Context, sessionID string)
 	return n, nil
 }
 
-// scanMessages scans rows shaped (message_id, source_id, sender, role, text,
-// ts, channel_id, thread_id). Both the history reads and SearchMessages select
-// that column order, so they share one scanner.
+// scanMessages scans rows shaped (message_id, source_id, sender, sender_id,
+// role, text, ts, channel_id, thread_id). Both the history reads and
+// SearchMessages select that column order, so they share one scanner.
 func scanMessages(rows *sql.Rows) ([]messaging.Message, error) {
 	defer func() { _ = rows.Close() }()
 	var out []messaging.Message
@@ -1007,7 +1014,7 @@ func scanMessages(rows *sql.Rows) ([]messaging.Message, error) {
 			role string
 			ts   int64
 		)
-		if err := rows.Scan(&id, &msg.SourceID, &msg.Sender, &role, &msg.Text, &ts,
+		if err := rows.Scan(&id, &msg.SourceID, &msg.Sender, &msg.SenderID, &role, &msg.Text, &ts,
 			&msg.ConversationID.ChannelID, &msg.ConversationID.ThreadID); err != nil {
 			return nil, fmt.Errorf("sessionstore: scan message: %w", err)
 		}
@@ -1063,7 +1070,7 @@ func (s *sqliteSessionStore) SearchMessages(ctx context.Context, sessionID strin
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT m.message_id, m.source_id, m.sender, m.role, m.text, m.ts,
+		SELECT m.message_id, m.source_id, m.sender, m.sender_id, m.role, m.text, m.ts,
 			COALESCE(s.channel_id, ''), COALESCE(s.thread_id, '')
 		FROM messages_fts
 		JOIN messages m ON m.id = messages_fts.rowid

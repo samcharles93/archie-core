@@ -130,9 +130,14 @@ type ConversationSource interface {
 	Messages(ctx context.Context, sessionID string, n int) ([]ConversationMessage, error)
 }
 
-// SessionSummary identifies one session and when it was last active.
+// SessionSummary identifies one session, the agent that served it, and when
+// it was last active.
 type SessionSummary struct {
-	ID         string
+	ID string
+	// AgentID is the agent that owns the session, as recorded on the
+	// session's own source. Agent-user memory is addressed by it, so a
+	// curator never has to recover the agent from the session id.
+	AgentID    string
 	LastActive time.Time
 }
 
@@ -140,7 +145,13 @@ type SessionSummary struct {
 type ConversationMessage struct {
 	Role    string // "user" or "assistant"
 	Content string
-	At      time.Time
+	// SenderID is the channel-native stable identifier of the party that
+	// sent the message (see messaging.Message.SenderID). Empty for an
+	// assistant message, and for a channel that carries no per-sender
+	// identity. A curator derives a session's participant from the
+	// user-role messages that carry one.
+	SenderID string
+	At       time.Time
 }
 
 // EventSink publishes curator activity (what ran, what changed, why). It is

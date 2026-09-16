@@ -420,6 +420,48 @@ func TestSQLiteMessageTimestampRoundTrips(t *testing.T) {
 	}
 }
 
+// TestSQLiteSessionStore_SenderIDRoundTrips proves the channel-native
+// participant identifier survives both history reads -- the ordered
+// RecentMessages and the ranked SearchMessages -- and that a record with no
+// sender id round-trips as empty rather than erroring.
+func TestSQLiteSessionStore_SenderIDRoundTrips(t *testing.T) {
+	st := newTestSQLiteStore(t)
+	ctx := context.Background()
+	if err := st.SaveMessage(ctx, "sess", messaging.Message{
+		SourceID: "tg-1", Sender: "alice", SenderID: "u-42",
+		Role: messaging.RoleUser, Text: "hello there", At: sqliteBase(),
+	}); err != nil {
+		t.Fatalf("SaveMessage: %v", err)
+	}
+	if err := st.SaveMessage(ctx, "sess", messaging.Message{
+		Sender: "archie", Role: messaging.RoleAssistant, Text: "hi", At: sqliteBase().Add(time.Second),
+	}); err != nil {
+		t.Fatalf("SaveMessage(no sender id): %v", err)
+	}
+
+	hist, err := st.RecentMessages(ctx, "sess", 10)
+	if err != nil {
+		t.Fatalf("RecentMessages: %v", err)
+	}
+	if len(hist) != 2 {
+		t.Fatalf("RecentMessages = %d messages, want 2", len(hist))
+	}
+	if hist[0].SenderID != "u-42" {
+		t.Errorf("RecentMessages()[0].SenderID = %q, want %q", hist[0].SenderID, "u-42")
+	}
+	if hist[1].SenderID != "" {
+		t.Errorf("RecentMessages()[1].SenderID = %q, want empty", hist[1].SenderID)
+	}
+
+	page, err := st.SearchMessages(ctx, "sess", MessageQuery{Query: "hello", Limit: 10})
+	if err != nil {
+		t.Fatalf("SearchMessages: %v", err)
+	}
+	if len(page.Messages) != 1 || page.Messages[0].SenderID != "u-42" {
+		t.Errorf("SearchMessages() = %+v, want one match with SenderID u-42", page.Messages)
+	}
+}
+
 func TestSQLiteMessageTimestampsIncreaseAcrossStoreHandles(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "messages.db")
 	stores := make([]SessionStore, 2)
@@ -643,7 +685,7 @@ func TestSQLiteSessionStore_MigratesPreRoleDatabase(t *testing.T) {
 		t.Fatalf("open raw db: %v", err)
 	}
 	oldMessages := strings.Replace(sqliteSessionSchema,
-		"\tsender     TEXT NOT NULL DEFAULT '',\n\trole       TEXT NOT NULL DEFAULT '',\n",
+		"\tsender     TEXT NOT NULL DEFAULT '',\n\tsender_id  TEXT NOT NULL DEFAULT '',\n\trole       TEXT NOT NULL DEFAULT '',\n",
 		"\tsender     TEXT NOT NULL DEFAULT '',\n", 1)
 	if _, err := db.ExecContext(t.Context(), oldMessages); err != nil {
 		t.Fatalf("create old schema: %v", err)
@@ -687,6 +729,62 @@ func TestSQLiteSessionStore_MigratesPreRoleDatabase(t *testing.T) {
 	}
 	if len(page.Messages) != 1 {
 		t.Errorf("sender search = %d matches, want 1", len(page.Messages))
+	}
+}
+
+// TestSQLiteSessionStore_MigratesPreSenderIDDatabase simulates a database
+// created before sender_id existed: a role-era schema with no sender_id
+// column. Opening it must add the column with an empty default, leave the
+// existing rows readable, and stay clean across a second open.
+func TestSQLiteSessionStore_MigratesPreSenderIDDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old-sender.db")
+	db, err := sql.Open("sqlite", sqliteSessionDSN(path))
+	if err != nil {
+		t.Fatalf("open raw db: %v", err)
+	}
+	oldMessages := strings.Replace(sqliteSessionSchema,
+		"\tsender_id  TEXT NOT NULL DEFAULT '',\n", "", 1)
+	if _, err := db.ExecContext(t.Context(), oldMessages); err != nil {
+		t.Fatalf("create old schema: %v", err)
+	}
+	millis := sqliteBase().UnixMilli()
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO sessions (session_id, platform, bot_user, channel_id, created_at, last_active_at)
+		VALUES ('sess-old', 'telegram', 'archie', 'chat-1', ?, ?)`, millis, millis); err != nil {
+		t.Fatalf("seed old session: %v", err)
+	}
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO messages (message_id, session_id, source_id, sender, role, text, ts) VALUES
+		('m-user', 'sess-old', 'tg-1', 'alice', 'user', 'hello', ?)`, millis); err != nil {
+		t.Fatalf("seed old message: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close raw db: %v", err)
+	}
+
+	st, err := OpenSQLiteSessionStore(path)
+	if err != nil {
+		t.Fatalf("reopen old database: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	hist, err := st.RecentMessages(context.Background(), "sess-old", 10)
+	if err != nil {
+		t.Fatalf("RecentMessages: %v", err)
+	}
+	if len(hist) != 1 {
+		t.Fatalf("history = %d messages, want 1", len(hist))
+	}
+	if hist[0].Sender != "alice" || hist[0].SenderID != "" {
+		t.Errorf("migrated message = %+v, want sender alice with empty SenderID", hist[0])
+	}
+
+	// The second open takes the duplicate-column path; it must not fail.
+	again, err := OpenSQLiteSessionStore(path)
+	if err != nil {
+		t.Fatalf("second reopen: %v", err)
+	}
+	t.Cleanup(func() { _ = again.Close() })
+	if _, err := again.RecentMessages(context.Background(), "sess-old", 10); err != nil {
+		t.Fatalf("RecentMessages after second reopen: %v", err)
 	}
 }
 
