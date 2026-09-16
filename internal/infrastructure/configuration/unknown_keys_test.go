@@ -3,6 +3,7 @@ package configuration
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -122,6 +123,46 @@ func TestDeploymentOverlaysHaveNoUnknownKeys(t *testing.T) {
 			if len(doc.UnknownKeys) != 0 {
 				t.Errorf("%s has unknown keys: %v", e.Name(), doc.UnknownKeys)
 			}
+		})
+	}
+}
+
+// TestRemovedFieldsSurfaceAsUnknownKeys pins the removal of two fields that
+// were decoded but read nowhere. Once they are gone the compiler guards
+// nothing, so the unknown-key detector is the only thing left that can tell an
+// operator their setting does nothing -- which is the whole reason to remove
+// them rather than leave a live-looking knob wired to nothing.
+func TestRemovedFieldsSurfaceAsUnknownKeys(t *testing.T) {
+	tests := []struct {
+		name  string
+		block string
+		key   string
+	}{
+		{
+			name:  "memory session_ttl",
+			block: "[memory]\nsession_ttl = \"72h\"\n",
+			key:   "memory.session_ttl",
+		},
+		{
+			name:  "tool policy parallel_execution",
+			block: "[tools.tool_policy]\nparallel_execution = true\n",
+			key:   "tools.tool_policy.parallel_execution",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			if err := os.WriteFile(path, []byte(minimalValidConfigTOML+tt.block), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			doc, err := New(nil).File(path)
+			if err != nil {
+				t.Fatalf("File: %v (a removed key must not fail the load)", err)
+			}
+			if slices.Contains(doc.UnknownKeys, tt.key) {
+				return
+			}
+			t.Errorf("UnknownKeys = %v, want it to contain %q", doc.UnknownKeys, tt.key)
 		})
 	}
 }

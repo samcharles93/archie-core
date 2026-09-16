@@ -118,9 +118,8 @@ Do not expose these helper flags as daemon settings.
 | `nats.url`, `token_env` | Empty URL keeps SQLite path. Configured token variable must be non-empty. | production-wired |
 | `containers.*` | See dedicated table below. | production-wired |
 | `chat.*` | See channel table below. | production-wired |
-| `memory.provider`, `provider_config`, `session_ttl` | Feature YAML decodes and tests these; `cmd/archied` always starts built-in file provider at `work_dir/memory`. | decoded-but-unwired |
+| `memory.provider`, `provider_config` | Feature YAML decodes these; `cmd/archied` always starts built-in file provider at `work_dir/memory`. | decoded-but-unwired |
 | `tools.mcp_servers` | `cmd/archied` registers daemon-side MCP providers. Empty transport becomes `stdio`; only `stdio` accepted. `url` decoded but unused. | partially-wired |
-| `tools.tool_policy.*` | Feature YAML decodes `max_result_chars` and `parallel_execution`; no production read exists. | decoded-but-unwired |
 | `indexing.index_dir`, `indexing.db_path` | `finalize` derives paths under `work_dir`; no entrypoint constructs `internal/indexing.Manager`. | decoded-but-unwired |
 | `extra` / unknown `conf.d` values | Test/library-only `LoadDir` stores untyped data; no core production consumer. | decoded-but-unwired |
 

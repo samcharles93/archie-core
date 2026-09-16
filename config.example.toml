@@ -270,7 +270,6 @@ listen = "127.0.0.1:8484"
 # nothing. Leave it unset.
 # [memory]
 # engine = "builtin"        # "builtin" is the only engine implemented so far
-# session_ttl = "0s"
 
 # Image generation capability (internal/domain/image). No provider is
 # implemented yet -- this section defines the contract/config surface only

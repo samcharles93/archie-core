@@ -328,7 +328,6 @@ type MemoryConfig struct {
 	// mechanism than Engine. See archie-core-1786637499161-356-e424e40d.1.
 	Provider       string            `toml:"provider" yaml:"provider" json:"provider"`
 	ProviderConfig map[string]string `toml:"provider_config" yaml:"provider_config" json:"provider_config"`
-	SessionTTL     Duration          `toml:"session_ttl" yaml:"session_ttl" json:"session_ttl"`
 }
 
 // MCPServer describes one MCP server connection.
@@ -362,8 +361,7 @@ type ToolPolicy struct {
 	// SpillDir is where results too large to inline are written so the model
 	// can be handed a path instead of losing the content. Empty disables
 	// spilling, leaving inline truncation as the only option.
-	SpillDir          string `toml:"spill_dir" yaml:"spill_dir" json:"spill_dir"`
-	ParallelExecution bool   `toml:"parallel_execution" yaml:"parallel_execution" json:"parallel_execution"`
+	SpillDir string `toml:"spill_dir" yaml:"spill_dir" json:"spill_dir"`
 }
 
 // WebFetchConfig controls the web_fetch tool.

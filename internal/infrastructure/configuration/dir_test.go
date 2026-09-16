@@ -201,7 +201,6 @@ func tmpConfigDir(t *testing.T) string {
 // provider_config:
 //   api_url: https://honcho.example.test
 //   api_key_env: HONCHO_KEY
-// session_ttl: 72h
 // `)
 
 // 	cfg, err := loadDir(dir, "")
@@ -214,9 +213,6 @@ func tmpConfigDir(t *testing.T) string {
 // 	}
 // 	if cfg.Memory.ProviderConfig["api_url"] != "https://honcho.example.test" {
 // 		t.Errorf("Memory api_url = %q", cfg.Memory.ProviderConfig["api_url"])
-// 	}
-// 	if cfg.Memory.SessionTTL.Std() != 72*time.Hour {
-// 		t.Errorf("Memory session_ttl = %v", cfg.Memory.SessionTTL.Std())
 // 	}
 // }
 
@@ -236,7 +232,6 @@ func tmpConfigDir(t *testing.T) string {
 //     url: https://search-mcp.example.test
 // tool_policy:
 //   max_result_chars: 100000
-//   parallel_execution: true
 // `)
 
 // 	cfg, err := loadDir(dir, "")
@@ -257,9 +252,6 @@ func tmpConfigDir(t *testing.T) string {
 // 	}
 // 	if cfg.Tools.Policy.MaxResultChars != 100000 {
 // 		t.Errorf("max_result_chars = %d", cfg.Tools.Policy.MaxResultChars)
-// 	}
-// 	if !cfg.Tools.Policy.ParallelExecution {
-// 		t.Error("parallel_execution should be true")
 // 	}
 // }
 
