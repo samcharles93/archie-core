@@ -8,7 +8,8 @@ description: "Measure Archie codebase maintainability, Go package dependency sha
 Collect evidence before judging quality. Keep collection read-only, save raw
 output, state what each metric cannot prove.
 
-Volatile facts and numeric snapshots below were verified on **2026-07-28**.
+Volatile facts and numeric snapshots below were verified on **2026-09-16**
+(HEAD `d565fb8`).
 
 Route to `archie-codebase-discovery` for semantic traces,
 `archie-config-and-flags` for config enumeration,
@@ -59,6 +60,14 @@ go run "$skill/scripts/config-use-candidates.go" -root . >"$evidence_dir/config.
 "$skill/scripts/package-shape.sh" tools >"$evidence_dir/packages-tools.tsv"
 "$skill/scripts/delivery-snapshot.sh" >"$evidence_dir/delivery.tsv"
 ```
+
+Both filesystem-walking scripts (`source-metrics.go`,
+`config-use-candidates.go`) skip `.worktrees/`, which holds live git worktrees
+nested inside the repo root. Each is a near-complete copy of the module, so
+walking them multiplies every count by the number of checkout worktrees. If a
+new nested-checkout convention appears, extend `excludedDirectory` in both;
+`.git/info/exclude` does not help, because the scripts walk the filesystem
+rather than `git ls-files`. `package-shape.sh` reads `go list`, so it is immune.
 
 ## Use the bundled reports
 
@@ -116,6 +125,15 @@ finds named fields with `toml`/`yaml`/`json` tags in `internal/config`, then
 counts selectors with the same **spelling**. It is deliberately fast and not
 type-aware.
 
+Only `candidate-no-selector-outside-config` is a signal.
+`candidate-no-entrypoint-selector` fires for ~180 of 196 rows because the
+script looks for selectors only in `cmd/`, and most fields are read from the
+composition root under `internal/app/archied`. Even the signal row has false
+positives: a field consumed by **spelling** rather than by a Go selector
+(`LegacyEnabled` via the reload allowlist map, `ReloadStatus.*` via JSON
+marshalling) reports zero. Confirm each candidate by hand before calling a
+field dead.
+
 For every candidate: run `gopls references -d` on the exact field identifier;
 trace decode → default → validation → normalization/copy → composition-root read
 → concrete component → observable behavior.
@@ -128,8 +146,14 @@ trace decode → default → validation → normalization/copy → composition-r
 
 Read: `SURFACE axis scope literal_count` as literal text evidence;
 `HYGIENE metric count` as tracked-path candidates; `MODULE path` as discovered
-Go module boundaries. The snapshot compares Task, GitHub docs CI, Gitea deploy
-CI, and selected composition-root anchors.
+Go module boundaries. The snapshot compares Task, GitHub CI, and
+composition-root anchors under `internal/app/archied`.
+
+Composition-root anchors must name the file that actually does the wiring.
+`cmd/archied/main.go` is a thin dispatcher that routes to
+`internal/app/archied`; anchoring on it yields a silent `0` for every row,
+which reads as "no composition root" rather than "wrong file". A zero here is
+evidence about the anchor, not about production.
 
 Inspect hygiene candidates directly:
 
@@ -149,7 +173,7 @@ golangci-lint run --enable-only=dupl ./internal/...
 staticcheck -checks=U1000 ./internal/...
 ```
 
-On 2026-07-28, the focused `dupl` command reported zero issues. Two code paths
+On 2026-09-16, the focused `dupl` command reported zero issues. Two code paths
 can implement the same responsibility with different syntax.
 
 For every candidate: name the externally visible operation; search all
@@ -159,7 +183,7 @@ OS files, and wire names; identify what a new feature supersedes; record
 production-only, test-only, compatibility, generated, and unreachable paths
 separately.
 
-As of 2026-07-28, `Taskfile.yml` defines no `deadcode` task and `go tool` lists
+As of 2026-09-16, `Taskfile.yml` defines no `deadcode` task and `go tool` lists
 no dead-code analyzer.
 
 ## Collect test, race, coverage, and runtime evidence
@@ -170,7 +194,7 @@ go tool cover -func=/tmp/archie-store.cover
 go test -race ./internal/store -count=1
 ```
 
-As of 2026-07-28, the package reported 65.2% statement coverage and passed its
+As of 2026-09-16, the package reported 78.6% statement coverage and passed its
 race run.
 
 ```sh
@@ -207,23 +231,35 @@ duplication, hid a path, or weakened a gate.
 
 ## Dated current snapshot
 
-The bundled scripts measured this checkout on 2026-07-28:
+The bundled scripts measured this checkout on 2026-09-16 (HEAD `d565fb8`).
+These are post-fix numbers: earlier runs of the same scripts reported roughly
+3x these file and line counts because they walked `.worktrees/`.
 
 | Observation | Unstable value |
 |---|---:|
-| Root production/test/generated Go files | 123 / 111 / 4 |
-| Root production/test/generated physical lines | 25,952 / 31,675 / 157 |
-| `cmd/archied.run` body span / approximate complexity | 668 / 96 |
-| `internal/config.finalize` body span / approximate complexity | 177 / 64 |
-| Root internal packages / direct internal edges | 51 / 129 |
-| Tagged config field rows | 110 |
-| Tracked paths / tracked `node_modules` paths / tracked symlinks | 558 / 237 / 238 |
-| `.dockerignore` present | 0 |
+| Root production/test/generated Go files | 408 / 397 / 9 |
+| Root production/test/generated physical lines | 73,729 / 93,572 / 12,237 |
+| `internal/app/archied.Run` body span / approximate complexity | 97 / 19 |
+| Root internal packages / direct internal edges | 110 / 306 |
+| Tagged config field rows | 196 |
+| Tracked paths / tracked `node_modules` paths / tracked symlinks | 1,081 / 0 / 1 |
+| `.dockerignore` present | 1 |
 
-The delivery snapshot found no Taskfile literals for race, the `tools` module,
-or docs; no Go-gate literals in either workflow; docs build in GitHub CI;
-container build/push in Gitea CI.
+`source-metrics.go` and `git ls-files` reconcile exactly here: 408 + 9
+generated production files and 397 test files, plus the `tools` module's
+5 / 2 / 0, against 422 non-test and 398 test tracked files. The single extra
+file is an untracked probe under `.local/`.
+
+The scripts count themselves: the skill's own Go files contribute 816 of those
+production lines. Editing a bundled script therefore moves
+`production_physical_lines` on its own, so re-baseline after any script change
+rather than reading the delta as a change in the product code.
+
+The delivery snapshot found no Taskfile literals for race or docs, but four
+for the `tools` module; GitHub `go gate` 4 and container publish 3; and
+non-zero literals for all five composition-root anchors under
+`internal/app/archied`.
 
 The focused test
 `go test ./internal/skillscript -run '^TestRunWrapsExternalCommand$' -count=1 -v`
-failed on 2026-07-28 with `Run() = "\n"`.
+failed on 2026-07-28 with `Run() = "\n"` and **passes** as of 2026-09-16.

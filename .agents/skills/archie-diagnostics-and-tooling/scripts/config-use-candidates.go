@@ -264,9 +264,14 @@ func countSelectors(root string, fset *token.FileSet, references map[string]*ref
 	})
 }
 
+// excludedDirectory reports whether a walked directory is outside the module.
+//
+// ".worktrees" holds live git worktrees of this same repository, nested inside
+// the root. countSelectors walks the whole root, so without this every selector
+// count is multiplied by the number of checkout worktrees.
 func excludedDirectory(_, name string) bool {
 	switch name {
-	case ".git", ".claude", ".references", "node_modules", "vendor", ".gotmp":
+	case ".git", ".claude", ".references", "node_modules", "vendor", ".gotmp", ".worktrees":
 		return true
 	}
 	return false

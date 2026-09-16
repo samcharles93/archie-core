@@ -247,9 +247,15 @@ func main() {
 	}
 }
 
+// excludedDirectory reports whether a walked directory is outside the module.
+//
+// ".worktrees" holds live git worktrees of this same repository, nested inside
+// the root. Each is a near-complete copy of the module, so walking them
+// multiplies every count by the number of checkout worktrees and floods the
+// HOTSPOT and PACKAGE rows with duplicates of the same declarations.
 func excludedDirectory(_, name string) bool {
 	switch name {
-	case ".git", ".claude", ".references", "node_modules", "vendor", ".gotmp":
+	case ".git", ".claude", ".references", "node_modules", "vendor", ".gotmp", ".worktrees":
 		return true
 	}
 	return false

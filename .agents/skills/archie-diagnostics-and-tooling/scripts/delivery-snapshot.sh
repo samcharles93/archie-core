@@ -54,15 +54,21 @@ scan_literal task_race taskfile 'go test[^#\n]*-race|-race[^#\n]*go test' Taskfi
 scan_literal task_tools_module taskfile 'go -C tools|cd tools|task:[[:space:]]+tools' Taskfile.yml
 scan_literal task_docs taskfile 'docsgen|docs:generate|docs:check' Taskfile.yml
 
+# One CI surface: .github/workflows. The Gitea workflow was dropped in e539048
+# ("ci: build and push images to GHCR, drop the Gitea workflow"), so scanning
+# .gitea/workflows aborted the whole snapshot under `set -eu`.
 scan_literal github_go_gate github-workflows 'go test|go vet|go build|golangci-lint|task[[:space:]]+check' .github/workflows
-scan_literal gitea_go_gate gitea-workflows 'go test|go vet|go build|golangci-lint|task[[:space:]]+check' .gitea/workflows
-scan_literal gitea_container_publish gitea-workflows 'docker build|docker push' .gitea/workflows
+scan_literal github_container_publish github-workflows 'docker build|docker push|docker/build-push-action|docker login' .github/workflows
 
-scan_literal production_load_overlay composition-root 'config\.LoadOverlay\(' cmd/archied/main.go
-scan_literal production_load_dir composition-root 'config\.LoadDir\(' cmd/archied/main.go
-scan_literal production_sqlite_store composition-root 'store\.Open\(' cmd/archied/main.go
-scan_literal production_daemon composition-root '&daemon\.Daemon\{' cmd/archied/main.go
-scan_literal production_rpc_servers composition-root 'registerTaskRPCServers\(' cmd/archied/main.go
+# Composition root. cmd/archied/main.go is now a ~30-line dispatcher that only
+# routes to internal/app/archied, so anchoring on it reported a silent zero for
+# every row below -- which reads as "no composition root" rather than "wrong
+# file". The wiring lives in internal/app/archied.
+scan_literal production_config_resolve composition-root 'configuration\.New\(' internal/app/archied
+scan_literal production_config_overlay composition-root 'ApplyOverlayValues\(|loadConfig\(' internal/app/archied
+scan_literal production_sqlite_store composition-root 'openProductionTaskStore\(|openStateStore\(' internal/app/archied
+scan_literal production_daemon composition-root '&daemon\.Daemon\{' internal/app/archied
+scan_literal production_rpc_servers composition-root 'registerTaskRPCServers\(' internal/app/archied
 
 git ls-files >"$temporary/tracked"
 tracked_total=$(wc -l <"$temporary/tracked" | sed 's/[[:space:]]//g')
@@ -81,7 +87,7 @@ else
 fi
 
 find . \
-	\( -path './.git' -o -path './.claude' -o -path './.references' -o -name node_modules \) -prune -o \
+	\( -path './.git' -o -path './.claude' -o -path './.references' -o -name node_modules -o -name .worktrees \) -prune -o \
 	-name go.mod -print |
 	LC_ALL=C sort |
 	while IFS= read -r module; do
