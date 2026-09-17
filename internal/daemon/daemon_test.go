@@ -80,13 +80,97 @@ func TestOpenTaskLogOpensAndClosesTheRightSink(t *testing.T) {
 	task := &workflow.Task{ID: 5, Attempt: 2}
 
 	closeFn := d.openTaskLog(task)
-	if ok := reg.Write(5, logging.Entry{Message: "x"}); !ok {
+	if ok := reg.Write(t.Context(), 5, logging.Entry{Message: "x"}); !ok {
 		t.Fatal("Write() = false right after openTaskLog, want true (sink should be open)")
 	}
 
 	closeFn()
-	if ok := reg.Write(5, logging.Entry{Message: "y"}); ok {
+	if ok := reg.Write(t.Context(), 5, logging.Entry{Message: "y"}); ok {
 		t.Error("Write() = true after openTaskLog's closer ran, want false (sink should be closed)")
+	}
+}
+
+// TestParkRunningTaskRecordsItsReasonInTheTasksOwnLog pins the answer to the
+// question the task log exists for: "why did this attempt park?" Every park
+// used to be written only to the daemon-wide log, so an attempt that parked
+// before its container produced any output -- a worktree prepare failure, an
+// unavailable worker, a taskrun error -- left a task log that the sink had
+// created and nothing had written to. The dashboard offered that zero-byte
+// file as a download, and the reason lived somewhere the operator could not
+// hand to anyone.
+func TestParkRunningTaskRecordsItsReasonInTheTasksOwnLog(t *testing.T) {
+	d, st, _ := testDaemon(t, 3, 0)
+	d.Log = slog.New(slog.DiscardHandler)
+	d.TaskLogs = logging.NewTaskRegistry(t.TempDir(), logging.NewFeed(10), logging.TaskSinkOptions{})
+
+	ctx := t.Context()
+	if _, err := st.EnqueueIssue(ctx, "acme", "widget", 42, "task", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := st.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("ClaimNext = (%+v, %v)", task, err)
+	}
+	// The sink is opened for the attempt by process() and closed when the run
+	// ends; the park happens in between, which is the only window it is read in.
+	closeLog := d.openTaskLog(task)
+	defer closeLog()
+
+	const reason = "worktree prepare failed: checkout branch fix/42-x: reference not found"
+	d.parkRunningTask(ctx, task.ID, reason)
+
+	page, err := d.TaskLogs.TaskLog(ctx, task.ID, task.Attempt, logging.Query{})
+	if err != nil {
+		t.Fatalf("TaskLog: %v", err)
+	}
+	if !page.Found {
+		t.Fatalf("attempt %d has no log file, want the reason recorded in one", task.Attempt)
+	}
+	if len(page.Entries) != 1 {
+		t.Fatalf("entries = %+v, want exactly the park reason", page.Entries)
+	}
+	entry := page.Entries[0]
+	if !strings.Contains(entry.Message, reason) {
+		t.Errorf("entry = %q, want it to carry the park reason %q", entry.Message, reason)
+	}
+	if entry.Level != slog.LevelError.String() {
+		t.Errorf("entry level = %q, want %q", entry.Level, slog.LevelError.String())
+	}
+	if entry.Fields["component"] != "daemon" {
+		t.Errorf("entry component = %v, want the daemon to be identifiable in the attempt's own log", entry.Fields["component"])
+	}
+}
+
+// TestParkDoesNotRecordAParkThatLosesTheRace keeps the new task-log entry as
+// truthful as the parked event it accompanies. If another actor moved the task
+// out of running first, the guarded transition reports ErStoreStaleTransition
+// and nothing was parked -- so "task parked: <reason>" must not appear in the
+// attempt's log either, or the log claims an outcome the task board contradicts.
+func TestParkDoesNotRecordAParkThatLosesTheRace(t *testing.T) {
+	d, st, _ := testDaemon(t, 3, 0)
+	d.Log = slog.New(slog.DiscardHandler)
+	d.TaskLogs = logging.NewTaskRegistry(t.TempDir(), logging.NewFeed(10), logging.TaskSinkOptions{})
+
+	ctx := t.Context()
+	if _, err := st.EnqueueIssue(ctx, "acme", "widget", 42, "task", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	// Left queued, not claimed: the running -> parked transition cannot match.
+	task, err := st.TaskByIssue(ctx, "acme", "widget", 42)
+	if err != nil || task == nil {
+		t.Fatalf("TaskByIssue = (%+v, %v)", task, err)
+	}
+	closeLog := d.openTaskLog(task)
+	defer closeLog()
+
+	d.parkRunningTask(ctx, task.ID, "worktree prepare failed: simulated")
+
+	page, err := d.TaskLogs.TaskLog(ctx, task.ID, task.Attempt, logging.Query{})
+	if err != nil {
+		t.Fatalf("TaskLog: %v", err)
+	}
+	if len(page.Entries) != 0 {
+		t.Errorf("entries = %+v, want none: the task was never parked", page.Entries)
 	}
 }
 

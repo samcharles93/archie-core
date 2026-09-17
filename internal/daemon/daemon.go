@@ -1038,6 +1038,7 @@ func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
 			d.Log.Warn("managed worker park transition failed", "task", task.ID, "err", err)
 			return
 		}
+		d.recordPark(ctx, task.ID, reason)
 		d.emit(events.Event{
 			Kind: events.KindParked, TaskID: task.ID,
 			Repo: repo.FullName(), Issue: task.IssueNumber, Detail: reason,
@@ -1051,6 +1052,7 @@ func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
 			d.Log.Warn("agent task transport park transition failed", "task", task.ID, "err", err)
 			return
 		}
+		d.recordPark(ctx, task.ID, reason)
 		d.emit(events.Event{
 			Kind: events.KindParked, TaskID: task.ID,
 			Repo: repo.FullName(), Issue: task.IssueNumber, Detail: reason,
@@ -1263,7 +1265,33 @@ func (d *Daemon) parkRunningTask(ctx context.Context, taskID int64, reason strin
 		if !errors.Is(err, storecontract.ErrStaleTransition) {
 			d.Log.Warn("terminal park transition failed", "task", taskID, "reason", reason, "err", err)
 		}
+		return
 	}
+	// Recorded only once the transition landed. An entry claiming the task
+	// parked would be a lie when another actor moved it out of running first
+	// -- the same race the parked event is withheld for.
+	d.recordPark(ctx, taskID, reason)
+}
+
+// recordPark writes one park reason into the task attempt's own log. Every
+// place that parks a task calls it, including the two capability parks in
+// process() that write their transition directly instead of going through
+// parkRunningTask -- a park an operator cannot read the reason for is the same
+// defect wherever it happens. Nothing daemon-side used to write to a task log
+// at all: the container's system-log subscription was the only writer, so an
+// attempt that parked before any container produced output left an empty log
+// file and an unexplained park reason.
+//
+// A task with no open sink (a retry this instance never dispatched, or logging
+// unwired) silently drops the entry, which is TaskRegistry.Write's own
+// contract.
+func (d *Daemon) recordPark(ctx context.Context, taskID int64, reason string) {
+	d.TaskLogs.Write(ctx, taskID, logging.Entry{
+		Time:    time.Now(),
+		Level:   slog.LevelError.String(),
+		Message: "task parked: " + reason,
+		Fields:  map[string]any{"component": "daemon", "task": taskID},
+	})
 }
 
 // containerEnv returns the environment variables passed to agent containers.
