@@ -230,13 +230,19 @@ func TestLiveReplyRendersNoisyToolTurnAsCompactTelegramText(t *testing.T) {
 	live.finalize(context.Background(), "I found the relevant renderer and stopped after the output-volume cap.")
 
 	got := (*calls)[len(*calls)-1].body()
-	want := "🔧 read — done\n\npackage gateway\n… 7 more lines\n\n" +
+	// A tool result is described, never quoted with an invented line count:
+	// "… 7 more lines" was the renderer counting its own truncated sample, and
+	// it cannot agree with the total the tool actually reported.
+	want := "🔧 read — done\n\npackage gateway\n\n" +
 		"🔧 find — done\n\n/home/sam/projects/unrelated/main.go\n\n" +
 		"🔧 shell — failed\n\ncommand_exit: exit status 2\n\n" +
 		"🔧 tools — stopped ×5\n\ntool-output limit reached (200000 chars); further results suppressed\n\n" +
 		"I found the relevant renderer and stopped after the output-volume cap."
 	if got != want {
 		t.Fatalf("Telegram-visible text:\n%s\n\nwant:\n%s", got, want)
+	}
+	if strings.Contains(got, "more lines") {
+		t.Errorf("renderer invented a line count from a truncated sample:\n%s", got)
 	}
 	for i, call := range *calls {
 		for _, forbidden := range []string{
@@ -704,8 +710,14 @@ func TestLiveReplyFramedTextClampsAnOversizedToolBlock(t *testing.T) {
 	if !strings.Contains(last.body(), "the answer") {
 		t.Fatalf("answer was lost after bounding oversized tool output: %.80q…", last.body())
 	}
-	if strings.Count(last.body(), "ok") > 3 || !strings.Contains(last.body(), "more lines") {
+	// The oversized block must be summarised rather than dumped, and the
+	// summary must not be a line count the renderer invented: "ok" repeats far
+	// more than three times, so anything that echoed the sample fails here.
+	if strings.Count(last.body(), "ok") > 3 {
 		t.Fatalf("oversized tool output was not summarized: %.80q…", last.body())
+	}
+	if strings.Contains(last.body(), "more lines") {
+		t.Errorf("summary invented a line count from a truncated sample: %.80q…", last.body())
 	}
 }
 

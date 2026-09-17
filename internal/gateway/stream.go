@@ -3,6 +3,7 @@ package gateway
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/samcharles93/archie-core/internal/webhookguard"
@@ -65,37 +66,159 @@ func toolProgressBlock(name, status, preview string) string {
 	return "🔧 " + name + " — " + status + "\n```text\n" + truncateRunes(preview, 180) + "\n```"
 }
 
+// toolPreview reduces a tool result to one informative line.
+//
+// The result is described, never quoted: a search returns match lines that say
+// nothing on their own (a path, a line number, a closing brace), so the preview
+// states what came back and how much of it. The count comes from the tool's own
+// truncation notice when it printed one, because a count recomputed from the
+// visible sample describes the sample, not the result set -- rendering both
+// produced two different numbers for one search ("194 more lines" next to
+// "… 3 more lines"), which reads as noise.
 func toolPreview(name, output string) string {
 	content, _ := unwrapToolContent(output)
-	preview, skipped := compactToolPreview(content)
-	if preview == "" {
-		if strings.TrimSpace(content) == "" {
-			return "completed"
-		}
-		return "completed with no printable preview"
+	if strings.TrimSpace(content) == "" {
+		return "completed"
 	}
-	remaining := max(countNonEmptyOrContentLines(content)-1-skipped, 0)
-	if remaining > 0 {
-		return fmt.Sprintf("%s\n… %d more lines", preview, remaining)
+	// A tool that reported a real total is the only trustworthy source for
+	// how much came back; anything we compute is about the sample we can see.
+	if total, ok := toolReportedTotal(content); ok {
+		return total
+	}
+	if summary, ok := searchResultSummary(content); ok {
+		return summary
+	}
+	preview := firstInformativeLine(content)
+	if preview == "" {
+		return "completed with no printable preview"
 	}
 	_ = name
 	return preview
 }
 
-func compactToolPreview(output string) (string, int) {
-	skipped := 0
-	for line := range strings.SplitSeq(output, "\n") {
+// toolReportedTotal extracts the line total from the truncation notices the
+// tool layer prints (internal/tools/builtin: "[truncated: showing 2/194 lines,
+// …]"). Those notices are metadata, not content, so they are never rendered as
+// a preview line -- quoting one is what produced "[truncated: showing 3/197
+// lines, 412B/24.1KB]" as if it were a search hit.
+//
+// A notice that shows everything (showing N/N) is not a truncation and gets no
+// summary: the content speaks for itself.
+func toolReportedTotal(content string) (string, bool) {
+	for line := range strings.SplitSeq(content, "\n") {
+		line = strings.TrimSpace(line)
+		shown, total, ok := parseTruncationNotice(line)
+		if !ok {
+			continue
+		}
+		if total <= shown {
+			continue
+		}
+		return fmt.Sprintf("%d lines total; showing %d", total, shown), true
+	}
+	return "", false
+}
+
+// parseTruncationNotice reads "showing <shown>/<total> lines" out of a
+// truncation notice, tolerating the surrounding "[truncated: … ]" wrapper.
+func parseTruncationNotice(line string) (shown, total int, ok bool) {
+	_, rest, found := strings.Cut(line, "showing ")
+	if !found {
+		return 0, 0, false
+	}
+	counts, _, found := strings.Cut(rest, " lines")
+	if !found {
+		return 0, 0, false
+	}
+	left, right, found := strings.Cut(counts, "/")
+	if !found {
+		return 0, 0, false
+	}
+	shown, errShown := strconv.Atoi(strings.TrimSpace(left))
+	total, errTotal := strconv.Atoi(strings.TrimSpace(right))
+	if errShown != nil || errTotal != nil {
+		return 0, 0, false
+	}
+	return shown, total, true
+}
+
+// searchResultSummary counts match lines in ripgrep-shaped output ("path-12-
+// text", "path:12:text", or a context separator). A search is the one tool
+// whose raw output is least useful quoted and most useful counted, so it is
+// summarised rather than sampled.
+func searchResultSummary(content string) (string, bool) {
+	matches, _ := countSearchMatches(content)
+	if matches == 0 {
+		return "", false
+	}
+	return fmt.Sprintf("%d %s", matches, pluralize(matches, "match", "matches")), true
+}
+
+// countSearchMatches counts match lines and whether any were truncated.
+func countSearchMatches(content string) (matches int, truncated bool) {
+	for line := range strings.SplitSeq(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "[") {
+			continue
+		}
+		if searchMatchLine(line) {
+			matches++
+		}
+	}
+	return matches, false
+}
+
+// searchMatchLine reports whether line has ripgrep's "path-N-text" or
+// "path:N:text" shape. The path may contain colons, so the separator is found
+// by scanning for the last one that is followed by a line number.
+func searchMatchLine(line string) bool {
+	if strings.HasPrefix(line, "--") && strings.Trim(line, "-") == "" {
+		return true // context separator
+	}
+	for i := len(line) - 1; i > 0; i-- {
+		if line[i] != ':' && line[i] != '-' {
+			continue
+		}
+		digits := line[i+1:]
+		end := 0
+		for end < len(digits) && digits[end] >= '0' && digits[end] <= '9' {
+			end++
+		}
+		if end == 0 || end >= len(digits) {
+			continue
+		}
+		if digits[end] == ':' || digits[end] == '-' {
+			return true
+		}
+	}
+	return false
+}
+
+// firstInformativeLine returns the first line worth showing: not blank, not a
+// module-cache path, and not a truncation notice (which is metadata the total
+// path already consumed).
+func firstInformativeLine(content string) string {
+	for line := range strings.SplitSeq(content, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
 		if strings.Contains(line, "/pkg/mod/") {
-			skipped++
 			continue
 		}
-		return truncateRunes(line, 120), skipped
+		if _, _, ok := parseTruncationNotice(line); ok {
+			continue
+		}
+		return truncateRunes(line, 120)
 	}
-	return "", skipped
+	return ""
+}
+
+func pluralize(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 func unwrapToolContent(output string) (string, bool) {
@@ -114,14 +237,6 @@ func unwrapToolContent(output string) (string, bool) {
 		return quoted, true
 	}
 	return output, false
-}
-
-func countNonEmptyOrContentLines(s string) int {
-	if strings.TrimSpace(s) == "" {
-		return 0
-	}
-	trimmed := strings.TrimRight(s, "\r\n")
-	return strings.Count(trimmed, "\n") + 1
 }
 
 func cleanToolError(name, raw string) string {
