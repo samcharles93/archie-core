@@ -1,9 +1,11 @@
 package workflow_test
 
 import (
+	"bytes"
 	"context"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
@@ -33,6 +35,50 @@ func (r *storeIntegrationRunner) Run(
 	res.Attempt = req.Attempt
 	res.Stage = req.Stage
 	return res, nil
+}
+
+// TestRunRecordsAParkReasonInTheRunsOwnLog pins the agent-side half of the
+// same contract: a run's own log is what an operator downloads to answer "why
+// did this park?", and a parked OUTCOME (a review that could not run, a stage
+// that ended parked rather than failing) used to reach the timeline as an event
+// and the store as park_reason, but never the log. A workflow that ends without
+// an outcome is the smallest way to reach that path.
+func TestRunRecordsAParkReasonInTheRunsOwnLog(t *testing.T) {
+	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "archie.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := st.Close(); err != nil {
+			t.Errorf("close store: %v", err)
+		}
+	})
+	ctx := context.Background()
+	if _, err := st.EnqueueIssue(ctx, "owner", "repo", 3, "title", "body", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := st.ClaimNext(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var logs bytes.Buffer
+	workflow.Run(ctx, workflow.Workflow{Name: "empty"}, &workflow.TaskContext{
+		Task: task, Store: st, Repo: config.Repo{Owner: "owner", Name: "repo"},
+		Log: slog.New(slog.NewJSONHandler(&logs, nil)),
+	})
+
+	const reason = "workflow ended without an outcome (definition bug)"
+	if !strings.Contains(logs.String(), reason) {
+		t.Errorf("run log = %s, want the park reason %q recorded in it", logs.String(), reason)
+	}
+	got, err := st.TaskByIssue(ctx, "owner", "repo", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != workflow.StatusParked || got.ParkReason != reason {
+		t.Fatalf("task status/park_reason = (%q, %q), want parked with the same reason the log carries", got.Status, got.ParkReason)
+	}
 }
 
 func TestAgentStagePersistsReturnedNotes(t *testing.T) {

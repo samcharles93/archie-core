@@ -316,7 +316,6 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 				return
 			}
 			t.ParkReason = fmt.Sprintf("stage %s: %v", stage.Name, err)
-			log.Warn("stage failed  --  parking", "stage", stage.Name, "err", err)
 			park(ctx, tc, t.ParkReason)
 			return
 		}
@@ -348,6 +347,11 @@ func park(ctx context.Context, tc *TaskContext, reason string) {
 	_ = tc.Store.Update(ctx, t)
 	_ = tc.Store.Transition(ctx, t.ID, StatusRunning, StatusParked, reason)
 	tc.Emit(events.KindParked, t.Stage, reason, nil)
+	// The run's own log is the surface an operator downloads to answer "why did
+	// this park?", and the event above lands on the timeline, which the log
+	// never carries. This is the one place a park's reason is final, so it is
+	// the one place that records it -- the stage names itself in the reason.
+	tc.Log.Error("task parked", "stage", t.Stage, "reason", reason)
 }
 
 func clip(s string, n int) string {

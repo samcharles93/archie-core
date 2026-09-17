@@ -95,6 +95,15 @@ appears on the dashboard exactly like daemon output. The approved target is
 for this composition to move to `internal/app/archied`; that package does not
 yet exist, so this document does not claim the migration is complete.
 
+The daemon is also a writer in its own right for the decisions only it makes.
+Every park records its reason into that attempt's sink (`daemon.recordPark`),
+on the daemon side after the guarded transition lands and in
+`workflow.park` on the agent side, because "why did this park?" is the question
+the log exists to answer and the container path cannot answer a run that never
+reached a container. The entry is written only once the park actually
+happened, so a transition another actor won does not leave a log claiming an
+outcome the task board contradicts.
+
 ### Gate output: stop discarding it
 
 `StageBaselineGate` and the equivalent TDD-stage gate runs write full
