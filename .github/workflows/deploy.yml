@@ -214,6 +214,10 @@ jobs:
     # archied tag at HEAD.
     if: needs.gate.outputs.archied_version != ''
     runs-on: ubuntu-latest
+    # Least privilege: the workflow default is contents:read, and only this
+    # job needs to write, to create the Release and attach the zip to it.
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -264,3 +268,49 @@ jobs:
           name: ${{ steps.zip.outputs.name }}
           path: ${{ steps.zip.outputs.name }}.zip
           retention-days: 90
+
+      # A Release is what an operator can actually download from; the
+      # artifact above is reachable only from the run's page, behind an
+      # Actions login, and expires after 90 days. Until this step existed the
+      # zip was produced and then stranded -- the only Release on this repo
+      # (archied/v1.22.0) was created by hand and carries no asset at all.
+      #
+      # Attached to the *archied* tag because the zip is named and versioned
+      # for archied, and `--follow-tags` pushes both tags at one commit.
+      # --generate-notes is deliberately not used: the changelog section is
+      # the release's own reviewed prose, and the tag/changelog gate above
+      # already guarantees it describes this version.
+      - name: Publish GitHub Release with the distribution zip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          tag="archied/v${{ steps.version.outputs.version }}"
+          version="${{ steps.version.outputs.version }}"
+          # The release body is this version's changelog section, not the whole
+          # file: from its "## [x.y.z]" heading to the next "## [" heading.
+          # Extracting rather than inlining keeps the changelog the single
+          # source of truth, and the tag/changelog gate above has already
+          # proven that section exists.
+          notes="$(mktemp)"
+          awk -v hdr="## [$version]" '
+            index($0, hdr) == 1 { printing = 1 }
+            printing && /^## \[/ && index($0, hdr) != 1 { exit }
+            printing { print }
+          ' CHANGELOG.archied.md > "$notes"
+          if ! [ -s "$notes" ]; then
+            echo "no [$version] section extracted from CHANGELOG.archied.md" >&2
+            exit 1
+          fi
+          # Idempotent: --clobber replaces the asset and leaves the notes
+          # alone, so a re-run of this job (a retried or superseded deploy)
+          # cannot fail on an existing Release or duplicate the zip.
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "${{ steps.zip.outputs.name }}.zip" --clobber
+          else
+            gh release create "$tag" \
+              --title "archied v$version" \
+              --notes-file "$notes" \
+              "${{ steps.zip.outputs.name }}.zip"
+          fi
+          echo "published $tag with ${{ steps.zip.outputs.name }}.zip"
