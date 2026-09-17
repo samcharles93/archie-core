@@ -5,8 +5,6 @@
 - The per-task runtime picks up the new State Store task-log read contract, so
   the sandboxed agents share one log-reading path with the daemon and the
   dashboard.
-- The gateway version stamp now covers the binaries installed alongside the
-  daemon, so their versions can be reported and compared.
 
 ## [1.26.0] - 2026-09-17
 
