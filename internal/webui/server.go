@@ -43,10 +43,16 @@ type Server struct {
 	// LogFeed is the daemon diagnostic stream. It is separate from Events,
 	// which contains persisted task lifecycle activity only.
 	LogFeed *logging.Feed
-	// TaskLogs holds each task's persisted log output. Archiving a task
-	// removes its log files here too, via TaskLogs.Remove -- nil (task
-	// logging not configured) makes that a no-op.
-	TaskLogs *logging.TaskRegistry
+	// TaskLogs reads each task's persisted log output. Composition gives this
+	// process whichever implementation it can use: the daemon (whose state
+	// directory holds the files) its own *logging.TaskRegistry, and the
+	// dashboard process, which owns no such directory, the State Store client
+	// -- the read crosses a contract rather than opening a file
+	// (docs/prds/ui-service-boundary.md). Nil means this process has no
+	// task-log capability at all, which the handlers report as disabled rather
+	// than as "the attempt has no log": those are different claims and only one
+	// of them is about configuration.
+	TaskLogs TaskLogSource
 
 	// UpdateConfig applies a set of dotted-path config updates through
 	// the same validate-persist-publish path as reload (wired by the
@@ -238,6 +244,7 @@ func (s *Server) registerTaskRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/tasks/{id}/action", s.handleTaskAction)
 	mux.HandleFunc("GET /api/tasks/{id}", s.handleTask)
 	mux.HandleFunc("GET /api/tasks/{id}/logs", s.handleTaskLogs)
+	mux.HandleFunc("GET /api/tasks/{id}/logs/download", s.handleTaskLogDownload)
 }
 
 func (s *Server) registerMappingAndBindingRoutes(mux *http.ServeMux) {

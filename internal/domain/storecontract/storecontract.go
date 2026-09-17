@@ -18,12 +18,14 @@ package storecontract
 import (
 	"context"
 	"errors"
+	"io"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/logging"
 )
 
 // TaskStore is the full store surface the daemon needs.
@@ -158,6 +160,27 @@ type BindingDispatcher interface {
 // and keeps the binding-specific shape on the binding interfaces.
 type BindingTaskCreator interface {
 	EnqueueBindingTask(ctx context.Context, owner, repo, title, body, wf, identity string, bindingID int64, bindingVersion int) (*task.Task, error)
+}
+
+// TaskLogStore reads one task attempt's persisted log. Deliberately separate
+// from TaskQueries: the log is not a row, it is a file the logging package
+// owns the format of, and a process that can read the task board should not
+// have to acquire a log reader to do it. The dashboard's UI process is the
+// consumer this exists for -- it holds no daemon-local file handle, so the
+// read crosses the State Store contract (docs/prds/ui-service-boundary.md).
+//
+// Found=false with a nil error is the not-found convention every read here
+// uses, and it is load-bearing: "this attempt has no log" is not "this
+// process cannot read logs". The second one is an error
+// (logging.ErrTaskLogsUnavailable), because a caller that conflates them
+// reports a configuration change where none is needed.
+type TaskLogStore interface {
+	// TaskLog returns a page of one attempt's decoded log. attempt 0 selects
+	// the task's current attempt.
+	TaskLog(ctx context.Context, taskID int64, attempt int, q logging.Query) (logging.TaskLogPage, error)
+	// TaskLogContent writes one attempt's log verbatim to w, for a download.
+	// found is false, with a nil error, when the attempt has no log file.
+	TaskLogContent(ctx context.Context, taskID int64, attempt int, w io.Writer) (found bool, err error)
 }
 
 // CapturedEvent is one unbound inbound webhook capture: no workflow binding,

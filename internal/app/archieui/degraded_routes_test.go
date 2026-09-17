@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
+	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
@@ -51,11 +52,13 @@ func TestRoutesWithoutAContractDegradeExplicitly(t *testing.T) {
 			want: http.StatusServiceUnavailable,
 		},
 		{
-			// The task exists; its logs do not, because the files live on
-			// the daemon's host. "disabled" is the same answer the daemon
-			// gives when task logging is off, and the page already reads it.
+			// Task logs are a State Store read contract now
+			// (archie-core-iaqx), so the route answers with real data
+			// rather than the degrade. The task exists and its attempt
+			// has no log file, which is the found=false answer -- the
+			// page says the attempt has no log, not that logging is off.
 			name: "per-task logs", method: http.MethodGet, path: "/api/tasks/" + strconv.FormatInt(taskID, 10) + "/logs",
-			want: http.StatusOK, emptyJSON: `"disabled":true`,
+			want: http.StatusOK, emptyJSON: `"found":false`,
 		},
 		{
 			name: "release version and update flow", method: http.MethodGet, path: "/api/version",
@@ -159,8 +162,17 @@ func composeUIProcess(t *testing.T) (*webui.Server, int64) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 
+	// The task-log reader lives on the state-directory side of the boundary:
+	// the State Store process holds a registry over the directory it owns, and
+	// the dashboard reads through it (archie-core-iaqx). Nothing is written to
+	// it here, so every attempt reads as found=false.
+	logs := logging.NewTaskRegistry(filepath.Join(t.TempDir(), "logs", "tasks"), logging.NewFeed(10), logging.TaskSinkOptions{})
+
 	target, stop := serveGRPC(t, func(r grpc.ServiceRegistrar) {
-		staterpc.RegisterServer(r, staterpc.Deps{Tasks: st, Captures: st, BindingDispatcher: st, ConfigSnapshots: st, Log: slog.New(slog.DiscardHandler)})
+		staterpc.RegisterServer(r, staterpc.Deps{
+			Tasks: st, Captures: st, BindingDispatcher: st, ConfigSnapshots: st,
+			TaskLogs: logs, Log: slog.New(slog.DiscardHandler),
+		})
 	})
 	t.Cleanup(stop)
 	client, closeClient, err := staterpc.Dial(target, "")

@@ -56,7 +56,12 @@ type daemonActions struct {
 	// cfg is the daemon's configuration, held by the stand-in daemon
 	// rather than by the dashboard: retry caps are the task owner's
 	// policy and the dashboard does not hold configuration.
-	cfg     *config.Holder
+	cfg *config.Holder
+	// logs is the daemon's own task-log registry. Archiving removes a
+	// task's log files, and that is the daemon's cleanup over the state
+	// directory it owns -- the dashboard reads logs through a contract and
+	// has no directory to remove anything from.
+	logs    *logging.TaskRegistry
 	issues  *recordingCloser
 	stopper *recordingTaskStopper
 	// scopes records the identity each action arrived with, one per call.
@@ -97,10 +102,10 @@ func (d *daemonActions) closeIssue() func(context.Context, string, string, int, 
 }
 
 func (d *daemonActions) removeLogs() func(int64) error {
-	if d.srv.TaskLogs == nil {
+	if d.logs == nil {
 		return nil
 	}
-	return d.srv.TaskLogs.Remove
+	return d.logs.Remove
 }
 
 func (d *daemonActions) publish() func(events.Event) {
@@ -701,11 +706,17 @@ func TestArchiveRemovesOnlyOneTerminalTask(t *testing.T) {
 // logging: without this, an archived task's log files (and every rotated
 // generation under it) would accumulate on disk forever, since nothing else
 // in the system ever visits a task again once it leaves the active board.
+//
+// The removal is the task owner's, not the dashboard's: the log files live in
+// the state directory, which the daemon owns, so the stand-in daemon holds the
+// registry the way the real one does. The dashboard reads logs through a
+// contract and has no directory to remove anything from.
 func TestArchiveRemovesTheTaskLogDirectory(t *testing.T) {
 	srv := newTestServer(t)
 	ctx := t.Context()
 	baseDir := t.TempDir()
-	srv.TaskLogs = logging.NewTaskRegistry(baseDir, logging.NewFeed(10), logging.TaskSinkOptions{})
+	logs := logging.NewTaskRegistry(baseDir, logging.NewFeed(10), logging.TaskSinkOptions{})
+	operatorActions(t, srv).logs = logs
 
 	if _, err := srv.Store.EnqueueIssue(ctx, "acme", "widget", 1, "done", "", "", ""); err != nil {
 		t.Fatal(err)
@@ -715,11 +726,11 @@ func TestArchiveRemovesTheTaskLogDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := srv.TaskLogs.Open(task.ID, task.Attempt); err != nil {
+	if err := logs.Open(task.ID, task.Attempt); err != nil {
 		t.Fatal(err)
 	}
-	srv.TaskLogs.Write(task.ID, logging.Entry{Message: "line"})
-	if err := srv.TaskLogs.Close(task.ID); err != nil {
+	logs.Write(task.ID, logging.Entry{Message: "line"})
+	if err := logs.Close(task.ID); err != nil {
 		t.Fatal(err)
 	}
 	dir := logging.TaskLogDir(baseDir, task.ID)

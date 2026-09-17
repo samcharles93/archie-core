@@ -88,7 +88,6 @@ func TestComposeUIServerHoldsNoDaemonState(t *testing.T) {
 		"Memory":          srv.Memory,
 		"Channels":        srv.Channels,
 		"LogFeed":         srv.LogFeed,
-		"TaskLogs":        srv.TaskLogs,
 		"WorkRequests":    srv.WorkRequests,
 	}
 	for name, handle := range unwired {
@@ -104,6 +103,16 @@ func TestComposeUIServerHoldsNoDaemonState(t *testing.T) {
 	// leaving them nil would degrade two pages that have an owner.
 	if srv.Mappings == nil || srv.Bindings == nil {
 		t.Error("Mappings/Bindings are unwired; both are State Store contracts the composed client implements")
+	}
+	// TaskLogs is the same shape as Mappings/Bindings -- the store client
+	// carries TaskLogStore -- and it is the one that used to answer "task
+	// logging was not enabled for this run" for every attempt in a deployment
+	// where logging is unconditional (archie-core-iaqx).
+	if srv.TaskLogs == nil {
+		t.Error("TaskLogs is unwired; the State Store client implements TaskLogStore, so leaving it nil degrades a page that has an owner")
+	}
+	if _, ok := srv.TaskLogs.(*staterpc.Client); !ok {
+		t.Errorf("TaskLogs = %T, want the remote *staterpc.Client: the UI process owns no state directory to read a log file from", srv.TaskLogs)
 	}
 	if srv.UpdateReportPath != "" {
 		t.Error("UpdateReportPath is set; host-local update relay stays with the daemon")

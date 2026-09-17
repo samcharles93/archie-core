@@ -31,13 +31,31 @@ type contract interface {
 	store.ConfigSnapshotStore
 }
 
+// taskLogContract is the task-log read group, driven separately because it is
+// not a *store.Store surface: the reader is internal/logging's own registry,
+// which owns the log format, so the local side of this contract is a registry
+// rather than a store.
+type taskLogContract interface {
+	store.TaskLogStore
+}
+
 func remoteContract(t *testing.T, local *store.Store) contract {
+	t.Helper()
+	return remoteTaskStore(t, local, nil)
+}
+
+// remoteTaskStore serves local behind a bufconn listener with a task-log
+// reader attached, and returns a client for it. The reader is a parameter
+// because the log files are internal/logging's, not the store's: this contract
+// fronts a reader rather than a table.
+func remoteTaskStore(t *testing.T, local *store.Store, logs store.TaskLogStore) *Client {
 	t.Helper()
 	listener := bufconn.Listen(1 << 20)
 	server := grpc.NewServer()
 	RegisterServer(server, Deps{
 		Tasks: local, Captures: local, Mappings: local, Bindings: local,
 		BindingDispatcher: local, BindingTaskCreator: local, ConfigSnapshots: local,
+		TaskLogs: logs,
 	})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop(); _ = listener.Close() })

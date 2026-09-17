@@ -14,6 +14,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/logging"
 )
 
 // Client is the single remote adapter wrapping one StateStoreServiceClient,
@@ -36,6 +37,7 @@ func (c *Client) Close() error { return nil }
 var (
 	_ task.Store                        = (*Client)(nil)
 	_ storecontract.TaskStore           = (*Client)(nil)
+	_ storecontract.TaskLogStore        = (*Client)(nil)
 	_ storecontract.CaptureStore        = (*Client)(nil)
 	_ storecontract.MappingStore        = (*Client)(nil)
 	_ storecontract.BindingStore        = (*Client)(nil)
@@ -415,6 +417,58 @@ func (c *Client) EnqueueBindingTask(ctx context.Context, owner, repo, title, bod
 		return nil, unmapError(err)
 	}
 	return taskValue(r.Task), nil
+}
+
+// Task log
+
+// TaskLog reads one task attempt's decoded log over the wire. found=false with
+// a nil error is the attempt-has-no-log answer; a process with no reader at
+// all comes back as an unavailable error, not as an empty page, so a caller
+// can tell the two apart.
+func (c *Client) TaskLog(ctx context.Context, taskID int64, attempt int, q logging.Query) (logging.TaskLogPage, error) {
+	r, err := c.client.ReadTaskLog(ctx, taskLogRequestProto(taskID, attempt, q))
+	if err != nil {
+		return logging.TaskLogPage{}, unmapError(err)
+	}
+	if !r.Found {
+		return logging.TaskLogPage{
+			Entries:    []logging.Entry{},
+			Components: []string{},
+		}, nil
+	}
+	return logging.TaskLogPage{
+		Entries:    mapValues(r.Entries, taskLogEntryValue),
+		Truncated:  r.Truncated,
+		File:       r.File,
+		Found:      true,
+		Components: r.Components,
+	}, nil
+}
+
+// TaskLogContent streams one attempt's log verbatim into w, for a download.
+// found is false, with a nil error, when the attempt has no log file.
+func (c *Client) TaskLogContent(ctx context.Context, taskID int64, attempt int, w io.Writer) (bool, error) {
+	stream, err := c.client.StreamTaskLogContent(ctx, &pb.StreamTaskLogContentRequest{TaskId: taskID, Attempt: int64(attempt)})
+	if err != nil {
+		return false, unmapError(err)
+	}
+	found := false
+	for {
+		r, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			return found, nil
+		}
+		if err != nil {
+			return found, unmapError(err)
+		}
+		found = found || r.Found
+		if len(r.Chunk) == 0 {
+			continue
+		}
+		if _, err := w.Write(r.Chunk); err != nil {
+			return found, err
+		}
+	}
 }
 
 func derefTasks(in []*pb.Task) []task.Task {
