@@ -87,7 +87,12 @@ func (r *TaskRegistry) Close(taskID int64) error {
 // log message is fire-and-forget best effort, and a late or duplicate
 // delivery after the task finished (or one this daemon instance never
 // dispatched) is expected, not exceptional.
-func (r *TaskRegistry) Write(taskID int64, entry Entry) bool {
+//
+// ctx is the caller's, used for the handler's own attribute extraction. It is
+// not consulted for cancellation: a park is recorded at exactly the moment a
+// run's context has been cancelled, and that entry is the one an operator most
+// needs to read.
+func (r *TaskRegistry) Write(ctx context.Context, taskID int64, entry Entry) bool {
 	if r == nil {
 		return false
 	}
@@ -105,7 +110,7 @@ func (r *TaskRegistry) Write(taskID int64, entry Entry) bool {
 	for k, v := range entry.Fields {
 		attrs = append(attrs, slog.Any(k, v))
 	}
-	got.logger.LogAttrs(context.Background(), level, entry.Message, attrs...)
+	got.logger.LogAttrs(ctx, level, entry.Message, attrs...)
 	return true
 }
 

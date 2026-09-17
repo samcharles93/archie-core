@@ -46,7 +46,7 @@ func TestTaskLogPageCarriesNoNilCollectionFields(t *testing.T) {
 				if tc.write {
 					// No "component" field at all: Components stays empty while
 					// Entries does not.
-					reader.Write(taskID, logging.Entry{Level: "INFO", Message: "starting"})
+					reader.Write(ctx, taskID, logging.Entry{Level: "INFO", Message: "starting"})
 				}
 				if err := reader.Close(taskID); err != nil {
 					t.Fatalf("close sink: %v", err)

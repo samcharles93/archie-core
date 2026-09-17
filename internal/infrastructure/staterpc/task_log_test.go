@@ -33,8 +33,8 @@ func TestTaskLogContract(t *testing.T) {
 			if err := reader.Open(taskID, 0); err != nil {
 				t.Fatalf("open sink: %v", err)
 			}
-			reader.Write(taskID, logging.Entry{Level: "INFO", Message: "starting", Fields: map[string]any{"component": "daemon"}})
-			reader.Write(taskID, logging.Entry{Level: "ERROR", Message: "gate failed", Fields: map[string]any{"component": "gate"}})
+			reader.Write(ctx, taskID, logging.Entry{Level: "INFO", Message: "starting", Fields: map[string]any{"component": "daemon"}})
+			reader.Write(ctx, taskID, logging.Entry{Level: "ERROR", Message: "gate failed", Fields: map[string]any{"component": "gate"}})
 			if err := reader.Close(taskID); err != nil {
 				t.Fatalf("close sink: %v", err)
 			}

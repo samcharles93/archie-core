@@ -805,7 +805,9 @@ func subscribeSystemLogs(nc *natsio.Conn, taskLogs *logging.TaskRegistry, log *s
 			log.Warn("system log message undecodable", "task", taskID, "err", err)
 			return
 		}
-		taskLogs.Write(taskID, entry)
+		// The NATS callback has no context of its own; the write is an append to
+		// an already-open sink, so there is nothing to cancel.
+		taskLogs.Write(context.Background(), taskID, entry)
 	})
 	if err != nil {
 		return nil, err

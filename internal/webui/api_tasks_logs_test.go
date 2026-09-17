@@ -28,7 +28,7 @@ func TestHandleTaskLogsReturnsEntriesForLatestAttemptByDefault(t *testing.T) {
 	if err := logs.Open(task.ID, task.Attempt); err != nil {
 		t.Fatal(err)
 	}
-	logs.Write(task.ID, logging.Entry{
+	logs.Write(ctx, task.ID, logging.Entry{
 		Level: "ERROR", Message: "gate failed", Fields: map[string]any{"component": "gate"},
 	})
 	if err := logs.Close(task.ID); err != nil {

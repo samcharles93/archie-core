@@ -729,7 +729,7 @@ func TestArchiveRemovesTheTaskLogDirectory(t *testing.T) {
 	if err := logs.Open(task.ID, task.Attempt); err != nil {
 		t.Fatal(err)
 	}
-	logs.Write(task.ID, logging.Entry{Message: "line"})
+	logs.Write(ctx, task.ID, logging.Entry{Message: "line"})
 	if err := logs.Close(task.ID); err != nil {
 		t.Fatal(err)
 	}

@@ -74,7 +74,7 @@ func TestHandleTaskLogsDownloadServesTheAttemptLog(t *testing.T) {
 	if err := logs.Open(task.ID, task.Attempt); err != nil {
 		t.Fatal(err)
 	}
-	logs.Write(task.ID, logging.Entry{Level: "ERROR", Message: "gate failed"})
+	logs.Write(ctx, task.ID, logging.Entry{Level: "ERROR", Message: "gate failed"})
 	if err := logs.Close(task.ID); err != nil {
 		t.Fatal(err)
 	}

@@ -170,7 +170,7 @@ func composeUIProcessWithLog(t *testing.T) (*webui.Server, int64, int) {
 	if err := logs.Open(task.ID, task.Attempt); err != nil {
 		t.Fatalf("open task log: %v", err)
 	}
-	logs.Write(task.ID, logging.Entry{
+	logs.Write(t.Context(), task.ID, logging.Entry{
 		Level: "ERROR", Message: "gate failed", Fields: map[string]any{"component": "gate"},
 	})
 	if err := logs.Close(task.ID); err != nil {

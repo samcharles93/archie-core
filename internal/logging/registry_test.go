@@ -14,7 +14,7 @@ func TestTaskRegistryOpenWriteCloseRoundTripsThroughTail(t *testing.T) {
 	if err := reg.Open(42, 1); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if ok := reg.Write(42, Entry{Level: "WARN", Message: "gate failed", Fields: map[string]any{"component": "gate"}}); !ok {
+	if ok := reg.Write(t.Context(), 42, Entry{Level: "WARN", Message: "gate failed", Fields: map[string]any{"component": "gate"}}); !ok {
 		t.Fatal("Write() = false, want true for an open task")
 	}
 	if err := reg.Close(42); err != nil {
@@ -46,7 +46,7 @@ func TestTaskRegistryWriteMirrorsToTheDashboardFeed(t *testing.T) {
 	if err := reg.Open(1, 1); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	reg.Write(1, Entry{Level: "INFO", Message: "hello"})
+	reg.Write(t.Context(), 1, Entry{Level: "INFO", Message: "hello"})
 	if err := reg.Close(1); err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestTaskRegistryWriteMirrorsToTheDashboardFeed(t *testing.T) {
 // expected, not exceptional: no panic, no error return path to check.
 func TestTaskRegistryWriteWithoutOpenIsANoOp(t *testing.T) {
 	reg := NewTaskRegistry(t.TempDir(), NewFeed(10), TaskSinkOptions{})
-	if ok := reg.Write(999, Entry{Message: "orphan"}); ok {
+	if ok := reg.Write(t.Context(), 999, Entry{Message: "orphan"}); ok {
 		t.Error("Write() = true for a task with no open sink, want false")
 	}
 }
@@ -79,12 +79,12 @@ func TestTaskRegistryOpenReplacesThePreviousAttempt(t *testing.T) {
 	if err := reg.Open(7, 1); err != nil {
 		t.Fatalf("Open attempt 1: %v", err)
 	}
-	reg.Write(7, Entry{Message: "attempt one"})
+	reg.Write(t.Context(), 7, Entry{Message: "attempt one"})
 
 	if err := reg.Open(7, 2); err != nil {
 		t.Fatalf("Open attempt 2: %v", err)
 	}
-	reg.Write(7, Entry{Message: "attempt two"})
+	reg.Write(t.Context(), 7, Entry{Message: "attempt two"})
 	if err := reg.Close(7); err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestTaskRegistryRemoveDeletesTheTaskDirectory(t *testing.T) {
 	if err := reg.Open(5, 1); err != nil {
 		t.Fatal(err)
 	}
-	reg.Write(5, Entry{Message: "x"})
+	reg.Write(t.Context(), 5, Entry{Message: "x"})
 	if err := reg.Close(5); err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestTaskRegistryNilReceiverIsSafe(t *testing.T) {
 	if err := reg.Open(1, 1); err != nil {
 		t.Errorf("Open() on nil registry = %v, want nil", err)
 	}
-	if ok := reg.Write(1, Entry{Message: "x"}); ok {
+	if ok := reg.Write(t.Context(), 1, Entry{Message: "x"}); ok {
 		t.Error("Write() on nil registry = true, want false")
 	}
 	if err := reg.Close(1); err != nil {
@@ -207,7 +207,7 @@ func TestTaskRegistryConcurrentTasksDoNotRace(t *testing.T) {
 				t.Errorf("Open(%d): %v", taskID, err)
 				return
 			}
-			reg.Write(taskID, Entry{Message: "line"})
+			reg.Write(t.Context(), taskID, Entry{Message: "line"})
 			if err := reg.Close(taskID); err != nil {
 				t.Errorf("Close(%d): %v", taskID, err)
 			}

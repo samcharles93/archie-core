@@ -806,7 +806,7 @@ func TestChatTaskLogReaderAdapterRoundTrip(t *testing.T) {
 	if err := taskLogs.Open(task.ID, task.Attempt); err != nil {
 		t.Fatal(err)
 	}
-	taskLogs.Write(task.ID, logging.Entry{Level: "ERROR", Message: "gate failed", Fields: map[string]any{"component": "gate"}})
+	taskLogs.Write(context.Background(), task.ID, logging.Entry{Level: "ERROR", Message: "gate failed", Fields: map[string]any{"component": "gate"}})
 	if err := taskLogs.Close(task.ID); err != nil {
 		t.Fatal(err)
 	}
