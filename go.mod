@@ -68,7 +68,7 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/go-git/go-billy/v6 v6.0.0-alpha.2
 	github.com/go-git/go-git/v6 v6.0.0-alpha.5
-	github.com/go-telegram/bot v1.25.0
+	github.com/go-telegram/bot v1.27.0
 	github.com/google/codesearch v1.3.0-rc.1
 	github.com/google/go-github/v78 v78.0.0
 	github.com/google/uuid v1.6.0
