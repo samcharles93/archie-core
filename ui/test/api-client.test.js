@@ -69,6 +69,14 @@ const READS = [
 // separately rather than folded into either inventory above.
 const STREAMS = ["chatStream"];
 
+// URL builders make no request at all: they hand a browser navigation to a
+// route the server serves as a file download, so the browser owns the
+// Content-Disposition filename and streams the body to disk. They are listed
+// separately because asserting a fetch contract on them would be wrong, and
+// leaving them out of this suite entirely is how an unclassified method
+// slipped through before.
+const URLS = ["taskLogDownloadURL"];
+
 let calls = [];
 
 function stubFetch(respond) {
@@ -135,6 +143,19 @@ test("the chat stream posts its payload and asks for an event stream", async () 
 	assert.equal(init.body, JSON.stringify({ text: "hi" }));
 });
 
+// A URL builder must not fetch: the browser has to own the navigation for the
+// server's Content-Disposition filename to apply. A fetch here would consume
+// the attachment and lose its name.
+test("the task-log download URL is built, not fetched", async () => {
+	stubFetch(() => {
+		throw new Error("a download URL must not be fetched by the client");
+	});
+
+	assert.equal(api.taskLogDownloadURL(7, 2), "/api/tasks/7/logs/download?attempt=2");
+	assert.equal(api.taskLogDownloadURL(7, null), "/api/tasks/7/logs/download");
+	assert.equal(calls.length, 0, "building a download URL must not make a request");
+});
+
 test("a bodyless DELETE resolves on 204 without parsing a body", async () => {
 	stubFetch(() => ({
 		ok: true,
@@ -175,6 +196,7 @@ test("every api method is classified by this suite", () => {
 		...MUTATIONS.map(([name]) => name),
 		...READS.map(([name]) => name),
 		...STREAMS,
+		...URLS,
 	]);
 	const actual = Object.keys(api).filter((key) => typeof api[key] === "function");
 	const unclassified = actual.filter((name) => !classified.has(name)).sort();

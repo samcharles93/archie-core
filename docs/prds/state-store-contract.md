@@ -259,8 +259,9 @@ Methods are named after the store methods so the mapping is unambiguous. `workfl
 | Dispatch | `ArmedBindingsForSource`, `RecordDispatch`, `ListUndispatchedCaptures` |
 | BindingTaskCreator | `EnqueueBindingTask` |
 | Config snapshot | `PutConfigSnapshot`, `GetConfigSnapshot` |
+| Task log | `ReadTaskLog`, `StreamTaskLogContent` |
 
-That is **42 unique RPCs** across one service (the `TaskEvents.Close` method is dropped).
+That is **44 unique RPCs** across one service (the `TaskEvents.Close` method is dropped).
 `Close()` is **excluded** from the wire (it is server lifecycle, not a client call) — see §11.
 
 The config-snapshot pair was added by `archie-core-ymut` (see
@@ -270,6 +271,19 @@ administrative: `authorizesTaskScopedCall` is deny-by-default, so a task-scoped 
 neither. `ConfigSnapshot.document` is opaque to this contract — the store neither parses nor
 validates it, and `schema` names the projection so a reader can refuse a shape it does not
 understand.
+
+The task-log pair was added by `archie-core-iaqx` (see `docs/prds/ui-service-boundary.md`'s
+route inventory). It is the one surface whose payload is not a row: the store service reads
+them out of the state directory it owns with `internal/logging`'s own reader, so the wire
+carries `logging.Entry`/`logging.Query` values and neither side restates the JSONL format.
+`ReadTaskLog` returns a decoded page and `StreamTaskLogContent` returns the raw bytes
+server-streamed, because a log file rotates at 20 MB — past gRPC's 4 MiB unary cap — and the
+same reasoning that made `StreamCaptures` supersede `ListCaptures` applies. `found=false` with
+no error means the attempt has no log; a service with no reader answers `Unavailable` instead,
+and the two answers are load-bearing for the dashboard: only the second is a deployment
+condition, and the panel that collapsed them told operators task logging was switched off when
+it was not. The Go facade is `storecontract.TaskLogStore` (2 methods), carried by
+`*staterpc.Client` alongside the rest.
 
 ### Domain types and `values.go` mapping
 
@@ -638,7 +652,7 @@ an explicit operator decision.
   (`workflow.Store` + `workflow.Task`/`Status`/`Source`, per dependency rules #2 and #7);
   daemon/webui store surfaces stay **producer-owned** in `internal/store`. `store.WorkflowStore`
   is superseded by `workflow.Store`.
-- **One `StateStore` gRPC service** (42 RPCs, grouped by contract) + narrow Go consumer facades
+- **One `StateStore` gRPC service** (44 RPCs, grouped by contract) + narrow Go consumer facades
   (≤8) on `staterpc.Client` — mirrors the single-`ChatService` precedent.
 - **Domain type relocation** (`Task`/`Status`/`Source` → `internal/domain/workflow`) is a
   Phase 2 prerequisite, pulled forward from migration-decisions §4 (minimal bound,

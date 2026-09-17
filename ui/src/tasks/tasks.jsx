@@ -359,7 +359,7 @@ function TasksApp({ query }) {
               </button>
             </div>
             {logsExpandedForTask && (
-              <TaskLogPanel state={logCache.get(t.id)} onRetry={() => loadTaskLogs(t.id)} />
+              <TaskLogPanel state={logCache.get(t.id)} taskId={t.id} onRetry={() => loadTaskLogs(t.id)} />
             )}
           </div>
         </td>
