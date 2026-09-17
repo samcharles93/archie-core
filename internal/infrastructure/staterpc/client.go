@@ -436,12 +436,20 @@ func (c *Client) TaskLog(ctx context.Context, taskID int64, attempt int, q loggi
 			Components: []string{},
 		}, nil
 	}
+	// Both collections are normalised: protobuf decodes an empty `repeated`
+	// field to nil, and a nil slice marshals to JSON null rather than an empty
+	// list, so the field's type would otherwise depend on whether it happened
+	// to have contents. mapValues owns the entries side.
+	components := r.Components
+	if components == nil {
+		components = []string{}
+	}
 	return logging.TaskLogPage{
 		Entries:    mapValues(r.Entries, taskLogEntryValue),
 		Truncated:  r.Truncated,
 		File:       r.File,
 		Found:      true,
-		Components: r.Components,
+		Components: components,
 	}, nil
 }
 
