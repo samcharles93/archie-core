@@ -165,6 +165,35 @@ func NewDiskProbeTargets(targets []DiskTarget) *DiskProbe {
 
 func (p *DiskProbe) Name() string { return "disk" }
 
+// reduceTargets collapses the configured targets to one per path: the first
+// target seen for a path wins its position, and the result keeps the strictest
+// requirement any target placed on that path.
+//
+// Position is what makes this necessary rather than using a plain set. With
+// root, an optional /var, then a required data path that resolves to /var, the
+// optional /var is the target that survives dedup -- and its optional rules
+// then apply to a path the daemon requires, so a vanished required path is
+// skipped as "optional absent" and the probe reports OK. Choosing the required
+// target (and its name) keeps the failure visible and correctly attributed.
+func reduceTargets(targets []DiskTarget) []DiskTarget {
+	index := make(map[string]int, len(targets))
+	out := make([]DiskTarget, 0, len(targets))
+	for _, target := range targets {
+		if target.Path == "" {
+			continue
+		}
+		if at, ok := index[target.Path]; ok {
+			if !target.Optional && out[at].Optional {
+				out[at] = target
+			}
+			continue
+		}
+		index[target.Path] = len(out)
+		out = append(out, target)
+	}
+	return out
+}
+
 func (p *DiskProbe) Check(ctx context.Context) health.Result {
 	_ = ctx
 	targets := p.Targets
@@ -180,12 +209,7 @@ func (p *DiskProbe) Check(ctx context.Context) health.Result {
 	}
 	var details []string
 	degraded := false
-	seen := make(map[string]bool)
-	for _, target := range targets {
-		if target.Path == "" || seen[target.Path] {
-			continue
-		}
-		seen[target.Path] = true
+	for _, target := range reduceTargets(targets) {
 		var stat syscall.Statfs_t
 		if err := statfs(target.Path, &stat); err != nil {
 			if target.Optional && errors.Is(err, os.ErrNotExist) {

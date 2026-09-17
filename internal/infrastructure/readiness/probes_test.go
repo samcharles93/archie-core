@@ -3,6 +3,9 @@ package readiness
 import (
 	"context"
 	"errors"
+	"os"
+	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
@@ -194,5 +197,73 @@ func TestGatewayProbe_DegradedWhenNoChannelRunning(t *testing.T) {
 	}, func(context.Context) int { return 0 })
 	if got := p.Check(context.Background()); got.Status != health.StatusDegraded {
 		t.Fatalf("status = %q, want degraded", got.Status)
+	}
+}
+
+// A required path must not inherit the rules of an earlier optional target on
+// the same path. Dedup keeps one target per path, and when the optional target
+// is the one kept, a required path that has gone missing is swallowed as
+// "optional absent" -- reporting OK while a path the daemon needs is
+// unavailable. Retaining required status for a path that any target requires
+// is the fix.
+func TestDiskProbe_DedupKeepsRequiredWhenOptionalSharesThePath(t *testing.T) {
+	fs := fakeStatfs(map[string]syscall.Statfs_t{
+		"/": {Blocks: 100, Bavail: 100}, // a healthy target keeps the detail list non-empty
+	})
+	// Production orders root first, then the optional /var, then the
+	// config-supplied data path -- which can resolve to /var and collide.
+	p := NewDiskProbeTargets([]DiskTarget{
+		{Name: "root", Path: "/"},
+		{Name: "var", Path: "/var", Optional: true},
+		{Name: "data", Path: "/var"},
+	})
+	p.Statfs = fs.statfs
+
+	got := p.Check(context.Background())
+	if got.Status != health.StatusDegraded {
+		t.Fatalf("status = %q, want degraded: a required path that has vanished must not be reported OK via an optional target's rules (detail: %s)",
+			got.Status, got.Detail)
+	}
+	if !strings.Contains(got.Detail, "data") {
+		t.Fatalf("detail = %q, want the required target named", got.Detail)
+	}
+}
+
+// The inverse: when the kept target is genuinely optional and only optional
+// targets share the path, an absent path still degrades nothing.
+func TestDiskProbe_DedupKeepsOptionalWhenNoTargetRequiresThePath(t *testing.T) {
+	fs := fakeStatfs(map[string]syscall.Statfs_t{
+		"/": {Blocks: 100, Bavail: 100},
+	})
+	p := NewDiskProbeTargets([]DiskTarget{
+		{Name: "root", Path: "/"},
+		{Name: "var", Path: "/var", Optional: true},
+		{Name: "var-dup", Path: "/var", Optional: true},
+	})
+	p.Statfs = fs.statfs
+
+	got := p.Check(context.Background())
+	if got.Status != health.StatusOK {
+		t.Fatalf("status = %q, want ok: an optional path absent entirely is not a failure (detail: %s)", got.Status, got.Detail)
+	}
+}
+
+// fakeStatfs returns a statfs replacement serving sizes for known paths and
+// ENOENT for anything else, so a test can drive the disk probe without
+// filling a real filesystem.
+func fakeStatfs(sizes map[string]syscall.Statfs_t) struct {
+	statfs func(string, *syscall.Statfs_t) error
+} {
+	return struct {
+		statfs func(string, *syscall.Statfs_t) error
+	}{
+		statfs: func(path string, out *syscall.Statfs_t) error {
+			stat, ok := sizes[path]
+			if !ok {
+				return os.ErrNotExist
+			}
+			*out = stat
+			return nil
+		},
 	}
 }
