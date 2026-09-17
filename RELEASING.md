@@ -63,9 +63,37 @@ Pushing is a separate, explicit step — never push without confirming first
 The deploy workflow reads tags pointing at `HEAD`; pushing the commit without
 its tags gets images stamped `dev`.
 
+## What a release publishes
+
+Tagging both components at one commit produces, from a single `deploy` run:
+
+- **Container images** — `ghcr.io/samcharles93/archied:latest` and, when the
+  runtime moved, `ghcr.io/samcharles93/archie-agent:latest`. A gateway-only
+  release (`RUNTIME=skip`) does not rebuild the agent image, so runtime commits
+  merged to `main` do not reach a running sandbox until an agent release is cut
+  and the host pulls the new image.
+- **A GitHub Release with a distribution zip** — `dist-zip` builds every
+  process the reference deployment runs (`archied`, `archie-gateway`,
+  `archie-state-store`, `archie-ui`, `archie-playbooks`) for linux/amd64, packs
+  them with `deployments/INSTRUCTIONS.md` and the changelogs, and attaches the
+  zip to the Release for the **archied** tag. The Release body is that
+  version's `CHANGELOG.archied.md` section. Both jobs are keyed to the archied
+  tag, so a gateway-only release still produces the zip.
+
+The zip is also uploaded as an Actions artifact, but that is a backup copy:
+artifacts expire after 90 days and need an Actions login to download. The
+Release asset is the durable, operator-reachable one.
+
 ## Gate
 
 CI (`deploy.yml`) runs `task check` before building images, then verifies any
 release tag at `HEAD` has a matching `[version]` section in its changelog. A
 tag with no changelog entry is a hard failure. No tags at `HEAD` is a warning,
 not a failure — images get stamped `dev`.
+
+One consequence worth knowing when a release commit needs amending: GitHub
+Actions runs the workflow **from the commit that triggered it**, so a fix to
+`deploy.yml` only takes effect for a release if it is an ancestor of the tagged
+commit. Delete and re-cut the tags (`git tag -d`, `task release`) rather than
+committing the fix on top of an already-tagged release.
+
