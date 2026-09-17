@@ -185,6 +185,42 @@ func TestLiveReplySkipsUnchangedRenders(t *testing.T) {
 	}
 }
 
+func TestLiveReplyCollapsesRepeatedSuccessfulEquivalentToolCalls(t *testing.T) {
+	live, calls := newTestLiveReply(t, true)
+
+	for range 14 {
+		live.ToolCall(toolEvent("grep", "/src/a.go:12:match\n/src/b.go:40:match", ""))
+	}
+	live.finalize(context.Background(), "done")
+
+	got := (*calls)[len(*calls)-1].body()
+	want := "🔧 grep — done ×14\n\n2 matches\n\ndone"
+	if got != want {
+		t.Fatalf("repeated successful grep calls rendered as:\n%s\nwant:\n%s", got, want)
+	}
+	if strings.Count(got, "🔧 grep") != 1 {
+		t.Fatalf("repeated successful grep calls should occupy one entry, got %d:\n%s", strings.Count(got, "🔧 grep"), got)
+	}
+}
+
+func TestLiveReplyDoesNotCollapseSuccessfulCallsWithDifferentResults(t *testing.T) {
+	live, calls := newTestLiveReply(t, true)
+
+	live.ToolCall(toolEvent("grep", "/src/a.go:12:match\n/src/b.go:40:match", ""))
+	live.ToolCall(toolEvent("grep", "/src/a.go:12:match\n/src/b.go:40:match", ""))
+	live.ToolCall(toolEvent("grep", "/src/a.go:12:match", ""))
+	live.ToolCall(toolEvent("rg", "/src/a.go:12:match\n/src/b.go:40:match", ""))
+	live.finalize(context.Background(), "done")
+
+	got := (*calls)[len(*calls)-1].body()
+	if strings.Count(got, "🔧 ") != 3 {
+		t.Fatalf("successful calls with different tools or summaries were collapsed:\n%s", got)
+	}
+	if !strings.Contains(got, "🔧 grep — done ×2") || strings.Contains(got, "×3") {
+		t.Fatalf("only equivalent successful calls should be counted together:\n%s", got)
+	}
+}
+
 func TestLiveReplySnapshotsToolCallVisibility(t *testing.T) {
 	live, calls := newTestLiveReply(t, true)
 	live.g.SetShowToolCalls(false)

@@ -19,6 +19,8 @@ func TestComposeStateStoreClientRequiresTarget(t *testing.T) {
 }
 
 func TestComposeStateStoreClientNonLoopbackFailsClosed(t *testing.T) {
+	// Keep this test independent of credentials inherited from the test runner.
+	t.Setenv("STATE_STORE_TOKEN", "")
 	for _, tt := range []struct {
 		name   string
 		target string
@@ -73,6 +75,8 @@ func TestOpenStateStoreAdapterRequiresTarget(t *testing.T) {
 }
 
 func TestOpenStateStoreAdapterRemoteFailsClosed(t *testing.T) {
+	// Keep this test independent of credentials inherited from the test runner.
+	t.Setenv("STATE_STORE_TOKEN", "")
 	b := newBootstrap()
 	b.secrets = &secret.Registry{}
 	b.cfg.Services.State = config.ServiceConnection{Target: "0.0.0.0:9090"}
