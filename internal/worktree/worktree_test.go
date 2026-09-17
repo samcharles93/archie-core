@@ -324,6 +324,176 @@ func TestPrepareRecoversFromADirtyWorktreeOnRetry(t *testing.T) {
 	}
 }
 
+// TestPrepareRecoversFromAPathTypeConflictOnRetry covers the retry failure
+// that followed the dirty-worktree one above, and the first that was not
+// about the *contents* of a file. A stage running inside the container can
+// leave a path whose TYPE contradicts the tree refresh resets onto: a
+// directory where the base tree has a file, or a file where the base tree
+// has a directory. go-git's hard reset cannot write over that contradiction --
+// it fails with `openat <path>: is a directory` / `not a directory` -- and the
+// Create-fallback in refresh then reported the whole thing as
+// `checkout branch <branch>: a branch named "refs/heads/<branch>" already
+// exists`. That names a branch that was never the problem, and it is the
+// reason a retry could not recover: the reported obstacle was not the real
+// one.
+//
+// refresh's contract is to discard the working tree, so a path it cannot
+// reset over is a path it has to clear first.
+func TestPrepareRecoversFromAPathTypeConflictOnRetry(t *testing.T) {
+	cases := []struct {
+		name  string
+		wreck func(t *testing.T, dir string)
+	}{
+		{"directory where the tree has a file", func(t *testing.T, dir string) {
+			if err := os.Remove(filepath.Join(dir, "README.md")); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(dir, "README.md", "inner"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "README.md", "inner", "junk"), []byte("junk\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"file where the tree has a directory", func(t *testing.T, dir string) {
+			if err := os.RemoveAll(filepath.Join(dir, "pkg")); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "pkg"), []byte("now a file\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"directory where the tree has a nested file", func(t *testing.T, dir string) {
+			if err := os.RemoveAll(filepath.Join(dir, "pkg")); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(dir, "pkg", "a.txt"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "pkg", "a.txt", "junk"), []byte("junk\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			ctx := context.Background()
+			host := newLocalRemote(t, "acme", "todo")
+			seedTrackedPath(t, host, "pkg/a.txt", "a\n")
+			m := newManager(t, host)
+
+			dir, branch, err := m.Prepare(ctx, "acme", "todo", testBase, 21, "fix: path type conflict", "", "bug")
+			if err != nil {
+				t.Fatalf("first Prepare() error = %v", err)
+			}
+			c.wreck(t, dir)
+
+			dir2, branch2, err := m.Prepare(ctx, "acme", "todo", testBase, 21, "fix: path type conflict", "", "bug")
+			if err != nil {
+				t.Fatalf("retry Prepare() over a path type conflict error = %v, want recovery", err)
+			}
+			if dir2 != dir || branch2 != branch {
+				t.Errorf("retry Prepare() = (%q, %q), want the same (%q, %q)", dir2, branch2, dir, branch)
+			}
+
+			// The retry must leave the base tree's own shape behind, not the
+			// wreckage: whichever type the previous attempt left, the tracked
+			// path has to come back as the tree declares it.
+			info, err := os.Lstat(filepath.Join(dir, "README.md"))
+			if err != nil {
+				t.Fatalf("README.md after retry: %v", err)
+			}
+			if info.IsDir() {
+				t.Error("README.md is still a directory, want the base tree's regular file")
+			}
+			content, err := os.ReadFile(filepath.Join(dir, "README.md"))
+			if err != nil {
+				t.Fatalf("read README.md after retry: %v", err)
+			}
+			if string(content) != "seed\n" {
+				t.Errorf("README.md = %q, want the base commit's content restored", content)
+			}
+			if pkg, err := os.Stat(filepath.Join(dir, "pkg")); err != nil {
+				t.Fatalf("pkg after retry: %v", err)
+			} else if !pkg.IsDir() {
+				t.Error("pkg is still a file, want the base tree's directory")
+			}
+			if a, err := os.ReadFile(filepath.Join(dir, "pkg", "a.txt")); err != nil {
+				t.Fatalf("read pkg/a.txt after retry: %v", err)
+			} else if string(a) != "a\n" {
+				t.Errorf("pkg/a.txt = %q, want the base commit's content restored", a)
+			}
+		})
+	}
+}
+
+// TestPrepareCreatesTheBranchWhenItIsGenuinelyMissing keeps the other half of
+// refresh's branch handling honest: resolving a branch's existence before
+// deciding whether to create it must not lose the create path. The branch name
+// derives from the issue title, so an edited title between attempts renames the
+// branch, and the second attempt has to create it.
+func TestPrepareCreatesTheBranchWhenItIsGenuinelyMissing(t *testing.T) {
+	ctx := context.Background()
+	host := newLocalRemote(t, "acme", "todo")
+	m := newManager(t, host)
+
+	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 22, "fix: first title", "", "bug")
+	if err != nil {
+		t.Fatalf("first Prepare() error = %v", err)
+	}
+	r, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := archieBranch(22, "fix: first title", "bug")
+	if err := r.Storer.RemoveReference(plumbing.NewBranchReferenceName(first)); err != nil {
+		t.Fatalf("remove branch %s: %v", first, err)
+	}
+
+	_, branch, err := m.Prepare(ctx, "acme", "todo", testBase, 22, "fix: renamed title", "", "bug")
+	if err != nil {
+		t.Fatalf("Prepare() after the branch was removed error = %v, want it created", err)
+	}
+	if _, err := r.Reference(plumbing.NewBranchReferenceName(branch), false); err != nil {
+		t.Errorf("branch %q not present after Prepare(): %v", branch, err)
+	}
+}
+
+// seedTrackedPath commits one path (creating its parent directories) onto the
+// fake remote's base branch, so a fixture can have a tracked *directory* as
+// well as the single tracked file newLocalRemote seeds.
+func seedTrackedPath(t *testing.T, host, path, content string) {
+	t.Helper()
+	seedDir := filepath.Join(t.TempDir(), "path-seed")
+	r, err := git.PlainClone(seedDir, &git.CloneOptions{URL: filepath.Join(host, "acme", "todo.git")})
+	if err != nil {
+		t.Fatalf("clone path seed: %v", err)
+	}
+	full := filepath.Join(seedDir, filepath.FromSlash(path))
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	disableSigning(t, r)
+	wt, err := r.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Add(path); err != nil {
+		t.Fatalf("add %s: %v", path, err)
+	}
+	sig := testSignature()
+	if _, err := wt.Commit("chore: seed "+path, &git.CommitOptions{Author: sig, Committer: sig}); err != nil {
+		t.Fatalf("commit %s: %v", path, err)
+	}
+	if err := r.Push(&git.PushOptions{RemoteName: git.DefaultRemoteName}); err != nil {
+		t.Fatalf("push %s: %v", path, err)
+	}
+}
+
 // A repository whose .git is a gitdir *file* rather than a directory (a
 // linked worktree, or a clone adopted by migrateLegacy) must still have its
 // abandoned untracked files cleaned. Returning filepath.SkipDir for a
@@ -359,7 +529,19 @@ func TestCleanUntrackedHandlesGitdirFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PlainOpen() with a gitdir file error = %v", err)
 	}
-	if err := cleanUntracked(r, dir); err != nil {
+	head, err := r.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	headCommit, err := r.CommitObject(head.Hash())
+	if err != nil {
+		t.Fatal(err)
+	}
+	headTree, err := headCommit.Tree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cleanUntracked(dir, headTree); err != nil {
 		t.Fatalf("cleanUntracked() error = %v", err)
 	}
 	if _, err := os.Stat(abandoned); !os.IsNotExist(err) {

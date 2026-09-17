@@ -242,40 +242,15 @@ func (m *Manager) refresh(ctx context.Context, dir, base, branch string) error {
 		return fmt.Errorf("fetch origin: %w", err)
 	}
 
-	wt, err := r.Worktree()
-	if err != nil {
-		return fmt.Errorf("open worktree: %w", err)
-	}
-	// Force discards whatever the working tree looks like right now: an
-	// interrupted prior attempt (killed container, a stage that edits
-	// files before ever reaching commit) can leave local modifications
-	// that make go-git's default MergeReset refuse to reconcile them, even
-	// onto a commit HEAD is already on. That refusal used to surface as
-	// "branch already exists" from the fallback below, which mis-assumed
-	// any checkout failure meant the branch didn't exist yet. Force is
-	// safe here regardless of cause: the hard reset to base a few lines
-	// down is about to discard the working tree anyway.
-	ref := plumbing.NewBranchReferenceName(branch)
-	if err := wt.Checkout(&git.CheckoutOptions{Branch: ref, Force: true}); err != nil {
-		// The branch does not exist yet in this worktree.
-		if err := wt.Checkout(&git.CheckoutOptions{Branch: ref, Create: true, Force: true}); err != nil {
-			return fmt.Errorf("checkout branch %s: %w", branch, err)
-		}
-	}
-
 	// Reset onto the freshly fetched base. This is a prepared clone, so a
-	// missing base is configuration or repository drift and must fail closed.
+	// missing base is configuration or repository drift and must fail closed
+	// -- and it is resolved before the first mutation, so a failure here
+	// leaves the worktree as it was rather than half-refreshed.
 	baseHash, err := resolveBase(r, base)
 	if err != nil {
 		return err
 	}
-	if err := wt.Reset(&git.ResetOptions{Commit: baseHash, Mode: git.HardReset}); err != nil {
-		return fmt.Errorf("reset to %s: %w", remoteBase(base), err)
-	}
-	if err := cleanUntracked(r, dir); err != nil {
-		return fmt.Errorf("clean abandoned worktree files: %w", err)
-	}
-	return nil
+	return resetOnto(r, dir, branch, baseHash, remoteBase(base))
 }
 
 // Resume re-syncs an already-prepared worktree onto its branch's remote tip
@@ -295,41 +270,104 @@ func (m *Manager) Resume(ctx context.Context, dir, branch string) error {
 		return fmt.Errorf("fetch origin: %w", err)
 	}
 
-	wt, err := r.Worktree()
-	if err != nil {
-		return fmt.Errorf("open worktree: %w", err)
-	}
-	ref := plumbing.NewBranchReferenceName(branch)
-	if err := wt.Checkout(&git.CheckoutOptions{Branch: ref, Force: true}); err != nil {
-		return fmt.Errorf("checkout branch %s: %w", branch, err)
-	}
-
 	tip, err := r.ResolveRevision(plumbing.Revision(remoteBase(branch)))
 	if err != nil {
 		return fmt.Errorf("resolve remote tip of %s: %w", branch, err)
 	}
-	if err := wt.Reset(&git.ResetOptions{Commit: *tip, Mode: git.HardReset}); err != nil {
-		return fmt.Errorf("reset to %s: %w", remoteBase(branch), err)
+	return resetOnto(r, dir, branch, *tip, remoteBase(branch))
+}
+
+// resetOnto discards the worktree's current contents and points branch at
+// commit, leaving a clean tree that matches commit.
+//
+// The ORDER here is the substance of the function, and it is deliberately the
+// opposite of the checkout-then-reset-then-clean it replaced. A previous
+// attempt -- an interrupted stage, a killed container, or a build run inside
+// the root sandbox -- can leave a path whose type contradicts the tree being
+// reset onto as well as untracked output beside it. go-git's reset cannot
+// write a file where a directory sits, nor create a directory through a file;
+// it failed with `openat <path>: is a directory` / `not a directory` before it
+// could apply anything, and the Create-fallback that used to follow reported
+// that as a branch that already existed. Clearing the worktree against the
+// TARGET tree first removes exactly those conflicts -- an on-disk directory the
+// tree declares as a file is untracked, and so is a file the tree declares as a
+// directory -- so the reset that follows has nothing left to collide with.
+func resetOnto(r *git.Repository, dir, branch string, commit plumbing.Hash, label string) error {
+	target, err := commitTree(r, commit)
+	if err != nil {
+		return err
 	}
-	if err := cleanUntracked(r, dir); err != nil {
-		return fmt.Errorf("clean abandoned worktree files: %w", err)
+	if err := cleanUntracked(dir, target); err != nil {
+		return fmt.Errorf("clear abandoned worktree files: %w", err)
+	}
+
+	wt, err := r.Worktree()
+	if err != nil {
+		return fmt.Errorf("open worktree: %w", err)
+	}
+	if err := checkOutBranch(r, wt, branch, commit); err != nil {
+		return err
+	}
+	if err := wt.Reset(&git.ResetOptions{Commit: commit, Mode: git.HardReset}); err != nil {
+		return fmt.Errorf("reset to %s: %w", label, err)
 	}
 	return nil
 }
 
-func cleanUntracked(r *git.Repository, dir string) error {
-	head, err := r.Head()
-	if err != nil {
-		return fmt.Errorf("resolve HEAD: %w", err)
+// checkOutBranch switches the worktree to branch, creating it at commit when it
+// does not exist yet.
+//
+// Whether the branch exists is resolved from the reference store rather than
+// inferred from a failed checkout. A checkout fails for reasons that have
+// nothing to do with a missing branch -- most often a path in the working tree
+// the tree cannot be written over -- and treating any such failure as "the
+// branch does not exist yet" produced `a branch named "refs/heads/<branch>"
+// already exists`: it named a branch that was never the problem and hid the
+// real cause from the park reason an operator reads to decide what to do.
+//
+// Creating from an explicit commit rather than from HEAD matters too: a branch
+// removed while HEAD still pointed at it (a renamed branch, a half-finished
+// refresh) made go-git's create path read an unresolvable HEAD and fail with
+// "reference not found" instead of creating the branch.
+func checkOutBranch(r *git.Repository, wt *git.Worktree, branch string, commit plumbing.Hash) error {
+	ref := plumbing.NewBranchReferenceName(branch)
+	opts := &git.CheckoutOptions{Branch: ref, Force: true}
+	switch _, err := r.Reference(ref, false); {
+	case err == nil:
+	case errors.Is(err, plumbing.ErrReferenceNotFound):
+		opts.Create = true
+		opts.Hash = commit
+	default:
+		return fmt.Errorf("resolve branch %s: %w", branch, err)
 	}
-	commit, err := r.CommitObject(head.Hash())
-	if err != nil {
-		return fmt.Errorf("load HEAD commit: %w", err)
+	if err := wt.Checkout(opts); err != nil {
+		return fmt.Errorf("checkout branch %s: %w", branch, err)
 	}
-	tree, err := commit.Tree()
+	return nil
+}
+
+// commitTree loads the tree of one commit, for the caller that has to know
+// which paths the worktree is about to be reset onto.
+func commitTree(r *git.Repository, commit plumbing.Hash) (*object.Tree, error) {
+	c, err := r.CommitObject(commit)
 	if err != nil {
-		return fmt.Errorf("load HEAD tree: %w", err)
+		return nil, fmt.Errorf("load commit %s: %w", commit, err)
 	}
+	tree, err := c.Tree()
+	if err != nil {
+		return nil, fmt.Errorf("load tree of %s: %w", commit, err)
+	}
+	return tree, nil
+}
+
+// cleanUntracked removes every path under dir that tree does not contain:
+// untracked files, whole directories of build output, and any path whose type
+// on disk contradicts what the tree declares.
+//
+// It is given the tree the worktree is being reset ONTO, not HEAD: the point is
+// to leave nothing behind that the incoming tree cannot be written over, and
+// on a retry HEAD is one of the things being replaced.
+func cleanUntracked(dir string, tree *object.Tree) error {
 	files := make(map[string]struct{})
 	dirs := make(map[string]struct{})
 	opaqueDirs := make(map[string]struct{})
@@ -367,6 +405,10 @@ func cleanUntracked(r *git.Repository, dir string) error {
 			if _, ok := dirs[rel]; ok {
 				return nil
 			}
+			// A directory the tree does not declare as one -- including a
+			// directory sitting on a path the tree declares as a FILE -- is
+			// output, not tracked content. It has to go before the reset can
+			// write the file this path is supposed to hold.
 			if err := os.RemoveAll(path); err != nil {
 				return err
 			}
