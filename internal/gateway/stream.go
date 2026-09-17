@@ -80,103 +80,145 @@ func toolPreview(name, output string) string {
 	if strings.TrimSpace(content) == "" {
 		return "completed"
 	}
-	// A tool that reported a real total is the only trustworthy source for
-	// how much came back; anything we compute is about the sample we can see.
-	if total, ok := toolReportedTotal(content); ok {
-		return total
-	}
-	if summary, ok := searchResultSummary(content); ok {
+	// A notice the tool printed is the only trustworthy source for how much
+	// came back; anything counted here describes the visible sample.
+	if summary, ok := toolNoticeSummary(content); ok {
 		return summary
+	}
+	// Only a search gets a counted summary. A compiler or linter diagnostic has
+	// the same "file.go:42: message" shape as a search hit, so counting every
+	// tool's output would report a build error as "3 matches" and hide the very
+	// output the operator asked for.
+	if isSearchTool(name) {
+		if summary, ok := searchResultSummary(content); ok {
+			return summary
+		}
 	}
 	preview := firstInformativeLine(content)
 	if preview == "" {
 		return "completed with no printable preview"
 	}
-	_ = name
 	return preview
 }
 
-// toolReportedTotal extracts the line total from the truncation notices the
-// tool layer prints (internal/tools/builtin: "[truncated: showing 2/194 lines,
-// …]"). Those notices are metadata, not content, so they are never rendered as
-// a preview line -- quoting one is what produced "[truncated: showing 3/197
-// lines, 412B/24.1KB]" as if it were a search hit.
+// searchToolNames are the tools whose output is a set of matches, and so reads
+// better counted than sampled. Every other tool is described by its first
+// informative line.
+var searchToolNames = map[string]bool{
+	"grep":       true,
+	"rg":         true,
+	"search":     true,
+	"toolsearch": true,
+}
+
+func isSearchTool(name string) bool {
+	return searchToolNames[strings.ToLower(strings.TrimSpace(name))]
+}
+
+// toolNoticeSummary renders the "how much came back" summary from the
+// truncation notice the tool printed, if any.
 //
-// A notice that shows everything (showing N/N) is not a truncation and gets no
-// summary: the content speaks for itself.
-func toolReportedTotal(content string) (string, bool) {
+// Two notice shapes exist (internal/tools/builtin): shell prints "[truncated:
+// showing last N/M lines, …]" and the other tools print "[truncated: showing
+// N/M lines, …]". Both are metadata, never content, so both must be recognised
+// -- missing the "last" form would quote the raw notice as the preview, which
+// is the exact defect this change removes.
+//
+// The same notice also tells us WHICH END was kept, which changes the summary:
+// a head-truncation ("showing 3/197") lost the tail, so "showing 3" describes
+// the sample; a tail-truncation ("showing last 66/97") lost the head, so the
+// count of what is visible says nothing useful about the whole.
+func toolNoticeSummary(content string) (string, bool) {
 	for line := range strings.SplitSeq(content, "\n") {
-		line = strings.TrimSpace(line)
-		shown, total, ok := parseTruncationNotice(line)
+		notice, ok := parseTruncationNotice(strings.TrimSpace(line))
 		if !ok {
 			continue
 		}
-		if total <= shown {
-			continue
+		if notice.total <= notice.shown {
+			continue // showing everything is not a truncation
 		}
-		return fmt.Sprintf("%d lines total; showing %d", total, shown), true
+		if notice.truncatedHead {
+			return fmt.Sprintf("%d lines total; showing last %d", notice.total, notice.shown), true
+		}
+		return fmt.Sprintf("%d lines total; showing %d", notice.total, notice.shown), true
 	}
 	return "", false
 }
 
-// parseTruncationNotice reads "showing <shown>/<total> lines" out of a
-// truncation notice, tolerating the surrounding "[truncated: … ]" wrapper.
-func parseTruncationNotice(line string) (shown, total int, ok bool) {
+// truncationNotice describes how much a tool reported and which end it kept.
+type truncationNotice struct {
+	shown         int
+	total         int
+	truncatedHead bool // the kept lines are the tail ("showing last N/M")
+}
+
+// parseTruncationNotice reads "<shown>/<total> lines" out of a truncation
+// notice, accepting both the plain and the "showing last" form and tolerating
+// the surrounding "[truncated: … ]" wrapper.
+func parseTruncationNotice(line string) (truncationNotice, bool) {
 	_, rest, found := strings.Cut(line, "showing ")
 	if !found {
-		return 0, 0, false
+		return truncationNotice{}, false
+	}
+	truncatedHead := false
+	if after, ok := strings.CutPrefix(rest, "last "); ok {
+		rest, truncatedHead = after, true
 	}
 	counts, _, found := strings.Cut(rest, " lines")
 	if !found {
-		return 0, 0, false
+		return truncationNotice{}, false
 	}
 	left, right, found := strings.Cut(counts, "/")
 	if !found {
-		return 0, 0, false
+		return truncationNotice{}, false
 	}
 	shown, errShown := strconv.Atoi(strings.TrimSpace(left))
 	total, errTotal := strconv.Atoi(strings.TrimSpace(right))
 	if errShown != nil || errTotal != nil {
-		return 0, 0, false
+		return truncationNotice{}, false
 	}
-	return shown, total, true
+	return truncationNotice{shown: shown, total: total, truncatedHead: truncatedHead}, true
 }
 
-// searchResultSummary counts match lines in ripgrep-shaped output ("path-12-
-// text", "path:12:text", or a context separator). A search is the one tool
-// whose raw output is least useful quoted and most useful counted, so it is
-// summarised rather than sampled.
+// searchResultSummary counts the match lines in ripgrep-shaped output. Only
+// matches are counted: with context requested, ripgrep also emits context lines
+// ("path-12-text", hyphen separator) and "--" group separators, and counting
+// those would report the match count plus every context line around it.
 func searchResultSummary(content string) (string, bool) {
-	matches, _ := countSearchMatches(content)
+	matches := countSearchMatches(content)
 	if matches == 0 {
 		return "", false
 	}
 	return fmt.Sprintf("%d %s", matches, pluralize(matches, "match", "matches")), true
 }
 
-// countSearchMatches counts match lines and whether any were truncated.
-func countSearchMatches(content string) (matches int, truncated bool) {
+// countSearchMatches counts lines using ripgrep's match separator (":").
+func countSearchMatches(content string) int {
+	matches := 0
 	for line := range strings.SplitSeq(content, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "[") {
-			continue
-		}
-		if searchMatchLine(line) {
+		if isSearchMatchLine(strings.TrimSpace(line)) {
 			matches++
 		}
 	}
-	return matches, false
+	return matches
 }
 
-// searchMatchLine reports whether line has ripgrep's "path-N-text" or
-// "path:N:text" shape. The path may contain colons, so the separator is found
-// by scanning for the last one that is followed by a line number.
-func searchMatchLine(line string) bool {
-	if strings.HasPrefix(line, "--") && strings.Trim(line, "-") == "" {
-		return true // context separator
+// isSearchMatchLine reports whether line has ripgrep's "path:N:text" match
+// shape -- a colon separator. The hyphen form ("path-N-text") is a CONTEXT
+// line, not a match, and "--" is a group separator between context blocks;
+// neither is a match and neither is counted.
+//
+// The path may itself contain colons, so the separator is located by scanning
+// from the end for a colon followed by digits and another colon.
+func isSearchMatchLine(line string) bool {
+	if line == "" || strings.HasPrefix(line, "[") {
+		return false
+	}
+	if strings.Trim(line, "-") == "" {
+		return false // "--" group separator
 	}
 	for i := len(line) - 1; i > 0; i-- {
-		if line[i] != ':' && line[i] != '-' {
+		if line[i] != ':' {
 			continue
 		}
 		digits := line[i+1:]
@@ -184,10 +226,9 @@ func searchMatchLine(line string) bool {
 		for end < len(digits) && digits[end] >= '0' && digits[end] <= '9' {
 			end++
 		}
-		if end == 0 || end >= len(digits) {
-			continue
-		}
-		if digits[end] == ':' || digits[end] == '-' {
+		// Require <path>:<digits>:<text> -- the trailing colon distinguishes a
+		// match from a "path:42" reference with nothing after it.
+		if end > 0 && end < len(digits) && digits[end] == ':' {
 			return true
 		}
 	}
@@ -195,7 +236,7 @@ func searchMatchLine(line string) bool {
 }
 
 // firstInformativeLine returns the first line worth showing: not blank, not a
-// module-cache path, and not a truncation notice (which is metadata the total
+// module-cache path, and not a truncation notice (which is metadata the notice
 // path already consumed).
 func firstInformativeLine(content string) string {
 	for line := range strings.SplitSeq(content, "\n") {
@@ -206,7 +247,7 @@ func firstInformativeLine(content string) string {
 		if strings.Contains(line, "/pkg/mod/") {
 			continue
 		}
-		if _, _, ok := parseTruncationNotice(line); ok {
+		if _, ok := parseTruncationNotice(line); ok {
 			continue
 		}
 		return truncateRunes(line, 120)

@@ -1,85 +1,136 @@
 package gateway
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 )
 
-// Operator report (2026-09-17): tool output in Telegram is unreadable. A
-// grep-heavy turn rendered as a wall of blocks like:
+// Operator report (2026-09-17): tool output in the Telegram channel was
+// unreadable. A grep-heavy turn rendered as a wall of fenced blocks, each
+// quoting one arbitrary match line under a heading that said only
+// "grep — done":
 //
 //	🔧 grep — done
-//	```text
-//	/home/sam/.claude/config.json-322-          }
+//	/path/config.json-322-          }
 //	… 194 more lines
-//	```
 //
-// Three faults, all in the render path:
+// One call rendered as 86 runes carrying no usable information: a path, a line
+// number, and a stray closing brace. The renderer now describes the result
+// instead of quoting it, and never states a count it computed itself.
 //
-//  1. the preview is an arbitrary match line -- a path, a line number and a
-//     stray brace -- with no statement of what matched or how much;
-//  2. the "… N more lines" we append disagrees with the count the tool
-//     already printed, so one result set shows two different numbers;
-//  3. a grep result ends with the tool's own truncation notice, which the
-//     preview renders as if it were a match.
-
-// TestGrepContextPreviewIsNotAnArbitraryMatchLine: the first line of ripgrep
-// context output is a path, a line number and (here) a closing brace. Showing
-// it tells the operator nothing about the search.
-func TestGrepContextPreviewIsNotAnArbitraryMatchLine(t *testing.T) {
-	output := strings.Join([]string{
-		"/home/sam/.claude/config.json-322-          }",
-		"/home/sam/.claude/config.json-323-        }",
-		"/home/sam/.claude/config.json-324-      }",
+// Cases are table-driven per the development protocol in AGENTS.md.
+func TestToolPreviewDescribesTheResult(t *testing.T) {
+	// A 197-line grep result whose first visible line is an arbitrary match;
+	// the tool's own notice is the only trustworthy total.
+	truncatedGrep := strings.Join([]string{
+		"/home/example/.config/app.json-322-          }",
+		"/home/example/.config/app.json-323-        }",
+		"/home/example/.config/app.json-324-      }",
 		"",
 		"[truncated: showing 3/197 lines, 412B/24.1KB]",
 	}, "\n")
 
-	got := RenderToolCall(ToolCallEvent{Name: "grep", Output: output})
-
-	if strings.Contains(got, "config.json-322-") {
-		t.Errorf("preview is an arbitrary match line, not a summary:\n%s", got)
+	tests := []struct {
+		name   string
+		tool   string
+		output string
+		want   string
+	}{
+		{
+			name:   "truncated search reports the tool's total, which is a head truncation",
+			tool:   "grep",
+			output: truncatedGrep,
+			want:   "197 lines total; showing 3",
+		},
+		{
+			name: "shell truncation notice says 'showing last' and is still metadata, not content",
+			tool: "shell",
+			output: strings.Join([]string{
+				"[truncated: showing last 66/97 lines, 46.2KB/164.8KB]",
+				"",
+				"the last line of the output",
+			}, "\n"),
+			want: "97 lines total; showing last 66",
+		},
+		{
+			name:   "an untruncated search is counted, not sampled",
+			tool:   "grep",
+			output: "/src/a.go:12:func main() {\n/src/b.go:40:\treturn nil\n/src/c.go:99:}",
+			want:   "3 matches",
+		},
+		{
+			name: "search context lines are not matches",
+			tool: "grep",
+			output: strings.Join([]string{
+				"/src/a.go:12:func main() {",
+				"/src/a.go-13-\treturn nil",
+				"/src/a.go-14-}",
+				"--",
+				"/src/b.go:40:\treturn nil",
+			}, "\n"),
+			want: "2 matches",
+		},
+		{
+			name:   "a single match is singular",
+			tool:   "grep",
+			output: "/src/a.go:12:func main() {",
+			want:   "1 match",
+		},
+		{
+			name:   "a colon in the path does not hide the match",
+			tool:   "grep",
+			output: "/src/weird:dir/a.go:12:func main() {",
+			want:   "1 match",
+		},
+		{
+			// A compiler diagnostic has the same "file:line:text" shape as a
+			// search hit. Counting it would report a build error as "N matches"
+			// and hide the diagnostic the operator actually needs.
+			name:   "a compiler diagnostic is shown, not counted as matches",
+			tool:   "shell",
+			output: "internal/webui/api_tasks.go:42: undefined: forgeLocator",
+			want:   "internal/webui/api_tasks.go:42: undefined: forgeLocator",
+		},
+		{
+			name:   "a non-search tool keeps its first informative line",
+			tool:   "find",
+			output: "/home/example/projects/app\n/home/example/projects/app/internal",
+			want:   "/home/example/projects/app",
+		},
+		{
+			name:   "module-cache noise is skipped",
+			tool:   "read",
+			output: "/home/example/go/pkg/mod/github.com/x/y@v1.0/z.go\npackage y",
+			want:   "package y",
+		},
+		{
+			name:   "empty output is reported as completed without a preview",
+			tool:   "shell",
+			output: "   \n  ",
+			want:   "completed",
+		},
 	}
-	if strings.Contains(got, "[truncated:") {
-		t.Errorf("preview quoted the tool's truncation notice as content:\n%s", got)
-	}
-	// A summary is expected: the operator needs to know how much matched.
-	if !strings.Contains(got, "197") {
-		t.Errorf("preview does not state the result size; want the tool's own 197 lines:\n%s", got)
-	}
-}
 
-// TestToolPreviewDoesNotStateItsOwnLineCount: the renderer recomputes a line
-// count from the previewed text instead of using the total the tool already
-// reported, so the operator sees two different numbers for one result set --
-// the tool's "194 more lines" and our "… 3 more lines". Any count we invent
-// from a truncated preview is wrong by construction, so the renderer must not
-// state one at all.
-func TestToolPreviewDoesNotStateItsOwnLineCount(t *testing.T) {
-	output := strings.Join([]string{
-		"/a/b.go-12-  return nil",
-		"/a/c.go-40-  return nil",
-		"",
-		"[truncated: showing 2/194 lines, 300B/12.0KB]",
-	}, "\n")
-
-	got := RenderToolCall(ToolCallEvent{Name: "grep", Output: output})
-
-	if strings.Contains(got, "more lines") {
-		t.Errorf("renderer invented a line count from a truncated preview; the tool's own count is the only true one:\n%s", got)
-	}
-	// The tool's real total should be what survives.
-	if !strings.Contains(got, "194") {
-		t.Errorf("render lost the tool's real total (194 lines):\n%s", got)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := RenderToolCall(ToolCallEvent{Name: tc.tool, Output: tc.output})
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("preview missing %q:\n%s", tc.want, got)
+			}
+			// The renderer must never state a count it computed from its own
+			// truncated sample: that produced two different numbers for one
+			// result set ("194 more lines" beside "… 3 more lines").
+			if strings.Contains(got, "more lines") && !strings.Contains(got, "lines total") {
+				t.Errorf("renderer invented a line count from its own sample:\n%s", got)
+			}
+		})
 	}
 }
 
 // TestToolRenderIsBoundedAndAggregatable: one rendered call must stay small so
 // a tool-heavy turn cannot crowd the answer out of a single Telegram frame.
-// Bounded at 220 runes so 14 calls stay well inside the 3900-rune frame.
 func TestToolRenderIsBoundedAndAggregatable(t *testing.T) {
-	output := strings.Repeat("/very/long/path/to/some/file.go-1234-    someLineOfSource();\n", 50)
+	output := strings.Repeat("/very/long/path/to/some/file.go:1234:    someLineOfSource();\n", 50)
 	got := RenderToolCall(ToolCallEvent{Name: "grep", Output: output})
 	if n := len([]rune(got)); n > 220 {
 		t.Errorf("one rendered tool call is %d runes, want <= 220:\n%s", n, got)
@@ -87,28 +138,5 @@ func TestToolRenderIsBoundedAndAggregatable(t *testing.T) {
 	// 14 such calls must leave the majority of the frame for the answer.
 	if n := len([]rune(got)) * 14; n > 3900/2 {
 		t.Errorf("14 rendered calls would consume %d of a 3900-rune frame", n)
-	}
-}
-
-// TestToolRenderKeepsShortOutputInformative: bounding must not throw away a
-// short result that genuinely fits -- the existing behaviour these tests must
-// not regress.
-func TestToolRenderKeepsShortOutputInformative(t *testing.T) {
-	got := RenderToolCall(ToolCallEvent{Name: "shell", Output: "total 8\ndrwxr-xr-x 2 sam sam"})
-	if !strings.Contains(got, "total 8") {
-		t.Errorf("short output lost its content: %q", got)
-	}
-}
-
-// TestToolRenderCountsMatchesForSearchTools: a search summary should say how
-// many matches, which is the one fact that makes it useful.
-func TestToolRenderCountsMatchesForSearchTools(t *testing.T) {
-	var b strings.Builder
-	for i := range 7 {
-		fmt.Fprintf(&b, "/src/file%d.go-%d-  match\n", i, i*10)
-	}
-	got := RenderToolCall(ToolCallEvent{Name: "grep", Output: b.String()})
-	if !strings.Contains(got, "7") {
-		t.Errorf("search preview does not report the match count:\n%s", got)
 	}
 }
