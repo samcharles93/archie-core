@@ -52,7 +52,7 @@ func FailureKey(e ToolCallEvent) string {
 	// Successful calls are also eligible for aggregation. Use the same
 	// compact summary that is shown to the user so equivalent results share a
 	// key while different result summaries remain distinct.
-	return strings.TrimSpace(e.Name) + "\x00" + toolPreview(e.Name, e.Output)
+	return "success\x00" + strings.TrimSpace(e.Name) + "\x00" + toolPreview(e.Name, e.Output)
 }
 
 func toolProgressBlock(name, status, preview string) string {
