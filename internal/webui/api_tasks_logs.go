@@ -98,12 +98,23 @@ func (s *Server) handleTaskLogDownload(w http.ResponseWriter, r *http.Request) {
 	// the reader into the response: a log file is unbounded input, so
 	// buffering it to size the response would defeat the reason the reader
 	// streams at all. The attempt's own name is known up front.
+	//
+	// Everything after this point must therefore CLEAR them before writing an
+	// error, never add to them: a 404 still carrying `Content-Disposition:
+	// attachment` is a browser download of the error text under a .log
+	// filename, and the NDJSON type would misdescribe it too.
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+taskLogFilename(id, attempt)+`"`)
+
+	clearAttachment := func() {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Del("Content-Disposition")
+	}
 
 	found, err := reader.TaskLogContent(r.Context(), id, attempt, w)
 	if err != nil {
 		if errors.Is(err, logging.ErrTaskLogsUnavailable) {
+			clearAttachment()
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
@@ -114,6 +125,7 @@ func (s *Server) handleTaskLogDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !found {
+		clearAttachment()
 		http.Error(w, "no log recorded for this attempt", http.StatusNotFound)
 	}
 }

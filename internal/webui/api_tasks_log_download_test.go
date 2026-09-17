@@ -119,6 +119,16 @@ func TestHandleTaskLogsDownloadWithoutALogAnswersNotFound(t *testing.T) {
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("GET %s with no log = %d, want 404", url, w.Code)
 	}
+	// The response is an error, not a file. Attachment headers are written
+	// before the read (the body streams, so the size is unknown up front), and
+	// leaving them on a 404 hands the caller a .log attachment containing only
+	// the error text.
+	if got := w.Header().Get("Content-Disposition"); got != "" {
+		t.Errorf("Content-Disposition = %q on a 404, want it cleared so the error is not presented as a download", got)
+	}
+	if got := w.Header().Get("Content-Type"); strings.Contains(got, "ndjson") {
+		t.Errorf("Content-Type = %q on a 404, want the error content type rather than the log's", got)
+	}
 }
 
 // TestHandleTaskLogsDownloadWithoutAReaderAnswersServiceUnavailable is the
@@ -143,5 +153,9 @@ func TestHandleTaskLogsDownloadWithoutAReaderAnswersServiceUnavailable(t *testin
 	if w.Code != http.StatusServiceUnavailable {
 		body, _ := io.ReadAll(w.Result().Body)
 		t.Fatalf("GET %s without a reader = %d (%s), want 503", url, w.Code, body)
+	}
+	// Same rule as the 404: an unavailable reader is an error, not a file.
+	if got := w.Header().Get("Content-Disposition"); got != "" {
+		t.Errorf("Content-Disposition = %q on a 503, want it cleared so the error is not presented as a download", got)
 	}
 }
