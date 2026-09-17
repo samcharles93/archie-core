@@ -12,7 +12,10 @@ package readiness
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
+	"strings"
 	"syscall"
 	"time"
 
@@ -130,42 +133,119 @@ func (p *ConfigProbe) Check(ctx context.Context) health.Result {
 // requirement of the readiness epic.
 const DefaultDiskThreshold = 0.90
 
-// DiskProbe checks the filesystem holding Path is below the used threshold.
-type DiskProbe struct {
-	Path      string
-	Threshold float64
+// DiskTarget is one filesystem location to measure. Optional targets are
+// ignored when they disappear (for example, /var on a non-Linux installation).
+type DiskTarget struct {
+	Name     string
+	Path     string
+	Optional bool
 }
 
-// NewDiskProbe returns a disk probe for the directory Path, degraded when
-// used usage exceeds the default 90% threshold.
+// DiskProbe checks each configured filesystem independently and aggregates the
+// results. Statfs is injectable so callers can test disk boundaries without
+// filling a filesystem.
+type DiskProbe struct {
+	// Path is retained for source compatibility with the original single-path
+	// probe. Targets takes precedence when non-empty.
+	Path      string
+	Targets   []DiskTarget
+	Threshold float64
+	Statfs    func(string, *syscall.Statfs_t) error
+}
+
+// NewDiskProbe returns a single-path disk probe.
 func NewDiskProbe(path string) *DiskProbe {
-	return &DiskProbe{Path: path, Threshold: DefaultDiskThreshold}
+	return NewDiskProbeTargets([]DiskTarget{{Name: "work", Path: path}})
+}
+
+// NewDiskProbeTargets returns a disk probe for the supplied, stable-ordered targets.
+func NewDiskProbeTargets(targets []DiskTarget) *DiskProbe {
+	return &DiskProbe{Targets: append([]DiskTarget(nil), targets...), Threshold: DefaultDiskThreshold, Statfs: syscall.Statfs}
 }
 
 func (p *DiskProbe) Name() string { return "disk" }
 
-func (p *DiskProbe) Check(ctx context.Context) health.Result {
-	if p.Path == "" {
-		return health.Result{Status: health.StatusDegraded, Detail: "no disk path configured"}
-	}
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs(p.Path, &stat); err != nil {
-		return health.Result{Status: health.StatusDegraded, Detail: "statfs failed: " + err.Error()}
-	}
-	if stat.Blocks == 0 {
-		return health.Result{Status: health.StatusDegraded, Detail: "cannot size filesystem"}
-	}
-	// Used fraction uses available (bavail) rather than free (bfree) so a
-	// filesystem with reserved blocks is not reported as safer than it is.
-	used := stat.Blocks - stat.Bavail
-	pct := float64(used) / float64(stat.Blocks)
-	if pct >= p.Threshold {
-		return health.Result{
-			Status: health.StatusDegraded,
-			Detail: fmt.Sprintf("%.0f%% used (limit %.0f%%)", pct*100, p.Threshold*100),
+// reduceTargets collapses the configured targets to one per path: the first
+// target seen for a path wins its position, and the result keeps the strictest
+// requirement any target placed on that path.
+//
+// Position is what makes this necessary rather than using a plain set. With
+// root, an optional /var, then a required data path that resolves to /var, the
+// optional /var is the target that survives dedup -- and its optional rules
+// then apply to a path the daemon requires, so a vanished required path is
+// skipped as "optional absent" and the probe reports OK. Choosing the required
+// target (and its name) keeps the failure visible and correctly attributed.
+func reduceTargets(targets []DiskTarget) []DiskTarget {
+	index := make(map[string]int, len(targets))
+	out := make([]DiskTarget, 0, len(targets))
+	for _, target := range targets {
+		if target.Path == "" {
+			continue
 		}
+		if at, ok := index[target.Path]; ok {
+			if !target.Optional && out[at].Optional {
+				out[at] = target
+			}
+			continue
+		}
+		index[target.Path] = len(out)
+		out = append(out, target)
 	}
-	return health.Result{Status: health.StatusOK}
+	return out
+}
+
+func (p *DiskProbe) Check(ctx context.Context) health.Result {
+	_ = ctx
+	targets := p.Targets
+	if len(targets) == 0 && p.Path != "" {
+		targets = []DiskTarget{{Name: "work", Path: p.Path}}
+	}
+	if len(targets) == 0 {
+		return health.Result{Status: health.StatusDegraded, Detail: "no disk targets configured"}
+	}
+	statfs := p.Statfs
+	if statfs == nil {
+		statfs = syscall.Statfs
+	}
+	var details []string
+	degraded := false
+	for _, target := range reduceTargets(targets) {
+		var stat syscall.Statfs_t
+		if err := statfs(target.Path, &stat); err != nil {
+			if target.Optional && errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			degraded = true
+			details = append(details, fmt.Sprintf("%s (%s): statfs failed: %v", target.Name, target.Path, err))
+			continue
+		}
+		if stat.Blocks == 0 {
+			degraded = true
+			details = append(details, fmt.Sprintf("%s (%s): cannot size filesystem", target.Name, target.Path))
+			continue
+		}
+		used := stat.Blocks - stat.Bavail
+		pct := float64(used) / float64(stat.Blocks)
+		status := "ok"
+		if pct >= p.Threshold {
+			status = "degraded"
+			degraded = true
+		}
+		details = append(details, fmt.Sprintf("%s (%s): %.0f%% used (limit %.0f%%), %s", target.Name, target.Path, pct*100, p.Threshold*100, status))
+	}
+	if len(details) == 0 {
+		for _, target := range targets {
+			if !target.Optional {
+				return health.Result{Status: health.StatusDegraded, Detail: "no disk path configured"}
+			}
+		}
+		return health.Result{Status: health.StatusOK, Detail: "no optional disk targets present"}
+	}
+	result := health.Result{Status: health.StatusOK, Detail: strings.Join(details, "; ")}
+	if degraded {
+		result.Status = health.StatusDegraded
+	}
+	return result
 }
 
 // --- model ---
