@@ -38,12 +38,17 @@ type deps struct {
 //     UpdateRepoField: the configuration owner stays the daemon. The read
 //     crosses as the snapshot ConfigSource renders; the write routes answer
 //     503 and the page hides their controls (archie-core-ymut).
-//   - LogFeed, TaskLogs, Events, Channels, ReloadChannel, Curators, Memory,
+//   - LogFeed, Events, Channels, ReloadChannel, Curators, Memory,
 //     Workflows, WorkRequests, RunningVersions, Chat.Updates,
 //     UpdateReportPath: no contract exists for these yet.
 //     Defining one amends the owning service's contract first
 //     (docs/prds/ui-service-boundary.md:205-207); the route migration is
 //     archie-core-8cda.5.3.
+//   - TaskLogs: wired below from the store client's TaskLogStore contract.
+//     Task log files live in the state directory the State Store owns, so this
+//     process reads one attempt's log over that contract rather than opening
+//     the file itself -- which would only work on a single host and is exactly
+//     what the boundary forbids (archie-core-iaqx).
 //   - Captures, CaptureIntake, CaptureMaxEvents: wired below. From the
 //     cutover change (archie-core-8cda.5.4) this process is the only
 //     listener serving POST /webhooks/capture/{source}: the receiver is a
@@ -77,8 +82,29 @@ func compose(d deps) *webui.Server {
 	if d.Chat != nil {
 		srv.Chat = &webui.ChatService{Contract: d.Chat}
 	}
+	// The task-log read crosses the State Store contract: the files live in
+	// the state directory that process owns, so this one asks for the log
+	// rather than opening a path (docs/prds/ui-service-boundary.md). Withholding
+	// it would degrade a page that has an owner, and would leave the dashboard
+	// claiming task logging was not enabled -- see wireTaskLogs.
+	wireTaskLogs(d, srv)
 	wireCaptureSurfaces(d, srv)
 	return srv
+}
+
+// wireTaskLogs attaches the task-log read when the store client carries the
+// contract, and logs the absence when it does not: a store without it leaves
+// the page reporting that this process cannot read logs, which is true, rather
+// than that the attempt has none, which it cannot know.
+func wireTaskLogs(d deps, srv *webui.Server) {
+	logs, ok := d.Store.(storecontract.TaskLogStore)
+	if !ok {
+		if d.Store != nil {
+			d.Log.Warn("task logs unavailable: state store does not implement TaskLogStore")
+		}
+		return
+	}
+	srv.TaskLogs = logs
 }
 
 // wireCaptureSurfaces attaches the capture read and the intake receiver.

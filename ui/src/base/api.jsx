@@ -112,6 +112,11 @@ export const api = {
   configReset: (key) => request("/api/config/reset", { method: "POST", body: { key } }),
   logs: (params) => request("/api/logs" + qs(params)),
   taskLogs: (id, params) => request(`/api/tasks/${id}/logs` + qs(params)),
+  // A download is a navigation, not a fetch: the browser must own the
+  // Content-Disposition filename and stream the body to disk rather than hold
+  // a whole log in memory. The URL builder is the client-side contract, and
+  // base/log-row's sibling module keeps it beside the panel that uses it.
+  taskLogDownloadURL: (id, attempt) => `/api/tasks/${id}/logs/download` + (attempt == null ? "" : `?attempt=${attempt}`),
   captures: (limit) => request("/api/captures" + qs({ limit })),
   mappings: () => request("/api/mappings"),
   mappingCreate: (mapping) => request("/api/mappings", { method: "POST", body: mapping }),

@@ -11,7 +11,9 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
+	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
+	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/store"
 )
 
@@ -95,6 +97,35 @@ func TestServeStateStoreServesContract(t *testing.T) {
 		}
 	case <-t.Context().Done():
 		t.Fatal("serveStateStore did not return after cancel")
+	}
+}
+
+// TestStateStoreDepsServeTaskLogs proves the standalone State Store process is
+// where a task-log read is served from: the daemon process holds no dashboard
+// listener any more, so the service the UI process dials is the only place this
+// contract can have a server-side reader, and it must be the daemon's own
+// registry over the state directory.
+//
+// Without this wiring the RPC exists and answers Unavailable for every task,
+// which the dashboard reports as "this process cannot read logs" -- honest, but
+// still not a working download (archie-core-iaqx).
+func TestStateStoreDepsServeTaskLogs(t *testing.T) {
+	b := newBootstrap()
+	logs := logging.NewTaskRegistry(filepath.Join(t.TempDir(), "logs", "tasks"), logging.NewFeed(10), logging.TaskSinkOptions{})
+	b.taskLogs = logs
+
+	deps := b.stateStoreDeps(&staterpc.TaskGrants{})
+	if deps.TaskLogs == nil {
+		t.Fatal("stateStoreDeps leaves TaskLogs nil; the State Store process is the only server-side reader the dashboard can reach")
+	}
+	if deps.TaskLogs != storecontract.TaskLogStore(logs) {
+		t.Fatalf("TaskLogs = %T, want the daemon's own registry over the state directory", deps.TaskLogs)
+	}
+	// A boot without a registry must not fabricate one: an empty reader would
+	// answer found=false for every attempt, which reads as "the attempt has no
+	// log" rather than "this process cannot read logs".
+	if plain := (&boot{}).stateStoreDeps(&staterpc.TaskGrants{}); plain.TaskLogs != nil {
+		t.Errorf("TaskLogs = %T with no registry on the boot, want nil so the RPC reports unavailability", plain.TaskLogs)
 	}
 }
 

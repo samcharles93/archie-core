@@ -53,6 +53,18 @@ service StateStoreService {
   rpc PutConfigSnapshot(PutConfigSnapshotRequest) returns (PutConfigSnapshotResponse);
   rpc GetConfigSnapshot(GetConfigSnapshotRequest) returns (GetConfigSnapshotResponse);
 
+  // Task log: one task attempt's persisted log. Task log files live in the
+  // state directory this process owns, so the dashboard reads them over this
+  // contract rather than opening them itself
+  // (docs/prds/ui-service-boundary.md).
+  rpc ReadTaskLog(ReadTaskLogRequest) returns (ReadTaskLogResponse);
+  // StreamTaskLogContent returns one attempt's log verbatim, one chunk per
+  // message, for a download. A log file is unbounded input (it rotates at
+  // DefaultMaxSizeMB), so a unary response would exceed gRPC's 4MiB message
+  // cap on a real log -- the same reason ListCaptures was superseded by
+  // StreamCaptures.
+  rpc StreamTaskLogContent(StreamTaskLogContentRequest) returns (stream StreamTaskLogContentResponse);
+
   // Capture
   rpc InsertCapture(InsertCaptureRequest) returns (InsertCaptureResponse);
   // ListCaptures is superseded by StreamCaptures (kept, unmodified, so an
@@ -370,6 +382,64 @@ message GetConfigSnapshotRequest {}
 message GetConfigSnapshotResponse {
   ConfigSnapshot snapshot = 1;
   bool found = 2;
+}
+
+// TaskLogEntry mirrors internal/logging.Entry: one decoded log line. fields
+// carries every remaining key as a JSON object string, the same way Event
+// carries its data, so structured context survives the hop without this
+// contract having to know what a call site attached.
+message TaskLogEntry {
+  int64 id = 1;
+  google.protobuf.Timestamp time = 2;
+  string level = 3;
+  string msg = 4;
+  string fields_json = 5;
+}
+
+// ReadTaskLog returns a page of one task attempt's decoded log. attempt is the
+// attempt the caller resolved (the dashboard sends the task's current attempt
+// when the request omitted one). levels, component, contains, since and until
+// carry the whole query the logging package's Tail accepts -- the wire mirrors
+// that query rather than a subset of it, so a filter cannot silently stop
+// working by crossing the boundary. limit is caller-capped
+// (docs/prds/state-store-contract.md §8: the log cap is 2000).
+message ReadTaskLogRequest {
+  int64 task_id = 1;
+  int64 attempt = 2;
+  int64 limit = 3;
+  repeated string levels = 4;
+  string component = 5;
+  string contains = 6;
+  google.protobuf.Timestamp since = 7;
+  google.protobuf.Timestamp until = 8;
+}
+// found=false is not an error: the task has no log file for that attempt.
+// That is a different condition from a process that cannot read logs at all
+// (codes.Unavailable), and the dashboard reports them differently.
+message ReadTaskLogResponse {
+  repeated TaskLogEntry entries = 1;
+  bool truncated = 2;
+  int64 attempt = 3;
+  bool found = 4;
+  repeated string components = 5;
+  // file is the path read, so the page can name where the log came from. It
+  // is the state directory's own layout, reported to an already-authenticated
+  // operator; no caller is expected to open it.
+  string file = 6;
+}
+
+// StreamTaskLogContent returns one attempt's log verbatim, for a download. The
+// bytes are the file's own JSONL, not a re-encoding of it: this contract
+// transports the log, it does not restate the format. found=false, with no
+// chunks, means the attempt has no log file -- not an error.
+message StreamTaskLogContentRequest {
+  int64 task_id = 1;
+  int64 attempt = 2;
+}
+message StreamTaskLogContentResponse {
+  bytes chunk = 1;
+  int64 attempt = 2;
+  bool found = 3;
 }
 
 message InsertCaptureRequest {

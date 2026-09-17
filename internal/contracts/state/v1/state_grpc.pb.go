@@ -45,6 +45,8 @@ const (
 	StateStoreService_TokensByDay_FullMethodName                = "/state.v1.StateStoreService/TokensByDay"
 	StateStoreService_PutConfigSnapshot_FullMethodName          = "/state.v1.StateStoreService/PutConfigSnapshot"
 	StateStoreService_GetConfigSnapshot_FullMethodName          = "/state.v1.StateStoreService/GetConfigSnapshot"
+	StateStoreService_ReadTaskLog_FullMethodName                = "/state.v1.StateStoreService/ReadTaskLog"
+	StateStoreService_StreamTaskLogContent_FullMethodName       = "/state.v1.StateStoreService/StreamTaskLogContent"
 	StateStoreService_InsertCapture_FullMethodName              = "/state.v1.StateStoreService/InsertCapture"
 	StateStoreService_ListCaptures_FullMethodName               = "/state.v1.StateStoreService/ListCaptures"
 	StateStoreService_StreamCaptures_FullMethodName             = "/state.v1.StateStoreService/StreamCaptures"
@@ -114,6 +116,17 @@ type StateStoreServiceClient interface {
 	// configuration page").
 	PutConfigSnapshot(ctx context.Context, in *PutConfigSnapshotRequest, opts ...grpc.CallOption) (*PutConfigSnapshotResponse, error)
 	GetConfigSnapshot(ctx context.Context, in *GetConfigSnapshotRequest, opts ...grpc.CallOption) (*GetConfigSnapshotResponse, error)
+	// Task log: one task attempt's persisted log. Task log files live in the
+	// state directory this process owns, so the dashboard reads them over this
+	// contract rather than opening them itself
+	// (docs/prds/ui-service-boundary.md).
+	ReadTaskLog(ctx context.Context, in *ReadTaskLogRequest, opts ...grpc.CallOption) (*ReadTaskLogResponse, error)
+	// StreamTaskLogContent returns one attempt's log verbatim, one chunk per
+	// message, for a download. A log file is unbounded input (it rotates at
+	// DefaultMaxSizeMB), so a unary response would exceed gRPC's 4MiB message
+	// cap on a real log -- the same reason ListCaptures was superseded by
+	// StreamCaptures.
+	StreamTaskLogContent(ctx context.Context, in *StreamTaskLogContentRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamTaskLogContentResponse], error)
 	// Capture
 	InsertCapture(ctx context.Context, in *InsertCaptureRequest, opts ...grpc.CallOption) (*InsertCaptureResponse, error)
 	// Deprecated: Do not use.
@@ -419,6 +432,35 @@ func (c *stateStoreServiceClient) GetConfigSnapshot(ctx context.Context, in *Get
 	return out, nil
 }
 
+func (c *stateStoreServiceClient) ReadTaskLog(ctx context.Context, in *ReadTaskLogRequest, opts ...grpc.CallOption) (*ReadTaskLogResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReadTaskLogResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ReadTaskLog_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) StreamTaskLogContent(ctx context.Context, in *StreamTaskLogContentRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamTaskLogContentResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &StateStoreService_ServiceDesc.Streams[0], StateStoreService_StreamTaskLogContent_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[StreamTaskLogContentRequest, StreamTaskLogContentResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type StateStoreService_StreamTaskLogContentClient = grpc.ServerStreamingClient[StreamTaskLogContentResponse]
+
 func (c *stateStoreServiceClient) InsertCapture(ctx context.Context, in *InsertCaptureRequest, opts ...grpc.CallOption) (*InsertCaptureResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(InsertCaptureResponse)
@@ -442,7 +484,7 @@ func (c *stateStoreServiceClient) ListCaptures(ctx context.Context, in *ListCapt
 
 func (c *stateStoreServiceClient) StreamCaptures(ctx context.Context, in *StreamCapturesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamCapturesResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &StateStoreService_ServiceDesc.Streams[0], StateStoreService_StreamCaptures_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &StateStoreService_ServiceDesc.Streams[1], StateStoreService_StreamCaptures_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -602,7 +644,7 @@ func (c *stateStoreServiceClient) ListUndispatchedCaptures(ctx context.Context, 
 
 func (c *stateStoreServiceClient) StreamUndispatchedCaptures(ctx context.Context, in *StreamUndispatchedCapturesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamUndispatchedCapturesResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &StateStoreService_ServiceDesc.Streams[1], StateStoreService_StreamUndispatchedCaptures_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &StateStoreService_ServiceDesc.Streams[2], StateStoreService_StreamUndispatchedCaptures_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -677,6 +719,17 @@ type StateStoreServiceServer interface {
 	// configuration page").
 	PutConfigSnapshot(context.Context, *PutConfigSnapshotRequest) (*PutConfigSnapshotResponse, error)
 	GetConfigSnapshot(context.Context, *GetConfigSnapshotRequest) (*GetConfigSnapshotResponse, error)
+	// Task log: one task attempt's persisted log. Task log files live in the
+	// state directory this process owns, so the dashboard reads them over this
+	// contract rather than opening them itself
+	// (docs/prds/ui-service-boundary.md).
+	ReadTaskLog(context.Context, *ReadTaskLogRequest) (*ReadTaskLogResponse, error)
+	// StreamTaskLogContent returns one attempt's log verbatim, one chunk per
+	// message, for a download. A log file is unbounded input (it rotates at
+	// DefaultMaxSizeMB), so a unary response would exceed gRPC's 4MiB message
+	// cap on a real log -- the same reason ListCaptures was superseded by
+	// StreamCaptures.
+	StreamTaskLogContent(*StreamTaskLogContentRequest, grpc.ServerStreamingServer[StreamTaskLogContentResponse]) error
 	// Capture
 	InsertCapture(context.Context, *InsertCaptureRequest) (*InsertCaptureResponse, error)
 	// Deprecated: Do not use.
@@ -799,6 +852,12 @@ func (UnimplementedStateStoreServiceServer) PutConfigSnapshot(context.Context, *
 }
 func (UnimplementedStateStoreServiceServer) GetConfigSnapshot(context.Context, *GetConfigSnapshotRequest) (*GetConfigSnapshotResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetConfigSnapshot not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ReadTaskLog(context.Context, *ReadTaskLogRequest) (*ReadTaskLogResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReadTaskLog not implemented")
+}
+func (UnimplementedStateStoreServiceServer) StreamTaskLogContent(*StreamTaskLogContentRequest, grpc.ServerStreamingServer[StreamTaskLogContentResponse]) error {
+	return status.Error(codes.Unimplemented, "method StreamTaskLogContent not implemented")
 }
 func (UnimplementedStateStoreServiceServer) InsertCapture(context.Context, *InsertCaptureRequest) (*InsertCaptureResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method InsertCapture not implemented")
@@ -1346,6 +1405,35 @@ func _StateStoreService_GetConfigSnapshot_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StateStoreService_ReadTaskLog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadTaskLogRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ReadTaskLog(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ReadTaskLog_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ReadTaskLog(ctx, req.(*ReadTaskLogRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_StreamTaskLogContent_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(StreamTaskLogContentRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(StateStoreServiceServer).StreamTaskLogContent(m, &grpc.GenericServerStream[StreamTaskLogContentRequest, StreamTaskLogContentResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type StateStoreService_StreamTaskLogContentServer = grpc.ServerStreamingServer[StreamTaskLogContentResponse]
+
 func _StateStoreService_InsertCapture_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(InsertCaptureRequest)
 	if err := dec(in); err != nil {
@@ -1786,6 +1874,10 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _StateStoreService_GetConfigSnapshot_Handler,
 		},
 		{
+			MethodName: "ReadTaskLog",
+			Handler:    _StateStoreService_ReadTaskLog_Handler,
+		},
+		{
 			MethodName: "InsertCapture",
 			Handler:    _StateStoreService_InsertCapture_Handler,
 		},
@@ -1855,6 +1947,11 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "StreamTaskLogContent",
+			Handler:       _StateStoreService_StreamTaskLogContent_Handler,
+			ServerStreams: true,
+		},
 		{
 			StreamName:    "StreamCaptures",
 			Handler:       _StateStoreService_StreamCaptures_Handler,

@@ -14,7 +14,8 @@ func TestHandleTaskLogsReturnsEntriesForLatestAttemptByDefault(t *testing.T) {
 	srv := newTestServer(t)
 	ctx := t.Context()
 	baseDir := t.TempDir()
-	srv.TaskLogs = logging.NewTaskRegistry(baseDir, logging.NewFeed(10), logging.TaskSinkOptions{})
+	logs := logging.NewTaskRegistry(baseDir, logging.NewFeed(10), logging.TaskSinkOptions{})
+	srv.TaskLogs = logs
 
 	if _, err := srv.Store.EnqueueIssue(ctx, "acme", "widget", 1, "task", "", "", ""); err != nil {
 		t.Fatal(err)
@@ -24,13 +25,13 @@ func TestHandleTaskLogsReturnsEntriesForLatestAttemptByDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := srv.TaskLogs.Open(task.ID, task.Attempt); err != nil {
+	if err := logs.Open(task.ID, task.Attempt); err != nil {
 		t.Fatal(err)
 	}
-	srv.TaskLogs.Write(task.ID, logging.Entry{
+	logs.Write(task.ID, logging.Entry{
 		Level: "ERROR", Message: "gate failed", Fields: map[string]any{"component": "gate"},
 	})
-	if err := srv.TaskLogs.Close(task.ID); err != nil {
+	if err := logs.Close(task.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -58,7 +59,8 @@ func TestHandleTaskLogsHonoursExplicitAttempt(t *testing.T) {
 	srv := newTestServer(t)
 	ctx := t.Context()
 	baseDir := t.TempDir()
-	srv.TaskLogs = logging.NewTaskRegistry(baseDir, logging.NewFeed(10), logging.TaskSinkOptions{})
+	logs := logging.NewTaskRegistry(baseDir, logging.NewFeed(10), logging.TaskSinkOptions{})
+	srv.TaskLogs = logs
 
 	if _, err := srv.Store.EnqueueIssue(ctx, "acme", "widget", 1, "task", "", "", ""); err != nil {
 		t.Fatal(err)

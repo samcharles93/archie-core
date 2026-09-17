@@ -17,6 +17,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
+	"github.com/samcharles93/archie-core/internal/logging"
 )
 
 func timestamp(t time.Time) *timestamppb.Timestamp {
@@ -245,6 +246,12 @@ const (
 	msgBindingTransition = "binding transition rejected"
 	msgAlreadyDispatched = "already dispatched"
 	msgInternal          = "state store: internal error"
+	// msgTaskLogsUnavailable is the public phrase for "this service has no
+	// task-log reader". It is a wire contract like the sentinels above: the
+	// client rehydrates logging.ErrTaskLogsUnavailable from (Unavailable, this
+	// message), and a caller depends on that to tell "this process cannot read
+	// logs" from "this attempt has no log".
+	msgTaskLogsUnavailable = "task log reader unavailable"
 )
 
 // mapError converts a store sentinel error into a structured gRPC status
@@ -301,6 +308,12 @@ func mapError(err error) error {
 // *status.Error whose code is DeadlineExceeded or Canceled, so we rehydrate
 // those back to the standard context sentinels -- otherwise the consumer
 // would (wrongly) park a task that was merely interrupted.
+//
+// Unavailable carries one message this package owns: the absent task-log
+// reader. It is rehydrated for the same reason the error sentinels are --
+// the dashboard's whole bug was rendering "this process cannot read logs" as
+// "the attempt has no log", and only the typed error makes that distinction
+// available to a caller.
 func unmapError(err error) error {
 	if err == nil {
 		return nil
@@ -314,6 +327,19 @@ func unmapError(err error) error {
 		return context.Canceled
 	case codes.DeadlineExceeded:
 		return context.DeadlineExceeded
+	}
+	if sentinel := sentinelForStatus(st); sentinel != nil {
+		return sentinel
+	}
+	return fmt.Errorf("state store: %s: %w", st.Message(), err)
+}
+
+// sentinelForStatus maps a status to the store or logging sentinel it stands
+// for, matched on (code, exact canonical message) -- those message constants
+// are part of the wire contract (§4). A code whose message is not one this
+// package defines returns nil, so the caller falls back to the wrapped form.
+func sentinelForStatus(st *status.Status) error {
+	switch st.Code() {
 	case codes.FailedPrecondition:
 		switch st.Message() {
 		case msgStaleTransition:
@@ -334,8 +360,12 @@ func unmapError(err error) error {
 		if st.Message() == msgAlreadyDispatched {
 			return storecontract.ErrAlreadyDispatched
 		}
+	case codes.Unavailable:
+		if st.Message() == msgTaskLogsUnavailable {
+			return logging.ErrTaskLogsUnavailable
+		}
 	}
-	return fmt.Errorf("state store: %s: %w", st.Message(), err)
+	return nil
 }
 
 // configSnapshotProto and configSnapshotValue carry the dashboard's
@@ -357,5 +387,48 @@ func configSnapshotValue(snapshot *pb.ConfigSnapshot) storecontract.ConfigSnapsh
 		Schema:      snapshot.Schema,
 		Document:    snapshot.Document,
 		PublishedAt: timeValue(snapshot.PublishedAt),
+	}
+}
+
+// taskLogEntryProto and taskLogEntryValue mirror internal/logging.Entry, whose
+// Fields map crosses as a JSON object string exactly as events.Event.Data does
+// (see eventDataJSON above). The logging package owns that format end to end;
+// this is a transport of it, not a second definition.
+func taskLogEntryProto(e logging.Entry) *pb.TaskLogEntry {
+	return &pb.TaskLogEntry{
+		Id: e.ID, Time: timestamp(e.Time), Level: e.Level, Msg: e.Message,
+		FieldsJson: eventDataJSON(e.Fields),
+	}
+}
+
+func taskLogEntryValue(e *pb.TaskLogEntry) logging.Entry {
+	if e == nil {
+		return logging.Entry{}
+	}
+	return logging.Entry{
+		ID: e.Id, Time: timeValue(e.Time), Level: e.Level, Message: e.Msg,
+		Fields: eventDataValue(e.FieldsJson),
+	}
+}
+
+// taskLogRequestProto is the client half of the ReadTaskLog mapping and
+// taskLogQueryValue the server half: the whole logging.Query crosses, not a
+// subset of it, so a filter cannot silently stop working at the boundary.
+func taskLogRequestProto(taskID int64, attempt int, q logging.Query) *pb.ReadTaskLogRequest {
+	return &pb.ReadTaskLogRequest{
+		TaskId: taskID, Attempt: int64(attempt), Limit: int64(q.Limit),
+		Levels: q.Levels, Component: q.Component, Contains: q.Contains,
+		Since: timestamp(q.Since), Until: timestamp(q.Until),
+	}
+}
+
+func taskLogQueryValue(r *pb.ReadTaskLogRequest) logging.Query {
+	return logging.Query{
+		Levels:    r.Levels,
+		Component: r.Component,
+		Contains:  r.Contains,
+		Limit:     int(r.Limit),
+		Since:     timeValue(r.Since),
+		Until:     timeValue(r.Until),
 	}
 }

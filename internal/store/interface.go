@@ -25,6 +25,7 @@ type (
 	TaskRetryer         = storecontract.TaskRetryer
 	TaskQueries         = storecontract.TaskQueries
 	TaskEvents          = storecontract.TaskEvents
+	TaskLogStore        = storecontract.TaskLogStore
 	CaptureStore        = storecontract.CaptureStore
 	ConfigSnapshotStore = storecontract.ConfigSnapshotStore
 	MappingStore        = storecontract.MappingStore

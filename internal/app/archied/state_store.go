@@ -125,6 +125,22 @@ func (b *boot) openStateStore(ctx context.Context) error {
 // degrades that group rather than aborting boot.
 func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	deps := staterpc.Deps{Tasks: b.st, Log: b.log, Grants: grants}
+	// Task logs live in the state directory, which this process owns, and the
+	// dashboard process owns no such directory -- so this is where a task-log
+	// read is served from (docs/prds/ui-service-boundary.md). The reader is
+	// the daemon's own registry, built over the same state-directory
+	// derivation this process uses for its SQLite file; both resolve from the
+	// same configured DBPath, so they agree on where archie keeps its state.
+	//
+	// The nil check is on the registry, not on the interface it is assigned
+	// to: a nil *logging.TaskRegistry stored in this field produces a non-nil
+	// interface holding a nil pointer, which the server's own
+	// `deps.TaskLogs == nil` guard would not catch. Leaving the field unset is
+	// what makes the RPC answer Unavailable -- the honest "this process cannot
+	// read logs" -- instead of depending on nil-receiver behaviour to notice.
+	if b.taskLogs != nil {
+		deps.TaskLogs = b.taskLogs
+	}
 	if cs, ok := b.st.(storecontract.CaptureStore); ok {
 		deps.Captures = cs
 	}

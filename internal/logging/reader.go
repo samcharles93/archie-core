@@ -2,8 +2,11 @@ package logging
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strings"
@@ -65,6 +68,88 @@ type Result struct {
 	Truncated bool `json:"truncated"`
 	// File is the path read, for the UI to show where this came from.
 	File string `json:"file"`
+	// Found reports whether the file existed. False with a nil error is not a
+	// failure: a caller asking for a log that has no file yet, or one whose
+	// attempt produced no output, must be told that rather than shown an empty
+	// page indistinguishable from a log that is genuinely empty. This is also
+	// what separates "there is no log for this attempt" from "this process
+	// cannot read logs at all" -- two conditions that a reader has to report
+	// differently because only the second is a configuration matter.
+	Found bool `json:"found"`
+}
+
+// TaskLogPage is one task attempt's log as a task-log reader returns it: the
+// page Tail selected, whether the attempt has a file at all, and the distinct
+// components present in the file's tail so a filter is built from what is
+// actually there rather than a hardcoded list that drifts.
+type TaskLogPage struct {
+	Result
+	Components []string `json:"components"`
+}
+
+// ErrTaskLogsUnavailable reports that this process cannot read task logs at
+// all -- no reader is configured here. It is deliberately not the same answer
+// as "this attempt has no log" (Result.Found = false): a caller that conflates
+// them tells an operator task logging is switched off when it is not, which is
+// the bug this error exists to prevent.
+var ErrTaskLogsUnavailable = errors.New("logging: task log reader unavailable")
+
+// taskLogChunkBytes bounds one write a TaskLogContent makes, so a reader that
+// pushes into a bounded transport emits chunks that transport can carry.
+// io.Copy would otherwise hand it reads of its own choosing.
+const taskLogChunkBytes = 256 << 10
+
+// TaskLog reads one task attempt's persisted log from this registry. A nil
+// registry (task logging not configured for this process) reports
+// ErrTaskLogsUnavailable, never an empty page: a process that cannot read logs
+// must say so rather than implicate the attempt. Safe to call on a nil
+// receiver, like every other method here.
+func (r *TaskRegistry) TaskLog(_ context.Context, taskID int64, attempt int, q Query) (TaskLogPage, error) {
+	if r == nil {
+		return TaskLogPage{}, ErrTaskLogsUnavailable
+	}
+	res, err := Tail(TaskLogPath(r.baseDir, taskID, attempt), q)
+	if err != nil {
+		return TaskLogPage{}, err
+	}
+	page := TaskLogPage{Result: res, Components: []string{}}
+	// The filter list is a convenience: failing to build it must not cost the
+	// caller their entries. Components only reads the tail this page already
+	// read, so its error is the same "treat as empty" case the daemon-wide
+	// handler has always applied -- it is dropped deliberately, not missed.
+	if res.Found {
+		if components, err := Components(res.File); err == nil {
+			page.Components = components
+		}
+	}
+	return page, nil
+}
+
+// TaskLogContent writes one task attempt's log to w exactly as it is on disk,
+// for a caller that wants the file rather than a decoded page. found is false,
+// with a nil error, when the attempt has no log file -- a normal state for an
+// attempt that produced no output, and not an error. A nil registry reports
+// ErrTaskLogsUnavailable, matching TaskLog.
+//
+// The content is streamed rather than returned as one slice because a log file
+// is unbounded input (it rotates at DefaultMaxSizeMB), and a caller moving it
+// across a transport with a message-size limit needs it in pieces.
+func (r *TaskRegistry) TaskLogContent(_ context.Context, taskID int64, attempt int, w io.Writer) (bool, error) {
+	if r == nil {
+		return false, ErrTaskLogsUnavailable
+	}
+	f, err := os.Open(TaskLogPath(r.baseDir, taskID, attempt))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("logging: open task log: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	if _, err := io.CopyBuffer(w, f, make([]byte, taskLogChunkBytes)); err != nil {
+		return false, fmt.Errorf("logging: read task log: %w", err)
+	}
+	return true, nil
 }
 
 // PageResult is what a single forward-paged call returns.
@@ -291,6 +376,19 @@ func Tail(path string, q Query) (Result, error) {
 	}
 	if limit > MaxTailLines {
 		limit = MaxTailLines
+	}
+
+	// found is read before readLines so an absent file is reported as such
+	// rather than only as an empty entry list -- see Result.Found. It is a
+	// Stat rather than a second readWindow: readLines reads the whole scan
+	// window, and doing that twice per Tail call would double the cost of
+	// every log view for one boolean.
+	if strings.TrimSpace(path) != "" {
+		if _, err := os.Stat(path); err == nil {
+			res.Found = true
+		} else if !os.IsNotExist(err) {
+			return Result{}, fmt.Errorf("logging: stat %s: %w", path, err)
+		}
 	}
 
 	matches := make([]Entry, 0, limit)

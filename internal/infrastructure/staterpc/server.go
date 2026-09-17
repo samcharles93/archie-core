@@ -5,7 +5,9 @@
 package staterpc
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/logging"
 )
 
 // Unavailable-capability errors, mirroring gatewayrpc's missing-session-store
@@ -30,9 +33,22 @@ var (
 	errBindingUnavailable            = status.Error(codes.Unavailable, "binding store unavailable")
 	errBindingDispatchUnavailable    = status.Error(codes.Unavailable, "binding dispatcher unavailable")
 	errBindingTaskCreatorUnavailable = status.Error(codes.Unavailable, "binding task creator unavailable")
+	// errTaskLogsUnavailable is the "this process cannot read task logs at
+	// all" answer, and it is deliberately distinct from a found=false read
+	// result: only the first is a deployment matter. A dashboard that receives
+	// this reports that the log cannot be read here; it must never turn it
+	// into "task logging was not enabled for this run", which is what the
+	// absent-handle path used to do.
+	errTaskLogsUnavailable = status.Error(codes.Unavailable, msgTaskLogsUnavailable)
 )
 
 func timeSeconds(s int64) time.Duration { return time.Duration(s) * time.Second }
+
+// taskLogChunkBytes bounds one streamed message. A log file rotates at
+// logging.DefaultMaxSizeMB, well past gRPC's 4MiB unary cap, so the download
+// is served in pieces (the same reason StreamCaptures superseded ListCaptures)
+// and the pieces must be small enough to carry.
+const taskLogChunkBytes = 256 << 10
 
 // Deps groups the store surfaces the StateStore service fronts. TaskStore is
 // required; the rest are optional (nil disables that group's RPCs, returning
@@ -47,7 +63,14 @@ type Deps struct {
 	Bindings           storecontract.BindingStore
 	BindingDispatcher  storecontract.BindingDispatcher
 	BindingTaskCreator storecontract.BindingTaskCreator
-	Log                *slog.Logger
+	// TaskLogs reads one task attempt's persisted log out of the state
+	// directory this process owns. Optional, and nil is the honest default for
+	// a store service that shares no state directory with the daemon:
+	// ReadTaskLog then answers codes.Unavailable, which the dashboard reports
+	// as "this process cannot read logs" rather than as "this attempt has no
+	// log". Conflating those two is the bug this contract exists to fix.
+	TaskLogs storecontract.TaskLogStore
+	Log      *slog.Logger
 }
 
 type server struct {
@@ -563,6 +586,117 @@ func (s *server) EnqueueBindingTask(ctx context.Context, r *pb.EnqueueBindingTas
 		return nil, s.logErr("EnqueueBindingTask", err)
 	}
 	return &pb.EnqueueBindingTaskResponse{Task: taskProto(t)}, nil
+}
+
+// Task log
+
+func (s *server) taskLogs() (storecontract.TaskLogStore, error) {
+	if s.deps.TaskLogs == nil {
+		return nil, errTaskLogsUnavailable
+	}
+	return s.deps.TaskLogs, nil
+}
+
+func (s *server) ReadTaskLog(ctx context.Context, r *pb.ReadTaskLogRequest) (*pb.ReadTaskLogResponse, error) {
+	logs, err := s.taskLogs()
+	if err != nil {
+		return nil, err
+	}
+	page, err := logs.TaskLog(ctx, r.TaskId, int(r.Attempt), taskLogQueryValue(r))
+	if err != nil {
+		// A store that cannot read its own state directory keeps its own
+		// identity: this is unavailability, not a missing log, and a caller
+		// has to be able to tell them apart.
+		if errors.Is(err, logging.ErrTaskLogsUnavailable) {
+			return nil, errTaskLogsUnavailable
+		}
+		return nil, s.logErr("ReadTaskLog", err)
+	}
+	if !page.Found {
+		return &pb.ReadTaskLogResponse{Attempt: r.Attempt}, nil
+	}
+	return &pb.ReadTaskLogResponse{
+		Entries:    mapValues(page.Entries, taskLogEntryProto),
+		Truncated:  page.Truncated,
+		Attempt:    r.Attempt,
+		Found:      true,
+		Components: page.Components,
+		File:       page.File,
+	}, nil
+}
+
+// StreamTaskLogContent sends one attempt's log verbatim, one chunk per
+// message, for a download. A single reply reports found=false with no chunks:
+// the attempt has no log file, which is a normal state rather than a failure.
+func (s *server) StreamTaskLogContent(r *pb.StreamTaskLogContentRequest, stream pb.StateStoreService_StreamTaskLogContentServer) error {
+	logs, err := s.taskLogs()
+	if err != nil {
+		return err
+	}
+	// The chunking the client sees is owned by the reader that writes into
+	// this buffer, so the wire never holds a whole log to re-slice it.
+	buf := &chunkWriter{stream: stream, attempt: r.Attempt}
+	found, err := logs.TaskLogContent(stream.Context(), r.TaskId, int(r.Attempt), buf)
+	if err != nil {
+		if errors.Is(err, logging.ErrTaskLogsUnavailable) {
+			return errTaskLogsUnavailable
+		}
+		return s.logErr("StreamTaskLogContent", err)
+	}
+	if err := buf.flush(); err != nil {
+		return err
+	}
+	// A found log with no bytes still reports found: an attempt whose file is
+	// empty did produce a log, and found is what tells the download it may
+	// write an empty file rather than answer 404.
+	if found && buf.sent {
+		return nil
+	}
+	return stream.Send(&pb.StreamTaskLogContentResponse{Attempt: r.Attempt, Found: found})
+}
+
+// chunkWriter packs everything a log reader writes into stream-sized messages
+// on its way through. It exists so the read can be one io.CopyBuffer of the
+// file into this writer: the reader keeps its own chunk size, and the bytes
+// are never all held at once.
+type chunkWriter struct {
+	stream  pb.StateStoreService_StreamTaskLogContentServer
+	attempt int64
+	pending []byte
+	// sent records whether any chunk reached the client, which is how the
+	// caller tells "the file was empty" from "the file was read".
+	sent bool
+}
+
+func (w *chunkWriter) Write(p []byte) (int, error) {
+	w.pending = append(w.pending, p...)
+	for len(w.pending) >= taskLogChunkBytes {
+		if err := w.emit(w.pending[:taskLogChunkBytes]); err != nil {
+			return 0, err
+		}
+		w.pending = w.pending[taskLogChunkBytes:]
+	}
+	return len(p), nil
+}
+
+func (w *chunkWriter) emit(chunk []byte) error {
+	w.sent = true
+	// The slice is copied into the message: the reader's buffer is reused
+	// across writes and must not be aliased by a message in flight.
+	return w.stream.Send(&pb.StreamTaskLogContentResponse{
+		Chunk:   bytes.Clone(chunk),
+		Attempt: w.attempt,
+		Found:   true,
+	})
+}
+
+func (w *chunkWriter) flush() error {
+	if len(w.pending) == 0 {
+		return nil
+	}
+	chunk := w.pending
+	w.pending = nil
+	return w.emit(chunk)
 }
 
 func mappingProtoPtr(m *mapping.Mapping) *pb.Mapping {
