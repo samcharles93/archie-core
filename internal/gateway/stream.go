@@ -153,10 +153,20 @@ type truncationNotice struct {
 }
 
 // parseTruncationNotice reads "<shown>/<total> lines" out of a truncation
-// notice, accepting both the plain and the "showing last" form and tolerating
-// the surrounding "[truncated: … ]" wrapper.
+// notice, accepting both the plain and the "showing last" form.
+//
+// The "[truncated: … ]" wrapper is required, not tolerated. It is the only
+// marker that distinguishes a notice the tool printed from ordinary output that
+// happens to contain the same phrasing: both built-in producers emit the
+// wrapper (internal/tools/builtin/truncate.go), so a bare "showing 3/197 lines"
+// inside a log or a document is content and must be left alone rather than
+// replaced by a summary.
 func parseTruncationNotice(line string) (truncationNotice, bool) {
-	_, rest, found := strings.Cut(line, "showing ")
+	_, rest, found := strings.Cut(line, "[truncated: ")
+	if !found {
+		return truncationNotice{}, false
+	}
+	_, rest, found = strings.Cut(rest, "showing ")
 	if !found {
 		return truncationNotice{}, false
 	}

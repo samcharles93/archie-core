@@ -104,6 +104,16 @@ func TestToolPreviewDescribesTheResult(t *testing.T) {
 			want:   "package y",
 		},
 		{
+			// Only the built-in truncation producers emit this phrasing, and
+			// they always wrap it as "[truncated: …]". Accepting the phrasing on
+			// its own would rewrite genuine output that merely mentions a count
+			// as if it were a truncation notice, hiding the real result.
+			name:   "ordinary text mentioning a line count is not truncation metadata",
+			tool:   "shell",
+			output: "the log said showing 3/197 lines before it continued\nand trailing output",
+			want:   "the log said showing 3/197 lines before it continued",
+		},
+		{
 			name:   "empty output is reported as completed without a preview",
 			tool:   "shell",
 			output: "   \n  ",
