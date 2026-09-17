@@ -49,6 +49,25 @@ func TestToolCallEventRenderToolCallBoundsOutputAndPreservesFailure(t *testing.T
 	}
 }
 
+func TestToolCallEventSuccessKeysCollapseEquivalentResultsWithoutColliding(t *testing.T) {
+	equivalent := ToolCallEvent{Name: "grep", Output: "/src/a.go:12:match\n/src/b.go:40:match"}
+	equivalentCopy := ToolCallEvent{Name: "grep", Output: "/src/a.go:99:different details\n/src/b.go:7:another detail"}
+	differentSummary := ToolCallEvent{Name: "grep", Output: "/src/a.go:12:match"}
+	differentTool := ToolCallEvent{Name: "rg", Output: equivalent.Output}
+
+	if key := FailureKey(equivalent); key == "" {
+		t.Fatal("successful tool calls need a non-empty aggregation key")
+	} else if key != FailureKey(equivalentCopy) {
+		t.Fatalf("equivalent successful results should share a key: %q vs %q", key, FailureKey(equivalentCopy))
+	}
+	if FailureKey(equivalent) == FailureKey(differentSummary) {
+		t.Fatalf("different successful summaries must not share a key: %q", FailureKey(equivalent))
+	}
+	if FailureKey(equivalent) == FailureKey(differentTool) {
+		t.Fatalf("different successful tools must not share a key: %q", FailureKey(equivalent))
+	}
+}
+
 func TestToolCallEventFailureKeyCollapsesLegacyTurnBudget(t *testing.T) {
 	first := ToolCallEvent{Name: "read", Err: "tool read: turn budget exceeded (200000 chars)"}
 	second := ToolCallEvent{Name: "shell", Err: "tool shell: turn budget exceeded (200000 chars)"}
