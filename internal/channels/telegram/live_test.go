@@ -647,20 +647,20 @@ func TestLiveReplyFramesStayWithinOneMessage(t *testing.T) {
 	// Telegram accepts fails this test instead of moving with it.
 	const telegramMessageMaxRunes = 4096
 
-	if len(*calls) < 3 {
-		t.Fatalf("calls = %d, want a frame per delta plus the abandon edit", len(*calls))
+	if len(*calls) < 2 {
+		t.Fatalf("calls = %d, want at least the opening frame and the abandon edit", len(*calls))
 	}
 	for i, call := range *calls {
 		if n := len([]rune(call.body())); n > telegramMessageMaxRunes {
 			t.Fatalf("frame %d is %d runes, want at most %d  --  Telegram rejects it whole",
 				i, n, telegramMessageMaxRunes)
 		}
-	}
-	// The tail is what the user is watching being written, so that is the
-	// end that survives the cut.
-	last := (*calls)[len(*calls)-1]
-	if !strings.HasPrefix(last.body(), "…") {
-		t.Fatalf("truncated frame = %.20q…, want a leading ellipsis marking the cut", last.body())
+		// Every frame that had to cut text must say so. An unmarked cut is
+		// indistinguishable from a reply that genuinely starts that way, and
+		// the message can never be corrected afterwards.
+		if !strings.HasPrefix(call.body(), "…") {
+			t.Fatalf("frame %d = %.20q…, want a leading ellipsis marking the cut", i, call.body())
+		}
 	}
 }
 
@@ -1181,5 +1181,58 @@ func TestLiveReplyMediaFallbackAfterFinalizeSendsFollowUp(t *testing.T) {
 	}
 	if !strings.Contains(got.body(), "could not send") || !strings.Contains(got.body(), bot.EscapeMarkdown("report.pdf")) {
 		t.Errorf("follow-up body = %q, want it to report the undelivered file", got.body())
+	}
+}
+
+// A turn with several short tool calls must keep all of them while they fit
+// the activity budget. Returning the newest line alone discards history that
+// was never over budget, and reports a "+N earlier" that is not true -- the
+// frame has room for those lines.
+func TestLiveReplyToolBlockKeepsEveryLineThatFits(t *testing.T) {
+	live, _ := newTestLiveReply(t, true)
+
+	for _, name := range []string{"read", "grep", "find"} {
+		live.ToolCall(toolEvent(name, "output for "+name, ""))
+	}
+
+	block := live.toolBlock()
+	for _, name := range []string{"read", "grep", "find"} {
+		if !strings.Contains(block, "🔧 "+name) {
+			t.Errorf("tool block dropped %s while every line still fits the %d-rune budget:\n%s",
+				name, liveToolMaxRunes, block)
+		}
+	}
+	if strings.Contains(block, "earlier") {
+		t.Errorf("tool block claims omitted activity although all of it fits:\n%s", block)
+	}
+}
+
+// The truncation marker on the answer budget must appear whether the cut is
+// made on the opening frame or a later one. The opening frame previously
+// sliced without one, so a large first chunk (or a turn that never opened a
+// reply) looked like it began mid-sentence, while later frames showed the cut.
+func TestLiveReplyClampAnswerAlwaysMarksTheCut(t *testing.T) {
+	live, _ := newTestLiveReply(t, true)
+
+	for _, tc := range []struct {
+		name      string
+		messageID int
+	}{
+		{name: "opening frame", messageID: 0},
+		{name: "later frame", messageID: 99},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			live.messageID = tc.messageID
+			got := live.clampAnswer(strings.Repeat("a", 200)+"TAIL", 50)
+			if !strings.HasPrefix(got, "…") {
+				t.Errorf("clamped answer does not mark the cut with an ellipsis: %.60q", got)
+			}
+			if !strings.HasSuffix(got, "TAIL") {
+				t.Errorf("clamped answer dropped the newest text: %.60q", got)
+			}
+			if n := len([]rune(got)); n > 50 {
+				t.Errorf("clamped answer is %d runes, over the 50-rune budget", n)
+			}
+		})
 	}
 }

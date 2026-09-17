@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -675,54 +676,63 @@ func (l *liveReply) framedText(answer string) string {
 	return block + "\n\n" + l.clampAnswer(answer, budget)
 }
 
-// clampAnswer lets the opening frame use its entire answer budget. Later
-// frames mark a cut with an ellipsis, while still retaining the newest text.
+// clampAnswer cuts the answer to its budget, retaining the newest text and
+// marking the cut with a leading ellipsis.
+//
+// The marker matters on every frame, including the opening one. A turn that
+// streams a large first chunk, or that never opens a reply at all (so
+// messageID stays 0), would otherwise render text that appears to begin
+// mid-sentence with nothing to say a cut was made -- and Telegram messages are
+// immutable, so it can never be corrected afterwards.
 func (l *liveReply) clampAnswer(answer string, budget int) string {
-	if l.messageID == 0 && utf8.RuneCountInString(answer) > budget {
-		runes := []rune(answer)
-		return string(runes[len(runes)-budget:])
-	}
 	return clampToRunes(answer, budget)
 }
 
 // toolBlock returns the most recent activity that fits its deliberately
-// smaller frame budget. A count makes discarded activity explicit, while
-// keeping the newest line visible even when that line is unusually large.
+// smaller frame budget, prefixed with a count of what was left out.
+//
+// The search runs from the newest line backwards, widening the window while
+// the result still fits, so EVERY line that fits is kept: returning as soon as
+// the newest line alone fits would discard history that was never over budget
+// and report a "+N earlier" that is simply untrue.
+//
 // The caller holds the lock.
 func (l *liveReply) toolBlock() string {
 	if len(l.toolLines) == 0 {
 		return ""
 	}
-	for count := 1; count <= len(l.toolLines); count++ {
-		start := len(l.toolLines) - count
-		omitted := start
-		prefix := ""
-		if omitted > 0 {
-			prefix = fmt.Sprintf("+%d earlier\n\n", omitted)
+	best := -1
+	for start := range slices.Backward(l.toolLines) {
+		if utf8.RuneCountInString(l.toolBlockWith(start)) > liveToolMaxRunes {
+			break
 		}
-		candidate := prefix + strings.Join(l.toolLines[start:], "\n")
-		if utf8.RuneCountInString(candidate) <= liveToolMaxRunes {
-			return candidate
-		}
-		// Adding older lines cannot make this candidate smaller. If the
-		// newest line itself is too large, truncate only that line below.
-		if count == 1 {
-			// The latest line is oversized; older lines are omitted too,
-			// and must be reflected in the indicator even though the line
-			// itself is the only one being retained.
-			omitted := len(l.toolLines) - 1
-			prefix = ""
-			if omitted > 0 {
-				prefix = fmt.Sprintf("+%d earlier\n\n", omitted)
-			}
-			available := liveToolMaxRunes - utf8.RuneCountInString(prefix)
-			if available <= 0 {
-				return clampToRunes(prefix, liveToolMaxRunes)
-			}
-			return prefix + clampToRunes(l.toolLines[len(l.toolLines)-1], available)
-		}
+		best = start
 	}
-	return clampToRunes(l.toolLines[len(l.toolLines)-1], liveToolMaxRunes)
+	if best >= 0 {
+		return l.toolBlockWith(best)
+	}
+	// Even the newest line alone overflows, so it is the only line retained
+	// and every older line must be reflected in the indicator.
+	omitted := len(l.toolLines) - 1
+	prefix := ""
+	if omitted > 0 {
+		prefix = fmt.Sprintf("+%d earlier\n\n", omitted)
+	}
+	available := liveToolMaxRunes - utf8.RuneCountInString(prefix)
+	if available <= 0 {
+		return clampToRunes(prefix, liveToolMaxRunes)
+	}
+	return prefix + clampToRunes(l.toolLines[len(l.toolLines)-1], available)
+}
+
+// toolBlockWith renders the activity from index start to the newest line,
+// including the "+N earlier" indicator for whatever precedes start.
+func (l *liveReply) toolBlockWith(start int) string {
+	prefix := ""
+	if omitted := start; omitted > 0 {
+		prefix = fmt.Sprintf("+%d earlier\n\n", omitted)
+	}
+	return prefix + strings.Join(l.toolLines[start:], "\n")
 }
 
 // clampToRunes cuts s to its last maxRunes runes, marking the cut with a
