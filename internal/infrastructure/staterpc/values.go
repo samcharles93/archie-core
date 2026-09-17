@@ -34,9 +34,18 @@ func timeValue(t *timestamppb.Timestamp) time.Time {
 	return t.AsTime()
 }
 
+// mapValues maps a slice of proto values to domain values, always returning a
+// non-nil result for empty input.
+//
+// Protobuf decodes an empty `repeated` field to nil, and Go marshals a nil
+// slice to JSON null rather than []. Returning nil here made every decoded
+// collection field's JSON type depend on whether it happened to have contents,
+// and made the wire path disagree with the local path, which normalises its own
+// slices. []B{} for empty input keeps the shape stable at every call site
+// without making each one remember to guard.
 func mapValues[A, B any](in []A, f func(A) B) []B {
-	if in == nil {
-		return nil
+	if len(in) == 0 {
+		return []B{}
 	}
 	out := make([]B, len(in))
 	for i, v := range in {
