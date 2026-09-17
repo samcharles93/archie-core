@@ -41,6 +41,11 @@ const (
 	// Only the live frame is bounded. finalize sends the whole reply,
 	// split across as many messages as it needs.
 	liveBodyMaxRunes = 3900
+
+	// Keep tool activity to a minority of a live frame so the answer remains
+	// readable even when a turn makes many calls. The remainder is reserved
+	// for the answer (and the cursor).
+	liveToolMaxRunes = (liveBodyMaxRunes - 2) / 3
 )
 
 // liveReply renders one chat turn into a single Telegram message as it is
@@ -653,32 +658,71 @@ func (l *liveReply) body() string {
 
 // framedText composes tool activity ahead of the answer text and clamps the
 // whole thing to fit one Telegram message. The caller holds the lock.
-//
-// The tool block is kept whole rather than clamped along with the answer:
-// tools run before the answer in an agentic turn, so a single clamp over the
-// concatenation would cut the tool block first as the answer grows past the
-// bound, and the user watching mid-turn would see tool activity silently
-// vanish partway through, then reappear once finalize leads with it again.
-// Keeping the block outside the clamp makes the live frame, an abandoned
-// frame, and the finished message agree on shape throughout the turn.
 func (l *liveReply) framedText(answer string) string {
 	if len(l.toolLines) == 0 {
-		return clampToOneMessage(answer)
+		return l.clampAnswer(answer, liveBodyMaxRunes-2)
 	}
-	block := strings.Join(l.toolLines, "\n")
+	block := l.toolBlock()
 	if answer == "" {
-		return clampToOneMessage(block)
+		return block
 	}
-	// Only the answer tail is clamped, to whatever is left of the budget
-	// once the tool block is accounted for. A tool block alone big enough
-	// to exhaust the budget is the one case where it gets clamped too --
-	// exceedingly unlikely given how short a rendered tool line is, but
-	// still a single Telegram message rather than a rejected edit.
-	budget := liveBodyMaxRunes - utf8.RuneCountInString(block) - 2
+	// Reserve the larger share of the frame for the answer. The two extra
+	// runes are the separator and the cursor appended by body.
+	budget := liveBodyMaxRunes - 2 - utf8.RuneCountInString(block) - 2
 	if budget <= 0 {
-		return clampToOneMessage(block)
+		return block
 	}
-	return block + "\n\n" + clampToRunes(answer, budget)
+	return block + "\n\n" + l.clampAnswer(answer, budget)
+}
+
+// clampAnswer lets the opening frame use its entire answer budget. Later
+// frames mark a cut with an ellipsis, while still retaining the newest text.
+func (l *liveReply) clampAnswer(answer string, budget int) string {
+	if l.messageID == 0 && utf8.RuneCountInString(answer) > budget {
+		runes := []rune(answer)
+		return string(runes[len(runes)-budget:])
+	}
+	return clampToRunes(answer, budget)
+}
+
+// toolBlock returns the most recent activity that fits its deliberately
+// smaller frame budget. A count makes discarded activity explicit, while
+// keeping the newest line visible even when that line is unusually large.
+// The caller holds the lock.
+func (l *liveReply) toolBlock() string {
+	if len(l.toolLines) == 0 {
+		return ""
+	}
+	for count := 1; count <= len(l.toolLines); count++ {
+		start := len(l.toolLines) - count
+		omitted := start
+		prefix := ""
+		if omitted > 0 {
+			prefix = fmt.Sprintf("+%d earlier\n\n", omitted)
+		}
+		candidate := prefix + strings.Join(l.toolLines[start:], "\n")
+		if utf8.RuneCountInString(candidate) <= liveToolMaxRunes {
+			return candidate
+		}
+		// Adding older lines cannot make this candidate smaller. If the
+		// newest line itself is too large, truncate only that line below.
+		if count == 1 {
+			// The latest line is oversized; older lines are omitted too,
+			// and must be reflected in the indicator even though the line
+			// itself is the only one being retained.
+			omitted := len(l.toolLines) - 1
+			prefix = ""
+			if omitted > 0 {
+				prefix = fmt.Sprintf("+%d earlier\n\n", omitted)
+			}
+			available := liveToolMaxRunes - utf8.RuneCountInString(prefix)
+			if available <= 0 {
+				return clampToRunes(prefix, liveToolMaxRunes)
+			}
+			return prefix + clampToRunes(l.toolLines[len(l.toolLines)-1], available)
+		}
+	}
+	return clampToRunes(l.toolLines[len(l.toolLines)-1], liveToolMaxRunes)
 }
 
 // clampToOneMessage cuts s to the tail that fits in a single Telegram
@@ -696,7 +740,10 @@ func clampToRunes(s string, maxRunes int) string {
 	if len(runes) <= maxRunes {
 		return s
 	}
-	return "…" + string(runes[len(runes)-maxRunes:])
+	if maxRunes <= 1 {
+		return "…"
+	}
+	return "…" + string(runes[len(runes)-(maxRunes-1):])
 }
 
 // finalText composes the finished message: the tool activity in the order it
