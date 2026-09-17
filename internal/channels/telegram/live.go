@@ -725,14 +725,6 @@ func (l *liveReply) toolBlock() string {
 	return clampToRunes(l.toolLines[len(l.toolLines)-1], liveToolMaxRunes)
 }
 
-// clampToOneMessage cuts s to the tail that fits in a single Telegram
-// message, marking the cut with a leading ellipsis. Counting runes rather
-// than bytes matches how Telegram measures the limit and keeps the cut off a
-// character boundary.
-func clampToOneMessage(s string) string {
-	return clampToRunes(s, liveBodyMaxRunes)
-}
-
 // clampToRunes cuts s to its last maxRunes runes, marking the cut with a
 // leading ellipsis.
 func clampToRunes(s string, maxRunes int) string {
