@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -33,7 +34,7 @@ func (b *boot) setupReadinessProbes() {
 	probes := []health.Probe{
 		readiness.NewStoreProbe(b.stateStore),
 		readiness.NewConfigProbe(b.cfgHolder.Get, configuration.Validate),
-		readiness.NewDiskProbe(diskProbePath(cfg)),
+		readiness.NewDiskProbeTargets(diskProbeTargets(cfg)),
 		readiness.NewModelProbe(b.chatModels.ActiveModel, b.chatModels.Models, modelReachProbe(cfg, b.chatModels.ActiveModel)),
 		readiness.NewGatewayProbe(
 			func() []readiness.ChannelState { return channelStates(b.channelManager) },
@@ -75,9 +76,20 @@ func sessionCount(ctx context.Context, chat *webui.ChatService) int {
 	return len(snapshot.Sessions)
 }
 
-// diskProbePath resolves the filesystem the readiness disk probe inspects:
-// the store database directory first (the data that must fit on disk), then
-// the working directory, then the process cwd.
+// diskProbeTargets returns the filesystems whose capacity matters to the
+// daemon. Root is always required; /var is useful on conventional Linux
+// installations but optional so it does not make other environments fail.
+func diskProbeTargets(cfg config.Config) []readiness.DiskTarget {
+	targets := []readiness.DiskTarget{{Name: "root", Path: "/"}}
+	if info, err := os.Stat("/var"); err == nil && info.IsDir() {
+		targets = append(targets, readiness.DiskTarget{Name: "var", Path: "/var", Optional: true})
+	}
+	targets = append(targets, readiness.DiskTarget{Name: "data", Path: diskProbePath(cfg)})
+	return targets
+}
+
+// diskProbePath preserves the database/work/cwd fallback used by the daemon's
+// disk target: the store database directory first, then work directory, then cwd.
 func diskProbePath(cfg config.Config) string {
 	switch {
 	case cfg.DBPath != "":
