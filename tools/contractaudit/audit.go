@@ -271,7 +271,8 @@ func writeText(out io.Writer, findings []Finding) {
 		for _, finding := range group {
 			counts[finding.Class]++
 		}
-		fmt.Fprintf(out, "\n%s  (%s %d, %s %d, %s %d, %s %d)\n",
+		fmt.Fprintf(
+			out, "\n%s  (%s %d, %s %d, %s %d, %s %d)\n",
 			surface,
 			Consumed, counts[Consumed],
 			DeclaredUnconsumed, counts[DeclaredUnconsumed],
