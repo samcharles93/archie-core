@@ -37,13 +37,11 @@ func RenderToolCall(e ToolCallEvent) string {
 	return toolProgressBlock(e.Name, "done", toolPreview(e.Name, e.Output))
 }
 
-// FailureKey identifies equivalent failures for channel adapters that collapse
-// retries. Legacy aggregate-output-limit errors deliberately share one key
-// across tool names: they are one obsolete turn-level condition, not five
-// independently useful failures.
-// FailureKey identifies equivalent failures for channel adapters that
-// collapse retries. (A function rather than a method because ToolCallEvent
-// is a messaging alias: see chat_contract_aliases.go.)
+// FailureKey identifies equivalent tool calls for channel adapters that
+// collapse repeated activity. Legacy aggregate-output-limit errors deliberately
+// share one key across tool names: they are one obsolete turn-level condition,
+// not five independently useful failures. (A function rather than a method
+// because ToolCallEvent is a messaging alias: see chat_contract_aliases.go.)
 func FailureKey(e ToolCallEvent) string {
 	if _, ok := legacyTurnBudgetLimit(e.Err); ok {
 		return "legacy-turn-output-limit"
@@ -51,7 +49,10 @@ func FailureKey(e ToolCallEvent) string {
 	if line := cleanToolError(e.Name, e.Err); line != "" {
 		return strings.TrimSpace(e.Name) + "\x00" + line
 	}
-	return ""
+	// Successful calls are also eligible for aggregation. Use the same
+	// compact summary that is shown to the user so equivalent results share a
+	// key while different result summaries remain distinct.
+	return strings.TrimSpace(e.Name) + "\x00" + toolPreview(e.Name, e.Output)
 }
 
 func toolProgressBlock(name, status, preview string) string {
