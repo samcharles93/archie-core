@@ -8,8 +8,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -419,6 +421,75 @@ func TestRunTaskExecutesBootstrapWorkflowEndToEnd(t *testing.T) {
 		t.Fatalf("commit identity = author %q <%s>, committer %q <%s>",
 			commit.Author.Name, commit.Author.Email, commit.Committer.Name, commit.Committer.Email)
 	}
+}
+
+// TestRunTaskRestoresWorktreeOwnershipOnEveryExit pins the half of the
+// worktree-ownership contract that archie-core#520 left open. CommitAll and
+// Push hand the worktree back to the daemon's own UID on the SUCCESS path;
+// every other way a container run can end -- a gate failure that parks the
+// task, a stage error, an early return -- used to leave the worktree owned by
+// root, because the agent runs as root inside the container. The daemon then
+// could not clean or reset those paths on the next attempt (a root-owned
+// directory cannot be unlinked from by its non-root owner), so a retry failed
+// before it could start no matter what the worktree refresh did.
+//
+// The run below exits early, which is the point: the restore has to be
+// deferred over the whole run rather than attached to the paths that happen to
+// commit. It is observed through a supplementary group -- a non-root process
+// may move a file it owns into a group it is a member of, so this proves the
+// chown ran without needing root.
+func TestRunTaskRestoresWorktreeOwnershipOnEveryExit(t *testing.T) {
+	probeGroup := supplementaryGroup(t)
+	workDir := t.TempDir()
+	probe := filepath.Join(workDir, "probe.txt")
+	if err := os.WriteFile(probe, []byte("x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("WORKTREE_UID", strconv.Itoa(os.Getuid()))
+	t.Setenv("WORKTREE_GID", strconv.Itoa(probeGroup))
+
+	// A runner factory that yields nothing fails the run after the trees (and
+	// the ownership defer) are already in place.
+	_, err := runTask(t.Context(), taskrun.Request{
+		Task: &workflow.Task{ID: 77, Branch: "feat/77-probe", Workflow: "implement"},
+		Repo: config.Repo{Owner: "acme", Name: "widget", Base: "main"},
+	}, taskDependencies{}, runnerFactory(func(map[string]agentexec.Provider, *slog.Logger) agentexec.Runner {
+		return nil
+	}), workDir, slog.New(slog.DiscardHandler))
+	if err == nil {
+		t.Fatal("runTask error = nil, want the missing-runner failure this exit is built around")
+	}
+
+	info, statErr := os.Stat(probe)
+	if statErr != nil {
+		t.Fatal(statErr)
+	}
+	gid, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Fatal("no syscall.Stat_t for the ownership probe")
+	}
+	if int(gid.Gid) != probeGroup {
+		t.Errorf("probe.txt gid = %d, want %d -- a run that never reached CommitAll or Push left the worktree owned by the container's own user", gid.Gid, probeGroup)
+	}
+}
+
+// supplementaryGroup returns a group this process is a member of but that is
+// not its primary gid, so a test can observe a chown a non-root process is
+// allowed to make.
+func supplementaryGroup(t *testing.T) int {
+	t.Helper()
+	groups, err := os.Getgroups()
+	if err != nil {
+		t.Skipf("os.Getgroups: %v", err)
+	}
+	for _, gid := range groups {
+		if gid != os.Getgid() {
+			return gid
+		}
+	}
+	t.Skip("process belongs to no supplementary group to chown into")
+	return 0
 }
 
 // TestExecuteTaskRequestUsesInfrastructureRPCDependencies preserves the

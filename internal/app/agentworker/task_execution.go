@@ -75,6 +75,26 @@ func (h *hybridTrees) reconcileOwnership(dir string) error {
 	return chownTree(dir, h.worktreeUID, h.worktreeGID)
 }
 
+// restoreWorktreeOwnership returns the deferred half of the ownership
+// contract: the agent runs as root inside the container, so a run that ends
+// without ever reaching CommitAll or Push (a gate failure that parks the task,
+// a stage error, an early return) has to hand the bind-mounted worktree back to
+// the daemon's own UID on its way out. The daemon is the process that later
+// cleans and resets that directory as a non-root host user, and it cannot even
+// unlink inside a root-owned directory -- so a parked attempt otherwise left a
+// worktree the next attempt could not start from, no matter what the refresh
+// did.
+//
+// Returns the func rather than deferring internally so the caller's own defer
+// runs it at the caller's return, not at this function's.
+func restoreWorktreeOwnership(trees *hybridTrees, dir string, log *slog.Logger) func() {
+	return func() {
+		if err := trees.reconcileOwnership(dir); err != nil {
+			log.Warn("worktree ownership restore failed", "dir", dir, "err", err)
+		}
+	}
+}
+
 func (h *hybridTrees) Diff(ctx context.Context, dir, base string) (string, error) {
 	return h.local.Diff(ctx, dir, base)
 }
@@ -188,6 +208,16 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 		worktreeUID: worktreeOwnerID(os.Getenv("WORKTREE_UID")),
 		worktreeGID: worktreeOwnerID(os.Getenv("WORKTREE_GID")),
 	}
+	// The agent process runs as root inside the container, so everything this
+	// run writes into the bind-mounted worktree is owned by UID 0 on the host;
+	// CommitAll and Push hand it back on the success path (archie-core#520).
+	// Doing the same here covers every OTHER way a run can end -- a gate
+	// failure that parks the task, a stage error, an early return -- because
+	// the daemon is the one that later cleans and resets this directory, as its
+	// own non-root host user, and it cannot even unlink a root-owned directory.
+	// Without this, a parked attempt left a worktree the next attempt could not
+	// start from.
+	defer restoreWorktreeOwnership(trees, workDir, log)()
 
 	// Start MCP providers and build a local tool registry.
 	mcpSet, mcpErr := startMCPProviders(ctx, req.MCPServers, log)
