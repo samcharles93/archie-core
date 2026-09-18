@@ -1,6 +1,8 @@
 package config_test
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
@@ -129,5 +131,95 @@ func TestResolvedTokenOfUnregisteredServiceHasNoEnvFallback(t *testing.T) {
 	}
 	if got := services.ResolvedToken("gatway", getenv); got != "" {
 		t.Errorf("ResolvedToken = %q, want empty", got)
+	}
+}
+
+// mustPanic runs fn and returns the recovered value, or fails if fn returned
+// normally. Registration errors are programming errors in this repository's
+// own init(), not operator input, so they abort the process rather than
+// returning an error nobody is positioned to handle.
+func mustPanic(t *testing.T, fn func()) (recovered any) {
+	t.Helper()
+	defer func() { recovered = recover() }()
+	fn()
+	t.Fatal("RegisterService returned normally, want a panic")
+	return nil
+}
+
+// TestRegisterServiceRejectsAnUnknownContext makes Context load-bearing. It
+// documented which addresses a service must end up with, but nothing read it,
+// so a typo'd context was accepted and silently meant nothing.
+func TestRegisterServiceRejectsAnUnknownContext(t *testing.T) {
+	got := mustPanic(t, func() {
+		config.RegisterService("clientt", "widget-badcontext", "", "127.0.0.1:7005", "T")
+	})
+	if !strings.Contains(fmt.Sprint(got), "clientt") {
+		t.Errorf("panic = %v, want it to name the invalid context", got)
+	}
+}
+
+// TestRegisterServiceRejectsAHostedServiceWithNoListen pins the requirement
+// Context exists to express: a service this repository hosts must have a
+// default bind address, because an empty one reaches net.Listen as "any free
+// port".
+func TestRegisterServiceRejectsAHostedServiceWithNoListen(t *testing.T) {
+	for _, hosted := range []string{config.ServiceServer, config.ServiceBoth} {
+		t.Run(hosted, func(t *testing.T) {
+			got := mustPanic(t, func() {
+				config.RegisterService(hosted, "widget-nolisten-"+hosted, "127.0.0.1:1", "", "T")
+			})
+			if !strings.Contains(fmt.Sprint(got), "listen") {
+				t.Errorf("panic = %v, want it to name the missing listen address", got)
+			}
+		})
+	}
+}
+
+// TestRegisterServiceAcceptsAClientWithNoTargetDefault keeps the State Store's
+// own shape legal: a dialled-only service may register an empty target, which
+// is how "the operator must supply this" is stated.
+func TestRegisterServiceAcceptsAClientWithNoTargetDefault(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("RegisterService panicked on a legal client registration: %v", r)
+		}
+	}()
+	config.RegisterService(config.ServiceClient, "widget-clientok", "", "127.0.0.1:7006", "T")
+}
+
+// TestRequireTargetReportsAnAbsentOperatorSuppliedTarget moves the "target is
+// required" check off two hand-written consumer copies and onto the registry,
+// which is what declared the target operator-supplied in the first place.
+func TestRequireTargetReportsAnAbsentOperatorSuppliedTarget(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		target  string
+		want    string
+		wantErr bool
+	}{
+		{name: "absent", wantErr: true},
+		{name: "blank", target: " \t\n", wantErr: true},
+		{name: "set", target: "10.0.0.1:9090", want: "10.0.0.1:9090"},
+		{name: "set with padding", target: "  10.0.0.1:9090  ", want: "10.0.0.1:9090"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			services := config.Services{config.ServiceNameState: {Target: tt.target}}
+			got, err := services.RequireTarget(config.ServiceNameState)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("RequireTarget returned no error for an empty target")
+				}
+				if !strings.Contains(err.Error(), "services.state.target") {
+					t.Errorf("error = %v, want it to name the config key", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("RequireTarget: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("RequireTarget = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

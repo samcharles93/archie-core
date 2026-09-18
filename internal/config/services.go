@@ -1,5 +1,10 @@
 package config
 
+import (
+	"fmt"
+	"strings"
+)
+
 // Services maps a registered service name to its connection settings, keyed by
 // the [services.<name>] section it was decoded from.
 //
@@ -33,6 +38,22 @@ func (s Services) ResolvedToken(name string, getenv func(string) string) string 
 		return ""
 	}
 	return getenv(spec.TokenEnv)
+}
+
+// RequireTarget returns the dial address for name, or an error naming the
+// config key when the operator has not supplied one.
+//
+// A service registered with an empty default target is one the operator must
+// configure, so this is the registry's own contract rather than a consumer's
+// private rule. It stays a lazy check at composition time, not a load-time
+// validation: a process that never dials a given service must still be able to
+// load a configuration that omits it.
+func (s Services) RequireTarget(name string) (string, error) {
+	target := strings.TrimSpace(s[name].Target)
+	if target == "" {
+		return "", fmt.Errorf("services.%s.target is required", name)
+	}
+	return target, nil
 }
 
 // ServiceConnection is a service's gRPC addresses plus the bearer token a

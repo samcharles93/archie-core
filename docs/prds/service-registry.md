@@ -60,8 +60,11 @@ Positional, five strings, as the story specifies. Each argument is data the curr
 states in prose or in a branch:
 
 - `context` is `client`, `server`, or `both`, and decides which fields must resolve
-  non-empty. A `server` or `both` service must end with a `listen`; a `client` or `both`
-  service must end with a `target`.
+  non-empty. `RegisterService` enforces it: an unknown context, or a hosted service with
+  no default `listen`, panics at registration. Registrations come from this repository's
+  own `init()`, never from operator input, so an invalid one is a programming error with
+  no caller positioned to handle an error return. A documented-but-unread `Context` would
+  be worse than no field at all.
 - `target` is the **default**, and an empty default means the operator must supply one.
   That single convention replaces the `state.target` required / `gateway.target` defaulted
   asymmetry with no branch: `state` registers `""`, `gateway` registers an address.

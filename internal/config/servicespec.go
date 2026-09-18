@@ -1,7 +1,9 @@
 package config
 
 import (
+	"fmt"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -60,7 +62,29 @@ var (
 //
 // Re-registering a name replaces the previous spec, so a test can install a
 // throwaway service without disturbing the built-ins.
+//
+// It panics on a registration that cannot be honoured. Registrations come from
+// this repository's own init(), never from operator input, so an invalid one is
+// a programming error: there is no caller positioned to handle an error return,
+// and failing at process start is better than a service that binds somewhere
+// nobody dials. Context is enforced here rather than merely documented, so
+// "hosted" genuinely implies a bind address.
 func RegisterService(context, name, target, listen, tokenEnv string) {
+	switch context {
+	case ServiceClient, ServiceServer, ServiceBoth:
+	default:
+		panic(fmt.Sprintf(
+			"config.RegisterService(%q): unknown context %q, want %q, %q or %q",
+			name, context, ServiceClient, ServiceServer, ServiceBoth,
+		))
+	}
+	if context != ServiceClient && strings.TrimSpace(listen) == "" {
+		panic(fmt.Sprintf(
+			"config.RegisterService(%q): a %q service needs a default listen address; "+
+				"an empty one reaches net.Listen as \"any free port\"",
+			name, context,
+		))
+	}
 	serviceRegistryMu.Lock()
 	defer serviceRegistryMu.Unlock()
 	serviceRegistry[name] = ServiceSpec{
