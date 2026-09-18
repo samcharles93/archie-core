@@ -248,7 +248,7 @@ if [[ ",$components," == *,agent,* ]]; then
   # Only record a version after the image build succeeds. Write beside the
   # state atomically so the check never observes a partial version.
   version_tmp="$(mktemp "$AGENT_VERSION_FILE.tmp.XXXXXX")"
-  printf '%s\\n' "$RT" > "$version_tmp"
+  printf '%s\n' "$RT" > "$version_tmp"
   chmod 600 "$version_tmp"
   mv -f "$version_tmp" "$AGENT_VERSION_FILE"
 fi

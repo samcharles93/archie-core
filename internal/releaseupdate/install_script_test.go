@@ -830,3 +830,24 @@ func TestUpdateInstallRefusesWhenTaskDatabaseCannotBeBackedUp(t *testing.T) {
 	}
 	assertCallAbsent(t, calls, "arhied.prev")
 }
+
+// The sidecar is the only record of the managed agent version, and
+// archie-update-check refuses anything but a bare release version, so a stray
+// escape in the write leaves the installed agent reported as unknown forever.
+func TestUpdateInstallWritesABareAgentVersionSidecar(t *testing.T) {
+	versionFile := filepath.Join(t.TempDir(), "archie-agent.version")
+	runUpdateInstallScript(t, map[string]string{
+		"ARCHIE_UPDATE_DAEMON_PREVIOUS": "1.13.0",
+		"ARCHIE_UPDATE_AGENT_PREVIOUS":  "1.9.9",
+		"ARCHIE_UPDATE_AGENT_VERSION":   "1.10.0",
+		"ARCHIE_AGENT_VERSION_FILE":     versionFile,
+	})
+
+	recorded, err := os.ReadFile(versionFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(recorded) != "1.10.0\n" {
+		t.Fatalf("sidecar = %q, want %q", recorded, "1.10.0\n")
+	}
+}
