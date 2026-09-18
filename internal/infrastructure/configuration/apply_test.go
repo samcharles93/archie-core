@@ -2,6 +2,7 @@ package configuration
 
 import (
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -38,7 +39,7 @@ func TestApplyOverlayValuesFieldLevelMerge(t *testing.T) {
 // must not clear target_token, because dropping the token silently removes
 // authentication for a non-loopback State Store. The existing field-level test
 // only covers one level (budgets.max_steps); these cases go two levels deep into
-// a struct of structs, which is the shape Services has.
+// a map of structs, which is the shape Services has.
 func TestApplyOverlayValuesPreservesOmittedNestedFields(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -48,21 +49,27 @@ func TestApplyOverlayValuesPreservesOmittedNestedFields(t *testing.T) {
 	}{
 		{
 			name:    "target-only overlay keeps the token",
-			start:   config.Services{State: config.ServiceConnection{Target: "127.0.0.1:50051", TargetToken: "secret"}},
-			overlay: map[string]any{"services": map[string]any{"state": map[string]any{"target": "10.0.0.5:50051"}}},
-			want:    config.Services{State: config.ServiceConnection{Target: "10.0.0.5:50051", TargetToken: "secret"}},
+			start:   config.Services{config.ServiceNameState: {Target: "127.0.0.1:50051", TargetToken: "secret"}},
+			overlay: map[string]any{"services": map[string]any{config.ServiceNameState: map[string]any{"target": "10.0.0.5:50051"}}},
+			want:    config.Services{config.ServiceNameState: {Target: "10.0.0.5:50051", TargetToken: "secret"}},
 		},
 		{
 			name:    "token-only overlay keeps the target",
-			start:   config.Services{State: config.ServiceConnection{Target: "10.0.0.5:50051", TargetToken: "old"}},
-			overlay: map[string]any{"services": map[string]any{"state": map[string]any{"target_token": "rotated"}}},
-			want:    config.Services{State: config.ServiceConnection{Target: "10.0.0.5:50051", TargetToken: "rotated"}},
+			start:   config.Services{config.ServiceNameState: {Target: "10.0.0.5:50051", TargetToken: "old"}},
+			overlay: map[string]any{"services": map[string]any{config.ServiceNameState: map[string]any{"target_token": "rotated"}}},
+			want:    config.Services{config.ServiceNameState: {Target: "10.0.0.5:50051", TargetToken: "rotated"}},
 		},
 		{
 			name:    "sibling service is untouched",
-			start:   config.Services{Gateway: config.ServiceConnection{Target: "127.0.0.1:50052"}, State: config.ServiceConnection{Target: "a", TargetToken: "t"}},
-			overlay: map[string]any{"services": map[string]any{"state": map[string]any{"target": "b"}}},
-			want:    config.Services{Gateway: config.ServiceConnection{Target: "127.0.0.1:50052"}, State: config.ServiceConnection{Target: "b", TargetToken: "t"}},
+			start:   config.Services{config.ServiceNameGateway: {Target: "127.0.0.1:50052"}, config.ServiceNameState: {Target: "a", TargetToken: "t"}},
+			overlay: map[string]any{"services": map[string]any{config.ServiceNameState: map[string]any{"target": "b"}}},
+			want:    config.Services{config.ServiceNameGateway: {Target: "127.0.0.1:50052"}, config.ServiceNameState: {Target: "b", TargetToken: "t"}},
+		},
+		{
+			name:    "an entry the overlay introduces decodes in full",
+			start:   config.Services{},
+			overlay: map[string]any{"services": map[string]any{config.ServiceNameState: map[string]any{"target": "127.0.0.1:50051", "target_token": "fresh"}}},
+			want:    config.Services{config.ServiceNameState: {Target: "127.0.0.1:50051", TargetToken: "fresh"}},
 		},
 	}
 
@@ -72,9 +79,71 @@ func TestApplyOverlayValuesPreservesOmittedNestedFields(t *testing.T) {
 			if err := ApplyOverlayValues(&cfg, tt.overlay); err != nil {
 				t.Fatalf("ApplyOverlayValues: %v", err)
 			}
-			if cfg.Services != tt.want {
+			if !maps.Equal(cfg.Services, tt.want) {
 				t.Errorf("Services = %+v, want %+v", cfg.Services, tt.want)
 			}
+		})
+	}
+}
+
+// TestApplyOverlayValuesMergesEveryMapEntry pins that the preservation above is
+// a property of ApplyOverlayValues rather than of Services. yaml.v3 decodes a
+// map value into a fresh zero value, so every map[string]struct field loses the
+// fields an override omits; Services, image.hosted and providers are the three
+// the configuration has, so a fix that named one of them would leave the other
+// two silently zeroing operator settings.
+func TestApplyOverlayValuesMergesEveryMapEntry(t *testing.T) {
+	tests := []struct {
+		name    string
+		start   config.Config
+		overlay map[string]any
+		check   func(t *testing.T, cfg config.Config)
+	}{
+		{
+			name: "image.hosted entry keeps the fields the overlay omits",
+			start: config.Config{Image: config.ImageConfig{Hosted: map[string]config.ImageHostedProvider{
+				"minimax": {Enabled: true, Class: "minimax", APIKeyEnv: "MINIMAX_API_KEY"},
+			}}},
+			overlay: map[string]any{"image": map[string]any{"hosted": map[string]any{
+				"minimax": map[string]any{"base_url": "https://api.example"},
+			}}},
+			check: func(t *testing.T, cfg config.Config) {
+				t.Helper()
+				want := map[string]config.ImageHostedProvider{
+					"minimax": {Enabled: true, Class: "minimax", APIKeyEnv: "MINIMAX_API_KEY", BaseURL: "https://api.example"},
+				}
+				if !maps.Equal(cfg.Image.Hosted, want) {
+					t.Errorf("Image.Hosted = %+v, want %+v", cfg.Image.Hosted, want)
+				}
+			},
+		},
+		{
+			name: "providers entry keeps the fields the overlay omits",
+			start: config.Config{Providers: map[string]config.Provider{
+				"anthropic": {Class: "anthropic", APIKeyEnv: "ANTHROPIC_API_KEY"},
+			}},
+			overlay: map[string]any{"providers": map[string]any{
+				"anthropic": map[string]any{"base_url": "https://proxy.example"},
+			}},
+			check: func(t *testing.T, cfg config.Config) {
+				t.Helper()
+				want := map[string]config.Provider{
+					"anthropic": {Class: "anthropic", APIKeyEnv: "ANTHROPIC_API_KEY", BaseURL: "https://proxy.example"},
+				}
+				if !maps.Equal(cfg.Providers, want) {
+					t.Errorf("Providers = %+v, want %+v", cfg.Providers, want)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := tt.start
+			if err := ApplyOverlayValues(&cfg, tt.overlay); err != nil {
+				t.Fatalf("ApplyOverlayValues: %v", err)
+			}
+			tt.check(t, cfg)
 		})
 	}
 }
