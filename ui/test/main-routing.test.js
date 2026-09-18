@@ -77,6 +77,25 @@ test("the app routes deep links and keeps the navigation highlight honest", asyn
     assert.equal(navCurrent("/tasks"), "page");
   });
 
+  // The real router, not a reconstruction of it: show() renders the run page with
+  // Preact's render() into one long-lived outlet, so two task ids on the same
+  // matched route must still be two component instances. Without a key on the
+  // page element the second id diffs the first one in place and the operator's
+  // Log tab from task 7 is still open on task 8.
+  await t.test("moving to another task id does not keep the previous task's panel", async () => {
+    await navigate("#/tasks/8");
+    await waitFor(() => assert.equal(title(), "Task #8"));
+    const selected = [...document.querySelectorAll('[role="tab"]')].find(
+      (tab) => tab.getAttribute("aria-selected") === "true",
+    );
+    assert.equal(
+      selected.textContent,
+      "Stages",
+      "W11: a new task id must remount the page, not inherit the previous task's open tab",
+    );
+    assert.equal(navCurrent("/tasks"), "page");
+  });
+
   await t.test("the existing task deep links keep working", async () => {
     await navigate("#/tasks?task=7&status=needs_you");
     await waitFor(() => assert.equal(title(), "Tasks"));

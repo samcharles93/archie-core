@@ -544,5 +544,13 @@ export function taskDetailPage(query, params) {
   const raw = params?.id;
   const id = parseTaskId(raw);
   if (id === null) return <InvalidId raw={raw ?? ""} />;
-  return <RunDetail id={id} query={query} />;
+  // The key is load-bearing, not cosmetic. The router renders this page with
+  // Preact's own render() into one long-lived outlet (main.jsx, show()), so
+  // navigating from #/tasks/1 to #/tasks/2 diffs the same element in place and
+  // RunDetail is never remounted. Without the key every piece of task-scoped
+  // state -- the open tab, the pinned attempt, the run history, the events, and
+  // the log/change/debug caches -- stays with the task that was left, and the
+  // new task is rendered against another task's reads. Keying by id makes the
+  // remount RunDetail's own comment assumes actually happen.
+  return <RunDetail key={id} id={id} query={query} />;
 }

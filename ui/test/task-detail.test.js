@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { render, cleanup, fireEvent, waitFor } from "@testing-library/preact";
+import { render as preactRender } from "preact";
 import { api, ApiError } from "../src/base/api.jsx";
 import { taskDetailPage } from "../src/tasks/task-detail.jsx";
 
@@ -395,6 +396,70 @@ test("a failure to load the attempts offers a retry", async () => {
   fireEvent.click([...root.querySelectorAll(".run-error button")][0]);
   await waitFor(() => assert.ok(root.querySelector(".run-stages")));
   unmount();
+  restore();
+});
+
+// The router renders the run page with Preact's own render() into one long-lived
+// outlet (main.jsx, show()), so moving from one task id to another diffs the same
+// component in place rather than mounting a fresh one. Every piece of task-scoped
+// state therefore has to be re-established when the id changes -- otherwise the
+// new task is shown with the previous task's tab, pinned attempt, run history and
+// events. RunDetail's own comment relies on this ("the route remounts it when
+// that changes"), so navigating between two ids is the case to pin.
+test("navigating to another task id re-establishes the task-scoped reads and selections", async () => {
+  const attemptReads = [];
+  const eventReads = [];
+  const { restore } = install({
+    taskAttempts: async (id) => {
+      attemptReads.push(String(id));
+      return ATTEMPTS;
+    },
+    task: async (id) => {
+      eventReads.push(String(id));
+      return EVENTS;
+    },
+  });
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+
+  // Task 1, opened pinned to its earlier attempt and to the Log tab.
+  preactRender(taskDetailPage(new URLSearchParams("tab=log&attempt=1"), { id: "1" }), host);
+  await waitFor(() => assert.equal(attemptReads.length, 1));
+  const selectedTab = () =>
+    [...host.querySelectorAll('[role="tab"]')].find(
+      (tab) => tab.getAttribute("aria-selected") === "true",
+    );
+  const pressedAttempt = () =>
+    [...host.querySelectorAll(".run-attempt")].find(
+      (chip) => chip.getAttribute("aria-pressed") === "true",
+    );
+  assert.equal(selectedTab().textContent, "Log");
+  assert.match(pressedAttempt().textContent, /Attempt 1/);
+
+  // The router's own navigation: the same matched route, a different captured id,
+  // the same outlet. Nothing unmounts, so no state is cleared for free.
+  preactRender(taskDetailPage(new URLSearchParams(""), { id: "2" }), host);
+
+  await waitFor(() =>
+    assert.equal(attemptReads.length, 2, "the new task's run history must be re-read"),
+  );
+  assert.equal(attemptReads[1], "2", "the run history must be read for the new task's id");
+  assert.equal(eventReads.length, 2, "the new task's events must be re-read");
+  assert.equal(eventReads[1], "2", "the events must be read for the new task's id");
+
+  assert.equal(
+    selectedTab().textContent,
+    "Stages",
+    "the previous task's tab must not carry over to the new task",
+  );
+  assert.match(
+    pressedAttempt().textContent,
+    /Attempt 2/,
+    "the previous task's pinned attempt must not carry over to the new task",
+  );
+
+  preactRender(null, host);
+  host.remove();
   restore();
 });
 
