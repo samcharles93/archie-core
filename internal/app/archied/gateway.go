@@ -36,13 +36,13 @@ type GatewayOptions struct {
 // inventing a value -- resolveServiceListen explains why an empty address is an
 // error rather than a default.
 func gatewayListenAndToken(b *boot, options GatewayOptions) (listen, token string, err error) {
-	listen, err = resolveServiceListen("gateway", options.Listen, b.cfg.Services.Gateway.Listen)
+	listen, err = resolveServiceListen("gateway", options.Listen, b.cfg.Services.Get(config.ServiceNameGateway).Listen)
 	if err != nil {
 		return "", "", err
 	}
 	token = options.Token
 	if token == "" {
-		token = gatewayResolvedToken(b.cfg.Services.Gateway, b.secrets)
+		token = b.cfg.Services.ResolvedToken(config.ServiceNameGateway, b.secrets.Getenv)
 	}
 	return listen, token, nil
 }

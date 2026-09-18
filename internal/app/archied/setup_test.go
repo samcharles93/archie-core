@@ -275,7 +275,7 @@ func TestRunSetup_GeneratedConfigSatisfiesDaemonRequirements(t *testing.T) {
 	}
 	// openStateStoreAdapter refuses an empty target, so this is the difference
 	// between a config that boots and one that does not.
-	if doc.Config.Services.State.Target == "" {
+	if doc.Config.Services.Get(config.ServiceNameState).Target == "" {
 		t.Error("generated config leaves services.state.target empty; the daemon would not boot")
 	}
 	if doc.Config.BotUser == "" {

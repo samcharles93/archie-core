@@ -1666,7 +1666,7 @@ func configWithCanarySecrets() config.Config {
 		Tools:    config.ToolsConfig{Policy: config.ToolPolicy{MaxResultChars: 12000, SpillDir: "/tmp/spill"}},
 		NATS:     config.NATSConfig{Mode: "external", URL: "nats://127.0.0.1:4222", TokenEnv: canaryNATSTokenEnv},
 		Chat:     config.ChatConfig{Operator: "sam", Telegram: config.TelegramConfig{TokenEnv: "TELEGRAM_TOKEN", Token: secret.SecretRef{Engine: "bws", Key: canaryTelegramToken}}},
-		Services: config.Services{State: config.ServiceConnection{Target: "127.0.0.1:50051", TargetToken: canaryStateStoreToken}},
+		Services: config.Services{config.ServiceNameState: {Target: "127.0.0.1:50051", TargetToken: canaryStateStoreToken}},
 		ModelLimits: map[string]config.ModelLimits{
 			"openai/gpt-4": {ContextWindow: 128000, MaxOutputTokens: 4096},
 		},

@@ -19,10 +19,10 @@ import (
 func TestComposeChatContractRejectsInvalidSettings(t *testing.T) {
 	for _, tt := range []struct {
 		name     string
-		settings config.ServiceConnection
+		settings config.Services
 	}{
-		{name: "missing target", settings: config.ServiceConnection{}},
-		{name: "blank target", settings: config.ServiceConnection{Target: " \t\n"}},
+		{name: "missing target", settings: config.Services{}},
+		{name: "blank target", settings: config.Services{config.ServiceNameGateway: {Target: " \t\n"}}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			chat, cleanup, err := composeChatContract(tt.settings, &secret.Registry{})
@@ -41,7 +41,7 @@ func TestComposeChatContractRejectsInvalidSettings(t *testing.T) {
 
 func TestComposeChatContractNonLoopbackFailsClosed(t *testing.T) {
 	_, _, err := composeChatContract(
-		config.ServiceConnection{Target: "gateway.example.com:8585"},
+		config.Services{config.ServiceNameGateway: {Target: "gateway.example.com:8585"}},
 		&secret.Registry{},
 	)
 	if err == nil {
@@ -67,7 +67,7 @@ func TestComposeChatContractRemoteAndCleanup(t *testing.T) {
 	})
 
 	chat, cleanup, err := composeChatContract(
-		config.ServiceConnection{Target: listener.Addr().String()},
+		config.Services{config.ServiceNameGateway: {Target: listener.Addr().String()}},
 		&secret.Registry{},
 	)
 	if err != nil {
@@ -95,18 +95,22 @@ func TestComposeChatContractRemoteAndCleanup(t *testing.T) {
 	}
 }
 
+// TestGatewayResolvedToken pins the daemon-side wiring rather than the
+// precedence rule itself: config.Services.ResolvedToken owns the rule and is
+// tested there, but only this level proves the gateway reads it through the
+// secret registry and lands on the env var its registration names.
 func TestGatewayResolvedToken(t *testing.T) {
-	if got := gatewayResolvedToken(config.ServiceConnection{TargetToken: "file-token"}, &secret.Registry{}); got != "file-token" {
+	secrets := &secret.Registry{}
+	explicit := config.Services{config.ServiceNameGateway: {TargetToken: "file-token"}}
+	if got := explicit.ResolvedToken(config.ServiceNameGateway, secrets.Getenv); got != "file-token" {
 		t.Fatalf("resolved token = %q, want file-token", got)
 	}
 	t.Setenv("GATEWAY_TOKEN", "environment-token")
-	if got := gatewayResolvedToken(config.ServiceConnection{}, &secret.Registry{}); got != "environment-token" {
+	empty := config.Services{config.ServiceNameGateway: {}}
+	if got := empty.ResolvedToken(config.ServiceNameGateway, secrets.Getenv); got != "environment-token" {
 		t.Fatalf("resolved token = %q, want environment-token", got)
 	}
-	if got := gatewayResolvedToken(
-		config.ServiceConnection{TargetToken: "file-token"},
-		&secret.Registry{},
-	); got != "file-token" {
+	if got := explicit.ResolvedToken(config.ServiceNameGateway, secrets.Getenv); got != "file-token" {
 		t.Fatalf("explicit target_token should win over the environment, got %q", got)
 	}
 }

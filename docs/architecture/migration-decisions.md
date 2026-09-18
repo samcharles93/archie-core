@@ -529,3 +529,19 @@ config DTO translation will land, so it unblocks the dissolution above.
 per area when the decisions are already dictated by
 `dependencies-and-contracts.md`. That is the ceremony pattern this project
 deliberately avoids.
+
+## OPEN — `[chat.*]` config section naming
+
+`configuration.md:160` already states the position: `ChatConfig` holds "separate
+channel instance settings... there is no chat-wide settings owner". The config
+section name has not followed, so a settings block named for a product surface
+owns what the architecture calls channel state.
+
+Two candidates, neither settled: `[channel.*]` and `[messaging.channel.*]`. The
+second reads as a domain path, and no config section in this repo is currently
+named after a domain package, so adopting it sets a precedent for every other
+section rather than fixing one name.
+
+Blocked on a maintainer decision, not on evidence. This is a rename with an
+operator-visible TOML break, so it should land with the `internal/config`
+dissolution recorded above rather than on its own.
