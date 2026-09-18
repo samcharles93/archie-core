@@ -30,10 +30,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # No `cache: pip` here: this repository is Go and has no
+      # requirements.txt or pyproject.toml for setup-python to hash. Asking for
+      # a pip cache makes the step fail outright with "No file ... matched to
+      # [**/requirements.txt or **/pyproject.toml]", so every docs-touching PR
+      # failed before `mkdocs build --strict` ever ran -- which also meant the
+      # strict link/config check silently stopped guarding anything.
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-          cache: pip
 
       - run: pip install mkdocs-material
 
