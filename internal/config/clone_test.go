@@ -32,6 +32,9 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 			Hosted: map[string]ImageHostedProvider{"openai": {Enabled: true}},
 			Local:  map[string]ImageLocalProvider{"sdxl": {Enabled: true}},
 		},
+		Services: Services{
+			ServiceNameState: {Target: "127.0.0.1:9090", TargetToken: "secret"},
+		},
 	}
 
 	got := orig.Clone()
@@ -52,6 +55,7 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 	*got.Tools.WebFetch.Enabled = false
 	got.Image.Hosted["openai"] = ImageHostedProvider{Enabled: false}
 	got.Image.Local["sdxl"] = ImageLocalProvider{Enabled: false}
+	got.Services[ServiceNameState] = ServiceConnection{Target: "changed"}
 
 	if orig.Models["builder"] != "m" {
 		t.Error("Models map is shared")
@@ -94,5 +98,8 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 	}
 	if !orig.Image.Local["sdxl"].Enabled {
 		t.Error("Image.Local map is shared")
+	}
+	if orig.Services[ServiceNameState].TargetToken != "secret" {
+		t.Error("Services map is shared")
 	}
 }

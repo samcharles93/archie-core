@@ -665,6 +665,11 @@ func (c Config) Clone() Config {
 	c.Memory.ProviderConfig = maps.Clone(c.Memory.ProviderConfig)
 	c.Image.Hosted = maps.Clone(c.Image.Hosted)
 	c.Image.Local = maps.Clone(c.Image.Local)
+	// Services is a map of structs, so the header is shared by the value copy
+	// above and yaml.Unmarshal writes keys into whatever map it is handed. Without
+	// this line an overlay -- or a dashboard PATCH -- rewrites the PUBLISHED
+	// snapshot in place, which is the mutation Clone exists to prevent.
+	c.Services = maps.Clone(c.Services)
 	if c.Tools.WebFetch.Enabled != nil {
 		v := *c.Tools.WebFetch.Enabled
 		c.Tools.WebFetch.Enabled = &v
