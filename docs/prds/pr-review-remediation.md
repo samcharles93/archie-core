@@ -57,7 +57,12 @@ cursor for both poll and webhook dedup.
   tasks calls `ListReviews`/`ListReviewComments` with a persisted `sinceID`
   cursor per task. This is the Gitea path and the deployment-without-webhook
   path; it must stay first-class, not a legacy fallback (the repo's own
-  webhook-intake rule).
+  webhook-intake rule). It is **one shared scan over all `pr_open` tasks**,
+  not a scan inside each identity's poll loop, and it calls the forge client
+  the scanned task's own identity owns. This is `reconcilePRs`'s shape
+  exactly (`internal/daemon/daemon.go`: `Store.OpenPRs` then `forgeFor(&t)`).
+  A per-identity scan would call one identity's forge client against another
+  identity's PR.
 
 Both paths emit the **same** typed reaction, so `PublishUnique` dedups them
 for free — the `TaskEnvelope.IdempotencyKey` pattern (7d5u decision 4) applied
@@ -90,6 +95,30 @@ That lookup does not exist. `pr_number` is written by
 is forbidden, `CLAUDE.md`), and an index on those three columns. It is the
 authorization boundary, so it is sequenced as its own step below rather than
 carried along with the envelope.
+
+**Identity is derived from the resolved task, never carried in the reaction.**
+The task row already stores `identity` (`internal/store/store.go`), and it is
+the resolved task's identity that selects the forge client, worktree manager,
+repo config and `bot_user` for the remediation run and the `ReplyToReview`
+reply, through the existing `forgeFor`/`treesFor`/`repoFor` helpers. That is
+what decision 5's "the identity that owns the task" means, and it is the only
+place identity enters this path.
+
+Identity is deliberately **not** added to the envelope, the idempotency key or
+the index:
+
+- A PR number is unique within an `owner/repo`, and the tasks table is keyed
+  `UNIQUE(owner, repo, issue_number)` with no host or identity column, so
+  archie already treats `owner/repo` as globally unique across identities. A
+  `(owner, repo, pr_number)` lookup cannot return a task other than the one
+  that owns that PR; there is no cross-identity resolution to guard against.
+- The webhook producer has no identity to carry: webhook intake refuses to
+  start when `[[identities]]` is configured (`setupForgeWebhook`,
+  `internal/app/archied/bootstrap.go`).
+- Keying on a field only one of the two producers can populate is precisely
+  the delivery-source-specific key `CLAUDE.md` forbids, and it would break the
+  webhook/poll dedup the key exists for. An index column that never appears in
+  the `WHERE` clause is dead weight.
 
 ### 4. Remediation: a `remediate` workflow on the existing branch
 
