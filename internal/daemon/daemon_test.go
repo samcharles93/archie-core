@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -1463,6 +1464,194 @@ func assertSwept(t *testing.T, name string, fg *sweepForge, wantInvitations int,
 	}
 	if !slices.Equal(repos, wantRepos) {
 		t.Errorf("%s verified repos = %v, want %v", name, repos, wantRepos)
+	}
+}
+
+// stallForge stands in for a forge client whose request never returns:
+// AcceptInvitations signals that its sweep has started, then blocks until the
+// test releases it or the sweep's own deadline fires.
+type stallForge struct {
+	testForge
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (f *stallForge) AcceptInvitations(ctx context.Context) error {
+	close(f.entered)
+	select {
+	case <-f.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// TestStartupSweepIsolatesAStalledForge pins the concurrency half of the
+// stalled-forge fix. Sweeping forges one at a time on the startup goroutine
+// left every later identity unswept when one forge request never returned,
+// and Startup gates the gateways and the run loop, so it held boot open too.
+// Each forge now gets its own goroutine; this asserts the ordering that
+// proves it: the sibling identity's sweep completes while the root forge is
+// still blocked.
+func TestStartupSweepIsolatesAStalledForge(t *testing.T) {
+	rootFg := &stallForge{entered: make(chan struct{}), release: make(chan struct{})}
+	siblingFg := &sweepForge{}
+	d := &Daemon{
+		Cfg:        config.NewHolder(config.Config{}),
+		Store:      store.OpenTest(t),
+		Forge:      rootFg,
+		Log:        slog.New(slog.DiscardHandler),
+		Identities: []*IdentityRunner{{Name: "sibling", Forge: siblingFg}},
+	}
+
+	errs := make(chan error, 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		errs <- d.Startup(context.Background())
+	}()
+
+	waitFor(t, 5*time.Second, "the stalled root forge to start its sweep", func() bool {
+		select {
+		case <-rootFg.entered:
+			return true
+		default:
+			return false
+		}
+	})
+	waitFor(t, 5*time.Second, "the sibling identity's sweep to finish", func() bool {
+		invitations, _ := siblingFg.snapshot()
+		return invitations == 1
+	})
+
+	close(rootFg.release)
+	waitFor(t, 5*time.Second, "Startup to return once the stall is released", func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	})
+	if err := <-errs; err != nil {
+		t.Errorf("Startup: %v", err)
+	}
+}
+
+// waitFor polls cond until it holds or the timeout expires.
+func waitFor(t *testing.T, timeout time.Duration, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", what)
+}
+
+// verifyForge returns a fixed error from VerifyPush, or blocks until the
+// sweep's own deadline expires first, standing in for an unreachable host.
+type verifyForge struct {
+	testForge
+	mu    sync.Mutex
+	calls int
+	block bool
+}
+
+var errVerifyDenied = errors.New("push access denied")
+
+func (f *verifyForge) VerifyPush(ctx context.Context, _, _ string) error {
+	f.mu.Lock()
+	f.calls++
+	f.mu.Unlock()
+	if f.block {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	return errVerifyDenied
+}
+
+func (f *verifyForge) callCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
+}
+
+// TestSweepNamesTheCauseOfAnAbandonedPushCheck pins what the boot sweep
+// reports when a push check does not come back. One budget covers a forge's
+// whole sweep, so a repo cut short by the deadline used to warn that it was
+// "not pushable" -- asserting access had been denied when nothing about
+// access had been learned, once per remaining repo. An operator shutdown
+// cancels the same context, and that is neither a spent budget nor a denial.
+func TestSweepNamesTheCauseOfAnAbandonedPushCheck(t *testing.T) {
+	repos := []config.Repo{
+		{Owner: "acme", Name: "one"},
+		{Owner: "acme", Name: "two"},
+		{Owner: "acme", Name: "three"},
+	}
+	tests := []struct {
+		name       string
+		mode       string
+		wantDenied int
+		wantBudget int
+		wantCalls  int
+	}{
+		{
+			name:       "a denied push is reported per repo",
+			mode:       "deny",
+			wantDenied: len(repos),
+			wantCalls:  len(repos),
+		},
+		{
+			name:       "an exhausted budget is reported once, as the cause",
+			mode:       "deadline",
+			wantBudget: 1,
+			wantCalls:  1,
+		},
+		{
+			name:      "a cancelled startup is reported as neither",
+			mode:      "cancel",
+			wantCalls: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fg := &verifyForge{block: tc.mode != "deny"}
+			var logs logBuffer
+			d := &Daemon{
+				Cfg:   config.NewHolder(config.Config{Repos: repos}),
+				Forge: fg,
+				Log:   slog.New(slog.NewTextHandler(&logs, nil)),
+			}
+
+			ctx := context.Background()
+			switch tc.mode {
+			case "deadline":
+				// Expire the sweep's budget without waiting out sweepTimeout.
+				deadline, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+				defer cancel()
+				ctx = deadline
+			case "cancel":
+				cancelled, cancel := context.WithCancel(ctx)
+				cancel()
+				ctx = cancelled
+			}
+
+			d.sweepAccess(ctx)
+
+			if got := fg.callCount(); got != tc.wantCalls {
+				t.Errorf("VerifyPush calls = %d, want %d", got, tc.wantCalls)
+			}
+			if got := strings.Count(logs.String(), "repo not pushable"); got != tc.wantDenied {
+				t.Errorf("denied-push warnings = %d, want %d\nlogs:\n%s", got, tc.wantDenied, logs.String())
+			}
+			if got := strings.Count(logs.String(), "sweep budget exhausted"); got != tc.wantBudget {
+				t.Errorf("budget warnings = %d, want %d\nlogs:\n%s", got, tc.wantBudget, logs.String())
+			}
+		})
 	}
 }
 
