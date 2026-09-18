@@ -12,9 +12,18 @@ import (
 // Defaults applied to absent input. Named so a reader can find the value
 // without reading the code that applies it.
 const (
-	defaultPollInterval    = 60 * time.Second
-	defaultDiffCapLines    = 400
-	defaultWebListen       = "127.0.0.1:8484" // "off" disables
+	defaultPollInterval = 60 * time.Second
+	defaultDiffCapLines = 400
+	defaultWebListen    = "127.0.0.1:8484" // "off" disables
+	// defaultGatewayAddr is where archie-gateway binds and, by default, where
+	// clients look for it. One constant for both so a default deployment's
+	// client and server cannot drift onto different ports.
+	defaultGatewayAddr = "127.0.0.1:8585"
+	// defaultStateListen is the state store's bind address. There is
+	// deliberately no default for [services.state].target: an empty target is
+	// a startup error in the daemon and the gateway, which no longer serve a
+	// local store (docs/prds/state-store-contract.md).
+	defaultStateListen     = "127.0.0.1:9090"
 	defaultMaxRetries      = 3
 	defaultForgeType       = "github"
 	defaultForgeHost       = "https://github.com"
@@ -63,7 +72,13 @@ const (
 // inspected, and reasoned about independently of whether the result is valid.
 func (l *Loader) applyDefaults(cfg *config.Config) {
 	if cfg.Services.Gateway.Target == "" {
-		cfg.Services.Gateway.Target = "127.0.0.1:8585"
+		cfg.Services.Gateway.Target = defaultGatewayAddr
+	}
+	if cfg.Services.Gateway.Listen == "" {
+		cfg.Services.Gateway.Listen = defaultGatewayAddr
+	}
+	if cfg.Services.State.Listen == "" {
+		cfg.Services.State.Listen = defaultStateListen
 	}
 	if cfg.Health.Listen == "" {
 		cfg.Health.Listen = defaultHealthListen

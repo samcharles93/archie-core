@@ -14,10 +14,18 @@ type Services struct {
 }
 
 // ServiceConnection is a contract adapter's gRPC address plus the bearer
-// token a client presents when the target is non-loopback. It does not
-// register services or start listeners. Changes require a daemon restart.
+// token a client presents when the target is non-loopback. A client reads only
+// Target and TargetToken; Listen belongs to the process that owns the service.
+// The struct does not itself register services or start listeners. Changes
+// require a daemon restart.
 type ServiceConnection struct {
 	Target string `toml:"target" yaml:"target"`
+	// Listen is the address the process that OWNS this service binds
+	// (archie-state-store, archie-gateway). It is read only by that process;
+	// every client ignores it. Defaulted, so a loaded config is never empty
+	// here -- an empty address reaches net.Listen as "any free port", which
+	// would silently move the service off the address its clients dial.
+	Listen string `toml:"listen" yaml:"listen"`
 	// TargetToken is the bearer token a client (daemon or agent) presents
 	// when dialing a non-loopback service target, and the standalone
 	// archie-state-store server validates. Empty means no token, which is

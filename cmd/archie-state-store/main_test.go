@@ -85,9 +85,10 @@ func buildBinary(t *testing.T, dir string) string {
 }
 
 // writeMinimalConfig writes a config.toml that passes configuration.Validate
-// while keeping the process minimal: the standalone binary reads its gRPC
-// listen address from -listen, not from [services.state].target, so the config
-// only needs the fields validation requires plus the db_path it owns. The
+// while keeping the process minimal: the standalone binary takes its gRPC
+// listen address from -listen or [services.state].listen, never from the
+// target, so the config only needs the fields validation requires plus the
+// db_path it owns. The
 // forge token resolves from an env var, so no real credential is needed.
 func writeMinimalConfig(t *testing.T, dir string) string {
 	t.Helper()
@@ -104,6 +105,27 @@ name = "widget"
 `, filepath.Join(dir, "archie.db"))
 	if err := os.WriteFile(cfg, []byte(content), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
+	}
+	return cfg
+}
+
+// writeConfigWithServiceListen is writeMinimalConfig plus the
+// [services.state] block that lets a test supply the listen address through
+// configuration instead of the -listen flag.
+func writeConfigWithServiceListen(t *testing.T, dir string) string {
+	t.Helper()
+	cfg := writeMinimalConfig(t, dir)
+	f, err := os.OpenFile(cfg, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatalf("open config to append: %v", err)
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			t.Fatalf("close config: %v", err)
+		}
+	}()
+	if _, err := f.WriteString("\n[services.state]\nlisten = \"127.0.0.1:0\"\n"); err != nil {
+		t.Fatalf("append [services.state]: %v", err)
 	}
 	return cfg
 }
@@ -158,7 +180,12 @@ func startStateStoreProcess(t *testing.T, bin, cfg string) *stateStoreProcess {
 // credential interceptors on both the unary and the streaming surface.
 func startStateStore(t *testing.T, bin, cfg, listen, token string) *stateStoreProcess {
 	t.Helper()
-	args := []string{"-config", cfg, "-listen", listen, "-ready-addr", "127.0.0.1:0"}
+	args := []string{"-config", cfg, "-ready-addr", "127.0.0.1:0"}
+	if listen != "" {
+		// An empty listen means "pass no -listen at all". A test uses that to
+		// prove the bound address came from [services.state].listen.
+		args = append(args, "-listen", listen)
+	}
 	if token != "" {
 		// An explicit -token wins over [services.state].target_token and the
 		// STATE_STORE_TOKEN secret, so the process authenticates callers with
@@ -291,14 +318,29 @@ func capture(source, body string) store.CapturedEvent {
 // adapter, error-sentinel fidelity across the wire, the not-found-as-(nil,nil)
 // convention, and single-owner SQLite (the binary owns the one archie.db file
 // and the consumer dials gRPC without opening any store file).
+//
+// It also takes its listen address from [services.state].listen rather than
+// -listen, so the startup path every deployment uses is covered by the process
+// that exercises the most: before that key existed the address came from a flag
+// default with no config key, so a host that already owned the port (cockpit
+// owns 9090 by default) could only be retargeted by passing -listen and
+// hand-writing an overlay whose target matched -- and the failure read as a
+// code fault, "address already in use" in the store and a gRPC handshake error
+// in every client.
 func TestStateStoreRealProcessSmoke(t *testing.T) {
 	if testing.Short() {
 		t.Skip("real-process smoke test builds and execs the binary; skip under -short")
 	}
 	dir := t.TempDir()
 	bin := buildBinary(t, dir)
-	cfg := writeMinimalConfig(t, dir)
-	st := startStateStoreProcess(t, bin, cfg)
+	cfg := writeConfigWithServiceListen(t, dir)
+	st := startStateStore(t, bin, cfg, "", "")
+	if st.addr == "" {
+		t.Fatalf("no bound gRPC address in the log:\n%s", st.log.String())
+	}
+	if !strings.Contains(st.log.String(), `"listen":"127.0.0.1:0"`) {
+		t.Fatalf("the resolved listen was not the configured address:\n%s", st.log.String())
+	}
 	cl := dial(t, st.addr)
 
 	ctx := t.Context()

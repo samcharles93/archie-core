@@ -31,7 +31,7 @@ func run() int {
 	var options archied.StateStoreOptions
 	flag.StringVar(&options.Config, "config", filepath.Join(base, "archie", "config.toml"), "configuration file or directory")
 	flag.StringVar(&options.Overlay, "config-overlay", "", "configuration overlay file or directory")
-	flag.StringVar(&options.Listen, "listen", "127.0.0.1:9090", "state store gRPC listen address")
+	flag.StringVar(&options.Listen, "listen", "", "state store gRPC listen address (defaults to [services.state].listen, else 127.0.0.1:9090)")
 	flag.StringVar(&options.Token, "token", "", "bearer token required for a non-loopback listener (defaults to [services.state].target_token)")
 	flag.StringVar(&options.ReadyAddr, "ready-addr", "", "optional readiness HTTP listen address (e.g. 127.0.0.1:9091)")
 	flag.Parse()

@@ -56,7 +56,11 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 	if err := b.loadConfig(ctx, options.Config, options.Overlay, false); err != nil {
 		return err
 	}
-	b.log = b.log.With("component", "state-store")
+	listen, err := resolveServiceListen("state", options.Listen, b.cfg.Services.State.Listen)
+	if err != nil {
+		return err
+	}
+	b.log = b.log.With("component", "state-store", "listen", listen)
 	if err := b.openStateStore(ctx); err != nil {
 		return err
 	}
@@ -67,11 +71,11 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 	}
 	grants := &staterpc.TaskGrants{}
 	//nolint:contextcheck // grpc.StreamServerInterceptor has no context.Context parameter; TaskGrants.StreamInterceptor derives its context from stream.Context() instead
-	opts, loopback, err := stateStoreServerOpts(options.Listen, token, grants)
+	opts, loopback, err := stateStoreServerOpts(listen, token, grants)
 	if err != nil {
 		return err
 	}
-	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", options.Listen)
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", listen)
 	if err != nil {
 		return fmt.Errorf("listen for state store: %w", err)
 	}
