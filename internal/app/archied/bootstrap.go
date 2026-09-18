@@ -44,6 +44,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/forge"
 	forgewebhook "github.com/samcharles93/archie-core/internal/forge/webhook"
 	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/indexing"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/overlay"
 	infraembedding "github.com/samcharles93/archie-core/internal/infrastructure/embedding"
@@ -64,6 +65,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/skill"
 	"github.com/samcharles93/archie-core/internal/storage"
 	"github.com/samcharles93/archie-core/internal/tools"
+	toolsbuiltin "github.com/samcharles93/archie-core/internal/tools/builtin"
 	"github.com/samcharles93/archie-core/internal/tools/minimax"
 	toolprovider "github.com/samcharles93/archie-core/internal/tools/provider"
 	builtintoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/builtin"
@@ -1190,9 +1192,40 @@ func (b *boot) setupGuardrails() {
 	)
 }
 
+// workspaceIndex builds the optional codesearch index that narrows grep's
+// candidate files. It returns a slice so a failure is simply "no index"
+// rather than a typed-nil reaching the provider.
+//
+// Every failure degrades instead of propagating: grep falls back to its
+// direct walk, which is what it did before this was wired at all. An
+// accelerator that can refuse to build must never stop the daemon starting.
+//
+// The context is detached from cancellation but keeps its values, because
+// NewManager starts an asynchronous build whose lifetime is the process
+// while the gateway path's boot context is cancelled once startup returns.
+// Inheriting cancellation would kill the build mid-flight and leave grep
+// permanently unindexed with nothing to show why; using Background instead
+// would silently drop any values the caller's context carries.
+func (b *boot) workspaceIndex(ctx context.Context, workspace string) []toolsbuiltin.GrepIndex {
+	cfg, log := b.cfg, b.log
+	idxCfg := cfg.Indexing.WithDefaults(cfg.WorkDir)
+	manager, err := indexing.NewManager(
+		context.WithoutCancel(ctx),
+		indexing.Config{IndexDir: idxCfg.IndexDir, DBPath: idxCfg.DBPath, Log: log},
+		workspace,
+	)
+	if err != nil {
+		log.Warn("workspace index unavailable; grep will search unindexed",
+			"workspace", workspace, "index_dir", idxCfg.IndexDir, "error", err)
+		return nil
+	}
+	log.Info("workspace index enabled", "workspace", workspace, "index_dir", idxCfg.IndexDir)
+	return []toolsbuiltin.GrepIndex{manager}
+}
+
 // registerTools registers the tool providers with a lifecycle: memory,
 // workspace file/shell tools and optional MCP servers.
-func (b *boot) registerTools() error {
+func (b *boot) registerTools(ctx context.Context) error {
 	cfg, log := b.cfg, b.log
 	b.providerRegistry = toolprovider.NewRegistry(b.toolReg)
 	if err := b.providerRegistry.Register(memorytoolprovider.New(b.memManager)); err != nil {
@@ -1204,7 +1237,8 @@ func (b *boot) registerTools() error {
 	// deliberate choice rather than a default.
 	if workspace := cfg.Chat.Workspace; workspace != "" {
 		unrestricted := cfg.Chat.UnrestrictedFilesystem
-		if err := b.providerRegistry.Register(builtintoolprovider.New(workspace, unrestricted)); err != nil {
+		index := b.workspaceIndex(ctx, workspace)
+		if err := b.providerRegistry.Register(builtintoolprovider.New(workspace, unrestricted, index...)); err != nil {
 			log.Error("workspace tool provider registration failed", "err", err)
 			return err
 		}

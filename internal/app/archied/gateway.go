@@ -115,7 +115,7 @@ func (b *boot) startGatewayRuntime(ctx context.Context, actor gateway.ChatTaskAc
 	if err := b.setupMemory(); err != nil { //nolint:contextcheck // setupMemory owns its lifecycle contexts, matching the daemon's setupMemoryAll
 		return nil, err
 	}
-	if err := b.registerTools(); err != nil {
+	if err := b.registerTools(ctx); err != nil {
 		return nil, err
 	}
 	b.registerStandaloneTools()
