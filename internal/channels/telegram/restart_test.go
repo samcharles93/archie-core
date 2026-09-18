@@ -73,6 +73,44 @@ func TestRequestRestartQueuesScopedReload(t *testing.T) {
 	}
 }
 
+// TestRequestRestartRejectsDuplicate pins RequestRestart's dedupe contract:
+// the restart channel is buffered to one, so a second request while one is
+// still queued is rejected rather than silently dropped or blocking a caller
+// outside Telegram. restartHandler (restart.go) is the production driver of
+// this path; the error surface is what callers observe.
+func TestRequestRestartRejectsDuplicate(t *testing.T) {
+	tests := []struct {
+		name    string
+		prefill bool
+		wantErr bool
+	}{
+		{name: "first request queues", wantErr: false},
+		{name: "second request rejected while queued", prefill: true, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := New("tok", []int64{1}, slog.Default())
+			if tt.prefill {
+				g.restartCh <- restartRequest{}
+			}
+
+			err := g.RequestRestart()
+			if tt.wantErr {
+				if err == nil || err.Error() != "telegram gateway restart already in progress" {
+					t.Fatalf("RequestRestart error = %v, want %q", err, "telegram gateway restart already in progress")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("RequestRestart error = %v, want nil", err)
+			}
+			if got := len(g.restartCh); got != 1 {
+				t.Fatalf("restart queue length = %d, want 1", got)
+			}
+		})
+	}
+}
+
 // A failing Reload must not be fatal: a bad config edit should leave the
 // gateway running on its previous settings, not take chat down for good.
 func TestReloadFailureKeepsPreviousSettings(t *testing.T) {
