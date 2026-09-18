@@ -10,13 +10,17 @@ import (
 // Defaults for Config. Previously these were unexported package constants,
 // which made stream naming and timeouts untunable per deployment.
 const (
-	DefaultStreamName   = "ARCHIE_TASKS"
-	DefaultConsumerName = "archie-daemon"
-	DefaultDedupWindow  = 2 * time.Minute
-	DefaultPollTimeout  = 2 * time.Second
-	DefaultAckWait      = 5 * time.Minute
-	DefaultMaxDeliver   = 3
-	DefaultInactiveTTL  = 24 * time.Hour
+	DefaultStreamName = "ARCHIE_TASKS"
+	// DefaultReactionStreamName is the fan-out stream carrying reaction
+	// subjects. It coexists with DefaultStreamName (ARCHIE_TASKS), which
+	// stays work-queue for task distribution.
+	DefaultReactionStreamName = "ARCHIE_REACTIONS"
+	DefaultConsumerName       = "archie-daemon"
+	DefaultDedupWindow        = 2 * time.Minute
+	DefaultPollTimeout        = 2 * time.Second
+	DefaultAckWait            = 5 * time.Minute
+	DefaultMaxDeliver         = 3
+	DefaultInactiveTTL        = 24 * time.Hour
 )
 
 // Config describes how to reach NATS and how the stream and consumer should
@@ -126,4 +130,16 @@ func (c Config) withDefaults() Config {
 		c.Retention = &policy
 	}
 	return c
+}
+
+// FanOutRetention returns a pointer to jetstream.LimitsPolicy for use as
+// Config.Retention. It exists so composition can select fan-out retention
+// without importing the NATS SDK: the retention policy type stays behind this
+// package's boundary, like every other JetStream type. LimitsPolicy is the one
+// policy that cannot be expressed by leaving Retention unset (withDefaults
+// treats nil as WorkQueuePolicy), so the choice must be visible at the call
+// site.
+func FanOutRetention() *jetstream.RetentionPolicy {
+	policy := jetstream.LimitsPolicy
+	return &policy
 }
