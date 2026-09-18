@@ -8,8 +8,8 @@ description: "Measure Archie codebase maintainability, Go package dependency sha
 Collect evidence before judging quality. Keep collection read-only, save raw
 output, state what each metric cannot prove.
 
-Volatile facts and numeric snapshots below were verified on **2026-09-16**
-(HEAD `d565fb8`).
+Volatile facts and numeric snapshots below were verified on **2026-09-18**
+(HEAD `2e1e1549`).
 
 Route to `archie-codebase-discovery` for semantic traces,
 `archie-config-and-flags` for config enumeration,
@@ -21,7 +21,7 @@ Route to `archie-codebase-discovery` for semantic traces,
   environment.
 - **Candidate:** a machine-found item requiring semantic confirmation.
 - **Production composition:** concrete construction selected by a shipped
-  entrypoint. Principal: `cmd/archied/main.go`.
+  entrypoint. Principal: `cmd/archied/main.go` → `internal/app/archied.Run()`.
 - **Fan-in:** number of packages in the same module that directly import a
   package.
 - **Fan-out:** number of packages in the same module that a package directly
@@ -42,7 +42,7 @@ export GOLANGCI_LINT_CACHE=/tmp/archie-diagnostics-lint
 export GOPROXY=off
 export GOFLAGS=-mod=readonly
 
-skill=.claude/skills/archie-diagnostics-and-tooling
+skill=.agents/skills/archie-diagnostics-and-tooling
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 evidence_dir=/tmp/archie-diagnostics-"$stamp"
 mkdir -p "$evidence_dir"
@@ -173,7 +173,7 @@ golangci-lint run --enable-only=dupl ./internal/...
 staticcheck -checks=U1000 ./internal/...
 ```
 
-On 2026-09-16, the focused `dupl` command reported zero issues. Two code paths
+On 2026-09-18, the focused `dupl` command reported zero issues. Two code paths
 can implement the same responsibility with different syntax.
 
 For every candidate: name the externally visible operation; search all
@@ -183,7 +183,7 @@ OS files, and wire names; identify what a new feature supersedes; record
 production-only, test-only, compatibility, generated, and unreachable paths
 separately.
 
-As of 2026-09-16, `Taskfile.yml` defines no `deadcode` task and `go tool` lists
+As of 2026-09-18, `Taskfile.yml` defines no `deadcode` task and `go tool` lists
 no dead-code analyzer.
 
 ## Collect test, race, coverage, and runtime evidence
@@ -194,7 +194,7 @@ go tool cover -func=/tmp/archie-store.cover
 go test -race ./internal/store -count=1
 ```
 
-As of 2026-09-16, the package reported 78.6% statement coverage and passed its
+As of 2026-09-18, the package reported 78.6% statement coverage and passed its
 race run.
 
 ```sh
@@ -231,34 +231,34 @@ duplication, hid a path, or weakened a gate.
 
 ## Dated current snapshot
 
-The bundled scripts measured this checkout on 2026-09-16 (HEAD `d565fb8`).
+The bundled scripts measured this checkout on 2026-09-18 (HEAD `2e1e1549`).
 These are post-fix numbers: earlier runs of the same scripts reported roughly
 3x these file and line counts because they walked `.worktrees/`.
 
 | Observation | Unstable value |
 |---|---:|
-| Root production/test/generated Go files | 408 / 397 / 9 |
-| Root production/test/generated physical lines | 73,729 / 93,572 / 12,237 |
+| Root production/test/generated Go files | 408 / 402 / 9 |
+| Root production/test/generated physical lines | 74,752 / 95,264 / 12,774 |
 | `internal/app/archied.Run` body span / approximate complexity | 97 / 19 |
-| Root internal packages / direct internal edges | 110 / 306 |
-| Tagged config field rows | 196 |
-| Tracked paths / tracked `node_modules` paths / tracked symlinks | 1,081 / 0 / 1 |
+| Root internal packages / direct internal edges | 110 / 316 |
+| Tagged config field rows | 194 |
+| Tracked paths / tracked `node_modules` paths / tracked symlinks | 1,088 / 0 / 1 |
 | `.dockerignore` present | 1 |
 
-`source-metrics.go` and `git ls-files` reconcile exactly here: 408 + 9
-generated production files and 397 test files, plus the `tools` module's
-5 / 2 / 0, against 422 non-test and 398 test tracked files. The single extra
-file is an untracked probe under `.local/`.
+`source-metrics.go` and `git ls-files` reconcile here: 408 + 9 generated
+production files and 402 test files, plus the `tools` module's 5 / 2 / 0,
+against 422 non-test and 403 test tracked files. The single extra file is an
+untracked probe under `.local/issue-tracker/probes/`.
 
-The scripts count themselves: the skill's own Go files contribute 816 of those
+The scripts count themselves: the skill's own Go files contribute 640 of those
 production lines. Editing a bundled script therefore moves
 `production_physical_lines` on its own, so re-baseline after any script change
 rather than reading the delta as a change in the product code.
 
-The delivery snapshot found no Taskfile literals for race or docs, but four
-for the `tools` module; GitHub `go gate` 4 and container publish 3; and
-non-zero literals for all five composition-root anchors under
-`internal/app/archied`.
+The delivery snapshot found no Taskfile literals for race; docs now has 6 and
+the `tools` module 7, both grown by wiring `task docs:check` into the gate;
+GitHub `go gate` 4 and container publish 3; and non-zero literals for all five
+composition-root anchors under `internal/app/archied`.
 
 The focused test
 `go test ./internal/skillscript -run '^TestRunWrapsExternalCommand$' -count=1 -v`

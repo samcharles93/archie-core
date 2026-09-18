@@ -54,7 +54,7 @@ scan_literal task_race taskfile 'go test[^#\n]*-race|-race[^#\n]*go test' Taskfi
 scan_literal task_tools_module taskfile 'go -C tools|cd tools|task:[[:space:]]+tools' Taskfile.yml
 scan_literal task_docs taskfile 'docsgen|docs:generate|docs:check' Taskfile.yml
 
-# One CI surface: .github/workflows. The Gitea workflow was dropped in e539048
+# One CI surface: .github/workflows. The Gitea workflow was dropped in dd9bddc2
 # ("ci: build and push images to GHCR, drop the Gitea workflow"), so scanning
 # .gitea/workflows aborted the whole snapshot under `set -eu`.
 scan_literal github_go_gate github-workflows 'go test|go vet|go build|golangci-lint|task[[:space:]]+check' .github/workflows

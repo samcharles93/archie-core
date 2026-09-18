@@ -180,6 +180,265 @@ func TestRunReportsFilesystemAndSourceErrors(t *testing.T) {
 	}
 }
 
+func TestCheckAcceptsTheCommittedArtifact(t *testing.T) {
+	repoRoot := filepath.Clean("../..")
+
+	if err := check(repoRoot, defaultOutputPath); err != nil {
+		t.Fatalf("check(%q) error = %v; committed generated data is stale", defaultOutputPath, err)
+	}
+}
+
+func TestCheckReportsChangedSchema(t *testing.T) {
+	repoRoot := filepath.Clean("../..")
+	output := filepath.Join(t.TempDir(), "contracts.json")
+	if err := run(repoRoot, output); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	mutateGeneratedData(t, output, func(data map[string]any) {
+		schemas := data["schemas"].(map[string]any)
+		schemas["AgentExecutionResult"].(map[string]any)["title"] = "tampered"
+	})
+
+	err := check(repoRoot, output)
+	if err == nil {
+		t.Fatal("check() returned nil error for a changed artifact")
+	}
+	for _, want := range []string{"changed", "AgentExecutionResult", "agentexec.Result"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("check() error = %q, want substring %q", err, want)
+		}
+	}
+}
+
+func TestCheckReportsRemovedSchema(t *testing.T) {
+	repoRoot := filepath.Clean("../..")
+	output := filepath.Join(t.TempDir(), "contracts.json")
+	if err := run(repoRoot, output); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	mutateGeneratedData(t, output, func(data map[string]any) {
+		delete(data["schemas"].(map[string]any), "MessageEvent")
+	})
+
+	err := check(repoRoot, output)
+	if err == nil {
+		t.Fatal("check() returned nil error for a removed schema")
+	}
+	if !strings.Contains(err.Error(), "MessageEvent") {
+		t.Errorf("check() error = %q, want the removed schema named", err)
+	}
+}
+
+func TestCheckReportsMissingArtifact(t *testing.T) {
+	repoRoot := filepath.Clean("../..")
+	output := filepath.Join(t.TempDir(), "contracts.json")
+
+	err := check(repoRoot, output)
+	if err == nil {
+		t.Fatal("check() returned nil error for a missing artifact")
+	}
+	if !strings.Contains(err.Error(), "missing") {
+		t.Fatalf("check() error = %q, want it to report a missing artifact", err)
+	}
+	if _, statErr := os.Stat(output); statErr == nil {
+		t.Fatal("check() created the missing artifact instead of reporting it")
+	}
+}
+
+func TestParseOptions(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		wantMode mode
+		wantOut  string
+		wantErr  string
+	}{
+		{name: "write by default", wantMode: modeWrite, wantOut: defaultOutputPath},
+		{name: "check first", args: []string{"check"}, wantMode: modeCheck, wantOut: defaultOutputPath},
+		{
+			name:     "check with flags",
+			args:     []string{"check", "--repo-root", ".."},
+			wantMode: modeCheck,
+			wantOut:  defaultOutputPath,
+		},
+		{
+			name:     "check honours out",
+			args:     []string{"check", "--out", "/tmp/artifacts.json"},
+			wantMode: modeCheck,
+			wantOut:  "/tmp/artifacts.json",
+		},
+		{
+			name:    "check after flags would otherwise silently write",
+			args:    []string{"--repo-root", "..", "check"},
+			wantErr: "unexpected argument",
+		},
+		{name: "misspelled subcommand", args: []string{"chekc"}, wantErr: "unexpected argument"},
+		{
+			name:    "stray trailing argument",
+			args:    []string{"--out", "/tmp/artifacts.json", "stray"},
+			wantErr: "unexpected argument",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := parseOptions(test.args)
+			if test.wantErr != "" {
+				if err == nil {
+					t.Fatalf("parseOptions(%q) returned nil error, want %q", test.args, test.wantErr)
+				}
+				if !strings.Contains(err.Error(), test.wantErr) {
+					t.Fatalf("parseOptions(%q) error = %q, want substring %q", test.args, err, test.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseOptions(%q) error = %v", test.args, err)
+			}
+			if got.mode != test.wantMode {
+				t.Errorf("parseOptions(%q).mode = %v, want %v", test.args, got.mode, test.wantMode)
+			}
+			if got.out != test.wantOut {
+				t.Errorf("parseOptions(%q).out = %q, want %q", test.args, got.out, test.wantOut)
+			}
+		})
+	}
+}
+
+func TestSchemaProvenanceFollowsNestedDefinitions(t *testing.T) {
+	schemas := map[string]any{
+		"Root": map[string]any{
+			"properties": map[string]any{
+				"middle": map[string]any{"$ref": "#/schemas/Middle"},
+			},
+		},
+		"Middle": map[string]any{
+			"properties": map[string]any{
+				"leaf": map[string]any{"$ref": "#/schemas/Leaf"},
+			},
+		},
+		"Leaf": map[string]any{"type": "string"},
+	}
+
+	provenance := schemaProvenance(schemas, map[string]string{"Root": "example.Root"})
+
+	if got := provenance["Root"]; got != "example.Root" {
+		t.Errorf("provenance[Root] = %q, want the root definition", got)
+	}
+	if got := provenance["Middle"]; got != "reached from example.Root" {
+		t.Errorf("provenance[Middle] = %q, want it reached from the root", got)
+	}
+	// Leaf is reachable only through Middle. A one-level walk misses it, and the
+	// report then claims no authoritative definition exists.
+	if got := provenance["Leaf"]; got != "reached from example.Root" {
+		t.Errorf("provenance[Leaf] = %q, want it reached from the root transitively", got)
+	}
+}
+
+func TestObsoleteArtifactsReportsUnownedFileInAnOwnedDirectory(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "docs", "data", "generated")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("create generated dir: %v", err)
+	}
+	for name, body := range map[string]string{
+		"contracts.json": "{}\n", // owned
+		"orphaned.json":  "{}\n", // obsolete
+		"notes.txt":      "not json\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	problems := obsoleteArtifacts(root, dir)
+	if len(problems) != 1 {
+		t.Fatalf("obsoleteArtifacts() = %q, want exactly the orphan", problems)
+	}
+	if !strings.Contains(problems[0], "orphaned.json") || !strings.Contains(problems[0], "obsolete") {
+		t.Fatalf("obsoleteArtifacts() = %q, want the orphan named", problems)
+	}
+}
+
+func TestObsoleteArtifactsNeverJudgesAnUnownedDirectory(t *testing.T) {
+	root := t.TempDir()
+	// An arbitrary --out location: the JSON beside the artifact belongs to
+	// whoever put it there, and docsgen must not claim it as its own.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "someone-elses.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatalf("write foreign json: %v", err)
+	}
+
+	if problems := obsoleteArtifacts(root, dir); len(problems) != 0 {
+		t.Fatalf("obsoleteArtifacts() = %q, want none for an unowned directory", problems)
+	}
+}
+
+func TestCheckNeverModifiesTheWorkingTree(t *testing.T) {
+	repoRoot := filepath.Clean("../..")
+	outputDir := t.TempDir()
+	output := filepath.Join(outputDir, "contracts.json")
+	if err := run(repoRoot, output); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	mutateGeneratedData(t, output, func(data map[string]any) {
+		data["generatedBy"] = "tampered"
+	})
+	before, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatalf("read before: %v", err)
+	}
+	beforeInfo, err := os.Stat(output)
+	if err != nil {
+		t.Fatalf("stat before: %v", err)
+	}
+
+	if err := check(repoRoot, output); err == nil {
+		t.Fatal("check() returned nil error for a changed artifact")
+	}
+
+	after, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatalf("read after: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("check() rewrote the artifact under test")
+	}
+	afterInfo, err := os.Stat(output)
+	if err != nil {
+		t.Fatalf("stat after: %v", err)
+	}
+	if beforeInfo.Mode() != afterInfo.Mode() {
+		t.Fatalf("check() changed the artifact mode: %v -> %v", beforeInfo.Mode(), afterInfo.Mode())
+	}
+	if entries, err := os.ReadDir(outputDir); err != nil {
+		t.Fatalf("read output dir: %v", err)
+	} else if len(entries) != 1 {
+		t.Fatalf("check() left %d files in the output dir, want 1", len(entries))
+	}
+}
+
+func mutateGeneratedData(t *testing.T, path string, mutate func(map[string]any)) {
+	t.Helper()
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	var data map[string]any
+	if err := json.Unmarshal(raw, &data); err != nil {
+		t.Fatalf("decode %s: %v", path, err)
+	}
+	mutate(data)
+	body, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		t.Fatalf("encode %s: %v", path, err)
+	}
+	if err := os.WriteFile(path, append(body, '\n'), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
 func TestRewriteRef(t *testing.T) {
 	tests := map[string]string{
 		"definition": "#/schemas/Contract",

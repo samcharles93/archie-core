@@ -5,11 +5,14 @@ description: Project-specific symptom-to-evidence triage for archie-core. Load t
 
 # Debug Archie from evidence
 
-**current** = 2026-07-28 verified; **fixed history** = regression patterns;
-**open** = verified gap.
+**current** = 2026-09-18 verified (HEAD `2e1e1549`); **fixed history** =
+regression patterns; **open** = verified gap.
 
-**Composition root**: `cmd/archied/main.go`. **Core NATS request/reply**: direct
-subject + reply inbox. **JetStream**: persisted stream `ARCHIE_TASKS`.
+**Composition root**: `cmd/archied/main.go` → `internal/app/archied.Run()`;
+wiring lives in `internal/app/archied/bootstrap.go`. **Core NATS
+request/reply**: direct subject + reply inbox. **JetStream**: persisted stream
+`ARCHIE_TASKS`. **State Store**: gRPC (`internal/infrastructure/staterpc`), not
+NATS.
 **Environment failure**: test/process cannot use host resource (listener, tmp,
 Docker). **Code regression**: behavior fails where prerequisites available.
 
@@ -29,7 +32,7 @@ Use this symptom index:
 
 | Symptom | First boundary | Go to |
 |---|---|---|
-| `Run() = "\n"` in `TestRunWrapsExternalCommand` | Skill-script test command shape | Current known regression |
+| `Run() = "\n"` in `TestRunWrapsExternalCommand` | Skill-script test command shape | Fixed history — passes since 2026-09-16 |
 | Embedded NATS panics before a test assertion | Listener permission | Test environment |
 | `nats: no responders available for request` | Core NATS subscription | NATS request/reply |
 | Agent reply timeout | JetStream request, inbox, or worker | NATS request/reply |
@@ -68,21 +71,19 @@ repository-local mitigation. `worktree.Manager.setIdentity` pins
 GIT_CONFIG_GLOBAL=/dev/null go test ./internal/worktree -count=1
 ```
 
-## Confirm the current known regression
+## Confirm the skill-script regression stays fixed
 
-As of 2026-07-28:
+The `TestRunWrapsExternalCommand` failure (`Run() = "\n"`) was a test bug, not
+a product bug: `exec.CommandContext(ctx, "sh", "-c", "echo", "wrapped")`
+passes `wrapped` as shell `$0`, so only `echo` ran. It failed from commit
+`308c199` and **passes as of 2026-09-16**. Re-run it to confirm the fix has not
+regressed; a failure now is a new defect, not this one.
 
 ```bash
 env GOTMPDIR=/tmp GOCACHE=/tmp/archie-skillscript-gocache \
   GIT_CONFIG_GLOBAL=/dev/null go test ./internal/skillscript \
   -run '^TestRunWrapsExternalCommand$' -count=1 -v
 ```
-
-Expected current failure: `Run() = "\n"`. The test constructs
-`exec.CommandContext(ctx, "sh", "-c", "echo", "wrapped")`. For `sh -c`, the
-argument after the command string becomes shell `$0`; therefore the command
-string is only `echo`, which prints a newline. This is a test regression from
-commit `308c199`, not proof that Yaegi cannot run external commands.
 
 ## Triage NATS request/reply and JetStream
 
@@ -91,7 +92,7 @@ commit `308c199`, not proof that Yaegi cannot run external commands.
 | Task discovery | `archie.task.>` in `ARCHIE_TASKS` | Work-queue retention; daemon durable `archie-daemon`; max deliver 3 |
 | Per-stage agent request | `archie.agent.<task>.request` | Reply inbox in `X-Archie-Reply`; wall-clock budget or 30m |
 | Full task handoff | `archie.taskrun.<task-id>` | Core request/reply; no-responder retry 20s every 250ms |
-| Store RPC | `archie.store.update`, `.transition` | Client timeout 60s composed by `internal/app/agentworker/worker.go` through the infrastructure transport |
+| Store RPC | gRPC State Store (`internal/infrastructure/staterpc`) | Client timeout 60s (`rpcTimeout` in `internal/app/agentworker/worker.go`); task-scoped grants for Update/Transition/InsertEvent only |
 | Forge RPC | `archie.forge.*` | Error travels in a JSON envelope |
 | Worktree RPC | `archie.worktree.prepare`, `.push` | Server default handler bound 15m |
 | Discovery dedup | `Nats-Msg-Id: archie:<owner>/<repo>/<issue>` | JetStream duplicate window 2m |
@@ -111,31 +112,33 @@ explicit `containers.network` plus warning logs now fence that path.
 
 Check semantics: republishing same owner/repo/issue within 2m is dedup'd; reply
 inbox auto-unsubscribes after one response; `Client.Fetch` must inspect
-`batch.Error()`; `agentexec.runStages` returns envelope and nil error for stage
-failure.
+`batch.Error()`; an empty poll reports `eventbus.ErrNoMessage` rather than
+`(nil, nil)`.
 
 ```bash
 env GOTMPDIR=/tmp GOCACHE=/tmp/archie-nats-unit-gocache \
-  go test ./internal/nats -run '^TestFetchPropagatesBatchError' -count=1 -v
+  go test ./internal/infrastructure/eventbus/nats -run 'TestPublishUniqueSuppressesDuplicateKeyOnWorkQueueStream' -count=1 -v
 env GOTMPDIR=/tmp GOCACHE=/tmp/archie-agent-unit-gocache \
-  go test ./internal/agentexec -run '^TestHandleMessage' -count=1 -v
+  go test ./internal/agentexec -run '^TestToolSetHandler' -count=1 -v
 ```
 
 ## Trace configuration from source to behavior
 
-Trace: `cmd/archied` reads `-config`/`-config-overlay` → `config.LoadOverlay`
+Trace: `cmd/archied` (`internal/app/archied/bootstrap.go`) reads
+`-config`/`-config-overlay` → `configuration.New(log)` + `Loader.Resolve`
 decodes, `finalize` defaults/validates → secrets resolve → composition root
 constructs service → Compose/subprocess/`containerEnv` propagate → consumer.
 
 ```bash
-rg -n 'config\.LoadOverlay|config\.LoadDir' cmd/archied internal/config
+rg -n 'Loader\.(Resolve|Overlay|Dir)|configuration\.' internal/app/archied internal/infrastructure/configuration
 env GOTMPDIR=/tmp GOCACHE=/tmp/archie-config-gocache \
-  go test ./internal/config \
-  -run 'Test(LoadOverlay|LoadForgeToken|DockerConfig)' -count=1 -v
+  go test ./internal/infrastructure/configuration \
+  -run 'Test(ResolveSelectsFileFormatsAndDirectories|LoadForgeTokenEnvBackwardCompat)' -count=1 -v
 ```
 
-`config.LoadDir` is test-only; a YAML field decoding correctly without
-composition-root read is a wiring gap, not a parser bug.
+The `config.Load`/`config.LoadDir` helpers are gone; decoding is
+`Loader`-based. A YAML field decoding correctly without a composition-root read
+is a wiring gap, not a parser bug.
 
 For environment failures:
 - The host supervisor supplies the daemon environment; inspect its unit or
@@ -188,7 +191,7 @@ bot token. Empty `allowed_user_ids` denies everyone.
 ```bash
 env GOTMPDIR=/tmp GOCACHE=/tmp/archie-telegram-gocache \
   go test ./internal/channels/telegram \
-  -run 'Test(SenderAllowlistFailsClosed|IsSenderAllowed|PublishedCommandsMatchExecutableCommandSurface)$' \
+  -run 'Test(SenderAllowlistFailsClosed|IsSenderAllowed|SessionManagementCommandsArePublished)$' \
   -count=1 -v
 ```
 
@@ -197,9 +200,12 @@ env GOTMPDIR=/tmp GOCACHE=/tmp/archie-telegram-gocache \
 ## Diagnose state, events, containers, and optional features
 
 ### SQLite and transitions
-`internal/store.Store.Transition` owns task state changes and transition history.
+`internal/store.Store.Transition` owns task state changes and transition
+history: it guards on `from` (`WHERE id=? AND status=?`, returning
+`store.ErrStaleTransition`) and writes status plus history in one transaction.
 When state is surprising: read `TaskByID` before/after caller; trace every
-`Transition`, `Requeue`, `RecoverStale`, `Update`.
+`Transition`, `Requeue`, `RecoverStale`, `Update` — and remember the daemon
+exposes these over the gRPC State Store, not NATS.
 
 ```bash
 env GOTMPDIR=/tmp GOCACHE=/tmp/archie-state-gocache go test ./internal/store -count=1
@@ -222,4 +228,4 @@ root-identity-bound; `SubprocessRunner` expects stdin JSON protocol.
 | Invalid MCP config | Warn and continue |
 | Skill catalog | Warn, continue without tool |
 | Worktree augmentation | Log error, use startup registry |
-| Workspace indexing | **Open:** no production `indexing.NewManager` call |
+| Workspace indexing | **Open:** `indexing.NewManager` exists but has no production caller in `internal/app/archied` |

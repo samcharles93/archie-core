@@ -6,10 +6,11 @@ description: "Trace Archie behavior and blast radius through Go source, types, s
 # Discover the Archie codebase
 
 Use evidence from the current checkout to explain a behavior before changing it.
-Volatile tool facts below were verified on **2026-07-28**.
+Volatile tool facts below were verified on **2026-09-18**.
 
-**Composition roots**: `cmd/archied/main.go` (legacy wiring) and
-`internal/app/agentworker` (invoked by `cmd/archie-agent/main.go`).
+**Composition roots**: `cmd/archied/main.go` (thin dispatcher) →
+`internal/app/archied.Run()`, and `internal/app/agentworker` (invoked by
+`cmd/archie-agent/main.go`). Do not treat `cmd/*` as the wiring site.
 **Production wiring**: a path selected by a shipped entrypoint — not a
 constructor, decoder, or passing unit test. **State owner**: component with
 authority to validate and persist a state transition.
@@ -21,8 +22,9 @@ go version; go env GOMOD GOWORK GOOS GOARCH
 gopls version; golangci-lint version; staticcheck -version
 ```
 
-As of 2026-07-28: Go 1.26.5, gopls 0.23.0, golangci-lint 2.12.2,
-staticcheck 2026.1. Use `gopls call_hierarchy` (no `go tool callgraph`).
+As of 2026-09-18: Go 1.27.0, gopls 0.23.0, golangci-lint 2.13.2,
+staticcheck 2026.2.1. Use `gopls call_hierarchy` (no `go tool callgraph`;
+`go tool` lists only asm, cgo, compile, cover, fix, link, preprofile, vet).
 
 Writable caches when defaults are read-only:
 
@@ -63,12 +65,12 @@ Start at these verified anchors:
 
 | Concern | Current anchor |
 |---|---|
-| Resident daemon | `cmd/archied/main.go` → `run()` → `daemon.Daemon` |
+| Resident daemon | `cmd/archied/main.go` → `internal/app/archied.Run()` (`internal/app/archied/main.go`) → `daemon.Daemon` |
 | Sandboxed worker | `cmd/archie-agent/main.go` → `internal/app/agentworker/`; NATS boundary in `internal/infrastructure/agenttransport/nats/` |
-| Task orchestration | `internal/daemon/daemon.go`, `internal/workflow/` |
-| Task contracts and SQLite | `internal/store/interface.go`, `internal/store/` |
-| Production task persistence | `internal/store/`; `store.Open` in `cmd/archied/main.go` |
-| RPC split | `internal/{nats,taskrun,natsrpc,storerpc,forgerpc,worktreerpc}/` |
+| Task orchestration | `internal/daemon/daemon.go`, `internal/domain/workflow/` |
+| Task contracts | `internal/domain/storecontract/storecontract.go` (`TaskStore`); `internal/store/interface.go` holds compatibility aliases only |
+| Production task persistence | `internal/store/`; `openProductionTaskStore` reached via `internal/app/archied/state_store.go` |
+| RPC split | `internal/{taskrun,natsrpc,forgerpc,worktreerpc}/` plus `internal/infrastructure/staterpc/` (gRPC State Store) |
 | Chat and channels | `internal/gateway/`, `internal/channels/` |
 | Configuration | `internal/config/`, `internal/infrastructure/configuration/`, `config.example.toml`, `deployments/*.toml` |
 | Target map | `docs/prds/01-project-management.md` and linked `docs/architecture/*.md` |
@@ -80,7 +82,7 @@ Start at these verified anchors:
 ```sh
 go list -f '{{.ImportPath}}|go={{join .GoFiles ","}}|tests={{join .TestGoFiles ","}}' ./internal/store
 go list -json ./internal/store
-.claude/skills/archie-codebase-discovery/scripts/package-edges.sh ./internal/...
+.agents/skills/archie-codebase-discovery/scripts/package-edges.sh ./internal/...
 ```
 
 ### Resolve symbols with gopls
@@ -88,20 +90,20 @@ go list -json ./internal/store
 1-indexed `file:line:column`:
 
 ```sh
-gopls symbols internal/store/interface.go
-gopls definition cmd/archied/main.go:154:18
-gopls references -d internal/store/interface.go:25:2
-gopls implementation internal/store/interface.go:16:6
-gopls call_hierarchy internal/store/interface.go:25:2
-go doc ./internal/store.TaskStore
+gopls symbols internal/domain/storecontract/storecontract.go
+gopls definition cmd/archied/main.go:27:14
+gopls references -d internal/domain/storecontract/storecontract.go:33:2
+gopls implementation internal/domain/storecontract/storecontract.go:33:2
+gopls call_hierarchy internal/domain/storecontract/storecontract.go:33:2
+go doc ./internal/domain/storecontract.TaskStore
 go test ./internal/store -list '.'
 ```
 
 ### Generate AST candidates for construction
 
 ```sh
-.claude/skills/archie-codebase-discovery/scripts/scan-go-type-syntax.sh Daemon .
-.claude/skills/archie-codebase-discovery/scripts/scan-go-type-syntax.sh -tests Task .
+.agents/skills/archie-codebase-discovery/scripts/scan-go-type-syntax.sh Daemon .
+.agents/skills/archie-codebase-discovery/scripts/scan-go-type-syntax.sh -tests Task .
 ```
 
 Confirms candidates with `gopls definition` or `gopls references`. Pass
@@ -154,7 +156,7 @@ Use `gopls references` on constructor and type.
 ### Prove package dependency direction
 
 ```sh
-.claude/skills/archie-codebase-discovery/scripts/package-edges.sh ./internal/...
+.agents/skills/archie-codebase-discovery/scripts/package-edges.sh ./internal/...
 go list -deps -json <pattern>
 ```
 
@@ -165,16 +167,20 @@ composition-root read → concrete component → observable behavior`.
 
 ```sh
 rg -n 'toml:"|yaml:"|json:"' internal/config
-rg -n 'LoadOverlay|LoadDir|finalize|ForTask|ToConfig' internal/config cmd
+rg -n 'Resolve|Overlay|Dir|finalize|ForTask|ToConfig' internal/infrastructure/configuration internal/app/archied
 gopls references -d <exact-field>
 ```
 
-As of 2026-07-28 `cmd/archied` calls `config.LoadOverlay`; `config.LoadDir` is
-test-only.
+Decoding lives in `internal/infrastructure/configuration`, not `internal/config`.
+`configuration.New(log)` returns a `Loader`; the composition root in
+`internal/app/archied/bootstrap.go` calls `Loader.Resolve` (with `Loader.Overlay`
+and `Loader.Dir` for overlay/`conf.d` inputs). There is no `config.Load` or
+`config.LoadDir`.
 
 ### Prove production composition
 
-1. Start at `cmd/archied/main.go:run`.
+1. Start at `internal/app/archied/main.go` (`Run`), entered from
+   `cmd/archied/main.go`.
 2. Record config condition per branch.
 3. Follow concrete construction into `daemon.Daemon` and gateway start.
 4. For container/NATS behavior, trace `cmd/archie-agent/main.go` into
@@ -185,10 +191,11 @@ test-only.
 
 ### Trace SQLite persistence
 
-Treat `internal/store` as the application contract and production adapter.
+Treat `internal/domain/storecontract` as the application contract and
+`internal/store` as the production SQLite adapter behind it.
 
 ```sh
-gopls implementation internal/store/interface.go:16:6
+gopls implementation internal/domain/storecontract/storecontract.go:33:2
 rg -n 'CREATE TABLE|CREATE INDEX|QueryContext|ExecContext|BeginTx' internal/store
 ```
 

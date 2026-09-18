@@ -19,7 +19,7 @@ script_dir=$(CDPATH= cd "$(dirname "$0")" && pwd)
 repo_root=$(CDPATH= cd "$script_dir/../../../.." && pwd)
 module_relative=${1:-.}
 module_root="$repo_root/$module_relative"
-edge_helper="$repo_root/.claude/skills/archie-codebase-discovery/scripts/package-edges.sh"
+edge_helper="$repo_root/.agents/skills/archie-codebase-discovery/scripts/package-edges.sh"
 
 if [ ! -f "$module_root/go.mod" ]; then
 	printf 'package-shape: no go.mod at %s\n' "$module_root" >&2

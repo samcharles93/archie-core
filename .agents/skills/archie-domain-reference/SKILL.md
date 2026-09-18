@@ -10,8 +10,12 @@ domain meaning with its owner, and mark migration state explicitly.
 
 ## Classify every statement
 
-As of 2026-07-28, Archie is between technical-package implementation and
-approved domain-oriented target. Never blend the two.
+As of 2026-09-18, Archie is partway through the domain migration: some approved
+target packages now exist and are production-wired (`internal/domain/messaging`,
+`internal/domain/workflow`, `internal/domain/workintake`, `internal/app`,
+`internal/eventbus`, `internal/infrastructure`), while others remain target-only
+(`internal/domain/agent`, `internal/domain/identity`, `internal/policy`). Never
+blend the two.
 
 | Label | Meaning | Evidence rule |
 | --- | --- | --- |
@@ -23,7 +27,7 @@ approved domain-oriented target. Never blend the two.
 Start design notes with status sentences:
 
 ```text
-CURRENT: store.Task persists one mutable Stage string.
+CURRENT: task.Task persists one mutable Stage string.
 APPROVED TARGET: WorkflowExecution records StepExecution history.
 OPEN: the exact schema and Go API for that history.
 ```
@@ -61,10 +65,10 @@ rg -n 'type IdentityConfig|type IdentityRunner|Identity string|BotUser string' i
 | **Adapter** | Boundary code translating external payloads into owned contracts. | **TARGET RULE:** infrastructure implements domain-owned interfaces. |
 | **Gateway** | Current technical interface/router and package — not approved domain vocabulary. | **CURRENT ONLY:** `internal/gateway`, `internal/channels`. |
 | **ChannelBindingID** | Stable reference connecting Agent to channel binding. | **APPROVED TARGET INPUT:** part of Conversation identity. |
-| **Message** | Immutable application record with MessageID and typed content. Platform IDs are external correlations. | **TARGET:** Messaging. **CURRENT:** `gateway.Message`; richer `MessageEvent` exists beside it. |
-| **Conversation** | AgentID + UserIdentityID + ChannelBindingID + ExternalConversationID + ThreadID. | **CONFIRMED TARGET:** Messaging. **CURRENT:** `gateway.SessionSource` lacks canonical Agent/user IDs. |
+| **Message** | Immutable application record with MessageID and typed content. Platform IDs are external correlations. | **CURRENT:** `internal/domain/messaging.Message`/`MessageID`; `gateway.MessageEvent` is a richer event type beside it. |
+| **Conversation** | AgentID + UserIdentityID + ChannelBindingID + ExternalConversationID + ThreadID. | **CONFIRMED TARGET, partly current:** `internal/domain/messaging.Conversation`/`ConversationID` exist; the gateway session store still lacks canonical Agent/user IDs. |
 | **Conversation branch** | Child conversation from one immutable parent message. | **CONFIRMED TARGET.** No current implementation. |
-| **Work Intake** | Admission, validation, routing boundary between interaction and durable workflow-backed work. | **CONFIRMED TARGET:** `internal/domain/workintake`. Does not exist as current package. |
+| **Work Intake** | Admission, validation, routing boundary between interaction and durable workflow-backed work. | **CONFIRMED TARGET, current package:** `internal/domain/workintake` exists. |
 | **Accepted work request** | Channel-neutral handoff after Work Intake accepts proposed outcome. | **TARGET HANDOFF:** Agent System consumes it, selects Workflow version, creates WorkflowExecution. |
 
 Do not equate an inbound Message with work. An Agent may answer, use
@@ -80,10 +84,10 @@ external payload -> channel adapter -> canonical Message and Conversation
 ```
 
 Do not describe current `/spawn` as this target. It directly creates a
-`store.Task` with synthetic forge issue number.
+`task.Task` with synthetic forge issue number.
 
 ```bash
-rg -n 'type Message struct|type MessageEvent struct|ToLegacy|type SessionSource|CreateTask|EnqueueChatTask|synthetic' internal/gateway internal/store cmd/archied
+rg -n 'type Message struct|type MessageEvent struct|ToLegacy|type Conversation struct|CreateTask|EnqueueChatTask|synthetic' internal/domain/messaging internal/gateway internal/store internal/app/archied
 ```
 
 ## Use the canonical execution vocabulary
@@ -91,10 +95,10 @@ rg -n 'type Message struct|type MessageEvent struct|ToLegacy|type SessionSource|
 | Term | Archie meaning | Current representation |
 | --- | --- | --- |
 | **Workflow** | Reusable, versioned definition. | `workflow.Workflow` is named `[]Stage` without durable version model. |
-| **WorkflowExecution** | One durable execution of one Workflow version. | `store.Task` is migration baseline. |
+| **WorkflowExecution** | One durable execution of one Workflow version. | `task.Task` is migration baseline. |
 | **WorkflowStep** | One defined operation. | `workflow.Stage` is closest definition. |
-| **StepExecution** | Durable record of one step's execution and outcome. | Missing; `store.Task.Stage` is one mutable string. |
-| **Attempt** | Retry within same WorkflowExecution. | `Task.Attempt`/`RetryCount` must become explicit attempt history. |
+| **StepExecution** | Durable record of one step's execution and outcome. | Missing; `task.Task.Stage` is one mutable string. |
+| **Attempt** | Retry within same WorkflowExecution. | `task.Task.Attempt`/`RetryCount` must become explicit attempt history. |
 | **Agent step execution** | One bounded model-backed WorkflowStep invocation. | `agentexec.Request`/`Result` correlate TaskID, Attempt, Stage, protocol version. |
 
 Use `WorkflowExecution` in domain contracts, architecture, generated reference.
@@ -103,7 +107,7 @@ informal prose.
 
 ### Interpret the current lifecycle exactly
 
-**CURRENT** `store.Task` states:
+**CURRENT** `task.Task` states:
 
 ```text
 queued -> running
@@ -114,12 +118,13 @@ pr_open -> merged | rejected
 running after crash -> queued
 ```
 
-Do not claim enforced. `Store.Transition` writes new status without comparing
-`from`, inserts history separately. `internal/gateway/tasks.go` duplicates
-status strings locally.
+Do not claim enforced. `Store.Transition` now guards on `from`
+(`WHERE id=? AND status=?` → `store.ErrStaleTransition`) and writes status plus
+history in one transaction; the sentinel crosses the State Store gRPC boundary.
+See `internal/store/store.go`.
 
 ```bash
-rg -n 'Status[A-Za-z]+|func \(s \*Store\) Transition|func \(s \*Store\) Requeue|RecoverStale' internal/store internal/gateway
+rg -n 'Status[A-Za-z]+|func \(s \*Store\) Transition|func \(s \*Store\) Requeue|RecoverStale' internal/store internal/domain/workflow internal/gateway
 ```
 
 ## Keep memory scope separate from conversation scope
@@ -154,7 +159,7 @@ rg -n 'type MemoryProvider|Initialize\(|type Config struct|MEMORY.md|USER.md|Age
 Give plugin only narrow typed registrars and explicitly supplied contracts.
 
 ```bash
-go test ./internal/plugin -run 'Test(GenericPluginContractRemainsMetadataOnly|EveryEngineInterfaceHasTypedCapabilityAndFamilyOwner)' -count=1
+go test ./internal/plugin -run 'Test(EngineFamilyInspectionRejectsInvalidShapes|PluginInterfaceExists)' -count=1
 ```
 
 ## Distinguish ownership and boundary terms
@@ -164,14 +169,16 @@ go test ./internal/plugin -run 'Test(GenericPluginContractRemainsMetadataOnly|Ev
 | **Domain** | Own one cohesive responsibility: vocabulary, state, rules, operations, commands, events, policies, runtime settings, required service contracts. |
 | **Command** | Request an action. Receiving domain owns contract and decides result. |
 | **Domain event** | Record something that happened. Publishing domain owns schema. |
-| **Event bus** | Broker-neutral delivery/lifecycle contract. `internal/eventbus` is approved target, not current. |
+| **Event bus** | Broker-neutral delivery/lifecycle contract. `internal/eventbus` exists and is production-wired. |
 | **Observability event** | `internal/events.Event` projection input. Bounded in-process bus may drop. Not authoritative state. |
 | **Policy** | Typed rule evaluated through shared mechanics. Consuming domain owns vocabulary. |
 | **Infrastructure** | Implements domain-owned ports, translates DBs, brokers, SDKs, files, containers. |
-| **Application composition** | Chooses implementations, translates config, connects contracts, orders startup/shutdown. Target: `internal/app`; current wiring in `cmd/archied`. |
+| **Application composition** | Chooses implementations, translates config, connects contracts, orders startup/shutdown. Current and target: `internal/app`; `cmd/*` stays process-input-only. |
 
-As of 2026-07-28, `internal/domain`, `internal/eventbus`, `internal/policy`,
-`internal/infrastructure`, `internal/app` do not exist. Target paths only.
+As of 2026-09-18, `internal/domain`, `internal/eventbus`,
+`internal/infrastructure`, and `internal/app` exist; only `internal/policy`
+does not. `internal/domain/agent` and `internal/domain/identity` are still
+target-only.
 
 ```bash
 for p in internal/domain internal/eventbus internal/policy internal/infrastructure internal/app; do test -d "$p" && echo "$p CURRENT" || echo "$p TARGET-ONLY"; done
@@ -196,15 +203,15 @@ Model never runs git directly. Worktree operations are daemon-owned.
 | `config.IdentityConfig.Name` | Canonical IdentityID plus separate bindings | Do not preserve mutable display name as ID. |
 | `config.IdentityConfig.BotUser` | Forge/Git or channel external binding | Not Conversation or Agent identity. |
 | `daemon.IdentityRunner` | Composition of identity-correlated capabilities | Currently service bundle, not Identity aggregate. |
-| `gateway.Message`, `MessageEvent` | Canonical Messaging Message | Choose one immutable typed contract. |
-| `gateway.SessionContext` | Conversation metadata | Add canonical Agent/user/binding ownership. |
+| `gateway.MessageEvent` | Canonical Messaging Message | Choose one immutable typed contract; `internal/domain/messaging.Message` is the target. |
+| gateway session context | Conversation metadata | Add canonical Agent/user/binding ownership. |
 | forge `Issue` or future Jira item | Channel message or external artifact | Preserve native reference in adapter. |
 | gateway `/spawn` and `TaskCreator` | Proposed/accepted work handoff | Work Intake admits; Agent System creates execution. |
-| `store.Task` | WorkflowExecution | Preserve every field intentionally. |
+| `store.Task` | WorkflowExecution | Preserve every field intentionally; the type now lives at `internal/domain/workflow/task.Task`. |
 | `workflow.Workflow` | Versioned Workflow definition | Add identity/version ownership before parity. |
 | `workflow.Stage` | WorkflowStep definition | A definition is not execution history. |
 | mutable `Task.Stage` | Derived position plus StepExecution records | Deletion requires proven history parity. |
-| `Task.Attempt`, `RetryCount` | Attempt history and retry evidence | Keep worker delivery retries distinct. |
+| `task.Task.Attempt`, `RetryCount` | Attempt history and retry evidence | Keep worker delivery retries distinct. |
 | `workflow.TaskContext` | Execution state plus narrow step ports | Remove global config/service bag. |
 | `events.Event` and `Bus` | Projections fed by authoritative domain events | Current drops acceptable for observability, not state. |
 | `cmd/archied` wiring | `internal/app/archied` composition | Keep `cmd/*` process-input-only. |

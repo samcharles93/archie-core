@@ -93,11 +93,12 @@ the survey, not about the tree.
 
 ## The two gaps this was aimed at
 
-**1. `docsgen check` is documented and does not exist.** Still open, filed as
-`archie-core-5gzx`. `generated-documentation.md:118-121` advertises
-`docsgen data|asyncapi|all|check`; `tools/docsgen/main.go` has exactly two flags
-and always writes, so the documented check mode cannot run and line 331's
-"generated drift is currently ungated" stands.
+**1. `docsgen check` is documented and does not exist.** Closed by issue #855.
+(issue #855 / `archie-core-5gzx`). `tools/docsgen` now has a `check` subcommand
+and `task docs:check`, wired into `task check`: it generates into a temporary
+directory, compares against the committed artifact, names the authoritative Go
+definition behind each mismatch, and never writes to the working tree.
+`docsgen data` and `docsgen asyncapi` remain target-only.
 
 **2. The dashboard's client was not centralised while its own docstring claimed
 it was.** Now closed by `18e8f8f`. The docstring said "Single place that knows how
