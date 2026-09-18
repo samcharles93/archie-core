@@ -10,76 +10,48 @@ import (
 	"github.com/samcharles93/archie-core/internal/gateway"
 )
 
-// TestBuildTelegramRouterWiresRestartCallback drives the same Router
-// composition path setupTelegramGateway uses and pins that the Telegram
-// adapter's restart callback is wired into Router.Restart. The daemon used to
-// capture tg.RequestRestart into a boot field and never read it, leaving
-// Router.Restart nil so /restart always answered "not configured".
-func TestBuildTelegramRouterWiresRestartCallback(t *testing.T) {
-	ctx := t.Context()
-	sessions := gateway.NewSessionStoreMemory()
-	t.Cleanup(func() { _ = sessions.Close() })
-
-	tg := telegram.New("test-token", nil, slog.Default())
-	router := buildTelegramRouter(ctx, tg, telegramSetup{
-		Cfg:          config.NewHolder(config.Config{}),
-		SessionStore: sessions,
-		Log:          slog.Default(),
-	}, sessions)
-
-	if router.Restart == nil {
-		t.Fatal("router.Restart = nil, want the telegram adapter restart callback wired into the router")
+// TestBuildTelegramRouterLeavesRestartUnwired pins that the Telegram router
+// never wires Router.Restart, regardless of whether a Telegram adapter is in
+// scope. Telegram's /restart is served by a dedicated exact-match handler
+// (registerCommandHandlers → restartHandler), which is the only path that
+// reaches RequestRestart; the router's own handleRestartAdapter is never
+// reached on Telegram, so wiring Router.Restart here would be unreachable in
+// production. It must stay nil and the router's /restart reply must keep
+// reporting not-configured.
+func TestBuildTelegramRouterLeavesRestartUnwired(t *testing.T) {
+	tests := []struct {
+		name string
+		tg   *telegram.Gateway
+	}{
+		{name: "telegram adapter present", tg: telegram.New("test-token", nil, slog.Default())},
+		{name: "no telegram adapter", tg: nil},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			sessions := gateway.NewSessionStoreMemory()
+			t.Cleanup(func() { _ = sessions.Close() })
 
-	// Invoking the router's restart path must call the adapter's restart
-	// callback exactly once: the first call queues the scoped reload and
-	// returns nil; a second call is rejected because a restart is already
-	// in progress.
-	if err := router.Restart(ctx); err != nil {
-		t.Fatalf("router.Restart = %v, want nil (callback called exactly once)", err)
-	}
-	if err := router.Restart(ctx); err == nil {
-		t.Fatal("router.Restart second call = nil, want error: telegram gateway restart already in progress")
-	}
+			router := buildTelegramRouter(ctx, tt.tg, telegramSetup{
+				Cfg:          config.NewHolder(config.Config{}),
+				SessionStore: sessions,
+				Log:          slog.Default(),
+			}, sessions)
 
-	// The wired router must also surface the capability to the local chat
-	// snapshot, which is what the web UI's restart affordance reads.
-	adapter := &gateway.LocalChatAdapter{Router: router, Sessions: sessions}
-	snapshot, err := adapter.Snapshot(ctx)
-	if err != nil {
-		t.Fatalf("snapshot: %v", err)
-	}
-	if !snapshot.RestartAvailable {
-		t.Fatal("snapshot.RestartAvailable = false, want true when the restart callback is wired")
-	}
-}
+			if router.Restart != nil {
+				t.Fatalf("router.Restart = %T, want nil: Telegram /restart is served by restartHandler, not this router", router.Restart)
+			}
 
-// TestBuildTelegramRouterRestartUnconfigured pins the unchanged behaviour
-// when no Telegram adapter exists: there is no restart callback, so
-// Router.Restart stays nil and /restart still reports "not configured".
-func TestBuildTelegramRouterRestartUnconfigured(t *testing.T) {
-	ctx := t.Context()
-	sessions := gateway.NewSessionStoreMemory()
-	t.Cleanup(func() { _ = sessions.Close() })
-
-	router := buildTelegramRouter(ctx, nil, telegramSetup{
-		Cfg:          config.NewHolder(config.Config{}),
-		SessionStore: sessions,
-		Log:          slog.Default(),
-	}, sessions)
-
-	if router.Restart != nil {
-		t.Fatal("router.Restart = non-nil with no telegram adapter, want nil")
-	}
-
-	reply, err := router.Route(ctx, gateway.Inbound{Message: messaging.Message{
-		Role: messaging.RoleUser,
-		Text: "/restart",
-	}})
-	if err != nil {
-		t.Fatalf("Route(/restart) error = %v", err)
-	}
-	if reply != "Chat adapter restart is not configured." {
-		t.Fatalf("Route(/restart) = %q, want %q", reply, "Chat adapter restart is not configured.")
+			reply, err := router.Route(ctx, gateway.Inbound{Message: messaging.Message{
+				Role: messaging.RoleUser,
+				Text: "/restart",
+			}})
+			if err != nil {
+				t.Fatalf("Route(/restart) error = %v", err)
+			}
+			if reply != "Chat adapter restart is not configured." {
+				t.Fatalf("Route(/restart) = %q, want %q", reply, "Chat adapter restart is not configured.")
+			}
+		})
 	}
 }
