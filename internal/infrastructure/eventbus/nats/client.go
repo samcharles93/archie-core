@@ -59,13 +59,20 @@ func Connect(ctx context.Context, cfg Config, log *slog.Logger) (*Client, error)
 		return nil, fmt.Errorf("nats jetstream init: %w", err)
 	}
 
-	stream, err := js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
+	streamConfig := jetstream.StreamConfig{
 		Name:       cfg.StreamName,
 		Subjects:   cfg.Subjects,
 		Storage:    jetstream.FileStorage,
 		Retention:  *cfg.Retention,
 		Duplicates: cfg.DedupWindow,
-	})
+	}
+	// Limits are applied only when the composition explicitly sets them;
+	// leaving MaxAge nil keeps the stream unbounded exactly as before.
+	if cfg.MaxAge != nil {
+		streamConfig.MaxAge = *cfg.MaxAge
+	}
+
+	stream, err := js.CreateOrUpdateStream(ctx, streamConfig)
 	if err != nil {
 		return nil, fmt.Errorf("nats create stream %q: %w", cfg.StreamName, err)
 	}

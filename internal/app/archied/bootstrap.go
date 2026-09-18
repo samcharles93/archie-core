@@ -453,6 +453,15 @@ func (b *boot) setupObservability(ctx context.Context) {
 	go persistEvents(ctx, sink, b.stateStore, log)
 }
 
+// reactionStreamMaxAge bounds how long a reaction survives in the fan-out
+// stream before JetStream discards it. Reactions are producer-only wake
+// events (docs/prds/event-sources-and-reactions.md): a dropped reaction only
+// delays work until the next poll, never loses it, because the authoritative
+// state is re-read at pass time. One day therefore tolerates a consumer that
+// is down or lagging for a full maintenance window without letting
+// acknowledged reactions accumulate without bound.
+const reactionStreamMaxAge = 24 * time.Hour
+
 // connectNATS opens the NATS client. External mode dials cfg.NATS.URL;
 // embedded mode starts an in-process nats-server and dials it, so single-
 // process deployments get task distribution and reaction delivery without a
@@ -512,6 +521,10 @@ func (b *boot) connectNATS(ctx context.Context) error { //nolint:nestif // embed
 	// must see each one, so they get their own stream under LimitsPolicy
 	// rather than the work-queue policy ARCHIE_TASKS uses (which lets a
 	// second consumer on an overlapping filter silently receive nothing).
+	// LimitsPolicy retains every message until a limit is reached, so without
+	// a finite limit acknowledged reactions would accumulate forever; the
+	// MaxAge cap bounds that by time.
+	reactionMaxAge := reactionStreamMaxAge
 	reactionClient, err := nats.Connect(ctx, nats.Config{
 		URL:           url,
 		Token:         natsToken,
@@ -519,6 +532,7 @@ func (b *boot) connectNATS(ctx context.Context) error { //nolint:nestif // embed
 		Subjects:      []string{workintake.SubjectReactionWildcard},
 		FilterSubject: workintake.SubjectReactionWildcard,
 		Retention:     nats.FanOutRetention(),
+		MaxAge:        &reactionMaxAge,
 	}, log)
 	if err != nil {
 		log.Error("nats reaction stream connect failed", "err", err)

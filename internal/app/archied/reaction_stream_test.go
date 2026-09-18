@@ -13,15 +13,19 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 )
 
-// TestConnectNATSCreatesReactionStream pins the ARCHIE_REACTIONS stream the
-// daemon must provision alongside ARCHIE_TASKS. A publish to archie.reaction.*
-// must land in a fan-out (LimitsPolicy) stream: two consumers on overlapping
-// filter subjects both receive it. Under the WorkQueuePolicy ARCHIE_TASKS
-// keeps, the second consumer would silently receive nothing (the trap
-// documented in CLAUDE.md).
+// TestConnectNATSCreatesReactionStream pins the two JetStream streams the
+// daemon must provision alongside each other: ARCHIE_TASKS (work-queue task
+// distribution) and ARCHIE_REACTIONS (fan-out reaction delivery). Each case
+// asserts the ACTUAL stream configuration the embedded broker reports, not
+// just the Config struct that composed it.
 //
-// Before this stream existed the publish below failed with "no matching
-// stream" because connectNATS bound only archie.task.>.
+// ARCHIE_REACTIONS must be a LimitsPolicy stream so two consumers on
+// overlapping filter subjects both receive a reaction (the trap documented in
+// CLAUDE.md), and it must carry a finite retention limit so acknowledged
+// reactions do not accumulate without bound. ARCHIE_TASKS must remain a
+// WorkQueuePolicy stream with no age/count/byte limit: acked messages are
+// discarded, so its only bound is outstanding work, and imposing a limit
+// could silently drop undelivered tasks.
 func TestConnectNATSCreatesReactionStream(t *testing.T) {
 	b := &boot{
 		cfg: config.Config{
@@ -46,8 +50,59 @@ func TestConnectNATSCreatesReactionStream(t *testing.T) {
 		t.Fatalf("jetstream.New = %v", err)
 	}
 
-	// Criterion 1: a publish to archie.reaction.* lands in ARCHIE_REACTIONS.
-	// Before the stream existed this returned "no matching stream".
+	streamCases := []struct {
+		name       string
+		stream     string
+		retention  jetstream.RetentionPolicy
+		subjects   []string
+		wantMaxAge time.Duration
+	}{
+		{
+			name:       "reactions fan-out with finite retention",
+			stream:     "ARCHIE_REACTIONS",
+			retention:  jetstream.LimitsPolicy,
+			subjects:   []string{"archie.reaction.>"},
+			wantMaxAge: reactionStreamMaxAge,
+		},
+		{
+			name:      "tasks work-queue unchanged and unbounded",
+			stream:    "ARCHIE_TASKS",
+			retention: jetstream.WorkQueuePolicy,
+			subjects:  []string{"archie.task.>"},
+			// wantMaxAge zero asserts ARCHIE_TASKS stays unbounded by age.
+		},
+	}
+	for _, tc := range streamCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stream, err := js.Stream(t.Context(), tc.stream)
+			if err != nil {
+				t.Fatalf("js.Stream(%s) = %v", tc.stream, err)
+			}
+			info, err := stream.Info(t.Context())
+			if err != nil {
+				t.Fatalf("stream.Info(%s) = %v", tc.stream, err)
+			}
+			if info.Config.Retention != tc.retention {
+				t.Fatalf("%s retention = %v, want %v", tc.stream, info.Config.Retention, tc.retention)
+			}
+			for _, subject := range tc.subjects {
+				if !slices.Contains(info.Config.Subjects, subject) {
+					t.Errorf("%s subjects = %v, want to contain %s", tc.stream, info.Config.Subjects, subject)
+				}
+			}
+			if info.Config.MaxAge != tc.wantMaxAge {
+				t.Fatalf("%s MaxAge = %v, want %v", tc.stream, info.Config.MaxAge, tc.wantMaxAge)
+			}
+		})
+	}
+
+	// Fan-out proof: two consumers on the same overlapping filter subject
+	// both receive the one published message. A work-queue stream would
+	// deliver it to only one of them.
+	reactionStream, err := js.Stream(t.Context(), "ARCHIE_REACTIONS")
+	if err != nil {
+		t.Fatalf("js.Stream(ARCHIE_REACTIONS) = %v", err)
+	}
 	if _, err := js.PublishMsg(t.Context(), &natsio.Msg{
 		Subject: "archie.reaction.test",
 		Data:    []byte("x"),
@@ -55,27 +110,9 @@ func TestConnectNATSCreatesReactionStream(t *testing.T) {
 		t.Fatalf("publish to archie.reaction.* = %v, want it to land in ARCHIE_REACTIONS", err)
 	}
 
-	stream, err := js.Stream(t.Context(), "ARCHIE_REACTIONS")
-	if err != nil {
-		t.Fatalf("js.Stream(ARCHIE_REACTIONS) = %v", err)
-	}
-	info, err := stream.Info(t.Context())
-	if err != nil {
-		t.Fatalf("stream.Info = %v", err)
-	}
-	if info.Config.Retention != jetstream.LimitsPolicy {
-		t.Fatalf("ARCHIE_REACTIONS retention = %v, want %v (fan-out)", info.Config.Retention, jetstream.LimitsPolicy)
-	}
-	if !slices.Contains(info.Config.Subjects, "archie.reaction.>") {
-		t.Fatalf("ARCHIE_REACTIONS subjects = %v, want to contain archie.reaction.>", info.Config.Subjects)
-	}
-
-	// Criterion 2: two consumers on the same overlapping filter subject both
-	// receive the one published message. A work-queue stream would deliver it
-	// to only one of them.
 	got := make(chan string, 2)
 	fetch := func() {
-		consumer, err := stream.CreateOrUpdateConsumer(t.Context(), jetstream.ConsumerConfig{
+		consumer, err := reactionStream.CreateOrUpdateConsumer(t.Context(), jetstream.ConsumerConfig{
 			FilterSubject: "archie.reaction.>",
 			AckPolicy:     jetstream.AckExplicitPolicy,
 		})

@@ -63,6 +63,16 @@ type Config struct {
 	// (LimitsPolicy) is a valid explicit choice.
 	Retention *jetstream.RetentionPolicy
 
+	// MaxAge is the maximum age of messages the stream retains. Nil leaves
+	// the stream unbounded by age, which is correct for ARCHIE_TASKS: under
+	// WorkQueuePolicy acked messages are discarded, so its only bound is
+	// outstanding work. The pointer form distinguishes "unset" (nil,
+	// unbounded, today's behaviour) from an explicit zero (also unbounded,
+	// but expressed on purpose), exactly like Retention. The fan-out
+	// reaction stream sets a finite MaxAge so acknowledged reactions cannot
+	// accumulate forever.
+	MaxAge *time.Duration
+
 	// DedupWindow is how long JetStream remembers a Nats-Msg-Id, suppressing
 	// republished duplicates of the same issue within the window.
 	DedupWindow time.Duration
@@ -92,7 +102,7 @@ func (c Config) Validate() error {
 	if c.FilterSubject == "" {
 		return fmt.Errorf("%w: FilterSubject is required", ErrInvalidConfig)
 	}
-	if c.PollTimeout < 0 || c.AckWait < 0 || c.DedupWindow < 0 {
+	if c.PollTimeout < 0 || c.AckWait < 0 || c.DedupWindow < 0 || (c.MaxAge != nil && *c.MaxAge < 0) {
 		return fmt.Errorf("%w: durations must not be negative", ErrInvalidConfig)
 	}
 	if c.MaxDeliver < 0 {
