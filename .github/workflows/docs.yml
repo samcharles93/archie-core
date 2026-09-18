@@ -1,0 +1,43 @@
+name: docs
+
+# Verification only. Deployment happens from the Ansible control node
+# (vectislabs.automation docs_site role against nebula), so there is nothing
+# for CI to publish. What CI is for here is catching a docs change that will
+# not build before it reaches a deploy.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - run: pip install mkdocs-material
+
+      # --strict fails on a broken internal link or an unknown config key. A
+      # docs site that silently ships dead links is worse than one that refuses
+      # to ship.
+      - run: mkdocs build --strict
