@@ -8,6 +8,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -1337,84 +1338,130 @@ func TestRepoForPrefersOwningIdentityRepoList(t *testing.T) {
 }
 
 // sweepForge records invitation sweeps and push verifications so a test can
-// assert Startup sweeps each identity's own forge and repos. It embeds
-// testForge for the rest of the forge.Forge surface; those methods are
-// unreachable from Startup.
+// assert which forges Startup swept. It embeds testForge for the rest of the
+// forge.Forge surface; those methods are unreachable from Startup. Startup
+// sweeps every forge concurrently, so the recorders are mutex-guarded.
 type sweepForge struct {
 	testForge
+	mu            sync.Mutex
 	invitations   int
 	verifiedRepos []string
 }
 
 func (f *sweepForge) AcceptInvitations(context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.invitations++
 	return nil
 }
 
 func (f *sweepForge) VerifyPush(_ context.Context, owner, repo string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.verifiedRepos = append(f.verifiedRepos, owner+"/"+repo)
 	return nil
 }
 
-// TestStartupSweepsEveryIdentityForgeAndRepos pins the boot-time invitation
-// sweep and push verification in multi-identity mode. Startup used to sweep
-// only d.Forge and d.Cfg.Get().Repos, so per-identity invites were never
-// accepted and per-identity repos never push-verified: a task from one of
-// those repos would fail at dispatch instead of warning at boot. In
-// multi-identity mode Run takes runIdentities and never polls the root repo
-// list, so Startup must sweep each identity's own forge/repos and leave the
-// root forge/repos alone (single-identity mode keeps the original root sweep).
-func TestStartupSweepsEveryIdentityForgeAndRepos(t *testing.T) {
-	rootFg := &sweepForge{}
-	oneFg := &sweepForge{}
-	twoFg := &sweepForge{}
+func (f *sweepForge) snapshot() (int, []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.invitations, slices.Clone(f.verifiedRepos)
+}
 
-	d := &Daemon{
-		Cfg: config.NewHolder(config.Config{
-			Repos: []config.Repo{{Owner: "root", Name: "repo"}},
-		}),
-		Store: store.OpenTest(t),
-		Forge: rootFg,
-		Log:   slog.New(slog.DiscardHandler),
-		Identities: []*IdentityRunner{
-			{
-				Name:  "one",
-				Forge: oneFg,
-				Repos: []config.Repo{{Owner: "one", Name: "a"}},
+// TestStartupSweepsEveryConfiguredForge pins the boot-time invitation sweep
+// and push verification. Startup used to sweep only d.Forge and
+// d.Cfg.Get().Repos, so in multi-identity mode per-identity invites were
+// never accepted and per-identity repos never push-verified: a task from one
+// of those repos failed at dispatch instead of warning at boot.
+//
+// The root forge is swept in both modes. Run never polls the root repo list
+// in multi-identity mode, but dispatchBinding enqueues with an empty identity
+// against resolveBindingRepo's root-repo fallback, and forgeFor/repoFor
+// resolve an empty identity to the root forge and root repos, so root targets
+// stay reachable there.
+func TestStartupSweepsEveryConfiguredForge(t *testing.T) {
+	type want struct {
+		invitations int
+		repos       []string
+	}
+	tests := []struct {
+		name       string
+		rootRepos  []config.Repo
+		identities []config.Repo // one identity per entry, keyed by owner
+		wantRoot   want
+		wantIDs    []want
+	}{
+		{
+			name:      "single identity sweeps the root forge",
+			rootRepos: []config.Repo{{Owner: "root", Name: "repo"}},
+			wantRoot:  want{invitations: 1, repos: []string{"root/repo"}},
+		},
+		{
+			name:      "multi identity sweeps the root forge and every identity",
+			rootRepos: []config.Repo{{Owner: "root", Name: "repo"}},
+			identities: []config.Repo{
+				{Owner: "one", Name: "a"},
+				{Owner: "two", Name: "b"},
 			},
-			{
-				Name:  "two",
-				Forge: twoFg,
-				Repos: []config.Repo{{Owner: "two", Name: "b"}, {Owner: "two", Name: "c"}},
+			wantRoot: want{invitations: 1, repos: []string{"root/repo"}},
+			wantIDs: []want{
+				{invitations: 1, repos: []string{"one/a"}},
+				{invitations: 1, repos: []string{"two/b"}},
 			},
+		},
+		{
+			name:      "identity with no repos still gets its invitations swept",
+			rootRepos: nil,
+			identities: []config.Repo{
+				{Owner: "one", Name: ""},
+			},
+			wantRoot: want{invitations: 1},
+			wantIDs:  []want{{invitations: 1}},
 		},
 	}
 
-	if err := d.Startup(context.Background()); err != nil {
-		t.Fatalf("Startup: %v", err)
-	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rootFg := &sweepForge{}
+			idForges := make([]*sweepForge, len(tc.identities))
+			runners := make([]*IdentityRunner, len(tc.identities))
+			for i, r := range tc.identities {
+				idForges[i] = &sweepForge{}
+				runner := &IdentityRunner{Name: r.Owner, Forge: idForges[i]}
+				if r.Name != "" {
+					runner.Repos = []config.Repo{r}
+				}
+				runners[i] = runner
+			}
 
-	if oneFg.invitations != 1 {
-		t.Errorf("identity one AcceptInvitations = %d, want 1", oneFg.invitations)
-	}
-	if twoFg.invitations != 1 {
-		t.Errorf("identity two AcceptInvitations = %d, want 1", twoFg.invitations)
-	}
-	if got := oneFg.verifiedRepos; !slices.Equal(got, []string{"one/a"}) {
-		t.Errorf("identity one verified repos = %v, want [one/a]", got)
-	}
-	if got := twoFg.verifiedRepos; !slices.Equal(got, []string{"two/b", "two/c"}) {
-		t.Errorf("identity two verified repos = %v, want [two/b two/c]", got)
-	}
+			d := &Daemon{
+				Cfg:        config.NewHolder(config.Config{Repos: tc.rootRepos}),
+				Store:      store.OpenTest(t),
+				Forge:      rootFg,
+				Log:        slog.New(slog.DiscardHandler),
+				Identities: runners,
+			}
 
-	// The root forge/repo list must not be swept in multi-identity mode:
-	// Run never polls it there, so verifying it would warn about repos no
-	// task can target.
-	if rootFg.invitations != 0 {
-		t.Errorf("root AcceptInvitations = %d, want 0 (root forge is not polled in multi-identity mode)", rootFg.invitations)
+			if err := d.Startup(context.Background()); err != nil {
+				t.Fatalf("Startup: %v", err)
+			}
+
+			assertSwept(t, "root", rootFg, tc.wantRoot.invitations, tc.wantRoot.repos)
+			for i, w := range tc.wantIDs {
+				assertSwept(t, runners[i].Name, idForges[i], w.invitations, w.repos)
+			}
+		})
 	}
-	if len(rootFg.verifiedRepos) != 0 {
-		t.Errorf("root verified repos = %v, want none (root repo list is not polled in multi-identity mode)", rootFg.verifiedRepos)
+}
+
+func assertSwept(t *testing.T, name string, fg *sweepForge, wantInvitations int, wantRepos []string) {
+	t.Helper()
+	invitations, repos := fg.snapshot()
+	if invitations != wantInvitations {
+		t.Errorf("%s AcceptInvitations = %d, want %d", name, invitations, wantInvitations)
+	}
+	if !slices.Equal(repos, wantRepos) {
+		t.Errorf("%s verified repos = %v, want %v", name, repos, wantRepos)
 	}
 }
 

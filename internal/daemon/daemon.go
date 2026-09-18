@@ -260,42 +260,60 @@ func (d *Daemon) Startup(ctx context.Context) error {
 		d.Log.Info("re-queued tasks left running by a previous daemon", "count", n)
 	}
 
-	// Multi-identity mode sweeps each identity's own forge and repo list:
-	// Run takes runIdentities there and never polls the root forge/repos, so
-	// verifying the root repo list would warn about repos no task can target.
-	// Failures are isolated per identity (logged as warnings, never aborting
-	// a sibling's sweep), matching Run's failure-isolation intent.
-	if len(d.Identities) > 0 {
-		for _, id := range d.Identities {
-			d.sweepIdentity(ctx, id)
-		}
-		return nil
-	}
-
-	if err := d.Forge.AcceptInvitations(ctx); err != nil {
-		d.Log.Warn("invitation sweep failed", "err", err)
-	}
-	for _, r := range d.Cfg.Get().Repos {
-		if err := d.Forge.VerifyPush(ctx, r.Owner, r.Name); err != nil {
-			d.Log.Warn("repo not pushable  --  tasks from it will fail", "repo", r.FullName(), "err", err)
-		}
-	}
+	d.sweepAccess(ctx)
 	return nil
 }
 
-// sweepIdentity runs the boot-time invitation sweep and push verification
-// for one identity's own forge and repo list. Failures are logged as
-// warnings and never propagate, so one identity's forge outage cannot stop
-// another identity's boot sweep.
-func (d *Daemon) sweepIdentity(ctx context.Context, id *IdentityRunner) {
-	if err := id.Forge.AcceptInvitations(ctx); err != nil {
-		d.Log.Warn("invitation sweep failed", "identity", id.Name, "err", err)
-	}
-	for _, r := range id.Repos {
-		if err := id.Forge.VerifyPush(ctx, r.Owner, r.Name); err != nil {
-			d.Log.Warn("repo not pushable  --  tasks from it will fail", "identity", id.Name, "repo", r.FullName(), "err", err)
+// sweepTimeout bounds one forge's boot sweep. Startup gates the gateways and
+// the run loop, and a forge client carries no request deadline of its own, so
+// an unreachable host would otherwise hold boot open indefinitely.
+const sweepTimeout = 2 * time.Minute
+
+// sweepAccess accepts pending invitations and verifies push access for the
+// root forge and for every configured identity's forge.
+//
+// The root is swept even in multi-identity mode. Run takes runIdentities
+// there and never polls the root repo list, but polling is not the only way a
+// task reaches a repo: dispatchBinding enqueues with an empty identity and
+// resolveBindingRepo falls back to the root repo list, and forgeFor/repoFor
+// resolve an empty identity to the root forge and root repos. Root targets
+// stay reachable, so they stay worth verifying; a deployment with no root
+// forge configured gets the noop client, whose sweep is silent.
+//
+// Each forge is swept in its own goroutine under its own deadline, mirroring
+// Run's goroutine-per-identity isolation. Warnings alone isolate a failing
+// sibling; they do not isolate a stalled one.
+func (d *Daemon) sweepAccess(ctx context.Context) {
+	sweep := func(identity string, fg forge.Forge, repos []config.Repo) {
+		log := d.Log
+		if identity != "" {
+			log = log.With("identity", identity)
+		}
+		ctx, cancel := context.WithTimeout(ctx, sweepTimeout)
+		defer cancel()
+		if err := fg.AcceptInvitations(ctx); err != nil {
+			log.Warn("invitation sweep failed", "err", err)
+		}
+		for _, r := range repos {
+			if err := fg.VerifyPush(ctx, r.Owner, r.Name); err != nil {
+				log.Warn("repo not pushable  --  tasks from it will fail", "repo", r.FullName(), "err", err)
+			}
 		}
 	}
+
+	var wg sync.WaitGroup
+	wg.Add(1 + len(d.Identities))
+	go func() {
+		defer wg.Done()
+		sweep("", d.Forge, d.Cfg.Get().Repos)
+	}()
+	for _, id := range d.Identities {
+		go func() {
+			defer wg.Done()
+			sweep(id.Name, id.Forge, id.Repos)
+		}()
+	}
+	wg.Wait()
 }
 
 // Run polls until the context ends. When Identities is non-empty, each
