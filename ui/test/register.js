@@ -3,11 +3,9 @@ import { JSDOM } from "jsdom";
 
 register("./hooks.js", import.meta.url);
 
-// A real DOM for @testing-library/preact. The custom shim in shim.js covers
-// only the el() DOM-building primitives; the testing library needs full DOM
-// globals (document, window, getComputedStyle, MutationObserver, ...), which
-// jsdom provides. Applied here so every test file sees them before importing
-// source modules.
+// A real DOM for @testing-library/preact: full DOM globals (document, window,
+// getComputedStyle, MutationObserver, ...), which jsdom provides. Applied here
+// so every test file sees them before importing source modules.
 const dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost/" });
 const { window } = dom;
 

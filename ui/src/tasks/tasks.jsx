@@ -2,9 +2,9 @@ import { Fragment } from "preact";
 import { useState, useEffect, useRef } from "preact/hooks";
 import "./tasks.css";
 import { api, classifyActionError } from "../base/api.jsx";
-import { ago } from "../base/dom.jsx";
+import { ago } from "../base/format.jsx";
 import { Pill } from "../base/pill.jsx";
-import { statTile as renderStatTile } from "../base/statTile.jsx";
+import { StatTile } from "../base/statTile.jsx";
 import { taskRowA11y } from "./task-row.jsx";
 import { initialTaskFilter, taskMatchesStatus } from "./task-filters.jsx";
 import { describeTimelineEvent } from "./timeline-event.jsx";
@@ -23,15 +23,6 @@ export function prefersReducedMotion() {
 export function revealBehavior() {
   return prefersReducedMotion() ? "auto" : "smooth";
 }
-
-function StatTileNode(props) {
-  const ref = useRef(null);
-  useEffect(() => {
-    if (ref.current) ref.current.replaceChildren(renderStatTile(props));
-  }, [props]);
-  return <div ref={ref} style={{ display: 'contents' }} />;
-}
-
 
 // renderActionError distinguishes a refused action ("you cannot do that" --
 // bad input, a conflicting task state) from a broken one (5xx, network drop,
@@ -242,23 +233,23 @@ function TasksApp({ query }) {
 
     return (
       <div className="grid grid-4 task-summary">
-        <StatTileNode
+        <StatTile
           label="Total tasks"
           value={total}
           compare={total ? "Everything archied has ever picked up" : "No tasks yet"}
         />
-        <StatTileNode
+        <StatTile
           label="Working now"
           value={working}
           compare={total ? `${working} of ${total} in progress` : "Nothing running"}
         />
-        <StatTileNode
+        <StatTile
           label="Needs you"
           value={needsYou}
           compare={needsYou ? "Parked or awaiting a reply" : "Nothing is blocked"}
           goodDirection="down"
         />
-        <StatTileNode
+        <StatTile
           label="Delivered"
           value={delivered}
           compare={total ? `${Math.round((delivered / total) * 100)}% of all tasks` : "No tasks yet"}

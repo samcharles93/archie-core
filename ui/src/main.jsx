@@ -1,9 +1,9 @@
 import "./css/_main.css";
-import { render } from "preact";
+import { h, render } from "preact";
+import { useCallback, useEffect, useState } from "preact/hooks";
 import { api } from "./base/api.jsx";
 import { hiddenRoutes } from "./capabilities.jsx";
-import { el, mount } from "./base/dom.jsx";
-import { icon } from "./base/icons.jsx";
+import { Icon } from "./base/icons.jsx";
 import { dashboardPage } from "./dashboard/dashboard.jsx";
 import { tasksPage } from "./tasks/tasks.jsx";
 import { taskDetailPage } from "./tasks/task-detail.jsx";
@@ -17,7 +17,7 @@ import { capturesPage } from "./captures/captures.jsx";
 import { mappingsPage } from "./mappings/mappings.jsx";
 import { bindingsPage } from "./bindings/bindings.jsx";
 import { memoryPage } from "./memory/memory.jsx";
-import { chatPage } from "./chat/chat.jsx";
+import { ChatPage } from "./chat/chat.jsx";
 import { matchRoute, navPath } from "./routing.jsx";
 
 /**
@@ -44,7 +44,7 @@ import { matchRoute, navPath } from "./routing.jsx";
 //   :name    -- one captured path segment, e.g. /tasks/:id
 const routes = [
   { path: "/", label: "Dashboard", icon: "dashboard", view: dashboardPage },
-  { path: "/chat", label: "Chat", icon: "chat", view: chatPage, section: "chat" },
+  { path: "/chat", label: "Chat", icon: "chat", view: ChatPage, section: "chat" },
   { path: "/tasks", label: "Tasks", icon: "tasks", view: tasksPage },
   { path: "/tasks/:id", label: "Task run", view: taskDetailPage, nav: false, navPath: "/tasks" },
   { path: "/logs", label: "Logs", icon: "logs", view: logsPage, section: "logs" },
@@ -61,244 +61,293 @@ const routes = [
 
 const THEME_KEY = "archie.theme";
 
+function currentTheme() {
+  return localStorage.getItem(THEME_KEY) || "dark";
+}
+
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
   localStorage.setItem(THEME_KEY, theme);
 }
 
-function currentTheme() {
-  return localStorage.getItem(THEME_KEY) || "dark";
+// navEntries lists what gets a navigation item: a detail route (nav:false) is
+// addressed by URL but reached from its section, so it is not an entry.
+function navEntries(hidden) {
+  return routes.filter((route) => route.nav !== false && !hidden.includes(route.path));
 }
 
-function commandBar(onNavigate, onToggleChat) {
-  const items = new Map();
+function Topbar({ activePath, hidden, onNavigate, chatOpen, onToggleChat, theme, onToggleTheme }) {
+  const [searchOpen, setSearchOpen] = useState(false);
 
-  const nav = el(
-    "nav.nav",
-    ...[null].flatMap(() => [
-      ...routes
-        .filter((route) => route.nav !== false)
-        .map((route) => {
-          const item = el(
-            "a.nav-item",
-            {
-              href: `#${route.path}`,
-              onclick: (e) => {
-                if (route.soon) e.preventDefault();
-                else onNavigate(route.path);
-              },
-              "aria-disabled": route.soon || undefined,
-              title: route.soon ? "Coming soon" : undefined,
-            },
-            icon(route.icon),
-            el("span.nav-label", route.label),
-            route.soon && el("span.nav-soon", "soon"),
-          );
-          items.set(route.path, item);
-          return item;
-        }),
-    ]),
-  );
+  const closeSearch = () => setSearchOpen(false);
 
-  const themeBtn = el("button.icon-btn", {
-    title: "Toggle light and dark",
-    "aria-label": "Toggle light and dark",
-    onclick: () => {
-      applyTheme(currentTheme() === "dark" ? "light" : "dark");
-      mount(themeBtn, icon(currentTheme() === "dark" ? "moon" : "sun"));
-    },
-  });
-  mount(themeBtn, icon(currentTheme() === "dark" ? "moon" : "sun"));
-
-  // Search jumps between sections. It is deliberately not a data search: the
-  // sections own their own filtering, and a second search that means something
-  // different in each place is worse than none.
-  let searchWrap;
-  const closeMobileSearch = () => {
-    searchWrap?.classList.remove("is-open");
-    searchToggle.setAttribute("aria-expanded", "false");
+  const onSearchKeyDown = (event) => {
+    if (event.key === "Escape") {
+      // preventDefault so the window-level handler (chat drawer close) does not
+      // also fire: dismissing the search should not dismiss the drawer.
+      event.preventDefault();
+      closeSearch();
+      event.target.blur();
+      return;
+    }
+    if (event.key !== "Enter") return;
+    // Search jumps between sections. It is deliberately not a data search: the
+    // sections own their own filtering, and a second search that means
+    // something different in each place is worse than none.
+    const query = event.target.value.trim().toLowerCase();
+    const hit = routes.find(
+      (route) => route.nav !== false && !route.soon && route.label.toLowerCase().startsWith(query),
+    );
+    if (hit) {
+      onNavigate(hit.path);
+      event.target.value = "";
+      closeSearch();
+    }
   };
-  const searchToggle = el(
-    "button.icon-btn.mobile-search-toggle",
-    {
-      type: "button",
-      "aria-label": "Open Jump to navigation",
-      "aria-expanded": "false",
-      onclick: () => {
-        searchWrap.classList.add("is-open");
-        searchToggle.setAttribute("aria-expanded", "true");
-        search.focus();
-      },
-    },
-    icon("search", { size: 15 }),
-  );
-  const search = el("input", {
-    type: "search",
-    placeholder: "Jump to\u2026",
-    "aria-label": "Jump to a section",
-    onkeydown: (e) => {
-      if (e.key === "Escape") {
-        // preventDefault so the window-level handler (chat drawer close) does
-        // not also fire: dismissing the search should not dismiss the drawer.
-        e.preventDefault();
-        closeMobileSearch();
-        e.target.blur();
-        return;
-      }
-      if (e.key !== "Enter") return;
-      const q = e.target.value.trim().toLowerCase();
-      const hit = routes.find((r) => r.nav !== false && !r.soon && r.label.toLowerCase().startsWith(q));
-      if (hit) {
-        onNavigate(hit.path);
-        e.target.value = "";
-        e.target.blur();
-        closeMobileSearch();
-      }
-    },
-  });
-  searchWrap = el(
-    "div.topbar-search",
-    el("span.topbar-search-icon", { "aria-hidden": "true" }, icon("search", { size: 15 })),
-    searchToggle,
-    search,
-  );
 
-  return {
-    node: el(
-      "header.topbar",
-      el("div.brand", el("span.brand-mark", "A"), "Archie"),
-      nav,
-      el(
-        "div.topbar-end",
-        searchWrap,
-        el("button.icon-btn.icon-btn-chat", {
-          "aria-label": "Open chat",
-          title: "Chat with Archie",
-          "aria-expanded": "false",
-          onclick: () => onToggleChat?.(),
-        }, icon("chat")),
-        el("button.icon-btn", { title: "Documentation", "aria-label": "Documentation" }, icon("help")),
-        themeBtn,
-        el("div.avatar", { title: "Signed in locally" }, "A"),
-      ),
+  return (
+    <header className="topbar">
+      <div className="brand">
+        <span className="brand-mark">A</span>
+        Archie
+      </div>
+      <nav className="nav">
+        {navEntries(hidden).map((route) => (
+          <a
+            className="nav-item"
+            key={route.path}
+            href={`#${route.path}`}
+            aria-current={route.path === activePath ? "page" : undefined}
+            aria-disabled={route.soon || undefined}
+            title={route.soon ? "Coming soon" : undefined}
+            onClick={(event) => {
+              if (route.soon) event.preventDefault();
+              else onNavigate(route.path);
+            }}
+          >
+            <Icon name={route.icon} />
+            <span className="nav-label">{route.label}</span>
+            {route.soon ? <span className="nav-soon">soon</span> : null}
+          </a>
+        ))}
+      </nav>
+      <div className="topbar-end">
+        <div className={`topbar-search${searchOpen ? " is-open" : ""}`}>
+          <span className="topbar-search-icon" aria-hidden="true">
+            <Icon name="search" size={15} />
+          </span>
+          <button
+            className="icon-btn mobile-search-toggle"
+            type="button"
+            aria-label="Open Jump to navigation"
+            aria-expanded={searchOpen ? "true" : "false"}
+            onClick={() => setSearchOpen(true)}
+          >
+            <Icon name="search" size={15} />
+          </button>
+          <input
+            type="search"
+            placeholder="Jump to…"
+            aria-label="Jump to a section"
+            onKeyDown={onSearchKeyDown}
+          />
+        </div>
+        <button
+          className="icon-btn icon-btn-chat"
+          aria-label="Open chat"
+          title="Chat with Archie"
+          aria-expanded={chatOpen ? "true" : "false"}
+          onClick={() => onToggleChat()}
+        >
+          <Icon name="chat" />
+        </button>
+        <button className="icon-btn" title="Documentation" aria-label="Documentation">
+          <Icon name="help" />
+        </button>
+        <button
+          className="icon-btn"
+          title="Toggle light and dark"
+          aria-label="Toggle light and dark"
+          onClick={onToggleTheme}
+        >
+          <Icon name={theme === "dark" ? "moon" : "sun"} />
+        </button>
+        <div className="avatar" title="Signed in locally">
+          A
+        </div>
+      </div>
+    </header>
+  );
+}
+
+// The chat drawer lives beside the outlet, mounted once. It is closed by
+// default and opened from the topbar launcher; because it is a slide-over
+// rather than a route, the operator can talk to Archie from any page without
+// leaving the work that prompted the question. It hosts a single ChatPage
+// instance, so session state and the stream survive navigation and are not
+// duplicated per page.
+function ChatDrawer({ open, onClose }) {
+  return (
+    <aside className={`chat-drawer${open ? " is-open" : ""}`} aria-label="Chat with Archie">
+      <div className="chat-drawer-panel">
+        <div className="chat-drawer-head">
+          <strong>Archie</strong>
+          <button className="icon-btn chat-drawer-close" aria-label="Close chat" title="Close chat" onClick={onClose}>
+            <Icon name="close" />
+          </button>
+        </div>
+        <ChatPage />
+      </div>
+      <div className="chat-scrim" onClick={onClose} />
+    </aside>
+  );
+}
+
+function ComingSoon({ label }) {
+  return (
+    <div>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">{label}</h1>
+        </div>
+      </div>
+      <div className="card">
+        <div className="empty">
+          <div className="empty-title">{`${label} is not built yet`}</div>
+          <div>This section is next up. Nothing is broken.</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// RouteView gives the router a keyed boundary. A page is a function of its
+// query and its path parameters, and two ids on the same parameterised route
+// must be two instances: without the key the second id diffs the first one in
+// place and the operator's open tab from the previous task stays open on the
+// next (W11).
+function RouteView({ view, search, params }) {
+  return view(search, params);
+}
+
+// Routing is wired once, at import, and pages render into one long-lived outlet
+// rather than as children of App.
+//
+// The listeners cannot live in an effect: a page installs its own
+// hash-sensitive state as it mounts, and the outgoing page has to be gone in
+// the same tick the hash changes. Task detail writes the tab selection back
+// with replaceState as it settles; if it is still mounted when the hashchange
+// lands, it canonicalises the URL back to its own route and the navigation is
+// silently lost. App publishes its outlet and its two navigation-owned pieces
+// of chrome through a callback ref, which runs at commit time -- before any
+// page effect can run.
+let outlet = null;
+let chrome = null;
+
+function show(rawPath) {
+  const [path, query = ""] = String(rawPath).split("?", 2);
+  const match = matchRoute(routes, path);
+  const route = match?.route || routes[0];
+  const params = match?.params || {};
+
+  // Let a page release its subscriptions before it is replaced, so the SSE
+  // stream does not leak a connection per navigation. The event goes to the
+  // outgoing page's root, before the swap.
+  outlet?.firstElementChild?.dispatchEvent(new CustomEvent("archie:teardown"));
+  // A detail route highlights the section it belongs to, so the nav item for
+  // Tasks stays current on #/tasks/42 instead of every item losing it.
+  chrome?.setActive(navPath(route));
+
+  // The chat is a drawer, not a page: /chat opens it rather than mounting a
+  // second ChatPage (which would duplicate session state and the stream).
+  const isChat = route.path === "/chat";
+  chrome?.setChatOpen(isChat);
+  if (!outlet) return;
+  if (isChat) {
+    render(null, outlet);
+    return;
+  }
+
+  // The key covers the path and its parameters, but NOT the query: the query
+  // string is an entry state, so a navigation that only changes the query of
+  // the page already mounted keeps the operator's own filter selection.
+  render(
+    route.view ? (
+      <RouteView
+        key={`${route.path}|${Object.values(params).join("/")}`}
+        view={route.view}
+        search={new URLSearchParams(query)}
+        params={params}
+      />
+    ) : (
+      <ComingSoon label={route.label} />
     ),
-    highlight(path) {
-      for (const [p, node] of items) {
-        if (p === path) node.setAttribute("aria-current", "page");
-        else node.removeAttribute("aria-current");
-      }
-    },
-    hide(paths) {
-      for (const path of paths) items.get(path)?.remove();
-    },
-  };
+    outlet,
+  );
 }
 
-function start() {
-  applyTheme(currentTheme());
+function navigate(next) {
+  if (location.hash !== `#${next}`) location.hash = next;
+  else show(next);
+}
 
-  const outlet = el("main.main");
-  // The chat drawer lives beside the outlet, mounted once. It is closed by
-  // default and opened from the topbar launcher; because it is a slide-over
-  // rather than a route, the operator can talk to Archie from any page
-  // without leaving the work that prompted the question. It hosts a single
-  // chatPage() instance, so session state and the stream survive navigation
-  // and are not duplicated per page.
-  const chatDrawer = el("aside.chat-drawer", { "aria-label": "Chat with Archie" });
-  const chatClose = el("button.icon-btn.chat-drawer-close", {
-    "aria-label": "Close chat",
-    title: "Close chat",
-    onclick: () => toggleChat(false),
-  }, icon("close"));
-  const drawerHead = el("div.chat-drawer-head", el("strong", "Archie"), chatClose);
-  chatDrawer.append(el("div.chat-drawer-panel", drawerHead, chatPage()),
-    el("div.chat-scrim", { onclick: () => toggleChat(false) }));
-  const bar = commandBar(navigate, () => toggleChat());
+window.addEventListener("hashchange", () => show(location.hash.slice(1) || "/"));
+window.addEventListener("keydown", (event) => {
+  // A focused control (the composer dismissing its command menu, or the topbar
+  // search) already handled Escape via preventDefault; closing the drawer too
+  // would make the menu impossible to dismiss alone.
+  if (event.defaultPrevented) return;
+  if (event.key === "Escape") chrome?.setChatOpen(false);
+});
+
+function App() {
+  const [active, setActive] = useState("/");
+  const [theme, setTheme] = useState(currentTheme);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [hidden, setHidden] = useState([]);
+
+  // Publishes the router's handles. A callback ref runs at commit time, so a
+  // hashchange that lands right after the first paint already finds them.
+  const publish = useCallback((element) => {
+    outlet = element;
+    chrome = { setActive, setChatOpen };
+  }, []);
+
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
+
+  useEffect(() => {
+    document.body.classList.toggle("chat-open", chatOpen);
+  }, [chatOpen]);
+
   // Asked for once, after the shell is up: the nav renders immediately and
   // loses the entries this process cannot back a moment later, rather than
   // holding the whole page behind one request.
-  api.capabilities()
-    .then((caps) => bar.hide(hiddenRoutes(caps?.sections, routes)))
-    .catch(() => {});
-  const shell = el("div.shell", bar.node, outlet, chatDrawer);
-  mount(document.getElementById("app"), shell);
+  useEffect(() => {
+    api
+      .capabilities()
+      .then((caps) => setHidden(hiddenRoutes(caps?.sections, routes)))
+      .catch(() => {});
+  }, []);
 
-  function toggleChat(open) {
-    const shouldOpen = open === undefined ? !chatDrawer.classList.contains("is-open") : open;
-    chatDrawer.classList.toggle("is-open", shouldOpen);
-    document.body.classList.toggle("chat-open", shouldOpen);
-    const btn = shell.querySelector(".icon-btn-chat");
-    if (btn) btn.setAttribute("aria-expanded", String(shouldOpen));
-  }
-  window.__archieToggleChat = toggleChat;
-
-  function navigate(path) {
-    if (location.hash !== '#' + path) location.hash = path;
-    else show(path);
-  }
-
-  function show(rawPath) {
-    // Let a page release its subscriptions before it is replaced, so the SSE
-    // stream does not leak a connection per navigation.
-    outlet.firstElementChild?.dispatchEvent(new CustomEvent("archie:teardown"));
-    const [path, query = ""] = rawPath.split("?", 2);
-    const match = matchRoute(routes, path);
-    const route = match?.route || routes[0];
-    // A detail route highlights the section it belongs to, so the nav item for
-    // Tasks stays current on #/tasks/42 instead of every item losing it.
-    bar.highlight(navPath(route));
-    // The chat is a drawer, not a page: /chat opens it rather than mounting a
-    // second chatPage() (which would duplicate session state and the stream).
-    if (route.path === "/chat") {
-      mount(outlet);
-      toggleChat(true);
-      return;
-    }
-    // Every registered page returns a Preact VNode (all views import `h`
-    // from "preact"), which mount()/append() cannot render -- append()
-    // only knows real DOM Nodes and strings, so a bare VNode object became
-    // the literal text "[object Object]". Preact's own render() diffs and
-    // mounts a VNode correctly, including running the previous page's
-    // effect-cleanup on unmount. comingSoon() (the `!route.view` fallback,
-    // currently unused -- no route declares `soon: true`) still returns a
-    // real DOM Node, so it keeps going through mount() -- render() and
-    // mount()/replaceChildren() should not alternate on the same outlet
-    // across navigations, since Preact tracks its own vdom state on the
-    // container node; if a `soon: true` route is ever added, revisit this.
-    const rendered = route.view ? route.view(new URLSearchParams(query), match?.params || {}) : comingSoon(route);
-    if (rendered instanceof Node) {
-      mount(outlet, rendered);
-    } else {
-      render(rendered, outlet);
-    }
-    // Navigating to a page dismisses the chat drawer; the operator has moved on.
-    toggleChat(false);
-  }
-
-  window.addEventListener("hashchange", () => show(location.hash.slice(1) || "/"));
-  window.addEventListener("keydown", (e) => {
-    // A focused control (the composer dismissing its command menu, or the
-    // topbar search) already handled Escape via preventDefault; closing the
-    // drawer too would make the menu impossible to dismiss alone.
-    if (e.defaultPrevented) return;
-    if (e.key === "Escape" && chatDrawer.classList.contains("is-open")) toggleChat(false);
-  });
-  show(location.hash.slice(1) || "/");
-}
-
-function comingSoon(route) {
-  return el(
-    "div",
-    el("div.page-head", el("div", el("h1.page-title", route.label))),
-    el(
-      "div.card",
-      el(
-        "div.empty",
-        el("div.empty-title", `${route.label} is not built yet`),
-        el("div", "This section is next up. Nothing is broken."),
-      ),
-    ),
+  return (
+    <div className="shell">
+      <Topbar
+        activePath={active}
+        hidden={hidden}
+        onNavigate={navigate}
+        chatOpen={chatOpen}
+        onToggleChat={() => setChatOpen((open) => !open)}
+        theme={theme}
+        onToggleTheme={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+      />
+      <main className="main" ref={publish} />
+      <ChatDrawer open={chatOpen} onClose={() => setChatOpen(false)} />
+    </div>
   );
 }
 
-start();
+applyTheme(currentTheme());
+render(<App />, document.getElementById("app"));
+show(location.hash.slice(1) || "/");
