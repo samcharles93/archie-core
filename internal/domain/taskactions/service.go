@@ -22,6 +22,11 @@ type Task struct {
 	Owner, Repo, Identity, Status, Stage, ParkReason string
 	IssueNumber, RetryCount                          int
 	ForgeBacked                                      bool
+	// Attempt is the run the operator acted on. It is stamped onto the event
+	// this action records so an intervention is attributable to the run it
+	// changed course -- without it a retry or a stop is indistinguishable
+	// between attempts on the timeline.
+	Attempt int
 }
 
 type Store interface {
@@ -85,7 +90,7 @@ func (s Service) apply(ctx context.Context, task *Task, identity *string, action
 	if identity != nil {
 		source = "chat"
 	}
-	o := outcome{event: events.Event{TaskID: task.ID, Repo: task.Owner + "/" + task.Repo, Issue: task.IssueNumber}}
+	o := outcome{event: events.Event{TaskID: task.ID, Repo: task.Owner + "/" + task.Repo, Issue: task.IssueNumber, Attempt: task.Attempt}}
 	switch action {
 	case taskstate.ActionApprove:
 		err := s.Store.Requeue(ctx, task.ID, "waiting_human", "implement")

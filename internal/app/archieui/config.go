@@ -77,8 +77,8 @@ func project(cfg config.Config) projection {
 	return projection{
 		listen:                cfg.Web.Listen,
 		trustForwardedHeaders: cfg.Web.TrustForwardedHeaders,
-		gateway:               ServiceTarget{Target: cfg.Services.Gateway.Target, Token: cfg.Services.Gateway.TargetToken},
-		state:                 ServiceTarget{Target: cfg.Services.State.Target, Token: cfg.Services.State.TargetToken},
+		gateway:               ServiceTarget{Target: cfg.Services.Get(config.ServiceNameGateway).Target, Token: cfg.Services.Get(config.ServiceNameGateway).TargetToken},
+		state:                 ServiceTarget{Target: cfg.Services.Get(config.ServiceNameState).Target, Token: cfg.Services.Get(config.ServiceNameState).TargetToken},
 		capture: CaptureOptions{
 			Retention:     cfg.Capture.Retention.Std(),
 			MaxEvents:     cfg.Capture.MaxEvents,

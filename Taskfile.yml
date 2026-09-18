@@ -192,6 +192,10 @@ tasks:
                            proxying /api and /events through to archie-ui
                            on :8484
 
+      The gRPC ports come from [services.state].listen and [services.gateway].listen in
+      deployments/dev.toml, each paired with the target that dials it. Move them there
+      when the host already owns one: cockpit binds 9090 by default.
+
       Open http://localhost:5173 -- not :8484. The Vite server is the one with
       hot reload; :8484 serves the last built dist/ and will look stale.
 

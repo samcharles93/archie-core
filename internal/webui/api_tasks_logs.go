@@ -48,8 +48,12 @@ func (s *Server) handleTaskLogs(w http.ResponseWriter, r *http.Request) {
 	page, err := reader.TaskLog(r.Context(), id, attempt, logging.Query{
 		Levels:    splitCSV(q.Get("level")),
 		Component: strings.TrimSpace(q.Get("component")),
-		Contains:  strings.TrimSpace(q.Get("q")),
-		Limit:     limit,
+		// Stage is a narrowing filter, not a scoping one: only entries a stage
+		// tagged carry the field, so the UI states that a stage filter matches
+		// the lines that record a stage and nothing else.
+		Stage:    strings.TrimSpace(q.Get("stage")),
+		Contains: strings.TrimSpace(q.Get("q")),
+		Limit:    limit,
 	})
 	if err != nil {
 		// A reader that exists but cannot read here is still a statement about
@@ -134,32 +138,16 @@ func (s *Server) handleTaskLogDownload(w http.ResponseWriter, r *http.Request) {
 // the attempt to read: the "attempt" query parameter when the request names
 // one, otherwise the task's current Attempt. It answers the request itself and
 // reports false when either step fails.
+//
+// The resolution itself is taskAttemptTarget's, shared with the attempt rail,
+// the changed-files read and the debug view, so every per-attempt read of one
+// task selects the same attempt for the same request.
 func (s *Server) taskLogTarget(w http.ResponseWriter, r *http.Request) (id int64, attempt int, ok bool) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		http.Error(w, "bad id", http.StatusBadRequest)
+	t, attempt, ok := s.taskAttemptTarget(w, r)
+	if !ok {
 		return 0, 0, false
 	}
-	task, err := s.Store.TaskByID(r.Context(), id)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return 0, 0, false
-	}
-	if task == nil {
-		http.Error(w, "task not found", http.StatusNotFound)
-		return 0, 0, false
-	}
-
-	attempt = task.Attempt
-	if raw := strings.TrimSpace(r.URL.Query().Get("attempt")); raw != "" {
-		parsed, err := strconv.Atoi(raw)
-		if err != nil {
-			http.Error(w, "bad attempt", http.StatusBadRequest)
-			return 0, 0, false
-		}
-		attempt = parsed
-	}
-	return id, attempt, true
+	return t.ID, attempt, true
 }
 
 // taskLogLimit bounds a page the way handleLogs bounds the daemon-wide read:

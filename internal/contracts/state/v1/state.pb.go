@@ -448,17 +448,22 @@ func (x *Task) GetUpdatedAt() *timestamppb.Timestamp {
 // string (matching the store's own on-disk representation) rather than
 // google.protobuf.Struct, to stay a direct mirror of the existing column.
 type Event struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	At            *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=at,proto3" json:"at,omitempty"`
-	Kind          string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
-	TaskId        int64                  `protobuf:"varint,4,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	Repo          string                 `protobuf:"bytes,5,opt,name=repo,proto3" json:"repo,omitempty"`
-	Issue         int64                  `protobuf:"varint,6,opt,name=issue,proto3" json:"issue,omitempty"`
-	Workflow      string                 `protobuf:"bytes,7,opt,name=workflow,proto3" json:"workflow,omitempty"`
-	Stage         string                 `protobuf:"bytes,8,opt,name=stage,proto3" json:"stage,omitempty"`
-	Detail        string                 `protobuf:"bytes,9,opt,name=detail,proto3" json:"detail,omitempty"`
-	DataJson      string                 `protobuf:"bytes,10,opt,name=data_json,json=dataJson,proto3" json:"data_json,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Id       int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	At       *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=at,proto3" json:"at,omitempty"`
+	Kind     string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
+	TaskId   int64                  `protobuf:"varint,4,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	Repo     string                 `protobuf:"bytes,5,opt,name=repo,proto3" json:"repo,omitempty"`
+	Issue    int64                  `protobuf:"varint,6,opt,name=issue,proto3" json:"issue,omitempty"`
+	Workflow string                 `protobuf:"bytes,7,opt,name=workflow,proto3" json:"workflow,omitempty"`
+	Stage    string                 `protobuf:"bytes,8,opt,name=stage,proto3" json:"stage,omitempty"`
+	// attempt is the run this event belongs to. Zero means UNATTRIBUTED, not a
+	// first attempt: rows written before the field existed, and the deliberately
+	// task-agnostic producers, all carry zero. A reader must report those as
+	// unattributable rather than presenting them as one run.
+	Attempt       int64  `protobuf:"varint,11,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	Detail        string `protobuf:"bytes,9,opt,name=detail,proto3" json:"detail,omitempty"`
+	DataJson      string `protobuf:"bytes,10,opt,name=data_json,json=dataJson,proto3" json:"data_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -547,6 +552,13 @@ func (x *Event) GetStage() string {
 		return x.Stage
 	}
 	return ""
+}
+
+func (x *Event) GetAttempt() int64 {
+	if x != nil {
+		return x.Attempt
+	}
+	return 0
 }
 
 func (x *Event) GetDetail() string {
@@ -3629,15 +3641,19 @@ func (x *TaskLogEntry) GetFieldsJson() string {
 // working by crossing the boundary. limit is caller-capped
 // (docs/prds/state-store-contract.md §8: the log cap is 2000).
 type ReadTaskLogRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        int64                  `protobuf:"varint,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	Attempt       int64                  `protobuf:"varint,2,opt,name=attempt,proto3" json:"attempt,omitempty"`
-	Limit         int64                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
-	Levels        []string               `protobuf:"bytes,4,rep,name=levels,proto3" json:"levels,omitempty"`
-	Component     string                 `protobuf:"bytes,5,opt,name=component,proto3" json:"component,omitempty"`
-	Contains      string                 `protobuf:"bytes,6,opt,name=contains,proto3" json:"contains,omitempty"`
-	Since         *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=since,proto3" json:"since,omitempty"`
-	Until         *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=until,proto3" json:"until,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	TaskId    int64                  `protobuf:"varint,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	Attempt   int64                  `protobuf:"varint,2,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	Limit     int64                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	Levels    []string               `protobuf:"bytes,4,rep,name=levels,proto3" json:"levels,omitempty"`
+	Component string                 `protobuf:"bytes,5,opt,name=component,proto3" json:"component,omitempty"`
+	Contains  string                 `protobuf:"bytes,6,opt,name=contains,proto3" json:"contains,omitempty"`
+	Since     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=since,proto3" json:"since,omitempty"`
+	Until     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=until,proto3" json:"until,omitempty"`
+	// stage filters on an entry's own "stage" field. Only entries a stage
+	// tagged carry one -- agent and tool output is logged without a stage, so a
+	// stage filter narrows the file rather than covering it. Empty means any.
+	Stage         string `protobuf:"bytes,9,opt,name=stage,proto3" json:"stage,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3726,6 +3742,13 @@ func (x *ReadTaskLogRequest) GetUntil() *timestamppb.Timestamp {
 		return x.Until
 	}
 	return nil
+}
+
+func (x *ReadTaskLogRequest) GetStage() string {
+	if x != nil {
+		return x.Stage
+	}
+	return ""
 }
 
 // found=false is not an error: the task has no log file for that attempt.
@@ -5720,7 +5743,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x19 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\x1a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\x81\x02\n" +
+	"updated_at\x18\x1a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\x9b\x02\n" +
 	"\x05Event\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12*\n" +
 	"\x02at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x12\n" +
@@ -5729,7 +5752,8 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x04repo\x18\x05 \x01(\tR\x04repo\x12\x14\n" +
 	"\x05issue\x18\x06 \x01(\x03R\x05issue\x12\x1a\n" +
 	"\bworkflow\x18\a \x01(\tR\bworkflow\x12\x14\n" +
-	"\x05stage\x18\b \x01(\tR\x05stage\x12\x16\n" +
+	"\x05stage\x18\b \x01(\tR\x05stage\x12\x18\n" +
+	"\aattempt\x18\v \x01(\x03R\aattempt\x12\x16\n" +
 	"\x06detail\x18\t \x01(\tR\x06detail\x12\x1b\n" +
 	"\tdata_json\x18\n" +
 	" \x01(\tR\bdataJson\"\x8c\x02\n" +
@@ -5926,7 +5950,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x05level\x18\x03 \x01(\tR\x05level\x12\x10\n" +
 	"\x03msg\x18\x04 \x01(\tR\x03msg\x12\x1f\n" +
 	"\vfields_json\x18\x05 \x01(\tR\n" +
-	"fieldsJson\"\x93\x02\n" +
+	"fieldsJson\"\xa9\x02\n" +
 	"\x12ReadTaskLogRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\x03R\x06taskId\x12\x18\n" +
 	"\aattempt\x18\x02 \x01(\x03R\aattempt\x12\x14\n" +
@@ -5935,7 +5959,8 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\tcomponent\x18\x05 \x01(\tR\tcomponent\x12\x1a\n" +
 	"\bcontains\x18\x06 \x01(\tR\bcontains\x120\n" +
 	"\x05since\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x05since\x120\n" +
-	"\x05until\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\x05until\"\xc9\x01\n" +
+	"\x05until\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\x05until\x12\x14\n" +
+	"\x05stage\x18\t \x01(\tR\x05stage\"\xc9\x01\n" +
 	"\x13ReadTaskLogResponse\x120\n" +
 	"\aentries\x18\x01 \x03(\v2\x16.state.v1.TaskLogEntryR\aentries\x12\x1c\n" +
 	"\ttruncated\x18\x02 \x01(\bR\ttruncated\x12\x18\n" +

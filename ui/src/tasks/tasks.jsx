@@ -8,8 +8,21 @@ import { statTile as renderStatTile } from "../base/statTile.jsx";
 import { taskRowA11y } from "./task-row.jsx";
 import { initialTaskFilter, taskMatchesStatus } from "./task-filters.jsx";
 import { describeTimelineEvent } from "./timeline-event.jsx";
-import { TaskLogPanel } from "./task-logs.jsx";
+import { TaskLogPanel, logCacheKey } from "./task-logs.jsx";
 import { actionFor, statusIds, statusKind, statusLabel } from "../base/task-meta.jsx";
+
+// The shell's global reduced-motion rule switches CSS transitions and
+// animations, NOT the JS smooth scroll this page performs when it reveals a
+// deep-linked row. The decision therefore has to be made here, in JavaScript,
+// and is exported so it can be tested directly (jsdom implements neither
+// matchMedia nor scrollIntoView).
+export function prefersReducedMotion() {
+  return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+}
+
+export function revealBehavior() {
+  return prefersReducedMotion() ? "auto" : "smooth";
+}
 
 function StatTileNode(props) {
   const ref = useRef(null);
@@ -50,6 +63,20 @@ function Empty({ title, detail }) {
   );
 }
 
+// The open log pane loads its own attempt's log whenever it is showing an
+// attempt it has no cached entry for: a retry moves the pane to a new attempt,
+// a forced reload drops its own entry, and a row can be reopened long after the
+// click that first opened it. Loading only from that click is what would leave
+// the pane sitting on "Loading…" with nothing fetching it.
+function TaskLogSection({ taskId, attempt, state, onLoad, onRetry }) {
+  const load = useRef(onLoad);
+  load.current = onLoad;
+  useEffect(() => {
+    if (state === undefined) load.current();
+  }, [state]);
+  return <TaskLogPanel state={state} taskId={taskId} attempt={attempt} onRetry={onRetry} />;
+}
+
 function TasksApp({ query }) {
   const [tasks, setTasks] = useState(null);
   const [error, setError] = useState(null);
@@ -63,6 +90,7 @@ function TasksApp({ query }) {
   
   const [eventCache, setEventCache] = useState(new Map());
   const [logCache, setLogCache] = useState(new Map());
+  const logRequests = useRef(new Set());
   const [logsExpanded, setLogsExpanded] = useState(new Set());
   const [actionErrors, setActionErrors] = useState(new Map());
   const [actionsInFlight, setActionsInFlight] = useState(new Set());
@@ -77,9 +105,11 @@ function TasksApp({ query }) {
           loadTimeline(expandedId);
         }
       }
+      return res;
     } catch (err) {
       setError(String(err.message || err));
       setTasks(null);
+      return null;
     }
   };
 
@@ -97,18 +127,40 @@ function TasksApp({ query }) {
     }
   };
 
-  const loadTaskLogs = async (id) => {
-    setLogCache(prev => {
+  const loadTaskLogs = async (id, attempt, { force = false } = {}) => {
+    // The cache entry is identified by the task AND the attempt: a task alone
+    // cannot tell two runs apart, so a retry used to leave the previous
+    // attempt's log on screen under the new run. One request per key, unless a
+    // control explicitly asks for the read again.
+    const key = logCacheKey(id, attempt);
+    if (logRequests.current.has(key) && !force) return;
+    logRequests.current.add(key);
+    if (force) {
+      setLogCache(prev => {
+        const next = new Map(prev);
+        next.delete(key);
+        return next;
+      });
+    }
+    try {
+      const res = await api.taskLogs(id, { attempt: attempt || undefined, limit: 500 });
+      setLogCache(prev => new Map(prev).set(key, res));
+    } catch {
+      setLogCache(prev => new Map(prev).set(key, null));
+    }
+  };
+
+  // An operator action can change a task's timeline -- a retry begins a new
+  // attempt -- so the events cached for that task are dropped rather than served
+  // against the new state. The log cache needs no invalidation here: its key
+  // already carries the attempt, so the new run is a different entry and can
+  // never be answered by the ended attempt's log.
+  const invalidateTaskCaches = (id) => {
+    setEventCache(prev => {
       const next = new Map(prev);
       next.delete(id);
       return next;
     });
-    try {
-      const res = await api.taskLogs(id, { limit: 500 });
-      setLogCache(prev => new Map(prev).set(id, res));
-    } catch {
-      setLogCache(prev => new Map(prev).set(id, null));
-    }
   };
 
   const performAction = async (id, action) => {
@@ -127,7 +179,14 @@ function TasksApp({ query }) {
         return next;
       });
       if (action === "archive") setExpandedId(null);
-      await load();
+      invalidateTaskCaches(id);
+      const res = await load();
+      // A row that is still open reloads against the attempt the task now has;
+      // otherwise it would sit on "Loading…" with its cache entry gone.
+      const updated = Array.isArray(res) ? res.find(t => String(t.id) === String(id)) : null;
+      if (updated && expandedId === id) {
+        loadTimeline(id);
+      }
     } catch (err) {
       setActionsInFlight(prev => {
         const next = new Set(prev);
@@ -146,7 +205,9 @@ function TasksApp({ query }) {
         const row = document.getElementById(`task-row-${expandedId}`);
         if (row) {
           row.focus({ preventScroll: true });
-          row.scrollIntoView({ block: "center", behavior: "smooth" });
+          // Optional call: focusing a deep-linked row is a nicety, and not every
+          // environment implements scrollIntoView on an element.
+          row.scrollIntoView?.({ block: "center", behavior: revealBehavior() });
         }
       });
     }
@@ -164,12 +225,8 @@ function TasksApp({ query }) {
   const toggleLogs = (id) => {
     setLogsExpanded(prev => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-        if (!logCache.has(id)) loadTaskLogs(id);
-      }
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
@@ -302,6 +359,7 @@ function TasksApp({ query }) {
   };
 
   const renderTimelineRow = (t) => {
+    const logKey = logCacheKey(t.id, t.attempt);
     const cached = eventCache.get(t.id);
     const logsExpandedForTask = logsExpanded.has(t.id);
 
@@ -359,7 +417,13 @@ function TasksApp({ query }) {
               </button>
             </div>
             {logsExpandedForTask && (
-              <TaskLogPanel state={logCache.get(t.id)} taskId={t.id} onRetry={() => loadTaskLogs(t.id)} />
+              <TaskLogSection
+                taskId={t.id}
+                attempt={t.attempt}
+                state={logCache.has(logKey) ? logCache.get(logKey) : undefined}
+                onLoad={() => loadTaskLogs(t.id, t.attempt)}
+                onRetry={() => loadTaskLogs(t.id, t.attempt, { force: true })}
+              />
             )}
           </div>
         </td>
@@ -448,7 +512,15 @@ function TasksApp({ query }) {
               {issueLink(t) ?? `#${t.issue_number}`}
             </td>
             <td className="strong" data-label="Title">
-              {t.title || "(untitled)"}
+              <a
+                className="task-detail-link"
+                href={`#/tasks/${t.id}`}
+                title="Open the run detail for this task"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                {t.title || "(untitled)"}
+              </a>
             </td>
             <td data-label="Status">
               <Pill text={statusLabel(t.status)} kind={statusKind(t.status)} />

@@ -6,6 +6,7 @@ import { el, mount } from "./base/dom.jsx";
 import { icon } from "./base/icons.jsx";
 import { dashboardPage } from "./dashboard/dashboard.jsx";
 import { tasksPage } from "./tasks/tasks.jsx";
+import { taskDetailPage } from "./tasks/task-detail.jsx";
 import { skillsPage } from "./skills/skills.jsx";
 import { workflowsPage } from "./workflows/workflows.jsx";
 import { channelsPage } from "./channels/channels.jsx";
@@ -17,6 +18,7 @@ import { mappingsPage } from "./mappings/mappings.jsx";
 import { bindingsPage } from "./bindings/bindings.jsx";
 import { memoryPage } from "./memory/memory.jsx";
 import { chatPage } from "./chat/chat.jsx";
+import { matchRoute, navPath } from "./routing.jsx";
 
 /**
  * Routes are declared once here. Adding a section means adding a feature
@@ -32,10 +34,19 @@ import { chatPage } from "./chat/chat.jsx";
 // daemon and the extracted UI service -- and a section the serving process
 // cannot back would otherwise render as permanently empty rather than as
 // absent (archie-core-8cda.5.4).
+//
+// A route may also carry:
+//   nav:false -- addressed by URL but not a navigation entry (a detail page
+//                reached from its section)
+//   navPath  -- the navigation entry this route keeps current; a parameterised
+//                route is not itself in the nav, so without this the section it
+//                belongs to would lose its aria-current highlight
+//   :name    -- one captured path segment, e.g. /tasks/:id
 const routes = [
   { path: "/", label: "Dashboard", icon: "dashboard", view: dashboardPage },
   { path: "/chat", label: "Chat", icon: "chat", view: chatPage, section: "chat" },
   { path: "/tasks", label: "Tasks", icon: "tasks", view: tasksPage },
+  { path: "/tasks/:id", label: "Task run", view: taskDetailPage, nav: false, navPath: "/tasks" },
   { path: "/logs", label: "Logs", icon: "logs", view: logsPage, section: "logs" },
   { path: "/captures", label: "Event inspector", icon: "captures", view: capturesPage, section: "captures" },
   { path: "/mappings", label: "Field mappings", icon: "mappings", view: mappingsPage, section: "mappings" },
@@ -66,6 +77,7 @@ function commandBar(onNavigate, onToggleChat) {
     "nav.nav",
     ...[null].flatMap(() => [
       ...routes
+        .filter((route) => route.nav !== false)
         .map((route) => {
           const item = el(
             "a.nav-item",
@@ -135,7 +147,7 @@ function commandBar(onNavigate, onToggleChat) {
       }
       if (e.key !== "Enter") return;
       const q = e.target.value.trim().toLowerCase();
-      const hit = routes.find((r) => !r.soon && r.label.toLowerCase().startsWith(q));
+      const hit = routes.find((r) => r.nav !== false && !r.soon && r.label.toLowerCase().startsWith(q));
       if (hit) {
         onNavigate(hit.path);
         e.target.value = "";
@@ -230,8 +242,11 @@ function start() {
     // stream does not leak a connection per navigation.
     outlet.firstElementChild?.dispatchEvent(new CustomEvent("archie:teardown"));
     const [path, query = ""] = rawPath.split("?", 2);
-    const route = routes.find((r) => r.path === path) || routes[0];
-    bar.highlight(route.path);
+    const match = matchRoute(routes, path);
+    const route = match?.route || routes[0];
+    // A detail route highlights the section it belongs to, so the nav item for
+    // Tasks stays current on #/tasks/42 instead of every item losing it.
+    bar.highlight(navPath(route));
     // The chat is a drawer, not a page: /chat opens it rather than mounting a
     // second chatPage() (which would duplicate session state and the stream).
     if (route.path === "/chat") {
@@ -250,7 +265,7 @@ function start() {
     // mount()/replaceChildren() should not alternate on the same outlet
     // across navigations, since Preact tracks its own vdom state on the
     // container node; if a `soon: true` route is ever added, revisit this.
-    const rendered = route.view ? route.view(new URLSearchParams(query)) : comingSoon(route);
+    const rendered = route.view ? route.view(new URLSearchParams(query), match?.params || {}) : comingSoon(route);
     if (rendered instanceof Node) {
       mount(outlet, rendered);
     } else {

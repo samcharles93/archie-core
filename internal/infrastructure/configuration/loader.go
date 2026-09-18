@@ -210,6 +210,23 @@ func unknownKeys(a, b []string) []string {
 	return out
 }
 
+// unregisteredServiceKeys reports [services.<name>] sections naming a service
+// nobody registered.
+//
+// Undecoded() cannot see these. Services is a map, so TOML decodes any section
+// under [services] into it successfully, and a typo'd [services.gatway] would
+// load clean where the previous struct form reported it. The registry is the
+// authority on which names exist, so ask it.
+func unregisteredServiceKeys(services config.Services) []string {
+	var out []string
+	for name := range services {
+		if _, ok := config.LookupService(name); !ok {
+			out = append(out, "services."+name)
+		}
+	}
+	return out
+}
+
 // sortedUnique returns keys sorted and de-duplicated, so Document.UnknownKeys
 // is deterministic across a base+overlay load that happens to name the same
 // stray key in both files.
@@ -322,7 +339,7 @@ func (l *Loader) decodeMain(doc *Document, path string, isYAMLFile bool) error {
 // judges the effective configuration, including values the operator never
 // wrote.
 func (l *Loader) finalize(doc *Document) (*Document, error) {
-	doc.UnknownKeys = sortedUnique(doc.UnknownKeys)
+	doc.UnknownKeys = sortedUnique(append(doc.UnknownKeys, unregisteredServiceKeys(doc.Config.Services)...))
 	l.applyDefaults(&doc.Config)
 	if err := Validate(&doc.Config); err != nil {
 		return nil, err

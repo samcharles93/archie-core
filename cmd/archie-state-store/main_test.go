@@ -85,9 +85,10 @@ func buildBinary(t *testing.T, dir string) string {
 }
 
 // writeMinimalConfig writes a config.toml that passes configuration.Validate
-// while keeping the process minimal: the standalone binary reads its gRPC
-// listen address from -listen, not from [services.state].target, so the config
-// only needs the fields validation requires plus the db_path it owns. The
+// while keeping the process minimal: the standalone binary takes its gRPC
+// listen address from -listen or [services.state].listen, never from the
+// target, so the config only needs the fields validation requires plus the
+// db_path it owns. The
 // forge token resolves from an env var, so no real credential is needed.
 func writeMinimalConfig(t *testing.T, dir string) string {
 	t.Helper()
@@ -104,6 +105,27 @@ name = "widget"
 `, filepath.Join(dir, "archie.db"))
 	if err := os.WriteFile(cfg, []byte(content), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
+	}
+	return cfg
+}
+
+// writeConfigWithServiceListen is writeMinimalConfig plus the
+// [services.state] block that lets a test supply the listen address through
+// configuration instead of the -listen flag.
+func writeConfigWithServiceListen(t *testing.T, dir string) string {
+	t.Helper()
+	cfg := writeMinimalConfig(t, dir)
+	f, err := os.OpenFile(cfg, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatalf("open config to append: %v", err)
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			t.Fatalf("close config: %v", err)
+		}
+	}()
+	if _, err := f.WriteString("\n[services.state]\nlisten = \"127.0.0.1:0\"\n"); err != nil {
+		t.Fatalf("append [services.state]: %v", err)
 	}
 	return cfg
 }
@@ -158,7 +180,12 @@ func startStateStoreProcess(t *testing.T, bin, cfg string) *stateStoreProcess {
 // credential interceptors on both the unary and the streaming surface.
 func startStateStore(t *testing.T, bin, cfg, listen, token string) *stateStoreProcess {
 	t.Helper()
-	args := []string{"-config", cfg, "-listen", listen, "-ready-addr", "127.0.0.1:0"}
+	args := []string{"-config", cfg, "-ready-addr", "127.0.0.1:0"}
+	if listen != "" {
+		// An empty listen means "pass no -listen at all". A test uses that to
+		// prove the bound address came from [services.state].listen.
+		args = append(args, "-listen", listen)
+	}
 	if token != "" {
 		// An explicit -token wins over [services.state].target_token and the
 		// STATE_STORE_TOKEN secret, so the process authenticates callers with
@@ -291,14 +318,29 @@ func capture(source, body string) store.CapturedEvent {
 // adapter, error-sentinel fidelity across the wire, the not-found-as-(nil,nil)
 // convention, and single-owner SQLite (the binary owns the one archie.db file
 // and the consumer dials gRPC without opening any store file).
+//
+// It also takes its listen address from [services.state].listen rather than
+// -listen, so the startup path every deployment uses is covered by the process
+// that exercises the most: before that key existed the address came from a flag
+// default with no config key, so a host that already owned the port (cockpit
+// owns 9090 by default) could only be retargeted by passing -listen and
+// hand-writing an overlay whose target matched -- and the failure read as a
+// code fault, "address already in use" in the store and a gRPC handshake error
+// in every client.
 func TestStateStoreRealProcessSmoke(t *testing.T) {
 	if testing.Short() {
 		t.Skip("real-process smoke test builds and execs the binary; skip under -short")
 	}
 	dir := t.TempDir()
 	bin := buildBinary(t, dir)
-	cfg := writeMinimalConfig(t, dir)
-	st := startStateStoreProcess(t, bin, cfg)
+	cfg := writeConfigWithServiceListen(t, dir)
+	st := startStateStore(t, bin, cfg, "", "")
+	if st.addr == "" {
+		t.Fatalf("no bound gRPC address in the log:\n%s", st.log.String())
+	}
+	if !strings.Contains(st.log.String(), `"listen":"127.0.0.1:0"`) {
+		t.Fatalf("the resolved listen was not the configured address:\n%s", st.log.String())
+	}
 	cl := dial(t, st.addr)
 
 	ctx := t.Context()
@@ -313,8 +355,22 @@ func TestStateStoreRealProcessSmoke(t *testing.T) {
 	if err := cl.Transition(ctx, task.ID, task.Status, "running", "smoke started"); err != nil {
 		t.Fatalf("Transition: %v", err)
 	}
-	if _, err := cl.InsertEvent(ctx, events.Event{Kind: "stage_finish", TaskID: task.ID, Data: map[string]any{"duration_ms": 12.0}}); err != nil {
+	if _, err := cl.InsertEvent(ctx, events.Event{Kind: "stage_finish", TaskID: task.ID, Attempt: 1, Data: map[string]any{"duration_ms": 12.0}}); err != nil {
 		t.Fatalf("InsertEvent: %v", err)
+	}
+	// R4's document is stored as an event, so the real process must round-trip
+	// it with its nested structure and its attempt key intact: the standalone
+	// State Store owns the only copy, and a lost field here is a Config tab
+	// that reads a run it cannot describe. The key is the daemon's own
+	// (internal/daemon/daemon.go writes "document"), asserted by name below.
+	if _, err := cl.InsertEvent(ctx, events.Event{
+		Kind: events.KindConfigCaptured, TaskID: task.ID, Attempt: 1,
+		Data: map[string]any{
+			"schema":   events.ConfigCapturedSchema,
+			"document": map[string]any{"bot_user": "archie", "models": map[string]any{"implement": "anthropic/claude"}},
+		},
+	}); err != nil {
+		t.Fatalf("InsertEvent config_captured: %v", err)
 	}
 	if capID, err := cl.InsertCapture(ctx, capture("sentry", `{"id":1}`), 0, 0); err != nil || capID == 0 {
 		t.Fatalf("InsertCapture = (%d, %v)", capID, err)
@@ -324,8 +380,24 @@ func TestStateStoreRealProcessSmoke(t *testing.T) {
 	if err != nil || got == nil || got.ID != task.ID || got.Status != "running" {
 		t.Fatalf("TaskByID after transition = %+v, %v", got, err)
 	}
-	if evs, err := cl.TaskEvents(ctx, task.ID); err != nil || len(evs) != 1 || evs[0].Kind != "stage_finish" {
+	evs, err := cl.TaskEvents(ctx, task.ID)
+	if err != nil || len(evs) != 2 || evs[0].Kind != "stage_finish" {
 		t.Fatalf("TaskEvents = %+v, %v", evs, err)
+	}
+	if evs[0].Attempt != 1 {
+		t.Errorf("TaskEvents attempt = %d, want 1 across the real process", evs[0].Attempt)
+	}
+	if evs[1].Kind != events.KindConfigCaptured || evs[1].Attempt != 1 || evs[1].Data["schema"] != events.ConfigCapturedSchema {
+		t.Errorf("config_captured event = %+v, want its kind, attempt and schema preserved", evs[1])
+	}
+	if _, renamed := evs[1].Data["config"]; renamed {
+		t.Error(`the document crossed under "config"; the producer writes it under "document"`)
+	}
+	if len(evs[1].Data) != 2 {
+		t.Errorf("config_captured data keys = %v, want exactly schema and document", evs[1].Data)
+	}
+	if doc, ok := evs[1].Data["document"].(map[string]any); !ok || doc["bot_user"] != "archie" {
+		t.Errorf("config_captured payload = %#v, want the decoded document under its own key", evs[1].Data)
 	}
 	if caps, err := cl.ListCaptures(ctx, 10); err != nil || len(caps) != 1 || caps[0].Source != "sentry" {
 		t.Fatalf("ListCaptures = %+v, %v", caps, err)

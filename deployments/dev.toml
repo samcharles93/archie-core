@@ -11,16 +11,20 @@
 [web]
 listen = "127.0.0.1:8484"
 
-# `task dev` also runs archie-state-store on its -listen default
-# (127.0.0.1:9090, loopback, no token) via dev:state-store -- point archied,
-# archie-gateway and archie-ui at it so a fresh dev checkout works without
-# hand-editing the installed config.toml
+# `task dev` runs archie-state-store via dev:state-store, which passes no
+# -listen, so the listen below is the port the store binds. It must agree with
+# the target: these two lines are the only place that pair is stated. Move them
+# when the host already owns 9090 (cockpit binds it by default) -- before the
+# listen key existed the collision could only be worked around by hand-writing
+# a matching target and passing -listen, and it read as a code fault.
 # (docs/prds/state-store-contract.md §12 step 7).
 [services.state]
 target = "127.0.0.1:9090"
+listen = "127.0.0.1:9090"
 
-# `task dev` runs archie-gateway on its -listen default (127.0.0.1:8585,
-# loopback, no token). Stated explicitly so the value archie-ui dials is
-# visible next to the State Store one.
+# `task dev` runs archie-gateway via dev:gateway, which also passes no -listen:
+# the listen below is what it binds. Stated explicitly so the value archie-ui
+# dials is visible next to the State Store one.
 [services.gateway]
 target = "127.0.0.1:8585"
+listen = "127.0.0.1:8585"

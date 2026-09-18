@@ -346,18 +346,18 @@ func (b *boot) openStores(ctx context.Context) error {
 // the STATE_STORE_TOKEN secret (§10). It runs after openStores has resolved
 // b.secrets, and before setupObservability / buildDaemon wire consumers.
 func (b *boot) openStateStoreAdapter() error {
-	target := strings.TrimSpace(b.cfg.Services.State.Target)
+	target := strings.TrimSpace(b.cfg.Services.Get(config.ServiceNameState).Target)
 	if target == "" {
 		return fmt.Errorf("services.state.target is required: archied/archie-gateway no longer own archie.db; the standalone archie-state-store process owns it (docs/prds/state-store-contract.md §12 step 7)")
 	}
-	client, cleanup, err := composeStateStoreClient(b.cfg.Services.State, b.secrets)
+	client, cleanup, err := composeStateStoreClient(b.cfg.Services, b.secrets)
 	if err != nil {
 		b.log.Error("state store adapter", "err", err)
 		return err
 	}
 	b.stateStore = client
 	b.stateStoreGrants = &staterpc.GrantIssuer{Client: client}
-	b.stateStoreToken = stateStoreResolvedToken(b.cfg.Services.State, b.secrets)
+	b.stateStoreToken = b.cfg.Services.ResolvedToken(config.ServiceNameState, b.secrets.Getenv)
 	b.addCleanup(cleanup)
 	return nil
 }
@@ -617,7 +617,7 @@ func (b *boot) setupLLMAndChat() error {
 	b.setupChatRuntime(cfg)
 
 	b.setupEmbeddings(cfg, log)
-	contract, cleanup, err := composeChatContract(cfg.Services.Gateway, b.secrets)
+	contract, cleanup, err := composeChatContract(cfg.Services, b.secrets)
 	if err != nil {
 		return err
 	}
@@ -1427,7 +1427,7 @@ func (b *boot) buildDaemon() {
 	b.d = &daemon.Daemon{
 		Cfg:                 b.cfgHolder,
 		ConnectedNATS:       daemon.NATSEndpoint{URL: b.natsURL, Token: b.natsToken},
-		ConnectedStateStore: daemon.StateStoreEndpoint{URL: strings.TrimSpace(b.cfg.Services.State.Target), Token: b.stateStoreToken},
+		ConnectedStateStore: daemon.StateStoreEndpoint{URL: strings.TrimSpace(b.cfg.Services.Get(config.ServiceNameState).Target), Token: b.stateStoreToken},
 		Store:               b.stateStore,
 		Bus:                 b.bus,
 		Forge:               b.forgeClient,

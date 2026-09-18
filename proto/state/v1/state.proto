@@ -162,6 +162,11 @@ message Event {
   int64 issue = 6;
   string workflow = 7;
   string stage = 8;
+  // attempt is the run this event belongs to. Zero means UNATTRIBUTED, not a
+  // first attempt: rows written before the field existed, and the deliberately
+  // task-agnostic producers, all carry zero. A reader must report those as
+  // unattributable rather than presenting them as one run.
+  int64 attempt = 11;
   string detail = 9;
   string data_json = 10;
 }
@@ -412,6 +417,10 @@ message ReadTaskLogRequest {
   string contains = 6;
   google.protobuf.Timestamp since = 7;
   google.protobuf.Timestamp until = 8;
+  // stage filters on an entry's own "stage" field. Only entries a stage
+  // tagged carry one -- agent and tool output is logged without a stage, so a
+  // stage filter narrows the file rather than covering it. Empty means any.
+  string stage = 9;
 }
 // found=false is not an error: the task has no log file for that attempt.
 // That is a different condition from a process that cannot read logs at all

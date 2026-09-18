@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { register } from "node:module";
-import { render, waitFor } from "@testing-library/preact";
+import { render, waitFor, fireEvent } from "@testing-library/preact";
 
 const cssLoad = "data:text/javascript," + encodeURIComponent(`
   export async function load(url, context, nextLoad) {
@@ -185,4 +185,108 @@ test("a link-kind action renders an anchor to the forge", async () => {
   assert.ok(link, "open_pr should render an <a> not a <button>");
   assert.equal(link.textContent, "Open PR");
   assert.equal(link.getAttribute("href"), "https://forge.example.internal/sam/archie/pull/42");
+});
+
+// The stuck-pane case: an open log pane whose row is collapsed while the task
+// is retried. If the pane only ever loaded from the click that opened it, the
+// new attempt's pane would sit on "Loading…" with nothing fetching it.
+test("a log pane left open across a retry loads the new attempt when the row is reopened", async () => {
+  const first = { id: 9, title: "Restart me", status: "parked", repo: "sam/archie", workflow: "tdd", attempt: 1, actions: ["retry"] };
+  const second = { ...first, attempt: 2, status: "running" };
+  const original = { tasks: api.tasks, task: api.task, taskAction: api.taskAction, taskLogs: api.taskLogs };
+  let listReads = 0;
+  const logReads = [];
+  api.tasks = async () => {
+    listReads += 1;
+    return [listReads === 1 ? first : second];
+  };
+  api.task = async () => [
+    { kind: "stage_start", attempt: listReads, stage: listReads === 1 ? "prepare" : "bootstrap", at: "2026-09-18T07:00:00Z" },
+  ];
+  api.taskLogs = async (id, params) => {
+    logReads.push(params);
+    return { found: true, attempt: params.attempt, disabled: false, entries: [{ level: "info", msg: "line" }] };
+  };
+  api.taskAction = async () => ({});
+  try {
+    const { container } = render(tasksPage(new URLSearchParams("task=9")));
+    await waitFor(() => assert.match(container.textContent, /Started stage: prepare/));
+    fireEvent.click(container.querySelector(".task-logs-section button"));
+    await waitFor(() => assert.equal(logReads.length, 1));
+
+    // Collapse the row, retry from the collapsed row, then reopen it.
+    fireEvent.click(container.querySelector(".task-expand"));
+    fireEvent.click(container.querySelector(".task-actions button"));
+    await waitFor(() => assert.equal(listReads, 2));
+    fireEvent.click(container.querySelector(".task-expand"));
+
+    await waitFor(() => assert.match(container.textContent, /Started stage: bootstrap/));
+    await waitFor(() => assert.equal(logReads.length, 2), { timeout: 2000 });
+    assert.deepEqual(logReads[1], { attempt: 2, limit: 500 });
+    assert.doesNotMatch(container.textContent, /Loading attempt log/);
+  } finally {
+    Object.assign(api, original);
+  }
+});
+
+// R8: the run detail page is a per-task route, and the list is how an operator
+// reaches it. The existing #/tasks?task=N deep link is a different affordance
+// and stays working (pinned in operator-controls.test.js).
+test("a task row links to its run detail page", async () => {
+  const root = await renderTask({ id: 7, title: "Fix the flaky test", status: "parked", repo: "sam/archie", actions: [] });
+  const link = root.querySelector(".task-detail-link");
+  assert.ok(link, "the title should link to the run detail page");
+  assert.equal(link.getAttribute("href"), "#/tasks/7");
+  assert.equal(link.textContent, "Fix the flaky test");
+});
+
+// W8: the per-task caches used to be written and never invalidated, so a retry
+// left the previous attempt's timeline (and, because the log cache was keyed by
+// task, its log) on screen under the new run.
+test("a retry drops the ended attempt's caches and reloads the new run", async () => {
+  const first = { id: 8, title: "Flaky", status: "parked", repo: "sam/archie", workflow: "tdd", attempt: 1, actions: ["retry"] };
+  const second = { ...first, attempt: 2, status: "running" };
+  const original = { tasks: api.tasks, task: api.task, taskAction: api.taskAction, taskLogs: api.taskLogs };
+  let listReads = 0;
+  const timelineReads = [];
+  const logReads = [];
+  api.tasks = async () => {
+    listReads += 1;
+    return [listReads === 1 ? first : second];
+  };
+  api.task = async () => {
+    timelineReads.push(timelineReads.length + 1);
+    const attempt = timelineReads.length;
+    return [
+      {
+        kind: "stage_start",
+        attempt,
+        stage: attempt === 1 ? "prepare" : "bootstrap",
+        at: "2026-09-18T07:00:00Z",
+      },
+    ];
+  };
+  api.taskLogs = async (id, params) => {
+    logReads.push(params);
+    return { found: true, attempt: params.attempt, disabled: false, entries: [{ level: "info", msg: "line" }] };
+  };
+  api.taskAction = async () => ({});
+  try {
+    const { container } = render(tasksPage(new URLSearchParams("task=8")));
+    await waitFor(() => assert.match(container.textContent, /Started stage: prepare/));
+
+    fireEvent.click(container.querySelector(".task-logs-section button"));
+    await waitFor(() => assert.equal(logReads.length, 1));
+    assert.deepEqual(logReads[0], { attempt: 1, limit: 500 });
+
+    fireEvent.click(container.querySelector(".task-actions button"));
+    await waitFor(() => assert.match(container.textContent, /Started stage: bootstrap/));
+    assert.equal(timelineReads.length, 2, "the timeline is refetched, not kept from the ended attempt");
+    assert.doesNotMatch(container.textContent, /Started stage: prepare/);
+
+    await waitFor(() => assert.equal(logReads.length, 2), { timeout: 2000 });
+    assert.deepEqual(logReads[1], { attempt: 2, limit: 500 }, "the log pane follows the new attempt");
+  } finally {
+    Object.assign(api, original);
+  }
 });

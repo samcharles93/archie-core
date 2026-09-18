@@ -9,7 +9,7 @@ import (
 )
 
 func TestComposeStateStoreClientRequiresTarget(t *testing.T) {
-	_, _, err := composeStateStoreClient(config.ServiceConnection{}, &secret.Registry{})
+	_, _, err := composeStateStoreClient(config.Services{}, &secret.Registry{})
 	if err == nil {
 		t.Fatal("empty target should error")
 	}
@@ -29,7 +29,7 @@ func TestComposeStateStoreClientNonLoopbackFailsClosed(t *testing.T) {
 		{name: "hostname without token", target: "store.example.com:9090"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := composeStateStoreClient(config.ServiceConnection{Target: tt.target}, &secret.Registry{})
+			_, _, err := composeStateStoreClient(config.Services{config.ServiceNameState: {Target: tt.target}}, &secret.Registry{})
 			if err == nil {
 				t.Fatalf("non-loopback %q without a token should fail closed (docs/prds/state-store-contract.md §9)", tt.target)
 			}
@@ -38,7 +38,7 @@ func TestComposeStateStoreClientNonLoopbackFailsClosed(t *testing.T) {
 }
 
 func TestComposeStateStoreClientLoopbackSucceeds(t *testing.T) {
-	st, cleanup, err := composeStateStoreClient(config.ServiceConnection{Target: "127.0.0.1:9090"}, &secret.Registry{})
+	st, cleanup, err := composeStateStoreClient(config.Services{config.ServiceNameState: {Target: "127.0.0.1:9090"}}, &secret.Registry{})
 	if err != nil {
 		t.Fatalf("loopback without token should succeed: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestComposeStateStoreClientLoopbackSucceeds(t *testing.T) {
 func TestComposeStateStoreClientTokenFromTargetToken(t *testing.T) {
 	// Non-loopback with a configured token must not fail closed; the interceptor
 	// is what carries it, so the client is dialable.
-	st, _, err := composeStateStoreClient(config.ServiceConnection{Target: "0.0.0.0:9090", TargetToken: "secret"}, &secret.Registry{})
+	st, _, err := composeStateStoreClient(config.Services{config.ServiceNameState: {Target: "0.0.0.0:9090", TargetToken: "secret"}}, &secret.Registry{})
 	if err != nil {
 		t.Fatalf("non-loopback with a token should succeed: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestOpenStateStoreAdapterRemoteFailsClosed(t *testing.T) {
 	t.Setenv("STATE_STORE_TOKEN", "")
 	b := newBootstrap()
 	b.secrets = &secret.Registry{}
-	b.cfg.Services.State = config.ServiceConnection{Target: "0.0.0.0:9090"}
+	b.cfg.Services = config.Services{config.ServiceNameState: {Target: "0.0.0.0:9090"}}
 	if err := b.openStateStoreAdapter(); err == nil {
 		t.Fatal("non-loopback without a token should fail closed")
 	}

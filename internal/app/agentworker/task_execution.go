@@ -14,6 +14,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/wfeval"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/installtype"
@@ -109,6 +110,16 @@ func (h *hybridTrees) Snapshot(ctx context.Context, dir, destDir string) error {
 
 func (h *hybridTrees) ChangedLines(ctx context.Context, dir, base string) (int, error) {
 	return h.local.ChangedLines(ctx, dir, base)
+}
+
+// ChangedFileStats is the capability the workflow captures a change through.
+// It is not part of workflow.Trees: it is asserted for as the unexported
+// optional interface package workflow declares, so a Trees implementation
+// without it degrades to no capture. Without this forwarder the in-container
+// path -- which is every production run, archie-agent executing the whole
+// workflow -- would be exactly that silent no-op.
+func (h *hybridTrees) ChangedFileStats(ctx context.Context, dir, base string) (task.ChangeStats, error) {
+	return h.local.ChangedFileStats(ctx, dir, base)
 }
 
 var _ workflow.Trees = (*hybridTrees)(nil)

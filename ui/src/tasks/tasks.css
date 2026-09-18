@@ -79,6 +79,19 @@
   text-decoration: underline;
 }
 
+/* The title cell links to the task's run detail page. It inherits the title's
+   colour so the row still reads as a list, and underlines on hover so the link
+   is discoverable. */
+.task-detail-link {
+  color: inherit;
+}
+
+.task-detail-link:hover,
+.task-detail-link:focus-visible {
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+}
+
 .task-actions {
   display: flex;
   gap: var(--sp-1);

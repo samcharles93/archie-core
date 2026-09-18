@@ -382,6 +382,7 @@ func TestOpenPRLinksSourceBranchBeforeCreatingPR(t *testing.T) {
 		Task:   &Task{ID: 1, Owner: "acme", Repo: "widget", IssueNumber: 42, Title: "Fix bug"},
 		Repo:   config.Repo{Owner: "acme", Name: "widget", Base: "main"},
 		Branch: "fix/42-bug",
+		Log:    slog.New(slog.DiscardHandler),
 	}
 	if err := OpenPR(context.Background(), tc, "summary"); err != nil {
 		t.Fatal(err)
@@ -420,10 +421,15 @@ func TestStageCommitPushDoesNotUseSyntheticIssueForChatNoOp(t *testing.T) {
 
 // fakeTrees implements Trees, tracking calls without touching a real
 // worktree. commitAllChanged controls what CommitAll reports.
+//
+// It deliberately does NOT implement the unexported changeStatsReader
+// capability: every stage test that drives a fake tree therefore also covers
+// the path where a capture cannot be taken at all.
 type fakeTrees struct {
 	commitAllChanged bool
 	pushed           bool
 	pushBranch       string
+	pushErr          error
 }
 
 func (f *fakeTrees) Prepare(context.Context, string, string, string, int, string, string, string) (string, string, error) {
@@ -435,6 +441,9 @@ func (f *fakeTrees) CommitAll(context.Context, string, string) (bool, error) {
 }
 
 func (f *fakeTrees) Push(_ context.Context, _, branch string) error {
+	if f.pushErr != nil {
+		return f.pushErr
+	}
 	f.pushed = true
 	f.pushBranch = branch
 	return nil
@@ -464,6 +473,7 @@ func TestStageCommitPushPushesBaselineFixEvenWithNothingNewToCommit(t *testing.T
 		Dir:           "/tmp/test",
 		Branch:        "archie/issue-1",
 		Task:          &Task{ID: 1, Owner: "o", Repo: "r", IssueNumber: 1},
+		Log:           slog.New(slog.DiscardHandler),
 	}
 
 	if err := stage.Run(context.Background(), tc); err != nil {
@@ -488,6 +498,7 @@ func TestStageCommitPushStillErrorsOnEmptyTreeWithoutBaselineFix(t *testing.T) {
 		Dir:    "/tmp/test",
 		Branch: "archie/issue-1",
 		Task:   &Task{ID: 1, Owner: "o", Repo: "r", IssueNumber: 1},
+		Log:    slog.New(slog.DiscardHandler),
 	}
 
 	if err := stage.Run(context.Background(), tc); err == nil {
@@ -595,6 +606,7 @@ func TestOpenPRSurvivesALinkBranchFailure(t *testing.T) {
 				Task:   &Task{ID: 1, Owner: "acme", Repo: "widget", IssueNumber: 42, Title: "Fix bug"},
 				Repo:   config.Repo{Owner: "acme", Name: "widget", Base: "main"},
 				Branch: "fix/42-bug",
+				Log:    slog.New(slog.DiscardHandler),
 			}
 
 			if err := OpenPR(context.Background(), taskCtx, "summary"); err != nil {

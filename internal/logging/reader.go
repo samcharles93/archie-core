@@ -38,6 +38,15 @@ type Query struct {
 	Levels []string
 	// Component matches the "component" field exactly. Empty means any.
 	Component string
+	// Stage matches the entry's own "stage" field exactly (case-insensitive).
+	// Empty means any.
+	//
+	// Only entries a stage tagged carry that field. Agent and tool output is
+	// logged by the runtime that produced it and carries no stage, so a stage
+	// filter NARROWS the file rather than covering it: the caller is obliged to
+	// say that, because an honest-looking filter over a partial field is worse
+	// than no filter. An entry with no stage never matches.
+	Stage string
 	// Contains matches the message or any field value, case-insensitively.
 	Contains string
 	// Limit caps returned entries. Zero selects DefaultTailLines; values
@@ -560,6 +569,12 @@ func (q Query) matches(e Entry) bool {
 	if q.Component != "" {
 		got, _ := e.Fields["component"].(string)
 		if !strings.EqualFold(got, q.Component) {
+			return false
+		}
+	}
+	if q.Stage != "" {
+		got, _ := e.Fields["stage"].(string)
+		if !strings.EqualFold(got, q.Stage) {
 			return false
 		}
 	}
