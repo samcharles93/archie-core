@@ -44,7 +44,7 @@ func TestExternalServicesDoNotRequireBridgeNetwork(t *testing.T) {
 	cfg := config.Config{}
 	cfg.NATS.Mode = config.NATSModeExternal
 	cfg.Containers.Network = "host"
-	cfg.Services.State.Target = "state.example.test:9090"
+	cfg.Services = config.Services{config.ServiceNameState: {Target: "state.example.test:9090"}}
 	pool, _, cleanup := startContainers(t.Context(), cfg, slog.New(slog.DiscardHandler))
 	defer cleanup()
 	if pool == nil {

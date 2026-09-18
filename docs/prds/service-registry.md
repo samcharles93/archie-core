@@ -3,6 +3,10 @@
 **Status:** Design, pre-implementation. Supersedes `state-store-contract.md` §10's
 `State ServiceConnection` struct-field instruction (revised to rev. 2d in the same change).
 
+**Base:** the `listen` field, `internal/app/archied/listen.go`, and the listen defaults cited
+below exist on `feat/attempt-attribution`, not on `main`. This design therefore lands on top of
+that branch: `RegisterService`'s `listen` argument has nothing to carry without it.
+
 ## Problem
 
 A service is already one Go type, `config.ServiceConnection`. What is duplicated is its
@@ -84,9 +88,13 @@ states in prose or in a branch:
 
 - `state-store-contract.md` §10 must be revised in the same change, or the tree contradicts
   its own ratified authority. Its summary (`:7`) already says `[services.<name>]`.
-- A typo'd `[services.gatway]` currently fails to decode into a known field and is silently
-  ignored either way. The registry makes strict rejection of unregistered names possible,
-  but that is **not** in scope here; it would break criterion 5's open extensibility.
+- A typo'd `[services.gatway]` is **reported today** (`UnknownKeys = [services.gatway,
+  services.gatway.target]`), because the struct form leaves it in `toml.MetaData.Undecoded()`.
+  A map decodes any section, so preserving that is a requirement, not an optional extra:
+  `unregisteredServiceKeys` asks the registry which names exist. This costs nothing in
+  extensibility, because the answer comes from registration data rather than a fixed list.
+  (An earlier draft of this document claimed the typo was silently ignored either way. It
+  was not; the behaviour was measured.)
 - Existing tests reference `cfg.Services.State` directly (`state_store_client_test.go:82`,
   `setup_test.go:278`, and others). They move to `Get`, mechanically.
 - No wire contract, no RPC, and no persisted format is touched. The 42-RPC State Store

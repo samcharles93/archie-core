@@ -12,18 +12,9 @@ import (
 // Defaults applied to absent input. Named so a reader can find the value
 // without reading the code that applies it.
 const (
-	defaultPollInterval = 60 * time.Second
-	defaultDiffCapLines = 400
-	defaultWebListen    = "127.0.0.1:8484" // "off" disables
-	// defaultGatewayAddr is where archie-gateway binds and, by default, where
-	// clients look for it. One constant for both so a default deployment's
-	// client and server cannot drift onto different ports.
-	defaultGatewayAddr = "127.0.0.1:8585"
-	// defaultStateListen is the state store's bind address. There is
-	// deliberately no default for [services.state].target: an empty target is
-	// a startup error in the daemon and the gateway, which no longer serve a
-	// local store (docs/prds/state-store-contract.md).
-	defaultStateListen     = "127.0.0.1:9090"
+	defaultPollInterval    = 60 * time.Second
+	defaultDiffCapLines    = 400
+	defaultWebListen       = "127.0.0.1:8484" // "off" disables
 	defaultMaxRetries      = 3
 	defaultForgeType       = "github"
 	defaultForgeHost       = "https://github.com"
@@ -71,15 +62,7 @@ const (
 // input was to not call them. Splitting them means defaults can be applied,
 // inspected, and reasoned about independently of whether the result is valid.
 func (l *Loader) applyDefaults(cfg *config.Config) {
-	if cfg.Services.Gateway.Target == "" {
-		cfg.Services.Gateway.Target = defaultGatewayAddr
-	}
-	if cfg.Services.Gateway.Listen == "" {
-		cfg.Services.Gateway.Listen = defaultGatewayAddr
-	}
-	if cfg.Services.State.Listen == "" {
-		cfg.Services.State.Listen = defaultStateListen
-	}
+	applyServiceDefaults(cfg)
 	if cfg.Health.Listen == "" {
 		cfg.Health.Listen = defaultHealthListen
 	}
@@ -92,6 +75,31 @@ func (l *Loader) applyDefaults(cfg *config.Config) {
 	applyCaptureDefaults(cfg)
 	applyNATSDefaults(cfg)
 	applyMemoryDefaults(cfg)
+}
+
+// applyServiceDefaults fills each registered service's absent addresses from
+// its registration. It iterates the registry rather than naming services, so a
+// new service needs no branch here -- only its RegisterService call.
+//
+// A registered service always ends with an entry, so later code can read
+// cfg.Services.Get(name) without distinguishing "absent section" from
+// "section with every field defaulted". An empty registered Target is a
+// service whose target the operator must supply, and stays empty for
+// validation to reject rather than being defaulted to something dialable.
+func applyServiceDefaults(cfg *config.Config) {
+	if cfg.Services == nil {
+		cfg.Services = config.Services{}
+	}
+	for _, spec := range config.RegisteredServices() {
+		conn := cfg.Services[spec.Name]
+		if conn.Target == "" {
+			conn.Target = spec.Target
+		}
+		if conn.Listen == "" {
+			conn.Listen = spec.Listen
+		}
+		cfg.Services[spec.Name] = conn
+	}
 }
 
 // applyMemoryDefaults fills an absent engine choice with the builtin

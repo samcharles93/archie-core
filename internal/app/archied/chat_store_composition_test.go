@@ -11,8 +11,10 @@ import (
 )
 
 func TestRemoteChatCompositionPreservesChannelTurnLedger(t *testing.T) {
-	cfg := config.Config{DBPath: filepath.Join(t.TempDir(), "tasks.db")}
-	cfg.Services.Gateway.Target = "127.0.0.1:1"
+	cfg := config.Config{
+		DBPath:   filepath.Join(t.TempDir(), "tasks.db"),
+		Services: config.Services{config.ServiceNameGateway: {Target: "127.0.0.1:1"}},
+	}
 	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "state-store.db"))
 	if err != nil {
 		t.Fatal(err)

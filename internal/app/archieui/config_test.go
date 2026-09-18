@@ -47,7 +47,7 @@ target_token = "state-token"
 
 // TestResolveReadsOnlyTheAllowlistedConfigProjection pins the maintainer's
 // decision for this bead: the UI process does read config.toml, but only
-// Services.Gateway.{Target,TargetToken}, Services.State.{Target,TargetToken}
+// Services.Get("gateway").{Target,TargetToken} and the same for "state"
 // and Web.{Listen,TrustForwardedHeaders}. Options has no field that could
 // carry anything else, so this asserts the six values arrive and the daemon's
 // own settings have nowhere to land.

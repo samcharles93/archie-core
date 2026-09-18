@@ -19,6 +19,7 @@ import (
 
 	"google.golang.org/grpc"
 
+	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/infrastructure/readiness"
@@ -56,7 +57,7 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 	if err := b.loadConfig(ctx, options.Config, options.Overlay, false); err != nil {
 		return err
 	}
-	listen, err := resolveServiceListen("state", options.Listen, b.cfg.Services.State.Listen)
+	listen, err := resolveServiceListen("state", options.Listen, b.cfg.Services.Get(config.ServiceNameState).Listen)
 	if err != nil {
 		return err
 	}
@@ -67,7 +68,7 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 
 	token := options.Token
 	if token == "" {
-		token = stateStoreResolvedToken(b.cfg.Services.State, b.secrets)
+		token = b.cfg.Services.ResolvedToken(config.ServiceNameState, b.secrets.Getenv)
 	}
 	grants := &staterpc.TaskGrants{}
 	//nolint:contextcheck // grpc.StreamServerInterceptor has no context.Context parameter; TaskGrants.StreamInterceptor derives its context from stream.Context() instead
