@@ -1,6 +1,9 @@
 # State Store — contract boundary & transport (ratification)
 
-**Status:** Ratified (rev. 2c). Rev. 1 was marked *conditionally ratified*; the three
+**Status:** Ratified (rev. 2d). Rev. 2d revises §10 only: the `State ServiceConnection`
+struct-field instruction is withdrawn in favour of name-keyed services
+(`docs/prds/service-registry.md`). The contract, its 42 RPCs, and the listener topology are
+unchanged. Rev. 1 was marked *conditionally ratified*; the three
 reviewer conditions it raised are resolved (rev. 2), and the two third-pass findings are
 resolved here: (a) the stale Q3 migration wording in `service-decomposition.md`
 (`store.WorkflowStore`, `mode = "inproc" | "remote"`) now matches the ratified ownership split
@@ -535,16 +538,17 @@ an explicit operator decision.
 
 **Follow the gateway's presence-based `target` seam, not the NATS `mode` enum.**
 
-- `internal/config/services.go` gains a `State ServiceConnection` field:
+- **Revised (rev. 2d).** This section previously instructed that
+  `internal/config/services.go` gain a `State ServiceConnection` *struct field*. That
+  instruction is withdrawn: naming each service as a field is the duplication
+  `docs/prds/service-registry.md` removes, and this document's own summary (`:7`) already
+  describes the seam as `[services.<name>]`. Services are keyed by name:
   ```go
-  type Services struct {
-      Gateway ServiceConnection `toml:"gateway" yaml:"gateway"`
-      State   ServiceConnection `toml:"state"   yaml:"state"`
-  }
-  type ServiceConnection struct {
-      Target string `toml:"target" yaml:"target"`
-  }
+  type Services map[string]ServiceConnection
   ```
+  registered once via `RegisterService(context, name, target, listen, tokenEnv)`. The TOML
+  shape below is unchanged, so nothing else in this section is affected; read
+  `cfg.Services.Get("state")` wherever it says `cfg.Services.State`.
 - **Empty `Target` → local** `*store.Store` adapter (the default; State Store not yet
   extracted). **Set `Target` → dial gRPC** and use `*staterpc.Client`. This differs from the
   gateway, where `Target` is always defaulted to `127.0.0.1:8585` because the gateway is already
