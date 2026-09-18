@@ -37,6 +37,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -55,16 +56,21 @@ const maxBodyBytes = 1 << 20 // 1 MiB
 // (*daemon.Daemon).PublishTask, the same enqueue path the poller uses.
 type PublishFunc func(ctx context.Context, task workintake.TaskEnvelope) error
 
+// ReviewPublishFunc delivers a review reaction. It is optional so existing
+// issue-only deployments retain their original wiring.
+type ReviewPublishFunc func(ctx context.Context, review workintake.ReviewCommentEnvelope) error
+
 // Receiver is the HTTP handler for forge webhooks. It verifies the signature,
 // decodes the event, applies the shared dispatch predicate, and publishes
 // matched issues.
 type Receiver struct {
-	secret  string
-	trigger string
-	label   string
-	botUser string
-	publish PublishFunc
-	log     *slog.Logger
+	secret        string
+	trigger       string
+	label         string
+	botUser       string
+	publish       PublishFunc
+	reviewPublish ReviewPublishFunc
+	log           *slog.Logger
 
 	mu             sync.Mutex
 	startedAt      time.Time
@@ -103,6 +109,10 @@ type Status struct {
 }
 
 // Status returns a snapshot of the receiver's activity counters.
+// SetReviewPublisher enables the optional pull-request review reaction
+// stream without changing the issue webhook constructor contract.
+func (r *Receiver) SetReviewPublisher(publish ReviewPublishFunc) { r.reviewPublish = publish }
+
 func (r *Receiver) Status() Status {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -177,6 +187,22 @@ func (r *Receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// independent of whether it turns out to be dispatch-eligible.
 	r.recordDelivery()
 
+	if review, ok := r.reviewFromEvent(event); ok {
+		if r.reviewPublish == nil {
+			// Review intake is optional, just like the forge capability.
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		if err := r.reviewPublish(req.Context(), review); err != nil {
+			r.log.Error("publish review reaction", "review", review.Ref(), "err", err)
+			http.Error(w, "publish failed", http.StatusInternalServerError)
+			return
+		}
+		r.recordPublish()
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+
 	issueEvent, ok := event.(*github.IssuesEvent)
 	if !ok {
 		// Not an issue event (ping, pull_request, etc.). Acknowledge and
@@ -201,6 +227,72 @@ func (r *Receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	r.recordPublish()
 	r.log.Info("published", "task", task.Ref())
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// reviewFromEvent converts actionable GitHub review deliveries to the same
+// reaction envelope used by the poll backstop. Non-actionable and malformed
+// events return false and are acknowledged by ServeHTTP.
+func (r *Receiver) reviewFromEvent(event any) (workintake.ReviewCommentEnvelope, bool) {
+	var owner, repo string
+	var prNumber int
+	var commentID, reviewID int64
+	var author, body, path, state string
+	var line int
+
+	switch e := event.(type) {
+	case *github.PullRequestReviewEvent:
+		if e.GetAction() != "submitted" || e.GetReview() == nil {
+			return workintake.ReviewCommentEnvelope{}, false
+		}
+		review := e.GetReview()
+		state = normalizeWebhookReviewState(review.GetState())
+		if state != "requested_changes" && state != "commented" {
+			return workintake.ReviewCommentEnvelope{}, false
+		}
+		commentID, reviewID = review.GetID(), review.GetID()
+		author, body = review.GetUser().GetLogin(), review.GetBody()
+		prNumber = e.GetPullRequest().GetNumber()
+		if e.GetRepo() != nil {
+			owner, repo = e.GetRepo().GetOwner().GetLogin(), e.GetRepo().GetName()
+		}
+	case *github.PullRequestReviewCommentEvent:
+		if e.GetAction() != "created" || e.GetComment() == nil {
+			return workintake.ReviewCommentEnvelope{}, false
+		}
+		comment := e.GetComment()
+		commentID, reviewID = comment.GetID(), comment.GetPullRequestReviewID()
+		author, body, path = comment.GetUser().GetLogin(), comment.GetBody(), comment.GetPath()
+		line = comment.GetOriginalLine()
+		if line == 0 {
+			line = comment.GetLine()
+		}
+		state = "commented"
+		prNumber = e.GetPullRequest().GetNumber()
+		if e.GetRepo() != nil {
+			owner, repo = e.GetRepo().GetOwner().GetLogin(), e.GetRepo().GetName()
+		}
+	default:
+		return workintake.ReviewCommentEnvelope{}, false
+	}
+	if owner == "" || repo == "" || prNumber <= 0 || commentID <= 0 || body == "" || author == "" || strings.EqualFold(author, r.botUser) {
+		return workintake.ReviewCommentEnvelope{}, false
+	}
+	return workintake.ReviewCommentEnvelope{Owner: owner, Repo: repo, PRNumber: prNumber, CommentID: commentID, ReviewID: reviewID, Author: author, State: state, Body: body, Path: path, Line: line}, true
+}
+
+func normalizeWebhookReviewState(state string) string {
+	switch state {
+	case "CHANGES_REQUESTED":
+		return "requested_changes"
+	case "COMMENTED":
+		return "commented"
+	case "APPROVED":
+		return "approved"
+	case "DISMISSED":
+		return "dismissed"
+	default:
+		return state
+	}
 }
 
 // taskFromEvent decodes a GitHub issues event into a task envelope, or

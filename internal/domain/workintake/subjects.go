@@ -16,6 +16,9 @@ const (
 
 	// SubjectTaskWildcard matches every task subject.
 	SubjectTaskWildcard = "archie.task.>"
+
+	// SubjectReviewComment carries review reactions for existing PR tasks.
+	SubjectReviewComment = "archie.reaction.review_comment"
 )
 
 // ErrUnknownKind reports a kind with no subject. Routing it to the default

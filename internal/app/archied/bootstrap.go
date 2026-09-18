@@ -1433,6 +1433,7 @@ func (b *boot) setupForgeWebhook() {
 		return
 	}
 	receiver := forgewebhook.New(secretValue, cfg.Dispatch.Trigger, cfg.Label, cfg.BotUser, b.d.PublishTask, log)
+	receiver.SetReviewPublisher(b.d.PublishReview)
 	host, port := parseListenAddr(cfg.Forge.WebhookAddr, "0.0.0.0", 8645)
 	addr := fmt.Sprintf("%s:%d", host, port)
 	srv := &http.Server{Addr: addr, Handler: receiver}

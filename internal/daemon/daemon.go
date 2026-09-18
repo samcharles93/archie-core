@@ -870,6 +870,22 @@ func (d *Daemon) PublishTask(ctx context.Context, task workintake.TaskEnvelope) 
 	return d.Tasks.PublishUnique(ctx, task.Subject(), task.IdempotencyKey(), payload)
 }
 
+// PublishReview publishes a review reaction using the same unique-delivery
+// path as polling. This is the webhook's source-independent enqueue hook.
+func (d *Daemon) PublishReview(ctx context.Context, review workintake.ReviewCommentEnvelope) error {
+	if d.Tasks == nil {
+		return fmt.Errorf("publish review %s: no task bus configured", review.Ref())
+	}
+	if review.Owner == "" || review.Repo == "" || review.PRNumber <= 0 || review.CommentID <= 0 {
+		return fmt.Errorf("publish review %s: invalid identity", review.Ref())
+	}
+	payload, err := review.Encode()
+	if err != nil {
+		return err
+	}
+	return d.Tasks.PublishUnique(ctx, review.Subject(), review.IdempotencyKey(), payload)
+}
+
 // acknowledge posts the pickup reaction and queued event
 // using fg  --  the forge client that owns repo (identity-scoped or root) --
 // and the ack reaction from cfg, the dispatch config that owns this poll.
