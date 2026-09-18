@@ -8,6 +8,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -1333,6 +1334,134 @@ func TestRepoForPrefersOwningIdentityRepoList(t *testing.T) {
 	// The same repo name must NOT resolve for an unrelated identity.
 	if _, ok := d.repoFor(&workflow.Task{Owner: "acme", Repo: "identity-only", Identity: "winter"}); ok {
 		t.Fatal("repoFor leaked archie's identity-only repo to winter")
+	}
+}
+
+// sweepForge records invitation sweeps and push verifications so a test can
+// assert which forges Startup swept. It embeds testForge for the rest of the
+// forge.Forge surface; those methods are unreachable from Startup. Startup
+// sweeps every forge concurrently, so the recorders are mutex-guarded.
+type sweepForge struct {
+	testForge
+	mu            sync.Mutex
+	invitations   int
+	verifiedRepos []string
+}
+
+func (f *sweepForge) AcceptInvitations(context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.invitations++
+	return nil
+}
+
+func (f *sweepForge) VerifyPush(_ context.Context, owner, repo string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.verifiedRepos = append(f.verifiedRepos, owner+"/"+repo)
+	return nil
+}
+
+func (f *sweepForge) snapshot() (int, []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.invitations, slices.Clone(f.verifiedRepos)
+}
+
+// TestStartupSweepsEveryConfiguredForge pins the boot-time invitation sweep
+// and push verification. Startup used to sweep only d.Forge and
+// d.Cfg.Get().Repos, so in multi-identity mode per-identity invites were
+// never accepted and per-identity repos never push-verified: a task from one
+// of those repos failed at dispatch instead of warning at boot.
+//
+// The root forge is swept in both modes. Run never polls the root repo list
+// in multi-identity mode, but dispatchBinding enqueues with an empty identity
+// against resolveBindingRepo's root-repo fallback, and forgeFor/repoFor
+// resolve an empty identity to the root forge and root repos, so root targets
+// stay reachable there.
+func TestStartupSweepsEveryConfiguredForge(t *testing.T) {
+	type want struct {
+		invitations int
+		repos       []string
+	}
+	tests := []struct {
+		name       string
+		rootRepos  []config.Repo
+		identities []config.Repo // one identity per entry, keyed by owner
+		wantRoot   want
+		wantIDs    []want
+	}{
+		{
+			name:      "single identity sweeps the root forge",
+			rootRepos: []config.Repo{{Owner: "root", Name: "repo"}},
+			wantRoot:  want{invitations: 1, repos: []string{"root/repo"}},
+		},
+		{
+			name:      "multi identity sweeps the root forge and every identity",
+			rootRepos: []config.Repo{{Owner: "root", Name: "repo"}},
+			identities: []config.Repo{
+				{Owner: "one", Name: "a"},
+				{Owner: "two", Name: "b"},
+			},
+			wantRoot: want{invitations: 1, repos: []string{"root/repo"}},
+			wantIDs: []want{
+				{invitations: 1, repos: []string{"one/a"}},
+				{invitations: 1, repos: []string{"two/b"}},
+			},
+		},
+		{
+			name:      "identity with no repos still gets its invitations swept",
+			rootRepos: nil,
+			identities: []config.Repo{
+				{Owner: "one", Name: ""},
+			},
+			wantRoot: want{invitations: 1},
+			wantIDs:  []want{{invitations: 1}},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rootFg := &sweepForge{}
+			idForges := make([]*sweepForge, len(tc.identities))
+			runners := make([]*IdentityRunner, len(tc.identities))
+			for i, r := range tc.identities {
+				idForges[i] = &sweepForge{}
+				runner := &IdentityRunner{Name: r.Owner, Forge: idForges[i]}
+				if r.Name != "" {
+					runner.Repos = []config.Repo{r}
+				}
+				runners[i] = runner
+			}
+
+			d := &Daemon{
+				Cfg:        config.NewHolder(config.Config{Repos: tc.rootRepos}),
+				Store:      store.OpenTest(t),
+				Forge:      rootFg,
+				Log:        slog.New(slog.DiscardHandler),
+				Identities: runners,
+			}
+
+			if err := d.Startup(context.Background()); err != nil {
+				t.Fatalf("Startup: %v", err)
+			}
+
+			assertSwept(t, "root", rootFg, tc.wantRoot.invitations, tc.wantRoot.repos)
+			for i, w := range tc.wantIDs {
+				assertSwept(t, runners[i].Name, idForges[i], w.invitations, w.repos)
+			}
+		})
+	}
+}
+
+func assertSwept(t *testing.T, name string, fg *sweepForge, wantInvitations int, wantRepos []string) {
+	t.Helper()
+	invitations, repos := fg.snapshot()
+	if invitations != wantInvitations {
+		t.Errorf("%s AcceptInvitations = %d, want %d", name, invitations, wantInvitations)
+	}
+	if !slices.Equal(repos, wantRepos) {
+		t.Errorf("%s verified repos = %v, want %v", name, repos, wantRepos)
 	}
 }
 
