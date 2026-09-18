@@ -180,6 +180,156 @@ func TestRunReportsFilesystemAndSourceErrors(t *testing.T) {
 	}
 }
 
+func TestCheckAcceptsTheCommittedArtifact(t *testing.T) {
+	repoRoot := filepath.Clean("../..")
+
+	if err := check(repoRoot, defaultOutputPath); err != nil {
+		t.Fatalf("check(%q) error = %v; committed generated data is stale", defaultOutputPath, err)
+	}
+}
+
+func TestCheckReportsChangedSchema(t *testing.T) {
+	repoRoot := filepath.Clean("../..")
+	output := filepath.Join(t.TempDir(), "contracts.json")
+	if err := run(repoRoot, output); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	mutateGeneratedData(t, output, func(data map[string]any) {
+		schemas := data["schemas"].(map[string]any)
+		schemas["AgentExecutionResult"].(map[string]any)["title"] = "tampered"
+	})
+
+	err := check(repoRoot, output)
+	if err == nil {
+		t.Fatal("check() returned nil error for a changed artifact")
+	}
+	for _, want := range []string{"changed", "AgentExecutionResult", "agentexec.Result"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("check() error = %q, want substring %q", err, want)
+		}
+	}
+}
+
+func TestCheckReportsRemovedSchema(t *testing.T) {
+	repoRoot := filepath.Clean("../..")
+	output := filepath.Join(t.TempDir(), "contracts.json")
+	if err := run(repoRoot, output); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	mutateGeneratedData(t, output, func(data map[string]any) {
+		delete(data["schemas"].(map[string]any), "MessageEvent")
+	})
+
+	err := check(repoRoot, output)
+	if err == nil {
+		t.Fatal("check() returned nil error for a removed schema")
+	}
+	if !strings.Contains(err.Error(), "MessageEvent") {
+		t.Errorf("check() error = %q, want the removed schema named", err)
+	}
+}
+
+func TestCheckReportsMissingArtifact(t *testing.T) {
+	repoRoot := filepath.Clean("../..")
+	output := filepath.Join(t.TempDir(), "contracts.json")
+
+	err := check(repoRoot, output)
+	if err == nil {
+		t.Fatal("check() returned nil error for a missing artifact")
+	}
+	if !strings.Contains(err.Error(), "missing") {
+		t.Fatalf("check() error = %q, want it to report a missing artifact", err)
+	}
+	if _, statErr := os.Stat(output); statErr == nil {
+		t.Fatal("check() created the missing artifact instead of reporting it")
+	}
+}
+
+func TestCheckReportsObsoleteArtifact(t *testing.T) {
+	repoRoot := filepath.Clean("../..")
+	outputDir := t.TempDir()
+	if err := run(repoRoot, filepath.Join(outputDir, "contracts.json")); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	obsolete := filepath.Join(outputDir, "orphaned.json")
+	if err := os.WriteFile(obsolete, []byte("{}\n"), 0o600); err != nil {
+		t.Fatalf("write obsolete artifact: %v", err)
+	}
+
+	err := check(repoRoot, filepath.Join(outputDir, "contracts.json"))
+	if err == nil {
+		t.Fatal("check() returned nil error for an obsolete artifact")
+	}
+	if !strings.Contains(err.Error(), "obsolete") || !strings.Contains(err.Error(), "orphaned.json") {
+		t.Fatalf("check() error = %q, want the obsolete file named", err)
+	}
+}
+
+func TestCheckNeverModifiesTheWorkingTree(t *testing.T) {
+	repoRoot := filepath.Clean("../..")
+	outputDir := t.TempDir()
+	output := filepath.Join(outputDir, "contracts.json")
+	if err := run(repoRoot, output); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	mutateGeneratedData(t, output, func(data map[string]any) {
+		data["generatedBy"] = "tampered"
+	})
+	before, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatalf("read before: %v", err)
+	}
+	beforeInfo, err := os.Stat(output)
+	if err != nil {
+		t.Fatalf("stat before: %v", err)
+	}
+
+	if err := check(repoRoot, output); err == nil {
+		t.Fatal("check() returned nil error for a changed artifact")
+	}
+
+	after, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatalf("read after: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("check() rewrote the artifact under test")
+	}
+	afterInfo, err := os.Stat(output)
+	if err != nil {
+		t.Fatalf("stat after: %v", err)
+	}
+	if beforeInfo.Mode() != afterInfo.Mode() {
+		t.Fatalf("check() changed the artifact mode: %v -> %v", beforeInfo.Mode(), afterInfo.Mode())
+	}
+	if entries, err := os.ReadDir(outputDir); err != nil {
+		t.Fatalf("read output dir: %v", err)
+	} else if len(entries) != 1 {
+		t.Fatalf("check() left %d files in the output dir, want 1", len(entries))
+	}
+}
+
+func mutateGeneratedData(t *testing.T, path string, mutate func(map[string]any)) {
+	t.Helper()
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	var data map[string]any
+	if err := json.Unmarshal(raw, &data); err != nil {
+		t.Fatalf("decode %s: %v", path, err)
+	}
+	mutate(data)
+	body, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		t.Fatalf("encode %s: %v", path, err)
+	}
+	if err := os.WriteFile(path, append(body, '\n'), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
 func TestRewriteRef(t *testing.T) {
 	tests := map[string]string{
 		"definition": "#/schemas/Contract",
