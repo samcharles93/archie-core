@@ -1,8 +1,7 @@
-import { h, Fragment, render } from "preact";
+import { h, Fragment } from "preact";
 import { useState, useEffect, useRef } from "preact/hooks";
 import { api } from "../base/api.jsx";
-import { renderMarkdown } from "./markdown.jsx";
-import { appendToolCall, appendNavigateChip } from "./chat-tools.jsx";
+import { ChatMarkdown } from "./markdown.jsx";
 import { channelID } from "./chat-state.jsx";
 import { newChatTurn, retryChatTurn, resolveTurn } from "./chat-retry.jsx";
 import { sessionTitle } from "./chat-render.jsx";
@@ -12,26 +11,6 @@ import "./chat.css";
 
 function currentPage() {
   return location.hash.slice(1) || "/";
-}
-
-function DOMWrap({ node }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    if (ref.current && node) {
-      ref.current.replaceChildren(node);
-    }
-  }, [node]);
-  return <div ref={ref} style={{ display: "contents" }} />;
-}
-
-function MarkdownView({ text }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    if (ref.current) {
-      ref.current.replaceChildren(renderMarkdown(text || ""));
-    }
-  }, [text]);
-  return <div ref={ref} style={{ display: "contents" }} />;
 }
 
 export function ChatApp() {
@@ -879,7 +858,7 @@ export function ChatApp() {
                                 })}
                               </div>
                             )}
-                            <MarkdownView text={text} />
+                            <ChatMarkdown text={text} />
                           </Fragment>
                         ) : (
                           <div className="chat-bubble-text">{text}</div>
@@ -934,7 +913,7 @@ export function ChatApp() {
                           })}
                         </div>
                       )}
-                      <MarkdownView text={streamingTurn.text || "…"} />
+                      <ChatMarkdown text={streamingTurn.text || "…"} />
                       {streamingTurn.isError && (
                         <button
                           className="btn chat-retry"
@@ -1017,11 +996,4 @@ export function ChatApp() {
 
 export function ChatPage() {
   return <ChatApp />;
-}
-
-export function chatPage() {
-  const container = document.createElement("div");
-  container.className = "chat-page";
-  render(<ChatApp />, container);
-  return container;
 }

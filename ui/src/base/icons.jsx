@@ -1,3 +1,5 @@
+import { h } from "preact";
+
 /**
  * Icon set.
  *
@@ -34,21 +36,28 @@ const paths = {
 };
 
 /**
- * icon("tasks") -> SVGElement. size is the rendered box; the grid is always 24
- * so stroke weight stays optically consistent at any size.
+ * Icon draws one glyph from the set. size is the rendered box; the grid is
+ * always 24 so stroke weight stays optically consistent at any size.
+ *
+ * The glyph bodies are the `paths` strings above, injected as raw SVG. They are
+ * in-repo constants and Preact cannot turn markup into elements, so re-authoring
+ * twenty multi-element glyphs as JSX would trade a data table for code without
+ * changing a single drawn pixel.
  */
-export function icon(name, { size = 18, className = "" } = {}) {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("width", String(size));
-  svg.setAttribute("height", String(size));
-  svg.setAttribute("fill", "none");
-  svg.setAttribute("stroke", "currentColor");
-  svg.setAttribute("stroke-width", "1.6");
-  svg.setAttribute("stroke-linecap", "round");
-  svg.setAttribute("stroke-linejoin", "round");
-  svg.setAttribute("aria-hidden", "true");
-  svg.setAttribute("class", `ico ${className}`.trim());
-  svg.innerHTML = paths[name] || paths.dashboard;
-  return svg;
+export function Icon({ name, size = 18, className = "" }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.6"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+      className={`ico ${className}`.trim()}
+      dangerouslySetInnerHTML={{ __html: paths[name] || paths.dashboard }}
+    />
+  );
 }

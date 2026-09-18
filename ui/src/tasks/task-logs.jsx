@@ -1,5 +1,4 @@
-import { useRef, useEffect } from "preact/hooks";
-import { logRow as renderLogRow, LOG_LEVELS } from "../base/log-row.jsx";
+import { LogRow, LOG_LEVELS } from "../base/log-row.jsx";
 
 // A task attempt's log pane (R5).
 //
@@ -20,14 +19,6 @@ import { logRow as renderLogRow, LOG_LEVELS } from "../base/log-row.jsx";
 // The attempt is not a filter here: the page selects the attempt and this pane
 // reports which one it is showing, so the pane can never read attempt 1's log
 // while claiming attempt 2.
-
-function LogRowNode({ entry }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    if (ref.current) ref.current.replaceChildren(renderLogRow(entry));
-  }, [entry]);
-  return <div ref={ref} style={{ display: "contents" }} />;
-}
 
 // Task-log download URL. The attempt is named explicitly so a download matches
 // the attempt the panel is showing rather than whatever is current by the time
@@ -195,7 +186,7 @@ export function TaskLogPanel({
         <>
           <div className="log-list task-log-list">
             {entries.map((entry, i) => (
-              <LogRowNode key={i} entry={entry} />
+              <LogRow key={i} entry={entry} />
             ))}
           </div>
           {footer}

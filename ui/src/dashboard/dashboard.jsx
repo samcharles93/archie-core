@@ -2,40 +2,14 @@ import { h, Fragment } from "preact";
 import { useState, useEffect, useRef } from "preact/hooks";
 import "./dashboard.css";
 import { api, subscribeEvents } from "../base/api.jsx";
-import { ago, compact, statusKind } from "../base/dom.jsx";
-import { statTile } from "../base/statTile.jsx";
-import { gauge, segmentBar } from "../base/gauge.jsx";
-import { icon } from "../base/icons.jsx";
+import { ago, compact } from "../base/format.jsx";
+import { statusKind } from "../base/task-meta.jsx";
+import { StatTile } from "../base/statTile.jsx";
+import { Gauge, SegmentBar } from "../base/gauge.jsx";
+import { Icon } from "../base/icons.jsx";
 import { Pill } from "../base/pill.jsx";
 import { dismissSetupComplete, setupPanelState } from "./setup-preference.jsx";
 import { dashboardTaskTargets } from "./task-targets.jsx";
-
-// Preact wrapper for base DOM components that still use `el()`
-function DOMWrap({ node }) {
-  const ref = useRef();
-  useEffect(() => {
-    if (ref.current && node) {
-      ref.current.replaceChildren(node);
-    }
-  }, [node]);
-  return <div ref={ref} style={{ display: "contents" }} />;
-}
-
-function StatTile(props) {
-  return <DOMWrap node={statTile(props)} />;
-}
-
-function Gauge(props) {
-  return <DOMWrap node={gauge(props)} />;
-}
-
-function SegmentBar({ segments }) {
-  return <DOMWrap node={segmentBar(segments)} />;
-}
-
-function Icon({ name, opts }) {
-  return <DOMWrap node={icon(name, opts)} />;
-}
 
 function Empty({ title, detail }) {
   return (
@@ -138,7 +112,7 @@ function DashboardApp() {
   if (error) {
     actions = (
       <button className="btn btn-primary" onClick={load}>
-        <Icon name="refresh" opts={{ size: 15 }} /> Retry
+        <Icon name="refresh" size={15} /> Retry
       </button>
     );
   } else if (tasks !== null) {
@@ -149,19 +123,19 @@ function DashboardApp() {
       <Fragment>
         {blocked > 0 && (
           <a className="btn btn-attention" href={targets.attention.href}>
-            <Icon name="tasks" opts={{ size: 15 }} /> {blocked} need{blocked === 1 ? "s" : ""} you
+            <Icon name="tasks" size={15} /> {blocked} need{blocked === 1 ? "s" : ""} you
           </a>
         )}
         {running > 0 && (
           <a className="btn" href={targets.running.href}>
-            <Icon name="workflows" opts={{ size: 15 }} /> {running} running
+            <Icon name="workflows" size={15} /> {running} running
           </a>
         )}
         <a className="btn" href="#/logs">
-          <Icon name="logs" opts={{ size: 15 }} /> Logs
+          <Icon name="logs" size={15} /> Logs
         </a>
         <button className="btn btn-primary" onClick={load}>
-          <Icon name="refresh" opts={{ size: 15 }} /> Refresh
+          <Icon name="refresh" size={15} /> Refresh
         </button>
       </Fragment>
     );
@@ -237,7 +211,7 @@ function DashboardApp() {
           <ul className="setup-list">
             {setup.steps.map((step, i) => (
               <li key={i} className={`setup-step ${step.done ? "done" : ""}`}>
-                <span className="setup-check">{step.done ? <Icon name="check" opts={{ size: 12 }} /> : ""}</span>
+                <span className="setup-check">{step.done ? <Icon name="check" size={12} /> : ""}</span>
                 <div>
                   <div className="setup-step-title">{step.title}</div>
                   {step.detail && <div className="setup-step-detail">{step.detail}</div>}
@@ -256,7 +230,7 @@ function DashboardApp() {
               <p className="card-sub">Archie is configured and ready to work.</p>
             </div>
             <div className="setup-complete-actions">
-              <span className="setup-pct"><Icon name="check" opts={{ size: 16 }} /></span>
+              <span className="setup-pct"><Icon name="check" size={16} /></span>
               <button
                 className="icon-btn setup-dismiss"
                 type="button"

@@ -1,4 +1,4 @@
-import { ago } from "../base/dom.jsx";
+import { ago } from "../base/format.jsx";
 
 // Changed files for one attempt (R3), from `GET /api/tasks/{id}/changes`.
 //
