@@ -257,13 +257,6 @@ func (m *legacyModule) Stop(context.Context) error {
 	return nil
 }
 
-// ModuleStatus combines host-owned lifecycle state with module-reported health.
-type ModuleStatus struct {
-	Manifest Manifest
-	State    LifecycleState
-	Health   Health
-}
-
 type hostState uint8
 
 const (
@@ -386,34 +379,6 @@ func (h *Host) Start(ctx context.Context) error {
 	return nil
 }
 
-// Health returns an immutable snapshot of module lifecycle and health.
-func (h *Host) Health(ctx context.Context) []ModuleStatus {
-	h.opMu.Lock()
-	defer h.opMu.Unlock()
-
-	h.mu.RLock()
-	statuses := make([]ModuleStatus, 0, len(h.registration))
-	modules := make([]Module, 0, len(h.registration))
-	for _, id := range h.registration {
-		entry := h.modules[id]
-		statuses = append(statuses, ModuleStatus{
-			Manifest: entry.manifest.clone(),
-			State:    entry.state,
-			Health:   Health{Status: HealthUnknown},
-		})
-		modules = append(modules, entry.module)
-	}
-	h.mu.RUnlock()
-
-	for i := range statuses {
-		if statuses[i].State != StateRunning {
-			continue
-		}
-		statuses[i].Health = safeHealth(ctx, statuses[i].Manifest.ID, modules[i])
-	}
-	return statuses
-}
-
 // Stop stops started modules in reverse dependency order. It attempts every
 // stop even when one module returns an error or panics.
 func (h *Host) Stop(ctx context.Context) error {
@@ -440,18 +405,6 @@ func (h *Host) Stop(ctx context.Context) error {
 	}
 	h.mu.Unlock()
 	return err
-}
-
-// Manifests returns immutable snapshots in registration order.
-func (h *Host) Manifests() []Manifest {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-
-	out := make([]Manifest, 0, len(h.registration))
-	for _, id := range h.registration {
-		out = append(out, h.modules[id].manifest.clone())
-	}
-	return out
 }
 
 func (h *Host) startOrderLocked() ([]string, error) {
@@ -575,27 +528,6 @@ func safeStart(ctx context.Context, id string, module Module) (err error) {
 		return fmt.Errorf("start plugin module %q: %w", id, err)
 	}
 	return nil
-}
-
-func safeHealth(ctx context.Context, id string, module Module) (health Health) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			health = Health{
-				Status:  HealthUnhealthy,
-				Message: fmt.Sprintf("plugin module %q health panic: %v", id, recovered),
-			}
-		}
-	}()
-	health = module.Health(ctx)
-	switch health.Status {
-	case HealthUnknown, HealthHealthy, HealthDegraded, HealthUnhealthy:
-		return health
-	default:
-		return Health{
-			Status:  HealthUnhealthy,
-			Message: fmt.Sprintf("plugin module %q returned invalid health status %q", id, health.Status),
-		}
-	}
 }
 
 func safeStop(ctx context.Context, id string, module Module) (err error) {

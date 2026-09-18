@@ -36,7 +36,6 @@ func init() {
 		"LifecycleState": reflect.ValueOf((*plugin.LifecycleState)(nil)),
 		"Manifest":       reflect.ValueOf((*plugin.Manifest)(nil)),
 		"Module":         reflect.ValueOf((*plugin.Module)(nil)),
-		"ModuleStatus":   reflect.ValueOf((*plugin.ModuleStatus)(nil)),
 		"Permission":     reflect.ValueOf((*plugin.Permission)(nil)),
 		"Plugin":         reflect.ValueOf((*plugin.Plugin)(nil)),
 		"Registry":       reflect.ValueOf((*plugin.Registry)(nil)),

@@ -87,34 +87,6 @@ func TestHostRegisterRejectsDuplicateAndMutationAfterStart(t *testing.T) {
 	}
 }
 
-func TestHostManifestsAreImmutableSnapshots(t *testing.T) {
-	t.Parallel()
-
-	host := plugin.NewHost()
-	manifest := validManifest("immutable")
-	if err := host.Register(&fakeModule{manifest: manifest}); err != nil {
-		t.Fatal(err)
-	}
-
-	manifest.Capabilities[0] = "mutated-at-source"
-	manifest.Dependencies = append(manifest.Dependencies, "source-dependency")
-
-	first := host.Manifests()
-	if len(first) != 1 {
-		t.Fatalf("Manifests() length = %d, want 1", len(first))
-	}
-	first[0].Capabilities[0] = "mutated-at-caller"
-	first[0].Dependencies = append(first[0].Dependencies, "caller-dependency")
-
-	second := host.Manifests()
-	if got := second[0].Capabilities[0]; got != "tools" {
-		t.Fatalf("stored capability = %q, want tools", got)
-	}
-	if len(second[0].Dependencies) != 0 {
-		t.Fatalf("stored dependencies = %v, want empty", second[0].Dependencies)
-	}
-}
-
 func TestHostStartsInDependencyOrderAndStopsInReverse(t *testing.T) {
 	t.Parallel()
 
@@ -273,26 +245,6 @@ func TestHostRegisterContainsManifestPanics(t *testing.T) {
 	}
 }
 
-func TestHostHealthRejectsInvalidProviderStatus(t *testing.T) {
-	t.Parallel()
-
-	host := plugin.NewHost()
-	module := &fakeModule{
-		manifest: validManifest("invalid-health"),
-		health:   plugin.Health{Status: "surprising"},
-	}
-	if err := host.Register(module); err != nil {
-		t.Fatal(err)
-	}
-	if err := host.Start(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	status := host.Health(context.Background())[0]
-	if status.Health.Status != plugin.HealthUnhealthy || !strings.Contains(status.Health.Message, "invalid health status") {
-		t.Fatalf("health status = %+v", status)
-	}
-}
-
 func TestHostStopContinuesAfterErrorsAndPanics(t *testing.T) {
 	t.Parallel()
 
@@ -377,54 +329,11 @@ func TestHostStartupRollbackIsBoundedAndRetryable(t *testing.T) {
 	if got := module.stopContextErrors[0]; got != nil {
 		t.Fatalf("rollback Stop() context error = %v, want original cancellation detached", got)
 	}
-	if got := statusByID(host.Health(context.Background()), module.manifest.ID).State; got != plugin.StateFailed {
-		t.Fatalf("failed module state = %q, want failed after successful or failed rollback cleanup", got)
-	}
 	if err := host.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop() retry error = %v", err)
 	}
 	if module.stopCount != 2 {
 		t.Fatalf("Stop() calls = %d, want rollback plus retry", module.stopCount)
-	}
-}
-
-func TestHostHealthIsPanicSafeAndSnapshotBased(t *testing.T) {
-	t.Parallel()
-
-	host := plugin.NewHost()
-	healthy := &fakeModule{
-		manifest: validManifest("healthy"),
-		health:   plugin.Health{Status: plugin.HealthHealthy, Message: "ready"},
-	}
-	panicky := &fakeModule{manifest: validManifest("panicky"), healthPanic: true}
-	for _, module := range []*fakeModule{healthy, panicky} {
-		if err := host.Register(module); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	before := host.Health(context.Background())
-	for _, status := range before {
-		if status.State != plugin.StateRegistered || status.Health.Status != plugin.HealthUnknown {
-			t.Fatalf("pre-start status = %+v, want registered/unknown", status)
-		}
-	}
-
-	if err := host.Start(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	after := host.Health(context.Background())
-	if got := statusByID(after, "healthy"); got.State != plugin.StateRunning || got.Health.Status != plugin.HealthHealthy {
-		t.Fatalf("healthy status = %+v", got)
-	}
-	if got := statusByID(after, "panicky"); got.State != plugin.StateRunning || got.Health.Status != plugin.HealthUnhealthy ||
-		!strings.Contains(got.Health.Message, "panic") {
-		t.Fatalf("panicky status = %+v", got)
-	}
-
-	after[0].Manifest.Capabilities[0] = "caller-mutation"
-	if got := host.Health(context.Background())[0].Manifest.Capabilities[0]; got != "tools" {
-		t.Fatalf("stored health manifest capability = %q, want tools", got)
 	}
 }
 
@@ -581,13 +490,4 @@ func (m *fakeModule) Stop(ctx context.Context) error {
 		return m.stopErrors[m.stopCount-1]
 	}
 	return m.stopErr
-}
-
-func statusByID(statuses []plugin.ModuleStatus, id string) plugin.ModuleStatus {
-	for _, status := range statuses {
-		if status.Manifest.ID == id {
-			return status
-		}
-	}
-	return plugin.ModuleStatus{}
 }
