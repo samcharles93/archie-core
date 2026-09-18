@@ -81,7 +81,9 @@ func Run(ctx context.Context, options Options) error {
 
 // serve runs handler on listener until ctx ends, then shuts the HTTP server
 // down within ShutdownTimeout so in-flight dashboard requests finish before
-// the contract clients close.
+// the contract clients close. A graceful shutdown that overruns its deadline
+// is a normal shutdown under load, not a process failure: the remaining
+// connections are force-closed and serve reports clean.
 func serve(ctx context.Context, listener net.Listener, handler http.Handler, opts Options) error {
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: opts.ReadHeaderTimeout}
 	serveErr := make(chan error, 1)
@@ -90,7 +92,14 @@ func serve(ctx context.Context, listener net.Listener, handler http.Handler, opt
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), opts.ShutdownTimeout)
 		defer cancel()
-		return server.Shutdown(shutdownCtx)
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			// Shutdown returned once the drain deadline elapsed with a request
+			// still in flight. Force-close what is left so shutdown finishes
+			// and the process exits cleanly rather than carrying a deadline
+			// error to the operator as a fatal exit (archie-core-u4xu).
+			_ = server.Close()
+		}
+		return nil
 	case err := <-serveErr:
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
