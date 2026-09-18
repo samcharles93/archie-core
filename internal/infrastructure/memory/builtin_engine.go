@@ -17,7 +17,7 @@ import (
 	"github.com/google/uuid"
 
 	domainmemory "github.com/samcharles93/archie-core/internal/domain/memory"
-	"github.com/samcharles93/archie-core/internal/memory/builtin"
+	"github.com/samcharles93/archie-core/internal/infrastructure/memory/builtin"
 )
 
 // EngineName is the name BuiltinEngine registers under and the default the
