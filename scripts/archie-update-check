@@ -5,14 +5,15 @@
 # via CommandCatalog (internal/releaseupdate/command.go), which never invokes
 # a shell, so this file must be directly executable.
 #
-# "Installed" is the release the running binary was ACTUALLY built from, read
-# via `archied -version` rather than trusted from git or filesystem state --
-# if a prior build/install step silently failed partway, the checkout can
-# disagree with what's really running, and -version is the one source that
-# cannot be wrong about that. The build stamp carries a git-describe suffix
-# when HEAD has moved past the tag (1.7.0-4-g0736708); that suffix is
-# stripped for the comparison, because unreleased commits are not an
-# available update and would otherwise report one forever.
+# "Installed" for the daemon is the release the running binary was ACTUALLY
+# built from, read via `archied -version`. The agent value in that output is
+# only the runtime version the daemon release was cut with; it is not the
+# managed image that an installer later rebuilt. The installer therefore owns
+# a sidecar beside BIN_DIR, archie-agent.version, and that is authoritative.
+# Older installations without the sidecar use the agent line as a compatibility
+# fallback. An existing malformed sidecar is reported as unknown, not replaced
+# by a fabricated version. Build-stamp git-describe suffixes are stripped for
+# comparison (1.7.0-4-g0736708 -> 1.7.0).
 #
 # "Available" is the newest release TAG, resolved without any dependency on a
 # local checkout. Two independent sources, in order:
@@ -39,6 +40,8 @@ readonly REPO_SLUG="${ARCHIE_SOURCE_SLUG:-samcharles93/archie-core}"
 readonly API_BASE="${ARCHIE_FORGE_API:-https://api.github.com}"
 readonly SOURCE_URL="${ARCHIE_SOURCE_URL:-https://github.com/${REPO_SLUG}.git}"
 readonly BIN="${ARCHIE_BIN:-$HOME/.local/bin/archied}"
+readonly BIN_DIR="${ARCHIE_BIN_DIR:-$(dirname "$BIN")}"
+readonly AGENT_VERSION_FILE="${ARCHIE_AGENT_VERSION_FILE:-$BIN_DIR/archie-agent.version}"
 readonly CURL_TIMEOUT="${ARCHIE_FORGE_TIMEOUT:-20}"
 readonly TOKEN="${ARCHIE_FORGE_TOKEN:-}"
 
@@ -120,7 +123,18 @@ artifact_state() {
 esc() { printf '%s' "${1:-}" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 
 daemon_installed="$(base "$(installed_for archied || true)")"
-agent_installed="$(base "$(installed_for archie-agent || true)")"
+agent_installed=""
+if [ -f "$AGENT_VERSION_FILE" ]; then
+  # A sidecar is updater state: accept only one released semantic version and
+  # deliberately do not fall back if it is empty or malformed.
+  sidecar_version="$(awk 'NF { if (seen++) { bad=1; next } gsub(/^[[:space:]]+|[[:space:]]+$/, "", $0); print } END { if (bad) exit 1 }' "$AGENT_VERSION_FILE" 2>/dev/null || true)"
+  if [[ "$sidecar_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+    agent_installed="$(base "$sidecar_version")"
+  fi
+else
+  # Compatibility for hosts installed before the sidecar existed.
+  agent_installed="$(base "$(installed_for archie-agent || true)")"
+fi
 
 daemon_available="$(newest_tag_git archied || true)"
 agent_available="$(newest_tag_git archie || true)"

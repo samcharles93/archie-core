@@ -74,6 +74,9 @@ configured_task_db_path() {
 AGENT_IMAGE="${ARCHIE_AGENT_IMAGE:-$(configured_agent_image)}"
 AGENT_IMAGE="${AGENT_IMAGE:-ghcr.io/samcharles93/archie-agent:latest}"
 AGENT_IMAGE_BACKUP="$BIN_DIR/archie-agent-image.prev.tar"
+# State for the managed image, independent of archied's daemon build stamp.
+AGENT_VERSION_FILE="${ARCHIE_AGENT_VERSION_FILE:-$BIN_DIR/archie-agent.version}"
+AGENT_VERSION_BACKUP="${ARCHIE_AGENT_VERSION_BACKUP:-$BIN_DIR/archie-agent.version.prev}"
 TASK_DB_PATH="${ARCHIE_TASK_DB_PATH:-$(configured_task_db_path)}"
 TASK_DB_BACKUP="${ARCHIE_TASK_DB_BACKUP:-$BIN_DIR/archie-task-db.prev.sqlite}"
 
@@ -231,8 +234,23 @@ if [[ ",$components," == *,agent,* ]]; then
   git checkout --quiet --detach "$rt_commit"
   echo "==> saving managed worker image $AGENT_IMAGE for rollback"
   docker image save --output "$AGENT_IMAGE_BACKUP" "$AGENT_IMAGE"
+  # Save explicit sidecar state, including the first-install (absent) case,
+  # before changing it. The watchdog restores this alongside the image.
+  if [ -f "$AGENT_VERSION_FILE" ]; then
+    cp -f "$AGENT_VERSION_FILE" "$AGENT_VERSION_BACKUP"
+    AGENT_VERSION_PREVIOUS_EXISTS=1
+  else
+    rm -f "$AGENT_VERSION_BACKUP"
+    AGENT_VERSION_PREVIOUS_EXISTS=0
+  fi
   echo "==> rebuilding managed worker image $AGENT_IMAGE for runtime $RT"
   docker build --build-arg "RUNTIME_VERSION=$RT" --tag "$AGENT_IMAGE" .
+  # Only record a version after the image build succeeds. Write beside the
+  # state atomically so the check never observes a partial version.
+  version_tmp="$(mktemp "$AGENT_VERSION_FILE.tmp.XXXXXX")"
+  printf '%s\n' "$RT" > "$version_tmp"
+  chmod 600 "$version_tmp"
+  mv -f "$version_tmp" "$AGENT_VERSION_FILE"
 fi
 
 echo "==> handing off to the update watchdog for restart and health verification"
@@ -252,6 +270,9 @@ systemd-run --user --unit=archied-update-restart --collect --quiet \
   --setenv=ARCHIE_UPDATE_INSTALLED_RUNTIME="$RT" \
   --setenv=ARCHIE_AGENT_IMAGE="$AGENT_IMAGE" \
   --setenv=ARCHIE_AGENT_IMAGE_BACKUP="$AGENT_IMAGE_BACKUP" \
+  --setenv=ARCHIE_AGENT_VERSION_FILE="$AGENT_VERSION_FILE" \
+  --setenv=ARCHIE_AGENT_VERSION_BACKUP="$AGENT_VERSION_BACKUP" \
+  --setenv=ARCHIE_AGENT_VERSION_PREVIOUS_EXISTS="${AGENT_VERSION_PREVIOUS_EXISTS:-0}" \
   --setenv=ARCHIE_TASK_DB_PATH="$TASK_DB_PATH" \
   --setenv=ARCHIE_TASK_DB_BACKUP="$TASK_DB_BACKUP" \
   "$BIN_DIR/archie-update-watchdog"

@@ -10,6 +10,9 @@ set -uo pipefail
 BIN_DIR="${ARCHIE_BIN_DIR:-$HOME/.local/bin}"
 AGENT_IMAGE="${ARCHIE_AGENT_IMAGE:-ghcr.io/samcharles93/archie-agent:latest}"
 AGENT_IMAGE_BACKUP="${ARCHIE_AGENT_IMAGE_BACKUP:-$BIN_DIR/archie-agent-image.prev.tar}"
+AGENT_VERSION_FILE="${ARCHIE_AGENT_VERSION_FILE:-$BIN_DIR/archie-agent.version}"
+AGENT_VERSION_BACKUP="${ARCHIE_AGENT_VERSION_BACKUP:-$BIN_DIR/archie-agent.version.prev}"
+AGENT_VERSION_PREVIOUS_EXISTS="${ARCHIE_AGENT_VERSION_PREVIOUS_EXISTS:-0}"
 TASK_DB_PATH="${ARCHIE_TASK_DB_PATH:-}"
 TASK_DB_BACKUP="${ARCHIE_TASK_DB_BACKUP:-$BIN_DIR/archie-task-db.prev.sqlite}"
 # The daemon exports its own health address (releaseupdate.CommandInstaller);
@@ -139,6 +142,18 @@ rollback_agent_image() {
   docker image load --input "$AGENT_IMAGE_BACKUP"
 }
 
+# The sidecar describes the image restored above. Restore its prior state in
+# the same rollback path; a first install has no prior file and must remove the
+# newly-created metadata rather than leave a false installed version behind.
+rollback_agent_version() {
+  if [ "$AGENT_VERSION_PREVIOUS_EXISTS" = 1 ]; then
+    [ -f "$AGENT_VERSION_BACKUP" ] || return 1
+    cp -f "$AGENT_VERSION_BACKUP" "$AGENT_VERSION_FILE"
+  else
+    rm -f "$AGENT_VERSION_FILE"
+  fi
+}
+
 rollback_task_db() {
   if [ -z "$TASK_DB_PATH" ]; then
     echo "==> no task database path; cannot restore schema-compatible state" >&2
@@ -180,7 +195,9 @@ if stop_units; then
       ;;
     agent)
       if [ -f "$AGENT_IMAGE_BACKUP" ]; then
-        rollback_agent_image && rolled_back=true
+        if rollback_agent_image && rollback_agent_version; then
+          rolled_back=true
+        fi
       else
         echo "==> no backup for managed worker image $AGENT_IMAGE; cannot roll it back automatically" >&2
       fi
@@ -189,7 +206,7 @@ if stop_units; then
       # Preserve the old all-or-nothing rollback guarantee: never restore one
       # component and leave the other on the failed release.
       if [ -f "$BIN_DIR/archied.prev" ] && [ -f "$AGENT_IMAGE_BACKUP" ] && { [ -z "$TASK_DB_PATH" ] || [ -f "$TASK_DB_BACKUP" ]; }; then
-        if rollback_agent_image && { [ -z "$TASK_DB_PATH" ] || rollback_task_db; } && rollback_gateway; then
+        if rollback_agent_image && rollback_agent_version && { [ -z "$TASK_DB_PATH" ] || rollback_task_db; } && rollback_gateway; then
           rolled_back=true
         fi
       else
