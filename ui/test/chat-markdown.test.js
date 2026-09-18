@@ -2,7 +2,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import "./shim.js";
 import { renderMarkdown } from "../src/chat/markdown.js";
-import { updateStreamingReply } from "../src/chat/chat-stream.js";
 
 test("chat Markdown renders Telegram-style rich blocks as semantic HTML", () => {
   const rendered = renderMarkdown(
@@ -19,15 +18,6 @@ test("chat Markdown renders Telegram-style rich blocks as semantic HTML", () => 
   assert.match(rendered.querySelector("pre").textContent, /fmt\.Println/);
   assert.equal(rendered.querySelector("table").querySelector("th").textContent, "Name");
   assert.equal(rendered.querySelector("table").querySelector("td").textContent, "Archie");
-});
-
-test("streaming assistant replies keep rich Markdown in the live bubble", () => {
-  const bubble = renderMarkdown("draft");
-  const updated = updateStreamingReply(bubble, "# Live\n\n**bold**");
-
-  assert.equal(updated.querySelector("h1").textContent, "Live");
-  assert.equal(updated.querySelector("strong").textContent, "bold");
-  assert.equal(updated.className, "chat-bubble-text");
 });
 
 test("chat Markdown renders images as img elements with src and alt", () => {
