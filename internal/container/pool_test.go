@@ -367,3 +367,194 @@ func TestAcquireEnforcesMaxUptime(t *testing.T) {
 		t.Fatalf("expected at least one stop and remove, got stop=%d remove=%d", stopCalls.Load(), removeCalls.Load())
 	}
 }
+
+// A released container is already gone, so its max-uptime reaper has nothing
+// left to reap. Leaving the timer armed made it fire an hour later against a
+// dead ID, logging "max uptime stop failed ... No such container" as though
+// teardown had gone wrong.
+func TestReleaseCancelsTheMaxUptimeTimer(t *testing.T) {
+	const containerID = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+
+	var stopCalls, removeCalls atomic.Int32
+	dockerAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/create"):
+			writeDockerJSON(t, w, map[string]any{"Id": containerID, "Warnings": []string{}})
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID+"/start"):
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID+"/stop"):
+			stopCalls.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID):
+			removeCalls.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "unexpected Docker API path "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(dockerAPI.Close)
+
+	dockerClient, err := client.New(client.WithHost(dockerAPI.URL), client.WithAPIVersion("1.55"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = dockerClient.Close() })
+
+	pool := &Pool{
+		cli: dockerClient,
+		cfg: Config{Image: "test/image", MaxUptime: 60 * time.Millisecond},
+		log: discardLogger(),
+	}
+
+	c, err := pool.Acquire(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	pool.Release(context.Background(), c)
+
+	// Deterministic half: the reaper is disarmed and its bookkeeping dropped,
+	// so nothing is left that could fire. The wait below is the observable
+	// consequence, not the proof.
+	pool.mu.Lock()
+	remaining := len(pool.teardowns)
+	pool.mu.Unlock()
+	if remaining != 0 {
+		t.Errorf("pool still holds %d armed teardown entr(ies) after Release, want 0", remaining)
+	}
+
+	stopAfterRelease, removeAfterRelease := stopCalls.Load(), removeCalls.Load()
+	time.Sleep(200 * time.Millisecond)
+
+	if got := stopCalls.Load(); got != stopAfterRelease {
+		t.Errorf("stop called %d times after Release, want %d: the max uptime timer still fired", got, stopAfterRelease)
+	}
+	if got := removeCalls.Load(); got != removeAfterRelease {
+		t.Errorf("remove called %d times after Release, want %d: the max uptime timer still fired", got, removeAfterRelease)
+	}
+}
+
+// MaxUptime is a hard lifetime cap from creation, enforced "regardless of
+// task state" (Config.MaxUptime). A grace period is task state, so a
+// container that outlives the cap while waiting out its grace window is still
+// reaped: cancelling the reaper before the grace sleep would extend the cap
+// by GracePeriod.
+func TestGracePeriodDoesNotExtendTheMaxUptimeCap(t *testing.T) {
+	const containerID = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+
+	stopped := make(chan struct{}, 4)
+	dockerAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/create"):
+			writeDockerJSON(t, w, map[string]any{"Id": containerID, "Warnings": []string{}})
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID+"/start"):
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID+"/stop"):
+			select {
+			case stopped <- struct{}{}:
+			default:
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID):
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "unexpected Docker API path "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(dockerAPI.Close)
+
+	dockerClient, err := client.New(client.WithHost(dockerAPI.URL), client.WithAPIVersion("1.55"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = dockerClient.Close() })
+
+	pool := &Pool{
+		cli: dockerClient,
+		cfg: Config{Image: "test/image", MaxUptime: 30 * time.Millisecond, GracePeriod: 2 * time.Second},
+		log: discardLogger(),
+	}
+
+	c, err := pool.Acquire(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+
+	released := make(chan struct{})
+	go func() {
+		defer close(released)
+		pool.Release(context.Background(), c)
+	}()
+
+	// The cap must bite while Release is still sleeping out the grace period.
+	select {
+	case <-stopped:
+	case <-released:
+		t.Fatal("Release returned before the max uptime cap fired; the grace period extended the cap")
+	case <-time.After(time.Second):
+		t.Fatal("max uptime cap never fired during the grace period")
+	}
+	<-released
+}
+
+// Timer.Stop cannot unwind a callback that has already begun, so cancelling
+// is not enough on its own: teardown has to be claimed once, by whichever of
+// the reaper and Release gets there first. Firing the reaper before Release
+// is the deterministic stand-in for the two overlapping.
+func TestReleaseAfterTheReaperFiredDoesNotTearDownTwice(t *testing.T) {
+	const containerID = "0f1e2d3c4b5a69780f1e2d3c4b5a69780f1e2d3c4b5a69780f1e2d3c4b5a6978"
+
+	var stopCalls, removeCalls atomic.Int32
+	reaped := make(chan struct{}, 1)
+	dockerAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/create"):
+			writeDockerJSON(t, w, map[string]any{"Id": containerID, "Warnings": []string{}})
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID+"/start"):
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID+"/stop"):
+			stopCalls.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID):
+			removeCalls.Add(1)
+			select {
+			case reaped <- struct{}{}:
+			default:
+			}
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "unexpected Docker API path "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(dockerAPI.Close)
+
+	dockerClient, err := client.New(client.WithHost(dockerAPI.URL), client.WithAPIVersion("1.55"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = dockerClient.Close() })
+
+	pool := &Pool{
+		cli: dockerClient,
+		cfg: Config{Image: "test/image", MaxUptime: 20 * time.Millisecond},
+		log: discardLogger(),
+	}
+
+	c, err := pool.Acquire(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+
+	select {
+	case <-reaped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("max uptime reaper never ran")
+	}
+	pool.Release(context.Background(), c)
+
+	if got := stopCalls.Load(); got != 1 {
+		t.Errorf("stop called %d times, want 1: the reaper and Release both tore the container down", got)
+	}
+	if got := removeCalls.Load(); got != 1 {
+		t.Errorf("remove called %d times, want 1: the reaper and Release both tore the container down", got)
+	}
+}

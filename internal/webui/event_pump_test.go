@@ -3,6 +3,7 @@ package webui
 import (
 	"bufio"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -161,4 +162,81 @@ func openSSEStream(t *testing.T, ctx context.Context, ts *httptest.Server) <-cha
 		}
 	}()
 	return lines
+}
+
+// flakyEventReader fails its first failures calls, then answers an empty
+// table. It stands in for the State Store during the window where the UI
+// process is up and the store has not bound its listener yet.
+type flakyEventReader struct {
+	failures int
+	calls    int
+}
+
+func (f *flakyEventReader) EventsSince(context.Context, int64, int) ([]events.Event, error) {
+	f.calls++
+	if f.calls <= f.failures {
+		return nil, errors.New("connection refused")
+	}
+	return nil, nil
+}
+
+// archie-ui binds before archie-state-store is guaranteed to be listening, so
+// the first prime is routinely refused. Returning on that error left the
+// activity feed history-only until the process was restarted by hand.
+func TestPumpPriming(t *testing.T) {
+	forever := 1 << 30
+
+	tests := []struct {
+		name string
+		// failures is how many EventsSince calls are refused before the
+		// store starts answering.
+		failures int
+		// deadline bounds the prime; zero means the test's own context, so
+		// priming runs until it succeeds.
+		deadline  time.Duration
+		wantErr   bool
+		wantCalls int // 0 means "unbounded, do not assert"
+	}{
+		{
+			name:      "retries until the store answers",
+			failures:  3,
+			wantCalls: 4,
+		},
+		{
+			name:     "gives up when the context ends",
+			failures: forever,
+			deadline: 20 * time.Millisecond,
+			wantErr:  true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			reader := &flakyEventReader{failures: tc.failures}
+			pump := &eventPump{
+				store:         reader,
+				log:           func(string, ...any) {},
+				broadcast:     func(events.Event) {},
+				primeRetryMin: time.Millisecond,
+			}
+
+			ctx := t.Context()
+			if tc.deadline > 0 {
+				timed, cancel := context.WithTimeout(ctx, tc.deadline)
+				defer cancel()
+				ctx = timed
+			}
+
+			err := pump.primeWithRetry(ctx)
+			if tc.wantErr && err == nil {
+				t.Fatal("primeWithRetry returned no error")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("primeWithRetry: %v", err)
+			}
+			if tc.wantCalls > 0 && reader.calls != tc.wantCalls {
+				t.Fatalf("EventsSince called %d times, want %d", reader.calls, tc.wantCalls)
+			}
+		})
+	}
 }

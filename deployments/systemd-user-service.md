@@ -97,7 +97,8 @@ the dashboard's health endpoint behind the token. A watchdog can curl
 ```ini
 [Unit]
 Description=Archie UI Service
-After=network.target
+After=network.target archie-state-store.service
+Wants=archie-state-store.service
 
 [Service]
 Type=simple
@@ -120,6 +121,11 @@ environment variable for it):
 GATEWAY_TOKEN=...      # presented to archie-gateway
 STATE_STORE_TOKEN=...  # presented to archie-state-store
 ```
+
+`After=` orders the start, it does not wait for the store to bind. The UI
+process closes that gap itself: its event pump retries priming with backoff
+until the State Store answers, so the activity feed goes live once the store
+is up rather than staying history-only until the next restart.
 
 ```ini
 ExecStart=%h/.local/bin/archie-ui -config %h/.config/archie/config.toml -token-file %h/.local/share/archie/web-token

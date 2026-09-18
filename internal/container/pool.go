@@ -88,6 +88,9 @@ type Pool struct {
 
 	mu     sync.Mutex
 	active int
+	// teardowns holds the one-shot teardown state for each live container,
+	// keyed by ID. See containerTeardown.
+	teardowns map[string]*containerTeardown
 }
 
 // Config is the subset of daemon container configuration the pool needs.
@@ -237,13 +240,28 @@ func (p *Pool) Acquire(ctx context.Context, mounts []storage.Mount, env []string
 	return &Container{ID: resp.ID}, nil
 }
 
+// containerTeardown is the one-shot teardown state for a live container: its
+// armed max-uptime reaper, and whether Docker stop/remove has been claimed.
+//
+// Both the reaper and Release tear a container down, and Timer.Stop cannot
+// unwind a callback that has already begun, so cancelling the timer is not
+// enough to keep them from overlapping. Claiming decides the winner instead:
+// exactly one path talks to Docker, and the loser skips straight to its own
+// bookkeeping.
+type containerTeardown struct {
+	timer  *time.Timer
+	closed bool
+}
+
 // armMaxUptime schedules a hard stop and remove for a container once its
-// lifetime cap elapses. The timer is keyed to the container ID and never
-// touches p.active: Release (or Close) remains the only owner of the active
-// slot. Docker stop and remove are idempotent, so a timer that fires after
-// Release has already removed the container only logs a warning.
+// lifetime cap elapses. The timer never touches p.active: Release (or Close)
+// remains the only owner of the active slot.
 func (p *Pool) armMaxUptime(ctx context.Context, id string) {
-	time.AfterFunc(p.cfg.MaxUptime, func() {
+	timer := time.AfterFunc(p.cfg.MaxUptime, func() {
+		if !p.claimTeardown(id) {
+			return
+		}
+		defer p.forgetTeardown(id)
 		zero := 0
 		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
@@ -254,6 +272,49 @@ func (p *Pool) armMaxUptime(ctx context.Context, id string) {
 			p.log.Warn("max uptime remove failed", "id", id[:12], "err", err)
 		}
 	})
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.teardownLocked(id).timer = timer
+}
+
+// claimTeardown reports whether the caller owns this container's Docker
+// teardown. The first caller wins; every later one is told to stay out.
+func (p *Pool) claimTeardown(id string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	t := p.teardownLocked(id)
+	if t.closed {
+		return false
+	}
+	t.closed = true
+	return true
+}
+
+// forgetTeardown disarms the reaper and drops the container's bookkeeping, so
+// the map does not grow for the life of the pool.
+func (p *Pool) forgetTeardown(id string) {
+	p.mu.Lock()
+	t := p.teardowns[id]
+	delete(p.teardowns, id)
+	p.mu.Unlock()
+	if t != nil && t.timer != nil {
+		t.timer.Stop()
+	}
+}
+
+// teardownLocked returns the container's teardown state, creating it on first
+// use. Callers must hold p.mu.
+func (p *Pool) teardownLocked(id string) *containerTeardown {
+	if p.teardowns == nil {
+		p.teardowns = make(map[string]*containerTeardown)
+	}
+	t := p.teardowns[id]
+	if t == nil {
+		t = &containerTeardown{}
+		p.teardowns[id] = t
+	}
+	return t
 }
 
 // releaseDecision reports how Release should tear a container down: whether
@@ -290,21 +351,29 @@ func (p *Pool) Release(ctx context.Context, c *Container) {
 		time.Sleep(p.cfg.GracePeriod)
 	}
 
-	// Detach from ctx before stopping. Release runs on the way out of a
-	// task, and the most important reason a task is on its way out is
-	// that it was cancelled -- at which point ctx is already dead, the
-	// graceful stop fails immediately, and the container is left to the
-	// forced remove below. Teardown is cleanup, so it gets its own
-	// deadline rather than inheriting the caller's cancellation.
-	stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-	defer cancel()
+	// Claim only now. MaxUptime is a cap from creation enforced regardless of
+	// task state, so the reaper must still be free to bite during the grace
+	// period above; claiming before the sleep would quietly extend the cap by
+	// GracePeriod. Losing the claim means the reaper already removed this
+	// container, so there is nothing left to stop.
+	if p.claimTeardown(c.ID) {
+		// Detach from ctx before stopping. Release runs on the way out of a
+		// task, and the most important reason a task is on its way out is
+		// that it was cancelled -- at which point ctx is already dead, the
+		// graceful stop fails immediately, and the container is left to the
+		// forced remove below. Teardown is cleanup, so it gets its own
+		// deadline rather than inheriting the caller's cancellation.
+		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
 
-	if _, err := p.cli.ContainerStop(stopCtx, c.ID, client.ContainerStopOptions{Timeout: stopTimeout}); err != nil {
-		p.log.Warn("container stop failed", "id", c.ID[:12], "err", err)
+		if _, err := p.cli.ContainerStop(stopCtx, c.ID, client.ContainerStopOptions{Timeout: stopTimeout}); err != nil {
+			p.log.Warn("container stop failed", "id", c.ID[:12], "err", err)
+		}
+		if _, err := p.cli.ContainerRemove(context.WithoutCancel(ctx), c.ID, client.ContainerRemoveOptions{Force: true}); err != nil {
+			p.log.Warn("container remove failed", "id", c.ID[:12], "err", err)
+		}
 	}
-	if _, err := p.cli.ContainerRemove(context.WithoutCancel(ctx), c.ID, client.ContainerRemoveOptions{Force: true}); err != nil {
-		p.log.Warn("container remove failed", "id", c.ID[:12], "err", err)
-	}
+	p.forgetTeardown(c.ID)
 
 	p.mu.Lock()
 	p.active--
