@@ -1,7 +1,8 @@
 # Task Observability
 
-**Status:** Implemented
-**Date:** 2026-08-09
+**Status:** Implemented. The per-run detail surface was added on 2026-09-18 and
+is described below.
+**Date:** 2026-08-09 (revised 2026-09-18)
 
 ## Historical problem
 
@@ -135,6 +136,183 @@ lifecycle rather than accumulating independently.
   Telegram or the webui chat — this is the surface that actually matters
   for the deployment model in `CLAUDE.md`, where an operator may not be
   looking at a dashboard at all.
+- The per-attempt read surface described in the next section, on top of the
+  same task-scoped stream.
+
+## Per-run task detail (attempts, stages, changes, config)
+
+**Status:** landed, together with the change set that carries this revision
+(workflow run `76f8e877`). The provenance half is in the tree: `events.Event.Attempt`,
+the `changes_captured` and `config_captured` event kinds, and the two protobuf field
+additions. So is the read half: the three per-attempt endpoints
+(`/api/tasks/{id}/attempts`, `/changes`, `/debug`) and the dashboard run-detail page
+that consumes them. The decision record, the rejected alternatives and the honest
+limits are `docs/prds/task-run-detail.md`.
+
+The task log surface above answers *why did this park?*. This surface answers
+*what did this run actually do?*, per attempt.
+
+### Attempt attribution
+
+One task can run many times, and the task's event stream is the durable record
+of all of them. `events.Event.Attempt` attributes each event to one run; `0`
+means **not attributable** — every event written before this change, plus the
+deliberately task-agnostic producers. An unattributed event is reported as a
+count and is never presented as an attempt.
+
+Attribution is a column, not a fold over `task_queued`/`task_retried`: a fold
+would have to guess which side of a boundary an event belongs to across a daemon
+restart, a stale-run recovery, or two interleaved attempts, and a guess rendered
+as structure is exactly the false fidelity this surface exists to avoid.
+
+The column reaches an existing database through the presence-gated arm in
+`internal/store`'s `migrateTasks` — `eventsSchema` is `CREATE TABLE IF NOT
+EXISTS`, so on an existing database the migrator is the *only* thing that adds
+it. `PRAGMA user_version` is unchanged because the loop is presence-gated
+rather than version-gated, and nothing is backfilled.
+
+### Read surface
+
+The routes are registered beside the existing task routes in
+`internal/webui`'s `registerTaskRoutes` and all resolve the task through the
+store's `TaskByID`; a task that does not exist is a `404`, never a `200` with an
+empty body.
+
+- `GET /api/tasks/{id}/attempts` — every attempt with its stages inline, so the
+  rail and the attempt selector can never disagree. Stages are ordered by
+  occurrence within their attempt. An attempt with no stages is legitimate and
+  renders as "no stages recorded", never as an unexplained empty rail.
+- `GET /api/tasks/{id}/changes?attempt=N` — the change captures for one
+  attempt, ordered by capture time; more than one per attempt is normal (a
+  mid-workflow commit such as TDD's `commit-repro`, then `commit-push`, then a
+  final `open-pr` capture that carries the pull-request number).
+  `found: false` means no capture was recorded for that attempt, which is
+  **not** "no files changed"; a capture that was recorded but could not be read
+  is reported as exactly that, and never as a diffstat of zeroes.
+- `GET /api/tasks/{id}` — unchanged: the raw event array, each event now
+  carrying `attempt`. The per-attempt configuration is read from this response,
+  selected by kind **and** attempt.
+- `GET /api/tasks/{id}/logs` — gains `stage` beside its existing filters. The
+  match is exact and case-insensitive, and an entry that records no stage never
+  matches (see `logging.Query.Stage`).
+- `GET /api/tasks/{id}/debug?attempt=N` — the stored task record and the task's
+  events, deliberately unfiltered, so an operator can attribute everything the
+  task did even when a panel has nothing to show.
+
+The `attempt` parameter follows one rule on every route: absent or `0` selects
+the task's current attempt, and the resolved attempt is echoed in the response.
+
+### Stage status
+
+`stage_start` and `stage_finish` are the only inputs, so the derivation is
+explicit and each case is pinned by a test:
+
+| Events seen for the stage | Reported |
+| --- | --- |
+| `stage_finish` with `data.error` | `failed`, with the error text |
+| `stage_finish` with `data.interrupted` | `interrupted` |
+| `stage_finish`, neither | `ok` — "returned without error" |
+| `stage_start` unmatched, and this is the task's current in-flight attempt | `running` |
+| `stage_start` unmatched on any dead attempt | `interrupted` — the run ended without finishing it |
+| `stage_finish` with no matching start | the stage, with no start time invented |
+| no stage information at all for that attempt | `unknown` |
+
+**There is no exit code.** `stage_finish` carries a duration and an optional
+error string and nothing else, so no stage can be shown as pass/fail and the
+page must not imply verification. A stage that finished cleanly and then parked
+stays `ok` on a failed task, which is why the attempt status is read together
+with the task status rather than on its own.
+
+### Changed files
+
+The change an attempt produced is read from the worktree at the moment it is
+committed or pushed, and persisted as a `changes_captured` durable event — plus
+one final capture when `OpenPR` records the pull-request number, which is the
+only point at which a capture can carry one. It has to be captured there: the
+worktree is deleted on merge, close and no-PR terminal states, a retry resets
+the branch onto its base, and no forge contract exposes a changed-file read.
+`internal/domain/workflow/task/changes.go` owns the value types and the status
+strings they persist.
+
+- One capture carries per-file `added`/`modified`/`deleted`/`renamed`/
+  `typechange` status with added and deleted line counts, and totals.
+- Each capture names its schema (`archie/task-changes@1`, in `internal/events`)
+  and a reader refuses a payload whose schema or key set it does not know,
+  rather than rendering the zero value of every field it could not find. That
+  refusal surfaces as "a capture was recorded but could not be read", which is
+  a different statement from "no capture was recorded".
+- `base_sha` is the merge base the file list was diffed against, not the base
+  branch's tip, so the pair describes one change set even when the base branch
+  moved during the run.
+- `files` is capped; `totals` always covers the **full** set, and a truncated
+  capture says so rather than silently dropping entries.
+- `binary` means "no textual hunks" — never a claim about the file's type on
+  disk — and a path the repository recorded as a rename pair is reported as the
+  repository recorded it.
+- Capture **degrades and never parks**: an implementation without the capture
+  seam captures nothing, logs, and lets the run continue.
+
+### Per-attempt configuration
+
+The effective configuration an attempt ran under is persisted as a once-per-
+attempt `config_captured` durable event carrying the schema constant
+`archie/task-config@1` and the non-secret task-runtime subset from
+`config.Config.ForTask()`. It is not stored in a table and has no endpoint of
+its own: the dashboard reads it out of the events response it already fetches.
+The single-row `config_snapshot` table is left alone — it answers what the
+running configuration is now and is replaced on every publish.
+
+Redaction is proven positively by a test that builds a full configuration
+containing canary values and asserts none of them survive serialising, rather
+than being inferred from the producer's contract. The timeline carries one
+human line for this kind; the document itself is rendered by the panel.
+
+**Trust boundary, stated honestly.** A task-scoped grant may insert events on
+its own task ID — that is how `tool_call` and `agent_finish` already work — so a
+task could in principle write its own `config_captured` event. This widens no
+capability, because the grant could already insert arbitrary events on itself,
+but it does mean this provenance is exactly as trustworthy as the rest of that
+task's event stream, and no more. It is not tamper-proofing and must never be
+described as such.
+
+### The wire
+
+The whole wire change is two fields on existing messages: `Event.attempt`
+(field 11) and `ReadTaskLogRequest.stage` (field 9) in
+`proto/state/v1/state.proto`. No RPC, no table and no configuration field was
+added, so the ratified state-store contract in
+`docs/prds/state-store-contract.md` rev 2c is unchanged.
+
+Version skew degrades instead of failing, and each degrade is a statement the
+page has to make rather than hide: an old server makes `attempt` read as `0` and
+`stage` match nothing, so the page says it cannot attribute events to attempts
+instead of labelling the whole stream "attempt 1"; an old client sees
+`config_captured` as an unfamiliar kind, and the panel must then say it cannot
+read per-run configuration — a different claim from "not captured for this
+attempt".
+
+### Rules the surface keeps
+
+- "No record" and "this deployment cannot read this" stay different answers,
+  for logs and for configuration alike.
+- No run-duration figure is shown. A run can spend days in `waiting_human`, so
+  one number would understate wall time; per-stage durations only.
+- No duration is invented for a stage with no start; it reads "not recorded".
+- The stage filter is a narrowing, not a coverage claim: agent and tool output
+  carries no stage and is never matched, and the pane says so beside the
+  control.
+- An attempt predating the change shows "not captured for this run" for its
+  configuration and its change capture, never an empty view that implies
+  defaults applied or nothing changed.
+
+### Failure and rollback
+
+Every part is additive. A capture or a configuration emit that cannot happen
+leaves the run alone — reporting must never park a task. Reverting the change
+set removes the endpoints and the page; the extra column and the extra event
+kinds are inert to the previous revision (SQLite ignores a column no statement
+names, and an unfamiliar event kind already renders as unfamiliar), and there is
+no data transformation to undo.
 
 ## Dependency direction
 

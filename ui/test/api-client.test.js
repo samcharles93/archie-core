@@ -44,6 +44,9 @@ const READS = [
 	["tasks", []],
 	["taskMeta", []],
 	["task", [1]],
+	["taskAttempts", [1]],
+	["taskChanges", [1, { attempt: 2 }]],
+	["taskDebug", [1, { attempt: 2 }]],
 	["setup", []],
 	["capabilities", []],
 	["workflows", []],
@@ -188,6 +191,28 @@ test("a 415 keeps the server's explanation and reads as refused", async () => {
 			assert.equal(classifyActionError(err).kind, "refused");
 			return true;
 		},
+	);
+});
+
+// The run detail page's reads. `qs` drops empty values, so an attempt the page
+// has not resolved yet must not be sent as an empty string: the server treats an
+// absent attempt as "the task's current attempt", and `attempt=` would be a
+// different, malformed request.
+test("the run detail reads build their URLs with absent filters absent", async () => {
+	stubFetch(okResponse);
+	await api.taskAttempts(42);
+	await api.taskChanges(42, { attempt: 2 });
+	await api.taskDebug(42, { attempt: 0 });
+	await api.taskChanges(42, {});
+
+	assert.deepEqual(
+		calls.map((call) => call.path),
+		[
+			"/api/tasks/42/attempts",
+			"/api/tasks/42/changes?attempt=2",
+			"/api/tasks/42/debug?attempt=0",
+			"/api/tasks/42/changes",
+		],
 	);
 });
 

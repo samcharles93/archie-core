@@ -9,6 +9,18 @@ import { el } from "./dom.jsx";
  * second distinct consumer".
  */
 
+// The level filter vocabulary. Server-side level filtering takes a CSV of
+// levels (`splitCSV` in internal/webui/api_tasks_logs.go), so the combined
+// options are a wire concern too, not a display choice. It lives here because
+// both the daemon log page and a task attempt's log pane filter by level.
+export const LOG_LEVELS = [
+  { value: "", label: "All levels" },
+  { value: "ERROR", label: "Errors" },
+  { value: "WARN,ERROR", label: "Warnings and errors" },
+  { value: "INFO,WARN,ERROR", label: "Info and above" },
+  { value: "DEBUG", label: "Debug only" },
+];
+
 export function levelKind(level) {
   switch ((level || "").toUpperCase()) {
     case "ERROR":

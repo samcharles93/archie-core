@@ -2,6 +2,7 @@ import { h } from "preact";
 import { useState, useEffect, useRef, useMemo } from "preact/hooks";
 import "./logs.css";
 import { api, subscribeLogs } from "../base/api.jsx";
+import { LOG_LEVELS } from "../base/log-row.jsx";
 import { Pill } from "../base/pill.jsx";
 
 function Empty({ title, detail }) {
@@ -52,13 +53,6 @@ function LogRow({ entry }) {
   );
 }
 
-const LEVELS = [
-  { value: "", label: "All levels" },
-  { value: "ERROR", label: "Errors" },
-  { value: "WARN,ERROR", label: "Warnings and errors" },
-  { value: "INFO,WARN,ERROR", label: "Info and above" },
-  { value: "DEBUG", label: "Debug only" },
-];
 
 function entryKey(entry) {
 	return `${entry.time || ""}|${entry.level || ""}|${entry.message || entry.msg || ""}|${JSON.stringify(entry.fields || {})}`;
@@ -191,7 +185,7 @@ function LogsApp() {
               value={filters.level} 
               onChange={(e) => setFilters(f => ({ ...f, level: e.target.value }))}
             >
-              {LEVELS.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
+              {LOG_LEVELS.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
             </select>
             <select 
               className="log-select" 

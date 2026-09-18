@@ -1,0 +1,617 @@
+/* The per-task run detail page.
+   Colour comes only from the shared tokens in css/tokens.css, so both themes
+   are covered by construction; the layout is one column of panels that
+   collapses on narrow viewports. Motion is limited to hover/selection
+   transitions and is switched off for reduced-motion users. */
+
+.run-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  margin: calc(var(--sp-2) * -1) 0 var(--sp-4);
+  font-size: var(--text-sm);
+}
+
+.run-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.run-meta-label {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.run-meta-value {
+  color: var(--fg);
+}
+
+.run-meta-muted {
+  color: var(--fg-muted);
+}
+
+.run-meta-link {
+  color: var(--accent);
+}
+
+.run-meta-link:hover {
+  text-decoration: underline;
+}
+
+.run-note {
+  margin: 0 0 var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border-left: 3px solid var(--warn);
+  background: var(--warn-soft);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font-size: var(--text-sm);
+}
+
+/* ── New run ─────────────────────────────────────────────────────────────── */
+
+.run-restart {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-4);
+}
+
+.run-restart-copy {
+  flex: 1 1 22rem;
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+
+.run-restart-unavailable {
+  flex: 1 1 22rem;
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+
+.run-restart-error {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.run-restart-error-refused {
+  color: var(--warn);
+}
+
+.run-restart-error-broken {
+  color: var(--danger);
+}
+
+.run-restart-error-session-expired {
+  color: var(--warn);
+}
+
+/* ── Attempt selector ────────────────────────────────────────────────────── */
+
+.run-attempts {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-4);
+}
+
+.run-attempt {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: border-color var(--transition), color var(--transition);
+}
+
+.run-attempt:hover {
+  border-color: var(--border-strong);
+  color: var(--fg);
+}
+
+.run-attempt.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+
+.run-attempt-id {
+  font-weight: 500;
+}
+
+.run-attempt-meta {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+/* ── Tabs ────────────────────────────────────────────────────────────────── */
+
+.run-card {
+  padding-top: var(--sp-4);
+}
+
+.tab-bar {
+  display: flex;
+  gap: var(--sp-1);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--sp-4);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.tab {
+  position: relative;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--transition), background var(--transition);
+}
+
+.tab:hover {
+  color: var(--fg);
+  background: var(--surface-hover);
+}
+
+.tab.is-selected {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+  font-weight: 500;
+}
+
+.run-panel {
+  min-width: 0;
+  min-height: 6rem;
+}
+
+.run-panel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+/* ── Shared panel states ─────────────────────────────────────────────────── */
+
+.run-loading {
+  padding: var(--sp-5) 0;
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+
+.run-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-3) 0;
+}
+
+.run-error-title {
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.run-error-detail {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  max-width: 60ch;
+}
+
+.run-json {
+  margin: 0;
+  padding: var(--sp-3);
+  max-height: 60vh;
+  overflow: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  /* pre-wrap keeps the indentation the JSON is printed with while letting a
+     long value wrap instead of forcing the panel to scroll sideways. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ── Stage rail ──────────────────────────────────────────────────────────── */
+
+.run-rail-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-4);
+}
+
+.run-rail-attempt {
+  font-weight: 600;
+}
+
+.run-rail-when {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+.run-stages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.run-stage {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.75rem 1fr;
+  gap: var(--sp-2);
+  padding-bottom: var(--sp-4);
+}
+
+/* The rail line: a single vertical stroke behind the stage nodes, so the
+   sequence reads as one run rather than as unrelated rows. */
+.run-stage::before {
+  content: "";
+  position: absolute;
+  left: 0.6875rem;
+  top: 1rem;
+  bottom: 0;
+  width: 1px;
+  background: var(--border-strong);
+}
+
+.run-stage:last-child::before {
+  display: none;
+}
+
+.run-stage-node {
+  position: relative;
+  z-index: 1;
+  width: 0.875rem;
+  height: 0.875rem;
+  margin: 0.25rem 0 0 0.25rem;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  background: var(--bg-raised);
+}
+
+.run-stage[data-status="ok"] .run-stage-node {
+  border-color: var(--ok);
+}
+
+.run-stage[data-status="failed"] .run-stage-node {
+  border-color: var(--danger);
+}
+
+.run-stage[data-status="interrupted"] .run-stage-node {
+  border-color: var(--warn);
+}
+
+.run-stage[data-status="running"] .run-stage-node {
+  border-color: var(--info);
+}
+
+.run-stage-body {
+  min-width: 0;
+}
+
+.run-stage-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.run-stage-name {
+  font-weight: 500;
+  color: var(--fg);
+  /* A stage name is one unbroken token often enough that it has to be allowed
+     to break, or a long one pushes the status and duration off the row. */
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.run-stage-duration {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+.run-stage-error {
+  margin-top: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-left: 3px solid var(--danger);
+  background: var(--danger-soft);
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.run-agent-report {
+  margin-top: var(--sp-2);
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+.run-agent-report-label {
+  color: var(--fg-muted);
+}
+
+.run-rail-legend,
+.run-rail-note {
+  margin: var(--sp-3) 0 0;
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  max-width: 70ch;
+}
+
+.run-rail-legend strong {
+  color: var(--fg-muted);
+}
+
+/* ── Changed files ───────────────────────────────────────────────────────── */
+
+.run-capture + .run-capture {
+  margin-top: var(--sp-5);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--border);
+}
+
+.run-capture-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.run-capture-when {
+  color: var(--fg);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.run-capture-at {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+.run-capture-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin: var(--sp-2) 0 var(--sp-3);
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+.run-capture-link {
+  color: var(--accent);
+}
+
+.run-capture-link:hover {
+  text-decoration: underline;
+}
+
+.run-capture-branch,
+.run-capture-sha {
+  color: var(--fg-muted);
+}
+
+.run-capture-totals {
+  color: var(--fg-muted);
+}
+
+.run-changes-table td {
+  padding: var(--sp-2) var(--sp-3);
+  vertical-align: top;
+}
+
+.run-changes-path {
+  color: var(--fg);
+  word-break: break-all;
+}
+
+.run-changes-old {
+  color: var(--fg-muted);
+}
+
+.run-changes-count {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.run-changes-hint,
+.run-changes-note,
+.run-changes-empty {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+.run-changes-hint {
+  display: block;
+}
+
+.run-changes-empty {
+  padding: var(--sp-3) 0;
+}
+
+/* ── Configuration ───────────────────────────────────────────────────────── */
+
+.run-config-scope {
+  margin: 0 0 var(--sp-2);
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  max-width: 75ch;
+}
+
+.run-config-when {
+  margin-bottom: var(--sp-3);
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+
+.run-config-unknown {
+  margin-bottom: var(--sp-2);
+  color: var(--warn);
+  font-size: var(--text-sm);
+}
+
+/* ── Log pane ────────────────────────────────────────────────────────────── */
+
+.task-log-filters {
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.task-log-attempt {
+  color: var(--fg);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.task-log-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.task-log-filter-label {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.task-log-filter-note {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  max-width: 80ch;
+}
+
+/* On the detail page the log is the primary content, so it takes the tallest
+   read surface and a framed edge of its own rather than the bare top rule the
+   inline list-page pane uses. Scoped to .run-panel so the list-page pane keeps
+   its 40vh cap. */
+.run-panel .task-log-list {
+  max-height: 62vh;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  padding: 0 var(--sp-2);
+}
+
+/* ── Status pills on this page ───────────────────────────────────────────── */
+
+/* The shared .pill palette draws its small status WORD in the semantic hue on
+   that hue's own tint. Measured against the card this page renders on, that
+   fails WCAG AA 4.5:1 for small text in the light theme (ok 3.39:1, warn
+   3.26:1, danger 4.03:1, idle 4.09:1) and for `unknown` in the dark theme
+   (idle 3.31:1). Raising the shared tokens is an app-wide design change, not
+   this page's to make, so here the status word is drawn in the full-contrast
+   foreground colour (>=12.6:1 both themes) and the hue is carried by the dot
+   the pill already has -- which still clears the 3:1 non-text minimum
+   (worst pair 3.26:1). */
+.run-page .pill {
+  color: var(--fg);
+}
+
+.run-page .pill-ok::before {
+  background: var(--ok);
+}
+
+.run-page .pill-warn::before {
+  background: var(--warn);
+}
+
+.run-page .pill-danger::before {
+  background: var(--danger);
+}
+
+.run-page .pill-info::before {
+  background: var(--info);
+}
+
+.run-page .pill-idle::before {
+  background: var(--idle);
+}
+
+/* ── Narrow viewports: the rail collapses ────────────────────────────────── */
+
+@media (max-width: 700px) {
+  .run-meta {
+    margin-bottom: var(--sp-3);
+  }
+
+  .run-restart {
+    align-items: flex-start;
+  }
+
+  .run-attempts {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: var(--sp-1);
+  }
+
+  /* The connector line and its gutter are what make the rail a timeline; on a
+     phone they cost the width the stage names need, so the rail becomes a plain
+     list of stages in order. */
+  .run-stage {
+    grid-template-columns: 1fr;
+    padding-bottom: var(--sp-3);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .run-stage::before {
+    display: none;
+  }
+
+  .run-stage-node {
+    display: none;
+  }
+
+  .run-capture-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-1);
+  }
+}
+
+@media (max-width: 480px) {
+  .tab {
+    padding: var(--sp-2);
+  }
+
+  .run-json {
+    max-height: 45vh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .run-attempt,
+  .tab {
+    transition: none;
+  }
+}

@@ -102,6 +102,26 @@ test("cancelled stages are described as interrupted rather than failed", () => {
   );
 });
 
+// Condition (d): the two provenance events render as human timeline lines and
+// must never dump the captured payload inline -- the Configuration tab renders
+// the document; the timeline only says that it was captured.
+test("capture events describe themselves without dumping their payload", () => {
+  const config = describeTimelineEvent({
+    kind: "config_captured",
+    data: { schema: "archie/task-config@1", document: { BotUser: "archie" } },
+  });
+  assert.equal(config.title, "Configuration captured");
+  assert.doesNotMatch(config.detail, /BotUser/);
+
+  const changes = describeTimelineEvent({
+    kind: "changes_captured",
+    data: { captured_after: "commit", totals: { files: 3, additions: 40, deletions: 5 } },
+  });
+  assert.equal(changes.title, "Change capture recorded");
+  assert.match(changes.detail, /3 files changed/);
+  assert.match(changes.detail, /captured after commit/);
+});
+
 test("unknown event kinds become readable labels", () => {
   assert.deepEqual(describeTimelineEvent({ kind: "human_approved", detail: "approved via dashboard" }), {
     title: "Human Approved",
