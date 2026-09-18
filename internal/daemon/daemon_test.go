@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -1547,6 +1548,103 @@ func waitFor(t *testing.T, timeout time.Duration, what string, cond func() bool)
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %s", what)
+}
+
+// verifyForge returns a fixed error from VerifyPush, or blocks until the
+// sweep's own deadline expires first, standing in for an unreachable host.
+type verifyForge struct {
+	testForge
+	mu    sync.Mutex
+	calls int
+	block bool
+}
+
+var errVerifyDenied = errors.New("push access denied")
+
+func (f *verifyForge) VerifyPush(ctx context.Context, _, _ string) error {
+	f.mu.Lock()
+	f.calls++
+	f.mu.Unlock()
+	if f.block {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	return errVerifyDenied
+}
+
+func (f *verifyForge) callCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
+}
+
+// TestSweepNamesAnExhaustedBudgetAsTheCause pins what the boot sweep reports
+// when a push check does not come back. One budget covers a forge's whole
+// sweep, so a repo cut short by the deadline used to warn that it was "not
+// pushable" -- asserting access had been denied when nothing about access had
+// been learned, once per remaining repo.
+func TestSweepNamesAnExhaustedBudgetAsTheCause(t *testing.T) {
+	repos := []config.Repo{
+		{Owner: "acme", Name: "one"},
+		{Owner: "acme", Name: "two"},
+		{Owner: "acme", Name: "three"},
+	}
+	tests := []struct {
+		name         string
+		block        bool
+		wantLog      string
+		wantLogCount int
+		absentLog    string
+		wantCalls    int
+	}{
+		{
+			name:         "a denied push is reported per repo",
+			wantLog:      "repo not pushable",
+			wantLogCount: len(repos),
+			absentLog:    "sweep budget exhausted",
+			wantCalls:    len(repos),
+		},
+		{
+			name:         "an exhausted budget is reported once, as the cause",
+			block:        true,
+			wantLog:      "sweep budget exhausted",
+			wantLogCount: 1,
+			absentLog:    "repo not pushable",
+			wantCalls:    1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fg := &verifyForge{block: tc.block}
+			var logs logBuffer
+			d := &Daemon{
+				Cfg:   config.NewHolder(config.Config{Repos: repos}),
+				Forge: fg,
+				Log:   slog.New(slog.NewTextHandler(&logs, nil)),
+			}
+
+			ctx := context.Background()
+			if tc.block {
+				// Expire the sweep's budget without waiting out sweepTimeout.
+				deadline, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+				defer cancel()
+				ctx = deadline
+			}
+
+			d.sweepAccess(ctx)
+
+			if got := fg.callCount(); got != tc.wantCalls {
+				t.Errorf("VerifyPush calls = %d, want %d", got, tc.wantCalls)
+			}
+			if got := strings.Count(logs.String(), tc.wantLog); got != tc.wantLogCount {
+				t.Errorf("%q logged %d times, want %d\nlogs:\n%s", tc.wantLog, got, tc.wantLogCount, logs.String())
+			}
+			if strings.Contains(logs.String(), tc.absentLog) {
+				t.Errorf("logs mention %q, want none\nlogs:\n%s", tc.absentLog, logs.String())
+			}
+		})
+	}
 }
 
 // mustCoreConn returns the raw NATS connection for tests that drive core-NATS
