@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -32,17 +33,52 @@ const (
 	modeCheck
 )
 
+// generatedArtifacts declares the directories docsgen owns end-to-end, and the
+// file names it produces in each. Obsolete detection is scoped to these
+// directories: an arbitrary --out location is not ours to judge, and the target
+// layout anticipates further named artifacts here (catalog.json, AsyncAPI
+// output), which must not be reported as stale merely for existing.
+var generatedArtifacts = map[string][]string{
+	"docs/data/generated": {"contracts.json"},
+}
+
+// options is a parsed command line.
+type options struct {
+	mode     mode
+	repoRoot string
+	out      string
+}
+
 func main() {
-	args := os.Args[1:]
+	parsed, err := parseOptions(os.Args[1:])
+	if err != nil {
+		log.Fatalf("docsgen: %v", err)
+	}
+
+	if parsed.mode == modeCheck {
+		err = check(parsed.repoRoot, parsed.out)
+	} else {
+		err = run(parsed.repoRoot, parsed.out)
+	}
+	if err != nil {
+		log.Fatalf("docsgen: %v", err)
+	}
+}
+
+// parseOptions resolves the optional `check` subcommand and the flags that
+// follow it. A leftover positional argument is an error rather than something
+// to ignore: `docsgen --repo-root .. check` would otherwise quietly fall through
+// to the write path and overwrite the artifact that check promises not to
+// touch, and a misspelled subcommand would do the same silently.
+func parseOptions(args []string) (options, error) {
 	selected := modeWrite
-	// `check` is a subcommand, not a flag: it selects a comparison instead of a
-	// write, and the flag package would treat it as a positional argument.
 	if len(args) > 0 && args[0] == "check" {
 		selected = modeCheck
 		args = args[1:]
 	}
 
-	flags := flag.NewFlagSet("docsgen", flag.ExitOnError)
+	flags := flag.NewFlagSet("docsgen", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
 	repoRoot := flags.String("repo-root", "..", "path to the Archie repository root")
 	out := flags.String(
 		"out",
@@ -50,18 +86,17 @@ func main() {
 		"output path relative to the repository root",
 	)
 	if err := flags.Parse(args); err != nil {
-		log.Fatalf("docsgen: %v", err)
+		return options{}, err
+	}
+	if extra := flags.Args(); len(extra) > 0 {
+		return options{}, fmt.Errorf(
+			"unexpected argument %q; usage: docsgen [check] [--repo-root DIR] [--out PATH] "+
+				"(`check` must come first)",
+			extra[0],
+		)
 	}
 
-	var err error
-	if selected == modeCheck {
-		err = check(*repoRoot, *out)
-	} else {
-		err = run(*repoRoot, *out)
-	}
-	if err != nil {
-		log.Fatalf("docsgen: %v", err)
-	}
+	return options{mode: selected, repoRoot: *repoRoot, out: *out}, nil
 }
 
 // check regenerates the artifact into a temporary directory and compares it
@@ -109,7 +144,7 @@ func check(repoRoot, outPath string) error {
 	}
 
 	problems := compareArtifacts(relative, expected, committed)
-	problems = append(problems, obsoleteArtifacts(absRoot, committedPath)...)
+	problems = append(problems, obsoleteArtifacts(absRoot, filepath.Dir(committedPath))...)
 	if len(problems) == 0 {
 		fmt.Printf("docsgen: %s is up to date\n", relative)
 		return nil
@@ -135,7 +170,7 @@ func compareArtifacts(relative string, expected, committed []byte) []string {
 		return []string{fmt.Sprintf("%s: committed output is unreadable: %v", relative, err)}
 	}
 
-	provenance := schemaProvenance(expectedSchemas)
+	provenance := schemaProvenance(expectedSchemas, contractRoots())
 	var problems []string
 	for _, name := range sortedSchemaNames(expectedSchemas) {
 		committedSchema, ok := committedSchemas[name]
@@ -168,58 +203,103 @@ func compareArtifacts(relative string, expected, committed []byte) []string {
 }
 
 // obsoleteArtifacts reports committed generated files in the artifact's
-// directory that the generator no longer produces, so a renamed or deleted
-// artifact cannot linger as dead documentation.
-func obsoleteArtifacts(absRoot, committedPath string) []string {
-	entries, err := os.ReadDir(filepath.Dir(committedPath))
+// obsoleteArtifacts reports files present in a directory docsgen owns that the
+// generator no longer produces, so a renamed or deleted artifact cannot linger
+// as dead documentation. A directory docsgen does not own is never judged: its
+// JSON belongs to someone else.
+func obsoleteArtifacts(absRoot, dir string) []string {
+	owned, ours := ownedArtifacts(absRoot, dir)
+	if !ours {
+		return nil
+	}
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil
 	}
-	owned := filepath.Base(committedPath)
 	var problems []string
 	for _, entry := range entries {
-		if entry.IsDir() || entry.Name() == owned {
+		if entry.IsDir() || owned[entry.Name()] {
 			continue
 		}
 		if filepath.Ext(entry.Name()) != ".json" {
 			continue
 		}
-		full := filepath.Join(filepath.Dir(committedPath), entry.Name())
 		problems = append(problems, fmt.Sprintf(
 			"%s is obsolete: no generator in tools/docsgen produces it",
-			displayPath(absRoot, full),
+			displayPath(absRoot, filepath.Join(dir, entry.Name())),
 		))
 	}
 	return problems
 }
 
+// ownedArtifacts reports which file names docsgen owns in dir, and whether dir
+// is one docsgen owns at all.
+func ownedArtifacts(absRoot, dir string) (map[string]bool, bool) {
+	relative, err := filepath.Rel(absRoot, dir)
+	if err != nil {
+		return nil, false
+	}
+	names, ours := generatedArtifacts[filepath.ToSlash(relative)]
+	if !ours {
+		return nil, false
+	}
+	owned := make(map[string]bool, len(names))
+	for _, name := range names {
+		owned[name] = true
+	}
+	return owned, true
+}
+
 // schemaProvenance names the authoritative Go definition behind each published
 // schema, so a drift report points at the code that must be reviewed rather
-// than only at the generated file.
-func schemaProvenance(schemas map[string]any) map[string]string {
-	provenance := map[string]string{}
-	types := currentContractTypes()
-	names := make([]string, 0, len(types))
-	for name := range types {
-		names = append(names, name)
+// than only at the generated file. roots maps each published contract to its
+// Go definition; every other schema is attributed to the contract that pulled
+// it in, transitively, because a definition reachable only through another
+// definition still belongs to the contract that caused it to be published.
+func schemaProvenance(schemas map[string]any, roots map[string]string) map[string]string {
+	// attribution maps each schema to the published contract it came in under.
+	attribution := make(map[string]string, len(roots))
+	queue := make([]string, 0, len(roots))
+	for _, name := range sortedStringKeys(roots) {
+		attribution[name] = name
+		queue = append(queue, name)
 	}
-	// Sorted: a nested definition referenced by several contracts would
-	// otherwise be attributed to whichever contract map iteration reached
-	// first, making the diagnostic nondeterministic.
-	sort.Strings(names)
-	for _, name := range names {
-		t := types[name]
-		provenance[name] = t.PkgPath() + "." + t.Name()
-	}
-	for _, name := range names {
-		walkSchemaRefs(schemas[name], func(target string) {
-			if _, known := provenance[target]; known {
+
+	// Breadth-first, seeded with every contract before any nested definition is
+	// followed, so a definition reachable from several contracts is attributed
+	// to the alphabetically first of them rather than to whichever the walk
+	// happened to reach.
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		root := attribution[current]
+		walkSchemaRefs(schemas[current], func(target string) {
+			if _, known := attribution[target]; known {
 				return
 			}
-			provenance[target] = "reached from " + provenance[name]
+			attribution[target] = root
+			queue = append(queue, target)
 		})
 	}
+
+	provenance := make(map[string]string, len(attribution))
+	for name, root := range attribution {
+		if source, isRoot := roots[name]; isRoot {
+			provenance[name] = source
+			continue
+		}
+		provenance[name] = "reached from " + roots[root]
+	}
 	return provenance
+}
+
+func sortedStringKeys(values map[string]string) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func describeProvenance(provenance map[string]string, name string) string {
@@ -229,10 +309,29 @@ func describeProvenance(provenance map[string]string, name string) string {
 	return "no authoritative definition found"
 }
 
+// contractRoots labels each published contract with the Go definition it comes
+// from, which is what makes a drift report name code rather than a file.
+func contractRoots() map[string]string {
+	types := currentContractTypes()
+	roots := make(map[string]string, len(types))
+	for name, t := range types {
+		roots[name] = t.PkgPath() + "." + t.Name()
+	}
+	return roots
+}
+
 func walkSchemaRefs(value any, visit func(target string)) {
 	switch node := value.(type) {
 	case map[string]any:
-		for key, child := range node {
+		// Sorted so a schema reachable by more than one path is visited in the
+		// same order every run; provenance must not depend on map iteration.
+		keys := make([]string, 0, len(node))
+		for key := range node {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			child := node[key]
 			if key == "$ref" {
 				if ref, ok := child.(string); ok {
 					if target, found := strings.CutPrefix(ref, "#/schemas/"); found {

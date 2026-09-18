@@ -245,23 +245,132 @@ func TestCheckReportsMissingArtifact(t *testing.T) {
 	}
 }
 
-func TestCheckReportsObsoleteArtifact(t *testing.T) {
-	repoRoot := filepath.Clean("../..")
-	outputDir := t.TempDir()
-	if err := run(repoRoot, filepath.Join(outputDir, "contracts.json")); err != nil {
-		t.Fatalf("run() error = %v", err)
-	}
-	obsolete := filepath.Join(outputDir, "orphaned.json")
-	if err := os.WriteFile(obsolete, []byte("{}\n"), 0o600); err != nil {
-		t.Fatalf("write obsolete artifact: %v", err)
+func TestParseOptions(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		wantMode mode
+		wantOut  string
+		wantErr  string
+	}{
+		{name: "write by default", wantMode: modeWrite, wantOut: defaultOutputPath},
+		{name: "check first", args: []string{"check"}, wantMode: modeCheck, wantOut: defaultOutputPath},
+		{
+			name:     "check with flags",
+			args:     []string{"check", "--repo-root", ".."},
+			wantMode: modeCheck,
+			wantOut:  defaultOutputPath,
+		},
+		{
+			name:     "check honours out",
+			args:     []string{"check", "--out", "/tmp/artifacts.json"},
+			wantMode: modeCheck,
+			wantOut:  "/tmp/artifacts.json",
+		},
+		{
+			name:    "check after flags would otherwise silently write",
+			args:    []string{"--repo-root", "..", "check"},
+			wantErr: "unexpected argument",
+		},
+		{name: "misspelled subcommand", args: []string{"chekc"}, wantErr: "unexpected argument"},
+		{
+			name:    "stray trailing argument",
+			args:    []string{"--out", "/tmp/artifacts.json", "stray"},
+			wantErr: "unexpected argument",
+		},
 	}
 
-	err := check(repoRoot, filepath.Join(outputDir, "contracts.json"))
-	if err == nil {
-		t.Fatal("check() returned nil error for an obsolete artifact")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := parseOptions(test.args)
+			if test.wantErr != "" {
+				if err == nil {
+					t.Fatalf("parseOptions(%q) returned nil error, want %q", test.args, test.wantErr)
+				}
+				if !strings.Contains(err.Error(), test.wantErr) {
+					t.Fatalf("parseOptions(%q) error = %q, want substring %q", test.args, err, test.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseOptions(%q) error = %v", test.args, err)
+			}
+			if got.mode != test.wantMode {
+				t.Errorf("parseOptions(%q).mode = %v, want %v", test.args, got.mode, test.wantMode)
+			}
+			if got.out != test.wantOut {
+				t.Errorf("parseOptions(%q).out = %q, want %q", test.args, got.out, test.wantOut)
+			}
+		})
 	}
-	if !strings.Contains(err.Error(), "obsolete") || !strings.Contains(err.Error(), "orphaned.json") {
-		t.Fatalf("check() error = %q, want the obsolete file named", err)
+}
+
+func TestSchemaProvenanceFollowsNestedDefinitions(t *testing.T) {
+	schemas := map[string]any{
+		"Root": map[string]any{
+			"properties": map[string]any{
+				"middle": map[string]any{"$ref": "#/schemas/Middle"},
+			},
+		},
+		"Middle": map[string]any{
+			"properties": map[string]any{
+				"leaf": map[string]any{"$ref": "#/schemas/Leaf"},
+			},
+		},
+		"Leaf": map[string]any{"type": "string"},
+	}
+
+	provenance := schemaProvenance(schemas, map[string]string{"Root": "example.Root"})
+
+	if got := provenance["Root"]; got != "example.Root" {
+		t.Errorf("provenance[Root] = %q, want the root definition", got)
+	}
+	if got := provenance["Middle"]; got != "reached from example.Root" {
+		t.Errorf("provenance[Middle] = %q, want it reached from the root", got)
+	}
+	// Leaf is reachable only through Middle. A one-level walk misses it, and the
+	// report then claims no authoritative definition exists.
+	if got := provenance["Leaf"]; got != "reached from example.Root" {
+		t.Errorf("provenance[Leaf] = %q, want it reached from the root transitively", got)
+	}
+}
+
+func TestObsoleteArtifactsReportsUnownedFileInAnOwnedDirectory(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "docs", "data", "generated")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("create generated dir: %v", err)
+	}
+	for name, body := range map[string]string{
+		"contracts.json": "{}\n", // owned
+		"orphaned.json":  "{}\n", // obsolete
+		"notes.txt":      "not json\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	problems := obsoleteArtifacts(root, dir)
+	if len(problems) != 1 {
+		t.Fatalf("obsoleteArtifacts() = %q, want exactly the orphan", problems)
+	}
+	if !strings.Contains(problems[0], "orphaned.json") || !strings.Contains(problems[0], "obsolete") {
+		t.Fatalf("obsoleteArtifacts() = %q, want the orphan named", problems)
+	}
+}
+
+func TestObsoleteArtifactsNeverJudgesAnUnownedDirectory(t *testing.T) {
+	root := t.TempDir()
+	// An arbitrary --out location: the JSON beside the artifact belongs to
+	// whoever put it there, and docsgen must not claim it as its own.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "someone-elses.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatalf("write foreign json: %v", err)
+	}
+
+	if problems := obsoleteArtifacts(root, dir); len(problems) != 0 {
+		t.Fatalf("obsoleteArtifacts() = %q, want none for an unowned directory", problems)
 	}
 }
 
