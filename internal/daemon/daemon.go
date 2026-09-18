@@ -296,11 +296,15 @@ func (d *Daemon) sweepAccess(ctx context.Context) {
 		}
 		for _, r := range repos {
 			if err := fg.VerifyPush(ctx, r.Owner, r.Name); err != nil {
-				if ctx.Err() != nil {
-					// The budget failed, not the repo: every later call would return
-					// the same error, so name the real cause once and stop.
+				// A sweep cut short by its own context is not a repo failure: name
+				// the budget when it expired, stay quiet on a shutdown.
+				switch {
+				case errors.Is(ctx.Err(), context.DeadlineExceeded):
+					// Every later call would return the same error, so say it once.
 					log.Warn("push check abandoned: sweep budget exhausted", "repo", r.FullName(), "err", err)
-					break
+					return
+				case ctx.Err() != nil:
+					return
 				}
 				log.Warn("repo not pushable  --  tasks from it will fail", "repo", r.FullName(), "err", err)
 			}
