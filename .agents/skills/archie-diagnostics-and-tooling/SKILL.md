@@ -242,7 +242,7 @@ These are post-fix numbers: earlier runs of the same scripts reported roughly
 | `internal/app/archied.Run` body span / approximate complexity | 97 / 19 |
 | Root internal packages / direct internal edges | 110 / 316 |
 | Tagged config field rows | 194 |
-| Tracked paths / tracked `node_modules` paths / tracked symlinks | 1,087 / 0 / 1 |
+| Tracked paths / tracked `node_modules` paths / tracked symlinks | 1,088 / 0 / 1 |
 | `.dockerignore` present | 1 |
 
 `source-metrics.go` and `git ls-files` reconcile here: 408 + 9 generated
@@ -255,10 +255,10 @@ production lines. Editing a bundled script therefore moves
 `production_physical_lines` on its own, so re-baseline after any script change
 rather than reading the delta as a change in the product code.
 
-The delivery snapshot found no Taskfile literals for race or docs, but four
-for the `tools` module; GitHub `go gate` 4 and container publish 3; and
-non-zero literals for all five composition-root anchors under
-`internal/app/archied`.
+The delivery snapshot found no Taskfile literals for race; docs now has 6 and
+the `tools` module 7, both grown by wiring `task docs:check` into the gate;
+GitHub `go gate` 4 and container publish 3; and non-zero literals for all five
+composition-root anchors under `internal/app/archied`.
 
 The focused test
 `go test ./internal/skillscript -run '^TestRunWrapsExternalCommand$' -count=1 -v`

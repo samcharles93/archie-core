@@ -140,21 +140,26 @@ Current behavior, verified 2026-09-18:
 
 - Tool path is `tools/docsgen`, not `tools/cmd/docsgen`.
 - Separate Go module replacing root module with `../`.
-- Accepts `--repo-root` and `--out`; no implemented `data`, `asyncapi`, `all`,
-  or `check` subcommands.
+- Accepts `--repo-root` and `--out`, plus a `check` subcommand that compares
+  against the committed artifact without writing. No implemented `data`,
+  `asyncapi`, or `all` subcommands.
 - `currentContractTypes` publishes three top-level contracts and collects
   referenced schemas into one JSON object.
 - Default output is `docs/data/generated/contracts.json`.
 
 ```bash
 GOTMPDIR=/tmp GOCACHE=/tmp/archie-docsgen-gocache go -C tools test -mod=readonly ./docsgen -count=1
-docs_tmp="$(mktemp /tmp/archie-contracts.XXXXXX.json)"
-GOTMPDIR=/tmp GOCACHE=/tmp/archie-docsgen-gocache go -C tools run -mod=readonly ./docsgen --repo-root .. --out "$docs_tmp"
-cmp "$docs_tmp" docs/data/generated/contracts.json
+task docs:check   # fails loudly, and names the Go type behind each mismatch
 ```
 
-Treat the PRD's `docsgen all`, `docsgen check`, and `task docs:*` commands as
-`APPROVED TARGET`.
+`docsgen check` and the `docs:generate`/`docs:check` tasks are implemented, and
+`task check` runs `docs:check` — generated drift is gated. `docsgen data`,
+`docsgen asyncapi`, and `docsgen all` remain `APPROVED TARGET`.
+
+The check is deliberately non-destructive: it generates into a temporary
+directory, so a failing gate never rewrites the artifact it judges. Fix a
+failure with `task docs:generate` and commit the result with the code change
+that shifted the contract surface.
 
 ## Store documentation as repository Markdown
 

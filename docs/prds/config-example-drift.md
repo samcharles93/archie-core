@@ -78,9 +78,11 @@ empty, with an explicit allowlist for keys another binary owns. This is the
 mechanism that would have caught a renamed key left behind in an example, and it
 needs no inventory.
 
-**3. Gate generated data in `task check`.** Add `docs:check` to the gate, closing
-the admitted `generated-documentation.md:331` hole. Cheap, already implemented as
-`go -C tools run ./docsgen check`.
+**3. Gate generated data in `task check`.** Done. `task docs:check` runs in the
+gate, closing the admitted "generated drift is currently ungated" hole. The
+check mode did not exist when this was written; it was added for issue #855,
+which also made the check non-destructive so the gate can never rewrite the
+artifact it is judging.
 
 **4. Explicitly NOT now: a generated key inventory.** `configuration.md`'s
 completion criteria want "generated documentation lists every external key,

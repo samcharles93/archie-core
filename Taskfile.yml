@@ -35,6 +35,35 @@ tasks:
     cmds:
       - bash tools/proto.sh check
 
+  docs:generate:
+    desc: Regenerate the committed contract reference from Archie-owned types
+    summary: |
+      Writes docs/data/generated/contracts.json. The output is committed, so
+      this dirties the tree deliberately: review the diff and commit it with
+      the code change that shifted the contract surface. Never hand-edit the
+      artifact.
+
+      -mod=readonly is mandatory on every `go -C tools` command; see
+      task test:tools for why.
+    cmds:
+      - go -C tools run -mod=readonly ./docsgen --repo-root ..
+
+  docs:check:
+    desc: Verify the committed contract reference matches Archie-owned types
+    summary: |
+      Implements Step 6 of docs/architecture/generated-documentation.md:
+      generates into a temporary directory, compares it with the committed
+      output, names the authoritative Go definition behind each mismatch, and
+      exits non-zero without modifying the working tree.
+
+      Fix a failure with `task docs:generate`, then commit the result in the
+      same commit as the code change that shifted the contract surface. This
+      checks rather than regenerates on purpose: a gate that silently rewrote
+      the artifact would bless an unintended contract change with no reviewer
+      ever seeing it, which Step 9 explicitly forbids.
+    cmds:
+      - go -C tools run -mod=readonly ./docsgen check --repo-root ..
+
   vet:
     desc: Run go vet
     cmds:
@@ -226,12 +255,13 @@ tasks:
       - go -C tools test -mod=readonly ./... -count=1
 
   check:
-    desc: "Full quality gate: fmt, go fix, proto, vet, lint, build, test, tools tests, ui tests"
+    desc: "Full quality gate: fmt, go fix, proto, docs, vet, lint, build, test, tools tests, ui tests"
     cmds:
       - task: fmt
       - go fix ./...
       - task: proto:lint
       - task: proto:check
+      - task: docs:check
       - task: vet
       - task: lint
       - task: build

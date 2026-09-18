@@ -327,27 +327,35 @@ When a renderer is selected it MUST:
 
 ### Step 8: developer commands
 
-No `docs:*` task exists. `Taskfile.yml` does not reference the generator, and
-`task check` does not run `docs:check`, so generated drift is currently ungated.
-
-The generator is run directly:
+`task docs:generate` writes the committed artifact; `task docs:check` verifies
+it. `task check` runs `docs:check`, so generated drift is gated rather than
+advisory: a stale artifact fails the gate and names the authoritative Go
+definition behind each mismatch.
 
 ```sh
-go -C tools run ./docsgen all --repo-root ..
-go -C tools run ./docsgen check --repo-root ..
+task docs:generate
+task docs:check
 ```
 
-Wiring `docs:check` into `task check` is worth doing and does not depend on the
-renderer decision.
+Both wrap the generator, which can still be run directly:
+
+```sh
+go -C tools run -mod=readonly ./docsgen --repo-root ..
+go -C tools run -mod=readonly ./docsgen check --repo-root ..
+```
+
+`docsgen all` is still target-only: `docsgen data` and `docsgen asyncapi` do not
+exist, and only the single `contracts.json` artifact is generated today.
 
 ### Step 9: CI
 
 The documentation workflow was deleted on 2026-09-12. No workflow builds, checks,
 or publishes documentation. `deploy.yml` does not reference `docs/**`.
 
-Reintroducing CI for documentation requires the renderer decision first. Any
-such workflow MUST check generated output and MUST NOT regenerate and silently
-publish uncommitted differences.
+Drift is therefore gated locally, by `task check` running `docs:check` — not in
+CI. Reintroducing CI for documentation requires the renderer decision first.
+Any such workflow MUST check generated output and MUST NOT regenerate and
+silently publish uncommitted differences.
 
 ### Step 10: cutover — done, in reverse
 
@@ -373,11 +381,12 @@ Documents MUST describe Archie. Publishing is a separate, undecided concern.
 Generated documentation is committed.
 
 No pre-commit hook is installed in this repository, and no CI step runs the
-generator. The policy below is the intended contract, currently unenforced:
+generator. Step 3 below is enforced by `task check`; steps 1, 2, and 4 still
+rely on the author, because nothing observes a commit:
 
 1. detects authoritative definition or generator changes;
 2. runs the generator;
-3. runs `docsgen check`;
+3. runs `docsgen check` — enforced by `task check`;
 4. refuses the commit when generated changes are unstaged or validation fails.
 
 A commit MUST NOT be created while generated documentation is stale.

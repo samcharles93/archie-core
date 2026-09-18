@@ -109,13 +109,13 @@ golangci-lint run ./...
 | `task lint` | `golangci-lint run ./...`. |
 | `task build` | Builds both commands into `bin/`. |
 | `task test` | `go test ./... -count=1` in the runtime module. |
-| `task check` | `fmt` + `go fix ./...` again + `proto:lint` + `proto:check` + `vet` + `lint` + `build` + `test` + `test:tools` + `test:ui`. |
+| `task check` | `fmt` + `go fix ./...` again + `proto:lint` + `proto:check` + `docs:check` + `vet` + `lint` + `build` + `test` + `test:tools` + `test:ui`. |
 | `task clean` | Recursively removes `bin/`; destructive. |
 | `task docker-build` | `docker compose build agent` only. |
 
 `task check` is the definitive gate but omits race tests, `task vuln`, and
-`task docker-build`. It has no docs step: there is no documentation build to
-omit.
+`task docker-build`. Its docs step, `docs:check`, verifies committed generated
+data and never renders anything: there is still no documentation build.
 Run only in authorized writable worktree. For read-only preview: `gofumpt -l .`.
 
 ## Verify the tools module separately
@@ -148,8 +148,16 @@ cmp --silent docs/data/generated/contracts.json /tmp/archie-core-contracts.json
 ```
 
 2026-09-18 run wrote 11 schemas. The committed output was stale since
-`4b340d2b` and was regenerated the same day; `cmp` now passes. Planned
-`docsgen all` and `docsgen check` do **not** exist yet.
+`4b340d2b` and was regenerated the same day; `cmp` now passes. `task docs:check`
+now runs inside `task check`, so this drift fails the gate instead of waiting to
+be found by hand. `docsgen all` does not exist yet.
+
+Prefer the task over the raw commands:
+
+```bash
+task docs:check      # non-destructive; fails loudly and names the Go type
+task docs:generate   # rewrites the committed artifact; review the diff
+```
 
 ## Documentation needs no build
 
