@@ -129,6 +129,23 @@ tasks:
       happily report last week's tree against today's code.
     cmds:
       - python3 tools/reachaudit/reachaudit.py --repo . {{.CLI_ARGS}}
+  docs:site:
+    desc: "Build the documentation site into ./site (MkDocs). --strict, so a dead internal link fails the build."
+    summary: |
+      Publishes docs/ minus the subtrees held back in mkdocs.yml's
+      exclude_docs. Requires mkdocs-material:
+
+        pip install --user mkdocs-material
+
+      Distinct from docs:check, which verifies the generated contract data
+      rather than the site.
+    cmds:
+      - mkdocs build --strict
+
+  docs:serve:
+    desc: "Serve the documentation site locally with live reload on :8000."
+    cmds:
+      - mkdocs serve
 
   ui:deps:
     desc: Install the dashboard's node dependencies (ui/node_modules is gitignored)

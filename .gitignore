@@ -48,3 +48,6 @@ config.production.toml
 .local/
 __pycache__/
 *.pyc
+
+# MkDocs build output (task docs:site)
+/site/
