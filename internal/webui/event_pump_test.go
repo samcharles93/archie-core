@@ -3,6 +3,7 @@ package webui
 import (
 	"bufio"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -161,4 +162,58 @@ func openSSEStream(t *testing.T, ctx context.Context, ts *httptest.Server) <-cha
 		}
 	}()
 	return lines
+}
+
+// flakyEventReader fails its first failures calls, then answers an empty
+// table. It stands in for the State Store during the window where the UI
+// process is up and the store has not bound its listener yet.
+type flakyEventReader struct {
+	failures int
+	calls    int
+}
+
+func (f *flakyEventReader) EventsSince(context.Context, int64, int) ([]events.Event, error) {
+	f.calls++
+	if f.calls <= f.failures {
+		return nil, errors.New("connection refused")
+	}
+	return nil, nil
+}
+
+// archie-ui binds before archie-state-store is guaranteed to be listening, so
+// the first prime is routinely refused. Returning on that error left the
+// activity feed history-only until the process was restarted by hand.
+func TestPumpPrimingRetriesUntilTheStoreAnswers(t *testing.T) {
+	reader := &flakyEventReader{failures: 3}
+	pump := &eventPump{
+		store:         reader,
+		log:           func(string, ...any) {},
+		broadcast:     func(events.Event) {},
+		primeRetryMin: time.Millisecond,
+	}
+
+	if err := pump.primeWithRetry(t.Context()); err != nil {
+		t.Fatalf("primeWithRetry: %v", err)
+	}
+	if reader.calls != 4 {
+		t.Fatalf("EventsSince called %d times, want 4 (3 refusals then success)", reader.calls)
+	}
+}
+
+// A shutdown during the retry wait must end the pump, not hold the process
+// open until the store appears.
+func TestPumpPrimingStopsRetryingWhenTheContextEnds(t *testing.T) {
+	reader := &flakyEventReader{failures: 1 << 30}
+	pump := &eventPump{
+		store:         reader,
+		log:           func(string, ...any) {},
+		broadcast:     func(events.Event) {},
+		primeRetryMin: time.Millisecond,
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	if err := pump.primeWithRetry(ctx); err == nil {
+		t.Fatal("primeWithRetry returned no error after the context ended")
+	}
 }

@@ -22,6 +22,14 @@ const (
 	eventPumpPageSize      = 200
 )
 
+// Backoff bounds for priming. The UI process and the State Store are separate
+// units with no ordering between them, so a refused dial at startup is
+// ordinary rather than fatal and the pump waits the store out.
+const (
+	eventPumpPrimeRetryMin = 250 * time.Millisecond
+	eventPumpPrimeRetryMax = 30 * time.Second
+)
+
 // eventPump is the UI process's substitute for the daemon's in-process event
 // bus. The daemon hands persisted events to Server.Broadcast from its own bus
 // subscription (internal/app/archied/main.go's persistAndBroadcastEvents); a
@@ -42,6 +50,36 @@ type eventPump struct {
 	// watermark is the highest event id already handed to broadcast. It only
 	// ever moves forward, and only past an event that was delivered.
 	watermark int64
+	// primeRetryMin is the first backoff between priming attempts. Zero
+	// means eventPumpPrimeRetryMin; a test sets it small.
+	primeRetryMin time.Duration
+}
+
+// primeWithRetry primes, retrying with capped exponential backoff until it
+// succeeds or ctx ends. Returning on the first error instead left the
+// activity feed history-only for the life of the process whenever the UI won
+// the startup race against the State Store.
+func (p *eventPump) primeWithRetry(ctx context.Context) error {
+	delay := p.primeRetryMin
+	if delay <= 0 {
+		delay = eventPumpPrimeRetryMin
+	}
+	for attempt := 1; ; attempt++ {
+		err := p.prime(ctx)
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return err
+		}
+		p.log("event pump priming failed; retrying", "attempt", attempt, "retry_in", delay, "err", err)
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(delay):
+		}
+		delay = min(delay*2, eventPumpPrimeRetryMax)
+	}
 }
 
 // eventReader is the one method the pump needs, so a test can drive it
@@ -65,7 +103,7 @@ func (s *Server) PumpEvents(ctx context.Context, interval time.Duration) error {
 		interval = DefaultEventPollInterval
 	}
 	pump := s.newEventPump()
-	if err := pump.prime(ctx); err != nil {
+	if err := pump.primeWithRetry(ctx); err != nil {
 		return fmt.Errorf("prime event pump: %w", err)
 	}
 	pump.run(ctx, interval)
