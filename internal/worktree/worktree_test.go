@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 
 	"github.com/samcharles93/archie-core/internal/container"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 )
 
 const testBase = "main"
@@ -1125,5 +1126,336 @@ func TestTaskBriefIsNeverCommitted(t *testing.T) {
 	// The agent still has to be able to read it off its mount.
 	if _, err := os.Stat(filepath.Join(dir, ".git", "task.json")); err != nil {
 		t.Errorf("brief missing after commit: %v", err)
+	}
+}
+
+func TestOperationsOnNonRepositoryDiffstat(t *testing.T) {
+	ctx := context.Background()
+	m := &Manager{WorkDir: t.TempDir()}
+	if _, err := m.ChangedFileStats(ctx, t.TempDir(), testBase); err == nil {
+		t.Error("ChangedFileStats() error = nil, want a failure")
+	}
+}
+
+// diffstatSeed is one file written into the fixture's first commit.
+type diffstatSeed struct {
+	path    string
+	content string
+}
+
+// newDiffstatRepo builds a repository whose only commit is reachable as both
+// the branch tip and refs/remotes/origin/<base>. That remote-tracking ref is
+// what resolveBase prefers, so the three-dot base is the same commit whether
+// or not the fixture ever had a remote -- and a diffstat fixture needs a base
+// commit that already contains the paths a change modifies, renames or
+// deletes.
+func newDiffstatRepo(t *testing.T, seeds []diffstatSeed) (string, *git.Repository, plumbing.Hash) {
+	t.Helper()
+	dir := t.TempDir()
+	r, err := git.PlainInit(dir, false, git.WithDefaultBranch(plumbing.NewBranchReferenceName(testBase)))
+	if err != nil {
+		t.Fatalf("init fixture repo: %v", err)
+	}
+	for _, seed := range seeds {
+		writeSeedCommit(t, r, dir, seed.path, seed.content, "seed "+seed.path)
+	}
+	head, err := r.Head()
+	if err != nil {
+		t.Fatalf("resolve fixture HEAD: %v", err)
+	}
+	if err := r.Storer.SetReference(plumbing.NewHashReference(
+		plumbing.NewRemoteReferenceName(git.DefaultRemoteName, testBase), head.Hash(),
+	)); err != nil {
+		t.Fatalf("set remote-tracking base ref: %v", err)
+	}
+	return dir, r, head.Hash()
+}
+
+// commitAll commits the fixture repo's working tree, failing the test on a
+// commit error.
+func commitAll(t *testing.T, r *git.Repository, dir, message string) {
+	t.Helper()
+	disableSigning(t, r)
+	wt, err := r.Worktree()
+	if err != nil {
+		t.Fatalf("worktree: %v", err)
+	}
+	if _, err := wt.Add("."); err != nil {
+		t.Fatalf("add all: %v", err)
+	}
+	sig := testSignature()
+	if _, err := wt.Commit(message, &git.CommitOptions{Author: sig, Committer: sig}); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+}
+
+// TestChangedFileStatsReportsWhatOneAttemptChanged is the producer-side half
+// of the changed-file capture: status and per-file line counts are read off
+// the SAME three-dot patch the diff cap reads, where the merge base is
+// resolved, so a capture can never disagree with the size gate about what
+// changed.
+func TestChangedFileStatsReportsWhatOneAttemptChanged(t *testing.T) {
+	binaryContent := []byte{0x00, 0x01, 0x02, 0xff, 0xfe}
+
+	tests := []struct {
+		name      string
+		seeds     []diffstatSeed
+		mutate    func(t *testing.T, dir string, r *git.Repository)
+		wantFiles []task.FileChange
+		wantTotal task.ChangeTotals
+	}{
+		{
+			name:  "added",
+			seeds: []diffstatSeed{{path: "README.md", content: "seed\n"}},
+			mutate: func(t *testing.T, dir string, _ *git.Repository) {
+				t.Helper()
+				if err := os.WriteFile(filepath.Join(dir, "new.txt"), []byte("one\ntwo\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantFiles: []task.FileChange{
+				{Path: "new.txt", Status: task.ChangeAdded, Additions: 2},
+			},
+			wantTotal: task.ChangeTotals{Files: 1, Additions: 2},
+		},
+		{
+			name:  "modified",
+			seeds: []diffstatSeed{{path: "a.txt", content: "one\n"}},
+			mutate: func(t *testing.T, dir string, _ *git.Repository) {
+				t.Helper()
+				if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one\ntwo\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantFiles: []task.FileChange{
+				{Path: "a.txt", Status: task.ChangeModified, Additions: 1},
+			},
+			wantTotal: task.ChangeTotals{Files: 1, Additions: 1},
+		},
+		{
+			name:  "deleted",
+			seeds: []diffstatSeed{{path: "a.txt", content: "one\ntwo\n"}},
+			mutate: func(t *testing.T, dir string, _ *git.Repository) {
+				t.Helper()
+				if err := os.Remove(filepath.Join(dir, "a.txt")); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantFiles: []task.FileChange{
+				{Path: "a.txt", Status: task.ChangeDeleted, Deletions: 2},
+			},
+			wantTotal: task.ChangeTotals{Files: 1, Deletions: 2},
+		},
+		{
+			name:  "renamed",
+			seeds: []diffstatSeed{{path: "old.txt", content: "same content\n"}},
+			mutate: func(t *testing.T, dir string, _ *git.Repository) {
+				t.Helper()
+				if err := os.Remove(filepath.Join(dir, "old.txt")); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "new.txt"), []byte("same content\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			},
+			// go-git reports the rename with its old path preserved and no line
+			// changes, because the content is identical: the line counts describe
+			// the content diff, not the path change.
+			wantFiles: []task.FileChange{
+				{Path: "new.txt", OldPath: "old.txt", Status: task.ChangeRenamed},
+			},
+			wantTotal: task.ChangeTotals{Files: 1},
+		},
+		{
+			name:  "binary alongside a text file keeps both paths with their own counts",
+			seeds: []diffstatSeed{{path: "README.md", content: "seed\n"}},
+			mutate: func(t *testing.T, dir string, _ *git.Repository) {
+				t.Helper()
+				// The binary file sorts before the text file, and go-git's
+				// Patch.Stats skips it entirely (no textual chunks). A capture
+				// that read paths and counts off one shared index would hand the
+				// text file's counts to the binary file here.
+				if err := os.WriteFile(filepath.Join(dir, "aaa-image.bin"), binaryContent, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "zzz-text.txt"), []byte("one\ntwo\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantFiles: []task.FileChange{
+				{Path: "aaa-image.bin", Status: task.ChangeAdded, Binary: true},
+				{Path: "zzz-text.txt", Status: task.ChangeAdded, Additions: 2},
+			},
+			wantTotal: task.ChangeTotals{Files: 2, Additions: 2},
+		},
+		{
+			name:  "a regular file replaced by a symlink is a typechange",
+			seeds: []diffstatSeed{{path: "link.txt", content: "target\n"}},
+			mutate: func(t *testing.T, dir string, _ *git.Repository) {
+				t.Helper()
+				if err := os.Remove(filepath.Join(dir, "link.txt")); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink("target", filepath.Join(dir, "link.txt")); err != nil {
+					t.Fatal(err)
+				}
+			},
+			// git reports this as a typechange: the entry changed from a regular
+			// file to a symlink. The line counts are the content diff (a symlink's
+			// blob holds the target path, without the trailing newline).
+			wantFiles: []task.FileChange{
+				{Path: "link.txt", Status: task.ChangeTypeChanged, Additions: 1, Deletions: 1},
+			},
+			wantTotal: task.ChangeTotals{Files: 1, Additions: 1, Deletions: 1},
+		},
+		{
+			name:  "a rename alongside a binary file keeps every count with its own path",
+			seeds: []diffstatSeed{{path: "README.md", content: "seed\n"}, {path: "old.txt", content: "same content\n"}},
+			mutate: func(t *testing.T, dir string, _ *git.Repository) {
+				t.Helper()
+				if err := os.Remove(filepath.Join(dir, "old.txt")); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "new.txt"), []byte("same content\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "aaa-image.bin"), binaryContent, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "zzz-text.txt"), []byte("one\ntwo\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantFiles: []task.FileChange{
+				{Path: "aaa-image.bin", Status: task.ChangeAdded, Binary: true},
+				{Path: "new.txt", OldPath: "old.txt", Status: task.ChangeRenamed},
+				{Path: "zzz-text.txt", Status: task.ChangeAdded, Additions: 2},
+			},
+			wantTotal: task.ChangeTotals{Files: 3, Additions: 2},
+		},
+		{
+			name:   "nothing changed",
+			seeds:  []diffstatSeed{{path: "README.md", content: "seed\n"}},
+			mutate: func(*testing.T, string, *git.Repository) {},
+			// Empty, not nil: the persisted payload carries a list, and a null
+			// there would read as a missing measurement rather than a measured
+			// zero.
+			wantFiles: []task.FileChange{},
+			wantTotal: task.ChangeTotals{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir, r, baseHash := newDiffstatRepo(t, tt.seeds)
+			tt.mutate(t, dir, r)
+			var head plumbing.Hash
+			if tt.name != "nothing changed" {
+				commitAll(t, r, dir, "change")
+				got, err := r.Head()
+				if err != nil {
+					t.Fatal(err)
+				}
+				head = got.Hash()
+			} else {
+				head = baseHash
+			}
+
+			m := &Manager{WorkDir: t.TempDir()}
+			stats, err := m.ChangedFileStats(t.Context(), dir, testBase)
+			if err != nil {
+				t.Fatalf("ChangedFileStats() error = %v", err)
+			}
+			if stats.BaseSHA != baseHash.String() {
+				t.Errorf("BaseSHA = %q, want the resolved base %q", stats.BaseSHA, baseHash)
+			}
+			if stats.HeadSHA != head.String() {
+				t.Errorf("HeadSHA = %q, want HEAD %q", stats.HeadSHA, head)
+			}
+			if len(stats.Files) != len(tt.wantFiles) {
+				t.Fatalf("Files = %+v, want %d entries %+v", stats.Files, len(tt.wantFiles), tt.wantFiles)
+			}
+			for i, want := range tt.wantFiles {
+				if got := stats.Files[i]; got != want {
+					t.Errorf("Files[%d] = %+v, want %+v", i, got, want)
+				}
+			}
+			if stats.Totals != tt.wantTotal {
+				t.Errorf("Totals = %+v, want %+v", stats.Totals, tt.wantTotal)
+			}
+		})
+	}
+}
+
+// TestChangedFileStatsRecordsTheDiffedBaseNotTheAdvancedTip pins the identity
+// of the recorded base to the commit the file list was actually diffed against
+// -- the merge base -- and not to base's tip, which moves whenever anyone
+// lands on the base branch mid-run. Naming the tip would pair a file list with
+// a commit it was never compared to.
+func TestChangedFileStatsRecordsTheDiffedBaseNotTheAdvancedTip(t *testing.T) {
+	ctx := context.Background()
+	host := newLocalRemote(t, "acme", "todo")
+	m := newManager(t, host)
+
+	dir, _, err := m.Prepare(ctx, "acme", "todo", testBase, 8, "feat: mine", "", "feature")
+	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	r, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	diverged, err := r.ResolveRevision(plumbing.Revision(remoteBase(testBase)))
+	if err != nil {
+		t.Fatalf("resolve the base this branch diverged from: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "mine.txt"), []byte("mine\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.CommitAll(ctx, dir, "feat: mine"); err != nil {
+		t.Fatalf("CommitAll() error = %v", err)
+	}
+
+	// Another author lands on the base branch and this clone fetches it, so
+	// origin/<base> now names a commit this branch never contained.
+	seed := filepath.Join(t.TempDir(), "other")
+	sr, err := git.PlainClone(seed, &git.CloneOptions{URL: filepath.Join(host, "acme", "todo.git")})
+	if err != nil {
+		t.Fatalf("clone for second author: %v", err)
+	}
+	writeSeedCommit(t, sr, seed, "theirs.txt", "theirs\n", "chore: theirs")
+	ref := plumbing.NewBranchReferenceName(testBase)
+	if err := sr.Push(&git.PushOptions{
+		RemoteName: git.DefaultRemoteName,
+		RefSpecs:   []gitconfig.RefSpec{gitconfig.RefSpec(ref + ":" + ref)},
+	}); err != nil {
+		t.Fatalf("second author push: %v", err)
+	}
+	if err := r.Fetch(&git.FetchOptions{RemoteName: git.DefaultRemoteName}); err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	tip, err := r.ResolveRevision(plumbing.Revision(remoteBase(testBase)))
+	if err != nil {
+		t.Fatalf("resolve the advanced base tip: %v", err)
+	}
+	if tip == diverged {
+		t.Fatal("the base branch did not advance; this test would assert nothing")
+	}
+
+	stats, err := m.ChangedFileStats(ctx, dir, testBase)
+	if err != nil {
+		t.Fatalf("ChangedFileStats() error = %v", err)
+	}
+	if stats.BaseSHA != diverged.String() {
+		t.Errorf("BaseSHA = %q, want the diffed merge base %q (the base tip is %q)",
+			stats.BaseSHA, diverged, tip)
+	}
+	// The same rule from the other side: a file list measured from the merge
+	// base cannot name a commit that landed on the base branch afterwards.
+	for _, f := range stats.Files {
+		if f.Path == "theirs.txt" {
+			t.Errorf("Files = %+v, includes another author's file: the diff is not merge-base relative", stats.Files)
+		}
 	}
 }

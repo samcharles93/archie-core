@@ -29,6 +29,52 @@ func line(level, msg string, extra ...string) string {
 	return s.String() + "}"
 }
 
+func TestTailStageFilter(t *testing.T) {
+	path := writeLog(
+		t,
+		line("INFO", "stage starting", `"stage":"prepare"`),
+		line("INFO", "stage finished", `"stage":"prepare"`, `"component":"daemon"`),
+		line("INFO", "stage starting", `"stage":"implement"`),
+		line("INFO", "agent turn", `"component":"daemon"`),
+		line("INFO", "stage starting", `"stage":"PREPARE"`),
+	)
+
+	tests := []struct {
+		name  string
+		query Query
+		want  []string
+	}{
+		{"stage selects only that stage's entries", Query{Stage: "prepare"}, []string{"stage starting", "stage finished", "stage starting"}},
+		{"stage match is case-insensitive", Query{Stage: "Implement"}, []string{"stage starting"}},
+		{"an entry with no stage never matches", Query{Stage: "prepare"}, []string{"stage starting", "stage finished", "stage starting"}},
+		{"stage combines with level", Query{Stage: "prepare", Levels: []string{"INFO"}}, []string{"stage starting", "stage finished", "stage starting"}},
+		{"stage combines with component", Query{Stage: "prepare", Component: "daemon"}, []string{"stage finished"}},
+		{"a stage nothing carries is empty, not an error", Query{Stage: "nonexistent"}, nil},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := Tail(path, tc.query)
+			if err != nil {
+				t.Fatalf("Tail: %v", err)
+			}
+			got := make([]string, 0, len(res.Entries))
+			for _, e := range res.Entries {
+				got = append(got, e.Message)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("got %v, want %v", got, tc.want)
+					break
+				}
+			}
+		})
+	}
+}
+
 func TestTailFilters(t *testing.T) {
 	path := writeLog(
 		t,

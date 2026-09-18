@@ -243,6 +243,9 @@ func (s *Server) registerTaskRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/task-meta", s.handleTaskMeta)
 	mux.HandleFunc("POST /api/tasks/{id}/action", s.handleTaskAction)
 	mux.HandleFunc("GET /api/tasks/{id}", s.handleTask)
+	mux.HandleFunc("GET /api/tasks/{id}/attempts", s.handleTaskAttempts)
+	mux.HandleFunc("GET /api/tasks/{id}/changes", s.handleTaskChanges)
+	mux.HandleFunc("GET /api/tasks/{id}/debug", s.handleTaskDebug)
 	mux.HandleFunc("GET /api/tasks/{id}/logs", s.handleTaskLogs)
 	mux.HandleFunc("GET /api/tasks/{id}/logs/download", s.handleTaskLogDownload)
 }

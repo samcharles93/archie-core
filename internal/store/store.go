@@ -95,6 +95,15 @@ func migrateTasks(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return err
 	}
+	// events is created by `CREATE TABLE IF NOT EXISTS` (eventsSchema), which
+	// is a no-op against a database that already has the table. On an existing
+	// archie.db this read plus the `events` arm below is therefore the ONLY
+	// thing that adds events.attempt; without it the first insert fails with
+	// `table events has no column named attempt`.
+	eventsColumns, err := tableColumns(ctx, tx, "events")
+	if err != nil {
+		return err
+	}
 
 	migrations := []struct {
 		table  string
@@ -109,11 +118,15 @@ func migrateTasks(ctx context.Context, db *sql.DB) error {
 		{"tasks", "binding_version", `ALTER TABLE tasks ADD COLUMN binding_version INTEGER NOT NULL DEFAULT 0`},
 		{"bindings", "owner", `ALTER TABLE bindings ADD COLUMN owner TEXT NOT NULL DEFAULT ''`},
 		{"bindings", "repo", `ALTER TABLE bindings ADD COLUMN repo TEXT NOT NULL DEFAULT ''`},
+		{"events", "attempt", `ALTER TABLE events ADD COLUMN attempt INTEGER NOT NULL DEFAULT 0`},
 	}
 	for _, migration := range migrations {
 		present := columns
-		if migration.table == "bindings" {
+		switch migration.table {
+		case "bindings":
 			present = bindingColumns
+		case "events":
+			present = eventsColumns
 		}
 		if present[migration.column] {
 			continue
@@ -544,9 +557,14 @@ func (s *Store) RecoverStale(ctx context.Context) (int64, error) {
 }
 
 // OpenPRs returns tasks whose PR state should be reconciled with GitHub.
+//
+// It carries attempt deliberately: the reconcile loop attributes pr_merged and
+// pr_rejected to the attempt that opened the PR, and it reaches the state store
+// over the wire, so the row must carry the value for taskProto to publish it.
+// Narrowing this projection back silently sends those events out unattributed.
 func (s *Store) OpenPRs(ctx context.Context) (tasks []workflow.Task, retErr error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, owner, repo, issue_number, pr_number, status, source, identity
+		SELECT id, owner, repo, issue_number, pr_number, status, source, identity, attempt
 		FROM tasks WHERE status=?`, workflow.StatusPROpen)
 	if err != nil {
 		return nil, err
@@ -557,7 +575,7 @@ func (s *Store) OpenPRs(ctx context.Context) (tasks []workflow.Task, retErr erro
 	for rows.Next() {
 		var t workflow.Task
 		if err := rows.Scan(&t.ID, &t.Owner, &t.Repo, &t.IssueNumber, &t.PRNumber,
-			&t.Status, &t.Source, &t.Identity); err != nil {
+			&t.Status, &t.Source, &t.Identity, &t.Attempt); err != nil {
 			return nil, err
 		}
 		tasks = append(tasks, t)

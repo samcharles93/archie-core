@@ -46,9 +46,17 @@ func TestForwardTaskEventsPublishesEachEventOnItsTaskSubject(t *testing.T) {
 	}()
 
 	want := []events.Event{
-		{Kind: events.KindStageStart, TaskID: 42, Stage: "baseline"},
-		{Kind: events.KindStageFinish, TaskID: 42, Stage: "baseline", Data: map[string]any{"duration_ms": float64(120)}},
-		{Kind: events.KindParked, TaskID: 42, Detail: "baseline red"},
+		{Kind: events.KindStageStart, TaskID: 42, Stage: "baseline", Attempt: 1},
+		{Kind: events.KindStageFinish, TaskID: 42, Stage: "baseline", Attempt: 1, Data: map[string]any{"duration_ms": float64(120)}},
+		{Kind: events.KindParked, TaskID: 42, Attempt: 1, Detail: "baseline red"},
+		// R4's document rides this bridge too: a worker captures its own
+		// effective configuration, and the daemon is a different process, so
+		// the payload has to survive the hop or the Config tab reads nothing.
+		// The daemon's own key for it is asserted below by name.
+		{Kind: events.KindConfigCaptured, TaskID: 42, Attempt: 1, Data: map[string]any{
+			"schema":   events.ConfigCapturedSchema,
+			"document": map[string]any{"bot_user": "archie"},
+		}},
 	}
 	for _, e := range want {
 		bus.Publish(e)
@@ -70,6 +78,21 @@ func TestForwardTaskEventsPublishesEachEventOnItsTaskSubject(t *testing.T) {
 		}
 		if got.Kind != want[i].Kind || got.TaskID != want[i].TaskID || got.Stage != want[i].Stage || got.Detail != want[i].Detail {
 			t.Errorf("event %d = %+v, want %+v", i, got, want[i])
+		}
+		if got.Attempt != want[i].Attempt {
+			t.Errorf("event %d attempt = %d, want %d (provenance must not be dropped on the hop)", i, got.Attempt, want[i].Attempt)
+		}
+		if got.Kind == events.KindConfigCaptured {
+			if got.Data["schema"] != events.ConfigCapturedSchema {
+				t.Errorf("event %d schema = %v, want %q", i, got.Data["schema"], events.ConfigCapturedSchema)
+			}
+			if _, renamed := got.Data["config"]; renamed {
+				t.Errorf(`event %d crossed under "config"; the producer writes the document under "document"`, i)
+			}
+			doc, ok := got.Data["document"].(map[string]any)
+			if !ok || doc["bot_user"] != "archie" {
+				t.Errorf("event %d document payload = %#v, want the decoded document under its own key", i, got.Data["document"])
+			}
 		}
 		if got.At.IsZero() {
 			t.Errorf("event %d has zero At, want the bus-stamped publish time", i)

@@ -50,6 +50,26 @@ const (
 	KindWorkRequestSubmitted = "work_request_submitted"
 	KindLog                  = "log" // data: level, msg
 
+	// KindChangesCaptured records the change one attempt produced, read off
+	// the worktree at the moment it was committed or pushed, plus a final
+	// capture once OpenPR knows the number. It is durable
+	// provenance, not a live view: the worktree is deleted on merge, close
+	// and no-PR terminal states, and a retry resets the branch onto its base,
+	// so nothing can re-derive this after the fact. data: schema
+	// (ChangesCapturedSchema), owner, repo, base, branch, head_sha, base_sha,
+	// pr_number, captured_after, files[], totals, truncated.
+	KindChangesCaptured = "changes_captured"
+
+	// KindConfigCaptured records the effective configuration one attempt ran
+	// under, captured where it is materialised for the dispatch. It is durable
+	// by requirement, not convenience: the published configuration snapshot is
+	// the CURRENT configuration and is replaced on every publish, so it cannot
+	// answer what a run that finished last week was configured with. This is
+	// the only record of that. data: schema (ConfigCapturedSchema) and document
+	// (the JSON encoding of the dispatch's config.TaskConfig, non-secret by
+	// construction and by test).
+	KindConfigCaptured = "config_captured"
+
 	// Curator family activity (epic archie-core-yp9). Curator runs ride
 	// the same bus so background agents mutating memory stay observable:
 	// what ran, when, what changed, and why (archie-core-114).
@@ -79,20 +99,39 @@ const (
 	KindUpdateReport = "update_report"
 )
 
+// ConfigCapturedSchema is the schema name carried inside a config_captured
+// event's data. It is named on the wire so a reader can refuse a document it
+// does not understand rather than rendering it as though it did.
+const ConfigCapturedSchema = "archie/task-config@1"
+
+// ChangesCapturedSchema is the schema name carried inside a changes_captured
+// event's data, for the same reason as ConfigCapturedSchema: a capture read by
+// a build that does not know its shape is a read failure, and the dashboard has
+// a state for that distinct from a capture it rendered as zeroes.
+const ChangesCapturedSchema = "archie/task-changes@1"
+
 // Event is the single wire type: task lifecycle, stage progress, agent
 // stats, and log lines all flow through it  --  every consumer (SQLite
 // sink, SSE fan-out, future aggregators) is just another subscriber.
 type Event struct {
-	ID       int64          `json:"id,omitempty"` // set by the store sink
-	At       time.Time      `json:"at"`
-	Kind     string         `json:"kind"`
-	TaskID   int64          `json:"task_id,omitempty"`
-	Repo     string         `json:"repo,omitempty"`
-	Issue    int            `json:"issue,omitempty"`
-	Workflow string         `json:"workflow,omitempty"`
-	Stage    string         `json:"stage,omitempty"`
-	Detail   string         `json:"detail,omitempty"`
-	Data     map[string]any `json:"data,omitempty"`
+	ID       int64     `json:"id,omitempty"` // set by the store sink
+	At       time.Time `json:"at"`
+	Kind     string    `json:"kind"`
+	TaskID   int64     `json:"task_id,omitempty"`
+	Repo     string    `json:"repo,omitempty"`
+	Issue    int       `json:"issue,omitempty"`
+	Workflow string    `json:"workflow,omitempty"`
+	Stage    string    `json:"stage,omitempty"`
+	// Attempt attributes the event to one run of the task. Zero means
+	// UNATTRIBUTED, not "attempt zero": every row written before this field
+	// existed, and the deliberately task-agnostic producers, carry 0. A
+	// reader must report those as unattributable rather than presenting them
+	// as a first run. The tag is deliberately not omitempty so that
+	// unattributed and absent stay distinguishable on the wire and in the
+	// array the dashboard renders.
+	Attempt int            `json:"attempt"`
+	Detail  string         `json:"detail,omitempty"`
+	Data    map[string]any `json:"data,omitempty"`
 }
 
 // Sub is one subscriber: a bounded channel plus a drop counter.

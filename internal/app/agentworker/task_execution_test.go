@@ -24,6 +24,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
@@ -421,6 +422,74 @@ func TestRunTaskExecutesBootstrapWorkflowEndToEnd(t *testing.T) {
 		t.Fatalf("commit identity = author %q <%s>, committer %q <%s>",
 			commit.Author.Name, commit.Author.Email, commit.Committer.Name, commit.Committer.Email)
 	}
+
+	// The change the run produced is captured at the push, through the
+	// container's hybridTrees, and persisted as durable provenance attributed
+	// to the attempt -- and captured once more by OpenPR, the first moment a
+	// capture can carry the pull-request number the view links. This is the
+	// only end-to-end path that matters: every production workflow.Run executes
+	// here.
+	timeline, err := st.TaskEvents(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("TaskEvents: %v", err)
+	}
+	var captured []events.Event
+	for _, e := range timeline {
+		if e.Kind == events.KindChangesCaptured {
+			captured = append(captured, e)
+		}
+	}
+	if len(captured) != 2 {
+		t.Fatalf("changes_captured events = %d, want the push capture and the one OpenPR takes (%d)", len(captured), stored.PRNumber)
+	}
+	for i, e := range captured {
+		if e.Attempt != task.Attempt || task.Attempt == 0 {
+			t.Errorf("capture %d attempt = %d, want the task's own attempt %d", i, e.Attempt, task.Attempt)
+		}
+	}
+	if captured[0].Stage != "commit-push" {
+		t.Errorf("capture stage = %q, want the capturing stage", captured[0].Stage)
+	}
+	data, err := json.Marshal(captured[0].Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload struct {
+		CapturedAfter string `json:"captured_after"`
+		PRNumber      int    `json:"pr_number"`
+		Files         []struct {
+			Path   string `json:"path"`
+			Status string `json:"status"`
+		} `json:"files"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatalf("decode capture: %v", err)
+	}
+	if payload.CapturedAfter != "commit-push" {
+		t.Errorf("captured_after = %q, want commit-push", payload.CapturedAfter)
+	}
+	if payload.PRNumber != 0 {
+		t.Errorf("the push capture carries pr_number %d, want 0: no PR existed when it was taken", payload.PRNumber)
+	}
+	if len(payload.Files) != 1 || payload.Files[0].Path != ".archie/bootstrap.md" || payload.Files[0].Status != "added" {
+		t.Errorf("captured files = %+v, want the bootstrap marker as an added file", payload.Files)
+	}
+
+	finalData, err := json.Marshal(captured[1].Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var final struct {
+		CapturedAfter string `json:"captured_after"`
+		PRNumber      int    `json:"pr_number"`
+	}
+	if err := json.Unmarshal(finalData, &final); err != nil {
+		t.Fatalf("decode the final capture: %v", err)
+	}
+	if final.CapturedAfter != "open-pr" || final.PRNumber != stored.PRNumber || final.PRNumber == 0 {
+		t.Errorf("final capture = %q pr %d, want open-pr carrying the stored PR number %d, without which the changed-files view has nothing to link",
+			final.CapturedAfter, final.PRNumber, stored.PRNumber)
+	}
 }
 
 // TestRunTaskRestoresWorktreeOwnershipOnEveryExit pins the half of the
@@ -766,5 +835,66 @@ func TestRouteTaskUsesRequestLabelOverride(t *testing.T) {
 	wf := routeTask(req, registry)
 	if wf.Name != "security-review" {
 		t.Fatalf("routeTask() = %q, want %q (request label override not applied)", wf.Name, "security-review")
+	}
+}
+
+// changeStatsReader mirrors the unexported optional interface package workflow
+// type-asserts on TaskContext.Trees to capture what an attempt changed. It is
+// restated here because an unexported interface cannot be named from this
+// package; the assertion below is therefore the only way this side can pin
+// that the in-container Trees is capable at all.
+type changeStatsReader interface {
+	ChangedFileStats(ctx context.Context, dir, base string) (task.ChangeStats, error)
+}
+
+// TestHybridTreesCanReportWhatChanged is the in-container half of the change
+// capture. Every production workflow.Run executes in archie-agent against a
+// hybridTrees, so a Trees without this capability would make the capture a
+// silent no-op in exactly the deployment that produces all the real data --
+// the daemon-side manager being capable would prove nothing.
+func TestHybridTreesCanReportWhatChanged(t *testing.T) {
+	var trees any = &hybridTrees{local: &worktree.Manager{}}
+	if _, ok := trees.(changeStatsReader); !ok {
+		t.Fatal("hybridTrees cannot report a diffstat; every capture inside a container would silently no-op")
+	}
+}
+
+// TestHybridTreesForwardsChangedFileStatsToItsLocalManager drives the
+// capability against a real worktree, so satisfaction of the interface is not
+// mistaken for a working forwarder.
+func TestHybridTreesForwardsChangedFileStatsToItsLocalManager(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	ctx := t.Context()
+	host := newLocalRemote(t, "acme", "diffstat")
+	manager := &worktree.Manager{
+		WorkDir: t.TempDir(), Token: "unused",
+		BotUser: "archie-bot", BotEmail: "archie-bot@example.com", BaseURL: "file://" + host,
+	}
+	dir, branch, err := manager.Prepare(ctx, "acme", "diffstat", "main", 4, "feat: widget", "", "")
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "widget.txt"), []byte("one\ntwo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.CommitAll(ctx, dir, "feat: widget"); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	trees := &hybridTrees{local: manager, localDir: dir, branch: branch}
+	stats, err := trees.ChangedFileStats(ctx, dir, "main")
+	if err != nil {
+		t.Fatalf("ChangedFileStats: %v", err)
+	}
+	if len(stats.Files) != 1 || stats.Files[0].Path != "widget.txt" {
+		t.Fatalf("files = %+v, want the one committed file", stats.Files)
+	}
+	if stats.Totals != (task.ChangeTotals{Files: 1, Additions: 2}) {
+		t.Errorf("totals = %+v, want the file's two added lines", stats.Totals)
+	}
+	if stats.HeadSHA == "" || stats.BaseSHA == "" {
+		t.Errorf("SHAs = (%q, %q), want both resolved", stats.BaseSHA, stats.HeadSHA)
 	}
 }

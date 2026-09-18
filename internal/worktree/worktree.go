@@ -36,8 +36,11 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	gitclient "github.com/go-git/go-git/v6/plumbing/client"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
+	fdiff "github.com/go-git/go-git/v6/plumbing/format/diff"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	githttp "github.com/go-git/go-git/v6/plumbing/transport/http"
+
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 )
 
 // preparedSentinel marks a worktree as fully cloned, branched and
@@ -598,38 +601,49 @@ func remoteUsesHTTP(r *git.Repository) bool {
 // Diffing against the remote tip instead would attribute every commit
 // landed on base since the branch started to this task.
 func (m *Manager) patch(ctx context.Context, dir, base string) (*object.Patch, error) {
+	p, _, err := m.patchFromMergeBase(ctx, dir, base)
+	return p, err
+}
+
+// patchFromMergeBase is patch plus the commit the diff was actually taken
+// against. That commit is the merge base of base and HEAD, which is NOT base's
+// tip once anyone has landed on the base branch since this branch diverged.
+// A capture records it beside the file list it measured, so the two describe
+// one change set: re-resolving origin/<base> on the side would name the new
+// tip instead.
+func (m *Manager) patchFromMergeBase(ctx context.Context, dir, base string) (*object.Patch, plumbing.Hash, error) {
 	r, err := git.PlainOpen(dir)
 	if err != nil {
-		return nil, fmt.Errorf("open worktree: %w", err)
+		return nil, plumbing.ZeroHash, fmt.Errorf("open worktree: %w", err)
 	}
 	baseHash, err := resolveBase(r, base)
 	if err != nil {
-		return nil, err
+		return nil, plumbing.ZeroHash, err
 	}
 	head, err := r.Head()
 	if err != nil {
-		return nil, fmt.Errorf("resolve HEAD: %w", err)
+		return nil, plumbing.ZeroHash, fmt.Errorf("resolve HEAD: %w", err)
 	}
 	baseCommit, err := r.CommitObject(baseHash)
 	if err != nil {
-		return nil, fmt.Errorf("load base commit: %w", err)
+		return nil, plumbing.ZeroHash, fmt.Errorf("load base commit: %w", err)
 	}
 	headCommit, err := r.CommitObject(head.Hash())
 	if err != nil {
-		return nil, fmt.Errorf("load head commit: %w", err)
+		return nil, plumbing.ZeroHash, fmt.Errorf("load head commit: %w", err)
 	}
 	bases, err := baseCommit.MergeBase(headCommit)
 	if err != nil {
-		return nil, fmt.Errorf("find merge base for %s...HEAD: %w", remoteBase(base), err)
+		return nil, plumbing.ZeroHash, fmt.Errorf("find merge base for %s...HEAD: %w", remoteBase(base), err)
 	}
 	if len(bases) == 0 {
-		return nil, fmt.Errorf("find merge base for %s...HEAD: no common ancestor", remoteBase(base))
+		return nil, plumbing.ZeroHash, fmt.Errorf("find merge base for %s...HEAD: no common ancestor", remoteBase(base))
 	}
 	p, err := bases[0].PatchContext(ctx, headCommit)
 	if err != nil {
-		return nil, fmt.Errorf("diff %s...HEAD: %w", remoteBase(base), err)
+		return nil, plumbing.ZeroHash, fmt.Errorf("diff %s...HEAD: %w", remoteBase(base), err)
 	}
-	return p, nil
+	return p, bases[0].Hash, nil
 }
 
 // ChangedLines reports lines added+deleted vs the base branch  --  the
@@ -685,6 +699,104 @@ func (m *Manager) ChangedFiles(ctx context.Context, dir, base string) ([]string,
 		files = append(files, name)
 	}
 	return files, nil
+}
+
+// fileTypeMask is the file-type subset of a tree entry's mode: the bits that
+// distinguish a regular file from a symlink or a gitlink. A mode change inside
+// one type (the executable bit) is a modification, exactly as git reports it;
+// a change across types is a typechange.
+const fileTypeMask = 0o170000
+
+// ChangedFileStats reports what HEAD changed against base, as the per-file
+// status and line counts one attempt's capture records. It reuses patch's
+// three-dot semantics: diffing against the remote tip instead would attribute
+// every commit landed on base since the branch started to this task.
+//
+// ChangedLines, Diff and ChangedFiles stay the shape stages call; this is the
+// same measurement with the detail a capture needs, so there is still exactly
+// one diff path -- and it reports the base that path diffed against.
+func (m *Manager) ChangedFileStats(ctx context.Context, dir, base string) (task.ChangeStats, error) {
+	// The diffed base is the merge base patchFromMergeBase diffed against, not
+	// base's tip: the recorded pair has to describe the file list beside it.
+	p, diffedBase, err := m.patchFromMergeBase(ctx, dir, base)
+	if err != nil {
+		return task.ChangeStats{}, err
+	}
+	r, err := git.PlainOpen(dir)
+	if err != nil {
+		return task.ChangeStats{}, fmt.Errorf("open worktree: %w", err)
+	}
+	head, err := r.Head()
+	if err != nil {
+		return task.ChangeStats{}, fmt.Errorf("resolve HEAD: %w", err)
+	}
+
+	patches := p.FilePatches()
+	// Paths come from FilePatches and counts from Stats, joined by position,
+	// because Stats() carries one entry per patch that produced textual chunks
+	// and SKIPS the rest (binary files, and any change whose content is
+	// identical). Reading the two lists off the same index would shift every
+	// later file's counts onto the wrong path as soon as one binary file is in
+	// the change. Totals come from Stats so they agree with ChangedLines, which
+	// sums the same list.
+	stats := p.Stats()
+	next := 0
+	files := make([]task.FileChange, 0, len(patches))
+	totals := task.ChangeTotals{Files: len(patches)}
+	for _, fp := range patches {
+		change := fileChange(fp)
+		if change.Binary || next >= len(stats) {
+			files = append(files, change)
+			continue
+		}
+		change.Additions = stats[next].Addition
+		change.Deletions = stats[next].Deletion
+		totals.Additions += stats[next].Addition
+		totals.Deletions += stats[next].Deletion
+		next++
+		files = append(files, change)
+	}
+
+	return task.ChangeStats{
+		BaseSHA: diffedBase.String(),
+		HeadSHA: head.Hash().String(),
+		Files:   files,
+		Totals:  totals,
+	}, nil
+}
+
+// fileChange classifies one file patch: whether the file was added, deleted,
+// renamed, retyped or modified, and whether it produced any textual hunks.
+func fileChange(fp fdiff.FilePatch) task.FileChange {
+	from, to := fp.Files()
+	change := task.FileChange{
+		// No textual hunks. This is what go-git can tell us, not a claim about
+		// the file on disk: a binary file reports it, and so does a rename whose
+		// content did not change.
+		Binary: len(fp.Chunks()) == 0,
+	}
+	// At least one side is always present: a change with both entries empty is
+	// rejected upstream (object.Change.Action), so there is no third state to
+	// report here.
+	switch {
+	case from == nil:
+		change.Path = to.Path()
+		change.Status = task.ChangeAdded
+	case to == nil:
+		change.Path = from.Path()
+		change.Status = task.ChangeDeleted
+	case from.Path() != to.Path():
+		change.Path = to.Path()
+		change.OldPath = from.Path()
+		change.Status = task.ChangeRenamed
+	case from.Mode()&fileTypeMask != to.Mode()&fileTypeMask:
+		change.Path = to.Path()
+		change.Status = task.ChangeTypeChanged
+	default:
+		change.Path = to.Path()
+		change.Status = task.ChangeModified
+	}
+	return change
 }
 
 // Snapshot exports HEAD's tracked files into a fresh, empty destDir with no

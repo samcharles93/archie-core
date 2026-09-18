@@ -134,7 +134,13 @@ type TaskContext struct {
 }
 
 // Emit publishes an observability event stamped with the task's
-// identity. Safe on a nil bus.
+// identity and the attempt that produced it. Safe on a nil bus.
+//
+// The attempt comes from the task record this context runs against, so a
+// reader can attribute the event to one run without segmenting the task's
+// stream by stage order. It is never guessed: a producer with no attempt
+// (the deliberately task-agnostic daemon events) leaves it zero, which reads
+// as unattributed rather than as a first run.
 func (tc *TaskContext) Emit(kind, stage, detail string, data map[string]any) {
 	if tc.Bus == nil {
 		return
@@ -145,6 +151,7 @@ func (tc *TaskContext) Emit(kind, stage, detail string, data map[string]any) {
 		Repo:     tc.Task.Owner + "/" + tc.Task.Repo,
 		Issue:    tc.Task.IssueNumber,
 		Workflow: tc.Task.Workflow,
+		Attempt:  tc.Task.Attempt,
 		Stage:    stage,
 		Detail:   detail,
 		Data:     data,
@@ -161,7 +168,8 @@ func (tc *TaskContext) EmitDurable(ctx context.Context, kind, stage, detail stri
 	}
 	event := events.Event{
 		At: time.Now().UTC(), Kind: kind, TaskID: tc.Task.ID, Repo: tc.Task.Owner + "/" + tc.Task.Repo,
-		Issue: tc.Task.IssueNumber, Workflow: tc.Task.Workflow, Stage: stage, Detail: detail, Data: data,
+		Issue: tc.Task.IssueNumber, Workflow: tc.Task.Workflow, Attempt: tc.Task.Attempt,
+		Stage: stage, Detail: detail, Data: data,
 	}
 	id, err := tc.Store.InsertEvent(ctx, event)
 	if err != nil {
@@ -293,7 +301,17 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 	for _, stage := range wf.Stages {
 		t.Stage = stage.Name
 		_ = tc.Store.Update(ctx, t)
-		log.Info("stage starting", "stage", stage.Name)
+		// The stage is bound onto the task logger for exactly the stage's own
+		// execution and removed afterwards, so every line a stage's code writes
+		// is selectable by stage (internal/logging.Query.Stage). It is restored
+		// rather than left in place because a line written outside any stage is
+		// not attributable to one. Agent and tool output is logged by the runtime
+		// that produced it, which never sees this logger, so it carries no stage:
+		// the stage filter narrows the log, it does not cover it.
+		previousLog := tc.Log
+		stageLog := previousLog.With("stage", stage.Name)
+		tc.Log = stageLog
+		stageLog.Info("stage starting")
 		tc.Emit(events.KindStageStart, stage.Name, "", nil)
 		started := time.Now()
 
@@ -306,13 +324,14 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 			}
 		}
 		tc.Emit(events.KindStageFinish, stage.Name, "", data)
+		tc.Log = previousLog
 
 		if err != nil {
 			// Daemon shutdown is not a workflow failure. Leave the task running
 			// so Startup's existing crash recovery requeues it; parking here
 			// would publish a false failure and require manual intervention.
 			if ctx.Err() != nil {
-				log.Info("stage interrupted", "stage", stage.Name, "err", err)
+				stageLog.Info("stage interrupted", "err", err)
 				return
 			}
 			t.ParkReason = fmt.Sprintf("stage %s: %v", stage.Name, err)

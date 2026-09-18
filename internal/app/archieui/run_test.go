@@ -9,13 +9,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
 
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
@@ -100,13 +103,16 @@ func TestUIServesDashboardAgainstRemoteContracts(t *testing.T) {
 		t.Fatalf("open temp store: %v", err)
 	}
 	defer st.Close()
-	if _, err := st.EnqueueChatTask(t.Context(), "acme", "widget", "remote summary", "body", "implement", ""); err != nil {
+	seeded, err := st.EnqueueChatTask(t.Context(), "acme", "widget", "remote summary", "body", "implement", "")
+	if err != nil {
 		t.Fatalf("seed task: %v", err)
 	}
 	// The daemon publishes the configuration page's projection; this process
-	// only renders it (archie-core-ymut).
+	// only renders it (archie-core-ymut). The forge host is published too: it
+	// is what the run-detail reads resolve their repository and pull-request
+	// links from, the same projection the task list uses.
 	published, err := json.Marshal(webui.ConfigView{
-		Identity: webui.IdentityView{BotUser: "archie", ForgeType: "github"},
+		Identity: webui.IdentityView{BotUser: "archie", ForgeType: "github", ForgeHost: "https://forge.example"},
 		Editable: true,
 	})
 	if err != nil {
@@ -116,6 +122,32 @@ func TestUIServesDashboardAgainstRemoteContracts(t *testing.T) {
 		Schema: webui.ConfigViewSchema, Document: published,
 	}); err != nil {
 		t.Fatalf("publish config snapshot: %v", err)
+	}
+
+	// The other half of the configuration page is per-attempt provenance, and
+	// the three run-detail reads are backed by the same State Store contract as
+	// the rest of the task surface. The statements below are what other
+	// processes write in production -- the daemon's dispatch capture, the
+	// worker's change capture -- attributed to one attempt, so the assertions
+	// further down read them back through the real client rather than a fake.
+	seedAt := time.Now().UTC()
+	for _, e := range []events.Event{
+		{Kind: events.KindStageStart, TaskID: seeded.ID, Attempt: 1, Stage: "prepare", At: seedAt},
+		{Kind: events.KindStageFinish, TaskID: seeded.ID, Attempt: 1, Stage: "prepare", At: seedAt.Add(time.Second), Data: map[string]any{"duration_ms": 1000}},
+		{Kind: events.KindConfigCaptured, TaskID: seeded.ID, Attempt: 1, At: seedAt, Data: map[string]any{
+			"schema": events.ConfigCapturedSchema, "document": map[string]any{"bot_user": "archie"},
+		}},
+		{Kind: events.KindChangesCaptured, TaskID: seeded.ID, Attempt: 1, Stage: "open-pr", At: seedAt, Data: map[string]any{
+			"schema": events.ChangesCapturedSchema, "owner": "acme", "repo": "widget",
+			"base": "main", "branch": "feat/1-widget", "head_sha": "head-sha", "base_sha": "base-sha",
+			"pr_number": 7, "captured_after": "open-pr", "truncated": false,
+			"files":  []any{map[string]any{"path": "internal/x.go", "old_path": "", "status": "modified", "additions": 12, "deletions": 3, "binary": false}},
+			"totals": map[string]any{"files": 1, "additions": 12, "deletions": 3},
+		}},
+	} {
+		if _, err := st.InsertEvent(t.Context(), e); err != nil {
+			t.Fatalf("seed %s event: %v", e.Kind, err)
+		}
 	}
 
 	stateTarget, stopState := serveGRPC(t, func(r grpc.ServiceRegistrar) {
@@ -238,6 +270,96 @@ func TestUIServesDashboardAgainstRemoteContracts(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Errorf("PATCH /api/config = %d, want 503: the daemon stays the configuration writer (PRD lines 95-96)", resp.StatusCode)
+	}
+
+	// The run-detail reads. These three routes have no fake behind them: the
+	// rail, the capture and the raw event list all come back over the State
+	// Store listener the UI dialled, so each assertion below is the real
+	// client's answer about the attempt-attributed set seeded above.
+	taskPath := "/api/tasks/" + strconv.FormatInt(seeded.ID, 10)
+	code, body = get(taskPath + "/attempts")
+	if code != http.StatusOK {
+		t.Fatalf("GET /attempts = %d (%s), want 200", code, body)
+	}
+	var rail struct {
+		Attempts []struct {
+			Attempt int    `json:"attempt"`
+			Status  string `json:"status"`
+			Stages  []struct {
+				Name   string `json:"name"`
+				Status string `json:"status"`
+			} `json:"stages"`
+		} `json:"attempts"`
+	}
+	if err := json.Unmarshal(body, &rail); err != nil {
+		t.Fatalf("decode attempts: %v (%s)", err, body)
+	}
+	if len(rail.Attempts) != 1 || rail.Attempts[0].Attempt != 1 || rail.Attempts[0].Status != "ok" {
+		t.Fatalf("attempts = %s, want exactly the seeded attempt 1 recorded ok", body)
+	}
+	if len(rail.Attempts[0].Stages) != 1 || rail.Attempts[0].Stages[0].Name != "prepare" || rail.Attempts[0].Stages[0].Status != "ok" {
+		t.Fatalf("stage rail = %s, want the attempt's own prepare stage", body)
+	}
+
+	code, body = get(taskPath + "/changes?attempt=1")
+	if code != http.StatusOK {
+		t.Fatalf("GET /changes = %d (%s), want 200", code, body)
+	}
+	var changes struct {
+		Found    bool `json:"found"`
+		Captures []struct {
+			PRNumber int    `json:"pr_number"`
+			PRURL    string `json:"pr_url"`
+			Files    []struct {
+				Path string `json:"path"`
+			} `json:"files"`
+		} `json:"captures"`
+	}
+	if err := json.Unmarshal(body, &changes); err != nil {
+		t.Fatalf("decode changes: %v (%s)", err, body)
+	}
+	if !changes.Found || len(changes.Captures) != 1 {
+		t.Fatalf("changes = %s, want the one capture recorded for the attempt", body)
+	}
+	if changes.Captures[0].PRNumber != 7 || changes.Captures[0].PRURL != "https://forge.example/acme/widget/pull/7" {
+		t.Errorf("capture = pr %d %q, want #7 linked through the published forge projection (%s)",
+			changes.Captures[0].PRNumber, changes.Captures[0].PRURL, body)
+	}
+	if len(changes.Captures[0].Files) != 1 || changes.Captures[0].Files[0].Path != "internal/x.go" {
+		t.Errorf("capture files = %s, want the file the attempt changed", body)
+	}
+
+	code, body = get(taskPath + "/debug?attempt=1")
+	if code != http.StatusOK {
+		t.Fatalf("GET /debug = %d (%s), want 200", code, body)
+	}
+	var debug struct {
+		Attempt int `json:"attempt"`
+		Task    struct {
+			ID int64 `json:"id"`
+		} `json:"task"`
+		Events []struct {
+			Kind    string `json:"kind"`
+			Attempt int    `json:"attempt"`
+		} `json:"events"`
+	}
+	if err := json.Unmarshal(body, &debug); err != nil {
+		t.Fatalf("decode debug: %v (%s)", err, body)
+	}
+	if debug.Task.ID != seeded.ID || debug.Attempt != 1 {
+		t.Errorf("debug = task %d attempt %d, want the seeded task and attempt 1 (%s)", debug.Task.ID, debug.Attempt, body)
+	}
+	kinds := map[string]int{}
+	for _, e := range debug.Events {
+		kinds[e.Kind]++
+		if e.Attempt != 1 {
+			t.Errorf("debug event %s carries attempt %d, want 1: attribution must survive the store it was read from", e.Kind, e.Attempt)
+		}
+	}
+	for _, kind := range []string{events.KindStageStart, events.KindStageFinish, events.KindConfigCaptured, events.KindChangesCaptured} {
+		if kinds[kind] != 1 {
+			t.Errorf("debug events = %s, want exactly one %s", body, kind)
+		}
 	}
 
 	// Routes with no contract behind them degrade rather than panic.
