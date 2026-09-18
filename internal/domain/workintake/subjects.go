@@ -95,9 +95,29 @@ func KindForLabels(labels []string) Kind {
 func KindsForLabels(labels []string) []Kind {
 	var kinds []Kind
 	for _, label := range labels {
-		if kind, ok := labelKinds[strings.TrimSpace(label)]; ok {
+		if kind, ok := labelKinds[labelValue(label)]; ok {
 			kinds = append(kinds, kind)
 		}
 	}
 	return kinds
+}
+
+// labelValue reduces a forge label to the value labelKinds is keyed on.
+//
+// Forges namespace labels by convention ("type::feature", "priority::medium")
+// and the namespace is the issue tracker's own taxonomy, not part of the
+// routing vocabulary, so the value after the last "::" is what identifies a
+// kind. Matching the bare string alone meant a repo that namespaces its
+// labels -- which this one does -- never matched any kind, and every task
+// fell through kind routing to the content-aware fallback in Route.
+//
+// The namespace itself is deliberately not checked: a closed three-value
+// vocabulary (bug, feature, bootstrap) is specific enough that a label ending
+// in one of them means that kind whatever the tracker files it under.
+func labelValue(label string) string {
+	trimmed := strings.TrimSpace(label)
+	if i := strings.LastIndex(trimmed, "::"); i >= 0 {
+		return strings.TrimSpace(trimmed[i+len("::"):])
+	}
+	return trimmed
 }
