@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/samcharles93/ai-sdk/agentloop"
@@ -283,30 +284,76 @@ func makeCaptureHandler(spec CaptureTool, captures map[string][]json.RawMessage)
 
 // validateCaptureArgs checks that the capture tool arguments satisfy all
 // constraints. Returns a rejection message and false on failure, or "" and
-// true on success.
+// true on success. Each constraint is its own check so adding one does not
+// grow a single branching function.
 func validateCaptureArgs(spec CaptureTool, value json.RawMessage) (string, bool) {
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(value, &object); err != nil {
 		return spec.Name + " rejected: arguments must be a JSON object", false //nolint:nilerr // the agent loop must see malformed tool arguments as feedback it can correct, not as a failed tool call
 	}
+	for _, check := range []func(CaptureTool, map[string]json.RawMessage) (string, bool){
+		checkRequiredFields,
+		checkNonEmptyStrings,
+		checkBooleanFields,
+		checkRequiredWhenTrue,
+	} {
+		if rejection, ok := check(spec, object); !ok {
+			return rejection, false
+		}
+	}
+	return "", true
+}
+
+func checkRequiredFields(spec CaptureTool, object map[string]json.RawMessage) (string, bool) {
 	for _, field := range spec.RequiredFields {
 		if _, ok := object[field]; !ok {
 			return fmt.Sprintf("%s rejected: %s is required", spec.Name, field), false
 		}
 	}
+	return "", true
+}
+
+func checkNonEmptyStrings(spec CaptureTool, object map[string]json.RawMessage) (string, bool) {
 	for _, field := range spec.NonEmptyStrings {
-		var text string
-		if raw, ok := object[field]; !ok || json.Unmarshal(raw, &text) != nil || strings.TrimSpace(text) == "" {
-			return fmt.Sprintf("%s rejected: %s must be a non-empty string", spec.Name, field), false //nolint:nilerr // same: a rejection message lets the model retry with a valid argument
-		}
-	}
-	for _, field := range spec.BooleanFields {
-		var val bool
-		if raw, ok := object[field]; !ok || json.Unmarshal(raw, &val) != nil {
-			return fmt.Sprintf("%s rejected: %s must be a boolean", spec.Name, field), false //nolint:nilerr // same: a rejection message lets the model retry with a valid argument
+		if !isNonEmptyString(object, field) {
+			return fmt.Sprintf("%s rejected: %s must be a non-empty string", spec.Name, field), false
 		}
 	}
 	return "", true
+}
+
+func checkBooleanFields(spec CaptureTool, object map[string]json.RawMessage) (string, bool) {
+	for _, field := range spec.BooleanFields {
+		var val bool
+		if raw, ok := object[field]; !ok || json.Unmarshal(raw, &val) != nil {
+			return fmt.Sprintf("%s rejected: %s must be a boolean", spec.Name, field), false
+		}
+	}
+	return "", true
+}
+
+// checkRequiredWhenTrue enforces the conditional requirements. Triggers are
+// visited in sorted order so a call violating two of them names the same one
+// every run, rather than a different one on each retry.
+func checkRequiredWhenTrue(spec CaptureTool, object map[string]json.RawMessage) (string, bool) {
+	for _, trigger := range slices.Sorted(maps.Keys(spec.RequiredWhenTrue)) {
+		var on bool
+		if raw, ok := object[trigger]; !ok || json.Unmarshal(raw, &on) != nil || !on {
+			continue
+		}
+		for _, field := range spec.RequiredWhenTrue[trigger] {
+			if !isNonEmptyString(object, field) {
+				return fmt.Sprintf("%s rejected: %s is required when %s is true", spec.Name, field, trigger), false
+			}
+		}
+	}
+	return "", true
+}
+
+func isNonEmptyString(object map[string]json.RawMessage, field string) bool {
+	var text string
+	raw, ok := object[field]
+	return ok && json.Unmarshal(raw, &text) == nil && strings.TrimSpace(text) != ""
 }
 
 // scriptToolSet exposes run_go_script: interpreting a Yaegi Go script

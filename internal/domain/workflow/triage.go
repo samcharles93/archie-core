@@ -9,8 +9,7 @@ import (
 )
 
 // triageWorkflowNames is the set of workflows triage may hand a task to.
-// Unrecognized or missing classifier output falls back to "implement" --
-// see triageDecideCaptureTools' schema description and Triage's OnResult.
+// A name outside it is refused, not defaulted -- see Triage's OnResult.
 var triageWorkflowNames = map[string]bool{
 	"implement":   true,
 	"tdd":         true,
@@ -44,18 +43,7 @@ func Triage() Workflow {
 				Role:         "planner",
 				ReadOnly:     true,
 				CaptureTools: triageDecideCaptureTools,
-				Mission: func(tc *TaskContext) string {
-					return fmt.Sprintf(
-						"Triage this %s on the repository %s: decide whether it needs a code "+
-							"change at all, and if so which workflow suits it best.\n\n"+
-							"%s\n\n"+
-							"Read only as much as you need to judge this -- a title/body that is "+
-							"purely conversational, administrative, or already resolved needs no code "+
-							"change. Then call the decide tool EXACTLY ONCE and afterwards call finish "+
-							"with status \"passed\".",
-						taskKind(tc.Task), tc.Repo.FullName(), taskPromptBlock(tc.Task),
-					)
-				},
+				Mission:      triageMission,
 				OnResult: func(tc *TaskContext, res agentexec.Result) error {
 					calls := res.Captures["decide"]
 					if len(calls) != 1 {
@@ -85,9 +73,14 @@ func Triage() Workflow {
 						tc.Outcome = Outcome{Status: StatusMerged, Detail: "triaged: no code change needed  --  " + captured.Reasons}
 						return nil
 					}
+					// No fallback. The decide tool already refuses a call that
+					// needs a code change and names no workflow, so reaching
+					// here with an unrecognised one means the model ignored
+					// its own enum; defaulting that to implement is how an
+					// unsettled capability used to reach the builder.
 					target := captured.Workflow
 					if !triageWorkflowNames[target] {
-						target = "implement"
+						return fmt.Errorf("triage chose workflow %q, which is not one of implement, tdd or feasibility", target)
 					}
 					tc.Task.Workflow = target
 					tc.Outcome = Outcome{
@@ -108,7 +101,7 @@ func triageDecideCaptureTools(*TaskContext) []agentexec.CaptureTool {
 		"type": "object",
 		"properties": {
 			"needs_code_change": {"type": "boolean", "description": "false: nothing to build -- close/no-op. true: route to a workflow that builds something."},
-			"workflow": {"type": "string", "enum": ["implement", "tdd", "feasibility"], "description": "Which workflow fits best, when needs_code_change is true. Defaults to implement if omitted or unrecognized."},
+			"workflow": {"type": "string", "enum": ["implement", "tdd", "feasibility"], "description": "Which workflow fits best, when needs_code_change is true. feasibility: a new capability whose design is not settled, or a request too broad to scope -- it produces a design document for a human to approve before any code is written. tdd: a defect with an observable wrong behaviour that a test can reproduce first. implement: the change is well understood and its shape is already clear. Choose feasibility when no approved design exists and the request is not a defect; do not choose implement merely because nothing else obviously fits. Defaults to implement if omitted or unrecognized."},
 			"reasons": {"type": "string", "description": "The rationale, written for the human who filed the request."}
 		},
 		"required": ["needs_code_change", "reasons"]
@@ -116,6 +109,36 @@ func triageDecideCaptureTools(*TaskContext) []agentexec.CaptureTool {
 	return []agentexec.CaptureTool{{
 		Name: "decide", Description: "Record the triage verdict. Call exactly once, before finish.",
 		Parameters: params, RequiredFields: []string{"needs_code_change", "reasons"},
-		NonEmptyStrings: []string{"reasons"}, BooleanFields: []string{"needs_code_change"}, MaxCalls: 1,
+		NonEmptyStrings: []string{"reasons"}, BooleanFields: []string{"needs_code_change"},
+		// Conditional, not flat: a task needing no code change has no
+		// workflow to name, and forcing one would be a meaningless answer.
+		RequiredWhenTrue: map[string][]string{"needs_code_change": {"workflow"}},
+		MaxCalls:         1,
 	}}
+}
+
+// triageMission is the classify stage's prompt. It is a named function so a
+// test can assert the selection criteria are actually stated to the model,
+// which is the whole of this stage's behaviour.
+func triageMission(tc *TaskContext) string {
+	return fmt.Sprintf(
+		"Triage this %s on the repository %s: decide whether it needs a code "+
+			"change at all, and if so which workflow suits it best.\n\n"+
+			"%s\n\n"+
+			"Read only as much as you need to judge this -- a title/body that is "+
+			"purely conversational, administrative, or already resolved needs no code "+
+			"change.\n\n"+
+			"If it does need a change, the workflow is a real decision, not a "+
+			"formality. Check whether the repository already has a settled design "+
+			"for what is being asked (a design document, an approved plan, an "+
+			"existing implementation to extend). If it does not, and the request "+
+			"is not a defect, choose feasibility: it writes a design document for "+
+			"a human to approve, which is cheaper than an implementation built on "+
+			"a guess. Choose tdd when there is an observable wrong behaviour a "+
+			"test can reproduce first. Choose implement only when the change is "+
+			"well understood and its shape is already clear.\n\n"+
+			"Then call the decide tool EXACTLY ONCE and afterwards call finish "+
+			"with status \"passed\".",
+		taskKind(tc.Task), tc.Repo.FullName(), taskPromptBlock(tc.Task),
+	)
 }

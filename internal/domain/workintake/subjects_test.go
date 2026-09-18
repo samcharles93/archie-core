@@ -69,6 +69,11 @@ func TestKindForLabels(t *testing.T) {
 		{name: "first recognised wins", labels: []string{"feature", "bug"}, want: KindFeature},
 		{name: "unrecognised then recognised", labels: []string{"wontfix", "bootstrap"}, want: KindBootstrap},
 		{name: "trims whitespace", labels: []string{" bug "}, want: KindBug},
+		{name: "namespaced label", labels: []string{"type::feature"}, want: KindFeature},
+		{name: "namespaced, other namespaces ignored", labels: []string{"status::in_progress", "priority::medium", "type::feature"}, want: KindFeature},
+		{name: "namespaced and trimmed", labels: []string{" type::bug "}, want: KindBug},
+		{name: "namespace alone is not a kind", labels: []string{"type::"}, want: KindDefault},
+		{name: "nested namespaces use the last segment", labels: []string{"meta::type::bug"}, want: KindBug},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -90,6 +95,8 @@ func TestKindsForLabels(t *testing.T) {
 		{name: "single", labels: []string{"bug"}, want: []Kind{KindBug}},
 		{name: "preserves order", labels: []string{"bug", "feature"}, want: []Kind{KindBug, KindFeature}},
 		{name: "skips unrecognised", labels: []string{"wontfix", "bug", "triage", "feature"}, want: []Kind{KindBug, KindFeature}},
+		{name: "namespaced labels", labels: []string{"type::bug", "type::feature"}, want: []Kind{KindBug, KindFeature}},
+		{name: "mixed bare and namespaced", labels: []string{"status::open", "bug", "type::feature"}, want: []Kind{KindBug, KindFeature}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

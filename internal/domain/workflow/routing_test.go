@@ -51,6 +51,33 @@ func TestRouteLabelMatchStillWinsOverTriage(t *testing.T) {
 	}
 }
 
+// Forges namespace labels by convention, and a repo that does so was routing
+// every issue through triage because no label ever matched a kind. Kind
+// routing is the free, reliable signal Route's triage fallback assumes is
+// already spent, so it has to survive the namespace.
+func TestRouteMatchesNamespacedLabels(t *testing.T) {
+	reg := Registry{"tdd": TDD(), "feasibility": Feasibility(), "triage": Triage(), "implement": Implement()}
+
+	tests := []struct {
+		name   string
+		labels string
+		want   string
+	}{
+		{name: "namespaced feature", labels: "type::feature", want: "feasibility"},
+		{name: "namespaced bug", labels: "type::bug", want: "tdd"},
+		{name: "real issue label set", labels: "status::in_progress,priority::medium,type::feature", want: "feasibility"},
+		{name: "bare labels still route", labels: "bug", want: "tdd"},
+		{name: "no kind label still triages", labels: "priority::medium", want: "triage"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if wf := Route(&Task{Labels: tt.labels}, reg); wf.Name != tt.want {
+				t.Fatalf("Route(%q) = %q, want %q", tt.labels, wf.Name, tt.want)
+			}
+		})
+	}
+}
+
 // TestLoadKindWorkflowsYAMLOverridesDefaultBinding is the first slice of
 // docs/prds/eda-playbook-engine.md: which workflow a Kind prefers becomes
 // data, not a Go literal. A YAML file rebinding "bug" to "feasibility"

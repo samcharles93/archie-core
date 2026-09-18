@@ -191,6 +191,16 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "required_when_true": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "description": "RequiredWhenTrue makes fields required only when a boolean field in\nthe same call is true, keyed by that boolean's name. It exists because\na flat RequiredFields entry cannot express \"name a workflow, but only\nwhen you have said one is needed\": the alternatives were forcing a\nmeaningless answer on the other branch, or accepting the omission and\ndefaulting it, which lets the model skip the decision entirely.\nA named field must also be a non-empty string when the trigger is true.",
+          "type": "object"
         }
       },
       "required": [
