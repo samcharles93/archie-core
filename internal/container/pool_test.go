@@ -412,6 +412,16 @@ func TestReleaseCancelsTheMaxUptimeTimer(t *testing.T) {
 	}
 	pool.Release(context.Background(), c)
 
+	// Deterministic half: the reaper is disarmed and its bookkeeping dropped,
+	// so nothing is left that could fire. The wait below is the observable
+	// consequence, not the proof.
+	pool.mu.Lock()
+	remaining := len(pool.reapers)
+	pool.mu.Unlock()
+	if remaining != 0 {
+		t.Errorf("pool still holds %d armed reaper(s) after Release, want 0", remaining)
+	}
+
 	stopAfterRelease, removeAfterRelease := stopCalls.Load(), removeCalls.Load()
 	time.Sleep(200 * time.Millisecond)
 
@@ -421,4 +431,67 @@ func TestReleaseCancelsTheMaxUptimeTimer(t *testing.T) {
 	if got := removeCalls.Load(); got != removeAfterRelease {
 		t.Errorf("remove called %d times after Release, want %d: the max uptime timer still fired", got, removeAfterRelease)
 	}
+}
+
+// MaxUptime is a hard lifetime cap from creation, enforced "regardless of
+// task state" (Config.MaxUptime). A grace period is task state, so a
+// container that outlives the cap while waiting out its grace window is still
+// reaped: cancelling the reaper before the grace sleep would extend the cap
+// by GracePeriod.
+func TestGracePeriodDoesNotExtendTheMaxUptimeCap(t *testing.T) {
+	const containerID = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+
+	stopped := make(chan struct{}, 4)
+	dockerAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/create"):
+			writeDockerJSON(t, w, map[string]any{"Id": containerID, "Warnings": []string{}})
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID+"/start"):
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID+"/stop"):
+			select {
+			case stopped <- struct{}{}:
+			default:
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID):
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "unexpected Docker API path "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(dockerAPI.Close)
+
+	dockerClient, err := client.New(client.WithHost(dockerAPI.URL), client.WithAPIVersion("1.55"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = dockerClient.Close() })
+
+	pool := &Pool{
+		cli: dockerClient,
+		cfg: Config{Image: "test/image", MaxUptime: 30 * time.Millisecond, GracePeriod: 2 * time.Second},
+		log: discardLogger(),
+	}
+
+	c, err := pool.Acquire(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+
+	released := make(chan struct{})
+	go func() {
+		defer close(released)
+		pool.Release(context.Background(), c)
+	}()
+
+	// The cap must bite while Release is still sleeping out the grace period.
+	select {
+	case <-stopped:
+	case <-released:
+		t.Fatal("Release returned before the max uptime cap fired; the grace period extended the cap")
+	case <-time.After(time.Second):
+		t.Fatal("max uptime cap never fired during the grace period")
+	}
+	<-released
 }

@@ -314,12 +314,16 @@ func (p *Pool) Release(ctx context.Context, c *Container) {
 	if c == nil {
 		return
 	}
-	p.cancelMaxUptime(c.ID)
 	honorGrace, stopTimeout := releaseDecision(ctx, p.cfg.GracePeriod)
 	if honorGrace {
 		p.log.Info("container keeping alive for grace period", "id", c.ID[:12], "grace", p.cfg.GracePeriod)
 		time.Sleep(p.cfg.GracePeriod)
 	}
+
+	// Disarm only now. MaxUptime is a cap from creation enforced regardless of
+	// task state, so it must still bite during the grace period above;
+	// cancelling before the sleep would quietly extend the cap by GracePeriod.
+	p.cancelMaxUptime(c.ID)
 
 	// Detach from ctx before stopping. Release runs on the way out of a
 	// task, and the most important reason a task is on its way out is
