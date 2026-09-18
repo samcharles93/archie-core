@@ -9,8 +9,7 @@ import (
 )
 
 // triageWorkflowNames is the set of workflows triage may hand a task to.
-// Unrecognized or missing classifier output falls back to "implement" --
-// see triageDecideCaptureTools' schema description and Triage's OnResult.
+// A name outside it is refused, not defaulted -- see Triage's OnResult.
 var triageWorkflowNames = map[string]bool{
 	"implement":   true,
 	"tdd":         true,
@@ -74,9 +73,14 @@ func Triage() Workflow {
 						tc.Outcome = Outcome{Status: StatusMerged, Detail: "triaged: no code change needed  --  " + captured.Reasons}
 						return nil
 					}
+					// No fallback. The decide tool already refuses a call that
+					// needs a code change and names no workflow, so reaching
+					// here with an unrecognised one means the model ignored
+					// its own enum; defaulting that to implement is how an
+					// unsettled capability used to reach the builder.
 					target := captured.Workflow
 					if !triageWorkflowNames[target] {
-						target = "implement"
+						return fmt.Errorf("triage chose workflow %q, which is not one of implement, tdd or feasibility", target)
 					}
 					tc.Task.Workflow = target
 					tc.Outcome = Outcome{
@@ -105,7 +109,11 @@ func triageDecideCaptureTools(*TaskContext) []agentexec.CaptureTool {
 	return []agentexec.CaptureTool{{
 		Name: "decide", Description: "Record the triage verdict. Call exactly once, before finish.",
 		Parameters: params, RequiredFields: []string{"needs_code_change", "reasons"},
-		NonEmptyStrings: []string{"reasons"}, BooleanFields: []string{"needs_code_change"}, MaxCalls: 1,
+		NonEmptyStrings: []string{"reasons"}, BooleanFields: []string{"needs_code_change"},
+		// Conditional, not flat: a task needing no code change has no
+		// workflow to name, and forcing one would be a meaningless answer.
+		RequiredWhenTrue: map[string][]string{"needs_code_change": {"workflow"}},
+		MaxCalls:         1,
 	}}
 }
 

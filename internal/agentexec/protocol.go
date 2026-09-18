@@ -52,7 +52,15 @@ type CaptureTool struct {
 	RequiredFields  []string        `json:"required_fields,omitempty"`
 	NonEmptyStrings []string        `json:"non_empty_strings,omitempty"`
 	BooleanFields   []string        `json:"boolean_fields,omitempty"`
-	MaxCalls        int             `json:"max_calls,omitempty"`
+	// RequiredWhenTrue makes fields required only when a boolean field in
+	// the same call is true, keyed by that boolean's name. It exists because
+	// a flat RequiredFields entry cannot express "name a workflow, but only
+	// when you have said one is needed": the alternatives were forcing a
+	// meaningless answer on the other branch, or accepting the omission and
+	// defaulting it, which lets the model skip the decision entirely.
+	// A named field must also be a non-empty string when the trigger is true.
+	RequiredWhenTrue map[string][]string `json:"required_when_true,omitempty"`
+	MaxCalls         int                 `json:"max_calls,omitempty"`
 }
 
 // Request is the complete, serializable input for one agent stage. The

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
 
@@ -141,10 +142,13 @@ func TestTriageRequeuesUnderChosenWorkflow(t *testing.T) {
 	}
 }
 
-// TestTriageDefaultsToImplementForUnrecognizedWorkflow confirms a missing
-// or unrecognized workflow choice degrades to "implement" rather than
-// producing an unroutable task.
-func TestTriageDefaultsToImplementForUnrecognizedWorkflow(t *testing.T) {
+// Defaulting an unrecognised workflow to "implement" let the classifier skip
+// the decision and send an unsettled capability straight to coding, which is
+// the failure the selection criteria exist to prevent. Omission is caught
+// earlier, by the decide tool's conditional requirement, so the model is
+// told and retries; a value that is not in the enum at all means the model
+// ignored its schema, and parking is the honest outcome.
+func TestTriageRefusesAnUnrecognizedWorkflow(t *testing.T) {
 	runner := agentRunnerFunc(func(_ context.Context, _ string, req agentexec.Request, _ agentexec.ToolCallReporter) (agentexec.Result, error) {
 		return agentexec.Result{
 			Version:  agentexec.ProtocolVersion,
@@ -152,7 +156,7 @@ func TestTriageDefaultsToImplementForUnrecognizedWorkflow(t *testing.T) {
 			Attempt:  req.Attempt,
 			Stage:    req.Stage,
 			Status:   agentexec.StatusPassed,
-			Captures: map[string][]json.RawMessage{"decide": triageDecision(t, true, "not-a-real-workflow", "unsure, defaulting")},
+			Captures: map[string][]json.RawMessage{"decide": triageDecision(t, true, "not-a-real-workflow", "unsure")},
 		}, nil
 	})
 	tc := &TaskContext{
@@ -163,11 +167,32 @@ func TestTriageDefaultsToImplementForUnrecognizedWorkflow(t *testing.T) {
 		Log:   slog.New(slog.DiscardHandler),
 	}
 
-	if err := classifyStage().Run(context.Background(), tc); err != nil {
-		t.Fatalf("classify stage = %v, want nil", err)
+	err := classifyStage().Run(context.Background(), tc)
+	if err == nil {
+		t.Fatal("classify stage accepted an unrecognised workflow")
 	}
-	if tc.Task.Workflow != "implement" {
-		t.Fatalf("Task.Workflow = %q, want %q", tc.Task.Workflow, "implement")
+	if !strings.Contains(err.Error(), "not-a-real-workflow") {
+		t.Fatalf("error %q does not name the rejected workflow", err)
+	}
+	if tc.Task.Workflow != "" {
+		t.Fatalf("Task.Workflow = %q, want it left unset", tc.Task.Workflow)
+	}
+}
+
+// The decide tool must demand a workflow exactly when one is needed, so an
+// omission is a retryable rejection rather than a silent default, and the
+// close-without-change branch is not made to invent an answer.
+func TestTriageRequiresAWorkflowOnlyWhenACodeChangeIsNeeded(t *testing.T) {
+	tools := triageDecideCaptureTools(nil)
+	if len(tools) != 1 {
+		t.Fatalf("triageDecideCaptureTools returned %d tools, want 1", len(tools))
+	}
+	required := tools[0].RequiredWhenTrue["needs_code_change"]
+	if !slices.Contains(required, "workflow") {
+		t.Fatalf("decide requires %v when needs_code_change is true, want it to include \"workflow\"", required)
+	}
+	if slices.Contains(tools[0].RequiredFields, "workflow") {
+		t.Error("decide requires workflow unconditionally; the close-without-change branch has no workflow to give")
 	}
 }
 
