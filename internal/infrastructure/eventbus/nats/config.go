@@ -10,13 +10,17 @@ import (
 // Defaults for Config. Previously these were unexported package constants,
 // which made stream naming and timeouts untunable per deployment.
 const (
-	DefaultStreamName   = "ARCHIE_TASKS"
-	DefaultConsumerName = "archie-daemon"
-	DefaultDedupWindow  = 2 * time.Minute
-	DefaultPollTimeout  = 2 * time.Second
-	DefaultAckWait      = 5 * time.Minute
-	DefaultMaxDeliver   = 3
-	DefaultInactiveTTL  = 24 * time.Hour
+	DefaultStreamName = "ARCHIE_TASKS"
+	// DefaultReactionStreamName is the fan-out stream carrying reaction
+	// subjects. It coexists with DefaultStreamName (ARCHIE_TASKS), which
+	// stays work-queue for task distribution.
+	DefaultReactionStreamName = "ARCHIE_REACTIONS"
+	DefaultConsumerName       = "archie-daemon"
+	DefaultDedupWindow        = 2 * time.Minute
+	DefaultPollTimeout        = 2 * time.Second
+	DefaultAckWait            = 5 * time.Minute
+	DefaultMaxDeliver         = 3
+	DefaultInactiveTTL        = 24 * time.Hour
 )
 
 // Config describes how to reach NATS and how the stream and consumer should
@@ -59,6 +63,16 @@ type Config struct {
 	// (LimitsPolicy) is a valid explicit choice.
 	Retention *jetstream.RetentionPolicy
 
+	// MaxAge is the maximum age of messages the stream retains. Nil leaves
+	// the stream unbounded by age, which is correct for ARCHIE_TASKS: under
+	// WorkQueuePolicy acked messages are discarded, so its only bound is
+	// outstanding work. The pointer form distinguishes "unset" (nil,
+	// unbounded, today's behaviour) from an explicit zero (also unbounded,
+	// but expressed on purpose), exactly like Retention. The fan-out
+	// reaction stream sets a finite MaxAge so acknowledged reactions cannot
+	// accumulate forever.
+	MaxAge *time.Duration
+
 	// DedupWindow is how long JetStream remembers a Nats-Msg-Id, suppressing
 	// republished duplicates of the same issue within the window.
 	DedupWindow time.Duration
@@ -88,7 +102,7 @@ func (c Config) Validate() error {
 	if c.FilterSubject == "" {
 		return fmt.Errorf("%w: FilterSubject is required", ErrInvalidConfig)
 	}
-	if c.PollTimeout < 0 || c.AckWait < 0 || c.DedupWindow < 0 {
+	if c.PollTimeout < 0 || c.AckWait < 0 || c.DedupWindow < 0 || (c.MaxAge != nil && *c.MaxAge < 0) {
 		return fmt.Errorf("%w: durations must not be negative", ErrInvalidConfig)
 	}
 	if c.MaxDeliver < 0 {
@@ -126,4 +140,16 @@ func (c Config) withDefaults() Config {
 		c.Retention = &policy
 	}
 	return c
+}
+
+// FanOutRetention returns a pointer to jetstream.LimitsPolicy for use as
+// Config.Retention. It exists so composition can select fan-out retention
+// without importing the NATS SDK: the retention policy type stays behind this
+// package's boundary, like every other JetStream type. LimitsPolicy is the one
+// policy that cannot be expressed by leaving Retention unset (withDefaults
+// treats nil as WorkQueuePolicy), so the choice must be visible at the call
+// site.
+func FanOutRetention() *jetstream.RetentionPolicy {
+	policy := jetstream.LimitsPolicy
+	return &policy
 }
