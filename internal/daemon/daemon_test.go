@@ -1336,6 +1336,88 @@ func TestRepoForPrefersOwningIdentityRepoList(t *testing.T) {
 	}
 }
 
+// sweepForge records invitation sweeps and push verifications so a test can
+// assert Startup sweeps each identity's own forge and repos. It embeds
+// testForge for the rest of the forge.Forge surface; those methods are
+// unreachable from Startup.
+type sweepForge struct {
+	testForge
+	invitations   int
+	verifiedRepos []string
+}
+
+func (f *sweepForge) AcceptInvitations(context.Context) error {
+	f.invitations++
+	return nil
+}
+
+func (f *sweepForge) VerifyPush(_ context.Context, owner, repo string) error {
+	f.verifiedRepos = append(f.verifiedRepos, owner+"/"+repo)
+	return nil
+}
+
+// TestStartupSweepsEveryIdentityForgeAndRepos pins the boot-time invitation
+// sweep and push verification in multi-identity mode. Startup used to sweep
+// only d.Forge and d.Cfg.Get().Repos, so per-identity invites were never
+// accepted and per-identity repos never push-verified: a task from one of
+// those repos would fail at dispatch instead of warning at boot. In
+// multi-identity mode Run takes runIdentities and never polls the root repo
+// list, so Startup must sweep each identity's own forge/repos and leave the
+// root forge/repos alone (single-identity mode keeps the original root sweep).
+func TestStartupSweepsEveryIdentityForgeAndRepos(t *testing.T) {
+	rootFg := &sweepForge{}
+	oneFg := &sweepForge{}
+	twoFg := &sweepForge{}
+
+	d := &Daemon{
+		Cfg: config.NewHolder(config.Config{
+			Repos: []config.Repo{{Owner: "root", Name: "repo"}},
+		}),
+		Store: store.OpenTest(t),
+		Forge: rootFg,
+		Log:   slog.New(slog.DiscardHandler),
+		Identities: []*IdentityRunner{
+			{
+				Name:  "one",
+				Forge: oneFg,
+				Repos: []config.Repo{{Owner: "one", Name: "a"}},
+			},
+			{
+				Name:  "two",
+				Forge: twoFg,
+				Repos: []config.Repo{{Owner: "two", Name: "b"}, {Owner: "two", Name: "c"}},
+			},
+		},
+	}
+
+	if err := d.Startup(context.Background()); err != nil {
+		t.Fatalf("Startup: %v", err)
+	}
+
+	if oneFg.invitations != 1 {
+		t.Errorf("identity one AcceptInvitations = %d, want 1", oneFg.invitations)
+	}
+	if twoFg.invitations != 1 {
+		t.Errorf("identity two AcceptInvitations = %d, want 1", twoFg.invitations)
+	}
+	if got := oneFg.verifiedRepos; !slices.Equal(got, []string{"one/a"}) {
+		t.Errorf("identity one verified repos = %v, want [one/a]", got)
+	}
+	if got := twoFg.verifiedRepos; !slices.Equal(got, []string{"two/b", "two/c"}) {
+		t.Errorf("identity two verified repos = %v, want [two/b two/c]", got)
+	}
+
+	// The root forge/repo list must not be swept in multi-identity mode:
+	// Run never polls it there, so verifying it would warn about repos no
+	// task can target.
+	if rootFg.invitations != 0 {
+		t.Errorf("root AcceptInvitations = %d, want 0 (root forge is not polled in multi-identity mode)", rootFg.invitations)
+	}
+	if len(rootFg.verifiedRepos) != 0 {
+		t.Errorf("root verified repos = %v, want none (root repo list is not polled in multi-identity mode)", rootFg.verifiedRepos)
+	}
+}
+
 // mustCoreConn returns the raw NATS connection for tests that drive core-NATS
 // subscriptions directly, failing the test if the client is not connected.
 func mustCoreConn(t *testing.T, c *arnats.Client) *natsio.Conn {
