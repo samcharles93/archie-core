@@ -183,37 +183,60 @@ func (f *flakyEventReader) EventsSince(context.Context, int64, int) ([]events.Ev
 // archie-ui binds before archie-state-store is guaranteed to be listening, so
 // the first prime is routinely refused. Returning on that error left the
 // activity feed history-only until the process was restarted by hand.
-func TestPumpPrimingRetriesUntilTheStoreAnswers(t *testing.T) {
-	reader := &flakyEventReader{failures: 3}
-	pump := &eventPump{
-		store:         reader,
-		log:           func(string, ...any) {},
-		broadcast:     func(events.Event) {},
-		primeRetryMin: time.Millisecond,
+func TestPumpPriming(t *testing.T) {
+	forever := 1 << 30
+
+	tests := []struct {
+		name string
+		// failures is how many EventsSince calls are refused before the
+		// store starts answering.
+		failures int
+		// deadline bounds the prime; zero means the test's own context, so
+		// priming runs until it succeeds.
+		deadline  time.Duration
+		wantErr   bool
+		wantCalls int // 0 means "unbounded, do not assert"
+	}{
+		{
+			name:      "retries until the store answers",
+			failures:  3,
+			wantCalls: 4,
+		},
+		{
+			name:     "gives up when the context ends",
+			failures: forever,
+			deadline: 20 * time.Millisecond,
+			wantErr:  true,
+		},
 	}
 
-	if err := pump.primeWithRetry(t.Context()); err != nil {
-		t.Fatalf("primeWithRetry: %v", err)
-	}
-	if reader.calls != 4 {
-		t.Fatalf("EventsSince called %d times, want 4 (3 refusals then success)", reader.calls)
-	}
-}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			reader := &flakyEventReader{failures: tc.failures}
+			pump := &eventPump{
+				store:         reader,
+				log:           func(string, ...any) {},
+				broadcast:     func(events.Event) {},
+				primeRetryMin: time.Millisecond,
+			}
 
-// A shutdown during the retry wait must end the pump, not hold the process
-// open until the store appears.
-func TestPumpPrimingStopsRetryingWhenTheContextEnds(t *testing.T) {
-	reader := &flakyEventReader{failures: 1 << 30}
-	pump := &eventPump{
-		store:         reader,
-		log:           func(string, ...any) {},
-		broadcast:     func(events.Event) {},
-		primeRetryMin: time.Millisecond,
-	}
+			ctx := t.Context()
+			if tc.deadline > 0 {
+				timed, cancel := context.WithTimeout(ctx, tc.deadline)
+				defer cancel()
+				ctx = timed
+			}
 
-	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
-	defer cancel()
-	if err := pump.primeWithRetry(ctx); err == nil {
-		t.Fatal("primeWithRetry returned no error after the context ended")
+			err := pump.primeWithRetry(ctx)
+			if tc.wantErr && err == nil {
+				t.Fatal("primeWithRetry returned no error")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("primeWithRetry: %v", err)
+			}
+			if tc.wantCalls > 0 && reader.calls != tc.wantCalls {
+				t.Fatalf("EventsSince called %d times, want %d", reader.calls, tc.wantCalls)
+			}
+		})
 	}
 }

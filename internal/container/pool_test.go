@@ -416,10 +416,10 @@ func TestReleaseCancelsTheMaxUptimeTimer(t *testing.T) {
 	// so nothing is left that could fire. The wait below is the observable
 	// consequence, not the proof.
 	pool.mu.Lock()
-	remaining := len(pool.reapers)
+	remaining := len(pool.teardowns)
 	pool.mu.Unlock()
 	if remaining != 0 {
-		t.Errorf("pool still holds %d armed reaper(s) after Release, want 0", remaining)
+		t.Errorf("pool still holds %d armed teardown entr(ies) after Release, want 0", remaining)
 	}
 
 	stopAfterRelease, removeAfterRelease := stopCalls.Load(), removeCalls.Load()
@@ -494,4 +494,67 @@ func TestGracePeriodDoesNotExtendTheMaxUptimeCap(t *testing.T) {
 		t.Fatal("max uptime cap never fired during the grace period")
 	}
 	<-released
+}
+
+// Timer.Stop cannot unwind a callback that has already begun, so cancelling
+// is not enough on its own: teardown has to be claimed once, by whichever of
+// the reaper and Release gets there first. Firing the reaper before Release
+// is the deterministic stand-in for the two overlapping.
+func TestReleaseAfterTheReaperFiredDoesNotTearDownTwice(t *testing.T) {
+	const containerID = "0f1e2d3c4b5a69780f1e2d3c4b5a69780f1e2d3c4b5a69780f1e2d3c4b5a6978"
+
+	var stopCalls, removeCalls atomic.Int32
+	reaped := make(chan struct{}, 1)
+	dockerAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/create"):
+			writeDockerJSON(t, w, map[string]any{"Id": containerID, "Warnings": []string{}})
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID+"/start"):
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID+"/stop"):
+			stopCalls.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID):
+			removeCalls.Add(1)
+			select {
+			case reaped <- struct{}{}:
+			default:
+			}
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "unexpected Docker API path "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(dockerAPI.Close)
+
+	dockerClient, err := client.New(client.WithHost(dockerAPI.URL), client.WithAPIVersion("1.55"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = dockerClient.Close() })
+
+	pool := &Pool{
+		cli: dockerClient,
+		cfg: Config{Image: "test/image", MaxUptime: 20 * time.Millisecond},
+		log: discardLogger(),
+	}
+
+	c, err := pool.Acquire(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+
+	select {
+	case <-reaped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("max uptime reaper never ran")
+	}
+	pool.Release(context.Background(), c)
+
+	if got := stopCalls.Load(); got != 1 {
+		t.Errorf("stop called %d times, want 1: the reaper and Release both tore the container down", got)
+	}
+	if got := removeCalls.Load(); got != 1 {
+		t.Errorf("remove called %d times, want 1: the reaper and Release both tore the container down", got)
+	}
 }
