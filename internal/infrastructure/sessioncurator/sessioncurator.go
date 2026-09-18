@@ -18,6 +18,12 @@ const Name = "session-memory"
 // written.
 const ActionExtracted = "memory.extracted"
 
+// ActionSkipped records a session the pass could not attribute to exactly
+// one participant, so nothing was written for it. The reason names how many
+// distinct senders were found (zero for a dashboard or webhook session,
+// more than one for a group chat).
+const ActionSkipped = "memory.skipped"
+
 // DefaultInterval is the check-in cadence used when nothing more
 // specific configures one, matching skillcurator.DefaultInterval's
 // convention (no per-curator interval config surface exists yet).
@@ -103,7 +109,7 @@ func (c *Curator) Pass(ctx context.Context, in curator.PassInput) (curator.PassR
 
 	var actions []curator.Action
 	for _, sess := range sessions {
-		action, err := c.reviewOne(ctx, engine, sess.ID)
+		action, err := c.reviewOne(ctx, engine, sess)
 		if err != nil {
 			return curator.PassResult{}, fmt.Errorf("session %q: %w", sess.ID, err)
 		}
@@ -126,16 +132,33 @@ func effectiveSince(since, now time.Time) time.Time {
 }
 
 // reviewOne extracts observations from one session's recent messages and
-// writes them through engine. Returns nil (no Action) when nothing was
-// extracted -- matching the skill curator's "a pass with nothing to
-// report is not an error."
-func (c *Curator) reviewOne(ctx context.Context, engine domainmemory.MemoryEngine, sessionID string) (*curator.Action, error) {
-	msgs, err := c.host.Conversations.Messages(ctx, sessionID, messageTailSize)
+// writes them through engine as agent-user memory for the session's single
+// participant. Returns nil (no Action) when nothing was extracted --
+// matching the skill curator's "a pass with nothing to report is not an
+// error" -- or when the session carries no messages at all. A session that
+// cannot be attributed to one participant is skipped with an Action saying
+// so.
+func (c *Curator) reviewOne(ctx context.Context, engine domainmemory.MemoryEngine, sess curator.SessionSummary) (*curator.Action, error) {
+	msgs, err := c.host.Conversations.Messages(ctx, sess.ID, messageTailSize)
 	if err != nil {
 		return nil, err
 	}
 	if len(msgs) == 0 {
 		return nil, nil
+	}
+
+	// Resolve the participant before spending a model call: an
+	// unattributable session has nowhere addressable to write, so there is
+	// nothing a model response could add. ScopeAgentUser is addressed by
+	// both ids, and a guess would file one person's facts under another's.
+	participant, distinct := sessionParticipant(msgs)
+	if participant == "" {
+		return &curator.Action{
+			At:     c.host.Clock.Now(),
+			Type:   ActionSkipped,
+			Detail: sess.ID,
+			Reason: fmt.Sprintf("no single participant: %d distinct sender(s)", distinct),
+		}, nil
 	}
 
 	text, err := c.askModel(ctx, msgs)
@@ -159,12 +182,25 @@ func (c *Curator) reviewOne(ctx context.Context, engine domainmemory.MemoryEngin
 		facts = facts[:maxObservationsPerSession]
 	}
 
+	// Agent-user is the only defensible home for a derived fact about a
+	// person: agent scope would leak user A's facts to user B through the
+	// same agent, user scope would pool them across agents, and the session
+	// id this used to write stops meaning anything when the session ends.
+	// ScopeAgentUser is also what a later chat turn reads back, which is
+	// the whole point of writing these at all.
+	scope := domainmemory.Scope{
+		Kind:  domainmemory.ScopeAgentUser,
+		Agent: domainmemory.AgentID(sess.AgentID),
+		User:  domainmemory.IdentityID(participant),
+	}
 	for _, fact := range facts {
-		if _, err := engine.Write(ctx, domainmemory.Observation{
-			Identity: sessionID,
-			Kind:     "note",
-			Content:  fact,
-			At:       c.host.Clock.Now(),
+		if _, err := engine.Create(ctx, domainmemory.NewRecord{
+			Scope:      scope,
+			Kind:       "note",
+			Content:    fact,
+			Author:     Name,
+			OriginUser: domainmemory.IdentityID(participant),
+			Source:     sess.ID,
 		}); err != nil {
 			return nil, err
 		}
@@ -173,9 +209,31 @@ func (c *Curator) reviewOne(ctx context.Context, engine domainmemory.MemoryEngin
 	return &curator.Action{
 		At:     c.host.Clock.Now(),
 		Type:   ActionExtracted,
-		Detail: fmt.Sprintf("%s: wrote %d observation(s)", sessionID, len(facts)),
+		Detail: fmt.Sprintf("%s: wrote %d observation(s)", sess.ID, len(facts)),
 		Reason: "session active since last pass",
 	}, nil
+}
+
+// sessionParticipant returns a session's single participant and how many
+// distinct senders it found. Only user-role messages count, and only their
+// non-empty SenderID: an assistant message carries the bot, and a dashboard
+// or webhook session carries no per-person identity at all -- neither may
+// manufacture a participant. Zero or several distinct senders means there is
+// no single participant to attribute the session to.
+func sessionParticipant(msgs []curator.ConversationMessage) (participant string, distinct int) {
+	senders := make(map[string]struct{})
+	for _, m := range msgs {
+		if m.Role != "user" || m.SenderID == "" {
+			continue
+		}
+		senders[m.SenderID] = struct{}{}
+	}
+	if len(senders) == 1 {
+		for id := range senders {
+			return id, 1
+		}
+	}
+	return "", len(senders)
 }
 
 // extractPrompt instructs the model to return a JSON array of short,
