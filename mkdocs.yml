@@ -19,6 +19,8 @@ exclude_docs: |
   inspiration/
   prds/*
   !prds/ui-service-boundary.md
+  !prds/service-decomposition.md
+  !prds/config-schema.md
   github-token.md
 
 theme:

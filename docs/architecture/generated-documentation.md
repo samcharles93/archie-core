@@ -349,13 +349,22 @@ exist, and only the single `contracts.json` artifact is generated today.
 
 ### Step 9: CI
 
-The documentation workflow was deleted on 2026-09-12. No workflow builds, checks,
-or publishes documentation. `deploy.yml` does not reference `docs/**`.
+The original documentation workflow was deleted on 2026-09-12. `deploy.yml` still
+does not reference `docs/**`.
 
-Drift is therefore gated locally, by `task check` running `docs:check` — not in
-CI. Reintroducing CI for documentation requires the renderer decision first.
-Any such workflow MUST check generated output and MUST NOT regenerate and
-silently publish uncommitted differences.
+`.github/workflows/docs.yml` (added 2026-09-18) builds the MkDocs site with
+`mkdocs build --strict` on changes to `docs/**` or `mkdocs.yml`, so a dead
+internal link fails before it reaches a deploy. It deliberately does no more
+than that: it does not run `docsgen`, does not regenerate `contracts.json`, and
+does not publish. Deployment is a separate path, run from the Ansible control
+node by the `vectislabs.automation` `docs_site` role.
+
+Generated-artifact drift is therefore still gated locally, by `task check`
+running `docs:check`, and not in CI. That split is the point. A CI job that
+regenerated output would be able to paper over uncommitted differences instead
+of failing on them, which is the failure this section exists to prevent, so any
+future documentation workflow MUST check generated output rather than produce
+it.
 
 ### Step 10: cutover — done, in reverse
 
