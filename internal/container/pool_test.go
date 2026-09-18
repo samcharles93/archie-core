@@ -367,3 +367,58 @@ func TestAcquireEnforcesMaxUptime(t *testing.T) {
 		t.Fatalf("expected at least one stop and remove, got stop=%d remove=%d", stopCalls.Load(), removeCalls.Load())
 	}
 }
+
+// A released container is already gone, so its max-uptime reaper has nothing
+// left to reap. Leaving the timer armed made it fire an hour later against a
+// dead ID, logging "max uptime stop failed ... No such container" as though
+// teardown had gone wrong.
+func TestReleaseCancelsTheMaxUptimeTimer(t *testing.T) {
+	const containerID = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+
+	var stopCalls, removeCalls atomic.Int32
+	dockerAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/create"):
+			writeDockerJSON(t, w, map[string]any{"Id": containerID, "Warnings": []string{}})
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID+"/start"):
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID+"/stop"):
+			stopCalls.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/containers/"+containerID):
+			removeCalls.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "unexpected Docker API path "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(dockerAPI.Close)
+
+	dockerClient, err := client.New(client.WithHost(dockerAPI.URL), client.WithAPIVersion("1.55"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = dockerClient.Close() })
+
+	pool := &Pool{
+		cli: dockerClient,
+		cfg: Config{Image: "test/image", MaxUptime: 60 * time.Millisecond},
+		log: discardLogger(),
+	}
+
+	c, err := pool.Acquire(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	pool.Release(context.Background(), c)
+
+	stopAfterRelease, removeAfterRelease := stopCalls.Load(), removeCalls.Load()
+	time.Sleep(200 * time.Millisecond)
+
+	if got := stopCalls.Load(); got != stopAfterRelease {
+		t.Errorf("stop called %d times after Release, want %d: the max uptime timer still fired", got, stopAfterRelease)
+	}
+	if got := removeCalls.Load(); got != removeAfterRelease {
+		t.Errorf("remove called %d times after Release, want %d: the max uptime timer still fired", got, removeAfterRelease)
+	}
+}

@@ -88,6 +88,9 @@ type Pool struct {
 
 	mu     sync.Mutex
 	active int
+	// reapers holds the armed max-uptime timer for each live container,
+	// keyed by ID, so Release can cancel the one it is tearing down.
+	reapers map[string]*time.Timer
 }
 
 // Config is the subset of daemon container configuration the pool needs.
@@ -238,12 +241,13 @@ func (p *Pool) Acquire(ctx context.Context, mounts []storage.Mount, env []string
 }
 
 // armMaxUptime schedules a hard stop and remove for a container once its
-// lifetime cap elapses. The timer is keyed to the container ID and never
-// touches p.active: Release (or Close) remains the only owner of the active
-// slot. Docker stop and remove are idempotent, so a timer that fires after
-// Release has already removed the container only logs a warning.
+// lifetime cap elapses. The timer never touches p.active: Release (or Close)
+// remains the only owner of the active slot. Release cancels the timer, so a
+// container that finished normally is not reaped a second time against an ID
+// Docker has already forgotten.
 func (p *Pool) armMaxUptime(ctx context.Context, id string) {
-	time.AfterFunc(p.cfg.MaxUptime, func() {
+	timer := time.AfterFunc(p.cfg.MaxUptime, func() {
+		p.forgetReaper(id)
 		zero := 0
 		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
@@ -254,6 +258,32 @@ func (p *Pool) armMaxUptime(ctx context.Context, id string) {
 			p.log.Warn("max uptime remove failed", "id", id[:12], "err", err)
 		}
 	})
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.reapers == nil {
+		p.reapers = make(map[string]*time.Timer)
+	}
+	p.reapers[id] = timer
+}
+
+// cancelMaxUptime disarms a container's reaper, if it has not already fired.
+func (p *Pool) cancelMaxUptime(id string) {
+	p.mu.Lock()
+	timer := p.reapers[id]
+	delete(p.reapers, id)
+	p.mu.Unlock()
+	if timer != nil {
+		timer.Stop()
+	}
+}
+
+// forgetReaper drops a timer's own map entry as it fires, so the map does not
+// grow for the life of the pool.
+func (p *Pool) forgetReaper(id string) {
+	p.mu.Lock()
+	delete(p.reapers, id)
+	p.mu.Unlock()
 }
 
 // releaseDecision reports how Release should tear a container down: whether
@@ -284,6 +314,7 @@ func (p *Pool) Release(ctx context.Context, c *Container) {
 	if c == nil {
 		return
 	}
+	p.cancelMaxUptime(c.ID)
 	honorGrace, stopTimeout := releaseDecision(ctx, p.cfg.GracePeriod)
 	if honorGrace {
 		p.log.Info("container keeping alive for grace period", "id", c.ID[:12], "grace", p.cfg.GracePeriod)
