@@ -142,7 +142,8 @@
         "task_id",
         "attempt",
         "stage",
-        "status"
+        "status",
+        "usage"
       ],
       "type": "object"
     },
@@ -257,7 +258,7 @@
           "type": "integer"
         },
         "height": {
-          "description": "Height is the pixel height for images and video.",
+          "description": "Height is the pixel height for images and video. nil means unknown\nor not applicable.",
           "type": "integer"
         },
         "mime_type": {
@@ -267,6 +268,10 @@
         "path": {
           "description": "Path is a local filesystem path on the host that produced the\nattachment. It is the alternative to URL for outbound delivery: a\nURL is fetched by the platform, a Path is uploaded by us. A file the\nagent wrote has no URL and never gets one -- publishing it would\ntrade a delivery problem for a hosting and access-control one -- so\nsenders that support upload must read this.\n\nExactly one of URL and Path is meaningful for an outbound send.",
           "type": "string"
+        },
+        "raw": {
+          "description": "Raw carries platform-specific fields the common vocabulary does not\ncover, so adapters never need a second attachment type.",
+          "type": "object"
         },
         "type": {
           "description": "Type is \"image\", \"video\", \"audio\", or \"document\".",

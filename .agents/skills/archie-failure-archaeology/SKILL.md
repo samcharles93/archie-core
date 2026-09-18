@@ -9,7 +9,7 @@ Stop the project from paying twice for the same lesson. Reconstruct what
 happened from checked-out code, tests, configuration, and commit graph.
 Treat commit prose as a lead, not proof. Preserve uncertainty.
 
-All volatile observations are dated **2026-07-28**.
+All volatile observations are dated **2026-09-18** (HEAD `2e1e1549`).
 
 Route to `archie-debugging-playbook` for active symptoms,
 `archie-codebase-discovery` for deep caller tracing.
@@ -109,7 +109,7 @@ If current behavior differs from chronicle, update the packet.
 
 | Incident and date | Symptom | Root cause | Evidence and status | Settled rule |
 |---|---|---|---|---|
-| Label auto-claim, 2026-07-22 | >80 labelled issues enrolled under label polling. | Label polling means eligibility, not hint. | `519882f` changes `config.docker.toml` to `assignee`. `internal/config/config.go` defaults to `assignee` but permits `label` and `either`. **Status:** `settled`. | Default to assignee-driven pickup. Label/either are deliberate bulk enrollment. |
+| Label auto-claim, 2026-07-22 | >80 labelled issues enrolled under label polling. | Label polling means eligibility, not hint. | `519882f` changed the Compose profile to `assignee`; that file was deleted (`cbb7929e`) and survives as `deployments/docker-nats-stack.toml`, which sets `trigger = "assignee"`. `internal/config/config.go` defaults to `assignee` but permits `label` and `either`. **Status:** `settled`. | Default to assignee-driven pickup. Label/either are deliberate bulk enrollment. |
 | Baseline-red park storm, 2026-07-23 onward | Task parks on gate failure that existed before its feature work. | Parking/retrying cannot change pre-existing failure; auto-repair mixes repository repair into feature scope. | `b2482af` made `StageBaselineGate` launch builder instead of parking. Nine repair commits in history. **Status:** `current` mitigation and architecture weak point. | Measure untouched baseline first. Track baseline repair as explicit change. |
 | Passed build with zero changes, 2026-07-23 | Commit-push reports "no changes," parks, retries, repeats. | "Passed with no changes" lacked terminal domain outcome. | `62c0df1` introduced no-op detection; `2bf42bd` set `Outcome`. `TestStageCommitPushClosesIssueWhenBuildNoChanges`. **Status:** `settled`. | Model no-op as explicit terminal result. |
 | Infinite parked-task retry, 2026-07-23 | Removing parked label repeatedly requeues with no terminal bound. | Retry count not durable or capped. | `a8fdb50` added persisted `retry_count`, global/per-repo `max_retries`, and `dead`. **Status:** `settled`. | Every autonomous retry needs durable attempt state, explicit bound, terminal state, and operator-visible reason. |
@@ -119,7 +119,7 @@ If current behavior differs from chronicle, update the packet.
 | Incident and date | Symptom | Root cause | Evidence and status | Settled rule |
 |---|---|---|---|---|
 | Container network auto-detection, 2026-07-27 | Every container task returns `nats: no responders`. | `selfNetwork` inspected hostnamed container, silently fell back to default bridge. | `37cf089` records incident, adds `containers.network`; `2ac306b` pins `archie-core_default`. **Status:** `conditional`. | Make cross-container network membership explicit in deployment. |
-| SecretRef schema crash-loop, 2026-07-27 and current `HEAD` | Both identities demand `ARCHIE_GITHUB_TOKEN` despite Gitea config. | Removing old `token_env` field let TOML ignore deployed value. `1f8588d` restored precedence-compatible fallback; `308c199` removed `Forge.TokenEnv` declaration while `finalize` still references it. **Status:** `open` regression at `HEAD`. | Preserve decoded compatibility until deployed files migrated and rejection of stale keys observable. |
+| SecretRef schema crash-loop, 2026-07-27 | Both identities demand `ARCHIE_GITHUB_TOKEN` despite Gitea config. | Removing old `token_env` field let TOML ignore deployed value. `1f8588d` restored precedence-compatible fallback; a later `308c199` removed the `Forge.TokenEnv` declaration while `finalize` still referenced it. | **Status: `settled`** as of 2026-09-18 — `config.Forge.TokenEnv` is declared (`internal/config/config.go`) and `configuration/defaults.go` converts it to an env `SecretRef` when the structured token is empty. | Preserve decoded compatibility until deployed files migrated and rejection of stale keys observable. |
 | Compose secret omission, 2026-07-27 | Config names valid env var, container sees it empty. | Compose forwards only listed environment entries. | `22fc0ef`, `d0624b7`. **Status:** `conditional`. | Trace every secret from config key to host value to Compose passthrough to process lookup. |
 | FullStream/TextStream deadlock, 2026-07-27 | Streamed Telegram reply renders empty cursor, typing never clears. | ai-sdk makes `FullStream` authoritative and backpressured; `TextStream` is best-effort. | `6a0bd27`. **Status:** `settled` with regression-test gap. | Drain authoritative stream through close. |
 | MCP Content-Length framing and mirrored fake, 2026-07-26 to 2026-07-27 | Internal MCP tests pass while official-SDK servers do not. | MCP stdio uses newline-delimited JSON. Test subprocess called same helpers, mirroring the same wrong protocol. | Compare `f2768eb:internal/tools/mcp/framing.go` with `dda4cde`. **Status:** `settled`. | For wire contracts, test raw canonical frames and independently implemented peer. |
@@ -164,15 +164,18 @@ If current behavior differs from chronicle, update the packet.
 | Incident and date | Symptom | Root cause | Status | Settled rule |
 |---|---|---|---|---|
 | Tracked `.gotmp`, 2026-07-27 | Build-cache binaries, generated `_testmain.go`, `.git-askpass` appear in commits. | Workaround path not ignored before use. | `4cb0577` removes artifacts and adds `.gotmp/` to `.gitignore`. **Settled.** | Put caches outside repo or ignore before first command. |
-| Tracked `docs/node_modules`, 2026-07-28 | Hundreds of pnpm symlink entries become repository content. | `docs/node_modules` neither ignored nor excluded from commit. | 237 entries at `HEAD`; no `.gitignore` rule. **Current/open.** | Track lockfiles, never installed trees. |
-| `308c199` cleanup regression, 2026-07-28 | `TestRunWrapsExternalCommand` returns `"\n"` instead of `"wrapped\n"`; forge compatibility removed again; dependency artifacts added. | Semantic edits classified and reviewed as cleanup. | Focused skillscript test fails at `HEAD`. **Current/open.** | No commit is "cleanup" for gating purposes. |
+| Tracked `docs/node_modules`, 2026-07-28 | Hundreds of pnpm symlink entries become repository content. | `docs/node_modules` neither ignored nor excluded from commit. | 237 entries at that time; the VitePress site was removed (`84b32694`) and `git ls-files | grep -c node_modules` is now **0**. **Settled.** | Track lockfiles, never installed trees. |
+| `308c199` cleanup regression, 2026-07-28 | `TestRunWrapsExternalCommand` returns `"\n"` instead of `"wrapped\n"`; forge compatibility removed again; dependency artifacts added. | Semantic edits classified and reviewed as cleanup. | The focused skillscript test **passes** as of 2026-09-16. **Settled.** | No commit is "cleanup" for gating purposes. |
 | `diff_cap_lines = 0` contradiction, introduced at project start | Operators set zero expecting unlimited, but decoded config becomes 400. | `finalize` converts zero to default 400; same sentinel means both "unset" and "unlimited." | **Current/open** contradiction. | Never overload zero value with both defaulting and explicit policy. |
 
 ## Keep unmerged work as dated candidates
 
-As of **2026-07-28**, these remote branches are not merged:
+As of **2026-09-18**, the six `fix/4x` and `feat/5x`/`feat/75` candidate
+branches recorded here on 2026-07-28 no longer exist on either remote —
+`git branch -r --no-merged HEAD` reports only `gitea/main` (and the Dolt helper
+ref). Treat their concerns as `superseded` unless a live branch re-raises one.
 
-| Candidate branch | Claimed concern |
+| Former candidate branch | Claimed concern |
 |---|---|
 | `origin/fix/43-loaddir-no-timeout-around-yaegi-eval-can-hang-daemon-startup` | Bound Yaegi evaluation during `LoadDir` |
 | `origin/fix/45-skillscriptrun-ignores-context-cannot-be-canceledtimed-out` | Make skill scripts cancellable |

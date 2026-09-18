@@ -9,7 +9,7 @@ Recreate the environment as independently verified surfaces. Do not turn a
 passing root-module command into a claim that the tools module, documentation
 site, race detector, linter, or container images also passed.
 
-All volatile observations are snapshots from **2026-07-28**.
+All volatile observations are snapshots from **2026-09-18** (HEAD `2e1e1549`).
 
 ## Name the surfaces
 
@@ -42,17 +42,17 @@ git --version; gpg --version
 ```
 
 Classify a missing command as an environment prerequisite. Bootstrap (verified
-2026-07-28): Go ≥ 1.26.3, Task ≥ 3.x, gofumpt (unpinned), golangci-lint v2
+2026-09-18): Go ≥ 1.27.0, Task ≥ 3.x, gofumpt (unpinned), golangci-lint v2
 (unpinned), Node 24.x for the `ui/` frontend.
 
 | Surface | Repository declaration | Installed snapshot | Interpretation |
 |---|---|---|---|
-| Runtime Go | `go 1.26.3` in `go.mod` | Go 1.26.5, linux/amd64 | Requires at least declared Go level. |
-| Tools Go | `go 1.26.4` in `tools/go.mod` | Same Go 1.26.5 binary | Toolchain must satisfy both modules. |
+| Runtime Go | `go 1.27.0` in `go.mod` | Go 1.27.0, linux/amd64 | Requires at least declared Go level. |
+| Tools Go | `go 1.27.0` in `tools/go.mod` | Same Go 1.27.0 binary | Toolchain must satisfy both modules. |
 | Task | Taskfile schema `version: "3"` | Task 3.48.0 | Installed version is environment fact. |
-| gofumpt | Used by `task fmt`; `@latest` install | v0.7.0 | Unpinned. |
-| golangci-lint | v2 config in `.golangci.yml`; `@latest` install | 2.12.2 | Use v2 CLI; exact release unpinned. |
-| Node | `ui/` frontend build | 24.18.0 | No `engines`/`packageManager` field. Docs need no Node. |
+| gofumpt | Used by `task fmt`; `@latest` install | v0.7.0 (built with go1.26.5) | Unpinned. |
+| golangci-lint | v2 config in `.golangci.yml`; `@latest` install | 2.13.2 | Use v2 CLI; exact release unpinned. |
+| Node | `ui/` frontend build | 24.18.1 / npm 11.8.0 | No `engines`/`packageManager` field. Docs need no Node. |
 | Containers | Compose commands in `Taskfile.yml` | Podman-backed, unusable in this sandbox | Verify CLI, Compose plugin, daemon/socket separately. |
 
 ## Prepare writable caches in a restricted sandbox
@@ -147,8 +147,9 @@ go -C tools run -mod=readonly ./docsgen --repo-root .. --out /tmp/archie-core-co
 cmp --silent docs/data/generated/contracts.json /tmp/archie-core-contracts.json
 ```
 
-2026-07-28 run wrote 10 schemas; comparison passed. Planned `docsgen all` and
-`docsgen check` do **not** exist yet.
+2026-09-18 run wrote 11 schemas. The committed output was stale since
+`4b340d2b` and was regenerated the same day; `cmp` now passes. Planned
+`docsgen all` and `docsgen check` do **not** exist yet.
 
 ## Documentation needs no build
 
@@ -172,9 +173,12 @@ rg -n '^(FROM|[[:space:]]*image:)|@latest|:latest|setup_24.x' \
   Dockerfile Dockerfile.archied docker-compose.yml
 ```
 
-No `.dockerignore` exists. Both Dockerfiles run `COPY . .`. Floating inputs: Go
-builder tags omit patch/digest; Ubuntu base images omit digests; agent installs
-multiple `@latest` Go tools; Node from moving `setup_24.x` channel.
+`.dockerignore` exists (421 bytes) and excludes `.git`, `.task`, `.claude`,
+`.codex`, `.crew`, `.agents`, `.references`, `bin/`, `dist/`, `docs/`,
+`node_modules/`, root-built `archied`/`archie-agent`, and local config. Both
+Dockerfiles still run `COPY . .` on top of it. Floating inputs: Go builder tags
+omit patch/digest; Ubuntu base images omit digests; agent installs multiple
+`@latest` Go tools; Node from moving `setup_24.x` channel.
 
 `task docker-build` needs registry/network and functioning Compose.
 `task docker-up` starts the Compose-managed NATS service and binds ports
@@ -207,10 +211,10 @@ env GIT_CONFIG_GLOBAL=/dev/null go test ./internal/worktree/... ./internal/workt
 | Focused Go behavior | `go test ./pkg/... -run '^TestName$' -count=1 -v` | Use first. |
 | Root unit/integration suite | `go test ./... -count=1` | Restricted sandbox fails listener-dependent packages. |
 | Root race suite | `go test -race ./... -count=1` | Not run by `task check`. |
-| Vet | `go vet ./...` | Passed on 2026-07-28. |
-| Lint | `golangci-lint run ./...` | Failed with 54 findings on 2026-07-28. |
-| Build | `go build -o /tmp/... ./cmd/archied` and `cmd/archie-agent` | Both passed on 2026-07-28. |
-| Tools tests | `go -C tools test -mod=readonly ./... -count=1` | Passed on 2026-07-28. |
-| Generated contract parity | Temp docsgen output + `cmp --silent` | Passed for 10 schemas. |
+| Vet | `go vet ./...` | Passed on 2026-09-18. |
+| Lint | `golangci-lint run ./...` | Not re-run on 2026-09-18; a focused `--enable-only=dupl ./internal/...` run reported 0 issues. Re-run before quoting a total. |
+| Build | `go build -o /tmp/... ./cmd/archied` and `cmd/archie-agent` | Both passed on 2026-09-18. |
+| Tools tests | `go -C tools test -mod=readonly ./... -count=1` | Passed on 2026-09-18. |
+| Generated contract parity | Temp docsgen output + `cmp --silent` | Passed for 11 schemas on 2026-09-18, after regenerating a file stale since `4b340d2b`. |
 | Container build | `task docker-build` | Not verified in restricted environment. |
-| Repository gate | `task check` | Non-green; skillscript failure in root suite. |
+| Repository gate | `task check` | See `archie-diagnostics-and-tooling` for the dated snapshot. |

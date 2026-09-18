@@ -9,7 +9,9 @@ Write one durable record for each decision or behavior. Separate what runs now
 from what Archie has approved as its destination.
 
 Route to `archie-architecture-planning-campaign` for ownership/boundary
-decisions, `archie-architecture-contract` for invariants,
+decisions (parked outside this checkout, under
+`/work/apps/archie-skills-parked/`),
+`archie-architecture-contract` for invariants,
 `archie-codebase-discovery` for live entry points,
 `archie-failure-archaeology` for incidents,
 `archie-config-and-flags`, `archie-build-and-env`, or `archie-run-and-operate`
@@ -34,12 +36,12 @@ migration delta.
 
 ## Use the repository authority map
 
-Verified on 2026-07-28:
+Verified on 2026-09-18:
 
 | Location | Role | Discipline |
 |---|---|---|
-| Live Go code, tests, `Taskfile.yml`, executable config parsing, composition under `cmd/` | `CURRENT` execution evidence | Trace producers and consumers; tests prove only asserted behavior |
-| `CLAUDE.md` | Current contributor and safety protocol plus compact architecture orientation | Verify operational claims against code and `Taskfile.yml`; `AGENTS.md` is a symlink |
+| Live Go code, tests, `Taskfile.yml`, executable config parsing, composition under `internal/app/` (entered from `cmd/`) | `CURRENT` execution evidence | Trace producers and consumers; tests prove only asserted behavior |
+| `CLAUDE.md` | Current contributor and safety protocol plus compact architecture orientation | Verify operational claims against code and `Taskfile.yml`; `AGENTS.md` is a symlink to it |
 | `ARCHITECTURE.md` | Useful architecture history and partial current overview | Corroborate every inventory/status claim; its "Planned" list is stale for implemented skill support |
 | `docs/prds/01-project-management.md` | Index and approved foundation for target architecture | Add or change target decisions in the focused document it names |
 | `docs/architecture/*.md` | Focused target decisions, active review procedure, migration inventory | Read each file's status |
@@ -50,7 +52,7 @@ Verified on 2026-07-28:
 | `docs/data/generated/contracts.json` | Current working-tree `GENERATED` output | Regenerate; never edit by hand |
 | `docs/` | Repository documentation only | Nothing builds, renders, or publishes it; Markdown is the artifact |
 
-The repository root has no `README.md` or `CONTRIBUTING.md` as of 2026-07-28.
+The repository root has no `README.md` or `CONTRIBUTING.md` as of 2026-09-18.
 
 ## Choose one destination
 
@@ -117,26 +119,24 @@ Distinguish evidence strength:
 ## Maintain component changelogs
 
 Keep gateway behavior in `CHANGELOG.archied.md` and agent-runtime behavior in
-`CHANGELOG.archie.md`; keep `CHANGELOG.md` as their index. The archied image
-copies both component files to `/usr/share/archie/`, and
+`CHANGELOG.archie.md`; keep `CHANGELOG.md` as their index.
+`Dockerfile.archied` copies both component files to `/usr/share/archie/`, and
 `internal/releaseannounce.changelogSection` parses a version heading.
 
-A verified 2026-07-28 contradiction is `OPEN`:
-
-- `.gitea/workflows/deploy.yml` passes `vX.Y.Z` component versions.
-- `changelogSection` searches for `## [<version>]`, and its fixtures use
-  `## [v0.1.0]`.
-- The two current component changelogs use headings such as `## [1.1.0]`
-  without `v`.
-- `cmd/archied.TestChangelogsTrackGatewayAndRuntimeIndependently` expects
-  the unprefixed current heading.
-
-Resolve parser, release metadata tests, and both documents atomically; do not
-"fix" only the prose.
+Version-heading format is settled as of 2026-09-18: both component changelogs
+use `## [1.27.0]` with no `v` prefix, `changelogSection` searches for
+`## [<version>]`, and `.github/workflows/deploy.yml` gates each release tag with
+`grep -q "^## \[$ver\]" CHANGELOG.<component>.md`. The earlier
+`vX.Y.Z`-vs-`X.Y.Z` contradiction involved `.gitea/workflows/deploy.yml`, which
+was dropped (`dd9bddc2 ci: build and push images to GHCR, drop the Gitea
+workflow`), so that question is `HISTORICAL`, not `OPEN`. The remaining guard is
+the CI shell gate plus `internal/releaseannounce`'s announcer tests
+(`TestAnnouncerReportsMissingReleaseSectionWithoutAdvancingState`); the old
+`cmd/archied.TestChangelogsTrackGatewayAndRuntimeIndependently` no longer exists.
 
 ## Maintain generated contracts
 
-Current behavior, verified 2026-07-28:
+Current behavior, verified 2026-09-18:
 
 - Tool path is `tools/docsgen`, not `tools/cmd/docsgen`.
 - Separate Go module replacing root module with `../`.
@@ -170,7 +170,7 @@ step; the publishing surface is an open decision
 | Content | Markdown under `docs/`, including `docs/data/generated/contracts.json` |
 | Links | Repository-relative (`../architecture/organisation.md`); no root-absolute links |
 | Build | None. There is no site, no dev server, no link checker, no Pages deploy |
-| Nav | `docs/prds/01-project-management.md` |
+| Nav | `docs/prds/01-project-management.md` is the index; there is no site nav |
 
 Because no build validates links, check them yourself or with a one-off script —
 nothing catches a dead link for you:

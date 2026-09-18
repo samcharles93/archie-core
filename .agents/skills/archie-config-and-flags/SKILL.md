@@ -9,7 +9,7 @@ Treat configuration as a dataflow, not as a struct inventory. Prove every
 claimed setting has an input, normalization path, composition seam, and runtime
 consumer.
 
-Current evidence date: **2026-07-28**.
+Current evidence date: **2026-09-18**.
 
 Use these status terms exactly:
 
@@ -39,8 +39,8 @@ Never upgrade a status merely because decoding tests pass.
 8. Assign one status from the table above.
 
 ```bash
-rg -n 'LoadOverlay|LoadDir|ForTask|ToConfig|flag\.' \
-  internal/config cmd/archied cmd/archie-agent
+rg -n 'Resolve|Overlay|Dir|ForTask|ToConfig|flag\.' \
+  internal/infrastructure/configuration internal/config internal/app/archied cmd/archie-agent
 rg -n 'FIELD_NAME|external_key|ENV_NAME' \
   --glob '*.go' --glob '*.toml' --glob '*.yml' --glob '*.yaml' .
 ```
@@ -49,10 +49,10 @@ rg -n 'FIELD_NAME|external_key|ENV_NAME' \
 
 | Input path | Current behavior | Status |
 | --- | --- | --- |
-| `archied -config PATH` | Defaults to `$XDG_CONFIG_HOME/archie/config.toml`, or `$HOME/.config/archie/config.toml`; `cmd/archied/main.go` calls `configuration.Loader.Resolve`. | production-wired |
-| `archied -config-overlay PATH` | Resolves a file or directory overlay through the same loader. Omitted overlay fields retain base values. | production-wired |
-| `config.Load(PATH)` | Loads one TOML and finalizes it; no current binary calls it directly. | test/library-only |
-| `config.LoadDir(base, overlay)` | Supports main YAML/TOML plus feature YAML and `conf.d`; no current entrypoint calls it. | test/library-only |
+| `archied -config PATH` | Defaults to `$XDG_CONFIG_HOME/archie/config.toml`, or `$HOME/.config/archie/config.toml`; `internal/app/archied/bootstrap.go` builds `configuration.New(log)` and calls `Loader.Resolve`. | production-wired |
+| `archied -config-overlay PATH` | Resolves a file or directory overlay through the same loader (`Loader.Overlay`/`ApplyOverlay`); the dashboard runtime overlay is layered from its own SQLite store. Omitted overlay fields retain base values. | production-wired |
+| `configuration.Loader.Dir(base, overlay)` | Supports main YAML/TOML plus feature YAML and `conf.d`; no current entrypoint calls it. | test/library-only |
+| `config.Load(path)`, `config.LoadDir(...)` | Removed. The old `internal/config` package-level helpers no longer exist; decoding is `Loader`-based. | not applicable |
 | `config.example.toml` | Load-tested example, not a deployed configuration. | test/library-only |
 | `deployments/docker-nats-stack.toml` | Complete host-daemon configuration for the Compose-managed NATS service. It is copied into the operator's config directory; Compose does not mount it. | supported-example |
 | Operator config and environment | Lives outside the repository; contents are deployment-specific. | external-production-unknown |
@@ -98,7 +98,7 @@ Do not expose these helper flags as daemon settings.
 | --- | --- | --- |
 | `work_dir`, `db_path` | Derive from `$XDG_DATA_HOME/archie`, else `$HOME/.local/share/archie`; explicit `~` paths are home-expanded. `db_path` is a prefix: tasks/events use `<db_path>-tasks.sqlite` and conversations use `<db_path>-conversations.sqlite`. | production-wired |
 | `skills_dir` | Empty falls back to `work_dir` for startup workflow registry. | partially-wired |
-| `plugin_dir` | Empty disables daemon plugin loading; configured directory loaded in `cmd/archied`. | production-wired |
+| `plugin_dir` | Empty disables daemon plugin loading; configured directory loaded in `internal/app/archied`. | production-wired |
 | `poll_interval` | Default `60s`; root poll loop uses it, identities may override only interval. | production-wired |
 | `label` | No default or validation; used for `dispatch.trigger = "label"` or `"either"`. | production-wired |
 | `max_retries` | Default `3`; repository value greater than zero overrides. | production-wired |
@@ -118,10 +118,10 @@ Do not expose these helper flags as daemon settings.
 | `nats.url`, `token_env` | Empty URL keeps SQLite path. Configured token variable must be non-empty. | production-wired |
 | `containers.*` | See dedicated table below. | production-wired |
 | `chat.*` | See channel table below. | production-wired |
-| `memory.provider`, `provider_config` | Feature YAML decodes these; `cmd/archied` always starts built-in file provider at `work_dir/memory`. | decoded-but-unwired |
-| `tools.mcp_servers` | `cmd/archied` registers daemon-side MCP providers. Empty transport becomes `stdio`; only `stdio` accepted. `url` decoded but unused. | partially-wired |
-| `indexing.index_dir`, `indexing.db_path` | `finalize` derives paths under `work_dir`; no entrypoint constructs `internal/indexing.Manager`. | decoded-but-unwired |
-| `extra` / unknown `conf.d` values | Test/library-only `LoadDir` stores untyped data; no core production consumer. | decoded-but-unwired |
+| `memory.provider`, `provider_config` | Feature YAML decodes these; `internal/app/archied` always starts built-in file provider at `work_dir/memory`. | decoded-but-unwired |
+| `tools.mcp_servers` | `internal/app/archied` registers daemon-side MCP providers. Empty transport becomes `stdio`; only `stdio` accepted. `url` decoded but unused. | partially-wired |
+| `indexing.index_dir`, `indexing.db_path` | `finalize` derives paths under `work_dir`; no entrypoint constructs `internal/indexing.Manager` (the exported `NewManager` exists but has no production caller). | decoded-but-unwired |
+| `extra` / unknown `conf.d` values | Test/library-only `Loader.Dir` stores untyped data; no core production consumer. | decoded-but-unwired |
 
 The default `agent.command = "archie-agent"` is not verified subprocess
 operation. `SubprocessRunner` expects one JSON invocation on stdin and one JSON
@@ -169,12 +169,12 @@ token and allowed-user list. Every other file setting is startup-only.
 ## Treat multi-identity as partially wired
 
 `finalize` requires each identity's `name`, `bot_user`, non-empty repos, forge
-type, and `SecretRef` token. `cmd/archied` builds an identity forge client and
-worktree manager.
+type, and `SecretRef` token. `internal/app/archied` builds an identity forge
+client and worktree manager.
 
 Do not infer complete isolation:
 
-- `cmd/archied` resolves root forge client before all identity runners.
+- `internal/app/archied` resolves root forge client before all identity runners.
 - Identity `name`, forge, repos, poll interval, bot user, bot email have
   production reads. Identity bot email not defaulted despite comment.
 - Identity `models`, `providers`, `dispatch`, `budgets`, `notify`, and
@@ -209,8 +209,8 @@ identity: identity forges require explicit structured `token`.
 | Telegram `token_env = "X"` | Reads `X`. | Not forwarded. | Not forwarded. |
 | `agent.env = ["X"]` | Names validated. | Copies present `X` from daemon env. | Not used by container construction. |
 
-`cmd/archied` creates `secret.NewRegistry`, which registers only the `env`
-engine. Non-env `SecretRef` values are not production-wired.
+`internal/app/archied` creates `secret.NewRegistry`, which registers only the
+`env` engine. Non-env `SecretRef` values are not production-wired.
 
 The host supervisor or launch shell supplies daemon secrets. Compose supplies
 no `archied` environment because the daemon is not a Compose service.

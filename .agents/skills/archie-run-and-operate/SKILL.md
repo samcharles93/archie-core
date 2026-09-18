@@ -5,8 +5,9 @@ description: "Run and observe Archie safely with a host daemon and the repositor
 
 # Run and operate Archie
 
-Use this runbook to operate the implementation that exists on **2026-07-28**.
-Treat source and tests as current; treat `docs/archive/` as history.
+Use this runbook to operate the implementation that exists on **2026-09-18**
+(HEAD `2e1e1549`). Treat source and tests as current; treat `docs/archive/` as
+history.
 
 ## Define the process shapes
 
@@ -62,7 +63,7 @@ Both linked binaries may also display Go's `-quickchecks` flag from
 
 ## Select the execution mode deliberately
 
-| Config shape | What runs | Operational status on 2026-07-28 |
+| Config shape | What runs | Operational status on 2026-09-18 |
 |---|---|---|
 | `agent.mode = "inprocess"` and no `[nats]` | `archied` polls and claims from SQLite, runs workflow stages and model tools in-process. | **Production-wired candidate.** No process or OS isolation. |
 | `agent.mode = "subprocess"` | `archied` starts `agent.command` per stage and expects one JSON invocation on stdin, one response on stdout. | **Open/broken with default command.** `cmd/archie-agent` is a long-running NATS worker and never calls `agentexec.ServeOne`. |
@@ -179,7 +180,7 @@ for `archie.task.>` and `archie.agent.>`.
 | Discovery | `archie.task.bug`, `.feature`, `.bootstrap`, or `.default`; daemon durable consumer `archie-daemon`, 5-min ack wait, max 3 deliveries. |
 | Per-stage requests | `archie.agent.<id>.request`; worker durable consumer defaults to `archie-agent`, 30-min ack wait, max 3 deliveries; response address in `X-Archie-Reply`. |
 | Container task | Core NATS request/reply on `archie.taskrun.<id>`. Task container reads `/data/worktree/.git/task.json` and creates dedicated subscription; shared worker uses queue group `archie-taskrun-workers`. |
-| Privileged RPC | Store, forge, and worktree operations return to `archied` over core NATS subjects in `internal/storerpc`, `internal/forgerpc`, and `internal/worktreerpc`. |
+| Privileged RPC | Store operations go to the gRPC State Store (`internal/infrastructure/staterpc`, task-scoped grants); forge and worktree operations return to `archied` over core NATS subjects in `internal/forgerpc` and `internal/worktreerpc`. |
 
 Set `containers.network` explicitly. `deployments/docker-nats-stack.toml` uses
 `archie-core_default`. Auto-detection inspects the daemon container; on failure,
@@ -195,8 +196,10 @@ It forwards only configured provider-key variables.
 Open limitations until code/tests prove otherwise:
 
 - `subprocess` + default `archie-agent` is protocol-incompatible.
-- `config.production.toml` uses legacy `token_env`; validation requires
-  `forge.token` secret reference.
+- A deployed overlay previously using legacy `token_env` still converts: the
+  structured `forge.token` secret reference wins when both are present and
+  `config.Forge.TokenEnv` is otherwise converted by
+  `internal/infrastructure/configuration/defaults.go`.
 - Container RPC uses root forge/worktree for every identity.
 - Container orphan recovery lacks daemon-instance label.
 - `max_uptime` only bounds `Pool.Acquire` create/start; no lifetime timer.
@@ -206,9 +209,12 @@ Open limitations until code/tests prove otherwise:
 
 ## Understand deployment and rollback seams
 
-The Gitea workflow builds/pushes only `archied:latest` and `archie-agent:latest`.
-It injects component versions into labels/metadata but publishes no versioned
-tags. It runs no quality gate before Docker builds.
+`.github/workflows/deploy.yml` gates on the release tags, then builds/pushes
+`archied:latest` and `archie-agent:latest` plus a versioned
+`linux/amd64` distribution zip attached to a GitHub Release. It injects
+component versions into labels/metadata and runs the quality gate before the
+Docker builds. The Gitea workflow that used to be the production build path was
+dropped (`dd9bddc2`); `deployments/*.toml` are the supported profiles.
 
 Before promotion: record running image IDs/digests; config checksums (no
 secrets); task counts via safe GET; establish a SQLite backup procedure.
@@ -218,6 +224,6 @@ does not undo forge changes, task transitions, or data-format changes.
 
 ## Treat carina facts as unverified external state
 
-Repository guidance (2026-07-28): two instances on `carina` with distinct
+Repository guidance (2026-09-18): two instances on `carina` with distinct
 `bot_user` values. No live process list, config, image digest, service manager,
 or deployment was verified. Do not invent SSH, systemd, or service commands.
