@@ -31,6 +31,7 @@ service StateStoreService {
 
   // Queries
   rpc TaskByIssue(TaskByIssueRequest) returns (TaskByIssueResponse);
+  rpc OpenTaskByPR(OpenTaskByPRRequest) returns (OpenTaskByPRResponse);
   rpc TaskByID(TaskByIDRequest) returns (TaskByIDResponse);
   rpc OpenPRs(OpenPRsRequest) returns (OpenPRsResponse);
   rpc ClearTerminalTasks(ClearTerminalTasksRequest) returns (ClearTerminalTasksResponse);
@@ -327,6 +328,16 @@ message TaskByIssueRequest {
   int64 number = 3;
 }
 message TaskByIssueResponse {
+  Task task = 1;
+  bool found = 2;
+}
+
+message OpenTaskByPRRequest {
+  string owner = 1;
+  string repo = 2;
+  int64 number = 3;
+}
+message OpenTaskByPRResponse {
   Task task = 1;
   bool found = 2;
 }

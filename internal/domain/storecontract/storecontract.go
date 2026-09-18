@@ -69,6 +69,7 @@ type TaskRetryer interface {
 // TaskQueries groups read-only task accessors.
 type TaskQueries interface {
 	TaskByIssue(ctx context.Context, owner, repo string, number int) (*task.Task, error)
+	OpenTaskByPR(ctx context.Context, owner, repo string, number int) (*task.Task, error)
 	TaskByID(ctx context.Context, taskID int64) (*task.Task, error)
 	OpenPRs(ctx context.Context) ([]task.Task, error)
 	ClearTerminalTasks(ctx context.Context) (int64, error)

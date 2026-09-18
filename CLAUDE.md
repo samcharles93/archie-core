@@ -183,11 +183,12 @@ structures found in legacy packages.
   `providerRegistry.RegisterOptional`. Missing or failed providers log warnings
   and degrade health without terminating the process.
 - **`internal/infrastructure/staterpc/` (State Store gRPC contract):**
-  Authority is `docs/prds/state-store-contract.md` (rev. 2d) -- read it before
+  Authority is `docs/prds/state-store-contract.md` (rev. 2e) -- read it before
   changing this package or its callers.
 - The proto (`proto/state/v1/state.proto`, service `StateStoreService`,
   package `statev1` in `internal/contracts/state/v1/`) is one gRPC service
-  fronting every ratified store contract (42 RPCs); the Go consumer facades
+  fronting every ratified store contract (48 RPCs, including grant management
+  and deprecated compatibility RPCs); the Go consumer facades
   stay narrow (`workflow.Store`, `store.TaskStore`, etc., all ≤8 methods
   except the `TaskStore` composite) via `staterpc.Client`'s multiple `var _`
   assertions -- never add a Go interface method without a matching RPC.

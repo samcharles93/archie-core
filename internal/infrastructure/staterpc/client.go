@@ -137,6 +137,17 @@ func (c *Client) TaskByIssue(ctx context.Context, owner, repo string, number int
 	return taskValue(r.Task), nil
 }
 
+func (c *Client) OpenTaskByPR(ctx context.Context, owner, repo string, number int) (*task.Task, error) {
+	r, err := c.client.OpenTaskByPR(ctx, &pb.OpenTaskByPRRequest{Owner: owner, Repo: repo, Number: int64(number)})
+	if err != nil {
+		return nil, unmapError(err)
+	}
+	if !r.Found {
+		return nil, nil
+	}
+	return taskValue(r.Task), nil
+}
+
 func (c *Client) TaskByID(ctx context.Context, taskID int64) (*task.Task, error) {
 	r, err := c.client.TaskByID(ctx, &pb.TaskByIDRequest{TaskId: taskID})
 	if err != nil {

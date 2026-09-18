@@ -135,6 +135,15 @@ func migrateTasks(ctx context.Context, db *sql.DB) error {
 			return err
 		}
 	}
+	return finishTaskMigration(ctx, tx, columns)
+}
+
+func finishTaskMigration(ctx context.Context, tx *sql.Tx, columns map[string]bool) error {
+	if columns["owner"] && columns["repo"] && columns["pr_number"] {
+		if _, err := tx.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_tasks_pr ON tasks(owner, repo, pr_number)`); err != nil {
+			return err
+		}
+	}
 	if _, err := tx.ExecContext(ctx, `PRAGMA user_version = 3`); err != nil {
 		return err
 	}
@@ -411,6 +420,23 @@ func (s *Store) TaskByIssue(ctx context.Context, owner, repo string, number int)
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
 			source, identity, binding_id, binding_version, created_at, updated_at
 		FROM tasks WHERE owner=? AND repo=? AND issue_number=?`, owner, repo, number)
+	t, err := scanTask(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return t, err
+}
+
+// OpenTaskByPR returns the live task that owns the given pull request, or nil.
+func (s *Store) OpenTaskByPR(ctx context.Context, owner, repo string, number int) (*workflow.Task, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, owner, repo, issue_number, title, body, labels, status,
+			workflow, stage, branch, plan, notes, pr_number, tokens_used,
+			iterations, attempt, park_reason, watch_comment_id, retry_count,
+			source, identity, binding_id, binding_version, created_at, updated_at
+		FROM tasks
+		WHERE owner=? AND repo=? AND pr_number=? AND status=?`,
+		owner, repo, number, workflow.StatusPROpen)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil

@@ -93,6 +93,7 @@ func TestStateStoreConformance(t *testing.T) {
 			}
 			task.Plan = "the plan"
 			task.Status = "running"
+			task.PRNumber = 401
 			if err := c.Update(ctx, task); err != nil {
 				t.Fatalf("Update: %v", err)
 			}
@@ -135,6 +136,17 @@ func TestStateStoreConformance(t *testing.T) {
 			byIssue, err := c.TaskByIssue(ctx, task.Owner, task.Repo, task.IssueNumber)
 			if err != nil || byIssue == nil || byIssue.ID != task.ID {
 				t.Fatalf("TaskByIssue: %+v %v", byIssue, err)
+			}
+			if err := c.Transition(ctx, task.ID, "running", "pr_open", "PR #401"); err != nil {
+				t.Fatalf("Transition to pr_open: %v", err)
+			}
+			byPR, err := c.OpenTaskByPR(ctx, task.Owner, task.Repo, task.PRNumber)
+			if err != nil || byPR == nil || byPR.ID != task.ID {
+				t.Fatalf("OpenTaskByPR: %+v %v", byPR, err)
+			}
+			missing, err = c.OpenTaskByPR(ctx, task.Owner, task.Repo, task.PRNumber+1)
+			if err != nil || missing != nil {
+				t.Fatalf("OpenTaskByPR missing: %+v %v", missing, err)
 			}
 			if _, err := c.Tasks(ctx, 10); err != nil {
 				t.Fatalf("Tasks: %v", err)

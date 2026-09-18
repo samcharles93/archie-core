@@ -1,9 +1,9 @@
 # State Store — contract boundary & transport (ratification)
 
-**Status:** Ratified (rev. 2d). Rev. 2d revises §10 only: the `State ServiceConnection`
-struct-field instruction is withdrawn in favour of name-keyed services
-(`docs/prds/service-registry.md`). The contract, its 42 RPCs, and the listener topology are
-unchanged. Rev. 1 was marked *conditionally ratified*; the three
+**Status:** Ratified (rev. 2e). Rev. 2e adds the `OpenTaskByPR` authorization lookup required
+by the ratified PR-review remediation contract. Rev. 2d revised §10 only: the
+`State ServiceConnection` struct-field instruction was withdrawn in favour of name-keyed
+services (`docs/prds/service-registry.md`). Rev. 1 was marked *conditionally ratified*; the three
 reviewer conditions it raised are resolved (rev. 2), and the two third-pass findings are
 resolved here: (a) the stale Q3 migration wording in `service-decomposition.md`
 (`store.WorkflowStore`, `mode = "inproc" | "remote"`) now matches the ratified ownership split
@@ -254,7 +254,7 @@ Methods are named after the store methods so the mapping is unambiguous. `workfl
 |---|---|
 | Lifecycle | `EnqueueIssue`, `EnqueueChatTask`, `ClaimNext`, `ClaimByIssue`, `Transition`, `Update`, `Requeue`, `RecoverStale` |
 | Archive / Retry | `ArchiveTask`, `RetryTask` |
-| Queries | `TaskByIssue`, `TaskByID`, `OpenPRs`, `ClearTerminalTasks`, `Tasks`, `StatusCounts`, `IncrementRetryCount` |
+| Queries | `TaskByIssue`, `OpenTaskByPR`, `TaskByID`, `OpenPRs`, `ClearTerminalTasks`, `Tasks`, `StatusCounts`, `IncrementRetryCount` |
 | Events | `InsertEvent`, `EventsSince`, `TaskEvents`, `WorkflowStats`, `StageStats`, `TokensByDay` |
 | Capture | `InsertCapture`, `ListCaptures` |
 | Mapping | `InsertMapping`, `GetMapping`, `ListMappings`, `UpdateMapping`, `DeleteMapping` |
@@ -264,7 +264,7 @@ Methods are named after the store methods so the mapping is unambiguous. `workfl
 | Config snapshot | `PutConfigSnapshot`, `GetConfigSnapshot` |
 | Task log | `ReadTaskLog`, `StreamTaskLogContent` |
 
-That is **44 unique RPCs** across one service (the `TaskEvents.Close` method is dropped).
+That is **45 unique contract RPCs** across one service (the `TaskEvents.Close` method is dropped).
 `Close()` is **excluded** from the wire (it is server lifecycle, not a client call) — see §11.
 
 The config-snapshot pair was added by `archie-core-ymut` (see
@@ -664,7 +664,7 @@ an explicit operator decision.
   (`workflow.Store` + `workflow.Task`/`Status`/`Source`, per dependency rules #2 and #7);
   daemon/webui store surfaces stay **producer-owned** in `internal/store`. `store.WorkflowStore`
   is superseded by `workflow.Store`.
-- **One `StateStore` gRPC service** (44 RPCs, grouped by contract) + narrow Go consumer facades
+- **One `StateStore` gRPC service** (45 contract RPCs, grouped by contract) + narrow Go consumer facades
   (≤8) on `staterpc.Client` — mirrors the single-`ChatService` precedent.
 - **Domain type relocation** (`Task`/`Status`/`Source` → `internal/domain/workflow`) is a
   Phase 2 prerequisite, pulled forward from migration-decisions §4 (minimal bound,
