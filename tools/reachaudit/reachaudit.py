@@ -67,8 +67,10 @@ def cmd_closure(repo: Path) -> set[str]:
 def deadcode_findings(repo: Path) -> list[str]:
     """Run deadcode, or reuse a cached run. Falls back to an empty list with a
     loud warning rather than silently reporting zero findings."""
-    cache = Path("/tmp/reachaudit-deadcode.txt")
-    if cache.exists():
+    head = run(["git", "rev-parse", "HEAD"], repo) or "unknown"
+    dirty = "-dirty" if run(["git", "status", "--porcelain"], repo) else ""
+    cache = Path(f"/tmp/reachaudit-deadcode-{head[:12]}{dirty}.txt")
+    if cache.exists() and not dirty:
         return cache.read_text().splitlines()
     print("running deadcode (this compiles the module, may take a minute)...", file=sys.stderr)
     out = subprocess.run(
@@ -138,7 +140,7 @@ def consumers(repo: Path, pkg: str) -> tuple[int, int]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--repo", default=str(Path.home() / "projects/archie-core"))
+    ap.add_argument("--repo", default=str(Path(__file__).resolve().parents[2]))
     ap.add_argument("--json")
     ap.add_argument("--md")
     ap.add_argument("--refresh", action="store_true", help="re-run deadcode instead of using the cache")

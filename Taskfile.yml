@@ -93,6 +93,43 @@ tasks:
     cmds:
       - govulncheck ./...
 
+  deadcode:
+    desc: "Report functions no shipped binary can reach (whole-program RTA from ./cmd/...). Not part of task check: it reports a standing backlog, so gating on it would fail every run until that backlog is zero."
+    summary: |
+      Answers "is this reachable in production", which no linter does:
+      golangci-lint's unused check is package-scoped, so anything exported
+      and called from a sibling package looks live even when no binary
+      reaches it.
+
+      Run via `go run ...@latest` deliberately. A locally installed deadcode
+      built against an older Go than this module exits non-zero and prints
+      NOTHING, which reads as "no dead code" instead of "analysis failed".
+      Building it against the repo toolchain makes that failure impossible.
+
+      -test=false is the point of the report: a function reached only by its
+      own tests is not reachable in production.
+
+      Read the output in one direction only. RTA over-approximates what is
+      reachable, so "unreachable func" is sound and worth acting on, while
+      silence proves nothing: interface dispatch and any address-taken
+      function (every reflect.ValueOf entry in the *extract tables) is
+      assumed reachable whether or not it is ever called.
+    cmds:
+      - go run golang.org/x/tools/cmd/deadcode@latest -test=false ./cmd/...
+
+  reachaudit:
+    desc: "Classify unreachable code as tracked / untracked / dynamic (tools/reachaudit). Wraps task deadcode with provenance and tracker status."
+    summary: |
+      deadcode says a function is unreachable. reachaudit says whether that
+      is a known gap, a forgotten one, or an artifact of runtime loading
+      (yaegi, reflection) that must never be deleted.
+
+      --refresh re-runs the analysis. Without it the tool reuses
+      /tmp/reachaudit-deadcode.txt with no staleness check, which will
+      happily report last week's tree against today's code.
+    cmds:
+      - python3 tools/reachaudit/reachaudit.py --repo . {{.CLI_ARGS}}
+
   ui:deps:
     desc: Install the dashboard's node dependencies (ui/node_modules is gitignored)
     internal: true
