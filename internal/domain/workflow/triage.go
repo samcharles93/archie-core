@@ -44,18 +44,7 @@ func Triage() Workflow {
 				Role:         "planner",
 				ReadOnly:     true,
 				CaptureTools: triageDecideCaptureTools,
-				Mission: func(tc *TaskContext) string {
-					return fmt.Sprintf(
-						"Triage this %s on the repository %s: decide whether it needs a code "+
-							"change at all, and if so which workflow suits it best.\n\n"+
-							"%s\n\n"+
-							"Read only as much as you need to judge this -- a title/body that is "+
-							"purely conversational, administrative, or already resolved needs no code "+
-							"change. Then call the decide tool EXACTLY ONCE and afterwards call finish "+
-							"with status \"passed\".",
-						taskKind(tc.Task), tc.Repo.FullName(), taskPromptBlock(tc.Task),
-					)
-				},
+				Mission:      triageMission,
 				OnResult: func(tc *TaskContext, res agentexec.Result) error {
 					calls := res.Captures["decide"]
 					if len(calls) != 1 {
@@ -108,7 +97,7 @@ func triageDecideCaptureTools(*TaskContext) []agentexec.CaptureTool {
 		"type": "object",
 		"properties": {
 			"needs_code_change": {"type": "boolean", "description": "false: nothing to build -- close/no-op. true: route to a workflow that builds something."},
-			"workflow": {"type": "string", "enum": ["implement", "tdd", "feasibility"], "description": "Which workflow fits best, when needs_code_change is true. Defaults to implement if omitted or unrecognized."},
+			"workflow": {"type": "string", "enum": ["implement", "tdd", "feasibility"], "description": "Which workflow fits best, when needs_code_change is true. feasibility: a new capability whose design is not settled, or a request too broad to scope -- it produces a design document for a human to approve before any code is written. tdd: a defect with an observable wrong behaviour that a test can reproduce first. implement: the change is well understood and its shape is already clear. Choose feasibility when no approved design exists and the request is not a defect; do not choose implement merely because nothing else obviously fits. Defaults to implement if omitted or unrecognized."},
 			"reasons": {"type": "string", "description": "The rationale, written for the human who filed the request."}
 		},
 		"required": ["needs_code_change", "reasons"]
@@ -118,4 +107,30 @@ func triageDecideCaptureTools(*TaskContext) []agentexec.CaptureTool {
 		Parameters: params, RequiredFields: []string{"needs_code_change", "reasons"},
 		NonEmptyStrings: []string{"reasons"}, BooleanFields: []string{"needs_code_change"}, MaxCalls: 1,
 	}}
+}
+
+// triageMission is the classify stage's prompt. It is a named function so a
+// test can assert the selection criteria are actually stated to the model,
+// which is the whole of this stage's behaviour.
+func triageMission(tc *TaskContext) string {
+	return fmt.Sprintf(
+		"Triage this %s on the repository %s: decide whether it needs a code "+
+			"change at all, and if so which workflow suits it best.\n\n"+
+			"%s\n\n"+
+			"Read only as much as you need to judge this -- a title/body that is "+
+			"purely conversational, administrative, or already resolved needs no code "+
+			"change.\n\n"+
+			"If it does need a change, the workflow is a real decision, not a "+
+			"formality. Check whether the repository already has a settled design "+
+			"for what is being asked (a design document, an approved plan, an "+
+			"existing implementation to extend). If it does not, and the request "+
+			"is not a defect, choose feasibility: it writes a design document for "+
+			"a human to approve, which is cheaper than an implementation built on "+
+			"a guess. Choose tdd when there is an observable wrong behaviour a "+
+			"test can reproduce first. Choose implement only when the change is "+
+			"well understood and its shape is already clear.\n\n"+
+			"Then call the decide tool EXACTLY ONCE and afterwards call finish "+
+			"with status \"passed\".",
+		taskKind(tc.Task), tc.Repo.FullName(), taskPromptBlock(tc.Task),
+	)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
@@ -186,5 +187,52 @@ func TestTriageRejectsMissingDecideCall(t *testing.T) {
 
 	if err := classifyStage().Run(context.Background(), tc); err == nil {
 		t.Fatal("classify stage = nil, want an error when decide was never called")
+	}
+}
+
+// The classifier picks between three workflows, and until this was written
+// neither the mission nor the decide schema said what any of them is for:
+// the mission spent its guidance on needs_code_change and the schema said
+// only "Which workflow fits best", with implement as the free default. Issue
+// 813 (a new capability with no design doc) was classified implement on that
+// basis and produced a half-wired slice, where feasibility would have
+// produced the design doc this repo requires first.
+//
+// This asserts the criteria are stated, not how they are worded: each target
+// must be named alongside the condition that selects it.
+func TestTriageStatesItsWorkflowSelectionCriteria(t *testing.T) {
+	stage := classifyStage()
+	tc := &TaskContext{Task: &Task{Title: "t", Body: "b"}, Cfg: config.Config{}, Repo: config.Repo{Owner: "o", Name: "r"}}
+
+	tools := triageDecideCaptureTools(tc)
+	if len(tools) != 1 {
+		t.Fatalf("triageDecideCaptureTools returned %d tools, want 1", len(tools))
+	}
+	schema := string(tools[0].Parameters)
+
+	for _, want := range []string{"feasibility", "tdd", "implement"} {
+		if !strings.Contains(schema, want) {
+			t.Errorf("decide schema never names the %q workflow", want)
+		}
+	}
+
+	// The criteria themselves. Each phrase is the discriminator a classifier
+	// needs to tell the three apart; without them the enum is unguided.
+	for _, want := range []string{"design", "reproduc"} {
+		if !strings.Contains(strings.ToLower(schema), want) {
+			t.Errorf("decide schema states no %q criterion for choosing a workflow", want)
+		}
+	}
+	if stage.Name != "classify" {
+		t.Fatalf("classify stage is named %q", stage.Name)
+	}
+
+	// The mission is what the model actually reads first, so the criteria
+	// have to be there too, not only in the tool schema.
+	mission := strings.ToLower(triageMission(tc))
+	for _, want := range []string{"feasibility", "tdd", "implement", "design", "reproduce"} {
+		if !strings.Contains(mission, want) {
+			t.Errorf("triage mission never mentions %q", want)
+		}
 	}
 }
