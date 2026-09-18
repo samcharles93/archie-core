@@ -549,22 +549,30 @@ an explicit operator decision.
   registered once via `RegisterService(context, name, target, listen, tokenEnv)`. The TOML
   shape below is unchanged, so nothing else in this section is affected; read
   `cfg.Services.Get("state")` wherever it says `cfg.Services.State`.
-- **Empty `Target` → local** `*store.Store` adapter (the default; State Store not yet
-  extracted). **Set `Target` → dial gRPC** and use `*staterpc.Client`. This differs from the
-  gateway, where `Target` is always defaulted to `127.0.0.1:8585` because the gateway is already
-  a separate process.
-- Because `[services.state]` is **not** in `config.example.toml` today (the gateway's own
-  section is also missing — documentation debt), **add `[services.state]`** with a commented
-  `target` to `config.example.toml` in the same change that introduces the config field, so the
-  seam is visible to operators.
-- Composition root: `internal/app/archied/bootstrap.go`. Base path = the local `*store.Store`
-  (already opened by `openProductionTaskStore`); if `cfg.Services.State.Target != ""`, dial gRPC
-  and assign `b.stateStore = staterpc.NewClient(conn)` (with the token from config/secret).
+- **Empty `Target` → startup error** (corrected in rev. 2d). This bullet previously said an
+  empty `Target` opens a local `*store.Store` adapter. That default was withdrawn when the
+  State Store was extracted (§12 step 7): the standalone `archie-state-store` process
+  exclusively owns `archie.db`, so both `archied` and `archie-gateway` now reject an empty
+  target (`internal/app/archied/bootstrap.go` and `state_store_client.go`: `services.state.target
+  is required`). **Set `Target` → dial gRPC** with `*staterpc.Client`; no client opens the
+  database itself. This differs from the gateway, where `Target` is defaulted to
+  `127.0.0.1:8585` because `archie-gateway` is already a separate process whose client and
+  server share one default.
+- `[services.state]` is present and **uncommented** in `config.example.toml`, with `target`
+  marked REQUIRED, because the value is now load-bearing for every client. (This bullet
+  previously instructed adding the section with a commented-out `target`; that advice is
+  withdrawn, since a commented target cannot boot.)
+- Composition root: `internal/app/archied/bootstrap.go` (the daemon) and
+  `internal/app/archieui/config.go` (the UI process) both read `cfg.Services.Get("state")` and
+  dial the remote State Store. `openProductionTaskStore` is **not** called from the daemon: it
+  lives in the standalone `archie-state-store` process (`internal/app/archied/state_store.go`),
+  which is the only path that opens `archie.db`.
 
 > **Mode fork, decided.** The gateway uses a single `target` address (no enum). The State Store
-> boundary uses the same seam for symmetry, but with the opposite default (local, not remote)
-> because the State Store is not yet extracted. No `mode` field is added. A companion
-> `STATE_STORE_TOKEN` secret (or a `[services.state] target_token` key) carries authentication.
+> boundary uses the same seam for symmetry, and **both now require a non-empty `target`**: the
+> State Store's local-store default was withdrawn when the process was extracted (§12 step 7).
+> No `mode` field is added. A companion `STATE_STORE_TOKEN` secret (or a
+> `[services.state] target_token` key) carries authentication.
 
 ---
 
