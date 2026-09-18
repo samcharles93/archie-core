@@ -1465,6 +1465,90 @@ func assertSwept(t *testing.T, name string, fg *sweepForge, wantInvitations int,
 	}
 }
 
+// stallForge stands in for a forge client whose request never returns:
+// AcceptInvitations signals that its sweep has started, then blocks until the
+// test releases it or the sweep's own deadline fires.
+type stallForge struct {
+	testForge
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (f *stallForge) AcceptInvitations(ctx context.Context) error {
+	close(f.entered)
+	select {
+	case <-f.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// TestStartupSweepIsolatesAStalledForge pins the concurrency half of the
+// stalled-forge fix. Sweeping forges one at a time on the startup goroutine
+// left every later identity unswept when one forge request never returned,
+// and Startup gates the gateways and the run loop, so it held boot open too.
+// Each forge now gets its own goroutine; this asserts the ordering that
+// proves it: the sibling identity's sweep completes while the root forge is
+// still blocked.
+func TestStartupSweepIsolatesAStalledForge(t *testing.T) {
+	rootFg := &stallForge{entered: make(chan struct{}), release: make(chan struct{})}
+	siblingFg := &sweepForge{}
+	d := &Daemon{
+		Cfg:        config.NewHolder(config.Config{}),
+		Store:      store.OpenTest(t),
+		Forge:      rootFg,
+		Log:        slog.New(slog.DiscardHandler),
+		Identities: []*IdentityRunner{{Name: "sibling", Forge: siblingFg}},
+	}
+
+	errs := make(chan error, 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		errs <- d.Startup(context.Background())
+	}()
+
+	waitFor(t, 5*time.Second, "the stalled root forge to start its sweep", func() bool {
+		select {
+		case <-rootFg.entered:
+			return true
+		default:
+			return false
+		}
+	})
+	waitFor(t, 5*time.Second, "the sibling identity's sweep to finish", func() bool {
+		invitations, _ := siblingFg.snapshot()
+		return invitations == 1
+	})
+
+	close(rootFg.release)
+	waitFor(t, 5*time.Second, "Startup to return once the stall is released", func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	})
+	if err := <-errs; err != nil {
+		t.Errorf("Startup: %v", err)
+	}
+}
+
+// waitFor polls cond until it holds or the timeout expires.
+func waitFor(t *testing.T, timeout time.Duration, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", what)
+}
+
 // mustCoreConn returns the raw NATS connection for tests that drive core-NATS
 // subscriptions directly, failing the test if the client is not connected.
 func mustCoreConn(t *testing.T, c *arnats.Client) *natsio.Conn {
