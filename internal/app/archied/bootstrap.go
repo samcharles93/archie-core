@@ -125,9 +125,8 @@ type boot struct {
 	catalog       modelcatalog.Snapshot
 	catalogModels []string
 
-	bus             *events.Bus
-	restartTelegram func() error
-	channelManager  *status.Manager
+	bus            *events.Bus
+	channelManager *status.Manager
 	// rateLimiter is the shared per-(channel, sender) inbound budget every
 	// chat Router is given. Nil when [chat.rate_limit] is not configured,
 	// which leaves rate limiting off.
@@ -647,9 +646,9 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 		},
 		ChatPRReviewer:      b.prReviewer(),
 		DefaultChatIdentity: b.defaultChatIdentity, SessionStore: b.chatSessionStore, Updates: b.updateService,
-		Secrets:         b.secrets,
-		Bus:             b.bus,
-		RegisterRestart: func(request func() error) { b.restartTelegram = request }, Log: log,
+		Secrets:        b.secrets,
+		Bus:            b.bus,
+		Log:            log,
 		ChannelManager: b.channelManager, AgentStatus: b.agentStatus,
 		RateLimiter: b.rateLimiter,
 	})

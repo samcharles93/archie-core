@@ -54,7 +54,6 @@ type telegramSetup struct {
 	SessionStore        gateway.SessionStore
 	Updates             telegram.UpdateService
 	Dangerous           gateway.DangerousCommandAuthority
-	RegisterRestart     func(func() error)
 	// Bus carries primary-input events (archie-core-035): a completed
 	// chat turn is published here so input-driven curators can wake. Nil
 	// disables turn events (tests, minimal setups).
@@ -117,9 +116,6 @@ func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), o
 	if err := tg.ValidateConfig(telegramValidateConfigMap(cfg.Chat.Telegram)); err != nil {
 		s.Log.Error("chat.telegram config invalid", "err", err)
 		return nil, false
-	}
-	if s.RegisterRestart != nil {
-		s.RegisterRestart(tg.RequestRestart)
 	}
 	tg.Version = func() string {
 		return fmt.Sprintf("Archie\nGateway: %s\nRuntime: %s", gatewayVersion, runtimeVersion)
@@ -310,6 +306,9 @@ func buildTelegramRouter(ctx context.Context, tg *telegram.Gateway, s telegramSe
 	router.Titles = newChatTitleGenerator(s)
 	router.Log = s.Log
 	configureTaskCommands(router, s.ChatTasks, s.ChatController, s.ChatTaskLister, s.DefaultChatIdentity)
+	if tg != nil {
+		router.Restart = func(ctx context.Context) error { return tg.RequestRestart() }
+	}
 
 	if s.LLM != nil {
 		turnRunner := newChatTurnRunner(ctx, tg.Name(), s, sessionStore, router)
