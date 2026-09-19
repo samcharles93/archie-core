@@ -290,6 +290,7 @@ type fakeForge struct {
 	reviewOwner    string
 	reviewRepo     string
 	reviewNumber   int
+	reviewHeadSHA  string
 	reviewErr      error
 
 	replyCommentID int64
@@ -350,9 +351,10 @@ func (f *fakeForge) LinkBranch(ctx context.Context, owner, repo string, number i
 	return f.linkErr
 }
 
-func (f *fakeForge) CreateReviewComments(ctx context.Context, owner, repo string, number int, comments []ReviewComment) error {
+func (f *fakeForge) CreateReviewComments(ctx context.Context, owner, repo string, number int, reviewedHeadSHA string, comments []ReviewComment) error {
 	f.reviewCalls++
 	f.reviewOwner, f.reviewRepo, f.reviewNumber = owner, repo, number
+	f.reviewHeadSHA = reviewedHeadSHA
 	f.reviewComments = append(f.reviewComments, comments...)
 	return f.reviewErr
 }

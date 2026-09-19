@@ -27,7 +27,10 @@ func TestStagePostReviewCommentsPostsLineAnchoredFindings(t *testing.T) {
 				File: "a.go", Line: 12, Defect: "nil deref on an empty map",
 				FailureScenario: "an issue with no labels panics the poller",
 				Verdict:         ReviewVerdictConfirmed, Level: ReviewLevelWarn,
-				Suggestion: "if len(labels) == 0 {\n\treturn nil\n}",
+				// Single-line only: a multi-line suggestion is rejected by
+				// ReviewFinding.Validate (Issue 2), so the posted fence replaces
+				// the anchored line exactly.
+				Suggestion: "if len(labels) == 0 { return nil }",
 			},
 			wantPosted:     true,
 			wantSuggestion: true,
@@ -220,6 +223,42 @@ func TestStagePostReviewCommentsAddressesTheRecordedPullRequest(t *testing.T) {
 	}
 	if f.reviewOwner != "acme" || f.reviewRepo != "widget" || f.reviewNumber != 42 {
 		t.Errorf("anchored at %s/%s#%d, want acme/widget#42", f.reviewOwner, f.reviewRepo, f.reviewNumber)
+	}
+}
+
+// TestStagePostReviewCommentsThreadsTheReviewedHeadSHA is the producer half of
+// the head-drift guard: the forge can only refuse a set whose line numbers
+// describe a revision the pull request has left if the stage tells it which
+// revision those numbers were measured on.
+func TestStagePostReviewCommentsThreadsTheReviewedHeadSHA(t *testing.T) {
+	tests := []struct {
+		name     string
+		reviewed string
+	}{
+		{name: "a measured revision reaches the forge", reviewed: "1a2b3c4d"},
+		{
+			name: "an unmeasured revision is passed through as empty so the forge posts unverified",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &fakeForge{}
+			tc := reviewCommentContext(f, ReviewReport{
+				Status: ReviewStatusCompleted,
+				Findings: []ReviewFinding{
+					{File: "a.go", Line: 4, Defect: "nil deref", Verdict: ReviewVerdictConfirmed, Level: ReviewLevelWarn},
+				},
+			})
+			tc.ReviewedHeadSHA = tt.reviewed
+
+			if err := StagePostReviewComments().Run(context.Background(), tc); err != nil {
+				t.Fatal(err)
+			}
+			if f.reviewHeadSHA != tt.reviewed {
+				t.Errorf("forge was handed reviewed head %q, want %q", f.reviewHeadSHA, tt.reviewed)
+			}
+		})
 	}
 }
 

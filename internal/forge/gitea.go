@@ -248,16 +248,22 @@ func (c *GiteaClient) ReplyToReview(ctx context.Context, owner, repo string, num
 // comments it could post. The PR-body findings list is the fallback in either
 // case.
 //
-// The head SHA is read here rather than passed in: it is the revision the line
-// numbers refer to, and the caller that produced them (a workflow stage running
-// in archie-agent) holds no forge credentials to read it with.
-func (c *GiteaClient) CreateReviewComments(ctx context.Context, owner, repo string, number int, comments []InlineReviewComment) error {
+// The head SHA is read here rather than taken from the caller: it is what Gitea
+// anchors the review to, and the caller that produced the line numbers (a
+// workflow stage running in archie-agent) holds no forge credentials to read it
+// with. reviewedHeadSHA is the revision those line numbers were measured on, and
+// the review is refused outright if the head has moved past it -- see
+// reviewHeadDrift.
+func (c *GiteaClient) CreateReviewComments(ctx context.Context, owner, repo string, number int, reviewedHeadSHA string, comments []InlineReviewComment) error {
 	pr, err := c.GetPullRequest(ctx, owner, repo, number)
 	if err != nil {
 		return err
 	}
 	if pr.HeadSHA == "" {
 		return fmt.Errorf("resolve head revision of %s/%s#%d: the forge reported no head sha", owner, repo, number)
+	}
+	if err := reviewHeadDrift(owner, repo, number, pr.HeadSHA, reviewedHeadSHA); err != nil {
+		return err
 	}
 	reviewComments := make([]gitea.CreatePullReviewComment, 0, len(comments))
 	for _, cm := range comments {

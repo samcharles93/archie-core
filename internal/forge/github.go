@@ -264,16 +264,22 @@ func (c *GitHubClient) ReplyToReview(ctx context.Context, owner, repo string, nu
 // CreateReviewComments posts line-anchored review comments, one GitHub call per
 // comment, anchored to the RIGHT (new) side of the pull request's head revision.
 //
-// The head SHA is read here rather than passed in: it is the revision the line
-// numbers refer to, and the caller that produced them (a workflow stage running
-// in archie-agent) holds no forge credentials to read it with.
+// The head SHA is read here rather than taken from the caller: it is what the
+// comments are anchored to, and the caller that produced the line numbers (a
+// workflow stage running in archie-agent) holds no forge credentials to read it
+// with. reviewedHeadSHA is the revision those line numbers were measured on, and
+// the set is refused outright if the head has moved past it -- see
+// reviewHeadDrift.
 //
 // A comment GitHub refuses -- a line that falls outside the diff, a file the
 // push renamed -- does not abandon the rest. The failures are joined and
 // returned, so one unanchorable finding cannot silently drop the others.
-func (c *GitHubClient) CreateReviewComments(ctx context.Context, owner, repo string, number int, comments []InlineReviewComment) error {
+func (c *GitHubClient) CreateReviewComments(ctx context.Context, owner, repo string, number int, reviewedHeadSHA string, comments []InlineReviewComment) error {
 	head, err := c.reviewHeadSHA(ctx, owner, repo, number)
 	if err != nil {
+		return err
+	}
+	if err := reviewHeadDrift(owner, repo, number, head, reviewedHeadSHA); err != nil {
 		return err
 	}
 	var errs []error

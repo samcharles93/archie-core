@@ -3,6 +3,7 @@ package workflow
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // ReviewLevel represents the severity level of a review finding.
@@ -208,6 +209,14 @@ func (f ReviewFinding) validateAnchor() error {
 	// somewhere later where nothing tells it.
 	if f.Suggestion != "" && f.Verdict != ReviewVerdictConfirmed {
 		return fmt.Errorf("review finding %s:%d offers a one-click suggestion with verdict %q; only %q may", f.File, f.Line, f.Verdict, ReviewVerdictConfirmed)
+	}
+	// A suggestion is a one-line replacement GitHub applies with a single click,
+	// so it must be single-line: an embedded newline renders a multi-line fence
+	// that GitHub applies only up to the first line, silently corrupting the file
+	// (docs/prds/inline-review.md). Enforced at the value so the agent's
+	// record_finding call is rejected with something the model can act on.
+	if f.Suggestion != "" && strings.ContainsAny(f.Suggestion, "\n\r") {
+		return fmt.Errorf("review finding %s:%d suggestion must be single-line; got %d line(s)", f.File, f.Line, strings.Count(f.Suggestion, "\n")+1)
 	}
 	return nil
 }

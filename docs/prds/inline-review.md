@@ -45,8 +45,11 @@ best-effort stage logs.
 
 The comment's line is anchored to the pull request's **current head revision**,
 resolved inside each implementation rather than passed in by the caller: it is
-the revision the reviewed line numbers refer to, and the caller that produced
-them cannot read it.
+the revision the comments are attached to, and the caller that produced the line
+numbers holds no forge credentials to read it. The caller does pass the revision
+those line numbers were **measured on** (`TaskContext.ReviewedHeadSHA`,
+recorded when `StageOpenPR` opens the pull request), and the implementation
+posts only while the head it read still matches it — see §4.
 
 Per-forge reality (verified against the SDKs, 2026-09-11):
 
@@ -74,7 +77,11 @@ the h019.5 calibration rule reused, not a new one.
 `Suggestion` replaces the anchored line exactly, and is only rendered when
 `Verdict == confirmed`. Single-line only in this cut;
 multi-line (GitHub's `StartLine`/`StartSide`) is a follow-up, because a
-multi-line suggestion that is off by one line silently corrupts the file.
+multi-line suggestion that is off by one line silently corrupts the file. The
+rule is enforced in `ReviewFinding.Validate` — an embedded newline is rejected
+there, so the `record_finding` tool refuses it with feedback the model can act
+on, rather than the renderer silently posting a fence that applies only its
+first line.
 
 ### 3. Which findings are posted inline
 
@@ -96,11 +103,19 @@ New `StagePostReviewComments`, after `StageOpenPR`:
 2. Post each line-anchored finding as an inline comment, with a suggestion block
    when `Verdict == confirmed && Suggestion != ""`. The head SHA the comments are
    anchored to is resolved by the forge implementation, not here; there is no
-   `PullRequestReader` on this side of the agent boundary.
+   `PullRequestReader` on this side of the agent boundary. The stage passes
+   `tc.ReviewedHeadSHA` alongside them.
 
-Nothing pushes between `StageReview` and this stage, so the pull request's head
-is the revision the review read; a retry re-previews it rather than reusing a
-stale anchor.
+Nothing in the run pushes between `StageReview` and this stage, so at that
+moment the pull request's head *is* the revision the review read. That was an
+assumption, and a collaborator can falsify it by pushing to the branch between
+the review and the posting. A line number is not validated against a revision:
+both forges anchor it to whatever now occupies that line, so a stale anchor
+mislabels rather than failing. The revision is therefore carried with the
+comments and the set is refused when the head has moved off it
+(`reviewHeadDrift`) — a refusal lands in the failure path below, leaving the PR
+body as the record. With no measured revision (a `Trees` that cannot report one)
+the comments post unverified rather than being dropped.
 
 **Failures log and never fail the task.** The PR is already open; a comment that
 failed to post must not park a task whose actual work succeeded, and the body

@@ -34,9 +34,15 @@ type Forger interface {
 	// CreateReviewComments posts line-anchored review comments on an open pull
 	// request. The whole set travels in one call because Gitea's only inline
 	// shape is a single submitted review holding many comments, and because
-	// one call cannot half-succeed against a rate limit. The implementation
-	// anchors them to the request's head revision.
-	CreateReviewComments(ctx context.Context, owner, repo string, number int, comments []ReviewComment) error
+	// one call cannot half-succeed against a rate limit.
+	//
+	// reviewedHeadSHA is the revision those line numbers were measured on. The
+	// implementation reads the pull request's head itself -- the worker holds no
+	// forge credentials -- and posts only while that head is still this
+	// revision, because a line number means nothing against a revision it was
+	// not measured on. Empty means "not measured": the comments post without
+	// the check rather than being dropped.
+	CreateReviewComments(ctx context.Context, owner, repo string, number int, reviewedHeadSHA string, comments []ReviewComment) error
 	// Comment posts a plain, non-anchored PR comment and returns its ID.
 	// The remediate workflow's round-cap stage uses this to tell an
 	// operator why it stopped remediating, and a whole-review reply (no
@@ -151,6 +157,15 @@ type TaskContext struct {
 	// body (h019.6). Zero value means the review did not run (disabled or
 	// skipped); ReviewReport.Ran() is the test for "render the section".
 	ReviewReport ReviewReport
+	// ReviewedHeadSHA is the worktree head at the moment the pull request was
+	// opened, which is the revision the review's line numbers were measured on
+	// (StageReview runs against that same worktree and commits nothing, so no
+	// revision intervenes). StagePostReviewComments threads it to the forge so
+	// a comment whose line numbers describe a head the pull request has since
+	// moved past is refused instead of attaching to unrelated code. Empty when
+	// the revision could not be read -- posting then proceeds unverified rather
+	// than dropping every finding.
+	ReviewedHeadSHA string
 }
 
 // Emit publishes an observability event stamped with the task's
