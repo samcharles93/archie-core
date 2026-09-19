@@ -51,13 +51,13 @@ func TestRunSetsUpMemoryBeforeGateways(t *testing.T) {
 		t.Fatal(err)
 	}
 	run := methodBody(t, file, "Run")
-	memoryAll := methodCallPosition(run, "setupMemoryAll")
+	memoryEngine := methodCallPosition(run, "setupMemoryEngine")
 	gateways := methodCallPosition(run, "setupGateways")
-	if memoryAll == token.NoPos || gateways == token.NoPos {
-		t.Fatalf("Run call positions: setupMemoryAll=%v setupGateways=%v, want both present", memoryAll, gateways)
+	if memoryEngine == token.NoPos || gateways == token.NoPos {
+		t.Fatalf("Run call positions: setupMemoryEngine=%v setupGateways=%v, want both present", memoryEngine, gateways)
 	}
-	if gateways < memoryAll {
-		t.Fatal("Run wires the gateways before setupMemoryAll; every turn runner would capture a nil memory engine")
+	if gateways < memoryEngine {
+		t.Fatal("Run wires the gateways before setupMemoryEngine; every turn runner would capture a nil memory engine")
 	}
 }
 
@@ -72,12 +72,12 @@ func TestStartGatewayRuntimeSetsUpMemoryBeforeGatewayChat(t *testing.T) {
 		t.Fatal(err)
 	}
 	run := methodBody(t, file, "startGatewayRuntime")
-	memoryAll := methodCallPosition(run, "setupMemoryAll")
+	memoryEngine := methodCallPosition(run, "setupMemoryEngine")
 	chat := methodCallPosition(run, "setupGatewayChat")
-	if memoryAll == token.NoPos || chat == token.NoPos {
-		t.Fatalf("startGatewayRuntime call positions: setupMemoryAll=%v setupGatewayChat=%v, want both present", memoryAll, chat)
+	if memoryEngine == token.NoPos || chat == token.NoPos {
+		t.Fatalf("startGatewayRuntime call positions: setupMemoryEngine=%v setupGatewayChat=%v, want both present", memoryEngine, chat)
 	}
-	if chat < memoryAll {
-		t.Fatal("startGatewayRuntime wires setupGatewayChat before setupMemoryAll; the turn runner would capture a nil memory engine")
+	if chat < memoryEngine {
+		t.Fatal("startGatewayRuntime wires setupGatewayChat before setupMemoryEngine; the turn runner would capture a nil memory engine")
 	}
 }

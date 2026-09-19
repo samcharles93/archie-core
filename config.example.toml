@@ -259,15 +259,11 @@ listen = "127.0.0.1:8484"
 # level       = "info"   # "debug" | "info" | "warn" | "error"
 # quiet       = false    # true suppresses stderr once a file is configured
 
-# The built-in file-backed memory engine (MEMORY.md + USER.md under
-# work_dir) is always on -- nothing here is required to get memory at all.
-# engine selects among the domain/memory engine family; "builtin" (the
-# default, same as leaving it unset) is the only one implemented so far.
-# provider is a separate, older mechanism -- an external provider identifier
-# for internal/memory.Manager.RegisterExternal -- but no external provider
-# is implemented anywhere in the repo to construct and register, so
-# setting it is REJECTED at config load rather than silently doing
-# nothing. Leave it unset.
+# The built-in file-backed memory engine (internal/domain/memory +
+# internal/infrastructure/memory) is always on -- nothing here is required
+# to get memory at all. engine selects among the domain/memory engine
+# family; "builtin" (the default, same as leaving it unset) is the only
+# one implemented so far.
 # [memory]
 # engine = "builtin"        # "builtin" is the only engine implemented so far
 

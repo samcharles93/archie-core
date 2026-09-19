@@ -39,7 +39,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/overlay"
-	"github.com/samcharles93/archie-core/internal/infrastructure/memory/builtin"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/secret"
@@ -195,7 +194,7 @@ func (a chatTaskListerAdapter) ListChatTasks(ctx context.Context, identity strin
 // filepath.Join silently accepts an empty string and would then put the
 // cache in the daemon's current working directory instead of its
 // persistent data directory -- guard it explicitly rather than trust that
-// invariant here too, the way memoryProvider already does nearby.
+// invariant here too.
 func npmCacheServerEnv(command, workDir string) []string {
 	if workDir == "" {
 		return nil
@@ -411,13 +410,14 @@ func Run() int { //nolint:cyclop // the composition root's setup sequence is del
 	if err := b.buildTreesAndIdentities(ctx); err != nil {
 		return 1
 	}
-	// setupMemoryAll must run before setupGateways: setupGateways constructs
-	// every chat turn runner (setupGatewayChat / setupTelegramGateway), and a
-	// turn runner captures b.memEngines at construction time. Built the other
-	// way round, every turn runner would capture a nil engine and the chat
-	// read path (docs/prds/memory-engine-unification.md §4) would silently
-	// never see a record.
-	if err := b.setupMemoryAll(); err != nil {
+	// setupMemoryEngine must run before setupGateways: setupGateways
+	// constructs every chat turn runner (setupGatewayChat /
+	// setupTelegramGateway), and a turn runner captures b.memEngines at
+	// construction time. Built the other way round, every turn runner would
+	// capture a nil engine and the chat read path
+	// (docs/prds/memory-engine-unification.md §4) would silently never see a
+	// record.
+	if err := b.setupMemoryEngine(); err != nil {
 		return 1
 	}
 	if !b.setupGateways(ctx, args.cfgPath, args.overlayPath) {
@@ -987,71 +987,6 @@ func safePluginInfo(p plugin.Plugin) (name, version string) {
 		}
 	}()
 	return p.Name(), p.Version()
-}
-
-// memoryProvider builds the built-in memory provider, falling back to the
-// default work directory when the configured one cannot be established.
-//
-// A bad path warns and degrades rather than stopping the daemon, in line with
-// the forge and container paths: memory is one capability among many. The
-// fallback is the location an unset work_dir would have produced, so an
-// operator who copied a config from another host (a container path such as
-// /var/lib/archie/work onto a laptop, say) lands somewhere predictable
-// instead of somewhere only this function knows about.
-//
-// Returns the provider and the directory actually in use. A nil provider
-// means the configuration is unusable in a way no fallback can fix.
-func memoryProvider(workDir string, log *slog.Logger) (*builtin.Provider, string) {
-	// An empty workDir would make filepath.Join produce the relative path
-	// "memory", which MkdirAll creates in whatever directory the daemon
-	// happens to be started from -- succeeding, and putting memory somewhere
-	// nobody will look. Defaulting should have prevented an empty workDir;
-	// treat it as unset rather than trusting it.
-	var dir string
-	var p *builtin.Provider
-	if workDir == "" {
-		log.Warn("no work directory configured, using the default for memory")
-	} else {
-		dir = filepath.Join(workDir, "memory")
-		var err error
-		p, err = builtin.New(builtin.Config{Dir: dir})
-		if err != nil {
-			log.Warn("memory directory rejected, falling back to the default", "dir", dir, "err", err)
-			p = nil
-		}
-		if p != nil && p.IsAvailable() {
-			return p, dir
-		}
-		if p != nil {
-			log.Warn("memory directory unusable, falling back to the default",
-				"dir", dir, "err", p.Err())
-		}
-	}
-
-	fallback := filepath.Join(configuration.DefaultWorkDir(), "memory")
-	if fallback == dir {
-		// Already the default: there is nowhere else to try, so run degraded
-		// and say what that costs rather than pretending memory works.
-		log.Error("memory unavailable: the agent will start every conversation "+
-			"with no recollection of earlier ones, and memory writes will fail",
-			"dir", dir)
-		return p, dir
-	}
-
-	fb, err := builtin.New(builtin.Config{Dir: fallback})
-	if err != nil {
-		log.Error("memory provider init failed at the default directory", "dir", fallback, "err", err)
-		return p, dir
-	}
-	if !fb.IsAvailable() {
-		log.Error("memory unavailable: neither the configured nor the default "+
-			"directory is usable, so the agent will start every conversation "+
-			"with no recollection of earlier ones",
-			"configured", dir, "default", fallback, "err", fb.Err())
-		return fb, fallback
-	}
-	log.Warn("using the default memory directory", "dir", fallback)
-	return fb, fallback
 }
 
 // startContainers brings up the mandatory autonomous-worker pool and storage

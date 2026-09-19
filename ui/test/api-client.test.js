@@ -60,7 +60,6 @@ const READS = [
 	["captures", [10]],
 	["mappings", []],
 	["bindings", []],
-	["memory", []],
 	["chatSessions", []],
 	["chatMessages", ["s"]],
 	["chatTurns", ["s"]],

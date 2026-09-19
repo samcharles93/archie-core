@@ -191,31 +191,6 @@ func tmpConfigDir(t *testing.T) string {
 // 	}
 // }
 
-// ── 5. Memory feature file ────────────────────────────────────────
-
-// func TestLoadDirMemoryConfig(t *testing.T) {
-// 	dir := tmpConfigDir(t)
-// 	writeFile(t, dir, "config.yaml", `bot_user: memtest`)
-// 	writeFile(t, dir, "config.memory.yaml", `
-// provider: honcho
-// provider_config:
-//   api_url: https://honcho.example.test
-//   api_key_env: HONCHO_KEY
-// `)
-
-// 	cfg, err := loadDir(dir, "")
-// 	if err != nil {
-// 		t.Fatalf("LoadDir: %v", err)
-// 	}
-// 	// Memory config is exposed via a structured field.
-// 	if cfg.Memory.Provider != "honcho" {
-// 		t.Errorf("Memory provider = %q", cfg.Memory.Provider)
-// 	}
-// 	if cfg.Memory.ProviderConfig["api_url"] != "https://honcho.example.test" {
-// 		t.Errorf("Memory api_url = %q", cfg.Memory.ProviderConfig["api_url"])
-// 	}
-// }
-
 // ── 6. Tools feature file ─────────────────────────────────────────
 
 // func TestLoadDirToolsConfig(t *testing.T) {

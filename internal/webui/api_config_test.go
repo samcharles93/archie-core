@@ -811,7 +811,7 @@ func TestCapabilitiesReportWhatThisProcessCanServe(t *testing.T) {
 	}
 
 	bare := get(newTestServer(t))
-	for _, section := range []string{"logs", "memory", "curators", "channels", "mappings", "bindings", "skills"} {
+	for _, section := range []string{"logs", "curators", "channels", "mappings", "bindings", "skills"} {
 		if bare[section] {
 			t.Errorf("section %q reported available with nothing wired behind it", section)
 		}
@@ -827,29 +827,14 @@ func TestCapabilitiesReportWhatThisProcessCanServe(t *testing.T) {
 	wired := newTestServer(t)
 	wired.Channels = status.NewManager([]status.Descriptor{{ID: "telegram", Name: "Telegram"}})
 	wired.LogFeed = logging.NewFeed(10)
-	wired.Memory = stubMemory{}
 	wired.Curators = stubCurators{}
 	wired.Skills = stubSkillCatalog{}
 	got := get(wired)
-	for _, section := range []string{"logs", "memory", "curators", "skills", "channels"} {
+	for _, section := range []string{"logs", "curators", "skills", "channels"} {
 		if !got[section] {
 			t.Errorf("section %q reported unavailable despite being wired", section)
 		}
 	}
-}
-
-// stubMemory satisfies the webui-owned MemoryStatus view for tests.
-type stubMemory struct{}
-
-func (stubMemory) Builtin() MemoryProviderHandle  { return stubMemoryProvider{} }
-func (stubMemory) External() MemoryProviderHandle { return nil }
-
-type stubMemoryProvider struct{}
-
-func (stubMemoryProvider) Name() string      { return "builtin" }
-func (stubMemoryProvider) IsAvailable() bool { return true }
-func (stubMemoryProvider) ToolViews() []MemoryToolView {
-	return []MemoryToolView{{Name: "remember", Description: "store a fact"}}
 }
 
 // stubCurators satisfies the webui-owned CuratorStatus view for tests.
