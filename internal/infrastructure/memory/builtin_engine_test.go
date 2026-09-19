@@ -259,6 +259,59 @@ func TestBuiltinEngineRenderedBlockRoundTripsContent(t *testing.T) {
 	}
 }
 
+// TestBuiltinEngineUpdateCarriesEveryContentShapeAndRetainsThePriorState
+// covers the other write path: Update replaces the block it finds by the text
+// it read out of the document, so an escaped block is the shape that has to
+// be found, superseded and retained exactly like an unescaped one.
+func TestBuiltinEngineUpdateCarriesEveryContentShapeAndRetainsThePriorState(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	for _, tt := range contentShapes() {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			e := newTestEngineAt(root)
+
+			created, err := e.Create(ctx, domainmemory.NewRecord{Scope: agentScope, Kind: "note", Content: tt.content})
+			if err != nil {
+				t.Fatalf("Create() = %v, want nil", err)
+			}
+			next := tt.content + "\n\nsuperseding paragraph"
+			updated, err := e.Update(ctx, domainmemory.RecordUpdate{
+				Scope:    agentScope,
+				ID:       created.ID,
+				Content:  next,
+				Expected: created.Revision,
+			})
+			if err != nil {
+				t.Fatalf("Update() = %v, want nil", err)
+			}
+			if updated.Content != next {
+				t.Errorf("Update() Content = %q, want %q", updated.Content, next)
+			}
+
+			// Everything below reads the file, not the engine's memory.
+			reopened := newTestEngineAt(root)
+			heads, err := reopened.List(ctx, agentScope)
+			if err != nil {
+				t.Fatalf("List() from a second engine = %v, want nil", err)
+			}
+			requireContents(t, "List() from a second engine", heads, next)
+
+			revs, err := reopened.Revisions(ctx, agentScope, created.ID)
+			if err != nil {
+				t.Fatalf("Revisions() from a second engine = %v, want nil", err)
+			}
+			if len(revs) != 1 {
+				t.Fatalf("Revisions() = %d revision(s), want the superseded state", len(revs))
+			}
+			if revs[0].Record.Content != tt.content {
+				t.Errorf("Revisions()[0].Content = %q, want the superseded content %q", revs[0].Record.Content, tt.content)
+			}
+		})
+	}
+}
+
 // TestBuiltinEngineContentSurvivesTheWriteAndAReopen carries the same shapes
 // through the whole path a caller uses: Create, a Get from the engine that
 // wrote it, and a Get and List from a second engine reading the file a
