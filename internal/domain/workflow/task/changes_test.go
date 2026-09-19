@@ -3,11 +3,12 @@ package task
 import "testing"
 
 // TestChangeStatusesAreSpelledAsPersisted pins the five status strings as
-// literals. They are the on-disk vocabulary of a changes_captured payload and
-// the dashboard mirrors them as its own key set
-// (ui/src/tasks/changed-files.jsx FILE_STATUS), so renaming one here without
-// the matching dashboard change renders raw status codes instead of words --
-// with both suites still green unless each side pins the literal.
+// literals. They are the on-disk vocabulary of a changes_captured payload. The
+// dashboard gets their labels from the served catalogue
+// (internal/webui/api_task_meta.go buildTaskMeta), pinned across the language
+// boundary by internal/webui/testdata/task_meta.json and
+// ui/test/task-meta-catalogue.test.js, so renaming one here fails that fixture
+// pair rather than rendering raw status codes beside words.
 func TestChangeStatusesAreSpelledAsPersisted(t *testing.T) {
 	statuses := []struct {
 		name string

@@ -5,16 +5,18 @@ import { attentionStatusIds, statusIds } from "../base/task-meta.jsx";
 // a status added on the backend shows up here without a frontend change.
 // "needs_you" is a UI pseudo-status (work waiting on a human), so it is
 // prepended rather than stored in the catalog.
-const ATTENTION_STATUSES = attentionStatusIds();
-const TASK_STATUSES = new Set(["needs_you", ...statusIds()]);
-
+//
+// Both sets are computed per call rather than at module load: the catalog is
+// replaced when the served /api/task-meta payload arrives, and a snapshot
+// captured at import time would never see it.
 export function initialTaskFilter(params) {
   const requested = params?.get?.("status") || "";
-  return TASK_STATUSES.has(requested) ? requested : "";
+  const known = new Set(["needs_you", ...statusIds()]);
+  return known.has(requested) ? requested : "";
 }
 
 export function taskMatchesStatus(task, status) {
   if (!status) return true;
-  if (status === "needs_you") return ATTENTION_STATUSES.has(task.status);
+  if (status === "needs_you") return attentionStatusIds().has(task.status);
   return task.status === status;
 }

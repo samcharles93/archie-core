@@ -40,7 +40,7 @@ async function navigate(hash) {
 test("the app routes deep links and keeps the navigation highlight honest", async (t) => {
   document.body.innerHTML = '<div id="app"></div>';
   location.hash = "#/tasks/42";
-  await import("../src/main.jsx");
+  const main = await import("../src/main.jsx");
   await waitFor(() => assert.equal(title(), "Task #42"));
 
   await t.test("a per-task route renders the run page and keeps Tasks current", () => {
@@ -75,6 +75,24 @@ test("the app routes deep links and keeps the navigation highlight honest", asyn
     // all -- so the panel says that rather than claiming there is no attempt.
     await waitFor(() => assert.match(document.body.textContent, /Could not load this task's attempts/));
     assert.equal(navCurrent("/tasks"), "page");
+  });
+
+  // The boot vocabulary upgrade (loadTaskMeta().then(renderMountedRoute)) redraws
+  // the mounted route with the same key. If it remounted the page, the open tab
+  // would reset to its default and every []-dep effect (the SSE subscription)
+  // would be torn down and rebuilt on every boot refresh; re-running show()
+  // instead would additionally dispatch archie:teardown at the page. The node
+  // identity check fails loudly on either.
+  await t.test("a catalog re-render keeps the open tab and the mounted nodes", () => {
+    const before = document.querySelector(".tab-bar");
+    assert.ok(before, "the run page should still be mounted");
+    main.renderMountedRoute();
+    const selected = [...document.querySelectorAll('[role="tab"]')].find(
+      (tab) => tab.getAttribute("aria-selected") === "true",
+    );
+    assert.equal(selected.textContent, "Log", "a catalog refresh must not reset the open tab");
+    assert.equal(document.querySelector(".tab-bar"), before, "the page must be diffed in place, not remounted");
+    assert.equal(navCurrent("/tasks"), "page", "a refresh is not a navigation and must not touch chrome");
   });
 
   // The real router, not a reconstruction of it: show() renders the run page with

@@ -9,7 +9,7 @@
 // newest attempt's configuration on every attempt, which is exactly the
 // merge-attempts bug the attempt column exists to prevent.
 
-export const CONFIG_SCHEMA = "archie/task-config@1";
+import { configSchema } from "../base/task-meta.jsx";
 
 export function selectConfigEvent(events, attempt) {
   return (
@@ -70,7 +70,7 @@ export function AttemptConfig({ events, attempt, onRetry }) {
         Captured {event.at || "at an unrecorded time"}
         {event.stage ? ` in stage ${event.stage}` : ""}
       </div>
-      {schema === CONFIG_SCHEMA ? (
+      {schema === configSchema() ? (
         <pre className="run-json">{JSON.stringify(document ?? {}, null, 2)}</pre>
       ) : (
         <>

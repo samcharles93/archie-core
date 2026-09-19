@@ -1,4 +1,5 @@
 import { ago } from "../base/format.jsx";
+import { fileStatusLabel } from "../base/task-meta.jsx";
 
 // Changed files for one attempt (R3), from `GET /api/tasks/{id}/changes`.
 //
@@ -7,18 +8,11 @@ import { ago } from "../base/format.jsx";
 // "no capture was recorded for this attempt", never "no files changed" -- a run
 // that predates capture, or one that produced no commit, has no capture and
 // nothing here can turn that into a claim about the repository.
-
-const FILE_STATUS = {
-  added: "Added",
-  modified: "Modified",
-  deleted: "Deleted",
-  renamed: "Renamed",
-  typechange: "Type changed",
-};
-
-export function fileStatusLabel(status) {
-  return FILE_STATUS[status] || status || "unknown";
-}
+//
+// The status labels are the server's vocabulary, served through /api/task-meta
+// and read from ../base/task-meta.jsx; re-exported here so this panel's callers
+// keep addressing the label by the surface that renders it.
+export { fileStatusLabel };
 
 // The forge links come from the same projection the task list uses: the task's
 // own repo/PR URLs, or the capture's if the server attached them. A link is

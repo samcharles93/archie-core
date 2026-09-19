@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { render, cleanup } from "@testing-library/preact";
-import { AttemptConfig, CONFIG_SCHEMA, selectConfigEvent } from "../src/tasks/attempt-config.jsx";
+import { AttemptConfig, selectConfigEvent } from "../src/tasks/attempt-config.jsx";
+import { configSchema, loadTaskMeta } from "../src/base/task-meta.jsx";
+import { api } from "../src/base/api.jsx";
 
 const EVENTS = [
   {
@@ -9,14 +11,14 @@ const EVENTS = [
     attempt: 1,
     at: "2026-09-18T07:00:00.100Z",
     stage: "",
-    data: { schema: CONFIG_SCHEMA, document: { BotUser: "archie-attempt-one", Models: { main: "openai/gpt" } } },
+    data: { schema: configSchema(), document: { BotUser: "archie-attempt-one", Models: { main: "openai/gpt" } } },
   },
   {
     kind: "config_captured",
     attempt: 2,
     at: "2026-09-18T07:05:00.100Z",
     stage: "",
-    data: { schema: CONFIG_SCHEMA, document: { BotUser: "archie-attempt-two", Models: { main: "openai/gpt" } } },
+    data: { schema: configSchema(), document: { BotUser: "archie-attempt-two", Models: { main: "openai/gpt" } } },
   },
 ];
 
@@ -100,12 +102,37 @@ test("selectConfigEvent ignores other kinds and other attempts", () => {
   assert.equal(selectConfigEvent(undefined, 1), null);
 });
 
-// CONFIG_SCHEMA mirrors events.ConfigCapturedSchema (internal/events/events.go),
-// which the Go suite pins by the same literal. Pinning both sides is what makes
-// a one-sided rename a failing test rather than every attempt rendering as
-// "unknown schema".
-test("the config schema is the one the producer stamps", () => {
-  assert.equal(CONFIG_SCHEMA, "archie/task-config@1");
+// The schema stamp is the server's vocabulary, served through /api/task-meta
+// and pinned across the language boundary by internal/webui/testdata/task_meta.json
+// (ui/test/task-meta-catalogue.test.js). When the catalogue names a newer
+// schema than the snapshot, that is the one this build accepts -- and the
+// snapshot's own stamp becomes "unknown schema" rather than being grandfathered
+// in. Stubbing api.taskMeta is the pattern settings-lifecycle.test.js already
+// uses for the same endpoint.
+test("the recognized schema follows the served catalogue", async () => {
+  const original = api.taskMeta;
+  api.taskMeta = async () => ({ config_schema: "archie/task-config@2" });
+  try {
+    await loadTaskMeta();
+    assert.equal(configSchema(), "archie/task-config@2");
+
+    const upgraded = [
+      { kind: "config_captured", attempt: 1, at: "2026-09-18T07:05:00.100Z", data: { schema: "archie/task-config@2", document: { future: true } } },
+    ];
+    const current = mount({ events: upgraded, attempt: 1 });
+    assert.match(current.root.querySelector(".run-json").textContent, /"future": true/);
+    assert.doesNotMatch(current.root.textContent, /unknown schema/);
+    current.unmount();
+
+    const older = [
+      { kind: "config_captured", attempt: 1, at: "2026-09-18T07:05:00.100Z", data: { schema: "archie/task-config@1", document: { past: true } } },
+    ];
+    const stale = mount({ events: older, attempt: 1 });
+    assert.match(stale.root.textContent, /unknown schema \(archie\/task-config@1\)/);
+    stale.unmount();
+  } finally {
+    api.taskMeta = original;
+  }
 });
 
 test.after(() => cleanup());

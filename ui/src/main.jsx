@@ -2,6 +2,7 @@ import "./css/_main.css";
 import { h, render } from "preact";
 import { useCallback, useEffect, useState } from "preact/hooks";
 import { api } from "./base/api.jsx";
+import { loadTaskMeta } from "./base/task-meta.jsx";
 import { hiddenRoutes } from "./capabilities.jsx";
 import { Icon } from "./base/icons.jsx";
 import { dashboardPage } from "./dashboard/dashboard.jsx";
@@ -243,6 +244,37 @@ function RouteView({ view, search, params }) {
 // page effect can run.
 let outlet = null;
 let chrome = null;
+// mounted is the route currently rendered into the outlet. renderMountedRoute
+// redraws it with the same key, so a catalog upgrade diffs the page in place
+// instead of remounting it.
+let mounted = null;
+
+// renderMountedRoute redraws the mounted page from the current catalog. It
+// renders the same keyed vnode show() does, so Preact reuses the component
+// instance: page hook state (an open run-detail tab) and []-dep effects (the
+// SSE subscriptions) survive. It deliberately does not dispatch
+// archie:teardown or touch chrome -- this is a vocabulary refresh, not a
+// navigation.
+export function renderMountedRoute() {
+  if (!outlet || !mounted) return;
+  const { route, params, query } = mounted;
+  // The key covers the path and its parameters, but NOT the query: the query
+  // string is an entry state, so a navigation that only changes the query of
+  // the page already mounted keeps the operator's own filter selection.
+  render(
+    route.view ? (
+      <RouteView
+        key={`${route.path}|${Object.values(params).join("/")}`}
+        view={route.view}
+        search={new URLSearchParams(query)}
+        params={params}
+      />
+    ) : (
+      <ComingSoon label={route.label} />
+    ),
+    outlet,
+  );
+}
 
 function show(rawPath) {
   const [path, query = ""] = String(rawPath).split("?", 2);
@@ -264,26 +296,13 @@ function show(rawPath) {
   chrome?.setChatOpen(isChat);
   if (!outlet) return;
   if (isChat) {
+    mounted = null;
     render(null, outlet);
     return;
   }
 
-  // The key covers the path and its parameters, but NOT the query: the query
-  // string is an entry state, so a navigation that only changes the query of
-  // the page already mounted keeps the operator's own filter selection.
-  render(
-    route.view ? (
-      <RouteView
-        key={`${route.path}|${Object.values(params).join("/")}`}
-        view={route.view}
-        search={new URLSearchParams(query)}
-        params={params}
-      />
-    ) : (
-      <ComingSoon label={route.label} />
-    ),
-    outlet,
-  );
+  mounted = { route, params, query };
+  renderMountedRoute();
 }
 
 function navigate(next) {
@@ -351,3 +370,8 @@ function App() {
 applyTheme(currentTheme());
 render(<App />, document.getElementById("app"));
 show(location.hash.slice(1) || "/");
+// Upgrade the vocabulary once the shell is up. renderMountedRoute redraws the
+// mounted page in place, so the snapshot's labels are replaced by the server's
+// without remounting the page or losing its state. loadTaskMeta never throws,
+// so an unreachable daemon just leaves the snapshot in place.
+loadTaskMeta().then(renderMountedRoute);

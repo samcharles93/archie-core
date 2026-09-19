@@ -234,6 +234,9 @@ the branch onto its base, and no forge contract exposes a changed-file read.
 `internal/domain/workflow/task/changes.go` owns the value types and the status
 strings they persist.
 
+- The labels for those statuses are served, not copied: `/api/task-meta`
+  carries a `change_statuses` list derived from the `Change*` constants, and
+  the dashboard reads it through `ui/src/base/task-meta.jsx`.
 - One capture carries per-file `added`/`modified`/`deleted`/`renamed`/
   `typechange` status with added and deleted line counts, and totals.
 - Each capture names its schema (`archie/task-changes@1`, in `internal/events`)
@@ -259,6 +262,8 @@ attempt `config_captured` durable event carrying the schema constant
 `archie/task-config@1` and the non-secret task-runtime subset from
 `config.Config.ForTask()`. It is not stored in a table and has no endpoint of
 its own: the dashboard reads it out of the events response it already fetches.
+The dashboard takes that stamp from `/api/task-meta`'s `config_schema` rather
+than spelling it out; see `docs/prds/dashboard-vocabulary.md`.
 The single-row `config_snapshot` table is left alone — it answers what the
 running configuration is now and is replaced on every publish.
 

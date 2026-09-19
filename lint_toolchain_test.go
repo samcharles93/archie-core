@@ -15,7 +15,7 @@ var builtWithGo = regexp.MustCompile(`\bbuilt with (go[0-9]+\.[0-9]+(?:\.[0-9]+)
 // moduleGoDirective returns the root go.mod `go` line, e.g. "go1.27.0".
 func moduleGoDirective(t *testing.T) string {
 	t.Helper()
-	for _, line := range strings.Split(readDeploymentFile(t, "go.mod"), "\n") {
+	for line := range strings.SplitSeq(readDeploymentFile(t, "go.mod"), "\n") {
 		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "go "); ok {
 			return "go" + strings.TrimSpace(rest)
 		}

@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { render, cleanup } from "@testing-library/preact";
 import { ChangedFiles, fileStatusLabel } from "../src/tasks/changed-files.jsx";
+import { applyTaskMeta } from "../src/base/task-meta.jsx";
 
 const CAPTURE = {
   captured_at: "2026-09-18T07:03:00.000Z",
@@ -149,21 +150,20 @@ test("the status vocabulary is words, and an unknown status is passed through", 
   assert.equal(fileStatusLabel("submodule"), "submodule");
 });
 
-// The five statuses are the producer's own vocabulary
-// (internal/domain/workflow/task/changes.go), pinned by literal in the Go suite.
-// This pins the dashboard half to the same five strings: without it, a rename on
-// one side renders raw status codes beside words and both suites stay green.
-test("the status vocabulary matches the strings the producer persists", () => {
-  const persisted = {
-    added: "Added",
-    modified: "Modified",
-    deleted: "Deleted",
-    renamed: "Renamed",
-    typechange: "Type changed",
+// The label rendered for a change status is the one the served catalog carries,
+// not a UI literal: a backend rename reaches this table with no JS edit. The
+// snapshot it starts from is pinned across the language boundary by
+// ui/test/task-meta-catalogue.test.js against the Go fixture.
+test("a served change-status label is what the table renders", () => {
+  applyTaskMeta({ change_statuses: [{ id: "typechange", label: "Kind changed" }] });
+  assert.equal(fileStatusLabel("typechange"), "Kind changed");
+  const capture = {
+    ...CAPTURE,
+    files: [{ path: "internal/x.go", old_path: "", status: "typechange", additions: 1, deletions: 0, binary: false }],
   };
-  for (const [status, label] of Object.entries(persisted)) {
-    assert.equal(fileStatusLabel(status), label, `${status} must be a known status, not passed through`);
-  }
+  const { root, unmount } = mount({ state: { task_id: 42, attempt: 2, found: true, captures: [capture] } });
+  assert.match(rowFor(root, "internal/x.go").textContent, /Kind changed/);
+  unmount();
 });
 
 test.after(() => cleanup());

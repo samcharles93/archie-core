@@ -3,9 +3,14 @@ import assert from "node:assert/strict";
 import { render, cleanup, fireEvent, waitFor } from "@testing-library/preact";
 import { render as preactRender } from "preact";
 import { api, ApiError } from "../src/base/api.jsx";
+import { configSchema } from "../src/base/task-meta.jsx";
 import { taskDetailPage } from "../src/tasks/task-detail.jsx";
 
-const CONFIG_SCHEMA = "archie/task-config@1";
+// The schema these fixtures stamp is the one the served catalog names, not a
+// literal copied here: this suite must not make every capture look readable if
+// the server's stamp changes (ui/test/task-meta-catalogue.test.js pins the
+// snapshot to the Go fixture).
+const CONFIG_SCHEMA = configSchema();
 
 const TASK = {
   id: 42,
