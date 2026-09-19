@@ -84,9 +84,6 @@ type Server struct {
 	// explicitly support reload are wired here; nil means reload is unavailable.
 	ReloadChannel func(context.Context, string) error
 
-	// Memory backs the memory view. Optional: the section reports memory as
-	// unavailable rather than failing when it is nil.
-	Memory MemoryStatus
 	// Skills is the webui-owned skill catalogue view; nil degrades
 	// /api/skills to an empty page.
 	Skills SkillCatalog
@@ -234,7 +231,6 @@ func (s *Server) registerCoreRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/channels", s.handleChannels)
 	mux.HandleFunc("POST /api/channels/{id}/reload", s.handleChannelReload)
 	mux.HandleFunc("GET /api/version", s.handleVersion)
-	mux.HandleFunc("GET /api/memory", s.handleMemory)
 	mux.HandleFunc("GET /api/capabilities", s.handleCapabilities)
 }
 

@@ -16,7 +16,6 @@ import { logsPage } from "./logs/logs.jsx";
 import { capturesPage } from "./captures/captures.jsx";
 import { mappingsPage } from "./mappings/mappings.jsx";
 import { bindingsPage } from "./bindings/bindings.jsx";
-import { memoryPage } from "./memory/memory.jsx";
 import { ChatPage } from "./chat/chat.jsx";
 import { matchRoute, navPath } from "./routing.jsx";
 
@@ -53,7 +52,6 @@ const routes = [
   { path: "/bindings", label: "Playbook bindings", icon: "bindings", view: bindingsPage, section: "bindings" },
   { path: "/skills", label: "Skills", icon: "skills", view: skillsPage, section: "skills" },
   { path: "/workflows", label: "Workflows", icon: "workflows", view: workflowsPage, section: "workflows" },
-  { path: "/memory", label: "Memory", icon: "memory", view: memoryPage, section: "memory" },
   { path: "/curators", label: "Curators", icon: "curators", view: curatorsPage, section: "curators" },
   { path: "/channels", label: "Channels", icon: "channels", view: channelsPage, section: "channels" },
   { path: "/settings", label: "Configuration", icon: "settings", view: settingsPage, section: "settings" },

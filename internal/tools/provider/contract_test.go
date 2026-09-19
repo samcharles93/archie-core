@@ -56,7 +56,6 @@ func TestArchiedWiresTypedProvidersAndExecutableConsumers(t *testing.T) {
 		// root was decomposed; the receiver makes the arg expressions
 		// carry the b. prefix there.
 		"toolprovider.NewRegistry(b.toolReg)",
-		"memorytoolprovider.New(b.memManager)",
 		"configuredMCPProvider(srv, cfg.WorkDir)",
 		"capabilityHost.Register(b.providerRegistry)",
 		// The chat turn builds its toolset from the registry before the
@@ -72,9 +71,6 @@ func TestArchiedWiresTypedProvidersAndExecutableConsumers(t *testing.T) {
 	}
 	if strings.Contains(text.String(), ".RegisterTools(ctx, toolReg)") {
 		t.Error("composition bypasses the typed provider registry with direct MCP registration")
-	}
-	if strings.Contains(text.String(), "memManager.GetToolSchemas()") {
-		t.Error("composition bypasses the typed memory tool provider")
 	}
 	if strings.Contains(text.String(), "NewLoopRunner") {
 		t.Error("archied constructs a worker-local autonomous runner")

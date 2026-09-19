@@ -56,7 +56,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
 	"github.com/samcharles93/archie-core/internal/logging"
-	"github.com/samcharles93/archie-core/internal/memory"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
 	"github.com/samcharles93/archie-core/internal/ratelimit"
@@ -69,7 +68,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/tools/minimax"
 	toolprovider "github.com/samcharles93/archie-core/internal/tools/provider"
 	builtintoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/builtin"
-	memorytoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/memory"
 	"github.com/samcharles93/archie-core/internal/tools/sendfile"
 	"github.com/samcharles93/archie-core/internal/tools/webfetch"
 	"github.com/samcharles93/archie-core/internal/webui"
@@ -184,7 +182,6 @@ type boot struct {
 	trees            *worktree.Manager
 	worktreeGrants   *worktreerpc.Grants
 	identityRunners  []*daemon.IdentityRunner
-	memManager       *memory.Manager
 	memEngines       *domainmemory.Registry
 	curatorRegistry  *curator.Registry
 	curatorRuntime   *curator.Runtime
@@ -1057,61 +1054,14 @@ func (b *boot) registerNATSRPC() error {
 	return nil
 }
 
-// setupMemory starts the memory manager. The built-in file-backed
-// provider (MEMORY.md + USER.md) lives under the daemon work directory.
-// memory.Manager.RegisterExternal exists for an external provider, but
-// nothing calls it here: no external MemoryProvider is implemented
-// anywhere in the repo to construct and register, and
-// configuration.validateMemory now rejects cfg.Memory.Provider being set
-// at all rather than silently accepting a value with no effect
-// (archie-core-1786637499161-356-e424e40d.1).
-func (b *boot) setupMemory() error {
-	cfg, log := b.cfg, b.log
-	memProvider, memDir := memoryProvider(cfg.WorkDir, log)
-	if memProvider == nil {
-		log.Error("memory provider init failed", "dir", memDir)
-		return fmt.Errorf("memory provider init failed in %s", memDir)
-	}
-	memManager, err := memory.NewManager(memProvider, nil)
-	if err != nil {
-		log.Error("memory manager init failed", "err", err)
-		return err
-	}
-	// Install the scanner the HandleToolCall gate reads. Without this the gate
-	// returns ThreatNone on every write (manager.ScanContent short-circuits when
-	// scanner is nil), so configuration.md's "Memory safety scanner" row would
-	// describe a control that never runs. The consequences stay at the
-	// documented defaults: scanReject is false, so a prompt-injection match is
-	// downgraded to a warn and logged rather than refusing the operator's write.
-	memManager.SetScanner(&memory.DefaultScanner{})
-	b.memManager = memManager
-
-	if err := memManager.Initialize("daemon"); err != nil {
-		log.Warn("memory manager initialize", "err", err)
-	}
-	mm := memManager
-	b.addCleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := mm.ShutdownContext(shutdownCtx); err != nil {
-			log.Error("memory manager shutdown", "err", err)
-		}
-	})
-	log.Info("memory manager started", "dir", memDir)
-	return nil
-}
-
 // setupMemoryEngine wires the domain/memory engine family
-// (archie-core-1786637499161-356-e424e40d), separate from and not yet
-// consulted by the legacy memory manager set up in setupMemory above.
-// cfg.Memory.Engine is validated at config load
-// (configuration.validateMemory) against the same set this switch covers,
-// so an unrecognised value cannot reach here -- this only guards against
-// the two lists drifting apart.
+// (archie-core-1786637499161-356-e424e40d), the only memory engine per
+// docs/prds/memory-engine-unification.md. cfg.Memory.Engine is validated at
+// config load (configuration.validateMemory) against the same set this
+// switch covers, so an unrecognised value cannot reach here -- this only
+// guards against the two lists drifting apart.
 //
-// Rooted at workDir/memory-engine, a directory separate from the legacy
-// provider's workDir/memory, so the two paths can never collide on the
-// same files while both exist.
+// Rooted at workDir/memory-engine.
 func (b *boot) setupMemoryEngine() error {
 	cfg, log := b.cfg, b.log
 	// The logger is what carries an engine's scanner warning: warn allows
@@ -1145,17 +1095,6 @@ func (b *boot) setupMemoryEngine() error {
 	})
 	log.Info("memory engine started", "engine", cfg.Memory.Engine)
 	return nil
-}
-
-// setupMemoryAll runs both memory setup phases -- the legacy manager and
-// the new engine family -- as one step. Kept as a single call from Run()
-// rather than two: they are always run together and Run() is already at
-// its cyclomatic complexity budget.
-func (b *boot) setupMemoryAll() error {
-	if err := b.setupMemory(); err != nil {
-		return err
-	}
-	return b.setupMemoryEngine()
 }
 
 // activeMemoryEngine resolves the engine setupMemoryEngine registered under
@@ -1220,7 +1159,7 @@ func (b *boot) setupCurators(ctx context.Context) {
 		Events: curatorEventSink{b.bus},
 		// b.memEngines (*domainmemory.Registry) satisfies
 		// curator.MemoryEngineSource's Get(name) signature directly, no
-		// adapter needed. Set by setupMemoryAll, which Run() calls before
+		// adapter needed. Set by setupMemoryEngine, which Run() calls before
 		// setupCurators.
 		MemoryEngines: b.memEngines,
 		// Skills is a shared host service like Events/MemoryEngines --
@@ -1304,15 +1243,14 @@ func (b *boot) workspaceIndex(ctx context.Context, workspace string) []toolsbuil
 	return []toolsbuiltin.GrepIndex{manager}
 }
 
-// registerTools registers the tool providers with a lifecycle: memory,
-// workspace file/shell tools and optional MCP servers.
+// registerTools registers the tool providers with a lifecycle: workspace
+// file/shell tools and optional MCP servers. Memory tools
+// (memory_create/update/delete/list) are not registered here -- they are
+// built per turn onto the resolved Subject's scopes
+// (internal/gateway/turn_memory_tool.go), not once at boot.
 func (b *boot) registerTools(ctx context.Context) error {
 	cfg, log := b.cfg, b.log
 	b.providerRegistry = toolprovider.NewRegistry(b.toolReg)
-	if err := b.providerRegistry.Register(memorytoolprovider.New(b.memManager)); err != nil {
-		log.Error("memory tool provider registration failed", "err", err)
-		return err
-	}
 	// Workspace file and shell tools. Registered only when a workspace is
 	// configured: these read, write and execute, so the directory is a
 	// deliberate choice rather than a default.

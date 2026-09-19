@@ -132,7 +132,6 @@ export const api = {
   bindingUpdate: (id, binding) => request(`/api/bindings/${id}`, { method: "PATCH", body: binding }),
   bindingDelete: (id) => request(`/api/bindings/${id}`, { method: "DELETE", parse: false }),
   bindingApprove: (id) => request(`/api/bindings/${id}/approve`, { method: "POST" }),
-  memory: () => request("/api/memory"),
   chatSessions: () => request("/api/chat/sessions"),
   chatMessages: (id) => request(`/api/chat/sessions/${encodeURIComponent(id)}/messages`),
   chatTurns: (id) => request(`/api/chat/sessions/${encodeURIComponent(id)}/turns`),

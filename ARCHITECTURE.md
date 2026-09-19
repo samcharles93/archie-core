@@ -45,7 +45,8 @@ See `docs/architecture/organisation.md` for the target structure and
 | `internal/webui/`            | Shared dashboard HTTP layer served by the archie-ui process |
 | `internal/gateway/` (18.7k LOC) | Persistent-connection layer between archie and its users (Telegram, web UI, etc.); shared CommandRouter for dispatch |
 | `internal/tools/` (20.9k LOC)   | Central tool subsystem: built-in tool implementations, approval, execution contract |
-| `internal/memory/` (7k LOC)     | Pluggable memory provider architecture                                    |
+| `internal/domain/memory/`       | Memory engine contract: four typed scopes, CRUD + revisions, content scanner |
+| `internal/infrastructure/memory/` | Builtin memory engine + its `builtin/` markdown store                   |
 | `internal/secret/`              | Secret reference resolution across named engines (env, vault, etc.)       |
 | `internal/plugin/`              | Core plugin interface: Yaegi-interpreted `.go` plugins loaded from `~/.config/archie/plugins/` and registered with the daemon's extension registry |
 | `internal/skill/`               | Parses and discovers agentskills.io `SKILL.md` files                      |
@@ -331,53 +332,55 @@ owning registry or manager.
 
 ### Memory engine family
 
-The current memory implementation is an engine family, not a collection of
-independent memory tools. `internal/memory.MemoryProvider` is the typed contract
-for built-in and external providers. It requires a provider name and availability
-check, session initialization, and tool-schema export. Optional capability
-contracts add system-prompt contributions, prefetch, conversation-turn sync,
-tool-call handling, and shutdown. Lifecycle hooks in `internal/memory/lifecycle.go`
-cover turn start, session end and switching, pre-compression, memory writes, and
-delegation.
+One engine, addressed by four typed scopes -- `ScopeGlobal`, `ScopeAgent`,
+`ScopeUser`, `ScopeAgentUser` (`internal/domain/memory`, `Scope`/`ScopeKind`).
+A caller names exactly the scopes it may read or write; the engine applies no
+access policy of its own, so isolation falls out mechanically because
+`ScopeAgent{a}` and `ScopeAgent{b}` are different storage keys. See
+`docs/prds/memory-engine-unification.md` for the decision this contract
+implements; it superseded `internal/memory` (`MemoryProvider`/`Manager`),
+deleted in that PRD's slice 5.
 
-`internal/memory.Manager` is the owning family manager and the only entry point
-that agent lifecycle code should use. It owns the built-in provider and, in the
-current implementation, permits at most one external provider. It merges schemas
-from available providers, indexes tool ownership, routes calls, validates
-provider configuration through provider-owned schemas, and serializes background
-write synchronization. Providers do not register callbacks or tools directly on
-the daemon.
+`MemoryEngine` (`internal/domain/memory/contract.go`) is the typed family
+contract: `Create`, `Get`, `Query`, `List`, `Update`, `Forget`, `Revisions` --
+CRUD with revisions retained, not just create/read/delete. `Update` supersedes
+rather than overwrites: the superseded state is appended to the scope's
+`HISTORY.md` before the live block is replaced, and `Update` carries no
+`Scope` field, so a record can never change scope. The family's content
+scanner (prompt-injection / sensitive-data patterns) is applied inside
+`Create` and `Update`, the single choke point every producer crosses.
 
-The manager defines the lifecycle and failure-isolation contract:
+`internal/domain/memory.Registry` is the owning family registry: registration,
+start/health/stop, shutdown ordering, and failure isolation, following the
+plugin engine rule (`ARCHITECTURE.md#plugin-engine-rule-strict`).
+`internal/infrastructure/memory.NewBuiltinEngine` is the only registered
+engine today; it persists through `internal/infrastructure/memory/builtin`,
+a markdown store (`MEMORY.md`-shaped per-scope files) that owns its on-disk
+format end-to-end.
 
-- construction starts the bounded background synchronization worker;
-- initialization attempts every active provider and returns the first error only
-after all providers have been attempted;
-- lifecycle hooks are dispatched asynchronously, with provider errors and panics
-recovered so a failing hook cannot interrupt the agent loop;
-- shutdown stops accepting new synchronization work, drains until the caller's
-context deadline, records abandoned work after a timeout, and shuts providers
-down in reverse registration order while still attempting every provider;
-- provider availability is checked before schemas and tool ownership are exposed,
-so an unavailable provider is isolated from normal dispatch rather than taking
-down the family.
+Two per-turn seams in `internal/gateway` connect a chat turn to the engine,
+each narrowed to exactly the operations it needs:
 
-A memory backend is not trusted merely because it implements
-`MemoryProvider`. The built-in file-backed provider runs in the daemon's trusted
-process. A third-party backend may run in-process only when the operator has
-explicitly trusted it with daemon privileges. An untrusted or out-of-process
-backend must cross a versioned, scoped protocol owned by the memory manager; if
-confidentiality or integrity depends on process isolation, it must run in a real
-container sandbox. A subprocess boundary alone is not a security boundary, and
-the backend must never receive `*daemon.Daemon`, a service locator, unrestricted
-host files, or credentials by virtue of being a memory provider.
+- **Read** (`turn_memory.go`, `MemoryStore`): `prepareTurn` runs a
+  scope-only `Query` over the resolved `Subject`'s readable scopes,
+  synchronously and before the prompt is built. It never returns an error --
+  a panicking or failing engine degrades to an empty `<memory>` block rather
+  than failing the turn -- and is bounded by a per-scope record limit and a
+  byte cap on the rendered block.
+- **Write** (`turn_memory_tool.go`, `MemoryWriteStore`): four tools --
+  `memory_create`, `memory_update`, `memory_delete`, `memory_list` -- built
+  per turn onto the resolved `Subject`'s writable scopes, not registered once
+  at boot. The model chooses the scope kind; it never chooses the agent or
+  user id, which come from the turn's resolved `Subject` and have no schema
+  field to override. `ScopeGlobal` is never model-writable.
 
-These are the current `internal/memory` contracts and wiring. They do not close
-the OPEN placement, authoritative-record, retrieval, access-enforcement, or
-provenance decisions listed in
-[`docs/architecture/migration-decisions.md`](docs/architecture/migration-decisions.md#5-memory-placement-and-storage),
-nor do they change the four required scopes documented in
-[`docs/architecture/agent-system.md`](docs/architecture/agent-system.md#memory-scopes).
+`boot.setupMemoryEngine` (`internal/app/archied/bootstrap.go`) registers and
+starts the engine and must run before `setupGateways`/`setupGatewayChat`:
+those construct every chat turn runner, which captures the engine at
+construction time (`internal/app/archied/composition_order_test.go` pins the
+ordering). The session curator (`internal/infrastructure/sessioncurator`)
+writes derived records onto `ScopeAgentUser`, making it the engine's other
+live producer besides the chat write path.
 
 ## Key Design Decisions
 

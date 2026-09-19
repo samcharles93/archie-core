@@ -316,18 +316,13 @@ type ImageLocalProvider struct {
 	Backend string `toml:"backend" yaml:"backend" json:"backend"`
 }
 
-// MemoryConfig holds memory provider configuration.
+// MemoryConfig holds memory engine configuration.
 type MemoryConfig struct {
 	// Engine selects among the domain/memory engine family
 	// (internal/domain/memory). Empty resolves to "builtin", the
 	// file-writing store under work_dir -- the same behaviour as an
 	// absent [memory] section entirely.
 	Engine string `toml:"engine" yaml:"engine" json:"engine"`
-	// Provider is the legacy external-provider identifier consumed by
-	// internal/memory.Manager.RegisterExternal, a separate, older
-	// mechanism than Engine. See archie-core-1786637499161-356-e424e40d.1.
-	Provider       string            `toml:"provider" yaml:"provider" json:"provider"`
-	ProviderConfig map[string]string `toml:"provider_config" yaml:"provider_config" json:"provider_config"`
 }
 
 // MCPServer describes one MCP server connection.
@@ -662,7 +657,6 @@ func (c Config) Clone() Config {
 	c.Chat.Telegram.UpdateInstallCommand = append([]string(nil), c.Chat.Telegram.UpdateInstallCommand...)
 	c.Bindings.PreviousEncryptionKeys = append([]SecretRef(nil), c.Bindings.PreviousEncryptionKeys...)
 	c.Tools.MCPServers = cloneMCPServers(c.Tools.MCPServers)
-	c.Memory.ProviderConfig = maps.Clone(c.Memory.ProviderConfig)
 	c.Image.Hosted = maps.Clone(c.Image.Hosted)
 	c.Image.Local = maps.Clone(c.Image.Local)
 	// Services is a map of structs, so the header is shared by the value copy

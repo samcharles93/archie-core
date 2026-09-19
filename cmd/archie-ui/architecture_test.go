@@ -66,7 +66,6 @@ var deletionGate = []bannedCategory{
 		modulePath + "internal/plugin",
 	}},
 	{"memory and curator runtime", []string{
-		modulePath + "internal/memory",
 		modulePath + "internal/domain/memory",
 		modulePath + "internal/infrastructure/memory",
 		modulePath + "internal/domain/curator",
