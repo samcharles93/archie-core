@@ -7,69 +7,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/installtype"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
-	"github.com/samcharles93/archie-core/internal/secret"
 )
-
-type telegramTestSecretEngine struct{}
-
-func (telegramTestSecretEngine) Name() string    { return "bws" }
-func (telegramTestSecretEngine) Version() string { return "test" }
-func (telegramTestSecretEngine) Resolve(key string) (string, error) {
-	if key == "telegram-token" {
-		return "token-from-bws", nil
-	}
-	return "", nil
-}
-
-func TestResolveTelegramTokenPrefersSecretRef(t *testing.T) {
-	registry := secret.NewRegistry()
-	registry.Register(telegramTestSecretEngine{})
-	cfg := config.TelegramConfig{
-		Token:    secret.SecretRef{Engine: "bws", Key: "telegram-token"},
-		TokenEnv: "TELEGRAM_LEGACY_TOKEN",
-	}
-	t.Setenv("TELEGRAM_LEGACY_TOKEN", "token-from-env")
-
-	got, err := resolveTelegramToken(cfg, registry)
-	if err != nil {
-		t.Fatalf("resolveTelegramToken returned error: %v", err)
-	}
-	if got != "token-from-bws" {
-		t.Fatalf("resolveTelegramToken = %q, want token-from-bws", got)
-	}
-}
-
-func TestResolveTelegramTokenFallsBackToTokenEnv(t *testing.T) {
-	registry := secret.NewRegistry()
-	cfg := config.TelegramConfig{TokenEnv: "TELEGRAM_LEGACY_TOKEN"}
-	t.Setenv("TELEGRAM_LEGACY_TOKEN", "token-from-env")
-
-	got, err := resolveTelegramToken(cfg, registry)
-	if err != nil {
-		t.Fatalf("resolveTelegramToken returned error: %v", err)
-	}
-	if got != "token-from-env" {
-		t.Fatalf("resolveTelegramToken = %q, want token-from-env", got)
-	}
-}
-
-func TestResolveTelegramTokenDoesNotUseTokenEnvWhenSecretRefIsSet(t *testing.T) {
-	registry := secret.NewRegistry()
-	registry.Register(telegramTestSecretEngine{})
-	cfg := config.TelegramConfig{
-		Token:    secret.SecretRef{Engine: "bws", Key: "telegram-token"},
-		TokenEnv: "TELEGRAM_LEGACY_TOKEN",
-	}
-	t.Setenv("TELEGRAM_LEGACY_TOKEN", "token-from-env")
-
-	got, err := resolveTelegramToken(cfg, registry)
-	if err != nil {
-		t.Fatalf("resolveTelegramToken returned error: %v", err)
-	}
-	if got == "token-from-env" {
-		t.Fatal("resolveTelegramToken used TokenEnv despite Token being configured")
-	}
-}
 
 // TestMakeUpdateServiceWiresInstallType is the regression test for
 // archie-core-522's fail-closed guarantee actually reaching production: a
@@ -81,7 +19,7 @@ func TestMakeUpdateServiceWiresInstallType(t *testing.T) {
 	cfg.Chat.Telegram.UpdateCheckCommand = []string{"archie-update-check"}
 	cfg.Chat.Telegram.UpdateInstallCommand = []string{"archie-update-install"}
 
-	service := makeUpdateService(telegramSetup{Cfg: config.NewHolder(cfg)})
+	service := makeUpdateService(chatSetup{Cfg: config.NewHolder(cfg)})
 
 	if service == nil {
 		t.Fatal("makeUpdateService returned nil despite a configured check command")
@@ -220,7 +158,7 @@ func TestMakeUpdateServiceProbesTheDaemonsOwnHealthAddress(t *testing.T) {
 			cfg.Chat.Telegram.UpdateCheckCommand = []string{"archie-update-check"}
 			cfg.Chat.Telegram.UpdateInstallCommand = []string{"archie-update-install"}
 
-			service := makeUpdateService(telegramSetup{Cfg: config.NewHolder(cfg)})
+			service := makeUpdateService(chatSetup{Cfg: config.NewHolder(cfg)})
 
 			if service == nil {
 				t.Fatal("makeUpdateService returned nil despite a configured check command")

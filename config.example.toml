@@ -151,6 +151,8 @@ class = "ollama"
 # token = { engine = "bws", key = "TELEGRAM_BOT_TOKEN" }
 # Legacy compatibility: read the token from this environment variable.
 # token_env = "TELEGRAM_BOT_TOKEN"      # env var holding the bot token from @BotFather
+# Run by archie-messaging, which serves /update, so these commands execute on
+# whichever host runs that process.
 # update_check_command = ["/usr/local/bin/archie-update-check"]
 # update_install_command = ["/usr/local/bin/archie-update-install"]
 

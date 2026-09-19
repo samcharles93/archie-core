@@ -108,6 +108,22 @@ func (h *hybridTrees) Snapshot(ctx context.Context, dir, destDir string) error {
 	return h.local.Snapshot(ctx, dir, destDir)
 }
 
+// Resume is a no-op here for the same reason Prepare is: resuming a PR
+// branch needs the daemon's forge credential to fetch, so archied must run
+// it against the bind-mounted worktree before the container starts, the
+// same way it runs Prepare today. The container's worktree is already
+// resumed by the time a remediate run reaches this stage.
+func (h *hybridTrees) Resume(ctx context.Context, dir, branch string) error {
+	return nil
+}
+
+// Dir returns the bind-mounted worktree path archied already prepared,
+// ignoring its arguments -- the sandbox has no way to independently derive
+// or verify the path, same as Prepare above.
+func (h *hybridTrees) Dir(owner, repo string, issue int) string {
+	return h.localDir
+}
+
 func (h *hybridTrees) ChangedLines(ctx context.Context, dir, base string) (int, error) {
 	return h.local.ChangedLines(ctx, dir, base)
 }

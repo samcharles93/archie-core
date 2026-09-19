@@ -26,25 +26,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/taskstate"
 )
 
-// Lifecycle receives adapter-owned startup facts. Callbacks are optional.
-// Starting is reported before each launch attempt; Running is reported only
-// after the adapter's external delivery boundary is ready.
-type Lifecycle struct {
-	Starting func()
-	Running  func()
-}
-
-func (l Lifecycle) ReportStarting() {
-	if l.Starting != nil {
-		l.Starting()
-	}
-}
-
-func (l Lifecycle) ReportRunning() {
-	if l.Running != nil {
-		l.Running()
-	}
-}
+// Lifecycle receives adapter-owned startup facts.
+type Lifecycle = messaging.Lifecycle
 
 // A Gateway owns a persistent connection to a chat channel. Start blocks;
 // the gateway should remain running until ctx is cancelled or Stop is called.
@@ -106,17 +89,7 @@ type ProviderModelManager interface {
 
 // ModelDetails is the catalog metadata rendered after an interactive model
 // selection. Limits are zero when the upstream catalog does not publish them.
-type ModelDetails struct {
-	Ref             string
-	Name            string
-	ContextWindow   int
-	MaxOutputTokens int
-	Reasoning       bool
-	Tools           bool
-	Attachment      bool
-	Structured      bool
-	InputModalities []string
-}
+type ModelDetails = messaging.ModelDetails
 
 // DetailedModelManager is the optional catalog-aware extension used by rich
 // model selectors. Runtime routing remains on ModelManager.

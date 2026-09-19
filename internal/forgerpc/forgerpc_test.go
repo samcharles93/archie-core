@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	natssrv "github.com/nats-io/nats-server/v2/test"
 	"github.com/nats-io/nats.go"
 
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/forge"
 )
 
@@ -44,6 +46,16 @@ type fakeForge struct {
 	commentErr error
 	closeErr   error
 	prErr      error
+
+	reviews   []reviewCommentsCall
+	reviewErr error
+}
+
+type reviewCommentsCall struct {
+	owner, repo string
+	number      int
+	reviewedSHA string
+	comments    []forge.InlineReviewComment
 }
 
 type commentCall struct {
@@ -98,6 +110,13 @@ func (f *fakeForge) SetStateLabel(_ context.Context, owner, repo string, number 
 func (f *fakeForge) LinkBranch(_ context.Context, owner, repo string, number int, branch string) error {
 	f.branches = append(f.branches, branchCall{owner: owner, repo: repo, number: number, branch: branch})
 	return nil
+}
+
+// CreateReviewComments makes fakeForge satisfy forge.ReviewCommentWriter, the
+// optional capability the server type-asserts.
+func (f *fakeForge) CreateReviewComments(_ context.Context, owner, repo string, number int, reviewedHeadSHA string, comments []forge.InlineReviewComment) error {
+	f.reviews = append(f.reviews, reviewCommentsCall{owner: owner, repo: repo, number: number, reviewedSHA: reviewedHeadSHA, comments: comments})
+	return f.reviewErr
 }
 
 func (f *fakeForge) AcceptInvitations(context.Context) error { panic("unexpected call") }
@@ -192,6 +211,88 @@ func TestClientLinkBranchPersistsViaServer(t *testing.T) {
 		t.Fatalf("branch link did not reach server, got %+v", f.branches)
 	}
 }
+
+func TestClientCreateReviewCommentsPersistsViaServer(t *testing.T) {
+	fg, client := newTestServer(t)
+
+	comments := []workflow.ReviewComment{
+		{Path: "a.go", Line: 12, Body: "**confirmed (warn)**: nil deref\n\n```suggestion\nreturn nil\n```"},
+		{Path: "b.go", Line: 3, Body: "**plausible (warn)**: possible race"},
+	}
+	if err := client.CreateReviewComments(context.Background(), "acme", "widget", 7, "reviewed-head-sha", comments); err != nil {
+		t.Fatalf("CreateReviewComments: %v", err)
+	}
+	if len(fg.reviews) != 1 {
+		t.Fatalf("reviews reached server %d times, want 1 batch", len(fg.reviews))
+	}
+	got := fg.reviews[0]
+	if got.owner != "acme" || got.repo != "widget" || got.number != 7 {
+		t.Errorf("anchored at %s/%s#%d, want acme/widget#7", got.owner, got.repo, got.number)
+	}
+	// The daemon is the only side that can read a pull request's head, so the
+	// revision the worker measured has to survive the round trip for the drift
+	// check to have anything to compare against.
+	if got.reviewedSHA != "reviewed-head-sha" {
+		t.Errorf("server saw reviewed head %q, want the worker's measured revision", got.reviewedSHA)
+	}
+	want := []forge.InlineReviewComment{
+		{Path: "a.go", Line: 12, Body: comments[0].Body},
+		{Path: "b.go", Line: 3, Body: comments[1].Body},
+	}
+	if !slices.Equal(got.comments, want) {
+		t.Errorf("comments = %+v, want %+v", got.comments, want)
+	}
+}
+
+// TestClientCreateReviewCommentsReportsAnIncapableForge is the degrade path: a
+// forge without the optional writer must answer with an error the best-effort
+// stage can log, not a silent success that leaves the operator believing
+// comments were posted.
+func TestClientCreateReviewCommentsReportsAnIncapableForge(t *testing.T) {
+	fg := &fakeForge{}
+	srv := startEmbedded(t)
+	serverConn := connect(t, srv.ClientURL())
+	// Embedding the forge.Forge INTERFACE (not the fake) keeps the promoted
+	// method set free of CreateReviewComments, which is what makes the type
+	// assertion fail -- exactly as it does for the noop forge.
+	rpcServer := &Server{Forge: noReviewCommentsForge{Forge: fg}, Log: slog.New(slog.DiscardHandler)}
+	unsub, err := rpcServer.Register(serverConn)
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	t.Cleanup(unsub)
+
+	client := &Client{Conn: connect(t, srv.ClientURL()), Timeout: 2 * time.Second}
+	err = client.CreateReviewComments(context.Background(), "acme", "widget", 7, "reviewed-sha", []workflow.ReviewComment{{Path: "a.go", Line: 1, Body: "x"}})
+	if err == nil {
+		t.Fatal("CreateReviewComments error = nil, want an incapable-forge error")
+	}
+	if len(fg.reviews) != 0 {
+		t.Errorf("the forge was called %d times despite lacking the capability", len(fg.reviews))
+	}
+}
+
+func TestClientCreateReviewCommentsPropagatesAForgeError(t *testing.T) {
+	fg := &fakeForge{reviewErr: errors.New("422 line is not part of the diff")}
+	srv := startEmbedded(t)
+	serverConn := connect(t, srv.ClientURL())
+	rpcServer := &Server{Forge: fg, Log: slog.New(slog.DiscardHandler)}
+	unsub, err := rpcServer.Register(serverConn)
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	t.Cleanup(unsub)
+
+	client := &Client{Conn: connect(t, srv.ClientURL()), Timeout: 2 * time.Second}
+	err = client.CreateReviewComments(context.Background(), "acme", "widget", 7, "reviewed-sha", []workflow.ReviewComment{{Path: "a.go", Line: 1, Body: "x"}})
+	if err == nil {
+		t.Fatal("CreateReviewComments error = nil, want the forge failure surfaced")
+	}
+}
+
+// noReviewCommentsForge is a forge.Forge whose method set lacks the optional
+// review-comment writer.
+type noReviewCommentsForge struct{ forge.Forge }
 
 func TestClientPropagatesServerError(t *testing.T) {
 	fg := &fakeForge{commentErr: errors.New("forge unavailable")}

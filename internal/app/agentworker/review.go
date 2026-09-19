@@ -162,6 +162,8 @@ Verdict is "confirmed" only when you have traced the actual failure -- read the 
 
 Level is "error" for a defect that blocks; "warn" for something worth knowing but not blocking.
 
+When a confirmed defect's fix is mechanical, and only then, pass suggestion: the exact text that should replace the anchored line, so the author can apply it in one click. It replaces that line exactly, so include the whole line (indentation included) and nothing else, and never guess -- a wrong one-click fix is worse than none. Do not pass a suggestion for a plausible finding, or for a fix you cannot state as a single line.
+
 When you have finished checking, reply with a short summary of what you checked and what you found (or that you found nothing). If you find nothing, say so plainly -- reporting zero findings on properties you actually checked is a valid and expected outcome, not a failure to find something.`
 
 // reviewerPrompt renders the reviewer's mission: the diff and issue text.
@@ -234,6 +236,7 @@ type findingInput struct {
 	Line            int    `json:"line" jsonschema:"description=Line number where the defect is located."`
 	Defect          string `json:"defect" jsonschema:"description=One-sentence statement of the defect."`
 	FailureScenario string `json:"failure_scenario" jsonschema:"description=Concrete inputs or state that produce the wrong output or a crash -- not a hypothetical."`
+	Suggestion      string `json:"suggestion,omitempty" jsonschema:"description=Optional. The exact replacement for the anchored line, when the fix is mechanical and you are certain of it -- it is offered as a one-click apply, so an approximate or partial line is worse than none. Only a confirmed finding may carry one; omit it for a plausible finding. Single line only."`
 	Verdict         string `json:"verdict" jsonschema:"description=Only 'confirmed' may block. Use 'plausible' for a real worry you have not fully traced.,enum=confirmed|plausible"`
 	Level           string `json:"level" jsonschema:"description=error blocks when confirmed; warn is advisory only.,enum=error|warn"`
 	Category        string `json:"category" jsonschema:"enum=dead-code|unchecked-error|hardcoded-value|interface-satisfaction|nil-risk|goroutine-leak|race|other"`
@@ -254,6 +257,7 @@ func recordFindingTool(findings *[]workflow.ReviewFinding) *core.Tool {
 				Line:            in.Line,
 				Defect:          in.Defect,
 				FailureScenario: in.FailureScenario,
+				Suggestion:      in.Suggestion,
 				Verdict:         workflow.ReviewVerdict(in.Verdict),
 				Level:           workflow.ReviewLevel(in.Level),
 				Category:        workflow.ReviewCategory(in.Category),

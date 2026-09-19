@@ -774,6 +774,34 @@ func TestReviewFindingValidation(t *testing.T) {
 			wantError: true,
 		},
 		{
+			name: "multi-line suggestion is rejected",
+			finding: ReviewFinding{
+				File:            "file.go",
+				Line:            10,
+				Defect:          "Defect with multi-line suggestion",
+				FailureScenario: "Scenario",
+				Verdict:         ReviewVerdictConfirmed,
+				Level:           ReviewLevelError,
+				Category:        ReviewCategoryNilRisk,
+				Suggestion:      "return nil\nmu.Lock()",
+			},
+			wantError: true,
+		},
+		{
+			name: "single-line suggestion on a confirmed finding is valid",
+			finding: ReviewFinding{
+				File:            "file.go",
+				Line:            10,
+				Defect:          "Defect with single-line suggestion",
+				FailureScenario: "Scenario",
+				Verdict:         ReviewVerdictConfirmed,
+				Level:           ReviewLevelError,
+				Category:        ReviewCategoryNilRisk,
+				Suggestion:      "mu.Lock()",
+			},
+			wantError: false,
+		},
+		{
 			name: "invalid verdict",
 			finding: ReviewFinding{
 				File:            "file.go",

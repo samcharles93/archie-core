@@ -228,8 +228,11 @@ type Task struct {
 	BindingVersion int64                  `protobuf:"varint,24,opt,name=binding_version,json=bindingVersion,proto3" json:"binding_version,omitempty"`
 	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,25,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt      *timestamppb.Timestamp `protobuf:"bytes,26,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// review_payload is the JSON-encoded review unit the remediate workflow's
+	// current run must address (docs/prds/pr-review-remediation.md decision 4).
+	ReviewPayload string `protobuf:"bytes,27,opt,name=review_payload,json=reviewPayload,proto3" json:"review_payload,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Task) Reset() {
@@ -442,6 +445,13 @@ func (x *Task) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *Task) GetReviewPayload() string {
+	if x != nil {
+		return x.ReviewPayload
+	}
+	return ""
 }
 
 // Event mirrors internal/events.Event. Data is carried as a JSON object
@@ -5819,7 +5829,7 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\x19RegisterTaskGrantResponse\".\n" +
 	"\x16RevokeTaskGrantRequest\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\"\x19\n" +
-	"\x17RevokeTaskGrantResponse\"\x87\x06\n" +
+	"\x17RevokeTaskGrantResponse\"\xae\x06\n" +
 	"\x04Task\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
 	"\x05owner\x18\x02 \x01(\tR\x05owner\x12\x12\n" +
@@ -5855,7 +5865,8 @@ const file_state_v1_state_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x19 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\x1a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\x9b\x02\n" +
+	"updated_at\x18\x1a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12%\n" +
+	"\x0ereview_payload\x18\x1b \x01(\tR\rreviewPayload\"\x9b\x02\n" +
 	"\x05Event\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12*\n" +
 	"\x02at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x12\n" +

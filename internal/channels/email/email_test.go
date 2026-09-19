@@ -11,8 +11,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/channels"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
+
+type fakeChatContract struct {
+	messaging.ChatContract
+	routeFunc func(ctx context.Context, in messaging.Inbound) (messaging.ChatReply, error)
+}
+
+func (f *fakeChatContract) Route(ctx context.Context, in messaging.Inbound) (messaging.ChatReply, error) {
+	if f.routeFunc != nil {
+		return f.routeFunc(ctx, in)
+	}
+	return messaging.ChatReply{Text: "ok"}, nil
+}
 
 func TestName(t *testing.T) {
 	g := New(":2525", "", slog.Default())
@@ -82,15 +95,17 @@ func TestSMTPReceiveAndRoute(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	g := New(":0", "", log)
 
-	router := gateway.NewRouter(nil, func(ctx context.Context, in gateway.Inbound) (string, error) {
-		if in.Message.Sender != "sender@test.com" {
-			return "", fmt.Errorf("unexpected sender: %s", in.Message.Sender)
-		}
-		if in.Message.SenderID != "sender@test.com" {
-			return "", fmt.Errorf("unexpected SenderID: %s", in.Message.SenderID)
-		}
-		return "got it", nil
-	}, "email")
+	chat := &fakeChatContract{
+		routeFunc: func(ctx context.Context, in messaging.Inbound) (messaging.ChatReply, error) {
+			if in.Message.Sender != "sender@test.com" {
+				return messaging.ChatReply{}, fmt.Errorf("unexpected sender: %s", in.Message.Sender)
+			}
+			if in.Message.SenderID != "sender@test.com" {
+				return messaging.ChatReply{}, fmt.Errorf("unexpected SenderID: %s", in.Message.SenderID)
+			}
+			return messaging.ChatReply{Text: "got it"}, nil
+		},
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
@@ -105,7 +120,7 @@ func TestSMTPReceiveAndRoute(t *testing.T) {
 	_ = ln.Close()
 
 	g.ListenAddr = addr
-	go func() { _ = g.Start(ctx, router, gateway.Lifecycle{}) }()
+	go func() { _ = g.Start(ctx, chat, channels.Lifecycle{}) }()
 	time.Sleep(20 * time.Millisecond)
 	defer func() { _ = g.Stop(context.Background()) }()
 
@@ -169,6 +184,6 @@ func TestTruncateSubject(t *testing.T) {
 
 // Compile-time guard.
 var (
-	_ gateway.Gateway = (*Gateway)(nil)
-	_                 = smtp.PlainAuth
+	_ channels.Channel = (*Gateway)(nil)
+	_                  = smtp.PlainAuth
 )

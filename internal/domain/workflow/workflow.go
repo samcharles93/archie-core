@@ -24,12 +24,34 @@ import (
 )
 
 // Forger is the subset of forge.Forge that workflow stages call mid-run.
-// forge.Forge (the daemon's real implementations) and forgerpc.Client
-// (archie-agent's NATS-backed proxy) both satisfy it.
+// Production reaches it through forgerpc.Client, which proxies each call to the
+// daemon over NATS -- the worker holds no forge credentials, so the daemon stays
+// the only caller of forge.Forge. Test fakes implement it directly.
 type Forger interface {
 	CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error
 	CreatePR(ctx context.Context, owner, repo, title, head, base, body string) (int, error)
 	LinkBranch(ctx context.Context, owner, repo string, issueNumber int, branch string) error
+	// CreateReviewComments posts line-anchored review comments on an open pull
+	// request. The whole set travels in one call because Gitea's only inline
+	// shape is a single submitted review holding many comments, and because
+	// one call cannot half-succeed against a rate limit.
+	//
+	// reviewedHeadSHA is the revision those line numbers were measured on. The
+	// implementation reads the pull request's head itself -- the worker holds no
+	// forge credentials -- and posts only while that head is still this
+	// revision, because a line number means nothing against a revision it was
+	// not measured on. Empty means "not measured": the comments post without
+	// the check rather than being dropped.
+	CreateReviewComments(ctx context.Context, owner, repo string, number int, reviewedHeadSHA string, comments []ReviewComment) error
+	// Comment posts a plain, non-anchored PR comment and returns its ID.
+	// The remediate workflow's round-cap stage uses this to tell an
+	// operator why it stopped remediating, and a whole-review reply (no
+	// single inline comment to thread onto) falls back to it.
+	Comment(ctx context.Context, owner, repo string, number int, body string) (int64, error)
+	// ReplyToReview posts a threaded reply to one review comment. The
+	// remediate workflow calls it once per remediation run, summarising
+	// what changed (docs/prds/pr-review-remediation.md decision 4).
+	ReplyToReview(ctx context.Context, owner, repo string, number int, commentID int64, body string) error
 }
 
 // Trees is the subset of *worktree.Manager that workflow stages call
@@ -106,6 +128,10 @@ type TaskContext struct {
 	ReproProof string
 	// decision is the feasibility assess stage's verdict.
 	decision *decision
+	// reviewUnit is the remediate workflow's decoded Task.ReviewPayload,
+	// stashed by its build stage so the commit-push and reply stages that
+	// follow don't each re-decode the same JSON.
+	reviewUnit ReviewUnit
 	// Outcome describes where the task ended up; the engine applies it.
 	Outcome Outcome
 
@@ -131,6 +157,15 @@ type TaskContext struct {
 	// body (h019.6). Zero value means the review did not run (disabled or
 	// skipped); ReviewReport.Ran() is the test for "render the section".
 	ReviewReport ReviewReport
+	// ReviewedHeadSHA is the worktree head at the moment the pull request was
+	// opened, which is the revision the review's line numbers were measured on
+	// (StageReview runs against that same worktree and commits nothing, so no
+	// revision intervenes). StagePostReviewComments threads it to the forge so
+	// a comment whose line numbers describe a head the pull request has since
+	// moved past is refused instead of attaching to unrelated code. Empty when
+	// the revision could not be read -- posting then proceeds unverified rather
+	// than dropping every finding.
+	ReviewedHeadSHA string
 }
 
 // Emit publishes an observability event stamped with the task's

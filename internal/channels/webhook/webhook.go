@@ -18,13 +18,12 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
-	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/webhookguard"
 )
 
 // Gateway is a deliver-only webhook gateway. It listens for HTTP POST
 // requests, validates their HMAC signatures, and routes the extracted
-// text through the gateway.Router for LLM processing.
+// text through the messaging ChatContract for LLM processing.
 type Gateway struct {
 	Host   string
 	Port   int
@@ -32,7 +31,7 @@ type Gateway struct {
 	log    *slog.Logger
 
 	server *http.Server
-	router *gateway.Router
+	client messaging.ChatContract
 	mu     sync.Mutex
 }
 
@@ -68,10 +67,10 @@ func (g *Gateway) Name() string { return "webhook" }
 
 // Start begins listening on the configured host:port. Blocks until ctx
 // is cancelled.
-func (g *Gateway) Start(ctx context.Context, router *gateway.Router, lifecycle gateway.Lifecycle) error {
+func (g *Gateway) Start(ctx context.Context, client messaging.ChatContract, lifecycle channels.Lifecycle) error {
 	lifecycle.ReportStarting()
 	g.mu.Lock()
-	g.router = router
+	g.client = client
 
 	mux := http.NewServeMux()
 	for i := range g.Routes {
@@ -108,12 +107,12 @@ func (g *Gateway) Start(ctx context.Context, router *gateway.Router, lifecycle g
 // Stop gracefully shuts down the HTTP server.
 func (g *Gateway) Stop(ctx context.Context) error {
 	g.mu.Lock()
-	srv := g.server
+	server := g.server
 	g.mu.Unlock()
-	if srv == nil {
+	if server == nil {
 		return nil
 	}
-	return srv.Shutdown(ctx)
+	return server.Shutdown(ctx)
 }
 
 // WebhookHandler returns the HTTP handler for testing.
@@ -126,6 +125,7 @@ func (g *Gateway) WebhookHandler() http.Handler {
 	return mux
 }
 
+// handleWebhook returns an http.HandlerFunc for one route.
 func (g *Gateway) handleWebhook(route *RouteConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -160,17 +160,17 @@ func (g *Gateway) handleWebhook(route *RouteConfig) http.HandlerFunc {
 			return
 		}
 
-		// Route through the gateway.
+		// Route through the chat contract.
 		g.mu.Lock()
-		router := g.router
+		client := g.client
 		g.mu.Unlock()
 
-		if router == nil {
+		if client == nil {
 			http.Error(w, "not started", http.StatusServiceUnavailable)
 			return
 		}
 
-		msg := gateway.Inbound{Message: messaging.Message{
+		msg := messaging.Inbound{Message: messaging.Message{
 			ConversationID: messaging.ConversationID{ChannelID: route.Path},
 			Sender:         "webhook",
 			// Webhooks have no per-caller identity; the configured route
@@ -180,16 +180,16 @@ func (g *Gateway) handleWebhook(route *RouteConfig) http.HandlerFunc {
 			Role:     messaging.RoleUser,
 			Text:     text,
 		}}
-		reply, err := router.Route(r.Context(), msg)
+		reply, err := client.Route(r.Context(), msg)
 		if err != nil {
 			g.log.Error("webhook route", "err", err, "path", route.Path)
 			http.Error(w, "route error", http.StatusInternalServerError)
 			return
 		}
 
-		if route.DeliverTo == "origin" && reply != "" {
+		if route.DeliverTo == "origin" && reply.Text != "" {
 			w.Header().Set("Content-Type", "text/plain")
-			_, _ = w.Write([]byte(reply))
+			_, _ = w.Write([]byte(reply.Text))
 		} else {
 			w.WriteHeader(http.StatusAccepted)
 		}

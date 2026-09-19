@@ -156,6 +156,53 @@ type PullRequestReviewReader interface {
 	ReplyToReview(ctx context.Context, owner, repo string, number int, commentID int64, body string) error
 }
 
+// InlineReviewComment is one line-anchored comment to post on a PR: the file,
+// the line in the reviewed commit's version of it, and the body -- which may
+// carry a fenced suggestion block the author can apply in one click.
+type InlineReviewComment struct {
+	Path string
+	Line int
+	Body string
+}
+
+// ReviewCommentWriter posts line-anchored review comments on an open pull
+// request. Forge implementations that cannot (the noop forge) do not implement
+// it; callers type-assert and degrade to the PR-body list rather than faking it.
+//
+// The set travels in one call because that is Gitea's native shape (a single
+// COMMENT-state review carrying many comments); GitHub loops internally. Each
+// implementation reads the pull request's current head itself and anchors the
+// comments to it, but only after checking it against reviewedHeadSHA -- the
+// revision the caller's line numbers were measured on. A line number that
+// outlives its revision does not fail loudly at the forge: it attaches to
+// whatever is on that line now, so the set is refused once the head has moved.
+// An empty reviewedHeadSHA means the caller could not measure one, and posts
+// unanchored by revision rather than dropping every finding.
+type ReviewCommentWriter interface {
+	CreateReviewComments(ctx context.Context, owner, repo string, number int, reviewedHeadSHA string, comments []InlineReviewComment) error
+}
+
+// reviewHeadDrift is the rule ReviewCommentWriter's implementations share: a
+// line-anchored comment set may be posted only while the pull request's head is
+// still the revision those line numbers were measured on. It returns nil when
+// there is nothing to refuse, including when the caller could not measure a
+// revision at all (reviewedHeadSHA == "") -- posting unverified is the
+// pre-existing behaviour, and is strictly better than dropping every finding.
+//
+// The check lives here rather than in each implementation because the danger is
+// identical on both: GitHub and Gitea accept a line number against the current
+// head and anchor it to whatever now occupies that line, so a stale anchor does
+// not fail loudly -- it misinforms.
+func reviewHeadDrift(owner, repo string, number int, head, reviewedHeadSHA string) error {
+	if reviewedHeadSHA == "" || strings.EqualFold(head, reviewedHeadSHA) {
+		return nil
+	}
+	return fmt.Errorf(
+		"pull request %s/%s#%d has moved off the reviewed revision (%s): head is now %s, so the line-anchored comments would land on lines they were not measured against",
+		owner, repo, number, reviewedHeadSHA, head,
+	)
+}
+
 // normalizeReviewState maps a GitHub review state string onto the neutral
 // ReviewState* constants. Unknown states pass through lowercased.
 func normalizeReviewState(s string) string {
