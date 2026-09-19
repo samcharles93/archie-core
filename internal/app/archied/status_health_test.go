@@ -549,3 +549,26 @@ func TestCuratorRunnerRecordsItsOutcome(t *testing.T) {
 		t.Fatalf("outcome = %+v, want the failed curator call", got)
 	}
 }
+
+// TestTitleGenerationDoesNotRecordChatModelHealth is the regression case for
+// /status blaming the provider for a cosmetic failure. Title generation runs
+// detached after a first turn under its own 30s bound and its error is
+// swallowed by the caller, so a title that merely timed out must not become
+// the process-wide "Chat model: failed" that an operator reads as an outage.
+func TestTitleGenerationDoesNotRecordChatModelHealth(t *testing.T) {
+	recorder := &providerOutcomeRecorder{}
+	rt := agentexec.NewRuntime(map[string]agentexec.Provider{
+		"openai": {Class: "openai", BaseURL: "http://127.0.0.1:1", APIKeyEnv: "ARCHIE_TEST_MISSING_KEY"},
+	})
+	if rt == nil {
+		t.Fatal("NewRuntime returned nil for a configured provider")
+	}
+	gen := &chatTitleGenerator{llm: rt, chatModels: newChatModelManager(map[string]string{"chat": "openai/gpt-4o"}, nil, nil)}
+
+	if _, err := gen.GenerateTitle(context.Background(), "s1", "hello"); err == nil {
+		t.Fatal("GenerateTitle against a closed port returned no error")
+	}
+	if _, attempted := recorder.LastChatModelOutcome(); attempted {
+		t.Error("a failed title proposal was recorded as chat-model health")
+	}
+}

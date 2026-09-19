@@ -375,7 +375,6 @@ type chatTitleGenerator struct {
 	log        *slog.Logger
 	llm        *runtime.Runtime
 	chatModels gateway.ModelManager
-	outcomes   *providerOutcomeRecorder
 }
 
 // newChatTitleGenerator wires an LLM-backed title generator for a chat
@@ -385,7 +384,7 @@ func newChatTitleGenerator(s chatSetup) gateway.TitleGenerator {
 	if s.LLM == nil || s.ChatModels == nil {
 		return nil
 	}
-	return &chatTitleGenerator{log: s.Log, llm: s.LLM, chatModels: s.ChatModels, outcomes: s.ProviderOutcomes}
+	return &chatTitleGenerator{log: s.Log, llm: s.LLM, chatModels: s.ChatModels}
 }
 
 func (g *chatTitleGenerator) GenerateTitle(ctx context.Context, sessionID, firstMessage string) (string, error) {
@@ -395,8 +394,15 @@ func (g *chatTitleGenerator) GenerateTitle(ctx context.Context, sessionID, first
 	}
 	// No tools: a title is a single completion. The active model is read
 	// at call time so a /model switch applies to titles too.
+	//
+	// Deliberately records no outcome for /status. A title is cosmetic,
+	// generated in a detached goroutine under its own 30s bound
+	// (gateway.titleGenerationTimeout), and its error is swallowed by the
+	// caller. Sharing the process-wide recorder let a title that merely timed
+	// out overwrite the chat-model health line with "failed", reporting a
+	// broken provider on the strength of a call no user was waiting for.
 	text, err := sendChatTurn(ctx, g.llm, g.chatModels.ActiveModel(),
-		core.GenerateOptions{Messages: messages, MaxSteps: 1}, nil, g.outcomes)
+		core.GenerateOptions{Messages: messages, MaxSteps: 1}, nil, nil)
 	if err != nil {
 		if g.log != nil {
 			g.log.Error("session title generation failed", "session", sessionID, "err", err)

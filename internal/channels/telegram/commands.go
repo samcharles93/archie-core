@@ -19,7 +19,7 @@ type commandSpec struct {
 // published command menu and /help. Keeping the discoverability surfaces
 // together prevents a newly registered command from being omitted from help.
 var gatewayCommandSpecs = []commandSpec{
-	{Command: "status", Description: "Show daemon health: broker, workers, channels, provider", Usage: "/status"},
+	{Command: "status", Description: "Show health: queue depth, broker, and the last chat-model call", Usage: "/status"},
 	{Command: "tasks", Description: "Show your tasks: state, stage, age, parked reason", Usage: "/tasks"},
 	{Command: "version", Description: "Show installed Archie versions", Usage: "/version"},
 	{Command: "update", Description: "Check for Archie updates", Usage: "/update"},
