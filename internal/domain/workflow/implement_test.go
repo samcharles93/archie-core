@@ -284,6 +284,13 @@ type fakeForge struct {
 	calls     []string
 	linkErr   error
 	prNumber  int
+
+	reviewCalls    int
+	reviewComments []ReviewComment
+	reviewOwner    string
+	reviewRepo     string
+	reviewNumber   int
+	reviewErr      error
 }
 
 func (f *fakeForge) CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error {
@@ -332,6 +339,13 @@ func (f *fakeForge) SetStateLabel(ctx context.Context, owner, repo string, numbe
 func (f *fakeForge) LinkBranch(ctx context.Context, owner, repo string, number int, branch string) error {
 	f.calls = append(f.calls, "link:"+branch)
 	return f.linkErr
+}
+
+func (f *fakeForge) CreateReviewComments(ctx context.Context, owner, repo string, number int, comments []ReviewComment) error {
+	f.reviewCalls++
+	f.reviewOwner, f.reviewRepo, f.reviewNumber = owner, repo, number
+	f.reviewComments = append(f.reviewComments, comments...)
+	return f.reviewErr
 }
 func (f *fakeForge) VerifyPush(ctx context.Context, owner, repo string) error { return nil }
 

@@ -24,12 +24,19 @@ import (
 )
 
 // Forger is the subset of forge.Forge that workflow stages call mid-run.
-// forge.Forge (the daemon's real implementations) and forgerpc.Client
-// (archie-agent's NATS-backed proxy) both satisfy it.
+// Production reaches it through forgerpc.Client, which proxies each call to the
+// daemon over NATS -- the worker holds no forge credentials, so the daemon stays
+// the only caller of forge.Forge. Test fakes implement it directly.
 type Forger interface {
 	CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error
 	CreatePR(ctx context.Context, owner, repo, title, head, base, body string) (int, error)
 	LinkBranch(ctx context.Context, owner, repo string, issueNumber int, branch string) error
+	// CreateReviewComments posts line-anchored review comments on an open pull
+	// request. The whole set travels in one call because Gitea's only inline
+	// shape is a single submitted review holding many comments, and because
+	// one call cannot half-succeed against a rate limit. The implementation
+	// anchors them to the request's head revision.
+	CreateReviewComments(ctx context.Context, owner, repo string, number int, comments []ReviewComment) error
 }
 
 // Trees is the subset of *worktree.Manager that workflow stages call

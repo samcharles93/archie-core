@@ -1,8 +1,8 @@
 // Package forgerpc lets archie-agent call the forge methods workflow stages
-// invoke mid-run  --  CloseIssue, CreatePR and LinkBranch, the workflow.Forger
-// set  --  over core NATS request/reply, instead of the agent container holding
-// a live forge API token. archied remains the sole holder of forge credentials
-// and the sole caller of forge.Forge.
+// invoke mid-run  --  CloseIssue, CreatePR, LinkBranch and CreateReviewComments,
+// the workflow.Forger set  --  over core NATS request/reply, instead of the agent
+// container holding a live forge API token. archied remains the sole holder of
+// forge credentials and the sole caller of forge.Forge.
 //
 // The rest of forge.Forge (issue polling, invitations, reactions, PR-state
 // reconciliation) is used exclusively by the daemon's own poll/reconcile
@@ -15,11 +15,16 @@
 // against an OLD daemon has no LinkBranch handler to reach, and the request
 // times out, so an image skew that way parks tasks. Note it in release notes
 // rather than assuming either side can lag.
+//
+// CreateReviewComments is the one method whose absence does NOT park a task: the
+// stage that calls it is best-effort by design, so the same new-agent/old-daemon
+// skew costs the inline comments and leaves the PR-body findings list intact.
 package forgerpc
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -27,16 +32,18 @@ import (
 
 	"github.com/nats-io/nats.go"
 
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/forge"
 	"github.com/samcharles93/archie-core/internal/natsrpc"
 )
 
 const (
-	SubjectComment       = "archie.forge.comment"
-	SubjectCloseIssue    = "archie.forge.close_issue"
-	SubjectCreatePR      = "archie.forge.create_pr"
-	SubjectLinkBranch    = "archie.forge.link_branch"
-	SubjectSetStateLabel = "archie.forge.set_state_label"
+	SubjectComment             = "archie.forge.comment"
+	SubjectCloseIssue          = "archie.forge.close_issue"
+	SubjectCreatePR            = "archie.forge.create_pr"
+	SubjectLinkBranch          = "archie.forge.link_branch"
+	SubjectSetStateLabel       = "archie.forge.set_state_label"
+	SubjectCreateReviewComment = "archie.forge.create_review_comments"
 )
 
 // SubjectFor returns the subject for base, scoped to identity when set.
@@ -91,6 +98,24 @@ type SetStateLabelRequest struct {
 	KnownLabels []string
 }
 
+// CreateReviewCommentsRequest carries one review's worth of line-anchored
+// comments. The payload mirrors workflow.ReviewComment rather than reusing it:
+// the wire shape is a contract between two processes that can be at different
+// versions, so it is stated here instead of inherited from a type that may be
+// renamed or reshaped for reasons that never crossed the wire.
+type CreateReviewCommentsRequest struct {
+	Owner, Repo string
+	Number      int
+	Comments    []InlineReviewCommentPayload
+}
+
+// InlineReviewCommentPayload is one comment on the wire.
+type InlineReviewCommentPayload struct {
+	Path string
+	Line int
+	Body string
+}
+
 // Response is a bare success/error envelope for calls with no return value.
 type Response struct {
 	natsrpc.Envelope
@@ -118,6 +143,7 @@ func (s *Server) RegisterFor(nc *nats.Conn, identity string) (unsubscribe func()
 		{Subject: SubjectFor(identity, SubjectCreatePR), Handler: s.handleCreatePR},
 		{Subject: SubjectFor(identity, SubjectLinkBranch), Handler: s.handleLinkBranch},
 		{Subject: SubjectFor(identity, SubjectSetStateLabel), Handler: s.handleSetStateLabel},
+		{Subject: SubjectFor(identity, SubjectCreateReviewComment), Handler: s.handleCreateReviewComments},
 	})
 }
 
@@ -158,6 +184,25 @@ func (s *Server) handleLinkBranch(msg *nats.Msg) {
 		return
 	}
 	err := s.Forge.LinkBranch(context.Background(), req.Owner, req.Repo, req.IssueNumber, req.Branch)
+	s.respond(msg, Response{Envelope: natsrpc.NewEnvelope(err)})
+}
+
+func (s *Server) handleCreateReviewComments(msg *nats.Msg) {
+	var req CreateReviewCommentsRequest
+	if err := json.Unmarshal(msg.Data, &req); err != nil {
+		s.respond(msg, Response{Envelope: natsrpc.NewEnvelope(fmt.Errorf("decode create_review_comments request: %w", err))})
+		return
+	}
+	writer, ok := s.Forge.(forge.ReviewCommentWriter)
+	if !ok {
+		s.respond(msg, Response{Envelope: natsrpc.NewEnvelope(errors.New("this forge cannot post review comments"))})
+		return
+	}
+	comments := make([]forge.InlineReviewComment, 0, len(req.Comments))
+	for _, cm := range req.Comments {
+		comments = append(comments, forge.InlineReviewComment{Path: cm.Path, Line: cm.Line, Body: cm.Body})
+	}
+	err := writer.CreateReviewComments(context.Background(), req.Owner, req.Repo, req.Number, comments)
 	s.respond(msg, Response{Envelope: natsrpc.NewEnvelope(err)})
 }
 
@@ -243,4 +288,20 @@ func (c *Client) LinkBranch(ctx context.Context, owner, repo string, issueNumber
 func (c *Client) SetStateLabel(ctx context.Context, owner, repo string, number int, label string, knownLabels []string) {
 	req := SetStateLabelRequest{Owner: owner, Repo: repo, Number: number, Label: label, KnownLabels: knownLabels}
 	_, _ = natsrpc.Call[Response](ctx, c.rpc(), c.subject(SubjectSetStateLabel), req)
+}
+
+// CreateReviewComments posts the review's line-anchored findings on the pull
+// request. It is the one proxied method a workflow stage treats as best-effort,
+// which is why it is also the one whose failure cannot park a task.
+func (c *Client) CreateReviewComments(ctx context.Context, owner, repo string, number int, comments []workflow.ReviewComment) error {
+	payload := make([]InlineReviewCommentPayload, 0, len(comments))
+	for _, cm := range comments {
+		payload = append(payload, InlineReviewCommentPayload{Path: cm.Path, Line: cm.Line, Body: cm.Body})
+	}
+	req := CreateReviewCommentsRequest{Owner: owner, Repo: repo, Number: number, Comments: payload}
+	resp, err := natsrpc.Call[Response](ctx, c.rpc(), c.subject(SubjectCreateReviewComment), req)
+	if err != nil {
+		return err
+	}
+	return resp.Err()
 }

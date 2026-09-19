@@ -105,6 +105,94 @@ func runReview(ctx context.Context, tc *TaskContext) (ReviewReport, error) {
 	return tc.Reviewer.Review(ctx, req), nil
 }
 
+// StagePostReviewComments posts the review's line-anchored findings as inline
+// comments on the pull request StageOpenPR has just opened (archie-core-q9au).
+//
+// Only line-anchored findings are posted. A whole-file finding has no line to
+// attach to and stays in the PR-body list, which remains the complete record and
+// the fallback. A blocking finding never reaches here either: StageReview parks
+// the task before StageOpenPR when a confirmed error-level finding survives, so
+// there is no PR to comment on.
+//
+// Best-effort by construction. The PR is already open and its body already
+// carries every finding, so a comment that failed to post must not park a task
+// whose actual work succeeded -- the same reasoning as OpenPR's best-effort
+// LinkBranch call. A failure is logged, never returned.
+func StagePostReviewComments() Stage {
+	return Stage{Name: "post-review-comments", Run: func(ctx context.Context, tc *TaskContext) error {
+		if !tc.ReviewReport.Ran() {
+			return nil
+		}
+		comments := lineAnchoredReviewComments(tc.ReviewReport)
+		if len(comments) == 0 {
+			return nil
+		}
+		// OpenPR records the number; without one there is nothing to anchor to,
+		// and a guess would attach the findings to unrelated work.
+		if tc.Task.PRNumber <= 0 {
+			tc.Log.Warn("review comments not posted: the task carries no pull request number",
+				"findings", len(comments))
+			return nil
+		}
+		err := tc.Forge.CreateReviewComments(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.PRNumber, comments)
+		if err != nil {
+			tc.Log.Error("review comments not posted; the pull request body still lists every finding",
+				"err", err, "pr", tc.Task.PRNumber, "comments", len(comments))
+			return nil
+		}
+		tc.Log.Info("review comments posted", "pr", tc.Task.PRNumber, "comments", len(comments))
+		return nil
+	}}
+}
+
+// ReviewComment is one line-anchored comment to post on an open pull request:
+// the repo-relative path, the line in the reviewed revision, and the rendered
+// body -- which may carry a fenced suggestion block. It is what the review stage
+// hands the forge through Forger, so it names nothing forge-specific.
+type ReviewComment struct {
+	Path string
+	Line int
+	Body string
+}
+
+// lineAnchoredReviewComments renders the findings that can carry an inline
+// comment. It is the one place "which findings, with what body" is decided, so
+// the PR body and the inline comments cannot disagree about a finding beyond the
+// location the body has to state in text.
+func lineAnchoredReviewComments(report ReviewReport) []ReviewComment {
+	comments := make([]ReviewComment, 0, len(report.Findings))
+	for _, f := range report.Findings {
+		if f.Line <= 0 {
+			continue
+		}
+		comments = append(comments, ReviewComment{Path: f.File, Line: f.Line, Body: renderReviewCommentBody(f)})
+	}
+	return comments
+}
+
+// renderReviewCommentBody renders one finding as the body of a comment anchored
+// to its line: the anchor carries the location, so the body states the defect,
+// the scenario that produces it, and -- for a confirmed defect the reviewer
+// supplied a replacement for -- the replacement as a fence GitHub applies in one
+// click.
+//
+// The fence is gated on confirmed here rather than left to the reviewer, because
+// it is a one-click apply: a wrong suggestion breaks the code and the author has
+// to notice. The prompt asks for a suggestion only on a confirmed, mechanically
+// fixable finding, but an agent's output is input, so the rule is enforced where
+// the fence is written.
+func renderReviewCommentBody(f ReviewFinding) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "**%s (%s)**: %s", f.Verdict, f.Level, f.Defect)
+	if f.FailureScenario != "" {
+		fmt.Fprintf(&b, "\n\n%s", f.FailureScenario)
+	}
+	if f.Verdict == ReviewVerdictConfirmed && f.Suggestion != "" {
+		fmt.Fprintf(&b, "\n\n```suggestion\n%s\n```", strings.TrimRight(f.Suggestion, "\n"))
+	}
+	return b.String()
+}
+
 // renderReviewDetail formats a review report as a park Detail: why the
 // task stopped, and what a human (or a retry) needs to know.
 func renderReviewDetail(report ReviewReport) string {

@@ -156,6 +156,28 @@ type PullRequestReviewReader interface {
 	ReplyToReview(ctx context.Context, owner, repo string, number int, commentID int64, body string) error
 }
 
+// InlineReviewComment is one line-anchored comment to post on a PR: the file,
+// the line in the reviewed commit's version of it, and the body -- which may
+// carry a fenced suggestion block the author can apply in one click.
+type InlineReviewComment struct {
+	Path string
+	Line int
+	Body string
+}
+
+// ReviewCommentWriter posts line-anchored review comments on an open pull
+// request. Forge implementations that cannot (the noop forge) do not implement
+// it; callers type-assert and degrade to the PR-body list rather than faking it.
+//
+// The set travels in one call because that is Gitea's native shape (a single
+// COMMENT-state review carrying many comments); GitHub loops internally. Each
+// implementation anchors the comments to the request's current head revision,
+// so a line number cannot drift onto unrelated code between the review and the
+// posting.
+type ReviewCommentWriter interface {
+	CreateReviewComments(ctx context.Context, owner, repo string, number int, comments []InlineReviewComment) error
+}
+
 // normalizeReviewState maps a GitHub review state string onto the neutral
 // ReviewState* constants. Unknown states pass through lowercased.
 func normalizeReviewState(s string) string {

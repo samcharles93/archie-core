@@ -1,6 +1,6 @@
 # Inline review -- decision
 
-**Status:** Proposed
+**Status:** Implemented
 **Beads issue:** `archie-core-q9au`
 **Builds on:** `archie-core-h019` (adversarial self-review), `docs/architecture/adversarial-review.md`
 
@@ -26,15 +26,27 @@ Both halves are missing today:
 
 ### 1. A narrow, type-asserted write surface
 
+The set of comments travels in one call, so a forge that can only carry them on
+a submitted review needs one request rather than one per finding:
+
 ```go
 type ReviewCommentWriter interface {
-    CreateReviewComment(ctx context.Context, owner, repo string, number int,
-        commitID, path string, line int, body string) error
+    CreateReviewComments(ctx context.Context, owner, repo string, number int,
+        comments []InlineReviewComment) error
 }
 ```
 
 Type-asserted like `PullRequestReader`/`PullRequestReviewReader`, so a forge
-that cannot do it is skipped rather than faked.
+that cannot do it is skipped rather than faked. The stage reaches it through
+`workflow.Forger`, whose production implementation is `forgerpc.Client` — the
+worker holds no forge credentials, so the daemon's forgerpc server type-asserts
+`forge.ReviewCommentWriter` and answers an incapable forge with an error the
+best-effort stage logs.
+
+The comment's line is anchored to the pull request's **current head revision**,
+resolved inside each implementation rather than passed in by the caller: it is
+the revision the reviewed line numbers refer to, and the caller that produced
+them cannot read it.
 
 Per-forge reality (verified against the SDKs, 2026-09-11):
 
@@ -59,7 +71,8 @@ definition the verdict the reviewer traced and can state the failure for. A
 `plausible` finding is a worry, and a worry gets a sentence, not a patch. This is
 the h019.5 calibration rule reused, not a new one.
 
-`Suggestion` replaces the anchored line exactly. Single-line only in this cut;
+`Suggestion` replaces the anchored line exactly, and is only rendered when
+`Verdict == confirmed`. Single-line only in this cut;
 multi-line (GitHub's `StartLine`/`StartSide`) is a follow-up, because a
 multi-line suggestion that is off by one line silently corrupts the file.
 
@@ -80,10 +93,14 @@ otherwise be a body-only list the author has to map back to lines by hand.
 New `StagePostReviewComments`, after `StageOpenPR`:
 
 1. Read the report stashed by `StageReview` (`tc.ReviewReport`, h019.6).
-2. Resolve the head SHA via `PullRequestReader.GetPullRequest` (the PR now
-   exists).
-3. Post each line-anchored finding as an inline comment, with a suggestion block
-   when `Verdict == confirmed && Suggestion != ""`.
+2. Post each line-anchored finding as an inline comment, with a suggestion block
+   when `Verdict == confirmed && Suggestion != ""`. The head SHA the comments are
+   anchored to is resolved by the forge implementation, not here; there is no
+   `PullRequestReader` on this side of the agent boundary.
+
+Nothing pushes between `StageReview` and this stage, so the pull request's head
+is the revision the review read; a retry re-previews it rather than reusing a
+stale anchor.
 
 **Failures log and never fail the task.** The PR is already open; a comment that
 failed to post must not park a task whose actual work succeeded, and the body
