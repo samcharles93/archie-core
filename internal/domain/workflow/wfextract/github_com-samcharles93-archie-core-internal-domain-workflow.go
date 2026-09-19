@@ -129,7 +129,7 @@ type _github_com_samcharles93_archie_core_internal_domain_workflow_Forger struct
 	WCloseIssue           func(ctx context.Context, owner string, repo string, number int, comment string) error
 	WComment              func(ctx context.Context, owner string, repo string, number int, body string) (int64, error)
 	WCreatePR             func(ctx context.Context, owner string, repo string, title string, head string, base string, body string) (int, error)
-	WCreateReviewComments func(ctx context.Context, owner string, repo string, number int, comments []workflow.ReviewComment) error
+	WCreateReviewComments func(ctx context.Context, owner string, repo string, number int, reviewedHeadSHA string, comments []workflow.ReviewComment) error
 	WLinkBranch           func(ctx context.Context, owner string, repo string, issueNumber int, branch string) error
 	WReplyToReview        func(ctx context.Context, owner string, repo string, number int, commentID int64, body string) error
 }
@@ -155,11 +155,11 @@ func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Forger) Cr
 	return W.WCreatePR(ctx, owner, repo, title, head, base, body)
 }
 
-func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Forger) CreateReviewComments(ctx context.Context, owner string, repo string, number int, comments []workflow.ReviewComment) error {
+func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Forger) CreateReviewComments(ctx context.Context, owner string, repo string, number int, reviewedHeadSHA string, comments []workflow.ReviewComment) error {
 	if W.WCreateReviewComments == nil {
 		return nil
 	}
-	return W.WCreateReviewComments(ctx, owner, repo, number, comments)
+	return W.WCreateReviewComments(ctx, owner, repo, number, reviewedHeadSHA, comments)
 }
 
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Forger) LinkBranch(ctx context.Context, owner string, repo string, issueNumber int, branch string) error {

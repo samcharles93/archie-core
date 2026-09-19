@@ -100,6 +100,9 @@ func TestWrapperNilGuardsPreserved(t *testing.T) {
 	if err := forger.ReplyToReview(context.Background(), "", "", 0, 0, ""); err != nil {
 		t.Errorf("ReplyToReview on nil WReplyToReview = %v, want nil", err)
 	}
+	if err := forger.CreateReviewComments(context.Background(), "", "", 0, "", nil); err != nil {
+		t.Errorf("CreateReviewComments on nil WCreateReviewComments = %v, want nil", err)
+	}
 
 	var reviewer _github_com_samcharles93_archie_core_internal_domain_workflow_Reviewer
 	if got := reviewer.Review(context.Background(), workflow.ReviewRequest{}); len(got.Findings) != 0 || got.Status != "" || got.Summary != "" {

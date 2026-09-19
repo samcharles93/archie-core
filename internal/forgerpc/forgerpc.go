@@ -108,7 +108,15 @@ type SetStateLabelRequest struct {
 type CreateReviewCommentsRequest struct {
 	Owner, Repo string
 	Number      int
-	Comments    []InlineReviewCommentPayload
+	// ReviewedHeadSHA is the revision the comments' line numbers were measured
+	// on, which the worker records when it opens the pull request. It is
+	// additive on the wire: a worker that predates it omits the field and the
+	// server posts unverified (the pre-existing behaviour) rather than refusing
+	// every set, and a server that predates it ignores the field. Neither
+	// direction breaks, and neither silently mints a revision that was never
+	// measured.
+	ReviewedHeadSHA string
+	Comments        []InlineReviewCommentPayload
 }
 
 // InlineReviewCommentPayload is one comment on the wire.
@@ -213,7 +221,7 @@ func (s *Server) handleCreateReviewComments(msg *nats.Msg) {
 	for _, cm := range req.Comments {
 		comments = append(comments, forge.InlineReviewComment{Path: cm.Path, Line: cm.Line, Body: cm.Body})
 	}
-	err := writer.CreateReviewComments(context.Background(), req.Owner, req.Repo, req.Number, comments)
+	err := writer.CreateReviewComments(context.Background(), req.Owner, req.Repo, req.Number, req.ReviewedHeadSHA, comments)
 	s.respond(msg, Response{Envelope: natsrpc.NewEnvelope(err)})
 }
 
@@ -319,12 +327,19 @@ func (c *Client) SetStateLabel(ctx context.Context, owner, repo string, number i
 // CreateReviewComments posts the review's line-anchored findings on the pull
 // request. It is the one proxied method a workflow stage treats as best-effort,
 // which is why it is also the one whose failure cannot park a task.
-func (c *Client) CreateReviewComments(ctx context.Context, owner, repo string, number int, comments []workflow.ReviewComment) error {
+//
+// reviewedHeadSHA travels with the call so the daemon -- the only side holding
+// forge credentials, and so the only side that can read a pull request's head --
+// can refuse a set whose line numbers describe a revision the PR has left.
+func (c *Client) CreateReviewComments(ctx context.Context, owner, repo string, number int, reviewedHeadSHA string, comments []workflow.ReviewComment) error {
 	payload := make([]InlineReviewCommentPayload, 0, len(comments))
 	for _, cm := range comments {
 		payload = append(payload, InlineReviewCommentPayload{Path: cm.Path, Line: cm.Line, Body: cm.Body})
 	}
-	req := CreateReviewCommentsRequest{Owner: owner, Repo: repo, Number: number, Comments: payload}
+	req := CreateReviewCommentsRequest{
+		Owner: owner, Repo: repo, Number: number,
+		ReviewedHeadSHA: reviewedHeadSHA, Comments: payload,
+	}
 	resp, err := natsrpc.Call[Response](ctx, c.rpc(), c.subject(SubjectCreateReviewComment), req)
 	if err != nil {
 		return err

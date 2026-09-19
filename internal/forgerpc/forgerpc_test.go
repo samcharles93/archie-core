@@ -54,6 +54,7 @@ type fakeForge struct {
 type reviewCommentsCall struct {
 	owner, repo string
 	number      int
+	reviewedSHA string
 	comments    []forge.InlineReviewComment
 }
 
@@ -113,8 +114,8 @@ func (f *fakeForge) LinkBranch(_ context.Context, owner, repo string, number int
 
 // CreateReviewComments makes fakeForge satisfy forge.ReviewCommentWriter, the
 // optional capability the server type-asserts.
-func (f *fakeForge) CreateReviewComments(_ context.Context, owner, repo string, number int, comments []forge.InlineReviewComment) error {
-	f.reviews = append(f.reviews, reviewCommentsCall{owner: owner, repo: repo, number: number, comments: comments})
+func (f *fakeForge) CreateReviewComments(_ context.Context, owner, repo string, number int, reviewedHeadSHA string, comments []forge.InlineReviewComment) error {
+	f.reviews = append(f.reviews, reviewCommentsCall{owner: owner, repo: repo, number: number, reviewedSHA: reviewedHeadSHA, comments: comments})
 	return f.reviewErr
 }
 
@@ -218,7 +219,7 @@ func TestClientCreateReviewCommentsPersistsViaServer(t *testing.T) {
 		{Path: "a.go", Line: 12, Body: "**confirmed (warn)**: nil deref\n\n```suggestion\nreturn nil\n```"},
 		{Path: "b.go", Line: 3, Body: "**plausible (warn)**: possible race"},
 	}
-	if err := client.CreateReviewComments(context.Background(), "acme", "widget", 7, comments); err != nil {
+	if err := client.CreateReviewComments(context.Background(), "acme", "widget", 7, "reviewed-head-sha", comments); err != nil {
 		t.Fatalf("CreateReviewComments: %v", err)
 	}
 	if len(fg.reviews) != 1 {
@@ -227,6 +228,12 @@ func TestClientCreateReviewCommentsPersistsViaServer(t *testing.T) {
 	got := fg.reviews[0]
 	if got.owner != "acme" || got.repo != "widget" || got.number != 7 {
 		t.Errorf("anchored at %s/%s#%d, want acme/widget#7", got.owner, got.repo, got.number)
+	}
+	// The daemon is the only side that can read a pull request's head, so the
+	// revision the worker measured has to survive the round trip for the drift
+	// check to have anything to compare against.
+	if got.reviewedSHA != "reviewed-head-sha" {
+		t.Errorf("server saw reviewed head %q, want the worker's measured revision", got.reviewedSHA)
 	}
 	want := []forge.InlineReviewComment{
 		{Path: "a.go", Line: 12, Body: comments[0].Body},
@@ -256,7 +263,7 @@ func TestClientCreateReviewCommentsReportsAnIncapableForge(t *testing.T) {
 	t.Cleanup(unsub)
 
 	client := &Client{Conn: connect(t, srv.ClientURL()), Timeout: 2 * time.Second}
-	err = client.CreateReviewComments(context.Background(), "acme", "widget", 7, []workflow.ReviewComment{{Path: "a.go", Line: 1, Body: "x"}})
+	err = client.CreateReviewComments(context.Background(), "acme", "widget", 7, "reviewed-sha", []workflow.ReviewComment{{Path: "a.go", Line: 1, Body: "x"}})
 	if err == nil {
 		t.Fatal("CreateReviewComments error = nil, want an incapable-forge error")
 	}
@@ -277,7 +284,7 @@ func TestClientCreateReviewCommentsPropagatesAForgeError(t *testing.T) {
 	t.Cleanup(unsub)
 
 	client := &Client{Conn: connect(t, srv.ClientURL()), Timeout: 2 * time.Second}
-	err = client.CreateReviewComments(context.Background(), "acme", "widget", 7, []workflow.ReviewComment{{Path: "a.go", Line: 1, Body: "x"}})
+	err = client.CreateReviewComments(context.Background(), "acme", "widget", 7, "reviewed-sha", []workflow.ReviewComment{{Path: "a.go", Line: 1, Body: "x"}})
 	if err == nil {
 		t.Fatal("CreateReviewComments error = nil, want the forge failure surfaced")
 	}

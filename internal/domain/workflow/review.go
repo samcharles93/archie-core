@@ -117,7 +117,10 @@ func runReview(ctx context.Context, tc *TaskContext) (ReviewReport, error) {
 // Best-effort by construction. The PR is already open and its body already
 // carries every finding, so a comment that failed to post must not park a task
 // whose actual work succeeded -- the same reasoning as OpenPR's best-effort
-// LinkBranch call. A failure is logged, never returned.
+// LinkBranch call. A failure is logged, never returned. That includes the forge
+// refusing the set because the pull request's head moved past ReviewedHeadSHA:
+// the line numbers would then describe a revision the author is no longer
+// looking at, and the PR body is the record that survives anyway.
 func StagePostReviewComments() Stage {
 	return Stage{Name: "post-review-comments", Run: func(ctx context.Context, tc *TaskContext) error {
 		if !tc.ReviewReport.Ran() {
@@ -134,7 +137,7 @@ func StagePostReviewComments() Stage {
 				"findings", len(comments))
 			return nil
 		}
-		err := tc.Forge.CreateReviewComments(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.PRNumber, comments)
+		err := tc.Forge.CreateReviewComments(ctx, tc.Task.Owner, tc.Task.Repo, tc.Task.PRNumber, tc.ReviewedHeadSHA, comments)
 		if err != nil {
 			tc.Log.Error("review comments not posted; the pull request body still lists every finding",
 				"err", err, "pr", tc.Task.PRNumber, "comments", len(comments))
