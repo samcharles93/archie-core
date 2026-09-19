@@ -3,6 +3,7 @@ import { h, render } from "preact";
 import { useCallback, useEffect, useState } from "preact/hooks";
 import { api } from "./base/api.jsx";
 import { hiddenRoutes } from "./capabilities.jsx";
+import { loadTaskMeta } from "./base/task-meta.jsx";
 import { Icon } from "./base/icons.jsx";
 import { dashboardPage } from "./dashboard/dashboard.jsx";
 import { tasksPage } from "./tasks/tasks.jsx";
@@ -327,6 +328,16 @@ function App() {
       .capabilities()
       .then((caps) => setHidden(hiddenRoutes(caps?.sections, routes)))
       .catch(() => {});
+  }, []);
+
+  // The lifecycle vocabulary -- status labels, pill severity, "needs you"
+  // grouping, and the operator actions -- is served by /api/task-meta. Ask for
+  // it once, after the shell is up: the freeze-dried defaults paint
+  // immediately and this replaces them, so a catalogue change on the server
+  // reaches the browser without a UI release. loadTaskMeta never throws (a
+  // failed fetch keeps the defaults), so it needs no catch here.
+  useEffect(() => {
+    loadTaskMeta();
   }, []);
 
   return (
