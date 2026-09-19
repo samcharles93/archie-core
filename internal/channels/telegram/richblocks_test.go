@@ -382,3 +382,82 @@ func TestMarkdownToBlocksFencedCodeIsVerbatim(t *testing.T) {
 		t.Errorf("fenced code was altered:\n got %q\nwant %q", got, body)
 	}
 }
+
+// TestMarkdownToBlocksHardLineBreak is the regression case for a chat report
+// arriving as one run-on line. /status and /tasks are line-oriented: every
+// newline is a real break, not CommonMark's soft wrap. Rendered without hard
+// breaks, "Runtime\nProvider: X\nModel: Y" reached Telegram as
+// "Runtime Provider: X Model: Y", and a task's title, state and park reason
+// were jammed into a single line each.
+func TestMarkdownToBlocksHardLineBreak(t *testing.T) {
+	blocks := markdownToBlocks("Runtime  \nProvider: DeepSeek  \nModel: deepseek/flash")
+
+	var texts []string
+	for _, b := range blocks {
+		texts = append(texts, blockText(b))
+	}
+	want := []string{"Runtime", "Provider: DeepSeek", "Model: deepseek/flash"}
+	if len(texts) != len(want) {
+		t.Fatalf("blocks = %d (%v), want %d lines each as its own block", len(texts), texts, len(want))
+	}
+	for i, w := range want {
+		if texts[i] != w {
+			t.Errorf("block[%d] = %q, want %q", i, texts[i], w)
+		}
+	}
+}
+
+// TestMarkdownToBlocksHardBreakKeepsTheStanzaTight pins that hard-broken lines
+// stay one visual stanza: the spacer paragraph that separates unrelated blocks
+// must not be inserted between lines the producer marked as continuing.
+func TestMarkdownToBlocksHardBreakKeepsTheStanzaTight(t *testing.T) {
+	blocks := markdownToBlocks("First line  \nSecond line\n\nNew stanza")
+
+	texts := make([]string, 0, len(blocks))
+	for _, b := range blocks {
+		texts = append(texts, blockText(b))
+	}
+	want := []string{"First line", "Second line", "", "New stanza"}
+	if len(texts) != len(want) {
+		t.Fatalf("blocks = %v, want %v", texts, want)
+	}
+	for i, w := range want {
+		if texts[i] != w {
+			t.Errorf("block[%d] = %q, want %q", i, texts[i], w)
+		}
+	}
+}
+
+// TestMarkdownToBlocksSoftWrapStillJoins pins that ordinary prose is
+// unaffected: a model's wrapped paragraph must not become ragged lines just
+// because the reports now ask for hard breaks.
+func TestMarkdownToBlocksSoftWrapStillJoins(t *testing.T) {
+	blocks := markdownToBlocks("A wrapped sentence\ncontinues here.")
+	if len(blocks) != 1 {
+		t.Fatalf("blocks = %d, want 1 joined paragraph", len(blocks))
+	}
+	if got := blockText(blocks[0]); got != "A wrapped sentence continues here." {
+		t.Errorf("paragraph = %q, want the two lines joined with a space", got)
+	}
+}
+
+// TestMarkdownToBlocksHardBreakDoesNotLeakPastABlankLine pins that a stanza's
+// last line does not pull the next stanza up against it. The hard break
+// belongs to the paragraph it closed, not to the document.
+func TestMarkdownToBlocksHardBreakDoesNotLeakPastABlankLine(t *testing.T) {
+	blocks := markdownToBlocks("Line one  \n\nLine two")
+
+	texts := make([]string, 0, len(blocks))
+	for _, b := range blocks {
+		texts = append(texts, blockText(b))
+	}
+	want := []string{"Line one", "", "Line two"}
+	if len(texts) != len(want) {
+		t.Fatalf("blocks = %v, want %v (a spacer between the two stanzas)", texts, want)
+	}
+	for i, w := range want {
+		if texts[i] != w {
+			t.Errorf("block[%d] = %q, want %q", i, texts[i], w)
+		}
+	}
+}
