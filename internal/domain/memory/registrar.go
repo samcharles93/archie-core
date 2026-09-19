@@ -1,6 +1,9 @@
 package memory
 
-import "time"
+import (
+	"log/slog"
+	"time"
+)
 
 // Registrar is the narrow typed host access an engine receives at
 // registration. Fields are typed contracts declared here — this package
@@ -16,6 +19,13 @@ type Registrar struct {
 	// Clock is injectable time. Always bound; nil at construction is
 	// replaced with the system clock.
 	Clock Clock
+	// Log is the engine-scoped diagnostic logger, optional so domain tests
+	// and embedders can construct a registrar without a logging sink (the
+	// curator family's Registrar carries the same field for the same
+	// reason). An engine emits here what it cannot emit as an event: the
+	// content scanner's warn level, which allows the write and is expected
+	// to leave a record of what it saw.
+	Log *slog.Logger
 }
 
 // EventSink publishes engine activity. Mirrors curator.EventSink: emission

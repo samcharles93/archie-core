@@ -1112,7 +1112,9 @@ func (b *boot) setupMemory() error {
 // same files while both exist.
 func (b *boot) setupMemoryEngine() error {
 	cfg, log := b.cfg, b.log
-	registry := domainmemory.NewRegistry(domainmemory.Registrar{})
+	// The logger is what carries an engine's scanner warning: warn allows
+	// the write, so the log line is the whole audit trail for it.
+	registry := domainmemory.NewRegistry(domainmemory.Registrar{Log: log})
 
 	switch cfg.Memory.Engine {
 	case infraMemory.EngineName, "":

@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -64,6 +65,7 @@ type BuiltinEngine struct {
 	stores map[string]*scopeStores // keyed by scope key, lazily created
 
 	clock domainmemory.Clock
+	log   *slog.Logger
 }
 
 // NewBuiltinEngine builds an engine that persists each scope under its own
@@ -83,7 +85,8 @@ func (e *BuiltinEngine) Manifest() domainmemory.Manifest {
 	return domainmemory.Manifest{RequiresNetwork: false}
 }
 
-// Bind takes the registrar's clock, which stamps CreatedAt/UpdatedAt.
+// Bind takes the registrar's clock, which stamps CreatedAt/UpdatedAt, and its
+// optional logger.
 //
 // It deliberately ignores Registrar.Events. The only warn-level finding this
 // engine produces is a scanner hit, and there is no ratified memory event
@@ -91,8 +94,12 @@ func (e *BuiltinEngine) Manifest() domainmemory.Manifest {
 // curators, workflow stages and scheduling, none for memory, and the
 // composition binds no memory event sink at all (bootstrap registers the
 // engine with an empty Registrar). Emitting an invented kind into a sink
-// nobody binds would look wired and not be.
-func (e *BuiltinEngine) Bind(host domainmemory.Registrar) { e.clock = host.Clock }
+// nobody binds would look wired and not be. The scanner's warning is a
+// diagnostic, not an event, and goes to Registrar.Log (see scanContent).
+func (e *BuiltinEngine) Bind(host domainmemory.Registrar) {
+	e.clock = host.Clock
+	e.log = host.Log
+}
 
 func (e *BuiltinEngine) Start(context.Context) error { return nil }
 
@@ -183,17 +190,28 @@ func sectionFor(kind string) (string, error) {
 	return kind, nil
 }
 
-// scanContent applies the family's scanner to content about to be persisted.
+// scanContent applies the family's scanner to content about to be persisted,
+// before anything is written.
+//
 // A block-level threat fails the write loudly -- loudly, because a scanner
 // hit that only logs is a control that looks wired and is not -- while a
-// warn-level hit is allowed through (see Bind for why it is not also
-// emitted).
-func scanContent(content string) error {
+// warn-level hit is stored and logged, which is what its level is documented
+// to mean ("allow the write but emit a warning"). Warn covers the
+// sensitive-data patterns: an API key, a token or a private key in stored
+// content is worth an audit line even though it is not worth refusing the
+// write over, and a warning that goes nowhere is the same as no scan at all.
+func (e *BuiltinEngine) scanContent(content string) error {
 	result := contentScanner.ScanContent(content)
-	if result.Level != domainmemory.ThreatBlock {
-		return nil
+	switch result.Level {
+	case domainmemory.ThreatBlock:
+		return fmt.Errorf("memory: builtin engine: refusing to persist content: %s", result.Message)
+	case domainmemory.ThreatWarn:
+		if e.log != nil {
+			e.log.Warn("memory: stored content matched a sensitive-data pattern",
+				"pattern", result.Pattern, "reason", result.Message)
+		}
 	}
-	return fmt.Errorf("memory: builtin engine: refusing to persist content: %s", result.Message)
+	return nil
 }
 
 // storeContent returns the content a block will actually hold, so that the
@@ -242,7 +260,7 @@ func (e *BuiltinEngine) Create(_ context.Context, in domainmemory.NewRecord) (do
 	if err != nil {
 		return domainmemory.Record{}, err
 	}
-	if err := scanContent(in.Content); err != nil {
+	if err := e.scanContent(in.Content); err != nil {
 		return domainmemory.Record{}, err
 	}
 	content, err := storeContent(in.Content)
@@ -369,7 +387,7 @@ func (e *BuiltinEngine) Update(_ context.Context, in domainmemory.RecordUpdate) 
 	}
 	// Scanned before anything is written: a refused update must leave both
 	// the record and its history untouched.
-	if err := scanContent(in.Content); err != nil {
+	if err := e.scanContent(in.Content); err != nil {
 		return domainmemory.Record{}, err
 	}
 	content, err := storeContent(in.Content)
