@@ -44,10 +44,12 @@ type Service struct {
 	stop    func()
 }
 
-// compose builds the Service from resolved configuration. A channel whose
+// compose builds the Service from resolved configuration. ctx is the service
+// lifetime: seams a channel invokes later (the Gateway version lookup) derive
+// their calls from it, so a shutdown cancels them. A channel whose
 // configuration is present but invalid fails composition rather than being
 // dropped: a front-end the operator configured must never silently not run.
-func compose(d deps) (*Service, error) {
+func compose(ctx context.Context, d deps) (*Service, error) {
 	srv := &Service{
 		cfg:    d.Config,
 		log:    d.Log,
@@ -61,6 +63,7 @@ func compose(d deps) (*Service, error) {
 				"Add your Telegram user id to chat.telegram.allowed_user_ids to enable the bot.")
 		}
 		tg := telegram.New(d.Config.TelegramToken, d.Config.Telegram.AllowedUserIDs, d.Log)
+		configureTelegram(ctx, tg, d.Config, d.Chat, d.Log)
 		if err := srv.add("telegram", tg, telegramValidateConfigMap(d.Config.Telegram)); err != nil {
 			return nil, err
 		}

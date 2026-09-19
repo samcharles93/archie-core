@@ -25,7 +25,7 @@ func Run(ctx context.Context, o Options) error {
 
 	health := newReadinessRegistry(cfg.Options, chat)
 
-	srv, err := compose(deps{
+	srv, err := compose(ctx, deps{
 		Config: cfg,
 		Log:    log,
 		Chat:   chat,

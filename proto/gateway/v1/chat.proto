@@ -100,6 +100,7 @@ message SnapshotResponse {
   bool restart_available = 9;
   bool cancellation_available = 10;
   bool personas_available = 11;
+  string version = 12;
 }
 message GetSessionRequest { string session_id = 1; }
 message GetSessionResponse { Session session = 1; bool found = 2; }

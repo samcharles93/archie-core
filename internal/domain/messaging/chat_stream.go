@@ -3,14 +3,18 @@ package messaging
 // ChatSnapshot is what Snapshot returns: the full chat state a dashboard
 // renders in one read.
 type ChatSnapshot struct {
-	Sessions              []SessionContext
-	Models                []string
-	ModelsByProvider      map[string][]string
-	Providers             []string
-	ActiveModel           string
-	ActiveProvider        string
-	Personas              []string
-	ActivePersonas        map[string]string
+	Sessions         []SessionContext
+	Models           []string
+	ModelsByProvider map[string][]string
+	Providers        []string
+	ActiveModel      string
+	ActiveProvider   string
+	Personas         []string
+	ActivePersonas   map[string]string
+	// Version is the Gateway's rendered component-version block. Channel
+	// frontends display it rather than stamping their own build, so a
+	// partially upgraded deployment cannot report itself as matched.
+	Version               string
 	RestartAvailable      bool
 	CancellationAvailable bool
 	PersonasAvailable     bool

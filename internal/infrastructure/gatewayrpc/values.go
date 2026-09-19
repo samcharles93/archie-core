@@ -195,7 +195,7 @@ func snapshotProto(v messaging.ChatSnapshot) *pb.SnapshotResponse {
 	for k, list := range v.ModelsByProvider {
 		groups[k] = &pb.StringList{Values: list}
 	}
-	return &pb.SnapshotResponse{Sessions: mapValues(v.Sessions, sessionProto), Models: v.Models, ModelsByProvider: groups, Providers: v.Providers, ActiveModel: v.ActiveModel, ActiveProvider: v.ActiveProvider, Personas: v.Personas, ActivePersonas: v.ActivePersonas, RestartAvailable: v.RestartAvailable, CancellationAvailable: v.CancellationAvailable, PersonasAvailable: v.PersonasAvailable}
+	return &pb.SnapshotResponse{Sessions: mapValues(v.Sessions, sessionProto), Models: v.Models, ModelsByProvider: groups, Providers: v.Providers, ActiveModel: v.ActiveModel, ActiveProvider: v.ActiveProvider, Personas: v.Personas, ActivePersonas: v.ActivePersonas, RestartAvailable: v.RestartAvailable, CancellationAvailable: v.CancellationAvailable, PersonasAvailable: v.PersonasAvailable, Version: v.Version}
 }
 
 func snapshotValue(v *pb.SnapshotResponse) messaging.ChatSnapshot {
@@ -203,5 +203,5 @@ func snapshotValue(v *pb.SnapshotResponse) messaging.ChatSnapshot {
 	for k, list := range v.ModelsByProvider {
 		groups[k] = list.GetValues()
 	}
-	return messaging.ChatSnapshot{Sessions: mapValues(v.Sessions, sessionValue), Models: v.Models, ModelsByProvider: groups, Providers: v.Providers, ActiveModel: v.ActiveModel, ActiveProvider: v.ActiveProvider, Personas: v.Personas, ActivePersonas: v.ActivePersonas, RestartAvailable: v.RestartAvailable, CancellationAvailable: v.CancellationAvailable, PersonasAvailable: v.PersonasAvailable}
+	return messaging.ChatSnapshot{Sessions: mapValues(v.Sessions, sessionValue), Models: v.Models, ModelsByProvider: groups, Providers: v.Providers, ActiveModel: v.ActiveModel, ActiveProvider: v.ActiveProvider, Personas: v.Personas, ActivePersonas: v.ActivePersonas, RestartAvailable: v.RestartAvailable, CancellationAvailable: v.CancellationAvailable, PersonasAvailable: v.PersonasAvailable, Version: v.Version}
 }

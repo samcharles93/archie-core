@@ -43,6 +43,7 @@ func TestChatContractConformance(t *testing.T) {
 			sessions := gateway.NewSessionStoreMemory()
 			t.Cleanup(func() { _ = sessions.Close() })
 			router := gateway.NewRouter(nil, nil, "web")
+			router.Version = "Archie\nGateway: 1.2.3\nRuntime: 4.5.6"
 			router.InitSessions(sessions)
 			local := &gateway.LocalChatAdapter{Router: router, Sessions: sessions}
 			var chat gateway.ChatContract = local
@@ -67,6 +68,11 @@ func TestChatContractConformance(t *testing.T) {
 			snap, err := chat.Snapshot(ctx)
 			if err != nil || len(snap.Sessions) != 1 || snap.CancellationAvailable || snap.PersonasAvailable {
 				t.Fatalf("snapshot: %+v %v", snap, err)
+			}
+			// The Messaging Service renders /version from this field rather
+			// than stamping its own build, so it has to survive the wire.
+			if snap.Version != router.Version {
+				t.Fatalf("snapshot version = %q, want %q", snap.Version, router.Version)
 			}
 			if _, err := chat.RecentMessages(ctx, reply.SessionID, 200); err != nil {
 				t.Fatal(err)

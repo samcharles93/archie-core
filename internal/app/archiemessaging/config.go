@@ -21,14 +21,27 @@ type ResolvedConfig struct {
 	Webhook       config.WebhookRoute
 	WebhookSecret string
 	WebhookAddr   string
+	// WorkDir, BotUser and HealthURL are not channel transport settings. They
+	// locate this identity's release-announcement and update-report state
+	// files, and give the update installer the daemon health endpoint to poll
+	// after it applies one (docs/architecture/migration-decisions.md, "Telegram
+	// operator surface after extraction").
+	WorkDir       string
+	BotUser       string
+	HealthURL     string
+	ShowToolCalls bool
 }
 
 type projection struct {
-	gateway     ServiceTarget
-	telegram    config.TelegramConfig
-	email       config.EmailConfig
-	webhook     config.WebhookRoute
-	webhookAddr string
+	gateway       ServiceTarget
+	telegram      config.TelegramConfig
+	email         config.EmailConfig
+	webhook       config.WebhookRoute
+	webhookAddr   string
+	workDir       string
+	botUser       string
+	healthURL     string
+	showToolCalls bool
 }
 
 // Resolve loads the configuration, extracts the messaging projection, resolves
@@ -74,6 +87,10 @@ func Resolve(o Options, log *slog.Logger) (ResolvedConfig, error) {
 		Webhook:       proj.webhook,
 		WebhookSecret: whSecret,
 		WebhookAddr:   proj.webhookAddr,
+		WorkDir:       proj.workDir,
+		BotUser:       proj.botUser,
+		HealthURL:     proj.healthURL,
+		ShowToolCalls: proj.showToolCalls,
 	}, nil
 }
 
@@ -94,10 +111,14 @@ func project(cfg config.Config) projection {
 			Target: cfg.Services.Get(config.ServiceNameGateway).Target,
 			Token:  cfg.Services.Get(config.ServiceNameGateway).TargetToken,
 		},
-		telegram:    cfg.Chat.Telegram,
-		email:       cfg.Chat.Email,
-		webhook:     cfg.Chat.Webhook,
-		webhookAddr: cfg.Chat.WebhookAddr,
+		telegram:      cfg.Chat.Telegram,
+		email:         cfg.Chat.Email,
+		webhook:       cfg.Chat.Webhook,
+		webhookAddr:   cfg.Chat.WebhookAddr,
+		workDir:       cfg.WorkDir,
+		botUser:       cfg.BotUser,
+		healthURL:     cfg.Health.URL(),
+		showToolCalls: cfg.Chat.ShowToolCalls,
 	}
 }
 
