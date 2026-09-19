@@ -125,6 +125,7 @@ func (b *boot) startGatewayRuntime(ctx context.Context, actor gateway.ChatTaskAc
 	b.bus = events.NewBus()
 	b.addCleanup(b.bus.Close)
 	b.capabilityHost = plugin.NewHost()
+	b.startRateLimiter(ctx, b.cfg.Chat.RateLimit)
 	// setupMemoryEngine must run before setupGatewayChat: setupGatewayChat
 	// constructs the turn runner, which captures b.memEngines at
 	// construction time (see the identical ordering note in main.go's Run).
