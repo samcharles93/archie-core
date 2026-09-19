@@ -256,12 +256,17 @@ type containerTeardown struct {
 // armMaxUptime schedules a hard stop and remove for a container once its
 // lifetime cap elapses. The timer never touches p.active: Release (or Close)
 // remains the only owner of the active slot.
+//
+// The reaper never calls forgetTeardown itself: Release is always coming for
+// this container (the pool guarantees every acquired container is eventually
+// released) and is the sole owner of deleting the map entry. Two callers
+// deleting it independently is what let a freshly-recreated, unclosed entry
+// slip between the reaper's delete and Release's claim check.
 func (p *Pool) armMaxUptime(ctx context.Context, id string) {
 	timer := time.AfterFunc(p.cfg.MaxUptime, func() {
 		if !p.claimTeardown(id) {
 			return
 		}
-		defer p.forgetTeardown(id)
 		zero := 0
 		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
@@ -292,7 +297,9 @@ func (p *Pool) claimTeardown(id string) bool {
 }
 
 // forgetTeardown disarms the reaper and drops the container's bookkeeping, so
-// the map does not grow for the life of the pool.
+// the map does not grow for the life of the pool. Only Release calls this
+// (see armMaxUptime); it is the container's final teardown step, so nothing
+// else can race a fresh entry back into existence afterward.
 func (p *Pool) forgetTeardown(id string) {
 	p.mu.Lock()
 	t := p.teardowns[id]
