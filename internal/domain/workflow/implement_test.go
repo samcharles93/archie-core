@@ -457,6 +457,8 @@ type fakeTrees struct {
 	pushErr          error
 
 	dir string
+	// changedLines is what ChangedLines reports, for StageDiffCap.
+	changedLines int
 
 	resumed      bool
 	resumeDir    string
@@ -485,7 +487,9 @@ func (f *fakeTrees) Diff(context.Context, string, string) (string, error) { retu
 
 func (f *fakeTrees) ChangedFiles(context.Context, string, string) ([]string, error) { return nil, nil }
 
-func (f *fakeTrees) ChangedLines(context.Context, string, string) (int, error) { return 0, nil }
+func (f *fakeTrees) ChangedLines(context.Context, string, string) (int, error) {
+	return f.changedLines, nil
+}
 
 func (f *fakeTrees) Snapshot(context.Context, string, string) error { return nil }
 

@@ -26,6 +26,7 @@
 poll_interval = "60s"
 label = "archie"
 bot_user = "vectis-labs-archie"
+# 0 switches the cap off; omit the key to take the built-in default (400).
 diff_cap_lines = 400
 
 # how many operator-triggered retries a parked task gets

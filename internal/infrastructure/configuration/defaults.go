@@ -208,8 +208,11 @@ func (l *Loader) applyGeneralDefaults(cfg *config.Config) {
 	if cfg.PollInterval == 0 {
 		cfg.PollInterval = config.Duration(defaultPollInterval)
 	}
-	if cfg.DiffCapLines == 0 {
-		cfg.DiffCapLines = defaultDiffCapLines
+	// Only an absent key takes the default. An explicit 0 is the documented
+	// way to switch the cap off and must survive.
+	if cfg.DiffCapLines == nil {
+		capLines := defaultDiffCapLines
+		cfg.DiffCapLines = &capLines
 	}
 	if cfg.Web.Listen == "" {
 		cfg.Web.Listen = defaultWebListen

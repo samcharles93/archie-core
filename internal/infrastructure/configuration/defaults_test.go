@@ -147,3 +147,35 @@ func TestApplyMemoryDefaultsLeavesExplicitEngineAlone(t *testing.T) {
 		t.Errorf("Memory.Engine = %q, want unchanged %q", cfg.Memory.Engine, "honcho")
 	}
 }
+
+// TestDefaultsKeepAnExplicitUnlimitedDiffCap is the regression case for
+// diff_cap_lines = 0 silently becoming 400. The dashboard schema, and
+// StageDiffCap itself, both document 0 as "no cap", but the defaults pass could
+// not tell an explicit 0 from an absent key and rewrote both to 400 -- so the
+// documented way to switch the cap off was unreachable through config.
+func TestDefaultsKeepAnExplicitUnlimitedDiffCap(t *testing.T) {
+	unlimited := 0
+	cfg := config.Config{DiffCapLines: &unlimited}
+	(&Loader{}).applyDefaults(&cfg)
+
+	if cfg.DiffCapLines == nil {
+		t.Fatal("DiffCapLines = nil, want the explicit 0 preserved")
+	}
+	if *cfg.DiffCapLines != 0 {
+		t.Fatalf("DiffCapLines = %d, want 0: an explicit 0 means no cap", *cfg.DiffCapLines)
+	}
+	if cfg.DiffCap() != 0 {
+		t.Fatalf("DiffCap() = %d, want 0 (unlimited)", cfg.DiffCap())
+	}
+}
+
+// TestDefaultsApplyTheDiffCapWhenUnset pins the other half: an absent key still
+// gets the safety cap, so omitting it never silently auto-opens huge PRs.
+func TestDefaultsApplyTheDiffCapWhenUnset(t *testing.T) {
+	cfg := config.Config{}
+	(&Loader{}).applyDefaults(&cfg)
+
+	if cfg.DiffCapLines == nil || *cfg.DiffCapLines != defaultDiffCapLines {
+		t.Fatalf("DiffCapLines = %v, want %d when the key is absent", cfg.DiffCapLines, defaultDiffCapLines)
+	}
+}

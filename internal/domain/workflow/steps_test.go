@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/samcharles93/archie-core/internal/config"
@@ -222,5 +223,52 @@ func TestStageRepoStagesPropagatesLoaderError(t *testing.T) {
 	}
 	if err := StageRepoStages().Run(context.Background(), tc); err == nil {
 		t.Fatal("StageRepoStages() = nil, want the loader's error propagated")
+	}
+}
+
+// TestStageDiffCapUnlimitedWhenCapIsZero pins that an explicit 0 switches the
+// cap off. The dashboard schema documents 0 that way, and this is the step that
+// has to honour it -- for a long time it could not, because the config loader
+// rewrote an explicit 0 to the default before the step ever saw it.
+func TestStageDiffCapUnlimitedWhenCapIsZero(t *testing.T) {
+	tc := &TaskContext{
+		Cfg:   config.Config{DiffCapLines: new(0)},
+		Trees: &fakeTrees{changedLines: 10_000},
+		Repo:  config.Repo{Owner: "acme", Name: "app"},
+	}
+
+	if err := StageDiffCap().Run(context.Background(), tc); err != nil {
+		t.Fatalf("StageDiffCap: %v", err)
+	}
+	if tc.Outcome.Status == StatusParked {
+		t.Fatalf("task parked with the cap switched off: %q", tc.Outcome.Detail)
+	}
+}
+
+// TestStageDiffCapParksWithAnActionableReason is the regression case for a park
+// reason that told the operator to do something impossible. A parked task's
+// actions are retry, abandon and reject (internal/taskstate), so "approve
+// manually" sent them looking for a button that does not exist -- which is
+// exactly what happened on task 11.
+func TestStageDiffCapParksWithAnActionableReason(t *testing.T) {
+	tc := &TaskContext{
+		Cfg:   config.Config{DiffCapLines: new(400)},
+		Trees: &fakeTrees{changedLines: 789},
+		Repo:  config.Repo{Owner: "acme", Name: "app"},
+	}
+
+	if err := StageDiffCap().Run(context.Background(), tc); err != nil {
+		t.Fatalf("StageDiffCap: %v", err)
+	}
+	if tc.Outcome.Status != StatusParked {
+		t.Fatalf("Outcome.Status = %q, want parked at 789 lines over a 400 cap", tc.Outcome.Status)
+	}
+	if strings.Contains(tc.Outcome.Detail, "approve") {
+		t.Errorf("park reason offers approve, which is not an action a parked task has: %q", tc.Outcome.Detail)
+	}
+	for _, want := range []string{"789", "400", "diff_cap_lines"} {
+		if !strings.Contains(tc.Outcome.Detail, want) {
+			t.Errorf("park reason %q is missing %q", tc.Outcome.Detail, want)
+		}
 	}
 }

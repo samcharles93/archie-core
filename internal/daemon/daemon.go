@@ -1602,7 +1602,12 @@ func (d *Daemon) captureAttemptConfig(ctx context.Context, task *workflow.Task, 
 func configForIdentity(root config.Config, identity config.IdentityConfig) config.Config {
 	root.BotUser = identity.BotUser
 	root.BotEmail = identity.BotEmail
-	root.DiffCapLines = identity.DiffCapLines
+	// Only an identity that set the cap overrides the shared one. Assigning
+	// unconditionally made an identity that omits the key inherit a nil cap,
+	// which reads as "no cap" and silently disabled the safety rail.
+	if identity.DiffCapLines != nil {
+		root.DiffCapLines = identity.DiffCapLines
+	}
 	root.Forge = identity.Forge
 	root.Dispatch = identity.Dispatch
 	root.Models = identity.Models
