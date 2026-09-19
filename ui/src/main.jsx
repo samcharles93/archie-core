@@ -1,8 +1,9 @@
 import "./css/_main.css";
 import { h, render } from "preact";
-import { useCallback, useEffect, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { api } from "./base/api.jsx";
 import { hiddenRoutes } from "./capabilities.jsx";
+import { loadTaskMeta } from "./base/task-meta.jsx";
 import { Icon } from "./base/icons.jsx";
 import { dashboardPage } from "./dashboard/dashboard.jsx";
 import { tasksPage } from "./tasks/tasks.jsx";
@@ -76,6 +77,7 @@ function navEntries(hidden) {
 
 function Topbar({ activePath, hidden, onNavigate, chatOpen, onToggleChat, theme, onToggleTheme }) {
   const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef(null);
 
   const closeSearch = () => setSearchOpen(false);
 
@@ -99,6 +101,7 @@ function Topbar({ activePath, hidden, onNavigate, chatOpen, onToggleChat, theme,
     if (hit) {
       onNavigate(hit.path);
       event.target.value = "";
+      event.target.blur();
       closeSearch();
     }
   };
@@ -139,11 +142,17 @@ function Topbar({ activePath, hidden, onNavigate, chatOpen, onToggleChat, theme,
             type="button"
             aria-label="Open Jump to navigation"
             aria-expanded={searchOpen ? "true" : "false"}
-            onClick={() => setSearchOpen(true)}
+            onClick={() => {
+              setSearchOpen(true);
+              // The field is always mounted -- the narrow layout only hides it --
+              // so focus can land in it straight away instead of on the toggle.
+              searchRef.current?.focus();
+            }}
           >
             <Icon name="search" size={15} />
           </button>
           <input
+            ref={searchRef}
             type="search"
             placeholder="Jump to…"
             aria-label="Jump to a section"
@@ -242,26 +251,22 @@ function RouteView({ view, search, params }) {
 let outlet = null;
 let chrome = null;
 
-function show(rawPath) {
+// renderRoute mounts the route's page into the outlet. It is separate from
+// show() because the lifecycle catalog arrives after the first paint and the
+// route tree renders into its own root: App re-rendering cannot reach into the
+// outlet, so a late catalog has to re-render the page explicitly or it keeps
+// the freeze-dried labels it read on the way up. The key is unchanged, so Preact
+// re-renders the mounted page in place and keeps its state.
+function renderRoute(rawPath) {
+  if (!outlet) return;
   const [path, query = ""] = String(rawPath).split("?", 2);
   const match = matchRoute(routes, path);
   const route = match?.route || routes[0];
   const params = match?.params || {};
 
-  // Let a page release its subscriptions before it is replaced, so the SSE
-  // stream does not leak a connection per navigation. The event goes to the
-  // outgoing page's root, before the swap.
-  outlet?.firstElementChild?.dispatchEvent(new CustomEvent("archie:teardown"));
-  // A detail route highlights the section it belongs to, so the nav item for
-  // Tasks stays current on #/tasks/42 instead of every item losing it.
-  chrome?.setActive(navPath(route));
-
   // The chat is a drawer, not a page: /chat opens it rather than mounting a
   // second ChatPage (which would duplicate session state and the stream).
-  const isChat = route.path === "/chat";
-  chrome?.setChatOpen(isChat);
-  if (!outlet) return;
-  if (isChat) {
+  if (route.path === "/chat") {
     render(null, outlet);
     return;
   }
@@ -282,6 +287,25 @@ function show(rawPath) {
     ),
     outlet,
   );
+}
+
+function show(rawPath) {
+  const [path] = String(rawPath).split("?", 2);
+  const match = matchRoute(routes, path);
+  const route = match?.route || routes[0];
+
+  // Let a page release its subscriptions before it is replaced, so the SSE
+  // stream does not leak a connection per navigation. The event goes to the
+  // outgoing page's root, before the swap.
+  outlet?.firstElementChild?.dispatchEvent(new CustomEvent("archie:teardown"));
+  // A detail route highlights the section it belongs to, so the nav item for
+  // Tasks stays current on #/tasks/42 instead of every item losing it.
+  chrome?.setActive(navPath(route));
+
+  // The chat is a drawer, not a page: /chat opens it rather than mounting a
+  // second ChatPage (which would duplicate session state and the stream).
+  chrome?.setChatOpen(route.path === "/chat");
+  renderRoute(rawPath);
 }
 
 function navigate(next) {
@@ -327,6 +351,20 @@ function App() {
       .capabilities()
       .then((caps) => setHidden(hiddenRoutes(caps?.sections, routes)))
       .catch(() => {});
+  }, []);
+
+  // The lifecycle vocabulary -- status labels, pill severity, "needs you"
+  // grouping, and the operator actions -- is served by /api/task-meta. Ask for
+  // it once, after the shell is up: the freeze-dried defaults paint
+  // immediately and this replaces them, so a catalogue change on the server
+  // reaches the browser without a UI release. loadTaskMeta never throws (a
+  // failed fetch keeps the defaults), so it needs no catch here.
+  useEffect(() => {
+    // The catalog lands after the first paint, and the route tree renders into
+    // its own root: without re-rendering it, an already-painted page keeps the
+    // freeze-dried labels it read on the way up until something else happens to
+    // re-render it.
+    loadTaskMeta().then(() => renderRoute(location.hash.slice(1) || "/"));
   }, []);
 
   return (

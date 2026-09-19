@@ -176,6 +176,31 @@ tasks:
     cmds:
       - npm run build
 
+  ui:check:
+    desc: Rebuild the dashboard into a temporary directory and reject a stale ui/dist
+    summary: |
+      ui/dist is committed because the Go build embeds it, so it is a generated
+      source file. Nothing else in the gate reads it and `task ui` rewrites it
+      in place, so before this a change to ui/src that landed without the
+      rebuilt bundle was invisible -- and two agents in two worktrees could each
+      "pass" while producing different dashboards.
+
+      Builds somewhere temporary and compares, never rewriting the committed
+      artifact, which is the rule docs:check already follows for the contract
+      reference. A gate that rebuilt ui/dist in place would bless an unintended
+      UI change with no reviewer ever seeing it.
+
+      Fix a failure with `task ui`, then commit the rebuilt bundle in the same
+      commit as the source change that caused it.
+
+      Declares ui:deps like `ui` and `test:ui` do, so a fresh clone works; that
+      means the gate runs `npm install` once for each dependent. Task's
+      sources/generates up-to-date check does not apply to a node_modules
+      directory, so the guard against that is a follow-up, not a claim here.
+    deps: [ui:deps]
+    cmds:
+      - bash tools/uidist.sh check
+
   test:ui:
     desc: Run the dashboard's node tests (DOM-building primitives)
     dir: ui
@@ -330,7 +355,7 @@ tasks:
       - go -C tools test -mod=readonly ./... -count=1
 
   check:
-    desc: "Full quality gate: fmt, go fix, proto, docs, vet, lint, build, test, tools tests, ui tests"
+    desc: "Full quality gate: fmt, go fix, proto, docs, vet, lint, build, test, tools tests, ui tests and bundle"
     cmds:
       - task: fmt
       - go fix ./...
@@ -348,6 +373,11 @@ tasks:
       # The dashboard's suite runs here too. Left out of the gate it rots
       # silently: nothing else executes it, so a broken DOM primitive ships.
       - task: test:ui
+      # ...and so is the bundle that suite is built from. ui/dist is committed
+      # and embedded; nothing else checks it against ui/src, and `task ui`
+      # rewrites it in place, so a forgotten rebuild used to leave no trace in
+      # the gate at all.
+      - task: ui:check
 
   contract:
     desc: "Report contract conformance: declared surfaces, their consumers, and the drift between them"
