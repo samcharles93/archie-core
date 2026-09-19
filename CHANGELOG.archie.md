@@ -1,5 +1,24 @@
 # archie-agent changelog
 
+## [1.28.0] - 2026-09-19
+
+- The sandboxed runtime picks up the attempt-attribution contract, so the events
+  and changes an agent produces are recorded against the attempt that produced
+  them.
+- `grep` can use the workspace codesearch index.
+- A worktree is handed back on every sandbox exit, and container teardown is
+  claimed once — a released container's reaper is cancelled rather than
+  re-firing during the grace period.
+- Retries recover from worktree path-type conflicts instead of failing
+  opaquely.
+- A parked workflow run records its park reason in its own log.
+- Triage criteria distinguish the workflows, and a workflow is required when a
+  code change is needed.
+- Namespaced forge labels match when routing by kind.
+- The `ARCHIE_REACTIONS` fan-out stream is provisioned.
+- Collection fields decoded over the State Store gRPC contract are never nil
+  slices, so an empty collection marshals as `[]` rather than `null`.
+
 ## [1.27.0] - 2026-09-17
 
 - The per-task runtime picks up the new State Store task-log read contract, so
