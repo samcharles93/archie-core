@@ -245,10 +245,10 @@ func TestPassWritesExtractedFactsToAgentUserScope(t *testing.T) {
 			wantContents: []string{"prefers tabs over spaces"},
 		},
 		{
-			name: "an empty sender among the user messages does not create a participant",
+			name: "an assistant sender beside one identified user sender is still one participant",
 			messages: []curator.ConversationMessage{
 				{Role: "user", SenderID: "u-42", Content: "I prefer tabs"},
-				{Role: "user", Content: "a message whose channel carries no sender id"},
+				{Role: "assistant", SenderID: "winter", Content: "noted"},
 			},
 			response:     `["prefers tabs over spaces"]`,
 			wantContents: []string{"prefers tabs over spaces"},
@@ -317,7 +317,15 @@ func TestPassSkipsSessionsWithoutASingleParticipant(t *testing.T) {
 		{
 			name:       "zero senders: a dashboard session carries no per-person identity",
 			messages:   []curator.ConversationMessage{{Role: "user", Content: "hello"}},
-			wantReason: "no single participant: 0 distinct sender(s)",
+			wantReason: "no single participant: 0 distinct sender(s), 1 unidentified user message(s)",
+		},
+		{
+			name: "an identified sender beside an unidentified user message: the excerpt's provenance is unknown",
+			messages: []curator.ConversationMessage{
+				{Role: "user", SenderID: "u-42", Content: "I prefer tabs"},
+				{Role: "user", Content: "a message whose channel carries no sender id"},
+			},
+			wantReason: "no single participant: 1 distinct sender(s), 1 unidentified user message(s)",
 		},
 		{
 			name: "several distinct senders: a group chat",
@@ -338,7 +346,7 @@ func TestPassSkipsSessionsWithoutASingleParticipant(t *testing.T) {
 				{Role: "user", Content: "hello"},
 				{Role: "user", Content: "still nobody"},
 			},
-			wantReason: "no single participant: 0 distinct sender(s)",
+			wantReason: "no single participant: 0 distinct sender(s), 2 unidentified user message(s)",
 		},
 	}
 

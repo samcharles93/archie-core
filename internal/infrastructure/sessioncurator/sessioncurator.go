@@ -21,7 +21,9 @@ const ActionExtracted = "memory.extracted"
 // ActionSkipped records a session the pass could not attribute to exactly
 // one participant, so nothing was written for it. The reason names how many
 // distinct senders were found (zero for a dashboard or webhook session,
-// more than one for a group chat).
+// more than one for a group chat), and how many user messages carried no
+// sender at all -- unknown provenance rules a session out on its own, beside
+// any number of identified senders.
 const ActionSkipped = "memory.skipped"
 
 // DefaultInterval is the check-in cadence used when nothing more
@@ -151,13 +153,13 @@ func (c *Curator) reviewOne(ctx context.Context, engine domainmemory.MemoryEngin
 	// unattributable session has nowhere addressable to write, so there is
 	// nothing a model response could add. ScopeAgentUser is addressed by
 	// both ids, and a guess would file one person's facts under another's.
-	participant, distinct := sessionParticipant(msgs)
+	participant, reason := sessionParticipant(msgs)
 	if participant == "" {
 		return &curator.Action{
 			At:     c.host.Clock.Now(),
 			Type:   ActionSkipped,
 			Detail: sess.ID,
-			Reason: fmt.Sprintf("no single participant: %d distinct sender(s)", distinct),
+			Reason: reason,
 		}, nil
 	}
 
@@ -214,26 +216,41 @@ func (c *Curator) reviewOne(ctx context.Context, engine domainmemory.MemoryEngin
 	}, nil
 }
 
-// sessionParticipant returns a session's single participant and how many
-// distinct senders it found. Only user-role messages count, and only their
-// non-empty SenderID: an assistant message carries the bot, and a dashboard
-// or webhook session carries no per-person identity at all -- neither may
-// manufacture a participant. Zero or several distinct senders means there is
-// no single participant to attribute the session to.
-func sessionParticipant(msgs []curator.ConversationMessage) (participant string, distinct int) {
+// sessionParticipant returns the one participant a session's memory may be
+// attributed to, or -- when there is none -- the reason there isn't.
+//
+// Only user-role messages carry a person: an assistant message carries the
+// bot, so it can never manufacture a participant.
+//
+// A user-role message with an empty SenderID is part of the excerpt the
+// model reads but names nobody, so the session is unattributable outright,
+// even beside exactly one identified sender. The alternative -- skipping it
+// and attributing the rest -- would credit whoever that sender is with
+// facts drawn from content of unknown provenance, which is the isolation
+// failure the agent-user scope exists to prevent.
+func sessionParticipant(msgs []curator.ConversationMessage) (participant, reason string) {
 	senders := make(map[string]struct{})
+	unidentified := 0
 	for _, m := range msgs {
-		if m.Role != "user" || m.SenderID == "" {
+		if m.Role != "user" {
+			continue
+		}
+		if m.SenderID == "" {
+			unidentified++
 			continue
 		}
 		senders[m.SenderID] = struct{}{}
 	}
+
+	if unidentified > 0 {
+		return "", fmt.Sprintf("no single participant: %d distinct sender(s), %d unidentified user message(s)", len(senders), unidentified)
+	}
 	if len(senders) == 1 {
 		for id := range senders {
-			return id, 1
+			return id, ""
 		}
 	}
-	return "", len(senders)
+	return "", fmt.Sprintf("no single participant: %d distinct sender(s)", len(senders))
 }
 
 // extractPrompt instructs the model to return a JSON array of short,
