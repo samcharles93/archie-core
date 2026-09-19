@@ -12,7 +12,11 @@ tasks:
   fmt:
     desc: Format and fix Go source (gofumpt, go fix)
     cmds:
-      - gofumpt -w .
+      # -extra must match the gofumpt formatter's extra-rules in
+      # .golangci.yml. Without it `task fmt` cannot produce what `task lint`
+      # demands -- e.g. func f(a int, b int) -> func f(a, b int) -- so a
+      # contributor has no command that satisfies the gate.
+      - gofumpt -extra -w .
       - go fix ./...
 
   proto:install:
