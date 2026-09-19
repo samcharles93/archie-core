@@ -8,6 +8,12 @@ import { ago } from "../base/format.jsx";
 // that predates capture, or one that produced no commit, has no capture and
 // nothing here can turn that into a claim about the repository.
 
+// The change-status ids are a wire vocabulary owned by the daemon
+// (internal/domain/workflow/task/changes.go). Only the words are the
+// dashboard's: an id added on the server renders as its raw id rather than
+// breaking the row. ui/test/changed-files.test.js pins the id set on this side
+// and the constants' own test pins it on the other, so a one-sided rename fails
+// instead of drifting.
 const FILE_STATUS = {
   added: "Added",
   modified: "Modified",

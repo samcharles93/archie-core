@@ -33,9 +33,10 @@ var dashboardPages = []DashboardPage{
 	{Path: "/logs", Label: "Logs", Description: "The daemon log stream, filterable by level and component."},
 	{Path: "/captures", Label: "Event inspector", Description: "Captured inbound events for inspection."},
 	{Path: "/mappings", Label: "Field mappings", Description: "How inbound event fields map onto internal ones."},
+	{Path: "/bindings", Label: "Playbook bindings", Description: "How captured events are bound to the workflows they start."},
 	{Path: "/skills", Label: "Skills", Description: "The SKILL.md capabilities Archie can activate."},
 	{Path: "/workflows", Label: "Workflows", Description: "The routed workflows (bootstrap, implement, tdd, feasibility) and their run history."},
-	{Path: "/memory", Label: "Memory", Description: "What Archie carries between conversations and the tools that read it."},
+	{Path: "/curators", Label: "Curators", Description: "The scheduled passes that curate Archie's memory and captures."},
 	{Path: "/channels", Label: "Channels", Description: "Inbound chat and notification channels (e.g. Telegram) and their state."},
 	{Path: "/settings", Label: "Configuration", Description: "Daemon configuration editable from the dashboard."},
 }

@@ -8,7 +8,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 const personalityCallbackPrefix = "personality:"
@@ -26,9 +26,10 @@ func (g *Gateway) handlePersonalityCommand(
 	ctx context.Context,
 	b *bot.Bot,
 	msg *models.Message,
-	router *gateway.Router,
+	client messaging.ChatContract,
 ) {
-	if router.Personas == nil {
+	snap, err := client.Snapshot(ctx)
+	if err != nil || !snap.PersonasAvailable {
 		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
 			"Personality switching is not configured.")
 		return
@@ -38,13 +39,14 @@ func (g *Gateway) handlePersonalityCommand(
 	fields := strings.Fields(text)
 	if len(fields) == 1 {
 		// No args: show inline keyboard.
-		g.sendPersonalitySelector(ctx, b, msg, router)
+		g.sendPersonalitySelector(ctx, b, msg, snap.Personas)
 		return
 	}
 
 	// Direct switch by name.
 	name := strings.ToLower(fields[1])
-	if !router.Personas.SetActive("", name) {
+	ok, err := client.SetPersona(ctx, "", name)
+	if err != nil || !ok {
 		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
 			fmt.Sprintf("Unknown personality %q. Use /personality to browse.", name))
 		return
@@ -57,10 +59,9 @@ func (g *Gateway) sendPersonalitySelector(
 	ctx context.Context,
 	b *bot.Bot,
 	msg *models.Message,
-	router *gateway.Router,
+	personas []string,
 ) {
-	names := router.Personas.List()
-	if len(names) == 0 {
+	if len(personas) == 0 {
 		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
 			"No personalities configured.")
 		return
@@ -69,7 +70,7 @@ func (g *Gateway) sendPersonalitySelector(
 	params := &bot.SendMessageParams{
 		ChatID:      msg.Chat.ID,
 		Text:        "Choose a personality:",
-		ReplyMarkup: g.personalityKeyboard(router.Personas),
+		ReplyMarkup: g.personalityKeyboard(personas),
 	}
 	if msg.MessageThreadID != 0 {
 		params.MessageThreadID = msg.MessageThreadID
@@ -79,10 +80,9 @@ func (g *Gateway) sendPersonalitySelector(
 	}
 }
 
-func (g *Gateway) personalityKeyboard(registry *gateway.PersonaRegistry) *models.InlineKeyboardMarkup {
-	names := registry.List()
-	rows := make([][]models.InlineKeyboardButton, 0, len(names))
-	for _, name := range names {
+func (g *Gateway) personalityKeyboard(personas []string) *models.InlineKeyboardMarkup {
+	rows := make([][]models.InlineKeyboardButton, 0, len(personas))
+	for _, name := range personas {
 		rows = append(rows, []models.InlineKeyboardButton{{
 			Text:         name,
 			CallbackData: personalityCallbackPrefix + name,
@@ -95,7 +95,7 @@ func (g *Gateway) handlePersonalityCallback(
 	ctx context.Context,
 	b *bot.Bot,
 	update *models.Update,
-	router *gateway.Router,
+	client messaging.ChatContract,
 ) {
 	query := update.CallbackQuery
 	if query == nil {
@@ -108,14 +108,16 @@ func (g *Gateway) handlePersonalityCallback(
 			"You are not authorised to use this bot.", true)
 		return
 	}
-	if router.Personas == nil {
+	snap, err := client.Snapshot(ctx)
+	if err != nil || !snap.PersonasAvailable {
 		g.answerModelCallback(ctx, b, query.ID,
 			"Personality switching is not configured.", true)
 		return
 	}
 
 	name := strings.TrimPrefix(query.Data, personalityCallbackPrefix)
-	if !router.Personas.SetActive("", name) {
+	ok, err := client.SetPersona(ctx, "", name)
+	if err != nil || !ok {
 		g.answerModelCallback(ctx, b, query.ID,
 			fmt.Sprintf("Unknown personality %q.", name), true)
 		return

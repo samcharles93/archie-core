@@ -6,6 +6,7 @@ package archied
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -13,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samcharles93/archie-core/internal/channels/status"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
@@ -36,44 +36,33 @@ func (b *boot) setupReadinessProbes() {
 		readiness.NewConfigProbe(b.cfgHolder.Get, configuration.Validate),
 		readiness.NewDiskProbeTargets(diskProbeTargets(cfg)),
 		readiness.NewModelProbe(b.chatModels.ActiveModel, b.chatModels.Models, modelReachProbe(cfg, b.chatModels.ActiveModel)),
-		readiness.NewGatewayProbe(
-			func() []readiness.ChannelState { return channelStates(b.channelManager) },
-			func(ctx context.Context) int { return sessionCount(ctx, b.chat) },
-		),
+		// The daemon no longer runs a chat channel, so it cannot observe one's
+		// lifecycle; channel health is the Messaging Service's own probe. What
+		// this process depends on is the Gateway answering, so that is what it
+		// reports (docs/prds/ui-service-boundary.md, "Listen, authentication,
+		// and readiness").
+		readiness.NewContractProbe("gateway", gatewayProbeTimeout, func(ctx context.Context) error {
+			return pingChat(ctx, b.chat)
+		}),
 	}
 	b.healthRegistry = health.NewRegistry(probes...)
 }
 
-// channelStates projects a channel lifecycle snapshot into the readiness
-// probe's view, so the probe does not depend on the channels package's
-// concrete type.
-func channelStates(m *status.Manager) []readiness.ChannelState {
-	if m == nil {
-		return nil
-	}
-	snapshot := m.Snapshot()
-	states := make([]readiness.ChannelState, 0, len(snapshot))
-	for _, s := range snapshot {
-		states = append(states, readiness.ChannelState{
-			ID:         s.ID,
-			Configured: s.Configured,
-			State:      string(s.State),
-		})
-	}
-	return states
-}
+// gatewayProbeTimeout bounds the Gateway readiness call so a hung Gateway
+// degrades this probe rather than stalling the whole health report.
+const gatewayProbeTimeout = 5 * time.Second
 
-// sessionCount returns the number of gateway sessions. An unwired chat
-// surface returns 0 rather than reporting a false failure.
-func sessionCount(ctx context.Context, chat *webui.ChatService) int {
+// pingChat asks the Gateway for a snapshot. An unwired chat surface is
+// reported as degraded rather than silently OK: a daemon with no Gateway
+// serves no chat at all.
+func pingChat(ctx context.Context, chat *webui.ChatService) error {
 	if chat == nil || chat.Contract == nil {
-		return 0
+		return errors.New("chat contract not wired")
 	}
-	snapshot, err := chat.Contract.Snapshot(ctx)
-	if err != nil {
-		return 0
+	if _, err := chat.Contract.Snapshot(ctx); err != nil {
+		return err
 	}
-	return len(snapshot.Sessions)
+	return nil
 }
 
 // diskProbeTargets returns the filesystems whose capacity matters to the

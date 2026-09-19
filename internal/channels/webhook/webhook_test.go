@@ -13,8 +13,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/channels"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
+
+type fakeChatContract struct {
+	messaging.ChatContract
+	routeFunc func(ctx context.Context, in messaging.Inbound) (messaging.ChatReply, error)
+}
+
+func (f *fakeChatContract) Route(ctx context.Context, in messaging.Inbound) (messaging.ChatReply, error) {
+	if f.routeFunc != nil {
+		return f.routeFunc(ctx, in)
+	}
+	return messaging.ChatReply{Text: "ok"}, nil
+}
 
 func TestName(t *testing.T) {
 	g := New("", 0, nil, slog.Default())
@@ -22,12 +35,6 @@ func TestName(t *testing.T) {
 		t.Errorf("Name() = %q", g.Name())
 	}
 }
-
-// HMAC signature verification itself is now internal/webhookguard.VerifyHMAC
-// and tested there; TestWebhookHandlerValidSignature and
-// TestWebhookHandlerInvalidSignature below cover this package's own
-// responsibility -- that the handler actually calls it and reacts correctly
-// to the result.
 
 func TestExtractText(t *testing.T) {
 	body := []byte(`{"issue":{"title":"fix bug","body":"details"}}`)
@@ -81,10 +88,12 @@ func TestWebhookHandlerRoute(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	g := New("", 0, []RouteConfig{{Path: "/hook"}}, log)
 	var gotSenderID string
-	g.router = gateway.NewRouter(nil, func(ctx context.Context, in gateway.Inbound) (string, error) {
-		gotSenderID = in.Message.SenderID
-		return "ok", nil
-	}, "webhook")
+	g.client = &fakeChatContract{
+		routeFunc: func(ctx context.Context, in messaging.Inbound) (messaging.ChatReply, error) {
+			gotSenderID = in.Message.SenderID
+			return messaging.ChatReply{Text: "ok"}, nil
+		},
+	}
 
 	handler := g.WebhookHandler()
 	payload := `{"text":"hello from webhook"}`
@@ -102,7 +111,7 @@ func TestWebhookHandlerRoute(t *testing.T) {
 
 func TestWebhookHandlerInvalidSignature(t *testing.T) {
 	g := New("", 0, []RouteConfig{{Path: "/hook", Secret: "secret"}}, slog.Default())
-	g.router = gateway.NewRouter(nil, nil, "webhook")
+	g.client = &fakeChatContract{}
 
 	handler := g.WebhookHandler()
 	rec := httptest.NewRecorder()
@@ -120,7 +129,7 @@ func TestWebhookHandlerValidSignature(t *testing.T) {
 	sig := "sha256=" + hex.EncodeToString(mac.Sum(nil))
 
 	g := New("", 0, []RouteConfig{{Path: "/hook", Secret: secret}}, slog.Default())
-	g.router = gateway.NewRouter(nil, nil, "webhook")
+	g.client = &fakeChatContract{}
 
 	handler := g.WebhookHandler()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/hook", strings.NewReader(string(body)))
@@ -140,8 +149,8 @@ func TestWebhookStartStop(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 
-	router := gateway.NewRouter(nil, nil, "webhook")
-	go func() { _ = g.Start(ctx, router, gateway.Lifecycle{}) }()
+	client := &fakeChatContract{}
+	go func() { _ = g.Start(ctx, client, channels.Lifecycle{}) }()
 
 	time.Sleep(30 * time.Millisecond)
 	_ = g.Stop(context.Background())
@@ -159,4 +168,4 @@ func TestExtractTextJSONRoundTrip(t *testing.T) {
 }
 
 // Compile-time guard.
-var _ gateway.Gateway = (*Gateway)(nil)
+var _ channels.Channel = (*Gateway)(nil)

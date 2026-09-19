@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/samcharles93/archie-core/internal/channels/status"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -32,36 +31,15 @@ func TestDiskProbePath_FallsBackToCwd(t *testing.T) {
 	}
 }
 
-func TestChannelStates_ProjectsSnapshot(t *testing.T) {
-	m := status.NewManager([]status.Descriptor{
-		{ID: "telegram", Name: "Telegram", Configured: true},
-		{ID: "email", Name: "Email", Configured: false},
-	})
-	m.MarkRunning("telegram")
-	states := channelStates(m)
-	if len(states) != 2 {
-		t.Fatalf("states = %d, want 2", len(states))
+// TestPingChat_ReportsUnwiredChat pins that a daemon with no Gateway contract
+// degrades its gateway probe rather than passing it: chat is served entirely
+// by the Gateway now, so an unwired contract means no chat at all.
+func TestPingChat_ReportsUnwiredChat(t *testing.T) {
+	if err := pingChat(context.Background(), nil); err == nil {
+		t.Fatal("pingChat(nil chat) = nil, want an error")
 	}
-	if states[0].ID != "telegram" || !states[0].Configured || states[0].State != "running" {
-		t.Fatalf("states[0] = %+v, want telegram running", states[0])
-	}
-	if states[1].ID != "email" || states[1].Configured || states[1].State != "stopped" {
-		t.Fatalf("states[1] = %+v, want email stopped", states[1])
-	}
-}
-
-func TestChannelStates_NilManager(t *testing.T) {
-	if got := channelStates(nil); got != nil {
-		t.Fatalf("channelStates(nil) = %#v, want nil", got)
-	}
-}
-
-func TestSessionCount_ToleratesUnwiredChat(t *testing.T) {
-	if got := sessionCount(context.Background(), nil); got != 0 {
-		t.Fatalf("sessionCount(nil chat) = %d, want 0", got)
-	}
-	if got := sessionCount(context.Background(), &webui.ChatService{}); got != 0 {
-		t.Fatalf("sessionCount(unwired Sessions) = %d, want 0", got)
+	if err := pingChat(context.Background(), &webui.ChatService{}); err == nil {
+		t.Fatal("pingChat(unwired contract) = nil, want an error")
 	}
 }
 
@@ -92,9 +70,8 @@ func TestSetupReadinessProbes_WiresEverySubsystem(t *testing.T) {
 	}
 
 	b := &boot{
-		st:             st,
-		cfgHolder:      config.NewHolder(cfg),
-		channelManager: status.NewManager([]status.Descriptor{{ID: "telegram", Name: "Telegram", Configured: true}}),
+		st:        st,
+		cfgHolder: config.NewHolder(cfg),
 		chat: &webui.ChatService{
 			Contract: &gateway.LocalChatAdapter{
 				Router:   &gateway.Router{},
