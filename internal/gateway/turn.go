@@ -104,6 +104,11 @@ type TurnRunnerConfig struct {
 	// in prepareTurn. Nil disables the <memory> block entirely (renderMemory
 	// treats a nil store the same as a failed read).
 	MemoryEngine MemoryStore
+	// MemoryWriter is the write surface the per-turn memory tool (slice 4)
+	// uses to build memory_create/memory_update/memory_delete/memory_list.
+	// Nil omits those tools entirely (MemoryTools treats a nil store the
+	// same as a subject with no writable scope: no tools registered).
+	MemoryWriter MemoryWriteStore
 	// UserIdentity resolves the initiating user's identity for one inbound
 	// message, per channel. False (or a nil UserIdentity) means the channel
 	// carries no per-person identity -- the dashboard's one bearer token, or a
@@ -298,6 +303,7 @@ type preparedTurn struct {
 // for one turn's generation call.
 func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, in Inbound, history []messaging.Message) (preparedTurn, error) {
 	compressed := compressTurnHistory(history)
+	subject := r.resolveSubject(in.Message)
 	extraTools := append(
 		TaskTools(r.TaskLister, r.Tasks, r.TaskLogs, r.TaskActor, r.TaskIdentity),
 		SessionTools(r.Sessions, r.Router.SessionTracker(), r.Channel, in.Message)...,
@@ -306,6 +312,7 @@ func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, in Inbou
 	// The dashboard tools (page_index, dashboard_navigate) belong to the web
 	// UI only: a non-web channel has no dashboard to point at.
 	extraTools = append(extraTools, PageIndexTools(r.Channel)...)
+	extraTools = append(extraTools, MemoryTools(r.MemoryWriter, subject)...)
 	modelName := r.Models.ActiveModel()
 	modelDetails := ModelDetails{}
 	if detailed, ok := r.Models.(DetailedModelManager); ok {
@@ -326,7 +333,7 @@ func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, in Inbou
 	if r.Personas != nil {
 		persona = r.Personas.GetActive(sessionID)
 	}
-	memoryBlock := renderMemory(ctx, r.MemoryEngine, r.resolveSubject(in.Message), r.Log)
+	memoryBlock := renderMemory(ctx, r.MemoryEngine, subject, r.Log)
 	systemPrompt := BuildSystemPrompt(SystemPromptConfig{
 		Persona:   persona,
 		Tools:     prepared.ToolSummaries(),

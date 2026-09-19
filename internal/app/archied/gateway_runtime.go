@@ -68,6 +68,7 @@ func (b *boot) setupGatewayChat(ctx context.Context, actor gateway.ChatTaskActor
 		DefaultChatIdentity: b.defaultChatIdentity, SessionStore: b.chatSessionStore,
 		Bus: b.bus, Log: b.log, Secrets: b.secrets,
 		MemoryEngine: b.memoryStore(),
+		MemoryWriter: b.memoryWriter(),
 	}
 	router.LLM, router.LLMStream = makeChatLLMResponder(ctx, "web", setup, b.chatSessionStore, router)
 	router.Titles = newChatTitleGenerator(setup)

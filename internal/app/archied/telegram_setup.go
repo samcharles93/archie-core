@@ -72,6 +72,10 @@ type telegramSetup struct {
 	// engine, resolved by cfg.Memory.Engine). Nil disables the chat <memory>
 	// block for every turn runner built from this setup.
 	MemoryEngine gateway.MemoryStore
+	// MemoryWriter is the same active engine's write surface, used to build
+	// the per-turn memory_create/update/delete/list tools (docs/prds/
+	// memory-engine-unification.md §5). Nil omits those tools.
+	MemoryWriter gateway.MemoryWriteStore
 }
 
 // telegramValidateConfigMap builds the map Gateway.ValidateConfig expects
@@ -360,6 +364,7 @@ func newChatTurnRunner(
 		Workspace:    cfg.Chat.Workspace,
 		Repos:        chatRepoEnv(cfg, s.DefaultChatIdentity),
 		MemoryEngine: s.MemoryEngine,
+		MemoryWriter: s.MemoryWriter,
 		UserIdentity: userIdentityResolver(channel),
 		Log:          s.Log,
 	})

@@ -690,6 +690,7 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 		ChannelManager: b.channelManager, AgentStatus: b.agentStatus,
 		RateLimiter:  b.rateLimiter,
 		MemoryEngine: b.memoryStore(),
+		MemoryWriter: b.memoryWriter(),
 	})
 	if !ok {
 		return false
@@ -1157,21 +1158,40 @@ func (b *boot) setupMemoryAll() error {
 	return b.setupMemoryEngine()
 }
 
-// memoryStore resolves the active memory engine (the same one
-// setupMemoryEngine registered under cfg.Memory.Engine) as the narrow read
-// surface a chat turn runner needs. Nil when the registry was never set up
-// or the configured engine is not registered -- both cases the turn runner
-// already treats as "no memory block" (gateway.renderMemory), so a chat
-// turn degrades instead of failing.
-func (b *boot) memoryStore() gateway.MemoryStore {
+// activeMemoryEngine resolves the engine setupMemoryEngine registered under
+// cfg.Memory.Engine. Both memoryStore and memoryWriter narrow this same
+// engine to the read or write surface their caller needs; ok is false when
+// the registry was never set up or the configured engine is not registered.
+func (b *boot) activeMemoryEngine() (domainmemory.MemoryEngine, bool) {
 	if b.memEngines == nil {
-		return nil
+		return nil, false
 	}
 	name := b.cfg.Memory.Engine
 	if name == "" {
 		name = infraMemory.EngineName
 	}
-	engine, ok := b.memEngines.Get(name)
+	return b.memEngines.Get(name)
+}
+
+// memoryStore resolves the active memory engine as the narrow read surface
+// a chat turn runner needs. Nil when activeMemoryEngine has none -- the
+// turn runner already treats that as "no memory block"
+// (gateway.renderMemory), so a chat turn degrades instead of failing.
+func (b *boot) memoryStore() gateway.MemoryStore {
+	engine, ok := b.activeMemoryEngine()
+	if !ok {
+		return nil
+	}
+	return engine
+}
+
+// memoryWriter resolves the active memory engine as the narrow write
+// surface the per-turn memory tool needs (docs/prds/
+// memory-engine-unification.md §5). Nil when activeMemoryEngine has none --
+// MemoryTools already treats that as "no memory tools", so a chat turn
+// simply has no memory_create/update/delete/list tools rather than failing.
+func (b *boot) memoryWriter() gateway.MemoryWriteStore {
+	engine, ok := b.activeMemoryEngine()
 	if !ok {
 		return nil
 	}
