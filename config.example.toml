@@ -26,6 +26,7 @@
 poll_interval = "60s"
 label = "archie"
 bot_user = "vectis-labs-archie"
+# 0 switches the cap off; omit the key to take the built-in default (400).
 diff_cap_lines = 400
 
 # how many operator-triggered retries a parked task gets
@@ -222,6 +223,11 @@ class = "ollama"
 # in the extracted UI topology.
 [health]
 listen = "127.0.0.1:8485"
+# Bounds one readiness probe's call into a service the daemon depends on but
+# does not own (the Gateway), so a hung dependency degrades that probe instead
+# of stalling the whole report. Omit for the default; a negative value leaves
+# only the caller's own deadline in force.
+# dependency_timeout = "5s"
 
 # Web dashboard and API: task board, activity stream, chat, config,
 # memory, SSE events. Served as an embedded SPA with a full REST

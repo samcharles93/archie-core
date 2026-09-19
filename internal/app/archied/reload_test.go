@@ -201,7 +201,7 @@ func TestChangedNonReloadableFields(t *testing.T) {
 	reloadableOnly.Repos = []config.Repo{{Owner: "x", Name: "z"}}
 	reloadableOnly.Budgets = config.Budgets{MaxSteps: 99}
 	reloadableOnly.Dispatch = config.Dispatch{Trigger: "label"}
-	reloadableOnly.DiffCapLines = 1234
+	reloadableOnly.DiffCapLines = new(1234)
 	reloadableOnly.Models = map[string]string{"builder": "provider/model"}
 	reloadableOnly.Notify = config.Notify{Webhook: "https://notify.example/hook"}
 	reloadableOnly.Label = "archie"

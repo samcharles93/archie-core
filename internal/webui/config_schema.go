@@ -108,7 +108,7 @@ func configFieldDescriptors() []ConfigSection {
 				{Key: "label", Label: "Pickup label", Type: FieldString, Editable: true},
 				{Key: "forge.type", Label: "Forge type", Type: FieldString, Editable: true, RestartRequired: true},
 				{Key: "forge.host", Label: "Forge host", Type: FieldString, Editable: true},
-				{Key: "diff_cap_lines", Label: "Max diff size (lines)", Description: "0 means unlimited.", Type: FieldInt, Editable: true},
+				{Key: "diff_cap_lines", Label: "Max diff size (lines)", Description: "0 switches the cap off; leave unset for the default.", Type: FieldInt, Editable: true},
 			},
 		},
 		{

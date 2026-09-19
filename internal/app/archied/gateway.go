@@ -99,6 +99,10 @@ func RunGateway(ctx context.Context, options GatewayOptions) error {
 		return fmt.Errorf("connect gateway task actions: %w", err)
 	}
 	b.addCleanup(nc.Close)
+	// Held before the chat runtime is built so /status' health source can
+	// report this process's own broker connection (newStatusHealth reads it
+	// lazily, but the field must be set before requests can arrive).
+	b.taskActionsConn = nc
 	contract, err := b.startGatewayRuntime(ctx, taskactions.Client{Conn: nc, Timeout: 30 * time.Second})
 	if err != nil {
 		return err

@@ -41,16 +41,12 @@ func (b *boot) setupReadinessProbes() {
 		// this process depends on is the Gateway answering, so that is what it
 		// reports (docs/prds/ui-service-boundary.md, "Listen, authentication,
 		// and readiness").
-		readiness.NewContractProbe("gateway", gatewayProbeTimeout, func(ctx context.Context) error {
+		readiness.NewContractProbe("gateway", time.Duration(cfg.Health.DependencyTimeout), func(ctx context.Context) error {
 			return pingChat(ctx, b.chat)
 		}),
 	}
 	b.healthRegistry = health.NewRegistry(probes...)
 }
-
-// gatewayProbeTimeout bounds the Gateway readiness call so a hung Gateway
-// degrades this probe rather than stalling the whole health report.
-const gatewayProbeTimeout = 5 * time.Second
 
 // pingChat asks the Gateway for a snapshot. An unwired chat surface is
 // reported as degraded rather than silently OK: a daemon with no Gateway

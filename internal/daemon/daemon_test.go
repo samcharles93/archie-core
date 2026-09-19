@@ -759,7 +759,7 @@ func TestRunViaAgentParksOnRunError(t *testing.T) {
 func TestRunViaAgentSendsExpectedRequest(t *testing.T) {
 	d, s, busClient := daemonWithNATS(t)
 	prev := d.Cfg.Get()
-	prev.DiffCapLines = 999
+	prev.DiffCapLines = new(999)
 	d.Cfg.Set(prev)
 	ctx := context.Background()
 
@@ -1975,7 +1975,7 @@ func configWithCanarySecrets() config.Config {
 			},
 		},
 		Budgets:      config.Budgets{MaxSteps: 40, GateMaxFailures: 2},
-		DiffCapLines: 800,
+		DiffCapLines: new(800),
 		Dispatch: config.Dispatch{
 			Trigger: "either", AckReaction: "eyes",
 			Labels: map[string]string{"queued": "archie:queued"},
@@ -2257,5 +2257,30 @@ func TestReconcilePRsAttributesTheOutcomeToTheTasksAttempt(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("reconcilePRs published no merge event")
+	}
+}
+
+// TestConfigForIdentityInheritsAnUnsetDiffCap is the regression case for an
+// identity silently disabling the diff cap. configForIdentity copied every
+// identity field over the root unconditionally, so an identity that simply did
+// not mention diff_cap_lines overwrote the shared cap with the zero value --
+// which StageDiffCap reads as "no cap". The safety rail vanished for exactly
+// the deployments that never configured it per identity.
+func TestConfigForIdentityInheritsAnUnsetDiffCap(t *testing.T) {
+	root := config.Config{DiffCapLines: new(400)}
+
+	inherited := configForIdentity(root, config.IdentityConfig{BotUser: "one"})
+	if inherited.DiffCap() != 400 {
+		t.Fatalf("DiffCap() = %d, want the shared 400 when the identity sets none", inherited.DiffCap())
+	}
+
+	overridden := configForIdentity(root, config.IdentityConfig{BotUser: "two", DiffCapLines: new(50)})
+	if overridden.DiffCap() != 50 {
+		t.Fatalf("DiffCap() = %d, want the identity's 50", overridden.DiffCap())
+	}
+
+	off := configForIdentity(root, config.IdentityConfig{BotUser: "three", DiffCapLines: new(0)})
+	if off.DiffCap() != 0 {
+		t.Fatalf("DiffCap() = %d, want 0: an identity may switch its own cap off explicitly", off.DiffCap())
 	}
 }

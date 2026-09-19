@@ -147,3 +147,18 @@ func (c *Client) connection() (*nats.Conn, error) {
 	}
 	return c.conn, nil
 }
+
+// Connected reports whether this client's connection to the broker is live.
+//
+// It reads the connection the client already holds. It deliberately does not
+// dial to check reachability: a fresh connection would report the dial's
+// success rather than this process's own bus being up, and it would put a
+// network round trip with its own timeout inside a caller that may be a chat
+// command handler.
+func (c *Client) Connected() bool {
+	conn, err := c.connection()
+	if err != nil {
+		return false
+	}
+	return conn.IsConnected()
+}

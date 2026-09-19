@@ -374,7 +374,7 @@ func BuildConfigView(in ConfigViewInput) ConfigView {
 			Label:        cfg.Label,
 			ForgeType:    cfg.Forge.Type,
 			ForgeHost:    cfg.Forge.Host,
-			DiffCapLines: cfg.DiffCapLines,
+			DiffCapLines: cfg.DiffCap(),
 		},
 		Repositories:  reposView(cfg.Repos),
 		MultiIdentity: len(cfg.Identities) > 0,

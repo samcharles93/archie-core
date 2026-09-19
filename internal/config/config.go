@@ -485,8 +485,14 @@ type Config struct {
 	BotUser string `toml:"bot_user" yaml:"bot_user"`
 	// BotEmail is the git author email; defaults to the GitHub noreply
 	// address for BotUser.
-	BotEmail     string `toml:"bot_email" yaml:"bot_email"`
-	DiffCapLines int    `toml:"diff_cap_lines" yaml:"diff_cap_lines"`
+	BotEmail string `toml:"bot_email" yaml:"bot_email"`
+	// DiffCapLines parks a task whose diff exceeds this many changed lines.
+	// It is a pointer so an explicit 0 ("no cap") is distinguishable from an
+	// absent key, which takes the default: with a plain int the documented
+	// way to switch the cap off was indistinguishable from not configuring
+	// it, and the defaults pass silently rewrote it. Read it through
+	// [Config.DiffCap].
+	DiffCapLines *int `toml:"diff_cap_lines" yaml:"diff_cap_lines"`
 
 	Forge    Forge    `toml:"forge" yaml:"forge"`
 	Dispatch Dispatch `toml:"dispatch" yaml:"dispatch"`
@@ -550,8 +556,10 @@ type IdentityConfig struct {
 	BotUser string `toml:"bot_user" yaml:"bot_user"`
 	// BotEmail is the git author email. Falls back to a forge-appropriate
 	// default from BotUser when empty.
-	BotEmail     string `toml:"bot_email" yaml:"bot_email"`
-	DiffCapLines int    `toml:"diff_cap_lines" yaml:"diff_cap_lines"`
+	BotEmail string `toml:"bot_email" yaml:"bot_email"`
+	// DiffCapLines overrides the shared cap for this identity. Nil (absent)
+	// inherits it; an explicit 0 switches the cap off for this identity only.
+	DiffCapLines *int `toml:"diff_cap_lines" yaml:"diff_cap_lines"`
 	// PollInterval overrides the shared PollInterval. When 0, the shared
 	// interval is used.
 	PollInterval Duration            `toml:"poll_interval" yaml:"poll_interval"`
@@ -586,6 +594,25 @@ type TaskConfig struct {
 	ToolPolicy   ToolPolicy             `json:"tool_policy"`
 }
 
+// DiffCapOf returns a DiffCapLines value for n. It exists because the field is
+// a pointer to keep "absent" distinct from an explicit 0, and a literal config
+// cannot take the address of a constant.
+//
+//go:fix inline
+func DiffCapOf(n int) *int { return new(n) }
+
+// DiffCap returns the effective changed-line cap: 0 means no cap, which is
+// also what an unconfigured value means once a Config has been built by hand
+// rather than loaded (tests, archie-agent's reconstructed Config). The loader's
+// defaults pass fills the absent case, so a loaded Config never reports 0
+// unless the operator asked for it.
+func (c Config) DiffCap() int {
+	if c.DiffCapLines == nil {
+		return 0
+	}
+	return *c.DiffCapLines
+}
+
 // TaskForge is the non-secret forge configuration needed by workflow stages.
 type TaskForge struct {
 	Host string `json:"host"`
@@ -601,7 +628,7 @@ func (c Config) ForTask() TaskConfig {
 		ModelLimits:  maps.Clone(c.ModelLimits),
 		Budgets:      c.Budgets,
 		Dispatch:     Dispatch{Trigger: c.Dispatch.Trigger, AckReaction: c.Dispatch.AckReaction, Labels: cloneStringMap(c.Dispatch.Labels)},
-		DiffCapLines: c.DiffCapLines,
+		DiffCapLines: c.DiffCap(),
 		Notify:       c.Notify,
 		Forge:        TaskForge{Host: c.Forge.Host},
 		ToolPolicy:   c.Tools.Policy,
@@ -620,7 +647,7 @@ func (tc TaskConfig) ToConfig() Config {
 		ModelLimits:  maps.Clone(tc.ModelLimits),
 		Budgets:      tc.Budgets,
 		Dispatch:     Dispatch{Trigger: tc.Dispatch.Trigger, AckReaction: tc.Dispatch.AckReaction, Labels: cloneStringMap(tc.Dispatch.Labels)},
-		DiffCapLines: tc.DiffCapLines,
+		DiffCapLines: &tc.DiffCapLines,
 		Notify:       tc.Notify,
 		Forge:        Forge{Host: tc.Forge.Host},
 		Tools:        ToolsConfig{Policy: tc.ToolPolicy},
@@ -1015,6 +1042,12 @@ type Health struct {
 	// Listen is the address the daemon serves /healthz, /health and
 	// /health/detailed on. Defaulted, never empty in a loaded config.
 	Listen string `toml:"listen" yaml:"listen"`
+	// DependencyTimeout bounds one readiness probe's call into a service this
+	// process depends on but does not own, so a hung dependency degrades that
+	// probe instead of stalling the whole health report. It is the daemon's
+	// equivalent of the extracted services' -dependency-timeout flag.
+	// Defaulted, never zero in a loaded config.
+	DependencyTimeout Duration `toml:"dependency_timeout" yaml:"dependency_timeout"`
 }
 
 // URL renders Listen as an address a local caller can dial, which is what

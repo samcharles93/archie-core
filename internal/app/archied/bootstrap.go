@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	natsio "github.com/nats-io/nats.go"
 	"github.com/samcharles93/ai-sdk/runtime"
 
 	"github.com/samcharles93/archie-core/internal/config"
@@ -121,6 +122,19 @@ type boot struct {
 	catalogModels []string
 
 	bus *events.Bus
+	// taskActionsConn is the standalone Gateway process's own NATS connection:
+	// it dials the broker directly (the Gateway does not build the
+	// consumer/stream client the daemon does) and uses it for task actions.
+	// Held so /status can report broker connectivity from the connection this
+	// process actually uses instead of dialling a fresh one. Nil in the daemon.
+	taskActionsConn *natsio.Conn
+	// providerOutcomes records the last-known outcome of every chat-model call
+	// this process makes, read back by /status (newStatusHealth). Built before
+	// the chat runtime, which carries it into each turn runner.
+	providerOutcomes *providerOutcomeRecorder
+	// statusHealth is the /status health source for this process, built from
+	// the subsystems that exist here.
+	statusHealth gateway.HealthSource
 	// rateLimiter is the shared per-(channel, sender) inbound budget every
 	// chat Router is given. Nil when [chat.rate_limit] is not configured,
 	// which leaves rate limiting off.
