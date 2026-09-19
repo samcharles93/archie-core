@@ -1,6 +1,6 @@
 import "./css/_main.css";
 import { h, render } from "preact";
-import { useCallback, useEffect, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { api } from "./base/api.jsx";
 import { hiddenRoutes } from "./capabilities.jsx";
 import { loadTaskMeta } from "./base/task-meta.jsx";
@@ -77,6 +77,7 @@ function navEntries(hidden) {
 
 function Topbar({ activePath, hidden, onNavigate, chatOpen, onToggleChat, theme, onToggleTheme }) {
   const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef(null);
 
   const closeSearch = () => setSearchOpen(false);
 
@@ -100,6 +101,7 @@ function Topbar({ activePath, hidden, onNavigate, chatOpen, onToggleChat, theme,
     if (hit) {
       onNavigate(hit.path);
       event.target.value = "";
+      event.target.blur();
       closeSearch();
     }
   };
@@ -140,11 +142,17 @@ function Topbar({ activePath, hidden, onNavigate, chatOpen, onToggleChat, theme,
             type="button"
             aria-label="Open Jump to navigation"
             aria-expanded={searchOpen ? "true" : "false"}
-            onClick={() => setSearchOpen(true)}
+            onClick={() => {
+              setSearchOpen(true);
+              // The field is always mounted -- the narrow layout only hides it --
+              // so focus can land in it straight away instead of on the toggle.
+              searchRef.current?.focus();
+            }}
           >
             <Icon name="search" size={15} />
           </button>
           <input
+            ref={searchRef}
             type="search"
             placeholder="Jump to…"
             aria-label="Jump to a section"
