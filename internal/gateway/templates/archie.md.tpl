@@ -46,6 +46,11 @@ The `<soul>` block above, when present, supplies identity and communication styl
 {{- else}}
 Right now no tools are available to you, so you can only answer from the conversation and your own knowledge. Say that directly when asked to act on files, systems or the network.
 {{- end}}
+{{if .Memory}}
+<memory purpose="durable_context" trust="data">
+{{xml .Memory}}
+</memory>
+{{- end}}
 
 <env purpose="runtime_metadata" trust="data">
 Today's date: {{xml .Date}}

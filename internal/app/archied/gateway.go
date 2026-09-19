@@ -125,14 +125,17 @@ func (b *boot) startGatewayRuntime(ctx context.Context, actor gateway.ChatTaskAc
 	b.bus = events.NewBus()
 	b.addCleanup(b.bus.Close)
 	b.capabilityHost = plugin.NewHost()
-	contract := b.setupGatewayChat(ctx, actor)
+	// setupMemoryAll must run before setupGatewayChat: setupGatewayChat
+	// constructs the turn runner, which captures b.memEngines at
+	// construction time (see the identical ordering note in main.go's Run).
 	// Memory is opened with its own long-lived context inside (matching the
 	// daemon path via setupMemoryAll): shutdown of the file-backed provider
 	// outlives the boot context by design, so the legacy manager wires itself
 	// with a background context rather than the gateway's boot ctx.
-	if err := b.setupMemory(); err != nil { //nolint:contextcheck // setupMemory owns its lifecycle contexts, matching the daemon's setupMemoryAll
+	if err := b.setupMemoryAll(); err != nil { //nolint:contextcheck // setupMemory owns its lifecycle contexts, matching the daemon's setupMemoryAll
 		return nil, err
 	}
+	contract := b.setupGatewayChat(ctx, actor)
 	if err := b.registerTools(ctx); err != nil {
 		return nil, err
 	}

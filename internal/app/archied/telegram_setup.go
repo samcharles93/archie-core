@@ -68,6 +68,10 @@ type telegramSetup struct {
 	// RateLimiter budgets inbound messages per sender when set. Nil
 	// leaves rate limiting off.
 	RateLimiter *ratelimit.Limiter
+	// MemoryEngine is the durable-memory read surface (b.memEngines' active
+	// engine, resolved by cfg.Memory.Engine). Nil disables the chat <memory>
+	// block for every turn runner built from this setup.
+	MemoryEngine gateway.MemoryStore
 }
 
 // telegramValidateConfigMap builds the map Gateway.ValidateConfig expects
@@ -355,6 +359,8 @@ func newChatTurnRunner(
 		Operator:     cfg.Chat.Operator,
 		Workspace:    cfg.Chat.Workspace,
 		Repos:        chatRepoEnv(cfg, s.DefaultChatIdentity),
+		MemoryEngine: s.MemoryEngine,
+		UserIdentity: userIdentityResolver(channel),
 		Log:          s.Log,
 	})
 	if err := runner.Recover(ctx); err != nil && s.Log != nil {

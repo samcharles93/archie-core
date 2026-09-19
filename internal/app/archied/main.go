@@ -411,6 +411,15 @@ func Run() int { //nolint:cyclop // the composition root's setup sequence is del
 	if err := b.buildTreesAndIdentities(ctx); err != nil {
 		return 1
 	}
+	// setupMemoryAll must run before setupGateways: setupGateways constructs
+	// every chat turn runner (setupGatewayChat / setupTelegramGateway), and a
+	// turn runner captures b.memEngines at construction time. Built the other
+	// way round, every turn runner would capture a nil engine and the chat
+	// read path (docs/prds/memory-engine-unification.md §4) would silently
+	// never see a record.
+	if err := b.setupMemoryAll(); err != nil {
+		return 1
+	}
 	if !b.setupGateways(ctx, args.cfgPath, args.overlayPath) {
 		return 1
 	}
@@ -423,9 +432,6 @@ func Run() int { //nolint:cyclop // the composition root's setup sequence is del
 	}
 
 	if err := b.registerNATSRPC(); err != nil {
-		return 1
-	}
-	if err := b.setupMemoryAll(); err != nil {
 		return 1
 	}
 	b.setupCurators(ctx)
