@@ -124,9 +124,20 @@ tasks:
       is a known gap, a forgotten one, or an artifact of runtime loading
       (yaegi, reflection) that must never be deleted.
 
+      Two report sections, because a dead whole package and a dead symbol
+      inside a live one are different failure modes: "unreachable-*" is a
+      package no shipped binary imports at all; "in-package-*" is a symbol
+      dead inside a package that IS shipped -- the ChatCourier/Dispatch
+      shape, where the feature is wired everywhere except its own call site.
+      Both carry the same tracked/untracked/dynamic classification.
+
       --refresh re-runs the analysis. Without it the tool reuses
-      /tmp/reachaudit-deadcode.txt with no staleness check, which will
-      happily report last week's tree against today's code.
+      /tmp/reachaudit-deadcode-<sha>.txt with no staleness check beyond HEAD
+      and a dirty-tree check, which will happily report last week's tree
+      against today's code if HEAD hasn't moved.
+
+      --json PATH and --md PATH write the same findings as structured data or
+      a Markdown report, in addition to the terminal summary.
     cmds:
       - python3 tools/reachaudit/reachaudit.py --repo . {{.CLI_ARGS}}
   docs:site:
