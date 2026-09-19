@@ -14,8 +14,8 @@ tasks:
     cmds:
       - go fix ./...
       # This must use the same engine and configuration as task lint. Running
-      # standalone gofumpt cannot reproduce goimports or gci's custom import
-      # grouping, so it can leave a tree that the gate rejects.
+      # standalone gofumpt cannot reproduce gci's custom import grouping, so it
+      # can leave a tree that the gate rejects.
       - golangci-lint fmt
 
   proto:install:
