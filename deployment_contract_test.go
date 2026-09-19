@@ -67,6 +67,35 @@ func TestWorkerImageIsNotDocumentedAsAStandaloneExecutor(t *testing.T) {
 	}
 }
 
+func TestFormattingUsesOneConfiguredWriter(t *testing.T) {
+	taskfile := readDeploymentFile(t, "Taskfile.yml")
+	fmtStart := strings.Index(taskfile, "  fmt:\n")
+	fmtEnd := strings.Index(taskfile, "  proto:install:\n")
+	if fmtStart < 0 || fmtEnd < fmtStart {
+		t.Fatal("Taskfile has no bounded fmt task")
+	}
+	fmtTask := taskfile[fmtStart:fmtEnd]
+
+	fix := strings.Index(fmtTask, "- go fix ./...")
+	format := strings.Index(fmtTask, "- golangci-lint fmt")
+	if fix < 0 || format < 0 || fix > format {
+		t.Error("fmt task must run go fix before the configured golangci-lint formatters")
+	}
+	if strings.Contains(fmtTask, "gofumpt -") {
+		t.Error("fmt task bypasses the configured formatter set with standalone gofumpt")
+	}
+	if got := strings.Count(taskfile, "- go fix ./..."); got != 1 {
+		t.Errorf("Taskfile runs go fix %d times, want exactly once through task fmt", got)
+	}
+}
+
+func TestFormattersExcludeInterpretedSecretEngines(t *testing.T) {
+	config := readDeploymentFile(t, ".golangci.yml")
+	if !strings.Contains(config, `^examples/secret-engines/(age|sops|vault)\.go$`) {
+		t.Fatal("formatter config does not protect the interpreted secret engines")
+	}
+}
+
 func TestSupportedProfilesUseOneExecutionTopology(t *testing.T) {
 	profiles := []string{
 		"deployments/single-forge-github.toml",

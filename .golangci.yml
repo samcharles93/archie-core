@@ -120,7 +120,8 @@ formatters:
     - gci
   settings:
     gofumpt:
-      extra-rules: true
+      extra:
+        group-params: true
     gci:
       # Matches the grouping already used across this repo.
       sections:
@@ -130,6 +131,11 @@ formatters:
       custom-order: true
   exclusions:
     generated: strict
+    # These are Yaegi programs shipped as examples. goimports cannot type-check
+    # files excluded by //go:build ignore and deletes their genuinely used
+    # internal/secret import, leaving the interpreter unable to load them.
+    paths:
+      - ^examples/secret-engines/(age|sops|vault)\.go$
 
 issues:
   # 0 = report everything. The defaults (50 per linter, 3 per message)
