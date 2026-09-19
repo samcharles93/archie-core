@@ -25,12 +25,15 @@ func Run(ctx context.Context, o Options) error {
 
 	health := newReadinessRegistry(cfg.Options, chat)
 
-	srv := compose(deps{
+	srv, err := compose(deps{
 		Config: cfg,
 		Log:    log,
 		Chat:   chat,
 		Health: health,
 	})
+	if err != nil {
+		return err
+	}
 
 	return srv.Start(ctx)
 }

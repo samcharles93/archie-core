@@ -12,8 +12,10 @@ import (
 	"github.com/samcharles93/archie-core/internal/channels/email"
 	"github.com/samcharles93/archie-core/internal/channels/telegram"
 	"github.com/samcharles93/archie-core/internal/channels/webhook"
+	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/secret"
 )
 
 type deps struct {
@@ -42,7 +44,10 @@ type Service struct {
 	stop    func()
 }
 
-func compose(d deps) *Service {
+// compose builds the Service from resolved configuration. A channel whose
+// configuration is present but invalid fails composition rather than being
+// dropped: a front-end the operator configured must never silently not run.
+func compose(d deps) (*Service, error) {
 	srv := &Service{
 		cfg:    d.Config,
 		log:    d.Log,
@@ -50,38 +55,85 @@ func compose(d deps) *Service {
 		health: d.Health,
 	}
 
-	// 1. Telegram
-	if d.Config.TelegramToken != "" && len(d.Config.Telegram.AllowedUserIDs) > 0 {
+	if d.Config.TelegramToken != "" {
+		if len(d.Config.Telegram.AllowedUserIDs) == 0 {
+			d.Log.Warn("chat.telegram has no allowed_user_ids: every sender will be rejected. " +
+				"Add your Telegram user id to chat.telegram.allowed_user_ids to enable the bot.")
+		}
 		tg := telegram.New(d.Config.TelegramToken, d.Config.Telegram.AllowedUserIDs, d.Log)
-		srv.channels = append(srv.channels, channelInstance{
-			name:    "telegram",
-			channel: tg,
-		})
-	}
-
-	// 2. Email
-	if d.Config.Email.ListenAddr != "" {
-		em := email.New(d.Config.Email.ListenAddr, d.Config.Email.RelayAddr, d.Log)
-		srv.channels = append(srv.channels, channelInstance{
-			name:    "email",
-			channel: em,
-		})
-	}
-
-	// 3. Webhook
-	if d.Config.WebhookAddr != "" {
-		host, portStr, err := net.SplitHostPort(d.Config.WebhookAddr)
-		if err == nil {
-			port, _ := strconv.Atoi(portStr)
-			wh := webhook.New(host, port, nil, d.Log)
-			srv.channels = append(srv.channels, channelInstance{
-				name:    "webhook",
-				channel: wh,
-			})
+		if err := srv.add("telegram", tg, telegramValidateConfigMap(d.Config.Telegram)); err != nil {
+			return nil, err
 		}
 	}
 
-	return srv
+	if d.Config.Email.ListenAddr != "" {
+		em := email.New(d.Config.Email.ListenAddr, d.Config.Email.RelayAddr, d.Log)
+		if err := srv.add("email", em, map[string]any{
+			"listen_addr": d.Config.Email.ListenAddr,
+			"relay_addr":  d.Config.Email.RelayAddr,
+		}); err != nil {
+			return nil, err
+		}
+	}
+
+	if d.Config.WebhookAddr != "" {
+		host, port := parseListenAddr(d.Config.WebhookAddr, "0.0.0.0", 8644)
+		wh := webhook.New(host, port, webhookRoutes(d.Config.Webhook, d.Config.WebhookSecret), d.Log)
+		if err := srv.add("webhook", wh, map[string]any{"host": host, "port": port}); err != nil {
+			return nil, err
+		}
+	}
+
+	return srv, nil
+}
+
+// add validates a channel against its own ConfigSchema contract and
+// registers it.
+func (s *Service) add(name string, ch channels.Channel, cfg map[string]any) error {
+	if err := ch.ValidateConfig(cfg); err != nil {
+		return fmt.Errorf("chat.%s config invalid: %w", name, err)
+	}
+	s.channels = append(s.channels, channelInstance{name: name, channel: ch})
+	return nil
+}
+
+// telegramValidateConfigMap builds the map Gateway.ValidateConfig expects
+// from the typed config, carrying whichever credential source is set
+// (token takes precedence, matching resolveTelegramToken).
+func telegramValidateConfigMap(cfg config.TelegramConfig) map[string]any {
+	m := map[string]any{"token_env": cfg.TokenEnv}
+	if cfg.Token != (secret.SecretRef{}) {
+		m["token"] = map[string]any{"engine": cfg.Token.Engine, "key": cfg.Token.Key}
+	}
+	return m
+}
+
+func webhookRoutes(route config.WebhookRoute, secretValue string) []webhook.RouteConfig {
+	path := route.Path
+	if path == "" {
+		path = "/webhook"
+	}
+	return []webhook.RouteConfig{{
+		Path:      path,
+		Secret:    secretValue,
+		Template:  route.Template,
+		DeliverTo: route.DeliverTo,
+	}}
+}
+
+func parseListenAddr(addr, defaultHost string, defaultPort int) (string, int) {
+	if addr == "" {
+		return defaultHost, defaultPort
+	}
+	host, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return defaultHost, defaultPort
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return defaultHost, defaultPort
+	}
+	return host, port
 }
 
 // Start launches the configured messaging channels.

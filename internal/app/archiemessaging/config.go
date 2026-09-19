@@ -19,6 +19,7 @@ type ResolvedConfig struct {
 	Telegram      config.TelegramConfig
 	Email         config.EmailConfig
 	Webhook       config.WebhookRoute
+	WebhookSecret string
 	WebhookAddr   string
 }
 
@@ -50,9 +51,19 @@ func Resolve(o Options, log *slog.Logger) (ResolvedConfig, error) {
 		return ResolvedConfig{}, err
 	}
 
-	tgToken, err := resolveTelegramToken(proj.telegram)
+	secrets := secret.NewRegistry()
+	tgToken, err := resolveTelegramToken(proj.telegram, secrets)
 	if err != nil {
 		return ResolvedConfig{}, fmt.Errorf("resolve telegram token: %w", err)
+	}
+
+	// An unresolvable webhook secret is not fatal: the route still serves,
+	// with signature validation off, which is what it did before a secret
+	// was ever configurable. It is logged so the degradation is visible.
+	whSecret, err := resolveWebhookSecret(proj.webhook, secrets)
+	if err != nil {
+		log.Error("webhook secret unresolvable; starting with signature validation disabled",
+			"engine", proj.webhook.Secret.Engine, "key", proj.webhook.Secret.Key, "err", err)
 	}
 
 	return ResolvedConfig{
@@ -61,6 +72,8 @@ func Resolve(o Options, log *slog.Logger) (ResolvedConfig, error) {
 		Telegram:      proj.telegram,
 		Email:         proj.email,
 		Webhook:       proj.webhook,
+		WebhookSecret: whSecret,
+		WebhookAddr:   proj.webhookAddr,
 	}, nil
 }
 
@@ -105,13 +118,22 @@ func merge(o Options, p projection) Options {
 	return o
 }
 
-func resolveTelegramToken(cfg config.TelegramConfig) (string, error) {
+// resolveTelegramToken reads whichever credential source is configured. A
+// secret ref takes precedence over token_env, so a deployment that moved to
+// a secret engine is not silently served by a stale environment variable.
+func resolveTelegramToken(cfg config.TelegramConfig, secrets *secret.Registry) (string, error) {
 	if cfg.Token != (secret.SecretRef{}) {
-		reg := secret.NewRegistry()
-		return reg.Resolve(cfg.Token)
+		return secrets.Resolve(cfg.Token)
 	}
 	if cfg.TokenEnv != "" {
 		return os.Getenv(cfg.TokenEnv), nil
+	}
+	return "", nil
+}
+
+func resolveWebhookSecret(route config.WebhookRoute, secrets *secret.Registry) (string, error) {
+	if route.Secret != (secret.SecretRef{}) {
+		return secrets.Resolve(route.Secret)
 	}
 	return "", nil
 }
