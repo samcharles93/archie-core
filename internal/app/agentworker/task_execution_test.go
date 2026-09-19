@@ -275,6 +275,10 @@ func (f *prCapturingForge) CreateReviewComments(context.Context, string, string,
 	return nil
 }
 
+func (f *prCapturingForge) ReplyToReview(context.Context, string, string, int, int64, string) error {
+	return nil
+}
+
 type remoteManager struct {
 	manager *worktree.Manager
 	dir     string

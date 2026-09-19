@@ -94,6 +94,13 @@ func TestWrapperNilGuardsPreserved(t *testing.T) {
 		t.Errorf("LinkBranch on nil WLinkBranch = %v, want nil", err)
 	}
 
+	if _, err := forger.Comment(context.Background(), "", "", 0, ""); err != nil {
+		t.Errorf("Comment on nil WComment = %v, want nil", err)
+	}
+	if err := forger.ReplyToReview(context.Background(), "", "", 0, 0, ""); err != nil {
+		t.Errorf("ReplyToReview on nil WReplyToReview = %v, want nil", err)
+	}
+
 	var reviewer _github_com_samcharles93_archie_core_internal_domain_workflow_Reviewer
 	if got := reviewer.Review(context.Background(), workflow.ReviewRequest{}); len(got.Findings) != 0 || got.Status != "" || got.Summary != "" {
 		t.Errorf("Review on nil WReview = %#v, want empty report", got)

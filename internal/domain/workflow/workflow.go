@@ -37,6 +37,15 @@ type Forger interface {
 	// one call cannot half-succeed against a rate limit. The implementation
 	// anchors them to the request's head revision.
 	CreateReviewComments(ctx context.Context, owner, repo string, number int, comments []ReviewComment) error
+	// Comment posts a plain, non-anchored PR comment and returns its ID.
+	// The remediate workflow's round-cap stage uses this to tell an
+	// operator why it stopped remediating, and a whole-review reply (no
+	// single inline comment to thread onto) falls back to it.
+	Comment(ctx context.Context, owner, repo string, number int, body string) (int64, error)
+	// ReplyToReview posts a threaded reply to one review comment. The
+	// remediate workflow calls it once per remediation run, summarising
+	// what changed (docs/prds/pr-review-remediation.md decision 4).
+	ReplyToReview(ctx context.Context, owner, repo string, number int, commentID int64, body string) error
 }
 
 // Trees is the subset of *worktree.Manager that workflow stages call
@@ -113,6 +122,10 @@ type TaskContext struct {
 	ReproProof string
 	// decision is the feasibility assess stage's verdict.
 	decision *decision
+	// reviewUnit is the remediate workflow's decoded Task.ReviewPayload,
+	// stashed by its build stage so the commit-push and reply stages that
+	// follow don't each re-decode the same JSON.
+	reviewUnit ReviewUnit
 	// Outcome describes where the task ended up; the engine applies it.
 	Outcome Outcome
 

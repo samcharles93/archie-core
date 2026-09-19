@@ -1,6 +1,7 @@
 // Package forgerpc lets archie-agent call the forge methods workflow stages
-// invoke mid-run  --  CloseIssue, CreatePR, LinkBranch and CreateReviewComments,
-// the workflow.Forger set  --  over core NATS request/reply, instead of the agent
+// invoke mid-run  --  CloseIssue, CreatePR, LinkBranch, CreateReviewComments,
+// Comment and ReplyToReview, the workflow.Forger set  --  over core NATS
+// request/reply, instead of the agent
 // container holding a live forge API token. archied remains the sole holder of
 // forge credentials and the sole caller of forge.Forge.
 //
@@ -44,6 +45,7 @@ const (
 	SubjectLinkBranch          = "archie.forge.link_branch"
 	SubjectSetStateLabel       = "archie.forge.set_state_label"
 	SubjectCreateReviewComment = "archie.forge.create_review_comments"
+	SubjectReplyToReview       = "archie.forge.reply_to_review"
 )
 
 // SubjectFor returns the subject for base, scoped to identity when set.
@@ -116,6 +118,14 @@ type InlineReviewCommentPayload struct {
 	Body string
 }
 
+// ReplyToReviewRequest carries one threaded reply to a review comment.
+type ReplyToReviewRequest struct {
+	Owner, Repo string
+	Number      int
+	CommentID   int64
+	Body        string
+}
+
 // Response is a bare success/error envelope for calls with no return value.
 type Response struct {
 	natsrpc.Envelope
@@ -144,6 +154,7 @@ func (s *Server) RegisterFor(nc *nats.Conn, identity string) (unsubscribe func()
 		{Subject: SubjectFor(identity, SubjectLinkBranch), Handler: s.handleLinkBranch},
 		{Subject: SubjectFor(identity, SubjectSetStateLabel), Handler: s.handleSetStateLabel},
 		{Subject: SubjectFor(identity, SubjectCreateReviewComment), Handler: s.handleCreateReviewComments},
+		{Subject: SubjectFor(identity, SubjectReplyToReview), Handler: s.handleReplyToReview},
 	})
 }
 
@@ -203,6 +214,21 @@ func (s *Server) handleCreateReviewComments(msg *nats.Msg) {
 		comments = append(comments, forge.InlineReviewComment{Path: cm.Path, Line: cm.Line, Body: cm.Body})
 	}
 	err := writer.CreateReviewComments(context.Background(), req.Owner, req.Repo, req.Number, comments)
+	s.respond(msg, Response{Envelope: natsrpc.NewEnvelope(err)})
+}
+
+func (s *Server) handleReplyToReview(msg *nats.Msg) {
+	var req ReplyToReviewRequest
+	if err := json.Unmarshal(msg.Data, &req); err != nil {
+		s.respond(msg, Response{Envelope: natsrpc.NewEnvelope(fmt.Errorf("decode reply_to_review request: %w", err))})
+		return
+	}
+	reader, ok := s.Forge.(forge.PullRequestReviewReader)
+	if !ok {
+		s.respond(msg, Response{Envelope: natsrpc.NewEnvelope(errors.New("this forge cannot reply to reviews"))})
+		return
+	}
+	err := reader.ReplyToReview(context.Background(), req.Owner, req.Repo, req.Number, req.CommentID, req.Body)
 	s.respond(msg, Response{Envelope: natsrpc.NewEnvelope(err)})
 }
 
@@ -300,6 +326,17 @@ func (c *Client) CreateReviewComments(ctx context.Context, owner, repo string, n
 	}
 	req := CreateReviewCommentsRequest{Owner: owner, Repo: repo, Number: number, Comments: payload}
 	resp, err := natsrpc.Call[Response](ctx, c.rpc(), c.subject(SubjectCreateReviewComment), req)
+	if err != nil {
+		return err
+	}
+	return resp.Err()
+}
+
+// ReplyToReview posts a threaded reply to one review comment, on behalf of
+// the remediate workflow.
+func (c *Client) ReplyToReview(ctx context.Context, owner, repo string, number int, commentID int64, body string) error {
+	req := ReplyToReviewRequest{Owner: owner, Repo: repo, Number: number, CommentID: commentID, Body: body}
+	resp, err := natsrpc.Call[Response](ctx, c.rpc(), c.subject(SubjectReplyToReview), req)
 	if err != nil {
 		return err
 	}
