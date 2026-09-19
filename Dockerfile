@@ -61,7 +61,14 @@ ENV PATH="/usr/local/go/bin:/go/bin:${PATH}"
 # Pinned release binaries. Building these with `go install` pulled ~2GB of
 # module and build cache into the image. delve is omitted because it ships no
 # prebuilt binary; `go install ...@latest` at runtime if an agent needs it.
-ARG GOLANGCI_LINT_VERSION=2.12.2
+#
+# golangci-lint's release binary embeds the go/types of the toolchain it was
+# built with and refuses to type-check a module newer than that toolchain: a
+# linter built with go1.26 on a `go 1.27.0` module panics with "package
+# requires newer Go version" before reporting a single finding. So the pin has
+# to track the go.mod go directive -- 2.13.2 is built with go1.27.0 -- and
+# TestLintToolchainSupportsModuleGoVersion checks the pairing.
+ARG GOLANGCI_LINT_VERSION=2.13.2
 ARG GOFUMPT_VERSION=0.11.0
 ARG BUF_VERSION=1.72.0
 RUN curl -fsSL "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64.tar.gz" \
