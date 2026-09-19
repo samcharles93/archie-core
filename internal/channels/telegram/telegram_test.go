@@ -15,7 +15,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/channels"
 )
 
 func TestName(t *testing.T) {
@@ -228,11 +228,11 @@ func TestSenderAllowlistFailsClosed(t *testing.T) {
 
 func TestStartWithoutToken(t *testing.T) {
 	g := New("", nil, slog.Default())
-	router := gateway.NewRouter(nil, nil, "telegram")
+	chat := &fakeChatContract{}
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	called := false
-	if err := g.Start(ctx, router, gateway.Lifecycle{Running: func() { called = true }}); err == nil {
+	if err := g.Start(ctx, chat, channels.Lifecycle{Running: func() { called = true }}); err == nil {
 		t.Error("expected error when starting without token")
 	}
 	if called {
@@ -266,7 +266,7 @@ func TestStartReportsRunningAfterLaunch(t *testing.T) {
 	started := make(chan bool, 1)
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- g.Start(ctx, gateway.NewRouter(nil, nil, "telegram"), gateway.Lifecycle{
+		errCh <- g.Start(ctx, &fakeChatContract{}, channels.Lifecycle{
 			Running: func() { started <- g.running },
 		})
 	}()
@@ -313,7 +313,7 @@ func TestStartReportsStartingOnRestart(t *testing.T) {
 	events := make(chan string, 4)
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- g.Start(ctx, gateway.NewRouter(nil, nil, "telegram"), gateway.Lifecycle{
+		errCh <- g.Start(ctx, &fakeChatContract{}, channels.Lifecycle{
 			Starting: func() { events <- "starting" },
 			Running:  func() { events <- "running" },
 		})
@@ -363,7 +363,7 @@ func TestStartAndStopLifecycle(t *testing.T) {
 	// we test what we can: ensure Start fails predictably when the API
 	// rejects us, rather than trying to mock the full Bot API wire
 	// protocol.
-	router := gateway.NewRouter(nil, nil, "telegram")
+	chat := &fakeChatContract{}
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 
@@ -372,7 +372,7 @@ func TestStartAndStopLifecycle(t *testing.T) {
 	// and our test server doesn't return a valid User object.
 	// The point: we exercise the Start/Stop path; accept either
 	// success or failure.
-	_ = g.Start(ctx, router, gateway.Lifecycle{})
+	_ = g.Start(ctx, chat, channels.Lifecycle{})
 	// Best-effort stop  --  don't assert on Start result since we can't
 	// fully mock the Bot API without the library supporting a base URL
 	// override.
@@ -383,11 +383,11 @@ func TestStartAndStopLifecycle(t *testing.T) {
 	}
 }
 
-// Compile-time guard: Gateway implements gateway.Gateway.
+// Compile-time guard: Gateway implements channels.Channel.
 var (
-	_ gateway.Gateway = (*Gateway)(nil)
-	_                 = (*bot.Bot)(nil)
-	_                 = models.Update{}
+	_ channels.Channel = (*Gateway)(nil)
+	_                  = (*bot.Bot)(nil)
+	_                  = models.Update{}
 )
 
 // ── Regression tests for previously untested paths ────────────────────
@@ -618,7 +618,7 @@ func TestLaunchDropsPendingUpdatesBeforePolling(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if _, err := g.launch(ctx, nil, gateway.Lifecycle{}); err != nil {
+	if _, err := g.launch(ctx, &fakeChatContract{}, channels.Lifecycle{}); err != nil {
 		t.Fatalf("launch() error = %v", err)
 	}
 	cancel()

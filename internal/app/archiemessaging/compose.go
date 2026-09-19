@@ -8,12 +8,12 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/channels/email"
 	"github.com/samcharles93/archie-core/internal/channels/telegram"
 	"github.com/samcharles93/archie-core/internal/channels/webhook"
 	"github.com/samcharles93/archie-core/internal/domain/health"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
-	"github.com/samcharles93/archie-core/internal/gateway"
 )
 
 type deps struct {
@@ -25,8 +25,7 @@ type deps struct {
 
 type channelInstance struct {
 	name    string
-	gateway gateway.Gateway
-	router  *gateway.Router
+	channel channels.Channel
 }
 
 // Service manages the lifecycle of the extracted Messaging Service and its
@@ -54,22 +53,18 @@ func compose(d deps) *Service {
 	// 1. Telegram
 	if d.Config.TelegramToken != "" && len(d.Config.Telegram.AllowedUserIDs) > 0 {
 		tg := telegram.New(d.Config.TelegramToken, d.Config.Telegram.AllowedUserIDs, d.Log)
-		router := NewContractRouter(d.Chat, "telegram")
 		srv.channels = append(srv.channels, channelInstance{
 			name:    "telegram",
-			gateway: tg,
-			router:  router,
+			channel: tg,
 		})
 	}
 
 	// 2. Email
 	if d.Config.Email.ListenAddr != "" {
 		em := email.New(d.Config.Email.ListenAddr, d.Config.Email.RelayAddr, d.Log)
-		router := NewContractRouter(d.Chat, "email")
 		srv.channels = append(srv.channels, channelInstance{
 			name:    "email",
-			gateway: em,
-			router:  router,
+			channel: em,
 		})
 	}
 
@@ -79,11 +74,9 @@ func compose(d deps) *Service {
 		if err == nil {
 			port, _ := strconv.Atoi(portStr)
 			wh := webhook.New(host, port, nil, d.Log)
-			router := NewContractRouter(d.Chat, "webhook")
 			srv.channels = append(srv.channels, channelInstance{
 				name:    "webhook",
-				gateway: wh,
-				router:  router,
+				channel: wh,
 			})
 		}
 	}
@@ -110,7 +103,7 @@ func (s *Service) Start(ctx context.Context) error {
 		c := ch
 		wg.Go(func() {
 			s.log.Info("starting channel", "name", c.name)
-			if err := c.gateway.Start(ctx, c.router, gateway.Lifecycle{}); err != nil && ctx.Err() == nil {
+			if err := c.channel.Start(ctx, s.chat, channels.Lifecycle{}); err != nil && ctx.Err() == nil {
 				s.log.Error("channel stopped with error", "name", c.name, "err", err)
 			}
 		})
@@ -120,7 +113,7 @@ func (s *Service) Start(ctx context.Context) error {
 
 	for _, ch := range s.channels {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.WithoutCancel(ctx), s.cfg.Options.ShutdownTimeout)
-		if err := ch.gateway.Stop(shutdownCtx); err != nil {
+		if err := ch.channel.Stop(shutdownCtx); err != nil {
 			s.log.Warn("channel stop failed", "name", ch.name, "err", err)
 		}
 		shutdownCancel()

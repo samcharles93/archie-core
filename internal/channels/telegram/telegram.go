@@ -22,7 +22,6 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
-	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
 )
 
@@ -106,7 +105,7 @@ type Gateway struct {
 	// turns serialises chat turns per session off the update worker and
 	// makes the running one cancellable by /stop. Rebuilt on every launch
 	// so a restart abandons in-flight turns with the old bot instance.
-	turns *gateway.Turns
+	turns *messaging.Turns
 
 	// liveMu guards liveReplies and liveStopped.
 	liveMu sync.Mutex
@@ -202,7 +201,7 @@ func (g *Gateway) RequestRestart() error {
 // Restarts are scoped to this gateway. The daemon keeps running, so
 // in-flight agent tasks are untouched  --  the whole point of the escape
 // hatch is to recover chat without disturbing work in progress.
-func (g *Gateway) Start(ctx context.Context, router *gateway.Router, lifecycle gateway.Lifecycle) error {
+func (g *Gateway) Start(ctx context.Context, client messaging.ChatContract, lifecycle channels.Lifecycle) error {
 	if g.Token == "" {
 		return fmt.Errorf("telegram bot token is required")
 	}
@@ -211,7 +210,7 @@ func (g *Gateway) Start(ctx context.Context, router *gateway.Router, lifecycle g
 	for {
 		lifecycle.ReportStarting()
 		runCtx, cancel := context.WithCancel(ctx)
-		b, err := g.launch(runCtx, router, lifecycle)
+		b, err := g.launch(runCtx, client, lifecycle)
 		if err != nil {
 			cancel()
 			return err
@@ -246,25 +245,25 @@ func (g *Gateway) Start(ctx context.Context, router *gateway.Router, lifecycle g
 	}
 }
 
-func (g *Gateway) registerCommandHandlers(b *bot.Bot, router *gateway.Router) {
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/status", bot.MatchTypeExact, g.statusHandler(router))
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/whoami", bot.MatchTypeExact, g.whoamiHandler(router))
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/profile", bot.MatchTypeExact, g.profileHandler(router))
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/sessions", bot.MatchTypeExact, g.sessionsHandler(router))
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/resume", bot.MatchTypeExact, g.resumeHandler(router))
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/agents", bot.MatchTypeExact, g.agentsHandler(router))
+func (g *Gateway) registerCommandHandlers(b *bot.Bot, client messaging.ChatContract) {
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/status", bot.MatchTypeExact, g.statusHandler(client))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/whoami", bot.MatchTypeExact, g.whoamiHandler(client))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/profile", bot.MatchTypeExact, g.profileHandler(client))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/sessions", bot.MatchTypeExact, g.sessionsHandler(client))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/resume", bot.MatchTypeExact, g.resumeHandler(client))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/agents", bot.MatchTypeExact, g.agentsHandler(client))
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/version", bot.MatchTypeExact, g.versionHandler())
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/update", bot.MatchTypeExact, g.updateHandler())
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, g.startHandler())
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/help", bot.MatchTypeExact, g.helpHandler())
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/restart", bot.MatchTypeExact, g.restartHandler())
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/rollback", bot.MatchTypePrefix, g.rollbackHandler())
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/stop", bot.MatchTypePrefix, g.stopHandler(router))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/stop", bot.MatchTypePrefix, g.stopHandler(client))
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/approve", bot.MatchTypeExact, g.approveHandler())
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/deny", bot.MatchTypeExact, g.denyHandler())
 }
 
-func (g *Gateway) startListening(ctx context.Context, b *bot.Bot, _ gateway.Lifecycle) error {
+func (g *Gateway) startListening(ctx context.Context, b *bot.Bot, _ channels.Lifecycle) error {
 	g.dropPendingUpdates(ctx, b)
 	g.running = true
 	go b.Start(ctx)
@@ -274,11 +273,11 @@ func (g *Gateway) startListening(ctx context.Context, b *bot.Bot, _ gateway.Life
 // launch builds one bot instance, registers handlers and starts its
 // long-poll delivery worker. Readiness is reported by pollReadinessClient
 // after the first successful getUpdates response.
-func (g *Gateway) launch(ctx context.Context, router *gateway.Router, lifecycle gateway.Lifecycle) (*bot.Bot, error) {
+func (g *Gateway) launch(ctx context.Context, client messaging.ChatContract, lifecycle channels.Lifecycle) (*bot.Bot, error) {
 	// Turns are per-launch. Each queued turn carries the update handler's
 	// context, which is this launch's, so a /restart cancels everything
 	// still running under the outgoing bot instance.
-	g.turns = gateway.NewTurns(g.log)
+	g.turns = messaging.NewTurns(g.log)
 	g.resetLiveRegistry()
 
 	opts := []bot.Option{
@@ -286,7 +285,7 @@ func (g *Gateway) launch(ctx context.Context, router *gateway.Router, lifecycle 
 		bot.WithDebugHandler(func(format string, args ...any) {
 			g.log.Debug("telegram debug", "message", fmt.Sprintf(format, args...))
 		}),
-		bot.WithDefaultHandler(g.defaultHandler(router)),
+		bot.WithDefaultHandler(g.defaultHandler(client)),
 		bot.WithMiddlewares(g.panicRecoveryMiddleware(), g.updateLoggingMiddleware()),
 		bot.WithHTTPClient(telegramPollTimeout, &pollReadinessClient{
 			client:    &http.Client{Timeout: telegramPollTimeout},
@@ -303,7 +302,7 @@ func (g *Gateway) launch(ctx context.Context, router *gateway.Router, lifecycle 
 	}
 	g.bot = b
 
-	g.registerCommandHandlers(b, router)
+	g.registerCommandHandlers(b, client)
 
 	// Publish the command list so Telegram renders a menu. Without this
 	// the commands are undiscoverable and the LLM, having no idea they
@@ -381,33 +380,33 @@ func (g *Gateway) Stop(ctx context.Context) error {
 
 // ── command handlers (gateway-local  --  no LLM) ────────────────
 
-func (g *Gateway) statusHandler(router *gateway.Router) bot.HandlerFunc {
-	return g.routeCmdHandler(router, "/status")
+func (g *Gateway) statusHandler(client messaging.ChatContract) bot.HandlerFunc {
+	return g.routeCmdHandler(client, "/status")
 }
 
-func (g *Gateway) whoamiHandler(router *gateway.Router) bot.HandlerFunc {
-	return g.routeCmdHandler(router, "/whoami")
+func (g *Gateway) whoamiHandler(client messaging.ChatContract) bot.HandlerFunc {
+	return g.routeCmdHandler(client, "/whoami")
 }
 
-func (g *Gateway) profileHandler(router *gateway.Router) bot.HandlerFunc {
-	return g.routeCmdHandler(router, "/profile")
+func (g *Gateway) profileHandler(client messaging.ChatContract) bot.HandlerFunc {
+	return g.routeCmdHandler(client, "/profile")
 }
 
-func (g *Gateway) sessionsHandler(router *gateway.Router) bot.HandlerFunc {
-	return g.routeCmdHandler(router, "/sessions")
+func (g *Gateway) sessionsHandler(client messaging.ChatContract) bot.HandlerFunc {
+	return g.routeCmdHandler(client, "/sessions")
 }
 
-func (g *Gateway) agentsHandler(router *gateway.Router) bot.HandlerFunc {
-	return g.routeCmdHandler(router, "/agents")
+func (g *Gateway) agentsHandler(client messaging.ChatContract) bot.HandlerFunc {
+	return g.routeCmdHandler(client, "/agents")
 }
 
-func (g *Gateway) resumeHandler(router *gateway.Router) bot.HandlerFunc {
+func (g *Gateway) resumeHandler(client messaging.ChatContract) bot.HandlerFunc {
 	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
 		msg, ok := g.authorizedMessage(ctx, b, update)
 		if !ok {
 			return
 		}
-		reply, err := router.Route(ctx, gateway.Inbound{Message: messaging.Message{
+		reply, err := client.Route(ctx, messaging.Inbound{Message: messaging.Message{
 			ConversationID: conversationID(msg),
 			Sender:         msg.From.Username,
 			Role:           messaging.RoleUser,
@@ -417,19 +416,19 @@ func (g *Gateway) resumeHandler(router *gateway.Router) bot.HandlerFunc {
 			g.log.Error("resume handler failed", "error", err)
 			return
 		}
-		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, reply)
+		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, reply.Text)
 	}
 }
 
 // routeCmdHandler builds a handler that routes a fixed command through the
-// gateway.Router and sends the reply.
-func (g *Gateway) routeCmdHandler(router *gateway.Router, cmd string) bot.HandlerFunc {
+// messaging.ChatContract and sends the reply.
+func (g *Gateway) routeCmdHandler(client messaging.ChatContract, cmd string) bot.HandlerFunc {
 	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
 		msg, ok := g.authorizedMessage(ctx, b, update)
 		if !ok {
 			return
 		}
-		reply, err := router.Route(ctx, gateway.Inbound{Message: messaging.Message{
+		reply, err := client.Route(ctx, messaging.Inbound{Message: messaging.Message{
 			ConversationID: conversationID(msg),
 			Sender:         msg.From.Username,
 			Role:           messaging.RoleUser,
@@ -439,7 +438,7 @@ func (g *Gateway) routeCmdHandler(router *gateway.Router, cmd string) bot.Handle
 			g.log.Error("command handler failed", "command", cmd, "error", err)
 			return
 		}
-		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, reply)
+		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, reply.Text)
 	}
 }
 
@@ -480,10 +479,10 @@ func (g *Gateway) startHandler() bot.HandlerFunc {
 
 // ── default handler (non-command text → router) ─────────────
 
-func (g *Gateway) defaultHandler(router *gateway.Router) bot.HandlerFunc {
+func (g *Gateway) defaultHandler(client messaging.ChatContract) bot.HandlerFunc {
 	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
 		if update.CallbackQuery != nil {
-			g.handleCallback(ctx, b, update, router)
+			g.handleCallback(ctx, b, update, client)
 			return
 		}
 
@@ -492,44 +491,44 @@ func (g *Gateway) defaultHandler(router *gateway.Router) bot.HandlerFunc {
 			return
 		}
 		if isModelSelectorRequest(msg.Text) {
-			g.sendProviderSelector(ctx, b, msg, router)
+			g.sendProviderSelector(ctx, b, msg, client)
 			return
 		}
 		if isModelCommand(msg.Text) {
-			g.handleModelCommand(ctx, b, msg, router)
+			g.handleModelCommand(ctx, b, msg, client)
 			return
 		}
 		if isPersonalityRequest(msg.Text) {
-			g.handlePersonalityCommand(ctx, b, msg, router)
+			g.handlePersonalityCommand(ctx, b, msg, client)
 			return
 		}
-		g.submitTurn(ctx, b, msg, router)
+		g.submitTurn(ctx, b, msg, client)
 	}
 }
 
 // handleCallback dispatches an inline-button callback query to the handler
 // for its prefix. Callback prefixes are mutually exclusive; an unknown
 // callback is ignored.
-func (g *Gateway) handleCallback(ctx context.Context, b *bot.Bot, update *models.Update, router *gateway.Router) {
+func (g *Gateway) handleCallback(ctx context.Context, b *bot.Bot, update *models.Update, client messaging.ChatContract) {
 	switch {
 	case strings.HasPrefix(update.CallbackQuery.Data, approvalCallbackPrefix):
 		g.handleApprovalCallback(ctx, b, update)
 	case strings.HasPrefix(update.CallbackQuery.Data, dangerousCmdPrefix):
 		g.handleDangerousCallback(ctx, b, update)
 	case strings.HasPrefix(update.CallbackQuery.Data, providerCallbackPrefix):
-		g.handleProviderCallback(ctx, b, update, router)
+		g.handleProviderCallback(ctx, b, update, client)
 	case strings.HasPrefix(update.CallbackQuery.Data, modelCallbackPrefix):
-		g.handleModelCallback(ctx, b, update, router)
+		g.handleModelCallback(ctx, b, update, client)
 	case strings.HasPrefix(update.CallbackQuery.Data, modelPageCallbackPrefix):
-		g.handleModelPageCallback(ctx, b, update, router)
+		g.handleModelPageCallback(ctx, b, update, client)
 	case update.CallbackQuery.Data == modelBackCallback:
-		g.handleModelBackCallback(ctx, b, update, router)
+		g.handleModelBackCallback(ctx, b, update, client)
 	case update.CallbackQuery.Data == modelCancelCallback:
 		g.handleModelCancelCallback(ctx, b, update)
 	case update.CallbackQuery.Data == modelNoopCallback:
 		g.handleModelNoopCallback(ctx, b, update)
 	case strings.HasPrefix(update.CallbackQuery.Data, personalityCallbackPrefix):
-		g.handlePersonalityCallback(ctx, b, update, router)
+		g.handlePersonalityCallback(ctx, b, update, client)
 	case strings.HasPrefix(update.CallbackQuery.Data, updateCallbackPrefix):
 		g.handleUpdateCallback(ctx, b, update)
 	}
@@ -543,8 +542,8 @@ func (g *Gateway) handleCallback(ctx context.Context, b *bot.Bot, update *models
 // running here would block delivery of every later update -- including the
 // /stop meant to cancel it, which would sit unread until the turn it was
 // aimed at had already finished.
-func (g *Gateway) submitTurn(ctx context.Context, b *bot.Bot, msg *models.Message, router *gateway.Router) {
-	gm := gateway.Inbound{Message: messaging.Message{
+func (g *Gateway) submitTurn(ctx context.Context, b *bot.Bot, msg *models.Message, client messaging.ChatContract) {
+	gm := messaging.Inbound{Message: messaging.Message{
 		// Telegram's message ID makes persistence idempotent: the store
 		// derives a canonical ID from it, so a redelivered update is a
 		// no-op rather than appending a duplicate or overwriting the
@@ -561,30 +560,49 @@ func (g *Gateway) submitTurn(ctx context.Context, b *bot.Bot, msg *models.Messag
 
 	// The lane key must be the session, so that /stop -- which resolves
 	// the same key -- reaches the turn the sender is actually watching.
-	session, err := router.ResolveSessionKey(ctx, gm)
-	if err != nil {
-		g.log.Error("resolve session for turn", "error", err)
-		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, "❌ Could not resolve this conversation's session.")
-		return
-	}
-
+	session := conversationID(msg).String()
 	chatID, threadID := msg.Chat.ID, msg.MessageThreadID
 	g.turns.Submit(ctx, session, func(turnCtx context.Context) {
 		// If the turn invokes a tool that requires human approval,
 		// the dispatch layer blocks on this approver. Nil is fine
 		// — most turns need no gating.
 		approver := g.NewApprover(b, chatID, threadID, msg.From.ID)
-		turnCtx = gateway.WithApprovalRequester(turnCtx, approver)
+		turnCtx = messaging.WithApprovalRequester(turnCtx, approver)
 
 		// reply appears as it is written; the typing indicator covers the
 		// gap before the first token and any non-streaming path.
 		stopTyping := g.startTyping(turnCtx, b, chatID, threadID)
 		live := g.newLiveReply(turnCtx, b, chatID, threadID, g.ShowToolCalls())
 
-		// If it starts with / but wasn't matched by a registered
-		// handler, it's unknown  --  let the router handle it (which
-		// will say "unrecognized").
-		reply, err := router.RouteStream(turnCtx, gm, live)
+		events, err := client.Stream(turnCtx, gm)
+		if err != nil {
+			stopTyping()
+			if errors.Is(err, context.Canceled) || errors.Is(turnCtx.Err(), context.Canceled) {
+				g.log.Info("chat turn stopped", "session", session)
+				live.abandon(turnCtx)
+			} else {
+				g.log.Error("stream failed", "error", err)
+				live.abandonFailed(turnCtx)
+			}
+			return
+		}
+
+		var reply string
+		var streamErr error
+		for ev := range events {
+			switch ev.Kind {
+			case "delta":
+				live.Delta(ev.Text)
+			case "tool":
+				live.ToolCall(ev.Tool)
+			case "media":
+				live.Media(turnCtx, ev.Media)
+			case "done":
+				reply = ev.Text
+			case "error":
+				streamErr = errors.New(ev.Text)
+			}
+		}
 		stopTyping()
 
 		// A cancelled turn is a /stop, not a fault. The stop handler has
@@ -601,12 +619,12 @@ func (g *Gateway) submitTurn(ctx context.Context, b *bot.Bot, msg *models.Messag
 		// partial: /stop is an acknowledged interruption, a provider error
 		// is not, and an unmarked partial reads as a finished answer either
 		// way.
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
+		if streamErr != nil || turnCtx.Err() != nil {
+			if errors.Is(turnCtx.Err(), context.Canceled) || (streamErr != nil && errors.Is(streamErr, context.Canceled)) {
 				g.log.Info("chat turn stopped", "session", session)
 				live.abandon(turnCtx)
 			} else {
-				g.log.Error("route failed", "error", err)
+				g.log.Error("stream turn failed", "error", streamErr)
 				live.abandonFailed(turnCtx)
 			}
 			return
