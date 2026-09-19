@@ -238,10 +238,11 @@ func chatRepoEnv(cfg config.Config, identity string) []gateway.RepoEnv {
 }
 
 // sendChatTurn runs one chat-model call and records its outcome for /status'
-// chat-model line. Recording happens in this one wrapper because every
-// chat-model call in this process passes through it: recording at the call
-// sites instead would let a path make a call and leave the reported
-// last-known outcome stale, which is a /status that lies about the provider.
+// chat-model line. Every chat turn passes through here, so one wrapper covers
+// the whole chat path; curator work is the other model caller in this process
+// and records at its own adapter (curatorLLMRunner). Anything that reaches the
+// runtime without recording leaves /status reporting a stale last-known
+// outcome, which is a /status that lies about the provider.
 func sendChatTurn(ctx context.Context, llm *runtime.Runtime, chatModel string, options core.GenerateOptions, turn gateway.TurnStream, outcomes *providerOutcomeRecorder) (string, error) {
 	text, err := runChatTurn(ctx, llm, chatModel, options, turn)
 	// record tolerates a nil recorder: a setup built without one (tests, a

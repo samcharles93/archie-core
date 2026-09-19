@@ -695,8 +695,20 @@ func (c Config) Clone() Config {
 		v := *c.Tools.WebFetch.Enabled
 		c.Tools.WebFetch.Enabled = &v
 	}
+	c.DiffCapLines = cloneIntPtr(c.DiffCapLines)
 	c.Extra = maps.Clone(c.Extra)
 	return c
+}
+
+// cloneIntPtr copies an optional int so a clone cannot write through to the
+// original. Optional ints carry a real meaning in their zero value (see
+// DiffCapLines), which is why they are pointers in the first place.
+func cloneIntPtr(v *int) *int {
+	if v == nil {
+		return nil
+	}
+	n := *v
+	return &n
 }
 
 func cloneRepos(repos []Repo) []Repo {
@@ -723,6 +735,7 @@ func cloneIdentities(ids []IdentityConfig) []IdentityConfig {
 		id.Providers = maps.Clone(id.Providers)
 		id.Dispatch.Labels = cloneStringMap(id.Dispatch.Labels)
 		id.Repos = cloneRepos(id.Repos)
+		id.DiffCapLines = cloneIntPtr(id.DiffCapLines)
 		out[i] = id
 	}
 	return out

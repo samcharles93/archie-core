@@ -240,3 +240,28 @@ func TestHandleStatusReadsTheWiredHealthSource(t *testing.T) {
 		})
 	}
 }
+
+// TestFormatChatModelBoundsTheProviderError pins that a provider error cannot
+// break /status' one-line-per-fact layout. The error is whatever the provider
+// returned, which for an HTML error page is neither short nor single-line, and
+// unlike a channel detail it was passed through raw.
+func TestFormatChatModelBoundsTheProviderError(t *testing.T) {
+	now := time.Now()
+	health := ChatModelHealth{
+		Attempted: true,
+		Outcome: ChatModelOutcome{
+			Model: "openai/gpt-5.6",
+			At:    now.Add(-time.Minute),
+			Err:   "502 Bad Gateway\n<html>\n<head><title>502</title></head>\n" + strings.Repeat("body text ", 40),
+		},
+	}
+
+	got := formatChatModel(health, now)
+	if strings.ContainsAny(got, "\n\r") {
+		t.Fatalf("formatChatModel() = %q, want a single line", got)
+	}
+	if len([]rune(got)) > maxChannelDetail+80 {
+		t.Fatalf("formatChatModel() is %d runes, want it bounded near maxChannelDetail (%d)",
+			len([]rune(got)), maxChannelDetail)
+	}
+}

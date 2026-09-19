@@ -547,14 +547,29 @@ func (s curatorEventSink) Emit(kind, detail string, data map[string]any) {
 // single completion are a bigger decision than this adapter makes.
 type curatorLLMRunner struct {
 	rt *runtime.Runtime
+	// outcomes records this call for /status alongside sendChatTurn's. A
+	// curator call is a model call this process made, and it does not pass
+	// through sendChatTurn, so without this a daemon whose only recent model
+	// traffic was curator work reports "no calls attempted yet" while the
+	// provider is demonstrably reachable -- or worse, keeps showing a much
+	// older chat outcome as current.
+	outcomes *providerOutcomeRecorder
 }
 
 func (r curatorLLMRunner) Chat(ctx context.Context, req curator.ChatRequest) (curator.ChatResult, error) {
+	// agentexec.NewRuntime returns nil when no provider is configured, and a
+	// nil *runtime.Runtime panics on the first method call. A curator asking
+	// for a completion on a daemon with no providers is a misconfiguration,
+	// not a reason to take the process down.
+	if r.rt == nil {
+		return curator.ChatResult{}, fmt.Errorf("curator chat: no model runtime is configured")
+	}
 	msgs := make([]chat.Message, 0, len(req.Messages))
 	for _, m := range req.Messages {
 		msgs = append(msgs, chat.Message{Role: chat.Role(m.Role), Content: m.Content})
 	}
 	res, err := r.rt.Chat(ctx, req.Model, core.GenerateOptions{Messages: msgs, MaxSteps: max(req.MaxSteps, 1)})
+	r.outcomes.record(req.Model, err)
 	if err != nil {
 		return curator.ChatResult{}, err
 	}

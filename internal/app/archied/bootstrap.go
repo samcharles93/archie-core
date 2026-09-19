@@ -995,7 +995,7 @@ func (b *boot) setupCurators(ctx context.Context) {
 		// Conversations backs the session-memory curator; b.chatSessionStore
 		// is opened by openChatSessions before setupCurators.
 		Conversations: sessioncurator.NewAdapter(b.chatSessionStore),
-		LLM:           curatorLLMRunner{rt: b.llm},
+		LLM:           curatorLLMRunner{rt: b.llm, outcomes: b.providerOutcomes},
 		// b.chatModels.ActiveModel() is the same source sendChatTurn uses
 		// for a real chat turn (telegram_setup.go) -- not
 		// b.defaultChatIdentity, which names a task-routing identity, not
