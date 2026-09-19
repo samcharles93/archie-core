@@ -31,7 +31,7 @@ func TestServiceStartsConfiguredChannels(t *testing.T) {
 		Chat: &dummyChatContract{},
 	}
 
-	srv, err := compose(d)
+	srv, err := compose(t.Context(), d)
 	if err != nil {
 		t.Fatalf("compose: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestServiceStartsConfiguredChannels(t *testing.T) {
 // instead would leave the operator with a service that starts cleanly and
 // answers nothing on that channel.
 func TestComposeRejectsInvalidChannelConfig(t *testing.T) {
-	_, err := compose(deps{
+	_, err := compose(t.Context(), deps{
 		Config: ResolvedConfig{
 			Email: config.EmailConfig{ListenAddr: "127.0.0.1:0"},
 		},
@@ -76,7 +76,7 @@ func TestComposeRejectsInvalidChannelConfig(t *testing.T) {
 		t.Fatalf("compose with a valid email listen addr: %v", err)
 	}
 
-	_, err = compose(deps{
+	_, err = compose(t.Context(), deps{
 		Config: ResolvedConfig{
 			TelegramToken: "token-123",
 			// Neither token_env nor a token ref: telegram.ValidateConfig refuses.

@@ -79,7 +79,7 @@ func TestServiceStartAndStop(t *testing.T) {
 		},
 		Log: slog.Default(),
 	}
-	srv, err := compose(d)
+	srv, err := compose(t.Context(), d)
 	if err != nil {
 		t.Fatalf("compose: %v", err)
 	}
