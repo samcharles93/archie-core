@@ -1,6 +1,9 @@
 # State Store — contract boundary & transport (ratification)
 
-**Status:** Ratified (rev. 2c). Rev. 1 was marked *conditionally ratified*; the three
+**Status:** Ratified (rev. 2e). Rev. 2e adds the `OpenTaskByPR` authorization lookup required
+by the ratified PR-review remediation contract. Rev. 2d revised §10 only: the
+`State ServiceConnection` struct-field instruction was withdrawn in favour of name-keyed
+services (`docs/prds/service-registry.md`). Rev. 1 was marked *conditionally ratified*; the three
 reviewer conditions it raised are resolved (rev. 2), and the two third-pass findings are
 resolved here: (a) the stale Q3 migration wording in `service-decomposition.md`
 (`store.WorkflowStore`, `mode = "inproc" | "remote"`) now matches the ratified ownership split
@@ -251,7 +254,7 @@ Methods are named after the store methods so the mapping is unambiguous. `workfl
 |---|---|
 | Lifecycle | `EnqueueIssue`, `EnqueueChatTask`, `ClaimNext`, `ClaimByIssue`, `Transition`, `Update`, `Requeue`, `RecoverStale` |
 | Archive / Retry | `ArchiveTask`, `RetryTask` |
-| Queries | `TaskByIssue`, `TaskByID`, `OpenPRs`, `ClearTerminalTasks`, `Tasks`, `StatusCounts`, `IncrementRetryCount` |
+| Queries | `TaskByIssue`, `OpenTaskByPR`, `TaskByID`, `OpenPRs`, `ClearTerminalTasks`, `Tasks`, `StatusCounts`, `IncrementRetryCount` |
 | Events | `InsertEvent`, `EventsSince`, `TaskEvents`, `WorkflowStats`, `StageStats`, `TokensByDay` |
 | Capture | `InsertCapture`, `ListCaptures` |
 | Mapping | `InsertMapping`, `GetMapping`, `ListMappings`, `UpdateMapping`, `DeleteMapping` |
@@ -261,7 +264,7 @@ Methods are named after the store methods so the mapping is unambiguous. `workfl
 | Config snapshot | `PutConfigSnapshot`, `GetConfigSnapshot` |
 | Task log | `ReadTaskLog`, `StreamTaskLogContent` |
 
-That is **44 unique RPCs** across one service (the `TaskEvents.Close` method is dropped).
+That is **45 unique contract RPCs** across one service (the `TaskEvents.Close` method is dropped).
 `Close()` is **excluded** from the wire (it is server lifecycle, not a client call) — see §11.
 
 The config-snapshot pair was added by `archie-core-ymut` (see
@@ -535,32 +538,41 @@ an explicit operator decision.
 
 **Follow the gateway's presence-based `target` seam, not the NATS `mode` enum.**
 
-- `internal/config/services.go` gains a `State ServiceConnection` field:
+- **Revised (rev. 2d).** This section previously instructed that
+  `internal/config/services.go` gain a `State ServiceConnection` *struct field*. That
+  instruction is withdrawn: naming each service as a field is the duplication
+  `docs/prds/service-registry.md` removes, and this document's own summary (`:7`) already
+  describes the seam as `[services.<name>]`. Services are keyed by name:
   ```go
-  type Services struct {
-      Gateway ServiceConnection `toml:"gateway" yaml:"gateway"`
-      State   ServiceConnection `toml:"state"   yaml:"state"`
-  }
-  type ServiceConnection struct {
-      Target string `toml:"target" yaml:"target"`
-  }
+  type Services map[string]ServiceConnection
   ```
-- **Empty `Target` → local** `*store.Store` adapter (the default; State Store not yet
-  extracted). **Set `Target` → dial gRPC** and use `*staterpc.Client`. This differs from the
-  gateway, where `Target` is always defaulted to `127.0.0.1:8585` because the gateway is already
-  a separate process.
-- Because `[services.state]` is **not** in `config.example.toml` today (the gateway's own
-  section is also missing — documentation debt), **add `[services.state]`** with a commented
-  `target` to `config.example.toml` in the same change that introduces the config field, so the
-  seam is visible to operators.
-- Composition root: `internal/app/archied/bootstrap.go`. Base path = the local `*store.Store`
-  (already opened by `openProductionTaskStore`); if `cfg.Services.State.Target != ""`, dial gRPC
-  and assign `b.stateStore = staterpc.NewClient(conn)` (with the token from config/secret).
+  registered once via `RegisterService(context, name, target, listen, tokenEnv)`. The TOML
+  shape below is unchanged, so nothing else in this section is affected; read
+  `cfg.Services.Get("state")` wherever it says `cfg.Services.State`.
+- **Empty `Target` → startup error** (corrected in rev. 2d). This bullet previously said an
+  empty `Target` opens a local `*store.Store` adapter. That default was withdrawn when the
+  State Store was extracted (§12 step 7): the standalone `archie-state-store` process
+  exclusively owns `archie.db`, so both `archied` and `archie-gateway` now reject an empty
+  target (`internal/app/archied/bootstrap.go` and `state_store_client.go`: `services.state.target
+  is required`). **Set `Target` → dial gRPC** with `*staterpc.Client`; no client opens the
+  database itself. This differs from the gateway, where `Target` is defaulted to
+  `127.0.0.1:8585` because `archie-gateway` is already a separate process whose client and
+  server share one default.
+- `[services.state]` is present and **uncommented** in `config.example.toml`, with `target`
+  marked REQUIRED, because the value is now load-bearing for every client. (This bullet
+  previously instructed adding the section with a commented-out `target`; that advice is
+  withdrawn, since a commented target cannot boot.)
+- Composition root: `internal/app/archied/bootstrap.go` (the daemon) and
+  `internal/app/archieui/config.go` (the UI process) both read `cfg.Services.Get("state")` and
+  dial the remote State Store. `openProductionTaskStore` is **not** called from the daemon: it
+  lives in the standalone `archie-state-store` process (`internal/app/archied/state_store.go`),
+  which is the only path that opens `archie.db`.
 
 > **Mode fork, decided.** The gateway uses a single `target` address (no enum). The State Store
-> boundary uses the same seam for symmetry, but with the opposite default (local, not remote)
-> because the State Store is not yet extracted. No `mode` field is added. A companion
-> `STATE_STORE_TOKEN` secret (or a `[services.state] target_token` key) carries authentication.
+> boundary uses the same seam for symmetry, and **both now require a non-empty `target`**: the
+> State Store's local-store default was withdrawn when the process was extracted (§12 step 7).
+> No `mode` field is added. A companion `STATE_STORE_TOKEN` secret (or a
+> `[services.state] target_token` key) carries authentication.
 
 ---
 
@@ -652,7 +664,7 @@ an explicit operator decision.
   (`workflow.Store` + `workflow.Task`/`Status`/`Source`, per dependency rules #2 and #7);
   daemon/webui store surfaces stay **producer-owned** in `internal/store`. `store.WorkflowStore`
   is superseded by `workflow.Store`.
-- **One `StateStore` gRPC service** (44 RPCs, grouped by contract) + narrow Go consumer facades
+- **One `StateStore` gRPC service** (45 contract RPCs, grouped by contract) + narrow Go consumer facades
   (≤8) on `staterpc.Client` — mirrors the single-`ChatService` precedent.
 - **Domain type relocation** (`Task`/`Status`/`Source` → `internal/domain/workflow`) is a
   Phase 2 prerequisite, pulled forward from migration-decisions §4 (minimal bound,

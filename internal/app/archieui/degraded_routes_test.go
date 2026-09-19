@@ -81,10 +81,6 @@ func TestRoutesWithoutAContractDegradeExplicitly(t *testing.T) {
 			want: http.StatusOK, emptyJSON: `[]`,
 		},
 		{
-			name: "memory", method: http.MethodGet, path: "/api/memory",
-			want: http.StatusOK,
-		},
-		{
 			name: "skills catalog", method: http.MethodGet, path: "/api/skills",
 			want: http.StatusOK, emptyJSON: `[]`,
 		},

@@ -199,3 +199,18 @@ func TestPublishDoesNotOverwritePreSetAt(t *testing.T) {
 		t.Errorf("At = %v, want %v (preset should not be overwritten)", e.At, preset)
 	}
 }
+
+// TestCapturedSchemasAreSpelledAsTheDashboardExpects pins the two schema names
+// as literals. They are wire vocabulary: the dashboard mirrors them
+// (ui/src/tasks/attempt-config.jsx, and api_tasks_changes.go for the changes
+// one), so changing a name here without changing the reader turns every
+// capture into "recorded but could not be read". The literal assertion is what
+// makes that a failing test rather than a silent one.
+func TestCapturedSchemasAreSpelledAsTheDashboardExpects(t *testing.T) {
+	if ConfigCapturedSchema != "archie/task-config@1" {
+		t.Errorf("ConfigCapturedSchema = %q, want archie/task-config@1", ConfigCapturedSchema)
+	}
+	if ChangesCapturedSchema != "archie/task-changes@1" {
+		t.Errorf("ChangesCapturedSchema = %q, want archie/task-changes@1", ChangesCapturedSchema)
+	}
+}

@@ -67,6 +67,7 @@ The repository root has no `README.md` or `CONTRIBUTING.md` as of 2026-09-18.
 | Content | Destination |
 |---|---|
 | Cross-cutting approved architecture index | `docs/prds/01-project-management.md` |
+| New capability with no settled design yet (CLAUDE.md's "write a decisive doc before coding") | New `docs/prds/<capability>.md` — use the PRD template in `references/templates.md`, which folds in a multi-agent execution breakdown so the sub-issues can be picked up without re-deriving the design |
 | Focused domain or requirement decision | Matching `docs/architecture/*.md` file |
 | Unresolved migration question | `docs/architecture/migration-decisions.md` |
 | Contributor protocol that must load before work | `CLAUDE.md` |

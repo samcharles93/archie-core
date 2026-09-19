@@ -13,7 +13,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 const (
@@ -95,7 +95,7 @@ type liveReply struct {
 	// with fixed Capabilities(), which the real Telegram one can't
 	// express (it always reports Media: true) but a future channel or a
 	// capability-limited deployment might.
-	newMediaSender func(b *bot.Bot, chatID int64, threadID int) gateway.MediaSender
+	newMediaSender func(b *bot.Bot, chatID int64, threadID int) messaging.MediaSender
 
 	cancelRender   context.CancelFunc
 	renderRequests chan chan struct{}
@@ -337,15 +337,15 @@ func (l *liveReply) Delta(text string) {
 // joining the line because the tool line and the model's reply share one
 // Markdown body (finalText): an unbalanced marker in the tool line breaks
 // parsing for the whole message, including the reply's own formatting.
-func (l *liveReply) ToolCall(event gateway.ToolCallEvent) {
+func (l *liveReply) ToolCall(event messaging.ToolCallEvent) {
 	if !l.showToolCalls || event.Name == "" {
 		return
 	}
 	// Render the completed result as a compact fenced block. Do not append the
 	// raw/JSON-shaped parameters: they are noisy, can expose secrets, and were
 	// the source of unreadable schema placeholders in Telegram.
-	line := gateway.RenderToolCall(event)
-	key := gateway.FailureKey(event)
+	line := messaging.RenderToolCall(event)
+	key := messaging.FailureKey(event)
 
 	l.mu.Lock()
 	if index, ok := l.failureLines[key]; key != "" && ok {
@@ -396,7 +396,7 @@ const mediaSendTimeout = 30 * time.Second
 // This used to skip on a missing URL alone, which dropped every local
 // file before it reached the sender -- the guard, not just the sender,
 // was part of making a local path undeliverable.
-func (l *liveReply) Media(event gateway.MediaEvent) {
+func (l *liveReply) Media(ctx context.Context, event messaging.MediaEvent) {
 	if event.Attachment.URL == "" && event.Attachment.Path == "" {
 		return
 	}
@@ -408,18 +408,18 @@ func (l *liveReply) Media(event gateway.MediaEvent) {
 		// the entire point of CapabilityReporter over attempt-then-catch
 		// -- a sender that already knows it cannot deliver a given media
 		// kind should never cost a doomed network round trip to find out.
-		if !gateway.CapabilitiesOf(sender).Media {
+		if !messaging.CapabilitiesOf(sender).Media {
 			l.g.log.Debug("channel cannot deliver media inline, falling back to a link",
 				"tool", event.ToolName, "type", event.Attachment.Type)
-			l.appendFallbackLine(event.Attachment)
+			l.appendFallbackLine(ctx, event.Attachment)
 			return
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), mediaSendTimeout)
+		sendCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), mediaSendTimeout)
 		defer cancel()
 
-		_, err := sender.SendMedia(ctx, gateway.MessageEvent{
-			Media: []gateway.MediaAttachment{event.Attachment},
+		_, err := sender.SendMedia(sendCtx, messaging.MessageEvent{
+			Media: []messaging.MediaAttachment{event.Attachment},
 		})
 		if err == nil {
 			return
@@ -427,14 +427,14 @@ func (l *liveReply) Media(event gateway.MediaEvent) {
 
 		l.g.log.Warn("media delivery failed, falling back to a link",
 			"tool", event.ToolName, "type", event.Attachment.Type, "error", err)
-		l.appendFallbackLine(event.Attachment)
+		l.appendFallbackLine(ctx, event.Attachment)
 	})
 }
 
 // appendFallbackLine renders att as a visible link in the reply, for a
 // MediaEvent that could not be (or was not attempted to be) delivered
 // inline.
-func (l *liveReply) appendFallbackLine(att gateway.MediaAttachment) {
+func (l *liveReply) appendFallbackLine(ctx context.Context, att messaging.MediaAttachment) {
 	// A local attachment has no URL to fall back to, and printing an empty
 	// one reads as a delivered file. Say plainly that it was not sent:
 	// the whole defect this path exists around is that non-delivery and
@@ -455,9 +455,9 @@ func (l *liveReply) appendFallbackLine(att gateway.MediaAttachment) {
 		// live message it would have edited is done being edited. Send
 		// this as its own message instead of dropping it.
 		l.mu.Unlock()
-		ctx, cancel := context.WithTimeout(context.Background(), mediaSendTimeout)
+		sendCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), mediaSendTimeout)
 		defer cancel()
-		l.g.sendMessage(ctx, l.b, l.chatID, l.messageThreadID, line)
+		l.g.sendMessage(sendCtx, l.b, l.chatID, l.messageThreadID, line)
 		return
 	}
 	l.toolLines = append(l.toolLines, line)

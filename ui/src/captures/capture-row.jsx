@@ -1,5 +1,5 @@
 import { h, Fragment } from "preact";
-import { ago } from "../base/dom.jsx";
+import { ago } from "../base/format.jsx";
 import { Pill } from "../base/pill.jsx";
 
 /**

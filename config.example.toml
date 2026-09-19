@@ -151,6 +151,8 @@ class = "ollama"
 # token = { engine = "bws", key = "TELEGRAM_BOT_TOKEN" }
 # Legacy compatibility: read the token from this environment variable.
 # token_env = "TELEGRAM_BOT_TOKEN"      # env var holding the bot token from @BotFather
+# Run by archie-messaging, which serves /update, so these commands execute on
+# whichever host runs that process.
 # update_check_command = ["/usr/local/bin/archie-update-check"]
 # update_install_command = ["/usr/local/bin/archie-update-install"]
 
@@ -259,15 +261,11 @@ listen = "127.0.0.1:8484"
 # level       = "info"   # "debug" | "info" | "warn" | "error"
 # quiet       = false    # true suppresses stderr once a file is configured
 
-# The built-in file-backed memory engine (MEMORY.md + USER.md under
-# work_dir) is always on -- nothing here is required to get memory at all.
-# engine selects among the domain/memory engine family; "builtin" (the
-# default, same as leaving it unset) is the only one implemented so far.
-# provider is a separate, older mechanism -- an external provider identifier
-# for internal/memory.Manager.RegisterExternal -- but no external provider
-# is implemented anywhere in the repo to construct and register, so
-# setting it is REJECTED at config load rather than silently doing
-# nothing. Leave it unset.
+# The built-in file-backed memory engine (internal/domain/memory +
+# internal/infrastructure/memory) is always on -- nothing here is required
+# to get memory at all. engine selects among the domain/memory engine
+# family; "builtin" (the default, same as leaving it unset) is the only
+# one implemented so far.
 # [memory]
 # engine = "builtin"        # "builtin" is the only engine implemented so far
 
@@ -304,6 +302,11 @@ gate_max_failures = 5
 # docs/prds/state-store-contract.md).
 [services.gateway]
 target = "127.0.0.1:8585"          # archie-gateway's gRPC address (always remote once set)
+# listen = "127.0.0.1:8585"         # The address archie-gateway BINDS. Read only by the
+#                                     # archie-gateway process; every client ignores it. Defaults
+#                                     # to the target above, so a default deployment's client and
+#                                     # server cannot drift onto different ports. Set it when the
+#                                     # host already owns that port.
 # target_token = "..."               # Bearer [REDACTED] for a NON-loopback listener. A loopback listener
 #                                       # (127.0.0.1/::1/localhost) needs no token. A non-loopback
 #                                       # listener without a token fails closed, as does a
@@ -316,6 +319,11 @@ target = "127.0.0.1:9090"          # REQUIRED. The State Store gRPC address arch
 #                                       # in-process: the standalone archie-state-store process
 #                                       # owns the single SQLite file (docs/prds/state-store-contract.md
 #                                       # §10/§12 step 7). An empty target is a startup error.
+# listen = "127.0.0.1:9090"         # The address archie-state-store BINDS. Read only by that
+#                                     # process; every client ignores it. Defaults to the target
+#                                     # above, so a default deployment's client and server cannot
+#                                     # drift onto different ports. Move it when the host already
+#                                     # owns 9090 (cockpit binds it by default).
 # target_token = "..."               # bearer token for a NON-loopback target. A loopback target
 #                                       # (127.0.0.1/::1/localhost) needs no token. A non-loopback
 #                                       # target without a token fails closed (docs/prds/state-store-contract.md

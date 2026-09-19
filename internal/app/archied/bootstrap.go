@@ -23,9 +23,6 @@ import (
 
 	"github.com/samcharles93/ai-sdk/runtime"
 
-	"github.com/samcharles93/archie-core/internal/channels/email"
-	"github.com/samcharles93/archie-core/internal/channels/status"
-	"github.com/samcharles93/archie-core/internal/channels/webhook"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/daemon"
@@ -56,7 +53,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/infrastructure/taskactions"
 	"github.com/samcharles93/archie-core/internal/logging"
-	"github.com/samcharles93/archie-core/internal/memory"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
 	"github.com/samcharles93/archie-core/internal/ratelimit"
@@ -69,7 +65,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/tools/minimax"
 	toolprovider "github.com/samcharles93/archie-core/internal/tools/provider"
 	builtintoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/builtin"
-	memorytoolprovider "github.com/samcharles93/archie-core/internal/tools/provider/memory"
 	"github.com/samcharles93/archie-core/internal/tools/sendfile"
 	"github.com/samcharles93/archie-core/internal/tools/webfetch"
 	"github.com/samcharles93/archie-core/internal/webui"
@@ -125,9 +120,7 @@ type boot struct {
 	catalog       modelcatalog.Snapshot
 	catalogModels []string
 
-	bus             *events.Bus
-	restartTelegram func() error
-	channelManager  *status.Manager
+	bus *events.Bus
 	// rateLimiter is the shared per-(channel, sender) inbound budget every
 	// chat Router is given. Nil when [chat.rate_limit] is not configured,
 	// which leaves rate limiting off.
@@ -185,7 +178,6 @@ type boot struct {
 	trees            *worktree.Manager
 	worktreeGrants   *worktreerpc.Grants
 	identityRunners  []*daemon.IdentityRunner
-	memManager       *memory.Manager
 	memEngines       *domainmemory.Registry
 	curatorRegistry  *curator.Registry
 	curatorRuntime   *curator.Runtime
@@ -347,18 +339,18 @@ func (b *boot) openStores(ctx context.Context) error {
 // the STATE_STORE_TOKEN secret (§10). It runs after openStores has resolved
 // b.secrets, and before setupObservability / buildDaemon wire consumers.
 func (b *boot) openStateStoreAdapter() error {
-	target := strings.TrimSpace(b.cfg.Services.State.Target)
+	target := strings.TrimSpace(b.cfg.Services.Get(config.ServiceNameState).Target)
 	if target == "" {
 		return fmt.Errorf("services.state.target is required: archied/archie-gateway no longer own archie.db; the standalone archie-state-store process owns it (docs/prds/state-store-contract.md §12 step 7)")
 	}
-	client, cleanup, err := composeStateStoreClient(b.cfg.Services.State, b.secrets)
+	client, cleanup, err := composeStateStoreClient(b.cfg.Services, b.secrets)
 	if err != nil {
 		b.log.Error("state store adapter", "err", err)
 		return err
 	}
 	b.stateStore = client
 	b.stateStoreGrants = &staterpc.GrantIssuer{Client: client}
-	b.stateStoreToken = stateStoreResolvedToken(b.cfg.Services.State, b.secrets)
+	b.stateStoreToken = b.cfg.Services.ResolvedToken(config.ServiceNameState, b.secrets.Getenv)
 	b.addCleanup(cleanup)
 	return nil
 }
@@ -406,44 +398,13 @@ func (b *boot) loadCatalog(ctx context.Context, cfgPath string) {
 	b.log.Info("model catalog loaded", "providers", len(catalog.Providers), "models", len(b.catalogModels))
 }
 
-// channelDescriptors projects the configured chat front-ends into the
-// dashboard's channel-status descriptors.
-//
-// Configured comes from config.ChatConfig.FrontEnds so this list and the
-// configuration projection published for the extracted UI process cannot
-// disagree about whether a front-end is set up (GitHub #821). ReloadSupported
-// and Detail stay here because they are channel-lifecycle facts about the bot
-// the daemon runs, not configuration: only Telegram can be reloaded in place
-// today, and its allowlist caveat is about who the running bot answers.
-func channelDescriptors(chat config.ChatConfig) []status.Descriptor {
-	frontEnds := chat.FrontEnds()
-	descriptors := make([]status.Descriptor, 0, len(frontEnds))
-	for _, frontEnd := range frontEnds {
-		descriptor := status.Descriptor{
-			ID:         frontEnd.ID,
-			Name:       frontEnd.Name,
-			Configured: frontEnd.Configured,
-		}
-		if frontEnd.ID == "telegram" {
-			descriptor.ReloadSupported = frontEnd.Configured
-			if frontEnd.Configured && len(chat.Telegram.AllowedUserIDs) == 0 {
-				descriptor.Detail = "Token set, but the allowlist is empty -- the bot answers nobody."
-			}
-		}
-		descriptors = append(descriptors, descriptor)
-	}
-	return descriptors
-}
-
-// setupObservability builds the event bus, channel manager and dashboard
-// server. Every event is logged to SQLite (stamped with its row id) and
+// setupObservability builds the event bus and dashboard server. Every event is logged to SQLite (stamped with its row id) and
 // then fanned out to live dashboard connections.
 func (b *boot) setupObservability(ctx context.Context) {
 	cfg, log := b.cfg, b.log
 	bus := events.NewBus()
 	b.bus = bus
 	b.addCleanup(func() { bus.Close() })
-	b.channelManager = status.NewManager(channelDescriptors(cfg.Chat))
 	b.cfgHolder = config.NewHolder(cfg)
 	// The watchdog leaves its verdict in a file on this host, so the daemon
 	// reads it and publishes the outcome as an event; the dashboard renders
@@ -452,6 +413,15 @@ func (b *boot) setupObservability(ctx context.Context) {
 	sink := bus.Subscribe(256)
 	go persistEvents(ctx, sink, b.stateStore, log)
 }
+
+// reactionStreamMaxAge bounds how long a reaction survives in the fan-out
+// stream before JetStream discards it. Reactions are producer-only wake
+// events (docs/prds/event-sources-and-reactions.md): a dropped reaction only
+// delays work until the next poll, never loses it, because the authoritative
+// state is re-read at pass time. One day therefore tolerates a consumer that
+// is down or lagging for a full maintenance window without letting
+// acknowledged reactions accumulate without bound.
+const reactionStreamMaxAge = 24 * time.Hour
 
 // connectNATS opens the NATS client. External mode dials cfg.NATS.URL;
 // embedded mode starts an in-process nats-server and dials it, so single-
@@ -507,11 +477,40 @@ func (b *boot) connectNATS(ctx context.Context) error { //nolint:nestif // embed
 		log.Error("nats connect failed", "err", err)
 		return err
 	}
+
+	// Reactions are producer-only fan-out events: every interested consumer
+	// must see each one, so they get their own stream under LimitsPolicy
+	// rather than the work-queue policy ARCHIE_TASKS uses (which lets a
+	// second consumer on an overlapping filter silently receive nothing).
+	// LimitsPolicy retains every message until a limit is reached, so without
+	// a finite limit acknowledged reactions would accumulate forever; the
+	// MaxAge cap bounds that by time.
+	reactionMaxAge := reactionStreamMaxAge
+	reactionClient, err := nats.Connect(ctx, nats.Config{
+		URL:           url,
+		Token:         natsToken,
+		StreamName:    nats.DefaultReactionStreamName,
+		Subjects:      []string{workintake.SubjectReactionWildcard},
+		FilterSubject: workintake.SubjectReactionWildcard,
+		Retention:     nats.FanOutRetention(),
+		MaxAge:        &reactionMaxAge,
+	}, log)
+	if err != nil {
+		log.Error("nats reaction stream connect failed", "err", err)
+		natsClient.Close()
+		return err
+	}
+
 	b.natsClient = natsClient
 	b.natsURL = url
 	b.natsToken = natsToken
 	b.addCleanup(func() { natsClient.Close() })
-	log.Info("nats connected", "url", url)
+	// The reaction client is kept only so its connection stays open for the
+	// daemon's lifetime and is closed at shutdown; the stream it provisions
+	// is the deliverable. A future producer (bead archie-core-8li9.3) will
+	// need its own publisher surface, wired when that step lands.
+	b.addCleanup(func() { reactionClient.Close() })
+	log.Info("nats connected", "url", url, "task_stream", nats.DefaultStreamName, "reaction_stream", nats.DefaultReactionStreamName)
 	return nil
 }
 
@@ -580,7 +579,7 @@ func (b *boot) setupLLMAndChat() error {
 	b.setupChatRuntime(cfg)
 
 	b.setupEmbeddings(cfg, log)
-	contract, cleanup, err := composeChatContract(cfg.Services.Gateway, b.secrets)
+	contract, cleanup, err := composeChatContract(cfg.Services, b.secrets)
 	if err != nil {
 		return err
 	}
@@ -599,7 +598,9 @@ const rateLimiterEvictInterval = time.Minute
 
 // startRateLimiter constructs b.rateLimiter from cfg when configured, and
 // drives its documented EvictStale ticker for the life of ctx. Leaves
-// b.rateLimiter nil (rate limiting off) when cfg is not enabled.
+// b.rateLimiter nil (rate limiting off) when cfg is not enabled. Only the
+// Gateway process calls it: it owns the sole Router, so it is the one place
+// an inbound budget can be applied to every channel's turns.
 func (b *boot) startRateLimiter(ctx context.Context, cfg config.RateLimitConfig) {
 	if !cfg.Enabled() {
 		return
@@ -618,159 +619,6 @@ func (b *boot) startRateLimiter(ctx context.Context, cfg config.RateLimitConfig)
 			}
 		}
 	}()
-}
-
-// setupGateways assembles the Telegram, email and webhook gateways. It
-// returns false when the Telegram gateway could not start, which the
-// caller treats as a fatal boot error.
-//
-// Multi-agent collaboration PRD phase C (docs/prds/multi-agent-collaboration.md).
-func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) bool {
-	cfg, log := b.cfg, b.log
-	b.startRateLimiter(ctx, cfg.Chat.RateLimit)
-	start, ok := setupTelegramGateway(ctx, telegramSetup{
-		Cfg: config.NewHolder(cfg), CfgPath: cfgPath, OverlayPath: overlayPath,
-		St: b.stateStore, LLM: b.llm, ChatModels: b.chatModels, ToolReg: b.toolReg,
-		Personas: b.personas, ChatTasks: b.chatTasks, ChatController: b.chatController,
-		ChatTaskLister: chatTaskListerAdapter{tasks: b.stateStore.Tasks},
-		ChatTaskLogs: chatTaskLogReaderAdapter{
-			tasks:    b.stateStore.TaskByID,
-			taskLogs: b.taskLogs,
-		},
-		ChatTaskActor: chatTaskActorAdapter{
-			contract: func() gateway.ChatContract {
-				if b.chat != nil {
-					return b.chat.Contract
-				}
-				return nil
-			}(),
-		},
-		ChatPRReviewer:      b.prReviewer(),
-		DefaultChatIdentity: b.defaultChatIdentity, SessionStore: b.chatSessionStore, Updates: b.updateService,
-		Secrets:         b.secrets,
-		Bus:             b.bus,
-		RegisterRestart: func(request func() error) { b.restartTelegram = request }, Log: log,
-		ChannelManager: b.channelManager, AgentStatus: b.agentStatus,
-		RateLimiter: b.rateLimiter,
-	})
-	if !ok {
-		return false
-	}
-	if start != nil {
-		b.startGateways = append(b.startGateways, start)
-	}
-
-	if !b.setupEmailGateway(ctx, cfg, log) {
-		return false
-	}
-	if !b.setupWebhookGateway(ctx, cfg, log) {
-		return false
-	}
-	return true
-}
-
-// setupEmailGateway registers the optional inbound email gateway when
-// chat.email.listen_addr is configured. It returns false when the
-// configured gateway fails its own ConfigSchema validation, which the
-// caller treats as a fatal boot error -- the same convention
-// setupTelegramGateway already uses.
-func (b *boot) setupEmailGateway(ctx context.Context, cfg config.Config, log *slog.Logger) bool {
-	if cfg.Chat.Email.ListenAddr == "" {
-		return true
-	}
-	em := email.New(cfg.Chat.Email.ListenAddr, cfg.Chat.Email.RelayAddr, log)
-	if err := em.ValidateConfig(map[string]any{
-		"listen_addr": cfg.Chat.Email.ListenAddr,
-		"relay_addr":  cfg.Chat.Email.RelayAddr,
-	}); err != nil {
-		log.Error("chat.email config invalid", "err", err)
-		return false
-	}
-	emRouter := gateway.NewRouter(b.stateStore, nil, "email")
-	emRouter.Limiter = b.rateLimiter
-	configureTaskCommands(emRouter, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.stateStore.Tasks}, b.defaultChatIdentity)
-	b.startGateways = append(b.startGateways, func() {
-		go func() {
-			lifecycle := gateway.Lifecycle{
-				Starting: func() { b.channelManager.MarkStarting("email") },
-				Running: func() {
-					b.channelManager.MarkRunning("email")
-					log.Info("email gateway started", "addr", cfg.Chat.Email.ListenAddr)
-				},
-			}
-			if err := em.Start(ctx, emRouter, lifecycle); err != nil && ctx.Err() == nil {
-				b.channelManager.MarkFailed("email", err.Error())
-				log.Error("email gateway stopped", "err", err)
-			}
-		}()
-	})
-	return true
-}
-
-// setupWebhookGateway registers the optional inbound webhook gateway when
-// chat.webhook_addr is configured. It returns false when the configured
-// gateway fails its own ConfigSchema validation, which the caller treats
-// as a fatal boot error -- the same convention setupTelegramGateway
-// already uses.
-func (b *boot) setupWebhookGateway(ctx context.Context, cfg config.Config, log *slog.Logger) bool {
-	if cfg.Chat.WebhookAddr == "" {
-		return true
-	}
-	host, port := parseListenAddr(cfg.Chat.WebhookAddr, "0.0.0.0", 8644)
-	secretValue, err := b.secrets.Resolve(cfg.Chat.Webhook.Secret)
-	if err != nil {
-		log.Error("webhook gateway secret unresolvable; starting with signature validation disabled",
-			"engine", cfg.Chat.Webhook.Secret.Engine, "key", cfg.Chat.Webhook.Secret.Key, "err", err)
-	}
-	wh := webhook.New(
-		host, port,
-		webhookRoutes(cfg.Chat.Webhook, secretValue),
-		log,
-	)
-	if err := wh.ValidateConfig(map[string]any{
-		"host": host,
-		"port": port,
-	}); err != nil {
-		log.Error("chat.webhook config invalid", "err", err)
-		return false
-	}
-	whRouter := gateway.NewRouter(b.stateStore, nil, "webhook")
-	whRouter.Limiter = b.rateLimiter
-	configureTaskCommands(whRouter, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.stateStore.Tasks}, b.defaultChatIdentity)
-	b.startGateways = append(b.startGateways, func() {
-		go func() {
-			lifecycle := gateway.Lifecycle{
-				Starting: func() { b.channelManager.MarkStarting("webhook") },
-				Running: func() {
-					b.channelManager.MarkRunning("webhook")
-					log.Info("webhook gateway started", "addr", fmt.Sprintf("%s:%d", host, port))
-				},
-			}
-			if err := wh.Start(ctx, whRouter, lifecycle); err != nil && ctx.Err() == nil {
-				b.channelManager.MarkFailed("webhook", err.Error())
-				log.Error("webhook gateway stopped", "err", err)
-			}
-		}()
-	})
-	return true
-}
-
-// webhookRoutes translates the configured [chat.webhook] route into the
-// gateway's RouteConfig. It is the composition site config.WebhookRoute
-// exists for: the HMAC/template/deliver-to fields have been implemented and
-// tested in internal/channels/webhook since it was written, reachable only
-// through this translation.
-func webhookRoutes(route config.WebhookRoute, secretValue string) []webhook.RouteConfig {
-	path := route.Path
-	if path == "" {
-		path = "/webhook"
-	}
-	return []webhook.RouteConfig{{
-		Path:      path,
-		Secret:    secretValue,
-		Template:  route.Template,
-		DeliverTo: route.DeliverTo,
-	}}
 }
 
 // loadWorkflows builds the workflow registry from the skill catalog.
@@ -1018,64 +866,19 @@ func (b *boot) registerNATSRPC() error {
 	return nil
 }
 
-// setupMemory starts the memory manager. The built-in file-backed
-// provider (MEMORY.md + USER.md) lives under the daemon work directory.
-// memory.Manager.RegisterExternal exists for an external provider, but
-// nothing calls it here: no external MemoryProvider is implemented
-// anywhere in the repo to construct and register, and
-// configuration.validateMemory now rejects cfg.Memory.Provider being set
-// at all rather than silently accepting a value with no effect
-// (archie-core-1786637499161-356-e424e40d.1).
-func (b *boot) setupMemory() error {
-	cfg, log := b.cfg, b.log
-	memProvider, memDir := memoryProvider(cfg.WorkDir, log)
-	if memProvider == nil {
-		log.Error("memory provider init failed", "dir", memDir)
-		return fmt.Errorf("memory provider init failed in %s", memDir)
-	}
-	memManager, err := memory.NewManager(memProvider, nil)
-	if err != nil {
-		log.Error("memory manager init failed", "err", err)
-		return err
-	}
-	// Install the scanner the HandleToolCall gate reads. Without this the gate
-	// returns ThreatNone on every write (manager.ScanContent short-circuits when
-	// scanner is nil), so configuration.md's "Memory safety scanner" row would
-	// describe a control that never runs. The consequences stay at the
-	// documented defaults: scanReject is false, so a prompt-injection match is
-	// downgraded to a warn and logged rather than refusing the operator's write.
-	memManager.SetScanner(&memory.DefaultScanner{})
-	b.memManager = memManager
-
-	if err := memManager.Initialize("daemon"); err != nil {
-		log.Warn("memory manager initialize", "err", err)
-	}
-	mm := memManager
-	b.addCleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := mm.ShutdownContext(shutdownCtx); err != nil {
-			log.Error("memory manager shutdown", "err", err)
-		}
-	})
-	log.Info("memory manager started", "dir", memDir)
-	return nil
-}
-
 // setupMemoryEngine wires the domain/memory engine family
-// (archie-core-1786637499161-356-e424e40d), separate from and not yet
-// consulted by the legacy memory manager set up in setupMemory above.
-// cfg.Memory.Engine is validated at config load
-// (configuration.validateMemory) against the same set this switch covers,
-// so an unrecognised value cannot reach here -- this only guards against
-// the two lists drifting apart.
+// (archie-core-1786637499161-356-e424e40d), the only memory engine per
+// docs/prds/memory-engine-unification.md. cfg.Memory.Engine is validated at
+// config load (configuration.validateMemory) against the same set this
+// switch covers, so an unrecognised value cannot reach here -- this only
+// guards against the two lists drifting apart.
 //
-// Rooted at workDir/memory-engine, a directory separate from the legacy
-// provider's workDir/memory, so the two paths can never collide on the
-// same files while both exist.
+// Rooted at workDir/memory-engine.
 func (b *boot) setupMemoryEngine() error {
 	cfg, log := b.cfg, b.log
-	registry := domainmemory.NewRegistry(domainmemory.Registrar{})
+	// The logger is what carries an engine's scanner warning: warn allows
+	// the write, so the log line is the whole audit trail for it.
+	registry := domainmemory.NewRegistry(domainmemory.Registrar{Log: log})
 
 	switch cfg.Memory.Engine {
 	case infraMemory.EngineName, "":
@@ -1106,15 +909,44 @@ func (b *boot) setupMemoryEngine() error {
 	return nil
 }
 
-// setupMemoryAll runs both memory setup phases -- the legacy manager and
-// the new engine family -- as one step. Kept as a single call from Run()
-// rather than two: they are always run together and Run() is already at
-// its cyclomatic complexity budget.
-func (b *boot) setupMemoryAll() error {
-	if err := b.setupMemory(); err != nil {
-		return err
+// activeMemoryEngine resolves the engine setupMemoryEngine registered under
+// cfg.Memory.Engine. Both memoryStore and memoryWriter narrow this same
+// engine to the read or write surface their caller needs; ok is false when
+// the registry was never set up or the configured engine is not registered.
+func (b *boot) activeMemoryEngine() (domainmemory.MemoryEngine, bool) {
+	if b.memEngines == nil {
+		return nil, false
 	}
-	return b.setupMemoryEngine()
+	name := b.cfg.Memory.Engine
+	if name == "" {
+		name = infraMemory.EngineName
+	}
+	return b.memEngines.Get(name)
+}
+
+// memoryStore resolves the active memory engine as the narrow read surface
+// a chat turn runner needs. Nil when activeMemoryEngine has none -- the
+// turn runner already treats that as "no memory block"
+// (gateway.renderMemory), so a chat turn degrades instead of failing.
+func (b *boot) memoryStore() gateway.MemoryStore {
+	engine, ok := b.activeMemoryEngine()
+	if !ok {
+		return nil
+	}
+	return engine
+}
+
+// memoryWriter resolves the active memory engine as the narrow write
+// surface the per-turn memory tool needs (docs/prds/
+// memory-engine-unification.md §5). Nil when activeMemoryEngine has none --
+// MemoryTools already treats that as "no memory tools", so a chat turn
+// simply has no memory_create/update/delete/list tools rather than failing.
+func (b *boot) memoryWriter() gateway.MemoryWriteStore {
+	engine, ok := b.activeMemoryEngine()
+	if !ok {
+		return nil
+	}
+	return engine
 }
 
 // setupCurators wires the curator engine family. The registry owns
@@ -1139,7 +971,7 @@ func (b *boot) setupCurators(ctx context.Context) {
 		Events: curatorEventSink{b.bus},
 		// b.memEngines (*domainmemory.Registry) satisfies
 		// curator.MemoryEngineSource's Get(name) signature directly, no
-		// adapter needed. Set by setupMemoryAll, which Run() calls before
+		// adapter needed. Set by setupMemoryEngine, which Run() calls before
 		// setupCurators.
 		MemoryEngines: b.memEngines,
 		// Skills is a shared host service like Events/MemoryEngines --
@@ -1223,15 +1055,14 @@ func (b *boot) workspaceIndex(ctx context.Context, workspace string) []toolsbuil
 	return []toolsbuiltin.GrepIndex{manager}
 }
 
-// registerTools registers the tool providers with a lifecycle: memory,
-// workspace file/shell tools and optional MCP servers.
+// registerTools registers the tool providers with a lifecycle: workspace
+// file/shell tools and optional MCP servers. Memory tools
+// (memory_create/update/delete/list) are not registered here -- they are
+// built per turn onto the resolved Subject's scopes
+// (internal/gateway/turn_memory_tool.go), not once at boot.
 func (b *boot) registerTools(ctx context.Context) error {
 	cfg, log := b.cfg, b.log
 	b.providerRegistry = toolprovider.NewRegistry(b.toolReg)
-	if err := b.providerRegistry.Register(memorytoolprovider.New(b.memManager)); err != nil {
-		log.Error("memory tool provider registration failed", "err", err)
-		return err
-	}
 	// Workspace file and shell tools. Registered only when a workspace is
 	// configured: these read, write and execute, so the directory is a
 	// deliberate choice rather than a default.
@@ -1390,7 +1221,7 @@ func (b *boot) buildDaemon() {
 	b.d = &daemon.Daemon{
 		Cfg:                 b.cfgHolder,
 		ConnectedNATS:       daemon.NATSEndpoint{URL: b.natsURL, Token: b.natsToken},
-		ConnectedStateStore: daemon.StateStoreEndpoint{URL: strings.TrimSpace(b.cfg.Services.State.Target), Token: b.stateStoreToken},
+		ConnectedStateStore: daemon.StateStoreEndpoint{URL: strings.TrimSpace(b.cfg.Services.Get(config.ServiceNameState).Target), Token: b.stateStoreToken},
 		Store:               b.stateStore,
 		Bus:                 b.bus,
 		Forge:               b.forgeClient,

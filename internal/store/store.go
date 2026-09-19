@@ -95,6 +95,15 @@ func migrateTasks(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return err
 	}
+	// events is created by `CREATE TABLE IF NOT EXISTS` (eventsSchema), which
+	// is a no-op against a database that already has the table. On an existing
+	// archie.db this read plus the `events` arm below is therefore the ONLY
+	// thing that adds events.attempt; without it the first insert fails with
+	// `table events has no column named attempt`.
+	eventsColumns, err := tableColumns(ctx, tx, "events")
+	if err != nil {
+		return err
+	}
 
 	migrations := []struct {
 		table  string
@@ -107,18 +116,32 @@ func migrateTasks(ctx context.Context, db *sql.DB) error {
 		{"tasks", "identity", `ALTER TABLE tasks ADD COLUMN identity TEXT NOT NULL DEFAULT ''`},
 		{"tasks", "binding_id", `ALTER TABLE tasks ADD COLUMN binding_id INTEGER NOT NULL DEFAULT 0`},
 		{"tasks", "binding_version", `ALTER TABLE tasks ADD COLUMN binding_version INTEGER NOT NULL DEFAULT 0`},
+		{"tasks", "review_payload", `ALTER TABLE tasks ADD COLUMN review_payload TEXT NOT NULL DEFAULT ''`},
 		{"bindings", "owner", `ALTER TABLE bindings ADD COLUMN owner TEXT NOT NULL DEFAULT ''`},
 		{"bindings", "repo", `ALTER TABLE bindings ADD COLUMN repo TEXT NOT NULL DEFAULT ''`},
+		{"events", "attempt", `ALTER TABLE events ADD COLUMN attempt INTEGER NOT NULL DEFAULT 0`},
 	}
 	for _, migration := range migrations {
 		present := columns
-		if migration.table == "bindings" {
+		switch migration.table {
+		case "bindings":
 			present = bindingColumns
+		case "events":
+			present = eventsColumns
 		}
 		if present[migration.column] {
 			continue
 		}
 		if _, err := tx.ExecContext(ctx, migration.sql); err != nil {
+			return err
+		}
+	}
+	return finishTaskMigration(ctx, tx, columns)
+}
+
+func finishTaskMigration(ctx context.Context, tx *sql.Tx, columns map[string]bool) error {
+	if columns["owner"] && columns["repo"] && columns["pr_number"] {
+		if _, err := tx.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_tasks_pr ON tasks(owner, repo, pr_number)`); err != nil {
 			return err
 		}
 	}
@@ -177,6 +200,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 	identity      TEXT NOT NULL DEFAULT '',
 	binding_id    INTEGER NOT NULL DEFAULT 0,
 	binding_version INTEGER NOT NULL DEFAULT 0,
+	review_payload TEXT NOT NULL DEFAULT '',
 	created_at    TEXT NOT NULL DEFAULT (datetime('now')),
 	updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
 	UNIQUE(owner, repo, issue_number)
@@ -249,7 +273,7 @@ func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, w
 		RETURNING id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
-			source, identity, binding_id, binding_version, created_at, updated_at`,
+			source, identity, binding_id, binding_version, review_payload, created_at, updated_at`,
 		owner, repo, owner, repo, syntheticIssueNumberBase-1, title, body, wf, identity)
 	return scanTask(row)
 }
@@ -290,7 +314,7 @@ func (s *Store) ClaimNext(ctx context.Context) (*workflow.Task, error) {
 		RETURNING id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
-			source, identity, binding_id, binding_version, created_at, updated_at`,
+			source, identity, binding_id, binding_version, review_payload, created_at, updated_at`,
 		workflow.StatusRunning, workflow.StatusQueued)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -305,7 +329,7 @@ func scanTask(row *sql.Row) (*workflow.Task, error) {
 		&t.Labels, &t.Status, &t.Workflow, &t.Stage, &t.Branch, &t.Plan, &t.Notes,
 		&t.PRNumber, &t.TokensUsed, &t.Iterations, &t.Attempt, &t.ParkReason,
 		&t.WatchCommentID, &t.RetryCount, &t.Source, &t.Identity,
-		&t.BindingID, &t.BindingVersion,
+		&t.BindingID, &t.BindingVersion, &t.ReviewPayload,
 		sqliteTime{&t.CreatedAt}, sqliteTime{&t.UpdatedAt})
 	if err != nil {
 		return nil, err
@@ -324,7 +348,7 @@ func (s *Store) ClaimByIssue(ctx context.Context, owner, repo string, number int
 		RETURNING id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
-			source, identity, binding_id, binding_version, created_at, updated_at`,
+			source, identity, binding_id, binding_version, review_payload, created_at, updated_at`,
 		workflow.StatusRunning, owner, repo, number, workflow.StatusQueued)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -382,11 +406,11 @@ func (s *Store) Update(ctx context.Context, t *workflow.Task) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE tasks SET workflow=?, stage=?, branch=?, plan=?, notes=?,
 			pr_number=?, tokens_used=?, iterations=?, park_reason=?,
-			watch_comment_id=?, updated_at=datetime('now')
+			watch_comment_id=?, retry_count=?, review_payload=?, updated_at=datetime('now')
 		WHERE id=?`,
 		t.Workflow, t.Stage, t.Branch, t.Plan, t.Notes,
 		t.PRNumber, t.TokensUsed, t.Iterations, clip(t.ParkReason, 4000),
-		t.WatchCommentID, t.ID)
+		t.WatchCommentID, t.RetryCount, t.ReviewPayload, t.ID)
 	return err
 }
 
@@ -396,8 +420,25 @@ func (s *Store) TaskByIssue(ctx context.Context, owner, repo string, number int)
 		SELECT id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
-			source, identity, binding_id, binding_version, created_at, updated_at
+			source, identity, binding_id, binding_version, review_payload, created_at, updated_at
 		FROM tasks WHERE owner=? AND repo=? AND issue_number=?`, owner, repo, number)
+	t, err := scanTask(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return t, err
+}
+
+// OpenTaskByPR returns the live task that owns the given pull request, or nil.
+func (s *Store) OpenTaskByPR(ctx context.Context, owner, repo string, number int) (*workflow.Task, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, owner, repo, issue_number, title, body, labels, status,
+			workflow, stage, branch, plan, notes, pr_number, tokens_used,
+			iterations, attempt, park_reason, watch_comment_id, retry_count,
+			source, identity, binding_id, binding_version, review_payload, created_at, updated_at
+		FROM tasks
+		WHERE owner=? AND repo=? AND pr_number=? AND status=?`,
+		owner, repo, number, workflow.StatusPROpen)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -413,7 +454,7 @@ func (s *Store) TaskByID(ctx context.Context, taskID int64) (*workflow.Task, err
 		SELECT id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
-			source, identity, binding_id, binding_version, created_at, updated_at
+			source, identity, binding_id, binding_version, review_payload, created_at, updated_at
 		FROM tasks WHERE id=?`, taskID)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -544,9 +585,14 @@ func (s *Store) RecoverStale(ctx context.Context) (int64, error) {
 }
 
 // OpenPRs returns tasks whose PR state should be reconciled with GitHub.
+//
+// It carries attempt deliberately: the reconcile loop attributes pr_merged and
+// pr_rejected to the attempt that opened the PR, and it reaches the state store
+// over the wire, so the row must carry the value for taskProto to publish it.
+// Narrowing this projection back silently sends those events out unattributed.
 func (s *Store) OpenPRs(ctx context.Context) (tasks []workflow.Task, retErr error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, owner, repo, issue_number, pr_number, status, source, identity
+		SELECT id, owner, repo, issue_number, pr_number, status, source, identity, attempt
 		FROM tasks WHERE status=?`, workflow.StatusPROpen)
 	if err != nil {
 		return nil, err
@@ -557,7 +603,7 @@ func (s *Store) OpenPRs(ctx context.Context) (tasks []workflow.Task, retErr erro
 	for rows.Next() {
 		var t workflow.Task
 		if err := rows.Scan(&t.ID, &t.Owner, &t.Repo, &t.IssueNumber, &t.PRNumber,
-			&t.Status, &t.Source, &t.Identity); err != nil {
+			&t.Status, &t.Source, &t.Identity, &t.Attempt); err != nil {
 			return nil, err
 		}
 		tasks = append(tasks, t)

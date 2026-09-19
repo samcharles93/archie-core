@@ -2,7 +2,7 @@ import { h, Fragment } from "preact";
 import { useState, useEffect } from "preact/hooks";
 import "./curators.css";
 import { api } from "../base/api.jsx";
-import { ago } from "../base/dom.jsx";
+import { ago } from "../base/format.jsx";
 import { Pill } from "../base/pill.jsx";
 
 function Empty({ title, detail }) {

@@ -40,7 +40,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/overlay"
 	"github.com/samcharles93/archie-core/internal/logging"
-	"github.com/samcharles93/archie-core/internal/memory/builtin"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/storage"
@@ -57,9 +56,7 @@ import (
 const (
 	// defaultChatMaxSteps bounds the model/tool round-trips in one chat
 	// turn when [config.ChatConfig.MaxSteps] is unset.
-	defaultChatMaxSteps          = 100
-	packagedGatewayChangelogPath = "/usr/share/archie/CHANGELOG.archied.md"
-	packagedRuntimeChangelogPath = "/usr/share/archie/CHANGELOG.archie.md"
+	defaultChatMaxSteps = 100
 )
 
 // Component versions are injected from their independent release tags.
@@ -195,7 +192,7 @@ func (a chatTaskListerAdapter) ListChatTasks(ctx context.Context, identity strin
 // filepath.Join silently accepts an empty string and would then put the
 // cache in the daemon's current working directory instead of its
 // persistent data directory -- guard it explicitly rather than trust that
-// invariant here too, the way memoryProvider already does nearby.
+// invariant here too.
 func npmCacheServerEnv(command, workDir string) []string {
 	if workDir == "" {
 		return nil
@@ -411,7 +408,10 @@ func Run() int { //nolint:cyclop // the composition root's setup sequence is del
 	if err := b.buildTreesAndIdentities(ctx); err != nil {
 		return 1
 	}
-	if !b.setupGateways(ctx, args.cfgPath, args.overlayPath) {
+	// setupMemoryEngine must run before setupCurators: curator.Registrar
+	// captures b.memEngines at construction time, so built the other way
+	// round every curator would hold a nil engine source.
+	if err := b.setupMemoryEngine(); err != nil {
 		return 1
 	}
 
@@ -423,9 +423,6 @@ func Run() int { //nolint:cyclop // the composition root's setup sequence is del
 	}
 
 	if err := b.registerNATSRPC(); err != nil {
-		return 1
-	}
-	if err := b.setupMemoryAll(); err != nil {
 		return 1
 	}
 	b.setupCurators(ctx)
@@ -951,18 +948,10 @@ func configHome() string {
 	return filepath.Join(home, ".config")
 }
 
-func releaseAnnouncementStatePath(workDir, identity string) string {
-	identityHash := sha256.Sum256([]byte(identity))
-	return filepath.Join(
-		workDir,
-		fmt.Sprintf("release-announcements-%x.json", identityHash[:8]),
-	)
-}
-
 // updateReportPath is where the update watchdog leaves the phase-2 outcome
-// of an update for this identity to relay on its next launch. Hashed the
-// same way as releaseAnnouncementStatePath so multiple identities sharing
-// one daemon (see docs/architecture/identity.md) never collide.
+// of an update for this identity to relay on its next launch. The identity is
+// hashed so multiple identities sharing one daemon (see
+// docs/architecture/identity.md) never collide.
 func updateReportPath(workDir, identity string) string {
 	identityHash := sha256.Sum256([]byte(identity))
 	return filepath.Join(
@@ -981,71 +970,6 @@ func safePluginInfo(p plugin.Plugin) (name, version string) {
 		}
 	}()
 	return p.Name(), p.Version()
-}
-
-// memoryProvider builds the built-in memory provider, falling back to the
-// default work directory when the configured one cannot be established.
-//
-// A bad path warns and degrades rather than stopping the daemon, in line with
-// the forge and container paths: memory is one capability among many. The
-// fallback is the location an unset work_dir would have produced, so an
-// operator who copied a config from another host (a container path such as
-// /var/lib/archie/work onto a laptop, say) lands somewhere predictable
-// instead of somewhere only this function knows about.
-//
-// Returns the provider and the directory actually in use. A nil provider
-// means the configuration is unusable in a way no fallback can fix.
-func memoryProvider(workDir string, log *slog.Logger) (*builtin.Provider, string) {
-	// An empty workDir would make filepath.Join produce the relative path
-	// "memory", which MkdirAll creates in whatever directory the daemon
-	// happens to be started from -- succeeding, and putting memory somewhere
-	// nobody will look. Defaulting should have prevented an empty workDir;
-	// treat it as unset rather than trusting it.
-	var dir string
-	var p *builtin.Provider
-	if workDir == "" {
-		log.Warn("no work directory configured, using the default for memory")
-	} else {
-		dir = filepath.Join(workDir, "memory")
-		var err error
-		p, err = builtin.New(builtin.Config{Dir: dir})
-		if err != nil {
-			log.Warn("memory directory rejected, falling back to the default", "dir", dir, "err", err)
-			p = nil
-		}
-		if p != nil && p.IsAvailable() {
-			return p, dir
-		}
-		if p != nil {
-			log.Warn("memory directory unusable, falling back to the default",
-				"dir", dir, "err", p.Err())
-		}
-	}
-
-	fallback := filepath.Join(configuration.DefaultWorkDir(), "memory")
-	if fallback == dir {
-		// Already the default: there is nowhere else to try, so run degraded
-		// and say what that costs rather than pretending memory works.
-		log.Error("memory unavailable: the agent will start every conversation "+
-			"with no recollection of earlier ones, and memory writes will fail",
-			"dir", dir)
-		return p, dir
-	}
-
-	fb, err := builtin.New(builtin.Config{Dir: fallback})
-	if err != nil {
-		log.Error("memory provider init failed at the default directory", "dir", fallback, "err", err)
-		return p, dir
-	}
-	if !fb.IsAvailable() {
-		log.Error("memory unavailable: neither the configured nor the default "+
-			"directory is usable, so the agent will start every conversation "+
-			"with no recollection of earlier ones",
-			"configured", dir, "default", fallback, "err", fb.Err())
-		return fb, fallback
-	}
-	log.Warn("using the default memory directory", "dir", fallback)
-	return fb, fallback
 }
 
 // startContainers brings up the mandatory autonomous-worker pool and storage

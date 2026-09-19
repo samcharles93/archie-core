@@ -1,59 +1,94 @@
-import { el } from "../base/dom.jsx";
+import { h } from "preact";
 
+/**
+ * Chat markdown.
+ *
+ * Telegram-style rich blocks -- headings, lists, quotes, fenced code, tables,
+ * inline emphasis/links/images -- rendered as semantic HTML. It is a
+ * component rather than a DOM builder so a streamed reply can be diffed: the
+ * transcript re-renders on every frame, and diffing is what stops the whole
+ * bubble being rebuilt each time the answer grows.
+ */
+
+const INLINE =
+  /(!\[[^\]]*\]\((?:https?:\/\/[^\s)]+|data:image\/[^\s)]+|\/[^\s)]+)\)|~~[^~]+~~|\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\[[^\]]+\]\((?:https?:\/\/[^\s)]+|\/[^\s)]+)\)|\*[^*]+\*|_[^_]+_)/g;
+
+// inlineMarkdown returns the children of one line: plain text and the element
+// each matched span becomes, in order.
 function inlineMarkdown(text) {
-  const fragment = document.createDocumentFragment();
-  const pattern = /(!\[[^\]]*\]\((?:https?:\/\/[^\s)]+|data:image\/[^\s)]+|\/[^\s)]+)\)|~~[^~]+~~|\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\[[^\]]+\]\((?:https?:\/\/[^\s)]+|\/[^\s)]+)\)|\*[^*]+\*|_[^_]+_)/g;
+  const children = [];
   let cursor = 0;
-  for (const match of text.matchAll(pattern)) {
-    if (match.index > cursor) fragment.append(document.createTextNode(text.slice(cursor, match.index)));
+  let key = 0;
+  for (const match of String(text).matchAll(INLINE)) {
+    if (match.index > cursor) children.push(text.slice(cursor, match.index));
     const value = match[0];
     if (value.startsWith("![")) {
       const img = value.match(/^!\[([^\]]*)\]\((.+)\)$/);
       if (img) {
-        fragment.append(el("img.chat-media-img", {
-          src: img[2],
-          alt: img[1] || "Image",
-          loading: "lazy",
-        }));
+        children.push(
+          <img className="chat-media-img" src={img[2]} alt={img[1] || "Image"} loading="lazy" key={key++} />,
+        );
       }
-    } else if (value.startsWith("~~")) fragment.append(el("del", value.slice(2, -2)));
-    else if (value.startsWith("**") || value.startsWith("__")) fragment.append(el("strong", value.slice(2, -2)));
-    else if (value.startsWith("`")) fragment.append(el("code", value.slice(1, -1)));
-    else if (value.startsWith("[")) {
+    } else if (value.startsWith("~~")) {
+      children.push(<del key={key++}>{value.slice(2, -2)}</del>);
+    } else if (value.startsWith("**") || value.startsWith("__")) {
+      children.push(<strong key={key++}>{value.slice(2, -2)}</strong>);
+    } else if (value.startsWith("`")) {
+      children.push(<code key={key++}>{value.slice(1, -1)}</code>);
+    } else if (value.startsWith("[")) {
       const link = value.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+|\/[^\s)]+)\)$/);
-      fragment.append(el("a", { href: link[2], target: "_blank", rel: "noreferrer" }, link[1]));
-    } else fragment.append(el("em", value.slice(1, -1)));
+      if (link) {
+        children.push(
+          <a href={link[2]} target="_blank" rel="noreferrer" key={key++}>
+            {link[1]}
+          </a>,
+        );
+      }
+    } else {
+      children.push(<em key={key++}>{value.slice(1, -1)}</em>);
+    }
     cursor = match.index + value.length;
   }
-  if (cursor < text.length) fragment.append(document.createTextNode(text.slice(cursor)));
-  return fragment;
+  if (cursor < text.length) children.push(text.slice(cursor));
+  return children;
 }
 
-export function renderMarkdown(text) {
-  const root = el("div.chat-bubble-text");
+export function ChatMarkdown({ text, className = "chat-bubble-text" }) {
+  const blocks = [];
   const lines = String(text || "").split("\n");
   let paragraph = [];
   let list = null;
   let code = null;
+  let key = 0;
+
   const flushParagraph = () => {
     if (paragraph.length) {
-      root.append(el("p", inlineMarkdown(paragraph.join(" "))));
+      blocks.push(<p key={key++}>{inlineMarkdown(paragraph.join(" "))}</p>);
       paragraph = [];
     }
   };
   const flushList = () => {
-    if (list) root.append(list);
+    if (!list) return;
+    const items = list.items.map((item, i) => <li key={i}>{inlineMarkdown(item)}</li>);
+    blocks.push(list.tag === "ol" ? <ol key={key++}>{items}</ol> : <ul key={key++}>{items}</ul>);
     list = null;
   };
+
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
     if (line.startsWith("```")) {
       flushParagraph();
       flushList();
       if (code) {
-        root.append(el("pre", el("code", code.join("\n"))));
+        blocks.push(
+          <pre key={key++}>
+            <code>{code.join("\n")}</code>
+          </pre>,
+        );
         code = null;
-      } else code = [];
+      } else {
+        code = [];
+      }
       continue;
     }
     if (code) {
@@ -62,7 +97,12 @@ export function renderMarkdown(text) {
     }
     const headerCells = tableCells(line);
     const separatorCells = index + 1 < lines.length ? tableCells(lines[index + 1]) : null;
-    if (headerCells && separatorCells && isTableSeparator(separatorCells) && headerCells.length === separatorCells.length) {
+    if (
+      headerCells &&
+      separatorCells &&
+      isTableSeparator(separatorCells) &&
+      headerCells.length === separatorCells.length
+    ) {
       flushParagraph();
       flushList();
       const rows = [];
@@ -74,9 +114,26 @@ export function renderMarkdown(text) {
         }
         rows.push(cells);
       }
-      const body = el("tbody");
-      for (const row of rows) body.append(el("tr", ...row.map((cell) => el("td", inlineMarkdown(cell)))));
-      root.append(el("table", el("thead", el("tr", ...headerCells.map((cell) => el("th", inlineMarkdown(cell))))), body));
+      blocks.push(
+        <table key={key++}>
+          <thead>
+            <tr>
+              {headerCells.map((cell, i) => (
+                <th key={i}>{inlineMarkdown(cell)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, r) => (
+              <tr key={r}>
+                {row.map((cell, c) => (
+                  <td key={c}>{inlineMarkdown(cell)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>,
+      );
       continue;
     }
     if (!line.trim()) {
@@ -88,7 +145,8 @@ export function renderMarkdown(text) {
     if (heading) {
       flushParagraph();
       flushList();
-      root.append(el(`h${heading[1].length}`, inlineMarkdown(heading[2])));
+      const Tag = `h${heading[1].length}`;
+      blocks.push(<Tag key={key++}>{inlineMarkdown(heading[2])}</Tag>);
       continue;
     }
     const bullet = line.match(/^\s*[-*]\s+(.+)$/);
@@ -96,25 +154,32 @@ export function renderMarkdown(text) {
     if (bullet || ordered) {
       flushParagraph();
       const tag = ordered ? "ol" : "ul";
-      if (!list || list.tagName.toLowerCase() !== tag) {
+      if (!list || list.tag !== tag) {
         flushList();
-        list = el(tag);
+        list = { tag, items: [] };
       }
-      list.append(el("li", inlineMarkdown((bullet || ordered)[1])));
+      list.items.push((bullet || ordered)[1]);
       continue;
     }
     if (line.startsWith(">")) {
       flushParagraph();
       flushList();
-      root.append(el("blockquote", inlineMarkdown(line.replace(/^>\s?/, ""))));
+      blocks.push(<blockquote key={key++}>{inlineMarkdown(line.replace(/^>\s?/, ""))}</blockquote>);
       continue;
     }
     paragraph.push(line);
   }
   flushParagraph();
   flushList();
-  if (code) root.append(el("pre", el("code", code.join("\n"))));
-  return root;
+  if (code) {
+    blocks.push(
+      <pre key={key++}>
+        <code>{code.join("\n")}</code>
+      </pre>,
+    );
+  }
+
+  return <div className={className}>{blocks}</div>;
 }
 
 function tableCells(line) {

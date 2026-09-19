@@ -85,16 +85,6 @@ func TestOptionalProviderFailureDoesNotStopTheFamily(t *testing.T) {
 				t.Error("tool \"desktop\" is registered despite its provider failing")
 			}
 
-			// Degraded, not healthy: a silent failure is how this went
-			// unnoticed until the daemon crash-looped.
-			health := registry.Health(context.Background())
-			if health.Status != plugin.HealthDegraded {
-				t.Errorf("Health = %q, want %q", health.Status, plugin.HealthDegraded)
-			}
-			if !strings.Contains(health.Message, "mcp.desktop-commander") {
-				t.Errorf("Health message %q does not name the failed provider", health.Message)
-			}
-
 			skipped := registry.Skipped()
 			if len(skipped) != 1 {
 				t.Fatalf("Skipped() = %v, want exactly the failed provider", skipped)
@@ -225,9 +215,6 @@ func TestEveryOptionalProviderFailing(t *testing.T) {
 	if err := registry.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	if got := registry.Health(context.Background()).Status; got != plugin.HealthDegraded {
-		t.Errorf("Health = %q, want %q", got, plugin.HealthDegraded)
-	}
 	if len(registry.Skipped()) != 2 {
 		t.Errorf("Skipped() = %v, want both providers", registry.Skipped())
 	}
@@ -295,13 +282,6 @@ func TestCarinaScenarioThroughCapabilityHost(t *testing.T) {
 		if _, ok := index.Get(name); !ok {
 			t.Errorf("tool %q was lost to a third-party npm package", name)
 		}
-	}
-	health := registry.Health(context.Background())
-	if health.Status != plugin.HealthDegraded {
-		t.Errorf("health = %q (%s), want degraded", health.Status, health.Message)
-	}
-	if !strings.Contains(health.Message, "unzip") {
-		t.Errorf("health message %q does not carry the cause", health.Message)
 	}
 	if err := host.Stop(context.Background()); err != nil {
 		t.Errorf("Stop: %v", err)

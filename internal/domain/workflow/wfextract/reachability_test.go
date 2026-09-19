@@ -2,6 +2,7 @@ package wfextract
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/traefik/yaegi/interp"
@@ -93,6 +94,16 @@ func TestWrapperNilGuardsPreserved(t *testing.T) {
 		t.Errorf("LinkBranch on nil WLinkBranch = %v, want nil", err)
 	}
 
+	if _, err := forger.Comment(context.Background(), "", "", 0, ""); err != nil {
+		t.Errorf("Comment on nil WComment = %v, want nil", err)
+	}
+	if err := forger.ReplyToReview(context.Background(), "", "", 0, 0, ""); err != nil {
+		t.Errorf("ReplyToReview on nil WReplyToReview = %v, want nil", err)
+	}
+	if err := forger.CreateReviewComments(context.Background(), "", "", 0, "", nil); err != nil {
+		t.Errorf("CreateReviewComments on nil WCreateReviewComments = %v, want nil", err)
+	}
+
 	var reviewer _github_com_samcharles93_archie_core_internal_domain_workflow_Reviewer
 	if got := reviewer.Review(context.Background(), workflow.ReviewRequest{}); len(got.Findings) != 0 || got.Status != "" || got.Summary != "" {
 		t.Errorf("Review on nil WReview = %#v, want empty report", got)
@@ -107,5 +118,71 @@ func TestWrapperNilGuardsPreserved(t *testing.T) {
 	}
 	if _, err := trees.ChangedLines(context.Background(), "", ""); err != nil {
 		t.Errorf("ChangedLines on nil WChangedLines = %v, want nil", err)
+	}
+}
+
+// TestChangeCaptureIsNotCallableFromInterpretedCode is the acceptance test for
+// "the sandbox surface did not widen", in the same shape as the reachability
+// test above and with the opposite assertion.
+//
+// An attempt's changed files are captured through an UNEXPORTED optional
+// interface asserted on TaskContext.Trees, precisely so that the capability is
+// not part of workflow.Trees: Trees is projected into this symbol table, so a
+// method added to it would become callable by every repository-authored
+// .archie/stages/*.go file. Both halves are asserted here -- the interface's
+// method set, and the interpreted call that must not resolve -- because the
+// second alone would be weaker: it would still pass if the symbol table lost
+// Trees altogether.
+func TestChangeCaptureIsNotCallableFromInterpretedCode(t *testing.T) {
+	trees := reflect.TypeFor[workflow.Trees]()
+	if _, ok := trees.MethodByName("ChangedFileStats"); ok {
+		t.Fatalf("workflow.Trees gained ChangedFileStats; interpreted stage code can now read a diffstat the engine only meant to capture")
+	}
+
+	// The control first: an interpreted call to a method Trees really has must
+	// resolve, so the refusal below is the missing method and not a broken
+	// harness.
+	const control = `package main
+
+import (
+	"context"
+
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
+)
+
+func UseTrees(t workflow.Trees) {
+	_, _ = t.Diff(context.Background(), "", "")
+}
+`
+	const probe = `package main
+
+import (
+	"context"
+
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
+)
+
+// CaptureDiffstat is an interpreted stage trying to reach the engine's
+// change capture through the surface TaskContext hands it.
+func CaptureDiffstat(t workflow.Trees) {
+	stats, err := t.ChangedFileStats(context.Background(), "", "")
+	_, _ = stats.HeadSHA, err
+}
+`
+
+	i, err := yaegiutil.New(interp.Options{}, Symbols)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if _, err := yaegiutil.Resolve[func(workflow.Trees)](i, control, "main.UseTrees"); err != nil {
+		t.Fatalf("the control call Trees.Diff did not resolve (%v); this test cannot tell a missing capability from a broken symbol table", err)
+	}
+
+	j, err := yaegiutil.New(interp.Options{}, Symbols)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if _, err := yaegiutil.Resolve[func(workflow.Trees)](j, probe, "main.CaptureDiffstat"); err == nil {
+		t.Error("interpreted stage code resolved Trees.ChangedFileStats; the capture capability leaked into the projected surface")
 	}
 }

@@ -67,6 +67,7 @@ func taskProto(t *task.Task) *pb.Task { //nolint:dupl // mirror-image field-by-f
 		WatchCommentId: t.WatchCommentID, Source: t.Source, Identity: t.Identity,
 		BindingId: t.BindingID, BindingVersion: int64(t.BindingVersion),
 		CreatedAt: timestamp(t.CreatedAt), UpdatedAt: timestamp(t.UpdatedAt),
+		ReviewPayload: t.ReviewPayload,
 	}
 }
 
@@ -83,6 +84,7 @@ func taskValue(t *pb.Task) *task.Task { //nolint:dupl // see taskProto above
 		WatchCommentID: t.WatchCommentId, Source: t.Source, Identity: t.Identity,
 		BindingID: t.BindingId, BindingVersion: int(t.BindingVersion),
 		CreatedAt: timeValue(t.CreatedAt), UpdatedAt: timeValue(t.UpdatedAt),
+		ReviewPayload: t.ReviewPayload,
 	}
 }
 
@@ -113,8 +115,8 @@ func eventDataValue(s string) map[string]any {
 func eventProto(e events.Event) *pb.Event {
 	return &pb.Event{
 		Id: e.ID, At: timestamp(e.At), Kind: e.Kind, TaskId: e.TaskID, Repo: e.Repo,
-		Issue: int64(e.Issue), Workflow: e.Workflow, Stage: e.Stage, Detail: e.Detail,
-		DataJson: eventDataJSON(e.Data),
+		Issue: int64(e.Issue), Workflow: e.Workflow, Stage: e.Stage, Attempt: int64(e.Attempt),
+		Detail: e.Detail, DataJson: eventDataJSON(e.Data),
 	}
 }
 
@@ -124,8 +126,8 @@ func eventValue(e *pb.Event) events.Event {
 	}
 	return events.Event{
 		ID: e.Id, At: timeValue(e.At), Kind: e.Kind, TaskID: e.TaskId, Repo: e.Repo,
-		Issue: int(e.Issue), Workflow: e.Workflow, Stage: e.Stage, Detail: e.Detail,
-		Data: eventDataValue(e.DataJson),
+		Issue: int(e.Issue), Workflow: e.Workflow, Stage: e.Stage, Attempt: int(e.Attempt),
+		Detail: e.Detail, Data: eventDataValue(e.DataJson),
 	}
 }
 
@@ -426,7 +428,7 @@ func taskLogEntryValue(e *pb.TaskLogEntry) logging.Entry {
 func taskLogRequestProto(taskID int64, attempt int, q logging.Query) *pb.ReadTaskLogRequest {
 	return &pb.ReadTaskLogRequest{
 		TaskId: taskID, Attempt: int64(attempt), Limit: int64(q.Limit),
-		Levels: q.Levels, Component: q.Component, Contains: q.Contains,
+		Levels: q.Levels, Component: q.Component, Stage: q.Stage, Contains: q.Contains,
 		Since: timestamp(q.Since), Until: timestamp(q.Until),
 	}
 }
@@ -435,6 +437,7 @@ func taskLogQueryValue(r *pb.ReadTaskLogRequest) logging.Query {
 	return logging.Query{
 		Levels:    r.Levels,
 		Component: r.Component,
+		Stage:     r.Stage,
 		Contains:  r.Contains,
 		Limit:     int(r.Limit),
 		Since:     timeValue(r.Since),

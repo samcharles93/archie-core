@@ -987,7 +987,7 @@ func TestGatewayRegisterLiveAfterStopAbandonsImmediately(t *testing.T) {
 func TestLiveReplyMediaDeliversTheAttachment(t *testing.T) {
 	live, calls := newTestLiveReply(t, false)
 
-	live.Media(gateway.MediaEvent{
+	live.Media(t.Context(), gateway.MediaEvent{
 		ToolName:   "video_gen",
 		Attachment: gateway.MediaAttachment{Type: "video", URL: "https://example.com/v.mp4"},
 	})
@@ -1006,7 +1006,7 @@ func TestLiveReplyMediaDeliversTheAttachment(t *testing.T) {
 func TestLiveReplyMediaWithNoURLIsANoop(t *testing.T) {
 	live, calls := newTestLiveReply(t, false)
 
-	live.Media(gateway.MediaEvent{ToolName: "video_gen", Attachment: gateway.MediaAttachment{Type: "video"}})
+	live.Media(t.Context(), gateway.MediaEvent{ToolName: "video_gen", Attachment: gateway.MediaAttachment{Type: "video"}})
 	live.waitMedia()
 
 	if len(*calls) != 0 {
@@ -1033,7 +1033,7 @@ func TestLiveReplyMediaFallsBackToALinkOnFailure(t *testing.T) {
 	t.Cleanup(live.stopRendering)
 	live.interval = 0
 
-	live.Media(gateway.MediaEvent{
+	live.Media(t.Context(), gateway.MediaEvent{
 		ToolName:   "video_gen",
 		Attachment: gateway.MediaAttachment{Type: "video", URL: "https://example.com/v.mp4"},
 	})
@@ -1079,7 +1079,7 @@ func TestLiveReplyMediaSkipsDeliveryWhenCapabilityReportsUnsupported(t *testing.
 	sender := &capabilityLimitedSender{}
 	live.newMediaSender = func(*bot.Bot, int64, int) gateway.MediaSender { return sender }
 
-	live.Media(gateway.MediaEvent{
+	live.Media(t.Context(), gateway.MediaEvent{
 		ToolName:   "video_gen",
 		Attachment: gateway.MediaAttachment{Type: "video", URL: "https://example.com/v.mp4"},
 	})
@@ -1120,7 +1120,7 @@ func TestLiveReplyMediaFallbackReportsUndeliveredLocalFile(t *testing.T) {
 	live, _ := newTestLiveReply(t, false)
 	live.newMediaSender = func(*bot.Bot, int64, int) gateway.MediaSender { return failingSender{} }
 
-	live.Media(gateway.MediaEvent{
+	live.Media(t.Context(), gateway.MediaEvent{
 		ToolName: "send_file",
 		Attachment: gateway.MediaAttachment{
 			Type:     "document",
@@ -1158,7 +1158,7 @@ func TestLiveReplyMediaFallbackAfterFinalizeSendsFollowUp(t *testing.T) {
 	live.doFinalize(context.Background(), "done")
 	before := len(*calls)
 
-	live.Media(gateway.MediaEvent{
+	live.Media(t.Context(), gateway.MediaEvent{
 		ToolName:   "send_file",
 		Attachment: gateway.MediaAttachment{Type: "document", Path: "/tmp/report.pdf", FileName: "report.pdf"},
 	})

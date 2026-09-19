@@ -23,7 +23,6 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 			MCPServers: []MCPServer{{Headers: map[string]string{"A": "b"}, Args: []string{"x"}}},
 			WebFetch:   WebFetchConfig{Enabled: &enabled},
 		},
-		Memory:      MemoryConfig{ProviderConfig: map[string]string{"k": "v"}},
 		Chat:        ChatConfig{Telegram: TelegramConfig{AllowedUserIDs: []int64{1}}},
 		LegacyAgent: LegacyAgent{Env: []string{"HOME"}},
 		Extra:       map[string]any{"custom": 1},
@@ -31,6 +30,9 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 		Image: ImageConfig{
 			Hosted: map[string]ImageHostedProvider{"openai": {Enabled: true}},
 			Local:  map[string]ImageLocalProvider{"sdxl": {Enabled: true}},
+		},
+		Services: Services{
+			ServiceNameState: {Target: "127.0.0.1:9090", TargetToken: "secret"},
 		},
 	}
 
@@ -44,7 +46,6 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 	got.Dispatch.Labels["q"] = "changed"
 	got.Tools.MCPServers[0].Headers["A"] = "changed"
 	got.Tools.MCPServers[0].Args[0] = "changed"
-	got.Memory.ProviderConfig["k"] = "changed"
 	got.Chat.Telegram.AllowedUserIDs[0] = 99
 	got.LegacyAgent.Env[0] = "changed"
 	got.Extra["custom"] = 2
@@ -52,6 +53,7 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 	*got.Tools.WebFetch.Enabled = false
 	got.Image.Hosted["openai"] = ImageHostedProvider{Enabled: false}
 	got.Image.Local["sdxl"] = ImageLocalProvider{Enabled: false}
+	got.Services[ServiceNameState] = ServiceConnection{Target: "changed"}
 
 	if orig.Models["builder"] != "m" {
 		t.Error("Models map is shared")
@@ -70,9 +72,6 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 	}
 	if orig.Tools.MCPServers[0].Headers["A"] != "b" || orig.Tools.MCPServers[0].Args[0] != "x" {
 		t.Error("MCP server fields are shared")
-	}
-	if orig.Memory.ProviderConfig["k"] != "v" {
-		t.Error("Memory.ProviderConfig is shared")
 	}
 	if orig.Chat.Telegram.AllowedUserIDs[0] != 1 {
 		t.Error("Telegram.AllowedUserIDs is shared")
@@ -94,5 +93,8 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 	}
 	if !orig.Image.Local["sdxl"].Enabled {
 		t.Error("Image.Local map is shared")
+	}
+	if orig.Services[ServiceNameState].TargetToken != "secret" {
+		t.Error("Services map is shared")
 	}
 }

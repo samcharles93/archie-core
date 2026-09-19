@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -21,12 +23,18 @@ type fakeEngine struct {
 	bindPanic bool
 	view      Registrar
 
-	records map[string]Record
-	nextID  int
+	records   map[RecordID]Record
+	revisions map[RecordID][]Revision
+	nextID    int
 }
 
 func newFake(name string, manifest Manifest) *fakeEngine {
-	return &fakeEngine{name: name, manifest: manifest, records: map[string]Record{}}
+	return &fakeEngine{
+		name:      name,
+		manifest:  manifest,
+		records:   map[RecordID]Record{},
+		revisions: map[RecordID][]Revision{},
+	}
 }
 
 func (f *fakeEngine) record(e string) {
@@ -46,31 +54,93 @@ func (f *fakeEngine) Bind(host Registrar) {
 	}
 }
 
-func (f *fakeEngine) Write(_ context.Context, obs Observation) (Record, error) {
+// The fake implements the full Store so it satisfies MemoryEngine, but these
+// tests exercise registration and lifecycle, not storage semantics -- the
+// builtin engine's own suite is the store's real coverage. The in-memory
+// behaviour here is deliberately minimal and not a reference implementation.
+func (f *fakeEngine) Create(_ context.Context, in NewRecord) (Record, error) {
 	f.nextID++
-	id := obs.Identity + "-" + time.Now().Format("150405.000000000") + "-" + string(rune('a'+f.nextID))
-	rec := Record{ID: id, Identity: obs.Identity, Kind: obs.Kind, Content: obs.Content, At: obs.At, Metadata: obs.Metadata}
-	f.records[id] = rec
+	rec := Record{
+		ID:         RecordID(f.name + "-" + strconv.Itoa(f.nextID)),
+		Scope:      in.Scope,
+		Kind:       in.Kind,
+		Content:    in.Content,
+		Revision:   1,
+		Author:     in.Author,
+		OriginUser: in.OriginUser,
+		Source:     in.Source,
+	}
+	f.records[rec.ID] = rec
+	return rec, nil
+}
+
+func (f *fakeEngine) Get(_ context.Context, scope Scope, id RecordID) (Record, error) {
+	rec, ok := f.records[id]
+	if !ok || rec.Scope != scope {
+		return Record{}, ErrNotFound
+	}
 	return rec, nil
 }
 
 func (f *fakeEngine) Query(_ context.Context, q Query) ([]Record, error) {
+	wanted := make(map[Scope]bool, len(q.Scopes))
+	for _, scope := range q.Scopes {
+		wanted[scope] = true
+	}
 	var out []Record
 	for _, r := range f.records {
-		if r.Identity == q.Identity {
+		if q.Text != "" && !strings.Contains(r.Content, q.Text) {
+			continue
+		}
+		if wanted[r.Scope] {
 			out = append(out, r)
 		}
 	}
-	return out, nil
+	slices.SortFunc(out, func(a, b Record) int { return strings.Compare(string(a.ID), string(b.ID)) })
+	return limit(out, q.Limit), nil
 }
 
-func (f *fakeEngine) List(ctx context.Context, identity string) ([]Record, error) {
-	return f.Query(ctx, Query{Identity: identity})
+func (f *fakeEngine) List(ctx context.Context, scope Scope) ([]Record, error) {
+	return f.Query(ctx, Query{Scopes: []Scope{scope}})
 }
 
-func (f *fakeEngine) Forget(_ context.Context, id string) error {
+func (f *fakeEngine) Update(_ context.Context, in RecordUpdate) (Record, error) {
+	rec, ok := f.records[in.ID]
+	if !ok || rec.Scope != in.Scope {
+		return Record{}, ErrNotFound
+	}
+	if in.Expected != 0 && in.Expected != rec.Revision {
+		return Record{}, ErrStaleRevision
+	}
+	f.revisions[rec.ID] = append(f.revisions[rec.ID], Revision{Record: rec, Deleted: false})
+	rec.Content = in.Content
+	rec.Revision++
+	rec.Author = in.Author
+	rec.Source = in.Source
+	f.records[rec.ID] = rec
+	return rec, nil
+}
+
+func (f *fakeEngine) Forget(_ context.Context, scope Scope, id RecordID) error {
+	rec, ok := f.records[id]
+	if !ok || rec.Scope != scope {
+		return nil
+	}
+	f.revisions[id] = append(f.revisions[id], Revision{Record: rec, Deleted: true})
 	delete(f.records, id)
 	return nil
+}
+
+func (f *fakeEngine) Revisions(_ context.Context, _ Scope, id RecordID) ([]Revision, error) {
+	return f.revisions[id], nil
+}
+
+// limit trims out to n when n > 0, matching the Store contract's Limit.
+func limit(out []Record, n int) []Record {
+	if n > 0 && len(out) > n {
+		return out[:n]
+	}
+	return out
 }
 
 func (f *fakeEngine) Start(context.Context) error {

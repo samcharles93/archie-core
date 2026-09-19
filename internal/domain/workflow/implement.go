@@ -111,6 +111,7 @@ func StageBaselineGate() Stage {
 			if changed {
 				tc.BuildSummary = res.Summary
 				tc.BaselineFixed = true
+				tc.captureChanges(ctx, capturedAfterBaselineFix)
 			}
 		}
 		return nil
@@ -191,6 +192,7 @@ func Implement() Workflow {
 			StageDiffCap(),
 			StageReview(),
 			StageOpenPR(implementPRBody),
+			StagePostReviewComments(),
 		},
 	}
 }

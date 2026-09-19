@@ -24,12 +24,34 @@ import (
 )
 
 // Forger is the subset of forge.Forge that workflow stages call mid-run.
-// forge.Forge (the daemon's real implementations) and forgerpc.Client
-// (archie-agent's NATS-backed proxy) both satisfy it.
+// Production reaches it through forgerpc.Client, which proxies each call to the
+// daemon over NATS -- the worker holds no forge credentials, so the daemon stays
+// the only caller of forge.Forge. Test fakes implement it directly.
 type Forger interface {
 	CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error
 	CreatePR(ctx context.Context, owner, repo, title, head, base, body string) (int, error)
 	LinkBranch(ctx context.Context, owner, repo string, issueNumber int, branch string) error
+	// CreateReviewComments posts line-anchored review comments on an open pull
+	// request. The whole set travels in one call because Gitea's only inline
+	// shape is a single submitted review holding many comments, and because
+	// one call cannot half-succeed against a rate limit.
+	//
+	// reviewedHeadSHA is the revision those line numbers were measured on. The
+	// implementation reads the pull request's head itself -- the worker holds no
+	// forge credentials -- and posts only while that head is still this
+	// revision, because a line number means nothing against a revision it was
+	// not measured on. Empty means "not measured": the comments post without
+	// the check rather than being dropped.
+	CreateReviewComments(ctx context.Context, owner, repo string, number int, reviewedHeadSHA string, comments []ReviewComment) error
+	// Comment posts a plain, non-anchored PR comment and returns its ID.
+	// The remediate workflow's round-cap stage uses this to tell an
+	// operator why it stopped remediating, and a whole-review reply (no
+	// single inline comment to thread onto) falls back to it.
+	Comment(ctx context.Context, owner, repo string, number int, body string) (int64, error)
+	// ReplyToReview posts a threaded reply to one review comment. The
+	// remediate workflow calls it once per remediation run, summarising
+	// what changed (docs/prds/pr-review-remediation.md decision 4).
+	ReplyToReview(ctx context.Context, owner, repo string, number int, commentID int64, body string) error
 }
 
 // Trees is the subset of *worktree.Manager that workflow stages call
@@ -106,6 +128,10 @@ type TaskContext struct {
 	ReproProof string
 	// decision is the feasibility assess stage's verdict.
 	decision *decision
+	// reviewUnit is the remediate workflow's decoded Task.ReviewPayload,
+	// stashed by its build stage so the commit-push and reply stages that
+	// follow don't each re-decode the same JSON.
+	reviewUnit ReviewUnit
 	// Outcome describes where the task ended up; the engine applies it.
 	Outcome Outcome
 
@@ -131,10 +157,25 @@ type TaskContext struct {
 	// body (h019.6). Zero value means the review did not run (disabled or
 	// skipped); ReviewReport.Ran() is the test for "render the section".
 	ReviewReport ReviewReport
+	// ReviewedHeadSHA is the worktree head at the moment the pull request was
+	// opened, which is the revision the review's line numbers were measured on
+	// (StageReview runs against that same worktree and commits nothing, so no
+	// revision intervenes). StagePostReviewComments threads it to the forge so
+	// a comment whose line numbers describe a head the pull request has since
+	// moved past is refused instead of attaching to unrelated code. Empty when
+	// the revision could not be read -- posting then proceeds unverified rather
+	// than dropping every finding.
+	ReviewedHeadSHA string
 }
 
 // Emit publishes an observability event stamped with the task's
-// identity. Safe on a nil bus.
+// identity and the attempt that produced it. Safe on a nil bus.
+//
+// The attempt comes from the task record this context runs against, so a
+// reader can attribute the event to one run without segmenting the task's
+// stream by stage order. It is never guessed: a producer with no attempt
+// (the deliberately task-agnostic daemon events) leaves it zero, which reads
+// as unattributed rather than as a first run.
 func (tc *TaskContext) Emit(kind, stage, detail string, data map[string]any) {
 	if tc.Bus == nil {
 		return
@@ -145,6 +186,7 @@ func (tc *TaskContext) Emit(kind, stage, detail string, data map[string]any) {
 		Repo:     tc.Task.Owner + "/" + tc.Task.Repo,
 		Issue:    tc.Task.IssueNumber,
 		Workflow: tc.Task.Workflow,
+		Attempt:  tc.Task.Attempt,
 		Stage:    stage,
 		Detail:   detail,
 		Data:     data,
@@ -161,7 +203,8 @@ func (tc *TaskContext) EmitDurable(ctx context.Context, kind, stage, detail stri
 	}
 	event := events.Event{
 		At: time.Now().UTC(), Kind: kind, TaskID: tc.Task.ID, Repo: tc.Task.Owner + "/" + tc.Task.Repo,
-		Issue: tc.Task.IssueNumber, Workflow: tc.Task.Workflow, Stage: stage, Detail: detail, Data: data,
+		Issue: tc.Task.IssueNumber, Workflow: tc.Task.Workflow, Attempt: tc.Task.Attempt,
+		Stage: stage, Detail: detail, Data: data,
 	}
 	id, err := tc.Store.InsertEvent(ctx, event)
 	if err != nil {
@@ -293,7 +336,17 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 	for _, stage := range wf.Stages {
 		t.Stage = stage.Name
 		_ = tc.Store.Update(ctx, t)
-		log.Info("stage starting", "stage", stage.Name)
+		// The stage is bound onto the task logger for exactly the stage's own
+		// execution and removed afterwards, so every line a stage's code writes
+		// is selectable by stage (internal/logging.Query.Stage). It is restored
+		// rather than left in place because a line written outside any stage is
+		// not attributable to one. Agent and tool output is logged by the runtime
+		// that produced it, which never sees this logger, so it carries no stage:
+		// the stage filter narrows the log, it does not cover it.
+		previousLog := tc.Log
+		stageLog := previousLog.With("stage", stage.Name)
+		tc.Log = stageLog
+		stageLog.Info("stage starting")
 		tc.Emit(events.KindStageStart, stage.Name, "", nil)
 		started := time.Now()
 
@@ -306,13 +359,14 @@ func Run(ctx context.Context, wf Workflow, tc *TaskContext) {
 			}
 		}
 		tc.Emit(events.KindStageFinish, stage.Name, "", data)
+		tc.Log = previousLog
 
 		if err != nil {
 			// Daemon shutdown is not a workflow failure. Leave the task running
 			// so Startup's existing crash recovery requeues it; parking here
 			// would publish a false failure and require manual intervention.
 			if ctx.Err() != nil {
-				log.Info("stage interrupted", "stage", stage.Name, "err", err)
+				stageLog.Info("stage interrupted", "err", err)
 				return
 			}
 			t.ParkReason = fmt.Sprintf("stage %s: %v", stage.Name, err)

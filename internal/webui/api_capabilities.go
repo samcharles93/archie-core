@@ -23,7 +23,6 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, _ *http.Request) {
 			"chat":     s.Chat != nil && s.Chat.Contract != nil,
 			"logs":     s.LogFeed != nil,
 			"skills":   s.Skills != nil,
-			"memory":   s.Memory != nil,
 			"curators": s.Curators != nil,
 			"channels": s.Channels != nil,
 			"captures": s.Captures != nil,

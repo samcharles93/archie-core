@@ -12,7 +12,11 @@ tasks:
   fmt:
     desc: Format and fix Go source (gofumpt, go fix)
     cmds:
-      - gofumpt -w .
+      # -extra must match the gofumpt formatter's extra-rules in
+      # .golangci.yml. Without it `task fmt` cannot produce what `task lint`
+      # demands -- e.g. func f(a int, b int) -> func f(a, b int) -- so a
+      # contributor has no command that satisfies the gate.
+      - gofumpt -extra -w .
       - go fix ./...
 
   proto:install:
@@ -124,9 +128,20 @@ tasks:
       is a known gap, a forgotten one, or an artifact of runtime loading
       (yaegi, reflection) that must never be deleted.
 
+      Two report sections, because a dead whole package and a dead symbol
+      inside a live one are different failure modes: "unreachable-*" is a
+      package no shipped binary imports at all; "in-package-*" is a symbol
+      dead inside a package that IS shipped -- the ChatCourier/Dispatch
+      shape, where the feature is wired everywhere except its own call site.
+      Both carry the same tracked/untracked/dynamic classification.
+
       --refresh re-runs the analysis. Without it the tool reuses
-      /tmp/reachaudit-deadcode.txt with no staleness check, which will
-      happily report last week's tree against today's code.
+      /tmp/reachaudit-deadcode-<sha>.txt with no staleness check beyond HEAD
+      and a dirty-tree check, which will happily report last week's tree
+      against today's code if HEAD hasn't moved.
+
+      --json PATH and --md PATH write the same findings as structured data or
+      a Markdown report, in addition to the terminal summary.
     cmds:
       - python3 tools/reachaudit/reachaudit.py --repo . {{.CLI_ARGS}}
   docs:site:
@@ -161,6 +176,31 @@ tasks:
     cmds:
       - npm run build
 
+  ui:check:
+    desc: Rebuild the dashboard into a temporary directory and reject a stale ui/dist
+    summary: |
+      ui/dist is committed because the Go build embeds it, so it is a generated
+      source file. Nothing else in the gate reads it and `task ui` rewrites it
+      in place, so before this a change to ui/src that landed without the
+      rebuilt bundle was invisible -- and two agents in two worktrees could each
+      "pass" while producing different dashboards.
+
+      Builds somewhere temporary and compares, never rewriting the committed
+      artifact, which is the rule docs:check already follows for the contract
+      reference. A gate that rebuilt ui/dist in place would bless an unintended
+      UI change with no reviewer ever seeing it.
+
+      Fix a failure with `task ui`, then commit the rebuilt bundle in the same
+      commit as the source change that caused it.
+
+      Declares ui:deps like `ui` and `test:ui` do, so a fresh clone works; that
+      means the gate runs `npm install` once for each dependent. Task's
+      sources/generates up-to-date check does not apply to a node_modules
+      directory, so the guard against that is a follow-up, not a claim here.
+    deps: [ui:deps]
+    cmds:
+      - bash tools/uidist.sh check
+
   test:ui:
     desc: Run the dashboard's node tests (DOM-building primitives)
     dir: ui
@@ -191,6 +231,10 @@ tasks:
         * vite             serves the dashboard with hot reload on :5173,
                            proxying /api and /events through to archie-ui
                            on :8484
+
+      The gRPC ports come from [services.state].listen and [services.gateway].listen in
+      deployments/dev.toml, each paired with the target that dials it. Move them there
+      when the host already owns one: cockpit binds 9090 by default.
 
       Open http://localhost:5173 -- not :8484. The Vite server is the one with
       hot reload; :8484 serves the last built dist/ and will look stale.
@@ -281,12 +325,14 @@ tasks:
       - "{{.BIN_DIR}}/archie-gateway"
       - "{{.BIN_DIR}}/archie-state-store"
       - "{{.BIN_DIR}}/archie-ui"
+      - "{{.BIN_DIR}}/archie-messaging"
       - "{{.BIN_DIR}}/archie-agent"
     cmds:
       - go build -ldflags "-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion={{.GATEWAY_VERSION}} -X github.com/samcharles93/archie-core/internal/app/archied.runtimeVersion={{.RUNTIME_VERSION}} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" -o {{.BIN_DIR}}/archied ./cmd/archied
       - go build -ldflags "-X github.com/samcharles93/archie-core/internal/app/archied.gatewayVersion={{.GATEWAY_VERSION}} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" -o {{.BIN_DIR}}/archie-gateway ./cmd/archie-gateway
       - go build -o {{.BIN_DIR}}/archie-state-store ./cmd/archie-state-store
       - go build -o {{.BIN_DIR}}/archie-ui ./cmd/archie-ui
+      - go build -o {{.BIN_DIR}}/archie-messaging ./cmd/archie-messaging
       - go build -ldflags "-X github.com/samcharles93/archie-core/internal/app/agentworker.version={{.RUNTIME_VERSION}} -X github.com/samcharles93/archie-core/internal/installtype.buildType=binary" -o {{.BIN_DIR}}/archie-agent ./cmd/archie-agent
 
   test:
@@ -309,7 +355,7 @@ tasks:
       - go -C tools test -mod=readonly ./... -count=1
 
   check:
-    desc: "Full quality gate: fmt, go fix, proto, docs, vet, lint, build, test, tools tests, ui tests"
+    desc: "Full quality gate: fmt, go fix, proto, docs, vet, lint, build, test, tools tests, ui tests and bundle"
     cmds:
       - task: fmt
       - go fix ./...
@@ -327,6 +373,11 @@ tasks:
       # The dashboard's suite runs here too. Left out of the gate it rots
       # silently: nothing else executes it, so a broken DOM primitive ships.
       - task: test:ui
+      # ...and so is the bundle that suite is built from. ui/dist is committed
+      # and embedded; nothing else checks it against ui/src, and `task ui`
+      # rewrites it in place, so a forgotten rebuild used to leave no trace in
+      # the gate at all.
+      - task: ui:check
 
   contract:
     desc: "Report contract conformance: declared surfaces, their consumers, and the drift between them"

@@ -61,9 +61,17 @@ ENV PATH="/usr/local/go/bin:/go/bin:${PATH}"
 # Pinned release binaries. Building these with `go install` pulled ~2GB of
 # module and build cache into the image. delve is omitted because it ships no
 # prebuilt binary; `go install ...@latest` at runtime if an agent needs it.
-ARG GOLANGCI_LINT_VERSION=2.12.2
+#
+# `task fmt` formats with this gofumpt and `task lint` then re-checks
+# formatting with the gofumpt golangci-lint vendors. Any construct the two
+# versions disagree on makes the gate unsatisfiable -- `task fmt` cannot
+# converge a check run by a different formatter. So GOFUMPT_VERSION must equal
+# the mvdan.cc/gofumpt version in golangci-lint v${GOLANGCI_LINT_VERSION}'s
+# go.mod (2.13.2 -> v0.11.0). Bump the two together, never separately.
+ARG GOLANGCI_LINT_VERSION=2.13.2
 ARG GOFUMPT_VERSION=0.11.0
 ARG BUF_VERSION=1.72.0
+
 RUN curl -fsSL "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64.tar.gz" \
       | tar -xz -C /usr/local/bin --strip-components=1 \
         "golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64/golangci-lint" && \

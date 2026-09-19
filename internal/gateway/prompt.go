@@ -64,6 +64,13 @@ type SystemPromptConfig struct {
 	// (chat.operator). Rendered so the agent knows the identity context it
 	// serves under; empty means unconfigured and must be said explicitly.
 	Operator string
+	// Memory is the pre-rendered <memory> block body: the durable records the
+	// read path recalled for this turn's resolved subject, already bounded by
+	// the per-scope record limit and the render byte cap. Empty when there is
+	// nothing to recall, or when the read degraded (engine failure, panic,
+	// unresolved identity beyond global/agent scope) -- the template omits
+	// the block entirely in that case, exactly like Tools.
+	Memory string
 }
 
 // promptData is the template execution context. It exists so the template
@@ -74,13 +81,19 @@ type promptData struct {
 	Date string
 }
 
+// escapeXML replaces the three bytes that would otherwise be read as markup
+// inside a trust="data" block. Exported within the package so callers that
+// must bound a block's *rendered* size (turn_memory.go's byte cap) measure
+// the same expansion the template applies, rather than the pre-escape size.
+var escapeXML = strings.NewReplacer(
+	"&", "&amp;",
+	"<", "&lt;",
+	">", "&gt;",
+).Replace
+
 var archiePromptTemplate = template.Must(
 	template.New("archie").
-		Funcs(template.FuncMap{"xml": strings.NewReplacer(
-			"&", "&amp;",
-			"<", "&lt;",
-			">", "&gt;",
-		).Replace}).
+		Funcs(template.FuncMap{"xml": escapeXML}).
 		Parse(archiePromptTpl),
 )
 
@@ -105,6 +118,7 @@ func BuildSystemPrompt(cfg SystemPromptConfig) string {
 		Workspace: cfg.Workspace,
 		Repos:     cfg.Repos,
 		Operator:  cfg.Operator,
+		Memory:    cfg.Memory,
 	}
 	var buf strings.Builder
 	if err := archiePromptTemplate.Execute(&buf, data); err != nil {

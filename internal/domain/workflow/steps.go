@@ -8,12 +8,106 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
+	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gate"
 	"github.com/samcharles93/archie-core/internal/gate/gateeval"
 )
 
 // Shared step library. Every workflow composes these; workflow-specific
 // stages live next to their workflow definition.
+
+// The captured_after values recorded inside a changes_captured event. They
+// are part of the on-disk payload: a reader distinguishes a mid-workflow
+// commit from the push that ended the run, so renaming one is a migration,
+// not a rename.
+const (
+	capturedAfterCommit      = "commit"
+	capturedAfterCommitPush  = "commit-push"
+	capturedAfterBaselineFix = "baseline-fix"
+	// capturedAfterOpenPR is the final capture of a run: OpenPR takes it the
+	// moment the PR number is recorded, because that is the only point at which
+	// a capture can carry one.
+	capturedAfterOpenPR = "open-pr"
+)
+
+// changeStatsReader is the optional capability through which a Trees
+// implementation reports what an attempt changed. It is deliberately
+// unexported, and deliberately NOT a method on Trees: Trees is projected into
+// the interpreted-stage symbol table, so declaring it there would widen what
+// repository-authored .archie/stages/*.go may call (pinned by
+// wfextract/reachability_test.go). A Trees implementation without it degrades
+// to no capture rather than failing the stage.
+type changeStatsReader interface {
+	ChangedFileStats(ctx context.Context, dir, base string) (task.ChangeStats, error)
+}
+
+// captureChanges records what this attempt has changed, read off the worktree
+// at the moment it was committed or pushed -- the only point where the
+// worktree still holds the change and a commit or push is known to have
+// happened. A retry resets the branch onto its base and a terminal state
+// deletes the worktree, so nothing can re-derive this afterwards.
+//
+// Capturing is reporting, not work: every failure path here logs and returns,
+// because a provenance record that could not be written must never park or
+// fail a run that otherwise succeeded.
+//
+// It returns the measured stats so a caller that runs at a point the worktree's
+// own revision matters (OpenPR) can reuse the read instead of paying for a
+// second one -- and gets the zero value on any failure path, which is why a
+// caller must treat an empty HeadSHA as "not measured" rather than as a
+// revision.
+func (tc *TaskContext) captureChanges(ctx context.Context, after string) task.ChangeStats {
+	if tc.Dir == "" {
+		tc.Log.Warn("change capture skipped: no worktree to read", "captured_after", after)
+		return task.ChangeStats{}
+	}
+	reader, ok := tc.Trees.(changeStatsReader)
+	if !ok {
+		tc.Log.Warn("change capture unavailable: this worktree implementation cannot report a diffstat",
+			"captured_after", after)
+		return task.ChangeStats{}
+	}
+	stats, err := reader.ChangedFileStats(ctx, tc.Dir, tc.Repo.BaseBranch())
+	if err != nil {
+		tc.Log.Warn("change capture failed", "captured_after", after, "err", err)
+		return task.ChangeStats{}
+	}
+	// Durable, never bus-only: the worktree this was measured from is gone by
+	// the time anyone reads it, so a capture that only reached the live feed
+	// would be lost with the process.
+	if err := tc.EmitDurable(ctx, events.KindChangesCaptured, tc.Task.Stage, "", changeCaptureData(tc, after, stats)); err != nil {
+		tc.Log.Warn("change capture not persisted", "captured_after", after, "err", err)
+	}
+	return stats
+}
+
+// changeCaptureData builds the persisted payload for one capture. Totals are
+// taken over the FULL set of changed files, so a capture truncated at
+// task.MaxCapturedFiles still reports how much the attempt changed -- only the
+// per-file breakdown is bounded.
+func changeCaptureData(tc *TaskContext, after string, stats task.ChangeStats) map[string]any {
+	files := stats.Files
+	truncated := false
+	if len(files) > task.MaxCapturedFiles {
+		files = files[:task.MaxCapturedFiles]
+		truncated = true
+	}
+	return map[string]any{
+		"schema":         events.ChangesCapturedSchema,
+		"owner":          tc.Task.Owner,
+		"repo":           tc.Task.Repo,
+		"base":           tc.Repo.BaseBranch(),
+		"branch":         tc.Branch,
+		"head_sha":       stats.HeadSHA,
+		"base_sha":       stats.BaseSHA,
+		"pr_number":      tc.Task.PRNumber,
+		"captured_after": after,
+		"files":          files,
+		"totals":         stats.Totals,
+		"truncated":      truncated,
+	}
+}
 
 // StagePrepareWorktree clones the repo fresh and checks out the task
 // branch. Skips if the daemon already prepared the worktree (Docker
@@ -42,6 +136,7 @@ func StageCommit(name string, message func(*TaskContext) string) Stage {
 		if !changed {
 			return fmt.Errorf("worktree has no changes to commit")
 		}
+		tc.captureChanges(ctx, capturedAfterCommit)
 		return nil
 	}}
 }
@@ -69,7 +164,11 @@ func StageCommitPush(message func(*TaskContext) string) Stage {
 		if !changed && !tc.BaselineFixed {
 			return fmt.Errorf("worktree has no changes to commit")
 		}
-		return tc.Trees.Push(ctx, tc.Dir, tc.Branch)
+		if err := tc.Trees.Push(ctx, tc.Dir, tc.Branch); err != nil {
+			return err
+		}
+		tc.captureChanges(ctx, capturedAfterCommitPush)
+		return nil
 	}}
 }
 
@@ -211,6 +310,19 @@ func OpenPR(ctx context.Context, tc *TaskContext, body string) error {
 	}
 	t.PRNumber = num
 	tc.Outcome = Outcome{Status: StatusPROpen, Detail: fmt.Sprintf("PR #%d", num)}
+	// The captures taken while committing and pushing ran before this PR
+	// existed, so they carry no number and the changed-files view cannot link
+	// it. This is the one point where the number is known and the worktree is
+	// still there to measure, so it is captured here rather than left for a
+	// read to reconstruct. Reporting only: captureChanges never fails the stage.
+	//
+	// The same read answers which revision this run's line numbers describe:
+	// nothing commits between StageReview and here, so the worktree still holds
+	// the head the review read, and the stage that posts line-anchored comments
+	// needs it to refuse a post once the PR's head has moved past it.
+	if stats := tc.captureChanges(ctx, capturedAfterOpenPR); stats.HeadSHA != "" {
+		tc.ReviewedHeadSHA = stats.HeadSHA
+	}
 	return nil
 }
 

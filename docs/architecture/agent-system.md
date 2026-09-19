@@ -95,9 +95,11 @@ because both users interact with the same Agent.
 
 Shared memory does not erase provenance. Every memory record retains its scope,
 author or acting identity, originating user when applicable, source, and
-revision history. The exact rules for selecting a write scope, granting access
-to global and user-wide memory, and authorizing explicit cross-scope sharing
-require a focused memory design decision.
+revision history. The rules for selecting a write scope, granting access
+to global and user-wide memory, and authorizing explicit cross-scope sharing are
+settled by [`docs/prds/memory-engine-unification.md`](../prds/memory-engine-unification.md)
+and recorded in [`migration-decisions.md`](migration-decisions.md#5-memory-placement-and-storage)
+section 5.
 
 An Agent interaction may answer conversationally, use a tool or capability, read
 or send messages, retain information, or propose durable workflow-backed work.

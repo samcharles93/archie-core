@@ -31,6 +31,7 @@ service StateStoreService {
 
   // Queries
   rpc TaskByIssue(TaskByIssueRequest) returns (TaskByIssueResponse);
+  rpc OpenTaskByPR(OpenTaskByPRRequest) returns (OpenTaskByPRResponse);
   rpc TaskByID(TaskByIDRequest) returns (TaskByIDResponse);
   rpc OpenPRs(OpenPRsRequest) returns (OpenPRsResponse);
   rpc ClearTerminalTasks(ClearTerminalTasksRequest) returns (ClearTerminalTasksResponse);
@@ -148,6 +149,9 @@ message Task {
   int64 binding_version = 24;
   google.protobuf.Timestamp created_at = 25;
   google.protobuf.Timestamp updated_at = 26;
+  // review_payload is the JSON-encoded review unit the remediate workflow's
+  // current run must address (docs/prds/pr-review-remediation.md decision 4).
+  string review_payload = 27;
 }
 
 // Event mirrors internal/events.Event. Data is carried as a JSON object
@@ -162,6 +166,11 @@ message Event {
   int64 issue = 6;
   string workflow = 7;
   string stage = 8;
+  // attempt is the run this event belongs to. Zero means UNATTRIBUTED, not a
+  // first attempt: rows written before the field existed, and the deliberately
+  // task-agnostic producers, all carry zero. A reader must report those as
+  // unattributable rather than presenting them as one run.
+  int64 attempt = 11;
   string detail = 9;
   string data_json = 10;
 }
@@ -326,6 +335,16 @@ message TaskByIssueResponse {
   bool found = 2;
 }
 
+message OpenTaskByPRRequest {
+  string owner = 1;
+  string repo = 2;
+  int64 number = 3;
+}
+message OpenTaskByPRResponse {
+  Task task = 1;
+  bool found = 2;
+}
+
 message TaskByIDRequest { int64 task_id = 1; }
 message TaskByIDResponse {
   Task task = 1;
@@ -412,6 +431,10 @@ message ReadTaskLogRequest {
   string contains = 6;
   google.protobuf.Timestamp since = 7;
   google.protobuf.Timestamp until = 8;
+  // stage filters on an entry's own "stage" field. Only entries a stage
+  // tagged carry one -- agent and tool output is logged without a stage, so a
+  // stage filter narrows the file rather than covering it. Empty means any.
+  string stage = 9;
 }
 // found=false is not an error: the task has no log file for that attempt.
 // That is a different condition from a process that cannot read logs at all

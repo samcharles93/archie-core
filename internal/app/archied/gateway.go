@@ -29,6 +29,24 @@ type GatewayOptions struct {
 	Token string
 }
 
+// gatewayListenAndToken resolves the two per-listener inputs RunGateway needs:
+// the address it binds and the bearer token a non-loopback bind validates.
+//
+// Both are flag-first and config-second, and both fail closed rather than
+// inventing a value -- resolveServiceListen explains why an empty address is an
+// error rather than a default.
+func gatewayListenAndToken(b *boot, options GatewayOptions) (listen, token string, err error) {
+	listen, err = resolveServiceListen("gateway", options.Listen, b.cfg.Services.Get(config.ServiceNameGateway).Listen)
+	if err != nil {
+		return "", "", err
+	}
+	token = options.Token
+	if token == "" {
+		token = b.cfg.Services.ResolvedToken(config.ServiceNameGateway, b.secrets.Getenv)
+	}
+	return listen, token, nil
+}
+
 // RunGateway owns conversation persistence, model runtime and tool-provider
 // lifecycles. Task-store adapters access the State Store contract (remote
 // *staterpc.Client via [services.state].target), not archie.db directly: the
@@ -85,16 +103,16 @@ func RunGateway(ctx context.Context, options GatewayOptions) error {
 	if err != nil {
 		return err
 	}
-	gatewayToken := options.Token
-	if gatewayToken == "" {
-		gatewayToken = gatewayResolvedToken(b.cfg.Services.Gateway, b.secrets)
-	}
-	//nolint:contextcheck // grpc.StreamServerInterceptor has no context.Context parameter; gatewayrpc.StreamServerInterceptor derives its context from stream.Context() instead
-	opts, loopback, err := gatewayServerOpts(options.Listen, gatewayToken)
+	listen, gatewayToken, err := gatewayListenAndToken(b, options)
 	if err != nil {
 		return err
 	}
-	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", options.Listen)
+	//nolint:contextcheck // grpc.StreamServerInterceptor has no context.Context parameter; gatewayrpc.StreamServerInterceptor derives its context from stream.Context() instead
+	opts, loopback, err := gatewayServerOpts(listen, gatewayToken)
+	if err != nil {
+		return err
+	}
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", listen)
 	if err != nil {
 		return fmt.Errorf("listen for gateway: %w", err)
 	}
@@ -107,14 +125,14 @@ func (b *boot) startGatewayRuntime(ctx context.Context, actor gateway.ChatTaskAc
 	b.bus = events.NewBus()
 	b.addCleanup(b.bus.Close)
 	b.capabilityHost = plugin.NewHost()
-	contract := b.setupGatewayChat(ctx, actor)
-	// Memory is opened with its own long-lived context inside (matching the
-	// daemon path via setupMemoryAll): shutdown of the file-backed provider
-	// outlives the boot context by design, so the legacy manager wires itself
-	// with a background context rather than the gateway's boot ctx.
-	if err := b.setupMemory(); err != nil { //nolint:contextcheck // setupMemory owns its lifecycle contexts, matching the daemon's setupMemoryAll
+	b.startRateLimiter(ctx, b.cfg.Chat.RateLimit)
+	// setupMemoryEngine must run before setupGatewayChat: setupGatewayChat
+	// constructs the turn runner, which captures b.memEngines at
+	// construction time (see the identical ordering note in main.go's Run).
+	if err := b.setupMemoryEngine(); err != nil { //nolint:contextcheck // setupMemoryEngine owns its own lifecycle context, matching the daemon's setupMemoryEngine
 		return nil, err
 	}
+	contract := b.setupGatewayChat(ctx, actor)
 	if err := b.registerTools(ctx); err != nil {
 		return nil, err
 	}

@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import "./shim.js";
-import { logRow, levelKind, fmtValue, shortTime } from "../src/base/log-row.js";
+import { h } from "preact";
+import { render, cleanup } from "@testing-library/preact";
+import { LogRow, levelKind, fmtValue, shortTime } from "../src/base/log-row.jsx";
 
 test("levelKind maps known levels to their pill kind", () => {
   assert.equal(levelKind("ERROR"), "danger");
@@ -22,23 +23,36 @@ test("shortTime falls back to a placeholder for an unparsable time", () => {
   assert.equal(shortTime("not a date"), "--:--:--");
 });
 
-test("logRow renders every field generically, including the ones the daemon-wide feed drops", () => {
-  const row = logRow({
-    time: "2026-01-01T00:00:00Z",
-    level: "info",
-    msg: "attempt finished",
-    fields: {
-      stage: "tdd",
-      prompt_tokens: 100,
-      completion_tokens: 40,
-      cached_tokens: 10,
-      stop_reason: "end_turn",
-      model: "sonnet-5",
-    },
-  });
+test("LogRow renders every field generically, including the ones the daemon-wide feed drops", () => {
+  const { container } = render(
+    <LogRow
+      entry={{
+        time: "2026-01-01T00:00:00Z",
+        level: "info",
+        msg: "attempt finished",
+        fields: {
+          stage: "tdd",
+          prompt_tokens: 100,
+          completion_tokens: 40,
+          cached_tokens: 10,
+          stop_reason: "end_turn",
+          model: "sonnet-5",
+        },
+      }}
+    />,
+  );
+  const row = container.querySelector(".log-row");
   assert.match(row.className, /log-row/);
   assert.match(row.textContent, /attempt finished/);
   for (const key of ["stage", "prompt_tokens", "completion_tokens", "cached_tokens", "stop_reason", "model"]) {
     assert.match(row.textContent, new RegExp(key), `missing field ${key}`);
   }
+  cleanup();
+});
+
+test("LogRow colours the row by level", () => {
+  const { container } = render(<LogRow entry={{ level: "ERROR", msg: "boom" }} />);
+  assert.match(container.querySelector(".log-row").className, /log-danger/);
+  assert.equal(container.querySelector(".log-level").textContent, "ERROR");
+  cleanup();
 });

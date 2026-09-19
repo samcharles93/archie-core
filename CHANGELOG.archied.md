@@ -1,5 +1,118 @@
 # archied changelog
 
+## [1.29.0] - 2026-09-19
+
+### Security
+
+- `google.golang.org/grpc` bumped past `v1.84.0` to patch
+  [GO-2026-6443](https://pkg.go.dev/vuln/GO-2026-6443), a server panic via a
+  missing `:authority`/`Host` header reachable through `archied`'s gRPC
+  gateway server. No stable release carries the fix yet, so this pins the
+  pre-release commit that does (`v1.85.0-dev.0.20260825072537-93e31b48545e`)
+  until `grpc-go` cuts `v1.85.0`.
+
+### Memory engine unification
+
+One memory engine, addressed by four typed scopes (global, agent, user,
+agent-user), replaces the two disconnected stores that previously existed:
+a chat-tool-written store nothing ever read back, and a curator-written store
+with no scope model.
+
+- `internal/domain/memory` is a CRUD contract (`Create`/`Get`/`Query`/`List`/
+  `Update`/`Forget`/`Revisions`) with retained revisions; updates supersede
+  rather than overwrite, so a crash mid-write leaves a recoverable extra
+  history entry, never a lost prior state (#886).
+- The chat turn reads its subject's scopes synchronously before the prompt is
+  built, rendering recalled records into a `<memory>` block; a failing or
+  panicking engine degrades to no memory block rather than failing the turn
+  (#887).
+- The model writes memory through four id-addressed tools
+  (`memory_create`/`update`/`delete`/`list`), scoped to the turn's own
+  resolved identity -- the model chooses the scope kind, never the ids, so it
+  has no path to write into another user's memory (#888).
+- The session curator now derives the agent-user scope from the session's own
+  user-role messages, instead of keying facts by a session id that stops
+  meaning anything once the session ends.
+- A channel with no resolvable user (dashboard, webhook) reads and writes only
+  global and agent scope; a webhook's route path is never treated as a user
+  identity.
+- Fixed a review finding on the read path: the per-scope record limit was
+  being applied as one shared total across all scopes rather than per scope,
+  and the rendered block's byte cap was checked before template escaping
+  rather than after, letting the escaped block exceed it.
+
+### Work intake
+
+- feat(workintake): define review reaction envelope
+- feat(workintake): authorize review reactions by owned PR
+
+### Cleanup
+
+- Deleted the unwired plugin capability-host health surface
+  (`Host.Health`/`Host.Manifests`/`ModuleStatus`) and the `Module.Health`
+  chain it fed -- including the `mcp`/`builtin` tool-provider health
+  implementations and their aggregation in `tools/provider.Registry` -- none
+  of which had ever had a production caller (#882).
+
+## [1.28.0] - 2026-09-19
+
+### Task detail and attempt attribution
+
+- New per-run task detail page, showing each attempt's own events, changes and
+  configuration rather than a single merged view.
+- Events, changes and config are attributed to the attempt that produced them;
+  `Event` carries `attempt` and `ReadTaskLogRequest` carries `stage`.
+- The task detail page remounts when the task id changes, so switching tasks
+  does not leave the previous one's data on screen.
+
+### Configuration
+
+- Services are keyed by name through a registry, so the State Store and Gateway
+  listen addresses are configurable rather than fixed.
+- A partial overlay no longer clears the fields it omits — an overlay that set
+  one key was wiping the rest.
+- The Services map is cloned on publish, so an overlay can no longer mutate the
+  snapshot other readers are holding.
+- The service context is enforced at registration.
+
+### Logging and park reasons
+
+- A parked run's reason is recorded in its own attempt log, in both the daemon
+  and the workflow, so "why did this park?" is answerable from the task itself.
+- `TaskRegistry.Write` takes the caller's context.
+
+### Worktrees and containers
+
+- Retries recover from path-type conflicts instead of failing opaquely, and the
+  underlying cause is no longer masked.
+- The worktree is handed back on every sandbox exit.
+- A container's max-uptime reaper is cancelled on release, the cap stays active
+  through the grace period, and teardown is claimed once rather than by
+  cancelling a timer.
+
+### Daemon and startup
+
+- Every identity's forge and repos are swept at startup, including the root
+  forge.
+- A cancelled startup is no longer reported as an exhausted sweep budget; an
+  exhausted budget names itself as the cause.
+
+### Other
+
+- `grep` can use the workspace codesearch index.
+- Forge labels are matched when namespaced, so label-driven routing works for
+  namespaced labels.
+- Triage is given criteria for choosing between workflows, and a workflow is
+  required when a code change is needed.
+- The Telegram adapter restart callback is wired into the chat router.
+- The `ARCHIE_REACTIONS` fan-out stream is provisioned and bounded by age.
+- `archie-ui` exits cleanly when graceful shutdown overruns its deadline.
+- The dashboard's event pump retries priming until the State Store answers.
+- The update writer emits the agent version sidecar with a real newline.
+- The UI finishes its Preact port; the imperative DOM layer is deleted.
+- Collection fields decoded over the State Store gRPC contract are never nil
+  slices, so an empty collection marshals as `[]` rather than `null`.
+
 ## [1.27.0] - 2026-09-17
 
 ### Dashboard task logs

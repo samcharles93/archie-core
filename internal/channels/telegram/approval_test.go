@@ -11,7 +11,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 const (
@@ -26,7 +26,7 @@ func newApprovalTestGateway(t *testing.T) (*Gateway, *bot.Bot, *[]telegramReques
 	return g, b, requests
 }
 
-func newTestApprover(g *Gateway, b *bot.Bot) gateway.ApprovalRequester {
+func newTestApprover(g *Gateway, b *bot.Bot) messaging.ApprovalRequester {
 	return g.NewApprover(b, approvalTestChatID, 0, approvalTestRecipient)
 }
 
@@ -74,7 +74,7 @@ func TestApprovalRequestPermanentShortCircuits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RequestApproval error = %v", err)
 	}
-	if decision != gateway.ApprovalPermanentlyApproved {
+	if decision != messaging.ApprovalPermanentlyApproved {
 		t.Errorf("decision = %v, want ApprovalPermanentlyApproved", decision)
 	}
 	if len(*requests) != 0 {
@@ -90,7 +90,7 @@ func TestApprovalRequestPermanentViaButton(t *testing.T) {
 	approver := newTestApprover(g, b)
 
 	done := make(chan struct{})
-	var decision gateway.ApprovalDecision
+	var decision messaging.ApprovalDecision
 	var err error
 	go func() {
 		decision, err = approver.RequestApproval(context.Background(), "session_delete", "Delete session")
@@ -112,7 +112,7 @@ func TestApprovalRequestPermanentViaButton(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("RequestApproval did not return after permanent button")
 	}
-	if decision != gateway.ApprovalPermanentlyApproved {
+	if decision != messaging.ApprovalPermanentlyApproved {
 		t.Errorf("decision = %v, want ApprovalPermanentlyApproved", decision)
 	}
 	if err != nil {
@@ -139,7 +139,7 @@ func TestApprovalRequestApprove(t *testing.T) {
 	approver := newTestApprover(g, b)
 
 	done := make(chan struct{})
-	var decision gateway.ApprovalDecision
+	var decision messaging.ApprovalDecision
 	var err error
 	go func() {
 		decision, err = approver.RequestApproval(context.Background(), "session_delete", "Delete session")
@@ -161,7 +161,7 @@ func TestApprovalRequestApprove(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("RequestApproval did not return after approve")
 	}
-	if decision != gateway.ApprovalApproved {
+	if decision != messaging.ApprovalApproved {
 		t.Errorf("decision = %v, want ApprovalApproved", decision)
 	}
 	if err != nil {
@@ -174,7 +174,7 @@ func TestApprovalRequestDenied(t *testing.T) {
 	approver := newTestApprover(g, b)
 
 	done := make(chan struct{})
-	var decision gateway.ApprovalDecision
+	var decision messaging.ApprovalDecision
 	var err error
 	go func() {
 		decision, err = approver.RequestApproval(context.Background(), "session_delete", "Delete session")
@@ -196,10 +196,10 @@ func TestApprovalRequestDenied(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("RequestApproval did not return after deny")
 	}
-	if decision != gateway.ApprovalDenied {
+	if decision != messaging.ApprovalDenied {
 		t.Errorf("decision = %v, want ApprovalDenied", decision)
 	}
-	if !errors.Is(err, gateway.ErrApprovalDenied) {
+	if !errors.Is(err, messaging.ErrApprovalDenied) {
 		t.Errorf("err = %v, want ErrApprovalDenied", err)
 	}
 }
@@ -214,13 +214,13 @@ func TestApprovalRequestTimeoutReturnsContextError(t *testing.T) {
 	defer cancel()
 
 	decision, err := approver.RequestApproval(ctx, "session_delete", "Delete session")
-	if decision != gateway.ApprovalDenied {
+	if decision != messaging.ApprovalDenied {
 		t.Errorf("decision = %v, want ApprovalDenied on timeout", decision)
 	}
 	if err == nil {
 		t.Fatal("expected a context error on timeout")
 	}
-	if errors.Is(err, gateway.ErrApprovalDenied) {
+	if errors.Is(err, messaging.ErrApprovalDenied) {
 		t.Errorf("timeout must not be ErrApprovalDenied, got %v", err)
 	}
 	if !errors.Is(err, context.DeadlineExceeded) {
@@ -319,7 +319,7 @@ func TestApprovalCallbackPrefixDistinctFromDangerous(t *testing.T) {
 
 func TestDefaultHandlerDispatchesApprovalCallback(t *testing.T) {
 	g, b, requests := newApprovalTestGateway(t)
-	router := gateway.NewRouter(nil, nil, "telegram")
+	chat := &fakeChatContract{}
 
 	token := makeDangerousToken()
 	g.registerPendingApproval(pendingApproval{
@@ -331,7 +331,7 @@ func TestDefaultHandlerDispatchesApprovalCallback(t *testing.T) {
 		resultCh:    make(chan approvalResult, 1),
 	})
 
-	g.defaultHandler(router)(context.Background(), b, &models.Update{
+	g.defaultHandler(chat)(context.Background(), b, &models.Update{
 		CallbackQuery: &models.CallbackQuery{
 			ID:   "callback-id",
 			From: models.User{ID: approvalTestRecipient},

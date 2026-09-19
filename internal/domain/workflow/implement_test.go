@@ -284,6 +284,18 @@ type fakeForge struct {
 	calls     []string
 	linkErr   error
 	prNumber  int
+
+	reviewCalls    int
+	reviewComments []ReviewComment
+	reviewOwner    string
+	reviewRepo     string
+	reviewNumber   int
+	reviewHeadSHA  string
+	reviewErr      error
+
+	replyCommentID int64
+	replyBody      string
+	replyErr       error
 }
 
 func (f *fakeForge) CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error {
@@ -294,6 +306,11 @@ func (f *fakeForge) CloseIssue(ctx context.Context, owner, repo string, number i
 func (f *fakeForge) Comment(ctx context.Context, owner, repo string, number int, body string) (int64, error) {
 	f.commented = append(f.commented, body)
 	return 0, nil
+}
+
+func (f *fakeForge) ReplyToReview(ctx context.Context, owner, repo string, number int, commentID int64, body string) error {
+	f.replyCommentID, f.replyBody = commentID, body
+	return f.replyErr
 }
 
 // Remaining forge.Forge stubs  --  only CloseIssue and Comment are used by StageCommitPush.
@@ -332,6 +349,14 @@ func (f *fakeForge) SetStateLabel(ctx context.Context, owner, repo string, numbe
 func (f *fakeForge) LinkBranch(ctx context.Context, owner, repo string, number int, branch string) error {
 	f.calls = append(f.calls, "link:"+branch)
 	return f.linkErr
+}
+
+func (f *fakeForge) CreateReviewComments(ctx context.Context, owner, repo string, number int, reviewedHeadSHA string, comments []ReviewComment) error {
+	f.reviewCalls++
+	f.reviewOwner, f.reviewRepo, f.reviewNumber = owner, repo, number
+	f.reviewHeadSHA = reviewedHeadSHA
+	f.reviewComments = append(f.reviewComments, comments...)
+	return f.reviewErr
 }
 func (f *fakeForge) VerifyPush(ctx context.Context, owner, repo string) error { return nil }
 
@@ -382,6 +407,7 @@ func TestOpenPRLinksSourceBranchBeforeCreatingPR(t *testing.T) {
 		Task:   &Task{ID: 1, Owner: "acme", Repo: "widget", IssueNumber: 42, Title: "Fix bug"},
 		Repo:   config.Repo{Owner: "acme", Name: "widget", Base: "main"},
 		Branch: "fix/42-bug",
+		Log:    slog.New(slog.DiscardHandler),
 	}
 	if err := OpenPR(context.Background(), tc, "summary"); err != nil {
 		t.Fatal(err)
@@ -420,10 +446,22 @@ func TestStageCommitPushDoesNotUseSyntheticIssueForChatNoOp(t *testing.T) {
 
 // fakeTrees implements Trees, tracking calls without touching a real
 // worktree. commitAllChanged controls what CommitAll reports.
+//
+// It deliberately does NOT implement the unexported changeStatsReader
+// capability: every stage test that drives a fake tree therefore also covers
+// the path where a capture cannot be taken at all.
 type fakeTrees struct {
 	commitAllChanged bool
 	pushed           bool
 	pushBranch       string
+	pushErr          error
+
+	dir string
+
+	resumed      bool
+	resumeDir    string
+	resumeBranch string
+	resumeErr    error
 }
 
 func (f *fakeTrees) Prepare(context.Context, string, string, string, int, string, string, string) (string, string, error) {
@@ -435,6 +473,9 @@ func (f *fakeTrees) CommitAll(context.Context, string, string) (bool, error) {
 }
 
 func (f *fakeTrees) Push(_ context.Context, _, branch string) error {
+	if f.pushErr != nil {
+		return f.pushErr
+	}
 	f.pushed = true
 	f.pushBranch = branch
 	return nil
@@ -447,6 +488,13 @@ func (f *fakeTrees) ChangedFiles(context.Context, string, string) ([]string, err
 func (f *fakeTrees) ChangedLines(context.Context, string, string) (int, error) { return 0, nil }
 
 func (f *fakeTrees) Snapshot(context.Context, string, string) error { return nil }
+
+func (f *fakeTrees) Resume(_ context.Context, dir, branch string) error {
+	f.resumed, f.resumeDir, f.resumeBranch = true, dir, branch
+	return f.resumeErr
+}
+
+func (f *fakeTrees) Dir(string, string, int) string { return f.dir }
 
 // TestStageCommitPushPushesBaselineFixEvenWithNothingNewToCommit is the
 // regression case for archie-core-95dj: StageBaselineGate already
@@ -464,6 +512,7 @@ func TestStageCommitPushPushesBaselineFixEvenWithNothingNewToCommit(t *testing.T
 		Dir:           "/tmp/test",
 		Branch:        "archie/issue-1",
 		Task:          &Task{ID: 1, Owner: "o", Repo: "r", IssueNumber: 1},
+		Log:           slog.New(slog.DiscardHandler),
 	}
 
 	if err := stage.Run(context.Background(), tc); err != nil {
@@ -488,6 +537,7 @@ func TestStageCommitPushStillErrorsOnEmptyTreeWithoutBaselineFix(t *testing.T) {
 		Dir:    "/tmp/test",
 		Branch: "archie/issue-1",
 		Task:   &Task{ID: 1, Owner: "o", Repo: "r", IssueNumber: 1},
+		Log:    slog.New(slog.DiscardHandler),
 	}
 
 	if err := stage.Run(context.Background(), tc); err == nil {
@@ -595,6 +645,7 @@ func TestOpenPRSurvivesALinkBranchFailure(t *testing.T) {
 				Task:   &Task{ID: 1, Owner: "acme", Repo: "widget", IssueNumber: 42, Title: "Fix bug"},
 				Repo:   config.Repo{Owner: "acme", Name: "widget", Base: "main"},
 				Branch: "fix/42-bug",
+				Log:    slog.New(slog.DiscardHandler),
 			}
 
 			if err := OpenPR(context.Background(), taskCtx, "summary"); err != nil {

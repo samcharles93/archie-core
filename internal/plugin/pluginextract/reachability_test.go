@@ -13,11 +13,11 @@ import (
 // TestPreviouslyMissingSymbolsReachableFromInterpretedCode is the regression
 // test for the stale symbol-table drift (e7bo): the committed generated file
 // predated internal/plugin/host.go (f73b2d1) and was never regenerated, so
-// the Host/Module/Manifest/Permission/Health/CapabilityKind/LifecycleState/
-// ModuleStatus types and the NewHost/AdaptLegacy/HostAPIVersion identifiers
-// that plugin.go's LoadDir exposes to interpreted daemon plugins were absent
-// from the table. A daemon plugin written against the capability-host API
-// could not resolve them, silently.
+// the Host/Module/Manifest/Permission/CapabilityKind types and the
+// NewHost/AdaptLegacy/HostAPIVersion identifiers that plugin.go's LoadDir
+// exposes to interpreted daemon plugins were absent from the table. A daemon
+// plugin written against the capability-host API could not resolve them,
+// silently.
 //
 // This test interprets a plugin that references the previously-missing
 // symbols, resolves it, and calls it -- proving the symbols are wired.
@@ -87,10 +87,7 @@ func (testModule) Manifest() plugin.Manifest {
 }
 
 func (testModule) Start(context.Context) error { return nil }
-func (testModule) Health(context.Context) plugin.Health {
-	return plugin.Health{Status: plugin.HealthHealthy}
-}
-func (testModule) Stop(context.Context) error { return nil }
+func (testModule) Stop(context.Context) error  { return nil }
 
 // TestWrapperNilGuardsPreserved follows the established pattern: yaegi's
 // fresh wrapper generation omits nil-guards on interface-wrappers, so they
@@ -103,9 +100,6 @@ func TestWrapperNilGuardsPreserved(t *testing.T) {
 	}
 	if got := mod.Manifest(); got.ID != "" || got.Name != "" || got.APIVersion != "" {
 		t.Errorf("Manifest on nil WManifest = %#v, want empty", got)
-	}
-	if got := mod.Health(context.Background()); got.Status != "" || got.Message != "" {
-		t.Errorf("Health on nil WHealth = %#v, want empty", got)
 	}
 	if err := mod.Stop(context.Background()); err != nil {
 		t.Errorf("Stop on nil WStop = %v, want nil", err)

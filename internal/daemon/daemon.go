@@ -296,6 +296,16 @@ func (d *Daemon) sweepAccess(ctx context.Context) {
 		}
 		for _, r := range repos {
 			if err := fg.VerifyPush(ctx, r.Owner, r.Name); err != nil {
+				// A sweep cut short by its own context is not a repo failure: name
+				// the budget when it expired, stay quiet on a shutdown.
+				switch {
+				case errors.Is(ctx.Err(), context.DeadlineExceeded):
+					// Every later call would return the same error, so say it once.
+					log.Warn("push check abandoned: sweep budget exhausted", "repo", r.FullName(), "err", err)
+					return
+				case ctx.Err() != nil:
+					return
+				}
 				log.Warn("repo not pushable  --  tasks from it will fail", "repo", r.FullName(), "err", err)
 			}
 		}
@@ -1027,6 +1037,14 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 			d.Log.Warn("PR state check failed", "pr", t.PRNumber, "err", err)
 			continue
 		}
+		// OpenPRs returns a deliberately narrow projection of a pr_open task
+		// (id/owner/repo/issue/pr/status/source/identity) that does not carry
+		// the attempt, so the outcome event below reads it from the task's own
+		// row. A failed lookup costs attribution and never the merge handling:
+		// the status transition and the worktree cleanup still run. OpenPRs
+		// carries attempt, so these events are attributed without a second
+		// read per open PR on every reconcile tick.
+		attempt := t.Attempt
 		switch state {
 		case "merged":
 			_ = d.Store.Transition(ctx, t.ID, workflow.StatusPROpen, workflow.StatusMerged, "")
@@ -1043,7 +1061,7 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 			))
 			d.Log.Info("PR merged", "repo", t.Owner+"/"+t.Repo, "pr", t.PRNumber)
 			d.emit(events.Event{
-				Kind: events.KindPRMerged, TaskID: t.ID,
+				Kind: events.KindPRMerged, TaskID: t.ID, Attempt: attempt,
 				Repo: t.Owner + "/" + t.Repo, Issue: t.IssueNumber,
 				Data: map[string]any{"pr": t.PRNumber},
 			})
@@ -1052,7 +1070,7 @@ func (d *Daemon) reconcilePRs(ctx context.Context) {
 			_ = trees.Cleanup(t.Owner, t.Repo, t.IssueNumber)
 			d.Log.Info("PR rejected", "repo", t.Owner+"/"+t.Repo, "pr", t.PRNumber)
 			d.emit(events.Event{
-				Kind: events.KindPRRejected, TaskID: t.ID,
+				Kind: events.KindPRRejected, TaskID: t.ID, Attempt: attempt,
 				Repo: t.Owner + "/" + t.Repo, Issue: t.IssueNumber,
 				Data: map[string]any{"pr": t.PRNumber},
 			})
@@ -1086,7 +1104,7 @@ func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
 		}
 		d.recordPark(ctx, task.ID, reason)
 		d.emit(events.Event{
-			Kind: events.KindParked, TaskID: task.ID,
+			Kind: events.KindParked, TaskID: task.ID, Attempt: task.Attempt,
 			Repo: repo.FullName(), Issue: task.IssueNumber, Detail: reason,
 		})
 		return
@@ -1100,7 +1118,7 @@ func (d *Daemon) process(ctx context.Context, task *workflow.Task) {
 		}
 		d.recordPark(ctx, task.ID, reason)
 		d.emit(events.Event{
-			Kind: events.KindParked, TaskID: task.ID,
+			Kind: events.KindParked, TaskID: task.ID, Attempt: task.Attempt,
 			Repo: repo.FullName(), Issue: task.IssueNumber, Detail: reason,
 		})
 		return
@@ -1364,12 +1382,15 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo conf
 		return
 	}
 	defer revoke()
+	cfg := d.configFor(task)
+	taskCfg := cfg.ForTask()
+	d.captureAttemptConfig(ctx, task, taskCfg)
 	req := taskrun.Request{
 		Task:           task,
 		Repo:           repo,
-		Cfg:            d.configFor(task).ForTask(),
-		Providers:      agentexec.ProvidersFromConfig(d.configFor(task).Providers),
-		MCPServers:     d.configFor(task).Tools.MCPServers,
+		Cfg:            taskCfg,
+		Providers:      agentexec.ProvidersFromConfig(cfg.Providers),
+		MCPServers:     cfg.Tools.MCPServers,
 		WorktreeGrant:  grant,
 		KindWorkflows:  d.KindWorkflows,
 		LabelWorkflows: d.LabelWorkflows,
@@ -1530,6 +1551,52 @@ func (d *Daemon) configFor(task *workflow.Task) config.Config {
 		return configForIdentity(d.Cfg.Get(), id.Cfg)
 	}
 	return d.Cfg.Get()
+}
+
+// captureAttemptConfig persists the effective task configuration this attempt
+// runs under, as a durable event on the attempt's own key.
+//
+// It is written where the configuration is materialised for the dispatch, so
+// the document is exactly what the run received. The published configuration
+// snapshot cannot answer this: it is the CURRENT configuration, replaced on
+// every publish, so a run that finished last week has no record anywhere else.
+//
+// Fail-open by construction: a configuration that could not be recorded is
+// worth a log line and nothing more. Parking a task over a reporting failure
+// would trade the run for the receipt.
+func (d *Daemon) captureAttemptConfig(ctx context.Context, task *workflow.Task, cfg config.TaskConfig) {
+	if d.Store == nil {
+		return
+	}
+	document, err := json.Marshal(cfg)
+	if err != nil {
+		d.Log.Warn("attempt configuration not captured", "task", task.ID, "attempt", task.Attempt, "err", err)
+		return
+	}
+	event := events.Event{
+		At:       time.Now().UTC(),
+		Kind:     events.KindConfigCaptured,
+		TaskID:   task.ID,
+		Repo:     task.Owner + "/" + task.Repo,
+		Issue:    task.IssueNumber,
+		Workflow: task.Workflow,
+		Attempt:  task.Attempt,
+		Data: map[string]any{
+			"schema": events.ConfigCapturedSchema,
+			// Raw so the document is embedded once, as it was encoded, rather
+			// than as a string a reader would have to decode again.
+			"document": json.RawMessage(document),
+		},
+	}
+	id, err := d.Store.InsertEvent(ctx, event)
+	if err != nil {
+		d.Log.Warn("attempt configuration not captured", "task", task.ID, "attempt", task.Attempt, "err", err)
+		return
+	}
+	// The assigned ID tells the event sink to broadcast without inserting a
+	// duplicate row.
+	event.ID = id
+	d.emit(event)
 }
 
 func configForIdentity(root config.Config, identity config.IdentityConfig) config.Config {

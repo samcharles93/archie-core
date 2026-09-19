@@ -61,18 +61,34 @@ func (fakeMemoryEngine) Health(context.Context) domainmemory.Health {
 	return domainmemory.Health{Status: domainmemory.HealthHealthy}
 }
 func (fakeMemoryEngine) Stop(context.Context) error { return nil }
-func (fakeMemoryEngine) Write(context.Context, domainmemory.Observation) (domainmemory.Record, error) {
+
+func (fakeMemoryEngine) Create(context.Context, domainmemory.NewRecord) (domainmemory.Record, error) {
 	return domainmemory.Record{}, nil
+}
+
+func (fakeMemoryEngine) Get(context.Context, domainmemory.Scope, domainmemory.RecordID) (domainmemory.Record, error) {
+	return domainmemory.Record{}, domainmemory.ErrNotFound
 }
 
 func (fakeMemoryEngine) Query(context.Context, domainmemory.Query) ([]domainmemory.Record, error) {
 	return nil, nil
 }
 
-func (fakeMemoryEngine) List(context.Context, string) ([]domainmemory.Record, error) {
+func (fakeMemoryEngine) List(context.Context, domainmemory.Scope) ([]domainmemory.Record, error) {
 	return nil, nil
 }
-func (fakeMemoryEngine) Forget(context.Context, string) error { return nil }
+
+func (fakeMemoryEngine) Update(context.Context, domainmemory.RecordUpdate) (domainmemory.Record, error) {
+	return domainmemory.Record{}, domainmemory.ErrNotFound
+}
+
+func (fakeMemoryEngine) Forget(context.Context, domainmemory.Scope, domainmemory.RecordID) error {
+	return nil
+}
+
+func (fakeMemoryEngine) Revisions(context.Context, domainmemory.Scope, domainmemory.RecordID) ([]domainmemory.Revision, error) {
+	return nil, nil
+}
 
 // testConversations is a fake ConversationSource with one session and no
 // messages -- enough for the presence/absence tests, which never call

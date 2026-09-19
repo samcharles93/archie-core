@@ -189,6 +189,14 @@ func (s *server) TaskByIssue(ctx context.Context, r *pb.TaskByIssueRequest) (*pb
 	return &pb.TaskByIssueResponse{Task: taskProto(t), Found: t != nil}, nil
 }
 
+func (s *server) OpenTaskByPR(ctx context.Context, r *pb.OpenTaskByPRRequest) (*pb.OpenTaskByPRResponse, error) {
+	t, err := s.deps.Tasks.OpenTaskByPR(ctx, r.Owner, r.Repo, int(r.Number))
+	if err != nil {
+		return nil, s.logErr("OpenTaskByPR", err)
+	}
+	return &pb.OpenTaskByPRResponse{Task: taskProto(t), Found: t != nil}, nil
+}
+
 func (s *server) TaskByID(ctx context.Context, r *pb.TaskByIDRequest) (*pb.TaskByIDResponse, error) {
 	t, err := s.deps.Tasks.TaskByID(ctx, r.TaskId)
 	if err != nil {

@@ -2,6 +2,7 @@ import { h } from "preact";
 import { useState, useEffect, useRef, useMemo } from "preact/hooks";
 import "./logs.css";
 import { api, subscribeLogs } from "../base/api.jsx";
+import { LOG_LEVELS, LogRow } from "../base/log-row.jsx";
 import { Pill } from "../base/pill.jsx";
 
 function Empty({ title, detail }) {
@@ -12,53 +13,6 @@ function Empty({ title, detail }) {
     </div>
   );
 }
-
-export function levelKind(level) {
-  switch ((level || "").toUpperCase()) {
-    case "ERROR": return "danger";
-    case "WARN": return "warn";
-    case "DEBUG": return "idle";
-    default: return "info";
-  }
-}
-
-export function fmtValue(v) {
-  if (v == null) return "";
-  return typeof v === "object" ? JSON.stringify(v) : v;
-}
-
-export function shortTime(value) {
-  const d = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(d.getTime())) return "--:--:--";
-  return d.toTimeString().slice(0, 8);
-}
-
-function LogRow({ entry }) {
-  const fields = entry.fields || {};
-  return (
-    <div className={`log-row log-${levelKind(entry.level)}`}>
-      <span className="log-time mono">{shortTime(entry.time)}</span>
-      <span className="log-level">{(entry.level || "info").toUpperCase()}</span>
-      <span className="log-body">
-        <span className="log-msg">{entry.message || entry.msg || ""}</span>
-        {Object.entries(fields).map(([k, v]) => (
-          <span className="log-field" key={k}>
-            <span className="log-field-key">{k}</span>
-            {String(fmtValue(v))}
-          </span>
-        ))}
-      </span>
-    </div>
-  );
-}
-
-const LEVELS = [
-  { value: "", label: "All levels" },
-  { value: "ERROR", label: "Errors" },
-  { value: "WARN,ERROR", label: "Warnings and errors" },
-  { value: "INFO,WARN,ERROR", label: "Info and above" },
-  { value: "DEBUG", label: "Debug only" },
-];
 
 function entryKey(entry) {
 	return `${entry.time || ""}|${entry.level || ""}|${entry.message || entry.msg || ""}|${JSON.stringify(entry.fields || {})}`;
@@ -191,7 +145,7 @@ function LogsApp() {
               value={filters.level} 
               onChange={(e) => setFilters(f => ({ ...f, level: e.target.value }))}
             >
-              {LEVELS.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
+              {LOG_LEVELS.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
             </select>
             <select 
               className="log-select" 

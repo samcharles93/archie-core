@@ -42,17 +42,36 @@ git --version; gpg --version
 ```
 
 Classify a missing command as an environment prerequisite. Bootstrap (verified
-2026-09-18): Go ≥ 1.27.0, Task ≥ 3.x, gofumpt (unpinned), golangci-lint v2
-(unpinned), Node 24.x for the `ui/` frontend.
+2026-09-19): Go ≥ 1.27.0, Task ≥ 3.x, gofumpt v0.11.0, golangci-lint 2.13.2,
+Node 24.x for the `ui/` frontend.
+
+`gofumpt` and `golangci-lint` are one pair, not two independent tools.
+`task fmt` formats with the standalone gofumpt; `task lint` re-checks that
+formatting with the gofumpt golangci-lint vendors, and `task check` runs
+`fmt` then `lint` without diffing the tree, so `lint` is the only hard
+failure for formatting. Install the pair from `Dockerfile`
+(`GOLANGCI_LINT_VERSION` 2.13.2 -> gofumpt `GOFUMPT_VERSION` 0.11.0) rather
+than `@latest` for either: on a construct the two versions disagree on,
+`task fmt` cannot converge `task lint`, and the gate is unsatisfiable.
+
+A rule only one side applies fails the same way, so `task fmt` also passes
+`-extra` to match the formatter's `extra-rules`. Both mismatches are
+reachable in ordinary code: gofumpt <= v0.9.2 keeps the redundant parens in
+`any((Trees)(nil))` that >= v0.10.0 removes, and without `-extra`
+`func f(a int, b int)` stays put while `task lint` demands `func f(a, b int)`.
+Formatting that only `task lint` can produce is still a real gap -- `gci`'s
+`custom-order` places archie-core imports last, where gofumpt sorts them
+alphabetically -- so run `golangci-lint fmt` when `task fmt` leaves a
+formatting failure standing.
 
 | Surface | Repository declaration | Installed snapshot | Interpretation |
 |---|---|---|---|
 | Runtime Go | `go 1.27.0` in `go.mod` | Go 1.27.0, linux/amd64 | Requires at least declared Go level. |
 | Tools Go | `go 1.27.0` in `tools/go.mod` | Same Go 1.27.0 binary | Toolchain must satisfy both modules. |
 | Task | Taskfile schema `version: "3"` | Task 3.48.0 | Installed version is environment fact. |
-| gofumpt | Used by `task fmt`; `@latest` install | v0.7.0 (built with go1.26.5) | Unpinned. |
-| golangci-lint | v2 config in `.golangci.yml`; `@latest` install | 2.13.2 | Use v2 CLI; exact release unpinned. |
-| Node | `ui/` frontend build | 24.18.1 / npm 11.8.0 | No `engines`/`packageManager` field. Docs need no Node. |
+| gofumpt | `task fmt`; pinned in `Dockerfile` (`GOFUMPT_VERSION`) | v0.11.0 | Must equal the gofumpt golangci-lint vendors. |
+| golangci-lint | v2 config in `.golangci.yml`; pinned in `Dockerfile` | 2.13.2 | Vendors gofumpt v0.11.0; `golangci-lint run` enables the formatters. |
+| Node | `ui/` frontend build | 26.9.0 / npm 11.19.1 | No `engines`/`packageManager` field. Docs need no Node. |
 | Containers | Compose commands in `Taskfile.yml` | Podman-backed, unusable in this sandbox | Verify CLI, Compose plugin, daemon/socket separately. |
 
 ## Prepare writable caches in a restricted sandbox
@@ -104,7 +123,7 @@ golangci-lint run ./...
 
 | Task | Exact effect |
 |---|---|
-| `task fmt` | `gofumpt -w .`, then `go fix ./...` — both may rewrite source. |
+| `task fmt` | `gofumpt -extra -w .`, then `go fix ./...` — both may rewrite source. |
 | `task vet` | `go vet ./...` in the runtime module. |
 | `task lint` | `golangci-lint run ./...`. |
 | `task build` | Builds both commands into `bin/`. |

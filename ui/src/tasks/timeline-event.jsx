@@ -4,7 +4,9 @@ function words(value) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function duration(milliseconds) {
+// Exported so the stage rail renders a duration exactly the way the timeline
+// does; a second formatter would eventually disagree with this one.
+export function duration(milliseconds) {
   const ms = Number(milliseconds);
   if (!Number.isFinite(ms) || ms < 0) return "";
   if (ms < 1000) return `${Math.round(ms)} ms`;
@@ -77,6 +79,22 @@ export function describeTimelineEvent(ev = {}) {
       title: `Agent ${data.status || "finished"}: ${stage}`,
       detail: usage.join(" · ") || ev.detail || "",
     };
+  }
+
+  // Condition (d): the two provenance kinds render as one human line. The
+  // captured payload is rendered by its own panel, never dumped into the
+  // timeline, so these cases name what was recorded and nothing more.
+  if (ev.kind === "config_captured") {
+    return {
+      title: "Configuration captured",
+      detail: "The effective task-runtime configuration for this run.",
+    };
+  }
+  if (ev.kind === "changes_captured") {
+    const fileCount = Number(data.totals?.files);
+    const files = Number.isFinite(fileCount) && fileCount > 0 ? `${fileCount} file${fileCount === 1 ? "" : "s"} changed` : "";
+    const after = data.captured_after ? `captured after ${data.captured_after}` : "";
+    return { title: "Change capture recorded", detail: [files, after].filter(Boolean).join(" · ") };
   }
 
   return { title: words(ev.kind || ev.type), detail: ev.detail || "" };

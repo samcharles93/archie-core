@@ -34,6 +34,54 @@ func TestTaskByIssue(t *testing.T) {
 	}
 }
 
+func TestOpenTaskByPR(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+
+	for i, status := range []string{workflow.StatusPROpen, workflow.StatusMerged, workflow.StatusRejected} {
+		issueNumber := i + 1
+		prNumber := 101 + i
+		if _, err := s.EnqueueIssue(ctx, "acme", "widget", issueNumber, "title", "body", "", ""); err != nil {
+			t.Fatal(err)
+		}
+		task, err := s.TaskByIssue(ctx, "acme", "widget", issueNumber)
+		if err != nil || task == nil {
+			t.Fatalf("TaskByIssue(%d) = (%+v, %v)", issueNumber, task, err)
+		}
+		task.PRNumber = prNumber
+		if err := s.Update(ctx, task); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Transition(ctx, task.ID, workflow.StatusQueued, status, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := s.OpenTaskByPR(ctx, "acme", "widget", 101)
+	if err != nil || got == nil || got.IssueNumber != 1 {
+		t.Fatalf("OpenTaskByPR(open) = (%+v, %v)", got, err)
+	}
+	for _, prNumber := range []int{102, 103, 999} {
+		got, err := s.OpenTaskByPR(ctx, "acme", "widget", prNumber)
+		if err != nil || got != nil {
+			t.Errorf("OpenTaskByPR(%d) = (%+v, %v), want (nil, nil)", prNumber, got, err)
+		}
+	}
+	if got, err := s.OpenTaskByPR(ctx, "other", "widget", 101); err != nil || got != nil {
+		t.Errorf("OpenTaskByPR(other owner) = (%+v, %v), want (nil, nil)", got, err)
+	}
+
+	var indexedColumns string
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT group_concat(name, ',')
+		FROM pragma_index_info('idx_tasks_pr')`).Scan(&indexedColumns); err != nil {
+		t.Fatal(err)
+	}
+	if indexedColumns != "owner,repo,pr_number" {
+		t.Fatalf("idx_tasks_pr columns = %q, want owner,repo,pr_number", indexedColumns)
+	}
+}
+
 func TestRequeueFromWaitingHuman(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()

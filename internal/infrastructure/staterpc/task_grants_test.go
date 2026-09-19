@@ -167,6 +167,41 @@ func TestTaskGrantScopesWorkerToItsOwnThreeRPCs(t *testing.T) {
 	if _, err := workerA.InsertEvent(ctx, events.Event{TaskID: taskA.ID, Kind: "log"}); err != nil {
 		t.Fatalf("task grant should authorize InsertEvent on its own task: %v", err)
 	}
+	// The documented residual of R4, pinned rather than hidden: a task grant
+	// may insert events on its OWN task -- that is how tool_call and agent_finish
+	// already work -- so a task can write its own config_captured provenance,
+	// and only its own. The permission is the existing InsertEvent permission,
+	// not a new surface, which is why the provenance is exactly as trustworthy
+	// as the rest of that task's event stream.
+	configEvent := events.Event{
+		TaskID: taskA.ID, Kind: events.KindConfigCaptured, Attempt: 1,
+		Data: map[string]any{"schema": events.ConfigCapturedSchema, "document": map[string]any{"bot_user": "archie"}},
+	}
+	if _, err := workerA.InsertEvent(ctx, configEvent); err != nil {
+		t.Fatalf("task grant should authorize its own config_captured event: %v", err)
+	}
+	configEvent.TaskID = taskB.ID
+	if _, err := workerA.InsertEvent(ctx, configEvent); err == nil {
+		t.Fatal("task grant must not authorize a config_captured event on another task")
+	}
+	// The document rides under the producer's own key (internal/daemon/daemon.go
+	// writes "document"), so the fixture above is read back and asserted by key
+	// rather than trusted: a rename would otherwise leave this test green.
+	stored, err := admin.TaskEvents(ctx, taskA.ID)
+	if err != nil {
+		t.Fatalf("TaskEvents: %v", err)
+	}
+	for _, e := range stored {
+		if e.Kind != events.KindConfigCaptured {
+			continue
+		}
+		if _, renamed := e.Data["config"]; renamed {
+			t.Error(`the document crossed under "config"; the producer writes it under "document"`)
+		}
+		if _, ok := e.Data["document"].(map[string]any); !ok {
+			t.Errorf("config_captured data = %#v, want the document under the producer's key", e.Data)
+		}
+	}
 	if err := workerA.Update(ctx, &workflow.Task{ID: taskA.ID, Owner: "acme", Repo: "widget"}); err != nil {
 		t.Fatalf("task grant should authorize Update on its own task: %v", err)
 	}

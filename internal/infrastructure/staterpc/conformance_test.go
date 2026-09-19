@@ -93,12 +93,29 @@ func TestStateStoreConformance(t *testing.T) {
 			}
 			task.Plan = "the plan"
 			task.Status = "running"
+			task.PRNumber = 401
 			if err := c.Update(ctx, task); err != nil {
 				t.Fatalf("Update: %v", err)
 			}
-			eventID, err := c.InsertEvent(ctx, events.Event{Kind: "stage_finish", TaskID: task.ID, Data: map[string]any{"duration_ms": 12.0}})
+			eventID, err := c.InsertEvent(ctx, events.Event{Kind: "stage_finish", TaskID: task.ID, Attempt: 2, Data: map[string]any{"duration_ms": 12.0}})
 			if err != nil || eventID == 0 {
 				t.Fatalf("InsertEvent: %v %v", eventID, err)
+			}
+			// R4's wire acceptance: the per-attempt configuration document IS an
+			// event, so it has to survive the same hop an event does, including
+			// its nested structure and the attempt key that attributes it to one
+			// run. A payload that arrives flattened reads as a config with no
+			// fields at all. The document rides under the daemon's own key
+			// (internal/daemon/daemon.go), asserted by name below.
+			_, err = c.InsertEvent(ctx, events.Event{
+				Kind: events.KindConfigCaptured, TaskID: task.ID, Attempt: 2,
+				Data: map[string]any{
+					"schema":   events.ConfigCapturedSchema,
+					"document": map[string]any{"bot_user": "archie", "models": map[string]any{"implement": "anthropic/claude"}},
+				},
+			})
+			if err != nil {
+				t.Fatalf("InsertEvent config_captured: %v", err)
 			}
 
 			// Stale transition: from no longer matches current status.
@@ -120,6 +137,17 @@ func TestStateStoreConformance(t *testing.T) {
 			if err != nil || byIssue == nil || byIssue.ID != task.ID {
 				t.Fatalf("TaskByIssue: %+v %v", byIssue, err)
 			}
+			if err := c.Transition(ctx, task.ID, "running", "pr_open", "PR #401"); err != nil {
+				t.Fatalf("Transition to pr_open: %v", err)
+			}
+			byPR, err := c.OpenTaskByPR(ctx, task.Owner, task.Repo, task.PRNumber)
+			if err != nil || byPR == nil || byPR.ID != task.ID {
+				t.Fatalf("OpenTaskByPR: %+v %v", byPR, err)
+			}
+			missing, err = c.OpenTaskByPR(ctx, task.Owner, task.Repo, task.PRNumber+1)
+			if err != nil || missing != nil {
+				t.Fatalf("OpenTaskByPR missing: %+v %v", missing, err)
+			}
 			if _, err := c.Tasks(ctx, 10); err != nil {
 				t.Fatalf("Tasks: %v", err)
 			}
@@ -131,8 +159,25 @@ func TestStateStoreConformance(t *testing.T) {
 			}
 
 			// TaskEvents / EventsSince / stats.
-			if evs, err := c.TaskEvents(ctx, task.ID); err != nil || len(evs) != 1 || evs[0].Data["duration_ms"] != 12.0 {
+			evs, err := c.TaskEvents(ctx, task.ID)
+			if err != nil || len(evs) != 2 || evs[0].Data["duration_ms"] != 12.0 {
 				t.Fatalf("TaskEvents: %+v %v", evs, err)
+			}
+			if evs[0].Attempt != 2 {
+				t.Errorf("TaskEvents attempt = %d, want 2 (provenance must survive the wire)", evs[0].Attempt)
+			}
+			if evs[1].Kind != events.KindConfigCaptured || evs[1].Attempt != 2 || evs[1].Data["schema"] != events.ConfigCapturedSchema {
+				t.Errorf("config_captured event = %+v, want its kind, attempt and schema preserved", evs[1])
+			}
+			if _, renamed := evs[1].Data["config"]; renamed {
+				t.Error(`the document crossed under "config"; the producer writes it under "document"`)
+			}
+			if len(evs[1].Data) != 2 {
+				t.Errorf("config_captured data keys = %v, want exactly schema and document", evs[1].Data)
+			}
+			doc, ok := evs[1].Data["document"].(map[string]any)
+			if !ok || doc["bot_user"] != "archie" {
+				t.Errorf("config_captured payload = %#v, want the decoded document under its own key", evs[1].Data)
 			}
 			if _, err := c.EventsSince(ctx, 0, 10); err != nil {
 				t.Fatalf("EventsSince: %v", err)

@@ -47,10 +47,6 @@ func (f *fakeMCPEngine) Discover(context.Context) ([]tools.ToolEntry, error) {
 	return f.entries, f.discoverErr
 }
 
-func (f *fakeMCPEngine) Health(context.Context) plugin.Health {
-	return plugin.Health{Status: plugin.HealthHealthy}
-}
-
 func (f *fakeMCPEngine) Stop(context.Context) error {
 	f.stops++
 	return f.stopErr

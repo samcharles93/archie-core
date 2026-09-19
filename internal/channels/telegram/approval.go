@@ -9,7 +9,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 // approvalCallbackPrefix separates tool-approval callbacks from other
@@ -49,18 +49,18 @@ type pendingApproval struct {
 // approvalResult carries the human's decision back to the blocked
 // RequestApproval call.
 type approvalResult struct {
-	decision gateway.ApprovalDecision
+	decision messaging.ApprovalDecision
 	err      error
 }
 
 // Compile-time guard.
-var _ gateway.ApprovalRequester = (*telegramApprover)(nil)
+var _ messaging.ApprovalRequester = (*telegramApprover)(nil)
 
 // NewApprover returns an ApprovalRequester that renders prompts in the
 // given chat. recipient is the Telegram user who may approve; in a private
 // DM this is the same as chatID, in a group it is the sender of the turn
 // that triggered the gated tool call.
-func (g *Gateway) NewApprover(b *bot.Bot, chatID int64, threadID int, recipient int64) gateway.ApprovalRequester {
+func (g *Gateway) NewApprover(b *bot.Bot, chatID int64, threadID int, recipient int64) messaging.ApprovalRequester {
 	return &telegramApprover{
 		gw:        g,
 		bot:       b,
@@ -76,15 +76,15 @@ func (g *Gateway) NewApprover(b *bot.Bot, chatID int64, threadID int, recipient 
 // returns ApprovalPermanentlyApproved. Otherwise the recipient is shown the
 // three-button inline keyboard and the call blocks until the human decides,
 // the context is cancelled, or the 2-minute approval window
-// (gateway.ToolApprovalTimeout) elapses.
-func (a *telegramApprover) RequestApproval(ctx context.Context, action, description string) (gateway.ApprovalDecision, error) {
+// (messaging.ToolApprovalTimeout) elapses.
+func (a *telegramApprover) RequestApproval(ctx context.Context, action, description string) (messaging.ApprovalDecision, error) {
 	// Compose the lookup key so a permanent approval is scoped to
 	// the specific resource: "Approve Permanently" on "delete session
 	// abc123" only permanently approves that one session, not every
 	// session_delete forever.
 	permKey := action + "\x00" + description
 	if a.gw.hasPermanentApprovalExact(a.recipient, permKey) {
-		return gateway.ApprovalPermanentlyApproved, nil
+		return messaging.ApprovalPermanentlyApproved, nil
 	}
 
 	token := makeDangerousToken()
@@ -94,7 +94,7 @@ func (a *telegramApprover) RequestApproval(ctx context.Context, action, descript
 		action:      action,
 		description: description,
 		recipient:   a.recipient,
-		expiresAt:   time.Now().Add(gateway.ToolApprovalTimeout),
+		expiresAt:   time.Now().Add(messaging.ToolApprovalTimeout),
 		resultCh:    resultCh,
 	})
 
@@ -107,16 +107,16 @@ func (a *telegramApprover) RequestApproval(ctx context.Context, action, descript
 		params.MessageThreadID = a.threadID
 	}
 
-	approvalCtx, cancel := context.WithTimeout(ctx, gateway.ToolApprovalTimeout)
+	approvalCtx, cancel := context.WithTimeout(ctx, messaging.ToolApprovalTimeout)
 	defer cancel()
 
 	if _, err := a.bot.SendMessage(approvalCtx, params); err != nil {
 		a.gw.removePendingApproval(token)
 		if approvalCtx.Err() != nil {
-			return gateway.ApprovalDenied, approvalCtx.Err()
+			return messaging.ApprovalDenied, approvalCtx.Err()
 		}
 		a.gw.log.Error("send approval prompt failed", "error", err)
-		return gateway.ApprovalDenied, fmt.Errorf("send approval prompt: %w", err)
+		return messaging.ApprovalDenied, fmt.Errorf("send approval prompt: %w", err)
 	}
 
 	select {
@@ -130,30 +130,30 @@ func (a *telegramApprover) RequestApproval(ctx context.Context, action, descript
 			return a.applyApprovalDecision(action, description, result)
 		default:
 			a.gw.removePendingApproval(token)
-			return gateway.ApprovalDenied, approvalCtx.Err()
+			return messaging.ApprovalDenied, approvalCtx.Err()
 		}
 	}
 }
 
 // applyApprovalDecision maps a human decision to the gateway contract,
 // recording a permanent approval when the human asked for one.
-func (a *telegramApprover) applyApprovalDecision(action, description string, result approvalResult) (gateway.ApprovalDecision, error) {
+func (a *telegramApprover) applyApprovalDecision(action, description string, result approvalResult) (messaging.ApprovalDecision, error) {
 	switch result.decision {
-	case gateway.ApprovalApproved:
-		return gateway.ApprovalApproved, nil
-	case gateway.ApprovalPermanentlyApproved:
+	case messaging.ApprovalApproved:
+		return messaging.ApprovalApproved, nil
+	case messaging.ApprovalPermanentlyApproved:
 		// Scoped: permanently approving "delete session abc123" only
 		// silences the prompt for that one resource, not every call to
 		// the same tool.
 		a.gw.recordPermanentApproval(a.recipient, action+"\x00"+description)
-		return gateway.ApprovalPermanentlyApproved, nil
-	case gateway.ApprovalDenied:
+		return messaging.ApprovalPermanentlyApproved, nil
+	case messaging.ApprovalDenied:
 		if result.err != nil {
-			return gateway.ApprovalDenied, result.err
+			return messaging.ApprovalDenied, result.err
 		}
-		return gateway.ApprovalDenied, gateway.ErrApprovalDenied
+		return messaging.ApprovalDenied, messaging.ErrApprovalDenied
 	default:
-		return gateway.ApprovalDenied, fmt.Errorf("unexpected approval decision %v", result.decision)
+		return messaging.ApprovalDenied, fmt.Errorf("unexpected approval decision %v", result.decision)
 	}
 }
 
@@ -255,15 +255,15 @@ func (g *Gateway) handleApprovalCallback(ctx context.Context, b *bot.Bot, update
 
 	switch decision {
 	case "approve":
-		pa.resultCh <- approvalResult{decision: gateway.ApprovalApproved}
+		pa.resultCh <- approvalResult{decision: messaging.ApprovalApproved}
 		g.answerDangerousCallback(ctx, b, query.ID, "Approved and executed.", false)
 		g.editDangerousMessage(ctx, b, query, "✅ Approved: "+pa.description)
 	case "permanent":
-		pa.resultCh <- approvalResult{decision: gateway.ApprovalPermanentlyApproved}
+		pa.resultCh <- approvalResult{decision: messaging.ApprovalPermanentlyApproved}
 		g.answerDangerousCallback(ctx, b, query.ID, "Permanently approved (valid 24h).", false)
 		g.editDangerousMessage(ctx, b, query, "✅ Approved (permanent, 24h): "+pa.description)
 	case "deny":
-		pa.resultCh <- approvalResult{decision: gateway.ApprovalDenied, err: gateway.ErrApprovalDenied}
+		pa.resultCh <- approvalResult{decision: messaging.ApprovalDenied, err: messaging.ErrApprovalDenied}
 		g.answerDangerousCallback(ctx, b, query.ID, "Action denied.", false)
 		g.editDangerousMessage(ctx, b, query, "❌ Denied: "+pa.description)
 	}
@@ -284,7 +284,7 @@ func parseApprovalCallback(data string) (decision, token string) {
 // The expiry figure is derived from the shared constant so a change to the
 // approval window cannot leave the prompt out of date.
 func approvalPromptText(action, description string) string {
-	minutes := int(gateway.ToolApprovalTimeout.Minutes())
+	minutes := int(messaging.ToolApprovalTimeout.Minutes())
 	return fmt.Sprintf(
 		"⚠️ Approval required\n\n"+
 			"Action: %s\n"+

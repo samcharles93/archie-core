@@ -30,3 +30,27 @@ a {
   color: inherit;
   text-decoration: none;
 }
+
+/* The focus floor. A component may style its own focus state; this guarantees
+   that nothing is ever focused and invisible for a keyboard user. `:focus-visible`
+   rather than `:focus` so a mouse click does not draw a ring around what was
+   clicked. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Accessible-only text: present to assistive technology, out of the visual
+   layout. Used for live-region status lines, which announce a change without
+   drawing a second, visible copy of the pane's own copy. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

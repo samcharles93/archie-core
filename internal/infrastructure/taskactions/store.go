@@ -16,7 +16,7 @@ func (s Store) TaskByID(ctx context.Context, id int64) (*taskactions.Task, error
 	if err != nil || t == nil {
 		return nil, err
 	}
-	return &taskactions.Task{ID: t.ID, Owner: t.Owner, Repo: t.Repo, Identity: t.Identity, Status: t.Status, Stage: t.Stage, ParkReason: t.ParkReason, IssueNumber: t.IssueNumber, RetryCount: t.RetryCount, ForgeBacked: t.IsForgeBacked()}, nil
+	return &taskactions.Task{ID: t.ID, Owner: t.Owner, Repo: t.Repo, Identity: t.Identity, Status: t.Status, Stage: t.Stage, ParkReason: t.ParkReason, IssueNumber: t.IssueNumber, RetryCount: t.RetryCount, Attempt: t.Attempt, ForgeBacked: t.IsForgeBacked()}, nil
 }
 
 func MaxRetries(cfg *config.Holder) func(*taskactions.Task) int {

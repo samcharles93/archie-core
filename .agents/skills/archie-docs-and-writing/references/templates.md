@@ -11,6 +11,7 @@ sections. Keep facts, decisions, and open questions visibly separate.
 - [Feature ownership and deprecation record](#feature-ownership-and-deprecation-record)
 - [Operational runbook](#operational-runbook)
 - [Documentation change review](#documentation-change-review)
+- [PRD: open capability design with multi-agent execution](#prd-open-capability-design-with-multi-agent-execution)
 
 ## Architecture decision record
 
@@ -361,4 +362,124 @@ Observed: <result>
 
 <List unverified external facts, unavailable environments, or still-open
 decisions. Never convert them into implied acceptance.>
+````
+
+## PRD: open capability design with multi-agent execution
+
+For `docs/prds/*.md` — CLAUDE.md's "no settled design exists" doc. The point
+of this template is that a cheaper/faster model can implement straight from
+it without re-deriving architecture: every decision the epic left open gets
+made here, not deferred again, and every file an implementer touches is
+named before any bead is picked up. `docs/prds/image-capability-contract.md`
+is the worked example this template was extracted from — read it once for
+the shape before writing a new PRD from a blank page.
+
+The three failure modes this template exists to prevent:
+
+- **Deferred decisions posing as scope.** "Hosted provider implementation is
+  a separate bead" is not a design decision, it's a missing one. If an open
+  question blocks an implementer, decide it here, in the PRD — not "this bead
+  will decide it later," which is how the same question gets re-opened by
+  every bead that touches it.
+- **Assumed gaps.** Before writing a section for "what's missing," grep for
+  it. `image-capability-contract.md`'s delivery section exists mostly because
+  the pipeline it needed already shipped for video — the section reports
+  that, instead of specifying new plumbing nothing required.
+- **Task lists a model can't execute standalone.** A subtask is not "wire the
+  delivery path"; it's the file, the interface it must satisfy, and the
+  existing call site that already proves the pattern (`internal/tools/minimax/tool.go`,
+  not "a tool like the video one").
+
+````markdown
+# <Capability> capability design
+
+Epic: `<bd id>` / GitHub `#<epic number>` ("<epic title>").
+
+<One paragraph: what shipped already and is settled (link its section
+below), what this document newly decides, and what stays explicitly
+out of scope. If a prior narrower doc already covers part of this
+capability, say so and extend it — do not start a second document for
+the same epic.>
+
+## Problem
+
+<What's missing today, with the exact "grep and found nothing" evidence,
+not an assertion.>
+
+## Design
+
+<The settled contract/type shape. Code blocks over prose where a type
+signature says more than describing it would.>
+
+## <Sub-feature N> (`#<issue>`)
+
+One section per sibling bead the epic lists as separate scope. Each one:
+
+- **Decision, not a deferral.** If the epic or a prior doc left this open,
+  decide it here and say why in one paragraph, citing what's actually in
+  the tree (a similar client already in the codebase, an existing config
+  convention, an interface already proven by another feature). "Decide and
+  record which at that bead's own design-doc step" is the sentence this
+  template exists to stop someone from writing twice.
+- **Call site**, named exactly: `<package/file>`, the function/type it adds
+  or extends, and the existing analogous call site it follows (never "a
+  handler like the others" — name the actual one).
+- **Reuse check.** Grep before specifying new plumbing. State what already
+  exists and what's actually new, the way a delivery pipeline already
+  proven by one media type doesn't need re-inventing for a second.
+- **Error/failure mapping**, as a table, when the sub-feature crosses a
+  provider/backend boundary: condition → contract error, so an implementer
+  never invents a new sentinel mid-way through.
+- **Testing.** What's fakeable vs. what needs a real backend, and which
+  gate (`task check` vs. a documented manual smoke command) each belongs to.
+
+## Call site inventory
+
+| concern | file | change |
+|---|---|---|
+| <concern> | `<path>` | done (`#<issue>`) / new (`#<issue>`) / none — already handles this |
+
+Every file any sub-feature touches, old or new, in one table — so an
+implementer greps this instead of re-deriving it, and a reviewer can tell
+at a glance whether a PR touched something the design didn't name.
+
+## Execution: multi-agent team breakdown
+
+One row per sub-feature section above. This is what turns the design into
+something a `/council`-style review or a cheaper/faster implementer model
+can run against directly instead of needing the full design re-explained.
+
+| sub-feature | issue | implementer scope | suggested council lenses | why |
+|---|---|---|---|---|
+| <name> | `#<issue>` | <the call-site inventory rows this bead owns> | `lens-<key>`, `lens-<key>` | <one clause: what that lens actually catches for this slice — e.g. lens-contract for a new provider error-mapping table, lens-operator for a backend-down failure path, lens-deletionist when the section's whole point is "don't rebuild what exists", lens-boundary for a new domain/infra split, lens-maintainer for a new user-facing state machine> |
+
+Pick lenses from the five in `.claude/workflows/council.js`
+(`boundary`, `contract`, `deletionist`, `operator`, `maintainer`) by what the
+slice actually risks getting wrong, not all five by default — a
+generate-and-poll HTTP client mostly risks failure-mode gaps
+(`lens-operator`), not domain-boundary violations. Run `/council` with
+`--lenses <picked>` once the implementation is gate-clean, before opening
+the PR for human review, same as any other open-decision residue at the
+end of a session.
+
+An implementer working one row needs only: this doc's matching sub-feature
+section, the call-site inventory, and the linked issue's acceptance
+criteria. It should not need the rest of the epic's history — that's the
+signal the PRD is thorough enough to hand to a faster/cheaper model.
+
+## File and link the beads
+
+For each sub-feature issue already filed against the epic (or newly filed
+if the epic didn't pre-file its sub-issues):
+
+- Issue body links back to this doc's matching section by heading, not by
+  restating the design — `bd update <id> --description` and, if the issue
+  also lives on the forge, keep both current (check whether this repo's
+  sync command actually propagates a description edit before trusting it
+  updated both; direct edit on both sides is the fallback).
+- Issue keeps its own acceptance criteria as the authoritative "done"
+  check — the PRD section is how, the issue's criteria are whether.
+- Add the suggested lenses from the Execution table as a line on the issue
+  itself, so picking it up needs no round-trip back to this doc to know
+  which `/council` lenses to run before it's done.
 ````

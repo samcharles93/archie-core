@@ -202,7 +202,6 @@ func compareArtifacts(relative string, expected, committed []byte) []string {
 	return problems
 }
 
-// obsoleteArtifacts reports committed generated files in the artifact's
 // obsoleteArtifacts reports files present in a directory docsgen owns that the
 // generator no longer produces, so a renamed or deleted artifact cannot linger
 // as dead documentation. A directory docsgen does not own is never judged: its

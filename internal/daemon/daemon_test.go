@@ -3,10 +3,12 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1549,6 +1551,110 @@ func waitFor(t *testing.T, timeout time.Duration, what string, cond func() bool)
 	t.Fatalf("timed out waiting for %s", what)
 }
 
+// verifyForge returns a fixed error from VerifyPush, or blocks until the
+// sweep's own deadline expires first, standing in for an unreachable host.
+type verifyForge struct {
+	testForge
+	mu    sync.Mutex
+	calls int
+	block bool
+}
+
+var errVerifyDenied = errors.New("push access denied")
+
+func (f *verifyForge) VerifyPush(ctx context.Context, _, _ string) error {
+	f.mu.Lock()
+	f.calls++
+	f.mu.Unlock()
+	if f.block {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	return errVerifyDenied
+}
+
+func (f *verifyForge) callCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
+}
+
+// TestSweepNamesTheCauseOfAnAbandonedPushCheck pins what the boot sweep
+// reports when a push check does not come back. One budget covers a forge's
+// whole sweep, so a repo cut short by the deadline used to warn that it was
+// "not pushable" -- asserting access had been denied when nothing about
+// access had been learned, once per remaining repo. An operator shutdown
+// cancels the same context, and that is neither a spent budget nor a denial.
+func TestSweepNamesTheCauseOfAnAbandonedPushCheck(t *testing.T) {
+	repos := []config.Repo{
+		{Owner: "acme", Name: "one"},
+		{Owner: "acme", Name: "two"},
+		{Owner: "acme", Name: "three"},
+	}
+	tests := []struct {
+		name       string
+		mode       string
+		wantDenied int
+		wantBudget int
+		wantCalls  int
+	}{
+		{
+			name:       "a denied push is reported per repo",
+			mode:       "deny",
+			wantDenied: len(repos),
+			wantCalls:  len(repos),
+		},
+		{
+			name:       "an exhausted budget is reported once, as the cause",
+			mode:       "deadline",
+			wantBudget: 1,
+			wantCalls:  1,
+		},
+		{
+			name:      "a cancelled startup is reported as neither",
+			mode:      "cancel",
+			wantCalls: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fg := &verifyForge{block: tc.mode != "deny"}
+			var logs logBuffer
+			d := &Daemon{
+				Cfg:   config.NewHolder(config.Config{Repos: repos}),
+				Forge: fg,
+				Log:   slog.New(slog.NewTextHandler(&logs, nil)),
+			}
+
+			ctx := context.Background()
+			switch tc.mode {
+			case "deadline":
+				// Expire the sweep's budget without waiting out sweepTimeout.
+				deadline, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+				defer cancel()
+				ctx = deadline
+			case "cancel":
+				cancelled, cancel := context.WithCancel(ctx)
+				cancel()
+				ctx = cancelled
+			}
+
+			d.sweepAccess(ctx)
+
+			if got := fg.callCount(); got != tc.wantCalls {
+				t.Errorf("VerifyPush calls = %d, want %d", got, tc.wantCalls)
+			}
+			if got := strings.Count(logs.String(), "repo not pushable"); got != tc.wantDenied {
+				t.Errorf("denied-push warnings = %d, want %d\nlogs:\n%s", got, tc.wantDenied, logs.String())
+			}
+			if got := strings.Count(logs.String(), "sweep budget exhausted"); got != tc.wantBudget {
+				t.Errorf("budget warnings = %d, want %d\nlogs:\n%s", got, tc.wantBudget, logs.String())
+			}
+		})
+	}
+}
+
 // mustCoreConn returns the raw NATS connection for tests that drive core-NATS
 // subscriptions directly, failing the test if the client is not connected.
 func mustCoreConn(t *testing.T, c *arnats.Client) *natsio.Conn {
@@ -1821,5 +1927,335 @@ func TestReconcilePRsSkipsChatTasks(t *testing.T) {
 
 	if len(fg.closedIssues) != 0 {
 		t.Errorf("CloseIssue called for a chat task: issue number is synthetic")
+	}
+}
+
+// daemonCanarySecrets are recognisable secret references and values that must
+// never appear in a captured configuration document. The event this capture
+// writes is readable by anyone who can read the task's timeline, so the
+// document is a disclosure boundary, not just a convenience.
+const (
+	canaryForgeToken      = "ghp_DAEMONCANARYFORGETOKEN01"
+	canaryWebhookSecret   = "CANARY-WEBHOOK-SECRET-02"
+	canaryIdentityToken   = "ghp_DAEMONCANARYIDENTITY03"
+	canaryProviderKey     = "sk-DAEMONCANARYPROVIDERKEY04"
+	canaryBWSKeyName      = "DAEMON-CANARY-BWS-KEY-NAME-05"
+	canaryTelegramToken   = "tg-DAEMONCANARYTELEGRAMTOKEN06"
+	canaryNATSTokenEnv    = "DAEMON_CANARY_NATS_TOKEN_ENV_07"
+	canaryStateStoreToken = "DAEMON-CANARY-STATE-STORE-TOKEN-08"
+)
+
+// configWithCanarySecrets is a fully populated configuration carrying
+// recognisable secrets in every place a deployment keeps one: the root forge,
+// an identity's forge, the model providers, the chat channel, the state store
+// and the NATS credential. A capture that serialized the wrong object -- the
+// whole config, or a projection that forgot to drop a secret -- would carry
+// one of them.
+func configWithCanarySecrets() config.Config {
+	return config.Config{
+		WorkDir:  "/work/archie",
+		DBPath:   "/work/archie/archie.db",
+		BotUser:  "archie-bot",
+		BotEmail: "archie@example.com",
+		Label:    "archie",
+		Forge: config.Forge{
+			Type: "gitea", Host: "gitea.example.com", TokenEnv: "GITEA_TOKEN",
+			Token:         secret.SecretRef{Engine: "bws", Key: canaryForgeToken},
+			WebhookSecret: secret.SecretRef{Engine: "bws", Key: canaryWebhookSecret},
+			Intake:        "webhook",
+		},
+		Models: map[string]string{"builder": "openai/gpt-4", "planner": "openai/gpt-4"},
+		Providers: map[string]config.Provider{
+			"openai": {
+				Class: "openai", APIKeyEnv: "OPENAI_API_KEY", BaseURL: "https://api.openai.com/v1",
+				APIKey: secret.SecretRef{Engine: "bws", Key: canaryBWSKeyName},
+			},
+			"custom": {
+				Class: "custom", APIKey: secret.SecretRef{Engine: "literal", Key: canaryProviderKey},
+			},
+		},
+		Budgets:      config.Budgets{MaxSteps: 40, GateMaxFailures: 2},
+		DiffCapLines: 800,
+		Dispatch: config.Dispatch{
+			Trigger: "either", AckReaction: "eyes",
+			Labels: map[string]string{"queued": "archie:queued"},
+		},
+		Notify:   config.Notify{Webhook: "https://hooks.example.com/notify"},
+		Tools:    config.ToolsConfig{Policy: config.ToolPolicy{MaxResultChars: 12000, SpillDir: "/tmp/spill"}},
+		NATS:     config.NATSConfig{Mode: "external", URL: "nats://127.0.0.1:4222", TokenEnv: canaryNATSTokenEnv},
+		Chat:     config.ChatConfig{Operator: "sam", Telegram: config.TelegramConfig{TokenEnv: "TELEGRAM_TOKEN", Token: secret.SecretRef{Engine: "bws", Key: canaryTelegramToken}}},
+		Services: config.Services{config.ServiceNameState: {Target: "127.0.0.1:50051", TargetToken: canaryStateStoreToken}},
+		ModelLimits: map[string]config.ModelLimits{
+			"openai/gpt-4": {ContextWindow: 128000, MaxOutputTokens: 4096},
+		},
+		Identities: []config.IdentityConfig{
+			{
+				Name: "gitea-bot", BotUser: "gitea-bot", BotEmail: "gitea-bot@example.com",
+				Forge:   config.Forge{Type: "gitea", Host: "gitea.example.com", Token: secret.SecretRef{Engine: "bws", Key: canaryIdentityToken}},
+				Models:  map[string]string{"builder": "openai/gpt-4"},
+				Budgets: config.Budgets{MaxSteps: 40},
+			},
+		},
+	}
+}
+
+// TestDispatchCapturesTheAttemptsEffectiveConfig is R4's producer half: the
+// configuration an attempt ran under is retrievable for that attempt.
+//
+// It asserts three separate claims rather than one: the event is durable and
+// attributed to the attempt, the document is the dispatch's own TaskConfig,
+// and no secret value anywhere in the configuration reaches it.
+func TestDispatchCapturesTheAttemptsEffectiveConfig(t *testing.T) {
+	d, s, busClient := daemonWithNATS(t)
+	d.Cfg.Set(configWithCanarySecrets())
+	ctx := context.Background()
+
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 5, "t", "b", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("claim: (%v, %v)", task, err)
+	}
+	if task.Attempt == 0 {
+		t.Fatal("claimed task has attempt 0; the event below could not be attributed to a run")
+	}
+
+	sub, err := mustCoreConn(t, busClient).Subscribe(agentnats.SubjectForTask(task.ID), func(msg *natsio.Msg) {
+		data, _ := json.Marshal(taskrun.Response{Status: workflow.StatusPROpen})
+		_ = msg.Respond(data)
+	})
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	t.Cleanup(func() { _ = sub.Unsubscribe() })
+
+	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"})
+
+	timeline, err := s.TaskEvents(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var captures []events.Event
+	for _, e := range timeline {
+		if e.Kind == events.KindConfigCaptured {
+			captures = append(captures, e)
+		}
+	}
+	if len(captures) != 1 {
+		t.Fatalf("config_captured events = %d, want exactly 1 for the attempt", len(captures))
+	}
+	captured := captures[0]
+	if captured.Attempt != task.Attempt {
+		t.Errorf("capture attempt = %d, want the dispatched attempt %d", captured.Attempt, task.Attempt)
+	}
+
+	encoded, err := json.Marshal(captured)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := string(encoded)
+	for _, leak := range []string{
+		canaryForgeToken, canaryWebhookSecret, canaryIdentityToken, canaryProviderKey,
+		canaryBWSKeyName, canaryTelegramToken, canaryNATSTokenEnv, canaryStateStoreToken,
+	} {
+		if strings.Contains(document, leak) {
+			t.Errorf("captured configuration document leaked %q:\n%s", leak, document)
+		}
+	}
+
+	var data struct {
+		Schema   string          `json:"schema"`
+		Document json.RawMessage `json:"document"`
+	}
+	if err := json.Unmarshal(encoded, &data); err != nil {
+		t.Fatal(err)
+	}
+	// The event wrapper carries kind/stage/attempt; the document itself is
+	// what the Config tab renders.
+	var wrapper struct {
+		Data struct {
+			Schema   string          `json:"schema"`
+			Document json.RawMessage `json:"document"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(encoded, &wrapper); err != nil {
+		t.Fatal(err)
+	}
+	if wrapper.Data.Schema != events.ConfigCapturedSchema {
+		t.Errorf("schema = %q, want %q", wrapper.Data.Schema, events.ConfigCapturedSchema)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(wrapper.Data.Document, &doc); err != nil {
+		t.Fatalf("document is not a JSON object: %v", err)
+	}
+
+	// The document is exactly TaskConfig's field set, not the larger dashboard
+	// projection: a reader must be able to trust that it carries no providers,
+	// repositories, identities or lock state.
+	wantKeys := []string{
+		"bot_email", "bot_user", "budgets", "diff_cap_lines", "dispatch",
+		"forge", "model_limits", "models", "notify", "tool_policy",
+	}
+	gotKeys := make([]string, 0, len(doc))
+	for key := range doc {
+		gotKeys = append(gotKeys, key)
+	}
+	sort.Strings(gotKeys)
+	if !slices.Equal(gotKeys, wantKeys) {
+		t.Errorf("document keys = %v, want exactly %v", gotKeys, wantKeys)
+	}
+	if doc["forge"] == nil || !strings.Contains(document, "gitea.example.com") {
+		t.Error("document is missing the non-secret forge host the Config tab renders")
+	}
+
+	// The size decides whether a per-attempt document belongs in an event at
+	// all; recorded so the number is reviewable, not assumed.
+	t.Logf("serialized config document: %d bytes for a fully populated deployment", len(wrapper.Data.Document))
+	if len(wrapper.Data.Document) == 0 {
+		t.Error("document is empty; the Config tab would render nothing")
+	}
+
+	// Models and ModelLimits are the only two fields whose size is set by the
+	// deployment rather than by the struct, so the growth factor gets measured
+	// too instead of assumed.
+	scaled := configWithCanarySecrets()
+	scaled.Models = map[string]string{}
+	scaled.ModelLimits = map[string]config.ModelLimits{}
+	for i := range 20 {
+		ref := fmt.Sprintf("openai/model-%d", i)
+		scaled.Models[fmt.Sprintf("role-%d", i)] = ref
+		scaled.ModelLimits[ref] = config.ModelLimits{ContextWindow: 128000, MaxOutputTokens: 4096}
+	}
+	scaledDoc, err := json.Marshal(scaled.ForTask())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("serialized config document with 20 named models: %d bytes", len(scaledDoc))
+}
+
+// failingEventStore is the daemon's store surface with an event insert that
+// always fails, so the fail-open policy of the capture can be observed without
+// breaking everything else the dispatch needs.
+type failingEventStore struct {
+	*store.Store
+}
+
+func (f failingEventStore) InsertEvent(context.Context, events.Event) (int64, error) {
+	return 0, fmt.Errorf("events table unavailable")
+}
+
+// TestCaptureAttemptConfigFailureDoesNotStopTheDispatch: a provenance record
+// that could not be written must not cost the run. The taskrun request has to
+// go out anyway, and nothing may park.
+func TestCaptureAttemptConfigFailureDoesNotStopTheDispatch(t *testing.T) {
+	d, s, busClient := daemonWithNATS(t)
+	d.Store = failingEventStore{Store: s}
+	ctx := context.Background()
+
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 6, "t", "b", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("claim: (%v, %v)", task, err)
+	}
+
+	dispatched := make(chan struct{}, 1)
+	sub, err := mustCoreConn(t, busClient).Subscribe(agentnats.SubjectForTask(task.ID), func(msg *natsio.Msg) {
+		dispatched <- struct{}{}
+		data, _ := json.Marshal(taskrun.Response{Status: workflow.StatusPROpen})
+		_ = msg.Respond(data)
+	})
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	t.Cleanup(func() { _ = sub.Unsubscribe() })
+
+	d.runViaAgent(ctx, task, config.Repo{Owner: "acme", Name: "widget", Base: "main"})
+
+	select {
+	case <-dispatched:
+	case <-time.After(time.Second):
+		t.Fatal("the taskrun request was never published; a failed config capture stopped the dispatch")
+	}
+
+	got, err := s.TaskByIssue(ctx, "acme", "widget", 6)
+	if err != nil || got == nil {
+		t.Fatalf("TaskByIssue: (%+v, %v)", got, err)
+	}
+	if got.Status == workflow.StatusParked {
+		t.Errorf("task parked with reason %q; a failed config capture must not park a run", got.ParkReason)
+	}
+}
+
+// TestTaskAgnosticDaemonEventsCarryNoAttempt pins the other half of the
+// attribution rule: an event produced before any task row exists has no
+// attempt to name, and inventing one -- the deployment's "current" attempt, a
+// zero-that-means-first -- would be a fabricated claim. It stays 0, which the
+// reader reports as unattributed.
+func TestTaskAgnosticDaemonEventsCarryNoAttempt(t *testing.T) {
+	d := &Daemon{Bus: events.NewBus(), Log: slog.New(slog.DiscardHandler)}
+	sub := d.Bus.Subscribe(4)
+	t.Cleanup(sub.Close)
+
+	d.acknowledge(context.Background(), &recordingForge{}, config.Config{},
+		config.Repo{Owner: "acme", Name: "widget"}, forge.Issue{Number: 3, Title: "a task"})
+
+	select {
+	case e := <-sub.C:
+		if e.Kind != events.KindTaskQueued {
+			t.Fatalf("kind = %q, want %q", e.Kind, events.KindTaskQueued)
+		}
+		if e.Attempt != 0 {
+			t.Errorf("queued event attempt = %d, want 0 (no task exists yet to attribute it to)", e.Attempt)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no queued event was published")
+	}
+}
+
+// TestReconcilePRsAttributesTheOutcomeToTheTasksAttempt: a PR is merged or
+// rejected against the attempt whose task recorded that PR number, so the
+// timeline can attribute the outcome to the run that produced it instead of
+// leaving it unattributed.
+func TestReconcilePRsAttributesTheOutcomeToTheTasksAttempt(t *testing.T) {
+	d, s, fg := testDaemon(t, 3, 0)
+	ctx := context.Background()
+	d.Bus = events.NewBus()
+	sub := d.Bus.Subscribe(8)
+	t.Cleanup(sub.Close)
+
+	if _, err := s.EnqueueIssue(ctx, "acme", "widget", 42, "a task", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.ClaimNext(ctx)
+	if err != nil || task == nil {
+		t.Fatalf("ClaimNext = (%+v, %v)", task, err)
+	}
+	if task.Attempt == 0 {
+		t.Fatal("claimed task has attempt 0; this test could not tell a stamp from a coincidence")
+	}
+	task.PRNumber = 7
+	if err := s.Update(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Transition(ctx, task.ID, workflow.StatusRunning, workflow.StatusPROpen, ""); err != nil {
+		t.Fatal(err)
+	}
+	fg.prStates = map[int]string{7: "merged"}
+
+	d.reconcilePRs(ctx)
+
+	select {
+	case e := <-sub.C:
+		if e.Kind != events.KindPRMerged {
+			t.Fatalf("kind = %q, want %q", e.Kind, events.KindPRMerged)
+		}
+		if e.Attempt != task.Attempt {
+			t.Errorf("pr_merged attempt = %d, want the task's attempt %d", e.Attempt, task.Attempt)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("reconcilePRs published no merge event")
 	}
 }

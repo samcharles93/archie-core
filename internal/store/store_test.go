@@ -111,6 +111,85 @@ func TestOpenMigratesUnversionedTaskSchemas(t *testing.T) {
 	}
 }
 
+// TestOpenMigratesLegacyEventsAttemptColumn covers the highest-risk step in
+// attempt provenance: adding events.attempt to a database that predates it.
+// eventsSchema is CREATE TABLE IF NOT EXISTS, so against an existing
+// archie.db that statement is a no-op and the migrator arm is the ONLY thing
+// that adds the column. A test that opens a fresh tempdir passes whether or
+// not the arm exists, so the failure this pins is the one production would
+// hit: `table events has no column named attempt`.
+func TestOpenMigratesLegacyEventsAttemptColumn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = raw.ExecContext(t.Context(), `
+		CREATE TABLE events (
+			id        INTEGER PRIMARY KEY AUTOINCREMENT,
+			at        TEXT NOT NULL,
+			kind      TEXT NOT NULL,
+			task_id   INTEGER NOT NULL DEFAULT 0,
+			repo      TEXT NOT NULL DEFAULT '',
+			issue     INTEGER NOT NULL DEFAULT 0,
+			workflow  TEXT NOT NULL DEFAULT '',
+			stage     TEXT NOT NULL DEFAULT '',
+			detail    TEXT NOT NULL DEFAULT '',
+			data      TEXT NOT NULL DEFAULT '{}'
+		);
+		INSERT INTO events (at, kind, task_id, stage, detail)
+		VALUES ('2026-01-01T00:00:00Z', 'stage_start', 7, 'prepare', 'pre-existing row');
+		PRAGMA user_version = 3`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	// The row written before the column existed survives and reads as
+	// unattributed -- zero is not a first attempt.
+	legacy, err := s.TaskEvents(t.Context(), 7)
+	if err != nil {
+		t.Fatalf("TaskEvents after legacy migration: %v", err)
+	}
+	if len(legacy) != 1 || legacy[0].Detail != "pre-existing row" {
+		t.Fatalf("legacy events = %+v, want the preserved row", legacy)
+	}
+	if legacy[0].Attempt != 0 {
+		t.Errorf("legacy event attempt = %d, want 0 (unattributed)", legacy[0].Attempt)
+	}
+
+	// Writing the new column is what actually fails in production when the
+	// migrator arm is missing.
+	if _, err := s.InsertEvent(t.Context(), events.Event{
+		Kind: "stage_finish", TaskID: 7, Stage: "prepare", Attempt: 2,
+		Data: map[string]any{"duration_ms": 1200},
+	}); err != nil {
+		t.Fatalf("InsertEvent with attempt after legacy migration: %v", err)
+	}
+
+	timeline, err := s.TaskEvents(t.Context(), 7)
+	if err != nil {
+		t.Fatalf("TaskEvents after insert: %v", err)
+	}
+	if len(timeline) != 2 {
+		t.Fatalf("TaskEvents = %d events, want 2", len(timeline))
+	}
+	if got := timeline[1].Attempt; got != 2 {
+		t.Errorf("attempt round-trip after legacy migration = %d, want 2", got)
+	}
+	if got := timeline[0].Attempt; got != 0 {
+		t.Errorf("legacy row attempt changed to %d, want 0", got)
+	}
+}
+
 func TestOpenRejectsNewerSchemaVersion(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "tasks.db")
 	db, err := sql.Open("sqlite", path)
@@ -526,12 +605,12 @@ func TestEventLogRoundTrip(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	id1, err := s.InsertEvent(ctx, events.Event{Kind: "stage_start", TaskID: 1, Stage: "plan"})
+	id1, err := s.InsertEvent(ctx, events.Event{Kind: "stage_start", TaskID: 1, Stage: "plan", Attempt: 1})
 	if err != nil || id1 == 0 {
 		t.Fatalf("insert = (%d, %v)", id1, err)
 	}
 	id2, err := s.InsertEvent(ctx, events.Event{
-		Kind: "stage_finish", TaskID: 1, Workflow: "implement", Stage: "plan",
+		Kind: "stage_finish", TaskID: 1, Workflow: "implement", Stage: "plan", Attempt: 2,
 		Data: map[string]any{"duration_ms": 1200},
 	})
 	if err != nil || id2 <= id1 {
@@ -545,10 +624,17 @@ func TestEventLogRoundTrip(t *testing.T) {
 	if evs[0].Data["duration_ms"] != float64(1200) {
 		t.Fatalf("data round-trip = %v", evs[0].Data)
 	}
+	if evs[0].Attempt != 2 {
+		t.Fatalf("EventsSince attempt round-trip = %d, want 2", evs[0].Attempt)
+	}
 
 	timeline, err := s.TaskEvents(ctx, 1)
 	if err != nil || len(timeline) != 2 {
 		t.Fatalf("TaskEvents = (%d, %v)", len(timeline), err)
+	}
+	// Two attempts of one task must stay distinguishable in its timeline.
+	if timeline[0].Attempt != 1 || timeline[1].Attempt != 2 {
+		t.Fatalf("TaskEvents attempts = (%d, %d), want (1, 2)", timeline[0].Attempt, timeline[1].Attempt)
 	}
 
 	stats, err := s.StageStats(ctx)

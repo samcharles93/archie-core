@@ -21,6 +21,13 @@ type ConversationID struct {
 	ThreadID  string
 }
 
+func (c ConversationID) String() string {
+	if c.ThreadID == "" {
+		return c.ChannelID
+	}
+	return c.ChannelID + "/" + c.ThreadID
+}
+
 // MessageID is the canonical, immutable identifier for a Message. Once
 // assigned it never changes, including across branch and fork operations —
 // a forked transcript references the original MessageID it branched from
@@ -75,9 +82,12 @@ type Message struct {
 
 	// Sender is the channel-native display attribution (e.g. a Telegram
 	// username) recorded when the message was written. Like SourceID it
-	// is external correlation metadata, never the canonical identity:
-	// role discrimination uses Role, never this field. It is preserved
-	// so history search and transcript rendering keep working.
+	// is external correlation metadata, never the canonical identity: the
+	// canonical Role field is authoritative in-process. At the gateway wire
+	// boundary (internal/infrastructure/gatewayrpc) Role is deliberately
+	// dropped and rebuilt from Sender via RoleForSender, so Sender is also
+	// preserved for that reconstruction and for history search and
+	// transcript rendering.
 	Sender string
 
 	// SenderID is the channel-native stable identifier for the party that

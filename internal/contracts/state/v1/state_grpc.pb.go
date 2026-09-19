@@ -32,6 +32,7 @@ const (
 	StateStoreService_ArchiveTask_FullMethodName                = "/state.v1.StateStoreService/ArchiveTask"
 	StateStoreService_RetryTask_FullMethodName                  = "/state.v1.StateStoreService/RetryTask"
 	StateStoreService_TaskByIssue_FullMethodName                = "/state.v1.StateStoreService/TaskByIssue"
+	StateStoreService_OpenTaskByPR_FullMethodName               = "/state.v1.StateStoreService/OpenTaskByPR"
 	StateStoreService_TaskByID_FullMethodName                   = "/state.v1.StateStoreService/TaskByID"
 	StateStoreService_OpenPRs_FullMethodName                    = "/state.v1.StateStoreService/OpenPRs"
 	StateStoreService_ClearTerminalTasks_FullMethodName         = "/state.v1.StateStoreService/ClearTerminalTasks"
@@ -97,6 +98,7 @@ type StateStoreServiceClient interface {
 	RetryTask(ctx context.Context, in *RetryTaskRequest, opts ...grpc.CallOption) (*RetryTaskResponse, error)
 	// Queries
 	TaskByIssue(ctx context.Context, in *TaskByIssueRequest, opts ...grpc.CallOption) (*TaskByIssueResponse, error)
+	OpenTaskByPR(ctx context.Context, in *OpenTaskByPRRequest, opts ...grpc.CallOption) (*OpenTaskByPRResponse, error)
 	TaskByID(ctx context.Context, in *TaskByIDRequest, opts ...grpc.CallOption) (*TaskByIDResponse, error)
 	OpenPRs(ctx context.Context, in *OpenPRsRequest, opts ...grpc.CallOption) (*OpenPRsResponse, error)
 	ClearTerminalTasks(ctx context.Context, in *ClearTerminalTasksRequest, opts ...grpc.CallOption) (*ClearTerminalTasksResponse, error)
@@ -296,6 +298,16 @@ func (c *stateStoreServiceClient) TaskByIssue(ctx context.Context, in *TaskByIss
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(TaskByIssueResponse)
 	err := c.cc.Invoke(ctx, StateStoreService_TaskByIssue_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) OpenTaskByPR(ctx context.Context, in *OpenTaskByPRRequest, opts ...grpc.CallOption) (*OpenTaskByPRResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OpenTaskByPRResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_OpenTaskByPR_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -700,6 +712,7 @@ type StateStoreServiceServer interface {
 	RetryTask(context.Context, *RetryTaskRequest) (*RetryTaskResponse, error)
 	// Queries
 	TaskByIssue(context.Context, *TaskByIssueRequest) (*TaskByIssueResponse, error)
+	OpenTaskByPR(context.Context, *OpenTaskByPRRequest) (*OpenTaskByPRResponse, error)
 	TaskByID(context.Context, *TaskByIDRequest) (*TaskByIDResponse, error)
 	OpenPRs(context.Context, *OpenPRsRequest) (*OpenPRsResponse, error)
 	ClearTerminalTasks(context.Context, *ClearTerminalTasksRequest) (*ClearTerminalTasksResponse, error)
@@ -813,6 +826,9 @@ func (UnimplementedStateStoreServiceServer) RetryTask(context.Context, *RetryTas
 }
 func (UnimplementedStateStoreServiceServer) TaskByIssue(context.Context, *TaskByIssueRequest) (*TaskByIssueResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method TaskByIssue not implemented")
+}
+func (UnimplementedStateStoreServiceServer) OpenTaskByPR(context.Context, *OpenTaskByPRRequest) (*OpenTaskByPRResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method OpenTaskByPR not implemented")
 }
 func (UnimplementedStateStoreServiceServer) TaskByID(context.Context, *TaskByIDRequest) (*TaskByIDResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method TaskByID not implemented")
@@ -1167,6 +1183,24 @@ func _StateStoreService_TaskByIssue_Handler(srv interface{}, ctx context.Context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StateStoreServiceServer).TaskByIssue(ctx, req.(*TaskByIssueRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_OpenTaskByPR_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(OpenTaskByPRRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).OpenTaskByPR(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_OpenTaskByPR_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).OpenTaskByPR(ctx, req.(*OpenTaskByPRRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1820,6 +1854,10 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TaskByIssue",
 			Handler:    _StateStoreService_TaskByIssue_Handler,
+		},
+		{
+			MethodName: "OpenTaskByPR",
+			Handler:    _StateStoreService_OpenTaskByPR_Handler,
 		},
 		{
 			MethodName: "TaskByID",

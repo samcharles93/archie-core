@@ -188,6 +188,35 @@ describes the target, not today's tree. Kept rather than deleted because the
 migration it serves is deferred by this very section, and re-deriving a tested
 wire adapter once that lands is pure cost.
 
+**Phase 4 Messaging Service extraction (2026-09-19, `archie-core-8cda.6.1`).**
+The process boundary for external channels (Telegram, email, webhook) is ratified
+in [`docs/prds/messaging-service-boundary.md`](../prds/messaging-service-boundary.md).
+Messaging is extracted into `cmd/archie-messaging` / `internal/app/archiemessaging`,
+calling Gateway's `messaging.ChatContract` exclusively over gRPC. Channel frontends
+hold no direct database handles, daemon state, or model runtimes.
+
+**Telegram operator surface after extraction (2026-09-19, `archie-core-8cda.6.6`).**
+`setupTelegramGateway` wired eight `telegram.Gateway` seams the daemon could
+satisfy from its own process. Each is resolved by where the fact it needs is
+actually owned, not by where it used to be built:
+
+| Seam | Resolution |
+|---|---|
+| `Version` | Sourced from the Gateway via `ChatSnapshot.Version`. The Messaging Service never stamps or infers a build version; `cmd/archie-messaging` deliberately takes no version ldflags, so it cannot report a partial upgrade as a matched one. |
+| `Updates` (`/update`) | Built in the Messaging Service from `[chat.telegram].update_check_command` / `update_install_command` — its own configuration. `Enrich` is dropped: `componentInstallTypeEnricher` reads `[nats]`, which this service must not decode, so the check command's own reported install type stands unmodified. |
+| `UpdateReportPath` | A local state file under `work_dir`, keyed by the same `sha256(bot_user)[:8]` scheme the daemon used, so a pending report is found rather than written afresh. |
+| `ReleaseAnnouncements` | **Deliberately left nil**, for the same reason as `RunningVersions`. `releaseannounce.Announcer` announces nothing unless each `Component` carries a parseable version, and the only versions this service can obtain are the Gateway's own build stamps, not archied's. Wiring the announcer without them yields a no-op that reads as configured, so it stays unwired until component self-reporting exists. |
+| `SetShowToolCalls` | Projected from `[chat].show_tool_calls`. |
+| `Reload` | Local: re-resolves the token and allowlist from this service's own config file and overlay. Reload was never a daemon fact. |
+| `RunningVersions` | **Deliberately left nil.** It exists to turn an installer's claim into a checked one, and only a component's own compiled-in build can vouch for it. The Messaging Service knows neither archied's build nor the observed archie-agent version (`daemon.AgentStatus`), and the Gateway's own `gatewayVersion` is a different binary's stamp — reporting it as the daemon's would manufacture exactly the false success the check exists to catch. Update reports therefore relay as unverified claims until a component self-report contract exists. |
+| `Dangerous` | Stays nil. No daemon composition ever set it; `/rollback` and `/stop` reported "not configured" before the extraction and still do. |
+
+The Messaging Service consequently reads `work_dir`, `bot_user`, `[chat]` and
+`[health]` in addition to the PRD's `[chat.*]` / `[services.gateway]` list.
+`[health]` is the daemon's health URL, which `releaseupdate.CommandInstaller`
+polls from outside to confirm an update came back up; the rest of the PRD's
+prohibition list is untouched.
+
 ### 3. Identity data migration
 
 The migration must define:
@@ -242,14 +271,18 @@ The four required scopes are fixed:
 - Agent-user relationship.
 
 A focused review of `internal/memory`, its providers, consumers, persistence,
-and tests must decide:
+and tests had these decisions:
 
-- `internal/domain/memory` versus ownership within the Agent domain;
-- the authoritative memory record and revision model;
-- provider and infrastructure boundaries;
-- retrieval and access enforcement;
-- migration of existing memory data;
-- provenance representation.
+- `internal/domain/memory` versus ownership within the Agent domain — settled
+  (2026-09-02, below);
+- the authoritative memory record and revision model — settled by the PRD
+  (2026-09-16, below);
+- provider and infrastructure boundaries — settled by the PRD (2026-09-16,
+  below);
+- retrieval and access enforcement — settled by the PRD (2026-09-16, below);
+  ranked retrieval remains open (below);
+- migration of existing memory data — open: existing data is not migrated;
+- provenance representation — settled by the PRD (2026-09-16, below).
 
 Conversation branches do not create another memory scope. A memory action has
 the same scoped effect regardless of which Conversation originated it.
@@ -294,6 +327,59 @@ memory model in general or a future non-file engine's model:
   the section name, reusing `builtin.ValidateSectionName` — so an
   invalid `Kind` fails `Write` with the same validation error `memory_edit`
   already returns for an invalid section today, not a new error shape.
+
+**Memory engine: scopes, CRUD with retained revisions, and store placement —
+DECIDED (2026-09-16).** Supersedes the 2026-09-02 "Authoritative record and
+revision model for the builtin engine" entry above, whose `<!--mem:<ulid>-->`
+live marker cannot carry provenance. Authority:
+[`docs/prds/memory-engine-unification.md`](../prds/memory-engine-unification.md)
+(Approved); the contract is `internal/domain/memory/contract.go`. This register
+supersedes; it does not erase.
+
+- **Four typed scopes, caller-named.** `internal/domain/memory` is addressed by
+  `Scope{Kind, Agent, User}` over `global`, `agent`, `user` and `agent-user`,
+  with `Validate` rejecting a component present where it is not required. A
+  caller names the read and write sets (`Subject.Scopes()` /
+  `WritableScopes()`; global is never model-writable) and the engine applies no
+  policy of its own: **access control is naming a scope, and nothing else.** An
+  engine that enforced policy would need to know about channels, sessions and
+  bindings, and every backend would reimplement it. `Scope.Key()` length-prefixes
+  each component, so two scopes can never share a key even when an opaque
+  channel-native id embeds the separator.
+- **The caller resolves identity; the engine never does.** Resolution happens in
+  the gateway turn path, where the native sender id and the session are both in
+  hand, and is supplied per channel by the composition. A webhook's sender id is
+  a route path, not a person, and treating it as one would give a URL an
+  identity. An absent user id yields global and agent scopes only: "show none of
+  it", never a wider fallback.
+- **CRUD supersedes, never overwrites.** `Store` is `Create`/`Get`/`Query`/
+  `List`/`Update`/`Forget`/`Revisions` over the four scopes. `Update` appends the
+  superseded state to the scope's `HISTORY.md` before replacing the live block;
+  `Update.Expected` names the revision being replaced and returns
+  `ErrStaleRevision` on mismatch, making a lost update between two processes
+  sharing one scope file detectable. `Forget` records a deleted revision before
+  removing the live block, so a record's provenance outlives its content; `Get`
+  and `Forget` take a scope, because an id alone does not locate one.
+- **Provenance representation.** The live marker becomes JSON, since a
+  `<!--mem:<ulid>-->` line cannot carry provenance, and `Record` retains the
+  provenance `agent-system.md` requires — scope, author, originating user,
+  source, and revision history. `Metadata` is dropped: it never round-tripped.
+- **Store and scanner placement.** The markdown store relocates to
+  `internal/infrastructure/memory/builtin`, its correct home under
+  `organisation.md`'s "a package owns its on-disk format end-to-end". The content
+  scanner moves into `internal/domain/memory` and is applied in `Create` and
+  `Update` — the single choke point every producer crosses, so curator-extracted
+  content is covered too.
+
+**Open in this section.** Ranked retrieval is deferred: `Query.Text` stays in
+the contract, unused by the prompt path. Existing memory data is not migrated:
+`<workDir>/memory` and `<workDir>/memory-engine` are left on disk, unreferenced.
+The PRD leaves these undetermined and they remain open here: group-chat
+extraction, where the curator fails closed on mixed-sender sessions; two
+processes (`archied` and `archie-gateway`) holding one scope file, where
+`Update.Expected` detects but does not prevent a lost block; unbounded
+`HISTORY.md` with no compaction policy; whether the per-scope size bound is
+right; and whether the dashboard should carry a user identity.
 
 ### 6. Runtime and process boundaries — DECIDED
 
@@ -529,3 +615,19 @@ config DTO translation will land, so it unblocks the dissolution above.
 per area when the decisions are already dictated by
 `dependencies-and-contracts.md`. That is the ceremony pattern this project
 deliberately avoids.
+
+## OPEN — `[chat.*]` config section naming
+
+`configuration.md:160` already states the position: `ChatConfig` holds "separate
+channel instance settings... there is no chat-wide settings owner". The config
+section name has not followed, so a settings block named for a product surface
+owns what the architecture calls channel state.
+
+Two candidates, neither settled: `[channel.*]` and `[messaging.channel.*]`. The
+second reads as a domain path, and no config section in this repo is currently
+named after a domain package, so adopting it sets a precedent for every other
+section rather than fixing one name.
+
+Blocked on a maintainer decision, not on evidence. This is a rename with an
+operator-visible TOML break, so it should land with the `internal/config`
+dissolution recorded above rather than on its own.
