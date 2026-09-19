@@ -188,17 +188,21 @@ func closeNoChangesIssue(ctx context.Context, tc *TaskContext) error {
 // oversized changes need human pre-approval, not an auto-opened PR.
 func StageDiffCap() Stage {
 	return Stage{Name: "diff-cap", Run: func(ctx context.Context, tc *TaskContext) error {
-		if tc.Cfg.DiffCapLines <= 0 {
+		capLines := tc.Cfg.DiffCap()
+		if capLines <= 0 {
 			return nil
 		}
 		lines, err := tc.Trees.ChangedLines(ctx, tc.Dir, tc.Repo.BaseBranch())
 		if err != nil {
 			return err
 		}
-		if lines > tc.Cfg.DiffCapLines {
+		if lines > capLines {
+			// No "approve" here: a parked task's operator actions are retry,
+			// abandon and reject (internal/taskstate), so telling the operator
+			// to approve sent them looking for a button that does not exist.
 			tc.Outcome = Outcome{
 				Status: StatusParked,
-				Detail: fmt.Sprintf("diff is %d changed lines (cap %d)  --  split the issue or approve manually", lines, tc.Cfg.DiffCapLines),
+				Detail: fmt.Sprintf("diff is %d changed lines (cap %d)  --  split the issue, or raise diff_cap_lines and retry", lines, capLines),
 			}
 		}
 		return nil

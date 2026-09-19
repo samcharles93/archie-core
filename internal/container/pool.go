@@ -501,3 +501,19 @@ func (p *Pool) recoverOrphans(ctx context.Context) {
 		p.log.Info("orphan recovery complete", "count", len(list.Items))
 	}
 }
+
+// Active is the number of containers this pool currently holds: acquired but
+// not yet released. It reads the pool's own counter rather than listing
+// Docker containers, which would include containers this pool does not own
+// (orphans from a crashed daemon, another instance's workers).
+func (p *Pool) Active() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.active
+}
+
+// Cap is the concurrency cap this pool enforces, from the configured
+// containers.max_concurrency. Zero means unlimited (Acquire only enforces a
+// cap when MaxConcurrency > 0), so a caller rendering "active/cap" must not
+// treat zero as a cap of zero.
+func (p *Pool) Cap() int { return p.cfg.MaxConcurrency }

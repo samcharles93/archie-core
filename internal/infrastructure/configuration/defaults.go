@@ -50,6 +50,11 @@ const (
 	// defaultHealthListen is the daemon's own liveness address. The update
 	// watchdog's fallback in scripts/archie-update-watchdog must match it.
 	defaultHealthListen = "127.0.0.1:8485"
+
+	// defaultHealthDependencyTimeout matches the extracted services'
+	// -dependency-timeout default, so every process bounds a probe into a
+	// dependency the same way out of the box.
+	defaultHealthDependencyTimeout = 5 * time.Second
 )
 
 // applyDefaults fills in every absent value. It never reports an error and
@@ -65,6 +70,9 @@ func (l *Loader) applyDefaults(cfg *config.Config) {
 	applyServiceDefaults(cfg)
 	if cfg.Health.Listen == "" {
 		cfg.Health.Listen = defaultHealthListen
+	}
+	if cfg.Health.DependencyTimeout == 0 {
+		cfg.Health.DependencyTimeout = config.Duration(defaultHealthDependencyTimeout)
 	}
 	l.applyGeneralDefaults(cfg)
 	applyForgeDefaults(cfg)
@@ -208,8 +216,11 @@ func (l *Loader) applyGeneralDefaults(cfg *config.Config) {
 	if cfg.PollInterval == 0 {
 		cfg.PollInterval = config.Duration(defaultPollInterval)
 	}
-	if cfg.DiffCapLines == 0 {
-		cfg.DiffCapLines = defaultDiffCapLines
+	// Only an absent key takes the default. An explicit 0 is the documented
+	// way to switch the cap off and must survive.
+	if cfg.DiffCapLines == nil {
+		capLines := defaultDiffCapLines
+		cfg.DiffCapLines = &capLines
 	}
 	if cfg.Web.Listen == "" {
 		cfg.Web.Listen = defaultWebListen
