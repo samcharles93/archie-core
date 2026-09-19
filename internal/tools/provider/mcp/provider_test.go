@@ -9,7 +9,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/tools"
 	protocol "github.com/samcharles93/archie-core/internal/tools/mcp"
 	toolprovider "github.com/samcharles93/archie-core/internal/tools/provider"
@@ -241,31 +240,6 @@ func TestProviderRejectsInvalidConfiguration(t *testing.T) {
 			provider := New(tt.server, tt.transport)
 			if err := provider.Start(context.Background()); err == nil {
 				t.Fatal("Start() succeeded")
-			}
-			if provider.Health(context.Background()).Status != plugin.HealthUnhealthy {
-				t.Fatal("invalid provider health is not unhealthy")
-			}
-		})
-	}
-}
-
-func TestProviderHealthMapsTransportState(t *testing.T) {
-	tests := []struct {
-		state protocol.TransportState
-		want  plugin.HealthStatus
-	}{
-		{state: protocol.StateRunning, want: plugin.HealthHealthy},
-		{state: protocol.StateStarting, want: plugin.HealthDegraded},
-		{state: protocol.StateStopping, want: plugin.HealthDegraded},
-		{state: protocol.StateStopped, want: plugin.HealthUnhealthy},
-		{state: protocol.StateError, want: plugin.HealthUnhealthy},
-	}
-	for _, tt := range tests {
-		t.Run(tt.state.String(), func(t *testing.T) {
-			transport := newFakeTransport()
-			transport.state = tt.state
-			if got := New("health", transport).Health(context.Background()).Status; got != tt.want {
-				t.Fatalf("Health().Status = %q, want %q", got, tt.want)
 			}
 		})
 	}

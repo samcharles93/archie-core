@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -252,59 +251,6 @@ func (r *Registry) failFamily(ctx context.Context, started []runningProvider, ca
 	rollbackFailed, rollbackErr := rollback(cleanupCtx, r.index, started)
 	r.setFailed(rollbackFailed)
 	return errors.Join(cause, rollbackErr)
-}
-
-// Health reports aggregate provider health.
-func (r *Registry) Health(ctx context.Context) plugin.Health {
-	r.mu.RLock()
-	state := r.state
-	running := append([]runningProvider(nil), r.running...)
-	skipped := append([]SkippedProvider(nil), r.skipped...)
-	r.mu.RUnlock()
-
-	switch state {
-	case stateFailed:
-		return plugin.Health{Status: plugin.HealthUnhealthy, Message: "tool-provider registry failed"}
-	case stateRunning:
-	default:
-		return plugin.Health{Status: plugin.HealthUnknown, Message: "tool-provider registry is not running"}
-	}
-
-	aggregate := plugin.Health{Status: plugin.HealthHealthy}
-	var messages []string
-
-	// An excluded optional provider is a degradation, not a clean start.
-	// Reporting healthy here is what let one broken npm package go unnoticed
-	// until the daemon crash-looped.
-	for _, s := range skipped {
-		aggregate.Status = plugin.HealthDegraded
-		message := s.ID + ": unavailable"
-		if s.Err != nil {
-			message = s.ID + ": " + s.Err.Error()
-		}
-		messages = append(messages, message)
-	}
-
-	for _, provider := range running {
-		health := safeHealth(ctx, provider.registration.engine)
-		switch health.Status {
-		case plugin.HealthHealthy:
-		case plugin.HealthDegraded:
-			if aggregate.Status == plugin.HealthHealthy {
-				aggregate.Status = plugin.HealthDegraded
-			}
-		case plugin.HealthUnhealthy:
-			aggregate.Status = plugin.HealthUnhealthy
-		default:
-			aggregate.Status = plugin.HealthUnhealthy
-			health.Message = fmt.Sprintf("invalid health status %q", health.Status)
-		}
-		if health.Message != "" {
-			messages = append(messages, provider.registration.manifest.ID+": "+health.Message)
-		}
-	}
-	aggregate.Message = strings.Join(messages, "; ")
-	return aggregate
 }
 
 // Stop removes all provider-owned tools before stopping providers in reverse
@@ -578,18 +524,6 @@ func safeDiscover(ctx context.Context, engine Engine) (entries []tools.ToolEntry
 		}
 	}()
 	return engine.Discover(ctx)
-}
-
-func safeHealth(ctx context.Context, engine Engine) (health plugin.Health) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			health = plugin.Health{
-				Status:  plugin.HealthUnhealthy,
-				Message: fmt.Sprintf("health panic: %v", recovered),
-			}
-		}
-	}()
-	return engine.Health(ctx)
 }
 
 func safeStop(ctx context.Context, engine Engine) (err error) {

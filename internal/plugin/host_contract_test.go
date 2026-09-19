@@ -51,12 +51,12 @@ func TestCapabilityHostContractExists(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{"Manifest", "Module", "LifecycleState", "Health", "Host"} {
+	for _, name := range []string{"Manifest", "Module", "Host"} {
 		if !types[name] {
 			t.Errorf("plugin package does not define %s", name)
 		}
 	}
-	for _, name := range []string{"Register", "Start", "Health", "Stop", "Manifests"} {
+	for _, name := range []string{"Register", "Start", "Stop"} {
 		if !hostMethods[name] {
 			t.Errorf("plugin.Host does not define %s", name)
 		}
