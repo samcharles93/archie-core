@@ -688,7 +688,8 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 		Bus:            b.bus,
 		Log:            log,
 		ChannelManager: b.channelManager, AgentStatus: b.agentStatus,
-		RateLimiter: b.rateLimiter,
+		RateLimiter:  b.rateLimiter,
+		MemoryEngine: b.memoryStore(),
 	})
 	if !ok {
 		return false
@@ -1154,6 +1155,27 @@ func (b *boot) setupMemoryAll() error {
 		return err
 	}
 	return b.setupMemoryEngine()
+}
+
+// memoryStore resolves the active memory engine (the same one
+// setupMemoryEngine registered under cfg.Memory.Engine) as the narrow read
+// surface a chat turn runner needs. Nil when the registry was never set up
+// or the configured engine is not registered -- both cases the turn runner
+// already treats as "no memory block" (gateway.renderMemory), so a chat
+// turn degrades instead of failing.
+func (b *boot) memoryStore() gateway.MemoryStore {
+	if b.memEngines == nil {
+		return nil
+	}
+	name := b.cfg.Memory.Engine
+	if name == "" {
+		name = infraMemory.EngineName
+	}
+	engine, ok := b.memEngines.Get(name)
+	if !ok {
+		return nil
+	}
+	return engine
 }
 
 // setupCurators wires the curator engine family. The registry owns

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/domain/memory"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/tools"
@@ -99,6 +100,17 @@ type TurnRunnerConfig struct {
 	// default branch, rendered into the prompt's <env> block.
 	Repos []RepoEnv
 	Log   *slog.Logger
+	// MemoryEngine is the durable-memory read surface consulted once per turn
+	// in prepareTurn. Nil disables the <memory> block entirely (renderMemory
+	// treats a nil store the same as a failed read).
+	MemoryEngine MemoryStore
+	// UserIdentity resolves the initiating user's identity for one inbound
+	// message, per channel. False (or a nil UserIdentity) means the channel
+	// carries no per-person identity -- the dashboard's one bearer token, or a
+	// webhook's route path, which must never be treated as a person -- and
+	// the turn's memory Subject gets no UserID, so its read is agent and
+	// global scope only (docs/prds/memory-engine-unification.md §3, §4).
+	UserIdentity func(msg messaging.Message) (memory.IdentityID, bool)
 }
 
 // TurnRunner owns one chat turn from session resolution through model
@@ -314,6 +326,7 @@ func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, in Inbou
 	if r.Personas != nil {
 		persona = r.Personas.GetActive(sessionID)
 	}
+	memoryBlock := renderMemory(ctx, r.MemoryEngine, r.resolveSubject(in.Message), r.Log)
 	systemPrompt := BuildSystemPrompt(SystemPromptConfig{
 		Persona:   persona,
 		Tools:     prepared.ToolSummaries(),
@@ -325,6 +338,7 @@ func (r *TurnRunner) prepareTurn(ctx context.Context, sessionID string, in Inbou
 		Workspace: r.Workspace,
 		Repos:     r.Repos,
 		Operator:  r.Operator,
+		Memory:    memoryBlock,
 	})
 	compression, err := CompressionConfigForModel(
 		modelDetails,
