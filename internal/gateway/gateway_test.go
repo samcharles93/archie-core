@@ -33,7 +33,7 @@ func TestRouteStatusShowsQueueDepthNotPerTaskCounts(t *testing.T) {
 	}
 	// queued and pr_open are not "in flight" (running/waiting/parked), so
 	// /status reports the daemon idle -- that per-task detail is /tasks' job.
-	want := "📊 Archie status\n\nQueue: idle\n\nRuntime\nNot configured"
+	want := "📊 Archie status\n\nQueue: idle  \nRuntime: not configured"
 	if reply != want {
 		t.Errorf("reply =\n%q\nwant:\n%q", reply, want)
 	}
@@ -51,7 +51,7 @@ func TestRouteStatusIncludesActiveProviderAndModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "📊 Archie status\n\nQueue: 1 in flight (1 running)\n\nRuntime\nProvider: OpenAI\nModel: openai/gpt-5.6"
+	want := "📊 Archie status\n\nQueue: 1 in flight (1 running)  \nProvider: OpenAI  \nModel: openai/gpt-5.6"
 	if reply != want {
 		t.Fatalf("reply =\n%q\nwant:\n%q", reply, want)
 	}
@@ -74,7 +74,7 @@ func TestRouteStatusEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Route: %v", err)
 	}
-	want := "📊 Archie status\n\nQueue: idle\n\nRuntime\nNot configured"
+	want := "📊 Archie status\n\nQueue: idle  \nRuntime: not configured"
 	if reply != want {
 		t.Errorf("reply = %q, want %q", reply, want)
 	}
@@ -104,7 +104,7 @@ func TestFormatStatus(t *testing.T) {
 			models: &fakeProviderModelManager{
 				activeModel: "openai/gpt-5.6-luna",
 			},
-			want: "📊 Archie status\n\nQueue: 2 in flight (2 parked)\n\nRuntime\nProvider: OpenAI\nModel: openai/gpt-5.6-luna",
+			want: "📊 Archie status\n\nQueue: 2 in flight (2 parked)  \nProvider: OpenAI  \nModel: openai/gpt-5.6-luna",
 		},
 		{
 			name: "in-flight states reduce to one aggregate line; queued and terminal states are excluded",
@@ -123,7 +123,7 @@ func TestFormatStatus(t *testing.T) {
 			models: &fakeProviderModelManager{
 				activeModel: "deepseek/deepseek-v4-pro",
 			},
-			want: "📊 Archie status\n\nQueue: 6 in flight (1 running, 2 waiting on you, 3 parked)\n\nRuntime\nProvider: DeepSeek\nModel: deepseek/deepseek-v4-pro",
+			want: "📊 Archie status\n\nQueue: 6 in flight (1 running, 2 waiting on you, 3 parked)  \nProvider: DeepSeek  \nModel: deepseek/deepseek-v4-pro",
 		},
 		{
 			name:   "empty task counts with active model",
@@ -131,7 +131,7 @@ func TestFormatStatus(t *testing.T) {
 			models: &fakeModelManager{
 				activeModel: "anthropic/claude-3-5-sonnet",
 			},
-			want: "📊 Archie status\n\nQueue: idle\n\nRuntime\nProvider: Anthropic\nModel: anthropic/claude-3-5-sonnet",
+			want: "📊 Archie status\n\nQueue: idle  \nProvider: Anthropic  \nModel: anthropic/claude-3-5-sonnet",
 		},
 		{
 			name:   "nil counts with active model",
@@ -139,19 +139,19 @@ func TestFormatStatus(t *testing.T) {
 			models: &fakeModelManager{
 				activeModel: "google/gemini-2.5-flash",
 			},
-			want: "📊 Archie status\n\nQueue: idle\n\nRuntime\nProvider: Google\nModel: google/gemini-2.5-flash",
+			want: "📊 Archie status\n\nQueue: idle  \nProvider: Google  \nModel: google/gemini-2.5-flash",
 		},
 		{
 			name:   "nil model manager",
 			counts: map[string]int{"running": 2},
 			models: nil,
-			want:   "📊 Archie status\n\nQueue: 2 in flight (2 running)\n\nRuntime\nNot configured",
+			want:   "📊 Archie status\n\nQueue: 2 in flight (2 running)  \nRuntime: not configured",
 		},
 		{
 			name:   "empty counts and nil model manager",
 			counts: map[string]int{},
 			models: nil,
-			want:   "📊 Archie status\n\nQueue: idle\n\nRuntime\nNot configured",
+			want:   "📊 Archie status\n\nQueue: idle  \nRuntime: not configured",
 		},
 		{
 			name:   "custom display namer interface",
@@ -159,7 +159,7 @@ func TestFormatStatus(t *testing.T) {
 			models: &fakeCustomDisplayNamerManager{
 				activeModel: "openai/gpt-5.6",
 			},
-			want: "📊 Archie status\n\nQueue: 1 in flight (1 running)\n\nRuntime\nProvider: OpenAI Custom Enterprise\nModel: openai/gpt-5.6",
+			want: "📊 Archie status\n\nQueue: 1 in flight (1 running)  \nProvider: OpenAI Custom Enterprise  \nModel: openai/gpt-5.6",
 		},
 		{
 			name:   "queued-only counts as idle -- queued is not in flight",
@@ -167,7 +167,7 @@ func TestFormatStatus(t *testing.T) {
 			models: &fakeProviderModelManager{
 				activeModel: "",
 			},
-			want: "📊 Archie status\n\nQueue: idle\n\nRuntime\nNot configured",
+			want: "📊 Archie status\n\nQueue: idle  \nRuntime: not configured",
 		},
 		{
 			name:   "model without slash and no provider manager",
@@ -175,7 +175,7 @@ func TestFormatStatus(t *testing.T) {
 			models: &fakeModelManager{
 				activeModel: "custom-local-model",
 			},
-			want: "📊 Archie status\n\nQueue: 1 in flight (1 running)\n\nRuntime\nProvider: Not configured\nModel: custom-local-model",
+			want: "📊 Archie status\n\nQueue: 1 in flight (1 running)  \nProvider: not configured  \nModel: custom-local-model",
 		},
 	}
 
@@ -254,7 +254,7 @@ func TestFormatTasks(t *testing.T) {
 			tasks: []ChatTaskSummary{
 				{ID: 42, Title: "Fix login bug", Status: taskstate.Running, Workflow: "tdd", Stage: "implement", UpdatedAt: now.Add(-3 * time.Minute)},
 			},
-			want: "🗂 Archie tasks\n\n▶ #42 Fix login bug\n  Running · tdd/implement · updated 3m ago",
+			want: "🗂 Archie tasks\n\n▶ #42 Fix login bug  \n  Running · tdd/implement · updated 3m ago",
 		},
 		{
 			// The criterion this command was built for: a bare "Running: 1"
@@ -265,14 +265,14 @@ func TestFormatTasks(t *testing.T) {
 				{ID: 5, Title: "Wedged", Status: taskstate.Running, Workflow: "tdd", Stage: "implement", UpdatedAt: now.Add(-47 * time.Minute)},
 				{ID: 6, Title: "Working", Status: taskstate.Running, Workflow: "tdd", Stage: "implement", UpdatedAt: now.Add(-20 * time.Second)},
 			},
-			want: "🗂 Archie tasks\n\n▶ #5 Wedged\n  Running · tdd/implement · updated 47m ago\n▶ #6 Working\n  Running · tdd/implement · updated just now",
+			want: "🗂 Archie tasks\n\n▶ #5 Wedged  \n  Running · tdd/implement · updated 47m ago\n\n▶ #6 Working  \n  Running · tdd/implement · updated just now",
 		},
 		{
 			name: "parked task shows its reason",
 			tasks: []ChatTaskSummary{
 				{ID: 17, Title: "Add dark mode", Status: taskstate.Parked, Workflow: "feasibility", ParkReason: "gate failed 3x", UpdatedAt: now.Add(-2 * time.Hour)},
 			},
-			want: "🗂 Archie tasks\n\n⏸ #17 Add dark mode\n  Parked · feasibility · updated 2h ago\n  ↳ gate failed 3x",
+			want: "🗂 Archie tasks\n\n⏸ #17 Add dark mode  \n  Parked · feasibility · updated 2h ago  \n  ↳ gate failed 3x",
 		},
 		{
 			name: "attempt is shown only once a retry has happened",
@@ -280,14 +280,14 @@ func TestFormatTasks(t *testing.T) {
 				{ID: 1, Title: "First try", Status: taskstate.Running, Attempt: 1, UpdatedAt: now},
 				{ID: 2, Title: "Retried", Status: taskstate.Running, Attempt: 2, UpdatedAt: now},
 			},
-			want: "🗂 Archie tasks\n\n▶ #1 First try\n  Running · updated just now\n▶ #2 Retried\n  Running · attempt 2 · updated just now",
+			want: "🗂 Archie tasks\n\n▶ #1 First try  \n  Running · updated just now\n\n▶ #2 Retried  \n  Running · attempt 2 · updated just now",
 		},
 		{
 			name: "an unrecognized status still renders, generically",
 			tasks: []ChatTaskSummary{
 				{ID: 9, Title: "Mystery", Status: "custom_state", UpdatedAt: now},
 			},
-			want: "🗂 Archie tasks\n\n• #9 Mystery\n  Custom state · updated just now",
+			want: "🗂 Archie tasks\n\n• #9 Mystery  \n  Custom state · updated just now",
 		},
 		{
 			name: "actionable work leads terminal work regardless of recency",
@@ -295,7 +295,7 @@ func TestFormatTasks(t *testing.T) {
 				{ID: 3, Title: "Just merged", Status: taskstate.Merged, UpdatedAt: now},
 				{ID: 4, Title: "Still running", Status: taskstate.Running, UpdatedAt: now.Add(-time.Hour)},
 			},
-			want: "🗂 Archie tasks\n\n▶ #4 Still running\n  Running · updated 1h ago\n✅ #3 Just merged\n  Merged · updated just now",
+			want: "🗂 Archie tasks\n\n▶ #4 Still running  \n  Running · updated 1h ago\n\n✅ #3 Just merged  \n  Merged · updated just now",
 		},
 	}
 
@@ -1136,5 +1136,38 @@ func TestLocalCommandSpecsAndCommandsAgree(t *testing.T) {
 		if !specified[name] {
 			t.Errorf("LocalCommandSpecs() is missing %s", name)
 		}
+	}
+}
+
+// TestSummarizeParkReasonBoundsAToolLog is the regression case for a single
+// parked task swamping /tasks. A gate failure parks the task with the tool's
+// whole output -- Sam's #10 carried a multi-line golangci-lint dump, warnings
+// and all -- which the list view rendered verbatim, pushing every other task
+// out of the reply.
+func TestSummarizeParkReasonBoundsAToolLog(t *testing.T) {
+	reason := "stage fix: agent parked (gate_parked): [golangci-lint] golangci-lint run ./...\n" +
+		"level=warning msg=\"[formatter] gofumpt: extra-rules is deprecated\"\n" +
+		"scratchverify/main.go:38:1: calculated cyclomatic complexity for function run is 16, max is 15 (cyclop)\n" +
+		"1 issues:\n- cyclop: 1"
+
+	got := summarizeParkReason(reason)
+	if strings.ContainsAny(got, "\n\r") {
+		t.Fatalf("summarizeParkReason() = %q, want a single line", got)
+	}
+	if len([]rune(got)) > parkReasonMaxRunes+3 {
+		t.Fatalf("summarizeParkReason() is %d runes, want at most %d plus the ellipsis",
+			len([]rune(got)), parkReasonMaxRunes)
+	}
+	if !strings.HasPrefix(got, "stage fix: agent parked") {
+		t.Fatalf("summarizeParkReason() = %q, want it to keep the leading reason", got)
+	}
+}
+
+// TestSummarizeParkReasonKeepsAShortReasonIntact pins that the common case --
+// a one-line reason an operator can act on -- is passed through untouched.
+func TestSummarizeParkReasonKeepsAShortReasonIntact(t *testing.T) {
+	const reason = "diff is 789 changed lines (cap 400) -- split the issue or approve manually"
+	if got := summarizeParkReason(reason); got != reason {
+		t.Fatalf("summarizeParkReason() = %q, want it unchanged", got)
 	}
 }

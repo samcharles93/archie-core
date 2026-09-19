@@ -127,12 +127,13 @@ func newStatusHealth(b *boot) gateway.HealthSource {
 			}
 			return b.containerPool.Active(), b.containerPool.Cap(), true
 		},
-		channels: func() ([]gateway.ChannelHealth, bool) {
-			if b.channelManager == nil {
-				return nil, false
-			}
-			return channelHealth(b.channelManager), true
-		},
+		// No channel source: the chat front-ends run in the extracted
+		// Messaging Service, so this process cannot observe a lifecycle it
+		// does not drive. Reporting anything here would be a guess, and
+		// "truthful or absent" says omit the section instead. Restoring it
+		// needs the Messaging Service to publish its channel lifecycle
+		// (archie-core-8cda.6.8).
+		channels: nil,
 		lastPoll: func() (time.Time, bool) {
 			if b.d == nil {
 				return time.Time{}, false

@@ -9,7 +9,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 const providerCallbackPrefix = "provider:"
@@ -18,17 +18,17 @@ func (g *Gateway) sendProviderSelector(
 	ctx context.Context,
 	b *bot.Bot,
 	msg *models.Message,
-	router *gateway.Router,
+	client messaging.ChatContract,
 ) {
-	manager, ok := router.Models.(gateway.ProviderModelManager)
-	if !ok || len(manager.Providers()) == 0 {
+	snap, err := client.Snapshot(ctx)
+	if err != nil || len(snap.Providers) == 0 {
 		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, "Provider switching is not configured.")
 		return
 	}
 	params := &bot.SendMessageParams{
 		ChatID:      msg.Chat.ID,
-		Text:        providerSelectorText(manager.ActiveModel(), manager.ActiveProvider()),
-		ReplyMarkup: g.providerSelectorKeyboard(manager),
+		Text:        providerSelectorText(snap.ActiveModel, snap.ActiveProvider),
+		ReplyMarkup: g.providerSelectorKeyboard(snap.ActiveProvider, snap.Providers, snap.ModelsByProvider),
 	}
 	if msg.MessageThreadID != 0 {
 		params.MessageThreadID = msg.MessageThreadID
@@ -45,12 +45,11 @@ func providerSelectorText(activeModel, activeProvider string) string {
 		"\n\nSelect a provider:"
 }
 
-func (g *Gateway) providerSelectorKeyboard(manager gateway.ProviderModelManager) *models.InlineKeyboardMarkup {
-	active := manager.ActiveProvider()
-	providers := manager.Providers()
+func (g *Gateway) providerSelectorKeyboard(active string, providers []string, modelsByProvider map[string][]string) *models.InlineKeyboardMarkup {
 	buttons := make([]models.InlineKeyboardButton, 0, len(providers))
 	for _, provider := range providers {
-		label := fmt.Sprintf("%s (%d)", providerName(manager, provider), len(manager.ModelsForProvider(provider)))
+		count := len(modelsByProvider[provider])
+		label := fmt.Sprintf("%s (%d)", providerDisplayName(provider), count)
 		if provider == active {
 			label = "✓ " + label
 		}
@@ -68,15 +67,6 @@ func (g *Gateway) providerSelectorKeyboard(manager gateway.ProviderModelManager)
 		Text: "✗ Cancel", CallbackData: modelCancelCallback,
 	}})
 	return &models.InlineKeyboardMarkup{InlineKeyboard: rows}
-}
-
-func providerName(manager gateway.ModelManager, provider string) string {
-	if namer, ok := manager.(gateway.ProviderDisplayNamer); ok {
-		if name := strings.TrimSpace(namer.ProviderDisplayName(provider)); name != "" {
-			return name
-		}
-	}
-	return providerDisplayName(provider)
 }
 
 func (g *Gateway) providerCallbackToken(provider string) string {
@@ -118,7 +108,7 @@ func (g *Gateway) handleProviderCallback(
 	ctx context.Context,
 	b *bot.Bot,
 	update *models.Update,
-	router *gateway.Router,
+	client messaging.ChatContract,
 ) {
 	query := update.CallbackQuery
 	if query == nil {
@@ -129,8 +119,8 @@ func (g *Gateway) handleProviderCallback(
 		g.answerModelCallback(ctx, b, query.ID, "You are not authorised to use this bot.", true)
 		return
 	}
-	manager, ok := router.Models.(gateway.ProviderModelManager)
-	if !ok {
+	snap, err := client.Snapshot(ctx)
+	if err != nil || len(snap.Providers) == 0 {
 		g.answerModelCallback(ctx, b, query.ID, "Provider switching is not configured.", true)
 		return
 	}
@@ -139,24 +129,26 @@ func (g *Gateway) handleProviderCallback(
 		g.answerModelCallback(ctx, b, query.ID, "That provider selection is no longer valid.", true)
 		return
 	}
-	if len(manager.ModelsForProvider(selected)) == 0 {
+	providerModels := snap.ModelsByProvider[selected]
+	if len(providerModels) == 0 {
 		g.answerModelCallback(ctx, b, query.ID, "That provider has no selectable models.", true)
 		return
 	}
 	g.answerModelCallback(ctx, b, query.ID, "", false)
-	g.updateModelSelectorForProvider(ctx, b, query, manager, selected)
+	g.updateModelSelectorForProvider(ctx, b, query, snap.ActiveModel, providerModels, selected)
 }
 
 func (g *Gateway) updateModelSelectorForProvider(
 	ctx context.Context,
 	b *bot.Bot,
 	query *models.CallbackQuery,
-	manager gateway.ProviderModelManager,
+	activeModel string,
+	providerModels []string,
 	provider string,
 ) {
 	params := &bot.EditMessageTextParams{
-		Text:        modelSelectorTextForProvider(provider, 0, len(manager.ModelsForProvider(provider))),
-		ReplyMarkup: g.modelSelectorKeyboardForProvider(manager, provider),
+		Text:        modelSelectorTextForProvider(provider, 0, len(providerModels)),
+		ReplyMarkup: g.modelSelectorKeyboardPage(activeModel, providerModels, provider, 0),
 	}
 	switch {
 	case query.Message.Message != nil:

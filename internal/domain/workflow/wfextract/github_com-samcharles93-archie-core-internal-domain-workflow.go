@@ -4,16 +4,24 @@ package wfextract
 
 import (
 	"context"
-	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"go/constant"
+	"go/token"
 	"reflect"
+
+	"github.com/samcharles93/archie-core/internal/domain/workflow"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
+	"github.com/samcharles93/archie-core/internal/events"
 )
 
 func init() {
 	Symbols["github.com/samcharles93/archie-core/internal/domain/workflow/workflow"] = map[string]reflect.Value{
 		// function, constant and variable definitions
 		"Bootstrap":                           reflect.ValueOf(workflow.Bootstrap),
+		"DecodeReviewUnit":                    reflect.ValueOf(workflow.DecodeReviewUnit),
 		"Definitions":                         reflect.ValueOf(workflow.Definitions),
 		"DefinitionsWithOrigins":              reflect.ValueOf(workflow.DefinitionsWithOrigins),
+		"EncodeReviewUnit":                    reflect.ValueOf(workflow.EncodeReviewUnit),
+		"ErrNoReviewPayload":                  reflect.ValueOf(&workflow.ErrNoReviewPayload).Elem(),
 		"Feasibility":                         reflect.ValueOf(workflow.Feasibility),
 		"GateFromRepo":                        reflect.ValueOf(workflow.GateFromRepo),
 		"Implement":                           reflect.ValueOf(workflow.Implement),
@@ -26,6 +34,7 @@ func init() {
 		"NewNotRunReviewReport":               reflect.ValueOf(workflow.NewNotRunReviewReport),
 		"NewSkippedReviewReport":              reflect.ValueOf(workflow.NewSkippedReviewReport),
 		"OpenPR":                              reflect.ValueOf(workflow.OpenPR),
+		"Remediate":                           reflect.ValueOf(workflow.Remediate),
 		"ReviewBlocking":                      reflect.ValueOf(workflow.ReviewBlocking),
 		"ReviewCategoryDeadCode":              reflect.ValueOf(workflow.ReviewCategoryDeadCode),
 		"ReviewCategoryGoroutineLeak":         reflect.ValueOf(workflow.ReviewCategoryGoroutineLeak),
@@ -49,15 +58,32 @@ func init() {
 		"Run":                                 reflect.ValueOf(workflow.Run),
 		"SetKindWorkflows":                    reflect.ValueOf(workflow.SetKindWorkflows),
 		"SetLabelWorkflows":                   reflect.ValueOf(workflow.SetLabelWorkflows),
+		"SourceChat":                          reflect.ValueOf(constant.MakeFromLiteral("\"chat\"", token.STRING, 0)),
+		"SourceForge":                         reflect.ValueOf(constant.MakeFromLiteral("\"forge\"", token.STRING, 0)),
 		"StageBaselineGate":                   reflect.ValueOf(workflow.StageBaselineGate),
+		"StageCheckReviewPayload":             reflect.ValueOf(workflow.StageCheckReviewPayload),
 		"StageCommit":                         reflect.ValueOf(workflow.StageCommit),
 		"StageCommitPush":                     reflect.ValueOf(workflow.StageCommitPush),
 		"StageDiffCap":                        reflect.ValueOf(workflow.StageDiffCap),
 		"StageOpenPR":                         reflect.ValueOf(workflow.StageOpenPR),
+		"StagePostReviewComments":             reflect.ValueOf(workflow.StagePostReviewComments),
 		"StagePrepareWorktree":                reflect.ValueOf(workflow.StagePrepareWorktree),
+		"StageRemediationCommitPush":          reflect.ValueOf(workflow.StageRemediationCommitPush),
+		"StageRemediationReply":               reflect.ValueOf(workflow.StageRemediationReply),
+		"StageRemediationRoundCap":            reflect.ValueOf(workflow.StageRemediationRoundCap),
 		"StageRepoStages":                     reflect.ValueOf(workflow.StageRepoStages),
+		"StageResumeWorktree":                 reflect.ValueOf(workflow.StageResumeWorktree),
 		"StageReview":                         reflect.ValueOf(workflow.StageReview),
 		"StageYaegiGate":                      reflect.ValueOf(workflow.StageYaegiGate),
+		"StatusClosedWontDo":                  reflect.ValueOf(constant.MakeFromLiteral("\"closed_wont_do\"", token.STRING, 0)),
+		"StatusDead":                          reflect.ValueOf(constant.MakeFromLiteral("\"dead\"", token.STRING, 0)),
+		"StatusMerged":                        reflect.ValueOf(constant.MakeFromLiteral("\"merged\"", token.STRING, 0)),
+		"StatusPROpen":                        reflect.ValueOf(constant.MakeFromLiteral("\"pr_open\"", token.STRING, 0)),
+		"StatusParked":                        reflect.ValueOf(constant.MakeFromLiteral("\"parked\"", token.STRING, 0)),
+		"StatusQueued":                        reflect.ValueOf(constant.MakeFromLiteral("\"queued\"", token.STRING, 0)),
+		"StatusRejected":                      reflect.ValueOf(constant.MakeFromLiteral("\"rejected\"", token.STRING, 0)),
+		"StatusRunning":                       reflect.ValueOf(constant.MakeFromLiteral("\"running\"", token.STRING, 0)),
+		"StatusWaitingHuman":                  reflect.ValueOf(constant.MakeFromLiteral("\"waiting_human\"", token.STRING, 0)),
 		"TDD":                                 reflect.ValueOf(workflow.TDD),
 		"Triage":                              reflect.ValueOf(workflow.Triage),
 
@@ -70,15 +96,21 @@ func init() {
 		"Outcome":           reflect.ValueOf((*workflow.Outcome)(nil)),
 		"Registry":          reflect.ValueOf((*workflow.Registry)(nil)),
 		"ReviewCategory":    reflect.ValueOf((*workflow.ReviewCategory)(nil)),
+		"ReviewCheck":       reflect.ValueOf((*workflow.ReviewCheck)(nil)),
+		"ReviewComment":     reflect.ValueOf((*workflow.ReviewComment)(nil)),
 		"ReviewDisposition": reflect.ValueOf((*workflow.ReviewDisposition)(nil)),
 		"ReviewFinding":     reflect.ValueOf((*workflow.ReviewFinding)(nil)),
 		"ReviewLevel":       reflect.ValueOf((*workflow.ReviewLevel)(nil)),
 		"ReviewReport":      reflect.ValueOf((*workflow.ReviewReport)(nil)),
 		"ReviewRequest":     reflect.ValueOf((*workflow.ReviewRequest)(nil)),
 		"ReviewStatus":      reflect.ValueOf((*workflow.ReviewStatus)(nil)),
+		"ReviewUnit":        reflect.ValueOf((*workflow.ReviewUnit)(nil)),
+		"ReviewUnitComment": reflect.ValueOf((*workflow.ReviewUnitComment)(nil)),
 		"ReviewVerdict":     reflect.ValueOf((*workflow.ReviewVerdict)(nil)),
 		"Reviewer":          reflect.ValueOf((*workflow.Reviewer)(nil)),
 		"Stage":             reflect.ValueOf((*workflow.Stage)(nil)),
+		"Store":             reflect.ValueOf((*workflow.Store)(nil)),
+		"Task":              reflect.ValueOf((*workflow.Task)(nil)),
 		"TaskContext":       reflect.ValueOf((*workflow.TaskContext)(nil)),
 		"Trees":             reflect.ValueOf((*workflow.Trees)(nil)),
 		"Workflow":          reflect.ValueOf((*workflow.Workflow)(nil)),
@@ -86,16 +118,20 @@ func init() {
 		// interface wrapper definitions
 		"_Forger":   reflect.ValueOf((*_github_com_samcharles93_archie_core_internal_domain_workflow_Forger)(nil)),
 		"_Reviewer": reflect.ValueOf((*_github_com_samcharles93_archie_core_internal_domain_workflow_Reviewer)(nil)),
+		"_Store":    reflect.ValueOf((*_github_com_samcharles93_archie_core_internal_domain_workflow_Store)(nil)),
 		"_Trees":    reflect.ValueOf((*_github_com_samcharles93_archie_core_internal_domain_workflow_Trees)(nil)),
 	}
 }
 
 // _github_com_samcharles93_archie_core_internal_domain_workflow_Forger is an interface wrapper for Forger type
 type _github_com_samcharles93_archie_core_internal_domain_workflow_Forger struct {
-	IValue      interface{}
-	WCloseIssue func(ctx context.Context, owner string, repo string, number int, comment string) error
-	WCreatePR   func(ctx context.Context, owner string, repo string, title string, head string, base string, body string) (int, error)
-	WLinkBranch func(ctx context.Context, owner string, repo string, issueNumber int, branch string) error
+	IValue                interface{}
+	WCloseIssue           func(ctx context.Context, owner string, repo string, number int, comment string) error
+	WComment              func(ctx context.Context, owner string, repo string, number int, body string) (int64, error)
+	WCreatePR             func(ctx context.Context, owner string, repo string, title string, head string, base string, body string) (int, error)
+	WCreateReviewComments func(ctx context.Context, owner string, repo string, number int, reviewedHeadSHA string, comments []workflow.ReviewComment) error
+	WLinkBranch           func(ctx context.Context, owner string, repo string, issueNumber int, branch string) error
+	WReplyToReview        func(ctx context.Context, owner string, repo string, number int, commentID int64, body string) error
 }
 
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Forger) CloseIssue(ctx context.Context, owner string, repo string, number int, comment string) error {
@@ -104,17 +140,40 @@ func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Forger) Cl
 	}
 	return W.WCloseIssue(ctx, owner, repo, number, comment)
 }
+
+func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Forger) Comment(ctx context.Context, owner string, repo string, number int, body string) (int64, error) {
+	if W.WComment == nil {
+		return 0, nil
+	}
+	return W.WComment(ctx, owner, repo, number, body)
+}
+
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Forger) CreatePR(ctx context.Context, owner string, repo string, title string, head string, base string, body string) (int, error) {
 	if W.WCreatePR == nil {
 		return 0, nil
 	}
 	return W.WCreatePR(ctx, owner, repo, title, head, base, body)
 }
+
+func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Forger) CreateReviewComments(ctx context.Context, owner string, repo string, number int, reviewedHeadSHA string, comments []workflow.ReviewComment) error {
+	if W.WCreateReviewComments == nil {
+		return nil
+	}
+	return W.WCreateReviewComments(ctx, owner, repo, number, reviewedHeadSHA, comments)
+}
+
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Forger) LinkBranch(ctx context.Context, owner string, repo string, issueNumber int, branch string) error {
 	if W.WLinkBranch == nil {
 		return nil
 	}
 	return W.WLinkBranch(ctx, owner, repo, issueNumber, branch)
+}
+
+func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Forger) ReplyToReview(ctx context.Context, owner string, repo string, number int, commentID int64, body string) error {
+	if W.WReplyToReview == nil {
+		return nil
+	}
+	return W.WReplyToReview(ctx, owner, repo, number, commentID, body)
 }
 
 // _github_com_samcharles93_archie_core_internal_domain_workflow_Reviewer is an interface wrapper for Reviewer type
@@ -128,6 +187,35 @@ func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Reviewer) 
 		return workflow.ReviewReport{}
 	}
 	return W.WReview(ctx, req)
+}
+
+// _github_com_samcharles93_archie_core_internal_domain_workflow_Store is an interface wrapper for Store type
+type _github_com_samcharles93_archie_core_internal_domain_workflow_Store struct {
+	IValue       interface{}
+	WInsertEvent func(ctx context.Context, e events.Event) (int64, error)
+	WTransition  func(ctx context.Context, taskID int64, from string, to string, detail string) error
+	WUpdate      func(ctx context.Context, t *task.Task) error
+}
+
+func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Store) InsertEvent(ctx context.Context, e events.Event) (int64, error) {
+	if W.WInsertEvent == nil {
+		return 0, nil
+	}
+	return W.WInsertEvent(ctx, e)
+}
+
+func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Store) Transition(ctx context.Context, taskID int64, from string, to string, detail string) error {
+	if W.WTransition == nil {
+		return nil
+	}
+	return W.WTransition(ctx, taskID, from, to, detail)
+}
+
+func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Store) Update(ctx context.Context, t *task.Task) error {
+	if W.WUpdate == nil {
+		return nil
+	}
+	return W.WUpdate(ctx, t)
 }
 
 // _github_com_samcharles93_archie_core_internal_domain_workflow_Trees is an interface wrapper for Trees type
@@ -148,36 +236,42 @@ func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Trees) Cha
 	}
 	return W.WChangedFiles(ctx, dir, base)
 }
+
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Trees) ChangedLines(ctx context.Context, dir string, base string) (int, error) {
 	if W.WChangedLines == nil {
 		return 0, nil
 	}
 	return W.WChangedLines(ctx, dir, base)
 }
+
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Trees) CommitAll(ctx context.Context, dir string, message string) (bool, error) {
 	if W.WCommitAll == nil {
 		return false, nil
 	}
 	return W.WCommitAll(ctx, dir, message)
 }
+
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Trees) Diff(ctx context.Context, dir string, base string) (string, error) {
 	if W.WDiff == nil {
 		return "", nil
 	}
 	return W.WDiff(ctx, dir, base)
 }
+
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Trees) Prepare(ctx context.Context, owner string, repo string, base string, issue int, title string, body string, labels string) (dir string, branch string, err error) {
 	if W.WPrepare == nil {
 		return "", "", nil
 	}
 	return W.WPrepare(ctx, owner, repo, base, issue, title, body, labels)
 }
+
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Trees) Push(ctx context.Context, dir string, branch string) error {
 	if W.WPush == nil {
 		return nil
 	}
 	return W.WPush(ctx, dir, branch)
 }
+
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Trees) Snapshot(ctx context.Context, dir string, destDir string) error {
 	if W.WSnapshot == nil {
 		return nil

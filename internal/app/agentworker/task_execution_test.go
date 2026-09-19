@@ -271,6 +271,14 @@ func (f *prCapturingForge) VerifyPush(context.Context, string, string) error {
 
 func (f *prCapturingForge) LinkBranch(context.Context, string, string, int, string) error { return nil }
 
+func (f *prCapturingForge) CreateReviewComments(context.Context, string, string, int, string, []workflow.ReviewComment) error {
+	return nil
+}
+
+func (f *prCapturingForge) ReplyToReview(context.Context, string, string, int, int64, string) error {
+	return nil
+}
+
 type remoteManager struct {
 	manager *worktree.Manager
 	dir     string

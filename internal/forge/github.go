@@ -6,6 +6,7 @@ package forge
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -258,6 +259,58 @@ func (c *GitHubClient) ReplyToReview(ctx context.Context, owner, repo string, nu
 		return fmt.Errorf("reply to review comment %d on %s/%s#%d: %w", commentID, owner, repo, number, err)
 	}
 	return nil
+}
+
+// CreateReviewComments posts line-anchored review comments, one GitHub call per
+// comment, anchored to the RIGHT (new) side of the pull request's head revision.
+//
+// The head SHA is read here rather than taken from the caller: it is what the
+// comments are anchored to, and the caller that produced the line numbers (a
+// workflow stage running in archie-agent) holds no forge credentials to read it
+// with. reviewedHeadSHA is the revision those line numbers were measured on, and
+// the set is refused outright if the head has moved past it -- see
+// reviewHeadDrift.
+//
+// A comment GitHub refuses -- a line that falls outside the diff, a file the
+// push renamed -- does not abandon the rest. The failures are joined and
+// returned, so one unanchorable finding cannot silently drop the others.
+func (c *GitHubClient) CreateReviewComments(ctx context.Context, owner, repo string, number int, reviewedHeadSHA string, comments []InlineReviewComment) error {
+	head, err := c.reviewHeadSHA(ctx, owner, repo, number)
+	if err != nil {
+		return err
+	}
+	if err := reviewHeadDrift(owner, repo, number, head, reviewedHeadSHA); err != nil {
+		return err
+	}
+	var errs []error
+	for _, cm := range comments {
+		comment := &github.PullRequestComment{
+			Body:     new(cm.Body),
+			Path:     new(cm.Path),
+			Line:     new(cm.Line),
+			Side:     new("RIGHT"),
+			CommitID: new(head),
+		}
+		if _, _, err := c.gh.PullRequests.CreateComment(ctx, owner, repo, number, comment); err != nil {
+			errs = append(errs, fmt.Errorf("create review comment %s:%d on %s/%s#%d: %w", cm.Path, cm.Line, owner, repo, number, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// reviewHeadSHA resolves the commit a PR's line numbers are anchored to. A
+// forge that reports an empty head SHA is a failure, not an anchor: an empty
+// commit_id makes GitHub reject every comment in the set with nothing that says
+// why.
+func (c *GitHubClient) reviewHeadSHA(ctx context.Context, owner, repo string, number int) (string, error) {
+	pr, err := c.GetPullRequest(ctx, owner, repo, number)
+	if err != nil {
+		return "", err
+	}
+	if pr.HeadSHA == "" {
+		return "", fmt.Errorf("resolve head revision of %s/%s#%d: the forge reported no head sha", owner, repo, number)
+	}
+	return pr.HeadSHA, nil
 }
 
 // CloseIssue closes an issue with a final comment (feasibility "won't do").

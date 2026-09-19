@@ -14,7 +14,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 type modelManagerStub struct {
@@ -24,12 +24,48 @@ type modelManagerStub struct {
 
 type detailedModelManagerStub struct {
 	*modelManagerStub
-	details map[string]gateway.ModelDetails
+	details map[string]messaging.ModelDetails
 }
 
-func (m *detailedModelManagerStub) ModelDetails(ref string) (gateway.ModelDetails, bool) {
+func (m *detailedModelManagerStub) ModelDetails(ref string) (messaging.ModelDetails, bool) {
 	details, ok := m.details[ref]
 	return details, ok
+}
+
+func newTestChatFromManager(m *modelManagerStub) *fakeChatContract {
+	if m == nil {
+		return &fakeChatContract{}
+	}
+	modelsByProvider := make(map[string][]string)
+	for _, p := range m.Providers() {
+		modelsByProvider[p] = m.ModelsForProvider(p)
+	}
+	return &fakeChatContract{
+		snapshot: messaging.ChatSnapshot{
+			Models:           m.Models(),
+			ActiveModel:      m.ActiveModel(),
+			Providers:        m.Providers(),
+			ActiveProvider:   m.ActiveProvider(),
+			ModelsByProvider: modelsByProvider,
+		},
+		routeFunc: func(ctx context.Context, in messaging.Inbound) (messaging.ChatReply, error) {
+			text := in.Message.Text
+			if after, ok := strings.CutPrefix(text, "/model "); ok {
+				ref := after
+				if err := m.SetActiveModel(ctx, ref); err != nil {
+					return messaging.ChatReply{Text: fmt.Sprintf("Cannot switch: %v", err)}, nil
+				}
+				return messaging.ChatReply{Text: fmt.Sprintf("Active model set to %s.", ref)}, nil
+			}
+			return messaging.ChatReply{Text: "ok"}, nil
+		},
+	}
+}
+
+func newTestChatFromDetailed(m *detailedModelManagerStub) *fakeChatContract {
+	chat := newTestChatFromManager(m.modelManagerStub)
+	chat.details = m.details
+	return chat
 }
 
 func (m *modelManagerStub) Models() []string {
@@ -137,12 +173,11 @@ func TestModelCommandShowsInlineSelector(t *testing.T) {
 		models: []string{"provider/alpha", "provider/beta", "other/gamma"},
 		active: "provider/beta",
 	}
-	router := gateway.NewRouter(nil, nil, "telegram")
-	router.Models = manager
+	chat := newTestChatFromManager(manager)
 	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	b, requests := newTelegramTestBot(t)
 
-	g.defaultHandler(router)(context.Background(), b, &models.Update{
+	g.defaultHandler(chat)(context.Background(), b, &models.Update{
 		Message: &models.Message{
 			From: &models.User{ID: allowedUserID},
 			Chat: models.Chat{ID: 7, Type: models.ChatTypePrivate},
@@ -192,12 +227,11 @@ func TestModelCommandDrillsFromProviderIntoFilteredModels(t *testing.T) {
 		},
 		active: "openrouter/openai/gpt-5.6",
 	}
-	router := gateway.NewRouter(nil, nil, "telegram")
-	router.Models = manager
+	chat := newTestChatFromManager(manager)
 	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	b, requests := newTelegramTestBot(t)
 
-	g.defaultHandler(router)(context.Background(), b, &models.Update{
+	g.defaultHandler(chat)(context.Background(), b, &models.Update{
 		Message: &models.Message{
 			From: &models.User{ID: allowedUserID},
 			Chat: models.Chat{ID: 7, Type: models.ChatTypePrivate},
@@ -214,7 +248,7 @@ func TestModelCommandDrillsFromProviderIntoFilteredModels(t *testing.T) {
 
 	*requests = nil
 	providerCallback := providerMarkup.InlineKeyboard[0][1].CallbackData
-	g.defaultHandler(router)(context.Background(), b, &models.Update{
+	g.defaultHandler(chat)(context.Background(), b, &models.Update{
 		CallbackQuery: &models.CallbackQuery{
 			ID:   "provider-callback",
 			From: models.User{ID: allowedUserID},
@@ -276,7 +310,7 @@ func TestModelSelectorKeyboardPageAcrossModelCounts(t *testing.T) {
 			}
 			g := New("1:test", []int64{42}, slog.Default())
 
-			page := g.modelSelectorKeyboardPage(manager, "provider", 0)
+			page := g.modelSelectorKeyboardPage(manager.ActiveModel(), manager.ModelsForProvider("provider"), "provider", 0)
 			rows := page.InlineKeyboard
 			if len(rows) == 0 {
 				t.Fatalf("no rows returned for %d models", tt.count)
@@ -327,14 +361,14 @@ func TestModelSelectorPageCallbackAdvancesToNextPage(t *testing.T) {
 	}
 	g := New("1:test", []int64{42}, slog.Default())
 
-	first := g.modelSelectorKeyboardPage(manager, "provider", 0)
+	first := g.modelSelectorKeyboardPage(manager.ActiveModel(), manager.ModelsForProvider("provider"), "provider", 0)
 	nav := first.InlineKeyboard[4]
 	next, ok := g.modelPageForCallback(nav[1].CallbackData)
 	if !ok {
 		t.Fatal("next page callback was not recorded")
 	}
 
-	second := g.modelSelectorKeyboardPage(manager, next.Provider, next.Page)
+	second := g.modelSelectorKeyboardPage(manager.ActiveModel(), manager.ModelsForProvider(next.Provider), next.Provider, next.Page)
 	if got := len(second.InlineKeyboard[0]); got != 1 {
 		t.Fatalf("second page model row = %d buttons, want 1 (nine models, page size eight)", got)
 	}
@@ -347,7 +381,7 @@ func TestModelSelectionConfirmationIncludesCatalogMetadata(t *testing.T) {
 	const ref = "google/gemini-3.6-flash"
 	manager := &detailedModelManagerStub{
 		modelManagerStub: &modelManagerStub{models: []string{ref}, active: ref},
-		details: map[string]gateway.ModelDetails{
+		details: map[string]messaging.ModelDetails{
 			ref: {
 				Ref: ref, ContextWindow: 1_048_576, MaxOutputTokens: 65_536,
 				Reasoning: true, Tools: true, Structured: true,
@@ -356,7 +390,7 @@ func TestModelSelectionConfirmationIncludesCatalogMetadata(t *testing.T) {
 		},
 	}
 
-	got := modelSelectionConfirmation(manager, ref)
+	got := modelSelectionConfirmation(newTestChatFromDetailed(manager), ref)
 	for _, want := range []string{
 		"Model switched to gemini-3.6-flash",
 		"Provider: Google",
@@ -377,12 +411,11 @@ func TestProviderCallbackHonoursTheProviderRenderedInTheSelector(t *testing.T) {
 		models: []string{"openai/gpt-5.6", "openrouter/openai/gpt-5.6"},
 		active: "openai/gpt-5.6",
 	}
-	router := gateway.NewRouter(nil, nil, "telegram")
-	router.Models = manager
+	chat := newTestChatFromManager(manager)
 	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	b, _ := newTelegramTestBot(t)
 
-	markup := g.providerSelectorKeyboard(manager)
+	markup := g.providerSelectorKeyboard(chat.snapshot.ActiveProvider, chat.snapshot.Providers, chat.snapshot.ModelsByProvider)
 	renderedCallback := markup.InlineKeyboard[0][0].CallbackData
 	manager.models = []string{"deepseek/deepseek-v4-pro", "openai/gpt-5.6", "openrouter/openai/gpt-5.6"}
 
@@ -390,7 +423,7 @@ func TestProviderCallbackHonoursTheProviderRenderedInTheSelector(t *testing.T) {
 		ID:   "callback-id",
 		From: models.User{ID: allowedUserID},
 		Data: renderedCallback,
-	}}, router)
+	}}, chat)
 
 	if got := manager.ActiveProvider(); got != "openai" {
 		t.Errorf("opening a provider page changed active provider to %q", got)
@@ -403,12 +436,11 @@ func TestModelCallbackSwitchesAndUpdatesSelector(t *testing.T) {
 		models: []string{"provider/alpha", "provider/beta"},
 		active: "provider/alpha",
 	}
-	router := gateway.NewRouter(nil, nil, "telegram")
-	router.Models = manager
+	chat := newTestChatFromManager(manager)
 	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	b, requests := newTelegramTestBot(t)
 
-	g.defaultHandler(router)(context.Background(), b, &models.Update{
+	g.defaultHandler(chat)(context.Background(), b, &models.Update{
 		CallbackQuery: &models.CallbackQuery{
 			ID:   "callback-id",
 			From: models.User{ID: allowedUserID},
@@ -449,8 +481,7 @@ func TestDirectModelSelectionWithProviderIsAtomicOnFailure(t *testing.T) {
 		models: []string{"openai/gpt-5.6", "anthropic/claude"},
 		active: "openai/gpt-5.6",
 	}
-	router := gateway.NewRouter(nil, nil, "telegram")
-	router.Models = manager
+	chat := newTestChatFromManager(manager)
 	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	b, _ := newTelegramTestBot(t)
 
@@ -458,7 +489,7 @@ func TestDirectModelSelectionWithProviderIsAtomicOnFailure(t *testing.T) {
 		From: &models.User{ID: allowedUserID},
 		Chat: models.Chat{ID: 7, Type: models.ChatTypePrivate},
 		Text: "/model missing --provider anthropic",
-	}, router)
+	}, chat)
 
 	if manager.active != "openai/gpt-5.6" {
 		t.Fatalf("failed selection changed active model to %q", manager.active)
@@ -470,7 +501,7 @@ func TestModelPageIndicatorCallbackIsAnswered(t *testing.T) {
 	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	b, requests := newTelegramTestBot(t)
 
-	g.defaultHandler(gateway.NewRouter(nil, nil, "telegram"))(context.Background(), b, &models.Update{
+	g.defaultHandler(&fakeChatContract{})(context.Background(), b, &models.Update{
 		CallbackQuery: &models.CallbackQuery{
 			ID: "noop-id", From: models.User{ID: allowedUserID}, Data: modelNoopCallback,
 		},
@@ -487,12 +518,11 @@ func TestModelCallbackHonoursTheModelRenderedInTheSelector(t *testing.T) {
 		models: []string{"openai/gpt-5.6", "openrouter/openai/gpt-5.6"},
 		active: "openai/gpt-5.6",
 	}
-	router := gateway.NewRouter(nil, nil, "telegram")
-	router.Models = manager
+	chat := newTestChatFromManager(manager)
 	g := New("1:test", []int64{allowedUserID}, slog.Default())
 	b, _ := newTelegramTestBot(t)
 
-	markup := g.modelSelectorKeyboard(manager)
+	markup := g.modelSelectorKeyboard(chat.snapshot.ActiveModel, chat.snapshot.Models, chat.snapshot.ActiveProvider, chat.snapshot.ModelsByProvider)
 	renderedCallback := markup.InlineKeyboard[0][0].CallbackData
 	if err := manager.SetActiveProvider(context.Background(), "openrouter"); err != nil {
 		t.Fatal(err)
@@ -502,7 +532,7 @@ func TestModelCallbackHonoursTheModelRenderedInTheSelector(t *testing.T) {
 		ID:   "callback-id",
 		From: models.User{ID: allowedUserID},
 		Data: renderedCallback,
-	}}, router)
+	}}, chat)
 
 	if got := manager.ActiveModel(); got != "openai/gpt-5.6" {
 		t.Errorf("stale selector chose %q, want the originally rendered model", got)
@@ -526,12 +556,11 @@ func TestModelCallbackRejectsUnauthorizedAndMalformedSelections(t *testing.T) {
 				models: []string{"provider/alpha", "provider/beta"},
 				active: "provider/alpha",
 			}
-			router := gateway.NewRouter(nil, nil, "telegram")
-			router.Models = manager
+			chat := newTestChatFromManager(manager)
 			g := New("1:test", []int64{allowedUserID}, slog.Default())
 			b, requests := newTelegramTestBot(t)
 
-			g.defaultHandler(router)(context.Background(), b, &models.Update{
+			g.defaultHandler(chat)(context.Background(), b, &models.Update{
 				CallbackQuery: &models.CallbackQuery{
 					ID:   "callback-id",
 					From: models.User{ID: tt.userID},
@@ -572,12 +601,11 @@ func TestProviderCallbackRejectsUnauthorizedAndMalformedSelections(t *testing.T)
 				models: []string{"openrouter/openai/gpt-5.6", "openai/gpt-5.6"},
 				active: "openrouter/openai/gpt-5.6",
 			}
-			router := gateway.NewRouter(nil, nil, "telegram")
-			router.Models = manager
+			chat := newTestChatFromManager(manager)
 			g := New("1:test", []int64{allowedUserID}, slog.Default())
 			b, requests := newTelegramTestBot(t)
 
-			g.defaultHandler(router)(context.Background(), b, &models.Update{
+			g.defaultHandler(chat)(context.Background(), b, &models.Update{
 				CallbackQuery: &models.CallbackQuery{
 					ID:   "callback-id",
 					From: models.User{ID: tt.userID},

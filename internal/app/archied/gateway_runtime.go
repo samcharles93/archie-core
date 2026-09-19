@@ -12,13 +12,12 @@ import (
 
 // setupChatRuntime wires the model runtime, tool registry, persona registry,
 // chat task creator/controller, default chat identity and the release-update
-// service. Both the daemon (its own Telegram/email routers) and the standalone
-// Gateway (the web router) build through this one constructor so the two
-// processes cannot diverge.
+// service. The daemon and the standalone Gateway build through this one
+// constructor so the two processes cannot diverge.
 func (b *boot) setupChatRuntime(cfg config.Config) {
 	// ── LLM runtime ──────────────────────────────────────────────────
-	// Created before gateways so the LLMResponder can be wired into the
-	// Telegram router for non-command message processing.
+	// Created before the router so the LLMResponder can be wired in for
+	// non-command message processing.
 	providers := executionProviders(cfg)
 	b.llm = agentexec.NewRuntime(providers)
 	b.toolReg = tools.NewRegistry()
@@ -52,7 +51,7 @@ func (b *boot) setupChatRuntime(cfg config.Config) {
 		requeue:    b.stateStore.Requeue,
 		transition: b.stateStore.Transition,
 	})
-	b.updateService = makeUpdateService(telegramSetup{Cfg: config.NewHolder(cfg)})
+	b.updateService = makeUpdateService(chatSetup{Cfg: config.NewHolder(cfg)})
 }
 
 // setupGatewayChat is the sole production constructor of the local contract.
@@ -61,6 +60,7 @@ func (b *boot) setupGatewayChat(ctx context.Context, actor gateway.ChatTaskActor
 	b.setupChatRuntime(b.cfg)
 	cfg := b.cfg
 	router := gateway.NewRouter(b.stateStore, nil, "web")
+	router.Limiter = b.rateLimiter
 	router.Version = fmt.Sprintf("Archie\nGateway: %s\nRuntime: %s", gatewayVersion, runtimeVersion)
 	router.Models = b.chatModels
 	router.Personas = b.personas
@@ -68,14 +68,14 @@ func (b *boot) setupGatewayChat(ctx context.Context, actor gateway.ChatTaskActor
 	router.InitSessions(b.chatSessionStore)
 	configureTaskCommands(router, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.stateStore.Tasks}, b.defaultChatIdentity)
 	router.Health = b.statusHealth
-	setup := telegramSetup{
-		Cfg: config.NewHolder(cfg), St: b.stateStore, LLM: b.llm, ChatModels: b.chatModels, ToolReg: b.toolReg,
-		Personas: b.personas, ChatTasks: b.chatTasks, ChatController: b.chatController,
+	setup := chatSetup{
+		Cfg: config.NewHolder(cfg), LLM: b.llm, ChatModels: b.chatModels, ToolReg: b.toolReg,
+		Personas: b.personas, ChatTasks: b.chatTasks,
 		ChatTaskLister: chatTaskListerAdapter{tasks: b.stateStore.Tasks},
 		ChatTaskLogs:   chatTaskLogReaderAdapter{tasks: b.stateStore.TaskByID, taskLogs: b.taskLogs},
 		ChatTaskActor:  actor, ChatPRReviewer: b.prReviewer(),
-		DefaultChatIdentity: b.defaultChatIdentity, SessionStore: b.chatSessionStore,
-		Bus: b.bus, Log: b.log, Secrets: b.secrets,
+		DefaultChatIdentity: b.defaultChatIdentity,
+		Bus:                 b.bus, Log: b.log,
 		MemoryEngine: b.memoryStore(),
 		MemoryWriter: b.memoryWriter(),
 		// The Gateway executes the web chat's turns, so it is the process

@@ -117,7 +117,10 @@ func formatHealth(report HealthReport, now time.Time) string {
 	if p := report.LastPoll; p != nil {
 		lines = append(lines, "Last poll: "+lastPollAge(*p, now))
 	}
-	return strings.Join(lines, "\n")
+	// Joined with the report's hard line break, not "\n": every one of these
+	// is a line, and a Markdown-rendering channel soft-joins plain newlines
+	// into one run-on paragraph (see reportLineBreak).
+	return strings.Join(lines, reportLineBreak)
 }
 
 func connectivity(connected bool) string {

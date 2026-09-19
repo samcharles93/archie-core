@@ -3,8 +3,10 @@ package archied
 import (
 	"context"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,7 +18,6 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/channels/status"
-	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/daemon"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/gateway"
@@ -402,26 +403,56 @@ func TestChannelHealthProjectsManagerSnapshot(t *testing.T) {
 	}
 }
 
-// TestBuildTelegramRouterCarriesStatusHealth pins the last hop: a router built
-// with a health source must expose it, or /status answers from the queue and
-// runtime sections alone while the composition root believes health is wired.
-func TestBuildTelegramRouterCarriesStatusHealth(t *testing.T) {
+// TestSetupGatewayChatCarriesStatusHealth pins the last hop: the router the
+// composition root builds must expose the health source, or /status answers
+// from the queue and runtime sections alone while the composition root
+// believes health is wired.
+//
+// Asserted on the source rather than by calling setupGatewayChat, which needs
+// a fully built boot (stores, runtime, memory engines) to run. That is the
+// same technique composition_order_test.go uses for wiring nothing at runtime
+// observes. The predecessor of this test drove buildTelegramRouter, which the
+// Messaging Service extraction deleted along with the daemon's own routers;
+// setupGatewayChat is now the sole production constructor of a Router.
+func TestSetupGatewayChatCarriesStatusHealth(t *testing.T) {
+	fileset := token.NewFileSet()
+	file, err := parser.ParseFile(fileset, "gateway_runtime.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := methodBody(t, file, "setupGatewayChat")
+
+	var wired bool
+	ast.Inspect(body, func(n ast.Node) bool {
+		assign, ok := n.(*ast.AssignStmt)
+		if !ok || len(assign.Lhs) != 1 {
+			return true
+		}
+		sel, ok := assign.Lhs[0].(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "Health" {
+			return true
+		}
+		if ident, ok := sel.X.(*ast.Ident); ok && ident.Name == "router" {
+			wired = true
+		}
+		return true
+	})
+	if !wired {
+		t.Fatal("setupGatewayChat never assigns router.Health; /status would lose its health section")
+	}
+}
+
+// TestRouterWithHealthAnswersStatus is the behavioural half: a router holding a
+// health source renders it into /status.
+func TestRouterWithHealthAnswersStatus(t *testing.T) {
 	sessions := gateway.NewSessionStoreMemory()
 	t.Cleanup(func() { _ = sessions.Close() })
 
 	st := store.OpenTest(t)
-	src := statusHealth{broker: func() (bool, bool) { return true, true }}
-	router := buildTelegramRouter(context.Background(), nil, telegramSetup{
-		Cfg:          config.NewHolder(config.Config{}),
-		St:           st,
-		SessionStore: sessions,
-		StatusHealth: src,
-		Log:          slog.Default(),
-	}, sessions)
+	router := gateway.NewRouter(st, nil, "web")
+	router.InitSessions(sessions)
+	router.Health = statusHealth{broker: func() (bool, bool) { return true, true }}
 
-	if router.Health == nil {
-		t.Fatal("router.Health = nil, want the configured health source")
-	}
 	reply, err := router.Route(context.Background(), gateway.Inbound{
 		Message: messaging.Message{Role: messaging.RoleUser, Text: "/status"},
 	})

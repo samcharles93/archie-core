@@ -55,7 +55,12 @@ surviving blocking finding — or a review that failed to run — parks the task
 (`StatusParked`, not `waiting_human`) with the findings rendered into the park
 reason; `StageOpenPR` never runs. Warn/plausible findings and the zero-finding
 case leave the outcome unset, so the PR opens with a findings section rendered
-onto its body.
+onto its body. `StagePostReviewComments` then runs after `StageOpenPR` and posts
+the **line-anchored** findings as inline review comments, carrying a one-click
+suggestion on a confirmed finding the reviewer could state a fix for. That stage
+is best-effort — a comment that fails to post is logged, never a park — because
+the body section already lists every finding, and it is the record a whole-file
+finding (no line to anchor to) only ever appears in.
 
 ## Model and budget
 

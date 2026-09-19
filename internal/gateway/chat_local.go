@@ -31,7 +31,7 @@ func (a *LocalChatAdapter) Snapshot(ctx context.Context) (ChatSnapshot, error) {
 	if err != nil {
 		return ChatSnapshot{}, err
 	}
-	s := ChatSnapshot{Sessions: sessions, Models: []string{}, Providers: []string{}, Personas: []string{}, ModelsByProvider: map[string][]string{}, ActivePersonas: map[string]string{}, RestartAvailable: a.Router.Restart != nil, CancellationAvailable: a.Turns != nil, PersonasAvailable: a.Personas != nil}
+	s := ChatSnapshot{Sessions: sessions, Models: []string{}, Providers: []string{}, Personas: []string{}, ModelsByProvider: map[string][]string{}, ActivePersonas: map[string]string{}, RestartAvailable: a.Router.Restart != nil, CancellationAvailable: a.Turns != nil, PersonasAvailable: a.Personas != nil, Version: a.Router.Version}
 	if a.Models != nil {
 		s.Models = slices.Clone(a.Models.Models())
 		s.ActiveModel = a.Models.ActiveModel()

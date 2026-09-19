@@ -235,6 +235,12 @@ type markdownBlockParser struct {
 	indented   bool
 	listItems  [][]models.InputRichBlock
 	quoteLines []string
+	// hardBreak records that the line just consumed ended in CommonMark's
+	// line-break marker, so the next line starts its own block.
+	hardBreak bool
+	// tightNext suppresses the spacer before the next block, keeping the
+	// lines of one hard-broken stanza visually together.
+	tightNext bool
 }
 
 // handleLine processes one line of input, dispatching to whichever
@@ -283,13 +289,42 @@ func (p *markdownBlockParser) handleLine(line string) {
 		// nothing, jamming the two lines together with no separator
 		// whatsoever. A space is the correct soft-break rendering anyway
 		// and survives regardless of how the client treats a literal "\n".
+		//
+		// A line that ended in a hard break is the exception: the producer
+		// said it is a line, so it closes its own block and the next one
+		// hugs it. Line-oriented reports (/status, /tasks) depend on this;
+		// without it every one of their lines soft-joined into one run-on
+		// paragraph (archie-core-8cda.6.10).
 		p.flushList()
 		p.flushQuote()
-		if p.paragraph.Len() > 0 {
+		switch {
+		case p.hardBreak:
+			p.flushParagraph()
+			p.tightNext = true
+		case p.paragraph.Len() > 0:
 			p.paragraph.WriteString(" ")
 		}
-		p.paragraph.WriteString(trimmed)
+		p.hardBreak = endsWithHardBreak(line)
+		p.paragraph.WriteString(trimHardBreak(trimmed))
 	}
+}
+
+// endsWithHardBreak reports whether line carries CommonMark's line-break
+// marker: two or more trailing spaces, or a trailing backslash.
+func endsWithHardBreak(line string) bool {
+	if strings.TrimSpace(line) == "" {
+		return false
+	}
+	if strings.HasSuffix(strings.TrimRight(line, " \t"), "\\") {
+		return true
+	}
+	return strings.HasSuffix(line, "  ")
+}
+
+// trimHardBreak removes a trailing backslash marker, which unlike trailing
+// spaces would otherwise survive into the rendered text.
+func trimHardBreak(trimmed string) string {
+	return strings.TrimRight(strings.TrimSuffix(trimmed, "\\"), " ")
 }
 
 // consumeCodeLine handles one line while a code block is open, reporting
@@ -338,13 +373,18 @@ func (p *markdownBlockParser) flush() {
 // makes that gap explicit instead of relying on client-side spacing that
 // doesn't exist.
 func (p *markdownBlockParser) appendBlock(block models.InputRichBlock) {
-	if len(p.blocks) > 0 && p.blocks[len(p.blocks)-1].Type != models.RichBlockTypeSectionHeading {
+	tight := p.tightNext
+	p.tightNext = false
+	if !tight && len(p.blocks) > 0 && p.blocks[len(p.blocks)-1].Type != models.RichBlockTypeSectionHeading {
 		p.blocks = append(p.blocks, paragraphBlock(""))
 	}
 	p.blocks = append(p.blocks, block)
 }
 
 func (p *markdownBlockParser) flushParagraph() {
+	// A pending hard break belongs to the paragraph being closed. Left set, it
+	// would make the next block hug whatever came before a blank line.
+	p.hardBreak = false
 	if p.paragraph.Len() == 0 {
 		return
 	}

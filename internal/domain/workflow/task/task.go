@@ -77,6 +77,15 @@ type Task struct {
 	// later edits to the binding cannot silently rewrite history.
 	BindingID      int64 `json:"binding_id"`
 	BindingVersion int   `json:"binding_version"`
+	// ReviewPayload is the JSON-encoded review unit (the forge review's
+	// actionable comments) the remediate workflow's current run must
+	// address. The daemon's reaction consumer injects it before queuing a
+	// remediation run, so the run is recoverable from the task record
+	// itself rather than only from a prompt (docs/prds/pr-review-remediation.md
+	// decision 4). Empty outside a remediation run. RetryCount doubles as
+	// the remediation round counter for this same task, bounded by the
+	// repo's existing max_retries (decision 5's round cap).
+	ReviewPayload string `json:"review_payload"`
 	// CreatedAt and UpdatedAt are the SQLite row timestamps, exposed so
 	// callers can show a task's age and last activity. They are written by
 	// column defaults and the UPDATE statements, never by the caller.

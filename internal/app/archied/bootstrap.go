@@ -24,9 +24,6 @@ import (
 	natsio "github.com/nats-io/nats.go"
 	"github.com/samcharles93/ai-sdk/runtime"
 
-	"github.com/samcharles93/archie-core/internal/channels/email"
-	"github.com/samcharles93/archie-core/internal/channels/status"
-	"github.com/samcharles93/archie-core/internal/channels/webhook"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/daemon"
@@ -124,8 +121,20 @@ type boot struct {
 	catalog       modelcatalog.Snapshot
 	catalogModels []string
 
-	bus            *events.Bus
-	channelManager *status.Manager
+	bus *events.Bus
+	// taskActionsConn is the standalone Gateway process's own NATS connection:
+	// it dials the broker directly (the Gateway does not build the
+	// consumer/stream client the daemon does) and uses it for task actions.
+	// Held so /status can report broker connectivity from the connection this
+	// process actually uses instead of dialling a fresh one. Nil in the daemon.
+	taskActionsConn *natsio.Conn
+	// providerOutcomes records the last-known outcome of every chat-model call
+	// this process makes, read back by /status (newStatusHealth). Built before
+	// the chat runtime, which carries it into each turn runner.
+	providerOutcomes *providerOutcomeRecorder
+	// statusHealth is the /status health source for this process, built from
+	// the subsystems that exist here.
+	statusHealth gateway.HealthSource
 	// rateLimiter is the shared per-(channel, sender) inbound budget every
 	// chat Router is given. Nil when [chat.rate_limit] is not configured,
 	// which leaves rate limiting off.
@@ -145,19 +154,6 @@ type boot struct {
 	lastReload func() config.ReloadStatus
 
 	natsClient *nats.Client
-	// taskActionsConn is the standalone Gateway process's own NATS connection:
-	// it dials the broker directly (the Gateway does not build the
-	// consumer/stream client the daemon does) and uses it for task actions.
-	// Held so /status can report broker connectivity from the connection this
-	// process actually uses instead of dialling a fresh one. Nil in the daemon.
-	taskActionsConn *natsio.Conn
-	// providerOutcomes records the last-known outcome of every chat-model call
-	// this process makes, read back by /status (newStatusHealth). Built before
-	// the gateways, which carry it into each turn runner.
-	providerOutcomes *providerOutcomeRecorder
-	// statusHealth is the /status health source for this process, built from
-	// the subsystems that exist here.
-	statusHealth gateway.HealthSource
 	// natsURL is the endpoint the daemon's own client connected with at
 	// startup. For external mode it is cfg.NATS.URL; for embedded mode it is
 	// the embedded server's ClientURL(). Recorded so Daemon.ConnectedNATS
@@ -416,44 +412,13 @@ func (b *boot) loadCatalog(ctx context.Context, cfgPath string) {
 	b.log.Info("model catalog loaded", "providers", len(catalog.Providers), "models", len(b.catalogModels))
 }
 
-// channelDescriptors projects the configured chat front-ends into the
-// dashboard's channel-status descriptors.
-//
-// Configured comes from config.ChatConfig.FrontEnds so this list and the
-// configuration projection published for the extracted UI process cannot
-// disagree about whether a front-end is set up (GitHub #821). ReloadSupported
-// and Detail stay here because they are channel-lifecycle facts about the bot
-// the daemon runs, not configuration: only Telegram can be reloaded in place
-// today, and its allowlist caveat is about who the running bot answers.
-func channelDescriptors(chat config.ChatConfig) []status.Descriptor {
-	frontEnds := chat.FrontEnds()
-	descriptors := make([]status.Descriptor, 0, len(frontEnds))
-	for _, frontEnd := range frontEnds {
-		descriptor := status.Descriptor{
-			ID:         frontEnd.ID,
-			Name:       frontEnd.Name,
-			Configured: frontEnd.Configured,
-		}
-		if frontEnd.ID == "telegram" {
-			descriptor.ReloadSupported = frontEnd.Configured
-			if frontEnd.Configured && len(chat.Telegram.AllowedUserIDs) == 0 {
-				descriptor.Detail = "Token set, but the allowlist is empty -- the bot answers nobody."
-			}
-		}
-		descriptors = append(descriptors, descriptor)
-	}
-	return descriptors
-}
-
-// setupObservability builds the event bus, channel manager and dashboard
-// server. Every event is logged to SQLite (stamped with its row id) and
+// setupObservability builds the event bus and dashboard server. Every event is logged to SQLite (stamped with its row id) and
 // then fanned out to live dashboard connections.
 func (b *boot) setupObservability(ctx context.Context) {
 	cfg, log := b.cfg, b.log
 	bus := events.NewBus()
 	b.bus = bus
 	b.addCleanup(func() { bus.Close() })
-	b.channelManager = status.NewManager(channelDescriptors(cfg.Chat))
 	b.cfgHolder = config.NewHolder(cfg)
 	// The watchdog leaves its verdict in a file on this host, so the daemon
 	// reads it and publishes the outcome as an event; the dashboard renders
@@ -647,7 +612,9 @@ const rateLimiterEvictInterval = time.Minute
 
 // startRateLimiter constructs b.rateLimiter from cfg when configured, and
 // drives its documented EvictStale ticker for the life of ctx. Leaves
-// b.rateLimiter nil (rate limiting off) when cfg is not enabled.
+// b.rateLimiter nil (rate limiting off) when cfg is not enabled. Only the
+// Gateway process calls it: it owns the sole Router, so it is the one place
+// an inbound budget can be applied to every channel's turns.
 func (b *boot) startRateLimiter(ctx context.Context, cfg config.RateLimitConfig) {
 	if !cfg.Enabled() {
 		return
@@ -666,168 +633,6 @@ func (b *boot) startRateLimiter(ctx context.Context, cfg config.RateLimitConfig)
 			}
 		}
 	}()
-}
-
-// setupGateways assembles the Telegram, email and webhook gateways. It
-// returns false when the Telegram gateway could not start, which the
-// caller treats as a fatal boot error.
-//
-// Multi-agent collaboration PRD phase C (docs/prds/multi-agent-collaboration.md).
-func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) bool {
-	cfg, log := b.cfg, b.log
-	b.startRateLimiter(ctx, cfg.Chat.RateLimit)
-	start, ok := setupTelegramGateway(ctx, telegramSetup{
-		Cfg: config.NewHolder(cfg), CfgPath: cfgPath, OverlayPath: overlayPath,
-		St: b.stateStore, LLM: b.llm, ChatModels: b.chatModels, ToolReg: b.toolReg,
-		Personas: b.personas, ChatTasks: b.chatTasks, ChatController: b.chatController,
-		ChatTaskLister: chatTaskListerAdapter{tasks: b.stateStore.Tasks},
-		ChatTaskLogs: chatTaskLogReaderAdapter{
-			tasks:    b.stateStore.TaskByID,
-			taskLogs: b.taskLogs,
-		},
-		ChatTaskActor: chatTaskActorAdapter{
-			contract: func() gateway.ChatContract {
-				if b.chat != nil {
-					return b.chat.Contract
-				}
-				return nil
-			}(),
-		},
-		ChatPRReviewer:      b.prReviewer(),
-		DefaultChatIdentity: b.defaultChatIdentity, SessionStore: b.chatSessionStore, Updates: b.updateService,
-		Secrets:        b.secrets,
-		Bus:            b.bus,
-		Log:            log,
-		ChannelManager: b.channelManager, AgentStatus: b.agentStatus,
-		RateLimiter:  b.rateLimiter,
-		MemoryEngine: b.memoryStore(),
-		MemoryWriter: b.memoryWriter(),
-		// /status reads its health section through these two: the source is
-		// this process's health, the recorder is what its chat-model calls
-		// write into.
-		StatusHealth:     b.statusHealth,
-		ProviderOutcomes: b.providerOutcomes,
-	})
-	if !ok {
-		return false
-	}
-	if start != nil {
-		b.startGateways = append(b.startGateways, start)
-	}
-
-	if !b.setupEmailGateway(ctx, cfg, log) {
-		return false
-	}
-	if !b.setupWebhookGateway(ctx, cfg, log) {
-		return false
-	}
-	return true
-}
-
-// setupEmailGateway registers the optional inbound email gateway when
-// chat.email.listen_addr is configured. It returns false when the
-// configured gateway fails its own ConfigSchema validation, which the
-// caller treats as a fatal boot error -- the same convention
-// setupTelegramGateway already uses.
-func (b *boot) setupEmailGateway(ctx context.Context, cfg config.Config, log *slog.Logger) bool {
-	if cfg.Chat.Email.ListenAddr == "" {
-		return true
-	}
-	em := email.New(cfg.Chat.Email.ListenAddr, cfg.Chat.Email.RelayAddr, log)
-	if err := em.ValidateConfig(map[string]any{
-		"listen_addr": cfg.Chat.Email.ListenAddr,
-		"relay_addr":  cfg.Chat.Email.RelayAddr,
-	}); err != nil {
-		log.Error("chat.email config invalid", "err", err)
-		return false
-	}
-	emRouter := gateway.NewRouter(b.stateStore, nil, "email")
-	emRouter.Limiter = b.rateLimiter
-	emRouter.Health = b.statusHealth
-	configureTaskCommands(emRouter, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.stateStore.Tasks}, b.defaultChatIdentity)
-	b.startGateways = append(b.startGateways, func() {
-		go func() {
-			lifecycle := gateway.Lifecycle{
-				Starting: func() { b.channelManager.MarkStarting("email") },
-				Running: func() {
-					b.channelManager.MarkRunning("email")
-					log.Info("email gateway started", "addr", cfg.Chat.Email.ListenAddr)
-				},
-			}
-			if err := em.Start(ctx, emRouter, lifecycle); err != nil && ctx.Err() == nil {
-				b.channelManager.MarkFailed("email", err.Error())
-				log.Error("email gateway stopped", "err", err)
-			}
-		}()
-	})
-	return true
-}
-
-// setupWebhookGateway registers the optional inbound webhook gateway when
-// chat.webhook_addr is configured. It returns false when the configured
-// gateway fails its own ConfigSchema validation, which the caller treats
-// as a fatal boot error -- the same convention setupTelegramGateway
-// already uses.
-func (b *boot) setupWebhookGateway(ctx context.Context, cfg config.Config, log *slog.Logger) bool {
-	if cfg.Chat.WebhookAddr == "" {
-		return true
-	}
-	host, port := parseListenAddr(cfg.Chat.WebhookAddr, "0.0.0.0", 8644)
-	secretValue, err := b.secrets.Resolve(cfg.Chat.Webhook.Secret)
-	if err != nil {
-		log.Error("webhook gateway secret unresolvable; starting with signature validation disabled",
-			"engine", cfg.Chat.Webhook.Secret.Engine, "key", cfg.Chat.Webhook.Secret.Key, "err", err)
-	}
-	wh := webhook.New(
-		host, port,
-		webhookRoutes(cfg.Chat.Webhook, secretValue),
-		log,
-	)
-	if err := wh.ValidateConfig(map[string]any{
-		"host": host,
-		"port": port,
-	}); err != nil {
-		log.Error("chat.webhook config invalid", "err", err)
-		return false
-	}
-	whRouter := gateway.NewRouter(b.stateStore, nil, "webhook")
-	whRouter.Limiter = b.rateLimiter
-	whRouter.Health = b.statusHealth
-	configureTaskCommands(whRouter, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.stateStore.Tasks}, b.defaultChatIdentity)
-	b.startGateways = append(b.startGateways, func() {
-		go func() {
-			lifecycle := gateway.Lifecycle{
-				Starting: func() { b.channelManager.MarkStarting("webhook") },
-				Running: func() {
-					b.channelManager.MarkRunning("webhook")
-					log.Info("webhook gateway started", "addr", fmt.Sprintf("%s:%d", host, port))
-				},
-			}
-			if err := wh.Start(ctx, whRouter, lifecycle); err != nil && ctx.Err() == nil {
-				b.channelManager.MarkFailed("webhook", err.Error())
-				log.Error("webhook gateway stopped", "err", err)
-			}
-		}()
-	})
-	return true
-}
-
-// webhookRoutes translates the configured [chat.webhook] route into the
-// gateway's RouteConfig. It is the composition site config.WebhookRoute
-// exists for: the HMAC/template/deliver-to fields have been implemented and
-// tested in internal/channels/webhook since it was written, reachable only
-// through this translation.
-func webhookRoutes(route config.WebhookRoute, secretValue string) []webhook.RouteConfig {
-	path := route.Path
-	if path == "" {
-		path = "/webhook"
-	}
-	return []webhook.RouteConfig{{
-		Path:      path,
-		Secret:    secretValue,
-		Template:  route.Template,
-		DeliverTo: route.DeliverTo,
-	}}
 }
 
 // loadWorkflows builds the workflow registry from the skill catalog.

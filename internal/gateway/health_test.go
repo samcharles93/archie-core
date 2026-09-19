@@ -151,7 +151,10 @@ func TestFormatHealthRendersOnlyWhatWasReported(t *testing.T) {
 				"Channels: telegram running",
 				"Chat model: ok 1m ago (openai/gpt-5.6)",
 				"Last poll: just now",
-			}, "\n"),
+				// Joined with the report's hard line break: each of these is a
+				// line, and a plain "\n" soft-joins them into one paragraph
+				// in a Markdown-rendering channel.
+			}, reportLineBreak),
 		},
 	}
 
@@ -179,13 +182,13 @@ func TestFormatStatusAppendsHealthToTheQueueLine(t *testing.T) {
 		{
 			name:   "unwired health source",
 			counts: map[string]int{"running": 1},
-			want:   "📊 Archie status\n\nQueue: 1 in flight (1 running)\n\nRuntime\nNot configured",
+			want:   "📊 Archie status\n\nQueue: 1 in flight (1 running)  \nRuntime: not configured",
 		},
 		{
 			name:   "wired health source",
 			counts: map[string]int{"running": 1},
 			report: HealthReport{Broker: &BrokerHealth{Connected: true}},
-			want:   "📊 Archie status\n\nQueue: 1 in flight (1 running)\nBroker: connected\n\nRuntime\nNot configured",
+			want:   "📊 Archie status\n\nQueue: 1 in flight (1 running)  \nBroker: connected  \nRuntime: not configured",
 		},
 	}
 	for _, tc := range tests {
