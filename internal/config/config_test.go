@@ -14,7 +14,7 @@ func TestTaskConfigToConfigRoundTrip(t *testing.T) {
 	cfg := Config{
 		BotUser:      "archie-bot",
 		BotEmail:     "archie-bot@users.noreply.github.com",
-		DiffCapLines: 321,
+		DiffCapLines: new(321),
 		Models:       map[string]string{"builder": "anthropic/claude"},
 		Budgets:      Budgets{MaxSteps: 12, WallClock: Duration(45 * time.Minute), GateMaxFailures: 3},
 		Dispatch:     Dispatch{Trigger: "label", AckReaction: "eyes", Labels: map[string]string{"working": "bot:working"}},
@@ -36,8 +36,10 @@ func TestTaskConfigToConfigRoundTrip(t *testing.T) {
 	if !reflect.DeepEqual(got.Dispatch, cfg.Dispatch) {
 		t.Fatalf("Dispatch = %#v, want %#v", got.Dispatch, cfg.Dispatch)
 	}
-	if got.DiffCapLines != cfg.DiffCapLines {
-		t.Fatalf("DiffCapLines = %d, want %d", got.DiffCapLines, cfg.DiffCapLines)
+	// Compared by effective value, not pointer: the round trip through
+	// TaskConfig carries the resolved cap and rebuilds a fresh pointer.
+	if got.DiffCap() != cfg.DiffCap() {
+		t.Fatalf("DiffCap() = %d, want %d", got.DiffCap(), cfg.DiffCap())
 	}
 	if got.Notify != cfg.Notify {
 		t.Fatalf("Notify = %#v, want %#v", got.Notify, cfg.Notify)
@@ -89,7 +91,7 @@ models = ["openai/gpt-5.6-sol", "openrouter/openai/gpt-5.6-sol"]
 
 func TestConfigForTaskJSONRoundTrip(t *testing.T) {
 	cfg := Config{
-		DiffCapLines: 321,
+		DiffCapLines: new(321),
 		Models: map[string]string{
 			"builder": "anthropic/claude",
 			"planner": "openai/gpt",
@@ -124,7 +126,7 @@ func TestConfigForTaskJSONRoundTrip(t *testing.T) {
 		Models:       cfg.Models,
 		Budgets:      cfg.Budgets,
 		Dispatch:     cfg.Dispatch,
-		DiffCapLines: cfg.DiffCapLines,
+		DiffCapLines: cfg.DiffCap(),
 		Notify:       cfg.Notify,
 		Forge:        TaskForge{Host: cfg.Forge.Host},
 		ToolPolicy:   cfg.Tools.Policy,

@@ -21,7 +21,7 @@ func TestRequestJSONRoundTrip(t *testing.T) {
 			Status:      workflow.StatusRunning,
 		},
 		Repo: config.Repo{Owner: "acme", Name: "widget", Base: "main"},
-		Cfg:  config.Config{DiffCapLines: 500}.ForTask(),
+		Cfg:  config.Config{DiffCapLines: new(500)}.ForTask(),
 		Providers: map[string]agentexec.Provider{
 			"anthropic": {Class: "anthropic", APIKeyEnv: "ANTHROPIC_API_KEY"},
 		},

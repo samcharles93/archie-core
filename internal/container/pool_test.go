@@ -3,6 +3,7 @@ package container
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -556,5 +557,95 @@ func TestReleaseAfterTheReaperFiredDoesNotTearDownTwice(t *testing.T) {
 	}
 	if got := removeCalls.Load(); got != 1 {
 		t.Errorf("remove called %d times, want 1: the reaper and Release both tore the container down", got)
+	}
+}
+
+// TestPoolActiveReportsInFlightContainers pins the worker-pool read surface
+// /status reports as its container line: how many containers this pool
+// currently holds, and the concurrency cap it enforces.
+//
+// Both come from the pool's own counter. A Docker listing would report
+// containers this pool does not own (orphans from a crashed daemon, containers
+// another archie instance started) and would make reading /status cost a
+// Docker round trip on every invocation.
+func TestPoolActiveReportsInFlightContainers(t *testing.T) {
+	const maxConcurrency = 2
+
+	var dockerCalls atomic.Int32
+	created := 0
+	dockerAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		dockerCalls.Add(1)
+		if strings.HasSuffix(r.URL.Path, "/containers/create") {
+			created++
+			writeDockerJSON(t, w, map[string]any{"Id": fmt.Sprintf("%064d", created), "Warnings": []string{}})
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(dockerAPI.Close)
+
+	dockerClient, err := client.New(client.WithHost(dockerAPI.URL), client.WithAPIVersion("1.55"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = dockerClient.Close() })
+
+	pool := &Pool{
+		cli: dockerClient,
+		cfg: Config{Image: "test/image", MaxConcurrency: maxConcurrency},
+		log: discardLogger(),
+	}
+
+	var held []*Container
+	acquire := func(t *testing.T) {
+		t.Helper()
+		c, err := pool.Acquire(context.Background(), nil, nil)
+		if err != nil {
+			t.Fatalf("Acquire: %v", err)
+		}
+		held = append(held, c)
+	}
+	release := func(t *testing.T) {
+		t.Helper()
+		if len(held) == 0 {
+			t.Fatal("release with nothing held")
+		}
+		pool.Release(context.Background(), held[len(held)-1])
+		held = held[:len(held)-1]
+	}
+
+	tests := []struct {
+		name string
+		act  func(*testing.T)
+		want int
+	}{
+		{name: "idle pool holds nothing", act: func(*testing.T) {}, want: 0},
+		{name: "one acquired container", act: acquire, want: 1},
+		{name: "two acquired containers", act: acquire, want: 2},
+		{name: "one released", act: release, want: 1},
+		{name: "both released", act: release, want: 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.act(t)
+			before := dockerCalls.Load()
+			got := pool.Active()
+			if after := dockerCalls.Load(); after != before {
+				t.Errorf("Active() made %d Docker API call(s), want 0: it must read the pool's own counter", after-before)
+			}
+			if got != tc.want {
+				t.Errorf("Active() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+
+	if got := pool.Cap(); got != maxConcurrency {
+		t.Errorf("Cap() = %d, want the configured MaxConcurrency %d", got, maxConcurrency)
+	}
+
+	// An unconfigured cap means "no limit" (Acquire treats MaxConcurrency <= 0
+	// that way), so it must not be reported as a cap of zero.
+	if got := (&Pool{}).Cap(); got != 0 {
+		t.Errorf("Cap() with no MaxConcurrency = %d, want 0 (unlimited)", got)
 	}
 }
