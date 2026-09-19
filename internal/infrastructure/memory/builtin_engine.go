@@ -200,11 +200,14 @@ func scanContent(content string) error {
 // record Create and Update answer with is the record a later Get reads back
 // rather than what the caller handed in.
 //
-// The trimming is not cosmetic: builtin.Store trims a block, and a block ends
-// at a blank line, so content that begins with whitespace would push the
-// block's own boundary and come back truncated -- or, for whitespace that is
-// itself a blank line, as an empty record. Content that is nothing but
-// whitespace is rejected here for the same reason.
+// The trimming is what makes that true at the content's edges: builtin.Store
+// trims a block, so content that begins or ends with whitespace would come
+// back without it -- or, for whitespace that is itself a blank line, as an
+// empty record. Content that is nothing but whitespace is rejected here for
+// the same reason. Interior blank lines and "## " lines are the block
+// format's own delimiters rather than whitespace at an edge, and are carried
+// through instead: renderBlock escapes them and parseBlocks undoes it, so
+// accepted content is never cut at one.
 func storeContent(content string) (string, error) {
 	trimmed := strings.TrimSpace(content)
 	if trimmed == "" {

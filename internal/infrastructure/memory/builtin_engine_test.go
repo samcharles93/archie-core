@@ -214,6 +214,96 @@ func TestBuiltinEngineCreateGetRoundTrip(t *testing.T) {
 	}
 }
 
+// contentShapes are the contents a record has to survive unchanged. Two of
+// them are the block format's own delimiters: the store ends a block at a
+// blank line and starts a section at a "## " line, so content holding either
+// is the content that comes back truncated unless the engine encodes it.
+func contentShapes() []struct{ name, content string } {
+	return []struct{ name, content string }{
+		{name: "a single paragraph", content: "prefers tabs over spaces"},
+		{name: "several lines", content: "first line\nsecond line"},
+		{name: "an embedded blank line", content: "first paragraph\n\nsecond paragraph"},
+		{name: "several embedded blank lines", content: "one\n\ntwo\n\nthree"},
+		{name: "a line starting a section", content: "before\n## not a section\nafter"},
+		{name: "a section line as the first line", content: "## heading-like first line\nbody"},
+		{name: "a line that is the section prefix alone", content: "before\n## \nafter"},
+		{name: "a blank line beside a section line", content: "before\n\n## both delimiters\nafter"},
+		{name: "trailing spaces on a line", content: "line with trailing spaces  \nnext"},
+		{name: "a line that is only backslashes", content: "before\n\\\nafter"},
+		{name: "a line starting with a backslash", content: "before\n\\## escaped-looking\nafter"},
+	}
+}
+
+// TestBuiltinEngineRenderedBlockRoundTripsContent is the format's own round
+// trip: what parseBlocks reads back out of a rendered block is exactly the
+// content renderBlock was handed, for every shape, so no accepted content is
+// silently cut at a delimiter.
+func TestBuiltinEngineRenderedBlockRoundTripsContent(t *testing.T) {
+	t.Parallel()
+	for _, tt := range contentShapes() {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			block, err := renderBlock(markerData{ID: "record-1", Revision: 1, Kind: "note"}, tt.content)
+			if err != nil {
+				t.Fatalf("renderBlock() = %v, want nil", err)
+			}
+			blocks := parseBlocks(block)
+			if len(blocks) != 1 {
+				t.Fatalf("parseBlocks(renderBlock(content)) = %d block(s), want exactly 1: %q was split at a delimiter", len(blocks), tt.content)
+			}
+			if got := blocks[0].content(); got != tt.content {
+				t.Errorf("parseBlocks(renderBlock(%q)).content() = %q, want the content back unchanged", tt.content, got)
+			}
+		})
+	}
+}
+
+// TestBuiltinEngineContentSurvivesTheWriteAndAReopen carries the same shapes
+// through the whole path a caller uses: Create, a Get from the engine that
+// wrote it, and a Get and List from a second engine reading the file a
+// restart would read.
+func TestBuiltinEngineContentSurvivesTheWriteAndAReopen(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	for _, tt := range contentShapes() {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			e := newTestEngineAt(root)
+
+			created, err := e.Create(ctx, domainmemory.NewRecord{Scope: agentScope, Kind: "note", Content: tt.content})
+			if err != nil {
+				t.Fatalf("Create() = %v, want nil", err)
+			}
+			if created.Content != tt.content {
+				t.Errorf("Create() Content = %q, want %q", created.Content, tt.content)
+			}
+
+			got, err := e.Get(ctx, agentScope, created.ID)
+			if err != nil {
+				t.Fatalf("Get() = %v, want nil", err)
+			}
+			if got.Content != tt.content {
+				t.Errorf("Get() Content = %q, want %q", got.Content, tt.content)
+			}
+
+			// Everything below reads the file, not the engine's memory.
+			reopened := newTestEngineAt(root)
+			again, err := reopened.Get(ctx, agentScope, created.ID)
+			if err != nil {
+				t.Fatalf("Get() from a second engine = %v, want nil", err)
+			}
+			requireRecord(t, "Get() from a second engine", again, created)
+
+			heads, err := reopened.List(ctx, agentScope)
+			if err != nil {
+				t.Fatalf("List() from a second engine = %v, want nil", err)
+			}
+			requireContents(t, "List() from a second engine", heads, tt.content)
+		})
+	}
+}
+
 func TestBuiltinEngineListReturnsTheScopeHeadsNewestFirst(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
