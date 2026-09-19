@@ -15,7 +15,7 @@ import (
 
 	"github.com/go-telegram/bot"
 
-	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/tools/sendfile"
 )
 
@@ -97,7 +97,7 @@ func (m *mediaAPI) called() (string, map[string]string) {
 	return m.method, form
 }
 
-func newTestMediaSender(t *testing.T, serverURL string, chatID int64, threadID int) gateway.MediaSender {
+func newTestMediaSender(t *testing.T, serverURL string, chatID int64, threadID int) messaging.MediaSender {
 	t.Helper()
 	b, err := bot.New("1:test", bot.WithServerURL(serverURL), bot.WithSkipGetMe())
 	if err != nil {
@@ -114,14 +114,14 @@ func TestSendMedia_RoutesByMediaType(t *testing.T) {
 	tests := []struct {
 		name       string
 		mediaType  string
-		msgType    gateway.MessageType
+		msgType    messaging.MessageType
 		wantMethod string
 		wantField  string
 	}{
-		{"video", "video", gateway.MsgVideo, "sendVideo", "video"},
-		{"image", "image", gateway.MsgImage, "sendPhoto", "photo"},
-		{"audio", "audio", gateway.MsgAudio, "sendAudio", "audio"},
-		{"document", "document", gateway.MsgDocument, "sendDocument", "document"},
+		{"video", "video", messaging.MsgVideo, "sendVideo", "video"},
+		{"image", "image", messaging.MsgImage, "sendPhoto", "photo"},
+		{"audio", "audio", messaging.MsgAudio, "sendAudio", "audio"},
+		{"document", "document", messaging.MsgDocument, "sendDocument", "document"},
 	}
 
 	for _, tt := range tests {
@@ -130,10 +130,10 @@ func TestSendMedia_RoutesByMediaType(t *testing.T) {
 			defer srv.Close()
 
 			sender := newTestMediaSender(t, srv.URL, 555, 0)
-			res, err := sender.SendMedia(context.Background(), gateway.MessageEvent{
+			res, err := sender.SendMedia(context.Background(), messaging.MessageEvent{
 				Type: tt.msgType,
 				Text: "a caption",
-				Media: []gateway.MediaAttachment{{
+				Media: []messaging.MediaAttachment{{
 					Type: tt.mediaType,
 					URL:  "https://example.com/asset",
 				}},
@@ -169,9 +169,9 @@ func TestSendMedia_UsesBoundThread(t *testing.T) {
 	defer srv.Close()
 
 	sender := newTestMediaSender(t, srv.URL, 555, 99)
-	if _, err := sender.SendMedia(context.Background(), gateway.MessageEvent{
-		Type:  gateway.MsgVideo,
-		Media: []gateway.MediaAttachment{{Type: "video", URL: "https://example.com/v.mp4"}},
+	if _, err := sender.SendMedia(context.Background(), messaging.MessageEvent{
+		Type:  messaging.MsgVideo,
+		Media: []messaging.MediaAttachment{{Type: "video", URL: "https://example.com/v.mp4"}},
 	}); err != nil {
 		t.Fatalf("SendMedia: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestSendMedia_NoAttachmentIsAnError(t *testing.T) {
 	defer srv.Close()
 
 	sender := newTestMediaSender(t, srv.URL, 555, 0)
-	res, err := sender.SendMedia(context.Background(), gateway.MessageEvent{Type: gateway.MsgVideo})
+	res, err := sender.SendMedia(context.Background(), messaging.MessageEvent{Type: messaging.MsgVideo})
 	if err == nil {
 		t.Fatal("expected an error for an event carrying no media")
 	}
@@ -216,9 +216,9 @@ func TestSendMedia_MissingSourceIsAnError(t *testing.T) {
 	defer srv.Close()
 
 	sender := newTestMediaSender(t, srv.URL, 555, 0)
-	res, err := sender.SendMedia(context.Background(), gateway.MessageEvent{
-		Type:  gateway.MsgVideo,
-		Media: []gateway.MediaAttachment{{Type: "video"}},
+	res, err := sender.SendMedia(context.Background(), messaging.MessageEvent{
+		Type:  messaging.MsgVideo,
+		Media: []messaging.MediaAttachment{{Type: "video"}},
 	})
 	if err == nil {
 		t.Fatal("expected an error for an attachment with no URL")
@@ -234,9 +234,9 @@ func TestSendMedia_UnknownTypeIsAnError(t *testing.T) {
 	defer srv.Close()
 
 	sender := newTestMediaSender(t, srv.URL, 555, 0)
-	res, err := sender.SendMedia(context.Background(), gateway.MessageEvent{
-		Type:  gateway.MsgVideo,
-		Media: []gateway.MediaAttachment{{Type: "hologram", URL: "https://example.com/h"}},
+	res, err := sender.SendMedia(context.Background(), messaging.MessageEvent{
+		Type:  messaging.MsgVideo,
+		Media: []messaging.MediaAttachment{{Type: "hologram", URL: "https://example.com/h"}},
 	})
 	if err == nil {
 		t.Fatal("expected an error for an unsupported media type")
@@ -274,9 +274,9 @@ func TestSendMedia_ClassifiesAPIFailures(t *testing.T) {
 			api.mu.Unlock()
 
 			sender := newTestMediaSender(t, srv.URL, 555, 0)
-			res, err := sender.SendMedia(context.Background(), gateway.MessageEvent{
-				Type:  gateway.MsgVideo,
-				Media: []gateway.MediaAttachment{{Type: "video", URL: "https://example.com/v.mp4"}},
+			res, err := sender.SendMedia(context.Background(), messaging.MessageEvent{
+				Type:  messaging.MsgVideo,
+				Media: []messaging.MediaAttachment{{Type: "video", URL: "https://example.com/v.mp4"}},
 			})
 			if err == nil {
 				t.Fatal("expected an error")
@@ -301,7 +301,7 @@ func TestMediaSender_ReportsMediaCapability(t *testing.T) {
 	defer srv.Close()
 
 	sender := newTestMediaSender(t, srv.URL, 555, 0)
-	if caps := gateway.CapabilitiesOf(sender); !caps.Media {
+	if caps := messaging.CapabilitiesOf(sender); !caps.Media {
 		t.Error("telegram media sender does not report the Media capability")
 	}
 }
@@ -341,9 +341,9 @@ func TestSendMedia_UploadsLocalPath(t *testing.T) {
 			path := writeTempFile(t, tt.file, "file bytes")
 
 			sender := newTestMediaSender(t, srv.URL, 555, 0)
-			res, err := sender.SendMedia(context.Background(), gateway.MessageEvent{
+			res, err := sender.SendMedia(context.Background(), messaging.MessageEvent{
 				Text:  "a caption",
-				Media: []gateway.MediaAttachment{{Type: tt.mediaType, Path: path}},
+				Media: []messaging.MediaAttachment{{Type: tt.mediaType, Path: path}},
 			})
 			if err != nil {
 				t.Fatalf("SendMedia: %v", err)
@@ -381,8 +381,8 @@ func TestSendMedia_UploadUsesAttachmentFileName(t *testing.T) {
 	path := writeTempFile(t, "tmp-8342.bin", "x")
 
 	sender := newTestMediaSender(t, srv.URL, 555, 0)
-	if _, err := sender.SendMedia(context.Background(), gateway.MessageEvent{
-		Media: []gateway.MediaAttachment{{Type: "document", Path: path, FileName: "session.log"}},
+	if _, err := sender.SendMedia(context.Background(), messaging.MessageEvent{
+		Media: []messaging.MediaAttachment{{Type: "document", Path: path, FileName: "session.log"}},
 	}); err != nil {
 		t.Fatalf("SendMedia: %v", err)
 	}
@@ -426,8 +426,8 @@ func TestSendMedia_LocalPathFailures(t *testing.T) {
 			defer srv.Close()
 
 			sender := newTestMediaSender(t, srv.URL, 555, 0)
-			res, err := sender.SendMedia(context.Background(), gateway.MessageEvent{
-				Media: []gateway.MediaAttachment{{Type: tt.mediaType, Path: tt.path}},
+			res, err := sender.SendMedia(context.Background(), messaging.MessageEvent{
+				Media: []messaging.MediaAttachment{{Type: tt.mediaType, Path: tt.path}},
 			})
 			if err == nil {
 				t.Fatal("expected an error")
@@ -475,8 +475,8 @@ func TestSendMedia_PhotoUnderLimitIsSent(t *testing.T) {
 	path := writeTempFile(t, "ok.png", "small")
 
 	sender := newTestMediaSender(t, srv.URL, 555, 0)
-	if _, err := sender.SendMedia(context.Background(), gateway.MessageEvent{
-		Media: []gateway.MediaAttachment{{Type: "image", Path: path}},
+	if _, err := sender.SendMedia(context.Background(), messaging.MessageEvent{
+		Media: []messaging.MediaAttachment{{Type: "image", Path: path}},
 	}); err != nil {
 		t.Fatalf("SendMedia: %v", err)
 	}

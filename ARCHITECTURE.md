@@ -32,6 +32,7 @@ See `docs/architecture/organisation.md` for the target structure and
 | `internal/domain/workflow/task/` | Task-execution vocabulary (`Task`, statuses, mid-run `Store`, `Definition`) importable without the engine |
 | `internal/domain/messaging/` | Canonical messages plus the chat wire contracts (`ChatContract`, sessions, turns, streaming) shared by gateway, channels, webui, and archie-ui |
 | `internal/channels/status/`  | Operator-facing channel lifecycle ledger (`State`/`Descriptor`/`Status`/`Manager`); the plugin contract stays in `internal/channels` |
+| `internal/app/archiemessaging/` | Messaging Service composition: Telegram/email/webhook channels, dialling the Gateway's `ChatContract` over gRPC. The daemon runs no channel and builds no `gateway.Router` |
 | `internal/domain/workintake/`| `TaskEnvelope`, routing `Kind`, label vocabulary, task subjects           |
 | `internal/agentexec/`        | Worker-local stage protocol and ai-sdk loop runner                        |
 | `internal/forge/`            | Forge interface: GitHub and Gitea implementations                         |
@@ -375,10 +376,10 @@ each narrowed to exactly the operations it needs:
   field to override. `ScopeGlobal` is never model-writable.
 
 `boot.setupMemoryEngine` (`internal/app/archied/bootstrap.go`) registers and
-starts the engine and must run before `setupGateways`/`setupGatewayChat`:
-those construct every chat turn runner, which captures the engine at
-construction time (`internal/app/archied/composition_order_test.go` pins the
-ordering). The session curator (`internal/infrastructure/sessioncurator`)
+starts the engine and must run before `setupGatewayChat`, which constructs the
+only chat turn runner in production and captures the engine at construction
+time (`internal/app/archied/composition_order_test.go` pins the ordering), and
+before `setupCurators`, whose `Registrar` captures the engine registry. The session curator (`internal/infrastructure/sessioncurator`)
 writes derived records onto `ScopeAgentUser`, making it the engine's other
 live producer besides the chat write path.
 

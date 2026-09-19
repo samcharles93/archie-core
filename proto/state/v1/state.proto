@@ -149,6 +149,9 @@ message Task {
   int64 binding_version = 24;
   google.protobuf.Timestamp created_at = 25;
   google.protobuf.Timestamp updated_at = 26;
+  // review_payload is the JSON-encoded review unit the remediate workflow's
+  // current run must address (docs/prds/pr-review-remediation.md decision 4).
+  string review_payload = 27;
 }
 
 // Event mirrors internal/events.Event. Data is carried as a JSON object

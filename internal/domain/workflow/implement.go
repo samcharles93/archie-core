@@ -192,6 +192,7 @@ func Implement() Workflow {
 			StageDiffCap(),
 			StageReview(),
 			StageOpenPR(implementPRBody),
+			StagePostReviewComments(),
 		},
 	}
 }

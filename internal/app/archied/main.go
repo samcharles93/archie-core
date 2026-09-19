@@ -56,9 +56,7 @@ import (
 const (
 	// defaultChatMaxSteps bounds the model/tool round-trips in one chat
 	// turn when [config.ChatConfig.MaxSteps] is unset.
-	defaultChatMaxSteps          = 100
-	packagedGatewayChangelogPath = "/usr/share/archie/CHANGELOG.archied.md"
-	packagedRuntimeChangelogPath = "/usr/share/archie/CHANGELOG.archie.md"
+	defaultChatMaxSteps = 100
 )
 
 // Component versions are injected from their independent release tags.
@@ -410,17 +408,10 @@ func Run() int { //nolint:cyclop // the composition root's setup sequence is del
 	if err := b.buildTreesAndIdentities(ctx); err != nil {
 		return 1
 	}
-	// setupMemoryEngine must run before setupGateways: setupGateways
-	// constructs every chat turn runner (setupGatewayChat /
-	// setupTelegramGateway), and a turn runner captures b.memEngines at
-	// construction time. Built the other way round, every turn runner would
-	// capture a nil engine and the chat read path
-	// (docs/prds/memory-engine-unification.md §4) would silently never see a
-	// record.
+	// setupMemoryEngine must run before setupCurators: curator.Registrar
+	// captures b.memEngines at construction time, so built the other way
+	// round every curator would hold a nil engine source.
 	if err := b.setupMemoryEngine(); err != nil {
-		return 1
-	}
-	if !b.setupGateways(ctx, args.cfgPath, args.overlayPath) {
 		return 1
 	}
 
@@ -957,18 +948,10 @@ func configHome() string {
 	return filepath.Join(home, ".config")
 }
 
-func releaseAnnouncementStatePath(workDir, identity string) string {
-	identityHash := sha256.Sum256([]byte(identity))
-	return filepath.Join(
-		workDir,
-		fmt.Sprintf("release-announcements-%x.json", identityHash[:8]),
-	)
-}
-
 // updateReportPath is where the update watchdog leaves the phase-2 outcome
-// of an update for this identity to relay on its next launch. Hashed the
-// same way as releaseAnnouncementStatePath so multiple identities sharing
-// one daemon (see docs/architecture/identity.md) never collide.
+// of an update for this identity to relay on its next launch. The identity is
+// hashed so multiple identities sharing one daemon (see
+// docs/architecture/identity.md) never collide.
 func updateReportPath(workDir, identity string) string {
 	identityHash := sha256.Sum256([]byte(identity))
 	return filepath.Join(

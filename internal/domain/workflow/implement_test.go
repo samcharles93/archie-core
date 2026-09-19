@@ -284,6 +284,18 @@ type fakeForge struct {
 	calls     []string
 	linkErr   error
 	prNumber  int
+
+	reviewCalls    int
+	reviewComments []ReviewComment
+	reviewOwner    string
+	reviewRepo     string
+	reviewNumber   int
+	reviewHeadSHA  string
+	reviewErr      error
+
+	replyCommentID int64
+	replyBody      string
+	replyErr       error
 }
 
 func (f *fakeForge) CloseIssue(ctx context.Context, owner, repo string, number int, comment string) error {
@@ -294,6 +306,11 @@ func (f *fakeForge) CloseIssue(ctx context.Context, owner, repo string, number i
 func (f *fakeForge) Comment(ctx context.Context, owner, repo string, number int, body string) (int64, error) {
 	f.commented = append(f.commented, body)
 	return 0, nil
+}
+
+func (f *fakeForge) ReplyToReview(ctx context.Context, owner, repo string, number int, commentID int64, body string) error {
+	f.replyCommentID, f.replyBody = commentID, body
+	return f.replyErr
 }
 
 // Remaining forge.Forge stubs  --  only CloseIssue and Comment are used by StageCommitPush.
@@ -332,6 +349,14 @@ func (f *fakeForge) SetStateLabel(ctx context.Context, owner, repo string, numbe
 func (f *fakeForge) LinkBranch(ctx context.Context, owner, repo string, number int, branch string) error {
 	f.calls = append(f.calls, "link:"+branch)
 	return f.linkErr
+}
+
+func (f *fakeForge) CreateReviewComments(ctx context.Context, owner, repo string, number int, reviewedHeadSHA string, comments []ReviewComment) error {
+	f.reviewCalls++
+	f.reviewOwner, f.reviewRepo, f.reviewNumber = owner, repo, number
+	f.reviewHeadSHA = reviewedHeadSHA
+	f.reviewComments = append(f.reviewComments, comments...)
+	return f.reviewErr
 }
 func (f *fakeForge) VerifyPush(ctx context.Context, owner, repo string) error { return nil }
 
@@ -430,6 +455,13 @@ type fakeTrees struct {
 	pushed           bool
 	pushBranch       string
 	pushErr          error
+
+	dir string
+
+	resumed      bool
+	resumeDir    string
+	resumeBranch string
+	resumeErr    error
 }
 
 func (f *fakeTrees) Prepare(context.Context, string, string, string, int, string, string, string) (string, string, error) {
@@ -456,6 +488,13 @@ func (f *fakeTrees) ChangedFiles(context.Context, string, string) ([]string, err
 func (f *fakeTrees) ChangedLines(context.Context, string, string) (int, error) { return 0, nil }
 
 func (f *fakeTrees) Snapshot(context.Context, string, string) error { return nil }
+
+func (f *fakeTrees) Resume(_ context.Context, dir, branch string) error {
+	f.resumed, f.resumeDir, f.resumeBranch = true, dir, branch
+	return f.resumeErr
+}
+
+func (f *fakeTrees) Dir(string, string, int) string { return f.dir }
 
 // TestStageCommitPushPushesBaselineFixEvenWithNothingNewToCommit is the
 // regression case for archie-core-95dj: StageBaselineGate already

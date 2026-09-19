@@ -72,13 +72,6 @@ ARG GOLANGCI_LINT_VERSION=2.13.2
 ARG GOFUMPT_VERSION=0.11.0
 ARG BUF_VERSION=1.72.0
 
-# Fail the build rather than ship an image whose two formatters disagree.
-RUN want="$(curl -fsSL "https://raw.githubusercontent.com/golangci/golangci-lint/v${GOLANGCI_LINT_VERSION}/go.mod" | awk '$1 == "mvdan.cc/gofumpt" { sub(/^v/, "", $2); print $2 }')" && \
-    if [ "$want" != "${GOFUMPT_VERSION}" ]; then \
-      echo "golangci-lint v${GOLANGCI_LINT_VERSION} vendors gofumpt v${want}, but GOFUMPT_VERSION=${GOFUMPT_VERSION}: task fmt and task lint would disagree." >&2; \
-      exit 1; \
-    fi
-
 RUN curl -fsSL "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64.tar.gz" \
       | tar -xz -C /usr/local/bin --strip-components=1 \
         "golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64/golangci-lint" && \

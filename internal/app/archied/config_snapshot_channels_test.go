@@ -11,16 +11,15 @@ import (
 	"github.com/samcharles93/archie-core/internal/webui"
 )
 
-// TestPublishedProjectionAgreesWithTheChannelManagerOnConfiguredChannels: the
-// daemon answers "is a chat channel configured" twice -- once through the
-// channel status manager it exposes on /api/channels, and once through the
-// ChatView.ChannelConfigured boolean it publishes for the dashboard's setup
-// checklist. Those two answers are read by different pages of the same
-// extracted process, so a deployment that the manager calls configured must
-// not be told by the checklist to connect a channel it already has. Both sides
-// now derive from one definition (config.ChatConfig.FrontEnds); this test is
-// what keeps them from being re-decided separately.
-func TestPublishedProjectionAgreesWithTheChannelManagerOnConfiguredChannels(t *testing.T) {
+// TestPublishedProjectionAgreesWithFrontEndsOnConfiguredChannels: "is a chat
+// channel configured" is answered twice -- once by config.ChatConfig.FrontEnds,
+// which the channel status surface on /api/channels is built from, and once by
+// the ChatView.ChannelConfigured boolean this process publishes for the
+// dashboard's setup checklist. A deployment that FrontEnds calls configured
+// must not be told by the checklist to connect a channel it already has. Both
+// sides derive from that one definition; this test is what keeps them from
+// being re-decided separately.
+func TestPublishedProjectionAgreesWithFrontEndsOnConfiguredChannels(t *testing.T) {
 	tests := []struct {
 		name string
 		cfg  config.Config
@@ -64,11 +63,11 @@ func TestPublishedProjectionAgreesWithTheChannelManagerOnConfiguredChannels(t *t
 			}
 			b.setupObservability(t.Context())
 
-			// What the dashboard's /api/channels page reads.
-			managerSaysConfigured := false
-			for _, descriptor := range b.channelManager.Snapshot() {
-				if descriptor.Configured {
-					managerSaysConfigured = true
+			// What the dashboard's /api/channels page is built from.
+			frontEndsSayConfigured := false
+			for _, frontEnd := range tc.cfg.Chat.FrontEnds() {
+				if frontEnd.Configured {
+					frontEndsSayConfigured = true
 				}
 			}
 
@@ -83,9 +82,9 @@ func TestPublishedProjectionAgreesWithTheChannelManagerOnConfiguredChannels(t *t
 				t.Fatalf("decode the published projection: %v", err)
 			}
 
-			if published.Chat.ChannelConfigured != managerSaysConfigured {
-				t.Errorf("published Chat.ChannelConfigured = %v, but the channel manager reports a configured front-end = %v (%+v)",
-					published.Chat.ChannelConfigured, managerSaysConfigured, published.Chat)
+			if published.Chat.ChannelConfigured != frontEndsSayConfigured {
+				t.Errorf("published Chat.ChannelConfigured = %v, but ChatConfig.FrontEnds reports a configured front-end = %v (%+v)",
+					published.Chat.ChannelConfigured, frontEndsSayConfigured, published.Chat)
 			}
 		})
 	}

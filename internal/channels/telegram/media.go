@@ -10,7 +10,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 // telegramMediaSender delivers a MessageEvent's attachment through the
@@ -40,21 +40,21 @@ type telegramMediaSender struct {
 }
 
 var (
-	_ gateway.MediaSender        = (*telegramMediaSender)(nil)
-	_ gateway.CapabilityReporter = (*telegramMediaSender)(nil)
+	_ messaging.MediaSender        = (*telegramMediaSender)(nil)
+	_ messaging.CapabilityReporter = (*telegramMediaSender)(nil)
 )
 
 // NewMediaSender returns a MediaSender bound to one chat and to the bot
 // instance of the launch that created it. Construct it per launch, from
 // the same b that handled the update, never from a stored field.
-func (g *Gateway) NewMediaSender(b *bot.Bot, chatID int64, threadID int) gateway.MediaSender {
+func (g *Gateway) NewMediaSender(b *bot.Bot, chatID int64, threadID int) messaging.MediaSender {
 	return &telegramMediaSender{bot: b, chatID: chatID, threadID: threadID}
 }
 
 // Capabilities reports Media support. Telegram implements every media
 // kind MediaAttachment can describe, so this is unconditionally true.
-func (s *telegramMediaSender) Capabilities() gateway.AdapterCapabilities {
-	return gateway.AdapterCapabilities{Media: true}
+func (s *telegramMediaSender) Capabilities() messaging.AdapterCapabilities {
+	return messaging.AdapterCapabilities{Media: true}
 }
 
 // errNoMedia and errNoSource are the two ways an event can be
@@ -80,7 +80,7 @@ const (
 // event text. Only the first is sent: a caption belongs to one file, and
 // batching several into a media group is a distinct API with its own
 // caption semantics.
-func (s *telegramMediaSender) SendMedia(ctx context.Context, event gateway.MessageEvent) (gateway.SendResult, error) {
+func (s *telegramMediaSender) SendMedia(ctx context.Context, event messaging.MessageEvent) (messaging.SendResult, error) {
 	if len(event.Media) == 0 {
 		return invalidMedia(errNoMedia)
 	}
@@ -109,7 +109,7 @@ func (s *telegramMediaSender) SendMedia(ctx context.Context, event gateway.Messa
 	if msg != nil {
 		id = fmt.Sprintf("%d", msg.ID)
 	}
-	return gateway.SendResult{Success: true, MessageID: id}, nil
+	return messaging.SendResult{Success: true, MessageID: id}, nil
 }
 
 var (
@@ -131,7 +131,7 @@ var (
 // operator sees an attachment that never arrived. The returned error is
 // classified invalid_message by the caller, so it is not retried  --  a
 // file does not get smaller on a second attempt.
-func (s *telegramMediaSender) source(att gateway.MediaAttachment) (models.InputFile, func(), error) {
+func (s *telegramMediaSender) source(att messaging.MediaAttachment) (models.InputFile, func(), error) {
 	noop := func() {}
 	if att.Path == "" {
 		return &models.InputFileString{Data: att.URL}, noop, nil
@@ -175,7 +175,7 @@ func uploadLimit(mediaType string) int64 {
 // media type, not the MessageEvent type, decides: the event type describes
 // the message while the attachment describes the file, and Telegram
 // rejects a video sent through sendPhoto.
-func (s *telegramMediaSender) dispatch(ctx context.Context, att gateway.MediaAttachment, file models.InputFile, caption string) (*models.Message, error) {
+func (s *telegramMediaSender) dispatch(ctx context.Context, att messaging.MediaAttachment, file models.InputFile, caption string) (*models.Message, error) {
 	switch att.Type {
 	case "video":
 		p := &bot.SendVideoParams{ChatID: s.chatID, Video: file, Caption: caption}
@@ -213,8 +213,8 @@ func (s *telegramMediaSender) dispatch(ctx context.Context, att gateway.MediaAtt
 // invalidMedia reports a failure that was detected before any request was
 // made. Never retryable: resending an event that carries nothing, or names
 // a type Telegram has no method for, fails identically every time.
-func invalidMedia(err error) (gateway.SendResult, error) {
-	return gateway.SendResult{
+func invalidMedia(err error) (messaging.SendResult, error) {
+	return messaging.SendResult{
 		Success:   false,
 		Retryable: false,
 		Error:     err,
@@ -231,8 +231,8 @@ func invalidMedia(err error) (gateway.SendResult, error) {
 // failure matching no sentinel is a transport error or a 5xx, both of
 // which may yet succeed  --  hence retryable, rather than defaulting to
 // permanent and silently dropping a deliverable asset.
-func classifySendError(err error) gateway.SendResult {
-	res := gateway.SendResult{Success: false, Error: err}
+func classifySendError(err error) messaging.SendResult {
+	res := messaging.SendResult{Success: false, Error: err}
 
 	switch {
 	case bot.IsTooManyRequestsError(err) || errors.Is(err, bot.ErrorTooManyRequests):
