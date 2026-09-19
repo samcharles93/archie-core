@@ -190,7 +190,12 @@ type Router struct {
 	// TaskLister backs /tasks: the live work view (id, title, status,
 	// workflow/stage, age). nil = /tasks not configured.
 	TaskLister ChatTaskLister
-	LLM        LLMResponder // nil = LLM not wired yet
+	// Health backs /status' daemon-health section (broker, worker pool,
+	// channels, chat model, last poll). nil = this process wired no health
+	// source, in which case /status omits the section rather than
+	// reporting a value it does not have.
+	Health HealthSource
+	LLM    LLMResponder // nil = LLM not wired yet
 	// LLMStream is the optional streaming responder. When set, adapters
 	// that can render partial output (see RouteStream) show the reply as
 	// it generates; when nil, everything falls back to LLM.
@@ -634,7 +639,11 @@ func (r *Router) handleStatus(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("status: %w", err)
 	}
-	return formatStatus(counts, r.Models), nil
+	report := HealthReport{}
+	if r.Health != nil {
+		report = r.Health.Health()
+	}
+	return formatStatus(counts, report, r.Models, time.Now()), nil
 }
 
 // handleTasks answers /tasks: the live view of this identity's work, with
@@ -838,14 +847,22 @@ func formatRuntimeSection(b *strings.Builder, provider, model string) {
 	fmt.Fprintf(b, "Provider: %s\nModel: %s\n", provider, model)
 }
 
-// formatStatus formats daemon health into a clean, mobile-friendly summary.
+// formatStatus formats daemon health into a clean, mobile-friendly summary:
+// the aggregate queue line, then the health section (broker, worker pool,
+// channels, chat model, last poll) from whatever the process could truthfully
+// report, then the runtime block.
+//
 // It deliberately does not itemize tasks -- that is /tasks' job -- so it
 // reduces the task counts to one aggregate health signal (is work backing
 // up) rather than duplicating /tasks' per-task list.
-func formatStatus(counts map[string]int, models ModelManager) string {
+func formatStatus(counts map[string]int, report HealthReport, models ModelManager, now time.Time) string {
 	var b strings.Builder
 	b.WriteString("📊 Archie status\n\n")
 	b.WriteString(formatQueueDepth(counts))
+	if health := formatHealth(report, now); health != "" {
+		b.WriteString(health)
+		b.WriteString("\n")
+	}
 
 	provider, model := extractRuntimeInfo(models)
 	formatRuntimeSection(&b, provider, model)

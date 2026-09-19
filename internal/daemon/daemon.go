@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/agentexec"
@@ -208,6 +209,12 @@ type Daemon struct {
 	// so /stop can reach work already in flight. Its zero value is ready
 	// to use.
 	running runningTasks
+
+	// lastPollAt is when the most recent poll pass began, in Unix
+	// nanoseconds (zero = no pass has started yet), read by
+	// LastPollAt. Atomic because runIdentities runs one poll goroutine per
+	// identity and they all stamp this one "is the poller alive" reading.
+	lastPollAt atomic.Int64
 }
 
 // IdentityRunner bundles identity-specific state for a single agent
@@ -433,6 +440,7 @@ func (d *Daemon) runIdentities(ctx context.Context) error {
 // drains or reconciles  --  those are store-wide and run in the shared
 // maintainAndDrain loop.
 func (d *Daemon) pollForIdentity(ctx context.Context, id *IdentityRunner) {
+	d.markPoll()
 	cfg := configForIdentity(d.Cfg.Get(), id.Cfg)
 	for _, repo := range id.Repos {
 		issues := d.pollIssuesWithConfig(ctx, id.Forge, cfg, repo)
@@ -865,6 +873,7 @@ func (d *taskDispatcher) Wait() {
 }
 
 func (d *Daemon) poll(ctx context.Context) {
+	d.markPoll()
 	for _, repo := range d.Cfg.Get().Repos {
 		issues := d.pollIssues(ctx, repo)
 		for _, is := range issues {
@@ -1672,4 +1681,26 @@ func (d *Daemon) repoFor(t *workflow.Task) (config.Repo, bool) {
 func (d *Daemon) allowConcurrentForTask(task *workflow.Task) bool {
 	repo, ok := d.repoFor(task)
 	return ok && repo.AllowConcurrent
+}
+
+// LastPollAt reports when the daemon last began a poll pass, or the zero
+// time when no pass has started yet.
+func (d *Daemon) LastPollAt() time.Time {
+	ns := d.lastPollAt.Load()
+	if ns == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, ns).UTC()
+}
+
+// markPoll stamps the start of a poll pass. It is called from both poll
+// paths: Run's single-identity loop (via poll) and runIdentities' per-identity
+// goroutines (via pollForIdentity).
+//
+// The stamp is the pass's START, not its completion: a pass that hangs on an
+// unreachable forge leaves the stamp stale, which is exactly the signal an
+// operator needs. Stamping the completion instead would leave the last
+// successful pass's time in place, so a wedged poller would look healthy.
+func (d *Daemon) markPoll() {
+	d.lastPollAt.Store(time.Now().UnixNano())
 }

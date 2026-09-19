@@ -76,6 +76,15 @@ type telegramSetup struct {
 	// the per-turn memory_create/update/delete/list tools (docs/prds/
 	// memory-engine-unification.md §5). Nil omits those tools.
 	MemoryWriter gateway.MemoryWriteStore
+	// StatusHealth is the composition root's daemon-health source, wired into
+	// every router built from this setup so /status can report broker, pool,
+	// channel, chat-model and last-poll health. Nil leaves /status with the
+	// queue and runtime sections alone.
+	StatusHealth gateway.HealthSource
+	// ProviderOutcomes records the outcome of every chat-model call this
+	// process makes, which StatusHealth reads back. Nil disables recording
+	// (the recorder's methods tolerate that rather than panicking).
+	ProviderOutcomes *providerOutcomeRecorder
 }
 
 // telegramValidateConfigMap builds the map Gateway.ValidateConfig expects
@@ -313,6 +322,7 @@ func buildTelegramRouter(ctx context.Context, tg *telegram.Gateway, s telegramSe
 	router.InitSessions(sessionStore)
 	router.Titles = newChatTitleGenerator(s)
 	router.Log = s.Log
+	router.Health = s.StatusHealth
 	configureTaskCommands(router, s.ChatTasks, s.ChatController, s.ChatTaskLister, s.DefaultChatIdentity)
 
 	if s.LLM != nil {
@@ -350,7 +360,7 @@ func newChatTurnRunner(
 		Sessions:     sessionStore,
 		Models:       s.ChatModels,
 		Personas:     s.Personas,
-		Model:        newChatTurnModel(s.LLM, s.ToolReg, cfg.Chat.MaxSteps, toolLimits(cfg)),
+		Model:        newChatTurnModel(s.LLM, s.ToolReg, cfg.Chat.MaxSteps, toolLimits(cfg), s.ProviderOutcomes),
 		TaskLister:   s.ChatTaskLister,
 		Tasks:        s.ChatTasks,
 		TaskLogs:     s.ChatTaskLogs,
@@ -406,7 +416,20 @@ func chatRepoEnv(cfg config.Config, identity string) []gateway.RepoEnv {
 	return env
 }
 
-func sendChatTurn(ctx context.Context, llm *runtime.Runtime, chatModel string, options core.GenerateOptions, turn gateway.TurnStream) (string, error) {
+// sendChatTurn runs one chat-model call and records its outcome for /status'
+// chat-model line. Recording happens in this one wrapper because every
+// chat-model call in this process passes through it: recording at the call
+// sites instead would let a path make a call and leave the reported
+// last-known outcome stale, which is a /status that lies about the provider.
+func sendChatTurn(ctx context.Context, llm *runtime.Runtime, chatModel string, options core.GenerateOptions, turn gateway.TurnStream, outcomes *providerOutcomeRecorder) (string, error) {
+	text, err := runChatTurn(ctx, llm, chatModel, options, turn)
+	// record tolerates a nil recorder: a setup built without one (tests, a
+	// deployment whose health surface is unwired) still makes its calls.
+	outcomes.record(chatModel, err)
+	return text, err
+}
+
+func runChatTurn(ctx context.Context, llm *runtime.Runtime, chatModel string, options core.GenerateOptions, turn gateway.TurnStream) (string, error) {
 	if turn == nil {
 		result, err := llm.Chat(ctx, chatModel, options)
 		if err != nil {
@@ -530,6 +553,7 @@ type chatTitleGenerator struct {
 	log        *slog.Logger
 	llm        *runtime.Runtime
 	chatModels gateway.ModelManager
+	outcomes   *providerOutcomeRecorder
 }
 
 // newChatTitleGenerator wires an LLM-backed title generator for a chat
@@ -539,7 +563,7 @@ func newChatTitleGenerator(s telegramSetup) gateway.TitleGenerator {
 	if s.LLM == nil || s.ChatModels == nil {
 		return nil
 	}
-	return &chatTitleGenerator{log: s.Log, llm: s.LLM, chatModels: s.ChatModels}
+	return &chatTitleGenerator{log: s.Log, llm: s.LLM, chatModels: s.ChatModels, outcomes: s.ProviderOutcomes}
 }
 
 func (g *chatTitleGenerator) GenerateTitle(ctx context.Context, sessionID, firstMessage string) (string, error) {
@@ -550,7 +574,7 @@ func (g *chatTitleGenerator) GenerateTitle(ctx context.Context, sessionID, first
 	// No tools: a title is a single completion. The active model is read
 	// at call time so a /model switch applies to titles too.
 	text, err := sendChatTurn(ctx, g.llm, g.chatModels.ActiveModel(),
-		core.GenerateOptions{Messages: messages, MaxSteps: 1}, nil)
+		core.GenerateOptions{Messages: messages, MaxSteps: 1}, nil, g.outcomes)
 	if err != nil {
 		if g.log != nil {
 			g.log.Error("session title generation failed", "session", sessionID, "err", err)

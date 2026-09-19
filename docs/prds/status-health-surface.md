@@ -1,7 +1,10 @@
 # /status health surface -- what's shipped, what's proposed
 
-**Status:** Phase 1 shipped 2026-09-03 (archie-core-wp9s). Phase 2 below is
-a **proposed resolution, awaiting Sam's sign-off** -- not yet implemented.
+**Status:** Phase 1 shipped 2026-09-03 (archie-core-wp9s). Phase 2 shipped
+2026-09-19: broker connectivity, container pool, last poll, provider
+reachability and channel state are implemented on the decisions recorded below,
+with the fields that had no truthful source left out rather than faked (see
+"Phase 2 -- shipped").
 
 ## Background
 
@@ -20,8 +23,8 @@ elsewhere (`/model` already lists active provider/model).
 - `/status`: itemized per-status task counts replaced with one aggregate
   `Queue: N in flight (...)` line (running/waiting/parked only -- queued and
   terminal states excluded as not a health concern). Runtime
-  (provider/model) is temporarily left in place; see the open question
-  below.
+  (provider/model) is temporarily left in place; see "Runtime (provider/model)"
+  under Phase 2's "Truthful or absent" for where that stands now.
 
 Not touched: `/agents` (`gateway.AgentReader`/`Router.Agents`) is a separate,
 pre-existing command that already has the right shape for "list active
@@ -35,9 +38,10 @@ something to resolve by implication here.
 ## Phase 2 -- health checks, verified against the actual tree
 
 Each bullet below was checked against real code before being called cheap
-or not; nothing here is guessed.
+or not; nothing here is guessed. Both open questions were settled (see "The two
+decisions") and all five fields shipped.
 
-### Cheap -- no design decision needed, straightforward to add
+### Verified as cheap against the tree
 
 - **Broker connectivity.** `internal/infrastructure/eventbus/nats.Client`
   already exposes `CoreConn() (*nats.Conn, error)`
@@ -53,56 +57,90 @@ or not; nothing here is guessed.
   poll tick, with a getter.
 - **Queue depth.** Already shipped in Phase 1.
 
-### Not cheap -- needs a decision before coding
+### The two decisions (settled 2026-09-19, decided by position)
 
-- **Provider reachability.** No existing check anywhere. The only way to
-  answer "is the provider reachable" is a real network call, which means:
-  a `/status` invocation either pays that latency and cost every time
-  (bad -- `/status` should be instant, matching `/model`'s and `/tasks`'
-  own current behaviour), or `/status` reports the **last** call's
-  outcome (success/failure/never-called) rather than probing live. The
-  latter needs a small success/failure counter or timestamp recorded at
-  the one place LLM calls already go through (`ai-sdk` responder path),
-  not a new probe. Recommend: last-known-outcome, not live probing --
-  but this is a real product tradeoff (freshness vs. cost) worth Sam's
-  explicit sign-off before it's built into a command he uses daily.
-- **Channel state.** `channels.Channel` (embeds `gateway.Gateway`:
-  `Name()/Start()/Stop()`) has no connectivity/health method today, and
-  telegram/email/webhook each manage their own connection lifecycle
-  independently. Answering "is Telegram actually connected" needs either
-  (a) a new method on the `Channel`/`Gateway` contract every implementation
-  must satisfy, or (b) each channel self-reporting into a shared registry
-  the daemon already holds (`ChannelManager` -- `bootstrap.go` already
-  calls `b.channelManager.MarkStarting/MarkRunning/MarkFailed` per
-  channel). (b) is very likely the right shape since `ChannelManager`
-  already exists and already tracks exactly this kind of state for the
-  dashboard; needs a read method exposed to `/status`. Flagging as
-  "needs a decision" only because it touches a contract multiple
-  implementations satisfy, not because the shape is unclear -- ChannelManager
-  is the obvious answer.
-- **Version.** Deliberately **not** proposed for `/status`: `/version`
-  already owns this (`Router.Version`, `handleVersion`), and duplicating it
-  back into `/status` would reintroduce the exact "answers something
-  available elsewhere in chat" complaint this ticket exists to fix.
+- **Provider reachability is last-known outcome, never a live probe.** A chat
+  command must not perform a blocking network call in its handler, and a probe
+  reports the probe's reachability rather than the daemon's. `/status` therefore
+  prints what actually happened -- the last chat-model call's model, age and
+  error, or "no calls attempted yet" when there has been none. Implemented as
+  `providerOutcomeRecorder`, written once in `sendChatTurn` (the single point
+  every chat-model call in the process passes through) and read back by
+  `newStatusHealth`. Nothing on this path dials a provider. The existing live
+  model reachability check (`readiness.go`'s `modelReachProbe`) is unchanged and
+  stays where it belongs: on `/health/detailed`, off the chat path.
+- **Channel state comes from the existing ChannelManager.** `/status` reads
+  `status.Manager.Snapshot()` -- the same ledger the dashboard and the readiness
+  probe already use -- rather than re-deriving channel health from each adapter.
+  No method was added to the `Channel`/`Gateway` contract.
 
-## Recommendation
+### Phase 2 -- shipped
 
-Ship the three cheap items (broker connectivity, container pool, last
-poll) as a mechanical follow-up alongside Phase 1's `Queue:` line --
-same shape, same non-duplication reasoning, no new design surface. Land
-provider reachability and channel state only after Sam confirms the
-last-known-outcome approach (provider) and the ChannelManager-read
-approach (channel), since both are choices about a command's behaviour
-he already has strong, specific opinions about.
+- **Broker connectivity.** `internal/infrastructure/eventbus/nats.Client` gained
+  `Connected() bool`, which reads the connection the process already holds. The
+  standalone Gateway (which dials NATS itself for task actions) reports the same
+  fact from that connection.
+- **Container pool.** `container.Pool.Active()` and `Pool.Cap()` read the pool's
+  own counter and configured `max_concurrency` -- not a Docker listing, which
+  would include containers this pool does not own. A cap of zero means
+  unlimited, so `/status` renders the count alone rather than "1/0 active".
+- **Last poll.** `daemon.Daemon.LastPollAt()` reports when the most recent poll
+  pass *began*; both poll paths (`poll` for single-identity `Run`,
+  `pollForIdentity` for `runIdentities`) stamp it. A pass that hangs leaves the
+  stamp stale, which is the signal -- stamping completion instead would leave a
+  wedged poller looking healthy.
+- **Queue depth.** Already shipped in Phase 1.
+- **Rendering.** `gateway.formatHealth` renders one line per reported fact
+  (`Broker:`, `Containers:`, `Channels:`, `Chat model:`, `Last poll:`) between
+  the queue line and the runtime block. The sources it reads are functions, not
+  captured values: occupancy and channel state change over the process's life,
+  and the daemon is built after the gateways, so a source captured at
+  construction would freeze `/status` on boot-time state.
 
-## Packages this touches (Phase 2)
+### Truthful or absent -- what is deliberately not reported
 
-- `internal/infrastructure/eventbus/nats`: `Client.Connected() bool`.
-- `internal/container`: `Pool.Active() int` (and `Pool.Cap() int` for
-  "N/M" display, from the already-configured `MaxConcurrency`).
-- `internal/daemon`: last-poll timestamp, read accessor.
-- `internal/gateway`: `formatStatus` gains the new lines; `Router` gains
-  whatever read surfaces back them (mirrors `StatusReader`'s existing
-  pattern -- a narrow interface, not a daemon-internals handle).
-- Provider reachability and channel state: packages TBD pending the two
-  decisions above.
+- **Version.** Still excluded: `/version` owns it, and duplicating it back into
+  `/status` is the exact "answers something available elsewhere in chat"
+  complaint this ticket exists to fix.
+- **Sections the standalone Gateway process cannot see.** The daemon owns the
+  poll loop, the container pool and the channel manager; the Gateway process
+  owns none of them. Its `/status` reports broker and chat-model health and
+  omits pool, polling and channels rather than printing zeroes. Aggregating them
+  across processes would need a new daemon RPC -- a new subsystem, out of scope
+  here. For the same reason the chat-model line is per process: the daemon
+  records the turns it runs (Telegram, email, webhook), the Gateway records the
+  web chat's, and the two do not pool outcomes. Each line is true of the process
+  answering the command.
+- **A channel's failure reason can outlive the failure.** `status.Manager` keeps
+  the last non-empty `Detail` across state changes, and that one field carries
+  both a descriptor's standing caveat and a runtime failure reason, so a channel
+  that failed and later recovered can still render the old reason. Splitting the
+  two belongs at the producer (the manager and its descriptor), not in this
+  reader, which reads the field exactly as the dashboard does.
+- **Container pool when Docker is unavailable.** Composition leaves
+  `containerPool` nil, so the section is absent. Naming a reason would mean
+  carrying Docker's startup error into the health surface.
+- **Runtime (provider/model).** Phase 1 left this block in place; it is still
+  here. It is static config that `/model` and `/whoami` already answer, so it is
+  the last thing in `/status` that this ticket's own rule says should not be
+  there -- but removing it is a product call on a command Sam uses daily, not a
+  mechanical follow-up. Recommended follow-up: drop the block once `/model` is
+  accepted as the only place provider/model belong.
+- **`/agents` copy.** The menu still advertises "List tasks currently being
+  worked" while `Router.Agents` is never wired (`archie-core-mxls`), so that one
+  published description does not match what its command does. Deleting,
+  rewiring or redefining `/agents` is that bead's call and is not folded in here.
+
+## Packages this touches (Phase 2, as shipped)
+
+- `internal/infrastructure/eventbus/nats`: `Client.Connected()`.
+- `internal/container`: `Pool.Active()`, `Pool.Cap()`.
+- `internal/daemon`: `lastPollAt`/`markPoll`/`LastPollAt()`.
+- `internal/gateway`: `health.go` (health contract + renderer), `Router.Health`,
+  `formatStatus`.
+- `internal/app/archied`: `status_health.go` (the composition-root bridge),
+  `ProviderOutcomes` threaded through `telegramSetup` into every turn runner,
+  and `sendChatTurn` recording each call's outcome.
+- `internal/domain/messaging` + `internal/channels/telegram`: `/status` and
+  `/tasks` descriptions, which now describe both commands' actual jobs on both
+  published surfaces.

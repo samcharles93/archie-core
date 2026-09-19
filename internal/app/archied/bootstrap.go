@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	natsio "github.com/nats-io/nats.go"
 	"github.com/samcharles93/ai-sdk/runtime"
 
 	"github.com/samcharles93/archie-core/internal/channels/email"
@@ -144,6 +145,19 @@ type boot struct {
 	lastReload func() config.ReloadStatus
 
 	natsClient *nats.Client
+	// taskActionsConn is the standalone Gateway process's own NATS connection:
+	// it dials the broker directly (the Gateway does not build the
+	// consumer/stream client the daemon does) and uses it for task actions.
+	// Held so /status can report broker connectivity from the connection this
+	// process actually uses instead of dialling a fresh one. Nil in the daemon.
+	taskActionsConn *natsio.Conn
+	// providerOutcomes records the last-known outcome of every chat-model call
+	// this process makes, read back by /status (newStatusHealth). Built before
+	// the gateways, which carry it into each turn runner.
+	providerOutcomes *providerOutcomeRecorder
+	// statusHealth is the /status health source for this process, built from
+	// the subsystems that exist here.
+	statusHealth gateway.HealthSource
 	// natsURL is the endpoint the daemon's own client connected with at
 	// startup. For external mode it is cfg.NATS.URL; for embedded mode it is
 	// the embedded server's ClientURL(). Recorded so Daemon.ConnectedNATS
@@ -688,6 +702,11 @@ func (b *boot) setupGateways(ctx context.Context, cfgPath, overlayPath string) b
 		RateLimiter:  b.rateLimiter,
 		MemoryEngine: b.memoryStore(),
 		MemoryWriter: b.memoryWriter(),
+		// /status reads its health section through these two: the source is
+		// this process's health, the recorder is what its chat-model calls
+		// write into.
+		StatusHealth:     b.statusHealth,
+		ProviderOutcomes: b.providerOutcomes,
 	})
 	if !ok {
 		return false
@@ -724,6 +743,7 @@ func (b *boot) setupEmailGateway(ctx context.Context, cfg config.Config, log *sl
 	}
 	emRouter := gateway.NewRouter(b.stateStore, nil, "email")
 	emRouter.Limiter = b.rateLimiter
+	emRouter.Health = b.statusHealth
 	configureTaskCommands(emRouter, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.stateStore.Tasks}, b.defaultChatIdentity)
 	b.startGateways = append(b.startGateways, func() {
 		go func() {
@@ -772,6 +792,7 @@ func (b *boot) setupWebhookGateway(ctx context.Context, cfg config.Config, log *
 	}
 	whRouter := gateway.NewRouter(b.stateStore, nil, "webhook")
 	whRouter.Limiter = b.rateLimiter
+	whRouter.Health = b.statusHealth
 	configureTaskCommands(whRouter, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.stateStore.Tasks}, b.defaultChatIdentity)
 	b.startGateways = append(b.startGateways, func() {
 		go func() {

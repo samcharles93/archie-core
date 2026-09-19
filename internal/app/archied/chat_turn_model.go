@@ -21,6 +21,8 @@ type chatTurnModel struct {
 	registry *tools.Registry
 	maxSteps int
 	limits   agentexec.ToolLimits
+	// outcomes records each call's result for /status (see sendChatTurn).
+	outcomes *providerOutcomeRecorder
 }
 
 func newChatTurnModel(
@@ -28,12 +30,14 @@ func newChatTurnModel(
 	registry *tools.Registry,
 	maxSteps int,
 	limits agentexec.ToolLimits,
+	outcomes *providerOutcomeRecorder,
 ) gateway.TurnModel {
 	return &chatTurnModel{
 		llm:      llm,
 		registry: registry,
 		maxSteps: maxSteps,
 		limits:   limits,
+		outcomes: outcomes,
 	}
 }
 
@@ -55,6 +59,7 @@ func (m *chatTurnModel) Prepare(
 		options:    options,
 		toolInfo:   toolSummaries(options.Tools),
 		toolTokens: gateway.EstimateTokens(string(toolSchema)),
+		outcomes:   m.outcomes,
 	}, nil
 }
 
@@ -64,6 +69,7 @@ type preparedChatTurnModel struct {
 	options    core.GenerateOptions
 	toolInfo   []gateway.ToolSummary
 	toolTokens int
+	outcomes   *providerOutcomeRecorder
 }
 
 func (m *preparedChatTurnModel) ToolSummaries() []gateway.ToolSummary {
@@ -94,5 +100,5 @@ func (m *preparedChatTurnModel) Generate(
 	// This is one provider response's output allowance, not a turn-
 	// continuation budget. Tool loops remain free to continue.
 	options.MaxTokens = request.MaxOutputTokens
-	return sendChatTurn(ctx, m.llm, m.model, options, stream)
+	return sendChatTurn(ctx, m.llm, m.model, options, stream, m.outcomes)
 }

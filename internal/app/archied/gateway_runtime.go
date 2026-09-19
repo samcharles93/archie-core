@@ -29,6 +29,14 @@ func (b *boot) setupChatRuntime(cfg config.Config) {
 	// ── Persona registry ─────────────────────────────────────────────
 	b.personas = gateway.NewPersonaRegistry(gateway.DefaultPersonas())
 
+	// ── Operator health surface ──────────────────────────────────────
+	// Built before the gateways because every turn runner and router built
+	// later carries both: the recorder is written by sendChatTurn, the source
+	// is read by /status. See newStatusHealth for why the source reads boot's
+	// fields lazily.
+	b.providerOutcomes = newProviderOutcomeRecorder()
+	b.statusHealth = newStatusHealth(b)
+
 	profiles, defaultChatIdentity := chatTaskProfiles(cfg)
 	var chatTasks gateway.TaskCreator
 	if len(profiles) > 0 {
@@ -59,6 +67,7 @@ func (b *boot) setupGatewayChat(ctx context.Context, actor gateway.ChatTaskActor
 	router.Updates = b.updateService
 	router.InitSessions(b.chatSessionStore)
 	configureTaskCommands(router, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.stateStore.Tasks}, b.defaultChatIdentity)
+	router.Health = b.statusHealth
 	setup := telegramSetup{
 		Cfg: config.NewHolder(cfg), St: b.stateStore, LLM: b.llm, ChatModels: b.chatModels, ToolReg: b.toolReg,
 		Personas: b.personas, ChatTasks: b.chatTasks, ChatController: b.chatController,
@@ -69,6 +78,9 @@ func (b *boot) setupGatewayChat(ctx context.Context, actor gateway.ChatTaskActor
 		Bus: b.bus, Log: b.log, Secrets: b.secrets,
 		MemoryEngine: b.memoryStore(),
 		MemoryWriter: b.memoryWriter(),
+		// The Gateway executes the web chat's turns, so it is the process
+		// that must record their outcomes for /status.
+		ProviderOutcomes: b.providerOutcomes,
 	}
 	router.LLM, router.LLMStream = makeChatLLMResponder(ctx, "web", setup, b.chatSessionStore, router)
 	router.Titles = newChatTitleGenerator(setup)

@@ -181,7 +181,9 @@ func TestFormatStatus(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := formatStatus(tc.counts, tc.models)
+			// Health sections are covered by TestFormatHealthRendersOnlyWhatWasReported;
+			// these cases pin the queue and runtime sections with no health source wired.
+			got := formatStatus(tc.counts, HealthReport{}, tc.models, time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC))
 			if got != tc.want {
 				t.Errorf("formatStatus() =\n%q\nwant:\n%q\ndiff:\ngot:\n%s\nwant:\n%s", got, tc.want, got, tc.want)
 			}
@@ -253,6 +255,17 @@ func TestFormatTasks(t *testing.T) {
 				{ID: 42, Title: "Fix login bug", Status: taskstate.Running, Workflow: "tdd", Stage: "implement", UpdatedAt: now.Add(-3 * time.Minute)},
 			},
 			want: "🗂 Archie tasks\n\n▶ #42 Fix login bug\n  Running · tdd/implement · updated 3m ago",
+		},
+		{
+			// The criterion this command was built for: a bare "Running: 1"
+			// reads the same whether the task is making progress or wedged in a
+			// failure loop, and each task's own age is what tells them apart.
+			name: "a stuck running task does not read like one making progress",
+			tasks: []ChatTaskSummary{
+				{ID: 5, Title: "Wedged", Status: taskstate.Running, Workflow: "tdd", Stage: "implement", UpdatedAt: now.Add(-47 * time.Minute)},
+				{ID: 6, Title: "Working", Status: taskstate.Running, Workflow: "tdd", Stage: "implement", UpdatedAt: now.Add(-20 * time.Second)},
+			},
+			want: "🗂 Archie tasks\n\n▶ #5 Wedged\n  Running · tdd/implement · updated 47m ago\n▶ #6 Working\n  Running · tdd/implement · updated just now",
 		},
 		{
 			name: "parked task shows its reason",
