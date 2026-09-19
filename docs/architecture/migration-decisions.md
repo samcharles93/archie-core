@@ -188,6 +188,13 @@ describes the target, not today's tree. Kept rather than deleted because the
 migration it serves is deferred by this very section, and re-deriving a tested
 wire adapter once that lands is pure cost.
 
+**Phase 4 Messaging Service extraction (2026-09-19, `archie-core-8cda.6.1`).**
+The process boundary for external channels (Telegram, email, webhook) is ratified
+in [`docs/prds/messaging-service-boundary.md`](../prds/messaging-service-boundary.md).
+Messaging is extracted into `cmd/archie-messaging` / `internal/app/archiemessaging`,
+calling Gateway's `messaging.ChatContract` exclusively over gRPC. Channel frontends
+hold no direct database handles, daemon state, or model runtimes.
+
 ### 3. Identity data migration
 
 The migration must define:
