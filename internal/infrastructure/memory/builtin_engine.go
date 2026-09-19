@@ -422,7 +422,8 @@ func (e *BuiltinEngine) Update(_ context.Context, in domainmemory.RecordUpdate) 
 	if in.Expected != 0 && in.Expected != current.marker.Revision {
 		return domainmemory.Record{}, fmt.Errorf(
 			"memory: builtin engine: %w: record %q is at revision %d, not %d",
-			domainmemory.ErrStaleRevision, in.ID, current.marker.Revision, in.Expected)
+			domainmemory.ErrStaleRevision, in.ID, current.marker.Revision, in.Expected,
+		)
 	}
 
 	now := e.now()
