@@ -663,6 +663,99 @@ func TestBuiltinEngineUpdateRetainsTheSupersededStateBeforeTheLiveWrite(t *testi
 	}
 }
 
+// TestBuiltinEngineSecondEngineCannotReuseAStaleRevision is the two-engine
+// case the PRD leaves undecided ("two processes, one scope file"): each
+// engine caches the scope's document, so a revision read out of that cache is
+// a revision that may no longer be on disk, and the rewrite that follows it
+// writes the whole document from the stale copy.
+func TestBuiltinEngineSecondEngineCannotReuseAStaleRevision(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	root := t.TempDir()
+	first := newTestEngineAt(root)
+	second := newTestEngineAt(root)
+
+	created, err := first.Create(ctx, domainmemory.NewRecord{Scope: agentScope, Content: "the original state"})
+	if err != nil {
+		t.Fatalf("Create() = %v, want nil", err)
+	}
+	// From here the second engine holds the document as it was before the
+	// first writes again, which is what a second process holds.
+	if _, err := second.Get(ctx, agentScope, created.ID); err != nil {
+		t.Fatalf("Get() = %v, want nil", err)
+	}
+
+	updated, err := first.Update(ctx, domainmemory.RecordUpdate{
+		Scope:    agentScope,
+		ID:       created.ID,
+		Content:  "the first writer's state",
+		Expected: 1,
+	})
+	if err != nil {
+		t.Fatalf("Update() by the first engine = %v, want nil", err)
+	}
+
+	_, err = second.Update(ctx, domainmemory.RecordUpdate{
+		Scope:    agentScope,
+		ID:       created.ID,
+		Content:  "the second writer's state",
+		Expected: 1,
+	})
+	if !errors.Is(err, domainmemory.ErrStaleRevision) {
+		t.Fatalf("Update() at a revision read before the first writer's update = %v, want %v", err, domainmemory.ErrStaleRevision)
+	}
+
+	live, err := first.Get(ctx, agentScope, created.ID)
+	if err != nil {
+		t.Fatalf("Get() = %v, want nil", err)
+	}
+	requireRecord(t, "Get() after the refused update", live, updated)
+}
+
+// TestBuiltinEngineUpdateDoesNotEraseRecordsItHasNotLoaded covers the other
+// half of the same defect: the engine rewrites the whole document, so a
+// second engine's update, built from a document it loaded before the first
+// engine wrote, took the records written since down with it.
+func TestBuiltinEngineUpdateDoesNotEraseRecordsItHasNotLoaded(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	root := t.TempDir()
+	first := newTestEngineAt(root)
+	second := newTestEngineAt(root)
+
+	earlier, err := first.Create(ctx, domainmemory.NewRecord{Scope: agentScope, Content: "written before the second engine loaded"})
+	if err != nil {
+		t.Fatalf("Create() = %v, want nil", err)
+	}
+	if _, err := second.Get(ctx, agentScope, earlier.ID); err != nil {
+		t.Fatalf("Get() = %v, want nil", err)
+	}
+	later, err := first.Create(ctx, domainmemory.NewRecord{Scope: agentScope, Content: "written after the second engine loaded"})
+	if err != nil {
+		t.Fatalf("Create() = %v, want nil", err)
+	}
+
+	// No expectation: this update is allowed, and must still be applied to
+	// the document as it is on disk rather than to the stale copy.
+	if _, err := second.Update(ctx, domainmemory.RecordUpdate{
+		Scope:   agentScope,
+		ID:      earlier.ID,
+		Content: "rewritten by the second engine",
+	}); err != nil {
+		t.Fatalf("Update() = %v, want nil", err)
+	}
+
+	got, err := newTestEngineAt(root).Get(ctx, agentScope, later.ID)
+	if err != nil {
+		t.Fatalf("Get() of the record written after the second engine loaded = %v, want nil", err)
+	}
+	if got.Content != "written after the second engine loaded" {
+		t.Errorf("Get() Content = %q, want the record the second engine had not loaded", got.Content)
+	}
+}
+
 func TestBuiltinEngineUpdateOfAnAbsentRecordIsNotFound(t *testing.T) {
 	// An id that names no live record in the named scope is ErrNotFound,
 	// whether it never existed or was superseded by a Forget.

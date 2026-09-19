@@ -383,15 +383,24 @@ func (e *BuiltinEngine) Update(_ context.Context, in domainmemory.RecordUpdate) 
 	if !ok {
 		return domainmemory.Record{}, notFound(in.Scope, in.ID)
 	}
+
+	// Read the document as it is on disk before anything is decided from it.
+	// This engine caches the scope's document and rewrites it whole (the PRD
+	// leaves "two processes, one scope file" undecided), so the copy it holds
+	// can be a whole write out of date -- the Expected check below would
+	// compare against a revision that is already superseded, and the rewrite
+	// that follows it would write the stale copy back over the current one.
+	// What this does not fix: the rewrite is still last-writer-wins for this
+	// record and every other one, between the reload and the write.
+	if err := stores.live.Reload(); err != nil {
+		return domainmemory.Record{}, err
+	}
 	current, ok := findBlock(stores.live, in.ID)
 	if !ok {
 		return domainmemory.Record{}, notFound(in.Scope, in.ID)
 	}
-	// Expected is what makes a lost update between two processes holding one
-	// scope's document detectable: this engine keeps the document in memory
-	// and rewrites it whole, without reloading or locking it (the PRD leaves
-	// "two processes, one scope file" undecided). For this one record, the
-	// revision the caller last saw is the check.
+	// Expected is what makes a lost update detectable: the revision the
+	// caller last saw is the check, against the revision just read.
 	if in.Expected != 0 && in.Expected != current.marker.Revision {
 		return domainmemory.Record{}, fmt.Errorf(
 			"memory: builtin engine: %w: record %q is at revision %d, not %d",
