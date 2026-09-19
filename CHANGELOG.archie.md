@@ -5,6 +5,10 @@
 - The sandboxed runtime picks up the review-reaction envelope and its
   owned-PR authorization, so an agent can only react to reviews on pull
   requests it opened itself.
+- `google.golang.org/grpc` bumped past `v1.84.0` to patch
+  [GO-2026-6443](https://pkg.go.dev/vuln/GO-2026-6443) (shared dependency
+  with `archied`; the pre-release commit is pinned pending a stable
+  `v1.85.0`).
 
 ## [1.28.0] - 2026-09-19
 

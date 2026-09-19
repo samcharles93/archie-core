@@ -2,6 +2,15 @@
 
 ## [1.29.0] - 2026-09-19
 
+### Security
+
+- `google.golang.org/grpc` bumped past `v1.84.0` to patch
+  [GO-2026-6443](https://pkg.go.dev/vuln/GO-2026-6443), a server panic via a
+  missing `:authority`/`Host` header reachable through `archied`'s gRPC
+  gateway server. No stable release carries the fix yet, so this pins the
+  pre-release commit that does (`v1.85.0-dev.0.20260825072537-93e31b48545e`)
+  until `grpc-go` cuts `v1.85.0`.
+
 ### Memory engine unification
 
 One memory engine, addressed by four typed scopes (global, agent, user,
