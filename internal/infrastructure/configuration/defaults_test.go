@@ -179,3 +179,26 @@ func TestDefaultsApplyTheDiffCapWhenUnset(t *testing.T) {
 		t.Fatalf("DiffCapLines = %v, want %d when the key is absent", cfg.DiffCapLines, defaultDiffCapLines)
 	}
 }
+
+// TestDefaultsFillTheHealthDependencyTimeout pins that the probe timeout has a
+// default, so a config that never mentions it still bounds the Gateway call
+// rather than letting a hung dependency stall the whole health report.
+func TestDefaultsFillTheHealthDependencyTimeout(t *testing.T) {
+	cfg := config.Config{}
+	(&Loader{}).applyDefaults(&cfg)
+
+	if got := time.Duration(cfg.Health.DependencyTimeout); got != defaultHealthDependencyTimeout {
+		t.Fatalf("Health.DependencyTimeout = %v, want %v", got, defaultHealthDependencyTimeout)
+	}
+}
+
+// TestDefaultsKeepAConfiguredHealthDependencyTimeout pins that an operator's
+// value is not overwritten, which is the whole point of making it configurable.
+func TestDefaultsKeepAConfiguredHealthDependencyTimeout(t *testing.T) {
+	cfg := config.Config{Health: config.Health{DependencyTimeout: config.Duration(30 * time.Second)}}
+	(&Loader{}).applyDefaults(&cfg)
+
+	if got := time.Duration(cfg.Health.DependencyTimeout); got != 30*time.Second {
+		t.Fatalf("Health.DependencyTimeout = %v, want the configured 30s", got)
+	}
+}

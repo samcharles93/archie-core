@@ -1042,6 +1042,12 @@ type Health struct {
 	// Listen is the address the daemon serves /healthz, /health and
 	// /health/detailed on. Defaulted, never empty in a loaded config.
 	Listen string `toml:"listen" yaml:"listen"`
+	// DependencyTimeout bounds one readiness probe's call into a service this
+	// process depends on but does not own, so a hung dependency degrades that
+	// probe instead of stalling the whole health report. It is the daemon's
+	// equivalent of the extracted services' -dependency-timeout flag.
+	// Defaulted, never zero in a loaded config.
+	DependencyTimeout Duration `toml:"dependency_timeout" yaml:"dependency_timeout"`
 }
 
 // URL renders Listen as an address a local caller can dial, which is what
