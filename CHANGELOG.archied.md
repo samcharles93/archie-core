@@ -1,5 +1,50 @@
 # archied changelog
 
+## [1.29.0] - 2026-09-19
+
+### Memory engine unification
+
+One memory engine, addressed by four typed scopes (global, agent, user,
+agent-user), replaces the two disconnected stores that previously existed:
+a chat-tool-written store nothing ever read back, and a curator-written store
+with no scope model.
+
+- `internal/domain/memory` is a CRUD contract (`Create`/`Get`/`Query`/`List`/
+  `Update`/`Forget`/`Revisions`) with retained revisions; updates supersede
+  rather than overwrite, so a crash mid-write leaves a recoverable extra
+  history entry, never a lost prior state (#886).
+- The chat turn reads its subject's scopes synchronously before the prompt is
+  built, rendering recalled records into a `<memory>` block; a failing or
+  panicking engine degrades to no memory block rather than failing the turn
+  (#887).
+- The model writes memory through four id-addressed tools
+  (`memory_create`/`update`/`delete`/`list`), scoped to the turn's own
+  resolved identity -- the model chooses the scope kind, never the ids, so it
+  has no path to write into another user's memory (#888).
+- The session curator now derives the agent-user scope from the session's own
+  user-role messages, instead of keying facts by a session id that stops
+  meaning anything once the session ends.
+- A channel with no resolvable user (dashboard, webhook) reads and writes only
+  global and agent scope; a webhook's route path is never treated as a user
+  identity.
+- Fixed a review finding on the read path: the per-scope record limit was
+  being applied as one shared total across all scopes rather than per scope,
+  and the rendered block's byte cap was checked before template escaping
+  rather than after, letting the escaped block exceed it.
+
+### Work intake
+
+- feat(workintake): define review reaction envelope
+- feat(workintake): authorize review reactions by owned PR
+
+### Cleanup
+
+- Deleted the unwired plugin capability-host health surface
+  (`Host.Health`/`Host.Manifests`/`ModuleStatus`) and the `Module.Health`
+  chain it fed -- including the `mcp`/`builtin` tool-provider health
+  implementations and their aggregation in `tools/provider.Registry` -- none
+  of which had ever had a production caller (#882).
+
 ## [1.28.0] - 2026-09-19
 
 ### Task detail and attempt attribution

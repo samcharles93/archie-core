@@ -1,5 +1,11 @@
 # archie-agent changelog
 
+## [1.29.0] - 2026-09-19
+
+- The sandboxed runtime picks up the review-reaction envelope and its
+  owned-PR authorization, so an agent can only react to reviews on pull
+  requests it opened itself.
+
 ## [1.28.0] - 2026-09-19
 
 - The sandboxed runtime picks up the attempt-attribution contract, so the events
