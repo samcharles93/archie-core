@@ -40,3 +40,43 @@ func TestDeployWorkflowOnlyPublishesRuntimeImageForRuntimeTag(t *testing.T) {
 		t.Fatal("archied build step is unexpectedly conditional")
 	}
 }
+
+func TestDeployWorkflowUsesConfiguredFormatters(t *testing.T) {
+	source := readDeploymentFile(t, ".github/workflows/deploy.yml")
+	for _, required := range []string{
+		"github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2",
+		"golangci-lint fmt",
+		"git diff --exit-code",
+		"golangci-lint run ./...",
+	} {
+		if !strings.Contains(source, required) {
+			t.Errorf("deploy workflow is missing formatter gate %q", required)
+		}
+	}
+	if strings.Contains(source, "gofumpt -w .") {
+		t.Error("deploy workflow bypasses the configured formatter set")
+	}
+}
+
+func TestPullRequestsRunTheDefinitiveGateWithoutPublishAccess(t *testing.T) {
+	source := readDeploymentFile(t, ".github/workflows/quality.yml")
+	for _, required := range []string{
+		"pull_request:",
+		"contents: read",
+		"task check",
+		"git diff --exit-code",
+	} {
+		if !strings.Contains(source, required) {
+			t.Errorf("quality workflow is missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"packages: write",
+		"docker/login-action",
+		"docker/build-push-action",
+	} {
+		if strings.Contains(source, forbidden) {
+			t.Errorf("quality workflow has publishing capability %q", forbidden)
+		}
+	}
+}

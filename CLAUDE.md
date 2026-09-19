@@ -85,20 +85,19 @@ automatically and note it in the handoff.
 
 Commands are defined in `Taskfile.yml` (requires Go 1.27.0,
 [Task](https://taskfile.dev), `gofumpt`, `golangci-lint`, and Node/npm).
-Install `gofumpt` and `golangci-lint` as the pinned pair from `Dockerfile`,
-never `@latest` for either: `task fmt` formats with the standalone gofumpt
-while `task lint` re-checks it with the gofumpt golangci-lint vendors, so a
-version mismatch makes `task check` unsatisfiable.
+Install the versions pinned in `Dockerfile`, never `@latest`. `golangci-lint`
+is the single writer for ordinary Go formatting; standalone `gofumpt` formats
+generated protobuf contracts only.
 
 ```bash
 task build      # build archied and archie-agent binaries into bin/
 task test       # go test ./... -count=1
 task test:ui    # dashboard node tests (DOM-building primitives)
 task ui         # build dashboard into ui/dist (LAW asset)
-task fmt        # gofumpt -w . && go fix ./...
+task fmt        # go fix ./... && golangci-lint fmt
 task vet        # go vet ./...
 task lint       # golangci-lint run ./...
-task check      # fmt + go fix + proto:lint + proto:check + docs:check + vet + lint + build + test + test:tools + test:ui (The Definitive Gate)
+task check      # fmt + proto:lint + proto:check + docs:check + vet + lint + build + test + test:tools + test:ui (The Definitive Gate)
 task dev        # archied live-reload + Vite HMR together on :5173
 ```
 
@@ -265,8 +264,8 @@ structures found in legacy packages.
    tests.
 3. **Quality Gate:** Run `task check`.
 4. **Formatting is LAW:** Adopt all formatting and simplification changes from
-   `task fmt` (`gofumpt` + `go fix`) verbatim. Never revert or fight canonical
-   linter/formatter diffs.
+   `task fmt` (`go fix` + the configured golangci-lint formatters) verbatim.
+   Never revert or fight canonical linter/formatter diffs.
 5. **No standing adversarial-review pass (for contributors):** Do not spawn a
    separate fresh-context reviewer pass on every change as a matter of course.
    Red-green TDD plus `task check` is the gate; a manual adversarial pass is

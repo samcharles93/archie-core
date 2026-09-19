@@ -35,7 +35,7 @@ task --list
 ```bash
 go version
 go env GOTOOLCHAIN GOVERSION GOOS GOARCH CGO_ENABLED GOTMPDIR GOCACHE GOMODCACHE
-task --version; gofumpt -version; golangci-lint version
+task --version; golangci-lint version; gofumpt -version
 node --version; npm --version   # UI only; docs need no Node toolchain
 docker --version; docker compose version
 git --version; gpg --version
@@ -45,32 +45,23 @@ Classify a missing command as an environment prerequisite. Bootstrap (verified
 2026-09-19): Go ≥ 1.27.0, Task ≥ 3.x, gofumpt v0.11.0, golangci-lint 2.13.2,
 Node 24.x for the `ui/` frontend.
 
-`gofumpt` and `golangci-lint` are one pair, not two independent tools.
-`task fmt` formats with the standalone gofumpt; `task lint` re-checks that
-formatting with the gofumpt golangci-lint vendors, and `task check` runs
-`fmt` then `lint` without diffing the tree, so `lint` is the only hard
-failure for formatting. Install the pair from `Dockerfile`
-(`GOLANGCI_LINT_VERSION` 2.13.2 -> gofumpt `GOFUMPT_VERSION` 0.11.0) rather
-than `@latest` for either: on a construct the two versions disagree on,
-`task fmt` cannot converge `task lint`, and the gate is unsatisfiable.
+`task fmt` runs `go fix` and then `golangci-lint fmt`; `task lint` uses the
+same binary and `.golangci.yml`, so its gofumpt, goimports, and gci rules have
+one owner and the writer converges the checker. Standalone `gofumpt` remains
+only for generated protobuf contracts in `tools/proto.sh`.
 
-A rule only one side applies fails the same way, so `task fmt` also passes
-`-extra` to match the formatter's `extra-rules`. Both mismatches are
-reachable in ordinary code: gofumpt <= v0.9.2 keeps the redundant parens in
-`any((Trees)(nil))` that >= v0.10.0 removes, and without `-extra`
-`func f(a int, b int)` stays put while `task lint` demands `func f(a, b int)`.
-Formatting that only `task lint` can produce is still a real gap -- `gci`'s
-`custom-order` places archie-core imports last, where gofumpt sorts them
-alphabetically -- so run `golangci-lint fmt` when `task fmt` leaves a
-formatting failure standing.
+The three Yaegi secret-engine examples carry `//go:build ignore`. goimports
+cannot type-check them and deletes a genuinely used `internal/secret` import,
+so `.golangci.yml` excludes those exact files from the formatter set. Their
+runtime loading remains covered by `internal/secret/engines_test.go`.
 
 | Surface | Repository declaration | Installed snapshot | Interpretation |
 |---|---|---|---|
 | Runtime Go | `go 1.27.0` in `go.mod` | Go 1.27.0, linux/amd64 | Requires at least declared Go level. |
 | Tools Go | `go 1.27.0` in `tools/go.mod` | Same Go 1.27.0 binary | Toolchain must satisfy both modules. |
 | Task | Taskfile schema `version: "3"` | Task 3.48.0 | Installed version is environment fact. |
-| gofumpt | `task fmt`; pinned in `Dockerfile` (`GOFUMPT_VERSION`) | v0.11.0 | Must equal the gofumpt golangci-lint vendors. |
-| golangci-lint | v2 config in `.golangci.yml`; pinned in `Dockerfile` | 2.13.2 | Vendors gofumpt v0.11.0; `golangci-lint run` enables the formatters. |
+| gofumpt | Generated protobuf formatting; pinned in `Dockerfile` | v0.11.0 | Not the ordinary source formatter. |
+| golangci-lint | v2 config in `.golangci.yml`; pinned in `Dockerfile` | 2.13.2 | Owns ordinary formatting and lint checks. |
 | Node | `ui/` frontend build | 26.9.0 / npm 11.19.1 | No `engines`/`packageManager` field. Docs need no Node. |
 | Containers | Compose commands in `Taskfile.yml` | Podman-backed, unusable in this sandbox | Verify CLI, Compose plugin, daemon/socket separately. |
 
@@ -123,19 +114,20 @@ golangci-lint run ./...
 
 | Task | Exact effect |
 |---|---|
-| `task fmt` | `gofumpt -extra -w .`, then `go fix ./...` — both may rewrite source. |
+| `task fmt` | `go fix ./...`, then `golangci-lint fmt` — both may rewrite source. |
 | `task vet` | `go vet ./...` in the runtime module. |
 | `task lint` | `golangci-lint run ./...`. |
 | `task build` | Builds both commands into `bin/`. |
 | `task test` | `go test ./... -count=1` in the runtime module. |
-| `task check` | `fmt` + `go fix ./...` again + `proto:lint` + `proto:check` + `docs:check` + `vet` + `lint` + `build` + `test` + `test:tools` + `test:ui`. |
+| `task check` | `fmt` + `proto:lint` + `proto:check` + `docs:check` + `vet` + `lint` + `build` + `test` + `test:tools` + `test:ui`. |
 | `task clean` | Recursively removes `bin/`; destructive. |
 | `task docker-build` | `docker compose build agent` only. |
 
 `task check` is the definitive gate but omits race tests, `task vuln`, and
 `task docker-build`. Its docs step, `docs:check`, verifies committed generated
 data and never renders anything: there is still no documentation build.
-Run only in authorized writable worktree. For read-only preview: `gofumpt -l .`.
+Run only in an authorized writable worktree. For a read-only ordinary-source
+preview, use `golangci-lint fmt --diff`.
 
 ## Verify the tools module separately
 

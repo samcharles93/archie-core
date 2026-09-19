@@ -10,14 +10,13 @@ tasks:
       - task --list
 
   fmt:
-    desc: Format and fix Go source (gofumpt, go fix)
+    desc: Fix and format Go source with the gate's configured formatters
     cmds:
-      # -extra must match the gofumpt formatter's extra-rules in
-      # .golangci.yml. Without it `task fmt` cannot produce what `task lint`
-      # demands -- e.g. func f(a int, b int) -> func f(a, b int) -- so a
-      # contributor has no command that satisfies the gate.
-      - gofumpt -extra -w .
       - go fix ./...
+      # This must use the same engine and configuration as task lint. Running
+      # standalone gofumpt cannot reproduce goimports or gci's custom import
+      # grouping, so it can leave a tree that the gate rejects.
+      - golangci-lint fmt
 
   proto:install:
     desc: Install the pinned Buf and protobuf Go generators
@@ -355,10 +354,9 @@ tasks:
       - go -C tools test -mod=readonly ./... -count=1
 
   check:
-    desc: "Full quality gate: fmt, go fix, proto, docs, vet, lint, build, test, tools tests, ui tests and bundle"
+    desc: "Full quality gate: fmt, proto, docs, vet, lint, build, test, tools tests, ui tests and bundle"
     cmds:
       - task: fmt
-      - go fix ./...
       - task: proto:lint
       - task: proto:check
       - task: docs:check
