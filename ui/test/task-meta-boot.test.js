@@ -39,3 +39,24 @@ test("booting the dashboard replaces the freeze-dried vocabulary with the served
   assert.deepEqual(statusIds(), ["custom_status"]);
   assert.equal(actionFor("custom_action")?.label, "Custom action");
 });
+
+// The task filter used to capture the vocabulary in module-level constants at
+// import, which froze the defaults for the life of the process: no catalog,
+// however late or however correct, could reach it.
+test("the task filter reads the served catalog rather than an import-time snapshot", async () => {
+  const { loadTaskMeta } = await import("../src/base/task-meta.jsx");
+  const { initialTaskFilter, taskMatchesStatus } = await import("../src/tasks/task-filters.jsx");
+
+  api.taskMeta = async () => ({
+    statuses: [
+      { id: "custom_status", label: "Custom status", kind: "danger", needs_you: true },
+      { id: "running", label: "Working", kind: "info" },
+    ],
+    actions: [],
+  });
+  await loadTaskMeta();
+
+  assert.equal(initialTaskFilter(new URLSearchParams("status=custom_status")), "custom_status");
+  assert.equal(taskMatchesStatus({ status: "custom_status" }, "needs_you"), true);
+  assert.equal(taskMatchesStatus({ status: "queued" }, "needs_you"), false);
+});
