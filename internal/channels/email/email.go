@@ -20,7 +20,6 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/channels"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
-	"github.com/samcharles93/archie-core/internal/gateway"
 )
 
 // Gateway is an email gateway that receives inbound messages via SMTP
@@ -37,7 +36,7 @@ type Gateway struct {
 	AllowedDomains []string
 
 	log    *slog.Logger
-	router *gateway.Router
+	client messaging.ChatContract
 	mu     sync.Mutex
 	ln     net.Listener
 }
@@ -58,10 +57,10 @@ func (g *Gateway) Name() string { return "email" }
 
 // Start begins listening for SMTP connections. Blocks until ctx is
 // cancelled.
-func (g *Gateway) Start(ctx context.Context, router *gateway.Router, lifecycle gateway.Lifecycle) error {
+func (g *Gateway) Start(ctx context.Context, client messaging.ChatContract, lifecycle channels.Lifecycle) error {
 	lifecycle.ReportStarting()
 	g.mu.Lock()
-	g.router = router
+	g.client = client
 	g.mu.Unlock()
 
 	lc := net.ListenConfig{}
@@ -187,13 +186,13 @@ func extractAddr(line string) string {
 }
 
 // processMessage extracts text from the raw email and routes it through
-// the gateway router. Replies are sent back via SMTP.
+// the messaging chat contract. Replies are sent back via SMTP.
 func (g *Gateway) processMessage(ctx context.Context, from, to, raw string) {
 	g.mu.Lock()
-	router := g.router
+	client := g.client
 	g.mu.Unlock()
 
-	if router == nil {
+	if client == nil {
 		g.log.Warn("email received before gateway started")
 		return
 	}
@@ -202,21 +201,21 @@ func (g *Gateway) processMessage(ctx context.Context, from, to, raw string) {
 	// following Content-Type or headers.
 	text := extractBody(raw)
 
-	msg := gateway.Inbound{Message: messaging.Message{
+	msg := messaging.Inbound{Message: messaging.Message{
 		ConversationID: messaging.ConversationID{ChannelID: to},
 		Sender:         from,
 		SenderID:       from,
 		Role:           messaging.RoleUser,
 		Text:           text,
 	}}
-	reply, err := router.Route(ctx, msg)
+	reply, err := client.Route(ctx, msg)
 	if err != nil {
 		g.log.Error("email route", "err", err, "from", from)
 		return
 	}
 
-	if reply != "" && g.RelayAddr != "" {
-		if err := g.sendReply(from, to, reply); err != nil {
+	if reply.Text != "" && g.RelayAddr != "" {
+		if err := g.sendReply(from, to, reply.Text); err != nil {
 			g.log.Error("email reply", "err", err, "to", from)
 		}
 	}

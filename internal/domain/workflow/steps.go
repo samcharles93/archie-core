@@ -51,21 +51,27 @@ type changeStatsReader interface {
 // Capturing is reporting, not work: every failure path here logs and returns,
 // because a provenance record that could not be written must never park or
 // fail a run that otherwise succeeded.
-func (tc *TaskContext) captureChanges(ctx context.Context, after string) {
+//
+// It returns the measured stats so a caller that runs at a point the worktree's
+// own revision matters (OpenPR) can reuse the read instead of paying for a
+// second one -- and gets the zero value on any failure path, which is why a
+// caller must treat an empty HeadSHA as "not measured" rather than as a
+// revision.
+func (tc *TaskContext) captureChanges(ctx context.Context, after string) task.ChangeStats {
 	if tc.Dir == "" {
 		tc.Log.Warn("change capture skipped: no worktree to read", "captured_after", after)
-		return
+		return task.ChangeStats{}
 	}
 	reader, ok := tc.Trees.(changeStatsReader)
 	if !ok {
 		tc.Log.Warn("change capture unavailable: this worktree implementation cannot report a diffstat",
 			"captured_after", after)
-		return
+		return task.ChangeStats{}
 	}
 	stats, err := reader.ChangedFileStats(ctx, tc.Dir, tc.Repo.BaseBranch())
 	if err != nil {
 		tc.Log.Warn("change capture failed", "captured_after", after, "err", err)
-		return
+		return task.ChangeStats{}
 	}
 	// Durable, never bus-only: the worktree this was measured from is gone by
 	// the time anyone reads it, so a capture that only reached the live feed
@@ -73,6 +79,7 @@ func (tc *TaskContext) captureChanges(ctx context.Context, after string) {
 	if err := tc.EmitDurable(ctx, events.KindChangesCaptured, tc.Task.Stage, "", changeCaptureData(tc, after, stats)); err != nil {
 		tc.Log.Warn("change capture not persisted", "captured_after", after, "err", err)
 	}
+	return stats
 }
 
 // changeCaptureData builds the persisted payload for one capture. Totals are
@@ -308,7 +315,14 @@ func OpenPR(ctx context.Context, tc *TaskContext, body string) error {
 	// it. This is the one point where the number is known and the worktree is
 	// still there to measure, so it is captured here rather than left for a
 	// read to reconstruct. Reporting only: captureChanges never fails the stage.
-	tc.captureChanges(ctx, capturedAfterOpenPR)
+	//
+	// The same read answers which revision this run's line numbers describe:
+	// nothing commits between StageReview and here, so the worktree still holds
+	// the head the review read, and the stage that posts line-anchored comments
+	// needs it to refuse a post once the PR's head has moved past it.
+	if stats := tc.captureChanges(ctx, capturedAfterOpenPR); stats.HeadSHA != "" {
+		tc.ReviewedHeadSHA = stats.HeadSHA
+	}
 	return nil
 }
 

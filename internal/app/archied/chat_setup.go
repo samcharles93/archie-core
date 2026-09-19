@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -13,61 +12,42 @@ import (
 	"github.com/samcharles93/ai-sdk/core"
 	"github.com/samcharles93/ai-sdk/runtime"
 
-	"github.com/samcharles93/archie-core/internal/channels/status"
-	"github.com/samcharles93/archie-core/internal/channels/telegram"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/daemon"
-	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
-	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
 	"github.com/samcharles93/archie-core/internal/installtype"
-	"github.com/samcharles93/archie-core/internal/ratelimit"
-	"github.com/samcharles93/archie-core/internal/releaseannounce"
 	"github.com/samcharles93/archie-core/internal/releaseupdate"
-	"github.com/samcharles93/archie-core/internal/secret"
 	"github.com/samcharles93/archie-core/internal/tools"
 )
 
-// telegramSetup contains the inputs needed to initialise the Telegram
-// chat gateway. Every field is intentionally explicit so the function
-// signature acts as a contract of what the gateway depends on.
-type telegramSetup struct {
-	// Cfg is read once per setup function via Get(); the daemon is not
+// chatSetup contains the inputs needed to build a chat turn runner and the
+// services that support it. Every field is intentionally explicit so the
+// function signature acts as a contract of what a chat turn depends on.
+type chatSetup struct {
+	// Cfg is read once per setup function via Get(); the process is not
 	// running yet at this point, so the reload-safe Holder is mostly a
 	// formality, but matching the daemon's API keeps callers honest.
 	Cfg                 *config.Holder
-	CfgPath             string
-	OverlayPath         string
-	St                  storecontract.TaskStore
 	LLM                 *runtime.Runtime
 	ChatModels          gateway.ModelManager
 	ToolReg             *tools.Registry
 	Personas            *gateway.PersonaRegistry
 	ChatTasks           gateway.TaskCreator
-	ChatController      gateway.TaskController
 	ChatTaskLister      gateway.ChatTaskLister
 	ChatTaskLogs        gateway.ChatTaskLogReader
 	ChatTaskActor       gateway.ChatTaskActor
 	ChatPRReviewer      gateway.ChatPRReviewer
 	DefaultChatIdentity string
-	SessionStore        gateway.SessionStore
-	Updates             telegram.UpdateService
-	Dangerous           gateway.DangerousCommandAuthority
 	// Bus carries primary-input events (archie-core-035): a completed
 	// chat turn is published here so input-driven curators can wake. Nil
 	// disables turn events (tests, minimal setups).
-	Bus            *events.Bus
-	Log            *slog.Logger
-	ChannelManager *status.Manager
+	Bus *events.Bus
+	Log *slog.Logger
 	// AgentStatus is the composition root's shared tracker for the most
 	// recently observed archie-agent version (see daemon.AgentStatus).
 	// Nil disables the agent component of RunningVersions.
 	AgentStatus *daemon.AgentStatus
-	Secrets     *secret.Registry
-	// RateLimiter budgets inbound messages per sender when set. Nil
-	// leaves rate limiting off.
-	RateLimiter *ratelimit.Limiter
 	// MemoryEngine is the durable-memory read surface (b.memEngines' active
 	// engine, resolved by cfg.Memory.Engine). Nil disables the chat <memory>
 	// block for every turn runner built from this setup.
@@ -76,106 +56,6 @@ type telegramSetup struct {
 	// the per-turn memory_create/update/delete/list tools (docs/prds/
 	// memory-engine-unification.md §5). Nil omits those tools.
 	MemoryWriter gateway.MemoryWriteStore
-}
-
-// telegramValidateConfigMap builds the map Gateway.ValidateConfig expects
-// from the typed config, carrying whichever credential source is set
-// (token takes precedence, matching resolveTelegramToken).
-func telegramValidateConfigMap(cfg config.TelegramConfig) map[string]any {
-	m := map[string]any{"token_env": cfg.TokenEnv}
-	if cfg.Token != (secret.SecretRef{}) {
-		m["token"] = map[string]any{"engine": cfg.Token.Engine, "key": cfg.Token.Key}
-	}
-	return m
-}
-
-func resolveTelegramToken(cfg config.TelegramConfig, registry *secret.Registry) (string, error) {
-	if cfg.Token != (secret.SecretRef{}) {
-		return registry.Resolve(cfg.Token)
-	}
-	if cfg.TokenEnv == "" {
-		return "", nil
-	}
-	return os.Getenv(cfg.TokenEnv), nil
-}
-
-// setupTelegramGateway initialises the Telegram chat gateway when a
-// token is configured. It returns a start function (nil when no token
-// is configured) and ok=false to signal the caller must exit early.
-func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), ok bool) {
-	cfg := s.Cfg.Get()
-	if cfg.Chat.Telegram.Token == (secret.SecretRef{}) && cfg.Chat.Telegram.TokenEnv == "" {
-		return nil, true
-	}
-	tgToken, err := resolveTelegramToken(cfg.Chat.Telegram, s.Secrets)
-	if err != nil {
-		s.Log.Error("chat.telegram token resolution failed", "err", err)
-		return nil, false
-	}
-	if tgToken == "" {
-		s.Log.Error("chat.telegram configured but token is empty")
-		return nil, false
-	}
-	if len(cfg.Chat.Telegram.AllowedUserIDs) == 0 {
-		s.Log.Warn("chat.telegram has no allowed_user_ids: every sender will be rejected. " +
-			"Add your Telegram user id to chat.telegram.allowed_user_ids to enable the bot.")
-	}
-	tg := telegram.New(tgToken, cfg.Chat.Telegram.AllowedUserIDs, s.Log)
-	if err := tg.ValidateConfig(telegramValidateConfigMap(cfg.Chat.Telegram)); err != nil {
-		s.Log.Error("chat.telegram config invalid", "err", err)
-		return nil, false
-	}
-	tg.Version = func() string {
-		return fmt.Sprintf("Archie\nGateway: %s\nRuntime: %s", gatewayVersion, runtimeVersion)
-	}
-	if s.Updates != nil {
-		tg.Updates = s.Updates
-	} else {
-		configureTelegramUpdates(tg, s)
-	}
-	tg.Dangerous = s.Dangerous
-	tg.SetShowToolCalls(cfg.Chat.ShowToolCalls)
-	tg.ReleaseAnnouncements = &releaseannounce.Announcer{
-		StatePath: releaseAnnouncementStatePath(cfg.WorkDir, cfg.BotUser),
-		Components: []releaseannounce.Component{
-			{ID: "gateway", Label: "THE GATEWAY", Version: gatewayVersion, ChangelogPath: packagedGatewayChangelogPath},
-			{ID: "runtime", Label: "THE RUNTIME", Version: runtimeVersion, ChangelogPath: packagedRuntimeChangelogPath},
-		},
-	}
-	tg.UpdateReportPath = updateReportPath(cfg.WorkDir, cfg.BotUser)
-	agentStatus := s.AgentStatus
-	tg.RunningVersions = func() map[string]string { return daemonRunningVersions(agentStatus) }
-	tg.Reload = makeTelegramReload(s)
-
-	sessionStore := s.SessionStore
-	if sessionStore == nil {
-		s.Log.Error("telegram conversation store is not configured")
-		return nil, false
-	}
-	router := buildTelegramRouter(ctx, tg, s, sessionStore)
-	return func() {
-		go func() {
-			lifecycle := gateway.Lifecycle{
-				Starting: func() {
-					if s.ChannelManager != nil {
-						s.ChannelManager.MarkStarting("telegram")
-					}
-				},
-				Running: func() {
-					if s.ChannelManager != nil {
-						s.ChannelManager.MarkRunning("telegram")
-					}
-					s.Log.Info("telegram gateway started")
-				},
-			}
-			if err := tg.Start(ctx, router, lifecycle); err != nil && ctx.Err() == nil {
-				if s.ChannelManager != nil {
-					s.ChannelManager.MarkFailed("telegram", err.Error())
-				}
-				s.Log.Error("telegram gateway stopped", "err", err)
-			}
-		}()
-	}, true
 }
 
 // daemonRunningVersions reports the component versions this process can
@@ -241,13 +121,7 @@ func componentInstallTypeEnricher(agentStatus *daemon.AgentStatus, nats config.N
 	}
 }
 
-func configureTelegramUpdates(tg *telegram.Gateway, s telegramSetup) {
-	if updates := makeUpdateService(s); updates != nil {
-		tg.Updates = updates
-	}
-}
-
-func makeUpdateService(s telegramSetup) *releaseupdate.Service {
+func makeUpdateService(s chatSetup) *releaseupdate.Service {
 	cfg := s.Cfg.Get()
 	if len(cfg.Chat.Telegram.UpdateCheckCommand) == 0 {
 		return nil
@@ -267,30 +141,6 @@ func makeUpdateService(s telegramSetup) *releaseupdate.Service {
 	return updates
 }
 
-func makeTelegramReload(s telegramSetup) func(*telegram.Gateway) error {
-	return func(g *telegram.Gateway) error {
-		doc, err := configuration.New(s.Log).Resolve(s.CfgPath, s.OverlayPath)
-		if err != nil {
-			return fmt.Errorf("reload config: %w", err)
-		}
-		newCfg := doc.Config
-		token, err := resolveTelegramToken(newCfg.Chat.Telegram, s.Secrets)
-		if err != nil {
-			return fmt.Errorf("reload config: resolve telegram token: %w", err)
-		}
-		if token == "" {
-			return fmt.Errorf("reload config: chat.telegram token is empty")
-		}
-		g.Token = token
-		g.AllowedUserIDs = newCfg.Chat.Telegram.AllowedUserIDs
-		g.SetShowToolCalls(newCfg.Chat.ShowToolCalls)
-		s.Log.Info("chat gateway config reloaded",
-			"allowed_user_ids", len(g.AllowedUserIDs),
-			"show_tool_calls", g.ShowToolCalls())
-		return nil
-	}
-}
-
 func makeTelegramSessionStore(cfg config.Config) (gateway.SessionStore, error) {
 	return gateway.OpenSQLiteSessionStore(conversationDBPath(cfg.DBPath))
 }
@@ -300,33 +150,10 @@ func conversationDBPath(taskDBPath string) string {
 	return taskDBPath + "-conversations.sqlite"
 }
 
-func buildTelegramRouter(ctx context.Context, tg *telegram.Gateway, s telegramSetup, sessionStore gateway.SessionStore) *gateway.Router {
-	// The router is built before the responder so the responder can resolve
-	// sessions through it. Both orderings work at runtime -- the responder is
-	// a closure -- but this way the dependency is visible rather than
-	// captured by reference.
-	router := gateway.NewRouter(s.St, nil, "telegram")
-	router.Limiter = s.RateLimiter
-	router.Models = s.ChatModels
-	router.Updates = s.Updates
-	router.Personas = s.Personas
-	router.InitSessions(sessionStore)
-	router.Titles = newChatTitleGenerator(s)
-	router.Log = s.Log
-	configureTaskCommands(router, s.ChatTasks, s.ChatController, s.ChatTaskLister, s.DefaultChatIdentity)
-
-	if s.LLM != nil {
-		turnRunner := newChatTurnRunner(ctx, tg.Name(), s, sessionStore, router)
-		router.LLM = turnRunner.Respond
-		router.LLMStream = turnRunner.RespondStream
-	}
-	return router
-}
-
 func makeChatLLMResponder(
 	ctx context.Context,
 	channel string,
-	s telegramSetup,
+	s chatSetup,
 	sessionStore gateway.SessionStore,
 	router *gateway.Router,
 ) (gateway.LLMResponder, gateway.LLMStreamResponder) {
@@ -340,7 +167,7 @@ func makeChatLLMResponder(
 func newChatTurnRunner(
 	ctx context.Context,
 	channel string,
-	s telegramSetup,
+	s chatSetup,
 	sessionStore gateway.SessionStore,
 	router *gateway.Router,
 ) *gateway.TurnRunner {
@@ -535,7 +362,7 @@ type chatTitleGenerator struct {
 // newChatTitleGenerator wires an LLM-backed title generator for a chat
 // setup, or nil when no model is available. Title generation is optional
 // everywhere, so every caller tolerates nil.
-func newChatTitleGenerator(s telegramSetup) gateway.TitleGenerator {
+func newChatTitleGenerator(s chatSetup) gateway.TitleGenerator {
 	if s.LLM == nil || s.ChatModels == nil {
 		return nil
 	}

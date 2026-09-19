@@ -424,6 +424,42 @@ func TestOpenPRCapturesThePullRequestNumber(t *testing.T) {
 	}
 }
 
+// TestOpenPRRecordsTheReviewedRevision is the producer half of the q9au
+// head-drift guard. Line numbers in a review finding describe one revision of
+// the worktree, and OpenPR is the last point at which the worktree is still
+// there to name it -- StageReview reads that same worktree and commits
+// nothing, so the head OpenPR measures is the head the review read. Without
+// the revision recorded here the posting stage has nothing to check the pull
+// request's head against.
+func TestOpenPRRecordsTheReviewedRevision(t *testing.T) {
+	trees := &capturingTrees{stats: sampleStats()}
+	tc := captureTaskContext(t, trees, &recordingStore{})
+	tc.Forge = &fakeForge{}
+
+	if err := OpenPR(context.Background(), tc, "body"); err != nil {
+		t.Fatalf("OpenPR() = %v, want nil", err)
+	}
+	if tc.ReviewedHeadSHA != trees.stats.HeadSHA {
+		t.Errorf("ReviewedHeadSHA = %q, want the measured worktree head %q", tc.ReviewedHeadSHA, trees.stats.HeadSHA)
+	}
+}
+
+// TestOpenPRLeavesTheReviewedRevisionUnsetWithoutAMeasurement pins the degrade
+// path: a worktree implementation that cannot report a diffstat leaves the
+// revision empty, which the forge reads as "not measured" and posts without the
+// check. Inventing a revision here would refuse every posting instead.
+func TestOpenPRLeavesTheReviewedRevisionUnsetWithoutAMeasurement(t *testing.T) {
+	tc := captureTaskContext(t, &fakeTrees{}, &recordingStore{})
+	tc.Forge = &fakeForge{}
+
+	if err := OpenPR(context.Background(), tc, "body"); err != nil {
+		t.Fatalf("OpenPR() = %v, want nil", err)
+	}
+	if tc.ReviewedHeadSHA != "" {
+		t.Errorf("ReviewedHeadSHA = %q, want empty when nothing measured the worktree", tc.ReviewedHeadSHA)
+	}
+}
+
 // TestChangeCaptureTruncatesTheFileListButNotTheTotals: one large refactor
 // must not write an unbounded payload, and a capture that dropped entries must
 // still report how much the attempt actually changed.

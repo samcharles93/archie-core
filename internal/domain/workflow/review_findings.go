@@ -3,6 +3,7 @@ package workflow
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // ReviewLevel represents the severity level of a review finding.
@@ -88,6 +89,12 @@ type ReviewFinding struct {
 	Defect string `json:"defect"`
 	// FailureScenario describes the concrete inputs or state that produce the wrong output or crash.
 	FailureScenario string `json:"failure_scenario"`
+	// Suggestion is the replacement text for the anchored line, when the
+	// reviewer can state the fix mechanically. Only a confirmed finding may
+	// carry one: it is rendered as a one-click apply, and a wrong one-click
+	// fix is worse than no fix (h019.5 calibration). Empty means "no
+	// mechanical fix", not "no fix needed".
+	Suggestion string `json:"suggestion,omitempty"`
 	// Verdict distinguishes confirmed defects from plausible hypotheses. Only confirmed findings may block.
 	Verdict ReviewVerdict `json:"verdict"`
 	// Disposition records the action taken once the finding is addressed.
@@ -170,6 +177,18 @@ func (r ReviewReport) Passed() bool {
 
 // Validate checks that the finding satisfies contract invariants.
 func (f ReviewFinding) Validate() error {
+	if err := f.validateAnchor(); err != nil {
+		return err
+	}
+	if err := f.validateClassification(); err != nil {
+		return err
+	}
+	return f.validateDisposition()
+}
+
+// validateAnchor checks where the defect is and what fix, if any, accompanies
+// it.
+func (f ReviewFinding) validateAnchor() error {
 	if f.File == "" {
 		return errors.New("review finding file is required")
 	}
@@ -182,6 +201,28 @@ func (f ReviewFinding) Validate() error {
 	if f.FailureScenario == "" {
 		return errors.New("review finding failure scenario is required")
 	}
+	// A suggestion is applied in one click, so only a confirmed defect may
+	// carry one: a wrong suggestion breaks the code and the author has to
+	// notice, where a plausible worry gets a sentence (h019.5 calibration).
+	// Enforced at the value so the agent's record_finding call is rejected with
+	// something the model can act on, instead of the suggestion being dropped
+	// somewhere later where nothing tells it.
+	if f.Suggestion != "" && f.Verdict != ReviewVerdictConfirmed {
+		return fmt.Errorf("review finding %s:%d offers a one-click suggestion with verdict %q; only %q may", f.File, f.Line, f.Verdict, ReviewVerdictConfirmed)
+	}
+	// A suggestion is a one-line replacement GitHub applies with a single click,
+	// so it must be single-line: an embedded newline renders a multi-line fence
+	// that GitHub applies only up to the first line, silently corrupting the file
+	// (docs/prds/inline-review.md). Enforced at the value so the agent's
+	// record_finding call is rejected with something the model can act on.
+	if f.Suggestion != "" && strings.ContainsAny(f.Suggestion, "\n\r") {
+		return fmt.Errorf("review finding %s:%d suggestion must be single-line; got %d line(s)", f.File, f.Line, strings.Count(f.Suggestion, "\n")+1)
+	}
+	return nil
+}
+
+// validateClassification checks the three enums that classify the finding.
+func (f ReviewFinding) validateClassification() error {
 	switch f.Verdict {
 	case ReviewVerdictConfirmed, ReviewVerdictPlausible:
 	default:
@@ -204,12 +245,16 @@ func (f ReviewFinding) Validate() error {
 	default:
 		return fmt.Errorf("invalid review category %q", f.Category)
 	}
-	if f.Disposition != "" {
-		switch f.Disposition {
-		case ReviewDispositionFixed, ReviewDispositionSkipped, ReviewDispositionNoChangeNeeded:
-		default:
-			return fmt.Errorf("invalid review disposition %q", f.Disposition)
-		}
+	return nil
+}
+
+// validateDisposition checks the optional record of what was done about the
+// finding once it was acted on.
+func (f ReviewFinding) validateDisposition() error {
+	switch f.Disposition {
+	case "", ReviewDispositionFixed, ReviewDispositionSkipped, ReviewDispositionNoChangeNeeded:
+	default:
+		return fmt.Errorf("invalid review disposition %q", f.Disposition)
 	}
 	return nil
 }

@@ -1,4 +1,4 @@
-package archied
+package archiemessaging
 
 import (
 	"testing"
@@ -6,14 +6,13 @@ import (
 	"github.com/samcharles93/archie-core/internal/config"
 )
 
-// TestWebhookRoutesAppliesConfiguredFields is the red case for
-// channels-platform-3: RouteConfig.Secret/Template/DeliverTo are
-// implemented and tested in internal/channels/webhook, but the only
-// production construction (setupWebhookGateway) built
-// []webhook.RouteConfig{{Path: "/webhook"}} literally, so no config value
-// could ever reach them and HMAC validation never ran. webhookRoutes is the
-// translation site; this pins that a configured [chat.webhook] route
-// actually reaches the gateway's RouteConfig.
+// TestWebhookRoutesAppliesConfiguredFields is the guard for
+// channels-platform-3: RouteConfig.Secret/Template/DeliverTo are implemented
+// and tested in internal/channels/webhook, but the original production
+// construction built []webhook.RouteConfig{{Path: "/webhook"}} literally, so
+// no config value could ever reach them and HMAC validation never ran.
+// webhookRoutes is the translation site; this pins that a configured
+// [chat.webhook] route actually reaches the gateway's RouteConfig.
 func TestWebhookRoutesAppliesConfiguredFields(t *testing.T) {
 	route := config.WebhookRoute{
 		Path:      "/github",

@@ -116,6 +116,7 @@ func migrateTasks(ctx context.Context, db *sql.DB) error {
 		{"tasks", "identity", `ALTER TABLE tasks ADD COLUMN identity TEXT NOT NULL DEFAULT ''`},
 		{"tasks", "binding_id", `ALTER TABLE tasks ADD COLUMN binding_id INTEGER NOT NULL DEFAULT 0`},
 		{"tasks", "binding_version", `ALTER TABLE tasks ADD COLUMN binding_version INTEGER NOT NULL DEFAULT 0`},
+		{"tasks", "review_payload", `ALTER TABLE tasks ADD COLUMN review_payload TEXT NOT NULL DEFAULT ''`},
 		{"bindings", "owner", `ALTER TABLE bindings ADD COLUMN owner TEXT NOT NULL DEFAULT ''`},
 		{"bindings", "repo", `ALTER TABLE bindings ADD COLUMN repo TEXT NOT NULL DEFAULT ''`},
 		{"events", "attempt", `ALTER TABLE events ADD COLUMN attempt INTEGER NOT NULL DEFAULT 0`},
@@ -199,6 +200,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 	identity      TEXT NOT NULL DEFAULT '',
 	binding_id    INTEGER NOT NULL DEFAULT 0,
 	binding_version INTEGER NOT NULL DEFAULT 0,
+	review_payload TEXT NOT NULL DEFAULT '',
 	created_at    TEXT NOT NULL DEFAULT (datetime('now')),
 	updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
 	UNIQUE(owner, repo, issue_number)
@@ -271,7 +273,7 @@ func (s *Store) EnqueueChatTask(ctx context.Context, owner, repo, title, body, w
 		RETURNING id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
-			source, identity, binding_id, binding_version, created_at, updated_at`,
+			source, identity, binding_id, binding_version, review_payload, created_at, updated_at`,
 		owner, repo, owner, repo, syntheticIssueNumberBase-1, title, body, wf, identity)
 	return scanTask(row)
 }
@@ -312,7 +314,7 @@ func (s *Store) ClaimNext(ctx context.Context) (*workflow.Task, error) {
 		RETURNING id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
-			source, identity, binding_id, binding_version, created_at, updated_at`,
+			source, identity, binding_id, binding_version, review_payload, created_at, updated_at`,
 		workflow.StatusRunning, workflow.StatusQueued)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -327,7 +329,7 @@ func scanTask(row *sql.Row) (*workflow.Task, error) {
 		&t.Labels, &t.Status, &t.Workflow, &t.Stage, &t.Branch, &t.Plan, &t.Notes,
 		&t.PRNumber, &t.TokensUsed, &t.Iterations, &t.Attempt, &t.ParkReason,
 		&t.WatchCommentID, &t.RetryCount, &t.Source, &t.Identity,
-		&t.BindingID, &t.BindingVersion,
+		&t.BindingID, &t.BindingVersion, &t.ReviewPayload,
 		sqliteTime{&t.CreatedAt}, sqliteTime{&t.UpdatedAt})
 	if err != nil {
 		return nil, err
@@ -346,7 +348,7 @@ func (s *Store) ClaimByIssue(ctx context.Context, owner, repo string, number int
 		RETURNING id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
-			source, identity, binding_id, binding_version, created_at, updated_at`,
+			source, identity, binding_id, binding_version, review_payload, created_at, updated_at`,
 		workflow.StatusRunning, owner, repo, number, workflow.StatusQueued)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -404,11 +406,11 @@ func (s *Store) Update(ctx context.Context, t *workflow.Task) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE tasks SET workflow=?, stage=?, branch=?, plan=?, notes=?,
 			pr_number=?, tokens_used=?, iterations=?, park_reason=?,
-			watch_comment_id=?, updated_at=datetime('now')
+			watch_comment_id=?, retry_count=?, review_payload=?, updated_at=datetime('now')
 		WHERE id=?`,
 		t.Workflow, t.Stage, t.Branch, t.Plan, t.Notes,
 		t.PRNumber, t.TokensUsed, t.Iterations, clip(t.ParkReason, 4000),
-		t.WatchCommentID, t.ID)
+		t.WatchCommentID, t.RetryCount, t.ReviewPayload, t.ID)
 	return err
 }
 
@@ -418,7 +420,7 @@ func (s *Store) TaskByIssue(ctx context.Context, owner, repo string, number int)
 		SELECT id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
-			source, identity, binding_id, binding_version, created_at, updated_at
+			source, identity, binding_id, binding_version, review_payload, created_at, updated_at
 		FROM tasks WHERE owner=? AND repo=? AND issue_number=?`, owner, repo, number)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -433,7 +435,7 @@ func (s *Store) OpenTaskByPR(ctx context.Context, owner, repo string, number int
 		SELECT id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
-			source, identity, binding_id, binding_version, created_at, updated_at
+			source, identity, binding_id, binding_version, review_payload, created_at, updated_at
 		FROM tasks
 		WHERE owner=? AND repo=? AND pr_number=? AND status=?`,
 		owner, repo, number, workflow.StatusPROpen)
@@ -452,7 +454,7 @@ func (s *Store) TaskByID(ctx context.Context, taskID int64) (*workflow.Task, err
 		SELECT id, owner, repo, issue_number, title, body, labels, status,
 			workflow, stage, branch, plan, notes, pr_number, tokens_used,
 			iterations, attempt, park_reason, watch_comment_id, retry_count,
-			source, identity, binding_id, binding_version, created_at, updated_at
+			source, identity, binding_id, binding_version, review_payload, created_at, updated_at
 		FROM tasks WHERE id=?`, taskID)
 	t, err := scanTask(row)
 	if errors.Is(err, sql.ErrNoRows) {
