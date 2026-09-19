@@ -624,6 +624,38 @@ func (r *Router) handleTasks(ctx context.Context) (string, error) {
 	return formatTasks(tasks, time.Now()), nil
 }
 
+// reportLineBreak ends a line of a line-oriented report. A chat report is a
+// list of facts, not prose, so every one of its newlines is a real break;
+// plain "\n" is CommonMark's soft wrap, which a Markdown-rendering channel
+// joins into one run-on paragraph (see the Telegram renderer's
+// markdownBlockParser).
+const reportLineBreak = "  \n"
+
+// parkReasonMaxRunes bounds the park reason shown per task. A reason carries
+// whatever the failing stage reported, which for a lint or test gate is a
+// whole tool log; unbounded, one parked task pushes every other task out of
+// the reply.
+const parkReasonMaxRunes = 160
+
+// summarizeParkReason reduces a park reason to one readable line: the first
+// non-empty line, bounded. The full reason stays on the task, which /task and
+// the dashboard show in full -- this is the list view.
+func summarizeParkReason(reason string) string {
+	line := reason
+	if first, _, ok := strings.Cut(reason, "\n"); ok {
+		line = first
+	}
+	line = strings.TrimSpace(line)
+	if line == "" {
+		line = strings.TrimSpace(reason)
+	}
+	runes := []rune(line)
+	if len(runes) <= parkReasonMaxRunes {
+		return line
+	}
+	return strings.TrimSpace(string(runes[:parkReasonMaxRunes])) + "..."
+}
+
 // formatTasks renders each task with enough identity and state to act on
 // it: id, title, status, workflow/stage, and age since its last
 // transition -- so a task that is running but stuck (old UpdatedAt) reads
@@ -642,7 +674,7 @@ func formatTasks(tasks []ChatTaskSummary, now time.Time) string {
 		if d, ok := taskStateDisplays[t.Status]; ok {
 			icon, label = d.icon, d.label
 		}
-		fmt.Fprintf(&b, "%s #%d %s\n", icon, t.ID, t.Title)
+		fmt.Fprintf(&b, "%s #%d %s%s", icon, t.ID, t.Title, reportLineBreak)
 		fmt.Fprintf(&b, "  %s", label)
 		if stage := workflowStage(t.Workflow, t.Stage); stage != "" {
 			fmt.Fprintf(&b, " · %s", stage)
@@ -653,10 +685,10 @@ func formatTasks(tasks []ChatTaskSummary, now time.Time) string {
 		if age := relativeAge(t.UpdatedAt, now); age != "" {
 			fmt.Fprintf(&b, " · updated %s", age)
 		}
-		b.WriteString("\n")
 		if t.Status == taskstate.Parked && t.ParkReason != "" {
-			fmt.Fprintf(&b, "  ↳ %s\n", t.ParkReason)
+			fmt.Fprintf(&b, "%s  ↳ %s", reportLineBreak, summarizeParkReason(t.ParkReason))
 		}
+		b.WriteString("\n\n")
 	}
 	return strings.TrimSpace(b.String())
 }
@@ -796,19 +828,22 @@ func extractRuntimeInfo(models ModelManager) (provider, model string) {
 	return formatProviderName(provider), model
 }
 
+// formatRuntimeSection appends the active provider and model as two more
+// report lines. They are not given a section header of their own: /status is
+// four facts, and a header for the last two made a short report read like a
+// document.
 func formatRuntimeSection(b *strings.Builder, provider, model string) {
-	b.WriteString("\nRuntime\n")
 	if provider == "" && model == "" {
-		b.WriteString("Not configured\n")
+		b.WriteString("Runtime: not configured")
 		return
 	}
 	if provider == "" {
-		provider = "Not configured"
+		provider = "not configured"
 	}
 	if model == "" {
-		model = "Not configured"
+		model = "not configured"
 	}
-	fmt.Fprintf(b, "Provider: %s\nModel: %s\n", provider, model)
+	fmt.Fprintf(b, "Provider: %s%sModel: %s", provider, reportLineBreak, model)
 }
 
 // formatStatus formats daemon health into a clean, mobile-friendly summary.
@@ -819,11 +854,12 @@ func formatStatus(counts map[string]int, models ModelManager) string {
 	var b strings.Builder
 	b.WriteString("📊 Archie status\n\n")
 	b.WriteString(formatQueueDepth(counts))
+	b.WriteString(reportLineBreak)
 
 	provider, model := extractRuntimeInfo(models)
 	formatRuntimeSection(&b, provider, model)
 
-	return strings.TrimSpace(b.String())
+	return b.String()
 }
 
 // formatQueueDepth summarizes in-flight work as one line: how many tasks
@@ -836,7 +872,7 @@ func formatQueueDepth(counts map[string]int) string {
 	parked := counts[taskstate.Parked]
 	inFlight := running + waiting + parked
 	if inFlight == 0 {
-		return "Queue: idle\n"
+		return "Queue: idle"
 	}
 	var parts []string
 	if running > 0 {
@@ -848,7 +884,7 @@ func formatQueueDepth(counts map[string]int) string {
 	if parked > 0 {
 		parts = append(parts, fmt.Sprintf("%d parked", parked))
 	}
-	return fmt.Sprintf("Queue: %d in flight (%s)\n", inFlight, strings.Join(parts, ", "))
+	return fmt.Sprintf("Queue: %d in flight (%s)", inFlight, strings.Join(parts, ", "))
 }
 
 func (r *Router) handleWhoami() (string, error) {
