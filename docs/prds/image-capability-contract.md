@@ -455,3 +455,33 @@ grep:
 | Telegram delivery | `internal/channels/telegram/media.go` | none — already handles `"image"` |
 | Dashboard delivery | `internal/webui/api_chat.go` | none in this epic — tracked separately (archie-core-1786748942243-6-f109697e) |
 | docs | `docs/` user-facing guide (#502) | new, against this design |
+
+## Execution: multi-agent team breakdown
+
+Each row is independently implementable from its own section above plus the
+call-site inventory — an implementer does not need this whole document
+re-explained, only its row. Lenses are picked from
+`.claude/workflows/council.js` (`boundary`, `contract`, `deletionist`,
+`operator`, `maintainer`) by what each slice actually risks getting wrong,
+not all five by default.
+
+| sub-feature | issue | implementer scope (call-site rows) | suggested lenses | why |
+|---|---|---|---|---|
+| Hosted provider | #498 | `internal/infrastructure/image/openai/*.go` (generate via ai-sdk, edit via direct HTTP client) | `lens-contract`, `lens-operator` | contract: the error-mapping table must actually produce the sentinels it claims, not leak ai-sdk/HTTP errors raw; operator: a live paid API's rate-limit/timeout/auth-failure paths are exactly the 3am-unattended-host case this lens exists for |
+| Local GPU provider | #499 | `internal/infrastructure/image/comfyui/*.go` (submit/poll against ComfyUI) | `lens-operator`, `lens-deletionist` | operator: backend-down, workflow-missing, and stuck-job failure modes on a host the operator's GPU actually runs; deletionist: a second, unevidenced "recipe" added later without real-hardware proof is exactly the speculative scaffolding this lens rejects |
+| `/image` routing | #500 | `internal/domain/messaging/commands.go`, `internal/gateway/gateway.go` (`Router.Images`, `handleImage`) | `lens-boundary`, `lens-maintainer` | boundary: a new `Router` field and its dependency on `image.Registry` must respect the same layering `Models`/`Tasks`/`Controller` already do; maintainer: this is the first local command with an explicit ask-once clarification exchange, not a single-shot reply — legibility for the next person who adds a command matters here |
+| Delivery + autonomous tool | #501 | `internal/tools/image/tool.go`, `internal/app/archied/bootstrap.go` (`registerImageTool`) | `lens-deletionist`, `lens-contract` | deletionist: the whole point of this section is "reuse `generate_video`'s pipeline, do not rebuild it" — this lens is the check that the implementation actually did that; contract: the new tool's `MultimodalResult`/`MediaRef{Type: "image"}` output must match the shape `multimodalMediaRefs` already decodes, not a near-miss |
+
+Run `/council --lenses <picked>` once a row's implementation is gate-clean
+(`task check` passing), before opening its PR — same timing as any other
+open-decision residue at the end of a session, not a standing per-commit
+gate.
+
+## File and link the beads
+
+`#498`–`#501` already exist (bd `archie-core-1786748942169-3-ae7cfaea`,
+`…-219-5-9844a72e`, `…-193-4-5072b564`, `…-243-6-f109697e`), filed under
+epic #496 before this document's decisions were made. Each one's
+description now links back to its matching section above instead of
+restating it, and carries its row from the Execution table above so picking
+it up needs no round-trip back to this document.
