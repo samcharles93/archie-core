@@ -155,27 +155,6 @@ func (p *Provider) Discover(ctx context.Context) ([]tools.ToolEntry, error) {
 	return entries, nil
 }
 
-// Health reports transport state.
-func (p *Provider) Health(context.Context) plugin.Health {
-	if p.name == "" || p.segment == "" {
-		return plugin.Health{Status: plugin.HealthUnhealthy, Message: "MCP server name is invalid"}
-	}
-	if isNilTransport(p.transport) {
-		return plugin.Health{Status: plugin.HealthUnhealthy, Message: "MCP transport is not configured"}
-	}
-	state := p.transport.State()
-	switch state {
-	case protocol.StateRunning:
-		return plugin.Health{Status: plugin.HealthHealthy}
-	case protocol.StateStarting, protocol.StateStopping:
-		return plugin.Health{Status: plugin.HealthDegraded, Message: "MCP transport is " + state.String()}
-	case protocol.StateStopped, protocol.StateError:
-		return plugin.Health{Status: plugin.HealthUnhealthy, Message: "MCP transport is " + state.String()}
-	default:
-		return plugin.Health{Status: plugin.HealthUnhealthy, Message: "MCP transport state is unknown"}
-	}
-}
-
 // Stop stops the MCP transport and removes any media files written during
 // this provider's lifetime.
 func (p *Provider) Stop(ctx context.Context) error {

@@ -355,9 +355,6 @@ func TestAdaptLegacyCreatesMetadataOnlyLifecycleModule(t *testing.T) {
 	if err := module.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if health := module.Health(context.Background()); health.Status != plugin.HealthHealthy {
-		t.Fatalf("legacy health = %+v, want healthy", health)
-	}
 	if err := module.Stop(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -429,8 +426,6 @@ type fakeModule struct {
 	stopContextErrors    []error
 	startPanic           bool
 	stopPanic            bool
-	healthPanic          bool
-	health               plugin.Health
 	manifestPanic        bool
 }
 
@@ -468,13 +463,6 @@ func (m *fakeModule) Start(context.Context) error {
 		panic("start panic")
 	}
 	return m.startErr
-}
-
-func (m *fakeModule) Health(context.Context) plugin.Health {
-	if m.healthPanic {
-		panic("health panic")
-	}
-	return m.health
 }
 
 func (m *fakeModule) Stop(ctx context.Context) error {

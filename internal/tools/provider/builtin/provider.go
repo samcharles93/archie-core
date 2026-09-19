@@ -119,23 +119,6 @@ func (p *Provider) Discover(ctx context.Context) ([]tools.ToolEntry, error) {
 	return entries, nil
 }
 
-// Health reports whether the tools were constructed.
-func (p *Provider) Health(context.Context) plugin.Health {
-	if p.workspace == "" {
-		return plugin.Health{
-			Status:  plugin.HealthUnhealthy,
-			Message: "workspace directory is not configured",
-		}
-	}
-	if p.registry == nil {
-		return plugin.Health{
-			Status:  plugin.HealthUnhealthy,
-			Message: "workspace tools are not started",
-		}
-	}
-	return plugin.Health{Status: plugin.HealthHealthy}
-}
-
 // Stop releases the constructed tools.
 func (p *Provider) Stop(context.Context) error {
 	p.registry = nil

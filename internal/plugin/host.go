@@ -178,40 +178,11 @@ func validateIdentifiers(kind string, values []string, required bool) error {
 	return nil
 }
 
-// LifecycleState is the host-owned state of a module.
-type LifecycleState string
-
-const (
-	StateRegistered LifecycleState = "registered"
-	StateStarting   LifecycleState = "starting"
-	StateRunning    LifecycleState = "running"
-	StateStopping   LifecycleState = "stopping"
-	StateStopped    LifecycleState = "stopped"
-	StateFailed     LifecycleState = "failed"
-)
-
-// HealthStatus is a module's self-reported operational health.
-type HealthStatus string
-
-const (
-	HealthUnknown   HealthStatus = "unknown"
-	HealthHealthy   HealthStatus = "healthy"
-	HealthDegraded  HealthStatus = "degraded"
-	HealthUnhealthy HealthStatus = "unhealthy"
-)
-
-// Health is a point-in-time module health report.
-type Health struct {
-	Status  HealthStatus
-	Message string
-}
-
 // Module is the capability host's metadata and lifecycle contract. Domain
 // operations belong to typed capability-family interfaces, not here.
 type Module interface {
 	Manifest() Manifest
 	Start(context.Context) error
-	Health(context.Context) Health
 	Stop(context.Context) error
 }
 
@@ -249,10 +220,6 @@ func (m *legacyModule) Start(context.Context) error {
 	return nil
 }
 
-func (m *legacyModule) Health(context.Context) Health {
-	return Health{Status: HealthHealthy}
-}
-
 func (m *legacyModule) Stop(context.Context) error {
 	return nil
 }
@@ -271,7 +238,6 @@ const (
 type registeredModule struct {
 	module   Module
 	manifest Manifest
-	state    LifecycleState
 }
 
 // Host validates module manifests and coordinates cross-family lifecycle.
@@ -321,7 +287,6 @@ func (h *Host) Register(module Module) error {
 	h.modules[manifest.ID] = &registeredModule{
 		module:   module,
 		manifest: manifest,
-		state:    StateRegistered,
 	}
 	h.registration = append(h.registration, manifest.ID)
 	return nil
@@ -353,22 +318,18 @@ func (h *Host) Start(ctx context.Context) error {
 
 	started := make([]string, 0, len(order))
 	for _, id := range order {
-		h.setModuleState(id, StateStarting)
 		module := h.module(id)
 		if err := safeStart(ctx, id, module); err != nil {
-			h.setModuleState(id, StateFailed)
 			rollback := append(append([]string(nil), started...), id)
 			rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
 			failedStops, rollbackErr := h.stopIDs(rollbackCtx, reverseClone(rollback))
 			cancel()
-			h.setModuleState(id, StateFailed)
 			h.mu.Lock()
 			h.started = reverseClone(failedStops)
 			h.state = hostFailed
 			h.mu.Unlock()
 			return errors.Join(err, rollbackErr)
 		}
-		h.setModuleState(id, StateRunning)
 		started = append(started, id)
 	}
 
@@ -449,14 +410,11 @@ func (h *Host) stopIDs(ctx context.Context, ids []string) ([]string, error) {
 	var errs []error
 	var failed []string
 	for _, id := range ids {
-		h.setModuleState(id, StateStopping)
 		if err := safeStop(ctx, id, h.module(id)); err != nil {
-			h.setModuleState(id, StateFailed)
 			failed = append(failed, id)
 			errs = append(errs, err)
 			continue
 		}
-		h.setModuleState(id, StateStopped)
 	}
 	return failed, errors.Join(errs...)
 }
@@ -465,12 +423,6 @@ func (h *Host) module(id string) Module {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.modules[id].module
-}
-
-func (h *Host) setModuleState(id string, state LifecycleState) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.modules[id].state = state
 }
 
 func (h *Host) ensureModulesLocked() {

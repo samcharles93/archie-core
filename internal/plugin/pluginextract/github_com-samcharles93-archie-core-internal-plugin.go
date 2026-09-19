@@ -13,27 +13,14 @@ import (
 func init() {
 	Symbols["github.com/samcharles93/archie-core/internal/plugin/plugin"] = map[string]reflect.Value{
 		// function, constant and variable definitions
-		"AdaptLegacy":     reflect.ValueOf(plugin.AdaptLegacy),
-		"HealthDegraded":  reflect.ValueOf(plugin.HealthDegraded),
-		"HealthHealthy":   reflect.ValueOf(plugin.HealthHealthy),
-		"HealthUnhealthy": reflect.ValueOf(plugin.HealthUnhealthy),
-		"HealthUnknown":   reflect.ValueOf(plugin.HealthUnknown),
-		"HostAPIVersion":  reflect.ValueOf(constant.MakeFromLiteral("\"1.0.0\"", token.STRING, 0)),
-		"LoadDir":         reflect.ValueOf(plugin.LoadDir),
-		"NewHost":         reflect.ValueOf(plugin.NewHost),
-		"StateFailed":     reflect.ValueOf(plugin.StateFailed),
-		"StateRegistered": reflect.ValueOf(plugin.StateRegistered),
-		"StateRunning":    reflect.ValueOf(plugin.StateRunning),
-		"StateStarting":   reflect.ValueOf(plugin.StateStarting),
-		"StateStopped":    reflect.ValueOf(plugin.StateStopped),
-		"StateStopping":   reflect.ValueOf(plugin.StateStopping),
+		"AdaptLegacy":    reflect.ValueOf(plugin.AdaptLegacy),
+		"HostAPIVersion": reflect.ValueOf(constant.MakeFromLiteral("\"1.0.0\"", token.STRING, 0)),
+		"LoadDir":        reflect.ValueOf(plugin.LoadDir),
+		"NewHost":        reflect.ValueOf(plugin.NewHost),
 
 		// type definitions
 		"CapabilityKind": reflect.ValueOf((*plugin.CapabilityKind)(nil)),
-		"Health":         reflect.ValueOf((*plugin.Health)(nil)),
-		"HealthStatus":   reflect.ValueOf((*plugin.HealthStatus)(nil)),
 		"Host":           reflect.ValueOf((*plugin.Host)(nil)),
-		"LifecycleState": reflect.ValueOf((*plugin.LifecycleState)(nil)),
 		"Manifest":       reflect.ValueOf((*plugin.Manifest)(nil)),
 		"Module":         reflect.ValueOf((*plugin.Module)(nil)),
 		"Permission":     reflect.ValueOf((*plugin.Permission)(nil)),
@@ -49,18 +36,11 @@ func init() {
 // _github_com_samcharles93_archie_core_internal_plugin_Module is an interface wrapper for Module type
 type _github_com_samcharles93_archie_core_internal_plugin_Module struct {
 	IValue    interface{}
-	WHealth   func(a0 context.Context) plugin.Health
 	WManifest func() plugin.Manifest
 	WStart    func(a0 context.Context) error
 	WStop     func(a0 context.Context) error
 }
 
-func (W _github_com_samcharles93_archie_core_internal_plugin_Module) Health(a0 context.Context) plugin.Health {
-	if W.WHealth == nil {
-		return plugin.Health{}
-	}
-	return W.WHealth(a0)
-}
 func (W _github_com_samcharles93_archie_core_internal_plugin_Module) Manifest() plugin.Manifest {
 	if W.WManifest == nil {
 		return plugin.Manifest{}

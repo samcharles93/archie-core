@@ -354,38 +354,6 @@ func TestRegistryStartupRollbackUsesBoundedDetachedContext(t *testing.T) {
 	}
 }
 
-func TestRegistryHealthAggregatesProviderHealthAndPanics(t *testing.T) {
-	tests := []struct {
-		name   string
-		health plugin.Health
-		panic  any
-		want   plugin.HealthStatus
-	}{
-		{name: "healthy", health: plugin.Health{Status: plugin.HealthHealthy}, want: plugin.HealthHealthy},
-		{name: "degraded", health: plugin.Health{Status: plugin.HealthDegraded}, want: plugin.HealthDegraded},
-		{name: "unhealthy", health: plugin.Health{Status: plugin.HealthUnhealthy}, want: plugin.HealthUnhealthy},
-		{name: "panic", panic: "health panic", want: plugin.HealthUnhealthy},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			registry := NewRegistry(tools.NewRegistry())
-			engine := newFakeEngine("health")
-			engine.health = tt.health
-			engine.healthPanic = tt.panic
-			if err := registry.Register(engine); err != nil {
-				t.Fatal(err)
-			}
-			if err := registry.Start(context.Background()); err != nil {
-				t.Fatal(err)
-			}
-			if got := registry.Health(context.Background()).Status; got != tt.want {
-				t.Fatalf("Health().Status = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
 type fakeEngine struct {
 	manifest             plugin.Manifest
 	tools                []tools.ToolEntry
@@ -396,8 +364,6 @@ type fakeEngine struct {
 	startPanic           any
 	discoverPanic        any
 	stopPanic            any
-	healthPanic          any
-	health               plugin.Health
 	startCount           int
 	discoverCount        int
 	stopCount            int
@@ -409,7 +375,6 @@ type fakeEngine struct {
 func newFakeEngine(id string) *fakeEngine {
 	return &fakeEngine{
 		manifest: testManifest(id, []plugin.CapabilityKind{"tools"}, nil),
-		health:   plugin.Health{Status: plugin.HealthHealthy},
 	}
 }
 
@@ -454,13 +419,6 @@ func (e *fakeEngine) Discover(context.Context) ([]tools.ToolEntry, error) {
 		panic(e.discoverPanic)
 	}
 	return e.tools, e.discoverErr
-}
-
-func (e *fakeEngine) Health(context.Context) plugin.Health {
-	if e.healthPanic != nil {
-		panic(e.healthPanic)
-	}
-	return e.health
 }
 
 func (e *fakeEngine) Stop(ctx context.Context) error {
