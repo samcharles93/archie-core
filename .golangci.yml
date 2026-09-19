@@ -114,6 +114,12 @@ linters:
           - maintidx
 
 formatters:
+  # goimports is deliberately absent. golangci-lint's goimports formatter
+  # builds a fresh x/tools ProcessEnv per file, so internal/imports re-reads
+  # and re-parses $GOMODCACHE's module index once per file -- 63 MiB here,
+  # ~155ms each, ~135s across this tree, and again on a cold `golangci-lint
+  # run`. gofumpt and gci cover formatting and grouping; a missing or unused
+  # import is a compile error, and formatter drift is reported by run itself.
   enable:
     - gofumpt
     - gci
