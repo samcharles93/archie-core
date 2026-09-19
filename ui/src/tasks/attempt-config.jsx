@@ -9,6 +9,12 @@
 // newest attempt's configuration on every attempt, which is exactly the
 // merge-attempts bug the attempt column exists to prevent.
 
+// The schema name is owned by the daemon (events.ConfigCapturedSchema in
+// internal/events/events.go). A payload in an unrecognised schema is shown
+// verbatim with a note rather than reinterpreted, so a server-side bump
+// degrades to the raw view instead of rendering something wrong. The literal is
+// pinned on both sides (internal/events/events_test.go and
+// ui/test/attempt-config.test.js) so a one-sided rename fails.
 export const CONFIG_SCHEMA = "archie/task-config@1";
 
 export function selectConfigEvent(events, attempt) {

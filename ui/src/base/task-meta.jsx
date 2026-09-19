@@ -8,6 +8,20 @@
 // keep working when archied is unreachable; loadTaskMeta() replaces them with
 // the live catalog as soon as it arrives. They must match the backend catalog
 // so drawing the page never flashes a stale label.
+//
+// loadTaskMeta() is called once at boot by main.jsx, and that call is the whole
+// mechanism: without it these accessors serve the snapshot forever and a
+// catalogue change on the server never reaches the browser, however true the
+// paragraph above reads.
+//
+// The dashboard draws a line here between two kinds of vocabulary. Anything
+// that is *presentation* -- a status's label, pill severity and "needs you"
+// grouping, or a control's label and confirm prompt -- is served, because the
+// server owns the words as well as the ids. A wire id the daemon produces and
+// the dashboard merely labels is mirrored instead, with a literal pin on each
+// side so a one-sided rename fails a test rather than drifting quietly: see
+// tasks/changed-files.jsx (FILE_STATUS) and tasks/attempt-config.jsx
+// (CONFIG_SCHEMA).
 import { api } from "./api.jsx";
 
 const DEFAULT_STATUSES = [

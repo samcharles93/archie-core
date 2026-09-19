@@ -14,15 +14,14 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
-	"github.com/samcharles93/archie-core/internal/gateway"
 )
 
 // These aliases keep Telegram's public configuration surface source
 // compatible while making the authority contract reusable by other
 // interactive adapters such as the Web UI.
 type (
-	DangerousCommandAuthority = gateway.DangerousCommandAuthority
-	CheckpointInfo            = gateway.CheckpointInfo
+	DangerousCommandAuthority = messaging.DangerousCommandAuthority
+	CheckpointInfo            = messaging.CheckpointInfo
 )
 
 // ── dangerous command approval system ─────────────────────────────
@@ -419,53 +418,26 @@ func rollbackApprovalText(num int) string {
 // with exec.CommandContext is killed with the turn, which is the case that
 // matters. Whatever the reply had already streamed stays on screen: it is
 // the record of what Archie did before being stopped.
-func (g *Gateway) stopCurrentTurn(ctx context.Context, b *bot.Bot, msg *models.Message, router *gateway.Router) {
+func (g *Gateway) stopCurrentTurn(ctx context.Context, b *bot.Bot, msg *models.Message, client messaging.ChatContract) {
 	var cancelled bool
 	var dropped int
 
-	// turns is only built by launch, so a gateway that has never started
-	// simply has nothing to stop. Report that rather than failing.
-	if g.turns != nil && router != nil {
-		session, err := router.ResolveSessionKey(ctx, gateway.Inbound{Message: messaging.Message{
-			ConversationID: conversationID(msg),
-			Sender:         msg.From.Username,
-			Role:           messaging.RoleUser,
-			Text:           msg.Text,
-		}})
-		if err != nil {
-			g.log.Error("resolve session for stop", "error", err)
-			g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, "❌ Could not resolve this conversation's session.")
-			return
-		}
+	session := conversationID(msg).String()
+	if g.turns != nil {
 		cancelled, dropped = g.turns.Stop(session)
 		g.log.Info("stop requested", "session", session, "cancelled", cancelled, "dropped", dropped)
 	}
-
-	// The brake covers agent tasks as well as the conversation. Someone
-	// reaching for it wants everything to stop, and should not have to
-	// know a task ID -- or which of the two is currently misbehaving.
-	stoppedTasks := g.stopRunningTasks(ctx, router)
+	if client != nil {
+		if res, err := client.Cancel(ctx, session); err == nil {
+			if res.Cancelled {
+				cancelled = true
+			}
+			dropped += res.Dropped
+		}
+	}
 
 	g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID,
-		stopReport(cancelled, dropped, stoppedTasks))
-}
-
-// stopRunningTasks interrupts the agent tasks currently executing and
-// returns their IDs. A failure here is logged and reported as none
-// stopped: /stop must still do whatever else it can.
-func (g *Gateway) stopRunningTasks(ctx context.Context, router *gateway.Router) []int64 {
-	if router == nil || router.Controller == nil {
-		return nil
-	}
-	stopped, err := router.Controller.StopRunning(ctx, router.Identity)
-	if err != nil {
-		g.log.Warn("stop running tasks failed", "error", err)
-		return nil
-	}
-	if len(stopped) > 0 {
-		g.log.Info("stopped running tasks", "tasks", stopped)
-	}
-	return stopped
+		stopReport(cancelled, dropped, nil))
 }
 
 // stopReport describes what a /stop actually stopped.
@@ -516,7 +488,7 @@ func joinWithAnd(parts []string) string {
 //
 // /stop <process-name> keeps the original behaviour of terminating a named
 // background process, which is destructive and still requires approval.
-func (g *Gateway) stopHandler(router *gateway.Router) bot.HandlerFunc {
+func (g *Gateway) stopHandler(client messaging.ChatContract) bot.HandlerFunc {
 	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
 		msg, ok := g.authorizedMessage(ctx, b, update)
 		if !ok {
@@ -525,7 +497,7 @@ func (g *Gateway) stopHandler(router *gateway.Router) bot.HandlerFunc {
 
 		rest := strings.TrimSpace(restAfterTelegram(msg.Text, "/stop", ""))
 		if rest == "" {
-			g.stopCurrentTurn(ctx, b, msg, router)
+			g.stopCurrentTurn(ctx, b, msg, client)
 			return
 		}
 

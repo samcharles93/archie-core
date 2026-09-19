@@ -21,6 +21,13 @@ type ConversationID struct {
 	ThreadID  string
 }
 
+func (c ConversationID) String() string {
+	if c.ThreadID == "" {
+		return c.ChannelID
+	}
+	return c.ChannelID + "/" + c.ThreadID
+}
+
 // MessageID is the canonical, immutable identifier for a Message. Once
 // assigned it never changes, including across branch and fork operations —
 // a forked transcript references the original MessageID it branched from
