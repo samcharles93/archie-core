@@ -64,8 +64,12 @@ jobs:
         with:
           node-version: "22"
 
+      # Pinned, not @latest: this gate rewrites formatting with the standalone
+      # gofumpt, and the agent image that gates PRs re-checks it with the
+      # gofumpt bundled in its golangci-lint. Those two versions must agree
+      # (see Dockerfile), or a PR passes here and fails there unfixably.
       - name: Install gofumpt
-        run: go install mvdan.cc/gofumpt@latest
+        run: go install mvdan.cc/gofumpt@v0.11.0
 
       - name: Install protobuf tools
         run: bash tools/proto.sh install

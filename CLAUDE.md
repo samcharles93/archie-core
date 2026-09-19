@@ -85,6 +85,10 @@ automatically and note it in the handoff.
 
 Commands are defined in `Taskfile.yml` (requires Go 1.27.0,
 [Task](https://taskfile.dev), `gofumpt`, `golangci-lint`, and Node/npm).
+Install `gofumpt` and `golangci-lint` as the pinned pair from `Dockerfile`,
+never `@latest` for either: `task fmt` formats with the standalone gofumpt
+while `task lint` re-checks it with the gofumpt golangci-lint vendors, so a
+version mismatch makes `task check` unsatisfiable.
 
 ```bash
 task build      # build archied and archie-agent binaries into bin/
