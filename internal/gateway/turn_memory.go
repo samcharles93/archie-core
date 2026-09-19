@@ -54,15 +54,25 @@ func renderMemory(ctx context.Context, store MemoryStore, subject domainmemory.S
 		}
 	}()
 
-	records, err := store.Query(ctx, domainmemory.Query{
-		Scopes: subject.Scopes(),
-		Limit:  memoryRecordsPerScope * len(subject.Scopes()),
-	})
-	if err != nil {
-		if log != nil {
-			log.Warn("chat memory read failed; continuing without a memory block", "err", err)
+	// One Query per scope, each capped at memoryRecordsPerScope: BuiltinEngine.
+	// Query bounds q.Limit across the whole result, not per scope it is given,
+	// so a single call across all of subject.Scopes() would let an early scope
+	// (agent-user is queried first) exhaust the entire budget and starve the
+	// later, wider scopes. Scopes() is already ordered most-specific-first, so
+	// appending each scope's results in order preserves that ordering.
+	var records []domainmemory.Record
+	for _, scope := range subject.Scopes() {
+		heads, err := store.Query(ctx, domainmemory.Query{
+			Scopes: []domainmemory.Scope{scope},
+			Limit:  memoryRecordsPerScope,
+		})
+		if err != nil {
+			if log != nil {
+				log.Warn("chat memory read failed; continuing without a memory block", "err", err)
+			}
+			return ""
 		}
-		return ""
+		records = append(records, heads...)
 	}
 	return renderMemoryRecords(records, log)
 }
@@ -73,15 +83,25 @@ func renderMemory(ctx context.Context, store MemoryStore, subject domainmemory.S
 // truth for addressing. A record whose line would push the block past
 // memoryBlockByteCap is dropped and logged rather than truncated mid-line,
 // so a partial block is never mistaken for a complete or a corrupted one.
+//
+// The cap is measured against each line's *escaped* size -- what
+// BuildSystemPrompt's `{{xml .Memory}}` will expand it to -- not its raw
+// size, because escapeXML can grow a byte fivefold ("&" -> "&amp;") and an
+// unescaped-size cap would let the rendered prompt exceed it by that factor.
+// The block itself still accumulates the raw (unescaped) lines: the template
+// escapes once on render, so escaping here too would double-escape it.
 func renderMemoryRecords(records []domainmemory.Record, log *slog.Logger) string {
 	var b strings.Builder
+	escapedLen := 0
 	dropped := 0
 	for _, record := range records {
 		line := fmt.Sprintf("- [%s] (%s, %s) %s\n", record.ID, record.Scope.Kind, record.Kind, record.Content)
-		if b.Len()+len(line) > memoryBlockByteCap {
+		next := escapedLen + len(escapeXML(line))
+		if next > memoryBlockByteCap {
 			dropped++
 			continue
 		}
+		escapedLen = next
 		b.WriteString(line)
 	}
 	if dropped > 0 && log != nil {

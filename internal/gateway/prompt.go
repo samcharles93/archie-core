@@ -81,13 +81,19 @@ type promptData struct {
 	Date string
 }
 
+// escapeXML replaces the three bytes that would otherwise be read as markup
+// inside a trust="data" block. Exported within the package so callers that
+// must bound a block's *rendered* size (turn_memory.go's byte cap) measure
+// the same expansion the template applies, rather than the pre-escape size.
+var escapeXML = strings.NewReplacer(
+	"&", "&amp;",
+	"<", "&lt;",
+	">", "&gt;",
+).Replace
+
 var archiePromptTemplate = template.Must(
 	template.New("archie").
-		Funcs(template.FuncMap{"xml": strings.NewReplacer(
-			"&", "&amp;",
-			"<", "&lt;",
-			">", "&gt;",
-		).Replace}).
+		Funcs(template.FuncMap{"xml": escapeXML}).
 		Parse(archiePromptTpl),
 )
 

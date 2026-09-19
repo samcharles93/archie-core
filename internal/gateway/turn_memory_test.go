@@ -324,6 +324,74 @@ func TestRenderMemoryRecordsCapsLoudly(t *testing.T) {
 	}
 }
 
+// TestRenderMemoryEnforcesPerScopeQuota guards against BuiltinEngine.Query's
+// Limit being a total across the scopes it is given, not per scope: a query
+// issued once across all four scopes with Limit = memoryRecordsPerScope *
+// len(scopes) would let an early scope (agent-user, queried first) consume
+// the whole budget and starve every later, wider scope. renderMemory must
+// query each scope separately so a scope with many records cannot crowd out
+// another scope's records.
+func TestRenderMemoryEnforcesPerScopeQuota(t *testing.T) {
+	engine := newMemoryTestEngine(t)
+	ctx := context.Background()
+
+	// Flood agent-user scope with far more than memoryRecordsPerScope
+	// records -- enough that, under a shared total limit, they alone would
+	// exhaust it.
+	for i := range memoryRecordsPerScope * 4 {
+		if _, err := engine.Create(ctx, domainmemory.NewRecord{
+			Scope:   domainmemory.Scope{Kind: domainmemory.ScopeAgentUser, Agent: "archie", User: "alice"},
+			Kind:    "note",
+			Content: fmt.Sprintf("agent-user filler %d", i),
+			Author:  "test",
+		}); err != nil {
+			t.Fatalf("Create(agent-user filler %d) error = %v", i, err)
+		}
+	}
+	if _, err := engine.Create(ctx, domainmemory.NewRecord{
+		Scope: domainmemory.Scope{Kind: domainmemory.ScopeGlobal}, Kind: "note",
+		Content: "global fact that must survive the flood", Author: "test",
+	}); err != nil {
+		t.Fatalf("Create(global) error = %v", err)
+	}
+
+	runner, prepared := newMemoryTestRunner(t, engine, telegramIdentity, "archie")
+	if _, err := runner.Run(ctx, chatMsg("s1", "chat-alice", "alice", "hi"), nil); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	prompt := lastSystemPrompt(prepared)
+	if !strings.Contains(prompt, "global fact that must survive the flood") {
+		t.Fatalf("global scope was starved by agent-user scope's record volume, prompt = %q", prompt)
+	}
+}
+
+// TestRenderMemoryRecordsCapBoundsEscapedSize is the escaping half of
+// acceptance criterion 8: BuildSystemPrompt's `{{xml .Memory}}` expands "&",
+// "<" and ">" up to fivefold after renderMemoryRecords applies its cap, so
+// the cap must bound the *escaped* size the template will actually produce,
+// not the pre-escape size renderMemoryRecords returns.
+func TestRenderMemoryRecordsCapBoundsEscapedSize(t *testing.T) {
+	var records []domainmemory.Record
+	for i := range 500 {
+		records = append(records, domainmemory.Record{
+			ID:    domainmemory.RecordID(fmt.Sprintf("rec-%d", i)),
+			Scope: domainmemory.Scope{Kind: domainmemory.ScopeGlobal},
+			Kind:  "note",
+			// Every byte is one that escapeXML expands, so a cap measured on
+			// the raw (unescaped) size would let the escaped size through at
+			// up to 4x the intended bound.
+			Content: strings.Repeat("&", 100),
+		})
+	}
+
+	got := renderMemoryRecords(records, slog.New(slog.DiscardHandler))
+	escaped := escapeXML(got)
+	if len(escaped) > memoryBlockByteCap {
+		t.Fatalf("escaped block = %d bytes, want <= %d (the size BuildSystemPrompt actually renders)", len(escaped), memoryBlockByteCap)
+	}
+}
+
 // TestRenderMemoryNilStoreIsANoOp guards the nil-engine composition case
 // (setupMemoryEngine failed or was never reached): a nil MemoryEngine must
 // not panic prepareTurn.
