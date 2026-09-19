@@ -12,7 +12,7 @@ import (
 
 	"github.com/go-telegram/bot/models"
 
-	"github.com/samcharles93/archie-core/internal/gateway"
+	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
 // ── DangerousCommandAuthority stub ─────────────────────────────
@@ -407,7 +407,7 @@ func TestStopCancelsRunningChatTurn(t *testing.T) {
 	g := New("1:test", []int64{allowedUserID}, slog.Default())
 
 	ctx := t.Context()
-	g.turns = gateway.NewTurns(slog.Default())
+	g.turns = messaging.NewTurns(slog.Default())
 
 	// stopCurrentTurn resolves the session through the router; with none
 	// wired, drive the lane directly and assert on the lane's state.

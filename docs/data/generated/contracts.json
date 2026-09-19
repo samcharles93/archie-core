@@ -304,73 +304,57 @@
     },
     "MessageEvent": {
       "additionalProperties": false,
-      "description": "MessageEvent is the rich message model for all gateway channels.",
+      "description": "MessageEvent is the rich message model for gateway channels.",
       "properties": {
         "callback_data": {
-          "description": "CallbackData is the payload from a button or inline-keyboard\npress (Type == MsgCallback).",
           "type": "string"
         },
         "channel_id": {
-          "description": "ChannelID identifies the conversation within the platform\n(chat ID, channel name, DM thread).",
           "type": "string"
         },
         "edited_from": {
-          "description": "EditedFrom is the original text before the edit. Set only when\nType is MsgEdited.",
           "type": "string"
         },
         "id": {
-          "description": "ID is the platform-assigned message identifier. Used for reply\nthreading, reactions, and edit/delete tracking.",
           "type": "string"
         },
         "media": {
-          "description": "Media holds attached files. Nil for text-only messages.",
           "items": {
             "$ref": "#/schemas/MediaAttachment"
           },
           "type": "array"
         },
         "platform": {
-          "description": "Platform names the source adapter (\"telegram\", \"discord\",\n\"web\", \"slack\").",
           "type": "string"
         },
         "raw": {
-          "description": "Raw is the original platform-specific payload. Adapters set\nthis for debug logging or handlers that need platform details\nnot captured by the generic fields.",
           "type": "object"
         },
         "reacted_to_id": {
-          "description": "ReactedToID is the message being reacted to.",
           "type": "string"
         },
         "reaction": {
-          "description": "Reaction is the emoji used when Type is MsgReaction.",
           "type": "string"
         },
         "reply_to_id": {
-          "description": "ReplyToID is the platform message ID this message is in reply\nto. Empty for top-level messages.",
           "type": "string"
         },
         "sender_id": {
-          "description": "SenderID is the platform-specific sender identifier.",
           "type": "string"
         },
         "sender_name": {
-          "description": "SenderName is the display name when available.",
           "type": "string"
         },
         "text": {
-          "description": "Text is the human-readable message body. It carries the caption\nfor media messages and the full content for text and system\nmessages.",
           "type": "string"
         },
         "thread_id": {
-          "description": "ThreadID identifies the conversation thread for platforms that\nsupport threading (Slack, Discord forums).",
           "type": "string"
         },
         "timestamp": {
-          "description": "Timestamp is the platform-assigned message time in Unix\nmilliseconds. Zero when unknown.",
           "type": "integer"
         },
         "type": {
-          "description": "Type discriminates the message kind.",
           "type": "string"
         }
       },

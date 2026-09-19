@@ -153,6 +153,10 @@ func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), o
 		return nil, false
 	}
 	router := buildTelegramRouter(ctx, tg, s, sessionStore)
+	client := &gateway.LocalChatAdapter{
+		Router: router, Sessions: sessionStore, Turns: gateway.NewTurns(s.Log),
+		Models: router.Models, Personas: router.Personas, TaskActor: s.ChatTaskActor,
+	}
 	return func() {
 		go func() {
 			lifecycle := gateway.Lifecycle{
@@ -168,7 +172,7 @@ func setupTelegramGateway(ctx context.Context, s telegramSetup) (start func(), o
 					s.Log.Info("telegram gateway started")
 				},
 			}
-			if err := tg.Start(ctx, router, lifecycle); err != nil && ctx.Err() == nil {
+			if err := tg.Start(ctx, client, lifecycle); err != nil && ctx.Err() == nil {
 				if s.ChannelManager != nil {
 					s.ChannelManager.MarkFailed("telegram", err.Error())
 				}

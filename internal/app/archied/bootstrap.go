@@ -725,6 +725,7 @@ func (b *boot) setupEmailGateway(ctx context.Context, cfg config.Config, log *sl
 	emRouter := gateway.NewRouter(b.stateStore, nil, "email")
 	emRouter.Limiter = b.rateLimiter
 	configureTaskCommands(emRouter, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.stateStore.Tasks}, b.defaultChatIdentity)
+	emChat := &gateway.LocalChatAdapter{Router: emRouter, Sessions: b.chatSessionStore}
 	b.startGateways = append(b.startGateways, func() {
 		go func() {
 			lifecycle := gateway.Lifecycle{
@@ -734,7 +735,7 @@ func (b *boot) setupEmailGateway(ctx context.Context, cfg config.Config, log *sl
 					log.Info("email gateway started", "addr", cfg.Chat.Email.ListenAddr)
 				},
 			}
-			if err := em.Start(ctx, emRouter, lifecycle); err != nil && ctx.Err() == nil {
+			if err := em.Start(ctx, emChat, lifecycle); err != nil && ctx.Err() == nil {
 				b.channelManager.MarkFailed("email", err.Error())
 				log.Error("email gateway stopped", "err", err)
 			}
@@ -773,6 +774,7 @@ func (b *boot) setupWebhookGateway(ctx context.Context, cfg config.Config, log *
 	whRouter := gateway.NewRouter(b.stateStore, nil, "webhook")
 	whRouter.Limiter = b.rateLimiter
 	configureTaskCommands(whRouter, b.chatTasks, b.chatController, chatTaskListerAdapter{tasks: b.stateStore.Tasks}, b.defaultChatIdentity)
+	whChat := &gateway.LocalChatAdapter{Router: whRouter, Sessions: b.chatSessionStore}
 	b.startGateways = append(b.startGateways, func() {
 		go func() {
 			lifecycle := gateway.Lifecycle{
@@ -782,7 +784,7 @@ func (b *boot) setupWebhookGateway(ctx context.Context, cfg config.Config, log *
 					log.Info("webhook gateway started", "addr", fmt.Sprintf("%s:%d", host, port))
 				},
 			}
-			if err := wh.Start(ctx, whRouter, lifecycle); err != nil && ctx.Err() == nil {
+			if err := wh.Start(ctx, whChat, lifecycle); err != nil && ctx.Err() == nil {
 				b.channelManager.MarkFailed("webhook", err.Error())
 				log.Error("webhook gateway stopped", "err", err)
 			}
