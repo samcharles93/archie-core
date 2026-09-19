@@ -116,7 +116,6 @@ linters:
 formatters:
   enable:
     - gofumpt
-    - goimports
     - gci
   settings:
     gofumpt:
@@ -131,9 +130,10 @@ formatters:
       custom-order: true
   exclusions:
     generated: strict
-    # These are Yaegi programs shipped as examples. goimports cannot type-check
-    # files excluded by //go:build ignore and deletes their genuinely used
-    # internal/secret import, leaving the interpreter unable to load them.
+    # These Yaegi programs sit behind //go:build ignore, so a formatter cannot
+    # type-check them: rewriting their imports deletes the genuinely used
+    # internal/secret import and the interpreter can no longer load them.
+    # Excluded from every formatter so adding one cannot reintroduce that.
     paths:
       - ^examples/secret-engines/(age|sops|vault)\.go$
 

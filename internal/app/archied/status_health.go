@@ -39,15 +39,31 @@ func newProviderOutcomeRecorder() *providerOutcomeRecorder { return &providerOut
 // when it succeeded. A nil recorder records nothing -- call paths built
 // without one (tests, minimal setups) must not panic.
 func (r *providerOutcomeRecorder) record(model string, err error) {
+	r.recordAt(model, err, time.Now().UTC())
+}
+
+// recordAt stores one call's outcome, keeping whichever is most recent.
+//
+// The completion time is taken by the caller, before the lock, so it reports
+// when the call actually finished rather than when this goroutine won the
+// mutex. That ordering is not the same as the lock's: two concurrent calls can
+// reach the lock in the opposite order to their completion, and an
+// unconditional store would then leave /status reporting an older call as the
+// latest one. Keeping the newer of the two is what makes the reported outcome
+// true regardless of scheduling.
+func (r *providerOutcomeRecorder) recordAt(model string, err error, at time.Time) {
 	if r == nil {
 		return
 	}
-	outcome := gateway.ChatModelOutcome{Model: model, At: time.Now().UTC()}
+	outcome := gateway.ChatModelOutcome{Model: model, At: at}
 	if err != nil {
 		outcome.Err = err.Error()
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.attempted && outcome.At.Before(r.outcome.At) {
+		return
+	}
 	r.outcome = outcome
 	r.attempted = true
 }

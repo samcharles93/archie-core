@@ -19,6 +19,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/channels/status"
 	"github.com/samcharles93/archie-core/internal/daemon"
+	"github.com/samcharles93/archie-core/internal/domain/curator"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/store"
@@ -461,5 +462,113 @@ func TestRouterWithHealthAnswersStatus(t *testing.T) {
 	}
 	if !strings.Contains(reply, "Broker: connected") {
 		t.Errorf("reply = %q, want the wired broker line", reply)
+	}
+}
+
+// TestRecordKeepsTheLatestOutcomeUnderReordering is the regression case for a
+// /status chat-model line that reports an older call as the latest. The
+// completion time is taken before the lock, so two concurrent calls can reach
+// the lock in the opposite order to their completion; an unconditional store
+// then overwrites the newer outcome with the older one.
+func TestRecordKeepsTheLatestOutcomeUnderReordering(t *testing.T) {
+	r := &providerOutcomeRecorder{}
+	newer := time.Now().UTC()
+	older := newer.Add(-time.Minute)
+
+	// The later call completes and stores first, as it would when the earlier
+	// call is descheduled between stamping and locking.
+	r.recordAt("openai/gpt-5.6", nil, newer)
+	r.recordAt("openai/gpt-4o", errors.New("401 Unauthorized"), older)
+
+	got, attempted := r.LastChatModelOutcome()
+	if !attempted {
+		t.Fatal("LastChatModelOutcome reports no attempt after two records")
+	}
+	if got.Model != "openai/gpt-5.6" || got.Err != "" {
+		t.Fatalf("outcome = %+v, want the newer successful call to survive", got)
+	}
+}
+
+// TestRecordStoresTheFirstOutcomeWhateverItsAge pins that the ordering guard
+// does not swallow the first record, whose timestamp has nothing to compare
+// against.
+func TestRecordStoresTheFirstOutcomeWhateverItsAge(t *testing.T) {
+	r := &providerOutcomeRecorder{}
+	r.recordAt("openai/gpt-4o", nil, time.Now().UTC().Add(-time.Hour))
+
+	if _, attempted := r.LastChatModelOutcome(); !attempted {
+		t.Fatal("the first recorded outcome was dropped")
+	}
+}
+
+// TestCuratorRunnerRefusesWithoutARuntime pins that a curator asking for a
+// completion on a daemon with no configured provider gets an error. The
+// runtime constructor returns nil in that case, and a nil *runtime.Runtime
+// panics on its first method call, which would take the daemon down. Nothing
+// is recorded: no provider call was attempted, and saying one failed would be
+// a /status that blames the provider for a local misconfiguration.
+func TestCuratorRunnerRefusesWithoutARuntime(t *testing.T) {
+	recorder := &providerOutcomeRecorder{}
+	runner := curatorLLMRunner{outcomes: recorder}
+
+	if _, err := runner.Chat(context.Background(), curator.ChatRequest{Model: "openai/gpt-4o"}); err == nil {
+		t.Fatal("Chat with no runtime returned no error")
+	}
+	if _, attempted := recorder.LastChatModelOutcome(); attempted {
+		t.Error("a local misconfiguration was recorded as a provider call")
+	}
+}
+
+// TestCuratorRunnerRecordsItsOutcome pins that curator model calls reach
+// /status. They do not pass through sendChatTurn, so before this a daemon
+// whose only recent model traffic was curator work reported "no calls
+// attempted yet" while the provider was demonstrably reachable.
+func TestCuratorRunnerRecordsItsOutcome(t *testing.T) {
+	recorder := &providerOutcomeRecorder{}
+	// A provider pointed at a closed local port fails fast without touching
+	// the network. The outcome is what matters here: a failed provider call is
+	// exactly what /status must not miss.
+	rt := agentexec.NewRuntime(map[string]agentexec.Provider{
+		"openai": {Class: "openai", BaseURL: "http://127.0.0.1:1", APIKeyEnv: "ARCHIE_TEST_MISSING_KEY"},
+	})
+	if rt == nil {
+		t.Fatal("NewRuntime returned nil for a configured provider")
+	}
+	runner := curatorLLMRunner{rt: rt, outcomes: recorder}
+
+	_, err := runner.Chat(context.Background(), curator.ChatRequest{Model: "openai/gpt-4o"})
+	if err == nil {
+		t.Fatal("Chat against a closed port returned no error")
+	}
+
+	got, attempted := recorder.LastChatModelOutcome()
+	if !attempted {
+		t.Fatal("curator call was not recorded; /status would report no calls attempted")
+	}
+	if got.Model != "openai/gpt-4o" || got.Err == "" {
+		t.Fatalf("outcome = %+v, want the failed curator call", got)
+	}
+}
+
+// TestTitleGenerationDoesNotRecordChatModelHealth is the regression case for
+// /status blaming the provider for a cosmetic failure. Title generation runs
+// detached after a first turn under its own 30s bound and its error is
+// swallowed by the caller, so a title that merely timed out must not become
+// the process-wide "Chat model: failed" that an operator reads as an outage.
+func TestTitleGenerationDoesNotRecordChatModelHealth(t *testing.T) {
+	recorder := &providerOutcomeRecorder{}
+	rt := agentexec.NewRuntime(map[string]agentexec.Provider{
+		"openai": {Class: "openai", BaseURL: "http://127.0.0.1:1", APIKeyEnv: "ARCHIE_TEST_MISSING_KEY"},
+	})
+	if rt == nil {
+		t.Fatal("NewRuntime returned nil for a configured provider")
+	}
+	gen := &chatTitleGenerator{llm: rt, chatModels: newChatModelManager(map[string]string{"chat": "openai/gpt-4o"}, nil, nil)}
+
+	if _, err := gen.GenerateTitle(context.Background(), "s1", "hello"); err == nil {
+		t.Fatal("GenerateTitle against a closed port returned no error")
+	}
+	if _, attempted := recorder.LastChatModelOutcome(); attempted {
+		t.Error("a failed title proposal was recorded as chat-model health")
 	}
 }

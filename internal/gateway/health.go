@@ -156,7 +156,10 @@ func formatChannels(channels []ChannelHealth) string {
 // multi-line error cannot break the chat reply's layout, and bounds its
 // length. A failed adapter is the case where an operator most needs the
 // reason, so this trims rather than drops it.
-func channelDetail(detail string) string {
+// boundedDetail flattens and caps a detail so one line of /status stays one
+// line. A provider error carries whatever the provider sent back, which for an
+// HTML error page or a echoed request body is neither short nor single-line.
+func boundedDetail(detail string) string {
 	flattened := strings.Join(strings.Fields(detail), " ")
 	runes := []rune(flattened)
 	if len(runes) <= maxChannelDetail {
@@ -164,6 +167,8 @@ func channelDetail(detail string) string {
 	}
 	return string(runes[:maxChannelDetail]) + "…"
 }
+
+func channelDetail(detail string) string { return boundedDetail(detail) }
 
 func formatChatModel(health ChatModelHealth, now time.Time) string {
 	if !health.Attempted {
@@ -183,9 +188,9 @@ func formatChatModel(health ChatModelHealth, now time.Time) string {
 	case outcome.Err == "":
 		return fmt.Sprintf("ok %s%s", age, model)
 	case age == "":
-		return fmt.Sprintf("failed%s: %s", model, outcome.Err)
+		return fmt.Sprintf("failed%s: %s", model, boundedDetail(outcome.Err))
 	default:
-		return fmt.Sprintf("failed %s%s: %s", age, model, outcome.Err)
+		return fmt.Sprintf("failed %s%s: %s", age, model, boundedDetail(outcome.Err))
 	}
 }
 

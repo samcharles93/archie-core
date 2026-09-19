@@ -11,12 +11,14 @@ import (
 func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 	enabled := true
 	orig := Config{
-		Models:      map[string]string{"builder": "m"},
-		ModelLimits: map[string]ModelLimits{"m": {ContextWindow: 128_000}},
-		Repos:       []Repo{{Gate: [][]string{{"task", "check"}}, Protect: []string{"p"}}},
+		Models:       map[string]string{"builder": "m"},
+		ModelLimits:  map[string]ModelLimits{"m": {ContextWindow: 128_000}},
+		Repos:        []Repo{{Gate: [][]string{{"task", "check"}}, Protect: []string{"p"}}},
+		DiffCapLines: new(400),
 		Identities: []IdentityConfig{{
-			Models: map[string]string{"planner": "m2"},
-			Repos:  []Repo{{Gate: [][]string{{"go", "vet"}}}},
+			Models:       map[string]string{"planner": "m2"},
+			DiffCapLines: new(50),
+			Repos:        []Repo{{Gate: [][]string{{"go", "vet"}}}},
 		}},
 		Dispatch: Dispatch{Labels: map[string]string{"q": "archie:q"}},
 		Tools: ToolsConfig{
@@ -51,6 +53,8 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 	got.Extra["custom"] = 2
 	got.Bindings.PreviousEncryptionKeys[0] = SecretRef{Engine: "env", Key: "changed"}
 	*got.Tools.WebFetch.Enabled = false
+	*got.DiffCapLines = 1
+	*got.Identities[0].DiffCapLines = 2
 	got.Image.Hosted["openai"] = ImageHostedProvider{Enabled: false}
 	got.Image.Local["sdxl"] = ImageLocalProvider{Enabled: false}
 	got.Services[ServiceNameState] = ServiceConnection{Target: "changed"}
@@ -84,6 +88,12 @@ func TestConfigCloneDeepCopiesReferenceFields(t *testing.T) {
 	}
 	if orig.Bindings.PreviousEncryptionKeys[0].Key != "K0" {
 		t.Error("Bindings.PreviousEncryptionKeys is shared")
+	}
+	if orig.DiffCap() != 400 {
+		t.Errorf("DiffCapLines pointer is shared: orig.DiffCap() = %d, want 400", orig.DiffCap())
+	}
+	if got := orig.Identities[0].DiffCapLines; got == nil || *got != 50 {
+		t.Errorf("Identities[0].DiffCapLines pointer is shared: got %v, want 50", got)
 	}
 	if !*orig.Tools.WebFetch.Enabled {
 		t.Error("WebFetch.Enabled pointer is shared")

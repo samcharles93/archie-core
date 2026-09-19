@@ -20,7 +20,7 @@ type CommandSpec struct {
 }
 
 var localCommandSpecs = []CommandSpec{
-	{Command: "/status", Description: "Show daemon health: broker, workers, channels, provider", Usage: "/status"},
+	{Command: "/status", Description: "Show health: queue depth, broker, and the last chat-model call", Usage: "/status"},
 	{Command: "/tasks", Description: "Show your tasks: state, stage, age, parked reason", Usage: "/tasks"},
 	{Command: "/model", Description: "Choose a provider and model", Usage: "/model [provider/model]"},
 	{Command: "/spawn", Description: "Create a tracked task", Usage: "/spawn <title>"},
