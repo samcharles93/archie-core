@@ -227,8 +227,9 @@ def main() -> int:
             continue
         lines.append(f"== {cat} ({len(group)}) ==")
         for r in group:
-            tr = "; ".join(r["tracker_hits"]) or "NONE"
-            lines.append(f"  {r['loc']:>6} LOC  {r['package']:<48} {tr[:56]}")
+            lines.append(f"  {r['loc']:>6} LOC  {r['package']}")
+            for hit in r["tracker_hits"] or ["NONE"]:
+                lines.append(f"      {hit}")
         lines.append("")
     for cat in ("in-package-untracked", "in-package-dynamic", "in-package-tracked"):
         group = [r for r in in_pkg_rows if r["category"] == cat]
