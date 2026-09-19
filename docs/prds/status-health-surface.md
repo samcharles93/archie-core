@@ -110,7 +110,10 @@ decisions") and all five fields shipped.
   here. For the same reason the chat-model line is per process: the daemon
   records the turns it runs (Telegram, email, webhook), the Gateway records the
   web chat's, and the two do not pool outcomes. Each line is true of the process
-  answering the command.
+  answering the command. **Decided 2026-09-19: they stay per-process.** Pooling
+  them would mean a new daemon↔gateway health RPC for one status line, and a
+  per-process line is true where an aggregate would be a claim about a process
+  the answering one cannot see.
 - **A channel's failure reason can outlive the failure.** `status.Manager` keeps
   the last non-empty `Detail` across state changes, and that one field carries
   both a descriptor's standing caveat and a runtime failure reason, so a channel
@@ -122,10 +125,12 @@ decisions") and all five fields shipped.
   carrying Docker's startup error into the health surface.
 - **Runtime (provider/model).** Phase 1 left this block in place; it is still
   here. It is static config that `/model` and `/whoami` already answer, so it is
-  the last thing in `/status` that this ticket's own rule says should not be
-  there -- but removing it is a product call on a command Sam uses daily, not a
-  mechanical follow-up. Recommended follow-up: drop the block once `/model` is
-  accepted as the only place provider/model belong.
+  the only line in `/status` that this ticket's own rule says should not be
+  there -- but the maintainer reads `/status` daily to see the active model at a
+  glance, and one command answering both "is archie well" and "what is it
+  running on" is worth that duplication. **Decided 2026-09-19: keep it.** It is
+  a settled product decision, not an oversight; do not remove it as a
+  mechanical follow-up.
 - **`/agents` copy.** The menu still advertises "List tasks currently being
   worked" while `Router.Agents` is never wired (`archie-core-mxls`), so that one
   published description does not match what its command does. Deleting,
