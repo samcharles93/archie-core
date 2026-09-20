@@ -35,13 +35,19 @@ Five top-level nav items. Dashboard is a link; the rest are dropdowns.
 | Work | Tasks, Workflows |
 | Agent | Skills, Curators |
 | Events | Inspector, Mappings, Bindings |
-| System | Status, Logs, Appearance, Task settings, Models & providers, Repositories, Channels, Advanced |
+| System | Status, Logs, Appearance; **Settings:** Task settings, Models, Repositories, Channels, Advanced |
 
 Items are renamed because the group now carries the context: "Event inspector"
 becomes "Inspector" under Events, and so on. A group renders only if at least
 one of its children survives capability gating, and a group left with one
 child still renders as a dropdown -- a bar whose shape changes per deployment
 is harder to learn than one with a predictable skeleton.
+
+The System dropdown has two narratives. Status, Logs and Appearance describe
+the running dashboard and sit first. A separator and visible **Settings** label
+introduce Task settings, Models, Repositories, Channels and Advanced; those are
+configuration destinations, not awkward phrases such as "System Models" or
+"System Advanced".
 
 ### Route map
 
@@ -90,14 +96,13 @@ This section was written against the Preact dashboard; the decisions above
 survive the Vue migration unchanged, only the primitive supplying them
 changed.
 
-### Explicitly not in scope
+### Scope boundaries
 
-- No change to what any page renders, beyond which route renders it. The
-  Configuration split moves sections between files; it does not redesign them.
-- `/system/appearance` ships with the theme control moved out of the topbar
-  icon and nothing else. The density and motion preferences named above are the
-  reason the page exists as a page rather than a section, not part of this
-  change.
+- The daemon-backed configuration pages move sections between routes; this
+  change does not alter their read-only configuration contract.
+- Appearance preferences remain browser-local; they do not create a daemon
+  configuration path. Theme, density, motion and tooltips apply immediately
+  and persist in local browser storage.
 - Mobile keeps the existing scrollable row of top-level items; groups expand
   in place rather than opening a floating menu. Nested floating menus on a
   phone are a separate problem.

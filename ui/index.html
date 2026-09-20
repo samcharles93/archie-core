@@ -7,12 +7,23 @@
     <title>archie-ui</title>
     <script>
       // Set before the first paint so a reload does not flash the wrong
-      // palette. Kept in sync with src/lib/theme.ts; a blocked localStorage
-      // falls back to dark, which is the default theme.
+      // palette or layout. Kept in sync with the appearance Pinia store;
+      // blocked site data falls back to dark, comfortable spacing and the
+      // system motion preference.
       (function () {
         var theme = "dark";
         try {
-          if (localStorage.getItem("archie.theme") === "light") theme = "light";
+          var storedTheme = localStorage.getItem("archie.theme");
+          if (storedTheme === "light") theme = "light";
+          if (storedTheme === "system") {
+            theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          }
+          if (localStorage.getItem("archie.density") === "compact") {
+            document.documentElement.dataset.density = "compact";
+          }
+          if (localStorage.getItem("archie.motion") === "reduced") {
+            document.documentElement.dataset.motion = "reduced";
+          }
         } catch (e) {
           /* default stands */
         }

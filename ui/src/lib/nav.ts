@@ -5,6 +5,7 @@ export interface NavEntry {
   label: string;
   description: string;
   section?: string;
+  dividerBefore?: string;
   soon?: boolean;
 }
 
@@ -34,7 +35,13 @@ const table = routes as Array<{ path: string; meta?: RouteMeta }>;
 
 // The group owns the context, so the items inside it are named for what they
 // are rather than what they belong to. Order is the reading order of the menu.
-const groups: Array<{ label: string; paths: string[] }> = [
+interface GroupSpec {
+  label: string;
+  paths: string[];
+  dividerBefore?: { path: string; label: string };
+}
+
+const groups: GroupSpec[] = [
   { label: "Work", paths: ["/tasks", "/workflows"] },
   { label: "Agent", paths: ["/skills", "/curators"] },
   { label: "Events", paths: ["/captures", "/mappings", "/bindings"] },
@@ -50,6 +57,7 @@ const groups: Array<{ label: string; paths: string[] }> = [
       "/channels",
       "/system/advanced",
     ],
+    dividerBefore: { path: "/system/tasks", label: "Settings" },
   },
 ];
 
@@ -75,7 +83,11 @@ export function navTree(hidden: string[] = []): NavNode[] {
   const nodes: NavNode[] = [{ kind: "link", entry: entryFor("/") }];
   for (const group of groups) {
     const items = group.paths.map(entryFor).filter(visible);
-    if (items.length > 0) nodes.push({ kind: "group", label: group.label, items });
+    const divided = items.map((item) => ({
+      ...item,
+      dividerBefore: item.path === group.dividerBefore?.path ? group.dividerBefore.label : undefined,
+    }));
+    if (divided.length > 0) nodes.push({ kind: "group", label: group.label, items: divided });
   }
   return nodes;
 }

@@ -201,18 +201,13 @@ tasks:
       - bash tools/uidist.sh check
 
   test:ui:
-    desc: Type-check the dashboard (no unit tests during the Vue migration)
+    desc: Test and type-check the dashboard
     dir: ui
-    # The Preact suite was dropped with the Preact app in the shadcn-vue
-    # migration; tests come back when there is behaviour worth pinning rather
-    # than a port to re-assert. Until then vue-tsc is the gate that would
-    # actually catch a broken component, and an empty `npm test` would pass
-    # vacuously.
-    #
     # ui:deps so a fresh clone fails on a real error rather than on a missing
     # node_modules, which is gitignored and installed by nothing else.
     deps: [ui:deps]
     cmds:
+      - npm test
       - npm run typecheck
 
   dev:

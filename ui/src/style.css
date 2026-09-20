@@ -17,6 +17,13 @@
    wrong palette. */
 @custom-variant dark (&:is([data-theme="dark"] *));
 
+/* Compact mode tightens the shared Tailwind spacing scale without shrinking
+   text or hit targets independently. Components keep their relative rhythm;
+   the whole workspace simply carries less air. */
+[data-density="compact"] {
+    --spacing: 0.225rem;
+}
+
 /*
  * Design tokens. Dark is the default because archied is a daemon you check at
  * odd hours; light is a toggle, not an afterthought, so both themes define the
@@ -272,5 +279,12 @@
             animation-duration: 0.01ms !important;
             transition-duration: 0.01ms !important;
         }
+    }
+
+    [data-motion="reduced"] *,
+    [data-motion="reduced"] *::before,
+    [data-motion="reduced"] *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
     }
 }
