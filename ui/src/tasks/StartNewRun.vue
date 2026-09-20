@@ -33,7 +33,7 @@ import { useTaskRun } from "./use-task-run";
  * `compact` renders the bare control for the header's action row; on its own
  * the component also renders the disabled reason.
  */
-const props = defineProps<{ id?: string; compact?: boolean }>();
+const props = defineProps<{ id?: string; compact?: boolean; class?: string }>();
 
 const run = useTaskRun();
 
@@ -59,6 +59,7 @@ const errorText = computed(() => {
   <AlertDialog>
     <AlertDialogTrigger as-child>
       <Button
+        :class="props.class"
         :variant="run.retryKind === 'primary' ? 'default' : 'outline'"
         :disabled="!run.canRetry || run.retryBusy"
         :title="unavailable || 'Retry this task as a new run'"

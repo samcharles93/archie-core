@@ -43,15 +43,13 @@ const run = provideTaskRun(taskId);
   <TaskDetailNotice v-else-if="run.missing" kind="missing" :raw="rawId" />
   <div v-else>
     <TaskHeader :id="rawId" />
-    <TaskMetaBar />
+    <TaskMetaBar>
+      <AttemptSelector class="ml-auto" />
+    </TaskMetaBar>
     <TaskNotes :id="rawId" />
-    <AttemptSelector />
 
     <Card>
       <CardContent>
-        <div class="mb-2 flex justify-end">
-          <AttemptSelector />
-        </div>
         <Tabs class="gap-4" :model-value="run.tab" @update:model-value="run.setTab">
           <TabBar />
           <TaskRunPanels :id="rawId" />

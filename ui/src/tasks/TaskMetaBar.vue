@@ -8,9 +8,9 @@ import { statusKind, statusLabel } from "@/lib/task-meta";
 import { useTaskRun } from "./use-task-run";
 
 /**
- * One meta line under the title: lifecycle status, the attempt on screen, and
- * the forge coordinates. Everything comes from reads the page already holds,
- * so the bar costs no request of its own.
+ * The task's lifecycle status, plus whatever the page parks on the same row
+ * (the attempt pager rides here, pushed right). Everything comes from reads
+ * the page already holds, so the bar costs no request of its own.
  *
  * "Not read" and "loading" are kept apart from "no status": the task list is
  * a list of the 100 most recently updated, so a task outside it is a fact
@@ -30,32 +30,6 @@ const taskStatusLabel = computed(() => statusLabel(run.task?.status ?? ""));
     <template v-else-if="run.task">
       <Badge :variant="taskKind">{{ taskStatusLabel }}</Badge>
     </template>
-    <a
-      v-if="run.task?.repo_url"
-      class="text-link hover:underline"
-      :href="run.task.repo_url"
-      target="_blank"
-      rel="noreferrer"
-    >
-      {{ run.task.owner }}/{{ run.task.repo }}
-    </a>
-    <a
-      v-if="run.task?.issue_url && run.task?.issue_number"
-      class="text-link hover:underline"
-      :href="run.task.issue_url"
-      target="_blank"
-      rel="noreferrer"
-    >
-      Issue #{{ run.task.issue_number }}
-    </a>
-    <a
-      v-if="run.task?.pr_url && run.task?.pr_number"
-      class="text-link hover:underline"
-      :href="run.task.pr_url"
-      target="_blank"
-      rel="noreferrer"
-    >
-      PR #{{ run.task.pr_number }}
-    </a>
+    <slot />
   </div>
 </template>
