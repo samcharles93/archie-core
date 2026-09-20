@@ -1,33 +1,50 @@
-import { ref, watchEffect } from "vue";
+import { ref, type Ref } from "vue";
+
+/**
+ * The theme is an attribute on <html>, not a class, because index.html sets it
+ * from localStorage before the first paint. Everything downstream reads the CSS
+ * variables once that attribute is present, so nothing in the app branches on
+ * the theme itself.
+ */
+export const THEME_KEY = "archie.theme";
 
 export type Theme = "dark" | "light";
 
-const STORAGE_KEY = "archie.theme";
+export function isTheme(value: unknown): value is Theme {
+  return value === "dark" || value === "light";
+}
 
-function stored(): Theme | null {
+/** Dark is the default: archied is a daemon you check at odd hours. */
+export function storedTheme(): Theme {
   try {
-    const value = localStorage.getItem(STORAGE_KEY);
-    return value === "dark" || value === "light" ? value : null;
+    const stored = localStorage.getItem(THEME_KEY);
+    return isTheme(stored) ? stored : "dark";
   } catch {
-    return null;
+    // Private windows and blocked site data throw on access. The default is
+    // correct there, so this is not worth surfacing.
+    return "dark";
   }
 }
 
-export const theme = ref<Theme>(stored() ?? "dark");
-
-watchEffect(() => {
-  const root = document.documentElement;
-  root.classList.toggle("dark", theme.value === "dark");
-  // Binds the UA's own painting (form controls, scrollbars, the canvas behind
-  // an overscroll) to the theme.
-  root.style.colorScheme = theme.value;
+export function applyTheme(theme: Theme): void {
+  document.documentElement.dataset.theme = theme;
   try {
-    localStorage.setItem(STORAGE_KEY, theme.value);
+    localStorage.setItem(THEME_KEY, theme);
   } catch {
-    // A blocked store costs persistence, not the toggle.
+    // The theme still applies for this page view; only persistence is lost.
   }
-});
+}
 
-export function toggleTheme() {
-  theme.value = theme.value === "dark" ? "light" : "dark";
+const current = ref<Theme>(storedTheme());
+
+/** The live theme, shared app-wide. Apply it through `setTheme` or `toggleTheme`. */
+export const theme: Ref<Theme> = current;
+
+export function setTheme(next: Theme): void {
+  current.value = next;
+  applyTheme(next);
+}
+
+export function toggleTheme(): void {
+  setTheme(current.value === "dark" ? "light" : "dark");
 }

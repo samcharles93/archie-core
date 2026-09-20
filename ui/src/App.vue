@@ -13,7 +13,7 @@ onMounted(() => {
 <template>
   <TooltipProvider :delay-duration="350">
     <Topbar :hidden="hidden" />
-    <main>
+    <main class="min-h-[calc(100svh-3.5rem)]">
       <!--
         Keyed on the path and its parameters but not the query: a query-only
         change is an entry state, so the page keeps the operator's filters,
