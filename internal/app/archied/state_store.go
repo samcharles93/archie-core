@@ -15,17 +15,38 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	"google.golang.org/grpc"
 
+	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/config"
+	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/health"
+	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
+	"github.com/samcharles93/archie-core/internal/infrastructure/cronstore"
 	"github.com/samcharles93/archie-core/internal/infrastructure/readiness"
 	"github.com/samcharles93/archie-core/internal/infrastructure/staterpc"
 	"github.com/samcharles93/archie-core/internal/store"
 )
+
+func configuredIdentityNames(cfg config.Config) []string {
+	if len(cfg.Identities) == 0 {
+		name := cfg.BotUser
+		if name == "" {
+			name = "archie"
+		}
+		return []string{name}
+	}
+	names := make([]string, 0, len(cfg.Identities))
+	for _, value := range cfg.Identities {
+		names = append(names, value.Name)
+	}
+	return names
+}
 
 // StateStoreOptions contains process inputs for the standalone State Store.
 type StateStoreOptions struct {
@@ -65,6 +86,31 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 	if err := b.openStateStore(ctx); err != nil {
 		return err
 	}
+	identityStore, ok := b.st.(interface {
+		BootstrapIdentities(context.Context, []string) error
+	})
+	if !ok {
+		return fmt.Errorf("state store does not support identity bootstrap")
+	}
+	legacyNames := configuredIdentityNames(b.cfg)
+	if err := identityStore.BootstrapIdentities(ctx, legacyNames); err != nil {
+		return fmt.Errorf("bootstrap identities: %w", err)
+	}
+	resources, ok := b.st.(interface {
+		Resource(context.Context, string) (store.Resource, error)
+		PutResource(context.Context, store.ResourceWrite) (store.Resource, error)
+	})
+	if !ok {
+		return fmt.Errorf("state store does not support control-plane resources")
+	}
+	control := controlplane.NewServer(resources)
+	versions, err := control.ImportConfig(ctx, b.cfg)
+	if err != nil {
+		return fmt.Errorf("import control-plane resources: %w", err)
+	}
+	if err := migrateLegacySchedules(ctx, control, b.cfg.DBPath, versions[controlplane.SchedulesKind]); err != nil {
+		return fmt.Errorf("migrate schedules: %w", err)
+	}
 
 	token := options.Token
 	if token == "" {
@@ -89,7 +135,42 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 		}
 	}
 
-	return serveStateStore(ctx, listener, b.stateStoreDeps(grants), opts)
+	deps := b.stateStoreDeps(grants)
+	deps.ControlPlane = control
+	return serveStateStore(ctx, listener, deps, opts)
+}
+
+func migrateLegacySchedules(ctx context.Context, control *controlplane.Server, dbPath string, version int64) error {
+	if version != 1 {
+		return nil
+	}
+	path := filepath.Join(filepath.Dir(dbPath), "cron", "jobs.json")
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	legacy, err := cronstore.Open(path)
+	if err != nil {
+		return err
+	}
+	jobs, listErr := legacy.List(ctx)
+	closeErr := legacy.Close()
+	if listErr != nil {
+		return listErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	value, err := json.Marshal(jobs)
+	if err != nil {
+		return err
+	}
+	if _, err := control.Command(ctx, &controlpb.CommandRequest{Kind: controlplane.SchedulesKind, Command: "replace", ValueJson: value, ExpectedVersion: 1, Actor: "system:migration", Source: "legacy-cronstore", RequestId: "import:legacy-schedules"}); err != nil {
+		return err
+	}
+	return os.Rename(path, path+".migrated")
 }
 
 // openStateStore opens the single task-store SQLite file exactly once for
@@ -130,6 +211,9 @@ func (b *boot) openStateStore(ctx context.Context) error {
 // degrades that group rather than aborting boot.
 func (b *boot) stateStoreDeps(grants *staterpc.TaskGrants) staterpc.Deps {
 	deps := staterpc.Deps{Tasks: b.st, Log: b.log, Grants: grants}
+	if identities, ok := b.st.(identity.Repository); ok {
+		deps.Identities = identities
+	}
 	// Task logs live in the state directory, which this process owns, and the
 	// dashboard process owns no such directory -- so this is where a task-log
 	// read is served from (docs/prds/ui-service-boundary.md). The reader is

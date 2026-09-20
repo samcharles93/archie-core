@@ -34,6 +34,7 @@ type ResolvedConfig struct {
 
 type projection struct {
 	gateway       ServiceTarget
+	stateStore    ServiceTarget
 	telegram      config.TelegramConfig
 	email         config.EmailConfig
 	webhook       config.WebhookRoute
@@ -111,6 +112,7 @@ func project(cfg config.Config) projection {
 			Target: cfg.Services.Get(config.ServiceNameGateway).Target,
 			Token:  cfg.Services.Get(config.ServiceNameGateway).TargetToken,
 		},
+		stateStore:    ServiceTarget{Target: cfg.Services.Get(config.ServiceNameState).Target, Token: cfg.Services.Get(config.ServiceNameState).TargetToken},
 		telegram:      cfg.Chat.Telegram,
 		email:         cfg.Chat.Email,
 		webhook:       cfg.Chat.Webhook,
@@ -126,6 +128,9 @@ func withEnvTokens(o Options) Options {
 	if o.Gateway.Token == "" {
 		o.Gateway.Token = os.Getenv("GATEWAY_TOKEN")
 	}
+	if o.StateStore.Token == "" {
+		o.StateStore.Token = os.Getenv("STATE_STORE_TOKEN")
+	}
 	return o
 }
 
@@ -135,6 +140,12 @@ func merge(o Options, p projection) Options {
 	}
 	if o.Gateway.Token == "" {
 		o.Gateway.Token = p.gateway.Token
+	}
+	if o.StateStore.Target == "" {
+		o.StateStore.Target = p.stateStore.Target
+	}
+	if o.StateStore.Token == "" {
+		o.StateStore.Token = p.stateStore.Token
 	}
 	return o
 }

@@ -20,7 +20,7 @@ export function logsEmptyTitle(durableUnavailable: boolean, streamState: string)
  */
 export function logsEmptyDetail(durableUnavailable: boolean, streamState: string): string {
   if (streamState === "unavailable") {
-    return "The daemon is not serving the log stream. Reload once it is reachable.";
+    return "The log stream will reconnect automatically.";
   }
   if (durableUnavailable) {
     return "This deployment keeps no durable history. Live daemon logs appear here while the page is open.";

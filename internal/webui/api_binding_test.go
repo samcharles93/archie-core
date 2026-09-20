@@ -26,12 +26,12 @@ func bindingTestServer(t *testing.T) *Server {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 	return &Server{
-		Store:     s,
-		Log:       slog.New(slog.DiscardHandler),
-		Mappings:  s,
-		Captures:  s,
-		Bindings:  s,
-		Workflows: []workflow.Definition{{ID: "implement", Name: "implement", Enabled: true}},
+		Store:        s,
+		Log:          slog.New(slog.DiscardHandler),
+		Mappings:     s,
+		Captures:     s,
+		Bindings:     s,
+		ControlPlane: workflowControlPlane(t, workflow.WorkflowDefinitionCollection{Definitions: []workflow.WorkflowDefinitionEntry{{ID: "implement", YAML: "id: implement\nsteps:\n  - type: implement.prepare\n"}}}),
 	}
 }
 

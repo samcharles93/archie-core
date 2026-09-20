@@ -5,6 +5,7 @@ package messaging
 // the executable router surface.
 var localCommands = []string{
 	"/status", "/tasks", "/model", "/spawn",
+	"/settings",
 	"/approve", "/cancel", "/start",
 	"/new", "/reset", "/topic", "/retry", "/undo",
 	"/title", "/branch", "/fork", "/compress", "/compact",
@@ -24,6 +25,7 @@ var localCommandSpecs = []CommandSpec{
 	{Command: "/tasks", Description: "Show your tasks: state, stage, age, parked reason", Usage: "/tasks"},
 	{Command: "/model", Description: "Choose a provider and model", Usage: "/model [provider/model]"},
 	{Command: "/spawn", Description: "Create a tracked task", Usage: "/spawn <title>"},
+	{Command: "/settings", Description: "Inspect or change runtime settings", Usage: "/settings [list|get|set|identity]"},
 	{Command: "/approve", Description: "Approve a waiting task", Usage: "/approve <task-id>"},
 	{Command: "/cancel", Description: "Cancel a queued or waiting task", Usage: "/cancel <task-id>"},
 	{Command: "/start", Description: "Confirm that Archie is running", Usage: "/start"},

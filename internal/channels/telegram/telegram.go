@@ -48,6 +48,11 @@ type Gateway struct {
 	// Updates is injected by the composition root. It owns release discovery,
 	// deferral persistence, and installation; Telegram only presents it.
 	Updates UpdateService
+	// Settings executes control-plane commands in this authenticated adapter.
+	Settings *messaging.SettingsCommand
+	// ResolveActor maps a channel-native sender to an authenticated Archie
+	// identity. Nil deliberately permits reads but makes writes fail closed.
+	ResolveActor func(int64) (string, bool)
 
 	// UpdateReportPath is where the update watchdog (see
 	// scripts/archie-update-watchdog) leaves the phase-2 outcome of an
@@ -254,6 +259,7 @@ func (g *Gateway) registerCommandHandlers(b *bot.Bot, client messaging.ChatContr
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/agents", bot.MatchTypeExact, g.agentsHandler(client))
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/version", bot.MatchTypeExact, g.versionHandler())
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/update", bot.MatchTypeExact, g.updateHandler())
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/settings", bot.MatchTypePrefix, g.settingsHandler())
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, g.startHandler())
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/help", bot.MatchTypeExact, g.helpHandler())
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/restart", bot.MatchTypeExact, g.restartHandler())
@@ -439,6 +445,22 @@ func (g *Gateway) routeCmdHandler(client messaging.ChatContract, cmd string) bot
 			return
 		}
 		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, reply.Text)
+	}
+}
+
+func (g *Gateway) settingsHandler() bot.HandlerFunc {
+	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
+		msg, ok := g.authorizedMessage(ctx, b, update)
+		if !ok {
+			return
+		}
+		actor := ""
+		if g.ResolveActor != nil {
+			actor, _ = g.ResolveActor(msg.From.ID)
+		}
+		input := strings.TrimSpace(strings.TrimPrefix(msg.Text, "/settings"))
+		reply := g.Settings.Execute(ctx, actor, input)
+		g.sendMessage(ctx, b, msg.Chat.ID, msg.MessageThreadID, reply)
 	}
 }
 

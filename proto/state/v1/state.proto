@@ -15,6 +15,14 @@ service StateStoreService {
   // Administrative task credential lifecycle. Worker credentials cannot call these.
   rpc RegisterTaskGrant(RegisterTaskGrantRequest) returns (RegisterTaskGrantResponse);
   rpc RevokeTaskGrant(RevokeTaskGrantRequest) returns (RevokeTaskGrantResponse);
+  // Identity domain. Task-scoped grants cannot call these administrative RPCs.
+  rpc ListIdentities(ListIdentitiesRequest) returns (ListIdentitiesResponse);
+  rpc GetIdentity(GetIdentityRequest) returns (GetIdentityResponse);
+  rpc CreateIdentity(CreateIdentityRequest) returns (CreateIdentityResponse);
+  rpc RenameIdentity(RenameIdentityRequest) returns (RenameIdentityResponse);
+  rpc SuspendIdentity(SuspendIdentityRequest) returns (SuspendIdentityResponse);
+  rpc ReactivateIdentity(ReactivateIdentityRequest) returns (ReactivateIdentityResponse);
+  rpc RetireIdentity(RetireIdentityRequest) returns (RetireIdentityResponse);
   // Lifecycle
   rpc EnqueueIssue(EnqueueIssueRequest) returns (EnqueueIssueResponse);
   rpc EnqueueChatTask(EnqueueChatTaskRequest) returns (EnqueueChatTaskResponse);
@@ -120,6 +128,45 @@ message RevokeTaskGrantRequest {
   string token = 1;
 }
 message RevokeTaskGrantResponse {}
+
+message Identity {
+  string id = 1;
+  string kind = 2;
+  string display_name = 3;
+  string lifecycle = 4;
+  int64 version = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+message IdentityAudit {
+  string actor_id = 1;
+  string source = 2;
+  string request_id = 3;
+}
+message ListIdentitiesRequest {}
+message ListIdentitiesResponse { repeated Identity identities = 1; }
+message GetIdentityRequest { string id = 1; }
+message GetIdentityResponse { Identity identity = 1; }
+message CreateIdentityRequest {
+  string id = 1;
+  string kind = 2;
+  string display_name = 3;
+  IdentityAudit audit = 4;
+}
+message RenameIdentityRequest {
+  string id = 1;
+  int64 expected_version = 2;
+  string display_name = 3;
+  IdentityAudit audit = 4;
+}
+message SuspendIdentityRequest { string id = 1; int64 expected_version = 2; IdentityAudit audit = 3; }
+message ReactivateIdentityRequest { string id = 1; int64 expected_version = 2; IdentityAudit audit = 3; }
+message RetireIdentityRequest { string id = 1; int64 expected_version = 2; IdentityAudit audit = 3; }
+message CreateIdentityResponse { Identity identity = 1; }
+message RenameIdentityResponse { Identity identity = 1; }
+message SuspendIdentityResponse { Identity identity = 1; }
+message ReactivateIdentityResponse { Identity identity = 1; }
+message RetireIdentityResponse { Identity identity = 1; }
 
 // Task mirrors internal/domain/workflow.Task.
 message Task {

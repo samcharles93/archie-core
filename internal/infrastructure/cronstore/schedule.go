@@ -113,6 +113,12 @@ func (s Schedule) firstRun(now time.Time) (time.Time, error) {
 	}
 }
 
+func (s Schedule) FirstRun(now time.Time) (time.Time, error) { return s.firstRun(now) }
+
+func (s Schedule) NextRun(lastRun time.Time) (time.Time, error) { return s.nextRun(lastRun) }
+
+func (s Schedule) Resolved() Schedule { return s.resolve() }
+
 // nextRun returns when the job should fire after a successful run at
 // lastRun. It is the engine-side counterpart to firstRun: every MarkRun
 // advances next_run through this function. Interval is fully implemented;

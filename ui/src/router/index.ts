@@ -8,6 +8,7 @@ import DashboardPage from "@/dashboard/DashboardPage.vue";
 import LogsPage from "@/logs/LogsPage.vue";
 import MappingsPage from "@/mappings/MappingsPage.vue";
 import SystemAdvancedPage from "@/settings/SystemAdvancedPage.vue";
+import SystemIdentitiesPage from "@/settings/SystemIdentitiesPage.vue";
 import SystemAppearancePage from "@/settings/SystemAppearancePage.vue";
 import SystemModelsPage from "@/settings/SystemModelsPage.vue";
 import SystemReposPage from "@/settings/SystemReposPage.vue";
@@ -45,6 +46,7 @@ const routes = [
   { path: "/system/tasks", name: "system-tasks", component: SystemTasksPage, meta: { label: "Task settings", description: "Work lifecycle: statuses, operator actions, and budgets.", section: "settings" } },
   { path: "/system/models", name: "system-models", component: SystemModelsPage, meta: { label: "Models", description: "Model roles and the providers backing them.", section: "settings" } },
   { path: "/system/repos", name: "system-repos", component: SystemReposPage, meta: { label: "Repositories", description: "Repositories Archie watches, and their per-repo gate overrides.", section: "settings" } },
+  { path: "/system/identities", name: "system-identities", component: SystemIdentitiesPage, meta: { label: "Identities", description: "Persistent actors and lifecycle.", section: "settings" } },
   { path: "/channels", name: "channels", component: ChannelsPage, meta: { label: "Channels", description: "Inbound chat and notification channels, and their state.", section: "channels" } },
   { path: "/system/advanced", name: "system-advanced", component: SystemAdvancedPage, meta: { label: "Advanced", description: "Identity, storage, sandboxing, and dangerous actions.", section: "settings" } },
   { path: "/settings", redirect: "/system/status", meta: { nav: false } },

@@ -5,13 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
-	"github.com/samcharles93/archie-core/internal/gate"
-	"github.com/samcharles93/archie-core/internal/gate/gateeval"
 )
 
 // Shared step library. Every workflow composes these; workflow-specific
@@ -32,12 +29,10 @@ const (
 )
 
 // changeStatsReader is the optional capability through which a Trees
-// implementation reports what an attempt changed. It is deliberately
-// unexported, and deliberately NOT a method on Trees: Trees is projected into
-// the interpreted-stage symbol table, so declaring it there would widen what
-// repository-authored .archie/stages/*.go may call (pinned by
-// wfextract/reachability_test.go). A Trees implementation without it degrades
-// to no capture rather than failing the stage.
+// implementation reports what an attempt changed. It stays separate from the
+// core Trees contract because capture is reporting, not workflow execution. A
+// Trees implementation without it degrades to no capture rather than failing
+// the stage.
 type changeStatsReader interface {
 	ChangedFileStats(ctx context.Context, dir, base string) (task.ChangeStats, error)
 }
@@ -209,78 +204,30 @@ func StageDiffCap() Stage {
 	}}
 }
 
-// StageRepoStages runs every custom stage the repo defines under
-// .archie/stages/*.go (Yaegi-interpreted via TaskContext.CustomStages),
-// in the order the loader returns them  --  a no-op when no loader is wired
-// up or the repo defines none. A custom stage that sets tc.Outcome ends
-// the workflow there, same as any built-in stage.
+// StageRepoStages rejects obsolete repository-authored Go stages.
 func StageRepoStages() Stage {
-	return Stage{Name: "repo-stages", Run: func(ctx context.Context, tc *TaskContext) error {
-		if tc.CustomStages == nil {
-			return nil
-		}
-		stages, err := tc.CustomStages(tc.Dir)
+	return Stage{Name: "repo-stages", Run: func(_ context.Context, tc *TaskContext) error {
+		stages, err := filepath.Glob(filepath.Join(tc.Dir, ".archie", "stages", "*.go"))
 		if err != nil {
-			return fmt.Errorf("repo stages: %w", err)
+			return fmt.Errorf("inspect legacy repository stages: %w", err)
 		}
-		for _, s := range stages {
-			tc.Log.Info("repo stage starting", "stage", s.Name)
-			if err := s.Run(ctx, tc); err != nil {
-				return fmt.Errorf("repo stage %s: %w", s.Name, err)
-			}
-			if tc.Outcome.Status != "" {
-				return nil
-			}
+		if len(stages) > 0 {
+			return fmt.Errorf("legacy .archie/stages/*.go is unsupported; migrate repository behavior to database-backed YAML workflow steps")
 		}
 		return nil
 	}}
 }
 
-// StageYaegiGate evaluates the repo's optional .archie/gate.go  --  a
-// Yaegi-interpreted Go file inspecting the committed diff for
-// project-specific rules shell gate commands can't express (AST checks,
-// diff scanning). A missing script is a no-op. Error-level findings
-// park the task; warn-level findings are logged only.
+// StageYaegiGate rejects the obsolete interpreted gate rather than silently
+// omitting behavior that cannot be represented by the typed registry.
 func StageYaegiGate() Stage {
-	return Stage{Name: "custom-gate", Run: func(ctx context.Context, tc *TaskContext) error {
-		base := tc.Repo.BaseBranch()
-		diff, err := tc.Trees.Diff(ctx, tc.Dir, base)
-		if err != nil {
-			return fmt.Errorf("custom gate: diff against %s: %w", base, err)
+	return Stage{Name: "custom-gate", Run: func(_ context.Context, tc *TaskContext) error {
+		_, err := os.Stat(filepath.Join(tc.Dir, ".archie", "gate.go"))
+		if err == nil {
+			return fmt.Errorf("legacy .archie/gate.go is unsupported; migrate its behavior to a registered YAML workflow step")
 		}
-		files, err := tc.Trees.ChangedFiles(ctx, tc.Dir, base)
-		if err != nil {
-			return fmt.Errorf("custom gate: changed files against %s: %w", base, err)
-		}
-
-		findings, err := gateeval.Evaluate(gate.GateContext{
-			Diff:         diff,
-			ChangedFiles: files,
-			Dir:          tc.Dir,
-			BaseRef:      "origin/" + base,
-			Repo:         tc.Repo.FullName(),
-		})
-		if err != nil {
-			return fmt.Errorf("custom gate: %w", err)
-		}
-
-		var blocking []string
-		for _, f := range findings {
-			if err := f.Validate(); err != nil {
-				return fmt.Errorf("custom gate: %w", err)
-			}
-			loc := f.File
-			if f.Line > 0 {
-				loc = fmt.Sprintf("%s:%d", f.File, f.Line)
-			}
-			msg := strings.TrimSpace(loc + ": " + f.Message)
-			if f.Blocking() {
-				blocking = append(blocking, msg)
-			}
-			tc.Log.Info("custom gate finding", "level", f.Level, "file", f.File, "line", f.Line, "message", f.Message)
-		}
-		if len(blocking) > 0 {
-			return fmt.Errorf("custom gate: %s", strings.Join(blocking, "; "))
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("inspect legacy .archie/gate.go: %w", err)
 		}
 		return nil
 	}}

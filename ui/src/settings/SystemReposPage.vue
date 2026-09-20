@@ -1,24 +1,22 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { computed, onMounted } from "vue";
+import { storeToRefs } from "pinia";
 
 import PageHeader from "@/base/PageHeader.vue";
-import { useLiveResource } from "@/stores/live-updates";
-import ConfigUnavailable from "./ConfigUnavailable.vue";
-import RepositoriesCard from "./RepositoriesCard.vue";
-import { configUnavailable, loadConfig } from "./state";
+import { resourcesForPage, useControlPlaneStore } from "@/stores/control-plane";
+import StructuredResourceCard from "./StructuredResourceCard.vue";
 
-/**
- * The repositories Archie watches, and the gate overrides each one carries.
- */
-useLiveResource(null, () => void loadConfig());
-onMounted(loadConfig);
+const controlPlane = useControlPlaneStore();
+const { catalog, catalogError } = storeToRefs(controlPlane);
+const resources = computed(() => resourcesForPage(catalog.value, "repositories"));
+onMounted(controlPlane.load);
 </script>
 
 <template>
   <div>
     <PageHeader title="Repositories" />
 
-    <ConfigUnavailable v-if="configUnavailable" />
-    <RepositoriesCard v-else />
+    <p v-if="catalogError" class="text-sm text-destructive" role="alert">{{ catalogError }}</p>
+    <StructuredResourceCard v-for="descriptor in resources" :key="descriptor.kind" :descriptor="descriptor" root-path="repositories" />
   </div>
 </template>

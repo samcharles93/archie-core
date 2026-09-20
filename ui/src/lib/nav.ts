@@ -42,19 +42,18 @@ interface GroupSpec {
 }
 
 const groups: GroupSpec[] = [
-  { label: "Work", paths: ["/tasks", "/workflows"] },
+  { label: "Work", paths: ["/tasks", "/workflows", "/channels", "/logs"] },
   { label: "Agent", paths: ["/skills", "/curators"] },
   { label: "Events", paths: ["/captures", "/mappings", "/bindings"] },
   {
     label: "System",
     paths: [
       "/system/status",
-      "/logs",
       "/system/appearance",
       "/system/tasks",
       "/system/models",
       "/system/repos",
-      "/channels",
+      "/system/identities",
       "/system/advanced",
     ],
     dividerBefore: { path: "/system/tasks", label: "Settings" },

@@ -1,27 +1,22 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { computed, onMounted } from "vue";
+import { storeToRefs } from "pinia";
 
 import PageHeader from "@/base/PageHeader.vue";
-import { useLiveResource } from "@/stores/live-updates";
-import ConfigSections from "./ConfigSections.vue";
-import ConfigUnavailable from "./ConfigUnavailable.vue";
+import { Button } from "@/components/ui/button";
+import { resourcesForPage, useControlPlaneStore } from "@/stores/control-plane";
+import ConfigCard from "./ConfigCard.vue";
 import DangerousActionsCard from "./DangerousActionsCard.vue";
-import { ADVANCED_SECTIONS } from "./sections";
-import { configUnavailable, loadConfig, loadDangerous } from "./state";
+import StructuredResourceCard from "./StructuredResourceCard.vue";
+import { loadDangerous } from "./state";
 
-/**
- * The settings that change where archied keeps its state and how it isolates
- * task execution, who it is on the forge, and the actions that need explicit
- * approval before they run.
- *
- * These are the fields with the longest reach: identity is what commits are
- * attributed to, and the container fields decide what the agent runs in.
- */
+const controlPlane = useControlPlaneStore();
+const { catalog, catalogError } = storeToRefs(controlPlane);
+const resources = computed(() => resourcesForPage(catalog.value, "advanced"));
 async function load(): Promise<void> {
-  await Promise.all([loadConfig(), loadDangerous()]);
+  await Promise.all([controlPlane.load(), loadDangerous()]);
 }
 
-useLiveResource(null, () => void load());
 onMounted(load);
 </script>
 
@@ -29,10 +24,15 @@ onMounted(load);
   <div>
     <PageHeader title="Advanced" />
 
-    <ConfigUnavailable v-if="configUnavailable" />
-    <ConfigSections v-else :ids="ADVANCED_SECTIONS" />
-    <!-- Dangerous actions come from the daemon's own endpoint, not the config
-         projection, so a config that failed to load does not hide them. -->
+    <p v-if="catalogError" class="text-sm text-destructive" role="alert">{{ catalogError }}</p>
+    <StructuredResourceCard v-for="descriptor in resources" :key="descriptor.kind" :descriptor="descriptor" />
+    <ConfigCard title="Managed elsewhere">
+      <div class="flex flex-wrap gap-2">
+        <Button as-child variant="outline"><RouterLink to="/captures">Captured events</RouterLink></Button>
+        <Button as-child variant="outline"><RouterLink to="/mappings">Capture mappings</RouterLink></Button>
+        <Button as-child variant="outline"><RouterLink to="/bindings">Capture bindings</RouterLink></Button>
+      </div>
+    </ConfigCard>
     <DangerousActionsCard />
   </div>
 </template>

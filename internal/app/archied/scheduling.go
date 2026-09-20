@@ -2,11 +2,12 @@ package archied
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"time"
 
+	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/domain/scheduling"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/gateway"
@@ -68,16 +69,7 @@ func (b *boot) setupScheduling() error {
 		return nil
 	}
 
-	storePath := filepath.Join(filepath.Dir(b.cfg.DBPath), "cron", "jobs.json")
-	store, err := cronstore.Open(storePath)
-	if err != nil {
-		return fmt.Errorf("scheduling: open job store: %w", err)
-	}
-	b.addCleanup(func() {
-		if err := store.Close(); err != nil {
-			b.log.Error("scheduling store close", "err", err)
-		}
-	})
+	store := scheduleResourceStore{client: b.controlPlane}
 
 	workflowRunner, err := crondelivery.NewWorkflowTask(store, spawnTaskSubmitter{creator: b.chatTasks, identity: b.defaultChatIdentity})
 	if err != nil {
@@ -95,6 +87,76 @@ func (b *boot) setupScheduling() error {
 	b.schedulingEngine = engine
 	b.addCleanup(shutdownSchedulingEngine(engine, b.log))
 	return nil
+}
+
+type scheduleResourceStore struct {
+	client *controlplane.Client
+}
+
+func (s scheduleResourceStore) Get(ctx context.Context, id string) (cronstore.JobSpec, bool, error) {
+	jobs, _, err := s.client.Schedules(ctx)
+	if err != nil {
+		return cronstore.JobSpec{}, false, err
+	}
+	for _, job := range jobs {
+		if job.ID == id {
+			return job, true, nil
+		}
+	}
+	return cronstore.JobSpec{}, false, nil
+}
+
+func (s scheduleResourceStore) Due(ctx context.Context, now time.Time) ([]scheduling.Job, error) {
+	jobs, _, err := s.client.Schedules(ctx)
+	if err != nil {
+		return nil, err
+	}
+	due := make([]scheduling.Job, 0, len(jobs))
+	for _, job := range jobs {
+		if !job.NextRun.After(now) {
+			due = append(due, scheduling.Job{ID: job.ID, Pool: scheduling.Pool(job.Pool), Detail: job.Detail})
+		}
+	}
+	return due, nil
+}
+
+func (s scheduleResourceStore) MarkRun(ctx context.Context, id string, runAt time.Time) error {
+	for range 4 {
+		jobs, version, err := s.client.Schedules(ctx)
+		if err != nil {
+			return err
+		}
+		found := false
+		for index := range jobs {
+			if jobs[index].ID != id {
+				continue
+			}
+			found = true
+			if jobs[index].Schedule.Resolved().Kind == cronstore.ScheduleOnce {
+				jobs = append(jobs[:index], jobs[index+1:]...)
+				break
+			}
+			next, nextErr := jobs[index].Schedule.NextRun(runAt)
+			if nextErr != nil {
+				return nextErr
+			}
+			at := runAt.UTC()
+			jobs[index].LastRun = &at
+			jobs[index].NextRun = next.UTC()
+			break
+		}
+		if !found {
+			return fmt.Errorf("%w: id %q", cronstore.ErrJobNotFound, id)
+		}
+		_, err = s.client.ReplaceSchedules(ctx, jobs, version, "system:scheduler", "scheduler", fmt.Sprintf("schedule-run:%s:%d", id, runAt.UnixNano()))
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, controlplane.ErrVersionConflict) {
+			return err
+		}
+	}
+	return controlplane.ErrVersionConflict
 }
 
 // shutdownSchedulingEngine returns a cleanup that stops the ticker engine.

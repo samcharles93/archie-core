@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package controlplane.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service ControlPlaneService {
+  rpc Catalog(CatalogRequest) returns (CatalogResponse);
+  rpc Query(QueryRequest) returns (QueryResponse);
+  rpc Command(CommandRequest) returns (CommandResponse);
+  rpc Watch(WatchRequest) returns (stream WatchResponse);
+}
+
+message ResourceDescriptor {
+  string kind = 1;
+  string title = 2;
+  string schema_json = 3;
+  repeated string commands = 4;
+  // ApplyMode is "live", "restart-required", or "domain-managed".
+  string apply_mode = 5;
+  // QueryService and command_service identify an existing domain API when
+  // the resource is not stored as a generic JSON document.
+  string query_service = 6;
+  string command_service = 7;
+  // DefaultsJson is the factory value a client can restore this resource to.
+  // Empty when the resource has no shipped default.
+  string defaults_json = 8;
+}
+message CatalogRequest {}
+message CatalogResponse { repeated ResourceDescriptor resources = 1; }
+
+message Resource {
+  string kind = 1;
+  int64 version = 2;
+  bytes value_json = 3;
+  google.protobuf.Timestamp updated_at = 4;
+}
+message QueryRequest { string kind = 1; }
+message QueryResponse { Resource resource = 1; }
+
+message CommandRequest {
+  string kind = 1;
+  string command = 2;
+  bytes value_json = 3;
+  int64 expected_version = 4;
+  string request_id = 5;
+  // Actor and source are supplied by a trusted service adapter, never copied
+  // from browser/request JSON.
+  string actor = 6;
+  string source = 7;
+}
+message CommandResponse { Resource resource = 1; }
+
+message WatchRequest {
+  string kind = 1;
+  int64 after_version = 2;
+}
+message WatchResponse {
+  Resource resource = 1;
+  string error = 2;
+}

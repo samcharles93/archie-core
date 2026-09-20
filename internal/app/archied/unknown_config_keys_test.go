@@ -50,3 +50,16 @@ func TestLoadConfigDoesNotWarnOnAKnownConfig(t *testing.T) {
 		t.Errorf("unexpected warning for a config with no unknown keys: %s", out)
 	}
 }
+
+func TestLoadConfigMakesRuntimeSettingsAvailableBeforeSubsystemSetup(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	writeConfig(t, path, minimalConfigTOML("widget"))
+	b := &boot{log: slog.Default()}
+
+	if err := b.loadConfig(t.Context(), path, "", true); err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if b.cfgHolder == nil {
+		t.Fatal("runtime config holder is nil before control-plane settings load")
+	}
+}

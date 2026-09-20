@@ -20,6 +20,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
 	"github.com/samcharles93/archie-core/internal/domain/curator"
+	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
@@ -177,6 +178,10 @@ type Daemon struct {
 	// When non-empty, Run() starts one goroutine per identity instead of
 	// using the single-identity Forge/Trees/Cfg.Repos path.
 	Identities []*IdentityRunner
+	// IdentityRepository is the durable lifecycle authority. Polling checks it
+	// every cycle so suspend/reactivate commands do not require a restart.
+	IdentityRepository identity.Repository
+	RootIdentityID     identity.IdentityID
 
 	// Guardrails is the tool-call guardrail engine, wired by the composition
 	// root. When non-nil, tool successes and failures are recorded and
@@ -191,6 +196,11 @@ type Daemon struct {
 	// bindings the daemon loaded; nil means built-in defaults.
 	KindWorkflows  workflow.KindWorkflows
 	LabelWorkflows workflow.LabelWorkflows
+	// WorkflowDefinitions supplies the active database definitions. A task is
+	// pinned once before dispatch; retries reuse the task's stored YAML.
+	WorkflowDefinitions interface {
+		WorkflowDefinitions(context.Context) (workflow.WorkflowDefinitionCollection, int64, error)
+	}
 
 	// ToolRegistry is the central tool registry, wired by the composition
 	// root. MCP-discovered tools and built-in tools are registered here
@@ -222,6 +232,7 @@ type Daemon struct {
 // own forge client, worktree manager, repo list, and config  --  but shares
 // the store, NATS connection, container pool, and event bus with siblings.
 type IdentityRunner struct {
+	ID    identity.IdentityID
 	Name  string
 	Forge forge.Forge
 	Trees *worktree.Manager
@@ -240,6 +251,7 @@ func NewIdentityRunner(ctx context.Context, idCfg config.IdentityConfig, fg forg
 		return nil, fmt.Errorf("identity name is required")
 	}
 	return &IdentityRunner{
+		ID:    identity.StableID(idCfg.Name),
 		Name:  idCfg.Name,
 		Forge: fg,
 		Trees: trees,
@@ -440,6 +452,9 @@ func (d *Daemon) runIdentities(ctx context.Context) error {
 // drains or reconciles  --  those are store-wide and run in the shared
 // maintainAndDrain loop.
 func (d *Daemon) pollForIdentity(ctx context.Context, id *IdentityRunner) {
+	if !d.identityActive(ctx, id.ID) {
+		return
+	}
 	d.markPoll()
 	cfg := configForIdentity(d.Cfg.Get(), id.Cfg)
 	for _, repo := range id.Repos {
@@ -447,7 +462,7 @@ func (d *Daemon) pollForIdentity(ctx context.Context, id *IdentityRunner) {
 		for _, is := range issues {
 			labels := strings.Join(is.Labels, ",")
 			if d.Tasks != nil {
-				d.pollNATS(ctx, id.Forge, cfg, repo, is, labels, id.Name)
+				d.pollNATS(ctx, id.Forge, cfg, repo, is, labels, string(id.ID))
 			}
 		}
 	}
@@ -873,6 +888,9 @@ func (d *taskDispatcher) Wait() {
 }
 
 func (d *Daemon) poll(ctx context.Context) {
+	if !d.identityActive(ctx, d.RootIdentityID) {
+		return
+	}
 	d.markPoll()
 	for _, repo := range d.Cfg.Get().Repos {
 		issues := d.pollIssues(ctx, repo)
@@ -1394,15 +1412,21 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo conf
 	cfg := d.configFor(task)
 	taskCfg := cfg.ForTask()
 	d.captureAttemptConfig(ctx, task, taskCfg)
+	if err := d.pinWorkflowDefinition(ctx, task); err != nil {
+		d.Log.Error("pin workflow definition failed", "task", task.ID, "err", err)
+		d.parkRunningTask(ctx, task.ID, "pin workflow definition: "+err.Error())
+		return
+	}
 	req := taskrun.Request{
-		Task:           task,
-		Repo:           repo,
-		Cfg:            taskCfg,
-		Providers:      agentexec.ProvidersFromConfig(cfg.Providers),
-		MCPServers:     cfg.Tools.MCPServers,
-		WorktreeGrant:  grant,
-		KindWorkflows:  d.KindWorkflows,
-		LabelWorkflows: d.LabelWorkflows,
+		Task:               task,
+		Repo:               repo,
+		Cfg:                taskCfg,
+		Providers:          agentexec.ProvidersFromConfig(cfg.Providers),
+		MCPServers:         cfg.Tools.MCPServers,
+		WorktreeGrant:      grant,
+		KindWorkflows:      d.KindWorkflows,
+		LabelWorkflows:     d.LabelWorkflows,
+		WorkflowDefinition: task.WorkflowDefinitionYAML,
 	}
 	data, err := json.Marshal(req)
 	if err != nil {
@@ -1439,6 +1463,46 @@ func (d *Daemon) runViaAgent(ctx context.Context, task *workflow.Task, repo conf
 	}
 
 	d.Log.Info("taskrun complete", "task", task.ID, "status", resp.Status)
+}
+
+func (d *Daemon) pinWorkflowDefinition(ctx context.Context, task *workflow.Task) error {
+	if task.WorkflowDefinitionYAML != "" {
+		if workflow.DigestDefinition(task.WorkflowDefinitionYAML) != task.WorkflowDefinitionDigest {
+			return fmt.Errorf("stored workflow definition digest mismatch")
+		}
+		return nil
+	}
+	if d.WorkflowDefinitions == nil {
+		return d.pinWorkflowFromCollection(ctx, task, workflow.ShippedDefinitions(), 0)
+	}
+	collection, version, err := d.WorkflowDefinitions.WorkflowDefinitions(ctx)
+	if err != nil {
+		return err
+	}
+	return d.pinWorkflowFromCollection(ctx, task, collection, version)
+}
+
+func (d *Daemon) pinWorkflowFromCollection(ctx context.Context, task *workflow.Task, collection workflow.WorkflowDefinitionCollection, version int64) error {
+	available := make(map[string]struct{}, len(collection.Definitions))
+	for _, definition := range collection.Definitions {
+		available[definition.ID] = struct{}{}
+	}
+	id, err := workflow.ResolveWorkflowID(task, available, d.KindWorkflows, d.LabelWorkflows)
+	if err != nil {
+		return err
+	}
+	definition, ok := collection.DefinitionByID(id)
+	if !ok {
+		return fmt.Errorf("workflow definition %q disappeared", id)
+	}
+	task.Workflow = id
+	task.WorkflowDefinitionVersion = version
+	task.WorkflowDefinitionYAML = definition.YAML
+	task.WorkflowDefinitionDigest = workflow.DigestDefinition(definition.YAML)
+	if err := d.Store.Update(ctx, task); err != nil {
+		return fmt.Errorf("persist workflow definition pin: %w", err)
+	}
+	return nil
 }
 
 const (
@@ -1636,11 +1700,27 @@ func (d *Daemon) identityFor(task *workflow.Task) *IdentityRunner {
 		return nil
 	}
 	for _, id := range d.Identities {
-		if id.Name == task.Identity {
+		if id.Name == task.Identity || string(id.ID) == task.Identity {
 			return id
 		}
 	}
 	return nil
+}
+
+func (d *Daemon) identityActive(ctx context.Context, id identity.IdentityID) bool {
+	if d.IdentityRepository == nil {
+		return true
+	}
+	if id == "" {
+		d.Log.Error("identity lifecycle check failed", "err", "identity ID is empty")
+		return false
+	}
+	value, err := d.IdentityRepository.Get(ctx, id)
+	if err != nil {
+		d.Log.Error("identity lifecycle check failed", "identity", id, "err", err)
+		return false
+	}
+	return value.Lifecycle == identity.LifecycleActive
 }
 
 // forgeFor returns the forge client that owns task: the identity's own

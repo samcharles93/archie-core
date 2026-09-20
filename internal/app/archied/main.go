@@ -347,7 +347,7 @@ func parseArgs() (runArgs, bool) {
 	return args, false
 }
 
-func Run() int { //nolint:cyclop // the composition root's setup sequence is deliberately flat and sequential
+func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence is deliberately flat and sequential
 	args, exit := parseArgs()
 	if exit {
 		return 0
@@ -390,6 +390,14 @@ func Run() int { //nolint:cyclop // the composition root's setup sequence is del
 	if err := b.openStateStoreAdapter(); err != nil {
 		return 1
 	}
+	if err := b.loadRuntimeConfig(ctx); err != nil {
+		b.log.Error("runtime settings unavailable", "err", err)
+		return 1
+	}
+	if err := b.startWorkflowExecutionSettings(ctx); err != nil {
+		b.log.Error("workflow execution settings unavailable", "err", err)
+		return 1
+	}
 	if exit, err := b.handleRequeue(ctx, args.requeue, args.once); err != nil {
 		return 1
 	} else if exit {
@@ -402,7 +410,7 @@ func Run() int { //nolint:cyclop // the composition root's setup sequence is del
 		return 1
 	}
 
-	if err := b.setupLLMAndChat(); err != nil {
+	if err := b.setupLLMAndChat(ctx); err != nil {
 		return 1
 	}
 	if err := b.buildTreesAndIdentities(ctx); err != nil {

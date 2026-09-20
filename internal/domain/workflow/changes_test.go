@@ -558,11 +558,8 @@ func TestBaselineFixCapturesItsOwnCommit(t *testing.T) {
 	}
 }
 
-// TestCaptureIsNeverCallableFromTrees makes the constraint explicit in code,
-// next to the type that must not grow past it: the capture is an optional,
-// unexported capability, and Trees -- the surface interpreted stage code is
-// handed -- must not name it. wfextract's reachability test proves the same
-// thing from the interpreted side.
+// TestCaptureIsNeverCallableFromTrees keeps capture reporting out of the core
+// workflow execution contract.
 func TestCaptureIsNeverCallableFromTrees(t *testing.T) {
 	if _, ok := any((*fakeTrees)(nil)).(changeStatsReader); ok {
 		t.Error("fakeTrees satisfies the capture capability; the degrade test above would be vacuous")

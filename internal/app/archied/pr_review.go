@@ -29,6 +29,10 @@ type prReviewer struct {
 	models    map[string]string
 	providers map[string]agentexec.Provider
 	maxSteps  int
+	// currentMaxSteps lets the composition root apply live control-plane
+	// versions to reviews that have not started yet. Tests and direct
+	// constructions retain maxSteps as the fallback.
+	currentMaxSteps func() int
 	// allowed maps a chat identity to the "owner/name" repos it may review.
 	// A nil identity is an authenticated dashboard operator, who may review
 	// any configured repository.
@@ -100,11 +104,15 @@ func (r *prReviewer) ReviewPR(ctx context.Context, identity *string, repo string
 		return gateway.PRReviewResult{}, fmt.Errorf("snapshot PR head: %w", err)
 	}
 
+	maxSteps := r.maxSteps
+	if r.currentMaxSteps != nil {
+		maxSteps = r.currentMaxSteps()
+	}
 	report := reviewer.Review(ctx, workflow.ReviewRequest{
 		SnapshotDir: snapshotDir,
 		Diff:        diff,
 		IssueText:   prIssueText(pr),
-		MaxSteps:    r.maxSteps,
+		MaxSteps:    maxSteps,
 	})
 	r.logReview(key, model, report)
 	return mapReviewResult(repo, number, model, report), nil
@@ -246,14 +254,22 @@ func (b *boot) prReviewer() gateway.ChatPRReviewer {
 	if forgeReader == nil {
 		return nil
 	}
-	b.chatPRReviewer = &prReviewer{
+	maxSteps := b.cfg.Budgets.MaxSteps
+	if b.cfgHolder != nil {
+		maxSteps = b.cfgHolder.Get().Budgets.MaxSteps
+	}
+	review := &prReviewer{
 		forge:     forgeReader,
 		trees:     b.trees,
 		models:    b.cfg.Models,
 		providers: executionProviders(b.cfg),
-		maxSteps:  b.cfg.Budgets.MaxSteps,
+		maxSteps:  maxSteps,
 		allowed:   buildReviewAllowlist(b.cfg),
 		log:       b.log,
 	}
+	if b.cfgHolder != nil {
+		review.currentMaxSteps = func() int { return b.cfgHolder.Get().Budgets.MaxSteps }
+	}
+	b.chatPRReviewer = review
 	return b.chatPRReviewer
 }

@@ -42,6 +42,7 @@ var dashboardPages = []DashboardPage{
 	{Path: "/system/tasks", Label: "Task settings", Description: "Work lifecycle: statuses, operator actions, and budgets."},
 	{Path: "/system/models", Label: "Models", Description: "Model roles and the providers backing them."},
 	{Path: "/system/repos", Label: "Repositories", Description: "Repositories Archie watches, and their per-repo gate overrides."},
+	{Path: "/system/identities", Label: "Identities", Description: "Persistent actors and lifecycle."},
 	{Path: "/system/advanced", Label: "Advanced", Description: "Identity, storage, sandboxing, and dangerous actions."},
 }
 

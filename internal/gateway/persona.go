@@ -3,9 +3,11 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
+	"github.com/samcharles93/archie-core/internal/domain/agent"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 )
 
@@ -43,20 +45,12 @@ func NewPersonaRegistry(personas []Persona) *PersonaRegistry {
 // DefaultPersonas returns Archie as the baseline identity followed by
 // optional communication styles.
 func DefaultPersonas() []Persona {
-	return []Persona{
-		{
-			Name: "archie",
-			Prompt: "You are Archie, a capable coding and project assistant. " +
-				"Be direct without being brusque, grounded in the actual workspace state, and use available tools when asked. " +
-				"Do not claim tools, files, memories, actions, or results you have not verified. " +
-				"Do not impersonate another assistant, provider, or vendor.",
-		},
-		{Name: "helpful", Prompt: "You are a helpful, friendly AI assistant."},
-		{Name: "concise", Prompt: "You are a concise assistant. Keep responses brief and to the point."},
-		{Name: "technical", Prompt: "You are a technical expert. Provide detailed, accurate technical information."},
-		{Name: "creative", Prompt: "You are a creative assistant. Think outside the box and offer innovative solutions."},
-		{Name: "teacher", Prompt: "You are a patient teacher. Explain concepts clearly with examples."},
+	shipped := agent.ShippedPersonas()
+	personas := make([]Persona, 0, len(shipped.Personas))
+	for _, persona := range shipped.Personas {
+		personas = append(personas, Persona{Name: persona.Name, Prompt: persona.Prompt})
 	}
+	return personas
 }
 
 // List returns all available persona names.
@@ -67,7 +61,26 @@ func (r *PersonaRegistry) List() []string {
 	for _, p := range r.personas {
 		names = append(names, p.Name)
 	}
+	sort.Strings(names)
 	return names
+}
+
+// Replace atomically changes the available definitions. Sessions whose
+// selection no longer exists use the new default.
+func (r *PersonaRegistry) Replace(personas []Persona, defaultName string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	next := make(map[string]Persona, len(personas))
+	for _, persona := range personas {
+		next[persona.Name] = persona
+	}
+	for session, name := range r.active {
+		if _, exists := next[name]; !exists {
+			delete(r.active, session)
+		}
+	}
+	r.personas = next
+	r.defaultName = defaultName
 }
 
 // SetActive sets the active persona for a session.

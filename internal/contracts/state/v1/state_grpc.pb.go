@@ -21,6 +21,13 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	StateStoreService_RegisterTaskGrant_FullMethodName          = "/state.v1.StateStoreService/RegisterTaskGrant"
 	StateStoreService_RevokeTaskGrant_FullMethodName            = "/state.v1.StateStoreService/RevokeTaskGrant"
+	StateStoreService_ListIdentities_FullMethodName             = "/state.v1.StateStoreService/ListIdentities"
+	StateStoreService_GetIdentity_FullMethodName                = "/state.v1.StateStoreService/GetIdentity"
+	StateStoreService_CreateIdentity_FullMethodName             = "/state.v1.StateStoreService/CreateIdentity"
+	StateStoreService_RenameIdentity_FullMethodName             = "/state.v1.StateStoreService/RenameIdentity"
+	StateStoreService_SuspendIdentity_FullMethodName            = "/state.v1.StateStoreService/SuspendIdentity"
+	StateStoreService_ReactivateIdentity_FullMethodName         = "/state.v1.StateStoreService/ReactivateIdentity"
+	StateStoreService_RetireIdentity_FullMethodName             = "/state.v1.StateStoreService/RetireIdentity"
 	StateStoreService_EnqueueIssue_FullMethodName               = "/state.v1.StateStoreService/EnqueueIssue"
 	StateStoreService_EnqueueChatTask_FullMethodName            = "/state.v1.StateStoreService/EnqueueChatTask"
 	StateStoreService_ClaimNext_FullMethodName                  = "/state.v1.StateStoreService/ClaimNext"
@@ -84,6 +91,14 @@ type StateStoreServiceClient interface {
 	// Administrative task credential lifecycle. Worker credentials cannot call these.
 	RegisterTaskGrant(ctx context.Context, in *RegisterTaskGrantRequest, opts ...grpc.CallOption) (*RegisterTaskGrantResponse, error)
 	RevokeTaskGrant(ctx context.Context, in *RevokeTaskGrantRequest, opts ...grpc.CallOption) (*RevokeTaskGrantResponse, error)
+	// Identity domain. Task-scoped grants cannot call these administrative RPCs.
+	ListIdentities(ctx context.Context, in *ListIdentitiesRequest, opts ...grpc.CallOption) (*ListIdentitiesResponse, error)
+	GetIdentity(ctx context.Context, in *GetIdentityRequest, opts ...grpc.CallOption) (*GetIdentityResponse, error)
+	CreateIdentity(ctx context.Context, in *CreateIdentityRequest, opts ...grpc.CallOption) (*CreateIdentityResponse, error)
+	RenameIdentity(ctx context.Context, in *RenameIdentityRequest, opts ...grpc.CallOption) (*RenameIdentityResponse, error)
+	SuspendIdentity(ctx context.Context, in *SuspendIdentityRequest, opts ...grpc.CallOption) (*SuspendIdentityResponse, error)
+	ReactivateIdentity(ctx context.Context, in *ReactivateIdentityRequest, opts ...grpc.CallOption) (*ReactivateIdentityResponse, error)
+	RetireIdentity(ctx context.Context, in *RetireIdentityRequest, opts ...grpc.CallOption) (*RetireIdentityResponse, error)
 	// Lifecycle
 	EnqueueIssue(ctx context.Context, in *EnqueueIssueRequest, opts ...grpc.CallOption) (*EnqueueIssueResponse, error)
 	EnqueueChatTask(ctx context.Context, in *EnqueueChatTaskRequest, opts ...grpc.CallOption) (*EnqueueChatTaskResponse, error)
@@ -188,6 +203,76 @@ func (c *stateStoreServiceClient) RevokeTaskGrant(ctx context.Context, in *Revok
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RevokeTaskGrantResponse)
 	err := c.cc.Invoke(ctx, StateStoreService_RevokeTaskGrant_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ListIdentities(ctx context.Context, in *ListIdentitiesRequest, opts ...grpc.CallOption) (*ListIdentitiesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListIdentitiesResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ListIdentities_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) GetIdentity(ctx context.Context, in *GetIdentityRequest, opts ...grpc.CallOption) (*GetIdentityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetIdentityResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_GetIdentity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) CreateIdentity(ctx context.Context, in *CreateIdentityRequest, opts ...grpc.CallOption) (*CreateIdentityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateIdentityResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_CreateIdentity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) RenameIdentity(ctx context.Context, in *RenameIdentityRequest, opts ...grpc.CallOption) (*RenameIdentityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RenameIdentityResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_RenameIdentity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) SuspendIdentity(ctx context.Context, in *SuspendIdentityRequest, opts ...grpc.CallOption) (*SuspendIdentityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SuspendIdentityResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_SuspendIdentity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) ReactivateIdentity(ctx context.Context, in *ReactivateIdentityRequest, opts ...grpc.CallOption) (*ReactivateIdentityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReactivateIdentityResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_ReactivateIdentity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stateStoreServiceClient) RetireIdentity(ctx context.Context, in *RetireIdentityRequest, opts ...grpc.CallOption) (*RetireIdentityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RetireIdentityResponse)
+	err := c.cc.Invoke(ctx, StateStoreService_RetireIdentity_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -698,6 +783,14 @@ type StateStoreServiceServer interface {
 	// Administrative task credential lifecycle. Worker credentials cannot call these.
 	RegisterTaskGrant(context.Context, *RegisterTaskGrantRequest) (*RegisterTaskGrantResponse, error)
 	RevokeTaskGrant(context.Context, *RevokeTaskGrantRequest) (*RevokeTaskGrantResponse, error)
+	// Identity domain. Task-scoped grants cannot call these administrative RPCs.
+	ListIdentities(context.Context, *ListIdentitiesRequest) (*ListIdentitiesResponse, error)
+	GetIdentity(context.Context, *GetIdentityRequest) (*GetIdentityResponse, error)
+	CreateIdentity(context.Context, *CreateIdentityRequest) (*CreateIdentityResponse, error)
+	RenameIdentity(context.Context, *RenameIdentityRequest) (*RenameIdentityResponse, error)
+	SuspendIdentity(context.Context, *SuspendIdentityRequest) (*SuspendIdentityResponse, error)
+	ReactivateIdentity(context.Context, *ReactivateIdentityRequest) (*ReactivateIdentityResponse, error)
+	RetireIdentity(context.Context, *RetireIdentityRequest) (*RetireIdentityResponse, error)
 	// Lifecycle
 	EnqueueIssue(context.Context, *EnqueueIssueRequest) (*EnqueueIssueResponse, error)
 	EnqueueChatTask(context.Context, *EnqueueChatTaskRequest) (*EnqueueChatTaskResponse, error)
@@ -793,6 +886,27 @@ func (UnimplementedStateStoreServiceServer) RegisterTaskGrant(context.Context, *
 }
 func (UnimplementedStateStoreServiceServer) RevokeTaskGrant(context.Context, *RevokeTaskGrantRequest) (*RevokeTaskGrantResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RevokeTaskGrant not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ListIdentities(context.Context, *ListIdentitiesRequest) (*ListIdentitiesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListIdentities not implemented")
+}
+func (UnimplementedStateStoreServiceServer) GetIdentity(context.Context, *GetIdentityRequest) (*GetIdentityResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetIdentity not implemented")
+}
+func (UnimplementedStateStoreServiceServer) CreateIdentity(context.Context, *CreateIdentityRequest) (*CreateIdentityResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateIdentity not implemented")
+}
+func (UnimplementedStateStoreServiceServer) RenameIdentity(context.Context, *RenameIdentityRequest) (*RenameIdentityResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RenameIdentity not implemented")
+}
+func (UnimplementedStateStoreServiceServer) SuspendIdentity(context.Context, *SuspendIdentityRequest) (*SuspendIdentityResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SuspendIdentity not implemented")
+}
+func (UnimplementedStateStoreServiceServer) ReactivateIdentity(context.Context, *ReactivateIdentityRequest) (*ReactivateIdentityResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReactivateIdentity not implemented")
+}
+func (UnimplementedStateStoreServiceServer) RetireIdentity(context.Context, *RetireIdentityRequest) (*RetireIdentityResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RetireIdentity not implemented")
 }
 func (UnimplementedStateStoreServiceServer) EnqueueIssue(context.Context, *EnqueueIssueRequest) (*EnqueueIssueResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method EnqueueIssue not implemented")
@@ -985,6 +1099,132 @@ func _StateStoreService_RevokeTaskGrant_Handler(srv interface{}, ctx context.Con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StateStoreServiceServer).RevokeTaskGrant(ctx, req.(*RevokeTaskGrantRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ListIdentities_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListIdentitiesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ListIdentities(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ListIdentities_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ListIdentities(ctx, req.(*ListIdentitiesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_GetIdentity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetIdentityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).GetIdentity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_GetIdentity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).GetIdentity(ctx, req.(*GetIdentityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_CreateIdentity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateIdentityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).CreateIdentity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_CreateIdentity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).CreateIdentity(ctx, req.(*CreateIdentityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_RenameIdentity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RenameIdentityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).RenameIdentity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_RenameIdentity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).RenameIdentity(ctx, req.(*RenameIdentityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_SuspendIdentity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SuspendIdentityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).SuspendIdentity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_SuspendIdentity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).SuspendIdentity(ctx, req.(*SuspendIdentityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_ReactivateIdentity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReactivateIdentityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).ReactivateIdentity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_ReactivateIdentity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).ReactivateIdentity(ctx, req.(*ReactivateIdentityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StateStoreService_RetireIdentity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RetireIdentityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StateStoreServiceServer).RetireIdentity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StateStoreService_RetireIdentity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StateStoreServiceServer).RetireIdentity(ctx, req.(*RetireIdentityRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1810,6 +2050,34 @@ var StateStoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RevokeTaskGrant",
 			Handler:    _StateStoreService_RevokeTaskGrant_Handler,
+		},
+		{
+			MethodName: "ListIdentities",
+			Handler:    _StateStoreService_ListIdentities_Handler,
+		},
+		{
+			MethodName: "GetIdentity",
+			Handler:    _StateStoreService_GetIdentity_Handler,
+		},
+		{
+			MethodName: "CreateIdentity",
+			Handler:    _StateStoreService_CreateIdentity_Handler,
+		},
+		{
+			MethodName: "RenameIdentity",
+			Handler:    _StateStoreService_RenameIdentity_Handler,
+		},
+		{
+			MethodName: "SuspendIdentity",
+			Handler:    _StateStoreService_SuspendIdentity_Handler,
+		},
+		{
+			MethodName: "ReactivateIdentity",
+			Handler:    _StateStoreService_ReactivateIdentity_Handler,
+		},
+		{
+			MethodName: "RetireIdentity",
+			Handler:    _StateStoreService_RetireIdentity_Handler,
 		},
 		{
 			MethodName: "EnqueueIssue",

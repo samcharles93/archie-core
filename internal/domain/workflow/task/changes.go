@@ -8,15 +8,9 @@ package task
 // its base, so this is the only record of what an attempt actually changed.
 // Nothing re-derives it after the fact.
 //
-// The value types live in this subpackage rather than in package workflow or
-// internal/worktree, for two reasons that were checked rather than assumed.
-// Package workflow must never import internal/worktree -- it has no such
-// import today -- so a shared value cannot live there. And this subpackage is
-// not projected into the interpreted-stage symbol table (the generated
-// wfextract table names no type from here), whereas a new exported type in
-// package workflow would be reachable from repository-authored
-// `.archie/stages/*.go`. Declaring it here widens nothing and needs no
-// symbol-table regeneration.
+// The value types live in this subpackage because package workflow must not
+// import internal/worktree. Both the workflow engine and persistence boundary
+// can use the measurement without depending on git infrastructure.
 type ChangeStats struct {
 	BaseSHA string       `json:"base_sha"`
 	HeadSHA string       `json:"head_sha"`

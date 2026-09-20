@@ -19,10 +19,11 @@ import (
 )
 
 type deps struct {
-	Config ResolvedConfig
-	Log    *slog.Logger
-	Chat   messaging.ChatContract
-	Health *health.Registry
+	Config   ResolvedConfig
+	Log      *slog.Logger
+	Chat     messaging.ChatContract
+	Health   *health.Registry
+	Settings *messaging.SettingsCommand
 }
 
 type channelInstance struct {
@@ -63,6 +64,7 @@ func compose(ctx context.Context, d deps) (*Service, error) {
 				"Add your Telegram user id to chat.telegram.allowed_user_ids to enable the bot.")
 		}
 		tg := telegram.New(d.Config.TelegramToken, d.Config.Telegram.AllowedUserIDs, d.Log)
+		tg.Settings = d.Settings
 		configureTelegram(ctx, tg, d.Config, d.Chat, d.Log)
 		if err := srv.add("telegram", tg, telegramValidateConfigMap(d.Config.Telegram)); err != nil {
 			return nil, err

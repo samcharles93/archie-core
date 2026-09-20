@@ -55,7 +55,12 @@ func (s *Server) handleBindingCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if !s.hasWorkflow(req.Workflow) {
+	available, err := s.hasWorkflow(r.Context(), req.Workflow)
+	if err != nil {
+		http.Error(w, "workflow definitions unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if !available {
 		http.Error(w, "binding: workflow not found: "+req.Workflow, http.StatusBadRequest)
 		return
 	}
@@ -136,7 +141,12 @@ func (s *Server) handleBindingUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if !s.hasWorkflow(req.Workflow) {
+	available, err := s.hasWorkflow(r.Context(), req.Workflow)
+	if err != nil {
+		http.Error(w, "workflow definitions unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if !available {
 		http.Error(w, "binding: workflow not found: "+req.Workflow, http.StatusBadRequest)
 		return
 	}

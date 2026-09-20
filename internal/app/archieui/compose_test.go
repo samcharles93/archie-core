@@ -94,9 +94,6 @@ func TestComposeUIServerHoldsNoDaemonState(t *testing.T) {
 			t.Errorf("%s is wired; it is a daemon-owned callback or runtime handle with no contract behind it yet", name)
 		}
 	}
-	if srv.Workflows != nil {
-		t.Error("Workflows is wired; the definition catalog is a filesystem scan on the daemon host")
-	}
 	// Mappings and bindings are the other way round: ratified State Store
 	// contracts, carried by the client this process already holds, so
 	// leaving them nil would degrade two pages that have an owner.

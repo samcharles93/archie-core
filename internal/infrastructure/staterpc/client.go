@@ -8,8 +8,10 @@ import (
 
 	"google.golang.org/grpc"
 
+	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
+	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
@@ -22,14 +24,18 @@ import (
 // as gatewayrpc.Client asserts both messaging.ChatContract and
 // messaging.SessionStore. See docs/prds/state-store-contract.md §2.
 type Client struct {
-	client pb.StateStoreServiceClient
+	client       pb.StateStoreServiceClient
+	controlPlane controlpb.ControlPlaneServiceClient
 }
 
 // NewClient wraps conn's generated client. Close is a no-op: the store
 // service owns its own DB lifecycle (§11).
 func NewClient(conn grpc.ClientConnInterface) *Client {
-	return &Client{client: pb.NewStateStoreServiceClient(conn)}
+	return &Client{client: pb.NewStateStoreServiceClient(conn), controlPlane: controlpb.NewControlPlaneServiceClient(conn)}
 }
+
+// ControlPlane returns the generic control-plane RPC client on the same authenticated connection.
+func (c *Client) ControlPlane() controlpb.ControlPlaneServiceClient { return c.controlPlane }
 
 // Close is a no-op; the remote store service owns its own DB lifecycle.
 func (c *Client) Close() error { return nil }
@@ -44,6 +50,7 @@ var (
 	_ storecontract.BindingDispatcher   = (*Client)(nil)
 	_ storecontract.BindingTaskCreator  = (*Client)(nil)
 	_ storecontract.ConfigSnapshotStore = (*Client)(nil)
+	_ identity.Repository               = (*Client)(nil)
 )
 
 // Lifecycle

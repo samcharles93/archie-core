@@ -41,6 +41,8 @@ type Request struct {
 	// daemon to publish this task's already-prepared branch. Repository
 	// coordinates never cross back from the sandbox as authority.
 	WorktreeGrant string `json:"worktree_grant,omitempty"`
+	// WorkflowDefinition is the exact YAML pinned on Task before dispatch.
+	WorkflowDefinition string `json:"workflow_definition"`
 }
 
 // Validate rejects a full-task request that cannot be correlated to a real
@@ -54,6 +56,9 @@ func (r Request) Validate() error {
 	}
 	if r.WorktreeGrant == "" {
 		return errors.New("worktree grant is required")
+	}
+	if r.WorkflowDefinition == "" {
+		return errors.New("workflow definition is required")
 	}
 	return nil
 }

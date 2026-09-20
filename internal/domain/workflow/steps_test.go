@@ -2,7 +2,6 @@ package workflow
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -135,8 +134,8 @@ func Check(ctx gate.GateContext) []gate.Finding {
 	runGit(t, dir, "commit", "-m", "add notes")
 
 	tc := newYaegiGateTaskContext(t, dir)
-	if err := StageYaegiGate().Run(context.Background(), tc); err != nil {
-		t.Fatalf("StageYaegiGate() = %v, want nil (warn findings don't block)", err)
+	if err := StageYaegiGate().Run(context.Background(), tc); err == nil {
+		t.Fatal("StageYaegiGate() = nil, want legacy gate rejection")
 	}
 }
 
@@ -173,57 +172,25 @@ func TestStageRepoStagesNilLoaderIsNoop(t *testing.T) {
 }
 
 func TestStageRepoStagesRunsAllInOrder(t *testing.T) {
-	var ran []string
-	tc := &TaskContext{
-		Log: slog.New(slog.DiscardHandler),
-		CustomStages: func(string) ([]Stage, error) {
-			return []Stage{
-				{Name: "first", Run: func(context.Context, *TaskContext) error { ran = append(ran, "first"); return nil }},
-				{Name: "second", Run: func(context.Context, *TaskContext) error { ran = append(ran, "second"); return nil }},
-			}, nil
-		},
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".archie", "stages"), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	if err := StageRepoStages().Run(context.Background(), tc); err != nil {
-		t.Fatalf("StageRepoStages() = %v", err)
+	if err := os.WriteFile(filepath.Join(dir, ".archie", "stages", "first.go"), []byte("package stages"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if len(ran) != 2 || ran[0] != "first" || ran[1] != "second" {
-		t.Fatalf("ran = %v, want [first second]", ran)
+	tc := &TaskContext{Dir: dir, Log: slog.New(slog.DiscardHandler)}
+	if err := StageRepoStages().Run(context.Background(), tc); err == nil {
+		t.Fatal("StageRepoStages() = nil, want legacy stage rejection")
 	}
 }
 
 func TestStageRepoStagesStopsOnOutcome(t *testing.T) {
-	var ran []string
-	tc := &TaskContext{
-		Log: slog.New(slog.DiscardHandler),
-		CustomStages: func(string) ([]Stage, error) {
-			return []Stage{
-				{Name: "first", Run: func(_ context.Context, tc *TaskContext) error {
-					ran = append(ran, "first")
-					tc.Outcome = Outcome{Status: "parked", Detail: "stop here"}
-					return nil
-				}},
-				{Name: "second", Run: func(context.Context, *TaskContext) error { ran = append(ran, "second"); return nil }},
-			}, nil
-		},
-	}
-	if err := StageRepoStages().Run(context.Background(), tc); err != nil {
-		t.Fatalf("StageRepoStages() = %v", err)
-	}
-	if len(ran) != 1 || ran[0] != "first" {
-		t.Fatalf("ran = %v, want only [first] (second stage should not run after an outcome is set)", ran)
-	}
+	t.Skip("repository-authored stages are no longer executable")
 }
 
 func TestStageRepoStagesPropagatesLoaderError(t *testing.T) {
-	tc := &TaskContext{
-		Log: slog.New(slog.DiscardHandler),
-		CustomStages: func(string) ([]Stage, error) {
-			return nil, errors.New("boom")
-		},
-	}
-	if err := StageRepoStages().Run(context.Background(), tc); err == nil {
-		t.Fatal("StageRepoStages() = nil, want the loader's error propagated")
-	}
+	t.Skip("repository-authored stage loaders are no longer called")
 }
 
 // TestStageDiffCapUnlimitedWhenCapIsZero pins that an explicit 0 switches the

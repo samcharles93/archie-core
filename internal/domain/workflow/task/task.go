@@ -44,15 +44,22 @@ type Task struct {
 	Labels      string `json:"labels"` // comma-separated, as seen at enqueue time
 	Status      string `json:"status"`
 	Workflow    string `json:"workflow"`
-	Stage       string `json:"stage"`
-	Branch      string `json:"branch"`
-	Plan        string `json:"plan"`
-	Notes       string `json:"notes"`
-	PRNumber    int    `json:"pr_number"`
-	TokensUsed  int    `json:"tokens_used"`
-	Iterations  int    `json:"iterations"`
-	Attempt     int    `json:"attempt"`
-	ParkReason  string `json:"park_reason"`
+	// WorkflowDefinitionVersion and WorkflowDefinitionDigest pin the exact
+	// database definition selected for this execution. WorkflowDefinitionYAML
+	// is the immutable worker handoff; retries reuse it instead of re-reading
+	// the active control-plane resource.
+	WorkflowDefinitionVersion int64  `json:"workflow_definition_version"`
+	WorkflowDefinitionDigest  string `json:"workflow_definition_digest"`
+	WorkflowDefinitionYAML    string `json:"workflow_definition_yaml"`
+	Stage                     string `json:"stage"`
+	Branch                    string `json:"branch"`
+	Plan                      string `json:"plan"`
+	Notes                     string `json:"notes"`
+	PRNumber                  int    `json:"pr_number"`
+	TokensUsed                int    `json:"tokens_used"`
+	Iterations                int    `json:"iterations"`
+	Attempt                   int    `json:"attempt"`
+	ParkReason                string `json:"park_reason"`
 	// RetryCount tracks how many times a parked task has been retried
 	// (parking-to-queued transitions). When it reaches the configured
 	// max_retries the daemon moves the task to StatusDead.
@@ -124,9 +131,8 @@ type Store interface {
 // workflow) for the same reason this package exists: dashboards render
 // Definitions without linking the engine.
 type Definition struct {
-	ID      string   `json:"id"`
-	Name    string   `json:"name"`
-	Origin  string   `json:"origin"`
-	Enabled bool     `json:"enabled"`
-	Stages  []string `json:"stages"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Origin  string `json:"origin"`
+	Enabled bool   `json:"enabled"`
 }

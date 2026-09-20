@@ -45,11 +45,13 @@ func Run(ctx context.Context, options Options) error {
 	cleanups = append(cleanups, closeGateway)
 
 	srv := compose(deps{
-		Options: opts,
-		Log:     log,
-		Store:   tasks,
-		Chat:    chat,
-		Health:  newReadinessRegistry(opts, tasks, chat),
+		Options:      opts,
+		Log:          log,
+		Store:        tasks,
+		Chat:         chat,
+		Health:       newReadinessRegistry(opts, tasks, chat),
+		ControlPlane: tasks.ControlPlane(),
+		Identities:   tasks,
 	})
 
 	// Live activity has no in-process bus in this process: the pump reads

@@ -6,10 +6,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { api } from "@/lib/api";
 import { useLiveResource } from "@/stores/live-updates";
+import { useControlPlaneStore } from "@/stores/control-plane";
 import StartWorkForm from "./StartWorkForm.vue";
 import type { StageStats } from "./stages";
 import StagesSection from "./StagesSection.vue";
 import WorkflowTable from "./WorkflowTable.vue";
+import WorkflowDefinitionsCard from "./WorkflowDefinitionsCard.vue";
 import type { WorkflowDefinition, WorkflowStats } from "./workflow-rows";
 
 interface WorkflowsResponse {
@@ -22,6 +24,7 @@ const definitions = ref<WorkflowDefinition[]>([]);
 const workflows = ref<WorkflowStats[]>([]);
 const stages = ref<StageStats[]>([]);
 const error = ref<string | null>(null);
+const controlPlane = useControlPlaneStore();
 
 async function load() {
   try {
@@ -36,12 +39,14 @@ async function load() {
 }
 
 useLiveResource("tasks", () => void load(), 500);
-onMounted(load);
+onMounted(async () => { await Promise.all([load(), controlPlane.load()]); });
 </script>
 
 <template>
   <div>
     <PageHeader title="Workflows" />
+
+    <WorkflowDefinitionsCard />
 
     <!-- Starting work needs a definition to start: with none served, the form
          could only be submitted to fail. -->

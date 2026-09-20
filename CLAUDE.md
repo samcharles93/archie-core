@@ -50,6 +50,8 @@ domain migration.
   planning/refactor tracking issues.
 - **Solo Project Context:** Prefer the smallest workable change over extensive
   defensive scaffolding.
+- **PRD writing:** Read and follow `docs/prds/RULES.md` before creating or
+  editing a PRD.
 
 ## Deployment Model
 

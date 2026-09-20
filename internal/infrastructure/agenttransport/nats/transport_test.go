@@ -21,6 +21,8 @@ import (
 	"github.com/samcharles93/archie-core/internal/worktreerpc"
 )
 
+const testDefinition = "id: implement\nsteps: []\n"
+
 func TestTransportContainsNoSharedTaskWorkerTopology(t *testing.T) {
 	source, err := os.ReadFile("transport.go")
 	if err != nil {
@@ -111,7 +113,7 @@ func TestSubscribeTasksServesOnlyBootTaskSubject(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = subscription.Close() })
 
-	payload, err := json.Marshal(taskrun.Request{Task: &workflow.Task{ID: 42}, WorktreeGrant: "grant"})
+	payload, err := json.Marshal(taskrun.Request{Task: &workflow.Task{ID: 42}, WorktreeGrant: "grant", WorkflowDefinition: testDefinition})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,8 +153,9 @@ func TestSubscribeTasksOwnsWireErrors(t *testing.T) {
 		{name: "null task", payload: []byte(`{"task":null}`), want: "validate taskrun request: task is required"},
 		{name: "nonpositive task ID", payload: []byte(`{"task":{"id":0}}`), want: "validate taskrun request: task ID must be positive, got 0"},
 		{name: "missing worktree grant", payload: []byte(`{"task":{"id":9}}`), want: "validate taskrun request: worktree grant is required"},
-		{name: "payload subject mismatch", payload: []byte(`{"task":{"id":8},"worktree_grant":"grant"}`), want: "validate taskrun request: task ID 8 does not match subject task ID 9"},
-		{name: "handler", payload: []byte(`{"task":{"id":9},"worktree_grant":"grant"}`), want: "run failed", wantHandlerCalls: 1},
+		{name: "missing workflow definition", payload: []byte(`{"task":{"id":9},"worktree_grant":"grant"}`), want: "validate taskrun request: workflow definition is required"},
+		{name: "payload subject mismatch", payload: []byte(`{"task":{"id":8},"worktree_grant":"grant","workflow_definition":"id: implement\nsteps: []\n"}`), want: "validate taskrun request: task ID 8 does not match subject task ID 9"},
+		{name: "handler", payload: []byte(`{"task":{"id":9},"worktree_grant":"grant","workflow_definition":"id: implement\nsteps: []\n"}`), want: "run failed", wantHandlerCalls: 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			before := handlerCalls
@@ -213,7 +216,7 @@ func TestHandleTaskRejectsSubjectCorrelationErrors(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			payload, err := json.Marshal(taskrun.Request{Task: &workflow.Task{ID: test.requestID}, WorktreeGrant: "grant"})
+			payload, err := json.Marshal(taskrun.Request{Task: &workflow.Task{ID: test.requestID}, WorktreeGrant: "grant", WorkflowDefinition: testDefinition})
 			if err != nil {
 				t.Fatal(err)
 			}

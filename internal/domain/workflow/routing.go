@@ -282,6 +282,41 @@ func workflowForLabels(reg Registry, labels string) (Workflow, bool) {
 	return Workflow{}, false
 }
 
+// ResolveWorkflowID deterministically selects a definition without compiling
+// or executing it. It is used before worker dispatch to pin the exact YAML.
+func ResolveWorkflowID(t *Task, available map[string]struct{}, kinds KindWorkflows, labels LabelWorkflows) (string, error) {
+	if t.Workflow != "" {
+		if _, ok := available[t.Workflow]; ok {
+			return t.Workflow, nil
+		}
+		return "", fmt.Errorf("workflow %q is not defined", t.Workflow)
+	}
+	for _, label := range workintake.SplitLabels(t.Labels) {
+		if id := labels[label]; id != "" {
+			if _, ok := available[id]; ok {
+				return id, nil
+			}
+		}
+	}
+	if kinds == nil {
+		kinds = defaultKindWorkflows
+	}
+	for _, kind := range workintake.KindsForLabels(workintake.SplitLabels(t.Labels)) {
+		if id := kinds[kind]; id != "" {
+			if _, ok := available[id]; ok {
+				return id, nil
+			}
+		}
+	}
+	if _, ok := available["triage"]; ok {
+		return "triage", nil
+	}
+	if _, ok := available["implement"]; ok {
+		return "implement", nil
+	}
+	return "", fmt.Errorf("no routable workflow definition")
+}
+
 // LabelWorkflows maps a forge issue label to the registered workflow name
 // it prefers. This is the second slice of docs/prds/eda-playbook-engine.md:
 // the label vocabulary itself -- not just the closed bug/feature/bootstrap

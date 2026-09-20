@@ -16,10 +16,11 @@ import (
 	"sync"
 
 	"github.com/samcharles93/archie-core/internal/channels/status"
+	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/health"
+	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
-	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/ui"
@@ -35,8 +36,6 @@ type Server struct {
 	// from the configuration it holds (LocalConfigView).
 	ConfigSource ConfigViewSource
 
-	// Workflows is the executable registry snapshot supplied by composition.
-	Workflows []task.Definition
 	// WorkRequests admits dashboard requests through the same task-creation
 	// boundary used by chat; it never invokes a workflow runner directly.
 	WorkRequests messaging.TaskCreator
@@ -102,6 +101,12 @@ type Server struct {
 	// Optional: nil answers 503 rather than fabricating a report, so a
 	// deployment that has not wired probes never looks healthy by accident.
 	Health *health.Registry
+
+	// ControlPlane is the State Store's versioned runtime administration
+	// contract. The HTTP adapter supplies operator attribution; browser JSON
+	// never carries actor, source, or request IDs.
+	ControlPlane controlpb.ControlPlaneServiceClient
+	Identities   identity.Repository
 
 	// Token gates access. Empty means no check, which is how loopback binds
 	// stay frictionless -- see IsLoopback.
@@ -262,6 +267,14 @@ func (s *Server) registerMappingAndBindingRoutes(mux *http.ServeMux) {
 }
 
 func (s *Server) registerConfigAndLogRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/control-plane/catalog", s.handleControlPlaneCatalog)
+	mux.HandleFunc("GET /api/control-plane/resources/{kind}", s.handleControlPlaneQuery)
+	mux.HandleFunc("POST /api/control-plane/resources/{kind}/commands/{command}", s.handleControlPlaneCommand)
+	mux.HandleFunc("GET /api/control-plane/watch/{kind}", s.handleControlPlaneWatch)
+	mux.HandleFunc("GET /api/identities", s.handleIdentitiesList)
+	mux.HandleFunc("GET /api/identities/watch", s.handleIdentitiesWatch)
+	mux.HandleFunc("POST /api/identities", s.handleIdentityCreate)
+	mux.HandleFunc("POST /api/identities/{id}/{command}", s.handleIdentityCommand)
 	mux.HandleFunc("GET /api/config", s.handleConfig)
 	mux.HandleFunc("PATCH /api/config", s.handleConfigUpdate)
 	mux.HandleFunc("POST /api/config/reset", s.handleConfigReset)

@@ -5,7 +5,9 @@ import (
 	"log/slog"
 	"time"
 
+	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/health"
+	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/events"
@@ -18,11 +20,13 @@ import (
 // contracts, the process's own logger and options, and the readiness registry
 // assembled over those same contracts.
 type deps struct {
-	Options Options
-	Log     *slog.Logger
-	Store   storecontract.TaskStore
-	Chat    messaging.ChatContract
-	Health  *health.Registry
+	Options      Options
+	Log          *slog.Logger
+	Store        storecontract.TaskStore
+	Chat         messaging.ChatContract
+	Health       *health.Registry
+	ControlPlane controlpb.ControlPlaneServiceClient
+	Identities   identity.Repository
 }
 
 // compose builds the dashboard server for the UI process. It sets exactly the
@@ -65,6 +69,8 @@ func compose(d deps) *webui.Server {
 		Token:                 d.Options.Token,
 		TrustForwardedHeaders: d.Options.trustForwardedHeaders(),
 		Health:                d.Health,
+		ControlPlane:          d.ControlPlane,
+		Identities:            d.Identities,
 	}
 	if snapshots, ok := d.Store.(storecontract.ConfigSnapshotStore); ok {
 		srv.ConfigSource = webui.RemoteConfigView(snapshots)

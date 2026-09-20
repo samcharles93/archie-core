@@ -15,8 +15,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	pb "github.com/samcharles93/archie-core/internal/contracts/state/v1"
 	"github.com/samcharles93/archie-core/internal/domain/binding"
+	"github.com/samcharles93/archie-core/internal/domain/identity"
 	"github.com/samcharles93/archie-core/internal/domain/mapping"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/logging"
@@ -55,6 +57,8 @@ const taskLogChunkBytes = 256 << 10
 // codes.Unavailable) exactly as their daemon-side consumers already treat a
 // nil Mappings/Bindings/BindingDispatcher/BindingTaskCreator as "disabled".
 type Deps struct {
+	ControlPlane       controlpb.ControlPlaneServiceServer
+	Identities         identity.Repository
 	Grants             *TaskGrants
 	Tasks              storecontract.TaskStore
 	Captures           storecontract.CaptureStore
@@ -87,6 +91,9 @@ func RegisterServer(registrar grpc.ServiceRegistrar, deps Deps) {
 		deps.Log = slog.New(slog.DiscardHandler)
 	}
 	pb.RegisterStateStoreServiceServer(registrar, &server{deps: deps})
+	if deps.ControlPlane != nil {
+		controlpb.RegisterControlPlaneServiceServer(registrar, deps.ControlPlane)
+	}
 }
 
 func (s *server) logErr(rpc string, err error) error {

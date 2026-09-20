@@ -20,7 +20,7 @@ func TestRemoteChatCompositionPreservesChannelTurnLedger(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	b := &boot{cfg: cfg, log: slog.Default(), cfgHolder: config.NewHolder(cfg), stateStore: st}
+	b := &boot{cfg: cfg, log: slog.Default(), cfgHolder: config.NewHolder(cfg), stateStore: st, personas: gateway.NewPersonaRegistry(gateway.DefaultPersonas())}
 	t.Cleanup(b.cleanup)
 	if err := b.openStores(t.Context()); err != nil {
 		t.Fatal(err)
@@ -29,7 +29,7 @@ func TestRemoteChatCompositionPreservesChannelTurnLedger(t *testing.T) {
 		t.Fatal("startup did not open the channel conversation store")
 	}
 	sessions := b.chatSessionStore
-	if err := b.setupLLMAndChat(); err != nil {
+	if err := b.setupLLMAndChat(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if b.chatSessionStore != sessions {

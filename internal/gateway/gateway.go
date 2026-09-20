@@ -160,6 +160,7 @@ type Router struct {
 	Personas   *PersonaRegistry
 	Tasks      TaskCreator    // nil = /spawn not configured
 	Controller TaskController // nil = /approve and /cancel not configured
+	Settings   *messaging.SettingsCommand
 	// TaskLister backs /tasks: the live work view (id, title, status,
 	// workflow/stage, age). nil = /tasks not configured.
 	TaskLister ChatTaskLister
@@ -308,6 +309,8 @@ func (r *Router) dispatchLocal(ctx context.Context, msg messaging.Message, text,
 	case "/cancel":
 		reply, err := r.handleCancel(ctx, rest)
 		return reply, true, err
+	case "/settings":
+		return r.Settings.Execute(ctx, "", rest), true, nil
 	case "/start":
 		reply, err := r.handleStart()
 		return reply, true, err

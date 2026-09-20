@@ -14,6 +14,7 @@ import (
 
 	"google.golang.org/grpc"
 
+	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
 	"github.com/samcharles93/archie-core/internal/infrastructure/gatewayrpc"
 )
@@ -73,6 +74,38 @@ func startTestGateway(t *testing.T) (target string, cleanup func()) {
 	}
 }
 
+// fakeControlPlane serves the empty channel-settings resource the Messaging
+// Service reads at startup. The database is authoritative for channel
+// settings, so the process refuses to start without a State Store to read.
+type fakeControlPlane struct {
+	controlpb.UnimplementedControlPlaneServiceServer
+}
+
+func (f *fakeControlPlane) Catalog(context.Context, *controlpb.CatalogRequest) (*controlpb.CatalogResponse, error) {
+	return &controlpb.CatalogResponse{}, nil
+}
+
+func (f *fakeControlPlane) Query(_ context.Context, request *controlpb.QueryRequest) (*controlpb.QueryResponse, error) {
+	return &controlpb.QueryResponse{Resource: &controlpb.Resource{Kind: request.GetKind(), Version: 1, ValueJson: []byte("{}")}}, nil
+}
+
+func startTestStateStore(t *testing.T) (target string, cleanup func()) {
+	t.Helper()
+	lis, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	srv := grpc.NewServer()
+	controlpb.RegisterControlPlaneServiceServer(srv, &fakeControlPlane{})
+	go func() {
+		_ = srv.Serve(lis)
+	}()
+	return lis.Addr().String(), func() {
+		srv.GracefulStop()
+		_ = lis.Close()
+	}
+}
+
 func TestBinaryHelp(t *testing.T) {
 	bin := buildBinary(t)
 	cmd := exec.CommandContext(t.Context(), bin, "-help")
@@ -87,8 +120,10 @@ func TestBinaryStartsAndShutsDownCleanly(t *testing.T) {
 	bin := buildBinary(t)
 	gatewayTarget, cleanup := startTestGateway(t)
 	defer cleanup()
+	stateStoreTarget, stopStateStore := startTestStateStore(t)
+	defer stopStateStore()
 
-	cmd := exec.CommandContext(t.Context(), bin, "-gateway-target", gatewayTarget)
+	cmd := exec.CommandContext(t.Context(), bin, "-gateway-target", gatewayTarget, "-state-store-target", stateStoreTarget)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("cmd.Start: %v", err)
 	}

@@ -35,6 +35,7 @@ type Options struct {
 	Overlay string
 
 	Gateway           ServiceTarget
+	StateStore        ServiceTarget
 	DependencyTimeout time.Duration
 	ShutdownTimeout   time.Duration
 }
@@ -58,6 +59,11 @@ func (o Options) validate() error {
 	}
 	if err := validateServiceTarget("gateway", o.Gateway); err != nil {
 		return err
+	}
+	if o.StateStore.Target != "" {
+		if err := validateServiceTarget("state store", o.StateStore); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -218,7 +218,7 @@ func TestWorkRequestOriginProxy(t *testing.T) {
 	srv := newTestServer(t)
 	creator := &recordingWorkRequestCreator{}
 	srv.WorkRequests = creator
-	srv.Workflows = []workflow.Definition{{ID: "implement", Name: "Implement", Enabled: true}}
+	srv.ControlPlane = workflowControlPlane(t, workflow.WorkflowDefinitionCollection{Definitions: []workflow.WorkflowDefinitionEntry{{ID: "implement", YAML: "id: implement\nsteps:\n  - type: implement.prepare\n"}}})
 	srv.TrustForwardedHeaders = true
 
 	body := `{"identity":"archie","repository":"acme/widget","workflow":"implement","title":"Fix login","instructions":"Reproduce and fix it."}`

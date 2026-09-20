@@ -1,26 +1,27 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { computed, onMounted } from "vue";
+import { storeToRefs } from "pinia";
 
 import PageHeader from "@/base/PageHeader.vue";
-import { useLiveResource } from "@/stores/live-updates";
-import ConfigUnavailable from "./ConfigUnavailable.vue";
-import ModelsCard from "./ModelsCard.vue";
-import { configUnavailable, loadConfig } from "./state";
+import { resourcesForPage, useControlPlaneStore } from "@/stores/control-plane";
+import StructuredResourceCard from "./StructuredResourceCard.vue";
 
-/**
- * Which model handles each stage of work, and which providers are wired up.
- * Nothing on this page is editable from the dashboard: a model role is a
- * structured field, and the server keeps those behind its own config path.
- */
-useLiveResource(null, () => void loadConfig());
-onMounted(loadConfig);
+const controlPlane = useControlPlaneStore();
+const { catalog, catalogError } = storeToRefs(controlPlane);
+const resources = computed(() => resourcesForPage(catalog.value, "models"));
+onMounted(controlPlane.load);
 </script>
 
 <template>
   <div>
     <PageHeader title="Models" />
 
-    <ConfigUnavailable v-if="configUnavailable" />
-    <ModelsCard v-else />
+    <p v-if="catalogError" class="text-sm text-destructive" role="alert">{{ catalogError }}</p>
+    <StructuredResourceCard
+      v-for="descriptor in resources"
+      :key="descriptor.kind"
+      :descriptor="descriptor"
+      :root-path="descriptor.kind === 'provider-settings' ? 'providers' : 'roles'"
+    />
   </div>
 </template>

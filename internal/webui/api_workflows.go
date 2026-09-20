@@ -1,15 +1,20 @@
 package webui
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"strings"
 
+	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/messaging"
+	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
 )
+
+const workflowDefinitionsKind = "workflow-definitions"
 
 // handleWorkflows returns per-workflow and per-stage statistics: run counts,
 // outcome breakdowns and spend per workflow, plus duration and failure counts
@@ -26,10 +31,15 @@ func (s *Server) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	definitions, err := s.workflowDefinitions(ctx)
+	if err != nil {
+		http.Error(w, "workflow definitions unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	writeJSON(w, map[string]any{
 		"workflows":   workflows,
 		"stages":      stages,
-		"definitions": s.Workflows,
+		"definitions": definitions,
 	})
 }
 
@@ -74,7 +84,12 @@ func (s *Server) handleWorkRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "identity, repository, workflow, title, and instructions are required", http.StatusBadRequest)
 		return
 	}
-	if !s.hasWorkflow(request.Workflow) {
+	available, err := s.hasWorkflow(r.Context(), request.Workflow)
+	if err != nil {
+		http.Error(w, "workflow definitions unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if !available {
 		http.Error(w, "workflow is not enabled", http.StatusConflict)
 		return
 	}
@@ -91,11 +106,37 @@ func (s *Server) handleWorkRequest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "task_id": taskID})
 }
 
-func (s *Server) hasWorkflow(id string) bool {
-	for _, workflow := range s.Workflows {
-		if workflow.ID == id && workflow.Enabled {
-			return true
+func (s *Server) hasWorkflow(ctx context.Context, id string) (bool, error) {
+	definitions, err := s.workflowDefinitions(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, definition := range definitions {
+		if definition.ID == id {
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
+}
+
+func (s *Server) workflowDefinitions(ctx context.Context) ([]task.Definition, error) {
+	if s.ControlPlane == nil {
+		return nil, nil
+	}
+	response, err := s.ControlPlane.Query(ctx, &controlpb.QueryRequest{Kind: workflowDefinitionsKind})
+	if err != nil {
+		return nil, err
+	}
+	if response.Resource == nil {
+		return nil, errors.New("workflow definitions missing")
+	}
+	var collection task.WorkflowDefinitionCollection
+	if err := json.Unmarshal(response.Resource.ValueJson, &collection); err != nil {
+		return nil, err
+	}
+	definitions := make([]task.Definition, 0, len(collection.Definitions))
+	for _, entry := range collection.Definitions {
+		definitions = append(definitions, task.Definition{ID: entry.ID, Name: entry.ID, Origin: "database", Enabled: true})
+	}
+	return definitions, nil
 }

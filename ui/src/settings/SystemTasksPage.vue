@@ -1,22 +1,27 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { computed, onMounted } from "vue";
+import { storeToRefs } from "pinia";
 
 import PageHeader from "@/base/PageHeader.vue";
-import { useLiveResource } from "@/stores/live-updates";
-import ConfigSections from "./ConfigSections.vue";
-import ConfigUnavailable from "./ConfigUnavailable.vue";
-import { TASKS_SECTIONS } from "./sections";
-import { configUnavailable, loadConfig } from "./state";
+import { useControlPlaneStore } from "@/stores/control-plane";
+import { resourcesForPage } from "@/stores/control-plane";
+import StructuredResourceCard from "./StructuredResourceCard.vue";
 
-useLiveResource(null, () => void loadConfig());
-onMounted(loadConfig);
+const controlPlane = useControlPlaneStore();
+const { catalog, catalogError } = storeToRefs(controlPlane);
+const resources = computed(() => resourcesForPage(catalog.value, "tasks"));
+onMounted(controlPlane.load);
 </script>
 
 <template>
   <div>
     <PageHeader title="Task settings" />
 
-    <ConfigUnavailable v-if="configUnavailable" />
-    <ConfigSections v-else :ids="TASKS_SECTIONS" />
+    <p v-if="catalogError" class="text-sm text-destructive" role="alert">{{ catalogError }}</p>
+    <StructuredResourceCard
+      v-for="descriptor in resources"
+      :key="descriptor.kind"
+      :descriptor="descriptor"
+    />
   </div>
 </template>

@@ -67,7 +67,7 @@ func RunGateway(ctx context.Context, options GatewayOptions) error {
 	// same remote State Store contract the daemon does via
 	// [services.state].target (docs/prds/state-store-contract.md §12 step 7).
 	// Its own session SQLite is untouched and stays Gateway-owned.
-	if err := b.openStateStoreAdapter(); err != nil {
+	if err := b.openGatewayState(ctx); err != nil {
 		return err
 	}
 	b.loadCatalog(ctx, options.Config)
@@ -125,6 +125,16 @@ func RunGateway(ctx context.Context, options GatewayOptions) error {
 	return serveGateway(ctx, listener, contract, b.chatSessionStore, opts)
 }
 
+func (b *boot) openGatewayState(ctx context.Context) error {
+	if err := b.openStateStoreAdapter(); err != nil {
+		return err
+	}
+	if err := b.loadRuntimeConfig(ctx); err != nil {
+		return fmt.Errorf("load runtime settings: %w", err)
+	}
+	return nil
+}
+
 func (b *boot) startGatewayRuntime(ctx context.Context, actor gateway.ChatTaskActor) (gateway.ChatContract, error) {
 	b.bus = events.NewBus()
 	b.addCleanup(b.bus.Close)
@@ -136,7 +146,10 @@ func (b *boot) startGatewayRuntime(ctx context.Context, actor gateway.ChatTaskAc
 	if err := b.setupMemoryEngine(); err != nil { //nolint:contextcheck // setupMemoryEngine owns its own lifecycle context, matching the daemon's setupMemoryEngine
 		return nil, err
 	}
-	contract := b.setupGatewayChat(ctx, actor)
+	contract, err := b.setupGatewayChat(ctx, actor)
+	if err != nil {
+		return nil, err
+	}
 	if err := b.registerTools(ctx); err != nil {
 		return nil, err
 	}

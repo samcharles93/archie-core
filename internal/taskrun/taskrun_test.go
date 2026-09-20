@@ -65,7 +65,7 @@ func TestRequestValidateRequiresPositiveTaskID(t *testing.T) {
 		{name: "zero ID", request: Request{Task: &workflow.Task{}}, wantErr: true},
 		{name: "negative ID", request: Request{Task: &workflow.Task{ID: -1}}, wantErr: true},
 		{name: "missing worktree grant", request: Request{Task: &workflow.Task{ID: 1}}, wantErr: true},
-		{name: "valid request", request: Request{Task: &workflow.Task{ID: 1}, WorktreeGrant: "grant"}},
+		{name: "valid request", request: Request{Task: &workflow.Task{ID: 1}, WorktreeGrant: "grant", WorkflowDefinition: "id: test\nsteps: []\n"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			err := test.request.Validate()

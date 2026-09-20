@@ -27,6 +27,8 @@ func run() int {
 	flag.StringVar(&options.Overlay, "config-overlay", "", "configuration overlay file or directory")
 	flag.StringVar(&options.Gateway.Target, "gateway-target", "", "archie-gateway gRPC address (defaults to [services.gateway].target, else 127.0.0.1:8585)")
 	flag.StringVar(&options.Gateway.Token, "gateway-token", "", "bearer token presented to archie-gateway")
+	flag.StringVar(&options.StateStore.Target, "state-store-target", "", "archie-state-store gRPC address (defaults to [services.state].target)")
+	flag.StringVar(&options.StateStore.Token, "state-store-token", "", "bearer token presented to archie-state-store")
 	flag.DurationVar(&options.DependencyTimeout, "dependency-timeout", 0, "readiness probe timeout (default 5s)")
 	flag.DurationVar(&options.ShutdownTimeout, "shutdown-timeout", 0, "shutdown timeout (default 5s)")
 	flag.Parse()

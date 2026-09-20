@@ -13,9 +13,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/agentexec"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
-	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
-	"github.com/samcharles93/archie-core/internal/domain/workflow/wfeval"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/installtype"
 	"github.com/samcharles93/archie-core/internal/storage"
@@ -202,26 +200,22 @@ func applyToolLimits(agent agentexec.Runner, policy config.ToolPolicy) {
 	}
 }
 
-// routeTask applies the request-carried routing bindings and selects the
-// workflow for a task. The daemon's package-level SetKindWorkflows state
-// never crosses the process boundary, so runTask installs the resolved
-// bindings here -- this worker process is where workflow.Route actually runs.
+// routeTask remains available for routing-only callers. Production execution
+// compiles the request's pinned YAML directly.
 func routeTask(req taskrun.Request, registry workflow.Registry) workflow.Workflow {
 	workflow.SetKindWorkflows(req.KindWorkflows)
 	workflow.SetLabelWorkflows(req.LabelWorkflows)
 	return workflow.Route(req.Task, registry)
 }
 
-// runTask builds a workflow.Registry from the container's mounted worktree,
-// routes and runs the entire workflow, and reports its terminal outcome.
+// runTask compiles the immutable database definition carried by the request,
+// runs it, and reports its terminal outcome.
 // Store remains archied's authority; Response.Task is a logging snapshot.
 func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependencies, newRunner runnerFactory, workDir string, log *slog.Logger) (*taskrun.Response, error) {
-	registry, err := skillbuild.BuildRegistry(workDir)
+	wf, err := resolvePinnedWorkflow(&req)
 	if err != nil {
-		return nil, fmt.Errorf("build registry: %w", err)
+		return nil, err
 	}
-
-	wf := routeTask(req, registry)
 
 	trees := &hybridTrees{
 		push: dependencies.trees,
@@ -286,17 +280,16 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 	}
 
 	tc := &workflow.TaskContext{
-		Task:         req.Task,
-		Repo:         req.Repo,
-		Cfg:          req.Cfg.ToConfig(),
-		Forge:        dependencies.forge,
-		Store:        dependencies.store,
-		Trees:        trees,
-		Agent:        agent,
-		Reviewer:     newReviewerFor(req),
-		Bus:          bus,
-		Log:          log,
-		CustomStages: wfeval.Discover,
+		Task:     req.Task,
+		Repo:     req.Repo,
+		Cfg:      req.Cfg.ToConfig(),
+		Forge:    dependencies.forge,
+		Store:    dependencies.store,
+		Trees:    trees,
+		Agent:    agent,
+		Reviewer: newReviewerFor(req),
+		Bus:      bus,
+		Log:      log,
 	}
 	if req.Repo.PersistentStorage {
 		memory, readErr := readProjectMemory(storage.MemoryPath)
@@ -316,4 +309,35 @@ func runTask(ctx context.Context, req taskrun.Request, dependencies taskDependen
 		AgentVersion:     Version(),
 		AgentInstallType: installtype.Type(),
 	}, nil
+}
+
+func resolvePinnedWorkflow(req *taskrun.Request) (workflow.Workflow, error) {
+	if req.WorkflowDefinition == "" {
+		shipped := workflow.ShippedDefinitions()
+		registry := make(workflow.Registry, len(shipped.Definitions))
+		for _, definition := range shipped.Definitions {
+			compiled, compileErr := workflow.ParseAndCompile(definition.YAML, workflow.BuiltinStepRegistry())
+			if compileErr != nil {
+				return workflow.Workflow{}, fmt.Errorf("compile shipped workflow definition: %w", compileErr)
+			}
+			registry[definition.ID] = compiled
+		}
+		selected := routeTask(*req, registry)
+		req.Task.Workflow = selected.Name
+		entry, ok := shipped.DefinitionByID(selected.Name)
+		if !ok {
+			return workflow.Workflow{}, fmt.Errorf("task has no pinned workflow definition")
+		}
+		req.WorkflowDefinition = entry.YAML
+		req.Task.WorkflowDefinitionYAML = entry.YAML
+		req.Task.WorkflowDefinitionDigest = workflow.DigestDefinition(entry.YAML)
+	}
+	wf, err := workflow.ParseAndCompile(req.WorkflowDefinition, workflow.BuiltinStepRegistry())
+	if err != nil {
+		return workflow.Workflow{}, fmt.Errorf("compile pinned workflow definition: %w", err)
+	}
+	if wf.Name != req.Task.Workflow || workflow.DigestDefinition(req.WorkflowDefinition) != req.Task.WorkflowDefinitionDigest {
+		return workflow.Workflow{}, fmt.Errorf("pinned workflow definition does not match task identity")
+	}
+	return wf, nil
 }

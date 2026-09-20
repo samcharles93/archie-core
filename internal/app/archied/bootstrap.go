@@ -24,6 +24,7 @@ import (
 	natsio "github.com/nats-io/nats.go"
 	"github.com/samcharles93/ai-sdk/runtime"
 
+	"github.com/samcharles93/archie-core/internal/app/controlplane"
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/container"
 	"github.com/samcharles93/archie-core/internal/daemon"
@@ -32,11 +33,11 @@ import (
 	"github.com/samcharles93/archie-core/internal/domain/eda/playbook"
 	domainembedding "github.com/samcharles93/archie-core/internal/domain/embedding"
 	"github.com/samcharles93/archie-core/internal/domain/health"
+	"github.com/samcharles93/archie-core/internal/domain/identity"
 	domainmemory "github.com/samcharles93/archie-core/internal/domain/memory"
 	"github.com/samcharles93/archie-core/internal/domain/scheduling"
 	"github.com/samcharles93/archie-core/internal/domain/storecontract"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
-	"github.com/samcharles93/archie-core/internal/domain/workflow/skillbuild"
 	"github.com/samcharles93/archie-core/internal/domain/workintake"
 	"github.com/samcharles93/archie-core/internal/events"
 	"github.com/samcharles93/archie-core/internal/forge"
@@ -116,6 +117,7 @@ type boot struct {
 	// standalone-only compose leaves no other case).
 	stateStoreGrants *staterpc.GrantIssuer
 	stateStoreToken  string
+	controlPlane     *controlplane.Client
 	chatSessionStore gateway.SessionStore
 
 	catalog       modelcatalog.Snapshot
@@ -282,6 +284,7 @@ func (b *boot) loadConfig(ctx context.Context, cfgPath, overlayPath string, noCo
 		}
 	}
 	b.cfg = b.doc.Config
+	b.cfgHolder = config.NewHolder(b.cfg)
 	b.currentProvenance.Store(&b.doc.Provenance)
 	return b.setupLogging()
 }
@@ -363,6 +366,7 @@ func (b *boot) openStateStoreAdapter() error {
 		return err
 	}
 	b.stateStore = client
+	b.controlPlane = controlplane.NewRPCClient(client.ControlPlane())
 	b.stateStoreGrants = &staterpc.GrantIssuer{Client: client}
 	b.stateStoreToken = b.cfg.Services.ResolvedToken(config.ServiceNameState, b.secrets.Getenv)
 	b.addCleanup(cleanup)
@@ -419,7 +423,6 @@ func (b *boot) setupObservability(ctx context.Context) {
 	bus := events.NewBus()
 	b.bus = bus
 	b.addCleanup(func() { bus.Close() })
-	b.cfgHolder = config.NewHolder(cfg)
 	// The watchdog leaves its verdict in a file on this host, so the daemon
 	// reads it and publishes the outcome as an event; the dashboard renders
 	// what it receives, wherever it runs (archie-core-8cda.5.4).
@@ -584,13 +587,15 @@ func (b *boot) setupEmbeddings(cfg config.Config, log *slog.Logger) {
 
 // setupLLMAndChat wires the runtime, tool registry, model management,
 // personas and the dashboard's chat service.
-func (b *boot) setupLLMAndChat() error {
+func (b *boot) setupLLMAndChat(ctx context.Context) error {
 	cfg, log := b.cfg, b.log
 
 	// Telegram/email keep their own in-process routers rather than going
 	// through ChatContract: their streaming responder is a callback, and
 	// ChatContract's wire-safe interface can't carry one.
-	b.setupChatRuntime(cfg)
+	if err := b.setupChatRuntime(ctx, cfg); err != nil {
+		return err
+	}
 
 	b.setupEmbeddings(cfg, log)
 	contract, cleanup, err := composeChatContract(cfg.Services, b.secrets)
@@ -635,9 +640,8 @@ func (b *boot) startRateLimiter(ctx context.Context, cfg config.RateLimitConfig)
 	}()
 }
 
-// loadWorkflows builds the workflow registry from the skill catalog.
-// Plugin-defined workflows override built-ins of the same name;
-// built-ins fill gaps.
+// loadWorkflows loads routing inputs. Executable definitions are supplied by
+// the State Store control plane and pinned before each dispatch.
 func (b *boot) loadWorkflows(ctx context.Context) error {
 	cfg, log := b.cfg, b.log
 	if err := b.loadWorkflowRouting(cfg, log); err != nil {
@@ -650,16 +654,7 @@ func (b *boot) loadWorkflows(ctx context.Context) error {
 		return err
 	}
 
-	skillsBase := cfg.SkillsDir
-	if skillsBase == "" {
-		skillsBase = cfg.WorkDir
-	}
-	workflowCatalog, err := skillbuild.BuildCatalog(skillsBase)
-	if err != nil {
-		log.Error("skill registry build failed", "err", err)
-		return err
-	}
-	log.Info("workflow registry built", "workflows", len(workflowCatalog.Registry))
+	log.Info("workflow step registry built", "shipped_workflows", len(workflow.ShippedDefinitions().Definitions))
 	// The dashboard is served by the archie-ui process from the cutover
 	// change (archie-core-8cda.5.4, PRD gate 7): the daemon runs no webui
 	// listener, and [web].listen is the archie-ui process's bind address.
@@ -1250,10 +1245,15 @@ func (b *boot) buildDaemon() {
 		Guardrails:          b.guardrails,
 		ToolRegistry:        b.toolReg,
 		Identities:          b.identityRunners,
+		RootIdentityID:      identity.StableID(configuredIdentityNames(b.cfg)[0]),
 		TaskLogs:            b.taskLogs,
 		AgentStatus:         b.agentStatus,
 		KindWorkflows:       b.kindWorkflows,
 		LabelWorkflows:      b.labelWorkflows,
+		WorkflowDefinitions: b.controlPlane,
+	}
+	if identities, ok := b.stateStore.(identity.Repository); ok {
+		b.d.IdentityRepository = identities
 	}
 	// Consumer mapping/binding surfaces resolve from b.stateStore (the State
 	// Store contract adapter): local by default, remote *staterpc.Client when

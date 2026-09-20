@@ -8,9 +8,19 @@ import (
 	"strings"
 	"testing"
 
+	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/gateway"
 )
+
+func workflowControlPlane(t *testing.T, definitions workflow.WorkflowDefinitionCollection) *controlPlaneClientStub {
+	t.Helper()
+	value, err := json.Marshal(definitions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &controlPlaneClientStub{query: &controlpb.Resource{Kind: "workflow-definitions", Version: 1, ValueJson: value}}
+}
 
 type recordingWorkRequestCreator struct{ request gateway.SpawnRequest }
 
@@ -21,7 +31,7 @@ func (c *recordingWorkRequestCreator) CreateTask(_ context.Context, request gate
 
 func TestWorkflowsIncludeInstalledZeroRunDefinitions(t *testing.T) {
 	srv := newTestServer(t)
-	srv.Workflows = []workflow.Definition{{ID: "implement", Name: "Implement", Origin: "builtin", Enabled: true, Stages: []string{"prepare", "plan"}}}
+	srv.ControlPlane = workflowControlPlane(t, workflow.WorkflowDefinitionCollection{Definitions: []workflow.WorkflowDefinitionEntry{{ID: "custom", YAML: "id: custom\nsteps:\n  - type: implement.prepare\n  - type: implement.plan\n"}}})
 
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/workflows", nil))
@@ -34,7 +44,7 @@ func TestWorkflowsIncludeInstalledZeroRunDefinitions(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if len(response.Definitions) != 1 || response.Definitions[0].ID != "implement" || len(response.Definitions[0].Stages) != 2 {
+	if len(response.Definitions) != 1 || response.Definitions[0].ID != "custom" || response.Definitions[0].Origin != "database" {
 		t.Fatalf("definitions = %#v", response.Definitions)
 	}
 }
@@ -43,7 +53,7 @@ func TestWorkRequestUsesNormalTaskAdmission(t *testing.T) {
 	srv := newTestServer(t)
 	creator := &recordingWorkRequestCreator{}
 	srv.WorkRequests = creator
-	srv.Workflows = []workflow.Definition{{ID: "implement", Name: "Implement", Enabled: true}}
+	srv.ControlPlane = workflowControlPlane(t, workflow.WorkflowDefinitionCollection{Definitions: []workflow.WorkflowDefinitionEntry{{ID: "implement", YAML: "id: implement\nsteps:\n  - type: implement.prepare\n"}}})
 
 	body := `{"identity":"archie","repository":"acme/widget","workflow":"implement","title":"Fix login","instructions":"Reproduce and fix it."}`
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/work-requests", strings.NewReader(body))
@@ -64,7 +74,7 @@ func TestWorkRequestRejectsDisabledWorkflow(t *testing.T) {
 	srv := newTestServer(t)
 	creator := &recordingWorkRequestCreator{}
 	srv.WorkRequests = creator
-	srv.Workflows = []workflow.Definition{{ID: "implement", Enabled: false}}
+	srv.ControlPlane = workflowControlPlane(t, workflow.WorkflowDefinitionCollection{Definitions: []workflow.WorkflowDefinitionEntry{{ID: "custom", YAML: "id: custom\nsteps:\n  - type: implement.prepare\n"}}})
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/work-requests", strings.NewReader(`{"identity":"archie","repository":"acme/widget","workflow":"implement","title":"Fix","instructions":"Do it"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Archie-CSRF", "1")

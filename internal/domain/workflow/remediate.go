@@ -117,13 +117,8 @@ const remediationRoundCapBytes = 2000
 
 // resumableTrees is the optional capability a Trees implementation offers
 // for continuing work on an already-open PR branch instead of starting a
-// fresh worktree. Deliberately NOT part of the exported Trees interface,
-// for two reasons: Trees is projected into the Yaegi symbol table
-// (wfextract) for repository-authored .archie/stages/*.go, and this
-// capability must not become callable from there (mirrors changeStatsReader
-// in steps.go); and Trees is already at golangci-lint's interfacebloat cap
-// of 8 methods, which CLAUDE.md reserves for proto/gRPC surfaces, not
-// growing Go interfaces further.
+// fresh worktree. It stays separate because Trees is already at the interface
+// size cap and most workflow stages do not need branch resumption.
 //
 // *worktree.Manager (real git access) and the container-mode hybrid
 // implementation both already satisfy this structurally; a Trees

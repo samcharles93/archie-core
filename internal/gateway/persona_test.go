@@ -57,6 +57,20 @@ func TestPersonaRegistryEmpty(t *testing.T) {
 	}
 }
 
+func TestPersonaRegistryReplaceFallsBackToNewDefault(t *testing.T) {
+	r := NewPersonaRegistry(DefaultPersonas())
+	if !r.SetActive("session", "creative") {
+		t.Fatal("select creative")
+	}
+	r.Replace([]Persona{{Name: "archie", Prompt: "new baseline"}, {Name: "concise", Prompt: "brief"}}, "concise")
+	if got := r.ActiveName("session"); got != "concise" {
+		t.Fatalf("ActiveName() = %q, want concise", got)
+	}
+	if got := r.GetActive("session"); got != "brief" {
+		t.Fatalf("GetActive() = %q, want brief", got)
+	}
+}
+
 func TestPersonaRegistryConcurrent(t *testing.T) {
 	r := NewPersonaRegistry(DefaultPersonas())
 	done := make(chan struct{})

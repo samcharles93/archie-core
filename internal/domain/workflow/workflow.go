@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -90,15 +89,9 @@ type TaskContext struct {
 	Reviewer Reviewer
 	Bus      *events.Bus // nil-safe via Emit
 	Log      *slog.Logger
-	// CustomStages discovers a repo's per-repo custom stages (Yaegi-
-	// interpreted from .archie/stages/*.go in the given worktree
-	// directory), returning them in the order they should run. Application
-	// composition injects it; nil disables discovery, so StageRepoStages is a
-	// no-op. The composition layer provides the implementation rather
-	// than importing the generated Yaegi symbol table here, which would create
-	// a workflow package import cycle.
+	// CustomStages is retained for source compatibility only. Repository Go
+	// stages are no longer executed; StageRepoStages rejects their presence.
 	CustomStages func(dir string) ([]Stage, error)
-
 	// SkillBody is the Markdown body of the loaded SKILL.md for this
 	// workflow's matching skill, injected into agent context. Empty
 	// when no skill is found (backward compatible).
@@ -253,37 +246,6 @@ type Workflow struct {
 
 // Registry maps workflow names to definitions.
 type Registry map[string]Workflow
-
-// Definitions snapshots a registry deterministically so installed workflows
-// remain visible even when they have not produced persisted run statistics.
-func Definitions(reg Registry) []Definition {
-	return DefinitionsWithOrigins(reg, nil)
-}
-
-// DefinitionsWithOrigins snapshots a registry with composition-supplied
-// provenance. Entries absent from origins are conservatively labelled
-// "registry", which keeps the helper useful for tests and non-catalog callers.
-func DefinitionsWithOrigins(reg Registry, origins map[string]string) []Definition {
-	ids := make([]string, 0, len(reg))
-	for id := range reg {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	definitions := make([]Definition, 0, len(ids))
-	for _, id := range ids {
-		wf := reg[id]
-		stages := make([]string, 0, len(wf.Stages))
-		for _, stage := range wf.Stages {
-			stages = append(stages, stage.Name)
-		}
-		origin := origins[id]
-		if origin == "" {
-			origin = "registry"
-		}
-		definitions = append(definitions, Definition{ID: id, Name: wf.Name, Origin: origin, Enabled: true, Stages: stages})
-	}
-	return definitions
-}
 
 // Route picks the workflow for a task. A pre-assigned workflow wins
 // (the waiting_human → approved handoff requeues under "implement");

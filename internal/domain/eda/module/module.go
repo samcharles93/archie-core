@@ -3,17 +3,14 @@
 // via Yaegi (same trust tier as PluginDir and SecretEngineDir -- NOT
 // repository-supplied task code).
 //
-// It generalizes the fixed-signature, resolved-by-name Yaegi pattern already
-// shipped for custom gates (internal/gate/gateeval) and workflow stage plugins
-// (internal/domain/workflow/skillbuild): read a .go file -> yaegiutil.New with
-// that kind's symbol table -> yaegiutil.Resolve[func(Args) Result] ->
-// yaegiutil.Safe-wrapped call.
+// Each module kind has a fixed signature and generated symbol table: load the
+// installed source, resolve its typed entrypoint, then call it through the
+// panic-safe interpreter boundary.
 //
 // Per docs/prds/module-position.md, there is deliberately no generic Module
 // interface with an any payload. Each action kind is its own tiny package
 // with its own generated contract (internal/domain/eda/module/<kind>), and
-// the registry's internal storage is the only place type erasure appears --
-// exactly as it already does inside wfextract.
+// the registry's internal storage is the only place type erasure appears.
 package module
 
 import (
@@ -111,8 +108,7 @@ func (r *ModuleRegistry) Register(kind, dir string) error {
 
 // resolveInvoker builds the type-erased invoker for one kind from its
 // interpreted source. Each kind has its own typed decode/invoke path below;
-// this switch is the only place the per-kind types are named, mirroring
-// wfextract's closed symbol table.
+// this switch is the only place the per-kind types are named.
 func resolveInvoker(kind, label, src string, k Kind) (invoker, error) {
 	switch kind {
 	case "log":
