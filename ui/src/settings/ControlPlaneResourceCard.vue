@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Spinner } from "@/components/ui/spinner";
 import { useControlPlaneStore, type ResourceDescriptor } from "@/stores/control-plane";
 import ConfigCard from "./ConfigCard.vue";
+import ResourceHistory from "./ResourceHistory.vue";
 
 interface JSONSchemaProperty {
   type?: "integer" | "number" | "string" | "boolean";
@@ -113,5 +114,6 @@ async function save(): Promise<void> {
         </Button>
       </div>
     </form>
+    <ResourceHistory :kind="descriptor.kind" />
   </ConfigCard>
 </template>

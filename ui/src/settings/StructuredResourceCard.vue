@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { cloneControlPlaneValue, useControlPlaneStore, type ResourceDescriptor } from "@/stores/control-plane";
 import ConfigCard from "./ConfigCard.vue";
+import ResourceHistory from "./ResourceHistory.vue";
 import StructuredValueEditor from "./StructuredValueEditor.vue";
 
 const props = defineProps<{ descriptor: ResourceDescriptor; rootPath?: string }>();
@@ -38,5 +39,6 @@ async function save(): Promise<void> {
         </Button>
       </div>
     </form>
+    <ResourceHistory :kind="descriptor.kind" />
   </ConfigCard>
 </template>

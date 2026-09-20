@@ -21,19 +21,27 @@ var (
 	ErrUnavailable     = errors.New("control-plane unavailable")
 )
 
-type resourceStore interface {
+// ResourceStore is the persistence the control plane requires. The composition
+// root asserts the State Store against it, so this is the single definition of
+// what a control-plane backing store must offer.
+type ResourceStore interface {
 	Resource(context.Context, string) (store.Resource, error)
+	ResourceHistory(context.Context, string, int) ([]store.Resource, error)
 	PutResource(context.Context, store.ResourceWrite) (store.Resource, error)
 }
 
+// defaultHistoryLimit caps an unbounded request. A settings resource edited
+// daily for a year still fits, and the dashboard pages rather than streams.
+const defaultHistoryLimit = 200
+
 type Server struct {
 	pb.UnimplementedControlPlaneServiceServer
-	store       resourceStore
+	store       ResourceStore
 	definitions map[string]Definition
 	ordered     []Definition
 }
 
-func NewServer(resources resourceStore) *Server {
+func NewServer(resources ResourceStore) *Server {
 	definitions := builtinDefinitions()
 	byKind := make(map[string]Definition, len(definitions))
 	for _, definition := range definitions {
@@ -60,6 +68,31 @@ func (s *Server) Query(ctx context.Context, request *pb.QueryRequest) (*pb.Query
 		return nil, mapError(err)
 	}
 	return &pb.QueryResponse{Resource: resourceProto(resource)}, nil
+}
+
+// History answers a resource's audit trail. The value of each revision comes
+// back with it: restoring one is an ordinary replace of that value, so no
+// rollback command of its own is needed.
+func (s *Server) History(ctx context.Context, request *pb.HistoryRequest) (*pb.HistoryResponse, error) {
+	if _, ok := s.definitions[request.GetKind()]; !ok {
+		return nil, status.Error(codes.NotFound, "resource not found")
+	}
+	limit := int(request.GetLimit())
+	if limit <= 0 || limit > defaultHistoryLimit {
+		limit = defaultHistoryLimit
+	}
+	revisions, err := s.store.ResourceHistory(ctx, request.Kind, limit)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	out := make([]*pb.Revision, 0, len(revisions))
+	for _, revision := range revisions {
+		out = append(out, &pb.Revision{
+			Version: revision.Version, ValueJson: revision.Value, Actor: revision.Actor,
+			Source: revision.Source, RequestId: revision.RequestID, At: timestamp(revision.At),
+		})
+	}
+	return &pb.HistoryResponse{Revisions: out}, nil
 }
 
 func (s *Server) Command(ctx context.Context, request *pb.CommandRequest) (*pb.CommandResponse, error) {

@@ -18,9 +18,11 @@ import (
 )
 
 type controlPlaneClientStub struct {
-	command *controlpb.CommandRequest
-	query   *controlpb.Resource
-	err     error
+	command   *controlpb.CommandRequest
+	query     *controlpb.Resource
+	history   *controlpb.HistoryRequest
+	revisions []*controlpb.Revision
+	err       error
 }
 
 func (f *controlPlaneClientStub) Catalog(context.Context, *controlpb.CatalogRequest, ...grpc.CallOption) (*controlpb.CatalogResponse, error) {
@@ -29,6 +31,11 @@ func (f *controlPlaneClientStub) Catalog(context.Context, *controlpb.CatalogRequ
 
 func (f *controlPlaneClientStub) Query(context.Context, *controlpb.QueryRequest, ...grpc.CallOption) (*controlpb.QueryResponse, error) {
 	return &controlpb.QueryResponse{Resource: f.query}, f.err
+}
+
+func (f *controlPlaneClientStub) History(_ context.Context, request *controlpb.HistoryRequest, _ ...grpc.CallOption) (*controlpb.HistoryResponse, error) {
+	f.history = request
+	return &controlpb.HistoryResponse{Revisions: f.revisions}, f.err
 }
 
 func (f *controlPlaneClientStub) Command(_ context.Context, request *controlpb.CommandRequest, _ ...grpc.CallOption) (*controlpb.CommandResponse, error) {
@@ -85,5 +92,54 @@ func TestControlPlaneConflictMapsToHTTPConflict(t *testing.T) {
 
 	if response.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409", response.Code)
+	}
+}
+
+func TestControlPlaneHistoryRendersRevisionsForRestore(t *testing.T) {
+	client := &controlPlaneClientStub{revisions: []*controlpb.Revision{
+		{Version: 2, ValueJson: []byte(`{"max_model_tool_steps":40}`), Actor: string(identity.SystemID), Source: "archie-ui", RequestId: "ui-2"},
+		{Version: 1, ValueJson: []byte(`{"max_model_tool_steps":25}`), Actor: "system:migration", Source: "legacy-config", RequestId: "import"},
+	}}
+	server := &Server{ControlPlane: client}
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/control-plane/resources/workflow-execution-settings/history", nil)
+	response := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %q", response.Code, response.Body.String())
+	}
+	if client.history.GetKind() != "workflow-execution-settings" {
+		t.Fatalf("history requested for %q", client.history.GetKind())
+	}
+	var got struct {
+		Revisions []struct {
+			Version int64           `json:"version"`
+			Value   json.RawMessage `json:"value"`
+			Actor   string          `json:"actor"`
+			Source  string          `json:"source"`
+		} `json:"revisions"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Revisions) != 2 || got.Revisions[0].Version != 2 || got.Revisions[0].Actor != string(identity.SystemID) {
+		t.Fatalf("revisions = %+v", got.Revisions)
+	}
+	// The value is the restore payload: it has to survive as JSON, not base64.
+	if string(got.Revisions[1].Value) != `{"max_model_tool_steps":25}` {
+		t.Fatalf("older value = %s, want the JSON a replace can send back", got.Revisions[1].Value)
+	}
+}
+
+func TestControlPlaneHistoryWithoutAControlPlaneIsUnavailable(t *testing.T) {
+	server := &Server{}
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/control-plane/resources/limits/history", nil)
+	response := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", response.Code)
 	}
 }

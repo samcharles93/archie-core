@@ -58,6 +58,29 @@ func (s *Store) Resource(ctx context.Context, kind string) (Resource, error) {
 	return r, err
 }
 
+// ResourceHistory returns kind's revisions newest first, each carrying the
+// audit record written with it. limit caps the rows; zero or less returns
+// every revision. An unknown kind has no history, which is not an error.
+func (s *Store) ResourceHistory(ctx context.Context, kind string, limit int) ([]Resource, error) {
+	if limit <= 0 {
+		limit = -1
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT kind,value,version,actor,source,request_id,expected_version,current_version,at FROM resource_history WHERE kind=? ORDER BY version DESC LIMIT ?`, kind, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var history []Resource
+	for rows.Next() {
+		var r Resource
+		if err := rows.Scan(&r.Kind, &r.Value, &r.Version, &r.Actor, &r.Source, &r.RequestID, &r.ExpectedVersion, &r.CurrentVersion, sqliteTime{&r.At}); err != nil {
+			return nil, err
+		}
+		history = append(history, r)
+	}
+	return history, rows.Err()
+}
+
 func (s *Store) PutResource(ctx context.Context, w ResourceWrite) (_ Resource, retErr error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

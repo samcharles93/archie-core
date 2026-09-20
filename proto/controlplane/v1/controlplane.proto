@@ -7,6 +7,7 @@ import "google/protobuf/timestamp.proto";
 service ControlPlaneService {
   rpc Catalog(CatalogRequest) returns (CatalogResponse);
   rpc Query(QueryRequest) returns (QueryResponse);
+  rpc History(HistoryRequest) returns (HistoryResponse);
   rpc Command(CommandRequest) returns (CommandResponse);
   rpc Watch(WatchRequest) returns (stream WatchResponse);
 }
@@ -37,6 +38,24 @@ message Resource {
 }
 message QueryRequest { string kind = 1; }
 message QueryResponse { Resource resource = 1; }
+
+// Revision is one entry of a resource's audit trail: the value that version
+// held, and who changed it from where.
+message Revision {
+  int64 version = 1;
+  bytes value_json = 2;
+  string actor = 3;
+  string source = 4;
+  string request_id = 5;
+  google.protobuf.Timestamp at = 6;
+}
+message HistoryRequest {
+  string kind = 1;
+  // Limit caps the revisions returned, newest first. Zero means the server's
+  // own default.
+  int32 limit = 2;
+}
+message HistoryResponse { repeated Revision revisions = 1; }
 
 message CommandRequest {
   string kind = 1;

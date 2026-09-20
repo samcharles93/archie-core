@@ -32,6 +32,22 @@ type controlPlaneResourceResponse struct {
 	Resource controlPlaneResource `json:"resource"`
 }
 
+// controlPlaneRevision is one entry of a resource's audit trail. Value is the
+// payload a restore sends back through the replace command, so it stays raw
+// JSON rather than the base64 a proto bytes field would otherwise render as.
+type controlPlaneRevision struct {
+	Version   int64           `json:"version"`
+	Value     json.RawMessage `json:"value"`
+	Actor     string          `json:"actor"`
+	Source    string          `json:"source"`
+	RequestID string          `json:"request_id"`
+	At        *time.Time      `json:"at,omitempty"`
+}
+
+type controlPlaneHistoryResponse struct {
+	Revisions []controlPlaneRevision `json:"revisions"`
+}
+
 func (s *Server) handleControlPlaneCatalog(w http.ResponseWriter, r *http.Request) {
 	if s.ControlPlane == nil {
 		http.Error(w, "control plane unavailable", http.StatusServiceUnavailable)
@@ -56,6 +72,31 @@ func (s *Server) handleControlPlaneQuery(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, controlPlaneResourceResponse{Resource: controlPlaneResourceView(response.Resource)})
+}
+
+func (s *Server) handleControlPlaneHistory(w http.ResponseWriter, r *http.Request) {
+	if s.ControlPlane == nil {
+		http.Error(w, "control plane unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	response, err := s.ControlPlane.History(r.Context(), &controlpb.HistoryRequest{Kind: r.PathValue("kind")})
+	if err != nil {
+		writeControlPlaneError(w, err)
+		return
+	}
+	revisions := make([]controlPlaneRevision, 0, len(response.Revisions))
+	for _, revision := range response.Revisions {
+		view := controlPlaneRevision{
+			Version: revision.Version, Value: revision.ValueJson, Actor: revision.Actor,
+			Source: revision.Source, RequestID: revision.RequestId,
+		}
+		if revision.At != nil {
+			at := revision.At.AsTime()
+			view.At = &at
+		}
+		revisions = append(revisions, view)
+	}
+	writeJSON(w, controlPlaneHistoryResponse{Revisions: revisions})
 }
 
 func (s *Server) handleControlPlaneCommand(w http.ResponseWriter, r *http.Request) {

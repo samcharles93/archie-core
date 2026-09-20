@@ -96,10 +96,7 @@ func RunStateStore(ctx context.Context, options StateStoreOptions) error {
 	if err := identityStore.BootstrapIdentities(ctx, legacyNames); err != nil {
 		return fmt.Errorf("bootstrap identities: %w", err)
 	}
-	resources, ok := b.st.(interface {
-		Resource(context.Context, string) (store.Resource, error)
-		PutResource(context.Context, store.ResourceWrite) (store.Resource, error)
-	})
+	resources, ok := b.st.(controlplane.ResourceStore)
 	if !ok {
 		return fmt.Errorf("state store does not support control-plane resources")
 	}

@@ -22,6 +22,19 @@ export interface ControlPlaneResource {
 
 interface ResourceResponse { resource: ControlPlaneResource }
 
+/** One entry of a resource's audit trail. `value` is what that version held,
+ * which is also the payload a restore replays through the replace command. */
+export interface ResourceRevision {
+  version: number;
+  value: unknown;
+  actor: string;
+  source: string;
+  request_id: string;
+  at?: string;
+}
+
+interface HistoryResponse { revisions?: ResourceRevision[] }
+
 export interface ResourceState {
   resource?: ControlPlaneResource;
   loading: boolean;
@@ -178,6 +191,11 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
     }
   }
 
+  async function history(kind: string): Promise<ResourceRevision[]> {
+    const response = await request<HistoryResponse>(`/api/control-plane/resources/${encodeURIComponent(kind)}/history`);
+    return response.revisions ?? [];
+  }
+
   /** The shipped definitions the catalog offers as "restore shipped". */
   function shippedWorkflows(): WorkflowDefinitionCollection {
     const defaults = catalog.value.find((resource) => resource.kind === "workflow-definitions")?.defaults_json;
@@ -189,5 +207,5 @@ export const useControlPlaneStore = defineStore("control-plane", () => {
     }
   }
 
-  return { catalog, catalogError, states, genericResources, load, replace, shippedWorkflows, stateFor };
+  return { catalog, catalogError, states, genericResources, history, load, replace, shippedWorkflows, stateFor };
 });

@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/samcharles93/archie-core/internal/config"
 	pb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 	"github.com/samcharles93/archie-core/internal/domain/agent"
@@ -198,5 +201,46 @@ func TestProviderSeedKeepsReferencesAndNeverResolvedSecrets(t *testing.T) {
 	}
 	if _, ok := value["openai"]; !ok {
 		t.Fatalf("provider resource = %s", encoded)
+	}
+}
+
+func TestHistoryCarriesEveryRevisionWithItsAudit(t *testing.T) {
+	t.Parallel()
+
+	resources := store.OpenTest(t)
+	defer resources.Close()
+	server := NewServer(resources)
+	if _, err := server.ImportConfig(t.Context(), config.Config{}); err != nil {
+		t.Fatal(err)
+	}
+	seeded, err := server.Query(t.Context(), &pb.QueryRequest{Kind: WorkflowExecutionSettingsKind})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := server.Command(t.Context(), &pb.CommandRequest{
+		Kind: WorkflowExecutionSettingsKind, Command: "replace",
+		ValueJson:       []byte(`{"max_model_tool_steps":40,"max_runtime_seconds":600,"max_consecutive_gate_failures":2}`),
+		ExpectedVersion: seeded.Resource.Version, Actor: "operator", Source: "archie-ui", RequestId: "edit-1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	history, err := server.History(t.Context(), &pb.HistoryRequest{Kind: WorkflowExecutionSettingsKind})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history.Revisions) != 2 {
+		t.Fatalf("revisions = %d, want the seed and the edit", len(history.Revisions))
+	}
+	newest := history.Revisions[0]
+	if newest.Actor != "operator" || newest.Source != "archie-ui" || newest.RequestId != "edit-1" {
+		t.Fatalf("newest revision audit = %+v, want the dashboard edit", newest)
+	}
+	// The value rides along so a restore is an ordinary replace of it.
+	if len(history.Revisions[1].ValueJson) == 0 {
+		t.Fatal("older revision carries no value; nothing to restore from")
+	}
+	if _, err := server.History(t.Context(), &pb.HistoryRequest{Kind: "not-a-resource"}); status.Code(err) != codes.NotFound {
+		t.Fatalf("history for an unknown kind = %v, want NotFound", err)
 	}
 }

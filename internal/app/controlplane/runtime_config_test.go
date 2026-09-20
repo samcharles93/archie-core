@@ -22,6 +22,10 @@ func (c *runtimeConfigClient) Query(_ context.Context, request *pb.QueryRequest,
 	return &pb.QueryResponse{Resource: &pb.Resource{Kind: request.Kind, Version: 2, ValueJson: value}}, err
 }
 
+func (*runtimeConfigClient) History(context.Context, *pb.HistoryRequest, ...grpc.CallOption) (*pb.HistoryResponse, error) {
+	panic("unexpected History")
+}
+
 func (*runtimeConfigClient) Command(context.Context, *pb.CommandRequest, ...grpc.CallOption) (*pb.CommandResponse, error) {
 	panic("unexpected Command")
 }

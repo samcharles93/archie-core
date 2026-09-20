@@ -363,6 +363,190 @@ func (x *QueryResponse) GetResource() *Resource {
 	return nil
 }
 
+// Revision is one entry of a resource's audit trail: the value that version
+// held, and who changed it from where.
+type Revision struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Version       int64                  `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
+	ValueJson     []byte                 `protobuf:"bytes,2,opt,name=value_json,json=valueJson,proto3" json:"value_json,omitempty"`
+	Actor         string                 `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
+	Source        string                 `protobuf:"bytes,4,opt,name=source,proto3" json:"source,omitempty"`
+	RequestId     string                 `protobuf:"bytes,5,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	At            *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=at,proto3" json:"at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Revision) Reset() {
+	*x = Revision{}
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Revision) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Revision) ProtoMessage() {}
+
+func (x *Revision) ProtoReflect() protoreflect.Message {
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Revision.ProtoReflect.Descriptor instead.
+func (*Revision) Descriptor() ([]byte, []int) {
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *Revision) GetVersion() int64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *Revision) GetValueJson() []byte {
+	if x != nil {
+		return x.ValueJson
+	}
+	return nil
+}
+
+func (x *Revision) GetActor() string {
+	if x != nil {
+		return x.Actor
+	}
+	return ""
+}
+
+func (x *Revision) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *Revision) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *Revision) GetAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.At
+	}
+	return nil
+}
+
+type HistoryRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Kind  string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	// Limit caps the revisions returned, newest first. Zero means the server's
+	// own default.
+	Limit         int32 `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HistoryRequest) Reset() {
+	*x = HistoryRequest{}
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HistoryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HistoryRequest) ProtoMessage() {}
+
+func (x *HistoryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HistoryRequest.ProtoReflect.Descriptor instead.
+func (*HistoryRequest) Descriptor() ([]byte, []int) {
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *HistoryRequest) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *HistoryRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type HistoryResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Revisions     []*Revision            `protobuf:"bytes,1,rep,name=revisions,proto3" json:"revisions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HistoryResponse) Reset() {
+	*x = HistoryResponse{}
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HistoryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HistoryResponse) ProtoMessage() {}
+
+func (x *HistoryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HistoryResponse.ProtoReflect.Descriptor instead.
+func (*HistoryResponse) Descriptor() ([]byte, []int) {
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *HistoryResponse) GetRevisions() []*Revision {
+	if x != nil {
+		return x.Revisions
+	}
+	return nil
+}
+
 type CommandRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Kind            string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
@@ -380,7 +564,7 @@ type CommandRequest struct {
 
 func (x *CommandRequest) Reset() {
 	*x = CommandRequest{}
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[6]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -392,7 +576,7 @@ func (x *CommandRequest) String() string {
 func (*CommandRequest) ProtoMessage() {}
 
 func (x *CommandRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[6]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -405,7 +589,7 @@ func (x *CommandRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandRequest.ProtoReflect.Descriptor instead.
 func (*CommandRequest) Descriptor() ([]byte, []int) {
-	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{6}
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *CommandRequest) GetKind() string {
@@ -466,7 +650,7 @@ type CommandResponse struct {
 
 func (x *CommandResponse) Reset() {
 	*x = CommandResponse{}
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[7]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -478,7 +662,7 @@ func (x *CommandResponse) String() string {
 func (*CommandResponse) ProtoMessage() {}
 
 func (x *CommandResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[7]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -491,7 +675,7 @@ func (x *CommandResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandResponse.ProtoReflect.Descriptor instead.
 func (*CommandResponse) Descriptor() ([]byte, []int) {
-	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{7}
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CommandResponse) GetResource() *Resource {
@@ -511,7 +695,7 @@ type WatchRequest struct {
 
 func (x *WatchRequest) Reset() {
 	*x = WatchRequest{}
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[8]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -523,7 +707,7 @@ func (x *WatchRequest) String() string {
 func (*WatchRequest) ProtoMessage() {}
 
 func (x *WatchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[8]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -536,7 +720,7 @@ func (x *WatchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchRequest.ProtoReflect.Descriptor instead.
 func (*WatchRequest) Descriptor() ([]byte, []int) {
-	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{8}
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *WatchRequest) GetKind() string {
@@ -563,7 +747,7 @@ type WatchResponse struct {
 
 func (x *WatchResponse) Reset() {
 	*x = WatchResponse{}
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[9]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -575,7 +759,7 @@ func (x *WatchResponse) String() string {
 func (*WatchResponse) ProtoMessage() {}
 
 func (x *WatchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[9]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -588,7 +772,7 @@ func (x *WatchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchResponse.ProtoReflect.Descriptor instead.
 func (*WatchResponse) Descriptor() ([]byte, []int) {
-	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{9}
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *WatchResponse) GetResource() *Resource {
@@ -634,7 +818,21 @@ const file_controlplane_v1_controlplane_proto_rawDesc = "" +
 	"\fQueryRequest\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\"F\n" +
 	"\rQueryResponse\x125\n" +
-	"\bresource\x18\x01 \x01(\v2\x19.controlplane.v1.ResourceR\bresource\"\xd5\x01\n" +
+	"\bresource\x18\x01 \x01(\v2\x19.controlplane.v1.ResourceR\bresource\"\xbc\x01\n" +
+	"\bRevision\x12\x18\n" +
+	"\aversion\x18\x01 \x01(\x03R\aversion\x12\x1d\n" +
+	"\n" +
+	"value_json\x18\x02 \x01(\fR\tvalueJson\x12\x14\n" +
+	"\x05actor\x18\x03 \x01(\tR\x05actor\x12\x16\n" +
+	"\x06source\x18\x04 \x01(\tR\x06source\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x05 \x01(\tR\trequestId\x12*\n" +
+	"\x02at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\":\n" +
+	"\x0eHistoryRequest\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\x05R\x05limit\"J\n" +
+	"\x0fHistoryResponse\x127\n" +
+	"\trevisions\x18\x01 \x03(\v2\x19.controlplane.v1.RevisionR\trevisions\"\xd5\x01\n" +
 	"\x0eCommandRequest\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x18\n" +
 	"\acommand\x18\x02 \x01(\tR\acommand\x12\x1d\n" +
@@ -652,10 +850,11 @@ const file_controlplane_v1_controlplane_proto_rawDesc = "" +
 	"\rafter_version\x18\x02 \x01(\x03R\fafterVersion\"\\\n" +
 	"\rWatchResponse\x125\n" +
 	"\bresource\x18\x01 \x01(\v2\x19.controlplane.v1.ResourceR\bresource\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error2\xc3\x02\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error2\x91\x03\n" +
 	"\x13ControlPlaneService\x12L\n" +
 	"\aCatalog\x12\x1f.controlplane.v1.CatalogRequest\x1a .controlplane.v1.CatalogResponse\x12F\n" +
 	"\x05Query\x12\x1d.controlplane.v1.QueryRequest\x1a\x1e.controlplane.v1.QueryResponse\x12L\n" +
+	"\aHistory\x12\x1f.controlplane.v1.HistoryRequest\x1a .controlplane.v1.HistoryResponse\x12L\n" +
 	"\aCommand\x12\x1f.controlplane.v1.CommandRequest\x1a .controlplane.v1.CommandResponse\x12H\n" +
 	"\x05Watch\x12\x1d.controlplane.v1.WatchRequest\x1a\x1e.controlplane.v1.WatchResponse0\x01B\xdc\x01\n" +
 	"\x13com.controlplane.v1B\x11ControlplaneProtoP\x01ZUgithub.com/samcharles93/archie-core/internal/contracts/controlplane/v1;controlplanev1\xa2\x02\x03CXX\xaa\x02\x0fControlplane.V1\xca\x02\x0fControlplane\\V1\xe2\x02\x1bControlplane\\V1\\GPBMetadata\xea\x02\x10Controlplane::V1b\x06proto3"
@@ -672,7 +871,7 @@ func file_controlplane_v1_controlplane_proto_rawDescGZIP() []byte {
 	return file_controlplane_v1_controlplane_proto_rawDescData
 }
 
-var file_controlplane_v1_controlplane_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_controlplane_v1_controlplane_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_controlplane_v1_controlplane_proto_goTypes = []any{
 	(*ResourceDescriptor)(nil),    // 0: controlplane.v1.ResourceDescriptor
 	(*CatalogRequest)(nil),        // 1: controlplane.v1.CatalogRequest
@@ -680,31 +879,38 @@ var file_controlplane_v1_controlplane_proto_goTypes = []any{
 	(*Resource)(nil),              // 3: controlplane.v1.Resource
 	(*QueryRequest)(nil),          // 4: controlplane.v1.QueryRequest
 	(*QueryResponse)(nil),         // 5: controlplane.v1.QueryResponse
-	(*CommandRequest)(nil),        // 6: controlplane.v1.CommandRequest
-	(*CommandResponse)(nil),       // 7: controlplane.v1.CommandResponse
-	(*WatchRequest)(nil),          // 8: controlplane.v1.WatchRequest
-	(*WatchResponse)(nil),         // 9: controlplane.v1.WatchResponse
-	(*timestamppb.Timestamp)(nil), // 10: google.protobuf.Timestamp
+	(*Revision)(nil),              // 6: controlplane.v1.Revision
+	(*HistoryRequest)(nil),        // 7: controlplane.v1.HistoryRequest
+	(*HistoryResponse)(nil),       // 8: controlplane.v1.HistoryResponse
+	(*CommandRequest)(nil),        // 9: controlplane.v1.CommandRequest
+	(*CommandResponse)(nil),       // 10: controlplane.v1.CommandResponse
+	(*WatchRequest)(nil),          // 11: controlplane.v1.WatchRequest
+	(*WatchResponse)(nil),         // 12: controlplane.v1.WatchResponse
+	(*timestamppb.Timestamp)(nil), // 13: google.protobuf.Timestamp
 }
 var file_controlplane_v1_controlplane_proto_depIdxs = []int32{
 	0,  // 0: controlplane.v1.CatalogResponse.resources:type_name -> controlplane.v1.ResourceDescriptor
-	10, // 1: controlplane.v1.Resource.updated_at:type_name -> google.protobuf.Timestamp
+	13, // 1: controlplane.v1.Resource.updated_at:type_name -> google.protobuf.Timestamp
 	3,  // 2: controlplane.v1.QueryResponse.resource:type_name -> controlplane.v1.Resource
-	3,  // 3: controlplane.v1.CommandResponse.resource:type_name -> controlplane.v1.Resource
-	3,  // 4: controlplane.v1.WatchResponse.resource:type_name -> controlplane.v1.Resource
-	1,  // 5: controlplane.v1.ControlPlaneService.Catalog:input_type -> controlplane.v1.CatalogRequest
-	4,  // 6: controlplane.v1.ControlPlaneService.Query:input_type -> controlplane.v1.QueryRequest
-	6,  // 7: controlplane.v1.ControlPlaneService.Command:input_type -> controlplane.v1.CommandRequest
-	8,  // 8: controlplane.v1.ControlPlaneService.Watch:input_type -> controlplane.v1.WatchRequest
-	2,  // 9: controlplane.v1.ControlPlaneService.Catalog:output_type -> controlplane.v1.CatalogResponse
-	5,  // 10: controlplane.v1.ControlPlaneService.Query:output_type -> controlplane.v1.QueryResponse
-	7,  // 11: controlplane.v1.ControlPlaneService.Command:output_type -> controlplane.v1.CommandResponse
-	9,  // 12: controlplane.v1.ControlPlaneService.Watch:output_type -> controlplane.v1.WatchResponse
-	9,  // [9:13] is the sub-list for method output_type
-	5,  // [5:9] is the sub-list for method input_type
-	5,  // [5:5] is the sub-list for extension type_name
-	5,  // [5:5] is the sub-list for extension extendee
-	0,  // [0:5] is the sub-list for field type_name
+	13, // 3: controlplane.v1.Revision.at:type_name -> google.protobuf.Timestamp
+	6,  // 4: controlplane.v1.HistoryResponse.revisions:type_name -> controlplane.v1.Revision
+	3,  // 5: controlplane.v1.CommandResponse.resource:type_name -> controlplane.v1.Resource
+	3,  // 6: controlplane.v1.WatchResponse.resource:type_name -> controlplane.v1.Resource
+	1,  // 7: controlplane.v1.ControlPlaneService.Catalog:input_type -> controlplane.v1.CatalogRequest
+	4,  // 8: controlplane.v1.ControlPlaneService.Query:input_type -> controlplane.v1.QueryRequest
+	7,  // 9: controlplane.v1.ControlPlaneService.History:input_type -> controlplane.v1.HistoryRequest
+	9,  // 10: controlplane.v1.ControlPlaneService.Command:input_type -> controlplane.v1.CommandRequest
+	11, // 11: controlplane.v1.ControlPlaneService.Watch:input_type -> controlplane.v1.WatchRequest
+	2,  // 12: controlplane.v1.ControlPlaneService.Catalog:output_type -> controlplane.v1.CatalogResponse
+	5,  // 13: controlplane.v1.ControlPlaneService.Query:output_type -> controlplane.v1.QueryResponse
+	8,  // 14: controlplane.v1.ControlPlaneService.History:output_type -> controlplane.v1.HistoryResponse
+	10, // 15: controlplane.v1.ControlPlaneService.Command:output_type -> controlplane.v1.CommandResponse
+	12, // 16: controlplane.v1.ControlPlaneService.Watch:output_type -> controlplane.v1.WatchResponse
+	12, // [12:17] is the sub-list for method output_type
+	7,  // [7:12] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_controlplane_v1_controlplane_proto_init() }
@@ -718,7 +924,7 @@ func file_controlplane_v1_controlplane_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_controlplane_v1_controlplane_proto_rawDesc), len(file_controlplane_v1_controlplane_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

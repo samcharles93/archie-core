@@ -248,6 +248,7 @@ func (s *Server) registerMappingAndBindingRoutes(mux *http.ServeMux) {
 func (s *Server) registerConfigAndLogRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/control-plane/catalog", s.handleControlPlaneCatalog)
 	mux.HandleFunc("GET /api/control-plane/resources/{kind}", s.handleControlPlaneQuery)
+	mux.HandleFunc("GET /api/control-plane/resources/{kind}/history", s.handleControlPlaneHistory)
 	mux.HandleFunc("POST /api/control-plane/resources/{kind}/commands/{command}", s.handleControlPlaneCommand)
 	mux.HandleFunc("GET /api/control-plane/watch/{kind}", s.handleControlPlaneWatch)
 	mux.HandleFunc("GET /api/identities", s.handleIdentitiesList)
