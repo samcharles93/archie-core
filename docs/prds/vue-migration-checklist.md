@@ -180,7 +180,7 @@ port rather than porting the flat bar first.
 
 - [ ] Five top-level items: Dashboard, Work, Agent, Events, System.
 - [ ] Rename under their group: Inspector, Mappings, Bindings.
-- [ ] Per-item descriptions in the dropdown, not hover tooltips.
+- [ ] Per-item hover tooltips carrying a one-line description.
 - [ ] Configuration splits into `/system/{status,appearance,tasks,models,repos,advanced}`.
 - [ ] `/settings` redirects to `/system/status` — it is in bookmarks and in the
       Go route registry.

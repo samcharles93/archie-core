@@ -73,10 +73,10 @@ was caught.
 
 ### Dropdown behaviour
 
-Each item carries a one-line description rendered beneath its label, not a
-hover tooltip. A dropdown has the width for it, the description is then visible
-to everyone rather than only to a mouse user who waits, and it survives on
-touch where hover does not. The `title` attribute is not used for this.
+Each item carries a one-line description shown as a hover tooltip, using
+shadcn-vue's `Tooltip` rather than the `title` attribute, so it is keyboard
+reachable on focus and styled with the rest of the menu. Touch gets no tooltip,
+so no item may depend on one to be identifiable.
 
 The menu is shadcn-vue's `DropdownMenu` (Reka UI underneath), which already
 supplies the roving focus, ArrowDown/ArrowUp movement, Escape-closes-and-
