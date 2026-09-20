@@ -118,23 +118,30 @@ does not show up as a broken page.
 
 ## Phase 2 — Shared primitives
 
-| Was | Becomes |
+| Was | Is |
 |---|---|
-| `base/pill.jsx` | `Badge`, with the status-token variants from `pill.css` |
-| `base/statTile.jsx` | `Card` composition **plus** its `Sparkline` (inline SVG polyline with its own min/max/step math) and trend-arrow logic, where `goodDirection` distinguishes "up is good" from "up is bad" |
-| `base/icons.jsx` | `lucide-vue-next` for most, but `dashboard`, `mappings`, `bindings`, `curators` and `memory` are bespoke glyphs with no 1:1 Lucide equivalent. Swapping them changes the drawing — a design call, not a rename |
-| `base/gauge.jsx` | bespoke SVG, port as-is — **exports two components**, `Gauge` and `SegmentBar` (proportional multi-segment bar plus legend, used for budget composition). Easy to port only the one the filename names |
-| `base/log-row.jsx` | bespoke, port as-is; see the `LOG_LEVELS` wire contract above |
-| `base/format.jsx` | genuinely pure, port as-is |
-| `base/task-meta.jsx` | **not** a plain module: module-level mutable cache, async fetch, and the boot-time re-render trigger above |
+| `base/pill.jsx` | `Badge`, with five status variants (`ok`, `warn`, `danger`, `info`, `idle`) over the palette's status tokens |
+| `base/statTile.jsx` | `base/StatTile.vue`: full `Card` composition (`CardHeader`, `CardTitle`, `CardDescription`, `CardAction`, `CardContent`), `base/Sparkline.vue`, and the `goodDirection` trend logic |
+| `base/icons.jsx` | **Not ported as a module.** Its string-keyed lookup is the pattern shadcn-vue's rules name as wrong, so icons come from `@lucide/vue` at the call site |
+| `base/gauge.jsx` | `base/Gauge.vue` and `base/SegmentBar.vue`, both ported. The gauge's `aria-label` announces the rounded percentage, which closes `86au` |
+| `base/log-row.jsx` | `base/LogRow.vue` over `lib/log.ts` (`LOG_LEVELS`, `levelKind`, `shortTime`, `fmtValue`) |
+| `base/format.jsx` | `lib/format.ts` (`ago`, `compact`) |
+| `base/task-meta.jsx` | `lib/task-meta.ts`; Vue's reactivity replaces the manual boot-time re-render the Preact module needed |
 
-- [ ] **Copy verbatim.** These five are framework-free and need only a rename:
-      `dashboard/activity-detail.js`, `chat/command-scroll.js`,
-      `workflows/workflow-rows.js`, `base/stream-state.js`,
-      `logs/logs-empty.js`. Each encodes a bug fixed today; re-deriving them by
-      hand is how the bugs come back.
-- [ ] `base/uuid.jsx` → `src/lib/uuid.ts`.
-- [ ] `routing.jsx` is superseded by vue-router. Do not port it.
+Two decisions worth not re-litigating:
+
+- The pill's dot did not come across to `Badge`. The Badge's own shape is the
+  affordance, and the same variant now covers things that are not status pills
+  (a trend indicator), where a dot reads as noise.
+- The five bespoke glyphs (`dashboard`, `mappings`, `bindings`, `curators`,
+  `memory`) are not drawn yet because nothing consumes them: the navigation is
+  text with tooltips. If a page needs one, it becomes its own component at that
+  point rather than a glyph table waiting for a caller.
+
+- [x] **Copy verbatim.** `dashboard/activity-detail.ts`, `chat/command-scroll.ts`,
+      `workflows/workflow-rows.ts`, `logs/logs-empty.ts`, and `lib/stream-state.ts`.
+- [x] `base/uuid.jsx` → `src/lib/uuid.ts`.
+- [x] `routing.jsx` is superseded by vue-router. Not ported.
 
 ## Phase 3 — Pages
 
