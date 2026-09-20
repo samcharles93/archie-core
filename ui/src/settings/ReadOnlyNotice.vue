@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { LockKeyhole } from "@lucide/vue";
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertTitle } from "@/components/ui/alert";
 import { configEditable } from "./state";
 
 /**
@@ -18,10 +18,6 @@ import { configEditable } from "./state";
 <template>
   <Alert v-if="!configEditable" class="mb-4">
     <LockKeyhole />
-    <AlertTitle>Read-only here</AlertTitle>
-    <AlertDescription>
-      This process serves a published configuration snapshot and holds no write path, so the values below cannot be
-      changed from this dashboard. Edit the config file on the host that owns it, or reach the dashboard that does.
-    </AlertDescription>
+    <AlertTitle>Read-only settings</AlertTitle>
   </Alert>
 </template>

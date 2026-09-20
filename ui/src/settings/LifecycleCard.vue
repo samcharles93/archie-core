@@ -32,7 +32,7 @@ const actions = computed(() => lifecycle.value?.actions ?? []);
   <ConfigCard
     v-else
     title="Work lifecycle"
-    description="The task statuses and operator actions archied ships. Add one on the backend and it appears here without a frontend change."
+    description="The task statuses and operator actions archied ships."
   >
     <LifecycleStatusList :statuses="statuses" />
     <LifecycleActionList :actions="actions" />

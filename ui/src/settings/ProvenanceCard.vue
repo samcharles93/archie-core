@@ -27,7 +27,7 @@ const rows = computed(() =>
     title="Configuration sources"
     :description="
       origins.length
-        ? 'Applied from top to bottom; later entries take precedence over earlier ones.'
+        ? 'Later entries take precedence.'
         : 'The files that supplied the running configuration.'
     "
   >

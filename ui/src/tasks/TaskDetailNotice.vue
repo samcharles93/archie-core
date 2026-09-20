@@ -31,7 +31,7 @@ const copy = computed(() =>
         title: "Task not found",
         sub: `No task with id ${props.raw ?? ""} in this deployment.`,
         empty: `Nothing is recorded for task ${props.raw ?? ""}`,
-        detail: "archied answered that this task does not exist, so there is no run history to show.",
+        detail: "archied answered that this task does not exist.",
       },
 );
 </script>

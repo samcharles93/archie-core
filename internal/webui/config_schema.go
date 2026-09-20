@@ -128,7 +128,7 @@ func configFieldDescriptors() []ConfigSection {
 		{
 			ID:          "models",
 			Label:       "Models & providers",
-			Description: "Which model handles each stage of work, and which LLM providers are wired up. Only the environment variable NAME is shown, never its value.",
+			Description: "Which model handles each stage of work. Only the environment variable NAME is shown, never its value.",
 			Fields: []ConfigField{
 				{Key: "models", Label: "Model roles", Type: FieldStructured, Editable: false},
 				{Key: "providers", Label: "Providers", Type: FieldStructured, Editable: false},
@@ -165,7 +165,7 @@ func configFieldDescriptors() []ConfigSection {
 		{
 			ID:          "web",
 			Label:       "Dashboard",
-			Description: "This dashboard's own listen address.",
+			Description: "This dashboard's listen address.",
 			Fields: []ConfigField{
 				{Key: "web.listen", Label: "Listen address", Description: `"off" disables the dashboard.`, Type: FieldString, Editable: true, RestartRequired: true},
 			},

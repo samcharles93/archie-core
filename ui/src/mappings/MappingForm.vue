@@ -37,8 +37,8 @@ function captureLabel(capture: Capture): string {
 const captureHint = computed(() => {
   if (captures.value.length) return null;
   return capturesEnabled.value
-    ? "No events have been captured yet, so there is nothing to bind against."
-    : "Capture is not configured on this deployment, so there is nothing to preview against.";
+    ? "No captured events yet."
+    : "Capture is not configured on this deployment.";
 });
 </script>
 

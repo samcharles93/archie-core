@@ -185,7 +185,7 @@ export function selectCapture(value: string): void {
     current.payloadError = null;
   } catch {
     current.payload = null;
-    current.payloadError = "This capture's body is not valid JSON, so its fields cannot be mapped by path.";
+    current.payloadError = "This capture's body is not valid JSON.";
   }
 }
 

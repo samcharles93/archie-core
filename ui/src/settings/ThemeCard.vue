@@ -19,7 +19,7 @@ function apply(value: unknown): void {
 </script>
 
 <template>
-  <ConfigCard title="Theme" description="The palette this browser renders the dashboard in.">
+  <ConfigCard title="Theme">
     <div class="flex justify-end">
       <ToggleGroup :model-value="theme" aria-label="Theme" @update:model-value="apply">
         <ToggleGroupItem value="dark">Dark</ToggleGroupItem>

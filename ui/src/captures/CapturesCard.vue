@@ -11,7 +11,7 @@ import CapturesList from "./CapturesList.vue";
   <Card>
     <CardHeader>
       <CardTitle>Recent captures</CardTitle>
-      <CardDescription>Newest first. Headers and payloads are redacted before they are stored.</CardDescription>
+      <CardDescription>Headers and payloads are redacted before they are stored.</CardDescription>
     </CardHeader>
     <CardContent>
       <CapturesList />

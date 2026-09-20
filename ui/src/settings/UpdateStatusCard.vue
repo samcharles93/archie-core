@@ -45,7 +45,7 @@ function basis(component: (typeof versionComponents.value)[number]): string {
   <ConfigCard
     v-if="versionMissing"
     title="Update status"
-    description="Not configured on this deployment, so there is nothing to check against."
+    description="Not configured on this deployment."
   />
   <Card v-else-if="versionError" class="mb-4">
     <CardContent>
@@ -60,7 +60,7 @@ function basis(component: (typeof versionComponents.value)[number]): string {
   <ConfigCard
     v-else
     title="Update status"
-    description="How each component is deployed, and whether what's running matches what's installed. Hover a row for the exact versions compared."
+    description="Whether what's running matches what's installed."
   >
     <Empty v-if="!versionComponents.length">
       <EmptyHeader>

@@ -129,7 +129,7 @@ const download = computed(() =>
     <Empty v-else-if="view.kind === 'empty'">
       <EmptyHeader>
         <EmptyTitle>Nothing recorded</EmptyTitle>
-        <EmptyDescription>This attempt's log file has no entries matching the current filter.</EmptyDescription>
+        <EmptyDescription>This attempt's log has no entries matching the current filter.</EmptyDescription>
       </EmptyHeader>
       <EmptyContent v-if="download">
         <Button variant="outline" size="sm" as-child>

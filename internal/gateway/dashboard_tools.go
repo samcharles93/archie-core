@@ -27,22 +27,22 @@ type DashboardPage struct {
 // page line and the dashboard_navigate tool both draw from it, so the agent
 // never points at a page it was not told about.
 var dashboardPages = []DashboardPage{
-	{Path: "/", Label: "Dashboard", Description: "The control room: what Archie is working on, what needs you, and token spend."},
-	{Path: "/tasks", Label: "Tasks", Description: "Issues Archie has picked up and where they stand: the work queue."},
-	{Path: "/workflows", Label: "Workflows", Description: "The routed workflows (bootstrap, implement, tdd, feasibility) and their run history."},
+	{Path: "/", Label: "Dashboard", Description: "What Archie is working on, what needs you, and token spend."},
+	{Path: "/tasks", Label: "Tasks", Description: "Issues Archie has picked up, and where each one stands."},
+	{Path: "/workflows", Label: "Workflows", Description: "The routed workflows and their run history."},
 	{Path: "/skills", Label: "Skills", Description: "The SKILL.md capabilities Archie can activate."},
-	{Path: "/curators", Label: "Curators", Description: "The scheduled passes that curate Archie's memory and captures."},
+	{Path: "/curators", Label: "Curators", Description: "Scheduled passes that curate Archie's memory and captures."},
 	{Path: "/captures", Label: "Event inspector", Description: "Captured inbound events for inspection."},
 	{Path: "/mappings", Label: "Field mappings", Description: "How inbound event fields map onto internal ones."},
-	{Path: "/bindings", Label: "Playbook bindings", Description: "How captured events are bound to the workflows they start."},
+	{Path: "/bindings", Label: "Playbook bindings", Description: "Which workflow a captured event starts."},
 	{Path: "/logs", Label: "Logs", Description: "The daemon log stream, filterable by level and component."},
-	{Path: "/channels", Label: "Channels", Description: "Inbound chat and notification channels (e.g. Telegram) and their state."},
-	{Path: "/system/status", Label: "Status", Description: "Update state, where the running configuration came from, and the daemon listen address."},
-	{Path: "/system/appearance", Label: "Appearance", Description: "Dashboard theme and display preferences."},
-	{Path: "/system/tasks", Label: "Task settings", Description: "Work lifecycle configuration: statuses, operator actions, and budgets."},
+	{Path: "/channels", Label: "Channels", Description: "Inbound chat and notification channels, and their state."},
+	{Path: "/system/status", Label: "Status", Description: "Update state, configuration sources, and the listen address."},
+	{Path: "/system/appearance", Label: "Appearance", Description: "Theme and display preferences."},
+	{Path: "/system/tasks", Label: "Task settings", Description: "Work lifecycle: statuses, operator actions, and budgets."},
 	{Path: "/system/models", Label: "Models", Description: "Model roles and the providers backing them."},
 	{Path: "/system/repos", Label: "Repositories", Description: "Repositories Archie watches, and their per-repo gate overrides."},
-	{Path: "/system/advanced", Label: "Advanced", Description: "Identity, storage and sandboxing, and the dangerous actions."},
+	{Path: "/system/advanced", Label: "Advanced", Description: "Identity, storage, sandboxing, and dangerous actions."},
 }
 
 // DashboardPages returns a copy of the dashboard page registry.

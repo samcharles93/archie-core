@@ -47,7 +47,7 @@ const unavailable = computed(() => {
   if (run.canRetry || run.taskList === undefined) return "";
   return run.task
     ? `A new run can only start from a parked task. This task is ${statusLabel(run.task.status ?? "")}.`
-    : "This task's operator controls could not be read, so a new run cannot be started from here.";
+    : "This task's operator controls could not be read.";
 });
 
 const errorText = computed(() => {

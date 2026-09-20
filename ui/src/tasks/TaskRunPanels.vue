@@ -48,7 +48,7 @@ function retryDebug(): void {
       <PanelError
         v-else-if="run.attempts === null"
         title="Could not load this task's attempts"
-        detail="This panel reads one attempt, and the task's run history could not be read."
+        detail="The task's run history could not be read."
         @retry="run.loadAttempts"
       />
 
@@ -56,7 +56,7 @@ function retryDebug(): void {
         <EmptyHeader>
           <EmptyTitle>No attempt recorded</EmptyTitle>
           <EmptyDescription>
-            This task has no recorded run, so there is nothing to read for an attempt.
+            This task has no recorded run.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>

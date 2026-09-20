@@ -15,7 +15,7 @@ import TooltipCard from "./TooltipCard.vue";
 
 <template>
   <div>
-    <PageHeader title="Appearance" subtitle="How the dashboard looks." />
+    <PageHeader title="Appearance" />
     <ThemeCard />
     <TooltipCard />
   </div>

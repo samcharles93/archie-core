@@ -38,7 +38,7 @@ const recognised = computed(() => schema.value === CONFIG_SCHEMA);
   <PanelError
     v-else-if="events === null"
     title="Could not load this task's events"
-    detail="The configuration is recorded as an event on the task, so it cannot be shown while the event stream is unreadable. archied did not answer — retry, or check the daemon."
+    detail="The run configuration could not be read — retry, or check the daemon."
     @retry="$emit('retry')"
   />
 

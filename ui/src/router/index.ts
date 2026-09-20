@@ -36,7 +36,7 @@ const routes = [
   { path: "/workflows", name: "workflows", component: WorkflowsPage, meta: { label: "Workflows", description: "The routed workflows and their run history.", section: "workflows" } },
   { path: "/skills", name: "skills", component: SkillsPage, meta: { label: "Skills", description: "The SKILL.md capabilities Archie can activate.", section: "skills" } },
   { path: "/curators", name: "curators", component: CuratorsPage, meta: { label: "Curators", description: "Scheduled passes that curate Archie's memory and captures.", section: "curators" } },
-  { path: "/captures", name: "captures", component: CapturesPage, meta: { label: "Inspector", description: "Captured inbound events, as they were received.", section: "captures" } },
+  { path: "/captures", name: "captures", component: CapturesPage, meta: { label: "Inspector", description: "Captured inbound events for inspection.", section: "captures" } },
   { path: "/mappings", name: "mappings", component: MappingsPage, meta: { label: "Mappings", description: "How inbound event fields map onto internal ones.", section: "mappings" } },
   { path: "/bindings", name: "bindings", component: BindingsPage, meta: { label: "Bindings", description: "Which workflow a captured event starts.", section: "bindings" } },
   { path: "/system/status", name: "system-status", component: SystemStatusPage, meta: { label: "Status", description: "Update state, configuration sources, and the listen address.", section: "settings" } },

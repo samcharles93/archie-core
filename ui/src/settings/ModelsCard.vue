@@ -13,7 +13,7 @@ import ProviderTable from "./ProviderTable.vue";
 <template>
   <ConfigCard
     title="Models & providers"
-    description="Which model handles each stage of work, and which LLM providers are wired up. Only the environment variable NAME is shown, never its value."
+    description="Which model handles each stage of work."
   >
     <ModelRoleList />
     <ProviderTable />
