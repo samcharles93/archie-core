@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { computed, useId } from "vue";
+import { computed } from "vue";
 
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LOG_LEVELS } from "@/lib/log";
 
@@ -29,9 +28,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{ filter: [next: LogFilters] }>();
 
-const levelId = useId();
-const stageId = useId();
-
 const levelOptions = computed(() => LOG_LEVELS.map((level) => ({ value: level.value || ALL, label: level.label })));
 const levelValue = computed(() => props.filters.level || ALL);
 const stageValue = computed(() => props.filters.stage || ALL);
@@ -54,9 +50,8 @@ function setStage(value: unknown): void {
     <span class="text-sm font-medium">{{ attempt > 0 ? `Attempt ${attempt}` : "Current attempt" }}</span>
 
     <div class="inline-flex items-center gap-2">
-      <Label :for="levelId" class="text-xs font-normal tracking-[0.05em] text-fg-muted uppercase">Level</Label>
-      <Select :model-value="levelValue" @update:model-value="setLevel">
-        <SelectTrigger :id="levelId" size="sm" aria-label="Filter log entries by level">
+      <Select :model-value="levelValue" aria-label="Filter log entries by level" @update:model-value="setLevel">
+        <SelectTrigger size="sm">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -70,9 +65,8 @@ function setStage(value: unknown): void {
     </div>
 
     <div class="inline-flex items-center gap-2">
-      <Label :for="stageId" class="text-xs font-normal tracking-[0.05em] text-fg-muted uppercase">Stage</Label>
-      <Select :model-value="stageValue" @update:model-value="setStage">
-        <SelectTrigger :id="stageId" size="sm" aria-label="Filter log entries by stage">
+      <Select :model-value="stageValue" aria-label="Filter log entries by stage" @update:model-value="setStage">
+        <SelectTrigger size="sm">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -89,11 +83,7 @@ function setStage(value: unknown): void {
          beside the control is what keeps a sparse result from reading as a
          broken pane. -->
     <p v-if="filters.stage" class="basis-full text-xs text-fg-muted">
-      A stage filter matches only log lines that record a stage. Agent and tool output carries none, so it is not
-      shown while this filter is set.
-    </p>
-    <p v-else-if="!stages.length" class="basis-full text-xs text-fg-muted">
-      This attempt recorded no stage names, so the stage filter has nothing to match.
+      Only lines a stage tagged are shown; agent and tool output carries none.
     </p>
   </div>
 </template>
