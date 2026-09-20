@@ -13,8 +13,10 @@
 // same height at the widths the table is used at.
 const CELL_LIMIT = 160;
 
-/** An activity event, as far as this column reads it. */
-export interface ActivityEvent {
+/** An activity event, as far as this column reads it. Deliberately narrower
+ * than the event the dashboard holds: this is the whole of what the cell
+ * renders, so a caller can pass anything carrying either field. */
+export interface ActivityDetailInput {
   detail?: unknown;
   message?: unknown;
 }
@@ -31,7 +33,7 @@ export interface ActivityDetail {
  * `text` is the single line the cell renders, `full` the untouched payload,
  * and `truncated` whether the two differ.
  */
-export function activityDetail(event: ActivityEvent | undefined): ActivityDetail {
+export function activityDetail(event: ActivityDetailInput | undefined): ActivityDetail {
   const full = String(event?.detail || event?.message || "");
   if (!full) return { text: "", full: "", truncated: false };
 

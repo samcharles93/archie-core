@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 
+import DashboardPage from "@/dashboard/DashboardPage.vue";
 import Placeholder from "@/views/Placeholder.vue";
 
 // internal/gateway/dashboard_tools.go mirrors this table; its test parses this
@@ -14,7 +15,7 @@ import Placeholder from "@/views/Placeholder.vue";
 //   navPath     the navigation entry this route keeps current
 //   soon        visible, greyed and non-navigable
 const routes = [
-  { path: "/", name: "dashboard", component: Placeholder, meta: { label: "Dashboard", description: "What Archie is working on, what needs you, and token spend." } },
+  { path: "/", name: "dashboard", component: DashboardPage, meta: { label: "Dashboard", description: "What Archie is working on, what needs you, and token spend." } },
   { path: "/tasks", name: "tasks", component: Placeholder, meta: { label: "Tasks", description: "Issues Archie has picked up, and where each one stands." } },
   { path: "/tasks/:id", name: "task-detail", component: Placeholder, meta: { label: "Task run", nav: false, navPath: "/tasks" } },
   { path: "/workflows", name: "workflows", component: Placeholder, meta: { label: "Workflows", description: "The routed workflows and their run history.", section: "workflows" } },
