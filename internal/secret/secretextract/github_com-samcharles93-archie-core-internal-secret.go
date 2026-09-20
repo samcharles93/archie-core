@@ -32,20 +32,11 @@ type _github_com_samcharles93_archie_core_internal_secret_Engine struct {
 }
 
 func (W _github_com_samcharles93_archie_core_internal_secret_Engine) Name() string {
-	if W.WName == nil {
-		return ""
-	}
 	return W.WName()
 }
 func (W _github_com_samcharles93_archie_core_internal_secret_Engine) Resolve(key string) (string, error) {
-	if W.WResolve == nil {
-		return "", nil
-	}
 	return W.WResolve(key)
 }
 func (W _github_com_samcharles93_archie_core_internal_secret_Engine) Version() string {
-	if W.WVersion == nil {
-		return ""
-	}
 	return W.WVersion()
 }

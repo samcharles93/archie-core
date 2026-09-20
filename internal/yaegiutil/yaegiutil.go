@@ -12,6 +12,7 @@ package yaegiutil
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/traefik/yaegi/interp"
@@ -75,9 +76,50 @@ func Resolve[T any](i *interp.Interpreter, src, exportPath string) (result T, er
 	}
 	fn, ok := v.Interface().(T)
 	if !ok {
-		return result, fmt.Errorf("%s is %T, want %T", exportPath, v.Interface(), result)
+		return result, fmt.Errorf("%s is %T, want %s", exportPath, v.Interface(), reflect.TypeFor[T]())
+	}
+	if err := checkComplete(fn); err != nil {
+		return result, fmt.Errorf("%s %w", exportPath, err)
 	}
 	return fn, nil
+}
+
+// checkComplete rejects a Yaegi interface wrapper that is missing a method
+// implementation. Yaegi type-checks "var X Iface = impl{}" and refuses an
+// incomplete impl before it ever builds a wrapper, but the generated wrapper
+// type is itself exported into the symbol table, so interpreted code can build
+// one directly ("var X = pkg._Iface{WName: ...}"). Struct-literal semantics
+// leave an omitted method nil, the wrapper still satisfies the interface
+// statically, and the omission surfaces as a nil-call panic at first use.
+// Values that are not wrappers (plain funcs, ordinary Go types) pass through.
+func checkComplete(v any) error {
+	rv := reflect.ValueOf(v)
+	for rv.Kind() == reflect.Pointer && !rv.IsNil() {
+		rv = rv.Elem()
+	}
+	if rv.Kind() != reflect.Struct {
+		return nil
+	}
+	rt := rv.Type()
+	// Every Yaegi wrapper carries the interpreted value alongside its methods.
+	if _, isWrapper := rt.FieldByName("IValue"); !isWrapper {
+		return nil
+	}
+
+	var missing []string
+	for i := range rt.NumField() {
+		f := rt.Field(i)
+		if f.Type.Kind() != reflect.Func || !strings.HasPrefix(f.Name, "W") {
+			continue
+		}
+		if rv.Field(i).IsNil() {
+			missing = append(missing, strings.TrimPrefix(f.Name, "W"))
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("does not implement %s", strings.Join(missing, ", "))
+	}
+	return nil
 }
 
 // Safe runs fn and recovers any panic  --  interpreted code is untrusted

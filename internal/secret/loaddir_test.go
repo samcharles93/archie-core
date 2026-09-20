@@ -148,11 +148,11 @@ var Engine = secret._Engine{
 
 // ── Adversarial tests ────────────────────────────────────────────────
 
-func TestLoadDirNilFunctionFieldsLoadsWithoutPanic(t *testing.T) {
-	// A _Engine with nil WName/WVersion/WResolve must LOAD without
-	// panicking AND must not panic when called  --  the wrapper must
-	// nil-guard. Otherwise resolving a secret from a malformed custom
-	// engine crashes the daemon.
+func TestLoadDirRefusesEngineWithNilFunctionFields(t *testing.T) {
+	// A hand-built _Engine with nil method fields must be refused at load.
+	// It previously loaded and answered ("", nil) from a nil WResolve, so a
+	// malformed engine returned an empty secret and reported success  --  a
+	// silent wrong answer is worse for a secret lookup than a refusal.
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "nilfuncs.go"), []byte(`package main
 
@@ -172,19 +172,8 @@ var Engine = secret._Engine{
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
-		t.Fatalf("LoadDir returned %d, want 1 (nil funcs should not prevent loading)", n)
-	}
-
-	e, _ := r.Get("")
-	if name := e.Name(); name != "" {
-		t.Errorf("Name() = %q, want empty from nil WName", name)
-	}
-	if version := e.Version(); version != "" {
-		t.Errorf("Version() = %q, want empty from nil WVersion", version)
-	}
-	if v, err := e.Resolve("k"); err != nil || v != "" {
-		t.Errorf("Resolve() = (%q, %v), want (\"\", nil) from nil WResolve", v, err)
+	if n != 0 {
+		t.Fatalf("LoadDir returned %d, want 0 (an engine missing methods must be refused)", n)
 	}
 }
 
@@ -314,45 +303,8 @@ var Engine = secret._Engine{
 	}
 }
 
-func TestGeneratedWrapperHasNilGuards(t *testing.T) {
-	// If go generate is re-run on secretextract, it overwrites the
-	// generated wrapper with Yaegi's default (no nil-guards). This test
-	// fails loudly if that happens  --  a custom engine that omits
-	// WResolve would otherwise panic the daemon on first secret lookup.
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "nilguard.go"), []byte(`package main
-
-import "github.com/samcharles93/archie-core/internal/secret"
-
-var Engine = secret._Engine{
-	WName:    nil,
-	WVersion: nil,
-	WResolve: nil,
-}
-`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	r := secret.NewRegistry()
-	n, err := r.LoadDir(dir, symbols)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 1 {
-		t.Fatal("engine with nil funcs not loaded")
-	}
-
-	e, _ := r.Get("")
-	func() {
-		defer func() {
-			if rec := recover(); rec != nil {
-				t.Fatalf("Name()/Version()/Resolve() panicked with nil funcs  --  "+
-					"the generated _Engine wrapper is missing nil guards. "+
-					"Re-run of `go generate` may have overwritten them: %v", rec)
-			}
-		}()
-		_ = e.Name()
-		_ = e.Version()
-		_, _ = e.Resolve("k")
-	}()
-}
+// The former TestGeneratedWrapperHasNilGuards was retired. It pinned
+// hand-added nil guards in the generated wrapper, which every regeneration
+// silently dropped, and the behaviour it protected  --  a nil WResolve
+// answering ("", nil)  --  was a silent wrong answer. LoadDir now refuses such
+// an engine outright; see TestLoadDirRefusesEngineWithNilFunctionFields.

@@ -4,13 +4,12 @@ package wfextract
 
 import (
 	"context"
-	"go/constant"
-	"go/token"
-	"reflect"
-
 	"github.com/samcharles93/archie-core/internal/domain/workflow"
 	"github.com/samcharles93/archie-core/internal/domain/workflow/task"
 	"github.com/samcharles93/archie-core/internal/events"
+	"go/constant"
+	"go/token"
+	"reflect"
 )
 
 func init() {
@@ -135,44 +134,21 @@ type _github_com_samcharles93_archie_core_internal_domain_workflow_Forger struct
 }
 
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Forger) CloseIssue(ctx context.Context, owner string, repo string, number int, comment string) error {
-	if W.WCloseIssue == nil {
-		return nil
-	}
 	return W.WCloseIssue(ctx, owner, repo, number, comment)
 }
-
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Forger) Comment(ctx context.Context, owner string, repo string, number int, body string) (int64, error) {
-	if W.WComment == nil {
-		return 0, nil
-	}
 	return W.WComment(ctx, owner, repo, number, body)
 }
-
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Forger) CreatePR(ctx context.Context, owner string, repo string, title string, head string, base string, body string) (int, error) {
-	if W.WCreatePR == nil {
-		return 0, nil
-	}
 	return W.WCreatePR(ctx, owner, repo, title, head, base, body)
 }
-
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Forger) CreateReviewComments(ctx context.Context, owner string, repo string, number int, reviewedHeadSHA string, comments []workflow.ReviewComment) error {
-	if W.WCreateReviewComments == nil {
-		return nil
-	}
 	return W.WCreateReviewComments(ctx, owner, repo, number, reviewedHeadSHA, comments)
 }
-
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Forger) LinkBranch(ctx context.Context, owner string, repo string, issueNumber int, branch string) error {
-	if W.WLinkBranch == nil {
-		return nil
-	}
 	return W.WLinkBranch(ctx, owner, repo, issueNumber, branch)
 }
-
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Forger) ReplyToReview(ctx context.Context, owner string, repo string, number int, commentID int64, body string) error {
-	if W.WReplyToReview == nil {
-		return nil
-	}
 	return W.WReplyToReview(ctx, owner, repo, number, commentID, body)
 }
 
@@ -183,9 +159,6 @@ type _github_com_samcharles93_archie_core_internal_domain_workflow_Reviewer stru
 }
 
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Reviewer) Review(ctx context.Context, req workflow.ReviewRequest) workflow.ReviewReport {
-	if W.WReview == nil {
-		return workflow.ReviewReport{}
-	}
 	return W.WReview(ctx, req)
 }
 
@@ -198,23 +171,12 @@ type _github_com_samcharles93_archie_core_internal_domain_workflow_Store struct 
 }
 
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Store) InsertEvent(ctx context.Context, e events.Event) (int64, error) {
-	if W.WInsertEvent == nil {
-		return 0, nil
-	}
 	return W.WInsertEvent(ctx, e)
 }
-
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Store) Transition(ctx context.Context, taskID int64, from string, to string, detail string) error {
-	if W.WTransition == nil {
-		return nil
-	}
 	return W.WTransition(ctx, taskID, from, to, detail)
 }
-
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Store) Update(ctx context.Context, t *task.Task) error {
-	if W.WUpdate == nil {
-		return nil
-	}
 	return W.WUpdate(ctx, t)
 }
 
@@ -231,50 +193,23 @@ type _github_com_samcharles93_archie_core_internal_domain_workflow_Trees struct 
 }
 
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Trees) ChangedFiles(ctx context.Context, dir string, base string) ([]string, error) {
-	if W.WChangedFiles == nil {
-		return nil, nil
-	}
 	return W.WChangedFiles(ctx, dir, base)
 }
-
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Trees) ChangedLines(ctx context.Context, dir string, base string) (int, error) {
-	if W.WChangedLines == nil {
-		return 0, nil
-	}
 	return W.WChangedLines(ctx, dir, base)
 }
-
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Trees) CommitAll(ctx context.Context, dir string, message string) (bool, error) {
-	if W.WCommitAll == nil {
-		return false, nil
-	}
 	return W.WCommitAll(ctx, dir, message)
 }
-
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Trees) Diff(ctx context.Context, dir string, base string) (string, error) {
-	if W.WDiff == nil {
-		return "", nil
-	}
 	return W.WDiff(ctx, dir, base)
 }
-
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Trees) Prepare(ctx context.Context, owner string, repo string, base string, issue int, title string, body string, labels string) (dir string, branch string, err error) {
-	if W.WPrepare == nil {
-		return "", "", nil
-	}
 	return W.WPrepare(ctx, owner, repo, base, issue, title, body, labels)
 }
-
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Trees) Push(ctx context.Context, dir string, branch string) error {
-	if W.WPush == nil {
-		return nil
-	}
 	return W.WPush(ctx, dir, branch)
 }
-
 func (W _github_com_samcharles93_archie_core_internal_domain_workflow_Trees) Snapshot(ctx context.Context, dir string, destDir string) error {
-	if W.WSnapshot == nil {
-		return nil
-	}
 	return W.WSnapshot(ctx, dir, destDir)
 }

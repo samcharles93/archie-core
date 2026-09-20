@@ -89,29 +89,10 @@ func (testModule) Manifest() plugin.Manifest {
 func (testModule) Start(context.Context) error { return nil }
 func (testModule) Stop(context.Context) error  { return nil }
 
-// TestWrapperNilGuardsPreserved follows the established pattern: yaegi's
-// fresh wrapper generation omits nil-guards on interface-wrappers, so they
-// are re-applied by hand after every regeneration. A zero-value wrapper
-// (all function fields nil) must not panic.
-func TestWrapperNilGuardsPreserved(t *testing.T) {
-	var mod _github_com_samcharles93_archie_core_internal_plugin_Module
-	if err := mod.Start(context.Background()); err != nil {
-		t.Errorf("Start on nil WStart = %v, want nil", err)
-	}
-	if got := mod.Manifest(); got.ID != "" || got.Name != "" || got.APIVersion != "" {
-		t.Errorf("Manifest on nil WManifest = %#v, want empty", got)
-	}
-	if err := mod.Stop(context.Background()); err != nil {
-		t.Errorf("Stop on nil WStop = %v, want nil", err)
-	}
-
-	var legacy _github_com_samcharles93_archie_core_internal_plugin_Plugin
-	if got := legacy.Name(); got != "" {
-		t.Errorf("Name on nil WName = %q, want empty", got)
-	}
-	if got := legacy.Version(); got != "" {
-		t.Errorf("Version on nil WVersion = %q, want empty", got)
-	}
-}
+// The former TestWrapperNilGuardsPreserved was retired. It pinned hand-added
+// nil guards that every regeneration silently dropped, and the behaviour it
+// protected was a lie: a nil WStop reported a clean shutdown for a module that
+// never ran one. Such a wrapper is now refused in yaegiutil.Resolve, before it
+// can reach a call site.
 
 var _ plugin.Module = testModule{}

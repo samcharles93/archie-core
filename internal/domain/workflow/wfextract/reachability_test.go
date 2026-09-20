@@ -1,7 +1,6 @@
 package wfextract
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
@@ -76,50 +75,11 @@ func UseRouting() error {
 	}
 }
 
-// TestWrapperNilGuardsPreserved is the Go-side nil-guard regression test,
-// following the established pattern in secretextract/wrapper_test.go and
-// pluginextract's TestGeneratedWrapperHasNilGuards: yaegi's fresh wrapper
-// generation omits nil-guards, so they are re-applied by hand after every
-// regeneration. A zero-value wrapper (all function fields nil) must not
-// panic.
-func TestWrapperNilGuardsPreserved(t *testing.T) {
-	var forger _github_com_samcharles93_archie_core_internal_domain_workflow_Forger
-	if err := forger.CloseIssue(context.Background(), "", "", 0, ""); err != nil {
-		t.Errorf("CloseIssue on nil WCloseIssue = %v, want nil", err)
-	}
-	if _, err := forger.CreatePR(context.Background(), "", "", "", "", "", ""); err != nil {
-		t.Errorf("CreatePR on nil WCreatePR = %v, want nil", err)
-	}
-	if err := forger.LinkBranch(context.Background(), "", "", 0, ""); err != nil {
-		t.Errorf("LinkBranch on nil WLinkBranch = %v, want nil", err)
-	}
-
-	if _, err := forger.Comment(context.Background(), "", "", 0, ""); err != nil {
-		t.Errorf("Comment on nil WComment = %v, want nil", err)
-	}
-	if err := forger.ReplyToReview(context.Background(), "", "", 0, 0, ""); err != nil {
-		t.Errorf("ReplyToReview on nil WReplyToReview = %v, want nil", err)
-	}
-	if err := forger.CreateReviewComments(context.Background(), "", "", 0, "", nil); err != nil {
-		t.Errorf("CreateReviewComments on nil WCreateReviewComments = %v, want nil", err)
-	}
-
-	var reviewer _github_com_samcharles93_archie_core_internal_domain_workflow_Reviewer
-	if got := reviewer.Review(context.Background(), workflow.ReviewRequest{}); len(got.Findings) != 0 || got.Status != "" || got.Summary != "" {
-		t.Errorf("Review on nil WReview = %#v, want empty report", got)
-	}
-
-	var trees _github_com_samcharles93_archie_core_internal_domain_workflow_Trees
-	if _, _, err := trees.Prepare(context.Background(), "", "", "", 0, "", "", ""); err != nil {
-		t.Errorf("Prepare on nil WPrepare = %v, want nil", err)
-	}
-	if _, err := trees.Diff(context.Background(), "", ""); err != nil {
-		t.Errorf("Diff on nil WDiff = %v, want nil", err)
-	}
-	if _, err := trees.ChangedLines(context.Background(), "", ""); err != nil {
-		t.Errorf("ChangedLines on nil WChangedLines = %v, want nil", err)
-	}
-}
+// The former TestWrapperNilGuardsPreserved was retired. It pinned hand-added
+// nil guards that every regeneration silently dropped, and the behaviour it
+// protected was a lie: a nil WCloseIssue reported a closed issue that was
+// never touched. A wrapper missing a method is now refused in
+// yaegiutil.Resolve, before it can reach a call site.
 
 // TestChangeCaptureIsNotCallableFromInterpretedCode is the acceptance test for
 // "the sandbox surface did not widen", in the same shape as the reachability

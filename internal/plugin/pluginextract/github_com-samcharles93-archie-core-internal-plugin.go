@@ -41,21 +41,12 @@ type _github_com_samcharles93_archie_core_internal_plugin_Module struct {
 }
 
 func (W _github_com_samcharles93_archie_core_internal_plugin_Module) Manifest() plugin.Manifest {
-	if W.WManifest == nil {
-		return plugin.Manifest{}
-	}
 	return W.WManifest()
 }
 func (W _github_com_samcharles93_archie_core_internal_plugin_Module) Start(a0 context.Context) error {
-	if W.WStart == nil {
-		return nil
-	}
 	return W.WStart(a0)
 }
 func (W _github_com_samcharles93_archie_core_internal_plugin_Module) Stop(a0 context.Context) error {
-	if W.WStop == nil {
-		return nil
-	}
 	return W.WStop(a0)
 }
 
@@ -67,14 +58,8 @@ type _github_com_samcharles93_archie_core_internal_plugin_Plugin struct {
 }
 
 func (W _github_com_samcharles93_archie_core_internal_plugin_Plugin) Name() string {
-	if W.WName == nil {
-		return ""
-	}
 	return W.WName()
 }
 func (W _github_com_samcharles93_archie_core_internal_plugin_Plugin) Version() string {
-	if W.WVersion == nil {
-		return ""
-	}
 	return W.WVersion()
 }

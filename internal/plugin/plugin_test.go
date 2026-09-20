@@ -3,11 +3,16 @@ package plugin_test
 import (
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/traefik/yaegi/interp"
+
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
+	"github.com/samcharles93/archie-core/internal/yaegiutil"
 )
 
 // ── Plugin interface ─────────────────────────────────────────────────
@@ -20,6 +25,65 @@ func TestPluginInterfaceExists(t *testing.T) {
 		Version() string
 	}
 	var _ nameVersioner = p
+}
+
+func TestPartialImplementationIsRejectedBeforeWrapping(t *testing.T) {
+	// Why the generated interface wrappers carry no nil-guards: Yaegi
+	// type-checks the assignment to the interface before it ever builds a
+	// wrapper, so a type missing a method never reaches Go as a wrapper with
+	// a nil method field. Guarding the generated wrappers by hand defends a
+	// state Yaegi cannot produce, and every regeneration silently drops it.
+	i, err := yaegiutil.New(interp.Options{}, symbols)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = yaegiutil.Resolve[plugin.Plugin](i, `package main
+
+import "github.com/samcharles93/archie-core/internal/plugin"
+
+type partial struct{}
+
+func (partial) Name() string { return "partial" }
+
+var Plugin plugin.Plugin = partial{}
+`, "main.Plugin")
+	if err == nil {
+		t.Fatal("want error for a Plugin missing Version(), got nil")
+	}
+	if !strings.Contains(err.Error(), "cannot use type") {
+		t.Errorf("want a Yaegi assignment type error, got: %v", err)
+	}
+}
+
+func TestCompleteImplementationWrapsWithNoNilMethods(t *testing.T) {
+	i, err := yaegiutil.New(interp.Options{}, symbols)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := yaegiutil.Resolve[plugin.Plugin](i, `package main
+
+import "github.com/samcharles93/archie-core/internal/plugin"
+
+type complete struct{}
+
+func (complete) Name() string    { return "n" }
+func (complete) Version() string { return "v" }
+
+var Plugin plugin.Plugin = complete{}
+`, "main.Plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rv := reflect.ValueOf(p)
+	if rv.Kind() != reflect.Struct {
+		t.Fatalf("want a Yaegi wrapper struct, got %T", p)
+	}
+	for j := range rv.NumField() {
+		f := rv.Type().Field(j)
+		if f.Type.Kind() == reflect.Func && rv.Field(j).IsNil() {
+			t.Errorf("wrapper field %s is nil; Yaegi is expected to populate every method", f.Name)
+		}
+	}
 }
 
 // ── LoadDir behavioral tests ─────────────────────────────────────────
@@ -178,11 +242,10 @@ func TestLoadDirNonexistentDirReturnsNil(t *testing.T) {
 // These tests try to BREAK LoadDir. A correct implementation must
 // degrade gracefully  --  skip the bad plugin, load the rest, never panic.
 
-func TestLoadDirNilFunctionFieldsLoadsWithoutPanic(t *testing.T) {
-	// A _Plugin with nil WName/WVersion must LOAD without panicking
-	// AND must not panic when Name()/Version() is called  --  the wrapper
-	// must nil-guard. Otherwise logging plugin names at startup crashes
-	// the daemon.
+func TestLoadDirRefusesWrapperWithNilFunctionFields(t *testing.T) {
+	// A _Plugin with nil WName/WVersion must be refused at load. It
+	// previously loaded and answered "" for both, so the daemon logged a
+	// nameless plugin as if it were healthy.
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "nilfuncs.go"), []byte(`package main
 
@@ -200,19 +263,8 @@ var Plugin = plugin._Plugin{
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plugins) != 1 {
-		t.Fatalf("LoadDir returned %d plugins, want 1 (nil funcs should not prevent loading)", len(plugins))
-	}
-
-	// These must not panic  --  the _Plugin wrapper must nil-guard.
-	// The daemon calls Name()/Version() at startup to log loaded plugins.
-	name := plugins[0].Name()
-	version := plugins[0].Version()
-	if name != "" {
-		t.Errorf("Name() = %q, want empty string from nil WName", name)
-	}
-	if version != "" {
-		t.Errorf("Version() = %q, want empty string from nil WVersion", version)
+	if len(plugins) != 0 {
+		t.Fatalf("LoadDir returned %d plugins, want 0 (a wrapper missing methods must be refused)", len(plugins))
 	}
 }
 
@@ -281,6 +333,32 @@ var Plugin partial
 	}
 	if len(plugins) != 0 {
 		t.Errorf("LoadDir returned %d plugins from partial impl, want 0", len(plugins))
+	}
+}
+
+func TestLoadDirSkipsHandBuiltPartialWrapper(t *testing.T) {
+	// Yaegi type-checks "var Plugin plugin.Plugin = impl{}" and refuses an
+	// incomplete impl, but interpreted code can also build the generated
+	// wrapper directly, where struct-literal semantics leave an omitted method
+	// nil and the call panics at first use. LoadDir must refuse it instead.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "partialwrap.go"), []byte(`package main
+
+import "github.com/samcharles93/archie-core/internal/plugin"
+
+var Plugin = plugin._Plugin{
+	WName: func() string { return "halfbuilt" },
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	plugins, err := plugin.LoadDir(dir, symbols)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plugins) != 0 {
+		t.Fatalf("LoadDir returned %d plugins from a wrapper missing WVersion, want 0", len(plugins))
 	}
 }
 
@@ -383,59 +461,10 @@ var Plugin = struct{}{}
 	_ = plugins
 }
 
-func TestGeneratedWrapperHasNilGuards(t *testing.T) {
-	// C4: the generated _Plugin wrapper must nil-guard WName and WVersion.
-	// If go generate strips these guards, the daemon panics at startup
-	// when logging plugin names. This test verifies the guards exist
-	// and will fail if someone regenerates without them.
-	//
-	// The _Plugin type is in the pluginextract package. We verify
-	// indirectly by loading a plugin with nil funcs and calling
-	// Name()/Version()  --  they must return empty strings, not panic.
-
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "nilguard.go"), []byte(`package main
-
-import "github.com/samcharles93/archie-core/internal/plugin"
-
-var Plugin = plugin._Plugin{
-	WName:    nil,
-	WVersion: nil,
-}
-`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	plugins, err := plugin.LoadDir(dir, symbols)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(plugins) != 1 {
-		t.Fatal("plugin with nil funcs not loaded")
-	}
-
-	// These must not panic. If they do, go generate was run and stripped
-	// the nil guards from the generated wrapper.
-	var name, version string
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				t.Fatalf("Name()/Version() panicked with nil funcs  --  "+
-					"the generated _Plugin wrapper is missing nil guards. "+
-					"Re-run `go generate` may have overwritten them: %v", r)
-			}
-		}()
-		name = plugins[0].Name()
-		version = plugins[0].Version()
-	}()
-
-	if name != "" {
-		t.Errorf("Name() = %q, want empty from nil WName", name)
-	}
-	if version != "" {
-		t.Errorf("Version() = %q, want empty from nil WVersion", version)
-	}
-}
+// The former TestGeneratedWrapperHasNilGuards was retired. It pinned
+// hand-added nil guards in the generated wrapper, which every regeneration
+// silently dropped. LoadDir now refuses such a plugin outright; see
+// TestLoadDirRefusesWrapperWithNilFunctionFields.
 
 func TestLoadDirPluginWithGoBuildTag(t *testing.T) {
 	// Build tags in Yaegi-interpreted code are just comments  --  they

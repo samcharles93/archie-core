@@ -3,10 +3,9 @@
 // from the log package itself so the generated file can import it without a
 // self-import cycle.
 //
-// IMPORTANT: Running `go generate` overwrites the generated file with
-// Yaegi's default wrapper which does NOT include nil-guards on function
-// fields. Re-apply nil-guards manually after regeneration until Yaegi
-// supports generating them natively.
+// The generated file is used verbatim. A wrapper whose method fields are not
+// all populated is refused in yaegiutil.Resolve, so it needs no hand-added
+// nil-guards -- an earlier convention that every regeneration silently undid.
 package logextract
 
 import "reflect"

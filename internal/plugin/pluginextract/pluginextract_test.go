@@ -27,32 +27,10 @@ func TestSymbolsContainsExpectedPluginEntries(t *testing.T) {
 	}
 }
 
-func TestGeneratedWrapperHasNilGuards(t *testing.T) {
-	// Regression: go generate strips nil-guards from _Plugin wrapper.
-	// Verify that Plugin is present in the Symbols table and is an
-	// interface type (as expected for yaegi interface extraction).
-
-	pkgKey := "github.com/samcharles93/archie-core/internal/plugin/plugin"
-	pkg := Symbols[pkgKey]
-
-	pluginType, ok := pkg["Plugin"]
-	if !ok {
-		t.Fatal("Plugin missing from Symbols")
-	}
-
-	// Plugin is an interface type — yaegi represents interfaces
-	// differently from struct pointers.
-	kind := pluginType.Kind()
-	if kind != reflect.Interface && kind != reflect.Pointer {
-		t.Errorf("Plugin type kind = %v, want Interface or Ptr", kind)
-	}
-
-	// Verify WName and WVersion exist on the Plugin interface type.
-	// For interface types, we check the method set.
-	if kind == reflect.Interface {
-		methodCount := pluginType.Type().NumMethod()
-		if methodCount < 2 {
-			t.Errorf("Plugin interface has %d methods, expected at least 2 (Name, Version)", methodCount)
-		}
-	}
-}
+// The former TestGeneratedWrapperHasNilGuards was retired: it was named for a
+// regression Yaegi cannot produce. Yaegi type-checks the assignment to an
+// interface before building a wrapper, so a wrapper never reaches Go with a nil
+// method field, and the hand-added guards it referred to only survived until the
+// next regeneration. That invariant is pinned directly in internal/plugin by
+// TestPartialImplementationIsRejectedBeforeWrapping and
+// TestCompleteImplementationWrapsWithNoNilMethods.

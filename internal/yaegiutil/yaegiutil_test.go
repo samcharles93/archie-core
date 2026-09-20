@@ -37,6 +37,23 @@ func Greet() string { return "hi" }`, "main.Greet")
 	}
 }
 
+func TestResolveWrongTypeNamesTheWantedType(t *testing.T) {
+	// The zero value of an interface T formats as <nil> under %T, so a failed
+	// assertion used to read "want <nil>" and tell the operator nothing.
+	i, err := yaegiutil.New(interp.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = yaegiutil.Resolve[interface{ Name() string }](i, `package main
+var Greet = 42`, "main.Greet")
+	if err == nil {
+		t.Fatal("want error for wrong type, got nil")
+	}
+	if strings.Contains(err.Error(), "<nil>") {
+		t.Errorf("error must name the wanted interface, got: %v", err)
+	}
+}
+
 func TestResolveMissingExport(t *testing.T) {
 	i, err := yaegiutil.New(interp.Options{})
 	if err != nil {

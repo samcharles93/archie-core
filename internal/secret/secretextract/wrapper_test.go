@@ -38,20 +38,6 @@ func TestEngineWrapperResolvePropagatesError(t *testing.T) {
 	}
 }
 
-func TestEngineWrapperNilGuards(t *testing.T) {
-	// The zero-value wrapper (all function fields nil) must not panic; this
-	// is the nil-guard behaviour TestGeneratedWrapperHasNilGuards protects
-	// against regenerate wiping out (see package doc comment).
-	var w _github_com_samcharles93_archie_core_internal_secret_Engine
-
-	if got, want := w.Name(), ""; got != want {
-		t.Errorf("Name() with nil WName = %q, want %q", got, want)
-	}
-	if got, want := w.Version(), ""; got != want {
-		t.Errorf("Version() with nil WVersion = %q, want %q", got, want)
-	}
-	got, err := w.Resolve("key")
-	if got != "" || err != nil {
-		t.Errorf("Resolve() with nil WResolve = (%q, %v), want (\"\", nil)", got, err)
-	}
-}
+// The former TestEngineWrapperNilGuards was retired along with the hand-added
+// nil guards it pinned. A wrapper missing a method is now refused where it
+// enters the daemon, in yaegiutil.Resolve, so it never reaches a call site.

@@ -18,9 +18,11 @@ import (
 	"github.com/samcharles93/archie-core/internal/yaegiutil"
 )
 
-// Plugin is a core plugin loaded by the daemon at startup. Each .go file
-// in ~/.config/archie/plugins/ must export a variable named "Plugin" that
-// satisfies this interface.
+// Plugin is a core plugin loaded by the daemon at startup. Each .go file in
+// ~/.config/archie/plugins/ must export a variable named "Plugin" declared
+// with an interface type: "var Plugin plugin.Plugin = impl{}". A
+// concrete-typed export is refused, because Yaegi only bridges an interpreted
+// value to Go as an interface when the declaration names one.
 type Plugin interface {
 	Name() string
 	Version() string
