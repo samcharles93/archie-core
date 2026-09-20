@@ -25,7 +25,6 @@ func init() {
 		"Module":         reflect.ValueOf((*plugin.Module)(nil)),
 		"Permission":     reflect.ValueOf((*plugin.Permission)(nil)),
 		"Plugin":         reflect.ValueOf((*plugin.Plugin)(nil)),
-		"Registry":       reflect.ValueOf((*plugin.Registry)(nil)),
 
 		// interface wrapper definitions
 		"_Module": reflect.ValueOf((*_github_com_samcharles93_archie_core_internal_plugin_Module)(nil)),

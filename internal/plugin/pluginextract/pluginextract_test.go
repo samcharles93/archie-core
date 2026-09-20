@@ -19,13 +19,6 @@ func TestSymbolsContainsExpectedPluginEntries(t *testing.T) {
 		t.Errorf("LoadDir kind = %v, want Func", v.Kind())
 	}
 
-	// Registry must be a pointer type.
-	if v, ok := pkg["Registry"]; !ok {
-		t.Error("Registry missing from Symbols")
-	} else if v.Kind() != reflect.Pointer {
-		t.Errorf("Registry kind = %v, want Ptr", v.Kind())
-	}
-
 	// Plugin must be a pointer type.
 	if v, ok := pkg["Plugin"]; !ok {
 		t.Error("Plugin missing from Symbols")

@@ -10,7 +10,7 @@ import (
 	"github.com/samcharles93/archie-core/internal/plugin/pluginextract"
 )
 
-// ── Plugin interface and registry ────────────────────────────────────
+// ── Plugin interface ─────────────────────────────────────────────────
 
 func TestPluginInterfaceExists(t *testing.T) {
 	var p plugin.Plugin
@@ -20,10 +20,6 @@ func TestPluginInterfaceExists(t *testing.T) {
 		Version() string
 	}
 	var _ nameVersioner = p
-}
-
-func TestRegistryExists(t *testing.T) {
-	_ = &plugin.Registry{}
 }
 
 // ── LoadDir behavioral tests ─────────────────────────────────────────

@@ -26,19 +26,6 @@ type Plugin interface {
 	Version() string
 }
 
-// Registry holds loaded plugins and dispatches extension point calls.
-type Registry struct {
-	plugins []Plugin
-}
-
-// Register adds a plugin to the registry.
-func (r *Registry) Register(p Plugin) {
-	r.plugins = append(r.plugins, p)
-}
-
-// Plugins returns all registered plugins.
-func (r *Registry) Plugins() []Plugin { return r.plugins }
-
 // LoadDir discovers and evaluates .go files in the given directory.
 // Each file must export a variable named "Plugin" that implements the
 // Plugin interface. Failed plugins are logged and skipped  --  the daemon
