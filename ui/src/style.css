@@ -49,6 +49,7 @@
     --color-primary: var(--primary);
     --color-primary-foreground: var(--primary-foreground);
     --color-primary-soft: var(--primary-soft);
+    --color-link: var(--link);
     --color-secondary: var(--secondary);
     --color-secondary-foreground: var(--secondary-foreground);
     --color-muted: var(--muted);
@@ -102,11 +103,16 @@
     --popover-foreground: #F0EAF7;
     --foreground: #F0EAF7;
 
-    /* Ink on the violet is 5.64:1; white on it is 4.02:1 and fails, so the
-       button label is the canvas colour in both directions, never white. */
-    --primary: #A76BF5;
-    --primary-foreground: #0F0A16;
-    --primary-soft: rgba(167, 107, 245, 0.16);
+    /* The primary surface is a deep violet so its label can be white: the
+       earlier bright violet with canvas-dark ink passed the ratio on paper and
+       failed in the hand -- black on bright purple vibrates at small sizes.
+       White on #7E56E6 is 4.81:1. Link text on the canvas is a separate token:
+       one violet cannot be both a dark-enough surface and a light-enough text
+       colour, so --link carries the light tint (#B691F7, 7.78:1 on canvas). */
+    --primary: #7E56E6;
+    --primary-foreground: #FFFFFF;
+    --primary-soft: rgba(126, 86, 230, 0.16);
+    --link: #B691F7;
 
     /* shadcn's `accent` is the hover surface, not the brand colour. */
     --secondary: #271838;
@@ -175,6 +181,7 @@
     --primary: #8B5FBF;
     --primary-foreground: #FFFFFF;
     --primary-soft: rgba(139, 95, 191, 0.12);
+    --link: #7A4FB3;
 
     --secondary: #E9D7F7;
     --secondary-foreground: #2E2A35;

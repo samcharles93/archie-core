@@ -8,9 +8,9 @@ import { statusKind, statusLabel } from "@/lib/task-meta";
 import { useTaskRun } from "./use-task-run";
 
 /**
- * The task's lifecycle status, the attempt this page is showing, and the forge
- * coordinates. All three come from reads the page already holds, so the bar
- * costs no request of its own.
+ * One meta line under the title: lifecycle status, the attempt on screen, and
+ * the forge coordinates. Everything comes from reads the page already holds,
+ * so the bar costs no request of its own.
  *
  * "Not read" and "loading" are kept apart from "no status": the task list is
  * a list of the 100 most recently updated, so a task outside it is a fact
@@ -24,28 +24,23 @@ const taskKind = computed<StatusKind>(() => statusKind(run.task?.status ?? "") a
 const taskStatusLabel = computed(() => statusLabel(run.task?.status ?? ""));
 
 const attemptText = computed(() => {
-  if (run.attempts === null) return "run history unreadable";
-  if (run.attempts === undefined) return "loading…";
-  if (run.attemptNumber == null) return "none recorded";
+  if (run.attempts === null) return "";
+  if (run.attempts === undefined) return "";
+  if (run.attemptNumber == null) return "";
   return `attempt ${run.attemptNumber} of ${run.currentAttempt ?? run.attemptNumber}`;
 });
 </script>
 
 <template>
-  <div class="-mt-2 mb-4 flex flex-wrap items-center gap-4 text-sm">
-    <span class="inline-flex items-center gap-2">
-      <span class="text-xs tracking-[0.05em] text-fg-muted uppercase">Task status</span>
-      <span v-if="run.taskList === undefined" class="text-fg-muted">loading…</span>
-      <Badge v-else-if="run.task" :variant="taskKind">{{ taskStatusLabel }}</Badge>
-      <span v-else class="text-fg-muted">not read</span>
-    </span>
-    <span class="inline-flex items-center gap-2">
-      <span class="text-xs tracking-[0.05em] text-fg-muted uppercase">Attempt</span>
-      <span>{{ attemptText }}</span>
-    </span>
+  <div class="mb-4 flex flex-wrap items-center gap-3 text-sm">
+    <span v-if="run.taskList === undefined" class="text-fg-muted">loading…</span>
+    <template v-else-if="run.task">
+      <Badge :variant="taskKind">{{ taskStatusLabel }}</Badge>
+    </template>
+    <span v-if="attemptText" class="text-fg-muted">{{ attemptText }}</span>
     <a
       v-if="run.task?.repo_url"
-      class="text-primary hover:underline"
+      class="text-link hover:underline"
       :href="run.task.repo_url"
       target="_blank"
       rel="noreferrer"
@@ -54,7 +49,7 @@ const attemptText = computed(() => {
     </a>
     <a
       v-if="run.task?.issue_url && run.task?.issue_number"
-      class="text-primary hover:underline"
+      class="text-link hover:underline"
       :href="run.task.issue_url"
       target="_blank"
       rel="noreferrer"
@@ -63,7 +58,7 @@ const attemptText = computed(() => {
     </a>
     <a
       v-if="run.task?.pr_url && run.task?.pr_number"
-      class="text-primary hover:underline"
+      class="text-link hover:underline"
       :href="run.task.pr_url"
       target="_blank"
       rel="noreferrer"

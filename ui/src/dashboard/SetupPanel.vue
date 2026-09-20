@@ -40,7 +40,7 @@ function dismiss() {
       <CardTitle>Finish setting up</CardTitle>
       <CardDescription>Archie needs these before it can work on its own.</CardDescription>
       <CardAction>
-        <span class="text-lg font-semibold text-primary">{{ pct }}%</span>
+        <span class="text-lg font-semibold text-link">{{ pct }}%</span>
       </CardAction>
     </CardHeader>
     <CardContent>

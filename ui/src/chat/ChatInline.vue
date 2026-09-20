@@ -26,7 +26,7 @@ defineProps<{ inline: ChatInline[] }>();
       :href="span.href"
       target="_blank"
       rel="noreferrer"
-      class="text-primary underline-offset-4 hover:underline"
+      class="text-link underline-offset-4 hover:underline"
       >{{ span.text }}</a
     >
     <em v-else-if="span.kind === 'em'">{{ span.text }}</em>

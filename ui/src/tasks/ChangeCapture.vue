@@ -28,7 +28,7 @@ const prNumber = computed(() => props.capture.pr_number);
     </div>
     <div class="mt-2 mb-3 flex flex-wrap items-center gap-3 text-xs text-fg-muted">
       <span class="font-mono">
-        <a v-if="links.repo" class="text-primary hover:underline" :href="links.repo" target="_blank" rel="noreferrer">
+        <a v-if="links.repo" class="text-link hover:underline" :href="links.repo" target="_blank" rel="noreferrer">
           {{ capture.owner }}/{{ capture.repo }}
         </a>
         <template v-else>{{ capture.owner || "" }}/{{ capture.repo || "" }}</template>
@@ -38,7 +38,7 @@ const prNumber = computed(() => props.capture.pr_number);
       </span>
       <span v-if="capture.head_sha" class="font-mono">{{ String(capture.head_sha).slice(0, 8) }}</span>
       <template v-if="prNumber">
-        <a v-if="links.pr" class="text-primary hover:underline" :href="links.pr" target="_blank" rel="noreferrer">
+        <a v-if="links.pr" class="text-link hover:underline" :href="links.pr" target="_blank" rel="noreferrer">
           PR #{{ prNumber }}
         </a>
         <span v-else class="font-mono">PR #{{ prNumber }}</span>

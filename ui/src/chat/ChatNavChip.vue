@@ -18,7 +18,7 @@ defineProps<{ path: string; label?: string }>();
   <RouterLink
     :to="path"
     :title="`Go to ${label || path}`"
-    class="inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary/45 bg-primary-soft px-2.5 py-1 text-xs font-semibold text-primary transition-colors hover:border-primary hover:bg-primary/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+    class="inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary/45 bg-primary-soft px-2.5 py-1 text-xs font-semibold text-link transition-colors hover:border-primary hover:bg-primary/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
   >
     <ArrowUpRight aria-hidden="true" class="size-3.5 shrink-0" />
     <span class="truncate">{{ label || path }}</span>

@@ -15,7 +15,7 @@ const PROMPTS = ["Summarise active tasks", "Show running agents", "Check system 
   <div class="w-full self-center justify-self-center py-6 text-center">
     <span
       aria-hidden="true"
-      class="mx-auto mb-3 grid size-9 place-items-center rounded-xl border border-border-strong font-bold text-primary"
+      class="mx-auto mb-3 grid size-9 place-items-center rounded-xl border border-border-strong font-bold text-link"
       >A</span
     >
     <h2 class="text-lg font-semibold tracking-[-0.02em]">What are we working on?</h2>

@@ -60,18 +60,13 @@ const startedAt = computed(() => {
     <Empty v-if="!attempts.length">
       <EmptyHeader>
         <EmptyTitle>No attempts recorded</EmptyTitle>
-        <EmptyDescription>
-          This task has no recorded run. An attempt is written when a stage event is emitted, and none exist here.
-        </EmptyDescription>
       </EmptyHeader>
     </Empty>
 
     <Empty v-else-if="!attempt">
       <EmptyHeader>
-        <EmptyTitle>Attempt {{ run.attemptNumber }} is not recorded for this task</EmptyTitle>
-        <EmptyDescription>
-          This task recorded attempt {{ attempts.map((a) => a.attempt).join(", ") }}.
-        </EmptyDescription>
+        <EmptyTitle>Attempt {{ run.attemptNumber }} is not recorded</EmptyTitle>
+        <EmptyDescription>This task recorded attempt {{ attempts.map((a) => a.attempt).join(", ") }}.</EmptyDescription>
       </EmptyHeader>
     </Empty>
 
