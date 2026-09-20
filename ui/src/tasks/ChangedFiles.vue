@@ -45,8 +45,7 @@ const nothingRecorded = computed(() => !props.state?.found || !captures.value.le
 
   <Empty v-else-if="nothingRecorded">
     <EmptyHeader>
-      <EmptyTitle>No change capture recorded for this attempt</EmptyTitle>
-      <EmptyDescription>The attempt may predate capture, or it produced no commit.</EmptyDescription>
+      <EmptyTitle>No change capture recorded</EmptyTitle>
     </EmptyHeader>
   </Empty>
 
