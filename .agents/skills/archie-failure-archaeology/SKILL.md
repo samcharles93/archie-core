@@ -9,7 +9,8 @@ Stop the project from paying twice for the same lesson. Reconstruct what
 happened from checked-out code, tests, configuration, and commit graph.
 Treat commit prose as a lead, not proof. Preserve uncertainty.
 
-All volatile observations are dated **2026-09-18** (HEAD `2e1e1549`).
+All volatile observations are dated **2026-09-18** (HEAD `2e1e1549`); the merge-shape
+section under Step 4 is dated **2026-09-20** (HEAD `1b0133d7`).
 
 Route to `archie-debugging-playbook` for active symptoms,
 `archie-codebase-discovery` for deep caller tracing.
@@ -57,9 +58,44 @@ git blame -L <start>,<end> -- <live-file>
 ```sh
 git show --no-ext-diff --format=fuller --stat <commit>
 git show --no-ext-diff -U80 <commit> -- <affected-paths>
-git merge-base --is-ancestor <commit> HEAD
+.agents/skills/archie-failure-archaeology/scripts/on-main.sh <commit>
 git branch -a --contains <commit>
 ```
+
+#### `--is-ancestor` is blind to squash and rebase merges
+
+`git merge-base --is-ancestor` answers a topology question: is this exact commit
+object an ancestor. **Squash and merge** always mints a new commit, and **Rebase
+and merge** mints new ones whenever the branch had to be replayed, so both
+orphan the SHA a branch holds. `git branch -a --contains` and
+`git branch -r --no-merged` are blind in the same way.
+
+As of **2026-09-20** (`origin/main` `1b0133d7`) this repository squash-merges —
+the last fifteen merged pull requests are all squashes, so the raw check is a
+false negative for every one of them. It was sound for everything merged up to
+**2026-09-18**, which used merge commits.
+
+Use `scripts/on-main.sh`, which keeps `--is-ancestor` as the offline fast path
+and otherwise asks the GitHub API, where merge state is recorded independently
+of the commit graph:
+
+```sh
+.agents/skills/archie-failure-archaeology/scripts/on-main.sh <ref> [base-ref]
+```
+
+`<base-ref>` defaults to `origin/main`; name `gitea/main` or `HEAD` when that is
+the trunk you mean, and `git fetch` first so the fast path is not stale.
+
+| Exit | Meaning |
+|---|---|
+| `0` | Ancestor of `<base-ref>`, or recorded in a merged pull request — landed |
+| `1` | On GitHub, in no merged pull request — not landed |
+| `2` | Bad ref, no `gh`, offline, never pushed — **undetermined, not a negative** |
+
+Branch on the code explicitly; `if on-main.sh <ref>; then` folds `2` into "not
+landed", which is the error this helper exists to prevent. It answers "did *this
+ref* land", not "did this work land" — a change reimplemented on another branch
+still reads `not-landed` for the original commit.
 
 Read parent version when failure is semantic:
 
@@ -190,5 +226,5 @@ Verify candidate state:
 git branch -r --no-merged HEAD
 git log -1 --date=iso-strict --format='%H %ad %s' <branch>
 git diff --stat HEAD...<branch>
-git merge-base --is-ancestor <branch> HEAD
+.agents/skills/archie-failure-archaeology/scripts/on-main.sh <branch> HEAD
 ```
