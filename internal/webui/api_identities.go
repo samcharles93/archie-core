@@ -87,9 +87,14 @@ func (s *Server) handleIdentityCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "cannot create identity ID", http.StatusInternalServerError)
 		return
 	}
+	audit, err := webAudit()
+	if err != nil {
+		http.Error(w, "cannot create request ID", http.StatusInternalServerError)
+		return
+	}
 	value, err := identity.New(id, request.Kind, request.DisplayName)
 	if err == nil {
-		value, err = s.Identities.Create(r.Context(), value, webIdentityAudit())
+		value, err = s.Identities.Create(r.Context(), value, audit)
 	}
 	if err != nil {
 		writeIdentityError(w, err)
@@ -105,8 +110,13 @@ func (s *Server) handleIdentityCommand(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
+	audit, err := webAudit()
+	if err != nil {
+		http.Error(w, "cannot create request ID", http.StatusInternalServerError)
+		return
+	}
 	command := identity.Command{Type: identity.CommandType(r.PathValue("command")), DisplayName: request.DisplayName}
-	value, err := s.Identities.Apply(r.Context(), identity.IdentityID(r.PathValue("id")), request.ExpectedVersion, command, webIdentityAudit())
+	value, err := s.Identities.Apply(r.Context(), identity.IdentityID(r.PathValue("id")), request.ExpectedVersion, command, audit)
 	if err != nil {
 		writeIdentityError(w, err)
 		return
@@ -114,9 +124,16 @@ func (s *Server) handleIdentityCommand(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, value)
 }
 
-func webIdentityAudit() identity.Audit {
-	id, _ := newControlPlaneRequestID()
-	return identity.Audit{ActorID: identity.SystemID, Source: "archie-ui", RequestID: id}
+// webAudit attributes a dashboard write. The dashboard authenticates with one
+// shared token and carries no per-user session, so the actor is the System
+// identity: a real identity the repository resolves, never a name the request
+// could claim for itself.
+func webAudit() (identity.Audit, error) {
+	id, err := newControlPlaneRequestID()
+	if err != nil {
+		return identity.Audit{}, err
+	}
+	return identity.Audit{ActorID: identity.SystemID, Source: "archie-ui", RequestID: id}, nil
 }
 
 func randomIdentityID() (identity.IdentityID, error) {

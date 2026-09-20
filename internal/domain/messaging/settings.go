@@ -100,9 +100,27 @@ func (c *SettingsCommand) Execute(ctx context.Context, actor, input string) stri
 	}
 }
 
-func (c *SettingsCommand) replace(ctx context.Context, actor, input string) string {
+// resolveActor maps a channel sender to the Archie identity the write is
+// recorded against. A sender that does not resolve cannot run a command: the
+// audit record names an identity or the command does not happen.
+func (c *SettingsCommand) resolveActor(ctx context.Context, subject, actor string) (identity.IdentityID, string) {
 	if strings.TrimSpace(actor) == "" {
-		return "Settings changes require an authenticated Archie identity; this channel cannot resolve one."
+		return "", subject + " require an authenticated Archie identity; this channel cannot resolve one."
+	}
+	if c.identities == nil {
+		return "", subject + " require an authenticated Archie identity; identity administration is unavailable."
+	}
+	resolved, err := c.identities.ResolveLegacyName(ctx, actor)
+	if err != nil {
+		return "", subject + " require an authenticated Archie identity; this sender did not resolve."
+	}
+	return resolved.ID, ""
+}
+
+func (c *SettingsCommand) replace(ctx context.Context, actor, input string) string {
+	actorID, refusal := c.resolveActor(ctx, "Settings changes", actor)
+	if refusal != "" {
+		return refusal
 	}
 	kind, raw, ok := strings.Cut(strings.TrimSpace(input), " ")
 	if !ok || kind == "" || strings.TrimSpace(raw) == "" {
@@ -119,7 +137,7 @@ func (c *SettingsCommand) replace(ctx context.Context, actor, input string) stri
 	if err := json.Unmarshal([]byte(raw), &value); err != nil {
 		return "Settings validation failed: invalid JSON."
 	}
-	updated, err := c.client.Command(ctx, SettingCommand{Kind: kind, RawValue: value, ExpectedVersion: current.Version, Actor: actor, Source: "messaging", RequestID: newSettingsRequestID()})
+	updated, err := c.client.Command(ctx, SettingCommand{Kind: kind, RawValue: value, ExpectedVersion: current.Version, Actor: string(actorID), Source: "messaging", RequestID: newSettingsRequestID()})
 	if err != nil {
 		return settingsError(err)
 	}
@@ -128,15 +146,9 @@ func (c *SettingsCommand) replace(ctx context.Context, actor, input string) stri
 
 func (c *SettingsCommand) identity(ctx context.Context, actor string, args []string) string { //nolint:gocyclo,cyclop,funlen // command arity checks remain adjacent to spoof-sensitive dispatch
 	const usage = "Usage: /settings identity <list|create <kind> <name>|rename <id> <name>|suspend <id>|reactivate <id>|retire <id>>"
-	if c.identities == nil {
-		return "Identity administration is unavailable."
-	}
-	if strings.TrimSpace(actor) == "" {
-		return "Identity changes require an authenticated Archie identity; this channel cannot resolve one."
-	}
-	actorIdentity, err := c.identities.ResolveLegacyName(ctx, actor)
-	if err != nil {
-		return "Identity changes require an authenticated Archie identity; this sender did not resolve."
+	actorID, refusal := c.resolveActor(ctx, "Identity changes", actor)
+	if refusal != "" {
+		return refusal
 	}
 	if len(args) == 1 && args[0] == "list" {
 		values, listErr := c.identities.List(ctx)
@@ -149,7 +161,7 @@ func (c *SettingsCommand) identity(ctx context.Context, actor string, args []str
 		}
 		return strings.Join(lines, "\n")
 	}
-	audit := identity.Audit{ActorID: actorIdentity.ID, Source: "messaging", RequestID: newSettingsRequestID()}
+	audit := identity.Audit{ActorID: actorID, Source: "messaging", RequestID: newSettingsRequestID()}
 	if len(args) == 3 && args[0] == "create" {
 		id := identity.StableID(audit.RequestID)
 		value, createErr := identity.New(id, identity.Kind(args[1]), args[2])
@@ -235,8 +247,9 @@ func (c *SettingsCommand) set(ctx context.Context, actor string, args []string) 
 	if len(args) < 3 {
 		return settingsUsage
 	}
-	if strings.TrimSpace(actor) == "" {
-		return "Settings changes require an authenticated Archie identity; this channel cannot resolve one."
+	actorID, refusal := c.resolveActor(ctx, "Settings changes", actor)
+	if refusal != "" {
+		return refusal
 	}
 	descriptor, err := c.descriptor(ctx, args[1])
 	if err != nil {
@@ -259,7 +272,7 @@ func (c *SettingsCommand) set(ctx context.Context, actor string, args []string) 
 		}
 		value[name] = parsed
 	}
-	updated, err := c.client.Command(ctx, SettingCommand{Kind: current.Kind, Value: value, ExpectedVersion: current.Version, Actor: actor, Source: "messaging", RequestID: newSettingsRequestID()})
+	updated, err := c.client.Command(ctx, SettingCommand{Kind: current.Kind, Value: value, ExpectedVersion: current.Version, Actor: string(actorID), Source: "messaging", RequestID: newSettingsRequestID()})
 	if err != nil {
 		return settingsError(err)
 	}

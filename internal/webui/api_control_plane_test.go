@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
+	"github.com/samcharles93/archie-core/internal/domain/identity"
 )
 
 type controlPlaneClientStub struct {
@@ -56,8 +57,8 @@ func TestControlPlaneCommandSuppliesTrustedAttribution(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %q", response.Code, response.Body.String())
 	}
-	if client.command.Actor != controlPlaneActor || client.command.Source != controlPlaneSource {
-		t.Fatalf("attribution = %q/%q", client.command.Actor, client.command.Source)
+	if client.command.Actor != string(identity.SystemID) || client.command.Source != "archie-ui" {
+		t.Fatalf("attribution = %q/%q, want the System identity from archie-ui", client.command.Actor, client.command.Source)
 	}
 	if !strings.HasPrefix(client.command.RequestId, "ui-") || client.command.ExpectedVersion != 1 {
 		t.Fatalf("request = %+v", client.command)

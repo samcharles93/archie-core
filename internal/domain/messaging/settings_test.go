@@ -101,6 +101,15 @@ func (s *settingsClientStub) Command(_ context.Context, command SettingCommand) 
 	return SettingResource{Kind: command.Kind, Version: command.ExpectedVersion + 1, Value: command.Value}, s.commandErr
 }
 
+// operatorRepository resolves the one sender the settings tests speak as.
+func operatorRepository(name string) (*identityRepositoryStub, identity.Identity) {
+	operator, _ := identity.New(identity.StableID(name), identity.KindUser, "operator")
+	return &identityRepositoryStub{
+		values:  map[identity.IdentityID]identity.Identity{operator.ID: operator},
+		aliases: map[string]identity.IdentityID{name: operator.ID},
+	}, operator
+}
+
 func TestSettingsSetUsesTrustedActorAndCurrentVersion(t *testing.T) {
 	client := &settingsClientStub{
 		descriptors: []SettingDescriptor{{Kind: "limits", Fields: map[string]SettingField{
@@ -108,15 +117,16 @@ func TestSettingsSetUsesTrustedActorAndCurrentVersion(t *testing.T) {
 		}}},
 		resource: SettingResource{Kind: "limits", Version: 7, Value: map[string]any{"enabled": false, "retries": float64(1), "timeout": "1m", "label": "old"}},
 	}
-	command := NewSettingsCommand(client)
+	repository, operator := operatorRepository("archie:operator-7")
+	command := NewSettingsCommand(client).WithIdentities(repository)
 
 	reply := command.Execute(t.Context(), "archie:operator-7", `set limits enabled=true retries=3 timeout="2m30s" label="night run"`)
 
 	if !strings.Contains(reply, "version 8") {
 		t.Fatalf("reply = %q, want version confirmation", reply)
 	}
-	if client.command.Actor != "archie:operator-7" {
-		t.Fatalf("actor = %q, want trusted actor", client.command.Actor)
+	if client.command.Actor != string(operator.ID) {
+		t.Fatalf("actor = %q, want the resolved identity ID %q", client.command.Actor, operator.ID)
 	}
 	if client.command.ExpectedVersion != 7 {
 		t.Fatalf("expected version = %d, want 7", client.command.ExpectedVersion)
@@ -136,6 +146,10 @@ func TestSettingsSetUsesTrustedActorAndCurrentVersion(t *testing.T) {
 	if !strings.Contains(unauthenticatedReply, "authenticated Archie identity") || client.command.RequestID != previousID {
 		t.Fatalf("unauthenticated reply = %q, command unexpectedly dispatched", unauthenticatedReply)
 	}
+	unresolvedReply := command.Execute(t.Context(), "mallory", "set limits retries=4")
+	if !strings.Contains(unresolvedReply, "did not resolve") || client.command.RequestID != previousID {
+		t.Fatalf("unresolved sender reply = %q, command unexpectedly dispatched", unresolvedReply)
+	}
 }
 
 func TestSettingsSetConflictDoesNotRetryAgainstANewerVersion(t *testing.T) {
@@ -144,7 +158,8 @@ func TestSettingsSetConflictDoesNotRetryAgainstANewerVersion(t *testing.T) {
 		resource:    SettingResource{Kind: "limits", Version: 4, Value: map[string]any{"retries": float64(1)}},
 		commandErr:  ErrSettingsConflict,
 	}
-	command := NewSettingsCommand(client)
+	repository, _ := operatorRepository("archie:operator-7")
+	command := NewSettingsCommand(client).WithIdentities(repository)
 
 	reply := command.Execute(t.Context(), "archie:operator-7", "set limits retries=2")
 
@@ -161,7 +176,8 @@ func TestSettingsReplaceAcceptsCollectionJSON(t *testing.T) {
 		descriptors: []SettingDescriptor{{Kind: "schedules"}},
 		resource:    SettingResource{Kind: "schedules", Version: 3, Raw: []any{}},
 	}
-	reply := NewSettingsCommand(client).Execute(t.Context(), "archie:operator-7", `replace schedules [{"id":"daily"}]`)
+	repository, _ := operatorRepository("archie:operator-7")
+	reply := NewSettingsCommand(client).WithIdentities(repository).Execute(t.Context(), "archie:operator-7", `replace schedules [{"id":"daily"}]`)
 	if !strings.Contains(reply, "version 4") {
 		t.Fatalf("reply = %q", reply)
 	}

@@ -16,11 +16,6 @@ import (
 	controlpb "github.com/samcharles93/archie-core/internal/contracts/controlplane/v1"
 )
 
-const (
-	controlPlaneActor  = "operator:web"
-	controlPlaneSource = "archie-ui"
-)
-
 type controlPlaneCommandRequest struct {
 	Value           json.RawMessage `json:"value"`
 	ExpectedVersion int64           `json:"expected_version"`
@@ -73,15 +68,15 @@ func (s *Server) handleControlPlaneCommand(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	requestID, err := newControlPlaneRequestID()
+	audit, err := webAudit()
 	if err != nil {
 		http.Error(w, "cannot create request ID", http.StatusInternalServerError)
 		return
 	}
 	response, err := s.ControlPlane.Command(r.Context(), &controlpb.CommandRequest{
 		Kind: r.PathValue("kind"), Command: r.PathValue("command"), ValueJson: request.Value,
-		ExpectedVersion: request.ExpectedVersion, Actor: controlPlaneActor,
-		Source: controlPlaneSource, RequestId: requestID,
+		ExpectedVersion: request.ExpectedVersion, Actor: string(audit.ActorID),
+		Source: audit.Source, RequestId: audit.RequestID,
 	})
 	if err != nil {
 		writeControlPlaneError(w, err)
