@@ -17,7 +17,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"syscall"
 
 	"github.com/moby/moby/client"
@@ -38,7 +37,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/forgerpc"
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
-	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/overlay"
 	"github.com/samcharles93/archie-core/internal/logging"
 	"github.com/samcharles93/archie-core/internal/plugin"
 	"github.com/samcharles93/archie-core/internal/secret"
@@ -292,15 +290,6 @@ func taskDBPath(configuredPath string) string {
 	return configuredPath + "-tasks.sqlite"
 }
 
-// configDBPath resolves the runtime config overlay file. It is a sibling
-// of the task and conversation stores (same configured path, own suffix)
-// so each file owns its user_version and its migrator with no
-// contention; recovery from a broken overlay is rm this file plus the
-// --no-config-overlay boot flag.
-func configDBPath(configuredPath string) string {
-	return configuredPath + "-config.sqlite"
-}
-
 func manualRequeueTask(ctx context.Context, st storecontract.TaskStore, taskID int64) error {
 	task, err := st.TaskByID(ctx, taskID)
 	if err != nil {
@@ -318,11 +307,10 @@ func manualRequeueTask(ctx context.Context, st storecontract.TaskStore, taskID i
 }
 
 type runArgs struct {
-	cfgPath         string
-	overlayPath     string
-	noConfigOverlay bool
-	once            bool
-	requeue         int64
+	cfgPath     string
+	overlayPath string
+	once        bool
+	requeue     int64
 }
 
 func parseArgs() (runArgs, bool) {
@@ -330,7 +318,6 @@ func parseArgs() (runArgs, bool) {
 	var args runArgs
 	flag.StringVar(&args.cfgPath, "config", defaultCfg, "path to a TOML/YAML config file or configuration directory")
 	flag.StringVar(&args.overlayPath, "config-overlay", "", "path to a TOML/YAML overlay file or configuration directory applied on top of -config")
-	flag.BoolVar(&args.noConfigOverlay, "no-config-overlay", false, "skip the runtime config overlay (recovery hatch for the DB overlay; the -config-overlay file overlay still applies)")
 	flag.BoolVar(&args.once, "once", false, "run a single poll+process cycle and exit (systemd timer / testing)")
 	flag.Int64Var(&args.requeue, "requeue", 0, "requeue a parked/waiting task by id (keeps its workflow), then exit unless -once is also set")
 	showVersion := flag.Bool("version", false, "print the gateway and runtime versions and exit")
@@ -366,7 +353,7 @@ func Run() int { //nolint:cyclop,funlen // the composition root's setup sequence
 	// The drain monitor cancels this root to trigger a graceful shutdown, which
 	// propagates through ctx exactly as an operator SIGTERM does.
 	b.shutdown = cancelRoot
-	if err := b.loadConfig(ctx, args.cfgPath, args.overlayPath, args.noConfigOverlay); err != nil {
+	if err := b.loadConfig(ctx, args.cfgPath, args.overlayPath); err != nil {
 		return 1
 	}
 	defer b.cleanup()
@@ -466,54 +453,6 @@ func (b *boot) wireConfigSurfaces(ctx context.Context, cfgPath, overlayPath stri
 	// which republishes; without this the UI process would render nothing
 	// until the first reload or dashboard edit.
 	b.publishConfigSnapshot(ctx)
-}
-
-// bootConfigOverlay layers the runtime config overlay over the resolved
-// file config. Every failure degrades rather than aborts -- the daemon
-// boots on file config alone and the reason is recorded in bootOverlayErr,
-// which /api/config surfaces as the reload status. The returned store is
-// nil only when Open failed; a store that opened but could not be read
-// stays open and non-nil so the dashboard PATCH path and reload wiring
-// keep exactly the behaviour of the original inline block.
-func bootConfigOverlay(
-	ctx context.Context,
-	loader *configuration.Loader,
-	doc *configuration.Document,
-	bootOverlayErr *atomic.Pointer[string],
-	log *slog.Logger,
-) (*overlay.Store, *configuration.Document) {
-	store, err := overlay.Open(ctx, configDBPath(doc.Config.DBPath))
-	if err != nil {
-		recordBootOverlayError(bootOverlayErr, log, err,
-			"config overlay unavailable; booting on file config alone",
-			"path", configDBPath(doc.Config.DBPath))
-		return nil, doc
-	}
-	overrides, err := store.Snapshot(ctx)
-	if err != nil {
-		recordBootOverlayError(bootOverlayErr, log, err,
-			"config overlay unreadable; booting on file config alone")
-		return store, doc
-	}
-	if len(overrides) == 0 {
-		return store, doc
-	}
-	applied, err := loader.ApplyOverlay(doc, overrides)
-	if err != nil {
-		recordBootOverlayError(bootOverlayErr, log, err,
-			"config overlay rejected by validation; booting on file config alone")
-		return store, doc
-	}
-	return store, applied
-}
-
-// recordBootOverlayError stores the degrade reason for /api/config and
-// logs it, so the operator sees both where they are looking.
-func recordBootOverlayError(p *atomic.Pointer[string], log *slog.Logger, err error, msg string, args ...any) {
-	reason := err.Error()
-	p.Store(&reason)
-	args = append(args, "err", err)
-	log.Error(msg, args...)
 }
 
 // persistEvents drains the bus until it closes, giving each event an ID

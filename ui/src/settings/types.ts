@@ -14,17 +14,13 @@
 export type ConfigFieldType = "string" | "int" | "bool" | "duration" | "enum" | "structured";
 
 export interface ConfigField {
-  /** The dotted path PATCH /api/config accepts this value under. */
+  /** The dotted path this value lives at in the running config. */
   key: string;
   label: string;
   description?: string;
   type: ConfigFieldType;
   value?: unknown;
-  /** The dashboard may change it. Distinct from locked_reason, which is a
-   * runtime property of the running config rather than of the field. */
-  editable: boolean;
   locked_reason?: string;
-  overridden?: boolean;
   options?: string[];
   /** Changing it will not take effect until archied restarts. */
   restart_required?: boolean;
@@ -78,11 +74,6 @@ export interface ConfigView {
   providers?: Record<string, ProviderView>;
   provenance?: ConfigOrigin[];
   reload?: ReloadStatus;
-  /** Whether this process can apply configuration changes at all. False makes
-   * the pages render values rather than controls, which is the honest offer
-   * from a process serving a published snapshot: its write routes answer 503
-   * (archie-core-ymut). */
-  editable: boolean;
   schema?: ConfigSection[];
 }
 

@@ -3,7 +3,6 @@ package webui
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -480,149 +479,6 @@ func TestHandleConfigSchemaNeverLeaksSecrets(t *testing.T) {
 	}
 }
 
-// TestHandleConfigUpdateAppliesViaSeam proves the PATCH handler passes
-// the decoded updates to the wired UpdateConfig seam and answers ok.
-func TestHandleConfigUpdateAppliesViaSeam(t *testing.T) {
-	srv := newTestServer(t)
-	var got map[string]any
-	srv.UpdateConfig = func(_ context.Context, updates map[string]any) error {
-		got = updates
-		return nil
-	}
-
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPatch, "/api/config",
-		strings.NewReader(`{"updates": {"budgets.max_steps": 12}}`))
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", w.Code, w.Body)
-	}
-	if got["budgets.max_steps"] != float64(12) {
-		t.Errorf("updates = %#v, want budgets.max_steps=12", got)
-	}
-}
-
-// TestHandleConfigUpdateInvalidMapsTo400 proves a rejected update (the
-// seam wraps its error with ErrConfigUpdateInvalid) answers 400.
-func TestHandleConfigUpdateInvalidMapsTo400(t *testing.T) {
-	srv := newTestServer(t)
-	srv.UpdateConfig = func(context.Context, map[string]any) error {
-		return fmt.Errorf("%w: label is not runtime-tunable", ErrConfigUpdateInvalid)
-	}
-
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPatch, "/api/config",
-		strings.NewReader(`{"updates": {"label": "x"}}`))
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400, body = %s", w.Code, w.Body)
-	}
-}
-
-// TestHandleConfigUpdateUnavailableMapsTo503 proves a disabled overlay
-// (ErrConfigUpdateUnavailable) answers 503, as does a server with no
-// UpdateConfig seam at all.
-func TestHandleConfigUpdateUnavailableMapsTo503(t *testing.T) {
-	srv := newTestServer(t)
-	srv.UpdateConfig = func(context.Context, map[string]any) error {
-		return fmt.Errorf("%w: overlay disabled by recovery flag", ErrConfigUpdateUnavailable)
-	}
-
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPatch, "/api/config",
-		strings.NewReader(`{"updates": {"label": "x"}}`))
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want 503, body = %s", w.Code, w.Body)
-	}
-}
-
-func TestHandleConfigUpdateWithoutSeamMapsTo503(t *testing.T) {
-	srv := newTestServer(t)
-
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPatch, "/api/config",
-		strings.NewReader(`{"updates": {"label": "x"}}`))
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want 503, body = %s", w.Code, w.Body)
-	}
-}
-
-// TestHandleConfigIncludesOverridden proves the overridden dotted keys
-// reach the view so the UI can mark rows shadowed by the runtime overlay.
-func TestHandleConfigIncludesOverridden(t *testing.T) {
-	srv := newTestServer(t)
-	localView(srv, ConfigViewInput{
-		Config:     configWithFakeSecrets().Get(),
-		Overridden: []string{"budgets.max_steps", "label"},
-	})
-
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-
-	var got ConfigView
-	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if len(got.Overridden) != 2 || got.Overridden[0] != "budgets.max_steps" || got.Overridden[1] != "label" {
-		t.Errorf("Overridden = %v, want [budgets.max_steps label]", got.Overridden)
-	}
-}
-
-func TestHandleConfigResetCallsSeamAndAnswersOk(t *testing.T) {
-	srv := newTestServer(t)
-	var got string
-	srv.ResetConfig = func(_ context.Context, key string) error {
-		got = key
-		return nil
-	}
-
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/config/reset",
-		strings.NewReader(`{"key": "budgets.max_steps"}`))
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", w.Code, w.Body)
-	}
-	if got != "budgets.max_steps" {
-		t.Errorf("ResetConfig called with %q, want budgets.max_steps", got)
-	}
-}
-
-func TestHandleConfigResetWithoutSeamMapsTo503(t *testing.T) {
-	srv := newTestServer(t)
-
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/config/reset",
-		strings.NewReader(`{"key": "label"}`))
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want 503, body = %s", w.Code, w.Body)
-	}
-}
-
-func TestHandleConfigResetRejectsEmptyKey(t *testing.T) {
-	srv := newTestServer(t)
-	srv.ResetConfig = func(context.Context, string) error { return nil }
-
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/config/reset",
-		strings.NewReader(`{"key": ""}`))
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400, body = %s", w.Code, w.Body)
-	}
-}
-
 // TestHandleChannelsWithoutManagerIsEmpty: channel lifecycle is the status
 // manager's to report. A process without one answers an empty list rather
 // than deriving channels from configuration, which could only ever describe
@@ -707,42 +563,6 @@ func TestRemoteConfigViewRendersThePublishedSnapshot(t *testing.T) {
 	}
 	if len(view.Provenance) != 1 || view.Provenance[0].Path != "/etc/archie/config.toml" {
 		t.Errorf("Provenance = %+v, want the published chain", view.Provenance)
-	}
-}
-
-// TestConfigViewEditableFollowsThisProcessWritePath: Editable describes the
-// rendering process, not the document. A published snapshot cannot make a
-// reader editable, and a process that holds the update path says so even
-// when the document it renders says otherwise.
-func TestConfigViewEditableFollowsThisProcessWritePath(t *testing.T) {
-	render := func(t *testing.T, wireUpdate bool) ConfigView {
-		t.Helper()
-		srv := newTestServer(t)
-		srv.ConfigSource = func(context.Context) (ConfigView, bool, error) {
-			// The document claims editable; only the process decides.
-			return ConfigView{Editable: true}, true, nil
-		}
-		if wireUpdate {
-			srv.UpdateConfig = func(context.Context, map[string]any) error { return nil }
-		}
-		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/config", nil)
-		w := httptest.NewRecorder()
-		srv.Handler().ServeHTTP(w, req)
-		if w.Code != http.StatusOK {
-			t.Fatalf("GET /api/config = %d, want 200", w.Code)
-		}
-		var got ConfigView
-		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
-			t.Fatalf("decode: %v", err)
-		}
-		return got
-	}
-
-	if render(t, false).Editable {
-		t.Error("Editable = true without an update path; the write routes answer 503")
-	}
-	if !render(t, true).Editable {
-		t.Error("Editable = false with UpdateConfig wired; the page would hide controls that work")
 	}
 }
 

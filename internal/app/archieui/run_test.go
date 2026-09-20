@@ -113,7 +113,6 @@ func TestUIServesDashboardAgainstRemoteContracts(t *testing.T) {
 	// links from, the same projection the task list uses.
 	published, err := json.Marshal(webui.ConfigView{
 		Identity: webui.IdentityView{BotUser: "archie", ForgeType: "github", ForgeHost: "https://forge.example"},
-		Editable: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -256,9 +255,6 @@ func TestUIServesDashboardAgainstRemoteContracts(t *testing.T) {
 	if rendered.Identity.BotUser != "archie" {
 		t.Fatalf("config view = %s, want the published projection", body)
 	}
-	if rendered.Editable {
-		t.Error("the UI process rendered configuration as editable; it has no write path")
-	}
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodPatch, ts.URL+"/api/config", http.NoBody)
 	if err != nil {
 		t.Fatalf("patch request: %v", err)
@@ -268,8 +264,8 @@ func TestUIServesDashboardAgainstRemoteContracts(t *testing.T) {
 		t.Fatalf("PATCH /api/config: %v", err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusServiceUnavailable {
-		t.Errorf("PATCH /api/config = %d, want 503: the daemon stays the configuration writer (PRD lines 95-96)", resp.StatusCode)
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("PATCH /api/config = %d, want 405: configuration is read here and written through the control plane", resp.StatusCode)
 	}
 
 	// The run-detail reads. These three routes have no fake behind them: the

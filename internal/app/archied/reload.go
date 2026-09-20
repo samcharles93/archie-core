@@ -33,7 +33,6 @@ type ReloadController struct {
 	// (dotted keys -> typed values) to layer over the file config before
 	// publishing. A failed overlay read or validation aborts the reload
 	// exactly like a bad file.
-	overlayValues func() (map[string]any, error)
 
 	status atomic.Pointer[config.ReloadStatus]
 }
@@ -57,39 +56,11 @@ func (c *ReloadController) Reload() error {
 		})
 		return err
 	}
-	if c.overlayValues != nil {
-		values, err := c.overlayValues()
-		if err != nil {
-			c.status.Store(&config.ReloadStatus{
-				LastError:   err.Error(),
-				LastErrorAt: time.Now().UTC().Format(time.RFC3339),
-			})
-			return err
-		}
-		if len(values) > 0 {
-			// ApplyOverlay never mutates its input: on failure the
-			// resolved document (and the running config) is untouched.
-			if doc, err = c.loader.ApplyOverlay(doc, values); err != nil {
-				c.status.Store(&config.ReloadStatus{
-					LastError:   err.Error(),
-					LastErrorAt: time.Now().UTC().Format(time.RFC3339),
-				})
-				return err
-			}
-		}
-	}
 	c.apply(doc)
 	c.status.Store(&config.ReloadStatus{
 		LastReloadAt: time.Now().UTC().Format(time.RFC3339),
 	})
 	return nil
-}
-
-// WithOverlay attaches the runtime config overlay source. Optional: a
-// controller without it publishes the file config alone.
-func (c *ReloadController) WithOverlay(fn func() (map[string]any, error)) *ReloadController {
-	c.overlayValues = fn
-	return c
 }
 
 // Status returns the most recent reload outcome.

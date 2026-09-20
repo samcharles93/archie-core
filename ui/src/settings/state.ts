@@ -32,11 +32,6 @@ function isMissing(err: unknown): boolean {
 export const config = ref<ConfigView | null>(null);
 export const configError = ref<string | null>(null);
 
-/** Whether this process can apply configuration changes. False means every row
- * renders as a value: the write routes answer 503, so a control would only
- * invite a failure. An unknown config (still loading, or unreadable) is not
- * read-only, so only an explicit false is treated as one. */
-export const configEditable = computed(() => config.value?.editable !== false);
 
 /** Nothing to render: either the read failed, or archied is running without a
  * config file wired into the dashboard. */

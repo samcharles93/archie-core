@@ -51,9 +51,6 @@ type ConfigField struct {
 	// LockedReason is set per instance from the running config's denied
 	// keys (configuration.DeniedKeys), not hand-authored here.
 	LockedReason string `json:"locked_reason,omitempty"`
-	// Overridden is set per instance from the running config's overlay
-	// state, not hand-authored here.
-	Overridden bool `json:"overridden"`
 	// Options lists the valid values for a FieldEnum field.
 	Options []string `json:"options,omitempty"`
 	// RestartRequired reports that changing this field through the
@@ -77,7 +74,7 @@ type ConfigSection struct {
 
 // configFieldDescriptors is the hand-authored catalog: one entry per field
 // ConfigView exposes today, in the section grouping settings.js already
-// renders. Values, LockedReason and Overridden are attached separately
+// renders. Values and LockedReason are attached separately
 // against a live ConfigView (archie-core-b6ew.2); this list is the
 // data-independent half of the contract -- key, label, type, and the two
 // safety-relevant properties (editable, restart_required) that must be
@@ -212,23 +209,17 @@ func configFieldValues(view ConfigView) map[string]any {
 // overridden markers to the static descriptor catalog, producing the
 // sections handleConfig returns to the dashboard. The catalog
 // (configFieldDescriptors) and the per-request state (configFieldValues,
-// view.Locked, view.Overridden) are kept as two separate functions
-// deliberately: one is data-independent and safe to unit-test as a fixed
-// catalog, the other is "what does this specific running config say."
+// view.Locked) are kept as two separate functions deliberately: one is
+// data-independent and safe to unit-test as a fixed catalog, the other is
+// "what does this specific running config say."
 func buildConfigSchema(view ConfigView) []ConfigSection {
 	values := configFieldValues(view)
-	overridden := make(map[string]bool, len(view.Overridden))
-	for _, key := range view.Overridden {
-		overridden[key] = true
-	}
-
 	sections := configFieldDescriptors()
 	for i := range sections {
 		for j := range sections[i].Fields {
 			f := &sections[i].Fields[j]
 			f.Value = values[f.Key]
 			f.LockedReason = view.Locked[f.Key]
-			f.Overridden = overridden[f.Key]
 		}
 	}
 	return sections

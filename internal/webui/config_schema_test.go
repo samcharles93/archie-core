@@ -45,7 +45,7 @@ func TestConfigFieldDescriptorsAreComplete(t *testing.T) {
 			if f.Type != FieldEnum && len(f.Options) != 0 {
 				t.Errorf("field %q has options but is not type enum", f.Key)
 			}
-			// Value/LockedReason/Overridden are attached per-instance
+			// Value/LockedReason are attached per-instance
 			// against a live ConfigView (archie-core-b6ew.2), not part of
 			// the static catalog -- the catalog must not pre-populate them.
 			if f.Value != nil {
@@ -53,9 +53,6 @@ func TestConfigFieldDescriptorsAreComplete(t *testing.T) {
 			}
 			if f.LockedReason != "" {
 				t.Errorf("field %q has a static LockedReason; that is attached per-request", f.Key)
-			}
-			if f.Overridden {
-				t.Errorf("field %q has a static Overridden; that is attached per-request", f.Key)
 			}
 		}
 	}

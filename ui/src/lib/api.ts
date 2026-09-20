@@ -140,13 +140,6 @@ export const api = {
   channelReload: <T = unknown>(id: string) =>
     request<T>(`/api/channels/${encodeURIComponent(id)}/reload`, { method: "POST", body: {} }),
   config: <T = unknown>() => request<T>("/api/config"),
-  configUpdate: <T = unknown>(updates: Payload) => request<T>("/api/config", { method: "PATCH", body: { updates } }),
-  configRepoUpdate: <T = unknown>(owner: string, name: string, field: string, value: unknown) =>
-    request<T>(`/api/config/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
-      method: "PATCH",
-      body: { field, value },
-    }),
-  configReset: <T = unknown>(key: string) => request<T>("/api/config/reset", { method: "POST", body: { key } }),
   logs: <T = unknown>(params?: QueryParams) => request<T>("/api/logs" + qs(params)),
   taskLogs: <T = unknown>(id: string, params?: QueryParams) =>
     request<T>(`/api/tasks/${encodeURIComponent(id)}/logs` + qs(params)),

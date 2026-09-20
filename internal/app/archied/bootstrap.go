@@ -45,7 +45,6 @@ import (
 	"github.com/samcharles93/archie-core/internal/gateway"
 	"github.com/samcharles93/archie-core/internal/indexing"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
-	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/overlay"
 	infraembedding "github.com/samcharles93/archie-core/internal/infrastructure/embedding"
 	"github.com/samcharles93/archie-core/internal/infrastructure/eventbus/nats"
 	infraMemory "github.com/samcharles93/archie-core/internal/infrastructure/memory"
@@ -84,8 +83,6 @@ type boot struct {
 
 	loader            *configuration.Loader
 	doc               *configuration.Document
-	overlayStore      *overlay.Store
-	bootOverlayErr    atomic.Pointer[string]
 	currentProvenance atomic.Pointer[configuration.Provenance]
 
 	health   *healthSurface
@@ -244,16 +241,12 @@ func (b *boot) cleanup() {
 	}
 }
 
-// loadConfig resolves the file config and layers the runtime overlay
-// over it. A Resolve failure is reported on stderr because the file log
-// destination is itself configuration that has not been read yet.
-func (b *boot) loadConfig(ctx context.Context, cfgPath, overlayPath string, noConfigOverlay bool) error {
+// loadConfig resolves the file config. A Resolve failure is reported on
+// stderr because the file log destination is itself configuration that has
+// not been read yet.
+func (b *boot) loadConfig(ctx context.Context, cfgPath, overlayPath string) error {
 	loader := configuration.New(b.log)
 	b.loader = loader
-	skipOverlay := noConfigOverlay || configuration.SkipOverlay()
-	if skipOverlay {
-		b.log.Info("runtime config overlay disabled (recovery hatch); booting on file config alone")
-	}
 	doc, err := loader.Resolve(cfgPath, overlayPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -267,21 +260,6 @@ func (b *boot) loadConfig(ctx context.Context, cfgPath, overlayPath string, noCo
 	// config is fatal, but a typo like this is not that, only a warning.
 	if len(doc.UnknownKeys) > 0 {
 		b.log.Warn("config file has unrecognised keys; check for typos", "keys", doc.UnknownKeys)
-	}
-	// Runtime config overlay: dashboard-edited overrides layered over the
-	// file config from their own SQLite file (own user_version and
-	// migrator, no contention with the task store). Skipped under
-	// --no-config-overlay / ARCHIE_SKIP_CONFIG_OVERLAY=1, or when the
-	// store cannot be opened or its values fail validation -- a broken
-	// overlay must not brick the daemon. bootOverlayErr carries the
-	// degrade reason into /api/config's reload status so it is visible
-	// where the operator is looking, not only in logs.
-	if !skipOverlay {
-		b.overlayStore, b.doc = bootConfigOverlay(ctx, loader, doc, &b.bootOverlayErr, b.log)
-		if b.overlayStore != nil {
-			store := b.overlayStore
-			b.addCleanup(func() { _ = store.Close() })
-		}
 	}
 	b.cfg = b.doc.Config
 	b.cfgHolder = config.NewHolder(b.cfg)
@@ -1357,22 +1335,6 @@ func (b *boot) configOrigins() []webui.ConfigOrigin {
 	return origins
 }
 
-// configOverrides lists the dotted keys the runtime overlay currently sets,
-// so the dashboard can mark those rows: their file value is shadowed until
-// reset. A disabled overlay store reports no overrides.
-func (b *boot) configOverrides(ctx context.Context) []string {
-	if b.overlayStore == nil {
-		return nil
-	}
-	keys, err := b.overlayStore.Keys(ctx)
-	if err != nil {
-		// A failed read omits the list rather than failing the whole
-		// view; the reload status carries the overlay degrade reason.
-		return nil
-	}
-	return keys
-}
-
 // configViewInput assembles the dashboard's configuration projection from
 // the daemon's own configuration state. The daemon is the configuration
 // owner, so it is the process that renders this view (archie-core-ml30).
@@ -1380,7 +1342,6 @@ func (b *boot) configViewInput(ctx context.Context) webui.ConfigViewInput {
 	in := webui.ConfigViewInput{
 		Config:     b.cfgHolder.Get(),
 		Provenance: b.configOrigins(),
-		Overridden: b.configOverrides(ctx),
 	}
 	if b.lastReload != nil {
 		status := b.lastReload()
@@ -1447,17 +1408,8 @@ func (b *boot) wireConfigPublishing(ctx context.Context, cfgPath, overlayPath st
 			log.Info("config reloaded", "paths", doc.Provenance.Paths())
 		}
 	})
-	if b.overlayStore != nil {
-		reloadController.WithOverlay(func() (map[string]any, error) { return b.overlayStore.Snapshot(ctx) })
-	}
-	// lastReload merges the reload controller's outcome with the boot-time
-	// overlay degrade, so /api/config carries both the last reload result
-	// and whether the runtime overlay is in effect at all.
 	b.lastReload = func() config.ReloadStatus {
 		st := reloadController.Status()
-		if p := b.bootOverlayErr.Load(); p != nil {
-			st.OverlayUnavailable = *p
-		}
 		return st
 	}
 

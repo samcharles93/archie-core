@@ -5,7 +5,7 @@ import ConfigCard from "./ConfigCard.vue";
 import ConfigList from "./ConfigList.vue";
 import ConfigRow from "./ConfigRow.vue";
 import { sectionRows, sectionsFor } from "./sections";
-import { config, configEditable } from "./state";
+import { config } from "./state";
 
 /**
  * The generic schema rows for one page. The daemon serves one catalog of
@@ -27,7 +27,6 @@ const sections = computed(() => sectionsFor(config.value?.schema, props.ids));
         :label="field.label"
         :value="field.value"
         :field="field"
-        :editable="configEditable"
       />
     </ConfigList>
   </ConfigCard>

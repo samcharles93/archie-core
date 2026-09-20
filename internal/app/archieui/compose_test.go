@@ -78,9 +78,6 @@ func TestComposeUIServerHoldsNoDaemonState(t *testing.T) {
 	}
 
 	unwired := map[string]any{
-		"UpdateConfig":    srv.UpdateConfig,
-		"ResetConfig":     srv.ResetConfig,
-		"UpdateRepoField": srv.UpdateRepoField,
 		"ReloadChannel":   srv.ReloadChannel,
 		"RunningVersions": srv.RunningVersions,
 		"Events":          srv.Events,

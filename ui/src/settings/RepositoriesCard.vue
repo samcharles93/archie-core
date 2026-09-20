@@ -4,19 +4,15 @@ import { computed } from "vue";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import ConfigCard from "./ConfigCard.vue";
-import RepoBoolCell from "./RepoBoolCell.vue";
-import RepoIntCell from "./RepoIntCell.vue";
-import { config, configEditable } from "./state";
+import { config } from "./state";
 
 /**
  * Each repository Archie polls, and the quality gate a change must pass before
  * it opens a pull request.
  *
- * Concurrent tasks, retries and self-review are per-repository overrides,
- * written through PATCH /api/config/repos/{owner}/{name} rather than into
- * config.toml directly, so a change here takes effect without editing a file
- * on the host. A process with no write path renders those three as values: its
- * PATCH route answers 503 (archie-core-ymut).
+ * Concurrent tasks, retries and self-review are per-repository policy. They
+ * are edited as the repository-policies control-plane resource, so this table
+ * reports what each repository is running with.
  */
 const repos = computed(() => config.value?.repositories ?? []);
 
@@ -58,9 +54,9 @@ function gateSummary(gate?: string[][]): string {
           <TableCell>{{ repo.ecosystem || "go" }}</TableCell>
           <TableCell class="font-mono">{{ gateSummary(repo.gate) }}</TableCell>
           <TableCell class="font-mono">{{ repo.protect?.length ? repo.protect.join(", ") : "—" }}</TableCell>
-          <RepoBoolCell :repo="repo" field="allow_concurrent" :editable="configEditable" />
-          <RepoIntCell :repo="repo" field="max_retries" :editable="configEditable" />
-          <RepoBoolCell :repo="repo" field="review_enabled" :editable="configEditable" />
+          <TableCell>{{ repo.allow_concurrent ? "yes" : "no" }}</TableCell>
+          <TableCell class="font-mono">{{ repo.max_retries ?? 0 }}</TableCell>
+          <TableCell>{{ repo.review_enabled ? "yes" : "no" }}</TableCell>
         </TableRow>
       </TableBody>
     </Table>

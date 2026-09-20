@@ -150,10 +150,6 @@ type ConfigView struct {
 	// dashboard to the reason. The UI renders these rows disabled rather
 	// than silently omitting the edit affordance.
 	Locked map[string]string `json:"locked,omitempty"`
-	// Overridden lists the dotted config keys currently set by the
-	// runtime overlay, so the UI can mark those rows (their file value
-	// is shadowed until reset) and offer a per-row reset.
-	Overridden []string `json:"overridden,omitempty"`
 	// MultiIdentity reports that the deployment configures [[identities]],
 	// so Identity and Repositories describe the default identity alone.
 	// Identities below carries the rest; a consumer attributing a task to
@@ -167,11 +163,6 @@ type ConfigView struct {
 	// Server.resolveForge (api_tasks.go). Empty for a single-identity
 	// deployment, whose forge is Identity above.
 	Identities []ForgeIdentityView `json:"identities,omitempty"`
-	// Editable reports whether this process can apply configuration
-	// changes. False makes the page render values without edit controls,
-	// which is what a process that only displays a published snapshot can
-	// honestly offer -- its write routes answer 503.
-	Editable bool `json:"editable"`
 	// Schema is the field-descriptor catalog (archie-core-b6ew) attached to
 	// this view's own values, locked reasons, and overridden markers -- see
 	// config_schema.go. The dashboard's generic renderer (archie-core-b6ew.3)
@@ -330,9 +321,6 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{})
 		return
 	}
-	// Editable belongs to the process that would perform the write, not to
-	// the document: whoever holds the update path is the writer.
-	view.Editable = s.UpdateConfig != nil
 	writeJSON(w, view)
 }
 
@@ -346,8 +334,6 @@ type ConfigViewInput struct {
 	// Provenance is the file chain that produced Config, in precedence
 	// order.
 	Provenance []ConfigOrigin
-	// Overridden lists the dotted keys the runtime overlay currently sets.
-	Overridden []string
 	// Reload is the most recent reload outcome, or nil when unavailable.
 	Reload *config.ReloadStatus
 }
@@ -411,7 +397,6 @@ func BuildConfigView(in ConfigViewInput) ConfigView {
 			ChannelConfigured: chatChannelConfigured(cfg.Chat),
 		},
 		Provenance: provenance,
-		Overridden: in.Overridden,
 		Reload:     in.Reload,
 		Locked:     lockedConfigKeys(),
 	}
@@ -450,81 +435,13 @@ func RemoteConfigView(snapshots storecontract.ConfigSnapshotStore) ConfigViewSou
 	}
 }
 
-// handleConfigReset deletes one runtime-overlay row via ResetConfig,
-// restoring the file value for that key. The dashboard offers this on
-// overridden rows so it can remove an override it created.
-func (s *Server) handleConfigReset(w http.ResponseWriter, r *http.Request) {
-	if s.ResetConfig == nil {
-		http.Error(w, ErrConfigUpdateUnavailable.Error(), http.StatusServiceUnavailable)
-		return
-	}
-	var body struct {
-		Key string `json:"key"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	if body.Key == "" {
-		http.Error(w, "key required", http.StatusBadRequest)
-		return
-	}
-	if err := s.ResetConfig(r.Context(), body.Key); err != nil {
-		switch {
-		case errors.Is(err, ErrConfigUpdateUnavailable):
-			http.Error(w, err.Error(), http.StatusServiceUnavailable)
-		case errors.Is(err, ErrConfigUpdateInvalid):
-			http.Error(w, err.Error(), http.StatusBadRequest)
-		default:
-			http.Error(w, "config reset failed: "+err.Error(), http.StatusInternalServerError)
-		}
-		return
-	}
-	writeJSON(w, map[string]any{"ok": true})
-}
-
-// lockedConfigKeys returns the dotted config keys the overlay refuses
-// to set, with the reason shown in the UI. These are the daemon's own
-// bootstrap inputs; changing them from the dashboard could break the
-// next boot.
+// lockedConfigKeys returns the dotted config keys that stay bootstrap-owned,
+// with the reason shown in the UI. These are the daemon's own startup inputs,
+// which the control plane deliberately does not manage.
 func lockedConfigKeys() map[string]string {
 	out := make(map[string]string, len(configuration.DeniedKeys))
 	maps.Copy(out, configuration.DeniedKeys)
 	return out
-}
-
-// handleConfigUpdate applies a set of dotted-path config updates via
-// UpdateConfig, which the composition root wires to the same
-// validate-persist-publish path as reload. The dashboard can then
-// change runtime-tunable settings without hand-editing TOML.
-func (s *Server) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
-	if s.UpdateConfig == nil {
-		http.Error(w, ErrConfigUpdateUnavailable.Error(), http.StatusServiceUnavailable)
-		return
-	}
-	var body struct {
-		Updates map[string]any `json:"updates"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	if len(body.Updates) == 0 {
-		http.Error(w, "no updates provided", http.StatusBadRequest)
-		return
-	}
-	if err := s.UpdateConfig(r.Context(), body.Updates); err != nil {
-		switch {
-		case errors.Is(err, ErrConfigUpdateUnavailable):
-			http.Error(w, err.Error(), http.StatusServiceUnavailable)
-		case errors.Is(err, ErrConfigUpdateInvalid):
-			http.Error(w, err.Error(), http.StatusBadRequest)
-		default:
-			http.Error(w, "config update failed: "+err.Error(), http.StatusInternalServerError)
-		}
-		return
-	}
-	writeJSON(w, map[string]any{"ok": true})
 }
 
 func reposView(repos []config.Repo) []RepoView {

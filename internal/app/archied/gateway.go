@@ -56,7 +56,7 @@ func gatewayListenAndToken(b *boot, options GatewayOptions) (listen, token strin
 func RunGateway(ctx context.Context, options GatewayOptions) error {
 	b := newBootstrap()
 	defer b.cleanup()
-	if err := b.loadConfig(ctx, options.Config, options.Overlay, false); err != nil {
+	if err := b.loadConfig(ctx, options.Config, options.Overlay); err != nil {
 		return err
 	}
 	b.log = b.log.With("component", "gateway")

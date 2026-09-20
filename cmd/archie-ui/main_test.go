@@ -897,11 +897,11 @@ func TestUIProcessServesTheDashboardAgainstLiveDependencies(t *testing.T) {
 		if err := json.Unmarshal(rendered.body, &view); err != nil {
 			t.Fatalf("decode config view: %v (%s)", err, rendered.body)
 		}
-		if view.Identity.BotUser != "archie-bot" || view.Editable {
+		if view.Identity.BotUser != "archie-bot" {
 			t.Errorf("config view = %s, want the published projection rendered read-only", rendered.body)
 		}
-		if got := d.do(d.request(http.MethodPatch, "/api/config", `{}`, true)); got.status != http.StatusServiceUnavailable {
-			t.Errorf("PATCH /api/config = %d, want 503", got.status)
+		if got := d.do(d.request(http.MethodPatch, "/api/config", `{}`, true)); got.status != http.StatusMethodNotAllowed {
+			t.Errorf("PATCH /api/config = %d, want 405: configuration is read here and written through the control plane", got.status)
 		}
 
 		// The setup checklist reads the same projection. It reported

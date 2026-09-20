@@ -53,27 +53,6 @@ type Server struct {
 	// of them is about configuration.
 	TaskLogs TaskLogSource
 
-	// UpdateConfig applies a set of dotted-path config updates through
-	// the same validate-persist-publish path as reload (wired by the
-	// composition root). Optional: when nil, PATCH /api/config answers
-	// 503. The handler never touches the Cfg Holder directly -- see the
-	// Cfg field doc.
-	UpdateConfig func(context.Context, map[string]any) error
-
-	// ResetConfig deletes one runtime-overlay row and republishes file +
-	// remaining overlay. Optional: when nil, POST /api/config/reset
-	// answers 503. Like UpdateConfig, it never touches the Cfg Holder
-	// directly.
-	ResetConfig func(context.Context, string) error
-
-	// UpdateRepoField changes one editable field (RepoEditableFields) on
-	// the repository identified by owner/name, republishing the full
-	// repository list through the same path as UpdateConfig. Optional:
-	// when nil, PATCH /api/config/repos/{owner}/{name} answers 503. See
-	// handleConfigRepoUpdate for why this needs its own seam rather than
-	// going through UpdateConfig's dotted-key path directly.
-	UpdateRepoField func(ctx context.Context, owner, name, field string, value any) error
-
 	// Channels reports actual adapter lifecycle, independently of configuration
 	// presence. Nil preserves the configuration-only fallback for tests and
 	// minimal embedding.
@@ -276,9 +255,6 @@ func (s *Server) registerConfigAndLogRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/identities", s.handleIdentityCreate)
 	mux.HandleFunc("POST /api/identities/{id}/{command}", s.handleIdentityCommand)
 	mux.HandleFunc("GET /api/config", s.handleConfig)
-	mux.HandleFunc("PATCH /api/config", s.handleConfigUpdate)
-	mux.HandleFunc("POST /api/config/reset", s.handleConfigReset)
-	mux.HandleFunc("PATCH /api/config/repos/{owner}/{name}", s.handleConfigRepoUpdate)
 	mux.HandleFunc("GET /api/logs", s.handleLogs)
 	mux.HandleFunc("GET /api/logs/stream", s.handleLogStream)
 }

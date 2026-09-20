@@ -9,7 +9,6 @@ import (
 
 	"github.com/samcharles93/archie-core/internal/config"
 	"github.com/samcharles93/archie-core/internal/infrastructure/configuration"
-	"github.com/samcharles93/archie-core/internal/infrastructure/configuration/overlay"
 	"github.com/samcharles93/archie-core/internal/store"
 	"github.com/samcharles93/archie-core/internal/webui"
 )
@@ -81,68 +80,8 @@ func TestPublishConfigSnapshotRendersTheDaemonsConfiguration(t *testing.T) {
 	if view.Reload == nil || view.Reload.LastError != "poll_interval must be positive" {
 		t.Errorf("Reload = %+v, want the last reload outcome", view.Reload)
 	}
-	// Editable describes the rendering process's write path, never the
-	// published document.
-	if view.Editable {
-		t.Error("the published document claims to be editable")
-	}
 }
 
-// TestPublishedSnapshotCarriesOverlayOverrides: the dashboard marks rows the
-// runtime overlay shadows, so the projection has to name those keys. The
-// daemon reads them from the overlay store it owns.
-func TestPublishedSnapshotCarriesOverlayOverrides(t *testing.T) {
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "state.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
-
-	overlayStore, err := overlay.Open(t.Context(), filepath.Join(t.TempDir(), "config.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = overlayStore.Close() })
-	if err := overlayStore.Set(t.Context(), "label", `"archie"`, "test"); err != nil {
-		t.Fatal(err)
-	}
-	if err := overlayStore.Set(t.Context(), "budgets.max_steps", "40", "test"); err != nil {
-		t.Fatal(err)
-	}
-
-	b := &boot{
-		log:          slog.New(slog.DiscardHandler),
-		stateStore:   st,
-		cfgHolder:    config.NewHolder(config.Config{}),
-		overlayStore: overlayStore,
-	}
-	b.publishConfigSnapshot(t.Context())
-
-	snapshot, found, err := st.ConfigSnapshot(context.Background())
-	if err != nil || !found {
-		t.Fatalf("ConfigSnapshot = (found %v, %v), want the published document", found, err)
-	}
-	var view webui.ConfigView
-	if err := json.Unmarshal(snapshot.Document, &view); err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"budgets.max_steps", "label"}
-	if len(view.Overridden) != len(want) {
-		t.Fatalf("Overridden = %+v, want %+v", view.Overridden, want)
-	}
-	for i, key := range want {
-		if view.Overridden[i] != key {
-			t.Errorf("Overridden[%d] = %q, want %q (sorted)", i, view.Overridden[i], key)
-		}
-	}
-}
-
-// TestPublishedSnapshotCarriesPerIdentityForges: in a multi-identity
-// deployment the task board attributes each task to the forge that owns it,
-// and the only process that holds that configuration is the daemon. So the
-// published projection has to name every configured identity's forge and the
-// repositories it owns (archie-core-pv6t); with the default identity alone,
-// every row in such a deployment renders unlinked.
 func TestPublishedSnapshotCarriesPerIdentityForges(t *testing.T) {
 	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
