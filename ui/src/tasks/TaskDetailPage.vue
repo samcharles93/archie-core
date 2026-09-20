@@ -49,6 +49,9 @@ const run = provideTaskRun(taskId);
 
     <Card>
       <CardContent>
+        <div class="mb-2 flex justify-end">
+          <AttemptSelector />
+        </div>
         <Tabs class="gap-4" :model-value="run.tab" @update:model-value="run.setTab">
           <TabBar />
           <TaskRunPanels :id="rawId" />

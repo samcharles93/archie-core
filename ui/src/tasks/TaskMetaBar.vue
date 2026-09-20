@@ -22,13 +22,6 @@ const run = useTaskRun();
 // the Badge draws, which is what makes the cast honest rather than a guess.
 const taskKind = computed<StatusKind>(() => statusKind(run.task?.status ?? "") as StatusKind);
 const taskStatusLabel = computed(() => statusLabel(run.task?.status ?? ""));
-
-const attemptText = computed(() => {
-  if (run.attempts === null) return "";
-  if (run.attempts === undefined) return "";
-  if (run.attemptNumber == null) return "";
-  return `attempt ${run.attemptNumber} of ${run.currentAttempt ?? run.attemptNumber}`;
-});
 </script>
 
 <template>
@@ -37,7 +30,6 @@ const attemptText = computed(() => {
     <template v-else-if="run.task">
       <Badge :variant="taskKind">{{ taskStatusLabel }}</Badge>
     </template>
-    <span v-if="attemptText" class="text-fg-muted">{{ attemptText }}</span>
     <a
       v-if="run.task?.repo_url"
       class="text-link hover:underline"

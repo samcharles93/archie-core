@@ -85,9 +85,8 @@ automatically and note it in the handoff.
 
 Commands are defined in `Taskfile.yml` (requires Go 1.27.0,
 [Task](https://taskfile.dev), `gofumpt`, `golangci-lint`, and Node/npm).
-Install the versions pinned in `Dockerfile`, never `@latest`. `golangci-lint`
-is the single writer for ordinary Go formatting; standalone `gofumpt` formats
-generated protobuf contracts only.
+`golangci-lint` is the single writer for ordinary Go formatting; standalone
+`gofumpt` formats generated protobuf contracts only.
 
 ```bash
 task build      # build archied and archie-agent binaries into bin/
