@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import CaptureActions from "./CaptureActions.vue";
 import CaptureStatus from "./CaptureStatus.vue";
 
 /** The page's title, and what belongs beside it: where the stream has got to,
@@ -14,7 +13,6 @@ import CaptureStatus from "./CaptureStatus.vue";
     </div>
     <div class="flex flex-wrap items-center gap-2">
       <CaptureStatus />
-      <CaptureActions />
     </div>
   </div>
 </template>

@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { AlignLeft, ListChecks, RefreshCw, Route } from "@lucide/vue";
+import { AlignLeft, ListChecks, Route } from "@lucide/vue";
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
 
 import { Button } from "@/components/ui/button";
-import { error, loadDashboard, tasks } from "./state";
+import { error, tasks } from "./state";
 import { dashboardTaskTargets } from "./task-targets";
 
 /**
@@ -16,11 +16,7 @@ const targets = computed(() => dashboardTaskTargets(tasks.value ?? []));
 </script>
 
 <template>
-  <Button v-if="error" @click="loadDashboard">
-    <RefreshCw data-icon="inline-start" />
-    Retry
-  </Button>
-  <template v-else-if="tasks !== null">
+  <template v-if="!error && tasks !== null">
     <Button v-if="targets.attention.count > 0" variant="attention" as-child>
       <RouterLink :to="targets.attention.href">
         <ListChecks data-icon="inline-start" />
@@ -38,10 +34,6 @@ const targets = computed(() => dashboardTaskTargets(tasks.value ?? []));
         <AlignLeft data-icon="inline-start" />
         Logs
       </RouterLink>
-    </Button>
-    <Button @click="loadDashboard">
-      <RefreshCw data-icon="inline-start" />
-      Refresh
     </Button>
   </template>
 </template>

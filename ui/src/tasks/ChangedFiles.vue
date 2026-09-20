@@ -22,8 +22,6 @@ const props = defineProps<{
   task: TaskRecord | null;
 }>();
 
-defineEmits<{ retry: [] }>();
-
 const captures = computed(() => props.state?.captures || []);
 
 // A capture event WAS recorded but its payload could not be read.
@@ -36,8 +34,7 @@ const nothingRecorded = computed(() => !props.state?.found || !captures.value.le
   <PanelError
     v-else-if="state === null"
     title="Could not load this attempt's changed files"
-    detail="archied did not answer for this attempt. It may be restarting — retry, or check the daemon."
-    @retry="$emit('retry')"
+    detail="archied did not answer for this attempt. Live updates will try again when the daemon reconnects."
   />
 
   <Empty v-else-if="undecodable">

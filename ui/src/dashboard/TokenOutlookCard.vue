@@ -3,7 +3,7 @@ import { computed } from "vue";
 
 import SegmentBar from "@/base/SegmentBar.vue";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { compact } from "@/lib/format";
 import { summary } from "./state";
 
@@ -26,7 +26,6 @@ const projected = computed(() => Math.round(perDay.value * 30));
       <Empty v-if="!days.length">
         <EmptyHeader>
           <EmptyTitle>Nothing spent yet</EmptyTitle>
-          <EmptyDescription>Usage appears here once Archie runs its first task.</EmptyDescription>
         </EmptyHeader>
       </Empty>
       <template v-else>

@@ -49,7 +49,7 @@ const unavailable = computed(() => {
 const errorText = computed(() => {
   const err = run.retryError;
   if (!err) return "";
-  if (err.kind === "session-expired") return "Your session has expired. Reload to sign in.";
+  if (err.kind === "session-expired") return "Dashboard authentication is required.";
   if (err.kind === "refused") return `${err.message} — this run cannot be restarted from here.`;
   return `${err.message} — try again, or check the daemon.`;
 });

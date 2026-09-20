@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { RefreshCw } from "@lucide/vue";
 import { onMounted, ref } from "vue";
 
 import PageHeader from "@/base/PageHeader.vue";
-import { Button } from "@/components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { api } from "@/lib/api";
+import { useLiveResource } from "@/stores/live-updates";
 import CuratorCard, { type Curator } from "./CuratorCard.vue";
 
 /**
@@ -28,6 +27,7 @@ async function load() {
   }
 }
 
+useLiveResource("curators", () => void load());
 onMounted(load);
 </script>
 
@@ -36,12 +36,7 @@ onMounted(load);
     <PageHeader
       title="Curators"
       subtitle="Background agents that maintain memory and skills: what ran, and why."
-    >
-      <Button variant="outline" @click="load">
-        <RefreshCw data-icon="inline-start" />
-        Refresh
-      </Button>
-    </PageHeader>
+    />
 
     <div class="grid grid-cols-1 gap-4 min-[1080px]:grid-cols-[repeat(auto-fit,minmax(340px,1fr))]">
       <Empty v-if="loadError">
@@ -54,7 +49,7 @@ onMounted(load);
         <EmptyHeader>
           <EmptyTitle>No curators registered</EmptyTitle>
           <EmptyDescription>
-            Curators are background agent loops that maintain memory and skills. None are registered on this daemon.
+            Curators are background agent loops that maintain memory and skills.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>

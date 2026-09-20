@@ -84,10 +84,11 @@ const confirmLabel = computed(() => confirmingMeta.value?.label || "Confirm");
 
 // A refused action ("you can't do that" -- bad input, a conflicting task state)
 // is the operator's to correct; a broken one (5xx, network drop, timeout) is
-// the daemon's, and says so. An expired session is neither, and gets its own
-// treatment above rather than either framing.
+// the daemon's, and says so. Authentication failures are surfaced by the app
+// shell because they affect every request, not only this row.
 const errorText = computed(() => {
   if (!error.value) return "";
+  if (error.value.kind === "session-expired") return "Dashboard authentication is required.";
   if (error.value.kind === "refused") return `${error.value.message} — you can't do that.`;
   return `${error.value.message} — try again, or check the daemon.`;
 });
@@ -152,12 +153,6 @@ function requestFromMenu(id: string) {
   request(id);
 }
 
-// A full reload, not a router navigation: the point is to re-establish the
-// session with whatever is in front of archied, which a client-side route
-// change would leave exactly as it was.
-function reloadPage() {
-  window.location.reload();
-}
 </script>
 
 <template>
@@ -167,13 +162,8 @@ function reloadPage() {
       variant="destructive"
       class="w-56 gap-0.5 px-2 py-1.5 text-xs whitespace-normal"
     >
-      <template v-if="error.kind === 'session-expired'">
-        <AlertTitle class="text-xs">Your session has expired</AlertTitle>
-        <AlertDescription class="text-xs">
-          <Button size="xs" variant="outline" @click.stop="reloadPage">Reload to sign in</Button>
-        </AlertDescription>
-      </template>
-      <AlertDescription v-else class="text-xs">{{ errorText }}</AlertDescription>
+      <AlertTitle v-if="error.kind === 'session-expired'" class="text-xs">Authentication required</AlertTitle>
+      <AlertDescription class="text-xs">{{ errorText }}</AlertDescription>
     </Alert>
 
     <!--

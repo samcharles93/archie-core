@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { RefreshCw } from "@lucide/vue";
 import { onMounted } from "vue";
 
 import PageHeader from "@/base/PageHeader.vue";
-import { Button } from "@/components/ui/button";
+import { useLiveResource } from "@/stores/live-updates";
 import ConfigSections from "./ConfigSections.vue";
 import ConfigUnavailable from "./ConfigUnavailable.vue";
 import DangerousActionsCard from "./DangerousActionsCard.vue";
@@ -23,17 +22,13 @@ async function load(): Promise<void> {
   await Promise.all([loadConfig(), loadDangerous()]);
 }
 
+useLiveResource(null, () => void load());
 onMounted(load);
 </script>
 
 <template>
   <div>
-    <PageHeader title="Advanced" subtitle="Identity, storage and sandboxing, and dangerous actions.">
-      <Button variant="outline" @click="load">
-        <RefreshCw data-icon="inline-start" />
-        Refresh
-      </Button>
-    </PageHeader>
+    <PageHeader title="Advanced" subtitle="Identity, storage and sandboxing, and dangerous actions." />
 
     <ReadOnlyNotice />
     <ConfigUnavailable v-if="configUnavailable" />

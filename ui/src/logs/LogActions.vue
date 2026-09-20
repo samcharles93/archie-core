@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { Pause, Play, RefreshCw } from "@lucide/vue";
+import { Pause, Play } from "@lucide/vue";
 
 import { Button } from "@/components/ui/button";
-import { loadLogs, paused } from "./state";
+import { paused } from "./state";
 
 /**
  * Freeze the tail, or read the history again.
@@ -22,10 +22,6 @@ function togglePause(): void {
       <Play v-if="paused" data-icon="inline-start" />
       <Pause v-else data-icon="inline-start" />
       {{ paused ? "Resume" : "Pause" }}
-    </Button>
-    <Button variant="outline" @click="loadLogs">
-      <RefreshCw data-icon="inline-start" />
-      Refresh
     </Button>
   </div>
 </template>

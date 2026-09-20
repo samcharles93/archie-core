@@ -1,12 +1,17 @@
 <script setup lang="ts">
+import { storeToRefs } from "pinia";
 import { onMounted } from "vue";
 
 import ChatLauncher from "@/chat/ChatLauncher.vue";
 import CommandPalette from "@/components/command-palette/CommandPalette.vue";
 import Topbar from "@/components/topbar/Topbar.vue";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { hidden, loadCapabilities } from "@/lib/capabilities";
 import { loadTaskMeta } from "@/lib/task-meta";
+import { useLiveUpdatesStore } from "@/stores/live-updates";
+
+const { authenticationRequired } = storeToRefs(useLiveUpdatesStore());
 
 onMounted(() => {
   // Asked for once, after the shell is up: the nav paints immediately and
@@ -41,6 +46,12 @@ onMounted(() => {
     >
       <Topbar :hidden="hidden" />
       <main class="w-full flex-1 overflow-x-hidden p-8 max-[900px]:p-4">
+        <Alert v-if="authenticationRequired" variant="destructive" class="mb-4">
+          <AlertTitle>Dashboard authentication required</AlertTitle>
+          <AlertDescription>
+            Open the dashboard URL Archie logged at startup to establish a new authenticated session.
+          </AlertDescription>
+        </Alert>
         <!--
           Keyed on the path and its parameters but not the query: a query-only
           change is an entry state, so the page keeps the operator's filters,

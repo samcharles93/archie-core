@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import SlowestStagesCard from "./SlowestStagesCard.vue";
 import StageFailuresCard from "./StageFailuresCard.vue";
 import type { StageStats } from "./stages";
@@ -28,7 +28,6 @@ const props = defineProps<{ stages: StageStats[] }>();
       <Empty>
         <EmptyHeader>
           <EmptyTitle>No stage data yet</EmptyTitle>
-          <EmptyDescription>Stage timing and failures appear here once workflows have run.</EmptyDescription>
         </EmptyHeader>
       </Empty>
     </CardContent>

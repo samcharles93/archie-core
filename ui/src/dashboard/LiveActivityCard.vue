@@ -1,16 +1,18 @@
 <script setup lang="ts">
+import { storeToRefs } from "pinia";
 import { useRouter } from "vue-router";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useLiveUpdatesStore } from "@/stores/live-updates";
 import ActivityRow from "./ActivityRow.vue";
-import { activity, streamStateKind, streamStateText } from "./state";
 
 /** The last 50 events, newest first, with the stream's own state on the card. */
 
 const router = useRouter();
+const { activity, streamKind, streamState } = storeToRefs(useLiveUpdatesStore());
 
 function openTask(taskID: number) {
   void router.push(`/tasks?task=${encodeURIComponent(taskID)}`);
@@ -23,7 +25,7 @@ function openTask(taskID: number) {
       <CardTitle>Live activity</CardTitle>
       <CardDescription>Last 50, newest first</CardDescription>
       <CardAction>
-        <Badge :variant="streamStateKind">{{ streamStateText }}</Badge>
+        <Badge :variant="streamKind">{{ streamState }}</Badge>
       </CardAction>
     </CardHeader>
     <CardContent>
@@ -50,7 +52,6 @@ function openTask(taskID: number) {
                 <Empty>
                   <EmptyHeader>
                     <EmptyTitle>Waiting for activity</EmptyTitle>
-                    <EmptyDescription>Events appear here as Archie works.</EmptyDescription>
                   </EmptyHeader>
                 </Empty>
               </TableCell>

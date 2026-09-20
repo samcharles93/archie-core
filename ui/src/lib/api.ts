@@ -42,6 +42,13 @@ async function errorMessage(res: Response): Promise<string> {
   return `${res.status} ${res.statusText}`;
 }
 
+let authenticationStateHandler: ((required: boolean) => void) | undefined;
+
+/** Let the app shell own authentication state without coupling requests to UI. */
+export function setAuthenticationStateHandler(handler: (required: boolean) => void): void {
+  authenticationStateHandler = handler;
+}
+
 export class ApiError extends Error {
   status: number;
 
@@ -77,6 +84,7 @@ export function classifyActionError(err: unknown): { kind: ActionErrorKind; mess
 // itself.
 async function send(path: string, init: RequestInit): Promise<Response> {
   const res = await fetch(path, init);
+  authenticationStateHandler?.(res.status === 401);
   if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
   return res;
 }

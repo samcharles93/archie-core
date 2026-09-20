@@ -19,7 +19,6 @@ defineProps<{
   attempt: number | null;
 }>();
 
-defineEmits<{ retry: [] }>();
 </script>
 
 <template>
@@ -27,8 +26,7 @@ defineEmits<{ retry: [] }>();
   <PanelError
     v-else-if="state === null"
     title="Could not load the stored record"
-    detail="archied did not answer for this task's debug view. It may be restarting — retry, or check the daemon."
-    @retry="$emit('retry')"
+    detail="archied did not answer for this task's debug view. Live updates will try again when the daemon reconnects."
   />
   <div v-else>
     <p class="mb-3 text-sm text-fg-muted">The stored record and every event, verbatim.</p>

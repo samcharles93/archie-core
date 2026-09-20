@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { RefreshCw } from "@lucide/vue";
 import { onMounted } from "vue";
 
 import PageHeader from "@/base/PageHeader.vue";
-import { Button } from "@/components/ui/button";
+import { useLiveResource } from "@/stores/live-updates";
 import ConfigNotices from "./ConfigNotices.vue";
 import ConfigSections from "./ConfigSections.vue";
 import ConfigUnavailable from "./ConfigUnavailable.vue";
@@ -27,17 +26,13 @@ async function load(): Promise<void> {
   await Promise.all([loadConfig(), loadVersion(), loadUpdate()]);
 }
 
+useLiveResource("updates", () => void load());
 onMounted(load);
 </script>
 
 <template>
   <div>
-    <PageHeader title="Status" subtitle="What archied is running with right now.">
-      <Button variant="outline" @click="load">
-        <RefreshCw data-icon="inline-start" />
-        Refresh
-      </Button>
-    </PageHeader>
+    <PageHeader title="Status" subtitle="Runtime health, versions, updates, and configuration." />
 
     <!-- Only the configuration projection is gated on the config read: update
          checking and the reload notices come from other endpoints, so a config

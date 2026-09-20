@@ -33,7 +33,6 @@ const webhookHint = "Point a webhook at /webhooks/capture/<source> and it will s
     <EmptyHeader>
       <EmptyMedia variant="icon"><Inbox /></EmptyMedia>
       <EmptyTitle>Capture is not configured</EmptyTitle>
-      <EmptyDescription>This deployment has no capture storage wired up.</EmptyDescription>
     </EmptyHeader>
   </Empty>
 

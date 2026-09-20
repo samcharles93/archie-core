@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Button, type ButtonVariants } from "@/components/ui/button";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import ConfigList from "./ConfigList.vue";
 import ConfigRow from "./ConfigRow.vue";
 import type { LifecycleEntry } from "./types";
@@ -26,7 +26,6 @@ function actionVariant(kind?: string): ButtonVariants["variant"] {
   <Empty v-if="!props.actions.length">
     <EmptyHeader>
       <EmptyTitle>No actions reported</EmptyTitle>
-      <EmptyDescription>The server did not return any operator actions.</EmptyDescription>
     </EmptyHeader>
   </Empty>
   <ConfigList v-else>

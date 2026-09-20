@@ -1,7 +1,7 @@
-import { onMounted, onUnmounted, ref } from "vue";
+import { onMounted, ref } from "vue";
 
-import { api, subscribeEvents } from "@/lib/api";
-import type { StatusKind } from "@/lib/status";
+import { api } from "@/lib/api";
+import { useLiveResource } from "@/stores/live-updates";
 import type { ActivityDetailInput } from "./activity-detail";
 import type { Setup } from "./setup-preference";
 
@@ -53,9 +53,6 @@ export const workflows = ref<{ workflows?: WorkflowStat[] } | null>(null);
 export const tasks = ref<DashboardTask[] | null>(null);
 export const error = ref<string | null>(null);
 
-export const activity = ref<ActivityEvent[]>([]);
-export const streamStateText = ref("connecting");
-export const streamStateKind = ref<StatusKind>("idle");
 export const taskIDsBySource = ref(new Map<string, number>());
 
 export async function loadDashboard(): Promise<void> {
@@ -95,23 +92,8 @@ export function taskIDFor(event: ActivityEvent): number {
   return taskIDForEvent(event, taskIDsBySource.value);
 }
 
-let unsubscribe: (() => void) | undefined;
-
 /** Owns the initial fetch and the event stream for the page's lifetime. */
 export function useDashboard(): void {
-  onMounted(async () => {
-    await loadDashboard();
-    unsubscribe = subscribeEvents(
-      (event) => {
-        const next = [event as ActivityEvent, ...activity.value];
-        next.splice(50);
-        activity.value = next;
-      },
-      (state) => {
-        streamStateText.value = state;
-        streamStateKind.value = state === "live" ? "ok" : "warn";
-      },
-    );
-  });
-  onUnmounted(() => unsubscribe?.());
+  useLiveResource("tasks", () => void loadDashboard(), 500);
+  onMounted(loadDashboard);
 }

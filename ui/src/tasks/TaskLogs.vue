@@ -46,7 +46,7 @@ const props = withDefaults(
   },
 );
 
-defineEmits<{ retry: []; filter: [next: LogFilters] }>();
+defineEmits<{ filter: [next: LogFilters] }>();
 
 const resolvedAttempt = computed(() => Number(props.attempt) || Number(props.state?.attempt) || 0);
 
@@ -106,8 +106,9 @@ const download = computed(() =>
     <PanelLoading v-if="view.kind === 'loading'" label="Loading attempt log…" />
 
     <div v-else-if="view.kind === 'failed'" class="flex flex-col items-start gap-2 py-3">
-      <p class="text-sm text-fg-muted">Could not load this attempt's log.</p>
-      <Button variant="outline" @click="$emit('retry')">Retry</Button>
+      <p class="text-sm text-fg-muted">
+        Could not load this attempt's log. Live updates will try again when the daemon reconnects.
+      </p>
     </div>
 
     <Empty v-else-if="view.kind === 'nolog'">
@@ -120,16 +121,13 @@ const download = computed(() =>
     <Empty v-else-if="view.kind === 'disabled'">
       <EmptyHeader>
         <EmptyTitle>No persisted log for this attempt</EmptyTitle>
-        <EmptyDescription>
-          This dashboard cannot read task logs. The service that owns the log files is not reporting a log reader.
-        </EmptyDescription>
+        <EmptyDescription>The log service is not reporting a reader, so the file cannot be read.</EmptyDescription>
       </EmptyHeader>
     </Empty>
 
     <Empty v-else-if="view.kind === 'empty'">
       <EmptyHeader>
         <EmptyTitle>Nothing recorded</EmptyTitle>
-        <EmptyDescription>This attempt's log has no entries matching the current filter.</EmptyDescription>
       </EmptyHeader>
       <EmptyContent v-if="download">
         <Button variant="outline" size="sm" as-child>

@@ -25,7 +25,6 @@ import type { AttemptsState } from "./task-run";
  * per-stage durations exist and only those are shown.
  */
 const props = defineProps<{ state: AttemptsState | null | undefined }>();
-defineEmits<{ retry: [] }>();
 
 const run = useTaskRun();
 
@@ -53,8 +52,7 @@ const startedAt = computed(() => {
   <PanelError
     v-else-if="state === null"
     title="Could not load this task's attempts"
-    detail="archied did not answer for this task's run history. It may be restarting — retry, or check the daemon."
-    @retry="$emit('retry')"
+    detail="archied did not answer for this task's run history. Live updates will try again when the daemon reconnects."
   />
   <template v-else>
     <Empty v-if="!attempts.length">
@@ -88,7 +86,6 @@ const startedAt = computed(() => {
       <Empty v-else>
         <EmptyHeader>
           <EmptyTitle>No stages recorded for this attempt</EmptyTitle>
-          <EmptyDescription>The attempt exists, but nothing recorded a stage for it.</EmptyDescription>
         </EmptyHeader>
       </Empty>
       <p class="mt-3 max-w-[70ch] text-xs text-fg-muted">

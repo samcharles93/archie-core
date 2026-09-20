@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Badge } from "@/components/ui/badge";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import type { StatusKind } from "@/lib/status";
 import { statusKind, statusLabel } from "@/lib/task-meta";
 import ConfigList from "./ConfigList.vue";
@@ -21,7 +21,6 @@ const props = defineProps<{ statuses: LifecycleEntry[] }>();
   <Empty v-if="!props.statuses.length">
     <EmptyHeader>
       <EmptyTitle>No statuses reported</EmptyTitle>
-      <EmptyDescription>The server did not return any lifecycle statuses.</EmptyDescription>
     </EmptyHeader>
   </Empty>
   <ConfigList v-else>

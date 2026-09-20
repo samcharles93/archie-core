@@ -4,7 +4,7 @@ import { computed } from "vue";
 import Gauge from "@/base/Gauge.vue";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { summary, workflows } from "./state";
 
 /** Sharer of runs: how much of the work that finished passed its gates. */
@@ -27,7 +27,6 @@ const totals = computed(() => ({
       <Empty v-if="!totals.runs">
         <EmptyHeader>
           <EmptyTitle>No completed runs yet</EmptyTitle>
-          <EmptyDescription>Once Archie finishes a task, its gate pass rate appears here.</EmptyDescription>
         </EmptyHeader>
       </Empty>
       <template v-else>

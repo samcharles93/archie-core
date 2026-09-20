@@ -1,6 +1,10 @@
 <script setup lang="ts">
+import { storeToRefs } from "pinia";
+
 import { Badge } from "@/components/ui/badge";
-import { streamKind, streamState } from "./state";
+import { useLiveUpdatesStore } from "@/stores/live-updates";
+
+const { streamKind, streamState } = storeToRefs(useLiveUpdatesStore());
 
 /**
  * The state of the stream that is supposed to be adding to this list. Without

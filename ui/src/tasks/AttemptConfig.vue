@@ -19,8 +19,6 @@ const props = defineProps<{
   attempt: number | null;
 }>();
 
-defineEmits<{ retry: [] }>();
-
 const event = computed(() => selectConfigEvent(props.events, props.attempt));
 
 // An unrecognised schema is shown verbatim with a note rather than
@@ -38,13 +36,12 @@ const recognised = computed(() => schema.value === CONFIG_SCHEMA);
   <PanelError
     v-else-if="events === null"
     title="Could not load this task's events"
-    detail="The run configuration could not be read — retry, or check the daemon."
-    @retry="$emit('retry')"
+    detail="The run configuration could not be read. Live updates will try again when the daemon reconnects."
   />
 
   <Empty v-else-if="!event">
     <EmptyHeader>
-      <EmptyTitle>No configuration captured for attempt {{ attempt }}</EmptyTitle>
+      <EmptyTitle>No configuration captured</EmptyTitle>
     </EmptyHeader>
   </Empty>
 

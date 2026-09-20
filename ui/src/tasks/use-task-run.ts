@@ -15,6 +15,7 @@ import { useRoute, useRouter } from "vue-router";
 
 import { api, classifyActionError, type ActionErrorKind } from "@/lib/api";
 import { actionFor } from "@/lib/task-meta";
+import { useLiveResource } from "@/stores/live-updates";
 
 import {
   attemptKey,
@@ -249,6 +250,8 @@ export function provideTaskRun(id: ComputedRef<number | null>): TaskRun {
     loadEvents();
     refreshToken.value += 1;
   }
+
+  useLiveResource("tasks", refreshAll, 500);
 
   async function performRetry(): Promise<void> {
     if (id.value == null) return;

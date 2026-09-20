@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { RefreshCw } from "@lucide/vue";
 import { onMounted, ref } from "vue";
 
 import PageHeader from "@/base/PageHeader.vue";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { api } from "@/lib/api";
+import { useLiveResource } from "@/stores/live-updates";
 import StartWorkForm from "./StartWorkForm.vue";
 import type { StageStats } from "./stages";
 import StagesSection from "./StagesSection.vue";
@@ -38,17 +37,13 @@ async function load() {
   }
 }
 
+useLiveResource("tasks", () => void load(), 500);
 onMounted(load);
 </script>
 
 <template>
   <div>
-    <PageHeader title="Workflows" subtitle="Run outcomes and spend per workflow, and where stages get stuck.">
-      <Button variant="outline" @click="load">
-        <RefreshCw data-icon="inline-start" />
-        Refresh
-      </Button>
-    </PageHeader>
+    <PageHeader title="Workflows" subtitle="Run outcomes and spend per workflow, and where stages get stuck." />
 
     <!-- Starting work needs a definition to start: with none served, the form
          could only be submitted to fail. -->

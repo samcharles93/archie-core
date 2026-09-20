@@ -1,13 +1,12 @@
 <script setup lang="ts">
-import { RefreshCw } from "@lucide/vue";
 import { computed, onMounted, ref } from "vue";
 
 import PageHeader from "@/base/PageHeader.vue";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
+import { useLiveResource } from "@/stores/live-updates";
 import SkillCard, { type Skill } from "./SkillCard.vue";
 
 /** What Archie can do, in plain language. */
@@ -27,6 +26,7 @@ async function load() {
   }
 }
 
+useLiveResource("skills", () => void load());
 onMounted(load);
 
 const filtered = computed(() => {
@@ -38,12 +38,7 @@ const filtered = computed(() => {
 
 <template>
   <div>
-    <PageHeader title="Skills" subtitle="What Archie can do, in plain language.">
-      <Button variant="outline" @click="load">
-        <RefreshCw data-icon="inline-start" />
-        Refresh
-      </Button>
-    </PageHeader>
+    <PageHeader title="Skills" subtitle="What Archie can do, in plain language." />
 
     <Card>
       <CardHeader>
@@ -64,14 +59,13 @@ const filtered = computed(() => {
               <EmptyTitle>No skills discovered yet</EmptyTitle>
               <EmptyDescription>
                 Skills live as SKILL.md files under project, shared, or user-global .agents/skills/&lt;name&gt;/
-                directories. Add one and refresh to make it available.
+                directories. Newly discovered skills appear here automatically.
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
           <Empty v-else-if="!filtered.length">
             <EmptyHeader>
-              <EmptyTitle>No skills match</EmptyTitle>
-              <EmptyDescription>Nothing found for "{{ search }}".</EmptyDescription>
+              <EmptyTitle>No skills match "{{ search }}"</EmptyTitle>
             </EmptyHeader>
           </Empty>
           <SkillCard v-for="skill in filtered" v-else :key="skill.name" :skill="skill" />

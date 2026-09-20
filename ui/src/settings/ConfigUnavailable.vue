@@ -19,7 +19,7 @@ import { configError } from "./state";
           <EmptyTitle>{{ configError ? "Cannot reach archied" : "No configuration loaded" }}</EmptyTitle>
           <EmptyDescription v-if="configError">{{ configError }}</EmptyDescription>
           <EmptyDescription v-else>
-            archied is running without a config file wired into the dashboard, so there is nothing to show.
+            archied is running without a config file wired into the dashboard.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>

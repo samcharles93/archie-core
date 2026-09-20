@@ -14,13 +14,12 @@ export function revealBehavior(): ScrollBehavior {
 </script>
 
 <script setup lang="ts">
-import { RefreshCw } from "@lucide/vue";
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { api, subscribeEvents } from "@/lib/api";
+import { api } from "@/lib/api";
+import { useLiveResource } from "@/stores/live-updates";
 import TaskFilters, { initialTaskFilter, taskMatchesStatus } from "./TaskFilters.vue";
 import type { Task } from "./TaskRow.vue";
 import TaskTable from "./TaskTable.vue";
@@ -80,39 +79,6 @@ const state = computed<"loading" | "error" | "empty" | "no-match">(() => {
   return "no-match";
 });
 
-onMounted(() => {
-  void load();
-  unsubscribe = subscribeEvents(handleEvent);
-});
-
-onUnmounted(() => {
-  clearTimeout(refreshTimer);
-  unsubscribe?.();
-});
-
-// The live stream is an invalidation signal, not data (the same rule the
-// captures page follows): every task-shaped event says the authoritative list
-// changed, and load() asks for it again. Stage progress fires several events a
-// minute, so the re-read is debounced -- 500ms trailing, so a burst of events
-// collapses into one fetch that lands after the last one.
-const REFRESH_DEBOUNCE_MS = 500;
-let refreshTimer: ReturnType<typeof setTimeout> | undefined;
-let unsubscribe: (() => void) | undefined;
-
-function handleEvent(raw: unknown): void {
-  const ev = raw as { kind?: string; task_id?: number | string } | null;
-  if (!ev) return;
-  // Task-shaped: anything carrying a task id (stage_start, agent_finish,
-  // outcome, parked, human_approved, ...) or a lifecycle kind of its own
-  // (task_queued, task_retried, ...). Chat turns and log lines never re-read
-  // the board.
-  if (!ev.task_id && !(typeof ev.kind === "string" && ev.kind.startsWith("task_"))) return;
-  clearTimeout(refreshTimer);
-  refreshTimer = setTimeout(() => {
-    void load();
-  }, REFRESH_DEBOUNCE_MS);
-}
-
 async function load() {
   error.value = null;
   try {
@@ -122,6 +88,9 @@ async function load() {
     tasks.value = null;
   }
 }
+
+useLiveResource("tasks", () => void load(), 500);
+onMounted(load);
 
 // A filter change is a query-only route change, so it must not remount the
 // list: the table keeps its identity and only its rows move. An empty status is
@@ -168,22 +137,16 @@ async function reveal(id: number) {
 
 <template>
   <div>
-    <div class="mb-5 flex flex-wrap items-start justify-between gap-5">
+    <div class="mb-5">
       <div>
         <h1 class="text-3xl font-semibold tracking-[-0.03em]">Tasks</h1>
         <p class="text-fg-muted mt-2 text-sm">Every issue archied has picked up, and where it stands.</p>
-      </div>
-      <div class="flex flex-wrap items-center gap-2">
-        <Button @click="load">
-          <RefreshCw data-icon="inline-start" />
-          Refresh
-        </Button>
       </div>
     </div>
 
     <Card v-if="error">
       <CardContent>
-        <TasksState kind="error" :detail="error" @retry="load" />
+        <TasksState kind="error" :detail="error" />
       </CardContent>
     </Card>
 
@@ -210,7 +173,7 @@ async function reveal(id: number) {
           -->
           <TaskTable :tasks="visible" :show-repo="showRepo" @done="load">
             <template #state>
-              <TasksState :kind="state" @retry="load" @clear="clearFilters" />
+              <TasksState :kind="state" @clear="clearFilters" />
             </template>
           </TaskTable>
         </CardContent>

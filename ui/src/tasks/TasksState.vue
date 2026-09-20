@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { RefreshCw } from "@lucide/vue";
 import { computed } from "vue";
 
 import { Button } from "@/components/ui/button";
@@ -15,7 +14,7 @@ type StateKind = "loading" | "error" | "empty" | "no-match";
 
 const props = defineProps<{ kind: StateKind; detail?: string | null }>();
 
-const emit = defineEmits<{ retry: []; clear: [] }>();
+const emit = defineEmits<{ clear: [] }>();
 
 const copy = computed(() => {
   if (props.kind === "error") {
@@ -44,12 +43,8 @@ const copy = computed(() => {
       <EmptyTitle>{{ copy.title }}</EmptyTitle>
       <EmptyDescription>{{ copy.description }}</EmptyDescription>
     </EmptyHeader>
-    <EmptyContent v-if="props.kind !== 'empty'">
-      <Button v-if="props.kind === 'error'" variant="outline" size="sm" @click="emit('retry')">
-        <RefreshCw data-icon="inline-start" />
-        Retry
-      </Button>
-      <Button v-else variant="ghost" size="sm" @click="emit('clear')">Clear filters</Button>
+    <EmptyContent v-if="props.kind === 'no-match'">
+      <Button variant="ghost" size="sm" @click="emit('clear')">Clear filters</Button>
     </EmptyContent>
   </Empty>
 </template>

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { Plus, RefreshCw } from "@lucide/vue";
+import { Plus } from "@lucide/vue";
 import { onMounted, ref } from "vue";
 
 import PageHeader from "@/base/PageHeader.vue";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { useLiveResource } from "@/stores/live-updates";
 import BindingEditor from "./BindingEditor.vue";
 import BindingsTable from "./BindingsTable.vue";
 import DeleteBindingDialog from "./DeleteBindingDialog.vue";
@@ -40,6 +41,7 @@ const editorOpen = ref(false);
 const editing = ref<Binding | null>(null);
 const deleting = ref<Binding | null>(null);
 
+useLiveResource(null, () => void load());
 onMounted(load);
 
 function startCreate(): void {
@@ -72,11 +74,7 @@ async function handleDelete(binding: Binding): Promise<void> {
       title="Playbook bindings"
       subtitle="Tie a matcher, a field mapping, and a workflow together. New and edited bindings need explicit approval before they can fire."
     >
-      <Button v-if="failure" @click="load">
-        <RefreshCw data-icon="inline-start" />
-        Retry
-      </Button>
-      <Button v-else @click="startCreate">
+      <Button v-if="!failure" @click="startCreate">
         <Plus data-icon="inline-start" />
         New binding
       </Button>

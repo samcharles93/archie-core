@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { RefreshCw } from "@lucide/vue";
 import { onMounted } from "vue";
 
 import PageHeader from "@/base/PageHeader.vue";
-import { Button } from "@/components/ui/button";
+import { useLiveResource } from "@/stores/live-updates";
 import ConfigSections from "./ConfigSections.vue";
 import ConfigUnavailable from "./ConfigUnavailable.vue";
 import LifecycleCard from "./LifecycleCard.vue";
@@ -19,17 +18,13 @@ async function load(): Promise<void> {
   await Promise.all([loadConfig(), loadLifecycle()]);
 }
 
+useLiveResource(null, () => void load());
 onMounted(load);
 </script>
 
 <template>
   <div>
-    <PageHeader title="Task settings" subtitle="How work moves through archied, and what it is allowed to spend.">
-      <Button variant="outline" @click="load">
-        <RefreshCw data-icon="inline-start" />
-        Refresh
-      </Button>
-    </PageHeader>
+    <PageHeader title="Task settings" subtitle="How work moves through archied, and what it is allowed to spend." />
 
     <ReadOnlyNotice />
     <LifecycleCard />

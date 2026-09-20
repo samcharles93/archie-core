@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { RefreshCw } from "@lucide/vue";
 import { onMounted, ref } from "vue";
 
 import PageHeader from "@/base/PageHeader.vue";
-import { Button } from "@/components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { api } from "@/lib/api";
+import { useLiveResource } from "@/stores/live-updates";
 import ChannelCard, { type Channel } from "./ChannelCard.vue";
 
 /** The conversational front-ends Archie can be reached through. */
@@ -34,6 +33,7 @@ async function reload(id: string) {
   await load();
 }
 
+useLiveResource(null, () => void load());
 onMounted(load);
 </script>
 
@@ -42,12 +42,7 @@ onMounted(load);
     <PageHeader
       title="Channels"
       subtitle="The conversational front-ends Archie can be reached through."
-    >
-      <Button variant="outline" @click="load">
-        <RefreshCw data-icon="inline-start" />
-        Refresh
-      </Button>
-    </PageHeader>
+    />
 
     <div class="grid grid-cols-1 gap-4 min-[1080px]:grid-cols-[repeat(auto-fit,minmax(340px,1fr))]">
       <Empty v-if="error">

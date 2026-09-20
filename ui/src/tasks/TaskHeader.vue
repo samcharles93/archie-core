@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, RefreshCw } from "@lucide/vue";
+import { ArrowLeft } from "@lucide/vue";
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
 
@@ -10,7 +10,7 @@ import { useTaskRun } from "./use-task-run";
 
 /**
  * The run page's head, one strip: the task, its workflow line, and the
- * actions. Back and Refresh are page chrome; Start a new run lives here too,
+ * actions. Back is page chrome; Start a new run lives here too,
  * since a restart is the page's one decision. The commit-discard consequence
  * is stated in the confirm dialog, not beside the button. The forge
  * coordinates (repo, issue, PR) sit at the row's far end: context, not
@@ -36,10 +36,6 @@ const workflow = computed(() => (run.task?.workflow ? `${run.task.workflow} work
           <ArrowLeft data-icon="inline-start" />
           Back to tasks
         </RouterLink>
-      </Button>
-      <Button variant="outline" @click="run.refreshAll">
-        <RefreshCw data-icon="inline-start" />
-        Refresh
       </Button>
       <StartNewRun compact :id="id" class="mr-auto" />
       <a

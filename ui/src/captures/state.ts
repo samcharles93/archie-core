@@ -1,8 +1,7 @@
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { onMounted, ref } from "vue";
 
-import { api, subscribeEvents } from "@/lib/api";
-import type { StatusKind } from "@/lib/status";
-import type { StreamState } from "@/lib/stream-state";
+import { api } from "@/lib/api";
+import { useLiveResource } from "@/stores/live-updates";
 
 /**
  * The event inspector's shared state.
@@ -43,7 +42,6 @@ export const captures = ref<Capture[]>([]);
 export const enabled = ref(true);
 export const error = ref<string | null>(null);
 export const loading = ref(true);
-export const streamState = ref<StreamState | "connecting">("connecting");
 
 /**
  * The open row's capture, or null. Held by value rather than by id: the list
@@ -52,13 +50,6 @@ export const streamState = ref<StreamState | "connecting">("connecting");
  * window.
  */
 export const selected = ref<Capture | null>(null);
-
-/** The stream's state as a badge kind. A stream still connecting and one that
- * has given up are different answers, so they do not share a tone. */
-export const streamKind = computed<StatusKind>(() => {
-  if (streamState.value === "live") return "ok";
-  return streamState.value === "unavailable" ? "danger" : "warn";
-});
 
 /**
  * load re-reads the list. It runs once on mount and again on every capture
@@ -81,26 +72,9 @@ export async function load(): Promise<void> {
   }
 }
 
-function handleEvent(raw: unknown): void {
-  // The "capture" event on /events carries the id and source only, no payload
-  // (see handleCapture), so it is an invalidation signal rather than data: it
-  // says a capture exists, and the authoritative list -- the only place the
-  // redacted payload lives -- is asked for again. Merging it into local state
-  // instead would put a row in the list with nothing behind it.
-  if ((raw as { kind?: string } | null)?.kind !== "capture") return;
-  void load();
-}
-
-let unsubscribe: (() => void) | undefined;
-
 /** Owns the initial read and the live stream that invalidates it, for the
  * page's lifetime. */
 export function useCaptures(): void {
-  onMounted(() => {
-    void load();
-    unsubscribe = subscribeEvents(handleEvent, (state) => {
-      streamState.value = state;
-    });
-  });
-  onUnmounted(() => unsubscribe?.());
+  useLiveResource("captures", () => void load());
+  onMounted(load);
 }

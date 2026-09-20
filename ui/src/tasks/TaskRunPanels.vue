@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { TabsContent } from "@/components/ui/tabs";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 
 import AttemptConfig from "./AttemptConfig.vue";
 import ChangedFiles from "./ChangedFiles.vue";
@@ -24,23 +24,11 @@ import { useTaskRun } from "./use-task-run";
 const props = defineProps<{ id: string }>();
 
 const run = useTaskRun();
-
-function retryLogs(): void {
-  if (run.attemptNumber != null) run.loadLogs(run.attemptNumber, { force: true });
-}
-
-function retryChanges(): void {
-  if (run.attemptNumber != null) run.loadChanges(run.attemptNumber, { force: true });
-}
-
-function retryDebug(): void {
-  if (run.attemptNumber != null) run.loadDebug(run.attemptNumber, { force: true });
-}
 </script>
 
 <template>
   <TabsContent v-for="tab in RUN_TABS" :key="tab.id" :value="tab.id">
-    <StageRail v-if="tab.id === 'stages'" :state="run.attempts" @retry="run.loadAttempts" />
+    <StageRail v-if="tab.id === 'stages'" :state="run.attempts" />
 
     <template v-else>
       <PanelLoading v-if="run.attempts === undefined" label="Loading this task's attempts…" />
@@ -49,15 +37,11 @@ function retryDebug(): void {
         v-else-if="run.attempts === null"
         title="Could not load this task's attempts"
         detail="The task's run history could not be read."
-        @retry="run.loadAttempts"
       />
 
       <Empty v-else-if="run.attemptNumber == null">
         <EmptyHeader>
           <EmptyTitle>No attempt recorded</EmptyTitle>
-          <EmptyDescription>
-            This task has no recorded run.
-          </EmptyDescription>
         </EmptyHeader>
       </Empty>
 
@@ -69,19 +53,17 @@ function retryDebug(): void {
         :filters="run.filters"
         :task-id="props.id"
         @filter="run.setFilters"
-        @retry="retryLogs"
       />
 
-      <ChangedFiles v-else-if="tab.id === 'changes'" :state="run.changesState" :task="run.task" @retry="retryChanges" />
+      <ChangedFiles v-else-if="tab.id === 'changes'" :state="run.changesState" :task="run.task" />
 
       <AttemptConfig
         v-else-if="tab.id === 'config'"
         :events="run.events"
         :attempt="run.attemptNumber"
-        @retry="run.loadEvents"
       />
 
-      <DebugView v-else-if="tab.id === 'debug'" :state="run.debugState" :attempt="run.attemptNumber" @retry="retryDebug" />
+      <DebugView v-else-if="tab.id === 'debug'" :state="run.debugState" :attempt="run.attemptNumber" />
     </template>
   </TabsContent>
 </template>
