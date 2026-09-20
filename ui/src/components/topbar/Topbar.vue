@@ -4,7 +4,6 @@ import Nav from "./Nav.vue";
 import ProfileDropdown from "./ProfileDropdown.vue";
 import SearchBar from "./SearchBar.vue";
 import SupportLink from "./SupportLink.vue";
-import ThemeToggle from "./ThemeToggle.vue";
 
 defineProps<{ hidden: string[] }>();
 </script>
@@ -16,7 +15,11 @@ defineProps<{ hidden: string[] }>();
     <div class="flex shrink-0 items-center gap-1">
       <SearchBar :hidden="hidden" />
       <SupportLink />
-      <ThemeToggle />
+      <!--
+        The theme control lives on /system/appearance, not here. Two switches
+        for one preference is two places to look and one of them to be wrong
+        (docs/prds/dashboard-navigation-groups.md).
+      -->
       <ProfileDropdown />
     </div>
   </header>

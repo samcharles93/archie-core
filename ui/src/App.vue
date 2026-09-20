@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from "vue";
 
+import ChatLauncher from "@/chat/ChatLauncher.vue";
 import Topbar from "@/components/topbar/Topbar.vue";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { hidden, loadCapabilities } from "@/lib/capabilities";
@@ -51,5 +52,13 @@ onMounted(() => {
         </RouterView>
       </main>
     </div>
+
+    <!--
+      Outside the shell on purpose: the frame above carries `backdrop-filter`,
+      which makes it a containing block for `position: fixed`, so a launcher
+      nested inside it would anchor to the shell rather than the viewport and
+      ride off the bottom of a long page.
+    -->
+    <ChatLauncher />
   </TooltipProvider>
 </template>

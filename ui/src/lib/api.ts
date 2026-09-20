@@ -155,7 +155,9 @@ export const api = {
     request<T>(`/api/mappings/${encodeURIComponent(id)}`, { method: "PATCH", body: mapping }),
   // A delete answers 204, so there is no body to parse.
   mappingDelete: (id: string) => request<void>(`/api/mappings/${encodeURIComponent(id)}`, { method: "DELETE", parse: false }),
-  mappingPreview: <T = unknown>(captureId: string, fields: unknown) =>
+  // capture_id is an int64 on the wire (mappingPreviewRequest), so it is sent
+  // as a number: a JSON string is rejected as an invalid request body.
+  mappingPreview: <T = unknown>(captureId: number, fields: unknown) =>
     request<T>("/api/mappings/preview", { method: "POST", body: { capture_id: captureId, fields } }),
   bindings: <T = unknown>() => request<T>("/api/bindings"),
   bindingCreate: <T = unknown>(binding: Payload) => request<T>("/api/bindings", { method: "POST", body: binding }),

@@ -148,54 +148,67 @@ Two decisions worth not re-litigating:
 In dependency order. Each is `git show e18fb8b2^:ui/src/<folder>/`. File counts
 verified against the deletion diff.
 
-- [ ] **Dashboard** (5 files). Health row, Throughput tiles, Token outlook,
-      Live activity table. Also the time-of-day `greeting()` and
-      `taskIDForEvent`, the click-through from an activity row to its task.
-- [ ] **Tasks** (13 files — the largest). List, filters, row actions, detail
-      page with tab bar, stage rail, changed files, attempt config, task logs,
-      timeline, debug view. Two interaction contracts that are not visual:
-      detail `tab`/`attempt` state lives in the query string and is written
-      with `history.replaceState`, **not** `location.hash =`, so a tab click
-      does not remount and refetch; and the list has a reduced-motion-aware
-      scroll-to-row reveal for deep links.
-- [ ] **Chat** (8 files, `chat.jsx` alone is 810 lines). Phase 5 covers the
-      launcher chrome; the content features are separate and none of them are
-      chrome: session list and switching, persona selector, provider and model
-      selectors (also driven by `/model` and persona slash commands), and
-      **inline tool-call rendering in the transcript** — name, parameters,
-      summary, and success-or-failure per call.
-- [ ] **Configuration** (5 files). The approved design splits it into
-      `/system/*` routes — see `docs/prds/dashboard-navigation-groups.md` — so
-      port into that shape directly rather than porting the monolith first.
-      Content beyond layout: `RepositoriesCard`'s inline-editable cells
-      (PATCH-on-blur with keyboard handling), `ModelsAndProvidersCard`,
-      `ProvenanceCard`, `LifecycleCard`, and the **editable-vs-read-only dual
-      mode** — `editable={false}` when the serving process only has a published
-      config snapshot and the PATCH routes answer 503 (`archie-core-ymut`).
-      That is architecture, not styling.
-- [ ] **Logs** (3 files). Filters, live tail, pause, the three empty states.
-- [ ] **Event inspector / captures** (3 files).
-- [ ] **Field mappings** (3 files), including the mapping editor.
-- [ ] **Playbook bindings** (3 files), including the binding editor.
-- [ ] **Workflows** (3 files).
-- [ ] **Skills**, **Curators**, **Channels** (2 files each). Capability-gated
-      and hidden on the reference deployment, so they are easy to forget and
-      easy to ship broken.
+Ported as named components, not as one file per page: see
+`docs/prds/dashboard-port-brief.md#componentisation`. A page file composes and
+holds nothing, shared state lives in a module beside it, and a lookup that maps
+a string to a component is not written.
+
+- [x] **Dashboard.** Health row, Throughput tiles, Token outlook, Live activity
+      table, the time-of-day `greeting()`, and the click-through from an
+      activity row to its task. The setup panel branches on the state machine
+      rather than on "is setup present", which had shown a 100% checklist where
+      the complete state belongs.
+- [x] **Tasks.** List, filters, row actions, detail page with tab bar, stage
+      rail, changed files, attempt config, task logs, timeline, debug view.
+      Both interaction contracts survive: detail `tab`/`attempt` is written with
+      `router.replace` (never a hash, and replace so a tab click adds no history
+      entry and does not remount), and the list's reduced-motion-aware
+      scroll-to-row reveal for deep links. `1q89`'s column priority is applied.
+      One deliberate deviation: the list's inline timeline expansion is gone,
+      since the row now opens `/tasks/:id` and that page owns the timeline; the
+      phone layout's stacked cards are not reproduced and the table scrolls
+      inside its own container instead.
+- [ ] **Chat.** In progress.
+- [x] **Configuration**, split into the six `/system/*` routes the approved
+      design names, with the editable-vs-read-only dual mode intact: this
+      composition serves a published snapshot, so the pages say they are
+      read-only rather than rendering controls that cannot work.
+- [x] **Logs.** Filters, live tail, pause. A 503 on the stream renders as
+      "Log stream unavailable" with the reason, not as a permanent
+      "reconnecting".
+- [x] **Event inspector / captures.**
+- [x] **Field mappings**, including the mapping editor. Its `mappingPreview`
+      `capture_id` is a number: the wire type is int64 and a JSON string is
+      rejected.
+- [x] **Playbook bindings**, including the binding editor.
+- [x] **Workflows**, keeping the "No stage data yet" state and omitting the
+      Start-work form when the endpoint serves no definitions (`3tij`).
+- [x] **Skills**, **Curators**, **Channels.** Capability-gated and hidden on the
+      reference deployment, so all three were verified by their own empty state.
+
+Every page was rendered against the running daemon at 1440x900 and 720px, with
+no horizontal page scroll at either width.
 
 ## Phase 4 — Navigation restructure
 
 Approved in `docs/prds/dashboard-navigation-groups.md`; build it during the
 port rather than porting the flat bar first.
 
-- [ ] Five top-level items: Dashboard, Work, Agent, Events, System.
-- [ ] Rename under their group: Inspector, Mappings, Bindings.
-- [ ] Per-item hover tooltips carrying a one-line description.
-- [ ] Configuration splits into `/system/{status,appearance,tasks,models,repos,advanced}`.
-- [ ] `/settings` redirects to `/system/status` — it is in bookmarks and in the
+- [x] Five top-level items: Dashboard, Work, Agent, Events, System.
+- [x] Rename under their group: Inspector, Mappings, Bindings.
+- [x] Per-item hover tooltips carrying a one-line description.
+- [x] Configuration splits into `/system/{status,appearance,tasks,models,repos,advanced}`.
+- [x] `/settings` redirects to `/system/status` — it is in bookmarks and in the
       Go route registry.
-- [ ] Add Logs to the nav. It was never in it.
-- [ ] Preserve the `soon:` entry treatment.
-- [ ] Update `dashboard_tools.go` for every new route in the same change.
+- [x] Add Logs to the nav. It was never in it.
+- [x] Preserve the `soon:` entry treatment.
+- [x] The theme control moves off the topbar and onto `/system/appearance`. Two
+      switches for one preference is two places to look and one of them to be
+      wrong; `components/topbar/ThemeToggle.vue` is deleted, not orphaned.
+- [x] Update `dashboard_tools.go` for every new route in the same change. The
+      registry already carried all sixteen, so its parity test has been passing
+      throughout; it is the check that a route cannot be added here and
+      forgotten there.
 
 ## Phase 5 — Behaviour shipped today that a naive port loses
 
