@@ -10,7 +10,6 @@ import type { ConfigField, ConfigSection } from "./types";
  * those, not the generic row renderer.
  */
 
-export const STATUS_SECTIONS = ["web"];
 export const TASKS_SECTIONS = ["budgets"];
 export const ADVANCED_SECTIONS = ["identity", "storage"];
 

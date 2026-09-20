@@ -26,6 +26,7 @@ export default defineConfig({
     // the dashboard) so the frontend can be developed without rebuilding Go.
     proxy: {
       "/api": "http://127.0.0.1:8484",
+      "/health": "http://127.0.0.1:8484",
       "/events": { target: "http://127.0.0.1:8484", ws: true },
     },
   },

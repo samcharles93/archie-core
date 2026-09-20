@@ -1,16 +1,12 @@
 <script setup lang="ts">
 import CaptureStatus from "./CaptureStatus.vue";
 
-/** The page's title, and what belongs beside it: where the stream has got to,
- * and a way to ask for the list again. */
+/** The page title and stream status. */
 </script>
 
 <template>
   <div class="mb-5 flex flex-wrap items-start justify-between gap-5">
-    <div>
-      <h1 class="text-3xl font-semibold tracking-[-0.03em]">Event inspector</h1>
-      <p class="mt-2 text-sm text-fg-muted">Inbound payloads, most recent first.</p>
-    </div>
+    <h1 class="text-3xl font-semibold tracking-[-0.03em]">Event inspector</h1>
     <div class="flex flex-wrap items-center gap-2">
       <CaptureStatus />
     </div>

@@ -3,19 +3,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 
 /**
  * One titled card of the System surface. Every card on the six pages opens the
- * same way -- a title, and the line that says what it covers -- so it is a
- * component rather than six copies of the same CardHeader markup.
+ * same way, so it is a component rather than six copies of the same CardHeader
+ * markup. A description is reserved for context the card cannot show itself.
  *
  * The card owns its own bottom margin: the pages stack cards directly, with
  * nothing between them.
  */
-defineProps<{ title: string; description?: string }>();
+defineProps<{ title?: string; description?: string }>();
 </script>
 
 <template>
   <Card class="mb-4">
-    <CardHeader>
-      <CardTitle>{{ title }}</CardTitle>
+    <CardHeader v-if="title || description">
+      <CardTitle v-if="title">{{ title }}</CardTitle>
       <CardDescription v-if="description">{{ description }}</CardDescription>
     </CardHeader>
     <CardContent>

@@ -118,6 +118,7 @@ async function request<T = unknown>(path: string, opts: RequestOptions = {}): Pr
 }
 
 export const api = {
+  health: <T = unknown>() => request<T>("/health/detailed"),
   summary: <T = unknown>() => request<T>("/api/summary"),
   tasks: <T = unknown>() => request<T>("/api/tasks"),
   taskMeta: <T = unknown>() => request<T>("/api/task-meta"),
@@ -139,7 +140,6 @@ export const api = {
   channelReload: <T = unknown>(id: string) =>
     request<T>(`/api/channels/${encodeURIComponent(id)}/reload`, { method: "POST", body: {} }),
   config: <T = unknown>() => request<T>("/api/config"),
-  version: <T = unknown>() => request<T>("/api/version"),
   configUpdate: <T = unknown>(updates: Payload) => request<T>("/api/config", { method: "PATCH", body: { updates } }),
   configRepoUpdate: <T = unknown>(owner: string, name: string, field: string, value: unknown) =>
     request<T>(`/api/config/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
@@ -191,12 +191,6 @@ export const api = {
     }),
   chatPersona: <T = unknown>(sessionID: string, name: string) =>
     request<T>("/api/chat/persona", { method: "POST", body: { session_id: sessionID, name } }),
-  chatUpdate: <T = unknown>() => request<T>("/api/chat/update"),
-  chatUpdateDefer: <T = unknown>(snapshot: unknown) => request<T>("/api/chat/update/defer", { method: "POST", body: { snapshot } }),
-  // Installing restarts archied, so it is allowed far longer than a normal
-  // request before the UI gives up.
-  chatUpdateInstall: <T = unknown>(snapshot: unknown) =>
-    request<T>("/api/chat/update/install", { method: "POST", body: { snapshot }, timeoutMs: 120000 }),
   chatDangerous: <T = unknown>() => request<T>("/api/chat/dangerous"),
   chatDangerousRequest: <T = unknown>(kind: string, spec: unknown) =>
     request<T>(`/api/chat/dangerous/${encodeURIComponent(kind)}`, { method: "POST", body: { spec } }),

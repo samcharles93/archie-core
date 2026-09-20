@@ -38,7 +38,7 @@ function chooseMotion(value: unknown): void {
 
 <template>
   <div>
-    <PageHeader title="Appearance" subtitle="How this dashboard looks and responds in this browser." />
+    <PageHeader title="Appearance" />
 
     <ConfigCard title="Dashboard preferences" description="Saved only in this browser and applied immediately.">
       <div class="grid gap-8 min-[700px]:grid-cols-2 min-[1100px]:grid-cols-4">

@@ -18,7 +18,7 @@ onMounted(loadConfig);
 
 <template>
   <div>
-    <PageHeader title="Models" subtitle="Model roles, and the providers backing them." />
+    <PageHeader title="Models" />
 
     <ConfigUnavailable v-if="configUnavailable" />
     <ModelsCard v-else />

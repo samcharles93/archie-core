@@ -29,7 +29,7 @@ function gateSummary(gate?: string[][]): string {
 </script>
 
 <template>
-  <ConfigCard v-if="!repos.length" title="Repositories" description="The repositories Archie polls for work.">
+  <ConfigCard v-if="!repos.length">
     <Empty>
       <EmptyHeader>
         <EmptyTitle>No repositories configured</EmptyTitle>
@@ -37,11 +37,7 @@ function gateSummary(gate?: string[][]): string {
       </EmptyHeader>
     </Empty>
   </ConfigCard>
-  <ConfigCard
-    v-else
-    title="Repositories"
-    description="Each repository Archie polls, and the quality gate a change must pass before it opens a pull request. Concurrent tasks, retries, and self-review are per-repository overrides -- PATCH /api/config/repos/{owner}/{name}, not the file config.toml directly."
-  >
+  <ConfigCard v-else>
     <Table>
       <TableHeader>
         <TableRow>

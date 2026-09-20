@@ -210,6 +210,13 @@ tasks:
       - npm test
       - npm run typecheck
 
+  # A test event for the capture intake, so the Events surfaces can be driven by
+  # hand without a real webhook source. See tools/webhook-send.sh --list.
+  webhook:send:
+    desc: Send a test event to the dashboard's capture intake (--help for kinds)
+    cmds:
+      - bash tools/webhook-send.sh {{.CLI_ARGS}}
+
   dev:
     desc: "Develop: archied live-reload + archie-gateway + archie-state-store + archie-ui + Vite HMR together. Open http://localhost:5173"
     summary: |

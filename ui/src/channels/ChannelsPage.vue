@@ -39,10 +39,7 @@ onMounted(load);
 
 <template>
   <div>
-    <PageHeader
-      title="Channels"
-      subtitle="The conversational front-ends Archie can be reached through."
-    />
+    <PageHeader title="Channels" />
 
     <div class="grid grid-cols-1 gap-4 min-[1080px]:grid-cols-[repeat(auto-fit,minmax(340px,1fr))]">
       <Empty v-if="error">

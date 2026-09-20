@@ -70,10 +70,7 @@ async function handleDelete(binding: Binding): Promise<void> {
 
 <template>
   <div>
-    <PageHeader
-      title="Playbook bindings"
-      subtitle="Tie a matcher, a field mapping, and a workflow together. New and edited bindings need explicit approval before they can fire."
-    >
+    <PageHeader title="Playbook bindings">
       <Button v-if="!failure" @click="startCreate">
         <Plus data-icon="inline-start" />
         New binding

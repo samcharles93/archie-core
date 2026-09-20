@@ -140,7 +140,6 @@ async function reveal(id: number) {
     <div class="mb-5">
       <div>
         <h1 class="text-3xl font-semibold tracking-[-0.03em]">Tasks</h1>
-        <p class="text-fg-muted mt-2 text-sm">Every issue archied has picked up, and where it stands.</p>
       </div>
     </div>
 

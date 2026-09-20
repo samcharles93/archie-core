@@ -4,7 +4,6 @@ import { onMounted } from "vue";
 import PageHeader from "@/base/PageHeader.vue";
 import { useLiveResource } from "@/stores/live-updates";
 import ConfigUnavailable from "./ConfigUnavailable.vue";
-import ReadOnlyNotice from "./ReadOnlyNotice.vue";
 import RepositoriesCard from "./RepositoriesCard.vue";
 import { configUnavailable, loadConfig } from "./state";
 
@@ -17,9 +16,8 @@ onMounted(loadConfig);
 
 <template>
   <div>
-    <PageHeader title="Repositories" subtitle="The repositories Archie polls, and their per-repo gate overrides." />
+    <PageHeader title="Repositories" />
 
-    <ReadOnlyNotice />
     <ConfigUnavailable v-if="configUnavailable" />
     <RepositoriesCard v-else />
   </div>

@@ -13,7 +13,6 @@ import ProviderTable from "./ProviderTable.vue";
 <template>
   <ConfigCard
     title="Models & providers"
-    description="Which model handles each stage of work."
   >
     <ModelRoleList />
     <ProviderTable />

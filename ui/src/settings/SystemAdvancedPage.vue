@@ -6,7 +6,6 @@ import { useLiveResource } from "@/stores/live-updates";
 import ConfigSections from "./ConfigSections.vue";
 import ConfigUnavailable from "./ConfigUnavailable.vue";
 import DangerousActionsCard from "./DangerousActionsCard.vue";
-import ReadOnlyNotice from "./ReadOnlyNotice.vue";
 import { ADVANCED_SECTIONS } from "./sections";
 import { configUnavailable, loadConfig, loadDangerous } from "./state";
 
@@ -28,9 +27,8 @@ onMounted(load);
 
 <template>
   <div>
-    <PageHeader title="Advanced" subtitle="Identity, storage and sandboxing, and dangerous actions." />
+    <PageHeader title="Advanced" />
 
-    <ReadOnlyNotice />
     <ConfigUnavailable v-if="configUnavailable" />
     <ConfigSections v-else :ids="ADVANCED_SECTIONS" />
     <!-- Dangerous actions come from the daemon's own endpoint, not the config

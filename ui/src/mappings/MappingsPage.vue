@@ -24,12 +24,7 @@ onMounted(loadMappings);
 <template>
   <div>
     <div class="mb-5 flex flex-wrap items-start justify-between gap-5">
-      <div>
-        <h1 class="text-3xl font-semibold tracking-[-0.03em]">Field mappings</h1>
-        <p class="mt-2 text-sm text-fg-muted">
-          Bind named fields to JSON paths from a real captured event, ready for a playbook binding.
-        </p>
-      </div>
+      <h1 class="text-3xl font-semibold tracking-[-0.03em]">Field mappings</h1>
       <div class="flex flex-wrap items-center gap-2">
         <Button @click="startCreate">
           <Plus data-icon="inline-start" />

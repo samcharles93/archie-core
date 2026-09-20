@@ -24,7 +24,7 @@ import WorkflowsPage from "@/workflows/WorkflowsPage.vue";
 //
 // meta:
 //   label       the navigation label, short because its group carries the context
-//   description one line, shown as the item's tooltip and mirrored in the registry
+//   description one line mirrored in the messaging page registry
 //   section     the capability from GET /api/capabilities this route needs; a
 //               route with no section is served in every composition
 //   navPath     the navigation entry this route keeps current

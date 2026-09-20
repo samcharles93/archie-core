@@ -9,8 +9,6 @@ import { api } from "@/lib/api";
 import { useLiveResource } from "@/stores/live-updates";
 import SkillCard, { type Skill } from "./SkillCard.vue";
 
-/** What Archie can do, in plain language. */
-
 const skills = ref<Skill[]>([]);
 const search = ref("");
 const loadError = ref<string | null>(null);
@@ -38,7 +36,7 @@ const filtered = computed(() => {
 
 <template>
   <div>
-    <PageHeader title="Skills" subtitle="What Archie can do, in plain language." />
+    <PageHeader title="Skills" />
 
     <Card>
       <CardHeader>
@@ -59,7 +57,7 @@ const filtered = computed(() => {
               <EmptyTitle>No skills discovered yet</EmptyTitle>
               <EmptyDescription>
                 Skills live as SKILL.md files under project, shared, or user-global .agents/skills/&lt;name&gt;/
-                directories. Newly discovered skills appear here automatically.
+                directories.
               </EmptyDescription>
             </EmptyHeader>
           </Empty>

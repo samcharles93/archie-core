@@ -12,8 +12,6 @@ import StagesSection from "./StagesSection.vue";
 import WorkflowTable from "./WorkflowTable.vue";
 import type { WorkflowDefinition, WorkflowStats } from "./workflow-rows";
 
-/** Run outcomes and spend per workflow, and where stages get stuck. */
-
 interface WorkflowsResponse {
   definitions?: WorkflowDefinition[];
   workflows?: WorkflowStats[];
@@ -43,7 +41,7 @@ onMounted(load);
 
 <template>
   <div>
-    <PageHeader title="Workflows" subtitle="Run outcomes and spend per workflow, and where stages get stuck." />
+    <PageHeader title="Workflows" />
 
     <!-- Starting work needs a definition to start: with none served, the form
          could only be submitted to fail. -->

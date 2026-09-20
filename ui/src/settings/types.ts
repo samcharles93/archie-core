@@ -86,37 +86,6 @@ export interface ConfigView {
   schema?: ConfigSection[];
 }
 
-/** One component as GET /api/version reports it. */
-export interface VersionComponent {
-  id?: string;
-  label?: string;
-  install_type?: string;
-  running_version?: string;
-  latest_available?: string;
-  status?: string;
-  installed_claim?: string;
-  reference?: string;
-}
-
-/** What one available update carries. The server serves both spellings of
- * each key, so both are read -- see UpdateActionsCard. */
-export interface AvailableUpdate {
-  Label?: string;
-  label?: string;
-  Available?: string;
-  available?: string;
-}
-
-export interface UpdateStatus {
-  available?: AvailableUpdate[];
-  can_install?: boolean;
-  /** The version snapshot a defer or install decision is made against. The
-   * server owns its shape; deferred is the one field the UI reads. */
-  snapshot?: { deferred?: boolean };
-  /** Set when the read failed rather than being unwired. */
-  error?: string;
-}
-
 /** A rollback point a dangerous action can target. Number and Label arrive in
  * either case depending on the source, so both are carried. */
 export interface DangerCheckpoint {
@@ -136,18 +105,4 @@ export interface DangerousActions {
   checkpoints?: DangerCheckpoint[];
   /** Set when the read failed rather than being unwired. */
   error?: string;
-}
-
-/** One lifecycle status or operator action, as GET /api/task-meta reports it.
- * A deployment that adds one on the backend shows it here without a frontend
- * change. */
-export interface LifecycleEntry {
-  id: string;
-  label?: string;
-  kind?: string;
-}
-
-export interface Lifecycle {
-  statuses?: LifecycleEntry[];
-  actions?: LifecycleEntry[];
 }

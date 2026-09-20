@@ -33,10 +33,7 @@ onMounted(load);
 
 <template>
   <div>
-    <PageHeader
-      title="Curators"
-      subtitle="Background agents that maintain memory and skills: what ran, and why."
-    />
+    <PageHeader title="Curators" />
 
     <div class="grid grid-cols-1 gap-4 min-[1080px]:grid-cols-[repeat(auto-fit,minmax(340px,1fr))]">
       <Empty v-if="loadError">

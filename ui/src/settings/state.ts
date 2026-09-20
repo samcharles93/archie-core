@@ -4,9 +4,6 @@ import { ApiError, api } from "@/lib/api";
 import type {
   ConfigView,
   DangerousActions,
-  Lifecycle,
-  UpdateStatus,
-  VersionComponent,
 } from "./types";
 
 /**
@@ -56,47 +53,6 @@ export async function loadConfig(): Promise<void> {
   }
 }
 
-// ── Updates ─────────────────────────────────────────────────────────────────
-
-export const versionComponents = ref<VersionComponent[]>([]);
-export const versionError = ref<string | null>(null);
-/** Update checking is not wired on this deployment. */
-export const versionMissing = ref(false);
-
-export async function loadVersion(): Promise<void> {
-  try {
-    const data = await api.version<{ components?: VersionComponent[] }>();
-    versionComponents.value = data?.components || [];
-    versionError.value = null;
-    versionMissing.value = false;
-  } catch (err) {
-    versionMissing.value = isMissing(err);
-    if (!versionMissing.value) versionError.value = errorText(err);
-  }
-}
-
-export const update = ref<UpdateStatus | null>(null);
-
-export async function loadUpdate(): Promise<void> {
-  try {
-    update.value = await api.chatUpdate<UpdateStatus>();
-  } catch (err) {
-    // Absent rather than failed on a deployment that did not wire it: nothing
-    // to show, not an error banner (archie-core-tf20).
-    update.value = isMissing(err) ? null : { error: errorText(err) };
-  }
-}
-
-export async function deferUpdate(snapshot: unknown): Promise<void> {
-  await api.chatUpdateDefer(snapshot);
-  await loadUpdate();
-}
-
-export async function installUpdate(snapshot: unknown): Promise<void> {
-  await api.chatUpdateInstall(snapshot);
-  await loadUpdate();
-}
-
 // ── Dangerous actions ───────────────────────────────────────────────────────
 
 export const dangerous = ref<DangerousActions | null>(null);
@@ -117,18 +73,4 @@ export async function requestDangerous(kind: string, spec: unknown): Promise<voi
 export async function decideDangerous(id: string, decision: string): Promise<void> {
   await api.chatDangerousDecision(id, decision);
   await loadDangerous();
-}
-
-// ── Work lifecycle ──────────────────────────────────────────────────────────
-
-export const lifecycle = ref<Lifecycle | null>(null);
-export const lifecycleError = ref<string | null>(null);
-
-export async function loadLifecycle(): Promise<void> {
-  try {
-    lifecycle.value = await api.taskMeta<Lifecycle>();
-    lifecycleError.value = null;
-  } catch (err) {
-    lifecycleError.value = errorText(err);
-  }
 }
