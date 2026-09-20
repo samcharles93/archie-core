@@ -6,6 +6,7 @@ import { statusKind, statusLabel } from "../base/task-meta.jsx";
 import { Pill } from "../base/pill.jsx";
 import { Row } from "./config-row.jsx";
 import { UpdateStatusCard } from "./update-status.jsx";
+import { UpdateActionsCard, DangerousActionsCard } from "./operator-cards.jsx";
 
 function Empty({ title, detail }) {
   return (
@@ -296,10 +297,54 @@ function SettingsApp() {
   const [lifecycleData, setLifecycleData] = useState(null);
   const [lifecycleError, setLifecycleError] = useState(null);
 
+  // Update actions and dangerous-action approvals, rehomed from the chat panel
+  // (archie-core-tf20). Both degrade to absent rather than to an error banner:
+  // a deployment that does not wire them should show nothing, not a failure.
+  const [updateData, setUpdateData] = useState(null);
+  const [dangerousData, setDangerousData] = useState(null);
+
   const loadAll = () => {
     loadCfg();
     loadVersion();
     loadLifecycle();
+    loadUpdate();
+    loadDangerous();
+  };
+
+  const loadUpdate = async () => {
+    try {
+      setUpdateData(await api.chatUpdate());
+    } catch (err) {
+      setUpdateData(err?.status === 501 ? null : { error: String(err.message || err) });
+    }
+  };
+
+  const loadDangerous = async () => {
+    try {
+      setDangerousData(await api.chatDangerous());
+    } catch (err) {
+      setDangerousData(err?.status === 501 ? null : { error: String(err.message || err) });
+    }
+  };
+
+  const deferUpdate = async (snapshot) => {
+    await api.chatUpdateDefer(snapshot);
+    await loadUpdate();
+  };
+
+  const installUpdate = async (snapshot) => {
+    await api.chatUpdateInstall(snapshot);
+    await loadUpdate();
+  };
+
+  const requestDangerous = async (kind, spec) => {
+    await api.chatDangerousRequest(kind, spec);
+    await loadDangerous();
+  };
+
+  const decideDangerous = async (id, decision) => {
+    await api.chatDangerousDecision(id, decision);
+    await loadDangerous();
   };
 
   const loadCfg = async () => {
@@ -362,6 +407,18 @@ function SettingsApp() {
           ) : null
         )}
       </div>
+
+      {updateData && (
+        <div>
+          <UpdateActionsCard data={updateData} onDefer={deferUpdate} onInstall={installUpdate} />
+        </div>
+      )}
+
+      {dangerousData && (
+        <div>
+          <DangerousActionsCard data={dangerousData} onRequest={requestDangerous} onDecide={decideDangerous} />
+        </div>
+      )}
 
       <div>
         <LifecycleCard data={lifecycleData} error={lifecycleError} />

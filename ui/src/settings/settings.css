@@ -300,3 +300,53 @@
     overflow-wrap: anywhere;
   }
 }
+
+/* Operator controls rehomed from the chat panel (archie-core-tf20). */
+.cfg-note {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+
+.cfg-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+.cfg-request-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+
+.cfg-request-row select,
+.cfg-request-row input {
+  flex: 0 1 22rem;
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-hover);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+/* One queued action: what it would do, and the decisions open on it. */
+.cfg-pending {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.cfg-pending .cfg-actions {
+  margin-top: 0;
+}
