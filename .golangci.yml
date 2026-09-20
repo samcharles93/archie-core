@@ -95,6 +95,12 @@ linters:
   exclusions:
     generated: lax
     warn-unused: true
+    # npm dependencies are not this module's code. `flatted`, pulled in
+    # transitively by the dashboard toolchain, ships a Go implementation
+    # alongside its JavaScript, and linting a vendored third-party file fails
+    # the gate on complexity nobody here can fix.
+    paths:
+      - ui/node_modules
     presets:
       - comments
       - std-error-handling

@@ -1,0 +1,269 @@
+@import "@fontsource-variable/geist";
+
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn-vue/tailwind.css";
+
+/* ui/dist is committed, so nothing ignores it and Tailwind's automatic content
+   detection scans it. That makes every build an input to the next one: class
+   strings left in the committed bundle generate utilities for classes nothing
+   references any more, so rebuilding an unchanged tree produced a different
+   bundle and tools/uidist.sh's freshness check failed on the first build after
+   every change. The bundle is generated, never a source. */
+@source not "../dist";
+
+/* The theme is an attribute on <html>, not a class, so the inline script in
+   index.html can set it before the first paint and a reload does not flash the
+   wrong palette. */
+@custom-variant dark (&:is([data-theme="dark"] *));
+
+/*
+ * Design tokens. Dark is the default because archied is a daemon you check at
+ * odd hours; light is a toggle, not an afterthought, so both themes define the
+ * same variable set and nothing else in the app references a raw colour.
+ *
+ * Semantic names only. Never `--violet`; always `--primary` or `--ok`, so a
+ * palette change is one file rather than a grep.
+ *
+ * Names on the left are shadcn-vue's contract, so its components pick the
+ * palette up with no per-component overrides. Names on the right that shadcn
+ * does not define (status colours, the subtle foreground, the glass surfaces)
+ * are ours.
+ *
+ * The dark theme is a saturated violet on a near-black canvas with a violet
+ * cast; the light theme is the ink and cream set inverted. Every foreground is
+ * checked against every surface it lands on, hover states included, at AA
+ * (4.5:1), and the ratios in the comments are the measured ones.
+ */
+@theme inline {
+    --font-sans: 'Geist Variable', sans-serif;
+    --font-heading: var(--font-sans);
+    --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary-soft: var(--primary-soft);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
+    --color-destructive-soft: var(--destructive-soft);
+    --color-border: var(--border);
+    --color-border-strong: var(--border-strong);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+    --color-hairline: var(--hairline);
+
+    /* Foreground ramp. --muted-foreground is shadcn's; --fg-subtle is the
+       quieter third step the dashboard's secondary text uses. */
+    --color-fg-muted: var(--fg-muted);
+    --color-fg-subtle: var(--fg-subtle);
+
+    /* Status. Task state, gate results and trend direction all draw from here,
+       so the same colour always means the same thing wherever it appears. */
+    --color-ok: var(--ok);
+    --color-ok-soft: var(--ok-soft);
+    --color-warn: var(--warn);
+    --color-warn-soft: var(--warn-soft);
+    --color-danger: var(--danger);
+    --color-danger-soft: var(--danger-soft);
+    --color-info: var(--info);
+    --color-info-soft: var(--info-soft);
+    --color-idle: var(--idle);
+    --color-idle-soft: var(--idle-soft);
+
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-xl: 20px;
+}
+
+/* ── Dark (default) ─────────────────────────────────────────────────────── */
+:root,
+[data-theme="dark"] {
+    color-scheme: dark;
+
+    /* Near-black carrying a violet cast, so the accent reads as light coming
+       out of the canvas rather than a swatch laid on top of grey. */
+    --background: #0F0A16;
+    --card: #191026;
+    --card-foreground: #F0EAF7;
+    --popover: #1F1430;
+    --popover-foreground: #F0EAF7;
+    --foreground: #F0EAF7;
+
+    /* Ink on the violet is 5.64:1; white on it is 4.02:1 and fails, so the
+       button label is the canvas colour in both directions, never white. */
+    --primary: #A76BF5;
+    --primary-foreground: #0F0A16;
+    --primary-soft: rgba(167, 107, 245, 0.16);
+
+    /* shadcn's `accent` is the hover surface, not the brand colour. */
+    --secondary: #271838;
+    --secondary-foreground: #F0EAF7;
+    --muted: #271838;
+    --muted-foreground: #B9AECB;
+    --accent: #271838;
+    --accent-foreground: #F0EAF7;
+
+    --destructive: #F87A88;
+    --destructive-foreground: #0F0A16;
+    --destructive-soft: rgba(248, 122, 136, 0.16);
+
+    --border: #3A2A52;
+    --border-strong: #503A6B;
+    --input: #3A2A52;
+    --ring: #A76BF5;
+
+    --fg-muted: #B9AECB;
+    --fg-subtle: #A99DBD;
+
+    --ok: #4FD08C;
+    --ok-soft: rgba(79, 208, 140, 0.16);
+    --warn: #F0B65C;
+    --warn-soft: rgba(240, 182, 92, 0.16);
+    --danger: #F87A88;
+    --danger-soft: rgba(248, 122, 136, 0.16);
+    --info: #A76BF5;
+    --info-soft: rgba(167, 107, 245, 0.16);
+    --idle: #A79BB8;
+    --idle-soft: rgba(167, 155, 184, 0.16);
+
+    /* The brand's second hue: the magenta the petals turn at their tips, so the
+       canvas wash runs violet into magenta instead of one flat colour. */
+    --brand-alt: #C061E8;
+    --bg-blur: rgba(15, 10, 22, 0.6);
+    /* Panels are translucent so the canvas wash shows through and the whole
+       workspace reads as one lit surface rather than opaque cards on a picture. */
+    --surface-glass: rgba(25, 16, 38, 0.62);
+    --surface-glass-strong: rgba(15, 10, 22, 0.8);
+    --workspace: rgba(12, 8, 18, 0.55);
+    --hairline: rgba(240, 234, 247, 0.07);
+    --wash-a: rgba(167, 107, 245, 0.14);
+    --wash-b: rgba(192, 97, 232, 0.12);
+    --wash-c: rgba(246, 239, 234, 0.04);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-md: 0 8px 28px rgba(0, 0, 0, 0.5);
+    --shadow-workspace: 0 24px 70px rgba(0, 0, 0, 0.6);
+
+    --transition: 140ms cubic-bezier(0.4, 0, 0.2, 1);
+    --radius-pill: 999px;
+}
+
+/* ── Light ──────────────────────────────────────────────────────────────── */
+[data-theme="light"] {
+    color-scheme: light;
+
+    --background: #F6EFEA;
+    --card: #FFFFFF;
+    --card-foreground: #2E2A35;
+    --popover: #FFFFFF;
+    --popover-foreground: #2E2A35;
+    --foreground: #2E2A35;
+
+    --primary: #8B5FBF;
+    --primary-foreground: #FFFFFF;
+    --primary-soft: rgba(139, 95, 191, 0.12);
+
+    --secondary: #E9D7F7;
+    --secondary-foreground: #2E2A35;
+    --muted: #E9D7F7;
+    --muted-foreground: #635B6B;
+    --accent: #E9D7F7;
+    --accent-foreground: #2E2A35;
+
+    --destructive: #BE2C43;
+    --destructive-foreground: #FFFFFF;
+    --destructive-soft: rgba(190, 44, 67, 0.10);
+
+    --border: #DDCFC2;
+    --border-strong: #C4B3A4;
+    --input: #DDCFC2;
+    --ring: #8B5FBF;
+
+    --fg-muted: #635B6B;
+    --fg-subtle: #6E6577;
+
+    --ok: #0C7548;
+    --ok-soft: rgba(12, 117, 72, 0.10);
+    --warn: #8A5A12;
+    --warn-soft: rgba(138, 90, 18, 0.10);
+    --danger: #BE2C43;
+    --danger-soft: rgba(190, 44, 67, 0.10);
+    --info: #8B5FBF;
+    --info-soft: rgba(139, 95, 191, 0.12);
+    --idle: #5A6270;
+    --idle-soft: rgba(90, 98, 112, 0.10);
+
+    --brand-alt: #C9A3E6;
+    --bg-blur: rgba(246, 239, 234, 0.6);
+    --surface-glass: rgba(255, 255, 255, 0.72);
+    --surface-glass-strong: rgba(255, 255, 255, 0.88);
+    --workspace: rgba(255, 255, 255, 0.55);
+    --hairline: rgba(46, 42, 53, 0.06);
+    --wash-a: rgba(139, 95, 191, 0.10);
+    --wash-b: rgba(201, 163, 230, 0.16);
+    --wash-c: rgba(12, 117, 72, 0.05);
+
+    --shadow-sm: 0 1px 2px rgba(46, 42, 53, 0.06);
+    --shadow-md: 0 8px 28px rgba(46, 42, 53, 0.10);
+    --shadow-workspace: 0 24px 70px rgba(46, 42, 53, 0.14);
+}
+
+@layer base {
+    * {
+        @apply border-border outline-ring/50;
+    }
+    body {
+        @apply bg-background text-foreground;
+        @apply font-sans;
+        /* The luminous canvas the shell floats on. Large, off-axis and
+           low-frequency, so it lights the workspace rather than competing with
+           it, and fixed so the surface above reads as glass rather than a
+           scrolling image. The padding is the margin the frame sits inside. */
+        background:
+            radial-gradient(70rem 40rem at 8% -10%, var(--wash-a), transparent 62%),
+            radial-gradient(56rem 34rem at 92% 4%, var(--wash-b), transparent 58%),
+            radial-gradient(48rem 30rem at 50% 108%, var(--wash-c), transparent 60%),
+            var(--background);
+        background-attachment: fixed;
+        padding: 1rem;
+    }
+    /* The focus floor. A component may style its own focus state; this
+       guarantees that nothing is ever focused and invisible for a keyboard
+       user. `:focus-visible` rather than `:focus` so a mouse click does not
+       draw a ring around what was clicked. */
+    :focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+    }
+    /* The frame is a desktop affordance: below this width the workspace goes
+       edge to edge, because a rounded card inset on a phone wastes the only
+       axis that matters. */
+    @media (max-width: 900px) {
+        body {
+            padding: 0;
+        }
+    }
+    /* An accessibility invariant, not a nicety: nothing animates for someone
+       who has asked it not to. */
+    @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+            animation-duration: 0.01ms !important;
+            transition-duration: 0.01ms !important;
+        }
+    }
+}

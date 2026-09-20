@@ -27,7 +27,7 @@ var routePathRe = regexp.MustCompile(`path:\s*"([^"]+)"`)
 // "single source of truth" claim into something a test can hold.
 func dashboardRoutesFromSource(t *testing.T) []string {
 	t.Helper()
-	path := filepath.Join("..", "..", "ui", "src", "main.jsx")
+	path := filepath.Join("..", "..", "ui", "src", "router", "index.ts")
 	src, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)

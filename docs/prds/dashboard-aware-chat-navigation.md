@@ -89,7 +89,7 @@ was not told about.
 ### Web UI (chat-render.js, chat-tools.js)
 
 A dashboard_navigate tool call renders as a **clickable chip**: an anchor with
-href="#/tasks" and the label. Because the app routes on location.hash, the chip is a
+href="/tasks" and the label. The chip is a
 real link that works from any page once the chat is a global presence. The chip is
 styled as an action, not a code line, so it visibly invites a click.
 

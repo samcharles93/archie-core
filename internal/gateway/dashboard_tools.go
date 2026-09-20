@@ -29,15 +29,20 @@ type DashboardPage struct {
 var dashboardPages = []DashboardPage{
 	{Path: "/", Label: "Dashboard", Description: "The control room: what Archie is working on, what needs you, and token spend."},
 	{Path: "/tasks", Label: "Tasks", Description: "Issues Archie has picked up and where they stand: the work queue."},
-	{Path: "/logs", Label: "Logs", Description: "The daemon log stream, filterable by level and component."},
+	{Path: "/workflows", Label: "Workflows", Description: "The routed workflows (bootstrap, implement, tdd, feasibility) and their run history."},
+	{Path: "/skills", Label: "Skills", Description: "The SKILL.md capabilities Archie can activate."},
+	{Path: "/curators", Label: "Curators", Description: "The scheduled passes that curate Archie's memory and captures."},
 	{Path: "/captures", Label: "Event inspector", Description: "Captured inbound events for inspection."},
 	{Path: "/mappings", Label: "Field mappings", Description: "How inbound event fields map onto internal ones."},
 	{Path: "/bindings", Label: "Playbook bindings", Description: "How captured events are bound to the workflows they start."},
-	{Path: "/skills", Label: "Skills", Description: "The SKILL.md capabilities Archie can activate."},
-	{Path: "/workflows", Label: "Workflows", Description: "The routed workflows (bootstrap, implement, tdd, feasibility) and their run history."},
-	{Path: "/curators", Label: "Curators", Description: "The scheduled passes that curate Archie's memory and captures."},
+	{Path: "/logs", Label: "Logs", Description: "The daemon log stream, filterable by level and component."},
 	{Path: "/channels", Label: "Channels", Description: "Inbound chat and notification channels (e.g. Telegram) and their state."},
-	{Path: "/settings", Label: "Configuration", Description: "Daemon configuration editable from the dashboard."},
+	{Path: "/system/status", Label: "Status", Description: "Update state, where the running configuration came from, and the daemon listen address."},
+	{Path: "/system/appearance", Label: "Appearance", Description: "Dashboard theme and display preferences."},
+	{Path: "/system/tasks", Label: "Task settings", Description: "Work lifecycle configuration: statuses, operator actions, and budgets."},
+	{Path: "/system/models", Label: "Models", Description: "Model roles and the providers backing them."},
+	{Path: "/system/repos", Label: "Repositories", Description: "Repositories Archie watches, and their per-repo gate overrides."},
+	{Path: "/system/advanced", Label: "Advanced", Description: "Identity, storage and sandboxing, and the dangerous actions."},
 }
 
 // DashboardPages returns a copy of the dashboard page registry.

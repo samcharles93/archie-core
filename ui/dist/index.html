@@ -1,12 +1,26 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="dark light" />
-    <title>Archie</title>
-    <script type="module" crossorigin src="./assets/index.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index.css">
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>archie-ui</title>
+    <script>
+      // Set before the first paint so a reload does not flash the wrong
+      // palette. Kept in sync with src/lib/theme.ts; a blocked localStorage
+      // falls back to dark, which is the default theme.
+      (function () {
+        var theme = "dark";
+        try {
+          if (localStorage.getItem("archie.theme") === "light") theme = "light";
+        } catch (e) {
+          /* default stands */
+        }
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index.css">
   </head>
   <body>
     <div id="app"></div>
