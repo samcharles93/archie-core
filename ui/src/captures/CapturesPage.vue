@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, watch } from "vue";
+import { useMediaQuery } from "@vueuse/core";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import CaptureDetail from "./CaptureDetail.vue";
@@ -17,13 +18,54 @@ import { load, selectById, selectNewest, selected, useCaptures } from "./state";
  * reading survives a reload and can be linked to. Selecting is a `replace`, not
  * a push, so walking the list adds no history entries to back out through.
  * Narrow screens stack the pane under the list.
+ *
+ * The pane is capped by the list it sits beside and by the room the window has
+ * for it -- never by its own content, which a payload has plenty of. Both of
+ * those are sizes the pane does not influence, so filling the cap cannot feed
+ * back into it; the page therefore stays as tall as the list, however large the
+ * payload.
  */
 useCaptures();
 
 const route = useRoute();
 const router = useRouter();
 
+const listColumn = ref<HTMLElement | null>(null);
+const paneCap = ref<number | null>(null);
+
+// The same breakpoint the grid states in its classes: one layout decision,
+// expressed twice because CSS cannot hand it to script.
+const stacked = useMediaQuery("(max-width: 1099px)");
+
+// Below the frame: the room left under the pane's own top edge. A margin
+// rather than a measured padding on purpose -- being a few pixels out costs a
+// few pixels, where measuring it from a frame that grows with its content
+// costs a runaway height.
+const FLOOR_MARGIN = 24;
+const MIN_PANE = 320;
+
+function measure(): void {
+  const column = listColumn.value;
+  if (stacked.value || !column) {
+    paneCap.value = null;
+    return;
+  }
+  const rect = column.getBoundingClientRect();
+  const listHeight = rect.height;
+  const room = window.innerHeight - rect.top - FLOOR_MARGIN;
+  paneCap.value = Math.max(MIN_PANE, Math.min(listHeight || MIN_PANE, room));
+}
+
+let observer: ResizeObserver | null = null;
+
 onMounted(async () => {
+  measure();
+  if (listColumn.value) {
+    observer = new ResizeObserver(measure);
+    observer.observe(listColumn.value);
+  }
+  window.addEventListener("resize", measure);
+
   await load();
   // The URL names a selection before the window is read, so the restore waits
   // for the list; an id it no longer holds falls back to the newest capture,
@@ -31,6 +73,12 @@ onMounted(async () => {
   const named = Number(route.query.capture);
   if (!Number.isInteger(named) || !selectById(named)) selectNewest();
 });
+
+onBeforeUnmount(() => {
+  observer?.disconnect();
+  window.removeEventListener("resize", measure);
+});
+watch(stacked, measure);
 
 watch(selected, (capture) => {
   const query = { ...route.query };
@@ -43,7 +91,9 @@ watch(selected, (capture) => {
 <template>
   <CapturesHeader />
   <div class="grid min-w-0 items-start gap-4 min-[1100px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-    <CapturesCard class="min-w-0" />
-    <CaptureDetail />
+    <div ref="listColumn" class="min-w-0">
+      <CapturesCard />
+    </div>
+    <CaptureDetail :max-height="paneCap" />
   </div>
 </template>
