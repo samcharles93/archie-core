@@ -1,20 +1,30 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed } from "vue";
 
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from "@/components/ui/message-scroller";
 import ChatBubble from "./ChatBubble.vue";
 import ChatEmptyState from "./ChatEmptyState.vue";
 import { messages, sendMessage, streamingTurn, type ChatMessage } from "./state";
 
 /**
  * The conversation: the messages so far, the turn still arriving, and what the
- * panel says before either exists. It scrolls itself to the newest line, so a
- * streamed answer stays in view as it grows.
+ * panel says before either exists.
+ *
+ * The scroller follows the tail, and stops following the moment the reader
+ * scrolls up rather than yanking them back on every streamed token. That is
+ * what MessageScroller is for, so it is used rather than re-derived: an
+ * earlier version set scrollTop from a watcher, which has neither the
+ * "reader scrolled away" state nor a way back down.
  */
 const emit = defineEmits<{ prompt: [text: string] }>();
-
-const scroller = ref<{ $el: HTMLElement } | null>(null);
 
 function parts(message: ChatMessage) {
   const from = message.from ?? message.From ?? "";
@@ -27,61 +37,46 @@ function parts(message: ChatMessage) {
 }
 
 const bubbles = computed(() => messages.value.map(parts));
-
-// ScrollArea renders its own scrollable element, so the way to follow the tail
-// is to reach into the component for it. Asking the wrapper instead would set
-// scrollTop on a box that does not scroll.
-function viewport(): HTMLElement | null {
-  return scroller.value?.$el?.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]') ?? null;
-}
-
-// Auto scroll to the bottom on a new message or a streamed token. flush: 'post'
-// measures after the new content is in the DOM; measuring before that reads the
-// height the transcript is about to replace.
-watch(
-  [messages, streamingTurn],
-  () => {
-    const el = viewport();
-    if (el) el.scrollTop = el.scrollHeight;
-  },
-  { flush: "post" },
-);
 </script>
 
 <template>
-  <ScrollArea ref="scroller" class="min-h-0 flex-1">
-    <div class="grid content-start gap-4 p-4">
-      <ChatEmptyState v-if="!bubbles.length && !streamingTurn" @prompt="emit('prompt', $event)" />
+  <MessageScrollerProvider auto-scroll default-scroll-position="end">
+    <MessageScroller class="min-h-0 flex-1">
+      <MessageScrollerViewport>
+        <MessageScrollerContent class="gap-4 p-4">
+          <ChatEmptyState v-if="!bubbles.length && !streamingTurn" @prompt="emit('prompt', $event)" />
 
-      <template v-else>
-        <ChatBubble
-          v-for="(bubble, i) in bubbles"
-          :key="i"
-          :text="bubble.text"
-          :tools="bubble.tools"
-          :assistant="bubble.assistant"
-        />
+          <template v-else>
+            <MessageScrollerItem v-for="(bubble, i) in bubbles" :key="i" :message-id="`m${i}`">
+              <ChatBubble :text="bubble.text" :tools="bubble.tools" :assistant="bubble.assistant" />
+            </MessageScrollerItem>
 
-        <!-- The live turn is a bubble like any other, so what arrives is
-             rendered by the same rules as what was already there. -->
-        <ChatBubble
-          v-if="streamingTurn"
-          :text="streamingTurn.text || '…'"
-          :tools="streamingTurn.tools"
-          assistant
-          streaming
-        >
-          <Button
-            v-if="streamingTurn.isError && streamingTurn.turn"
-            variant="outline"
-            size="sm"
-            class="mt-2"
-            @click="sendMessage({ turn: streamingTurn.turn })"
-          >
-            Retry
-          </Button>
-        </ChatBubble>
-      </template>
-    </div>
-  </ScrollArea>
+            <!-- The live turn is a bubble like any other, so what arrives is
+                 rendered by the same rules as what was already there. It is the
+                 scroll anchor while it streams. -->
+            <MessageScrollerItem v-if="streamingTurn" message-id="streaming" scroll-anchor>
+              <ChatBubble
+                :text="streamingTurn.text || '…'"
+                :tools="streamingTurn.tools"
+                assistant
+                streaming
+              >
+                <Button
+                  v-if="streamingTurn.isError && streamingTurn.turn"
+                  variant="outline"
+                  size="sm"
+                  class="mt-2"
+                  @click="sendMessage({ turn: streamingTurn.turn })"
+                >
+                  Retry
+                </Button>
+              </ChatBubble>
+            </MessageScrollerItem>
+          </template>
+        </MessageScrollerContent>
+      </MessageScrollerViewport>
+
+      <MessageScrollerButton />
+    </MessageScroller>
+  </MessageScrollerProvider>
 </template>
