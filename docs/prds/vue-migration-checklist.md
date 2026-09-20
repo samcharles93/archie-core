@@ -2,14 +2,16 @@
 
 **Status:** In progress
 **Date:** 2026-09-20
-**Bead:** `archie-core-ocfm` (navigation restructure, folded in below)
+**Bead:** `archie-core-tavn` (epic), `archie-core-ocfm` (navigation restructure)
 **Bootstrap commit:** `e18fb8b2`
 
 The Preact dashboard was deleted, not ported incrementally. This is the list of
 what has to exist again, what must not be lost on the way, and the contracts
 that break silently if missed.
 
-Deleted source is recoverable at `git show e18fb8b2^:ui/src/<path>`.
+Deleted source is recoverable at `git show e18fb8b2^:ui/src/<path>`. Every
+claim below was cross-checked against that tree; where a number is a live
+measurement rather than something recoverable from git, it says so.
 
 ## Invariants that outlive the framework
 
@@ -21,24 +23,46 @@ does not show up as a broken page.
       in `vite.config.ts`; do not let a later Vite change reintroduce hashing.
 - [ ] **Route registry.** `internal/gateway/dashboard_tools.go` hand-copies the
       route table and `TestDashboardPagesRegistryCoversEveryRoute` parses
-      `ui/src/router/index.ts` to hold them in step. Adding a route without a
-      registry entry fails the gate; that guard caught a stale `/chat` entry
-      earlier today. Keep the `const routes = [` / one-per-line / `nav: false`
-      shape the parser expects.
+      `ui/src/router/index.ts` to hold them in step. The parser needs
+      `const routes = [` on its own line, `path: "..."` on a single line per
+      route, and `nav: false` on any entry the registry should skip. That guard
+      caught a stale `/chat` entry earlier today.
+- [ ] **Mutation headers.** Every POST/PATCH/DELETE must send **both**
+      `X-Archie-CSRF: 1` and `Content-Type: application/json`. The server
+      returns 403 without the first and 415 without the second
+      (`internal/webui/api_tasks.go:376`, `authorizeTaskMutation`). GET sends
+      neither. This is the single most likely thing to silently break every
+      write after the port.
 - [ ] **Hash routing.** Every existing bookmark, dashboard link and
       agent-issued navigation is `#/tasks`. `createWebHashHistory`, already set.
-- [ ] **Capability gating.** `GET /api/capabilities` returns which `section`s
-      the serving process can back; a route whose section is absent must be
-      hidden, not rendered empty. Was `capabilities.jsx` +
-      `hiddenRoutes(caps, routes)`. Fail open: unknown or failed response hides
-      nothing.
-- [ ] **Single fetch path.** Every call went through one `send()` in
-      `base/api.jsx` so the CSRF header, content type, timeout and `ApiError`
-      shape lived in one place. A test used to fail if a second `fetch()`
-      appeared there. Port the constraint, not just the functions.
-- [ ] **SSE lifecycle.** `subscribeLogs` and the dashboard event stream must be
-      torn down on unmount or the app leaks a connection per navigation. Preact
-      did this with an `archie:teardown` event; Vue should use `onUnmounted`.
+- [ ] **Capability gating.** `GET /api/capabilities`
+      (`internal/webui/api_capabilities.go:20`) returns a `sections` map of ten
+      booleans: chat, logs, skills, curators, channels, captures, mappings,
+      bindings, and workflows/settings which are always true. A route whose
+      section is false must be hidden, not rendered empty. **Fail open**: on a
+      failed or null response hide nothing — the old client used a bare
+      `.catch(() => {})` for exactly this. A page that says "unavailable" is
+      recoverable; a nav entry that vanished is not.
+- [ ] **`LOG_LEVELS`** in `base/log-row.jsx` is a wire contract, not a display
+      list: the CSV level filter is matched server-side by `splitCSV` in
+      `internal/webui/api_tasks_logs.go`. A value mismatch breaks filtering
+      with no error.
+- [ ] **SSE lifecycle.** Three streams, all `id: <n>\ndata: <json>\n\n` except
+      chat which omits the id:
+      `/events` (task lifecycle, `sse.go:37`, supports `?since=` and
+      `Last-Event-ID` resume), `/api/logs/stream` (`api_logs.go:80`, same
+      resume protocol), `/api/chat/stream` (`api_chat.go:399`, frames typed
+      delta/tool/media/navigate). Each must be closed on unmount or the app
+      leaks a connection per navigation. Preact used an `archie:teardown`
+      event; Vue should use `onUnmounted`.
+
+> **On tests.** Per Sam's call, the 43-file suite was not ported and tests
+> return when there is behaviour worth pinning. Flagging one exception for when
+> that moment comes: the deleted `ui/test/api-client.test.js` classified every
+> API method as mutation/read/stream/url and asserted the right headers per
+> class. It is the only cheap guard on the CSRF contract above. (It did **not**
+> text-scan for a second `fetch()` — that check was deliberately removed
+> upstream for testing the file's wording rather than its behaviour.)
 
 ## Phase 1 — Foundation
 
@@ -52,33 +76,54 @@ does not show up as a broken page.
 - [ ] **Contrast values.** Carry the corrected tokens, not the originals:
       `--fg-subtle` `#7d8b9e` dark / `#636f82` light, and `--accent-fg`
       `#0d1014` on the dark accent. The originals failed WCAG AA at 3.37:1,
-      2.72:1 and 3.2:1. The accent itself is unchanged and is also the link
-      colour.
-- [ ] **API client** (`base/api.jsx` → `src/lib/api.ts`). ~45 methods; list
-      recoverable from the deleted file. Keep `ApiError` carrying `status`, and
-      the 401/4xx/5xx classification callers branch on.
-- [ ] **App shell.** Topbar, `.shell` frame, main outlet. Note `.shell` has
-      `backdrop-filter`, which makes it a containing block for `position:
-      fixed` — the chat launcher must render outside it or it anchors to the
-      scrolling shell.
+      2.72:1 and 3.2:1 (independently recomputed). The accent itself is
+      unchanged and is also the link colour.
+- [ ] **API client** (`base/api.jsx` → `src/lib/api.ts`). **48 methods plus two
+      SSE subscribers.** Keep `ApiError` carrying `status`, and the
+      401/4xx/5xx classification callers branch on. `GET /api/bindings/{id}`
+      and `GET /api/mappings/{id}` exist server-side but were never called —
+      do not add clients for them without a reason.
+- [ ] **App shell** — the real source is `main.jsx` (410 lines), not just CSS.
+      Beyond the topbar and outlet it carries:
+  - [ ] **Jump-to search**: Enter navigates to the first nav label matching the
+        typed prefix; Escape closes the field and calls `preventDefault` so it
+        does not also close the chat panel, which has its own Escape handler.
+  - [ ] **`soon: true` nav entries** — greyed, labelled, non-navigable. An
+        affordance, not dead code.
+  - [ ] **`loadTaskMeta()` at boot**, which re-renders the mounted route once
+        `/api/task-meta` lands so freeze-dried defaults are replaced.
+  - [ ] **Route keying**: keyed on path + params but deliberately **not** the
+        query string, so a query-only change (a task-detail tab switch) does
+        not remount and lose state, while two different `:id`s do get fresh
+        instances. vue-router needs an equivalent `:key` strategy or this
+        regresses silently.
+  - [ ] `.shell` has `backdrop-filter`, making it a containing block for
+        `position: fixed` — the chat launcher must render outside it.
+- [ ] **CSS inventory.** Eleven files, of which only four map onto shadcn
+      primitives (`table.css`→Table, `empty.css`→Empty, `button.css`→Button,
+      `tokens.css`→theme). The rest carry behaviour with no other home:
+      `layout.css` (498 lines — the shell, topbar, nav, the whole chat dock and
+      morph, and every responsive breakpoint Phase 5 describes in prose; port
+      **from this file**, do not reverse-engineer it), `card.css`
+      (`.card`/`.grid-2`/`.grid-4`, used on nearly every page), `page.css`
+      (`.page-head`/`.page-title`/`.page-sub`/`.page-actions`, every page),
+      `pill.css` (the ok/warn/danger/info/idle colour definitions a Badge port
+      must match), `base.css` (`:focus-visible` ring, `.sr-only`),
+      `responsive.css` (the global `prefers-reduced-motion` override — an
+      accessibility invariant), `_main.css` (import order only).
 - [ ] **Theme toggle** and its persistence.
 
 ## Phase 2 — Shared primitives
 
-Old hand-built components and their shadcn-vue replacements. Take the
-replacement unless the behaviour is genuinely bespoke.
-
 | Was | Becomes |
 |---|---|
-| `base/pill.jsx` | `Badge`, with the status-token variants |
-| `base/statTile.jsx` | `Card` composition |
-| `base/icons.jsx` | `lucide-vue-next` (the set already matched a 24-grid stroke system) |
-| `base/gauge.jsx` | bespoke SVG — port as-is |
-| `base/log-row.jsx` | bespoke — port as-is |
-| `base/format.jsx`, `base/task-meta.jsx` | plain modules, port as-is |
-| `css/table.css` | `Table` |
-| `css/empty.css` | `Empty` |
-| `css/button.css` | `Button` |
+| `base/pill.jsx` | `Badge`, with the status-token variants from `pill.css` |
+| `base/statTile.jsx` | `Card` composition **plus** its `Sparkline` (inline SVG polyline with its own min/max/step math) and trend-arrow logic, where `goodDirection` distinguishes "up is good" from "up is bad" |
+| `base/icons.jsx` | `lucide-vue-next` for most, but `dashboard`, `mappings`, `bindings`, `curators` and `memory` are bespoke glyphs with no 1:1 Lucide equivalent. Swapping them changes the drawing — a design call, not a rename |
+| `base/gauge.jsx` | bespoke SVG, port as-is — **exports two components**, `Gauge` and `SegmentBar` (proportional multi-segment bar plus legend, used for budget composition). Easy to port only the one the filename names |
+| `base/log-row.jsx` | bespoke, port as-is; see the `LOG_LEVELS` wire contract above |
+| `base/format.jsx` | genuinely pure, port as-is |
+| `base/task-meta.jsx` | **not** a plain module: module-level mutable cache, async fetch, and the boot-time re-render trigger above |
 
 - [ ] **Copy verbatim.** These five are framework-free and need only a rename:
       `dashboard/activity-detail.js`, `chat/command-scroll.js`,
@@ -90,18 +135,34 @@ replacement unless the behaviour is genuinely bespoke.
 
 ## Phase 3 — Pages
 
-In dependency order. Each is `git show e18fb8b2^:ui/src/<folder>/`.
+In dependency order. Each is `git show e18fb8b2^:ui/src/<folder>/`. File counts
+verified against the deletion diff.
 
 - [ ] **Dashboard** (5 files). Health row, Throughput tiles, Token outlook,
-      Live activity table.
+      Live activity table. Also the time-of-day `greeting()` and
+      `taskIDForEvent`, the click-through from an activity row to its task.
 - [ ] **Tasks** (13 files — the largest). List, filters, row actions, detail
       page with tab bar, stage rail, changed files, attempt config, task logs,
-      timeline, debug view.
-- [ ] **Chat** (8 files). See Phase 5; this one carries the most recent work.
-- [ ] **Configuration** (5 files). Currently one ~4000px page; the approved
-      design splits it into `/system/*` routes — see
-      `docs/prds/dashboard-navigation-groups.md`. Port into that shape directly
-      rather than porting the monolith and splitting later.
+      timeline, debug view. Two interaction contracts that are not visual:
+      detail `tab`/`attempt` state lives in the query string and is written
+      with `history.replaceState`, **not** `location.hash =`, so a tab click
+      does not remount and refetch; and the list has a reduced-motion-aware
+      scroll-to-row reveal for deep links.
+- [ ] **Chat** (8 files, `chat.jsx` alone is 810 lines). Phase 5 covers the
+      launcher chrome; the content features are separate and none of them are
+      chrome: session list and switching, persona selector, provider and model
+      selectors (also driven by `/model` and persona slash commands), and
+      **inline tool-call rendering in the transcript** — name, parameters,
+      summary, and success-or-failure per call.
+- [ ] **Configuration** (5 files). The approved design splits it into
+      `/system/*` routes — see `docs/prds/dashboard-navigation-groups.md` — so
+      port into that shape directly rather than porting the monolith first.
+      Content beyond layout: `RepositoriesCard`'s inline-editable cells
+      (PATCH-on-blur with keyboard handling), `ModelsAndProvidersCard`,
+      `ProvenanceCard`, `LifecycleCard`, and the **editable-vs-read-only dual
+      mode** — `editable={false}` when the serving process only has a published
+      config snapshot and the PATCH routes answer 503 (`archie-core-ymut`).
+      That is architecture, not styling.
 - [ ] **Logs** (3 files). Filters, live tail, pause, the three empty states.
 - [ ] **Event inspector / captures** (3 files).
 - [ ] **Field mappings** (3 files), including the mapping editor.
@@ -123,11 +184,14 @@ port rather than porting the flat bar first.
 - [ ] `/settings` redirects to `/system/status` — it is in bookmarks and in the
       Go route registry.
 - [ ] Add Logs to the nav. It was never in it.
+- [ ] Preserve the `soon:` entry treatment.
 - [ ] Update `dashboard_tools.go` for every new route in the same change.
 
 ## Phase 5 — Behaviour shipped today that a naive port loses
 
 All of this landed in the last few hours and exists only in the deleted tree.
+The implementation source for nearly all of it is
+`git show e18fb8b2^:ui/src/css/layout.css` plus `main.jsx` and `chat/chat.jsx`.
 
 - [ ] **Chat is a FAB, not a route.** No `/chat`, no nav entry, no topbar icon.
 - [ ] **The panel grows out of the launcher**: collapsed to a pill over the
@@ -136,6 +200,8 @@ All of this landed in the last few hours and exists only in the deleted tree.
 - [ ] **No scrim, no scroll lock.** The page stays readable and clickable.
 - [ ] **No close button** — the FAB is the only toggle, and stays visible on
       mobile where the panel becomes a sheet.
+- [ ] Escape closes the panel **and returns focus to the launcher**; the dock
+      carries `aria-expanded`/`aria-controls`/`aria-hidden`.
 - [ ] Header shows the open conversation's name (`panelTitle`).
 - [ ] New chat = `message-circle-plus`, in the header.
 - [ ] Slash palette is the only command surface; it floats above the input and
@@ -145,8 +211,12 @@ All of this landed in the last few hours and exists only in the deleted tree.
       during a send.
 - [ ] Bubbles carry no speaker label.
 - [ ] **Topbar cannot clip.** The nav is the only shrinkable region; search
-      collapses below 1500px; nav wraps below 1270px. Previously 106px of the
-      utility cluster was unreachable between 1221px and ~1582px.
+      collapses below 1500px; nav wraps below 1270px; sheet mode at 720px;
+      edge-to-edge at 900px. Previously the utility cluster was unreachable
+      between 1221px and ~1582px: measured at 1440x900, `.topbar-end` ended at
+      x=1515 against a shell edge of 1409, so 106px carrying the avatar, theme
+      toggle and documentation button was clipped with no scroll affordance.
+      That figure is a live measurement, not recoverable from git.
 - [ ] **Live activity detail is clamped** to one line with the full payload on
       the title. Unclamped it made the dashboard 7,481px tall.
 - [ ] **HEALTH cards take their own height** (`align-items: start`).
@@ -173,4 +243,5 @@ from nav), `86au` (gauge `aria-label` announces an unrounded percentage),
 
 - Porting the 43 test files. Tests return when there is behaviour worth pinning
   rather than a port to re-assert. `task test:ui` is a `vue-tsc` typecheck
-  meanwhile.
+  meanwhile. See the note under Invariants for the one exception worth
+  reconsidering first.
